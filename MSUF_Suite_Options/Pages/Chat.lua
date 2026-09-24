@@ -1,6 +1,13 @@
 local _, P = ...
 local S, M, T, Tr = P.S, P.M, P.T, P.Tr
 local PAGE, ID = "suite_chat", "chat"
+P.Gates[ID] = function(rule)
+    if rule.key == "fontShadow" or rule.key == "fontShadowOpacity"
+        or rule.key == "fontShadowDistance" then
+        return P.Get(ID, "fontRendering") ~= 3
+    end
+    return true
+end
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local GLYPHS = "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png"
 
@@ -126,7 +133,7 @@ local function Build(ctx)
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_text", Tr("Message text"),
         P.SectionRules(ID, "text"), {
-            help = "Leave size at 0 to follow Blizzard or the MSUF Skinning font setting. A custom size changes the existing font face only.",
+            help = "Leave font and size at their defaults to follow Blizzard or MSUF Fonts. Choose an outline, shadow and Smooth, Sharp or Slug rendering for chat messages. Slug has no shadow.",
         })
 end
 

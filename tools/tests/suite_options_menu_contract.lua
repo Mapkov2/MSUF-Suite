@@ -167,6 +167,12 @@ W.SectionSwitch = function(section, label)
     section.headerSwitch = widget
     return widget
 end
+W.AttachContextColorShortcut = function(section, opts)
+    local shortcut = Widget("ColorShortcut")
+    shortcut.options = opts
+    section.colorShortcut = shortcut
+    return shortcut
+end
 W.SetControlEnabled = function(widget, enabled) widget.enabled = enabled and true or false end
 W.SettingsRows = function(ctx, parent, spec)
     local controls, y = {}, spec.y
@@ -300,6 +306,71 @@ for _, key in ipairs(expected) do
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
 end
+local sliderCount = 0
+for pageKey, ctx in pairs(contexts) do
+    for _, widget in ipairs(ctx.widgets) do
+        if widget.rowKind == "slider" then
+            sliderCount = sliderCount + 1
+            local row = widget.row
+            assert(row.step == 1 or row.step == 0.01,
+                pageKey .. " has a slider without single-unit or one-percent-point steps: " .. row.id)
+            if row.step == 0.01 then assert(row.roundStep == false, "fractional slider rounds to a whole number") end
+            if pageKey == "suite_actionbars" and row.id == "iconZoom" then
+                assert(row.step == 1 and row.format(3.5) == "3.50",
+                    "old half-step icon zoom value must remain visible until edited")
+            end
+        end
+    end
+end
+assert(sliderCount > 0, "suite pages contain no sliders")
+-- Suite pages have no inline color boxes. Every visible catalog color must
+-- remain in its section's three-dot picker, including selected-bar templates.
+local shortcutColors, shortcutColorCount = {}, 0
+for pageKey, ctx in pairs(contexts) do
+    for _, widget in ipairs(ctx.widgets) do
+        assert(widget.rowKind ~= "color", pageKey .. " still renders an inline color box")
+    end
+    for _, section in ipairs(ctx.sections) do
+        if type(section.colorShortcut) == "table" then
+            local targets = section.colorShortcut.options.getTargets()
+            assert(section.colorShortcut.options.maxTargets >= #targets,
+                pageKey .. " color shortcut truncates its targets: " .. section.sectionId)
+            for _, target in ipairs(targets) do
+                assert(type(target.get) == "function" and type(target.set) == "function",
+                    pageKey .. " has an unbound color shortcut target")
+                shortcutColors[target.sourceSettingKey or target.settingKey] = true
+                shortcutColorCount = shortcutColorCount + 1
+            end
+        end
+    end
+end
+assert(shortcutColorCount > 0, "suite color shortcut audit did not cover the catalog")
+for _, id in ipairs(Suite.SuiteOrder) do
+    for _, rule in ipairs(Suite.SuiteCatalog[id].controls) do
+        if rule.color and not rule.hidden and not rule.previewOnly then
+            local template = rule.key:gsub("^bar%d+", "bar1"):gsub("^w%d+", "w1")
+            if id == "cooldownManager" and rule.suffix then template = "c1_" .. rule.suffix end
+            assert(shortcutColors["msufsuite." .. id .. "." .. template],
+                "Suite accordion dots omit " .. id .. "." .. rule.key)
+        end
+    end
+end
+local cdmLook
+for _, section in ipairs(contexts.suite_cooldownManager.sections) do
+    if section.sectionId == "suite_cooldownManager_look" then cdmLook = section; break end
+end
+assert(cdmLook and cdmLook.colorShortcut, "Cooldown bar colors lost their accordion shortcut")
+local cdmBorder
+for _, target in ipairs(cdmLook.colorShortcut.options.getTargets()) do
+    if target.sourceSettingKey == "msufsuite.cooldownManager.c1_borderColor" then cdmBorder = target; break end
+end
+assert(cdmBorder and cdmBorder.settingKey == "msufsuite.cooldownManager.ess_borderColor",
+    "Cooldown color shortcut does not follow the selected bar")
+local previousCDMColor = S.Config("cooldownManager").ess_borderColor
+cdmBorder.set(0x12/255, 0x34/255, 0x56/255)
+assert(S.Config("cooldownManager").ess_borderColor == "123456",
+    "Cooldown color shortcut wrote to the wrong bar")
+S.Config("cooldownManager").ess_borderColor = previousCDMColor
 -- An unavailable module must still let users change its saved switch. The
 -- runtime stays off until its client capability or AddOn is available.
 local actionBarsHeader = contexts.suite_actionbars.sections[1].headerSwitch
@@ -316,7 +387,7 @@ assert(S.Config("actionbars").enabled and not S.states.actionbars.active,
 actionBarsHeader.set(false)
 SecureHandlerSetFrameRef = secureRef
 M.RequestRefresh()
-local qolHeader = contexts.suite_qualityOfLife.sections[2].headerSwitch
+local qolHeader = contexts.suite_qualityOfLife.sections[3].headerSwitch
 C_AddOns.GetAddOnEnableState = function(name)
     return name == "MSUF_Suite_QualityOfLife" and 0 or 1
 end
@@ -360,7 +431,49 @@ ownStyle.set(false)
 assert(not Suite.Suite.Config("dataTexts").bar1StyleOverride,
     "own style did not return to shared settings")
 local qolPage = contexts.suite_qualityOfLife
-local qolGroups = { "xpBar_xp_bar", "qol_repair", "qol_junk", "quests_automation", "loot_collection",
+for _, id in ipairs({ "actionbars", "cooldownManager", "bags", "dataTexts", "skyriding", "chat" }) do
+    local rules = Suite.SuiteCatalog[id].rules
+    for _, key in ipairs({ "font", "fontRendering", "fontShadow", "fontShadowOpacity", "fontShadowDistance" }) do
+        assert(rules[key], id .. " is missing the shared text effect " .. key)
+    end
+    assert(rules.fontRendering.default == 3 and S.Config(id).fontRendering == 3,
+        id .. " did not start with Slug rendering")
+end
+assert(Suite.SuiteCatalog.damageMeter.rules.rendering.default == 3
+    and Suite.SuiteCatalog.damageMeter.rules.outline.default == 2
+    and S.Config("damageMeter").rendering == 3,
+    "Damage Meter default is not outlined Slug")
+assert(Suite.SuiteCatalog.bags.rules.fontShadow.default == false,
+    "Bags default enables a shadow that Slug cannot render")
+local savedChat = S.Config("chat")
+savedChat.fontRendering = 1
+S.Normalize(Suite.DB)
+assert(savedChat.fontRendering == 1, "normalization overwrote an existing Smooth selection")
+savedChat.fontRendering = 3
+for _, name in ipairs(Suite.MinimapInfoFields) do
+    for _, suffix in ipairs({ "Font", "Outline", "Rendering", "Shadow", "ShadowOpacity", "ShadowDistance" }) do
+        assert(Suite.SuiteCatalog.minimap.rules["info" .. name .. suffix],
+            "Minimap " .. name .. " is missing " .. suffix)
+    end
+    assert(Suite.SuiteCatalog.minimap.rules["info" .. name .. "Rendering"].default == 3
+        and S.Config("minimap")["info" .. name .. "Rendering"] == 3,
+        "Minimap " .. name .. " did not start with Slug")
+end
+for _, suffix in ipairs({ "Font", "Outline", "Rendering", "Shadow", "ShadowOpacity", "ShadowDistance" }) do
+    assert(Suite.SuiteCatalog.minimap.rules["infoDifficulty" .. suffix],
+        "Minimap difficulty text is missing " .. suffix)
+end
+assert(Suite.SuiteCatalog.minimap.rules.infoDifficultyRendering.default == 3,
+    "Minimap difficulty text did not default to Slug")
+for bar = 1, 3 do
+    for _, key in ipairs({ "fontRendering", "fontShadow", "fontShadowOpacity", "fontShadowDistance" }) do
+        assert(Suite.SuiteCatalog.dataTexts.rules["bar" .. bar .. key:sub(1, 1):upper() .. key:sub(2)],
+            "DataText bar " .. bar .. " is missing " .. key)
+    end
+    assert(Suite.SuiteCatalog.dataTexts.rules["bar" .. bar .. "FontRendering"].default == 3,
+        "DataText bar " .. bar .. " did not default to Slug")
+end
+local qolGroups = { "xpBar_xp_bar", "skyriding_flight_hud", "qol_repair", "qol_junk", "quests_automation", "loot_collection",
     "loot_history", "combatLog_log_dungeons" }
 assert(#qolPage.sections == #qolGroups, "Quality of Life retained Module Basics or nested accordions")
 for i, name in ipairs(qolGroups) do
@@ -370,6 +483,11 @@ for i, name in ipairs(qolGroups) do
 end
 local route = {
     ["msufsuite.xpBar.width"] = "xpBar_xp_bar",
+    ["msufsuite.skyriding.width"] = "skyriding_flight_hud",
+    ["msufsuite.skyriding.font"] = "skyriding_flight_hud",
+    ["msufsuite.skyriding.barTexture"] = "skyriding_flight_hud",
+    ["msufsuite.skyriding.barHeight"] = "skyriding_flight_hud",
+    ["msufsuite.skyriding.panelOpacity"] = "skyriding_flight_hud",
     ["msufsuite.qol.repairLimit"] = "qol_repair",
     ["msufsuite.qol.junkReport"] = "qol_junk",
     ["msufsuite.quests.onlyIDs"] = "quests_automation",
@@ -386,13 +504,49 @@ for _, widget in ipairs(qolPage.widgets) do
         routed = routed + 1
     end
 end
-assert(routed == 7, "Quality of Life settings lost their search routes")
+assert(routed == 12, "Quality of Life settings lost their search routes")
 local xpBar = qolPage.sections[1].headerSwitch
 xpBar.set(true)
 assert(xpBar.get() and S.Config("xpBar").enabled, "XP bar header switch did not enable its module")
 xpBar.set(false)
 assert(not xpBar.get(), "XP bar header switch did not disable its module")
-local repair, junk = qolPage.sections[2].headerSwitch, qolPage.sections[3].headerSwitch
+local skyride = qolPage.sections[2].headerSwitch
+skyride.set(true)
+assert(skyride.get() and S.Config("skyriding").enabled, "Skyriding switch did not save its preference")
+local skyControls = {}
+for _, widget in ipairs(qolPage.widgets) do
+    local key = widget.meta and widget.meta.settingKey
+    if key and key:match("^msufsuite%.skyriding%.") then
+        skyControls[key:match("%.([^.]+)$")] = widget
+    end
+end
+assert(skyControls.font.rowKind == "dropdown" and skyControls.barTexture.rowKind == "dropdown"
+    and not skyControls.panelColor and skyControls.fontSize.rowKind == "slider",
+    "Skyriding styling controls are missing from the Quality of Life accordion")
+local skyPanelColor
+for _, target in ipairs(qolPage.sections[2].colorShortcut.options.getTargets()) do
+    if target.settingKey == "msufsuite.skyriding.panelColor" then skyPanelColor = target; break end
+end
+assert(skyPanelColor, "Skyriding panel color is missing from its three-dot picker")
+assert(skyControls.font.row.values()[1].text == "MSUF Expressway (default)",
+    "Skyriding font picker does not describe its real default")
+skyControls.font.set("Test font")
+skyControls.barTexture.set("Test bars")
+skyControls.fontSize.set(15)
+skyControls.panelOpacity.set(45)
+assert(S.Config("skyriding").font == "Test font" and S.Config("skyriding").barTexture == "Test bars"
+    and S.Config("skyriding").fontSize == 15 and S.Config("skyriding").panelOpacity == 45,
+    "Skyriding styling changes were not saved")
+skyControls.look.set(2)
+assert(S.Config("skyriding").look == 2 and S.Config("skyriding").panelColor == "151719"
+    and S.Config("skyriding").accentColor == "b9ab86",
+    "Skyriding preset did not apply its colors")
+skyPanelColor.set(1, 0, 0)
+assert(S.Config("skyriding").look == 4 and S.Config("skyriding").panelColor == "ff0000",
+    "Changing a Skyriding color did not keep it as Custom")
+skyride.set(false)
+assert(not skyride.get(), "Skyriding switch did not turn off")
+local repair, junk = qolPage.sections[3].headerSwitch, qolPage.sections[4].headerSwitch
 repair.set(true)
 assert(repair.get() and S.Config("qol").enabled and S.Config("qol").repair)
 junk.set(true)
@@ -401,7 +555,7 @@ assert(not repair.get() and junk.get() and S.Config("qol").enabled,
     "turning off repair disabled active junk selling")
 junk.set(false)
 assert(not S.Config("qol").enabled, "inactive merchant helpers retained their runtime gate")
-local collect, history = qolPage.sections[5].headerSwitch, qolPage.sections[6].headerSwitch
+local collect, history = qolPage.sections[6].headerSwitch, qolPage.sections[7].headerSwitch
 collect.set(true)
 history.set(true)
 collect.set(false)
@@ -409,7 +563,7 @@ assert(not collect.get() and history.get() and S.Config("loot").enabled,
     "turning off collection disabled active loot history")
 history.set(false)
 assert(not S.Config("loot").enabled, "inactive loot helpers retained their runtime gate")
-local quests, combatLog = qolPage.sections[4].headerSwitch, qolPage.sections[7].headerSwitch
+local quests, combatLog = qolPage.sections[5].headerSwitch, qolPage.sections[8].headerSwitch
 quests.set(true)
 combatLog.set(true)
 assert(quests.get() and combatLog.get() and S.Config("quests").enabled
@@ -426,13 +580,32 @@ assert(colorSections.colors_suite_minimap and colorSections.colors_suite_actionb
     and colorSections.colors_suite_damageMeter and colorSections.colors_suite_buffReminders
     and colorSections.colors_suite_chat and colorSections.colors_suite_dataTexts,
     "MSUF Colors missed Suite module colors")
-local dataColorCount = 0
+local globalColors = {}
 for _, widget in ipairs(colorContext.widgets) do
-    if widget.meta and widget.meta.sectionId == "colors_suite_dataTexts" then
-        dataColorCount = dataColorCount + 1
+    if widget.rowKind == "color" and widget.meta then globalColors[widget.meta.settingKey] = widget end
+end
+local expectedColorCount = 0
+for _, id in ipairs(Suite.SuiteOrder) do
+    for _, rule in ipairs(Suite.SuiteCatalog[id].controls) do
+        if rule.color and not rule.hidden then
+            local key = "msufsuite." .. id .. "." .. rule.key
+            assert(globalColors[key], "MSUF Colors missed Suite color: " .. key)
+            expectedColorCount = expectedColorCount + 1
+        end
     end
 end
-assert(dataColorCount == 7, "DataTexts per-bar colors duplicated the shared Colors category")
+local actualColorCount = 0
+for _ in pairs(globalColors) do actualColorCount = actualColorCount + 1 end
+assert(actualColorCount == expectedColorCount, "MSUF Colors has incomplete or duplicate Suite color rows")
+assert(globalColors["msufsuite.dataTexts.bar1BackgroundColor"]
+    and globalColors["msufsuite.cooldownManager.c1_borderColor"],
+    "MSUF Colors omits individual bar colors")
+local dataTextBarColor = globalColors["msufsuite.dataTexts.bar2BackgroundColor"]
+local previousDataTextColor = S.Config("dataTexts").bar2BackgroundColor
+dataTextBarColor.set(0x12/255, 0x34/255, 0x56/255)
+assert(S.Config("dataTexts").bar2BackgroundColor == "123456",
+    "MSUF Colors did not write the individual DataText bar color")
+S.Config("dataTexts").bar2BackgroundColor = previousDataTextColor
 local skinColor = { 0.4, 0.5, 0.6, 0.7 }
 MapkoSkin = {
     addonName = "MSUF_Suite_Skin", ColorOrder = { { "accent", "ACCENT" } }, L = { ACCENT = "Accent" },
@@ -519,6 +692,9 @@ local skinContext = { key = "suite_skin", width = 720, refreshers = {}, widgets 
 current = skinContext
 M.pages.suite_skin.build(skinContext)
 for _, fn in ipairs(skinContext.refreshers) do fn() end
+for _, widget in ipairs(skinContext.widgets) do
+    assert(widget.rowKind ~= "color", "Skinning still renders an inline color box")
+end
 assert(skinContext.pageItems[1] == "fixed-preview"
     and skinContext.pageItems[2] == "suite_skin_frame_basic",
     "Skin preview must own the fixed header before Frame Basics")
@@ -560,6 +736,39 @@ assert(skin.DB.skins.settings == false, "Blizzard adapter control did not update
 for _, section in ipairs(skinContext.sections) do
     assert(section.finished and section.sectionId ~= "suite_skin_editor", "old nested Skinning editor remains")
 end
+local skinPaletteSection
+for _, section in ipairs(skinContext.sections) do
+    if section.sectionId == "suite_skin_colors" then skinPaletteSection = section; break end
+end
+assert(skinPaletteSection and skinPaletteSection.colorShortcut, "Skin colors lost their accordion shortcut")
+local skinPaletteTargets = skinPaletteSection.colorShortcut.options.getTargets()
+assert(#skinPaletteTargets == #skin.ColorOrder and #skinPaletteTargets > 4,
+    "Skin accordion color shortcut truncates the palette")
+local skinPaletteKeys = {}
+for _, target in ipairs(skinPaletteTargets) do skinPaletteKeys[target.settingKey] = target end
+local orderedSkinKeys = {}
+for _, entry in ipairs(skin.ColorOrder) do
+    orderedSkinKeys[entry[1]] = true
+    assert(skinPaletteKeys["msufsuite.skin.color." .. entry[1]],
+        "Skin accordion omitted color " .. entry[1])
+end
+for key in pairs(skin.Defaults.theme.colors) do
+    assert(orderedSkinKeys[key], "Skin theme color is absent from ColorOrder: " .. key)
+end
+skinPaletteKeys["msufsuite.skin.color.microIconHover"].set(0.1, 0.2, 0.3, 0.4)
+assert(skin.DB.theme.colors.microIconHover[1] == 0.1
+    and skin.DB.theme.colors.microIconHover[4] == 0.4,
+    "Skin accordion picker did not save a color outside the former inline swatches")
+local fullSkinColors = { key = "opt_colors", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+current = fullSkinColors
+Suite.Options.BuildColorsCategory(fullSkinColors, W.PageBuilder(fullSkinColors))
+local fullSkinKeys = {}
+for _, widget in ipairs(fullSkinColors.widgets) do
+    if widget.meta then fullSkinKeys[widget.meta.settingKey] = true end
+end
+for _, entry in ipairs(skin.ColorOrder) do
+    assert(fullSkinKeys["msufsuite.skin." .. entry[1]], "MSUF Colors omitted Skin color " .. entry[1])
+end
 MapkoSkin = nil
 local covered = {}
 for _, ctx in pairs(contexts) do
@@ -569,6 +778,7 @@ for _, ctx in pairs(contexts) do
         if path then covered[path] = true end
     end
 end
+for key in pairs(shortcutColors) do covered[key] = true end
 local checked = 0
 for _, id in ipairs(Suite.SuiteOrder) do
     for key, rule in pairs(Suite.SuiteCatalog[id].rules) do
@@ -589,6 +799,15 @@ assert(not covered["msufsuite.minimap.buttonTrackingX"]
 -- Per-bar controls follow the selected bar.
 local function Find(ctx, predicate)
     for _, widget in ipairs(ctx.widgets) do if predicate(widget) then return widget end end
+end
+local function ColorTarget(ctx, sectionId, settingKey)
+    for _, section in ipairs(ctx.sections) do
+        if section.sectionId == sectionId and type(section.colorShortcut) == "table" then
+            for _, target in ipairs(section.colorShortcut.options.getTargets()) do
+                if target.sourceSettingKey == settingKey or target.settingKey == settingKey then return target end
+            end
+        end
+    end
 end
 local bars = contexts.suite_actionbars
 current = bars
@@ -616,6 +835,19 @@ local size = Find(bars, function(w) return w.meta and w.meta.settingKey == "msuf
 assert(picker and size, "action bar editor controls missing")
 picker.set(12)
 assert(size.get() == S.Config("actionbars").bar12Size, "per-bar control did not follow the selection")
+local barBackground
+for _, section in ipairs(bars.sections) do
+    if section.sectionId == "suite_actionbars_bar_background" then barBackground = section; break end
+end
+local barColor = barBackground and barBackground.colorShortcut
+    and barBackground.colorShortcut.options.getTargets()[1]
+assert(barColor and barColor.settingKey == "msufsuite.actionbars.bar12BackgroundColor",
+    "Action bar color shortcut does not follow the selected bar")
+local previousBarColor = S.Config("actionbars").bar12BackgroundColor
+barColor.set(0x12/255, 0x34/255, 0x56/255)
+assert(S.Config("actionbars").bar12BackgroundColor == "123456",
+    "Action bar color shortcut wrote to the wrong bar")
+S.Config("actionbars").bar12BackgroundColor = previousBarColor
 size.set(44)
 assert(S.Config("actionbars").bar12Size == 44 and S.Config("actionbars").bar1Size ~= 44, "per-bar write hit the wrong bar")
 local macro = Find(bars, function(w) return w.meta and w.meta.settingKey == "msufsuite.actionbars.bar1Macro" end)
@@ -636,7 +868,7 @@ windowPicker.set(3)
 assert(windowType.get() == S.Config("damageMeter").w3Type)
 local dmConfig = S.Config("damageMeter")
 local meterLook = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.look" end)
-local meterBorder = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.borderColor" end)
+local meterBorder = ColorTarget(dm, "suite_damageMeter_window", "msufsuite.damageMeter.borderColor")
 assert(meterLook and meterBorder and dmConfig.look == 2 and dmConfig.borderColor == "575b58",
     "Midnight Dark damage meter look is missing from the menu")
 meterLook.set(2)
@@ -661,7 +893,7 @@ local shadowOpacity = Find(dm, function(w) return w.meta and w.meta.settingKey =
 local ellipsis = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.nameEllipsis" end)
 local gradientSwitch = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.gradientEnabled" end)
 local gradientStrength = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.gradientStrength" end)
-local gradientColor = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.gradientColor" end)
+local gradientColor = ColorTarget(dm, "suite_damageMeter_bars", "msufsuite.damageMeter.gradientColor")
 local gradientButtons = {}
 for _, key in ipairs({ "gradientDirLeft", "gradientDirRight", "gradientDirUp", "gradientDirDown" }) do
     gradientButtons[key] = registeredControls["menu2.suite_damageMeter.damageMeter." .. key]
@@ -675,10 +907,10 @@ assert(gradientSwitch and gradientStrength and gradientColor and dmConfig.gradie
 assert(dmConfig.showRealm==false,"server-name toggle must default to hidden")
 dmConfig.enabled = true
 M.RequestRefresh()
-assert(not gradientStrength.enabled and not gradientColor.enabled
+assert(not gradientStrength.enabled
     and not gradientButtons.gradientDirRight.enabled,"disabled gradient still editable")
 gradientSwitch.set(true)
-assert(gradientStrength.enabled and gradientColor.enabled
+assert(gradientStrength.enabled and gradientColor
     and gradientButtons.gradientDirRight.enabled and gradientButtons.gradientDirRight.active,
     "enabled gradient did not activate strength, color and D-pad")
 gradientButtons.gradientDirRight.scripts.OnClick()
@@ -701,6 +933,7 @@ M.RequestRefresh()
 assert(headerTimer.enabled and floatingTimer.enabled and not shadowOpacity.enabled and not ellipsis.enabled,
     "Slug shadow or name shortening dependencies are wrong")
 dmConfig.rendering = 1
+dmConfig.outline = 1
 dmConfig.nameMaxChars = 8
 M.RequestRefresh()
 assert(shadowOpacity.enabled and ellipsis.enabled, "text controls did not re-enable")
@@ -727,7 +960,7 @@ S.Config("minimap").scrollZoom = false
 M.RequestRefresh()
 assert(zoomReset.enabled == false, "enableKey dependency ignored")
 local stylePreset = Find(mm, function(w) return w.meta and w.meta.settingKey == "msufsuite.minimap.stylePreset" end)
-local styleColor = Find(mm, function(w) return w.meta and w.meta.settingKey == "msufsuite.minimap.styleColor" end)
+local styleColor = ColorTarget(mm, "suite_minimap_style_art", "msufsuite.minimap.styleColor")
 local stylePath = Find(mm, function(w) return w.meta and w.meta.settingKey == "msufsuite.minimap.styleTexturePath" end)
 assert(stylePreset and styleColor and stylePath, "minimap style editor controls missing")
 stylePreset.set(3)
@@ -1014,7 +1247,7 @@ assert(S.Config("minimap").infoLocationX == arrowX - 10,
     "arrow key moved an element after the preview selection was cleared")
 GameTooltip = nil
 GetZoneText = nil
-for _, id in ipairs({ "minimap", "actionbars", "damageMeter", "bags", "dataTexts", "xpBar", "chat" }) do
+for _, id in ipairs({ "minimap", "actionbars", "damageMeter", "bags", "dataTexts", "xpBar", "skyriding", "chat" }) do
     S.Config(id).enabled = true
 end
 local beforeStyle = historyProvider.capture()
@@ -1025,7 +1258,9 @@ assert(S.Config("minimap").stylePreset == 7 and S.Config("minimap").styleGlowCol
     and S.Config("actionbars").borderColor == "9f8960"
     and S.Config("damageMeter").bgColor == "14181b"
     and S.Config("bags").backgroundColor == "14181b"
-    and S.Config("dataTexts").look == 3 and S.Config("xpBar").look == 3,
+    and S.Config("dataTexts").look == 3 and S.Config("xpBar").look == 3
+    and S.Config("skyriding").look == 3
+    and S.Config("skyriding").panelColor == "14181b",
     "Forever style missed a core module")
 assert(S.Config("minimap").infoClock == clockVisible
     and S.Config("actionbars").bar1Visibility == barVisibility
@@ -1070,6 +1305,8 @@ assert(S.Config("actionbars").look == 2 and S.Config("actionbars").borderColor =
     and S.Config("buffReminders").borderColor == "575b58"
     and cooldowns.cdColor == "e9e9e4" and cooldowns.ess_borderColor == "575b58"
     and cooldowns.ess_glowColor == "b9ab86" and cooldowns.bar_barColor == "b9ab86"
+    and S.Config("skyriding").look == 2
+    and S.Config("skyriding").panelColor == "151719"
     and data.look == 2 and not data.customColors
     and data.bar1Look == 2 and not data.bar1CustomColors,
     "Dark global look missed an enabled Suite module or retained overriding colors")
@@ -1081,9 +1318,10 @@ assert(S.Set("xpBar", "enabled", true) and xp.look == 2,
 
 assert(S.ApplyGlobalLook("midnight"), "Blue global look was rejected")
 assert(S.Config("minimap").stylePreset == 8 and S.Config("actionbars").look == 1
-    and S.Config("xpBar").look == 1 and S.Config("dataTexts").look == 1
+    and S.Config("xpBar").look == 1 and S.Config("skyriding").look == 1
+    and S.Config("dataTexts").look == 1
     and S.Config("buffReminders").borderColor == "41627a"
     and cooldowns.bar_barColor == "57c7df",
     "Midnight Blue did not update Suite modules")
 
-print("Suite options menu: navigation, pages, full setting coverage, per-bar/window keys, gating and locale isolation passed")
+print("Suite options menu: navigation, no inline Suite colors, complete section shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

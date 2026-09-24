@@ -446,8 +446,17 @@ function ScopeMethods:SkinButton(button, options)
         or not HasMethod(button, "SetPushedTexture") then
         return false, "unsupported-control"
     end
+    local spec = SanitizeSpec(options)
+    local scope = GetScope(self)
+    -- MSUF's sidebar uses the ordinary dark menu selection. Normalize older
+    -- MSUF callers too, so a separately installed frame addon cannot bring
+    -- back the bright blue navigation material.
+    if scope and scope.client.name == "MidnightSimpleUnitFrames"
+        and spec.role == "navigation" and spec.listItem == true then
+        spec.activeRole = "button"
+    end
     return RequestVisual(self, button, "control", {
-        kind = "button", spec = SanitizeSpec(options),
+        kind = "button", spec = spec,
     }, true)
 end
 

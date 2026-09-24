@@ -38,16 +38,18 @@ local id = "cooldownManager"
 
 ------------------------------------------------------------------ slots
 -- kind: 1 cooldown icons, 2 aura icons, 3 aura bars. Categories are
--- Enum.CooldownViewerCategory values the built-in bars follow.
+-- Enum.CooldownViewerCategory values the built-in bars follow (runtime
+-- Catalog.lua BAR_OF mirrors them). Essential also takes the equipment
+-- slot pool (7, trinkets), after its own entries in Blizzard's order.
 CDM.KIND_COOLDOWN, CDM.KIND_AURA, CDM.KIND_BAR = 1, 2, 3
 -- preset: "defensives" fills the bar with the class's defensive cooldowns
 -- (runtime Presets.lua) until the user edits its list; "racials" appends the
--- character's racial to the bar's Blizzard entries.
+-- character's racial to the bar's Blizzard entries (potions and healthstones).
 CDM.SLOTS = {
-    { key = "ess", title = "Essential cooldowns", kind = 1, builtin = true, categories = { 0 } },
+    { key = "ess", title = "Essential cooldowns", kind = 1, builtin = true, categories = { 0, 7 } },
     { key = "uti", title = "Utility cooldowns", kind = 1, builtin = true, categories = { 1 } },
     { key = "def", title = "Defensives", kind = 1, builtin = true, categories = {}, preset = "defensives" },
-    { key = "ext", title = "Potions and racials", kind = 1, builtin = true, categories = { 5, 7 }, preset = "racials" },
+    { key = "ext", title = "Potions and racials", kind = 1, builtin = true, categories = { 5 }, preset = "racials" },
     { key = "buf", title = "Buffs", kind = 2, builtin = true, categories = { 2, 6, 8 } },
     { key = "bar", title = "Buff bars", kind = 3, builtin = true, categories = { 3 } },
 }
@@ -78,12 +80,22 @@ B.Section(id, "general", "General", {
 B.Section(id, "text", "Text", {
     Font("font", "Font"),
     Choice("fontOutline", "Text outline", 1, { "Outline", "Thick outline", "None" }),
+    Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Bool("fontShadow", "Text shadow"),
+    Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+    Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Color("cdColor", "Countdown color", "ffffff"),
     Color("stackColor", "Charges and stacks color", "ffffff"),
     Color("keybindColor", "Keybind color", "ffffff"),
     Number("thresholdSeconds", "Warn when fewer seconds remain (0 = off)", 0, 0, 10),
     Color("thresholdColor", "Warning countdown color", "ff5a3c"),
 })
+local textRules = NS.SuiteCatalog[id].rules
+textRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
+for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
+    textRules[key].enableKey = "fontShadow"
+    textRules[key].requiresChoice = textRules.fontShadow.requiresChoice
+end
 B.Section(id, "data", "Data", {
     String("listsData", "Bar contents", "", 60000),
     String("spellsData", "Per-spell choices", "", 60000),
@@ -257,12 +269,6 @@ for _, slot in ipairs(CDM.SLOTS) do
         rules[k.gap].requiresChoice = rules[k.side].requiresChoice
         for i = 2, #ANCHOR_LABELS do rules[k.side].requiresChoice.values[i] = true end
     end
-    -- One template set in the Colors painter, not eleven copies.
-    if slot.key ~= "ess" then
-        for suffix in pairs(k) do
-            if rules[k[suffix]].color then rules[k[suffix]].hideInColors = true end
-        end
-    end
 end
 
 ------------------------------------------------------------------ entry keys and data codec
@@ -299,12 +305,23 @@ local function Sound(value)
     if value == "" then return true end
     return value:find("^lsm:.+") ~= nil or value:find("^kit:%d+$") ~= nil or value:find("^file:%d+$") ~= nil
 end
+-- glowStyle (1 Blizzard alert, 2 Marching ants, 3 Pulse, 4 Border) and
+-- glowColor style every glow of the entry: ready, spell alert, "glow while
+-- active" and the stack glow; absent, the bar's glow style and tint apply.
+-- stackGlow: glow while the aura has at least N applications (0 = off).
+-- stackColorAt: stack text in stackColor from N applications (0 = off).
 CDM.SPELL_FIELDS = {
     procGlow = Bool01, readyGlow = Bool01, auraGlow = Bool01, glowStyle = Range(1, 4), glowColor = Hex,
     desat = Range(1, 3), hideReady = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
     showAura = Bool01, swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
     threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01,
+    stackGlow = Range(0, 99), stackColorAt = Range(0, 99), stackColor = Hex,
+    -- Where a buff-bar aura is looked for: 1 automatic (harmful spells on the
+    -- target, the rest on the player), 2 the player, 3 the target, 4 both.
+    auraUnit = Range(1, 4),
 }
+-- What an absent per-spell field means where no bar setting stands behind it.
+CDM.SPELL_DEFAULTS = { stackColor = "ff5a3c" }
 CDM.LIMITS = { specs = 64, entries = 60, hidden = 400, spells = 600 }
 
 local function ValidSpec(value) return type(value) == "number" and value > 0 and value < 100000 and math.floor(value) == value end

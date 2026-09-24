@@ -426,14 +426,38 @@ local function ApplyWindow(self, frame)
     end
 
     if type(frame.GetFont) == "function" and type(frame.SetFont) == "function" then
-        if c.fontSize > 0 then
-            local path, _, flags = frame:GetFont()
-            if type(path) == "string" then
-                self.context:Tuple(frame, "GetFont", "SetFont", path, c.fontSize, flags)
+        local chosenFont = type(c.font) == "string" and c.font ~= "" and S.ResolveFont(c.font) or nil
+        local custom = chosenFont or c.fontSize > 0 or (c.fontOutline or 1) ~= 1
+            or (c.fontRendering or 1) ~= 1
+        if custom then
+            local path, size, flags = frame:GetFont()
+            local owned = self.context.tuples and self.context.tuples[frame]
+            local original = owned and owned.SetFont and owned.SetFont.before
+            if original then path, size, flags = original[1], original[2], original[3] end
+            if S.Public(path) and S.Public(size) and S.Public(flags)
+                and type(path) == "string" and type(size) == "number" then
+                local outlines = { flags, "OUTLINE", "THICKOUTLINE", "" }
+                self.context:Tuple(frame, "GetFont", "SetFont", chosenFont or path,
+                    c.fontSize > 0 and c.fontSize or size,
+                    S.FontFlags(outlines[c.fontOutline or 1] or flags, c.fontRendering or 1))
             end
         else
             self.context:RestoreTuple(frame, "SetFont")
         end
+    end
+    local shadow = c.fontShadow or 1
+    if (c.fontRendering or 1) == 3 then shadow = 3 end
+    if shadow == 1 then
+        self.context:RestoreTuple(frame, "SetShadowColor")
+        self.context:RestoreTuple(frame, "SetShadowOffset")
+    elseif shadow == 2 then
+        self.context:Tuple(frame, "GetShadowColor", "SetShadowColor", 0, 0, 0,
+            (c.fontShadowOpacity or 100) / 100)
+        local distance = c.fontShadowDistance or 1
+        self.context:Tuple(frame, "GetShadowOffset", "SetShadowOffset", distance, -distance)
+    else
+        self.context:Tuple(frame, "GetShadowColor", "SetShadowColor", 0, 0, 0, 0)
+        self.context:Tuple(frame, "GetShadowOffset", "SetShadowOffset", 0, 0)
     end
 end
 

@@ -26,8 +26,21 @@ function Database.IsProfileName(name)
 end
 
 local function NewProfile()
+    if Suite.Client and Suite.Client.isForever
+        and type(Suite.ForeverFactoryModuleCompact) == "string"
+        and type(_G.MSUF_TryDecodeCompactString) == "function"
+        and Suite.ProfileIO then
+        local ok, envelope = pcall(_G.MSUF_TryDecodeCompactString,
+            Suite.ForeverFactoryModuleCompact:sub(8))
+        if ok and type(envelope) == "table" and envelope.addon == "MSUF_Suite"
+            and envelope.format == 1 then
+            local profile = Suite.ProfileIO.PrepareTable(envelope.profile, false)
+            if profile then return profile end
+        end
+    end
     return { suite = { schema = 1, modules = {} } }
 end
+Database.CreateFactoryProfile = NewProfile
 
 -- Return a prepared copy. The caller publishes it only after all checks pass;
 -- neither an existing saved root nor the legacy skin database is mutated.

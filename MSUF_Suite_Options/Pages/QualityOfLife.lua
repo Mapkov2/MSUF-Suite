@@ -14,10 +14,15 @@ local HELP = {
     log_other = "Battlegrounds, arenas, scenarios and delves are independent choices.",
     log_exit = "MSUF stops only a log it started. A log that was already on stays on. Re-entering selected content cancels a pending stop. WoW writes the log in its Logs folder.",
     xp_bar = "Choose Midnight Blue, neutral Midnight Dark glass or MSUF Forever's dark gold frame. All use MSUF's bar texture and font. Turn the 20 XP divisions on or off. The lower line can show session gain, XP per hour and time to level. Move the bar in MSUF Edit Mode; hover for exact values. A session survives /reload and starts fresh on the next login.",
+    flight_hud = "Retail only. Shows while Skyriding is available, or only in flight if selected. The bars show speed, Vigor and Second Wind; the icon shows Whirling Surge. Move and preview the HUD in MSUF Edit Mode. Unknown charge values display as dashes.",
+    flight_typography = "Choose an MSUF or SharedMedia font and bar texture. Font size, outline, shadow, Smooth/Sharp/Slug rendering, bar height and spacing update the HUD immediately. Slug has no shadow.",
+    flight_colors = "Pick a preset above or use the three color dots in this header for your own colors. Changing a color marks the look as Custom. Panel opacity and empty bar opacity are separate.",
 }
 
 local GROUPS = {
     { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" } },
+    { id = "skyriding", title = "Skyriding HUD (Retail)", switch = "enabled",
+        sections = { "flight_hud", "flight_typography", "flight_colors" } },
     { id = "qol", title = "Repair", switch = "repair", other = "autoJunk", sections = { "repair" } },
     { id = "qol", title = "Sell junk", switch = "autoJunk", other = "repair", sections = { "junk" } },
     { id = "quests", title = "Quest helpers", switch = "enabled", sections = { "automation", "filters" } },
@@ -58,15 +63,18 @@ local function FeatureAccordion(ctx, b, group)
         P.Meta(PAGE, id, group.switch, "setting", sectionId))
 
     local y = -18
+    local allRules = {}
     for _, section in ipairs(group.sections) do
         local source = P.SectionRules(id, section)
+        local rules = GroupRules(group, source)
+        for _, rule in ipairs(rules) do allRules[#allRules + 1] = rule end
         if #group.sections > 1 then
             local heading = P.Text(body, Tr(source[1].sectionTitle), 16, y, width, P.T.colors.text)
             y = y - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
         end
         local help = P.Text(body, HELP[section], 16, y, width)
         y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 10
-        y = P.RuleGrid(ctx, body, PAGE, id, GroupRules(group, source), y, width, nil, sectionId)
+        y = P.RuleGrid(ctx, body, PAGE, id, rules, y, width, nil, sectionId)
         y = y - 16
     end
     if id == "xpBar" then
@@ -80,6 +88,12 @@ local function FeatureAccordion(ctx, b, group)
             function() return S.Status(id) == "Active" end,
             P.Meta(PAGE, id, "action.resetSession", "action", sectionId))
         y = y - 38
+    elseif id == "skyriding" then
+        P.Button(ctx, body, "Move in Edit Mode", 16, y, width,
+            function() S.OpenEditMode(id, "flight") end,
+            function() return S.Status(id) == "Active" end,
+            P.Meta(PAGE, id, "action.edit", "action", sectionId))
+        y = y - 38
     end
     P.M.TrackRefresh(ctx, function()
         local available = S.Availability(id)
@@ -89,6 +103,7 @@ local function FeatureAccordion(ctx, b, group)
             entry.label:SetText(title .. (available and "" or Tr(" - Unavailable")))
         end
     end)
+    P.AttachRuleColors(body, title, id, allRules)
     P.FinishBody(b, body, y)
 end
 
@@ -100,4 +115,4 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, icon = { 7, 1 },
-    aliases = { "qol", "qualityoflife", "quality_of_life", "merchant", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp" } })
+    aliases = { "qol", "qualityoflife", "quality_of_life", "merchant", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp", "skyriding", "vigor", "secondwind" } })

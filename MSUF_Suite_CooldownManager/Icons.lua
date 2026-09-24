@@ -110,7 +110,8 @@ end
 
 local function Font(fontString,size,r,g,b)
     local state=C.state
-    S.SetFont(fontString,state.font,size,state.fontFlags)
+    S.SetStyledFont(fontString,state.font,size,state.fontFlags,state.fontRendering,
+        state.fontShadow,state.fontShadowOpacity,state.fontShadowDistance)
     fontString:SetTextColor(r or 1,g or 1,b or 1)
 end
 
@@ -328,7 +329,7 @@ local function Recycle(pool,icon)
     end
     icon.entry,icon.sim=nil,nil
     -- Time memos (item cooldown, real-swipe flag) belong to the old entry.
-    icon.itemStart,icon.cdReal=nil,nil
+    icon.itemStart,icon.itemLock,icon.cdReal=nil,nil,nil
     if icon.cdSet~=false then icon.cdSet=false;icon.cd:Clear() end
     if icon.chargeCd and icon.chargeSet~=false then icon.chargeSet=false;icon.chargeCd:Clear() end
     if icon.countOff~=true then icon.countOff=true;icon.count:SetText("") end

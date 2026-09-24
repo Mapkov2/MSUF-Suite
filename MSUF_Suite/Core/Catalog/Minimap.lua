@@ -208,6 +208,10 @@ for _, field in ipairs(infoFields) do
     Info(Font(prefix .. "Font", "Text font"))
     Info(Number(prefix .. "Size", "Text size", 12, 8, 32))
     Info(Choice(prefix .. "Outline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }))
+    Info(Choice(prefix .. "Rendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }))
+    Info(Bool(prefix .. "Shadow", "Text shadow"))
+    Info(Number(prefix .. "ShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5))
+    Info(Choice(prefix .. "ShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }))
     Info(Color(prefix .. "Color", "Text color", "ffffff"))
     Info(Bool(prefix .. "ClassColor", "Use class color"))
     Info(Number(prefix .. "Width", "Text width", field[5], 40, 400))
@@ -264,7 +268,13 @@ B.Section(id, "info_tooltips", "Hover details", {
 })
 B.Add(id, Bool("infoDifficulty", "Show instance difficulty as text", false), "info_difficulty", "Difficulty")
 for _, rule in ipairs({
+    Font("infoDifficultyFont", "Text font"),
     Number("infoDifficultySize", "Text size", 12, 8, 24),
+    Choice("infoDifficultyOutline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }),
+    Choice("infoDifficultyRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Bool("infoDifficultyShadow", "Text shadow"),
+    Number("infoDifficultyShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+    Choice("infoDifficultyShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Choice("infoDifficultyAnchor", "Text anchor", 1, NS.MinimapTextAnchorLabels),
     Number("infoDifficultyX", "Horizontal offset", 4, -300, 300),
     Number("infoDifficultyY", "Vertical offset", -20, -300, 300),

@@ -20,6 +20,19 @@ local Num=Catalog.Num
 local Resolve={}
 C.Resolve=Resolve
 
+-- Healthstones (Presets.CONSUMABLES): their item entries and Blizzard's
+-- records of their categories hide while the bags hold none (hideEmpty,
+-- read by Time). Potion categories never hide: their item lists may miss a
+-- rank. Keys are built once.
+local CONSUMABLES=C.Presets and C.Presets.CONSUMABLES or EMPTY
+local consumableKeys,consumable,itemCategory,hideItem,hideCategory={},{},{},{},{}
+for i=1,#CONSUMABLES do
+    local item,category=CONSUMABLES[i].item,CONSUMABLES[i].category
+    local key="i"..item
+    consumableKeys[i],itemCategory[key]=key,category
+    consumable[key],hideItem[item],hideCategory[category]=true,true,true
+end
+
 local KIND_FAMILY={1,2,2}
 local SOURCE_FAMILY={s=1,i=1,e=1,a=2,d=2}
 local PLACEHOLDER_TEXTURE,PLACEHOLDER_COUNT=134400,3
@@ -103,8 +116,32 @@ local function Clear(e,src,id,family)
     e.src,e.id,e.family,e.category=src,id,family,nil
     e.selfAura,e.hasAura,e.charges,e.hasRange=false,false,false,false
     e.equipSlot,e.itemID,e.spellCategory,e.tooltip=nil,nil,nil,nil
-    e.linked,e.unit=EMPTY,nil
+    e.linked,e.unit,e.hideEmpty=EMPTY,nil,false
 end
+
+-- The unit a Blizzard aura entry is looked for on: the target when any of its
+-- aura IDs is a harmful spell (a DoT, Deathstalker's Mark), else the player
+-- (a buff). Blizzard's selfAura flag is not used for aura lookups by
+-- Blizzard itself. Cold: cached per spell ID.
+local harmfulCache={}
+local function Harmful(id)
+    if not id then return false end
+    local known=harmfulCache[id]
+    if known~=nil then return known end
+    local spell=C_Spell
+    local check=spell and spell.IsSpellHarmful or IsHarmfulSpell
+    local result=check and check(id)
+    known=Public(result) and result==true or false
+    harmfulCache[id]=known
+    return known
+end
+local function AuraUnit(base,override,tooltip,linked)
+    if Harmful(base) or Harmful(override) or Harmful(tooltip) then return "target" end
+    for i=1,#(linked or EMPTY) do if Harmful(linked[i]) then return "target" end end
+    return "player"
+end
+-- Per-spell "Track on" (auraUnit): 2 me, 3 target, 4 both.
+local AURA_UNIT={nil,"player","target","both"}
 
 local function FillBlizzard(e,rec)
     local base,override,family=rec.spell,rec.override,rec.family
@@ -112,16 +149,13 @@ local function FillBlizzard(e,rec)
     SetOverride(e,override)
     e.base,e.tooltip,e.spell,e.linked,e.category=base,rec.tooltip,override or base,rec.linked,rec.category
     e.selfAura,e.hasAura,e.charges,e.known=rec.selfAura,rec.hasAura,rec.charges,rec.known
-    e.equipSlot,e.spellCategory=rec.equipSlot,rec.spellCategory
+    e.equipSlot,e.spellCategory,e.hideEmpty=rec.equipSlot,rec.spellCategory,hideCategory[rec.spellCategory]==true
     e.itemID=rec.equipSlot and Catalog.EquipItem(rec.equipSlot) or nil
     e.hasRange=family==1 and base~=nil and HasRange(base)
     e.texture,e.name=Catalog.RecordTexture(rec),Catalog.RecordName(rec)
     if family==2 or rec.hasAura then
         e.auraIDs=AuraSet(e.auraIDs,base,override,rec.tooltip,rec.linked)
-        -- Blizzard's viewer looks for every tracked aura on the player and on
-        -- the target (selfAura is not used for that), so a debuff such as
-        -- Deathstalker's Mark shows from a buff bar too.
-        e.unit="both"
+        e.unit=AuraUnit(base,override,rec.tooltip,rec.linked)
     else
         e.auraIDs=nil
     end
@@ -147,7 +181,7 @@ local function FillItem(e,id)
     local spell=Catalog.ItemSpell(id)
     Clear(e,"i",id,1)
     SetOverride(e,nil)
-    e.base,e.spell,e.itemID,e.known=spell,spell,id,true
+    e.base,e.spell,e.itemID,e.known,e.hideEmpty=spell,spell,id,true,hideItem[id]==true
     e.texture,e.name=icon,Catalog.ItemName(id)
     e.auraIDs=nil
     return true
@@ -194,13 +228,36 @@ end
 -- once per catalog generation. Unlearned spells drop out in Materialize.
 -- presetSpell: plain spell keys that come only from a preset; unlearned ones
 -- stay hidden even in previews (every race's racial, other specs' spells).
+-- The Potions and racials row starts with the Healthstones: each item key
+-- stands in for Blizzard's record of its category while the catalog has no
+-- learned one (covered: category -> the learned record with the lowest ID),
+-- so the healthstone shows once; standIn maps such a category to its item
+-- key, so an unlearned record never previews next to it.
 local presetKeys,presetGen,presetSeen,spellKey,presetSpell={},nil,{},{},{}
+local covered,standIn={},{}
+local function Consumables(out)
+    local n=0
+    for i=1,#CONSUMABLES do
+        local category=CONSUMABLES[i].category
+        if not covered[category] then
+            local key=consumableKeys[i]
+            standIn[category]=key
+            if not presetSeen[key] then presetSeen[key]=true; n=n+1; out[n]=key end
+        end
+    end
+    return n
+end
 local function PresetLists()
     local gen=Catalog.generation
     if presetGen==gen then return presetKeys end
     presetGen=gen
-    wipe(spellKey); wipe(presetSpell)
+    wipe(spellKey); wipe(presetSpell); wipe(covered); wipe(standIn)
     for _,rec in pairs(Catalog.records) do
+        local category=rec.known and rec.spellCategory
+        if category then
+            local held=covered[category]
+            if not held or rec.id<held.id then covered[category]=rec end
+        end
         if rec.family==1 then
             local key=rec.key
             if rec.spell and not spellKey[rec.spell] then spellKey[rec.spell]=key end
@@ -216,8 +273,8 @@ local function PresetLists()
             or def.preset=="racials" and Presets.RACIALS) or nil
         if ids then
             local out=presetKeys[def.key] or {}
-            local n=0
             wipe(presetSeen)
+            local n=def.preset=="racials" and Consumables(out) or 0
             for j=1,#ids do
                 local id=ids[j]
                 local key=spellKey[id]
@@ -235,9 +292,31 @@ local function PresetLists()
     end
     return presetKeys
 end
+-- A healthstone has two keys, its item and Blizzard's record of its
+-- category, and a user list can hold either (the page saves the keys a bar
+-- shows). Both name the one that shows now: the learned record, else the
+-- item that stands in for it. Claims and list places use this key, so the
+-- healthstone keeps its list place and never shows twice. Needs PresetLists.
+local function Canon(key)
+    local category=itemCategory[key]
+    if category then
+        local rec=covered[category]
+        return rec and rec.key or key
+    end
+    local src,id=Parse(key)
+    if src=="b" then
+        local rec=Catalog.records[id]
+        local stand=rec and not rec.known and rec.spellCategory and standIn[rec.spellCategory]
+        if stand then return stand end
+    end
+    return key
+end
 
 ------------------------------------------------------------------ claims and collection
 local claimed,used,keys,tmp,placed,planCache={},{},{},{},{},{}
+-- usedSlot: equipment slots the bar being collected lists (e13). slotHome:
+-- the bar that claimed each listed equipment slot, across all bars.
+local usedSlot,slotHome={},{}
 
 local function SpecData()
     local specID,lists=C.state.specID,C.lists
@@ -266,15 +345,19 @@ local function ListOf(i,specLists,presets)
 end
 local function ClaimList(list,slot,family)
     for j=1,#list do
-        local key=list[j]
-        if claimed[key]==nil and FamilyOf(key)==family then claimed[key]=slot end
+        local key=Canon(list[j])
+        if claimed[key]==nil and FamilyOf(key)==family then
+            claimed[key]=slot
+            local src,id=Parse(key)
+            if src=="e" and slotHome[id]==nil then slotHome[id]=slot end
+        end
     end
 end
 -- A key is claimed by the first bar (menu order) whose list holds it and whose
 -- kind can show it, so a bar switched to another kind releases its entries.
 -- User lists claim first, presets take what is left.
 local function Claim(specLists,presets)
-    wipe(claimed)
+    wipe(claimed); wipe(slotHome)
     for pass=1,2 do
         for i=1,#SLOTS do
             local def=SLOTS[i]
@@ -293,35 +376,65 @@ local function Claim(specLists,presets)
         end
     end
 end
+-- A Blizzard entry joins a built-in bar unless another bar claims it, it is
+-- hidden or already placed. A trinket record follows its equipment slot like
+-- a claimed spell: a bar that lists the slot (e13) is its one home, so the
+-- record stays off every other bar and off that one (the e13 icon shows it).
+-- Trinket buff records (family 2) are not slots and stay on Buffs. An
+-- unlearned healthstone record yields to its claimed stand-in item.
+local function Offer(rec,slot,hidden,out,n)
+    local key=rec.key
+    local owner=claimed[key]
+    local equip=rec.family==1 and rec.equipSlot
+    local home=equip and slotHome[equip]
+    local stand=rec.spellCategory and standIn[rec.spellCategory]
+    if not used[key] and not hidden[key] and (owner==nil or owner==slot)
+        and not (equip and (usedSlot[equip] or (home~=nil and home~=slot)))
+        and not (stand and claimed[stand]~=nil) then
+        used[key]=true; n=n+1; out[n]=key
+    end
+    return n
+end
 local function Collect(i,kind,specLists,hidden,preview,out,presets)
     local def=SLOTS[i]
     local slot,family=def.key,KIND_FAMILY[kind]
     local n=0
-    wipe(used)
+    wipe(used); wipe(usedSlot)
     local list,explicit=ListOf(i,specLists,presets)
     if list then
         for j=1,#list do
-            local key=list[j]
+            local key=Canon(list[j])
             if claimed[key]==slot and not used[key] and (explicit or not hidden[key]) then
                 used[key]=true; n=n+1; out[n]=key
+                local src,id=Parse(key)
+                if src=="e" then usedSlot[id]=true end
             end
         end
     end
     if def.builtin and family then
         local records=Catalog.records
-        -- Unlearned entries only in preview; they sit in Blizzard's global order.
-        local source=preview and Catalog.order or Catalog.byBar[slot]
-        for j=1,#(source or EMPTY) do
-            local rec=records[source[j]]
-            if rec and rec.bar==slot and rec.family==family then
-                local key=rec.key
-                local owner=claimed[key]
-                if not used[key] and not hidden[key] and (owner==nil or owner==slot) then
-                    used[key]=true; n=n+1; out[n]=key
+        if preview then
+            -- Unlearned entries too, in Blizzard's global order; pool entries
+            -- (trinkets on Essential) after the bar's own, as in byBar.
+            local order,tail=Catalog.order,Catalog.TAIL
+            for pass=1,2 do
+                for j=1,#order do
+                    local rec=records[order[j]]
+                    if rec and rec.bar==slot and rec.family==family and (tail[rec.category]==true)==(pass==2) then
+                        n=Offer(rec,slot,hidden,out,n)
+                    end
                 end
+            end
+        else
+            local source=Catalog.byBar[slot] or EMPTY
+            for j=1,#source do
+                local rec=records[source[j]]
+                if rec and rec.bar==slot and rec.family==family then n=Offer(rec,slot,hidden,out,n) end
             end
         end
     end
+    -- Potions and racials: the Healthstones, then the racial, after
+    -- Blizzard's entries (and after a user list, which they survive).
     local extra=def.preset=="racials" and presets[slot]
     if extra then
         for j=1,#extra do
@@ -378,9 +491,12 @@ local function Materialize(key,slot,index,preview,spells)
     local e=old or {key=key}
     if old then Snapshot(old) end
     if not Fill(e,key) or not (e.known or preview and not presetSpell[key]) then return nil end
-    if old then Compare(old) end
     local ov=spells[key]
-    e.slot,e.index,e.ov=slot,index,type(ov)=="table" and ov or EMPTY
+    ov=type(ov)=="table" and ov or EMPTY
+    local chosen=e.unit and AURA_UNIT[ov.auraUnit]
+    if chosen then e.unit=chosen end
+    if old then Compare(old) end
+    e.slot,e.index,e.ov=slot,index,ov
     entries[key],placed[key]=e,true
     return e
 end
@@ -463,12 +579,15 @@ function Resolve.Keys(slot,out)
     local presets=PresetLists()
     Claim(specLists,presets)
     local n=Collect(i,KindOf(i),specLists,hidden,true,out,presets)
-    -- Preset-only spells the character does not know never show (Materialize).
+    -- Preset-only spells the character does not know, and healthstones the
+    -- client has no item for, never show (Materialize).
     local m=0
     for j=1,n do
         local key=out[j]
         local _,id=Parse(key)
-        if not presetSpell[key] or Known(BaseSpell(id)) then m=m+1; out[m]=key end
+        if (not presetSpell[key] or Known(BaseSpell(id))) and not (consumable[key] and not Catalog.ItemIcon(id)) then
+            m=m+1; out[m]=key
+        end
     end
     for j=n,m+1,-1 do out[j]=nil end
     return out

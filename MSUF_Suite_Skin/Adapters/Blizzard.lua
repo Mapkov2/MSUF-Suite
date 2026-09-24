@@ -254,6 +254,9 @@ Adapters.Register({
     resolve = function() return NS.BlizzardCatalog end,
     apply = function(_, owner)
         local genericApplied, genericReason = NS.GenericWindows.ApplyAll(owner)
+        if NS.GenericWindows.IsCategoryEnabled("character") then
+            NS.MacroWindow.Start(owner)
+        end
         if not genericApplied then
             return false, genericReason
         end

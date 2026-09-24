@@ -695,6 +695,7 @@ local entries = {
         category = "character",
         addon = "Blizzard_MacroUI",
         frames = { "MacroFrame" },
+        mode = { role = "popup" },
     },
     {
         id = "macro-dialogs",

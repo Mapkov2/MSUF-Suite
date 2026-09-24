@@ -22,6 +22,12 @@ local ELEMENTS = { showTracking = "Tracking", showCalendar = "Calendar", showMai
 -- Client capabilities come from the runtime once it is loaded; before that
 -- every control stays editable and the runtime ignores what it cannot do.
 P.Gates[ID] = function(rule, key)
+    local prefix = key:match("^(info%a+)Shadow")
+    if prefix then
+        prefix = prefix:gsub("Shadow.*$", "")
+        if P.Get(ID, prefix .. "Rendering") == 3 then return false end
+        if key ~= prefix .. "Shadow" and not P.Get(ID, prefix .. "Shadow") then return false end
+    end
     if rule.key == "shape" and S.CanShapeMinimap and not S.CanShapeMinimap() then return false end
     if rule.key == "hoverHeight" and P.Get(ID, "shape") == 2 then return false end
     if rule.infoField and S.CanShowMinimapInfo and not P.Get(ID, key) and not S.CanShowMinimapInfo(rule.infoField) then return false end

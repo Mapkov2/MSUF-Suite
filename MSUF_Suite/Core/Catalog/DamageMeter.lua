@@ -87,8 +87,8 @@ B.Section(id, "bars", "Bars", {
 })
 B.Section(id, "text", "Text and numbers", {
     Font("font", "Font"),
-    Choice("outline", "Text style", 1, { "Shadow", "Outline", "Thick outline", "None", "Outline + shadow", "Thick outline + shadow" }),
-    Choice("rendering", "Font rendering", 1, { "Smooth", "Sharp / pixel", "Slug" }),
+    Choice("outline", "Text style", 2, { "Shadow", "Outline", "Thick outline", "None", "Outline + shadow", "Thick outline + shadow" }),
+    Choice("rendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
     Number("shadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("shadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Number("textOpacity", "Text opacity (percent)", 100, 50, 100, 5),

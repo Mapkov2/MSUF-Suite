@@ -52,7 +52,18 @@ B.Section("bags", "itemLevels", "Item levels", {
     B.Number("itemLevelSize", "Item level text size", 12, 8, 20),
     B.Bool("qualityColor", "Color item levels by quality", true),
     B.Font("font", "Item level font"),
+    B.Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    B.Choice("fontOutline", "Text outline", 1, { "Outline", "Thick outline", "None" }),
+    B.Bool("fontShadow", "Text shadow"),
+    B.Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+    B.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
 })
+local textRules = NS.SuiteCatalog.bags.rules
+textRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
+for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
+    textRules[key].enableKey = "fontShadow"
+    textRules[key].requiresChoice = textRules.fontShadow.requiresChoice
+end
 
 B.Section("bags", "window", "Combined bag window", {
     B.Bool("showSessionGold", "Show gold change since login", true),

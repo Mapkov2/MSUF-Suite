@@ -403,7 +403,7 @@ local editControls = {
     EditOption("buttonsPerLine", "Per line", 1, MAX_BUTTONS_PER_LINE, 1),
     EditOption("spacing", "Spacing", -8, 16, 1),
     {
-        id = "size", label = "Size %", kind = "number", min = 50, max = 150, step = 5,
+        id = "size", label = "Size %", kind = "number", min = 50, max = 150, step = 1,
         get = function()
             local settings = Settings()
             return settings and math.floor((settings.scale or 1) * 100 + 0.5)

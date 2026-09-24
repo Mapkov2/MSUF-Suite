@@ -6,7 +6,7 @@ local COUNT = Suite.ActionBarCount or 12
 local HELP = {
     appearance = "Shared look of every suite action button. Blizzard's own highlight art is used when you pick Blizzard.",
     cooldowns = "Cooldown numbers, swipes and state colors come from the client's action data; nothing is polled.",
-    text = "Fonts and colors of keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below.",
+    text = "Fonts, outlines, shadows and Smooth/Sharp/Slug rendering for keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below. Slug has no shadow.",
     behavior = "Paging switches bar 1 between pages, like Blizzard's own main bar. Key bindings keep using Blizzard's commands.",
     editor = "Choose a bar to adjust its layout below. The preview uses sample buttons; empty slots and stances can differ in game.",
 }

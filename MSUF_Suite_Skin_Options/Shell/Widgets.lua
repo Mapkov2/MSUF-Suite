@@ -445,6 +445,10 @@ function O.CreateDropdown(parent, labelText, values, getter, setter, width, form
 end
 
 function O.CreateSlider(parent, labelText, minimum, maximum, step, getter, setter, width, formatter, options)
+    -- One whole unit for integral ranges, one percent point for fractional
+    -- ranges such as opacity and scale. Modifier keys use the same 5x/10x
+    -- increments as the Suite controls in the MSUF menu.
+    step = step < 1 and 0.01 or 1
     local row = O.CreatePanel(parent, "card")
     row:SetSize(width or 520, 58)
     local label = O.CreateText(row, labelText, 12, "text")
@@ -485,7 +489,18 @@ function O.CreateSlider(parent, labelText, minimum, maximum, step, getter, sette
     end)
     slider:SetScript("OnValueChanged", function(_, value)
         if internalChange or NS.IsCombatLocked() then return end
-        value = math.floor(value / step + 0.5) * step
+        local multiplier = IsControlKeyDown and IsControlKeyDown() and 10
+            or IsShiftKeyDown and IsShiftKeyDown() and 5 or 1
+        local increment = step * multiplier
+        value = minimum + math.floor((value - minimum) / increment + 0.5) * increment
+        value = math.max(minimum, math.min(maximum, value))
+        if value ~= slider:GetValue() then
+            internalChange = true
+            slider:SetValue(value)
+            internalChange = false
+        end
+        local current = tonumber(getter())
+        if current and math.abs(current - value) < 0.000001 then return end
         local began = not dragging and BeginWidgetChange(labelText, options)
         setter(value)
         if began then CommitWidgetChange(labelText, options, true) end

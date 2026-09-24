@@ -97,7 +97,8 @@ function Region:SetFont(path,size,flags) self.font={path,size,flags};return true
 function Region:SetText(value) self.text=value end
 function Region:GetText() return self.text end
 function Region:SetTextColor(r,g,b) self.textColor={r,g,b} end
-function Region:SetShadowOffset() end
+function Region:SetShadowOffset(x,y) self.shadowOffset={x,y} end
+function Region:SetShadowColor(r,g,b,a) self.shadowColor={r,g,b,a} end
 function Region:SetJustifyH() end
 function Region:SetWordWrap() end
 
@@ -941,6 +942,14 @@ assert(math.abs(style.borderEdges[1].color[1]-.78)<.01 and style.button.Highligh
 assert(style.button.icon.coords[1]==.1)
 assert(S.Set("actionbars","highlightStyle",3))
 assert(style.button.HighlightTexture.atlas=="UI-HUD-ActionBar-IconFrame-Mouseover","Blizzard style restores the template art")
+assert(S.SetMany("actionbars",{fontOutline=2,fontRendering=2,fontShadow=true,
+    fontShadowOpacity=75,fontShadowDistance=2}))
+assert(style.button.Count.font[3]=="THICKOUTLINE,MONOCHROME"
+    and style.button.Count.shadowColor[4]==0.75 and style.button.Count.shadowOffset[1]==2,
+    "Action Bar text effects did not apply")
+assert(S.Set("actionbars","fontRendering",3))
+assert(style.button.Count.font[3]=="OUTLINE,SLUG" and style.button.Count.shadowColor[4]==0,
+    "Action Bar Slug retained a shadow")
 assert(Button(2,1).button.cooldown.hideNumbers==false and Button(2,1).button.chargeCooldown.hideNumbers==false)
 assert(S.Set("actionbars","cooldownNumbers",false))
 assert(Button(2,1).button.cooldown.hideNumbers==true and Button(2,1).button.chargeCooldown.hideNumbers==true)

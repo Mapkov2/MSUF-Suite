@@ -1572,10 +1572,6 @@ function GenericWindows.ApplyEntry(entry, owner)
             local ok, reason, metrics = ApplyFrameNow(frame, owner, CatalogMode(frameMode or entry.mode))
             if ok then
                 applied = applied + 1
-                if entry.id == "macros" and NS.MacroWindow
-                    and not NS.MacroWindow.Apply(frame, owner) then
-                    totals.errors = totals.errors + 1
-                end
             else
                 failed = failed + 1
                 if reason == "protected" then
@@ -1590,6 +1586,12 @@ function GenericWindows.ApplyEntry(entry, owner)
                     totals.fullscreenGuarded = totals.fullscreenGuarded + 1
                 end
                 totals.truncated = totals.truncated or metrics.truncated == true
+            end
+            -- The Macro adapter also starts independently of the catalog.
+            -- Reapply after a late generic pass so pooled slot surfaces keep
+            -- their specific artwork and selection style in either event order.
+            if entry.id == "macros" and NS.MacroWindow then
+                NS.MacroWindow.Apply(frame, owner)
             end
         else
             failed = failed + 1

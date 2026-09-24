@@ -173,6 +173,11 @@ end
 ------------------------------------------------------------------ options canvas
 -- One holder per parent frame, reused: standalone icons (kinds 1 and 2) or
 -- simple rows (kind 3), laid out with the live layout math.
+-- The options page lays its own mouse buttons over the drawing and reads,
+-- after each Render: holder.count (items drawn), holder.kind, holder.items[i]
+-- (the icon or row region), holder.keys[i] (the entry key, false for a
+-- sample icon of an empty bar) and holder.dim[i] (unlearned or sample).
+-- Plain table fields written in place: no widget call, nothing allocated.
 local keyScratch,describe,textures,names={},{},{},{}
 
 local function Holder(parent)
@@ -180,6 +185,8 @@ local function Holder(parent)
     if not holder then
         holder=S.CreateFrame("Frame",nil,parent)
         holder.icons,holder.rows,holder.fakes,holder.out,holder.look={},{},{},{},{gen=0}
+        holder.keys,holder.dim={},{}
+        holder.items=holder.icons
         holder.count,holder.shown=0,false
         canvases[parent]=holder
     end
@@ -188,31 +195,34 @@ end
 
 -- Textures and names of what the bar holds now (or would hold when off);
 -- unlearned spells included, sample icons for an empty bar.
-local function Content(slot,kind)
+local function Content(slot,kind,holder)
     local keys=C.Resolve.Keys(slot,keyScratch)
     local spells=type(C.spells)=="table" and type(C.spells.e)=="table" and C.spells.e or EMPTY
+    local itemKeys,dim=holder.keys,holder.dim
     local n=0
     for i=1,#keys do
         local key=keys[i]
         local e=C.entries[key]
-        local tex,name
-        if e and e.src~="p" then tex,name=e.texture,e.name
+        local tex,name,known
+        if e and e.src~="p" then tex,name,known=e.texture,e.name,e.known
         else
             local d=C.Resolve.Describe(key,describe)
-            if d then tex,name=d.texture,d.name end
+            if d then tex,name,known=d.texture,d.name,d.known end
         end
         local ov=spells[key]
         if type(ov)=="table" and ov.icon then tex=ov.icon end
         n=n+1
         textures[n],names[n]=tex or QUESTION,name or ""
+        itemKeys[n],dim[n]=key,known==false
     end
     if n==0 then
         Samples()
         local family=kind==1 and 1 or 2
-        for i=1,3 do textures[i],names[i]=Sample(family,i),"" end
+        for i=1,3 do textures[i],names[i],itemKeys[i],dim[i]=Sample(family,i),"",false,true end
         n=3
     end
     for i=#textures,n+1,-1 do textures[i],names[i]=nil,nil end
+    for i=#itemKeys,n+1,-1 do itemKeys[i],dim[i]=nil,nil end
     return n
 end
 
@@ -271,12 +281,16 @@ end
 
 -- The bar look of a holder's rows; a change bumps gen and every row
 -- restyles once.
-local function Look(holder,w,h,tex,r,g,b,bgA,left,lead,size,font,flags)
+local function Look(holder,w,h,tex,r,g,b,bgA,left,lead,size,st)
     local look=holder.look
     if look.w~=w or look.h~=h or look.tex~=tex or look.r~=r or look.g~=g or look.b~=b or look.bgA~=bgA
-        or look.left~=left or look.lead~=lead or look.size~=size or look.font~=font or look.flags~=flags then
+        or look.left~=left or look.lead~=lead or look.size~=size or look.font~=st.font
+        or look.flags~=st.fontFlags or look.rendering~=st.fontRendering or look.shadow~=st.fontShadow
+        or look.shadowOpacity~=st.fontShadowOpacity or look.shadowDistance~=st.fontShadowDistance then
         look.w,look.h,look.tex,look.r,look.g,look.b,look.bgA=w,h,tex,r,g,b,bgA
-        look.left,look.lead,look.size,look.font,look.flags=left,lead,size,font,flags
+        look.left,look.lead,look.size,look.font,look.flags=left,lead,size,st.font,st.fontFlags
+        look.rendering,look.shadow,look.shadowOpacity,look.shadowDistance=
+            st.fontRendering,st.fontShadow,st.fontShadowOpacity,st.fontShadowDistance
         look.gen=look.gen+1
     end
     return look.gen
@@ -299,7 +313,8 @@ local function StyleRow(row,w,h,tex,r,g,b,bgA,left,lead,size,st)
     fill:SetTexture(tex)
     fill:SetVertexColor(r,g,b,1)
     local name=row.name
-    S.SetFont(name,st.font,size,st.fontFlags)
+    S.SetStyledFont(name,st.font,size,st.fontFlags,st.fontRendering,
+        st.fontShadow,st.fontShadowOpacity,st.fontShadowDistance)
     name:ClearAllPoints()
     name:SetPoint("LEFT",row,"LEFT",(left and lead or 0)+4,0)
     name:SetPoint("RIGHT",row,"RIGHT",-(left and 0 or lead)-4,0)
@@ -320,7 +335,7 @@ local function Rows(holder,view,count)
     local left=view.barIconSide~=2
     local lead=view.barIcon~=false and h or 0
     local size=max(8,math.floor(h*.55))
-    local gen=Look(holder,w,h,tex,r,g,b,bgA,left,lead,size,st.font,st.fontFlags)
+    local gen=Look(holder,w,h,tex,r,g,b,bgA,left,lead,size,st)
     local out,named=holder.out,view.barName~=false
     for i=1,count do
         local row=Row(holder,i)
@@ -352,11 +367,12 @@ function Pv.Render(parent,slot,maxWidth,maxHeight)
     if not view then return nil end
     local holder=Holder(parent)
     local kind=view.kind or 1
-    local n=Content(slot,kind)
+    local n=Content(slot,kind,holder)
     local width,height,count=C.Layout.Offsets(view,n,holder.out)
     Rest(holder)
     if kind==3 then Rows(holder,view,count) else Icons(holder,view,count,slot) end
     holder.kind,holder.count,holder.slot=kind,count,slot
+    holder.items=kind==3 and holder.rows or holder.icons
     if holder.pvW~=width or holder.pvH~=height then
         holder.pvW,holder.pvH=width,height
         holder:SetSize(width,height)

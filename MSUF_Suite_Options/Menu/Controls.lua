@@ -1,6 +1,17 @@
 local _, P = ...
 local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 
+-- Slider increments are a UI choice. Keep catalog steps intact so existing
+-- fractional profile values are not rounded during database normalization.
+function P.SliderStep(minimum, maximum, default, declaredStep)
+    local function Whole(value)
+        return type(value) == "number" and value == math.floor(value)
+    end
+    if Whole(minimum) and Whole(maximum) and (default == nil or Whole(default))
+        and not ((declaredStep or 1) < 1 and maximum - minimum <= 2) then return 1 end
+    return 0.01
+end
+
 function P.RGB(hex)
     if type(hex) ~= "string" or #hex ~= 6 then return 1, 1, 1 end
     return (tonumber(hex:sub(1, 2), 16) or 255) / 255, (tonumber(hex:sub(3, 4), 16) or 255) / 255,
@@ -13,8 +24,8 @@ end
 
 -- MSUF's own font list (keys or paths) plus the native choice; a saved font
 -- that is no longer installed stays selectable so it is not silently lost.
-function P.FontValues(selected)
-    local values, seen = { { value = "", text = Tr("Native font") } }, { [""] = true }
+function P.FontValues(selected, defaultLabel)
+    local values, seen = { { value = "", text = Tr(defaultLabel or "Native font") } }, { [""] = true }
     local source = M.GlobalPage and M.GlobalPage.FontValues and M.GlobalPage.FontValues(false) or {}
     for _, entry in ipairs(source) do
         if entry.value ~= nil and not seen[entry.value] then
@@ -53,6 +64,7 @@ end
 -- One W.SettingsRows row for a catalog rule. `keyFn` maps the template key to
 -- the live key when shared controls edit the selected bar or window.
 function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
+    if rule.color and pageKey ~= "colors" then return nil end
     local function Key() return keyFn and keyFn(rule.key) or rule.key end
     local row = P.Meta(pageKey, id, rule.key, "setting", sectionId)
     row.id, row.label = rule.key, Tr(rule.label)
@@ -63,7 +75,7 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
     elseif rule.font or rule.texture then
         row.kind = "dropdown"
         local list = rule.font and P.FontValues or P.TextureValues
-        row.values = function() return list(P.Get(id, Key())) end
+        row.values = function() return list(P.Get(id, Key()), rule.defaultLabel) end
         row.get = function() return P.Get(id, Key()) end
         row.set = function(value) P.Set(id, Key(), value or "") end
     elseif rule.choices then
@@ -89,8 +101,15 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
         row.get = function() return P.Get(id, Key()) == true end
         row.set = function(value) P.Set(id, Key(), value == true) end
     elseif type(rule.default) == "number" then
-        row.kind, row.min, row.max, row.step, row.default = "slider", rule.min, rule.max, rule.step or 1, rule.default
-        row.roundStep = (rule.step or 1) >= 1
+        row.kind, row.min, row.max, row.step, row.default = "slider", rule.min, rule.max,
+            P.SliderStep(rule.min, rule.max, rule.default, rule.step), rule.default
+        row.roundStep = row.step >= 1
+        if row.step == 1 and (rule.step or 1) < 1 then
+            row.format = function(value)
+                if value ~= math.floor(value) then return string.format("%.2f", value) end
+                return tostring(value)
+            end
+        end
         row.get = function() return P.Get(id, Key()) end
         row.set = function(value) P.Set(id, Key(), tonumber(value) or rule.default) end
     else
@@ -114,7 +133,9 @@ end
 function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId, columns)
     local rows, pending, strings = {}, {}, {}
     for _, rule in ipairs(rules) do
-        if not rule.hidden then
+        -- Suite pages edit colors from their section shortcut. Only the
+        -- canonical MSUF Colors page renders inline color rows.
+        if not rule.hidden and (pageKey == "colors" or not rule.color) then
             local row = P.RuleRow(pageKey, id, rule, keyFn, sectionId)
             if row then rows[#rows + 1] = row; pending[#pending + 1] = rule
             elseif type(rule.default) == "string" then strings[#strings + 1] = rule end
@@ -139,6 +160,37 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
     return y, entries
 end
 
+-- Suite accordions use this shortcut as their sole color entry point.
+function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
+    if not (body and W.AttachContextColorShortcut) then return end
+    local colors = {}
+    for _, rule in ipairs(rules or {}) do
+        if rule.color and not rule.hidden then colors[#colors + 1] = rule end
+    end
+    if #colors == 0 then return end
+    local shortcut = W.AttachContextColorShortcut(body, {
+        title = Tr(title), maxTargets = #colors,
+        getTargets = function()
+            local targets = {}
+            for _, rule in ipairs(colors) do
+                local function Key() return keyFn and keyFn(rule.key) or rule.key end
+                targets[#targets + 1] = {
+                    label = Tr(rule.label),
+                    sourceSettingKey = "msufsuite." .. id .. "." .. rule.key,
+                    settingKey = "msufsuite." .. id .. "." .. Key(),
+                    isEnabled = isRelevant and function() return isRelevant(rule) end or nil,
+                    get = function() return P.RGB(P.Get(id, Key())) end,
+                    set = function(r, g, b) P.Set(id, Key(), Hex(r, g, b)) end,
+                }
+            end
+            return targets
+        end,
+    })
+    -- Later bound swatches must not replace this complete, curated list.
+    if shortcut then shortcut._msuf2BoundColorShortcut = nil end
+    return shortcut
+end
+
 -- A collapsible section built from catalog rules, with optional help text.
 -- opts: help, open, keyFn, columns, onEnsureVisible, extra(body, y) -> y
 function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
@@ -153,6 +205,7 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     local entries
     y, entries = P.RuleGrid(ctx, body, pageKey, id, rules, y, width, opts.keyFn, sectionId, opts.columns)
     if opts.extra then y = opts.extra(body, y, width) or y end
+    P.AttachRuleColors(body, title, id, rules, opts.keyFn)
     local entry = body._msuf2CollapsibleEntry
     if entry and opts.onEnsureVisible then entry._msuf2EnsureVisible = opts.onEnsureVisible end
     P.FinishBody(b, body, y)
@@ -176,7 +229,12 @@ function P.BuildColorsCategory(ctx, b)
     for _, id in ipairs(P.order) do
         local colors = {}
         for _, rule in ipairs(P.catalog[id].controls) do
-            if rule.color and not rule.hidden and not rule.hideInColors then colors[#colors + 1] = rule end
+            if rule.color and not rule.hidden then
+                local entry = {}
+                for key, value in pairs(rule) do entry[key] = value end
+                entry.label = (rule.sectionTitle and (rule.sectionTitle .. " · ") or "") .. rule.label
+                colors[#colors + 1] = entry
+            end
         end
         if #colors > 0 then
             P.RuleSection(ctx, b, "colors", id, "colors_suite_" .. id,

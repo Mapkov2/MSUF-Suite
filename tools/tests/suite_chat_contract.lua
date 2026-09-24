@@ -4,6 +4,13 @@ local NS = {
     IsCombatLocked = function() return false end,
 }
 local S = {}
+S.Public = function(value) return value ~= "secret" end
+S.ResolveFont = function(key) return key == "TestFont" and "Test.ttf" or nil end
+S.FontFlags = function(outline, rendering)
+    if rendering == 3 then return outline == "" and "SLUG" or "OUTLINE,SLUG" end
+    if rendering == 2 then return outline == "" and "MONOCHROME" or outline .. ",MONOCHROME" end
+    return outline
+end
 local textures = {}
 local function Texture()
     local texture = { shown = true, alpha = 1 }
@@ -42,6 +49,10 @@ local function Frame(name)
     function frame:GetName() return self.name end
     function frame:GetFont() return unpack(self.font) end
     function frame:SetFont(path, size, flags) self.font = { path, size, flags } end
+    function frame:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 0 }) end
+    function frame:SetShadowColor(...) self.shadowColor = { ... } end
+    function frame:GetShadowOffset() return unpack(self.shadowOffset or { 0, 0 }) end
+    function frame:SetShadowOffset(...) self.shadowOffset = { ... } end
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:GetWidth() return self.width or 64 end
     function frame:GetHeight() return self.height or 32 end
@@ -157,13 +168,14 @@ end
 function ctx:Tuple(frame, getter, setter, ...)
     local record = self.original[frame] or {}
     self.original[frame] = record
-    record[setter] = record[setter] or { frame[getter](frame) }
+    record[setter] = record[setter] or { before = { frame[getter](frame) } }
+    self.tuples = self.original
     frame[setter](frame, ...)
 end
 function ctx:RestoreTuple(frame, setter)
     self.restored = self.restored + 1
     local record = self.original[frame]
-    if record and record[setter] then frame[setter](frame, unpack(record[setter])); record[setter] = nil end
+    if record and record[setter] then frame[setter](frame, unpack(record[setter].before)); record[setter] = nil end
 end
 module.context = ctx
 module.active = true
@@ -173,8 +185,11 @@ module.config = {
     tabActiveColor = "f4f7fb", tabInactiveColor = "aab5c2",
     tabPanel = true, sidebarPanel = true, sidebarWidth = 28,
     inputPanel = true, inputColor = "0a1522", inputAlpha = 86, padding = 4, fontSize = 15,
+    font = "", fontOutline = 1, fontRendering = 3, fontShadow = 1,
 }
 module:Enable()
+assert(ChatFrame1.font[3] == "SLUG" and ChatFrame1.shadowColor[4] == 0,
+    "default chat messages did not use Slug")
 assert(ctx.callbacks.UPDATE_CHAT_WINDOWS and ctx.callbacks.UPDATE_FLOATING_CHAT_WINDOWS
     and temporaryHook and newWindowHook and selectHook)
 assert(not ctx.callbacks.CHAT_MSG_SAY and not ctx.callbacks.CHAT_MSG_CHANNEL)
@@ -240,10 +255,28 @@ assert(not sidebar.sidebarFrame.shown and QuickJoinToastButton.alpha == 1 and Qu
 module.config.sidebarPanel = true
 module:Refresh()
 module.config.fontSize = 0
+module.config.fontRendering = 1
 module.config.tabAccent = false
 module:Refresh()
 assert(ChatFrame1.font[2] == 12 and ctx.restored > 0)
 assert(not module.visuals[ChatFrame1].tabLine.shown)
+module.config.font, module.config.fontOutline = "TestFont", 3
+module.config.fontRendering, module.config.fontShadow = 2, 2
+module.config.fontShadowOpacity, module.config.fontShadowDistance = 60, 2
+module:Refresh()
+assert(ChatFrame1.font[1] == "Test.ttf" and ChatFrame1.font[2] == 12
+    and ChatFrame1.font[3] == "THICKOUTLINE,MONOCHROME"
+    and ChatFrame1.shadowColor[4] == 0.6 and ChatFrame1.shadowOffset[1] == 2,
+    "chat font effects were not applied")
+module.config.fontRendering = 3
+module:Refresh()
+assert(ChatFrame1.font[3] == "OUTLINE,SLUG" and ChatFrame1.shadowColor[4] == 0
+    and ChatFrame1.shadowOffset[1] == 0, "Slug must suppress native chat shadow")
+module.config.font, module.config.fontOutline = "", 1
+module.config.fontRendering, module.config.fontShadow = 1, 1
+module:Refresh()
+assert(ChatFrame1.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1.font[3] == ""
+    and ChatFrame1.shadowColor[4] == 0, "chat text ownership did not restore")
 ChatFrame2 = Frame("ChatFrame2")
 ChatFrame2.isDocked = true
 ChatFrame2Tab = Frame("ChatFrame2Tab")

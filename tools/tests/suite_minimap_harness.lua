@@ -102,6 +102,8 @@ function H.New(root, client, options)
     function R:SetAtlas(value) self.atlas = value end
     function R:SetDrawLayer(value) self.layer = value end
     function R:SetFont(path, size, flags) self.font = { path, size, flags }; return true end
+    function R:SetShadowColor(...) self.shadowColor = { ... } end
+    function R:SetShadowOffset(...) self.shadowOffset = { ... } end
     function R:GetFont() return "Native.ttf", 12, "" end
     function R:SetText(value) self.text = value; self.textWrites = (self.textWrites or 0) + 1 end
     function R:GetText() return self.text end
@@ -495,8 +497,8 @@ end
 -- Starts the controller and turns the module on through the real Apply path.
 function H.Enable(W, values)
     local S = W.S
-    if not S.started then S.Start() end
     if values then for key, value in pairs(values) do W.config[key] = value end end
+    if not S.started then S.Start() end
     assert(S.Set("minimap", "enabled", true))
     assert(W.M.active and S.states.minimap.active, "minimap did not activate")
 end

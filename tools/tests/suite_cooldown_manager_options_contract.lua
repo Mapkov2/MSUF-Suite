@@ -4,7 +4,8 @@ local root = assert(arg[1], "repository root required")
 -- coverage through custom bar 1's template rules, selected-bar key mapping,
 -- attach targets (bars plus the player and target frames),
 -- list edits (codec + one history entry per gesture), the spell picker, the
--- per-spell popover, combat refusal and teardown when the page hides.
+-- per-spell popover, the preview as spell editor (pooled icon buttons over
+-- the runtime canvas), combat refusal and teardown when the page hides.
 -- Budgets: a settings write that cannot change the spell tiles makes no
 -- runtime call for them; navigation buttons take no history snapshot; the
 -- only per-frame work is a drag, cleared on release, hide and combat.
@@ -83,6 +84,8 @@ function methods:SetAllPoints(target) self.points = { { "ALL", target } } end
 function methods:IsMouseOver() return self.mouseOver == true end
 function methods:GetEffectiveScale() return 1 end
 function methods:SetScale(v) self.scale = v end
+function methods:GetScale() return self.scale end
+function methods:GetCenter() return self.cx, self.cy end
 function methods:GetFrameLevel() return self.level or 1 end
 function methods:SetFrameLevel(v) self.level = v end
 function methods:GetParent() return self.parent end
@@ -163,6 +166,25 @@ GameTooltip = tooltip
 local toggledBlizzard = 0
 CooldownViewerSettings = { TogglePanel = function() toggledBlizzard = toggledBlizzard + 1 end }
 local soundNames = { "Boom", "Bell", "Chime" }
+-- Blizzard's Cooldown Manager sound list (Blizzard_CooldownViewer), read only:
+-- any write from the page fails. Category 1 has a global string, 6 a plain
+-- enum name, 9 neither; broken rows are skipped.
+Enum.CooldownViewerSoundCategory = { Animals = 1, War2 = 6 }
+COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_ANIMALS = "Animal sounds"
+local function ReadOnly(tbl)
+    return setmetatable(tbl, { __newindex = function() error("Blizzard's sound data was written", 2) end })
+end
+local blizzardSounds = {
+    [1] = { { soundEnum = 1, soundKitID = 316401, text = "Cat" }, { soundEnum = 2, soundKitID = 316406, text = "Chicken" } },
+    [6] = { { soundEnum = 3, soundKitID = 316731, text = "Abstract Whoosh" }, { soundEnum = 4, soundKitID = 0, text = "Broken" },
+        "junk" },
+    [9] = { { soundEnum = 5, soundKitID = 353392 } },
+}
+for _, rows in pairs(blizzardSounds) do
+    for _, row in ipairs(rows) do if type(row) == "table" then ReadOnly(row) end end
+    ReadOnly(rows)
+end
+CooldownViewerSoundData = ReadOnly(blizzardSounds)
 LibStub = { GetLibrary = function(_, name)
     if name ~= "LibSharedMedia-3.0" then return nil end
     return { List = function() return soundNames end, Fetch = function(_, _, key) return "Sounds\\" .. key end }
@@ -282,6 +304,11 @@ W.FocusCollapsibleSection = function(section) focused = section.sectionId; retur
 W.Dropdown = function(parent, label) local d = Widget("Dropdown", parent); d.label = label; return d end
 W.MoveWidget = function() end
 W.SectionSwitch = function(section, label) local w = Widget("Switch", section); w.label = label; section.headerSwitch = w; return w end
+W.AttachContextColorShortcut = function(section, opts)
+    local shortcut = { options = opts }
+    section.colorShortcut = shortcut
+    return shortcut
+end
 W.SetControlEnabled = function(widget, enabled) widget.enabled = enabled and true or false end
 W.SettingsRows = function(ctx, parent, spec)
     local controls, y = {}, spec.y
@@ -296,9 +323,9 @@ end
 W.PageBuilder = function(ctx)
     local b = { width = ctx.width, y = -12 }
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
-    function b:CollapsibleSection(id, title)
+    function b:CollapsibleSection(id, title, _, open)
         local body = Widget("Section")
-        body.sectionId, body.title = id, title
+        body.sectionId, body.title, body.defaultOpen = id, title, open == true
         body._msuf2Width = ctx.width
         body._msuf2CollapsibleEntry = { label = Widget("FontString", body) }
         ctx.sections[#ctx.sections + 1] = body
@@ -373,8 +400,9 @@ local runtime = { played = {}, released = 0, specID = 62 }
 local CATALOG_ORDER = { "b1", "b2", "b3", "b4", "b5", "b6", "b10", "b11", "b20", "b30", "b40" }
 -- Rows carry their spell IDs where the runtime knows them (b1 has none, so
 -- both shapes are covered).
+-- hasAura: a cooldown that tracks a buff (its stacks show on the icon).
 local CATALOG = {
-    b1 = { name = "Fireball", texture = 101, family = 1, known = true },
+    b1 = { name = "Fireball", texture = 101, family = 1, known = true, hasAura = true },
     b2 = { name = "Frostbolt", texture = 102, family = 1, known = true },
     b3 = { name = "Arcane Blast", texture = 103, family = 1, known = false },
     b4 = { name = "Frost Nova", texture = 104, family = 1, known = true, spell = 122 },
@@ -406,7 +434,8 @@ local function Resolve()
             if seen[key] or entryFamily ~= family then return end
             seen[key] = true
             out[#out + 1] = { key = key, name = record and record.name or key, texture = record and record.texture,
-                known = not record or record.known, family = entryFamily, hidden = key == "b2" }
+                known = not record or record.known, family = entryFamily, hidden = key == "b2",
+                hasAura = record and record.hasAura }
         end
         for _, key in ipairs(explicit[slot] or {}) do if claimed[key] == slot then Add(key) end end
         if not info.custom then
@@ -443,10 +472,32 @@ InstallRuntime = function()
         end
         return out
     end
+    -- Like Preview.lua's canvas: per drawn item its region (icon, or row for
+    -- buff bars), entry key (false for a sample) and dim flag, capped by
+    -- the bar's icon limit; regions are pooled.
     S.CooldownManagerRenderPreview = function(parent, slot, w, h)
         runtime.rendered = { parent = parent, slot = slot, w = w, h = h }
-        runtime.frame = runtime.frame or Widget("Frame", parent)
-        return runtime.frame
+        local frame = runtime.frame or Widget("Frame", parent)
+        runtime.frame = frame
+        frame.icons, frame.rows, frame.keys, frame.dim = frame.icons or {}, frame.rows or {}, frame.keys or {}, frame.dim or {}
+        local info = CDM.SLOTS[CDM.SLOT_INDEX[slot]]
+        local kind = info.custom and Config()[slot .. "_kind"] or info.kind
+        local n = 0
+        for i, entry in ipairs(Resolve()[slot]) do
+            n = i
+            frame.keys[i], frame.dim[i] = entry.key, entry.known == false
+        end
+        if n == 0 then
+            for i = 1, 3 do frame.keys[i], frame.dim[i] = false, true end
+            n = 3
+        end
+        for i = #frame.keys, n + 1, -1 do frame.keys[i], frame.dim[i] = nil, nil end
+        local cap = Config()[slot .. "_maxIcons"]
+        local count = type(cap) == "number" and cap > 0 and math.min(cap, n) or n
+        frame.items = kind == 3 and frame.rows or frame.icons
+        for i = 1, count do frame.items[i] = frame.items[i] or Widget(kind == 3 and "Row" or "Icon", frame) end
+        frame.count, frame.kind = count, kind
+        return frame
     end
     S.CooldownManagerReleasePreview = function() runtime.released = runtime.released + 1 end
     -- Like the runtime: refused while the module is off or in combat; the
@@ -503,7 +554,9 @@ current = ctx
 spec.build(ctx)
 assert(ctx.pageItems[1] == "fixed-preview", "the docked preview must be the first page item")
 assert(ctx.sections[1].sectionId == PAGE .. "_cooldownManager_module" and ctx.sections[1].headerSwitch, "module card must follow the preview")
--- Navigation clicks never take Menu2's full settings snapshot.
+-- Navigation clicks never take Menu2's full settings snapshot. Frame Basics
+-- is one block: the three module actions, then the bar choice (selector and
+-- + Add bar) and the selected bar's summary.
 local cardButtons = 0
 for _, child in ipairs(ctx.sections[1].children or {}) do
     if child.kind == "Button" then
@@ -511,7 +564,9 @@ for _, child in ipairs(ctx.sections[1].children or {}) do
         assert(child._msuf2SkipHistoryCheckpoint, "module card action takes a history snapshot: " .. tostring(child.text))
     end
 end
-assert(cardButtons == 3, "module card actions missing")
+assert(cardButtons == 4 and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].parent == ctx.sections[1],
+    "Frame Basics must hold the three module actions and + Add bar")
+assert(ctx.sections[1].title == "Frame Basics" and ctx.sections[1].defaultOpen, "Frame Basics comes first and open")
 for _, section in ipairs(ctx.sections) do
     for _, child in ipairs(section.children or {}) do
         if child.kind == "Button" and section ~= ctx.sections[1] then
@@ -544,13 +599,29 @@ for _, section in ipairs(Page.SECTIONS) do
     end
 end
 for suffix in pairs(CDM.KEYS.c1) do assert(suffixes[suffix], "no section for " .. suffix) end
+-- Every rule has exactly one control on the page (Basics takes its rules
+-- from the topic sections, it does not repeat them).
 local covered = {}
 for _, widget in ipairs(ctx.widgets) do
+    assert(widget.rowKind ~= "color", "Cooldown Manager still renders an inline color box")
     local key = widget.meta and widget.meta.settingKey
     if key then
+        assert(not covered[key], "setting shown twice on the page: " .. key)
         covered[key] = widget
         local prefix = key:match("^msufsuite%.cooldownManager%.(%w+)_")
         assert(not prefix or prefix == "c1", "control bound to a live per-bar key: " .. key)
+    end
+end
+for _, section in ipairs(ctx.sections) do
+    if type(section.colorShortcut) == "table" then
+        local targets = section.colorShortcut.options.getTargets()
+        assert(#targets <= section.colorShortcut.options.maxTargets,
+            "Cooldown Manager color shortcut truncates its targets")
+        for _, target in ipairs(targets) do
+            local key = target.sourceSettingKey or target.settingKey
+            assert(not covered[key], "color shown twice on the page: " .. key)
+            covered[key] = target
+        end
     end
 end
 local catalog = Suite.SuiteCatalog[ID]
@@ -583,12 +654,25 @@ picker.set("uti")
 assert(Page.selected == "uti" and size.get() == Config().uti_size, "size control did not follow the selected bar")
 size.set(50)
 assert(Config().uti_size == 50 and Config().c1_size == c1Size and Config().ess_size ~= 50, "keyFn write hit the wrong bar")
-local order = {}
-for i, section in ipairs(ctx.sections) do order[i] = section.sectionId:gsub("^suite_cooldownManager_", "") end
-assert(table.concat(order, ",") == "cooldownManager_module,bars,spells,layout,look,text,effects,buffs,barstyle,visibility,general",
+local order, openSections = {}, {}
+for i, section in ipairs(ctx.sections) do
+    order[i] = section.sectionId:gsub("^suite_cooldownManager_", "")
+    if section.defaultOpen then openSections[#openSections + 1] = order[i] end
+end
+assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,layout,look,text,effects,buffs,barstyle,visibility,general",
     "unexpected section order: " .. table.concat(order, ","))
-assert(ctx.sections[4]._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
-    "layout header does not name the selected bar")
+assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only Frame Basics and Basics start open: "
+    .. table.concat(openSections, ","))
+assert(ctx.sections[3].title == "Spell list", "the tile section is the Spell list")
+assert(ctx.sections[2]._msuf2CollapsibleEntry.label.text == "Basics: Utility cooldowns"
+    and ctx.sections[4]._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
+    "section headers do not name the selected bar")
+-- Basics holds the most used settings of the bar.
+for _, suffix in ipairs({ "on", "size", "perRow", "anchor", "side", "align", "alpha" }) do
+    assert(Control(suffix).parent == ctx.sections[2], "Basics lacks " .. suffix)
+end
+assert(Control("grow").parent == ctx.sections[4] and Control("oocAlpha").parent == ctx.sections[5],
+    "Layout and Look keep the rest")
 picker.set("bar")
 M.RequestRefresh()
 assert(not size.enabled and Control("barWidth").enabled and not Control("desat").enabled and Control("pandemic").enabled,
@@ -596,6 +680,8 @@ assert(not size.enabled and Control("barWidth").enabled and not Control("desat")
 assert(Control("grow").enabled and not Control("spacing").enabled and not Control("zoom").enabled,
     "the built-in Buff bars row has fixed spacing and icon look")
 assert(not Control("name").enabled and not Control("kind").enabled, "built-in bars cannot be renamed or retyped")
+assert(not Control("glowStyle").enabled and not Control("glowTint").enabled,
+    "the built-in Buff bars row has no bar-level glow look")
 picker.set("c2")
 M.RequestRefresh()
 assert(Control("name").enabled and Control("kind").enabled and size.enabled and Control("desat").enabled
@@ -605,10 +691,22 @@ M.RequestRefresh()
 assert(not size.enabled and Control("barWidth").enabled, "custom bar type change did not re-gate controls")
 -- A custom Buff bar bar keeps what the runtime reads for it.
 for suffix in pairs(Page.KIND3_EXTRA) do
-    assert(Control(suffix).enabled, "custom buff bars use " .. suffix)
+    local control = Control(suffix)
+    assert(control.sourceSettingKey and control.isEnabled() or control.enabled,
+        "custom buff bars use " .. suffix)
 end
 assert(Control("grow").enabled and not Control("perRow").enabled and not Control("vertical").enabled
     and not Control("desat").enabled, "custom buff bar gates are wrong")
+-- Custom buff bars of both types keep the glow look their aura glows use.
+for _, kind in ipairs({ 3, 2 }) do
+    Config().c2_kind = kind
+    M.RequestRefresh()
+    for suffix in pairs(Page.AURA_EXTRA) do
+        assert(Page.Relevant("c2", suffix), "custom buff bars (type " .. kind .. ") use " .. suffix)
+    end
+    assert(Control("glowStyle").enabled and Control("glowTint").enabled and not Control("readyGlow").enabled,
+        "custom buff bar glow look gates are wrong (type " .. kind .. ")")
+end
 Config().c2_kind = 1
 -- The bar name commits to the bar it was typed for, even when the bar
 -- changes before the input loses focus.
@@ -854,6 +952,11 @@ local fieldRows = {}
 for _, field in ipairs(Page.FIELDS) do
     assert(CDM.SPELL_FIELDS[field.key], "popover row for an unknown spell field: " .. field.key)
     fieldRows[field.key] = true
+    -- A row may also hold a second field (the stack color beside its threshold).
+    if field.color then
+        assert(CDM.SPELL_FIELDS[field.color] and not fieldRows[field.color], "bad companion field " .. field.color)
+        fieldRows[field.color] = true
+    end
 end
 for field in pairs(CDM.SPELL_FIELDS) do assert(fieldRows[field], "no popover row for spell field " .. field) end
 local tile = grid.tiles[1]
@@ -861,6 +964,8 @@ Click(tile, "LeftButton")
 local pop = assert(Page.popover)
 assert(pop.shown and pop.key == "b2" and pop.anchor == tile, "popover did not open on the tile")
 assert(pop.rows.readyGlow.shown and not pop.rows.auraGlow and not pop.rows.lossSound, "popover rows must follow the entry family")
+assert(not pop.hasAura and not pop.rows.stackGlow and not pop.rows.stackColorAt and not pop.rows.auraUnit,
+    "a cooldown without a buff has no stack options and no Track on")
 -- Controls end left of the per-row reset button (the row is 290 wide).
 local resetLeft = pop.rows.readyGlow.reset.parent.width - pop.rows.readyGlow.reset.width
 assert(130 + pop.rows.glowStyle.choice.width <= resetLeft
@@ -881,7 +986,15 @@ assert(lastDropdown and lastDropdown.owner == pop.rows.glowStyle.choice, "glow s
 lastDropdown.onSelect(2)
 assert(Page.SpellField("b2", "glowStyle") == 2, "glow style failed")
 Fire(pop.rows.readyAlpha.minus, "OnClick")
-assert(Page.SpellField("b2", "readyAlpha") == 95, "stepper must start from the bar value")
+assert(Page.SpellField("b2", "readyAlpha") == 99, "stepper must start from the bar value in single steps")
+IsShiftKeyDown = function() return true end
+Fire(pop.rows.readyAlpha.minus, "OnClick")
+assert(Page.SpellField("b2", "readyAlpha") == 94, "Shift stepper must move by five")
+IsShiftKeyDown = nil
+IsControlKeyDown = function() return true end
+Fire(pop.rows.readyAlpha.minus, "OnClick")
+assert(Page.SpellField("b2", "readyAlpha") == 84, "Ctrl stepper must move by ten")
+IsControlKeyDown = nil
 Fire(pop.rows.glowColor.swatches[3], "OnClick")
 assert(Page.SpellField("b2", "glowColor") == "ff4d4d", "color swatch failed")
 Fire(pop.rows.icon.edit, "OnEnterPressed")
@@ -889,21 +1002,80 @@ assert(Page.SpellField("b2", "icon") == nil, "empty icon field must not write")
 pop.rows.icon.edit:SetText("12345")
 Fire(pop.rows.icon.edit, "OnEnterPressed")
 assert(Page.SpellField("b2", "icon") == 12345, "custom icon failed")
--- Sound picker: LSM list, filter, play, pick.
+-- Sound picker: None, Blizzard's Cooldown Manager sounds by category, then
+-- the LSM list; filter, play, pick.
+local settingsToggles = toggledBlizzard
 Fire(pop.rows.sound.choice, "OnClick")
 local sounds = assert(Page.soundPicker)
+-- Blizzard's list is read once per data table and kept.
+local kits = assert(Page.BlizzardSounds(), "Blizzard's sound list missing")
+local firstGroup = kits.groups[1]
+assert(#kits.groups == 3 and Page.BlizzardSounds() == kits and kits.groups[1] == firstGroup,
+    "Blizzard's sound list must be built once per data table")
 assert(sounds.shown and pop.shown, "sound picker must open above the popover")
-sounds.search:SetText("be")
-Fire(sounds.search, "OnTextChanged", true)
-local bell
-for _, row in ipairs(sounds.rows) do if row.shown and row.item and row.item.value == "lsm:Bell" then bell = row end end
-assert(bell and not sounds.rows[2].shown, "sound filter failed")
+local function SoundRows()
+    local out, texts = {}, {}
+    for _, row in ipairs(sounds.rows) do
+        if row.shown and row.item then out[#out + 1] = row; texts[#texts + 1] = row.text.text end
+    end
+    return out, table.concat(texts, "|")
+end
+local function FilterSounds(text)
+    sounds.search:SetText(text)
+    Fire(sounds.search, "OnTextChanged", true)
+    return SoundRows()
+end
+local listed, listText = SoundRows()
+assert(listText == "None|Blizzard Cooldown Manager|Animal sounds|Cat|Chicken|War 2|Abstract Whoosh|Category 9|"
+    .. "Sound kit 353392|Shared media|Boom|Bell|Chime", "sound list order: " .. listText)
+assert(listed[2].item.header == 1 and listed[3].item.header == 2 and not listed[2].play.shown and not listed[3].play.shown
+    and listed[4].play.shown and not listed[1].play.shown, "headers and None have no Play button")
+assert(listed[2].text.textColor[1] == 0.2 and listed[3].text.textColor[1] == 0.5, "section and category headers are styled")
+assert(listed[4].item.value == "kit:316401" and listed[9].item.value == "kit:353392", "Blizzard sounds are kit values")
+Fire(listed[3], "OnClick")
+assert(sounds.shown and Page.SpellField("b2", "sound") == nil, "a header is not a sound")
+Fire(listed[4].play, "OnClick")
+assert(runtime.played[#runtime.played] == "kit:316401", "Blizzard sound preview must play the kit through the runtime")
+local _, found = FilterSounds("animal")
+assert(found == "Blizzard Cooldown Manager|Animal sounds|Cat|Chicken", "a category name must find its sounds: " .. found)
+_, found = FilterSounds("whoosh")
+assert(found == "Blizzard Cooldown Manager|War 2|Abstract Whoosh", "Blizzard sounds must be found by name: " .. found)
+_, found = FilterSounds("zzz")
+assert(found == "", "headers without a match must hide")
+listed = FilterSounds("be")
+local bell = listed[2]
+assert(#listed == 2 and listed[1].item.header == 1 and bell.item.value == "lsm:Bell", "sound filter failed")
 Fire(bell.play, "OnClick")
 assert(runtime.played[#runtime.played] == "lsm:Bell", "sound preview failed")
 Fire(bell, "OnClick")
 assert(Page.SpellField("b2", "sound") == "lsm:Bell" and not sounds.shown, "sound pick failed")
 Fire(pop.rows.sound.play, "OnClick")
 assert(runtime.played[#runtime.played] == "lsm:Bell", "row play button failed")
+-- A Blizzard sound shows its name; reopened, it is marked in its category
+-- and not listed a second time. Reopening reuses the pooled rows and items.
+local soundFrames, soundItems = #frames, sounds.items
+Fire(pop.rows.sound.choice, "OnClick")
+listed = FilterSounds("chick")
+Fire(listed[3], "OnClick")
+assert(Page.SpellField("b2", "sound") == "kit:316406" and pop.rows.sound.choice.text == "Chicken", "Blizzard sound pick failed")
+Fire(pop.rows.sound.choice, "OnClick")
+listed, listText = SoundRows()
+assert(listText:find("^None|Blizzard Cooldown Manager|") and listed[5].item.value == "kit:316406"
+    and listed[5].text.textColor[1] == 0.2 and listed[4].text.textColor[1] == 1, "the current Blizzard sound is not marked")
+assert(#frames == soundFrames and sounds.items == soundItems and Page.BlizzardSounds() == kits,
+    "reopening the sound picker must reuse its rows, items and Blizzard's list")
+Fire(sounds.close, "OnClick")
+-- Without Blizzard's list the section is hidden and a kit keeps a plain label.
+CooldownViewerSoundData = nil
+Fire(pop.rows.sound.choice, "OnClick")
+_, listText = SoundRows()
+assert(listText == "None|Sound kit 316406|Shared media|Boom|Bell|Chime", "sound list without Blizzard's data: " .. listText)
+assert(#frames == soundFrames, "the sound picker without Blizzard's list must reuse its rows")
+Fire(sounds.close, "OnClick")
+CooldownViewerSoundData = blizzardSounds
+M.RequestRefresh()
+assert(pop.rows.sound.choice.text == "Chicken", "the sound label did not come back with Blizzard's list")
+assert(toggledBlizzard == settingsToggles, "the sound picker must never drive Blizzard's settings panel")
 writes = historyWrites
 Fire(pop.reset, "OnClick")
 assert(Page.SpellOverrides().e.b2 == nil and historyWrites == writes + 1, "reset spell failed")
@@ -914,10 +1086,190 @@ for _, item in ipairs(lastDropdown.values) do names[#names + 1] = item.value .. 
 assert(table.concat(names, ",") == "uti+,def+,ext+,buf-,bar-", "move list must mark bars of the other family: " .. table.concat(names, ","))
 lastDropdown.onSelect("ext")
 assert(Keys("ext") == "b30,b2" and not pop.shown, "move to bar failed")
+-- Stack options on a cooldown that shows its buff: steppers from Off, the
+-- stack color beside its threshold, one history entry per gesture.
+Click(grid.tiles[2], "LeftButton")
+assert(pop.shown and pop.key == "b1" and pop.hasAura, "the popover did not open on the cooldown with a buff")
+local stackGlow, stackColor = pop.rows.stackGlow, pop.rows.stackColorAt
+assert(stackGlow and stackGlow.shown and stackColor.shown, "a cooldown that shows its buff offers the stack options")
+assert(stackGlow.label.text == "Glow at stacks" and stackColor.label.text == "Color stacks from", "stack row labels")
+assert(stackGlow.value.text == "Off" and stackColor.value.text == "Off" and not stackGlow.reset.shown
+    and not stackColor.reset.shown and not stackGlow.hint and not stackColor.hint, "stack options start off, with no bar hint")
+-- "Track on" (auraUnit): where the entry's buff is looked for. A stack row
+-- right before "Glow at stacks"; Automatic (0) stores nothing, Me, Target
+-- and Both store the runtime's 2, 3 and 4.
+local trackOn = pop.rows.auraUnit
+assert(trackOn and trackOn.shown and trackOn.label.text == "Track on" and trackOn.choice.text == "Automatic"
+    and not trackOn.reset.shown and trackOn.label.textColor[1] ~= 0.2, "a cooldown that shows its buff offers Track on, Automatic")
+assert(trackOn.points[1][5] == pop.rows.showAura.points[1][5] - 26 and stackGlow.points[1][5] == trackOn.points[1][5] - 26,
+    "Track on sits under Show active buff duration, right before Glow at stacks")
+assert(130 + trackOn.choice.width <= resetLeft, "the Track on choice runs under the reset button")
+do
+    local field, index
+    for i, candidate in ipairs(Page.FIELDS) do if candidate.key == "auraUnit" then field, index = candidate, i end end
+    assert(field == trackOn.field and Page.FIELDS[index + 1].key == "stackGlow", "Track on must be the row before Glow at stacks")
+    assert(field.kind == "choice" and field.stack and not field.cd and not field.aura and not field.auraLabel and not field.bar,
+        "Track on is a stack row with one label and no bar value behind it")
+    local choices = {}
+    for i, item in ipairs(field.menu) do choices[i] = item.value .. "=" .. item.text end
+    assert(table.concat(choices, ",") == "0=Automatic,2=Me,3=Target,4=Both", "Track on choices: " .. table.concat(choices, ","))
+    local valid = CDM.SPELL_FIELDS.auraUnit
+    assert(not valid(0) and valid(1) and valid(2) and valid(3) and valid(4) and not valid(5) and not valid(2.5),
+        "the catalog stores 1 to 4; Automatic from the popover stores nothing")
+    -- The stored values mean what the runtime makes of them (Resolve.lua).
+    local file = assert(io.open(root .. "/MSUF_Suite_CooldownManager/Resolve.lua", "rb"))
+    local literal = file:read("*a"):match("AURA_UNIT%s*=%s*(%b{})")
+    file:close()
+    local units = assert(literal and loadstring("return " .. literal), "the runtime's Track on map is missing")()
+    assert(units[1] == nil and units[2] == "player" and units[3] == "target" and units[4] == "both",
+        "Me, Target and Both must be the runtime's player, target and both")
+    -- Stack-row gating: buffs and cooldowns that show their buff, never a
+    -- plain cooldown or an item.
+    local Applies = Page.FieldApplies
+    assert(Applies(field, 2, "b", false) and Applies(field, 2, "a", false) and Applies(field, 2, "d", false)
+        and Applies(field, 1, "b", true) and not Applies(field, 1, "b", false) and not Applies(field, 1, "s", false)
+        and not Applies(field, 1, "i", false) and not Applies(field, 1, "e", false), "Track on must follow the stack rows")
+    -- Picks: one history entry each through the codec the runtime reads.
+    local tileB1 = grid:Tile("b1")
+    assert(tileB1 and not tileB1.mark.shown, "b1 starts without spell options")
+    writes = historyWrites
+    Fire(trackOn.choice, "OnClick")
+    assert(lastDropdown.owner == trackOn.choice and lastDropdown.values == field.menu and lastDropdown.current == 0,
+        "the Track on list did not open on Automatic")
+    lastDropdown.onSelect(3)
+    assert(Page.SpellField("b1", "auraUnit") == 3 and historyWrites == writes + 1 and trackOn.choice.text == "Target"
+        and trackOn.reset.shown and trackOn.label.textColor[1] == 0.2 and tileB1.mark.shown, "Track on: Target failed")
+    assert(CDM.Codec.DecodeSpells(Config().spellsData).e.b1.auraUnit == 3, "the choice must reach the stored spell options")
+    Fire(trackOn.choice, "OnClick")
+    assert(lastDropdown.current == 3, "the Track on list must mark the current choice")
+    lastDropdown.onSelect(4)
+    assert(Page.SpellField("b1", "auraUnit") == 4 and trackOn.choice.text == "Both", "Track on: Both failed")
+    lastDropdown.onSelect(2)
+    assert(Page.SpellField("b1", "auraUnit") == 2 and trackOn.choice.text == "Me" and historyWrites == writes + 3,
+        "Track on: Me failed")
+    -- Automatic clears the field: the spell is no longer customised.
+    writes = historyWrites
+    lastDropdown.onSelect(0)
+    assert(Page.SpellField("b1", "auraUnit") == nil and Page.SpellOverrides().e.b1 == nil and historyWrites == writes + 1
+        and trackOn.choice.text == "Automatic" and not trackOn.reset.shown and trackOn.label.textColor[1] ~= 0.2
+        and not tileB1.mark.shown, "Automatic must clear the field, not store 0")
+    lastDropdown.onSelect(0)
+    assert(historyWrites == writes + 1, "Automatic on an automatic spell must not write")
+    -- The row's reset clears it back to Automatic.
+    lastDropdown.onSelect(3)
+    writes = historyWrites
+    Fire(trackOn.reset, "OnClick")
+    assert(Page.SpellField("b1", "auraUnit") == nil and historyWrites == writes + 1 and trackOn.choice.text == "Automatic"
+        and not trackOn.reset.shown, "the Track on reset must clear it back to Automatic")
+    -- An explicit 1 (automatic, from an import) reads Automatic too.
+    assert(Page.SetSpellField("b1", "auraUnit", 1) and trackOn.choice.text == "Automatic", "a stored 1 must read Automatic")
+    lastDropdown.onSelect(0)
+    assert(Page.SpellField("b1", "auraUnit") == nil, "Automatic must clear a stored 1")
+    -- Values outside the catalog are refused, Automatic's 0 among them.
+    writes = historyWrites
+    assert(not Page.SetSpellField("b1", "auraUnit", 0) and not Page.SetSpellField("b1", "auraUnit", 5)
+        and not Page.SetSpellField("b1", "auraUnit", 2.5) and not Page.SetSpellField("b1", "auraUnit", "3")
+        and Page.SpellField("b1", "auraUnit") == nil and historyWrites == writes, "Track on stored an invalid value")
+    -- Without Menu2's list, the choice steps through Me, Target, Both and
+    -- back to Automatic.
+    local openList = W.OpenDropdown
+    W.OpenDropdown = nil
+    local stepped = {}
+    for i = 1, 4 do
+        Fire(trackOn.choice, "OnClick")
+        stepped[i] = tostring((Page.SpellField("b1", "auraUnit"))) .. "=" .. trackOn.choice.text
+    end
+    W.OpenDropdown = openList
+    assert(table.concat(stepped, ",") == "2=Me,3=Target,4=Both,nil=Automatic",
+        "Track on must step through its choices: " .. table.concat(stepped, ","))
+    assert(Page.SpellOverrides().e.b1 == nil, "stepping back to Automatic must leave no spell options")
+end
+local stackReset = stackColor.reset.parent.width - stackColor.reset.width
+assert(130 + 22 + 2 + stackColor.value.width + 2 + 22 + 8 + stackColor.swatch.width <= stackReset,
+    "the stack color swatch runs under the reset button")
+local dr, dg, db = P.RGB("ff5a3c")
+assert(stackColor.swatch.fill.color[1] == dr and stackColor.swatch.fill.color[2] == dg and stackColor.swatch.fill.color[3] == db
+    and stackColor.swatch.alpha == 0.5, "the swatch shows the default stack color, dimmed while off")
+writes = historyWrites
+Fire(stackGlow.plus, "OnClick")
+assert(Page.SpellField("b1", "stackGlow") == 1 and historyWrites == writes + 1 and stackGlow.value.text == "1"
+    and stackGlow.reset.shown and stackGlow.label.textColor[1] == 0.2, "glow at stacks must step up from Off")
+IsShiftKeyDown = function() return true end
+Fire(stackGlow.plus, "OnClick")
+IsShiftKeyDown = nil
+assert(Page.SpellField("b1", "stackGlow") == 6, "Shift steps five stacks")
+IsControlKeyDown = function() return true end
+Fire(stackGlow.minus, "OnClick")
+IsControlKeyDown = nil
+assert(Page.SpellField("b1", "stackGlow") == nil and stackGlow.value.text == "Off" and not stackGlow.reset.shown,
+    "stepping back to 0 must turn the stack glow off, not store 0")
+assert(Page.SetSpellField("b1", "stackGlow", 99))
+writes = historyWrites
+Fire(stackGlow.plus, "OnClick")
+assert(Page.SpellField("b1", "stackGlow") == 99 and historyWrites == writes, "glow at stacks stops at 99")
+for _ = 1, 3 do Fire(stackColor.plus, "OnClick") end
+assert(Page.SpellField("b1", "stackColorAt") == 3 and stackColor.value.text == "3" and stackColor.swatch.alpha == 1,
+    "color stacks from failed")
+Fire(stackColor.swatch, "OnEnter")
+assert(tooltip.shown and tooltip.owner == stackColor.swatch and tooltip.text == "Stack color", "the swatch explains itself")
+Fire(stackColor.swatch, "OnLeave")
+Fire(stackColor.swatch, "OnClick")
+assert(lastDropdown.owner == stackColor.swatch and lastDropdown.values == Page.COLOR_MENU and lastDropdown.current == "",
+    "the stack color list did not open")
+local defaultItem = lastDropdown.values[1]
+assert(defaultItem.value == "" and defaultItem.swatchColor[1] == dr and defaultItem.swatchColor[4] == 1
+    and #lastDropdown.values == 9, "the color list starts with the default color")
+writes = historyWrites
+lastDropdown.onSelect("4db8ff")
+local br, bg, bb = P.RGB("4db8ff")
+assert(Page.SpellField("b1", "stackColor") == "4db8ff" and historyWrites == writes + 1
+    and stackColor.swatch.fill.color[1] == br and stackColor.swatch.fill.color[3] == bb
+    and stackColor.swatch.edge.color[1] == 0.2, "stack color pick failed")
+Fire(stackColor.swatch, "OnClick")
+assert(lastDropdown.current == "4db8ff", "the color list must mark the current color")
+lastDropdown.onSelect("")
+assert(Page.SpellField("b1", "stackColor") == nil, "picking the default color must clear the field")
+-- Without Menu2's list, the swatch steps through the colors.
+local openDropdown = W.OpenDropdown
+W.OpenDropdown = nil
+Fire(stackColor.swatch, "OnClick")
+W.OpenDropdown = openDropdown
+assert(Page.SpellField("b1", "stackColor") == "ffd200", "the swatch did not step to the next color")
+-- A color alone customises the row; its reset clears both fields as one step.
+Fire(stackColor.minus, "OnClick"); Fire(stackColor.minus, "OnClick"); Fire(stackColor.minus, "OnClick")
+assert(Page.SpellField("b1", "stackColorAt") == nil and stackColor.reset.shown and stackColor.label.textColor[1] == 0.2,
+    "a stack color without a threshold is still a choice")
+Fire(stackColor.plus, "OnClick")
+writes = historyWrites
+Fire(stackColor.reset, "OnClick")
+assert(Page.SpellField("b1", "stackColorAt") == nil and Page.SpellField("b1", "stackColor") == nil
+    and historyWrites == writes + 1 and not stackColor.reset.shown, "the stack row reset must clear both fields at once")
+-- The buff and its stacks show only with "Show active buff duration":
+-- otherwise the stack rows (Track on among them) stay editable but dimmed.
+assert(stackGlow.alpha == 1 and stackColor.alpha == 1 and trackOn.alpha == 1, "stack rows dimmed while the buff shows")
+Fire(pop.rows.showAura.off, "OnClick")
+assert(stackGlow.alpha == 0.45 and stackColor.alpha == 0.45 and trackOn.alpha == 0.45 and pop.rows.glowStyle.alpha == 1,
+    "stack rows must dim while the spell hides its buff")
+Fire(trackOn.choice, "OnClick")
+lastDropdown.onSelect(3)
+assert(Page.SpellField("b1", "auraUnit") == 3 and trackOn.shown, "a dimmed Track on must stay editable")
+Fire(pop.rows.showAura.reset, "OnClick")
+assert(stackGlow.alpha == 1 and trackOn.alpha == 1, "stack rows must follow the spell's buff choice")
+Config().ess_showAura = false
+M.RequestRefresh()
+assert(stackGlow.alpha == 0.45 and trackOn.alpha == 0.45, "stack rows must follow the bar's Show active buff duration")
+Config().ess_showAura = true
+M.RequestRefresh()
+Fire(pop.reset, "OnClick")
+assert(Page.SpellOverrides().e.b1 == nil and trackOn.choice.text == "Automatic" and not trackOn.reset.shown,
+    "reset spell failed (Track on must go back to Automatic)")
+Fire(pop.close, "OnClick")
 -- Custom entries can be copied to the other specializations.
 Click(grid.tiles[3], "LeftButton")
 assert(pop.key == "i5512" and pop.copy.shown and not pop.rows.procGlow.shown and pop.rows.readyGlow.shown,
     "item entries show item options and the copy action")
+assert(not pop.hasAura and not pop.rows.stackGlow.shown and not pop.rows.stackColorAt.shown and not pop.rows.auraUnit.shown,
+    "items have no stack options and no Track on")
 Fire(pop.copy, "OnClick")
 assert(Lists().specs[63].ess[1] == "i5512" and Lists().specs[64].ess[1] == "i5512", "copy to specializations failed")
 Fire(pop.close, "OnClick")
@@ -928,12 +1280,299 @@ Click(grid.tiles[1], "RightButton")
 assert(pop.shown and pop.key == "b10" and pop.rows.auraGlow.shown and pop.rows.lossSound.shown and not pop.rows.readyGlow.shown,
     "buff entries must show buff options")
 assert(pop.rows.sound.label.text == "Sound when gained", "buff sound label")
--- Buff glows are a plain edge; a buff's own icon shows only while it is missing.
-assert(not pop.rows.glowStyle.shown and pop.rows.glowColor.shown, "buff entries offer a glow style the runtime ignores")
+-- Glow style and color style buff glows too; stack options are always
+-- live for buffs; a buff's own icon shows only while it is missing.
+assert(pop.rows.glowStyle.shown and pop.rows.glowColor.shown, "buff entries must offer the glow style and color")
+assert(pop.rows.stackGlow.shown and pop.rows.stackColorAt.shown and pop.rows.stackGlow.alpha == 1
+    and pop.rows.stackColorAt.alpha == 1, "buff entries must offer the stack options at full strength")
+local buffTrack = pop.rows.auraUnit
+assert(buffTrack.shown and buffTrack.alpha == 1 and buffTrack.label.text == "Track on" and buffTrack.choice.text == "Automatic",
+    "buff entries must offer Track on at full strength, under the same label")
+assert(buffTrack.points[1][5] == pop.rows.showMissing.points[1][5] - 26
+    and pop.rows.stackGlow.points[1][5] == buffTrack.points[1][5] - 26,
+    "buff stack rows follow the missing row, Track on first")
+Fire(buffTrack.choice, "OnClick")
+lastDropdown.onSelect(4)
+assert(Page.SpellField("b10", "auraUnit") == 4 and buffTrack.choice.text == "Both", "buff Track on failed")
+Fire(pop.rows.glowStyle.choice, "OnClick")
+lastDropdown.onSelect(3)
+assert(Page.SpellField("b10", "glowStyle") == 3 and pop.rows.glowStyle.choice.text == "Pulse", "buff glow style failed")
+Fire(pop.rows.stackGlow.plus, "OnClick")
+Fire(pop.rows.stackColorAt.plus, "OnClick")
+assert(Page.SpellField("b10", "stackGlow") == 1 and Page.SpellField("b10", "stackColorAt") == 1, "buff stack options failed")
+Fire(pop.reset, "OnClick")
+assert(Page.SpellOverrides().e.b10 == nil and buffTrack.choice.text == "Automatic", "reset buff options failed")
 assert(pop.rows.icon.shown and pop.rows.icon.label.text == "Icon when missing (Enter)", "buff icon row must say when it applies")
 picker.set("ess")
 assert(not pop.shown, "changing the bar closes the popover")
 M.RequestRefresh()
+
+------------------------------------------------------------------ preview editor
+-- The drawn icons are the spell editor: hover, click, middle-click, drag and
+-- the + tile, on every bar type. The page lays pooled buttons over what the
+-- runtime drew and never hooks the drawing itself.
+do
+    local DOT = " \194\183 "
+    local HINT = "Click a spell for its settings" .. DOT .. "drag to reorder or onto a bar above" .. DOT
+        .. "middle-click removes" .. DOT .. "+ adds"
+    local TIP = "Click: settings" .. DOT .. "Drag: reorder" .. DOT .. "Middle-click: remove"
+    local listsBefore = Config().listsData
+    local hits, drag, canvas = ui.hits, ui.drag, runtime.frame
+    local function Idle()
+        if drag.host.scripts.OnUpdate then return false end
+        for _, hit in ipairs(hits) do if hit.scripts.OnUpdate then return false end end
+        return true
+    end
+    assert(Keys("ess") == "b3,b1,i5512", "unexpected start: " .. Keys("ess"))
+    assert(ui.hitCount == 3 and hits[1].key == "b3" and hits[2].key == "b1" and hits[3].key == "i5512",
+        "preview icons must carry the drawn entries")
+    for i = 1, 3 do
+        assert(hits[i].points[1][1] == "ALL" and hits[i].points[1][2] == canvas.icons[i], "preview button " .. i .. " is not on its icon")
+    end
+    assert(hits[1].dimmed and hits[1].dim.shown and not hits[2].dim.shown, "unlearned entries must be dimmed in the preview")
+    assert(ui.plus.shown and ui.plus.points[1][2] == canvas and ui.plus.points[1][3] == "RIGHT",
+        "the + tile must sit at the end of the drawing")
+    -- The last note takes the hint's place until it clears itself.
+    assert(Page.note and ui.previewLine.text == Page.note, "the preview line must show the last note")
+    Page.ClearNote()
+    assert(ui.previewLine.text == HINT and not ui.previewUndo.shown and ui.previewUndo._msuf2SkipHistoryCheckpoint
+        and PendingTasks() == 0, "the hint line under the preview")
+    for _, icon in ipairs(canvas.icons) do
+        assert(next(icon.scripts) == nil and next(icon.hooks) == nil, "the page hooked the runtime's drawing")
+    end
+    -- At rest nothing runs per frame, and a repaint reuses every frame.
+    assert(Idle(), "preview buttons run per frame at rest")
+    local frameCount, hitPoints, plusPoints = #frames, hits[1].points, ui.plus.points
+    M.RequestRefresh()
+    M.RequestRefresh()
+    assert(#frames == frameCount, "a preview repaint created frames")
+    assert(hits[1].points == hitPoints and ui.plus.points == plusPoints, "a repaint of the same drawing re-anchored its buttons")
+
+    -- Hover: outline and a short tooltip, allocation-free.
+    Fire(hits[2], "OnEnter")
+    assert(hits[2].hover.shown and hits[2].lines[1].shown and tooltip.shown and tooltip.owner == hits[2]
+        and tooltip.text == "Fireball" and tooltip.line == TIP, "hover must outline the icon and name the spell")
+    Fire(hits[2], "OnLeave")
+    assert(not hits[2].hover.shown and not hits[2].lines[1].shown and not tooltip.shown, "leaving must clear the hover")
+    Fire(hits[1], "OnEnter")
+    assert(tooltip.text == "Arcane Blast" and tooltip.line == "Not learned right now.", "unlearned entries say so")
+    Fire(hits[1], "OnLeave")
+    local function Hover()
+        Fire(hits[2], "OnEnter"); Fire(hits[2], "OnLeave")
+        Fire(ui.plus, "OnEnter"); Fire(ui.plus, "OnLeave")
+    end
+    collectgarbage("collect")
+    collectgarbage("stop")
+    -- One pass first: a collection shrinks the Lua stack and the next call
+    -- grows it again, which is not the hover's allocation.
+    Hover()
+    local before = collectgarbage("count")
+    for _ = 1, 50 do Hover() end
+    local grew = collectgarbage("count") - before
+    collectgarbage("restart")
+    assert(grew == 0, "hovering the preview allocated " .. grew .. " KB")
+
+    -- Left or right click: the tile's popover, under the icon; again closes.
+    local writes = historyWrites
+    Click(hits[2], "LeftButton")
+    assert(pop.shown and pop.key == "b1" and pop.anchor == hits[2] and pop.points[1][2] == hits[2]
+        and pop.points[1][3] == "BOTTOMLEFT", "a click must open the spell's popover under its icon")
+    assert(pop.hasAura and pop.rows.stackGlow.shown and pop.rows.auraUnit.shown and pop.rows.readyGlow.shown,
+        "the preview opens the tile's popover rows")
+    assert(hits[2].lines[1].shown and historyWrites == writes, "the open icon is outlined; opening writes nothing")
+    Click(hits[2], "LeftButton")
+    assert(not pop.shown and not hits[2].lines[1].shown, "clicking the icon again must close the popover")
+    Click(hits[2], "RightButton")
+    assert(pop.shown and pop.anchor == hits[2], "a right click opens the popover too")
+    Fire(pop.rows.readyGlow.on, "OnClick")
+    assert(Page.SpellField("b1", "readyGlow") == true and historyWrites == writes + 1 and pop.shown and pop.anchor == hits[2],
+        "a popover edit is one history entry and keeps the popover on its icon")
+    assert(grid:Tile("b1").edge.color[1] == 0.12, "the spell list must not light a tile for the preview's popover")
+    Fire(pop.reset, "OnClick")
+    Click(hits[1], "LeftButton")
+    assert(pop.shown and pop.key == "b3" and pop.anchor == hits[1] and hits[1].lines[1].shown and not hits[2].lines[1].shown,
+        "an unlearned entry opens its popover, and only its icon is outlined")
+    Fire(pop.close, "OnClick")
+    assert(not pop.shown and not hits[1].lines[1].shown, "closing the popover clears the outline")
+    -- An open popover follows its spell when the drawing changes under it.
+    Click(hits[2], "LeftButton")
+    assert(Page.RemoveEntry("ess", "b3"))
+    assert(pop.shown and pop.key == "b1" and pop.anchor == hits[1] and pop.points[1][2] == hits[1]
+        and hits[1].lines[1].shown and not hits[2].lines[1].shown, "the popover must follow its spell to its new icon")
+    Config().listsData = listsBefore
+    M.RequestRefresh()
+    assert(pop.shown and pop.anchor == hits[2] and Keys("ess") == "b3,b1,i5512", "the popover must follow its spell back")
+    Fire(pop.close, "OnClick")
+
+    -- Middle-click removes, with the Undo line under the preview.
+    writes = historyWrites
+    Click(hits[2], "MiddleButton")
+    assert(Keys("ess") == "b3,i5512" and historyWrites == writes + 1, "middle-click must remove the spell in one step")
+    assert(Page.note == "Removed Fireball." and ui.previewLine.text == "Removed Fireball." and ui.previewUndo.shown
+        and PendingTasks() == 1, "the preview must show the removal with its Undo")
+    assert(ui.hitCount == 2 and hits[2].key == "i5512" and not hits[3].shown, "the preview must follow the removal")
+    Click(ui.previewUndo, "LeftButton")
+    assert(Keys("ess") == "b3,b1,i5512" and historyWrites == writes + 2 and PendingTasks() == 0 and not ui.previewUndo.shown
+        and ui.previewLine.text == HINT, "Undo under the preview must bring the spell back")
+
+    -- Drag: 3 px, an insert marker, before or after the hovered icon.
+    for i = 1, 3 do hits[i].cx, hits[i].cy = 60 + 40 * i, 50 end
+    cursorX, cursorY = 100, 50
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    assert(drag.host.scripts.OnUpdate and not drag.active, "a press must arm the drag driver")
+    cursorX = 101
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(not drag.active and not Page.ghost.shown, "the drag started below 3 px")
+    cursorX = 185
+    hits[3].mouseOver = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.active and Page.ghost.shown and hits[1].dim.shown and drag.dropHit == hits[3] and drag.dropAfter
+        and drag.marker.shown and drag.marker.points[1][2] == hits[3] and drag.marker.points[1][3] == "RIGHT",
+        "the right half of an icon must mark the place after it")
+    writes = historyWrites
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    Fire(hits[1], "OnClick", "LeftButton")
+    hits[3].mouseOver = false
+    assert(Keys("ess") == "b1,i5512,b3" and historyWrites == writes + 1, "preview reorder failed: " .. Keys("ess"))
+    assert(Idle() and not Page.ghost.shown and not drag.marker.shown and not pop.shown,
+        "the drop must end the drag without opening the popover")
+    cursorX = 180
+    Fire(hits[3], "OnMouseDown", "LeftButton")
+    cursorX = 95
+    hits[1].mouseOver = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.dropHit == hits[1] and not drag.dropAfter and drag.marker.points[1][3] == "LEFT",
+        "the left half must mark the place before")
+    Fire(hits[3], "OnMouseUp", "LeftButton")
+    hits[1].mouseOver = false
+    assert(Keys("ess") == "b3,b1,i5512", "dropping before the first icon failed: " .. Keys("ess"))
+    cursorX = 100
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 240
+    ui.plus.mouseOver = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.dropHit == ui.plus and drag.marker.points[1][2] == ui.plus and drag.marker.points[1][3] == "LEFT",
+        "the + tile takes a drop at the end")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    ui.plus.mouseOver = false
+    assert(Keys("ess") == "b1,i5512,b3", "dropping on + must move the spell to the end: " .. Keys("ess"))
+    -- Onto a bar chip: moved there; a cooldown on a buff bar is refused.
+    cursorX = 100
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 200
+    ui.chips.uti.mouseOver = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.dropSlot == "uti" and ui.chips.uti.drop.shown and not drag.marker.shown, "a bar chip must take the drop")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    ui.chips.uti.mouseOver = false
+    assert(Keys("ess") == "i5512,b3" and Keys("uti"):find("b1", 1, true) and not ui.chips.uti.drop.shown
+        and Page.note == "Moved Fireball to Utility cooldowns.", "dropping on a bar chip must move the spell there")
+    cursorX = 100
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 200
+    ui.chips.buf.mouseOver = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    ui.chips.buf.mouseOver = false
+    assert(Page.noteError and Page.note == "That bar shows buffs." and ui.previewLine.textColor[1] == 1
+        and Keys("ess") == "i5512,b3", "a cooldown dropped on a buff bar must be refused, in red")
+
+    -- Combat: no hover, no click, no drag; combat mid-drag ends it.
+    local keysNow = Keys("ess")
+    tooltip.shown = false
+    combat = true
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    assert(Idle(), "a preview drag armed in combat")
+    Fire(hits[1], "OnEnter")
+    assert(not hits[1].hover.shown and not tooltip.shown, "no hover in combat")
+    Click(hits[1], "LeftButton")
+    Click(hits[1], "MiddleButton")
+    Click(ui.plus, "LeftButton")
+    assert(not pop.shown and not Page.picker.shown and Keys("ess") == keysNow, "combat must refuse preview clicks")
+    combat = false
+    cursorX = 100
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 150
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.active and Page.ghost.shown, "preview drag did not start")
+    combat = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    combat = false
+    assert(Idle() and not drag.active and not Page.ghost.shown, "combat must end a preview drag")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    assert(Keys("ess") == keysNow, "a drag ended by combat must not write")
+    -- Hiding the preview (or the menu) ends a drag too.
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    Fire(drag.host, "OnHide")
+    assert(Idle(), "hiding the preview left the drag driver running")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 190
+    Fire(drag.host, "OnUpdate", 0.01)
+    ui.previewBody:Hide()
+    assert(Idle() and not drag.active and not Page.ghost.shown and runtime.previewOn == false,
+        "closing the page must end a preview drag")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    assert(Keys("ess") == keysNow, "a drag ended by closing the page must not write")
+    ui.previewBody:Show()
+    ctx.fixedPreview.record.onActivate()
+    assert(Page.ui == ui and runtime.previewOn, "the page did not come back")
+
+    -- An empty bar: dimmed samples and the + tile open the picker.
+    picker.set("c1")
+    M.RequestRefresh()
+    assert(ui.hitCount == 3 and hits[1].key == false and hits[1].dimmed and hits[3].dim.shown,
+        "an empty bar must show dimmed sample icons")
+    Fire(hits[1], "OnEnter")
+    assert(tooltip.text == "Sample icon", "samples say what they are")
+    Fire(hits[1], "OnLeave")
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    assert(Idle(), "samples do not drag")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    Fire(hits[1], "OnClick", "LeftButton")
+    local pick = Page.picker
+    assert(pick.shown and pick.anchor == hits[1] and pick.title.text == "Add to Custom bar 1", "a sample must open the picker")
+    Click(hits[1], "LeftButton")
+    assert(not pick.shown, "clicking the sample again closes the picker")
+    Click(ui.plus, "LeftButton")
+    assert(pick.shown and pick.anchor == ui.plus, "the + tile must open the picker")
+    Click(ui.plus, "LeftButton")
+    assert(not pick.shown, "the + tile closes the picker again")
+
+    -- Buff bars (rows) and buff icons get the same buttons.
+    picker.set("bar")
+    M.RequestRefresh()
+    assert(ui.kind == 3 and hits[1].key == "b20" and hits[1].points[1][2] == canvas.rows[1] and ui.hitCount == 1,
+        "buff bar rows must get the same buttons")
+    Click(hits[1], "LeftButton")
+    assert(pop.shown and pop.key == "b20" and pop.anchor == hits[1] and pop.rows.auraGlow.shown,
+        "a buff bar row opens its buff popover")
+    Fire(pop.close, "OnClick")
+    picker.set("buf")
+    M.RequestRefresh()
+    assert(ui.kind == 2 and hits[1].key == "b10" and hits[2].key == "b11" and hits[1].points[1][2] == canvas.icons[1],
+        "buff icons must get the same buttons")
+    -- Drawn downwards: the drag follows the drawing's own flow.
+    hits[1].cx, hits[1].cy, hits[2].cx, hits[2].cy = 100, 60, 100, 30
+    cursorX, cursorY = 100, 60
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    cursorY = 25
+    hits[2].mouseOver = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.axis == "y" and drag.sign == -1 and drag.dropAfter and drag.marker.points[1][3] == "BOTTOM",
+        "a downward drawing must mark below the icon")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    hits[2].mouseOver = false
+    assert(Keys("buf") == "b11,b10", "buff reorder failed: " .. Keys("buf"))
+    Click(hits[1], "MiddleButton")
+    assert(Keys("buf") == "b10" and Page.note == "Removed Ice Barrier.", "middle-click must remove buffs too")
+
+    Page.ClearNote()
+    Config().listsData = listsBefore
+    picker.set("ess")
+    M.RequestRefresh()
+    assert(Keys("ess") == "b3,b1,i5512" and Idle() and not ui.previewUndo.shown, "preview editor state not restored")
+end
 
 ------------------------------------------------------------------ bars
 Page.OpenAddBar(ui.addChip)
@@ -1010,11 +1649,14 @@ assert(handle.scripts.OnUpdate, "the drawing must follow the cursor while the ba
 cursorX, cursorY = 130, 90
 Fire(handle, "OnUpdate", 0.01)
 local point = runtime.frame.points[1]
-assert(point[1] == "CENTER" and point[4] == 30 and point[5] == -10, "the drawing did not follow the cursor")
+-- The drawing rests left of center by half the + tile beside it.
+local baseX = handle.baseX
+assert(type(baseX) == "number" and baseX < 0, "the drawing and its + tile are not centered together")
+assert(point[1] == "CENTER" and point[4] == baseX + 30 and point[5] == -10, "the drawing did not follow the cursor")
 Fire(handle, "OnMouseUp", "LeftButton")
 assert(Config().ess_x == x + 30 and Config().ess_y == y - 10, "dragging the preview did not move the bar")
 point = runtime.frame.points[1]
-assert(handle.scripts.OnUpdate == nil and point[4] == 0 and point[5] == 0, "the drop left the drag running or the drawing off center")
+assert(handle.scripts.OnUpdate == nil and point[4] == baseX and point[5] == 0, "the drop left the drag running or the drawing off center")
 M.RequestRefresh()
 assert(ui.previewBody._selectedHandle == handle and ui.previewBody.selectionX == Config().ess_x, "selection bar lost the free bar")
 Config().ess_anchor = 2
@@ -1097,10 +1739,10 @@ cursorX, cursorY = 100, 100
 Fire(handle, "OnMouseDown", "LeftButton")
 cursorX, cursorY = 150, 100
 Fire(handle, "OnUpdate", 0.01)
-assert(handle.dragging and runtime.frame.points[1][4] == 50, "preview drag did not start")
+assert(handle.dragging and runtime.frame.points[1][4] == handle.baseX + 50, "preview drag did not start")
 combat = true
 Fire(handle, "OnUpdate", 0.01)
-assert(handle.scripts.OnUpdate == nil and not handle.dragging and runtime.frame.points[1][4] == 0,
+assert(handle.scripts.OnUpdate == nil and not handle.dragging and runtime.frame.points[1][4] == handle.baseX,
     "combat must end a preview drag and center the drawing")
 Fire(handle, "OnMouseDown", "LeftButton")
 assert(handle.scripts.OnUpdate == nil, "preview drag armed in combat")
@@ -1110,6 +1752,10 @@ assert(not Page.AddEntry("ess", "b5", 1) and not Page.RemoveEntry("ess", "b1") a
     "list edits must be refused in combat")
 assert(not Page.SetSpellField("b1", "readyGlow", true) and not Page.TogglePicker(grid.plus) and not Page.AddBar(1),
     "combat must refuse spell options, the picker and new bars")
+assert(not Page.SetSpellField("b1", "stackGlow", 3) and not Page.ClearSpellFields("b1", { "stackColorAt", "stackColor" })
+    and not Page.SetSpellField("b1", "auraUnit", 3)
+    and not Page.OpenSoundPicker(handle, "", function() end) and not sounds.shown,
+    "combat must refuse stack options and the sound picker")
 Click(grid.tiles[1], "MiddleButton")
 Fire(grid.tiles[1], "OnMouseDown", "LeftButton")
 assert(host.scripts.OnUpdate == nil, "drag armed in combat")
@@ -1127,7 +1773,60 @@ host:Hide()
 assert(PendingTasks() == 0 and host.scripts.OnUpdate == nil, "hiding the page left a timer or drag driver")
 assert(not pop.shown and not watcher.events.PLAYER_REGEN_DISABLED and not watcher.events.GLOBAL_MOUSE_DOWN, "popups outlived the page")
 assert(runtime.previewOn == false and runtime.simulate == false and runtime.released > 0, "preview mode outlived the page")
+
+------------------------------------------------------------------ runtime canvas
+-- The real Preview.lua publishes what the page lays its buttons on: items
+-- drawn (capped), their regions, entry keys and dim flags (unlearned or
+-- sample), for icons and buff bar rows alike.
+do
+    local C = { EMPTY = {}, plans = {}, state = {}, entries = {}, spells = { e = {} }, views = {} }
+    C.Catalog = { order = {}, records = {}, RecordTexture = function() end }
+    local lists = { ess = { "s1", "s2", "s3" }, bar = { "a1" }, c1 = {} }
+    C.Resolve = {
+        Keys = function(slot, out)
+            for i = #out, 1, -1 do out[i] = nil end
+            for i, key in ipairs(lists[slot] or {}) do out[i] = key end
+            return out
+        end,
+        Describe = function(key, d) d.texture, d.name, d.known = 500, key, key ~= "s2"; return d end,
+    }
+    C.Icons = {
+        CreateStandalone = function(parent) return Widget("Icon", parent) end,
+        StyleIcon = function(icon, view) icon.styleGen, icon.styleView = view.styleGen, view end,
+        SetTexture = function(icon, texture) icon.texture = texture end,
+    }
+    C.Layout = {
+        Offsets = function(view, n, out)
+            local count = view.maxIcons and math.min(n, view.maxIcons) or n
+            for i = 1, count do out[2 * i - 1], out[2 * i] = (i - 1) * 40, 0 end
+            return count * 40, 36, count
+        end,
+        Metrics = function() return 200, 20 end,
+    }
+    C.views.ess = { kind = 1, styleGen = 1, maxIcons = 2 }
+    C.views.bar = { kind = 3, styleGen = 1 }
+    C.views.c1 = { kind = 1, styleGen = 1 }
+    local suite = setmetatable({
+        CreateFrame = function(kind, _, parent) return Widget(kind, parent) end,
+        CreateTexture = function(parent) return Widget("Texture", parent) end,
+        CreateFontString = function(parent) return Widget("FontString", parent) end,
+    }, { __index = function() return Noop end })
+    local chunk = assert(loadfile(root .. "/MSUF_Suite_CooldownManager/Preview.lua"))
+    chunk("MSUF_Suite_CooldownManager", { NS = { IsCombatLocked = function() return false end }, Suite = suite, CDM = C })
+    local stage = Widget("Frame")
+    local holder = assert(C.Preview.Render(stage, "ess", 400, 100), "canvas missing")
+    assert(holder.count == 2 and holder.kind == 1 and holder.items == holder.icons and holder.items[2].shown
+        and holder.keys[1] == "s1" and holder.keys[2] == "s2" and holder.keys[3] == "s3"
+        and holder.dim[1] == false and holder.dim[2] == true, "the canvas must publish its items, keys and dim flags")
+    assert(C.Preview.Render(stage, "bar", 400, 100) == holder and holder.kind == 3 and holder.items == holder.rows
+        and holder.count == 1 and holder.keys[1] == "a1" and holder.keys[2] == nil and holder.dim[2] == nil,
+        "buff bars publish their rows, and stale keys are cleared")
+    C.Preview.Render(stage, "c1", 400, 100)
+    assert(holder.count == 3 and holder.items == holder.icons and holder.keys[1] == false and holder.keys[3] == false
+        and holder.dim[1] and holder.dim[3], "an empty bar publishes its sample icons as dimmed placeholders")
+    C.Preview.Release(stage)
+end
 for key in pairs(_G) do
     if not globalsBefore[key] then error("options page created global " .. tostring(key)) end
 end
-print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets, tile memo, list edits, picker, popover, bar reuse, preview drag, simulation, layouts, combat refusal and teardown passed")
+print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets, Frame Basics with the bar choice, Basics, exactly-once coverage, tile memo, list edits, picker, popover, preview editor (hover, click, middle-click, drag, +, samples, buff bars), stack options, Track on, buff glow styles, Blizzard sounds, bar reuse, preview drag, simulation, layouts, combat refusal, teardown and the runtime canvas contract passed")

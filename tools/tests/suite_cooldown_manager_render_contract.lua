@@ -62,6 +62,8 @@ Record("Hide",function(self) self.shown=false end)
 Record("SetShown",function(self,shown) Plain(shown,"SetShown");self.shown=shown and true or false end)
 Record("SetScript",function(self,key,fn) self.scripts[key]=fn end)
 Record("SetFont",function(self,path,size,flags) Plain(size,"SetFont");self.font=path;self.size=size;self.flags=flags end)
+Record("SetShadowColor",function(self,r,g,b,a) self.shadowColor={r,g,b,a} end)
+Record("SetShadowOffset",function(self,x,y) self.shadowOffset={x,y} end)
 Record("SetTextColor",function(self,r,g,b) self.textColor=r end)
 Record("SetCooldownFromDurationObject",function(self,duration) assert(getmetatable(duration)==_G.DurationMT,"not a duration object");self.running=true end)
 Record("Clear",function(self) self.running=false end)
@@ -528,6 +530,42 @@ do
     assert(b2.cooling==false and ready.b2==2,"every charge back inside a GCD must be ready")
     Info(200,false,false)
 end
+-- SPELL_UPDATE_CHARGES ("recharge", no payload): while a charge is
+-- available the main swipe is clear, so only the recharge swipe and the
+-- count are read and the main state holds; a main swipe that shows (no
+-- charge left) is read in full.
+do
+    charges[200].isActive=false
+    T.Refresh(b2,"cooldown")
+    assert(b2.cooling==false and not b2.icon.cdSet,"a charge available: the main swipe is clear")
+    charges[200].isActive=true
+    local queries,durationsBefore,counts=cooldownQueries,durationCalls,Calls(b2.icon.count,"SetText")
+    local mainWrites=Calls(b2.icon.cd,"SetCooldownFromDurationObject")+Calls(b2.icon.cd,"Clear")
+    T.Refresh(b2,"recharge")
+    assert(cooldownQueries==queries and durationCalls==durationsBefore+1,"recharge read the main cooldown")
+    assert(b2.icon.chargeCd.running and Calls(b2.icon.count,"SetText")==counts+1,"recharge swipe and count follow")
+    assert(Calls(b2.icon.cd,"SetCooldownFromDurationObject")+Calls(b2.icon.cd,"Clear")==mainWrites,"the main swipe is untouched")
+    assert(b2.cooling==false,"a spent charge with one left is not cooling")
+    -- No charge left: the main swipe shows and is read in full.
+    Info(200,true,false)
+    T.Refresh(b2,"cooldown")
+    assert(b2.cooling==true and b2.icon.cdSet==true)
+    queries=cooldownQueries
+    T.Refresh(b2,"recharge")
+    assert(cooldownQueries==queries+1 and b2.cooling==true,"a showing main swipe is read in full")
+    -- The main swipe ran out (a charge is back): cooling holds while
+    -- recharging, and the last charge back settles it without a main query.
+    Info(200,false,false)
+    b2.icon.cd.scripts.OnCooldownDone(b2.icon.cd)
+    assert(b2.cooling==true and not b2.icon.cdSet,"one charge back is not ready yet")
+    local alerts=ready.b2 or 0
+    charges[200].isActive=false
+    queries=cooldownQueries
+    now=now+10
+    T.Refresh(b2,"recharge")
+    assert(cooldownQueries==queries and b2.cooling==false and ready.b2==alerts+1,"every charge back is ready")
+    assert(not b2.icon.chargeCd.running,"the recharge swipe clears")
+end
 -- Outside SPELL_UPDATE_COOLDOWN, isOnGCD is ignored when a plain probe exists or state is known.
 do
     Info(300,true,true)
@@ -700,6 +738,127 @@ do
     I.Sync("uti")
     assert(not p1.icon and not p2.icon)
 end
+-- Healthstones (hideEmpty, from Resolve): the Healthstone item and
+-- Blizzard's healthstone category leave their bar while the bags hold none,
+-- counts on or off; the refresh reports the flip so the caller relayouts
+-- once. Previews show them; potion categories (no hideEmpty) never hide.
+local stone,stoneCat
+do
+    stone=Entry("i5512","uti",{itemID=5512,texture=538745,hideEmpty=true})
+    stoneCat=Entry("b10","uti",{spellCategory=1711,texture=K.CATEGORY_ICONS[1711],hideEmpty=true})
+    table.insert(C.plans.uti.entries,stone)
+    table.insert(C.plans.uti.entries,stoneCat)
+    bag[5512]=nil
+    I.Sync("uti")
+    assert(stone.hidden==true and stone.empty==true and stoneCat.hidden==true and stoneCat.empty==true,"empty healthstones hide")
+    assert(stone.icon.countOff==true and stoneCat.icon.countOff==true,"no count while empty")
+    bag[5512]=2
+    T.BagsChanged()
+    assert(T.Refresh(stone,"item")==true and stone.hidden==false and stone.empty==false,"a stone in the bags shows the item")
+    assert(T.Refresh(stoneCat,"item")==true and stoneCat.hidden==false and stoneCat.icon.count.last.SetText==2,
+        "and the category, with its count")
+    assert(stone.icon.count.last.SetText==2)
+    assert(T.Refresh(stone,"item")==false and T.Refresh(stoneCat,"full")==false,"no flip, no relayout")
+    bag[5512]=1
+    T.BagsChanged()
+    assert(T.Refresh(stone,"item")==false and stone.hidden==false and stone.icon.countOff==true,"one stone shows without a count")
+    -- Counts off: the bags are still read for the hide rule, no count shows.
+    uti.charges=false
+    bag[5512]=nil
+    T.BagsChanged()
+    assert(T.Refresh(stone,"item")==true and stone.hidden==true,"counts off still hide an empty stone")
+    assert(T.Refresh(stoneCat,"item")==true and stoneCat.hidden==true and stoneCat.icon.countOff==true)
+    bag[5512]=2
+    T.BagsChanged()
+    assert(T.Refresh(stoneCat,"item")==true and stoneCat.hidden==false and stoneCat.icon.countOff==true,"shown, no count")
+    uti.charges=true
+    T.Refresh(stoneCat,"item")
+    bag[5512]=nil
+    T.BagsChanged()
+    C.state.preview=true
+    assert(T.Refresh(stone,"full")==true and stone.hidden==false and stone.empty==true,"previews show empty stones")
+    C.state.preview=false
+    assert(T.Refresh(stone,"full")==true and stone.hidden==true)
+    -- A flip without a cooling edge re-evaluates the ready glow as well.
+    stone.ov={readyGlow=true}
+    C.state.inCombat=true
+    T.Refresh(stone,"full")
+    assert(stone.hidden==true and not stone.icon.gReady,"no ready glow while empty")
+    bag[5512]=2
+    T.BagsChanged()
+    assert(T.Refresh(stone,"item")==true and stone.icon.gReady==true,"a stone back in the bags glows ready")
+    bag[5512]=nil
+    T.BagsChanged()
+    assert(T.Refresh(stone,"item")==true and not stone.icon.gReady,"the glow goes with the last stone")
+    C.state.inCombat=false
+    stone.ov=C.EMPTY
+    T.Refresh(stone,"full")
+    T.Refresh(stoneCat,"item")
+    T.Refresh(b4,"item")
+    assert(b4.icon.countOff==true and b4.hidden==false and b4.empty==false,"an empty potion category stays")
+end
+-- An item cooldown on hold (Blizzard starts it when combat ends: false from
+-- C_Item, 0 from C_Container and the inventory API) shows no swipe, looks
+-- held (desaturated even with desaturation off, at the cooling opacity) and
+-- counts as cooling, so no ready alert fires; the use is counted at once.
+-- The enabled cooldown then arms the swipe, and its end is one ready edge.
+do
+    local icon=stone.icon
+    bag[5512]=3
+    T.BagsChanged()
+    stone.ov={desat=2,cdAlpha=40}
+    T.Refresh(stone,"full")
+    assert(stone.hidden==false and stone.cooling==false and icon.count.last.SetText==3)
+    local alerts=ready.i5512 or 0
+    itemCd[5512]={now,60,false}
+    bag[5512]=2
+    T.Refresh(stone,"item")
+    assert(stone.cooling==true and not icon.cd.running and icon.tex.last.SetDesaturation==1 and icon.last.SetAlpha==.4,
+        "a held cooldown: no swipe, desaturated, cooling opacity")
+    assert(icon.count.last.SetText==2 and (ready.i5512 or 0)==alerts,"the use is counted; no ready alert")
+    local quiet,queries=writes,countQueries
+    T.Refresh(stone,"item");T.Refresh(stone,"cooldown");T.Refresh(stone,"full")
+    itemCd[5512]={now,60,0}
+    T.Refresh(stone,"item")
+    assert(writes==quiet and countQueries==queries and stone.cooling==true,"a held cooldown writes and counts once")
+    -- Zero allocation while held.
+    collectgarbage("collect")
+    collectgarbage("stop")
+    for _=1,20 do T.Refresh(stone,"item");T.Refresh(stoneCat,"item") end
+    local before=collectgarbage("count")
+    for _=1,300 do T.Refresh(stone,"item");T.Refresh(stoneCat,"item") end
+    local after=collectgarbage("count")
+    collectgarbage("restart")
+    assert(after==before,("a held item cooldown allocated %.3f KB"):format(after-before))
+    -- Combat ended: the cooldown starts (BAG_UPDATE_COOLDOWN).
+    itemCd[5512]={now,60,true}
+    T.Refresh(stone,"item")
+    assert(stone.cooling==true and icon.cd.running and icon.itemDur.start==now and icon.tex.last.SetDesaturation==0
+        and icon.last.SetAlpha==.4,"the released cooldown arms the swipe")
+    assert((ready.i5512 or 0)==alerts,"no ready alert on release")
+    now=now+61
+    icon.cd.scripts.OnCooldownDone(icon.cd)
+    assert(stone.cooling==false and not icon.cd.running and ready.i5512==alerts+1 and icon.last.SetAlpha==1,
+        "its end is one ready edge")
+    -- A secret flag is never compared: the icon clears.
+    itemCd[5512]={now,60,SECRET_BOOL}
+    T.Refresh(stone,"item")
+    assert(stone.cooling==false and not icon.cd.running and ready.i5512==alerts+1)
+    -- Equipment slots hold the same way.
+    equip.start,equip.length,equip.enable=now,120,0
+    T.Refresh(e13,"item")
+    assert(e13.cooling==true and not e13.icon.cd.running and e13.icon.tex.last.SetDesaturation==1,"a held trinket")
+    equip.enable=1
+    T.Refresh(e13,"item")
+    assert(e13.cooling==true and e13.icon.cd.running,"the trinket's released cooldown")
+    equip.start,equip.length=0,0
+    T.Refresh(e13,"item")
+    itemCd[5512],bag[5512]=nil,nil
+    table.remove(C.plans.uti.entries)
+    table.remove(C.plans.uti.entries)
+    I.Sync("uti")
+    assert(not stone.icon and not stoneCat.icon)
+end
 -- Category 0 is no category; OnCooldownDone never re-enters its own refresh.
 do
     local entry=Entry("b7","uti",{spell=600,base=600,spellCategory=0,texture=1007,charges=false})
@@ -746,9 +905,9 @@ do
     collectgarbage("collect")
     collectgarbage("stop")
     local cd=b1.icon.cd
-    for _=1,20 do T.Refresh(b1,"cooldown");T.Refresh(b1,"charges");T.Refresh(b1,"done");T.Refresh(b2,"charges");T.Done(b1.icon,cd) end
+    for _=1,20 do T.Refresh(b1,"cooldown");T.Refresh(b1,"charges");T.Refresh(b1,"done");T.Refresh(b2,"charges");T.Refresh(b2,"recharge");T.Done(b1.icon,cd) end
     local before=collectgarbage("count")
-    for _=1,300 do T.Refresh(b1,"cooldown");T.Refresh(b1,"charges");T.Refresh(b1,"done");T.Refresh(b2,"charges");T.Done(b1.icon,cd) end
+    for _=1,300 do T.Refresh(b1,"cooldown");T.Refresh(b1,"charges");T.Refresh(b1,"done");T.Refresh(b2,"charges");T.Refresh(b2,"recharge");T.Done(b1.icon,cd) end
     local after=collectgarbage("count")
     collectgarbage("restart")
     assert(after==before,("Time.Refresh allocated %.3f KB"):format(after-before))
@@ -976,4 +1135,4 @@ do
         end
     end
 end
-print("Cooldown manager render: constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")
+print("Cooldown manager render: constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, empty healthstones, held item cooldowns, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")

@@ -569,11 +569,29 @@ function Database.NormalizeProfileName(name)
     return name
 end
 
+local function CreateFactoryProfile()
+    local suite = _G.MSUFSuite
+    local encoded = suite and suite.ForeverFactorySkinCompact
+    local decode = _G.MSUF_TryDecodeCompactString
+    if NS.Client and NS.Client.isForever and type(encoded) == "string"
+        and type(decode) == "function" then
+        local ok, envelope = pcall(decode, "MSUF3:" .. encoded:sub(8))
+        if ok and type(envelope) == "table"
+            and (envelope.addon == "MapkoSkin" or envelope.addon == "MidnightSkin")
+            and envelope.format == 1 and envelope.kind == "profile" then
+            local profile = Database.SanitizeProfile(envelope.payload)
+            if profile then return profile end
+        end
+    end
+    return Database.Normalize(NS.CopyValue(NS.Defaults))
+end
+Database.CreateFactoryProfile = CreateFactoryProfile
+
 local function NewRoot(profile)
     return {
         schema = Database.rootSchema,
         activeProfile = "Default",
-        profiles = { Default = Database.Normalize(profile or NS.CopyValue(NS.Defaults)) },
+        profiles = { Default = Database.Normalize(profile or CreateFactoryProfile()) },
     }
 end
 
@@ -587,7 +605,7 @@ local function NormalizeRoot(root)
             normalized[name] = Database.Normalize(profile)
         end
     end
-    if not next(normalized) then normalized.Default = NS.CopyValue(NS.Defaults) end
+    if not next(normalized) then normalized.Default = CreateFactoryProfile() end
     root.profiles = normalized
     local active = Database.NormalizeProfileName(root.activeProfile)
     if not active or not normalized[active] then
@@ -656,8 +674,8 @@ function Database.CreateProfile(name, copyCurrent)
     if not name then return false, "invalid-name" end
     if not NS.RootDB then return false, "database-not-ready" end
     if NS.RootDB.profiles[name] then return false, "profile-exists" end
-    local source = copyCurrent and NS.DB or NS.Defaults
-    NS.RootDB.profiles[name] = Database.SanitizeProfile(source)
+    NS.RootDB.profiles[name] = copyCurrent and Database.SanitizeProfile(NS.DB)
+        or CreateFactoryProfile()
     return true, name
 end
 
@@ -718,7 +736,7 @@ function Database.ResetColors()
 end
 
 function Database.ResetAll()
-    local profile = NS.CopyValue(NS.Defaults)
+    local profile = CreateFactoryProfile()
     local name = Database.GetActiveProfileName()
     if not NS.RootDB then NS.RootDB = NewRoot(profile) end
     NS.RootDB.profiles[name] = profile

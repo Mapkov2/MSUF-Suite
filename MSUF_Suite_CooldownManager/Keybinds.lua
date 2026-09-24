@@ -2,10 +2,11 @@ local _,P=...
 local NS,S=P.NS,P.Suite
 local C=P.CDM
 -- Spell -> short key text for icons on bars that show keybinds. Texts are
--- cached per spell; icons get theirs through Icons.SetKeybind. Binding and
--- action slot events drop the cache, bar content changes only push cached
--- texts (new spells are looked up once); both arrive coalesced 0.2 s after
--- the last request. Nothing here runs per cooldown event.
+-- cached per spell (items per item ID); icons get theirs through
+-- Icons.SetKeybind. Binding and action slot events drop the cache, bar
+-- content changes only push cached texts (new spells are looked up once);
+-- both arrive coalesced 0.2 s after the last request. Nothing here runs per
+-- cooldown event.
 local KB={map={}}
 C.Keybinds=KB
 local Public=S.Public
@@ -25,6 +26,13 @@ for rank=1,#RANGES do
     for slot=range[1],range[2] do COMMAND[slot],RANK[slot]=range[3]..(slot-range[1]+1),rank end
 end
 for slot=73,120 do COMMAND[slot],RANK[slot]="ACTIONBUTTON"..((slot-73)%12+1),#RANGES+1 end
+-- The same slots in key preference order (bonus bar pages last).
+local ORDERED={}
+for rank=1,#RANGES do
+    local range=RANGES[rank]
+    for slot=range[1],range[2] do ORDERED[#ORDERED+1]=slot end
+end
+for slot=73,120 do ORDERED[#ORDERED+1]=slot end
 
 -- SHIFT-/CTRL-/ALT- become S/C/A, NUMPAD N, mouse BUTTON M, the wheel MWU/MWD.
 local SHORT={{"SHIFT%-","S"},{"CTRL%-","C"},{"ALT%-","A"},{"MOUSEWHEELUP","MWU"},{"MOUSEWHEELDOWN","MWD"},
@@ -79,6 +87,40 @@ function KB.Text(spell)
     return text
 end
 
+-- Trinkets and other items sit on the bars as item actions, which
+-- FindSpellActionButtons never matches (there is no item counterpart): one
+-- scan of the ranged action slots per item, in the same key preference,
+-- cached like spells.
+local itemMap={}
+local function ItemLookup(item)
+    local info=_G.GetActionInfo
+    if type(info)~="function" then return "" end
+    for i=1,#ORDERED do
+        local slot=ORDERED[i]
+        local kind,id=info(slot)
+        if Public(kind) and kind=="item" and Public(id) and id==item then
+            local key=BoundKey(COMMAND[slot])
+            if key then return Short(key) end
+        end
+    end
+    return ""
+end
+-- An item entry (Blizzard's trinket records, the equipment-slot rows and
+-- custom items) takes the key of its item action, else its use spell's.
+function KB.EntryText(e)
+    local item=e.itemID
+    if item and (e.equipSlot or e.src=="e" or e.src=="i") then
+        local text=itemMap[item]
+        if text==nil then
+            text=ItemLookup(item)
+            itemMap[item]=text
+        end
+        if text~="" then return text end
+    end
+    -- Action slots hold the base spell of an override.
+    return KB.Text(e.base or e.spell)
+end
+
 -- Cold: pushes key text to every entry of a cooldown bar that shows
 -- keybinds, from the cache where it has the spell.
 function KB.Refresh()
@@ -89,8 +131,7 @@ function KB.Refresh()
             for i=1,#entries do
                 local e=entries[i]
                 if e.src~="p" then
-                    -- Action slots hold the base spell of an override.
-                    local text=KB.Text(e.base or e.spell)
+                    local text=KB.EntryText(e)
                     if e.keyText~=text then C.Icons.SetKeybind(e,text) end
                 end
             end
@@ -100,6 +141,7 @@ end
 -- Bindings or action slots changed: every text is looked up again.
 function KB.Rebuild()
     wipe(KB.map)
+    wipe(itemMap)
     KB.Refresh()
 end
 
@@ -124,5 +166,6 @@ end
 
 function KB.Clear()
     wipe(KB.map)
+    wipe(itemMap)
     stale=false
 end

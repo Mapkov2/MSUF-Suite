@@ -430,7 +430,10 @@ end
 
 local function Style(self, record)
     if record.style == self.labelStyle then return end
-    S.SetFont(record.label, self.fontPath, self.config.itemLevelSize, "OUTLINE")
+    local c = self.config
+    local flags = ({ "OUTLINE", "THICKOUTLINE", "" })[c.fontOutline] or "OUTLINE"
+    S.SetStyledFont(record.label, self.fontPath, c.itemLevelSize, flags, c.fontRendering,
+        c.fontShadow, c.fontShadowOpacity, c.fontShadowDistance)
     record.style = self.labelStyle
     record.quality = nil
 end
@@ -614,6 +617,9 @@ function M:Refresh()
         or last.backgroundOpacity ~= c.backgroundOpacity or last.editMode ~= S.editMode
     local labelChanged = not last or last.font ~= c.font
         or last.itemLevelSize ~= c.itemLevelSize or last.qualityColor ~= c.qualityColor
+        or last.fontOutline ~= c.fontOutline or last.fontRendering ~= c.fontRendering
+        or last.fontShadow ~= c.fontShadow or last.fontShadowOpacity ~= c.fontShadowOpacity
+        or last.fontShadowDistance ~= c.fontShadowDistance
     local levelChanged = not last or last.showItemLevel ~= c.showItemLevel
     local goldChanged = not last or last.showSessionGold ~= c.showSessionGold
     if windowChanged then StyleWindows(self) end
@@ -640,6 +646,9 @@ function M:Refresh()
     last.backgroundColor, last.backgroundOpacity, last.accentColor =
         c.backgroundColor, c.backgroundOpacity, c.accentColor
     last.font, last.itemLevelSize, last.qualityColor = c.font, c.itemLevelSize, c.qualityColor
+    last.fontOutline, last.fontRendering, last.fontShadow =
+        c.fontOutline, c.fontRendering, c.fontShadow
+    last.fontShadowOpacity, last.fontShadowDistance = c.fontShadowOpacity, c.fontShadowDistance
     last.showItemLevel, last.showSessionGold, last.editMode =
         c.showItemLevel, c.showSessionGold, S.editMode
     self.appliedVisual = last
@@ -695,7 +704,7 @@ function M:RegisterMovers()
         extraControls = {
             {
                 id = "size", label = "Size %", kind = "number",
-                min = 65, max = 150, step = 5,
+                min = 65, max = 150, step = 1,
                 get = function() return math.floor(S.Config("bags").windowScale * 100 + 0.5) end,
                 set = function(value) return S.Set("bags", "windowScale", value / 100) end,
             },

@@ -201,7 +201,7 @@ bar.slots[1].label.SetFont = function(self, ...)
     return setFont(self, ...)
 end
 assert(S.SetMany("dataTexts", {
-    backgroundTexture = "TestTexture", font = "TestFont", textOutline = 2,
+    backgroundTexture = "TestTexture", font = "TestFont", textOutline = 2, fontRendering = 1,
     customColors = true, backgroundColor = "123456", labelColor = "abcdef", valueColor = "fedcba",
     borderEnabled = false, accentEnabled = false, separatorEnabled = true,
     separatorSize = 2, gap = 6, padding = 8, textAlign = 1,
@@ -215,6 +215,16 @@ assert(bar.background.texture == "Interface\\AddOns\\Test\\Media\\bar.tga"
     and bar.slots[1].label.justify == "LEFT"
     and bar.slots[1].label.text:find("|cffabcdefGold: |r|cfffedcba10g|r", 1, true),
     "custom texture, colors, outline, alignment or dividers were not applied")
+assert(S.SetMany("dataTexts", { fontRendering = 2, fontShadow = true,
+    fontShadowOpacity = 65, fontShadowDistance = 2 }))
+assert(bar.slots[1].label.font[3] == "THICKOUTLINE,MONOCHROME"
+    and bar.slots[1].label.shadowColor[4] == 0.65
+    and bar.slots[1].label.shadowOffset[1] == 2,
+    "DataText Sharp font or shadow was not applied")
+assert(S.Set("dataTexts", "fontRendering", 3))
+assert(bar.slots[1].label.font[3] == "OUTLINE,SLUG"
+    and bar.slots[1].label.shadowColor[4] == 0,
+    "DataText Slug retained a shadow")
 local styledTextureWrites, styledFontWrites = textureWrites, fontWrites
 W.Advance(2)
 assert(textureWrites == styledTextureWrites and fontWrites == styledFontWrites,

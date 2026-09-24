@@ -18,9 +18,11 @@ local items = {
 }
 local function Font()
     local font = { shown = false }
-    for _, key in ipairs({ "SetDrawLayer", "SetJustifyH", "SetShadowOffset", "SetShadowColor" }) do
+    for _, key in ipairs({ "SetDrawLayer", "SetJustifyH" }) do
         font[key] = function() end
     end
+    function font:SetShadowOffset(...) self.shadowOffset = { ... } end
+    function font:SetShadowColor(...) self.shadowColor = { ... } end
     function font:SetPoint(...) self.point = { ... } end
     function font:SetWidth(value) self.width = value end
     function font:SetWordWrap(value) self.wordWrap = value end
@@ -221,6 +223,13 @@ local S = {
     end,
     editMode = false,
 }
+S.SetStyledFont = function(font, _, size, flags, rendering, shadow, opacity, distance)
+    font.size = size
+    font.flags = rendering == 3 and (flags == "" and "SLUG" or "OUTLINE,SLUG") or flags
+    local shown = shadow and rendering ~= 3
+    font:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
+    font:SetShadowOffset(shown and (distance or 1) or 0, shown and -(distance or 1) or 0)
+end
 local state = { IsCombatLocked = function() return combat end,
     RootDB = { suiteGold = { ["Player-test"] = 100000 } }, loginKind = "login",
     goldSessionCaptured = true }
@@ -281,7 +290,9 @@ function context:Position(frame, point, x, y)
     frame:ClearAllPoints()
     frame:SetPoint(point, UIParent, point, x, y)
 end
-module.config = { showItemLevel = true, itemLevelSize = 12, font = "", qualityColor = true,
+module.config = { showItemLevel = true, itemLevelSize = 12, font = "",
+    fontOutline = 1, fontRendering = 3, fontShadow = false,
+    fontShadowOpacity = 100, fontShadowDistance = 1, qualityColor = true,
     showSessionGold = true,
     windowScale = 1, windowMoved = false, windowX = 0, windowY = 0,
     styleWindows = false, backgroundColor = "14181b", backgroundOpacity = 98, accentColor = "9f8960",
@@ -494,6 +505,9 @@ context.events.USE_COMBINED_BAGS_CHANGED(module, "USE_COMBINED_BAGS_CHANGED", fa
 assert(bagMode == "1", "native split mode was not restored while the module is active")
 assert(#fonts == 2 and module.overlays[buttons[1]].label.text == "640"
     and module.overlays[buttons[1]].label.shown, "equipment item level not visible on first open")
+assert(module.overlays[buttons[1]].label.flags == "OUTLINE,SLUG"
+    and module.overlays[buttons[1]].label.shadowColor[4] == 0,
+    "default item level text did not use shadow-free Slug")
 assert(module.overlays[buttons[2]].label == nil, "non-equipment allocated a font")
 local firstCalls = levelCalls
 local pendingBefore = module.pending
@@ -556,6 +570,16 @@ hooks.UpdateItems()
 module.config.itemLevelSize = 15
 module:Refresh()
 assert(module.overlays[buttons[1]].label.size == 15, "font setting did not refresh")
+module.config.fontOutline, module.config.fontRendering = 2, 2
+module.config.fontShadow, module.config.fontShadowOpacity, module.config.fontShadowDistance = true, 70, 2
+module:Refresh()
+local levelLabel = module.overlays[buttons[1]].label
+assert(levelLabel.flags == "THICKOUTLINE" and levelLabel.shadowColor[4] == 0.7
+    and levelLabel.shadowOffset[1] == 2, "item level text effects did not refresh")
+module.config.fontRendering = 3
+module:Refresh()
+assert(levelLabel.flags == "OUTLINE,SLUG" and levelLabel.shadowColor[4] == 0,
+    "Slug item level text retained a shadow")
 module.config.showItemLevel = false
 module:Refresh()
 assert(not module.overlays[buttons[1]].label.shown, "turning labels off left text visible")

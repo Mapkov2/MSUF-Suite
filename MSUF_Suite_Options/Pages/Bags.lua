@@ -27,7 +27,7 @@ local function Build(ctx)
     })
     local rules = P.SectionRules(ID, "itemLevels")
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_itemLevels", Tr("Item levels"), rules, {
-        help = "Equipment item levels appear in the upper right of each slot. Item data that has not loaded yet appears as soon as the client provides it.",
+        help = "Equipment item levels appear in the upper right of each slot. Choose a font, outline, shadow and Smooth, Sharp or Slug rendering. Slug has no shadow. Missing item data appears when the client provides it.",
         open = true,
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_window", Tr("Combined bag window"),

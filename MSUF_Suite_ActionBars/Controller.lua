@@ -117,7 +117,7 @@ end
 
 local function NumberControl(id,key)
     local rule=S.catalog.actionbars.rules[key]
-    return {id=id,label=S.Text(rule.label),kind="number",min=rule.min,max=rule.max,step=rule.step or 1,
+    return {id=id,label=S.Text(rule.label),kind="number",min=rule.min,max=rule.max,step=1,
         get=function() return S.Config("actionbars")[key] end,
         set=function(value) return S.Set("actionbars",key,value) end}
 end

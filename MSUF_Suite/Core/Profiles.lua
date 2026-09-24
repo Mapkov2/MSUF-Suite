@@ -65,13 +65,15 @@ function P.OnLifecycle(kind, source, target)
     end
     if kind == "reset" and DB.IsProfileName(source) then
         if DB.GetProfile(source) then
-            local profile = { suite = { schema = 1, modules = {} } }
+            local profile = DB.CreateFactoryProfile()
             Suite.Suite.Normalize(profile)
             Suite.RootDB.profiles[source] = profile
             if DB.GetActiveProfileName() == source then DB.Activate(source) end
         end
         if skin and skin.Defaults then
-            skin.Database.SetProfile(source, Suite.CopyValue(skin.Defaults))
+            local factory = skin.Database.CreateFactoryProfile and skin.Database.CreateFactoryProfile()
+                or Suite.CopyValue(skin.Defaults)
+            skin.Database.SetProfile(source, factory)
             if skin.Database.GetActiveProfileName() == source then skin.Database.SetActiveProfile(source) end
         end
         return true

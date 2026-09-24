@@ -497,7 +497,8 @@ function M:Refresh()
                 button:SetShown(button.source ~= nil)
                 if button.source then
                     button.label:SetText("—")
-                    S.SetFont(button.label, font, style.fontSize, OUTLINES[style.textOutline] or "OUTLINE")
+                    S.SetStyledFont(button.label, font, style.fontSize, OUTLINES[style.textOutline] or "OUTLINE",
+                        style.fontRendering, style.fontShadow, style.fontShadowOpacity, style.fontShadowDistance)
                     button.label:SetJustifyH(ALIGN[style.textAlign] or "CENTER")
                     button.label:SetTextColor(1, 1, 1)
                 end
@@ -542,7 +543,7 @@ function M:RegisterMovers()
             point = function() return NS.DataTextPoints[self.config[prefix .. "Point"]] or "BOTTOM" end,
             historyKeys = { prefix .. "Width", prefix .. "Height" },
             extraControls = {
-                { id = "width", label = "Width", kind = "number", min = 180, max = 900, step = 5,
+                { id = "width", label = "Width", kind = "number", min = 180, max = 900, step = 1,
                     get = function() return S.Config(ID)[prefix .. "Width"] end,
                     set = function(value) return S.Set(ID, prefix .. "Width", value) end },
             },

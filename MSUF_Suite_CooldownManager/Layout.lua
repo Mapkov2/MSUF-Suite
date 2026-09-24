@@ -386,6 +386,26 @@ function L.Movable(slot)
     return not (parent==nil and off~=nil)
 end
 L.FollowsViewer=FollowsViewer
+-- The bar's own x/y count from Blizzard's Essential bar: it follows that
+-- bar (FollowsViewer) and has no parent bar, MSUF frame or switched-off bar
+-- whose placement it takes, the condition Anchor rides it under. A bar
+-- standing in for it reads the same x/y the same way.
+function L.RidesViewer(slot)
+    if not FollowsViewer(slot) or L.Parent(slot)~=nil or L.FrameTarget(slot)~=nil then return false end
+    local _,standIn=Direct(slot)
+    return standIn==nil
+end
+-- Growth-edge point of a bar with this view laid on Blizzard's Essential
+-- bar (UIParent units from its bottom left); nil when that bar's rectangle
+-- is unreadable.
+local function ViewerPoint(view)
+    local left,bottom,right,top=Rect("viewer")
+    if not left then return nil end
+    local point=Point(view)
+    return point=="LEFT" and left or point=="RIGHT" and right or (left+right)/2,
+        point=="TOP" and top or point=="BOTTOM" and bottom or (bottom+top)/2
+end
+L.ViewerPoint=ViewerPoint
 
 -- x/y of an attached bar are an offset from its attach point. A drag
 -- preview passes its values in without writing settings.
@@ -418,12 +438,9 @@ local function Anchor(slot)
     -- growth edge on growth edge, centered (also for a bar standing in for
     -- a switched-off Essential bar: its x/y count from Blizzard's bar too).
     if not left and FollowsViewer(standIn or slot) then
-        left,bottom,right,top=Rect("viewer")
-        if left then
-            local point=Point(pv)
-            local x=point=="LEFT" and left or point=="RIGHT" and right or (left+right)/2
-            local y=point=="TOP" and top or point=="BOTTOM" and bottom or (bottom+top)/2
-            SetAnchor(bar,point,UIParent,"BOTTOMLEFT",Round(x/unit)*unit+ox,Round(y/unit)*unit+oy)
+        local x,y=ViewerPoint(pv)
+        if x then
+            SetAnchor(bar,Point(pv),UIParent,"BOTTOMLEFT",Round(x/unit)*unit+ox,Round(y/unit)*unit+oy)
             return
         end
     end
@@ -555,6 +572,41 @@ local function TargetRow(entry)
     return entry.unit=="target"
 end
 
+-- Aura bars in fixed places: keepSlots or showMissing on the bar or a
+-- spell, or a column (a vertical one-line bar, or one icon per line) that
+-- mixes player and target entries. Player and target auras sit in two
+-- containers that cannot interleave, so in a column every entry keeps its
+-- own cell in the bar's order. Horizontal rows stay compact and grow from
+-- their alignment point like Blizzard's. Second value: the cells follow the
+-- bar's order on that single line or column. Third value: a centered
+-- horizontal row that mixes both fits on one line split at its center
+-- (player auras end there, target auras start there), compact and growing
+-- from the middle. Shared by Auras, the layout and the controller.
+function L.FixedAuras(view,entries)
+    local cap=view.maxIcons
+    if type(cap)~="number" or cap<=0 or cap>#entries then cap=#entries end
+    local n1,n2=0,0
+    for i=1,cap do if TargetRow(entries[i]) then n2=n2+1 else n1=n1+1 end end
+    local _,_,_,per,vertical,_,align=Grid(view,px or L.PixelScale())
+    local n=n1+n2
+    local single=n<=per or per==1
+    local fixed=view.keepSlots==true or view.showMissing==true
+    if not fixed then
+        for i=1,#entries do
+            local ov=entries[i].ov
+            if ov and ov.showMissing==true then fixed=true;break end
+        end
+    end
+    local split=false
+    if not fixed and n1>0 and n2>0 then
+        if (vertical and n<=per) or (not vertical and per==1) then fixed=true
+        elseif not vertical and n<=per then
+            if align==1 then split=true else fixed=true end
+        end
+    end
+    return fixed,fixed and single,split
+end
+
 -- Aura bars: footprint of every entry (the container shows the active ones);
 -- player-row entries first, target-row entries from a new line in growth
 -- order. Fixed cells follow entry positions in the plan.
@@ -570,7 +622,13 @@ local function PlaceAuras(bar,view,plan)
     local unit=px or L.PixelScale()
     local w,h,sp,per,vertical,grow,align=Grid(view,unit)
     local out=bar.out
-    local width,height=Fill(w,h,sp,per,vertical,grow,align,n1,n2,out,unit)
+    -- Fixed places on one line: every entry in the bar's order. Otherwise
+    -- the target part starts on a new line after the player part.
+    local _,ordered,split=L.FixedAuras(view,entries)
+    ordered=ordered or split
+    local width,height
+    if ordered then width,height=Fill(w,h,sp,per,vertical,grow,align,n1+n2,0,out,unit)
+    else width,height=Fill(w,h,sp,per,vertical,grow,align,n1,n2,out,unit) end
     bar.lines1,bar.lines2=ceil(n1/per),ceil(n2/per)
     local cells=bar.cells
     if #cells>0 then
@@ -582,6 +640,7 @@ local function PlaceAuras(bar,view,plan)
             local at
             if entry and r1+r2<n1+n2 then
                 if TargetRow(entry) then r2=r2+1; at=n1+r2 else r1=r1+1; at=r1 end
+                if ordered then at=r1+r2 end
             end
             if at then
                 Size(cell,cw,ch)

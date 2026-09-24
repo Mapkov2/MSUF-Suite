@@ -421,7 +421,7 @@ function M:RegisterMovers()
         point = function() return POINTS[self.config.point] or "BOTTOM" end,
         historyKeys = { "width", "height", "scale" },
         extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 220, max = 800, step = 5,
+            { id = "width", label = "Width", kind = "number", min = 220, max = 800, step = 1,
               get = function() return S.Config(ID).width end,
               set = function(value) return S.Set(ID, "width", value) end },
             { id = "height", label = "Height", kind = "number", min = 8, max = 40, step = 1,

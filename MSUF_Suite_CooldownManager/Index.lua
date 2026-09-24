@@ -73,8 +73,9 @@ local function AddCooldown(e,view)
     if e.hasRange and view and view.range then Push(Index.ranged,e) end
     if spell and view and view.usable then Push(Index.usable,e) end
     if spell and Option(e,view,"procGlow") then Push(Index.proc,e) end
-    -- Item, equipment-slot (custom or Blizzard trinket rows) and potion-category
-    -- entries follow bag contents; only real items follow item cooldowns
+    -- Item, equipment-slot (custom entries, or Blizzard's trinkets on whichever
+    -- bar holds them, Essential by default) and potion-category entries follow
+    -- bag contents; only real items follow item cooldowns
     -- (categories arrive through SPELL_UPDATE_COOLDOWN's category payload).
     if item or category then Push(Index.items,e) end
     if item then Push(Index.bags,e) end

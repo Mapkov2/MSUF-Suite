@@ -22,6 +22,8 @@ function AB.BuildStyle()
     AB.style=style
     style.font=S.ResolveFont(c.font)
     style.flags=OUTLINES[c.fontOutline] or ""
+    style.rendering,style.shadow=c.fontRendering,c.fontShadow
+    style.shadowOpacity,style.shadowDistance=c.fontShadowOpacity,c.fontShadowDistance
     style.zoom=c.iconZoom/100
     style.border=c.borderSize
     local cr,cg,cb=S.ClassRGB(Class())
@@ -105,9 +107,9 @@ end
 local function Text(fontString,size,r,g,b,shown)
     if not fontString then return end
     local style=AB.style
-    S.SetFont(fontString,style.font,size,style.flags)
+    S.SetStyledFont(fontString,style.font,size,style.flags,style.rendering,
+        style.shadow,style.shadowOpacity,style.shadowDistance)
     fontString:SetTextColor(r,g,b)
-    fontString:SetShadowOffset(0,0)
     fontString:SetAlpha(shown and 1 or 0)
 end
 

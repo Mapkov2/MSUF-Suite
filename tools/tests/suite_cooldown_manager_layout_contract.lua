@@ -200,7 +200,8 @@ assert(created==createdBefore,"loading the layout plane created frames")
 local L,V,N,Pv=C.Layout,C.Visibility,C.Native,C.Preview
 assert(L and V and N and Pv,"exports missing")
 for _,name in ipairs({"PixelScale","InvalidateScale","EnsureBar","Apply","ApplyAll","Offsets","Cell","Hide","HideAll",
-    "Metrics","Point","Parent","FrameTarget","Free","Movable","DragPlace","ForgetAnchors","CombatEnded","Request","Flush"}) do
+    "Metrics","Point","Parent","FrameTarget","Free","Movable","RidesViewer","ViewerPoint","DragPlace","ForgetAnchors",
+    "CombatEnded","Request","Flush","FixedAuras"}) do
     assert(type(L[name])=="function","Layout."..name.." missing")
 end
 for _,name in ipairs({"Apply","ApplyAll","CombatChanged","ReleaseAll","FlushPending","HasPending","Paint","Binding","DriverCount"}) do
@@ -363,11 +364,89 @@ C.AnchorChanged=function() anchorChanges=anchorChanges+1 end
 -- Icon and aura layer entry points the layout plane calls (guarded there):
 -- overlay edges from PlaceIcons, mouse edges from the visibility paint.
 local overlayLog,mouseLog,auraMouseLog={},{},{}
+-- The aura layer's row rule (A.TargetRow), its flow table and its compact
+-- container placement (Place) run from Auras.lua's own source, and the
+-- controller's footprint (Extent) from Controller.lua's, so the layout is
+-- checked against them. SyncAura's arguments to Place are pinned below.
+local AuraRule={}
+local auraGeo={}
+do
+    local function Source(name)
+        local file=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..name,"rb"))
+        local text=file:read("*a"):gsub("\r","")
+        file:close()
+        return text
+    end
+    local text=Source("Auras.lua")
+    local function Body(name,args)
+        local body=text:match("\n(local function "..name.."%("..args.."%)\n.-\nend)\n")
+        return assert(body,"Auras.lua "..name.." source")
+    end
+    AuraRule.TargetRow=assert(loadstring(Body("TargetRow","e").."\nreturn TargetRow"))()
+    assert(text:find("\nA.UnitOf,A.Ids,A.TargetRow=UnitOf,Ids,TargetRow\n",1,true),"Auras.lua exports TargetRow")
+    local flow=assert(text:match("\n(local FLOW=%b{})\n"),"Auras.lua FLOW source")
+    AuraRule.FLOW=assert(loadstring(flow.."\nreturn FLOW"))()
+    AuraRule.Place=assert(loadstring("local geo=...\n"..Body("Place","rec,offset,split").."\nreturn Place"))(auraGeo)
+    -- SyncAura takes the one rule from the layout, builds the geometry from
+    -- the layout's metrics, and places compact containers only: the player
+    -- container leads and the target container trails a split row; else the
+    -- target container starts the reserved player lines further.
+    for _,line in ipairs({
+        "\nlocal UNITS={\"player\",\"target\"}\n",
+        "    if layout~=nil and layout.Cell~=nil and layout.FixedAuras~=nil then fixed,_,split=layout.FixedAuras(view,entries) end\n",
+        "    m.fixed,m.split=fixed==true,split==true\n",
+        "        local w,h,sp,per,vertical,grow,align=Metrics(view,m.lk)\n",
+        "        local flow=FLOW[vertical][grow==2 and 2 or 1]\n",
+        "        geo.w,geo.h,geo.gp,geo.gc=w,h,max(0,sp),sp\n",
+        "        geo.flow,geo.point=flow,flow[4][align] or flow[4][1]\n",
+        "        if vertical then dir=grow==2 and -1 or 1 else dir=grow==2 and 1 or -1 end\n",
+        "        geo.step=(cross+sp)*dir\n",
+        "        geo.host=bar.auraHost or bar.frame\n",
+        "        for i=1,cap do if not TargetRow(entries[i]) then players=players+1 end end\n",
+        "        local lines=ceil(players/per)\n",
+        "                local side=m.split and (u==1 and \"lead\" or \"tail\") or nil\n",
+        "                Run(slot,\"aura\",unit,role,m.fixed,view,n,force,(u==2 and not side) and lines or 0,side)\n",
+        "    if not fixed then Place(rec,offset,split) end\n    if Build(rec,view,n) then return end\n",
+        "    if layout and layout.Metrics then return layout.Metrics(view) end\n",
+    }) do
+        assert(text:find(line,1,true),"Auras.lua SyncAura: "..line)
+    end
+    -- Containers are only ever anchored to our own frames: Place to the aura
+    -- host, a fixed-places container to its own parent (bar frame or host),
+    -- never to another container (Blizzard forbids it).
+    local anchors={}
+    for call in text:gmatch("[%w_]+:SetPoint%b()") do
+        if call:sub(1,2)=="c:" then anchors[#anchors+1]=call end
+    end
+    assert(#anchors==2 and anchors[1]=='c:SetPoint("TOPLEFT",parent,"TOPLEFT",0,0)' and anchors[2]=="c:SetPoint(point,host,rel,dx,dy)",
+        "container anchors: "..table.concat(anchors," | "))
+    assert(text:find("\n            local parent=fam==\"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
+        and text:find("\n    local point,host=g.point,g.host\n",1,true),"container parents and hosts are the bar's own frames")
+    local rels=0
+    for rel in text:gmatch("[%w_]+:SetPoint%(%s*[^,]+,%s*([%w_%.%[%]]+)") do
+        rels=rels+1
+        assert(rel~="c" and not rel:find("%.frame$"),"a region anchored to a container: "..rel)
+    end
+    for rel in text:gmatch("[%w_]+:SetAllPoints%(([%w_%.%[%]]+)") do
+        rels=rels+1
+        assert(rel~="c" and not rel:find("%.frame$"),"a region stretched over a container: "..rel)
+    end
+    assert(rels>20,"anchor scan found "..rels.." calls")
+    local controller=Source("Controller.lua")
+    local extent=assert(controller:match("\n(local function Extent%(view,plan%)\n.-\nend)\n"),"Controller.lua Extent source")
+    assert(extent:find("\n    local _,ordered,split=C.Layout.FixedAuras(view,list)\n    if ordered or split then n1,n2=n1+n2,0 end\n",1,true),
+        "Extent takes the one rule: one line when ordered or split")
+    AuraRule.Extent=assert(loadstring("local C,probe,ceil=...\n"..extent.."\nreturn Extent"))(C,{},math.ceil)
+end
+-- Resolve gives every entry one unit; only "target" takes the target part,
+-- a per-spell "both" counts in the player part.
+assert(AuraRule.TargetRow({unit="target"})==true and AuraRule.TargetRow({unit="player"})==false
+    and AuraRule.TargetRow({unit="both"})==false and AuraRule.TargetRow({unit="both",selfAura=false})==false,
+    "target row: unit target only")
 C.Auras={
     OverlayShown=function(entry,on) overlayLog[#overlayLog+1]={entry,on} end,
     SetBarMouse=function(slot,on) auraMouseLog[#auraMouseLog+1]=slot..(on and "+" or "-") end,
-    -- the aura layer's row rule (Auras.lua A.TargetRow)
-    TargetRow=function(e) return e.unit=="target" or (e.unit=="both" and e.selfAura~=true) end,
+    TargetRow=AuraRule.TargetRow,
 }
 C.Icons={SetBarMouse=function(slot,on) mouseLog[#mouseLog+1]=slot..(on and "+" or "-") end}
 local function Clear(list) for i=#list,1,-1 do list[i]=nil end end
@@ -416,12 +495,30 @@ assert(L.FrameTarget("ext")=="player" and L.FrameTarget("def")=="player","potion
 assert(L.FrameTarget("ess")==nil and L.FrameTarget("uti")==nil,"bar anchors are not frame anchors")
 CheckPoint(C.bars.ext.frame,"TOP",UIParent,"CENTER",0,0,"ext free at the screen center without MSUF's player frame")
 assert(C.bars.ext.frame.w==28 and C.bars.ext.frame.h==25,"empty ext keeps one icon footprint")
--- aura icon bar: player line first in growth order (down), target line below
+-- Aura icon bars. Player and target auras sit in two containers that
+-- cannot interleave. Layout.FixedAuras is the ONE rule (Auras.SyncAura,
+-- this layout and the controller's Extent share it): fixed places for
+-- keepSlots, showMissing (bar or spell) or a column mixing both parts;
+-- ordered when those places fit one line (or one per line); split when a
+-- centered horizontal row mixes both and fits one line.
 local bufBar=C.bars.buf
 assert(bufBar.auraHost and bufBar.auraHost.parent==bufBar.frame and bufBar.auraHost.allPoints==bufBar.frame,"aura host")
-assert(bufBar.frame.w==94 and bufBar.frame.h==56,"buf grouped footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+assert(buf.perRow==10 and buf.vertical~=true and (buf.maxIcons or 0)==0 and buf.align==1 and buf.grow==1,
+    "buff icon defaults: 10 per line, horizontal, centered, growing down, no cap")
+assert(buf.keepSlots==false and buf.showMissing==false,"buff icons are compact by default")
+local function Rule(view,entries,label,fixed,ordered,split)
+    local f,o,s=L.FixedAuras(view,entries)
+    assert(f==fixed and o==ordered and s==split,label..": rule "..tostring(f)..","..tostring(o)..","..tostring(s))
+end
+-- A centered row mixing 3 buffs and 2 target auras (P,T,P,T,P) at perRow
+-- 10 fits one line: split at its center, compact. Its footprint is ONE
+-- line of 5 cells, 158x27 units (30 at 90 percent, 2 apart) without a gap
+-- between the parts; the player/target split is still recorded per part.
+Rule(buf,bufEntries,"centered mixed row",false,false,true)
+assert(bufBar.frame.w==158 and bufBar.frame.h==27,"buf one-line footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
 assert(bufBar.lines1==1 and bufBar.lines2==1,"line split recorded")
-local cellAt={{0,0},{16,-29},{32,0},{48,-29},{64,0}}
+-- cells follow the plan: entry i at cell i of the line
+local cellAt={{0,0},{32,0},{64,0},{96,0},{128,0}}
 for i=1,5 do
     local cell=L.Cell("buf",i)
     assert(cell.parent==bufBar.auraHost,"cell parent")
@@ -432,11 +529,17 @@ assert(L.Cell("buf",3)==bufBar.cells[3],"cells are stable")
 assert(#bufBar.cells==5,"the first cell request makes a cell for every entry at once")
 -- an existing cell is a lookup: no layout pass, no widget call (the flush's
 -- layout pass keeps cells placed), even while the plan moved on
-Plan("buf",{Entry("target"),Entry("target"),Entry("player"),Entry("player"),Entry("player")})
+Plan("buf",{Entry("target"),Entry("target"),Entry("player"),Entry("player")})
 ResetCalls()
 for i=1,5 do assert(L.Cell("buf",i)==bufBar.cells[i]) end
 assert(Writes()==0,"existing cells wrote "..Writes().." times")
-CheckPoint(bufBar.cells[1],"TOPLEFT",bufBar.auraHost,"TOPLEFT",0,0,"cells keep their place until the layout pass")
+assert(bufBar.cells[5].shown,"cells keep their state until the layout pass")
+-- the layout pass: a split row keeps every entry at its plan position,
+-- whatever its unit (T,T,P,P -> cells 1..4); the spare cell hides
+L.Apply("buf")
+assert(bufBar.frame.w==126 and bufBar.frame.h==27,"shorter split row "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"reordered cell "..i) end
+assert(not bufBar.cells[5].shown,"the cell past the plan hides")
 Plan("buf",bufEntries)
 -- missing cells: made up to the laid-out entries (maxIcons caps), placed once
 do
@@ -456,36 +559,467 @@ do
     c6.kind,c6.maxIcons=1,0
     C.plans.c6=nil
 end
--- Blizzard aura entries track both units ("both"); the aura layer's rule
--- names their row (own buffs: the player row, tracked debuffs: the target
--- row), so its containers and these cells agree. One fixed cell serves the
--- player's and the target's slot of an entry.
-local function Both(self) return {unit="both",selfAura=self} end
-Plan("buf",{Both(true),Entry("target"),Both(false),Entry("player")})
+-- Resolve gives every Blizzard aura entry one unit (a harmful ID: target,
+-- else player); a per-spell "both" choice counts in the player part, so the
+-- aura layer's containers and these cells agree. One cell per entry: in
+-- fixed places a "both" entry's player and target slots share it.
+local function Both() return {unit="both"} end
+local bothPlan={Both(),Entry("target"),Both(),Entry("player")}
+Plan("buf",bothPlan)
 L.Apply("buf")
-assert(bufBar.lines1==1 and bufBar.lines2==1,"one player line, one target line")
-assert(bufBar.frame.w==62 and bufBar.frame.h==56,"footprint with both entries "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
-local bothAt={{0,0},{0,-29},{32,-29},{32,0}}
-for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",bothAt[i][1],bothAt[i][2],"both-unit cell "..i) end
+Rule(buf,bothPlan,"both entries beside a target entry",false,false,true)
+assert(bufBar.lines1==1 and bufBar.lines2==1,"both entries in the player part, the target entry in the target part")
+assert(bufBar.frame.w==126 and bufBar.frame.h==27,"one line of four "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"both-unit cell "..i) end
 assert(not bufBar.cells[5].shown,"cell beyond the entries hides")
-Plan("buf",{Both(true),Both(true)})
+-- the parts decide the lines: at 2 per line the player part (both, both,
+-- player) takes two lines and the target entry a third
+local bothAt={{0,0},{16,-58},{32,0},{16,-29}}
+local function BothLines(label)
+    assert(bufBar.lines1==2 and bufBar.lines2==1 and bufBar.frame.w==62 and bufBar.frame.h==85,
+        label..": both entries count in the player part")
+    for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",bothAt[i][1],bothAt[i][2],label..", cell "..i) end
+end
+buf.perRow=2; Touch("buf"); L.Apply("buf")
+Rule(buf,bothPlan,"both entries past a line",false,false,false)
+BothLines("both entries over three lines")
+-- a leftover selfAura hint no longer moves an entry
+Plan("buf",{{unit="both",selfAura=false},Entry("target"),{unit="both",selfAura=true},Entry("player")})
 L.Apply("buf")
-assert(bufBar.lines1==1 and bufBar.lines2==0 and bufBar.frame.w==62 and bufBar.frame.h==27,"own buffs fill one player line")
-CheckPoint(bufBar.cells[2],"TOPLEFT",bufBar.auraHost,"TOPLEFT",32,0,"second own buff on the player line")
-Plan("buf",{Both(false),Both(nil)})
-L.Apply("buf")
-assert(bufBar.lines1==0 and bufBar.lines2==1 and bufBar.frame.w==62 and bufBar.frame.h==27,"tracked debuffs only: one target line")
-CheckPoint(bufBar.cells[1],"TOPLEFT",bufBar.auraHost,"TOPLEFT",0,0,"a bar of tracked debuffs starts at the growth point")
--- without the aura layer's rule only target entries take the target row
+BothLines("selfAura ignored")
+-- without the aura layer's rule the layout's own rule gives the same parts
 local rowRule=C.Auras.TargetRow
 C.Auras.TargetRow=nil
-Plan("buf",{Both(false),Entry("target")})
+Plan("buf",bothPlan)
 L.Apply("buf")
-assert(bufBar.lines1==1 and bufBar.lines2==1,"fallback: both entries in the player row")
+BothLines("fallback")
+buf.perRow=10; Touch("buf"); L.Apply("buf")
+Rule(buf,bothPlan,"fallback rule",false,false,true)
+for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"fallback cell "..i) end
 C.Auras.TargetRow=rowRule
+Plan("buf",{Both(),Both()})
+L.Apply("buf")
+Rule(buf,C.plans.buf.entries,"own buffs only",false,false,false)
+assert(bufBar.lines1==1 and bufBar.lines2==0 and bufBar.frame.w==62 and bufBar.frame.h==27,"own buffs fill one player line")
+CheckPoint(bufBar.cells[2],"TOPLEFT",bufBar.auraHost,"TOPLEFT",32,0,"second own buff on the player line")
+Plan("buf",{Entry("target"),Entry("target")})
+L.Apply("buf")
+Rule(buf,C.plans.buf.entries,"target auras only",false,false,false)
+assert(bufBar.lines1==0 and bufBar.lines2==1 and bufBar.frame.w==62 and bufBar.frame.h==27,"target debuffs only: one target line")
+CheckPoint(bufBar.cells[1],"TOPLEFT",bufBar.auraHost,"TOPLEFT",0,0,"a bar of target debuffs starts at the growth point")
+
+-- The rule on its own (no layout pass): which bars keep fixed places,
+-- which of those follow the bar's order, which rows split at the center.
+do
+    local p,t=Entry("player"),Entry("target")
+    local function View(fields)
+        local view={kind=2,size=30,height=90,spacing=2,perRow=10,maxIcons=0,vertical=false,align=1,grow=1,
+            keepSlots=false,showMissing=false}
+        for key,value in pairs(fields) do view[key]=value end
+        return view
+    end
+    local mixed={p,t,p,t,p}
+    -- a vertical column mixing both that fits one line: fixed, ordered
+    Rule(View({vertical=true}),mixed,"vertical mixed column",true,true,false)
+    Rule(View({vertical=true,perRow=5}),mixed,"vertical mixed column filled exactly",true,true,false)
+    Rule(View({vertical=true,grow=2,align=3}),mixed,"vertical mixed column growing left",true,true,false)
+    Rule(View({vertical=true,perRow=4}),mixed,"vertical mixed columns",false,false,false)
+    Rule(View({vertical=true,perRow=1}),mixed,"vertical, one per column (a row)",false,false,false)
+    Rule(View({vertical=true}),{p,p,p},"vertical buffs only",false,false,false)
+    Rule(View({vertical=true}),{t,t},"vertical target auras only",false,false,false)
+    -- a horizontal bar with one per line mixing both is a column: fixed, ordered
+    Rule(View({perRow=1}),mixed,"one per line mixed",true,true,false)
+    Rule(View({perRow=1,align=2}),{t,p},"one per line mixed, start aligned",true,true,false)
+    Rule(View({perRow=1}),{p,p},"one per line buffs only",false,false,false)
+    -- a horizontal row mixing both that fits one line: split when centered,
+    -- fixed and ordered from an edge
+    Rule(View({}),mixed,"centered mixed row",false,false,true)
+    Rule(View({grow=2}),mixed,"centered mixed row growing up",false,false,true)
+    Rule(View({perRow=2}),{t,p},"centered mixed pair filling its line",false,false,true)
+    Rule(View({align=2}),mixed,"start aligned mixed row",true,true,false)
+    Rule(View({align=3}),mixed,"end aligned mixed row",true,true,false)
+    Rule(View({perRow=4}),mixed,"mixed row past a line",false,false,false)
+    Rule(View({perRow=4,align=2}),mixed,"start aligned mixed rows",false,false,false)
+    Rule(View({}),{p,p},"buffs only row",false,false,false)
+    Rule(View({}),{t,t,t},"target auras only row",false,false,false)
+    Rule(View({}),{},"empty bar",false,false,false)
+    -- maxIcons decides what mixes and what fits
+    Rule(View({maxIcons=3,vertical=true}),{p,p,p,t,t},"capped to buffs only",false,false,false)
+    Rule(View({maxIcons=4,perRow=4}),mixed,"capped mixed row fits",false,false,true)
+    Rule(View({maxIcons=4,perRow=4,vertical=true}),mixed,"capped mixed column fits",true,true,false)
+    Rule(View({maxIcons=9,perRow=4}),mixed,"a cap above the entries",false,false,false)
+    -- keepSlots and showMissing: fixed places, never split; ordered only
+    -- when they fit one line (or one per line)
+    Rule(View({keepSlots=true}),mixed,"keepSlots row on one line",true,true,false)
+    Rule(View({keepSlots=true,perRow=4}),mixed,"keepSlots past a line",true,false,false)
+    Rule(View({keepSlots=true,perRow=1}),{p,p,p},"keepSlots one per line",true,true,false)
+    Rule(View({keepSlots=true,vertical=true,perRow=2}),{p,p,p},"keepSlots columns",true,false,false)
+    Rule(View({keepSlots=true}),{},"keepSlots without entries",true,true,false)
+    Rule(View({showMissing=true,perRow=4}),{p,p},"showMissing row",true,true,false)
+    Rule(View({showMissing=true,perRow=2}),{p,p,p},"showMissing past a line",true,false,false)
+    local marked={unit="player",ov={showMissing=true}}
+    Rule(View({perRow=2}),{p,p,marked},"a spell showing its missing buff",true,false,false)
+    Rule(View({}),{t,marked},"a spell showing its missing buff on a centered row",true,true,false)
+    Rule(View({}),{p,{unit="player",ov={showMissing=false}}},"an override without showMissing",false,false,false)
+    -- buff bars are one bar per line: a mixed stack keeps fixed places in
+    -- the bar's order
+    Rule({kind=3,barWidth=220,barHeight=20,spacing=2,grow=1},{p,t,p},"mixed buff bars",true,true,false)
+    Rule({kind=3,barWidth=220,barHeight=20,spacing=2,grow=1},{p,p},"buff bars of buffs only",false,false,false)
+end
+
+-- One line or more (P,T,P,T,P). A line filled exactly (perRow 5 = n1+n2)
+-- stays one split line.
+Plan("buf",bufEntries)
+buf.perRow=5; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"a line filled exactly",false,false,true)
+assert(bufBar.frame.w==158 and bufBar.frame.h==27,"a line filled exactly stays one line")
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],cellAt[i][2],"full line cell "..i) end
+-- growing up changes nothing on a single line
+buf.grow=2; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"a line growing up",false,false,true)
+assert(bufBar.frame.w==158 and bufBar.frame.h==27,"one line growing up")
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],cellAt[i][2],"one line up, cell "..i) end
+buf.grow=1; Touch("buf")
+-- From the start or the end edge the same mixed line keeps fixed places in
+-- the bar's order: a row growing from an edge has no center to split at.
+for align=2,3 do
+    buf.align=align; Touch("buf"); L.Apply("buf")
+    Rule(buf,bufEntries,"aligned mixed row "..align,true,true,false)
+    assert(bufBar.frame.w==158 and bufBar.frame.h==27,"aligned mixed row footprint "..align)
+    for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],cellAt[i][2],"aligned "..align..", cell "..i) end
+end
+buf.align=1; Touch("buf")
+-- keepSlots on a centered line: fixed places in the bar's order, no split
+buf.keepSlots=true; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"keepSlots on one line",true,true,false)
+assert(bufBar.frame.w==158 and bufBar.frame.h==27,"keepSlots line footprint")
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],cellAt[i][2],"keepSlots line, cell "..i) end
+buf.keepSlots=false; Touch("buf")
+-- One entry past a line (perRow 4 < n1+n2): compact, the multi-line layout
+-- is unchanged. The player part takes its own lines, the target part starts
+-- a new line in growth order, and every line is aligned (centered) on its own.
+buf.perRow=4; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"mixed entries past a line",false,false,false)
+assert(bufBar.lines1==1 and bufBar.lines2==1,"multi-line split")
+assert(bufBar.frame.w==94 and bufBar.frame.h==56,"multi-line footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+local splitAt={{0,0},{16,-29},{32,0},{48,-29},{64,0}}
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",splitAt[i][1],splitAt[i][2],"multi-line cell "..i) end
+-- growing up puts the player line at the bottom and the target line above it
+buf.grow=2; Touch("buf"); L.Apply("buf")
+local upAt={{0,-29},{16,0},{32,-29},{48,0},{64,-29}}
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",upAt[i][1],upAt[i][2],"multi-line up, cell "..i) end
+buf.grow=1; Touch("buf")
+-- start aligned: every line starts at the start edge, still compact
+buf.align=2; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"start aligned lines",false,false,false)
+local startAt={{0,0},{0,-29},{32,0},{32,-29},{64,0}}
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",startAt[i][1],startAt[i][2],"start aligned lines, cell "..i) end
+buf.align=1; Touch("buf")
+-- keepSlots past one line: fixed places but not the bar's order; the cells
+-- take the multi-line places (player part first, target part after it)
+buf.keepSlots=true; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"keepSlots past a line",true,false,false)
+assert(bufBar.frame.w==94 and bufBar.frame.h==56,"keepSlots multi-line footprint")
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",splitAt[i][1],splitAt[i][2],"keepSlots lines, cell "..i) end
+buf.keepSlots=false; Touch("buf")
+-- the layout pass puts target entries after every player entry of a
+-- multi-line bar, whatever their plan order (T,T,P,P,P: player line first)
+Plan("buf",{Entry("target"),Entry("target"),Entry("player"),Entry("player"),Entry("player")})
+L.Apply("buf")
+local reorderedAt={{16,-29},{48,-29},{0,0},{32,0},{64,0}}
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",reorderedAt[i][1],reorderedAt[i][2],"reordered lines, cell "..i) end
+Plan("buf",bufEntries)
+-- several player lines (perRow 2): the target part starts after every
+-- reserved player line (the aura layer offsets it by lines*step)
+buf.perRow=2; Touch("buf"); L.Apply("buf")
+assert(bufBar.lines1==2 and bufBar.lines2==1,"two player lines, one target line")
+assert(bufBar.frame.w==62 and bufBar.frame.h==85,"three-line footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+local reservedAt={{0,0},{0,-58},{32,0},{32,-58},{16,-29}}
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",reservedAt[i][1],reservedAt[i][2],"reserved lines, cell "..i) end
+-- maxIcons decides: the first 4 entries (P,T,P,T) fit perRow 4, one split line
+buf.perRow,buf.maxIcons=4,4; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"capped entries on one line",false,false,true)
+assert(bufBar.lines1==1 and bufBar.lines2==1,"capped split")
+assert(bufBar.frame.w==126 and bufBar.frame.h==27,"capped entries fit one line "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"capped cell "..i) end
+assert(not bufBar.cells[5].shown,"the entry past maxIcons has no cell")
+buf.maxIcons=0
+-- Vertical single column (perRow 10) mixing both: fixed places in the bar's
+-- order, the target debuffs among the buffs in ONE column, never in a
+-- column beside them.
+buf.perRow,buf.vertical=10,true; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"vertical mixed column",true,true,false)
+assert(bufBar.frame.w==30 and bufBar.frame.h==143,"one column footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",0,-(i-1)*29,"single column, cell "..i) end
+-- growing left changes nothing in a single column
+buf.grow=2; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"vertical mixed column growing left",true,true,false)
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",0,-(i-1)*29,"single column left, cell "..i) end
+buf.grow=1; Touch("buf")
+-- a column too short for every entry (perRow 4) is compact: the target part
+-- in the next column, centered on its own
+buf.perRow=4; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"vertical mixed columns",false,false,false)
+assert(bufBar.frame.w==62 and bufBar.frame.h==85,"two columns "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+local columnsAt={{0,0},{32,-14},{0,-29},{32,-43},{0,-58}}
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",columnsAt[i][1],columnsAt[i][2],"two columns, cell "..i) end
+-- one per column (perRow 1) is a row of columns: compact, the target part
+-- after the player columns
+buf.perRow=1; Touch("buf"); L.Apply("buf")
+Rule(buf,bufEntries,"vertical, one per column",false,false,false)
+assert(bufBar.frame.w==158 and bufBar.frame.h==27,"a row of columns "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+local rowAt={0,96,32,128,64}
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",rowAt[i],0,"row of columns, cell "..i) end
+buf.vertical=false; Touch("buf")
+-- Horizontal, one per line (perRow 1): a column mixing both keeps fixed
+-- places in the bar's order
+L.Apply("buf")
+Rule(buf,bufEntries,"one per line mixed",true,true,false)
+assert(bufBar.frame.w==30 and bufBar.frame.h==143,"one per line footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
+for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",0,-(i-1)*29,"one per line, cell "..i) end
+
+-- Every split against the rule and a reference layout (30x27 cells, 2
+-- apart, every line aligned on its own, the centering origin floored):
+-- ordered or split bars lay ONE sequence of n1+n2 cells in the bar's order;
+-- every other bar lays the player part first and starts the target part on
+-- the line after the reserved player lines. The controller's Extent
+-- reports the same footprint.
+local function Expected(n1,n2,per,vertical,align,keep)
+    local n=n1+n2
+    local fixed,split=keep,false
+    if not fixed and n1>0 and n2>0 then
+        if vertical then fixed=n<=per
+        elseif per==1 then fixed=true
+        elseif n<=per then
+            if align==1 then split=true else fixed=true end
+        end
+    end
+    return fixed,fixed and (n<=per or per==1),split
+end
+local function Reference(counts,per,vertical,align,grow)
+    local along,across=30,27
+    if vertical then along,across=27,30 end
+    local lines,widest=0,0
+    for _,count in ipairs(counts) do
+        lines=lines+math.ceil(count/per)
+        widest=math.max(widest,math.min(count,per))
+    end
+    local cells={}
+    if lines==0 then return 30,27,cells end
+    local extent,depth=widest*along+(widest-1)*2,lines*across+(lines-1)*2
+    local first=0
+    for _,count in ipairs(counts) do
+        for i=0,count-1 do
+            local line=floor(i/per)
+            local inLine=math.min(per,count-line*per)
+            local free=extent-(inLine*along+(inLine-1)*2)
+            local a=(align==2 and 0 or align==3 and free or floor(free/2))+(i-line*per)*(along+2)
+            local g=first+line
+            if grow==2 then g=lines-1-g end
+            local b=g*(across+2)
+            cells[#cells+1]=vertical and {b,-a} or {a,-b}
+        end
+        first=first+math.ceil(count/per)
+    end
+    if vertical then return depth,extent,cells end
+    return extent,depth,cells
+end
+local cases=0
+for _,vertical in ipairs({false,true}) do
+    for align=1,3 do
+        for grow=1,2 do
+            for _,keep in ipairs({false,true}) do
+                for per=1,4 do
+                    for n1=0,3 do
+                        for n2=0,3 do
+                            local n=n1+n2
+                            if n>0 then
+                                -- interleaved plan, a target entry first
+                                local list,np,nt={},0,0
+                                for k=1,n do
+                                    if nt<n2 and (np>=n1 or k%2==1) then nt=nt+1; list[k]=Entry("target")
+                                    else np=np+1; list[k]=Entry("player") end
+                                end
+                                buf.vertical,buf.align,buf.grow,buf.keepSlots,buf.perRow=vertical,align,grow,keep,per
+                                Touch("buf"); Plan("buf",list)
+                                L.Cell("buf",n)
+                                L.Apply("buf")
+                                local label=(vertical and "vertical" or "horizontal").." align "..align.." grow "..grow
+                                    ..(keep and " keepSlots" or "").." perRow "..per..", "..n1.."+"..n2
+                                local fixed,ordered,split=Expected(n1,n2,per,vertical,align,keep)
+                                Rule(buf,list,label,fixed,ordered,split)
+                                local one=ordered or split
+                                local w,h,cells=Reference(one and {n} or {n1,n2},per,vertical,align,grow)
+                                assert(bufBar.frame.w==w and bufBar.frame.h==h,
+                                    label..": footprint "..bufBar.frame.w.."x"..bufBar.frame.h.." ~= "..w.."x"..h)
+                                local ew,eh=AuraRule.Extent(buf,C.plans.buf)
+                                assert(Near(ew,w) and Near(eh,h),label..": controller extent "..ew.."x"..eh.." ~= "..w.."x"..h)
+                                assert(bufBar.lines1==math.ceil(n1/per) and bufBar.lines2==math.ceil(n2/per),label..": part lines")
+                                local r1,r2=0,0
+                                for k=1,n do
+                                    local at
+                                    if list[k].unit=="target" then r2=r2+1; at=n1+r2 else r1=r1+1; at=r1 end
+                                    if one then at=k end
+                                    CheckPoint(bufBar.cells[k],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cells[at][1],cells[at][2],label..": cell "..k)
+                                end
+                                for k=n+1,#bufBar.cells do assert(not bufBar.cells[k].shown,label..": spare cell "..k.." hides") end
+                                cases=cases+1
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+assert(cases==2*3*2*2*4*15,"every split checked, got "..cases)
+buf.vertical,buf.align,buf.grow,buf.keepSlots,buf.perRow=false,1,1,false,10; Touch("buf")
+
+-- Compact containers (Auras.lua's Place with SyncAura's arguments), always
+-- on our own aura host. A split row anchors the player container by its
+-- TOPRIGHT corner and the target container by its TOPLEFT corner to the
+-- host's TOP center, half a spacing to either side: buffs end at the
+-- center, target auras start there, one spacing apart like any two icons
+-- (Blizzard sizes each container to its shown auras, so both grow from the
+-- middle). Every other compact bar anchors the player container at its
+-- alignment point and the target container the reserved player lines
+-- further, where the layout puts the target part.
+do
+    local function Container()
+        local c={points={}}
+        c.SetPoint,c.ClearAllPoints=Frame.SetPoint,Frame.ClearAllPoints
+        function c:SetFlowLayoutAxis(axis) self.axis=axis end
+        function c:SetFlowLayoutAnchorPoint(point) self.flowPoint=point end
+        function c:SetFlowLayoutGrowthDirection(hd,vd) self.hd,self.vd=hd,vd end
+        function c:SetFlowLayoutMaximumLineSize(line) self.line=line end
+        function c:SetFlowLayoutPadding() end
+        return c
+    end
+    -- SyncAura's geometry and Run arguments for the two containers of a bar
+    local function Containers()
+        L.Apply("buf")
+        local view,plan=C.views.buf,C.plans.buf
+        local fixed,_,split=L.FixedAuras(view,plan.entries)
+        assert(not fixed,"containers are placed on compact bars only")
+        local w,h,sp,per,vertical,grow,align=L.Metrics(view)
+        local flow=AuraRule.FLOW[vertical][grow==2 and 2 or 1]
+        auraGeo.w,auraGeo.h,auraGeo.gp,auraGeo.gc=w,h,math.max(0,sp),sp
+        auraGeo.axis=vertical and 1 or 0
+        auraGeo.flow,auraGeo.point=flow,flow[4][align] or flow[4][1]
+        local primary,cross=w,h
+        if vertical then primary,cross=h,w end
+        auraGeo.line=per*primary+(per-1)*auraGeo.gp+.01
+        auraGeo.vertical=vertical
+        local dir
+        if vertical then dir=grow==2 and -1 or 1 else dir=grow==2 and 1 or -1 end
+        auraGeo.step=(cross+sp)*dir
+        auraGeo.host=bufBar.auraHost or bufBar.frame
+        local cap=#plan.entries
+        if type(view.maxIcons)=="number" and view.maxIcons>0 and view.maxIcons<cap then cap=view.maxIcons end
+        local players=0
+        for i=1,cap do if not AuraRule.TargetRow(plan.entries[i]) then players=players+1 end end
+        local lines=math.ceil(players/per)
+        local recs={}
+        for u=1,2 do
+            local side=split and (u==1 and "lead" or "tail") or nil
+            recs[u]={frame=Container(),geo=0}
+            AuraRule.Place(recs[u],(u==2 and not side) and lines or 0,side)
+        end
+        return recs[1].frame,recs[2].frame
+    end
+    local host=bufBar.auraHost
+    Plan("buf",bufEntries)
+    -- the default centered row (P,T,P,T,P at perRow 10): split
+    local lead,tail=Containers()
+    CheckPoint(lead,"TOPRIGHT",host,"TOP",-1,0,"split: buffs end at the center")
+    CheckPoint(tail,"TOPLEFT",host,"TOP",1,0,"split: target auras start at the center")
+    assert(lead.flowPoint=="TOPLEFT" and tail.flowPoint=="TOPLEFT" and lead.hd==1 and tail.hd==1 and lead.axis==0,
+        "both containers flow left to right")
+    -- no gap: the parts sit one spacing apart, as the layout's cells do
+    local cellGap=Point(bufBar.cells[2])[4]-Point(bufBar.cells[1])[4]-30
+    assert(cellGap==2 and Point(tail)[4]-Point(lead)[4]==cellGap,"one spacing between buffs and target auras")
+    -- whatever the plan order: T,T,P,P splits the same way
+    Plan("buf",{Entry("target"),Entry("target"),Entry("player"),Entry("player")})
+    lead,tail=Containers()
+    CheckPoint(lead,"TOPRIGHT",host,"TOP",-1,0,"split of a reordered plan: lead")
+    CheckPoint(tail,"TOPLEFT",host,"TOP",1,0,"split of a reordered plan: tail")
+    Plan("buf",bufEntries)
+    -- growing up: the bottom corners on the host's bottom center
+    buf.grow=2; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"BOTTOMRIGHT",host,"BOTTOM",-1,0,"split growing up: lead")
+    CheckPoint(tail,"BOTTOMLEFT",host,"BOTTOM",1,0,"split growing up: tail")
+    buf.grow=1; Touch("buf")
+    -- a wider spacing splits evenly around the center
+    buf.spacing=6; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"TOPRIGHT",host,"TOP",-3,0,"split with spacing 6: lead")
+    CheckPoint(tail,"TOPLEFT",host,"TOP",3,0,"split with spacing 6: tail")
+    buf.spacing=2; Touch("buf")
+    -- capped to 4 at perRow 4: still one split line
+    buf.perRow,buf.maxIcons=4,4; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"TOPRIGHT",host,"TOP",-1,0,"capped split: lead")
+    CheckPoint(tail,"TOPLEFT",host,"TOP",1,0,"capped split: tail")
+    buf.maxIcons=0; Touch("buf")
+    -- past a line (perRow 4): player lines at the host's TOP, the target
+    -- container one line lower, on the layout's target line
+    lead,tail=Containers()
+    CheckPoint(lead,"TOP",host,"TOP",0,0,"compact lines: player part at the alignment point")
+    CheckPoint(tail,"TOP",host,"TOP",0,-29,"compact lines: target part after the player line")
+    assert(Point(tail)[5]==Point(bufBar.cells[2])[5],"the target container starts on the layout's target line")
+    -- two player lines (perRow 2): two lines further
+    buf.perRow=2; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"TOP",host,"TOP",0,0,"reserved lines: player part")
+    CheckPoint(tail,"TOP",host,"TOP",0,-58,"reserved lines: target part after two player lines")
+    assert(Point(tail)[5]==Point(bufBar.cells[2])[5],"the target container starts on the layout's target line")
+    buf.perRow=4; Touch("buf")
+    -- growing up: bottom center, the target line above the player line
+    buf.grow=2; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"BOTTOM",host,"BOTTOM",0,0,"compact lines up: player part")
+    CheckPoint(tail,"BOTTOM",host,"BOTTOM",0,29,"compact lines up: target part above")
+    buf.grow=1; Touch("buf")
+    -- start and end aligned lines: the matching top corner
+    buf.align=2; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"TOPLEFT",host,"TOPLEFT",0,0,"start aligned lines: player part")
+    CheckPoint(tail,"TOPLEFT",host,"TOPLEFT",0,-29,"start aligned lines: target part")
+    buf.align=3; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"TOPRIGHT",host,"TOPRIGHT",0,0,"end aligned lines: player part")
+    CheckPoint(tail,"TOPRIGHT",host,"TOPRIGHT",0,-29,"end aligned lines: target part")
+    buf.align=1; Touch("buf")
+    -- vertical columns (perRow 4): the target column one column right
+    buf.vertical=true; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"LEFT",host,"LEFT",0,0,"columns: player part")
+    CheckPoint(tail,"LEFT",host,"LEFT",32,0,"columns: target column after the player column")
+    assert(Point(tail)[4]==Point(bufBar.cells[2])[4],"the target container starts on the layout's target column")
+    buf.grow=2; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"RIGHT",host,"RIGHT",0,0,"columns growing left: player part")
+    CheckPoint(tail,"RIGHT",host,"RIGHT",-32,0,"columns growing left: target column")
+    buf.grow=1; Touch("buf")
+    -- one per column: the target part after the three player columns
+    buf.perRow=1; Touch("buf")
+    lead,tail=Containers()
+    CheckPoint(lead,"LEFT",host,"LEFT",0,0,"row of columns: player part")
+    CheckPoint(tail,"LEFT",host,"LEFT",96,0,"row of columns: target part after three columns")
+    assert(Point(tail)[4]==Point(bufBar.cells[2])[4],"the target container starts on the layout's first target column")
+    buf.vertical,buf.perRow=false,10; Touch("buf")
+    -- buffs only: the player container at the alignment point, no split
+    Plan("buf",{Entry("player"),Entry("player"),Entry("player")})
+    lead=Containers()
+    CheckPoint(lead,"TOP",host,"TOP",0,0,"buffs only: compact from the growth point")
+    Plan("buf",bufEntries)
+end
+buf.perRow=10; Touch("buf")
 Plan("buf",bufEntries)
 L.Apply("buf")
 for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],cellAt[i][2],"buf cell "..i.." restored") end
+assert(bufBar.frame.w==158 and bufBar.frame.h==27,"buf footprint restored")
 -- aura bar bar: the built-in bar has a grow rule, default Down; 220x(3*20+2*2)
 local barBar=C.bars.bar
 assert(C.views.bar.grow==1 and CDM.KEYS.bar.grow,"built-in buff bars carry a grow rule")
@@ -499,6 +1033,15 @@ C.views.bar.grow=2; Touch("bar"); L.Apply("bar")
 for i=1,3 do CheckPoint(barBar.cells[i],"TOPLEFT",barBar.auraHost,"TOPLEFT",0,-(3-i)*22,"bar cell grows up "..i) end
 CheckPoint(barBar.frame,"TOP",bufBar.frame,"BOTTOM",0,-4,"attached bar keeps its attach point when growing up")
 C.views.bar.grow=1; Touch("bar"); L.Apply("bar")
+-- buff bars are one per line: a stack mixing both keeps fixed places in the
+-- bar's order (P,T,P -> rows 1,2,3), never the target bar after the buffs
+Plan("bar",{Entry("player"),Entry("target"),Entry("player")})
+L.Apply("bar")
+Rule(C.views.bar,C.plans.bar.entries,"mixed buff bars",true,true,false)
+assert(barBar.frame.w==220 and barBar.frame.h==64,"mixed buff bar footprint")
+for i=1,3 do CheckPoint(barBar.cells[i],"TOPLEFT",barBar.auraHost,"TOPLEFT",0,-(i-1)*22,"mixed bar cell "..i) end
+Plan("bar",{Entry("player"),Entry("player"),Entry("player")})
+L.Apply("bar")
 ResetCalls()
 L.ApplyAll()
 assert(Writes()==0,"repeat ApplyAll wrote "..Writes().." times")
@@ -1449,6 +1992,21 @@ do
     CheckPoint(essBar.frame,"TOP",UIParent,"BOTTOMLEFT",910,430,"top edge centered on Blizzard's bar, shifted by x/y")
     assert(#Probes(essential)==2,"Blizzard's bar is watched by two probes")
     assert(not L.Free("ess") and L.Movable("ess"),"a riding bar moves by an offset")
+    -- RidesViewer: x/y count from Blizzard's bar exactly while Anchor
+    -- rides it; attached, they are the attach offset.
+    assert(L.RidesViewer("ess") and not L.RidesViewer("uti"),"the free Essential bar rides Blizzard's bar")
+    local vx,vy=L.ViewerPoint(ess)
+    assert(vx==900 and vy==435,"growth edge on Blizzard's bar")
+    ess.anchor=PLAYER
+    assert(not L.RidesViewer("ess") and L.FollowsViewer("ess"),"on the player frame: an attach offset")
+    ess.anchor=AnchorOf("ext")
+    assert(ext.on and L.Parent("ess")=="ext" and not L.RidesViewer("ess"),"attached to a bar: an attach offset")
+    ext.on=false
+    assert(L.Parent("ess")==nil and not L.RidesViewer("ess"),"its parent off: it takes that bar's placement")
+    ext.on=true
+    ess.anchor=AnchorOf("uti")
+    assert(L.Parent("ess")==nil and L.RidesViewer("ess"),"inside an anchor cycle it is free, so it rides")
+    ess.anchor=1
     assert(L.DragPlace("ess",0,0))
     CheckPoint(essBar.frame,"TOP",UIParent,"BOTTOMLEFT",900,435,"drag preview relative to Blizzard's bar")
     L.Apply("ess")
@@ -1496,6 +2054,7 @@ do
     S.ResolveTexture=function(value,fallback) return value or fallback end
     S.ClassRGB=function() return .2,.4,.6 end
     S.SetFont=function(fontString,font) fontString:SetFont(font) end
+    S.SetStyledFont=function(fontString,font) fontString:SetFont(font) end
     S.CreateTexture=function(parent) return CreateFrame("Texture",nil,parent) end
     S.CreateFontString=function(parent) return CreateFrame("FontString",nil,parent) end
     UnitClass=function() return "Mage","MAGE" end

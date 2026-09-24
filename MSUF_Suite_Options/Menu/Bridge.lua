@@ -15,6 +15,25 @@ function P.Tr(text)
 end
 local Tr = P.Tr
 
+-- Previews must work before the optional runtime addon loads Surfaces.lua.
+function P.StylePreviewFont(label, path, size, outline, rendering, shadow, opacity, distance)
+    if S.SetStyledFont then
+        return S.SetStyledFont(label, path, size, outline, rendering, shadow, opacity, distance)
+    end
+    local flags = outline or ""
+    if rendering == 3 then
+        flags = flags == "" and "SLUG" or "OUTLINE,SLUG"
+    elseif rendering == 2 and not flags:find("MONOCHROME", 1, true) then
+        flags = flags == "" and "MONOCHROME" or flags .. ",MONOCHROME"
+    end
+    local fallback = _G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+    if label:SetFont(path or fallback, size, flags) == false then label:SetFont(fallback, size, "") end
+    local shown = shadow == true and rendering ~= 3
+    label:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
+    local offset = shown and (distance or 1) or 0
+    label:SetShadowOffset(offset, -offset)
+end
+
 -- One MSUF history entry owns a complete Suite gesture, including edits made
 -- from the preview and Edit Mode. Keep runtime logs outside snapshots.
 local transientRootKeys = { suiteChat = true, suiteRuns = true, suiteRecovery = true, suiteXP = true, suiteGold = true }
@@ -119,6 +138,16 @@ function P.Set(id, key, value)
             for setting, choice in pairs(preset) do values[setting] = choice end
             return P.SetMany(id, values)
         end
+    elseif id == "skyriding" and key == "look" then
+        local preset = Suite.SkyridingLookPresets and Suite.SkyridingLookPresets[tonumber(value)]
+        if preset then
+            local values = { look = value }
+            for setting, choice in pairs(preset) do values[setting] = choice end
+            return P.SetMany(id, values)
+        end
+    elseif id == "skyriding" and Suite.SkyridingLookVisualKeys
+        and Suite.SkyridingLookVisualKeys[key] and P.Get(id, "look") ~= 4 then
+        return P.SetMany(id, { [key] = value, look = 4 })
     elseif id == "bags" and Suite.BagsLookVisualKeys
         and Suite.BagsLookVisualKeys[key] and P.Get(id, "look") ~= 4 then
         return P.SetMany(id, { [key] = value, look = 4 })

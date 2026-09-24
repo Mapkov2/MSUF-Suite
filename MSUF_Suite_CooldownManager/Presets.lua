@@ -149,6 +149,16 @@ local RACIALS={
 }
 Presets.RACIALS=RACIALS
 
+-- Bag consumables on the Potions and racials bar, in this order after
+-- Blizzard's entries and before the racial. Warlocks with Pact of Gluttony
+-- create the Demonic Healthstone. Each one stands in for Blizzard's record
+-- of its spellCategory while the catalog has no learned record, and shows
+-- only while the bags hold it (hideEmpty).
+Presets.CONSUMABLES={
+    {item=5512,category=1711},   -- Healthstone
+    {item=224464,category=2566}, -- Demonic Healthstone
+}
+
 -- Bag items behind Blizzard's potion and healthstone entries (spellCategory),
 -- every quality rank: their counts add up to the number shown on the icon.
 Presets.CATEGORY_ITEMS={

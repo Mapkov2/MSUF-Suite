@@ -612,12 +612,13 @@ function P.BuildMinimapPreview(ctx, b, sections)
         local button = item.button
         button:SetShown(shown)
         if not shown then return end
-        local font = name ~= "Difficulty" and config[prefix .. "Font"] or ""
+        local font = config[prefix .. "Font"] or ""
         local size = config[prefix .. "Size"] or 12
-        local outline = name ~= "Difficulty" and OUTLINES[config[prefix .. "Outline"]] or "OUTLINE"
+        local outline = OUTLINES[config[prefix .. "Outline"]] or "OUTLINE"
         local path = S.ResolveFont and S.ResolveFont(font) or STANDARD_TEXT_FONT
-        if S.SetFont then S.SetFont(item.label, path, math.max(8, size * art.scale), outline)
-        else item.label:SetFont(path or STANDARD_TEXT_FONT, math.max(8, size * art.scale), outline) end
+        P.StylePreviewFont(item.label, path, math.max(8, size * art.scale), outline,
+            config[prefix .. "Rendering"], config[prefix .. "Shadow"],
+            config[prefix .. "ShadowOpacity"], config[prefix .. "ShadowDistance"])
         local sample = Sample(name, config)
         item.label:SetText(sample)
         local configuredWidth = math.max(24, (config[prefix .. "Width"] or 100) * art.scale)

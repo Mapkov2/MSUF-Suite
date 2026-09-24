@@ -32,7 +32,7 @@ local QUIET=2   -- seconds without sounds after loading screens and activation
 --  layout   bar geometry: layoutGen and one layout pass
 --  flow     aura container flow (aura bars only; cooldown icons are placed by the layout)
 --  style    icon look: styleGen, restyle of icons and aura buttons
---  restyle  look without a generation (tooltips, frame layer)
+--  restyle  look without a generation (tooltips, frame layer, aura glow look)
 --  behavior behaviorGen and a refresh of the bar's cooldown entries
 --  index    event routing membership (Index.Rebuild, event registration)
 --  overlay  aura overlays on cooldown icons   aura  aura containers of aura bars
@@ -54,8 +54,10 @@ Work({"kind"},{layout=true,flow=true,resolve=true,style=true,behavior=true,bar=t
 Work({"zoom","border","borderColor","borderClass","swipeAlpha","edge","cdText","cdSize","stackSize","stackPos",
     "keybindSize","keybindPos"},{style=true})
 Work({"keybind"},{style=true,keybind=true})
-Work({"desat","cdAlpha","readyAlpha","hideReady","readyGlow","glowStyle","glowColor","glowTint","rangeColor","bling"},
-    {behavior=true})
+Work({"desat","cdAlpha","readyAlpha","hideReady","readyGlow","rangeColor","bling"},{behavior=true})
+-- The glow look also styles aura glows: aura buttons of aura bars and the
+-- overlays of cooldown bars restyle through their diffed sync.
+Work({"glowStyle","glowColor","glowTint"},{behavior=true,restyle=true})
 Work({"range","usable","procGlow","charges","assist"},{behavior=true,index=true})
 Work({"showAura"},{behavior=true,index=true,overlay=true})
 Work({"showMissing","keepSlots","auraGlow","pandemic"},{behavior=true,aura=true})
@@ -130,11 +132,14 @@ function C.AnchorChanged()
     if timer and timer.After then timer.After(0,FireAnchorChanged) else FireAnchorChanged() end
 end
 
--- "full" wins over everything; an "item" mark (bag contents: potion and
--- healthstone entries keep their cooldown) never replaces a pending one.
+-- Marks in one frame merge to the one that refreshes most: "full" (texture,
+-- state, effects) over "charges" (state and count) over "recharge" (the
+-- recharge swipe and count, SPELL_UPDATE_CHARGES) over "item" (bag contents:
+-- potion and healthstone entries keep their cooldown).
+local RANK={item=1,recharge=2,charges=3,full=4}
 local function Mark(e,reason)
     local pending=marked[e]
-    if pending~="full" and not (reason=="item" and pending~=nil) then marked[e]=reason end
+    if pending==nil or RANK[reason]>RANK[pending] then marked[e]=reason end
     Schedule()
 end
 
@@ -153,7 +158,14 @@ local function ReadGlobals(c,all)
     local st=C.state
     local text=all
     local font,flags=S.ResolveFont(c.font),OUTLINE[c.fontOutline] or "OUTLINE"
-    if st.font~=font or st.fontFlags~=flags then st.font,st.fontFlags,text=font,flags,true end
+    if st.font~=font or st.fontFlags~=flags or st.fontRendering~=c.fontRendering
+        or st.fontShadow~=c.fontShadow or st.fontShadowOpacity~=c.fontShadowOpacity
+        or st.fontShadowDistance~=c.fontShadowDistance then
+        st.font,st.fontFlags,st.fontRendering=font,flags,c.fontRendering
+        st.fontShadow,st.fontShadowOpacity,st.fontShadowDistance=
+            c.fontShadow,c.fontShadowOpacity,c.fontShadowDistance
+        text=true
+    end
     if seenHex.cd~=c.cdColor then seenHex.cd,text=c.cdColor,true;st.cdR,st.cdG,st.cdB=S.RGB(c.cdColor) end
     if seenHex.stack~=c.stackColor then seenHex.stack,text=c.stackColor,true;st.stackR,st.stackG,st.stackB=S.RGB(c.stackColor) end
     if seenHex.key~=c.keybindColor then seenHex.key,text=c.keybindColor,true;st.keyR,st.keyG,st.keyB=S.RGB(c.keybindColor) end
@@ -346,14 +358,32 @@ local function Reposition(x,y)
     view.layoutGen=view.layoutGen+1
     D.layout=true
 end
--- The Essential bar's x/y mean an offset from Blizzard's bar while it rides
--- it (MSUF follows Blizzard's bar) and a screen position otherwise. On each
--- switch the values are rewritten so the bar does not jump. Written a frame
--- later with the capture; a switch back before that drops the rewrite.
+-- Screen position (x/y from the screen center) of the riding Essential
+-- bar's growth edge: from its frame, else (bar off, a stand-in shown) from
+-- Blizzard's bar plus the current offset; nil when neither is readable.
+local function RideToFree()
+    local k=KEYS.ess
+    local free=Convert("ess",nil,nil,true)
+    if free and free[k.x]~=nil then return free[k.x],free[k.y] end
+    local view=C.views.ess
+    if not (view and UIParent) then return nil end
+    local vx,vy=C.Layout.ViewerPoint(view)
+    local uiW,uiH=UIParent:GetWidth(),UIParent:GetHeight()
+    if not (Finite(vx) and Finite(vy) and Finite(uiW) and Finite(uiH)) then return nil end
+    return Clamp(k.x,vx+(view.x or 0)-uiW/2),Clamp(k.y,vy+(view.y or 0)-uiH/2)
+end
+-- The Essential bar's x/y mean an offset from Blizzard's bar while the
+-- layout rides it (Layout.RidesViewer: MSUF follows Blizzard's bar and the
+-- Essential bar is not attached) and a screen position while it is free;
+-- attached, they are an offset from its attach point and are never
+-- rewritten here (only the flag follows). On each switch the values are
+-- rewritten so the bar does not jump; when nothing is readable nothing is
+-- written and the next Refresh tries again. Written a frame later with the
+-- capture; a switch back before that drops the rewrite.
 local function SyncViewerOffset()
     local config=M.config
     if type(config)~="table" or NS.IsCombatLocked() then return end
-    local on=C.Native.FollowViewer()==true
+    local on=C.Layout.RidesViewer("ess")==true
     local saved=config.essOnViewer==true
     local waiting=pendingCapture and pendingCapture.essOnViewer
     local k=KEYS.ess
@@ -368,10 +398,13 @@ local function SyncViewerOffset()
         return
     end
     local values=pendingCapture or {}
+    -- Free again: the place the bar has now, unless a pending capture
+    -- already holds a screen position.
     if on then values[k.x],values[k.y]=0,0
-    else
-        local free=Convert("ess",nil,nil,true)
-        if free then for key,value in pairs(free) do values[key]=value end end
+    elseif values[k.x]==nil and C.Layout.Free("ess") then
+        local x,y=RideToFree()
+        if x==nil then return end
+        values[k.x],values[k.y]=x,y
     end
     values.essOnViewer=on
     pendingCapture=values
@@ -429,10 +462,15 @@ local function OnCooldown(_,_,spellID,baseSpellID,category,recovery,itemID)
 end
 
 local function MarkCharges(e) Mark(e,"charges") end
+local function MarkRecharge(e) Mark(e,"recharge") end
 local function MarkItem(e) Mark(e,"item") end
+-- SPELL_UPDATE_CHARGES names no spell: charge entries refresh their
+-- recharge swipe and count only (Time "recharge"); spending and regaining
+-- charges also reach them through SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_USES
+-- and the swipes' OnCooldownDone.
 local function OnCharges()
     local list=C.Index.charged
-    for i=1,#list do MarkCharges(list[i]) end
+    for i=1,#list do MarkRecharge(list[i]) end
 end
 local function OnUses(_,_,spellID,baseSpellID) C.Index.ForSpell(spellID,baseSpellID,MarkCharges) end
 -- Item cooldowns: items and equipment slots only. Potion and healthstone
@@ -697,10 +735,15 @@ local function KeybindWatch()
     end
     return false
 end
--- The item bars (and custom item entries) follow equipment changes.
+-- Gear changes matter to every shown bar that holds an equipment slot
+-- record, learned or not (the trinkets on Essential, trinket buffs, any bar
+-- a Blizzard layout moved one to), and to custom item entries.
 local function EquipWatch()
     local views=C.views
-    if (views.ext and views.ext.on) or (views.buf and views.buf.on) then return true end
+    for bar in pairs(C.Catalog.equipBars) do
+        local view=views[bar]
+        if view and view.on then return true end
+    end
     return #C.Index.items>0
 end
 local function UpdateEvents()
@@ -793,7 +836,8 @@ Flush=function()
     if D.catalog then
         D.catalog=false
         if UpdateSpec() then D.resolve=true end
-        if C.Catalog.Rebuild() then D.resolve=true end
+        -- A changed catalog may move equipment slot records between bars.
+        if C.Catalog.Rebuild() then D.resolve,D.events=true,true end
         if captureWait and C.Catalog.Ready() and not locked then Capture() end
     end
     if D.resolve then
@@ -922,7 +966,7 @@ end
 local movers={}
 local function Control(id,key)
     local rule=S.catalog[ID].rules[key]
-    return {id=id,label=S.Text(rule.label),kind="number",min=rule.min,max=rule.max,step=rule.step or 1,
+    return {id=id,label=S.Text(rule.label),kind="number",min=rule.min,max=rule.max,step=1,
         get=function() return S.Config(ID)[key] end,
         set=function(value) return S.Set(ID,key,value) end}
 end
@@ -998,9 +1042,11 @@ function S.CooldownManagerBarEntries(slot)
             if type(ov)~="table" then ov=EMPTY end
             local hide=ov.hideReady
             if hide==nil then hide=view.hideReady==true end
-            local hidden=(cap~=nil and #rows>=cap) or (hide and live~=nil and d.family==1 and not live.cooling) or false
+            -- An empty Healthstone (Time: entry.empty) leaves its bar too.
+            local hidden=(cap~=nil and #rows>=cap) or (hide and live~=nil and d.family==1 and not live.cooling)
+                or (live~=nil and live.empty==true) or false
             rows[#rows+1]={key=key,name=d.name,texture=ov.icon or d.texture,known=d.known~=false,family=d.family,
-                hidden=hidden==true}
+                hasAura=d.hasAura==true,hidden=hidden==true}
         end
     end
     return rows
@@ -1089,6 +1135,9 @@ local function Extent(view,plan)
         if C.Auras.TargetRow(list[i]) then n2=n2+1 else n1=n1+1 end
     end
     local w,h,sp,per,vertical=C.Layout.Metrics(view)
+    -- Fixed places on one line keep target entries on that line (Layout.PlaceAuras).
+    local _,ordered,split=C.Layout.FixedAuras(view,list)
+    if ordered or split then n1,n2=n1+n2,0 end
     local lines=ceil(n1/per)+ceil(n2/per)
     if lines==0 then return w,h end
     local along,across=w,h
@@ -1134,6 +1183,31 @@ end
 function S.CooldownManagerConvertVertical(slot,vertical)
     return Convert(slot,nil,vertical==true)
 end
+-- The Essential bar riding Blizzard's bar after an attach change counts
+-- its x/y from that bar: turning free it keeps its place as an offset from
+-- it (zero when a rectangle is unreadable). The flag travels with the
+-- values, so SyncViewerOffset finds nothing to convert on that Refresh.
+local function RideAnchor(values,anchor)
+    local view=C.views.ess
+    if not (M.active and view) then return end
+    local old=view.anchor
+    view.anchor=anchor
+    local rides=C.Layout.RidesViewer("ess")==true
+    view.anchor=old
+    values.essOnViewer=rides
+    if not rides then return end
+    local k=KEYS.ess
+    values[k.x],values[k.y]=0,0
+    local bar=C.bars.ess
+    local vx,vy=C.Layout.ViewerPoint(view)
+    if not (vx and bar and bar.shown) then return end
+    local left,bottom,w,h=bar.frame:GetRect()
+    if not (Finite(left) and Finite(bottom) and Finite(w) and Finite(h)) then return end
+    local point=C.Layout.Point(view)
+    local x=point=="LEFT" and left or point=="RIGHT" and left+w or left+w/2
+    local y=point=="TOP" and bottom+h or point=="BOTTOM" and bottom or bottom+h/2
+    values[k.x],values[k.y]=Clamp(k.x,x-vx),Clamp(k.y,y-vy)
+end
 -- Attach changes keep the bar on screen: to Free, the x/y that hold its
 -- current place; to a bar or unit frame, a zero offset from that anchor.
 function S.CooldownManagerConvertAnchor(slot,anchor)
@@ -1142,6 +1216,7 @@ function S.CooldownManagerConvertAnchor(slot,anchor)
     local values
     if anchor==1 then values=Convert(slot,nil,nil,true) or {} else values={[k.x]=0,[k.y]=0} end
     values[k.anchor]=anchor
+    if slot=="ess" then RideAnchor(values,anchor) end
     return values
 end
 function S.CooldownManagerMovable(slot) return C.Layout.Movable(slot) end

@@ -1,33 +1,38 @@
 local _, P = ...
 -- Cooldown manager page: one home for every bar. The docked preview shows the
--- selected bar; the sections below edit it through custom bar 1's rules, which
--- Page.KeyFn maps from c1_<setting> to <selected bar>_<setting>.
+-- selected bar and edits its spells; Frame Basics picks the bar, and the
+-- sections below edit it through custom bar 1's rules, which Page.KeyFn maps
+-- from c1_<setting> to <selected bar>_<setting>.
 local Page = P.CDMPage
 if not Page then return end
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local ID, PAGE = Page.ID, Page.PAGE
 local CDM = Suite.CDM
 local RULES, SLOTS, KEYS = P.catalog[ID].rules, CDM.SLOTS, CDM.KEYS
-local max, ceil, format = math.max, math.ceil, string.format
+local max, min, ceil, format = math.max, math.min, math.ceil, string.format
 
 local HELP = {
-    bars = "Every section below edits the bar chosen here. Built-in bars follow Blizzard's Cooldown Manager; Defensives start with your class's defensive cooldowns, Potions and racials add your racial; custom bars show only what you add.",
-    spells = "Click a spell for its own options. Drag to reorder, or drop it on a bar in the preview to move it. Middle-click removes it (with undo); removed spells stay listed under Add spells, where a click brings one back. Lists are kept per specialization.",
+    bars = "The preview and every section below edit the bar chosen here. Built-in bars follow Blizzard's Cooldown Manager; Defensives start with your class's defensive cooldowns, Potions and racials add your racial; custom bars show only what you add.",
+    basics = "The settings you change most. Attach the bar to another bar or to your player frame to keep them together.",
+    spells = "Every spell of this bar, unlearned ones included. The preview edits them too: click a spell for its own options, drag to reorder or onto a bar above, middle-click removes it (with undo). Removed spells stay listed under Add spells, where a click brings one back. Lists are kept per specialization.",
     layout = "Where this bar sits and how its icons line up. Attach it to another bar to keep them together, or leave it free and move it on screen.",
     look = "Icon crop, border and opacity of this bar.",
-    text = "Countdown, charges and keybind text of this bar.",
-    effects = "How cooldown icons react. Single spells can differ: click them under Spells on this bar.",
+    text = "Font, outline, shadow and Smooth/Sharp/Slug rendering for countdowns, charges and keybind text. Slug has no shadow.",
+    effects = "How cooldown icons react. Single spells can differ: click them in the preview.",
     buffs = "Buff icons and buff bars: missing buffs, fixed places and highlights.",
     barstyle = "Size and look of timer bars. Used when the bar type is Buff bars.",
     visibility = "When this bar shows. This page and MSUF Edit Mode always show every bar.",
     general = "Settings for the whole cooldown manager. Blizzard's cooldown bars: \"Turn off\" is the fastest. \"Keep running invisibly\" keeps frames that are attached to Blizzard's bars in place, for example from other addons. The status line at the top says when MSUF needs it and it is used automatically.",
 }
 -- Per-bar settings by topic; every custom bar 1 rule appears exactly once.
+-- Basics holds the most used ones and stays open; the rest start closed.
 local SECTIONS = {
-    { id = "layout", title = "Layout", open = true, suffixes = { "on", "name", "kind", "anchor", "side", "gap", "size",
-        "height", "spacing", "perRow", "maxIcons", "vertical", "align", "grow", "x", "y" } },
+    { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "side", "align",
+        "alpha" } },
+    { id = "layout", title = "Layout", suffixes = { "name", "kind", "gap", "height", "spacing", "maxIcons", "vertical",
+        "grow", "x", "y" } },
     { id = "look", title = "Look", suffixes = { "zoom", "border", "borderColor", "borderClass", "swipeAlpha", "edge",
-        "strata", "alpha", "oocAlpha" } },
+        "strata", "oocAlpha" } },
     { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackSize", "stackPos", "keybind",
         "keybindSize", "keybindPos" } },
     { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",
@@ -87,7 +92,7 @@ end
 local function RuleGrid(ctx, body, rules, y, width, sectionId)
     local rows, bound, strings = {}, {}, {}
     for _, rule in ipairs(rules) do
-        local row = P.RuleRow(PAGE, ID, rule, Page.KeyFn, sectionId)
+        local row = not rule.color and P.RuleRow(PAGE, ID, rule, Page.KeyFn, sectionId)
         if row then
             if rule.key == KEYS.c1.grow then
                 row.values = growValues
@@ -99,7 +104,7 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
                 row.set = function(value) AnchorSet(tonumber(value) or rule.default) end
             end
             rows[#rows + 1], bound[#bound + 1] = row, rule
-        elseif type(rule.default) == "string" then
+        elseif not rule.color and type(rule.default) == "string" then
             strings[#strings + 1] = rule
         end
     end
@@ -158,16 +163,20 @@ local function BuildSection(ctx, b, ui, spec)
     local y = Help(body, HELP[spec.id], -18, width)
     local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)
     y = y - 20
-    -- The attach and grow lists are repainted before the dropdowns that
-    -- show them read their captions (refreshers run in order).
-    if spec.id == "layout" then M.TrackRefresh(ctx, function() if not P.Combat() then PaintChoices() end end) end
+    -- The attach (Basics) and grow (Layout) lists are repainted before the
+    -- dropdowns that show them read their captions (refreshers run in order).
+    if spec.id == "basics" then M.TrackRefresh(ctx, function() if not P.Combat() then PaintChoices() end end) end
     local rules = {}
     for i, suffix in ipairs(spec.suffixes) do rules[i] = RULES[KEYS.c1[suffix]] end
     y = RuleGrid(ctx, body, rules, y, width, sectionId)
     if spec.module then
         P.Text(body, "These apply to every bar:", 16, y - 6, width, T.colors.text)
-        y = RuleGrid(ctx, body, P.SectionRules(ID, spec.module), y - 28, width, sectionId)
+        local shared = P.SectionRules(ID, spec.module)
+        y = RuleGrid(ctx, body, shared, y - 28, width, sectionId)
+        for _, rule in ipairs(shared) do rules[#rules + 1] = rule end
     end
+    P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn,
+        function(rule) return not rule.suffix or Page.Relevant(Page.selected, rule.suffix) end)
     if spec.id == "layout" then
         local half = math.floor((width - 12) / 2)
         -- Navigation needs no snapshot; the reset records its own history entry.
@@ -221,12 +230,15 @@ function Page.Summary(slot)
     return text
 end
 
-local function BuildBars(ctx, b, ui)
-    local sectionId = "suite_cooldownManager_bars"
-    local body = b:CollapsibleSection(sectionId, Tr("Choose a bar"), 120, true)
+-- The bar choice closes the Frame Basics card: one block with the module
+-- switch, its actions, the bar being edited and that bar's summary.
+local function BuildBars(ctx, b, ui, body)
+    local sectionId = PAGE .. "_" .. ID .. "_module"
     local width = max(240, (body._msuf2Width or b.width or 720) - 32)
     local half = math.floor((width - 12) / 2)
-    local y = Help(body, HELP.bars, -18, width)
+    local y = min(tonumber(body._msuf2CursorY) or -80, -40)
+    if W.DividerAt then W.DividerAt(body, y + 4, 16, 16) end
+    y = Help(body, HELP.bars, y - 8, width)
     local values = {}
     local function Values()
         for i, info in ipairs(SLOTS) do
@@ -259,9 +271,11 @@ local function BuildBars(ctx, b, ui)
 end
 
 ------------------------------------------------------------------ spells
+-- The preview is the spell editor; this closed list keeps every entry
+-- (unlearned and rule-hidden ones too) and the list-wide actions reachable.
 local function BuildSpells(ctx, b, ui)
     local sectionId = "suite_cooldownManager_spells"
-    local body = b:CollapsibleSection(sectionId, Tr("Spells on this bar"), 120, true)
+    local body = b:CollapsibleSection(sectionId, Tr("Spell list"), 120, false)
     local width = max(240, (body._msuf2Width or b.width or 720) - 32)
     local y = Help(body, HELP.spells, -18, width)
     local spec = P.Text(body, "", 16, y, width, T.colors.text)
@@ -293,10 +307,12 @@ local function BuildSpells(ctx, b, ui)
         M.RegisterControlMetadata(restore, P.Meta(PAGE, ID, "spells.restore", "action", sectionId), "Show removed spells", "button")
         M.RegisterControlMetadata(clear, P.Meta(PAGE, ID, "spells.clear", "action", sectionId), "Use Blizzard's order", "button")
     end
+    -- The note shows here and under the preview.
     ui.PaintNote = function()
         Page.SetRaw(note, Page.note or "")
         if Page.noteError then note:SetTextColor(1, 0.4, 0.35) else note:SetTextColor(Page.Color("text", 0.92, 0.94, 0.98)) end
         undo:SetShown(Page.undo ~= nil)
+        if ui.PaintPreviewNote then ui.PaintPreviewNote() end
     end
     local top = y
     local function Layout(height)
@@ -321,6 +337,7 @@ local function BuildSpells(ctx, b, ui)
         local preset = Page.SlotInfo(Page.selected).preset == "defensives"
         clear:SetText(Tr(custom and "Remove all spells" or preset and "Restore default spells" or "Use Blizzard's order"))
         clear:SetEnabled(not blocked and Page.HasList(Page.selected))
+        Header(body, "Spell list")
     end)
     ui.sections.spells = body
     Layout(grid:Refresh())
@@ -350,9 +367,12 @@ local function Build(ctx)
         local children = { card:GetChildren() }
         for i = 1, #children do children[i]._msuf2SkipHistoryCheckpoint = true end
     end
-    BuildBars(ctx, b, ui)
-    BuildSpells(ctx, b, ui)
-    for _, spec in ipairs(SECTIONS) do BuildSection(ctx, b, ui, spec) end
+    if card then BuildBars(ctx, b, ui, card) end
+    -- Basics first, then the closed spell list, then the other topics.
+    for _, spec in ipairs(SECTIONS) do
+        BuildSection(ctx, b, ui, spec)
+        if spec.id == "basics" then BuildSpells(ctx, b, ui) end
+    end
     ui.sections.general = P.RuleSection(ctx, b, PAGE, ID, "suite_cooldownManager_general", Tr("General"),
         P.SectionRules(ID, "general"), { help = HELP.general, open = false })
 end

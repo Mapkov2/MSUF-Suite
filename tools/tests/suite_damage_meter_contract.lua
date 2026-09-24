@@ -440,7 +440,8 @@ assert(math.abs(typePanel.palette.accent[1]-0x9f/255)<.001
 D.HideTypeMenu()
 assert(S.SetMany("damageMeter",{bgColor="000000",headerColor="1b1b1b",borderColor="000000",
     barColor="598ccc",titleColor="ffffff"}))
-assert(c.combatTime and c.headerTimer and not c.timer and c.rendering==1 and c.nameMaxChars==0,"text and time defaults")
+assert(c.combatTime and c.headerTimer and not c.timer and c.rendering==3
+    and c.outline==2 and c.nameMaxChars==0,"text and time defaults")
 assert(S.Set("damageMeter","headerTimer",false) and win.timer.text=="" and heal.timer.text=="","header timer switch did not clear both windows")
 assert(S.Set("damageMeter","headerTimer",true) and win.timer.text=="(0:42)","header timer did not restore")
 assert(S.Set("damageMeter","combatTime",false) and win.timer.text=="" and heal.timer.text=="","master combat time switch did not clear headers")

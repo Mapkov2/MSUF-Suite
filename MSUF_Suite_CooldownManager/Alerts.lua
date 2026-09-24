@@ -2,10 +2,13 @@ local _,P=...
 local NS,S=P.NS,P.Suite
 local C=P.CDM
 -- Sounds and speech. Ready alerts for cooldowns play from Lua with a 1 s
--- throttle per entry; aura gain and loss sounds are registered with
--- C_UnitAuras.AddAuraSound, so Blizzard plays them without any Lua per aura
--- event. Nothing plays while muted or during the short silence after a
--- loading screen (C.state.soundQuietUntil, set by the controller).
+-- throttle per entry; aura gain and loss sounds from files are registered
+-- with C_UnitAuras.AddAuraSound, so Blizzard plays them without any Lua per
+-- aura event. That API takes files only: sound kits (Blizzard's Cooldown
+-- Manager sounds) on aura entries play from a sensor in the aura button
+-- (Auras.lua) through PlayAura. Nothing plays while muted or during the
+-- short silence after a loading screen (C.state.soundQuietUntil, set by the
+-- controller).
 local L={pending=false}
 C.Alerts=L
 
@@ -15,11 +18,21 @@ local wipe=table.wipe or wipe
 local Public=S.Public
 local EMPTY=C.EMPTY or {}
 local THROTTLE=1
+-- Container switches (ours, or an ancestor such as the UI being hidden for
+-- a cinematic) show and hide aura buttons: their sensors keep quiet this
+-- long after one.
+local HUSH=.3
 local TRIGGER=_G.Enum and _G.Enum.UnitAuraSoundTrigger or EMPTY
 local ADDED,REMOVED=TRIGGER.Added or 0,TRIGGER.Removed or 2
 
 local kinds,args={},{}                   -- parsed sound values, once per distinct value
 local last=setmetatable({},{__mode="k"}) -- entry -> time of its last ready alert
+local gained,lost={},{}                  -- entry key -> time of its last kit gain / loss sound
+-- Kit edges wait one frame (FlushAura): entry key -> frame time of the
+-- edge, and the hush gate of the container that heard it.
+local gainAt,lossAt,gainGate,lossGate={},{},{},{}
+local anyGate={}                         -- hush gate for callers without their own
+local flushArmed=false
 local have={}                            -- registration key -> {id, refs}
 local want={}                            -- scratch: registration key -> refs
 local regs={}                            -- registration key -> what to register
@@ -118,6 +131,94 @@ function L.Ready(entry)
     if tts then Speak(entry.name) end
 end
 
+------------------------------------------------------------------ aura kit sounds
+-- "kit:<soundKitID>" values: aura entries play these from a sensor.
+local function IsKit(value) return type(value)=="string" and Parse(value)=="kit" end
+L.IsKit=IsKit
+
+-- A container was switched (retarget, pause, rebuild, bar or UI shown or
+-- hidden): its buttons shown or hidden now are no aura gains or losses.
+-- gate: the container's record (fields hushFrom, hushUntil), so a retarget
+-- never silences the player's buffs. Overlapping hushes merge into one
+-- window; GetTime() is the frame's time, so a hush later in the same frame
+-- still covers an edge heard before it.
+local function Hush(gate)
+    gate=gate or anyGate
+    local now=GetTime()
+    local till=gate.hushUntil
+    if not till or now>till then gate.hushFrom=now end
+    gate.hushUntil=now+HUSH
+end
+L.Hush=Hush
+local function Hushed(gate,at)
+    local from=gate and gate.hushFrom
+    return from~=nil and at>=from and at<gate.hushUntil
+end
+
+-- One kit edge after its frame: mute, the quiet window after a loading
+-- screen, the container's hush and a 1 s throttle per entry and direction.
+local function Settle(key,at,loss,gate)
+    local e=C.entries[key]
+    local ov=e and e.ov
+    if not ov or ov==EMPTY or e.family==1 then return end
+    local value
+    if loss then value=ov.lossSound else value=ov.sound end
+    if not IsKit(value) then return end
+    local st=C.state
+    if st.muteSounds or at<(st.soundQuietUntil or 0) or Hushed(gate,at) or Hushed(anyGate,at) then return end
+    local now=GetTime()
+    local seen=loss and lost or gained
+    local prev=seen[key]
+    if prev and now-prev<THROTTLE then return end
+    seen[key]=now
+    Emit(value)
+end
+
+-- Next frame: an entry heard both hiding and showing is a button reset (a
+-- full aura rebuild releases and re-acquires every button in one pass, and
+-- a new aura instance swaps buttons), not a change: both edges drop.
+local function FlushAura()
+    flushArmed=false
+    for key,at in pairs(gainAt) do
+        gainAt[key]=nil
+        local gate=gainGate[key]
+        gainGate[key]=nil
+        if lossAt[key] then lossAt[key],lossGate[key]=nil,nil
+        else Settle(key,at,false,gate) end
+    end
+    for key,at in pairs(lossAt) do
+        lossAt[key]=nil
+        local gate=lossGate[key]
+        lossGate[key]=nil
+        Settle(key,at,true,gate)
+    end
+end
+
+-- A sensor saw an aura entry's button show ("gain") or hide ("loss"). Only
+-- entries with a kit value listen (files are native registrations); the
+-- edge is decided one frame later (FlushAura). No aura data is read: the
+-- sensor only knows it showed. Returns whether the edge was taken.
+function L.PlayAura(key,which,gate)
+    local e=type(key)=="string" and C.entries[key]
+    local ov=e and e.ov
+    if not ov or ov==EMPTY or e.family==1 then return false end
+    if not (IsKit(ov.sound) or IsKit(ov.lossSound)) then return false end
+    local st=C.state
+    local now=GetTime()
+    if st.muteSounds or now<(st.soundQuietUntil or 0) then return false end
+    if which=="loss" then lossAt[key],lossGate[key]=now,gate
+    else gainAt[key],gainGate[key]=now,gate end
+    if flushArmed then return true end
+    local timer=_G.C_Timer
+    if timer and timer.After then
+        flushArmed=true
+        timer.After(0,FlushAura)
+    else
+        FlushAura()
+    end
+    return true
+end
+
 ------------------------------------------------------------------ aura sounds
 -- Registrations are counted per (unit, spell, trigger, channel, sound):
 -- entries sharing one keep a single native registration.
@@ -131,6 +232,7 @@ end
 local function Want(e,trigger,value,channel)
     if type(value)~="string" or value=="" then return end
     -- AddAuraSound takes files only; sound kits cannot be registered.
+    -- Kits play from the aura button's sensor instead (PlayAura).
     local kind=Parse(value)
     if kind~="lsm" and kind~="file" then return end
     local auras=C.Auras
@@ -223,6 +325,9 @@ function L.ReleaseAll()
         have[key]=nil
         if remove then remove(reg.id) end
     end
+    wipe(gained)
+    wipe(lost)
+    wipe(gainAt);wipe(lossAt);wipe(gainGate);wipe(lossGate)
     L.pending=false
     L.released=true
 end

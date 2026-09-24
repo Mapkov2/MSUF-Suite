@@ -74,8 +74,8 @@ local function Preview(ctx, body, y, width, bar)
             label:SetPoint("LEFT", sample, "LEFT", (i - 1) * half + style.padding + (i == 2 and style.gap / 2 or 0), 0)
             label:SetWidth(half - 2 * style.padding - style.gap / 2)
             label:SetJustifyH(align)
-            if S.SetFont then S.SetFont(label, font, style.fontSize, flags)
-            else label:SetFont(font, style.fontSize, flags) end
+            P.StylePreviewFont(label, font, style.fontSize, flags, style.fontRendering,
+                style.fontShadow, style.fontShadowOpacity, style.fontShadowDistance)
             local name, value = i == 1 and "Gold" or "FPS", i == 1 and "124g" or "75"
             label:SetText((style.showLabels and ("|cff" .. style.labelColor .. name .. ": |r") or "")
                 .. "|cff" .. style.valueColor .. value .. "|r")
@@ -190,8 +190,10 @@ local function BarSection(ctx, b, bar)
     local ownGrid = P.W.SettingsRows(ctx, body, { x = 16, y = y, width = width, columns = 2, rows = { ownRow } })
     P.GateControls(ctx, ID, { { rule = ownRule, widget = ownGrid.controls[ownRule.key] } })
     y = ownGrid.bottomY - 8
-    y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix .. "Style"), y, width, nil, sectionId)
+    local styleRules = P.SectionRules(ID, prefix .. "Style")
+    y = P.RuleGrid(ctx, body, PAGE, ID, styleRules, y, width, nil, sectionId)
     y = Preview(ctx, body, y - 8, width, bar)
+    P.AttachRuleColors(body, "Bar " .. bar, ID, styleRules)
     P.FinishBody(b, body, y - 12)
 end
 local function Build(ctx)
@@ -215,7 +217,7 @@ local function Build(ctx)
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_textStyle", Tr("Shared text style"),
         P.SectionRules(ID, "textStyle"), {
-            help = "Choose an MSUF font, text outline and separate label, value and warning colors.",
+            help = "Choose an MSUF font, outline, shadow and Smooth, Sharp or Slug rendering. Slug has no shadow. Label, value and warning colors are separate.",
         })
     local bagRules = P.SectionRules(ID, "bags")
     if #bagRules > 0 then

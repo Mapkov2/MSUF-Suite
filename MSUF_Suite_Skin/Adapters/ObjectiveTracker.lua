@@ -1,7 +1,7 @@
 local _, NS = ...
 
 -- Clean-room Objective Tracker skin verified against wow-ui-source
--- upstream/ptr a1f5e990. The tracker remains positioned and driven entirely
+-- upstream/forever bd2470ae and upstream/live 09b9db79. The tracker remains positioned and driven entirely
 -- by Blizzard Edit Mode; this adapter only observes four exact visual
 -- lifecycle methods and owns colors/textures on cosmetic regions.
 local ObjectiveTrackerSkin = {
@@ -21,6 +21,7 @@ local SkinHeaderAccents
 local SkinBlockAccents
 local SkinPOIButton
 local SkinBlockSurface
+local SkinModuleSurface
 local headerTrimCache = setmetatable({}, { __mode = "k" })
 local headerRuleCache = setmetatable({}, { __mode = "k" })
 
@@ -50,73 +51,15 @@ local function OwnerState(owner)
         state = {
             active = false,
             surfaces = setmetatable({}, { __mode = "k" }),
+            moduleSurfaces = setmetatable({}, { __mode = "k" }),
+            blockSurfaces = setmetatable({}, { __mode = "k" }),
             headerSurfaces = setmetatable({}, { __mode = "k" }),
             headerTrims = setmetatable({}, { __mode = "k" }),
             headerRules = setmetatable({}, { __mode = "k" }),
-            textStates = setmetatable({}, { __mode = "k" }),
         }
         ObjectiveTrackerSkin.owners[owner] = state
     end
     return state
-end
-
-local function ReadTextColor(fontString)
-    local getter = SafeField(fontString, "GetTextColor")
-    if type(getter) ~= "function" then return nil end
-    local ok, r, g, b, a = pcall(getter, fontString)
-    if not ok or type(r) ~= "number" then return nil end
-    return { r, g, b, tonumber(a) or 1 }
-end
-
-local function SameColor(left, right)
-    if not left or not right then return false end
-    for index = 1, 4 do
-        if type(left[index]) ~= "number" or type(right[index]) ~= "number"
-            or math.abs(left[index] - right[index]) > 0.015 then
-            return false
-        end
-    end
-    return true
-end
-
-local function ThemeColor(role)
-    return { NS.Theme.GetColor(role) }
-end
-
-local function SetTrackerText(state, fontString, role)
-    if not fontString or type(SafeField(fontString, "SetTextColor")) ~= "function" then
-        return false
-    end
-    local current = ReadTextColor(fontString)
-    if not current then return false end
-    local textState = state.textStates[fontString]
-    if not textState then
-        textState = { original = current }
-        state.textStates[fontString] = textState
-    end
-    local applied = ThemeColor(role)
-    if SameColor(current, applied) then
-        textState.role = role
-        textState.applied = applied
-        return true
-    end
-    local ok = pcall(fontString.SetTextColor, fontString, unpack(applied))
-    if ok then
-        textState.role = role
-        textState.applied = applied
-    end
-    return ok == true
-end
-
-local function RestoreTrackerText(state)
-    for fontString, textState in pairs(state.textStates) do
-        local current = ReadTextColor(fontString)
-        if textState.original and SameColor(current, textState.applied)
-            and type(SafeField(fontString, "SetTextColor")) == "function" then
-            pcall(fontString.SetTextColor, fontString, unpack(textState.original))
-        end
-    end
-    state.textStates = setmetatable({}, { __mode = "k" })
 end
 
 local function Getter(object, method)
@@ -322,8 +265,7 @@ end
 
 SkinBlockAccents = function(state, block)
     if not state or not state.active or not block then return end
-    local role = SafeField(block, "isHighlighted") == true and "title" or "blizzardYellow"
-    SetTrackerText(state, SafeField(block, "HeaderText"), role)
+    -- Blizzard owns semantic campaign/quest colors and hover changes.
     TrackTexture(SafeField(block, "HeaderGlow"), state.owner, "blizzardYellow")
     HookBlock(block)
     SkinPOIButton(state, SafeField(block, "poiButton"))
@@ -370,8 +312,7 @@ SkinHeaderAccents = function(state, header, collapsed)
     else
         TrackTexture(background, state.owner, "blizzardYellow")
     end
-    SetTrackerText(state, SafeField(header, "Text"),
-        header == SafeField(state.frame, "Header") and "title" or "accentAlt")
+    -- Keep Blizzard's category color (for example, green Campaign headers).
     TrackTexture(SafeField(header, "Shine"), state.owner, "blizzardYellow")
     TrackTexture(SafeField(header, "Glow"), state.owner, "blizzardYellow")
     SkinTrackerAction(SafeField(header, "MinimizeButton"), state.owner, collapsed)
@@ -398,16 +339,41 @@ local function Attach(target, owner, spec)
 end
 
 SkinBlockSurface = function(state, block)
-    if not state or not state.active or not block
-        or SafeField(block, "used") ~= true or state.surfaces[block] then return end
-    -- Quest text reads cleanly against the world in Forever. Modern adds a
-    -- faint wash, with no box around every tracked item.
-    if NS.DB.hud.objectiveTrackerStyle ~= "modern" then return end
-    Attach(block, state.owner, {
+    if not state or not state.active or not block then return end
+    if SafeField(block, "used") ~= true
+        or NS.DB.hud.objectiveTrackerStyle ~= "modern" then
+        if state.blockSurfaces[block] then
+            NS.Surface.SetVisible(block, false)
+            state.blockSurfaces[block] = nil
+        end
+        return
+    end
+    -- Modern has a faint wash per item; Forever uses one group card.
+    if state.blockSurfaces[block] then return end
+    if Attach(block, state.owner, {
         role = "card", radius = 8, border = 0,
         fillAlphaScale = 0.22,
         inset = 0,
-    })
+    }) then state.blockSurfaces[block] = true end
+end
+
+-- Blizzard sizes each module after laying out its blocks. A background on the
+-- module itself follows that size automatically and gives each quest group one
+-- compact dark card without touching anchors, block text or Edit Mode.
+SkinModuleSurface = function(state, module)
+    if not state or not state.active or not module then return end
+    if not NS.DB.hud.objectiveTrackerBackground
+        or NS.DB.hud.objectiveTrackerStyle ~= "forever" then
+        if state.moduleSurfaces[module] then
+            NS.Surface.SetVisible(module, false)
+            state.moduleSurfaces[module] = nil
+        end
+        return
+    end
+    if Attach(module, state.owner, {
+        role = "card", shape = "continuous", radius = 4,
+        border = 0, inset = 0,
+    }) then state.moduleSurfaces[module] = true end
 end
 
 local function SkinHeader(header, owner, primary)
@@ -525,6 +491,7 @@ local function ApplyNow(frame, owner)
     for index = 1, #modules do
         local module = _G[modules[index]]
         if module then
+            SkinModuleSurface(state, module)
             SkinHeader(SafeField(module, "Header"), owner, false)
             HookModule(module)
             EnumerateActiveBlocks(module, function(block)
@@ -544,6 +511,7 @@ RefreshAllSurfaces = function()
             for index = 1, #modules do
                 local module = _G[modules[index]]
                 if module then
+                    SkinModuleSurface(state, module)
                     SkinHeader(SafeField(module, "Header"), state.owner, false)
                     EnumerateActiveBlocks(module, function(block)
                         SkinBlockSurface(state, block)
@@ -612,7 +580,6 @@ function ObjectiveTrackerSkin.Disable(_, owner)
     local state = ObjectiveTrackerSkin.owners[owner]
     if state then
         state.active = false
-        RestoreTrackerText(state)
         for target in pairs(state.surfaces) do
             pcall(NS.Surface.SetVisible, target, false)
         end

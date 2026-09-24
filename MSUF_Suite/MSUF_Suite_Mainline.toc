@@ -8,6 +8,7 @@
 ## SavedVariables: MSUFSuiteDB
 
 Core\Platform.lua
+Core\ForeverFactory.lua
 Core\Database.lua
 Core\SuiteCatalog.lua
 Core\Catalog\ActionBars.lua

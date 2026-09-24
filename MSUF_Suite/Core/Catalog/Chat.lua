@@ -87,4 +87,15 @@ B.Section(id, "input", "Input line", {
 })
 B.Section(id, "text", "Message text", {
     B.Number("fontSize", "Font size (0: follow Blizzard / MSUF Fonts)", 0, 0, 24),
+    B.Font("font", "Message font (default: follow Blizzard / MSUF Fonts)"),
+    B.Choice("fontOutline", "Text outline", 1, { "Follow Blizzard", "Outline", "Thick outline", "None" }),
+    B.Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    B.Choice("fontShadow", "Text shadow", 1, { "Follow Blizzard", "On", "Off" }),
+    B.Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+    B.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
 })
+local textRules = NS.SuiteCatalog[id].rules
+textRules.font.defaultLabel = "Blizzard / MSUF Fonts (default)"
+for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
+    textRules[key].requiresChoice = { key = "fontShadow", values = { [2] = true } }
+end

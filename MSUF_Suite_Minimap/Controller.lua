@@ -146,7 +146,7 @@ function M:RegisterMovers()
         isEnabled = function() return M.active == true and MM.host ~= nil end,
         historyKeys = { "size" },
         extraControls = {
-            { id = "size", label = "Size", kind = "number", min = 100, max = 600, step = 5,
+            { id = "size", label = "Size", kind = "number", min = 100, max = 600, step = 1,
               get = function() return S.Config("minimap").size end,
               set = function(value) return S.Set("minimap", "size", value) end },
         },

@@ -90,6 +90,15 @@ function S.Normalize(profile)
         end
         db.lookPresetRevision = 1
     end
+    -- Older Skyriding profiles have a selected look but no editable colors.
+    -- Seed only missing fields from that look before generic defaults apply.
+    local sky = db.modules.skyriding
+    if type(sky) == "table" then
+        local preset = NS.SkyridingLookPresets[sky.look] or NS.SkyridingLookPresets[1]
+        for key, value in pairs(preset) do
+            if sky[key] == nil then sky[key] = value end
+        end
+    end
     for i=1,#S.order do
         local id = S.order[i]
         local config = db.modules[id]
@@ -189,6 +198,7 @@ local function LookValues(id, index, config)
     elseif id == "chat" then preset = NS.ChatLookPresets[index]
     elseif id == "damageMeter" then preset = NS.DamageMeterLookPresets[index]
     elseif id == "minimap" then return NS.MinimapStylePresets[minimapLookIndices[index]]
+    elseif id == "skyriding" then preset = NS.SkyridingLookPresets[index]
     elseif id == "xpBar" then return { look = index }
     elseif id == "buffReminders" then
         return { borderColor = NS.DataTextLooks[index].border }

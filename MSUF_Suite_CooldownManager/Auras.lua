@@ -16,13 +16,21 @@ local C=P.CDM
 --    and parked in a per-bar pool for reuse (never dropped from it);
 --  * in combat only container-level switches run: target containers pause
 --    while the target is friendly, overlay slots follow their icon.
+-- Per-spell stack choices ride on the same bindings, so no Lua ever reads
+-- an application count: a shared count formatter colors the stack text
+-- from N applications, and the stack glow is placed by an application bar
+-- Blizzard fills (see NewStack). Glows are flipbooks, edges and alpha
+-- loops styled by widget writes only. The one Lua on the aura side: bars
+-- whose entries have sound kits (not registrable natively) get a sensor
+-- in each button that runs when the button shows or hides, never on a
+-- stack or duration update.
 local K=C.Const
 local A={pending={}}
 C.Auras=A
 
 local CreateFrame,InCombatLockdown=CreateFrame,InCombatLockdown
-local floor,ceil,max=math.floor,math.ceil,math.max
-local pairs,next,type=pairs,next,type
+local floor,ceil,max,min=math.floor,math.ceil,math.max,math.min
+local pairs,next,type,tonumber=pairs,next,type,tonumber
 local tremove,tconcat=table.remove,table.concat
 local wipe=table.wipe or wipe
 local Public=S.Public
@@ -47,6 +55,21 @@ local ROUND=E.NumericRuleFormatRounding or EMPTY
 local UP,DOWN=ROUND.Up or 1,ROUND.Down or 2
 local GOLD=K.GLOW_GOLD or {1,.82,0}
 local PANDEMIC={1,.3,.15}
+-- Glow styles (Const): 1 Blizzard alert and 2 marching ants share one
+-- flipbook layout, 3 pulses the edges, 4 holds them still.
+local GLOW=K.GLOW
+local FLIP=GLOW[1]
+local PULSE=GLOW[3] and GLOW[3].pulse or .6
+local PULSE_LOW=.25
+-- The widest glow reaches this far around its button: the stack gate's size.
+local REACH=1
+for i=1,#GLOW do
+    local scale=GLOW[i].scale
+    if scale and scale>REACH then REACH=scale end
+end
+local STACK_TEXTURE="Interface\\Buttons\\WHITE8X8"
+local DEFAULTS=NS.CDM and NS.CDM.SPELL_DEFAULTS or EMPTY
+local STACK_COLOR=DEFAULTS.stackColor or "ff5a3c"
 -- Container levels above the bar frame: aura bars sit over their host (+1)
 -- and cells (+2); overlays sit on the icon (+1) at swipe height, under the
 -- icon's glows and text.
@@ -72,8 +95,13 @@ local unseen={}   -- bar slot -> true while Visibility hides the bar
 local list,where,ids,cand,lay,sig,geo,flushing={},{},{},{},{},{},{},{}
 local groupOpts,slotOpts={maxFrameCount=1},{}
 local textOpts={}
+local countOpts={} -- stack text options per (N, color); false without the API
+local barOpts={}   -- SetApplicationBar options (Blizzard copies them)
+local need={}      -- bindings the bar being synced asks for: glow, stack, kit
+local sensed={}    -- kit sensor frame -> its button record
+local watching={}  -- ancestor watch frame -> its kit container record
 local stamp=0
-local targetsQueued,debounced=false,false
+local debounced=false
 local classFile
 
 ------------------------------------------------------------------ helpers
@@ -151,14 +179,16 @@ local function FilterOf(e,unit)
     if unit=="target" then return HARM_MINE end
     return e.src=="a" and HELP_ANY or HELP_MINE
 end
--- Aura bars place player entries first, then the target row. A "both"
--- entry takes the row the catalog's selfAura hint names, so a tracked
--- debuff (a DoT) holds its place in the target row, where it shows. The
--- layout sizes the rows by the same rule.
+-- Aura bars place player entries first, then target entries. Resolve gives
+-- every entry one unit (harmful auras: target); a "both" entry (chosen per
+-- spell) counts in the player part. The layout sizes the parts by this rule.
 local function TargetRow(e)
-    local unit=e.unit
-    return unit=="target" or (unit=="both" and e.selfAura~=true)
+    return e.unit=="target"
 end
+-- Player and target auras live in two containers that cannot interleave
+-- (and Blizzard forbids anchoring one AuraContainer to another). Compact
+-- bars show the target part after the player part; "Keep buffs in fixed
+-- places" gives every entry its own cell in the bar's order instead.
 A.UnitOf,A.Ids,A.TargetRow=UnitOf,Ids,TargetRow
 
 -- Duration text options per (threshold, warning color): a binding template
@@ -198,6 +228,38 @@ local function TextOpts(seconds)
     return opts
 end
 
+-- Stack text options per (stackColorAt, stackColor): one formatter per
+-- signature, shared by every button. Nothing below two applications (like
+-- Blizzard's default), plain from two, colored from N (N = 1 colors a
+-- single application too). nil: the plain binding (off, or no formatter).
+local function CountOpts(ov)
+    local n=ov.stackColorAt
+    if type(n)~="number" or n<1 then return nil end
+    n=floor(n)
+    local hex=ov.stackColor or STACK_COLOR
+    local rgb=type(hex)=="string" and #hex==6 and tonumber(hex,16)
+    if not rgb then return nil end
+    local key=n*16777216+rgb
+    local opts=countOpts[key]
+    if opts~=nil then return opts or nil end
+    opts=false
+    local strings=_G.C_StringUtil
+    local make=strings and strings.CreateNumericRuleFormatter
+    if type(make)=="function" then
+        local formatter=make()
+        if formatter and formatter.SetBreakpoints then
+            local points={{threshold=0,format=""}}
+            if n>2 then points[2]={threshold=2,format="%d"} end
+            points[#points+1]={threshold=n,format="|cff"..hex.."%d|r"}
+            formatter:SetBreakpoints(points)
+            opts={formatter=formatter}
+        end
+    end
+    countOpts[key]=opts
+    return opts or nil
+end
+A.CountOpts=CountOpts
+
 ------------------------------------------------------------------ look
 -- Every visual value of a container's buttons in rec.lk; the returned
 -- string changes exactly when a button needs restyling.
@@ -230,6 +292,8 @@ local function Look(rec,view)
     end
     lk.l,lk.r,lk.t,lk.b=left,right,top,bottom
     lk.font,lk.flags=st.font,st.fontFlags
+    lk.rendering,lk.shadow,lk.shadowOpacity,lk.shadowDistance=
+        st.fontRendering,st.fontShadow,st.fontShadowOpacity,st.fontShadowDistance
     local cs,ss=view.cdSize or 0,view.stackSize or 0
     if cs<=0 then cs=bar and max(9,floor(h*.55)) or max(10,floor(h*.38)) end
     if ss<=0 then ss=bar and max(8,floor(h*.45)) or max(9,floor(h*.3)) end
@@ -266,6 +330,169 @@ local function Edges(owner)
     return set
 end
 
+------------------------------------------------------------------ glows
+-- One glow on an aura button, built in initializeFrame: a flipbook texture
+-- for styles 1 and 2 and four edges on their own frame for 3 (pulsing) and
+-- 4 (still). Both loops run in C. The flipbook rests at alpha 0 and only
+-- its loop lifts it, so a stopped loop never shows the whole sheet. 12.1.5
+-- and Forever play the loops each time the button shows and stop them when
+-- it hides (AddAuraShownAnimation); 12.1.0 has only the start given here.
+local function NewGlow(button,parent,level)
+    local frame=CreateFrame("Frame",nil,parent)
+    frame:SetAllPoints(parent)
+    frame:SetFrameLevel(level)
+    frame:Hide()
+    local flip=frame:CreateTexture(nil,"OVERLAY")
+    flip:SetPoint("CENTER",frame,"CENTER",0,0)
+    flip:SetAlpha(0)
+    flip:Hide()
+    local loop=flip:CreateAnimationGroup()
+    loop:SetLooping("REPEAT")
+    local lift=loop:CreateAnimation("Alpha")
+    lift:SetFromAlpha(1)
+    lift:SetToAlpha(1)
+    lift:SetDuration(FLIP.duration)
+    local book=loop:CreateAnimation("FlipBook")
+    book:SetFlipBookRows(FLIP.rows)
+    book:SetFlipBookColumns(FLIP.cols)
+    book:SetFlipBookFrames(FLIP.frames)
+    book:SetFlipBookFrameWidth(0)
+    book:SetFlipBookFrameHeight(0)
+    book:SetDuration(FLIP.duration)
+    local ring=CreateFrame("Frame",nil,frame)
+    ring:SetAllPoints(frame)
+    ring:Hide()
+    local pulse=ring:CreateAnimationGroup()
+    pulse:SetLooping("BOUNCE")
+    local fade=pulse:CreateAnimation("Alpha")
+    fade:SetFromAlpha(1)
+    fade:SetToAlpha(1)
+    fade:SetDuration(PULSE)
+    local g={frame=frame,flip=flip,ring=ring,edges=Edges(ring),fade=fade}
+    if button.AddAuraShownAnimation then
+        button:AddAuraShownAnimation(loop)
+        button:AddAuraShownAnimation(pulse)
+    end
+    loop:Play()
+    pulse:Play()
+    return g
+end
+
+-- Style, color (nil: the art's own gold) and the size of what the glow
+-- surrounds. Same input: no call.
+local function Painted(g,style,r,gg,b,lk)
+    return g.st==style and g.cr==r and g.cg==gg and g.cb==b and g.w==lk.w and g.h==lk.h and g.px==lk.px
+end
+local function PaintGlow(g,style,r,gg,b,lk)
+    if Painted(g,style,r,gg,b,lk) then return end
+    local w,h,px=lk.w,lk.h,lk.px
+    g.st,g.cr,g.cg,g.cb,g.w,g.h,g.px=style,r,gg,b,w,h,px
+    local spec=GLOW[style] or FLIP
+    if spec.atlas then
+        -- Same margin on every side: bars get a band, not a stretched art.
+        local grow=(spec.scale-1)*min(w,h)
+        local flip=g.flip
+        flip:SetAtlas(spec.atlas)
+        flip:SetSize(w+grow,h+grow)
+        -- Tinting a golden atlas needs it gray first.
+        flip:SetDesaturated(r~=nil)
+        if r then flip:SetVertexColor(r,gg,b) else flip:SetVertexColor(1,1,1) end
+        flip:Show()
+        g.ring:Hide()
+    else
+        K.PlaceEdges(g.edges,g.ring,(spec.edge or 2)*px,r or GOLD[1],gg or GOLD[2],b or GOLD[3],1)
+        g.fade:SetToAlpha(spec.pulse and PULSE_LOW or 1)
+        g.ring:Show()
+        g.flip:Hide()
+    end
+end
+
+-- Style and color of an entry's aura glows: per-spell choices first, then
+-- the bar's (Build copies them to the record).
+local function GlowSpec(rec,ov)
+    local style=ov.glowStyle or rec.gStyle
+    if not GLOW[style] then style=1 end
+    local hex=ov.glowColor
+    if hex then return style,K.HexRGB(hex) end
+    if rec.gTint then return style,rec.gR,rec.gG,rec.gB end
+    return style
+end
+
+-- Stack glow, built in initializeFrame. A gate that clips its children,
+-- as large as the widest glow around the button; an invisible StatusBar
+-- that Blizzard fills with the aura's applications (SetApplicationBar,
+-- maximum N); and the glow host centered on the fill's right edge. The bar
+-- is N travels long and ends at the gate's center, so from N applications
+-- on the fill edge sits on the center and the glow on the button, and each
+-- missing application moves it one travel (more than the gate is wide) to
+-- the left, out of the gate. The count stays in C: no Lua compares it.
+local function NewStack(button,level)
+    local gate=CreateFrame("Frame",nil,button)
+    gate:SetPoint("CENTER",button,"CENTER",0,0)
+    gate:SetFrameLevel(level)
+    gate:SetClipsChildren(true)
+    gate:Hide()
+    local bar=CreateFrame("StatusBar",nil,button)
+    bar:SetStatusBarTexture(STACK_TEXTURE)
+    bar:SetMinMaxValues(0,1)
+    bar:SetValue(0)
+    bar:SetAlpha(0)
+    local host=CreateFrame("Frame",nil,gate)
+    host:SetPoint("CENTER",bar:GetStatusBarTexture(),"RIGHT",0,0)
+    local glow=NewGlow(button,host,level)
+    glow.frame:Show()
+    return {gate=gate,bar=bar,host=host,glow=glow}
+end
+
+-- Gate, bar and host for threshold n and the button's size. The bar's
+-- range is Blizzard's: every apply sets it to 0..maxApplications.
+local function Placed(s,n,lk) return s.n==n and s.w==lk.w and s.h==lk.h and s.px==lk.px end
+local function PlaceStack(s,n,lk)
+    if Placed(s,n,lk) then return end
+    local w,h,px=lk.w,lk.h,lk.px
+    s.n,s.w,s.h,s.px=n,w,h,px
+    local grow=(REACH-1)*min(w,h)+2*px
+    local gw,gh=w+grow,h+grow
+    local travel=max(gw,gh)+2*px
+    s.gate:SetSize(gw,gh)
+    s.host:SetSize(w,h)
+    local bar=s.bar
+    bar:SetSize(travel*n,px)
+    bar:ClearAllPoints()
+    bar:SetPoint("LEFT",s.gate,"CENTER",-travel*n,0)
+end
+
+-- Kit sounds of aura entries (AddAuraSound takes files only): a sensor
+-- frame in the button hears it show (aura gained) and hide (aura lost).
+-- The sound, mute, quiet window, pairing and throttle are the alert
+-- layer's; the container record is the hush gate of its sensors.
+local function Heard(sensor,which)
+    local part=sensed[sensor]
+    local rec=part and part.rec
+    if not rec then return end
+    local k=part.pos
+    local e=rec.on[k] and rec.entry[k]
+    local alerts=C.Alerts
+    if e and alerts and alerts.PlayAura then alerts.PlayAura(e.key,which,rec) end
+end
+local function Gained(sensor) Heard(sensor,"gain") end
+local function Lost(sensor) Heard(sensor,"loss") end
+
+-- Container switches show or hide buttons without an aura changing:
+-- that container's sensors stay silent for a moment.
+local function Hush(rec)
+    if not rec.kit then return end
+    local alerts=C.Alerts
+    if alerts and alerts.Hush then alerts.Hush(rec) end
+end
+-- An ancestor of a kit container shown or hidden (the UI hidden for a
+-- cinematic, the bar hidden): a plain frame beside the container on the
+-- same host hears it and hushes the container.
+local function Woke(watch)
+    local rec=watching[watch]
+    if rec then Hush(rec) end
+end
+
 -- Tainted code may touch sealed aura buttons only out of combat, while
 -- auras are not secret and each button says so plainly.
 local function Quiet()
@@ -292,7 +519,7 @@ local function Mutable(rec)
 end
 
 local function Text(fs,size,r,g,b,lk)
-    S.SetFont(fs,lk.font,size,lk.flags)
+    S.SetStyledFont(fs,lk.font,size,lk.flags,lk.rendering,lk.shadow,lk.shadowOpacity,lk.shadowDistance)
     fs:SetTextColor(r,g,b)
 end
 
@@ -365,12 +592,59 @@ local function Style(rec,part)
     count:SetPoint(point,icon,point,K.POINT_X[pos]*inset,K.POINT_Y[pos]*inset)
     count:SetJustifyH(K.JUSTIFY[pos])
     if part.pan then K.PlaceEdges(part.panEdges,part.pan,max(2*px,bw),PANDEMIC[1],PANDEMIC[2],PANDEMIC[3],1) end
-    if part.glow then K.PlaceEdges(part.glowEdges,part.glow,2*px,part.gr or GOLD[1],part.gg or GOLD[2],part.gb or GOLD[3],1) end
     if b.SetMouseMotionEnabled then b:SetMouseMotionEnabled(lk.tip) end
 end
 
--- Per-spell choices on one button: swipe mode, glow while active, warning
--- threshold. With dry set it only reports whether a write is needed.
+-- Glow while active: shown and painted per entry.
+local function ApplyGlow(rec,part,ov,dry)
+    local g=part.glow
+    local on=ov.auraGlow
+    if on==nil then on=rec.glowAll end
+    if on==true then
+        local style,r,gg,b=GlowSpec(rec,ov)
+        if part.gOn and Painted(g,style,r,gg,b,rec.lk) then return false end
+        if dry then return true end
+        PaintGlow(g,style,r,gg,b,rec.lk)
+        if not part.gOn then part.gOn=true;g.frame:Show() end
+    elseif part.gOn then
+        if dry then return true end
+        part.gOn=false
+        g.frame:Hide()
+    end
+    return false
+end
+
+-- Stack glow from N applications: gate shown, bar and glow placed for N.
+-- A bound bar is rebound when N changes (a setter replaces its element).
+local function ApplyStack(rec,part,ov,dry)
+    local s=part.stack
+    local n=ov.stackGlow
+    if type(n)~="number" or n<1 then n=0 else n=floor(n) end
+    if n==0 then
+        if not s.on then return false end
+        if dry then return true end
+        s.on=false
+        s.gate:Hide()
+        return false
+    end
+    local lk=rec.lk
+    local style,r,gg,b=GlowSpec(rec,ov)
+    if s.on and Placed(s,n,lk) and Painted(s.glow,style,r,gg,b,lk) and (s.bound==n or not part.bound) then return false end
+    if dry then return true end
+    PlaceStack(s,n,lk)
+    PaintGlow(s.glow,style,r,gg,b,lk)
+    if part.bound and s.bound~=n then
+        s.bound=n
+        barOpts.maxApplications=n
+        part.button:SetApplicationBar(s.bar,barOpts)
+    end
+    if not s.on then s.on=true;s.gate:Show() end
+    return false
+end
+
+-- Per-spell choices on one button: swipe mode, glows, stack text color,
+-- warning threshold. With dry set it only reports whether a write is
+-- needed. Unbound (initializeFrame) it prepares what the binding takes.
 local function ApplyEntry(rec,part,e,dry)
     local ov=e.ov or EMPTY
     local cd=part.cd
@@ -384,22 +658,15 @@ local function ApplyEntry(rec,part,e,dry)
             cd:SetDrawSwipe(mode~=3)
         end
     end
-    local glow=part.glow
-    if glow then
-        local on=ov.auraGlow
-        if on==nil then on=rec.glowAll end
-        local hex=on and (ov.glowColor or "ffd200") or false
-        if part.glowHex~=hex then
-            if dry then return true end
-            part.glowHex=hex
-            if hex then
-                part.gr,part.gg,part.gb=K.HexRGB(hex)
-                K.PlaceEdges(part.glowEdges,glow,2*rec.lk.px,part.gr,part.gg,part.gb,1)
-            end
-            glow:SetShown(hex~=false)
-        end
+    if part.glow and ApplyGlow(rec,part,ov,dry) then return true end
+    if part.stack and ApplyStack(rec,part,ov,dry) then return true end
+    local count=CountOpts(ov)
+    if part.countOpts~=count then
+        if dry then return true end
+        part.countOpts=count
+        if part.bound then part.button:SetApplicationCount(part.count,count) end
     end
-    if part.bound then
+    if part.bound and part.dur then
         local opts=TextOpts(ov.threshold or C.state.threshold)
         if part.textOpts~=opts then
             if dry then return true end
@@ -415,7 +682,7 @@ end
 -- region as a descendant of the button, binds last (bound regions are
 -- sealed), and keeps our state in our own table, never on the button.
 local function Init(rec,button,k)
-    local part={button=button,pos=k}
+    local part={button=button,pos=k,rec=rec}
     part.edges=Edges(button)
     part.icon=button:CreateTexture(nil,"ARTWORK")
     local lower
@@ -433,13 +700,8 @@ local function Init(rec,button,k)
         lower:SetReverse(true)
         part.cd=lower
     end
+    -- Glows over the icon and swipe, text above the glows.
     local level=lower:GetFrameLevel()+1
-    local text=CreateFrame("Frame",nil,button)
-    text:SetAllPoints(button)
-    text:SetFrameLevel(level)
-    part.count=text:CreateFontString(nil,"OVERLAY")
-    if rec.text then part.dur=text:CreateFontString(nil,"OVERLAY") end
-    if rec.name then part.name=text:CreateFontString(nil,"OVERLAY") end
     if rec.pandemic then
         local pan=CreateFrame("Frame",nil,button)
         pan:SetAllPoints(button)
@@ -447,12 +709,22 @@ local function Init(rec,button,k)
         pan:Hide()
         part.pan,part.panEdges=pan,Edges(pan)
     end
-    if rec.glow then
-        local glow=CreateFrame("Frame",nil,button)
-        glow:SetAllPoints(button)
-        glow:SetFrameLevel(level)
-        glow:Hide()
-        part.glow,part.glowEdges=glow,Edges(glow)
+    if rec.glow then part.glow=NewGlow(button,button,level) end
+    if rec.stack then part.stack=NewStack(button,level) end
+    local text=CreateFrame("Frame",nil,button)
+    text:SetAllPoints(button)
+    text:SetFrameLevel(level+1)
+    part.count=text:CreateFontString(nil,"OVERLAY")
+    if rec.text then part.dur=text:CreateFontString(nil,"OVERLAY") end
+    if rec.name then part.name=text:CreateFontString(nil,"OVERLAY") end
+    if rec.kit then
+        -- A new button hides once it is set up: not an aura leaving.
+        Hush(rec)
+        local sensor=CreateFrame("Frame",nil,button)
+        sensor:SetAllPoints(button)
+        sensed[sensor]=part
+        sensor:SetScript("OnShow",Gained)
+        sensor:SetScript("OnHide",Lost)
     end
     if button.SetMouseClickEnabled then button:SetMouseClickEnabled(false) end
     if button.SetTooltipAnchorPoint then button:SetTooltipAnchorPoint("ANCHOR_BOTTOMRIGHT") end
@@ -470,13 +742,21 @@ local function Init(rec,button,k)
     if part.dur then
         local opts=rec.topts[k] or TEXT_DEFAULT
         button:SetDurationText(part.dur,opts)
-        part.textOpts,part.bound=opts,true
+        part.textOpts=opts
     end
     if part.name then button:SetSpellName(part.name) end
-    -- No count formatter: Blizzard's default shows stacks above 1 only.
-    button:SetApplicationCount(part.count)
+    -- Without a formatter Blizzard shows stacks above 1 only; the per-spell
+    -- stack color passes a shared formatter (CountOpts).
+    button:SetApplicationCount(part.count,part.countOpts)
+    local stack=part.stack
+    if stack then
+        stack.bound=stack.n or 1
+        barOpts.maxApplications=stack.bound
+        button:SetApplicationBar(stack.bar,barOpts)
+    end
     -- 12.1.5 and Forever return nothing here; the result is never used.
     if part.pan and button.AddPandemicRegion then button:AddPandemicRegion(part.pan) end
+    part.bound=true
     local parts=rec.parts
     parts[#parts+1]=part
 end
@@ -543,7 +823,10 @@ local function Build(rec,view,n)
     local look=Look(rec,view)
     local parts=rec.parts
     if parts[1]==nil then rec.look=look end
+    -- Bar-level glow choices behind the per-spell ones (GlowSpec).
     rec.glowAll=view.auraGlow==true
+    rec.gStyle,rec.gTint=view.glowStyle,view.glowTint==true
+    rec.gR,rec.gG,rec.gB=view.glowR or 1,view.glowG or 1,view.glowB or 1
     local threshold=C.state.threshold
     local keys=rec.keys
     stamp=stamp+1
@@ -622,7 +905,11 @@ end
 -- on its cell instead). Container widget writes: legal in combat.
 local function Show(rec)
     local shown=not (unseen[rec.slot] or (A.preview and rec.fam=="aura" and not rec.fixed))
-    if rec.shown~=shown then rec.shown=shown;rec.frame:SetShown(shown) end
+    if rec.shown~=shown then
+        rec.shown=shown
+        Hush(rec)
+        rec.frame:SetShown(shown)
+    end
 end
 
 local function Bar(slot)
@@ -638,6 +925,7 @@ local function Retire(slot,fam,unit)
     if not rec then return end
     byUnit[unit]=nil
     rec.enabled,rec.shown=false,false
+    Hush(rec)
     rec.frame:SetEnabled(false)
     rec.frame:Hide()
     -- Every retired container stays reusable: it cannot be freed, so one
@@ -663,9 +951,10 @@ end
 
 -- The live container of one bar, family and unit. Bindings are fixed at
 -- button creation, so a change of binding set (mode, text, name, pandemic,
--- glow, bar direction) swaps containers. fresh: a new container for
+-- glow, stack glow, kit sensor, bar direction) swaps containers; `need`
+-- says which the bar's entries ask for. fresh: a new container for
 -- buttons that refused a restyle (a pooled one would refuse it too).
-local function Ensure(slot,fam,unit,role,fixed,view,glowAny,fresh)
+local function Ensure(slot,fam,unit,role,fixed,view,fresh)
     local bar=Bar(slot)
     if not bar then return nil end
     local fams=live[slot]
@@ -675,8 +964,10 @@ local function Ensure(slot,fam,unit,role,fixed,view,glowAny,fresh)
     if role=="bar" then text,name,fill=view.barTime~=false,view.barName~=false,view.barFill==2 and 2 or 1
     else text,name,fill=view.cdText~=false,false,1 end
     local pan=fam=="aura" and view.pandemic==true
-    local glow=fam=="aura" and (view.auraGlow==true or glowAny==true)
-    local bind=(fixed and "s" or "g")..role..(text and 1 or 0)..(name and 1 or 0)..(pan and 1 or 0)..(glow and 1 or 0)..fill
+    local glow=fam=="aura" and (view.auraGlow==true or need.glow==true)
+    local stack,kit=need.stack==true,fam=="aura" and need.kit==true
+    local bind=(fixed and "s" or "g")..role..(text and 1 or 0)..(name and 1 or 0)..(pan and 1 or 0)..(glow and 1 or 0)
+        ..(stack and 1 or 0)..(kit and 1 or 0)..fill
     local rec=byUnit[unit]
     if rec and rec.bind~=bind then Retire(slot,fam,unit);rec=nil end
     if not rec then
@@ -689,9 +980,16 @@ local function Ensure(slot,fam,unit,role,fixed,view,glowAny,fresh)
             if c.SetEditModePreviewEnabled then c:SetEditModePreviewEnabled(false) end
             if fixed then c:SetPoint("TOPLEFT",parent,"TOPLEFT",0,0) end
             rec={frame=c,slot=slot,fam=fam,role=role,fixed=fixed,bind=bind,prefix=fixed and "s" or "g",
-                text=text,name=name,pandemic=pan,glow=glow,fill=fill,geo=0,
+                text=text,name=name,pandemic=pan,glow=glow,stack=stack,kit=kit,fill=fill,geo=0,
                 keys={},on={},act={},shut={},filter={},ids={},entry={},anchors={},byAnchor={},topts={},li={},lg={},
                 mark={},parts={},lk={}}
+            if kit then
+                local watch=CreateFrame("Frame",nil,parent)
+                watch:SetAllPoints(parent)
+                watching[watch]=rec
+                watch:SetScript("OnShow",Woke)
+                watch:SetScript("OnHide",Woke)
+            end
         end
         byUnit[unit]=rec
     end
@@ -709,7 +1007,7 @@ end
 
 -- Compact containers: flow layout and host anchor from geo; the target row
 -- starts `offset` lines further in growth direction. Container writes only.
-local function Place(rec,offset)
+local function Place(rec,offset,split)
     local c,g=rec.frame,geo
     if rec.gw~=g.w or rec.gh~=g.h or rec.gp~=g.gp or rec.gc~=g.gc then
         rec.gw,rec.gh,rec.gp,rec.gc=g.w,g.h,g.gp,g.gc
@@ -722,12 +1020,19 @@ local function Place(rec,offset)
     if rec.line~=g.line then rec.line=g.line;c:SetFlowLayoutMaximumLineSize(g.line) end
     if not rec.padded then rec.padded=true;c:SetFlowLayoutPadding(0,0,0,0) end
     local dx,dy=0,0
-    if g.vertical then dx=offset*g.step else dy=offset*g.step end
     local point,host=g.point,g.host
-    if rec.pt~=point or rec.host~=host or rec.dx~=dx or rec.dy~=dy then
-        rec.pt,rec.host,rec.dx,rec.dy=point,host,dx,dy
+    local rel=point
+    if split then
+        -- Centered row with both parts: player auras end at the center,
+        -- target auras start there. Blizzard sizes each container to its
+        -- shown auras, so both grow from the middle.
+        rel=flow[1]:find("BOTTOM") and "BOTTOM" or "TOP"
+        if split=="lead" then point,dx=rel.."RIGHT",-g.gp/2 else point,dx=rel.."LEFT",g.gp/2 end
+    elseif g.vertical then dx=offset*g.step else dy=offset*g.step end
+    if rec.pt~=point or rec.host~=host or rec.rel~=rel or rec.dx~=dx or rec.dy~=dy then
+        rec.pt,rec.host,rec.rel,rec.dx,rec.dy=point,host,rel,dx,dy
         c:ClearAllPoints()
-        c:SetPoint(point,host,point,dx,dy)
+        c:SetPoint(point,host,rel,dx,dy)
     end
 end
 
@@ -836,7 +1141,7 @@ local function Hold(cell,e,m,dim)
         bg:SetTexture(lk.tex)
         bg:SetVertexColor(lk.fr*.25,lk.fg*.25,lk.fb*.25,dim and lk.bgA*.6 or lk.bgA)
         bg:Show()
-        S.SetFont(name,lk.font,lk.cs,lk.flags)
+        S.SetStyledFont(name,lk.font,lk.cs,lk.flags,lk.rendering,lk.shadow,lk.shadowOpacity,lk.shadowDistance)
         name:SetTextColor(lk.cr,lk.cg,lk.cb,dim and .6 or 1)
         name:ClearAllPoints()
         local lead=lk.icon and lk.h or 0
@@ -888,10 +1193,32 @@ local function Debounce()
     timer.After(.5,Debounced)
 end
 
-local function Run(slot,fam,unit,role,fixed,view,glowAny,n,force,offset)
-    local rec=Ensure(slot,fam,unit,role,fixed,view,glowAny,false)
+-- What a bar's entries ask of its buttons (need, read by Ensure): a glow
+-- while active, a stack glow, a sensor for kit sounds (aura bars only).
+local function Needs(entries,aura)
+    need.glow,need.stack,need.kit=false,false,false
+    local alerts=C.Alerts
+    local isKit=alerts and alerts.IsKit
+    for i=1,#entries do
+        local e=entries[i]
+        local ov=e.ov
+        if ov and ov~=EMPTY and e.src~="p" then
+            local n=ov.stackGlow
+            if type(n)=="number" and n>=1 then need.stack=true end
+            if aura then
+                if ov.auraGlow==true then need.glow=true end
+                if isKit and (isKit(ov.sound) or isKit(ov.lossSound)) then need.kit=true end
+            end
+        end
+    end
+end
+
+local function Run(slot,fam,unit,role,fixed,view,n,force,offset,split)
+    local rec=Ensure(slot,fam,unit,role,fixed,view,false)
     if not rec then return end
-    if not fixed then Place(rec,offset) end
+    -- Filters, groups and new buttons change what shows: not aura events.
+    Hush(rec)
+    if not fixed then Place(rec,offset,split) end
     if Build(rec,view,n) then return end
     -- Sealed buttons refused the restyle; the structure is current. While
     -- auras are secret (M+ key, PvP match) the look waits for them to open
@@ -904,9 +1231,9 @@ local function Run(slot,fam,unit,role,fixed,view,glowAny,n,force,offset)
         return
     end
     Retire(slot,fam,unit)
-    rec=Ensure(slot,fam,unit,role,fixed,view,glowAny,true)
+    rec=Ensure(slot,fam,unit,role,fixed,view,true)
     if not rec then return end
-    if not fixed then Place(rec,offset) end
+    if not fixed then Place(rec,offset,split) end
     Build(rec,view,n)
 end
 
@@ -926,16 +1253,12 @@ local function SyncAura(slot,view,plan,force)
     m.role=role
     m.look=Look(m,view)
     local entries=plan.entries
-    local missing,glowAny=false,false
-    for i=1,#entries do
-        local ov=entries[i].ov
-        if ov then
-            if ov.showMissing==true then missing=true end
-            if ov.auraGlow==true then glowAny=true end
-        end
-    end
+    Needs(entries,true)
     local layout=C.Layout
-    m.fixed=(view.keepSlots==true or view.showMissing==true or missing) and layout~=nil and layout.Cell~=nil
+    -- One rule for the layout and the containers (Layout.FixedAuras).
+    local fixed,_,split=false,nil,false
+    if layout~=nil and layout.Cell~=nil and layout.FixedAuras~=nil then fixed,_,split=layout.FixedAuras(view,entries) end
+    m.fixed,m.split=fixed==true,split==true
     local bar=Bar(slot)
     if not bar then return end
     if Available() then
@@ -965,7 +1288,10 @@ local function SyncAura(slot,view,plan,force)
             local unit=UNITS[u]
             local n=Collect(plan,unit,false,view)
             if n==0 then Retire(slot,"aura",unit)
-            else Run(slot,"aura",unit,role,m.fixed,view,glowAny,n,force,u==2 and lines or 0) end
+            else
+                local side=m.split and (u==1 and "lead" or "tail") or nil
+                Run(slot,"aura",unit,role,m.fixed,view,n,force,(u==2 and not side) and lines or 0,side)
+            end
         end
     end
     Placeholders(slot,view,plan,m)
@@ -998,11 +1324,12 @@ function A.SyncOverlays(slot,force)
     end
     if InCombatLockdown() then A.pending[slot]=true;return end
     A.pending[slot]=nil
+    Needs(plan.entries,false)
     for u=1,2 do
         local unit=UNITS[u]
         local n=Collect(plan,unit,true,view)
         if n==0 then Retire(slot,"over",unit)
-        else Run(slot,"over",unit,"over",true,view,false,n,force,0) end
+        else Run(slot,"over",unit,"over",true,view,n,force,0) end
     end
     RefreshTargets()
 end
@@ -1033,27 +1360,24 @@ local function React()
     local enabled=not FriendlyTarget()
     for i=1,#targets do
         local rec=targets[i]
-        if rec.enabled~=enabled then rec.enabled=enabled;rec.frame:SetEnabled(enabled) end
+        if rec.enabled~=enabled then rec.enabled=enabled;Hush(rec);rec.frame:SetEnabled(enabled) end
     end
 end
--- Same-token retarget fires no UNIT_AURA: refresh target containers once,
--- next frame, however many target events arrived.
-local function UpdateTargets()
-    targetsQueued=false
-    for i=1,#targets do
-        local rec=targets[i]
-        if rec.enabled then rec.frame:UpdateAllAuras() end
-    end
-end
+-- Same-token retarget fires no UNIT_AURA: each target container is told at
+-- once. A container turning on reparses inside SetEnabled; a running one
+-- is marked dirty by UpdateAllAuras and parses once when it next draws, so
+-- several target events in one frame still cost one parse. The pause
+-- starts at once, so a friendly target is never parsed. The new target's
+-- auras are no gains or losses: kit sensors stay silent.
 function A.TargetChanged()
     if targets[1]==nil then return end
-    -- The pause starts at once, so a friendly target is never parsed.
-    React()
-    if targetsQueued then return end
-    local timer=_G.C_Timer
-    if not (timer and timer.After) then return UpdateTargets() end
-    targetsQueued=true
-    timer.After(0,UpdateTargets)
+    local enabled=not FriendlyTarget()
+    for i=1,#targets do
+        local rec=targets[i]
+        Hush(rec)
+        if rec.enabled~=enabled then rec.enabled=enabled;rec.frame:SetEnabled(enabled)
+        elseif enabled then rec.frame:UpdateAllAuras() end
+    end
 end
 -- UNIT_FACTION for the target (a duel starts, a charm ends): work only when
 -- its disposition changed.

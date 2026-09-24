@@ -433,7 +433,9 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         entry.useZoneColor = c.infoLocationZoneColor and not (c.infoLocationClassColor and classColor)
     end
     local size = c[prefix .. "Size"]
-    S.SetFont(entry.label, S.ResolveFont(c[prefix .. "Font"]), size, outlines[c[prefix .. "Outline"]])
+    S.SetStyledFont(entry.label, S.ResolveFont(c[prefix .. "Font"]), size,
+        outlines[c[prefix .. "Outline"]], c[prefix .. "Rendering"],
+        c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
     local lines = key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2 or 1
     entry.size = size
     entry.button:SetSize(c[prefix .. "Width"], size * lines + 8)
@@ -522,7 +524,9 @@ function MM.RefreshTexts()
     if difficulty then
         if not M.difficultyLabel then M.difficultyLabel = S.CreateFontString(M.infoFrame, nil, "OVERLAY", "GameFontNormalSmall") end
         local label = M.difficultyLabel
-        S.SetFont(label, nil, c.infoDifficultySize, "OUTLINE")
+        S.SetStyledFont(label, S.ResolveFont(c.infoDifficultyFont), c.infoDifficultySize,
+            outlines[c.infoDifficultyOutline] or "OUTLINE", c.infoDifficultyRendering,
+            c.infoDifficultyShadow, c.infoDifficultyShadowOpacity, c.infoDifficultyShadowDistance)
         label:SetJustifyH(Anchor(label, c.infoDifficultyAnchor, c.infoDifficultyX, c.infoDifficultyY))
         label:Show()
         M.difficultyText, M.difficultyColor, M.difficultyDirty = nil, nil, true

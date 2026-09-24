@@ -27,8 +27,11 @@ for _,file in ipairs(FILES) do
     handle:close()
     local header=file=="Presets.lua" and DATA_HEADER or HEADER
     assert(text:sub(1,#header)==header,file.." header")
+    -- The data plane only decides which unit an entry watches; it anchors no
+    -- frame, so no aura container can be anchored (to another container or
+    -- anything else) from here. Placement belongs to Auras/Layout.
     for _,word in ipairs({"pcall","loadstring","setfenv","hooksecurefunc","OnUpdate","GetDataProvider","SetLayoutData",
-        "CooldownViewerSettings:","TriggerEvent","Claude","Anthropic"}) do
+        "CooldownViewerSettings:","TriggerEvent","SetPoint","SetAllPoints","ClearAllPoints","Claude","Anthropic"}) do
         assert(not text:find(word,1,true),file.." must not use "..word)
     end
 end
@@ -112,6 +115,17 @@ local overrides={[9002]=9003}
 local charges={[9003]=2,[1112]=3}
 local ranged={[1001]=true,[1002]=true,[9002]=true,[1112]=true}
 local known={[9001]=true,[9002]=true,[1001]=true}
+-- Harmful spells (C_Spell.IsSpellHarmful): 2003 is the buff bar's debuff
+-- (Deathstalker's Mark), 9101 is harmful but listed as an explicit "a" key,
+-- 3001 answers with a secret. harmfulCalls counts every question per ID.
+local harmful,harmfulCalls={[2003]=true,[9101]=true,[3001]="secret"},{}
+local function AskHarmful(id)
+    assert(type(id)=="number" and not IsSecret(id),"harmful lookups take a plain spell ID")
+    harmfulCalls[id]=(harmfulCalls[id] or 0)+1
+    local answer=harmful[id]
+    if answer=="secret" then return Secret() end
+    return answer==true
+end
 C_Spell={
     GetSpellName=function(id) assert(type(id)=="number");return names[id] end,
     GetSpellTexture=function(id) local t=textures[id];if t then return t[1],t[2],t[3] end end,
@@ -119,6 +133,7 @@ C_Spell={
     GetSpellCharges=function(id) local max=charges[id];if max then return {maxCharges=max,currentCharges=Secret()} end end,
     SpellHasRange=function(id) return ranged[id]==true end,
     GetSpellCooldownDuration=function() end,
+    IsSpellHarmful=AskHarmful,
 }
 C_SpellBook={
     FindSpellOverrideByID=function(id) return overrides[id] end,
@@ -162,6 +177,79 @@ local function Keys(list)
 end
 local function Same(label,got,want) assert(got==want,label..": got "..tostring(got).." want "..tostring(want)) end
 
+------------------------------------------------------------------ slot categories
+-- The catalog's slot categories and the runtime's bar map say the same:
+-- trinkets (equipment slot pool 7) join Essential, Potions and racials keeps
+-- potions and healthstones (5) only. Pool 7 follows Essential's own entries.
+local function Cats(key) return table.concat(CDM.SLOTS[CDM.SLOT_INDEX[key]].categories,",") end
+Same("ess categories",Cats("ess"),"0,7")
+Same("ext categories",Cats("ext"),"5")
+for _,def in ipairs(CDM.SLOTS) do
+    for _,cat in ipairs(def.categories) do
+        assert(Catalog.BAR_OF[cat]==def.key,def.key.." lists category "..cat.." that the runtime maps elsewhere")
+    end
+end
+for cat,bar in pairs(Catalog.BAR_OF) do
+    local listed=false
+    for _,c in ipairs(CDM.SLOTS[CDM.SLOT_INDEX[bar]].categories) do if c==cat then listed=true end end
+    assert(listed,"category "..cat.." maps to "..bar.." but the catalog slot does not list it")
+end
+assert(Catalog.BAR_OF[7]=="ess" and Catalog.BAR_OF[5]=="ext" and Catalog.TAIL[7]==true and not Catalog.TAIL[0],"trinket tail")
+
+------------------------------------------------------------------ per-spell choices
+-- Stack features validate like every other field: glow from N applications,
+-- stack text colored from N (0 = off, at most 99, whole numbers) and a
+-- six-digit hex color. Malformed values are dropped before anything is
+-- stored; an entry left with nothing disappears.
+local F=CDM.SPELL_FIELDS
+for _,field in ipairs({"stackGlow","stackColorAt","stackColor","glowStyle","glowColor","auraGlow","sound","lossSound"}) do
+    assert(type(F[field])=="function",field.." has no validator")
+end
+for _,v in ipairs({0,1,5,99}) do assert(F.stackGlow(v) and F.stackColorAt(v),"stack threshold "..v.." refused") end
+for _,v in ipairs({-1,100,2.5,0/0,math.huge,"3",true,{}}) do
+    assert(not F.stackGlow(v) and not F.stackColorAt(v),"stack threshold "..tostring(v).." accepted")
+end
+assert(F.stackColor("ff5a3c") and F.stackColor("FFAA00"),"hex stack colors")
+for _,v in ipairs({"ff5a3","ff5a3c0","#ff5a3c","gg5a3c","",0xff5a3c,true}) do
+    assert(not F.stackColor(v),"stack color "..tostring(v).." accepted")
+end
+Same("stack color default",CDM.SPELL_DEFAULTS.stackColor,"ff5a3c")
+assert(F.stackColor(CDM.SPELL_DEFAULTS.stackColor),"the default is a valid value")
+-- Blizzard Cooldown Manager sounds are sound kits.
+assert(F.sound("kit:8959") and F.lossSound("kit:8959") and not F.sound("kit:") and not F.sound("kit:12a"),"kit sounds")
+local cleanSpells=CDM.CleanSpells({e={
+    a9101={stackGlow=3,stackColorAt=2,stackColor="3cff5a",glowStyle=2,glowColor="00ff00",auraGlow=true,sound="kit:8959"},
+    a9102={stackGlow=100,stackColorAt=-1,stackColor="red",bogus=true},
+    b101={stackGlow=0,stackColorAt=1,stackColor="FF5A3C",glowStyle=5,glowColor="xyz"},
+    d9103={stackGlow=2.5,readyGlow=true},
+}})
+local sp=cleanSpells.e.a9101
+assert(sp.stackGlow==3 and sp.stackColorAt==2 and sp.stackColor=="3cff5a" and sp.glowStyle==2 and sp.glowColor=="00ff00"
+    and sp.auraGlow==true and sp.sound=="kit:8959","valid stack and glow choices are kept")
+assert(cleanSpells.e.a9102==nil,"an entry with only malformed choices is dropped")
+sp=cleanSpells.e.b101
+assert(sp.stackGlow==0 and sp.stackColorAt==1 and sp.stackColor=="FF5A3C" and sp.glowStyle==nil and sp.glowColor==nil,
+    "0 and 1 are kept; a bad style or color is dropped")
+sp=cleanSpells.e.d9103
+assert(sp.stackGlow==nil and sp.readyGlow==true,"a fractional stack count is dropped, the rest of the entry stays")
+-- Data string round trip: what is stored is already clean, and decoding
+-- cleans again.
+local spellText=assert(CDM.Codec.EncodeSpells({v=1,e={
+    a9101={stackGlow=3,stackColorAt=2,stackColor="3cff5a",glowStyle=4,glowColor="00ff00"},
+    a9102={stackGlow=-4,stackColor="ff5a3"},
+}}))
+assert(spellText~="","encoded")
+local stored=MSUF_TryDecodeCompactString(spellText)
+assert(stored.e.a9101 and stored.e.a9102==nil,"malformed entries never reach the stored string")
+local decoded=CDM.Codec.DecodeSpells(spellText)
+sp=decoded.e.a9101
+assert(sp.stackGlow==3 and sp.stackColorAt==2 and sp.stackColor=="3cff5a" and sp.glowStyle==4 and sp.glowColor=="00ff00",
+    "stack choices survive the data string")
+assert(decoded.e.a9102==nil)
+stored.e.a9101.stackGlow=150
+assert(CDM.Codec.DecodeSpells(spellText).e.a9101.stackGlow==nil,"a damaged stored value is dropped on decode")
+Same("only malformed",CDM.Codec.EncodeSpells({e={a1={stackGlow=500,stackColor="nope"}}}),"")
+
 ------------------------------------------------------------------ readiness gate
 -- Loading the runtime creates no frame (the options page loads it with the
 -- module off); the gate exists only while Blizzard's data is missing.
@@ -183,11 +271,13 @@ sets[0]=essSet
 assert(Catalog.Rebuild()==true)
 local gen=Catalog.generation
 Same("order",Keys(Catalog.order),"101,102,103,104,107,111,112,201,202,203,301,701,702,801,501,502,601")
-Same("ess",Keys(Catalog.byBar.ess),"101,102,107")
+-- Trinkets (pool 7) join the end of Essential; Potions and racials keeps
+-- potions and healthstones (pool 5).
+Same("ess",Keys(Catalog.byBar.ess),"101,102,107,701")
 Same("uti",Keys(Catalog.byBar.uti),"111,112")
 Same("buf",Keys(Catalog.byBar.buf),"201,202,801,601")
 Same("bar",Keys(Catalog.byBar.bar),"301")
-Same("ext",Keys(Catalog.byBar.ext),"701,501,502")
+Same("ext",Keys(Catalog.byBar.ext),"501,502")
 Same("unknown",Keys(Catalog.unknown),"104,702")
 local recs=Catalog.records
 assert(recs[103].category==-1 and recs[103].hideByDefault and recs[103].family==1,"HideByDefault 0 -> -1")
@@ -197,15 +287,24 @@ assert(recs[111].override==nil,"secret override dropped")
 assert(recs[101]~=infos[101] and recs[201].linked~=infos[201].linkedSpellIDs and recs[201].linked[1]==2002,"whitelisted copies")
 assert(recs[102].linked==C.EMPTY and recs[801].buffSlot==1 and recs[501].spellCategory==30)
 assert(recs[101].key=="b101" and recs[601].bar=="buf" and recs[601].family==2 and recs[501].bar=="ext")
+assert(recs[701].bar=="ess" and recs[701].category==7 and recs[701].family==1 and recs[702].bar=="ess","trinkets on Essential")
+-- Bars that hold an equipment slot, learned or not (gear changes matter there).
+local function Set(t)
+    local list={}
+    for key in pairs(t) do list[#list+1]=key end
+    table.sort(list)
+    return table.concat(list,",")
+end
+Same("equip bars",Set(Catalog.equipBars),"buf,ess")
 infos[101].spellID=424242
 assert(recs[101].spell==1001,"record does not alias Blizzard's table")
 infos[101].spellID=1001
 assert(Catalog.Rebuild()==false and Catalog.generation==gen+1,"unchanged rebuild still counts a generation")
 -- Invisible entries follow Blizzard's own switch.
 CDM_HIDE_INVISIBLE_ITEMS=true
-assert(Catalog.Rebuild()==true and recs[502]==nil and Keys(Catalog.byBar.ext)=="701,501")
+assert(Catalog.Rebuild()==true and recs[502]==nil and Keys(Catalog.byBar.ext)=="501")
 CDM_HIDE_INVISIBLE_ITEMS=nil
-assert(Catalog.Rebuild()==true and recs[502] and Keys(Catalog.byBar.ext)=="701,501,502")
+assert(Catalog.Rebuild()==true and recs[502] and Keys(Catalog.byBar.ext)=="501,502")
 
 ------------------------------------------------------------------ catalog: layout versions
 local function Layout(key,data) layouts[key]=data;layoutBlob="1|"..key;Catalog.Rebuild() end
@@ -227,9 +326,20 @@ Same("decode cache",cborCalls,calls)
 layoutBlob=Secret()
 Catalog.Rebuild()
 Same("secret blob keeps layout",Keys(Catalog.byBar.ess),"102,101,107,701")
+-- A saved order that puts a pool trinket first still ends Essential with it
+-- (a trinket moved into Essential keeps its saved place, v5 above); one moved
+-- into the potion pool (5) goes to Potions and racials.
+Layout("LT",{[1]=5,[2]={[83]=7},[3]={[83]={[7]={[1]={701,102,101}}}}})
+Same("tail order",Keys(Catalog.order),"701,102,101,103,104,107,111,112,201,202,203,301,702,801,501,502,601")
+Same("tail ess",Keys(Catalog.byBar.ess),"102,101,107,701")
+Layout("LP",{[1]=5,[2]={[83]=7},[3]={[83]={[7]={[2]={[5]={701}}}}}})
+Same("pool 5 ess",Keys(Catalog.byBar.ess),"101,102,107")
+Same("pool 5 ext",Keys(Catalog.byBar.ext),"701,501,502")
+assert(recs[701].category==5 and recs[701].bar=="ext" and recs[702].bar=="ess")
+Same("equip bars follow the move",Set(Catalog.equipBars),"buf,ess,ext")
 -- v5 explicit starter layout.
 Layout("L5S",{[1]=5,[2]={[83]=0},[3]={[83]={[7]=L5}}})
-Same("starter",Keys(Catalog.byBar.ess),"101,102,107")
+Same("starter",Keys(Catalog.byBar.ess),"101,102,107,701")
 -- v4 without an active entry: lowest layout ID stands in for pairs().
 Layout("L4",{[1]=4,[2]={},[3]={[83]={[9]={[2]={[1]={101}}},[4]={[2]={[1]={102}}}}}})
 Same("v4 fallback",Keys(Catalog.byBar.uti),"102,111,112")
@@ -247,15 +357,16 @@ Same("other tag",Keys(Catalog.byBar.uti),"111,112")
 Layout("L6",{[1]=6,[3]={[83]={[1]={[2]={[1]={101}}}}}})
 Same("format 6 ignored",Keys(Catalog.byBar.uti),"111,112")
 layouts.L5b=layouts.L5;layoutBlob="2|L5b";Catalog.Rebuild()
-Same("encoding 2 ignored",Keys(Catalog.byBar.ess),"101,102,107")
+Same("encoding 2 ignored",Keys(Catalog.byBar.ess),"101,102,107,701")
 layoutBlob="garbage";Catalog.Rebuild()
-Same("no envelope",Keys(Catalog.byBar.ess),"101,102,107")
+Same("no envelope",Keys(Catalog.byBar.ess),"101,102,107,701")
 -- No spec tag: Blizzard falls back to the defaults, so do we.
 specIndex=nil;layoutBlob="1|L5";Catalog.Rebuild()
-Same("nil tag",Keys(Catalog.byBar.ess),"101,102,107")
+Same("nil tag",Keys(Catalog.byBar.ess),"101,102,107,701")
 assert(Catalog.specTag==nil)
 specIndex=3;layoutBlob="";Catalog.Rebuild()
-Same("back to defaults",Keys(Catalog.byBar.ess),"101,102,107")
+Same("back to defaults",Keys(Catalog.byBar.ess),"101,102,107,701")
+Same("equip bars back",Set(Catalog.equipBars),"buf,ess")
 -- Blizzard's layout callbacks rebuild only when the saved string moved.
 assert(Catalog.LayoutStale()==false,"the decoded layout is current")
 layoutBlob="1|L5"
@@ -291,11 +402,11 @@ C.spells=CDM.CleanSpells({e={b101={procGlow=false},b102={procGlow=true}}})
 C.state.specID=63
 local plans,changed=Resolve.Build()
 assert(plans==C.plans and changed==true)
-Same("r ess",Keys(plans.ess.entries),"b101,s9001")               -- b102 claimed by c1, b107 by the hidden c3
+Same("r ess",Keys(plans.ess.entries),"b101,s9001")               -- b102 claimed by c1, b107 by the hidden c3, the trinket (b701) by c1's e13
 Same("r uti",Keys(plans.uti.entries),"b112")                     -- b111 hidden; b112 on c2 is the wrong family
-Same("r buf",Keys(plans.buf.entries),"b202,b801,b601")           -- b201 claimed by c2
+Same("r buf",Keys(plans.buf.entries),"b202,b801,b601")           -- b201 claimed by c2; b801 is a trinket buff, not the slot
 Same("r bar",Keys(plans.bar.entries),"b301")
-Same("r ext",Keys(plans.ext.entries),"b701,b501,b502")      -- no racial is named or known here
+Same("r ext",Keys(plans.ext.entries),"b501,b502")                -- no racial is named or known here
 Same("r def",Keys(plans.def.entries),"")                         -- no Mage defensive exists in this world
 Same("r c1",Keys(plans.c1.entries),"b102,s9002,i7001,e13,s1001") -- a9101 wrong family, s9004 unlearned
 Same("r c2",Keys(plans.c2.entries),"a9101,d9102,b201")
@@ -310,21 +421,35 @@ e=E.i7001
 assert(e.src=="i" and e.itemID==7001 and e.spell==7101 and e.texture==777 and e.name=="Potion" and e.known)
 e=E.e13
 assert(e.src=="e" and e.equipSlot==13 and e.itemID==5555 and e.texture==5556 and e.name=="Trinket A" and e.spell==nil)
+-- Explicit aura keys pick their unit by kind: "a" the player (even for a
+-- harmful spell), "d" the target.
 e=E.a9101
-assert(e.family==2 and e.unit=="player" and e.auraIDs[9101] and e.selfAura and e.hasAura)
+assert(e.family==2 and e.unit=="player" and e.auraIDs[9101] and e.selfAura and e.hasAura,"an a key watches the player")
 e=E.d9102
-assert(e.family==2 and e.unit=="target" and e.auraIDs[9102] and not e.selfAura)
--- Blizzard aura entries watch player and target alike: Blizzard's viewer scans
--- both units for every tracked aura (selfAura is not used), so a debuff on a
--- buff bar still shows. Only the explicit a/d entries pick one unit.
+assert(e.family==2 and e.unit=="target" and e.auraIDs[9102] and not e.selfAura,"a d key watches the target")
+-- Every Blizzard aura entry watches exactly one unit: the target when any of
+-- its aura IDs (base, override, tooltip, linked) is harmful, else the player.
+-- Blizzard's selfAura is not used, and the automatic unit is never "both":
+-- only the per-spell "Track on" choice (below) watches both units.
 e=E.b201
-assert(e.family==2 and e.selfAura and e.unit=="both" and e.auraIDs[2001] and e.auraIDs[2002] and e.linked[1]==2002)
-assert(E.b202.unit=="both" and not E.b202.selfAura and E.b301.unit=="both" and E.b801.unit=="both")
+assert(e.family==2 and e.selfAura and e.unit=="player" and e.auraIDs[2001] and e.auraIDs[2002] and e.linked[1]==2002)
+assert(E.b202.unit=="target" and not E.b202.selfAura,"a harmful spell on a buff bar (Deathstalker's Mark) is a target aura")
+assert(E.b301.unit=="player","a secret harmful answer counts as helpful")
+assert(E.b801.unit=="player" and E.b601.unit=="player")
 e=E.b101
-assert(e.family==1 and e.hasAura and e.auraIDs[1001] and e.unit=="both" and e.texture==3 and e.hasRange and e.ov.procGlow==false)
+assert(e.family==1 and e.hasAura and e.auraIDs[1001] and e.unit=="player" and e.texture==3 and e.hasRange and e.ov.procGlow==false,
+    "a cooldown that shows its buff watches one unit too")
 assert(E.b102.unit==nil and E.b102.auraIDs==nil and E.b112.unit==nil,"cooldowns without an aura watch no unit")
-e=E.b701
-assert(e.spell==nil and e.equipSlot==13 and e.itemID==5555 and e.texture==5556 and e.name=="Trinket A")
+for key,entry in pairs(E) do
+    if entry.src=="b" and entry.auraIDs then
+        assert(entry.unit=="player" or entry.unit=="target",key.." watches "..tostring(entry.unit))
+    end
+end
+-- Only Blizzard aura entries ask: explicit keys and plain cooldowns never do.
+assert(harmfulCalls[9101]==nil and harmfulCalls[9102]==nil,"explicit aura keys never ask")
+assert(harmfulCalls[1002]==nil and harmfulCalls[1112]==nil and harmfulCalls[9001]==nil,"cooldowns without an aura never ask")
+assert(harmfulCalls[2003]==1 and harmfulCalls[1001]==1 and harmfulCalls[3001]==1,"aura entries ask")
+assert(E.b701==nil,"c1 lists the trinket's slot (e13): Blizzard's record for it shows on no other bar")
 assert(E.b501.texture=="Interface/ICONS/INV_POTION_54" and E.b501.spellCategory==30)
 assert(E.b102.ov.procGlow==true and E.b102.hasRange and E.b102.spell==1002)
 -- Entry tables survive rebuilds with their runtime fields.
@@ -356,35 +481,244 @@ plans=Resolve.Build()
 assert(not b101.auraIDs[1099] and Resolve.auraTouched[b101])
 plans=Resolve.Build()
 assert(Resolve.touched[1]==nil,"settled")
+
+------------------------------------------------------------------ aura units
+local function TouchedKeys()
+    local set={}
+    for i=1,#Resolve.touched do set[Resolve.touched[i].key]=true end
+    return Set(set)
+end
+local function AuraTouchedKeys()
+    local set={}
+    for entry in pairs(Resolve.auraTouched) do set[entry.key]=true end
+    return Set(set)
+end
+local function AskedTotal()
+    local n=0
+    for _,count in pairs(harmfulCalls) do n=n+count end
+    return n
+end
+-- The harmful answer is cached per spell ID: seven builds and two catalog
+-- rebuilds above asked each ID once, and more of them ask nothing.
+for id,count in pairs(harmfulCalls) do Same("asked "..id,count,1) end
+local asked=AskedTotal()
+Resolve.Build();Catalog.Rebuild();Resolve.Build()
+Same("cached answers",AskedTotal(),asked)
+-- Any harmful aura ID moves the entry to the target, and back to the player
+-- when it goes; the change reaches the entry's container (auraTouched).
+-- Override (a talent that turns a buff into a debuff):
+harmful[6002]=true
+infos[601].overrideSpellID=6002
+Catalog.Rebuild()
+plans,changed=Resolve.Build()
+assert(changed==false and E.b601.unit=="target" and E.b601.auraIDs[6002],"a harmful override watches the target")
+Same("override touched",AuraTouchedKeys(),"b601")
+Same("asked 6002",harmfulCalls[6002],1)
+infos[601].overrideSpellID=nil
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b601.unit=="player" and Resolve.auraTouched[E.b601],"the override gone, the player again")
+-- Tooltip spell:
+harmful[8002]=true
+infos[801].overrideTooltipSpellID=8002
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b801.unit=="target" and E.b801.tooltip==8002 and E.b801.auraIDs[8002],"a harmful tooltip spell watches the target")
+Same("tooltip touched",AuraTouchedKeys(),"b801")
+infos[801].overrideTooltipSpellID=nil
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b801.unit=="player" and Resolve.auraTouched[E.b801])
+-- Linked spell (after helpful IDs, a selfAura entry):
+harmful[2005]=true
+infos[201].linkedSpellIDs={2002,2005}
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b201.unit=="target" and E.b201.selfAura and E.b201.auraIDs[2005],"a harmful linked spell watches the target")
+Same("linked touched",AuraTouchedKeys(),"b201")
+infos[201].linkedSpellIDs={2002}
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b201.unit=="player" and Resolve.auraTouched[E.b201])
+-- Secret IDs never reach the question (the stub raises on one): the catalog
+-- drops a secret linked or tooltip ID, and a plain harmful ID next to it
+-- still decides.
+harmful[6003]=true
+infos[601].linkedSpellIDs,infos[601].overrideTooltipSpellID={Secret(),6003},Secret()
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b601.unit=="target" and #E.b601.linked==1 and E.b601.linked[1]==6003 and E.b601.tooltip==nil
+    and E.b601.auraIDs[6003],"secret IDs are dropped, the plain harmful one decides")
+Same("secret neighbours touched",AuraTouchedKeys(),"b601")
+Same("asked 6003",harmfulCalls[6003],1)
+infos[601].linkedSpellIDs,infos[601].overrideTooltipSpellID={},nil
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b601.unit=="player" and not E.b601.auraIDs[6003] and Resolve.auraTouched[E.b601])
+-- selfAura decides nothing: flipped both ways, no unit moves.
+infos[201].selfAura,infos[202].selfAura=false,true
+Catalog.Rebuild()
+Resolve.Build()
+assert(not E.b201.selfAura and E.b201.unit=="player" and E.b202.selfAura and E.b202.unit=="target","selfAura is not the unit")
+Same("selfAura moves no container",AuraTouchedKeys(),"")
+infos[201].selfAura,infos[202].selfAura=true,false
+Catalog.Rebuild()
+Resolve.Build()
+-- Without C_Spell.IsSpellHarmful the global IsHarmfulSpell answers; without
+-- either, an aura is the player's. Cached answers are not asked again.
+-- While C_Spell.IsSpellHarmful exists it answers and the global is never asked.
+local globalAsked=0
+IsHarmfulSpell=function() globalAsked=globalAsked+1;return false end
+harmful[3004]=true
+infos[301].linkedSpellIDs={3004}
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b301.unit=="target" and harmfulCalls[3004]==1 and globalAsked==0,"C_Spell.IsSpellHarmful answers first")
+local isSpellHarmful=C_Spell.IsSpellHarmful
+C_Spell.IsSpellHarmful=nil
+harmful[3005]=true
+IsHarmfulSpell=AskHarmful
+infos[301].linkedSpellIDs={3005}
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b301.unit=="target" and harmfulCalls[3005]==1 and harmfulCalls[3001]==1,"the global answers new IDs")
+IsHarmfulSpell=nil
+harmful[3006]=true
+infos[301].linkedSpellIDs={3006}
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b301.unit=="player" and harmfulCalls[3006]==nil,"no API, no target")
+C_Spell.IsSpellHarmful=isSpellHarmful
+infos[301].linkedSpellIDs={}
+Catalog.Rebuild()
+Resolve.Build()
+assert(E.b301.unit=="player" and not E.b301.auraIDs[3006] and Resolve.auraTouched[E.b301],"linked IDs cleared")
+for id,count in pairs(harmfulCalls) do Same("asked once "..id,count,1) end
+
+-- Per-spell "Track on" (auraUnit): 1 automatic, 2 me, 3 target, 4 both.
+-- Stored values are whole numbers 1-4; the page's "Automatic" (0) clears
+-- the field.
+for _,v in ipairs({1,2,3,4}) do assert(F.auraUnit(v),"auraUnit "..v.." refused") end
+for _,v in ipairs({0,5,-1,2.5,0/0,math.huge,"3",true,{}}) do
+    assert(not F.auraUnit(v),"auraUnit "..tostring(v).." accepted")
+end
+assert(CDM.CleanSpells({e={b202={auraUnit=0}}}).e.b202==nil,"Automatic (0) is never stored")
+Same("track round trip",CDM.Codec.DecodeSpells(CDM.Codec.EncodeSpells({e={b202={auraUnit=3}}})).e.b202.auraUnit,3)
+local BASE_SPELLS={b101={procGlow=false},b102={procGlow=true}}
+local function Track(map)
+    local e={}
+    for key,fields in pairs(BASE_SPELLS) do e[key]={procGlow=fields.procGlow} end
+    for key,v in pairs(map) do e[key]=e[key] or {};e[key].auraUnit=v end
+    C.spells=CDM.CleanSpells({e=e})
+    plans,changed=Resolve.Build()
+end
+-- The choice replaces the automatic unit on every entry that watches one
+-- (Blizzard aura entries, cooldowns that show their buff, explicit keys);
+-- an entry without a unit never gets one. It is applied before the refill
+-- is compared, so each entry whose unit moved resyncs its container.
+Track({b202=2,b201=3,b301=4,b601=1,b101=4,a9101=3,d9102=2,b102=3})
+assert(changed==false,"a unit choice moves no entry between bars")
+assert(E.b202.unit=="player","2: a harmful aura tracked on me")
+assert(E.b201.unit=="target","3: a helpful aura tracked on the target")
+assert(E.b301.unit=="both" and E.b101.unit=="both","4: both units")
+assert(E.b601.unit=="player","1: automatic")
+assert(E.a9101.unit=="target" and E.d9102.unit=="player","explicit keys follow the choice too")
+assert(E.b102.unit==nil and E.b102.auraIDs==nil,"a cooldown without an aura gets no unit")
+assert(E.b202.ov.auraUnit==2 and E.b102.ov.auraUnit==3)
+Same("track touched",TouchedKeys(),"a9101,b101,b201,b202,b301,d9102")
+Same("track aura touched",AuraTouchedKeys(),"a9101,b101,b201,b202,b301,d9102")
+-- The same choices again: nothing moves.
+asked=AskedTotal()
+Track({b202=2,b201=3,b301=4,b601=1,b101=4,a9101=3,d9102=2,b102=3})
+assert(Resolve.touched[1]==nil and next(Resolve.auraTouched)==nil,"an unchanged choice resyncs nothing")
+Same("choices ask nothing",AskedTotal(),asked)
+-- Changed choices: only those entries resync. 1 is automatic, not a unit of
+-- its own: the harmful b202 goes back to the target.
+Track({b202=1,b201=3,b301=3,b601=1,b101=4,a9101=3,d9102=2,b102=3})
+assert(E.b301.unit=="target" and E.b202.unit=="target","3: the target; 1: automatic (harmful)")
+Same("changed choices touched",AuraTouchedKeys(),"b202,b301")
+-- A choice equal to the automatic unit moves nothing (b601 from automatic to
+-- me, b801 from no choice to me).
+Track({b202=1,b201=3,b301=3,b601=2,b801=2,b101=4,a9101=3,d9102=2,b102=3})
+assert(E.b601.unit=="player" and E.b801.unit=="player")
+Same("same as automatic",AuraTouchedKeys(),"")
+-- A choice holds when the automatic unit moves under it: a harmful override
+-- arrives on b601 (tracked on me) and it stays on the player. Its aura IDs
+-- moved, so it still resyncs; nothing else does.
+infos[601].overrideSpellID=6002
+Catalog.Rebuild()
+Track({b202=1,b201=3,b301=3,b601=2,b801=2,b101=4,a9101=3,d9102=2,b102=3})
+assert(changed==false and E.b601.unit=="player" and E.b601.auraIDs[6002],"the choice beats a harmful override")
+Same("choice under override",AuraTouchedKeys(),"b601")
+infos[601].overrideSpellID=nil
+Catalog.Rebuild()
+Track({b202=1,b201=3,b301=3,b601=2,b801=2,b101=4,a9101=3,d9102=2,b102=3})
+assert(E.b601.unit=="player" and not E.b601.auraIDs[6002])
+Same("override gone under a choice",AuraTouchedKeys(),"b601")
+-- Cleared: every entry is back on its automatic unit, and each one that
+-- moved resyncs.
+Track({})
+assert(E.b202.unit=="target" and E.b201.unit=="player" and E.b301.unit=="player" and E.b601.unit=="player"
+    and E.b801.unit=="player" and E.b101.unit=="player" and E.a9101.unit=="player" and E.d9102.unit=="target"
+    and E.b102.unit==nil,"automatic again")
+Same("cleared touched",AuraTouchedKeys(),"a9101,b101,b201,b301,d9102")
+-- A stored value outside 1-4 (a damaged string) means automatic: nothing moves.
+C.spells={v=1,e={b101={procGlow=false},b102={procGlow=true},b202={auraUnit=7},b201={auraUnit="3"},b301={auraUnit=0/0},
+    a9101={auraUnit=0},d9102={auraUnit=true}}}
+plans,changed=Resolve.Build()
+assert(changed==false and E.b202.unit=="target" and E.b201.unit=="player" and E.b301.unit=="player"
+    and E.a9101.unit=="player" and E.d9102.unit=="target","a malformed choice is automatic")
+Same("malformed touched",AuraTouchedKeys(),"")
+Track({})
+assert(Resolve.touched[1]==nil,"settled")
 -- Per-spec lists and hidden sets: spec 64 has none.
 C.state.specID=64
 local s9002=E.s9002
 plans,changed=Resolve.Build()
 assert(changed==true)
-Same("64 ess",Keys(plans.ess.entries),"b101,b102,b107")
+Same("64 ess",Keys(plans.ess.entries),"b101,b102,b107,b701")
 Same("64 uti",Keys(plans.uti.entries),"b111,b112")
 Same("64 buf",Keys(plans.buf.entries),"b201,b202,b801,b601")
 assert(#plans.c1.entries==0 and #plans.c2.entries==0)
 assert(E.b102==b102 and b102.slot=="ess" and b102.index==2,"moved entry keeps its table")
 assert(E.s9002==nil and s9002.slot==nil and s9002.index==nil,"entries that left are released")
+-- No list names the trinket's slot here: Blizzard's record ends Essential and
+-- routes as it did on Potions and racials (equipment slot and item
+-- cooldowns, bag events, no use count).
+e=E.b701
+assert(e.spell==nil and e.equipSlot==13 and e.itemID==5555 and e.texture==5556 and e.name=="Trinket A")
+assert(e.slot=="ess" and e.index==4 and e.family==1 and e.category==7 and e.known,"the trinket ends the Essential bar")
+Index.Rebuild()
+Same("64 byEquip 13",Keys(Index.byEquip[13]),"b701")
+Same("64 byItem 5555",Keys(Index.byItem[5555]),"b701")
+Same("64 bags",Keys(Index.bags),"b701")
+assert(Index.byEquip[13][1]==e and Index.byItem[5555][1]==e and Index.bags[1]==e,"trinket routes on Essential")
+local counted=false
+for i=1,#Index.counted do if Index.counted[i]==e then counted=true end end
+assert(not counted,"a trinket has no use count")
 -- Preview: unlearned Blizzard entries and placeholders on empty shown bars.
 C.state.specID=63
 C.state.preview=true
 plans=Resolve.Build()
-Same("p ess",Keys(plans.ess.entries),"b101,s9001,b104")
-Same("p ext",Keys(plans.ext.entries),"b701,b702,b501,b502")
+-- Unlearned trinkets stay after Essential's own entries; the learned one
+-- (slot 13) is c1's e13.
+Same("p ess",Keys(plans.ess.entries),"b101,s9001,b104,b702")
+Same("p ext",Keys(plans.ext.entries),"b501,b502")
 Same("p c1",Keys(plans.c1.entries),"b102,s9002,i7001,e13,s1001,s9004")
 Same("p c4",Keys(plans.c4.entries),"pc4_1,pc4_2,pc4_3")
 Same("p def",Keys(plans.def.entries),"pdef_1,pdef_2,pdef_3")     -- unnamed preset spells never fill it
 e=plans.c4.entries[2]
 assert(e.src=="p" and e.texture==134400 and e.family==2 and e.slot=="c4" and e.index==2 and e.known and E[e.key]==e)
+-- Aura placeholders count in the player part (one container, no target row).
+for i=1,#plans.c4.entries do Same("placeholder unit "..i,plans.c4.entries[i].unit,"player") end
+assert(plans.def.entries[1].unit==nil,"a cooldown placeholder watches no unit")
 assert(E.b104.known==false)
 C.state.preview=false
 plans=Resolve.Build()
 assert(#plans.c4.entries==0 and E.pc4_1==nil and E.b104==nil)
 -- Options helpers.
 Same("keys c3",Keys(Resolve.Keys("c3")),"b107")
-Same("keys ess",Keys(Resolve.Keys("ess")),"b101,s9001,b104")
+Same("keys ess",Keys(Resolve.Keys("ess")),"b101,s9001,b104,b702")
 local d=Resolve.Describe("s9004",{})
 assert(d and d.known==false and d.name=="Other spec" and Resolve.Describe("s424242")==nil and Resolve.Describe("zz")==nil)
 assert(C.entries.s9004==nil,"Describe leaves live entries alone")
@@ -399,6 +733,7 @@ for _,row in ipairs(rows) do byKey[row.key]=row end
 assert(byKey.b101.slot=="ess" and byKey.b102.slot=="c1" and byKey.b104.known==false and byKey.b103.category==-1)
 assert(byKey.b201==nil and byKey.e13==nil and byKey.e14==nil and rows[#rows].key:sub(1,1)=="b","no trinket rows")
 assert(byKey.b101.spell==1001 and byKey.b102.spell==1002 and byKey.b107.spell==nil,"rows carry the spell ID")
+assert(byKey.b701 and byKey.b701.slot==nil,"the trinket record has no home while c1 lists its slot")
 rows=Catalog.List(2)
 byKey={}
 for _,row in ipairs(rows) do byKey[row.key]=row end
@@ -407,29 +742,32 @@ assert(byKey.b201.spell==2001 and byKey.b801.spell==8001)
 
 ------------------------------------------------------------------ index
 Index.Rebuild()
-Same("cooldown",Keys(Index.cooldown),"b101,s9001,b112,b701,b501,b502,b102,s9002,i7001,e13,s1001")
+Same("cooldown",Keys(Index.cooldown),"b101,s9001,b112,b501,b502,b102,s9002,i7001,e13,s1001")
 Same("charged",Keys(Index.charged),"b112,s9002")
 Same("ranged",Keys(Index.ranged),"b101,b112,b102,s9002,s1001")
 Same("usable",Keys(Index.usable),"b101,s9001,b112")
 Same("proc",Keys(Index.proc),"s9001,b112,b501,b502,b102")
-Same("items",Keys(Index.items),"b701,b501,i7001,e13")
+Same("items",Keys(Index.items),"b501,i7001,e13")
 Same("aura",Keys(Index.aura),"b202,b801,b601,b301,a9101,d9102,b201")
 Same("overlay",Keys(Index.overlay),"b101")
 Same("assist",Keys(Index.assist),"b101,s9001")
 Same("bySpell 1001",Keys(Index.bySpell[1001]),"b101,s1001")
 Same("bySpell 9003",Keys(Index.bySpell[9003]),"s9002")
-Same("byItem 5555",Keys(Index.byItem[5555]),"b701,e13")
-Same("byEquip 13",Keys(Index.byEquip[13]),"b701,e13")
+Same("byItem 5555",Keys(Index.byItem[5555]),"e13")
+Same("byEquip 13",Keys(Index.byEquip[13]),"e13")
 Same("byCategory 30",Keys(Index.byCategory[30]),"b501")
 -- Item cooldowns reach real items only; potion categories follow their
 -- SPELL_UPDATE_COOLDOWN payload. Use counts matter where counts show.
-Same("bags",Keys(Index.bags),"b701,i7001,e13")
+Same("bags",Keys(Index.bags),"i7001,e13")
 Same("counted",Keys(Index.counted),"b101,s9001,b112,b502,b102,s9002,s1001")
+-- The trinket slot routes from its one home (c1's e13); the spec 64 block
+-- above covers Blizzard's record on Essential.
+assert(E.b701==nil and Index.byEquip[13][1]==E.e13 and Index.byItem[5555][1]==E.e13,"one route per equipment slot")
 -- A category of 0 is no category (0 is truthy): a plain spell stays out of
 -- the bag lists and keeps its use count.
 E.b101.spellCategory=0
 Index.Rebuild()
-Same("items, category 0",Keys(Index.items),"b701,b501,i7001,e13")
+Same("items, category 0",Keys(Index.items),"b501,i7001,e13")
 Same("counted, category 0",Keys(Index.counted),"b101,s9001,b112,b502,b102,s9002,s1001")
 assert(Index.byCategory[0]==nil,"category 0 must not be routed")
 E.b101.spellCategory=nil
@@ -440,8 +778,8 @@ Same("catalog byBase",Keys(Catalog.byBase[1002]),"b102")
 local hits,last=0,nil
 local function Hit(entry) hits=hits+1;last=entry end
 Same("ForSpell shared base",Index.ForSpell(1001,nil,Hit),2)
-Same("ForItem",Index.ForItem(5555,Hit),2)
-Same("ForEquip",Index.ForEquip(13,Hit),2)
+Same("ForItem",Index.ForItem(5555,Hit),1)
+Same("ForEquip",Index.ForEquip(13,Hit),1)
 Same("ForCategory",Index.ForCategory(30,Hit),1)
 Same("ForSpell miss",Index.ForSpell(424242,nil,Hit),0)
 Same("ForSpell secret",Index.ForSpell(Secret(),Secret(),Hit),0)
@@ -500,7 +838,7 @@ CreateFrame=function(...) lateFrame=create(...);return lateFrame end
 local late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={}}}
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
 assert(lateFrame==nil and late.CDM.Catalog.Ready() and lateFrame==nil,"ready without a gate frame")
-assert(late.CDM.Catalog.Rebuild()==true and #late.CDM.Catalog.byBar.ess==3)
+assert(late.CDM.Catalog.Rebuild()==true and #late.CDM.Catalog.byBar.ess==4)
 -- Loaded after login with Blizzard's data still missing: only the data
 -- event is left to wait for.
 IsLoggedIn=function() return true end
@@ -574,26 +912,26 @@ plans=Resolve.Build()
 -- Defensives in preset order claim their Blizzard entries (base, linked or
 -- override ID) off Essential and Utility; unlearned and unnamed spells drop
 -- out. The racial follows Blizzard's Potions and racials entries.
-Bars("preset",{def="b113,s342245,b105,b114",ess="b101,s9001",uti="b112",ext="b701,b501,b502,s28730"})
+Bars("preset",{def="b113,s342245,b105,b114",ess="b101,s9001",uti="b112",ext="b501,b502,s28730"})
 e=E.b113
 assert(e.src=="b" and e.slot=="def" and e.index==1 and e.name=="Ice Block" and e.known)
 e=E.s342245
 assert(e.src=="s" and e.family==1 and e.slot=="def" and e.index==2 and e.known and e.name=="Alter Time" and e.texture==442245)
 assert(E.b105.index==3 and E.b105.linked[1]==55342 and E.b114.spell==235313 and E.b114.name=="Blazing Barrier")
-assert(E.s28730.src=="s" and E.s28730.slot=="ext" and E.s28730.index==4)
+assert(E.s28730.src=="s" and E.s28730.slot=="ext" and E.s28730.index==3)
 assert(E.s110959==nil and E.b115==nil and E.s26297==nil and E.s20594==nil and E.s414658==nil,"unlearned presets stay out")
 -- Preview: the unlearned Blizzard entry dims on Defensives like any other;
 -- preset-only spells stay hidden (other builds' talents, other races' racials).
 C.state.preview=true
 plans=Resolve.Build()
-Bars("preset p",{def="b113,s342245,b105,b114,b115",uti="b112",ext="b701,b702,b501,b502,s28730"})
+Bars("preset p",{def="b113,s342245,b105,b114,b115",uti="b112",ess="b101,s9001,b104,b702",ext="b501,b502,s28730"})
 assert(E.b115.known==false and E.b115.slot=="def" and E.s110959==nil and E.s26297==nil and E.s20594==nil)
 C.state.preview=false
 -- The preset claims only while Defensives is shown: switched off, its
 -- spells go back to their Blizzard bars.
 C.views.def.on=false
 plans=Resolve.Build()
-Bars("preset off",{ess="b101,s9001,b105",uti="b112,b113,b114",ext="b701,b501,b502,s28730"})
+Bars("preset off",{ess="b101,s9001,b105",uti="b112,b113,b114",ext="b501,b502,s28730"})
 assert(plans.def==nil and E.s342245==nil,"a preset-only spell has no bar while Defensives is off")
 C.views.def.on=true
 plans=Resolve.Build()
@@ -601,19 +939,19 @@ Bars("preset on",{def="b113,s342245,b105,b114",uti="b112"})
 -- A spec without lists or hidden entries gets the same preset.
 C.state.specID=64
 plans=Resolve.Build()
-Bars("preset 64",{def="b113,s342245,b105,b114",ess="b101,b102,b107",uti="b111,b112",ext="b701,b501,b502,s28730"})
+Bars("preset 64",{def="b113,s342245,b105,b114",ess="b101,b102,b107,b701",uti="b111,b112",ext="b501,b502,s28730"})
 C.state.specID=63
 -- User lists claim first: presets take only what is left.
 SetLists({c1={"b102","s9002","i7001","e13","a9101","s1001","s9004","b114","s28730"}})
 plans=Resolve.Build()
-Bars("claim",{c1="b102,s9002,i7001,e13,s1001,b114,s28730",def="b113,s342245,b105",uti="b112",ext="b701,b501,b502"})
+Bars("claim",{c1="b102,s9002,i7001,e13,s1001,b114,s28730",def="b113,s342245,b105",uti="b112",ext="b501,b502"})
 -- A user list for Defensives replaces the preset: its entries ignore the
 -- hidden set, the preset's Blizzard entries return to their own bars and the
 -- preset-only spell is gone. A listed preset spell (the options page copies
 -- the preset on the first edit) still stays hidden while unlearned.
 SetLists({def={"b111","b112","s110959"}})
 plans=Resolve.Build()
-Bars("list",{def="b111,b112",ess="b101,s9001,b105",uti="b113,b114",ext="b701,b501,b502,s28730"})
+Bars("list",{def="b111,b112",ess="b101,s9001,b105",uti="b113,b114",ext="b501,b502,s28730"})
 assert(E.s342245==nil and E.b111.slot=="def" and E.b112.index==2)
 C.state.preview=true
 plans=Resolve.Build()
@@ -626,16 +964,57 @@ Bars("empty list",{def="",ess="b101,s9001,b105",uti="b112,b113,b114"})
 -- hidden Blizzard entry does not fall back to its own bar.
 SetLists(nil,{b113=true,s342245=true,s28730=true})
 plans=Resolve.Build()
-Bars("hidden",{def="b105,b114",uti="b112",ext="b701,b501,b502"})
+Bars("hidden",{def="b105,b114",uti="b112",ess="b101,s9001",ext="b501,b502"})
+-- A hidden trinket leaves Essential like any other Blizzard entry.
+SetLists(nil,{b701=true})
+plans=Resolve.Build()
+Bars("hidden trinket",{ess="b101,s9001",ext="b501,b502,s28730"})
+assert(E.b701==nil,"a hidden trinket has no entry")
 -- A user list for Potions and racials keeps the racial after Blizzard's entries.
 SetLists({ext={"b501"}})
 plans=Resolve.Build()
-Bars("ext list",{ext="b501,b701,b502,s28730"})
+Bars("ext list",{ext="b501,b502,s28730",ess="b101,s9001"})
+-- A trinket the user listed on Potions and racials (lists from before
+-- trinkets moved) stays there: explicit lists claim first.
+SetLists({ext={"b701","b501"}})
+plans=Resolve.Build()
+Bars("ext trinket list",{ext="b701,b501,b502,s28730",ess="b101,s9001"})
+assert(E.b701.slot=="ext" and E.b701.index==1)
+-- An equipment slot has one home, like a spell: the first bar (menu order)
+-- that lists it (e13). Blizzard's record for the same slot then stays off
+-- every bar, that one included, so the trinket shows once.
+SetLists({ess={"b101","e13","s9001"}})
+plans=Resolve.Build()
+Bars("e13 on ess",{ess="b101,e13,s9001",c1="b102,s9002,i7001,s1001"})
+assert(E.e13.slot=="ess" and E.b701==nil,"one icon per equipment slot on a bar")
+C.state.preview=true
+plans=Resolve.Build()
+Bars("e13 on ess p",{ess="b101,e13,s9001,b104,b702"})
+C.state.preview=false
+-- The slot listed on Potions and racials (where the picker's trinket rows
+-- used to go) takes the trinket off Essential; c1's later e13 yields.
+SetLists({ext={"e13"}})
+plans=Resolve.Build()
+Bars("e13 on ext",{ext="e13,b501,b502,s28730",ess="b101,s9001",c1="b102,s9002,i7001,s1001",buf="b202,b801,b601"})
+assert(E.e13.slot=="ext" and E.b701==nil,"one home per equipment slot")
+C.state.preview=true
+plans=Resolve.Build()
+Bars("e13 on ext p",{ess="b101,s9001,b104,b702",ext="e13,b501,b502,s28730"})
+C.state.preview=false
+Same("keys ess (e13 on ext)",Keys(Resolve.Keys("ess")),"b101,s9001,b104,b702")
+SetLists()
+plans=Resolve.Build()
+Bars("e13 on c1",{ess="b101,s9001",c1="b102,s9002,i7001,e13,s1001"})
+-- Released, the slot goes back to Blizzard's record on Essential.
+SetLists({c1={"b102"}})
+plans=Resolve.Build()
+Bars("e13 released",{ess="b101,s9001,b701",c1="b102"})
+assert(E.b701.slot=="ess" and E.e13==nil)
 -- Explicit unlearned spells preview; preset spells never do, listed or not.
 SetLists({c1={"s9004","s26297","s110959"}})
 C.state.preview=true
 plans=Resolve.Build()
-Bars("explicit p",{c1="s9004",def="b113,s342245,b105,b114,b115",ext="b701,b702,b501,b502,s28730"})
+Bars("explicit p",{c1="s9004",def="b113,s342245,b105,b114,b115",ext="b501,b502,s28730"})
 assert(E.s9004.known==false and E.s26297==nil and E.s110959==nil)
 C.state.preview=false
 plans=Resolve.Build()
@@ -645,7 +1024,7 @@ UnitClass=function() return "Warrior","WARRIOR",1 end
 Catalog.Rebuild()
 SetLists()
 plans=Resolve.Build()
-Bars("warrior",{def="",ess="b101,s9001,b105",uti="b112,b113,b114",ext="b701,b501,b502,s28730"})
+Bars("warrior",{def="",ess="b101,s9001,b105",uti="b112,b113,b114",ext="b501,b502,s28730"})
 UnitClass=function() return "Mage","MAGE",8 end
 Catalog.Rebuild()
 plans=Resolve.Build()
@@ -653,6 +1032,143 @@ Bars("mage again",{def="b113,s342245,b105,b114"})
 -- Options helpers: the keys a bar holds include unlearned Blizzard entries
 -- (the page dims them) but, like every preview, no unlearned preset spell.
 Same("keys def",Keys(Resolve.Keys("def")),"b113,s342245,b105,b114,b115")
-Same("keys ext",Keys(Resolve.Keys("ext")),"b701,b702,b501,b502,s28730")
+Same("keys ext",Keys(Resolve.Keys("ext")),"b501,b502,s28730")
+Same("keys ess (presets)",Keys(Resolve.Keys("ess")),"b101,s9001,b104,b702")
+
+------------------------------------------------------------------ presets: healthstones
+-- Potions and racials offers the Healthstone and the Demonic Healthstone
+-- (Presets.CONSUMABLES, plain item entries) after Blizzard's entries and
+-- before the racial. A learned Blizzard record of the same spellCategory,
+-- on any bar, replaces its item, so each healthstone shows once. Both kinds
+-- hide while the bags hold none (hideEmpty); potions and spells never do.
+local CONSUMABLES=Presets.CONSUMABLES
+assert(#CONSUMABLES==2 and CONSUMABLES[1].item==5512 and CONSUMABLES[1].category==1711
+    and CONSUMABLES[2].item==224464 and CONSUMABLES[2].category==2566,"the Healthstone, then the Demonic Healthstone")
+for i=1,#CONSUMABLES do
+    local c=CONSUMABLES[i]
+    assert(Presets.CATEGORY_ITEMS[c.category][1]==c.item,"item "..c.item.." counts for its category")
+end
+-- An item the client has no icon for makes no entry and no key for the page.
+Bars("no stone icons",{ext="b501,b502,s28730"})
+local itemIcons={[7001]=777,[5555]=5556,[5512]=538745,[224464]=538744}
+local itemNames={[7001]="Potion",[5555]="Trinket A",[5512]="Healthstone",[224464]="Demonic Healthstone"}
+local getIcon,getName=C_Item.GetItemIconByID,C_Item.GetItemNameByID
+C_Item.GetItemIconByID=function(id) return itemIcons[id] end
+C_Item.GetItemNameByID=function(id) return itemNames[id] end
+plans=Resolve.Build()
+Bars("healthstones",{ext="b501,b502,i5512,i224464,s28730",ess="b101,s9001"})
+Same("keys ext (healthstones)",Keys(Resolve.Keys("ext")),"b501,b502,i5512,i224464,s28730")
+e=E.i5512
+assert(e.src=="i" and e.itemID==5512 and e.slot=="ext" and e.index==3 and e.known and e.hideEmpty==true
+    and e.texture==538745 and e.name=="Healthstone","the Healthstone item entry")
+assert(E.i224464.index==4 and E.i224464.hideEmpty==true and E.s28730.index==5,"potions, healthstones, racial")
+assert(E.b501.hideEmpty==false and E.b502.hideEmpty==false and E.b101.hideEmpty==false and E.s28730.hideEmpty==false,
+    "potions and spells never hide")
+-- Routed like any bag item: contents and item cooldowns.
+Index.Rebuild()
+local function Has(list,entry) for i=1,#list do if list[i]==entry then return true end end return false end
+Same("byItem 5512",Keys(Index.byItem[5512]),"i5512")
+assert(Has(Index.items,E.i5512) and Has(Index.bags,E.i5512) and Has(Index.items,E.i224464) and Has(Index.bags,E.i224464),
+    "healthstones follow bag contents and item cooldowns")
+-- The per-spec hidden set removes one like the racial.
+SetLists(nil,{i5512=true})
+plans=Resolve.Build()
+Bars("stone hidden",{ext="b501,b502,i224464,s28730"})
+assert(E.i5512==nil,"a removed healthstone has no entry")
+-- A user list for Potions and racials keeps them after Blizzard's entries,
+-- in place when the list names one.
+SetLists({ext={"b501"}})
+plans=Resolve.Build()
+Bars("stones after a list",{ext="b501,b502,i5512,i224464,s28730"})
+SetLists({ext={"i224464","b502"}})
+plans=Resolve.Build()
+Bars("listed stone",{ext="i224464,b502,b501,i5512,s28730"})
+-- User lists claim first: a healthstone listed on a custom bar lives there.
+SetLists({c1={"b102","s9002","i7001","e13","a9101","s1001","s9004","i5512"}})
+plans=Resolve.Build()
+Bars("stone on c1",{c1="b102,s9002,i7001,e13,s1001,i5512",ext="b501,b502,i224464,s28730"})
+-- The preset claims only while Potions and racials is shown.
+SetLists()
+C.views.ext.on=false
+plans=Resolve.Build()
+assert(plans.ext==nil and E.i5512==nil and E.i224464==nil,"no healthstone entry while the bar is off")
+C.views.ext.on=true
+-- Blizzard's own records: a learned Healthstone record on Potions and
+-- racials, and a Demonic Healthstone record a Blizzard layout moved to
+-- Essential, each replace their item. Both hide while empty.
+local essSetPresets,extSet=sets[0],sets[5]
+sets[0]={101,102,103,104,107,105,504}
+sets[5]={501,502,101,503}
+infos[503]=Info(503,5,5003,{spellCategoryID=1711})
+infos[504]=Info(504,0,5004,{spellCategoryID=2566})
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("blizzard stones",{ext="b501,b502,b503,s28730",ess="b101,s9001,b504"})
+assert(E.i5512==nil and E.i224464==nil and E.b503.hideEmpty==true and E.b504.hideEmpty==true,"one healthstone each, Blizzard's")
+assert(E.b503.texture=="Interface/ICONS/Warlock_ Healthstone" and E.b504.texture=="Interface/ICONS/Warlock_ Bloodstone")
+Same("keys ext (blizzard stones)",Keys(Resolve.Keys("ext")),"b501,b502,b503,s28730")
+-- An unlearned record does not count: the item stands in for it, and the
+-- record stays out of previews and the page's keys next to it.
+infos[503].isKnown=false
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("unlearned stone record",{ext="b501,b502,i5512,s28730"})
+C.state.preview=true
+plans=Resolve.Build()
+Bars("unlearned stone record p",{ext="b501,b502,i5512,s28730"})
+C.state.preview=false
+Same("keys ext (unlearned record)",Keys(Resolve.Keys("ext")),"b501,b502,i5512,s28730")
+-- A healthstone has two keys, its item and Blizzard's record, and a list can
+-- hold either (the page saves the keys the bar shows). Both name one entry:
+-- the learned record, else the item that stands in for it, at the list's
+-- place. A list saved while the item stood in, after the record is learned:
+SetLists({ext={"b501","b502","i5512","s28730"}})
+plans=Resolve.Build()
+Bars("listed stand-in",{ext="b501,b502,i5512,s28730"})
+infos[503].isKnown=true
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("listed stand-in learned",{ext="b501,b502,b503,s28730"})
+assert(E.i5512==nil and E.b503.index==3,"the record takes the item's place")
+Same("keys ext (listed stand-in learned)",Keys(Resolve.Keys("ext")),"b501,b502,b503,s28730")
+-- A list saved while the record was learned, after it is unlearned:
+SetLists({ext={"b501","b502","b503","s28730"}})
+plans=Resolve.Build()
+Bars("listed record",{ext="b501,b502,b503,s28730"})
+infos[503].isKnown=false
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("listed record unlearned",{ext="b501,b502,i5512,s28730"})
+assert(E.b503==nil and E.i5512.index==3,"the item takes the record's place")
+C.state.preview=true
+plans=Resolve.Build()
+Bars("listed record unlearned p",{ext="b501,b502,i5512,s28730"})
+C.state.preview=false
+Same("keys ext (listed record unlearned)",Keys(Resolve.Keys("ext")),"b501,b502,i5512,s28730")
+-- A list that already holds both keys shows one, at the first one's place.
+SetLists({ext={"i5512","b501","b503"}})
+plans=Resolve.Build()
+Bars("both keys",{ext="i5512,b501,b502,s28730"})
+infos[503].isKnown=true
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("both keys learned",{ext="b503,b501,b502,s28730"})
+Same("keys ext (both keys)",Keys(Resolve.Keys("ext")),"b503,b501,b502,s28730")
+-- One home: a listed item takes its learned record along, off Blizzard's bar.
+SetLists({c1={"b102","e13","i5512"},ext={"i224464"}})
+plans=Resolve.Build()
+Bars("stones listed as items",{c1="b102,e13,b503",ext="b504,b501,b502,s28730",ess="b101,s9001"})
+assert(E.i5512==nil and E.i224464==nil and E.b503.slot=="c1" and E.b504.slot=="ext","one healthstone each")
+SetLists()
+infos[503].isKnown=false
+sets[0],sets[5],infos[503],infos[504]=essSetPresets,extSet,nil,nil
+C_Item.GetItemIconByID,C_Item.GetItemNameByID=getIcon,getName
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("stones gone",{ext="b501,b502,s28730"})
+
+-- Across every catalog generation, spec and preview above, each spell ID was
+-- asked whether it is harmful once.
+for id,count in pairs(harmfulCalls) do Same("asked once in the run "..id,count,1) end
 
 print("cooldown manager data contract ok: "..#Catalog.order.." records, "..#Index.cooldown.." cooldown entries")

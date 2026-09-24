@@ -431,10 +431,10 @@ local function Movers()
             isEnabled=function() return index<=M.config.windowCount end,
             historyKeys={D.KEYS[i].Width,D.KEYS[i].Height},
             extraControls={
-                {id="width",label="Width",kind="number",min=150,max=900,step=5,
+                {id="width",label="Width",kind="number",min=150,max=900,step=1,
                     get=function() return S.Config("damageMeter")[D.KEYS[index].Width] end,
                     set=function(value) return S.Set("damageMeter",D.KEYS[index].Width,value) end},
-                {id="height",label="Height",kind="number",min=50,max=900,step=5,
+                {id="height",label="Height",kind="number",min=50,max=900,step=1,
                     get=function() return S.Config("damageMeter")[D.KEYS[index].Height] end,
                     set=function(value) return S.Set("damageMeter",D.KEYS[index].Height,value) end},
             }}

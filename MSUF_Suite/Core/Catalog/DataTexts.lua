@@ -54,12 +54,24 @@ local textStyle = {
     Font("font", "Font"),
     Number("fontSize", "Text size", NS.Client.isForever and 11 or 12, 9, 22),
     Choice("textOutline", "Text outline", 1, { "Outline", "Thick outline", "None", "Monochrome outline" }),
+    Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Bool("fontShadow", "Text shadow"),
+    Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+    Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Choice("textAlign", "Text alignment", 2, { "Left", "Center", "Right" }),
     Bool("showLabels", "Show data names", true),
     Color("labelColor", "Label color", initial.label),
     Color("valueColor", "Value color", initial.value),
     Color("warningColor", "Warning color", initial.warning),
 }
+for _, rule in ipairs(textStyle) do
+    if rule.key == "fontShadow" then
+        rule.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
+    elseif rule.key == "fontShadowOpacity" or rule.key == "fontShadowDistance" then
+        rule.enableKey = "fontShadow"
+        rule.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
+    end
+end
 local dependencies = {
     backgroundTexture = "backgroundEnabled", backgroundOpacity = "backgroundEnabled",
     borderSize = "borderEnabled", separatorSize = "separatorEnabled",
@@ -95,7 +107,10 @@ local function AddBarStyle(bar)
             for field, value in pairs(rule) do own[field] = value end
             own.key = NS.DataTextBarStyleKey(bar, rule.key)
             own.enableKey = rule.enableKey and NS.DataTextBarStyleKey(bar, rule.enableKey) or switch.key
-            if own.color then own.hideInColors = true end
+            if rule.requiresChoice then
+                own.requiresChoice = { key = NS.DataTextBarStyleKey(bar, rule.requiresChoice.key),
+                    values = rule.requiresChoice.values }
+            end
             B.Add("dataTexts", own, section, "Bar " .. bar .. " styling")
         end
     end
@@ -146,6 +161,8 @@ function NS.DataTextEffectiveStyle(config, bar)
         separatorEnabled = Value("separatorEnabled"), separatorSize = Value("separatorSize"),
         separatorColor = ColorValue("separator"), padding = Value("padding"), gap = Value("gap"),
         font = Value("font"), fontSize = Value("fontSize"), textOutline = Value("textOutline"),
+        fontRendering = Value("fontRendering"), fontShadow = Value("fontShadow"),
+        fontShadowOpacity = Value("fontShadowOpacity"), fontShadowDistance = Value("fontShadowDistance"),
         textAlign = Value("textAlign"), showLabels = Value("showLabels"),
         labelColor = ColorValue("label"), valueColor = ColorValue("value"), warningColor = ColorValue("warning"),
     }

@@ -90,11 +90,21 @@ B.Section(id, "cooldowns", "Cooldowns and states", {
 B.Section(id, "text", "Text", {
     Font("font", "Font"),
     Choice("fontOutline", "Text outline", 1, { "Outline", "Thick outline", "None" }),
+    Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Bool("fontShadow", "Text shadow"),
+    Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+    Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Color("keybindColor", "Keybind color", initial.keybindColor),
     Color("macroColor", "Macro name color", initial.macroColor),
     Color("countColor", "Count color", initial.countColor),
     Color("cooldownColor", "Cooldown number color", initial.cooldownColor),
 })
+local textRules = NS.SuiteCatalog[id].rules
+textRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
+for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
+    textRules[key].enableKey = "fontShadow"
+    textRules[key].requiresChoice = textRules.fontShadow.requiresChoice
+end
 B.Section(id, "behavior", "Behavior", {
     Bool("mouseoverShowAll", "Hovering one mouseover bar reveals all of them", false),
     Bool("showOnDrag", "Show hidden bars while dragging a spell", true),

@@ -108,7 +108,9 @@ Setter("UnregisterAllEvents",function(self) self.events={} end)
 Setter("SetTexture",function(self,tex) self.tex=tex end,true)
 Setter("SetVertexColor",function(self,r,g,b) self.vc={r,g,b} end,true)
 Setter("SetText",function(self,text) self.text=text end)
-Setter("SetFont",function(self,path,size) Plain(size,"SetFont");self.font=path;self.size=size end)
+Setter("SetFont",function(self,path,size,flags) Plain(size,"SetFont");self.font=path;self.size=size;self.fontFlags=flags end)
+Setter("SetShadowColor",function(self,r,g,b,a) self.shadowColor={r,g,b,a} end)
+Setter("SetShadowOffset",function(self,x,y) self.shadowOffset={x,y} end)
 Setter("SetCooldownFromDurationObject",function(self,duration)
     assert(getmetatable(duration)==_G.DurationMT,"not a duration object");self.running=duration
 end)
@@ -122,15 +124,67 @@ for _,name in ipairs({"EnableMouse","EnableMouseMotion","SetDesaturated","SetAtl
     "SetHideCountdownNumbers","SetReverse","SetCountdownFormatter","SetClampedToScreen","SetMouseClickEnabled",
     "SetMouseMotionEnabled","SetJustifyH","SetWordWrap","SetFlowLayoutAxis","SetFlowLayoutAnchorPoint",
     "SetFlowLayoutGrowthDirection","SetFlowLayoutMaximumLineSize","SetFlowLayoutPadding","SetAuraGroupFilterString",
-    "SetAuraSlotFilterString","SetAuraGroupEnabled","SetAuraSlotEnabled","SetAuraGroupMaxFrameCount","SetEditModePreviewEnabled"}) do
+    "SetAuraSlotFilterString","SetAuraGroupMaxFrameCount","SetEditModePreviewEnabled"}) do
     Setter(name,nil,true)
 end
 for _,name in ipairs({"SetTexCoord","SetColorTexture","SetDesaturation","SetTextColor","SetSwipeColor","SetLooping",
     "SetDuration","SetFromAlpha","SetToAlpha","SetFlipBookRows","SetFlipBookColumns","SetFlipBookFrames",
     "SetFlipBookFrameWidth","SetFlipBookFrameHeight","SetStatusBarTexture","SetStatusBarColor","SetMinMaxValues","SetValue",
-    "AddAuraGroup","AddAuraSlot","SetAuraGroupCandidateFilters","SetAuraSlotCandidateFilters","SetAuraGroupLayout",
+    "SetAuraGroupLayout",
     "SetOwner","SetSpellByID","SetItemByID","SetInventoryItem","SetTooltipAnchorPoint"}) do
     Setter(name)
+end
+-- Compact aura containers remember each group's spell IDs and on state, so
+-- the test reads which container (unit) tracks an entry.
+function Widget:Group(key)
+    local groups=self.groups or {}
+    self.groups=groups
+    local group=groups[key] or {on=true}
+    groups[key]=group
+    return group
+end
+function Widget:Tracks(id)
+    for _,group in pairs(self.groups or {}) do if group.on and group.ids and group.ids[id] then return true end end
+    return false
+end
+Setter("AddAuraGroup",function(self,key,_,opts)
+    local group=self:Group(key)
+    group.on,group.ids=true,{}
+    for id in pairs(opts.candidateFilters.includeSpellIDs or {}) do group.ids[id]=true end
+end)
+Setter("SetAuraGroupCandidateFilters",function(self,key,filters)
+    local group=self:Group(key)
+    group.ids={}
+    for id in pairs(filters.includeSpellIDs or {}) do group.ids[id]=true end
+end)
+Setter("SetAuraGroupEnabled",function(self,key,on) self:Group(key).on=on==true end,true)
+-- Fixed-place slots (AuraSlots) record their spell IDs and on state like
+-- groups, so Tracks reads both. While Widget.InitSlots(true) holds, a new
+-- slot also gets its one button through initializeFrame, as the client
+-- does, so the test reads the cell each slot follows.
+do
+    local initSlots=false
+    function Widget.InitSlots(on) initSlots=on==true end
+    local BUTTON={"SetIcon","SetDurationCooldown","SetDurationText","SetDurationBar","SetSpellName","SetApplicationCount",
+        "SetApplicationBar"}
+    local function Ignore() end
+    Setter("AddAuraSlot",function(self,key,_,opts)
+        local group=self:Group(key)
+        group.on,group.slot,group.ids=true,true,{}
+        for id in pairs(opts.candidateFilters.includeSpellIDs or {}) do group.ids[id]=true end
+        if initSlots then
+            local button=New("AuraButton",self)
+            for i=1,#BUTTON do button[BUTTON[i]]=Ignore end
+            group.button=button
+            opts.initializeFrame(button)
+        end
+    end)
+    Setter("SetAuraSlotCandidateFilters",function(self,key,filters)
+        local group=self:Group(key)
+        group.ids={}
+        for id in pairs(filters.includeSpellIDs or {}) do group.ids[id]=true end
+    end)
+    Setter("SetAuraSlotEnabled",function(self,key,on) self:Group(key).on=on==true end,true)
 end
 function Widget:GetWidth() return self.w end
 function Widget:GetHeight() return self.h end
@@ -361,6 +415,16 @@ C_Spell={
     GetLastCategoryCooldownSource=function(category)
         if category==4 and not combat then return 431932,212265 end
     end,
+    -- Harmful spells (a DoT like Ignite, Deathstalker's Mark): a Blizzard
+    -- aura entry with any harmful aura ID is tracked on the target, the
+    -- rest on the player. Calls are counted per ID (Resolve caches them).
+    harmful={[302]=true,[3011]=true},
+    harmChecks={},
+    IsSpellHarmful=function(spell)
+        Plain(spell,"IsSpellHarmful")
+        C_Spell.harmChecks[spell]=(C_Spell.harmChecks[spell] or 0)+1
+        return C_Spell.harmful[spell]==true
+    end,
 }
 C_SpellBook={
     IsSpellKnownOrInSpellBook=function(spell) return known[spell]==true end,
@@ -371,7 +435,9 @@ C_Item={
     GetItemIconByID=function(item) if item==9002 or item==7777 then return 5000+item end end,
     GetItemNameByID=function(item) if item==9002 then return "Healthstone" end if item==7777 then return "Trinket" end end,
     GetItemSpell=function(item) if item==9002 then return "Use Item",9102 end end,
-    GetItemCooldown=function() return 0,0,true end,
+    -- Item cooldowns by item ID ({start,length,enable}); none by default.
+    cooldowns={},
+    GetItemCooldown=function(item) local cd=C_Item.cooldowns[item];if cd then return cd[1],cd[2],cd[3] end return 0,0,true end,
     GetItemCount=function(item) return bagCounts[item] or 2 end,
     IsUsableItem=function() return true,false end,
 }
@@ -530,8 +596,11 @@ assert(S.CooldownManagerStatus()==nil and not S.CooldownManagerSetPreview(true),
 -- The page's request is kept for the next activation; closing the page takes it back.
 assert(S.CooldownManagerSetPreview(false),"turning the preview off always succeeds")
 local coldRows=S.CooldownManagerBarEntries("ess")
-assert(#coldRows==4 and coldRows[3].key=="b13" and coldRows[3].known==false and coldRows[1].known==true,
-    "the options page lists a bar before the module ever ran")
+assert(#coldRows==5 and coldRows[3].key=="b13" and coldRows[3].known==false and coldRows[1].known==true
+    and coldRows[5].key=="b71","the options page lists a bar before the module ever ran (trinket last)")
+-- Rows say which cooldowns track a buff (the popover's stack rows follow it).
+assert(coldRows[2].key=="b12" and coldRows[2].hasAura==true and coldRows[1].hasAura==false
+    and coldRows[5].hasAura==false,"bar rows carry hasAura")
 assert(#S.CooldownManagerBarEntries("nope")==0)
 local barStage=New("Frame",UIParent)
 local rowsCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200),"buff bar canvas")
@@ -610,11 +679,25 @@ for _,slot in ipairs({"ess","uti","def","ext","buf","bar"}) do
     assert(bars[slot] and bars[slot].shown and bars[slot].frame.shown,slot.." bar not shown")
 end
 assert(not (bars.c1 and bars.c1.shown),"custom bars start off")
-assert(C.Icons.Count("ess")==3 and C.Icons.Count("uti")==2 and C.Icons.Count("ext")==3,"cooldown icons per bar")
+assert(C.Icons.Count("ess")==4 and C.Icons.Count("uti")==2 and C.Icons.Count("ext")==2,"cooldown icons per bar")
+-- The trinket slot joins the end of Essential; Potions and racials keeps the
+-- racial and the potion category.
+local trinket=assert(C.entries.b71,"trinket entry")
+assert(trinket.slot=="ess" and trinket.index==4 and trinket.icon and trinket.equipSlot==13 and trinket.itemID==7777,
+    "the trinket ends the Essential bar")
+assert(C.entries.b51.slot=="ext" and C.entries.b52.slot=="ext","potions and racials stay")
 assert(not C.entries.b13,"unlearned spells stay out of live bars")
 local e11,e12,e14,e21,e22=C.entries.b11,C.entries.b12,C.entries.b14,C.entries.b21,C.entries.b22
 assert(e11.icon and e12.icon and e14.icon and e21.icon and e22.icon)
 assert(C.entries.b52.catSpell==431932,"category entries are seeded from the last category source")
+-- Every Blizzard aura entry gets one unit: the target when an aura ID is
+-- harmful (Ignite, a DoT), else the player. Blizzard's selfAura flag plays
+-- no part: Ignite is no self aura and was tracked on both units before.
+assert(C.entries.b32.unit=="target" and C.entries.b31.unit=="player" and e12.unit=="player" and C.entries.b41.unit=="player",
+    "harmful Blizzard auras track on the target, the rest on the player")
+assert(e11.unit==nil and e21.unit==nil,"cooldowns without an aura track no unit")
+assert(C_Spell.harmChecks[302]==1 and C_Spell.harmChecks[301]==1 and C_Spell.harmChecks[102]==1,
+    "the harmful check runs once per spell ID")
 assert(config.ess_keybind==false and (e12.icon.lastKey or "")=="","keybind text starts off on the Essential bar")
 assert(C.state.specID==63 and C.state.specTag==82,"spec detection")
 assert(bars.ess.frame.point[1]=="TOP" and bars.ess.frame.point[2]==UIParent and bars.ess.frame.point[3]=="CENTER"
@@ -736,6 +819,12 @@ assert(cdCalls==1 and cdSpells[201]~=nil,"a GCD start refreshed icons that ignor
 cdCalls,invCalls=0,0
 Fire("SPELL_UPDATE_COOLDOWN",nil)
 assert(cdCalls==7 and invCalls==1,"nil payload refreshes each cooldown icon once ("..cdCalls..")")
+-- The trinket on Essential reads its cooldown by equipment slot on bag
+-- cooldown events, as it did on Potions and racials.
+invCalls=0
+assert(Fire("BAG_UPDATE_COOLDOWN"))
+Run()
+assert(invCalls==1 and C.entries.b71.slot=="ess","item cooldowns reach the trinket on Essential ("..invCalls..")")
 -- A GCD start that matches nothing touches nothing while icons ignore the GCD.
 cdCalls=0
 Fire("SPELL_UPDATE_COOLDOWN",55555,nil,nil,133)
@@ -829,8 +918,9 @@ assert(potion.lastCount==2*#potions and potion.count.text==2*#potions,"the count
 -- the spell's display count never replaces it.
 Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
 assert(potion.count.text==2*#potions,"a category cooldown refresh replaced the bag count with the spell display count")
--- Marks in one frame: a bag mark keeps the entry's cooldown, so it never
--- replaces a pending charges mark; charges replaces a pending bag mark.
+-- Marks in one frame merge to the one that refreshes most: a bag mark keeps
+-- the entry's cooldown, so it never replaces a pending recharge mark; a
+-- recharge mark replaces a pending bag mark and never a use-count mark.
 do
     local entry=C.entries.b52
     local charged=C.Index.charged
@@ -848,13 +938,39 @@ do
     end
     assert(Registered("SPELL_UPDATE_CHARGES") and Registered("BAG_UPDATE_DELAYED"))
     local got=Marks("SPELL_UPDATE_CHARGES","BAG_UPDATE_DELAYED")
-    assert(got=="charges","a bag mark replaced a pending charges mark ("..got..")")
+    assert(got=="recharge","a bag mark replaced a pending recharge mark ("..got..")")
     got=Marks("BAG_UPDATE_DELAYED","SPELL_UPDATE_CHARGES")
-    assert(got=="charges","a charges mark did not replace a pending bag mark ("..got..")")
+    assert(got=="recharge","a recharge mark did not replace a pending bag mark ("..got..")")
     got=Marks("BAG_UPDATE_DELAYED","BAG_UPDATE_DELAYED")
     assert(got=="item","bag contents refresh the entry once ("..got..")")
     C.Time.Refresh=realRefresh
     charged[#charged]=nil
+end
+-- SPELL_UPDATE_CHARGES names no spell. While a charge is available (the
+-- main swipe is clear) it reads only the recharge swipe and the count, no
+-- main cooldown; a pending use-count mark keeps its full refresh.
+do
+    cdState[101]=nil
+    Fire("SPELL_UPDATE_COOLDOWN",101)
+    assert(not e11.icon.cdSet,"a charge is available: the main swipe is clear")
+    chargeState[101].isActive=true
+    local reasons,realRefresh={},C.Time.Refresh
+    C.Time.Refresh=function(e,reason)
+        if e==e11 then reasons[#reasons+1]=reason end
+        return realRefresh(e,reason)
+    end
+    cdCalls=0
+    Fire("SPELL_UPDATE_CHARGES")
+    Run()
+    assert(table.concat(reasons,",")=="recharge" and cdCalls==0,"a charge event queried the main cooldown ("..cdCalls..")")
+    assert(e11.icon.chargeCd.running,"the recharge swipe follows the charge event")
+    assert(Registered("SPELL_UPDATE_USES"))
+    for i=#reasons,1,-1 do reasons[i]=nil end
+    Fire("SPELL_UPDATE_USES",101)
+    Fire("SPELL_UPDATE_CHARGES")
+    Run()
+    assert(table.concat(reasons,",")=="charges","a recharge mark replaced a pending use-count mark")
+    C.Time.Refresh=realRefresh
 end
 
 ------------------------------------------------------------------ overrides
@@ -929,6 +1045,15 @@ Step("ess_cdAlpha",100)
 Step("ess_procGlow",false)
 assert(Calls("index")==1 and Calls("iconSync")+Calls("auraSync")==0,"spell alert glows change routing membership")
 Step("ess_procGlow",true)
+-- The glow look styles aura glows too: the bar's overlays and an aura bar's
+-- buttons restyle through their diffed sync, no icon sync or re-route.
+for _,key in ipairs({"ess_glowStyle","ess_glowTint","ess_glowColor"}) do
+    local was=config[key]
+    Step(key,key=="ess_glowStyle" and 3 or key=="ess_glowTint" and not was or "3399ff")
+    assert(Calls("auraSync")==1 and Calls("iconSync")+Calls("index")+Calls("layoutAll")==0,
+        key.." restyles the bar's aura glows only")
+    Step(key,was)
+end
 local tipGen=C.views.ess.styleGen
 Step("ess_tooltips",true)
 -- Restyle: icons and the bar's aura overlays (Auras.Restyle is their diffed sync), no icon sync.
@@ -1127,29 +1252,390 @@ assert(KeyList(values)=="c1_anchor,c1_x,c1_y" and values.c1_anchor==2 and values
 values=assert(S.CooldownManagerConvertAnchor("ext",1))
 assert(values.ext_anchor==1 and type(values.ext_x)=="number","a bar on the player frame converts to free too")
 assert(S.CooldownManagerConvertAnchor("nope",1)==nil and S.CooldownManagerConvertAnchor("ess","1")==nil,"invalid attach")
--- Aura bars reserve player entries first and target entries from a new
--- line, so a conversion sizes them as two groups (two lines of 3 here, not one).
+-- Compact aura bars reserve player entries first and target entries from a
+-- new line, so a conversion sizes them as two groups. A centered row that
+-- mixes both and fits one line splits at its center (Layout.FixedAuras) and
+-- lays out as one line: 2+1 at three per line is one line.
 local auraLists=config.listsData
 config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"},
     c2={"a401","a301","d302"}},[63]={c1={"s9001","i9002"}}}}))
 config.c2_kind,config.c2_perRow=2,3
 module:Refresh()
 Run()
-assert(C.plans.c2.kind==2 and #C.plans.c2.entries==3 and C.entries.d302.unit=="target")
+assert(C.plans.c2.kind==2 and #C.plans.c2.entries==3 and C.entries.d302.unit=="target" and C.entries.a401.unit=="player")
+assert(select(3,C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries))==true
+    and not C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries),"a centered mixed row on one line splits, compact")
+-- 36 px icons, 2 px apart: one line of three cells.
+assert(bars.c2.lines1==1 and bars.c2.lines2==1 and bars.c2.frame.w==112 and bars.c2.frame.h==36,
+    "three entries at three per line lay out as one line ("..tostring(bars.c2.frame.w).."x"..tostring(bars.c2.frame.h)..")")
 bars.c2.frame.rect={400,300,74,74}
 values=assert(S.CooldownManagerConvertGrow("c2",2))
-assert(values.c2_x==437-512 and values.c2_y==300+37-384-37,"aura bars convert with both groups' lines ("..tostring(values.c2_y)..")")
--- A Blizzard buff that is not a self aura ("both") sits in the target row,
--- as the aura layer and the layout draw it: 2+2 at two per line is two
--- lines, not three.
-config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"},
-    c2={"a401","a301","b32","d302"}},[63]={c1={"s9001","i9002"}}}}))
+assert(values.c2_x==437-512 and values.c2_y==300+37-384-18,"one line holds both groups when they fit ("..tostring(values.c2_y)..")")
+-- 2+1 at two per line: the player line, then the target line.
 config.c2_perRow=2
 module:Refresh()
 Run()
-assert(#C.plans.c2.entries==4 and C.entries.b32.unit=="both" and C.entries.b32.slot=="c2" and C.Auras.TargetRow(C.entries.b32))
+assert(select("#",C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries))==3
+    and not C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries)
+    and not select(3,C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries)),"over two lines the row stays compact, unsplit")
+assert(bars.c2.lines1==1 and bars.c2.lines2==1 and bars.c2.frame.w==74 and bars.c2.frame.h==74,"a player line, then a target line")
 values=assert(S.CooldownManagerConvertGrow("c2",2))
-assert(values.c2_y==300+37-384-37,"a 'both' entry converts in the target row ("..tostring(values.c2_y)..")")
+assert(values.c2_x==437-512 and values.c2_y==300+37-384-37,"aura bars convert with both groups' lines ("..tostring(values.c2_y)..")")
+-- Per-spell "Track on" (auraUnit) travels through spellsData: 1 automatic
+-- (harmful aura IDs on the target, the rest on the player), 2 the player,
+-- 3 the target, 4 both ("both" counts in the player part). A change resolves
+-- the entry's unit again, marks it aura-touched and resyncs its bar: the
+-- entry moves between the player and the target container, the target part
+-- moves by the player lines, and the layout and conversion follow.
+do (function()
+    local keptSpells=config.spellsData
+    config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"},
+        c2={"a401","a301","b32","d303"}},[63]={c1={"s9001","i9002"}}}}))
+    module:Refresh()
+    Run()
+    local b32=C.entries.b32
+    assert(#C.plans.c2.entries==4 and b32.slot=="c2" and b32.unit=="target" and C.Auras.TargetRow(b32)
+        and b32.ov.auraUnit==nil,"automatic: Ignite (harmful) tracks on the target")
+    -- Automatic: any harmful aura ID decides (base, override, tooltip or
+    -- linked); Blizzard's selfAura flag does not. Cooldowns without an aura
+    -- track nothing. Probed through Describe on records of our own.
+    local records=C.Catalog.records
+    local probes={
+        {spell=301,linked={3011},selfAura=true,unit="target"},{spell=301,tooltip=302,unit="target"},
+        {spell=301,override=302,unit="target"},{spell=301,unit="player"},{spell=302,family=1,unit="target"},
+        {spell=302,family=1,hasAura=false},
+    }
+    for i=1,#probes do
+        local probe,id=probes[i],9900+i
+        records[id]={id=id,key="b"..id,spell=probe.spell,override=probe.override,tooltip=probe.tooltip,
+            linked=probe.linked or C.EMPTY,family=probe.family or 2,hasAura=probe.hasAura~=false,
+            selfAura=probe.selfAura==true,known=true,charges=false}
+        local d=assert(C.Resolve.Describe("b"..id,{}),"probe "..i)
+        records[id]=nil
+        assert(d.unit==probe.unit,"automatic unit of probe "..i..": "..tostring(d.unit))
+    end
+    assert(C_Spell.harmChecks[3011]==1 and C_Spell.harmChecks[302]==1 and C_Spell.harmChecks[301]==1,
+        "probes reuse the cached answers")
+    local _,h,sp=C.Layout.Metrics(C.views.c2)
+    -- Compact containers flow from the bar's aura host (its frame without one).
+    local frame=bars.c2.frame
+    local host=bars.c2.auraHost or frame
+    -- The live (shown, enabled) containers of c2 by unit.
+    local function Live()
+        local found={}
+        for i=1,#all do
+            local w=all[i]
+            if w.kind=="AuraContainer" and (w.parent==host or w.parent==frame) and w.shown and w.enabled and w.unit then
+                assert(not found[w.unit],"two live "..w.unit.." containers on one bar")
+                found[w.unit]=w
+            end
+        end
+        return found.player,found.target
+    end
+    local function Track(value)
+        local e={b11={readyGlow=true,glowStyle=2}}
+        if value~=nil then e.b32={auraUnit=value} end
+        config.spellsData=assert(Codec.EncodeSpells({v=1,e=e}))
+        ResetCalls()
+        module:Refresh()
+        Run()
+    end
+    -- value, unit, player lines before the target part (2 per line: a401,
+    -- a301 and b32 unless b32 sits in the target part, which d303 holds
+    -- anyway), changed from the step before.
+    local steps={
+        {4,"both",2,true},{2,"player",2,true},{3,"target",1,true},{1,"target",1,false},{nil,"target",1,false},
+        {2,"player",2,true},{nil,"target",1,true},
+    }
+    for i=1,#steps do
+        local value,unit,lines,changed=steps[i][1],steps[i][2],steps[i][3],steps[i][4]
+        local label="Track on "..tostring(value)
+        local _,oldTarget=Live()
+        local placed=oldTarget and oldTarget.calls.SetPoint or 0
+        Track(value)
+        assert(Codec.DecodeSpells(config.spellsData).e.b32==nil and value==nil
+            or Codec.DecodeSpells(config.spellsData).e.b32.auraUnit==value,label..": the choice survives the data string")
+        assert(C.spells.e.b32==nil and value==nil or C.spells.e.b32.auraUnit==value,label..": decoded on Refresh")
+        assert(C.entries.b32==b32 and b32.ov.auraUnit==value and b32.unit==unit,
+            label..": the entry tracks on "..unit.." ("..tostring(b32.unit)..")")
+        assert(C.Auras.TargetRow(b32)==(unit=="target"),label..": only target entries sit in the target part")
+        assert((C.Resolve.auraTouched[b32]==true)==changed,label..": aura-touched exactly when the unit changed")
+        assert(Calls("resolve")==1 and Calls("auraSync")>=1,label..": resolved once, aura bars synced")
+        local player,target=Live()
+        assert(player and target,label..": c2 keeps its player and target containers (d303)")
+        assert(player:Tracks(302)==(unit~="target") and target:Tracks(302)==(unit~="player"),
+            label..": Ignite in the "..unit.." container(s)")
+        assert(player:Tracks(401) and player:Tracks(301) and target:Tracks(303) and not player:Tracks(303)
+            and not target:Tracks(401),label..": the other entries stay where they were")
+        local p=target.point
+        assert(p[2]==host and p[1]==p[3] and p[4]==0 and math.abs(p[5]+lines*(h+sp))<1e-6,
+            label..": the target part starts after "..lines.." player line(s) ("..tostring(p[5])..")")
+        if not changed then
+            assert(target==oldTarget and target.calls.SetPoint==placed,label..": an unchanged unit places nothing again")
+        end
+        assert(bars.c2.lines1==lines and bars.c2.lines2==1 and math.abs(bars.c2.frame.h-((lines+1)*h+lines*sp))<1e-6,
+            label..": the layout follows ("..tostring(bars.c2.frame.h)..")")
+        local conv=assert(S.CooldownManagerConvertGrow("c2",2))
+        local depth=(lines+1)*h+lines*sp
+        assert(conv.c2_y==math.floor(300+37-384-depth/2+.5),
+            label..": the conversion sizes "..(lines+1).." lines ("..tostring(conv.c2_y)..")")
+    end
+    -- Values outside 1..4 never reach the data string: automatic.
+    for _,bad in ipairs({0,5,2.5,"4",true}) do
+        Track(bad)
+        assert(Codec.DecodeSpells(config.spellsData).e.b32==nil and b32.ov.auraUnit==nil and b32.unit=="target",
+            "an invalid Track on value is dropped ("..tostring(bad)..")")
+    end
+    -- One rule places aura bars (Layout.FixedAuras, shared by the aura
+    -- layer, the layout and the conversions). Player and target auras live
+    -- in two containers that cannot interleave, so a column that mixes both
+    -- (a vertical bar whose entries fit one line, or one icon per line)
+    -- keeps every entry in its own cell in the bar's order. A mixed row that
+    -- fits one line is fixed and ordered when start or end aligned; centered
+    -- it splits at its center: player auras end there, target auras start
+    -- there, both compact and growing from the middle. Every other compact
+    -- bar keeps the target part the reserved player lines further, from the
+    -- alignment point. Containers anchor only to our own frames, never to
+    -- one another. Ignite (b32, the target) sits between two player buffs.
+    Widget.InitSlots(true)
+    config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"},
+        c2={"a401","b32","a301","d303"}},[63]={c1={"s9001","i9002"}}}}))
+    local K2=Suite.CDM.KEYS.c2
+    local cw=C.Layout.Metrics(C.views.c2)
+    local dx,dy=cw+sp,h+sp
+    local cells=bars.c2.cells
+    -- Settings (all of them each time), Track on for Ignite; the shared rule's answer.
+    local function Bar(values,auraUnit)
+        for suffix,value in pairs(values) do config[assert(K2[suffix],suffix)]=value end
+        Track(auraUnit)
+        return C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries)
+    end
+    local function Slots(container)
+        for _,group in pairs(container.groups or {}) do if group.slot then return true end end
+        return false
+    end
+    -- The cell the on slot for `id` follows (its button's SetAllPoints).
+    local function SlotCell(container,id)
+        for _,group in pairs(container.groups or {}) do
+            if group.slot and group.on and group.ids and group.ids[id] then
+                local p=group.button and group.button.point
+                return p and p[1]=="ALL" and p[2] or nil
+            end
+        end
+    end
+    -- Cells by plan position, in columns/lines of cw+sp and h+sp.
+    local function CellsAt(label,spots)
+        for i=1,#spots do
+            local cell=cells[i]
+            local p=cell and cell.point
+            assert(p and cell.shown and p[1]=="TOPLEFT" and p[2]==host and p[3]=="TOPLEFT"
+                and math.abs(p[4]-spots[i][1]*dx)<1e-6 and math.abs(p[5]+spots[i][2]*dy)<1e-6,
+                label..": cell "..i.." sits at "..tostring(p and p[4]).."/"..tostring(p and p[5]))
+        end
+    end
+    local function Size(label,width,height)
+        local f=bars.c2.frame
+        assert(math.abs(f.w-width)<1e-6 and math.abs(f.h-height)<1e-6,
+            label..": the layout draws "..width.."x"..height.." ("..tostring(f.w).."x"..tostring(f.h)..")")
+    end
+    -- Fixed containers cover the bar from its top left (the aura host, or
+    -- the bar frame of the same rectangle when the first sync after a kind
+    -- change ran before the layout made the host); their slots follow cells.
+    local function Fixed(label,container)
+        local p=container and container.point
+        assert(p and Slots(container) and p[1]=="TOPLEFT" and (p[2]==host or p[2]==frame) and p[3]=="TOPLEFT"
+            and p[4]==0 and p[5]==0,label..": a fixed container covers the bar")
+    end
+    local function Compact(label,container,point,rel,x,y)
+        local p=container and container.point
+        assert(p and not Slots(container) and p[1]==point and p[2]==host and p[3]==rel
+            and math.abs(p[4]-x)<1e-6 and math.abs(p[5]-y)<1e-6,
+            label..": a compact container at "..point.." of the host's "..rel.." "..x.."/"..y.." ("
+            ..tostring(p and p[1]).." "..tostring(p and p[3]).." "..tostring(p and p[4]).."/"..tostring(p and p[5])..")")
+    end
+    -- Every aura container (every bar) on our own bar frames or aura hosts.
+    local function OwnAnchors(label)
+        local own={}
+        for _,bar in pairs(C.bars) do
+            own[bar.frame]=true
+            if bar.auraHost then own[bar.auraHost]=true end
+        end
+        for i=1,#all do
+            local w=all[i]
+            if w.kind=="AuraContainer" and w.point then
+                assert(own[w.point[2]] and w.point[2].kind~="AuraContainer",
+                    label..": an aura container is anchored to a frame that is not ours")
+            end
+        end
+    end
+    -- The controller's extent (Convert) sizes the bar as the layout drew it:
+    -- a conversion to the current grow keeps the frame's growth edge.
+    local function Extent(label)
+        local f=bars.c2.frame
+        local conv=assert(S.CooldownManagerConvertGrow("c2",C.views.c2.grow==2 and 2 or 1))
+        local point=C.Layout.Point(C.views.c2)
+        local x,y=437-512,337-384
+        if point=="TOP" then y=y+f.h/2 elseif point=="BOTTOM" then y=y-f.h/2
+        elseif point=="LEFT" then x=x-f.w/2 else x=x+f.w/2 end
+        assert(conv.c2_x==math.floor(x+.5) and conv.c2_y==math.floor(y+.5),
+            label..": the conversion sizes the bar as laid out ("..tostring(conv.c2_x).."/"..tostring(conv.c2_y)..")")
+    end
+    local function Check(label)
+        OwnAnchors(label)
+        Extent(label)
+    end
+    local line4=4*cw+3*sp
+    -- A vertical bar whose entries fit one column: fixed places in the bar's order.
+    local fixed,ordered,split=Bar({vertical=true,align=1,grow=1,perRow=4,keepSlots=false})
+    assert(fixed==true and ordered==true and split==false,"a mixed column is fixed and ordered")
+    local player,target=Live()
+    Fixed("column",player);Fixed("column",target)
+    CellsAt("column",{{0,0},{0,1},{0,2},{0,3}})
+    Size("column",cw,4*h+3*sp)
+    assert(SlotCell(player,401)==cells[1] and SlotCell(target,302)==cells[2] and SlotCell(player,301)==cells[3]
+        and SlotCell(target,303)==cells[4] and not SlotCell(player,302) and not SlotCell(target,401),
+        "column: each slot follows the cell of its entry, Ignite between the player buffs")
+    Check("column")
+    -- Both: Ignite's player and target slots share its cell.
+    fixed,ordered,split=Bar({vertical=true,align=1,grow=1,perRow=4,keepSlots=false},4)
+    player,target=Live()
+    assert(fixed==true and ordered==true and split==false and b32.unit=="both" and not C.Auras.TargetRow(b32),
+        "a column with a both entry stays fixed and ordered")
+    assert(SlotCell(player,302)==cells[2] and SlotCell(target,302)==cells[2] and SlotCell(player,301)==cells[3],
+        "both: the player and the target slot share Ignite's cell")
+    CellsAt("both",{{0,0},{0,1},{0,2},{0,3}})
+    Check("both")
+    -- A vertical bar that needs two columns stays compact: the target part
+    -- starts the reserved player columns further, from the left edge.
+    fixed,ordered,split=Bar({vertical=true,align=1,grow=1,perRow=2,keepSlots=false})
+    assert(not fixed and not ordered and not split,"a mixed column that needs two columns is compact")
+    player,target=Live()
+    Compact("two columns",player,"LEFT","LEFT",0,0)
+    Compact("two columns",target,"LEFT","LEFT",dx,0)
+    assert(player:Tracks(401) and player:Tracks(301) and target:Tracks(302) and target:Tracks(303),"two columns: tracking")
+    Size("two columns",2*cw+sp,2*h+sp)
+    Check("two columns")
+    -- One icon per line on a horizontal bar is a column too.
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=1,keepSlots=false})
+    assert(fixed==true and ordered==true and split==false,"one icon per line is fixed and ordered")
+    player,target=Live()
+    Fixed("one per line",player);Fixed("one per line",target)
+    CellsAt("one per line",{{0,0},{0,1},{0,2},{0,3}})
+    Size("one per line",cw,4*h+3*sp)
+    assert(SlotCell(player,401)==cells[1] and SlotCell(target,302)==cells[2] and SlotCell(player,301)==cells[3]
+        and SlotCell(target,303)==cells[4],"one per line: slots follow their cells")
+    Check("one per line")
+    -- A centered horizontal row over two lines stays compact from the top
+    -- center, the target part one player line further.
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=2,keepSlots=false})
+    assert(not fixed and not ordered and not split,"a centered mixed row over two lines is compact")
+    player,target=Live()
+    Compact("two lines",player,"TOP","TOP",0,0)
+    Compact("two lines",target,"TOP","TOP",0,-dy)
+    Size("two lines",2*cw+sp,2*h+sp)
+    Check("two lines")
+    -- Keep buffs in fixed places: fixed; ordered only on one line.
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=2,keepSlots=true})
+    assert(fixed==true and ordered==false and split==false,"keepSlots over two lines: fixed, not ordered")
+    player,target=Live()
+    Fixed("keepSlots, two lines",player);Fixed("keepSlots, two lines",target)
+    CellsAt("keepSlots, two lines",{{0,0},{0,1},{1,0},{1,1}})
+    Size("keepSlots, two lines",2*cw+sp,2*h+sp)
+    assert(SlotCell(player,401)==cells[1] and SlotCell(target,302)==cells[2] and SlotCell(player,301)==cells[3]
+        and SlotCell(target,303)==cells[4],"keepSlots, two lines: player cells first, target cells from the next line")
+    Check("keepSlots, two lines")
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=4,keepSlots=true})
+    assert(fixed==true and ordered==true and split==false,"keepSlots on one line: fixed and ordered")
+    Fixed("keepSlots, one line",(Live()))
+    CellsAt("keepSlots, one line",{{0,0},{1,0},{2,0},{3,0}})
+    Size("keepSlots, one line",line4,h)
+    Check("keepSlots, one line")
+    -- A start or end aligned mixed row on one line: fixed and ordered.
+    for align=2,3 do
+        local label="aligned "..align
+        fixed,ordered,split=Bar({vertical=false,align=align,grow=1,perRow=4,keepSlots=false})
+        assert(fixed==true and ordered==true and split==false,label..": a mixed row on one line is fixed and ordered")
+        player,target=Live()
+        Fixed(label,player);Fixed(label,target)
+        CellsAt(label,{{0,0},{1,0},{2,0},{3,0}})
+        assert(SlotCell(player,401)==cells[1] and SlotCell(target,302)==cells[2] and SlotCell(player,301)==cells[3]
+            and SlotCell(target,303)==cells[4],label..": slots in the bar's order")
+        Size(label,line4,h)
+        Check(label)
+    end
+    -- Centered on one line: split at the center, compact on both sides. The
+    -- player container ends there by its top right corner, the target
+    -- container starts there by its top left corner, one spacing apart:
+    -- no reserved gap. The footprint is one line; cells sit in plan order.
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=4,keepSlots=false})
+    assert(fixed==false and ordered==false and split==true,"a centered mixed row on one line splits at its center")
+    player,target=Live()
+    Compact("split",player,"TOPRIGHT","TOP",-sp/2,0)
+    Compact("split",target,"TOPLEFT","TOP",sp/2,0)
+    assert(math.abs(target.point[4]-player.point[4]-sp)<1e-6,"split: the two halves are one spacing apart")
+    assert(player:Tracks(401) and player:Tracks(301) and target:Tracks(302) and target:Tracks(303)
+        and not player:Tracks(302),"split: buffs on the player side, Ignite on the target side")
+    CellsAt("split",{{0,0},{1,0},{2,0},{3,0}})
+    Size("split",line4,h)
+    Check("split")
+    -- A vertical conversion of the split row sizes one column (fixed there).
+    local values=assert(S.CooldownManagerConvertVertical("c2",true))
+    assert(values.c2_vertical==true and values.c2_x==math.floor(437-512-cw/2+.5) and values.c2_y==337-384,
+        "a split row converted to vertical sizes one column ("..tostring(values.c2_x)..")")
+    assert(C.views.c2.vertical==false,"the conversion leaves the view alone")
+    -- Growing up: the halves hang from the bottom center.
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=2,perRow=4,keepSlots=false})
+    assert(split==true and not fixed,"a centered mixed row growing up splits too")
+    player,target=Live()
+    Compact("split up",player,"BOTTOMRIGHT","BOTTOM",-sp/2,0)
+    Compact("split up",target,"BOTTOMLEFT","BOTTOM",sp/2,0)
+    Size("split up",line4,h)
+    Check("split up")
+    -- Both: Ignite on both sides of the split.
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=4,keepSlots=false},4)
+    assert(split==true and not fixed,"a split row with a both entry stays split")
+    player,target=Live()
+    Compact("split, both",player,"TOPRIGHT","TOP",-sp/2,0)
+    Compact("split, both",target,"TOPLEFT","TOP",sp/2,0)
+    assert(player:Tracks(302) and target:Tracks(302),"split, both: Ignite on both sides")
+    Check("split, both")
+    -- Without target entries nothing mixes: one compact player container
+    -- from the top center. Me takes Ignite off the target container.
+    config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"},
+        c2={"a401","b32"}},[63]={c1={"s9001","i9002"}}}}))
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=4,keepSlots=false},2)
+    assert(not fixed and not ordered and not split,"a row of player entries is compact")
+    player,target=Live()
+    assert(#C.plans.c2.entries==2 and player and player:Tracks(302) and player:Tracks(401) and not target,
+        "Me: one player container, no target container")
+    Compact("player row",player,"TOP","TOP",0,0)
+    Size("player row",2*cw+sp,h)
+    Check("player row")
+    fixed,ordered,split=Bar({vertical=false,align=1,grow=1,perRow=4,keepSlots=false},3)
+    player,target=Live()
+    assert(split==true and player and target and target:Tracks(302) and not player:Tracks(302)
+        and C.Resolve.auraTouched[b32],"Target: Ignite moves to the target side of the split")
+    Compact("buff and target aura",player,"TOPRIGHT","TOP",-sp/2,0)
+    Compact("buff and target aura",target,"TOPLEFT","TOP",sp/2,0)
+    Size("buff and target aura",2*cw+sp,h)
+    Check("buff and target aura")
+    -- Vertical: one column, the target aura in the cell after the buff
+    -- (never in a column beside it, Deathstalker's Mark).
+    fixed,ordered,split=Bar({vertical=true,align=1,grow=1,perRow=4,keepSlots=false},3)
+    assert(fixed==true and ordered==true and split==false,"a buff over a target aura is one fixed column")
+    player,target=Live()
+    Fixed("buff over target aura",player);Fixed("buff over target aura",target)
+    CellsAt("buff over target aura",{{0,0},{0,1}})
+    assert(SlotCell(player,401)==cells[1] and SlotCell(target,302)==cells[2],"the target aura follows the second cell")
+    Size("buff over target aura",cw,2*h+sp)
+    Check("buff over target aura")
+    Widget.InitSlots(false)
+    for suffix,value in pairs({vertical=false,align=1,grow=1,keepSlots=false}) do config[K2[suffix]]=value end
+    config.spellsData=keptSpells
+    module:Refresh()
+    Run()
+    assert(C.entries.b32.unit=="target" and C.entries.b32.ov.auraUnit==nil,"back to automatic")
+end)() end
 bars.c2.frame.rect=nil
 config.listsData,config.c2_kind,config.c2_perRow=auraLists,1,10
 module:Refresh()
@@ -1265,6 +1751,35 @@ module:Refresh()
 Run()
 Run(.2)
 assert(C.entries.s9001.slot=="c1" and PendingTimers()==0)
+-- The trinket on Essential sits on the bars as an item action, which
+-- FindSpellActionButtons never matches: its key comes from a scan of the
+-- action slots by item ID, in the same key preference, cached per item.
+local actionItems,infoCalls={[5]=7777,[64]=7777},0
+GetActionInfo=function(slot)
+    infoCalls=infoCalls+1
+    local item=actionItems[slot]
+    if item then return "item",item end
+end
+bindings.ACTIONBUTTON5,bindings.MULTIACTIONBAR1BUTTON4="E","ALT-4"
+assert(Fire("ACTIONBAR_SLOT_CHANGED",5))
+Run(.2)
+local trinketIcon=assert(C.entries.b71.icon)
+assert(trinketIcon.lastKey=="E" and e12.icon.lastKey=="CF","the trinket takes the key of its item action (main bar first)")
+local scans=infoCalls
+assert(scans>0)
+C.Keybinds.Request(false)
+Run(.2)
+assert(infoCalls==scans and trinketIcon.lastKey=="E","a content refresh reuses the item's cached key")
+actionItems[5]=nil
+assert(Fire("ACTIONBAR_SLOT_CHANGED",5))
+Run(.2)
+assert(infoCalls>scans and trinketIcon.lastKey=="A4","moving the item action rescans")
+actionItems[64]=nil
+assert(Fire("UPDATE_BINDINGS"))
+Run(.2)
+assert(trinketIcon.lastKey=="","no key without an item action")
+GetActionInfo=nil
+bindings.ACTIONBUTTON5,bindings.MULTIACTIONBAR1BUTTON4=nil,nil
 
 ------------------------------------------------------------------ assisted combat
 config.ess_assist=true
@@ -1361,6 +1876,86 @@ module:Refresh()
 assert(C.views.ess.x==0 and C.views.ess.y==wantY,"switching back before the save restores the saved position")
 Run()
 assert(config.essOnViewer==false and config.ess_y==wantY and PendingTimers()==0,"nothing was written")
+-- Only the layout's reading counts (Layout.RidesViewer). Attached, x/y are
+-- an attach offset: MSUF following Blizzard's bar or letting go of it
+-- leaves them alone.
+local PLAYER=#Suite.CDM.SLOTS+2
+local function Apply(values)
+    for key,value in pairs(values) do config[key]=value end
+    module:Refresh()
+    Run()
+end
+Apply({ess_anchor=PLAYER,ess_x=0,ess_y=10})
+MSUF_DB={general={anchorToCooldown=true}}
+module:Refresh()
+Run()
+assert(C.Native.FollowViewer() and not C.Layout.RidesViewer("ess"),"attached: following Blizzard's bar, not riding it")
+assert(config.ess_x==0 and config.ess_y==10 and config.essOnViewer==false and PendingTimers()==0,
+    "an attach offset survives MSUF following Blizzard's bar")
+-- Turning free while MSUF follows Blizzard's bar: the bar keeps its place
+-- as an offset from Blizzard's bar (top edge 528, ours at 525), and the
+-- flag travels with the values, so nothing is converted afterwards.
+bars.ess.frame.rect={362,489,300,36}
+local toFree=assert(S.CooldownManagerConvertAnchor("ess",1))
+assert(toFree.ess_anchor==1 and toFree.ess_x==0 and toFree.ess_y==-3 and toFree.essOnViewer==true,
+    "turning free while riding gives an offset from Blizzard's bar ("..tostring(toFree.ess_y)..")")
+Apply(toFree)
+assert(C.Layout.RidesViewer("ess") and config.ess_y==-3 and config.essOnViewer==true and PendingTimers()==0,
+    "the converted values stay as they are")
+-- Blizzard's top edge and the offset both snap to the pixel grid.
+local unit=C.Layout.PixelScale()
+local function Snap(value) return math.floor(value/unit+.5)*unit end
+local ride2=bars.ess.frame.point
+assert(ride2[1]=="TOP" and ride2[3]=="BOTTOMLEFT" and math.abs(ride2[5]-(Snap(528)+Snap(-3)))<1e-6,
+    "the bar kept its place")
+local toFrame=assert(S.CooldownManagerConvertAnchor("ess",PLAYER))
+assert(toFrame.ess_x==0 and toFrame.ess_y==0 and toFrame.essOnViewer==false,"attaching while riding: a zero attach offset")
+Apply(toFrame)
+config.ess_y=10
+module:Refresh()
+Run()
+MSUF_DB=nil
+module:Refresh()
+Run()
+assert(config.ess_x==0 and config.ess_y==10 and config.essOnViewer==false and PendingTimers()==0,
+    "an attach offset survives MSUF letting go of Blizzard's bar")
+bars.ess.frame.rect=nil
+-- Our Essential bar off while it rides: Utility stands in with the same
+-- offset. Letting go takes the screen position from Blizzard's bar plus
+-- that offset (528-3-384 = 141 above the center), so nothing jumps.
+Apply({ess_anchor=1,ess_x=0,ess_y=141})
+MSUF_DB={general={anchorToCooldown=true}}
+module:Refresh()
+Run()
+assert(config.essOnViewer==true and config.ess_y==0)
+Apply({ess_on=false,ess_y=-3})
+assert(not bars.ess.shown and bars.uti.shown)
+MSUF_DB=nil
+module:Refresh()
+assert(C.views.ess.y==141,"the view takes the position from Blizzard's bar at once")
+Run()
+assert(config.essOnViewer==false and config.ess_x==0 and config.ess_y==141,"the screen position is saved")
+local stand=bars.uti.frame.point
+assert(stand[1]=="TOP" and stand[2]==UIParent and stand[3]=="CENTER" and math.abs(stand[5]-Snap(141))<1e-6
+    and math.abs(384+stand[5]-(Snap(528)+Snap(-3)))<unit,"the stand-in stays in place")
+-- Nothing readable (our bar off, Blizzard's bar without a rectangle):
+-- nothing is written, the flag holds and the next Refresh tries again.
+MSUF_DB={general={anchorToCooldown=true}}
+module:Refresh()
+Run()
+assert(config.essOnViewer==true and config.ess_y==0)
+essViewer.rect={}
+C.Layout.InvalidateScale()
+MSUF_DB=nil
+module:Refresh()
+Run()
+assert(config.essOnViewer==true and config.ess_x==0 and config.ess_y==0 and PendingTimers()==0,"nothing readable: nothing written")
+essViewer.rect={362,478,300,50}
+C.Layout.InvalidateScale()
+module:Refresh()
+Run()
+assert(config.essOnViewer==false and config.ess_y==144,"the next Refresh converts ("..tostring(config.ess_y)..")")
+Apply({ess_on=true})
 config.ess_x,config.ess_y,config.blizzard=savedX,savedY,1
 essViewer.rect=nil
 module:Refresh()
@@ -1390,17 +1985,51 @@ assert(LiveTickers()==0)
 NoOnUpdate()
 Run(5)
 assert(PendingTimers()==0 and LiveTickers()==0,"idle again")
--- Both bag events live exactly while item entries exist.
+-- Both bag events live exactly while item entries exist. The trinket on
+-- Essential is one: bag events stay while it alone is left, and go once it
+-- is removed as well.
 config.ext_on,config.c1_on=false,false
 module:Refresh()
 Run()
-assert(#C.Index.items==0 and not Registered("BAG_UPDATE_COOLDOWN") and not Registered("BAG_UPDATE_DELAYED"),
+assert(#C.Index.items==1 and C.Index.items[1]==C.entries.b71 and Registered("BAG_UPDATE_COOLDOWN")
+    and Registered("BAG_UPDATE_DELAYED") and Registered("PLAYER_EQUIPMENT_CHANGED"),"the trinket on Essential keeps its item events")
+local bagLists=config.listsData
+config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"}},
+    [63]={c1={"s9001","i9002"}}},hidden={[62]={b71=true}}}))
+module:Refresh()
+Run()
+assert(not C.entries.b71 and #C.Index.items==0 and not Registered("BAG_UPDATE_COOLDOWN") and not Registered("BAG_UPDATE_DELAYED"),
     "bag events without item entries")
+config.listsData=bagLists
 config.ext_on,config.c1_on=true,true
 module:Refresh()
 Run()
-assert(#C.Index.items>0 and Registered("BAG_UPDATE_COOLDOWN") and Registered("BAG_UPDATE_DELAYED"),
+assert(#C.Index.items>0 and Registered("BAG_UPDATE_COOLDOWN") and Registered("BAG_UPDATE_DELAYED") and C.entries.b71.slot=="ess",
     "bag events return with item entries")
+-- The gear watch follows the bars that hold an equipment slot record,
+-- learned or not: with Buffs, Potions and racials and the custom bar off and
+-- the trinket not usable yet, equipping an on-use trinket must still rebuild.
+config.ext_on,config.c1_on,config.buf_on=false,false,false
+infos[71].isKnown=false
+Fire("SPELLS_CHANGED")
+module:Refresh()
+Run()
+assert(not C.entries.b71 and #C.Index.items==0 and C.Catalog.equipBars.ess and Registered("PLAYER_EQUIPMENT_CHANGED"),
+    "an unlearned trinket on Essential keeps the gear watch")
+config.ess_on=false
+module:Refresh()
+Run()
+assert(not Registered("PLAYER_EQUIPMENT_CHANGED"),"no gear watch without a shown bar holding equipment")
+config.ess_on=true
+module:Refresh()
+Run()
+assert(Registered("PLAYER_EQUIPMENT_CHANGED"),"the gear watch returns with the Essential bar")
+infos[71].isKnown=true
+config.ext_on,config.c1_on,config.buf_on=true,true,true
+Fire("SPELLS_CHANGED")
+module:Refresh()
+Run()
+assert(C.entries.b71 and C.entries.b71.slot=="ess" and Registered("PLAYER_EQUIPMENT_CHANGED"))
 -- Only trinket slots and slots an entry tracks rebuild the catalog.
 ResetCalls()
 assert(Fire("PLAYER_EQUIPMENT_CHANGED",13,true) and PendingTimers()==1,"a trinket change rebuilds")
@@ -1431,6 +2060,129 @@ Run()
 assert(bars.ess.shown and AnchorEvents()==anchorCount+2,"showing it again notifies")
 assert(Suite.CooldownManager.GetAnchorFrame("EssentialCooldownViewer")==bars.ess.anchorFrame)
 anchorCount=AnchorEvents()
+
+------------------------------------------------------------------ healthstones
+-- Potions and racials offers the Healthstone and the Demonic Healthstone
+-- after Blizzard's entries. They hide while the bags hold none, keep both
+-- bag events alive (alone too), relayout their bar once per flip, and a
+-- cooldown held until combat ends shows no swipe until BAG_UPDATE_COOLDOWN
+-- starts it. A function of its own: the main chunk is at Lua's 200-local limit.
+do (function()
+    local keptLists,getIcon,getName=config.listsData,C_Item.GetItemIconByID,C_Item.GetItemNameByID
+    -- Counts were switched off above; the bar shows them again here.
+    local chargesKey=Suite.CDM.KEYS.ext.charges
+    local keptCharges=config[chargesKey]
+    config[chargesKey]=true
+    C_Item.GetItemIconByID=function(item) if item==5512 or item==224464 then return 538745 end return getIcon(item) end
+    C_Item.GetItemNameByID=function(item)
+        if item==5512 then return "Healthstone" elseif item==224464 then return "Demonic Healthstone" end
+        return getName(item)
+    end
+    bagCounts[5512],bagCounts[224464]=0,0
+    -- Only the healthstones follow the bags: the potion and the trinket are
+    -- removed for this spec and the custom bar (a bag item) is off.
+    config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"}}},
+        hidden={[62]={b52=true,b71=true}}}))
+    config.c1_on=false
+    module:Refresh()
+    Run()
+    local ext=C.plans.ext.entries
+    assert(#ext==3 and ext[1].key=="b51" and ext[2].key=="i5512" and ext[3].key=="i224464",
+        "Blizzard's entries, then the Healthstone and the Demonic Healthstone")
+    local stone,demonic=C.entries.i5512,C.entries.i224464
+    assert(stone.icon and demonic.icon and stone.hidden==true and demonic.hidden==true and not stone.icon.shown
+        and not demonic.icon.shown,"empty healthstones hide")
+    assert(#C.Index.items==2 and #C.Index.bags==2 and Registered("BAG_UPDATE_DELAYED") and Registered("BAG_UPDATE_COOLDOWN"),
+        "bag events stay while only hidden healthstones follow the bags")
+    local rows=S.CooldownManagerBarEntries("ext")
+    assert(rows[2].key=="i5512" and rows[2].hidden==true and rows[1].hidden==false,"the page marks an empty healthstone hidden")
+    -- Count 0 -> 1 -> 0: one relayout of the bar per flip, none in between.
+    ResetCalls()
+    bagCounts[5512]=1
+    assert(Fire("BAG_UPDATE_DELAYED"))
+    Run()
+    assert(stone.hidden==false and stone.icon.shown and demonic.hidden==true and Calls("layout")==1 and Calls("layoutAll")==0,
+        "a stone in the bags shows it with one relayout ("..Calls("layout")..")")
+    ResetCalls()
+    bagCounts[5512]=3
+    Fire("BAG_UPDATE_DELAYED")
+    Run()
+    assert(stone.icon.count.text==3 and Calls("layout")==0,"a count change without a flip lays nothing out")
+    ResetCalls()
+    bagCounts[5512]=0
+    Fire("BAG_UPDATE_DELAYED")
+    Run()
+    assert(stone.hidden==true and not stone.icon.shown and Calls("layout")==1,"the last stone used hides it again")
+    -- Bag events that change nothing: no allocation, no widget call, no
+    -- layout (the next-frame flush runs through an allocation-free timer).
+    bagCounts[5512]=2
+    Fire("BAG_UPDATE_DELAYED")
+    Run()
+    do
+        local after,queued=C_Timer.After,nil
+        C_Timer.After=function(_,fn) queued=fn end
+        local function Pass(event)
+            Fire(event)
+            local fn=queued
+            queued=nil
+            if fn then fn() end
+        end
+        ResetCalls()
+        collectgarbage("collect")
+        collectgarbage("stop")
+        for _=1,20 do Pass("BAG_UPDATE_COOLDOWN");Pass("BAG_UPDATE_DELAYED") end
+        local quiet=writes
+        local kb=collectgarbage("count")
+        for _=1,300 do Pass("BAG_UPDATE_COOLDOWN");Pass("BAG_UPDATE_DELAYED") end
+        local used=collectgarbage("count")-kb
+        collectgarbage("restart")
+        C_Timer.After=after
+        assert(used==0,"bag events that change nothing allocated "..used.." KB")
+        assert(writes==quiet and Calls("layout")==0,"bag events that change nothing wrote "..(writes-quiet).." widgets")
+    end
+    -- Used in combat: the cooldown is held until combat ends (enable false),
+    -- no swipe, still cooling (no ready alert). The BAG_UPDATE_COOLDOWN that
+    -- starts it arms the swipe; its end is the one ready edge.
+    local alerts,realReady=0,C.Alerts.Ready
+    C.Alerts.Ready=function(e,...) if e==stone then alerts=alerts+1 end return realReady(e,...) end
+    combat=true
+    Fire("PLAYER_REGEN_DISABLED")
+    Run()
+    C_Item.cooldowns[5512]={now,60,false}
+    bagCounts[5512]=1
+    Fire("BAG_UPDATE_COOLDOWN")
+    Fire("BAG_UPDATE_DELAYED")
+    Run()
+    assert(stone.cooling==true and not stone.icon.cd.running and stone.hidden==false and alerts==0,
+        "a held cooldown: no swipe, cooling, still shown")
+    combat=false
+    Fire("PLAYER_REGEN_ENABLED")
+    Run()
+    assert(stone.cooling==true and not stone.icon.cd.running,"held until the cooldown starts")
+    C_Item.cooldowns[5512]={now,60,true}
+    Fire("BAG_UPDATE_COOLDOWN")
+    Run()
+    assert(stone.cooling==true and stone.icon.cd.running and alerts==0,"the cooldown's start arms the swipe")
+    Run(61)
+    stone.icon.cd.scripts.OnCooldownDone(stone.icon.cd)
+    Run()
+    assert(stone.cooling==false and not stone.icon.cd.running and alerts==1,"its end is one ready edge")
+    C.Alerts.Ready=realReady
+    -- Removed from the bar (hidden set) the bag events go with the last one.
+    config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"}}},
+        hidden={[62]={b52=true,b71=true,i5512=true,i224464=true}}}))
+    module:Refresh()
+    Run()
+    assert(not C.entries.i5512 and #C.Index.items==0 and not Registered("BAG_UPDATE_DELAYED") and not Registered("BAG_UPDATE_COOLDOWN"),
+        "no bag events without bag entries")
+    C_Item.cooldowns[5512],bagCounts[5512],bagCounts[224464]=nil,nil,nil
+    C_Item.GetItemIconByID,C_Item.GetItemNameByID=getIcon,getName
+    config.listsData,config.c1_on,config[chargesKey]=keptLists,true,keptCharges
+    module:Refresh()
+    Run()
+    assert(#C.plans.ext.entries==2 and not C.entries.i5512 and C.entries.b52.slot=="ext" and C.entries.b71.slot=="ess"
+        and Registered("BAG_UPDATE_DELAYED"),"back to the potion, the racial and the trinket")
+end)() end
 
 ------------------------------------------------------------------ loading screens silence sounds
 Fire("PLAYER_ENTERING_WORLD",false,true)
@@ -1478,11 +2230,11 @@ config.blizzard=2
 module.active=true
 module:Enable()
 Run()
-assert(C.Preview.mode=="options" and C.state.preview and C.Icons.Count("ess")==4,"the stored preview request applies on enable")
+assert(C.Preview.mode=="options" and C.state.preview and C.Icons.Count("ess")==5,"the stored preview request applies on enable")
 assert(S.CooldownManagerSetPreview(false))
 Run()
 assert(not C.state.preview,"the page takes its request back")
-assert(bars.ess.shown and C.Icons.Count("ess")==3 and Registered("SPELL_UPDATE_COOLDOWN"),"re-enable")
+assert(bars.ess.shown and C.Icons.Count("ess")==4 and Registered("SPELL_UPDATE_COOLDOWN"),"re-enable")
 assert(essViewer.alpha==0 and cvars.cooldownViewerEnabled=="1")
 assert(AnchorEvents()==anchorCount+2,"a second activation notifies once")
 local alphaHook,acquireHook
@@ -1555,6 +2307,21 @@ assert(config.ess_size==50 and config.defaultsVersion==3,"current settings are n
 assert(S.CooldownManagerSetPreview(false))
 Run()
 assert(not C.state.preview)
+config.fontOutline,config.fontRendering,config.fontShadow=2,2,true
+config.fontShadowOpacity,config.fontShadowDistance=70,2
+module:Refresh();Run()
+local effectCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200))
+assert(effectCanvas.rows[1].name.fontFlags=="THICKOUTLINE,MONOCHROME"
+    and effectCanvas.rows[1].name.shadowColor[4]==0.7
+    and effectCanvas.rows[1].name.shadowOffset[1]==2,
+    "Cooldown Manager preview text effects did not apply")
+config.fontRendering=3
+module:Refresh();Run()
+effectCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200))
+assert(effectCanvas.rows[1].name.fontFlags=="OUTLINE,SLUG"
+    and effectCanvas.rows[1].name.shadowColor[4]==0,
+    "Cooldown Manager Slug retained a shadow")
+S.CooldownManagerReleasePreview(barStage)
 Deactivate()
 for key in pairs(_G) do assert(globalsBefore[key] or key=="MSUF_DB","runtime created the global "..tostring(key)) end
 

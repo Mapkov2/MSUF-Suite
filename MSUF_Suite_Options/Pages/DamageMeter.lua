@@ -4,7 +4,7 @@ local PAGE, ID = "suite_damageMeter", "damageMeter"
 
 local HELP = {
     general = "Windows update from the client's own combat data: every event outside combat, and at the chosen interval during combat.",
-    bars = "Bar colors follow the class unless you turn class colors off. The gradient can shade several edges at once; choose its color and strength below.",
+    bars = "Bar colors follow the class unless you turn class colors off. The gradient can shade several edges at once; choose its color from the three dots and its strength below.",
     text = "Choose Custom layout to set the order of total, per-second and percent values, then pick spaces, brackets or a separator. The percent switch controls main rows; breakdown rows show available shares. Unavailable shares are omitted. Primary means per second for DPS/HPS and total for other meters. Text settings also apply to headers, details and the floating timer. Slug uses WoW's crisp font renderer with an outline and no shadow. Protected values show without a percentage until combat ends.",
     window = "The header shows the meter and fight. Its buttons change the meter and fight directly in the window.",
     details = "Click a bar to open the spell breakdown in the window; hover it for a short tooltip.",
@@ -133,6 +133,7 @@ local function Build(ctx)
     local note = P.Text(body, "", 28 + math.floor(width / 2), y - 24, math.floor(width / 2) - 12)
     y = y - 62
     y = P.RuleGrid(ctx, body, PAGE, ID, templates, y, width, WindowKey, "suite_damageMeter_windows")
+    P.AttachRuleColors(body, "Window settings", ID, templates, WindowKey)
     P.Button(ctx, body, "Move this window", 16, y - 4, math.floor((width - 12) / 2),
         function() P.MoveOnScreen(ID, "window" .. selected) end,
         function() return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount") end,

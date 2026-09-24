@@ -40,9 +40,15 @@ C_AddOns = {
 }
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua", nil, "Vanilla")
 assert(Suite.Database.Initialize(nil))
+Suite.DB.suite.modules.skyriding = { enabled = false, look = 3 }
 Suite.Suite.Normalize(Suite.DB)
+assert(Suite.Suite.Config("skyriding").look == 3
+    and Suite.Suite.Config("skyriding").panelColor == "14181b"
+    and Suite.Suite.Config("skyriding").accentColor == "d8b66a",
+    "older Skyriding profiles lost their selected colors")
 for _, id in ipairs(Suite.SuiteOrder) do
-    assert(Suite.Suite.Config(id).enabled == true, id .. " factory module is off")
+    assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding"),
+        id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end
 Suite.Suite.Start()
@@ -63,6 +69,8 @@ assert(Suite.Database.Create("Fresh", false))
 assert(Suite.Database.Activate("Fresh"))
 assert(Suite.Suite.Config("minimap").enabled == true and module.active,
     "new profile did not start with its modules enabled")
+assert(Suite.Suite.Config("skyriding").enabled == false,
+    "new profile enabled the Retail flight HUD without a user choice")
 assert(Suite.Suite.Set("minimap", "enabled", false))
 assert(module.stops == 1 and module.context.released and not module.active)
 module.Enable = function(self) error("deliberate partial activation") end

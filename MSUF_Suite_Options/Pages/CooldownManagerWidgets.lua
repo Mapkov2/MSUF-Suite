@@ -126,12 +126,18 @@ function Page.Key(suffix) return KEYS[Page.selected][suffix] end
 local KIND3_EXTRA = { spacing = true, maxIcons = true, zoom = true, border = true, borderColor = true,
     borderClass = true, cdSize = true, stackSize = true, stackPos = true }
 Page.KIND3_EXTRA = KIND3_EXTRA
+-- Custom buff bars of both types keep the bar's glow style and tint: the
+-- runtime styles their aura glows ("glow while active", stack glows) with
+-- them. The built-in Buffs and Buff bars rows have none (default look).
+local AURA_EXTRA = { glowStyle = true, glowTint = true, glowColor = true }
+Page.AURA_EXTRA = AURA_EXTRA
 function Page.Relevant(slot, suffix)
     local key = KEYS[slot] and KEYS[slot][suffix]
     if not key or RULES[key].hidden then return false end
     if not Page.SlotInfo(slot).custom or suffix == "name" or suffix == "kind" then return true end
     local kind = Page.Kind(slot)
     if kind == 3 and KIND3_EXTRA[suffix] then return true end
+    if (kind == 2 or kind == 3) and AURA_EXTRA[suffix] then return true end
     local ref = REF_KEYS[kind] or REF_KEYS[1]
     return ref[suffix] ~= nil
 end
@@ -514,6 +520,20 @@ function Page.ResetSpell(key)
     spells.e[key] = nil
     return Page.Commit("Reset spell options", nil, spells)
 end
+-- A popover row that edits two fields resets both in one history entry.
+function Page.ClearSpellFields(key, names)
+    if P.Combat() then return false, COMBAT end
+    local spells = CDM.Codec.DecodeSpells(P.Get(ID, "spellsData"))
+    local fields = spells.e[key]
+    if not fields then return true end
+    local changed = false
+    for i = 1, #names do
+        if fields[names[i]] ~= nil then fields[names[i]], changed = nil, true end
+    end
+    if not changed then return true end
+    if next(fields) == nil then spells.e[key] = nil end
+    return Page.Commit("Spell option", nil, spells)
+end
 
 ------------------------------------------------------------------ notes and undo
 -- One short line under the spell tiles; it clears itself after 8 seconds
@@ -716,12 +736,65 @@ function Page.PlaySound(value)
     local path = lsm and lsm.Fetch and lsm:Fetch("sound", name, true)
     if path and type(_G.PlaySoundFile) == "function" then _G.PlaySoundFile(path, "Master") end
 end
+-- Blizzard's Cooldown Manager sound list, read only: CooldownViewerSoundData
+-- maps Enum.CooldownViewerSoundCategory values to { soundEnum, soundKitID,
+-- text } rows. Built once per table; the kits play as "kit:<soundKitID>".
+local kitSounds = { groups = {}, names = {} }
+local function CategoryTitle(id)
+    local enum = _G.Enum and _G.Enum.CooldownViewerSoundCategory
+    local key
+    if type(enum) == "table" then
+        for name, value in pairs(enum) do
+            if value == id and type(name) == "string" then key = name end
+        end
+    end
+    if not key then return format(Tr("Category %d"), id) end
+    local text = _G["COOLDOWN_VIEWER_SETTINGS_SOUND_ALERT_CATEGORY_" .. key:upper()]
+    if type(text) == "string" and text ~= "" then return text end
+    -- "War2" reads "War 2", "ShortSounds" reads "Short Sounds".
+    return (key:gsub("(%l)(%u)", "%1 %2"):gsub("(%a)(%d)", "%1 %2"))
+end
+local function KitGroup(id, rows)
+    local group = { title = CategoryTitle(id) }
+    for i = 1, #rows do
+        local row = rows[i]
+        local kit = type(row) == "table" and row.soundKitID or nil
+        if type(kit) == "number" and kit > 0 and kit < 2147483648 and kit == floor(kit) then
+            local text = row.text
+            if type(text) ~= "string" or text == "" then text = Tr("Sound kit") .. " " .. format("%d", kit) end
+            group[#group + 1] = { value = "kit:" .. format("%d", kit), text = text }
+            kitSounds.names[kit] = text
+        end
+    end
+    return group
+end
+function Page.BlizzardSounds()
+    local data = _G.CooldownViewerSoundData
+    if type(data) ~= "table" then return nil end
+    if kitSounds.data == data then return kitSounds end
+    local groups, ids = kitSounds.groups, {}
+    for i = #groups, 1, -1 do groups[i] = nil end
+    for kit in pairs(kitSounds.names) do kitSounds.names[kit] = nil end
+    for id, rows in pairs(data) do
+        if type(id) == "number" and type(rows) == "table" then ids[#ids + 1] = id end
+    end
+    table.sort(ids)
+    for i = 1, #ids do
+        local group = KitGroup(ids[i], data[ids[i]])
+        if #group > 0 then groups[#groups + 1] = group end
+    end
+    kitSounds.data = data
+    return kitSounds
+end
 function Page.SoundLabel(value)
     if type(value) ~= "string" or value == "" then return Tr("None") end
     local name = value:match("^lsm:(.+)$")
     if name then return name end
     local kit = value:match("^kit:(%d+)$")
-    if kit then return Tr("Sound kit") .. " " .. kit end
+    if kit then
+        local known = Page.BlizzardSounds()
+        return known and known.names[tonumber(kit)] or (Tr("Sound kit") .. " " .. kit)
+    end
     local file = value:match("^file:(%d+)$")
     return file and (Tr("Sound file") .. " " .. file) or value
 end
@@ -851,6 +924,17 @@ function Page.ClosePopups(keep)
     if Page.dropdownOpen and W.CloseDropdown then W.CloseDropdown({ immediate = true }) end
     Page.dropdownOpen = nil
 end
+-- Closes the popups whose anchor went out of sight (a closed spell list),
+-- then those anchored inside them; the preview keeps its own open.
+function Page.CloseOrphans()
+    for _ = 1, 2 do
+        for i = 1, #Page.popups do
+            local popup = Page.popups[i]
+            local anchor = popup.anchor
+            if popup:IsShown() and anchor and anchor.IsVisible and not anchor:IsVisible() then popup:Hide() end
+        end
+    end
+end
 function Page.PlacePopup(popup, anchor)
     popup.anchor = anchor
     popup:ClearAllPoints()
@@ -922,6 +1006,16 @@ local function PaintEdge(tile, lit)
         tile.edge:SetColorTexture(0.12, 0.15, 0.20, 1)
     end
 end
+-- Marks what the popover belongs to: a spell tile, or a preview icon (which
+-- brings its own Light).
+local function Light(anchor, on)
+    if not anchor then return end
+    if anchor.edge then PaintEdge(anchor, on) elseif anchor.Light then anchor:Light(on) end
+end
+local function PopoverOn(anchor)
+    local popover = Page.popover
+    return popover ~= nil and popover:IsShown() and popover.anchor == anchor
+end
 
 local function TileEnter(self)
     if self.grid.dragTile then return end
@@ -935,7 +1029,7 @@ local function TileEnter(self)
         Tr("Click: spell options. Middle-click: remove. Drag: reorder, or drop on a bar in the preview."))
 end
 local function TileLeave(self)
-    PaintEdge(self, Page.popover and Page.popover:IsShown() and Page.popover.key == self.key)
+    PaintEdge(self, PopoverOn(self))
     HideTip(self)
 end
 local function TileDown(self, button)
@@ -1018,7 +1112,7 @@ local function EntryFamily(entry, slot)
 end
 
 function Page.CreateTileGrid(_, parent, x, y, width)
-    local grid = setmetatable({ tiles = {}, count = 0, width = width }, Grid)
+    local grid = setmetatable({ tiles = {}, byKey = {}, count = 0, width = width }, Grid)
     local host = CreateFrame("Frame", nil, parent)
     host:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     host:SetSize(width, TILE)
@@ -1034,12 +1128,21 @@ function Page.CreateTileGrid(_, parent, x, y, width)
     grid.marker:SetColorTexture(r, g, b, 1)
     grid.marker:Hide()
     grid.onUpdate = function() grid:Update() end
+    -- A closed list ends its drag and closes what its tiles opened; the page
+    -- itself hiding closes everything (Page.Deactivate).
     host:SetScript("OnHide", function()
         grid:CancelDrag()
-        Page.ClosePopups()
-        Page.ClearNote()
+        Page.CloseOrphans()
     end)
     return grid
+end
+-- The tile of an entry on the selected bar, and the entry after it in the
+-- bar's list (nil when it is last). The preview reads both.
+function Grid:Tile(key) return key and self.byKey[key] or nil end
+function Grid:NextKey(key)
+    local tile = self.byKey[key]
+    local nextTile = tile and tile.index < self.count and self.tiles[tile.index + 1] or nil
+    return nextTile and nextTile.key or nil
 end
 
 -- What the tiles depend on: bar, spec, lists, per-spell choices, Blizzard's
@@ -1087,7 +1190,11 @@ function Grid:Refresh()
     local spells = Page.SpellOverrides().e
     local popover = Page.popover
     local openKey = popover and popover:IsShown() and popover.slot == slot and popover.key or nil
+    -- A popover opened from the preview stays on its preview icon.
+    local fromGrid = openKey ~= nil and popover.anchor ~= nil and popover.anchor.grid == self
     local count, openTile, loading = 0, nil, false
+    local byKey = self.byKey
+    for key in pairs(byKey) do byKey[key] = nil end
     for i = 1, entries and #entries or 0 do
         local entry = entries[i]
         local key = EntryKey(entry)
@@ -1095,17 +1202,20 @@ function Grid:Refresh()
             count = count + 1
             local tile = self.tiles[count]
             if not tile then tile = NewTile(self, count, false); self.tiles[count] = tile end
+            if byKey[key] == nil then byKey[key] = tile end
             tile.key, tile.name, tile.texture = key, entry.name, entry.texture
             -- An icon the client has not loaded yet: ask again next refresh.
             if Public(tile.texture) and tile.texture == nil then loading = true end
             tile.known, tile.hidden, tile.family = Plain(entry.known) ~= false, Plain(entry.hidden) == true, EntryFamily(entry, slot)
+            -- A cooldown that tracks a buff shows it on the icon (stack options).
+            tile.aura = tile.family == 2 or Plain(entry.hasAura) == true
             SetIcon(tile.icon, tile.texture)
             tile.icon:SetDesaturated(not tile.known)
             tile:SetAlpha(tile.known and 1 or 0.55)
             tile.mark:SetShown(spells[tile.key] ~= nil)
             tile.ruleMark:SetShown(tile.hidden)
             if tile.key == openKey then openTile = tile end
-            PaintEdge(tile, tile.key == openKey)
+            PaintEdge(tile, fromGrid and tile.key == openKey)
             tile:Show()
         end
     end
@@ -1127,8 +1237,13 @@ function Grid:Refresh()
     else self.message:SetText("") end
     self.message:SetShown(count == 0)
     if popover and popover:IsShown() then
-        if openTile then Page.PlacePopup(popover, openTile); Page.PaintPopover()
-        else popover:Hide() end
+        if openTile then
+            popover.hasAura = openTile.aura
+            if fromGrid then Page.PlacePopup(popover, openTile) end
+            Page.PaintPopover()
+        else
+            popover:Hide()
+        end
     end
     local rows = floor(count / perRow) + 1
     local height = rows * (TILE + GAP) - GAP
@@ -1136,6 +1251,46 @@ function Grid:Refresh()
     self.height = height
     if loading then self.valid = false end
     return height
+end
+
+-- The dragged icon under the cursor, shared by the list and the preview.
+function Page.ShowGhost(texture)
+    local ghost = Page.ghost
+    if not ghost then
+        ghost = CreateFrame("Frame", nil, _G.UIParent)
+        ghost:SetFrameStrata("TOOLTIP")
+        ghost:SetSize(TILE, TILE)
+        ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
+        ghost.icon:SetAllPoints(ghost)
+        ghost.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        ghost:SetAlpha(0.8)
+        Page.ghost = ghost
+    end
+    SetIcon(ghost.icon, texture)
+    ghost:Show()
+end
+function Page.MoveGhost(x, y)
+    local ghost = Page.ghost
+    if not ghost then return end
+    local uiScale = Scale(_G.UIParent)
+    ghost:ClearAllPoints()
+    ghost:SetPoint("CENTER", _G.UIParent, "BOTTOMLEFT", x / uiScale, y / uiScale)
+end
+function Page.HideGhost()
+    if Page.ghost then Page.ghost:Hide() end
+end
+-- A drop onto another bar's chip moves the entry there; a drop on this bar
+-- puts it before beforeKey (last without one). One history entry.
+function Page.CommitDrop(key, family, name, slot, beforeKey)
+    if slot then
+        local ok, reason = Page.MoveEntry(key, slot, nil, family)
+        if ok then Page.Note(format(Tr("Moved %s to %s."), name, Page.BarName(slot))) else Page.Fail(reason) end
+        return ok
+    end
+    if beforeKey == key then return true end
+    local ok, reason = Page.MoveEntry(key, Page.selected, beforeKey, family)
+    if not ok then Page.Fail(reason) end
+    return ok
 end
 
 -- Drag: 3 px threshold, OnUpdate only while the left button is held.
@@ -1149,29 +1304,14 @@ function Grid:Update()
         if dx * dx + dy * dy < 9 then return end
         self:StartDrag()
     end
-    local ghost = Page.ghost
-    local uiScale = Scale(_G.UIParent)
-    ghost:ClearAllPoints()
-    ghost:SetPoint("CENTER", _G.UIParent, "BOTTOMLEFT", x / uiScale, y / uiScale)
+    Page.MoveGhost(x, y)
     self:Target(x)
 end
 function Grid:StartDrag()
     local tile = self.pressTile
     self.dragTile = tile
     Page.ClosePopups()
-    local ghost = Page.ghost
-    if not ghost then
-        ghost = CreateFrame("Frame", nil, _G.UIParent)
-        ghost:SetFrameStrata("TOOLTIP")
-        ghost:SetSize(TILE, TILE)
-        ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
-        ghost.icon:SetAllPoints(ghost)
-        ghost.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        ghost:SetAlpha(0.8)
-        Page.ghost = ghost
-    end
-    SetIcon(ghost.icon, tile.texture)
-    ghost:Show()
+    Page.ShowGhost(tile.texture)
     tile:SetAlpha(0.3)
 end
 function Grid:Target(cursorX)
@@ -1210,33 +1350,25 @@ function Grid:Drop()
     local tile, target, after, slot = self.dragTile, self.dropTile, self.dropAfter, self.dropSlot
     local key, family, name = tile.key, tile.family, Public(tile.name) and tile.name or tile.key
     self:CancelDrag()
-    if slot then
-        local ok, reason = Page.MoveEntry(key, slot, nil, family)
-        if ok then Page.Note(format(Tr("Moved %s to %s."), name, Page.BarName(slot))) else Page.Fail(reason) end
-        return
-    end
+    if slot then Page.CommitDrop(key, family, name, slot); return end
     if not target then return end
     local beforeKey
     if target ~= self.plus then
-        if after then
-            local nextTile = self.tiles[target.index + 1]
-            beforeKey = nextTile and target.index + 1 <= self.count and nextTile.key or nil
-        else
-            beforeKey = target.key
-        end
+        if after then beforeKey = self:NextKey(target.key) else beforeKey = target.key end
     end
-    if beforeKey == key then return end
-    local ok, reason = Page.MoveEntry(key, Page.selected, beforeKey, family)
-    if not ok then Page.Fail(reason) end
+    Page.CommitDrop(key, family, name, nil, beforeKey)
 end
 function Grid:CancelDrag()
     self.host:SetScript("OnUpdate", nil)
     local tile = self.dragTile
     if tile then tile:SetAlpha(tile.known and 1 or 0.55) end
+    local dragging = tile ~= nil
     self.pressTile, self.dragTile, self.dropTile, self.dropAfter, self.dropSlot = nil, nil, nil, nil, nil
-    if Page.ghost then Page.ghost:Hide() end
     self.marker:Hide()
-    if Page.HighlightChip then Page.HighlightChip(nil) end
+    if dragging then
+        Page.HideGhost()
+        if Page.HighlightChip then Page.HighlightChip(nil) end
+    end
 end
 
 ------------------------------------------------------------------ spell picker
@@ -1596,20 +1728,26 @@ function Page.TogglePicker(anchor)
 end
 
 ------------------------------------------------------------------ sound picker
-local SOUND_W, SOUND_H = 280, 330
+-- "None", the current value when no list below has it, Blizzard's Cooldown
+-- Manager sounds by category, then the LibSharedMedia sounds. Items and rows
+-- are pooled; a header shows while one of its rows matches the filter, and a
+-- category name finds all of its sounds.
+local SOUND_W, SOUND_H = 280, 400
 local sounds
 
 local function SoundRowClick(self)
     local item = self.item
-    if not item or P.Combat() then return end
+    if not item or item.header or P.Combat() then return end
     local pick = sounds.onPick
     sounds:Hide()
     if pick then pick(item.value) end
 end
 local function SoundPlayClick(self)
     local item = self.row and self.row.item
-    if item then Page.PlaySound(item.value) end
+    if item and not item.header then Page.PlaySound(item.value) end
 end
+local function SoundRowEnter(self) if self.item and not self.item.header then self.hover:Show() end end
+local function SoundRowLeave(self) self.hover:Hide() end
 local function SoundRow(index)
     local row = sounds.rows[index]
     if row then return row end
@@ -1627,26 +1765,45 @@ local function SoundRow(index)
     row.play.row = row
     row.play:SetPoint("RIGHT", row, "RIGHT", -2, 0)
     row:SetScript("OnClick", SoundRowClick)
-    row:SetScript("OnEnter", function(self) self.hover:Show() end)
-    row:SetScript("OnLeave", function(self) self.hover:Hide() end)
+    row:SetScript("OnEnter", SoundRowEnter)
+    row:SetScript("OnLeave", SoundRowLeave)
     sounds.rows[index] = row
     return row
 end
+local function PaintSoundRow(row, item)
+    row.item = item
+    SetRaw(row.text, item.text)
+    local r, g, b
+    if item.header == 2 then r, g, b = Color("muted", 0.6, 0.65, 0.72)
+    elseif item.header or item.value == sounds.current then r, g, b = Accent()
+    else r, g, b = Color("text", 0.92, 0.94, 0.98) end
+    row.text:SetTextColor(r, g, b)
+    row.play:SetShown(not item.header and item.value ~= "")
+    row.hover:Hide()
+end
 function Page.FilterSounds()
     local query = Page.Query(sounds.search)
-    local shown = 0
-    local r, g, b = Accent()
-    local tr, tg, tb = Color("text", 0.92, 0.94, 0.98)
+    local items = sounds.items
+    -- Headers come before their rows: they are cleared before a row marks them.
     for i = 1, sounds.count do
-        local item = sounds.items[i]
-        if query == "" or item.search:find(query, 1, true) then
+        local item = items[i]
+        if item.header then
+            item.match = false
+        else
+            item.match = query == "" or item.search:find(query, 1, true) ~= nil
+            if item.match then
+                if item.section then item.section.match = true end
+                if item.group then item.group.match = true end
+            end
+        end
+    end
+    local shown = 0
+    for i = 1, sounds.count do
+        local item = items[i]
+        if item.match then
             shown = shown + 1
             local row = SoundRow(shown)
-            row.item = item
-            SetRaw(row.text, item.text)
-            local current = item.value == sounds.current
-            row.text:SetTextColor(current and r or tr, current and g or tg, current and b or tb)
-            row.play:SetShown(item.value ~= "")
+            PaintSoundRow(row, item)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", sounds.content, "TOPLEFT", 0, -(shown - 1) * 22)
             row:Show()
@@ -1655,46 +1812,81 @@ function Page.FilterSounds()
     for i = shown + 1, #sounds.rows do sounds.rows[i].item = nil; sounds.rows[i]:Hide() end
     sounds.content:SetHeight(max(1, shown * 22))
 end
-local function SoundItem(n, value, text)
+-- header: 1 section, 2 category. Rows are found by their category name too.
+local function SoundItem(n, value, text, header, section, group)
     local item = sounds.items[n]
     if not item then item = {}; sounds.items[n] = item end
-    item.value, item.text = value, text
-    item.search = type(text) == "string" and text:lower() or ""
+    item.value, item.text, item.header, item.section, item.group = value, text, header, section, group
+    local search = type(text) == "string" and text:lower() or ""
+    item.search = group and (search .. " " .. group.search) or search
+    return item
+end
+local function KitListed(value, kits)
+    local kit = kits and value:match("^kit:(%d+)$")
+    return kit ~= nil and kits.names[tonumber(kit)] ~= nil
+end
+-- Blizzard's Cooldown Manager sounds, one header per category.
+local function AddKitSounds(n, kits)
+    local groups = kits and kits.groups or EMPTY
+    if #groups == 0 then return n end
+    n = n + 1
+    local section = SoundItem(n, nil, Tr("Blizzard Cooldown Manager"), 1)
+    for i = 1, #groups do
+        local group = groups[i]
+        n = n + 1
+        local header = SoundItem(n, nil, group.title, 2, section)
+        for j = 1, #group do
+            n = n + 1
+            SoundItem(n, group[j].value, group[j].text, nil, section, header)
+        end
+    end
+    return n
+end
+local function AddMediaSounds(n)
+    local lsm = Media()
+    local names = lsm and lsm.List and lsm:List("sound") or EMPTY
+    local section
+    for i = 1, #names do
+        local name = names[i]
+        if type(name) == "string" and name ~= "" and #name <= 116 then
+            if not section then n = n + 1; section = SoundItem(n, nil, Tr("Shared media"), 1) end
+            n = n + 1
+            SoundItem(n, "lsm:" .. name, name, nil, section)
+        end
+    end
+    return n
+end
+local function EnsureSounds()
+    if sounds then return sounds end
+    sounds = Page.NewPopup(SOUND_W, SOUND_H)
+    Page.soundPicker = sounds
+    sounds.items, sounds.rows, sounds.count = {}, {}, 0
+    sounds.title = Label(sounds, "GameFontNormal", Tr("Choose a sound"))
+    sounds.title:SetPoint("TOPLEFT", sounds, "TOPLEFT", 12, -12)
+    sounds.close = Button(sounds, "x", 22, 20, function() sounds:Hide() end)
+    sounds.close:SetPoint("TOPRIGHT", sounds, "TOPRIGHT", -8, -8)
+    sounds.search = Page.SearchBox(sounds, SOUND_W - 28, Tr("Filter sounds"), Page.FilterSounds)
+    sounds.search:SetPoint("TOPLEFT", sounds, "TOPLEFT", 14, -36)
+    sounds.scroll, sounds.content = Page.ScrollArea(sounds, SOUND_W - 40)
+    sounds.scroll:SetPoint("TOPLEFT", sounds, "TOPLEFT", 12, -66)
+    sounds.scroll:SetPoint("BOTTOMRIGHT", sounds, "BOTTOMRIGHT", -26, 12)
+    sounds.OnClosed = function(self) self.search:ClearFocus(); self.onPick = nil end
+    return sounds
 end
 function Page.OpenSoundPicker(anchor, current, onPick)
     if P.Combat() then return false end
     if sounds and sounds:IsShown() and sounds.anchor == anchor then sounds:Hide(); return false end
-    if not sounds then
-        sounds = Page.NewPopup(SOUND_W, SOUND_H)
-        Page.soundPicker = sounds
-        sounds.items, sounds.rows, sounds.count = {}, {}, 0
-        sounds.title = Label(sounds, "GameFontNormal", Tr("Choose a sound"))
-        sounds.title:SetPoint("TOPLEFT", sounds, "TOPLEFT", 12, -12)
-        sounds.close = Button(sounds, "x", 22, 20, function() sounds:Hide() end)
-        sounds.close:SetPoint("TOPRIGHT", sounds, "TOPRIGHT", -8, -8)
-        sounds.search = Page.SearchBox(sounds, SOUND_W - 28, Tr("Filter sounds"), Page.FilterSounds)
-        sounds.search:SetPoint("TOPLEFT", sounds, "TOPLEFT", 14, -36)
-        sounds.scroll, sounds.content = Page.ScrollArea(sounds, SOUND_W - 40)
-        sounds.scroll:SetPoint("TOPLEFT", sounds, "TOPLEFT", 12, -66)
-        sounds.scroll:SetPoint("BOTTOMRIGHT", sounds, "BOTTOMRIGHT", -26, 12)
-        sounds.OnClosed = function(self) self.search:ClearFocus(); self.onPick = nil end
-    end
+    EnsureSounds()
+    current = type(current) == "string" and current or ""
+    local kits = Page.BlizzardSounds()
     local n = 1
     SoundItem(n, "", Tr("None"))
-    if type(current) == "string" and current ~= "" and not current:find("^lsm:") then
+    if current ~= "" and not current:find("^lsm:") and not KitListed(current, kits) then
         n = n + 1
         SoundItem(n, current, Page.SoundLabel(current))
     end
-    local lsm = Media()
-    local names = lsm and lsm.List and lsm:List("sound") or EMPTY
-    for i = 1, #names do
-        local name = names[i]
-        if type(name) == "string" and name ~= "" and #name <= 116 then
-            n = n + 1
-            SoundItem(n, "lsm:" .. name, name)
-        end
-    end
-    sounds.count, sounds.current, sounds.onPick = n, type(current) == "string" and current or "", onPick
+    n = AddMediaSounds(AddKitSounds(n, kits))
+    sounds.count, sounds.current, sounds.onPick = n, current, onPick
     Page.ClosePopups(Page.popover)
     Page.PlacePopup(sounds, anchor)
     if Page.popover and sounds.SetFrameLevel then sounds:SetFrameLevel((Page.popover:GetFrameLevel() or 0) + 20) end
@@ -1707,26 +1899,37 @@ end
 
 ------------------------------------------------------------------ per-spell popover
 -- Options of one entry, limited to its family and to what the runtime reads
--- for it (buff glows are a plain edge, so they have no style). A missing
--- value means "follow the bar": customised rows get the accent label and a
--- reset button, which sits in its own column right of every control.
+-- for it. A missing value means "follow the bar": customised rows get the
+-- accent label and a reset button, which sits in its own column right of
+-- every control. Glow style and color style every glow of the entry (spell
+-- alert, ready, buff while active and stack glows). Stack rows (0 = off)
+-- serve buffs and cooldowns that show their buff; "Color stacks from" also
+-- holds the stack color (its swatch opens a color list, reset clears both).
 local POP_W, POP_MAX = 330, 480
 local SWATCHES = { "ffd200", "ffffff", "ff4d4d", "4dff73", "4db8ff", "c78cff", "4dffff", "ff9933" }
-local SWATCH, SWATCH_STEP = 13, 14
+local SWATCH_NAMES = { "Gold", "White", "Red", "Green", "Blue", "Purple", "Cyan", "Orange" }
+local SWATCH, SWATCH_STEP, STACK_SWATCH = 13, 14, 18
+-- The stack color of an entry that has none.
+local STACK_COLOR = CDM.SPELL_DEFAULTS and CDM.SPELL_DEFAULTS.stackColor or "ff5a3c"
 local FIELDS = {
     { key = "procGlow", label = "Spell alert glow", kind = "bool", cd = true, spellOnly = true, bar = "procGlow" },
     { key = "readyGlow", label = "Glow when ready", kind = "bool", cd = true, bar = "readyGlow" },
     { key = "auraGlow", label = "Glow while active", kind = "bool", aura = true, bar = "auraGlow" },
-    { key = "glowStyle", label = "Glow style", kind = "choice", cd = true,
+    { key = "glowStyle", label = "Glow style", kind = "choice", cd = true, aura = true,
       values = { { 0, "Bar setting" }, { 1, "Blizzard alert" }, { 2, "Marching ants" }, { 3, "Pulse" }, { 4, "Border" } } },
     { key = "glowColor", label = "Glow color", kind = "color", cd = true, aura = true },
     { key = "desat", label = "Desaturate on cooldown", kind = "choice", cd = true,
       values = { { 0, "Bar setting" }, { 2, "Never" }, { 3, "Always" } } },
     { key = "hideReady", label = "Hide when ready", kind = "bool", cd = true, bar = "hideReady" },
-    { key = "readyAlpha", label = "Opacity when ready", kind = "number", cd = true, bar = "readyAlpha", step = 5, max = 100 },
-    { key = "cdAlpha", label = "Opacity on cooldown", kind = "number", cd = true, bar = "cdAlpha", step = 5, max = 100 },
+    { key = "readyAlpha", label = "Opacity when ready", kind = "number", cd = true, bar = "readyAlpha", step = 1, max = 100 },
+    { key = "cdAlpha", label = "Opacity on cooldown", kind = "number", cd = true, bar = "cdAlpha", step = 1, max = 100 },
     { key = "showAura", label = "Show active buff duration", kind = "bool", cd = true, spellOnly = true, bar = "showAura" },
     { key = "showMissing", label = "Show dimmed when missing", kind = "bool", aura = true, bar = "showMissing" },
+    { key = "auraUnit", label = "Track on", kind = "choice", stack = true,
+      values = { { 0, "Automatic" }, { 2, "Me" }, { 3, "Target" }, { 4, "Both" } } },
+    { key = "stackGlow", label = "Glow at stacks", kind = "number", stack = true, off = true, step = 1, max = 99 },
+    { key = "stackColorAt", label = "Color stacks from", kind = "number", stack = true, off = true, step = 1, max = 99,
+      color = "stackColor" },
     { key = "swipe", label = "Swipe", kind = "choice", cd = true, aura = true,
       values = { { 0, "Normal" }, { 2, "Reversed" }, { 3, "Hidden" } } },
     { key = "threshold", label = "Warn below (seconds)", kind = "number", cd = true, aura = true, step = 1, max = 10 },
@@ -1738,15 +1941,26 @@ local FIELDS = {
       aura = true },
 }
 Page.FIELDS = FIELDS
+local function SwatchItem(value, text, hex)
+    local r, g, b = P.RGB(hex)
+    return { value = value, text = text, swatchColor = { r, g, b, 1 } }
+end
+-- Stack colors: "" is the default color (the field is cleared).
+local COLOR_MENU = { SwatchItem("", "Default", STACK_COLOR) }
+for i, hex in ipairs(SWATCHES) do COLOR_MENU[i + 1] = SwatchItem(hex, SWATCH_NAMES[i], hex) end
+Page.COLOR_MENU = COLOR_MENU
 for _, field in ipairs(FIELDS) do
     if field.values then
         field.menu = {}
         for i, pair in ipairs(field.values) do field.menu[i] = { value = pair[1], text = pair[2] } end
     end
+    if field.color then field.clears = { field.key, field.color } end
 end
 local pop
 
-local function Applies(field, family, kind)
+-- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
+local function Applies(field, family, kind, aura)
+    if field.stack then return family == 2 or aura == true end
     if family == 2 then return field.aura == true end
     if not field.cd then return false end
     return not (field.spellOnly and (kind == "i" or kind == "e"))
@@ -1757,11 +1971,27 @@ local function BarValue(field)
     local key = field.bar and KEYS[pop.slot] and KEYS[pop.slot][field.bar]
     if key then return P.Get(ID, key) end
 end
+-- A cooldown shows its buff, and so its stacks, only while "Show active
+-- buff duration" applies to it; its stack rows are dimmed otherwise.
+local function StacksShown(fields)
+    if pop.family == 2 then return true end
+    local value = fields and fields.showAura
+    if value == nil then
+        local key = KEYS[pop.slot] and KEYS[pop.slot].showAura
+        value = key and P.Get(ID, key)
+    end
+    return value == true
+end
 local function SetField(field, value)
     local ok, reason = Page.SetSpellField(pop.key, field.key, value)
     if not ok then Page.Fail(reason) end
 end
-local function ResetClick(self) SetField(self.row.field, nil) end
+local function ResetClick(self)
+    local field = self.row.field
+    if not field.clears then SetField(field, nil); return end
+    local ok, reason = Page.ClearSpellFields(pop.key, field.clears)
+    if not ok then Page.Fail(reason) end
+end
 local function BoolClick(self)
     local field = self.row.field
     if Page.SpellField(pop.key, field.key) == self.value then SetField(field, nil) else SetField(field, self.value) end
@@ -1783,16 +2013,40 @@ local function ChoiceClick(self)
     for i = 1, #menu do if menu[i].value == current then index = i end end
     Pick(menu[index % #menu + 1].value)
 end
+-- Fields with "off" start at 0 and clear themselves when stepped back to it.
 local function StepClick(self)
     local field = self.row.field
     local current = Page.SpellField(pop.key, field.key)
-    if current == nil then current = tonumber(BarValue(field)) or 0 end
-    local value = max(0, min(field.max, current + self.delta * field.step))
-    SetField(field, floor(value / field.step + 0.5) * field.step)
+    if current == nil then current = field.off and 0 or tonumber(BarValue(field)) or 0 end
+    local multiplier = IsControlKeyDown and IsControlKeyDown() and 10
+        or IsShiftKeyDown and IsShiftKeyDown() and 5 or 1
+    local value = max(0, min(field.max, current + self.delta * field.step * multiplier))
+    value = floor(value / field.step + 0.5) * field.step
+    SetField(field, not (field.off and value == 0) and value or nil)
 end
 local function SwatchClick(self)
     local field = self.row.field
     if Page.SpellField(pop.key, field.key) == self.hex then SetField(field, nil) else SetField(field, self.hex) end
+end
+local function ColorClick(self)
+    local name = self.row.field.color
+    local current = Page.SpellField(pop.key, name) or ""
+    local function Pick(value)
+        local ok, reason = Page.SetSpellField(pop.key, name, value ~= "" and value or nil)
+        if not ok then Page.Fail(reason) end
+    end
+    if W.OpenDropdown then
+        Page.dropdownOpen = true
+        W.OpenDropdown(self, COLOR_MENU, current, Pick)
+        return
+    end
+    -- Without Menu2's list, step through the colors.
+    local index = 1
+    for i = 1, #COLOR_MENU do if COLOR_MENU[i].value == current then index = i end end
+    Pick(COLOR_MENU[index % #COLOR_MENU + 1].value)
+end
+local function ColorEnter(self)
+    ShowTip(self, Tr("Stack color"), Tr("Stacks show in this color from the number on the left."))
 end
 local function SoundClick(self)
     local field = self.row.field
@@ -1808,6 +2062,42 @@ local function IconCommit(self)
     if text == "" then SetField(self.row.field, nil)
     elseif id and id >= 1 and id < 2147483648 and id == floor(id) then SetField(self.row.field, id)
     else Page.Fail("Enter a texture file ID."); Page.PaintPopover() end
+end
+
+local function NewSwatch(row, size, onClick)
+    local swatch = CreateFrame("Button", nil, row)
+    swatch:SetSize(size, size)
+    swatch.edge = swatch:CreateTexture(nil, "BACKGROUND")
+    swatch.edge:SetAllPoints(swatch)
+    swatch.fill = swatch:CreateTexture(nil, "ARTWORK")
+    swatch.fill:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
+    swatch.fill:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
+    swatch.row = row
+    swatch:SetScript("OnClick", onClick)
+    return swatch
+end
+local function NumberControls(row, field, x)
+    row.minus = Button(row, "-", 22, 20, StepClick)
+    row.minus.row, row.minus.delta = row, -1
+    row.minus:SetPoint("LEFT", row, "LEFT", x, 0)
+    row.value = Label(row, "GameFontHighlightSmall", "")
+    row.value:SetWidth(36)
+    row.value:SetJustifyH("CENTER")
+    row.value:SetPoint("LEFT", row.minus, "RIGHT", 2, 0)
+    row.plus = Button(row, "+", 22, 20, StepClick)
+    row.plus.row, row.plus.delta = row, 1
+    row.plus:SetPoint("LEFT", row.value, "RIGHT", 2, 0)
+    if field.color then
+        row.swatch = NewSwatch(row, STACK_SWATCH, ColorClick)
+        row.swatch:SetPoint("LEFT", row.plus, "RIGHT", 8, 0)
+        row.swatch:SetScript("OnEnter", ColorEnter)
+        row.swatch:SetScript("OnLeave", HideTip)
+    elseif not field.off then
+        -- "Bar" marks a value that follows the bar.
+        row.hint = Label(row, "GameFontDisableSmall", "", "muted")
+        row.hint:SetPoint("LEFT", row.plus, "RIGHT", 6, 0)
+        row.hint:SetWidth(30)
+    end
 end
 
 local function Row(field)
@@ -1843,34 +2133,15 @@ local function Row(field)
             row.play:SetPoint("LEFT", row.choice, "RIGHT", 2, 0)
         end
     elseif kind == "number" then
-        row.minus = Button(row, "-", 22, 20, StepClick)
-        row.minus.row, row.minus.delta = row, -1
-        row.minus:SetPoint("LEFT", row, "LEFT", x, 0)
-        row.value = Label(row, "GameFontHighlightSmall", "")
-        row.value:SetWidth(36)
-        row.value:SetJustifyH("CENTER")
-        row.value:SetPoint("LEFT", row.minus, "RIGHT", 2, 0)
-        row.plus = Button(row, "+", 22, 20, StepClick)
-        row.plus.row, row.plus.delta = row, 1
-        row.plus:SetPoint("LEFT", row.value, "RIGHT", 2, 0)
-        row.hint = Label(row, "GameFontDisableSmall", "", "muted")
-        row.hint:SetPoint("LEFT", row.plus, "RIGHT", 6, 0)
-        row.hint:SetWidth(30)
+        NumberControls(row, field, x)
     elseif kind == "color" then
         row.swatches = {}
         for i, hex in ipairs(SWATCHES) do
-            local swatch = CreateFrame("Button", nil, row)
-            swatch:SetSize(SWATCH, SWATCH)
+            local swatch = NewSwatch(row, SWATCH, SwatchClick)
             swatch:SetPoint("LEFT", row, "LEFT", x + (i - 1) * SWATCH_STEP, 0)
-            swatch.edge = swatch:CreateTexture(nil, "BACKGROUND")
-            swatch.edge:SetAllPoints(swatch)
-            swatch.fill = swatch:CreateTexture(nil, "ARTWORK")
-            swatch.fill:SetPoint("TOPLEFT", swatch, "TOPLEFT", 2, -2)
-            swatch.fill:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -2, 2)
             local r, g, b = P.RGB(hex)
             swatch.fill:SetColorTexture(r, g, b, 1)
-            swatch.row, swatch.hex = row, hex
-            swatch:SetScript("OnClick", SwatchClick)
+            swatch.hex = hex
             row.swatches[i] = swatch
         end
     elseif kind == "icon" then
@@ -1894,15 +2165,33 @@ local function Row(field)
     return row
 end
 
+local function PaintNumber(row, field, value, companion)
+    local shown = value
+    if shown == nil then shown = field.off and 0 or tonumber(BarValue(field)) or 0 end
+    SetRaw(row.value, field.off and shown == 0 and Tr("Off") or tostring(shown))
+    row.value:SetAlpha(value ~= nil and 1 or 0.6)
+    if row.hint then row.hint:SetText(value ~= nil and "" or Tr("Bar")) end
+    local swatch = row.swatch
+    if swatch then
+        local r, g, b = P.RGB(companion or STACK_COLOR)
+        swatch.fill:SetColorTexture(r, g, b, 1)
+        if companion then r, g, b = Accent() else r, g, b = 0, 0, 0 end
+        swatch.edge:SetColorTexture(r, g, b, companion and 1 or 0.8)
+        swatch:SetAlpha(shown > 0 and 1 or 0.5)
+    end
+end
 local function PaintRow(row, fields)
     local field = row.field
     local value = fields and fields[field.key]
-    local custom = value ~= nil
+    local companion = field.color and fields and fields[field.color] or nil
+    local custom = value ~= nil or companion ~= nil
     row.label:SetText(Tr(pop.family == 2 and field.auraLabel or field.label))
     local r, g, b
     if custom then r, g, b = Accent() else r, g, b = Color("text", 0.92, 0.94, 0.98) end
     row.label:SetTextColor(r, g, b)
     row.reset:SetShown(custom)
+    -- Stack rows of a cooldown whose buff is not shown stay editable, dimmed.
+    row:SetAlpha((not field.stack or StacksShown(fields)) and 1 or 0.45)
     local kind = field.kind
     if kind == "bool" then
         row.on:SetActive(value == true)
@@ -1914,11 +2203,7 @@ local function PaintRow(row, fields)
         for i = 1, #field.menu do if field.menu[i].value == (value or 0) then text = field.menu[i].text end end
         row.choice:SetText(Tr(text))
     elseif kind == "number" then
-        local shown = value
-        if shown == nil then shown = tonumber(BarValue(field)) or 0 end
-        SetRaw(row.value, tostring(shown))
-        row.value:SetAlpha(custom and 1 or 0.6)
-        row.hint:SetText(custom and "" or Tr("Bar"))
+        PaintNumber(row, field, value, companion)
     elseif kind == "color" then
         local ar, ag, ab = Accent()
         for i = 1, #row.swatches do
@@ -2004,7 +2289,7 @@ local function EnsurePopover()
     pop.scroll, pop.content = Page.ScrollArea(pop, POP_W - 40)
     pop.OnClosed = function(self)
         for _, row in pairs(self.rows) do if row.edit then row.edit:ClearFocus() end end
-        if self.anchor and self.anchor.edge then PaintEdge(self.anchor, false) end
+        Light(self.anchor, false)
     end
     return pop
 end
@@ -2026,7 +2311,7 @@ function Page.PaintPopover()
     for i = 1, #FIELDS do
         local field = FIELDS[i]
         local row = pop.rows[field.key]
-        if Applies(field, pop.family, kind) then
+        if Applies(field, pop.family, kind, pop.hasAura) then
             row = Row(field)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", pop.content, "TOPLEFT", 0, -y)
@@ -2041,17 +2326,31 @@ function Page.PaintPopover()
     pop:SetHeight(min(POP_MAX, top + y + 12))
 end
 
-function Page.TogglePopover(tile)
-    if pop and pop:IsShown() and pop.key == tile.key and pop.slot == Page.selected then pop:Hide(); return false end
+-- Opens the entry of a spell tile, anchored under the tile or under anchor
+-- (its icon in the preview). The same spell clicked there again closes it.
+function Page.TogglePopover(tile, anchor)
+    anchor = anchor or tile
+    if pop and pop:IsShown() and pop.key == tile.key and pop.slot == Page.selected and pop.anchor == anchor then
+        pop:Hide()
+        return false
+    end
     if P.Combat() or not tile.key then return false end
     EnsurePopover()
     Page.ClosePopups(pop)
-    pop.key, pop.slot, pop.family = tile.key, Page.selected, tile.family
+    if pop:IsShown() and pop.anchor ~= anchor then Light(pop.anchor, false) end
+    pop.key, pop.slot, pop.family, pop.hasAura = tile.key, Page.selected, tile.family, tile.aura == true
     pop.entryName, pop.texture = tile.name, tile.texture
-    Page.PlacePopup(pop, tile)
+    Page.PlacePopup(pop, anchor)
     if pop.scroll.SetVerticalScroll then pop.scroll:SetVerticalScroll(0) end
     Page.PaintPopover()
     pop:Show()
-    PaintEdge(tile, true)
+    Light(anchor, true)
     return true
+end
+-- The preview moves the open popover to the icon that now holds its entry.
+function Page.MovePopover(anchor)
+    if not (pop and pop:IsShown()) or pop.anchor == anchor then return end
+    Light(pop.anchor, false)
+    Page.PlacePopup(pop, anchor)
+    Light(anchor, true)
 end

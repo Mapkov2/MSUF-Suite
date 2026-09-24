@@ -16,6 +16,7 @@ local moduleAddons = {
     loot = "MSUF_Suite_QualityOfLife",
     combatLog = "MSUF_Suite_QualityOfLife",
     xpBar = "MSUF_Suite_QualityOfLife",
+    skyriding = "MSUF_Suite_QualityOfLife",
     dataTexts = "MSUF_Suite_DataTexts",
     buffReminders = "MSUF_Suite_BuffReminders",
     chat = "MSUF_Suite_Chat",

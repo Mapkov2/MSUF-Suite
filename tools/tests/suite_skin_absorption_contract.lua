@@ -47,6 +47,12 @@ for line in toc:gmatch("[^\r\n]+") do
     end
 end
 assert(namespace.ready and namespace.addonName == "MSUF_Suite_Skin")
+local macroStarts = 0
+local originalMacroStart = assert(namespace.MacroWindow.Start)
+namespace.MacroWindow.Start = function(...)
+    macroStarts = macroStarts + 1
+    return originalMacroStart(...)
+end
 do
     local previousSuite, opened = _G.MSUFSuite
     _G.MSUFSuite = { Menu = { Open = function(page) opened = page; return true end } }
@@ -65,7 +71,21 @@ end
 assert(lifecycle, "Suite skin lifecycle missing")
 lifecycle.scripts.OnEvent(lifecycle, "ADDON_LOADED", "MSUF_Suite_Skin")
 lifecycle.scripts.OnEvent(lifecycle, "PLAYER_LOGIN")
+assert(macroStarts > 0, "Blizzard-window startup did not start the Macro adapter")
 assert(namespace.DB and _G.MSUFSuiteSkinDB == namespace.RootDB)
+do
+    local api = namespace.GetAPI(2, 1)
+    local client = assert(api:RegisterAddon("MidnightSimpleUnitFrames", { integrationVersion = 1 }))
+    local nav = new_frame("Button", "SuiteMSUFNavigationContract", UIParent)
+    assert(client:SkinButton(nav, {
+        role = "navigation", activeRole = "navigationActive",
+        listItem = true, active = true,
+    }))
+    local surface = namespace.Registry.GetSurface(nav)
+    assert(surface and surface.spec.activeRole == "button",
+        "Suite provider kept the bright blue MSUF navigation highlight")
+    client:ReleaseAll()
+end
 assert(namespace.DB.typography.sharedMediaFont == "MapkoSkin - Expressway ExtraBold")
 local looks, palettes = 0, 0
 local function ColorsValid()
@@ -123,6 +143,15 @@ for category, enabled in pairs(namespace.Defaults.skinCategories) do
     assert(enabled == true, "Blizzard window category starts disabled: " .. category)
 end
 assert(namespace.BlizzardCatalog.glass.valid, "reviewed Blizzard glass catalog is invalid")
+for _, lookName in ipairs({ "midnight", "midnightDark", "foreverGlass" }) do
+    assert(namespace.LookPresets[lookName].objectiveTrackerStyle == "forever",
+        "main look lost the compact quest-tracker default: " .. lookName)
+end
+local macroShell
+for _, entry in ipairs(namespace.BlizzardCatalog.entries) do
+    if entry.id == "macros" then macroShell = entry.mode and entry.mode.role; break end
+end
+assert(macroShell == "popup", "Macro window still uses the translucent generic shell")
 for _, frameName in ipairs({ "CharacterFrame", "PVEFrame", "ProfessionsFrame",
     "SettingsPanel", "GameMenuFrame", "AddonList", "MerchantFrame" }) do
     local coverage = namespace.BlizzardCatalog.GetGlassContract(frameName)
@@ -693,6 +722,8 @@ do
     module.Header.Text:SetTextColor(0.3, 0.4, 0.5, 1)
     local block = new_frame("Frame", "SuiteTrackerQuestBlock", module)
     block.used = true
+    block.HeaderText = block:CreateFontString()
+    block.HeaderText:SetTextColor(0.1, 0.9, 0.5, 1)
     module.usedBlocks = { quest = { [1] = block } }
     function module:LayoutBlock() end
     _G.ScenarioObjectiveTracker = module
@@ -702,15 +733,29 @@ do
     assert(namespace.ObjectiveTrackerSkin.Apply(tracker, "suite-tracker-contract"))
     local state = namespace.ObjectiveTrackerSkin.owners["suite-tracker-contract"]
     assert(state and not state.surfaces[tracker] and state.surfaces[tracker.Header]
+        and state.surfaces[module]
         and not state.surfaces[block] and state.headerTrims[tracker.Header]
         and state.headerRules[tracker.Header],
-        "Forever tracker must leave quest rows unboxed")
+        "Forever tracker must group quests in one card without boxing each row")
     local titleSurface = namespace.Registry.GetSurface(tracker.Header)
     local sectionSurface = namespace.Registry.GetSurface(module.Header)
+    local moduleSurface = namespace.Registry.GetSurface(module)
+    assert(moduleSurface.spec.role == "card" and moduleSurface.spec.border == 0,
+        "Forever quest group did not receive its dark card")
     assert(titleSurface.spec.border == 0 and titleSurface.spec.fillAlphaScale < 0.5
         and sectionSurface.spec.border == 0
         and sectionSurface.spec.fillVisible == false,
         "Forever tracker still draws heavy header bands")
+    namespace.DB.hud.objectiveTrackerStyle = "modern"
+    namespace.ObjectiveTrackerSkin:OnThemeChanged("hud", "objectiveTrackerStyle")
+    assert(namespace.Registry.GetSurface(module).visible == false
+        and namespace.Registry.GetSurface(block).visible == true,
+        "Modern tracker kept the Forever quest-group card")
+    namespace.DB.hud.objectiveTrackerStyle = "forever"
+    namespace.ObjectiveTrackerSkin:OnThemeChanged("hud", "objectiveTrackerStyle")
+    assert(namespace.Registry.GetSurface(module).visible == true
+        and namespace.Registry.GetSurface(block).visible == false,
+        "Forever tracker kept Modern per-quest boxes")
     assert(namespace.ObjectiveTrackerSkin.Disable(tracker, "suite-tracker-contract"))
     assert(not state.headerTrims[tracker.Header]:IsShown()
         and not state.headerRules[tracker.Header]:IsShown(),
@@ -734,11 +779,10 @@ do
         and namespace.Registry.GetSurface(block).spec.fillAlphaScale < 0.3,
         "Modern tracker quest wash is too heavy")
     assert(namespace.ObjectiveTrackerSkin.ApplyAccents(tracker, "suite-tracker-accents"))
-    local titleR = namespace.Theme.GetColor("title")
-    local sectionR = namespace.Theme.GetColor("accentAlt")
-    assert(math.abs(select(1, tracker.Header.Text:GetTextColor()) - titleR) < 0.001
-        and math.abs(select(1, module.Header.Text:GetTextColor()) - sectionR) < 0.001,
-        "tracker heading colors did not follow the skin palette")
+    assert(math.abs(select(1, tracker.Header.Text:GetTextColor()) - 0.3) < 0.001
+        and math.abs(select(1, module.Header.Text:GetTextColor()) - 0.3) < 0.001
+        and math.abs(select(2, block.HeaderText:GetTextColor()) - 0.9) < 0.001,
+        "tracker skin replaced Blizzard's semantic category or quest colors")
     local title = tracker.Header.Text
     local setColor = title.SetTextColor
     local writes = 0
@@ -750,12 +794,12 @@ do
     assert(writes == 0, "unchanged tracker color was written again")
     setColor(title, 0.2, 0.3, 0.4, 1)
     assert(namespace.ObjectiveTrackerSkin.ApplyAccents(tracker, "suite-tracker-accents"))
-    assert(writes == 1 and math.abs(select(1, title:GetTextColor()) - titleR) < 0.001,
-        "tracker did not restore its accent after Blizzard changed the color")
+    assert(writes == 0 and math.abs(select(1, title:GetTextColor()) - 0.2) < 0.001,
+        "tracker overrode a later Blizzard category color")
     title.SetTextColor = setColor
     assert(namespace.ObjectiveTrackerSkin.Disable(tracker, "suite-tracker-accents"))
-    assert(math.abs(select(1, tracker.Header.Text:GetTextColor()) - 0.3) < 0.001,
-        "tracker heading color was not restored")
+    assert(math.abs(select(1, tracker.Header.Text:GetTextColor()) - 0.2) < 0.001,
+        "tracker disable overwrote Blizzard's latest category color")
     assert(namespace.ObjectiveTrackerSkin.Disable(tracker, "suite-tracker-modern"))
     _G.ScenarioObjectiveTracker = nil
 end

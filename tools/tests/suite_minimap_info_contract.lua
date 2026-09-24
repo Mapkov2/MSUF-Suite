@@ -33,7 +33,16 @@ do
     local clock = M.infoEntries.Clock
     check(clock.label.text == "14:03" and W.Pending() == 1 and W.Pending(40) == 1, "clock scheduling")
     check(clock.button.points[1][1] == "TOP" and clock.label.justify == "CENTER", "clock anchor")
-    check(clock.label.font[1] == "Fonts\\FRIZQT__.TTF" and clock.label.font[2] == 12 and clock.label.font[3] == "OUTLINE", "native font")
+    check(clock.label.font[1] == "Fonts\\FRIZQT__.TTF" and clock.label.font[2] == 12
+        and clock.label.font[3] == "OUTLINE,SLUG", "native Slug font")
+    assert(S.SetMany("minimap", { infoClockOutline = 3, infoClockRendering = 2,
+        infoClockShadow = true, infoClockShadowOpacity = 80, infoClockShadowDistance = 2 }))
+    check(clock.label.font[3] == "THICKOUTLINE,MONOCHROME"
+        and clock.label.shadowColor[4] == 0.8 and clock.label.shadowOffset[1] == 2,
+        "clock text effects")
+    assert(S.Set("minimap", "infoClockRendering", 3))
+    check(clock.label.font[3] == "OUTLINE,SLUG" and clock.label.shadowColor[4] == 0,
+        "Slug clock shadow")
     assert(S.SetMany("minimap", { infoFPS = true, infoLatency = true, infoCoordinates = true, infoStatusColors = true }))
     local entries = M.infoEntries
     check(entries.FPS.label.text == "80 FPS" and entries.Latency.label.text == "50 ms", "fps/latency")

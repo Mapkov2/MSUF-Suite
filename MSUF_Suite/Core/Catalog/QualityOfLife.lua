@@ -134,3 +134,87 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", 148, -3000, 3000),
 })
+
+-- The flight HUD is Retail-only and remains dormant until explicitly enabled.
+B.Module("skyriding", {
+    title = "Skyriding HUD",
+    description = "Movable MSUF flight display for speed, Vigor, Second Wind and Whirling Surge.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if not NS.Client.isMainline or NS.Client.isForever then
+            return false, "Skyriding is available only in Retail"
+        end
+        if not (C_PlayerInfo and type(C_PlayerInfo.GetGlidingInfo) == "function"
+            and C_Spell and type(C_Spell.GetSpellCharges) == "function") then
+            return false, "Skyriding data is unavailable on this client"
+        end
+        return true
+    end,
+})
+NS.SkyridingLookPresets = {
+    [1] = { panelColor = "0a1220", borderColor = "41627a", trackColor = "102033",
+        accentColor = "57c7df", windColor = "558bdd", textColor = "f4f7fb",
+        mutedColor = "aab5c2", thrillColor = "d8b66a" },
+    [2] = { panelColor = "151719", borderColor = "575b58", trackColor = "202326",
+        accentColor = "b9ab86", windColor = "8b9cb2", textColor = "e9e9e4",
+        mutedColor = "b9bdb9", thrillColor = "e2c57c" },
+    [3] = { panelColor = "14181b", borderColor = "9f8960", trackColor = "20272a",
+        accentColor = "d8b66a", windColor = "668db8", textColor = "f4f3eb",
+        mutedColor = "d4dce2", thrillColor = "f0d284" },
+}
+NS.SkyridingLookVisualKeys = {
+    panelColor = true, borderColor = true, trackColor = true, accentColor = true,
+    windColor = true, textColor = true, mutedColor = true, thrillColor = true,
+    panelOpacity = true, trackOpacity = true, borderSize = true,
+}
+local initialSky = NS.SkyridingLookPresets[1]
+B.Section("skyriding", "flight_hud", "Skyriding HUD", {
+    Choice("look", "MSUF style", 1, { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+    Number("width", "HUD width", 350, 220, 600, 5),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Bool("airborneOnly", "Show only while airborne"),
+    Bool("showSpeed", "Show speed and Thrill threshold", true),
+    Bool("showVigor", "Show Vigor charges", true),
+    Bool("showSecondWind", "Show Second Wind charges", true),
+    Bool("showWhirlingSurge", "Show Whirling Surge cooldown", true),
+    Number("speedMax", "Speed bar maximum (percent)", 1200, 500, 2000, 50),
+    Number("thrillSpeed", "Thrill speed (percent)", 830, 300, 1500, 10),
+    Choice("point", "Screen anchor", 5,
+        { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", -145, -3000, 3000),
+})
+B.Section("skyriding", "flight_typography", "Text and bars", {
+    B.Font("font", "Font (MSUF Expressway by default)"),
+    Number("fontSize", "Font size", 11, 9, 18),
+    Choice("fontOutline", "Text outline", 1, { "None", "Outline", "Thick outline" }),
+    Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Bool("fontShadow", "Text shadow"),
+    Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+    Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
+    B.Texture("barTexture", "Bar texture"),
+    Number("barHeight", "Bar height", 10, 6, 18),
+    Number("rowGap", "Space between rows", 0, 0, 12),
+})
+NS.SuiteCatalog.skyriding.rules.font.defaultLabel = "MSUF Expressway (default)"
+local skyTextRules = NS.SuiteCatalog.skyriding.rules
+skyTextRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
+for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
+    skyTextRules[key].enableKey = "fontShadow"
+    skyTextRules[key].requiresChoice = skyTextRules.fontShadow.requiresChoice
+end
+B.Section("skyriding", "flight_colors", "Colors and panel", {
+    B.Color("panelColor", "Panel color", initialSky.panelColor),
+    Number("panelOpacity", "Panel opacity (percent)", 94, 0, 100),
+    B.Color("borderColor", "Border color", initialSky.borderColor),
+    Number("borderSize", "Border thickness", 1, 0, 3),
+    B.Color("trackColor", "Empty bar color", initialSky.trackColor),
+    Number("trackOpacity", "Empty bar opacity (percent)", 100, 0, 100),
+    B.Color("accentColor", "Vigor and speed color", initialSky.accentColor),
+    B.Color("windColor", "Second Wind color", initialSky.windColor),
+    B.Color("thrillColor", "Thrill speed color", initialSky.thrillColor),
+    B.Color("textColor", "Value text color", initialSky.textColor),
+    B.Color("mutedColor", "Label text color", initialSky.mutedColor),
+})
+NS.SuiteCatalog.skyriding.rules.speedMax.enableKey = "showSpeed"
+NS.SuiteCatalog.skyriding.rules.thrillSpeed.enableKey = "showSpeed"

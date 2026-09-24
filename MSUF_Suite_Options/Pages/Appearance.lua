@@ -70,12 +70,13 @@ local function Row(kind, label, key, section, get, set, values, min, max, step)
     row.id, row.kind, row.label, row.get, row.set = key, kind, Tr(label), get, set
     if kind == "dropdown" then row.values = values
     elseif kind == "slider" then
-        row.min, row.max, row.step, row.roundStep = min, max, step, step >= 1
+        row.min, row.max, row.step = min, max, P.SliderStep(min, max, nil, step)
+        row.roundStep = row.step >= 1
     end
     return row
 end
 
-local function Section(ctx, b, id, title, help, rows, open, extra)
+local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
     local body = b:CollapsibleSection("suite_skin_" .. id, Tr(title), 120, open)
     local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
     local y = -18
@@ -83,15 +84,55 @@ local function Section(ctx, b, id, title, help, rows, open, extra)
         local hint = P.Text(body, help, 16, y, width)
         y = y - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
     end
-    if #rows > 0 then
+    local visibleRows = {}
+    for _, row in ipairs(rows) do
+        if row.kind ~= "color" then visibleRows[#visibleRows + 1] = row end
+    end
+    if #visibleRows > 0 then
         local grid = W.SettingsRows(ctx, body, {
-            x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = rows,
+            x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = visibleRows,
         })
         y = grid.bottomY
     end
     if extra then y = extra(body, y, width) or y end
+    local colorRows = {}
+    for _, row in ipairs(contextRows or rows) do
+        if row.kind == "color" then colorRows[#colorRows + 1] = row end
+    end
+    if #colorRows > 0 and W.AttachContextColorShortcut then
+        local shortcut = W.AttachContextColorShortcut(body, {
+            title = Tr(title), maxTargets = #colorRows,
+            getTargets = function()
+                local targets = {}
+                for _, row in ipairs(colorRows) do
+                    targets[#targets + 1] = {
+                        label = row.label, get = row.get, set = row.set,
+                        settingKey = row.settingKey,
+                        hasOpacity = true,
+                        getOpacity = function() return select(4, row.get()) end,
+                    }
+                end
+                return targets
+            end,
+        })
+        if shortcut then shortcut._msuf2BoundColorShortcut = nil end
+    end
     P.FinishBody(b, body, y)
     return body
+end
+
+local function SkinColorRow(skin, key, label)
+    local row = Meta("color." .. key, "colors")
+    row.id, row.kind, row.label = key, "color", Tr(label)
+    row.get = function()
+        local color = skin.Theme.GetColorTable(key)
+        return color[1], color[2], color[3], color[4]
+    end
+    row.set = function(r, g, blue, alpha)
+        Change(skin, label, "color." .. key,
+            function() return skin.Theme.SetColor(key, r, g, blue, alpha) end)
+    end
+    return row
 end
 
 local function ConfigRow(skin, rows, section, label, path, key, kind, values, min, max, step, setter)
@@ -418,27 +459,21 @@ local function Build(ctx)
     for _, spec in ipairs({ { "Window background", "background" }, { "Panel", "surface" },
         { "Button", "buttonFill" }, { "Accent", "accent" }, { "Text", "text" }, { "Border", "border" } }) do
         local label, key = spec[1], spec[2]
-        local row = Meta("color." .. key, "colors")
-        row.id, row.kind, row.label = key, "color", Tr(label)
-        row.get = function()
-            local color = skin.Theme.GetColorTable(key)
-            return color[1], color[2], color[3], color[4]
-        end
-        row.set = function(r, g, blue, alpha)
-            Change(skin, label, "color." .. key,
-                function() return skin.Theme.SetColor(key, r, g, blue, alpha) end)
-        end
-        colors[#colors + 1] = row
+        colors[#colors + 1] = SkinColorRow(skin, key, label)
+    end
+    local paletteRows = {}
+    for _, entry in ipairs(skin.ColorOrder or {}) do
+        paletteRows[#paletteRows + 1] = SkinColorRow(skin, entry[1], (skin.L and skin.L[entry[2]]) or entry[1])
     end
     Section(ctx, b, "colors", "Main colors",
-        "Use the MSUF color picker here. The full palette is under Appearance > Colors > Suite skin.", colors, false,
+        "Use the color dots for the full skin palette. The same colors are under Appearance > Colors > Suite skin.", colors, false,
         function(body, y, width)
             P.Button(ctx, body, "Reset skin colors to " .. skin.LookPresets[skin.Defaults.theme.look].label,
                 16, y, width, function()
                 Change(skin, "Reset skin colors", "colors.reset", skin.Theme.ResetColors)
             end, nil, P.Meta(PAGE, "skin", "colors.reset", "action", "suite_skin_colors"))
             return y - 40
-        end)
+        end, paletteRows)
 
     local fonts = {}
     fonts[#fonts + 1] = Row("toggle", "Override Blizzard fonts", "font.enabled", "fonts",

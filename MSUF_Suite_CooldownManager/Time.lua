@@ -42,7 +42,7 @@ local function Curves(icon,entry,view)
     icon.desatCurve=on and K.DesatCurve() or nil
     local ready=ov.readyAlpha or view.readyAlpha or 100
     local cooling=ov.cdAlpha or view.cdAlpha or 100
-    icon.readyAlpha=ready/100
+    icon.readyAlpha,icon.coolAlpha=ready/100,cooling/100
     icon.alphaCurve=(ready~=100 or cooling~=100) and K.StepCurve(ready,cooling) or nil
     local hide=ov.hideReady
     if hide==nil then hide=view.hideReady==true end
@@ -71,6 +71,13 @@ local function Feedback(icon,duration)
         local value=alpha and icon.readyAlpha or 1
         if icon.fbAlpha~=value then icon.fbAlpha=value;icon:SetAlpha(value) end
     end
+end
+-- The look of an item cooldown on hold: desaturated at the cooling opacity,
+-- through the same plain memos.
+local function Held(icon)
+    if icon.fbDesat~=1 then icon.fbDesat=1;icon.tex:SetDesaturation(1) end
+    local value=icon.alphaCurve and icon.coolAlpha or 1
+    if icon.fbAlpha~=value then icon.fbAlpha=value;icon:SetAlpha(value) end
 end
 
 -- cdReal marks a main swipe whose end is the end of the real cooldown (a
@@ -115,12 +122,19 @@ end
 -- Returns the entry's cooling state. reason "expired": the main swipe held
 -- the GCD-free duration and just ran out, so the real cooldown is over and
 -- any isActive now is the GCD; nothing is queried for the main cooldown (a
--- new cooldown re-arms through SPELL_UPDATE_COOLDOWN).
+-- new cooldown re-arms through SPELL_UPDATE_COOLDOWN). reason "recharge"
+-- (SPELL_UPDATE_CHARGES, no payload): while the main swipe is clear a
+-- charge is available, so only the recharge swipe and the count are read
+-- and the main state holds; a main swipe that shows (no charge left, or the
+-- GCD) is read in full.
 local function SpellState(entry,icon,spell,reason,view)
     local cooling,exact=false,true
+    if reason=="recharge" and icon.cdSet==true then reason="charges" end
     if reason=="expired" then
         ClearMain(icon)
         Feedback(icon,nil)
+    elseif reason=="recharge" then
+        cooling,exact=entry.cooling==true,false
     else
         local info=GetCooldown and GetCooldown(spell)
         local active=info and info.isActive
@@ -218,14 +232,17 @@ local function ItemCount(item)
     end
     return count
 end
-local function CategoryCount(icon,category,view)
-    local total=view.charges and Total(category) or 0
-    if total>0 then
+-- Returns true when the bags hold none; a hideEmpty entry reads its total
+-- even while counts are off.
+local function CategoryCount(icon,category,view,entry)
+    local total=(view.charges or entry.hideEmpty) and Total(category) or 0
+    if total>0 and view.charges then
         ShowCount(icon,total)
     else
         icon.lastCount=nil
         CountOff(icon)
     end
+    return total==0
 end
 
 ------------------------------------------------------------------ items
@@ -234,6 +251,11 @@ end
 -- start and length are memoized, so a repeated BAG_UPDATE_COOLDOWN with the
 -- same cooldown writes nothing; the swipe's own OnCooldownDone ("expired")
 -- or the plain end time retires it. Secret values clear the icon.
+-- A cooldown on hold (enable 0 or false: Blizzard starts it when combat
+-- ends, e.g. a Healthstone used in combat) shows no swipe, looks held and
+-- counts as cooling, so no ready alert fires; the BAG_UPDATE_COOLDOWN that
+-- starts it arms the swipe as a new cooldown. Returns the cooling state and
+-- whether the bags hold none of the item.
 local function ItemState(entry,icon,view,reason)
     local slot=entry.equipSlot or (entry.src=="e" and entry.id) or nil
     local item=entry.itemID or entry.id
@@ -244,8 +266,18 @@ local function ItemState(entry,icon,view,reason)
         start,length,enable=GetItemCooldown(item)
     end
     local cooling=false
-    if Public(start) and Public(length) and Public(enable) and type(start)=="number" and type(length)=="number"
-        and start>0 and length>0 and enable~=false and enable~=0 then
+    local plain=Public(start) and Public(length) and Public(enable) and type(start)=="number" and type(length)=="number"
+    if plain and length>0 and (enable==false or enable==0) then
+        if not icon.itemLock then
+            -- The item was used: its own count is read again.
+            icon.itemLock,icon.itemStart=true,nil
+            if not slot then counts[item]=nil end
+        end
+        ClearMain(icon)
+        Held(icon)
+        cooling=true
+    elseif plain and start>0 and length>0 then
+        icon.itemLock=nil
         local gcd=C.state.showGCD==true
         if icon.itemStart==start and icon.itemLen==length and icon.itemGCD==gcd then
             if not icon.itemOver and (reason=="expired" or start+length<=GetTime()) then
@@ -275,19 +307,20 @@ local function ItemState(entry,icon,view,reason)
             if not shown then ClearMain(icon);Feedback(icon,nil) end
         end
     else
-        icon.itemStart=nil
+        icon.itemStart,icon.itemLock=nil,nil
         ClearMain(icon)
         Feedback(icon,nil)
     end
     ClearCharge(icon)
-    local count=not slot and view.charges and ItemCount(item)
-    if count and count~=1 then
+    -- An empty healthstone (hideEmpty) shows no "0", not even in a preview.
+    local count=not slot and (view.charges or entry.hideEmpty) and ItemCount(item)
+    if count and count~=1 and view.charges and not (count==0 and entry.hideEmpty) then
         ShowCount(icon,count)
     else
         icon.lastCount=nil
         CountOff(icon)
     end
-    return cooling
+    return cooling,count==0
 end
 
 ------------------------------------------------------------------ edges
@@ -318,8 +351,10 @@ local function Edge(entry,cooling)
 end
 
 -- reason: "cooldown" (SPELL_UPDATE_COOLDOWN, isOnGCD trustworthy),
--- "charges", "item" (bag events), "done", "expired" (the main swipe ran
--- out, from Done), "full". Returns true when entry.hidden changed.
+-- "charges" (SPELL_UPDATE_USES), "recharge" (SPELL_UPDATE_CHARGES: the
+-- charge part only, see SpellState), "item" (bag events), "done",
+-- "expired" (the main swipe ran out, from Done), "full". Returns true when
+-- entry.hidden changed.
 function T.Refresh(entry,reason)
     local icon=entry.icon
     if not icon or icon.sim or entry.src=="p" then return false end
@@ -327,9 +362,9 @@ function T.Refresh(entry,reason)
     if not view then return false end
     if icon.curveEntry~=entry or icon.curveOv~=entry.ov or icon.curveGen~=view.behaviorGen then Curves(icon,entry,view) end
     if reason=="full" then C.Icons.Apply(entry) end
-    local cooling
+    local cooling,empty
     if entry.equipSlot or entry.src=="i" or entry.src=="e" then
-        cooling=ItemState(entry,icon,view,reason)
+        cooling,empty=ItemState(entry,icon,view,reason)
     else
         -- Category entries (potions, healthstones) follow the spell that last
         -- started the category; the controller keeps entry.catSpell current.
@@ -347,12 +382,23 @@ function T.Refresh(entry,reason)
             if not category then CountOff(icon) end
             cooling=false
         end
-        if category then CategoryCount(icon,category,view) end
+        if category then empty=CategoryCount(icon,category,view,entry) end
     end
-    local hidden=(icon.hideReady and not cooling and not C.state.preview) and true or false
+    -- Healthstones (hideEmpty) leave their bar while the bags hold none;
+    -- entry.empty keeps that answer for the options page.
+    empty=entry.hideEmpty==true and empty==true
+    entry.empty=empty
+    local hidden=(not C.state.preview and ((icon.hideReady and not cooling) or empty)) and true or false
     local changed=(entry.hidden==true)~=hidden
     entry.hidden=hidden
+    local was=entry.cooling
     Edge(entry,cooling)
+    -- A flip without a cooling edge (a Healthstone leaving or joining the
+    -- bags) re-evaluates the glows as well; Edge covers the others.
+    if changed and was==cooling then
+        local fx=C.Effects
+        if fx and fx.Update then fx.Update(entry) end
+    end
     return changed
 end
 
@@ -394,7 +440,7 @@ function T.Simulate(entry,duration)
     local view=C.views[entry.slot]
     if view and (icon.curveEntry~=entry or icon.curveOv~=entry.ov or icon.curveGen~=view.behaviorGen) then Curves(icon,entry,view) end
     -- The live swipe is replaced either way: the item memo starts over.
-    icon.itemStart=nil
+    icon.itemStart,icon.itemLock=nil,nil
     if duration then
         icon.sim=duration
         icon.cd:SetCooldownFromDurationObject(duration,true)
