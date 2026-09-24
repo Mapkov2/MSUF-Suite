@@ -1,0 +1,16 @@
+## Interface: 50504
+## Title: MSUF Suite - Minimap
+## Notes: Optional Minimap module for MSUF Suite.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## LoadOnDemand: 1
+
+Bootstrap.lua
+Host.lua
+Input.lua
+Elements.lua
+Drawer.lua
+Info.lua
+Tooltips.lua
+Controller.lua

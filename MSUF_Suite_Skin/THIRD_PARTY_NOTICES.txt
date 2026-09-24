@@ -1,0 +1,12 @@
+MapkoSkin includes these unmodified third-party libraries:
+
+- LibStub, by Kaelten. Public domain.
+- CallbackHandler-1.0, by Ace3 Development Team. BSD-style license; see its source header.
+- LibSharedMedia-3.0, by Elkano and contributors. GNU Lesser General Public License v2.1; see its source header and https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+
+The bundled Expressway and Fritz Soundscape font files and status-bar textures
+were copied from the author's MSUF project at the user's explicit request.
+They are packaged locally so MapkoSkin has no runtime dependency on MSUF.
+The Dreamy, Foggy and Glass status-bar artwork was contributed to MSUF by Aur0r4
+and is redistributed here with the same permission under which it is bundled
+with MSUF.

@@ -1,0 +1,10 @@
+## Interface: 50504
+## Title: MSUF Suite - DataTexts
+## Notes: Optional information bars for MSUF Suite.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## LoadOnDemand: 1
+
+Bootstrap.lua
+DataTexts.lua

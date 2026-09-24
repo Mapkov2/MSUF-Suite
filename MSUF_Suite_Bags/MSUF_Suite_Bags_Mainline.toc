@@ -1,0 +1,10 @@
+## Interface: 120007, 120100, 120105, 16001
+## Title: MSUF Suite - Bags
+## Notes: Optional Bags module for MSUF Suite.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## LoadOnDemand: 1
+
+Bootstrap.lua
+Bags.lua

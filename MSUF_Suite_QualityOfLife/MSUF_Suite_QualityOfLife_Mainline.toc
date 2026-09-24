@@ -1,0 +1,14 @@
+## Interface: 120007, 120100, 120105, 16001
+## Title: MSUF Suite - Quality of Life
+## Notes: Optional experience bar, merchant, quest, loot and combat logging helpers for MSUF Suite.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## LoadOnDemand: 1
+
+Bootstrap.lua
+Merchant.lua
+QuestHelpers.lua
+Loot.lua
+CombatLog.lua
+ExperienceBar.lua

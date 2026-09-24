@@ -1,0 +1,7 @@
+_local_workflows/
+__pycache__/
+*.py[cod]
+*.zip
+dist/
+.env
+.env.*

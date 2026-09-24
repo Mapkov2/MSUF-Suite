@@ -1,0 +1,12 @@
+## Interface: 50504
+## Title: MSUF Suite - Shared runtime
+## Notes: Shared runtime required by enabled Suite modules.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite
+## LoadOnDemand: 1
+
+Surfaces.lua
+Runtime.lua
+DataSources.lua
+EditMode.lua

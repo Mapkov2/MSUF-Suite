@@ -1,0 +1,77 @@
+## Interface: 120007, 120100, 120105, 16001
+## Title: MSUF Suite - Skinning
+## Notes: Suite-owned MapkoSkin skin engine.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite
+## LoadOnDemand: 1
+## SavedVariables: MSUFSuiteSkinDB
+## IconTexture: Interface\AddOns\MSUF_Suite_Skin\Media\Icon.png
+
+Libs\LibStub\LibStub.lua
+Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+Libs\LibSharedMedia-3.0\LibSharedMedia-3.0.lua
+Core\Bootstrap.lua
+Core\Client.lua
+Locales\Localization.lua
+Locales\enUS.lua
+Locales\deDE.lua
+Core\Defaults.lua
+Core\Database.lua
+Core\SharedMedia.lua
+Core\ProfileIO.lua
+Core\Safety.lua
+Core\Registry.lua
+Core\CombatGate.lua
+Core\Theme.lua
+Core\BlizzardFontCatalog.lua
+Core\BlizzardYellow.lua
+Core\Checkmarks.lua
+Core\Typography.lua
+Rendering\Geometry.lua
+Rendering\Surface.lua
+Rendering\WindowActionSkin.lua
+Rendering\WindowControls.lua
+Rendering\MicroMenuVisual.lua
+Core\Cosmetics.lua
+Rendering\IconSkin.lua
+Rendering\ControlSkin.lua
+Rendering\ScrollBarSkin.lua
+Adapters\UIPanelButtons.lua
+Adapters\Catalog.lua
+Adapters\GenericWindows.lua
+Adapters\MacroWindow.lua
+Adapters\DeepWindows.lua
+Adapters\SemanticHUD.lua
+Adapters\EquipmentInfo.lua
+Adapters\GearAnnotations.lua
+Adapters\CharacterDetails.lua
+Adapters\CharacterStats.lua
+Adapters\EQoLCharacter.lua
+Adapters\CharacterPanel.lua
+Adapters\InspectPanel.lua
+Adapters\SocialUI.lua
+Adapters\SharedChrome.lua
+Adapters\LegacyWindows.lua
+Adapters\CommonMenus.lua
+Adapters\CommonArt.lua
+Adapters\ForeverGroupFinder.lua
+Adapters\Commerce.lua
+Adapters\GameMenu.lua
+Adapters\WorldMap.lua
+Adapters\PlayerSpells.lua
+Adapters\EncounterJournal.lua
+Adapters\ObjectiveTracker.lua
+Adapters\ChatFrames.lua
+Adapters\DamageMeter.lua
+Adapters\EditMode.lua
+Adapters\Communities.lua
+Adapters\MajorWindows.lua
+Adapters\OwnedMicroBar.lua
+Adapters\MicroMenu.lua
+Adapters\Blizzard.lua
+Adapters\ClientWindows.lua
+Core\PublicAPI.lua
+Shell\OptionsLoader.lua
+Core\Lifecycle.lua
+Core\Finalize.lua

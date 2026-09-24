@@ -1,0 +1,25 @@
+## Interface: 120007, 120100, 120105, 16001
+## Title: MSUF Suite - Options
+## Notes: Suite pages for the MSUF options menu.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
+## LoadOnDemand: 1
+
+Menu\Bridge.lua
+Menu\Controls.lua
+Pages\ActionBars.lua
+Pages\MinimapPreviewArt.lua
+Pages\MinimapPreview.lua
+Pages\Minimap.lua
+Pages\DamageMeter.lua
+Pages\Bags.lua
+Pages\DataTexts.lua
+Pages\QualityOfLife.lua
+Pages\BuffReminders.lua
+Pages\Chat.lua
+Pages\CooldownManagerWidgets.lua
+Pages\CooldownManagerPreview.lua
+Pages\CooldownManager.lua
+Pages\Appearance.lua
+Menu\Register.lua

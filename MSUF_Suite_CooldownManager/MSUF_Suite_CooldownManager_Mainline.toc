@@ -1,0 +1,25 @@
+## Interface: 120007, 120100, 120105, 16001
+## Title: MSUF Suite - Cooldown manager
+## Notes: Optional cooldown, buff and buff bar manager for Retail and Forever.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## LoadOnDemand: 1
+
+Bootstrap.lua
+Const.lua
+Presets.lua
+Catalog.lua
+Resolve.lua
+Index.lua
+Icons.lua
+Time.lua
+Effects.lua
+Auras.lua
+Alerts.lua
+Layout.lua
+Visibility.lua
+Native.lua
+Keybinds.lua
+Preview.lua
+Controller.lua

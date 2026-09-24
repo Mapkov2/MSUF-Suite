@@ -1,0 +1,16 @@
+## Interface: 11509
+## Title: MSUF Suite - Damage meter
+## Notes: Optional Damage meter module for MSUF Suite.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## LoadOnDemand: 1
+
+Bootstrap.lua
+Data.lua
+Rows.lua
+Window.lua
+Breakdown.lua
+Menus.lua
+Timer.lua
+Controller.lua

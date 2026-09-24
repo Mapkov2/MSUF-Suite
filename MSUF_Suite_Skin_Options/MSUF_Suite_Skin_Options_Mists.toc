@@ -1,0 +1,26 @@
+## Interface: 50504
+## Title: MSUF Suite - Skinning Options
+## Notes: Suite skinning pages inside MSUF.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MSUF_Suite_Skin, MSUF_Suite_Options
+## LoadOnDemand: 1
+
+MSKIN_OptionsBootstrap.lua
+Shell\Theme.lua
+Shell\Widgets.lua
+Shell\Search.lua
+Shell\Window.lua
+Pages\Dashboard.lua
+Pages\Looks.lua
+Pages\Icons.lua
+Pages\Colors.lua
+Pages\Typography.lua
+Pages\Geometry.lua
+Pages\Skins.lua
+Pages\Coverage.lua
+Pages\HUD.lua
+Pages\Profiles.lua
+Pages\Advanced.lua
+Shell\Embedded.lua
+MSKIN_OptionsFinalize.lua

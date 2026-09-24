@@ -1,0 +1,5 @@
+Copyright (c) 2026 Mapko. All rights reserved.
+
+Private use is permitted by the copyright holder. Redistribution,
+modification, sublicensing, and commercial use require prior written
+permission from the copyright holder.

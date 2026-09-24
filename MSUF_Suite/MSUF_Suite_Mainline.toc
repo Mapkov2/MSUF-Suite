@@ -1,0 +1,28 @@
+## Interface: 120007, 120100, 120105, 16001
+## Title: MSUF Suite
+## Notes: Optional interface modules in the MSUF menu.
+## Author: Mapko
+## Version: 6.5-beta6
+## Dependencies: MidnightSimpleUnitFrames
+## OptionalDeps: MapkoSkin
+## SavedVariables: MSUFSuiteDB
+
+Core\Platform.lua
+Core\Database.lua
+Core\SuiteCatalog.lua
+Core\Catalog\ActionBars.lua
+Core\Catalog\Minimap.lua
+Core\MinimapStyle.lua
+Core\Catalog\DamageMeter.lua
+Core\Catalog\Bags.lua
+Core\Catalog\QualityOfLife.lua
+Core\Catalog\DataTexts.lua
+Core\Catalog\BuffReminders.lua
+Core\Catalog\Chat.lua
+Core\Catalog\CooldownManager.lua
+Core\Suite.lua
+Integrations\MapkoSkin.lua
+Core\ProfileIO.lua
+Core\Profiles.lua
+Core\Menu.lua
+Core\Startup.lua

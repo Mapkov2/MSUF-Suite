@@ -1,0 +1,29 @@
+<Bindings>
+	<!-- Commands for the suite-only action bars 9 and 10. They have no bodies:
+	     MSUF Suite routes keys bound here to its buttons with override click
+	     bindings while the action bar module is active. -->
+	<Binding name="MSUFSUITE_BAR9_BUTTON1" header="MSUFSUITE_BAR9" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON2" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON3" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON4" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON5" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON6" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON7" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON8" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON9" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON10" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON11" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR9_BUTTON12" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON1" header="MSUFSUITE_BAR10" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON2" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON3" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON4" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON5" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON6" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON7" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON8" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON9" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON10" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON11" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_BAR10_BUTTON12" category="BINDING_HEADER_MSUFSUITE"/>
+</Bindings>
