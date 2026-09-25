@@ -58,7 +58,15 @@ local function Commit(self)
 end
 
 local function AddonLoaded(_, _, name)
-    if name == "Blizzard_HybridMinimap" then
+    if name == "MinimapButtonButton" then
+        -- Yield any buttons already in our drawer before MBB collects them on
+        -- PLAYER_LOGIN. The normal Suite refresh defers protected work in combat.
+        if M.active then
+            MM.Force("drawer")
+            MM.Force("input")
+            S.Apply("minimap")
+        end
+    elseif name == "Blizzard_HybridMinimap" then
         if M.mapOwned then MM.ApplyHybrid() end
     elseif name == "Blizzard_TimeManager" then
         if M.mapOwned and not NS.IsCombatLocked() then MM.ApplyDecorations() end
@@ -109,7 +117,7 @@ function M:Refresh()
     if dirty.geometry or dirty.position then MM.ApplyHost() end
     if dirty.geometry then
         if self.mapOwned then MM.ApplyMap(true) end
-        if not c.collectButtons then MM.RefreshIcons() end
+        if not MM.CollectsButtons() then MM.RefreshIcons() end
     end
     if not self.mapOwned then MM.Queue("claim") end
     if dirty.border or dirty.geometry then MM.ApplyBorder() end

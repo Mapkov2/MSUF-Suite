@@ -654,6 +654,7 @@ function P.BuildMinimapPreview(ctx, b, sections)
             local spec, button = item.spec, item.button
             local key, layer = spec[1], spec[5]
             local wanted = key == "folio" and config.showLanding ~= 3 or spec[4] and config[spec[4]] == true
+            if key == "drawer" and Suite.Client.IsAddOnLoaded("MinimapButtonButton") then wanted = false end
             if spec[4] == false then
                 wanted = S.MinimapElementPreviewShown and S.MinimapElementPreviewShown(spec[2]) == true or false
             end

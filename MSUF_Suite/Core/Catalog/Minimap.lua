@@ -14,7 +14,9 @@ B.Module("minimap", {
     title = "Minimap",
     description = "A clean minimap in its own frame: size, shape, border, zoom, Blizzard buttons, an addon button drawer and information texts. Blizzard's minimap buttons keep working.",
     core = true, page = "suite_minimap",
-    conflicts = { "SexyMap", "MinimapButtonButton", "EllesmereUIMinimap", "ElvUI" },
+    -- MinimapButtonButton owns addon buttons, not the map. The runtime lets it
+    -- keep those buttons and leaves the Suite drawer dormant while it is loaded.
+    conflicts = { "SexyMap", "EllesmereUIMinimap", "ElvUI" },
     available = Available,
 })
 

@@ -313,7 +313,7 @@ function MM.LayoutElements()
     MM.LayoutRow(c.elementRow, items, count, size, c.elementSpacing, c.elementDistance, 0, "elements")
     if MM.rowCount ~= count then
         MM.rowCount = count
-        if c.collectButtons and c.drawerRow == c.elementRow then MM.Queue("drawer") end
+        if MM.CollectsButtons() and c.drawerRow == c.elementRow then MM.Queue("drawer") end
     end
 end
 MM.flushers.rows = MM.LayoutElements
