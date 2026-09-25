@@ -313,15 +313,21 @@ function Database.Normalize(db)
     windowActions.opacity = Clamp(windowActions.opacity, 0.35, 1)
     local microMenu = db.icons.microMenu
     local defaults = NS.Defaults.icons.microMenu
-    if NS.Client.isForever and previousRevision <= 48
-        and db.theme.look == "foreverGlass"
-        and microMenu.preset == "forever"
-        and microMenu.positionPreset == "custom"
+    local oldFactoryBottom = previousRevision <= 48
         and microMenu.layoutPoint == "BOTTOM"
         and microMenu.layoutRelativePoint == "BOTTOM"
-        and microMenu.layoutX == 463 and microMenu.layoutY == 0 then
-        -- The shipped Forever factory export placed the bar beside the chat.
-        -- Move only that exact position; preserve every other custom layout.
+        and microMenu.layoutX == 463 and microMenu.layoutY == 0
+    local oldFactoryLeft = previousRevision <= 49
+        and microMenu.layoutPoint == "BOTTOMLEFT"
+        and microMenu.layoutRelativePoint == "BOTTOMLEFT"
+        and microMenu.layoutX == 18 and microMenu.layoutY == 18
+    if NS.Client.isForever and db.theme.look == "foreverGlass"
+        and microMenu.preset == "forever"
+        and microMenu.layoutMode == "owned"
+        and microMenu.positionPreset == "custom"
+        and (oldFactoryBottom or oldFactoryLeft) then
+        -- Two shipped Forever positions put the bar over the chat. Move only
+        -- those exact signatures; preserve every other custom layout.
         local position = NS.MicroMenuPositionPresets.bottomCenter
         microMenu.layoutPoint, microMenu.layoutRelativePoint = position.point, position.relativePoint
         microMenu.layoutX, microMenu.layoutY = position.x, position.y

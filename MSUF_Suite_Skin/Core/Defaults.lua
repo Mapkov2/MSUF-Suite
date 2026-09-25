@@ -145,7 +145,7 @@ NS.CopyValue = CopyValue
 NS.BaseColors = midnightColors
 
 NS.Defaults = {
-    revision = 49,
+    revision = 50,
     enabled = true,
     characterDetails = { view = "modern", enabled = true, expanded = true, styleEQoL = true, inlineGear = true, wideLayout = true },
     characterStats = { enabled = true, diminishingReturns = true },

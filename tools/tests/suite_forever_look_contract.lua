@@ -58,7 +58,7 @@ micro.buttonBackground, micro.buttonBorder = true, 1
 micro.iconSize, micro.spacing = 20, 3
 micro.iconStyle = "line"
 forever.Database.Normalize(legacy)
-assert(legacy.revision == 49 and legacy.geometry.radius == 12
+assert(legacy.revision == 50 and legacy.geometry.radius == 12
     and legacy.theme.shellOpacity == 0.92 and legacy.theme.hoverStyle == "softFill"
     and legacy.theme.colors.background[4] == forever.PresetOverrides.foreverGlass.background[4]
     and micro.positionPreset == "bottomCenter" and micro.layoutX == 0 and micro.layoutY == 120
@@ -96,7 +96,7 @@ tuned.icons.microMenu.positionPreset = "custom"
 tuned.icons.microMenu.layoutX = -75
 forever.Database.Normalize(retired)
 local original = forever.PresetOverrides.foreverGlass
-assert(retired.revision == 49 and retired.geometry.radius == 12
+assert(retired.revision == 50 and retired.geometry.radius == 12
     and retired.theme.gradientStrength == 0.50 and retired.theme.shellOpacity == 0.92
     and retired.theme.hoverStyle == "softFill" and retired.typography.face == "sharedMedia"
     and retired.theme.colors.background[1] == original.background[1]
@@ -172,7 +172,7 @@ end
 priorPalette.theme.colors.microIconHover = { 0.11, 0.22, 0.33, 0.47 }
 local microAlpha = priorPalette.theme.colors.microBarFill[4]
 forever.Database.Normalize(priorPalette)
-assert(priorPalette.revision == 49
+assert(priorPalette.revision == 50
     and MatchesHex(priorPalette.theme.colors.card, "292F31")
     and priorPalette.theme.colors.card[4] == 0.51
     and MatchesHex(priorPalette.theme.colors.microBarFill, "0E1C28")
@@ -214,6 +214,33 @@ forever.Database.Normalize(placedBar)
 assert(placedBar.icons.microMenu.positionPreset == "custom"
     and placedBar.icons.microMenu.layoutX == 464,
     "hand-placed Forever bar was overwritten")
+local savedForeverBar = forever.CopyValue(forever.Defaults)
+savedForeverBar.revision = 49
+savedForeverBar.icons.microMenu.positionPreset = "custom"
+savedForeverBar.icons.microMenu.layoutPoint = "BOTTOMLEFT"
+savedForeverBar.icons.microMenu.layoutRelativePoint = "BOTTOMLEFT"
+savedForeverBar.icons.microMenu.layoutX = 18
+savedForeverBar.icons.microMenu.layoutY = 18
+forever.Database.Normalize(savedForeverBar)
+assert(savedForeverBar.revision == 50
+    and savedForeverBar.icons.microMenu.positionPreset == "bottomCenter"
+    and savedForeverBar.icons.microMenu.layoutPoint == "BOTTOM"
+    and savedForeverBar.icons.microMenu.layoutRelativePoint == "BOTTOM"
+    and savedForeverBar.icons.microMenu.layoutX == 0
+    and savedForeverBar.icons.microMenu.layoutY == 120,
+    "saved Forever profile still places the Micro Bar over chat")
+local movedForeverBar = forever.CopyValue(savedForeverBar)
+movedForeverBar.revision = 49
+movedForeverBar.icons.microMenu.positionPreset = "custom"
+movedForeverBar.icons.microMenu.layoutPoint = "BOTTOMLEFT"
+movedForeverBar.icons.microMenu.layoutRelativePoint = "BOTTOMLEFT"
+movedForeverBar.icons.microMenu.layoutX = 19
+movedForeverBar.icons.microMenu.layoutY = 18
+forever.Database.Normalize(movedForeverBar)
+assert(movedForeverBar.icons.microMenu.positionPreset == "custom"
+    and movedForeverBar.icons.microMenu.layoutPoint == "BOTTOMLEFT"
+    and movedForeverBar.icons.microMenu.layoutX == 19,
+    "a nearby player position was overwritten")
 local oldGlyphs = forever.CopyValue(forever.Defaults)
 oldGlyphs.revision = 43
 oldGlyphs.icons.microMenu.iconStyle = "line"
