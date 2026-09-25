@@ -13,9 +13,15 @@ local M = AB.M
 local Public = S.Public
 local api = {}
 local slotMap = {}
-local dirty = { cooldown = false, usable = false, state = false, count = false, icon = false, full = false }
+-- tint: re-applies the range color after a color change; keys: binding texts.
+local dirty = {
+    cooldown = false, usable = false, state = false, count = false, icon = false, tint = false, keys = false, full = false,
+}
 local dirtySlots, dirtyBars, refillBars, gridBars = {}, {}, {}, {}
-local scheduled, routingDirty, gridDirty = false, false, false
+-- scheduled: the next-frame flush is pending. throttled: the trailing flush
+-- of the cooldown/usable cap is pending. Separate flags, so next-frame work
+-- (a page change, a slot change) never waits for the cap.
+local scheduled, throttled, routingDirty, gridDirty = false, false, false, false
 local legacyCooldown, legacyCharges = {}, {}
 local last = { cooldown = 0, usable = 0 }
 local chargeEpoch = 0
@@ -64,7 +70,8 @@ function AB.ResolveAPI()
         api.Charges = function(slot)
             local current, maximum, start, duration, modRate = get(slot)
             legacyCharges.currentCharges, legacyCharges.maxCharges = current, maximum
-            legacyCharges.cooldownStartTime, legacyCharges.cooldownDuration, legacyCharges.chargeModRate = start, duration, modRate
+            legacyCharges.cooldownStartTime, legacyCharges.cooldownDuration = start, duration
+            legacyCharges.chargeModRate = modRate
             legacyCharges.isActive = type(current) == "number" and type(maximum) == "number" and current < maximum
                 and type(duration) == "number" and duration > 0
             return legacyCharges
@@ -230,8 +237,8 @@ end
 
 -- Cooldown feedback (desaturation, alpha) excludes the global cooldown.
 local function CooldownFeedback(rec, active, duration)
-    local c, button = M.config, rec.button
-    local desaturate, alpha = c.desaturateCooldown, c.cooldownAlpha < 100
+    local config, button = M.config, rec.button
+    local desaturate, alpha = config.desaturateCooldown, config.cooldownAlpha < 100
     if not desaturate and not alpha then
         if rec.feedback then
             rec.feedback = nil
@@ -259,7 +266,7 @@ local function CooldownFeedback(rec, active, duration)
         -- Plain values: the GCD never lasts longer than 1.5 s.
         local long = Public(duration) and type(duration) == "number" and duration > 1.5
         button.icon:SetDesaturation((desaturate and long) and 1 or 0)
-        button:SetAlpha((alpha and long) and c.cooldownAlpha / 100 or 1)
+        button:SetAlpha((alpha and long) and config.cooldownAlpha / 100 or 1)
     end
 end
 
@@ -347,12 +354,72 @@ local function Cooldown(rec)
 end
 
 ------------------------------------------------------------------ glows
-local function ActionSpell(slot)
+-- What a proc glow event is matched against, per button: a spell action
+-- keeps its spell ID until the button is repainted; a macro (modifiers can
+-- change its spell without a slot event) or an unreadable action is read
+-- per event; a flyout rescans its slots; anything else never glows.
+local GLOW_NONE, GLOW_SPELL, GLOW_DYNAMIC, GLOW_FLYOUT = 0, 1, 2, 3
+
+-- The action's kind, ID and subtype; nothing while any of them is secret.
+local function ReadAction(slot)
     if type(GetActionInfo) ~= "function" then return end
     local kind, id, sub = GetActionInfo(slot)
     if not Public(kind) or not Public(id) or not Public(sub) then return end
+    return kind, id, sub
+end
+
+-- The spell a proc glow matches on this action, else its flyout.
+local function ActionSpell(slot)
+    local kind, id, sub = ReadAction(slot)
     if kind == "spell" or (kind == "macro" and sub == "spell") then return id end
     if kind == "flyout" then return nil, id end
+end
+
+-- Caches what GlowMatch compares; returns ActionSpell's answer.
+local function CacheAction(rec)
+    local kind, id, sub = ReadAction(rec.slot)
+    if kind == "spell" then
+        rec.glowKind, rec.glowID = GLOW_SPELL, id
+        return id
+    elseif kind == "flyout" then
+        rec.glowKind, rec.glowID = GLOW_FLYOUT, id
+        return nil, id
+    elseif kind == "macro" or kind == nil then
+        rec.glowKind, rec.glowID = GLOW_DYNAMIC, nil
+        if sub == "spell" then return id end
+        return
+    end
+    rec.glowKind, rec.glowID = GLOW_NONE, nil
+end
+
+-- Blizzard's proc alert on a suite button, played exactly as
+-- ActionButtonSpellAlertManager plays a default alert on a button without
+-- a bar or action field (template, 1.4x size, start animation, then loop).
+-- The manager is not called: it records every alert in its shared
+-- activeAlerts table, which Blizzard walks for its own buttons, and a
+-- suite entry there would taint that walk. The frame is created raw, as
+-- the manager creates it, so the flipbook looks the same.
+local ALERT_TEMPLATE = "ActionButtonSpellAlertTemplate"
+local alertAvailable = type(_G.ActionButtonSpellAlertMixin) == "table"
+
+local function ShowAlert(button)
+    local alert = button.SpellActivationAlert
+    if not alert then
+        alert = CreateFrame("Frame", nil, button, ALERT_TEMPLATE)
+        button.SpellActivationAlert = alert
+        alert:SetPoint("CENTER", button, "CENTER", 0, 0)
+    end
+    local size = button:GetWidth()
+    alert:SetSize(size * 1.4, size * 1.4)
+    alert:Show()
+    alert.ProcStartAnim:Play()
+end
+
+local function HideAlert(button)
+    local alert = button.SpellActivationAlert
+    if not alert then return end
+    alert:Hide()
+    alert.ProcStartAnim:Stop()
 end
 
 local function SetGlow(rec, show)
@@ -361,34 +428,21 @@ local function SetGlow(rec, show)
     local button = rec.button
     -- Hide whatever the previous mode drew before switching.
     if rec.glow then
-        if rec.glowMode == 1 and ActionButtonSpellAlertManager then ActionButtonSpellAlertManager:HideAlert(button) end
-        if rec.glowEdges then
-            for i = 1, 4 do
-                rec.glowEdges[i]:Hide()
-            end
-        end
+        if rec.glowMode == 1 and alertAvailable then HideAlert(button) end
+        AB.ShowEdges(rec.glowEdges, false)
     end
     rec.glow, rec.glowMode = show, mode
     if not show then return end
-    if mode == 1 and ActionButtonSpellAlertManager then
-        ActionButtonSpellAlertManager:ShowAlert(button)
-        local alert = button.SpellActivationAlert
-        if alert then
-            local size = button:GetWidth()
-            alert:SetSize(size * 1.4, size * 1.4)
-        end
+    if mode == 1 and alertAvailable then
+        ShowAlert(button)
     elseif mode == 2 then
-        if not rec.glowEdges then
-            rec.glowEdges = {}
-            for i = 1, 4 do rec.glowEdges[i] = S.CreateTexture(button, nil, "OVERLAY", nil, 7) end
-        end
         local style = AB.style
-        AB.PlaceEdges(rec.glowEdges, button, 2, style.ir, style.ig, style.ib, 1)
+        AB.PlaceEdges(AB.Edges(rec, "glowEdges", "OVERLAY", 7), button, 2, style.ir, style.ig, style.ib, 1)
     end
 end
 
 local function GlowCheck(rec)
-    local spell, flyout = ActionSpell(rec.slot)
+    local spell, flyout = CacheAction(rec)
     local show = false
     if spell and api.Overlayed then
         local overlayed = api.Overlayed(spell)
@@ -430,6 +484,7 @@ local function Clear(rec)
         end
         button:SetAlpha(1)
     end
+    rec.glowKind, rec.glowID = GLOW_NONE, nil
     SetGlow(rec, false)
     ReleaseRange(rec)
 end
@@ -458,7 +513,6 @@ local function Paint(rec)
     Cooldown(rec)
     GlowCheck(rec)
 end
-AB.PaintButton = Paint
 
 -- Icon storms (forms, spell overrides): only buttons whose texture changed
 -- get the full repaint.
@@ -480,7 +534,31 @@ local function Refill(bar)
     for i = count + 1, #filled do filled[i] = nil end
 end
 
-function AB.Remap()
+-- slotMap: slot -> the owned buttons showing it. A slot's list is created
+-- the first time a button shows that slot and reused afterwards.
+local function MapButton(rec)
+    local slot = rec.slot
+    if not slot then return end
+    local list = slotMap[slot]
+    if not list then
+        list = {}
+        slotMap[slot] = list
+    end
+    list[#list + 1] = rec
+end
+
+local function UnmapButton(rec)
+    local list = rec.slot and slotMap[rec.slot]
+    if not list then return end
+    for i = #list, 1, -1 do
+        if list[i] == rec then
+            table.remove(list, i)
+            return
+        end
+    end
+end
+
+local function Remap()
     for _, list in pairs(slotMap) do
         for i = #list, 1, -1 do
             list[i] = nil
@@ -489,18 +567,12 @@ function AB.Remap()
     for i = 1, #AB.owned do
         local rec = AB.owned[i]
         rec.noChargeEpoch = nil
-        local slot = rec.slot
-        if slot then
-            local list = slotMap[slot]
-            if not list then
-                list = {}
-                slotMap[slot] = list
-            end
-            list[#list + 1] = rec
-        end
+        MapButton(rec)
     end
 end
 
+-- Key texts depend on bindings only (each button keeps its command), so
+-- page flips and repaints never read them.
 local function KeyTexts(bar)
     for i = 1, #bar.buttons do
         local rec = bar.buttons[i]
@@ -509,12 +581,17 @@ local function KeyTexts(bar)
     end
 end
 
-function AB.PaintBar(bar)
-    if bar.owned and not bar.native then
-        for i = 1, #bar.buttons do Paint(bar.buttons[i]) end
-        Refill(bar)
+local function AllKeyTexts()
+    for index = 1, AB.BAR_COUNT do
+        local bar = AB.bars[index]
+        if bar then KeyTexts(bar) end
     end
-    KeyTexts(bar)
+end
+
+local function PaintBar(bar)
+    if not bar.owned or bar.native then return end
+    for i = 1, #bar.buttons do Paint(bar.buttons[i]) end
+    Refill(bar)
 end
 
 local function Walk(fn)
@@ -544,7 +621,7 @@ local function NativeFeedback(rec)
         if rec.feedback then CooldownFeedback(rec, false) end
         return
     end
-    local c = M.config
+    local config = M.config
     if api.durations and AB.desatCurve and api.CooldownDuration then
         -- The duration object can evaluate a secret remaining time directly
         -- into visual C sinks. Avoid GetActionCooldown's fresh info table on
@@ -561,8 +638,8 @@ local function NativeFeedback(rec)
         local object = api.CooldownDuration(rec.slot, true)
         if object and type(object.EvaluateRemainingDuration) == "function" then
             rec.feedback = true
-            rec.button.icon:SetDesaturation(c.desaturateCooldown and object:EvaluateRemainingDuration(AB.desatCurve) or 0)
-            rec.button:SetAlpha(c.cooldownAlpha < 100 and object:EvaluateRemainingDuration(AB.alphaCurve) or 1)
+            rec.button.icon:SetDesaturation(config.desaturateCooldown and object:EvaluateRemainingDuration(AB.desatCurve) or 0)
+            rec.button:SetAlpha(config.cooldownAlpha < 100 and object:EvaluateRemainingDuration(AB.alphaCurve) or 1)
             return
         end
     end
@@ -596,7 +673,7 @@ local function NativeState(rec)
     if not M.config.castHighlight then rec.button:SetChecked(false) end
 end
 
-local function NativeUsablePost(button, slot, usable, noMana)
+local function NativeUsablePost(button)
     local rec = AB.records[button]
     if not rec or not rec.native or not M.active then return end
     -- Blizzard has already painted usable state. Only an active range
@@ -666,12 +743,32 @@ function AB.RefreshNative()
     end
 end
 
+-- A range color change: buttons tinted out of range take the new color.
+local function Retint(rec)
+    if rec.outOfRange then
+        rec.tint = nil
+        Tint(rec)
+    end
+end
+
 ------------------------------------------------------------------ flush
 local Flush
-local function Schedule(delay)
+local function Schedule()
     if scheduled or not C_Timer then return end
     scheduled = true
-    C_Timer.After(delay or 0, Flush)
+    C_Timer.After(0, Flush)
+end
+
+local function CapDone()
+    throttled = false
+    -- A pending next-frame flush runs the capped walks as well.
+    if not scheduled then Flush() end
+end
+
+local function Throttle(wait)
+    if throttled or not C_Timer then return end
+    throttled = true
+    C_Timer.After(wait, CapDone)
 end
 
 -- Leading edge next frame, then at most one walk per CAP seconds.
@@ -679,7 +776,7 @@ local function Capped(kind, now, fn)
     if not dirty[kind] then return end
     local wait = last[kind] + CAP - now
     if wait > 0 then
-        Schedule(wait)
+        Throttle(wait)
         return
     end
     dirty[kind] = false
@@ -688,35 +785,27 @@ local function Capped(kind, now, fn)
     if kind == "cooldown" and not AB.directDuration then WalkNative(NativeFeedback) end
 end
 
-Flush = function()
-    scheduled = false
-    if not M.active then return end
-    local now = type(GetTime) == "function" and GetTime() or 0
-    local nativeFull = false
-    if dirty.full then
-        dirty.full = false
-        for kind in pairs(dirty) do dirty[kind] = false end
-        for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
-        for index = 1, AB.BAR_COUNT do
-            local bar = AB.bars[index]
-            if bar then
-                dirtyBars[bar] = true
-            end
-        end
-        -- Suite paint skips native buttons, so their optional effects still
-        -- need one pass when a global refresh absorbs same-frame events.
-        nativeFull = true
-        if M.config.hideEmptyCharges then dirty.count = true end
-        if not M.config.castHighlight then dirty.state = true end
-        if not AB.directDuration then dirty.cooldown = true end
+-- A full refresh repaints every bar and absorbs the same-frame marks.
+local function ExpandFull()
+    dirty.full = false
+    for kind in pairs(dirty) do dirty[kind] = false end
+    for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
+    for index = 1, AB.BAR_COUNT do
+        local bar = AB.bars[index]
+        if bar then dirtyBars[bar] = true end
     end
+    dirty.keys = true
+    -- Suite paint skips native buttons, so their optional effects still
+    -- need one pass when a global refresh absorbs same-frame events.
+    if M.config.hideEmptyCharges then dirty.count = true end
+    if not M.config.castHighlight then dirty.state = true end
+    if not AB.directDuration then dirty.cooldown = true end
+end
+
+local function PaintDirty()
     for bar in pairs(dirtyBars) do
         dirtyBars[bar] = nil
-        if Visible(bar) then
-            AB.PaintBar(bar)
-        else
-            KeyTexts(bar)
-        end
+        if Visible(bar) then PaintBar(bar) end
     end
     for slot in pairs(dirtySlots) do
         dirtySlots[slot] = nil
@@ -735,66 +824,95 @@ Flush = function()
         refillBars[bar] = nil
         Refill(bar)
     end
+end
+
+local function WalkDirty(now)
     Capped("cooldown", now, Cooldown)
     Capped("usable", now, Usable)
     if dirty.state then
         dirty.state = false
         Walk(State)
-        if not M.config.castHighlight then
-            WalkNative(NativeState)
-        end
+        if not M.config.castHighlight then WalkNative(NativeState) end
     end
     if dirty.count then
         dirty.count = false
         Walk(Count)
-        if M.config.hideEmptyCharges then
-            WalkNative(NativeCount)
-        end
+        if M.config.hideEmptyCharges then WalkNative(NativeCount) end
     end
     if dirty.icon then
         dirty.icon = false
         Walk(Icon)
         for index = 1, 10 do
             local bar = AB.bars[index]
-            if bar and not bar.native and Visible(bar) then
-                Refill(bar)
-            end
+            if bar and not bar.native and Visible(bar) then Refill(bar) end
         end
     end
+    if dirty.tint then
+        dirty.tint = false
+        Walk(Retint)
+        WalkNative(Retint)
+    end
+    if dirty.keys then
+        dirty.keys = false
+        AllKeyTexts()
+    end
+end
+
+-- Shown/empty state and key routing are protected: out of combat only.
+local function FlushProtected()
+    if NS.IsCombatLocked() then return end
+    for index = 1, 10 do
+        local bar = AB.bars[index]
+        if bar and (gridDirty or gridBars[bar]) then
+            gridBars[bar] = nil
+            AB.Execute(bar.header, AB.SNIPPET.GRID)
+        end
+    end
+    gridDirty = false
+    if routingDirty then
+        routingDirty = false
+        AB.UpdateRouting()
+    end
+end
+
+Flush = function()
+    scheduled = false
+    if not M.active then return end
+    local now = type(GetTime) == "function" and GetTime() or 0
+    local nativeFull = dirty.full
+    if nativeFull then ExpandFull() end
+    PaintDirty()
+    WalkDirty(now)
     if nativeFull then
         WalkNative(NativeColor)
         if M.config.procGlow == 2 then WalkNative(GlowCheck) end
     end
-    -- Shown/empty state and key routing are protected: out of combat only.
-    if not NS.IsCombatLocked() then
-        for index = 1, 10 do
-            local bar = AB.bars[index]
-            if bar and (gridDirty or gridBars[bar]) then
-                gridBars[bar] = nil
-                AB.Execute(bar.header, [[self:ChildUpdate("grid")]])
-            end
-        end
-        gridDirty = false
-        if routingDirty then
-            routingDirty = false
-            AB.UpdateRouting()
-        end
-    end
+    FlushProtected()
 end
 
 local function Mark(kind)
     dirty[kind] = true
-    Schedule(0)
+    Schedule()
 end
+AB.Mark = Mark
 function AB.MarkAll()
     dirty.full = true
     routingDirty = true
     gridDirty = true
-    Schedule(0)
+    Schedule()
 end
 function AB.MarkBar(bar)
     dirtyBars[bar] = true
-    Schedule(0)
+    Schedule()
+end
+
+-- Re-runs the suite's shown-button plan on one bar after Blizzard applied
+-- its own (Blizzard.lua); in combat it waits for combat to end.
+function AB.Regrid(bar)
+    if not AB.Execute(bar.header, AB.SNIPPET.GRID) then
+        gridBars[bar] = true
+        Schedule()
+    end
 end
 
 ------------------------------------------------------------------ events
@@ -805,20 +923,25 @@ local function SlotChanged(_, _, slot)
     end
     dirtySlots[slot] = true
     -- A filled or emptied slot changes which buttons show; a slot becoming or
-    -- ceasing to be a flyout changes key routing.
+    -- ceasing to be a flyout changes key routing. Suite buttons re-read their
+    -- action when repainted; Blizzard paints the native ones, so their proc
+    -- glow match is re-read here while the pixel glow follows it.
     local list = slotMap[slot]
     if list then
         local flyout = AB.IsFlyoutSlot(slot)
+        local nativeGlow = M.config.procGlow == 2
         for i = 1, #list do
             local rec = list[i]
             gridBars[rec.bar] = true
-            if not rec.native and rec.flyout ~= flyout then
+            if rec.native then
+                if nativeGlow then CacheAction(rec) end
+            elseif rec.flyout ~= flyout then
                 rec.flyout = flyout
                 routingDirty = true
             end
         end
     end
-    Schedule(0)
+    Schedule()
 end
 
 local function UsableChanged(_, _, changes)
@@ -870,14 +993,22 @@ local function TargetChanged()
 end
 
 -- Proc glows match the event's spell against spell and macro actions;
--- flyouts rescan their slots.
+-- flyouts rescan their slots. Spell actions use the ID cached at paint
+-- time, so a glow event reads no action info for them.
 local glowSpell, glowShow
 local function GlowMatch(rec)
-    local id, flyout = ActionSpell(rec.slot)
-    if id == glowSpell then
-        SetGlow(rec, glowShow and M.config.procGlow ~= 3)
-    elseif flyout then
+    local kind = rec.glowKind
+    if kind == GLOW_SPELL then
+        if rec.glowID == glowSpell then SetGlow(rec, glowShow and M.config.procGlow ~= 3) end
+    elseif kind == GLOW_FLYOUT then
         GlowCheck(rec)
+    elseif kind == GLOW_DYNAMIC then
+        local id, flyout = ActionSpell(rec.slot)
+        if id == glowSpell then
+            SetGlow(rec, glowShow and M.config.procGlow ~= 3)
+        elseif flyout then
+            GlowCheck(rec)
+        end
     end
 end
 local function Glow(_, event, spell)
@@ -908,13 +1039,10 @@ local function LossOfControl(_, _, unit)
     Mark("cooldown")
 end
 
+-- Key texts are cosmetic and update at once, also in combat; routing waits
+-- for combat to end (Bindings.lua).
 local function Bindings()
-    for index = 1, AB.BAR_COUNT do
-        local bar = AB.bars[index]
-        if bar then
-            KeyTexts(bar)
-        end
-    end
+    AllKeyTexts()
     AB.UpdateRouting()
 end
 
@@ -949,7 +1077,7 @@ local function RegenEnabled()
         AB.UpdateClickAttributes()
     end
     if AB.dragPending or AB.dragging then AB.ApplyDrag() end
-    if gridDirty or routingDirty or next(gridBars) then Schedule(0) end
+    if gridDirty or routingDirty or next(gridBars) then Schedule() end
 end
 
 local EVENTS = {
@@ -1020,7 +1148,6 @@ local EVENTS = {
     end,
     PLAYER_REGEN_ENABLED = RegenEnabled,
 }
-AB.EVENTS = EVENTS
 
 -- Range checks and spell overlays can fire frequently in combat. Keep their
 -- listeners absent when the matching paint feature is off; Refresh re-syncs
@@ -1059,11 +1186,14 @@ local function Hidden(header)
 end
 
 -- Page changes arrive from the restricted page handler, also in combat.
+-- Only bar 1's twelve buttons move in the slot map.
 function AB.OnHeaderAttribute(bar, name, value)
     if not M.active then return end
     if name == "actionpage" and bar.index == 1 then
+        local buttons = bar.buttons
+        for i = 1, #buttons do UnmapButton(buttons[i]) end
         AB.PageSlots(bar, value)
-        AB.Remap()
+        for i = 1, #buttons do MapButton(buttons[i]) end
         routingDirty = true
         AB.MarkBar(bar)
     elseif name == "state-vis" then
@@ -1113,7 +1243,7 @@ function AB.StartDispatcher()
     end
     local bar = AB.bars[1]
     if bar then AB.PageSlots(bar, bar.header:GetAttribute("actionpage")) end
-    AB.Remap()
+    Remap()
     AB.MarkAll()
 end
 
@@ -1140,3 +1270,4 @@ function AB.RangeReferences()
     for _, count in pairs(rangeRefs) do total = total + count end
     return total
 end
+

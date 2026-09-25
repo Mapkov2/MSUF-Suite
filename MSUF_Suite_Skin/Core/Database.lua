@@ -316,14 +316,11 @@ local function MigrateRetiredForeverLook(db, revision)
     end
 end
 
+-- MergeDefaults has already given every factory color key a full table.
 local function NormalizeColors(colors)
-    for key, fallback in pairs(NS.Defaults.theme.colors) do
+    for key in pairs(NS.Defaults.theme.colors) do
         local color = colors[key]
-        if type(color) == "table" then
-            for index = 1, 4 do color[index] = Clamp(color[index], 0, 1) end
-        else
-            colors[key] = NS.CopyValue(fallback)
-        end
+        for index = 1, 4 do color[index] = Clamp(color[index], 0, 1) end
     end
 end
 
@@ -582,6 +579,10 @@ local function NormalizeMicroMenu(microMenu)
         microMenu.positionPreset = defaults.positionPreset
     end
     microMenu.locked = microMenu.locked ~= false
+    for _, condition in ipairs(NS.MicroMenuLoadConditions) do
+        local key = condition[1]
+        if type(microMenu[key]) ~= "boolean" then microMenu[key] = defaults[key] end
+    end
     if type(microMenu.barBackground) ~= "boolean" then
         microMenu.barBackground = defaults.barBackground
     end

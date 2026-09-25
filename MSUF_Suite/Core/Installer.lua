@@ -12,10 +12,89 @@ local page = 1
 local frame
 local moduleOverrides = { suite = {}, forever = {} }
 
-local de = type(GetLocale) == "function" and GetLocale() == "deDE"
-local function Tr(english, german) return de and german or english end
+-- Installer texts follow the Suite localization: English source strings
+-- looked up in MSUF's locale table. That table has no installer strings yet,
+-- so their reviewed German wording stays here and German clients keep it.
+local GERMAN = {
+    ["Finish combat first."] = "Bitte zuerst den Kampf beenden.",
+    ["INSTALLATION"] = "INSTALLATION",
+    ["1. Choose a profile"] = "1. Profil wählen",
+    ["Modern keeps your MSUF frames. Forever installs the full factory profile."] = "Modern behält deine MSUF-Frames. Forever installiert das komplette Factory-Profil.",
+    ["2. Select modules"] = "2. Module auswählen",
+    ["Keep the profile defaults or switch individual Suite modules on or off."] = "Übernimm die Profilwerte oder schalte einzelne Suite-Module an oder aus.",
+    ["3. Set UI scale"] = "3. UI-Skalierung wählen",
+    ["Scaling starts off and changes only if you enable it."] = "Skalierung ist zunächst aus und ändert sich nur auf deinen Wunsch.",
+    ["Pixel perfect"] = "Pixelgenau",
+    ["Small"] = "Klein",
+    ["Medium"] = "Mittel",
+    ["Large"] = "Groß",
+    ["Profile activated"] = "Profil aktiviert",
+    ["Your selected settings have been saved."] = "Deine gewählten Einstellungen wurden gespeichert.",
+    ["Reload the interface"] = "Oberfläche neu laden",
+    ["This finishes loading the selected Suite modules."] = "Damit werden die gewählten Suite-Module vollständig geladen.",
+    ["Back"] = "Zurück",
+    ["Not now"] = "Später",
+    ["Continue"] = "Weiter",
+    ["DONE"] = "FERTIG",
+    ["Reload UI"] = "UI neu laden",
+    ["Install"] = "Installieren",
+    ["Welcome to MSUF Suite"] = "Willkommen bei MSUF Suite",
+    ["Set up your interface in a few steps. Nothing changes until you click Install."] = "Richte deine Oberfläche in wenigen Schritten ein. Erst „Installieren“ übernimmt die Auswahl.",
+    ["Choose your profile"] = "Profil auswählen",
+    ["Forever creates a complete profile. Modern keeps your MSUF frames and applies Suite and Skin settings."] = "Forever erstellt ein vollständiges Profil. Modern behält deine MSUF-Frames und übernimmt Suite- und Skin-Einstellungen.",
+    ["Modern  ·  Suite only"] = "Modern  ·  nur Suite",
+    ["Retail default. Applies the included Suite and optional Skin profile; keeps your MSUF frames."] = "Retail-Standard. Übernimmt Suite- und optionales Skin-Profil; behält deine MSUF-Frames.",
+    ["Forever  ·  Complete profile"] = "Forever  ·  vollständiges Profil",
+    ["Applies the current Forever factory to MSUF frames and Suite modules; Skin is included when enabled."] = "Übernimmt die aktuelle Forever-Factory für MSUF-Frames und Suite-Module; Skin bei aktiviertem Addon.",
+    ["SELECTED"] = "GEWÄHLT",
+    ["CHOOSE"] = "WÄHLEN",
+    ["Forever creates a new profile. Existing profiles remain saved."] = "Forever erstellt ein neues Profil. Bestehende Profile bleiben gespeichert.",
+    ["Modern replaces active Suite and optional Skin settings. MSUF frames stay unchanged."] = "Modern ersetzt aktive Suite- und optionale Skin-Einstellungen. MSUF-Frames bleiben unverändert.",
+    ["MSUF spec cooldown profiles"] = "MSUF-Spec-Cooldown-Profile",
+    ["Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM."] = "Raid-Essentials, Utility und Buffs für deinen Spec; aus folgt dem Blizzard-CDM.",
+    ["ON"] = "AN",
+    ["OFF"] = "AUS",
+    ["Choose Suite modules"] = "Suite-Module auswählen",
+    ["The chosen profile supplies all settings. Toggle which Suite modules are enabled in it."] = "Das gewählte Profil liefert alle Einstellungen. Wähle hier die aktivierten Suite-Module.",
+    ["Set UI scale"] = "UI-Skalierung einstellen",
+    ["Global UI scaling is off by default. Turn it on only if you want a different interface size."] = "Globale UI-Skalierung ist standardmäßig aus. Schalte sie nur für eine andere Oberflächengröße ein.",
+    ["UI scaling is on"] = "UI-Skalierung ist an",
+    ["UI scaling is off"] = "UI-Skalierung ist aus",
+    ["Choose a preset below or fine-tune with the slider."] = "Wähle unten eine Stufe oder stelle den Regler frei ein.",
+    ["MSUF restores your current Blizzard UI scale. Click here to enable optional scaling."] = "MSUF stellt deine aktuelle Blizzard-UI-Skalierung wieder her. Zum Aktivieren hier klicken.",
+    ["Presets"] = "Skalierungsstufen",
+    ["No Suite scaling will be applied."] = "Es wird keine Suite-Skalierung angewendet.",
+    ["Review and install"] = "Prüfen und installieren",
+    ["Check your choices. Install applies them together; you can return to any step first."] = "Prüfe deine Auswahl. „Installieren“ übernimmt sie gemeinsam; du kannst vorher zurückgehen.",
+    ["Profile"] = "Profil",
+    ["Forever · complete MSUF and Suite factory"] = "Forever · vollständige MSUF- und Suite-Factory",
+    ["Modern · Suite profile, MSUF frames retained"] = "Modern · Suite-Profil, MSUF-Frames bleiben",
+    ["Modules"] = "Module",
+    ["enabled"] = "aktiv",
+    ["MSUF spec cooldowns"] = "MSUF-Spec-Cooldowns",
+    ["Blizzard cooldowns"] = "Blizzard-Cooldowns",
+    ["UI scaling"] = "UI-Skalierung",
+    ["Pixel perfect · adapts to resolution"] = "Pixelgenau · passt sich der Auflösung an",
+    ["Off · Blizzard setting retained"] = "Aus · Blizzard-Einstellung bleibt",
+    ["Installation complete"] = "Installation abgeschlossen",
+    ["Your new setup is active. Reload the interface to finish loading all selected modules."] = "Deine neue Einrichtung ist aktiv. Lade die Oberfläche neu, damit alle gewählten Module geladen werden.",
+}
+local german = type(GetLocale) == "function" and GetLocale() == "deDE"
+local function Text(english)
+    local value = german and GERMAN[english] or Suite.L and Suite.L[english]
+    return type(value) == "string" and value ~= "" and value or english
+end
+
 local function RetailCooldowns()
-    return Suite.Client and Suite.Client.isMainline and selected == "suite"
+    return Suite.Client and Suite.Client.isMainline
+        and (selected == "suite" or Suite.Client.isForever ~= true)
+end
+
+local function PlayerCooldownAnchor()
+    local anchors = Suite.CDM and Suite.CDM.FRAME_ANCHORS
+    for index, unit in pairs(anchors or {}) do
+        if unit == "player" then return index end
+    end
 end
 
 local function FrameProfileName()
@@ -46,21 +125,37 @@ local function PreparedProfile()
         -- edges, so changing resolution or UI scale cannot push them away.
         local texts = modules.dataTexts
         if texts then texts.bar1Point, texts.bar1X, texts.bar1Y = 9, 0, 170 end
-        local cooldowns = modules.cooldownManager
-        if cooldowns and RetailCooldowns() then
-            cooldowns.raidEssentials = useRaidEssentials
-            -- The Retail factory already includes the Subtlety Suite layout.
-            -- Keep it on a fresh install; personal lists take precedence when
-            -- a user reruns Modern. Other specs use the raid fallback.
-            local active = DB.GetProfile(DB.GetActiveProfileName())
-            local old = active and active.suite and active.suite.modules
-                and active.suite.modules.cooldownManager
-            if old and type(old.listsData) == "string" then
-                cooldowns.listsData = old.listsData
-            end
-            if old and type(old.spellsData) == "string" then
-                cooldowns.spellsData = old.spellsData
-            end
+    end
+    local cooldowns = modules.cooldownManager
+    if cooldowns and RetailCooldowns() then
+        cooldowns.raidEssentials = useRaidEssentials
+        -- Keep personal icon lists and spell choices when changing between
+        -- Modern and Retail Forever. Fresh installs use the supplied preset.
+        local active = DB.GetProfile(DB.GetActiveProfileName())
+        local old = active and active.suite and active.suite.modules
+            and active.suite.modules.cooldownManager
+        if old and type(old.listsData) == "string"
+            and (selected == "suite" or old.listsData ~= "") then
+            cooldowns.listsData = old.listsData
+        end
+        if old and type(old.spellsData) == "string"
+            and (selected == "suite" or old.spellsData ~= "") then
+            cooldowns.spellsData = old.spellsData
+        end
+        if selected == "forever" then
+            local playerAnchor = PlayerCooldownAnchor()
+            if not playerAnchor then return nil, "CDM player-frame anchor unavailable" end
+            -- The authored Forever rows must survive the runtime's legacy
+            -- defaults migration. Its old Potions row followed Utility far
+            -- below the player; both side rows now follow the Player frame.
+            cooldowns.captured = true
+            cooldowns.defaultsVersion = Suite.CDM.DEFAULTS_VERSION
+            cooldowns.def_anchor, cooldowns.def_side = playerAnchor, 2
+            cooldowns.def_gap, cooldowns.def_align = 44, 3
+            cooldowns.def_x, cooldowns.def_y = 0, 0
+            cooldowns.ext_anchor, cooldowns.ext_side = playerAnchor, 1
+            cooldowns.ext_gap, cooldowns.ext_align = 22, 2
+            cooldowns.ext_x, cooldowns.ext_y = 0, 0
         end
     end
     local overrides = moduleOverrides[selected] or {}
@@ -147,7 +242,7 @@ local function ScaleControlsReady()
 end
 
 function Installer.Apply()
-    if Suite.IsCombatLocked() then return false, Tr("Finish combat first.", "Bitte zuerst den Kampf beenden.") end
+    if Suite.IsCombatLocked() then return false, Text("Finish combat first.") end
     if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
     local ready, why = ScaleControlsReady()
     if not ready then return false, why end
@@ -159,6 +254,10 @@ function Installer.Apply()
     if not ok then return false, reason end
     ok, reason = ApplyScale()
     if not ok then return false, reason end
+    local previous = Suite.RootDB.installation
+    local getDefault = _G.MSUF_GetDefaultProfileForNewCharacters
+    local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
+        and type(getDefault) == "function" and getDefault() == previous.frameProfileName
     Suite.RootDB.installation = {
         revision = 2, status = "complete", profile = selected,
         frameProfileName = FrameProfileName(),
@@ -166,7 +265,19 @@ function Installer.Apply()
         raidEssentials = RetailCooldowns() and useRaidEssentials,
         uiScaleEnabled = useScale, uiScale = useScale and scale or nil,
         uiScalePreset = useScale and scalePreset or nil,
+        foreverAnchorRevision = RetailCooldowns() and selected == "forever" and 1 or nil,
     }
+    if carriedDefault and type(_G.MSUF_SetDefaultProfileForNewCharacters) == "function"
+        and _G.MSUF_SetDefaultProfileForNewCharacters(FrameProfileName()) == true then
+        Suite.RootDB.installation.newCharacterProfileRevision = 1
+        Suite.RootDB.installation.newCharacterProfileOwned = true
+    end
+    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureNewCharacterProfile then
+        Suite.SuiteProfiles.EnsureNewCharacterProfile()
+    end
+    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureRetailResourceStack then
+        Suite.SuiteProfiles.EnsureRetailResourceStack(true)
+    end
     return true
 end
 
@@ -271,287 +382,343 @@ local function ModuleRow(parent, id, index, count)
     return card
 end
 
-local function Build()
-    if frame then return frame end
-    frame = CreateFrame("Frame", "MSUFSuiteInstallFrame", _G.UIParent, "BackdropTemplate")
-    frame:SetSize(580, 470)
-    frame:SetPoint("CENTER")
-    frame:SetFrameStrata("DIALOG")
-    frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+------------------------------------------------------------------ window
+-- The steps below create the window's regions in their original order, so
+-- stacking and layout stay unchanged.
+local function CreateWindow()
+    local window = CreateFrame("Frame", "MSUFSuiteInstallFrame", _G.UIParent, "BackdropTemplate")
+    window:SetSize(580, 470)
+    window:SetPoint("CENTER")
+    window:SetFrameStrata("DIALOG")
+    window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
         insets = { left = 4, right = 4, top = 4, bottom = 4 } })
-    frame:SetBackdropColor(0.035, 0.055, 0.085, 0.985)
-    frame:SetBackdropBorderColor(0.25, 0.43, 0.52, 1)
-    frame:EnableMouse(true)
-    frame:SetMovable(true)
-    if frame.SetClampedToScreen then frame:SetClampedToScreen(true) end
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    frame:Hide()
+    window:SetBackdropColor(0.035, 0.055, 0.085, 0.985)
+    window:SetBackdropBorderColor(0.25, 0.43, 0.52, 1)
+    window:EnableMouse(true)
+    window:SetMovable(true)
+    if window.SetClampedToScreen then window:SetClampedToScreen(true) end
+    window:RegisterForDrag("LeftButton")
+    window:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    window:Hide()
+    return window
+end
 
-    frame.brand = Label(frame, "GameFontNormalSmall", 36, -19, 310, 17)
-    frame.brand:SetText("MSUF SUITE  /  " .. Tr("INSTALLATION", "INSTALLATION"))
-    frame.step = Label(frame, "GameFontNormalSmall", 455, -19, 89, 17)
-    frame.step:SetJustifyH("RIGHT")
-    frame.title = Label(frame, "GameFontNormalLarge", 36, -47, 508, 30)
-    frame.body = Label(frame, "GameFontHighlight", 36, -108, 508, 57)
-    frame.progress = {}
+-- Brand, step counter, page title and body, and the five progress segments.
+local function BuildHeader(window)
+    window.brand = Label(window, "GameFontNormalSmall", 36, -19, 310, 17)
+    window.brand:SetText("MSUF SUITE  /  " .. Text("INSTALLATION"))
+    window.step = Label(window, "GameFontNormalSmall", 455, -19, 89, 17)
+    window.step:SetJustifyH("RIGHT")
+    window.title = Label(window, "GameFontNormalLarge", 36, -47, 508, 30)
+    window.body = Label(window, "GameFontHighlight", 36, -108, 508, 57)
+    window.progress = {}
     for i = 1, 5 do
-        local segment = frame:CreateTexture(nil, "ARTWORK")
+        local segment = window:CreateTexture(nil, "ARTWORK")
         segment:SetTexture("Interface\\Buttons\\WHITE8X8")
         segment:SetSize(99, 3)
-        segment:SetPoint("TOPLEFT", frame, "TOPLEFT", 36 + (i - 1) * 106, -87)
-        frame.progress[i] = segment
+        segment:SetPoint("TOPLEFT", window, "TOPLEFT", 36 + (i - 1) * 106, -87)
+        window.progress[i] = segment
     end
+end
 
-    frame.intro = {
-        InfoCard(frame, 36, 231, Tr("1. Choose a profile", "1. Profil wählen"),
-            Tr("Modern keeps your MSUF frames. Forever installs the full factory profile.",
-                "Modern behält deine MSUF-Frames. Forever installiert das komplette Factory-Profil.")),
-        InfoCard(frame, 36, 157, Tr("2. Select modules", "2. Module auswählen"),
-            Tr("Keep the profile defaults or switch individual Suite modules on or off.",
-                "Übernimm die Profilwerte oder schalte einzelne Suite-Module an oder aus.")),
-        InfoCard(frame, 36, 83, Tr("3. Set UI scale", "3. UI-Skalierung wählen"),
-            Tr("Scaling starts off and changes only if you enable it.",
-                "Skalierung ist zunächst aus und ändert sich nur auf deinen Wunsch.")),
+-- Pages 1 to 3: welcome cards, profile choice with the cooldown switch, and
+-- one row per Suite module.
+local function BuildProfileSteps(window)
+    window.intro = {
+        InfoCard(window, 36, 231, Text("1. Choose a profile"),
+            Text("Modern keeps your MSUF frames. Forever installs the full factory profile.")),
+        InfoCard(window, 36, 157, Text("2. Select modules"),
+            Text("Keep the profile defaults or switch individual Suite modules on or off.")),
+        InfoCard(window, 36, 83, Text("3. Set UI scale"),
+            Text("Scaling starts off and changes only if you enable it.")),
     }
-
-    frame.suite = ProfileCard(frame, 36, 210, function()
+    window.suite = ProfileCard(window, 36, 210, function()
         selected = "suite"
         Installer.Refresh()
     end)
-    frame.forever = ProfileCard(frame, 36, 112, function()
+    window.forever = ProfileCard(window, 36, 112, function()
         selected = "forever"
         Installer.Refresh()
     end)
-    frame.profileNote = Label(frame, "GameFontHighlightSmall", 38, -373, 504, 27)
-    frame.cooldowns = Panel(frame, 36, 63, 508, 42, true)
-    frame.cooldowns.title = Label(frame.cooldowns, "GameFontNormal", 14, -7, 360, 17)
-    frame.cooldowns.detail = Label(frame.cooldowns, "GameFontHighlightSmall", 14, -24, 460, 15)
-    frame.cooldowns.mark = Label(frame.cooldowns, "GameFontNormalSmall", 388, -7, 105, 18)
-    frame.cooldowns.mark:SetJustifyH("RIGHT")
-    frame.cooldowns:SetScript("OnClick", function()
+    window.profileNote = Label(window, "GameFontHighlightSmall", 38, -373, 504, 27)
+    local cooldowns = Panel(window, 36, 63, 508, 42, true)
+    cooldowns.title = Label(cooldowns, "GameFontNormal", 14, -7, 360, 17)
+    cooldowns.detail = Label(cooldowns, "GameFontHighlightSmall", 14, -24, 460, 15)
+    cooldowns.mark = Label(cooldowns, "GameFontNormalSmall", 388, -7, 105, 18)
+    cooldowns.mark:SetJustifyH("RIGHT")
+    cooldowns:SetScript("OnClick", function()
         useRaidEssentials = not useRaidEssentials
         Installer.Refresh()
     end)
-
-    frame.moduleRows = {}
+    window.cooldowns = cooldowns
+    window.moduleRows = {}
     for index, id in ipairs(Suite.SuiteOrder or {}) do
-        frame.moduleRows[index] = ModuleRow(frame, id, index, #Suite.SuiteOrder)
+        window.moduleRows[index] = ModuleRow(window, id, index, #Suite.SuiteOrder)
     end
+end
 
-    frame.scaleToggle = ProfileCard(frame, 36, 216, function()
+local SCALE_PRESETS = {
+    { "Pixel perfect", function()
+        local pixel = type(_G.MSUF_GetPixelPerfectScale) == "function"
+            and _G.MSUF_GetPixelPerfectScale() or 1
+        return tonumber(pixel) or 1
+    end },
+    { "Small", function() return 0.6 end },
+    { "Medium", function() return 0.7 end },
+    { "Large", function() return 0.8 end },
+}
+
+local function BuildScaleSlider(window)
+    local slider = CreateFrame("Slider", "MSUFSuiteInstallScaleSlider", window, "OptionsSliderTemplate")
+    slider:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 86, 110)
+    slider:SetSize(346, 18)
+    slider:SetMinMaxValues(0.3, 1.15)
+    slider:SetValueStep(0.01)
+    for _, suffix in ipairs({ "Low", "High", "Text" }) do
+        local label = _G["MSUFSuiteInstallScaleSlider" .. suffix]
+        if label then label:Hide() end
+    end
+    if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+    window.scaleSlider = slider
+    slider:SetValue(scale)
+    slider:SetScript("OnValueChanged", function(_, value)
+        scale = math.floor(value * 100 + 0.5) / 100
+        scalePreset = "custom"
+        if window.scaleLabel then window.scaleLabel:SetText(("%d%%"):format(scale * 100 + 0.5)) end
+    end)
+end
+
+-- Page 4: the scaling switch, preset buttons, slider and value label.
+local function BuildScaleStep(window)
+    window.scaleToggle = ProfileCard(window, 36, 216, function()
         useScale = not useScale
         Installer.Refresh()
     end)
-    frame.scaleHint = Label(frame, "GameFontHighlightSmall", 38, -269, 500, 18)
-    frame.presets = {}
-    local presets = {
-        { Tr("Pixel perfect", "Pixelgenau"), function()
-            local pixel = type(_G.MSUF_GetPixelPerfectScale) == "function"
-                and _G.MSUF_GetPixelPerfectScale() or 1
-            return tonumber(pixel) or 1
-        end },
-        { Tr("Small", "Klein"), function() return 0.6 end },
-        { Tr("Medium", "Mittel"), function() return 0.7 end },
-        { Tr("Large", "Groß"), function() return 0.8 end },
-    }
-    for index, preset in ipairs(presets) do
-        frame.presets[index] = NavButton(frame, 36 + (index - 1) * 135, 151, 103,
-            preset[1], function()
+    window.scaleHint = Label(window, "GameFontHighlightSmall", 38, -269, 500, 18)
+    window.presets = {}
+    for index, preset in ipairs(SCALE_PRESETS) do
+        window.presets[index] = NavButton(window, 36 + (index - 1) * 135, 151, 103,
+            Text(preset[1]), function()
                 local wanted = math.max(0.3, math.min(1.15, preset[2]()))
-                frame.scaleSlider:SetValue(wanted)
+                window.scaleSlider:SetValue(wanted)
                 scale = wanted
                 scalePreset = index == 1 and "pixel" or "custom"
                 Installer.Refresh()
             end)
     end
-    frame.scaleSlider = CreateFrame("Slider", "MSUFSuiteInstallScaleSlider", frame, "OptionsSliderTemplate")
-    frame.scaleSlider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 86, 110)
-    frame.scaleSlider:SetSize(346, 18)
-    frame.scaleSlider:SetMinMaxValues(0.3, 1.15)
-    frame.scaleSlider:SetValueStep(0.01)
-    for _, suffix in ipairs({ "Low", "High", "Text" }) do
-        local label = _G["MSUFSuiteInstallScaleSlider" .. suffix]
-        if label then label:Hide() end
+    BuildScaleSlider(window)
+    window.scaleLabel = Label(window, "GameFontNormal", 448, -338, 88, 24)
+    window.scaleLabel:SetJustifyH("RIGHT")
+end
+
+-- Pages 5 and 6: the review summary and the completion cards.
+local function BuildResultCards(window)
+    window.review = {
+        InfoCard(window, 36, 225, "", ""),
+        InfoCard(window, 36, 152, "", ""),
+        InfoCard(window, 36, 79, "", ""),
+    }
+    window.done = {
+        InfoCard(window, 36, 176, Text("Profile activated"),
+            Text("Your selected settings have been saved.")),
+        InfoCard(window, 36, 103, Text("Reload the interface"),
+            Text("This finishes loading the selected Suite modules.")),
+    }
+end
+
+-- Continue walks the pages, installs on the review page and reloads at the end.
+local function OnContinue(window)
+    if page < 5 then
+        page = page + 1
+        Installer.Refresh()
+    elseif page == 5 then
+        local ok, reason = Installer.Apply()
+        if not ok then
+            window.status:SetText("|cffff6666" .. tostring(reason or "Installation failed") .. "|r")
+            return
+        end
+        page = 6
+        Installer.Refresh()
+    elseif type(_G.ReloadUI) == "function" then
+        _G.ReloadUI()
+    else
+        window:Hide()
     end
-    if frame.scaleSlider.SetObeyStepOnDrag then frame.scaleSlider:SetObeyStepOnDrag(true) end
-    frame.scaleSlider:SetValue(scale)
-    frame.scaleSlider:SetScript("OnValueChanged", function(_, value)
-        scale = math.floor(value * 100 + 0.5) / 100
-        scalePreset = "custom"
-        if frame.scaleLabel then frame.scaleLabel:SetText(("%d%%"):format(scale * 100 + 0.5)) end
-    end)
-    frame.scaleLabel = Label(frame, "GameFontNormal", 448, -338, 88, 24)
-    frame.scaleLabel:SetJustifyH("RIGHT")
+end
 
-    frame.review = {
-        InfoCard(frame, 36, 225, "", ""),
-        InfoCard(frame, 36, 152, "", ""),
-        InfoCard(frame, 36, 79, "", ""),
-    }
-    frame.done = {
-        InfoCard(frame, 36, 176, Tr("Profile activated", "Profil aktiviert"),
-            Tr("Your selected settings have been saved.", "Deine gewählten Einstellungen wurden gespeichert.")),
-        InfoCard(frame, 36, 103, Tr("Reload the interface", "Oberfläche neu laden"),
-            Tr("This finishes loading the selected Suite modules.", "Damit werden die gewählten Suite-Module vollständig geladen.")),
-    }
-
-    frame.status = Label(frame, "GameFontHighlightSmall", 36, -403, 508, 17)
-    frame.back = NavButton(frame, 36, 15, 104, Tr("Back", "Zurück"), function()
+local function BuildNavigation(window)
+    window.status = Label(window, "GameFontHighlightSmall", 36, -403, 508, 17)
+    window.back = NavButton(window, 36, 15, 104, Text("Back"), function()
         page = math.max(1, page - 1)
         Installer.Refresh()
     end)
-    frame.close = NavButton(frame, 150, 15, 104, Tr("Not now", "Später"), function()
+    window.close = NavButton(window, 150, 15, 104, Text("Not now"), function()
         if Suite.RootDB and page ~= 6 then
             Suite.RootDB.installation = { revision = 2, status = "skipped" }
         end
-        frame:Hide()
+        window:Hide()
     end)
-    frame.next = NavButton(frame, 414, 15, 130, Tr("Continue", "Weiter"), function()
-        if page < 5 then
-            page = page + 1
-            Installer.Refresh()
-        elseif page == 5 then
-            local ok, reason = Installer.Apply()
-            if not ok then
-                frame.status:SetText("|cffff6666" .. tostring(reason or "Installation failed") .. "|r")
-                return
-            end
-            page = 6
-            Installer.Refresh()
-        elseif type(_G.ReloadUI) == "function" then
-            _G.ReloadUI()
-        else
-            frame:Hide()
-        end
-    end, true)
+    window.next = NavButton(window, 414, 15, 130, Text("Continue"), function() OnContinue(window) end, true)
+end
+
+local function Build()
+    if frame then return frame end
+    frame = CreateWindow()
+    BuildHeader(frame)
+    BuildProfileSteps(frame)
+    BuildScaleStep(frame)
+    BuildResultCards(frame)
+    BuildNavigation(frame)
     return frame
 end
 
-function Installer.Refresh()
-    local f = Build()
-    local intro, profiles, modules, scaling, review, complete =
-        page == 1, page == 2, page == 3, page == 4, page == 5, page == 6
-    f.step:SetText(complete and Tr("DONE", "FERTIG") or
-        ("%d / 5"):format(page))
+------------------------------------------------------------------ pages
+local function SetShownAll(list, shown)
+    for _, item in ipairs(list) do item:SetShown(shown) end
+end
+
+-- Shows the controls of the current page (1 welcome, 2 profile, 3 modules,
+-- 4 scaling, 5 review, 6 done) and updates progress and navigation.
+local function ShowPage(f)
+    local complete, scaling = page == 6, page == 4
+    f.step:SetText(complete and Text("DONE") or ("%d / 5"):format(page))
     for i, segment in ipairs(f.progress) do
-        if i <= math.min(page, 5) then segment:SetColorTexture(0.16, 0.74, 0.84, 1)
-        else segment:SetColorTexture(0.20, 0.25, 0.30, 1) end
+        if i <= math.min(page, 5) then
+            segment:SetColorTexture(0.16, 0.74, 0.84, 1)
+        else
+            segment:SetColorTexture(0.20, 0.25, 0.30, 1)
+        end
     end
-    for _, card in ipairs(f.intro) do card:SetShown(intro) end
-    f.suite:SetShown(profiles)
-    f.forever:SetShown(profiles)
-    f.profileNote:SetShown(profiles and selected == "forever")
-    f.cooldowns:SetShown(profiles and RetailCooldowns())
-    for _, row in ipairs(f.moduleRows) do row:SetShown(modules) end
+    SetShownAll(f.intro, page == 1)
+    f.suite:SetShown(page == 2)
+    f.forever:SetShown(page == 2)
+    f.profileNote:SetShown(page == 2 and selected == "forever")
+    f.cooldowns:SetShown(page == 2 and RetailCooldowns())
+    SetShownAll(f.moduleRows, page == 3)
     f.scaleToggle:SetShown(scaling)
     f.scaleHint:SetShown(scaling)
     f.scaleSlider:SetShown(scaling and useScale)
     f.scaleLabel:SetShown(scaling and useScale)
-    for _, preset in ipairs(f.presets) do preset:SetShown(scaling and useScale) end
-    for _, card in ipairs(f.review) do card:SetShown(review) end
-    for _, card in ipairs(f.done) do card:SetShown(complete) end
+    SetShownAll(f.presets, scaling and useScale)
+    SetShownAll(f.review, page == 5)
+    SetShownAll(f.done, complete)
     f.back:SetShown(page > 1 and not complete)
     f.close:SetShown(not complete)
     f.close:ClearAllPoints()
     f.close:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", page == 1 and 36 or 150, 15)
-    f.next.caption:SetText(complete and Tr("Reload UI", "UI neu laden")
-        or review and Tr("Install", "Installieren") or Tr("Continue", "Weiter"))
+    f.next.caption:SetText(complete and Text("Reload UI") or page == 5 and Text("Install") or Text("Continue"))
     f.status:SetText("")
+end
 
-    if intro then
-        f.title:SetText(Tr("Welcome to MSUF Suite", "Willkommen bei MSUF Suite"))
-        f.body:SetText(Tr("Set up your interface in a few steps. Nothing changes until you click Install.",
-            "Richte deine Oberfläche in wenigen Schritten ein. Erst „Installieren“ übernimmt die Auswahl."))
-    elseif profiles then
-        f.title:SetText(Tr("Choose your profile", "Profil auswählen"))
-        f.body:SetText(Tr("Forever creates a complete profile. Modern keeps your MSUF frames and applies Suite and Skin settings.",
-            "Forever erstellt ein vollständiges Profil. Modern behält deine MSUF-Frames und übernimmt Suite- und Skin-Einstellungen."))
-        f.suite.title:SetText(Tr("Modern  ·  Suite only", "Modern  ·  nur Suite"))
-        f.suite.detail:SetText(Tr("Retail default. Applies the included Suite and optional Skin profile; keeps your MSUF frames.",
-            "Retail-Standard. Übernimmt Suite- und optionales Skin-Profil; behält deine MSUF-Frames."))
-        f.forever.title:SetText(Tr("Forever  ·  Complete profile", "Forever  ·  vollständiges Profil"))
-        f.forever.detail:SetText(Tr("Applies the current Forever factory to MSUF frames and Suite modules; Skin is included when enabled.",
-            "Übernimmt die aktuelle Forever-Factory für MSUF-Frames und Suite-Module; Skin bei aktiviertem Addon."))
-        Style(f.suite, selected == "suite")
-        Style(f.forever, selected == "forever")
-        f.suite.mark:SetText(selected == "suite" and Tr("SELECTED", "GEWÄHLT") or Tr("CHOOSE", "WÄHLEN"))
-        f.forever.mark:SetText(selected == "forever" and Tr("SELECTED", "GEWÄHLT") or Tr("CHOOSE", "WÄHLEN"))
-        f.profileNote:SetText(selected == "forever"
-            and Tr("Forever creates a new profile. Existing profiles remain saved.",
-                "Forever erstellt ein neues Profil. Bestehende Profile bleiben gespeichert.")
-            or Tr("Modern replaces active Suite and optional Skin settings. MSUF frames stay unchanged.",
-                "Modern ersetzt aktive Suite- und optionale Skin-Einstellungen. MSUF-Frames bleiben unverändert."))
-        f.cooldowns.title:SetText(Tr("MSUF spec cooldown profiles", "MSUF-Spec-Cooldown-Profile"))
-        f.cooldowns.detail:SetText(Tr("Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM.",
-            "Raid-Essentials, Utility und Buffs für deinen Spec; aus folgt dem Blizzard-CDM."))
-        f.cooldowns.mark:SetText(useRaidEssentials and Tr("ON", "AN") or Tr("OFF", "AUS"))
-        Style(f.cooldowns, useRaidEssentials)
-    elseif modules then
-        f.title:SetText(Tr("Choose Suite modules", "Suite-Module auswählen"))
-        f.body:SetText(Tr("The chosen profile supplies all settings. Toggle which Suite modules are enabled in it.",
-            "Das gewählte Profil liefert alle Einstellungen. Wähle hier die aktivierten Suite-Module."))
-        local profile, reason = PreparedProfile()
-        if not profile then f.status:SetText("|cffff6666" .. tostring(reason) .. "|r") end
-        for _, row in ipairs(f.moduleRows) do
-            local config = profile and profile.suite.modules[row.id]
-            local enabled = config and config.enabled == true
-            Style(row, enabled)
-            row.state:SetText(enabled and Tr("ON", "AN") or Tr("OFF", "AUS"))
-        end
-    elseif scaling then
-        f.title:SetText(Tr("Set UI scale", "UI-Skalierung einstellen"))
-        f.body:SetText(Tr("Global UI scaling is off by default. Turn it on only if you want a different interface size.",
-            "Globale UI-Skalierung ist standardmäßig aus. Schalte sie nur für eine andere Oberflächengröße ein."))
-        f.scaleToggle.title:SetText(useScale and Tr("UI scaling is on", "UI-Skalierung ist an")
-            or Tr("UI scaling is off", "UI-Skalierung ist aus"))
-        f.scaleToggle.detail:SetText(useScale and Tr("Choose a preset below or fine-tune with the slider.",
-            "Wähle unten eine Stufe oder stelle den Regler frei ein.")
-            or Tr("MSUF restores your current Blizzard UI scale. Click here to enable optional scaling.",
-                "MSUF stellt deine aktuelle Blizzard-UI-Skalierung wieder her. Zum Aktivieren hier klicken."))
-        f.scaleToggle.mark:SetText(useScale and Tr("ON", "AN") or Tr("OFF", "AUS"))
-        Style(f.scaleToggle, useScale)
-        f.scaleHint:SetText(useScale and Tr("Presets", "Skalierungsstufen") or
-            Tr("No Suite scaling will be applied.", "Es wird keine Suite-Skalierung angewendet."))
-        f.scaleLabel:SetText(scalePreset == "pixel" and ("%.2f%%"):format(scale * 100)
-            or ("%d%%"):format(scale * 100 + 0.5))
-    elseif review then
-        f.title:SetText(Tr("Review and install", "Prüfen und installieren"))
-        f.body:SetText(Tr("Check your choices. Install applies them together; you can return to any step first.",
-            "Prüfe deine Auswahl. „Installieren“ übernimmt sie gemeinsam; du kannst vorher zurückgehen."))
-        local profile, reason = PreparedProfile()
-        if not profile then f.status:SetText("|cffff6666" .. tostring(reason) .. "|r") end
-        local enabled, total = 0, 0
-        for _, id in ipairs(Suite.SuiteOrder or {}) do
-            total = total + 1
-            if profile and profile.suite.modules[id] and profile.suite.modules[id].enabled then
-                enabled = enabled + 1
-            end
-        end
-        f.review[1].title:SetText(Tr("Profile", "Profil"))
-        f.review[1].detail:SetText(selected == "forever"
-            and Tr("Forever · complete MSUF and Suite factory", "Forever · vollständige MSUF- und Suite-Factory")
-            or Tr("Modern · Suite profile, MSUF frames retained", "Modern · Suite-Profil, MSUF-Frames bleiben"))
-        f.review[2].title:SetText(Tr("Modules", "Module"))
-        local moduleSummary = ("%d / %d %s"):format(enabled, total, Tr("enabled", "aktiv"))
-        if RetailCooldowns() then
-            moduleSummary = moduleSummary .. "  ·  "
-                .. (useRaidEssentials and Tr("MSUF spec cooldowns", "MSUF-Spec-Cooldowns")
-                    or Tr("Blizzard cooldowns", "Blizzard-Cooldowns"))
-        end
-        f.review[2].detail:SetText(moduleSummary)
-        f.review[3].title:SetText(Tr("UI scaling", "UI-Skalierung"))
-        f.review[3].detail:SetText(useScale and (scalePreset == "pixel"
-            and Tr("Pixel perfect · adapts to resolution", "Pixelgenau · passt sich der Auflösung an")
-            or ("%d%%"):format(scale * 100 + 0.5))
-            or Tr("Off · Blizzard setting retained", "Aus · Blizzard-Einstellung bleibt"))
-    else
-        f.title:SetText(Tr("Installation complete", "Installation abgeschlossen"))
-        f.body:SetText(Tr("Your new setup is active. Reload the interface to finish loading all selected modules.",
-            "Deine neue Einrichtung ist aktiv. Lade die Oberfläche neu, damit alle gewählten Module geladen werden."))
+local function SetPageText(f, title, body)
+    f.title:SetText(Text(title))
+    f.body:SetText(Text(body))
+end
+
+-- The profile of the current choice; a failure is shown in the status line.
+local function PreviewProfile(f)
+    local profile, reason = PreparedProfile()
+    if not profile then f.status:SetText("|cffff6666" .. tostring(reason) .. "|r") end
+    return profile
+end
+
+local function PaintWelcome(f)
+    SetPageText(f, "Welcome to MSUF Suite",
+        "Set up your interface in a few steps. Nothing changes until you click Install.")
+end
+
+local function PaintProfiles(f)
+    SetPageText(f, "Choose your profile",
+        "Forever creates a complete profile. Modern keeps your MSUF frames and applies Suite and Skin settings.")
+    f.suite.title:SetText(Text("Modern  ·  Suite only"))
+    f.suite.detail:SetText(Text("Retail default. Applies the included Suite and optional Skin profile; keeps your MSUF frames."))
+    f.forever.title:SetText(Text("Forever  ·  Complete profile"))
+    f.forever.detail:SetText(Text("Applies the current Forever factory to MSUF frames and Suite modules; Skin is included when enabled."))
+    Style(f.suite, selected == "suite")
+    Style(f.forever, selected == "forever")
+    f.suite.mark:SetText(selected == "suite" and Text("SELECTED") or Text("CHOOSE"))
+    f.forever.mark:SetText(selected == "forever" and Text("SELECTED") or Text("CHOOSE"))
+    f.profileNote:SetText(selected == "forever"
+        and Text("Forever creates a new profile. Existing profiles remain saved.")
+        or Text("Modern replaces active Suite and optional Skin settings. MSUF frames stay unchanged."))
+    f.cooldowns.title:SetText(Text("MSUF spec cooldown profiles"))
+    f.cooldowns.detail:SetText(Text("Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM."))
+    f.cooldowns.mark:SetText(useRaidEssentials and Text("ON") or Text("OFF"))
+    Style(f.cooldowns, useRaidEssentials)
+end
+
+local function PaintModules(f)
+    SetPageText(f, "Choose Suite modules",
+        "The chosen profile supplies all settings. Toggle which Suite modules are enabled in it.")
+    local profile = PreviewProfile(f)
+    for _, row in ipairs(f.moduleRows) do
+        local config = profile and profile.suite.modules[row.id]
+        local enabled = config and config.enabled == true
+        Style(row, enabled)
+        row.state:SetText(enabled and Text("ON") or Text("OFF"))
     end
+end
+
+local function PaintScaling(f)
+    SetPageText(f, "Set UI scale",
+        "Global UI scaling is off by default. Turn it on only if you want a different interface size.")
+    f.scaleToggle.title:SetText(useScale and Text("UI scaling is on") or Text("UI scaling is off"))
+    f.scaleToggle.detail:SetText(useScale and Text("Choose a preset below or fine-tune with the slider.")
+        or Text("MSUF restores your current Blizzard UI scale. Click here to enable optional scaling."))
+    f.scaleToggle.mark:SetText(useScale and Text("ON") or Text("OFF"))
+    Style(f.scaleToggle, useScale)
+    f.scaleHint:SetText(useScale and Text("Presets") or Text("No Suite scaling will be applied."))
+    f.scaleLabel:SetText(scalePreset == "pixel" and ("%.2f%%"):format(scale * 100)
+        or ("%d%%"):format(scale * 100 + 0.5))
+end
+
+local function ModuleSummary(profile)
+    local enabled, total = 0, 0
+    for _, id in ipairs(Suite.SuiteOrder or {}) do
+        total = total + 1
+        if profile and profile.suite.modules[id] and profile.suite.modules[id].enabled then
+            enabled = enabled + 1
+        end
+    end
+    local summary = ("%d / %d %s"):format(enabled, total, Text("enabled"))
+    if RetailCooldowns() then
+        summary = summary .. "  ·  "
+            .. (useRaidEssentials and Text("MSUF spec cooldowns") or Text("Blizzard cooldowns"))
+    end
+    return summary
+end
+
+local function PaintReview(f)
+    SetPageText(f, "Review and install",
+        "Check your choices. Install applies them together; you can return to any step first.")
+    local profile = PreviewProfile(f)
+    f.review[1].title:SetText(Text("Profile"))
+    f.review[1].detail:SetText(selected == "forever"
+        and Text("Forever · complete MSUF and Suite factory")
+        or Text("Modern · Suite profile, MSUF frames retained"))
+    f.review[2].title:SetText(Text("Modules"))
+    f.review[2].detail:SetText(ModuleSummary(profile))
+    f.review[3].title:SetText(Text("UI scaling"))
+    f.review[3].detail:SetText(useScale and (scalePreset == "pixel"
+        and Text("Pixel perfect · adapts to resolution")
+        or ("%d%%"):format(scale * 100 + 0.5))
+        or Text("Off · Blizzard setting retained"))
+end
+
+local function PaintComplete(f)
+    SetPageText(f, "Installation complete",
+        "Your new setup is active. Reload the interface to finish loading all selected modules.")
+end
+
+local PAGE_PAINTERS = { PaintWelcome, PaintProfiles, PaintModules, PaintScaling, PaintReview, PaintComplete }
+
+function Installer.Refresh()
+    local f = Build()
+    ShowPage(f)
+    local paint = PAGE_PAINTERS[page] or PaintComplete
+    paint(f)
 end
 
 function Installer.Open()

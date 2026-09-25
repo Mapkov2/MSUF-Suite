@@ -22,7 +22,14 @@ local LegacyWindows = {
 }
 NS.LegacyWindows = LegacyWindows
 
+local Field = NS.Safety.Field
+local Kit = NS.AdapterKit
+local Fade = Kit.Fade
+
 local DEFAULT_OWNER = "blizzardWindows"
+local CALENDAR_DAY_COUNT = 42
+
+local ROW_SPEC = Kit.SurfaceSpec("card", 4, 1, true)
 
 local groups = {
     {
@@ -102,90 +109,39 @@ local achievementBackdropChrome = {
     "TopEdge", "BottomEdge", "LeftEdge", "RightEdge",
 }
 
-local function WeakSet()
-    return setmetatable({}, { __mode = "k" })
-end
-
-local function SafeField(object, key)
-    if not object then return nil end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
-end
-
-local function IsCombatLocked()
-    return type(NS.IsCombatLocked) == "function" and NS.IsCombatLocked() == true
-end
-
-local function IsLoaded(addon)
-    if type(addon) ~= "string" or addon == "" then return true end
-    if C_AddOns and type(C_AddOns.IsAddOnLoaded) == "function" then
-        local ok, loadedOrLoading, loaded = pcall(C_AddOns.IsAddOnLoaded, addon)
-        if not ok then return false end
-        return loaded == true or (loaded == nil and loadedOrLoading == true)
-    end
-    if type(IsAddOnLoaded) == "function" then
-        local ok, loaded = pcall(IsAddOnLoaded, addon)
-        return ok and loaded == true
-    end
-    return false
-end
+local achievementHeaderChrome = { "Left", "Right" }
 
 local function CategoryEnabled(category)
-    if not NS.GenericWindows
-        or type(NS.GenericWindows.IsCategoryEnabled) ~= "function" then
-        return true
-    end
-    local ok, enabled = pcall(NS.GenericWindows.IsCategoryEnabled, category)
-    return not ok or enabled ~= false
+    return NS.GenericWindows.IsCategoryEnabled(category)
 end
 
-local function OwnerKey(owner)
-    return tostring(owner or DEFAULT_OWNER)
-end
-
-local function GetOwnerState(owner)
+local function OwnerState(owner)
     owner = owner or DEFAULT_OWNER
     local state = LegacyWindows.owners[owner]
     if not state then
         state = {
             owner = owner,
-            ownerKey = OwnerKey(owner),
+            ownerKey = tostring(owner),
             active = false,
             groups = {},
             deferred = {},
         }
         LegacyWindows.owners[owner] = state
     end
-    return state, owner
+    return state
 end
 
-local function GetGroupState(state, spec)
+-- Each group is its own skin context and cosmetic owner.
+local function GroupState(state, spec)
     local group = state.groups[spec.id]
     if not group then
         group = {
             owner = state.ownerKey .. ":legacy-windows:" .. spec.id,
-            surfaces = WeakSet(),
+            surfaces = Kit.WeakSet(),
         }
         state.groups[spec.id] = group
     end
     return group
-end
-
-local function Report(label, message)
-    if type(NS.ReportError) == "function" then
-        NS.ReportError("legacy windows " .. tostring(label), message)
-    end
-end
-
-local function Fade(group, region)
-    if not group or not region or IsCombatLocked() or not NS.Cosmetics
-        or type(NS.Cosmetics.Fade) ~= "function" or not NS.Safety
-        or not NS.Safety.CanDecorate(region, true) then
-        return false
-    end
-    local ok, faded = pcall(NS.Cosmetics.Fade, region, group.owner)
-    if not ok then Report("fade", faded) end
-    return ok and faded == true
 end
 
 local function FadeGlobal(group, name)
@@ -195,64 +151,15 @@ local function FadeGlobal(group, name)
     return true
 end
 
-local function FadeDirectTextures(group, frame)
-    if not frame or type(SafeField(frame, "GetRegions")) ~= "function" then return end
-    pcall(function()
-        local function Visit(...)
-            for index = 1, select("#", ...) do
-                local region = select(index, ...)
-                local objectType = type(SafeField(region, "GetObjectType")) == "function"
-                    and region:GetObjectType() or nil
-                if objectType == "Texture" then Fade(group, region) end
-            end
-        end
-        Visit(frame:GetRegions())
-    end)
-end
-
-local function ExistingSurface(target)
-    if not NS.Registry or type(NS.Registry.GetSurface) ~= "function" then
-        return nil
-    end
-    local ok, surface = pcall(NS.Registry.GetSurface, target)
-    return ok and surface or nil
-end
-
 local function Attach(group, target)
-    if not group or not target or IsCombatLocked() or not NS.Surface
-        or type(NS.Surface.Attach) ~= "function" or not NS.Safety
-        or not NS.Safety.CanCreateRegions(target, true) then
-        return false
-    end
-
     -- Surface has one registry slot per target. Do not take ownership of a
     -- surface installed by GenericWindows or another focused adapter.
-    local existing = ExistingSurface(target)
-    if existing and not LegacyWindows.surfaceTargets[target] then
+    if target and NS.Registry.GetSurface(target) and not LegacyWindows.surfaceTargets[target] then
         return true
     end
-
-    local ok, surface = pcall(NS.Surface.Attach, target, {
-        role = "card",
-        radius = 4,
-        inset = 1,
-        listItem = true,
-        allowImplicitProtected = true,
-    })
-    if ok and surface then
-        LegacyWindows.surfaceTargets[target] = true
-        group.surfaces[target] = true
-        return true
-    end
-    if not ok then Report("surface", surface) end
-    return false
-end
-
-local function NormalTexture(button)
-    local getter = SafeField(button, "GetNormalTexture")
-    if type(getter) ~= "function" then return nil end
-    local ok, texture = pcall(getter, button)
-    return ok and texture or nil
+    if not Kit.Attach(group, target, ROW_SPEC) then return false end
+    LegacyWindows.surfaceTargets[target] = true
+    return true
 end
 
 local function StaticResult(found, expected)
@@ -263,7 +170,7 @@ end
 
 local function SkinCalendar(_, group)
     local found = 0
-    for index = 1, 42 do
+    for index = 1, CALENDAR_DAY_COUNT do
         local button = _G["CalendarDayButton" .. index]
         if button then
             found = found + 1
@@ -271,7 +178,7 @@ local function SkinCalendar(_, group)
             -- Only the parchment normal texture is decorative. EventTexture,
             -- EventBackgroundTexture, PendingInviteTexture, OverlayFrame,
             -- DarkFrame, the highlight, and CalendarTodayFrame remain native.
-            Fade(group, NormalTexture(button))
+            Fade(group, NS.Safety.Call(button, "GetNormalTexture"))
         end
     end
     for index = 1, #calendarChrome do
@@ -279,7 +186,7 @@ local function SkinCalendar(_, group)
     end
     -- WeekdaySelectedTexture, CalendarTodayTexture/Glow, event markers and
     -- all day-state overlays are intentionally absent from calendarChrome.
-    return StaticResult(found, 42)
+    return StaticResult(found, CALENDAR_DAY_COUNT)
 end
 
 local function SkinNamedRows(group, prefix, count)
@@ -290,7 +197,7 @@ local function SkinNamedRows(group, prefix, count)
         if row then
             found = found + 1
             Attach(group, row)
-            Fade(group, SafeField(row, "SlotTexture"))
+            Fade(group, Field(row, "SlotTexture"))
             FadeGlobal(group, name .. "NameFrame")
         end
     end
@@ -324,23 +231,19 @@ local function SkinAchievements(root, group)
         end
     end
 
-    local header = SafeField(root, "Header") or _G.AchievementFrameHeader
-    Fade(group, SafeField(header, "Left"))
-    Fade(group, SafeField(header, "Right"))
-    for index = 1, #achievementBackdropChrome do
-        Fade(group, SafeField(root, achievementBackdropChrome[index]))
-    end
-    Fade(group, SafeField(SafeField(root, "HeaderDetails"), "TopTileStreaks"))
+    Kit.FadeFields(group, Field(root, "Header") or _G.AchievementFrameHeader, achievementHeaderChrome)
+    Kit.FadeFields(group, root, achievementBackdropChrome)
+    Fade(group, Kit.Path(root, "HeaderDetails", "TopTileStreaks"))
 
     -- These exact frames contain only their structural material textures as
     -- direct Texture regions. FontStrings and every child card/control remain
     -- untouched; the generic catalog continues to own the root Glass shell.
-    FadeDirectTextures(group, _G.AchievementFrameAchievements)
-    Fade(group, SafeField(_G.AchievementFrameSummary, "Background"))
-    FadeDirectTextures(group, _G.AchievementFrameStatsBG)
+    Kit.FadeTextures(group, _G.AchievementFrameAchievements)
+    Fade(group, Field(_G.AchievementFrameSummary, "Background"))
+    Kit.FadeTextures(group, _G.AchievementFrameStatsBG)
     FadeGlobal(group, "AchievementFrameComparisonBackground")
-    Fade(group, SafeField(_G.AchievementFrameComparison, "Dark"))
-    FadeDirectTextures(group, SafeField(root, "SearchResults"))
+    Fade(group, Field(_G.AchievementFrameComparison, "Dark"))
+    Kit.FadeTextures(group, Field(root, "SearchResults"))
 
     -- WaterMark, guild emblems, header data, achievement cards, shields,
     -- icons, reward art and progress fills are semantic and stay untouched.
@@ -357,25 +260,21 @@ local groupSkinners = {
 local function DisableGroup(state, spec)
     local group = state and state.groups[spec.id]
     if not group then return true end
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
 
-    if NS.Surface and type(NS.Surface.SetVisible) == "function" then
-        for target in pairs(group.surfaces) do
-            if LegacyWindows.surfaceTargets[target] then
-                pcall(NS.Surface.SetVisible, target, false)
-            end
+    for target in pairs(group.surfaces) do
+        if LegacyWindows.surfaceTargets[target] then
+            NS.Surface.SetVisible(target, false)
         end
     end
-    if NS.Cosmetics and type(NS.Cosmetics.RestoreOwner) == "function" then
-        pcall(NS.Cosmetics.RestoreOwner, group.owner)
-    end
+    NS.Cosmetics.RestoreOwner(group.owner)
     state.groups[spec.id] = nil
     return true
 end
 
 local function ApplyGroup(spec, state)
     if not state or not state.active then return false, "disabled" end
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
     if not CategoryEnabled(spec.category) then
         DisableGroup(state, spec)
         return true, "disabled"
@@ -383,20 +282,9 @@ local function ApplyGroup(spec, state)
 
     local root = _G[spec.root]
     if not root then
-        return false, IsLoaded(spec.addon) and "missing" or "waiting"
+        return false, NS.Client.IsAddOnLoaded(spec.addon) and "missing" or "waiting"
     end
-    local skinner = groupSkinners[spec.id]
-    if type(skinner) ~= "function" then return false, "missing" end
-    return skinner(root, GetGroupState(state, spec))
-end
-
-local function ExecuteGroup(spec, state)
-    local ok, applied, reason = pcall(ApplyGroup, spec, state)
-    if not ok then
-        Report(spec.id, applied)
-        return false, "failed"
-    end
-    return applied, reason
+    return groupSkinners[spec.id](root, GroupState(state, spec))
 end
 
 local function DeferredKey(state, suffix)
@@ -407,7 +295,7 @@ local Schedule
 
 local function ApplyGroupOrDefer(spec, state)
     if not state or not state.active then return false, "disabled" end
-    if not IsCombatLocked() then return ExecuteGroup(spec, state) end
+    if not NS.IsCombatLocked() then return ApplyGroup(spec, state) end
 
     local key = DeferredKey(state, "apply:" .. spec.id)
     state.deferred[key] = true
@@ -415,7 +303,7 @@ local function ApplyGroupOrDefer(spec, state)
         local current = LegacyWindows.owners[state.owner]
         if current then current.deferred[key] = nil end
         if current and current.active then
-            local applied, reason = ExecuteGroup(spec, current)
+            local applied, reason = ApplyGroup(spec, current)
             if not applied and reason == "waiting" then Schedule(spec) end
         end
     end)
@@ -433,29 +321,14 @@ end
 
 Schedule = function(spec)
     if LegacyWindows.waiting[spec.id] then return true end
-    if IsLoaded(spec.addon) or not EventUtil
-        or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then
-        return false
-    end
-
+    if NS.Client.IsAddOnLoaded(spec.addon) then return false end
     LegacyWindows.waiting[spec.id] = true
-    local ok, message = pcall(EventUtil.ContinueOnAddOnLoaded, spec.addon, function()
+    local scheduled = Kit.ContinueOnAddOnLoaded(spec.addon, function()
         LegacyWindows.waiting[spec.id] = nil
         ApplyGroupForOwners(spec)
     end)
-    if not ok then
-        LegacyWindows.waiting[spec.id] = nil
-        Report("load " .. spec.id, message)
-        return false
-    end
-    return true
-end
-
-local function CancelDeferred(state)
-    for key in pairs(state.deferred) do
-        NS.CombatGate.Cancel(key)
-    end
-    state.deferred = {}
+    if not scheduled then LegacyWindows.waiting[spec.id] = nil end
+    return scheduled
 end
 
 local function DisableNow(owner)
@@ -469,9 +342,8 @@ local function DisableNow(owner)
 end
 
 function LegacyWindows.Apply(owner)
-    local state
-    state, owner = GetOwnerState(owner)
-    CancelDeferred(state)
+    local state = OwnerState(owner)
+    Kit.CancelDeferred(state)
     state.active = true
 
     local enabled, applied, waiting, queued, failed = 0, 0, 0, 0, 0
@@ -510,8 +382,8 @@ function LegacyWindows.Disable(owner)
     if not state then return true end
 
     state.active = false
-    CancelDeferred(state)
-    if IsCombatLocked() then
+    Kit.CancelDeferred(state)
+    if NS.IsCombatLocked() then
         local key = DeferredKey(state, "disable")
         state.deferred[key] = true
         NS.CombatGate.RunOrDefer(key, function()

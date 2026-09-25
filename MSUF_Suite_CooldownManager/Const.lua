@@ -226,6 +226,13 @@ function K.Clamp(key, value)
     return value
 end
 
+-- Four OVERLAY textures on owner for K.PlaceEdges.
+function K.NewEdges(owner, sublevel)
+    local set = {}
+    for i = 1, 4 do set[i] = S.CreateTexture(owner, nil, "OVERLAY", nil, sublevel) end
+    return set
+end
+
 -- Four edges inside owner's rect; the side edges stop short of the top and
 -- bottom ones so translucent colors do not double at the corners. No width
 -- only hides them: points and color are written when they show again.

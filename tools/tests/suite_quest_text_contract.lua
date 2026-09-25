@@ -3,9 +3,15 @@ local callbacks = {}
 local listener
 local theme = { text = { 0.93, 0.95, 0.97 }, title = { 0.98, 0.91, 0.77 } }
 
-hooksecurefunc = function(name, callback)
-    assert(type(_G[name]) == "function", "hook target missing: " .. name)
-    callbacks[name] = callback
+hooksecurefunc = function(target, method, callback)
+    if type(target) == "string" then
+        assert(type(_G[target]) == "function", "hook target missing: " .. target)
+        callbacks[target] = method
+        return
+    end
+    assert(type(target[method]) == "function", "object hook target missing: " .. method)
+    callbacks[target] = callbacks[target] or {}
+    callbacks[target][method] = callback
 end
 QuestInfo_Display = function() end
 QuestFrame_SetTextColor = function() end
@@ -13,6 +19,7 @@ QuestFrame_SetTitleTextColor = function() end
 QuestFrameGreetingPanel_OnShow = function() end
 
 local NS = {
+    Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     IsCombatLocked = function() return false end,
     Theme = { GetColor = function(role)
         local color = assert(theme[role], role)
@@ -38,6 +45,17 @@ end
 local map = Frame()
 local quest = Frame()
 local other = Frame()
+local gossip = Frame()
+gossip.fontStrings = {}
+function gossip:RegisterFontString(region)
+    self.fontStrings[region] = true
+    if callbacks[self] then callbacks[self].RegisterFontString(self, region) end
+end
+function gossip:UpdateTheme()
+    for region in pairs(self.fontStrings) do region:SetTextColor(0.21, 0.17, 0.11) end
+    if callbacks[self] then callbacks[self].UpdateTheme(self) end
+end
+GossipFrame = gossip
 local details = Frame(map)
 local objectiveFrame = Frame(details)
 QuestInfoTitleHeader = Text(details, 0.33, 0.21, 0.10)
@@ -99,4 +117,44 @@ assert(greeting.color[1] == theme.title[1], "other active quest root was restore
 NS.QuestText.Deactivate(quest, "quest")
 assert(greeting.color[1] == 0.28, "NPC greeting was not restored")
 assert(greetingButtonText.color[1] == 0.31, "NPC quest list was not restored")
+
+local gossipGreeting = Text(Frame(gossip), 0.26, 0.20, 0.12)
+local gossipOption = Text(Frame(gossip), 0.29, 0.22, 0.14)
+gossip:RegisterFontString(gossipGreeting)
+gossip:RegisterFontString(gossipOption)
+assert(NS.QuestText.Activate(gossip, "gossip"))
+assert(gossipGreeting.color[1] == 0.84, "existing gossip greeting stayed dark")
+assert(gossipOption.color[1] == 0.84, "existing gossip option stayed dark")
+gossip:UpdateTheme()
+assert(gossipGreeting.color[1] == 0.84, "gossip theme refresh darkened greeting")
+assert(gossipOption.color[1] == 0.84, "gossip theme refresh darkened option")
+local newOption = Text(Frame(gossip), 0.30, 0.23, 0.15)
+gossip:RegisterFontString(newOption)
+assert(newOption.color[1] == 0.84, "new ScrollBox option stayed dark")
+NS.QuestText.Deactivate(gossip, "gossip")
+assert(gossipGreeting.color[1] == 0.21, "native greeting color was not restored")
+assert(gossipOption.color[1] == 0.21, "native option color was not restored")
+assert(newOption.color[1] == 0.30, "new option color was not restored")
+
+-- Exercise the actual quest-window adapter path so a future root-list change
+-- cannot silently leave GossipFrame unregistered again.
+QuestFrame = quest
+QuestLogPopupDetailFrame = Frame()
+QuestFrameRewardPanel = { MaterialTopLeft = {} }
+NS.AdapterKit = {
+    Fade = function(_, region) return region ~= nil end,
+    Path = function() return nil end,
+    WeakSet = function() return setmetatable({}, { __mode = "k" }) end,
+    CancelDeferred = function() end,
+}
+NS.GenericWindows = { IsCategoryEnabled = function(category) return category == "quest" end }
+NS.Client = { IsAddOnLoaded = function(addon) return addon == "Blizzard_UIPanels_Game" end }
+NS.ControlSkin = { DisableOwner = function() end }
+NS.IconSkin = { DisableOwner = function() end }
+NS.Cosmetics = { RestoreOwner = function() end }
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/DeepWindows.lua"))("MSUF_Suite_Skin", NS)
+assert(NS.DeepWindows.Apply("quest-test"))
+assert(gossipGreeting.color[1] == 0.84, "quest adapter did not activate GossipFrame text")
+assert(NS.DeepWindows.Disable("quest-test"))
+assert(gossipGreeting.color[1] == 0.21, "quest adapter did not restore GossipFrame text")
 print("suite quest text contract: OK")

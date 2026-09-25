@@ -73,11 +73,16 @@ local function Clamp(value, minimum, maximum)
     return value
 end
 
+-- Raw option read: caller metatables never run. False reads as unset.
 local function ReadOption(options, key)
     if type(options) ~= "table" then return nil end
-    local ok, value = pcall(rawget, options, key)
-    return ok and value or nil
+    return rawget(options, key) or nil
 end
+
+local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape" }
+local windowActionSetters = {
+    "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetDisabledTexture",
+}
 
 -- Whitelist only declarative rendering values.  Public callers cannot pass
 -- region arrays, callbacks, functions, internal owner tokens, or the reviewed
@@ -95,7 +100,8 @@ local function SanitizeSpec(source)
     spec.radius = Clamp(ReadOption(source, "radius"), 4, 12)
     spec.border = Clamp(ReadOption(source, "border"), 0, 2)
     spec.pillHeight = Clamp(ReadOption(source, "pillHeight"), 20, 32)
-    for _, key in ipairs({ "active", "forceEdge", "listItem", "slice", "useControlShape" }) do
+    for index = 1, #specFlags do
+        local key = specFlags[index]
         local value = ReadOption(source, key)
         if type(value) == "boolean" then spec[key] = value end
     end
@@ -110,12 +116,6 @@ end
 
 local function RuntimeEnabled()
     return PublicAPI.playerReady == true and NS.DB and NS.DB.enabled == true
-end
-
-local function Report(context, message)
-    if type(NS.ReportError) == "function" then
-        NS.ReportError("public API " .. tostring(context), message)
-    end
 end
 
 local function GetScope(facade)
@@ -135,24 +135,22 @@ local function GetClient(facade)
     return record
 end
 
--- Public input is untrusted.  Wrap the entire safety boundary so even hostile
--- metatables or inaccessible members fail closed without escaping into MSKIN.
+-- Public input is untrusted: forbidden, protected (explicitly or through a
+-- secure descendant) and compositor-managed targets are refused.
 local function SafeTarget(target, needsRegions)
     if target == nil then return false, "invalid-target" end
-    local ok, allowed = pcall(function()
-        if not NS.Safety or NS.Safety.IsForbidden(target) then return false end
-        local protected, explicit = NS.Safety.GetProtection(target)
-        if protected == true or explicit == true then return false end
-        if needsRegions and not NS.Safety.CanCreateRegions(target, false) then return false end
-        return true
-    end)
-    if not ok or allowed ~= true then return false, "protected-target" end
+    local Safety = NS.Safety
+    if Safety.IsForbidden(target) then return false, "protected-target" end
+    local protected, explicit = Safety.GetProtection(target)
+    if protected or explicit then return false, "protected-target" end
+    if needsRegions and not Safety.CanCreateRegions(target, false) then
+        return false, "protected-target"
+    end
     return true
 end
 
 local function ReadMember(target, key)
-    local ok, value = pcall(function() return target and target[key] end)
-    return ok and value or nil
+    return NS.Safety.Field(target, key) or nil
 end
 
 local function HasMethod(target, key)
@@ -160,13 +158,10 @@ local function HasMethod(target, key)
 end
 
 local function IsDescendant(target, region)
-    if not region then return false end
     local current = region
     for _ = 1, 8 do
-        local getter = ReadMember(current, "GetParent")
-        if type(getter) ~= "function" then return false end
-        local ok, parent = pcall(getter, current)
-        if not ok or not parent then return false end
+        local parent = NS.Safety.Call(current, "GetParent")
+        if not parent then return false end
         if parent == target then return true end
         current = parent
     end
@@ -399,19 +394,14 @@ end
 
 local function QueueEntry(scope, target, entry)
     if not PublicAPI.playerReady then return true, "pending" end
-    local result, resultReason = false, "internal-error"
-    local function Guarded()
-        local ok, applied, reason = pcall(ReconcileEntry, scope, target, entry)
-        if not ok then
-            Report(scope.key, applied)
-            result, resultReason = false, "internal-error"
-            return
-        end
-        result, resultReason = applied == true, reason
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer(entry.pendingKey, function()
+            ReconcileEntry(scope, target, entry)
+        end)
+        return true, "deferred"
     end
-    local ran, reason = NS.CombatGate.RunOrDefer(entry.pendingKey, Guarded)
-    if not ran then return true, reason == "combat" and "deferred" or (reason or "deferred") end
-    return result, resultReason
+    local applied, reason = ReconcileEntry(scope, target, entry)
+    return applied == true, reason
 end
 
 local function RequestVisual(facade, target, aspect, value, needsRegions)
@@ -466,8 +456,8 @@ function ScopeMethods:SkinWindowAction(button, kind)
     if not safe then return false, reason end
     if kind ~= "close" and kind ~= "minimize" and kind ~= "maximize"
         and kind ~= "expand" and kind ~= "collapse" then return false, "invalid-action" end
-    for _, method in ipairs({ "SetNormalTexture", "SetHighlightTexture", "SetPushedTexture", "SetDisabledTexture" }) do
-        if not HasMethod(button, method) then return false, "unsupported-control" end
+    for index = 1, #windowActionSetters do
+        if not HasMethod(button, windowActionSetters[index]) then return false, "unsupported-control" end
     end
     return RequestVisual(self, button, "control", { kind = "windowAction", action = kind }, true)
 end
@@ -635,19 +625,14 @@ local function QueueScopeOperation(scope, operation)
     end
     scope.pendingOperation = operation
     if not PublicAPI.playerReady then return true, "pending" end
-    local result, resultReason = false, "internal-error"
-    local function Guarded()
-        local ok, applied, reason = pcall(RunScopeOperation, scope)
-        if not ok then
-            Report(scope.key .. " " .. tostring(operation), applied)
-            result, resultReason = false, "internal-error"
-            return
-        end
-        result, resultReason = applied == true, reason
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer(scope.pendingKey, function()
+            RunScopeOperation(scope)
+        end)
+        return true, "deferred"
     end
-    local ran, reason = NS.CombatGate.RunOrDefer(scope.pendingKey, Guarded)
-    if not ran then return true, reason == "combat" and "deferred" or reason end
-    return result, resultReason
+    local applied, reason = RunScopeOperation(scope)
+    return applied == true, reason
 end
 
 function ScopeMethods:RefreshAll()
@@ -733,21 +718,14 @@ function ClientMethods:Unregister()
     local record, reason = GetClient(self)
     if not record then return false, reason end
     record.unregisterPending = true
-    local result, resultReason = false, "internal-error"
-    local function Guarded()
-        local ok, unregistered, detail = pcall(UnregisterClientNow, record)
-        if not ok then
-            record.unregisterPending = false
-            Report(record.name .. " unregister", unregistered)
-            result, resultReason = false, "internal-error"
-            return
-        end
-        result, resultReason = unregistered == true, detail
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer("public-client:" .. record.name, function()
+            UnregisterClientNow(record)
+        end)
+        return true, "deferred"
     end
-    local ran, currentReason = NS.CombatGate.RunOrDefer(
-        "public-client:" .. record.name, Guarded)
-    if not ran then return true, currentReason == "combat" and "deferred" or currentReason end
-    return result, resultReason
+    local unregistered, detail = UnregisterClientNow(record)
+    return unregistered == true, detail
 end
 
 for name, method in pairs(ScopeMethods) do ClientMethods[name] = method end
@@ -869,11 +847,13 @@ local function SyncClientNow(record)
 end
 
 local function QueueClientSync(record)
-    local function Guarded()
-        local ok, message = pcall(SyncClientNow, record)
-        if not ok then Report(record.name .. " sync", message) end
+    if not NS.IsCombatLocked() then
+        SyncClientNow(record)
+        return true
     end
-    return NS.CombatGate.RunOrDefer("public-client-sync:" .. record.name, Guarded)
+    return NS.CombatGate.RunOrDefer("public-client-sync:" .. record.name, function()
+        SyncClientNow(record)
+    end)
 end
 
 local function OnRegistryChanged(_, domain, key)

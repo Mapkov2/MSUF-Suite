@@ -5,10 +5,11 @@ local NS, S = P.NS, P.Suite
 -- exist only while the module is active and has something to show.
 local D = { windows = {}, MAX = 5, KEYS = {}, OVERALL = 0, CURRENT = 1, AVOIDABLE = 8, DEATHS = 9, ENEMY = 10 }
 P.DamageMeter = D
-local M = { cvars = { damageMeterEnabled = true }, styleGen = 0, events = {} }
+-- damageMeterEnabled is declared on the catalog entry (restored on disable).
+local M = { styleGen = 0, events = {} }
 D.M = M
 local Public = S.Public
-local floor, format, huge = math.floor, string.format, math.huge
+local floor, format = math.floor, string.format
 
 -- Enum.DamageMeterType values are identical on every client (catalog choice
 -- index = value + 1). Dps/Hps lead with the rate, like Blizzard's meter;
@@ -26,9 +27,8 @@ for i = 1, D.MAX do
     D.KEYS[i] = keys
 end
 
-function D.Plain(value)
-    return Public(value) and type(value) == "number" and value == value and value ~= huge and value ~= -huge
-end
+-- A readable, finite number.
+D.Plain = S.Finite
 
 -- Plain junk (nil, NaN) becomes 0; secret values pass through for C sinks.
 function D.Num(value)

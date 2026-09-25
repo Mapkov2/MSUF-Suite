@@ -23,6 +23,11 @@ NS.SemanticHUD = SemanticHUD
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
 
+-- Exactly one boolean, also for a missing target (Field returns no value then).
+local function HasMethod(target, name)
+    return type(target) == "table" and type(target[name]) == "function"
+end
+
 local DEFAULT_OWNER = "blizzardWindows"
 local COOLDOWN_ADDON = "Blizzard_CooldownViewer"
 local ICON_OVERLAY_ATLAS = "UI-HUD-CoolDownManager-IconOverlay"
@@ -232,7 +237,7 @@ local function ApplyViewer(state, viewer)
     local definition = ViewerDefinition(viewer)
     if not definition then return false, "foreign viewer" end
     local pool = Field(viewer, "itemFramePool")
-    if type(Field(pool, "EnumerateActive")) ~= "function" then return false, "missing pool" end
+    if not HasMethod(pool, "EnumerateActive") then return false, "missing pool" end
 
     local skinItem = definition.kind == "bar" and SkinBarItem or SkinIconItem
     local count, styled = 0, 0
@@ -389,7 +394,7 @@ local function CooldownViewerReady()
         if type(concreteMixin) ~= "table" then return false end
         for methodIndex = 1, #lifecycleMethods do
             local method = lifecycleMethods[methodIndex]
-            if type(Field(viewer, method)) ~= "function"
+            if not HasMethod(viewer, method)
                 or type(concreteMixin[method]) ~= "function" then
                 return false
             end

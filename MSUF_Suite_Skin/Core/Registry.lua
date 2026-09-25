@@ -23,7 +23,10 @@ function Registry.RegisterSurface(target, state, tokens)
     -- spec, but must not tear down identical token subscriptions or allocate
     -- a new hash table. False marks old memberships until this pass confirms them.
     local bound = Registry.surfaceTokens[target]
-    if not bound then bound = {}; Registry.surfaceTokens[target] = bound end
+    if not bound then
+        bound = {}
+        Registry.surfaceTokens[target] = bound
+    end
     for token in pairs(bound) do
         bound[token] = false
     end
@@ -93,11 +96,11 @@ function Registry.NotifyListeners(domain, key)
     if NS.IsCombatLocked() then
         return false
     end
+    -- Other addons can listen through the public API; one failing listener
+    -- is reported and does not stop the rest (see Safety.Dispatch).
+    local dispatch = NS.Safety.Dispatch
     for owner, callback in pairs(Registry.listeners) do
-        local ok, message = pcall(callback, owner, domain, key)
-        if not ok then
-            NS.ReportError("theme listener", message)
-        end
+        dispatch(callback, owner, domain, key)
     end
     return true
 end

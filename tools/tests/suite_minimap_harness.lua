@@ -370,6 +370,7 @@ function H.New(root, client, options)
     G.GameTooltip:Hide()
     function G.GameTooltip:SetOwner(owner) self.owner = owner; self.lines = {} end
     function G.GameTooltip:GetOwner() return self.owner end
+    function G.GameTooltip:IsOwned(owner) return self.owner == owner end
     function G.GameTooltip:ClearLines() self.lines = {} end
     function G.GameTooltip:SetText(text) self.lines = { text } end
     function G.GameTooltip:AddLine(text) self.lines[#self.lines + 1] = text end

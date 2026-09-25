@@ -28,6 +28,11 @@ NS.UIPanelButtons = UIPanelButtons
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
 
+-- Exactly one boolean, also for a missing target (Field returns no value then).
+local function HasMethod(target, name)
+    return type(target) == "table" and type(target[name]) == "function"
+end
+
 local OWNER = "uipanel-buttons"
 local DEFER_KEY = "uipanel-buttons:late"
 local STATIC_POPUP_COUNT = 4
@@ -309,7 +314,8 @@ local function AdoptFrame(frame)
     if native.controllerOnShow and rawget(frame, "OnShow") == native.controllerOnShow then
         hooksecurefunc(frame, "OnShow", OnAdoptedControllerShown)
     end
-    if native.legacyOnShow and frame:GetScript("OnShow") == native.legacyOnShow then
+    if native.legacyOnShow and HasMethod(frame, "HookScript")
+        and frame:GetScript("OnShow") == native.legacyOnShow then
         frame:HookScript("OnShow", OnAdoptedPanelButtonShown)
     end
 end
@@ -335,11 +341,11 @@ local function HookStaticPopups()
     for index = 1, STATIC_POPUP_COUNT do
         local popup = _G["StaticPopup" .. index]
         if popup and not hooked[popup] then
-            if type(Field(popup, "SetupButtons")) == "function" then
+            if HasMethod(popup, "SetupButtons") then
                 hooksecurefunc(popup, "SetupButtons", OnGameDialogButtonsSetup)
                 hooked.staticPopup = true
             end
-            if type(Field(popup, "SetupCloseButton")) == "function" then
+            if HasMethod(popup, "SetupCloseButton") then
                 hooksecurefunc(popup, "SetupCloseButton", OnGameDialogCloseSetup)
             end
             hooked[popup] = true
@@ -356,7 +362,7 @@ InstallHooks = function()
     end
 
     local controller = _G.ButtonControllerMixin
-    if not hooked.shared and type(Field(controller, "OnShow")) == "function" then
+    if not hooked.shared and HasMethod(controller, "OnShow") then
         native.controllerOnShow = controller.OnShow
         hooksecurefunc(controller, "OnShow", OnSharedButtonShown)
         hooked.shared = true

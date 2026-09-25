@@ -30,7 +30,13 @@ local K = C.Const
 local A = { pending = {} }
 C.Auras = A
 
-local CreateFrame, InCombatLockdown = CreateFrame, InCombatLockdown
+-- Regions inside Blizzard's aura buttons and the containers themselves are
+-- created with the client's CreateFrame: the container lays those buttons
+-- out and seals their bound regions, so MSUF's pixel-layout policy
+-- (S.CreateFrame) must not round what Blizzard positions. Frames on our
+-- own bars use S.CreateFrame.
+local CreateFrame = CreateFrame
+local IsCombatLocked = NS.IsCombatLocked
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local pairs, next, type, tonumber = pairs, next, type, tonumber
 local tremove, tconcat = table.remove, table.concat
@@ -147,17 +153,17 @@ end
 
 -- includeSpellIDs of an entry: Resolve gives every aura entry (and every
 -- cooldown with an aura) its auraIDs; callers copy what they keep.
-local function Ids(e)
-    local map = e.auraIDs
+local function Ids(entry)
+    local map = entry.auraIDs
     if type(map) == "table" and next(map) ~= nil then return map end
 end
 
 -- The unit Resolve gave the entry (harmful IDs: target, else player; a
 -- per-spell "Track on" choice wins). "both": the player and the target
 -- container.
-local function UnitOf(e) return e.unit or "player" end
-local function OnUnit(e, unit)
-    local u = UnitOf(e)
+local function UnitOf(entry) return entry.unit or "player" end
+local function OnUnit(entry, unit)
+    local u = UnitOf(entry)
     return u == unit or u == "both"
 end
 -- Own harmful auras on a friendly target bypass spell-ID filters (Blizzard's
@@ -168,17 +174,17 @@ local function FriendlyTarget()
 end
 -- Own helpful auras (any caster for custom "a" entries) or own harmful
 -- auras on the target.
-local function FilterOf(e, unit)
+local function FilterOf(entry, unit)
     if unit == "target" then return HARM_MINE end
-    return e.src == "a" and HELP_ANY or HELP_MINE
+    return entry.src == "a" and HELP_ANY or HELP_MINE
 end
 -- The part of an aura bar an entry takes: e.unit=="target" entries the
 -- target part; a per-spell "both" counts in the player part. Player and
 -- target auras live in two containers that cannot interleave (and Blizzard
 -- forbids anchoring one AuraContainer to another); Layout.FixedAuras is the
 -- one rule for how the two parts are arranged.
-local function TargetRow(e)
-    return e.unit == "target"
+local function TargetRow(entry)
+    return entry.unit == "target"
 end
 A.UnitOf, A.Ids, A.TargetRow = UnitOf, Ids, TargetRow
 
@@ -186,14 +192,14 @@ A.UnitOf, A.Ids, A.TargetRow = UnitOf, Ids, TargetRow
 -- that Blizzard copies into each button. The fallbacks must ride on the
 -- binding, and without a formatter on it no text renders at all.
 local function TextOpts(seconds)
-    local st = C.state
+    local state = C.state
     if type(seconds) ~= "number" or seconds <= 0 then
         seconds = 0
     else
         seconds = floor(seconds + .5)
     end
     local R, G, B = 0, 0, 0
-    if seconds > 0 then R, G, B = floor((st.thR or 1) * 255 + .5), floor((st.thG or 1) * 255 + .5), floor((st.thB or 1) * 255 + .5) end
+    if seconds > 0 then R, G, B = floor((state.thR or 1) * 255 + .5), floor((state.thG or 1) * 255 + .5), floor((state.thB or 1) * 255 + .5) end
     local key = seconds * 16777216 + R * 65536 + G * 256 + B
     local opts = textOpts[key]
     if opts then return opts end
@@ -263,7 +269,7 @@ end
 -- Every visual value of a container's buttons in rec.lk; the returned
 -- string changes exactly when a button needs restyling.
 local function Look(rec, view)
-    local st, lk, bar = C.state, rec.lk, rec.role == "bar"
+    local state, lk, bar = C.state, rec.lk, rec.role == "bar"
     local px = Px()
     local w, h
     if bar then
@@ -282,17 +288,17 @@ local function Look(rec, view)
     local iw, ih = w - 2 * bw, h - 2 * bw
     if bar then iw = ih end
     lk.l, lk.r, lk.t, lk.b = K.Crop(view.zoom, iw, ih)
-    lk.font, lk.flags = st.font, st.fontFlags
+    lk.font, lk.flags = state.font, state.fontFlags
     lk.rendering, lk.shadow, lk.shadowOpacity, lk.shadowDistance =
-        st.fontRendering, st.fontShadow, st.fontShadowOpacity, st.fontShadowDistance
+        state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance
     local cs, ss = view.cdSize or 0, view.stackSize or 0
     if cs <= 0 then cs = bar and max(9, floor(h * .55)) or max(10, floor(h * .38)) end
     if ss <= 0 then ss = bar and max(8, floor(h * .45)) or max(9, floor(h * .3)) end
     lk.cs, lk.ss = cs, ss
     local pos = view.stackPos
     lk.sp = (pos and K.POINTS[pos]) and pos or 9
-    lk.cr, lk.cg, lk.cb = st.cdR or 1, st.cdG or 1, st.cdB or 1
-    lk.sr, lk.sg, lk.sb = st.stackR or 1, st.stackG or 1, st.stackB or 1
+    lk.cr, lk.cg, lk.cb = state.cdR or 1, state.cdG or 1, state.cdB or 1
+    lk.sr, lk.sg, lk.sb = state.stackR or 1, state.stackG or 1, state.stackB or 1
     lk.swipe = (view.swipeAlpha or 60) / 100
     lk.edge = view.edge == true
     lk.tip = view.tooltips == true
@@ -470,12 +476,12 @@ local function Heard(sensor, which)
     local rec = part and part.rec
     if not rec then return end
     local k = part.pos
-    local e = rec.on[k] and rec.entry[k]
+    local entry = rec.on[k] and rec.entry[k]
     -- Entries without a sound on the kit bar cost these reads only.
-    local ov = e and e.ov
+    local ov = entry and entry.ov
     if not ov or ov == EMPTY or not (ov.sound or ov.lossSound) then return end
     local alerts = C.Alerts
-    if alerts and alerts.PlayAura then alerts.PlayAura(e.key, which, rec) end
+    if alerts and alerts.PlayAura then alerts.PlayAura(entry.key, which, rec) end
 end
 local function Gained(sensor) Heard(sensor, "gain") end
 local function Lost(sensor) Heard(sensor, "loss") end
@@ -498,7 +504,7 @@ end
 -- Tainted code may touch sealed aura buttons only out of combat, while
 -- auras are not secret and each button says so plainly.
 local function Quiet()
-    if InCombatLockdown() then return false end
+    if IsCombatLocked() then return false end
     local secrets = _G.C_Secrets
     local should = secrets and secrets.ShouldAurasBeSecret
     if type(should) == "function" then
@@ -677,8 +683,8 @@ end
 -- dry set it only reports whether a write is needed. Unbound
 -- (initializeFrame) it prepares what the binding takes. Hidden text is
 -- never bound: a bound one is cleared, then hidden by hand.
-local function ApplyEntry(rec, part, e, dry)
-    local ov = e.ov or EMPTY
+local function ApplyEntry(rec, part, entry, dry)
+    local ov = entry.ov or EMPTY
     local cd = part.cd
     if cd and rec.role == "icon" then
         local mode = ov.swipe or 1
@@ -839,51 +845,51 @@ local function Apply(rec, k)
     local on = rec.on[k] == true and not rec.shut[k]
     if rec.act[k] == on then return end
     rec.act[k] = on
-    local c, key = rec.frame, rec.keys[k]
+    local container, key = rec.frame, rec.keys[k]
     if rec.fixed then
-        if c.SetAuraSlotEnabled then
-            c:SetAuraSlotEnabled(key, on)
+        if container.SetAuraSlotEnabled then
+            container:SetAuraSlotEnabled(key, on)
         elseif on then
             cand.includeSpellIDs = rec.ids[k]
-            c:SetAuraSlotCandidateFilters(key, cand)
+            container:SetAuraSlotCandidateFilters(key, cand)
             cand.includeSpellIDs = nil
         else
-            c:SetAuraSlotCandidateFilters(key, NONE)
+            container:SetAuraSlotCandidateFilters(key, NONE)
         end
-    elseif c.SetAuraGroupEnabled then
-        c:SetAuraGroupEnabled(key, on)
+    elseif container.SetAuraGroupEnabled then
+        container:SetAuraGroupEnabled(key, on)
     else
-        c:SetAuraGroupMaxFrameCount(key, on and 1 or 0)
+        container:SetAuraGroupMaxFrameCount(key, on and 1 or 0)
     end
 end
 
-local function Update(rec, k, e, f, set)
-    local c, key, fixed = rec.frame, rec.keys[k], rec.fixed
+local function Update(rec, k, entry, filter, set)
+    local container, key, fixed = rec.frame, rec.keys[k], rec.fixed
     local have = rec.ids[k]
     -- Spell list first, then the filter string: the group never passes
     -- through a state without its spell list. A 12.1.0 slot that is off
     -- keeps NONE until Apply hands it the list.
     if not SameSet(have, set) then
         CopySet(have, set)
-        if not fixed or c.SetAuraSlotEnabled or rec.act[k] then
+        if not fixed or container.SetAuraSlotEnabled or rec.act[k] then
             cand.includeSpellIDs = have
             if fixed then
-                c:SetAuraSlotCandidateFilters(key, cand)
+                container:SetAuraSlotCandidateFilters(key, cand)
             else
-                c:SetAuraGroupCandidateFilters(key, cand)
+                container:SetAuraGroupCandidateFilters(key, cand)
             end
             cand.includeSpellIDs = nil
         end
     end
-    if rec.filter[k] ~= f then
-        rec.filter[k] = f
+    if rec.filter[k] ~= filter then
+        rec.filter[k] = filter
         if fixed then
-            c:SetAuraSlotFilterString(key, f)
+            container:SetAuraSlotFilterString(key, filter)
         else
-            c:SetAuraGroupFilterString(key, f)
+            container:SetAuraGroupFilterString(key, filter)
         end
     end
-    rec.on[k], rec.entry[k] = true, e
+    rec.on[k], rec.entry[k] = true, entry
     Apply(rec, k)
 end
 
@@ -901,7 +907,7 @@ end
 -- fixed mode keys slots by their anchor (cell or cooldown icon). Returns
 -- false when sealed buttons would need a write they refuse.
 local function Build(rec, view, n)
-    local c, fixed, over, slot = rec.frame, rec.fixed, rec.fam == "over", rec.slot
+    local container, fixed, over, slot = rec.frame, rec.fixed, rec.fam == "over", rec.slot
     local look = Look(rec, view)
     local parts = rec.parts
     if parts[1] == nil then rec.look = look end
@@ -914,11 +920,11 @@ local function Build(rec, view, n)
     local keys = rec.keys
     stamp = stamp + 1
     for i = 1, n do
-        local e = list[i]
-        local set, f = Ids(e), FilterOf(e, rec.unit)
+        local entry = list[i]
+        local set, filter = Ids(entry), FilterOf(entry, rec.unit)
         local k
         if fixed then
-            local anchor = over and e.icon or C.Layout.Cell(slot, where[i])
+            local anchor = over and entry.icon or C.Layout.Cell(slot, where[i])
             k = rec.byAnchor[anchor]
             if not k then
                 k = #keys + 1
@@ -936,24 +942,24 @@ local function Build(rec, view, n)
             if not keys[k] then keys[k] = rec.prefix .. k end
         end
         rec.mark[k] = stamp
-        if rec.text then rec.topts[k] = TextOpts((e.ov or EMPTY).threshold or threshold) end
+        if rec.text then rec.topts[k] = TextOpts((entry.ov or EMPTY).threshold or threshold) end
         if rec.ids[k] then
-            Update(rec, k, e, f, set)
-            if not fixed and (rec.li[k] ~= e.index or rec.lg[k] ~= rec.geo) then
-                rec.li[k], rec.lg[k] = e.index, rec.geo
-                c:SetAuraGroupLayout(keys[k], GroupLayout(rec, e.index))
+            Update(rec, k, entry, filter, set)
+            if not fixed and (rec.li[k] ~= entry.index or rec.lg[k] ~= rec.geo) then
+                rec.li[k], rec.lg[k] = entry.index, rec.geo
+                container:SetAuraGroupLayout(keys[k], GroupLayout(rec, entry.index))
             end
         else
-            rec.entry[k], rec.filter[k], rec.ids[k], rec.on[k], rec.act[k] = e, f, CopySet({}, set), true, true
+            rec.entry[k], rec.filter[k], rec.ids[k], rec.on[k], rec.act[k] = entry, filter, CopySet({}, set), true, true
             cand.includeSpellIDs = set
             local function init(button) Init(rec, button, k) end
             if fixed then
                 slotOpts.candidateFilters, slotOpts.initializeFrame = cand, init
-                c:AddAuraSlot(keys[k], f, slotOpts)
+                container:AddAuraSlot(keys[k], filter, slotOpts)
             else
-                rec.li[k], rec.lg[k] = e.index, rec.geo
-                groupOpts.candidateFilters, groupOpts.initializeFrame, groupOpts.layout = cand, init, GroupLayout(rec, e.index)
-                c:AddAuraGroup(keys[k], f, groupOpts)
+                rec.li[k], rec.lg[k] = entry.index, rec.geo
+                groupOpts.candidateFilters, groupOpts.initializeFrame, groupOpts.layout = cand, init, GroupLayout(rec, entry.index)
+                container:AddAuraGroup(keys[k], filter, groupOpts)
             end
             cand.includeSpellIDs = nil
             slotOpts.initializeFrame, groupOpts.initializeFrame = nil, nil
@@ -972,8 +978,8 @@ local function Build(rec, view, n)
     if not dirty then
         for i = 1, #parts do
             local part = parts[i]
-            local e = rec.on[part.pos] and rec.entry[part.pos]
-            if e and ApplyEntry(rec, part, e, true) then
+            local entry = rec.on[part.pos] and rec.entry[part.pos]
+            if entry and ApplyEntry(rec, part, entry, true) then
                 dirty = true
                 break
             end
@@ -984,8 +990,8 @@ local function Build(rec, view, n)
     for i = 1, #parts do
         local part = parts[i]
         if restyle then Style(rec, part) end
-        local e = rec.on[part.pos] and rec.entry[part.pos]
-        if e then ApplyEntry(rec, part, e, false) end
+        local entry = rec.on[part.pos] and rec.entry[part.pos]
+        if entry then ApplyEntry(rec, part, entry, false) end
     end
     rec.look = look
     return true
@@ -1077,17 +1083,17 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
         if not fresh then rec = Acquire(slot, fam, bind, unit) end
         if not rec then
             local parent = fam == "over" and bar.frame or bar.auraHost or bar.frame
-            local c = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
-            if not c then return nil end
+            local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+            if not container then return nil end
             -- 12.1.5 and Forever: no fake Edit Mode auras in our bars.
-            if c.SetEditModePreviewEnabled then c:SetEditModePreviewEnabled(false) end
-            if fixed then c:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0) end
-            rec = { frame = c, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
+            if container.SetEditModePreviewEnabled then container:SetEditModePreviewEnabled(false) end
+            if fixed then container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0) end
+            rec = { frame = container, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
                 text = text, name = name, pandemic = pan, glow = glow, stack = stack, kit = kit, fill = fill, geo = 0,
                 keys = {}, on = {}, act = {}, shut = {}, filter = {}, ids = {}, entry = {}, anchors = {}, byAnchor = {}, topts = {}, li = {}, lg = {},
                 mark = {}, parts = {}, lk = {} }
             if kit then
-                local watch = CreateFrame("Frame", nil, parent)
+                local watch = S.CreateFrame("Frame", nil, parent)
                 watch:SetAllPoints(parent)
                 watching[watch] = rec
                 watch:SetScript("OnShow", Woke)
@@ -1096,25 +1102,25 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
         end
         byUnit[unit] = rec
     end
-    local c = rec.frame
+    local container = rec.frame
     local level = bar.frame:GetFrameLevel() + (fam == "over" and OVER_LEVEL or AURA_LEVEL)
     if rec.level ~= level then
         rec.level = level
-        c:SetFrameLevel(level)
+        container:SetFrameLevel(level)
     end
     local strata = STRATA[view.strata] or "MEDIUM"
     if rec.strata ~= strata then
         rec.strata = strata
-        c:SetFrameStrata(strata)
+        container:SetFrameStrata(strata)
     end
     if rec.unit ~= unit then
         rec.unit = unit
-        c:SetUnit(unit)
+        container:SetUnit(unit)
     end
     local enabled = not (unit == "target" and FriendlyTarget())
     if rec.enabled ~= enabled then
         rec.enabled = enabled
-        c:SetEnabled(enabled)
+        container:SetEnabled(enabled)
     end
     Show(rec)
     return rec
@@ -1123,31 +1129,31 @@ end
 -- Compact containers: flow layout and host anchor from geo; the target row
 -- starts `offset` lines further in growth direction. Container writes only.
 local function Place(rec, offset, split)
-    local c, g = rec.frame, geo
+    local container, g = rec.frame, geo
     if rec.gw ~= g.w or rec.gh ~= g.h or rec.gp ~= g.gp or rec.gc ~= g.gc then
         rec.gw, rec.gh, rec.gp, rec.gc = g.w, g.h, g.gp, g.gc
         rec.geo = rec.geo + 1
     end
     if rec.axis ~= g.axis then
         rec.axis = g.axis
-        c:SetFlowLayoutAxis(g.axis)
+        container:SetFlowLayoutAxis(g.axis)
     end
     local flow = g.flow
     if rec.flowPoint ~= flow[1] then
         rec.flowPoint = flow[1]
-        c:SetFlowLayoutAnchorPoint(flow[1])
+        container:SetFlowLayoutAnchorPoint(flow[1])
     end
     if rec.hd ~= flow[2] or rec.vd ~= flow[3] then
         rec.hd, rec.vd = flow[2], flow[3]
-        c:SetFlowLayoutGrowthDirection(flow[2], flow[3])
+        container:SetFlowLayoutGrowthDirection(flow[2], flow[3])
     end
     if rec.line ~= g.line then
         rec.line = g.line
-        c:SetFlowLayoutMaximumLineSize(g.line)
+        container:SetFlowLayoutMaximumLineSize(g.line)
     end
     if not rec.padded then
         rec.padded = true
-        c:SetFlowLayoutPadding(0, 0, 0, 0)
+        container:SetFlowLayoutPadding(0, 0, 0, 0)
     end
     local dx, dy = 0, 0
     local point, host = g.point, g.host
@@ -1169,8 +1175,8 @@ local function Place(rec, offset, split)
     end
     if rec.pt ~= point or rec.host ~= host or rec.rel ~= rel or rec.dx ~= dx or rec.dy ~= dy then
         rec.pt, rec.host, rec.rel, rec.dx, rec.dy = point, host, rel, dx, dy
-        c:ClearAllPoints()
-        c:SetPoint(point, host, rel, dx, dy)
+        container:ClearAllPoints()
+        container:SetPoint(point, host, rel, dx, dy)
     end
 end
 
@@ -1191,9 +1197,9 @@ end
 
 -- hideReady of a cooldown entry, as the time layer reads it; placeholders
 -- never hide.
-local function Hides(e, view)
-    if e.src == "p" then return false end
-    local hide = (e.ov or EMPTY).hideReady
+local function Hides(entry, view)
+    if entry.src == "p" then return false end
+    local hide = (entry.ov or EMPTY).hideReady
     if hide == nil then hide = view.hideReady == true end
     return hide == true
 end
@@ -1211,23 +1217,23 @@ local function Collect(plan, unit, over, view)
     if not over and limit and limit < cap then cap = limit end
     local steady = 0
     for i = 1, cap do
-        local e = entries[i]
+        local entry = entries[i]
         local ok
         if over then
-            if e.icon then
+            if entry.icon then
                 if limit and steady >= limit then break end
-                if not Hides(e, view) then steady = steady + 1 end
-                if e.family == 1 and e.hasAura and e.src ~= "p" and OnUnit(e, unit) then
-                    ok = (e.ov or EMPTY).showAura
+                if not Hides(entry, view) then steady = steady + 1 end
+                if entry.family == 1 and entry.hasAura and entry.src ~= "p" and OnUnit(entry, unit) then
+                    ok = (entry.ov or EMPTY).showAura
                     if ok == nil then ok = view.showAura == true end
                 end
             end
-        elseif e.src ~= "p" and OnUnit(e, unit) then
-            ok = e.family ~= 1
+        elseif entry.src ~= "p" and OnUnit(entry, unit) then
+            ok = entry.family ~= 1
         end
-        if ok and Ids(e) then
+        if ok and Ids(entry) then
             n = n + 1
-            list[n], where[n] = e, i
+            list[n], where[n] = entry, i
         end
     end
     for i = #list, n + 1, -1 do list[i], where[i] = nil, nil end
@@ -1253,7 +1259,7 @@ local function Unholds(slot)
     for i = 1, #cells do Unhold(cells[i]) end
 end
 
-local function Hold(cell, e, m, dim)
+local function Hold(cell, entry, barMeta, dim)
     local h = holders[cell]
     if not h then
         h = { bg = S.CreateTexture(cell, nil, "BACKGROUND", nil, 0), icon = S.CreateTexture(cell, nil, "BACKGROUND", nil, 1),
@@ -1262,17 +1268,17 @@ local function Hold(cell, e, m, dim)
         h.name:SetJustifyH("LEFT")
         holders[cell] = h
     end
-    local tex = (e.ov or EMPTY).icon or e.texture or QUESTION
-    if h.shown and h.e == e and h.tex == tex and h.look == m.look and h.dim == dim then return end
-    h.shown, h.e, h.tex, h.look, h.dim = true, e, tex, m.look, dim
-    local lk, icon = m.lk, h.icon
+    local tex = (entry.ov or EMPTY).icon or entry.texture or QUESTION
+    if h.shown and h.e == entry and h.tex == tex and h.look == barMeta.look and h.dim == dim then return end
+    h.shown, h.e, h.tex, h.look, h.dim = true, entry, tex, barMeta.look, dim
+    local lk, icon = barMeta.lk, h.icon
     local bw = lk.bw
     icon:SetTexture(tex)
     icon:SetTexCoord(lk.l, lk.r, lk.t, lk.b)
     icon:SetDesaturated(dim)
     icon:SetAlpha(dim and .5 or 1)
     icon:ClearAllPoints()
-    if m.role == "bar" then
+    if barMeta.role == "bar" then
         local left = lk.side == 1
         local point = left and "TOPLEFT" or "TOPRIGHT"
         icon:SetPoint(point, cell, point, left and bw or -bw, -bw)
@@ -1290,7 +1296,7 @@ local function Hold(cell, e, m, dim)
         local lead = lk.icon and lk.h or 0
         name:SetPoint("LEFT", cell, "LEFT", (left and lead or 0) + 4 * lk.px, 0)
         name:SetPoint("RIGHT", cell, "RIGHT", -(left and 0 or lead) - 4 * lk.px, 0)
-        name:SetText(e.name or "")
+        name:SetText(entry.name or "")
         name:Show()
     else
         icon:SetPoint("TOPLEFT", cell, "TOPLEFT", bw, -bw)
@@ -1301,7 +1307,7 @@ local function Hold(cell, e, m, dim)
     end
 end
 
-local function Placeholders(slot, view, plan, m)
+local function Placeholders(slot, view, plan, barMeta)
     local layout, bar = C.Layout, C.bars[slot]
     if not (layout and layout.Cell and bar and bar.cells) then return end
     local preview = A.preview == true
@@ -1310,14 +1316,14 @@ local function Placeholders(slot, view, plan, m)
     local limit = view.maxIcons
     if type(limit) == "number" and limit > 0 and limit < cap then cap = limit end
     for i = 1, cap do
-        local e = entries[i]
+        local entry = entries[i]
         local show = preview
-        if not show and m.fixed and e.src ~= "p" then
-            show = (e.ov or EMPTY).showMissing
+        if not show and barMeta.fixed and entry.src ~= "p" then
+            show = (entry.ov or EMPTY).showMissing
             if show == nil then show = view.showMissing == true end
         end
         if show then
-            Hold(layout.Cell(slot, i), e, m, not preview)
+            Hold(layout.Cell(slot, i), entry, barMeta, not preview)
         else
             Unhold(bar.cells[i])
         end
@@ -1349,9 +1355,9 @@ local function Needs(entries, aura, view)
     local alerts = C.Alerts
     local isKit = alerts and alerts.IsKit
     for i = 1, #entries do
-        local e = entries[i]
-        local ov = e.ov
-        if ov and ov ~= EMPTY and e.src ~= "p" then
+        local entry = entries[i]
+        local ov = entry.ov
+        if ov and ov ~= EMPTY and entry.src ~= "p" then
             if ov.timeText == 2 then need.text = true end
             local n = ov.stackGlow
             if type(n) == "number" and n >= 1 then need.stack = true end
@@ -1389,20 +1395,20 @@ end
 
 local function SyncAura(slot, view, plan, force)
     local role = plan.kind == 3 and "bar" or "icon"
-    local m = meta[slot]
-    if not m then
-        m = { lk = {} }
-        meta[slot] = m
+    local barMeta = meta[slot]
+    if not barMeta then
+        barMeta = { lk = {} }
+        meta[slot] = barMeta
     end
-    m.role = role
-    m.look = Look(m, view)
+    barMeta.role = role
+    barMeta.look = Look(barMeta, view)
     local entries = plan.entries
     Needs(entries, true, view)
     local layout = C.Layout
     -- One rule for the layout and the containers (Layout.FixedAuras).
     local fixed, _, split = false, nil, false
     if layout ~= nil and layout.Cell ~= nil and layout.FixedAuras ~= nil then fixed, _, split = layout.FixedAuras(view, entries) end
-    m.fixed, m.split = fixed == true, split == true
+    barMeta.fixed, barMeta.split = fixed == true, split == true
     local bar = Bar(slot)
     if not bar then return end
     if Available() then
@@ -1442,12 +1448,12 @@ local function SyncAura(slot, view, plan, force)
             if n == 0 then
                 Retire(slot, "aura", unit)
             else
-                local side = m.split and (u == 1 and "lead" or "tail") or nil
-                Run(slot, "aura", unit, role, m.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)
+                local side = barMeta.split and (u == 1 and "lead" or "tail") or nil
+                Run(slot, "aura", unit, role, barMeta.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)
             end
         end
     end
-    Placeholders(slot, view, plan, m)
+    Placeholders(slot, view, plan, barMeta)
 end
 
 -- Structural sync of one bar (aura bars and cooldown overlays alike). Out
@@ -1463,7 +1469,7 @@ function A.Sync(slot, force)
         Unholds(slot)
         return A.SyncOverlays(slot, force)
     end
-    if InCombatLockdown() then
+    if IsCombatLocked() then
         A.pending[slot] = true
         return
     end
@@ -1484,7 +1490,7 @@ function A.SyncOverlays(slot, force)
         end
         return
     end
-    if InCombatLockdown() then
+    if IsCombatLocked() then
         A.pending[slot] = true
         return
     end
@@ -1605,7 +1611,7 @@ end
 -- pending, and the sealed-button debounce: runs every sync that combat or
 -- sealed buttons held back, then pending aura sounds.
 function A.FlushPending()
-    if InCombatLockdown() then return end
+    if IsCombatLocked() then return end
     local n = 0
     for slot in pairs(A.pending) do
         n = n + 1
@@ -1630,12 +1636,15 @@ function A.SetPreview(on)
     for _, fams in pairs(live) do
         for _, rec in pairs(fams.aura) do Show(rec) end
     end
-    for slot, m in pairs(meta) do
+    for slot, barMeta in pairs(meta) do
         local view, plan = C.views[slot], C.plans[slot]
         if view and plan and view.on and plan.kind ~= 1 then
-            Placeholders(slot, view, plan, m)
+            Placeholders(slot, view, plan, barMeta)
         else
             Unholds(slot)
         end
     end
 end
+
+
+

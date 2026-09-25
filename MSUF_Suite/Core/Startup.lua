@@ -73,10 +73,19 @@ local function Start()
         return
     end
     if Suite.Skin then Suite.Skin.SetEnabled(Suite.RootDB.skinEnabled ~= false) end
+    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureNewCharacterProfile then
+        Suite.SuiteProfiles.EnsureNewCharacterProfile()
+    end
     if Suite.SuiteProfiles and Suite.SuiteProfiles.SyncActive then
         Suite.SuiteProfiles.SyncActive(_G.MSUF_ActiveProfile or "Default")
     end
+    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureRetailForeverCooldownLayout then
+        Suite.SuiteProfiles.EnsureRetailForeverCooldownLayout()
+    end
     Suite.Suite.Start()
+    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureRetailResourceStack then
+        Suite.SuiteProfiles.EnsureRetailResourceStack(false)
+    end
     if Suite.Installer then Suite.Installer.MaybeShow() end
 end
 

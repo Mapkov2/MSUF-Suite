@@ -1,7 +1,7 @@
 local _, NS = ...
 
--- Guards for touching Blizzard and other foreign objects without pcall. Each
--- known failure has an explicit check instead of a swallowed error:
+-- Guards for touching Blizzard and other foreign objects without protected
+-- calls. Each known failure has an explicit check instead of a swallowed error:
 --   * Forbidden objects reject every method except IsForbidden.
 --   * 12.x getters return secret values instead of raising; a secret must not
 --     be compared, used as a table key or in arithmetic (Safety.Public).
@@ -19,9 +19,13 @@ function Safety.Public(value)
     return canaccessvalue ~= nil and canaccessvalue(value) == true
 end
 
+-- Every helper below returns at least one value, so a result can go straight
+-- into type(), tonumber() or a comparison.
+
 -- A field of a widget or table; nil for anything else.
 function Safety.Field(target, key)
     if type(target) == "table" then return target[key] end
+    return nil
 end
 
 function Safety.IsForbidden(target)
@@ -30,12 +34,19 @@ function Safety.IsForbidden(target)
     return not Safety.Public(forbidden) or forbidden == true
 end
 
--- Calls target:name(...) when the object is readable and has that method.
--- Returns nothing otherwise. Results may be secret: check with Safety.Public.
+-- Passes all results through; a call that returned nothing yields nil.
+local function AtLeastOne(first, ...)
+    return first, ...
+end
+
+-- Calls target:name(...) when the object is readable and has that method,
+-- and returns its results. nil otherwise. Results may be secret: check them
+-- with Safety.Public before comparing.
 function Safety.Call(target, name, ...)
-    if type(target) ~= "table" or Safety.IsForbidden(target) then return end
+    if type(target) ~= "table" or Safety.IsForbidden(target) then return nil end
     local method = target[name]
-    if type(method) == "function" then return method(target, ...) end
+    if type(method) ~= "function" then return nil end
+    return AtLeastOne(method(target, ...))
 end
 
 -- Calls target:name(...) for its side effect. True when the call happened.
@@ -52,6 +63,7 @@ end
 function Safety.Read(target, name, ...)
     local value = Safety.Call(target, name, ...)
     if Safety.Public(value) then return value end
+    return nil
 end
 
 -- r, g, b, a from a color getter such as GetVertexColor or GetTextColor, or
@@ -106,6 +118,15 @@ Safety.CanControl = Safety.CanDecorate
 function Safety.CanCreateRegions(target, allowImplicitProtected)
     return Safety.CanDecorate(target, allowImplicitProtected)
         and not Safety.IsCompositorManaged(target)
+end
+
+-- Runs code that other addons can supply (theme listeners and adapters from
+-- the public API) the way Blizzard's CallbackRegistry runs its callbacks: an
+-- error is reported to the error handler (BugSack) and the caller's loop goes
+-- on. Nothing is swallowed. Returns the results, or nothing after an error.
+-- Offline test harnesses have no securecallfunction and call directly.
+Safety.Dispatch = securecallfunction or function(callback, ...)
+    return callback(...)
 end
 
 return Safety

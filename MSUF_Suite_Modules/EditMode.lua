@@ -17,10 +17,7 @@ local function Epoch()
     return epoch
 end
 
-local function Finite(value)
-    return S.Public(value) and type(value) == "number" and value == value
-        and value > -math.huge and value < math.huge
-end
+local Finite = S.Finite
 
 local function API()
     local api = _G.MSUF_EditModeAPI

@@ -83,7 +83,8 @@ end
 MoveViewLeftStop = function() cameraStops = cameraStops + 1 end
 SetPortraitTexture = function(texture, unit)
     assert(unit == "player")
-    if portraitFails then error("portrait unavailable") end
+    -- A missing portrait leaves the texture unchanged (the API has no result).
+    if portraitFails then return end
     texture.portraitUnit = unit
 end
 UnitIsAFK = function(unit)
@@ -113,9 +114,11 @@ local private = { NS = {}, Suite = suite }
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
 local module = assert(installed)
 module.active = true
-module.context = { Event = function(_, event, callback, allowCombat)
+local eventUnits = {}
+module.context = { Event = function(_, event, callback, allowCombat, unit)
     assert(allowCombat == true)
     events[event] = callback
+    eventUnits[event] = unit
 end, RemoveEvent = function(_, event) events[event] = nil end }
 
 module:Enable()
@@ -123,6 +126,8 @@ assert(events.PLAYER_FLAGS_CHANGED and events.UNIT_FLAGS
     and events.PLAYER_ENTERING_WORLD and events.PLAYER_LEAVING_WORLD
     and events.PLAYER_REGEN_DISABLED and events.PLAYER_REGEN_ENABLED)
 assert(not module.host and checks == 1, "inactive players should allocate no screen")
+assert(eventUnits.UNIT_FLAGS == "player" and eventUnits.PLAYER_FLAGS_CHANGED == nil,
+    "UNIT_FLAGS must be registered for the player only")
 
 afk = true
 events.PLAYER_FLAGS_CHANGED(module, "PLAYER_FLAGS_CHANGED", "party1")

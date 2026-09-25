@@ -310,7 +310,8 @@ end
 local function FlyoutDirection(header, columns, rows)
     local x, y = header:GetCenter()
     local width, height = UIParent:GetWidth(), UIParent:GetHeight()
-    if not (S.Public(x) and S.Public(y) and S.Public(width) and S.Public(height)) or type(x) ~= "number" or type(y) ~= "number" then
+    if not (S.Public(x) and S.Public(y) and S.Public(width) and S.Public(height))
+        or type(x) ~= "number" or type(y) ~= "number" then
         return columns >= rows and "UP" or "LEFT"
     end
     if columns >= rows then return y > height / 2 and "DOWN" or "UP" end

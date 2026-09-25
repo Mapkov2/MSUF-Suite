@@ -16,6 +16,7 @@ B.Module("objectives", {
     available = MainlineFamily,
 })
 local objectiveContent = {
+    B.Bool("pauseInRaidCombat", "Pause tracker during raid combat", false),
     B.Bool("showAchievements", "Tracked achievements", true),
     B.Bool("showScenario", "Scenario and delve steps", true),
     B.Bool("showWorldQuests", "World quests", true),

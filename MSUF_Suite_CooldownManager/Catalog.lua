@@ -15,7 +15,7 @@ local wipe = C.wipe
 -- generation moves with every rebuild, content only when a rebuild changed
 -- a record, an order or a bar list.
 local Catalog = { records = {}, order = {}, generation = 0, content = 0, byBar = { ess = {}, uti = {}, buf = {}, bar = {}, ext = {} },
-    defaultByBar = { uti = {}, buf = {}, bar = {} }, byBase = {},
+    defaultByBar = { ess = {}, uti = {}, buf = {}, bar = {} }, byBase = {},
     equipBars = {} }
 C.Catalog = Catalog
 
@@ -168,7 +168,7 @@ local function Watch()
         SetReady()
         return
     end
-    gateFrame = CreateFrame("Frame")
+    gateFrame = S.CreateFrame("Frame")
     for event, seen in pairs(gate) do
         if not seen then gateFrame:RegisterEvent(event) end
     end
@@ -178,8 +178,17 @@ function Catalog.Ready()
     if ready then return true end
     local viewer = C_CooldownViewer
     local get = viewer and viewer.GetCooldownViewerCategorySet
-    local ids = get and get(0, true)
-    if Public(ids) and type(ids) == "table" and #ids > 0 then
+    -- A spec can have no Essential entry. Any populated spell or aura category
+    -- proves the viewer data exists, including after a late module load.
+    local populated = false
+    for category = 0, 3 do
+        local ids = get and get(category, true)
+        if Public(ids) and type(ids) == "table" and #ids > 0 then
+            populated = true
+            break
+        end
+    end
+    if populated then
         SetReady()
     else
         Watch()
@@ -251,7 +260,7 @@ Catalog.SpecTag = SpecTag
 ------------------------------------------------------------------ rebuild
 local fetched, defaultOrder, merged, kept, eff, linkedTmp = {}, {}, {}, {}, {}, {}
 local bars = { ess = {}, uti = {}, buf = {}, bar = {}, ext = {} }
-local defaultBars = { uti = {}, buf = {}, bar = {} }
+local defaultBars = { ess = {}, uti = {}, buf = {}, bar = {} }
 local defaultSeen = {}
 local tailTmp, equipTmp = {}, {}
 local basePool = {}
@@ -532,18 +541,18 @@ end
 -- combat: records come from byBase, live entries from the routing index
 -- (every entry on a shown bar by base spell), so a base nothing tracks
 -- costs two lookups. No allocation beyond the client's own strings.
-local function Override(e, base, override)
-    e.prevOverride = e.override
-    e.override = override
-    e.spell = override or base
-    if e.auraIDs and override then e.auraIDs[override] = true end
-    local rec = e.src == "b" and Catalog.records[e.id]
+local function Override(entry, base, override)
+    entry.prevOverride = entry.override
+    entry.override = override
+    entry.spell = override or base
+    if entry.auraIDs and override then entry.auraIDs[override] = true end
+    local rec = entry.src == "b" and Catalog.records[entry.id]
     if rec then
-        e.texture = Catalog.RecordTexture(rec) or e.texture
-        e.name = Catalog.RecordName(rec) or e.name
+        entry.texture = Catalog.RecordTexture(rec) or entry.texture
+        entry.name = Catalog.RecordName(rec) or entry.name
     else
-        e.texture = SpellTexture(base) or e.texture
-        e.name = SpellName(e.spell) or e.name
+        entry.texture = SpellTexture(base) or entry.texture
+        entry.name = SpellName(entry.spell) or entry.name
     end
 end
 function Catalog.OnOverride(base, override)
@@ -565,9 +574,9 @@ function Catalog.OnOverride(base, override)
     end
     if list then
         for i = 1, #list do
-            local e = list[i]
-            if (e.src == "b" or e.src == "s") and e.base == base and e.override ~= override then
-                Override(e, base, override)
+            local entry = list[i]
+            if (entry.src == "b" or entry.src == "s") and entry.base == base and entry.override ~= override then
+                Override(entry, base, override)
                 any = true
             end
         end

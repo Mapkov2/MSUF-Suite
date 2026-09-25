@@ -9,607 +9,373 @@ local EncounterJournalSkin = {
 }
 NS.EncounterJournalSkin = EncounterJournalSkin
 
+local Safety = NS.Safety
+local Field = Safety.Field
+local Kit = NS.AdapterKit
+local Path = Kit.Path
+local Fade = Kit.Fade
+local Attach = Kit.Attach
+local SetTextColor = Kit.SetTextColor
+
 local CALLBACK_TAB_SET = "EncounterJournal.TabSet"
 local CALLBACK_JOURNEY_CHANGED = "JourneysFrameMixin.FactionChanged"
-local RegisterAllScrollBoxes
+local ROWS_JOB = "encounterJournal:rows"
+local POOL_LIMIT = 64
+local PREWARM_LIMIT = 32
+local JOURNEY_REWARD_PREWARM = 4
 
-local function WeakSet()
-    return setmetatable({}, { __mode = "k" })
+local GetMajorFactionData = C_MajorFactions and C_MajorFactions.GetMajorFactionData
+
+local ROOT_MODE = {
+    role = "shell",
+    radius = 8,
+    maxDepth = 8,
+    maxNodes = 900,
+    allowImplicitProtected = true,
+    registerDynamicRows = false,
+}
+
+local SHELL_SPEC = { role = "shell", radius = 8, inset = 0 }
+local PANEL_SPEC = { role = "panel", radius = 8, inset = 1 }
+local PANEL_INSET_SPEC = { role = "panel", radius = 8, inset = 2 }
+local CARD_SPEC = { role = "card", radius = 8, inset = 2 }
+local SMALL_CARD_SPEC = { role = "card", radius = 6, inset = 1 }
+local TUTORIAL_SPEC = { role = "card", radius = 8, inset = 8 }
+local ROW_SPEC = { role = "card", radius = 6, inset = 1, listItem = true }
+
+local BUTTON_SPEC = {
+    role = "button",
+    activeRole = "buttonPrimary",
+    useControlShape = true,
+    pillHeight = 28,
+    inset = 1,
+}
+local PRIMARY_BUTTON_SPEC = {
+    role = "buttonPrimary",
+    activeRole = "buttonPrimary",
+    useControlShape = true,
+    pillHeight = 28,
+    inset = 1,
+}
+local TAB_SPEC = {
+    role = "navigation",
+    activeRole = "navigationActive",
+    useControlShape = true,
+    pillHeight = 28,
+    inset = 1,
+}
+local SEARCH_SPEC = {
+    role = "input",
+    useControlShape = true,
+    pillHeight = 28,
+    inset = 1,
+}
+
+-- Exact atlases for the only region enumerations in this adapter. Parent
+-- identity plus atlas and a minimum size keep unrelated semantic art native.
+local TUTORIAL_ATLAS = { atlas = "adventureguide-tutorial-rpe", width = 480, height = 220 }
+local LOOT_ATLAS = { atlas = "loottab-background", width = 400, height = 200 }
+
+local chromeFields = {
+    "Bg", "BG", "Background", "Backdrop", "TopTileStreaks",
+    "BottomTileStreaks", "BackgroundTile", "BackgroundTexture",
+}
+local rootTabs = {
+    "JourneysTab", "MonthlyActivitiesTab", "suggestTab", "dungeonsTab",
+    "raidsTab", "LootJournalTab", "TutorialsTab",
+}
+local encounterTabs = { "overviewTab", "lootTab", "bossTab", "modelTab" }
+local themeBorderFields = { "Top", "Bottom", "Left", "Right", "FilterList" }
+
+local rowTitleFields = {
+    "Name", "name", "SetName", "JourneyName", "JourneyCardName",
+    "CategoryName", "Title", "RewardCardName", "HighlightTitle", "NameText",
+}
+local rowTextFields = {
+    "Description", "description", "ItemLevel", "JourneyCardLevel",
+    "JourneyCardProgress", "HighlightDescription", "ConditionsText", "Label",
+}
+local rowMutedFields = {
+    "SpecName", "HighlightLevel", "TimeLeft", "ProgressText", "Points",
+}
+
+local scrollBoxPaths = {
+    { "instanceSelect", "ScrollBox" },
+    { "searchResults", "ScrollBox" },
+    { "encounter", "info", "BossesScrollBox" },
+    { "encounter", "info", "LootContainer", "ScrollBox" },
+    { "JourneysFrame", "JourneysList" },
+    { "MonthlyActivitiesFrame", "ScrollBox" },
+    { "MonthlyActivitiesFrame", "FilterList", "ScrollBox" },
+    { "LootJournal", "ScrollBox" },
+    { "LootJournalItems", "ItemSetsFrame", "ScrollBox" },
+}
+
+local function CanCreateRegions(target)
+    return Safety.CanCreateRegions(target, true)
 end
 
-local function SafeField(object, key)
-    if not object then
-        return nil
-    end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
-end
-
-local function Path(object, ...)
-    for index = 1, select("#", ...) do
-        object = SafeField(object, select(index, ...))
-        if not object then
-            return nil
-        end
-    end
-    return object
-end
-
-local function IsUnsafe(target)
-    return not NS.Safety or not NS.Safety.CanCreateRegions(target, true)
-end
-
-local function IsUnsafeControl(target)
-    return not NS.Safety or not NS.Safety.CanControl(target, true)
-        or not NS.Safety.CanCreateRegions(target, true)
-end
-
-local function NewState(frame, owner)
-    return {
-        frame = frame,
-        owner = owner,
-        active = false,
-        surfaces = WeakSet(),
-        rows = WeakSet(),
-        textColors = setmetatable({}, { __mode = "k" }),
-        textRoles = setmetatable({}, { __mode = "k" }),
-        vertexColors = setmetatable({}, { __mode = "k" }),
-        vertexRoles = setmetatable({}, { __mode = "k" }),
-        scrollBoxes = WeakSet(),
-        eventCallbacks = {},
-        deferred = {},
-    }
-end
+local SkinDynamicRow
 
 local function GetState(frame, owner)
     local state = EncounterJournalSkin.states[frame]
     if not state then
-        state = NewState(frame, owner)
+        state = {
+            frame = frame,
+            owner = owner,
+            active = false,
+            surfaces = Kit.WeakSet(),
+            rows = Kit.WeakSet(),
+            textColors = Kit.NewTextColors(),
+            scrollBoxes = Kit.WeakSet(),
+            eventCallbacks = {},
+            deferred = {},
+        }
+        state.visitRow = function(row) SkinDynamicRow(state, row) end
         EncounterJournalSkin.states[frame] = state
     end
     state.owner = owner or state.owner
     return state
 end
 
-local function ReadTextColor(fontObject)
-    local getter = SafeField(fontObject, "GetTextColor")
-    if type(getter) ~= "function" then
-        return nil
-    end
-    local ok, r, g, b, a = pcall(getter, fontObject)
-    if not ok or type(r) ~= "number" then
-        return nil
-    end
-    return { r, g, b, tonumber(a) or 1 }
-end
-
-local function SameColor(left, right)
-    return left and right
-        and left[1] == right[1]
-        and left[2] == right[2]
-        and left[3] == right[3]
-        and left[4] == right[4]
-end
-
-local function ThemeColor(role)
-    return { NS.Theme.GetColor(role) }
-end
-
-local function SetThemeTextColor(state, fontObject, role, recapture)
-    if not fontObject or type(SafeField(fontObject, "SetTextColor")) ~= "function" then
-        return false
-    end
-
-    local current = ReadTextColor(fontObject)
-    local previousRole = state.textRoles[fontObject]
-    if not state.textColors[fontObject] then
-        state.textColors[fontObject] = current
-    elseif recapture and previousRole and current
-        and not SameColor(current, ThemeColor(previousRole)) then
-        -- Blizzard may swap a tab's native font state before this callback.
-        -- Capture only a color which is observably not one installed by us.
-        state.textColors[fontObject] = current
-    end
-
-    state.textRoles[fontObject] = role
-    local r, g, b, a = NS.Theme.GetColor(role)
-    fontObject:SetTextColor(r, g, b, a)
-    return true
-end
-
-local function ReadVertexColor(texture)
-    local getter = SafeField(texture, "GetVertexColor")
-    if type(getter) ~= "function" then
-        return nil
-    end
-    local ok, r, g, b, a = pcall(getter, texture)
-    if not ok or type(r) ~= "number" then
-        return nil
-    end
-    return { r, g, b, tonumber(a) or 1 }
-end
-
-local function SetThemeVertexColor(state, texture, role)
-    if not texture or type(SafeField(texture, "SetVertexColor")) ~= "function" then
-        return false
-    end
-    if not state.vertexColors[texture] then
-        state.vertexColors[texture] = ReadVertexColor(texture)
-    end
-    state.vertexRoles[texture] = role
-    local r, g, b, a = NS.Theme.GetColor(role)
-    texture:SetVertexColor(r, g, b, a)
-    return true
-end
-
-local function AttachSurface(state, target, spec)
-    if not target or IsUnsafe(target) then
-        return nil
-    end
-    spec = spec or {}
-    spec.allowImplicitProtected = true
-    local ok, surface = pcall(NS.Surface.Attach, target, spec)
-    if ok and surface then
-        state.surfaces[target] = true
-        NS.Surface.SetVisible(target, true)
-        return surface
-    end
-    return nil
-end
-
-local function Fade(state, region)
-    if region then
-        pcall(NS.Cosmetics.Fade, region, state.owner)
-    end
-end
-
-local function FadeNineSlice(state, nineSlice)
-    if nineSlice then
-        pcall(NS.Cosmetics.FadeNineSlice, nineSlice, state.owner)
-    end
-end
-
 local function FadeChrome(state, frame)
-    if not frame then
-        return
-    end
-    for _, key in ipairs({
-        "Bg", "BG", "Background", "Backdrop", "TopTileStreaks",
-        "BottomTileStreaks", "BackgroundTile", "BackgroundTexture",
-    }) do
-        Fade(state, SafeField(frame, key))
-    end
-    FadeNineSlice(state, SafeField(frame, "NineSlice"))
-    FadeNineSlice(state, SafeField(frame, "Border"))
+    if not frame then return end
+    Kit.FadeFields(state, frame, chromeFields)
+    Kit.FadeNineSlice(state, Field(frame, "NineSlice"))
+    Kit.FadeNineSlice(state, Field(frame, "Border"))
 end
 
-local function CollectRegions(frame)
-    local getter = SafeField(frame, "GetRegions")
-    if type(getter) ~= "function" then
-        return {}
-    end
-
-    local regions = {}
-    local function Capture(...)
-        for index = 1, select("#", ...) do
-            regions[#regions + 1] = select(index, ...)
-        end
-    end
-    local ok = pcall(function() Capture(getter(frame)) end)
-    return ok and regions or {}
-end
-
+-- An unsized (0) or unreadable extent counts as large enough.
 local function IsLargeRegion(region, minimumWidth, minimumHeight)
-    local widthGetter = SafeField(region, "GetWidth")
-    local heightGetter = SafeField(region, "GetHeight")
-    local width, height
-    if type(widthGetter) == "function" then
-        local ok, value = pcall(widthGetter, region)
-        if ok and type(value) == "number" then width = value end
-    end
-    if type(heightGetter) == "function" then
-        local ok, value = pcall(heightGetter, region)
-        if ok and type(value) == "number" then height = value end
-    end
+    local width = Safety.Read(region, "GetWidth")
+    local height = Safety.Read(region, "GetHeight")
+    width = type(width) == "number" and width or nil
+    height = type(height) == "number" and height or nil
     return (not width or width == 0 or width >= minimumWidth)
         and (not height or height == 0 or height >= minimumHeight)
 end
 
-local function FadeExactAtlas(state, exactFrame, atlas, minimumWidth, minimumHeight)
-    if not exactFrame or type(atlas) ~= "string" then
-        return false
+local function FadeLargeAtlasRegion(region, state, atlasSpec)
+    if Safety.Read(region, "GetAtlas") == atlasSpec.atlas
+        and IsLargeRegion(region, atlasSpec.width, atlasSpec.height) then
+        Fade(state, region)
     end
-    local faded = false
-    for _, region in ipairs(CollectRegions(exactFrame)) do
-        local getAtlas = SafeField(region, "GetAtlas")
-        if type(getAtlas) == "function" then
-            local ok, value = pcall(getAtlas, region)
-            if ok and value == atlas
-                and IsLargeRegion(region, minimumWidth or 1, minimumHeight or 1) then
-                Fade(state, region)
-                faded = true
-            end
-        end
-    end
-    return faded
 end
 
 local function ButtonText(button)
-    local text = SafeField(button, "Text") or SafeField(button, "text")
-    if text then
-        return text
-    end
-    local getter = SafeField(button, "GetFontString")
-    if type(getter) == "function" then
-        local ok, value = pcall(getter, button)
-        if ok then
-            return value
-        end
-    end
-    return nil
-end
-
-local function TrackControl(state, target, result)
-    if result then
-        state.surfaces[target] = true
-        return true
-    end
-    return false
+    return Field(button, "Text") or Field(button, "text") or (Safety.Call(button, "GetFontString"))
 end
 
 local function SkinButton(state, button, primary)
-    if not button or IsUnsafeControl(button) then
+    local method = Field(button, "Left") and Field(button, "Center") and Field(button, "Right")
+        and "ApplyThreeSliceButton" or "ApplyButton"
+    if not Kit.SkinControl(state, button, primary and PRIMARY_BUTTON_SPEC or BUTTON_SPEC, method) then
         return false
     end
-    local spec = {
-        role = primary and "buttonPrimary" or "button",
-        activeRole = "buttonPrimary",
-        useControlShape = true,
-        pillHeight = 28,
-        inset = 1,
-        allowImplicitProtected = true,
-    }
-    local result
-    if SafeField(button, "Left") and SafeField(button, "Center") and SafeField(button, "Right") then
-        local ok, value = pcall(NS.ControlSkin.ApplyThreeSliceButton, button, state.owner, spec)
-        result = ok and value
-    else
-        local ok, value = pcall(NS.ControlSkin.ApplyButton, button, state.owner, spec)
-        result = ok and value
-    end
-    if TrackControl(state, button, result) then
-        SetThemeTextColor(state, ButtonText(button), primary and "title" or "text", true)
-        return true
-    end
-    return false
+    SetTextColor(state.textColors, ButtonText(button), primary and "title" or "text", true)
+    return true
 end
 
 local function TabSelected(tab)
-    local getter = SafeField(tab, "IsSelected")
-    if type(getter) == "function" then
-        local ok, selected = pcall(getter, tab)
-        if ok then
-            return selected == true
-        end
+    if type((Field(tab, "IsSelected"))) == "function" then
+        return Safety.Read(tab, "IsSelected") == true
     end
-    local active = SafeField(tab, "MiddleActive")
-        or SafeField(tab, "LeftActive") or SafeField(tab, "RightActive")
-    local shown = SafeField(active, "IsShown")
-    if type(shown) == "function" then
-        local ok, selected = pcall(shown, active)
-        if ok then
-            return selected == true
-        end
+    local active = Field(tab, "MiddleActive") or Field(tab, "LeftActive") or Field(tab, "RightActive")
+    if type((Field(active, "IsShown"))) == "function" then
+        return Kit.IsShown(active)
     end
-    return SafeField(tab, "isSelected") == true
+    return Field(tab, "isSelected") == true
 end
 
 local function SkinTab(state, tab)
-    if not tab or IsUnsafeControl(tab) then
+    if not Kit.SkinControl(state, tab, TAB_SPEC, "ApplyTab") then
         return false
     end
-    local ok, result = pcall(NS.ControlSkin.ApplyTab, tab, state.owner, {
-        role = "navigation",
-        activeRole = "navigationActive",
-        useControlShape = true,
-        pillHeight = 28,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
-    if ok and result then
-        state.surfaces[tab] = true
-        pcall(NS.ControlSkin.Refresh, tab)
-        SetThemeTextColor(state, ButtonText(tab), TabSelected(tab) and "accentBright" or "muted", true)
-        return true
-    end
-    return false
+    NS.ControlSkin.Refresh(tab)
+    SetTextColor(state.textColors, ButtonText(tab), TabSelected(tab) and "accentBright" or "muted", true)
+    return true
 end
 
 local function SkinSearchBox(state, searchBox)
-    if not searchBox or IsUnsafeControl(searchBox) then
+    if not searchBox or not CanCreateRegions(searchBox) then
         return
     end
-    local ok, result = pcall(NS.ControlSkin.ApplySearchBox, searchBox, state.owner, {
-        role = "input",
-        useControlShape = true,
-        pillHeight = 28,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
-    if ok and result then
-        state.surfaces[searchBox] = true
-    end
-    SetThemeTextColor(state, searchBox, "text")
-    SetThemeTextColor(state, SafeField(searchBox, "Instructions"), "muted")
+    Kit.SkinControl(state, searchBox, SEARCH_SPEC, "ApplySearchBox")
+    SetTextColor(state.textColors, searchBox, "text")
+    SetTextColor(state.textColors, Field(searchBox, "Instructions"), "muted")
 end
 
 local function SkinTutorial(state)
     local contents = Path(state.frame, "TutorialsFrame", "Contents")
-    if not contents or IsUnsafe(contents) then
+    if not contents or not CanCreateRegions(contents) then
         return
     end
-
-    -- This is deliberately the only region enumeration in the adapter. The
-    -- parent identity and exact atlas prevent unrelated semantic art from being
-    -- suppressed. The verified atlas is the large tutorial parchment layer.
-    FadeExactAtlas(state, contents, "adventureguide-tutorial-rpe", 480, 220)
-    AttachSurface(state, contents, {
-        role = "card",
-        radius = 8,
-        inset = 8,
-        allowImplicitProtected = true,
-    })
-    SetThemeTextColor(state, SafeField(contents, "Header"), "title")
-    SetThemeTextColor(state, SafeField(contents, "Description"), "text")
-    Fade(state, SafeField(contents, "Divider"))
-    SkinButton(state, SafeField(contents, "StartButton"), true)
+    -- The verified atlas is the large tutorial parchment layer.
+    Kit.ForEachRegion(contents, FadeLargeAtlasRegion, state, TUTORIAL_ATLAS)
+    Attach(state, contents, TUTORIAL_SPEC)
+    SetTextColor(state.textColors, Field(contents, "Header"), "title")
+    SetTextColor(state.textColors, Field(contents, "Description"), "text")
+    Fade(state, Field(contents, "Divider"))
+    SkinButton(state, Field(contents, "StartButton"), true)
 end
 
 local function SkinSuggestionCard(state, card)
-    if not card or IsUnsafe(card) then
+    if not card or not CanCreateRegions(card) then
         return
     end
-    Fade(state, SafeField(card, "bg"))
-    AttachSurface(state, card, {
-        role = "card",
-        radius = 8,
-        inset = 2,
-        allowImplicitProtected = true,
-    })
+    Fade(state, Field(card, "bg"))
+    Attach(state, card, CARD_SPEC)
 
-    local center = SafeField(card, "centerDisplay")
-    SetThemeTextColor(state, Path(center, "title", "text"), "title")
-    SetThemeTextColor(state, Path(center, "description", "text"), "text")
-    SetThemeTextColor(state, Path(card, "reward", "text"), "muted")
-    SkinButton(state, SafeField(card, "button"), true)
+    local center = Field(card, "centerDisplay")
+    SetTextColor(state.textColors, Path(center, "title", "text"), "title")
+    SetTextColor(state.textColors, Path(center, "description", "text"), "text")
+    SetTextColor(state.textColors, Path(card, "reward", "text"), "muted")
+    SkinButton(state, Field(card, "button"), true)
 end
 
 local function SkinSuggestions(state)
-    local suggest = SafeField(state.frame, "suggestFrame")
-    if not suggest or IsUnsafe(suggest) then
+    local suggest = Field(state.frame, "suggestFrame")
+    if not suggest or not CanCreateRegions(suggest) then
         return
     end
-    AttachSurface(state, suggest, {
-        role = "panel",
-        radius = 8,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
-    SkinSuggestionCard(state, SafeField(suggest, "Suggestion1"))
-    SkinSuggestionCard(state, SafeField(suggest, "Suggestion2"))
-    SkinSuggestionCard(state, SafeField(suggest, "Suggestion3"))
+    Attach(state, suggest, PANEL_SPEC)
+    SkinSuggestionCard(state, Field(suggest, "Suggestion1"))
+    SkinSuggestionCard(state, Field(suggest, "Suggestion2"))
+    SkinSuggestionCard(state, Field(suggest, "Suggestion3"))
 end
 
 local function SkinInstanceSelect(state)
-    local instanceSelect = SafeField(state.frame, "instanceSelect")
-    if not instanceSelect or IsUnsafe(instanceSelect) then
+    local instanceSelect = Field(state.frame, "instanceSelect")
+    if not instanceSelect or not CanCreateRegions(instanceSelect) then
         return
     end
-    Fade(state, SafeField(instanceSelect, "bg"))
-    Fade(state, SafeField(instanceSelect, "evergreenBg"))
-    AttachSurface(state, instanceSelect, {
-        role = "panel",
-        radius = 8,
-        inset = 2,
-        allowImplicitProtected = true,
-    })
-    SetThemeTextColor(state, SafeField(instanceSelect, "Title"), "title")
+    Fade(state, Field(instanceSelect, "bg"))
+    Fade(state, Field(instanceSelect, "evergreenBg"))
+    Attach(state, instanceSelect, PANEL_INSET_SPEC)
+    SetTextColor(state.textColors, Field(instanceSelect, "Title"), "title")
 end
 
 local function SkinEncounterDetail(state)
-    local encounter = SafeField(state.frame, "encounter")
-    if not encounter or IsUnsafe(encounter) then
+    local encounter = Field(state.frame, "encounter")
+    if not encounter or not CanCreateRegions(encounter) then
         return
     end
-    AttachSurface(state, encounter, {
-        role = "panel",
-        radius = 8,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
+    Attach(state, encounter, PANEL_SPEC)
 
-    local instance = SafeField(encounter, "instance")
-    if instance and not IsUnsafe(instance) then
-        Fade(state, SafeField(instance, "loreBG"))
-        Fade(state, SafeField(instance, "titleBG"))
-        AttachSurface(state, instance, {
-            role = "card",
-            radius = 8,
-            inset = 2,
-            allowImplicitProtected = true,
-        })
-        SetThemeTextColor(state, SafeField(instance, "title"), "title")
+    local instance = Field(encounter, "instance")
+    if instance and CanCreateRegions(instance) then
+        Fade(state, Field(instance, "loreBG"))
+        Fade(state, Field(instance, "titleBG"))
+        Attach(state, instance, CARD_SPEC)
+        SetTextColor(state.textColors, Field(instance, "title"), "title")
     end
 
-    local info = SafeField(encounter, "info")
-    if info and not IsUnsafe(info) then
+    local info = Field(encounter, "info")
+    if info and CanCreateRegions(info) then
         FadeChrome(state, info)
-        AttachSurface(state, info, {
-            role = "panel",
-            radius = 8,
-            inset = 1,
-            allowImplicitProtected = true,
-        })
-        SetThemeTextColor(state, SafeField(info, "instanceTitle"), "title")
-        SetThemeTextColor(state, SafeField(info, "encounterTitle"), "title")
-        for _, key in ipairs({ "overviewTab", "lootTab", "bossTab", "modelTab" }) do
-            SkinTab(state, SafeField(info, key))
+        Attach(state, info, PANEL_SPEC)
+        SetTextColor(state.textColors, Field(info, "instanceTitle"), "title")
+        SetTextColor(state.textColors, Field(info, "encounterTitle"), "title")
+        for index = 1, #encounterTabs do
+            SkinTab(state, Field(info, encounterTabs[index]))
         end
     end
 end
 
 local function SkinMonthlyActivities(state)
-    local monthly = SafeField(state.frame, "MonthlyActivitiesFrame")
-    if not monthly or IsUnsafe(monthly) then
+    local monthly = Field(state.frame, "MonthlyActivitiesFrame")
+    if not monthly or not CanCreateRegions(monthly) then
         return
     end
-    Fade(state, SafeField(monthly, "Bg"))
-    AttachSurface(state, monthly, {
-        role = "panel",
-        radius = 8,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
+    Fade(state, Field(monthly, "Bg"))
+    Attach(state, monthly, PANEL_SPEC)
 
-    local filterList = SafeField(monthly, "FilterList")
-    if filterList and not IsUnsafe(filterList) then
-        Fade(state, SafeField(filterList, "Bg"))
-        AttachSurface(state, filterList, {
-            role = "card",
-            radius = 6,
-            inset = 1,
-            allowImplicitProtected = true,
-        })
+    local filterList = Field(monthly, "FilterList")
+    if filterList and CanCreateRegions(filterList) then
+        Fade(state, Field(filterList, "Bg"))
+        Attach(state, filterList, SMALL_CARD_SPEC)
     end
+    Kit.FadeFields(state, Field(monthly, "ThemeContainer"), themeBorderFields)
 
-    local themeContainer = SafeField(monthly, "ThemeContainer")
-    for _, key in ipairs({ "Top", "Bottom", "Left", "Right", "FilterList" }) do
-        Fade(state, SafeField(themeContainer, key))
-    end
+    local colors = state.textColors
+    local header = Field(monthly, "HeaderContainer")
+    SetTextColor(colors, Field(header, "Title"), "title")
+    SetTextColor(colors, Field(header, "Month"), "text")
+    SetTextColor(colors, Field(header, "TimeLeft"), "muted")
+    SetTextColor(colors, Field(monthly, "RestrictedText"), "danger")
 
-    local header = SafeField(monthly, "HeaderContainer")
-    SetThemeTextColor(state, SafeField(header, "Title"), "title")
-    SetThemeTextColor(state, SafeField(header, "Month"), "text")
-    SetThemeTextColor(state, SafeField(header, "TimeLeft"), "muted")
-    SetThemeTextColor(state, SafeField(monthly, "RestrictedText"), "danger")
-
-    local threshold = SafeField(monthly, "ThresholdContainer")
-    SetThemeTextColor(state, Path(threshold, "TextContainer", "Points"), "text")
-    SetThemeTextColor(state, Path(threshold, "TextContainer", "ProgressText"), "muted")
+    local threshold = Field(monthly, "ThresholdContainer")
+    SetTextColor(colors, Path(threshold, "TextContainer", "Points"), "text")
+    SetTextColor(colors, Path(threshold, "TextContainer", "ProgressText"), "muted")
 end
 
 local function SkinJourneys(state)
-    local journeys = SafeField(state.frame, "JourneysFrame")
-    if not journeys or IsUnsafe(journeys) then
+    local journeys = Field(state.frame, "JourneysFrame")
+    if not journeys or not CanCreateRegions(journeys) then
         return
     end
-    AttachSurface(state, journeys, {
-        role = "panel",
-        radius = 8,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
-    FadeChrome(state, SafeField(journeys, "BorderFrame"))
+    Attach(state, journeys, PANEL_SPEC)
+    FadeChrome(state, Field(journeys, "BorderFrame"))
 
-    local progress = SafeField(journeys, "JourneyProgress")
-    if progress and not IsUnsafe(progress) then
-        AttachSurface(state, progress, {
-            role = "panel",
-            radius = 8,
-            inset = 2,
-            allowImplicitProtected = true,
-        })
-        SetThemeTextColor(state, SafeField(progress, "JourneyName"), "title")
-        SetThemeTextColor(state, Path(progress, "ProgressDetailsFrame", "JourneyLevel"), "title")
-        SetThemeTextColor(state, Path(progress, "ProgressDetailsFrame", "JourneyLevelProgress"), "text")
-        SkinButton(state, SafeField(progress, "OverviewBtn"))
+    local colors = state.textColors
+    local progress = Field(journeys, "JourneyProgress")
+    if progress and CanCreateRegions(progress) then
+        Attach(state, progress, PANEL_INSET_SPEC)
+        SetTextColor(colors, Field(progress, "JourneyName"), "title")
+        SetTextColor(colors, Path(progress, "ProgressDetailsFrame", "JourneyLevel"), "title")
+        SetTextColor(colors, Path(progress, "ProgressDetailsFrame", "JourneyLevelProgress"), "text")
+        SkinButton(state, Field(progress, "OverviewBtn"))
     end
 
-    local overview = SafeField(journeys, "JourneyOverview")
-    if overview and not IsUnsafe(overview) then
-        AttachSurface(state, overview, {
-            role = "panel",
-            radius = 8,
-            inset = 2,
-            allowImplicitProtected = true,
-        })
-        SetThemeTextColor(state, SafeField(overview, "JourneyName"), "title")
-        SetThemeTextColor(state, SafeField(overview, "JourneyDescription"), "text")
-        SetThemeTextColor(state, SafeField(overview, "HighlightLabel"), "muted")
-        SetThemeTextColor(state, SafeField(overview, "LevelText"), "accentBright")
-        SkinButton(state, SafeField(overview, "OverviewBtn"))
+    local overview = Field(journeys, "JourneyOverview")
+    if overview and CanCreateRegions(overview) then
+        Attach(state, overview, PANEL_INSET_SPEC)
+        SetTextColor(colors, Field(overview, "JourneyName"), "title")
+        SetTextColor(colors, Field(overview, "JourneyDescription"), "text")
+        SetTextColor(colors, Field(overview, "HighlightLabel"), "muted")
+        SetTextColor(colors, Field(overview, "LevelText"), "accentBright")
+        SkinButton(state, Field(overview, "OverviewBtn"))
     end
 end
 
 local function SkinLootJournals(state)
-    local loot = SafeField(state.frame, "LootJournal")
-    if loot and not IsUnsafe(loot) then
-        FadeExactAtlas(state, loot, "loottab-background", 400, 200)
-        AttachSurface(state, loot, {
-            role = "panel",
-            radius = 8,
-            inset = 1,
-            allowImplicitProtected = true,
-        })
+    local loot = Field(state.frame, "LootJournal")
+    if loot and CanCreateRegions(loot) then
+        Kit.ForEachRegion(loot, FadeLargeAtlasRegion, state, LOOT_ATLAS)
+        Attach(state, loot, PANEL_SPEC)
     end
 
-    local items = SafeField(state.frame, "LootJournalItems")
-    if items and not IsUnsafe(items) then
-        FadeExactAtlas(state, items, "loottab-background", 400, 200)
-        AttachSurface(state, items, {
-            role = "panel",
-            radius = 8,
-            inset = 1,
-            allowImplicitProtected = true,
-        })
-        local itemSets = SafeField(items, "ItemSetsFrame")
-        if itemSets and not IsUnsafe(itemSets) then
-            AttachSurface(state, itemSets, {
-                role = "card",
-                radius = 6,
-                inset = 1,
-                allowImplicitProtected = true,
-            })
+    local items = Field(state.frame, "LootJournalItems")
+    if items and CanCreateRegions(items) then
+        Kit.ForEachRegion(items, FadeLargeAtlasRegion, state, LOOT_ATLAS)
+        Attach(state, items, PANEL_SPEC)
+        local itemSets = Field(items, "ItemSetsFrame")
+        if itemSets and CanCreateRegions(itemSets) then
+            Attach(state, itemSets, SMALL_CARD_SPEC)
         end
     end
 end
 
 local function SkinRootStatic(state)
     local frame = state.frame
-    if not frame or IsUnsafe(frame) then
+    if not frame or not CanCreateRegions(frame) then
         return false
     end
 
-    if NS.GenericWindows and not state.genericApplied then
-        local ok, applied = pcall(NS.GenericWindows.ApplyFrame, frame, state.owner, {
-            role = "shell",
-            radius = 8,
-            maxDepth = 8,
-            maxNodes = 900,
-            allowImplicitProtected = true,
-            registerDynamicRows = false,
-        })
-        state.genericApplied = ok and applied == true
+    if not state.genericApplied then
+        state.genericApplied = NS.GenericWindows.ApplyFrame(frame, state.owner, ROOT_MODE) == true
     end
 
-    if not AttachSurface(state, frame, {
-        role = "shell",
-        radius = 8,
-        inset = 0,
-        allowImplicitProtected = true,
-    }) then
+    if not Attach(state, frame, SHELL_SPEC) then
         return false
     end
     FadeChrome(state, frame)
-    FadeChrome(state, SafeField(frame, "inset"))
-    SetThemeTextColor(state, Path(frame, "TitleContainer", "TitleText"), "title")
-    SkinSearchBox(state, SafeField(frame, "searchBox"))
+    FadeChrome(state, Field(frame, "inset"))
+    SetTextColor(state.textColors, Path(frame, "TitleContainer", "TitleText"), "title")
+    SkinSearchBox(state, Field(frame, "searchBox"))
 
-    for _, key in ipairs({
-        "JourneysTab", "MonthlyActivitiesTab", "suggestTab", "dungeonsTab",
-        "raidsTab", "LootJournalTab", "TutorialsTab",
-    }) do
-        SkinTab(state, SafeField(frame, key))
+    for index = 1, #rootTabs do
+        SkinTab(state, Field(frame, rootTabs[index]))
     end
 
     SkinInstanceSelect(state)
@@ -622,62 +388,41 @@ local function SkinRootStatic(state)
     return true
 end
 
-local rowTitleFields = {
-    "Name", "name", "SetName", "JourneyName", "JourneyCardName",
-    "CategoryName", "Title", "RewardCardName", "HighlightTitle", "NameText",
-}
+local function SetRowTextColors(state, row, fields, role)
+    for index = 1, #fields do
+        SetTextColor(state.textColors, Field(row, fields[index]), role, true)
+    end
+end
 
-local rowTextFields = {
-    "Description", "description", "ItemLevel", "JourneyCardLevel",
-    "JourneyCardProgress", "HighlightDescription", "ConditionsText", "Label",
-}
-
-local rowMutedFields = {
-    "SpecName", "HighlightLevel", "TimeLeft", "ProgressText", "Points",
-}
-
-local function SkinDynamicRow(state, row)
-    if not state.active or not row or IsUnsafe(row) then
+SkinDynamicRow = function(state, row)
+    if not state.active or not row or not CanCreateRegions(row) then
         return
     end
-    AttachSurface(state, row, {
-        role = "card",
-        radius = 6,
-        inset = 1,
-        listItem = true,
-        allowImplicitProtected = true,
-    })
+    Attach(state, row, ROW_SPEC)
     state.rows[row] = true
 
     -- These are verified decorative card layers; icon, portrait, encounter
     -- image, reward and status textures are intentionally left untouched.
-    Fade(state, SafeField(row, "Background"))
-    Fade(state, SafeField(row, "Backplate"))
+    Fade(state, Field(row, "Background"))
+    Fade(state, Field(row, "Backplate"))
 
-    for _, key in ipairs(rowTitleFields) do
-        SetThemeTextColor(state, SafeField(row, key), "title", true)
-    end
-    for _, key in ipairs(rowTextFields) do
-        SetThemeTextColor(state, SafeField(row, key), "text", true)
-    end
-    for _, key in ipairs(rowMutedFields) do
-        SetThemeTextColor(state, SafeField(row, key), "muted", true)
-    end
+    SetRowTextColors(state, row, rowTitleFields, "title")
+    SetRowTextColors(state, row, rowTextFields, "text")
+    SetRowTextColors(state, row, rowMutedFields, "muted")
 
-    local textContainer = SafeField(row, "TextContainer")
-    SetThemeTextColor(state, SafeField(textContainer, "NameText"), "title", true)
-    SetThemeTextColor(state, SafeField(textContainer, "ConditionsText"), "text", true)
+    local textContainer = Field(row, "TextContainer")
+    SetTextColor(state.textColors, Field(textContainer, "NameText"), "title", true)
+    SetTextColor(state.textColors, Field(textContainer, "ConditionsText"), "text", true)
 end
 
-local function EnumerateActivePool(state, pool)
-    local getter = SafeField(pool, "GetNextActive")
-    if type(getter) ~= "function" then
+local function SkinActivePool(state, pool)
+    if type((Field(pool, "GetNextActive"))) ~= "function" then
         return 0
     end
     local count, current = 0, nil
-    while count < 64 do
-        local ok, object = pcall(getter, pool, current)
-        if not ok or not object or object == current then
+    while count < POOL_LIMIT do
+        local object = pool:GetNextActive(current)
+        if not object or object == current then
             break
         end
         current = object
@@ -687,43 +432,42 @@ local function EnumerateActivePool(state, pool)
     return count
 end
 
+-- Acquires and releases up to desiredCount pooled frames once, so frames
+-- Blizzard shows later are already skinned.
 local function PrewarmPool(state, pool, desiredCount)
-    desiredCount = math.max(0, math.min(32, tonumber(desiredCount) or 0))
+    desiredCount = math.max(0, math.min(PREWARM_LIMIT, tonumber(desiredCount) or 0))
     if desiredCount == 0 or not pool then
         return
     end
 
-    local active = EnumerateActivePool(state, pool)
-    local acquire = SafeField(pool, "Acquire")
-    local release = SafeField(pool, "Release")
-    if type(acquire) ~= "function" or type(release) ~= "function" then
+    local active = SkinActivePool(state, pool)
+    if type((Field(pool, "Acquire"))) ~= "function" or type((Field(pool, "Release"))) ~= "function" then
         return
     end
 
     local acquired = {}
     for _ = active + 1, desiredCount do
-        local ok, object = pcall(acquire, pool)
-        if not ok or not object then
+        local object = pool:Acquire()
+        if not object then
             break
         end
         acquired[#acquired + 1] = object
         SkinDynamicRow(state, object)
     end
     for index = #acquired, 1, -1 do
-        pcall(release, pool, acquired[index])
+        pool:Release(acquired[index])
     end
 end
 
 local function RefreshJourneyPools(state, factionID)
-    local journeys = SafeField(state.frame, "JourneysFrame")
-    local progressPool = Path(journeys, "JourneyProgress", "rewardPool")
-    EnumerateActivePool(state, progressPool)
+    local journeys = Field(state.frame, "JourneysFrame")
+    SkinActivePool(state, Path(journeys, "JourneyProgress", "rewardPool"))
 
     local highlightsPool = Path(journeys, "JourneyOverview", "Highlights", "highlightPool")
-    EnumerateActivePool(state, highlightsPool)
-    if factionID and C_MajorFactions and type(C_MajorFactions.GetMajorFactionData) == "function" then
-        local ok, data = pcall(C_MajorFactions.GetMajorFactionData, factionID)
-        local highlights = ok and data and data.highlights
+    SkinActivePool(state, highlightsPool)
+    if type(factionID) == "number" and GetMajorFactionData then
+        local data = GetMajorFactionData(factionID)
+        local highlights = type(data) == "table" and data.highlights
         if type(highlights) == "table" then
             PrewarmPool(state, highlightsPool, #highlights)
         end
@@ -731,10 +475,10 @@ local function RefreshJourneyPools(state, factionID)
 end
 
 local function RefreshDynamicTables(state, factionID)
-    local encounter = SafeField(state.frame, "encounter")
+    local encounter = Field(state.frame, "encounter")
     for _, collection in ipairs({
-        SafeField(encounter, "usedHeaders"),
-        SafeField(encounter, "freeHeaders"),
+        Field(encounter, "usedHeaders"),
+        Field(encounter, "freeHeaders"),
         Path(state.frame, "MonthlyActivitiesFrame", "thresholdFrames"),
     }) do
         if type(collection) == "table" then
@@ -746,42 +490,33 @@ local function RefreshDynamicTables(state, factionID)
     RefreshJourneyPools(state, factionID)
 end
 
-local function SafeRefresh(state, includeStatic, factionID)
+local function Refresh(state, includeStatic, factionID)
     if not state or not state.active then
         return
     end
-    local ok, message = pcall(function()
-        if includeStatic then
-            SkinRootStatic(state)
-        end
-        RefreshDynamicTables(state, factionID)
-    end)
-    if not ok then
-        NS.ReportError("encounter journal refresh", message)
+    if includeStatic then
+        SkinRootStatic(state)
     end
+    RefreshDynamicTables(state, factionID)
 end
 
 local function QueueRefresh(state, suffix, callback)
     if not state or not state.active then
         return
     end
+    if not NS.IsCombatLocked() then
+        callback()
+        return
+    end
     local key = "encounterJournal:" .. tostring(suffix)
-    local function Run()
+    state.deferred[key] = true
+    NS.CombatGate.RunOrDefer(key, function()
         state.deferred[key] = nil
-        if state.active then
-            local ok, message = pcall(callback)
-            if not ok then
-                NS.ReportError("encounter journal callback", message)
-            end
-        end
-    end
-    if NS.IsCombatLocked() then
-        state.deferred[key] = true
-        NS.CombatGate.RunOrDefer(key, Run)
-    else
-        Run()
-    end
+        if state.active then callback() end
+    end)
 end
+
+local RegisterAllScrollBoxes
 
 function EncounterJournalSkin:OnTabSet(frame)
     local state = self.activeState
@@ -789,7 +524,7 @@ function EncounterJournalSkin:OnTabSet(frame)
         return
     end
     QueueRefresh(state, "tab", function()
-        SafeRefresh(state, true)
+        Refresh(state, true)
         RegisterAllScrollBoxes(state)
     end)
 end
@@ -800,95 +535,67 @@ function EncounterJournalSkin:OnJourneyChanged(factionID)
         return
     end
     QueueRefresh(state, "journey", function()
-        SafeRefresh(state, false, factionID)
+        Refresh(state, false, factionID)
     end)
 end
 
+-- Rows initialized during combat are painted in one pass once it ends.
+local function FlushCombatRows()
+    local state = EncounterJournalSkin.activeState
+    if not state then return end
+    state.deferred[ROWS_JOB] = nil
+    if not state.active then return end
+    for scrollBox in pairs(state.scrollBoxes) do
+        Kit.ForEachRow(scrollBox, state.visitRow)
+    end
+end
+
+-- ScrollBox callback for every initialized (new or recycled) row.
 function EncounterJournalSkin:OnScrollBoxInitialized(row)
     local state = self.activeState
-    if not state or not row then
+    if not state or not state.active or not row then
         return
     end
-    QueueRefresh(state, "row:" .. tostring(row), function()
-        SkinDynamicRow(state, row)
-    end)
-end
-
-local function RefreshThemeColors(state)
-    for fontObject, role in pairs(state.textRoles) do
-        if fontObject and type(SafeField(fontObject, "SetTextColor")) == "function" then
-            local r, g, b, a = NS.Theme.GetColor(role)
-            fontObject:SetTextColor(r, g, b, a)
+    if NS.IsCombatLocked() then
+        if not state.deferred[ROWS_JOB] then
+            state.deferred[ROWS_JOB] = true
+            NS.CombatGate.RunOrDefer(ROWS_JOB, FlushCombatRows)
         end
+        return
     end
-    for texture, role in pairs(state.vertexRoles) do
-        if texture and type(SafeField(texture, "SetVertexColor")) == "function" then
-            local r, g, b, a = NS.Theme.GetColor(role)
-            texture:SetVertexColor(r, g, b, a)
-        end
-    end
+    SkinDynamicRow(state, row)
 end
 
 function EncounterJournalSkin:OnThemeChanged()
     local state = self.activeState
     if state and state.active and not NS.IsCombatLocked() then
-        RefreshThemeColors(state)
-        pcall(NS.ControlSkin.RefreshOwner, state.owner)
+        Kit.RefreshTextColors(state.textColors)
+        NS.ControlSkin.RefreshOwner(state.owner)
     end
-end
-
-local function ScrollEvent()
-    return ScrollBoxListMixin and ScrollBoxListMixin.Event
-        and ScrollBoxListMixin.Event.OnInitializedFrame
 end
 
 local function RegisterScrollBox(state, scrollBox)
-    local event = ScrollEvent()
-    if not event or not scrollBox or state.scrollBoxes[scrollBox]
-        or type(SafeField(scrollBox, "RegisterCallback")) ~= "function" then
+    if not scrollBox or state.scrollBoxes[scrollBox] then
         return
     end
-
-    local ok = pcall(scrollBox.RegisterCallback, scrollBox, event,
+    local event = Kit.RegisterRowCallback(scrollBox,
         EncounterJournalSkin.OnScrollBoxInitialized, EncounterJournalSkin)
-    if not ok then
+    if not event then
         return
     end
-    state.scrollBoxes[scrollBox] = true
-
-    local forEach = SafeField(scrollBox, "ForEachFrame")
-    if type(forEach) == "function" then
-        pcall(forEach, scrollBox, function(row)
-            SkinDynamicRow(state, row)
-        end)
-    end
+    state.scrollBoxes[scrollBox] = event
+    Kit.ForEachRow(scrollBox, state.visitRow)
 end
 
 RegisterAllScrollBoxes = function(state)
-    local frame = state.frame
-    local scrollBoxes = {
-        Path(frame, "instanceSelect", "ScrollBox"),
-        Path(frame, "searchResults", "ScrollBox"),
-        Path(frame, "encounter", "info", "BossesScrollBox"),
-        Path(frame, "encounter", "info", "LootContainer", "ScrollBox"),
-        Path(frame, "JourneysFrame", "JourneysList"),
-        Path(frame, "MonthlyActivitiesFrame", "ScrollBox"),
-        Path(frame, "MonthlyActivitiesFrame", "FilterList", "ScrollBox"),
-        Path(frame, "LootJournal", "ScrollBox"),
-        Path(frame, "LootJournalItems", "ItemSetsFrame", "ScrollBox"),
-    }
-    for index = 1, #scrollBoxes do
-        RegisterScrollBox(state, scrollBoxes[index])
+    for index = 1, #scrollBoxPaths do
+        RegisterScrollBox(state, Kit.PathOf(state.frame, scrollBoxPaths[index]))
     end
 end
 
 local function RegisterEventCallback(state, event, method)
-    if state.eventCallbacks[event] or not EventRegistry
-        or type(SafeField(EventRegistry, "RegisterCallback")) ~= "function" then
-        return
-    end
-    local ok = pcall(EventRegistry.RegisterCallback, EventRegistry, event, method, EncounterJournalSkin)
-    if ok then
+    if not state.eventCallbacks[event]
+        and Kit.RegisterEventCallback(event, method, EncounterJournalSkin) then
         state.eventCallbacks[event] = true
     end
 end
@@ -901,72 +608,30 @@ local function RegisterCallbacks(state)
 end
 
 local function UnregisterCallbacks(state)
-    if EventRegistry and type(SafeField(EventRegistry, "UnregisterCallback")) == "function" then
-        for event in pairs(state.eventCallbacks) do
-            pcall(EventRegistry.UnregisterCallback, EventRegistry, event, EncounterJournalSkin)
-        end
+    for event in pairs(state.eventCallbacks) do
+        Kit.UnregisterEventCallback(event, EncounterJournalSkin)
     end
     state.eventCallbacks = {}
 
-    local event = ScrollEvent()
-    if event then
-        for scrollBox in pairs(state.scrollBoxes) do
-            local unregister = SafeField(scrollBox, "UnregisterCallback")
-            if type(unregister) == "function" then
-                pcall(unregister, scrollBox, event, EncounterJournalSkin)
-            end
-        end
+    for scrollBox, event in pairs(state.scrollBoxes) do
+        Kit.UnregisterRowCallback(scrollBox, event, EncounterJournalSkin)
     end
-    state.scrollBoxes = WeakSet()
+    state.scrollBoxes = Kit.WeakSet()
     NS.Registry.RemoveListener(EncounterJournalSkin)
-end
-
-local function RestoreTextColors(state)
-    for fontObject, original in pairs(state.textColors) do
-        local role = state.textRoles[fontObject]
-        local current = ReadTextColor(fontObject)
-        if original and role and SameColor(current, ThemeColor(role))
-            and type(SafeField(fontObject, "SetTextColor")) == "function" then
-            fontObject:SetTextColor(original[1], original[2], original[3], original[4])
-        end
-    end
-    state.textColors = setmetatable({}, { __mode = "k" })
-    state.textRoles = setmetatable({}, { __mode = "k" })
-end
-
-local function RestoreVertexColors(state)
-    for texture, original in pairs(state.vertexColors) do
-        local role = state.vertexRoles[texture]
-        local current = ReadVertexColor(texture)
-        if original and role and SameColor(current, ThemeColor(role))
-            and type(SafeField(texture, "SetVertexColor")) == "function" then
-            texture:SetVertexColor(original[1], original[2], original[3], original[4])
-        end
-    end
-    state.vertexColors = setmetatable({}, { __mode = "k" })
-    state.vertexRoles = setmetatable({}, { __mode = "k" })
 end
 
 local function RestoreState(state)
     state.active = false
-    for key in pairs(state.deferred) do
-        NS.CombatGate.Cancel(key)
-    end
-    state.deferred = {}
+    Kit.CancelDeferred(state)
     UnregisterCallbacks(state)
 
-    pcall(NS.ControlSkin.DisableOwner, state.owner)
-    for target in pairs(state.surfaces) do
-        pcall(NS.Surface.SetVisible, target, false)
-    end
-    RestoreTextColors(state)
-    RestoreVertexColors(state)
-    pcall(NS.Cosmetics.RestoreOwner, state.owner)
-    if NS.GenericWindows then
-        pcall(NS.GenericWindows.Disable, state.owner)
-    end
+    NS.ControlSkin.DisableOwner(state.owner)
+    Kit.HideSurfaces(state)
+    Kit.RestoreTextColors(state.textColors)
+    NS.Cosmetics.RestoreOwner(state.owner)
+    NS.GenericWindows.Disable(state.owner)
     state.genericApplied = false
-    state.rows = WeakSet()
+    state.rows = Kit.WeakSet()
 end
 
 function EncounterJournalSkin.Apply(frame, owner)
@@ -975,7 +640,7 @@ function EncounterJournalSkin.Apply(frame, owner)
     if not frame then
         return false, "missing"
     end
-    if IsUnsafe(frame) then
+    if not CanCreateRegions(frame) then
         return false, "protected"
     end
 
@@ -995,11 +660,7 @@ function EncounterJournalSkin.Apply(frame, owner)
     state.active = true
     EncounterJournalSkin.activeState = state
 
-    local ok, applied = pcall(SkinRootStatic, state)
-    if not ok or not applied then
-        if not ok then
-            NS.ReportError("encounter journal apply", applied)
-        end
+    if not SkinRootStatic(state) then
         RestoreState(state)
         if EncounterJournalSkin.activeState == state then
             EncounterJournalSkin.activeState = nil
@@ -1009,7 +670,7 @@ function EncounterJournalSkin.Apply(frame, owner)
 
     RegisterCallbacks(state)
     RefreshDynamicTables(state)
-    PrewarmPool(state, Path(frame, "JourneysFrame", "JourneyProgress", "rewardPool"), 4)
+    PrewarmPool(state, Path(frame, "JourneysFrame", "JourneyProgress", "rewardPool"), JOURNEY_REWARD_PREWARM)
     return true
 end
 
@@ -1032,8 +693,8 @@ function EncounterJournalSkin.Disable(frame, owner)
     if state then
         RestoreState(state)
     elseif owner then
-        pcall(NS.ControlSkin.DisableOwner, owner)
-        pcall(NS.Cosmetics.RestoreOwner, owner)
+        NS.ControlSkin.DisableOwner(owner)
+        NS.Cosmetics.RestoreOwner(owner)
     end
     if EncounterJournalSkin.activeState == state then
         EncounterJournalSkin.activeState = nil

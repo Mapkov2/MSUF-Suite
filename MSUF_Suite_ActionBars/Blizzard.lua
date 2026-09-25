@@ -92,7 +92,9 @@ end
 ]]
 
 local function Unmouse(frame)
-    if frame and not NS.Safety.IsForbidden(frame) and not frame:IsProtected() and frame.EnableMouse then frame:EnableMouse(false) end
+    if frame and not NS.Safety.IsForbidden(frame) and not frame:IsProtected() and frame.EnableMouse then
+        frame:EnableMouse(false)
+    end
 end
 
 -- MainActionBar can be re-shown by Blizzard (vehicle exit, pet battles).
@@ -147,7 +149,8 @@ end
 
 function AB.Dispose()
     if AB.disposed then return true end
-    if NS.IsCombatLocked() or type(SecureHandlerExecute) ~= "function" or type(SecureHandlerSetFrameRef) ~= "function" then return false end
+    if NS.IsCombatLocked() or type(SecureHandlerExecute) ~= "function"
+        or type(SecureHandlerSetFrameRef) ~= "function" then return false end
     local control = S.CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
     local hidden = S.CreateFrame("Frame", nil, UIParent, "SecureFrameTemplate")
     hidden:SetAllPoints(UIParent)
@@ -254,7 +257,10 @@ function AB.Adopt(index)
         for i = 1, 10 do
             local button = AB.Frame(prefix .. i)
             if not button then break end
-            local rec = { button = button, bar = bar, index = i, owned = false, command = AB.COMMANDS[index] .. i, name = prefix .. i }
+            local rec = {
+                button = button, bar = bar, index = i, owned = false,
+                command = AB.COMMANDS[index] .. i, name = prefix .. i,
+            }
             AB.records[button] = rec
             bar.buttons[i] = rec
             AB.adopted[#AB.adopted + 1] = rec

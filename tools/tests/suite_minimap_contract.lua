@@ -746,6 +746,24 @@ do
 print("Minimap WoW Forever deltas (landing, coordinates, skin mask) passed")
 
 -- Original ornamental art uses the same saved values as the options preview;
+-- WoW Forever swaps the map mask when rotation changes. A change inside
+-- combat must not place the protected map; the mask returns after combat.
+do
+    local W = H.New(root, "Forever")
+    W.editModeReady = true
+    H.Enable(W, { captured = true })
+    W.Step()
+    check(W.M.mapOwned, "Forever map was not claimed")
+    local masks = W.calls.mask or 0
+    W.SetCombat(true)
+    W.Event("CVAR_UPDATE", "rotateMinimap")
+    W.Step()
+    check((W.calls.mask or 0) == masks, "the mask flush placed the protected map in combat")
+    W.SetCombat(false); W.Step()
+    check((W.calls.mask or 0) > masks, "the mask did not return after combat")
+    print("Minimap mask flush waits for combat passed")
+end
+
 -- Blizzard's map remains owned by the existing host and animation is native.
 do
     local W = H.New(root, "Mainline")

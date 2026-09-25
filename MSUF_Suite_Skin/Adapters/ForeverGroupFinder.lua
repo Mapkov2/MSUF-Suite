@@ -4,7 +4,8 @@ local _, NS = ...
 -- is a different window from Retail's PVEFrame. Keep Blizzard's role icons,
 -- category IDs, result rows, scripts, and secure listing controls intact.
 local ForeverGroupFinder = {
-    active = false, hooked = false,
+    active = false,
+    hooked = false,
     scrollBoxes = setmetatable({}, { __mode = "k" }),
 }
 NS.ForeverGroupFinder = ForeverGroupFinder
@@ -78,12 +79,18 @@ local function FadeListChrome(frame)
     Fade(frame.BarMiddle)
 end
 
-local function FadeRoleBackground(roles)
-    if not roles or type(roles.GetRegions) ~= "function" then return end
-    for _, region in ipairs({ roles:GetRegions() }) do
+local function FadeRoleRegions(...)
+    for index = 1, select("#", ...) do
+        local region = select(index, ...)
         if type(region.GetAtlas) == "function" and region:GetAtlas() == ROLE_BACKGROUND_ATLAS then
             Fade(region)
         end
+    end
+end
+
+local function FadeRoleBackground(roles)
+    if roles and type(roles.GetRegions) == "function" then
+        FadeRoleRegions(roles:GetRegions())
     end
 end
 
@@ -124,7 +131,11 @@ local function RegisterRows(scrollBox, kind)
         SkinResultRow(row, kind)
     end, token)
     ForeverGroupFinder.scrollBoxes[scrollBox] = token
-    scrollBox:ForEachFrame(function(row) SkinResultRow(row, kind) end)
+    -- ForEachFrame indexes the list view, which exists only once Blizzard
+    -- initialized the ScrollBox.
+    if type(scrollBox.HasView) ~= "function" or scrollBox:HasView() then
+        scrollBox:ForEachFrame(function(row) SkinResultRow(row, kind) end)
+    end
 end
 
 local function SkinFrame(frame, mode)

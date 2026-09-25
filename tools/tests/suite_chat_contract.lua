@@ -5,6 +5,11 @@ local NS = {
 }
 local S = {}
 S.Public = function(value) return value ~= "secret" end
+S.Text = function(value) return value end
+S.RGB = function(hex)
+    return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+end
+S.CreateFrame = function(...) return CreateFrame(...) end
 S.ResolveFont = function(key) return key == "TestFont" and "Test.ttf" or nil end
 S.FontFlags = function(outline, rendering)
     if rendering == 3 then return outline == "" and "SLUG" or "OUTLINE,SLUG" end
@@ -47,6 +52,7 @@ local function Frame(name)
             GetAlpha = function(label) return label.alpha or 1 end }
     end
     function frame:GetName() return self.name end
+    function frame:GetParent() return self.parent end
     function frame:GetFont() return unpack(self.font) end
     function frame:SetFont(path, size, flags) self.font = { path, size, flags } end
     function frame:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 0 }) end
@@ -95,7 +101,11 @@ local function Frame(name)
     function frame:ScrollToBottom() self.scrolled = (self.scrolled or 0) + 1 end
     return frame
 end
-CreateFrame = function(_, _, _) return Frame(nil) end
+CreateFrame = function(_, _, parent)
+    local frame = Frame(nil)
+    frame.parent = parent
+    return frame
+end
 UIParent = Frame("UIParent")
 ChatFrame1 = Frame("ChatFrame1")
 ChatFrame1.isDocked = true
@@ -233,9 +243,13 @@ assert(sidebar.input.points[1][2] == ChatFrame1 and sidebar.input.points[1][3] =
     and sidebar.input.points[2][2] == ChatFrame1 and sidebar.input.points[2][3] == "BOTTOMRIGHT"
     and sidebar.inputEdges[1].points[1][2] == sidebar.input,
     "input backdrop and border do not align with the chat panel width")
+-- The label overlay is a child of the tab: FCF_Close hides the tab itself
+-- and Blizzard fades the tab's alpha (0.2 / 0.4), both of which the child follows.
 ChatFrame1Tab:SetAlpha(0.4)
-assert(sidebar.tabLabel.value == "General" and sidebar.tabOverlay.alpha == 1,
-    "Blizzard tab refresh dimmed the independent MSUF label")
+assert(sidebar.tabLabel.value == "General" and sidebar.tabOverlay.parent == ChatFrame1Tab
+    and sidebar.tabOverlay.alpha == 1 and sidebar.tabOverlay.shown,
+    "the MSUF tab label does not follow the tab's visibility and alpha fading")
+ChatFrame1Tab:SetAlpha(1)
 assert(sidebar.buttons[1].glyph.path == "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png",
     "MSUF glyph texture was replaced by a solid color")
 assert(not sidebar.copyButton, "copy UI must be absent by default")

@@ -6,15 +6,24 @@ local _, NS = ...
 local MicroMenuVisual = {}
 NS.MicroMenuVisual = MicroMenuVisual
 
-local STRETCHED = Enum and Enum.UITextureSliceMode
-    and Enum.UITextureSliceMode.Stretched or 0
+local Safety = NS.Safety
+local ConfigureShape = NS.Geometry.ConfigureShape
+
+local MEDIA = NS.path .. "Media\\MicroMenu\\"
 local ICON_ATLASES = {
-    line = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\MicroMenu\\MapkoSkinMicroGlyphsAtlas.png",
-    bold = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\MicroMenu\\MapkoSkinMicroGlyphsBoldAtlas.png",
+    line = MEDIA .. "MapkoSkinMicroGlyphsAtlas.png",
+    bold = MEDIA .. "MapkoSkinMicroGlyphsBoldAtlas.png",
 }
-local FOREVER_PLATE = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\MicroMenu\\ForeverMicroPlate.tga"
-local MIDNIGHT_PLATE = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\MicroMenu\\MidnightMicroPlate.tga"
+local FOREVER_PLATE = MEDIA .. "ForeverMicroPlate.tga"
+local MIDNIGHT_PLATE = MEDIA .. "MidnightMicroPlate.tga"
 local ICON_SLOTS = 16
+
+-- The bold glyph style sits on a plate made for the authored bar materials.
+local PLATE_TEXTURES = {
+    forever = FOREVER_PLATE,
+    modern = MIDNIGHT_PLATE,
+    midnightDark = MIDNIGHT_PLATE,
+}
 
 local ICON_CELLS = {
     CharacterMicroButton = 0,
@@ -36,8 +45,7 @@ local ICON_CELLS = {
 }
 
 -- Blizzard keeps the icon art in the button's Normal atlas and paints the
--- button background separately. These names are only for the menu preview;
--- live buttons copy their current native atlas so guild variants stay current.
+-- button background separately. These names are only for the menu preview.
 local BLIZZARD_ICON_NAMES = {
     ProfessionMicroButton = "Professions",
     PlayerSpellsMicroButton = "SpecTalents",
@@ -56,6 +64,9 @@ local BLIZZARD_ICON_NAMES = {
     MainMenuMicroButton = "GameMenu",
 }
 
+-- These icon styles keep Blizzard's own artwork and need no overlay.
+local NATIVE_ICON_STYLES = { blizzard = true, blizzardIcons = true }
+
 local NATIVE_STATE_TEXTURES = {
     { key = "normal", getter = "GetNormalTexture" },
     { key = "highlight", getter = "GetHighlightTexture" },
@@ -63,23 +74,32 @@ local NATIVE_STATE_TEXTURES = {
     { key = "disabled", getter = "GetDisabledTexture" },
 }
 
+local VISUAL_STATES = {
+    normal = "normal",
+    hover = "hover",
+    highlight = "hover",
+    pressed = "pressed",
+    pushed = "pressed",
+    disabled = "disabled",
+}
+
+local HOVER_FILL_ALPHA = { softFill = 0.24, solidFill = 0.72 }
+
+-- The game menu button carries Blizzard's latency/framerate bar.
+local PERFORMANCE_BUTTON = "MainMenuMicroButton"
+local PERFORMANCE_BAR = "MainMenuBarPerformanceBar"
+
 local states = setmetatable({}, { __mode = "k" })
 
--- Pass the operands through pcall; do not allocate a capturing closure per read.
-local function IndexMember(object, key)
-    return object[key]
+local function HasMethod(target, name)
+    return type(Safety.Field(target, name)) == "function" and not Safety.IsForbidden(target)
 end
 
-local function ReadMember(target, key)
-    if not target then return nil end
-    local ok, value = pcall(IndexMember, target, key)
-    return ok and value or nil
-end
-
-local function CallMethod(target, methodName, ...)
-    local method = ReadMember(target, methodName)
-    if type(method) ~= "function" then return false end
-    return pcall(method, target, ...)
+local function AllPublic(...)
+    for index = 1, select("#", ...) do
+        if not Safety.Public((select(index, ...))) then return false end
+    end
+    return true
 end
 
 local function Clamp(value, minimum, maximum)
@@ -112,8 +132,19 @@ local function SameArray(first, second)
     return true
 end
 
+local function SamePoints(first, second)
+    if type(first) ~= "table" or type(second) ~= "table"
+        or #first ~= #second then
+        return false
+    end
+    for index = 1, #first do
+        if not SameArray(first[index], second[index]) then return false end
+    end
+    return true
+end
+
 local function CanCreate(button)
-    return NS.Safety and NS.Safety.CanCreateRegions(button, true) == true
+    return Safety.CanCreateRegions(button, true)
 end
 
 local function GeometrySpec(settings, spec)
@@ -133,33 +164,11 @@ local function GeometrySpec(settings, spec)
     return spec
 end
 
-local function ConfigureShape(texture, asset, geometry)
-    if not texture or not asset then return false end
-    if texture.ClearTextureSlice then texture:ClearTextureSlice() end
-    texture:SetTexture(asset)
-    if geometry.slice and texture.SetTextureSliceMargins then
-        texture:SetTextureSliceMargins(
-            geometry.margins[1], geometry.margins[2],
-            geometry.margins[3], geometry.margins[4])
-        if texture.SetTextureSliceMode then
-            texture:SetTextureSliceMode(STRETCHED)
-        end
-    end
-    return true
-end
-
-local function ReuseColor(color, r, g, b, a)
-    if color and color.r == r and color.g == g and color.b == b and color.a == a then
-        return color
-    end
-    return CreateColor(r, g, b, a)
-end
-
 local function ApplySolid(texture, colorKey, alphaScale, state, cacheKey)
     local r, g, b, a = NS.Theme.GetColor(colorKey)
     a = (tonumber(a) or 1) * (tonumber(alphaScale) or 1)
     if texture.SetGradient and type(CreateColor) == "function" then
-        local color = ReuseColor(state[cacheKey], r, g, b, a)
+        local color = NS.Theme.ReuseColor(state[cacheKey], r, g, b, a)
         state[cacheKey] = color
         texture:SetGradient("VERTICAL", color, color)
     else
@@ -178,12 +187,10 @@ local function ApplyMaterial(texture, material, state)
     local toA = from[4] + (to[4] - from[4]) * strength
     if NS.DB.theme.gradient and texture.SetGradient
         and type(CreateColor) == "function" then
-        state.materialFrom = ReuseColor(state.materialFrom, from[1], from[2], from[3], from[4] * opacity)
-        state.materialTo = ReuseColor(state.materialTo, toR, toG, toB, toA * opacity)
-        texture:SetGradient(
-            NS.DB.theme.gradientDirection or "VERTICAL",
-            state.materialFrom,
-            state.materialTo)
+        state.materialFrom = NS.Theme.ReuseColor(state.materialFrom, from[1], from[2], from[3], from[4] * opacity)
+        state.materialTo = NS.Theme.ReuseColor(state.materialTo, toR, toG, toB, toA * opacity)
+        texture:SetGradient(NS.DB.theme.gradientDirection or "VERTICAL",
+            state.materialFrom, state.materialTo)
     else
         texture:SetVertexColor(from[1], from[2], from[3], from[4] * opacity)
     end
@@ -195,15 +202,21 @@ local function AnchorSquare(texture, button, size)
     texture:SetSize(size, size)
 end
 
+-- Blizzard's performance bar is borrowed while the clean style is active:
+-- recolored flat, laid next to the glyph and returned exactly as found.
+-- Each property is owned separately and only while it still shows the
+-- value we wrote; a later Blizzard write takes the property back.
+-- Readers return a new value, or nil when it is missing or secret.
+
 local function CapturePoints(region)
-    local points = {}
-    local ok, count = CallMethod(region, "GetNumPoints")
-    count = ok and tonumber(count) or nil
+    local count = tonumber(Safety.Read(region, "GetNumPoints"))
     if count == nil then return nil end
+    local points = {}
     for index = 1, math.floor(count) do
-        local pointOk, point, relativeTo, relativePoint, x, y =
-            CallMethod(region, "GetPoint", index)
-        if not pointOk or type(point) ~= "string" then return nil end
+        local point, relativeTo, relativePoint, x, y = Safety.Call(region, "GetPoint", index)
+        if type(point) ~= "string" or not AllPublic(point, relativeTo, relativePoint, x, y) then
+            return nil
+        end
         points[#points + 1] = {
             point, relativeTo, relativePoint,
             tonumber(x) or 0, tonumber(y) or 0,
@@ -212,34 +225,21 @@ local function CapturePoints(region)
     return points
 end
 
-local function RestorePoints(region, points)
-    if not CallMethod(region, "ClearAllPoints") then return false end
-    for index = 1, #(points or {}) do
-        if not CallMethod(region, "SetPoint", unpack(points[index])) then
-            return false
-        end
-    end
-    return true
-end
-
-local function SamePoints(first, second)
-    if type(first) ~= "table" or type(second) ~= "table"
-        or #first ~= #second then
-        return false
-    end
-    for index = 1, #first do
-        if not SameArray(first[index], second[index]) then return false end
+local function WritePoints(region, points)
+    if not Safety.Invoke(region, "ClearAllPoints") then return false end
+    for index = 1, #points do
+        region:SetPoint(unpack(points[index]))
     end
     return true
 end
 
 local function CaptureTextureSource(region)
-    local atlasOk, atlas = CallMethod(region, "GetAtlas")
-    local textureOk, texture = CallMethod(region, "GetTexture")
-    if not atlasOk and not textureOk then return nil end
+    if not HasMethod(region, "GetAtlas") and not HasMethod(region, "GetTexture") then
+        return nil
+    end
     return {
-        atlas = atlasOk and atlas or nil,
-        texture = textureOk and texture or nil,
+        atlas = Safety.Read(region, "GetAtlas"),
+        texture = Safety.Read(region, "GetTexture"),
     }
 end
 
@@ -248,71 +248,93 @@ local function SameTextureSource(first, second)
         and first.atlas == second.atlas and first.texture == second.texture
 end
 
+local function WriteTextureSource(region, source)
+    if source.atlas ~= nil then
+        return Safety.Invoke(region, "SetAtlas", source.atlas)
+    end
+    return Safety.Invoke(region, "SetTexture", source.texture)
+end
+
 local function CaptureTexCoord(region)
-    local ok, first, second, third, fourth, fifth, sixth, seventh, eighth =
-        CallMethod(region, "GetTexCoord")
-    if not ok or first == nil then return nil end
+    local first, second, third, fourth, fifth, sixth, seventh, eighth =
+        Safety.Call(region, "GetTexCoord")
+    if first == nil or not AllPublic(first, second, third, fourth, fifth, sixth, seventh, eighth) then
+        return nil
+    end
     if fifth ~= nil then
         return { first, second, third, fourth, fifth, sixth, seventh, eighth }
     end
     return { first, second, third, fourth }
 end
 
+local function WriteTexCoord(region, coords)
+    return Safety.Invoke(region, "SetTexCoord", unpack(coords))
+end
+
 local function CaptureLayer(region)
-    local ok, layer, subLevel = CallMethod(region, "GetDrawLayer")
-    if not ok or type(layer) ~= "string" then return nil end
+    local layer, subLevel = Safety.Call(region, "GetDrawLayer")
+    if type(layer) ~= "string" or not AllPublic(layer, subLevel) then return nil end
     return { layer, tonumber(subLevel) or 0 }
 end
 
+local function WriteLayer(region, layer)
+    return Safety.Invoke(region, "SetDrawLayer", unpack(layer))
+end
+
 local function CaptureSize(region)
-    local widthOk, width = CallMethod(region, "GetWidth")
-    local heightOk, height = CallMethod(region, "GetHeight")
-    width, height = tonumber(width), tonumber(height)
-    if not widthOk or not heightOk or width == nil or height == nil then
-        return nil
-    end
+    local width = tonumber(Safety.Read(region, "GetWidth"))
+    local height = tonumber(Safety.Read(region, "GetHeight"))
+    if width == nil or height == nil then return nil end
     return { width, height }
 end
 
-local function CapturePerformanceRegion(state, region)
-    if state.buttonName ~= "MainMenuMicroButton" or not region then return false end
-    local source = CaptureTextureSource(region)
-    local texCoord = CaptureTexCoord(region)
-    local layer = CaptureLayer(region)
-    local points = CapturePoints(region)
-    local size = CaptureSize(region)
-    if not source or not texCoord or not layer or not points or not size then
-        return false
-    end
-    state.performance = {
-        region = region,
-        original = {
-            source = source,
-            texCoord = texCoord,
-            layer = layer,
-            points = points,
-            size = size,
-        },
-    }
-    return true
+local function WriteSize(region, size)
+    return Safety.Invoke(region, "SetSize", unpack(size))
 end
 
+-- Restored in this order; a rollback runs it backwards.
 local PERFORMANCE_PROPERTIES = {
-    "source", "texCoord", "layer", "points", "size",
+    { key = "source", capture = CaptureTextureSource, same = SameTextureSource, write = WriteTextureSource },
+    { key = "texCoord", capture = CaptureTexCoord, same = SameArray, write = WriteTexCoord },
+    { key = "layer", capture = CaptureLayer, same = SameArray, write = WriteLayer },
+    { key = "points", capture = CapturePoints, same = SamePoints, write = WritePoints },
+    { key = "size", capture = CaptureSize, same = SameArray, write = WriteSize },
 }
+-- The first three are set once; points and size follow the button size.
+local SOURCE, TEX_COORD, LAYER, POINTS, SIZE = 1, 2, 3, 4, 5
 
 local function HasOwnedPerformanceProperty(applied)
     for index = 1, #PERFORMANCE_PROPERTIES do
-        if applied.owned[PERFORMANCE_PROPERTIES[index]] then return true end
+        if applied.owned[PERFORMANCE_PROPERTIES[index].key] then return true end
     end
     return false
 end
 
-local function RestorePerformanceSource(region, source)
-    if source.atlas ~= nil then
-        return CallMethod(region, "SetAtlas", source.atlas)
+-- Where the bar goes for this button size. Rebuilt only when the size
+-- changes; applied values may keep a reference, so it is never mutated.
+local function PerformanceLayout(state, visualSize)
+    local layout = state.performanceLayout
+    if not layout or layout.visualSize ~= visualSize then
+        layout = {
+            visualSize = visualSize,
+            points = { { "CENTER", state.button, "CENTER", math.max(7, visualSize * 0.5 - 3), 0 } },
+            size = { 2, Clamp(visualSize - 14, 6, 12) },
+        }
+        state.performanceLayout = layout
     end
-    return CallMethod(region, "SetTexture", source.texture)
+    return layout
+end
+
+local function CapturePerformanceRegion(state, region)
+    local original = {}
+    for index = 1, #PERFORMANCE_PROPERTIES do
+        local property = PERFORMANCE_PROPERTIES[index]
+        local value = property.capture(region)
+        if not value then return false end
+        original[property.key] = value
+    end
+    state.performance = { region = region, original = original }
+    return true
 end
 
 local function RestorePerformanceRegion(state)
@@ -325,152 +347,68 @@ local function RestorePerformanceRegion(state)
     local applied = performance.applied
     applied.restoring = true
     local success = true
-
-    if applied.owned.source then
-        local current = CaptureTextureSource(region)
-        if not current then
-            success = false
-        elseif SameTextureSource(current, applied.source) then
-            if RestorePerformanceSource(region, original.source) then
-                applied.owned.source = false
+    for index = 1, #PERFORMANCE_PROPERTIES do
+        local property = PERFORMANCE_PROPERTIES[index]
+        local key = property.key
+        if applied.owned[key] then
+            local current = property.capture(region)
+            if not current then
+                success = false
+            elseif not property.same(current, applied[key]) then
+                applied.owned[key] = false
+            elseif property.write(region, original[key]) then
+                applied.owned[key] = false
             else
                 success = false
             end
-        else
-            applied.owned.source = false
         end
     end
-    if applied.owned.texCoord then
-        local current = CaptureTexCoord(region)
-        if not current then
-            success = false
-        elseif SameArray(current, applied.texCoord) then
-            if CallMethod(region, "SetTexCoord", unpack(original.texCoord)) then
-                applied.owned.texCoord = false
-            else
-                success = false
-            end
-        else
-            applied.owned.texCoord = false
-        end
-    end
-    if applied.owned.layer then
-        local current = CaptureLayer(region)
-        if not current then
-            success = false
-        elseif SameArray(current, applied.layer) then
-            if CallMethod(region, "SetDrawLayer", unpack(original.layer)) then
-                applied.owned.layer = false
-            else
-                success = false
-            end
-        else
-            applied.owned.layer = false
-        end
-    end
-    if applied.owned.points then
-        local current = CapturePoints(region)
-        if not current then
-            success = false
-        elseif SamePoints(current, applied.points) then
-            if RestorePoints(region, original.points) then
-                applied.owned.points = false
-            else
-                success = false
-            end
-        else
-            applied.owned.points = false
-        end
-    end
-    if applied.owned.size then
-        local current = CaptureSize(region)
-        if not current then
-            success = false
-        elseif SameArray(current, applied.size) then
-            if CallMethod(region, "SetSize", unpack(original.size)) then
-                applied.owned.size = false
-            else
-                success = false
-            end
-        else
-            applied.owned.size = false
-        end
-    end
-
     if not HasOwnedPerformanceProperty(applied) then
         state.performance = nil
     end
     return success
 end
 
+-- Moves an owned property to its desired value unless someone else has
+-- taken it over. A failed write puts the previous value back.
+local function FollowDesired(region, applied, property, desired)
+    local key = property.key
+    if not applied.owned[key] then return true end
+    local current = property.capture(region)
+    if not current then return false end
+    if not property.same(current, applied[key]) then
+        applied.owned[key] = false
+        return true
+    end
+    if property.same(applied[key], desired) then return true end
+    local previous = applied[key]
+    if property.write(region, desired) then
+        applied[key] = desired
+        return true
+    end
+    if not property.write(region, previous) then
+        applied[key] = property.capture(region) or previous
+    end
+    return false
+end
+
 local function RefreshOwnedPerformanceRegion(performance, state, visualSize)
     local applied = performance.applied
     local region = performance.region
-    local success = true
-
-    if applied.owned.source then
-        local current = CaptureTextureSource(region)
-        if not current then return false end
-        if not SameTextureSource(current, applied.source) then
-            applied.owned.source = false
-        end
-    end
-    if applied.owned.texCoord then
-        local current = CaptureTexCoord(region)
-        if not current then return false end
-        if not SameArray(current, applied.texCoord) then
-            applied.owned.texCoord = false
-        end
-    end
-    if applied.owned.layer then
-        local current = CaptureLayer(region)
-        if not current then return false end
-        if not SameArray(current, applied.layer) then
-            applied.owned.layer = false
-        end
-    end
-
-    local x = math.max(7, visualSize * 0.5 - 3)
-    local desiredPoints = { { "CENTER", state.button, "CENTER", x, 0 } }
-    if applied.owned.points then
-        local current = CapturePoints(region)
-        if not current then
-            success = false
-        elseif not SamePoints(current, applied.points) then
-            applied.owned.points = false
-        elseif not SamePoints(applied.points, desiredPoints) then
-            local previous = applied.points
-            if RestorePoints(region, desiredPoints) then
-                applied.points = desiredPoints
-            else
-                if not RestorePoints(region, previous) then
-                    applied.points = CapturePoints(region) or previous
-                end
-                success = false
+    for index = SOURCE, LAYER do
+        local property = PERFORMANCE_PROPERTIES[index]
+        local key = property.key
+        if applied.owned[key] then
+            local current = property.capture(region)
+            if not current then return false end
+            if not property.same(current, applied[key]) then
+                applied.owned[key] = false
             end
         end
     end
-
-    local desiredSize = { 2, Clamp(visualSize - 14, 6, 12) }
-    if applied.owned.size then
-        local current = CaptureSize(region)
-        if not current then
-            success = false
-        elseif not SameArray(current, applied.size) then
-            applied.owned.size = false
-        elseif not SameArray(applied.size, desiredSize) then
-            local previous = applied.size
-            if CallMethod(region, "SetSize", unpack(desiredSize)) then
-                applied.size = desiredSize
-            else
-                if not CallMethod(region, "SetSize", unpack(previous)) then
-                    applied.size = CaptureSize(region) or previous
-                end
-                success = false
-            end
-        end
-    end
-    return success
+    local layout = PerformanceLayout(state, visualSize)
+    local success = FollowDesired(region, applied, PERFORMANCE_PROPERTIES[POINTS], layout.points)
+    return FollowDesired(region, applied, PERFORMANCE_PROPERTIES[SIZE], layout.size) and success
 end
 
 local function RollbackNewPerformanceRegion(state)
@@ -485,39 +423,14 @@ local function RollbackNewPerformanceRegion(state)
     -- and this rollback. Restoring every property we successfully touched is
     -- therefore safe even when its post-write getter failed and there is no
     -- usable ownership comparison yet.
-    if applied.owned.size then
-        if CallMethod(region, "SetSize", unpack(original.size)) then
-            applied.owned.size = false
-        else
-            success = false
-        end
-    end
-    if applied.owned.points then
-        if RestorePoints(region, original.points) then
-            applied.owned.points = false
-        else
-            success = false
-        end
-    end
-    if applied.owned.layer then
-        if CallMethod(region, "SetDrawLayer", unpack(original.layer)) then
-            applied.owned.layer = false
-        else
-            success = false
-        end
-    end
-    if applied.owned.texCoord then
-        if CallMethod(region, "SetTexCoord", unpack(original.texCoord)) then
-            applied.owned.texCoord = false
-        else
-            success = false
-        end
-    end
-    if applied.owned.source then
-        if RestorePerformanceSource(region, original.source) then
-            applied.owned.source = false
-        else
-            success = false
+    for index = #PERFORMANCE_PROPERTIES, 1, -1 do
+        local property = PERFORMANCE_PROPERTIES[index]
+        if applied.owned[property.key] then
+            if property.write(region, original[property.key]) then
+                applied.owned[property.key] = false
+            else
+                success = false
+            end
         end
     end
 
@@ -529,92 +442,44 @@ local function RollbackNewPerformanceRegion(state)
     return success
 end
 
+-- Writes value, takes ownership, and records what the client reports back.
+local function TakeProperty(region, applied, property, value)
+    if not property.write(region, value) then return false end
+    local key = property.key
+    applied[key] = value
+    applied.owned[key] = true
+    local captured = property.capture(region)
+    if not captured then return false end
+    applied[key] = captured
+    return true
+end
+
 local function ApplyNewPerformanceRegion(state, visualSize, region)
     if not CapturePerformanceRegion(state, region) then return false end
     local performance = state.performance
     local applied = { owned = {}, restoring = false }
     performance.applied = applied
 
-    local colorOk, r, g, b, a = CallMethod(region, "GetVertexColor")
-    if not colorOk or type(r) ~= "number" or type(g) ~= "number"
-        or type(b) ~= "number" then
+    local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
+    if not r then
         state.performance = nil
         return false
     end
 
-    local success = true
-    if CallMethod(region, "SetColorTexture", 1, 1, 1, 1) then
-        applied.source = { atlas = nil, texture = nil }
+    -- A flat white texture keeps the bar's own latency color as its tint.
+    local success = false
+    if Safety.Invoke(region, "SetColorTexture", 1, 1, 1, 1) then
         applied.owned.source = true
         local captured = CaptureTextureSource(region)
-        if captured then
-            applied.source = captured
-        else
-            success = false
-        end
-        if not CallMethod(region, "SetVertexColor", r, g, b,
-            type(a) == "number" and a or 1) then
-            success = false
-        end
-    else
-        success = false
+        applied.source = captured or {}
+        success = captured ~= nil
+        if not Safety.Invoke(region, "SetVertexColor", r, g, b, a) then success = false end
     end
-    if CallMethod(region, "SetTexCoord", 0, 1, 0, 1) then
-        applied.texCoord = { 0, 1, 0, 1 }
-        applied.owned.texCoord = true
-        local captured = CaptureTexCoord(region)
-        if captured then
-            applied.texCoord = captured
-        else
-            success = false
-        end
-    else
-        success = false
-    end
-    if CallMethod(region, "SetDrawLayer", "OVERLAY", -5) then
-        applied.layer = { "OVERLAY", -5 }
-        applied.owned.layer = true
-        local captured = CaptureLayer(region)
-        if captured then
-            applied.layer = captured
-        else
-            success = false
-        end
-    else
-        success = false
-    end
-
-    local x = math.max(7, visualSize * 0.5 - 3)
-    local desiredPoints = { { "CENTER", state.button, "CENTER", x, 0 } }
-    if RestorePoints(region, desiredPoints) then
-        applied.points = desiredPoints
-        applied.owned.points = true
-        local captured = CapturePoints(region)
-        if captured then
-            applied.points = captured
-        else
-            success = false
-        end
-    else
-        -- ClearAllPoints may have succeeded before SetPoint failed.
-        applied.points = CapturePoints(region) or desiredPoints
-        applied.owned.points = true
-        success = false
-    end
-
-    local desiredSize = { 2, Clamp(visualSize - 14, 6, 12) }
-    if CallMethod(region, "SetSize", unpack(desiredSize)) then
-        applied.size = desiredSize
-        applied.owned.size = true
-        local captured = CaptureSize(region)
-        if captured then
-            applied.size = captured
-        else
-            success = false
-        end
-    else
-        success = false
-    end
+    success = TakeProperty(region, applied, PERFORMANCE_PROPERTIES[TEX_COORD], { 0, 1, 0, 1 }) and success
+    success = TakeProperty(region, applied, PERFORMANCE_PROPERTIES[LAYER], { "OVERLAY", -5 }) and success
+    local layout = PerformanceLayout(state, visualSize)
+    success = TakeProperty(region, applied, PERFORMANCE_PROPERTIES[POINTS], layout.points) and success
+    success = TakeProperty(region, applied, PERFORMANCE_PROPERTIES[SIZE], layout.size) and success
 
     if not success then
         RollbackNewPerformanceRegion(state)
@@ -624,8 +489,8 @@ local function ApplyNewPerformanceRegion(state, visualSize, region)
 end
 
 local function ApplyPerformanceRegion(state, visualSize)
-    if state.buttonName ~= "MainMenuMicroButton" then return true end
-    local currentRegion = ReadMember(state.button, "MainMenuBarPerformanceBar")
+    if state.buttonName ~= PERFORMANCE_BUTTON then return true end
+    local currentRegion = Safety.Field(state.button, PERFORMANCE_BAR)
     local performance = state.performance
 
     if performance and performance.region ~= currentRegion then
@@ -646,16 +511,18 @@ local function ApplyPerformanceRegion(state, visualSize)
     return RefreshOwnedPerformanceRegion(performance, state, visualSize)
 end
 
+-- Native state masks: a transparent mask per native state texture hides
+-- Blizzard's art under the overlay without changing that texture itself.
+
 local function ConfigureNativeStateMask(state, binding)
-    local mask = binding and binding.mask
-    if not mask then return false end
-    local pointsOk = CallMethod(mask, "SetAllPoints", state.button)
-    local textureOk = CallMethod(mask, "SetColorTexture", 0, 0, 0, 0)
+    local mask = binding.mask
+    local pointsOk = Safety.Invoke(mask, "SetAllPoints", state.button)
+    local textureOk = Safety.Invoke(mask, "SetColorTexture", 0, 0, 0, 0)
     if not textureOk then
-        textureOk = CallMethod(mask, "SetTexture", "Interface\\Buttons\\WHITE8X8")
-            and CallMethod(mask, "SetVertexColor", 1, 1, 1, 0)
+        textureOk = Safety.Invoke(mask, "SetTexture", "Interface\\Buttons\\WHITE8X8")
+            and Safety.Invoke(mask, "SetVertexColor", 1, 1, 1, 0)
     end
-    local hideOk = CallMethod(mask, "Hide")
+    local hideOk = Safety.Invoke(mask, "Hide")
     binding.shown = false
     binding.ready = pointsOk and textureOk and hideOk
     return binding.ready
@@ -663,29 +530,24 @@ end
 
 local function EnsureNativeStateMasks(state)
     state.nativeMasks = state.nativeMasks or {}
-    local createMask = ReadMember(state.button, "CreateMaskTexture")
-    if type(createMask) ~= "function" then return false end
+    local button = state.button
     local success = true
     for index = 1, #NATIVE_STATE_TEXTURES do
         local key = NATIVE_STATE_TEXTURES[index].key
         local binding = state.nativeMasks[key]
         if not binding then
-            if not CanCreate(state.button) then
-                success = false
+            -- CanCreate is checked first: indexing CreateMaskTexture on a
+            -- compositor frame is itself reported.
+            if CanCreate(button) and type(button.CreateMaskTexture) == "function" then
+                binding = {
+                    mask = button:CreateMaskTexture(nil, "OVERLAY", nil, -4),
+                    applied = false,
+                    ready = false,
+                    shown = false,
+                }
+                state.nativeMasks[key] = binding
             else
-                local ok, mask = pcall(createMask, state.button, nil,
-                    "OVERLAY", nil, -4)
-                if ok and mask then
-                    binding = {
-                        mask = mask,
-                        applied = false,
-                        ready = false,
-                        shown = false,
-                    }
-                    state.nativeMasks[key] = binding
-                else
-                    success = false
-                end
+                success = false
             end
         end
         if binding and not binding.ready
@@ -699,27 +561,27 @@ end
 local function ApplyNativeStateMask(state, spec)
     local binding = state.nativeMasks and state.nativeMasks[spec.key]
     if not binding or not binding.ready then return false end
-    local ok, target = CallMethod(state.button, spec.getter)
-    if not ok then return false end
+    if not HasMethod(state.button, spec.getter) then return false end
+    local target = Safety.Call(state.button, spec.getter)
 
     if binding.applied and binding.target ~= target then
         if not binding.target
-            or not CallMethod(binding.target, "RemoveMaskTexture", binding.mask) then
+            or not Safety.Invoke(binding.target, "RemoveMaskTexture", binding.mask) then
             return false
         end
         binding.applied = false
         binding.target = nil
-        if not CallMethod(binding.mask, "Hide") then return false end
+        if not Safety.Invoke(binding.mask, "Hide") then return false end
         binding.shown = false
     end
     if not target then return true end
     if not binding.applied then
-        if not CallMethod(target, "AddMaskTexture", binding.mask) then return false end
+        if not Safety.Invoke(target, "AddMaskTexture", binding.mask) then return false end
         binding.target = target
         binding.applied = true
     end
     if binding.shown then return true end
-    if not CallMethod(binding.mask, "Show") then return false end
+    if not Safety.Invoke(binding.mask, "Show") then return false end
     binding.shown = true
     return true
 end
@@ -727,8 +589,7 @@ end
 local function ApplyNativeStateMasks(state)
     local success = EnsureNativeStateMasks(state)
     for index = 1, #NATIVE_STATE_TEXTURES do
-        success = ApplyNativeStateMask(state,
-            NATIVE_STATE_TEXTURES[index]) and success
+        success = ApplyNativeStateMask(state, NATIVE_STATE_TEXTURES[index]) and success
     end
     return success
 end
@@ -740,18 +601,20 @@ local function RestoreNativeStateMasks(state)
         local binding = state.nativeMasks[NATIVE_STATE_TEXTURES[index].key]
         if binding then
             if binding.applied then
-                if binding.target and CallMethod(binding.target,
-                    "RemoveMaskTexture", binding.mask) then
+                if binding.target
+                    and Safety.Invoke(binding.target, "RemoveMaskTexture", binding.mask) then
                     binding.applied = false
                     binding.target = nil
                 else
                     success = false
                 end
             end
-            if not binding.applied and not CallMethod(binding.mask, "Hide") then
-                success = false
-            elseif not binding.applied then
-                binding.shown = false
+            if not binding.applied then
+                if Safety.Invoke(binding.mask, "Hide") then
+                    binding.shown = false
+                else
+                    success = false
+                end
             end
         end
     end
@@ -771,32 +634,12 @@ local function ApplyIconSource(texture, buttonName, iconStyle)
     end
 end
 
-local function ApplyLiveBlizzardIcon(state)
-    local source
-    if state.buttonName == "CharacterMicroButton" then
-        source = state.button.Portrait
-    else
-        source = state.button:GetNormalTexture()
-    end
-    local atlas = source and source.GetAtlas and source:GetAtlas()
-    local texture = source and source.GetTexture and source:GetTexture()
-    local kind = atlas and "atlas" or texture and "texture" or nil
-    local value = atlas or texture
-    if kind == state.nativeIconKind and value == state.nativeIconValue then return source end
-    state.nativeIconKind, state.nativeIconValue = kind, value
-    if kind == "atlas" then
-        state.icon:SetAtlas(value)
-    elseif kind == "texture" then
-        state.icon:SetTexture(value)
-        if state.buttonName == "CharacterMicroButton" and source.GetTexCoord then
-            state.icon:SetTexCoord(source:GetTexCoord())
-        else
-            state.icon:SetTexCoord(0, 1, 0, 1)
-        end
-    else
-        ApplyIconSource(state.icon, state.buttonName, "line")
-    end
-    return source
+-- Our overlay keeps its own alpha while the native button fades.
+local function PrepareOverlayRegion(region)
+    Safety.Invoke(region, "SetIgnoreParentAlpha", true)
+    Safety.Invoke(region, "SetIgnoreParentScale", false)
+    region:Hide()
+    return region
 end
 
 local function EnsureState(button, buttonName, iconStyle)
@@ -806,13 +649,12 @@ local function EnsureState(button, buttonName, iconStyle)
             or (iconStyle and iconStyle ~= state.iconStyle) then
             state.buttonName = buttonName or state.buttonName
             state.iconStyle = iconStyle or state.iconStyle
-            state.nativeIconKind, state.nativeIconValue = nil, nil
             ApplyIconSource(state.icon, state.buttonName, state.iconStyle)
         end
         state.masksReady = EnsureNativeStateMasks(state)
         return state
     end
-    if not CanCreate(button) or type(ReadMember(button, "CreateTexture")) ~= "function" then
+    if not CanCreate(button) or type(button.CreateTexture) ~= "function" then
         return nil
     end
 
@@ -820,18 +662,13 @@ local function EnsureState(button, buttonName, iconStyle)
         button = button,
         buttonName = buttonName,
         iconStyle = iconStyle,
-        plate = button:CreateTexture(nil, "OVERLAY", nil, -8),
-        fill = button:CreateTexture(nil, "OVERLAY", nil, -7),
-        edge = button:CreateTexture(nil, "OVERLAY", nil, -6),
-        icon = button:CreateTexture(nil, "OVERLAY", nil, -5),
+        plate = PrepareOverlayRegion(button:CreateTexture(nil, "OVERLAY", nil, -8)),
+        fill = PrepareOverlayRegion(button:CreateTexture(nil, "OVERLAY", nil, -7)),
+        edge = PrepareOverlayRegion(button:CreateTexture(nil, "OVERLAY", nil, -6)),
+        icon = PrepareOverlayRegion(button:CreateTexture(nil, "OVERLAY", nil, -5)),
         nativeMasks = {},
         visible = false,
     }
-    for _, region in ipairs({ state.plate, state.fill, state.edge, state.icon }) do
-        CallMethod(region, "SetIgnoreParentAlpha", true)
-        CallMethod(region, "SetIgnoreParentScale", false)
-        CallMethod(region, "Hide")
-    end
     state.plate:SetTexture(FOREVER_PLATE)
     ApplyIconSource(state.icon, buttonName, iconStyle)
     states[button] = state
@@ -839,131 +676,112 @@ local function EnsureState(button, buttonName, iconStyle)
     return state
 end
 
-local function NormalizeState(stateName)
-    if stateName == "highlight" then return "hover" end
-    if stateName == "pushed" then return "pressed" end
-    if stateName == "normal" or stateName == "hover"
-        or stateName == "pressed" or stateName == "disabled" then
-        return stateName
-    end
-    return "normal"
-end
-
-local function RefreshState(state, settings, stateName)
-    stateName = NormalizeState(stateName)
-    if stateName == "hover" and settings.hoverStyle == "off" then
-        stateName = "normal"
-    end
+-- Sizes and anchors the overlay; returns the button size.
+local function LayoutOverlay(state, settings)
     local visualSize = Clamp(settings.buttonSize, 20, 32)
     local iconSize = Clamp(settings.iconSize, 10, visualSize - 4)
-    if state.buttonName == "MainMenuMicroButton"
-        and ReadMember(state.button, "MainMenuBarPerformanceBar") then
+    if state.buttonName == PERFORMANCE_BUTTON and Safety.Field(state.button, PERFORMANCE_BAR) then
+        -- Leave room beside the glyph for the performance bar.
         iconSize = math.min(iconSize, math.max(10, visualSize - 10))
     end
     AnchorSquare(state.fill, state.button, visualSize)
     AnchorSquare(state.edge, state.button, visualSize)
     AnchorSquare(state.icon, state.button, iconSize)
-    local nativeIconSource
-    if settings.iconStyle == "blizzardIcons" then
-        nativeIconSource = ApplyLiveBlizzardIcon(state)
-        -- The native Micro Button atlas is 32x40; preserve that ratio inside
-        -- our plate rather than stretching Blizzard's glyph into a square.
-        if state.buttonName ~= "CharacterMicroButton" then
-            state.icon:SetSize(iconSize * 0.8, iconSize)
-        end
-    end
     AnchorSquare(state.plate, state.button, visualSize + 2)
+    return visualSize
+end
 
-    state.geometrySpec = GeometrySpec(settings, state.geometrySpec)
-    local geometry = NS.Geometry.Resolve(state.geometrySpec, state.geometry)
-    state.geometry = geometry
-    ConfigureShape(state.fill, geometry.fill, geometry)
-    local edgeAsset = geometry.edge
-    local showFill = settings.buttonBackground == true
-    local showEdge = edgeAsset ~= nil
+local function PaintBorderEdge(state, geometry, asset, material)
+    ConfigureShape(state.edge, asset, geometry)
+    local r, g, b, a = NS.Theme.GetColor(material.border)
+    state.edge:SetVertexColor(r, g, b, a * NS.Theme.GetBorderOpacity())
+end
+
+local function PaintSolidEdge(state, geometry, asset, colorKey, alphaScale)
+    ConfigureShape(state.edge, asset, geometry)
+    ApplySolid(state.edge, colorKey, alphaScale, state, "edgeSolid")
+end
+
+local function PaintHoverLayers(state, settings, geometry, material)
     local hoverStyle = settings.hoverStyle or "outline"
-    local material = NS.Theme.GetMaterial("microButton")
+    local showFill = settings.buttonBackground == true
+    local showEdge = geometry.edge ~= nil
+    ApplyMaterial(state.fill, material, state)
+    local fillAlpha = HOVER_FILL_ALPHA[hoverStyle]
+    if fillAlpha then
+        ApplySolid(state.fill, "hover", fillAlpha, state, "fillSolid")
+        showFill = true
+    end
+    if hoverStyle == "outline" or fillAlpha then
+        showEdge = geometry.hoverEdge ~= nil
+        if showEdge then
+            PaintSolidEdge(state, geometry, geometry.hoverEdge, "hover", NS.Theme.GetBorderOpacity())
+        end
+    elseif hoverStyle == "iconOnly" or hoverStyle == "off" then
+        showEdge = geometry.edge ~= nil and settings.buttonBorder ~= 0
+        if geometry.edge then PaintBorderEdge(state, geometry, geometry.edge, material) end
+    end
+    return showFill, showEdge
+end
 
-    if stateName == "normal" then
-        ApplyMaterial(state.fill, material, state)
-        if edgeAsset then
-            ConfigureShape(state.edge, edgeAsset, geometry)
-            local r, g, b, a = NS.Theme.GetColor(material.border)
-            state.edge:SetVertexColor(r, g, b,
-                a * NS.Theme.GetBorderOpacity())
-        end
-    elseif stateName == "hover" then
-        ApplyMaterial(state.fill, material, state)
-        if hoverStyle == "softFill" or hoverStyle == "solidFill" then
-            ApplySolid(state.fill, "hover", hoverStyle == "softFill" and 0.24 or 0.72, state, "fillSolid")
-            showFill = true
-        end
-        if hoverStyle == "outline" or hoverStyle == "softFill"
-            or hoverStyle == "solidFill" then
-            edgeAsset = geometry.hoverEdge
-            showEdge = edgeAsset ~= nil
-            if edgeAsset then
-                ConfigureShape(state.edge, edgeAsset, geometry)
-                ApplySolid(state.edge, "hover", NS.Theme.GetBorderOpacity(), state, "edgeSolid")
-            end
-        elseif hoverStyle == "iconOnly" or hoverStyle == "off" then
-            showEdge = geometry.edge ~= nil and settings.buttonBorder ~= 0
-            if geometry.edge then
-                ConfigureShape(state.edge, geometry.edge, geometry)
-                local r, g, b, a = NS.Theme.GetColor(material.border)
-                state.edge:SetVertexColor(r, g, b,
-                    a * NS.Theme.GetBorderOpacity())
-            end
-        end
+-- Paints fill and edge for one visual state; returns whether each shows.
+local function PaintStateLayers(state, settings, geometry, stateName)
+    local material = NS.Theme.GetMaterial("microButton")
+    ConfigureShape(state.fill, geometry.fill, geometry)
+    if stateName == "hover" then
+        return PaintHoverLayers(state, settings, geometry, material)
     elseif stateName == "pressed" then
         ApplySolid(state.fill, "pressed", 0.52, state, "fillSolid")
-        showFill = true
-        edgeAsset = geometry.hoverEdge
-        showEdge = edgeAsset ~= nil
-        if edgeAsset then
-            ConfigureShape(state.edge, edgeAsset, geometry)
-            ApplySolid(state.edge, "pressed", NS.Theme.GetBorderOpacity(), state, "edgeSolid")
+        if geometry.hoverEdge then
+            PaintSolidEdge(state, geometry, geometry.hoverEdge, "pressed", NS.Theme.GetBorderOpacity())
         end
-    else
+        return true, geometry.hoverEdge ~= nil
+    elseif stateName == "disabled" then
         ApplySolid(state.fill, "disabled", 0.18, state, "fillSolid")
-        showFill = settings.buttonBackground == true
-        if edgeAsset then
-            ConfigureShape(state.edge, edgeAsset, geometry)
-            ApplySolid(state.edge, "disabled", NS.Theme.GetBorderOpacity() * 0.62, state, "edgeSolid")
+        if geometry.edge then
+            PaintSolidEdge(state, geometry, geometry.edge, "disabled", NS.Theme.GetBorderOpacity() * 0.62)
         end
+        return settings.buttonBackground == true, geometry.edge ~= nil
     end
+    ApplyMaterial(state.fill, material, state)
+    if geometry.edge then PaintBorderEdge(state, geometry, geometry.edge, material) end
+    return settings.buttonBackground == true, geometry.edge ~= nil
+end
 
-    local originalColor
-    if nativeIconSource and nativeIconSource.GetVertexColor then
-        local r, g, b, a = nativeIconSource:GetVertexColor()
-        originalColor = state.nativeIconColor or {}
-        originalColor[1], originalColor[2], originalColor[3], originalColor[4] = r, g, b, a
-        state.nativeIconColor = originalColor
-    end
-    local r, g, b, a = NS.MicroMenuSkin.GetIconColor(stateName, originalColor)
-    if settings.iconStyle == "blizzardIcons"
-        and state.buttonName == "CharacterMicroButton" then
-        -- A player portrait is full-color imagery, not a tintable glyph.
-        r, g, b = 1, 1, 1
-    end
-    state.icon:SetVertexColor(r, g, b, a)
-    state.icon:SetDesaturated(false)
-    state.fill:SetShown(showFill and state.visible)
-    state.edge:SetShown(showEdge and state.visible)
-    local decorated = (settings.iconStyle == "bold" or settings.iconStyle == "blizzardIcons")
-        and (settings.barMaterial == "forever" or settings.barMaterial == "modern"
-            or settings.barMaterial == "midnightDark")
-    if decorated and state.plateMaterial ~= settings.barMaterial then
-        state.plate:SetTexture(settings.barMaterial == "forever" and FOREVER_PLATE or MIDNIGHT_PLATE)
-        state.plate:SetDesaturated(settings.barMaterial == "midnightDark")
-        if settings.barMaterial == "midnightDark" then
+local function PaintPlate(state, settings)
+    local material = settings.barMaterial
+    local decorated = settings.iconStyle == "bold" and PLATE_TEXTURES[material] ~= nil
+    if decorated and state.plateMaterial ~= material then
+        state.plate:SetTexture(PLATE_TEXTURES[material])
+        state.plate:SetDesaturated(material == "midnightDark")
+        if material == "midnightDark" then
             state.plate:SetVertexColor(0.84, 0.85, 0.82, 1)
         else
             state.plate:SetVertexColor(1, 1, 1, 1)
         end
-        state.plateMaterial = settings.barMaterial
+        state.plateMaterial = material
     end
     state.plate:SetShown(state.visible and decorated)
+end
+
+-- Paints the overlay for a clean (line or bold) icon style.
+local function RefreshState(state, settings, stateName)
+    stateName = VISUAL_STATES[stateName] or "normal"
+    if stateName == "hover" and settings.hoverStyle == "off" then
+        stateName = "normal"
+    end
+    local visualSize = LayoutOverlay(state, settings)
+    state.geometrySpec = GeometrySpec(settings, state.geometrySpec)
+    local geometry = NS.Geometry.Resolve(state.geometrySpec, state.geometry)
+    state.geometry = geometry
+    local showFill, showEdge = PaintStateLayers(state, settings, geometry, stateName)
+
+    local r, g, b, a = NS.MicroMenuSkin.GetIconColor(stateName, nil)
+    state.icon:SetVertexColor(r, g, b, a)
+    state.icon:SetDesaturated(false)
+    state.fill:SetShown(showFill and state.visible)
+    state.edge:SetShown(showEdge and state.visible)
+    PaintPlate(state, settings)
     state.icon:SetShown(state.visible)
     local performanceOk = ApplyPerformanceRegion(state, visualSize)
     local masksOk = ApplyNativeStateMasks(state)
@@ -971,10 +789,17 @@ local function RefreshState(state, settings, stateName)
     return performanceOk and masksOk
 end
 
+local function HideOverlay(state)
+    state.visible = false
+    state.fill:Hide()
+    state.edge:Hide()
+    state.plate:Hide()
+    state.icon:Hide()
+end
+
 function MicroMenuVisual.Prepare(button, buttonName, settings)
     if not button or not settings then return false end
-    local nativeStyle = settings.iconStyle == "blizzard"
-        or settings.iconStyle == "blizzardIcons"
+    local nativeStyle = NATIVE_ICON_STYLES[settings.iconStyle] == true
     local state = EnsureState(button, buttonName,
         nativeStyle and "line" or settings.iconStyle)
     if not state then return false end
@@ -982,12 +807,7 @@ function MicroMenuVisual.Prepare(button, buttonName, settings)
         -- Preallocate only. Native art remains entirely visible in Blizzard
         -- mode, while a later clean-style switch needs no CreateTexture or
         -- CreateMaskTexture call below an already-owned MicroMenu root.
-        state.visible = false
-        CallMethod(state.fill, "Hide")
-        CallMethod(state.edge, "Hide")
-        CallMethod(state.plate, "Hide")
-        CallMethod(state.icon, "Hide")
-        state.masksReady = EnsureNativeStateMasks(state)
+        HideOverlay(state)
         return state.masksReady
     end
     -- Attach while Blizzard's native MicroMenu is still under its original
@@ -999,7 +819,7 @@ end
 
 function MicroMenuVisual.Apply(button, buttonName, settings, stateName)
     if not button or not settings then return false, "invalid" end
-    if settings.iconStyle == "blizzard" or settings.iconStyle == "blizzardIcons" then
+    if NATIVE_ICON_STYLES[settings.iconStyle] then
         MicroMenuVisual.Restore(button)
         return false, "native"
     end
@@ -1012,6 +832,10 @@ end
 function MicroMenuVisual.Refresh(button, settings, stateName)
     local state = states[button]
     if not state or not state.visible then return false, "inactive" end
+    if NATIVE_ICON_STYLES[settings.iconStyle] then
+        MicroMenuVisual.Restore(button)
+        return false, "native"
+    end
     return RefreshState(state, settings, stateName), "refreshed"
 end
 
@@ -1020,11 +844,7 @@ function MicroMenuVisual.Restore(button)
     if not state then return true end
     local success = RestoreNativeStateMasks(state)
     success = RestorePerformanceRegion(state) and success
-    state.visible = false
-    state.fill:Hide()
-    state.edge:Hide()
-    state.plate:Hide()
-    state.icon:Hide()
+    HideOverlay(state)
     state.currentState = nil
     return success
 end

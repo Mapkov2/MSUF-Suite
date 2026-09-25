@@ -283,6 +283,69 @@ assert(P.OnLifecycle("rename", "Clone", "Renamed")
 assert(P.SyncActive("SwitchOnly") and P.OnLifecycle("delete", "Renamed")
     and not DB.GetProfile("Renamed") and not skinProfiles.Renamed,
     "MSUF profile delete left orphan Suite settings")
+
+-- One-time migrations never run again on a copy: export -> import -> export
+-- is lossless, also for values that an older build would still migrate.
+local function Same(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+    for key, value in pairs(a) do if not Same(value, b[key]) then return false end end
+    for key in pairs(b) do if a[key] == nil then return false end end
+    return true
+end
+local function Encoded(text) return encodings[tonumber(text:match("(%d+)$"))] end
+local S = Suite.Suite
+local live = Suite.DB.suite.modules
+live.chat.look, live.damageMeter.look, live.dataTexts.look, live.xpBar.look = 2, 2, 2, 2
+live.xpBar.point, live.xpBar.x, live.xpBar.y = 8, 0, 148
+live.objectives.titleSize, live.objectives.sectionSize = 16, 16
+live.objectives.colorStyle, live.objectives.backgroundOpacity = 1, 82
+live.announcements.subtitleSize = 15
+local firstExport = assert(IO.ExportProfile())
+assert(DB.CreateFromProfile("RoundTrip", assert(IO.PrepareProfile(firstExport, false))))
+local secondExport = assert(IO.ExportProfile("RoundTrip"))
+assert(Same(Encoded(firstExport), Encoded(secondExport)), "export -> import -> export changed the profile")
+local copied = DB.GetProfile("RoundTrip").suite
+assert(copied.revision == S.MigrationRevision
+    and copied.modules.chat.look == 2 and copied.modules.damageMeter.look == 2
+    and copied.modules.dataTexts.look == 2 and copied.modules.xpBar.look == 2
+    and copied.modules.xpBar.point == 8 and copied.modules.xpBar.y == 148
+    and copied.modules.objectives.titleSize == 16 and copied.modules.objectives.sectionSize == 16
+    and copied.modules.objectives.backgroundOpacity == 82
+    and copied.modules.announcements.subtitleSize == 15,
+    "a copied profile ran one-time migrations again")
+local saved = assert(IO.PrepareTable(Suite.DB, false))
+assert(Same(saved.suite.modules, live), "Save As copy ran one-time migrations again")
+local chatModule = assert(IO.ExportModule("chat"))
+live.chat.look = 1
+assert(P.ImportModule(chatModule) and live.chat.look == 2, "module import ran one-time migrations again")
+-- Strings from older builds still migrate exactly once: without any state
+-- (all steps) or with the per-step flags they were saved with.
+encodings[#encodings + 1] = { addon = "MSUF_Suite", format = 1, profile = { suite = { schema = 1, modules = {
+    chat = { look = 2, panelColor = "14181b" }, objectives = { titleSize = 16 },
+} } } }
+local legacyText = IO.prefix .. "MSUF3:" .. #encodings
+local legacy = assert(IO.PrepareProfile(legacyText, false))
+assert(legacy.suite.revision == S.MigrationRevision and legacy.suite.modules.chat.look == 3
+    and legacy.suite.modules.objectives.titleSize == 18, "an old profile string was not migrated")
+assert(DB.CreateFromProfile("LegacyOnce", legacy))
+local legacyAgain = assert(IO.PrepareProfile(assert(IO.ExportProfile("LegacyOnce")), false))
+assert(legacyAgain.suite.modules.chat.look == 3 and legacyAgain.suite.modules.objectives.titleSize == 18,
+    "an imported old profile migrated twice")
+encodings[#encodings + 1] = { addon = "MSUF_Suite", format = 1, profile = { suite = {
+    schema = 1, lookPresetRevision = 1, modules = { chat = { look = 3 }, objectives = { titleSize = 16 } },
+} } }
+local flagged = assert(IO.PrepareProfile(IO.prefix .. "MSUF3:" .. #encodings, false))
+assert(flagged.suite.modules.chat.look == 3 and flagged.suite.modules.objectives.titleSize == 18
+    and flagged.suite.lookPresetRevision == nil and flagged.suite.revision == S.MigrationRevision,
+    "per-step flags of an older string were not honored")
+-- Forever-only steps do not re-enable modules on a copy either.
+Suite.Client.isForever = true
+live.actionbars.enabled, live.objectives.enabled, live.announcements.enabled = false, false, false
+local foreverCopy = assert(IO.PrepareTable(Suite.DB, false)).suite.modules
+Suite.Client.isForever = false
+assert(not foreverCopy.actionbars.enabled and not foreverCopy.objectives.enabled
+    and not foreverCopy.announcements.enabled, "a Forever copy switched modules back on")
+
 C_EncodingUtil = nil
 assert(not P.Export())
 assert(not DB.Delete("SwitchOnly") and DB.GetProfile("SwitchOnly"), "the active profile was deleted")
@@ -301,4 +364,75 @@ assert(factoryMenu.layoutPoint == "BOTTOMLEFT" and factoryMenu.layoutRelativePoi
     and factoryMenu.layoutX == 1791 and factoryMenu.layoutY == 20
     and not next(skinProfiles.ForeverFactorySkin.windowControls.positions),
     "Forever installer overwrote the supplied Skin menu position")
+-- The first Suite install repairs a character that MSUF already bound to
+-- Default, then leaves deliberate account defaults and later changes alone.
+local newCharacterDefault
+MSUF_GetDefaultProfileForNewCharacters = function() return newCharacterDefault end
+MSUF_SetDefaultProfileForNewCharacters = function(name)
+    assert(MSUF_GlobalDB.profiles[name])
+    newCharacterDefault = name
+    return true
+end
+MSUF_ProfileWasUnboundAtLogin = true
+MSUF_SwitchProfile("Default")
+Suite.RootDB.installation = { status = "complete", profile = "suite", frameProfileName = "Raid" }
+assert(P.EnsureNewCharacterProfile() and newCharacterDefault == "Raid"
+    and MSUF_ActiveProfile == "Raid" and Suite.RootDB.installation.newCharacterProfileRevision == 1,
+    "new character did not receive the installed frame profile")
+assert(Suite.RootDB.installation.newCharacterProfileOwned == true)
+newCharacterDefault = nil
+MSUF_SwitchProfile("Default")
+assert(not P.EnsureNewCharacterProfile() and newCharacterDefault == nil
+    and MSUF_ActiveProfile == "Default", "a cleared preference was overwritten")
+newCharacterDefault = "Shared"
+Suite.RootDB.installation = { status = "complete", profile = "suite", frameProfileName = "Raid" }
+assert(not P.EnsureNewCharacterProfile() and newCharacterDefault == "Shared"
+    and MSUF_ActiveProfile == "Default" and Suite.RootDB.installation.newCharacterProfileRevision == 1,
+    "an existing MSUF new-character preference was overwritten")
+assert(Suite.RootDB.installation.newCharacterProfileOwned ~= true)
+Suite.Client.isMainline = true
+Suite.DB.suite.modules.cooldownManager = { enabled = true }
+MSUF_DB = { bars = { classPowerAnchorToCooldown = false, classPowerOffsetY = 280 },
+    player = { powerBarDetached = true, detachedPowerBarAnchorToClassPower = true } }
+local resourceRefresh = 0
+MSUF_ClassPower_Apply = function() resourceRefresh = resourceRefresh + 1 end
+Suite.RootDB.installation = { status = "complete", profile = "suite" }
+assert(P.EnsureRetailResourceStack(false) and MSUF_DB.bars.classPowerAnchorToCooldown
+    and MSUF_DB.bars.classPowerCooldownTopAnchor and MSUF_DB.bars.classPowerOffsetY == 0
+    and MSUF_DB.player.detachedPowerBarAnchorToClassPower
+    and resourceRefresh == 1 and Suite.RootDB.installation.resourceStackRevision == 1,
+    "old Modern setup did not attach the resource stack above Essential")
+MSUF_DB.bars.classPowerOffsetY = 12
+assert(not P.EnsureRetailResourceStack(false) and MSUF_DB.bars.classPowerOffsetY == 12,
+    "a later personal resource offset was overwritten")
+assert(P.EnsureRetailResourceStack(true) and MSUF_DB.bars.classPowerOffsetY == 0,
+    "rerunning Modern did not restore its resource defaults")
+MSUF_DB = { bars = { classPowerOffsetY = -41 }, player = {} }
+Suite.RootDB.installation = { status = "complete", profile = "forever" }
+assert(P.EnsureRetailResourceStack(false) and MSUF_DB.bars.classPowerAnchorToCooldown
+    and MSUF_DB.player.powerBarDetached and MSUF_DB.player.detachedPowerBarAnchorToClassPower,
+    "old Retail Forever did not receive the CDM resource stack")
+Suite.Client.isForever = true
+MSUF_DB = { bars = { classPowerOffsetY = -41 }, player = {} }
+Suite.RootDB.installation = { status = "complete", profile = "forever" }
+assert(not P.EnsureRetailResourceStack(false) and MSUF_DB.bars.classPowerAnchorToCooldown == nil,
+    "actual Forever client received a Retail-only resource migration")
+Suite.Client.isForever = false
+Suite.CDM = { DEFAULTS_VERSION = 3, FRAME_ANCHORS = { [14] = "player" } }
+local foreverCooldowns = { enabled = true, ext_anchor = 3, ext_y = -380, defaultsVersion = 0 }
+Suite.DB.suite.modules.cooldownManager = foreverCooldowns
+Suite.RootDB.installation = { status = "complete", profile = "forever" }
+assert(P.EnsureRetailForeverCooldownLayout() and foreverCooldowns.ext_anchor == 14
+    and foreverCooldowns.ext_y == 0 and foreverCooldowns.def_anchor == 14
+    and foreverCooldowns.captured == true and foreverCooldowns.defaultsVersion == 3,
+    "old Retail Forever Potions did not move to Player")
+foreverCooldowns.ext_anchor, foreverCooldowns.ext_y = 3, -100
+Suite.RootDB.installation = { status = "complete", profile = "forever" }
+assert(not P.EnsureRetailForeverCooldownLayout() and foreverCooldowns.ext_y == -100,
+    "personal Forever Potions position was overwritten")
+Suite.Client.isForever = true
+foreverCooldowns.ext_y = -380
+Suite.RootDB.installation = { status = "complete", profile = "forever" }
+assert(not P.EnsureRetailForeverCooldownLayout() and foreverCooldowns.ext_anchor == 3,
+    "actual Forever client received a Retail-only CDM anchor migration")
 print("Standalone profiles: unified MSUF, module and skin sharing, lifecycle, migration, collision/combat guards, rollback and sanitization passed")

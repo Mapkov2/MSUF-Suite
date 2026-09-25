@@ -15,12 +15,7 @@ local DIFFICULTY_EVENTS = { "PLAYER_DIFFICULTY_CHANGED", "GROUP_ROSTER_UPDATE", 
     "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET" }
 local INVITE_EVENT = "CALENDAR_UPDATE_PENDING_INVITES"
 local zoneColors = {
-    sanctuary = "69ccf0",
-    arena = "ff1a1a",
-    friendly = "1aff1a",
-    hostile = "ff1a1a",
-    contested =
-    "ffb300"
+    sanctuary = "69ccf0", arena = "ff1a1a", friendly = "1aff1a", hostile = "ff1a1a", contested = "ffb300",
 }
 local outlines = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
 -- Blizzard's localized names where one exists, else the suite's own text.
@@ -31,7 +26,7 @@ local TITLES = {
     Coordinates = { false, "Coordinates" },
     Durability = { "DURABILITY", "Durability" },
     Location = { "ZONE", "Location" },
-    Weather = { false, "Weather" }
+    Weather = { false, "Weather" },
 }
 -- WeatherType values from Blizzard's Forever WeatherConstantsDocumentation.
 local WEATHER_TYPES = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm", [4] = "Other weather" }
@@ -82,9 +77,7 @@ local TIER_COLORS = { "e0a060", "4aa8ff", "b36bff", "a0a0a0", "40d8d8", "ff9a33"
 -- Flexible raids show the current group size instead of the maximum.
 local FLEX = { [14] = true, [15] = true, [17] = true, [33] = true }
 
-local function Number(value)
-    return S.Public(value) and type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
-end
+local Finite = S.Finite
 
 function S.CanShowMinimapInfo(key)
     if key == "Durability" then return type(GetInventoryItemDurability) == "function" end
@@ -100,11 +93,11 @@ end
 local function Clock(entry)
     local c = M.config
     local stamp = S.ReadInfoSource("clockStamp")
-    local second = Number(stamp) and math.floor(stamp) % 60 or nil
+    local second = Finite(stamp) and math.floor(stamp) % 60 or nil
     local server, localTime
     if c.infoClockSource ~= 2 and type(GetGameTime) == "function" then
         local hour, minute = S.ReadInfoSource("clockTime")
-        if Number(hour) and Number(minute) then
+        if Finite(hour) and Finite(minute) then
             local suffix = ""
             if not c.infoClock24Hour then
                 suffix = hour < 12 and " AM" or " PM"
@@ -124,7 +117,7 @@ end
 
 local function FPS(entry)
     local value = S.ReadInfoSource("fps")
-    if not Number(value) or value < 0 then return "--", entry.interval end
+    if not Finite(value) or value < 0 then return "--", entry.interval end
     value = math.floor(value + .5)
     if value ~= entry.lastFPS then
         entry.lastFPS = value
@@ -137,13 +130,13 @@ end
 local function Latency(entry)
     local home, world = S.ReadInfoSource("latency")
     local mode = M.config.infoLatencySource
-    home = Number(home) and home >= 0 and math.floor(home + .5) or nil
-    world = Number(world) and world >= 0 and math.floor(world + .5) or nil
+    home = Finite(home) and home >= 0 and math.floor(home + .5) or nil
+    world = Finite(world) and world >= 0 and math.floor(world + .5) or nil
     if mode ~= 2 and not home or mode ~= 1 and not world then return "--", entry.interval end
     if home ~= entry.lastHome or world ~= entry.lastWorld or mode ~= entry.lastMode then
         entry.lastHome, entry.lastWorld, entry.lastMode = home, world, mode
-        entry.latencyText = mode == 1 and home .. " ms" or mode == 2 and world .. " ms" or
-            home .. " / " .. world .. " ms"
+        entry.latencyText = mode == 1 and home .. " ms" or mode == 2 and world .. " ms"
+            or home .. " / " .. world .. " ms"
     end
     local value = mode == 1 and home or mode == 2 and world or math.max(home, world)
     local severity = value >= M.config.infoLatencyBad and 3 or value >= M.config.infoLatencyWarning and 2 or 1
@@ -154,7 +147,7 @@ end
 -- loading screens report no position; polling them would only repeat "--").
 local function Coordinates(entry)
     local x, y = S.ReadInfoSource("coordinates")
-    if not Number(x) or not Number(y) or x < 0 or x > 1 or y < 0 or y > 1 then return "--" end
+    if not Finite(x) or not Finite(y) or x < 0 or x > 1 or y < 0 or y > 1 then return "--" end
     local cx, cy = math.floor(x * entry.coordinateScale + .5), math.floor(y * entry.coordinateScale + .5)
     if cx ~= entry.lastX or cy ~= entry.lastY then
         entry.lastX, entry.lastY = cx, cy
@@ -194,29 +187,22 @@ local function Location(entry)
     end
     return entry.locationText, nil, nil, color
 end
+-- C_Weather exists on WoW Forever only.
 local function Weather()
     local api = C_Weather
     if not api or type(api.GetCurrentWeather) ~= "function" then return "--" end
-    local ok, info = pcall(api.GetCurrentWeather)
-    if not ok or not S.Public(info) or type(info) ~= "table" then return "--" end
+    local info = api.GetCurrentWeather()
+    if not S.Public(info) or type(info) ~= "table" then return "--" end
     local kind = info.type
     if not S.Public(kind) or type(kind) ~= "number" then return "--" end
     local label = WEATHER_TYPES[kind]
     return label and S.Text(label) or "--"
 end
 local readers = {
-    Clock = Clock,
-    FPS = FPS,
-    Latency = Latency,
-    Coordinates = Coordinates,
-    Durability = Durability,
-    Location = Location,
-    Weather = Weather
+    Clock = Clock, FPS = FPS, Latency = Latency, Coordinates = Coordinates,
+    Durability = Durability, Location = Location, Weather = Weather,
 }
-
-local function Color(hex)
-    return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
-end
+local Color = S.RGB
 
 local function ClassColor()
     if type(UnitClass) ~= "function" then return end
@@ -224,7 +210,10 @@ local function ClassColor()
     if not S.Public(token) or type(token) ~= "string" then return end
     local palette = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
     local color = type(palette) == "table" and palette[token]
-    if not S.Public(color) or type(color) ~= "table" or not Number(color.r) or not Number(color.g) or not Number(color.b) then return end
+    if not S.Public(color) or type(color) ~= "table" or not Finite(color.r) or not Finite(color.g)
+        or not Finite(color.b) then
+        return
+    end
     return string.format("%02x%02x%02x", math.floor(math.max(0, math.min(1, color.r)) * 255 + .5),
         math.floor(math.max(0, math.min(1, color.g)) * 255 + .5),
         math.floor(math.max(0, math.min(1, color.b)) * 255 + .5))
@@ -234,9 +223,9 @@ end
 local function DifficultyText()
     if type(GetInstanceInfo) ~= "function" then return "" end
     local _, kind, difficulty, _, maxPlayers, _, dynamic, _, groupSize = GetInstanceInfo()
-    if not S.Public(kind) or kind == "none" or kind == "interior" or kind == "neighborhood" or not Number(difficulty) then
-        return
-        ""
+    if not S.Public(kind) or kind == "none" or kind == "interior" or kind == "neighborhood"
+        or not Finite(difficulty) then
+        return ""
     end
     local tag, letter, tier = TAGS[difficulty], nil, 1
     if tag then
@@ -256,18 +245,18 @@ local function DifficultyText()
     if difficulty == 8 then
         local reader = C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo
         local level = type(reader) == "function" and reader()
-        return Number(level) and level > 0 and letter .. math.floor(level) or letter, tier
+        return Finite(level) and level > 0 and letter .. math.floor(level) or letter, tier
     end
     if tag and tag[3] then return letter, tier end
     local flexible = FLEX[difficulty] or (S.Public(dynamic) and dynamic == true)
-    local size = flexible and Number(groupSize) and groupSize > 0 and groupSize or maxPlayers
-    return (Number(size) and size > 0 and math.floor(size) or "") .. letter, tier
+    local size = flexible and Finite(groupSize) and groupSize > 0 and groupSize or maxPlayers
+    return (Finite(size) and size > 0 and math.floor(size) or "") .. letter, tier
 end
 
 local function Invites()
     local calendar = C_Calendar
     local count = calendar and type(calendar.GetNumPendingInvites) == "function" and calendar.GetNumPendingInvites()
-    return Number(count) and count > 0
+    return Finite(count) and count > 0
 end
 
 local function Cancel()
@@ -281,16 +270,19 @@ end
 
 local function Visible()
     local frame = M.infoFrame
-    if not M.active or not M.infoActive or M.infoConfiguring or not frame or NS.Safety.IsForbidden(frame) or not frame:IsVisible() then return false end
+    if not M.active or not M.infoActive or M.infoConfiguring or not frame or NS.Safety.IsForbidden(frame)
+        or not frame:IsVisible() then
+        return false
+    end
     if type(frame.GetEffectiveAlpha) == "function" then
         local alpha = frame:GetEffectiveAlpha()
-        return Number(alpha) and alpha > 0
+        return Finite(alpha) and alpha > 0
     end
     -- Legacy clients may lack GetEffectiveAlpha; still honor faded ancestors.
     while frame do
         if NS.Safety.IsForbidden(frame) then return false end
         local alpha = frame:GetAlpha()
-        if not Number(alpha) or alpha <= 0 then return false end
+        if not Finite(alpha) or alpha <= 0 then return false end
         frame = frame:GetParent()
     end
     return true
@@ -300,7 +292,7 @@ S.IsMinimapInfoVisible = Visible
 -- The box and the invite mark follow the text's width, re-measured on change only.
 local function Decorate(entry)
     local width = entry.label:GetStringWidth()
-    if not Number(width) then width = 0 end
+    if not Finite(width) then width = 0 end
     if entry.box and entry.box:IsShown() then entry.box:SetWidth(math.max(entry.size, width + 8)) end
     local mark = entry.invite
     if mark and mark:IsShown() then
@@ -369,7 +361,7 @@ Tick = function()
         if entry and entry.active and entry.button:IsShown() then
             if eventFields[key] then
                 if entry.dirty then Sample(entry, key) end
-            elseif Number(now) then
+            elseif Finite(now) then
                 if entry.due == nil or (entry.due and entry.due <= now) then
                     local delay = Sample(entry, key)
                     entry.due = delay and now + delay or false
@@ -490,13 +482,10 @@ local function Tooltip(button)
     GameTooltip:AddLine(entry.text or "--", 1, 1, 1)
     if key == "Clock" then
         if entry.invite and entry.invite:IsShown() then
-            GameTooltip:AddLine(S.Text("Calendar invitations are waiting."),
-                1, .82, 0)
+            GameTooltip:AddLine(S.Text("Calendar invitations are waiting."), 1, .82, 0)
         end
-        GameTooltip:AddLine(
-            S.Text(M.config.infoClockClick == 1 and "Left: calendar. Right: clock." or "Left: clock. Right: calendar."),
-            .7,
-            .8, .9)
+        local hint = M.config.infoClockClick == 1 and "Left: calendar. Right: clock." or "Left: clock. Right: calendar."
+        GameTooltip:AddLine(S.Text(hint), .7, .8, .9)
     elseif key == "Coordinates" or key == "Location" and M.config.infoLocationClick then
         GameTooltip:AddLine(S.Text("Click to open the world map."), .7, .8, .9)
     elseif key == "Durability" then
@@ -580,10 +569,10 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         entry.lastX, entry.lastY = nil, nil
     elseif key == "Durability" then
         entry.lastDurability = nil
-        entry.iconPrefix = c.infoDurabilityIcon and
-            "|TInterface\\Durability\\UI-Durability-Icons:" ..
-            c.infoDurabilitySize .. ":" .. math.floor(c.infoDurabilitySize * 18 / 22) .. ":0:0:128:128:0:18:0:22|t " or
-            ""
+        entry.iconPrefix = c.infoDurabilityIcon
+            and "|TInterface\\Durability\\UI-Durability-Icons:" .. c.infoDurabilitySize .. ":"
+                .. math.floor(c.infoDurabilitySize * 18 / 22) .. ":0:0:128:128:0:18:0:22|t "
+            or ""
     elseif key == "Location" then
         entry.lastZone, entry.lastSubzone = nil, nil
         entry.separator = c.infoLocationBelow and "\n" or " - "
@@ -624,19 +613,24 @@ local function Listen(events, handler, wanted)
     end
 end
 
-function MM.RefreshTexts()
-    if NS.IsCombatLocked() then
-        MM.Force("texts")
-        S.Queue("minimap")
-        return
-    end
-    Cancel()
-    local c = M.config
-    local hideCoordinates = false
-    if c.infoCoordinates and c.infoCoordinatesHideInstance then
-        local inside = type(IsInInstance) == "function" and IsInInstance()
-        hideCoordinates = not S.Public(inside) or inside == true
-    end
+local function ListenOne(event, handler, wanted)
+    if wanted then MM.Listen(event, "info", handler) else MM.Unlisten(event, "info") end
+end
+
+-- Coordinates can be set to hide inside instances.
+local function CoordinatesHidden(c)
+    if not (c.infoCoordinates and c.infoCoordinatesHideInstance) then return false end
+    local inside = type(IsInInstance) == "function" and IsInInstance()
+    return not S.Public(inside) or inside == true
+end
+
+local function TextWanted(c, key, hideCoordinates)
+    return c["info" .. key] and not (key == "Coordinates" and hideCoordinates) and S.CanShowMinimapInfo(key)
+end
+
+-- Registers only the events the enabled texts need; returns whether the
+-- difficulty label is wanted.
+local function SyncTextEvents(c)
     local durability = c.infoDurability and S.CanShowMinimapInfo("Durability")
     local location = c.infoLocation and S.CanShowMinimapInfo("Location")
     local weather = c.infoWeather and S.CanShowMinimapInfo("Weather")
@@ -647,36 +641,17 @@ function MM.RefreshTexts()
         and C_Calendar ~= nil and type(C_Calendar.GetNumPendingInvites) == "function"
     Listen(DURABILITY_EVENTS, DurabilityChanged, durability)
     Listen(ZONE_EVENTS, ZoneChanged, location or coordinates or difficulty or weather)
-    if weather then
-        MM.Listen("WEATHER_CHANGED", "info", WeatherChanged)
-    else
-        MM.Unlisten("WEATHER_CHANGED", "info")
-    end
+    ListenOne("WEATHER_CHANGED", WeatherChanged, weather)
     Listen(DIFFICULTY_EVENTS, DifficultyChanged, difficulty)
-    if M.inviteWanted then MM.Listen(INVITE_EVENT, "info", UpdateInvite) else MM.Unlisten(INVITE_EVENT, "info") end
-    local world = durability or location or coordinates or weather or difficulty or M.inviteWanted
-    if world then
-        MM.Listen("PLAYER_ENTERING_WORLD", "info", WorldChanged)
-    else
-        MM.Unlisten("PLAYER_ENTERING_WORLD",
-            "info")
-    end
-    local any = difficulty
-    for _, key in ipairs(keys) do
-        if c["info" .. key] and not (key == "Coordinates" and hideCoordinates) and S.CanShowMinimapInfo(key) then
-            any = true
-            break
-        end
-    end
-    M.difficultyActive = difficulty
-    if not any or not MM.host then
-        M.infoActive = false
-        if M.infoFrame and not NS.Safety.IsForbidden(M.infoFrame) then M.infoFrame:Hide() end
-        MM.SetExtent("texts", 0, 0, 0, 0)
-        return
-    end
-    M.infoActive, M.infoConfiguring = true, true
-    EnsureFrame()
+    ListenOne(INVITE_EVENT, UpdateInvite, M.inviteWanted)
+    ListenOne("PLAYER_ENTERING_WORLD", WorldChanged,
+        durability or location or coordinates or weather or difficulty or M.inviteWanted)
+    return difficulty
+end
+
+-- Styles and places every wanted text; returns how far texts reach above
+-- and below the map.
+local function LayoutEntries(c, hideCoordinates)
     local classColor
     for _, key in ipairs(keys) do
         if c["info" .. key] and c["info" .. key .. "ClassColor"] then
@@ -688,7 +663,7 @@ function MM.RefreshTexts()
     local above, below = 0, 0
     for _, key in ipairs(keys) do
         local prefix, entry = "info" .. key, M.infoEntries[key]
-        if c[prefix] and not (key == "Coordinates" and hideCoordinates) and S.CanShowMinimapInfo(key) then
+        if TextWanted(c, key, hideCoordinates) then
             if not entry then
                 entry = CreateEntry(key)
                 M.infoEntries[key] = entry
@@ -703,6 +678,10 @@ function MM.RefreshTexts()
             entry.button:Hide()
         end
     end
+    return above, below
+end
+
+local function ApplyInviteMark(c)
     local clock = M.infoEntries.Clock
     if clock and M.inviteWanted and not clock.invite then
         clock.invite = S.CreateTexture(clock.button, nil, "ARTWORK")
@@ -711,21 +690,54 @@ function MM.RefreshTexts()
     end
     if clock and clock.invite then clock.invite:SetSize(c.infoClockSize, c.infoClockSize) end
     UpdateInvite()
-    if difficulty then
-        if not M.difficultyLabel then
-            M.difficultyLabel = S.CreateFontString(M.infoFrame, nil, "OVERLAY",
-                "GameFontNormalSmall")
-        end
-        local label = M.difficultyLabel
-        S.SetStyledFont(label, S.ResolveFont(c.infoDifficultyFont), c.infoDifficultySize,
-            outlines[c.infoDifficultyOutline] or "OUTLINE", c.infoDifficultyRendering,
-            c.infoDifficultyShadow, c.infoDifficultyShadowOpacity, c.infoDifficultyShadowDistance)
-        label:SetJustifyH(Anchor(label, c.infoDifficultyAnchor, c.infoDifficultyX, c.infoDifficultyY))
-        label:Show()
-        M.difficultyText, M.difficultyColor, M.difficultyDirty = nil, nil, true
-    elseif M.difficultyLabel then
-        M.difficultyLabel:Hide()
+end
+
+local function ApplyDifficultyLabel(c, difficulty)
+    if not difficulty then
+        if M.difficultyLabel then M.difficultyLabel:Hide() end
+        return
     end
+    if not M.difficultyLabel then
+        M.difficultyLabel = S.CreateFontString(M.infoFrame, nil, "OVERLAY", "GameFontNormalSmall")
+    end
+    local label = M.difficultyLabel
+    S.SetStyledFont(label, S.ResolveFont(c.infoDifficultyFont), c.infoDifficultySize,
+        outlines[c.infoDifficultyOutline] or "OUTLINE", c.infoDifficultyRendering,
+        c.infoDifficultyShadow, c.infoDifficultyShadowOpacity, c.infoDifficultyShadowDistance)
+    label:SetJustifyH(Anchor(label, c.infoDifficultyAnchor, c.infoDifficultyX, c.infoDifficultyY))
+    label:Show()
+    M.difficultyText, M.difficultyColor, M.difficultyDirty = nil, nil, true
+end
+
+function MM.RefreshTexts()
+    if NS.IsCombatLocked() then
+        MM.Force("texts")
+        S.Queue("minimap")
+        return
+    end
+    Cancel()
+    local c = M.config
+    local hideCoordinates = CoordinatesHidden(c)
+    local difficulty = SyncTextEvents(c)
+    local any = difficulty
+    for _, key in ipairs(keys) do
+        if TextWanted(c, key, hideCoordinates) then
+            any = true
+            break
+        end
+    end
+    M.difficultyActive = difficulty
+    if not any or not MM.host then
+        M.infoActive = false
+        if M.infoFrame and not NS.Safety.IsForbidden(M.infoFrame) then M.infoFrame:Hide() end
+        MM.SetExtent("texts", 0, 0, 0, 0)
+        return
+    end
+    M.infoActive, M.infoConfiguring = true, true
+    EnsureFrame()
+    local above, below = LayoutEntries(c, hideCoordinates)
+    ApplyInviteMark(c)
+    ApplyDifficultyLabel(c, difficulty)
     local border = MM.BorderWidth()
     MM.SetExtent("texts", 0, 0, above > 0 and above + border or 0, below > 0 and below + border or 0)
     M.infoFrame:Show()

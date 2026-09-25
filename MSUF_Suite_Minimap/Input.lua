@@ -6,6 +6,7 @@ local M = MM.M
 -- intercept map pings and native buttons even when pass-through is requested.
 -- Blizzard's zoom buttons move into a mouse-transparent suite holder. A
 -- motion-only catcher drives mouseover visibility without taking clicks.
+local Finite = S.Finite
 local weak = { __mode = "k" }
 local holder, catcher
 local inputMap, inputScripts
@@ -33,9 +34,9 @@ local function ResetZoom()
     local map = _G.Minimap
     if not M.active or not MM.Usable(map) then return end
     local zoom, levels = map:GetZoom(), map:GetZoomLevels()
-    if MM.Number(zoom) and zoom > 0 then
+    if Finite(zoom) and zoom > 0 then
         map:SetZoom(0)
-        if MM.Number(levels) then SyncButtons(0, levels) end
+        if Finite(levels) then SyncButtons(0, levels) end
     end
 end
 -- Every manual zoom re-arms the one-shot reset; zoom level 0 needs none.
@@ -48,14 +49,14 @@ local function ArmReset()
     local seconds = M.active and M.config.zoomResetSeconds or 0
     if seconds <= 0 or not timer or type(timer.NewTimer) ~= "function" or not MM.Usable(map) then return end
     local zoom = map:GetZoom()
-    if MM.Number(zoom) and zoom > 0 then resetTimer = timer.NewTimer(seconds, ResetZoom) end
+    if Finite(zoom) and zoom > 0 then resetTimer = timer.NewTimer(seconds, ResetZoom) end
 end
 MM.ArmZoomReset = ArmReset
 local function Zoom(step)
     local map = _G.Minimap
     if not MM.Usable(map) then return end
     local zoom, levels = map:GetZoom(), map:GetZoomLevels()
-    if not MM.Number(zoom) or not MM.Number(levels) or levels < 1 then return end
+    if not Finite(zoom) or not Finite(levels) or levels < 1 then return end
     local target = math.max(0, math.min(levels - 1, zoom + step))
     if target == zoom then return end
     map:SetZoom(target)
@@ -63,7 +64,7 @@ local function Zoom(step)
     ArmReset()
 end
 local function Wheel(_, delta)
-    if M.active and M.config.scrollZoom and MM.Number(delta) and delta ~= 0 then Zoom(delta > 0 and 1 or -1) end
+    if M.active and M.config.scrollZoom and Finite(delta) and delta ~= 0 then Zoom(delta > 0 and 1 or -1) end
 end
 
 -- Blizzard's own tracking dropdown (Retail, TBC, Mists); Classic Era has none.
@@ -83,8 +84,7 @@ local function MouseUp(_, button)
         if type(tracking.IsMenuOpen) == "function" and tracking:IsMenuOpen() then
             tracking:CloseMenu()
         else
-            tracking
-                :OpenMenu()
+            tracking:OpenMenu()
         end
     elseif action == 3 then
         if type(_G.ToggleCalendar) == "function" then _G.ToggleCalendar() end
@@ -106,6 +106,10 @@ local function RestoreMapInput()
     inputMap, inputScripts = nil, nil
 end
 
+-- The map's own OnMouseUp and OnMouseWheel are wrapped, not hooked: Blizzard
+-- pings on every mouse button (middle-click is the suite's action) and zooms
+-- through its zoom buttons with a sound; a post-hook could not suppress either.
+-- Other buttons still reach Blizzard's handler, and disable restores both.
 local function InstallMapInput(map)
     if not MM.Usable(map) or type(map.GetScript) ~= "function"
         or type(map.SetScript) ~= "function" then
@@ -257,7 +261,7 @@ local function PlaceZoom(mode)
     for _, item in ipairs({ { zoomIn, c.zoomInX or 0, 27 + (c.zoomInY or 0) },
         { zoomOut, c.zoomOutX or 0, inset + (c.zoomOutY or 0) } }) do
         local width, height = item[1]:GetSize()
-        if MM.Number(width) and MM.Number(height) then
+        if Finite(width) and Finite(height) then
             local x, y = -inset + item[2], item[3]
             left = math.max(left, width - (MM.width or 0) - x)
             right = math.max(right, x)

@@ -3,6 +3,7 @@
 -- placement, page registration, control coverage of every catalog setting,
 -- per-bar/per-window key mapping, enable gating and the locale merge.
 local root = assert(arg[1], "repository root required")
+local flavor = arg[2] or "Mainline"
 local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }
     return setmetatable(f, { __index = function(_, key)
@@ -50,9 +51,10 @@ InCombatLockdown = function() return false end
 LoggingCombat = function() return false end
 GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "deDE" end
-WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
+WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = flavor == "Mainline" and 1 or 2, 1
 GameFontHighlightSmall = {}
 local loaded = { MidnightSimpleUnitFrames = true, MidnightSimpleUnitFrames_Options = true }
+local optionsNS
 local function LoadTOC(addon, flavor, ns)
     local toc = assert(io.open(root .. "/" .. addon .. "/" .. addon .. "_" .. flavor .. ".toc"))
     for line in toc:lines() do
@@ -67,7 +69,12 @@ C_AddOns = {
     IsAddOnLoaded = function(name) return loaded[name] == true, loaded[name] == true end,
     DoesAddOnExist = function(name) return name ~= "MapkoSkin" end,
     LoadAddOn = function(name)
-        if name == "MSUF_Suite_Options" then loaded[name] = true; LoadTOC(name, "Mainline", {}); return true end
+        if name == "MSUF_Suite_Options" then
+            loaded[name] = true
+            optionsNS = {}
+            LoadTOC(name, flavor, optionsNS)
+            return true
+        end
         return false, "MISSING"
     end,
 }
@@ -124,8 +131,11 @@ T.CenterButtonLabel = function() end
 M.navItems = {
     { key = "home", label = "Dashboard" },
     { title = "Frames", id = "frames" }, { key = "uf_player", label = "Unitframes", group = "frames" },
-    { title = "Features", id = "features" }, { key = "gameplay", label = "Gameplay", group = "features" },
-    { key = "profiles", label = "Profiles", group = "features" },
+    { title = "Combat", id = "combat" }, { title = "Interface", id = "interface" },
+    { title = "Style", id = "style" }, { key = "opt_colors", label = "Colors", group = "style" },
+    { title = "General", id = "general" }, { key = "gameplay", label = "Gameplay", group = "general" },
+    { key = "opt_misc", label = "Miscellaneous", group = "general" },
+    { key = "profiles", label = "Profiles", group = "general" },
 }
 M.navPrimaryForKey = { home = "home", profiles = "profiles" }
 M.ALIASES = { meter = "opt_bars" }
@@ -231,7 +241,7 @@ Enum = { DamageMeterType = { DamageDone = 0 } }
 Minimap = { SetMaskTexture = function() end }
 
 -- Boot the suite core as the client would, then attach the menu.
-LoadTOC("MSUF_Suite", "Mainline", {})
+LoadTOC("MSUF_Suite", flavor, {})
 local Suite = assert(MSUFSuite)
 local S = Suite.Suite
 Suite.Database.Initialize(nil)
@@ -242,18 +252,39 @@ assert(Suite.Menu.Attach(), "suite menu did not attach")
 assert(Suite.Menu.attached == true)
 assert(historyProvider and Suite.Options.BuildColorsCategory, "Suite did not register MSUF history and colors")
 for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .. tostring(k)) end
-
--- Navigation: suite group right before MSUF's Features group, rows in order.
-local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_cooldownManager", "suite_skin" }
-local at
-for i, item in ipairs(M.navItems) do if item.id == "suite_modules" then at = i end end
-assert(at and M.navItems[at].title == "UI Suite", "suite title row missing")
-for offset, key in ipairs(expected) do
-    local item = M.navItems[at + offset]
-    assert(item and item.key == key and item.group == "suite_modules", "nav row " .. offset .. " is " .. tostring(item and item.key))
+if flavor ~= "Mainline" then
+    assert(M.PageHasReset("suite_dataTexts") and M.PageHasReset("suite_skin"),
+        "Forever Suite pages lack Reset page")
+    local rule = S.catalog.dataTexts.rules.bar1X
+    assert(rule and optionsNS and optionsNS.ResetRules)
+    assert(S.Set("dataTexts", "bar1X", 47))
+    assert(optionsNS.ResetRules("dataTexts", { rule })
+        and S.Config("dataTexts").bar1X == rule.default,
+        "Forever section reset missed its setting")
+    assert(S.Set("dataTexts", "bar1X", 47))
+    assert(M.ResetPageToDefaults("suite_dataTexts")
+        and S.Config("dataTexts").bar1X == rule.default,
+        "Forever Reset page missed its module")
+    print("Suite options reset: Forever page and accordion contracts passed")
+    return
 end
-assert(M.navItems[at + #expected + 1].id == "features", "suite group must sit right before Features")
-assert(M.navItems[#M.navItems].key == "profiles", "MSUF profiles row moved")
+
+-- Navigation: suite pages join MSUF's groups by id and MSUF rows keep their places.
+local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_cooldownManager", "suite_skin" }
+local function NavShape(items)
+    local out = {}
+    for _, item in ipairs(items) do
+        out[#out + 1] = item.key and (item.key .. "@" .. tostring(item.group)) or ("#" .. tostring(item.id))
+    end
+    return table.concat(out, " ")
+end
+local COMBAT_ROWS = "#combat suite_cooldownManager@combat suite_buffReminders@combat suite_hud@combat"
+local INTERFACE_ROWS = "#interface suite_actionbars@interface suite_minimap@interface suite_damageMeter@interface"
+    .. " suite_bags@interface suite_chat@interface suite_dataTexts@interface"
+local hostShape = "home@nil #frames uf_player@frames " .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
+    .. " #style opt_colors@style suite_skin@style"
+    .. " #general gameplay@general suite_qualityOfLife@general opt_misc@general profiles@general"
+assert(NavShape(M.navItems) == hostShape, "suite navigation: " .. NavShape(M.navItems))
 for _, key in ipairs(expected) do
     assert(M.pages[key], "page not registered: " .. key)
     assert(M.navPrimaryForKey[key] == key)
@@ -282,16 +313,37 @@ assert(M.ALIASES.meter == "opt_bars", "suite overrode an MSUF alias")
 assert(M.ALIASES.damage_meter == "suite_damageMeter" and M.ALIASES.minimap == "suite_minimap")
 assert(M.ALIASES.chat == "suite_chat", "chat page alias is missing")
 -- Attaching twice must not duplicate rows.
-Suite.Menu.attached = false
-assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", {
-    Suite = Suite, M = M, T = T, pages = {}, Tr = M.Tr, host = MSUF_NS, Refresh = function() end,
-})
-local count = 0
-for _, item in ipairs(M.navItems) do if item.id == "suite_modules" then count = count + 1 end end
-assert(count == 1, "suite navigation inserted twice")
+local function Reattach()
+    Suite.Menu.attached = false
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", {
+        Suite = Suite, M = M, T = T, pages = optionsNS.pages, Tr = M.Tr, host = MSUF_NS, Refresh = function() end,
+    })
+end
+Reattach()
+assert(NavShape(M.navItems) == hostShape, "suite navigation inserted twice: " .. NavShape(M.navItems))
+-- A host without those groups (Retail MSUF) keeps its own: Skinning joins
+-- Appearance, Quality of Life joins Features after Gameplay, and Combat and
+-- Interface are created in front of Features.
+local hostItems = M.navItems
+M.navItems = {
+    { key = "home", label = "Dashboard" },
+    { title = "Frames", id = "frames" }, { key = "uf_player", label = "Unitframes", group = "frames" },
+    { title = "Appearance", id = "appearance" }, { key = "opt_bars", label = "Bars", group = "appearance" },
+    { key = "opt_misc", label = "Miscellaneous", group = "appearance" },
+    { title = "Features", id = "features" }, { key = "classpower", label = "Class Resources", group = "features" },
+    { key = "gameplay", label = "Gameplay", group = "features" },
+    { key = "profiles", label = "Profiles", group = "features" },
+}
+Reattach()
+local legacyShape = "home@nil #frames uf_player@frames"
+    .. " #appearance opt_bars@appearance opt_misc@appearance suite_skin@appearance "
+    .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
+    .. " #features classpower@features gameplay@features suite_qualityOfLife@features profiles@features"
+assert(NavShape(M.navItems) == legacyShape, "suite navigation on a legacy host: " .. NavShape(M.navItems))
+M.navItems = hostItems
 
 -- The suite ships English pages and never writes into MSUF's locale table.
-assert(rawget(L, "UI Suite") == nil, "suite wrote a translation into MSUF's locale table")
+assert(rawget(L, "Interface") == nil, "suite wrote a translation into MSUF's locale table")
 assert(rawget(L, "Enable module") == "MSUF-eigene Übersetzung", "suite changed an MSUF translation")
 
 -- Build every page and collect the keys its controls read.
@@ -357,6 +409,17 @@ assert(hudSections.suite_hud_objectives_type and hudSections.suite_hud_announcem
     and not hudSections.suite_hud_objectives_quest_groups
     and not hudSections.suite_hud_announcements_event_colors,
     "HUD appearance was not condensed")
+local raidPause
+for _, widget in ipairs(contexts.suite_hud.widgets) do
+    if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.pauseInRaidCombat" then
+        raidPause = widget
+        break
+    end
+end
+assert(raidPause and raidPause.row and raidPause.row.kind == "toggle"
+    and raidPause.meta.sectionId == "suite_hud_objectives_content"
+    and Suite.SuiteCatalog.objectives.rules.pauseInRaidCombat.default == false,
+    "raid combat tracker pause must be an optional HUD toggle")
 local focusedColor, category
 M.ColorsSetPainterCategory = function(key) category = key end
 M.cache = { opt_colors = { sections = {
@@ -759,8 +822,9 @@ assert(skinContext.sections[1].sectionId == "suite_skin_frame_basic"
     and skinContext.sections[1].headerSwitch
     and skinContext.sections[2].sectionId == "suite_skin_basic", "Skin Frame Basics is not first")
 assert(skinContext.sections[3].sectionId == "suite_skin_micro"
-    and skinContext.sections[4].sectionId == "suite_skin_micro_details"
-    and skinContext.sections[5].sectionId == "suite_skin_hud",
+    and skinContext.sections[4].sectionId == "suite_skin_micro_load_conditions"
+    and skinContext.sections[5].sectionId == "suite_skin_micro_details"
+    and skinContext.sections[6].sectionId == "suite_skin_hud",
     "Micro Bar and Blizzard HUD setup must be immediately visible after the main look")
 local skinControls = {}
 for _, widget in ipairs(skinContext.widgets) do
@@ -769,6 +833,8 @@ end
 assert(skinControls["msufsuite.skin.theme.look"] and skinControls["msufsuite.skin.theme.shellOpacity"]
     and skinControls["msufsuite.skin.icons.windowActions.style"]
     and skinControls["msufsuite.skin.icons.microMenu.layoutMode"]
+    and skinControls["msufsuite.skin.icons.microMenu.loadHideMounted"]
+    and skinControls["msufsuite.skin.icons.microMenu.loadShowWhenInjured"]
     and skinControls["msufsuite.skin.enabled"], "native Skinning controls missing")
 assert(skinControls["msufsuite.skin.icons.microMenu.preset"]
     and not skinControls["msufsuite.skin.hud.objectiveTrackerStyle"]
@@ -1332,7 +1398,15 @@ GetZoneText = nil
 for _, id in ipairs({ "minimap", "actionbars", "damageMeter", "bags", "dataTexts", "xpBar", "skyriding", "chat" }) do
     S.Config(id).enabled = true
 end
+-- A history snapshot copies the active profile and root flags only; other
+-- profiles and runtime logs are neither copied nor rolled back.
+Suite.RootDB.profiles.Other = { suite = { schema = 1, modules = {} } }
+Suite.RootDB.suiteChat = { lines = { "kept" } }
 local beforeStyle = historyProvider.capture()
+assert(beforeStyle.root.profiles.Other == nil and beforeStyle.root.suiteChat == nil
+    and beforeStyle.root.profiles[Suite.RootDB.activeProfile],
+    "Suite history copied more than the active profile")
+Suite.RootDB.profiles.Other.marker = true
 local clockVisible, barVisibility, meterType = S.Config("minimap").infoClock,
     S.Config("actionbars").bar1Visibility, S.Config("damageMeter").w1Type
 assert(Suite.Options.ApplyForeverStyle(), "Suite Forever style did not apply")
@@ -1350,6 +1424,9 @@ assert(S.Config("minimap").infoClock == clockVisible
 assert(historyWrites > 0 and historyProvider.restore(beforeStyle), "Suite history restore failed")
 assert(S.Config("minimap").stylePreset == beforeStyle.root.profiles[beforeStyle.root.activeProfile].suite.modules.minimap.stylePreset,
     "Suite history did not restore the minimap style")
+assert(Suite.RootDB.profiles.Other.marker and Suite.RootDB.suiteChat.lines[1] == "kept",
+    "Suite history restore touched another profile or the chat log")
+Suite.RootDB.profiles.Other, Suite.RootDB.suiteChat = nil, nil
 local skinRoot = { activeProfile = "Default", profiles = { Default = { theme = { look = "dark" } } },
     optionsUI = { lastPage = "colors" } }
 MapkoSkin = {
@@ -1406,4 +1483,58 @@ assert(S.Config("minimap").stylePreset == 8 and S.Config("actionbars").look == 1
     and cooldowns.bar_barColor == "57c7df",
     "Midnight Blue did not update Suite modules")
 
-print("Suite options menu: navigation, no inline Suite colors, complete section shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")
+-- Suite pages join Menu2's Reset page toolbar; section resets touch only the
+-- keys of that accordion, including dynamic bar keys.
+assert(M.PageHasReset("suite_dataTexts") and M.PageHasReset("suite_hud")
+    and M.PageHasReset("suite_skin") and not M.PageHasReset("unknown-suite-page"),
+    "Suite page reset was not registered precisely")
+local bar1X = S.catalog.dataTexts.rules.bar1X
+assert(bar1X and optionsNS and optionsNS.ResetRules)
+assert(S.SetMany("dataTexts", { bar1X = 47, bar2X = 58 }))
+assert(optionsNS.ResetRules("dataTexts", { bar1X })
+    and S.Config("dataTexts").bar1X == bar1X.default
+    and S.Config("dataTexts").bar2X == 58,
+    "section reset changed another bar")
+assert(M.ResetPageToDefaults("suite_dataTexts")
+    and S.Config("dataTexts").bar2X == S.catalog.dataTexts.rules.bar2X.default,
+    "Reset page did not restore the module defaults")
+assert(S.Config("actionbars").look == 1,
+    "Suite page reset changed another page")
+local actionRules = S.catalog.actionbars.rules
+assert(actionRules.bar1X and actionRules.bar10X)
+assert(S.SetMany("actionbars", { bar1X = 17, bar10X = 18 }))
+assert(optionsNS.ResetPrefix("actionbars", "bar1")
+    and S.Config("actionbars").bar1X == actionRules.bar1X.default
+    and S.Config("actionbars").bar10X == 18,
+    "bar 1 reset also changed bar 10")
+local defaultLook = actionRules.look.default
+assert(S.SetMany("actionbars", { look = 4, borderColor = "ffffff" }))
+assert(optionsNS.ResetRules("actionbars", { actionRules.look })
+    and S.Config("actionbars").look == defaultLook
+    and S.Config("actionbars").borderColor == S.catalog.actionbars.look.presets[defaultLook].borderColor,
+    "look section reset left custom visuals under a preset label")
+local sectionButtons = {}
+W.TopButton = function()
+    local button = Widget("SectionAction")
+    sectionButtons[#sectionButtons + 1] = button
+    return button
+end
+M.CreateMenuPopupPanel = function() return Widget("SectionPopup") end
+local header, outer = Widget("SectionHeader"), Widget("SectionOuter")
+header.GetFrameLevel = function() return 1 end
+local sectionBody = { _msuf2CollapsibleEntry = { header = header, outer = outer,
+    _msuf2RefreshLayout = function() end } }
+local resetCalls = 0
+local sectionContext = { refreshers = {} }
+local more = optionsNS.AttachSectionReset(sectionContext, sectionBody, "Test section", function()
+    resetCalls = resetCalls + 1
+    return true
+end)
+assert(more and sectionButtons[1] == more and sectionBody._msuf2CollapsibleEntry._msuf2SectionActions == more,
+    "accordion reset action was not attached to its header")
+more.scripts.OnClick()
+assert(sectionButtons[2] and sectionButtons[2].scripts.OnClick, "Reset section menu is missing")
+sectionButtons[2].scripts.OnClick()
+assert(resetCalls == 1, "Reset section action did not run")
+
+print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

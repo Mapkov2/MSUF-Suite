@@ -23,8 +23,8 @@ function D.BuildStyle()
     local style = M.style or {}
     M.style = style
     style.font = S.ResolveFont(c.font)
-    local outline = (c.outline == 2 or c.outline == 5) and "OUTLINE" or (c.outline == 3 or c.outline == 6) and
-        "THICKOUTLINE" or ""
+    local outline = (c.outline == 2 or c.outline == 5) and "OUTLINE"
+        or (c.outline == 3 or c.outline == 6) and "THICKOUTLINE" or ""
     if c.rendering == 3 then
         style.flags = outline == "" and "SLUG" or "OUTLINE,SLUG"
     elseif c.rendering == 2 then
@@ -347,13 +347,15 @@ local function Want(event, on, handler)
     if on then M.context:Event(event, handler, true) else M.context:RemoveEvent(event) end
 end
 -- Data events only while a window is shown; combat and zone events while a
--- window could appear (or the standalone timer runs).
+-- window could appear (or the standalone timer runs). A combat that started
+-- keeps PLAYER_REGEN_ENABLED until it ends: Edit Mode or the preview can
+-- force windows at combat start and stop forcing them inside it.
 function D.UpdateEvents()
     local c = M.config
     local possible = M.forced or c.visibility ~= 5
     local clock = possible or (c.combatTime and c.timer)
     Want("PLAYER_REGEN_DISABLED", clock, CombatStart)
-    Want("PLAYER_REGEN_ENABLED", clock, CombatEnd)
+    Want("PLAYER_REGEN_ENABLED", clock or M.inCombat, CombatEnd)
     Want("PLAYER_ENTERING_WORLD", clock, World)
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
     Want("GROUP_ROSTER_UPDATE", possible and c.visibility == 3, Roster)
@@ -458,62 +460,36 @@ local function Movers()
     local label = D.Text("DAMAGE_METER_LABEL", "Damage meter")
     for i = 1, D.MAX do
         local index = i
+        local keys = D.KEYS[i]
         movers[i] = {
-            elementID = "window" .. i,
-            label = format("%s %d", label, i),
-            point = "BOTTOMRIGHT",
-            order = 900 + i,
-            xKey = D.KEYS[i].X,
-            yKey = D.KEYS[i].Y,
+            elementID = "window" .. i, label = format("%s %d", label, i), point = "BOTTOMRIGHT", order = 900 + i,
+            xKey = keys.X, yKey = keys.Y,
             getFrame = function()
                 local win = D.windows[index]
                 return win and win.frame
             end,
             isEnabled = function() return index <= M.config.windowCount end,
-            historyKeys = { D.KEYS[i].Width, D.KEYS[i].Height },
+            historyKeys = { keys.Width, keys.Height },
             extraControls = {
-                {
-                    id = "width",
-                    label = "Width",
-                    kind = "number",
-                    min = 150,
-                    max = 900,
-                    step = 1,
-                    get = function() return S.Config("damageMeter")[D.KEYS[index].Width] end,
-                    set = function(value) return S.Set("damageMeter", D.KEYS[index].Width, value) end
-                },
-                {
-                    id = "height",
-                    label = "Height",
-                    kind = "number",
-                    min = 50,
-                    max = 900,
-                    step = 1,
-                    get = function() return S.Config("damageMeter")[D.KEYS[index].Height] end,
-                    set = function(value) return S.Set("damageMeter", D.KEYS[index].Height, value) end
-                },
-            }
+                { id = "width", label = "Width", kind = "number", min = 150, max = 900, step = 1,
+                    get = function() return S.Config("damageMeter")[keys.Width] end,
+                    set = function(value) return S.Set("damageMeter", keys.Width, value) end },
+                { id = "height", label = "Height", kind = "number", min = 50, max = 900, step = 1,
+                    get = function() return S.Config("damageMeter")[keys.Height] end,
+                    set = function(value) return S.Set("damageMeter", keys.Height, value) end },
+            },
         }
     end
     movers.timer = {
-        label = "Combat timer",
-        point = "CENTER",
-        order = 906,
-        xKey = "timerX",
-        yKey = "timerY",
+        label = "Combat timer", point = "CENTER", order = 906, xKey = "timerX", yKey = "timerY",
         getFrame = function() return M.timerFrame end,
         isEnabled = function() return M.config.combatTime and M.config.timer == true end,
         historyKeys = { "timerSize" },
-        extraControls = { {
-            id = "size",
-            label = "Text size",
-            kind = "number",
-            min = 10,
-            max = 40,
-            step = 1,
-            get = function() return S.Config("damageMeter").timerSize end,
-            set = function(value) return S.Set("damageMeter", "timerSize", value) end
-        } }
+        extraControls = {
+            { id = "size", label = "Text size", kind = "number", min = 10, max = 40, step = 1,
+                get = function() return S.Config("damageMeter").timerSize end,
+                set = function(value) return S.Set("damageMeter", "timerSize", value) end },
+        },
     }
     return movers
 end

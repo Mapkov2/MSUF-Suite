@@ -11,9 +11,6 @@ local function Build(ctx)
             if type(_G.OpenAllBags) == "function" then OpenAllBags() end
             S.OpenEditMode(ID, "combined")
           end, function() return P.Get(ID, "enabled") and S.Availability(ID) end, key = "move" },
-        { "Reset module", function()
-            P.WithHistory("Reset bags", "suite:bags.reset", function() return S.Reset(ID) end)
-        end, function() return S.Availability(ID) end, key = "reset" },
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {

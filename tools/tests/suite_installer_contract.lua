@@ -7,6 +7,7 @@ local Suite = {
     ForeverFactoryModuleCompact = "MSUFM1:MSUF3:forever",
     ForeverFactorySkinCompact = "MSKIN1:forever",
     ForeverFactoryFramesCompact = "MSUF3:frames",
+    CDM = { DEFAULTS_VERSION = 3, FRAME_ANCHORS = { [14] = "player" } },
     SuiteOrder = { "chat", "bags", "minimap", "damageMeter", "dataTexts",
         "buffReminders", "qol", "quests", "loot", "combatLog", "xpBar",
         "skyriding", "cooldownManager", "objectives", "announcements",
@@ -42,6 +43,11 @@ Suite.ProfileIO = {
             modules.actionbars.bar1Point = 8
             modules.actionbars.bar3Point = 7
             modules.actionbars.bar3X, modules.actionbars.bar3Y = 1039, 145
+            modules.cooldownManager.captured = false
+            modules.cooldownManager.defaultsVersion = 0
+            modules.cooldownManager.ext_anchor = 3
+            modules.cooldownManager.ext_y = -380
+            modules.cooldownManager.listsData = ""
         end
         if text == Suite.RetailFactoryModuleCompact then
             modules.cooldownManager.listsData = "MSUF3:factoryRogue"
@@ -79,6 +85,15 @@ Suite.SuiteProfiles = {
             and profile.suite.modules.xpBar.y == -24
             and profile.suite.modules.actionbars.bar1Point == 8,
             "Forever factory retained display-specific offsets")
+        local cdm = profile.suite.modules.cooldownManager
+        assert(cdm.enabled and cdm.raidEssentials == true and cdm.captured == true
+            and cdm.defaultsVersion == 3
+            and cdm.def_anchor == 14 and cdm.def_side == 2
+            and cdm.def_gap == 44 and cdm.def_align == 3 and cdm.def_y == 0
+            and cdm.ext_anchor == 14 and cdm.ext_side == 1
+            and cdm.ext_gap == 22 and cdm.ext_align == 2 and cdm.ext_y == 0
+            and cdm.listsData == "MSUF3:factoryRogue",
+            "Retail Forever did not retain CDM presets and anchor its side rows to Player")
         return true, name
     end,
 }
@@ -178,6 +193,8 @@ assert(window.suite.shown and window.forever.shown and window.cooldowns.shown
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.forever.scripts.OnClick() -- Retail can choose the full Forever factory
+assert(window.cooldowns.shown and window.cooldowns.mark.text == "ON",
+    "Retail Forever hid the spec cooldown choice")
 window.next.scripts.OnClick() -- profile -> modules
 assert(window.moduleRows[2].shown)
 CheckLayout()
@@ -195,6 +212,9 @@ assert(window.review[1].shown and window.next.caption.text == "Install")
 CheckLayout()
 window.next.scripts.OnClick() -- install
 assert(factoryCalls == 1 and Suite.RootDB.installation.profile == "forever")
+assert(Suite.RootDB.installation.raidEssentials == true
+    and Suite.RootDB.installation.foreverAnchorRevision == 1,
+    "Retail Forever did not record its CDM spec and anchor defaults")
 assert(Suite.RootDB.installation.moduleOverrides.bags == true)
 assert(Suite.RootDB.installation.uiScaleEnabled and Suite.RootDB.installation.uiScale == 0.75)
 assert(scaleChanges[#scaleChanges][1] == "global" and scaleChanges[#scaleChanges][2] == 0.75)
@@ -236,4 +256,22 @@ assert(Suite.RootDB.installation.raidEssentials == false
     and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData == "MSUF3:rogue"
     and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData == "MSUF3:spells",
     "Modern onboarding must retain personal CDM lists while applying the chosen default")
-print("Suite installer: profiles, module selection, optional scaling, layout, and completion passed")
+
+-- Texts use the Suite localization (MSUF's table by English key); German
+-- clients keep the installer's own reviewed wording.
+local function OpenLocalized(locale, L)
+    GetLocale = function() return locale end
+    Suite.L = L
+    MSUFSuiteInstallFrame = nil
+    assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
+    Suite.Installer.Open()
+    return assert(MSUFSuiteInstallFrame)
+end
+window = OpenLocalized("deDE", { Continue = "Fortfahren" })
+assert(window.title.text == "Willkommen bei MSUF Suite" and window.next.caption.text == "Weiter"
+    and window.close.caption.text == "Später", "German installer wording regressed")
+window = OpenLocalized("frFR", { Continue = "Continuer" })
+assert(window.next.caption.text == "Continuer" and window.title.text == "Welcome to MSUF Suite",
+    "installer ignored the Suite localization table")
+GetLocale, Suite.L = nil, nil
+print("Suite installer: profiles, module selection, optional scaling, layout, localization and completion passed")

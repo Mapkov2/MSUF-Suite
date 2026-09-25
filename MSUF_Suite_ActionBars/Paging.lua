@@ -59,7 +59,8 @@ end
 function AB.PageDriver(config)
     local driver = SPECIAL
     if config.pagingModifiers then
-        driver = driver .. "[mod:shift] " .. config.pageShift .. "; [mod:ctrl] " .. config.pageCtrl .. "; [mod:alt] " .. config.pageAlt .. "; "
+        driver = driver .. "[mod:shift] " .. config.pageShift .. "; [mod:ctrl] " .. config.pageCtrl
+            .. "; [mod:alt] " .. config.pageAlt .. "; "
     end
     driver = driver .. MANUAL
     if not config.disableFormPaging then driver = driver .. FORMS end

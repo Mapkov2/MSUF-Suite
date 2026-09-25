@@ -35,56 +35,72 @@ function P.StylePreviewFont(label, path, size, outline, rendering, shadow, opaci
 end
 
 -- One MSUF history entry owns a complete Suite gesture, including edits made
--- from the preview and Edit Mode. Keep runtime logs outside snapshots.
-local transientRootKeys = { suiteChat = true, suiteRuns = true, suiteRecovery = true, suiteXP = true, suiteGold = true }
-local function CopyHistoryRoot(root)
-    if type(root) ~= "table" then return nil end
-    local copy = Suite.CopyValue(root)
-    for key in pairs(transientRootKeys) do copy[key] = nil end
-    return copy
+-- from the preview and Edit Mode. MSUF calls every provider on every tracked
+-- gesture, so a snapshot holds only what a gesture can change: the active
+-- Suite and skin profiles plus the small root flags. Other profiles (MSUF
+-- clears its history on profile operations) and runtime logs stay out.
+local SUITE_ROOT_SKIP = {
+    profiles = true, suiteChat = true, suiteRuns = true, suiteRecovery = true, suiteXP = true, suiteGold = true,
+}
+local SKIN_ROOT_SKIP = { profiles = true, optionsUI = true }
+
+-- Returns a root-shaped copy: { profiles = { [active] = copy }, flags... }.
+local function CaptureRoot(root, skip)
+    if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end
+    local snapshot = { profiles = {} }
+    for key, value in pairs(root) do
+        if not skip[key] then snapshot[key] = Suite.CopyValue(value) end
+    end
+    local name = root.activeProfile
+    if name ~= nil then snapshot.profiles[name] = Suite.CopyValue(root.profiles[name]) end
+    return snapshot
 end
-local function ReplaceHistoryRoot(target, source)
-    local transient = {}
-    for key in pairs(transientRootKeys) do transient[key] = target[key] end
-    for key in pairs(target) do target[key] = nil end
-    for key, value in pairs(source) do target[key] = Suite.CopyValue(value) end
-    for key, value in pairs(transient) do target[key] = value end
+
+local function RestoreRoot(root, snapshot, skip)
+    for key in pairs(root) do
+        if not skip[key] and snapshot[key] == nil then root[key] = nil end
+    end
+    for key, value in pairs(snapshot) do
+        if not skip[key] then root[key] = Suite.CopyValue(value) end
+    end
+    local name = snapshot.activeProfile
+    local profile = name ~= nil and type(snapshot.profiles) == "table" and snapshot.profiles[name]
+    if type(profile) == "table" then root.profiles[name] = Suite.CopyValue(profile) end
 end
-function P.CaptureHistoryState()
-    local root = CopyHistoryRoot(Suite.RootDB)
-    if not root then return nil end
-    local state = { root = root }
+
+local function SkinRoot()
     local skin = _G.MapkoSkin
     if type(skin) == "table" and skin.addonName == "MSUF_Suite_Skin"
         and skin.Database and type(skin.Database.GetRoot) == "function" then
-        state.skinRoot = Suite.CopyValue(skin.Database.GetRoot())
-        if state.skinRoot then state.skinRoot.optionsUI = nil end
+        return skin, skin.Database.GetRoot()
     end
-    return state
 end
+
+function P.CaptureHistoryState()
+    local root = CaptureRoot(Suite.RootDB, SUITE_ROOT_SKIP)
+    if not root then return nil end
+    local _, skinRoot = SkinRoot()
+    return { root = root, skinRoot = CaptureRoot(skinRoot, SKIN_ROOT_SKIP) }
+end
+
 function P.RestoreHistoryState(state)
     if Suite.IsCombatLocked() or type(state) ~= "table" or type(state.root) ~= "table"
-        or type(Suite.RootDB) ~= "table" then return false end
+        or type(Suite.RootDB) ~= "table" or type(Suite.RootDB.profiles) ~= "table" then
+        return false
+    end
     local previousProfile = Suite.RootDB.activeProfile
-    ReplaceHistoryRoot(Suite.RootDB, state.root)
-    local active = Suite.RootDB.profiles and Suite.RootDB.profiles[Suite.RootDB.activeProfile]
+    RestoreRoot(Suite.RootDB, state.root, SUITE_ROOT_SKIP)
+    local active = Suite.RootDB.profiles[Suite.RootDB.activeProfile]
     if type(active) ~= "table" then return false end
     Suite.DB = active
     S.Normalize(active)
     if previousProfile ~= Suite.RootDB.activeProfile and Suite.OnProfileChanged then
         Suite.OnProfileChanged(Suite.RootDB.activeProfile)
     end
-    local skin = _G.MapkoSkin
-    if state.skinRoot and type(skin) == "table" and skin.addonName == "MSUF_Suite_Skin"
-        and skin.Database and type(skin.Database.GetRoot) == "function" then
-        local skinRoot = skin.Database.GetRoot()
-        if type(skinRoot) == "table" then
-            local optionsUI = skinRoot.optionsUI
-            for key in pairs(skinRoot) do skinRoot[key] = nil end
-            for key, value in pairs(state.skinRoot) do skinRoot[key] = Suite.CopyValue(value) end
-            skinRoot.optionsUI = optionsUI
-            skin.Database.SetActiveProfile(skinRoot.activeProfile)
-        end
+    local skin, skinRoot = SkinRoot()
+    if type(state.skinRoot) == "table" and type(skinRoot) == "table" and type(skinRoot.profiles) == "table" then
+        RestoreRoot(skinRoot, state.skinRoot, SKIN_ROOT_SKIP)
+        skin.Database.SetActiveProfile(skinRoot.activeProfile)
     end
     if Suite.Skin and Suite.Skin.enabled ~= (Suite.RootDB.skinEnabled == true) then
         Suite.Skin.SetEnabled(Suite.RootDB.skinEnabled == true)
@@ -130,68 +146,28 @@ end
 -- Every write goes through the controller; the page repaints afterwards. The
 -- last refusal per module is shown in that module's status line.
 P.feedback = {}
-function P.Set(id, key, value)
-    if (id == "objectives" or id == "announcements")
-        and P.catalog[id].rules[key] and P.catalog[id].rules[key].color
-        and P.Get(id, "colorStyle") ~= 2 then
-        return P.SetMany(id, { [key] = value, colorStyle = 2 })
-    elseif id == "bags" and key == "look" then
-        local preset = Suite.BagsLookPresets and Suite.BagsLookPresets[tonumber(value)]
-        if preset then
-            local values = { look = value }
-            for setting, choice in pairs(preset) do values[setting] = choice end
-            return P.SetMany(id, values)
-        end
-    elseif id == "skyriding" and key == "look" then
-        local preset = Suite.SkyridingLookPresets and Suite.SkyridingLookPresets[tonumber(value)]
-        if preset then
-            local values = { look = value }
-            for setting, choice in pairs(preset) do values[setting] = choice end
-            return P.SetMany(id, values)
-        end
-    elseif id == "skyriding" and Suite.SkyridingLookVisualKeys
-        and Suite.SkyridingLookVisualKeys[key] and P.Get(id, "look") ~= 4 then
-        return P.SetMany(id, { [key] = value, look = 4 })
-    elseif id == "bags" and Suite.BagsLookVisualKeys
-        and Suite.BagsLookVisualKeys[key] and P.Get(id, "look") ~= 4 then
-        return P.SetMany(id, { [key] = value, look = 4 })
-    elseif id == "actionbars" and key == "look" then
-        local preset = Suite.ActionBarLookPresets and Suite.ActionBarLookPresets[tonumber(value)]
-        if preset then
-            local values = { look = value }
-            for setting, choice in pairs(preset) do values[setting] = choice end
-            return P.SetMany(id, values)
-        end
-    elseif id == "actionbars" and Suite.ActionBarLookVisualKeys
-        and Suite.ActionBarLookVisualKeys[key] and P.Get(id, "look") ~= 4 then
-        return P.SetMany(id, { [key] = value, look = 4 })
-    elseif id == "minimap" and key == "stylePreset" then
-        local preset = Suite.MinimapStylePresets and Suite.MinimapStylePresets[tonumber(value)]
-        if preset then return P.SetMany(id, preset) end
-    elseif id == "damageMeter" and key == "look" then
-        local preset = Suite.DamageMeterLookPresets and Suite.DamageMeterLookPresets[tonumber(value)]
-        if preset then
-            local values = { look = value }
-            for setting, choice in pairs(preset) do values[setting] = choice end
-            return P.SetMany(id, values)
-        end
-    elseif id == "damageMeter" and Suite.DamageMeterLookVisualKeys
-        and Suite.DamageMeterLookVisualKeys[key] and P.Get(id, "look") ~= 4 then
-        return P.SetMany(id, { [key] = value, look = 4 })
-    elseif id == "chat" and key == "look" then
-        local preset = Suite.ChatLookPresets and Suite.ChatLookPresets[tonumber(value)]
-        if preset then
-            local values = { look = value }
-            for setting, choice in pairs(preset) do values[setting] = choice end
-            return P.SetMany(id, values)
-        end
-    elseif id == "chat" and Suite.ChatLookVisualKeys and Suite.ChatLookVisualKeys[key]
-        and P.Get(id, "look") ~= 4 then
-        return P.SetMany(id, { [key] = value, look = 4 })
-    elseif id == "minimap" and Suite.MinimapStyleVisualKeys and Suite.MinimapStyleVisualKeys[key]
-        and P.Get(id, "stylePreset") ~= 1 then
-        return P.SetMany(id, { [key] = value, stylePreset = 1 })
+
+-- Look rules come from the catalog entry (spec.look, see SuiteCatalog.lua):
+-- choosing a preset writes its values, and editing one of its visual
+-- settings switches the preset to Custom.
+local function LookEdit(id, key, value)
+    local look = P.catalog[id].look
+    if not look or not look.key then return nil end
+    if key == look.key then
+        local preset = look.presets and look.presets[tonumber(value)]
+        if not preset then return nil end
+        local values = { [key] = value }
+        for setting, choice in pairs(preset) do values[setting] = choice end
+        return values
     end
+    if look.custom and look.visualKeys and look.visualKeys[key] and P.Get(id, look.key) ~= look.custom then
+        return { [key] = value, [look.key] = look.custom }
+    end
+end
+
+function P.Set(id, key, value)
+    local values = LookEdit(id, key, value)
+    if values then return P.SetMany(id, values) end
     local ok, reason
     P.WithHistory(P.catalog[id].rules[key].label, "suite:" .. id .. "." .. key, function()
         ok, reason = S.Set(id, key, value)
@@ -203,11 +179,12 @@ function P.Set(id, key, value)
     return ok, reason
 end
 function P.SetMany(id, values)
-    if id == "minimap" and type(values) == "table" and values.stylePreset == nil
-        and P.Get(id, "stylePreset") ~= 1 then
+    local look = P.catalog[id].look
+    if look and look.custom and look.visualKeys and type(values) == "table"
+        and values[look.key] == nil and P.Get(id, look.key) ~= look.custom then
         for key in pairs(values) do
-            if Suite.MinimapStyleVisualKeys and Suite.MinimapStyleVisualKeys[key] then
-                local custom = { stylePreset = 1 }
+            if look.visualKeys[key] then
+                local custom = { [look.key] = look.custom }
                 for setting, value in pairs(values) do custom[setting] = value end
                 values = custom
                 break

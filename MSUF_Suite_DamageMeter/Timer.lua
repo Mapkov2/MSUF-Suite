@@ -1,9 +1,9 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 -- Standalone combat timer: the Current-session duration while combat is
 -- live, updated by a one-shot timer only while visible (whole seconds,
--- memoized). After
--- combat it hides, or keeps the frozen last duration when timerKeep is on.
+-- memoized). After combat it hides, or keeps the frozen last duration when
+-- timerKeep is on.
 local D = P.DamageMeter
 local M = D.M
 local floor = math.floor

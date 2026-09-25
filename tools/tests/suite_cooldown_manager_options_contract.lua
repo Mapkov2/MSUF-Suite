@@ -545,7 +545,8 @@ local globalsBefore = {}
 for key in pairs(_G) do globalsBefore[key] = true end
 local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
-for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Pages/CooldownManagerWidgets.lua",
+for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Pages/CooldownManagerData.lua",
+    "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPopover.lua",
     "Pages/CooldownManagerPreview.lua", "Pages/CooldownManager.lua", "Menu/Register.lua" }) do
     local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))
     if file:find("CooldownManager", 1, true) then setfenv(chunk, strict) end
@@ -576,7 +577,7 @@ spec.build(ctx)
 assert(ctx.pageItems[1] == "fixed-preview", "the docked preview must be the first page item")
 assert(ctx.sections[1].sectionId == PAGE .. "_cooldownManager_module" and ctx.sections[1].headerSwitch, "module card must follow the preview")
 -- Navigation clicks never take Menu2's full settings snapshot. Frame Basics
--- is one block: the three module actions, the rules for every bar, then the
+-- is one block: the two module actions, the rules for every bar, then the
 -- bar choice (selector, + Add bar, Bar actions, name and type) and the
 -- selected bar's summary.
 local cardButtons = 0
@@ -586,9 +587,9 @@ for _, child in ipairs(ctx.sections[1].children or {}) do
         assert(child._msuf2SkipHistoryCheckpoint, "module card action takes a history snapshot: " .. tostring(child.text))
     end
 end
-assert(cardButtons == 5 and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].parent == ctx.sections[1]
+assert(cardButtons == 4 and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].parent == ctx.sections[1]
     and registered["menu2." .. PAGE .. ".cooldownManager.editor.actions"].parent == ctx.sections[1],
-    "Frame Basics must hold the three module actions, + Add bar and Bar actions")
+    "Frame Basics must hold the two module actions, + Add bar and Bar actions")
 assert(ctx.sections[1].title == "Frame Basics" and ctx.sections[1].defaultOpen, "Frame Basics comes first and open")
 for _, section in ipairs(ctx.sections) do
     for _, child in ipairs(section.children or {}) do
@@ -1990,20 +1991,21 @@ assert(Config().c1_on and Config().c1_name == "Buffs 1" and Config().c1_kind == 
     and ui.chips.c1.shown, "Undo did not bring the deleted bar back")
 Config().listsData = listsBeforeReuse
 Page.ClearNote()
--- Reset module: everything, one history entry, and Undo brings it all back.
+-- Reset page: every cooldown-manager setting and spell list in one history entry.
 local configBefore = {}
 for key, value in pairs(Config()) do configBefore[key] = value end
 Config().listsData = listsWithC1
 configBefore.listsData = listsWithC1
 writes = historyWrites
-Fire(registered["menu2." .. PAGE .. ".cooldownManager.action.reset"], "OnClick")
-assert(Config().listsData == "" and not Config().c1_on and historyWrites == writes + 1 and Page.undo
-    and Page.note:find("spell lists", 1, true), "reset module must say what it reset and offer Undo")
-Page.RunUndo()
+local beforePageReset = historyProvider.capture()
+assert(M.ResetPageToDefaults(PAGE), "cooldown-manager Reset page was unavailable")
+assert(Config().listsData == "" and not Config().c1_on and historyWrites == writes + 1,
+    "Reset page did not restore settings and spell lists as one history entry")
+assert(historyProvider.restore(beforePageReset), "Reset page history could not restore the Suite state")
 for key, value in pairs(configBefore) do
     assert(Config()[key] == value, "Undo of the module reset lost " .. key)
 end
-assert(historyWrites == writes + 2, "the module reset Undo must be one history entry")
+assert(historyWrites == writes + 1, "Reset page must write one history entry")
 Config().listsData = listsBeforeReuse
 Page.ClearNote()
 Page.selected = "c1"
@@ -2286,4 +2288,16 @@ end
 for key in pairs(_G) do
     if not globalsBefore[key] then error("options page created global " .. tostring(key)) end
 end
-print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets and loops, Frame Basics with the module rules and the bar choice, Basics, Text rules, exactly-once coverage, tile memo, list edits with Undo, picker, popover (text rows, row help, header actions), preview editor (hover, click, middle-click, drag, +, samples, buff bars, marks, write memo), stack options, Track on, buff glow styles, Blizzard sounds, bar reuse with Undo, bar actions (copy, reset, hide, rename, delete), module reset with Undo, greyed reasons, preview drag, simulation, layouts, combat refusal, teardown and the runtime canvas contract passed")
+-- Each page file keeps real headroom below Lua 5.1's 200 locals per chunk.
+for _, file in ipairs({ "CooldownManagerData", "CooldownManagerWidgets", "CooldownManagerPopover",
+    "CooldownManagerPreview", "CooldownManager" }) do
+    local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/" .. file .. ".lua", "rb"))
+    local names = 0
+    for line in handle:read("*a"):gmatch("[^\r\n]+") do
+        local list = line:match("^local function ([%w_]+)") or line:match("^local ([%w_, ]+)=") or line:match("^local ([%w_]+)%s*$")
+        if list then names = names + select(2, list:gsub("[%w_]+", "")) end
+    end
+    handle:close()
+    assert(names <= 140, file .. ".lua declares " .. names .. " top-level locals")
+end
+print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets and loops, Frame Basics with the module rules and the bar choice, Basics, Text rules, exactly-once coverage, tile memo, list edits with Undo, picker, popover (text rows, row help, header actions), preview editor (hover, click, middle-click, drag, +, samples, buff bars, marks, write memo), stack options, Track on, buff glow styles, Blizzard sounds, bar reuse with Undo, bar actions (copy, reset, hide, rename, delete), page reset with history, greyed reasons, preview drag, simulation, layouts, combat refusal, teardown and the runtime canvas contract passed")

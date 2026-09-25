@@ -7,6 +7,7 @@ local M = MM.M
 -- deciding when each button is shown (nothing here force-shows a button): a
 -- hidden button keeps an empty slot outside the row, and its show/hide re-packs
 -- the row one frame later.
+local Finite = S.Finite
 local weak = { __mode = "k" }
 local mine, watched = setmetatable({}, weak), setmetatable({}, weak)
 local slots, items = {}, {}
@@ -79,9 +80,8 @@ local SPECS = {
 }
 
 local function Available(spec)
-    if spec.key == "Difficulty" and type(_G.MiniMap_ShouldShowDifficulty) == "function" and not _G.MiniMap_ShouldShowDifficulty() then
-        return false
-    end
+    local showDifficulty = _G.MiniMap_ShouldShowDifficulty
+    if spec.key == "Difficulty" and type(showDifficulty) == "function" and not showDifficulty() then return false end
     return spec.frames() ~= nil
 end
 function S.MinimapElementAvailable(key)
@@ -178,7 +178,7 @@ local function Slot(key)
 end
 local function Fit(frame, size)
     local width, height = frame:GetSize()
-    if not MM.Number(width) or not MM.Number(height) then return 1 end
+    if not Finite(width) or not Finite(height) then return 1 end
     local larger = math.max(width, height)
     return larger > 0 and size / larger or 1
 end

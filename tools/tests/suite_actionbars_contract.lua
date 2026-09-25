@@ -35,6 +35,17 @@ local function RunTimers()
         timer.fn()
     end
 end
+-- One frame: only the timers already due run; later ones stay queued.
+local function RunDue()
+    local guard=0
+    while true do
+        guard=guard+1;assert(guard<500,"timer loop")
+        local index
+        for i=1,#timers do if timers[i].at<=now then index=i;break end end
+        if not index then return end
+        table.remove(timers,index).fn()
+    end
+end
 
 ------------------------------------------------------------------ frames
 local Frame,Region={},{}
@@ -309,6 +320,14 @@ TEMPLATES.ActionButtonTemplate=function(frame)
     -- BaseActionButtonMixin_OnAttributeChanged -> UpdateFlyout.
     frame.scripts.OnAttributeChanged=function() flyoutUpdates=flyoutUpdates+1 end
 end
+ActionButtonSpellAlertMixin={}
+TEMPLATES.ActionButtonSpellAlertTemplate=function(frame)
+    frame.shown=false
+    local function Animation()
+        return {Play=function(self) self.playing=true end,Stop=function(self) self.playing=false end}
+    end
+    frame.ProcStartAnim,frame.ProcLoop=Animation(),Animation()
+end
 SecureHandlerExecute=function(frame,body)
     assert(not combat,"Cannot use SecureHandlers API during combat")
     assert(frame.explicit,"Header frame must be explicitly protected")
@@ -478,7 +497,12 @@ C_ActionBar={
         if on then rangeEnabled[slot]=true;rangeOn=rangeOn+1 else rangeEnabled[slot]=nil;rangeOff=rangeOff+1 end
     end,
 }
-GetActionInfo=function(slot) local a=actions[slot];if a then return a.kind,a.id,a.sub end end
+local infoReads=0
+GetActionInfo=function(slot)
+    infoReads=infoReads+1
+    local a=actions[slot]
+    if a then return a.kind,a.id,a.sub end
+end
 local overlayed,alerts={},{}
 C_SpellActivationOverlay={IsSpellOverlayed=function(id) assert(not IsSecret(id));return overlayed[id]==true end}
 ActionButtonSpellAlertManager={
@@ -490,7 +514,12 @@ GameTooltip={SetOwner=function(self,owner) self.owner=owner end,GetOwner=functio
     SetAction=function(_,slot) tooltip.slot=slot end,Hide=function(self) self.owner=nil;tooltip.slot=nil end}
 GameTooltip_SetDefaultAnchor=function(tip,owner) tip.owner=owner end
 local bindings,overrides,overrideWrites,overrideClears={},{},0,0
-GetBindingKey=function(command) local keys=bindings[command];if keys then return unpack(keys) end end
+local bindingReads=0
+GetBindingKey=function(command)
+    bindingReads=bindingReads+1
+    local keys=bindings[command]
+    if keys then return unpack(keys) end
+end
 GetBindingText=function(key) return key end
 SetOverrideBindingClick=function(owner,priority,key,name,button)
     assert(not combat,"override binding in combat")
@@ -573,6 +602,18 @@ for index,name in ipairs(multibars) do
     Buttons(name.."Button",bar,12)
 end
 MultiBarBottomLeft.visibility="InCombat"
+for _,name in ipairs(multibars) do
+    local bar=_G[name]
+    function bar:UpdateShownButtons()
+        secure=secure+1
+        for _,button in ipairs(self.actionButtons) do
+            local grid=(button.attrs.showgrid or 0)>0
+            button:SetShown(button.index<=self.numButtonsShowable and not button.attrs.statehidden
+                and (grid or actions[button.attrs.action]~=nil))
+        end
+        secure=secure-1
+    end
+end
 MultiBarRight.isHorizontal,MultiBarRight.numRows,MultiBarRight.numButtonsShowable=false,2,10
 for _,name in ipairs({"StanceBar","PetActionBar"}) do
     local bar=NewFrame("Frame",name,UIParent)
@@ -596,7 +637,7 @@ MSUFSuite=Suite
 MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() return true end}}
 SlashCmdList={}
 MSUF_PixelLayoutRegion=function(frame) return frame end
-for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Suite","Bindings"}) do
+for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings","Suite"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
@@ -662,8 +703,8 @@ if nativeReuse then
     for index=2,8 do
         local bar=Bar(index)
         assert(bar.native,"Retail bar did not choose native buttons: "..index)
-        assert(_G[AB.NATIVE_BARS[index]].numButtonsShowable==12,
-            "old Blizzard layout can cap suite buttons")
+        assert(_G[AB.NATIVE_BARS[index]].numButtonsShowable==(index==4 and 10 or 12),
+            "the suite wrote Blizzard's icon count (a tainted value its secure pass reads)")
         for i=1,12 do
             local rec=Button(index,i)
             local button=_G[AB.NATIVE_BUTTONS[index]..i]
@@ -687,6 +728,17 @@ if nativeReuse then
     c.bar4Buttons=12;M:Refresh()
     assert(Button(4,11).button.shown and not Button(4,11).button.attrs.statehidden,
         "suite must reveal buttons beyond the imported Blizzard count")
+    -- Blizzard's hidden bar still runs its own plan (spellbook grids, Edit
+    -- Mode icon counts) and caps at its count; the suite's plan follows.
+    MultiBarRight:UpdateShownButtons()
+    assert(Button(4,11).button.shown and Button(4,12).button.shown,
+        "Blizzard's icon count capped suite buttons out of combat")
+    combat=true
+    MultiBarRight:UpdateShownButtons()
+    assert(not Button(4,11).button.shown,"harness: Blizzard's secure plan caps in combat")
+    combat=false
+    Event("PLAYER_REGEN_ENABLED");RunTimers()
+    assert(Button(4,11).button.shown,"the suite's plan did not return after combat")
     c.bar4Buttons=10;M:Refresh()
     c.bar2ShowEmpty=true;M:Refresh()
     assert(Button(2,2).button.shown and not Button(2,2).button.attrs.statehidden,
@@ -865,6 +917,10 @@ assert(not Bar(1).header.shown and not Bar(2).header.shown and Bar(12).header.at
 conditions.vehicleui=nil;special.vehicle=nil
 conditions["bonusbar:1"]=true;special.bonus=1;Drivers()
 assert(Bar(1).header.attrs.actionpage==7 and MainBar.attrs.actionpage==7 and Bar(1).header.shown,"form page")
+-- Key texts follow bindings only: a page flip repaints without reading them.
+local pageKeyReads=bindingReads
+RunDue()
+assert(bindingReads==pageKeyReads and Button(1,1).slot==73,"a page flip re-read the key bindings")
 combat=false
 RunTimers()
 -- Custom paging: modifiers and opt-outs stop the mirror and route bar 1 keys.
@@ -1003,6 +1059,23 @@ local start=now
 Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
 assert(calls.duration-cooldownCalls==walk and now>=start+.1-1e-9,"storm cap delays the next walk")
 RunTimers()
+-- The cap's trailing flush has its own flag: a page change while it waits
+-- (a form swap in combat) still repaints bar 1 on the next frame.
+actions[73]={kind="spell",id=3073,texture=373}
+now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunDue()
+Event("ACTIONBAR_UPDATE_COOLDOWN");RunDue()
+assert(#timers==1 and timers[1].at>now,"the cap arms one trailing flush")
+local keyReads=bindingReads
+combat=true
+conditions["bonusbar:1"]=true;special.bonus=1;Drivers()
+RunDue()
+assert(Button(1,1).slot==73 and Button(1,1).button.icon.texture==373,"a page change waited for the cooldown cap")
+assert(bindingReads==keyReads,"a page change re-read the key bindings")
+conditions["bonusbar:1"]=nil;special.bonus=nil;Drivers()
+RunDue()
+assert(Button(1,1).slot==1 and Button(1,1).button.icon.texture==101)
+combat=false
+RunTimers()
 actions[61].cooldown={isActive=true,isEnabled=true,startTime=now,duration=8,modRate=1}
 now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
 assert(b61.cooldown.object and b61.cooldown.object.slot==61,
@@ -1110,12 +1183,28 @@ assert(S.Set("actionbars","bar2Visibility",1))
 RunTimers()
 assert(rangeEnabled[61],"shown bars re-acquire")
 -- Proc glows by spell id; secret payloads fall back to a full rescan.
+-- The suite plays Blizzard's alert template itself: no entry in the
+-- manager's shared table, which Blizzard walks for its own buttons.
 overlayed[61]=true
+local flyouts=0
+for index=1,10 do
+    local bar=AB.bars[index]
+    if not bar.native and bar.header:IsVisible() then
+        for _,rec in ipairs(bar.filled) do
+            if actions[rec.slot] and actions[rec.slot].kind=="flyout" then flyouts=flyouts+1 end
+        end
+    end
+end
+local reads=infoReads
 Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
-assert(alerts[b61],"Blizzard spell alert on the matching button")
+assert(infoReads-reads==flyouts,"a proc glow event read action info for spell buttons: "..(infoReads-reads))
+local alert=b61.SpellActivationAlert
+assert(alert and alert.shown and alert.ProcStartAnim.playing and alert.width==b61.width*1.4,
+    "Blizzard spell alert on the matching button")
+assert(not next(alerts),"a suite button entered Blizzard's shared spell alert table")
 overlayed[61]=nil
 Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61)
-assert(not alerts[b61])
+assert(not alert.shown and not alert.ProcStartAnim.playing and not next(alerts))
 Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",Secret());RunTimers()
 assert(S.Set("actionbars","procGlow",2))
 overlayed[61]=true;Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
@@ -1200,6 +1289,65 @@ assert(style.button.Count.font[3]=="OUTLINE,SLUG" and style.button.Count.shadowC
 assert(Button(2,1).button.cooldown.hideNumbers==false and Button(2,1).button.chargeCooldown.hideNumbers==false)
 assert(S.Set("actionbars","cooldownNumbers",false))
 assert(Button(2,1).button.cooldown.hideNumbers==true and Button(2,1).button.chargeCooldown.hideNumbers==true)
+
+------------------------------------------------------------------ keybind export
+-- The cooldown manager's icons show the key of the suite button that
+-- presses a spell: bar order first (bar 9 owns slots 13-24, bar 10 slots
+-- 109-120), bar 1's form pages last.
+local spellSlots={}
+C_ActionBar.FindSpellActionButtons=function(spell) return spellSlots[spell] or {} end
+spellSlots[1001]={1}
+spellSlots[61]={61}
+spellSlots[2013]={13}
+spellSlots[2110]={110}
+spellSlots[2075]={75}
+spellSlots[2076]={62,75}
+spellSlots[3000]={}
+bindings.MSUFSUITE_BAR10_BUTTON2={"CTRL-SPACE"}
+assert(S.ActionBarsBindingForSpell(1001)=="1" and S.ActionBarsBindingForSpell(61)=="S1","native command keys")
+assert(S.ActionBarsBindingForSpell(2013)=="CM4","bar 9 presses slots 13-24")
+assert(S.ActionBarsBindingForSpell(2110)=="CSpc","bar 10 presses slots 109-120, not bar 1's keys")
+bindings.ACTIONBUTTON3={"3"}
+assert(S.ActionBarsBindingForSpell(2075)=="3","form pages take bar 1's keys")
+assert(S.ActionBarsBindingForSpell(2076)=="3","an unbound bar slot falls back to a form page key")
+assert(S.ActionBarsBindingForSpell(3000)=="","a spell on no button has no key")
+c.disableFormPaging=true
+assert(S.ActionBarsBindingForSpell(2075)=="","bar 1 never pages to forms with the opt-out")
+c.disableFormPaging=false
+bindings.ACTIONBUTTON3=nil
+bindings.MSUFSUITE_BAR10_BUTTON2=nil
+
+------------------------------------------------------------------ settings work
+-- A slider tick does the work of its setting only: bar 3's size restyles
+-- bar 3's buttons, its opacity restyles and lays out nothing.
+local restore={bar3Size=c.bar3Size,bar3Alpha=c.bar3Alpha,iconZoom=c.iconZoom}
+local styled={}
+local styleButton=AB.StyleButton
+AB.StyleButton=function(rec) styled[rec.bar.index]=(styled[rec.bar.index] or 0)+1;return styleButton(rec) end
+local layoutBar=AB.LayoutBar
+local laid={}
+AB.LayoutBar=function(bar) laid[bar.index]=(laid[bar.index] or 0)+1;return layoutBar(bar) end
+assert(S.Set("actionbars","bar3Size",44))
+assert(styled[3]==12 and laid[3]==1 and not styled[2] and not laid[2],"a bar size tick restyled or moved other bars")
+styled,laid={},{}
+assert(S.Set("actionbars","bar3Alpha",55))
+assert(not next(styled) and not next(laid) and Bar(3).header.alpha==.55,"an opacity tick restyled or moved bars")
+assert(S.Set("actionbars","iconZoom",8))
+local total=0
+for _,n in pairs(styled) do total=total+n end
+assert(total==#AB.owned+#AB.adopted and not next(laid),"a global look change must restyle every button, move none")
+styled={}
+M:Refresh()
+assert(not next(styled) and not next(laid),"a refresh without changes did work")
+AB.StyleButton,AB.LayoutBar=styleButton,layoutBar
+assert(S.SetMany("actionbars",restore))
+-- Mover specs are built once per bar, not on every refresh.
+local specs={}
+local register=S.RegisterOwnedMover
+S.RegisterOwnedMover=function(id,element,spec) specs[element]=specs[element] or {};table.insert(specs[element],spec);return register(id,element,spec) end
+M:RegisterMovers();M:RegisterMovers()
+assert(specs.bar3 and specs.bar3[1]==specs.bar3[2],"mover specs were rebuilt")
+S.RegisterOwnedMover=register
 
 ------------------------------------------------------------------ movers and exports
 M:RegisterMovers()

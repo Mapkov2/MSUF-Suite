@@ -6,7 +6,8 @@ local C = P.CDM
 -- Icons.SetKeybind. Binding and action slot events drop the cache, bar
 -- content changes only push cached texts (new spells are looked up once);
 -- a burst of requests shares one pass 0.2 s after its first request.
--- Nothing here runs per cooldown event.
+-- Nothing here runs per cooldown event. Key texts are the action bars' own
+-- (S.KeyText), so an icon and its button show the same label.
 local KB = { map = {} }
 C.Keybinds = KB
 local Public = S.Public
@@ -14,37 +15,27 @@ local type, pairs = type, pairs
 local wipe = C.wipe
 local DELAY = 0.2
 
--- Action slot ranges and the binding command each range presses (in the
--- order a key is preferred). Bonus bar pages (forms, stances) press the main
--- bar keys and only count when no other slot has a key.
-local RANGES = { { 1, 12, "ACTIONBUTTON" }, { 61, 72, "MULTIACTIONBAR1BUTTON" }, { 49, 60, "MULTIACTIONBAR2BUTTON" },
+-- Action slots and the binding command that presses each, in the order a
+-- key is preferred: the eight Blizzard bars, the suite's bars 9 (slots
+-- 13-24) and 10 (slots 109-120), then the form pages (stances, shapeshift
+-- forms) that the main bar keys press, which only count when no other slot
+-- has a key. With Blizzard's bars the suite commands have no keys, so slots
+-- 109-120 fall through to their form page. The suite action bars answer for
+-- themselves while they run (S.ActionBarsBindingForSpell).
+local RANGES = {
+    { 1, 12, "ACTIONBUTTON" }, { 61, 72, "MULTIACTIONBAR1BUTTON" }, { 49, 60, "MULTIACTIONBAR2BUTTON" },
     { 25, 36, "MULTIACTIONBAR3BUTTON" }, { 37, 48, "MULTIACTIONBAR4BUTTON" }, { 145, 156, "MULTIACTIONBAR5BUTTON" },
-    { 157, 168, "MULTIACTIONBAR6BUTTON" }, { 169, 180, "MULTIACTIONBAR7BUTTON" } }
-local COMMAND, RANK = {}, {}
-for rank = 1, #RANGES do
-    local range = RANGES[rank]
-    for slot = range[1], range[2] do COMMAND[slot], RANK[slot] = range[3] .. (slot - range[1] + 1), rank end
-end
-for slot = 73, 120 do COMMAND[slot], RANK[slot] = "ACTIONBUTTON" .. ((slot - 73) % 12 + 1), #RANGES + 1 end
--- The same slots in key preference order (bonus bar pages last).
-local ORDERED = {}
-for rank = 1, #RANGES do
-    local range = RANGES[rank]
-    for slot = range[1], range[2] do ORDERED[#ORDERED + 1] = slot end
-end
-for slot = 73, 120 do ORDERED[#ORDERED + 1] = slot end
-
--- SHIFT-/CTRL-/ALT- become S/C/A, NUMPAD N, mouse BUTTON M, the wheel MWU/MWD.
-local SHORT = { { "SHIFT%-", "S" }, { "CTRL%-", "C" }, { "ALT%-", "A" }, { "MOUSEWHEELUP", "MWU" }, { "MOUSEWHEELDOWN", "MWD" },
-    { "NUMPAD", "N" }, { "BUTTON", "M" } }
-local shortCache = {}
-local function Short(key)
-    local text = shortCache[key]
-    if text then return text end
-    text = key
-    for i = 1, #SHORT do text = text:gsub(SHORT[i][1], SHORT[i][2]) end
-    shortCache[key] = text
-    return text
+    { 157, 168, "MULTIACTIONBAR6BUTTON" }, { 169, 180, "MULTIACTIONBAR7BUTTON" },
+    { 13, 24, "MSUFSUITE_BAR9_BUTTON" }, { 109, 120, "MSUFSUITE_BAR10_BUTTON" },
+    { 73, 120, "ACTIONBUTTON" },
+}
+local SLOTS, COMMANDS = {}, {}
+for i = 1, #RANGES do
+    local first, last, prefix = RANGES[i][1], RANGES[i][2], RANGES[i][3]
+    for slot = first, last do
+        local n = #SLOTS + 1
+        SLOTS[n], COMMANDS[n] = slot, prefix .. ((slot - first) % 12 + 1)
+    end
 end
 
 local function BoundKey(command)
@@ -53,27 +44,34 @@ local function BoundKey(command)
     if Public(key) and type(key) == "string" and key ~= "" then return key end
 end
 
--- First key found, by range preference; "" when the spell has no key.
+-- The first candidate whose slot is in `wanted` and has a key; "" for none.
+local function FirstKey(wanted)
+    for i = 1, #SLOTS do
+        if wanted[SLOTS[i]] then
+            local key = BoundKey(COMMANDS[i])
+            if key then return S.KeyText(key) end
+        end
+    end
+    return ""
+end
+
+local spellSlots = {}
 local function Lookup(spell)
     local export = S.ActionBarsBindingForSpell
     if type(export) == "function" then
         local text = export(spell)
-        if Public(text) and type(text) == "string" and text ~= "" then return text end
+        if Public(text) and type(text) == "string" then return text end
     end
-    local bar = _G.C_ActionBar
-    local find = bar and bar.FindSpellActionButtons
+    local actionBar = _G.C_ActionBar
+    local find = actionBar and actionBar.FindSpellActionButtons
     local slots = find and find(spell)
     if not (Public(slots) and type(slots) == "table") then return "" end
-    local best, bestRank
+    wipe(spellSlots)
     for i = 1, #slots do
         local slot = slots[i]
-        local rank = Public(slot) and RANK[slot]
-        if rank and (not bestRank or rank < bestRank) then
-            local key = BoundKey(COMMAND[slot])
-            if key then best, bestRank = key, rank end
-        end
+        if Public(slot) and type(slot) == "number" then spellSlots[slot] = true end
     end
-    return best and Short(best) or ""
+    return FirstKey(spellSlots)
 end
 
 function KB.Text(spell)
@@ -88,27 +86,28 @@ end
 
 -- Trinkets and other items sit on the bars as item actions, which
 -- FindSpellActionButtons never matches (there is no item counterpart): one
--- scan of the ranged action slots per item, in the same key preference,
--- cached like spells.
-local itemMap = {}
+-- scan of the candidate slots per item, in the same key preference, cached
+-- like spells.
+local itemMap, itemSlots = {}, {}
 local function ItemLookup(item)
     local info = _G.GetActionInfo
     if type(info) ~= "function" then return "" end
-    for i = 1, #ORDERED do
-        local slot = ORDERED[i]
-        local kind, id = info(slot)
-        if Public(kind) and kind == "item" and Public(id) and id == item then
-            local key = BoundKey(COMMAND[slot])
-            if key then return Short(key) end
+    wipe(itemSlots)
+    for i = 1, #SLOTS do
+        local slot = SLOTS[i]
+        if itemSlots[slot] == nil then
+            local kind, id = info(slot)
+            itemSlots[slot] = Public(kind) and kind == "item" and Public(id) and id == item or false
         end
     end
-    return ""
+    return FirstKey(itemSlots)
 end
+
 -- An item entry (Blizzard's trinket records, the equipment-slot rows and
 -- custom items) takes the key of its item action, else its use spell's.
-function KB.EntryText(e)
-    local item = e.itemID
-    if item and (e.equipSlot or e.src == "e" or e.src == "i") then
+function KB.EntryText(entry)
+    local item = entry.itemID
+    if item and (entry.equipSlot or entry.src == "e" or entry.src == "i") then
         local text = itemMap[item]
         if text == nil then
             text = ItemLookup(item)
@@ -117,7 +116,7 @@ function KB.EntryText(e)
         if text ~= "" then return text end
     end
     -- Action slots hold the base spell of an override.
-    return KB.Text(e.base or e.spell)
+    return KB.Text(entry.base or entry.spell)
 end
 
 -- Cold: pushes key text to every entry of a cooldown bar that shows
@@ -128,15 +127,16 @@ function KB.Refresh()
         if plan.kind == 1 and view and view.keybind then
             local entries = plan.entries
             for i = 1, #entries do
-                local e = entries[i]
-                if e.src ~= "p" then
-                    local text = KB.EntryText(e)
-                    if e.keyText ~= text then C.Icons.SetKeybind(e, text) end
+                local entry = entries[i]
+                if entry.src ~= "p" then
+                    local text = KB.EntryText(entry)
+                    if entry.keyText ~= text then C.Icons.SetKeybind(entry, text) end
                 end
             end
         end
     end
 end
+
 -- Bindings or action slots changed: every text is looked up again.
 function KB.Rebuild()
     wipe(KB.map)
@@ -158,6 +158,7 @@ local function Fire()
         KB.Refresh()
     end
 end
+
 function KB.Request(bindings)
     if bindings then stale = true end
     if armed then return end

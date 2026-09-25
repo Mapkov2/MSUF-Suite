@@ -60,6 +60,16 @@ C_AddOns = {
 }
 Support.Load(root, "MSUF_Suite", {}, nil, nil, tocFlavor)
 assert(#frames == 2 and frames[2].events.PLAYER_ENTERING_WORLD and loads == 0)
+-- The key binding labels load with the core, right after the bar titles.
+local coreFiles, bindingsAt, barsAt = Support.TocFiles(root, "MSUF_Suite", tocFlavor), nil, nil
+for index, file in ipairs(coreFiles) do
+    if file == "Core/Bindings.lua" then bindingsAt = index end
+    if file == "Core/Catalog/ActionBars.lua" then barsAt = index end
+end
+assert(barsAt and bindingsAt == barsAt + 1, "Core/Bindings.lua must follow Core/Catalog/ActionBars.lua")
+assert(BINDING_HEADER_MSUFSUITE == "MSUF Suite" and BINDING_HEADER_MSUFSUITE_BAR9 == "Action bar 9"
+    and BINDING_NAME_MSUFSUITE_BAR10_BUTTON12 == "Action bar 10 button 12",
+    "the key binding panel would show raw command names")
 frames[1]:callback("ADDON_LOADED", "MSUF_Suite")
 -- MSUF's options addon is not loaded yet, so one watcher waits for it.
 assert(#frames == 3 and frames[3].events.ADDON_LOADED and optionLoads == 0)

@@ -645,6 +645,28 @@ function S.SetMany(id, values)
     return true
 end
 
+-- Section resets restore only their owned keys. Enabling a module through the
+-- normal setter applies the active look to unrelated appearance settings;
+-- that behavior is intentionally skipped for a scoped reset.
+function S.ResetKeys(id, values)
+    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+    local db = ActiveSuite()
+    local spec = S.catalog[id]
+    if not db or not spec or type(values) ~= "table" then return false, "Invalid settings" end
+    local clean = {}
+    for key, value in pairs(values) do
+        local checked, reason = CheckedValue(spec.rules[key], value)
+        if checked == nil then return false, reason end
+        clean[key] = checked
+    end
+    local config = S.Config(id)
+    for key, value in pairs(clean) do config[key] = value end
+    S.states[id].error = nil
+    S.Apply(id)
+    Changed()
+    return true
+end
+
 function S.AddSpellFromCursor(id, key)
     local rule = S.catalog[id] and S.catalog[id].rules[key]
     if not rule or not (rule.spells or rule.items) or NS.IsCombatLocked()
@@ -739,7 +761,7 @@ function S.Open(id)
     local spec = type(id) == "string" and S.catalog[id]
     local page = spec and (spec.page or ("suite_" .. id)) or "suite_actionbars"
     if NS.Menu and NS.Menu.Open and NS.Menu.Open(page) then return end
-    NS.Print("Open MSUF > UI Suite. MSUF must be installed and enabled.")
+    NS.Print("Open the MSUF menu to find the Suite pages. MSUF must be installed and enabled.")
 end
 
 SLASH_MSUFSUITE1 = "/msuite"

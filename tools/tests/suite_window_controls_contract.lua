@@ -103,10 +103,6 @@ end }
 local NS = {
     DB = { enabled = true, skins = { blizzardWindows = true },
         windowControls = { enabled = true, scales = {}, positions = {} } },
-    Safety = {
-        IsForbidden = function() return false end,
-        GetProtection = function(frame) return frame.protected or false, false end,
-    },
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
     Registry = { AddListener = function() end },
     BlizzardCatalog = { FindByFrame = function(name)
@@ -116,7 +112,25 @@ local NS = {
     end },
     IsCombatLocked = function() return InCombatLockdown() end,
 }
+-- The real guards and layout limits, not stubs.
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
+
+-- Safety helpers always return a value, even when they refuse to read.
+local Safety = NS.Safety
+Check(type(Safety.Field(nil, "x")) == "nil" and select("#", Safety.Field(nil, "x")) == 1,
+    "Safety.Field returned no value for a non-table")
+Check(select("#", Safety.Call(nil, "X")) >= 1 and select("#", Safety.Read(nil, "X")) >= 1,
+    "Safety.Call or Safety.Read returned no value for a non-table")
+local probe = { IsForbidden = function() return false end, Quiet = function() end }
+Check(select("#", Safety.Call(probe, "Missing")) >= 1 and select("#", Safety.Call(probe, "Quiet")) >= 1
+    and type(Safety.Call(probe, "Quiet")) == "nil", "Safety.Call returned no value")
+local forbidden = { IsForbidden = function() return true end, GetName = function() return "X" end }
+Check(select("#", Safety.Call(forbidden, "GetName")) == 1 and Safety.Call(forbidden, "GetName") == nil
+    and not Safety.Invoke(forbidden, "GetName"), "Safety called a method on a forbidden object")
+Check(select(2, Safety.Call({ Pair = function() return 1, 2 end }, "Pair")) == 2,
+    "Safety.Call dropped a result")
 
 local character = Frame("CharacterFrame", UIParent)
 character.CloseButton = Frame(nil, character, "Button")
@@ -252,4 +266,29 @@ NS.DB.theme.look = "midnight"
 NS.WindowControls:OnThemeChanged("theme", "look")
 Check(not state.defaultPosition and character.point[4] == 30,
     "switching away from Forever did not restore native placement")
+
+-- The scale drag stops itself when the button is released outside the grip
+-- or the panel hides, without waiting for OnMouseUp.
+local mouseDown = true
+IsMouseButtonDown = function() return mouseDown end
+cursorX, cursorY = 500, 500
+state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
+cursorX, cursorY = 560, 470
+state.grip.scripts.OnUpdate(state.grip)
+mouseDown = false
+state.grip.scripts.OnUpdate(state.grip)
+Check(state.grip.scripts.OnUpdate == nil and state.drag == nil
+    and NS.DB.windowControls.scales.CharacterFrame == character.scale,
+    "a released mouse button did not end the scale drag")
+mouseDown = true
+state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
+character:Hide()
+state.grip.scripts.OnUpdate(state.grip)
+Check(state.grip.scripts.OnUpdate == nil and state.drag == nil,
+    "hiding the panel left the scale drag running")
+character:Show()
+IsMouseButtonDown = nil
+Check(state.grip.scripts.OnMouseDown == settingsGrip.scripts.OnMouseDown
+    and state.titleDrag.scripts.OnDragStart == settingsTitle.scripts.OnDragStart,
+    "window controls allocate script handlers per panel")
 print("Suite window controls: " .. checks .. " checks passed")

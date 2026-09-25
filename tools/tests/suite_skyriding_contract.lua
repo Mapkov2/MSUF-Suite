@@ -56,6 +56,9 @@ local suite = { ChatLookPresets = {} }
 suite.Suite = { instances = {}, editMode = false }
 local S = suite.Suite
 S.Public = function(value) return value ~= "secret" end
+-- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
+S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
+S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
 S.Install = function(id, module) assert(id == "skyriding"); S.instances[id] = module end
 S.RegisterOwnedMover = function(id, element, spec)
     assert(id == "skyriding" and element == "flight" and spec.xKey == "x")

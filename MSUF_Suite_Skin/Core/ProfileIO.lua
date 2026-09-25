@@ -18,32 +18,29 @@ local function Codec()
     return codec
 end
 
-local function TryCall(callback, ...)
-    if type(callback) ~= "function" then return false end
-    return pcall(callback, ...)
-end
-
 local function CompressionMethod()
     return Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate
 end
 
+-- C_EncodingUtil returns nothing for input it cannot encode or decode; every
+-- result is type-checked below instead of trusting it.
 local function Encode(envelope)
     local codec = Codec()
     if not codec then return nil, "codec-unavailable" end
-    local ok, serialized = TryCall(codec.SerializeCBOR, envelope)
-    if not ok or type(serialized) ~= "string" or #serialized > ProfileIO.maxDecodedBytes then
+    local serialized = codec.SerializeCBOR(envelope)
+    if type(serialized) ~= "string" or #serialized > ProfileIO.maxDecodedBytes then
         return nil, "serialize-failed"
     end
     local payload = serialized
     local method = CompressionMethod()
     if method and type(codec.CompressString) == "function" then
-        local compressedOK, compressed = TryCall(codec.CompressString, serialized, method)
-        if compressedOK and type(compressed) == "string" and #compressed < #serialized then
+        local compressed = codec.CompressString(serialized, method)
+        if type(compressed) == "string" and #compressed < #serialized then
             payload = compressed
         end
     end
-    local encodedOK, encoded = TryCall(codec.EncodeBase64, payload)
-    if not encodedOK or type(encoded) ~= "string" then return nil, "encode-failed" end
+    local encoded = codec.EncodeBase64(payload)
+    if type(encoded) ~= "string" then return nil, "encode-failed" end
     if #encoded > ProfileIO.maxEncodedBytes then return nil, "export-too-large" end
     return ProfileIO.prefix .. encoded
 end
@@ -55,17 +52,21 @@ local function Decode(text)
     if text:sub(1, #ProfileIO.prefix) ~= ProfileIO.prefix then return nil, "invalid-prefix" end
     local codec = Codec()
     if not codec then return nil, "codec-unavailable" end
-    local ok, decoded = TryCall(codec.DecodeBase64, text:sub(#ProfileIO.prefix + 1))
-    if not ok or type(decoded) ~= "string" then return nil, "decode-failed" end
+    local decoded = codec.DecodeBase64(text:sub(#ProfileIO.prefix + 1))
+    if type(decoded) ~= "string" then return nil, "decode-failed" end
     local payload = decoded
     local method = CompressionMethod()
     if method and type(codec.DecompressString) == "function" then
-        local inflateOK, inflated = TryCall(codec.DecompressString, decoded, method)
-        if inflateOK and type(inflated) == "string" then payload = inflated end
+        local inflated = codec.DecompressString(decoded, method)
+        if type(inflated) == "string" then payload = inflated end
     end
     if #payload > ProfileIO.maxDecodedBytes then return nil, "import-too-large" end
-    local deserializeOK, envelope = TryCall(codec.DeserializeCBOR, payload)
-    if not deserializeOK or type(envelope) ~= "table" then return nil, "deserialize-failed" end
+    -- DecodeBase64 and DecompressString return nothing for bad input and
+    -- DeserializeCBOR declares a nilable result (EncodingUtilDocumentation).
+    -- TODO(in-game): confirm it returns nil rather than raising for malformed
+    -- CBOR that survived both steps.
+    local envelope = codec.DeserializeCBOR(payload)
+    if type(envelope) ~= "table" then return nil, "deserialize-failed" end
     if (envelope.addon ~= "MapkoSkin" and envelope.addon ~= "MidnightSkin")
         or envelope.format ~= 1 then
         return nil, "incompatible"
@@ -98,7 +99,6 @@ function ProfileIO.PrepareProfile(text)
     end
     local profile = NS.Database.SanitizeProfile(envelope.payload)
     if not profile then return nil, "invalid-profile" end
-    if NS.Suite then NS.Suite.SanitizeImport(profile) end
     return profile, envelope.name
 end
 
@@ -119,9 +119,6 @@ function ProfileIO.ImportAll(text)
     if not envelope then return false, reason end
     if envelope.kind ~= "database" or type(envelope.payload) ~= "table" then
         return false, "not-a-database"
-    end
-    if NS.Suite then
-        for _, profile in pairs(envelope.payload) do NS.Suite.SanitizeImport(profile) end
     end
     return NS.Database.ReplaceProfiles(envelope.payload, envelope.activeProfile)
 end

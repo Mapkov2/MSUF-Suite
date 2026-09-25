@@ -243,6 +243,19 @@ NS.Defaults = {
             preset = "forever",
             layoutMode = "owned",
             visibility = "always",
+            loadHideInHousing = false,
+            loadHideInCombat = false,
+            loadHideInGroup = false,
+            loadHideInInstance = false,
+            loadHideInVehicle = false,
+            loadHideMounted = false,
+            loadHideNoTarget = false,
+            loadHideOutOfCombat = false,
+            loadHideOutOfCombatNoTarget = false,
+            loadHideResting = false,
+            loadHideSolo = false,
+            loadHideStealthed = false,
+            loadShowWhenInjured = false,
             locked = true,
             orientation = "horizontal",
             growth = "LEFT_UP",
@@ -345,6 +358,21 @@ NS.MicroMenuHoverStyles = { "outline", "softFill", "solidFill", "iconOnly", "off
 NS.MicroMenuShapes = { "global", "round", "continuous", "squircle" }
 NS.MicroMenuLayoutModes = { "owned", "blizzard" }
 NS.MicroMenuVisibilityModes = { "always", "combat", "outOfCombat", "mouseover", "never" }
+NS.MicroMenuLoadConditions = {
+    { "loadHideInHousing", "Housing" },
+    { "loadHideInCombat", "In combat", "[combat] hide" },
+    { "loadHideInGroup", "In group", "[group] hide" },
+    { "loadHideInInstance", "In instance" },
+    { "loadHideInVehicle", "In vehicle", "[@player,unithasvehicleui] hide; [vehicleui] hide" },
+    { "loadHideMounted", "Mounted", "[mounted] hide" },
+    { "loadHideNoTarget", "No target", "[@target,noexists] hide" },
+    { "loadHideOutOfCombat", "Out of combat", "[nocombat] hide" },
+    { "loadHideOutOfCombatNoTarget", "Out of combat and no target", "[nocombat,@target,noexists] hide" },
+    { "loadHideResting", "Resting", "[resting] hide" },
+    { "loadHideSolo", "Solo", "[nogroup] hide" },
+    { "loadHideStealthed", "Stealthed", "[stealth] hide" },
+    { "loadShowWhenInjured", "Show only below 100% health" },
+}
 NS.MicroMenuOrientations = { "horizontal", "vertical" }
 NS.MicroMenuGrowthModes = { "RIGHT_DOWN", "LEFT_DOWN", "RIGHT_UP", "LEFT_UP" }
 NS.MicroMenuPoints = {

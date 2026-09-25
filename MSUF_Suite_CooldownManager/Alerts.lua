@@ -11,7 +11,7 @@ local C = P.CDM
 local L = { pending = false }
 C.Alerts = L
 
-local GetTime, InCombatLockdown = GetTime, InCombatLockdown
+local GetTime = GetTime
 local pairs, type, tonumber = pairs, type, tonumber
 local wipe = C.wipe
 local Public = S.Public
@@ -154,8 +154,8 @@ end
 function L.Play(value, force)
     if type(value) ~= "string" or value == "" then return false end
     if not force then
-        local st = C.state
-        if st.muteSounds or GetTime() < (st.soundQuietUntil or 0) then return false end
+        local state = C.state
+        if state.muteSounds or GetTime() < (state.soundQuietUntil or 0) then return false end
     end
     return Emit(value)
 end
@@ -168,10 +168,10 @@ function L.Ready(entry)
     local sound, tts = ov.sound, ov.tts == true
     if sound == "" then sound = nil end
     if not sound and not tts then return end
-    local st = C.state
-    if st.muteSounds then return end
+    local state = C.state
+    if state.muteSounds then return end
     local now = GetTime()
-    if now < (st.soundQuietUntil or 0) then return end
+    if now < (state.soundQuietUntil or 0) then return end
     local prev = last[entry]
     if prev and now - prev < THROTTLE then return end
     last[entry] = now
@@ -210,9 +210,9 @@ end
 -- One kit edge after its frame: mute, the quiet window after a loading
 -- screen, the container's hush and a 1 s throttle per entry and direction.
 local function Settle(key, at, loss, gate)
-    local e = C.entries[key]
-    local ov = e and e.ov
-    if not ov or ov == EMPTY or e.family == 1 then return end
+    local entry = C.entries[key]
+    local ov = entry and entry.ov
+    if not ov or ov == EMPTY or entry.family == 1 then return end
     local value
     if loss then
         value = ov.lossSound
@@ -220,8 +220,8 @@ local function Settle(key, at, loss, gate)
         value = ov.sound
     end
     if not IsKit(value) then return end
-    local st = C.state
-    if st.muteSounds or at < (st.soundQuietUntil or 0) or Hushed(gate, at) or Hushed(anyGate, at) then return end
+    local state = C.state
+    if state.muteSounds or at < (state.soundQuietUntil or 0) or Hushed(gate, at) or Hushed(anyGate, at) then return end
     local now = GetTime()
     local seen = loss and lost or gained
     local prev = seen[key]
@@ -258,13 +258,13 @@ end
 -- edge is decided one frame later (FlushAura). No aura data is read: the
 -- sensor only knows it showed. Returns whether the edge was taken.
 function L.PlayAura(key, which, gate)
-    local e = type(key) == "string" and C.entries[key]
-    local ov = e and e.ov
-    if not ov or ov == EMPTY or e.family == 1 then return false end
+    local entry = type(key) == "string" and C.entries[key]
+    local ov = entry and entry.ov
+    if not ov or ov == EMPTY or entry.family == 1 then return false end
     if not (IsKit(ov.sound) or IsKit(ov.lossSound)) then return false end
-    local st = C.state
+    local state = C.state
     local now = GetTime()
-    if st.muteSounds or now < (st.soundQuietUntil or 0) then return false end
+    if state.muteSounds or now < (state.soundQuietUntil or 0) then return false end
     if which == "loss" then
         lossAt[key], lossGate[key] = now, gate
     else
@@ -291,23 +291,23 @@ local function Wanted(set, unit, trigger, channel, value)
         if not regs[key] then regs[key] = { unit = unit, spell = spell, trigger = trigger, channel = channel, value = value } end
     end
 end
-local function Want(e, trigger, value, channel)
+local function Want(entry, trigger, value, channel)
     if type(value) ~= "string" or value == "" then return end
     -- The shipped CDM kits resolve to files. Unknown kits still play from
     -- the aura button's sensor instead (PlayAura).
     local kind, id = Parse(value)
     if kind ~= "lsm" and kind ~= "file" and not (kind == "kit" and kitFiles[id]) then return end
     local auras = C.Auras
-    local set = auras and auras.Ids(e)
+    local set = auras and auras.Ids(entry)
     if not set then return end
-    local unit = auras.UnitOf(e)
+    local unit = auras.UnitOf(entry)
     if unit ~= "both" then return Wanted(set, unit, trigger, channel, value) end
     -- Blizzard entries watch the player and the target ("both" is no unit
     -- token). A native sound cannot check the caster or the target's
     -- disposition, so a self aura keeps to the player: a target
     -- registration would sound it again for a friendly target or yourself.
     Wanted(set, "player", trigger, channel, value)
-    if not e.selfAura then Wanted(set, "target", trigger, channel, value) end
+    if not entry.selfAura then Wanted(set, "target", trigger, channel, value) end
 end
 
 local function Register(add, reg)
@@ -343,7 +343,7 @@ function L.SyncAuraSounds()
     local auras = _G.C_UnitAuras
     local add, remove = auras and auras.AddAuraSound, auras and auras.RemoveAuraSound
     if type(add) ~= "function" or type(remove) ~= "function" then return end
-    if InCombatLockdown() then
+    if NS.IsCombatLocked() then
         L.pending = true
         return
     end
@@ -355,21 +355,21 @@ function L.SyncAuraSounds()
     end
     L.pending = false
     wipe(want)
-    local st = C.state
+    local state = C.state
     -- Inside the quiet window every registration is dropped and comes back
     -- when the window ends, so a loading screen cannot replay gain sounds.
-    local wait = (st.soundQuietUntil or 0) - GetTime()
-    if not st.muteSounds and wait <= 0 then
+    local wait = (state.soundQuietUntil or 0) - GetTime()
+    if not state.muteSounds and wait <= 0 then
         local channel = Channel()
         for _, plan in pairs(C.plans) do
             if plan.kind ~= 1 then
                 local entries = plan.entries
                 for i = 1, #entries do
-                    local e = entries[i]
-                    local ov = e.ov
-                    if ov and ov ~= EMPTY and e.src ~= "p" and e.family ~= 1 then
-                        Want(e, ADDED, ov.sound, channel)
-                        Want(e, REMOVED, ov.lossSound, channel)
+                    local entry = entries[i]
+                    local ov = entry.ov
+                    if ov and ov ~= EMPTY and entry.src ~= "p" and entry.family ~= 1 then
+                        Want(entry, ADDED, ov.sound, channel)
+                        Want(entry, REMOVED, ov.lossSound, channel)
                     end
                 end
             end
@@ -391,7 +391,7 @@ function L.SyncAuraSounds()
             if not id then L.pending = true end
         end
     end
-    if wait > 0 and not st.muteSounds then Arm(wait) end
+    if wait > 0 and not state.muteSounds then Arm(wait) end
 end
 
 function L.ReleaseAll()
@@ -417,3 +417,5 @@ function L.Registrations()
     for _ in pairs(have) do n = n + 1 end
     return n, have
 end
+
+

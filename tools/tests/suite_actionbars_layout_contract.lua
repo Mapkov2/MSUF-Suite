@@ -15,7 +15,7 @@ local created=0
 CreateFrame=function() created=created+1;return {SetScript=function() end,RegisterEvent=function() end} end
 UIParent={GetEffectiveScale=function() return 1 end,GetWidth=function() return 1024 end,GetHeight=function() return 768 end}
 GetPhysicalScreenSize=function() return 1024,768 end
-for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Suite","Bindings"}) do
+for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings","Suite"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)

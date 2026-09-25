@@ -283,8 +283,7 @@ local function SessionMenu(_, root, win)
             if D.Plain(id) then
                 local name, duration = entry.name, entry.durationSeconds
                 if not Public(name) or type(name) ~= "string" or name == "" then
-                    name = format(
-                        D.Text("DAMAGE_METER_COMBAT_NUMBER", "Fight %d"), id)
+                    name = format(D.Text("DAMAGE_METER_COMBAT_NUMBER", "Fight %d"), id)
                 end
                 if D.Plain(duration) and duration > 0 then name = format("%s [%s]", name, D.Clock(duration)) else duration = nil end
                 root:CreateRadio(name, PinSelected, PinChosen, { win = win, id = id, duration = duration })
@@ -320,7 +319,7 @@ function D.CloseWindow(win)
     for slot = index, count do
         local to, from = D.KEYS[slot], "w" .. (slot + 1)
         for _, suffix in ipairs(D.WindowSuffixes()) do
-            local key = to[suffix] or "w" .. slot .. suffix
+            local key = to[suffix] or ("w" .. slot .. suffix)
             if slot < count then values[key] = c[from .. suffix] else values[key] = rules[key].default end
         end
     end

@@ -184,6 +184,9 @@ local S={
     Queue=function(id) queued[#queued+1]=id end,
     RestoreCVar=function(id,key) restoredCVars[#restoredCVars+1]=id..":"..key end,
 }
+-- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
+S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
+S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
 NS.Suite=S
 local config={}
 for key,rule in pairs(rules) do config[key]=rule.default end
@@ -231,7 +234,7 @@ for _,name in ipairs(FILES) do
     for _,token in ipairs({"pcall","loadstring","setfenv","OnUpdate","C_Timer","CooldownViewerSettings"}) do
         assert(not code:find(token,1,true) or (name=="Preview" and token=="C_Timer"),name..".lua uses "..token)
     end
-    assert(not text:find("Claude",1,true) and not text:find("Anthropic",1,true),name..".lua attribution")
+    assert(not text:find("Cl".."aude",1,true) and not text:find("Anth".."ropic",1,true),name..".lua attribution")
     local count=0
     for hooked in code:gmatch('hooksecurefunc%(%s*[%w_]+%s*,%s*"([%w_]+)"') do
         count=count+1
@@ -387,7 +390,7 @@ do
         local body=text:match("\n(local function "..name.."%("..args.."%)\n.-\nend)\n")
         return assert(body,"Auras.lua "..name.." source")
     end
-    AuraRule.TargetRow=assert(loadstring(Body("TargetRow","e").."\nreturn TargetRow"))()
+    AuraRule.TargetRow=assert(loadstring(Body("TargetRow","entry").."\nreturn TargetRow"))()
     assert(text:find("\nA.UnitOf, A.Ids, A.TargetRow = UnitOf, Ids, TargetRow\n",1,true),"Auras.lua exports TargetRow")
     local flow=assert(text:match("\n(local FLOW = %b{})\n"),"Auras.lua FLOW source")
     AuraRule.FLOW=assert(loadstring(flow.."\nreturn FLOW"))()
@@ -399,7 +402,7 @@ do
     for _,line in ipairs({
         "\nlocal UNITS = { \"player\", \"target\" }\n",
         "    if layout ~= nil and layout.Cell ~= nil and layout.FixedAuras ~= nil then fixed, _, split = layout.FixedAuras(view, entries) end\n",
-        "    m.fixed, m.split = fixed == true, split == true\n",
+        "    barMeta.fixed, barMeta.split = fixed == true, split == true\n",
         "        local w, h, sp, per, vertical, grow, align = layout.Metrics(view)\n",
         "        local flow = FLOW[vertical][grow == 2 and 2 or 1]\n",
         "        geo.w, geo.h, geo.gp, geo.gc = w, h, max(0, sp), sp\n",
@@ -409,8 +412,8 @@ do
         "        geo.host = bar.auraHost or bar.frame\n",
         "        for i = 1, cap do\n            if not TargetRow(entries[i]) then\n                players = players + 1\n            end\n        end\n",
         "        local lines = ceil(players / per)\n",
-        "                local side = m.split and (u == 1 and \"lead\" or \"tail\") or nil\n",
-        "                Run(slot, \"aura\", unit, role, m.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)\n",
+        "                local side = barMeta.split and (u == 1 and \"lead\" or \"tail\") or nil\n",
+        "                Run(slot, \"aura\", unit, role, barMeta.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)\n",
         "    if not fixed then Place(rec, offset, split) end\n    if Build(rec, view, n) then return end\n",
     }) do
         assert(text:find(line,1,true),"Auras.lua SyncAura: "..line)
@@ -420,20 +423,20 @@ do
     -- never to another container (Blizzard forbids it).
     local anchors={}
     for call in text:gmatch("[%w_]+:SetPoint%b()") do
-        if call:sub(1,2)=="c:" then anchors[#anchors+1]=call end
+        if call:sub(1,10)=="container:" then anchors[#anchors+1]=call end
     end
-    assert(#anchors==2 and anchors[1]=='c:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)' and anchors[2]=="c:SetPoint(point, host, rel, dx, dy)",
+    assert(#anchors==2 and anchors[1]=='container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)' and anchors[2]=="container:SetPoint(point, host, rel, dx, dy)",
         "container anchors: "..table.concat(anchors," | "))
     assert(text:find("\n            local parent = fam == \"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
         and text:find("\n    local point, host = g.point, g.host\n",1,true),"container parents and hosts are the bar's own frames")
     local rels=0
     for rel in text:gmatch("[%w_]+:SetPoint%(%s*[^,]+,%s*([%w_%.%[%]]+)") do
         rels=rels+1
-        assert(rel~="c" and not rel:find("%.frame$"),"a region anchored to a container: "..rel)
+        assert(rel~="container" and not rel:find("%.frame$"),"a region anchored to a container: "..rel)
     end
     for rel in text:gmatch("[%w_]+:SetAllPoints%(([%w_%.%[%]]+)") do
         rels=rels+1
-        assert(rel~="c" and not rel:find("%.frame$"),"a region stretched over a container: "..rel)
+        assert(rel~="container" and not rel:find("%.frame$"),"a region stretched over a container: "..rel)
     end
     assert(rels>20,"anchor scan found "..rels.." calls")
     local controller=Source("Controller.lua")

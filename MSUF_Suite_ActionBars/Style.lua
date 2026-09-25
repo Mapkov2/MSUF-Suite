@@ -4,11 +4,18 @@ local NS, S = P.NS, P.Suite
 -- use the regions of ActionButtonTemplate; adopted stance/pet buttons are
 -- Blizzard's, so only cosmetic regions are touched there and every suite
 -- texture lives in the suite's own records, never on Blizzard tables.
+-- Every button remembers the style generations it was styled with (the
+-- global AB.styleGen and its bar's styleGen); a refresh restyles only the
+-- buttons whose look changed.
 local AB = P.ActionBars
 local M = AB.M
+local max, floor = math.max, math.floor
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
 -- Highlight/pressed choices: 1 Border, 2 Soft fill, 3 Blizzard, 4 None.
 local STYLE_BORDER, STYLE_FILL, STYLE_BLIZZARD = 1, 2, 3
+-- Cooldown frames beside the main swipe that follow the icon.
+local EXTRA_COOLDOWNS = { "chargeCooldown", "lossOfControlCooldown" }
+AB.styleGen = 0
 
 local function Class()
     if type(UnitClass) ~= "function" then return nil end
@@ -16,42 +23,44 @@ local function Class()
     return S.Public(class) and class or nil
 end
 
--- Resolved once per refresh; buttons read plain values from here.
+-- Resolved once per style change; buttons read plain values from here.
 function AB.BuildStyle()
-    local c = M.config
+    local config = M.config
     local style = AB.style or {}
     AB.style = style
-    style.font = S.ResolveFont(c.font)
-    style.flags = OUTLINES[c.fontOutline] or ""
-    style.rendering, style.shadow = c.fontRendering, c.fontShadow
-    style.shadowOpacity, style.shadowDistance = c.fontShadowOpacity, c.fontShadowDistance
-    style.zoom = c.iconZoom / 100
-    style.border = c.borderSize
-    local cr, cg, cb = S.ClassRGB(Class())
-    if c.borderClassColor and cr then
-        style.br, style.bg, style.bb = cr, cg, cb
+    style.font = S.ResolveFont(config.font)
+    style.flags = OUTLINES[config.fontOutline] or ""
+    style.rendering, style.shadow = config.fontRendering, config.fontShadow
+    style.shadowOpacity, style.shadowDistance = config.fontShadowOpacity, config.fontShadowDistance
+    style.zoom = config.iconZoom / 100
+    style.border = config.borderSize
+    local classR, classG, classB = S.ClassRGB(Class())
+    if config.borderClassColor and classR then
+        style.br, style.bg, style.bb = classR, classG, classB
     else
-        style.br, style.bg, style.bb = S.RGB(c.borderColor)
+        style.br, style.bg, style.bb = S.RGB(config.borderColor)
     end
-    if c.interactionClassColor and cr then
-        style.ir, style.ig, style.ib = cr, cg, cb
+    if config.interactionClassColor and classR then
+        style.ir, style.ig, style.ib = classR, classG, classB
     else
-        style.ir, style.ig, style.ib = S.RGB(c.interactionColor)
+        style.ir, style.ig, style.ib = S.RGB(config.interactionColor)
     end
-    style.sr, style.sg, style.sb = S.RGB(c.slotColor)
-    style.slotAlpha = c.slotAlpha / 100
-    style.kr, style.kg, style.kb = S.RGB(c.keybindColor)
-    style.mr, style.mg, style.mb = S.RGB(c.macroColor)
-    style.cr, style.cg, style.cb = S.RGB(c.countColor)
-    style.dr, style.dg, style.db = S.RGB(c.cooldownColor)
-    style.wr, style.wg, style.wb = S.RGB(c.swipeColor)
-    style.swipeAlpha = c.swipeAlpha / 100
-    style.highlight, style.pushed = c.highlightStyle, c.pushedStyle
-    style.rr, style.rg, style.rb = S.RGB(c.rangeColor)
+    style.sr, style.sg, style.sb = S.RGB(config.slotColor)
+    style.slotAlpha = config.slotAlpha / 100
+    style.kr, style.kg, style.kb = S.RGB(config.keybindColor)
+    style.mr, style.mg, style.mb = S.RGB(config.macroColor)
+    style.cr, style.cg, style.cb = S.RGB(config.countColor)
+    style.dr, style.dg, style.db = S.RGB(config.cooldownColor)
+    style.wr, style.wg, style.wb = S.RGB(config.swipeColor)
+    style.swipeAlpha = config.swipeAlpha / 100
+    style.highlight, style.pushed = config.highlightStyle, config.pushedStyle
+    style.rr, style.rg, style.rb = S.RGB(config.rangeColor)
+    AB.styleGen = AB.styleGen + 1
     return style
 end
 
-local function Edges(rec, key, layer, sublevel)
+-- Four textures on the button, created once per record and key.
+function AB.Edges(rec, key, layer, sublevel)
     local set = rec[key]
     if not set then
         set = {}
@@ -63,7 +72,7 @@ end
 
 -- Four edges inside the button rect; the side edges stop short of the top
 -- and bottom ones so translucent colors do not double at the corners.
-local function PlaceEdges(set, button, width, r, g, b, a)
+function AB.PlaceEdges(set, button, width, r, g, b, a)
     local shown = width > 0
     for i = 1, 4 do
         local edge = set[i]
@@ -85,18 +94,23 @@ local function PlaceEdges(set, button, width, r, g, b, a)
     set[4]:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, width)
     set[4]:SetWidth(width)
 end
-AB.PlaceEdges = PlaceEdges
 
-local function ShowEdges(set, shown)
+function AB.ShowEdges(set, shown)
     if not set then return end
     for i = 1, 4 do set[i]:SetShown(shown) end
 end
+
+local Edges, PlaceEdges, ShowEdges = AB.Edges, AB.PlaceEdges, AB.ShowEdges
 
 -- Remembers a template texture's own art once, so "Blizzard" can restore it.
 local function Remember(rec, key, texture)
     rec.art = rec.art or {}
     if texture and rec.art[key] == nil then
-        rec.art[key] = { atlas = texture.GetAtlas and texture:GetAtlas(), file = texture:GetTexture(), blend = texture:GetBlendMode() }
+        rec.art[key] = {
+            atlas = texture.GetAtlas and texture:GetAtlas(),
+            file = texture:GetTexture(),
+            blend = texture:GetBlendMode(),
+        }
     end
     return rec.art[key]
 end
@@ -135,18 +149,13 @@ local function Text(fontString, size, r, g, b, shown)
 end
 
 local function Hide(region)
-    if region then
-        region:SetAlpha(0)
-    end
+    if region then region:SetAlpha(0) end
 end
 
--- Applies the static look to one button. Called on every refresh; all
--- writes are idempotent and nothing here runs from events.
-function AB.StyleButton(rec)
-    local button, style, c = rec.button, AB.style, M.config
-    local k = rec.bar.key
-    local size = rec.bar.size or c[k.Size]
-    local border = style.border
+-- Icon crop, hidden template art and the empty-slot fill behind the icon
+-- (filled slots cover it).
+local function StyleIcon(rec, border)
+    local button, style = rec.button, AB.style
     local icon = button.icon
     if icon then
         if button.IconMask and not rec.unmasked and icon.RemoveMaskTexture then
@@ -166,7 +175,6 @@ function AB.StyleButton(rec)
         Hide(button.NewActionTexture)
         Hide(button.SpellHighlightTexture)
     end
-    -- Empty-slot fill behind the icon; filled slots cover it.
     local slot = rec.slotTexture
     if not slot then
         slot = S.CreateTexture(button, nil, "BACKGROUND", nil, -8)
@@ -176,23 +184,34 @@ function AB.StyleButton(rec)
     slot:SetPoint("TOPLEFT", button, "TOPLEFT", border, -border)
     slot:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -border, border)
     slot:SetColorTexture(style.sr, style.sg, style.sb, style.slotAlpha)
+end
+
+-- Border, mouseover and pressed looks. Mouseover uses HIGHLIGHT-layer edges
+-- that show on hover without scripts. The pressed border needs press state
+-- (owned buttons only); adopted buttons fall back to the fill.
+local function StyleInteractions(rec, size, border)
+    local button, style = rec.button, AB.style
     PlaceEdges(Edges(rec, "borderEdges", "OVERLAY", 6), button, border, style.br, style.bg, style.bb, 1)
-    -- Mouseover: HIGHLIGHT-layer edges show on hover without scripts.
-    local hover = Edges(rec, "hoverEdges", "HIGHLIGHT", 7)
-    PlaceEdges(hover, button, style.highlight == STYLE_BORDER and math.max(1, math.floor(size / 20 + .5)) or 0, style.ir, style.ig, style.ib, 1)
+    local hoverWidth = style.highlight == STYLE_BORDER and max(1, floor(size / 20 + .5)) or 0
+    PlaceEdges(Edges(rec, "hoverEdges", "HIGHLIGHT", 7), button, hoverWidth, style.ir, style.ig, style.ib, 1)
     StyleInteraction(rec, "highlight", button:GetHighlightTexture(), style.highlight, .25)
-    -- Pressed: the border variant needs press state (owned buttons only);
-    -- adopted buttons fall back to the fill.
     local pushed = style.pushed
     if pushed == STYLE_BORDER and not rec.owned then pushed = STYLE_FILL end
     local press = Edges(rec, "pressEdges", "OVERLAY", 7)
-    PlaceEdges(press, button, pushed == STYLE_BORDER and math.max(1, math.floor(size / 15 + .5)) or 0, style.ir, style.ig, style.ib, 1)
+    PlaceEdges(press, button, pushed == STYLE_BORDER and max(1, floor(size / 15 + .5)) or 0, style.ir, style.ig, style.ib, 1)
     ShowEdges(press, false)
     rec.pressBorder = pushed == STYLE_BORDER
     StyleInteraction(rec, "pushed", button:GetPushedTexture(), pushed, .35)
-    StyleInteraction(rec, "checked", button:GetCheckedTexture(), style.highlight == STYLE_BLIZZARD and STYLE_BLIZZARD or STYLE_FILL, .3)
-    -- Text: keybind top right, count bottom right, macro name bottom.
-    local fontScale = rec.owned and 0 or 2
+    local checked = style.highlight == STYLE_BLIZZARD and STYLE_BLIZZARD or STYLE_FILL
+    StyleInteraction(rec, "checked", button:GetCheckedTexture(), checked, .3)
+end
+
+-- Keybind top right, count bottom right, macro name at the bottom. Native
+-- and adopted buttons show the key on a suite font string, because
+-- Blizzard rewrites its own HotKey text.
+local function StyleTexts(rec, size, border, fontScale)
+    local button, style, config = rec.button, AB.style, M.config
+    local keys = rec.bar.key
     local hotkey = rec.owned and not rec.native and button.HotKey or rec.keyText
     if not rec.owned or rec.native then
         Hide(button.HotKey)
@@ -204,46 +223,68 @@ function AB.StyleButton(rec)
     if hotkey then
         hotkey:ClearAllPoints()
         hotkey:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1 - border, -2 - border)
-        local keySize = math.max(6, c[k.KeybindSize] - fontScale)
+        local keySize = max(6, config[keys.KeybindSize] - fontScale)
         hotkey:SetJustifyH("RIGHT")
         hotkey:SetWordWrap(false)
-        hotkey:SetSize(math.max(1, size - 2), keySize + 2)
-        Text(hotkey, keySize, style.kr, style.kg, style.kb, c[k.Keybind])
+        hotkey:SetSize(max(1, size - 2), keySize + 2)
+        Text(hotkey, keySize, style.kr, style.kg, style.kb, config[keys.Keybind])
     end
     local count = button.Count
     if count then
         count:ClearAllPoints()
         count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1 - border, 2 + border)
-        Text(count, c[k.CountSize], style.cr, style.cg, style.cb, true)
+        Text(count, config[keys.CountSize], style.cr, style.cg, style.cb, true)
     end
     local name = button.Name
     if name then
         name:ClearAllPoints()
         name:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 1, 2 + border)
         name:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 2 + border)
-        name:SetHeight(c[k.MacroSize] + 2)
+        name:SetHeight(config[keys.MacroSize] + 2)
         name:SetWordWrap(false)
-        Text(name, c[k.MacroSize], style.mr, style.mg, style.mb, rec.owned and c[k.Macro])
+        Text(name, config[keys.MacroSize], style.mr, style.mg, style.mb, rec.owned and config[keys.Macro])
     end
+end
+
+local function StyleCooldowns(rec, fontScale)
+    local button, style, config = rec.button, AB.style, M.config
+    local target = button.icon or button
     local cooldown = button.cooldown
     if cooldown then
         cooldown:ClearAllPoints()
-        cooldown:SetAllPoints(icon or button)
+        cooldown:SetAllPoints(target)
         cooldown:SetSwipeColor(style.wr, style.wg, style.wb, style.swipeAlpha)
         cooldown:SetDrawEdge(false)
         cooldown:SetDrawBling(false)
-        cooldown:SetHideCountdownNumbers(not c.cooldownNumbers)
+        cooldown:SetHideCountdownNumbers(not config.cooldownNumbers)
         local text = cooldown.GetCountdownFontString and cooldown:GetCountdownFontString()
-        if text then Text(text, math.max(6, c[k.CooldownSize] - fontScale), style.dr, style.dg, style.db, true) end
+        if text then
+            Text(text, max(6, config[rec.bar.key.CooldownSize] - fontScale), style.dr, style.dg, style.db, true)
+        end
     end
-    for _, key in ipairs({ "chargeCooldown", "lossOfControlCooldown" }) do
+    local rechargeNumbers = config.cooldownNumbers and config.rechargeNumbers
+    for i = 1, #EXTRA_COOLDOWNS do
+        local key = EXTRA_COOLDOWNS[i]
         local extra = button[key]
         if extra then
             extra:ClearAllPoints()
-            extra:SetAllPoints(icon or button)
-            extra:SetHideCountdownNumbers(key == "lossOfControlCooldown" or not (c.cooldownNumbers and c.rechargeNumbers))
+            extra:SetAllPoints(target)
+            extra:SetHideCountdownNumbers(key == "lossOfControlCooldown" or not rechargeNumbers)
         end
     end
+end
+
+-- Applies the static look to one button; all writes are idempotent and
+-- nothing here runs from events.
+function AB.StyleButton(rec)
+    local button, bar = rec.button, rec.bar
+    local size = bar.size or M.config[bar.key.Size]
+    local border = AB.style.border
+    local fontScale = rec.owned and 0 or 2
+    StyleIcon(rec, border)
+    StyleInteractions(rec, size, border)
+    StyleTexts(rec, size, border, fontScale)
+    StyleCooldowns(rec, fontScale)
     if rec.owned and button.Border then
         button.Border:ClearAllPoints()
         button.Border:SetAllPoints(button)
@@ -251,8 +292,9 @@ function AB.StyleButton(rec)
     local alert = button.SpellActivationAlert
     if alert and rec.owned then
         alert:SetSize(size * 1.4, size * 1.4)
-        if rec.native then alert:SetAlpha(c.procGlow == 1 and 1 or 0) end
+        if rec.native then alert:SetAlpha(M.config.procGlow == 1 and 1 or 0) end
     end
+    rec.styleGen, rec.barStyleGen = AB.styleGen, bar.styleGen
 end
 
 -- Press state for native and routed keys; also drives the "Border" pressed
@@ -265,7 +307,7 @@ end
 -- WoW owns the pressed state during a physical mouse click. Forcing it back
 -- to NORMAL in OnMouseUp can cancel the release click before OnClick fires.
 -- Only the suite's custom border needs a mouse hook; keyboard presses still
--- use SetPushed below because they do not generate mouse events.
+-- use SetPushed above because they do not generate mouse events.
 local function MouseDown(button)
     local rec = AB.records[button]
     if rec and M.active and rec.pressBorder then ShowEdges(rec.pressEdges, true) end
@@ -289,14 +331,18 @@ function AB.HookPress(rec)
     button:HookScript("PreClick", PreClick)
 end
 
-function AB.StyleAll()
-    AB.BuildStyle()
+-- Restyles the buttons whose look changed: every button after a global
+-- style change (rebuild set), else only those of bars whose styleGen moved.
+function AB.StyleAll(rebuild)
+    if rebuild or not AB.style then AB.BuildStyle() end
+    local gen = AB.styleGen
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
         if bar then
+            local barGen = bar.styleGen
             for i = 1, #bar.buttons do
                 local rec = bar.buttons[i]
-                AB.StyleButton(rec)
+                if rec.styleGen ~= gen or rec.barStyleGen ~= barGen then AB.StyleButton(rec) end
                 AB.HookPress(rec)
             end
         end

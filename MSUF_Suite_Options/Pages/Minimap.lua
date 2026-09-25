@@ -46,48 +46,63 @@ local function TooltipChoice(index)
 end
 P.ChoiceGates[ID] = { infoClockTooltip = TooltipChoice, infoFPSTooltip = TooltipChoice, infoLatencyTooltip = TooltipChoice }
 
+-- { stylePreset value, label, swatch color } of the one-click minimap looks.
+local STYLE_PRESETS = {
+    { 8, "Midnight Blue", "57c7df" }, { 9, "Midnight Dark", "b9ab86" },
+    { 7, "MSUF Forever", "d8b66a" }, { 2, "Clean", "aab5c2" },
+    { 3, "Arcane", "b7a4ff" }, { 4, "Ember", "ffc078" },
+    { 5, "Astral", "a7e8ff" }, { 6, "Steel", "c1d6df" },
+}
+local PRESET_COLUMNS, PRESET_GAP = 4, 7
+
+-- A tall preset tile: the style's border art as a swatch above its name.
+local function PresetButton(body, spec, index, width)
+    local button = T.Button(body, Tr(spec[2]), width, 55)
+    local label = rawget(button, "_msuf2Label")
+    if label then
+        label:ClearAllPoints()
+        label:SetPoint("BOTTOM", button, "BOTTOM", 0, 5)
+        label:SetJustifyH("CENTER")
+    end
+    local path = Suite.MinimapStyle and Suite.MinimapStyle.paths[spec[1] - 1]
+    local swatch = button:CreateTexture(nil, "ARTWORK")
+    swatch:SetPoint("CENTER", button, "CENTER", 0, 10)
+    swatch:SetSize(index == 1 and 17 or 24, index == 1 and 17 or 24)
+    swatch:SetTexture(path or "Interface\\Buttons\\WHITE8X8")
+    local r, g, blue = P.RGB(spec[3])
+    swatch:SetVertexColor(r, g, blue, 1)
+    button:SetScript("OnClick", function()
+        if not P.Combat() then P.Set(ID, "stylePreset", spec[1]) end
+    end)
+    if M.RegisterControlMetadata then
+        M.RegisterControlMetadata(button,
+            P.Meta(PAGE, ID, "style.preset." .. spec[1], "action", "suite_minimap_style_presets"),
+            spec[2] .. " minimap style", "button")
+    end
+    return button
+end
+
 local function BuildStylePresets(ctx, b)
     local rules = P.SectionRules(ID, "style_presets")
     return P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_style_presets", Tr("Choose a look"), rules, {
-        help = HELP.style_presets, open = true,
+        help = HELP.style_presets,
+        open = true,
         extra = function(body, y, width)
-            local presets = {
-                { 8, "Midnight Blue", "57c7df" }, { 9, "Midnight Dark", "b9ab86" },
-                { 7, "MSUF Forever", "d8b66a" }, { 2, "Clean", "aab5c2" },
-                { 3, "Arcane", "b7a4ff" }, { 4, "Ember", "ffc078" },
-                { 5, "Astral", "a7e8ff" }, { 6, "Steel", "c1d6df" },
-            }
-            local gap = 7
-            local columns = 4
-            local buttonWidth = math.max(40, math.floor((width - gap * (columns - 1)) / columns))
-            for i, spec in ipairs(presets) do
-                local button = T.Button(body, Tr(spec[2]), buttonWidth, 55)
+            local buttonWidth = math.max(40, math.floor((width - PRESET_GAP * (PRESET_COLUMNS - 1)) / PRESET_COLUMNS))
+            local buttons = {}
+            for i, spec in ipairs(STYLE_PRESETS) do
+                local button = PresetButton(body, spec, i, buttonWidth)
                 button:SetPoint("TOPLEFT", body, "TOPLEFT",
-                    16 + ((i - 1) % columns) * (buttonWidth + gap),
-                    y - math.floor((i - 1) / columns) * 62)
-                local label = type(button) == "table" and rawget(button, "_msuf2Label")
-                if label and type(label.ClearAllPoints) == "function" then
-                    label:ClearAllPoints()
-                    label:SetPoint("BOTTOM", button, "BOTTOM", 0, 5)
-                    label:SetJustifyH("CENTER")
-                end
-                local path = Suite.MinimapStyle and Suite.MinimapStyle.paths[spec[1] - 1]
-                local swatch = button:CreateTexture(nil, "ARTWORK")
-                swatch:SetPoint("CENTER", button, "CENTER", 0, 10)
-                swatch:SetSize(24, 24)
-                swatch:SetTexture(path or "Interface\\Buttons\\WHITE8X8")
-                local r, g, blue = P.RGB(spec[3])
-                swatch:SetVertexColor(r, g, blue, 1)
-                if i == 1 then swatch:SetSize(17, 17) end
-                button:SetScript("OnClick", function()
-                    if not P.Combat() then P.Set(ID, "stylePreset", spec[1]) end
-                end)
-                if M.RegisterControlMetadata then
-                    M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "style.preset." .. spec[1], "action", "suite_minimap_style_presets"),
-                        spec[2] .. " minimap style", "button")
-                end
-                M.TrackRefresh(ctx, function() button:SetAlpha(P.Get(ID, "stylePreset") == spec[1] and 1 or 0.58) end)
+                    16 + ((i - 1) % PRESET_COLUMNS) * (buttonWidth + PRESET_GAP),
+                    y - math.floor((i - 1) / PRESET_COLUMNS) * 62)
+                buttons[i] = button
             end
+            M.TrackRefresh(ctx, function()
+                local selected = P.Get(ID, "stylePreset")
+                for i, spec in ipairs(STYLE_PRESETS) do
+                    buttons[i]:SetAlpha(selected == spec[1] and 1 or 0.58)
+                end
+            end)
             return y - 130
         end,
     })
@@ -105,9 +120,6 @@ local function Build(ctx)
               and not Suite.Client.IsAddOnLoaded("MinimapButtonButton") end, key = "rescan" },
         { "Reload UI", function() if ReloadUI then ReloadUI() end end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
-        { "Reset module", function()
-            P.WithHistory("Reset minimap", "suite:minimap.reset", function() return S.Reset(ID) end)
-        end, function() return S.Availability(ID) end, key = "reset" },
     })
     sections.style_presets = BuildStylePresets(ctx, b)
     for _, section in ipairs({ "layout", "hover_size", "landing", "shape", "behavior", "elements", "addons" }) do

@@ -57,13 +57,13 @@ function Pv.Decorate()
     for _, plan in pairs(C.plans) do
         local entries = plan.entries
         for i = 1, #entries do
-            local e = entries[i]
-            if e.src == "p" then
+            local entry = entries[i]
+            if entry.src == "p" then
                 if not filled then
                     Samples()
                     filled = true
                 end
-                e.texture = Sample(e.family, e.id)
+                entry.texture = Sample(entry.family, entry.id)
             end
         end
     end
@@ -155,10 +155,10 @@ local function Restart()
         if plan.kind == 1 then
             local entries, n = plan.entries, 0
             for i = 1, #entries do
-                local e = entries[i]
-                if e.icon and n < 3 then
+                local entry = entries[i]
+                if entry.icon and n < 3 then
                     n = n + 1
-                    Sim(e, ROLES[n])
+                    Sim(entry, ROLES[n])
                 end
             end
         end
@@ -248,10 +248,10 @@ local function Content(slot, kind, holder)
     local n = 0
     for i = 1, #keys do
         local key = keys[i]
-        local e = C.entries[key]
+        local entry = C.entries[key]
         local tex, name, known
-        if e and e.src ~= "p" then
-            tex, name, known = e.texture, e.name, e.known
+        if entry and entry.src ~= "p" then
+            tex, name, known = entry.texture, entry.name, entry.known
         else
             local d = C.Resolve.Describe(key, describe)
             if d then tex, name, known = d.texture, d.name, d.known end
@@ -332,22 +332,22 @@ end
 
 -- The bar look of a holder's rows; a change bumps gen and every row
 -- restyles once.
-local function Look(holder, w, h, tex, r, g, b, bgA, left, lead, size, st)
+local function Look(holder, w, h, tex, r, g, b, bgA, left, lead, size, state)
     local look = holder.look
     if look.w ~= w or look.h ~= h or look.tex ~= tex or look.r ~= r or look.g ~= g or look.b ~= b or look.bgA ~= bgA
-        or look.left ~= left or look.lead ~= lead or look.size ~= size or look.font ~= st.font
-        or look.flags ~= st.fontFlags or look.rendering ~= st.fontRendering or look.shadow ~= st.fontShadow
-        or look.shadowOpacity ~= st.fontShadowOpacity or look.shadowDistance ~= st.fontShadowDistance then
+        or look.left ~= left or look.lead ~= lead or look.size ~= size or look.font ~= state.font
+        or look.flags ~= state.fontFlags or look.rendering ~= state.fontRendering or look.shadow ~= state.fontShadow
+        or look.shadowOpacity ~= state.fontShadowOpacity or look.shadowDistance ~= state.fontShadowDistance then
         look.w, look.h, look.tex, look.r, look.g, look.b, look.bgA = w, h, tex, r, g, b, bgA
-        look.left, look.lead, look.size, look.font, look.flags = left, lead, size, st.font, st.fontFlags
+        look.left, look.lead, look.size, look.font, look.flags = left, lead, size, state.font, state.fontFlags
         look.rendering, look.shadow, look.shadowOpacity, look.shadowDistance =
-            st.fontRendering, st.fontShadow, st.fontShadowOpacity, st.fontShadowDistance
+            state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance
         look.gen = look.gen + 1
     end
     return look.gen
 end
 
-local function StyleRow(row, w, h, tex, r, g, b, bgA, left, lead, size, st)
+local function StyleRow(row, w, h, tex, r, g, b, bgA, left, lead, size, state)
     local side = left and "LEFT" or "RIGHT"
     row:SetSize(w, h)
     row.bg:SetTexture(tex)
@@ -364,8 +364,8 @@ local function StyleRow(row, w, h, tex, r, g, b, bgA, left, lead, size, st)
     fill:SetTexture(tex)
     fill:SetVertexColor(r, g, b, 1)
     local name = row.name
-    S.SetStyledFont(name, st.font, size, st.fontFlags, st.fontRendering,
-        st.fontShadow, st.fontShadowOpacity, st.fontShadowDistance)
+    S.SetStyledFont(name, state.font, size, state.fontFlags, state.fontRendering,
+        state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
     name:ClearAllPoints()
     name:SetPoint("LEFT", row, "LEFT", (left and lead or 0) + 4, 0)
     name:SetPoint("RIGHT", row, "RIGHT", -(left and 0 or lead) - 4, 0)
@@ -374,7 +374,7 @@ end
 -- Kind 3: icon, a partly filled bar and the name, in the bar's own look.
 local function Rows(holder, view, count)
     local w, h = C.Layout.Metrics(view)
-    local st = C.state
+    local state = C.state
     local tex = S.ResolveTexture(view.barTexture, BAR_TEXTURE)
     local r, g, b
     if view.barClass ~= false and type(UnitClass) == "function" then
@@ -386,13 +386,13 @@ local function Rows(holder, view, count)
     local left = view.barIconSide ~= 2
     local lead = view.barIcon ~= false and h or 0
     local size = max(8, math.floor(h * .55))
-    local gen = Look(holder, w, h, tex, r, g, b, bgA, left, lead, size, st)
+    local gen = Look(holder, w, h, tex, r, g, b, bgA, left, lead, size, state)
     local out, named, textures, names = holder.out, view.barName ~= false, holder.textures, holder.names
     for i = 1, count do
         local row = Row(holder, i)
         if row.pvLook ~= gen then
             row.pvLook = gen
-            StyleRow(row, w, h, tex, r, g, b, bgA, left, lead, size, st)
+            StyleRow(row, w, h, tex, r, g, b, bgA, left, lead, size, state)
         end
         Place(row, holder, out[2 * i - 1], out[2 * i])
         local texture, text = textures[i], named and names[i] or ""
@@ -473,3 +473,5 @@ end
 function Pv.ReleaseAll()
     for parent in pairs(canvases) do Pv.Release(parent) end
 end
+
+

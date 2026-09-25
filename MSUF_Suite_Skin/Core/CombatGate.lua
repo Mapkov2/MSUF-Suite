@@ -1,5 +1,7 @@
 local _, NS = ...
 
+-- Runs visual work now, or once after combat. A job is keyed, so a newer
+-- request for the same target replaces the older one.
 local CombatGate = {
     pending = {},
     count = 0,
@@ -12,18 +14,19 @@ local function DrainPending()
     if NS.IsCombatLocked() then
         return
     end
-
-    eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    -- Each job leaves the queue before it runs. A job that raises therefore
+    -- surfaces its error without taking the remaining jobs with it: they stay
+    -- queued for the next PLAYER_REGEN_ENABLED.
     local pending = CombatGate.pending
-    CombatGate.pending = {}
-    CombatGate.count = 0
-
-    for key, callback in pairs(pending) do
-        local ok, message = pcall(callback)
-        if not ok then
-            NS.ReportError("deferred job " .. tostring(key), message)
-        end
+    local key, callback = next(pending)
+    while key ~= nil do
+        pending[key] = nil
+        CombatGate.count = CombatGate.count - 1
+        callback()
+        key, callback = next(pending)
     end
+    CombatGate.count = 0
+    eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 end
 
 eventFrame:SetScript("OnEvent", DrainPending)

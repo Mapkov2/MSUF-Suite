@@ -98,10 +98,7 @@ local ns = {
     Theme = { GetColor = function() return 0.7, 0.5, 0.3, 1 end },
     Registry = { AddListener = function(_, callback) themeListener = callback end },
     IsCombatLocked = function() return false end,
-    Safety = {
-        CanCreateRegions = function() return true end,
-        CanDecorate = function() return true end,
-    },
+    Safety = assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     Cosmetics = {
         Fade = function(region) region.alpha = 0; return true end,
         Restore = function(region) region.alpha = 1; return true end,

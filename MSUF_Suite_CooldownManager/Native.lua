@@ -157,7 +157,7 @@ function N.FollowViewer()
 end
 
 ------------------------------------------------------------------ first-run capture
-local function Number(value) return Public(value) and type(value) == "number" and value == value end
+local Number = S.Number
 -- A stand-in view for Layout.Point.
 local pointProbe = {}
 

@@ -9,6 +9,23 @@ NS.DataTextSourceKeys = {
     false, "gold", "bags", "durability", "clock", "fps", "latency", "coordinates", "location", "xp", "sessionGold",
 }
 NS.DataTextPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+-- The same player-state choices as the unit-frame Load Conditions. Every bar
+-- owns its settings so one information strip can stay visible independently.
+NS.DataTextLoadConditions = {
+    { "HideInHousing", "Housing" },
+    { "HideInCombat", "In combat", "[combat] hide" },
+    { "HideInGroup", "In group", "[group] hide" },
+    { "HideInInstance", "In instance" },
+    { "HideInVehicle", "In vehicle", "[@player,unithasvehicleui] hide; [vehicleui] hide" },
+    { "HideMounted", "Mounted", "[mounted] hide" },
+    { "HideNoTarget", "No target", "[@target,noexists] hide" },
+    { "HideOutOfCombat", "Out of combat", "[nocombat] hide" },
+    { "HideOutOfCombatNoTarget", "Out of combat and no target", "[nocombat,@target,noexists] hide" },
+    { "HideResting", "Resting", "[resting] hide" },
+    { "HideSolo", "Solo", "[nogroup] hide" },
+    { "HideStealthed", "Stealthed", "[stealth] hide" },
+    { "ShowWhenInjured", "Show only below 100% health" },
+}
 NS.DataTextLooks = {
     { background = "0a1220", border = "41627a", accent = "57c7df", label = "a9ccdf",
       value = "f4f7fb", separator = "41627a", warning = "ff7575" },
@@ -149,6 +166,11 @@ for bar = 1, 3 do
     for slot = 1, 6 do
         B.Add("dataTexts", Choice(prefix .. "Slot" .. slot, "Place " .. slot,
             defaults[bar][slot] or 1, NS.DataTextSources), section, "Bar " .. bar)
+    end
+    for _, condition in ipairs(NS.DataTextLoadConditions) do
+        local rule = Bool(prefix .. "LoadCond" .. condition[1], condition[2], false)
+        rule.enableKey = prefix .. "Enabled"
+        B.Add("dataTexts", rule, prefix .. "Load", "Bar " .. bar .. " Load Conditions")
     end
     AddBarStyle(bar)
 end

@@ -19,6 +19,16 @@ else
 end
 S.Public = Public
 
+-- A readable number: not secret, not NaN.
+function S.Number(value)
+    return Public(value) and type(value) == "number" and value == value
+end
+
+-- A readable number that is also not infinite.
+function S.Finite(value)
+    return S.Number(value) and value > -math.huge and value < math.huge
+end
+
 local function Accessible(frame)
     return frame and not NS.Safety.IsForbidden(frame)
 end

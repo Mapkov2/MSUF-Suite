@@ -94,8 +94,15 @@ end
 local function CVarChanged(_, _, name)
     if name == "rotateMinimap" and M.mapOwned then MM.Queue("mask") end
 end
+-- Placing the protected map waits for combat to end (geometry re-applies it).
 MM.flushers.mask = function()
-    if M.mapOwned then MM.ApplyMap(true) end
+    if not M.mapOwned then return end
+    if NS.IsCombatLocked() then
+        MM.Force("geometry")
+        S.Queue("minimap")
+        return
+    end
+    MM.ApplyMap(true)
 end
 MM.flushers.hoverSize = function()
     local width, height, active = MM.Dimensions()
@@ -136,7 +143,7 @@ function M:Refresh()
         return
     end
     MM.EnsureFrames()
-    local c, dirty = self.config, Dirty(self)
+    local dirty = Dirty(self)
     if dirty.geometry or dirty.position then MM.ApplyHost() end
     if dirty.geometry then
         if self.mapOwned then MM.ApplyMap(true) end
@@ -170,26 +177,16 @@ end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("minimap", "map", {
-        label = MM.Label("MINIMAP_LABEL", "Minimap"),
-        order = 500,
+        label = MM.Label("MINIMAP_LABEL", "Minimap"), order = 500,
         getFrame = function() return MM.host end,
-        xKey = "x",
-        yKey = "y",
-        pointKey = "point",
+        xKey = "x", yKey = "y", pointKey = "point",
         point = function() return MM.ANCHORS[M.config.point] or "TOPRIGHT" end,
         isEnabled = function() return M.active == true and MM.host ~= nil end,
         historyKeys = { "size" },
         extraControls = {
-            {
-                id = "size",
-                label = "Size",
-                kind = "number",
-                min = 100,
-                max = 600,
-                step = 1,
+            { id = "size", label = "Size", kind = "number", min = 100, max = 600, step = 1,
                 get = function() return S.Config("minimap").size end,
-                set = function(value) return S.Set("minimap", "size", value) end
-            },
+                set = function(value) return S.Set("minimap", "size", value) end },
         },
     })
 end

@@ -11,6 +11,7 @@ Core\Platform.lua
 Core\Database.lua
 Core\SuiteCatalog.lua
 Core\Catalog\ActionBars.lua
+Core\Bindings.lua
 Core\Catalog\Minimap.lua
 Core\MinimapStyle.lua
 Core\Catalog\DamageMeter.lua

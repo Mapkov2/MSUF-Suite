@@ -31,10 +31,7 @@ function NS.ReportError(context, message)
     local handler = type(geterrorhandler) == "function" and geterrorhandler() or nil
     local text = ("MapkoSkin %s: %s"):format(tostring(context or "error"), tostring(message or "unknown error"))
     if type(handler) == "function" then
-        local ok = pcall(handler, text)
-        if not ok and type(print) == "function" then
-            print(text)
-        end
+        handler(text)
     elseif type(print) == "function" then
         print(text)
     end

@@ -7,6 +7,7 @@ local shapePath = NS.path .. "Media\\Shapes\\"
 local pillHeights = { 20, 24, 28, 32 }
 local emptySpec = {}
 local assets = {}
+local STRETCHED = Enum and Enum.UITextureSliceMode and Enum.UITextureSliceMode.Stretched or 0
 
 local function ClosestValue(values, requested)
     requested = tonumber(requested) or values[1]
@@ -25,9 +26,15 @@ end
 -- Finite asset combinations, never keyed by a frame or an arbitrary spec.
 local function GetAssets(shape, extent, border)
     local family = assets[shape]
-    if not family then family = {}; assets[shape] = family end
+    if not family then
+        family = {}
+        assets[shape] = family
+    end
     local size = family[extent]
-    if not size then size = {}; family[extent] = size end
+    if not size then
+        size = {}
+        family[extent] = size
+    end
     local result = size[border]
     if not result then
         local stem = shape == "pill" and ("pill_h" .. tostring(extent))
@@ -82,6 +89,25 @@ function Geometry.Resolve(spec, result)
     result.radius = not pill and extent or nil
     result.border, result.slice = border, spec.slice ~= false
     return result
+end
+
+-- Paints a resolved shape asset on a texture, nine-sliced when the geometry
+-- asks for it.
+function Geometry.ConfigureShape(texture, asset, geometry)
+    if not texture or not asset then
+        return
+    end
+    if texture.ClearTextureSlice then
+        texture:ClearTextureSlice()
+    end
+    texture:SetTexture(asset)
+    if geometry.slice and texture.SetTextureSliceMargins then
+        local margins = geometry.margins
+        texture:SetTextureSliceMargins(margins[1], margins[2], margins[3], margins[4])
+        if texture.SetTextureSliceMode then
+            texture:SetTextureSliceMode(STRETCHED)
+        end
+    end
 end
 
 function Geometry.GetFamilies()

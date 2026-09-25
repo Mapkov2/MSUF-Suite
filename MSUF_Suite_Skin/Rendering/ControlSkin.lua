@@ -11,6 +11,8 @@ local ControlSkin = {
 }
 NS.ControlSkin = ControlSkin
 
+local Safety = NS.Safety
+
 local nineSlicePieces = {
     "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
     "TopEdge", "BottomEdge", "LeftEdge", "RightEdge", "Center",
@@ -31,49 +33,53 @@ local regionSets = {
     },
 }
 
+-- Spec keys that describe cosmetics or one-shot state, not the surface.
+local nonSurfaceSpecKeys = { active = true, regions = true, nineSlices = true }
+local cosmeticListKeys = { "regions", "nineSlices" }
+local ownedStateKeys = { "highlight", "pushed", "disabled" }
+
 local function IsProtected(target, allowImplicitProtected)
-    return not NS.Safety or not NS.Safety.CanCreateRegions(target, allowImplicitProtected)
+    return not Safety.CanCreateRegions(target, allowImplicitProtected)
 end
 
 local function AccessibleNumber(region, method)
-    if not region or type(region[method]) ~= "function" then
-        return nil
-    end
-    local ok, value = pcall(region[method], region)
-    if not ok then
-        return nil
-    end
-    if type(issecretvalue) == "function" and issecretvalue(value) then
-        if type(canaccessvalue) ~= "function" or not canaccessvalue(value) then
-            return nil
-        end
-    end
-    return tonumber(value)
+    return tonumber(Safety.Read(region, method))
 end
 
-local function CopySpec(spec)
-    local copy = {}
-    for key, value in pairs(spec or {}) do
-        if key ~= "active" and key ~= "regions" and key ~= "nineSlices" then
-            copy[key] = value
-        end
-    end
-    return copy
+local function Wipe(target)
+    for key in pairs(target) do target[key] = nil end
+    return target
 end
 
-local function CopyCosmeticSpec(spec)
-    local copy = {}
-    for _, key in ipairs({ "regions", "nineSlices" }) do
+-- The surface part of a caller spec, copied into the control's own table.
+local function CopySpec(spec, target)
+    if spec == target then return target end
+    target = Wipe(target or {})
+    for key, value in pairs(spec) do
+        if not nonSurfaceSpecKeys[key] then
+            target[key] = value
+        end
+    end
+    return target
+end
+
+-- Snapshot of the caller's extra region lists, reusing the previous lists.
+local function CopyCosmeticSpec(spec, target)
+    target = target or {}
+    for index = 1, #cosmeticListKeys do
+        local key = cosmeticListKeys[index]
         local source = spec and spec[key]
         if type(source) == "table" then
-            local list = {}
-            for index = 1, #source do
-                list[index] = source[index]
+            local list = Wipe(target[key] or {})
+            for position = 1, #source do
+                list[position] = source[position]
             end
-            copy[key] = list
+            target[key] = list
+        else
+            target[key] = nil
         end
     end
-    return copy
+    return target
 end
 
 local function OwnerSet(owner)
@@ -102,24 +108,17 @@ local function BindOwner(target, state, owner)
     end
 end
 
-local function NewState(target, kind, owner)
-    local state = {
-        kind = kind,
-        enabled = false,
-        faded = setmetatable({}, { __mode = "k" }),
-        native = {},
-    }
-    ControlSkin.states[target] = state
-    BindOwner(target, state, owner)
-    return state
-end
-
 local function GetState(target, kind, owner)
     local state = ControlSkin.states[target]
     if not state then
-        return NewState(target, kind, owner)
-    end
-    if state.kind ~= kind then
+        state = {
+            kind = kind,
+            enabled = false,
+            faded = setmetatable({}, { __mode = "k" }),
+            native = {},
+        }
+        ControlSkin.states[target] = state
+    elseif state.kind ~= kind then
         return nil, "control already uses a different skin kind"
     end
     BindOwner(target, state, owner)
@@ -127,7 +126,7 @@ local function GetState(target, kind, owner)
 end
 
 local function FadeRegion(state, region)
-    if not region or type(region.SetAlpha) ~= "function" then
+    if type(region) ~= "table" or type(region.SetAlpha) ~= "function" then
         return false
     end
     if state.faded[region] == nil then
@@ -142,7 +141,8 @@ local function FadeRegion(state, region)
 end
 
 local function FadeNamedRegions(target, state, names)
-    for index = 1, #(names or {}) do
+    if not names then return end
+    for index = 1, #names do
         local name = names[index]
         if type(name) == "string" then
             FadeRegion(state, target[name])
@@ -151,7 +151,7 @@ local function FadeNamedRegions(target, state, names)
 end
 
 local function FadeNineSlice(state, nineSlice)
-    if not nineSlice then
+    if type(nineSlice) ~= "table" then
         return
     end
     for index = 1, #nineSlicePieces do
@@ -166,10 +166,13 @@ local function ApplyCosmetics(target, state, kind, spec)
     if kind == "searchBox" then
         FadeNineSlice(state, target.NineSlice)
     end
-    for index = 1, #((spec and spec.nineSlices) or {}) do
-        local field = spec.nineSlices[index]
-        if type(field) == "string" then
-            FadeNineSlice(state, target[field])
+    local nineSlices = spec and spec.nineSlices
+    if nineSlices then
+        for index = 1, #nineSlices do
+            local field = nineSlices[index]
+            if type(field) == "string" then
+                FadeNineSlice(state, target[field])
+            end
         end
     end
 end
@@ -178,19 +181,15 @@ local function RestoreCosmetics(state)
     for region, alpha in pairs(state.faded) do
         -- Leave a cosmetic value installed after ours alone. Zero is the
         -- exact alpha this module owns and is therefore safe to restore.
-        if AccessibleNumber(region, "GetAlpha") == 0 and type(region.SetAlpha) == "function" then
+        if AccessibleNumber(region, "GetAlpha") == 0 then
             region:SetAlpha(alpha)
         end
+        state.faded[region] = nil
     end
-    state.faded = setmetatable({}, { __mode = "k" })
 end
 
 local function ReadSpecialTexture(button, getter)
-    if type(button[getter]) ~= "function" then
-        return nil
-    end
-    local ok, texture = pcall(button[getter], button)
-    return ok and texture or nil
+    return (Safety.Call(button, getter))
 end
 
 local function SnapshotButtonState(button, state)
@@ -198,36 +197,31 @@ local function SnapshotButtonState(button, state)
         return
     end
     state.nativeCaptured = true
-    state.native.highlight = ReadSpecialTexture(button, "GetHighlightTexture")
-    state.native.pushed = ReadSpecialTexture(button, "GetPushedTexture")
-    state.native.disabled = ReadSpecialTexture(button, "GetDisabledTexture")
-    if state.native.highlight and type(state.native.highlight.GetBlendMode) == "function" then
-        local ok, blendMode = pcall(state.native.highlight.GetBlendMode, state.native.highlight)
-        if ok then
-            state.native.highlightBlendMode = blendMode
-        end
-    end
+    local native = state.native
+    native.highlight = ReadSpecialTexture(button, "GetHighlightTexture")
+    native.pushed = ReadSpecialTexture(button, "GetPushedTexture")
+    native.disabled = ReadSpecialTexture(button, "GetDisabledTexture")
+    native.highlightBlendMode = Safety.Read(native.highlight, "GetBlendMode")
 end
 
+-- The state-texture setters reject nil. A slot that had no native texture
+-- keeps our owned texture, which the caller hides.
 local function SetSpecialTexture(button, setter, texture, blendMode)
-    if type(button[setter]) ~= "function" then
+    if texture == nil then
         return false
     end
-    local ok
     if blendMode then
-        ok = pcall(button[setter], button, texture, blendMode)
-    else
-        ok = pcall(button[setter], button, texture)
+        return Safety.Invoke(button, setter, texture, blendMode)
     end
-    return ok == true
+    return Safety.Invoke(button, setter, texture)
 end
 
 local function SetOwnedStateAlpha(surface, alpha)
     if not surface then
         return
     end
-    for _, key in ipairs({ "highlight", "pushed", "disabled" }) do
-        local texture = surface[key]
+    for index = 1, #ownedStateKeys do
+        local texture = surface[ownedStateKeys[index]]
         if texture and type(texture.SetAlpha) == "function" then
             texture:SetAlpha(alpha)
         end
@@ -250,46 +244,42 @@ local function AssignOwnedButtonStates(button)
     return true
 end
 
+local function ForgetNativeStates(state)
+    Wipe(state.native)
+    state.nativeCaptured = false
+end
+
 local function RestoreButtonStates(button, state)
     if not state.nativeCaptured then
         return
     end
     local surface = NS.Registry.GetSurface(button)
+    local native = state.native
     if surface then
         if ReadSpecialTexture(button, "GetHighlightTexture") == surface.highlight then
-            SetSpecialTexture(button, "SetHighlightTexture", state.native.highlight, state.native.highlightBlendMode)
+            SetSpecialTexture(button, "SetHighlightTexture", native.highlight, native.highlightBlendMode)
         end
         if ReadSpecialTexture(button, "GetPushedTexture") == surface.pushed then
-            SetSpecialTexture(button, "SetPushedTexture", state.native.pushed)
+            SetSpecialTexture(button, "SetPushedTexture", native.pushed)
         end
         if ReadSpecialTexture(button, "GetDisabledTexture") == surface.disabled then
-            SetSpecialTexture(button, "SetDisabledTexture", state.native.disabled)
+            SetSpecialTexture(button, "SetDisabledTexture", native.disabled)
         end
     end
     SetOwnedStateAlpha(surface, 0)
-    state.native = {}
-    state.nativeCaptured = false
+    ForgetNativeStates(state)
 end
 
 local function DetectSelected(tab)
     if type(tab.IsSelected) == "function" then
-        local ok, selected = pcall(tab.IsSelected, tab)
-        if ok then
-            return selected == true
-        end
+        return Safety.Read(tab, "IsSelected") == true
     end
     local active = tab.MiddleActive or tab.LeftActive or tab.RightActive
-    if active and type(active.IsShown) == "function" then
-        local ok, shown = pcall(active.IsShown, active)
-        if ok then
-            return shown == true
-        end
-    end
-    return false
+    return Safety.Read(active, "IsShown") == true
 end
 
-local function DefaultButtonSpec(kind, spec)
-    local copy = CopySpec(spec)
+local function DefaultButtonSpec(kind, spec, target)
+    local copy = CopySpec(spec, target)
     local isTab = kind == "minimalTab" or kind == "panelTab"
     copy.role = copy.role or (isTab and "navigation" or "button")
     copy.activeRole = copy.activeRole or (isTab and "navigationActive" or "buttonPrimary")
@@ -302,8 +292,8 @@ local function DefaultButtonSpec(kind, spec)
     return copy
 end
 
-local function DefaultSearchSpec(spec)
-    local copy = CopySpec(spec)
+local function DefaultSearchSpec(spec, target)
+    local copy = CopySpec(spec, target)
     copy.role = copy.role or "input"
     if copy.useControlShape == nil then
         copy.useControlShape = true
@@ -320,38 +310,44 @@ local function SkinButtonSurface(button, state, active)
         isTab and state.requestedActive == nil)
 end
 
-local function ApplyButtonNow(button, owner, kind, spec)
+local function TrackNativeAssets(button, owner)
     local actionKind = NS.Checkmarks and NS.Checkmarks.GetWindowAction(button) or nil
     if NS.Checkmarks then
         NS.Checkmarks.TrackButton(button, owner)
         NS.Checkmarks.TrackDropdown(button, owner)
     end
+    return actionKind
+end
+
+local function MarkWindowAction(state, actionKind)
+    state.windowAction = true
+    state.actionKind = actionKind
+    state.enabled = true
+end
+
+local function ApplyButtonNow(button, owner, kind, spec)
+    local actionKind = TrackNativeAssets(button, owner)
     local state, reason = GetState(button, kind, owner)
     if not state then
         return nil, reason
     end
 
-    state.spec = DefaultButtonSpec(kind, spec)
-    state.cosmeticSpec = CopyCosmeticSpec(spec)
-    state.requestedActive = spec and spec.active
+    state.spec = DefaultButtonSpec(kind, spec, state.spec)
+    state.cosmeticSpec = CopyCosmeticSpec(spec, state.cosmeticSpec)
+    state.requestedActive = spec.active
     if actionKind and NS.WindowActionSkin then
         local action, actionReason = NS.WindowActionSkin.Apply(button, owner, actionKind)
         if not action then return nil, actionReason or "window action unavailable" end
-        state.windowAction = true
-        state.actionKind = actionKind
-        state.enabled = true
+        MarkWindowAction(state, actionKind)
         return state
     end
 
     state.windowAction = false
     state.actionKind = nil
-    state.preserveNativeStates = false
     SnapshotButtonState(button, state)
-    local surface, surfaceReason
-    surface, surfaceReason = SkinButtonSurface(button, state)
+    local surface, surfaceReason = SkinButtonSurface(button, state)
     if not surface or not AssignOwnedButtonStates(button) then
-        state.native = {}
-        state.nativeCaptured = false
+        ForgetNativeStates(state)
         return nil, surfaceReason or "surface unavailable"
     end
     ApplyCosmetics(button, state, kind, spec)
@@ -365,8 +361,8 @@ local function ApplySearchNow(searchBox, owner, spec)
     if not state then
         return nil, reason
     end
-    state.spec = DefaultSearchSpec(spec)
-    state.cosmeticSpec = CopyCosmeticSpec(spec)
+    state.spec = DefaultSearchSpec(spec, state.spec)
+    state.cosmeticSpec = CopyCosmeticSpec(spec, state.cosmeticSpec)
     local surface, surfaceReason = NS.Surface.Attach(searchBox, state.spec)
     if not surface then
         return nil, surfaceReason or "surface unavailable"
@@ -376,72 +372,82 @@ local function ApplySearchNow(searchBox, owner, spec)
     return state
 end
 
-local function ApplyDeferred(target, operation, callback, allowImplicitProtected)
+-- Runs apply(target, a, b, c) now, or once after combat under a per-control
+-- key. Only the combat path allocates.
+local function RunOrDefer(target, allowImplicitProtected, operation, apply, a, b, c)
     if not target then return nil, "invalid control" end
     if IsProtected(target, allowImplicitProtected) then
         return nil, "protected control"
     end
     if type(target.CreateTexture) ~= "function" then return nil, "invalid control" end
-
-    -- Ordinary OOC applications do not need a deferred job key, wrapper or
-    -- captured result slots. Keep the keyed combat path exactly as before.
     if not NS.IsCombatLocked() then
-        local result, reason = callback()
-        return result, reason
+        return apply(target, a, b, c)
     end
-
-    local result, callbackReason
-    local ran, reason = NS.CombatGate.RunOrDefer("controlskin:" .. tostring(target), function()
-        result, callbackReason = callback()
+    local _, reason = NS.CombatGate.RunOrDefer("controlskin:" .. tostring(target), function()
+        apply(target, a, b, c)
     end)
-    if ran then
-        return result, callbackReason
-    end
     return nil, reason or operation
 end
 
+local emptySpec = {}
+
+local function ApplyButtonKind(button, owner, spec, kind)
+    spec = spec or emptySpec
+    return RunOrDefer(button, spec.allowImplicitProtected, "apply", ApplyButtonNow, owner, kind, spec)
+end
+
 function ControlSkin.ApplyThreeSliceButton(button, owner, spec)
-    spec = spec or {}
-    return ApplyDeferred(button, "apply", function()
-        return ApplyButtonNow(button, owner, "threeSlice", spec)
-    end, spec.allowImplicitProtected)
+    return ApplyButtonKind(button, owner, spec, "threeSlice")
 end
 
 function ControlSkin.ApplyButton(button, owner, spec)
-    spec = spec or {}
-    return ApplyDeferred(button, "apply", function()
-        return ApplyButtonNow(button, owner, "button", spec)
-    end, spec.allowImplicitProtected)
+    return ApplyButtonKind(button, owner, spec, "button")
 end
 
 ControlSkin.ApplyUIPanelButton = ControlSkin.ApplyButton
 
 function ControlSkin.ApplyMinimalTab(tab, owner, spec)
-    spec = spec or {}
-    return ApplyDeferred(tab, "apply", function()
-        return ApplyButtonNow(tab, owner, "minimalTab", spec)
-    end, spec.allowImplicitProtected)
+    return ApplyButtonKind(tab, owner, spec, "minimalTab")
 end
 
 function ControlSkin.ApplyPanelTab(tab, owner, spec)
-    spec = spec or {}
-    return ApplyDeferred(tab, "apply", function()
-        return ApplyButtonNow(tab, owner, "panelTab", spec)
-    end, spec.allowImplicitProtected)
+    return ApplyButtonKind(tab, owner, spec, "panelTab")
 end
 
 function ControlSkin.ApplyTab(tab, owner, spec)
-    if tab and (tab.LeftActive or tab.MiddleActive or tab.RightActive) then
+    if type(tab) == "table" and (tab.LeftActive or tab.MiddleActive or tab.RightActive) then
         return ControlSkin.ApplyPanelTab(tab, owner, spec)
     end
     return ControlSkin.ApplyMinimalTab(tab, owner, spec)
 end
 
 function ControlSkin.ApplySearchBox(searchBox, owner, spec)
-    spec = spec or {}
-    return ApplyDeferred(searchBox, "apply", function()
-        return ApplySearchNow(searchBox, owner, spec)
-    end, spec.allowImplicitProtected)
+    spec = spec or emptySpec
+    return RunOrDefer(searchBox, spec.allowImplicitProtected, "apply", ApplySearchNow, owner, spec)
+end
+
+-- Button skins follow a native window action (returns nil and its kind) or
+-- (re)assign the owned state textures. A refresh also drops an action layer
+-- whose native art kit has changed to a non-action family.
+local function RepaintButton(target, state, active, dropStaleAction)
+    local actionKind = TrackNativeAssets(target, state.owner)
+    if actionKind and NS.WindowActionSkin then
+        return nil, actionKind
+    end
+    if dropStaleAction and state.windowAction and NS.WindowActionSkin then
+        NS.WindowActionSkin.Disable(target, state.owner)
+    end
+    state.windowAction = false
+    state.actionKind = nil
+    -- A disabled control may have been restyled by Blizzard or another addon.
+    -- Capture that current cooperative state before our textures are assigned
+    -- again so the next Disable restores the latest owner, not our old skin.
+    SnapshotButtonState(target, state)
+    local surface, reason = SkinButtonSurface(target, state, active)
+    if not surface or not AssignOwnedButtonStates(target) then
+        return false, reason or "surface unavailable"
+    end
+    return true
 end
 
 local function RefreshNow(target, state, active)
@@ -453,35 +459,24 @@ local function RefreshNow(target, state, active)
         if not surface then
             return false, reason or "surface unavailable"
         end
-        ApplyCosmetics(target, state, state.kind, state.cosmeticSpec)
     else
-        local actionKind = NS.Checkmarks and NS.Checkmarks.GetWindowAction(target) or nil
-        if NS.Checkmarks then
-            NS.Checkmarks.TrackButton(target, state.owner)
-            NS.Checkmarks.TrackDropdown(target, state.owner)
-        end
-        if actionKind and NS.WindowActionSkin then
+        local painted, detail = RepaintButton(target, state, active, true)
+        if painted == nil then
             if state.nativeCaptured then RestoreButtonStates(target, state) end
-            local action, reason = NS.WindowActionSkin.Apply(target, state.owner, actionKind)
+            local action, reason = NS.WindowActionSkin.Apply(target, state.owner, detail)
             if not action then return false, reason or "window action unavailable" end
-            state.windowAction = true
-            state.actionKind = actionKind
-            state.preserveNativeStates = false
-            state.enabled = true
+            MarkWindowAction(state, detail)
             return true
-        elseif state.windowAction and NS.WindowActionSkin then
-            NS.WindowActionSkin.Disable(target, state.owner)
-            state.windowAction = false
-            state.actionKind = nil
+        elseif not painted then
+            return false, detail
         end
-        SnapshotButtonState(target, state)
-        local surface, reason = SkinButtonSurface(target, state, active)
-        if not surface or not AssignOwnedButtonStates(target) then
-            return false, reason or "surface unavailable"
-        end
-        ApplyCosmetics(target, state, state.kind, state.cosmeticSpec)
     end
+    ApplyCosmetics(target, state, state.kind, state.cosmeticSpec)
     return true
+end
+
+local function AllowsImplicit(state)
+    return state.spec and state.spec.allowImplicitProtected
 end
 
 function ControlSkin.Refresh(target, active)
@@ -489,15 +484,11 @@ function ControlSkin.Refresh(target, active)
     if not state then
         return false, "unknown control"
     end
-    local result, callbackReason
-    local refreshed, reason = ApplyDeferred(target, "refresh", function()
-        result, callbackReason = RefreshNow(target, state, active)
-        return result, callbackReason
-    end, state.spec and state.spec.allowImplicitProtected)
+    local refreshed, reason = RunOrDefer(target, AllowsImplicit(state), "refresh", RefreshNow, state, active)
     if refreshed == nil then
         return false, reason
     end
-    return refreshed, callbackReason
+    return refreshed, reason
 end
 
 local function EnableNow(target, state, active)
@@ -507,30 +498,15 @@ local function EnableNow(target, state, active)
             return nil, reason or "surface unavailable"
         end
     else
-        local actionKind = NS.Checkmarks and NS.Checkmarks.GetWindowAction(target) or nil
-        if NS.Checkmarks then
-            NS.Checkmarks.TrackButton(target, state.owner)
-            NS.Checkmarks.TrackDropdown(target, state.owner)
-        end
-        if actionKind and NS.WindowActionSkin then
-            local action, reason = NS.WindowActionSkin.Apply(target, state.owner, actionKind)
+        local painted, detail = RepaintButton(target, state, active, false)
+        if painted == nil then
+            local action, reason = NS.WindowActionSkin.Apply(target, state.owner, detail)
             if not action then return nil, reason or "window action unavailable" end
-            state.windowAction = true
-            state.actionKind = actionKind
-            state.enabled = true
+            MarkWindowAction(state, detail)
             return true
-        end
-        state.windowAction = false
-        state.actionKind = nil
-        -- A disabled control may have been restyled by Blizzard or another addon.
-        -- Capture that current cooperative state before our textures are assigned
-        -- again so the next Disable restores the latest owner, not our old skin.
-        SnapshotButtonState(target, state)
-        local surface, reason = SkinButtonSurface(target, state, active)
-        if not surface or not AssignOwnedButtonStates(target) then
-            state.native = {}
-            state.nativeCaptured = false
-            return nil, reason or "surface unavailable"
+        elseif not painted then
+            ForgetNativeStates(state)
+            return nil, detail
         end
     end
     ApplyCosmetics(target, state, state.kind, state.cosmeticSpec)
@@ -543,9 +519,7 @@ function ControlSkin.Enable(target, active)
     if not state then
         return false, "unknown control"
     end
-    local enabled, reason = ApplyDeferred(target, "enable", function()
-        return EnableNow(target, state, active)
-    end, state.spec and state.spec.allowImplicitProtected)
+    local enabled, reason = RunOrDefer(target, AllowsImplicit(state), "enable", EnableNow, state, active)
     if enabled == nil then
         return false, reason
     end
@@ -577,49 +551,62 @@ function ControlSkin.Disable(target)
     if not state then
         return false, "unknown control"
     end
-    local result, callbackReason
-    local disabled, reason = ApplyDeferred(target, "disable", function()
-        result, callbackReason = DisableNow(target, state)
-        return result, callbackReason
-    end, state.spec and state.spec.allowImplicitProtected)
+    local disabled, reason = RunOrDefer(target, AllowsImplicit(state), "disable", DisableNow, state)
     if disabled == nil then
         return false, reason
     end
-    return disabled, callbackReason
+    return disabled, reason
 end
 
-function ControlSkin.RefreshOwner(owner)
+local function RefreshOwnerNow(owner)
     local set = ControlSkin.owners[owner]
-    if not set then
+    if not set then return end
+    for target in pairs(set) do
+        local state = ControlSkin.states[target]
+        if state and state.enabled and not IsProtected(target, AllowsImplicit(state)) then
+            RefreshNow(target, state)
+        end
+    end
+end
+
+local function DisableOwnerNow(owner)
+    local set = ControlSkin.owners[owner]
+    if not set then return end
+    for target in pairs(set) do
+        local state = ControlSkin.states[target]
+        if state and not IsProtected(target, AllowsImplicit(state)) then
+            DisableNow(target, state)
+        end
+    end
+    ControlSkin.owners[owner] = nil
+end
+
+-- Owner-wide work shares one key per owner, so a later request replaces a
+-- pending one.
+local function RunOwnerOperation(owner, operation)
+    if not NS.IsCombatLocked() then
+        operation(owner)
         return true
     end
     local ran, reason = NS.CombatGate.RunOrDefer("controlskin-owner:" .. tostring(owner), function()
-        for target in pairs(set) do
-            local state = ControlSkin.states[target]
-            if state and state.enabled and not IsProtected(target, state.spec and state.spec.allowImplicitProtected) then
-                RefreshNow(target, state)
-            end
-        end
+        operation(owner)
     end)
     return ran == true, reason
+end
+
+function ControlSkin.RefreshOwner(owner)
+    if not ControlSkin.owners[owner] then
+        return true
+    end
+    return RunOwnerOperation(owner, RefreshOwnerNow)
 end
 
 function ControlSkin.DisableOwner(owner)
     if NS.Checkmarks then NS.Checkmarks.UntrackOwner(owner) end
-    local set = ControlSkin.owners[owner]
-    if not set then
+    if not ControlSkin.owners[owner] then
         return true
     end
-    local ran, reason = NS.CombatGate.RunOrDefer("controlskin-owner:" .. tostring(owner), function()
-        for target in pairs(set) do
-            local state = ControlSkin.states[target]
-            if state and not IsProtected(target, state.spec and state.spec.allowImplicitProtected) then
-                DisableNow(target, state)
-            end
-        end
-        ControlSkin.owners[owner] = nil
-    end)
-    return ran == true, reason
+    return RunOwnerOperation(owner, DisableOwnerNow)
 end
 
 function ControlSkin.IsApplied(target)

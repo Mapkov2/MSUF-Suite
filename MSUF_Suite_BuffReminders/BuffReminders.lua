@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = {}
+local Public = S.Public
 local MAX_ENTRIES = 12
 local QUESTION_MARK = 134400
 -- These spell IDs are already part of MSUF's long-term raid buff presets.
@@ -46,7 +47,41 @@ local OIL_WEAPON_LOCATIONS = {
 }
 local FOOD_ICONS = { [136000] = true, [133950] = true }
 local ANCHORS = { "CENTER", "TOP" }
+-- The automatic consumable picks remembered by Compile. A bag update only
+-- recompiles when one of these picks changed.
+local STOCK = {
+    { key = "stockFlask", items = FLASKS },
+    { key = "stockFood", items = FOODS },
+    { key = "stockRune", items = RUNES },
+    { key = "stockOil", items = OILS },
+}
+-- Registered while out of combat. In combat the reminders are hidden by their
+-- state driver, so only PLAYER_REGEN_ENABLED stays registered.
+local EVENTS = {
+    "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "SPELLS_CHANGED",
+    "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED_NEW_AREA", "BAG_UPDATE_DELAYED",
+    "PLAYER_EQUIPMENT_CHANGED", "PLAYER_ALIVE", "PLAYER_DEAD", "PLAYER_UNGHOST",
+    "PLAYER_MOUNT_DISPLAY_CHANGED",
+}
+local COMPILE_EVENTS = {
+    SPELLS_CHANGED = true, PLAYER_REGEN_ENABLED = true, PLAYER_SPECIALIZATION_CHANGED = true,
+    PLAYER_EQUIPMENT_CHANGED = true, WEAPON_SLOT_CHANGED = true,
+}
+local INSTANCE_EVENTS = { PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true, PLAYER_REGEN_ENABLED = true }
+local EVENT_MODES = {
+    UNIT_AURA = "aura",
+    UNIT_INVENTORY_CHANGED = "weapon", WEAPON_ENCHANT_CHANGED = "weapon",
+    WEAPON_SLOT_CHANGED = "weapon", PLAYER_EQUIPMENT_CHANGED = "weapon",
+    PLAYER_ENTERING_WORLD = "all", ZONE_CHANGED_NEW_AREA = "all", PLAYER_REGEN_ENABLED = "all",
+    SPELLS_CHANGED = "all", PLAYER_SPECIALIZATION_CHANGED = "all",
+}
+local UNIT_FILTERED = { UNIT_AURA = true, UNIT_INVENTORY_CHANGED = true, PLAYER_SPECIALIZATION_CHANGED = true }
+local WEAPON_EVENTS = { "WEAPON_ENCHANT_CHANGED", "WEAPON_SLOT_CHANGED" }
 local itemCountAPI = (_G.C_Item and _G.C_Item.GetItemCount) or _G.GetItemCount
+
+local function Clear(t)
+    for key in pairs(t) do t[key] = nil end
+end
 
 local function ID(value)
     local id = tonumber(value)
@@ -57,12 +92,12 @@ local function Known(spellID)
     local first = _G.IsPlayerSpell
     if type(first) == "function" then
         local result = first(spellID)
-        if S.Public(result) and result == true then return true end
+        if Public(result) and result == true then return true end
     end
     local second = _G.IsSpellKnown
     if type(second) == "function" then
         local result = second(spellID)
-        if S.Public(result) and result == true then return true end
+        if Public(result) and result == true then return true end
     end
     return false
 end
@@ -70,7 +105,7 @@ end
 local function ItemCount(itemID)
     if type(itemCountAPI) ~= "function" then return nil end
     local count = itemCountAPI(itemID)
-    if S.Public(count) and type(count) == "number" then return count end
+    if Public(count) and type(count) == "number" then return count end
 end
 
 local function FirstStocked(items)
@@ -85,10 +120,10 @@ local function OilWeaponEquipped(slot)
     local getID = _G.GetInventoryItemID
     local getInfo = _G.C_Item and _G.C_Item.GetItemInfoInstant
     if type(getID) ~= "function" or type(getInfo) ~= "function" then return false end
-    local ok, itemID = pcall(getID, "player", slot)
-    if not ok or not S.Public(itemID) or type(itemID) ~= "number" then return false end
-    local infoOK, _, _, _, location, _, classID = pcall(getInfo, itemID)
-    if not infoOK or not S.Public(location) or not S.Public(classID) then return false end
+    local itemID = getID("player", slot)
+    if not Public(itemID) or type(itemID) ~= "number" then return false end
+    local _, _, _, location, _, classID = getInfo(itemID)
+    if not Public(location) or not Public(classID) then return false end
     -- ItemClass.Weapon is 2; a shield, held item or ranged weapon is not an oil target.
     return classID == 2 and OIL_WEAPON_LOCATIONS[location] == true
 end
@@ -96,7 +131,7 @@ end
 local function OwnWeaponImbueKnown()
     if type(_G.UnitClass) ~= "function" then return true end
     local _, class = UnitClass("player")
-    if not S.Public(class) or type(class) ~= "string" then return true end
+    if not Public(class) or type(class) ~= "string" then return true end
     if class == "SHAMAN" then
         return Known(382021) or Known(318038) or Known(33757)
     end
@@ -113,27 +148,26 @@ local function Texture(kind, id)
         local fn = _G.C_Item and _G.C_Item.GetItemIconByID or _G.GetItemIcon
         if type(fn) == "function" then value = fn(id) end
     end
-    return S.Public(value) and value or QUESTION_MARK
+    return Public(value) and value or QUESTION_MARK
 end
 
 local function AuraExpiry(data)
     local expiration, duration = data.expirationTime, data.duration
-    if S.Public(expiration) and S.Public(duration)
+    if Public(expiration) and Public(duration)
         and type(expiration) == "number" and type(duration) == "number"
         and expiration > 0 and duration > 0 and expiration < math.huge then
         return expiration
     end
 end
 
-local function PublicAuraSnapshot(data)
+-- Copies the public identity and timing of an aura into target.
+local function FillSnapshot(target, data)
     local instanceID = data.auraInstanceID
-    if not S.Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
+    if not Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
     local expiration = AuraExpiry(data)
-    return {
-        auraInstanceID = instanceID,
-        expirationTime = expiration,
-        duration = expiration and data.duration or nil
-    }
+    target.auraInstanceID, target.expirationTime = instanceID, expiration
+    target.duration = expiration and data.duration or nil
+    return target
 end
 
 local function AuraPresent(entry, scan)
@@ -146,16 +180,15 @@ local function AuraPresent(entry, scan)
         if scan then
             data = scan[id]
         else
-            local ok
-            ok, data = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
-            if not ok or not S.Public(data) then
+            data = C_UnitAuras.GetPlayerAuraBySpellID(id)
+            if not Public(data) then
                 unknown = true
                 data = nil
             end
         end
         if data then
             local instanceID = data.auraInstanceID
-            if not S.Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
+            if not Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
             local expiration = scan and data.expirationTime or AuraExpiry(data)
             return true, instanceID, expiration, nil, expiration and data.duration or nil
         end
@@ -173,63 +206,65 @@ local function MatchesAuraID(entry, spellID)
     return false
 end
 
-local function AuraChangeAffects(entry, info)
-    if not S.Public(info) or type(info) ~= "table" then return true end
-    local full = info.isFullUpdate
-    if not S.Public(full) or full then return true end
-    if entry.present == nil then return true end
-    local added = info.addedAuras
-    if not S.Public(added) or (added ~= nil and type(added) ~= "table") then return true end
-    if added then
-        for _, aura in ipairs(added) do
-            if not S.Public(aura) then return true end
-            local spellID = aura.spellId
-            if not S.Public(spellID) or type(spellID) ~= "number"
-                or MatchesAuraID(entry, spellID) then
-                return true
-            end
-        end
-    end
-    if entry.present == false then return false end
-    local instanceID = entry.auraInstanceID
-    if not instanceID then return true end
-    local removed = info.removedAuraInstanceIDs
-    if not S.Public(removed) or (removed ~= nil and type(removed) ~= "table") then return true end
-    if removed then
-        for _, removedID in ipairs(removed) do
-            if not S.Public(removedID) or type(removedID) ~= "number"
-                or removedID == instanceID or (entry.instanceIDs and entry.instanceIDs[removedID]) then
-                return true
-            end
-        end
-    end
-    local updated = info.updatedAuraInstanceIDs
-    if not S.Public(updated) or (updated ~= nil and type(updated) ~= "table") then return true end
-    if updated then
-        for _, updatedID in ipairs(updated) do
-            if not S.Public(updatedID) or type(updatedID) ~= "number"
-                or updatedID == instanceID or (entry.instanceIDs and entry.instanceIDs[updatedID]) then
-                return true
-            end
+-- A public list of aura instance IDs, nil (absent), or false (unreadable).
+local function IDList(list)
+    if not Public(list) or (list ~= nil and type(list) ~= "table") then return false end
+    return list
+end
+
+local function ListTouches(list, entry, instanceID)
+    for _, id in ipairs(list) do
+        if not Public(id) or type(id) ~= "number" or id == instanceID
+            or (entry.instanceIDs and entry.instanceIDs[id]) then
+            return true
         end
     end
     return false
 end
 
+local function AuraChangeAffects(entry, info)
+    if not Public(info) or type(info) ~= "table" then return true end
+    local full = info.isFullUpdate
+    if not Public(full) or full then return true end
+    if entry.present == nil then return true end
+    local added = IDList(info.addedAuras)
+    if added == false then return true end
+    if added then
+        for _, aura in ipairs(added) do
+            if not Public(aura) then return true end
+            local spellID = aura.spellId
+            if not Public(spellID) or type(spellID) ~= "number" or MatchesAuraID(entry, spellID) then return true end
+        end
+    end
+    if entry.present == false then return false end
+    local instanceID = entry.auraInstanceID
+    if not instanceID then return true end
+    local removed = IDList(info.removedAuraInstanceIDs)
+    if removed == false or (removed and ListTouches(removed, entry, instanceID)) then return true end
+    local updated = IDList(info.updatedAuraInstanceIDs)
+    if updated == false or (updated and ListTouches(updated, entry, instanceID)) then return true end
+    return false
+end
+
+-- Classic fallback: one bounded scan of the player's helpful auras.
 local function ScanAuras(self)
     local get = C_UnitAuras.GetAuraDataByIndex
     if type(get) ~= "function" then return nil, false end
-    local found = self.auraScratch
-    local wanted = self.auraWanted
-    for id in pairs(found) do found[id] = nil end
+    local found, wanted, snapshots = self.auraScratch, self.auraWanted, self.auraSnapshots
+    Clear(found)
     for index = 1, 255 do
-        local ok, data = pcall(get, "player", index, "HELPFUL")
-        if not ok or not S.Public(data) then return nil, false end
+        local data = get("player", index, "HELPFUL")
+        if not Public(data) then return nil, false end
         if data == nil then break end
         local spellID = data.spellId
-        if not S.Public(spellID) then return nil, false end
+        if not Public(spellID) then return nil, false end
         if type(spellID) == "number" and wanted[spellID] then
-            found[spellID] = PublicAuraSnapshot(data)
+            local snapshot = snapshots[spellID]
+            if not snapshot then
+                snapshot = {}
+                snapshots[spellID] = snapshot
+            end
+            found[spellID] = FillSnapshot(snapshot, data)
         end
         if index == 255 then return nil, false end
     end
@@ -243,10 +278,10 @@ local function ScanFood(self)
         return
     end
     local ids = self.foodIDs
-    for id in pairs(ids) do ids[id] = nil end
+    Clear(ids)
     for index = 1, 255 do
-        local ok, data = pcall(get, "player", index, "HELPFUL")
-        if not ok or not S.Public(data) then
+        local data = get("player", index, "HELPFUL")
+        if not Public(data) then
             self.foodKnown = false
             return
         end
@@ -255,21 +290,23 @@ local function ScanFood(self)
             return
         end
         local icon, instanceID = data.icon, data.auraInstanceID
-        if not S.Public(icon) or not S.Public(instanceID) then
+        if not Public(icon) or not Public(instanceID) then
             self.foodKnown = false
             return
         end
         if type(icon) == "number" and FOOD_ICONS[icon]
             and (instanceID == nil or type(instanceID) == "number") then
-            ids[instanceID or index] = PublicAuraSnapshot(data)
+            ids[instanceID or index] = FillSnapshot({}, data)
         end
     end
     self.foodKnown = false
 end
 
+-- Applies one UNIT_AURA delta to the known food auras. Returns true when the
+-- food reminder must be re-evaluated; foodKnown false/nil forces a rescan.
 local function FoodDelta(self, info)
     if not self.hasFood then return false end
-    if not S.Public(info) then
+    if not Public(info) then
         self.foodKnown = false
         return true
     end
@@ -277,7 +314,7 @@ local function FoodDelta(self, info)
         self.foodKnown = nil
         return true
     end
-    if type(info) ~= "table" or not S.Public(info.isFullUpdate) then
+    if type(info) ~= "table" or not Public(info.isFullUpdate) then
         self.foodKnown = false
         return true
     end
@@ -288,14 +325,14 @@ local function FoodDelta(self, info)
     if self.foodKnown ~= true then return false end
     local ids = self.foodIDs
     local changed = false
-    local removed = info.removedAuraInstanceIDs
-    if not S.Public(removed) or (removed ~= nil and type(removed) ~= "table") then
+    local removed = IDList(info.removedAuraInstanceIDs)
+    if removed == false then
         self.foodKnown = false
         return true
     end
     if removed then
         for _, id in ipairs(removed) do
-            if not S.Public(id) then
+            if not Public(id) then
                 self.foodKnown = false
                 return true
             end
@@ -303,32 +340,32 @@ local function FoodDelta(self, info)
             ids[id] = nil
         end
     end
-    local added = info.addedAuras
-    if not S.Public(added) or (added ~= nil and type(added) ~= "table") then
+    local added = IDList(info.addedAuras)
+    if added == false then
         self.foodKnown = false
         return true
     end
     if added then
         for _, aura in ipairs(added) do
-            if not S.Public(aura) or not S.Public(aura.icon) or not S.Public(aura.auraInstanceID) then
+            if not Public(aura) or not Public(aura.icon) or not Public(aura.auraInstanceID) then
                 self.foodKnown = false
                 return true
             end
             if type(aura.icon) == "number" and type(aura.auraInstanceID) == "number"
                 and FOOD_ICONS[aura.icon] then
-                ids[aura.auraInstanceID] = PublicAuraSnapshot(aura)
+                ids[aura.auraInstanceID] = FillSnapshot({}, aura)
                 changed = true
             end
         end
     end
-    local updated = info.updatedAuraInstanceIDs
-    if not S.Public(updated) or (updated ~= nil and type(updated) ~= "table") then
+    local updated = IDList(info.updatedAuraInstanceIDs)
+    if updated == false then
         self.foodKnown = false
         return true
     end
     if updated then
         for _, id in ipairs(updated) do
-            if not S.Public(id) then
+            if not Public(id) then
                 self.foodKnown = false
                 return true
             end
@@ -358,11 +395,11 @@ end
 local function EnchantPresent(slot)
     local paperDoll = _G.C_PaperDollInfo
     if paperDoll and type(paperDoll.GetTemporaryEnchantmentInfo) == "function" then
-        local ok, data = pcall(paperDoll.GetTemporaryEnchantmentInfo, slot)
-        if not ok or not S.Public(data) then return nil end
+        local data = paperDoll.GetTemporaryEnchantmentInfo(slot)
+        if not Public(data) then return nil end
         if data == nil then return false end
         local remaining, timed = data.remainingTimeMs, data.hasExpirationTime
-        if S.Public(remaining) and S.Public(timed) and timed == true
+        if Public(remaining) and Public(timed) and timed == true
             and type(remaining) == "number" and remaining > 0 and remaining < math.huge
             and type(_G.GetTime) == "function" then
             return true, GetTime() + remaining / 1000
@@ -370,13 +407,12 @@ local function EnchantPresent(slot)
         return true
     end
     if type(_G.GetWeaponEnchantInfo) == "function" then
-        local ok, main, mainRemaining, _, _, off, offRemaining = pcall(GetWeaponEnchantInfo)
-        if not ok then return nil end
+        local main, mainRemaining, _, _, off, offRemaining = GetWeaponEnchantInfo()
         local value, remaining
         if slot == 16 then value, remaining = main, mainRemaining else value, remaining = off, offRemaining end
-        if not S.Public(value) then return nil end
+        if not Public(value) then return nil end
         if value ~= true then return false end
-        if S.Public(remaining) and type(remaining) == "number" and remaining > 0
+        if Public(remaining) and type(remaining) == "number" and remaining > 0
             and remaining < math.huge and type(_G.GetTime) == "function" then
             return true, GetTime() + remaining / 1000
         end
@@ -390,21 +426,21 @@ local function ReadInstance(self)
         return
     end
     local _, instanceType = GetInstanceInfo()
-    self.instanceType = S.Public(instanceType) and instanceType or false
+    self.instanceType = Public(instanceType) and instanceType or false
 end
 
 local function Allowed(self)
     if type(_G.UnitIsDeadOrGhost) == "function" then
         local dead = UnitIsDeadOrGhost("player")
-        if not S.Public(dead) or dead == true then return false end
+        if not Public(dead) or dead == true then return false end
     end
     if type(_G.UnitInVehicle) == "function" then
         local vehicle = UnitInVehicle("player")
-        if not S.Public(vehicle) or vehicle == true then return false end
+        if not Public(vehicle) or vehicle == true then return false end
     end
     if self.config.hideMounted and type(_G.IsMounted) == "function" then
         local mounted = IsMounted()
-        if not S.Public(mounted) or mounted == true then return false end
+        if not Public(mounted) or mounted == true then return false end
     end
     local instanceType = self.instanceType
     if instanceType == false or instanceType == "arena" or instanceType == "pvp" then return false end
@@ -444,6 +480,11 @@ local function Tooltip(button)
     GameTooltip:Show()
 end
 
+local function HideTooltip()
+    if _G.GameTooltip then GameTooltip:Hide() end
+end
+
+-- Secure action buttons stay raw CreateFrame: the template owns the click.
 local function MakeButton(self, index)
     local button = CreateFrame("Button", nil, self.host, "SecureActionButtonTemplate")
     button:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
@@ -457,7 +498,7 @@ local function MakeButton(self, index)
     button.count = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     button.count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
     button:SetScript("OnEnter", Tooltip)
-    button:SetScript("OnLeave", function() if _G.GameTooltip then GameTooltip:Hide() end end)
+    button:SetScript("OnLeave", HideTooltip)
     button:Hide()
     self.buttons[index] = button
     return button
@@ -476,22 +517,17 @@ local function Add(entries, seen, kind, itemID, auraID, slot, aliases, poison, p
         key = "aura:" .. auraID
     end
     if seen[key] then return end
-    if aliases and not (poison and poisonRank > 1) then
+    local claimsAliases = aliases and not (poison and poisonRank > 1)
+    if claimsAliases then
         for _, id in ipairs(aliases) do if seen["aura:" .. id] then return end end
     end
     seen[key] = true
-    if aliases and not (poison and poisonRank > 1) then
+    if claimsAliases then
         for _, id in ipairs(aliases) do seen["aura:" .. id] = true end
     end
     entries[#entries + 1] = {
-        kind = kind,
-        id = itemID,
-        aura = auraID,
-        slot = slot,
-        aliases = aliases,
-        poison = poison,
-        poisonRank = poisonRank,
-        candidates = candidates
+        kind = kind, id = itemID, aura = auraID, slot = slot, aliases = aliases,
+        poison = poison, poisonRank = poisonRank, candidates = candidates,
     }
 end
 
@@ -514,48 +550,36 @@ local function SameEntries(left, right)
     return true
 end
 
-function M:Compile()
-    if NS.IsCombatLocked() then return end
-    local entries, seen = {}, {}
-    local c = self.config
-    local class
-    if type(_G.UnitClass) == "function" then
-        local _, value = UnitClass("player")
-        if S.Public(value) then class = value end
+local function PlayerClass()
+    if type(_G.UnitClass) ~= "function" then return nil end
+    local _, value = UnitClass("player")
+    if Public(value) then return value end
+end
+
+local function AddPoisonGroup(entries, seen, name, aliases, priority, perCategory)
+    local candidates = {}
+    for _, spellID in ipairs(priority) do
+        if Known(spellID) then candidates[#candidates + 1] = spellID end
     end
-    if c.classBuff then
-        local buff = CLASS_BUFF[class]
-        if buff and Known(buff.cast) then Add(entries, seen, "spell", buff.cast, buff.auras[1], nil, buff.auras) end
+    for rank = 1, math.min(perCategory, #candidates) do
+        Add(entries, seen, "spell", candidates[rank], candidates[rank], nil, aliases, name, rank, candidates)
     end
-    if NS.Client.modernEquipment and c.autoRoguePoisons and class == "ROGUE"
-        and type(_G.GetSpecialization) == "function" and type(_G.GetSpecializationInfo) == "function" then
-        local specIndex = GetSpecialization()
-        if S.Public(specIndex) and type(specIndex) == "number" and specIndex > 0 then
-            local specID = GetSpecializationInfo(specIndex)
-            if S.Public(specID) and (specID == 259 or specID == 260 or specID == 261) then
-                local twoPerCategory = specID == 259 and Known(381801)
-                local groups = {
-                    {
-                        name = "lethal",
-                        aliases = LETHAL_POISONS,
-                        priority = specID == 259 and ASSASSINATION_LETHAL_POISONS or OTHER_LETHAL_POISONS
-                    },
-                    { name = "nonlethal", aliases = NONLETHAL_POISONS, priority = NONLETHAL_POISONS },
-                }
-                for _, group in ipairs(groups) do
-                    local candidates = {}
-                    for _, spellID in ipairs(group.priority) do
-                        if Known(spellID) then candidates[#candidates + 1] = spellID end
-                    end
-                    local required = twoPerCategory and math.min(2, #candidates) or math.min(1, #candidates)
-                    for rank = 1, required do
-                        Add(entries, seen, "spell", candidates[rank], candidates[rank], nil,
-                            group.aliases, group.name, rank, candidates)
-                    end
-                end
-            end
-        end
-    end
+end
+
+local function AddRoguePoisons(entries, seen)
+    if type(_G.GetSpecialization) ~= "function" or type(_G.GetSpecializationInfo) ~= "function" then return end
+    local specIndex = GetSpecialization()
+    if not Public(specIndex) or type(specIndex) ~= "number" or specIndex <= 0 then return end
+    local specID = GetSpecializationInfo(specIndex)
+    if not Public(specID) or not (specID == 259 or specID == 260 or specID == 261) then return end
+    -- Dragon-Tempered Blades permits two poisons per category on Assassination.
+    local perCategory = specID == 259 and Known(381801) and 2 or 1
+    AddPoisonGroup(entries, seen, "lethal", LETHAL_POISONS,
+        specID == 259 and ASSASSINATION_LETHAL_POISONS or OTHER_LETHAL_POISONS, perCategory)
+    AddPoisonGroup(entries, seen, "nonlethal", NONLETHAL_POISONS, NONLETHAL_POISONS, perCategory)
+end
+
+local function AddConfigured(entries, seen, c)
     for token in c.spellIDs:gmatch("%d+") do
         if #entries >= MAX_ENTRIES then break end
         local spellID = ID(token)
@@ -570,31 +594,175 @@ function M:Compile()
     local mainID, offID = ID(c.mainHandItem), ID(c.offHandItem)
     if mainID then Add(entries, seen, "weapon", mainID, nil, 16) end
     if offID then Add(entries, seen, "weapon", offID, nil, 17) end
-    if NS.Client.modernEquipment then
-        if c.autoFlask and #entries < MAX_ENTRIES then
-            local itemID = FirstStocked(FLASKS)
-            if itemID then Add(entries, seen, "item", itemID, FLASK_AURAS[1], nil, FLASK_AURAS) end
-        end
-        if c.autoFood and #entries < MAX_ENTRIES then
-            local itemID = FirstStocked(FOODS)
-            if itemID then Add(entries, seen, "food", itemID) end
-        end
-        if c.autoRune and #entries < MAX_ENTRIES then
-            local itemID = FirstStocked(RUNES)
-            if itemID then Add(entries, seen, "item", itemID, RUNE_AURAS[1], nil, RUNE_AURAS) end
-        end
-        if c.autoWeapon and #entries < MAX_ENTRIES and (not mainID or not offID) then
-            local itemID = FirstStocked(OILS)
-            if itemID and not OwnWeaponImbueKnown() then
-                if not mainID and OilWeaponEquipped(16) then
-                    Add(entries, seen, "weapon", itemID, nil, 16)
-                end
-                if #entries < MAX_ENTRIES and not offID and OilWeaponEquipped(17) then
-                    Add(entries, seen, "weapon", itemID, nil, 17)
-                end
+    return mainID, offID
+end
+
+-- Automatic consumables: the first owned item of each enabled category.
+-- Every evaluated pick is remembered (false for "none owned").
+local function AddStocked(self, entries, seen, c, mainID, offID)
+    if c.autoFlask and #entries < MAX_ENTRIES then
+        local itemID = FirstStocked(FLASKS)
+        self.stockFlask = itemID or false
+        if itemID then Add(entries, seen, "item", itemID, FLASK_AURAS[1], nil, FLASK_AURAS) end
+    end
+    if c.autoFood and #entries < MAX_ENTRIES then
+        local itemID = FirstStocked(FOODS)
+        self.stockFood = itemID or false
+        if itemID then Add(entries, seen, "food", itemID) end
+    end
+    if c.autoRune and #entries < MAX_ENTRIES then
+        local itemID = FirstStocked(RUNES)
+        self.stockRune = itemID or false
+        if itemID then Add(entries, seen, "item", itemID, RUNE_AURAS[1], nil, RUNE_AURAS) end
+    end
+    if c.autoWeapon and #entries < MAX_ENTRIES and (not mainID or not offID) then
+        local itemID = FirstStocked(OILS)
+        self.stockOil = itemID or false
+        if itemID and not OwnWeaponImbueKnown() then
+            if not mainID and OilWeaponEquipped(16) then
+                Add(entries, seen, "weapon", itemID, nil, 16)
+            end
+            if #entries < MAX_ENTRIES and not offID and OilWeaponEquipped(17) then
+                Add(entries, seen, "weapon", itemID, nil, 17)
             end
         end
     end
+end
+
+local function StockChanged(self)
+    for i = 1, #STOCK do
+        local picked = self[STOCK[i].key]
+        if picked ~= nil and (FirstStocked(STOCK[i].items) or false) ~= picked then return true end
+    end
+    return false
+end
+
+local function BuildEntries(self)
+    local entries, seen = {}, {}
+    local c = self.config
+    local class = PlayerClass()
+    for i = 1, #STOCK do self[STOCK[i].key] = nil end
+    if c.classBuff then
+        local buff = CLASS_BUFF[class]
+        if buff and Known(buff.cast) then Add(entries, seen, "spell", buff.cast, buff.auras[1], nil, buff.auras) end
+    end
+    if NS.Client.modernEquipment and c.autoRoguePoisons and class == "ROGUE" then AddRoguePoisons(entries, seen) end
+    local mainID, offID = AddConfigured(entries, seen, c)
+    if NS.Client.modernEquipment then AddStocked(self, entries, seen, c, mainID, offID) end
+    return entries
+end
+
+local OnEvent
+
+-- UNIT_AURA and the weapon events are registered only while an entry needs
+-- them and the player is out of combat.
+local function SyncUnitEvents(self)
+    local context = self.context
+    local wantAura = not self.suspended and (self.hasAura or self.hasFood) or false
+    local wantWeapon = not self.suspended and self.hasWeapon or false
+    if wantAura ~= self.auraListening then
+        self.auraListening = wantAura
+        if wantAura then
+            context:Event("UNIT_AURA", OnEvent, true, "player")
+        else
+            context:RemoveEvent("UNIT_AURA")
+        end
+    end
+    if wantWeapon ~= self.weaponListening then
+        self.weaponListening = wantWeapon
+        if wantWeapon then
+            context:Event("UNIT_INVENTORY_CHANGED", OnEvent, true, "player")
+            for i = 1, #WEAPON_EVENTS do context:Event(WEAPON_EVENTS[i], OnEvent, true) end
+        else
+            context:RemoveEvent("UNIT_INVENTORY_CHANGED")
+            for i = 1, #WEAPON_EVENTS do context:RemoveEvent(WEAPON_EVENTS[i]) end
+        end
+    end
+end
+
+local function NewPoisonState(entry)
+    return {
+        aliases = entry.aliases, candidates = entry.candidates,
+        active = {}, instanceIDs = {}, warnings = {}, required = 0,
+    }
+end
+
+-- Derives masks, poison groups, the wanted aura IDs and which event groups
+-- the new entry list needs.
+local function IndexEntries(self, entries)
+    local hasAura, hasWeapon, hasFood = false, false, false
+    local wanted = self.auraWanted
+    self.poisonStates = {}
+    Clear(wanted)
+    for index, entry in ipairs(entries) do
+        entry.bit = 2 ^ (index - 1)
+        if entry.slot then
+            hasWeapon = true
+        elseif entry.kind == "food" then
+            hasFood = true
+        else
+            hasAura = true
+            if entry.poison then
+                local state = self.poisonStates[entry.poison]
+                if not state then
+                    state = NewPoisonState(entry)
+                    self.poisonStates[entry.poison] = state
+                end
+                state.required = state.required + 1
+            end
+            if entry.aliases then
+                for _, id in ipairs(entry.aliases) do wanted[id] = true end
+            else
+                wanted[entry.aura] = true
+            end
+        end
+    end
+    self.hasAura, self.hasFood, self.hasWeapon = hasAura, hasFood, hasWeapon
+    SyncUnitEvents(self)
+end
+
+local function BindButton(button, entry)
+    local action = entry.kind == "spell" and "spell" or "item"
+    button:SetAttribute("type1", action)
+    button:SetAttribute("spell1", action == "spell" and entry.id or nil)
+    button:SetAttribute("item1", action == "item" and ("item:" .. entry.id) or nil)
+    button:SetAttribute("target-slot", entry.slot)
+    button:SetAttribute("unit", "player")
+    button.icon:SetTexture(Texture(action, entry.id))
+    entry.actionID = entry.id
+    button.count:SetText("")
+end
+
+local function LayoutButtons(self, entries, entriesChanged, geometryChanged, colorChanged)
+    local c = self.config
+    local size, spacing, columns = c.size, c.spacing, c.columns
+    if entriesChanged or geometryChanged then
+        local displayColumns = math.min(columns, math.max(1, #entries))
+        local rows = math.max(1, math.ceil(#entries / columns))
+        self.host:SetSize(displayColumns * size + (displayColumns - 1) * spacing,
+            rows * size + (rows - 1) * spacing)
+    end
+    if not (entriesChanged or geometryChanged or colorChanged) then return end
+    local r, g, b = S.RGB(c.borderColor)
+    for index = 1, math.max(#entries, #self.buttons) do
+        local button = self.buttons[index] or MakeButton(self, index)
+        local entry = entries[index]
+        if entriesChanged then
+            button.entry = entry
+            button:Hide()
+        end
+        if entry then
+            if entriesChanged then BindButton(button, entry) end
+            if entriesChanged or colorChanged then button.border:SetColorTexture(r, g, b, 1) end
+            if entriesChanged or geometryChanged then button:SetSize(size, size) end
+        end
+    end
+end
+
+function M:Compile()
+    if NS.IsCombatLocked() then return end
+    local c = self.config
+    local entries = BuildEntries(self)
     local entriesChanged = not SameEntries(self.entries, entries)
     if entriesChanged then
         self.entries, self.mask = entries, nil
@@ -607,9 +775,8 @@ function M:Compile()
     local geometryChanged = not layout or layout.size ~= c.size or layout.spacing ~= c.spacing
         or layout.columns ~= c.columns
     local colorChanged = not layout or layout.borderColor ~= c.borderColor
-    local layoutChanged = anchorChanged or geometryChanged or colorChanged
-    if not entriesChanged and not layoutChanged then return false end
-    if layoutChanged then
+    if not entriesChanged and not anchorChanged and not geometryChanged and not colorChanged then return false end
+    if anchorChanged or geometryChanged or colorChanged then
         layout = layout or {}
         layout.point, layout.x, layout.y = c.point, c.x, c.y
         layout.size, layout.spacing, layout.columns = c.size, c.spacing, c.columns
@@ -617,105 +784,13 @@ function M:Compile()
         self.layout = layout
         if geometryChanged then self.mask = nil end
     end
-    if entriesChanged then
-        local hasAura, hasWeapon, hasFood = false, false, false
-        local wanted = self.auraWanted
-        self.poisonStates = {}
-        for id in pairs(wanted) do wanted[id] = nil end
-        for index, entry in ipairs(entries) do
-            entry.bit = 2 ^ (index - 1)
-            if entry.slot then
-                hasWeapon = true
-            elseif entry.kind == "food" then
-                hasFood = true
-            else
-                hasAura = true
-                if entry.poison then
-                    local state = self.poisonStates[entry.poison]
-                    if not state then
-                        state = {
-                            aliases = entry.aliases,
-                            candidates = entry.candidates,
-                            active = {},
-                            instanceIDs = {},
-                            warnings = {},
-                            required = 0
-                        }
-                        self.poisonStates[entry.poison] = state
-                    end
-                    state.required = state.required + 1
-                end
-                if entry.aliases then
-                    for _, id in ipairs(entry.aliases) do wanted[id] = true end
-                else
-                    wanted[entry.aura] = true
-                end
-            end
-        end
-        self.hasAura, self.hasFood = hasAura, hasFood
-        if (hasAura or hasFood) and not self.auraListening then
-            self.frame:RegisterUnitEvent("UNIT_AURA", "player")
-            self.auraListening = true
-        elseif not hasAura and not hasFood and self.auraListening then
-            self.frame:UnregisterEvent("UNIT_AURA")
-            self.auraListening = false
-        end
-        if hasWeapon and not self.weaponListening then
-            self.frame:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
-            if NS.Client.SupportsEvent("WEAPON_ENCHANT_CHANGED") then
-                self.frame:RegisterEvent("WEAPON_ENCHANT_CHANGED")
-            end
-            if NS.Client.SupportsEvent("WEAPON_SLOT_CHANGED") then
-                self.frame:RegisterEvent("WEAPON_SLOT_CHANGED")
-            end
-            self.weaponListening = true
-        elseif not hasWeapon and self.weaponListening then
-            self.frame:UnregisterEvent("UNIT_INVENTORY_CHANGED")
-            self.frame:UnregisterEvent("WEAPON_ENCHANT_CHANGED")
-            self.frame:UnregisterEvent("WEAPON_SLOT_CHANGED")
-            self.weaponListening = false
-        end
-    end
-    local size, spacing, columns = c.size, c.spacing, c.columns
+    if entriesChanged then IndexEntries(self, entries) end
     if anchorChanged then
         self.host:ClearAllPoints()
         local point = ANCHORS[c.point] or "CENTER"
         self.host:SetPoint(point, UIParent, point, c.x, c.y)
     end
-    if entriesChanged or geometryChanged then
-        local displayColumns = math.min(columns, math.max(1, #entries))
-        local rows = math.max(1, math.ceil(#entries / columns))
-        self.host:SetSize(displayColumns * size + (displayColumns - 1) * spacing,
-            rows * size + (rows - 1) * spacing)
-    end
-    if entriesChanged or geometryChanged or colorChanged then
-        local r = tonumber(c.borderColor:sub(1, 2), 16) / 255
-        local g = tonumber(c.borderColor:sub(3, 4), 16) / 255
-        local b = tonumber(c.borderColor:sub(5, 6), 16) / 255
-        for index = 1, math.max(#entries, #self.buttons) do
-            local button = self.buttons[index] or MakeButton(self, index)
-            local entry = entries[index]
-            if entriesChanged then
-                button.entry = entry
-                button:Hide()
-            end
-            if entry then
-                if entriesChanged then
-                    local action = entry.kind == "spell" and "spell" or "item"
-                    button:SetAttribute("type1", action)
-                    button:SetAttribute("spell1", action == "spell" and entry.id or nil)
-                    button:SetAttribute("item1", action == "item" and ("item:" .. entry.id) or nil)
-                    button:SetAttribute("target-slot", entry.slot)
-                    button:SetAttribute("unit", "player")
-                    button.icon:SetTexture(Texture(action, entry.id))
-                    entry.actionID = entry.id
-                    button.count:SetText("")
-                end
-                if entriesChanged or colorChanged then button.border:SetColorTexture(r, g, b, 1) end
-                if entriesChanged or geometryChanged then button:SetSize(size, size) end
-            end
-        end
-    end
+    LayoutButtons(self, entries, entriesChanged, geometryChanged, colorChanged)
     return entriesChanged
 end
 
@@ -725,15 +800,14 @@ end
 
 local function ReadPoisonState(state, scan, directAura)
     local active, instanceIDs = state.active, state.instanceIDs
-    for id in pairs(instanceIDs) do instanceIDs[id] = nil end
+    Clear(instanceIDs)
     local count, unknown = 0, false
     state.auraInstanceID = nil
     for _, spellID in ipairs(state.aliases) do
         local data
         if directAura then
-            local ok
-            ok, data = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-            if not ok or not S.Public(data) then
+            data = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+            if not Public(data) then
                 unknown = true
                 data = nil
             end
@@ -754,7 +828,7 @@ local function ReadPoisonState(state, scan, directAura)
                 record.expiresAt, record.duration = data.expirationTime, data.duration
             end
             local instanceID = data.auraInstanceID
-            if S.Public(instanceID) and type(instanceID) == "number" then
+            if Public(instanceID) and type(instanceID) == "number" then
                 instanceIDs[instanceID] = true
                 state.auraInstanceID = instanceID
             end
@@ -799,104 +873,122 @@ local function BuildPoisonWarnings(state, now, threshold)
     return nextDue
 end
 
+local function RefreshPoisonEntry(self, index, entry)
+    local state = self.poisonStates[entry.poison]
+    local spellID = state.warnings[entry.poisonRank]
+    entry.present, entry.expiresAt = spellID == nil, nil
+    if state.unknown then entry.present = nil end
+    local actionID = spellID or entry.id
+    if entry.actionID ~= actionID then
+        entry.actionID = actionID
+        self.buttons[index]:SetAttribute("spell1", actionID)
+        self.buttons[index].icon:SetTexture(Texture("spell", actionID))
+    end
+end
+
+local function RefreshAuraEntry(self, entry, scan, usable, directAura, fullRefresh, updateInfo, foodDirty)
+    if entry.kind == "food" then
+        if fullRefresh or foodDirty then
+            entry.present, entry.expiresAt, entry.totalDuration = FoodPresent(self)
+        end
+    elseif not usable then
+        entry.present, entry.auraInstanceID, entry.expiresAt,
+            entry.instanceIDs, entry.totalDuration = nil, nil, nil, nil, nil
+    elseif fullRefresh or not directAura or AuraChangeAffects(entry, updateInfo) then
+        entry.present, entry.auraInstanceID, entry.expiresAt,
+            entry.instanceIDs, entry.totalDuration = AuraPresent(entry, scan)
+    end
+end
+
+-- Returns the reminder bit mask and the next advance-warning deadline.
+local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
+    local mask, nextDue = 0, nil
+    local fullRefresh = self.needsFullRefresh or mode == "all"
+    local auraDirty = fullRefresh or mode == "aura"
+    local weaponDirty = fullRefresh or mode == "weapon"
+    local directAura = type(C_UnitAuras.GetPlayerAuraBySpellID) == "function"
+    local scan, usable
+    if auraDirty and self.hasAura then
+        if directAura then usable = true else scan, usable = ScanAuras(self) end
+    end
+    for _, state in pairs(self.poisonStates) do
+        if auraDirty and (fullRefresh or not directAura or AuraChangeAffects(state, updateInfo)) then
+            ReadPoisonState(state, usable and scan or nil, directAura and usable)
+        end
+        local due = BuildPoisonWarnings(state, now, threshold)
+        if due and (not nextDue or due < nextDue) then nextDue = due end
+    end
+    for index, entry in ipairs(self.entries) do
+        if entry.poison then
+            RefreshPoisonEntry(self, index, entry)
+        elseif entry.slot then
+            if weaponDirty then entry.present, entry.expiresAt = EnchantPresent(entry.slot) end
+        elseif auraDirty then
+            RefreshAuraEntry(self, entry, scan, usable, directAura, fullRefresh, updateInfo, foodDirty)
+        end
+        if entry.present == false then
+            mask = mask + entry.bit
+        elseif entry.present == true and threshold > 0 and now and entry.expiresAt
+            and (not entry.totalDuration or entry.totalDuration > threshold) then
+            local due = entry.expiresAt - threshold
+            if due <= now then
+                mask = mask + entry.bit
+            elseif not nextDue or due < nextDue then
+                nextDue = due
+            end
+        end
+    end
+    self.needsFullRefresh = false
+    return mask, nextDue
+end
+
+local function ShowMask(self, mask)
+    local shown, columns, size, spacing = 0, self.config.columns, self.config.size, self.config.spacing
+    for index, button in ipairs(self.buttons) do
+        local bit = self.entries[index] and self.entries[index].bit or 2 ^ (index - 1)
+        if mask % (bit * 2) >= bit then
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", self.host, "TOPLEFT", (shown % columns) * (size + spacing),
+                -math.floor(shown / columns) * (size + spacing))
+            button:Show()
+            shown = shown + 1
+        else
+            button:Hide()
+        end
+    end
+end
+
+local function UpdateCounts(self)
+    for index, entry in ipairs(self.entries) do
+        if entry.kind ~= "spell" then
+            local count = ItemCount(entry.id)
+            if count ~= entry.count then
+                entry.count = count
+                self.buttons[index].count:SetText(count and tostring(count) or "")
+            end
+        end
+    end
+    self.countsDirty = false
+end
+
 function M:Update(mode, updateCounts, updateInfo, foodDirty)
     if NS.IsCombatLocked() then return end
-    local mask = 0
     local now = type(_G.GetTime) == "function" and GetTime() or nil
-    if not S.Public(now) or type(now) ~= "number" then now = nil end
+    if not Public(now) or type(now) ~= "number" then now = nil end
     local minutes = tonumber(self.config.remindBeforeMinutes) or 0
     local threshold = math.max(0, minutes) * 60
-    local nextDue
+    local mask, nextDue = 0, nil
     if Allowed(self) then
-        local fullRefresh = self.needsFullRefresh or mode == "all"
-        local auraDirty = fullRefresh or mode == "aura"
-        local weaponDirty = fullRefresh or mode == "weapon"
-        local directAura = type(C_UnitAuras.GetPlayerAuraBySpellID) == "function"
-        local scan, usable
-        if auraDirty and self.hasAura then
-            if directAura then usable = true else scan, usable = ScanAuras(self) end
-        end
-        for _, state in pairs(self.poisonStates) do
-            if auraDirty and (fullRefresh or not directAura or AuraChangeAffects(state, updateInfo)) then
-                ReadPoisonState(state, usable and scan or nil, directAura and usable)
-            end
-            local due = BuildPoisonWarnings(state, now, threshold)
-            if due and (not nextDue or due < nextDue) then nextDue = due end
-        end
-        for index, entry in ipairs(self.entries) do
-            if entry.poison then
-                local state = self.poisonStates[entry.poison]
-                local spellID = state.warnings[entry.poisonRank]
-                entry.present, entry.expiresAt = spellID == nil, nil
-                if state.unknown then entry.present = nil end
-                local actionID = spellID or entry.id
-                if entry.actionID ~= actionID then
-                    entry.actionID = actionID
-                    self.buttons[index]:SetAttribute("spell1", actionID)
-                    self.buttons[index].icon:SetTexture(Texture("spell", actionID))
-                end
-            elseif entry.slot then
-                if weaponDirty then entry.present, entry.expiresAt = EnchantPresent(entry.slot) end
-            elseif auraDirty then
-                if entry.kind == "food" then
-                    if fullRefresh or foodDirty then
-                        entry.present, entry.expiresAt, entry.totalDuration = FoodPresent(self)
-                    end
-                elseif not usable then
-                    entry.present, entry.auraInstanceID, entry.expiresAt,
-                    entry.instanceIDs, entry.totalDuration = nil, nil, nil, nil, nil
-                elseif fullRefresh or not directAura or AuraChangeAffects(entry, updateInfo) then
-                    entry.present, entry.auraInstanceID, entry.expiresAt,
-                    entry.instanceIDs, entry.totalDuration = AuraPresent(entry, scan)
-                end
-            end
-            if entry.present == false then
-                mask = mask + entry.bit
-            elseif entry.present == true and threshold > 0 and now and entry.expiresAt
-                and (not entry.totalDuration or entry.totalDuration > threshold) then
-                local due = entry.expiresAt - threshold
-                if due <= now then
-                    mask = mask + entry.bit
-                elseif not nextDue or due < nextDue then
-                    nextDue = due
-                end
-            end
-        end
-        self.needsFullRefresh = false
+        mask, nextDue = Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
     else
         self.needsFullRefresh = true
     end
     ScheduleThreshold(self, nextDue, now)
-    local changed = self.mask ~= mask
-    if changed then
+    if self.mask ~= mask then
         self.mask = mask
-        local shown, columns, size, spacing = 0, self.config.columns, self.config.size, self.config.spacing
-        for index, button in ipairs(self.buttons) do
-            local bit = self.entries[index] and self.entries[index].bit or 2 ^ (index - 1)
-            local visible = mask % (bit * 2) >= bit
-            if visible then
-                button:ClearAllPoints()
-                button:SetPoint("TOPLEFT", self.host, "TOPLEFT", (shown % columns) * (size + spacing),
-                    -math.floor(shown / columns) * (size + spacing))
-                button:Show()
-                shown = shown + 1
-            else
-                button:Hide()
-            end
-        end
+        ShowMask(self, mask)
     end
-    if self.countsDirty or updateCounts then
-        for index, entry in ipairs(self.entries) do
-            if entry.kind ~= "spell" then
-                local count = ItemCount(entry.id)
-                if count ~= entry.count then
-                    entry.count = count
-                    self.buttons[index].count:SetText(count and tostring(count) or "")
-                end
-            end
-        end
-        self.countsDirty = false
-    end
+    if self.countsDirty or updateCounts then UpdateCounts(self) end
     local previewShown = S.editMode == true and mask == 0
     if self.previewShown ~= previewShown then
         self.preview:SetShown(previewShown)
@@ -904,60 +996,59 @@ function M:Update(mode, updateCounts, updateInfo, foodDirty)
     end
 end
 
-local function OnEvent(frame, event, unit, updateInfo)
-    local self = frame.owner
+local function RegisterEvents(self)
+    for i = 1, #EVENTS do self.context:Event(EVENTS[i], OnEvent, true) end
+end
+
+-- Entering combat: every handler would return early, so stop listening.
+local function Suspend(self)
+    self.suspended = true
+    for i = 1, #EVENTS do
+        if EVENTS[i] ~= "PLAYER_REGEN_ENABLED" then self.context:RemoveEvent(EVENTS[i]) end
+    end
+    SyncUnitEvents(self)
+end
+
+local function Resume(self)
+    self.suspended = false
+    RegisterEvents(self)
+    SyncUnitEvents(self)
+end
+
+OnEvent = function(self, event, unit, updateInfo)
     if not self.active then return end
-    if (event == "UNIT_AURA" or event == "UNIT_INVENTORY_CHANGED"
-            or event == "PLAYER_SPECIALIZATION_CHANGED") and unit ~= "player" then
+    if UNIT_FILTERED[event] and unit ~= "player" then return end
+    if event == "PLAYER_REGEN_DISABLED" then
+        Suspend(self)
         return
     end
+    if event == "PLAYER_REGEN_ENABLED" and self.suspended then Resume(self) end
     if NS.IsCombatLocked() then return end
     local foodDirty = event == "UNIT_AURA" and FoodDelta(self, updateInfo)
-    if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
-        or event == "PLAYER_REGEN_ENABLED" then
+    if INSTANCE_EVENTS[event] then
         ReadInstance(self)
         self.foodKnown = nil
     end
-    if event == "SPELLS_CHANGED" or event == "PLAYER_REGEN_ENABLED"
-        or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "BAG_UPDATE_DELAYED"
-        or event == "PLAYER_EQUIPMENT_CHANGED" or event == "WEAPON_SLOT_CHANGED" then
-        self:Compile()
-    end
-    local mode = "visual"
-    if event == "UNIT_AURA" then
-        mode = "aura"
-    elseif event == "UNIT_INVENTORY_CHANGED" or event == "WEAPON_ENCHANT_CHANGED"
-        or event == "WEAPON_SLOT_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
-        mode = "weapon"
-    elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
-        or event == "PLAYER_REGEN_ENABLED" or event == "SPELLS_CHANGED"
-        or event == "PLAYER_SPECIALIZATION_CHANGED" then
-        mode = "all"
-    end
-    self:Update(mode, event == "BAG_UPDATE_DELAYED", updateInfo, foodDirty)
+    local bagUpdate = event == "BAG_UPDATE_DELAYED"
+    if COMPILE_EVENTS[event] or (bagUpdate and StockChanged(self)) then self:Compile() end
+    self:Update(EVENT_MODES[event] or "visual", bagUpdate, updateInfo, foodDirty)
 end
 
 function M:Enable()
     if not self.host then
         self.host = CreateFrame("Frame", nil, UIParent, "SecureFrameTemplate")
         self.buttons, self.auraScratch, self.auraWanted, self.foodIDs = {}, {}, {}, {}
+        self.auraSnapshots = {}
         self.preview = self.host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         self.preview:SetPoint("CENTER", self.host, "CENTER")
-        self.preview:SetText("Buff reminders")
-        self.frame = CreateFrame("Frame")
-        self.frame.owner = self
-        self.frame:SetScript("OnEvent", OnEvent)
+        self.preview:SetText(S.Text("Buff reminders"))
     end
     self.host:Show()
     self.foodKnown = nil
+    self.suspended = false
     RegisterStateDriver(self.host, "visibility", "[combat] hide; show")
     ReadInstance(self)
-    for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "SPELLS_CHANGED",
-        "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED_NEW_AREA", "BAG_UPDATE_DELAYED",
-        "PLAYER_EQUIPMENT_CHANGED", "PLAYER_ALIVE", "PLAYER_DEAD", "PLAYER_UNGHOST",
-        "PLAYER_MOUNT_DISPLAY_CHANGED" }) do
-        if NS.Client.SupportsEvent(event) then self.frame:RegisterEvent(event) end
-    end
+    RegisterEvents(self)
     self:Refresh()
 end
 
@@ -968,8 +1059,10 @@ end
 
 function M:Disable()
     CancelThreshold(self)
-    self.frame:UnregisterAllEvents()
-    self.auraListening, self.weaponListening = false, false
+    self.suspended = true
+    SyncUnitEvents(self)
+    for i = 1, #EVENTS do self.context:RemoveEvent(EVENTS[i]) end
+    self.suspended = false
     if type(_G.UnregisterStateDriver) == "function" then UnregisterStateDriver(self.host, "visibility") end
     self.host:Hide()
     self.entries, self.mask = nil, nil
@@ -979,45 +1072,20 @@ end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("buffReminders", "buffs", {
-        label = "Buff reminders",
-        order = 620,
-        getFrame = function() return self.host end,
-        xKey = "x",
-        yKey = "y",
-        pointKey = "point",
+        label = "Buff reminders", order = 620, getFrame = function() return self.host end,
+        xKey = "x", yKey = "y", pointKey = "point",
         point = function() return ANCHORS[self.config.point] or "CENTER" end,
         historyKeys = { "size", "spacing", "columns" },
         extraControls = {
-            {
-                id = "size",
-                label = "Icon size",
-                kind = "number",
-                min = 22,
-                max = 72,
-                step = 1,
+            { id = "size", label = "Icon size", kind = "number", min = 22, max = 72, step = 1,
                 get = function() return S.Config("buffReminders").size end,
-                set = function(value) return S.Set("buffReminders", "size", value) end
-            },
-            {
-                id = "spacing",
-                label = "Spacing",
-                kind = "number",
-                min = 0,
-                max = 20,
-                step = 1,
+                set = function(value) return S.Set("buffReminders", "size", value) end },
+            { id = "spacing", label = "Spacing", kind = "number", min = 0, max = 20, step = 1,
                 get = function() return S.Config("buffReminders").spacing end,
-                set = function(value) return S.Set("buffReminders", "spacing", value) end
-            },
-            {
-                id = "columns",
-                label = "Per row",
-                kind = "number",
-                min = 1,
-                max = 12,
-                step = 1,
+                set = function(value) return S.Set("buffReminders", "spacing", value) end },
+            { id = "columns", label = "Per row", kind = "number", min = 1, max = 12, step = 1,
                 get = function() return S.Config("buffReminders").columns end,
-                set = function(value) return S.Set("buffReminders", "columns", value) end
-            },
+                set = function(value) return S.Set("buffReminders", "columns", value) end },
         },
     })
 end

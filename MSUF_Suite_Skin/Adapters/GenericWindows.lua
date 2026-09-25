@@ -347,10 +347,10 @@ local function IsMinimalTab(button)
     -- MinimalTabTemplate instances declared with parentKey are anonymous, so
     -- their GetName() cannot identify them. These exact atlas key-values plus
     -- SelectableButtonMixin:IsSelected form the stable native contract.
-    return type(Field(button, "IsSelected")) == "function"
-        and type(Field(button, "selectedLeftTexture")) == "string"
-        and type(Field(button, "selectedMiddleTexture")) == "string"
-        and type(Field(button, "selectedRightTexture")) == "string"
+    return type((Field(button, "IsSelected"))) == "function"
+        and type((Field(button, "selectedLeftTexture"))) == "string"
+        and type((Field(button, "selectedMiddleTexture"))) == "string"
+        and type((Field(button, "selectedRightTexture"))) == "string"
         and Field(button, "Left") ~= nil
         and Field(button, "Middle") ~= nil
         and Field(button, "Right") ~= nil
@@ -552,9 +552,9 @@ end
 
 local function LooksLikeScrollBox(frame, name)
     return (name:find("ScrollBox", 1, true) ~= nil
-            or type(Field(frame, "GetView")) == "function")
-        and type(Field(frame, "RegisterCallback")) == "function"
-        and type(Field(frame, "ForEachFrame")) == "function"
+            or type((Field(frame, "GetView"))) == "function")
+        and type((Field(frame, "RegisterCallback"))) == "function"
+        and type((Field(frame, "ForEachFrame"))) == "function"
 end
 
 local function GlyphForButton(button, hint)
@@ -675,14 +675,10 @@ local function SkinItemIconButton(button, owner, metrics, name)
     local icon = Field(button, "Icon") or Field(button, "icon") or Field(button, "IconTexture")
     local iconBorder = Field(button, "IconBorder") or Field(button, "iconBorder")
     if not icon or not iconBorder then return false end
-    local hasQualityContract = type(Field(button, "SetItemButtonQuality")) == "function"
+    local hasQualityContract = type((Field(button, "SetItemButtonQuality"))) == "function"
         or ContainsNameToken(name, itemIconNameTokens)
     if not hasQualityContract then return false end
-    return NS.IconSkin.Apply(button, owner, {
-        icon = icon,
-        nativeBorder = iconBorder,
-        allowImplicitProtected = metrics.allowImplicitProtected,
-    }) ~= nil
+    return Kit.SkinItemIcon(button, owner, icon, iconBorder, metrics.allowImplicitProtected)
 end
 
 local function ChildPanelRole(name)
@@ -945,7 +941,7 @@ local function SkinLegacyDropdownList(frame, owner, metrics)
     local backdrop = Field(frame, "MenuBackdrop")
     if border then FadeChrome(border, owner) end
     if backdrop then FadeChrome(backdrop, owner) end
-    local count = math.max(tonumber(Field(frame, "numButtons")) or 0, 1)
+    local count = math.max(tonumber((Field(frame, "numButtons"))) or 0, 1)
     count = math.min(count, LEGACY_DROPDOWN_BUTTON_LIMIT)
     local frameName = ObjectName(frame)
     for index = 1, count do
@@ -1150,7 +1146,7 @@ local function ApplyFrameNow(frame, owner, mode)
     if not CanSkin(frame, allowImplicitProtected) then
         return false, Safety.IsCompositorManaged(frame) and "compositor" or "protected", nil
     end
-    if type(Field(frame, "CreateTexture")) ~= "function" then return false, "invalid", nil end
+    if type((Field(frame, "CreateTexture"))) ~= "function" then return false, "invalid", nil end
 
     local previousState = frameStates[frame]
     local previous = previousState and previousState.owner == owner and previousState or nil

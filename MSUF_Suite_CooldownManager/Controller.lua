@@ -85,18 +85,18 @@ local CHANNEL = { "Master", "SFX", "Dialog" }
 local SUFFIX, KEY, WORKS = {}, {}, {}
 for i = 1, #SLOTS do
     local def = SLOTS[i]
-    local s, k, w = {}, {}, {}
+    local s, keys, w = {}, {}, {}
     for suffix, key in pairs(KEYS[def.key]) do
         if not (def.builtin and (suffix == "kind" or suffix == "name")) then
-            s[#s + 1], k[#k + 1], w[#w + 1] = suffix, key, WORK[suffix] or EMPTY
+            s[#s + 1], keys[#keys + 1], w[#w + 1] = suffix, key, WORK[suffix] or EMPTY
         end
     end
-    SUFFIX[i], KEY[i], WORKS[i] = s, k, w
+    SUFFIX[i], KEY[i], WORKS[i] = s, keys, w
 end
 
 ------------------------------------------------------------------ dirty mask
 -- keysLater: keybind texts after a resolve, through the coalesced request.
-local D = { catalog = false, resolve = false, index = false, events = false, cooldowns = false, usable = false, effects = false,
+local dirty = { catalog = false, resolve = false, index = false, events = false, cooldowns = false, usable = false, effects = false,
     keybinds = false, keysLater = false, alerts = false, layout = false, visibility = false }
 -- Per slot: sync (structure), style, behavior (entry refresh), visible
 -- (driver and alpha), laid (layout of that bar only).
@@ -116,7 +116,7 @@ local seenHex = {}
 -- ten times per second in combat storms, with one trailing refresh so the
 -- final state is never lost. Other events and show edges still paint now.
 local USABLE_INTERVAL = .1
-local usableNext, usableTimer = 0, nil
+local usableNext, usableArmed = 0, false
 
 local Flush
 local function Schedule()
@@ -157,14 +157,14 @@ end
 -- alone, SPELL_UPDATE_USES) over "item" (bag contents: potion and
 -- healthstone entries keep their cooldown).
 local RANK = { item = 1, count = 2, recharge = 3, charges = 4, full = 5 }
-local function Mark(e, reason)
-    local pending = marked[e]
-    if pending == nil or RANK[reason] > RANK[pending] then marked[e] = reason end
+local function Mark(entry, reason)
+    local pending = marked[entry]
+    if pending == nil or RANK[reason] > RANK[pending] then marked[entry] = reason end
     Schedule()
 end
 
 local function ResetDirty()
-    for key in pairs(D) do D[key] = false end
+    for key in pairs(dirty) do dirty[key] = false end
     wipe(sync)
     wipe(style)
     wipe(behavior)
@@ -173,7 +173,7 @@ local function ResetDirty()
     wipe(marked)
 end
 local function Pending()
-    for _, on in pairs(D) do
+    for _, on in pairs(dirty) do
         if on then
             return true
         end
@@ -183,43 +183,43 @@ local function Pending()
 end
 
 ------------------------------------------------------------------ reading settings
-local function ReadGlobals(c, all)
-    local st = C.state
+local function ReadGlobals(config, all)
+    local state = C.state
     local text = all
-    local raid = c.raidEssentials ~= false
-    if all or st.raidEssentials ~= raid then st.raidEssentials, D.resolve = raid, true end
-    local font, flags = S.ResolveFont(c.font), OUTLINE[c.fontOutline] or "OUTLINE"
-    if st.font ~= font or st.fontFlags ~= flags or st.fontRendering ~= c.fontRendering
-        or st.fontShadow ~= c.fontShadow or st.fontShadowOpacity ~= c.fontShadowOpacity
-        or st.fontShadowDistance ~= c.fontShadowDistance then
-        st.font, st.fontFlags, st.fontRendering = font, flags, c.fontRendering
-        st.fontShadow, st.fontShadowOpacity, st.fontShadowDistance =
-            c.fontShadow, c.fontShadowOpacity, c.fontShadowDistance
+    local raid = config.raidEssentials ~= false
+    if all or state.raidEssentials ~= raid then state.raidEssentials, dirty.resolve = raid, true end
+    local font, flags = S.ResolveFont(config.font), OUTLINE[config.fontOutline] or "OUTLINE"
+    if state.font ~= font or state.fontFlags ~= flags or state.fontRendering ~= config.fontRendering
+        or state.fontShadow ~= config.fontShadow or state.fontShadowOpacity ~= config.fontShadowOpacity
+        or state.fontShadowDistance ~= config.fontShadowDistance then
+        state.font, state.fontFlags, state.fontRendering = font, flags, config.fontRendering
+        state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance =
+            config.fontShadow, config.fontShadowOpacity, config.fontShadowDistance
         text = true
     end
-    if seenHex.cd ~= c.cdColor then
-        seenHex.cd, text = c.cdColor, true
-        st.cdR, st.cdG, st.cdB = S.RGB(c.cdColor)
+    if seenHex.cd ~= config.cdColor then
+        seenHex.cd, text = config.cdColor, true
+        state.cdR, state.cdG, state.cdB = S.RGB(config.cdColor)
     end
-    if seenHex.stack ~= c.stackColor then
-        seenHex.stack, text = c.stackColor, true
-        st.stackR, st.stackG, st.stackB = S.RGB(c.stackColor)
+    if seenHex.stack ~= config.stackColor then
+        seenHex.stack, text = config.stackColor, true
+        state.stackR, state.stackG, state.stackB = S.RGB(config.stackColor)
     end
-    if seenHex.key ~= c.keybindColor then
-        seenHex.key, text = c.keybindColor, true
-        st.keyR, st.keyG, st.keyB = S.RGB(c.keybindColor)
+    if seenHex.key ~= config.keybindColor then
+        seenHex.key, text = config.keybindColor, true
+        state.keyR, state.keyG, state.keyB = S.RGB(config.keybindColor)
     end
-    if seenHex.th ~= c.thresholdColor then
-        seenHex.th, text = c.thresholdColor, true
-        st.thR, st.thG, st.thB = S.RGB(c.thresholdColor)
+    if seenHex.th ~= config.thresholdColor then
+        seenHex.th, text = config.thresholdColor, true
+        state.thR, state.thG, state.thB = S.RGB(config.thresholdColor)
     end
-    if st.threshold ~= c.thresholdSeconds then st.threshold, text = c.thresholdSeconds, true end
-    local gcd = c.showGCD == true
-    if all or st.showGCD ~= gcd then st.showGCD, D.cooldowns = gcd, true end
-    local glow = c.readyGlowCombat == true
-    if all or st.readyGlowCombat ~= glow then st.readyGlowCombat, D.effects = glow, true end
-    local mute, channel = c.muteSounds == true, CHANNEL[c.soundChannel] or "Master"
-    if all or st.muteSounds ~= mute or st.soundChannel ~= channel then st.muteSounds, st.soundChannel, D.alerts = mute, channel, true end
+    if state.threshold ~= config.thresholdSeconds then state.threshold, text = config.thresholdSeconds, true end
+    local gcd = config.showGCD == true
+    if all or state.showGCD ~= gcd then state.showGCD, dirty.cooldowns = gcd, true end
+    local glow = config.readyGlowCombat == true
+    if all or state.readyGlowCombat ~= glow then state.readyGlowCombat, dirty.effects = glow, true end
+    local mute, channel = config.muteSounds == true, CHANNEL[config.soundChannel] or "Master"
+    if all or state.muteSounds ~= mute or state.soundChannel ~= channel then state.muteSounds, state.soundChannel, dirty.alerts = mute, channel, true end
     return text
 end
 
@@ -227,7 +227,7 @@ end
 -- the slot's hit set; the set then bumps generations and marks work once.
 -- A position drag or an opacity slider never syncs structure, a behavior
 -- tick rebuilds the routing index only when membership can change.
-local function ReadViews(c, all, text)
+local function ReadViews(config, all, text)
     for i = 1, #SLOTS do
         local def = SLOTS[i]
         local slot = def.key
@@ -240,7 +240,7 @@ local function ReadViews(c, all, text)
         end
         local suffixes, keys, works = SUFFIX[i], KEY[i], WORKS[i]
         for j = 1, #keys do
-            local suffix, value = suffixes[j], c[keys[j]]
+            local suffix, value = suffixes[j], config[keys[j]]
             if view[suffix] ~= value then
                 view[suffix] = value
                 for key in pairs(works[j]) do hit[key] = true end
@@ -265,7 +265,7 @@ local function ReadViews(c, all, text)
             local aura = view.kind == 2 or view.kind == 3
             if hit.layout then
                 view.layoutGen = view.layoutGen + 1
-                D.layout = true
+                dirty.layout = true
             end
             if hit.style then view.styleGen = view.styleGen + 1 end
             if hit.style or hit.restyle then style[slot] = true end
@@ -273,13 +273,13 @@ local function ReadViews(c, all, text)
                 view.behaviorGen = view.behaviorGen + 1
                 behavior[slot] = true
             end
-            if hit.index then D.index = true end
+            if hit.index then dirty.index = true end
             if hit.visible then visible[slot] = true end
             -- Structure: aura containers follow flow, aura and buff bar
             -- settings; cooldown bars only their aura overlays.
             if fresh or (aura and (hit.flow or hit.aura or hit.bar)) or (not aura and hit.overlay) then sync[slot] = true end
-            if hit.resolve then D.resolve = true end
-            if hit.keybind then D.keybinds, D.events = true, true end
+            if hit.resolve then dirty.resolve = true end
+            if hit.keybind then dirty.keybinds, dirty.events = true, true end
             wipe(hit)
         end
     end
@@ -288,17 +288,17 @@ end
 -- The data strings are decoded only when they changed. Per-spell choices
 -- reach cooldown entries through the behavior refresh and aura buttons and
 -- overlays through a structural sync.
-local function DecodeData(c)
-    local lists, spells = c.listsData, c.spellsData
+local function DecodeData(config)
+    local lists, spells = config.listsData, config.spellsData
     if lists ~= lastLists then
         lastLists = lists
         C.lists = CDM.Codec.DecodeLists(lists)
-        D.resolve = true
+        dirty.resolve = true
     end
     if spells ~= lastSpells then
         lastSpells = spells
         C.spells = CDM.Codec.DecodeSpells(spells)
-        D.resolve, D.alerts, D.index = true, true, true
+        dirty.resolve, dirty.alerts, dirty.index = true, true, true
         for i = 1, #SLOTS do
             local slot = SLOTS[i].key
             behavior[slot], sync[slot] = true, true
@@ -320,15 +320,15 @@ local function UpdateSpec()
         end
     end
     specName, specIcon = name, icon
-    local st, tag = C.state, C.Catalog.SpecTag()
-    if st.specID == id and st.specTag == tag then return false end
-    st.specID, st.specTag = id, tag
+    local state, tag = C.state, C.Catalog.SpecTag()
+    if state.specID == id and state.specTag == tag then return false end
+    state.specID, state.specTag = id, tag
     return true
 end
 
 ------------------------------------------------------------------ preview mode
 local function PreviewChanged()
-    D.resolve, D.cooldowns, D.effects, D.layout, D.visibility = true, true, true, true, true
+    dirty.resolve, dirty.cooldowns, dirty.effects, dirty.layout, dirty.visibility = true, true, true, true, true
     Schedule()
 end
 -- MSUF Edit Mode wins over the options page; both suspend the bar rules.
@@ -349,9 +349,7 @@ local function PersistCapture()
     S.SetMany(ID, values)
 end
 -- Plain finite numbers; settings rounded and clamped to their rule (K.Clamp).
-local function Finite(value)
-    return Public(value) and type(value) == "number" and value == value and value > -huge and value < huge
-end
+local Finite = S.Finite
 local Clamp = K.Clamp
 -- A stand-in view for Layout.Point while converting saved positions.
 local pointProbe = {}
@@ -375,21 +373,21 @@ local function ResetDefaults(values, config)
         local center = version < 3 and Finite(uiW) and Finite(uiH)
         for i = 1, #SLOTS do
             local def = SLOTS[i]
-            local k = KEYS[def.key]
-            local anchor = values[k.anchor] or config[k.anchor]
+            local keys = KEYS[def.key]
+            local anchor = values[keys.anchor] or config[keys.anchor]
             if anchor ~= 1 then
-                if version < 2 and values[k.x] == nil then values[k.x], values[k.y] = 0, 0 end
-            elseif center and values[k.x] == nil then
-                if def.custom and config[k.on] ~= true then
+                if version < 2 and values[keys.x] == nil then values[keys.x], values[keys.y] = 0, 0 end
+            elseif center and values[keys.x] == nil then
+                if def.custom and config[keys.on] ~= true then
                     -- Unused custom bars start in the middle of the screen.
-                    values[k.x], values[k.y] = 0, 0
+                    values[keys.x], values[keys.y] = 0, 0
                 else
                     -- Free x/y used to count from the same point of UIParent.
-                    pointProbe.kind = config[k.kind] or def.kind or 1
-                    pointProbe.vertical = k.vertical and config[k.vertical] == true or false
-                    pointProbe.grow = k.grow and config[k.grow] or nil
+                    pointProbe.kind = config[keys.kind] or def.kind or 1
+                    pointProbe.vertical = keys.vertical and config[keys.vertical] == true or false
+                    pointProbe.grow = keys.grow and config[keys.grow] or nil
                     local dx, dy = K.EdgeOffset(C.Layout.Point(pointProbe), uiW, uiH)
-                    values[k.x], values[k.y] = Clamp(k.x, (config[k.x] or 0) + dx), Clamp(k.y, (config[k.y] or 0) + dy)
+                    values[keys.x], values[keys.y] = Clamp(keys.x, (config[keys.x] or 0) + dx), Clamp(keys.y, (config[keys.y] or 0) + dy)
                 end
             end
         end
@@ -405,21 +403,21 @@ local function Reposition(x, y)
     if not view or x == nil then return end
     view.x, view.y = x, y
     view.layoutGen = view.layoutGen + 1
-    D.layout = true
+    dirty.layout = true
 end
 -- Screen position (x/y from the screen center) of the riding Essential
 -- bar's growth edge: from its frame, else (bar off, a stand-in shown) from
 -- Blizzard's bar plus the current offset; nil when neither is readable.
 local function RideToFree()
-    local k = KEYS.ess
+    local keys = KEYS.ess
     local free = Convert("ess", nil, nil, true)
-    if free and free[k.x] ~= nil then return free[k.x], free[k.y] end
+    if free and free[keys.x] ~= nil then return free[keys.x], free[keys.y] end
     local view = C.views.ess
     if not (view and UIParent) then return nil end
     local vx, vy = C.Layout.ViewerPoint(view)
     local uiW, uiH = UIParent:GetWidth(), UIParent:GetHeight()
     if not (Finite(vx) and Finite(vy) and Finite(uiW) and Finite(uiH)) then return nil end
-    return Clamp(k.x, vx + (view.x or 0) - uiW / 2), Clamp(k.y, vy + (view.y or 0) - uiH / 2)
+    return Clamp(keys.x, vx + (view.x or 0) - uiW / 2), Clamp(keys.y, vy + (view.y or 0) - uiH / 2)
 end
 -- The Essential bar's x/y mean an offset from Blizzard's bar while the
 -- layout rides it (Layout.RidesViewer: MSUF follows Blizzard's bar and the
@@ -435,30 +433,30 @@ local function SyncViewerOffset()
     local on = C.Layout.RidesViewer("ess") == true
     local saved = config.essOnViewer == true
     local waiting = pendingCapture and pendingCapture.essOnViewer
-    local k = KEYS.ess
+    local keys = KEYS.ess
     if waiting == nil then
         if saved == on then return end
     elseif waiting == on then
         return
     elseif saved == on then
-        pendingCapture[k.x], pendingCapture[k.y], pendingCapture.essOnViewer = nil, nil, nil
+        pendingCapture[keys.x], pendingCapture[keys.y], pendingCapture.essOnViewer = nil, nil, nil
         if next(pendingCapture) == nil then pendingCapture = nil end
-        Reposition(config[k.x], config[k.y])
+        Reposition(config[keys.x], config[keys.y])
         return
     end
     local values = pendingCapture or {}
     -- Free again: the place the bar has now, unless a pending capture
     -- already holds a screen position.
     if on then
-        values[k.x], values[k.y] = 0, 0
-    elseif values[k.x] == nil and C.Layout.Free("ess") then
+        values[keys.x], values[keys.y] = 0, 0
+    elseif values[keys.x] == nil and C.Layout.Free("ess") then
         local x, y = RideToFree()
         if x == nil then return end
-        values[k.x], values[k.y] = x, y
+        values[keys.x], values[keys.y] = x, y
     end
     values.essOnViewer = on
     pendingCapture = values
-    Reposition(values[k.x], values[k.y])
+    Reposition(values[keys.x], values[keys.y])
     local timer = _G.C_Timer
     if timer and timer.After then timer.After(0, PersistCapture) end
 end
@@ -484,16 +482,16 @@ end
 ------------------------------------------------------------------ hot event handlers
 -- Prebuilt callbacks; per-event values travel through these upvalues.
 local stamp, curSpell, curRange = 0, nil, nil
-local function RefreshCooldown(e)
-    if e.cdStamp == stamp or not e.icon then return end
-    e.cdStamp = stamp
-    if C.Time.Refresh(e, "cooldown") then C.Layout.Request(e.slot) end
+local function RefreshCooldown(entry)
+    if entry.cdStamp == stamp or not entry.icon then return end
+    entry.cdStamp = stamp
+    if C.Time.Refresh(entry, "cooldown") then C.Layout.Request(entry.slot) end
 end
 local function EachCooldown(fn)
     local list = C.Index.cooldown
     for i = 1, #list do fn(list[i]) end
 end
-local function SetCategorySpell(e) e.catSpell = curSpell end
+local function SetCategorySpell(entry) entry.catSpell = curSpell end
 
 -- SPELL_UPDATE_COOLDOWN: nil or unreadable spell = all; category payloads
 -- (potions, healthstones) name the spell that started the category; a GCD
@@ -502,24 +500,24 @@ local function SetCategorySpell(e) e.catSpell = curSpell end
 local function OnCooldown(_, _, spellID, baseSpellID, category, recovery, itemID)
     stamp = stamp + 1
     if (issecret and issecret(spellID)) or spellID == nil then return EachCooldown(RefreshCooldown) end
-    local X = C.Index
+    local index = C.Index
     local item = not (issecret and issecret(itemID)) and itemID or nil
     if item and not (issecret and issecret(category)) and category and category ~= 0 then
         curSpell = not (issecret and issecret(baseSpellID)) and baseSpellID or spellID
-        if X.ForCategory(category, SetCategorySpell) > 0 then X.ForCategory(category, RefreshCooldown) end
+        if index.ForCategory(category, SetCategorySpell) > 0 then index.ForCategory(category, RefreshCooldown) end
     end
     if C.state.showGCD and not (issecret and issecret(recovery)) and recovery == GCD then return EachCooldown(RefreshCooldown) end
-    X.ForSpell(spellID, baseSpellID, RefreshCooldown)
-    if item then X.ForItem(item, RefreshCooldown) end
+    index.ForSpell(spellID, baseSpellID, RefreshCooldown)
+    if item then index.ForItem(item, RefreshCooldown) end
 end
 
 local countedSet = C.Index.countedSet
-local function MarkCount(e)
-    if countedSet[e] then
-        Mark(e, "count")
+local function MarkCount(entry)
+    if countedSet[entry] then
+        Mark(entry, "count")
     end
 end
-local function MarkItem(e) Mark(e, "item") end
+local function MarkItem(entry) Mark(entry, "item") end
 -- SPELL_UPDATE_CHARGES names no spell. Spending a charge arrives with the
 -- spell's SPELL_UPDATE_COOLDOWN and a charge coming back with the recharge
 -- swipe's OnCooldownDone (Blizzard's viewer never registers this event), so
@@ -528,9 +526,9 @@ local function MarkItem(e) Mark(e, "item") end
 local function OnCharges()
     local list = C.Index.charged
     for i = 1, #list do
-        local e = list[i]
-        local icon = e.icon
-        if icon and icon.chargeSet then Mark(e, "recharge") end
+        local entry = list[i]
+        local icon = entry.icon
+        if icon and icon.chargeSet then Mark(entry, "recharge") end
     end
 end
 -- SPELL_UPDATE_USES: the count alone (Time "count"), for entries that show
@@ -550,28 +548,33 @@ local function OnBagContents()
     for i = 1, #list do MarkItem(list[i]) end
 end
 -- Visibility keeps transparent bars in the plan. Only visible icons need
--- a usability read; Visibility.Paint catches up on the show edge.
-local function UsableTimerDone()
-    usableTimer = nil
+-- a usability read; Visibility.Paint catches up on the show edge. The
+-- trailing refresh of a throttle window is one shared callback behind an
+-- armed flag (no timer object per window); a disable does not cancel it,
+-- the callback finds the module inactive.
+local function UsableWindowDone()
+    usableArmed = false
     if not M.active then return end
     usableNext = GetTime() + USABLE_INTERVAL
-    D.usable = true
+    dirty.usable = true
     Schedule()
 end
 local function OnUsable()
-    if D.usable or usableTimer then return end
+    if dirty.usable or usableArmed then return end
     local list = C.Index.usable
     for i = 1, #list do
-        local e = list[i]
-        local bar = C.bars[e.slot]
-        if e.icon and bar and bar.hidden ~= true and not e.outOfRange then
+        local entry = list[i]
+        local bar = C.bars[entry.slot]
+        if entry.icon and bar and bar.hidden ~= true and not entry.outOfRange then
             local now = GetTime()
-            if now >= usableNext or not (_G.C_Timer and _G.C_Timer.NewTimer) then
+            local timer = _G.C_Timer
+            if now >= usableNext or not (timer and timer.After) then
                 usableNext = now + USABLE_INTERVAL
-                D.usable = true
+                dirty.usable = true
                 Schedule()
             else
-                usableTimer = _G.C_Timer.NewTimer(usableNext - now, UsableTimerDone)
+                usableArmed = true
+                timer.After(usableNext - now, UsableWindowDone)
             end
             return
         end
@@ -579,18 +582,18 @@ local function OnUsable()
 end
 
 -- SPELL_UPDATE_ICON names the base spell (nil = all).
-local function Retexture(e)
+local function Retexture(entry)
     local catalog, tex = C.Catalog, nil
-    if e.src == "b" then
-        local rec = catalog.records[e.id]
+    if entry.src == "b" then
+        local rec = catalog.records[entry.id]
         tex = rec and catalog.RecordTexture(rec)
-    elseif e.src == "s" then
-        tex = catalog.SpellTexture(e.base)
+    elseif entry.src == "s" then
+        tex = catalog.SpellTexture(entry.base)
     end
-    if tex and tex ~= e.texture then
-        e.texture = tex
+    if tex and tex ~= entry.texture then
+        entry.texture = tex
         C.state.entryGen = (C.state.entryGen or 0) + 1
-        C.Icons.Texture(e)
+        C.Icons.Texture(entry)
     end
 end
 local function OnIcon(_, _, spellID)
@@ -598,14 +601,14 @@ local function OnIcon(_, _, spellID)
     C.Index.ForSpell(spellID, nil, Retexture)
 end
 
-local function ProcOn(e) C.Effects.Proc(e, true) end
-local function ProcOff(e) C.Effects.Proc(e, false) end
+local function ProcOn(entry) C.Effects.Proc(entry, true) end
+local function ProcOff(entry) C.Effects.Proc(entry, false) end
 local function OnGlowShow(_, _, spellID) C.Index.ForSpell(spellID, nil, ProcOn) end
 local function OnGlowHide(_, _, spellID) C.Index.ForSpell(spellID, nil, ProcOff) end
 
 -- Only the entry holding the check for this spell follows its update.
-local function RangeEntry(e)
-    if e.rangeSpell == curSpell then C.Effects.Range(e, curRange) end
+local function RangeEntry(entry)
+    if entry.rangeSpell == curSpell then C.Effects.Range(entry, curRange) end
 end
 local function OnRange(_, _, spell, inRange, checksRange)
     if (issecret and issecret(spell)) or spell == nil then return end
@@ -646,11 +649,11 @@ end
 -- base. Both lookups are by base spell: a base nothing tracks costs two
 -- reads. The new ID is routed at once; the full index rebuild waits for
 -- the end of combat.
-local function Overridden(e)
-    if e.src ~= "b" and e.src ~= "s" then return end
-    if e.icon then Mark(e, "full") end
-    if e.auraIDs and e.slot then sync[e.slot] = true end
-    C.Index.AddSpell(e, e.override)
+local function Overridden(entry)
+    if entry.src ~= "b" and entry.src ~= "s" then return end
+    if entry.icon then Mark(entry, "full") end
+    if entry.auraIDs and entry.slot then sync[entry.slot] = true end
+    C.Index.AddSpell(entry, entry.override)
 end
 local function OnOverride(_, _, base, override)
     if not C.Catalog.OnOverride(base, override) then return end
@@ -658,7 +661,7 @@ local function OnOverride(_, _, base, override)
     if C.state.inCombat then
         staleRoutes = true
     else
-        D.index = true
+        dirty.index = true
     end
     Schedule()
 end
@@ -666,10 +669,10 @@ end
 ------------------------------------------------------------------ cold event handlers
 local RESOLVING = { SPELLS_CHANGED = true, TRAIT_CONFIG_UPDATED = true, ACTIVE_PLAYER_SPECIALIZATION_CHANGED = true }
 local function OnCatalog(_, event)
-    D.catalog = true
+    dirty.catalog = true
     -- Learned state of custom spells and per-spec lists follow these.
     if RESOLVING[event] then
-        D.resolve = true
+        dirty.resolve = true
         C.Resolve.SpellsChanged()
     end
     Schedule()
@@ -678,14 +681,14 @@ end
 -- own in-memory merges: rebuild only when the saved layout string moved.
 local function OnLayoutChanged()
     if C.Catalog.LayoutStale() then
-        D.catalog = true
+        dirty.catalog = true
         Schedule()
     end
 end
 -- Trinket slots and slots an entry tracks; other gear changes cost a lookup.
 local function OnEquipment(_, _, slot)
     if Public(slot) and slot ~= nil and slot ~= 13 and slot ~= 14 and not C.Index.byEquip[slot] then return end
-    D.catalog, D.resolve = true, true
+    dirty.catalog, dirty.resolve = true, true
     Schedule()
 end
 local function OnBindings() C.Keybinds.Request(true) end
@@ -703,12 +706,12 @@ end
 -- changed; visibility sources re-read their state (a transition during the
 -- loading screen may have had no event).
 local function OnWorld()
-    local st = C.state
-    st.inCombat = NS.IsCombatLocked()
-    st.soundQuietUntil = GetTime() + QUIET
+    local state = C.state
+    state.inCombat = NS.IsCombatLocked()
+    state.soundQuietUntil = GetTime() + QUIET
     if AlertsWanted() then C.Alerts.SyncAuraSounds() end
     C.Resolve.SpellsChanged()
-    D.catalog, D.resolve, D.visibility = true, true, true
+    dirty.catalog, dirty.resolve, dirty.visibility = true, true, true
     Schedule()
 end
 
@@ -724,7 +727,7 @@ local function OnScale()
             if view.kind == 2 or view.kind == 3 then sync[slot] = true end
         end
     end
-    D.layout = true
+    dirty.layout = true
     Schedule()
 end
 
@@ -791,13 +794,13 @@ local function SeedCategories()
     if not get then return end
     local list = C.Index.items
     for i = 1, #list do
-        local e = list[i]
-        local category = e.spellCategory
-        if category and category ~= 0 and not e.catSpell then
+        local entry = list[i]
+        local category = entry.spellCategory
+        if category and category ~= 0 and not entry.catSpell then
             local spell, item = get(category)
             if Public(spell) and type(spell) == "number" and spell > 0 and Public(item) and item then
-                e.catSpell = spell
-                if e.icon then Mark(e, "full") end
+                entry.catSpell = spell
+                if entry.icon then Mark(entry, "full") end
             end
         end
     end
@@ -805,8 +808,8 @@ end
 
 ------------------------------------------------------------------ combat edges
 local function OnCombatStart()
-    local st = C.state
-    st.inCombat = true
+    local state = C.state
+    state.inCombat = true
     C.Preview.Simulate(false)
     C.Effects.CombatChanged(true)
     C.Visibility.CombatChanged()
@@ -830,7 +833,7 @@ local function OnCombatEnd()
     if pendingCapture then PersistCapture() end
     if staleRoutes then
         staleRoutes = false
-        D.index = true
+        dirty.index = true
         Schedule()
     end
     if seedLater then
@@ -884,24 +887,24 @@ local function EquipWatch()
     return #C.Index.items > 0
 end
 local function UpdateEvents()
-    local X = C.Index
-    local cooldown = #X.cooldown > 0
+    local index = C.Index
+    local cooldown = #index.cooldown > 0
     Want("SPELL_UPDATE_COOLDOWN", cooldown, OnCooldown)
-    Want("SPELL_UPDATE_USES", #X.counted > 0, OnUses)
+    Want("SPELL_UPDATE_USES", #index.counted > 0, OnUses)
     Want("SPELL_UPDATE_ICON", cooldown, OnIcon)
-    Want("SPELL_UPDATE_CHARGES", #X.charged > 0, OnCharges)
-    Want("BAG_UPDATE_COOLDOWN", #X.bags > 0, OnBag)
-    Want("BAG_UPDATE_DELAYED", #X.items > 0, OnBagContents)
-    Want("SPELL_UPDATE_USABLE", #X.usable > 0, OnUsable)
-    Want("SPELL_RANGE_CHECK_UPDATE", #X.ranged > 0, OnRange)
-    local proc = #X.proc > 0
+    Want("SPELL_UPDATE_CHARGES", #index.charged > 0, OnCharges)
+    Want("BAG_UPDATE_COOLDOWN", #index.bags > 0, OnBag)
+    Want("BAG_UPDATE_DELAYED", #index.items > 0, OnBagContents)
+    Want("SPELL_UPDATE_USABLE", #index.usable > 0, OnUsable)
+    Want("SPELL_RANGE_CHECK_UPDATE", #index.ranged > 0, OnRange)
+    local proc = #index.proc > 0
     Want("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", proc, OnGlowShow)
     Want("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", proc, OnGlowHide)
-    Want("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", cooldown or #X.aura > 0, OnOverride)
+    Want("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", cooldown or #index.aura > 0, OnOverride)
     local target = TargetWatch()
-    Want("PLAYER_TARGET_CHANGED", #X.ranged > 0 or target, OnTarget)
+    Want("PLAYER_TARGET_CHANGED", #index.ranged > 0 or target, OnTarget)
     Want("UNIT_FACTION", target, OnFaction)
-    Want("ADDON_RESTRICTION_STATE_CHANGED", #X.aura > 0 or #X.overlay > 0, OnRestriction)
+    Want("ADDON_RESTRICTION_STATE_CHANGED", #index.aura > 0 or #index.overlay > 0, OnRestriction)
     Want("PLAYER_EQUIPMENT_CHANGED", EquipWatch(), OnEquipment)
     local keys = KeybindWatch()
     Want("UPDATE_BINDINGS", keys, OnBindings)
@@ -939,12 +942,12 @@ local function Resolved(any)
     local R = C.Resolve
     local touched, auraTouched = R.touched, R.auraTouched
     for i = 1, #touched do
-        local e = touched[i]
-        if e.icon then Mark(e, "full") end
-        local slot = e.slot
-        if slot and (e.family == 2 or auraTouched[e]) then sync[slot] = true end
+        local entry = touched[i]
+        if entry.icon then Mark(entry, "full") end
+        local slot = entry.slot
+        if slot and (entry.family == 2 or auraTouched[entry]) then sync[slot] = true end
     end
-    if any or touched[1] ~= nil then D.index, D.alerts, D.keysLater = true, true, true end
+    if any or touched[1] ~= nil then dirty.index, dirty.alerts, dirty.keysLater = true, true, true end
 end
 
 local function MarkPlans(only)
@@ -957,38 +960,35 @@ local function MarkPlans(only)
 end
 
 local function RefreshMarked()
-    for e, reason in pairs(marked) do
-        marked[e] = nil
-        if e.icon and e.slot then
-            if reason == "full" then C.Icons.Texture(e) end
-            if C.Time.Refresh(e, reason) then C.Layout.Request(e.slot) end
-            if reason == "full" then C.Effects.Update(e) end
+    for entry, reason in pairs(marked) do
+        marked[entry] = nil
+        if entry.icon and entry.slot then
+            if reason == "full" then C.Icons.Texture(entry) end
+            if C.Time.Refresh(entry, reason) then C.Layout.Request(entry.slot) end
+            if reason == "full" then C.Effects.Update(entry) end
         end
     end
 end
 
-Flush = function()
-    if not M.active then
-        scheduled = false
-        ResetDirty()
-        return
-    end
-    local locked = NS.IsCombatLocked()
-    if D.catalog then
-        D.catalog = false
-        if UpdateSpec() then D.resolve = true end
+-- Flush steps, in dependency order.
+
+-- Catalog, resolve, routing index and event registration.
+local function FlushData(locked)
+    if dirty.catalog then
+        dirty.catalog = false
+        if UpdateSpec() then dirty.resolve = true end
         -- A changed catalog may move equipment slot records between bars.
-        if C.Catalog.Rebuild() then D.resolve, D.events = true, true end
+        if C.Catalog.Rebuild() then dirty.resolve, dirty.events = true, true end
         if captureWait and C.Catalog.Ready() and not locked then Capture() end
     end
-    if D.resolve then
-        D.resolve = false
+    if dirty.resolve then
+        dirty.resolve = false
         local _, any = C.Resolve.Build()
         C.Preview.Decorate()
         Resolved(any)
     end
-    if D.index then
-        D.index, D.events, staleRoutes = false, true, false
+    if dirty.index then
+        dirty.index, dirty.events, staleRoutes = false, true, false
         C.Index.Rebuild()
         if locked then
             seedLater = true
@@ -996,11 +996,15 @@ Flush = function()
             SeedCategories()
         end
     end
-    if D.events then
-        D.events = false
+    if dirty.events then
+        dirty.events = false
         UpdateEvents()
         UpdateAssist()
     end
+end
+
+-- Structure (icons before aura overlays) or, without it, the look.
+local function FlushStructure()
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
         if sync[slot] then
@@ -1013,8 +1017,12 @@ Flush = function()
             C.Auras.Restyle(slot)
         end
     end
-    if D.cooldowns then
-        D.cooldowns = false
+end
+
+-- Cooldown state of marked entries, usability of visible icons, effects.
+local function FlushEntries()
+    if dirty.cooldowns then
+        dirty.cooldowns = false
         MarkPlans(nil)
     end
     if next(behavior) then
@@ -1022,39 +1030,46 @@ Flush = function()
         wipe(behavior)
     end
     RefreshMarked()
-    if D.usable then
-        D.usable = false
+    if dirty.usable then
+        dirty.usable = false
         local list = C.Index.usable
         for i = 1, #list do
-            local e = list[i]
-            local bar = C.bars[e.slot]
-            if e.icon and bar and bar.hidden ~= true and not e.outOfRange then C.Effects.Usable(e) end
+            local entry = list[i]
+            local bar = C.bars[entry.slot]
+            if entry.icon and bar and bar.hidden ~= true and not entry.outOfRange then C.Effects.Usable(entry) end
         end
     end
-    if D.effects then
-        D.effects = false
+    if dirty.effects then
+        dirty.effects = false
         C.Effects.CombatChanged()
     end
-    -- Keybind setting changes push cached texts now; resolves wait for the
-    -- coalesced request.
-    if D.keybinds then
-        D.keybinds, D.keysLater = false, false
+end
+
+-- Keybind setting changes push cached texts now; resolves wait for the
+-- coalesced request. Aura sounds follow their entries.
+local function FlushTextsAndSounds()
+    if dirty.keybinds then
+        dirty.keybinds, dirty.keysLater = false, false
         C.Keybinds.Refresh()
     end
-    if D.keysLater then
-        D.keysLater = false
+    if dirty.keysLater then
+        dirty.keysLater = false
         if KeybindWatch() then
             C.Keybinds.Request(false)
         end
     end
-    if D.alerts then
-        D.alerts = false
+    if dirty.alerts then
+        dirty.alerts = false
         if AlertsWanted() then
             C.Alerts.SyncAuraSounds()
         end
     end
-    if D.layout then
-        D.layout = false
+end
+
+-- Layout (all bars or the marked ones), then visibility.
+local function FlushPlacement()
+    if dirty.layout then
+        dirty.layout = false
         wipe(laid)
         C.Layout.ApplyAll()
     else
@@ -1067,8 +1082,8 @@ Flush = function()
         end
         C.Layout.Flush()
     end
-    if D.visibility then
-        D.visibility = false
+    if dirty.visibility then
+        dirty.visibility = false
         wipe(visible)
         C.Visibility.ApplyAll()
     else
@@ -1077,15 +1092,28 @@ Flush = function()
             C.Visibility.Apply(slot)
         end
     end
+end
+
+Flush = function()
+    if not M.active then
+        scheduled = false
+        ResetDirty()
+        return
+    end
+    FlushData(NS.IsCombatLocked())
+    FlushStructure()
+    FlushEntries()
+    FlushTextsAndSounds()
+    FlushPlacement()
     scheduled = false
     if Pending() or next(C.Layout.dirty) then Schedule() end
 end
 
 ------------------------------------------------------------------ lifecycle (spec 8.1)
 function M:Enable()
-    local st = C.state
-    st.inCombat = NS.IsCombatLocked()
-    st.soundQuietUntil = GetTime() + QUIET
+    local state = C.state
+    state.inCombat = NS.IsCombatLocked()
+    state.soundQuietUntil = GetTime() + QUIET
     C.Layout.InvalidateScale()
     C.Resolve.SpellsChanged()
     first, captureWait, pendingCapture = true, false, nil
@@ -1110,7 +1138,7 @@ function M:Refresh()
     local text = ReadGlobals(config, all)
     ReadViews(config, all, text)
     DecodeData(config)
-    if all then D.catalog, D.resolve, D.layout, D.visibility, D.events, D.keybinds = true, true, true, true, true, true end
+    if all then dirty.catalog, dirty.resolve, dirty.layout, dirty.visibility, dirty.events, dirty.keybinds = true, true, true, true, true, true end
     ApplyPreview()
     if not captureWait then
         C.Native.Apply()
@@ -1118,7 +1146,7 @@ function M:Refresh()
     end
     if S.editMode then
         C.Layout.ForgetAnchors()
-        D.layout = true
+        dirty.layout = true
     end
     CoreEvents()
     if Pending() then Schedule() end
@@ -1127,10 +1155,6 @@ end
 -- The options page's preview request outlives a disable: the page turns it
 -- off when it closes, and a re-enable while it is open applies it again.
 function M:Disable()
-    if usableTimer then
-        usableTimer:Cancel()
-        usableTimer = nil
-    end
     usableNext = 0
     C.Preview.SetMode(nil)
     C.Preview.ReleaseAll()
@@ -1172,17 +1196,17 @@ local ICON_CONTROLS, BAR_CONTROLS = { "size", "spacing", "perRow" }, { "barWidth
 -- Free bars move in MSUF Edit Mode; attached bars follow their parent.
 local function Mover(i)
     local def = SLOTS[i]
-    local slot, k = def.key, KEYS[def.key]
-    local list = k.size and ICON_CONTROLS or BAR_CONTROLS
+    local slot, keys = def.key, KEYS[def.key]
+    local list = keys.size and ICON_CONTROLS or BAR_CONTROLS
     local controls, history = {}, {}
     for j = 1, #list do
-        local key = k[list[j]]
+        local key = keys[list[j]]
         if key then
             controls[#controls + 1] = Control(list[j], key)
             history[#history + 1] = key
         end
     end
-    return { label = def.title, order = 700 + i, xKey = k.x, yKey = k.y, extraControls = controls, historyKeys = history,
+    return { label = def.title, order = 700 + i, xKey = keys.x, yKey = keys.y, extraControls = controls, historyKeys = history,
         getFrame = function()
             local bar = C.bars[slot]
             return bar and bar.frame
@@ -1242,17 +1266,17 @@ function S.CooldownManagerBarEntries(slot)
         local key = keys[i]
         local live = C.entries[key]
         if live and live.slot ~= slot then live = nil end
-        local d = live or C.Resolve.Describe(key, describe)
-        if d then
+        local desc = live or C.Resolve.Describe(key, describe)
+        if desc then
             local ov = spells[key]
             if type(ov) ~= "table" then ov = EMPTY end
             local hide = ov.hideReady
             if hide == nil then hide = view.hideReady == true end
             -- An empty Healthstone (Time: entry.empty) leaves its bar too.
-            local hidden = (cap ~= nil and #rows >= cap) or (hide and live ~= nil and d.family == 1 and not live.cooling)
+            local hidden = (cap ~= nil and #rows >= cap) or (hide and live ~= nil and desc.family == 1 and not live.cooling)
                 or (live ~= nil and live.empty == true) or false
-            rows[#rows + 1] = { key = key, name = d.name, texture = ov.icon or d.texture, known = d.known ~= false, family = d.family,
-                hasAura = d.hasAura == true, hidden = hidden == true }
+            rows[#rows + 1] = { key = key, name = desc.name, texture = ov.icon or desc.texture, known = desc.known ~= false, family = desc.family,
+                hasAura = desc.hasAura == true, hidden = hidden == true }
         end
     end
     return rows
@@ -1338,7 +1362,7 @@ function S.CooldownManagerSpec()
     if specFrame ~= now then
         specFrame = now
         if UpdateSpec() and M.active then
-            D.catalog, D.resolve = true, true
+            dirty.catalog, dirty.resolve = true, true
             Schedule()
         end
     end
@@ -1368,8 +1392,8 @@ local function Extent(view, plan)
     if plan.kind == 1 then
         local n, preview = 0, C.state.preview
         for i = 1, #list do
-            local e = list[i]
-            if e.icon and (preview or not e.hidden) then n = n + 1 end
+            local entry = list[i]
+            if entry.icon and (preview or not entry.hidden) then n = n + 1 end
         end
         return C.Layout.Offsets(view, n, offsetScratch)
     end
@@ -1402,11 +1426,11 @@ end
 -- Grow direction and orientation move the growth-edge anchor. The new x/y
 -- keep the bar's center where it is now (free bars that are shown only).
 Convert = function(slot, grow, vertical, anyAnchor)
-    local k = KEYS[slot]
-    if not k then return nil end
+    local keys = KEYS[slot]
+    if not keys then return nil end
     local values = {}
-    if grow ~= nil and k.grow then values[k.grow] = grow end
-    if vertical ~= nil and k.vertical then values[k.vertical] = vertical end
+    if grow ~= nil and keys.grow then values[keys.grow] = grow end
+    if vertical ~= nil and keys.vertical then values[keys.vertical] = vertical end
     local view, bar, plan = C.views[slot], C.bars[slot], C.plans[slot]
     if not (M.active and view and bar and bar.shown and plan and (anyAnchor or C.Layout.Free(slot)) and UIParent) then return values end
     local left, bottom, w, h = bar.frame:GetRect()
@@ -1419,7 +1443,7 @@ Convert = function(slot, grow, vertical, anyAnchor)
     local point = C.Layout.Point(view)
     view.grow, view.vertical = oldGrow, oldVertical
     local dx, dy = K.EdgeOffset(point, nw, nh)
-    values[k.x], values[k.y] = Clamp(k.x, left + w / 2 - uiW / 2 + dx), Clamp(k.y, bottom + h / 2 - uiH / 2 + dy)
+    values[keys.x], values[keys.y] = Clamp(keys.x, left + w / 2 - uiW / 2 + dx), Clamp(keys.y, bottom + h / 2 - uiH / 2 + dy)
     return values
 end
 function S.CooldownManagerConvertGrow(slot, grow)
@@ -1442,8 +1466,8 @@ local function RideAnchor(values, anchor)
     view.anchor = old
     values.essOnViewer = rides
     if not rides then return end
-    local k = KEYS.ess
-    values[k.x], values[k.y] = 0, 0
+    local keys = KEYS.ess
+    values[keys.x], values[keys.y] = 0, 0
     local bar = C.bars.ess
     local vx, vy = C.Layout.ViewerPoint(view)
     if not (vx and bar and bar.shown) then return end
@@ -1452,20 +1476,20 @@ local function RideAnchor(values, anchor)
     local point = C.Layout.Point(view)
     local x = point == "LEFT" and left or point == "RIGHT" and left + w or left + w / 2
     local y = point == "TOP" and bottom + h or point == "BOTTOM" and bottom or bottom + h / 2
-    values[k.x], values[k.y] = Clamp(k.x, x - vx), Clamp(k.y, y - vy)
+    values[keys.x], values[keys.y] = Clamp(keys.x, x - vx), Clamp(keys.y, y - vy)
 end
 -- Attach changes keep the bar on screen: to Free, the x/y that hold its
 -- current place; to a bar or unit frame, a zero offset from that anchor.
 function S.CooldownManagerConvertAnchor(slot, anchor)
-    local k = KEYS[slot]
-    if not k or type(anchor) ~= "number" then return nil end
+    local keys = KEYS[slot]
+    if not keys or type(anchor) ~= "number" then return nil end
     local values
     if anchor == 1 then
         values = Convert(slot, nil, nil, true) or {}
     else
-        values = { [k.x] = 0, [k.y] = 0 }
+        values = { [keys.x] = 0, [keys.y] = 0 }
     end
-    values[k.anchor] = anchor
+    values[keys.anchor] = anchor
     if slot == "ess" then RideAnchor(values, anchor) end
     return values
 end
@@ -1476,3 +1500,6 @@ NS.CooldownManager = NS.CooldownManager or {}
 NS.CooldownManager.GetAnchorFrame = function(viewerName) return C.Native.AnchorFrame(viewerName) end
 
 S.Install(ID, M)
+
+
+

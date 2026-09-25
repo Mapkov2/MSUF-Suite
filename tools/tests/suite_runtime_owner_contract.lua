@@ -12,11 +12,17 @@ CreateFrame = function()
     local frame = { events = {}, registrations = 0, unregistrations = 0 }
     function frame:SetScript(_, callback) self.callback = callback end
     function frame:RegisterEvent(event) self.events[event] = true; self.registrations = self.registrations + 1 end
+    function frame:RegisterUnitEvent(event, unit) self.events[event] = unit; self.registrations = self.registrations + 1 end
     function frame:UnregisterEvent(event) self.events[event] = nil; self.unregistrations = self.unregistrations + 1 end
     function frame:UnregisterAllEvents() self.events = {} end
     frames[#frames + 1] = frame
     return frame
 end
+local cvarValues = { rotateMinimap = "0", combinedBags = "0", autoLootDefault = "0" }
+GetCVar = function(key) return cvarValues[key] end
+SetCVar = function(key, value) cvarValues[key] = tostring(value) end
+UnitName = function() return "Tester" end
+GetRealmName = function() return "Realm" end
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua", nil, "Vanilla")
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
@@ -52,7 +58,10 @@ assert(events == 2 and context.frame.registrations == 1 and context.combatEvents
     "refresh re-registered an unchanged event or lost its updated callback")
 context:RemoveEvent("TEST_EVENT")
 context:RemoveEvent("TEST_EVENT")
-assert(context.frame.unregistrations == 1, "removing an absent event repeated a native call")
+context:Event("UNIT_FLAGS", function() end, true, "player")
+assert(context.frame.events.UNIT_FLAGS == "player", "a unit event was registered for every unit")
+context:RemoveEvent("UNIT_FLAGS")
+assert(context.frame.unregistrations == 2, "removing an absent event repeated a native call")
 local native = { scale = 1 }
 function native:GetScale() return self.scale end
 function native:SetScale(value) self.scale = value end
@@ -85,5 +94,50 @@ assert(paints == 2, "previously created popup lost its skin after toggling")
 context:Release()
 context:RefreshOwnedSkins()
 assert(paints == 3 and released == 2, "module reactivation lost owned popup styling")
+
+-- CVar ownership: a context sets only CVars its module declares, and a saved
+-- record is dropped only once it is resolved.
+local S = Suite.Suite
+local function Saved(id, key)
+    local recovery = Suite.RootDB.suiteRecovery and Suite.RootDB.suiteRecovery["Realm/Tester"]
+    return recovery and recovery[id] and recovery[id][key]
+end
+local minimap = S.NewContext("minimap")
+assert(S.instances.minimap == nil and not minimap:CVar("autoLootDefault", 1)
+    and cvarValues.autoLootDefault == "0" and not Saved("minimap", "autoLootDefault"),
+    "a context set a CVar its module never declared")
+assert(minimap:CVar("rotateMinimap", 1) and cvarValues.rotateMinimap == "1" and Saved("minimap", "rotateMinimap"))
+-- The module addon is not loaded: its catalog entry still hands the CVar back.
+S.RestoreSaved("minimap")
+assert(cvarValues.rotateMinimap == "0" and not Saved("minimap", "rotateMinimap"),
+    "a saved CVar was dropped without being restored while its addon was not loaded")
+-- An unreadable value keeps the record for a later attempt.
+assert(minimap:CVar("rotateMinimap", 1))
+cvarValues.rotateMinimap = nil
+S.RestoreCVar("minimap", "rotateMinimap")
+assert(Saved("minimap", "rotateMinimap"), "an unrestored CVar record was dropped")
+cvarValues.rotateMinimap = "1"
+S.RestoreCVar("minimap", "rotateMinimap")
+assert(cvarValues.rotateMinimap == "0" and not Saved("minimap", "rotateMinimap"))
+-- A later change by the player resolves the record without overwriting it.
+assert(minimap:CVar("rotateMinimap", 1))
+cvarValues.rotateMinimap = "0"
+minimap:Release()
+assert(cvarValues.rotateMinimap == "0" and not Saved("minimap", "rotateMinimap"))
+-- Records of CVars no loaded code declares are kept for their owner.
+Suite.RootDB.suiteRecovery = { ["Realm/Tester"] = { bags = {
+    combinedBags = { before = "0", applied = "1" }, unknownCVar = { before = "0", applied = "1" },
+} } }
+cvarValues.combinedBags = "1"
+S.RestoreSaved("bags")
+assert(cvarValues.combinedBags == "0" and not Saved("bags", "combinedBags") and Saved("bags", "unknownCVar"),
+    "the Bags catalog did not own combinedBags or an unknown record was dropped")
+local bagsModule = { cvars = { unknownCVar = true } }
+S.instances.bags = bagsModule
+cvarValues.unknownCVar = "1"
+S.RestoreSaved("bags")
+S.instances.bags = nil
+assert(cvarValues.unknownCVar == "0" and Suite.RootDB.suiteRecovery["Realm/Tester"] == nil,
+    "a module-level cvars declaration did not restore its record")
 print("Standalone runtime: AFK screen and " .. (count - 1)
     .. " Quality of Life helpers register without skin or frames; event and property cleanup passed")

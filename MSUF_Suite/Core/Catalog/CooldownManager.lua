@@ -375,7 +375,10 @@ function CDM.CleanLists(data)
                         any = true
                     end
                 end
-                if any then out.specs[spec] = cleanSlots; specCount = specCount + 1 end
+                if any then
+                    out.specs[spec] = cleanSlots
+                    specCount = specCount + 1
+                end
             end
         end
     end
@@ -421,9 +424,15 @@ function CDM.CleanSpells(data)
             local clean, any = {}, false
             for field, value in pairs(fields) do
                 local valid = CDM.SPELL_FIELDS[field]
-                if valid and valid(value) then clean[field] = value; any = true end
+                if valid and valid(value) then
+                    clean[field] = value
+                    any = true
+                end
             end
-            if any then out.e[key] = clean; count = count + 1 end
+            if any then
+                out.e[key] = clean
+                count = count + 1
+            end
         end
     end
     return out

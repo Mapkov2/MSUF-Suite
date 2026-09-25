@@ -19,7 +19,9 @@ Pages\QualityOfLife.lua
 Pages\HUD.lua
 Pages\BuffReminders.lua
 Pages\Chat.lua
+Pages\CooldownManagerData.lua
 Pages\CooldownManagerWidgets.lua
+Pages\CooldownManagerPopover.lua
 Pages\CooldownManagerPreview.lua
 Pages\CooldownManager.lua
 Pages\Appearance.lua

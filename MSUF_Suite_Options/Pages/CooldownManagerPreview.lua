@@ -90,8 +90,14 @@ end
 
 -- Left click selects the bar, right click opens its actions.
 local function ChipClick(self, button)
-    if self.add then Page.OpenAddBar(self); return end
-    if button == "RightButton" then Page.OpenBarMenu(self, self.slot); return end
+    if self.add then
+        Page.OpenAddBar(self)
+        return
+    end
+    if button == "RightButton" then
+        Page.OpenBarMenu(self, self.slot)
+        return
+    end
     Page.Select(self.slot)
 end
 local function ChipEnter(self)
@@ -143,7 +149,10 @@ local function PlaceChip(ui, chip, text, x, row, width)
     return x + w + 4, row
 end
 local function ShowChip(chip, show)
-    if chip._cdmShown ~= show then chip._cdmShown = show; chip:SetShown(show) end
+    if chip._cdmShown ~= show then
+        chip._cdmShown = show
+        chip:SetShown(show)
+    end
 end
 -- Every listed bar: shown ones, the built-in bars and custom bars that were
 -- set up; bars that are off are dimmed. Returns the strip height.
@@ -157,8 +166,14 @@ local function PaintStrip(ui, width)
         if show then
             x, row = PlaceChip(ui, chip, Page.BarName(slot), x, row, width)
             local active, alpha = slot == Page.selected, Page.IsOn(slot) and 1 or 0.5
-            if chip._cdmActive ~= active then chip._cdmActive = active; chip:SetActive(active) end
-            if chip._cdmAlpha ~= alpha then chip._cdmAlpha = alpha; chip:SetAlpha(alpha) end
+            if chip._cdmActive ~= active then
+                chip._cdmActive = active
+                chip:SetActive(active)
+            end
+            if chip._cdmAlpha ~= alpha then
+                chip._cdmAlpha = alpha
+                chip:SetAlpha(alpha)
+            end
         end
     end
     local add = ui.addChip
@@ -166,7 +181,10 @@ local function PaintStrip(ui, width)
     ShowChip(add, free)
     if free then x, row = PlaceChip(ui, add, Tr("+ Add bar"), x, row, width) end
     local height = (row + 1) * STRIP_ROW
-    if ui.stripHeight ~= height then ui.stripHeight = height; ui.strip:SetHeight(height) end
+    if ui.stripHeight ~= height then
+        ui.stripHeight = height
+        ui.strip:SetHeight(height)
+    end
     return height
 end
 
@@ -179,7 +197,10 @@ local function HandleEnter(self)
         or Page.AttachedText(slot),
         Tr("Click to open its Basics: size and attachment."))
 end
-local function HandleLeave(self) self.hover:Hide(); Page.HideTip(self) end
+local function HandleLeave(self)
+    self.hover:Hide()
+    Page.HideTip(self)
+end
 -- The drawing sits left of center by half the + tile beside it (stage
 -- units, counted in the drawing's own scale), so both stay centered.
 local function Place(self, dx, dy)
@@ -228,10 +249,16 @@ local function HandleUp(self, button)
     self.downX, self.downY = nil, nil
     StopDrag(self)
     local x, y = Page.Cursor()
-    if not x or P.Combat() then Recenter(self); return end
+    if not x or P.Combat() then
+        Recenter(self)
+        return
+    end
     local scale = Page.Scale(_G.UIParent)
     local dx, dy = (x - startX) / scale, (y - startY) / scale
-    if not dragged and abs(dx) + abs(dy) < 3 then Page.FocusSection("basics"); return end
+    if not dragged and abs(dx) + abs(dy) < 3 then
+        Page.FocusSection("basics")
+        return
+    end
     local slot = Page.selected
     if not Page.Movable(slot) then
         Page.Note(Page.AttachedText(slot), nil, true)
@@ -276,7 +303,10 @@ local function HitEnter(self)
     self.hover:Show()
     Ring(self, true)
     local tips = ui.tips
-    if not self.key then Page.ShowTip(self, tips.sampleTitle, tips.sample); return end
+    if not self.key then
+        Page.ShowTip(self, tips.sampleTitle, tips.sample)
+        return
+    end
     local tile = HitTile(self)
     local state = self.dimmed and tips.unlearned or tile and tile.hidden and Page.HiddenText(tile.hiddenBy) or nil
     Page.ShowTip(self, HitName(self, tile), tips.hint, state, Page.CustomLine(self.key))
@@ -312,8 +342,11 @@ local function Flow(drag, ui)
         local x2, y2 = second:GetCenter()
         if type(x1) == "number" and type(y1) == "number" and type(x2) == "number" and type(y2) == "number" then
             local dx, dy = x2 - x1, y2 - y1
-            if abs(dx) >= abs(dy) then axis, sign = "x", dx >= 0 and 1 or -1
-            else axis, sign = "y", dy >= 0 and 1 or -1 end
+            if abs(dx) >= abs(dy) then
+                axis, sign = "x", dx >= 0 and 1 or -1
+            else
+                axis, sign = "y", dy >= 0 and 1 or -1
+            end
         end
     end
     drag.axis, drag.sign = axis, sign
@@ -334,7 +367,10 @@ local function Mark(drag, target, after)
     if drag.markTarget == target and drag.markAfter == after then return end
     drag.markTarget, drag.markAfter = target, after
     local marker = drag.marker
-    if not target then marker:Hide(); return end
+    if not target then
+        marker:Hide()
+        return
+    end
     marker:ClearAllPoints()
     local lead = after == (drag.sign > 0)
     if drag.axis == "y" and not target.plus then
@@ -350,9 +386,16 @@ local function DragTarget(drag, x, y)
     local ui = drag.hit.ui
     local chip = Page.ChipUnderCursor()
     if chip == Page.selected then chip = nil end
-    if drag.chip ~= chip then drag.chip = chip; Page.HighlightChip(chip) end
+    if drag.chip ~= chip then
+        drag.chip = chip
+        Page.HighlightChip(chip)
+    end
     drag.dropSlot = chip
-    if chip then drag.dropHit = nil; Mark(drag, nil); return end
+    if chip then
+        drag.dropHit = nil
+        Mark(drag, nil)
+        return
+    end
     local target, after = nil, false
     for i = 1, ui.hitCount do
         local hit = ui.hits[i]
@@ -376,14 +419,19 @@ local function DragDrop(drag)
     local key, family, name, slot = drag.key, drag.family, drag.name, drag.dropSlot
     local target, after = drag.dropHit, drag.dropAfter
     DragCancel(drag)
-    if slot then Page.CommitDrop(key, family, name, slot); return end
+    if slot then
+        Page.CommitDrop(key, family, name, slot)
+        return
+    end
     if not target then return end
     local beforeKey
     if target ~= ui.plus then
         local targetKey = target.key
         if not targetKey then return end
-        if not after then beforeKey = targetKey
-        elseif ui.grid and ui.grid:Tile(targetKey) then beforeKey = ui.grid:NextKey(targetKey)
+        if not after then
+            beforeKey = targetKey
+        elseif ui.grid and ui.grid:Tile(targetKey) then
+            beforeKey = ui.grid:NextKey(targetKey)
         else
             local nextHit = target.index < ui.hitCount and ui.hits[target.index + 1] or nil
             beforeKey = nextHit and nextHit.key or nil
@@ -393,7 +441,10 @@ local function DragDrop(drag)
 end
 local function DragUpdate(host)
     local drag = host.drag
-    if P.Combat() or not drag.hit then DragCancel(drag); return end
+    if P.Combat() or not drag.hit then
+        DragCancel(drag)
+        return
+    end
     local x, y = Page.Cursor()
     if not x then return end
     if not drag.active then
@@ -427,10 +478,16 @@ local function HitUp(self, button)
     end
 end
 local function HitClick(self, button)
-    if self.suppressClick then self.suppressClick = nil; return end
+    if self.suppressClick then
+        self.suppressClick = nil
+        return
+    end
     local key = self.key
     if P.Combat() or key == nil then return end
-    if not key then Page.TogglePicker(self); return end
+    if not key then
+        Page.TogglePicker(self)
+        return
+    end
     local tile = HitTile(self)
     if button == "MiddleButton" then
         Page.ClosePopups()
@@ -499,7 +556,10 @@ local function PlusEnter(self)
     self.hover:Show()
     Page.ShowTip(self, self.ui.tips.plusTitle, self.ui.tips.plus)
 end
-local function PlusLeave(self) self.hover:Hide(); Page.HideTip(self) end
+local function PlusLeave(self)
+    self.hover:Hide()
+    Page.HideTip(self)
+end
 local function PlusClick(self)
     if P.Combat() then return end
     Page.TogglePicker(self)
@@ -543,8 +603,14 @@ local function PaintMarks(ui)
         local own = key and spells[key] ~= nil or false
         local tile = key and grid and grid:Tile(key)
         local hidden = tile ~= nil and tile ~= false and tile.hidden == true
-        if hit.markOn ~= own then hit.markOn = own; hit.mark:SetShown(own) end
-        if hit.ruleOn ~= hidden then hit.ruleOn = hidden; hit.ruleMark:SetShown(hidden) end
+        if hit.markOn ~= own then
+            hit.markOn = own
+            hit.mark:SetShown(own)
+        end
+        if hit.ruleOn ~= hidden then
+            hit.ruleOn = hidden
+            hit.ruleMark:SetShown(hidden)
+        end
     end
 end
 -- Lays the buttons over what the runtime drew (see Preview.lua for the
@@ -567,14 +633,23 @@ local function PaintHits(ui, frame, editable)
         hit.key = keys[i]
         if hit.key == nil then hit.key = false end
         local dim = type(dims) == "table" and dims[i] == true
-        if hit.dimmed ~= dim then hit.dimmed = dim; hit.dim:SetShown(dim) end
-        if not hit.pvShown then hit.pvShown = true; hit:Show() end
+        if hit.dimmed ~= dim then
+            hit.dimmed = dim
+            hit.dim:SetShown(dim)
+        end
+        if not hit.pvShown then
+            hit.pvShown = true
+            hit:Show()
+        end
         shown = i
     end
     for i = shown + 1, #ui.hits do
         local hit = ui.hits[i]
         hit.key = nil
-        if hit.pvShown ~= false then hit.pvShown = false; hit:Hide() end
+        if hit.pvShown ~= false then
+            hit.pvShown = false
+            hit:Hide()
+        end
     end
     ui.hitCount, ui.kind = shown, frame and frame.kind or 1
     local plus, show = ui.plus, editable and frame ~= nil
@@ -586,7 +661,10 @@ local function PaintHits(ui, frame, editable)
             local own = tonumber((frame:GetScale())) or 1
             size = max(16, min(PLUS, floor(height * own * (tonumber((ui.stage:GetScale())) or 1) + 0.5)))
         end
-        if plus.size ~= size then plus.size = size; plus:SetSize(size, size) end
+        if plus.size ~= size then
+            plus.size = size
+            plus:SetSize(size, size)
+        end
         if plus.frame ~= frame then
             plus.frame = frame
             plus:ClearAllPoints()
@@ -594,7 +672,10 @@ local function PaintHits(ui, frame, editable)
         end
         if plus:GetFrameLevel() ~= level then plus:SetFrameLevel(level) end
     end
-    if plus.pvShown ~= show then plus.pvShown = show; plus:SetShown(show) end
+    if plus.pvShown ~= show then
+        plus.pvShown = show
+        plus:SetShown(show)
+    end
     PaintMarks(ui)
 end
 -- An open popover follows its entry to the icon that holds it now.
@@ -604,7 +685,10 @@ local function FollowPopover(ui)
     if not (anchor and anchor.ui == ui and anchor.lines) then return end
     for i = 1, ui.hitCount do
         local hit = ui.hits[i]
-        if hit.key == pop.key then Page.MovePopover(hit); return end
+        if hit.key == pop.key then
+            Page.MovePopover(hit)
+            return
+        end
     end
     pop:Hide()
 end
@@ -615,7 +699,8 @@ local function StatusText()
     local _, specName = Page.Spec()
     local slot = Page.selected
     local text = specName and format(Tr("Spells for %s."), specName) or ""
-    if not Page.IsOn(slot) then text = text .. "  " .. Tr("This bar is off.")
+    if not Page.IsOn(slot) then
+        text = text .. "  " .. Tr("This bar is off.")
     elseif Page.Movable(slot) then
         local label = P.Get(ID, Page.Key("anchor")) == 1 and "Position %d, %d." or "Offset %d, %d from its anchor."
         text = text .. "  " .. format(Tr(label), P.Get(ID, Page.Key("x")), P.Get(ID, Page.Key("y")))
@@ -787,7 +872,10 @@ local function Render(ui)
         return nil
     end
     local scale = Page.Scale(_G.UIParent) / Page.Scale(canvas)
-    if ui.stageScale ~= scale then ui.stageScale = scale; ui.stage:SetScale(scale) end
+    if ui.stageScale ~= scale then
+        ui.stageScale = scale
+        ui.stage:SetScale(scale)
+    end
     local w = (tonumber(canvas:GetWidth()) or ui.width) / scale
     local h = (tonumber(canvas:GetHeight()) or 80) / scale
     -- Room for the + tile right of the drawing; both stay centered.
@@ -822,7 +910,10 @@ local function Paint(ui)
     local stripHeight = PaintStrip(ui, ui.width)
     local room = ui.compact and (COMPACT - 22 - LINE - 2) or (EXPANDED - 60 - LINE - 2)
     local height = max(40, room - stripHeight)
-    if ui.canvasHeight ~= height then ui.canvasHeight = height; ui.canvas:SetHeight(height) end
+    if ui.canvasHeight ~= height then
+        ui.canvasHeight = height
+        ui.canvas:SetHeight(height)
+    end
     local frame = Render(ui)
     PaintHits(ui, frame, frame ~= nil and not Page.EditorBlocked())
     FollowPopover(ui)

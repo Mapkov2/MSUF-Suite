@@ -38,6 +38,14 @@ function AdapterKit.PathOf(object, keys)
     return object
 end
 
+-- True when every listed member is present: an exact template contract.
+function AdapterKit.HasFields(object, fields)
+    for index = 1, #fields do
+        if not Field(object, fields[index]) then return false end
+    end
+    return true
+end
+
 function AdapterKit.ObjectType(object)
     local objectType = Safety.Read(object, "GetObjectType")
     return type(objectType) == "string" and objectType or nil
@@ -71,13 +79,13 @@ end
 
 -- callback(region, a, b, c) for each direct region, without a result table.
 function AdapterKit.ForEachRegion(frame, callback, a, b, c)
-    if Safety.IsForbidden(frame) or type(Field(frame, "GetRegions")) ~= "function" then return end
+    if Safety.IsForbidden(frame) or type((Field(frame, "GetRegions"))) ~= "function" then return end
     VisitValues(callback, a, b, c, frame:GetRegions())
 end
 
 -- callback(object, a, b) for at most limit active objects of a Blizzard pool.
 function AdapterKit.ForEachActive(pool, limit, callback, a, b)
-    if type(Field(pool, "EnumerateActive")) ~= "function" then return 0 end
+    if type((Field(pool, "EnumerateActive"))) ~= "function" then return 0 end
     local count = 0
     for object in pool:EnumerateActive() do
         if count >= limit then break end
@@ -100,7 +108,7 @@ end
 function AdapterKit.RegisterRowCallback(scrollBox, callback, owner)
     local event = AdapterKit.RowInitializedEvent()
     if not event or Safety.IsForbidden(scrollBox)
-        or type(Field(scrollBox, "RegisterCallback")) ~= "function" then
+        or type((Field(scrollBox, "RegisterCallback"))) ~= "function" then
         return nil
     end
     scrollBox:RegisterCallback(event, callback, owner)
@@ -118,7 +126,7 @@ end
 -- ScrollBox:ForEachFrame indexes its view, which exists only after Blizzard
 -- initialized the list. Paged content frames have no view and are always ready.
 function AdapterKit.ForEachRow(scrollBox, callback)
-    if Safety.IsForbidden(scrollBox) or type(Field(scrollBox, "ForEachFrame")) ~= "function" then
+    if Safety.IsForbidden(scrollBox) or type((Field(scrollBox, "ForEachFrame"))) ~= "function" then
         return false
     end
     if type(scrollBox.HasView) == "function" and scrollBox:HasView() ~= true then return false end
@@ -126,17 +134,19 @@ function AdapterKit.ForEachRow(scrollBox, callback)
     return true
 end
 
--- hooksecurefunc raises when the hooked member is not a function. A nil
--- target hooks a global function.
+-- hooksecurefunc raises when the hooked member is not a function, so both
+-- helpers check first. A missing target (mixin not loaded) hooks nothing.
 function AdapterKit.HookFunction(target, method, callback)
-    if type(hooksecurefunc) ~= "function" then return false end
-    if target == nil then
-        if type(_G[method]) ~= "function" then return false end
-        hooksecurefunc(method, callback)
-        return true
+    if type(hooksecurefunc) ~= "function" or type((Field(target, method))) ~= "function" then
+        return false
     end
-    if type(Field(target, method)) ~= "function" then return false end
     hooksecurefunc(target, method, callback)
+    return true
+end
+
+function AdapterKit.HookGlobal(name, callback)
+    if type(hooksecurefunc) ~= "function" or type(_G[name]) ~= "function" then return false end
+    hooksecurefunc(name, callback)
     return true
 end
 
@@ -258,10 +268,133 @@ function AdapterKit.SkinControl(context, control, spec, method)
     return true
 end
 
+-- IconSkin reads its spec only during the call, so one scratch spec serves
+-- every item button without a table per button.
+local itemIconSpec = {}
+
+function AdapterKit.SkinItemIcon(button, owner, icon, nativeBorder, allowImplicitProtected)
+    itemIconSpec.icon = icon
+    itemIconSpec.nativeBorder = nativeBorder
+    itemIconSpec.allowImplicitProtected = allowImplicitProtected == true
+    local state = NS.IconSkin.Apply(button, owner, itemIconSpec)
+    itemIconSpec.icon = nil
+    itemIconSpec.nativeBorder = nil
+    return state ~= nil
+end
+
 function AdapterKit.HideSurfaces(context)
     for target in pairs(context.surfaces) do
         NS.Surface.SetVisible(target, false)
     end
+end
+
+-- A surface spec built once at load. Unset flags keep Surface's defaults:
+-- no list-item transparency, no forced edge and a visible fill.
+function AdapterKit.SurfaceSpec(role, radius, inset, listItem, forceEdge, fillVisible)
+    return {
+        role = role,
+        radius = radius,
+        inset = inset or 0,
+        listItem = listItem == true,
+        forceEdge = forceEdge == true,
+        fillVisible = fillVisible ~= false,
+        allowImplicitProtected = true,
+    }
+end
+
+local SELECTION_INDICATOR_SPEC = AdapterKit.SurfaceSpec("navigationActive", 8, 2, true, true)
+
+-- An owned, mouse-transparent frame over a navigation button, parented to
+-- the content panel Blizzard shows while that button is selected. Panel
+-- visibility then mirrors the selection without a hook, timer or polling;
+-- the transparent center keeps the native icon and label readable.
+-- matchLevel also copies the button's strata and level.
+function AdapterKit.SelectionIndicator(context, indicators, button, panel, matchLevel)
+    if not button or not panel or not Safety.CanDecorate(panel, true) then return false end
+    local indicator = indicators[button]
+    if not indicator then
+        indicator = CreateFrame("Frame", nil, panel)
+        indicators[button] = indicator
+    end
+    indicator:SetParent(panel)
+    indicator:ClearAllPoints()
+    indicator:SetAllPoints(button)
+    if matchLevel then
+        local strata = Safety.Read(button, "GetFrameStrata")
+        if type(strata) == "string" then indicator:SetFrameStrata(strata) end
+        local level = Safety.Read(button, "GetFrameLevel")
+        if type(level) == "number" then indicator:SetFrameLevel(level) end
+    end
+    indicator:EnableMouse(false)
+    indicator:Show()
+    if AdapterKit.Attach(context, indicator, SELECTION_INDICATOR_SPEC) then return true end
+    indicator:Hide()
+    return false
+end
+
+function AdapterKit.HideIndicators(indicators)
+    for _, indicator in pairs(indicators) do
+        indicator:Hide()
+    end
+end
+
+-- Reversible theme text colors. The native color is captured once, or again
+-- with recapture when Blizzard repainted the text since our last paint, and
+-- is restored only while our color is still installed.
+function AdapterKit.NewTextColors()
+    return {
+        originals = AdapterKit.WeakSet(),
+        roles = AdapterKit.WeakSet(),
+        installed = AdapterKit.WeakSet(),
+    }
+end
+
+local function InstallTextColor(colors, fontObject, role)
+    local installed = colors.installed[fontObject]
+    if not installed then
+        installed = {}
+        colors.installed[fontObject] = installed
+    end
+    installed[1], installed[2], installed[3], installed[4] = NS.Theme.GetColor(role)
+    fontObject:SetTextColor(installed[1], installed[2], installed[3], installed[4])
+end
+
+local function MatchesColor(color, r, g, b, a)
+    return color ~= nil and r ~= nil
+        and color[1] == r and color[2] == g and color[3] == b and color[4] == a
+end
+
+function AdapterKit.SetTextColor(colors, fontObject, role, recapture)
+    if Safety.IsForbidden(fontObject) or type((Field(fontObject, "SetTextColor"))) ~= "function" then
+        return false
+    end
+    local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")
+    local original = colors.originals[fontObject]
+    if not original then
+        if r then colors.originals[fontObject] = { r, g, b, a } end
+    elseif recapture and r and not MatchesColor(colors.installed[fontObject], r, g, b, a) then
+        original[1], original[2], original[3], original[4] = r, g, b, a
+    end
+    colors.roles[fontObject] = role
+    InstallTextColor(colors, fontObject, role)
+    return true
+end
+
+function AdapterKit.RefreshTextColors(colors)
+    for fontObject, role in pairs(colors.roles) do
+        InstallTextColor(colors, fontObject, role)
+    end
+end
+
+function AdapterKit.RestoreTextColors(colors)
+    for fontObject, original in pairs(colors.originals) do
+        if MatchesColor(colors.installed[fontObject], Safety.ReadColor(fontObject, "GetTextColor")) then
+            fontObject:SetTextColor(original[1], original[2], original[3], original[4])
+        end
+    end
+    colors.originals = AdapterKit.WeakSet()
+    colors.roles = AdapterKit.WeakSet()
+    colors.installed = AdapterKit.WeakSet()
 end
 
 -- Exact shared chrome adapters, verified clean-room against
@@ -508,7 +641,7 @@ local function SkinQueueStatus(state)
     if not root then return false end
     local applied = ApplyGeneric(root, state.owner, QUEUE_MODE)
     local pool = Field(root, "statusEntriesPool")
-    if type(Field(pool, "EnumerateActive")) == "function" then
+    if type((Field(pool, "EnumerateActive"))) == "function" then
         local count = 0
         for entry in pool:EnumerateActive() do
             if count >= QUEUE_ENTRY_LIMIT then break end

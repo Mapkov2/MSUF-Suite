@@ -190,8 +190,16 @@ C_Item = {
 GetCVar = function() return bagMode end
 GetItemQualityColor = function(quality) return quality == 4 and 0.7 or 1, 0.5, 1 end
 
+local deferred, setManyCalls = {}, 0
+C_Timer = { After = function(_, callback) deferred[#deferred + 1] = callback end }
+local function RunDeferred()
+    local list = deferred
+    deferred = {}
+    for _, callback in ipairs(list) do callback() end
+end
 local S = {
     Public = function(value) return value ~= "secret" end,
+    Text = function(value) return value end,
     CreateFontString = function(parent) local font = Font(); font.parent = parent; return font end,
     CreateFrame = function(_, _, parent) return VisualFrame(parent) end,
     CreateTexture = function(parent) return Texture(parent) end,
@@ -217,12 +225,16 @@ local S = {
         return true
     end,
     SetMany = function(_, values)
+        setManyCalls = setManyCalls + 1
         for key, value in pairs(values) do module.config[key] = value end
         module:Refresh()
         return true
     end,
     editMode = false,
 }
+-- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
+S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
+S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
 S.SetStyledFont = function(font, _, size, flags, rendering, shadow, opacity, distance)
     font.size = size
     font.flags = rendering == 3 and (flags == "" and "SLUG" or "OUTLINE,SLUG") or flags
@@ -237,6 +249,12 @@ assert(loadfile(root .. "/MSUF_Suite_Bags/Bags.lua"))("MSUF_Suite_Bags", {
     NS = state, Suite = S,
 })
 assert(module and #fonts == 0 and #textures == 0 and not next(hooks), "dormant module did work before enable")
+local catalogNS = { Client = { isForever = false } }
+for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+    assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", catalogNS)
+end
+assert(catalogNS.SuiteCatalog.bags.cvars and catalogNS.SuiteCatalog.bags.cvars.combinedBags,
+    "combinedBags is not declared, so disabling Bags would never restore it")
 
 local context = { events = {} }
 function context:CVar(key, value)
@@ -400,9 +418,28 @@ module.config.backgroundOpacity = 90
 module:Refresh()
 assert(combinedStyle.shell.shown and reagentStyle.shell.shown,
     "legacy disabled styling hid the new default bag window")
+assert(module.config.windowX == 0 and module.config.windowY == 0 and #deferred > 0,
+    "Blizzard's native bag anchor was written straight into the profile")
+local nativeWrites = setManyCalls
+RunDeferred()
+assert(setManyCalls == nativeWrites + 1 and #deferred == 0,
+    "the native bag anchor did not go through the settings path exactly once")
 assert(hooks.NativeAnchors and nativeLayouts > 0 and module.config.windowX == -40
     and module.config.windowY == 32 and ContainerFrameCombinedBags.scale == 0.9,
     "the Suite bag window did not preserve Blizzard's initial placement")
+-- A native anchor recorded just before combat is written after combat ends.
+module.config.windowX = 5
+UpdateContainerFrameAnchors()
+combat = true
+nativeWrites = setManyCalls
+RunDeferred()
+assert(module.config.windowX == 5 and setManyCalls == nativeWrites,
+    "the native bag anchor was written during combat")
+combat = false
+context.events.PLAYER_REGEN_ENABLED(module)
+RunDeferred()
+assert(module.config.windowX == -40 and setManyCalls == nativeWrites + 1,
+    "the native bag anchor was not written after combat")
 module:RegisterMovers()
 assert(mover and mover.moveValues.windowMoved and mover.resetKeys[1] == "windowMoved"
     and mover.extraControls[1].id == "size" and mover.isEnabled(),
@@ -672,6 +709,9 @@ do
             return true
         end,
     }
+    -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
+    bridge.Number = function(value) return bridge.Public(value) and type(value) == "number" and value == value end
+    bridge.Finite = function(value) return bridge.Number(value) and value > -math.huge and value < math.huge end
     assert(loadfile(root .. "/MSUF_Suite_Modules/EditMode.lua"))("MSUF_Suite_Modules", {
         NS = { DB = {}, Safety = { IsForbidden = function() return false end },
             IsCombatLocked = function() return false end },

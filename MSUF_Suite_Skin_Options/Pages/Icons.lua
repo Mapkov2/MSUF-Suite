@@ -367,29 +367,6 @@ local function BuildMicroPreview(preview, view)
     return microPreview
 end
 
--- Same line geometry as the item border primitive (Rendering/IconSkin.lua).
-local function AnchorBorderLines(lines, icon, thickness, padding)
-    local extent = padding + thickness
-    local top, bottom, left, right = lines[1], lines[2], lines[3], lines[4]
-    for index = 1, 4 do lines[index]:ClearAllPoints() end
-    top:SetPoint("BOTTOMLEFT", icon, "TOPLEFT", -extent, padding)
-    top:SetPoint("BOTTOMRIGHT", icon, "TOPRIGHT", extent, padding)
-    top:SetHeight(thickness)
-    bottom:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", -extent, -padding)
-    bottom:SetPoint("TOPRIGHT", icon, "BOTTOMRIGHT", extent, -padding)
-    bottom:SetHeight(thickness)
-    left:SetPoint("TOPRIGHT", icon, "TOPLEFT", -padding, extent)
-    left:SetPoint("BOTTOMRIGHT", icon, "BOTTOMLEFT", -padding, -extent)
-    left:SetWidth(thickness)
-    right:SetPoint("TOPLEFT", icon, "TOPRIGHT", padding, extent)
-    right:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", padding, -extent)
-    right:SetWidth(thickness)
-end
-
-local function ClampWhole(value, fallback, low, high)
-    return math.max(low, math.min(high, math.floor((tonumber(value) or fallback) + 0.5)))
-end
-
 local function CreateItemBorderSample(parent)
     local holder = CreateFrame("Frame", nil, parent)
     holder:SetSize(48, 48)
@@ -405,8 +382,8 @@ local function CreateItemBorderSample(parent)
 
     local function Refresh()
         local theme = NS.DB.theme
-        AnchorBorderLines(lines, icon, ClampWhole(theme.iconBorderThickness, 1, 1, 3),
-            ClampWhole(theme.iconBorderPadding, 0, 0, 3))
+        -- The same border geometry and clamping as real item buttons.
+        NS.IconSkin.AnchorLines(lines, icon, theme.iconBorderThickness, theme.iconBorderPadding)
         local style = theme.iconBorderStyle
         local r, g, b, a
         if style == "quality" then

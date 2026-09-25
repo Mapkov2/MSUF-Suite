@@ -11,21 +11,26 @@ local HELP = {
     position = "Move the reminder row in MSUF Edit Mode or set its offsets here.",
 }
 
+-- { catalog section, accordion title } in page order.
+local SECTIONS = {
+    { "tracking", "What to remind" },
+    { "recommended", "Recommended consumables (Mainline)" },
+    { "visibility", "When to show" },
+    { "appearance", "Icons" },
+    { "position", "Position" },
+}
+
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Edit Mode", function() S.OpenEditMode(ID, "buffs") end,
             function() return S.Status(ID) == "Active" end, key = "edit" },
-        { "Reset module", function()
-            P.WithHistory("Reset buff reminders", "suite:buffReminders.reset", function() return S.Reset(ID) end)
-        end, key = "reset" },
     })
-    for _, section in ipairs({ "tracking", "recommended", "visibility", "appearance", "position" }) do
-        local title = ({ tracking="What to remind", recommended="Recommended consumables (Mainline)", visibility="When to show", appearance="Icons", position="Position" })[section]
-        P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_" .. section, Tr(title),
-            P.SectionRules(ID, section), { help=Tr(HELP[section]), open=section == "tracking" })
+    for _, section in ipairs(SECTIONS) do
+        P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
+            P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = section[1] == "tracking" })
     end
 end
 
-P.RegisterPage({ key=PAGE, label="Buff Reminders", title="Buff Reminders", build=Build, icon={ 7, 1 },
-    aliases={ "buffreminders", "buffs", "reminders", "consumables" } })
+P.RegisterPage({ key = PAGE, label = "Buff Reminders", title = "Buff Reminders", build = Build, icon = { 7, 1 },
+    aliases = { "buffreminders", "buffs", "reminders", "consumables" } })

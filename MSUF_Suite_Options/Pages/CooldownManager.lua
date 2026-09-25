@@ -259,6 +259,9 @@ local function BuildSection(ctx, b, ui, spec)
         for _, rule in ipairs(shared) do rules[#rules + 1] = rule end
     end
     P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn, ColorEnabled)
+    P.AttachSectionReset(ctx, body, spec.title, function()
+        return P.ResetRules(ID, rules, Page.KeyFn)
+    end)
     if spec.id == "layout" then
         local half = floor((width - 12) / 2)
         -- Navigation needs no snapshot; the reset records its own history entry.
@@ -303,8 +306,11 @@ function Page.Summary(slot)
             -- up the chain, or takes the place of the bar that is off.
             local shown, standIn = Page.Chain(slot)
             text = text .. " (" .. Tr("off") .. ")"
-            if shown then text = text .. ", " .. format(Tr("follows %s"), Page.BarName(shown))
-            elseif standIn then text = text .. ", " .. format(Tr("takes the place of %s"), Page.BarName(standIn)) end
+            if shown then
+                text = text .. ", " .. format(Tr("follows %s"), Page.BarName(shown))
+            elseif standIn then
+                text = text .. ", " .. format(Tr("takes the place of %s"), Page.BarName(standIn))
+            end
         end
     else
         text = text .. "  -  " .. Tr("placed freely")
@@ -503,13 +509,19 @@ local function BuildSpells(ctx, b, ui)
             or Tr("Show removed spells"))
         restore:SetEnabled(hidden > 0)
         local label = Page.ClearLabel(Page.selected)
-        if body._cdmClear ~= label then body._cdmClear = label; clear:SetText(Tr(label)) end
+        if body._cdmClear ~= label then
+            body._cdmClear = label
+            clear:SetText(Tr(label))
+        end
         clear:SetEnabled(not blocked and Page.HasList(Page.selected))
         copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))
         import:SetEnabled(not blocked and type(S.CooldownManagerBlizzardSnapshot) == "function")
         Header(body, "Spell list", false, "")
     end)
     ui.sections.spells = body
+    P.AttachSectionReset(ctx, body, "Spell list", function()
+        return Page.ClearWithUndo and Page.ClearWithUndo(Page.selected) or false
+    end)
     Layout(grid:Refresh())
 end
 
@@ -527,8 +539,6 @@ local function Build(ctx)
         { "Move bars on screen", function() P.MoveOnScreen(ID, Page.MoveTarget()) end,
             function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.MoveTarget() ~= nil end, key = "move" },
         { "Open Blizzard's Cooldown Settings", Page.OpenBlizzardSettings, Page.CanOpenBlizzardSettings, key = "blizzard" },
-        -- One history entry, and an Undo line under the preview.
-        { "Reset module", function() Page.ResetModule() end, function() return S.Availability(ID) end, key = "reset" },
     })
     -- These actions navigate, or record their own history entry (reset), so
     -- a click never takes Menu2's full settings snapshot.
@@ -539,6 +549,12 @@ local function Build(ctx)
     if card then
         BuildGeneral(ctx, card)
         BuildBars(ctx, b, ui, card)
+        P.AttachSectionReset(ctx, card, "Frame Basics", function()
+            local rules = P.SectionRules(ID, "general")
+            rules[#rules + 1] = RULES[KEYS.c1.name]
+            rules[#rules + 1] = RULES[KEYS.c1.kind]
+            return P.ResetRules(ID, rules, Page.KeyFn, { "enabled" })
+        end)
     end
     -- Basics first, then the closed spell list, then the other topics.
     for _, spec in ipairs(SECTIONS) do

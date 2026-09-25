@@ -277,7 +277,11 @@ end
 local function ScheduleRescan()
     if rescanTimer then rescanTimer:Cancel() end
     local timer = _G.C_Timer
-    if timer and type(timer.NewTimer) == "function" then rescanTimer = timer.NewTimer(RESCAN_DELAY, Rescan) else Rescan() end
+    if timer and type(timer.NewTimer) == "function" then
+        rescanTimer = timer.NewTimer(RESCAN_DELAY, Rescan)
+    else
+        Rescan()
+    end
 end
 local function Library()
     local stub = _G.LibStub
@@ -295,7 +299,6 @@ function MM.RefreshIcons()
 end
 
 function MM.ApplyDrawer()
-    local c = M.config
     if not MM.CollectsButtons() then
         MM.ReleaseDrawer()
         MM.RefreshIcons()

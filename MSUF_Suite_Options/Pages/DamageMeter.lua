@@ -50,7 +50,10 @@ local function BuildGradientPad(ctx, body, y, width)
             if active then
                 local others = false
                 for _, other in ipairs(gradientKeys) do
-                    if other ~= key and P.Get(ID, other) then others = true; break end
+                    if other ~= key and P.Get(ID, other) then
+                        others = true
+                        break
+                    end
                 end
                 if not others then return end
             end
@@ -81,34 +84,12 @@ local function Build(ctx)
         { "Reset combat data", function() if S.DamageMeterReset then S.DamageMeterReset() end end,
           function() return S.DamageMeterReset ~= nil and P.Get(ID, "enabled") end, key = "reset_data" },
         { "Move on screen", function() P.MoveOnScreen(ID, "window1") end, nil, key = "move" },
-        { "Reset module", function()
-            P.WithHistory("Reset damage meter", "suite:damageMeter.reset", function() return S.Reset(ID) end)
-        end, function() return S.Availability(ID) end, key = "reset" },
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_damageMeter_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
             help = "Midnight Blue keeps the original blue palette. Midnight Dark uses neutral charcoal glass; MSUF Forever retains its muted gold. Color changes become Custom.",
-            extra = function(body, y, width)
-                local gap = 8
-                local buttonWidth = math.floor((width - 2 * gap) / 3)
-                for index, name in ipairs({ "Midnight Blue", "Midnight Dark", "MSUF Forever" }) do
-                    local button = T.Button(body, Tr(name), buttonWidth, 26)
-                    button:SetPoint("TOPLEFT", body, "TOPLEFT", 16 + (index - 1) * (buttonWidth + gap), y)
-                    button:SetScript("OnClick", function()
-                        if not P.Combat() then P.Set(ID, "look", index) end
-                    end)
-                    if M.RegisterControlMetadata then
-                        M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "look." .. index, "action", "suite_damageMeter_look"),
-                            Tr(name), "button")
-                    end
-                    M.TrackRefresh(ctx, function()
-                        button:SetAlpha(P.Get(ID, "look") == index and 1 or 0.65)
-                        button:SetEnabled(P.RuleEnabled(ID, P.catalog[ID].rules.look))
-                    end)
-                end
-                return y - 38
-            end,
+            extra = P.LookPresetButtons(ctx, PAGE, ID, "suite_damageMeter_look"),
         })
     for _, section in ipairs({ "general", "bars", "text", "window", "details", "timer" }) do
         local rules = P.SectionRules(ID, section)
@@ -128,12 +109,18 @@ local function Build(ctx)
     for i = 1, Suite.DamageMeterMaxWindows or 5 do choices[i] = { value = i, text = string.format(Tr("Window %d"), i) } end
     local picker = M.BindDropdownAt(ctx, body, Tr("Window"), 16, y, choices, math.floor(width / 2),
         function() return selected end,
-        function(value) selected = tonumber(value) or 1; P.Refresh() end,
+        function(value)
+            selected = tonumber(value) or 1
+            P.Refresh()
+        end,
         P.Meta(PAGE, ID, "window.selected", "ephemeral", "suite_damageMeter_windows"))
     local note = P.Text(body, "", 28 + math.floor(width / 2), y - 24, math.floor(width / 2) - 12)
     y = y - 62
     y = P.RuleGrid(ctx, body, PAGE, ID, templates, y, width, WindowKey, "suite_damageMeter_windows")
     P.AttachRuleColors(body, "Window settings", ID, templates, WindowKey)
+    P.AttachSectionReset(ctx, body, "Window settings", function()
+        return P.ResetPrefix(ID, "w" .. selected)
+    end)
     P.Button(ctx, body, "Move this window", 16, y - 4, math.floor((width - 12) / 2),
         function() P.MoveOnScreen(ID, "window" .. selected) end,
         function() return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount") end,

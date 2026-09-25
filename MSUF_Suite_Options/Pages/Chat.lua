@@ -1,5 +1,5 @@
 local _, P = ...
-local S, M, T, Tr = P.S, P.M, P.T, P.Tr
+local M, Tr = P.M, P.Tr
 local PAGE, ID = "suite_chat", "chat"
 P.Gates[ID] = function(rule)
     if rule.key == "fontShadow" or rule.key == "fontShadowOpacity"
@@ -87,7 +87,8 @@ local function Sample(body, y, width, ctx)
     lines:SetPoint("TOPLEFT", sample, "TOPLEFT", 39, -43)
     lines:SetWidth(width - 50)
     lines:SetJustifyH("LEFT")
-    lines:SetText("|cff9fc3e7[Guild]|r Mapko: Welcome to MSUF.\n|cffc9d4dd[Party]|r Chat links and channels stay native.")
+    lines:SetText("|cff9fc3e7[" .. Tr("Guild") .. "]|r Mapko: " .. Tr("Welcome to MSUF.") .. "\n|cffc9d4dd["
+        .. Tr("Party") .. "]|r " .. Tr("Chat links and channels stay native."))
     local input = sample:CreateTexture(nil, "BORDER")
     input:SetTexture(WHITE)
     input:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 36, 8)
@@ -118,35 +119,14 @@ end
 
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
-    P.ModuleCard(ctx, b, PAGE, ID, {
-        { "Reset module", function()
-            P.WithHistory("Reset chat", "suite:chat.reset", function() return S.Reset(ID) end)
-        end, function() return S.Availability(ID) end, key = "reset" },
-    })
+    P.ModuleCard(ctx, b, PAGE, ID)
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
             help = "Midnight Dark is the Retail default; MSUF Forever is the Forever default. Midnight Blue keeps the original blue glass. Your own color changes become Custom.",
-            extra = function(body, y, width)
-                local gap = 8
-                local buttonWidth = math.floor((width - 2 * gap) / 3)
-                for index, name in ipairs({ "Midnight Blue", "Midnight Dark", "MSUF Forever" }) do
-                    local button = T.Button(body, Tr(name), buttonWidth, 26)
-                    button:SetPoint("TOPLEFT", body, "TOPLEFT", 16 + (index - 1) * (buttonWidth + gap), y)
-                    button:SetScript("OnClick", function()
-                        if not P.Combat() then P.Set(ID, "look", index) end
-                    end)
-                    if M.RegisterControlMetadata then
-                        M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "look." .. index, "action", PAGE .. "_look"),
-                            Tr(name), "button")
-                    end
-                    M.TrackRefresh(ctx, function()
-                        button:SetAlpha(P.Get(ID, "look") == index and 1 or 0.65)
-                        button:SetEnabled(P.RuleEnabled(ID, P.catalog[ID].rules.look))
-                    end)
-                end
-                return Sample(body, y - 38, width, ctx)
-            end,
+            extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look", function(body, y, width)
+                return Sample(body, y, width, ctx)
+            end),
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_window", Tr("Chat window"),
         P.SectionRules(ID, "window"), {

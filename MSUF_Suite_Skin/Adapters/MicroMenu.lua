@@ -8,7 +8,16 @@ local MicroMenuSkin = {
 }
 NS.MicroMenuSkin = MicroMenuSkin
 
-local BUTTON_NAMES = NS.Client and NS.Client.isForever and {
+local Field = NS.Safety.Field
+local Call = NS.Safety.Call
+local Public = NS.Safety.Public
+
+-- Exactly one boolean, also for a missing target (Field returns no value then).
+local function HasMethod(target, name)
+    return type(target) == "table" and type(target[name]) == "function"
+end
+
+local BUTTON_NAMES = NS.Client.isForever and {
     "CharacterMicroButton",
     "ProfessionMicroButton",
     "SpellbookMicroButton",
@@ -75,39 +84,6 @@ local STATE_OPACITY = {
     disabled = "disabledOpacity",
 }
 
-local OPTION_KEYS = {
-    layoutMode = true,
-    visibility = true,
-    locked = true,
-    orientation = true,
-    growth = true,
-    buttonsPerLine = true,
-    spacing = true,
-    scale = true,
-    padding = true,
-    layoutPoint = true,
-    layoutRelativePoint = true,
-    layoutX = true,
-    layoutY = true,
-    positionPreset = true,
-    barBackground = true,
-    barBorder = true,
-    barMaterial = true,
-    buttonBackground = true,
-    buttonBorder = true,
-    shape = true,
-    radius = true,
-    iconStyle = true,
-    buttonSize = true,
-    iconSize = true,
-    hoverStyle = true,
-    tint = true,
-    normalOpacity = true,
-    hoverOpacity = true,
-    pressedOpacity = true,
-    disabledOpacity = true,
-}
-
 -- Layout ownership and visual styling are intentionally independent. Moving,
 -- scaling or unlocking the owned bar must not discard the selected icon look.
 local VISUAL_OPTION_KEYS = {
@@ -129,12 +105,27 @@ local VISUAL_OPTION_KEYS = {
     disabledOpacity = true,
 }
 
+local POSITION_KEYS = {
+    layoutPoint = true,
+    layoutRelativePoint = true,
+    layoutX = true,
+    layoutY = true,
+}
+
+-- Blizzard's MicroButton methods whose native state updates rewrite the
+-- button art. They are copied onto every button when it is created, so each
+-- live instance is hooked once; OnEnter/OnLeave use one script hook that also
+-- drives the owned bar's mouseover reveal.
+local BUTTON_STATE_METHODS = { "SetPushed", "SetNormal", "OnEnable", "OnDisable" }
+
 local textureStates = setmetatable({}, { __mode = "k" })
 local alphaStates = setmetatable({}, { __mode = "k" })
 local surfaceRecords = setmetatable({}, { __mode = "k" })
 local activeButtons = setmetatable({}, { __mode = "k" })
+local hookedButtons = setmetatable({}, { __mode = "k" })
 local listenerOwner = {}
 local listenerRegistered = false
+local containerHooked = false
 local activeRoot
 local activeOwner
 local desiredActive = false
@@ -142,21 +133,7 @@ local desiredRoot
 local desiredOwner
 local DEFER_KEY = "micro-menu:state"
 local visualSuspended = false
-local visualHooks = setmetatable({}, { __mode = "k" })
 local transitionInProgress = false
-
-local function Accessible(value)
-    if type(issecretvalue) == "function" and issecretvalue(value) then
-        if type(canaccessvalue) ~= "function" or not canaccessvalue(value) then
-            return nil
-        end
-    end
-    return value
-end
-
-local function IsCombatLocked()
-    return type(NS.IsCombatLocked) == "function" and NS.IsCombatLocked() == true
-end
 
 local function Clamp01(value)
     value = tonumber(value) or 0
@@ -170,58 +147,35 @@ local function Near(first, second)
         and math.abs(first - second) <= 0.00001
 end
 
-local function SameVertex(first, second)
-    return first and second
-        and Near(first[1], second[1])
-        and Near(first[2], second[2])
-        and Near(first[3], second[3])
-        and Near(first[4], second[4])
+-- Compares a stored { r, g, b, a } with four values.
+local function SameVertex(color, r, g, b, a)
+    return color ~= nil and Near(color[1], r) and Near(color[2], g)
+        and Near(color[3], b) and Near(color[4], a)
 end
 
--- Pass the operands through pcall; do not allocate a capturing closure per read.
-local function IndexMember(object, key)
-    return object[key]
-end
-
-local function ReadMember(target, key)
-    if not target then return nil end
-    local ok, value = pcall(IndexMember, target, key)
-    return ok and value or nil
-end
-
-local function CallMethod(target, methodName, ...)
-    local method = ReadMember(target, methodName)
-    if type(method) ~= "function" then return false end
-    return pcall(method, target, ...)
-end
-
-local function ReadGlobal(name)
-    local ok, value = pcall(function() return _G[name] end)
-    return ok and value or nil
+local function StoreVertex(color, r, g, b, a)
+    color[1], color[2], color[3], color[4] = r, g, b, a
 end
 
 local function ReadAlpha(region)
-    local ok, value = CallMethod(region, "GetAlpha")
-    if not ok then return nil end
-    value = Accessible(value)
-    return type(value) == "number" and value or nil
+    local value = Call(region, "GetAlpha")
+    if type(value) == "number" and Public(value) then return value end
+    return nil
 end
 
 local function ReadVertex(region)
-    local ok, r, g, b, a = CallMethod(region, "GetVertexColor")
-    if not ok then return nil end
-    r, g, b, a = Accessible(r), Accessible(g), Accessible(b), Accessible(a)
-    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+    local r, g, b, a = Call(region, "GetVertexColor")
+    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number"
+        or not Public(r) or not Public(g) or not Public(b) or not Public(a) then
         return nil
     end
-    return { r, g, b, type(a) == "number" and a or 1 }
+    return r, g, b, type(a) == "number" and a or 1
 end
 
 local function ReadDesaturated(region)
-    local ok, value = CallMethod(region, "IsDesaturated")
-    if not ok then return nil end
-    value = Accessible(value)
-    return type(value) == "boolean" and value or nil
+    local value = Call(region, "IsDesaturated")
+    if type(value) == "boolean" and Public(value) then return value end
+    return nil
 end
 
 local function Settings()
@@ -252,12 +206,7 @@ local function CanControl(target)
     -- report its non-secure descendants as implicitly protected. Cosmetic
     -- repainting is still permitted outside combat; explicitly protected or
     -- forbidden objects continue to fail closed in Safety.CanControl.
-    return NS.Safety and NS.Safety.CanControl(target, true) == true
-end
-
-local function CanCreateRegions(target, allowImplicitProtected)
-    return NS.Safety
-        and NS.Safety.CanCreateRegions(target, allowImplicitProtected == true) == true
+    return NS.Safety.CanControl(target, true) == true
 end
 
 local function NormalizeState(stateName)
@@ -267,37 +216,31 @@ local function NormalizeState(stateName)
     return "normal"
 end
 
+-- Icon colors -------------------------------------------------------------------------
+
 local function ReadOriginalColor(original)
     if type(original) ~= "table" then return 1, 1, 1, 1 end
-    local getRGBA = ReadMember(original, "GetRGBA")
     local r, g, b, a
-    if type(getRGBA) == "function" then
-        local ok
-        ok, r, g, b, a = pcall(getRGBA, original)
-        if not ok then r, g, b, a = nil, nil, nil, nil end
+    if type(original.GetRGBA) == "function" then
+        r, g, b, a = original:GetRGBA()
     end
     if type(r) ~= "number" then
-        local ok
-        ok, r, g, b, a = pcall(function()
-            return original.r or original[1], original.g or original[2],
-                original.b or original[3], original.a or original[4]
-        end)
-        if not ok then r, g, b, a = nil, nil, nil, nil end
+        r, g, b, a = original.r or original[1], original.g or original[2],
+            original.b or original[3], original.a or original[4]
     end
-    r, g, b, a = Accessible(r), Accessible(g), Accessible(b), Accessible(a)
-    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number"
+        or not Public(r) or not Public(g) or not Public(b) or not Public(a) then
         return 1, 1, 1, 1
     end
     return Clamp01(r), Clamp01(g), Clamp01(b), Clamp01(type(a) == "number" and a or 1)
 end
 
 local function ClassColor(stateName)
-    local r, g, b, a = 1, 1, 1, 1
-    if NS.Theme and type(NS.Theme.GetPlayerClassColor) == "function" then
-        local ok, cr, cg, cb, ca = pcall(NS.Theme.GetPlayerClassColor, false)
-        if ok and type(cr) == "number" and type(cg) == "number" and type(cb) == "number" then
-            r, g, b, a = cr, cg, cb, type(ca) == "number" and ca or 1
-        end
+    local r, g, b, a = NS.Theme.GetPlayerClassColor(false)
+    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+        r, g, b, a = 1, 1, 1, 1
+    elseif type(a) ~= "number" then
+        a = 1
     end
     if stateName == "hover" then
         r, g, b = r + (1 - r) * 0.25, g + (1 - g) * 0.25, b + (1 - b) * 0.25
@@ -324,23 +267,15 @@ function MicroMenuSkin.GetIconColor(stateName, original)
     local r, g, b, a
     if tint == "class" then
         r, g, b, a = ClassColor(stateName)
-        if NS.Theme and type(NS.Theme.GetColor) == "function" then
-            local ok, _, _, _, tokenAlpha = pcall(NS.Theme.GetColor, STATE_TOKENS[stateName])
-            if ok and type(tokenAlpha) == "number" then a = a * tokenAlpha end
-        end
-    elseif tint == "monochrome" and NS.Theme
-        and type(NS.Theme.GetColor) == "function" then
-        local ok
-        ok, r, g, b, a = pcall(NS.Theme.GetColor, STATE_TOKENS[stateName])
-        if not ok then r, g, b, a = nil, nil, nil, nil end
-        if type(r) == "number" and type(g) == "number" and type(b) == "number" then
+        local _, _, _, tokenAlpha = NS.Theme.GetColor(STATE_TOKENS[stateName])
+        if type(tokenAlpha) == "number" then a = a * tokenAlpha end
+    else
+        r, g, b, a = NS.Theme.GetColor(STATE_TOKENS[stateName])
+        if tint == "monochrome" and type(r) == "number" and type(g) == "number"
+            and type(b) == "number" then
             local luminance = Clamp01(r * 0.2126 + g * 0.7152 + b * 0.0722)
             r, g, b = luminance, luminance, luminance
         end
-    elseif NS.Theme and type(NS.Theme.GetColor) == "function" then
-        local ok
-        ok, r, g, b, a = pcall(NS.Theme.GetColor, STATE_TOKENS[stateName])
-        if not ok then r, g, b, a = nil, nil, nil, nil end
     end
     if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
         r, g, b, a = originalR, originalG, originalB, 1
@@ -349,23 +284,26 @@ function MicroMenuSkin.GetIconColor(stateName, original)
         originalA * Clamp01(type(a) == "number" and a or 1) * opacity
 end
 
+-- Reversible texture and alpha states ---------------------------------------------------
+
 local function ApplyTextureTint(button, region, stateName)
     if not region or not CanControl(button) then return false end
-    local current = ReadVertex(region)
-    if not current then return false end
+    local currentR, currentG, currentB, currentA = ReadVertex(region)
+    if not currentR then return false end
     local currentDesaturated = ReadDesaturated(region)
     local state = textureStates[region]
     if not state then
         state = {
             button = button,
-            original = { current[1], current[2], current[3], current[4] },
+            original = { currentR, currentG, currentB, currentA },
             originalDesaturated = currentDesaturated,
         }
     else
         state.button = button
-        if state.applied and not SameVertex(current, state.applied)
-            and not SameVertex(current, state.original) then
-            state.original = { current[1], current[2], current[3], current[4] }
+        -- Blizzard changed the color since we tinted it: that is the new native value.
+        if state.applied and not SameVertex(state.applied, currentR, currentG, currentB, currentA)
+            and not SameVertex(state.original, currentR, currentG, currentB, currentA) then
+            StoreVertex(state.original, currentR, currentG, currentB, currentA)
         end
         if currentDesaturated ~= nil and state.appliedDesaturated ~= nil
             and currentDesaturated ~= state.appliedDesaturated
@@ -375,25 +313,21 @@ local function ApplyTextureTint(button, region, stateName)
     end
 
     local r, g, b, a = MicroMenuSkin.GetIconColor(stateName, state.original)
-    local desired = { r, g, b, a }
-    local tint = (Settings() or {}).tint or "native"
     local desiredDesaturated = state.originalDesaturated
-    if tint == "monochrome" and desiredDesaturated ~= nil then
+    if (Settings() or {}).tint == "monochrome" and desiredDesaturated ~= nil then
         desiredDesaturated = true
     end
-
-    if not SameVertex(current, desired) then
-        local ok = CallMethod(region, "SetVertexColor", r, g, b, a)
-        if not ok then return false end
+    if not (Near(currentR, r) and Near(currentG, g) and Near(currentB, b) and Near(currentA, a)) then
+        region:SetVertexColor(r, g, b, a)
     end
     if desiredDesaturated ~= nil and currentDesaturated ~= desiredDesaturated then
-        local ok = CallMethod(region, "SetDesaturated", desiredDesaturated)
-        if not ok then return false end
+        region:SetDesaturated(desiredDesaturated)
     end
 
-    state.applied = desired
+    state.applied = state.applied or {}
+    StoreVertex(state.applied, r, g, b, a)
     state.appliedDesaturated = desiredDesaturated
-    if SameVertex(state.original, desired)
+    if SameVertex(state.original, r, g, b, a)
         and (state.originalDesaturated == nil
             or state.originalDesaturated == desiredDesaturated) then
         textureStates[region] = nil
@@ -404,23 +338,22 @@ local function ApplyTextureTint(button, region, stateName)
 end
 
 local function RestoreTexture(region, state)
-    if not state or not CanControl(state.button) then return false end
-    local current = ReadVertex(region)
-    local success = true
-    if current and state.applied and SameVertex(current, state.applied)
-        and not SameVertex(current, state.original) then
-        success = CallMethod(region, "SetVertexColor",
-            state.original[1], state.original[2], state.original[3], state.original[4]) and success
+    if not CanControl(state.button) then return false end
+    local r, g, b, a = ReadVertex(region)
+    local original = state.original
+    if r and state.applied and SameVertex(state.applied, r, g, b, a)
+        and not SameVertex(original, r, g, b, a) then
+        region:SetVertexColor(original[1], original[2], original[3], original[4])
     end
     local currentDesaturated = ReadDesaturated(region)
     if currentDesaturated ~= nil and state.appliedDesaturated ~= nil
         and currentDesaturated == state.appliedDesaturated
         and state.originalDesaturated ~= nil
         and currentDesaturated ~= state.originalDesaturated then
-        success = CallMethod(region, "SetDesaturated", state.originalDesaturated) and success
+        region:SetDesaturated(state.originalDesaturated)
     end
     textureStates[region] = nil
-    return success
+    return true
 end
 
 local function FadeExact(button, region)
@@ -436,9 +369,7 @@ local function FadeExact(button, region)
             state.original = current
         end
     end
-    if not Near(current, 0) and not CallMethod(region, "SetAlpha", 0) then
-        return false
-    end
+    if not Near(current, 0) then region:SetAlpha(0) end
     state.applied = 0
     if Near(state.original, 0) then
         alphaStates[region] = nil
@@ -449,26 +380,47 @@ local function FadeExact(button, region)
 end
 
 local function RestoreAlpha(region, state)
-    if not state or not CanControl(state.button) then return false end
+    if not CanControl(state.button) then return false end
     local current = ReadAlpha(region)
-    local success = true
     if current ~= nil and Near(current, state.applied) and not Near(current, state.original) then
-        success = CallMethod(region, "SetAlpha", state.original)
+        region:SetAlpha(state.original)
     end
     alphaStates[region] = nil
+    return true
+end
+
+-- Clearing entries during pairs() is allowed; nothing is added meanwhile.
+local function RestoreButtonTextures(button)
+    local success = true
+    for region, state in pairs(textureStates) do
+        if state.button == button then
+            success = RestoreTexture(region, state) and success
+        end
+    end
     return success
 end
 
-local function SurfaceSpec(role, settings, isBar)
-    local shape = settings.shape
-    if isBar then
-        if settings.barMaterial == "forever" then
-            role = "microBarForever"
-        elseif settings.barMaterial == "modern" then
-            role = "microBarModern"
-        elseif settings.barMaterial == "midnightDark" then
-            role = "microBarDark"
+local function RestoreButtonAlphas(button)
+    local success = true
+    for region, state in pairs(alphaStates) do
+        if state.button == button then
+            success = RestoreAlpha(region, state) and success
         end
+    end
+    return success
+end
+
+-- Surfaces -------------------------------------------------------------------------------
+
+local BAR_ROLES = {
+    forever = "microBarForever",
+    modern = "microBarModern",
+    midnightDark = "microBarDark",
+}
+
+local function SurfaceSpec(role, settings, isBar)
+    if isBar then
+        role = BAR_ROLES[settings.barMaterial] or role
     end
     local spec = {
         role = role,
@@ -478,10 +430,10 @@ local function SurfaceSpec(role, settings, isBar)
         pillHeight = 32,
         slice = true,
     }
-    if shape == "global" or shape == nil then
+    if settings.shape == "global" or settings.shape == nil then
         spec.useControlShape = true
     else
-        spec.shape = shape
+        spec.shape = settings.shape
     end
     return spec
 end
@@ -489,23 +441,19 @@ end
 local function RestoreSurface(target)
     local record = surfaceRecords[target]
     if not record then return true end
-    local current = NS.Registry and NS.Registry.GetSurface(target)
+    local current = NS.Registry.GetSurface(target)
     if not current or current.spec ~= record.appliedSpec then
         surfaceRecords[target] = nil
         return true
     end
-    local success = true
+    local success
     if record.previous then
-        local restored = NS.Surface.Attach(target, record.previous.spec)
-        success = restored ~= nil
-        if restored then
-            local visible = record.previous.visible ~= false
-            local ok = NS.Surface.SetVisible(target, visible)
-            success = ok ~= false and success
+        success = NS.Surface.Attach(target, record.previous.spec) ~= nil
+        if success then
+            success = NS.Surface.SetVisible(target, record.previous.visible ~= false) ~= false
         end
     else
-        local ok = NS.Surface.SetVisible(target, false)
-        success = ok ~= false
+        success = NS.Surface.SetVisible(target, false) ~= false
     end
     if success then surfaceRecords[target] = nil end
     return success
@@ -513,12 +461,10 @@ end
 
 local function ApplySurface(target, role, background, border, settings, isBar,
     allowImplicitProtected)
-    border = BorderValue(border)
-    if background ~= true and border == 0 then
+    if background ~= true and BorderValue(border) == 0 then
         return RestoreSurface(target)
     end
-    if not NS.Surface or not NS.Registry
-        or not CanCreateRegions(target, allowImplicitProtected) then
+    if not NS.Safety.CanCreateRegions(target, allowImplicitProtected == true) then
         return false
     end
 
@@ -535,189 +481,163 @@ local function ApplySurface(target, role, background, border, settings, isBar,
     local spec = SurfaceSpec(role, settings, isBar)
     spec.fillVisible = background == true
     spec.allowImplicitProtected = allowImplicitProtected == true
-    local surface = NS.Surface.Attach(target, spec)
-    if not surface then return false end
+    if not NS.Surface.Attach(target, spec) then return false end
     record.appliedSpec = spec
     surfaceRecords[target] = record
-
     return true
 end
 
+-- Root and buttons -----------------------------------------------------------------------
+
 local function ResolveRoot(requested)
-    local globalRoot = ReadGlobal("MicroMenu")
+    local globalRoot = _G.MicroMenu
     if globalRoot then
         if requested and requested ~= globalRoot then return nil, "unexpected-root" end
         return globalRoot
     end
     if not requested then return nil, "missing" end
-    local ok, name = CallMethod(requested, "GetName")
-    if not ok or Accessible(name) ~= "MicroMenu" then return nil, "unexpected-root" end
+    if Call(requested, "GetName") ~= "MicroMenu" then return nil, "unexpected-root" end
     return requested
 end
 
 local function ResolveButton(name, root)
-    local button = ReadGlobal(name)
+    local button = _G[name]
     if not button then return nil end
-    local objectType = ReadMember(button, "GetObjectType")
-    if type(objectType) == "function" then
-        local ok, value = pcall(objectType, button)
-        if not ok or Accessible(value) ~= "Button" then return nil end
+    if HasMethod(button, "GetObjectType") and Call(button, "GetObjectType") ~= "Button" then
+        return nil
     end
-    local ok, parent = CallMethod(button, "GetParent")
-    if not ok or parent ~= root then return nil end
+    if Call(button, "GetParent") ~= root then return nil end
     return button
 end
 
-local function CollectKeys(map, button, inverseSet)
-    local result = {}
-    for key, state in pairs(map) do
-        if (button and state.button == button)
-            or (inverseSet and state.button and not inverseSet[state.button]) then
-            result[#result + 1] = key
-        end
-    end
-    return result
-end
-
-local function RestoreButtonTextures(button)
-    local success = true
-    local textures = CollectKeys(textureStates, button)
-    for index = 1, #textures do
-        local region = textures[index]
-        success = RestoreTexture(region, textureStates[region]) and success
-    end
-    return success
-end
-
-local function RestoreButtonAlphas(button)
-    local success = true
-    local alphas = CollectKeys(alphaStates, button)
-    for index = 1, #alphas do
-        local region = alphas[index]
-        success = RestoreAlpha(region, alphaStates[region]) and success
-    end
-    return success
+local function PublicCall(button, method)
+    local value = Call(button, method)
+    if Public(value) then return value end
 end
 
 local function ResolveVisualState(button)
-    local ok, enabled = CallMethod(button, "IsEnabled")
-    if ok then enabled = Accessible(enabled) else enabled = nil end
-    if enabled == false then return "disabled" end
-
-    local state
-    ok, state = CallMethod(button, "GetButtonState")
-    if ok then state = Accessible(state) else state = nil end
-    if state == "PUSHED" then return "pressed" end
-
-    local mouseOver
-    ok, mouseOver = CallMethod(button, "IsMouseOver")
-    if ok then mouseOver = Accessible(mouseOver) else mouseOver = nil end
-    if mouseOver == true then return "hover" end
+    if PublicCall(button, "IsEnabled") == false then return "disabled" end
+    if PublicCall(button, "GetButtonState") == "PUSHED" then return "pressed" end
+    if PublicCall(button, "IsMouseOver") == true then return "hover" end
     return "normal"
 end
 
-local function ApplyButton(button, buttonName, settings)
-    if not CanControl(button) then return false end
-    local success = true
-    -- Blizzard icons use the live native textures. Copying their atlas into a
-    -- smaller overlay loses portrait, state and client-specific artwork.
-    local clean = settings.iconStyle ~= "blizzard"
-        and settings.iconStyle ~= "blizzardIcons"
-
-    if clean then
-        success = RestoreButtonTextures(button) and success
-        for index = 1, #CLEAN_HIDDEN_MEMBERS do
-            local member = CLEAN_HIDDEN_MEMBERS[index]
-            local region = ReadMember(button, member)
-            if region then
-                success = FadeExact(button, region) and success
-            end
+local function ApplyCleanButton(button, buttonName, settings)
+    local success = RestoreButtonTextures(button)
+    for index = 1, #CLEAN_HIDDEN_MEMBERS do
+        local region = Field(button, CLEAN_HIDDEN_MEMBERS[index])
+        if region then
+            success = FadeExact(button, region) and success
         end
-        for index = 1, #TEXTURE_STATES do
-            local spec = TEXTURE_STATES[index]
-            local ok, region = CallMethod(button, spec.getter)
-            if ok and region then success = FadeExact(button, region) and success end
-        end
-        success = RestoreSurface(button) and success
-        if not NS.MicroMenuVisual
-            or not NS.MicroMenuVisual.Apply(button, buttonName, settings,
-                ResolveVisualState(button)) then
-            success = false
-        end
-        return success
     end
-
-    if NS.MicroMenuVisual then
-        success = NS.MicroMenuVisual.Restore(button) and success
+    for index = 1, #TEXTURE_STATES do
+        local region = Call(button, TEXTURE_STATES[index].getter)
+        if region then success = FadeExact(button, region) and success end
     end
+    success = RestoreSurface(button) and success
+    return NS.MicroMenuVisual.Apply(button, buttonName, settings, ResolveVisualState(button))
+        and success
+end
+
+local function TintRequested(settings)
+    return settings.tint ~= "native"
+        or (tonumber(settings.normalOpacity) or 1) < 1
+        or (tonumber(settings.hoverOpacity) or 1) < 1
+        or (tonumber(settings.pressedOpacity) or 1) < 1
+        or (tonumber(settings.disabledOpacity) or 1) < 1
+end
+
+local function ApplyNativeButton(button, settings)
+    local success = NS.MicroMenuVisual.Restore(button)
     success = RestoreButtonAlphas(button) and success
     success = RestoreButtonTextures(button) and success
 
     -- Full Blizzard keeps the original button background. Blizzard icons keep
     -- the original icon and state textures, while the Suite bar supplies the
     -- surrounding frame.
-    local extraPlate = settings.buttonBackground == true
-        or BorderValue(settings.buttonBorder) > 0
+    local extraPlate = settings.buttonBackground == true or BorderValue(settings.buttonBorder) > 0
     if extraPlate or settings.iconStyle == "blizzardIcons" then
-        local background = ReadMember(button, "Background")
-        local pushedBackground = ReadMember(button, "PushedBackground")
+        local background = Field(button, "Background")
+        local pushedBackground = Field(button, "PushedBackground")
         if background then success = FadeExact(button, background) and success end
         if pushedBackground then success = FadeExact(button, pushedBackground) and success end
     end
 
-    local tintRequested = settings.tint ~= "native"
-        or (tonumber(settings.normalOpacity) or 1) < 1
-        or (tonumber(settings.hoverOpacity) or 1) < 1
-        or (tonumber(settings.pressedOpacity) or 1) < 1
-        or (tonumber(settings.disabledOpacity) or 1) < 1
-    if tintRequested then
+    if TintRequested(settings) then
         for index = 1, #TEXTURE_STATES do
             local spec = TEXTURE_STATES[index]
-            local ok, region = CallMethod(button, spec.getter)
-            if ok and region then
+            local region = Call(button, spec.getter)
+            if region then
                 success = ApplyTextureTint(button, region, spec.state) and success
             end
         end
     end
 
     if extraPlate then
-        success = ApplySurface(button, "microButton", settings.buttonBackground,
+        return ApplySurface(button, "microButton", settings.buttonBackground,
             settings.buttonBorder, settings, false, true) and success
-    else
-        success = RestoreSurface(button) and success
     end
-    return success
+    return RestoreSurface(button) and success
 end
 
-local BUTTON_VISUAL_HOOK_METHODS = {
-    "OnEnter", "OnLeave", "SetPushed", "SetNormal",
-    "OnEnable", "OnDisable", "UpdateTabard",
-}
+local function ApplyButton(button, buttonName, settings)
+    if not CanControl(button) then return false end
+    -- Blizzard icons use the live native textures. Copying their atlas into a
+    -- smaller overlay loses portrait, state and client-specific artwork.
+    if settings.iconStyle ~= "blizzard" and settings.iconStyle ~= "blizzardIcons" then
+        return ApplyCleanButton(button, buttonName, settings)
+    end
+    return ApplyNativeButton(button, settings)
+end
 
-local BUTTON_LAYOUT_HOOK_METHODS = { "OnShow", "OnHide" }
+local function RestoreButton(button)
+    local success = RestoreButtonTextures(button)
+    success = RestoreButtonAlphas(button) and success
+    success = NS.MicroMenuVisual.Restore(button) and success
+    return RestoreSurface(button) and success
+end
+
+-- Hooks ----------------------------------------------------------------------------------
 
 local function OnButtonVisualLifecycle(button)
-    if IsCombatLocked() or visualSuspended or transitionInProgress
-        or not MicroMenuSkin.active or not button then
+    if NS.IsCombatLocked() or visualSuspended or transitionInProgress
+        or not MicroMenuSkin.active then
         return
     end
     local buttonName = activeButtons[button]
-    local settings = buttonName and Settings() or nil
+    local settings = buttonName and Settings()
     if settings then ApplyButton(button, buttonName, settings) end
 end
 
+local function OnButtonEnter(button)
+    OnButtonVisualLifecycle(button)
+    NS.OwnedMicroBar.HoverEnter()
+end
+
+local function OnButtonLeave(button)
+    OnButtonVisualLifecycle(button)
+    NS.OwnedMicroBar.HoverLeave()
+end
+
 local layoutRefreshPending = false
+
 local function FlushButtonLayout()
     layoutRefreshPending = false
-    if IsCombatLocked() or visualSuspended or transitionInProgress
+    if NS.IsCombatLocked() or visualSuspended or transitionInProgress
         or not MicroMenuSkin.active then
         return
     end
     MicroMenuSkin.RefreshActive()
 end
-local function OnButtonLayoutLifecycle()
-    if IsCombatLocked() or visualSuspended or transitionInProgress
-        or not MicroMenuSkin.active or layoutRefreshPending then return end
+
+-- Every MicroButton's OnShow/OnHide calls MicroMenuContainer:Layout() (all
+-- clients), so one hook on the container sees each visibility change. Repeated
+-- signals within a frame collapse into one deferred refresh.
+local function OnContainerLayout()
+    if NS.IsCombatLocked() or visualSuspended or transitionInProgress
+        or not MicroMenuSkin.active or layoutRefreshPending then
+        return
+    end
     layoutRefreshPending = true
     local timer = _G.C_Timer
     if timer and type(timer.After) == "function" then
@@ -727,73 +647,45 @@ local function OnButtonLayoutLifecycle()
     end
 end
 
+local function EnsureContainerHook()
+    local container = _G.MicroMenuContainer
+    if containerHooked or not HasMethod(container, "Layout") then
+        return containerHooked
+    end
+    hooksecurefunc(container, "Layout", OnContainerLayout)
+    containerHooked = true
+    return true
+end
+
+-- Returns false when a required native method is missing on this client.
 local function EnsureButtonHooks(button, buttonName)
-    if type(hooksecurefunc) ~= "function" then return false end
-    local hooks = visualHooks[button]
-    if not hooks then
-        hooks = {}
-        visualHooks[button] = hooks
+    if hookedButtons[button] then return true end
+    for index = 1, #BUTTON_STATE_METHODS do
+        if not HasMethod(button, BUTTON_STATE_METHODS[index]) then return false end
     end
-    local found = false
-    for index = 1, #BUTTON_VISUAL_HOOK_METHODS do
-        local methodName = BUTTON_VISUAL_HOOK_METHODS[index]
-        local key = "visual:" .. methodName
-        local methodExists = type(ReadMember(button, methodName)) == "function"
-        if not methodExists and (methodName ~= "UpdateTabard"
-            or buttonName == "GuildMicroButton") then
-            return false
-        end
-        if methodExists then
-            found = true
-            if not hooks[key] then
-                local ok = pcall(function()
-                    hooksecurefunc(button, methodName, OnButtonVisualLifecycle)
-                end)
-                if not ok then return false end
-                hooks[key] = true
-            end
-        end
+    local tabard = buttonName == "GuildMicroButton"
+    if not HasMethod(button, "HookScript")
+        or (tabard and not HasMethod(button, "UpdateTabard")) then
+        return false
     end
-    for index = 1, #BUTTON_LAYOUT_HOOK_METHODS do
-        local methodName = BUTTON_LAYOUT_HOOK_METHODS[index]
-        local key = "layout:" .. methodName
-        local methodExists = type(ReadMember(button, methodName)) == "function"
-        if not methodExists then
-            return false
-        end
-        if methodExists then
-            found = true
-            if not hooks[key] then
-                local ok = pcall(function()
-                    hooksecurefunc(button, methodName, OnButtonLayoutLifecycle)
-                end)
-                if not ok then return false end
-                hooks[key] = true
-            end
-        end
+    for index = 1, #BUTTON_STATE_METHODS do
+        hooksecurefunc(button, BUTTON_STATE_METHODS[index], OnButtonVisualLifecycle)
     end
-    return found
+    if tabard then hooksecurefunc(button, "UpdateTabard", OnButtonVisualLifecycle) end
+    button:HookScript("OnEnter", OnButtonEnter)
+    button:HookScript("OnLeave", OnButtonLeave)
+    hookedButtons[button] = true
+    return true
 end
 
 local function EnsureVisualHooks(buttons)
-    local success = true
+    local success = EnsureContainerHook()
     local found = false
     for button, buttonName in pairs(buttons) do
         found = true
         success = EnsureButtonHooks(button, buttonName) and success
     end
     return found and success
-end
-
-local function RestoreButton(button)
-    local success = true
-    success = RestoreButtonTextures(button) and success
-    success = RestoreButtonAlphas(button) and success
-    if NS.MicroMenuVisual then
-        success = NS.MicroMenuVisual.Restore(button) and success
-    end
-    success = RestoreSurface(button) and success
-    return success
 end
 
 local function RestoreAbsentButtons(currentButtons)
@@ -806,25 +698,48 @@ local function RestoreAbsentButtons(currentButtons)
     return success
 end
 
+local ApplyNow
+
+local function OnThemeChanged(_, domain)
+    if MicroMenuSkin.active and (domain == "color" or domain == "theme"
+        or domain == "appearance" or domain == "geometry"
+        or domain == "profile" or domain == "adapter") then
+        ApplyNow(activeRoot, activeOwner)
+    end
+end
+
+local function EnsureListener()
+    if listenerRegistered then return end
+    NS.Registry.AddListener(listenerOwner, OnThemeChanged)
+    listenerRegistered = true
+end
+
 local function RemoveListener()
-    if listenerRegistered and NS.Registry then
+    if listenerRegistered then
         NS.Registry.RemoveListener(listenerOwner)
     end
     listenerRegistered = false
 end
 
-local ApplyNow
+-- Apply and disable ----------------------------------------------------------------------
 
-local function EnsureListener()
-    if listenerRegistered or not NS.Registry then return end
-    NS.Registry.AddListener(listenerOwner, function(_, domain)
-        if MicroMenuSkin.active and (domain == "color" or domain == "theme"
-            or domain == "appearance" or domain == "geometry"
-            or domain == "profile" or domain == "adapter") then
-            ApplyNow(activeRoot, activeOwner)
-        end
-    end)
-    listenerRegistered = true
+-- Returns the surface target (owned bar or native root), whether the bar owns
+-- it, whether Blizzard currently overrides the menu, and partial.
+local function ApplyLayout(root, settings)
+    local target, layoutReason = NS.OwnedMicroBar.Apply(root, settings)
+    local ownedBar = NS.OwnedMicroBar.GetFrames()
+    if layoutReason == "blizzard-override" then
+        if ownedBar and ownedBar ~= root then RestoreSurface(ownedBar) end
+        return root, false, true, false
+    end
+    if not target then
+        if ownedBar and ownedBar ~= root then RestoreSurface(ownedBar) end
+        return root, false, false, true
+    end
+    local owned = target ~= root
+    local inactive = owned and root or ownedBar
+    if inactive and inactive ~= target then RestoreSurface(inactive) end
+    return target, owned, false, false
 end
 
 local function ApplyResolved(root, owner, settings)
@@ -835,17 +750,14 @@ local function ApplyResolved(root, owner, settings)
         local button = ResolveButton(buttonName, root)
         if button then
             currentButtons[button] = buttonName
-            if NS.MicroMenuVisual
-                and type(NS.MicroMenuVisual.Prepare) == "function"
-                and not NS.MicroMenuVisual.Prepare(button, buttonName, settings) then
+            if not NS.MicroMenuVisual.Prepare(button, buttonName, settings) then
                 partial = true
             end
             -- Native artwork can still use MSKIN button surfaces later. Seed
             -- those regions before an owned layout reparents the button,
             -- independent of the currently selected icon artwork.
-            if not ApplySurface(button, "microButton",
-                    true, settings.buttonBorder,
-                    settings, false, true) then
+            if not ApplySurface(button, "microButton", true, settings.buttonBorder,
+                settings, false, true) then
                 partial = true
             end
         else
@@ -858,54 +770,36 @@ local function ApplyResolved(root, owner, settings)
     if not EnsureVisualHooks(currentButtons) then
         partial = true
     end
-    if NS.OwnedMicroBar and NS.OwnedMicroBar.TrackHoverButtons then
-        NS.OwnedMicroBar.TrackHoverButtons(currentButtons)
-    end
+    NS.OwnedMicroBar.TrackHoverButtons(currentButtons)
 
-    local barTarget, ownedTarget = root, false
-    local skipBarSurface = false
-    if NS.OwnedMicroBar and type(NS.OwnedMicroBar.Apply) == "function" then
-        local target, layoutReason = NS.OwnedMicroBar.Apply(root, settings)
-        if layoutReason == "blizzard-override" then
-            skipBarSurface = true
-        elseif target then
-            barTarget = target
-            ownedTarget = target ~= root
-        else
-            partial = true
-        end
-        local ownedBar = type(NS.OwnedMicroBar.GetFrames) == "function"
-            and NS.OwnedMicroBar.GetFrames() or nil
-        local inactiveTarget = ownedTarget and root or ownedBar
-        if inactiveTarget and inactiveTarget ~= barTarget then
-            RestoreSurface(inactiveTarget)
-        end
-    end
+    local barTarget, ownedTarget, overridden, layoutPartial = ApplyLayout(root, settings)
+    partial = partial or layoutPartial
     -- Camelot's MicroMenu root has its own wide action-bar art. Its border
     -- extends past our compact owned shell, producing a second frame.
-    if NS.Client and NS.Client.isForever and ownedTarget
-        and settings.iconStyle ~= "blizzard" then
-        local borderArt = ReadMember(root, "BorderArt")
-        local backgroundArt = ReadMember(root, "BackgroundArt")
+    if NS.Client.isForever and ownedTarget and settings.iconStyle ~= "blizzard" then
+        local borderArt = Field(root, "BorderArt")
+        local backgroundArt = Field(root, "BackgroundArt")
         if borderArt then partial = not FadeExact(root, borderArt) or partial end
         if backgroundArt then partial = not FadeExact(root, backgroundArt) or partial end
     elseif not RestoreButtonAlphas(root) then
         partial = true
     end
-    if skipBarSurface then
+    if overridden then
         if not RestoreSurface(root) then partial = true end
     elseif not ApplySurface(barTarget, "microBar", settings.barBackground,
         settings.barBorder, settings, true, ownedTarget) then
         partial = true
     end
 
-    visualSuspended = skipBarSurface
+    visualSuspended = overridden
     for button, buttonName in pairs(currentButtons) do
-        if skipBarSurface then
-            if not RestoreButton(button) then partial = true end
-        elseif not ApplyButton(button, buttonName, settings) then
-            partial = true
+        local applied
+        if overridden then
+            applied = RestoreButton(button)
+        else
+            applied = ApplyButton(button, buttonName, settings)
         end
+        if not applied then partial = true end
     end
     if not RestoreAbsentButtons(currentButtons) then partial = true end
 
@@ -920,53 +814,36 @@ local function ApplyResolved(root, owner, settings)
     return true, partial and "partial" or "applied"
 end
 
+-- transitionInProgress keeps the native hooks quiet while this adapter itself
+-- rewrites the buttons; each transition clears it again when it finishes.
 ApplyNow = function(requestedRoot, owner)
-    if IsCombatLocked() then return false, "combat" end
-    if transitionInProgress then return false, "busy" end
+    if NS.IsCombatLocked() then return false, "combat" end
     local root, reason = ResolveRoot(requestedRoot)
     if not root then return false, reason end
     local settings = Settings()
     if not settings then return false, "settings" end
 
     transitionInProgress = true
-    local ok, success, result = pcall(ApplyResolved, root, owner, settings)
+    local success, result = ApplyResolved(root, owner, settings)
     transitionInProgress = false
-    if not ok then error(success, 0) end
     return success, result
 end
 
 local function DisableResolved()
     local partial = false
-
-    local textures = {}
-    for region in pairs(textureStates) do textures[#textures + 1] = region end
-    for index = 1, #textures do
-        local region = textures[index]
-        if not RestoreTexture(region, textureStates[region]) then partial = true end
+    for region, state in pairs(textureStates) do
+        if not RestoreTexture(region, state) then partial = true end
     end
-
-    local alphas = {}
-    for region in pairs(alphaStates) do alphas[#alphas + 1] = region end
-    for index = 1, #alphas do
-        local region = alphas[index]
-        if not RestoreAlpha(region, alphaStates[region]) then partial = true end
+    for region, state in pairs(alphaStates) do
+        if not RestoreAlpha(region, state) then partial = true end
     end
-
-    if NS.MicroMenuVisual then
-        for button in pairs(activeButtons) do
-            if not NS.MicroMenuVisual.Restore(button) then partial = true end
-        end
+    for button in pairs(activeButtons) do
+        if not NS.MicroMenuVisual.Restore(button) then partial = true end
     end
-
-    local surfaces = {}
-    for target in pairs(surfaceRecords) do surfaces[#surfaces + 1] = target end
-    for index = 1, #surfaces do
-        if not RestoreSurface(surfaces[index]) then partial = true end
+    for target in pairs(surfaceRecords) do
+        if not RestoreSurface(target) then partial = true end
     end
-    if NS.OwnedMicroBar and type(NS.OwnedMicroBar.Disable) == "function" then
-        local restored = NS.OwnedMicroBar.Disable(activeRoot)
-        if restored == false then partial = true end
-    end
+    if NS.OwnedMicroBar.Disable(activeRoot) == false then partial = true end
 
     activeButtons = setmetatable({}, { __mode = "k" })
     activeRoot, activeOwner = nil, nil
@@ -978,12 +855,10 @@ local function DisableResolved()
 end
 
 local function DisableNow()
-    if IsCombatLocked() then return false, "combat" end
-    if transitionInProgress then return false, "busy" end
+    if NS.IsCombatLocked() then return false, "combat" end
     transitionInProgress = true
-    local ok, success, result = pcall(DisableResolved)
+    local success, result = DisableResolved()
     transitionInProgress = false
-    if not ok then error(success, 0) end
     return success, result
 end
 
@@ -995,31 +870,30 @@ local function RunDesired()
 end
 
 local function DeferDesired()
-    if not NS.CombatGate or type(NS.CombatGate.RunOrDefer) ~= "function" then
-        return false, "combat"
-    end
     NS.CombatGate.RunOrDefer(DEFER_KEY, RunDesired)
     return false, "combat"
 end
 
 function MicroMenuSkin.Apply(frame, owner)
     desiredActive, desiredRoot, desiredOwner = true, frame, owner
-    if IsCombatLocked() then return DeferDesired() end
+    if NS.IsCombatLocked() then return DeferDesired() end
     return ApplyNow(frame, owner)
 end
 
 function MicroMenuSkin.Disable()
     desiredActive, desiredRoot, desiredOwner = false, nil, nil
-    if IsCombatLocked() then return DeferDesired() end
+    if NS.IsCombatLocked() then return DeferDesired() end
     return DisableNow()
 end
 
 function MicroMenuSkin.RefreshActive()
     if not MicroMenuSkin.active then return false, "inactive" end
     desiredActive, desiredRoot, desiredOwner = true, activeRoot, activeOwner
-    if IsCombatLocked() then return DeferDesired() end
+    if NS.IsCombatLocked() then return DeferDesired() end
     return ApplyNow(activeRoot, activeOwner)
 end
+
+-- Settings -------------------------------------------------------------------------------
 
 local function MutableSettings()
     if not NS.DB then return nil end
@@ -1038,8 +912,90 @@ local function RefreshAfterSetting()
     return ApplyNow(activeRoot, activeOwner)
 end
 
+-- Option validators: (value, settings) -> accepted, normalized value.
+local function BooleanOption(value)
+    return type(value) == "boolean", value
+end
+
+local function ListedOption(listName)
+    return function(value) return IsListed(NS[listName], value), value end
+end
+
+local function RangeOption(minimum, maximum, integer)
+    return function(value)
+        value = tonumber(value)
+        if not value or value < minimum or value > maximum then return false end
+        return true, integer and math.floor(value + 0.5) or value
+    end
+end
+
+local BorderRange = RangeOption(0, 2, true)
+local ButtonSizeRange = RangeOption(20, 32, true)
+
+local function BorderOption(value)
+    if type(value) == "boolean" then value = value and 1 or 0 end
+    return BorderRange(value)
+end
+
+local function OpacityOption(value)
+    value = tonumber(value)
+    return value ~= nil, value and Clamp01(value)
+end
+
+local optionValidators = {
+    layoutMode = ListedOption("MicroMenuLayoutModes"),
+    visibility = ListedOption("MicroMenuVisibilityModes"),
+    locked = BooleanOption,
+    orientation = ListedOption("MicroMenuOrientations"),
+    growth = ListedOption("MicroMenuGrowthModes"),
+    buttonsPerLine = RangeOption(1, #BUTTON_NAMES, true),
+    spacing = RangeOption(-8, 16, true),
+    scale = RangeOption(0.5, 1.5, false),
+    padding = RangeOption(0, 16, true),
+    layoutPoint = ListedOption("MicroMenuPoints"),
+    layoutRelativePoint = ListedOption("MicroMenuPoints"),
+    layoutX = RangeOption(-4096, 4096, true),
+    layoutY = RangeOption(-4096, 4096, true),
+    positionPreset = function(value)
+        return value == "custom" or (NS.MicroMenuPositionPresets
+            and NS.MicroMenuPositionPresets[value]) ~= nil, value
+    end,
+    barBackground = BooleanOption,
+    barBorder = BorderOption,
+    barMaterial = ListedOption("MicroMenuBarMaterials"),
+    buttonBackground = BooleanOption,
+    buttonBorder = BorderOption,
+    shape = ListedOption("MicroMenuShapes"),
+    radius = function(value)
+        value = tonumber(value)
+        return IsListed(NS.GeometryRadii, value), value
+    end,
+    iconStyle = ListedOption("MicroMenuIconStyles"),
+    buttonSize = function(value, settings)
+        local accepted
+        accepted, value = ButtonSizeRange(value)
+        if accepted and tonumber(settings.iconSize) and settings.iconSize > value - 4 then
+            settings.iconSize = value - 4
+        end
+        return accepted, value
+    end,
+    iconSize = function(value, settings)
+        local maximum = math.min(28, (tonumber(settings.buttonSize) or 28) - 4)
+        return RangeOption(10, maximum, true)(value)
+    end,
+    hoverStyle = ListedOption("MicroMenuHoverStyles"),
+    tint = ListedOption("MicroMenuTintModes"),
+    normalOpacity = OpacityOption,
+    hoverOpacity = OpacityOption,
+    pressedOpacity = OpacityOption,
+    disabledOpacity = OpacityOption,
+}
+for _, condition in ipairs(NS.MicroMenuLoadConditions) do
+    optionValidators[condition[1]] = BooleanOption
+end
+
 function MicroMenuSkin.ApplyPreset(presetName)
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
     if presetName == "recommended" or presetName == "default" then
         presetName = (NS.Defaults and NS.Defaults.icons
             and NS.Defaults.icons.microMenu and NS.Defaults.icons.microMenu.preset) or "forever"
@@ -1047,7 +1003,7 @@ function MicroMenuSkin.ApplyPreset(presetName)
     local preset = NS.MicroMenuPresetValues and NS.MicroMenuPresetValues[presetName]
     local settings = MutableSettings()
     if not preset or not settings then return false, "invalid preset" end
-    for key in pairs(OPTION_KEYS) do
+    for key in pairs(optionValidators) do
         if preset[key] ~= nil then settings[key] = preset[key] end
     end
     settings.preset = presetName
@@ -1055,132 +1011,34 @@ function MicroMenuSkin.ApplyPreset(presetName)
 end
 
 function MicroMenuSkin.SetOption(key, value)
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
     if key == "preset" then return MicroMenuSkin.ApplyPreset(value) end
-    if not OPTION_KEYS[key] then return false, "unknown option" end
+    local validate = optionValidators[key]
+    if not validate then return false, "unknown option" end
     local settings = MutableSettings()
     if not settings then return false, "settings" end
-
-    if key == "barBackground" or key == "buttonBackground" or key == "locked" then
-        if type(value) ~= "boolean" then return false, "invalid value" end
-    elseif key == "layoutMode" then
-        if not IsListed(NS.MicroMenuLayoutModes, value) then
-            return false, "invalid value"
-        end
-    elseif key == "visibility" then
-        if not IsListed(NS.MicroMenuVisibilityModes, value) then
-            return false, "invalid value"
-        end
-    elseif key == "orientation" then
-        if not IsListed(NS.MicroMenuOrientations, value) then
-            return false, "invalid value"
-        end
-    elseif key == "growth" then
-        if not IsListed(NS.MicroMenuGrowthModes, value) then
-            return false, "invalid value"
-        end
-    elseif key == "layoutPoint" or key == "layoutRelativePoint" then
-        if not IsListed(NS.MicroMenuPoints, value) then
-            return false, "invalid value"
-        end
-    elseif key == "positionPreset" then
-        if value ~= "custom" and not (NS.MicroMenuPositionPresets
-            and NS.MicroMenuPositionPresets[value]) then
-            return false, "invalid value"
-        end
-    elseif key == "buttonsPerLine" then
-        value = tonumber(value)
-        if not value or value < 1 or value > #BUTTON_NAMES then
-            return false, "invalid value"
-        end
-        value = math.floor(value + 0.5)
-    elseif key == "spacing" then
-        value = tonumber(value)
-        if not value or value < -8 or value > 16 then
-            return false, "invalid value"
-        end
-        value = math.floor(value + 0.5)
-    elseif key == "scale" then
-        value = tonumber(value)
-        if not value or value < 0.5 or value > 1.5 then
-            return false, "invalid value"
-        end
-    elseif key == "padding" then
-        value = tonumber(value)
-        if not value or value < 0 or value > 16 then
-            return false, "invalid value"
-        end
-        value = math.floor(value + 0.5)
-    elseif key == "layoutX" or key == "layoutY" then
-        value = tonumber(value)
-        if not value or value < -4096 or value > 4096 then
-            return false, "invalid value"
-        end
-        value = math.floor(value + 0.5)
-    elseif key == "barBorder" or key == "buttonBorder" then
-        if type(value) == "boolean" then value = value and 1 or 0 end
-        value = tonumber(value)
-        if not value or value < 0 or value > 2 then return false, "invalid value" end
-        value = math.floor(value + 0.5)
-    elseif key == "shape" then
-        if not IsListed(NS.MicroMenuShapes, value) then return false, "invalid value" end
-    elseif key == "barMaterial" then
-        if not IsListed(NS.MicroMenuBarMaterials, value) then return false, "invalid value" end
-    elseif key == "radius" then
-        value = tonumber(value)
-        if not IsListed(NS.GeometryRadii, value) then return false, "invalid value" end
-    elseif key == "iconStyle" then
-        if not IsListed(NS.MicroMenuIconStyles, value) then
-            return false, "invalid value"
-        end
-    elseif key == "hoverStyle" then
-        if not IsListed(NS.MicroMenuHoverStyles, value) then
-            return false, "invalid value"
-        end
-    elseif key == "buttonSize" then
-        value = tonumber(value)
-        if not value or value < 20 or value > 32 then
-            return false, "invalid value"
-        end
-        value = math.floor(value + 0.5)
-        if tonumber(settings.iconSize) and settings.iconSize > value - 4 then
-            settings.iconSize = value - 4
-        end
-    elseif key == "iconSize" then
-        value = tonumber(value)
-        local maximum = math.min(28, (tonumber(settings.buttonSize) or 28) - 4)
-        if not value or value < 10 or value > maximum then
-            return false, "invalid value"
-        end
-        value = math.floor(value + 0.5)
-    elseif key == "tint" then
-        if not IsListed(NS.MicroMenuTintModes, value) then return false, "invalid value" end
-    else
-        value = tonumber(value)
-        if not value then return false, "invalid value" end
-        value = Clamp01(value)
-    end
+    local accepted
+    accepted, value = validate(value, settings)
+    if not accepted then return false, "invalid value" end
 
     settings[key] = value
     if VISUAL_OPTION_KEYS[key] then
         settings.preset = "custom"
-    elseif key == "layoutMode" and settings.preset == "blizzard"
-        and value ~= "blizzard" then
+    elseif key == "layoutMode" and settings.preset == "blizzard" and value ~= "blizzard" then
         settings.preset = "custom"
-    elseif key == "layoutPoint" or key == "layoutRelativePoint"
-        or key == "layoutX" or key == "layoutY" then
+    elseif POSITION_KEYS[key] then
         settings.positionPreset = "custom"
     end
     return RefreshAfterSetting()
 end
 
 function MicroMenuSkin.ResetRecommended()
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
     local defaults = NS.Defaults and NS.Defaults.icons
         and NS.Defaults.icons.microMenu
     local settings = MutableSettings()
     if not defaults or not settings then return false, "settings" end
-    for key in pairs(OPTION_KEYS) do
+    for key in pairs(optionValidators) do
         if defaults[key] ~= nil then settings[key] = defaults[key] end
     end
     settings.preset = defaults.preset
@@ -1188,7 +1046,7 @@ function MicroMenuSkin.ResetRecommended()
 end
 
 function MicroMenuSkin.SetPositionPreset(presetName)
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
     local preset = NS.MicroMenuPositionPresets
         and NS.MicroMenuPositionPresets[presetName]
     local settings = MutableSettings()

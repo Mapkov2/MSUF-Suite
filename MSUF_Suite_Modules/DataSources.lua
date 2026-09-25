@@ -116,10 +116,7 @@ function S.InvalidateSharedData(key)
     snapshots[key] = nil
 end
 
-local function Number(value)
-    return S.Public(value) and type(value) == "number" and value == value
-        and value > -math.huge and value < math.huge
-end
+local Finite = S.Finite
 
 local function PublicText(reader)
     if type(reader) ~= "function" then return "" end
@@ -134,36 +131,36 @@ local readers = {
     fps = function()
         if type(GetFramerate) ~= "function" then return nil end
         local value = GetFramerate()
-        return Number(value) and value >= 0 and value or nil
+        return Finite(value) and value >= 0 and value or nil
     end,
     latency = function()
         if type(GetNetStats) ~= "function" then return nil end
         local _, _, home, world = GetNetStats()
-        return Number(home) and home >= 0 and home or nil,
-            Number(world) and world >= 0 and world or nil
+        return Finite(home) and home >= 0 and home or nil,
+            Finite(world) and world >= 0 and world or nil
     end,
     clockTime = function()
         if type(GetGameTime) ~= "function" then return nil end
         local hour, minute = GetGameTime()
-        return Number(hour) and hour or nil, Number(minute) and minute or nil
+        return Finite(hour) and hour or nil, Finite(minute) and minute or nil
     end,
     clockStamp = function()
         if type(GetServerTime) ~= "function" then return nil end
         local stamp = GetServerTime()
-        return Number(stamp) and stamp or nil
+        return Finite(stamp) and stamp or nil
     end,
     coordinates = function()
         if type(GetMapForUnit) ~= "function" or type(GetMapPosition) ~= "function" then return nil end
         local mapID = GetMapForUnit("player")
-        if not Number(mapID) or mapID <= 0 then return nil end
+        if not Finite(mapID) or mapID <= 0 then return nil end
         local position = GetMapPosition(mapID, "player")
         if not S.Public(position) or (type(position) ~= "table" and type(position) ~= "userdata")
             or type(position.GetXY) ~= "function" then
             return nil
         end
         local x, y = position:GetXY()
-        return Number(x) and x >= 0 and x <= 1 and x or nil,
-            Number(y) and y >= 0 and y <= 1 and y or nil
+        return Finite(x) and x >= 0 and x <= 1 and x or nil,
+            Finite(y) and y >= 0 and y <= 1 and y or nil
     end,
     durability = function()
         if type(GetInventoryItemDurability) ~= "function" then return nil end
@@ -171,7 +168,7 @@ local readers = {
         for slot = 1, 19 do
             local current, maximum = GetInventoryItemDurability(slot)
             if not S.Public(current) or not S.Public(maximum) then return nil end
-            if Number(current) and Number(maximum) and current >= 0 and maximum > 0 then
+            if Finite(current) and Finite(maximum) and current >= 0 and maximum > 0 then
                 current = math.min(current, maximum)
                 local ratio = current / maximum
                 if not low or ratio < low then low = ratio end
@@ -186,7 +183,7 @@ local readers = {
     gold = function()
         if type(GetMoney) ~= "function" then return nil end
         local value = GetMoney()
-        return Number(value) and value >= 0 and math.floor(value) or nil
+        return Finite(value) and value >= 0 and math.floor(value) or nil
     end,
     bags = function()
         local container = C_Container
@@ -196,7 +193,7 @@ local readers = {
         local free, total = 0, 0
         for bag = 0, 4 do
             local capacity, available = slots(bag), freeSlots(bag)
-            if not Number(capacity) or not Number(available) then return nil end
+            if not Finite(capacity) or not Finite(available) then return nil end
             total, free = total + capacity, free + available
         end
         return free, total
@@ -206,7 +203,7 @@ local readers = {
             return nil
         end
         local level, current, maximum = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
-        if not Number(level) or not Number(current) or not Number(maximum) then return nil end
+        if not Finite(level) or not Finite(current) or not Finite(maximum) then return nil end
         return level, current, maximum
     end,
 }

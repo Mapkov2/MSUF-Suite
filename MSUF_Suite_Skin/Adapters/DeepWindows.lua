@@ -2,7 +2,7 @@ local _, NS = ...
 
 -- Bounded late-lifecycle coverage for a small set of Retail windows whose
 -- material art or pooled descendants are created/refreshed after the normal
--- catalog pass.  Contracts were verified against Gethe/wow-ui-source
+-- catalog pass. Contracts were verified against Gethe/wow-ui-source
 -- upstream/live 8ea15b61e45c0ed4eba01439c90757f86eb78d34:
 --
 --   Blizzard_UIPanels_Game/Mainline/QuestFrameTemplates.xml, GossipFrame.xml,
@@ -29,7 +29,16 @@ local DeepWindows = {
 }
 NS.DeepWindows = DeepWindows
 
+local Field = NS.Safety.Field
+local Kit = NS.AdapterKit
+local Path = Kit.Path
+local Fade = Kit.Fade
+
 local DEFAULT_OWNER = "blizzardWindows"
+local DESCENDANT_DEPTH = 12
+local BANK_TAB_LIMIT = 32
+local BANK_ITEM_LIMIT = 128
+local WARBAND_CARD_LIMIT = 64
 
 local UI_PANELS_ADDON = "Blizzard_UIPanels_Game"
 local PROFESSIONS_ADDON = "Blizzard_Professions"
@@ -64,6 +73,18 @@ local GENERIC_TRAITS_MODE = {
     -- Only the exact shell fields below need a late lifecycle repaint.
     childSurfaces = false,
     registerDynamicRows = false,
+}
+
+local FOREVER_BOOK_MODE = {
+    role = "panel", maxDepth = 0, maxNodes = 1,
+    fillVisible = false, childSurfaces = false, registerDynamicRows = false,
+    allowImplicitProtected = true,
+}
+
+local FOREVER_CARD_MODE = {
+    role = "card", maxDepth = 0, maxNodes = 1,
+    childSurfaces = false, registerDynamicRows = false,
+    allowImplicitProtected = true,
 }
 
 local CUSTOMER_CATEGORY_SPEC = {
@@ -125,54 +146,33 @@ local GOSSIP_MATERIAL_GLOBALS = {
     "GossipFrameGreetingPanelMaterialBotRight",
 }
 
-local function WeakMap()
-    return setmetatable({}, { __mode = "k" })
-end
+local PROFESSION_DETAIL_FIELDS = {
+    "BackgroundTop", "BackgroundMiddle", "BackgroundBottom", "BackgroundMinimized",
+}
 
-local function SafeField(object, key)
-    if not object then return nil end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
-end
+local FOREVER_PROFESSION_CARDS = {
+    "PrimaryProfession1", "PrimaryProfession2", "SecondaryProfession1",
+    "SecondaryProfession2", "SecondaryProfession3",
+}
 
-local function Path(object, ...)
-    for index = 1, select("#", ...) do
-        object = SafeField(object, select(index, ...))
-        if not object then return nil end
-    end
-    return object
-end
+local CUSTOMER_CATEGORY_FIELDS = {
+    "Text", "NormalTexture", "HighlightTexture", "SelectedTexture", "Lines", "SpacerLine",
+}
 
-local function Report(label, message)
-    if type(NS.ReportError) == "function" then
-        NS.ReportError("deep windows " .. tostring(label), message)
-    end
-end
-
-local function IsCombatLocked()
-    return type(NS.IsCombatLocked) == "function" and NS.IsCombatLocked() == true
-end
+local WARBAND_CARD_FIELDS = {
+    "Icon", "Name", "NameBackground", "Border", "SlotFavorite", "HighlightTexture",
+}
 
 local function CategoryEnabled(category)
-    local generic = NS.GenericWindows
-    if generic and type(generic.IsCategoryEnabled) == "function" then
-        local ok, enabled = pcall(generic.IsCategoryEnabled, category)
-        return ok and enabled ~= false
-    end
-    return true
+    return NS.GenericWindows.IsCategoryEnabled(category)
 end
 
-local function IsLoaded(addon)
-    if C_AddOns and type(C_AddOns.IsAddOnLoaded) == "function" then
-        local ok, loadedOrLoading, loaded = pcall(C_AddOns.IsAddOnLoaded, addon)
-        return ok and (loaded == true or (loaded == nil and loadedOrLoading == true))
-    end
-    if type(IsAddOnLoaded) == "function" then
-        local ok, loaded = pcall(IsAddOnLoaded, addon)
-        return ok and loaded == true
-    end
-    return false
+local function CanCreateRegions(target)
+    return NS.Safety.CanCreateRegions(target, true)
 end
+
+local SkinCustomerCategory
+local SkinCustomerRow
 
 local function OwnerState(parentOwner)
     parentOwner = parentOwner or DEFAULT_OWNER
@@ -180,105 +180,58 @@ local function OwnerState(parentOwner)
     if not state then
         state = {
             parentOwner = parentOwner,
-            skinOwner = tostring(parentOwner) .. ":deep-windows",
+            owner = tostring(parentOwner) .. ":deep-windows",
             active = false,
             deferred = {},
-            cardSurfaces = WeakMap(),
+            cardSurfaces = Kit.WeakSet(),
         }
+        -- Row visitors are built once per owner, not per refresh.
+        state.visitCategory = function(button) SkinCustomerCategory(state, button) end
+        state.visitRow = function(button) SkinCustomerRow(state, button) end
         DeepWindows.owners[parentOwner] = state
     end
-    return state, parentOwner
+    return state
 end
 
-local function CanDecorate(target)
-    return target and NS.Safety
-        and type(NS.Safety.CanDecorate) == "function"
-        and NS.Safety.CanDecorate(target, true)
-end
-
-local function CanCreateRegions(target)
-    return target and NS.Safety
-        and type(NS.Safety.CanCreateRegions) == "function"
-        and NS.Safety.CanCreateRegions(target, true)
-end
-
-local function Fade(state, region)
-    if not state or not state.active or not region or IsCombatLocked()
-        or not CanDecorate(region) or not NS.Cosmetics
-        or type(NS.Cosmetics.Fade) ~= "function" then
-        return false
-    end
-    local ok, applied = pcall(NS.Cosmetics.Fade, region, state.skinOwner)
-    if not ok then Report("fade", applied) end
-    return ok and applied == true
-end
-
-local nineSlicePieces = {
-    "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
-    "TopEdge", "BottomEdge", "LeftEdge", "RightEdge", "Center",
-}
-
-local function FadeNineSlice(state, nineSlice)
-    if not nineSlice then return end
-    for index = 1, #nineSlicePieces do
-        Fade(state, SafeField(nineSlice, nineSlicePieces[index]))
-    end
-end
-
-local function ParentIs(frame, expectedParent)
-    local getter = SafeField(frame, "GetParent")
-    if type(getter) ~= "function" then return false end
-    local ok, parent = pcall(getter, frame)
-    return ok and parent == expectedParent
-end
-
-local function IsDescendantOf(frame, ancestor, maxDepth)
-    if not frame or not ancestor then return false end
-    local current = frame
-    for _ = 1, maxDepth or 12 do
-        if current == ancestor then return true end
-        local getter = SafeField(current, "GetParent")
-        if type(getter) ~= "function" then return false end
-        local ok, parent = pcall(getter, current)
-        if not ok or not parent or parent == current then return false end
-        current = parent
-    end
-    return current == ancestor
+local function FadeRegion(region, state)
+    Fade(state, region)
 end
 
 local function FadeMaterialPanel(state, panel)
     if not panel then return 0 end
     local faded = 0
     for index = 1, #MATERIAL_FIELDS do
-        if Fade(state, SafeField(panel, MATERIAL_FIELDS[index])) then
+        if Fade(state, Field(panel, MATERIAL_FIELDS[index])) then
             faded = faded + 1
         end
     end
     return faded
 end
 
+local function SetQuestText(state, active)
+    local questText = NS.QuestText
+    if not questText then return end
+    local method = active and questText.Activate or questText.Deactivate
+    method(_G.QuestFrame, state.owner)
+    method(_G.GossipFrame, state.owner)
+    method(_G.QuestLogPopupDetailFrame, state.owner)
+end
+
 local function ApplyQuestAndGossip(state)
     if not state or not state.active then return false, "disabled" end
     if not CategoryEnabled("quest") then
-        if NS.QuestText then
-            NS.QuestText.Deactivate(_G.QuestFrame, state.skinOwner)
-            NS.QuestText.Deactivate(_G.QuestLogPopupDetailFrame, state.skinOwner)
-        end
+        SetQuestText(state, false)
         return true, "disabled"
     end
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
 
     local faded = 0
     for index = 1, #QUEST_PANELS do
         faded = faded + FadeMaterialPanel(state, _G[QUEST_PANELS[index]])
     end
-    if NS.QuestText then
-        NS.QuestText.Activate(_G.QuestFrame, state.skinOwner)
-        NS.QuestText.Activate(_G.QuestLogPopupDetailFrame, state.skinOwner)
-    end
+    SetQuestText(state, true)
 
-    local gossipPanel = Path(_G.GossipFrame, "GreetingPanel")
-    if Fade(state, SafeField(gossipPanel, "MaterialTopLeft")) then
+    if Fade(state, Path(_G.GossipFrame, "GreetingPanel", "MaterialTopLeft")) then
         faded = faded + 1
     end
     for index = 1, #GOSSIP_MATERIAL_GLOBALS do
@@ -292,217 +245,140 @@ end
 
 local function ApplyDeepRoot(state, root, mode)
     if not state or not state.active or not root then return false, "missing" end
-    if IsCombatLocked() then return false, "combat" end
-    local generic = NS.GenericWindows
-    if not generic or type(generic.ApplyFrame) ~= "function" then
-        return false, "missing"
-    end
-
+    if NS.IsCombatLocked() then return false, "combat" end
     -- Use the parent catalog owner deliberately. GenericWindows already owns
     -- these roots and therefore remains the sole restorer for its surfaces,
     -- controls, dynamic ScrollBox callbacks and cosmetic state.
-    local ok, applied, reason = pcall(generic.ApplyFrame,
-        root, state.parentOwner, mode or PROFESSION_MODE)
-    if not ok then
-        Report("root reapply", applied)
-        return false, "failed"
-    end
+    local applied, reason = NS.GenericWindows.ApplyFrame(root, state.parentOwner, mode or PROFESSION_MODE)
     return applied == true, reason
 end
 
-local function FadeExactPanel(state, panel)
+local function FadePanelChrome(state, panel)
     if not panel then return end
-    Fade(state, SafeField(panel, "Bg"))
-    Fade(state, SafeField(panel, "Background"))
-    FadeNineSlice(state, SafeField(panel, "NineSlice"))
-end
-
-local function FadeExactRegions(state, frame)
-    local getter = SafeField(frame, "GetRegions")
-    if type(getter) ~= "function" then return end
-    pcall(function()
-        local function Visit(...)
-            for index = 1, select("#", ...) do
-                Fade(state, select(index, ...))
-            end
-        end
-        Visit(getter(frame))
-    end)
+    Fade(state, Field(panel, "Bg"))
+    Fade(state, Field(panel, "Background"))
+    Kit.FadeNineSlice(state, Field(panel, "NineSlice"))
 end
 
 local function FadeProfessionRecipeList(state, recipeList)
     if not recipeList then return end
-    Fade(state, SafeField(recipeList, "Background"))
-    FadeNineSlice(state, SafeField(recipeList, "BackgroundNineSlice"))
-end
-
-local function FadeProfessionDetails(state, details)
-    if not details then return end
-    for _, key in ipairs({
-        "BackgroundTop", "BackgroundMiddle", "BackgroundBottom", "BackgroundMinimized",
-    }) do
-        Fade(state, SafeField(details, key))
-    end
+    Fade(state, Field(recipeList, "Background"))
+    Kit.FadeNineSlice(state, Field(recipeList, "BackgroundNineSlice"))
 end
 
 local function FadeProfessionSchematic(state, schematic, hasOwnNineSlice)
     if not schematic then return end
-    Fade(state, SafeField(schematic, "Background"))
-    Fade(state, SafeField(schematic, "MinimalBackground"))
+    Fade(state, Field(schematic, "Background"))
+    Fade(state, Field(schematic, "MinimalBackground"))
     if hasOwnNineSlice then
-        FadeNineSlice(state, SafeField(schematic, "NineSlice"))
+        Kit.FadeNineSlice(state, Field(schematic, "NineSlice"))
     end
-    FadeProfessionDetails(state, SafeField(schematic, "Details"))
+    Kit.FadeFields(state, Field(schematic, "Details"), PROFESSION_DETAIL_FIELDS)
+end
+
+-- Camelot puts its professions book inside ProfessionsFrame instead of
+-- loading the standalone ProfessionsBookFrame. The anonymous atlas on
+-- CraftingPage and the five book cards are exact decorative regions; spell
+-- buttons, rank bars, recipes, and profession icons stay native.
+local function FadeForeverProfessionBook(state, root, crafting)
+    Kit.FadeAtlas(state, crafting, "Profession-Background-Template2")
+    local content = Path(root, "BookPage", "ProfessionsContentFrame")
+    if not content then return end
+    NS.GenericWindows.ApplyFrame(content, state.parentOwner, FOREVER_BOOK_MODE)
+    for index = 1, #FOREVER_PROFESSION_CARDS do
+        local card = Field(content, FOREVER_PROFESSION_CARDS[index])
+        if card then
+            NS.GenericWindows.ApplyFrame(card, state.parentOwner, FOREVER_CARD_MODE)
+            Fade(state, Field(card, "Background"))
+        end
+    end
 end
 
 local function FadeProfessionChrome(state, root)
     -- These exact parentKey-only frames are anonymous in Blizzard's XML, so
     -- the generic name-token traversal cannot identify their decorative art.
     -- Keep recipe, reagent, quality, reward and order-state content native.
-    local crafting = SafeField(root, "CraftingPage")
-    FadeProfessionRecipeList(state, SafeField(crafting, "RecipeList"))
-    FadeProfessionSchematic(state, SafeField(crafting, "SchematicForm"), true)
+    local crafting = Field(root, "CraftingPage")
+    FadeProfessionRecipeList(state, Field(crafting, "RecipeList"))
+    FadeProfessionSchematic(state, Field(crafting, "SchematicForm"), true)
 
-    if NS.Client and NS.Client.isForever then
-        -- Camelot puts its professions book inside ProfessionsFrame instead of
-        -- loading the standalone ProfessionsBookFrame. The anonymous atlas on
-        -- CraftingPage and the five book cards are exact decorative regions;
-        -- spell buttons, rank bars, recipes, and profession icons stay native.
-        if crafting and type(crafting.GetRegions) == "function" then
-            local regions = { crafting:GetRegions() }
-            for index = 1, #regions do
-                local region = regions[index]
-                if type(region.GetAtlas) == "function"
-                    and region:GetAtlas() == "Profession-Background-Template2" then
-                    Fade(state, region)
-                end
-            end
-        end
-        local content = Path(root, "BookPage", "ProfessionsContentFrame")
-        if content then
-            NS.GenericWindows.ApplyFrame(content, state.parentOwner, {
-                role = "panel", maxDepth = 0, maxNodes = 1,
-                fillVisible = false, childSurfaces = false, registerDynamicRows = false,
-                allowImplicitProtected = true,
-            })
-            for _, key in ipairs({
-                "PrimaryProfession1", "PrimaryProfession2", "SecondaryProfession1",
-                "SecondaryProfession2", "SecondaryProfession3",
-            }) do
-                local card = SafeField(content, key)
-                if card then
-                    NS.GenericWindows.ApplyFrame(card, state.parentOwner, {
-                        role = "card", maxDepth = 0, maxNodes = 1,
-                        childSurfaces = false, registerDynamicRows = false,
-                        allowImplicitProtected = true,
-                    })
-                    Fade(state, SafeField(card, "Background"))
-                end
-            end
-        end
+    if NS.Client.isForever then
+        FadeForeverProfessionBook(state, root, crafting)
     end
 
     Fade(state, Path(root, "SpecPage", "TreeView", "Background"))
     Fade(state, Path(root, "SpecPage", "DetailedView", "Background"))
     Fade(state, Path(root, "SpecPage", "TreePreview", "Background"))
 
-    local orders = SafeField(root, "OrdersPage")
-    local browse = SafeField(orders, "BrowseFrame")
-    FadeProfessionRecipeList(state, SafeField(browse, "RecipeList"))
-    local orderList = SafeField(browse, "OrderList")
-    Fade(state, SafeField(orderList, "Background"))
-    FadeNineSlice(state, SafeField(orderList, "NineSlice"))
+    local orders = Field(root, "OrdersPage")
+    local browse = Field(orders, "BrowseFrame")
+    FadeProfessionRecipeList(state, Field(browse, "RecipeList"))
+    local orderList = Field(browse, "OrderList")
+    Fade(state, Field(orderList, "Background"))
+    Kit.FadeNineSlice(state, Field(orderList, "NineSlice"))
 
-    local orderView = SafeField(orders, "OrderView")
-    local orderInfo = SafeField(orderView, "OrderInfo")
-    Fade(state, SafeField(orderInfo, "Background"))
-    FadeNineSlice(state, SafeField(orderInfo, "NineSlice"))
-    local orderDetails = SafeField(orderView, "OrderDetails")
-    Fade(state, SafeField(orderDetails, "Background"))
-    FadeNineSlice(state, SafeField(orderDetails, "NineSlice"))
+    local orderView = Field(orders, "OrderView")
+    local orderInfo = Field(orderView, "OrderInfo")
+    Fade(state, Field(orderInfo, "Background"))
+    Kit.FadeNineSlice(state, Field(orderInfo, "NineSlice"))
+    local orderDetails = Field(orderView, "OrderDetails")
+    Fade(state, Field(orderDetails, "Background"))
+    Kit.FadeNineSlice(state, Field(orderDetails, "NineSlice"))
     -- This concrete order SchematicForm has no own NineSlice in Retail.
-    FadeProfessionSchematic(state, SafeField(orderDetails, "SchematicForm"), false)
+    FadeProfessionSchematic(state, Field(orderDetails, "SchematicForm"), false)
 end
 
-local function RegionIsShown(region)
-    local getter = SafeField(region, "IsShown")
-    if type(getter) ~= "function" then return false end
-    local ok, shown = pcall(getter, region)
-    return ok and shown == true
-end
-
-local function SkinCustomerCategory(state, button)
-    if not state or not state.active or not button or SafeField(button, "isSpacer") == true
-        or IsCombatLocked() or not CanCreateRegions(button)
-        or not SafeField(button, "Text") or not SafeField(button, "NormalTexture")
-        or not SafeField(button, "HighlightTexture") or not SafeField(button, "SelectedTexture")
-        or not SafeField(button, "Lines") or not SafeField(button, "SpacerLine")
-        or not NS.ControlSkin or type(NS.ControlSkin.ApplyButton) ~= "function" then
+SkinCustomerCategory = function(state, button)
+    if not state or not state.active or not button or Field(button, "isSpacer") == true
+        or NS.IsCombatLocked() or not CanCreateRegions(button)
+        or not Kit.HasFields(button, CUSTOMER_CATEGORY_FIELDS) then
         return false
     end
-    CUSTOMER_CATEGORY_SPEC.active = RegionIsShown(SafeField(button, "SelectedTexture"))
-    local ok, applied = pcall(NS.ControlSkin.ApplyButton,
-        button, state.skinOwner, CUSTOMER_CATEGORY_SPEC)
+    -- ControlSkin copies the spec synchronously, so the shared table can
+    -- carry this row's selection for exactly one call.
+    CUSTOMER_CATEGORY_SPEC.active = Kit.IsShown(Field(button, "SelectedTexture"))
+    local applied = NS.ControlSkin.ApplyButton(button, state.owner, CUSTOMER_CATEGORY_SPEC)
     CUSTOMER_CATEGORY_SPEC.active = nil
-    if not ok then Report("customer category", applied) end
-    return ok and applied ~= nil
+    return applied ~= nil
 end
 
-local function SkinCustomerRow(state, button)
-    if not state or not state.active or not button or IsCombatLocked()
-        or not CanCreateRegions(button) or not SafeField(button, "HighlightTexture")
-        or not NS.ControlSkin or type(NS.ControlSkin.ApplyButton) ~= "function" then
+SkinCustomerRow = function(state, button)
+    if not state or not state.active or not button or NS.IsCombatLocked()
+        or not CanCreateRegions(button) or not Field(button, "HighlightTexture") then
         return false
     end
-    local ok, applied = pcall(NS.ControlSkin.ApplyButton,
-        button, state.skinOwner, CUSTOMER_ROW_SPEC)
-    if not ok then Report("customer row", applied) end
-    return ok and applied ~= nil
-end
-
-local function ForEachVisibleRow(scrollBox, callback)
-    local forEach = SafeField(scrollBox, "ForEachFrame")
-    if type(forEach) ~= "function" or type(callback) ~= "function" then return end
-    pcall(forEach, scrollBox, callback)
+    return NS.ControlSkin.ApplyButton(button, state.owner, CUSTOMER_ROW_SPEC) ~= nil
 end
 
 local function SkinVisibleCustomerRows(state, root)
-    local browse = SafeField(root, "BrowseOrders")
-    ForEachVisibleRow(Path(browse, "CategoryList", "ScrollBox"), function(button)
-        SkinCustomerCategory(state, button)
-    end)
-    ForEachVisibleRow(Path(browse, "RecipeList", "ScrollBox"), function(button)
-        SkinCustomerRow(state, button)
-    end)
-    ForEachVisibleRow(Path(root, "MyOrdersPage", "OrderList", "ScrollBox"), function(button)
-        SkinCustomerRow(state, button)
-    end)
-    ForEachVisibleRow(Path(root, "Form", "CurrentListings", "OrderList", "ScrollBox"), function(button)
-        SkinCustomerRow(state, button)
-    end)
+    local browse = Field(root, "BrowseOrders")
+    Kit.ForEachRow(Path(browse, "CategoryList", "ScrollBox"), state.visitCategory)
+    Kit.ForEachRow(Path(browse, "RecipeList", "ScrollBox"), state.visitRow)
+    Kit.ForEachRow(Path(root, "MyOrdersPage", "OrderList", "ScrollBox"), state.visitRow)
+    Kit.ForEachRow(Path(root, "Form", "CurrentListings", "OrderList", "ScrollBox"), state.visitRow)
 end
 
 local function FadeCustomerOrdersChrome(state, root)
     -- Standalone customer orders copies Auction House chrome into anonymous
     -- parentKey frames. Fade only those source-confirmed decorative members;
     -- recipe icons, favorites, text, money and order state remain native.
-    FadeExactPanel(state, SafeField(root, "MoneyFrameInset"))
-    FadeExactRegions(state, SafeField(root, "MoneyFrameBorder"))
+    FadePanelChrome(state, Field(root, "MoneyFrameInset"))
+    Kit.ForEachRegion(Field(root, "MoneyFrameBorder"), FadeRegion, state)
 
-    local browse = SafeField(root, "BrowseOrders")
-    FadeExactPanel(state, SafeField(browse, "CategoryList"))
-    FadeExactPanel(state, SafeField(browse, "RecipeList"))
+    local browse = Field(root, "BrowseOrders")
+    FadePanelChrome(state, Field(browse, "CategoryList"))
+    FadePanelChrome(state, Field(browse, "RecipeList"))
 
-    FadeExactPanel(state, Path(root, "MyOrdersPage", "OrderList"))
+    FadePanelChrome(state, Path(root, "MyOrdersPage", "OrderList"))
 
-    local form = SafeField(root, "Form")
-    Fade(state, SafeField(form, "RecipeHeader"))
-    FadeExactPanel(state, SafeField(form, "LeftPanelBackground"))
-    FadeExactPanel(state, SafeField(form, "RightPanelBackground"))
+    local form = Field(root, "Form")
+    Fade(state, Field(form, "RecipeHeader"))
+    FadePanelChrome(state, Field(form, "LeftPanelBackground"))
+    FadePanelChrome(state, Field(form, "RightPanelBackground"))
     Fade(state, Path(form, "PaymentContainer", "NoteEditBox", "Border"))
-    local listings = SafeField(form, "CurrentListings")
-    FadeExactPanel(state, listings)
-    FadeExactPanel(state, SafeField(listings, "OrderList"))
+    local listings = Field(form, "CurrentListings")
+    FadePanelChrome(state, listings)
+    FadePanelChrome(state, Field(listings, "OrderList"))
 
     SkinVisibleCustomerRows(state, root)
 end
@@ -525,13 +401,13 @@ local function FadeGenericTraitChrome(state, root)
     -- GenericTraitFrameMixin:ApplyLayout assigns these atlases after the
     -- catalog pass. They are exact decorative shell members; ButtonsParent,
     -- talent nodes, edges, FX, currency text/icon and scripts stay native.
-    Fade(state, SafeField(root, "Background"))
-    Fade(state, SafeField(root, "BorderOverlay"))
-    FadeNineSlice(state, SafeField(root, "NineSlice"))
+    Fade(state, Field(root, "Background"))
+    Fade(state, Field(root, "BorderOverlay"))
+    Kit.FadeNineSlice(state, Field(root, "NineSlice"))
     Fade(state, Path(root, "NineSlice", "DetailTop"))
     Fade(state, Path(root, "Header", "TitleDivider"))
     Fade(state, Path(root, "Inset", "Bg"))
-    FadeNineSlice(state, Path(root, "Inset", "NineSlice"))
+    Kit.FadeNineSlice(state, Path(root, "Inset", "NineSlice"))
     Fade(state, Path(root, "Currency", "CurrencyBackground"))
 end
 
@@ -541,65 +417,52 @@ local function ApplyGenericTraitRoot(state, root)
     return applied, reason
 end
 
-local function ApplyProfessionRootForOwners(root, descendant)
-    if IsCombatLocked() or not root then return end
-    if descendant and not IsDescendantOf(descendant, root, 12) then return end
+-- True when frame is nil (a whole-window refresh) or lies inside root.
+local function Covers(root, frame)
+    return root ~= nil and (frame == nil or frame == root
+        or Kit.IsDescendantOf(frame, root, DESCENDANT_DEPTH))
+end
+
+-- apply(state, a, b) for every active owner while the category is enabled.
+local function ForActiveOwners(category, apply, a, b)
+    if NS.IsCombatLocked() or not CategoryEnabled(category) then return end
     for _, state in pairs(DeepWindows.owners) do
-        if state.active and CategoryEnabled("profession") then
-            ApplyProfessionRoot(state, root)
-        end
+        if state.active then apply(state, a, b) end
     end
 end
 
 local function RefreshProfessions(frame)
     local root = _G.ProfessionsFrame
-    if root and (frame == nil or frame == root or IsDescendantOf(frame, root, 12)) then
-        ApplyProfessionRootForOwners(root, frame)
+    if Covers(root, frame) then
+        ForActiveOwners("profession", ApplyProfessionRoot, root)
     end
 end
 
 local function RefreshCustomerOrders(frame)
     local root = _G.ProfessionsCustomerOrdersFrame
-    if root and (frame == nil or frame == root or IsDescendantOf(frame, root, 12)) then
-        for _, state in pairs(DeepWindows.owners) do
-            if state.active and CategoryEnabled("profession") then
-                ApplyCustomerOrdersRoot(state, root)
-            end
-        end
+    if Covers(root, frame) then
+        ForActiveOwners("profession", ApplyCustomerOrdersRoot, root)
     end
 end
 
 local function RefreshGenericTraits(frame)
     local root = _G.GenericTraitFrame
-    if not root or (frame ~= nil and frame ~= root
-        and not IsDescendantOf(frame, root, 12)) then
-        return
-    end
-    for _, state in pairs(DeepWindows.owners) do
-        if state.active and CategoryEnabled("character") then
-            ApplyGenericTraitRoot(state, root)
-        end
+    if Covers(root, frame) then
+        ForActiveOwners("character", ApplyGenericTraitRoot, root)
     end
 end
 
-
 local function RefreshCustomerCategory(button)
     local root = _G.ProfessionsCustomerOrdersFrame
-    if not root or not IsDescendantOf(button, root, 12) or IsCombatLocked() then return end
-    for _, state in pairs(DeepWindows.owners) do
-        if state.active and CategoryEnabled("profession") then
-            SkinCustomerCategory(state, button)
-        end
+    if root and Kit.IsDescendantOf(button, root, DESCENDANT_DEPTH) then
+        ForActiveOwners("profession", SkinCustomerCategory, button)
     end
 end
 
 local function RefreshCustomerRow(button)
     local root = _G.ProfessionsCustomerOrdersFrame
-    if not root or not IsDescendantOf(button, root, 12) or IsCombatLocked() then return end
-    for _, state in pairs(DeepWindows.owners) do
-        if state.active and CategoryEnabled("profession") then
-            SkinCustomerRow(state, button)
-        end
+    if root and Kit.IsDescendantOf(button, root, DESCENDANT_DEPTH) then
+        ForActiveOwners("profession", SkinCustomerRow, button)
     end
 end
 
@@ -609,18 +472,14 @@ end
 
 local function HookMixin(key, mixinName, methodName, callback)
     if DeepWindows.hooks[key] then return true end
-    local mixin = _G[mixinName]
-    if type(mixin) ~= "table" or type(SafeField(mixin, methodName)) ~= "function"
-        or type(hooksecurefunc) ~= "function" then
-        return false
-    end
-    local ok, message = pcall(hooksecurefunc, mixin, methodName, callback)
-    if not ok then
-        Report("hook " .. key, message)
-        return false
-    end
+    if not Kit.HookFunction(_G[mixinName], methodName, callback) then return false end
     DeepWindows.hooks[key] = true
     return true
+end
+
+local function DispatchContainerGenerate(frame)
+    local callback = DeepWindows.containerGenerateCallback
+    if callback then callback(frame) end
 end
 
 -- CommonMenus owns the exact bag renderer and active-owner gate. This audited
@@ -629,35 +488,19 @@ end
 function DeepWindows.InstallContainerGenerateHook(callback)
     if type(callback) ~= "function" then return false end
     if DeepWindows.hooks.containerGenerate then return true end
-    if type(hooksecurefunc) ~= "function"
-        or type(_G.ContainerFrame_GenerateFrame) ~= "function" then
+    if not Kit.HookGlobal("ContainerFrame_GenerateFrame", DispatchContainerGenerate) then
         return false
     end
-
     DeepWindows.containerGenerateCallback = callback
-    local ok, message = pcall(hooksecurefunc, "ContainerFrame_GenerateFrame", function(frame)
-        local current = DeepWindows.containerGenerateCallback
-        if type(current) == "function" then current(frame) end
-    end)
-    if not ok then
-        DeepWindows.containerGenerateCallback = nil
-        Report("hook container-generate", message)
-        return false
-    end
     DeepWindows.hooks.containerGenerate = true
     return true
 end
 
 local function InstallProfessionsHooks()
-    if not DeepWindows.hooks.professionsTabSet and EventRegistry
-        and type(EventRegistry.RegisterCallback) == "function" then
-        local ok, message = pcall(EventRegistry.RegisterCallback, EventRegistry,
-            "ProfessionsFrame.TabSet", DeepWindows.OnProfessionsTabSet, DeepWindows)
-        if ok then
-            DeepWindows.hooks.professionsTabSet = true
-        else
-            Report("ProfessionsFrame.TabSet", message)
-        end
+    if not DeepWindows.hooks.professionsTabSet
+        and Kit.RegisterEventCallback("ProfessionsFrame.TabSet",
+            DeepWindows.OnProfessionsTabSet, DeepWindows) then
+        DeepWindows.hooks.professionsTabSet = true
     end
 
     HookMixin("professions-show", "ProfessionsMixin", "OnShow", RefreshProfessions)
@@ -702,95 +545,67 @@ end
 
 local function SkinBankTab(state, tab, panel)
     if not state or not state.active or not tab or not panel
-        or not ParentIs(tab, panel) or not SafeField(tab, "tabData")
-        or IsCombatLocked() or not CategoryEnabled("inventory")
-        or not NS.ControlSkin or type(NS.ControlSkin.ApplyTab) ~= "function" then
+        or not Kit.ParentIs(tab, panel) or not Field(tab, "tabData")
+        or NS.IsCombatLocked() or not CategoryEnabled("inventory") then
         return false
     end
-    local ok, applied = pcall(NS.ControlSkin.ApplyTab,
-        tab, state.skinOwner, BANK_TAB_SPEC)
-    if not ok then Report("bank tab", applied) end
-    return ok and applied ~= nil
+    return NS.ControlSkin.ApplyTab(tab, state.owner, BANK_TAB_SPEC) ~= nil
 end
 
 local function SkinBankItem(state, button, panel)
     if not state or not state.active or not button or not panel
-        or not ParentIs(button, panel) or IsCombatLocked()
-        or not CategoryEnabled("inventory") or not NS.IconSkin
-        or type(NS.IconSkin.Apply) ~= "function" then
+        or not Kit.ParentIs(button, panel) or NS.IsCombatLocked()
+        or not CategoryEnabled("inventory") then
         return false
     end
 
     -- Current BankPanelItemButtonMixin uses the inherited lowercase item icon
     -- and the inherited IconBorder updated by SetItemButtonQuality. Cooldown,
     -- SearchOverlay, IconQuestTexture, Background and itemLocation stay native.
-    local icon = SafeField(button, "icon")
-    local qualityBorder = SafeField(button, "IconBorder")
+    local icon = Field(button, "icon")
+    local qualityBorder = Field(button, "IconBorder")
     if not icon or not qualityBorder then return false end
-    local ok, applied = pcall(NS.IconSkin.Apply, button, state.skinOwner, {
-        icon = icon,
-        nativeBorder = qualityBorder,
-        allowImplicitProtected = true,
-    })
-    if not ok then Report("bank item", applied) end
-    return ok and applied ~= nil
+    return Kit.SkinItemIcon(button, state.owner, icon, qualityBorder, true)
 end
 
-local function EnumerateActive(pool, limit, callback)
-    local enumerate = SafeField(pool, "EnumerateActive")
-    if type(enumerate) ~= "function" or type(callback) ~= "function" then
-        return false
+-- Skins at most limit active pool objects; returns how many were skinned.
+local function SkinPool(state, pool, panel, limit, skin)
+    if type((Field(pool, "EnumerateActive"))) ~= "function" then return 0 end
+    local visited, decorated = 0, 0
+    for object in pool:EnumerateActive() do
+        if visited >= limit then break end
+        visited = visited + 1
+        if skin(state, object, panel) then decorated = decorated + 1 end
     end
-    local ok, iterator, invariant, control = pcall(enumerate, pool)
-    if not ok or type(iterator) ~= "function" then return false end
-    for _ = 1, limit do
-        local iterOk, value = pcall(iterator, invariant, control)
-        if not iterOk or value == nil then break end
-        control = value
-        callback(value)
-    end
-    return true
+    return decorated
 end
 
 local function ApplyBank(state)
     if not state or not state.active then return false, "disabled" end
     if not CategoryEnabled("inventory") then return true, "disabled" end
-    if IsCombatLocked() then return false, "combat" end
+    if NS.IsCombatLocked() then return false, "combat" end
     local panel = Path(_G.BankFrame, "BankPanel")
     if not panel then return false, "missing" end
 
-    local decorated = 0
-    if SkinBankTab(state, SafeField(panel, "PurchaseTab"), panel) then
-        decorated = decorated + 1
-    end
-    EnumerateActive(SafeField(panel, "bankTabPool"), 32, function(tab)
-        if SkinBankTab(state, tab, panel) then decorated = decorated + 1 end
-    end)
-    EnumerateActive(SafeField(panel, "itemButtonPool"), 128, function(button)
-        if SkinBankItem(state, button, panel) then decorated = decorated + 1 end
-    end)
+    local decorated = SkinBankTab(state, Field(panel, "PurchaseTab"), panel) and 1 or 0
+    decorated = decorated + SkinPool(state, Field(panel, "bankTabPool"), panel,
+        BANK_TAB_LIMIT, SkinBankTab)
+    decorated = decorated + SkinPool(state, Field(panel, "itemButtonPool"), panel,
+        BANK_ITEM_LIMIT, SkinBankItem)
     return true, decorated > 0 and "applied" or "waiting"
 end
 
 local function RefreshBankTab(tab)
-    if IsCombatLocked() then return end
     local panel = Path(_G.BankFrame, "BankPanel")
-    if not panel or not ParentIs(tab, panel) then return end
-    for _, state in pairs(DeepWindows.owners) do
-        if state.active and CategoryEnabled("inventory") then
-            SkinBankTab(state, tab, panel)
-        end
+    if panel and Kit.ParentIs(tab, panel) then
+        ForActiveOwners("inventory", SkinBankTab, tab, panel)
     end
 end
 
 local function RefreshBankItem(button)
-    if IsCombatLocked() then return end
     local panel = Path(_G.BankFrame, "BankPanel")
-    if not panel or not ParentIs(button, panel) then return end
-    for _, state in pairs(DeepWindows.owners) do
-        if state.active and CategoryEnabled("inventory") then
-            SkinBankItem(state, button, panel)
-        end
+    if panel and Kit.ParentIs(button, panel) then
+        ForActiveOwners("inventory", SkinBankItem, button, panel)
     end
 end
 
@@ -800,92 +615,65 @@ local function InstallBankHooks()
 end
 
 local function SkinWarbandCard(state, card)
-    if not state or not state.active or not card or IsCombatLocked()
+    if not state or not state.active or not card or NS.IsCombatLocked()
         or not CategoryEnabled("journal") or not CanCreateRegions(card)
-        or not SafeField(card, "Icon") or not SafeField(card, "Name")
-        or not SafeField(card, "NameBackground") or not SafeField(card, "Border")
-        or not SafeField(card, "SlotFavorite") or not SafeField(card, "HighlightTexture")
-        or not NS.Surface or type(NS.Surface.Attach) ~= "function"
-        or not NS.Registry or type(NS.Registry.GetSurface) ~= "function" then
+        or not Kit.HasFields(card, WARBAND_CARD_FIELDS) then
         return false
     end
 
+    -- Only reuse a card surface this adapter installed with its own spec.
     local existing = NS.Registry.GetSurface(card)
     local record = DeepWindows.warbandSurfaces[card]
-    if existing then
-        if not record or record.surface ~= existing
-            or SafeField(existing, "spec") ~= WARBAND_CARD_SPEC
-            or (record.owner and record.owner ~= state.skinOwner) then
-            return false
-        end
-    end
-
-    local ok, surface = pcall(NS.Surface.Attach, card, WARBAND_CARD_SPEC)
-    if not ok then
-        Report("warband card", surface)
+    if existing and (not record or record.surface ~= existing
+        or existing.spec ~= WARBAND_CARD_SPEC
+        or (record.owner and record.owner ~= state.owner)) then
         return false
     end
+
+    local surface = NS.Surface.Attach(card, WARBAND_CARD_SPEC)
     if not surface then return false end
 
     record = record or {}
     record.surface = surface
-    record.owner = state.skinOwner
+    record.owner = state.owner
     DeepWindows.warbandSurfaces[card] = record
     state.cardSurfaces[card] = surface
-    Fade(state, SafeField(card, "NameBackground"))
-    Fade(state, SafeField(card, "Border"))
+    Fade(state, Field(card, "NameBackground"))
+    Fade(state, Field(card, "Border"))
     return true
+end
+
+local function WarbandIcons()
+    return Path(_G.WarbandSceneJournal, "IconsFrame", "Icons")
 end
 
 local function ApplyWarbandCards(state, icons)
     if not state or not state.active then return false, "disabled" end
     if not CategoryEnabled("journal") then return true, "disabled" end
-    if IsCombatLocked() then return false, "combat" end
-    icons = icons or Path(_G.WarbandSceneJournal, "IconsFrame", "Icons")
-    if not icons or icons ~= Path(_G.WarbandSceneJournal, "IconsFrame", "Icons") then
-        return false, "missing"
-    end
-    local forEach = SafeField(icons, "ForEachFrame")
-    if type(forEach) ~= "function" then return false, "missing" end
+    if NS.IsCombatLocked() then return false, "combat" end
+    icons = icons or WarbandIcons()
+    if not icons or icons ~= WarbandIcons() then return false, "missing" end
 
-    local count = 0
-    local decorated = 0
-    local ok, message = pcall(forEach, icons, function(card)
+    local count, decorated = 0, 0
+    local visited = Kit.ForEachRow(icons, function(card)
         count = count + 1
         if SkinWarbandCard(state, card) then decorated = decorated + 1 end
-        return count >= 64
+        return count >= WARBAND_CARD_LIMIT
     end)
-    if not ok then
-        Report("warband enumeration", message)
-        return false, "failed"
-    end
+    if not visited then return false, "missing" end
     return true, decorated > 0 and "applied" or "waiting"
 end
 
-local function RefreshWarbandOwners(icons)
-    if IsCombatLocked() or icons ~= Path(_G.WarbandSceneJournal, "IconsFrame", "Icons") then
-        return
-    end
-    for _, state in pairs(DeepWindows.owners) do
-        if state.active and CategoryEnabled("journal") then
-            ApplyWarbandCards(state, icons)
-        end
-    end
-end
-
 function DeepWindows:OnWarbandSceneUpdate()
-    RefreshWarbandOwners(Path(_G.WarbandSceneJournal, "IconsFrame", "Icons"))
+    local icons = WarbandIcons()
+    if icons then ForActiveOwners("journal", ApplyWarbandCards, icons) end
 end
 
 local function RegisterWarbandCallback(icons)
-    if not icons or DeepWindows.warbandCallbacks[icons] then return icons ~= nil end
+    if DeepWindows.warbandCallbacks[icons] then return true end
     local event = Path(_G.PagedContentFrameBaseMixin, "Event", "OnUpdate")
-    local register = SafeField(icons, "RegisterCallback")
-    if not event or type(register) ~= "function" then return false end
-    local ok, message = pcall(register, icons, event,
-        DeepWindows.OnWarbandSceneUpdate, DeepWindows)
-    if not ok then
-        Report("warband callback", message)
+    if type(event) ~= "string" or not NS.Safety.Invoke(icons, "RegisterCallback",
+        event, DeepWindows.OnWarbandSceneUpdate, DeepWindows) then
         return false
     end
     DeepWindows.warbandCallbacks[icons] = event
@@ -906,7 +694,7 @@ end
 
 local function ApplyCollections(state)
     if not CategoryEnabled("journal") then return true, "disabled" end
-    local icons = Path(_G.WarbandSceneJournal, "IconsFrame", "Icons")
+    local icons = WarbandIcons()
     if not icons then return false, "missing" end
     RegisterWarbandCallback(icons)
     return ApplyWarbandCards(state, icons)
@@ -918,26 +706,23 @@ local function ApplyGenericTraits(state)
     return ApplyGenericTraitRoot(state, _G.GenericTraitFrame)
 end
 
+-- Adds one sub-apply result to the running applied/waiting counts.
+local function Tally(applied, waiting, ok, reason)
+    if ok and reason == "waiting" then return applied, waiting + 1 end
+    if ok then return applied + 1, waiting end
+    return applied, waiting
+end
+
 local function ApplyUIPanels(state)
     local attempted, applied, waiting = 0, 0, 0
     if CategoryEnabled("quest") then
         attempted = attempted + 1
-        local ok, reason = ApplyQuestAndGossip(state)
-        if ok and reason == "waiting" then
-            waiting = waiting + 1
-        elseif ok then
-            applied = applied + 1
-        end
+        applied, waiting = Tally(applied, waiting, ApplyQuestAndGossip(state))
     end
     if CategoryEnabled("inventory") then
         attempted = attempted + 1
         InstallBankHooks()
-        local ok, reason = ApplyBank(state)
-        if ok and reason == "waiting" then
-            waiting = waiting + 1
-        elseif ok then
-            applied = applied + 1
-        end
+        applied, waiting = Tally(applied, waiting, ApplyBank(state))
     end
     if attempted == 0 then return true, "disabled" end
     if applied == attempted then return true, "applied" end
@@ -992,21 +777,8 @@ local function DeferredKey(state, suffix)
     return "deep-windows:" .. tostring(state.parentOwner) .. ":" .. tostring(suffix)
 end
 
-local function CancelDeferred(state)
-    if not state then return end
-    for key in pairs(state.deferred) do
-        if NS.CombatGate and type(NS.CombatGate.Cancel) == "function" then
-            NS.CombatGate.Cancel(key)
-        end
-        state.deferred[key] = nil
-    end
-end
-
 local function DeferApply(state, suffix)
-    if not state or not state.active or not NS.CombatGate
-        or type(NS.CombatGate.RunOrDefer) ~= "function" then
-        return false, "combat"
-    end
+    if not state or not state.active then return false, "combat" end
     local parentOwner = state.parentOwner
     local key = DeferredKey(state, suffix)
     state.deferred[key] = true
@@ -1020,59 +792,45 @@ local function DeferApply(state, suffix)
 end
 
 local function ApplyAddonForOwners(spec)
-    if not spec then return end
-    if IsCombatLocked() then
-        for _, state in pairs(DeepWindows.owners) do
-            if state.active and spec.relevant() then
-                DeferApply(state, "load-" .. spec.addon)
-            end
-        end
-        return
-    end
     for _, state in pairs(DeepWindows.owners) do
         if state.active and spec.relevant() then
-            local ok, applied = pcall(spec.apply, state)
-            if not ok then Report("load " .. spec.addon, applied) end
+            if NS.IsCombatLocked() then
+                DeferApply(state, "load-" .. spec.addon)
+            else
+                spec.apply(state)
+            end
         end
     end
 end
 
 local function ScheduleAddon(addon)
     if DeepWindows.waiting[addon] then return true end
-    if IsLoaded(addon) or not EventUtil
-        or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then
-        return false
-    end
+    if NS.Client.IsAddOnLoaded(addon) then return false end
     DeepWindows.waiting[addon] = true
-    local ok, message = pcall(EventUtil.ContinueOnAddOnLoaded, addon, function()
+    local scheduled = Kit.ContinueOnAddOnLoaded(addon, function()
         DeepWindows.waiting[addon] = nil
         ApplyAddonForOwners(addonSpecByName[addon])
     end)
-    if not ok then
-        DeepWindows.waiting[addon] = nil
-        Report("load " .. addon, message)
-        return false
-    end
-    return true
+    if not scheduled then DeepWindows.waiting[addon] = nil end
+    return scheduled
 end
 
 ApplyState = function(state)
     if not state or not state.active then return false, "disabled" end
-    if IsCombatLocked() then return DeferApply(state, "apply") end
+    if NS.IsCombatLocked() then return DeferApply(state, "apply") end
 
     local applied, waiting, failed = 0, 0, 0
     for index = 1, #addonSpecs do
         local spec = addonSpecs[index]
         if spec.relevant() then
-            if IsLoaded(spec.addon) or spec.ready() then
-                local ok, result, reason = pcall(spec.apply, state)
-                if ok and result and reason == "waiting" then
+            if NS.Client.IsAddOnLoaded(spec.addon) or spec.ready() then
+                local result, reason = spec.apply(state)
+                if result and reason == "waiting" then
                     waiting = waiting + 1
-                elseif ok and result then
+                elseif result then
                     applied = applied + 1
                 else
                     failed = failed + 1
-                    if not ok then Report(spec.addon, result) end
                 end
             elseif ScheduleAddon(spec.addon) then
                 waiting = waiting + 1
@@ -1088,48 +846,36 @@ ApplyState = function(state)
     return true, "applied"
 end
 
+-- Hides only warband card surfaces this owner installed and still owns.
+local function HideWarbandCards(state)
+    for card, surface in pairs(state.cardSurfaces) do
+        local record = DeepWindows.warbandSurfaces[card]
+        if NS.Registry.GetSurface(card) == surface and record and record.surface == surface
+            and record.owner == state.owner and surface.spec == WARBAND_CARD_SPEC then
+            NS.Surface.SetVisible(card, false)
+            record.owner = nil
+        end
+    end
+end
+
 local function DisableNow(state)
     if not state then return true end
     state.active = false
-    CancelDeferred(state)
-    if NS.QuestText then
-        NS.QuestText.Deactivate(_G.QuestFrame, state.skinOwner)
-        NS.QuestText.Deactivate(_G.QuestLogPopupDetailFrame, state.skinOwner)
-    end
-
-    if NS.ControlSkin and type(NS.ControlSkin.DisableOwner) == "function" then
-        pcall(NS.ControlSkin.DisableOwner, state.skinOwner)
-    end
-    if NS.IconSkin and type(NS.IconSkin.DisableOwner) == "function" then
-        pcall(NS.IconSkin.DisableOwner, state.skinOwner)
-    end
-    if NS.Surface and type(NS.Surface.SetVisible) == "function"
-        and NS.Registry and type(NS.Registry.GetSurface) == "function" then
-        for card, surface in pairs(state.cardSurfaces) do
-            local current = NS.Registry.GetSurface(card)
-            local record = DeepWindows.warbandSurfaces[card]
-            if current == surface and record and record.surface == surface
-                and record.owner == state.skinOwner
-                and SafeField(current, "spec") == WARBAND_CARD_SPEC then
-                pcall(NS.Surface.SetVisible, card, false)
-                record.owner = nil
-            end
-        end
-    end
-    if NS.Cosmetics and type(NS.Cosmetics.RestoreOwner) == "function" then
-        pcall(NS.Cosmetics.RestoreOwner, state.skinOwner)
-    end
-
+    Kit.CancelDeferred(state)
+    SetQuestText(state, false)
+    NS.ControlSkin.DisableOwner(state.owner)
+    NS.IconSkin.DisableOwner(state.owner)
+    HideWarbandCards(state)
+    NS.Cosmetics.RestoreOwner(state.owner)
     DeepWindows.owners[state.parentOwner] = nil
     return true
 end
 
 function DeepWindows.Apply(parentOwner)
-    local state
-    state, parentOwner = OwnerState(parentOwner)
-    CancelDeferred(state)
+    local state = OwnerState(parentOwner)
+    Kit.CancelDeferred(state)
     state.active = true
-    if IsCombatLocked() then return DeferApply(state, "apply") end
+    if NS.IsCombatLocked() then return DeferApply(state, "apply") end
     return ApplyState(state)
 end
 
@@ -1138,20 +884,18 @@ function DeepWindows.Disable(parentOwner)
     local state = DeepWindows.owners[parentOwner]
     if not state then return true end
 
-    CancelDeferred(state)
-    if IsCombatLocked() then
+    Kit.CancelDeferred(state)
+    if NS.IsCombatLocked() then
         state.active = false
-        if NS.CombatGate and type(NS.CombatGate.RunOrDefer) == "function" then
-            local key = DeferredKey(state, "disable")
-            state.deferred[key] = true
-            NS.CombatGate.RunOrDefer(key, function()
-                local current = DeepWindows.owners[parentOwner]
-                if current then
-                    current.deferred[key] = nil
-                    if not current.active then DisableNow(current) end
-                end
-            end)
-        end
+        local key = DeferredKey(state, "disable")
+        state.deferred[key] = true
+        NS.CombatGate.RunOrDefer(key, function()
+            local current = DeepWindows.owners[parentOwner]
+            if current then
+                current.deferred[key] = nil
+                if not current.active then DisableNow(current) end
+            end
+        end)
         return false, "combat"
     end
 

@@ -7,9 +7,7 @@ local container = C_Container
 local POOR = Enum and Enum.ItemQuality and Enum.ItemQuality.Poor or 0
 local BATCH = 12
 
-local function Number(value)
-    return Public(value) and type(value) == "number" and value == value
-end
+local Number = S.Number
 
 local function GuildRepair(cost)
     if type(CanGuildBankRepair) ~= "function" or type(GetGuildBankWithdrawMoney) ~= "function"

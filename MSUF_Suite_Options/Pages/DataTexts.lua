@@ -5,6 +5,11 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 local DEFAULT_FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
+local PLACES = 6
+-- Top, bottom, left and right preview edges, each spanning its whole side.
+local EDGE_POINTS = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" },
+    { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+
 local function ResolveMedia(kind, key)
     if type(key) ~= "string" or key == "" then return nil end
     local shared = kind == "font" and S.ResolveFont or S.ResolveTexture
@@ -20,77 +25,99 @@ local function ResolveMedia(kind, key)
     return media and media:Fetch(kind == "font" and "font" or "statusbar", key, true) or nil
 end
 
+local function Color(texture, hex, alpha)
+    local r, g, b = P.RGB(hex)
+    texture:SetVertexColor(r, g, b, alpha)
+end
+
+------------------------------------------------------------------ preview
+local function PaintPreview(view, style)
+    local fill, edges = view.fill, view.edges
+    fill:SetTexture(ResolveMedia("texture", style.backgroundTexture) or WHITE)
+    Color(fill, style.backgroundColor, style.backgroundOpacity / 100)
+    fill:SetShown(style.backgroundEnabled)
+    for i = 1, 4 do
+        local edge = edges[i]
+        Color(edge, style.borderColor, .85)
+        edge:SetShown(style.borderEnabled)
+        if i <= 2 then edge:SetHeight(style.borderSize) else edge:SetWidth(style.borderSize) end
+    end
+    Color(view.accent, style.accentColor, .9)
+    view.accent:SetShown(style.accentEnabled)
+    Color(view.divider, style.separatorColor, .8)
+    view.divider:SetSize(style.separatorSize, math.max(6, 32 - 2 * style.padding))
+    view.divider:SetShown(style.separatorEnabled)
+    local font = ResolveMedia("font", style.font) or DEFAULT_FONT
+    local flags = OUTLINES[style.textOutline] or "OUTLINE"
+    local align = ALIGN[style.textAlign] or "CENTER"
+    local half = math.floor(view.width / 2)
+    for i, label in ipairs(view.labels) do
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", view.sample, "LEFT", (i - 1) * half + style.padding + (i == 2 and style.gap / 2 or 0), 0)
+        label:SetWidth(half - 2 * style.padding - style.gap / 2)
+        label:SetJustifyH(align)
+        P.StylePreviewFont(label, font, style.fontSize, flags, style.fontRendering,
+            style.fontShadow, style.fontShadowOpacity, style.fontShadowDistance)
+        local name, value = i == 1 and Tr("Gold") or "FPS", i == 1 and "124g" or "75"
+        label:SetText((style.showLabels and ("|cff" .. style.labelColor .. name .. ": |r") or "")
+            .. "|cff" .. style.valueColor .. value .. "|r")
+    end
+end
+
+-- A sample bar (shared style, or `bar`'s own) with two example texts.
 local function Preview(ctx, body, y, width, bar)
+    local view = { width = math.min(width, 520), edges = {}, labels = {} }
     local sample = CreateFrame("Frame", nil, body)
     sample:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
-    sample:SetSize(math.min(width, 520), 32)
-    local fill = sample:CreateTexture(nil, "BACKGROUND")
-    fill:SetAllPoints(sample)
-    local edges = {}
-    for i = 1, 4 do edges[i] = sample:CreateTexture(nil, "BORDER"); edges[i]:SetTexture(WHITE) end
-    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT")
-    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT")
-    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT")
-    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT")
-    local accent = sample:CreateTexture(nil, "ARTWORK")
-    accent:SetTexture(WHITE)
-    accent:SetPoint("BOTTOMLEFT"); accent:SetPoint("BOTTOMRIGHT"); accent:SetHeight(1)
-    local divider = sample:CreateTexture(nil, "ARTWORK")
-    divider:SetTexture(WHITE)
-    divider:SetPoint("CENTER")
-    local labels = {}
+    sample:SetSize(view.width, 32)
+    view.sample = sample
+    view.fill = sample:CreateTexture(nil, "BACKGROUND")
+    view.fill:SetAllPoints(sample)
+    for i = 1, 4 do
+        local edge = sample:CreateTexture(nil, "BORDER")
+        edge:SetTexture(WHITE)
+        edge:SetPoint(EDGE_POINTS[i][1])
+        edge:SetPoint(EDGE_POINTS[i][2])
+        view.edges[i] = edge
+    end
+    view.accent = sample:CreateTexture(nil, "ARTWORK")
+    view.accent:SetTexture(WHITE)
+    view.accent:SetPoint("BOTTOMLEFT")
+    view.accent:SetPoint("BOTTOMRIGHT")
+    view.accent:SetHeight(1)
+    view.divider = sample:CreateTexture(nil, "ARTWORK")
+    view.divider:SetTexture(WHITE)
+    view.divider:SetPoint("CENTER")
     for i = 1, 2 do
         local label = sample:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         label:SetWordWrap(false)
-        labels[i] = label
+        view.labels[i] = label
     end
     M.TrackRefresh(ctx, function()
-        local style = P.Suite.DataTextEffectiveStyle(S.Config(ID), bar or 1)
-        local function Color(texture, hex, alpha)
-            local r, g, b = P.RGB(hex)
-            texture:SetVertexColor(r, g, b, alpha)
-        end
-        local texture = ResolveMedia("texture", style.backgroundTexture)
-        fill:SetTexture(texture or WHITE)
-        Color(fill, style.backgroundColor, style.backgroundOpacity / 100)
-        fill:SetShown(style.backgroundEnabled)
-        for i = 1, 4 do
-            local edge = edges[i]
-            Color(edge, style.borderColor, .85)
-            edge:SetShown(style.borderEnabled)
-            if i <= 2 then edge:SetHeight(style.borderSize) else edge:SetWidth(style.borderSize) end
-        end
-        Color(accent, style.accentColor, .9)
-        accent:SetShown(style.accentEnabled)
-        Color(divider, style.separatorColor, .8)
-        divider:SetSize(style.separatorSize, math.max(6, 32 - 2 * style.padding))
-        divider:SetShown(style.separatorEnabled)
-        local font = ResolveMedia("font", style.font) or DEFAULT_FONT
-        local flags = OUTLINES[style.textOutline] or "OUTLINE"
-        local align = ALIGN[style.textAlign] or "CENTER"
-        local half = math.floor(math.min(width, 520) / 2)
-        for i, label in ipairs(labels) do
-            label:ClearAllPoints()
-            label:SetPoint("LEFT", sample, "LEFT", (i - 1) * half + style.padding + (i == 2 and style.gap / 2 or 0), 0)
-            label:SetWidth(half - 2 * style.padding - style.gap / 2)
-            label:SetJustifyH(align)
-            P.StylePreviewFont(label, font, style.fontSize, flags, style.fontRendering,
-                style.fontShadow, style.fontShadowOpacity, style.fontShadowDistance)
-            local name, value = i == 1 and "Gold" or "FPS", i == 1 and "124g" or "75"
-            label:SetText((style.showLabels and ("|cff" .. style.labelColor .. name .. ": |r") or "")
-                .. "|cff" .. style.valueColor .. value .. "|r")
-        end
+        PaintPreview(view, P.Suite.DataTextEffectiveStyle(S.Config(ID), bar or 1))
     end)
     return y - 44
 end
 
+------------------------------------------------------------------ bars
 local function NextBar()
-    for i = 1, 3 do if not P.Get(ID, "bar" .. i .. "Enabled") then return i end end
+    for i = 1, 3 do
+        if not P.Get(ID, "bar" .. i .. "Enabled") then return i end
+    end
 end
+
+local function HasEmptyPlace(prefix)
+    for slot = 1, PLACES do
+        if P.Get(ID, prefix .. "Slot" .. slot) == 1 then return true end
+    end
+    return false
+end
+
+-- Fills the first empty place with a source the bar does not show yet.
 local function AddPlace(bar)
     local prefix, used = "bar" .. bar, {}
-    for slot = 1, 6 do used[P.Get(ID, prefix .. "Slot" .. slot)] = true end
-    for slot = 1, 6 do
+    for slot = 1, PLACES do used[P.Get(ID, prefix .. "Slot" .. slot)] = true end
+    for slot = 1, PLACES do
         local key = prefix .. "Slot" .. slot
         if P.Get(ID, key) == 1 then
             for choice = 2, #P.Suite.DataTextSources do
@@ -100,6 +127,7 @@ local function AddPlace(bar)
         end
     end
 end
+
 local function OpenChoice(button, bar, slot)
     local key = "bar" .. bar .. "Slot" .. slot
     if MenuUtil and type(MenuUtil.CreateContextMenu) == "function" then
@@ -114,50 +142,44 @@ local function OpenChoice(button, bar, slot)
     -- The dropdown rows below remain the primary picker on older clients.
     P.Set(ID, key, P.Get(ID, key) % #P.Suite.DataTextSources + 1)
 end
-local function BarSection(ctx, b, bar)
-    local prefix, sectionId = "bar" .. bar, PAGE .. "_bar" .. bar
-    local body = b:CollapsibleSection(sectionId, Tr("Bar " .. bar), 120, bar == 1)
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
-    local toggle = P.W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
-    M.BindBoolWidget(ctx, toggle,
-        function() return P.Get(ID, prefix .. "Enabled") == true end,
-        function(value) P.Set(ID, prefix .. "Enabled", value == true) end,
-        P.Meta(PAGE, ID, prefix .. "Enabled", "setting", sectionId))
-    M.TrackRefresh(ctx, function()
-        P.W.SetControlEnabled(toggle, not P.Combat())
-    end)
-    local y = -18
-    local help = P.Text(body, "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear.", 16, y, width)
-    y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 10
+
+-- One tile per place; a click opens the source menu.
+local function BuildPlaces(ctx, body, bar, sectionId, y, width)
+    local prefix = "bar" .. bar
     local gap = 6
-    local tileWidth = math.floor((width - 5 * gap) / 6)
-    for slot = 1, 6 do
-        local index = slot
+    local tileWidth = math.floor((width - (PLACES - 1) * gap) / PLACES)
+    local buttons = {}
+    for slot = 1, PLACES do
         local button = T.Button(body, "", tileWidth, 29)
         button:SetPoint("TOPLEFT", body, "TOPLEFT", 16 + (slot - 1) * (tileWidth + gap), y)
         button:SetScript("OnClick", function(self)
-            if not P.Combat() then OpenChoice(self, bar, index) end
+            if not P.Combat() then OpenChoice(self, bar, slot) end
         end)
         if M.RegisterControlMetadata then
             M.RegisterControlMetadata(button, P.Meta(PAGE, ID, prefix .. "Slot" .. slot .. ".preview", "action", sectionId),
                 "Choose data for place " .. slot, "button")
         end
-        M.TrackRefresh(ctx, function()
-            local choice = P.Get(ID, prefix .. "Slot" .. index)
-            button:SetText(Tr(P.Suite.DataTextSources[choice] or "None"))
-            button:SetEnabled(S.Availability(ID) and P.Get(ID, "enabled")
-                and P.Get(ID, prefix .. "Enabled") and not P.Combat())
-        end)
+        buttons[slot] = button
     end
-    y = y - 43
+    M.TrackRefresh(ctx, function()
+        local enabled = S.Availability(ID) and P.Get(ID, "enabled") and P.Get(ID, prefix .. "Enabled")
+            and not P.Combat()
+        for slot = 1, PLACES do
+            local choice = P.Get(ID, prefix .. "Slot" .. slot)
+            buttons[slot]:SetText(Tr(P.Suite.DataTextSources[choice] or "None"))
+            buttons[slot]:SetEnabled(enabled)
+        end
+    end)
+    return y - 43
+end
+
+local function BuildBarActions(ctx, body, bar, sectionId, y, width)
+    local prefix = "bar" .. bar
     local buttonWidth = math.floor((width - 12) / 3)
     P.Button(ctx, body, "Add place", 16, y, buttonWidth,
         function() AddPlace(bar) end,
-        function()
-            if not P.Get(ID, prefix .. "Enabled") then return false end
-            for slot = 1, 6 do if P.Get(ID, prefix .. "Slot" .. slot) == 1 then return true end end
-            return false
-        end, P.Meta(PAGE, ID, prefix .. ".addPlace", "action", sectionId))
+        function() return P.Get(ID, prefix .. "Enabled") and HasEmptyPlace(prefix) end,
+        P.Meta(PAGE, ID, prefix .. ".addPlace", "action", sectionId))
     P.Button(ctx, body, "Move in Edit Mode", 22 + buttonWidth, y, buttonWidth,
         function() S.OpenEditMode(ID, prefix) end,
         function() return S.Status(ID) == "Active" and P.Get(ID, prefix .. "Enabled") end,
@@ -166,9 +188,12 @@ local function BarSection(ctx, b, bar)
         function() P.Set(ID, prefix .. "Enabled", false) end,
         function() return P.Get(ID, prefix .. "Enabled") end,
         P.Meta(PAGE, ID, prefix .. ".hide", "action", sectionId))
-    y = y - 43
-    y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix), y, width, nil, sectionId)
-    y = y - 16
+    return y - 43
+end
+
+-- Switching a bar to its own style starts from the current shared settings.
+local function BuildBarStyle(ctx, body, bar, sectionId, y, width)
+    local prefix = "bar" .. bar
     local heading = P.Text(body, Tr("Bar styling"), 16, y, width, T.colors.text)
     y = y - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
     local helpStyle = P.Text(body,
@@ -194,8 +219,42 @@ local function BarSection(ctx, b, bar)
     y = P.RuleGrid(ctx, body, PAGE, ID, styleRules, y, width, nil, sectionId)
     y = Preview(ctx, body, y - 8, width, bar)
     P.AttachRuleColors(body, "Bar " .. bar, ID, styleRules)
+    return y
+end
+
+local function BarSection(ctx, b, bar)
+    local prefix, sectionId = "bar" .. bar, PAGE .. "_bar" .. bar
+    local body = b:CollapsibleSection(sectionId, Tr("Bar " .. bar), 120, bar == 1)
+    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+    local toggle = P.W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
+    M.BindBoolWidget(ctx, toggle,
+        function() return P.Get(ID, prefix .. "Enabled") == true end,
+        function(value) P.Set(ID, prefix .. "Enabled", value == true) end,
+        P.Meta(PAGE, ID, prefix .. "Enabled", "setting", sectionId))
+    M.TrackRefresh(ctx, function()
+        P.W.SetControlEnabled(toggle, not P.Combat())
+    end)
+    local y = -18
+    local help = P.Text(body, "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear.",
+        16, y, width)
+    y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 10
+    y = BuildPlaces(ctx, body, bar, sectionId, y, width)
+    y = BuildBarActions(ctx, body, bar, sectionId, y, width)
+    y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix), y, width, nil, sectionId)
+    local heading = P.Text(body, Tr("Load Conditions"), 16, y - 12, width, T.colors.text)
+    y = y - 12 - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
+    local loadHelp = P.Text(body,
+        "Hide this bar when any selected condition is true. The health condition uses your character's health. At full health the bar is transparent but can still receive clicks. Edit Mode shows it for placement.",
+        16, y, width)
+    y = y - math.max(14, math.ceil(loadHelp:GetStringHeight() or 14)) - 8
+    y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix .. "Load"), y, width, nil, sectionId)
+    y = BuildBarStyle(ctx, body, bar, sectionId, y - 16, width)
+    P.AttachSectionReset(ctx, body, "Bar " .. bar, function()
+        return P.ResetPrefix(ID, prefix)
+    end)
     P.FinishBody(b, body, y - 12)
 end
+
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
     P.ModuleCard(ctx, b, PAGE, ID, {
@@ -205,9 +264,6 @@ local function Build(ctx)
         end, function() return S.Availability(ID) and P.Get(ID, "enabled") and NextBar() ~= nil end, key = "addBar" },
         { "Move first bar", function() S.OpenEditMode(ID, "bar1") end,
           function() return S.Status(ID) == "Active" and P.Get(ID, "bar1Enabled") end, key = "move" },
-        { "Reset module", function()
-            P.WithHistory("Reset DataTexts", "suite:dataTexts.reset", function() return S.Reset(ID) end)
-        end, function() return S.Availability(ID) end, key = "reset" },
     })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_appearance", Tr("Shared bar style"),
         P.SectionRules(ID, "appearance"), {
@@ -227,5 +283,6 @@ local function Build(ctx)
     end
     for bar = 1, 3 do BarSection(ctx, b, bar) end
 end
+
 P.RegisterPage({ key = PAGE, label = "DataTexts", title = "DataTexts", build = Build, icon = { 5, 2 },
     aliases = { "datatext", "datatexts", "data bars", "info bar", "system info" } })

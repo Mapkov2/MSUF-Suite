@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 -- Pooled bar rows. Styling (fonts, anchors, textures) runs only when the
 -- style generation changes; painting writes content, memoizes plain values
 -- and hands secret values straight to C sinks (StatusBar, FontString,
@@ -97,8 +97,8 @@ end
 
 function D.ClearMemo(row)
     row.rank, row.rawName, row.class, row.iconKey, row.spellID = nil, nil, nil, nil, nil
-    row.mA, row.mB, row.mP, row.mF, row.mO, row.mS, row.mMax, row.mVal, row.full, row.mDeath = nil, nil, nil, nil, nil,
-        nil, nil, nil, nil, nil
+    row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = nil, nil, nil, nil, nil, nil
+    row.mMax, row.mVal, row.full, row.mDeath = nil, nil, nil, nil
 end
 
 -- Gradient textures are allocated once per used direction, and only restyled
@@ -282,7 +282,9 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
     local percent
     if alwaysPercent or style.percent then
         denominator = Num(denominator)
-        if Public(total) and Public(denominator) and denominator > 0 then percent = floor(total / denominator * 100 + .5) end
+        if Public(total) and Public(denominator) and denominator > 0 then
+            percent = floor(total / denominator * 100 + .5)
+        end
     end
     local order, separator = style.valueOrder or 1, style.valueSeparator or 2
     local allPlain = Public(total) and (countOnly or Public(rate))
@@ -345,8 +347,7 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
         if alwaysPercent or style.percent then
             denominator = Num(denominator)
             if Public(total) and Public(denominator) and denominator > 0 then
-                percent = floor(total / denominator * 100 +
-                    .5)
+                percent = floor(total / denominator * 100 + .5)
             end
         end
         if a == row.mA and b == row.mB and percent == row.mP and fmt == row.mF then return end

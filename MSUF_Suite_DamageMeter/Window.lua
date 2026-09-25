@@ -151,8 +151,7 @@ function D.StyleHeader(win)
         if previous then
             button:SetPoint("RIGHT", previous, "LEFT", -2, 0)
         else
-            button:SetPoint("RIGHT", win.header,
-                "RIGHT", -3, 0)
+            button:SetPoint("RIGHT", win.header, "RIGHT", -3, 0)
         end
         previous = button
         if button.iconScale then button.icon:SetSize(size * button.iconScale, size * button.iconScale) end
@@ -460,8 +459,8 @@ end
 local function Round(value) return floor(value + .5) end
 function D.SaveGeometry(win, sized)
     local frame, keys = win.frame, D.KEYS[win.index]
-    local right, bottom, parentRight, parentBottom = frame:GetRight(), frame:GetBottom(), UIParent:GetRight(),
-        UIParent:GetBottom()
+    local right, bottom = frame:GetRight(), frame:GetBottom()
+    local parentRight, parentBottom = UIParent:GetRight(), UIParent:GetBottom()
     if not (D.Plain(right) and D.Plain(bottom) and D.Plain(parentRight) and D.Plain(parentBottom)) then
         D.PlaceWindow(win)
         return

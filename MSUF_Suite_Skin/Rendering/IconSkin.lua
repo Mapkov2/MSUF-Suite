@@ -11,38 +11,13 @@ NS.IconSkin = IconSkin
 
 local listenerOwner = {}
 local listenerRegistered = false
+local emptySpec = {}
 
-local function WeakSet()
-    return setmetatable({}, { __mode = "k" })
-end
-
-local function Accessible(value)
-    if type(issecretvalue) == "function" and issecretvalue(value) then
-        if type(canaccessvalue) ~= "function" or not canaccessvalue(value) then
-            return nil
-        end
-    end
-    return value
-end
-
+-- true, false, or nil when unknown (missing method, forbidden or secret).
 local function IsShown(region)
-    if not region or type(region.IsShown) ~= "function" then return nil end
-    local ok, shown = pcall(region.IsShown, region)
-    if not ok then return nil end
-    shown = Accessible(shown)
+    local shown = NS.Safety.Read(region, "IsShown")
     if shown == nil then return nil end
     return shown == true
-end
-
-local function ReadVertexColor(region)
-    if not region or type(region.GetVertexColor) ~= "function" then return nil end
-    local ok, r, g, b, a = pcall(region.GetVertexColor, region)
-    if not ok then return nil end
-    r, g, b, a = Accessible(r), Accessible(g), Accessible(b), Accessible(a)
-    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
-        return nil
-    end
-    return r, g, b, type(a) == "number" and a or 1
 end
 
 local function SetLineColor(line, r, g, b, a)
@@ -54,6 +29,8 @@ local function SetLineColor(line, r, g, b, a)
     end
 end
 
+-- Places the four border lines (top, bottom, left, right) around icon.
+-- Thickness is clamped to 1..3 and padding to 0..3 whole pixels.
 local function AnchorLines(lines, icon, thickness, padding)
     if not lines or not icon then return end
     thickness = math.max(1, math.min(3, math.floor((tonumber(thickness) or 1) + 0.5)))
@@ -75,21 +52,22 @@ local function AnchorLines(lines, icon, thickness, padding)
     right:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", padding, -extent)
     right:SetWidth(thickness)
 end
+-- Shared with the options preview so it draws the same border.
+IconSkin.AnchorLines = AnchorLines
 
 local function RefreshState(state)
     if not state or NS.IsCombatLocked() then return false end
-    local style = (NS.DB and NS.DB.theme and NS.DB.theme.iconBorderStyle)
-        or NS.Defaults.theme.iconBorderStyle
-    local iconVisible = IsShown(state.icon)
-    local visible = state.enabled ~= false and style ~= "off" and iconVisible ~= false
+    local theme = NS.DB and NS.DB.theme or NS.Defaults.theme
+    local style = theme.iconBorderStyle or NS.Defaults.theme.iconBorderStyle
+    local visible = state.enabled ~= false and style ~= "off" and IsShown(state.icon) ~= false
     local r, g, b, a
+    -- The faded native border still carries Blizzard's live quality color.
     if visible and style == "quality" and IsShown(state.nativeBorder) == true then
-        r, g, b, a = ReadVertexColor(state.nativeBorder)
+        r, g, b, a = NS.Safety.ReadColor(state.nativeBorder, "GetVertexColor")
     end
     if not r then
         r, g, b, a = NS.Theme.GetColor("iconBorder")
     end
-    local theme = NS.DB and NS.DB.theme or NS.Defaults.theme
     AnchorLines(state.lines, state.icon, theme.iconBorderThickness, theme.iconBorderPadding)
     a = a * (tonumber(theme.iconBorderOpacity) or 1)
     for index = 1, #state.lines do
@@ -114,20 +92,20 @@ local function EnsureListener()
 end
 
 local function CreateLines(button, icon)
-    local top = button:CreateTexture(nil, "OVERLAY", nil, 1)
-    local bottom = button:CreateTexture(nil, "OVERLAY", nil, 1)
-    local left = button:CreateTexture(nil, "OVERLAY", nil, 1)
-    local right = button:CreateTexture(nil, "OVERLAY", nil, 1)
-
-    local lines = { top, bottom, left, right }
+    local lines = {
+        button:CreateTexture(nil, "OVERLAY", nil, 1),
+        button:CreateTexture(nil, "OVERLAY", nil, 1),
+        button:CreateTexture(nil, "OVERLAY", nil, 1),
+        button:CreateTexture(nil, "OVERLAY", nil, 1),
+    }
     AnchorLines(lines, icon, 1, 0)
     return lines
 end
 
 function IconSkin.Apply(button, owner, spec)
-    spec = spec or {}
+    spec = spec or emptySpec
     if not button or NS.IsCombatLocked() then return nil, "combat" end
-    if not NS.Safety or not NS.Safety.CanCreateRegions(button, spec.allowImplicitProtected) then
+    if not NS.Safety.CanCreateRegions(button, spec.allowImplicitProtected) then
         return nil, "protected"
     end
     local icon = spec.icon or button.Icon or button.icon or button.IconTexture
@@ -140,29 +118,21 @@ function IconSkin.Apply(button, owner, spec)
     if state and state.enabled ~= false and state.owner ~= owner then
         return nil, "already owned"
     end
+    if not NS.Cosmetics.Fade(nativeBorder, owner) then return nil, "native" end
     if not state then
-        local faded = NS.Cosmetics.Fade(nativeBorder, owner)
-        if not faded then return nil, "native" end
         state = {
             button = button,
-            icon = icon,
-            nativeBorder = nativeBorder,
             lines = CreateLines(button, icon),
-            owner = owner,
-            enabled = true,
         }
         IconSkin.states[button] = state
-    else
-        local faded = NS.Cosmetics.Fade(nativeBorder, owner)
-        if not faded then return nil, "native" end
-        state.icon = icon
-        state.nativeBorder = nativeBorder
-        state.owner = owner
-        state.enabled = true
     end
+    state.icon = icon
+    state.nativeBorder = nativeBorder
+    state.owner = owner
+    state.enabled = true
     local owned = IconSkin.owners[owner]
     if not owned then
-        owned = WeakSet()
+        owned = setmetatable({}, { __mode = "k" })
         IconSkin.owners[owner] = owned
     end
     owned[button] = true

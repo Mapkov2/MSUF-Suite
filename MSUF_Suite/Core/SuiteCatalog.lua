@@ -91,7 +91,9 @@ function Build.Add(id, rule, section, sectionTitle, opts)
     local spec = assert(catalog[id], "unknown suite module " .. tostring(id))
     assert(not spec.rules[rule.key], id .. "." .. rule.key .. " declared twice")
     rule.section, rule.sectionTitle = section, sectionTitle
-    if opts then for field, value in pairs(opts) do rule[field] = value end end
+    if opts then
+        for field, value in pairs(opts) do rule[field] = value end
+    end
     spec.controls[#spec.controls + 1] = rule
     spec.rules[rule.key] = rule
     return rule

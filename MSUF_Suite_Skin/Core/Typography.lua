@@ -16,6 +16,15 @@ local Typography = {
 }
 NS.Typography = Typography
 
+-- Deferred jobs resolve the current entry points when they run.
+local function ApplyConfigured()
+    Typography.ApplyConfigured()
+end
+
+local function Restore()
+    Typography.Restore()
+end
+
 NS.FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" }
 
 local faceLabels = {
@@ -43,10 +52,7 @@ local function IsLoaded(addon)
     if not C_AddOns or type(C_AddOns.IsAddOnLoaded) ~= "function" then
         return false
     end
-    local ok, first, second = pcall(C_AddOns.IsAddOnLoaded, addon)
-    if not ok then
-        return false
-    end
+    local first, second = C_AddOns.IsAddOnLoaded(addon)
     return second == true or (second == nil and first == true)
 end
 
@@ -155,11 +161,9 @@ local function IsSpecial(name)
 end
 
 local function ReadFont(object)
-    if not object or type(object.GetFont) ~= "function" then
-        return nil
-    end
-    local ok, path, height, flags = pcall(object.GetFont, object)
-    if not ok or type(path) ~= "string" or type(height) ~= "number" or height <= 0 then
+    local path, height, flags = NS.Safety.Call(object, "GetFont")
+    if not NS.Safety.Public(path) or not NS.Safety.Public(height)
+        or type(path) ~= "string" or type(height) ~= "number" or height <= 0 then
         return nil
     end
     return path, height, flags or ""
@@ -182,14 +186,11 @@ local function ApplyObject(object, path, states)
         state = { originalPath = currentPath }
         states[object] = state
     end
-    local ok, result = pcall(object.SetFont, object, path, height, flags)
-    if not ok or result == false then
-        pcall(object.SetFont, object, currentPath, height, flags)
-        return false
-    end
-    local appliedPath = ReadFont(object)
+    -- SetFont returns false for a file it cannot load; the path read back
+    -- confirms that the object really switched.
+    local appliedPath = object:SetFont(path, height, flags) ~= false and ReadFont(object) or nil
     if NormalizePath(appliedPath) ~= NormalizePath(path) then
-        pcall(object.SetFont, object, currentPath, height, flags)
+        object:SetFont(currentPath, height, flags)
         return false
     end
     state.lastPath = appliedPath
@@ -201,8 +202,7 @@ local function RestoreObject(object, state)
     if not currentPath or NormalizePath(currentPath) ~= NormalizePath(state.lastPath) then
         return false
     end
-    local ok, result = pcall(object.SetFont, object, state.originalPath, height, flags)
-    return ok and result ~= false
+    return object:SetFont(state.originalPath, height, flags) ~= false
 end
 
 local function RestoreTracked(states)
@@ -223,11 +223,8 @@ local function BlizzardFontSet()
 end
 
 local function ApplyFontObjects(path)
-    if type(GetFonts) ~= "function" then
-        return 0
-    end
-    local ok, names = pcall(GetFonts)
-    if not ok or type(names) ~= "table" then
+    local names = type(GetFonts) == "function" and GetFonts() or nil
+    if type(names) ~= "table" then
         return 0
     end
     local allowed = BlizzardFontSet()
@@ -294,17 +291,12 @@ local function ScheduleLateFonts()
         local addon = loadOnDemandOwners[index]
         if not IsLoaded(addon) and not Typography.waiting[addon] then
             Typography.waiting[addon] = true
-            local ok = pcall(EventUtil.ContinueOnAddOnLoaded, addon, function()
+            EventUtil.ContinueOnAddOnLoaded(addon, function()
                 Typography.waiting[addon] = nil
                 if NS.DB and NS.DB.enabled and NS.DB.typography.enabled then
-                    NS.CombatGate.RunOrDefer("typography:late", function()
-                        Typography.ApplyConfigured()
-                    end)
+                    NS.CombatGate.RunOrDefer("typography:late", ApplyConfigured)
                 end
             end)
-            if not ok then
-                Typography.waiting[addon] = nil
-            end
         end
     end
 end
@@ -315,16 +307,11 @@ local function ScheduleStartupSettle()
         return
     end
     Typography.startupSettleScheduled = true
-    local ok = pcall(EventUtil.ContinueAfterAllEvents, function()
+    EventUtil.ContinueAfterAllEvents(function()
         if NS.DB and NS.DB.enabled and NS.DB.typography.enabled then
-            NS.CombatGate.RunOrDefer("typography:startup-settle", function()
-                Typography.ApplyConfigured()
-            end)
+            NS.CombatGate.RunOrDefer("typography:startup-settle", ApplyConfigured)
         end
     end, "PLAYER_ENTERING_WORLD")
-    if not ok then
-        Typography.startupSettleScheduled = false
-    end
 end
 
 function Typography.ApplyConfigured()
@@ -332,9 +319,7 @@ function Typography.ApplyConfigured()
         return false, "uninitialized"
     end
     if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer("typography:apply", function()
-            Typography.ApplyConfigured()
-        end)
+        NS.CombatGate.RunOrDefer("typography:apply", ApplyConfigured)
         return false, "combat"
     end
     if not NS.DB.enabled or not NS.DB.typography.enabled then
@@ -371,9 +356,7 @@ end
 
 function Typography.Restore()
     if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer("typography:restore", function()
-            Typography.Restore()
-        end)
+        NS.CombatGate.RunOrDefer("typography:restore", Restore)
         return false, "combat"
     end
     local restored = RestoreTracked(Typography.fontStates)

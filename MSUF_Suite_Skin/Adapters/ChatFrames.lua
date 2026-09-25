@@ -12,6 +12,11 @@ local Field = NS.Safety.Field
 local Call = NS.Safety.Call
 local Public = NS.Safety.Public
 
+-- Exactly one boolean, also for a missing target (Field returns no value then).
+local function HasMethod(target, name)
+    return type(target) == "table" and type(target[name]) == "function"
+end
+
 local REFRESH_KEY = "chat-frames:refresh"
 local BUILTIN_CHAT_WINDOWS = 10
 local MAX_CHAT_FRAMES = 64
@@ -179,7 +184,7 @@ local function ApplyTextRole(fontString, textState)
 end
 
 local function SetTextRole(state, fontString, role, recapture)
-    if type(Field(fontString, "SetTextColor")) ~= "function" then return false end
+    if not HasMethod(fontString, "SetTextColor") then return false end
     local r, g, b, a = ReadTextColor(fontString)
     if not r then return false end
     local textState = state.textStates[fontString]
@@ -198,7 +203,7 @@ end
 
 local function RefreshTextColors(state)
     for fontString, textState in pairs(state.textStates) do
-        if type(Field(fontString, "SetTextColor")) == "function" then
+        if HasMethod(fontString, "SetTextColor") then
             ApplyTextRole(fontString, textState)
         end
     end
@@ -220,7 +225,7 @@ local function TrackTexture(state, texture, role, recapture)
     if not texture then return false end
     if not state.textureCaptured[texture] then
         state.textureCaptured[texture] = true
-        if type(Field(texture, "IsDesaturated")) == "function" then
+        if HasMethod(texture, "IsDesaturated") then
             state.nativeDesaturation[texture] = Call(texture, "IsDesaturated") == true
         end
     end
@@ -346,7 +351,7 @@ SkinEditBox = function(state, editBox, recapture)
     TrackSuffixes(state, editBox, editBoxFocusSuffixes, "active", recapture)
     TrackButtonTextures(state, NamedRegion(editBox, "Language"),
         "checkmark", "pressed", "hover")
-    if not hookedEditBoxes[editBox] and type(Field(editBox, "UpdateHeader")) == "function" then
+    if not hookedEditBoxes[editBox] and HasMethod(editBox, "UpdateHeader") then
         hooksecurefunc(editBox, "UpdateHeader", OnEditBoxHeader)
         hookedEditBoxes[editBox] = true
     end

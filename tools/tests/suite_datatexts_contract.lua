@@ -62,6 +62,16 @@ Load("Bootstrap")
 Load("DataTexts")
 local M = assert(S.instances.dataTexts)
 assert(not M.bars[1] and W.Pending() == 0, "dormant DataTexts allocated a visible bar or timer")
+-- The shared data timer reuses one task table per owner for every tick.
+local probeTicks = 0
+local function Probe() probeTicks = probeTicks + 1 end
+local firstTask = S.ScheduleDataTick("probe", 1, Probe)
+assert(S.ScheduleDataTick("probe", 1, Probe) == firstTask, "a data tick allocated a new task table")
+W.Advance(1)
+assert(probeTicks == 1 and S.ScheduleDataTick("probe", 1, Probe) == firstTask, "a rescheduled tick allocated")
+firstTask:Cancel()
+W.Advance(1)
+assert(probeTicks == 1 and W.Pending() == 0, "a cancelled data tick still fired or kept its timer")
 local defaultLook = flavor == "Forever" and 3 or 2
 assert(S.Config("chat").look == defaultLook
     and S.Config("damageMeter").look == defaultLook
@@ -184,10 +194,12 @@ assert(S.states.dataTexts.active and M.bars[1].frame:IsShown()
     "starter bar did not render its selected sources")
 assert(reads.fps == before and W.Pending() == 1,
     "minimap and DataTexts did not reuse the FPS sample and timer")
+local fpsRecord = M.values.fps
 fps = 40
 W.Advance(2)
 assert(reads.fps == before + 1 and M.bars[1].slots[3].text == "FPS: 40" and W.Pending() == 1,
     "shared timer did not read FPS once for both displays")
+assert(M.values.fps == fpsRecord, "a changed sample allocated a new value record")
 local bar = M.bars[1]
 local textureWrites, fontWrites = 0, 0
 local setTexture, setFont = bar.background.SetTexture, bar.slots[1].label.SetFont
@@ -270,6 +282,17 @@ assert(W.Pending() == 0, "hidden bars kept a sampled data timer")
 W.Fire(M.bars[1].frame, "OnEnter")
 assert(M.bars[1].frame.alpha == 1 and W.Pending() == 1,
     "mouse entry did not resume sampled data")
+local rebinds, rebind = 0, M.Rebind
+M.Rebind = function(...) rebinds = rebinds + 1; return rebind(...) end
+M.bars[1].frame.mouseOver = true
+W.Fire(M.bars[1].slots[1], "OnEnter")
+W.Fire(M.bars[1].slots[1], "OnLeave")
+W.Fire(M.bars[1].slots[2], "OnEnter")
+W.Fire(M.bars[1].slots[2], "OnLeave")
+M.bars[1].frame.mouseOver = nil
+M.Rebind = rebind
+assert(rebinds == 0 and M.bars[1].frame.alpha == 1 and W.Pending() == 1,
+    "moving between slots of a hovered bar rebound its data sources")
 W.Fire(M.bars[1].frame, "OnLeave")
 assert(M.bars[1].frame.alpha == 0 and W.Pending() == 0,
     "mouse exit did not cancel sampled data")

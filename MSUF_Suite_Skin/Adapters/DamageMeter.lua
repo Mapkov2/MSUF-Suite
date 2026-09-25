@@ -11,6 +11,11 @@ NS.DamageMeterSkin = DamageMeterSkin
 
 local Field = NS.Safety.Field
 
+-- Exactly one boolean, also for a missing target (Field returns no value then).
+local function HasMethod(target, name)
+    return type(target) == "table" and type(target[name]) == "function"
+end
+
 local ROW_SPEC = {
     role = "card", shape = "continuous", radius = 4, inset = 0, listItem = true,
     allowImplicitProtected = true,
@@ -93,7 +98,7 @@ end
 -- SetMinimized is an instance method of each exact session window.
 local function HookWindow(window)
     if DamageMeterSkin.hookedWindows[window]
-        or type(Field(window, "SetMinimized")) ~= "function" then
+        or not HasMethod(window, "SetMinimized") then
         return
     end
     hooksecurefunc(window, "SetMinimized", OnWindowMinimized)
@@ -115,12 +120,12 @@ end
 local function RegisterScrollBox(state, scrollBox)
     local event = InitializedFrameEvent()
     if not scrollBox or not event or state.scrollBoxes[scrollBox]
-        or type(Field(scrollBox, "RegisterCallback")) ~= "function" then
+        or not HasMethod(scrollBox, "RegisterCallback") then
         return false
     end
     scrollBox:RegisterCallback(event, OnRowInitialized, state)
     state.scrollBoxes[scrollBox] = true
-    if type(Field(scrollBox, "ForEachFrame")) == "function" and not NS.IsCombatLocked() then
+    if HasMethod(scrollBox, "ForEachFrame") and not NS.IsCombatLocked() then
         scrollBox:ForEachFrame(state.skinRow)
     end
     return true
@@ -154,7 +159,7 @@ local function SkinSessionWindow(state, window)
 end
 
 local function SkinAllWindows(frame, state)
-    if type(Field(frame, "ForEachSessionWindow")) == "function" then
+    if HasMethod(frame, "ForEachSessionWindow") then
         frame:ForEachSessionWindow(function(window) SkinSessionWindow(state, window) end)
         return
     end
@@ -184,7 +189,7 @@ function DamageMeterSkin.Disable(_, owner)
     local event = InitializedFrameEvent()
     if event then
         for scrollBox in pairs(state.scrollBoxes) do
-            if type(Field(scrollBox, "UnregisterCallback")) == "function" then
+            if HasMethod(scrollBox, "UnregisterCallback") then
                 scrollBox:UnregisterCallback(event, state)
             end
         end

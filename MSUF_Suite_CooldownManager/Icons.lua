@@ -103,9 +103,7 @@ local function CreateIcon(parent, pingable)
     end
     icon.tex = S.CreateTexture(icon, nil, "ARTWORK")
     icon.cd = NewCooldown(icon)
-    local edges = {}
-    for i = 1, 4 do edges[i] = S.CreateTexture(icon, nil, "OVERLAY", nil, 7) end
-    icon.edges = edges
+    icon.edges = K.NewEdges(icon, 7)
     -- Stacks and the keybind sit on their own frame above the swipe and the
     -- glows; the countdown is the swipe's own text (see Texts).
     local over = S.CreateFrame("Frame", nil, icon)

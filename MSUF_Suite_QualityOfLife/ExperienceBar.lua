@@ -57,19 +57,16 @@ local function Tint(texture, hex, alpha)
     texture:SetVertexColor(r, g, b, alpha)
 end
 
-local function Number(value)
-    return S.Public(value) and type(value) == "number" and value == value
-        and value > -math.huge and value < math.huge
-end
+local Finite = S.Finite
 
 local function Clock()
     local value = GetServerTime()
-    return Number(value) and floor(value) or 0
+    return Finite(value) and floor(value) or 0
 end
 
 local function XP()
     local level, current, maximum = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
-    if not Number(level) or not Number(current) or not Number(maximum)
+    if not Finite(level) or not Finite(current) or not Finite(maximum)
         or level < 1 or current < 0 or maximum < 0 then
         return nil
     end
@@ -79,7 +76,7 @@ end
 local function Rested()
     if type(GetXPExhaustion) ~= "function" then return 0 end
     local value = GetXPExhaustion()
-    return Number(value) and max(0, value) or 0
+    return Finite(value) and max(0, value) or 0
 end
 
 local function Exact(value)
@@ -96,7 +93,7 @@ local function Compact(value)
 end
 
 local function Duration(seconds)
-    if not Number(seconds) or seconds < 0 then return "--" end
+    if not Finite(seconds) or seconds < 0 then return "--" end
     seconds = floor(seconds)
     if seconds >= 86400 then return ("%dd %dh"):format(floor(seconds / 86400), floor(seconds % 86400 / 3600)) end
     if seconds >= 3600 then return ("%dh %dm"):format(floor(seconds / 3600), floor(seconds % 3600 / 60)) end
@@ -105,14 +102,14 @@ local function Duration(seconds)
 end
 
 local function ValidSession(saved, level, now)
-    return type(saved) == "table" and Number(saved.started) and saved.started > 0
+    return type(saved) == "table" and Finite(saved.started) and saved.started > 0
         and saved.started <= now and now - saved.started < SESSION_MAX_AGE
-        and Number(saved.gained) and saved.gained >= 0
-        and Number(saved.lastLevel) and saved.lastLevel >= 1 and saved.lastLevel <= level
-        and Number(saved.lastXP) and saved.lastXP >= 0
-        and Number(saved.lastMax) and saved.lastMax >= 0
+        and Finite(saved.gained) and saved.gained >= 0
+        and Finite(saved.lastLevel) and saved.lastLevel >= 1 and saved.lastLevel <= level
+        and Finite(saved.lastXP) and saved.lastXP >= 0
+        and Finite(saved.lastMax) and saved.lastMax >= 0
         and (saved.lastMax == 0 or saved.lastXP <= saved.lastMax)
-        and Number(saved.levelUps) and saved.levelUps >= 0
+        and Finite(saved.levelUps) and saved.levelUps >= 0
 end
 
 local function CharacterKey()
@@ -320,7 +317,7 @@ local function Layout(self)
     host:SetPoint(point, UIParent, point, c.x, c.y)
     bar:SetSize(c.width, c.height)
     local effectiveScale = type(bar.GetEffectiveScale) == "function" and bar:GetEffectiveScale() or 1
-    local pixel = Number(effectiveScale) and effectiveScale > 0 and 1 / effectiveScale or 1
+    local pixel = Finite(effectiveScale) and effectiveScale > 0 and 1 / effectiveScale or 1
     self.pixel = pixel
     self.edges[1]:SetHeight(pixel)
     self.edges[2]:SetHeight(pixel)

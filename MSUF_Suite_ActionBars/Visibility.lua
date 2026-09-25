@@ -19,7 +19,10 @@ local PLACEABLE = { spell = true, item = true, macro = true, mount = true, compa
 -- suite button, 8 = placement preview. Bit 1 is never a reveal.
 local REVEAL = {}
 for _, bit in ipairs({ 2, 4, 8 }) do
-    REVEAL[bit] = { [true] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',true)', [false] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',false)' }
+    REVEAL[bit] = {
+        [true] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',true)',
+        [false] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',false)',
+    }
 end
 
 local function HasForms()
@@ -56,13 +59,13 @@ end
 -- Alpha for one bar: bar opacity when shown; the fade opacity while a
 -- mouseover bar is neither hovered nor revealed.
 function AB.UpdateAlpha(bar)
-    local c, k = M.config, bar.key
-    local alpha = c[k.Alpha] / 100
+    local config, keys = M.config, bar.key
+    local alpha = config[keys.Alpha] / 100
     if bar.header:GetAttribute("state-vis") == "fade" and not (S.editMode or AB.dragging or bar.hover
-        or (c.mouseoverShowAll and AnyHover())) then
+        or (config.mouseoverShowAll and AnyHover())) then
         -- Zero-alpha secure frames do not reliably take hover in Forever.
         -- One percent stays visually hidden but leaves a hit target.
-        alpha = math.max(0.01, c[k.FadeAlpha] / 100)
+        alpha = math.max(0.01, config[keys.FadeAlpha] / 100)
     end
     if bar.alpha ~= alpha then
         bar.alpha = alpha
@@ -103,8 +106,7 @@ local function Enter(frame)
     local bar = rec and rec.bar or AB.headers[frame]
     if not bar then return end
     SetHover(bar, true)
-    if rec and rec.owned and not rec.native and AB.ShowTooltip then AB.ShowTooltip(rec) end
-    if rec and AB.OnButtonEnter then AB.OnButtonEnter(rec) end
+    if rec and rec.owned and not rec.native then AB.ShowTooltip(rec) end
 end
 local function Leave(frame)
     if not M.active then return end
@@ -112,7 +114,6 @@ local function Leave(frame)
     local bar = rec and rec.bar or AB.headers[frame]
     if not bar then return end
     if rec and rec.owned and not rec.native and GameTooltip and GameTooltip:GetOwner() == frame then GameTooltip:Hide() end
-    if rec and AB.OnButtonLeave then AB.OnButtonLeave(rec) end
     SetHover(bar, bar.header:IsMouseOver() or FlyoutOpen(bar))
 end
 function AB.HookHover(frame)
@@ -166,37 +167,40 @@ function AB.CursorChanged()
     C_Timer.After(0.05, Settle)
 end
 
--- Registers drivers, preview forcing and header mouse motion for every bar.
--- A driver is re-registered only when its string changes (re-registering
--- blinks the bar).
-function AB.ApplyVisibility()
+-- Driver, preview forcing and header mouse motion of one bar. A driver is
+-- re-registered only when its string changes (re-registering blinks the bar).
+local function ApplyBarVisibility(bar, config, forms)
+    local keys = bar.key
+    local mode = config[keys.Visibility]
+    local driver = AB.VisibilityDriver(bar.index, mode, forms)
+    local forced = SetForced(bar, "forceshow", S.editMode and mode ~= 6)
+    if bar.visDriver ~= driver then
+        bar.visDriver = driver
+        RegisterStateDriver(bar.header, "vis", driver)
+    end
+    -- The driver only re-runs the handler when its state changes.
+    if forced then AB.Execute(bar.header, AB.SNIPPET.VIS) end
+    local fade = mode == 4 or mode == 5
+    -- EnableMouseMotion alone leaves the header non-interactive on
+    -- Forever. Buttons continue to receive their own clicks.
+    bar.header:EnableMouse(fade and not config[keys.ClickThrough])
+    if bar.header.EnableMouseMotion then bar.header:EnableMouseMotion(fade) end
+    AB.HookHover(bar.header)
+    for i = 1, #bar.buttons do AB.HookHover(bar.buttons[i].button) end
+    if not fade then bar.hover = nil end
+    AB.UpdateAlpha(bar)
+end
+
+-- Applies visibility to the bars in the set `only` (nil: every bar, plus
+-- the placement preview reveal).
+function AB.ApplyVisibility(only)
     if NS.IsCombatLocked() then return end
-    local c = M.config
-    local forms = HasForms()
+    local config, forms = M.config, HasForms()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
-        if bar then
-            local mode = c[bar.key.Visibility]
-            local driver = AB.VisibilityDriver(index, mode, forms)
-            local forced = SetForced(bar, "forceshow", S.editMode and mode ~= 6)
-            if bar.visDriver ~= driver then
-                bar.visDriver = driver
-                RegisterStateDriver(bar.header, "vis", driver)
-            end
-            -- The driver only re-runs the handler when its state changes.
-            if forced then AB.Execute(bar.header, AB.SNIPPET.VIS) end
-            local fade = mode == 4 or mode == 5
-            -- EnableMouseMotion alone leaves the header non-interactive on
-            -- Forever. Buttons continue to receive their own clicks.
-            bar.header:EnableMouse(fade and not c[bar.key.ClickThrough])
-            if bar.header.EnableMouseMotion then bar.header:EnableMouseMotion(fade) end
-            AB.HookHover(bar.header)
-            for i = 1, #bar.buttons do AB.HookHover(bar.buttons[i].button) end
-            if not fade then bar.hover = nil end
-            AB.UpdateAlpha(bar)
-        end
+        if bar and (not only or only[bar]) then ApplyBarVisibility(bar, config, forms) end
     end
-    AB.Reveal(8, S.editMode == true)
+    if not only then AB.Reveal(8, S.editMode == true) end
 end
 
 function AB.StopVisibility()

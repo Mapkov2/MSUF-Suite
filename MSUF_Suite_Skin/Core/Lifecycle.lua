@@ -52,8 +52,7 @@ eventFrame:SetScript("OnEvent", function(self, event, loadedAddon)
     if event == "PLAYER_LOGOUT" then
         local chatFrames = NS.ChatFramesSkin
         if chatFrames and type(chatFrames.RestoreBlizzardMessageColors) == "function" then
-            local ok, message = pcall(chatFrames.RestoreBlizzardMessageColors)
-            if not ok then NS.ReportError("chat color logout restore", message) end
+            chatFrames.RestoreBlizzardMessageColors()
         end
     end
 end)

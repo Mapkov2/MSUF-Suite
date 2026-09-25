@@ -285,7 +285,7 @@ local M=S.instances.damageMeter
 Suite.Client.AddOnEnabled=function() return true end -- the test loaded this optional addon directly
 local function RunPaint() return Fire(M.paintTimer) and 1 or 0 end
 local function RunClock() return Fire(M.clockTimer) and 1 or 0 end
-assert(M and D and M.cvars.damageMeterEnabled,"module did not install")
+assert(M and D and S.catalog.damageMeter.cvars.damageMeterEnabled,"module did not install")
 assert(#frames==baseFrames and Created("Texture")==0 and #timers==0 and #afters==0,"loading allocated frames or timers")
 
 -- The controller drives the lifecycle; a disabled module stays dormant.
@@ -898,6 +898,19 @@ win.bdRows[1].scripts.OnEnter(win.bdRows[1])
 assert(GameTooltip.owner==win.bdRows[1] and GameTooltip.spell==133,"spell tooltip missing")
 win.bdRows[1].scripts.OnLeave(win.bdRows[1])
 combat=false;Event("PLAYER_REGEN_ENABLED")
+-- Visibility "Never" without the standalone timer: a combat that starts in
+-- Edit Mode must still end, or the options preview is refused afterwards.
+local visibility,combatTime=c.visibility,c.combatTime
+assert(S.SetMany("damageMeter",{visibility=5,combatTime=false}))
+S.SetEditMode(true)
+assert(Registered("PLAYER_REGEN_DISABLED"),"Edit Mode windows did not watch combat")
+combat=true;Event("PLAYER_REGEN_DISABLED")
+assert(M.inCombat and not M.forced,"combat did not end the Edit Mode preview")
+combat=false;Event("PLAYER_REGEN_ENABLED")
+assert(not M.inCombat,"combat state stuck after Edit Mode combat")
+S.SetEditMode(false)
+assert(S.DamageMeterPreview(true) and S.DamageMeterPreview(false),"options preview refused after combat")
+assert(S.SetMany("damageMeter",{visibility=visibility,combatTime=combatTime}))
 D.OpenTypeMenu(win,win.header)
 assert(typePanel.shown and typePanel.events.GLOBAL_MOUSE_DOWN)
 assert(S.Set("damageMeter","enabled",false))

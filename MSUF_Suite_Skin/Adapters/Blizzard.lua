@@ -58,11 +58,25 @@ local function ScheduleLoadOnDemand(definition)
     return true
 end
 
+-- Definitions can come from other addons (API v1 RegisterAdapter), so their
+-- callbacks run through Safety.Dispatch: a failing adapter is reported and the
+-- other adapters still apply. The leading true tells a finished call from an
+-- error, which returns nothing.
+local function Finish(callback, frame, id)
+    return true, callback(frame, id)
+end
+
+local function RunCallback(callback, frame, id)
+    local finished, first, second = NS.Safety.Dispatch(Finish, callback, frame, id)
+    if not finished then return false, "error" end
+    return first, second
+end
+
 local function DisableDefinition(definition, frame)
     local id = definition.id
     NS.WindowControls.DisableOwner(id)
     if type(definition.disable) == "function" then
-        local disabled, reason = definition.disable(frame, id)
+        local disabled, reason = RunCallback(definition.disable, frame, id)
         if disabled == false then
             return false, reason or "disable-failed"
         end
@@ -87,7 +101,7 @@ end
 local function RunDefinition(definition, frame)
     local id = definition.id
     if type(definition.apply) == "function" then
-        local applied, reason = definition.apply(frame, id)
+        local applied, reason = RunCallback(definition.apply, frame, id)
         if applied == false then
             return false, reason or "failed"
         end
@@ -99,7 +113,7 @@ local function RunDefinition(definition, frame)
         return false, reason or "failed"
     end
     if type(definition.fade) == "function" then
-        definition.fade(frame, id)
+        RunCallback(definition.fade, frame, id)
     end
     NS.Surface.SetVisible(frame, true)
     return true, "applied"
@@ -118,7 +132,7 @@ local function ApplyDefinition(definition)
         return false
     end
 
-    local frame = definition.resolve()
+    local frame = RunCallback(definition.resolve)
     if not frame then
         local waiting = ScheduleLoadOnDemand(definition)
         Adapters.status[id] = { state = waiting and "waiting" or "missing" }

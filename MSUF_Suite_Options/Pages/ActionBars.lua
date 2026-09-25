@@ -104,7 +104,10 @@ local function BuildQuick(ctx, b)
         local status = P.Text(body, "", x + 44, y - 26, cell - 44, T.colors.dim or T.colors.muted)
         M.TrackRefresh(ctx, function()
             W.SetControlEnabled(toggle, Available(bar) and not P.Combat())
-            if not Available(bar) then status:SetText(Tr("Not available on this client")); return end
+            if not Available(bar) then
+                status:SetText(Tr("Not available on this client"))
+                return
+            end
             local mode = P.Get(ID, key)
             local label = Rule(key).choices[mode]
             if mode == 6 then
@@ -115,6 +118,14 @@ local function BuildQuick(ctx, b)
             end
         end)
     end
+    P.AttachSectionReset(ctx, body, "Choose your bars", function()
+        local keys = {}
+        for index = 1, COUNT do
+            keys[#keys + 1] = "bar" .. index .. "Visibility"
+            keys[#keys + 1] = "bar" .. index .. "ResumeVisibility"
+        end
+        return P.ResetRules(ID, {}, nil, keys)
+    end)
     P.FinishBody(b, body, top - math.ceil(COUNT / columns) * 54 - 4)
 end
 
@@ -203,7 +214,11 @@ local function BuildEditor(ctx, b)
     for i = 1, COUNT do bars[i] = { value = i, text = Tr(Suite.ActionBarTitles[i]) } end
     M.BindDropdownAt(ctx, body, Tr("Selected bar"), 16, y, bars, half,
         function() return selected end,
-        function(value) selected = tonumber(value) or 1; if copyTarget == selected then copyTarget = selected == 1 and 2 or 1 end; P.Refresh() end,
+        function(value)
+            selected = tonumber(value) or 1
+            if copyTarget == selected then copyTarget = selected == 1 and 2 or 1 end
+            P.Refresh()
+        end,
         P.Meta(PAGE, ID, "editor.selected", "ephemeral", "suite_actionbars_editor"))
     y = y - 62
     y = y - BuildPreview(ctx, body, y, width) - 8
@@ -220,6 +235,9 @@ local function BuildEditor(ctx, b)
     P.Button(ctx, body, "Key bindings", 28 + half, y, half, function() if S.OpenQuickKeybind then S.OpenQuickKeybind() end end,
         function() return S.OpenQuickKeybind ~= nil end,
         P.Meta(PAGE, ID, "editor.bindings", "action", "suite_actionbars_editor"))
+    P.AttachSectionReset(ctx, body, "Customize a bar", function()
+        return P.ResetPrefix(ID, "bar" .. selected)
+    end)
     P.FinishBody(b, body, y - 38)
 end
 
@@ -233,7 +251,11 @@ local function BuildTools(ctx, b)
     local bars = {}
     for i = 1, COUNT do bars[i] = { value = i, text = Tr(Suite.ActionBarTitles[i]) } end
     M.BindDropdownAt(ctx, body, Tr("Copy to bar"), 16, y, bars, half,
-        function() return copyTarget end, function(value) copyTarget = tonumber(value) or 1; P.Refresh() end,
+        function() return copyTarget end,
+        function(value)
+            copyTarget = tonumber(value) or 1
+            P.Refresh()
+        end,
         P.Meta(PAGE, ID, "editor.copyTarget", "ephemeral", section))
     local scopes = { { value = "all", text = Tr("Everything except position") }, { value = "layout", text = Tr("Layout") },
         { value = "visibility", text = Tr("Visibility") }, { value = "appearance", text = Tr("Text and background") } }
@@ -268,34 +290,12 @@ local function Build(ctx)
         { "Move on screen", function() P.MoveOnScreen(ID, "bar1") end, nil, key = "move" },
         { "Reload UI", function() if ReloadUI then ReloadUI() end end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
-        { "Reset module", function()
-            P.WithHistory("Reset action bars", "suite:actionbars.reset", function() return S.Reset(ID) end)
-        end, function() return S.Availability(ID) end, key = "reset" },
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_actionbars_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
             help = "Choose the shared button colors and frame. Layout, bindings and visibility stay as set. Changing an individual color switches the label to Custom.",
-            extra = function(body, y, width)
-                local gap = 8
-                local buttonWidth = math.floor((width - 2 * gap) / 3)
-                for index, name in ipairs({ "Midnight Blue", "Midnight Dark", "MSUF Forever" }) do
-                    local button = T.Button(body, Tr(name), buttonWidth, 26)
-                    button:SetPoint("TOPLEFT", body, "TOPLEFT", 16 + (index - 1) * (buttonWidth + gap), y)
-                    button:SetScript("OnClick", function()
-                        if not P.Combat() then P.Set(ID, "look", index) end
-                    end)
-                    if M.RegisterControlMetadata then
-                        M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "look." .. index, "action", "suite_actionbars_look"),
-                            Tr(name), "button")
-                    end
-                    M.TrackRefresh(ctx, function()
-                        button:SetAlpha(P.Get(ID, "look") == index and 1 or 0.65)
-                        button:SetEnabled(P.RuleEnabled(ID, P.catalog[ID].rules.look))
-                    end)
-                end
-                return y - 38
-            end,
+            extra = P.LookPresetButtons(ctx, PAGE, ID, "suite_actionbars_look"),
         })
     BuildQuick(ctx, b)
     BuildEditor(ctx, b)

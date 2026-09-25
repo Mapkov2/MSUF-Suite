@@ -10,8 +10,9 @@ local waitingForItems = false
 local Changed
 local events = { "UPDATE_INSTANCE_INFO", "WEEKLY_REWARDS_UPDATE", "GET_ITEM_INFO_RECEIVED" }
 
-local function Number(value)
-    return S.Public(value) and type(value) == "number" and value == value and value >= 0 and value < math.huge
+-- Counts, levels, times and IDs: readable, finite and not negative.
+local function NonNegative(value)
+    return S.Finite(value) and value >= 0
 end
 
 local function Text(value)
@@ -49,7 +50,7 @@ end
 MM.HideInfoTooltip = S.HideMinimapInfoTooltip
 
 local function ResetText(seconds, extended)
-    if not Number(seconds) then return "--" end
+    if not NonNegative(seconds) then return "--" end
     local text
     if seconds <= 0 then
         text = S.Text("Expired")
@@ -64,7 +65,7 @@ end
 local function Lockouts(tooltip)
     local c, shown, omitted = M.config, 0, 0
     local count = GetNumSavedInstances()
-    if not Number(count) then
+    if not NonNegative(count) then
         tooltip:AddLine(S.Text("Instance information unavailable."))
         return
     end
@@ -72,11 +73,12 @@ local function Lockouts(tooltip)
         local name, _, reset, _, locked, extended, _, raid, _, difficulty, bosses, defeated = GetSavedInstanceInfo(index)
         if Text(name) and S.Public(locked) and S.Public(extended) and S.Public(raid)
             and (c.tooltipExpired or locked or extended)
-            and (c.tooltipInstanceKind == 1 or c.tooltipInstanceKind == 2 and raid or c.tooltipInstanceKind == 3 and not raid) then
+            and (c.tooltipInstanceKind == 1 or c.tooltipInstanceKind == 2 and raid
+                or c.tooltipInstanceKind == 3 and not raid) then
             if shown < c.tooltipRows then
                 local label = name
                 if Text(difficulty) and difficulty ~= "" then label = label .. " - " .. difficulty end
-                if c.tooltipBossProgress and Number(bosses) and bosses > 0 and Number(defeated) then
+                if c.tooltipBossProgress and NonNegative(bosses) and bosses > 0 and NonNegative(defeated) then
                     label = label .. " (" .. math.floor(defeated) .. "/" .. math.floor(bosses) .. ")"
                 end
                 tooltip:AddDoubleLine(label, ResetText(reset, extended), 1, 1, 1, .75, .8, .9)
@@ -88,7 +90,7 @@ local function Lockouts(tooltip)
     end
     if c.tooltipWorldBosses and type(GetNumSavedWorldBosses) == "function" and type(GetSavedWorldBossInfo) == "function" then
         local total = GetNumSavedWorldBosses()
-        if Number(total) then
+        if NonNegative(total) then
             for index = 1, math.min(math.floor(total), 100) do
                 local name, _, reset = GetSavedWorldBossInfo(index)
                 if Text(name) then
@@ -111,7 +113,7 @@ local function Lockouts(tooltip)
 end
 
 local function RewardLevel(activity)
-    if not M.config.tooltipRewardLevels or not Number(activity.id)
+    if not M.config.tooltipRewardLevels or not NonNegative(activity.id)
         or type(C_WeeklyRewards.GetExampleRewardItemHyperlinks) ~= "function" then
         return nil
     end
@@ -121,7 +123,7 @@ local function RewardLevel(activity)
     if not Text(link) or link == "" then return nil end
     local level = reader(link)
     if S.Public(level) and level == nil then waitingForItems = true end
-    return Number(level) and math.floor(level) or nil
+    return NonNegative(level) and math.floor(level) or nil
 end
 
 local function ActivityLabel(kind)
@@ -144,10 +146,10 @@ local function ActivityLevel(activity)
     elseif activity.type == types.World then
         return S.Text("Tier") .. " " .. math.floor(level)
     end
-    if Number(activity.activityTierID) and type(C_WeeklyRewards.GetDifficultyIDForActivityTier) == "function" then
+    if NonNegative(activity.activityTierID) and type(C_WeeklyRewards.GetDifficultyIDForActivityTier) == "function" then
         local difficulty = C_WeeklyRewards.GetDifficultyIDForActivityTier(activity.activityTierID)
         local heroic = DifficultyUtil and DifficultyUtil.ID and DifficultyUtil.ID.DungeonHeroic
-        if Number(difficulty) and Number(heroic) and difficulty == heroic then
+        if NonNegative(difficulty) and NonNegative(heroic) and difficulty == heroic then
             return MM.Label("PLAYER_DIFFICULTY2",
                 "Heroic")
         end
@@ -169,15 +171,15 @@ local function Vault(tooltip)
     local shown = 0
     for index = 1, math.min(#activities, 36) do
         local activity = activities[index]
-        if S.Public(activity) and type(activity) == "table" and Number(activity.type)
-            and Number(activity.index) and Number(activity.progress) and Number(activity.threshold) and activity.threshold > 0 then
+        if S.Public(activity) and type(activity) == "table" and NonNegative(activity.type) and NonNegative(activity.index)
+            and NonNegative(activity.progress) and NonNegative(activity.threshold) and activity.threshold > 0 then
             local category = ActivityLabel(activity.type)
             if category then
                 local complete = activity.progress >= activity.threshold
                 local progress = math.floor(math.min(activity.progress, activity.threshold)) ..
                     "/" .. math.floor(activity.threshold)
                 local label = category .. " " .. math.floor(activity.index)
-                if complete and Number(activity.level) and activity.level > 0 then
+                if complete and NonNegative(activity.level) and activity.level > 0 then
                     label = label .. " - " .. ActivityLevel(activity)
                 end
                 if complete and M.config.tooltipRewardLevels then
@@ -193,7 +195,8 @@ local function Vault(tooltip)
 end
 
 local function Draw()
-    if not owner or not M.active or not S.IsMinimapInfoVisible() or NS.Safety.IsForbidden(owner) or not owner:IsVisible() or not Owned(owner) then
+    if not owner or not M.active or not S.IsMinimapInfoVisible() or NS.Safety.IsForbidden(owner)
+        or not owner:IsVisible() or not Owned(owner) then
         S.HideMinimapInfoTooltip()
         return
     end
@@ -221,8 +224,8 @@ local lastRequest
 local function RequestLockouts()
     if type(RequestRaidInfo) ~= "function" then return end
     local now = type(GetTime) == "function" and GetTime()
-    if Number(now) and lastRequest and now - lastRequest < RAID_INFO_INTERVAL then return end
-    lastRequest = Number(now) and now or nil
+    if NonNegative(now) and lastRequest and now - lastRequest < RAID_INFO_INTERVAL then return end
+    lastRequest = NonNegative(now) and now or nil
     RequestRaidInfo()
 end
 

@@ -14,8 +14,13 @@ local ScrollBarSkin = {
 }
 NS.ScrollBarSkin = ScrollBarSkin
 
+local Safety = NS.Safety
+
 local listenerOwner = {}
 local listenerRegistered = false
+
+-- Tinted colors are compared with what the client reports back.
+local COLOR_EPSILON = 0.0001
 
 local TRACK_SURFACE_SPEC = {
     role = "input",
@@ -110,159 +115,138 @@ local function WeakSet()
     return setmetatable({}, { __mode = "k" })
 end
 
-local function SafeField(object, key)
-    if not object then return nil end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
-end
-
-local function Accessible(value)
-    if type(issecretvalue) == "function" and issecretvalue(value) then
-        if type(canaccessvalue) ~= "function" or not canaccessvalue(value) then
-            return nil
-        end
-    end
-    return value
-end
-
-local function ReadObjectType(object)
-    local getter = SafeField(object, "GetObjectType")
-    if type(getter) ~= "function" then return nil end
-    local ok, value = pcall(getter, object)
-    value = ok and Accessible(value) or nil
-    return type(value) == "string" and value or nil
-end
-
-local function ReadVertexColor(region)
-    local getter = SafeField(region, "GetVertexColor")
-    if type(getter) ~= "function" then return nil end
-    local ok, r, g, b, a = pcall(getter, region)
-    if not ok then return nil end
-    r, g, b, a = Accessible(r), Accessible(g), Accessible(b), Accessible(a)
-    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
-        return nil
-    end
-    return { r, g, b, type(a) == "number" and a or 1 }
-end
+local Field = Safety.Field
 
 local function IsTintable(region)
-    return ReadVertexColor(region) ~= nil
-        and type(SafeField(region, "SetVertexColor")) == "function"
+    return type(Field(region, "SetVertexColor")) == "function"
+        and Safety.ReadColor(region, "GetVertexColor") ~= nil
 end
 
 local function IsFadeable(region)
-    return type(SafeField(region, "GetAlpha")) == "function"
-        and type(SafeField(region, "SetAlpha")) == "function"
+    return type(Field(region, "GetAlpha")) == "function"
+        and type(Field(region, "SetAlpha")) == "function"
 end
 
 local function FieldsEqual(object, expected)
     for key, value in pairs(expected) do
-        if SafeField(object, key) ~= value then return false end
+        if Field(object, key) ~= value then return false end
     end
     return true
 end
 
 local function GetterReturns(target, methodName, expected)
-    local method = SafeField(target, methodName)
-    if type(method) ~= "function" then return false end
-    local ok, value = pcall(method, target)
-    return ok and value == expected
+    return type(Field(target, methodName)) == "function"
+        and Safety.Read(target, methodName) == expected
 end
 
 local function OverlayMatches(region, expectedAtlas)
-    if not IsTintable(region) then return false end
-    local getter = SafeField(region, "GetAtlas")
-    if type(getter) ~= "function" then return false end
-    local ok, atlas = pcall(getter, region)
-    atlas = ok and Accessible(atlas) or nil
-    return atlas == expectedAtlas
+    return IsTintable(region) and Safety.Read(region, "GetAtlas") == expectedAtlas
 end
 
-local function CommonContract(target)
+local function SetRegions(list, first, second, third)
+    list[1], list[2], list[3] = first, second, third
+end
+
+local function ClearRegions(list)
+    list[1], list[2], list[3] = nil, nil, nil
+end
+
+-- A contract names the verified Blizzard regions of one scroll bar. Its
+-- region lists are always present, empty when a template has none.
+local function NewContract()
+    return { trackRegions = {}, thumbRegions = {}, backgroundRegions = {} }
+end
+
+-- Refreshes compare the live bar against the stored contract through this
+-- reused scratch contract instead of a new one.
+local scratchContract = NewContract()
+
+local function CommonContract(target, contract)
     -- The supported Retail templates are EventFrames. Reject Slider objects
     -- before looking at fields so an ordinary horizontal value slider can
     -- never opt in merely because an addon gave it similarly named children.
-    local objectType = ReadObjectType(target)
-    if not objectType or objectType == "Slider" then return nil end
-    if type(SafeField(target, "SetScrollPercentage")) ~= "function"
-        or type(SafeField(target, "GetScrollPercentage")) ~= "function" then
+    local objectType = Safety.Read(target, "GetObjectType")
+    if type(objectType) ~= "string" or objectType == "Slider" then return nil end
+    if type(Field(target, "SetScrollPercentage")) ~= "function"
+        or type(Field(target, "GetScrollPercentage")) ~= "function" then
         return nil
     end
 
-    local track = SafeField(target, "Track")
-    local thumb = SafeField(track, "Thumb")
-    local back = SafeField(target, "Back")
-    local forward = SafeField(target, "Forward")
+    local track = Field(target, "Track")
+    local thumb = Field(track, "Thumb")
+    local back = Field(target, "Back")
+    local forward = Field(target, "Forward")
     if not track or not thumb or not back or not forward
         or not GetterReturns(target, "GetTrack", track)
         or not GetterReturns(target, "GetThumb", thumb)
         or not GetterReturns(target, "GetBackStepper", back)
         or not GetterReturns(target, "GetForwardStepper", forward)
-        or type(SafeField(track, "CreateTexture")) ~= "function" then
+        or type(Field(track, "CreateTexture")) ~= "function" then
         return nil
     end
 
-    local trackRegions = {}
-    local trackBegin = SafeField(track, "Begin")
-    local trackMiddle = SafeField(track, "Middle")
-    local trackEnd = SafeField(track, "End")
+    local trackBegin = Field(track, "Begin")
+    local trackMiddle = Field(track, "Middle")
+    local trackEnd = Field(track, "End")
     if trackBegin or trackMiddle or trackEnd then
         if not IsFadeable(trackBegin) or not IsFadeable(trackMiddle)
             or not IsFadeable(trackEnd) then
             return nil
         end
-        trackRegions = { trackBegin, trackMiddle, trackEnd }
+        SetRegions(contract.trackRegions, trackBegin, trackMiddle, trackEnd)
+    else
+        ClearRegions(contract.trackRegions)
     end
-    local thumbRegions = {
-        SafeField(thumb, "Begin"),
-        SafeField(thumb, "Middle"),
-        SafeField(thumb, "End"),
-    }
-    local backTexture = SafeField(back, "Texture")
-    local forwardTexture = SafeField(forward, "Texture")
+    local thumbRegions = contract.thumbRegions
+    SetRegions(thumbRegions, Field(thumb, "Begin"), Field(thumb, "Middle"), Field(thumb, "End"))
+    local backTexture = Field(back, "Texture")
+    local forwardTexture = Field(forward, "Texture")
     for index = 1, 3 do
         if not IsTintable(thumbRegions[index]) then return nil end
     end
     if not IsTintable(backTexture) or not IsTintable(forwardTexture) then return nil end
 
-    return {
-        target = target,
-        track = track,
-        thumb = thumb,
-        back = back,
-        forward = forward,
-        trackRegions = trackRegions,
-        thumbRegions = thumbRegions,
-        backTexture = backTexture,
-        forwardTexture = forwardTexture,
-    }
+    contract.target = target
+    contract.track = track
+    contract.thumb = thumb
+    contract.back = back
+    contract.forward = forward
+    contract.backTexture = backTexture
+    contract.forwardTexture = forwardTexture
+    contract.kind = nil
+    contract.background = nil
+    contract.backOverlay = nil
+    contract.forwardOverlay = nil
+    ClearRegions(contract.backgroundRegions)
+    return contract
 end
 
-local function DetectContract(target)
-    local contract = CommonContract(target)
-    if not contract then return nil, "unsupported" end
-
-    local horizontal = SafeField(target, "isHorizontal") == true
-        or SafeField(contract.thumb, "isHorizontal") == true
-    local background = SafeField(target, "Background")
-    if not background and not horizontal and #contract.trackRegions == 3
+local function IsMinimalContract(target, contract, horizontal)
+    return not horizontal and #contract.trackRegions == 3
+        and Field(target, "Background") == nil
         and FieldsEqual(contract.thumb, minimalThumbFields)
         and FieldsEqual(contract.back, minimalBackFields)
         and FieldsEqual(contract.forward, minimalForwardFields)
-        and SafeField(contract.back, "Overlay") == nil
-        and SafeField(contract.forward, "Overlay") == nil then
+        and Field(contract.back, "Overlay") == nil
+        and Field(contract.forward, "Overlay") == nil
+end
+
+-- Fills contract (a new one when omitted) from the live scroll bar.
+local function DetectContract(target, contract)
+    contract = CommonContract(target, contract or NewContract())
+    if not contract then return nil, "unsupported" end
+
+    local targetHorizontal = Field(target, "isHorizontal") == true
+    local thumbHorizontal = Field(contract.thumb, "isHorizontal") == true
+    local horizontal = targetHorizontal or thumbHorizontal
+    if IsMinimalContract(target, contract, horizontal) then
         contract.kind = "minimal"
-        contract.tintSpecs = {
-            { regions = contract.thumbRegions, role = "accentBright", alpha = 1 },
-            { regions = { contract.backTexture, contract.forwardTexture }, role = "blizzardArrow", alpha = 1 },
-        }
         return contract
     end
 
+    local background = Field(target, "Background")
     if not background or #contract.trackRegions ~= 0 then return nil, "unsupported" end
     local definition = horizontal and trimContracts.horizontal or trimContracts.vertical
-    local targetHorizontal = SafeField(target, "isHorizontal") == true
-    local thumbHorizontal = SafeField(contract.thumb, "isHorizontal") == true
     if targetHorizontal ~= definition.horizontal
         or thumbHorizontal ~= definition.horizontal
         or not FieldsEqual(contract.thumb, definition.thumb)
@@ -271,149 +255,134 @@ local function DetectContract(target)
         return nil, "unsupported"
     end
 
-    local backgroundRegions = {
-        SafeField(background, "Begin"),
-        SafeField(background, "Middle"),
-        SafeField(background, "End"),
-    }
+    local backgroundRegions = contract.backgroundRegions
+    SetRegions(backgroundRegions, Field(background, "Begin"), Field(background, "Middle"),
+        Field(background, "End"))
     for index = 1, 3 do
         if not IsTintable(backgroundRegions[index]) then return nil, "unsupported" end
     end
 
     contract.kind = definition.horizontal and "trim-horizontal" or "trim-vertical"
     contract.background = background
-    contract.backgroundRegions = backgroundRegions
-    contract.tintSpecs = {
-        { regions = contract.thumbRegions, role = "accentBright", alpha = 1 },
-        { regions = { contract.backTexture, contract.forwardTexture }, role = "blizzardArrow", alpha = 1 },
-        { regions = backgroundRegions, role = "borderSoft", alpha = 0.72 },
-    }
-
-    local backOverlay = SafeField(contract.back, "Overlay")
-    local forwardOverlay = SafeField(contract.forward, "Overlay")
+    local backOverlay = Field(contract.back, "Overlay")
+    local forwardOverlay = Field(contract.forward, "Overlay")
     if OverlayMatches(backOverlay, definition.backOverlay)
         and OverlayMatches(forwardOverlay, definition.forwardOverlay) then
         contract.backOverlay = backOverlay
         contract.forwardOverlay = forwardOverlay
-        contract.tintSpecs[#contract.tintSpecs + 1] = {
-            regions = { backOverlay, forwardOverlay }, role = "hover", alpha = 1,
-        }
     end
     return contract
 end
 
+local function SameRegions(left, right)
+    if #left ~= #right then return false end
+    for index = 1, #left do
+        if left[index] ~= right[index] then return false end
+    end
+    return true
+end
+
 local function SameContract(left, right)
-    if not left or not right or left.kind ~= right.kind
-        or left.track ~= right.track or left.thumb ~= right.thumb
-        or left.back ~= right.back or left.forward ~= right.forward
-        or left.background ~= right.background then
-        return false
-    end
-    for _, key in ipairs({ "trackRegions", "thumbRegions", "backgroundRegions" }) do
-        local a, b = left[key] or {}, right[key] or {}
-        if #a ~= #b then return false end
-        for index = 1, #a do
-            if a[index] ~= b[index] then return false end
-        end
-    end
-    return left.backTexture == right.backTexture
+    return left ~= nil and right ~= nil and left.kind == right.kind
+        and left.track == right.track and left.thumb == right.thumb
+        and left.back == right.back and left.forward == right.forward
+        and left.background == right.background
+        and SameRegions(left.trackRegions, right.trackRegions)
+        and SameRegions(left.thumbRegions, right.thumbRegions)
+        and SameRegions(left.backgroundRegions, right.backgroundRegions)
+        and left.backTexture == right.backTexture
         and left.forwardTexture == right.forwardTexture
         and left.backOverlay == right.backOverlay
         and left.forwardOverlay == right.forwardOverlay
 end
 
 local function CanDecorate(contract)
-    if not NS.Safety or not NS.Safety.CanCreateRegions(contract.track, false) then
-        return false
-    end
-    for _, target in ipairs({
-        contract.target, contract.thumb, contract.back, contract.forward,
-        contract.background,
-    }) do
-        if target and not NS.Safety.CanDecorate(target, false) then return false end
-    end
-    return true
+    return Safety.CanCreateRegions(contract.track, false)
+        and Safety.CanDecorate(contract.target, false)
+        and Safety.CanDecorate(contract.thumb, false)
+        and Safety.CanDecorate(contract.back, false)
+        and Safety.CanDecorate(contract.forward, false)
+        and (not contract.background or Safety.CanDecorate(contract.background, false))
 end
 
-local function SameColor(left, right)
-    if not left or not right then return false end
-    local epsilon = 0.0001
-    for index = 1, 4 do
-        if math.abs(left[index] - right[index]) > epsilon then return false end
-    end
-    return true
+local function SameColor(color, r, g, b, a)
+    return math.abs(color[1] - r) <= COLOR_EPSILON
+        and math.abs(color[2] - g) <= COLOR_EPSILON
+        and math.abs(color[3] - b) <= COLOR_EPSILON
+        and math.abs(color[4] - a) <= COLOR_EPSILON
 end
 
 local function TintRegion(state, region, role, alphaScale)
     local held = ScrollBarSkin.regionOwners[region]
     if held and held ~= state then return false end
-    local current = ReadVertexColor(region)
-    if not current then return false end
+    local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
+    if not r then return false end
 
     local tint = state.tints[region]
     if not tint then
-        tint = { original = current }
+        tint = { original = { r, g, b, a }, applied = {} }
         state.tints[region] = tint
-    elseif tint.applied and not SameColor(current, tint.applied)
-        and not SameColor(current, tint.original) then
+    elseif tint.applied[1] and not SameColor(tint.applied, r, g, b, a)
+        and not SameColor(tint.original, r, g, b, a) then
         return false
     end
 
-    local r, g, b, a = NS.Theme.GetColor(role)
-    local desired = { r, g, b, tint.original[4] * (tonumber(a) or 1) * (alphaScale or 1) }
-    local setter = SafeField(region, "SetVertexColor")
-    local ok = type(setter) == "function"
-        and pcall(setter, region, desired[1], desired[2], desired[3], desired[4])
-    if not ok then return false end
-    tint.applied = desired
+    local tokenR, tokenG, tokenB, tokenA = NS.Theme.GetColor(role)
+    local applied = tint.applied
+    applied[1], applied[2], applied[3] = tokenR, tokenG, tokenB
+    applied[4] = tint.original[4] * (tonumber(tokenA) or 1) * (alphaScale or 1)
+    region:SetVertexColor(applied[1], applied[2], applied[3], applied[4])
     tint.role = role
     tint.alphaScale = alphaScale or 1
     ScrollBarSkin.regionOwners[region] = state
     return true
 end
 
+local function TintRegions(state, regions, role, alphaScale)
+    for index = 1, #regions do
+        if not TintRegion(state, regions[index], role, alphaScale) then return false end
+    end
+    return true
+end
+
+-- Tints stop at the first region another owner or Blizzard has changed.
 local function ApplyTints(state)
-    for index = 1, #state.contract.tintSpecs do
-        local spec = state.contract.tintSpecs[index]
-        for regionIndex = 1, #spec.regions do
-            if not TintRegion(state, spec.regions[regionIndex], spec.role, spec.alpha) then
-                return false
-            end
-        end
+    local contract = state.contract
+    if not TintRegions(state, contract.thumbRegions, "accentBright", 1)
+        or not TintRegion(state, contract.backTexture, "blizzardArrow", 1)
+        or not TintRegion(state, contract.forwardTexture, "blizzardArrow", 1)
+        or not TintRegions(state, contract.backgroundRegions, "borderSoft", 0.72) then
+        return false
+    end
+    if contract.backOverlay then
+        return TintRegion(state, contract.backOverlay, "hover", 1)
+            and TintRegion(state, contract.forwardOverlay, "hover", 1)
     end
     return true
 end
 
 local function RestoreTints(state)
     for region, tint in pairs(state.tints) do
-        local current = ReadVertexColor(region)
-        local setter = SafeField(region, "SetVertexColor")
-        if tint.applied and SameColor(current, tint.applied) and type(setter) == "function" then
-            pcall(setter, region, unpack(tint.original))
+        local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
+        if r and tint.applied[1] and SameColor(tint.applied, r, g, b, a) then
+            local original = tint.original
+            region:SetVertexColor(original[1], original[2], original[3], original[4])
         end
         if ScrollBarSkin.regionOwners[region] == state then
             ScrollBarSkin.regionOwners[region] = nil
         end
+        state.tints[region] = nil
     end
-    state.tints = setmetatable({}, { __mode = "k" })
 end
 
 local function FadeTrack(state)
-    for index = 1, #state.contract.trackRegions do
-        if not NS.Cosmetics.Fade(state.contract.trackRegions[index], state.cosmeticOwner) then
+    local regions = state.contract.trackRegions
+    for index = 1, #regions do
+        if not NS.Cosmetics.Fade(regions[index], state.cosmeticOwner) then
             return false
         end
     end
     return true
-end
-
-local function OwnerSet(owner)
-    local set = ScrollBarSkin.owners[owner]
-    if not set then
-        set = WeakSet()
-        ScrollBarSkin.owners[owner] = set
-    end
-    return set
 end
 
 local function BindOwner(target, state, owner)
@@ -422,7 +391,12 @@ local function BindOwner(target, state, owner)
         if oldSet then oldSet[target] = nil end
     end
     state.owner = owner
-    OwnerSet(owner)[target] = true
+    local set = ScrollBarSkin.owners[owner]
+    if not set then
+        set = WeakSet()
+        ScrollBarSkin.owners[owner] = set
+    end
+    set[target] = true
 end
 
 local function TargetKey(target)
@@ -450,10 +424,14 @@ local function ClearPendingTarget(target, cancel)
     if cancel and NS.CombatGate then NS.CombatGate.Cancel(TargetKey(target)) end
 end
 
-local function RestoreState(target, state)
-    if not state then return end
+local function RestoreNative(state)
     NS.Cosmetics.RestoreOwner(state.cosmeticOwner)
     RestoreTints(state)
+end
+
+local function RestoreState(target, state)
+    if not state then return end
+    RestoreNative(state)
     if state.contract and NS.Registry.GetSurface(state.contract.track) == state.surface then
         NS.Surface.SetVisible(state.contract.track, false)
     end
@@ -469,12 +447,13 @@ end
 
 local function RefreshNow(target, state)
     if not state or state.enabled == false then return false, "disabled" end
-    local contract, reason = DetectContract(target)
-    if not contract or not SameContract(state.contract, contract) then
+    local detected, reason = DetectContract(target, scratchContract)
+    if not detected or not SameContract(state.contract, detected) then
         RestoreState(target, state)
         ScrollBarSkin.states[target] = nil
         return false, reason or "contract changed"
     end
+    local contract = state.contract
     if not CanDecorate(contract) then return false, "protected" end
     if not FadeTrack(state) or not ApplyTints(state) then return false, "native ownership" end
     if NS.Registry.GetSurface(contract.track) ~= state.surface then
@@ -486,49 +465,43 @@ local function RefreshNow(target, state)
 end
 
 local function ApplyNow(target, owner)
-    local contract, reason = DetectContract(target)
-    if not contract then return nil, reason end
-    if not CanDecorate(contract) then return nil, "protected" end
+    local detected, reason = DetectContract(target, scratchContract)
+    if not detected then return nil, reason end
+    if not CanDecorate(detected) then return nil, "protected" end
 
     local state = ScrollBarSkin.states[target]
     if state and state.enabled ~= false and state.owner ~= owner then
         return nil, "already owned"
     end
-    if state and not SameContract(state.contract, contract) then
+    if state and not SameContract(state.contract, detected) then
         RestoreState(target, state)
         ScrollBarSkin.states[target] = nil
         state = nil
     end
 
     if not state then
-        if NS.Registry.GetSurface(contract.track) then return nil, "surface already owned" end
+        if NS.Registry.GetSurface(detected.track) then return nil, "surface already owned" end
         state = {
             target = target,
-            contract = contract,
+            contract = DetectContract(target),
             cosmeticOwner = {},
             tints = setmetatable({}, { __mode = "k" }),
             enabled = false,
         }
-    elseif NS.Registry.GetSurface(contract.track) ~= state.surface then
+    elseif NS.Registry.GetSurface(detected.track) ~= state.surface then
         return nil, "surface ownership"
     end
 
+    local contract = state.contract
     local wasEnabled = state.enabled ~= false
-    state.contract = contract
     if not FadeTrack(state) or not ApplyTints(state) then
-        if not wasEnabled then
-            NS.Cosmetics.RestoreOwner(state.cosmeticOwner)
-            RestoreTints(state)
-        end
+        if not wasEnabled then RestoreNative(state) end
         return nil, "native ownership"
     end
 
     local surface, surfaceReason = NS.Surface.Attach(contract.track, TRACK_SURFACE_SPEC)
     if not surface then
-        if not wasEnabled then
-            NS.Cosmetics.RestoreOwner(state.cosmeticOwner)
-            RestoreTints(state)
-        end
+        if not wasEnabled then RestoreNative(state) end
         return nil, surfaceReason or "surface unavailable"
     end
 
@@ -557,10 +530,16 @@ local function EnsureListener()
     listenerRegistered = true
 end
 
+local function ApplyAndListen(target, owner)
+    local state, reason = ApplyNow(target, owner)
+    if state then EnsureListener() end
+    return state, reason
+end
+
 function ScrollBarSkin.Apply(target, owner)
     if not target then return nil, "invalid target" end
     if owner == nil then return nil, "invalid owner" end
-    local contract, reason = DetectContract(target)
+    local contract, reason = DetectContract(target, scratchContract)
     if not contract then return nil, reason end
     if not CanDecorate(contract) then return nil, "protected" end
 
@@ -577,16 +556,13 @@ function ScrollBarSkin.Apply(target, owner)
         NS.CombatGate.RunOrDefer(TargetKey(target), function()
             if ScrollBarSkin.pendingTargets[target] ~= owner then return end
             ClearPendingTarget(target, false)
-            local state = ApplyNow(target, owner)
-            if state then EnsureListener() end
+            ApplyAndListen(target, owner)
         end)
         return nil, "combat"
     end
 
     ClearPendingTarget(target, true)
-    local state, applyReason = ApplyNow(target, owner)
-    if state then EnsureListener() end
-    return state, applyReason
+    return ApplyAndListen(target, owner)
 end
 
 function ScrollBarSkin.Refresh(target)
@@ -641,7 +617,7 @@ function ScrollBarSkin.GetState(target)
 end
 
 function ScrollBarSkin.GetContract(target)
-    local contract = DetectContract(target)
+    local contract = DetectContract(target, scratchContract)
     return contract and contract.kind or nil
 end
 

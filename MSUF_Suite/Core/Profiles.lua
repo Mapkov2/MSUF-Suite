@@ -126,6 +126,122 @@ function P.SyncActive(name)
 end
 Suite.OnMSUFProfileChanged = P.SyncActive
 
+-- MSUF resolves a new character's frame profile before Suite starts. Install
+-- the chosen Suite profile as MSUF's new-character default once, and repair
+-- this login if MSUF already assigned its historical "Default" fallback.
+-- An existing MSUF preference (including one later cleared by the user) wins.
+function P.EnsureNewCharacterProfile()
+    local installation = Suite.RootDB and Suite.RootDB.installation
+    if type(installation) ~= "table" or installation.status ~= "complete"
+        or installation.newCharacterProfileRevision == 1 then return false end
+    local name = installation.frameProfileName or DB.GetActiveProfileName()
+    local profiles = _G.MSUF_GlobalDB and _G.MSUF_GlobalDB.profiles
+    if not DB.IsProfileName(name) or type(profiles) ~= "table"
+        or type(profiles[name]) ~= "table" then return false end
+    if not installation.frameProfileName then installation.frameProfileName = name end
+    local get = _G.MSUF_GetDefaultProfileForNewCharacters
+    local set = _G.MSUF_SetDefaultProfileForNewCharacters
+    if type(get) ~= "function" or type(set) ~= "function" then return false end
+    local chosen = get()
+    if chosen then
+        installation.newCharacterProfileRevision = 1
+        return false
+    end
+    if set(name) ~= true then return false end
+    installation.newCharacterProfileRevision = 1
+    installation.newCharacterProfileOwned = true
+    if _G.MSUF_ProfileWasUnboundAtLogin == true and _G.MSUF_ActiveProfile ~= name
+        and type(_G.MSUF_SwitchProfile) == "function" and not Suite.IsCombatLocked() then
+        return _G.MSUF_SwitchProfile(name) == true
+    end
+    return true
+end
+
+-- Retail Modern and Retail Forever both need the same resource stack above
+-- their Essential row. Apply once; rerunning the installer explicitly restores
+-- these defaults on the newly selected frame profile.
+function P.EnsureRetailResourceStack(force)
+    local installation = Suite.RootDB and Suite.RootDB.installation
+    local module = Suite.DB and Suite.DB.suite and Suite.DB.suite.modules
+    module = module and module.cooldownManager
+    if not (Suite.Client and Suite.Client.isMainline)
+        or type(installation) ~= "table" or installation.status ~= "complete"
+        or (installation.profile ~= "suite" and installation.profile ~= "forever")
+        or (installation.profile == "forever" and Suite.Client.isForever == true)
+        or type(module) ~= "table"
+        or module.enabled == false then return false end
+    if not force and installation.resourceStackRevision == 1 then return false end
+    local db = _G.MSUF_DB
+    if type(db) ~= "table" then return false end
+    local bars, player = db.bars, db.player
+    if type(bars) ~= "table" or type(player) ~= "table" then return false end
+    local migrate = force or (bars.classPowerAnchorToCooldown ~= true
+        and (player.powerBarDetached == true
+            and player.detachedPowerBarAnchorToClassPower == true
+            or installation.profile == "forever" and bars.classPowerOffsetY == -41))
+    installation.resourceStackRevision = 1
+    if not migrate then return false end
+    bars.showClassPower = true
+    bars.classPowerAnchorToCooldown = true
+    bars.classPowerCooldownTopAnchor = true
+    bars.classPowerWidthMode = "cooldown"
+    bars.detachedPowerBarWidthMode = "cooldown"
+    bars.classPowerOffsetX, bars.classPowerOffsetY = 0, 0
+    player.showPowerBar = true
+    player.powerBarDetached = true
+    player.detachedPowerBarAnchorToClassPower = true
+    player.detachedPowerBarSyncClassPower = true
+    player.detachedPowerBarAnchorMode = "CENTER"
+    player.detachedPowerBarOffsetX, player.detachedPowerBarOffsetY = 0, -4
+    if type(_G.MSUF_EnsureCooldownWidthObservers) == "function" then
+        _G.MSUF_EnsureCooldownWidthObservers()
+    end
+    if type(_G.MSUF_ApplyPowerBarEmbedLayout_ForUnitKey) == "function" then
+        _G.MSUF_ApplyPowerBarEmbedLayout_ForUnitKey("player", true)
+    end
+    if type(_G.MSUF_ClassPower_Apply) == "function" then
+        _G.MSUF_ClassPower_Apply({ playerHP = true })
+    end
+    if type(_G.MSUF_UFCore_NotifyConfigChanged) == "function" then
+        _G.MSUF_UFCore_NotifyConfigChanged("player", false, true, "SuiteResourceStack")
+    end
+    return true
+end
+
+-- Older Retail Forever imports had Potions attached to Utility at Y=-380.
+-- Repair that exact factory layout before CDM starts, preserving personal
+-- changes and the authored Forever icon sizes/positions.
+function P.EnsureRetailForeverCooldownLayout()
+    local installation = Suite.RootDB and Suite.RootDB.installation
+    if not (Suite.Client and Suite.Client.isMainline and Suite.Client.isForever ~= true)
+        or type(installation) ~= "table" or installation.status ~= "complete"
+        or installation.profile ~= "forever" or installation.foreverAnchorRevision == 1 then
+        return false
+    end
+    local config = Suite.DB and Suite.DB.suite and Suite.DB.suite.modules
+    config = config and config.cooldownManager
+    if type(config) ~= "table" or config.enabled == false then return false end
+    local anchor
+    for index, unit in pairs(Suite.CDM and Suite.CDM.FRAME_ANCHORS or {}) do
+        if unit == "player" then anchor = index; break end
+    end
+    if not anchor then return false end
+    installation.foreverAnchorRevision = 1
+    if config.ext_anchor ~= 3 or config.ext_y ~= -380 then return false end
+    config.def_anchor, config.def_side = anchor, 2
+    config.def_gap, config.def_align = 44, 3
+    config.def_x, config.def_y = 0, 0
+    config.ext_anchor, config.ext_side = anchor, 1
+    config.ext_gap, config.ext_align = 22, 2
+    config.ext_x, config.ext_y = 0, 0
+    config.captured = true
+    config.defaultsVersion = Suite.CDM.DEFAULTS_VERSION
+    if Suite.Suite and Suite.Suite.started and Suite.Suite.Apply then
+        Suite.Suite.Apply("cooldownManager")
+    end
+    return true
+end
+
 -- MSUF's native Profiles page owns names and copy operations. Keep the Suite
 -- and optional skin profile stores aligned with those same actions.
 function P.OnLifecycle(kind, source, target)

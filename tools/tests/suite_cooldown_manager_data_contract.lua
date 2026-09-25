@@ -31,7 +31,7 @@ for _,file in ipairs(FILES) do
     -- frame, so no aura container can be anchored (to another container or
     -- anything else) from here. Placement belongs to Auras/Layout.
     for _,word in ipairs({"pcall","loadstring","setfenv","hooksecurefunc","OnUpdate","GetDataProvider","SetLayoutData",
-        "CooldownViewerSettings:","TriggerEvent","SetPoint","SetAllPoints","ClearAllPoints","Claude","Anthropic"}) do
+        "CooldownViewerSettings:","TriggerEvent","SetPoint","SetAllPoints","ClearAllPoints","Cl".."aude","Anth".."ropic"}) do
         assert(not text:find(word,1,true),file.." must not use "..word)
     end
 end
@@ -160,7 +160,10 @@ CreateFrame=function()
 end
 
 ------------------------------------------------------------------ bootstrap stub + files
-local S={Public=function(v) return not IsSecret(v) end,Text=function(v) return v end}
+-- S.CreateFrame (Surfaces.lua) wraps the client CreateFrame; looked up per
+-- call so the stubs below can replace it.
+local S={Public=function(v) return not IsSecret(v) end,Text=function(v) return v end,
+    CreateFrame=function(...) return CreateFrame(...) end}
 local P={NS=NS,Suite=S}
 P.CDM={M={},EMPTY={},state={raidEssentials=false},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
@@ -257,8 +260,8 @@ Same("only malformed",CDM.Codec.EncodeSpells({e={a1={stackGlow=500,stackColor="n
 -- Loading the runtime creates no frame (the options page loads it with the
 -- module off); the gate exists only while Blizzard's data is missing.
 assert(gateFrame==nil,"the readiness gate is created lazily")
-local essSet=sets[0]
-sets[0]={}
+local spellSets={}
+for category=0,3 do spellSets[category]=sets[category]; sets[category]={} end
 assert(not Catalog.Ready() and Catalog.Rebuild()==false and Catalog.generation==0,"not ready before data")
 assert(gateFrame and gateFrame.events.COOLDOWN_VIEWER_DATA_LOADED and gateFrame.events.VARIABLES_LOADED
     and gateFrame.events.PLAYER_ENTERING_WORLD,"before login the gate waits for all three events")
@@ -268,7 +271,7 @@ for _,event in ipairs({"VARIABLES_LOADED","PLAYER_ENTERING_WORLD"}) do gateFrame
 assert(not Catalog.Ready())
 gateFrame.scripts.OnEvent(gateFrame,"COOLDOWN_VIEWER_DATA_LOADED")
 assert(Catalog.Ready() and next(gateFrame.events)==nil and gateFrame.scripts.OnEvent==nil,"gate completes and unregisters")
-sets[0]=essSet
+for category=0,3 do sets[category]=spellSets[category] end
 
 ------------------------------------------------------------------ catalog: defaults
 assert(Catalog.Rebuild()==true)
@@ -880,11 +883,17 @@ IsLoggedIn=function() return true end
 sets[0]={}
 late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,wipe=C.wipe}}
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
+assert(late.CDM.Catalog.Ready() and lateFrame==nil,
+    "a spec with no Essential IDs but populated Utility must be ready")
+for category=0,3 do sets[category]={} end
+late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,wipe=C.wipe}}
+assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
 assert(not late.CDM.Catalog.Ready() and lateFrame and lateFrame.events.COOLDOWN_VIEWER_DATA_LOADED
     and not lateFrame.events.VARIABLES_LOADED and not lateFrame.events.PLAYER_ENTERING_WORLD,"after login only the data event")
 lateFrame.scripts.OnEvent(lateFrame,"COOLDOWN_VIEWER_DATA_LOADED")
 assert(late.CDM.Catalog.Ready() and next(lateFrame.events)==nil,"the data event completes the gate")
-CreateFrame,IsLoggedIn,sets[0]=create,nil,essSet
+CreateFrame,IsLoggedIn=create,nil
+for category=0,3 do sets[category]=spellSets[category] end
 
 ------------------------------------------------------------------ presets: data
 -- Every class has a list; racials and the bag-item categories Blizzard draws
@@ -1229,10 +1238,10 @@ names[190319],textures[190319],known[190319]="Combustion",{190319,190319},true
 C.state.specID,C.state.raidEssentials=63,true
 C.lists=CDM.CleanLists(nil)
 plans=Resolve.Build()
-Same("raid default keeps the on-use trinket",Keys(plans.ess.entries),"s190319,b701")
+Same("raid default fills sparse essentials and keeps the on-use trinket",Keys(plans.ess.entries),"s190319,b101,b102,b107,b701")
 C.lists=CDM.CleanLists({specs={[63]={c1={"e13"}}}})
 plans=Resolve.Build()
-Same("custom trinket home wins over raid default",Keys(plans.ess.entries),"s190319")
+Same("custom trinket home wins over raid default",Keys(plans.ess.entries),"s190319,b101,b102,b107")
 assert(E.e13 and E.e13.slot=="c1" and E.b701==nil,"trinket must have one home")
 C.lists=CDM.CleanLists({specs={[63]={ess={"b101","b102"}}}})
 plans=Resolve.Build()

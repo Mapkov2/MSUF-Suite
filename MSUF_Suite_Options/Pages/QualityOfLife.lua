@@ -104,6 +104,9 @@ local function FeatureAccordion(ctx, b, group)
         end
     end)
     P.AttachRuleColors(body, title, id, allRules)
+    P.AttachSectionReset(ctx, body, title, function()
+        return P.ResetRules(id, allRules, nil, { group.switch })
+    end)
     P.FinishBody(b, body, y)
 end
 

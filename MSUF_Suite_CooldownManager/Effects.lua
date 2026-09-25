@@ -40,11 +40,8 @@ local function EnsureGlow(icon)
     flip:Hide()
     glow.flip, glow.flipOn = flip, false
     glow.flipAnim = K.FlipBook(flip, K.GLOW[1])
-    local edges = {}
-    for i = 1, 4 do
-        edges[i] = S.CreateTexture(glow, nil, "OVERLAY")
-        edges[i]:Hide()
-    end
+    local edges = K.NewEdges(glow)
+    for i = 1, 4 do edges[i]:Hide() end
     glow.edges, glow.edgesOn = edges, false
     glow.pulse = K.Pulse(glow, K.GLOW[3].pulse)
     icon.glow = glow

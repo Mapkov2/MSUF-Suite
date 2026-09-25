@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 local M = {}
 local ID = "skyriding"
 local ASCENT, SECOND_WIND, SURGE = 372610, 425782, 361584
@@ -43,10 +43,7 @@ local function Paint(texture, hex, alpha)
     texture:SetAlpha(alpha or 1)
 end
 
-local function Finite(value)
-    return Public(value) and type(value) == "number" and value == value
-        and value > -math.huge and value < math.huge
-end
+local Finite = S.Finite
 
 -- Frequent redraws write a FontString only when its content changed.
 local function SetText(fontString, text)

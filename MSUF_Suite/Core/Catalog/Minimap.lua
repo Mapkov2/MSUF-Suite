@@ -214,7 +214,10 @@ for _, field in ipairs(infoFields) do
     local section = "info_" .. key:lower()
     local shown = B.Add(id, Bool(prefix, field[6], key == "Clock" or key == "Location" or key == "Weather" and NS.Client.isForever), section, key)
     shown.infoField = key
-    local function Info(rule) rule.enableKey = prefix; return B.Add(id, rule, section, key) end
+    local function Info(rule)
+        rule.enableKey = prefix
+        return B.Add(id, rule, section, key)
+    end
     Info(Font(prefix .. "Font", "Text font"))
     Info(Number(prefix .. "Size", "Text size", 12, 8, 32))
     Info(Choice(prefix .. "Outline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }))
@@ -230,7 +233,10 @@ for _, field in ipairs(infoFields) do
     Info(Number(prefix .. "Y", "Vertical offset", field[4], -300, 300)).category = "advanced"
     Info(Choice(prefix .. "Box", "Text background", 1, { "None", "Box in the border color" }))
 end
-local function InfoOption(key, rule) rule.enableKey = "info" .. key; return B.Add(id, rule, "info_" .. key:lower(), key) end
+local function InfoOption(key, rule)
+    rule.enableKey = "info" .. key
+    return B.Add(id, rule, "info_" .. key:lower(), key)
+end
 InfoOption("Clock", Choice("infoClockSource", "Clock source", 1, { "Realm time", "Local time", "Realm and local time" }))
 InfoOption("Clock", Bool("infoClock24Hour", "Use 24-hour format", true))
 InfoOption("Clock", Bool("infoClockSeconds", "Show seconds"))
@@ -289,7 +295,10 @@ for _, rule in ipairs({
     Number("infoDifficultyX", "Horizontal offset", 4, -300, 300),
     Number("infoDifficultyY", "Vertical offset", -20, -300, 300),
     Bool("infoDifficultyColors", "Color by difficulty", true),
-}) do rule.enableKey = "infoDifficulty"; B.Add(id, rule, "info_difficulty", "Difficulty") end
+}) do
+    rule.enableKey = "infoDifficulty"
+    B.Add(id, rule, "info_difficulty", "Difficulty")
+end
 
 local rules = NS.SuiteCatalog.minimap.rules
 if NS.Client.isForever then

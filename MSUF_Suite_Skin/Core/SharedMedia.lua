@@ -80,10 +80,7 @@ if LSM and type(LSM.RegisterCallback) == "function" then
     local function OnRegistered(event, mediaType, key)
         SharedMedia:OnRegistered(event, mediaType, key)
     end
-    local ok, message = pcall(LSM.RegisterCallback, SharedMedia,
-        "LibSharedMedia_Registered", OnRegistered)
-    SharedMedia.callbackRegistered = ok == true
-    SharedMedia.callbackError = not ok and message or nil
+    LSM.RegisterCallback(SharedMedia, "LibSharedMedia_Registered", OnRegistered)
 end
 
 function SharedMedia.GetLibrary()

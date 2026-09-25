@@ -1,5 +1,248 @@
 local _, NS = ...
 
+local Field = NS.Safety.Field
+local Call = NS.Safety.Call
+local Public = NS.Safety.Public
+
+local function HasMethod(target, name)
+    return type(target) == "table" and type(target[name]) == "function"
+end
+
+local function WeakSet()
+    return setmetatable({}, { __mode = "k" })
+end
+
+---------------------------------------------------------------------------------------------
+-- PaperDollChrome: shared by CharacterPanel (below) and InspectPanel (next in the
+-- TOC). Per-owner state, combat deferral, waiting for the load-on-demand
+-- window addon, and the decorative primitives both PaperDoll windows use.
+---------------------------------------------------------------------------------------------
+local Chrome = {}
+Chrome.__index = Chrome
+NS.PaperDollChrome = Chrome
+
+-- Surface specs are shared per call site; Surface.Attach stores, never edits them.
+function Chrome.Spec(role, radius, inset, listItem, activeRole)
+    return {
+        role = role,
+        radius = radius,
+        inset = inset,
+        listItem = listItem == true,
+        activeRole = activeRole,
+        allowImplicitProtected = true,
+    }
+end
+
+local SLOT_SPEC = Chrome.Spec("button", 4, 0, true)
+local INSET_SPEC = Chrome.Spec("panel", 5, 0)
+
+function Chrome.Track(state, target)
+    if target then state.surfaces[target] = true end
+end
+
+function Chrome.Fade(state, region)
+    if not region or NS.IsCombatLocked() or not NS.Safety.CanDecorate(region, true) then
+        return false
+    end
+    return NS.Cosmetics.Fade(region, state.owner) == true
+end
+
+function Chrome.FadeNineSlice(state, target)
+    local nineSlice = Field(target, "NineSlice")
+    if not nineSlice or NS.IsCombatLocked() or not NS.Safety.CanDecorate(nineSlice, true) then
+        return false
+    end
+    NS.Cosmetics.FadeNineSlice(nineSlice, state.owner)
+    return true
+end
+
+function Chrome.Attach(state, target, spec)
+    if not target or NS.IsCombatLocked() or not NS.Safety.CanCreateRegions(target, true)
+        or not NS.Surface.Attach(target, spec) then
+        return false
+    end
+    state.surfaces[target] = true
+    return true
+end
+
+function Chrome.SkinInset(state, inset)
+    if not inset then return false end
+    Chrome.FadeNineSlice(state, inset)
+    Chrome.Fade(state, Field(inset, "Bg"))
+    Chrome.Fade(state, Field(inset, "Background"))
+    return Chrome.Attach(state, inset, INSET_SPEC)
+end
+
+-- The window portrait lives under several names across clients.
+function Chrome.FadePortraits(state, root, globalPortrait)
+    Chrome.Fade(state, globalPortrait)
+    Chrome.Fade(state, Field(root, "Portrait"))
+    Chrome.Fade(state, Field(root, "portrait"))
+    local container = Field(root, "PortraitContainer")
+    Chrome.Fade(state, Field(container, "Portrait"))
+    Chrome.Fade(state, Field(container, "portrait"))
+end
+
+-- config: prefix (deferral keys), addon, rootName, slotNames, applyNow(state),
+-- applyOrWait(state) (applies once the root exists, else waits for the addon),
+-- optional initState(state) and slotIcon(slot) fallback.
+function Chrome.New(config)
+    config.owners = {}
+    config.exactSlots = WeakSet()
+    config.waiting = false
+    return setmetatable(config, Chrome)
+end
+
+function Chrome:OwnerState(owner)
+    local state = self.owners[owner]
+    if not state then
+        state = {
+            owner = owner,
+            active = false,
+            surfaces = WeakSet(),
+            deferred = {},
+            jobs = {},
+        }
+        if self.initState then self.initState(state) end
+        self.owners[owner] = state
+    end
+    return state
+end
+
+-- Runs callback(state) now, or once after combat. A suffix always maps to the
+-- same callback, so its combat job and key are built once per owner.
+function Chrome:RunOrDefer(state, suffix, callback)
+    if not state.active then return false end
+    if not NS.IsCombatLocked() then
+        callback(state)
+        return true
+    end
+    local job = state.jobs[suffix]
+    if not job then
+        local key = self.prefix .. ":" .. suffix .. ":" .. tostring(state.owner)
+        local owners = self.owners
+        job = { key = key }
+        job.run = function()
+            local current = owners[state.owner]
+            if current then current.deferred[key] = nil end
+            if current and current.active then callback(current) end
+        end
+        state.jobs[suffix] = job
+    end
+    state.deferred[job.key] = true
+    NS.CombatGate.RunOrDefer(job.key, job.run)
+    return false, "combat"
+end
+
+function Chrome:ForActiveOwners(suffix, callback)
+    for _, state in pairs(self.owners) do
+        if state.active then self:RunOrDefer(state, suffix, callback) end
+    end
+end
+
+function Chrome:SkinSlot(state, slot)
+    if not state.active or not slot or not self.exactSlots[slot] or NS.IsCombatLocked() then
+        return false
+    end
+    Chrome.Attach(state, slot, SLOT_SPEC)
+    local icon = Field(slot, "Icon") or Field(slot, "icon")
+        or (self.slotIcon and self.slotIcon(slot))
+    local border = Field(slot, "IconBorder") or Field(slot, "iconBorder")
+    if icon and border then
+        NS.IconSkin.Apply(slot, state.owner, {
+            icon = icon,
+            nativeBorder = border,
+            allowImplicitProtected = true,
+        })
+    end
+    return true
+end
+
+function Chrome:SkinAllSlots(state)
+    if not state.active or NS.IsCombatLocked() then return false end
+    local applied = false
+    for index = 1, #self.slotNames do
+        local name = self.slotNames[index]
+        local slot = _G[name]
+        if slot then
+            self.exactSlots[slot] = true
+            Chrome.Fade(state, _G[name .. "Frame"])
+            applied = self:SkinSlot(state, slot) or applied
+        end
+    end
+    return applied
+end
+
+-- Native slot updates: one slot now, or, in combat, one bounded pass over
+-- all slots after PLAYER_REGEN_ENABLED for the whole combat window.
+function Chrome:RefreshSlot(slot)
+    if not self.exactSlots[slot] then return end
+    local skinAll = self.skinAllSlots
+    for _, state in pairs(self.owners) do
+        if state.active then
+            if NS.IsCombatLocked() then
+                self:RunOrDefer(state, "slots", skinAll)
+            else
+                self:SkinSlot(state, slot)
+            end
+        end
+    end
+end
+
+function Chrome:ApplyForActiveOwners()
+    self:ForActiveOwners("apply", self.applyOrWait)
+end
+
+-- True while waiting for the window addon to load.
+function Chrome:ScheduleLoad()
+    if self.waiting then return true end
+    if NS.Client.IsAddOnLoaded(self.addon) or not EventUtil
+        or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then
+        return false
+    end
+    self.waiting = true
+    EventUtil.ContinueOnAddOnLoaded(self.addon, function()
+        self.waiting = false
+        self:ApplyForActiveOwners()
+    end)
+    return true
+end
+
+local function CategoryEnabled()
+    return NS.GenericWindows.IsCategoryEnabled("character")
+end
+
+function Chrome:Activate(owner)
+    if not CategoryEnabled() then return true, "disabled" end
+    local state = self:OwnerState(owner)
+    state.active = true
+    if NS.IsCombatLocked() then
+        self:RunOrDefer(state, "apply", self.applyOrWait)
+        return false, "combat"
+    end
+    if not _G[self.rootName] then
+        if self:ScheduleLoad() then return true, "waiting" end
+        return false, "missing"
+    end
+    return self.applyNow(state)
+end
+
+-- Cancels deferred work, hides this owner's surfaces and forgets the owner.
+function Chrome:Release(state)
+    state.active = false
+    for key in pairs(state.deferred) do
+        NS.CombatGate.Cancel(key)
+        state.deferred[key] = nil
+    end
+    for target in pairs(state.surfaces) do
+        NS.Surface.SetVisible(target, false)
+    end
+    self.owners[state.owner] = nil
+end
+
+---------------------------------------------------------------------------------------------
+-- CharacterPanel
+--
 -- Clean-room Character/PaperDoll coverage verified against
 -- Gethe/wow-ui-source upstream/live at
 -- 027d26c3406d3de2cbd2b1f67d468fe033a1bcd4:
@@ -14,22 +257,9 @@ local _, NS = ...
 -- Blizzard keeps ownership of the model scene, equipment slots, scripts,
 -- item/state data and pooled stat lifecycle. Wide equipment geometry is owned
 -- reversibly by GearAnnotations, after the exact native UpdateSize completion.
-local CharacterPanel = {
-    owners = {},
-    activeOwnerCount = 0,
-    waiting = false,
-    hookedStats = false,
-    hookedSlots = false,
-    hookedSidebar = false,
-    hookedModelBackground = false,
-    hookedModeTabs = false,
-    hookedTabLayout = false,
-    exactSlots = setmetatable({}, { __mode = "k" }),
-}
-NS.CharacterPanel = CharacterPanel
-
+---------------------------------------------------------------------------------------------
 local DEFAULT_OWNER = "blizzardWindows"
-local CHARACTER_ADDON = "Blizzard_UIPanels_Game"
+local MAX_STAT_ROWS = 64
 
 local modelArtNames = {
     "CharacterModelFrameBackgroundTopLeft",
@@ -47,12 +277,8 @@ local modelArtNames = {
     "PaperDollInnerBorderBottom",
     "PaperDollInnerBorderBottom2",
 }
-local modelBackgroundNames = {
-    "CharacterModelFrameBackgroundTopLeft",
-    "CharacterModelFrameBackgroundTopRight",
-    "CharacterModelFrameBackgroundBotLeft",
-    "CharacterModelFrameBackgroundBotRight",
-}
+-- The first four entries of modelArtNames: Forever tints them instead of fading.
+local MODEL_BACKGROUND_COUNT = 4
 
 local slotNames = {
     "CharacterHeadSlot",
@@ -93,135 +319,49 @@ local FOREVER_TAB_FALLBACKS = {
     "Character", "Reputation", "Skills", "PvP", "Currency", "Statistics",
 }
 
-local function WeakSet()
-    return setmetatable({}, { __mode = "k" })
-end
-
-local function SafeField(object, key)
-    if not object then return nil end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
-end
-
-local function AccessibleBoolean(value)
-    if type(issecretvalue) == "function" and issecretvalue(value) then
-        if type(canaccessvalue) ~= "function" or not canaccessvalue(value) then
-            return nil
-        end
-    end
-    return value == true
-end
-
-local function IsShown(region)
-    local method = SafeField(region, "IsShown")
-    if type(method) ~= "function" then return nil end
-    local ok, shown = pcall(method, region)
-    if not ok then return nil end
-    return AccessibleBoolean(shown)
-end
-
-local function OwnerState(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = CharacterPanel.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            surfaces = WeakSet(),
-            deferred = {},
-        }
-        CharacterPanel.owners[owner] = state
-    end
-    return state, owner
-end
-
-local function Report(label, message)
-    if type(NS.ReportError) == "function" then
-        NS.ReportError("character panel " .. tostring(label), message)
-    end
-end
-
-local function CategoryEnabled()
-    return not NS.GenericWindows
-        or type(NS.GenericWindows.IsCategoryEnabled) ~= "function"
-        or NS.GenericWindows.IsCategoryEnabled("character")
-end
-
-local function IsAddonLoaded()
-    if C_AddOns and type(C_AddOns.IsAddOnLoaded) == "function" then
-        local ok, loadedOrLoading, loaded = pcall(C_AddOns.IsAddOnLoaded, CHARACTER_ADDON)
-        return ok and (loaded == true or (loaded == nil and loadedOrLoading == true))
-    end
-    if type(IsAddOnLoaded) == "function" then
-        local ok, loaded = pcall(IsAddOnLoaded, CHARACTER_ADDON)
-        return ok and loaded == true
-    end
-    return _G.CharacterFrame ~= nil
-end
-
-local function TrackSurface(state, target)
-    if state and target then state.surfaces[target] = true end
-end
-
-local function Fade(state, region)
-    if not state or not region or NS.IsCombatLocked() or not NS.Cosmetics
-        or type(NS.Cosmetics.Fade) ~= "function" or not NS.Safety
-        or not NS.Safety.CanDecorate(region, true) then
-        return false
-    end
-    local ok, result = pcall(NS.Cosmetics.Fade, region, state.owner)
-    if not ok then Report("fade", result) end
-    return ok and result == true
-end
-
-local function FadeNineSlice(state, target)
-    local nineSlice = SafeField(target, "NineSlice")
-    if not nineSlice or NS.IsCombatLocked() or not NS.Cosmetics
-        or type(NS.Cosmetics.FadeNineSlice) ~= "function" or not NS.Safety
-        or not NS.Safety.CanDecorate(nineSlice, true) then
-        return false
-    end
-    local ok, message = pcall(NS.Cosmetics.FadeNineSlice, nineSlice, state.owner)
-    if not ok then
-        Report("nine slice", message)
-        return false
-    end
-    return true
-end
-
-local function Attach(state, target, role, radius, inset, listItem, activeRole)
-    if not state or not target or NS.IsCombatLocked() or not NS.Surface
-        or type(NS.Surface.Attach) ~= "function" or not NS.Safety
-        or not NS.Safety.CanCreateRegions(target, true) then
-        return false
-    end
-    local ok, surface = pcall(NS.Surface.Attach, target, {
-        role = role or "card",
-        radius = radius or 4,
-        inset = inset or 0,
-        listItem = listItem == true,
-        activeRole = activeRole,
+local PANE_SPEC = Chrome.Spec("panel", 4, 0)
+local DETAIL_SPEC = Chrome.Spec("card", 4, 0)
+local NAVIGATION_TAB_SPEC = Chrome.Spec("navigation", 4, 1, true, "navigationActive")
+local FOREVER_TAB_SPEC = {
+    role = "navigation", activeRole = "navigationActive",
+    fillVisible = false, border = 0, radius = 2, inset = 0,
+    allowImplicitProtected = true,
+}
+local STAT_ROW_SPEC = Chrome.Spec("card", 2, 1, true)
+local STATS_CARD_SPEC = Chrome.Spec("card", 5, 0)
+local STATS_PANEL_SPEC = Chrome.Spec("panel", 5, 0)
+local STAT_HEADER_SPEC = Chrome.Spec("card", 3, 1, false)
+local MODEL_SPEC = Chrome.Spec("card", 6, 0)
+local SIDEBAR_TAB_SPEC = Chrome.Spec("navigation", 5, 1, true)
+-- ControlSkin copies these; one per native selection state.
+local sidebarControlSpecs = {}
+for _, active in ipairs({ true, false }) do
+    sidebarControlSpecs[active] = {
+        role = "navigation",
+        activeRole = "navigationActive",
+        active = active,
+        useControlShape = true,
+        pillHeight = 32,
+        radius = 5,
+        inset = 1,
+        regions = { "TabBg", "Hider", "Highlight" },
         allowImplicitProtected = true,
-    })
-    if ok and surface then
-        TrackSurface(state, target)
-        return true
-    end
-    if not ok then Report("surface", surface) end
-    return false
+    }
 end
 
-local function FadeAtlas(state, host, atlas)
-    if not host or type(host.GetRegions) ~= "function" then return end
-    local ok, regions = pcall(function() return { host:GetRegions() } end)
-    if not ok then return end
-    for index = 1, #regions do
-        local region = regions[index]
-        local getAtlas = SafeField(region, "GetAtlas")
-        if type(getAtlas) == "function" then
-            local read, name = pcall(getAtlas, region)
-            if read and name == atlas then Fade(state, region) end
-        end
+local Fade, Attach, Track = Chrome.Fade, Chrome.Attach, Chrome.Track
+
+-- nil when the region cannot answer (missing, forbidden or secret).
+local function IsShown(region)
+    local shown = Call(region, "IsShown")
+    if shown == nil or not Public(shown) then return nil end
+    return shown == true
+end
+
+local function FadeAtlasRegions(state, atlas, ...)
+    for index = 1, select("#", ...) do
+        local region = select(index, ...)
+        if Call(region, "GetAtlas") == atlas then Fade(state, region) end
     end
 end
 
@@ -230,20 +370,19 @@ local function ForeverLook()
         and NS.DB.theme.look == "foreverGlass"
 end
 
+-- Forever mode tabs ------------------------------------------------------------------------
+
 local function CaptureGeometry(frame)
-    if not frame or type(frame.GetNumPoints) ~= "function"
-        or type(frame.GetWidth) ~= "function" or type(frame.GetHeight) ~= "function"
-        or type(frame.ClearAllPoints) ~= "function" or type(frame.SetPoint) ~= "function"
-        or type(frame.SetSize) ~= "function" then return nil end
+    if not HasMethod(frame, "GetNumPoints") or not HasMethod(frame, "GetWidth")
+        or not HasMethod(frame, "GetHeight") or not HasMethod(frame, "ClearAllPoints")
+        or not HasMethod(frame, "SetPoint") or not HasMethod(frame, "SetSize") then
+        return nil
+    end
     local count = frame:GetNumPoints()
     if type(count) ~= "number" or count > 4 then return nil end
     local snapshot = { width = frame:GetWidth(), height = frame:GetHeight(), points = {} }
-    if type(frame.GetFrameStrata) == "function" then
-        snapshot.strata = frame:GetFrameStrata()
-    end
-    if type(frame.GetFrameLevel) == "function" then
-        snapshot.level = frame:GetFrameLevel()
-    end
+    if HasMethod(frame, "GetFrameStrata") then snapshot.strata = frame:GetFrameStrata() end
+    if HasMethod(frame, "GetFrameLevel") then snapshot.level = frame:GetFrameLevel() end
     for index = 1, count do
         snapshot.points[index] = { frame:GetPoint(index) }
     end
@@ -251,12 +390,8 @@ local function CaptureGeometry(frame)
 end
 
 local function CanMoveForever(frame)
-    if not frame or not NS.Safety.CanCreateRegions(frame, true) then return false end
-    if type(NS.Safety.GetProtection) == "function" then
-        local protected = NS.Safety.GetProtection(frame)
-        if protected then return false end
-    end
-    return true
+    return frame ~= nil and NS.Safety.CanCreateRegions(frame, true)
+        and not NS.Safety.GetProtection(frame)
 end
 
 local function RestoreGeometry(frame, snapshot)
@@ -266,12 +401,17 @@ local function RestoreGeometry(frame, snapshot)
         frame:SetPoint(unpack(snapshot.points[index]))
     end
     frame:SetSize(snapshot.width, snapshot.height)
-    if snapshot.strata and type(frame.SetFrameStrata) == "function" then
+    if snapshot.strata and HasMethod(frame, "SetFrameStrata") then
         frame:SetFrameStrata(snapshot.strata)
     end
-    if snapshot.level and type(frame.SetFrameLevel) == "function" then
+    if snapshot.level and HasMethod(frame, "SetFrameLevel") then
         frame:SetFrameLevel(snapshot.level)
     end
+end
+
+local function RestoreTitle(state, root)
+    local title = Field(root, "TitleText")
+    if title then NS.Cosmetics.Restore(title, state.owner) end
 end
 
 local function RestoreForeverTabs(state, root)
@@ -282,50 +422,79 @@ local function RestoreForeverTabs(state, root)
         RestoreGeometry(tab, nav.tabGeometry[index])
         if tab._msufForeverLabel then tab._msufForeverLabel:Hide() end
         if tab._msufForeverRule then tab._msufForeverRule:Hide() end
-        local icon = SafeField(tab, "Icon")
+        local icon = Field(tab, "Icon")
         if icon then NS.Cosmetics.Restore(icon, state.owner) end
     end
     RestoreGeometry(nav.container, nav.containerGeometry)
-    if type(root.UpdateTabLayout) == "function" then root:UpdateTabLayout() end
+    if HasMethod(root, "UpdateTabLayout") then root:UpdateTabLayout() end
     if nav.header then nav.header:Hide() end
     if nav.headerRule then nav.headerRule:Hide() end
-    local title = SafeField(root, "TitleText")
-    if title then NS.Cosmetics.Restore(title, state.owner) end
+    RestoreTitle(state, root)
     nav.restoring = false
 end
 
+-- Captures the native tab geometry once; nil when a tab cannot be moved.
+local function EnsureForeverNav(root, container, tabs)
+    local nav = root._msufForeverTabs
+    if nav then return nav end
+    local original = CaptureGeometry(container)
+    if not original or not CanMoveForever(container) then return nil end
+    nav = { container = container, containerGeometry = original, tabs = {}, tabGeometry = {} }
+    for index = 1, #tabs do
+        local tab = tabs[index]
+        local geometry = CaptureGeometry(tab)
+        if not geometry or not CanMoveForever(tab) then return nil end
+        nav.tabs[index], nav.tabGeometry[index] = tab, geometry
+    end
+    root._msufForeverTabs = nav
+    return nav
+end
+
+local function PlaceForeverTab(state, root, container, tab, index, visualIndex, tabWidth)
+    tab:ClearAllPoints()
+    tab:SetPoint("TOPLEFT", container, "TOPLEFT", (visualIndex - 1) * tabWidth, 0)
+    tab:SetSize(tabWidth, 30)
+    local icon = Field(tab, "Icon")
+    if icon then Fade(state, icon) end
+    if not tab._msufForeverLabel then
+        local label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("CENTER", tab, "CENTER", 0, 1)
+        tab._msufForeverLabel = label
+        local rule = tab:CreateTexture(nil, "OVERLAY")
+        rule:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 10, 1)
+        rule:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -10, 1)
+        rule:SetHeight(2)
+        tab._msufForeverRule = rule
+    end
+    local labelText = tab.tooltipText
+    tab._msufForeverLabel:SetText(type(labelText) == "string" and labelText ~= "" and labelText
+        or FOREVER_TAB_FALLBACKS[index] or tostring(index))
+    tab._msufForeverLabel:SetWidth(tabWidth - 4)
+    tab._msufForeverLabel:Show()
+    local selected = root.selectedTab == index
+    tab._msufForeverLabel:SetTextColor(NS.Theme.GetColor(selected and "accent" or "text"))
+    tab._msufForeverRule:SetColorTexture(NS.Theme.GetColor("accent"))
+    tab._msufForeverRule:SetShown(selected)
+end
+
 local function PositionForeverTabs(state, root)
-    if not ForeverLook() or not NS.Theme or not NS.Safety
-        or not CanMoveForever(root) then
+    if not ForeverLook() or not CanMoveForever(root) then
         RestoreForeverTabs(state, root)
         return false
     end
-    local container = SafeField(root, "ModeTabs")
-    local tabs = SafeField(container, "Tabs")
-    local width = type(root.GetWidth) == "function" and root:GetWidth()
+    local container = Field(root, "ModeTabs")
+    local tabs = Field(container, "Tabs")
+    local width = HasMethod(root, "GetWidth") and root:GetWidth()
     if type(tabs) ~= "table" or #tabs < 3 or #tabs > 8
         or type(width) ~= "number" or width < 550
-        or type(container.SetFrameStrata) ~= "function"
-        or type(container.SetFrameLevel) ~= "function"
-        or type(root.GetFrameLevel) ~= "function" then
+        or not HasMethod(container, "SetFrameStrata")
+        or not HasMethod(container, "SetFrameLevel")
+        or not HasMethod(root, "GetFrameLevel") then
         RestoreForeverTabs(state, root)
         return false
     end
-    local nav = root._msufForeverTabs
-    if not nav then
-        local original = CaptureGeometry(container)
-        if not original or not CanMoveForever(container) then return false end
-        nav = { container = container, containerGeometry = original,
-            tabs = {}, tabGeometry = {} }
-        for index = 1, #tabs do
-            local tab = tabs[index]
-            local geometry = CaptureGeometry(tab)
-            if not geometry or not CanMoveForever(tab) then return false end
-            nav.tabs[index], nav.tabGeometry[index] = tab, geometry
-        end
-        root._msufForeverTabs = nav
-    end
-    if nav.restoring then return false end
+    local nav = EnsureForeverNav(root, container, tabs)
+    if not nav or nav.restoring then return false end
     if not nav.header then
         nav.header = container:CreateTexture(nil, "ARTWORK", nil, -7)
         nav.headerRule = container:CreateTexture(nil, "ARTWORK", nil, -6)
@@ -333,14 +502,12 @@ local function PositionForeverTabs(state, root)
     end
     nav.header:SetColorTexture(NS.Theme.GetColor("microBarFill"))
     nav.headerRule:SetColorTexture(NS.Theme.GetColor("microBarBorder"))
-    local usable = math.min(384, width - 24)
-    local visibleTabs = {}
-    for index, tab in ipairs(nav.tabs) do
-        if IsShown(tab) ~= false then
-            visibleTabs[#visibleTabs + 1] = { tab = tab, index = index }
-        end
+
+    local visibleCount = 0
+    for _, tab in ipairs(nav.tabs) do
+        if IsShown(tab) ~= false then visibleCount = visibleCount + 1 end
     end
-    if #visibleTabs == 0 then
+    if visibleCount == 0 then
         nav.header:Hide()
         nav.headerRule:Hide()
         return false
@@ -348,69 +515,47 @@ local function PositionForeverTabs(state, root)
     nav.header:Show()
     nav.headerRule:Show()
     nav.active = true
-    local tabWidth = math.min(64, math.floor(usable / #visibleTabs))
+    local usable = math.min(384, width - 24)
+    local tabWidth = math.min(64, math.floor(usable / visibleCount))
     -- The native reputation/currency lists use HIGH strata. Keep their native
     -- tabs above those panes when presenting the tabs inside the window.
     container:SetFrameStrata("HIGH")
     container:SetFrameLevel(math.max(520, root:GetFrameLevel() + 50))
     container:ClearAllPoints()
     container:SetPoint("TOPLEFT", root, "TOPLEFT", 8, -26)
-    container:SetSize(tabWidth * #visibleTabs, 30)
+    container:SetSize(tabWidth * visibleCount, 30)
     nav.header:ClearAllPoints()
     nav.header:SetPoint("TOPLEFT", container, "TOPLEFT", -4, 2)
     nav.header:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 4, -2)
     nav.headerRule:ClearAllPoints()
     nav.headerRule:SetPoint("BOTTOMLEFT", nav.header, "BOTTOMLEFT", 0, 0)
     nav.headerRule:SetPoint("BOTTOMRIGHT", nav.header, "BOTTOMRIGHT", 0, 0)
-    for visualIndex, item in ipairs(visibleTabs) do
-        local tab, index = item.tab, item.index
-        tab:ClearAllPoints()
-        tab:SetPoint("TOPLEFT", container, "TOPLEFT", (visualIndex - 1) * tabWidth, 0)
-        tab:SetSize(tabWidth, 30)
-        local icon = SafeField(tab, "Icon")
-        if icon then Fade(state, icon) end
-        if not tab._msufForeverLabel then
-            local label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            label:SetPoint("CENTER", tab, "CENTER", 0, 1)
-            tab._msufForeverLabel = label
-            local rule = tab:CreateTexture(nil, "OVERLAY")
-            rule:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 10, 1)
-            rule:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -10, 1)
-            rule:SetHeight(2)
-            tab._msufForeverRule = rule
+    local visualIndex = 0
+    for index, tab in ipairs(nav.tabs) do
+        if IsShown(tab) ~= false then
+            visualIndex = visualIndex + 1
+            PlaceForeverTab(state, root, container, tab, index, visualIndex, tabWidth)
         end
-        local labelText = tab.tooltipText
-        tab._msufForeverLabel:SetText(type(labelText) == "string"
-            and labelText ~= "" and labelText
-            or FOREVER_TAB_FALLBACKS[index] or tostring(index))
-        tab._msufForeverLabel:SetWidth(tabWidth - 4)
-        tab._msufForeverLabel:Show()
-        local selected = root.selectedTab == index
-        tab._msufForeverLabel:SetTextColor(NS.Theme.GetColor(
-            selected and "accent" or "text"))
-        tab._msufForeverRule:SetColorTexture(NS.Theme.GetColor("accent"))
-        tab._msufForeverRule:SetShown(selected)
     end
-    local title = SafeField(root, "TitleText")
-    if title then NS.Cosmetics.Restore(title, state.owner) end
+    RestoreTitle(state, root)
     return true
 end
 
 local function SkinForeverPanes(state, root)
     if not NS.Client.isForever then return end
-    local left = SafeField(root, "LeftPaneHost")
-    local right = SafeField(root, "RightPaneHost")
-    if Attach(state, left, "panel", 4, 0) then
-        FadeAtlas(state, left, "UI-Character-Info-General-BG")
+    local left = Field(root, "LeftPaneHost")
+    local right = Field(root, "RightPaneHost")
+    if Attach(state, left, PANE_SPEC) then
+        FadeAtlasRegions(state, "UI-Character-Info-General-BG", Call(left, "GetRegions"))
     end
-    if Attach(state, right, "panel", 4, 0) then
-        FadeAtlas(state, right, "UI-Character-Info-Stat-BG")
-        Fade(state, SafeField(right, "StoneBg"))
+    if Attach(state, right, PANE_SPEC) then
+        FadeAtlasRegions(state, "UI-Character-Info-Stat-BG", Call(right, "GetRegions"))
+        Fade(state, Field(right, "StoneBg"))
     end
 end
 
 local function SkinForeverSubframes(state, root)
-    if not ForeverLook() or not state or not state.active or NS.IsCombatLocked() then
+    if not ForeverLook() or not state.active or NS.IsCombatLocked() then
         return
     end
     -- Camelot already supplies the faction, currency, skills, PvP and
@@ -419,41 +564,36 @@ local function SkinForeverSubframes(state, root)
     for index = 1, #FOREVER_VIEWS do
         local spec = FOREVER_VIEWS[index]
         local view = _G[spec[1]]
-        if view and type(view.GetParent) == "function"
-            and view:GetParent() == root then
-            local list = SafeField(view, "ScrollBox")
-            local detail = spec[2] and SafeField(view, spec[2])
-            if list then Attach(state, list, "panel", 4, 0) end
-            if detail then Attach(state, detail, "card", 4, 0) end
+        if view and Call(view, "GetParent") == root then
+            local list = Field(view, "ScrollBox")
+            local detail = spec[2] and Field(view, spec[2])
+            if list then Attach(state, list, PANE_SPEC) end
+            if detail then Attach(state, detail, DETAIL_SPEC) end
         end
     end
 end
 
 local function SkinForeverModeTabs(state, root)
-    if not NS.Client.isForever or not state or not state.active or NS.IsCombatLocked() then return end
-    local container = SafeField(root, "ModeTabs")
-    local tabs = SafeField(container, "Tabs")
+    if not NS.Client.isForever or not state.active or NS.IsCombatLocked() then return end
+    local container = Field(root, "ModeTabs")
+    local tabs = Field(container, "Tabs")
     if type(tabs) ~= "table" then return end
-    Attach(state, container, "panel", 4, 0)
+    Attach(state, container, PANE_SPEC)
+    local foreverLook = ForeverLook()
     for index = 1, #tabs do
         local tab = tabs[index]
         if tab then
             local attached
-            if ForeverLook() and NS.Surface and NS.Surface.Attach then
-                local ok, surface = pcall(NS.Surface.Attach, tab, {
-                    role = "navigation", activeRole = "navigationActive",
-                    fillVisible = false, border = 0, radius = 2, inset = 0,
-                    allowImplicitProtected = true,
-                })
-                attached = ok and surface ~= nil
-                if attached then TrackSurface(state, tab) end
+            if foreverLook then
+                attached = NS.Surface.Attach(tab, FOREVER_TAB_SPEC) ~= nil
+                if attached then Track(state, tab) end
             else
-                attached = Attach(state, tab, "navigation", 4, 1, true, "navigationActive")
+                attached = Attach(state, tab, NAVIGATION_TAB_SPEC)
             end
             if attached then
-                Fade(state, SafeField(tab, "Background"))
-                Fade(state, SafeField(tab, "SelectedTexture"))
-                Fade(state, SafeField(tab, "HighlightTexture"))
+                Fade(state, Field(tab, "Background"))
+                Fade(state, Field(tab, "SelectedTexture"))
+                Fade(state, Field(tab, "HighlightTexture"))
                 NS.Surface.SetActive(tab, root.selectedTab == index)
             end
         end
@@ -461,94 +601,88 @@ local function SkinForeverModeTabs(state, root)
     PositionForeverTabs(state, root)
 end
 
-local function SkinInset(state, inset)
-    if not inset then return false end
-    FadeNineSlice(state, inset)
-    Fade(state, SafeField(inset, "Bg"))
-    Fade(state, SafeField(inset, "Background"))
-    return Attach(state, inset, "panel", 5, 0)
-end
+-- Stats, model, slots and sidebar ------------------------------------------------------
 
 local function SkinStatRow(state, row)
     if not row then return false end
-    Fade(state, SafeField(row, "Background"))
+    Fade(state, Field(row, "Background"))
     if row.Label and row.Value and NS.CharacterStats.StylesRows(_G.CharacterStatsPane) then
         -- The stat-card pass supplies the final spec once for these exact rows.
-        TrackSurface(state, row)
+        Track(state, row)
         return true
     end
-    return Attach(state, row, "card", 2, 1, true)
+    return Attach(state, row, STAT_ROW_SPEC)
+end
+
+local function SkinStatHeader(state, frame, modern)
+    Fade(state, Field(frame, "Background"))
+    -- The dedicated pass owns the final section spec; do not paint a boxed
+    -- header only to replace it again in the same update.
+    if modern then
+        Track(state, frame)
+    else
+        Attach(state, frame, STAT_HEADER_SPEC)
+    end
 end
 
 local function SkinStats(state)
     local pane = _G.CharacterStatsPane
-    if not pane or not state or not state.active or NS.IsCombatLocked() then
+    if not pane or not state.active or NS.IsCombatLocked() then
         return false
     end
 
-    Fade(state, SafeField(pane, "ClassBackground"))
-    Attach(state, pane, NS.GearAnnotations.IsWide() and "card" or "panel", 5, 0)
-    local pool = SafeField(pane, "statsFramePool")
-    local enumerate = SafeField(pool, "EnumerateActive")
-    local modern = NS.CharacterStats.StylesRows(pane) and type(enumerate)=="function"
+    Fade(state, Field(pane, "ClassBackground"))
+    Attach(state, pane, NS.GearAnnotations.IsWide() and STATS_CARD_SPEC or STATS_PANEL_SPEC)
+    local pool = Field(pane, "statsFramePool")
+    local enumerable = HasMethod(pool, "EnumerateActive")
+    local modern = enumerable and NS.CharacterStats.StylesRows(pane)
 
     for index = 1, #statCategoryFields do
-        local category = SafeField(pane, statCategoryFields[index])
-        if category then
-            Fade(state, SafeField(category, "Background"))
-            -- The dedicated pass owns the final section spec; do not paint a
-            -- boxed header only to replace it again in the same update.
-            if modern then TrackSurface(state,category)
-            else Attach(state, category, "card", 3, 1, false) end
-        end
+        local category = Field(pane, statCategoryFields[index])
+        if category then SkinStatHeader(state, category, modern) end
     end
+    local itemLevel = Field(pane, "ItemLevelFrame")
+    if itemLevel then SkinStatHeader(state, itemLevel, modern) end
 
-    local itemLevel = SafeField(pane, "ItemLevelFrame")
-    if itemLevel then
-        Fade(state, SafeField(itemLevel, "Background"))
-        if modern then TrackSurface(state,itemLevel)
-        else Attach(state, itemLevel, "card", 3, 1, false) end
-    end
-
-    if type(enumerate) == "function" then
-        local ok, iterator, invariant, initial = pcall(enumerate, pool)
-        if ok and type(iterator) == "function" then
-            local control = initial
-            -- Retail currently has far fewer than 64 active character-stat
-            -- rows. The hard ceiling keeps this foreign-pool walk bounded if
-            -- a future/custom iterator ever violates the normal contract.
-            for _ = 1, 64 do
-                local iterOk, row = pcall(iterator, invariant, control)
-                if not iterOk then
-                    Report("stat pool", row)
-                    break
-                end
-                if row == nil then break end
-                control = row
-                -- ObjectPoolMixin:EnumerateActive() returns object -> true.
-                -- Only the object key is touched; Blizzard owns every value.
-                SkinStatRow(state, row)
-            end
+    if enumerable then
+        -- ObjectPoolMixin:EnumerateActive() returns object -> true. Only the
+        -- object key is touched; Blizzard owns every value. Retail has far
+        -- fewer than 64 active rows; the bound keeps a foreign pool finite.
+        local iterator, invariant, control = pool:EnumerateActive()
+        for _ = 1, MAX_STAT_ROWS do
+            local row = iterator(invariant, control)
+            if row == nil then break end
+            control = row
+            SkinStatRow(state, row)
         end
     end
     NS.CharacterStats.Apply(pane, state.owner)
     return true
 end
 
+local function RestoreModelColors(model)
+    local colors = model and model._msufForeverBackgroundColors
+    if not colors then return end
+    for region, color in pairs(colors) do
+        region:SetVertexColor(unpack(color))
+    end
+    model._msufForeverBackgroundColors = nil
+end
+
 local function SkinModel(state)
-    if not state or not state.active or NS.IsCombatLocked() then return false end
+    if not state.active or NS.IsCombatLocked() then return false end
     local model = _G.CharacterModelScene
-    local saved = model and model._msufForeverBackgroundColors
-    if model and ForeverLook() then
-        if model and not saved then
+    local foreverLook = ForeverLook()
+    if model and foreverLook then
+        local saved = model._msufForeverBackgroundColors
+        if not saved then
             saved = {}
             model._msufForeverBackgroundColors = saved
         end
-        for index = 1, #modelBackgroundNames do
-            local region = _G[modelBackgroundNames[index]]
+        for index = 1, MODEL_BACKGROUND_COUNT do
+            local region = _G[modelArtNames[index]]
             if region and NS.Safety.CanDecorate(region, true)
-                and type(region.GetVertexColor) == "function"
-                and type(region.SetVertexColor) == "function" then
+                and HasMethod(region, "GetVertexColor") and HasMethod(region, "SetVertexColor") then
                 NS.Cosmetics.Restore(region, state.owner)
                 if not saved[region] then
                     saved[region] = { region:GetVertexColor() }
@@ -556,280 +690,94 @@ local function SkinModel(state)
                 region:SetVertexColor(0.36, 0.44, 0.54, saved[region][4] or 1)
             end
         end
-    elseif saved then
-        for region, color in pairs(saved) do
-            region:SetVertexColor(unpack(color))
-        end
-        model._msufForeverBackgroundColors = nil
+    else
+        RestoreModelColors(model)
     end
-    for index = ForeverLook() and #modelBackgroundNames + 1 or 1, #modelArtNames do
+    for index = foreverLook and MODEL_BACKGROUND_COUNT + 1 or 1, #modelArtNames do
         Fade(state, _G[modelArtNames[index]])
     end
-    return Attach(state, model, "card", 6, 0)
+    return Attach(state, model, MODEL_SPEC)
 end
 
-local function SkinSlot(state, slot)
-    if not state or not state.active or not slot or not CharacterPanel.exactSlots[slot]
-        or NS.IsCombatLocked() then
-        return false
+local function SkinSidebarTab(state, tab)
+    local hider = Field(tab, "Hider")
+    if NS.Safety.CanControl(tab, true)
+        and NS.ControlSkin.ApplyButton(tab, state.owner, sidebarControlSpecs[IsShown(hider) == false]) then
+        Track(state, tab)
+        return true
     end
-
-    Attach(state, slot, "button", 4, 0, true)
-    if NS.IconSkin and type(NS.IconSkin.Apply) == "function" then
-        local icon = SafeField(slot, "Icon") or SafeField(slot, "icon")
-        local border = SafeField(slot, "IconBorder") or SafeField(slot, "iconBorder")
-        if icon and border then
-            local ok, iconState = pcall(NS.IconSkin.Apply, slot, state.owner, {
-                icon = icon,
-                nativeBorder = border,
-                allowImplicitProtected = true,
-            })
-            if not ok then Report("slot icon", iconState) end
-        end
-    end
-    return true
-end
-
-local function SkinAllSlots(state)
-    if not state or not state.active or NS.IsCombatLocked() then return false end
-    local applied = false
-    for index = 1, #slotNames do
-        local name = slotNames[index]
-        local slot = _G[name]
-        if slot then
-            CharacterPanel.exactSlots[slot] = true
-            Fade(state, _G[name .. "Frame"])
-            applied = SkinSlot(state, slot) or applied
-        end
-    end
-    return applied
+    Fade(state, Field(tab, "TabBg"))
+    Fade(state, hider)
+    Fade(state, Field(tab, "Highlight"))
+    return Attach(state, tab, SIDEBAR_TAB_SPEC)
 end
 
 local function SkinSidebar(state)
-    if not state or not state.active or NS.IsCombatLocked() then return false end
+    if not state.active or NS.IsCombatLocked() then return false end
     local container = _G.PaperDollSidebarTabs
-    Fade(state, SafeField(container, "DecorLeft"))
-    Fade(state, SafeField(container, "DecorRight"))
-
+    Fade(state, Field(container, "DecorLeft"))
+    Fade(state, Field(container, "DecorRight"))
     local applied = false
     for index = 1, 3 do
         local tab = _G["PaperDollSidebarTab" .. index]
         if tab then
-            local tabApplied = false
-            local hider = SafeField(tab, "Hider")
-            local active = IsShown(hider) == false
-            if NS.ControlSkin and type(NS.ControlSkin.ApplyButton) == "function"
-                and NS.Safety and NS.Safety.CanControl(tab, true) then
-                local ok, controlState = pcall(NS.ControlSkin.ApplyButton, tab, state.owner, {
-                    role = "navigation",
-                    activeRole = "navigationActive",
-                    active = active,
-                    useControlShape = true,
-                    pillHeight = 32,
-                    radius = 5,
-                    inset = 1,
-                    regions = { "TabBg", "Hider", "Highlight" },
-                    allowImplicitProtected = true,
-                })
-                if ok and controlState then
-                    TrackSurface(state, tab)
-                    tabApplied = true
-                    applied = true
-                elseif not ok then
-                    Report("sidebar tab", controlState)
-                end
-            end
-            if not tabApplied then
-                Fade(state, SafeField(tab, "TabBg"))
-                Fade(state, hider)
-                Fade(state, SafeField(tab, "Highlight"))
-                tabApplied = Attach(state, tab, "navigation", 5, 1, true)
-                applied = tabApplied or applied
-            end
+            applied = SkinSidebarTab(state, tab) or applied
         end
     end
     return applied
 end
 
-local function DeferredKey(state, suffix)
-    return "character-panel:" .. tostring(suffix) .. ":" .. tostring(state.owner)
+local function SkinForeverTabsAndViews(state)
+    local root = _G.CharacterFrame
+    SkinForeverModeTabs(state, root)
+    SkinForeverSubframes(state, root)
 end
 
-local function RunOrDefer(state, suffix, callback)
-    if not state or not state.active or type(callback) ~= "function" then return false end
-    local key = DeferredKey(state, suffix)
-    state.deferred[key] = true
-    local ran, reason = NS.CombatGate.RunOrDefer(key, function()
-        local current = CharacterPanel.owners[state.owner]
-        if current then current.deferred[key] = nil end
-        if current and current.active then callback(current) end
-    end)
-    if ran then state.deferred[key] = nil end
-    return ran == true, reason
+local function RepositionForeverTabs(state)
+    PositionForeverTabs(state, _G.CharacterFrame)
 end
 
-local function RefreshStatsForOwners()
-    for _, state in pairs(CharacterPanel.owners) do
-        if state.active then
-            RunOrDefer(state, "stats", SkinStats)
+local function RefreshForeverLook(state)
+    SkinForeverTabsAndViews(state)
+    SkinModel(state)
+end
+
+-- UpdateSize finishes the native PaperDoll resize. ShowSubFrame assigns
+-- activeSubframe AFTER showing the PaperDoll child, so reflow the existing
+-- snapshots here; do not perform another inventory/tooltip scan.
+local function RelayoutPaperDoll(state)
+    local view = NS.CharacterDetails.views[_G.CharacterFrame]
+    NS.GearAnnotations.ApplyLayout(view)
+    if view and view.wide then
+        for _, row in ipairs(view.rows) do
+            NS.GearAnnotations.Update(view, row, row.slotName)
         end
+        NS.GearAnnotations.UpdateSummary(view)
     end
+    NS.EQoLCharacter.Refresh()
+    SkinStats(state)
 end
 
-local function RefreshSlotForOwners(slot)
-    if not CharacterPanel.exactSlots[slot] then return end
-    for _, state in pairs(CharacterPanel.owners) do
-        if state.active then
-            if NS.IsCombatLocked() then
-                -- All native slot updates in one combat window collapse into
-                -- one bounded pass after PLAYER_REGEN_ENABLED.
-                RunOrDefer(state, "slots", SkinAllSlots)
-            else
-                SkinSlot(state, slot)
-            end
-        end
-    end
-end
-
-local function RefreshSidebarForOwners()
-    for _, state in pairs(CharacterPanel.owners) do
-        if state.active then
-            RunOrDefer(state, "sidebar", SkinSidebar)
-        end
-    end
-end
-
-local function RefreshModelForOwners(model)
-    if model ~= _G.CharacterModelScene then return end
-    for _, state in pairs(CharacterPanel.owners) do
-        if state.active then
-            RunOrDefer(state, "model", SkinModel)
-        end
-    end
-end
-
-local function InstallHooks()
-    if type(hooksecurefunc) ~= "function" then return false end
-
-    local root=_G.CharacterFrame
-    if root and CharacterPanel.layoutRoot~=root and type(root.UpdateSize)=="function" then
-        hooksecurefunc(root,"UpdateSize",function()
-            for _,state in pairs(CharacterPanel.owners) do
-                if state.active then
-                    RunOrDefer(state,"layout",function(current)
-                        local view=NS.CharacterDetails.views[root]
-                        NS.GearAnnotations.ApplyLayout(view)
-                        -- ShowSubFrame assigns activeSubframe AFTER showing the
-                        -- PaperDoll child. Reflow its existing snapshots here;
-                        -- do not perform another inventory/tooltip scan.
-                        if view and view.wide then
-                            for _,row in ipairs(view.rows) do NS.GearAnnotations.Update(view,row,row.slotName) end
-                            NS.GearAnnotations.UpdateSummary(view)
-                        end
-                        NS.EQoLCharacter.Refresh()
-                        SkinStats(current)
-                    end)
-                end
-            end
-        end)
-        CharacterPanel.layoutRoot=root
-    end
-
-    if not CharacterPanel.hookedStats
-        and type(_G.PaperDollFrame_UpdateStats) == "function" then
-        local ok = pcall(function()
-            hooksecurefunc("PaperDollFrame_UpdateStats", RefreshStatsForOwners)
-        end)
-        CharacterPanel.hookedStats = ok == true
-    end
-
-    if not CharacterPanel.hookedSlots
-        and type(_G.PaperDollItemSlotButton_Update) == "function" then
-        local ok = pcall(function()
-            hooksecurefunc("PaperDollItemSlotButton_Update", RefreshSlotForOwners)
-        end)
-        CharacterPanel.hookedSlots = ok == true
-    end
-
-    if not CharacterPanel.hookedSidebar
-        and type(_G.PaperDollFrame_UpdateSidebarTabs) == "function" then
-        local ok = pcall(function()
-            hooksecurefunc("PaperDollFrame_UpdateSidebarTabs", RefreshSidebarForOwners)
-        end)
-        CharacterPanel.hookedSidebar = ok == true
-    end
-
-
-    -- SetPaperDollBackground rewrites the native race background and its
-    -- overlay alpha every time the paper doll opens. Re-assert only our
-    -- cosmetic suppression after that native update; the model and textures
-    -- remain Blizzard-owned.
-    if not CharacterPanel.hookedModelBackground
-        and type(_G.SetPaperDollBackground) == "function" then
-        local ok = pcall(function()
-            hooksecurefunc("SetPaperDollBackground", RefreshModelForOwners)
-        end)
-        CharacterPanel.hookedModelBackground = ok == true
-    end
-
-    if NS.Client.isForever and not CharacterPanel.hookedModeTabs and root
-        and type(root.SetSelectedModeTabByFrame) == "function" then
-        local ok = pcall(function()
-            hooksecurefunc(root, "SetSelectedModeTabByFrame", function()
-                for _, state in pairs(CharacterPanel.owners) do
-                    if state.active then
-                        RunOrDefer(state, "mode-tabs", function(current)
-                            SkinForeverModeTabs(current, root)
-                            SkinForeverSubframes(current, root)
-                        end)
-                    end
-                end
-            end)
-        end)
-        CharacterPanel.hookedModeTabs = ok == true
-    end
-    if NS.Client.isForever and not CharacterPanel.hookedTabLayout and root
-        and type(root.UpdateTabLayout) == "function" then
-        local ok = pcall(function()
-            hooksecurefunc(root, "UpdateTabLayout", function()
-                for _, state in pairs(CharacterPanel.owners) do
-                    if state.active then
-                        RunOrDefer(state, "mode-tabs-layout", function(current)
-                            PositionForeverTabs(current, root)
-                        end)
-                    end
-                end
-            end)
-        end)
-        CharacterPanel.hookedTabLayout = ok == true
-    end
-
-    return CharacterPanel.hookedStats and CharacterPanel.hookedSlots
-        and CharacterPanel.hookedSidebar and CharacterPanel.hookedModelBackground
-end
+local CharacterPanel
+local panel
+local InstallHooks
 
 local function ApplyNow(state)
     local root = _G.CharacterFrame
-    if not root or not state or not state.active then return false, "missing" end
+    if not root or not state.active then return false, "missing" end
     if NS.IsCombatLocked() then return false, "combat" end
 
-    Fade(state, SafeField(root, "Background"))
-    Fade(state, _G.CharacterFramePortrait)
-    Fade(state, SafeField(root, "Portrait"))
-    Fade(state, SafeField(root, "portrait"))
-    local portraitContainer = SafeField(root, "PortraitContainer")
-    Fade(state, SafeField(portraitContainer, "Portrait"))
-    Fade(state, SafeField(portraitContainer, "portrait"))
-    SkinInset(state, SafeField(root, "Inset"))
-    SkinInset(state, SafeField(root, "InsetRight") or _G.CharacterFrameInsetRight)
+    Fade(state, Field(root, "Background"))
+    Chrome.FadePortraits(state, root, _G.CharacterFramePortrait)
+    Chrome.SkinInset(state, Field(root, "Inset"))
+    Chrome.SkinInset(state, Field(root, "InsetRight") or _G.CharacterFrameInsetRight)
     SkinForeverPanes(state, root)
 
-    NS.CharacterDetails.Apply(root,"character",state.owner)
+    NS.CharacterDetails.Apply(root, "character", state.owner)
 
     SkinModel(state)
-
     SkinStats(state)
-    SkinAllSlots(state)
+    panel:SkinAllSlots(state)
     SkinSidebar(state)
     SkinForeverModeTabs(state, root)
     SkinForeverSubframes(state, root)
@@ -838,114 +786,105 @@ local function ApplyNow(state)
     return true, "applied"
 end
 
-local function ApplyForActiveOwners()
-    if NS.IsCombatLocked() then
-        for _, state in pairs(CharacterPanel.owners) do
-            if state.active then
-                RunOrDefer(state, "apply", ApplyNow)
-            end
-        end
-        return
-    end
-    for _, state in pairs(CharacterPanel.owners) do
-        if state.active then
-            local ok, message = pcall(ApplyNow, state)
-            if not ok then Report("load", message) end
-        end
+local function ApplyOrWait(state)
+    if _G.CharacterFrame then
+        ApplyNow(state)
+    else
+        panel:ScheduleLoad()
     end
 end
 
-local function ScheduleLoad()
-    if CharacterPanel.waiting or IsAddonLoaded() or not EventUtil
-        or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then
-        return false
+panel = Chrome.New({
+    prefix = "character-panel",
+    addon = "Blizzard_UIPanels_Game",
+    rootName = "CharacterFrame",
+    slotNames = slotNames,
+    applyNow = ApplyNow,
+    applyOrWait = ApplyOrWait,
+})
+panel.skinAllSlots = function(state) return panel:SkinAllSlots(state) end
+
+CharacterPanel = {
+    owners = panel.owners,
+    exactSlots = panel.exactSlots,
+    hooks = {},
+}
+NS.CharacterPanel = CharacterPanel
+
+local function OnUpdateSize() panel:ForActiveOwners("layout", RelayoutPaperDoll) end
+local function OnStatsUpdated() panel:ForActiveOwners("stats", SkinStats) end
+local function OnSlotUpdated(slot) panel:RefreshSlot(slot) end
+local function OnSidebarUpdated() panel:ForActiveOwners("sidebar", SkinSidebar) end
+local function OnModeTabSelected() panel:ForActiveOwners("mode-tabs", SkinForeverTabsAndViews) end
+local function OnTabLayout() panel:ForActiveOwners("mode-tabs-layout", RepositionForeverTabs) end
+
+local function OnPaperDollBackground(model)
+    if model == _G.CharacterModelScene then
+        panel:ForActiveOwners("model", SkinModel)
     end
-    CharacterPanel.waiting = true
-    local ok, message = pcall(EventUtil.ContinueOnAddOnLoaded, CHARACTER_ADDON, function()
-        CharacterPanel.waiting = false
-        ApplyForActiveOwners()
-    end)
-    if not ok then
-        CharacterPanel.waiting = false
-        Report("addon load", message)
-        return false
+end
+
+local function HookOnce(key, target, method, callback)
+    local hooks = CharacterPanel.hooks
+    if hooks[key] then return end
+    if target == nil then
+        if type(_G[method]) ~= "function" then return end
+        hooksecurefunc(method, callback)
+    else
+        if not HasMethod(target, method) then return end
+        hooksecurefunc(target, method, callback)
     end
-    return true
+    hooks[key] = true
+end
+
+InstallHooks = function()
+    local root = _G.CharacterFrame
+    if root and CharacterPanel.layoutRoot ~= root and HasMethod(root, "UpdateSize") then
+        hooksecurefunc(root, "UpdateSize", OnUpdateSize)
+        CharacterPanel.layoutRoot = root
+    end
+    HookOnce("stats", nil, "PaperDollFrame_UpdateStats", OnStatsUpdated)
+    HookOnce("slots", nil, "PaperDollItemSlotButton_Update", OnSlotUpdated)
+    HookOnce("sidebar", nil, "PaperDollFrame_UpdateSidebarTabs", OnSidebarUpdated)
+    -- SetPaperDollBackground rewrites the native race background and its
+    -- overlay alpha every time the paper doll opens. Re-assert only our
+    -- cosmetic suppression after that native update; the model and textures
+    -- remain Blizzard-owned.
+    HookOnce("modelBackground", nil, "SetPaperDollBackground", OnPaperDollBackground)
+    if NS.Client.isForever and root then
+        HookOnce("modeTabs", root, "SetSelectedModeTabByFrame", OnModeTabSelected)
+        HookOnce("tabLayout", root, "UpdateTabLayout", OnTabLayout)
+    end
 end
 
 function CharacterPanel.Apply(owner)
-    if not CategoryEnabled() then return true, "disabled" end
-    local state
-    state, owner = OwnerState(owner)
-    if not state.active then
-        state.active = true
-        CharacterPanel.activeOwnerCount = CharacterPanel.activeOwnerCount + 1
-    end
-    if NS.IsCombatLocked() then
-        RunOrDefer(state, "apply", function(current)
-            if _G.CharacterFrame then
-                ApplyNow(current)
-            else
-                ScheduleLoad()
-            end
-        end)
-        return false, "combat"
-    end
-    if not _G.CharacterFrame then
-        if ScheduleLoad() then return true, "waiting" end
-        return false, "missing"
-    end
-    return ApplyNow(state)
+    return panel:Activate(owner or DEFAULT_OWNER)
 end
 
 function CharacterPanel.Disable(owner)
     owner = owner or DEFAULT_OWNER
-    local state = CharacterPanel.owners[owner]
+    local state = panel.owners[owner]
     if not state then return true end
     if NS.IsCombatLocked() then return false, "combat" end
 
     state.active = false
-    local model = _G.CharacterModelScene
-    local colors = model and model._msufForeverBackgroundColors
-    if colors then
-        for region, color in pairs(colors) do region:SetVertexColor(unpack(color)) end
-        model._msufForeverBackgroundColors = nil
-    end
+    RestoreModelColors(_G.CharacterModelScene)
     RestoreForeverTabs(state, _G.CharacterFrame)
     NS.EQoLCharacter.Disable(owner)
     NS.CharacterStats.Disable(_G.CharacterStatsPane, owner)
-    NS.CharacterDetails.Disable(_G.CharacterFrame,owner)
-    for key in pairs(state.deferred) do
-        NS.CombatGate.Cancel(key)
-        state.deferred[key] = nil
-    end
-    for target in pairs(state.surfaces) do
-        pcall(NS.Surface.SetVisible, target, false)
-    end
-    CharacterPanel.owners[owner] = nil
-    CharacterPanel.activeOwnerCount = math.max(0, CharacterPanel.activeOwnerCount - 1)
-
+    NS.CharacterDetails.Disable(_G.CharacterFrame, owner)
+    panel:Release(state)
     -- The parent blizzardWindows adapter restores the shared IconSkin,
     -- ControlSkin and Cosmetics owner exactly once through GenericWindows.
     return true
 end
 
-if NS.Registry and type(NS.Registry.AddListener) == "function" then
-    NS.Registry.AddListener(CharacterPanel, function(_, domain, key)
-        if not NS.Client.isForever or (domain ~= "profile"
-            and not (domain == "theme" and key == "look")) then return end
-        local root = _G.CharacterFrame
-        if not root then return end
-        for _, state in pairs(CharacterPanel.owners) do
-            if state.active then
-                RunOrDefer(state, "mode-tabs-theme", function(current)
-                    SkinForeverModeTabs(current, root)
-                    SkinForeverSubframes(current, root)
-                    SkinModel(current)
-                end)
-            end
-        end
-    end)
-end
+NS.Registry.AddListener(CharacterPanel, function(_, domain, key)
+    if not NS.Client.isForever or (domain ~= "profile"
+        and not (domain == "theme" and key == "look")) or not _G.CharacterFrame then
+        return
+    end
+    panel:ForActiveOwners("mode-tabs-theme", RefreshForeverLook)
+end)
 
 return CharacterPanel

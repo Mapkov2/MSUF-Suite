@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 -- Spell breakdowns: the in-window panel (click a row) and the hover tooltip.
 -- Both fetch a source only with a plain identity (D.Identity); a row whose
 -- identity is secret shows an explanation instead of querying the API.
@@ -320,16 +320,8 @@ function D.BreakdownWheel(region, delta) D.ScrollBreakdown(region.win, delta) en
 
 D.listScripts = { OnClick = D.RowClick, OnEnter = D.RowEnter, OnLeave = D.RowLeave, OnMouseWheel = D.RowWheel }
 D.spellScripts = {
-    OnClick = D.BreakdownBack,
-    OnEnter = D.SpellEnter,
-    OnLeave = D.SpellLeave,
-    OnMouseWheel = D
-        .BreakdownWheel
+    OnClick = D.BreakdownBack, OnEnter = D.SpellEnter, OnLeave = D.SpellLeave, OnMouseWheel = D.BreakdownWheel,
 }
 D.panelScripts = {
-    OnClick = D.BreakdownBack,
-    OnMouseWheel = D.BreakdownWheel,
-    OnEnter = D.HoverEnter,
-    OnLeave = D
-        .HoverLeave
+    OnClick = D.BreakdownBack, OnMouseWheel = D.BreakdownWheel, OnEnter = D.HoverEnter, OnLeave = D.HoverLeave,
 }

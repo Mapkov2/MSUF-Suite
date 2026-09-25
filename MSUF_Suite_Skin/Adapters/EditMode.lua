@@ -14,6 +14,11 @@ NS.EditModeSkin = EditModeSkin
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
 
+-- Exactly one boolean, also for a missing target (Field returns no value then).
+local function HasMethod(target, name)
+    return type(target) == "table" and type(target[name]) == "function"
+end
+
 local dialogRoots = {
     "EditModeLayoutDialog",
     "EditModeImportLayoutDialog",
@@ -91,7 +96,7 @@ local function HookInstance(frame, method, callback)
         hooked = setmetatable({}, { __mode = "k" })
         instanceHooks[method] = hooked
     end
-    if hooked[frame] or type(Field(frame, method)) ~= "function" then return end
+    if hooked[frame] or not HasMethod(frame, method) then return end
     hooksecurefunc(frame, method, callback)
     hooked[frame] = true
 end
@@ -335,11 +340,12 @@ end
 -- regions while it is being shown.
 local function PrimePool(state, pools, template, count, skin)
     local pool = Call(pools, "GetPool", template)
-    if not pool or type(Field(pool, "Acquire")) ~= "function"
-        or type(Field(pool, "Release")) ~= "function" then
+    if not pool or not HasMethod(pool, "Acquire")
+        or not HasMethod(pool, "Release") then
         return
     end
-    local active = tonumber(Call(pool, "GetNumActive")) or 0
+    local active = Call(pool, "GetNumActive")
+    active = type(active) == "number" and active or 0
     local acquired = {}
     for _ = 1, count - math.max(0, active) do
         local frame = pool:Acquire()
@@ -354,7 +360,7 @@ end
 
 local function SkinActiveSettings(state, dialog)
     local pools = Field(dialog, "pools")
-    if type(Field(pools, "EnumerateActiveByTemplate")) ~= "function" then return end
+    if not HasMethod(pools, "EnumerateActiveByTemplate") then return end
     for index = 1, #settingTemplates do
         for settingFrame in pools:EnumerateActiveByTemplate(settingTemplates[index]) do
             SkinSettingFrame(state, settingFrame)

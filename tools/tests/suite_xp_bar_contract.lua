@@ -53,6 +53,9 @@ local function Load(kind)
     suite.Suite = { instances = {}, editMode = false }
     local runtime = suite.Suite
     runtime.Public = function(value) return value ~= "secret" end
+    -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
+    runtime.Number = function(value) return runtime.Public(value) and type(value) == "number" and value == value end
+    runtime.Finite = function(value) return runtime.Number(value) and value > -math.huge and value < math.huge end
     runtime.Text = function(value) return value end
     runtime.CreateFrame = CreateFrame
     runtime.ResolveTexture = function(_, fallback) return fallback end

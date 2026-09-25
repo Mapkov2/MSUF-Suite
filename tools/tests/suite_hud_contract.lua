@@ -150,6 +150,9 @@ local suite = { Client = { isMainline = true, isForever = flavor == "Forever" },
     Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end }
 local S = suite.Suite
 S.Public = function() return true end
+-- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
+S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
+S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
 S.CreateFrame = CreateFrame
 S.CreateTexture = function(parent) return parent:CreateTexture() end
 S.CreateFontString = function(parent) return parent:CreateFontString() end
@@ -164,9 +167,12 @@ S.RegisterOwnedMover = function(id, element, spec) movers[id] = { element = elem
 S.Install = function(id, module) S.instances[id] = module end
 S.Config = function(id) return S.instances[id].config end
 S.Set = function(id, key, value) S.Config(id)[key] = value; return true end
+local moduleStates = {}
+S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return moduleStates[id] end
 local function Context()
     local ctx = { events = {}, hidden = {}, parents = {} }
     function ctx:Event(event, callback) self.events[event] = callback end
+    function ctx:RemoveEvent(event) self.events[event] = nil end
     function ctx:Skin() return nil end
     function ctx:HideControl(frame, value) self.hidden[frame] = value end
     function ctx:Property(frame, getter, setter, value)
@@ -293,6 +299,17 @@ tracker.context.events.QUEST_WATCH_UPDATE(tracker, "QUEST_WATCH_UPDATE")
 assert(#scheduled == 1, "burst should schedule one objective refresh")
 Drain()
 assert(questUpdates == 2 and setPoints == before, "unchanged objectives should not lay out again")
+-- Refreshes reuse collected entry tables and one shared flush callback.
+local questEntry, questLine = tracker.sources.quests[1], tracker.sources.quests[1].lines[1]
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+local flushCallback = scheduled[1]
+Drain()
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+assert(scheduled[1] == flushCallback, "each refresh request allocated a new callback")
+Drain()
+assert(tracker.sources.quests[1] == questEntry and tracker.sources.quests[1].lines[1] == questLine
+    and questUpdates == 4 and setPoints == before, "a quest refresh allocated new entry tables")
+questUpdates = 2
 tracker.config.colorStyle = 2
 tracker.config.backgroundColor = "224466"
 tracker.config.titleColor = "ffffff"
@@ -481,12 +498,14 @@ clock = 101
 Drain()
 assert(activeQuest.timer.text == "1:29", "visible quest timer must update without rebuilding rows")
 activeQuest.collapse.OnClick(activeQuest.collapse)
-assert(not tracker.rows["line:quests:42:1"] and tracker.config.collapsedEntries["quests:42"],
+assert(not tracker.rows["line:quests:42:1"] and moduleStates.objectives.collapsedEntries["quests:42"]
+    and tracker.config.collapsedEntries == nil,
     "quest collapse must hide only its objective lines")
 tracker.rows["entry:quests:42"].collapse.OnClick(tracker.rows["entry:quests:42"].collapse)
 assert(tracker.rows["line:quests:42:6"], "quest expansion must restore every objective")
 tracker.rows["section:quests"].OnClick(tracker.rows["section:quests"])
-assert(not tracker.rows["entry:quests:42"] and tracker.config.collapsedGroups.quests,
+assert(not tracker.rows["entry:quests:42"] and moduleStates.objectives.collapsedGroups.quests
+    and tracker.config.collapsedGroups == nil,
     "group collapse must hide its entries and persist the group state")
 tracker.rows["section:quests"].OnClick(tracker.rows["section:quests"])
 local rowFrameCount = #frames
@@ -635,6 +654,47 @@ assert(not tracker.mplusActive and disabledTicker.cancelled
     "turning off the M+ replacement must cancel its ticker and show quests")
 activeKey = false
 end
+local insideRaid, instanceKind = false, nil
+IsInInstance = function() return insideRaid, instanceKind end
+tracker.config.pauseInRaidCombat = true
+tracker.config.showTimers = true
+tracker:Refresh()
+assert(tracker.timerPending, "visible objective timers should schedule before raid combat")
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+insideRaid, instanceKind, combatLocked = true, "raid", true
+tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+assert(tracker.pausedForRaidCombat and not tracker.host.shown
+    and not tracker.timerPending
+    and not tracker.context.events.QUEST_LOG_UPDATE
+    and not tracker.context.events.SCENARIO_UPDATE
+    and not tracker.context.events.GROUP_ROSTER_UPDATE
+    and tracker.context.events.PLAYER_ENTERING_WORLD,
+    "raid combat must hide the Suite tracker and unregister its work events")
+local beforeRaidReads = questUpdates
+tracker.context.events.ZONE_CHANGED_NEW_AREA(tracker, "ZONE_CHANGED_NEW_AREA")
+Drain()
+assert(questUpdates == beforeRaidReads and not tracker.timerPending,
+    "raid combat must cancel queued tracker reads and countdown ticks")
+combatLocked = false
+tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
+assert(not tracker.pausedForRaidCombat and tracker.host.shown
+    and tracker.context.events.QUEST_LOG_UPDATE
+    and questUpdates == beforeRaidReads + 1,
+    "leaving raid combat must register events and rebuild current objectives")
+combatLocked = true
+tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+insideRaid, instanceKind = false, "none"
+tracker.context.events.PLAYER_ENTERING_WORLD(tracker, "PLAYER_ENTERING_WORLD")
+assert(not tracker.pausedForRaidCombat and tracker.context.events.QUEST_LOG_UPDATE,
+    "leaving a raid instance in combat must wake the tracker")
+combatLocked = false
+tracker.config.pauseInRaidCombat = false
+tracker:Refresh()
+insideRaid, instanceKind, combatLocked = true, "raid", true
+tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+assert(not tracker.pausedForRaidCombat and tracker.context.events.QUEST_LOG_UPDATE,
+    "an off toggle must leave raid combat tracker updates enabled")
+combatLocked = false
 tracker:Disable()
 Drain()
 tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")

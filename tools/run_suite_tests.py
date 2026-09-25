@@ -19,6 +19,7 @@ EXTRA = {
     "suite_skin_msuf_bridge_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames"),
                                              str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_actionbars_contract.lua": [[], ["native"]],
 }
 
 

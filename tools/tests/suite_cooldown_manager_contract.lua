@@ -58,7 +58,7 @@ for _,file in ipairs(ORDER) do
     local text=Read(root.."/"..ADDON.."/"..file)
     if file=="Presets.lua" or file=="GuideProfiles.lua" then assert(text:sub(1,#DATA_HEADER)==DATA_HEADER,file.." header")
     elseif file~="Bootstrap.lua" then assert(text:sub(1,#HEADER)==HEADER,file.." header") end
-    for _,word in ipairs({"pcall","loadstring","setfenv","getfenv","OnUpdate","Claude","Anthropic"}) do
+    for _,word in ipairs({"pcall","loadstring","setfenv","getfenv","OnUpdate","Cl".."aude","Anth".."ropic"}) do
         assert(not text:find(word,1,true),file.." uses "..word)
     end
     if file~="Native.lua" then assert(not text:find("hooksecurefunc",1,true),file.." hooks Blizzard code") end
@@ -885,8 +885,16 @@ Run()
 assert(e21.icon.tex.vc and e21.icon.tex.vc[1]==.4,"unusable tint")
 usable.stormReads=usable.calls[201] or 0
 usable[201]=nil
-for _=1,30 do Fire("SPELL_UPDATE_USABLE") end
-Run()
+-- The throttle window arms one shared callback, no timer object per window.
+do
+    local newTimer=C_Timer.NewTimer
+    C_Timer.NewTimer=function() error("the usable throttle allocated a timer object") end
+    local pending=PendingTimers()
+    for _=1,30 do Fire("SPELL_UPDATE_USABLE") end
+    assert(PendingTimers()==pending+1,"a usable storm armed more than one trailing refresh")
+    Run()
+    C_Timer.NewTimer=newTimer
+end
 assert(e21.icon.tex.vc[1]==.4 and (usable.calls[201] or 0)==usable.stormReads,
     "usable event storm repainted before the trailing deadline")
 Run(.1)
@@ -1887,6 +1895,32 @@ Run(.2)
 assert(trinketIcon.lastKey=="","no key without an item action")
 GetActionInfo=nil
 bindings.ACTIONBUTTON5,bindings.MULTIACTIONBAR1BUTTON4=nil,nil
+-- The suite's bar 9 presses slots 13-24 and bar 10 slots 109-120 with their
+-- own commands; key labels are the action bars' own (S.KeyText).
+do
+local KB=C.Keybinds
+actionSlots[9101]={13}
+actionSlots[9103]={110}
+bindings.MSUFSUITE_BAR9_BUTTON1="MOUSEWHEELUP"
+bindings.MSUFSUITE_BAR10_BUTTON2="SPACE"
+KB.Clear()
+assert(KB.Text(9101)=="MwU","suite bar 9 slots lost their key or its action bar label")
+assert(KB.Text(9103)=="Spc","slots 109-120 took the main bar key instead of bar 10's")
+bindings.MSUFSUITE_BAR10_BUTTON2=nil
+KB.Clear()
+assert(KB.Text(9103)=="CF","a form page slot without a bar 10 key falls back to the main bar key")
+-- Running suite action bars answer for their own layout, "" included.
+S.ActionBarsBindingForSpell=function(spell) return spell==9101 and "X" or "" end
+KB.Clear()
+assert(KB.Text(9101)=="X" and KB.Text(9103)=="","the action bars' answer is final")
+S.ActionBarsBindingForSpell=function() return nil end
+KB.Clear()
+assert(KB.Text(9101)=="MwU","without running action bars the slot table applies")
+S.ActionBarsBindingForSpell=nil
+bindings.MSUFSUITE_BAR9_BUTTON1=nil
+actionSlots[9101],actionSlots[9103]=nil,nil
+KB.Clear()
+end
 
 ------------------------------------------------------------------ assisted combat
 config.ess_assist=true

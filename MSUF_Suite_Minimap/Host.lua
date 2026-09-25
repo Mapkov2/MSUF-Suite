@@ -28,13 +28,11 @@ local DRIVERS = { [2] = "[combat] show; hide", [3] = "[combat] hide; show" }
 local TEXTURES = { "MinimapCompassTexture", "MinimapCompassTextureUnderlay", "MinimapBorder", "MinimapNorthTag" }
 local CONTROLS = { "TimeManagerClockButton", "MinimapZoneTextButton", "MinimapToggleButton" }
 
-local function Number(value)
-    return S.Public(value) and type(value) == "number" and value == value and value > -math.huge and value < math.huge
-end
+local Finite = S.Finite
 local function Usable(frame)
     return type(frame) == "table" and not NS.Safety.IsForbidden(frame)
 end
-MM.Number, MM.Usable = Number, Usable
+MM.Usable = Usable
 
 -- Prefers Blizzard's client-localized string and falls back to the suite text.
 function MM.Label(global, english)
@@ -48,7 +46,7 @@ function MM.Pixel()
     local util, host = _G.PixelUtil, MM.host
     local factor = util and type(util.GetPixelToUIUnitFactor) == "function" and util.GetPixelToUIUnitFactor()
     local scale = host and host:GetEffectiveScale()
-    if Number(factor) and factor > 0 and Number(scale) and scale > 0 then return factor / scale end
+    if Finite(factor) and factor > 0 and Finite(scale) and scale > 0 then return factor / scale end
     return 1
 end
 
@@ -162,7 +160,7 @@ local function Record(frame)
     }
     for i = 1, frame:GetNumPoints() do
         local point, relative, relativePoint, x, y = frame:GetPoint(i)
-        if not (S.Public(point) and S.Public(relative) and Number(x) and Number(y)) then
+        if not (S.Public(point) and S.Public(relative) and Finite(x) and Finite(y)) then
             record.points = nil
             break
         end
@@ -193,7 +191,7 @@ local function Put(frame, want)
     SetLayer(frame, want.strata, want.level)
     if want.scale and frame:GetScale() ~= want.scale then frame:SetScale(want.scale) end
     local scale = frame:GetScale()
-    if not Number(scale) or scale <= 0 then scale = 1 end
+    if not Finite(scale) or scale <= 0 then scale = 1 end
     frame:ClearAllPoints()
     frame:SetPoint(want.point, want.relative, want.relativePoint, want.x / scale, want.y / scale)
     placing = false
@@ -274,7 +272,7 @@ function MM.Release(frame)
     placing = true
     frame:SetParent(record.parent)
     SetLayer(frame, record.strata, record.level)
-    if Number(record.scale) and record.scale > 0 then frame:SetScale(record.scale) end
+    if Finite(record.scale) and record.scale > 0 then frame:SetScale(record.scale) end
     if record.points then
         frame:ClearAllPoints()
         for i = 1, #record.points do
@@ -472,7 +470,7 @@ end
 local function Nudge(map)
     -- The engine re-renders terrain only on a zoom change after a size or mask change.
     local zoom, levels = map:GetZoom(), map:GetZoomLevels()
-    if not Number(zoom) or not Number(levels) or levels < 2 then return end
+    if not Finite(zoom) or not Finite(levels) or levels < 2 then return end
     map:SetZoom(zoom > 0 and zoom - 1 or zoom + 1)
     map:SetZoom(zoom)
 end
@@ -595,8 +593,8 @@ function MM.Capture()
         local mapScale, uiScale = map:GetEffectiveScale(), UIParent:GetEffectiveScale()
         local width, cx, cy = map:GetWidth(), map:GetCenter()
         local screenW, screenH = UIParent:GetWidth(), UIParent:GetHeight()
-        if Number(mapScale) and Number(uiScale) and uiScale > 0 and Number(width) and width > 0 and Number(cx)
-            and Number(cy) and Number(screenW) and Number(screenH) then
+        if Finite(mapScale) and Finite(uiScale) and uiScale > 0 and Finite(width) and width > 0 and Finite(cx)
+            and Finite(cy) and Finite(screenW) and Finite(screenH) then
             local ratio = mapScale / uiScale
             local size = math.max(100, math.min(600, width * ratio))
             local halfW, halfH = size / 2, (c.shape == 3 and size * WIDE or size) / 2
@@ -604,10 +602,9 @@ function MM.Capture()
             local column = cx < screenW / 3 and 1 or cx > screenW * 2 / 3 and 3 or 2
             local row = cy > screenH * 2 / 3 and 1 or cy < screenH / 3 and 3 or 2
             values.size, values.point = math.floor(size + 0.5), (row - 1) * 3 + column
-            values.x = math.floor((column == 1 and cx - halfW or column == 3 and cx + halfW - screenW or cx - screenW / 2) +
-                0.5)
-            values.y = math.floor((row == 1 and cy + halfH - screenH or row == 3 and cy - halfH or cy - screenH / 2) +
-                0.5)
+            local x = column == 1 and cx - halfW or column == 3 and cx + halfW - screenW or cx - screenW / 2
+            local y = row == 1 and cy + halfH - screenH or row == 3 and cy - halfH or cy - screenH / 2
+            values.x, values.y = math.floor(x + 0.5), math.floor(y + 0.5)
         end
     end
     S.SetMany("minimap", values)
@@ -669,7 +666,7 @@ function MM.ReleaseMap()
     map:SetParent(parent)
     map:SetFrameStrata(record.strata)
     map:SetFrameLevel(record.level)
-    if Number(record.scale) and record.scale > 0 then map:SetScale(record.scale) end
+    if Finite(record.scale) and record.scale > 0 then map:SetScale(record.scale) end
     map:ClearAllPoints()
     if lost then
         map:SetPoint("CENTER", parent, "CENTER")
@@ -679,14 +676,14 @@ function MM.ReleaseMap()
             map:SetPoint(point[1], point[2], point[3], point[4], point[5])
         end
     end
-    if Number(record.width) and Number(record.height) then map:SetSize(record.width, record.height) end
+    if Finite(record.width) and Finite(record.height) then map:SetSize(record.width, record.height) end
     if type(map.SetFixedFrameStrata) == "function" then
         map:SetFixedFrameStrata(record.fixedStrata)
         map:SetFixedFrameLevel(record.fixedLevel)
     end
     MM.placingMap = false
     local insets = record.insets
-    if insets and Number(insets[1]) and Number(insets[3]) then
+    if insets and Finite(insets[1]) and Finite(insets[3]) then
         map:SetHitRectInsets(insets[1], insets[2], insets[3],
             insets[4])
     end

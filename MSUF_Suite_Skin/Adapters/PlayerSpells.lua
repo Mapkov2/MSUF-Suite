@@ -13,178 +13,171 @@ local PlayerSpellsSkin = {
 }
 NS.PlayerSpellsSkin = PlayerSpellsSkin
 
+local Safety = NS.Safety
+local Field = Safety.Field
+local Kit = NS.AdapterKit
+local Fade = Kit.Fade
+
 local CALLBACK_FRAME_TAB = "PlayerSpellsFrame.TabSet"
 local CALLBACK_DISPLAYED_SPELLS = "PlayerSpellsFrame.SpellBookFrame.DisplayedSpellsChanged"
 
-local tabArtKeys = {
-    "Left", "Middle", "Right",
-    "LeftActive", "MiddleActive", "RightActive",
-    "LeftHighlight", "MiddleHighlight", "RightHighlight",
+local SHELL_SPEC = { role = "shell", radius = 8, inset = 0 }
+local SPELL_BOOK_SPEC = { role = "panel", radius = 8, inset = 3 }
+local PREVIEW_SPEC = { role = "popup", radius = 6, inset = 0 }
+local LIST_CARD_SPEC = { role = "card", radius = 6, inset = 1, listItem = true }
+local SPELL_BUTTON_SPEC = { role = "panel", radius = 6, inset = 1 }
+local DROPDOWN_SPEC = { role = "button", shape = "round", radius = 6, inset = 2 }
+local WINDOW_BUTTON_SPEC = { role = "button", shape = "round", radius = 6, inset = 2 }
+local PREVIOUS_PAGE_SPEC = { role = "button", shape = "round", radius = 6, inset = 3 }
+local NEXT_PAGE_SPEC = { role = "buttonPrimary", shape = "round", radius = 6, inset = 3 }
+local SEARCH_SPEC = {
+    role = "input",
+    useControlShape = true,
+    pillHeight = 28,
+    inset = 1,
+}
+local TAB_SPEC = {
+    role = "navigation",
+    activeRole = "navigationActive",
+    useControlShape = true,
+    pillHeight = 32,
+    inset = 1,
 }
 
-local function IsUnsafe(frame)
-    return not NS.Safety or not NS.Safety.CanCreateRegions(frame, true)
-end
+local PAGE_MODE = {
+    role = "panel",
+    radius = 8,
+    maxDepth = 7,
+    maxNodes = 480,
+    allowImplicitProtected = true,
+}
+local TALENTS_MODE = {
+    role = "panel",
+    radius = 8,
+    maxDepth = 7,
+    maxNodes = 600,
+    allowImplicitProtected = true,
+}
+local DIALOG_MODE = {
+    role = "popup",
+    radius = 8,
+    maxDepth = 7,
+    maxNodes = 480,
+    allowImplicitProtected = true,
+}
 
-local function IsUnsafeControl(frame)
-    return not NS.Safety or not NS.Safety.CanControl(frame, true)
-        or not NS.Safety.CanCreateRegions(frame, true)
-end
+local buttonTextureGetters = {
+    "GetNormalTexture",
+    "GetPushedTexture",
+    "GetDisabledTexture",
+    "GetHighlightTexture",
+}
+local searchPreviewArt = {
+    "Background", "BorderAnchor", "BotRightCorner",
+    "BottomBorder", "LeftBorder", "RightBorder",
+}
+local spellBookArt = {
+    "TopBar", "BookBGHalved", "BookBGLeft", "BookBGRight",
+    "BookCornerFlipbook", "Bookmark",
+}
+local talentsArt = { "BlackBG", "BottomBar", "Background" }
+-- Blizzard animates the region alpha of these textures. A zero vertex alpha
+-- remains suppressed without touching animation state.
+local talentsAnimatedArt = {
+    "BackgroundFlash", "OverlayBackgroundRight", "OverlayBackgroundMid",
+    "Clouds1", "Clouds2", "AirParticlesClose", "AirParticlesFar",
+}
+local talentDialogs = {
+    "ClassTalentLoadoutCreateDialog",
+    "ClassTalentLoadoutEditDialog",
+    "ClassTalentLoadoutImportDialog",
+    "HeroTalentsSelectionDialog",
+}
 
-local function NewState(frame, owner)
-    return {
-        frame = frame,
-        owner = owner,
-        active = false,
-        surfaces = setmetatable({}, { __mode = "k" }),
-        glyphs = setmetatable({}, { __mode = "k" }),
-        buttonGlyphs = setmetatable({}, { __mode = "k" }),
-        textColors = setmetatable({}, { __mode = "k" }),
-        textRoles = setmetatable({}, { __mode = "k" }),
-        vertexColors = setmetatable({}, { __mode = "k" }),
-    }
+local function CanCreateRegions(frame)
+    return Safety.CanCreateRegions(frame, true)
 end
 
 local function GetState(frame, owner)
     local state = PlayerSpellsSkin.states[frame]
     if not state then
-        state = NewState(frame, owner)
+        state = {
+            frame = frame,
+            owner = owner,
+            active = false,
+            surfaces = Kit.WeakSet(),
+            glyphs = Kit.WeakSet(),
+            buttonGlyphs = Kit.WeakSet(),
+            textColors = Kit.WeakSet(),
+            textRoles = Kit.WeakSet(),
+            vertexColors = Kit.WeakSet(),
+        }
         PlayerSpellsSkin.states[frame] = state
     end
     return state
 end
 
 local function SetThemeTextColor(state, fontObject, colorKey, recapture)
-    if not fontObject or type(fontObject.SetTextColor) ~= "function" then
+    if type((Field(fontObject, "SetTextColor"))) ~= "function" then
         return false
     end
-
-    if (recapture or not state.textColors[fontObject]) and type(fontObject.GetTextColor) == "function" then
-        local ok, r, g, b, a = pcall(fontObject.GetTextColor, fontObject)
-        if ok and type(r) == "number" then
-            state.textColors[fontObject] = { r, g, b, tonumber(a) or 1 }
+    if recapture or not state.textColors[fontObject] then
+        local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")
+        if r then
+            state.textColors[fontObject] = { r, g, b, a }
         end
     end
-
     state.textRoles[fontObject] = colorKey
-    local r, g, b, a = NS.Theme.GetColor(colorKey)
-    fontObject:SetTextColor(r, g, b, a)
+    fontObject:SetTextColor(NS.Theme.GetColor(colorKey))
     return true
 end
 
 local function SuppressVertexAlpha(state, texture)
-    if not texture or type(texture.SetVertexColor) ~= "function" then
+    if type((Field(texture, "SetVertexColor"))) ~= "function" then
         return false
     end
-
-    if not state.vertexColors[texture] and type(texture.GetVertexColor) == "function" then
-        local ok, r, g, b, a = pcall(texture.GetVertexColor, texture)
-        if ok and type(r) == "number" then
-            state.vertexColors[texture] = { r, g, b, tonumber(a) or 1 }
+    if not state.vertexColors[texture] then
+        local r, g, b, a = Safety.ReadColor(texture, "GetVertexColor")
+        if r then
+            state.vertexColors[texture] = { r, g, b, a }
         end
     end
-
     texture:SetVertexColor(1, 1, 1, 0)
     return true
 end
 
-local function AttachSurface(state, target, spec)
-    if not target or IsUnsafe(target) then
-        return nil
-    end
-
-    spec = spec or {}
-    spec.allowImplicitProtected = true
-    local surface = NS.Surface.Attach(target, spec)
-    if surface then
-        state.surfaces[target] = true
-        NS.Surface.SetVisible(target, true)
-    end
-    return surface
-end
-
-local function Fade(state, region)
-    if region then
-        NS.Cosmetics.Fade(region, state.owner)
-    end
-end
-
-local function FadeNineSlice(state, nineSlice)
-    if nineSlice then
-        NS.Cosmetics.FadeNineSlice(nineSlice, state.owner)
-    end
-end
-
 local function FadeButtonTextures(state, button)
-    if not button or IsUnsafeControl(button) then
+    if not button or not CanCreateRegions(button) then
         return false
     end
-
-    local getters = {
-        "GetNormalTexture",
-        "GetPushedTexture",
-        "GetDisabledTexture",
-        "GetHighlightTexture",
-    }
-    for index = 1, #getters do
-        local getter = button[getters[index]]
-        if type(getter) == "function" then
-            local ok, texture = pcall(getter, button)
-            if ok then
-                Fade(state, texture)
-            end
-        end
+    for index = 1, #buttonTextureGetters do
+        Fade(state, (Safety.Call(button, buttonTextureGetters[index])))
     end
     return true
 end
 
 local function AddButtonGlyph(state, button, text, colorKey)
-    if not button or IsUnsafeControl(button) then
-        return nil
-    end
-
     local glyph = state.buttonGlyphs[button]
     if not glyph then
         glyph = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         glyph:SetPoint("CENTER", button, "CENTER", 0, 0)
         state.buttonGlyphs[button] = glyph
-        state.glyphs[glyph] = colorKey or "text"
     end
-
+    state.glyphs[glyph] = colorKey
     glyph:SetText(text)
-    state.glyphs[glyph] = colorKey or state.glyphs[glyph] or "text"
-    local r, g, b, a = NS.Theme.GetColor(state.glyphs[glyph])
-    glyph:SetTextColor(r, g, b, a)
+    glyph:SetTextColor(NS.Theme.GetColor(colorKey))
     glyph:Show()
     return glyph
 end
 
 local function SkinGlyphButton(state, button, glyphText, spec)
-    if not button or IsUnsafeControl(button) then
+    if not button or not CanCreateRegions(button) then
         return false
     end
-    local actionKind = NS.Checkmarks and NS.Checkmarks.GetWindowAction(button) or nil
-    if actionKind and NS.ControlSkin then
-        spec = spec or {
-            role = "button",
-            shape = "round",
-            radius = 6,
-            inset = 2,
-        }
-        spec.allowImplicitProtected = true
-        local applied = NS.ControlSkin.ApplyButton(button, state.owner, spec)
-        if applied then
-            state.surfaces[button] = true
-            return true
-        end
-        return false
+    if NS.Checkmarks and NS.Checkmarks.GetWindowAction(button) then
+        return Kit.SkinControl(state, button, spec)
     end
-    if not AttachSurface(state, button, spec or {
-        role = "button",
-        shape = "round",
-        radius = 6,
-        inset = 2,
-    }) then
+    if not Kit.Attach(state, button, spec) then
         return false
     end
     FadeButtonTextures(state, button)
@@ -194,128 +187,77 @@ local function SkinGlyphButton(state, button, glyphText, spec)
 end
 
 local function SkinSearchBox(state, searchBox)
-    if not searchBox or IsUnsafeControl(searchBox) then
+    if not searchBox or not CanCreateRegions(searchBox) then
         return
     end
-
-    local surface = NS.ControlSkin.ApplySearchBox(searchBox, state.owner, {
-        role = "input",
-        useControlShape = true,
-        pillHeight = 28,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
-    if surface then
-        state.surfaces[searchBox] = true
-    end
+    Kit.SkinControl(state, searchBox, SEARCH_SPEC, "ApplySearchBox")
     SetThemeTextColor(state, searchBox, "text")
-    SetThemeTextColor(state, searchBox.Instructions, "muted")
+    SetThemeTextColor(state, Field(searchBox, "Instructions"), "muted")
 end
 
 local function SkinSearchPreview(state, preview)
-    if not preview or IsUnsafe(preview) then
+    if not preview or not CanCreateRegions(preview) then
         return
     end
-
-    AttachSurface(state, preview, {
-        role = "popup",
-        radius = 6,
-        inset = 0,
-    })
-    Fade(state, preview.Background)
-    Fade(state, preview.BorderAnchor)
-    Fade(state, preview.BotRightCorner)
-    Fade(state, preview.BottomBorder)
-    Fade(state, preview.LeftBorder)
-    Fade(state, preview.RightBorder)
+    Kit.Attach(state, preview, PREVIEW_SPEC)
+    Kit.FadeFields(state, preview, searchPreviewArt)
 end
 
 local function SkinTab(state, tab)
-    if not tab or IsUnsafeControl(tab) then
+    if not tab or not CanCreateRegions(tab) then
         return
     end
-
-    local surface = NS.ControlSkin.ApplyTab(tab, state.owner, {
-        role = "navigation",
-        activeRole = "navigationActive",
-        useControlShape = true,
-        pillHeight = 32,
-        inset = 1,
-        allowImplicitProtected = true,
-    })
-    if surface then
-        state.surfaces[tab] = true
-    end
-
-    local selected = tab.isSelected == true
+    Kit.SkinControl(state, tab, TAB_SPEC, "ApplyTab")
+    local selected = Field(tab, "isSelected") == true
     NS.ControlSkin.Refresh(tab, selected)
     -- Blizzard changes the tab's FontObject whenever selection changes. Save
     -- that current native color before applying ours so Disable restores the
     -- latest selected/unselected state rather than the first state we saw.
-    SetThemeTextColor(state, tab.Text, selected and "accentBright" or "muted", true)
+    SetThemeTextColor(state, Field(tab, "Text"), selected and "accentBright" or "muted", true)
 end
 
 local function SkinTabSystem(state, tabSystem)
-    if not tabSystem or type(tabSystem.tabs) ~= "table" then
+    local tabs = Field(tabSystem, "tabs")
+    if type(tabs) ~= "table" then
         return
     end
-    for index = 1, #tabSystem.tabs do
-        SkinTab(state, tabSystem.tabs[index])
+    for index = 1, #tabs do
+        SkinTab(state, tabs[index])
     end
 end
 
 local function SkinHeader(state, header)
-    AttachSurface(state, header, {
-        role = "card",
-        radius = 6,
-        inset = 1,
-        listItem = true,
-    })
+    Kit.Attach(state, header, LIST_CARD_SPEC)
     SuppressVertexAlpha(state, header.Backplate)
     SuppressVertexAlpha(state, header.Border)
     SetThemeTextColor(state, header.Text, "title")
 end
 
 local function SkinSpellItem(state, item)
-    AttachSurface(state, item, {
-        role = "card",
-        radius = 6,
-        inset = 1,
-        listItem = true,
-    })
+    Kit.Attach(state, item, LIST_CARD_SPEC)
 
     -- Backplate alpha is changed by Blizzard on hover, so vertex alpha is used
     -- here instead of SetAlpha(0). The suppression survives those hover updates.
     SuppressVertexAlpha(state, item.Backplate)
 
     local button = item.Button
-    if button and not IsUnsafeControl(button) then
-        AttachSurface(state, button, {
-            role = "panel",
-            radius = 6,
-            inset = 1,
-        })
+    if button and CanCreateRegions(button) then
+        Kit.Attach(state, button, SPELL_BUTTON_SPEC)
         SuppressVertexAlpha(state, button.Border)
     end
 
     local textContainer = item.TextContainer
-    SetThemeTextColor(state, item.Name or (textContainer and textContainer.Name), "text")
-    SetThemeTextColor(state, item.SubName or (textContainer and textContainer.SubName), "muted")
-    SetThemeTextColor(state, item.RequiredLevel or (textContainer and textContainer.RequiredLevel), "warning")
+    SetThemeTextColor(state, item.Name or Field(textContainer, "Name"), "text")
+    SetThemeTextColor(state, item.SubName or Field(textContainer, "SubName"), "muted")
+    SetThemeTextColor(state, item.RequiredLevel or Field(textContainer, "RequiredLevel"), "warning")
 end
 
 local function SkinDisplayedSpellFrames(state)
-    local spellBook = state.frame and state.frame.SpellBookFrame
-    local paged = spellBook and spellBook.PagedSpellsFrame
-    if not paged or type(paged.GetFrames) ~= "function" then
-        return
-    end
-
-    local frames = paged:GetFrames()
+    local paged = Kit.Path(state.frame, "SpellBookFrame", "PagedSpellsFrame")
+    local frames = type((Field(paged, "GetFrames"))) == "function" and paged:GetFrames() or nil
     if type(frames) ~= "table" then
         return
     end
-
     for index = 1, #frames do
         local element = frames[index]
         if element then
@@ -332,181 +274,96 @@ local function SkinPagingControls(state, pagingControls)
     if not pagingControls then
         return
     end
-
     SetThemeTextColor(state, pagingControls.PageText, "muted")
-    SkinGlyphButton(state, pagingControls.PrevPageButton, "<", {
-        role = "button",
-        shape = "round",
-        radius = 6,
-        inset = 3,
-    })
-    SkinGlyphButton(state, pagingControls.NextPageButton, ">", {
-        role = "buttonPrimary",
-        shape = "round",
-        radius = 6,
-        inset = 3,
-    })
+    SkinGlyphButton(state, pagingControls.PrevPageButton, "<", PREVIOUS_PAGE_SPEC)
+    SkinGlyphButton(state, pagingControls.NextPageButton, ">", NEXT_PAGE_SPEC)
 end
 
 local function SkinSpellBookStatic(state, spellBook)
-    if not spellBook or IsUnsafe(spellBook) then
+    if not spellBook or not CanCreateRegions(spellBook) then
         return
     end
 
-    AttachSurface(state, spellBook, {
-        role = "panel",
-        radius = 8,
-        inset = 3,
-    })
-
-    Fade(state, spellBook.TopBar)
-    Fade(state, spellBook.BookBGHalved)
-    Fade(state, spellBook.BookBGLeft)
-    Fade(state, spellBook.BookBGRight)
-    Fade(state, spellBook.BookCornerFlipbook)
-    Fade(state, spellBook.Bookmark)
-
+    Kit.Attach(state, spellBook, SPELL_BOOK_SPEC)
+    Kit.FadeFields(state, spellBook, spellBookArt)
     SkinTabSystem(state, spellBook.CategoryTabSystem)
     SkinSearchBox(state, spellBook.SearchBox)
     SkinSearchPreview(state, spellBook.SearchPreviewContainer)
 
     local settingsDropdown = spellBook.SettingsDropdown
-    if settingsDropdown and not IsUnsafeControl(settingsDropdown) then
-        AttachSurface(state, settingsDropdown, {
-            role = "button",
-            shape = "round",
-            radius = 6,
-            inset = 2,
-        })
+    if settingsDropdown and CanCreateRegions(settingsDropdown) then
+        Kit.Attach(state, settingsDropdown, DROPDOWN_SPEC)
     end
 
-    -- The assisted-combat spell button itself inherits SecureFrameTemplate and
-    -- is deliberately untouched. Only its non-secure containing chip is drawn.
-    -- This container owns an explicitly secure spell button.  Leave the entire
-    -- chip untouched so no MapkoSkin region participates in its secure tree.
+    -- The assisted-combat chip owns an explicitly secure spell button, so the
+    -- entire chip stays untouched and no MapkoSkin region joins its tree.
 
-    local paged = spellBook.PagedSpellsFrame
-    SkinPagingControls(state, paged and paged.PagingControls)
+    SkinPagingControls(state, Field(spellBook.PagedSpellsFrame, "PagingControls"))
+end
+
+-- Each page gets one generic traversal per apply; it is only walked while
+-- shown so hidden pages keep their untouched native state until opened.
+local function ApplyPageOnce(state, page, mode, requireShown)
+    if requireShown and Safety.Read(page, "IsShown") == false then return end
+    state.pagesSkinned = state.pagesSkinned or Kit.WeakSet()
+    if state.pagesSkinned[page] then return end
+    NS.GenericWindows.ApplyFrame(page, state.owner, mode)
+    state.pagesSkinned[page] = true
 end
 
 local function SkinSpecializationAndTalentPages(state)
     local frame = state.frame
-    if not frame or not NS.GenericWindows then
+    if not frame then
         return
     end
 
     local specFrame = frame.SpecFrame
-    if specFrame and not IsUnsafe(specFrame) then
+    if specFrame and CanCreateRegions(specFrame) then
         -- Suppress the opaque native layer before attaching; the surface is
         -- then created after it and remains the visible full-frame base.
         Fade(state, specFrame.BlackBG)
         Fade(state, specFrame.Background)
-        local shown = type(specFrame.IsShown) ~= "function" or specFrame:IsShown()
-        if shown and (not state.pagesSkinned or not state.pagesSkinned[specFrame]) then
-            NS.GenericWindows.ApplyFrame(specFrame, state.owner, {
-                role = "panel",
-                radius = 8,
-                maxDepth = 7,
-                maxNodes = 480,
-                allowImplicitProtected = true,
-            })
-            state.pagesSkinned = state.pagesSkinned or setmetatable({}, { __mode = "k" })
-            state.pagesSkinned[specFrame] = true
-        end
+        ApplyPageOnce(state, specFrame, PAGE_MODE, true)
     end
 
     local talentsFrame = frame.TalentsFrame
-    if talentsFrame and not IsUnsafe(talentsFrame) then
-        for _, key in ipairs({
-            "BlackBG", "BottomBar", "Background",
-        }) do
-            Fade(state, talentsFrame[key])
+    if talentsFrame and CanCreateRegions(talentsFrame) then
+        Kit.FadeFields(state, talentsFrame, talentsArt)
+        for index = 1, #talentsAnimatedArt do
+            SuppressVertexAlpha(state, talentsFrame[talentsAnimatedArt[index]])
         end
-        for _, key in ipairs({
-            "BackgroundFlash", "OverlayBackgroundRight", "OverlayBackgroundMid",
-            "Clouds1", "Clouds2", "AirParticlesClose", "AirParticlesFar",
-        }) do
-            -- Blizzard animates the region alpha of these textures. A zero
-            -- vertex alpha remains suppressed without touching animation state.
-            SuppressVertexAlpha(state, talentsFrame[key])
-        end
-        local shown = type(talentsFrame.IsShown) ~= "function" or talentsFrame:IsShown()
-        if shown and (not state.pagesSkinned or not state.pagesSkinned[talentsFrame]) then
-            NS.GenericWindows.ApplyFrame(talentsFrame, state.owner, {
-                role = "panel",
-                radius = 8,
-                maxDepth = 7,
-                maxNodes = 600,
-                allowImplicitProtected = true,
-            })
-            state.pagesSkinned = state.pagesSkinned or setmetatable({}, { __mode = "k" })
-            state.pagesSkinned[talentsFrame] = true
-        end
+        ApplyPageOnce(state, talentsFrame, TALENTS_MODE, true)
         SkinSearchBox(state, talentsFrame.SearchBox)
         SkinSearchPreview(state, talentsFrame.SearchPreviewContainer)
     end
 
-    for _, dialog in ipairs({
-        _G.ClassTalentLoadoutCreateDialog,
-        _G.ClassTalentLoadoutEditDialog,
-        _G.ClassTalentLoadoutImportDialog,
-        _G.HeroTalentsSelectionDialog,
-    }) do
-        if dialog and not IsUnsafe(dialog)
-            and (not state.pagesSkinned or not state.pagesSkinned[dialog]) then
-            NS.GenericWindows.ApplyFrame(dialog, state.owner, {
-                role = "popup",
-                radius = 8,
-                maxDepth = 7,
-                maxNodes = 480,
-                allowImplicitProtected = true,
-            })
-            state.pagesSkinned = state.pagesSkinned or setmetatable({}, { __mode = "k" })
-            state.pagesSkinned[dialog] = true
+    for index = 1, #talentDialogs do
+        local dialog = _G[talentDialogs[index]]
+        if dialog and CanCreateRegions(dialog) then
+            ApplyPageOnce(state, dialog, DIALOG_MODE, false)
         end
     end
 end
 
 local function SkinRootStatic(state)
     local frame = state.frame
-    if not frame or IsUnsafe(frame) then
+    if not frame or not CanCreateRegions(frame) then
         return false
     end
 
-    AttachSurface(state, frame, {
-        role = "shell",
-        radius = 8,
-        inset = 0,
-    })
+    Kit.Attach(state, frame, SHELL_SPEC)
     Fade(state, frame.Bg)
     Fade(state, frame.TopTileStreaks)
-    FadeNineSlice(state, frame.NineSlice)
+    Kit.FadeNineSlice(state, frame.NineSlice)
 
-    local title = frame.TitleContainer and frame.TitleContainer.TitleText
-    SetThemeTextColor(state, title, "title")
+    SetThemeTextColor(state, Kit.Path(frame, "TitleContainer", "TitleText"), "title")
     SkinTabSystem(state, frame.TabSystem)
-
-    SkinGlyphButton(state, frame.CloseButton, "X", {
-        role = "button",
-        shape = "round",
-        radius = 6,
-        inset = 2,
-    })
+    SkinGlyphButton(state, frame.CloseButton, "X", WINDOW_BUTTON_SPEC)
 
     local maxMin = frame.MaximizeMinimizeButton
     if maxMin then
-        SkinGlyphButton(state, maxMin.MaximizeButton, "+", {
-            role = "button",
-            shape = "round",
-            radius = 6,
-            inset = 2,
-        })
-        SkinGlyphButton(state, maxMin.MinimizeButton, "-", {
-            role = "button",
-            shape = "round",
-            radius = 6,
-            inset = 2,
-        })
+        SkinGlyphButton(state, maxMin.MaximizeButton, "+", WINDOW_BUTTON_SPEC)
+        SkinGlyphButton(state, maxMin.MinimizeButton, "-", WINDOW_BUTTON_SPEC)
     end
 
     SkinSpellBookStatic(state, frame.SpellBookFrame)
@@ -515,16 +372,10 @@ end
 
 local function RefreshThemeColors(state)
     for fontObject, colorKey in pairs(state.textRoles) do
-        if fontObject and type(fontObject.SetTextColor) == "function" then
-            local r, g, b, a = NS.Theme.GetColor(colorKey)
-            fontObject:SetTextColor(r, g, b, a)
-        end
+        fontObject:SetTextColor(NS.Theme.GetColor(colorKey))
     end
     for glyph, colorKey in pairs(state.glyphs) do
-        if glyph and type(glyph.SetTextColor) == "function" then
-            local r, g, b, a = NS.Theme.GetColor(colorKey)
-            glyph:SetTextColor(r, g, b, a)
-        end
+        glyph:SetTextColor(NS.Theme.GetColor(colorKey))
     end
 end
 
@@ -533,13 +384,21 @@ local function RefreshVisualState(state, refreshPages)
         return
     end
     SkinTabSystem(state, state.frame.TabSystem)
-    local spellBook = state.frame.SpellBookFrame
-    SkinTabSystem(state, spellBook and spellBook.CategoryTabSystem)
+    SkinTabSystem(state, Field(state.frame.SpellBookFrame, "CategoryTabSystem"))
     SkinDisplayedSpellFrames(state)
     if refreshPages then
         SkinSpecializationAndTalentPages(state)
     end
     RefreshThemeColors(state)
+end
+
+local function RefreshPendingState()
+    local current = PlayerSpellsSkin.activeState
+    if current and current.active then
+        local includePages = current.pendingPageRefresh == true
+        current.pendingPageRefresh = nil
+        RefreshVisualState(current, includePages)
+    end
 end
 
 function PlayerSpellsSkin:QueueRefresh(frame, refreshPages)
@@ -553,14 +412,7 @@ function PlayerSpellsSkin:QueueRefresh(frame, refreshPages)
 
     if NS.IsCombatLocked() then
         state.pendingPageRefresh = state.pendingPageRefresh or refreshPages == true
-        NS.CombatGate.RunOrDefer("playerSpells:refresh", function()
-            local current = PlayerSpellsSkin.activeState
-            if current and current.active then
-                local includePages = current.pendingPageRefresh == true
-                current.pendingPageRefresh = nil
-                RefreshVisualState(current, includePages)
-            end
-        end)
+        NS.CombatGate.RunOrDefer("playerSpells:refresh", RefreshPendingState)
         return
     end
     RefreshVisualState(state, refreshPages)
@@ -582,67 +434,61 @@ function PlayerSpellsSkin:OnThemeChanged()
 end
 
 local function RegisterCallbacks()
-    if PlayerSpellsSkin.callbacksRegistered or not EventRegistry then
+    if PlayerSpellsSkin.callbacksRegistered then
         return
     end
-    EventRegistry:RegisterCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin.OnFrameTabSet, PlayerSpellsSkin)
-    EventRegistry:RegisterCallback(CALLBACK_DISPLAYED_SPELLS, PlayerSpellsSkin.OnDisplayedSpellsChanged, PlayerSpellsSkin)
-    NS.Registry.AddListener(PlayerSpellsSkin, PlayerSpellsSkin.OnThemeChanged)
-    PlayerSpellsSkin.callbacksRegistered = true
+    if Kit.RegisterEventCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin.OnFrameTabSet, PlayerSpellsSkin) then
+        Kit.RegisterEventCallback(CALLBACK_DISPLAYED_SPELLS,
+            PlayerSpellsSkin.OnDisplayedSpellsChanged, PlayerSpellsSkin)
+        NS.Registry.AddListener(PlayerSpellsSkin, PlayerSpellsSkin.OnThemeChanged)
+        PlayerSpellsSkin.callbacksRegistered = true
+    end
 end
 
 local function UnregisterCallbacks()
     if not PlayerSpellsSkin.callbacksRegistered then
         return
     end
-    if EventRegistry then
-        EventRegistry:UnregisterCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin)
-        EventRegistry:UnregisterCallback(CALLBACK_DISPLAYED_SPELLS, PlayerSpellsSkin)
-    end
+    Kit.UnregisterEventCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin)
+    Kit.UnregisterEventCallback(CALLBACK_DISPLAYED_SPELLS, PlayerSpellsSkin)
     NS.Registry.RemoveListener(PlayerSpellsSkin)
     PlayerSpellsSkin.callbacksRegistered = false
 end
 
-local function RestoreState(state)
-    state.active = false
-
-    if NS.GenericWindows then
-        NS.GenericWindows.Disable(state.owner)
-    end
-    state.pagesSkinned = nil
-    NS.ControlSkin.DisableOwner(state.owner)
-
-    for target in pairs(state.surfaces) do
-        NS.Surface.SetVisible(target, false)
-    end
-    for glyph in pairs(state.glyphs) do
-        if glyph and type(glyph.Hide) == "function" then
-            glyph:Hide()
-        end
-    end
+-- Restores a native color only while our themed color is still installed.
+local function RestoreTextColors(state)
     for fontObject, color in pairs(state.textColors) do
-        if fontObject and type(fontObject.SetTextColor) == "function" then
-            local role = state.textRoles[fontObject]
-            local current = role and { NS.Theme.GetColor(role) } or nil
-            local ok, r, g, b, a = type(fontObject.GetTextColor) == "function"
-                and pcall(fontObject.GetTextColor, fontObject)
-            if ok and current
-                and r == current[1] and g == current[2]
-                and b == current[3] and (tonumber(a) or 1) == current[4] then
+        local role = state.textRoles[fontObject]
+        if role then
+            local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")
+            local themeR, themeG, themeB, themeA = NS.Theme.GetColor(role)
+            if r and r == themeR and g == themeG and b == themeB and a == themeA then
                 fontObject:SetTextColor(color[1], color[2], color[3], color[4])
             end
         end
     end
+end
+
+local function RestoreVertexColors(state)
     for texture, color in pairs(state.vertexColors) do
-        if texture and type(texture.SetVertexColor) == "function" then
-            local ok, r, g, b, a = type(texture.GetVertexColor) == "function"
-                and pcall(texture.GetVertexColor, texture)
-            if ok and r == 1 and g == 1 and b == 1 and (tonumber(a) or 1) == 0 then
-                texture:SetVertexColor(color[1], color[2], color[3], color[4])
-            end
+        local r, g, b, a = Safety.ReadColor(texture, "GetVertexColor")
+        if r == 1 and g == 1 and b == 1 and a == 0 then
+            texture:SetVertexColor(color[1], color[2], color[3], color[4])
         end
     end
+end
 
+local function RestoreState(state)
+    state.active = false
+    NS.GenericWindows.Disable(state.owner)
+    state.pagesSkinned = nil
+    NS.ControlSkin.DisableOwner(state.owner)
+    Kit.HideSurfaces(state)
+    for glyph in pairs(state.glyphs) do
+        glyph:Hide()
+    end
+    RestoreTextColors(state)
+    RestoreVertexColors(state)
     NS.Cosmetics.RestoreOwner(state.owner)
 end
 
@@ -652,7 +498,7 @@ function PlayerSpellsSkin.Apply(frame, owner)
     if not frame then
         return false, "missing"
     end
-    if IsUnsafe(frame) then
+    if not CanCreateRegions(frame) then
         return false, "protected"
     end
 
@@ -679,7 +525,8 @@ function PlayerSpellsSkin.Apply(frame, owner)
 end
 
 function PlayerSpellsSkin.Disable(frame, owner)
-    frame = frame or (PlayerSpellsSkin.activeState and PlayerSpellsSkin.activeState.frame) or _G.PlayerSpellsFrame
+    frame = frame or (PlayerSpellsSkin.activeState and PlayerSpellsSkin.activeState.frame)
+        or _G.PlayerSpellsFrame
     if not frame then
         return true
     end

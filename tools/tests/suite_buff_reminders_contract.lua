@@ -94,6 +94,11 @@ local S = { Public=function(value) return not (type(value) == "table" and value.
     end,
     Config=function() return testModule.config end,
     Set=function(_,key,value) testModule.config[key]=value;testModule:Refresh();return true end,
+    Text=function(value) return value end,
+    CreateFrame=function(...) return CreateFrame(...) end,
+    RGB=function(hex)
+        return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+    end,
     editMode=false }
 local NS = { IsCombatLocked=function() return combat end,
     Client={ SupportsEvent=function() return true end } }
@@ -101,6 +106,24 @@ assert(loadfile(root .. "/MSUF_Suite_BuffReminders/BuffReminders.lua"))("MSUF_Su
 local module = assert(testModule)
 module.config = { classBuff=true, spellIDs="777", items="123:888", mainHandItem="456", offHandItem="",
     instancesOnly=false, hideMounted=true, size=38, spacing=5, columns=6, borderColor="e8b855", point=1, x=0, y=0 }
+-- The module context: events are registered per name (unit events keep their
+-- unit); eventFrame.OnEvent dispatches like the runtime does.
+local eventFrame, callbacks = { events = {} }, {}
+module.context = {
+    Event = function(_, event, callback, allowCombat, unit)
+        assert(allowCombat == true, "buff reminder event must run its own combat checks")
+        callbacks[event] = callback
+        eventFrame.events[event] = unit or true
+    end,
+    RemoveEvent = function(_, event)
+        callbacks[event] = nil
+        eventFrame.events[event] = nil
+    end,
+}
+function eventFrame.OnEvent(_, event, ...)
+    local callback = callbacks[event]
+    if callback and module.active then callback(module, event, ...) end
+end
 module.active = true
 module:Enable()
 assert(driver == module.host and #module.entries == 4 and #module.buttons == 4,
@@ -111,7 +134,6 @@ assert(module.buttons[4].attributes["target-slot"] == 16,
     "manual weapon enchant did not target the main hand")
 assert(module.mask == 15 and module.buttons[4].shown, "missing buffs did not show")
 assert(module.buttons[3].count.text == "2", "item count was not shown")
-local eventFrame = module.frame
 assert(eventFrame.events.UNIT_AURA == "player" and eventFrame.events.UNIT_INVENTORY_CHANGED == "player")
 local before = auraReads
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "target")
@@ -123,6 +145,10 @@ assert(auraReads == before + 3, "player event did more than one targeted lookup 
 before, itemReads = auraReads, 0
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 assert(auraReads == before + 3 and itemReads == 0, "unchanged auras repainted item counts")
+eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
+assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.BAG_UPDATE_DELAYED
+    and not eventFrame.events.UNIT_INVENTORY_CHANGED and eventFrame.events.PLAYER_REGEN_ENABLED,
+    "combat kept event listeners whose handlers do nothing in combat")
 combat = true
 before = auraReads
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
@@ -131,6 +157,8 @@ combat = false
 enchant[16] = {}
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
 assert(module.mask == 6 and not module.buttons[4].shown, "weapon enchant presence was ignored")
+assert(eventFrame.events.UNIT_AURA == "player" and eventFrame.events.UNIT_INVENTORY_CHANGED == "player"
+    and eventFrame.events.BAG_UPDATE_DELAYED, "combat end did not restore the event listeners")
 auras[888] = { secret=true }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 assert(module.mask == 2 and not module.buttons[3].shown, "secret aura result created a false reminder")
@@ -201,10 +229,14 @@ assert(module.buttons[5].attributes.type1 == "item" and module.buttons[5].attrib
 assert(module.mask == 30 and foodReads == 1, "missing default consumables were not shown")
 local beforeAura, beforeEnchant, beforeTexture = auraReads, enchantReads, textureWrites
 beforeAttributes = attributeWrites
+local compiled, compile = 0, module.Compile
+module.Compile = function(...) compiled = compiled + 1; return compile(...) end
 eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
+module.Compile = compile
 assert(auraReads == beforeAura and enchantReads == beforeEnchant
     and attributeWrites == beforeAttributes and textureWrites == beforeTexture,
     "unchanged bag update queried buffs or rebound secure buttons")
+assert(compiled == 0, "a bag update that kept every consumable pick rebuilt the reminder list")
 auras[1459], auras[432778] = nil, { spellId=432778, auraInstanceID=72 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 beforeAura, beforeEnchant = auraReads, enchantReads
@@ -260,7 +292,8 @@ eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=10
 assert(module.mask == 26 and foodReads == beforeFood, "Well Fed delta did not hide food")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 42 } })
 assert(module.mask == 30 and foodReads == beforeFood, "removed Well Fed aura did not show food")
-C_UnitAuras.GetAuraDataByIndex = function() error("restricted aura data") end
+-- Restricted aura data arrives as a secret value (the API does not raise).
+C_UnitAuras.GetAuraDataByIndex = function() return { secret=true } end
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
 assert(module.mask == 26 and not module.buttons[3].shown,
     "restricted food aura data created a false reminder")

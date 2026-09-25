@@ -9,6 +9,7 @@ local at = assert(source:find(marker, 1, true), "MapkoSkin smoke fixture changed
 local fixture = source:sub(1, at - 1)
 local contract = [=[
 WOW_PROJECT_MAINLINE, WOW_PROJECT_ID = 1, 1
+UIParent.GetFrameLevel = function() return 0 end
 local simulateForever = arg[3] == "Forever"
 GameEvent = simulateForever and { RegisterCamelotEvents = function() end } or {}
 _G.MSUFSuiteSkinMigrating = true
@@ -34,6 +35,53 @@ oldLifecycle.scripts.OnEvent(oldLifecycle, "PLAYER_LOGIN")
 assert(_G.MapkoSkinDB and old.DB and not old.PublicAPI.playerReady,
     "Old engine applied skins during the data-only migration")
 _G.MSUFSuiteSkinMigrating = nil
+-- SharedXML grid utilities and unit events used by the owned Micro Bar.
+GridLayoutUtil = { calls = {} }
+function GridLayoutUtil.CreateStandardGridLayout(stride, xPadding, yPadding, xMultiplier, yMultiplier)
+    return { horizontal = true, stride = stride, xPadding = xPadding, yPadding = yPadding,
+        xMultiplier = xMultiplier, yMultiplier = yMultiplier }
+end
+function GridLayoutUtil.CreateVerticalGridLayout(stride, xPadding, yPadding, xMultiplier, yMultiplier)
+    return { horizontal = false, stride = stride, xPadding = xPadding, yPadding = yPadding,
+        xMultiplier = xMultiplier, yMultiplier = yMultiplier }
+end
+function GridLayoutUtil.ApplyGridLayout(regions, anchor, layout)
+    GridLayoutUtil.calls[#GridLayoutUtil.calls + 1] = { regions = regions, anchor = anchor, layout = layout }
+end
+AnchorUtil = { CreateAnchor = function(point, relativeTo, relativePoint)
+    return { point = point, relativeTo = relativeTo, relativePoint = relativePoint }
+end }
+function Frame:RegisterUnitEvent(event, unit)
+    self.events[event] = true
+    self.unitEvents = self.unitEvents or {}
+    self.unitEvents[event] = unit
+end
+-- Blizzard frames created before the load-on-demand skin keep the native
+-- handlers and mixin copies they were built with.
+local preexisting = {
+    legacyOnShow = UIPanelButton_OnShow,
+    controllerOnShow = ButtonControllerMixin.OnShow,
+    setArtKit = UIButtonMixin.SetButtonArtKit,
+    setupButtons = GameDialogMixin.SetupButtons,
+}
+preexisting.legacy = new_frame("Button", "ContractPreexistingPanelButton", UIParent)
+preexisting.legacy:SetScript("OnShow", preexisting.legacyOnShow)
+function preexisting.legacy:HookScript(script, callback)
+    self.hookedScripts = self.hookedScripts or {}
+    self.hookedScripts[script] = callback
+end
+preexisting.icon = new_frame("Button", "ContractPreexistingIconButton", UIParent)
+preexisting.icon.SetButtonArtKit = preexisting.setArtKit
+preexisting.controller = new_frame("Frame", nil, preexisting.icon)
+preexisting.controller.OnShow = preexisting.controllerOnShow
+_G.StaticPopup1 = new_frame("Frame", "StaticPopup1", UIParent)
+StaticPopup1.SetupButtons = preexisting.setupButtons
+function EnumerateFrames(previous)
+    if not previous then return created_frames[1] end
+    for index = 1, #created_frames do
+        if created_frames[index] == previous then return created_frames[index + 1] end
+    end
+end
 local legacyFrameCount = #created_frames
 local namespace = {}
 local toc = read("MSUF_Suite_Skin/MSUF_Suite_Skin_Mainline.toc")
@@ -72,6 +120,45 @@ assert(lifecycle, "Suite skin lifecycle missing")
 lifecycle.scripts.OnEvent(lifecycle, "ADDON_LOADED", "MSUF_Suite_Skin")
 lifecycle.scripts.OnEvent(lifecycle, "PLAYER_LOGIN")
 assert(macroStarts > 0, "Blizzard-window startup did not start the Macro adapter")
+do
+    local panelButtons = namespace.UIPanelButtons
+    local legacy = preexisting.legacy
+    assert(panelButtons.adopted and legacy.hookedScripts and legacy.hookedScripts.OnShow,
+        "a UIPanelButton created before the skin loaded was not hooked")
+    legacy.hookedScripts.OnShow(legacy)
+    assert(panelButtons.tracked[legacy] == "legacy",
+        "a UIPanelButton created before the skin loaded was not skinned when shown")
+    assert(preexisting.icon.SetButtonArtKit ~= preexisting.setArtKit
+        and preexisting.controller.OnShow ~= preexisting.controllerOnShow,
+        "existing red button art-kit and shared-button controllers were not hooked")
+    assert(StaticPopup1.SetupButtons ~= preexisting.setupButtons
+        and GameDialogMixin.SetupButtons == preexisting.setupButtons,
+        "StaticPopup1 kept its unhooked GameDialogMixin copy")
+    _G.StaticPopup1, _G.EnumerateFrames = nil, nil
+end
+do
+    local native = function() end
+    _G.EditModeManagerFrameMixin = { SetHasActiveChanges = native }
+    local manager = new_frame("Frame", "ContractEditModeManager", UIParent)
+    manager.SetHasActiveChanges = native
+    namespace.EditModeSkin.Apply(manager, "editmode-contract")
+    assert(manager.SetHasActiveChanges ~= native
+        and _G.EditModeManagerFrameMixin.SetHasActiveChanges == native,
+        "Edit Mode hooked its mixin instead of the existing manager frame")
+    namespace.EditModeSkin.Disable(manager, "editmode-contract")
+    _G.EditModeManagerFrameMixin = nil
+
+    local chat = new_frame("ScrollingMessageFrame", "ContractChatFrame", UIParent)
+    chat.editBox = new_frame("EditBox", "ContractChatFrameEditBox", chat)
+    chat.editBox.UpdateHeader = native
+    local previousChat = _G.ChatFrame1
+    _G.ChatFrame1 = chat
+    namespace.ChatFramesSkin.Apply(chat, "chat-contract")
+    assert(chat.editBox.UpdateHeader ~= native,
+        "header updates of an existing chat edit box are not observed")
+    namespace.ChatFramesSkin.Disable(chat, "chat-contract")
+    _G.ChatFrame1 = previousChat
+end
 assert(namespace.DB and _G.MSUFSuiteSkinDB == namespace.RootDB)
 do
     local api = namespace.GetAPI(2, 1)
@@ -176,12 +263,25 @@ if not simulateForever then
     assert(hover[1] == 168 / 255 and hover[2] == 173 / 255
         and namespace.DB.theme.hoverStyle == "outline",
         "Blizzard menu hover did not use a visible Dark outline")
+    local hookCount = 0
+    local function RecordHook(self, script, callback)
+        hookCount = hookCount + 1
+        self.hooks[script] = callback
+    end
     local row = CreateFrame("Button", "DarkMenuRow")
     row.hooks = {}
-    function row:HookScript(script, callback) self.hooks[script] = callback end
+    row.HookScript = RecordHook
     local surface = namespace.Surface.Attach(row, {
         role = "card", listItem = true, interactive = true,
     })
+    local otherRow = CreateFrame("Button", "DarkMenuRowTwo")
+    otherRow.hooks = {}
+    otherRow.HookScript = RecordHook
+    namespace.Surface.Attach(otherRow, { role = "card", listItem = true, interactive = true })
+    namespace.Surface.Attach(row, { role = "card", listItem = true, interactive = true })
+    assert(hookCount == 4 and row.hooks.OnEnter == otherRow.hooks.OnEnter
+        and row.hooks.OnLeave == otherRow.hooks.OnLeave,
+        "interactive surfaces allocate hover closures or hook a button twice")
     assert(surface and surface.hoverOverlay and surface.hoverOverlay.drawLayer == "HIGHLIGHT"
         and surface.hoverOverlay.texture:match("_edge1%.png$")
         and not surface.hoverOverlay.shown,
@@ -225,6 +325,64 @@ if not simulateForever then
     assert(customHover.theme.hoverStyle == "softFill"
         and customHover.theme.colors.hover[1] == 0.31,
         "Dark hover migration overwrote a custom color")
+end
+do
+    -- 12.x getters may return secret colors. Native gold is recolored only
+    -- when its channels can be read; a secret is never compared or tracked.
+    local function Label(parent, r, g, b)
+        local label = parent:CreateFontString()
+        label:SetTextColor(r, g, b, 1)
+        label.colorWrites = 0
+        local setTextColor = label.SetTextColor
+        function label:SetTextColor(...)
+            self.colorWrites = self.colorWrites + 1
+            return setTextColor(self, ...)
+        end
+        return label
+    end
+    local previousSecret, previousAccess = issecretvalue, canaccessvalue
+    local secretFrame = CreateFrame("Frame", "SecretGoldFrame", UIParent)
+    local secretLabel = Label(secretFrame, 1, 0.82, 0)
+    secretFrame.regions = { secretLabel }
+    local secretTexture = secretFrame:CreateTexture(nil, "ARTWORK")
+    secretTexture:SetVertexColor(1, 0.82, 0, 1)
+    local vertexWrites = 0
+    local setVertexColor = secretTexture.SetVertexColor
+    function secretTexture:SetVertexColor(...)
+        vertexWrites = vertexWrites + 1
+        return setVertexColor(self, ...)
+    end
+    issecretvalue = function(value) return type(value) == "number" end
+    canaccessvalue = function() return false end
+    local tracked = namespace.BlizzardYellow.TrackFrame(secretFrame)
+    local tinted = namespace.Checkmarks.TrackTexture(secretTexture, "secret-contract", "checkmark")
+    issecretvalue, canaccessvalue = previousSecret, previousAccess
+    assert(tracked == 0 and secretLabel.colorWrites == 0
+        and namespace.BlizzardYellow.directStates[secretLabel] == nil,
+        "Blizzard gold recolored text whose color was secret")
+    assert(tinted == false and vertexWrites == 0 and namespace.Checkmarks.states[secretTexture] == nil,
+        "checkmark tint compared a secret vertex color")
+    assert(namespace.BlizzardYellow.TrackFrame(secretFrame) == 1 and secretLabel.colorWrites == 1,
+        "Blizzard gold skipped readable native text")
+
+    -- A dropdown label outside the button's regions is still visited, once,
+    -- and a forbidden label is left alone.
+    local dropdown = CreateFrame("Button", "GoldLabelDropdown", UIParent)
+    dropdown.Text = Label(CreateFrame("Frame", nil, dropdown), 1, 0.82, 0)
+    assert(namespace.BlizzardYellow.TrackDropdown(dropdown) == 1
+        and dropdown.Text.colorWrites == 1, "dropdown label outside the regions was not recolored")
+    local listed = CreateFrame("Button", "ListedLabelDropdown", UIParent)
+    listed.Text = Label(listed, 1, 0.82, 0)
+    listed.regions = { listed.Text }
+    assert(namespace.BlizzardYellow.TrackDropdown(listed) == 1 and listed.Text.colorWrites == 1,
+        "a dropdown label listed as a region was visited twice")
+    local guarded = CreateFrame("Button", "ForbiddenLabelDropdown", UIParent)
+    guarded.Text = Label(CreateFrame("Frame", nil, guarded), 1, 0.82, 0)
+    function guarded.Text:IsForbidden() return true end
+    assert(namespace.BlizzardYellow.TrackDropdown(guarded) == 0 and guarded.Text.colorWrites == 0,
+        "a forbidden dropdown label was recolored")
+    namespace.BlizzardYellow.Restore()
+    namespace.Checkmarks.UntrackOwner("secret-contract")
 end
 do
     local previousSuite, appliedLook = _G.MSUFSuite, nil
@@ -389,6 +547,8 @@ for name in pairs(namespace.MicroMenuPositionPresets) do
 end
 do
     local registeredOwner, registeredElement, enteredOwner, enteredId
+    local previousEnum, previousCurve, previousPercent, previousHousing =
+        _G.Enum, _G.C_CurveUtil, _G.UnitHealthPercent, _G.C_Housing
     _G.RegisterStateDriver = function(frame, attribute, driver)
         assert(attribute == "visibility")
         frame.visibilityDriver = driver
@@ -410,9 +570,34 @@ do
             return true
         end,
     }
+    -- Model WoW's frame levels and FrameUtil's level-preserving reparent. A
+    -- new parent normally adds one level; the native MicroMenu keeps level 2.
+    local previousCreateFrame, previousFrameUtil = CreateFrame, FrameUtil
+    CreateFrame = function(kind, name, parent, ...)
+        local frame = previousCreateFrame(kind, name, parent, ...)
+        if name == "MapkoSkinMicroBarHealthGate" or name == "MapkoSkinMicroBar" then
+            frame.frameLevel = parent:GetFrameLevel() + 1
+            function frame:GetFrameLevel() return self.frameLevel end
+            function frame:SetFrameLevel(level) self.frameLevel = level end
+        end
+        return frame
+    end
+    FrameUtil = { SetParentMaintainRenderLayering = function(frame, parent)
+        local level = frame:GetFrameLevel()
+        frame:SetParent(parent)
+        frame:SetFrameLevel(level)
+    end }
     local container = new_frame("Frame", "MicroMenuContainer", UIParent)
+    function container:GetFrameLevel() return 1 end
     _G.MicroMenuContainer = container
     local root = new_frame("Frame", "MicroMenu", container)
+    root.frameLevel = 2
+    function root:GetFrameLevel() return self.frameLevel end
+    function root:SetFrameLevel(level) self.frameLevel = level end
+    function root:SetParent(parent)
+        self.parent = parent
+        self.frameLevel = parent:GetFrameLevel() + 1
+    end
     function root:MarkDirty() end
     function root:Layout() self:SetSize(180, 28) end
     function root:ResetMicroMenuPosition()
@@ -421,9 +606,24 @@ do
         self:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
     end
     function root:UpdateHelpTicketButtonAnchor() end
+    local layoutChildren = {
+        new_frame("Button", "OwnedGridChild1", root), new_frame("Button", "OwnedGridChild2", root),
+    }
+    function root:GetLayoutChildren() return layoutChildren end
     local settings = namespace.DB.icons.microMenu
     settings.layoutMode, settings.locked = "owned", false
     local bar, mode = namespace.OwnedMicroBar.Apply(root, settings)
+    CreateFrame = previousCreateFrame
+    assert(bar:GetParent():GetFrameLevel() == UIParent:GetFrameLevel()
+        and bar:GetFrameLevel() < root:GetFrameLevel(),
+        "Micro Bar shell can cover native icons after health-gate reparenting")
+    local portraitUnit
+    for _, frame in ipairs(created_frames) do
+        if frame.unitEvents and frame.unitEvents.UNIT_PORTRAIT_UPDATE then
+            portraitUnit = frame.unitEvents.UNIT_PORTRAIT_UPDATE
+        end
+    end
+    assert(portraitUnit == "player", "Micro Bar portrait listened to every unit's portrait updates")
     assert(bar and mode == "owned" and registeredOwner == "MSUFSuite.Skin"
         and registeredElement.id == "microBar", "Micro Bar did not join MSUF Edit Mode")
     local _, legacyMover = namespace.OwnedMicroBar.GetFrames()
@@ -454,8 +654,20 @@ do
     assert(controls[5].set(true) and controls[5].get() and not controls[6].get(),
         "Micro Bar popup Vertical control did not select vertical layout")
     namespace.OwnedMicroBar.Apply(root, settings)
-    assert(root.isHorizontal == false and root.stride == 6 and root.childXPadding == 4,
+    local placed = GridLayoutUtil.calls[#GridLayoutUtil.calls]
+    assert(placed and placed.regions == layoutChildren and placed.anchor.relativeTo == root
+        and placed.layout.horizontal == false and placed.layout.stride == 6
+        and placed.layout.xPadding == 4 and placed.layout.yPadding == 4,
         "Micro Bar popup settings did not reach the owned runtime layout")
+    for _, field in ipairs({ "isHorizontal", "stride", "isStacked", "childXPadding",
+        "childYPadding", "layoutFramesGoingRight", "layoutFramesGoingUp", "oldGridSettings" }) do
+        assert(root[field] == nil, "Micro Bar wrote Blizzard's MicroMenu layout field " .. field)
+    end
+    local placements = #GridLayoutUtil.calls
+    root:Layout()
+    assert(#GridLayoutUtil.calls == placements + 1
+        and GridLayoutUtil.calls[#GridLayoutUtil.calls].layout.stride == 6,
+        "a native MicroMenu layout pass did not restore the owned grid")
     assert(controls[6].set(true) and controls[6].get() and not controls[5].get(),
         "Micro Bar popup Horizontal control did not select horizontal layout")
     assert(registeredElement.restoreState(before)
@@ -499,12 +711,94 @@ do
     namespace.OwnedMicroBar.Apply(root, settings)
     assert(bar:IsShown() and bar:GetAlpha() == 1 and bar.visibilityDriver == nil,
         "Always visibility did not restore the Micro Bar")
+    assert(settings.loadHideMounted == false and settings.loadShowWhenInjured == false,
+        "Micro Bar load conditions changed existing defaults")
+    assert(namespace.MicroMenuSkin.SetOption("loadHideMounted", true),
+        "Micro Bar mounted option was rejected")
+    namespace.OwnedMicroBar.Apply(root, settings)
+    assert(bar.visibilityDriver == "[mounted] hide; show",
+        "Micro Bar mounted condition did not reach the secure driver")
+    assert(namespace.MicroMenuSkin.SetOption("loadHideNoTarget", true)
+        and namespace.MicroMenuSkin.SetOption("loadShowWhenInjured", true),
+        "Micro Bar health/no-target options were rejected")
+    namespace.OwnedMicroBar.Apply(root, settings)
+    assert(bar.visibilityDriver == "[mounted] hide; show",
+        "health condition did not supersede the no-target rule")
+    local healthGate = bar:GetParent()
+    local healthValue = 0
+    _G.Enum = { LuaCurveType = { Step = 1 } }
+    _G.C_CurveUtil = { CreateCurve = function()
+        return { SetType = function(self, value) self.kind = value end,
+            AddPoint = function(self, x, y) self[x] = y end }
+    end }
+    _G.UnitHealthPercent = function(unit, includeAbsorbs, curve)
+        assert(unit == "player" and includeAbsorbs == false and curve.kind == 1
+            and curve[0] == 1 and curve[1] == 0)
+        return healthValue
+    end
+    namespace.OwnedMicroBar.Apply(root, settings)
+    assert(healthGate.alpha == 0 and healthGate ~= UIParent,
+        "full-health condition did not fade the native Micro Bar subtree")
+    local loadEventFrame
+    for _, frame in ipairs(created_frames) do
+        if frame.events.UNIT_HEALTH and frame.events.HOUSE_PLOT_ENTERED == nil then
+            loadEventFrame = frame
+        end
+    end
+    assert(loadEventFrame and loadEventFrame.unitEvents.UNIT_HEALTH == "player",
+        "Micro Bar health event did not limit updates to the player")
+    healthValue = 1
+    loadEventFrame.scripts.OnEvent(loadEventFrame, "UNIT_HEALTH", "player")
+    assert(healthGate.alpha == 1, "health update did not restore the Micro Bar")
+    settings.visibility = "mouseover"
+    namespace.OwnedMicroBar.Apply(root, settings)
+    healthValue = 0
+    loadEventFrame.scripts.OnEvent(loadEventFrame, "UNIT_HEALTH", "player")
+    bar.scripts.OnEnter(bar)
+    assert(bar:GetAlpha() == 1 and healthGate.alpha == 0,
+        "mouseover alpha overrode the Micro Bar health condition")
+    registeredElement.onSessionChanged(true)
+    assert(bar.visibilityDriver == nil and healthGate.alpha == 1,
+        "Edit Mode did not reveal a health-hidden Micro Bar")
+    registeredElement.onSessionChanged(false)
+    assert(bar.visibilityDriver == "[mounted] hide; show" and healthGate.alpha == 0,
+        "leaving Edit Mode did not restore Micro Bar load conditions")
+    settings.visibility = "always"
+    _G.C_Housing = { IsInsideHouseOrPlot = function() return false end }
+    assert(namespace.MicroMenuSkin.SetOption("loadHideInHousing", true))
+    namespace.OwnedMicroBar.Apply(root, settings)
+    local housingEventFrame
+    for _, frame in ipairs(created_frames) do
+        if frame.events.HOUSE_PLOT_ENTERED then housingEventFrame = frame end
+    end
+    assert(housingEventFrame, "Micro Bar housing condition did not register its event")
+    _G.C_Housing.IsInsideHouseOrPlot = function() return true end
+    housingEventFrame.scripts.OnEvent(housingEventFrame, "HOUSE_PLOT_ENTERED")
+    assert(bar.visibilityDriver == "hide", "housing entry did not hide the Micro Bar")
+    _G.C_Housing.IsInsideHouseOrPlot = function() return false end
+    housingEventFrame.scripts.OnEvent(housingEventFrame, "HOUSE_PLOT_EXITED")
+    assert(bar.visibilityDriver == "[mounted] hide; show",
+        "housing exit did not restore the Micro Bar rule")
+    settings.loadHideMounted, settings.loadHideNoTarget = false, false
+    settings.loadShowWhenInjured, settings.loadHideInHousing = false, false
+    namespace.OwnedMicroBar.Apply(root, settings)
+    assert(bar.visibilityDriver == nil and healthGate.alpha == 1,
+        "clearing Micro Bar load conditions kept its driver or health fade")
+    root.isHorizontal, root.stride, root.childXPadding, root.childYPadding = true, 13, -5, -5
+    root.layoutFramesGoingRight, root.layoutFramesGoingUp = true, false
     assert(namespace.OwnedMicroBar.Disable(root))
+    local nativeGrid = GridLayoutUtil.calls[#GridLayoutUtil.calls].layout
+    assert(nativeGrid.horizontal and nativeGrid.stride == 13 and nativeGrid.xPadding == -5
+        and nativeGrid.yMultiplier == -1, "disabling the Micro Bar did not restore Blizzard's grid")
     assert(not registeredElement.isEnabled(), "disabled Micro Bar remained movable")
+    _G.Enum, _G.C_CurveUtil, _G.UnitHealthPercent, _G.C_Housing =
+        previousEnum, previousCurve, previousPercent, previousHousing
     _G.RegisterStateDriver, _G.UnregisterStateDriver = nil, nil
+    FrameUtil = previousFrameUtil
 end
 do
     local container = new_frame("Frame", "NativeMicroMenuContainer", UIParent)
+    function container:Layout() end
     local root = new_frame("Frame", "MicroMenu", container)
     _G.MicroMenu, _G.MicroMenuContainer = root, container
     root.BorderArt = root:CreateTexture(nil, "BACKGROUND")
@@ -552,9 +846,12 @@ do
             button["Set" .. state .. "Texture"](button, texture)
         end
         for _, method in ipairs({ "OnEnter", "OnLeave", "SetPushed", "SetNormal",
-                "OnEnable", "OnDisable", "OnShow", "OnHide", "UpdateTabard" }) do
+                "OnEnable", "OnDisable", "UpdateTabard" }) do
             button[method] = function() end
         end
+        -- MainMenuBarMicroButtonMixin:OnShow/OnHide lay out Blizzard's container.
+        function button:OnShow() MicroMenuContainer:Layout() end
+        function button:OnHide() MicroMenuContainer:Layout() end
         function button:IsEnabled() return true end
         function button:GetButtonState() return "NORMAL" end
         function button:IsMouseOver() return self._microOver == true end
@@ -568,6 +865,7 @@ do
     if simulateForever then
         assert(namespace.MicroMenuSkin.SetOption("buttonsPerLine", 14))
     end
+    local hooksBefore = MSKIN_TEST_SECURE_HOOK_COUNT
 
     for _, preset in ipairs({ "modern", "midnightDark", "forever" }) do
         assert(namespace.MicroMenuSkin.ApplyPreset(preset))
@@ -631,6 +929,11 @@ do
             end
         end
     end
+    -- Four state methods per button, the guild tabard, one container and two
+    -- MicroMenu hooks; re-applying presets must not add more.
+    assert(MSKIN_TEST_SECURE_HOOK_COUNT - hooksBefore <= #buttons * 4 + 4,
+        "Micro Bar installed more than four native hooks per button: "
+            .. tostring(MSKIN_TEST_SECURE_HOOK_COUNT - hooksBefore))
     assert(namespace.MicroMenuSkin.ApplyPreset("blizzard"))
     assert(namespace.DB.icons.microMenu.layoutMode == "blizzard"
         and not namespace.OwnedMicroBar.active and root:GetParent() == container
@@ -809,6 +1112,16 @@ end
 local searchHits = options.SearchSettings("opacity", 4)
 assert(#searchHits > 0 and #searchHits <= 4 and searchHits[1].page and searchHits[1].pageLabel,
     "skin settings search returned no usable results")
+host.search:SetText("opacity")
+host.search.RefreshSearch()
+assert(host.searchPopup:IsShown() and host.searchRows[1]:IsShown(), "embedded search showed no result rows")
+host.searchRows[1]:GetScript("OnClick")(host.searchRows[1], "LeftButton")
+assert(host.key == searchHits[1].page and not host.searchPopup:IsShown(),
+    "embedded search result did not open its page")
+options.SetMode("guided")
+options.SetMode("expert")
+assert(options.GetMode() == "expert" and options.SetMode("guided") and options.GetMode() == "guided",
+    "skin options mode switch failed")
 host:Hide()
 assert(options.Open(), "standalone skin window did not open")
 for _, key in ipairs(pages) do

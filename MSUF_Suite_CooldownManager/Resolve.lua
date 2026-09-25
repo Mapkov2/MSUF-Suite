@@ -100,10 +100,10 @@ local function OverrideOf(base)
 end
 
 ------------------------------------------------------------------ entry fill
-local function SetOverride(e, override)
-    if e.override ~= override then
-        e.prevOverride = e.override
-        e.override = override
+local function SetOverride(entry, override)
+    if entry.override ~= override then
+        entry.prevOverride = entry.override
+        entry.override = override
     end
 end
 local function AuraSet(set, a, b, c, linked)
@@ -123,11 +123,11 @@ local function AuraSet(set, a, b, c, linked)
     return set
 end
 -- Resets the source fields; auraIDs is left for the caller so its table is reused.
-local function Clear(e, src, id, family)
-    e.src, e.id, e.family, e.category = src, id, family, nil
-    e.selfAura, e.hasAura, e.charges, e.hasRange = false, false, false, false
-    e.equipSlot, e.itemID, e.spellCategory, e.tooltip = nil, nil, nil, nil
-    e.linked, e.unit, e.hideEmpty = EMPTY, nil, false
+local function Clear(entry, src, id, family)
+    entry.src, entry.id, entry.family, entry.category = src, id, family, nil
+    entry.selfAura, entry.hasAura, entry.charges, entry.hasRange = false, false, false, false
+    entry.equipSlot, entry.itemID, entry.spellCategory, entry.tooltip = nil, nil, nil, nil
+    entry.linked, entry.unit, entry.hideEmpty = EMPTY, nil, false
 end
 
 -- The unit a Blizzard aura entry is looked for on: the target when any of its
@@ -158,85 +158,85 @@ end
 -- Per-spell "Track on" (auraUnit): 2 me, 3 target, 4 both.
 local AURA_UNIT = { nil, "player", "target", "both" }
 
-local function FillBlizzard(e, rec)
+local function FillBlizzard(entry, rec)
     local base, override, family = rec.spell, rec.override, rec.family
-    Clear(e, "b", rec.id, family)
-    SetOverride(e, override)
-    e.base, e.tooltip, e.spell, e.linked, e.category = base, rec.tooltip, override or base, rec.linked, rec.category
-    e.selfAura, e.hasAura, e.charges, e.known = rec.selfAura, rec.hasAura, rec.charges, rec.known
-    e.equipSlot, e.spellCategory, e.hideEmpty = rec.equipSlot, rec.spellCategory, hideCategory[rec.spellCategory] == true
-    e.itemID = rec.equipSlot and Catalog.EquipItem(rec.equipSlot) or nil
-    e.hasRange = family == 1 and base ~= nil and HasRange(base)
-    e.texture, e.name = Catalog.RecordTexture(rec), Catalog.RecordName(rec)
+    Clear(entry, "b", rec.id, family)
+    SetOverride(entry, override)
+    entry.base, entry.tooltip, entry.spell, entry.linked, entry.category = base, rec.tooltip, override or base, rec.linked, rec.category
+    entry.selfAura, entry.hasAura, entry.charges, entry.known = rec.selfAura, rec.hasAura, rec.charges, rec.known
+    entry.equipSlot, entry.spellCategory, entry.hideEmpty = rec.equipSlot, rec.spellCategory, hideCategory[rec.spellCategory] == true
+    entry.itemID = rec.equipSlot and Catalog.EquipItem(rec.equipSlot) or nil
+    entry.hasRange = family == 1 and base ~= nil and HasRange(base)
+    entry.texture, entry.name = Catalog.RecordTexture(rec), Catalog.RecordName(rec)
     if family == 2 or rec.hasAura then
-        e.auraIDs = AuraSet(e.auraIDs, base, override, rec.tooltip, rec.linked)
-        e.unit = AuraUnit(base, override, rec.tooltip, rec.linked)
+        entry.auraIDs = AuraSet(entry.auraIDs, base, override, rec.tooltip, rec.linked)
+        entry.unit = AuraUnit(base, override, rec.tooltip, rec.linked)
     else
-        e.auraIDs = nil
+        entry.auraIDs = nil
     end
     return true
 end
-local function FillSpell(e, id)
+local function FillSpell(entry, id)
     local name = Catalog.SpellName(id)
     if not name then return false end
     local base = BaseSpell(id)
     local override = OverrideOf(base)
     local spell = override or base
-    Clear(e, "s", id, 1)
-    SetOverride(e, override)
-    e.base, e.spell = base, spell
-    e.charges, e.known, e.hasRange = Charged(spell), Known(base), HasRange(base)
-    e.texture, e.name = Catalog.SpellTexture(base), Catalog.SpellName(spell) or name
-    e.auraIDs = nil
+    Clear(entry, "s", id, 1)
+    SetOverride(entry, override)
+    entry.base, entry.spell = base, spell
+    entry.charges, entry.known, entry.hasRange = Charged(spell), Known(base), HasRange(base)
+    entry.texture, entry.name = Catalog.SpellTexture(base), Catalog.SpellName(spell) or name
+    entry.auraIDs = nil
     return true
 end
-local function FillItem(e, id)
+local function FillItem(entry, id)
     local icon = Catalog.ItemIcon(id)
     if not icon then return false end
     local spell = Catalog.ItemSpell(id)
-    Clear(e, "i", id, 1)
-    SetOverride(e, nil)
-    e.base, e.spell, e.itemID, e.known, e.hideEmpty = spell, spell, id, true, hideItem[id] == true
-    e.texture, e.name = icon, Catalog.ItemName(id)
-    e.auraIDs = nil
+    Clear(entry, "i", id, 1)
+    SetOverride(entry, nil)
+    entry.base, entry.spell, entry.itemID, entry.known, entry.hideEmpty = spell, spell, id, true, hideItem[id] == true
+    entry.texture, entry.name = icon, Catalog.ItemName(id)
+    entry.auraIDs = nil
     return true
 end
-local function FillEquip(e, slot)
+local function FillEquip(entry, slot)
     local item = Catalog.EquipItem(slot)
     local spell = item and Catalog.ItemSpell(item) or nil
-    Clear(e, "e", slot, 1)
-    SetOverride(e, nil)
-    e.base, e.spell, e.equipSlot, e.itemID, e.known = spell, spell, slot, item, item ~= nil
-    e.texture = Catalog.EquipTexture(slot)
-    e.name = item and Catalog.ItemName(item) or Catalog.SlotLabel(slot)
-    e.auraIDs = nil
+    Clear(entry, "e", slot, 1)
+    SetOverride(entry, nil)
+    entry.base, entry.spell, entry.equipSlot, entry.itemID, entry.known = spell, spell, slot, item, item ~= nil
+    entry.texture = Catalog.EquipTexture(slot)
+    entry.name = item and Catalog.ItemName(item) or Catalog.SlotLabel(slot)
+    entry.auraIDs = nil
     return true
 end
-local function FillAura(e, src, id)
+local function FillAura(entry, src, id)
     local name, texture = Catalog.SpellName(id), Catalog.SpellTexture(id)
     if not (name or texture) then return false end
-    Clear(e, src, id, 2)
-    SetOverride(e, nil)
-    e.base, e.spell, e.known = id, id, true
-    e.selfAura, e.hasAura = src == "a", true
-    e.texture, e.name = texture, name
-    e.auraIDs = AuraSet(e.auraIDs, id)
-    e.unit = src == "a" and "player" or "target"
+    Clear(entry, src, id, 2)
+    SetOverride(entry, nil)
+    entry.base, entry.spell, entry.known = id, id, true
+    entry.selfAura, entry.hasAura = src == "a", true
+    entry.texture, entry.name = texture, name
+    entry.auraIDs = AuraSet(entry.auraIDs, id)
+    entry.unit = src == "a" and "player" or "target"
     return true
 end
-local function Fill(e, key)
+local function Fill(entry, key)
     local src, id = Parse(key)
     if src == "b" then
         local rec = Catalog.records[id]
-        return rec ~= nil and FillBlizzard(e, rec)
+        return rec ~= nil and FillBlizzard(entry, rec)
     elseif src == "s" then
-        return FillSpell(e, id)
+        return FillSpell(entry, id)
     elseif src == "i" then
-        return FillItem(e, id)
+        return FillItem(entry, id)
     elseif src == "e" then
-        return FillEquip(e, id)
+        return FillEquip(entry, id)
     elseif src == "a" or src == "d" then
-        return FillAura(e, src, id)
+        return FillAura(entry, src, id)
     end
     return false
 end
@@ -522,9 +522,35 @@ local function Collect(i, kind, specLists, hidden, replaced, preview, out, prese
             end
         end
     elseif slot == "ess" and not explicit then
-        -- The short raid preset replaces Blizzard's spell clutter, but an
-        -- equipped on-use trinket still belongs on Essential. User lists and
-        -- imported layouts remain exact, including deliberate removals.
+        -- Some talent variants are absent from the short raid preset. Fill a
+        -- sparse Essential row with up to four learned spells from the guide
+        -- and Blizzard's Essential category, after the preferred raid buttons. Keep
+        -- dedicated Defensives claims and explicit user lists authoritative.
+        local knownCount = 0
+        for j = 1, n do
+            local key = out[j]
+            local src, id = Parse(key)
+            local rec = src == "b" and Catalog.records[id]
+            if rec and rec.known and not rec.equipSlot
+                or src == "s" and presetSpell[key] and PresetKnown(key) then
+                knownCount = knownCount + 1
+            end
+        end
+        local defaults = Catalog.defaultByBar.ess or EMPTY
+        for j = 1, #defaults do
+            if knownCount >= 4 then break end
+            local key = defaults[j]
+            local src, id = Parse(key)
+            local rec = src == "b" and Catalog.records[id]
+            if rec and rec.known and not rec.equipSlot
+                and rec.family == family then
+                local before = n
+                n = Offer(rec, slot, hidden, out, n)
+                if n > before then knownCount = knownCount + 1 end
+            end
+        end
+        -- An equipped on-use trinket still belongs at the end of Essential.
+        -- User lists and imported layouts remain exact, including removals.
         local order, records = Catalog.order, Catalog.records
         for j = 1, #order do
             local rec = records[order[j]]
@@ -569,10 +595,10 @@ for i = 1, #WATCH do
 end
 local touched, auraTouched, was, wasIDs = {}, {}, {}, {}
 Resolve.touched, Resolve.auraTouched = touched, auraTouched
-local function Snapshot(e)
-    for i = 1, #WATCH do was[i] = e[WATCH[i]] end
+local function Snapshot(entry)
+    for i = 1, #WATCH do was[i] = entry[WATCH[i]] end
     wipe(wasIDs)
-    local ids = e.auraIDs
+    local ids = entry.auraIDs
     if ids then
         for id in pairs(ids) do
             wasIDs[id] = true
@@ -590,17 +616,17 @@ local function SameIDs(ids)
     for _ in pairs(wasIDs) do n = n - 1 end
     return n == 0
 end
-local function Compare(e)
+local function Compare(entry)
     local diff = false
     for i = 1, #WATCH do
-        if was[i] ~= e[WATCH[i]] then
+        if was[i] ~= entry[WATCH[i]] then
             diff = true
             break
         end
     end
-    local aura = was[UNIT_AT] ~= e.unit or was[HASAURA_AT] ~= e.hasAura or not SameIDs(e.auraIDs)
-    if diff or aura then touched[#touched + 1] = e end
-    if aura then auraTouched[e] = true end
+    local aura = was[UNIT_AT] ~= entry.unit or was[HASAURA_AT] ~= entry.hasAura or not SameIDs(entry.auraIDs)
+    if diff or aura then touched[#touched + 1] = entry end
+    if aura then auraTouched[entry] = true end
 end
 
 ------------------------------------------------------------------ build
@@ -618,29 +644,29 @@ local function Materialize(key, slot, index, preview, spells)
     end
     local entries = C.entries
     local old = entries[key]
-    local e = old or { key = key }
+    local entry = old or { key = key }
     if old then Snapshot(old) end
-    if not Fill(e, key) or not (e.known or preview and not presetSpell[key]) then return nil end
+    if not Fill(entry, key) or not (entry.known or preview and not presetSpell[key]) then return nil end
     local ov = spells[key]
     ov = type(ov) == "table" and ov or EMPTY
-    local chosen = e.unit and AURA_UNIT[ov.auraUnit]
-    if chosen then e.unit = chosen end
+    local chosen = entry.unit and AURA_UNIT[ov.auraUnit]
+    if chosen then entry.unit = chosen end
     if old then Compare(old) end
-    e.slot, e.index, e.ov = slot, index, ov
-    entries[key], placed[key] = e, true
-    return e
+    entry.slot, entry.index, entry.ov = slot, index, ov
+    entries[key], placed[key] = entry, true
+    return entry
 end
 local function Placeholder(slot, n, family)
     local key = placeholderKeys[slot][n]
-    local e = C.entries[key] or { key = key }
-    Clear(e, "p", n, family)
-    SetOverride(e, nil)
-    e.base, e.spell, e.known = nil, nil, true
-    e.texture, e.name, e.auraIDs = PLACEHOLDER_TEXTURE, nil, nil
-    if family == 2 then e.unit = "player" end
-    e.slot, e.index, e.ov = slot, n, EMPTY
-    C.entries[key], placed[key] = e, true
-    return e
+    local entry = C.entries[key] or { key = key }
+    Clear(entry, "p", n, family)
+    SetOverride(entry, nil)
+    entry.base, entry.spell, entry.known = nil, nil, true
+    entry.texture, entry.name, entry.auraIDs = PLACEHOLDER_TEXTURE, nil, nil
+    if family == 2 then entry.unit = "player" end
+    entry.slot, entry.index, entry.ov = slot, n, EMPTY
+    C.entries[key], placed[key] = entry, true
+    return entry
 end
 local function Fold(plan, kind, n)
     local list = plan.entries
@@ -687,10 +713,10 @@ function Resolve.Build()
             local count = Collect(i, kind, specLists, hidden, replaced, preview, keys, presets)
             local n = 0
             for j = 1, count do
-                local e = Materialize(keys[j], slot, n + 1, preview, spells)
-                if e then
+                local entry = Materialize(keys[j], slot, n + 1, preview, spells)
+                if entry then
                     n = n + 1
-                    tmp[n] = e
+                    tmp[n] = entry
                 end
             end
             if preview and n == 0 then
@@ -709,10 +735,10 @@ function Resolve.Build()
         end
     end
     -- Entries that left every bar lose their place; Icons releases their frames.
-    for key, e in pairs(entries) do
+    for key, entry in pairs(entries) do
         if not placed[key] then
             entries[key] = nil
-            e.slot, e.index = nil, nil
+            entry.slot, entry.index = nil, nil
         end
     end
     return plans, any

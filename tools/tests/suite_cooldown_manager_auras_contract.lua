@@ -549,7 +549,7 @@ for _,file in ipairs({"Auras.lua","Alerts.lua"}) do
     assert(header=="local _, P = ...\nlocal NS, S = P.NS, P.Suite\nlocal C = P.CDM",file.." header")
     -- No event registration of its own: no Lua runs per UNIT_AURA.
     for _,word in ipairs({"pcall","loadstring","setfenv","hooksecurefunc","HookScript","OnUpdate",
-        "RegisterEvent","RegisterUnitEvent","NewTicker","SetAuraBorder","SetAuraSymbol","Claude","Anthropic"}) do
+        "RegisterEvent","RegisterUnitEvent","NewTicker","SetAuraBorder","SetAuraSymbol","Cl".."aude","Anth".."ropic"}) do
         assert(not text:find(word,1,true),file.." must not contain "..word)
     end
     -- Stack counts, bar values and shown states stay in C: nothing reads

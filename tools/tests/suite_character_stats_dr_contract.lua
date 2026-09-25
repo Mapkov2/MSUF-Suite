@@ -1,6 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local locales = {}
 local NS = {
+    Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     Registry = { AddListener = function() end },
     IsCombatLocked = function() return false end,
     RegisterLocale = function(locale, values) locales[locale] = values end,

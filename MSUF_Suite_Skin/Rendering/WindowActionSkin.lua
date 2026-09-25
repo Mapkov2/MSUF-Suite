@@ -53,31 +53,28 @@ local buttonArtKitSuffixes = {
     highlight = "-Highlight",
 }
 
-local function SafeField(object, key)
-    if not object then return nil end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
+local Safety = NS.Safety
+
+local function Field(object, key)
+    return Safety.Field(object, key) or nil
 end
 
+-- The first result of a getter, or nil.
 local function Getter(object, method)
-    local getter = SafeField(object, method)
-    if type(getter) ~= "function" then return nil end
-    local ok, value = pcall(getter, object)
-    return ok and value or nil
+    return Safety.Call(object, method) or nil
 end
 
 local function AccessibleAlpha(region)
-    local value = Getter(region, "GetAlpha")
-    if type(issecretvalue) == "function" and issecretvalue(value) then
-        if type(canaccessvalue) ~= "function" or not canaccessvalue(value) then
-            return nil
-        end
-    end
-    return tonumber(value)
+    return tonumber(Safety.Read(region, "GetAlpha"))
+end
+
+local function Wipe(target)
+    for key in pairs(target) do target[key] = nil end
+    return target
 end
 
 local function IsListed(list, value)
-    for index = 1, #(list or {}) do
+    for index = 1, #list do
         if list[index] == value then return true end
     end
     return false
@@ -89,9 +86,8 @@ local function Settings()
 end
 
 local function CanApply(button)
-    return button and NS.Safety
-        and NS.Safety.CanCreateRegions(button, true)
-        and type(SafeField(button, "CreateTexture")) == "function"
+    return button and Safety.CanCreateRegions(button, true)
+        and type(Field(button, "CreateTexture")) == "function"
 end
 
 local function OwnerSet(owner)
@@ -135,49 +131,45 @@ local function BindOwner(button, state, owner)
     return true
 end
 
+-- The state-texture setters reject nil. A slot that had no native texture
+-- keeps our glyph, which is hidden on restore.
 local function SetSpecialTexture(button, setter, texture, blendMode)
-    local method = SafeField(button, setter)
-    if type(method) ~= "function" then return false end
-    local ok
+    if texture == nil then return false end
     if blendMode then
-        ok = pcall(method, button, texture, blendMode)
-    else
-        ok = pcall(method, button, texture)
+        return Safety.Invoke(button, setter, texture, blendMode)
     end
-    return ok == true
+    return Safety.Invoke(button, setter, texture)
 end
 
 local function ReadBlendMode(texture)
-    local value = Getter(texture, "GetBlendMode")
+    local value = Safety.Read(texture, "GetBlendMode")
     return type(value) == "string" and value or nil
 end
 
 local function SnapshotNative(button, state)
-    state.native = {}
+    local native = Wipe(state.native)
     for index = 1, #specialTextures do
         local definition = specialTextures[index]
-        state.native[definition.key] = Getter(button, definition.getter)
+        native[definition.key] = Getter(button, definition.getter)
     end
-    state.native.highlightBlendMode = ReadBlendMode(state.native.highlight)
+    native.highlightBlendMode = ReadBlendMode(native.highlight)
     state.nativeCaptured = true
 end
 
 local function HideGlyphs(state)
-    for _, glyph in pairs(state.glyphs or {}) do
-        if glyph and type(SafeField(glyph, "Hide")) == "function" then
-            pcall(glyph.Hide, glyph)
-        end
+    if not state.glyphs then return end
+    for _, glyph in pairs(state.glyphs) do
+        glyph:Hide()
     end
 end
 
 local function RestoreExtraRegions(state)
-    for region, snapshot in pairs(state.extraRegions or {}) do
-        if type(SafeField(region, "SetAlpha")) == "function"
-            and AccessibleAlpha(region) == 0 then
-            pcall(region.SetAlpha, region, snapshot.alpha)
+    for region, snapshot in pairs(state.extraRegions) do
+        if AccessibleAlpha(region) == 0 then
+            region:SetAlpha(snapshot.alpha)
         end
+        state.extraRegions[region] = nil
     end
-    state.extraRegions = setmetatable({}, { __mode = "k" })
 end
 
 local function RestoreNative(button, state)
@@ -194,7 +186,7 @@ local function RestoreNative(button, state)
     end
     HideGlyphs(state)
     RestoreExtraRegions(state)
-    state.native = {}
+    Wipe(state.native)
     state.nativeCaptured = false
 end
 
@@ -203,26 +195,26 @@ local function RebaseNative(state)
     -- newer slots win; discard the old snapshot instead of overwriting them.
     HideGlyphs(state)
     RestoreExtraRegions(state)
-    state.native = {}
+    Wipe(state.native)
     state.nativeCaptured = false
 end
 
 local function SyncNativeAtlases(button, state)
     if not state.nativeCaptured or not state.glyphs then return true end
-    for _, definition in ipairs({ specialTextures[1], specialTextures[2] }) do
+    -- Normal and Pushed only: the first two state slots.
+    for index = 1, 2 do
+        local definition = specialTextures[index]
         local glyph = state.glyphs[definition.key]
         if Getter(button, definition.getter) ~= glyph then
             return false
         end
-        local atlas = Getter(glyph, "GetAtlas")
-        local native = state.native[definition.key]
-        local setAtlas = SafeField(native, "SetAtlas")
-        if type(atlas) == "string" and type(setAtlas) == "function" then
+        local atlas = Safety.Read(glyph, "GetAtlas")
+        if type(atlas) == "string" then
             -- Dynamic Blizzard controls rewrite the active Normal/Pushed
             -- texture objects in place. Mirror that state into the hidden
             -- native textures before repainting our glyphs so Native/Disable
             -- always restores the current semantic action, not a stale one.
-            pcall(setAtlas, native, atlas, true)
+            Safety.Invoke(state.native[definition.key], "SetAtlas", atlas, true)
         end
     end
     return true
@@ -232,7 +224,7 @@ local function MatchesButtonArtKit(button, artKit)
     if type(artKit) ~= "string" or artKit == "" then return false end
     for index = 1, #specialTextures do
         local definition = specialTextures[index]
-        local atlas = Getter(Getter(button, definition.getter), "GetAtlas")
+        local atlas = Safety.Read(Getter(button, definition.getter), "GetAtlas")
         local expected = artKit .. buttonArtKitSuffixes[definition.key]
         if type(atlas) ~= "string" or atlas:lower() ~= expected:lower() then
             return false
@@ -254,49 +246,39 @@ local function SyncNativeButtonArtKit(button, state, artKit)
             return false
         end
         local native = state.native[definition.key]
-        if type(SafeField(native, "SetAtlas")) ~= "function" then return false end
+        if type(Field(native, "SetAtlas")) ~= "function" then return false end
     end
     for index = 1, #specialTextures do
         local definition = specialTextures[index]
-        local native = state.native[definition.key]
         local expected = artKit .. buttonArtKitSuffixes[definition.key]
-        local setAtlas = SafeField(native, "SetAtlas")
-        local ok = pcall(setAtlas, native, expected, true)
-        if not ok then return false end
+        if not Safety.Invoke(state.native[definition.key], "SetAtlas", expected, true) then
+            return false
+        end
     end
     return true
 end
 
 local function CreateGlyph(button, layer, subLevel)
-    local create = SafeField(button, "CreateTexture")
-    if type(create) ~= "function" then return nil end
-    local ok, texture = pcall(create, button, nil, layer, nil, subLevel)
-    if not ok then return nil end
+    local texture = button:CreateTexture(nil, layer, nil, subLevel)
     texture:SetPoint("CENTER", button, "CENTER", 0, 0)
-    if type(SafeField(texture, "SetSnapToPixelGrid")) == "function" then
-        pcall(texture.SetSnapToPixelGrid, texture, false)
+    if type(texture.SetSnapToPixelGrid) == "function" then
+        texture:SetSnapToPixelGrid(false)
     end
-    if type(SafeField(texture, "SetTexelSnappingBias")) == "function" then
-        pcall(texture.SetTexelSnappingBias, texture, 0)
+    if type(texture.SetTexelSnappingBias) == "function" then
+        texture:SetTexelSnappingBias(0)
     end
     return texture
 end
 
+-- Callers have verified that the button accepts owned regions.
 local function EnsureGlyphs(button, state)
-    if state.glyphs then return true end
-    local glyphs = {
+    if state.glyphs then return end
+    state.glyphs = {
         normal = CreateGlyph(button, "ARTWORK", 6),
         pushed = CreateGlyph(button, "ARTWORK", 6),
         disabled = CreateGlyph(button, "ARTWORK", 6),
         highlight = CreateGlyph(button, "HIGHLIGHT", 6),
     }
-    if not glyphs.normal or not glyphs.pushed or not glyphs.disabled
-        or not glyphs.highlight then
-        for _, glyph in pairs(glyphs) do if glyph and glyph.Hide then glyph:Hide() end end
-        return false
-    end
-    state.glyphs = glyphs
-    return true
 end
 
 local function GlyphKey(kind, glyphMode)
@@ -369,43 +351,45 @@ local function AssignGlyphStates(button, state)
 end
 
 local function FadeExtraRegion(state, region)
-    if not region or type(SafeField(region, "SetAlpha")) ~= "function" then return end
+    if type(Field(region, "SetAlpha")) ~= "function" then return end
+    local current = AccessibleAlpha(region)
+    if current == nil then return end
     local snapshot = state.extraRegions[region]
     if not snapshot then
-        local alpha = AccessibleAlpha(region)
-        if alpha == nil then return end
-        snapshot = { alpha = alpha }
+        snapshot = { alpha = current }
         state.extraRegions[region] = snapshot
     end
-    local current = AccessibleAlpha(region)
     if current == snapshot.alpha or current == 0 then
-        pcall(region.SetAlpha, region, 0)
+        region:SetAlpha(0)
     end
 end
 
 local function RefreshExtraRegions(button, state)
     if state.kind == "close" or state.kind == "minimize" then
-        FadeExtraRegion(state, SafeField(button, "Border"))
+        FadeExtraRegion(state, Field(button, "Border"))
     end
     if state.kind == "expand" or state.kind == "collapse" then
-        FadeExtraRegion(state, SafeField(button, "Icon"))
+        FadeExtraRegion(state, Field(button, "Icon"))
     end
 end
 
+-- One spec serves every action surface: all of them follow the same
+-- settings, and every refresh rewrites it before the surface reads it.
+local surfaceSpec = {
+    role = "button",
+    pillHeight = 24,
+    allowImplicitProtected = true,
+}
+
 local function SurfaceSpec(settings)
     local shape = settings.surfaceShape
-    local spec = {
-        role = "button",
-        useControlShape = shape == "global",
-        pillHeight = 24,
-        radius = tonumber(settings.surfaceRadius) or 4,
-        inset = tonumber(settings.surfaceInset) or 2,
-        border = settings.style == "outline" and 1 or 0,
-        fillVisible = settings.style == "soft",
-        allowImplicitProtected = true,
-    }
-    if shape ~= "global" then spec.shape = shape end
-    return spec
+    surfaceSpec.useControlShape = shape == "global"
+    surfaceSpec.shape = shape ~= "global" and shape or nil
+    surfaceSpec.radius = tonumber(settings.surfaceRadius) or 4
+    surfaceSpec.inset = tonumber(settings.surfaceInset) or 2
+    surfaceSpec.border = settings.style == "outline" and 1 or 0
+    surfaceSpec.fillVisible = settings.style == "soft"
+    return surfaceSpec
 end
 
 local function RefreshSurface(button, settings)
@@ -480,10 +464,7 @@ local function ApplyNow(button, owner, kind)
     end
 
     if not state.nativeCaptured then SnapshotNative(button, state) end
-    if not EnsureGlyphs(button, state) then
-        RestoreNative(button, state)
-        return nil, "glyph textures unavailable"
-    end
+    EnsureGlyphs(button, state)
     ConfigureGlyphs(button, state, settings)
     if not RefreshSurface(button, settings) or not AssignGlyphStates(button, state) then
         RestoreNative(button, state)

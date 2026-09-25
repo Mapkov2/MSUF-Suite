@@ -1,5 +1,7 @@
 local _, NS = ...
 
+-- Reversible alpha suppression of native decoration. Each region remembers
+-- its original value and is restored only while it still shows our value.
 local Cosmetics = {
     states = setmetatable({}, { __mode = "k" }),
     owners = {},
@@ -12,32 +14,23 @@ local nineSlicePieces = {
 }
 
 local function AccessibleAlpha(region)
-    if not region or type(region.GetAlpha) ~= "function" then
-        return nil
-    end
-    local ok, value = pcall(region.GetAlpha, region)
-    if not ok then
-        return nil
-    end
-    if type(issecretvalue) == "function" and issecretvalue(value) then
-        if type(canaccessvalue) ~= "function" or not canaccessvalue(value) then
-            return nil
-        end
-    end
-    return tonumber(value)
+    return tonumber(NS.Safety.Read(region, "GetAlpha"))
 end
 
-local function OwnerSet(owner)
+local function Track(region, state, owner)
+    Cosmetics.states[region] = state
+    if owner == nil then return end
     local set = Cosmetics.owners[owner]
     if not set then
         set = setmetatable({}, { __mode = "k" })
         Cosmetics.owners[owner] = set
     end
-    return set
+    set[region] = true
 end
 
 function Cosmetics.Fade(region, owner)
-    if not region or type(region.SetAlpha) ~= "function" then
+    if type(region) ~= "table" or type(region.SetAlpha) ~= "function"
+        or NS.Safety.IsForbidden(region) then
         return false
     end
     local state = Cosmetics.states[region]
@@ -47,79 +40,73 @@ function Cosmetics.Fade(region, owner)
             return false
         end
         state = { kind = "alpha", alpha = alpha, owner = owner }
-        Cosmetics.states[region] = state
     elseif state.kind ~= "alpha" or state.owner ~= owner then
         return false
     end
-    OwnerSet(owner)[region] = true
+    Track(region, state, owner)
     region:SetAlpha(0)
     return true
 end
 
 function Cosmetics.SuppressVertexAlpha(region, owner)
-    if not region or type(region.GetVertexColor) ~= "function"
-        or type(region.SetVertexColor) ~= "function" then
+    if type(region) ~= "table" or type(region.SetVertexColor) ~= "function"
+        or NS.Safety.IsForbidden(region) then
         return false
     end
     local state = Cosmetics.states[region]
     if not state then
-        local ok, r, g, b, a = pcall(region.GetVertexColor, region)
-        if not ok then return false end
+        local r, g, b, a = NS.Safety.ReadColor(region, "GetVertexColor")
+        if not r then return false end
         state = { kind = "vertex", vertex = { r, g, b, a }, owner = owner }
-        Cosmetics.states[region] = state
     elseif state.kind ~= "vertex" or state.owner ~= owner then
         return false
     end
-    OwnerSet(owner)[region] = true
+    Track(region, state, owner)
     region:SetVertexColor(state.vertex[1], state.vertex[2], state.vertex[3], 0)
     return true
 end
 
+local function FadePieces(frame, pieces, owner)
+    if type(frame) ~= "table" then return end
+    for index = 1, #pieces do
+        Cosmetics.Fade(frame[pieces[index]], owner)
+    end
+end
+
+local dialogHeaderPieces = { "LeftBG", "CenterBG", "RightBG" }
+local flatBackgroundPieces = { "BottomLeft", "BottomRight", "BottomEdge", "TopSection" }
+
 function Cosmetics.FadeNineSlice(nineSlice, owner)
-    if not nineSlice then
-        return
-    end
-    for index = 1, #nineSlicePieces do
-        Cosmetics.Fade(nineSlice[nineSlicePieces[index]], owner)
-    end
+    FadePieces(nineSlice, nineSlicePieces, owner)
 end
 
 function Cosmetics.FadeDialogHeader(header, owner)
-    if not header then
-        return
-    end
-    Cosmetics.Fade(header.LeftBG, owner)
-    Cosmetics.Fade(header.CenterBG, owner)
-    Cosmetics.Fade(header.RightBG, owner)
+    FadePieces(header, dialogHeaderPieces, owner)
 end
 
 function Cosmetics.FadeFlatBackground(background, owner)
-    if not background then
-        return
+    FadePieces(background, flatBackgroundPieces, owner)
+end
+
+-- Restores the original value only while the region still shows ours;
+-- a value installed later by Blizzard or another addon wins.
+local function RestoreRegion(region, state)
+    if state.kind == "vertex" then
+        local vertex = state.vertex
+        local r, g, b, a = NS.Safety.ReadColor(region, "GetVertexColor")
+        if a == 0 and r == vertex[1] and g == vertex[2] and b == vertex[3] then
+            region:SetVertexColor(vertex[1], vertex[2], vertex[3], vertex[4])
+        end
+    elseif AccessibleAlpha(region) == 0 then
+        region:SetAlpha(state.alpha)
     end
-    Cosmetics.Fade(background.BottomLeft, owner)
-    Cosmetics.Fade(background.BottomRight, owner)
-    Cosmetics.Fade(background.BottomEdge, owner)
-    Cosmetics.Fade(background.TopSection, owner)
+    Cosmetics.states[region] = nil
 end
 
 function Cosmetics.Restore(region, owner)
     local state = region and Cosmetics.states[region]
     if not state or state.owner ~= owner then return false end
-
-    if state.kind == "vertex" and type(region.GetVertexColor) == "function"
-        and type(region.SetVertexColor) == "function" then
-        local ok, r, g, b, a = pcall(region.GetVertexColor, region)
-        if ok and a == 0 and r == state.vertex[1]
-            and g == state.vertex[2] and b == state.vertex[3] then
-            region:SetVertexColor(unpack(state.vertex))
-        end
-    elseif state.kind == "alpha" and type(region.SetAlpha) == "function" then
-        local current = AccessibleAlpha(region)
-        if current == 0 then region:SetAlpha(state.alpha) end
-    end
-
-    Cosmetics.states[region] = nil
+    RestoreRegion(region, state)
     local set = Cosmetics.owners[owner]
     if set then set[region] = nil end
     return true
@@ -132,20 +119,8 @@ function Cosmetics.RestoreOwner(owner)
     end
     for region in pairs(set) do
         local state = Cosmetics.states[region]
-        if state and state.owner == owner and state.kind == "vertex"
-            and type(region.GetVertexColor) == "function"
-            and type(region.SetVertexColor) == "function" then
-            local ok, r, g, b, a = pcall(region.GetVertexColor, region)
-            if ok and a == 0 and r == state.vertex[1] and g == state.vertex[2] and b == state.vertex[3] then
-                region:SetVertexColor(unpack(state.vertex))
-            end
-            Cosmetics.states[region] = nil
-        elseif state and state.owner == owner and type(region.SetAlpha) == "function" then
-            local current = AccessibleAlpha(region)
-            if current == 0 then
-                region:SetAlpha(state.alpha)
-            end
-            Cosmetics.states[region] = nil
+        if state and state.owner == owner then
+            RestoreRegion(region, state)
         end
     end
     Cosmetics.owners[owner] = nil
