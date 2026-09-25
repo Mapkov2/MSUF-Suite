@@ -85,7 +85,7 @@ if flavor == "Mainline" or flavor == "Forever" then
             modules = { actionbars = { enabled = false } } } }
         owner.Suite.Normalize(oldBars)
         assert(oldBars.suite.modules.actionbars.enabled
-            and oldBars.suite.actionBarsDefaultRevision == 2,
+            and oldBars.suite.revision == owner.Suite.MigrationRevision,
             "older Forever profile did not activate ActionBars")
         oldBars.suite.modules.actionbars.enabled = false
         owner.Suite.Normalize(oldBars)

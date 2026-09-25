@@ -75,7 +75,8 @@ local legacyLooks = { suite = { modules = {
     xpBar = { look = 2 },
 } } }
 S.Normalize(legacyLooks)
-assert(legacyLooks.suite.lookPresetRevision == 1
+assert(legacyLooks.suite.revision == S.MigrationRevision
+    and legacyLooks.suite.lookPresetRevision == nil
     and legacyLooks.suite.modules.chat.look == 3
     and legacyLooks.suite.modules.chat.panelColor == "14181b"
     and legacyLooks.suite.modules.damageMeter.look == 4
@@ -111,7 +112,7 @@ if flavor == "Forever" then
         old.suite.modules.actionbars["bar" .. i .. "ResumeVisibility"] = previous[i] == 6 and 1 or previous[i]
     end
     S.Normalize(old)
-    assert(old.suite.layoutRevision == 2
+    assert(old.suite.revision == S.MigrationRevision
         and old.suite.modules.dataTexts.bar1Width == 340
         and old.suite.modules.dataTexts.bar1Layout == 2
         and old.suite.modules.damageMeter.w1Y == 60
@@ -119,8 +120,6 @@ if flavor == "Forever" then
         and old.suite.modules.actionbars.bar1Visibility == 4
         and old.suite.modules.actionbars.bar12Visibility == 4
         and old.suite.modules.actionbars.enabled == true
-        and old.suite.actionBarsDefaultRevision == 2
-        and old.suite.paletteRevision == 1
         and old.suite.modules.chat.inputColor == "111517"
         and old.suite.modules.buffReminders.borderColor == "d8b66a"
         and old.suite.modules.cooldownManager.bar_barColor == "d8b66a",

@@ -98,6 +98,9 @@ assert(module.fill.texture:find("MSUF_Lucent_v2.tga", 1, true)
     and module.rested.texture == module.fill.texture, "both XP fills must use MSUF bar art")
 assert(module.levelText.font[1]:find("Expressway SemiBold.ttf", 1, true)
     and module.details.font[1] == module.levelText.font[1], "XP texts must use the MSUF font")
+assert(module.fill.texture == "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Bars\\MSUF_Lucent_v2.tga"
+    and module.levelText.font[1] == "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf",
+    "XP media paths lost their separators when Lua parsed them")
 assert(math.abs(module.edges[1].color[1] - 0x57 / 255) < 0.001
     and math.abs(module.panel.color[3] - 0x20 / 255) < 0.001, "Midnight colors")
 module.config.look = 2
