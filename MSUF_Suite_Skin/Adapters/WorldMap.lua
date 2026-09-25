@@ -403,6 +403,7 @@ function WorldMapSkin.Apply(frame, owner)
         return false, reason
     end
     RegisterCallbacks()
+    if NS.QuestText then NS.QuestText.Activate(frame, owner) end
     return true
 end
 
@@ -426,6 +427,7 @@ function WorldMapSkin.Disable(frame, owner)
     end
 
     if state then
+        if NS.QuestText then NS.QuestText.Deactivate(frame, owner) end
         for target in pairs(state.surfaces) do
             NS.Surface.SetVisible(target, false)
         end

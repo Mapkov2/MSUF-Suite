@@ -9,18 +9,34 @@ local HOST_ELEMENT = "external:msuf.blizzard:minimap"
 local CATEGORIES = {
     { name = "geometry", keys = { "size", "shape", "hoverResize", "hoverWidth", "hoverHeight" } },
     { name = "position", keys = { "point", "x", "y" } },
-    { name = "border", keys = { "size", "shape", "borderSize", "borderColor", "borderClassColor",
-        "borderAlpha", "shadowSize", "shadowColor", "shadowAlpha", "stylePreset", "styleTexture", "styleTexturePath",
-        "styleColor", "styleAlpha", "styleScale", "styleX", "styleY", "stylePlacement", "styleBlend", "styleRotation",
-        "styleGlow", "styleGlowColor", "styleGlowAlpha", "styleGlowScale", "styleBackdrop", "styleBackdropColor",
-        "styleBackdropAlpha", "styleBackdropPadding" } },
-    { name = "input", keys = { "visibility", "hoverResize", "rotate", "scrollZoom", "zoomResetSeconds", "zoomButtons", "middleClick",
-        "zoomInX", "zoomInY", "zoomOutX", "zoomOutY",
-        "showLanding", "collectButtons", "drawerMouseover", "infoCoordinates", "infoCoordinatesMode" } },
-    { name = "elements", keys = { "showTracking", "showCalendar", "showMail", "showCrafting", "showDifficulty", "showLanding", "landingIcon",
-        "landingX", "landingY", "difficultyButtonX", "difficultyButtonY", "showCompartment", "elementRow", "elementSize", "elementSpacing", "elementDistance", "infoDifficulty", "borderSize" } },
-    { name = "drawer", keys = { "collectButtons", "drawerRow", "drawerX", "drawerY", "drawerButtonSize", "drawerColumns", "drawerMouseover",
-        "elementRow", "elementSize", "elementSpacing", "elementDistance", "borderSize", "borderColor", "borderClassColor" } },
+    {
+        name = "border",
+        keys = { "size", "shape", "borderSize", "borderColor", "borderClassColor",
+            "borderAlpha", "shadowSize", "shadowColor", "shadowAlpha", "stylePreset", "styleTexture", "styleTexturePath",
+            "styleColor", "styleAlpha", "styleScale", "styleX", "styleY", "stylePlacement", "styleBlend", "styleRotation",
+            "styleGlow", "styleGlowColor", "styleGlowAlpha", "styleGlowScale", "styleBackdrop", "styleBackdropColor",
+            "styleBackdropAlpha", "styleBackdropPadding" }
+    },
+    {
+        name = "input",
+        keys = { "visibility", "hoverResize", "rotate", "scrollZoom", "zoomResetSeconds", "zoomButtons", "middleClick",
+            "zoomInX", "zoomInY", "zoomOutX", "zoomOutY",
+            "showLanding", "collectButtons", "drawerMouseover", "infoCoordinates", "infoCoordinatesMode" }
+    },
+    {
+        name = "elements",
+        keys = { "showTracking", "showCalendar", "showMail", "showCrafting", "showDifficulty", "showLanding",
+            "landingIcon",
+            "landingX", "landingY", "difficultyButtonX", "difficultyButtonY", "showCompartment", "elementRow",
+            "elementSize", "elementSpacing", "elementDistance", "infoDifficulty", "borderSize" }
+    },
+    {
+        name = "drawer",
+        keys = { "collectButtons", "drawerRow", "drawerX", "drawerY", "drawerButtonSize", "drawerColumns",
+            "drawerMouseover",
+            "elementRow", "elementSize", "elementSpacing", "elementDistance", "borderSize", "borderColor",
+            "borderClassColor" }
+    },
     { name = "texts", keys = { "borderSize", "borderColor", "borderClassColor", "showCalendar" } },
 }
 for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Battlefield", "Queue", "WorldMap", "Compartment" }) do
@@ -84,7 +100,11 @@ end
 MM.flushers.hoverSize = function()
     local width, height, active = MM.Dimensions()
     if width == MM.width and height == MM.height and active == MM.hoverGeometryActive then return end
-    if NS.IsCombatLocked() then MM.Force("geometry"); S.Queue("minimap"); return end
+    if NS.IsCombatLocked() then
+        MM.Force("geometry")
+        S.Queue("minimap")
+        return
+    end
     MM.ApplyHost()
     if M.mapOwned then MM.ApplyMap(true) end
     MM.ApplyBorder()
@@ -111,7 +131,10 @@ function M:Enable()
 end
 
 function M:Refresh()
-    if NS.IsCombatLocked() then S.Queue("minimap"); return end
+    if NS.IsCombatLocked() then
+        S.Queue("minimap")
+        return
+    end
     MM.EnsureFrames()
     local c, dirty = self.config, Dirty(self)
     if dirty.geometry or dirty.position then MM.ApplyHost() end
@@ -147,16 +170,26 @@ end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("minimap", "map", {
-        label = MM.Label("MINIMAP_LABEL", "Minimap"), order = 500,
+        label = MM.Label("MINIMAP_LABEL", "Minimap"),
+        order = 500,
         getFrame = function() return MM.host end,
-        xKey = "x", yKey = "y", pointKey = "point",
+        xKey = "x",
+        yKey = "y",
+        pointKey = "point",
         point = function() return MM.ANCHORS[M.config.point] or "TOPRIGHT" end,
         isEnabled = function() return M.active == true and MM.host ~= nil end,
         historyKeys = { "size" },
         extraControls = {
-            { id = "size", label = "Size", kind = "number", min = 100, max = 600, step = 1,
-              get = function() return S.Config("minimap").size end,
-              set = function(value) return S.Set("minimap", "size", value) end },
+            {
+                id = "size",
+                label = "Size",
+                kind = "number",
+                min = 100,
+                max = 600,
+                step = 1,
+                get = function() return S.Config("minimap").size end,
+                set = function(value) return S.Set("minimap", "size", value) end
+            },
         },
     })
 end

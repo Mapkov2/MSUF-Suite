@@ -210,13 +210,13 @@ local C={M={},EMPTY={},views={},plans={},bars={},entries={},wipe=function(t) for
 local P={NS=NS,Suite=S,CDM=C}
 local FILES={"Const.lua","Presets.lua","Icons.lua","Time.lua","Effects.lua"}
 -- Presets.lua is plain data plus one class lookup: it needs only the CDM table.
-local HEADERS={["Presets.lua"]="^local _,P=%.%.%.\nlocal C=P%.CDM\n"}
+local HEADERS={["Presets.lua"]="^local _, P = %.%.%.\nlocal C = P%.CDM\n"}
 for _,file in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..file
     local handle=assert(io.open(path,"rb"))
     local text=handle:read("*a"):gsub("\r","")
     handle:close()
-    assert(text:find(HEADERS[file] or "^local _,P=%.%.%.\nlocal NS,S=P%.NS,P%.Suite\nlocal C=P%.CDM\n"),file.." must start with the runtime header")
+    assert(text:find(HEADERS[file] or "^local _, P = %.%.%.\nlocal NS, S = P%.NS, P%.Suite\nlocal C = P%.CDM\n"),file.." must start with the runtime header")
     for _,banned in ipairs({"pcall","loadstring","setfenv","OnUpdate","hooksecurefunc","NewTicker","Claude","Anthropic"}) do
         assert(not text:find(banned,1,true),file.." uses banned "..banned)
     end

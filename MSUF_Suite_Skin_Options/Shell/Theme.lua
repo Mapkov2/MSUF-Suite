@@ -1,5 +1,6 @@
 local _, Private = ...
 local NS, O = Private.NS, Private.Options
+local L = NS.L
 
 O.Layout = {
     width = 1060,
@@ -9,11 +10,16 @@ O.Layout = {
     padding = 16,
 }
 
+-- Colors each role was last painted with; see the text role refresher below.
+local paintedColors = {}
+
 function O.SetTextColor(fontString, colorKey)
     if not fontString then return end
     colorKey = colorKey or "text"
     O.textRoles[fontString] = colorKey
-    fontString:SetTextColor(NS.Theme.GetColor(colorKey))
+    local r, g, b, a = NS.Theme.GetColor(colorKey)
+    if not paintedColors[colorKey] then paintedColors[colorKey] = { r, g, b, a } end
+    fontString:SetTextColor(r, g, b, a)
 end
 
 function O.CreateText(parent, text, size, colorKey, justify)
@@ -45,23 +51,50 @@ function O.FormatRGBA(color)
     return ("#%02X%02X%02X  %d%%"):format(r, g, b, a)
 end
 
-function O.HumanizeShape(shape)
-    local labels = {
-        round = "Circular",
-        continuous = "Continuous n=4",
-        squircle = "Squircle n=6",
-        pill = "Pill",
-    }
-    return labels[shape] or tostring(shape)
+------------------------------------------------------------------ value labels
+function O.Percent(value)
+    return tostring(math.floor((tonumber(value) or 0) * 100 + 0.5)) .. "%"
 end
 
--- FontStrings are not Surface registry consumers. Keep one weak role map so
+function O.Pixel(value)
+    value = math.floor((tonumber(value) or 0) + 0.5)
+    return tostring(value) .. " px"
+end
+
+-- Formatter over a static label map; unknown values show as they are.
+function O.Labeler(labels)
+    return function(value)
+        return labels[value] or tostring(value)
+    end
+end
+
+O.HumanizeShape = O.Labeler({
+    round = L["Circular"],
+    continuous = L["Continuous n=4"],
+    squircle = L["Squircle n=6"],
+    pill = L["Pill"],
+})
+
+------------------------------------------------------------------ text roles
+-- FontStrings are not Surface registry consumers. One weak role map lets
 -- presets and token edits repaint every existing options label without hooks
--- or per-widget event handlers.
-O.TrackRefresh(function()
-    for fontString, colorKey in pairs(O.textRoles) do
-        if fontString and type(fontString.SetTextColor) == "function" then
-            fontString:SetTextColor(NS.Theme.GetColor(colorKey))
+-- or per-widget handlers. The map is repainted only when a role color
+-- changed, so ordinary setting refreshes compare a few colors and stop.
+local function RoleColorsChanged()
+    local changed = false
+    for colorKey, painted in pairs(paintedColors) do
+        local r, g, b, a = NS.Theme.GetColor(colorKey)
+        if painted[1] ~= r or painted[2] ~= g or painted[3] ~= b or painted[4] ~= a then
+            painted[1], painted[2], painted[3], painted[4] = r, g, b, a
+            changed = true
         end
+    end
+    return changed
+end
+
+O.TrackRefresh(function()
+    if not RoleColorsChanged() then return end
+    for fontString, colorKey in pairs(O.textRoles) do
+        fontString:SetTextColor(NS.Theme.GetColor(colorKey))
     end
 end)

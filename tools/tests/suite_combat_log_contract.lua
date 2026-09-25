@@ -21,6 +21,8 @@ local secret = {}
 issecretvalue = function(value) return value == secret end
 
 local suite = { instances = {} }
+suite.Public = function(value) return not issecretvalue(value) end
+suite.Text = function(value) return value end
 function suite.Install(id, module)
     assert(id == "combatLog" and not suite.instances[id])
     suite.instances[id] = module

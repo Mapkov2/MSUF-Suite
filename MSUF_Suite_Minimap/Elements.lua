@@ -27,24 +27,55 @@ end
 -- family (Era, TBC, Mists) uses globals; queue and world-map buttons exist on
 -- Classic only and follow Blizzard's visibility without a setting.
 local SPECS = {
-    { key = "Tracking", toggle = "showTracking", frames = function() return Cluster("Tracking") or Global("MiniMapTracking") end },
+    {
+        key = "Tracking",
+        toggle = "showTracking",
+        frames = function()
+            return Cluster("Tracking") or
+                Global("MiniMapTracking")
+        end
+    },
     -- Era and TBC: the day/night indicator; Mists and Retail: the calendar button.
     { key = "Calendar", toggle = "showCalendar", frames = function() return Global("GameTimeFrame") end },
-    { key = "Mail", toggle = "showMail", frames = function() return Cluster("IndicatorFrame", "MailFrame") or Global("MiniMapMailFrame") end },
-    { key = "Crafting", toggle = "showCrafting", frames = function() return Cluster("IndicatorFrame", "CraftingOrderFrame") end },
+    {
+        key = "Mail",
+        toggle = "showMail",
+        frames = function()
+            return Cluster("IndicatorFrame", "MailFrame") or
+                Global("MiniMapMailFrame")
+        end
+    },
+    {
+        key = "Crafting",
+        toggle = "showCrafting",
+        frames = function()
+            return Cluster("IndicatorFrame",
+                "CraftingOrderFrame")
+        end
+    },
     { key = "Battlefield", frames = function() return Global("MiniMapBattlefieldFrame") end },
     { key = "Queue", frames = function() return Global("LFGMinimapFrame") end },
     { key = "WorldMap", frames = function() return Global("MiniMapWorldMapButton") end },
     { key = "Compartment", toggle = "showCompartment", frames = function() return Global("AddonCompartmentFrame") end },
-    { key = "Difficulty", toggle = "showDifficulty", corner = "TOPRIGHT", frames = function()
-        local retail = Cluster("InstanceDifficulty")
-        if retail then return retail end
-        return Global("MiniMapInstanceDifficulty"), Global("GuildInstanceDifficulty"), Global("MiniMapChallengeMode")
-    end },
+    {
+        key = "Difficulty",
+        toggle = "showDifficulty",
+        corner = "TOPRIGHT",
+        frames = function()
+            local retail = Cluster("InstanceDifficulty")
+            if retail then return retail end
+            return Global("MiniMapInstanceDifficulty"), Global("GuildInstanceDifficulty"), Global("MiniMapChallengeMode")
+        end
+    },
     -- WoW Forever's landing refresh path fails with foreign placement; left alone there.
-    { key = "Landing", toggle = "showLanding", corner = "BOTTOMLEFT", frames = function()
-        if not NS.Client.isForever then return Global("ExpansionLandingPageMinimapButton") end
-    end },
+    {
+        key = "Landing",
+        toggle = "showLanding",
+        corner = "BOTTOMLEFT",
+        frames = function()
+            if not NS.Client.isForever then return Global("ExpansionLandingPageMinimapButton") end
+        end
+    },
 }
 
 local function Available(spec)
@@ -60,6 +91,7 @@ function S.MinimapElementAvailable(key)
     end
     return false
 end
+
 -- Read-only preview hint. `nil` means Blizzard has not made this button yet;
 -- `false` means it exists but its owner currently hides it (mail, crafting, etc.).
 -- The Retail difficulty widget keeps its outer frame shown even when all
@@ -95,6 +127,7 @@ function S.MinimapDifficultyPreviewSource()
     if mode and type(frame.ContentModes) ~= "table" then return mode, mode end
     return frame, mode
 end
+
 function S.MinimapElementPreviewShown(key)
     for i = 1, #SPECS do
         local spec = SPECS[i]
@@ -102,8 +135,11 @@ function S.MinimapElementPreviewShown(key)
             local frame, second, third = spec.frames()
             if not MM.Usable(frame) then return nil end
             local shown
-            if key == "Difficulty" then shown = ActiveDifficulty(frame, second, third) ~= nil
-            else shown = frame:IsShown() end
+            if key == "Difficulty" then
+                shown = ActiveDifficulty(frame, second, third) ~= nil
+            else
+                shown = frame:IsShown()
+            end
             if S.Public(shown) then return shown end
             return nil
         end
@@ -165,7 +201,8 @@ end
 -- button or its click handler. Hiding the badge restores Blizzard's look.
 local function StyleLanding(button, c)
     if NS.IsCombatLocked() and (button and button:IsProtected() or landingButton and landingButton:IsProtected()) then
-        MM.Defer(); return
+        MM.Defer()
+        return
     end
     if landingButton ~= button then
         if landingBadge then landingBadge:Hide() end
@@ -231,7 +268,8 @@ function MM.LayoutRow(mode, frames, count, size, spacing, distance, start, exten
         local x = row[3] * out + row[5] * index * step + dx
         local y = row[4] * out + row[6] * index * step + dy
         -- A slot holding a protected button is protected itself until combat ends.
-        if combat and frame:IsProtected() then MM.Defer()
+        if combat and frame:IsProtected() then
+            MM.Defer()
         else
             frame:ClearAllPoints()
             frame:SetPoint(row[1], host, row[2], x, y)
@@ -250,7 +288,10 @@ end
 
 -- Slots holding a protected button are protected themselves during combat.
 local function Locked(frame)
-    if frame and NS.IsCombatLocked() and frame:IsProtected() then MM.Defer(); return true end
+    if frame and NS.IsCombatLocked() and frame:IsProtected() then
+        MM.Defer()
+        return true
+    end
     return false
 end
 local function HideSlot(key)
@@ -282,7 +323,8 @@ function MM.LayoutElements()
         local spec = SPECS[i]
         local a, b, d = spec.frames()
         if spec.key == "Landing" then StyleLanding(a, c) end
-        if not a then HideSlot(spec.key)
+        if not a then
+            HideSlot(spec.key)
         elseif not Wanted(spec, c) then
             Park(a, b, d)
             HideSlot(spec.key)
@@ -316,6 +358,7 @@ function MM.LayoutElements()
         if MM.CollectsButtons() and c.drawerRow == c.elementRow then MM.Queue("drawer") end
     end
 end
+
 MM.flushers.rows = MM.LayoutElements
 
 MM.OnHover(function(shown)

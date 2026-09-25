@@ -20,6 +20,7 @@ local function Apply()
         local target=_G[roots[i]]
         if target then NS.GenericWindows.ApplyFrame(target,owner,"shell") end
     end
+    if NS.QuestText then NS.QuestText.Activate(_G.QuestLogFrame, owner) end
     for i=1,#addons do
         local addon=addons[i]
         if NS.Client.HasAddOn(addon)~=false and not NS.Client.IsAddOnLoaded(addon) then
@@ -35,6 +36,7 @@ end
 local function Disable()
     if frame then frame:UnregisterAllEvents() end
     for key in pairs(pending) do pending[key]=nil end
+    if NS.QuestText then NS.QuestText.Deactivate(_G.QuestLogFrame, owner) end
     NS.GenericWindows.Disable(owner)
     return true
 end

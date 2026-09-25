@@ -225,7 +225,7 @@ for _,name in ipairs(FILES) do
     local file=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..name..".lua","rb"))
     local text=file:read("*a"):gsub("\r","")
     file:close()
-    assert(text:find("^local _,P=%.%.%.\nlocal NS,S=P%.NS,P%.Suite\nlocal C=P%.CDM\n"),"header of "..name)
+    assert(text:find("^local _, P = %.%.%.\nlocal NS, S = P%.NS, P%.Suite\nlocal C = P%.CDM\n"),"header of "..name)
     local code=text:gsub("%-%-[^\n]*","")
     -- The options simulation owns the only timer of the plane (while it runs).
     for _,token in ipairs({"pcall","loadstring","setfenv","OnUpdate","C_Timer","CooldownViewerSettings"}) do
@@ -388,30 +388,30 @@ do
         return assert(body,"Auras.lua "..name.." source")
     end
     AuraRule.TargetRow=assert(loadstring(Body("TargetRow","e").."\nreturn TargetRow"))()
-    assert(text:find("\nA.UnitOf,A.Ids,A.TargetRow=UnitOf,Ids,TargetRow\n",1,true),"Auras.lua exports TargetRow")
-    local flow=assert(text:match("\n(local FLOW=%b{})\n"),"Auras.lua FLOW source")
+    assert(text:find("\nA.UnitOf, A.Ids, A.TargetRow = UnitOf, Ids, TargetRow\n",1,true),"Auras.lua exports TargetRow")
+    local flow=assert(text:match("\n(local FLOW = %b{})\n"),"Auras.lua FLOW source")
     AuraRule.FLOW=assert(loadstring(flow.."\nreturn FLOW"))()
-    AuraRule.Place=assert(loadstring("local geo=...\n"..Body("Place","rec,offset,split").."\nreturn Place"))(auraGeo)
+    AuraRule.Place=assert(loadstring("local geo=...\n"..Body("Place","rec, offset, split").."\nreturn Place"))(auraGeo)
     -- SyncAura takes the one rule from the layout, builds the geometry from
     -- the layout's metrics, and places compact containers only: the player
     -- container leads and the target container trails a split row; else the
     -- target container starts the reserved player lines further.
     for _,line in ipairs({
-        "\nlocal UNITS={\"player\",\"target\"}\n",
-        "    if layout~=nil and layout.Cell~=nil and layout.FixedAuras~=nil then fixed,_,split=layout.FixedAuras(view,entries) end\n",
-        "    m.fixed,m.split=fixed==true,split==true\n",
-        "        local w,h,sp,per,vertical,grow,align=layout.Metrics(view)\n",
-        "        local flow=FLOW[vertical][grow==2 and 2 or 1]\n",
-        "        geo.w,geo.h,geo.gp,geo.gc=w,h,max(0,sp),sp\n",
-        "        geo.flow,geo.point=flow,flow[4][align] or flow[4][1]\n",
-        "        if vertical then dir=grow==2 and -1 or 1 else dir=grow==2 and 1 or -1 end\n",
-        "        geo.step=(cross+sp)*dir\n",
-        "        geo.host=bar.auraHost or bar.frame\n",
-        "        for i=1,cap do if not TargetRow(entries[i]) then players=players+1 end end\n",
-        "        local lines=ceil(players/per)\n",
-        "                local side=m.split and (u==1 and \"lead\" or \"tail\") or nil\n",
-        "                Run(slot,\"aura\",unit,role,m.fixed,view,n,force,(u==2 and not side) and lines or 0,side)\n",
-        "    if not fixed then Place(rec,offset,split) end\n    if Build(rec,view,n) then return end\n",
+        "\nlocal UNITS = { \"player\", \"target\" }\n",
+        "    if layout ~= nil and layout.Cell ~= nil and layout.FixedAuras ~= nil then fixed, _, split = layout.FixedAuras(view, entries) end\n",
+        "    m.fixed, m.split = fixed == true, split == true\n",
+        "        local w, h, sp, per, vertical, grow, align = layout.Metrics(view)\n",
+        "        local flow = FLOW[vertical][grow == 2 and 2 or 1]\n",
+        "        geo.w, geo.h, geo.gp, geo.gc = w, h, max(0, sp), sp\n",
+        "        geo.flow, geo.point = flow, flow[4][align] or flow[4][1]\n",
+        "        if vertical then\n            dir = grow == 2 and -1 or 1\n        else\n            dir = grow == 2 and 1 or -1\n        end\n",
+        "        geo.step = (cross + sp) * dir\n",
+        "        geo.host = bar.auraHost or bar.frame\n",
+        "        for i = 1, cap do\n            if not TargetRow(entries[i]) then\n                players = players + 1\n            end\n        end\n",
+        "        local lines = ceil(players / per)\n",
+        "                local side = m.split and (u == 1 and \"lead\" or \"tail\") or nil\n",
+        "                Run(slot, \"aura\", unit, role, m.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)\n",
+        "    if not fixed then Place(rec, offset, split) end\n    if Build(rec, view, n) then return end\n",
     }) do
         assert(text:find(line,1,true),"Auras.lua SyncAura: "..line)
     end
@@ -422,10 +422,10 @@ do
     for call in text:gmatch("[%w_]+:SetPoint%b()") do
         if call:sub(1,2)=="c:" then anchors[#anchors+1]=call end
     end
-    assert(#anchors==2 and anchors[1]=='c:SetPoint("TOPLEFT",parent,"TOPLEFT",0,0)' and anchors[2]=="c:SetPoint(point,host,rel,dx,dy)",
+    assert(#anchors==2 and anchors[1]=='c:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)' and anchors[2]=="c:SetPoint(point, host, rel, dx, dy)",
         "container anchors: "..table.concat(anchors," | "))
-    assert(text:find("\n            local parent=fam==\"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
-        and text:find("\n    local point,host=g.point,g.host\n",1,true),"container parents and hosts are the bar's own frames")
+    assert(text:find("\n            local parent = fam == \"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
+        and text:find("\n    local point, host = g.point, g.host\n",1,true),"container parents and hosts are the bar's own frames")
     local rels=0
     for rel in text:gmatch("[%w_]+:SetPoint%(%s*[^,]+,%s*([%w_%.%[%]]+)") do
         rels=rels+1
@@ -437,8 +437,8 @@ do
     end
     assert(rels>20,"anchor scan found "..rels.." calls")
     local controller=Source("Controller.lua")
-    local extent=assert(controller:match("\n(local function Extent%(view,plan%)\n.-\nend)\n"),"Controller.lua Extent source")
-    assert(extent:find("\n    local _,ordered,split=C.Layout.FixedAuras(view,list)\n    if ordered or split then n1,n2=n1+n2,0 end\n",1,true),
+    local extent=assert(controller:match("\n(local function Extent%(view, plan%)\n.-\nend)\n"),"Controller.lua Extent source")
+    assert(extent:find("\n    local _, ordered, split = C.Layout.FixedAuras(view, list)\n    if ordered or split then n1, n2 = n1 + n2, 0 end\n",1,true),
         "Extent takes the one rule: one line when ordered or split")
     AuraRule.Extent=assert(loadstring("local C,probe,ceil=...\n"..extent.."\nreturn Extent"))(C,{},math.ceil)
 end

@@ -1,6 +1,6 @@
 local _, NS = ...
 
--- Clean-room adapter for Blizzard's native 12.1 Damage Meter.  Class-colored
+-- Clean-room adapter for Blizzard's native 12.1 Damage Meter. Class-colored
 -- StatusBar fills, text, icons, clicks, dropdowns, resize behavior, Edit Mode
 -- ownership, and combat-session refreshes remain Blizzard-owned.
 local DamageMeterSkin = {
@@ -9,65 +9,76 @@ local DamageMeterSkin = {
 }
 NS.DamageMeterSkin = DamageMeterSkin
 
-local function SafeField(object, key)
-    if not object then return nil end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
+local Field = NS.Safety.Field
+
+local ROW_SPEC = {
+    role = "card", shape = "continuous", radius = 4, inset = 0, listItem = true,
+    allowImplicitProtected = true,
+}
+local SOURCE_WINDOW_SPEC = { role = "popup", radius = 8, inset = 0, allowImplicitProtected = true }
+local SESSION_WINDOW_SPEC = { role = "shell", radius = 8, inset = 0, allowImplicitProtected = true }
+
+local function Attach(state, target, spec)
+    if not target or not NS.Safety.CanDecorate(target, true) then return false end
+    if not NS.Surface.Attach(target, spec) then return false end
+    state.surfaces[target] = true
+    return true
+end
+
+local function SkinRow(row, owner)
+    local state = DamageMeterSkin.owners[owner]
+    if not state or not state.active or NS.IsCombatLocked()
+        or not NS.DB.hud.damageMeterRows then
+        return false
+    end
+    local statusBar = Field(row, "StatusBar")
+    if not statusBar then return false end
+
+    NS.Cosmetics.SuppressVertexAlpha(Field(statusBar, "Background"), owner)
+    NS.Cosmetics.SuppressVertexAlpha(Field(statusBar, "BackgroundEdge"), owner)
+    local regions = Field(statusBar, "BackgroundRegions")
+    if type(regions) == "table" then
+        for _, region in pairs(regions) do
+            NS.Cosmetics.SuppressVertexAlpha(region, owner)
+        end
+    end
+    -- This plate sits behind Blizzard's class-/source-colored StatusBar fill.
+    Attach(state, statusBar, ROW_SPEC)
+    return true
 end
 
 local function OwnerState(owner)
     local state = DamageMeterSkin.owners[owner]
     if not state then
         state = {
+            owner = owner,
             active = false,
             surfaces = setmetatable({}, { __mode = "k" }),
             scrollBoxes = setmetatable({}, { __mode = "k" }),
             windows = setmetatable({}, { __mode = "k" }),
         }
+        state.skinRow = function(row) SkinRow(row, owner) end
         DamageMeterSkin.owners[owner] = state
     end
     return state
 end
 
-local function Track(owner, target)
-    local state = DamageMeterSkin.owners[owner]
-    if state and target then state.surfaces[target] = true end
-end
-
-local function Attach(target, owner, spec)
-    if not target or not NS.Safety.CanDecorate(target, true) then return false end
-    spec = spec or {}
-    spec.allowImplicitProtected = true
-    local surface = NS.Surface.Attach(target, spec)
-    if surface then
-        Track(owner, target)
-        return true
-    end
-    return false
-end
-
-local function CallBoolean(object, method)
-    local callback = SafeField(object, method)
-    if type(callback) ~= "function" then return nil end
-    local ok, value = pcall(callback, object)
-    return ok and value == true or nil
-end
-
 local function SkinWindowAction(button, owner, kind)
     if not button then return false end
-    if NS.WindowActionSkin then
-        local action, reason = NS.WindowActionSkin.SyncNativeVisual(button, owner, kind)
-        if action then return true end
-        if reason == "owned by another adapter"
-            or reason == "state texture ownership changed" then return false end
+    local action, reason = NS.WindowActionSkin.SyncNativeVisual(button, owner, kind)
+    if action then return true end
+    if reason == "owned by another adapter"
+        or reason == "state texture ownership changed" then
+        return false
     end
-    if NS.Checkmarks then return NS.Checkmarks.TrackButton(button, owner) end
-    return false
+    return NS.Checkmarks.TrackButton(button, owner)
 end
 
 local function SkinMinimizeButton(window, owner, minimized)
-    if type(minimized) ~= "boolean" then minimized = CallBoolean(window, "IsMinimized") end
-    return SkinWindowAction(SafeField(window, "MinimizeButton"), owner,
+    if type(minimized) ~= "boolean" then
+        minimized = NS.Safety.Call(window, "IsMinimized") == true
+    end
+    return SkinWindowAction(Field(window, "MinimizeButton"), owner,
         minimized and "maximize" or "minimize")
 end
 
@@ -79,38 +90,14 @@ local function OnWindowMinimized(window, minimized)
     end
 end
 
+-- SetMinimized is an instance method of each exact session window.
 local function HookWindow(window)
-    if not window or DamageMeterSkin.hookedWindows[window]
-        or type(hooksecurefunc) ~= "function"
-        or type(SafeField(window, "SetMinimized")) ~= "function" then
-        return false
+    if DamageMeterSkin.hookedWindows[window]
+        or type(Field(window, "SetMinimized")) ~= "function" then
+        return
     end
-    local ok = pcall(function()
-        hooksecurefunc(window, "SetMinimized", OnWindowMinimized)
-    end)
-    if ok then DamageMeterSkin.hookedWindows[window] = true end
-    return ok == true
-end
-
-local function SkinRow(row, owner)
-    local state = DamageMeterSkin.owners[owner]
-    if not state or not state.active or NS.IsCombatLocked()
-        or not NS.DB.hud.damageMeterRows then
-        return false
-    end
-    local statusBar = SafeField(row, "StatusBar")
-    if not statusBar then return false end
-
-    NS.Cosmetics.SuppressVertexAlpha(SafeField(statusBar, "Background"), owner)
-    NS.Cosmetics.SuppressVertexAlpha(SafeField(statusBar, "BackgroundEdge"), owner)
-    for _, region in pairs(SafeField(statusBar, "BackgroundRegions") or {}) do
-        NS.Cosmetics.SuppressVertexAlpha(region, owner)
-    end
-    -- This plate sits behind Blizzard's class-/source-colored StatusBar fill.
-    Attach(statusBar, owner, {
-        role = "card", shape = "continuous", radius = 4, inset = 0, listItem = true,
-    })
-    return true
+    hooksecurefunc(window, "SetMinimized", OnWindowMinimized)
+    DamageMeterSkin.hookedWindows[window] = true
 end
 
 local function InitializedFrameEvent()
@@ -118,63 +105,63 @@ local function InitializedFrameEvent()
         and ScrollBoxListMixin.Event.OnInitializedFrame
 end
 
-local function RegisterScrollBox(scrollBox, owner)
-    local state = DamageMeterSkin.owners[owner]
+-- CallbackRegistry passes the registration owner first: the owner state.
+local function OnRowInitialized(state, row)
+    -- Damage rows can be recycled during combat. Cosmetic work is optional,
+    -- so SkinRow neither mutates nor queues from that hot path.
+    SkinRow(row, state.owner)
+end
+
+local function RegisterScrollBox(state, scrollBox)
     local event = InitializedFrameEvent()
-    if not state or not scrollBox or not event or state.scrollBoxes[scrollBox]
-        or type(SafeField(scrollBox, "RegisterCallback")) ~= "function" then
+    if not scrollBox or not event or state.scrollBoxes[scrollBox]
+        or type(Field(scrollBox, "RegisterCallback")) ~= "function" then
         return false
     end
-    local token = {}
-    local function OnInitialized(_, row)
-        -- Damage rows can be recycled during combat.  Cosmetic work is
-        -- optional, so do not mutate or queue from that hot path.
-        SkinRow(row, owner)
-    end
-    local ok = pcall(scrollBox.RegisterCallback, scrollBox, event, OnInitialized, token)
-    if not ok then return false end
-    state.scrollBoxes[scrollBox] = token
-    if type(SafeField(scrollBox, "ForEachFrame")) == "function" and not NS.IsCombatLocked() then
-        pcall(scrollBox.ForEachFrame, scrollBox, function(row) SkinRow(row, owner) end)
+    scrollBox:RegisterCallback(event, OnRowInitialized, state)
+    state.scrollBoxes[scrollBox] = true
+    if type(Field(scrollBox, "ForEachFrame")) == "function" and not NS.IsCombatLocked() then
+        scrollBox:ForEachFrame(state.skinRow)
     end
     return true
 end
 
-local function SkinSourceWindow(sourceWindow, owner)
+local function SkinSourceWindow(state, sourceWindow)
     if not sourceWindow or not NS.DB.hud.damageMeterDetails then return end
-    NS.Cosmetics.SuppressVertexAlpha(SafeField(sourceWindow, "Background"), owner)
-    Attach(sourceWindow, owner, { role = "popup", radius = 8, inset = 0 })
-    SkinWindowAction(SafeField(sourceWindow, "CloseButton"), owner, "close")
-    RegisterScrollBox(SafeField(sourceWindow, "ScrollBox"), owner)
+    local owner = state.owner
+    NS.Cosmetics.SuppressVertexAlpha(Field(sourceWindow, "Background"), owner)
+    Attach(state, sourceWindow, SOURCE_WINDOW_SPEC)
+    SkinWindowAction(Field(sourceWindow, "CloseButton"), owner, "close")
+    RegisterScrollBox(state, Field(sourceWindow, "ScrollBox"))
 end
 
-local function SkinSessionWindow(window, owner)
+local function SkinSessionWindow(state, window)
     if not window then return end
-    local state = DamageMeterSkin.owners[owner]
-    if state then state.windows[window] = true end
+    local owner = state.owner
+    state.windows[window] = true
     HookWindow(window)
     SkinMinimizeButton(window, owner)
-    local minimize = SafeField(window, "MinimizeContainer")
+    local minimize = Field(window, "MinimizeContainer")
     if NS.DB.hud.damageMeterWindows then
-        NS.Cosmetics.SuppressVertexAlpha(SafeField(window, "Header"), owner)
-        NS.Cosmetics.SuppressVertexAlpha(SafeField(minimize, "Background"), owner)
-        Attach(window, owner, { role = "shell", radius = 8, inset = 0 })
+        NS.Cosmetics.SuppressVertexAlpha(Field(window, "Header"), owner)
+        NS.Cosmetics.SuppressVertexAlpha(Field(minimize, "Background"), owner)
+        Attach(state, window, SESSION_WINDOW_SPEC)
     end
 
-    RegisterScrollBox(SafeField(minimize, "ScrollBox"), owner)
-    SkinRow(SafeField(minimize, "LocalPlayerEntry"), owner)
-    SkinSourceWindow(SafeField(minimize, "SourceWindow"), owner)
+    RegisterScrollBox(state, Field(minimize, "ScrollBox"))
+    SkinRow(Field(minimize, "LocalPlayerEntry"), owner)
+    SkinSourceWindow(state, Field(minimize, "SourceWindow"))
 end
 
-local function EnumerateWindows(frame, callback)
-    if type(SafeField(frame, "ForEachSessionWindow")) == "function" then
-        local ok = pcall(frame.ForEachSessionWindow, frame, callback)
-        if ok then return end
+local function SkinAllWindows(frame, state)
+    if type(Field(frame, "ForEachSessionWindow")) == "function" then
+        frame:ForEachSessionWindow(function(window) SkinSessionWindow(state, window) end)
+        return
     end
-    local list = SafeField(frame, "windowDataList")
+    local list = Field(frame, "windowDataList")
     if type(list) == "table" then
         for _, data in pairs(list) do
-            callback(SafeField(data, "sessionWindow"))
+            SkinSessionWindow(state, Field(data, "sessionWindow"))
         end
     end
 end
@@ -185,7 +172,7 @@ function DamageMeterSkin.Apply(frame, owner)
     if not NS.Safety.CanDecorate(frame, true) then return false, "protected" end
     local state = OwnerState(owner)
     state.active = true
-    EnumerateWindows(frame, function(window) SkinSessionWindow(window, owner) end)
+    SkinAllWindows(frame, state)
     return true
 end
 
@@ -196,18 +183,17 @@ function DamageMeterSkin.Disable(_, owner)
     state.active = false
     local event = InitializedFrameEvent()
     if event then
-        for scrollBox, token in pairs(state.scrollBoxes) do
-            local unregister = SafeField(scrollBox, "UnregisterCallback")
-            if type(unregister) == "function" then
-                pcall(unregister, scrollBox, event, token)
+        for scrollBox in pairs(state.scrollBoxes) do
+            if type(Field(scrollBox, "UnregisterCallback")) == "function" then
+                scrollBox:UnregisterCallback(event, state)
             end
         end
     end
     for target in pairs(state.surfaces) do
-        pcall(NS.Surface.SetVisible, target, false)
+        NS.Surface.SetVisible(target, false)
     end
-    if NS.WindowActionSkin then NS.WindowActionSkin.DisableOwner(owner) end
-    if NS.Checkmarks then NS.Checkmarks.UntrackOwner(owner) end
+    NS.WindowActionSkin.DisableOwner(owner)
+    NS.Checkmarks.UntrackOwner(owner)
     NS.Cosmetics.RestoreOwner(owner)
     DamageMeterSkin.owners[owner] = nil
     return true

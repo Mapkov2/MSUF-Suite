@@ -14,28 +14,69 @@ local ZONE_EVENTS = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_
 local DIFFICULTY_EVENTS = { "PLAYER_DIFFICULTY_CHANGED", "GROUP_ROSTER_UPDATE", "INSTANCE_GROUP_SIZE_CHANGED",
     "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET" }
 local INVITE_EVENT = "CALENDAR_UPDATE_PENDING_INVITES"
-local zoneColors = { sanctuary = "69ccf0", arena = "ff1a1a", friendly = "1aff1a", hostile = "ff1a1a", contested = "ffb300" }
+local zoneColors = {
+    sanctuary = "69ccf0",
+    arena = "ff1a1a",
+    friendly = "1aff1a",
+    hostile = "ff1a1a",
+    contested =
+    "ffb300"
+}
 local outlines = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
 -- Blizzard's localized names where one exists, else the suite's own text.
-local TITLES = { Clock = { "TIMEMANAGER_TITLE", "Clock" }, FPS = { false, "FPS" }, Latency = { false, "Latency" },
-    Coordinates = { false, "Coordinates" }, Durability = { "DURABILITY", "Durability" },
-    Location = { "ZONE", "Location" }, Weather = { false, "Weather" } }
+local TITLES = {
+    Clock = { "TIMEMANAGER_TITLE", "Clock" },
+    FPS = { false, "FPS" },
+    Latency = { false, "Latency" },
+    Coordinates = { false, "Coordinates" },
+    Durability = { "DURABILITY", "Durability" },
+    Location = { "ZONE", "Location" },
+    Weather = { false, "Weather" }
+}
 -- WeatherType values from Blizzard's Forever WeatherConstantsDocumentation.
 local WEATHER_TYPES = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm", [4] = "Other weather" }
 -- GetInstanceInfo difficulty IDs: tag and colour tier (1 normal, 2 heroic, 3
 -- mythic, 4 raid finder/follower, 5 timewalking, 6 keystone). Bare tags carry
 -- no group size. Unknown IDs fall back to GetDifficultyInfo's heroic/mythic flags.
 local TAGS = {
-    [1] = { "N", 1 }, [2] = { "H", 2 }, [23] = { "M", 3 },
-    [14] = { "N", 1 }, [15] = { "H", 2 }, [16] = { "M", 3 }, [233] = { "M", 3 },
-    [3] = { "N", 1 }, [4] = { "N", 1 }, [5] = { "H", 2 }, [6] = { "H", 2 }, [9] = { "N", 1 }, [148] = { "N", 1 },
-    [173] = { "N", 1 }, [174] = { "H", 2 }, [242] = { "N", 1 }, [243] = { "N", 1 },
-    [7] = { "LFR", 4 }, [17] = { "LFR", 4 }, [205] = { "F", 4, true },
-    [24] = { "TW", 5 }, [33] = { "TW", 5 }, [151] = { "TW", 5 },
-    [18] = { "EVT", 1 }, [19] = { "EVT", 1 }, [30] = { "EVT", 1 },
-    [25] = { "PvP", 1 }, [29] = { "PvP", 1 }, [32] = { "PvP", 1 }, [34] = { "PvP", 1 }, [45] = { "PvP", 1 },
-    [12] = { "S", 1 }, [38] = { "S", 1 }, [11] = { "HS", 2 }, [39] = { "HS", 2 }, [40] = { "MS", 3 },
-    [8] = { "M+", 6, true }, [208] = { "D", 1, true },
+    [1] = { "N", 1 },
+    [2] = { "H", 2 },
+    [23] = { "M", 3 },
+    [14] = { "N", 1 },
+    [15] = { "H", 2 },
+    [16] = { "M", 3 },
+    [233] = { "M", 3 },
+    [3] = { "N", 1 },
+    [4] = { "N", 1 },
+    [5] = { "H", 2 },
+    [6] = { "H", 2 },
+    [9] = { "N", 1 },
+    [148] = { "N", 1 },
+    [173] = { "N", 1 },
+    [174] = { "H", 2 },
+    [242] = { "N", 1 },
+    [243] = { "N", 1 },
+    [7] = { "LFR", 4 },
+    [17] = { "LFR", 4 },
+    [205] = { "F", 4, true },
+    [24] = { "TW", 5 },
+    [33] = { "TW", 5 },
+    [151] = { "TW", 5 },
+    [18] = { "EVT", 1 },
+    [19] = { "EVT", 1 },
+    [30] = { "EVT", 1 },
+    [25] = { "PvP", 1 },
+    [29] = { "PvP", 1 },
+    [32] = { "PvP", 1 },
+    [34] = { "PvP", 1 },
+    [45] = { "PvP", 1 },
+    [12] = { "S", 1 },
+    [38] = { "S", 1 },
+    [11] = { "HS", 2 },
+    [39] = { "HS", 2 },
+    [40] = { "MS", 3 },
+    [8] = { "M+", 6, true },
+    [208] = { "D", 1, true },
 }
 local TIER_COLORS = { "e0a060", "4aa8ff", "b36bff", "a0a0a0", "40d8d8", "ff9a33" }
 -- Flexible raids show the current group size instead of the maximum.
@@ -65,7 +106,11 @@ local function Clock(entry)
         local hour, minute = S.ReadInfoSource("clockTime")
         if Number(hour) and Number(minute) then
             local suffix = ""
-            if not c.infoClock24Hour then suffix = hour < 12 and " AM" or " PM"; hour = hour % 12; if hour == 0 then hour = 12 end end
+            if not c.infoClock24Hour then
+                suffix = hour < 12 and " AM" or " PM"
+                hour = hour % 12
+                if hour == 0 then hour = 12 end
+            end
             server = string.format("%02d:%02d", hour, minute)
             if c.infoClockSeconds and second then server = server .. string.format(":%02d", second) end
             server = server .. suffix
@@ -81,7 +126,10 @@ local function FPS(entry)
     local value = S.ReadInfoSource("fps")
     if not Number(value) or value < 0 then return "--", entry.interval end
     value = math.floor(value + .5)
-    if value ~= entry.lastFPS then entry.lastFPS = value; entry.fpsText = value .. " FPS" end
+    if value ~= entry.lastFPS then
+        entry.lastFPS = value
+        entry.fpsText = value .. " FPS"
+    end
     local severity = value < M.config.infoFPSWarning and 3 or value < M.config.infoFPSGood and 2 or 1
     return entry.fpsText, entry.interval, severity
 end
@@ -94,7 +142,8 @@ local function Latency(entry)
     if mode ~= 2 and not home or mode ~= 1 and not world then return "--", entry.interval end
     if home ~= entry.lastHome or world ~= entry.lastWorld or mode ~= entry.lastMode then
         entry.lastHome, entry.lastWorld, entry.lastMode = home, world, mode
-        entry.latencyText = mode == 1 and home .. " ms" or mode == 2 and world .. " ms" or home .. " / " .. world .. " ms"
+        entry.latencyText = mode == 1 and home .. " ms" or mode == 2 and world .. " ms" or
+            home .. " / " .. world .. " ms"
     end
     local value = mode == 1 and home or mode == 2 and world or math.max(home, world)
     local severity = value >= M.config.infoLatencyBad and 3 or value >= M.config.infoLatencyWarning and 2 or 1
@@ -155,8 +204,15 @@ local function Weather()
     local label = WEATHER_TYPES[kind]
     return label and S.Text(label) or "--"
 end
-local readers = { Clock = Clock, FPS = FPS, Latency = Latency, Coordinates = Coordinates,
-    Durability = Durability, Location = Location, Weather = Weather }
+local readers = {
+    Clock = Clock,
+    FPS = FPS,
+    Latency = Latency,
+    Coordinates = Coordinates,
+    Durability = Durability,
+    Location = Location,
+    Weather = Weather
+}
 
 local function Color(hex)
     return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
@@ -170,22 +226,33 @@ local function ClassColor()
     local color = type(palette) == "table" and palette[token]
     if not S.Public(color) or type(color) ~= "table" or not Number(color.r) or not Number(color.g) or not Number(color.b) then return end
     return string.format("%02x%02x%02x", math.floor(math.max(0, math.min(1, color.r)) * 255 + .5),
-        math.floor(math.max(0, math.min(1, color.g)) * 255 + .5), math.floor(math.max(0, math.min(1, color.b)) * 255 + .5))
+        math.floor(math.max(0, math.min(1, color.g)) * 255 + .5),
+        math.floor(math.max(0, math.min(1, color.b)) * 255 + .5))
 end
 
 -- Group size and difficulty letter, e.g. "20M", "5H", "M+12", "25LFR".
 local function DifficultyText()
     if type(GetInstanceInfo) ~= "function" then return "" end
     local _, kind, difficulty, _, maxPlayers, _, dynamic, _, groupSize = GetInstanceInfo()
-    if not S.Public(kind) or kind == "none" or kind == "interior" or kind == "neighborhood" or not Number(difficulty) then return "" end
+    if not S.Public(kind) or kind == "none" or kind == "interior" or kind == "neighborhood" or not Number(difficulty) then
+        return
+        ""
+    end
     local tag, letter, tier = TAGS[difficulty], nil, 1
-    if tag then letter, tier = tag[1], tag[2]
+    if tag then
+        letter, tier = tag[1], tag[2]
     elseif type(GetDifficultyInfo) == "function" then
         local _, _, heroic, _, displayHeroic, displayMythic = GetDifficultyInfo(difficulty)
-        if S.Public(displayMythic) and displayMythic then letter, tier = "M", 3
-        elseif S.Public(heroic) and S.Public(displayHeroic) and (heroic or displayHeroic) then letter, tier = "H", 2
-        else letter = "N" end
-    else return "" end
+        if S.Public(displayMythic) and displayMythic then
+            letter, tier = "M", 3
+        elseif S.Public(heroic) and S.Public(displayHeroic) and (heroic or displayHeroic) then
+            letter, tier = "H", 2
+        else
+            letter = "N"
+        end
+    else
+        return ""
+    end
     if difficulty == 8 then
         local reader = C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo
         local level = type(reader) == "function" and reader()
@@ -204,7 +271,10 @@ local function Invites()
 end
 
 local function Cancel()
-    if M.infoTimer then M.infoTimer:Cancel(); M.infoTimer = nil end
+    if M.infoTimer then
+        M.infoTimer:Cancel()
+        M.infoTimer = nil
+    end
     M.infoVisible = false
     if S.HideMinimapInfoTooltip then S.HideMinimapInfoTooltip() end
 end
@@ -235,17 +305,28 @@ local function Decorate(entry)
     local mark = entry.invite
     if mark and mark:IsShown() then
         mark:ClearAllPoints()
-        if entry.justify == "RIGHT" then mark:SetPoint("RIGHT", entry.button, "RIGHT", -(width + 2), 0)
-        elseif entry.justify == "LEFT" then mark:SetPoint("LEFT", entry.button, "LEFT", width + 2, 0)
-        else mark:SetPoint("LEFT", entry.button, "CENTER", width / 2 + 2, 0) end
+        if entry.justify == "RIGHT" then
+            mark:SetPoint("RIGHT", entry.button, "RIGHT", -(width + 2), 0)
+        elseif entry.justify == "LEFT" then
+            mark:SetPoint("LEFT", entry.button, "LEFT", width + 2, 0)
+        else
+            mark:SetPoint("LEFT", entry.button, "CENTER", width / 2 + 2, 0)
+        end
     end
 end
 
 local function Sample(entry, key)
     local text, delay, severity, overrideColor = readers[key](entry)
-    if text ~= entry.text then entry.label:SetText(text); entry.text = text; Decorate(entry) end
+    if text ~= entry.text then
+        entry.label:SetText(text)
+        entry.text = text
+        Decorate(entry)
+    end
     local color = overrideColor or entry.statusColors and severity and entry.statusColors[severity] or entry.color
-    if color ~= entry.lastColor then entry.label:SetTextColor(Color(color)); entry.lastColor = color end
+    if color ~= entry.lastColor then
+        entry.label:SetTextColor(Color(color))
+        entry.lastColor = color
+    end
     entry.dirty = false
     return delay
 end
@@ -253,12 +334,21 @@ end
 local function UpdateDifficulty()
     local label = M.difficultyLabel
     if not M.difficultyActive or not label then return end
-    if not Visible() then M.difficultyDirty = true; return end
+    if not Visible() then
+        M.difficultyDirty = true
+        return
+    end
     M.difficultyDirty = false
     local text, tier = DifficultyText()
-    if text ~= M.difficultyText then label:SetText(text); M.difficultyText = text end
+    if text ~= M.difficultyText then
+        label:SetText(text)
+        M.difficultyText = text
+    end
     local color = M.config.infoDifficultyColors and TIER_COLORS[tier] or "ffffff"
-    if color ~= M.difficultyColor then label:SetTextColor(Color(color)); M.difficultyColor = color end
+    if color ~= M.difficultyColor then
+        label:SetTextColor(Color(color))
+        M.difficultyColor = color
+    end
 end
 
 local function UpdateInvite()
@@ -293,7 +383,10 @@ Tick = function()
 end
 
 function S.UpdateMinimapInfoVisibility()
-    if not Visible() then Cancel(); return end
+    if not Visible() then
+        Cancel()
+        return
+    end
     if not M.infoVisible then
         M.infoVisible = true
         for key in pairs(eventFields) do
@@ -310,7 +403,10 @@ local function Rearm()
     local entry = M.infoEntries and M.infoEntries.Coordinates
     if not entry or not entry.active then return end
     entry.due = nil
-    if M.infoTimer then M.infoTimer:Cancel(); M.infoTimer = nil end
+    if M.infoTimer then
+        M.infoTimer:Cancel()
+        M.infoTimer = nil
+    end
     if Visible() then Tick() end
 end
 
@@ -320,7 +416,10 @@ local function EventField(key)
     entry.dirty = true
     if Visible() then Sample(entry, key) end
 end
-local function DurabilityChanged() S.InvalidateSharedData("durability"); EventField("Durability") end
+local function DurabilityChanged()
+    S.InvalidateSharedData("durability")
+    EventField("Durability")
+end
 local function ZoneChanged()
     S.InvalidateSharedData("location")
     S.InvalidateSharedData("coordinates")
@@ -339,21 +438,33 @@ local function WorldChanged()
     local c = M.config
     if c.infoCoordinates and c.infoCoordinatesHideInstance then
         -- Entering or leaving an instance may show or hide the coordinates text.
-        if NS.IsCombatLocked() then MM.Force("texts"); S.Queue("minimap") else MM.RefreshTexts() end
+        if NS.IsCombatLocked() then
+            MM.Force("texts")
+            S.Queue("minimap")
+        else
+            MM.RefreshTexts()
+        end
     end
 end
 
 local function OpenCalendar()
-    if type(ToggleCalendar) == "function" then ToggleCalendar(); return end
-    if GameTimeFrame and not NS.Safety.IsForbidden(GameTimeFrame) and type(GameTimeFrame.Click) == "function" then GameTimeFrame:Click() end
+    if type(ToggleCalendar) == "function" then
+        ToggleCalendar()
+        return
+    end
+    if GameTimeFrame and not NS.Safety.IsForbidden(GameTimeFrame) and type(GameTimeFrame.Click) == "function" then
+        GameTimeFrame:Click()
+    end
 end
 local function Click(button, mouseButton)
     if not M.active or NS.IsCombatLocked() then return end
     if button.infoKey == "Clock" then
         local calendar = M.config.infoClockClick == 1
         if mouseButton == "RightButton" then calendar = not calendar end
-        if calendar then OpenCalendar()
-        elseif type(ToggleTimeManager) == "function" then ToggleTimeManager()
+        if calendar then
+            OpenCalendar()
+        elseif type(ToggleTimeManager) == "function" then
+            ToggleTimeManager()
         else
             if type(TimeManager_Toggle) ~= "function" then
                 local loader = C_AddOns and C_AddOns.LoadAddOn or LoadAddOn
@@ -362,8 +473,11 @@ local function Click(button, mouseButton)
             if type(TimeManager_Toggle) == "function" then TimeManager_Toggle() end
         end
     elseif (button.infoKey == "Coordinates" or button.infoKey == "Location" and M.config.infoLocationClick)
-        and type(ToggleWorldMap) == "function" then ToggleWorldMap()
-    elseif button.infoKey == "Durability" and type(ToggleCharacter) == "function" then ToggleCharacter("PaperDollFrame") end
+        and type(ToggleWorldMap) == "function" then
+        ToggleWorldMap()
+    elseif button.infoKey == "Durability" and type(ToggleCharacter) == "function" then
+        ToggleCharacter("PaperDollFrame")
+    end
 end
 
 local function Tooltip(button)
@@ -375,27 +489,41 @@ local function Tooltip(button)
     GameTooltip:SetText(MM.Label(title[1], title[2]))
     GameTooltip:AddLine(entry.text or "--", 1, 1, 1)
     if key == "Clock" then
-        if entry.invite and entry.invite:IsShown() then GameTooltip:AddLine(S.Text("Calendar invitations are waiting."), 1, .82, 0) end
-        GameTooltip:AddLine(S.Text(M.config.infoClockClick == 1 and "Left: calendar. Right: clock." or "Left: clock. Right: calendar."), .7, .8, .9)
+        if entry.invite and entry.invite:IsShown() then
+            GameTooltip:AddLine(S.Text("Calendar invitations are waiting."),
+                1, .82, 0)
+        end
+        GameTooltip:AddLine(
+            S.Text(M.config.infoClockClick == 1 and "Left: calendar. Right: clock." or "Left: clock. Right: calendar."),
+            .7,
+            .8, .9)
     elseif key == "Coordinates" or key == "Location" and M.config.infoLocationClick then
         GameTooltip:AddLine(S.Text("Click to open the world map."), .7, .8, .9)
-    elseif key == "Durability" then GameTooltip:AddLine(S.Text("Click to open your equipment."), .7, .8, .9) end
+    elseif key == "Durability" then
+        GameTooltip:AddLine(S.Text("Click to open your equipment."), .7, .8, .9)
+    end
     GameTooltip:Show()
 end
 
 local function LeaveTooltip(button)
-    if S.HideMinimapInfoTooltip then S.HideMinimapInfoTooltip(button)
-    elseif GameTooltip and GameTooltip:GetOwner() == button then GameTooltip:Hide() end
+    if S.HideMinimapInfoTooltip then
+        S.HideMinimapInfoTooltip(button)
+    elseif GameTooltip and GameTooltip:GetOwner() == button then
+        GameTooltip:Hide()
+    end
 end
 
 local function CreateEntry(key)
     local button = S.CreateFrame("Button", nil, M.infoFrame)
     button.infoKey = key
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:SetScript("OnClick", Click); button:SetScript("OnEnter", Tooltip)
-    button:SetScript("OnLeave", LeaveTooltip); button:SetScript("OnHide", LeaveTooltip)
+    button:SetScript("OnClick", Click)
+    button:SetScript("OnEnter", Tooltip)
+    button:SetScript("OnLeave", LeaveTooltip)
+    button:SetScript("OnHide", LeaveTooltip)
     local label = S.CreateFontString(button, nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetAllPoints(button); label:SetWordWrap(false)
+    label:SetAllPoints(button)
+    label:SetWordWrap(false)
     return { button = button, label = label }
 end
 
@@ -409,7 +537,8 @@ local function EnsureFrame()
         M.infoFrame:SetScript("OnHide", Cancel)
         M.infoEntries = {}
     end
-    M.infoFrame:ClearAllPoints(); M.infoFrame:SetAllPoints(host)
+    M.infoFrame:ClearAllPoints()
+    M.infoFrame:SetAllPoints(host)
     M.infoFrame:SetFrameLevel(MM.mapLevel + 13)
 end
 
@@ -417,8 +546,14 @@ end
 local function Anchor(region, anchor, x, y)
     local host, border = MM.host, MM.BorderWidth()
     region:ClearAllPoints()
-    if anchor == 10 then region:SetPoint("BOTTOM", host, "TOP", x, y + border); return "CENTER" end
-    if anchor == 11 then region:SetPoint("TOP", host, "BOTTOM", x, y - border); return "CENTER" end
+    if anchor == 10 then
+        region:SetPoint("BOTTOM", host, "TOP", x, y + border)
+        return "CENTER"
+    end
+    if anchor == 11 then
+        region:SetPoint("TOP", host, "BOTTOM", x, y - border)
+        return "CENTER"
+    end
     local point = MM.ANCHORS[anchor] or "CENTER"
     region:SetPoint(point, host, point, x, y)
     return point:find("LEFT", 1, true) and "LEFT" or point:find("RIGHT", 1, true) and "RIGHT" or "CENTER"
@@ -436,14 +571,19 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     end
     entry.interval = c[prefix .. "Interval"] or 1
     if key == "Clock" then
-        entry.clockFormat = (c.infoClock24Hour and "%H:%M" or "%I:%M") .. (c.infoClockSeconds and ":%S" or "") .. (c.infoClock24Hour and "" or " %p")
+        entry.clockFormat = (c.infoClock24Hour and "%H:%M" or "%I:%M") ..
+            (c.infoClockSeconds and ":%S" or "") .. (c.infoClock24Hour and "" or " %p")
     elseif key == "Coordinates" then
-        entry.decimalScale = 10 ^ c.infoCoordinatesDecimals; entry.coordinateScale = entry.decimalScale * 100
+        entry.decimalScale = 10 ^ c.infoCoordinatesDecimals
+        entry.coordinateScale = entry.decimalScale * 100
         entry.coordinateFormat = "%." .. c.infoCoordinatesDecimals .. "f, %." .. c.infoCoordinatesDecimals .. "f"
         entry.lastX, entry.lastY = nil, nil
     elseif key == "Durability" then
         entry.lastDurability = nil
-        entry.iconPrefix = c.infoDurabilityIcon and "|TInterface\\Durability\\UI-Durability-Icons:" .. c.infoDurabilitySize .. ":" .. math.floor(c.infoDurabilitySize * 18 / 22) .. ":0:0:128:128:0:18:0:22|t " or ""
+        entry.iconPrefix = c.infoDurabilityIcon and
+            "|TInterface\\Durability\\UI-Durability-Icons:" ..
+            c.infoDurabilitySize .. ":" .. math.floor(c.infoDurabilitySize * 18 / 22) .. ":0:0:128:128:0:18:0:22|t " or
+            ""
     elseif key == "Location" then
         entry.lastZone, entry.lastSubzone = nil, nil
         entry.separator = c.infoLocationBelow and "\n" or " - "
@@ -462,13 +602,19 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         if not entry.box then entry.box = S.CreateTexture(entry.button, nil, "BACKGROUND") end
         local box = entry.box
         box:ClearAllPoints()
-        if entry.justify == "LEFT" then box:SetPoint("LEFT", entry.button, "LEFT", -4, 0)
-        elseif entry.justify == "RIGHT" then box:SetPoint("RIGHT", entry.button, "RIGHT", 4, 0)
-        else box:SetPoint("CENTER", entry.button, "CENTER") end
+        if entry.justify == "LEFT" then
+            box:SetPoint("LEFT", entry.button, "LEFT", -4, 0)
+        elseif entry.justify == "RIGHT" then
+            box:SetPoint("RIGHT", entry.button, "RIGHT", 4, 0)
+        else
+            box:SetPoint("CENTER", entry.button, "CENTER")
+        end
         box:SetHeight(size * lines + 4)
         box:SetColorTexture(boxR, boxG, boxB, 1)
         box:Show()
-    elseif entry.box then entry.box:Hide() end
+    elseif entry.box then
+        entry.box:Hide()
+    end
     entry.text = nil
 end
 
@@ -479,7 +625,11 @@ local function Listen(events, handler, wanted)
 end
 
 function MM.RefreshTexts()
-    if NS.IsCombatLocked() then MM.Force("texts"); S.Queue("minimap"); return end
+    if NS.IsCombatLocked() then
+        MM.Force("texts")
+        S.Queue("minimap")
+        return
+    end
     Cancel()
     local c = M.config
     local hideCoordinates = false
@@ -497,15 +647,26 @@ function MM.RefreshTexts()
         and C_Calendar ~= nil and type(C_Calendar.GetNumPendingInvites) == "function"
     Listen(DURABILITY_EVENTS, DurabilityChanged, durability)
     Listen(ZONE_EVENTS, ZoneChanged, location or coordinates or difficulty or weather)
-    if weather then MM.Listen("WEATHER_CHANGED", "info", WeatherChanged)
-    else MM.Unlisten("WEATHER_CHANGED", "info") end
+    if weather then
+        MM.Listen("WEATHER_CHANGED", "info", WeatherChanged)
+    else
+        MM.Unlisten("WEATHER_CHANGED", "info")
+    end
     Listen(DIFFICULTY_EVENTS, DifficultyChanged, difficulty)
     if M.inviteWanted then MM.Listen(INVITE_EVENT, "info", UpdateInvite) else MM.Unlisten(INVITE_EVENT, "info") end
     local world = durability or location or coordinates or weather or difficulty or M.inviteWanted
-    if world then MM.Listen("PLAYER_ENTERING_WORLD", "info", WorldChanged) else MM.Unlisten("PLAYER_ENTERING_WORLD", "info") end
+    if world then
+        MM.Listen("PLAYER_ENTERING_WORLD", "info", WorldChanged)
+    else
+        MM.Unlisten("PLAYER_ENTERING_WORLD",
+            "info")
+    end
     local any = difficulty
     for _, key in ipairs(keys) do
-        if c["info" .. key] and not (key == "Coordinates" and hideCoordinates) and S.CanShowMinimapInfo(key) then any = true; break end
+        if c["info" .. key] and not (key == "Coordinates" and hideCoordinates) and S.CanShowMinimapInfo(key) then
+            any = true
+            break
+        end
     end
     M.difficultyActive = difficulty
     if not any or not MM.host then
@@ -518,20 +679,29 @@ function MM.RefreshTexts()
     EnsureFrame()
     local classColor
     for _, key in ipairs(keys) do
-        if c["info" .. key] and c["info" .. key .. "ClassColor"] then classColor = ClassColor(); break end
+        if c["info" .. key] and c["info" .. key .. "ClassColor"] then
+            classColor = ClassColor()
+            break
+        end
     end
     local boxR, boxG, boxB = MM.BorderRGB()
     local above, below = 0, 0
     for _, key in ipairs(keys) do
         local prefix, entry = "info" .. key, M.infoEntries[key]
         if c[prefix] and not (key == "Coordinates" and hideCoordinates) and S.CanShowMinimapInfo(key) then
-            if not entry then entry = CreateEntry(key); M.infoEntries[key] = entry end
+            if not entry then
+                entry = CreateEntry(key)
+                M.infoEntries[key] = entry
+            end
             Style(entry, key, c, classColor, boxR, boxG, boxB)
             local anchor, height = c[prefix .. "Anchor"], c[prefix .. "Size"] + 8
             if anchor == 10 then above = math.max(above, c[prefix .. "Y"] + height) end
             if anchor == 11 then below = math.max(below, height - c[prefix .. "Y"]) end
             entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == 2 or MM.Revealed())
-        elseif entry then entry.active = false; entry.button:Hide() end
+        elseif entry then
+            entry.active = false
+            entry.button:Hide()
+        end
     end
     local clock = M.infoEntries.Clock
     if clock and M.inviteWanted and not clock.invite then
@@ -542,7 +712,10 @@ function MM.RefreshTexts()
     if clock and clock.invite then clock.invite:SetSize(c.infoClockSize, c.infoClockSize) end
     UpdateInvite()
     if difficulty then
-        if not M.difficultyLabel then M.difficultyLabel = S.CreateFontString(M.infoFrame, nil, "OVERLAY", "GameFontNormalSmall") end
+        if not M.difficultyLabel then
+            M.difficultyLabel = S.CreateFontString(M.infoFrame, nil, "OVERLAY",
+                "GameFontNormalSmall")
+        end
         local label = M.difficultyLabel
         S.SetStyledFont(label, S.ResolveFont(c.infoDifficultyFont), c.infoDifficultySize,
             outlines[c.infoDifficultyOutline] or "OUTLINE", c.infoDifficultyRendering,
@@ -550,10 +723,13 @@ function MM.RefreshTexts()
         label:SetJustifyH(Anchor(label, c.infoDifficultyAnchor, c.infoDifficultyX, c.infoDifficultyY))
         label:Show()
         M.difficultyText, M.difficultyColor, M.difficultyDirty = nil, nil, true
-    elseif M.difficultyLabel then M.difficultyLabel:Hide() end
+    elseif M.difficultyLabel then
+        M.difficultyLabel:Hide()
+    end
     local border = MM.BorderWidth()
     MM.SetExtent("texts", 0, 0, above > 0 and above + border or 0, below > 0 and below + border or 0)
-    M.infoFrame:Show(); M.infoConfiguring = false
+    M.infoFrame:Show()
+    M.infoConfiguring = false
     S.UpdateMinimapInfoVisibility()
 end
 

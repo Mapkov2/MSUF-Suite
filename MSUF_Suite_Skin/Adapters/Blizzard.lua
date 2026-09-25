@@ -8,16 +8,13 @@ local Adapters = {
 }
 NS.Adapters = Adapters
 
-local function IsUnsafeRoot(frame, definition)
-    return not NS.Safety or not NS.Safety.CanDecorate(frame, definition.allowImplicitProtected)
+local function IsValidDefinition(definition)
+    return type(definition) == "table" and type(definition.id) == "string"
+        and type(definition.resolve) == "function"
 end
 
 function Adapters.Register(definition)
-    if type(definition) ~= "table" or type(definition.id) ~= "string"
-        or type(definition.resolve) ~= "function" then
-        return false
-    end
-    if Adapters.definitions[definition.id] then
+    if not IsValidDefinition(definition) or Adapters.definitions[definition.id] then
         return false
     end
     Adapters.definitions[definition.id] = definition
@@ -26,8 +23,7 @@ function Adapters.Register(definition)
 end
 
 function Adapters.Replace(definition)
-    if type(definition) ~= "table" or type(definition.id) ~= "string"
-        or type(definition.resolve) ~= "function" then
+    if not IsValidDefinition(definition) then
         return false
     end
     if not Adapters.definitions[definition.id] then
@@ -39,57 +35,42 @@ end
 
 local function ScheduleLoadOnDemand(definition)
     local id = definition.id
-    if not definition.loadAddon then
+    local addon = definition.loadAddon
+    if not addon or NS.Client.HasAddOn(addon) == false then
         return false
     end
-    if NS.Client and NS.Client.HasAddOn(definition.loadAddon)==false then return false end
     if Adapters.waiting[id] then
         return true
     end
-    if not EventUtil or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then
-        return false
-    end
-
     -- EventUtil invokes its callback synchronously when the addon is already
-    -- loaded.  If a Blizzard build has loaded the addon but omitted/renamed the
+    -- loaded. If a Blizzard build has loaded the addon but omitted/renamed the
     -- expected root, rescheduling from that callback would recurse forever.
-    if C_AddOns and type(C_AddOns.IsAddOnLoaded) == "function" then
-        local ok, loadedOrLoading, loaded = pcall(C_AddOns.IsAddOnLoaded, definition.loadAddon)
-        if ok and (loaded == true or (loaded == nil and loadedOrLoading == true)) then
-            return false
-        end
+    if not EventUtil or type(EventUtil.ContinueOnAddOnLoaded) ~= "function"
+        or NS.Client.IsAddOnLoaded(addon) then
+        return false
     end
 
     Adapters.waiting[id] = true
-    local ok, message = pcall(EventUtil.ContinueOnAddOnLoaded, definition.loadAddon, function()
+    EventUtil.ContinueOnAddOnLoaded(addon, function()
         Adapters.waiting[id] = nil
         Adapters.Apply(id)
     end)
-    if not ok then
-        Adapters.waiting[id] = nil
-        NS.ReportError("adapter load " .. id, message)
-        return false
-    end
     return true
 end
 
 local function DisableDefinition(definition, frame)
     local id = definition.id
-    if NS.WindowControls then NS.WindowControls.DisableOwner(id) end
+    NS.WindowControls.DisableOwner(id)
     if type(definition.disable) == "function" then
-        local ok, disabled, reason = pcall(definition.disable, frame, id)
-        if not ok then
-            NS.ReportError("adapter disable " .. id, disabled)
-            return false, "disable-failed"
-        end
+        local disabled, reason = definition.disable(frame, id)
         if disabled == false then
             return false, reason or "disable-failed"
         end
-    else
-        NS.Cosmetics.RestoreOwner(id)
-        if frame then
-            NS.Surface.SetVisible(frame, false)
-        end
+        return true
+    end
+    NS.Cosmetics.RestoreOwner(id)
+    if frame then
+        NS.Surface.SetVisible(frame, false)
     end
     return true
 end
@@ -102,68 +83,61 @@ local function DefinitionEnabled(definition)
     return configured == true
 end
 
+-- Returns false with a status when the definition could not be applied.
+local function RunDefinition(definition, frame)
+    local id = definition.id
+    if type(definition.apply) == "function" then
+        local applied, reason = definition.apply(frame, id)
+        if applied == false then
+            return false, reason or "failed"
+        end
+        return true, reason == "partial" and "partial" or "applied"
+    end
+
+    local surface, reason = NS.Surface.Attach(frame, { role = "shell", inset = definition.inset or 0 })
+    if not surface then
+        return false, reason or "failed"
+    end
+    if type(definition.fade) == "function" then
+        definition.fade(frame, id)
+    end
+    NS.Surface.SetVisible(frame, true)
+    return true, "applied"
+end
+
 local function ApplyDefinition(definition)
     local id = definition.id
     if not NS.DB.enabled or not DefinitionEnabled(definition) then
         local previous = Adapters.status[id]
-        local disabled, reason = DisableDefinition(definition, previous and previous.frame)
+        local frame = previous and previous.frame
+        local disabled, reason = DisableDefinition(definition, frame)
         Adapters.status[id] = {
             state = disabled and "disabled" or (reason or "disable-failed"),
-            frame = previous and previous.frame,
+            frame = frame,
         }
         return false
     end
 
-    local resolved, frame = pcall(definition.resolve)
-    if not resolved then
-        NS.ReportError("adapter resolve " .. id, frame)
-        Adapters.status[id] = { state = "failed" }
-        return false
-    end
+    local frame = definition.resolve()
     if not frame then
         local waiting = ScheduleLoadOnDemand(definition)
         Adapters.status[id] = { state = waiting and "waiting" or "missing" }
         return false
     end
-    if IsUnsafeRoot(frame, definition) then
+    if not NS.Safety.CanDecorate(frame, definition.allowImplicitProtected) then
         Adapters.status[id] = { state = "protected", frame = frame }
         return false
     end
 
-    local appliedState
-    if type(definition.apply) == "function" then
-        local ok, applied, reason = pcall(definition.apply, frame, id)
-        if not ok then
-            NS.ReportError("adapter apply " .. id, applied)
-            Adapters.status[id] = { state = "failed", frame = frame }
-            return false
-        end
-        if applied == false then
-            Adapters.status[id] = { state = reason or "failed", frame = frame }
-            return false
-        end
-        if reason == "partial" then
-            appliedState = "partial"
-        end
-    else
-        local surface, reason = NS.Surface.Attach(frame, { role = "shell", inset = definition.inset or 0 })
-        if not surface then
-            Adapters.status[id] = { state = reason or "failed", frame = frame }
-            return false
-        end
-        if type(definition.fade) == "function" then
-            definition.fade(frame, id)
-        end
-        NS.Surface.SetVisible(frame, true)
+    local applied, state = RunDefinition(definition, frame)
+    Adapters.status[id] = { state = state, frame = frame }
+    if not applied then
+        return false
     end
-    if definition.trackIconTree == true and NS.Checkmarks
-        and type(NS.Checkmarks.TrackControlTree) == "function" then
-        local ok, message = pcall(NS.Checkmarks.TrackControlTree, frame, id,
-            definition.iconTreeOptions)
-        if not ok then NS.ReportError("adapter icon controls " .. id, message) end
+    if definition.trackIconTree == true then
+        NS.Checkmarks.TrackControlTree(frame, id, definition.iconTreeOptions)
     end
-    Adapters.status[id] = { state = appliedState or "applied", frame = frame }
-    if NS.WindowControls then NS.WindowControls.Attach(frame, id) end
+    NS.WindowControls.Attach(frame, id)
     return true
 end
 
@@ -198,9 +172,10 @@ function Adapters.Refresh(id)
         return false
     end
     local previous = Adapters.status[id]
-    local disabled, reason = DisableDefinition(definition, previous and previous.frame)
+    local frame = previous and previous.frame
+    local disabled, reason = DisableDefinition(definition, frame)
     if not disabled then
-        Adapters.status[id] = { state = reason or "disable-failed", frame = previous and previous.frame }
+        Adapters.status[id] = { state = reason or "disable-failed", frame = frame }
         return false
     end
     return ApplyDefinition(definition)
@@ -248,6 +223,38 @@ function Adapters.GetStatusTable()
     return copy
 end
 
+-- Sub-skins of the Blizzard window adapter, applied in this order after the
+-- generic catalog. A failure whose reason is `tolerated` (combat deferral, a
+-- pending load-on-demand addon) still counts as applied; any other failure
+-- reports the adapter as "partial". `category` gates a part on its catalog
+-- category; skipped parts, and parts the client's TOC does not load (the
+-- Forever group finder on Classic), count as applied.
+local COMBAT_OR_WAITING = { combat = true, waiting = true }
+local COMBAT_ONLY = { combat = true }
+local windowParts = {
+    { module = "DeepWindows", tolerated = COMBAT_OR_WAITING },
+    { module = "SemanticHUD", tolerated = COMBAT_OR_WAITING },
+    { module = "SharedChrome", tolerated = COMBAT_OR_WAITING },
+    { module = "UIPanelButtons", tolerated = COMBAT_ONLY },
+    { module = "CommonMenus", tolerated = COMBAT_ONLY },
+    { module = "Commerce", tolerated = COMBAT_OR_WAITING },
+    { module = "CharacterPanel", tolerated = COMBAT_OR_WAITING, category = "character" },
+    { module = "InspectPanel", tolerated = COMBAT_OR_WAITING, category = "character" },
+    { module = "SocialUISkin", tolerated = COMBAT_OR_WAITING, category = "social" },
+    { module = "MajorWindows", tolerated = COMBAT_OR_WAITING },
+    { module = "LegacyWindows", tolerated = COMBAT_OR_WAITING },
+    -- Forever's group finder has its own adapter below.
+    { module = "CommonArt", tolerated = COMBAT_ONLY, category = "group", excludeForever = true },
+    { module = "ForeverGroupFinder", tolerated = COMBAT_ONLY },
+}
+
+local function PartEnabled(part)
+    if not NS[part.module] or part.excludeForever and NS.Client.isForever then
+        return false
+    end
+    return not part.category or NS.GenericWindows.IsCategoryEnabled(part.category)
+end
+
 Adapters.Register({
     id = "blizzardWindows",
     labelKey = "SKIN_BLIZZARD_WINDOWS",
@@ -260,67 +267,17 @@ Adapters.Register({
         if not genericApplied then
             return false, genericReason
         end
-        local deepApplied, deepReason = NS.DeepWindows.Apply(owner)
-        local semanticApplied, semanticReason = NS.SemanticHUD.Apply(owner)
-        local sharedApplied, sharedReason = NS.SharedChrome.Apply(owner)
-        local panelButtonsApplied, panelButtonsReason = NS.UIPanelButtons.Apply(owner)
-        local commonApplied, commonReason = NS.CommonMenus.Apply(owner)
-        local commerceApplied, commerceReason = NS.Commerce.Apply(owner)
-        local characterApplied, characterReason = true, "disabled"
-        local inspectApplied, inspectReason = true, "disabled"
-        if NS.GenericWindows.IsCategoryEnabled("character") then
-            characterApplied, characterReason = NS.CharacterPanel.Apply(owner)
-            inspectApplied, inspectReason = NS.InspectPanel.Apply(owner)
+        local partial = false
+        for index = 1, #windowParts do
+            local part = windowParts[index]
+            if PartEnabled(part) then
+                local applied, reason = NS[part.module].Apply(owner)
+                if not applied and not part.tolerated[reason] then
+                    partial = true
+                end
+            end
         end
-        local socialApplied, socialReason = true, "disabled"
-        if NS.GenericWindows.IsCategoryEnabled("social") then
-            socialApplied, socialReason = NS.SocialUISkin.Apply(owner)
-        end
-        local majorApplied, majorReason = NS.MajorWindows.Apply(owner)
-        local legacyApplied, legacyReason = NS.LegacyWindows.Apply(owner)
-        local artApplied, artReason = true, "disabled"
-        if NS.GenericWindows.IsCategoryEnabled("group")
-            and not (NS.Client and NS.Client.isForever) then
-            artApplied, artReason = NS.CommonArt.Apply(owner)
-        end
-        local foreverGroupApplied, foreverGroupReason = NS.ForeverGroupFinder.Apply(owner)
-        if not commonApplied and commonReason ~= "combat" then
-            return true, "partial"
-        end
-        if not deepApplied and deepReason ~= "combat" and deepReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not semanticApplied and semanticReason ~= "combat" and semanticReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not sharedApplied and sharedReason ~= "combat" and sharedReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not panelButtonsApplied and panelButtonsReason ~= "combat" then
-            return true, "partial"
-        end
-        if not commerceApplied and commerceReason ~= "combat" and commerceReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not characterApplied and characterReason ~= "combat" and characterReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not inspectApplied and inspectReason ~= "combat" and inspectReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not socialApplied and socialReason ~= "combat" and socialReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not majorApplied and majorReason ~= "combat" and majorReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not legacyApplied and legacyReason ~= "combat" and legacyReason ~= "waiting" then
-            return true, "partial"
-        end
-        if not artApplied and artReason ~= "combat" then
-            return true, "partial"
-        end
-        if not foreverGroupApplied and foreverGroupReason ~= "combat" then
+        if partial then
             return true, "partial"
         end
         return true, genericReason
@@ -330,7 +287,9 @@ Adapters.Register({
         NS.SharedChrome.Disable(owner)
         NS.Commerce.Disable(owner)
         NS.CommonArt.Disable(owner)
-        NS.ForeverGroupFinder.Disable(owner)
+        if NS.ForeverGroupFinder then
+            NS.ForeverGroupFinder.Disable(owner)
+        end
         NS.CommonMenus.Disable(owner)
         NS.SocialUISkin.Disable(owner)
         NS.CharacterPanel.Disable(owner)

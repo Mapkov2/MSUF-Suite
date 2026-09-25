@@ -67,7 +67,8 @@ end
 
 local function NewBar(parent)
     local bar = CreateFrame("StatusBar", nil, parent)
-    bar:SetStatusBarTexture(type(S.ResolveTexture) == "function" and S.ResolveTexture("MSUF Lucent", BAR_TEXTURE) or BAR_TEXTURE)
+    bar:SetStatusBarTexture(type(S.ResolveTexture) == "function" and S.ResolveTexture("MSUF Lucent", BAR_TEXTURE) or
+        BAR_TEXTURE)
     bar:SetMinMaxValues(0, 1)
     local track = bar:CreateTexture(nil, "BACKGROUND")
     track:SetAllPoints(bar)
@@ -97,10 +98,14 @@ local function Create(self)
     panel:SetAllPoints(host)
     local edges = {}
     for i = 1, 4 do edges[i] = host:CreateTexture(nil, "OVERLAY") end
-    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT")
-    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT")
-    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT")
-    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT")
+    edges[1]:SetPoint("TOPLEFT")
+    edges[1]:SetPoint("TOPRIGHT")
+    edges[2]:SetPoint("BOTTOMLEFT")
+    edges[2]:SetPoint("BOTTOMRIGHT")
+    edges[3]:SetPoint("TOPLEFT")
+    edges[3]:SetPoint("BOTTOMLEFT")
+    edges[4]:SetPoint("TOPRIGHT")
+    edges[4]:SetPoint("BOTTOMRIGHT")
     local divider = host:CreateTexture(nil, "ARTWORK")
     divider:SetPoint("TOPLEFT", host, "TOPLEFT", PADDING, -23)
     divider:SetPoint("TOPRIGHT", host, "TOPRIGHT", -PADDING, -23)
@@ -222,8 +227,10 @@ local function Layout(self)
     host:SetPoint(point, UIParent, point, c.x, c.y)
     local pixel = 1 / math.max(0.1, host:GetEffectiveScale() or 1)
     local border = math.max(pixel, c.borderSize * pixel)
-    self.edges[1]:SetHeight(border); self.edges[2]:SetHeight(border)
-    self.edges[3]:SetWidth(border); self.edges[4]:SetWidth(border)
+    self.edges[1]:SetHeight(border)
+    self.edges[2]:SetHeight(border)
+    self.edges[3]:SetWidth(border)
+    self.edges[4]:SetWidth(border)
     self.divider:ClearAllPoints()
     self.divider:SetPoint("TOPLEFT", host, "TOPLEFT", PADDING, contentTop + 6)
     self.divider:SetPoint("TOPRIGHT", host, "TOPRIGHT", -PADDING, contentTop + 6)
@@ -233,9 +240,15 @@ local function Layout(self)
     self.state:SetSize(headerWidth / 2 - 4, c.fontSize + 2)
     y = contentTop
     self.wind:SetShown(c.showSecondWind)
-    if c.showSecondWind then LayoutRow(self.wind, contentWidth, y, self.windCount or 3, c); y = y - rowHeight end
+    if c.showSecondWind then
+        LayoutRow(self.wind, contentWidth, y, self.windCount or 3, c)
+        y = y - rowHeight
+    end
     self.vigor:SetShown(c.showVigor)
-    if c.showVigor then LayoutRow(self.vigor, contentWidth, y, self.vigorCount or 6, c); y = y - rowHeight end
+    if c.showVigor then
+        LayoutRow(self.vigor, contentWidth, y, self.vigorCount or 6, c)
+        y = y - rowHeight
+    end
     self.speed:SetShown(c.showSpeed)
     self.speedText:SetShown(c.showSpeed)
     self.speedValue:SetShown(c.showSpeed)
@@ -269,7 +282,7 @@ local function DrawRow(self, row, spellID, preview, maxPips)
         local c = self.config
         LayoutRow(row, ContentWidth(c),
             spellID == SECOND_WIND and ContentTop(c) or
-                (c.showSecondWind and ContentTop(c) - RowHeight(c) or ContentTop(c)), count, c)
+            (c.showSecondWind and ContentTop(c) - RowHeight(c) or ContentTop(c)), count, c)
     end
     for i, pip in ipairs(row.pips) do
         if i <= count then
@@ -287,13 +300,19 @@ local function SyncSpellEvents(self, visible, preview)
     local context = self.context
     if watchCharges ~= self.watchCharges then
         self.watchCharges = watchCharges
-        if watchCharges then context:Event("SPELL_UPDATE_CHARGES", self.spellChanged, true)
-        else context:RemoveEvent("SPELL_UPDATE_CHARGES") end
+        if watchCharges then
+            context:Event("SPELL_UPDATE_CHARGES", self.spellChanged, true)
+        else
+            context:RemoveEvent("SPELL_UPDATE_CHARGES")
+        end
     end
     if watchCooldown ~= self.watchCooldown then
         self.watchCooldown = watchCooldown
-        if watchCooldown then context:Event("SPELL_UPDATE_COOLDOWN", self.spellChanged, true)
-        else context:RemoveEvent("SPELL_UPDATE_COOLDOWN") end
+        if watchCooldown then
+            context:Event("SPELL_UPDATE_COOLDOWN", self.spellChanged, true)
+        else
+            context:RemoveEvent("SPELL_UPDATE_COOLDOWN")
+        end
     end
 end
 
@@ -304,7 +323,11 @@ local function Update(self)
     local visible = preview or (capable == true and (not self.config.airborneOnly or flying == true))
     self.host:SetShown(visible)
     SyncSpellEvents(self, visible, preview)
-    if not visible then self.host:SetScript("OnUpdate", nil); self.ticking = false; return end
+    if not visible then
+        self.host:SetScript("OnUpdate", nil)
+        self.ticking = false
+        return
+    end
     self.state:SetText(preview and "PREVIEW" or (flying and "IN FLIGHT" or "READY"))
     local ticking = self.config.showSpeed and flying == true
     if self.config.showSecondWind then
@@ -335,7 +358,10 @@ local function Update(self)
         if not self.ticking then
             self.host:SetScript("OnUpdate", function(_, elapsed)
                 self.elapsed = (self.elapsed or 0) + elapsed
-                if self.elapsed >= 0.1 then self.elapsed = 0; Update(self) end
+                if self.elapsed >= 0.1 then
+                    self.elapsed = 0
+                    Update(self)
+                end
             end)
             self.ticking = true
         end
@@ -369,20 +395,34 @@ function M:Disable()
         self.context:RemoveEvent("SPELL_UPDATE_COOLDOWN")
     end
     self.watchCharges, self.watchCooldown = false, false
-    if self.host then self.host:SetScript("OnUpdate", nil); self.host:Hide() end
+    if self.host then
+        self.host:SetScript("OnUpdate", nil)
+        self.host:Hide()
+    end
     self.ticking, self.elapsed = false, 0
 end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "flight", {
-        label = "Skyriding HUD", order = 640, getFrame = function() return self.host end,
-        xKey = "x", yKey = "y", pointKey = "point",
+        label = "Skyriding HUD",
+        order = 640,
+        getFrame = function() return self.host end,
+        xKey = "x",
+        yKey = "y",
+        pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         historyKeys = { "width", "scale" },
         extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 220, max = 600, step = 1,
-              get = function() return S.Config(ID).width end,
-              set = function(value) return S.Set(ID, "width", value) end },
+            {
+                id = "width",
+                label = "Width",
+                kind = "number",
+                min = 220,
+                max = 600,
+                step = 1,
+                get = function() return S.Config(ID).width end,
+                set = function(value) return S.Set(ID, "width", value) end
+            },
         },
     })
 end

@@ -1,15 +1,17 @@
 local _, Private = ...
 local S = Private.Suite
 
--- All Suite information displays share one deadline timer. A display owns a
--- cancellable task; the native timer exists only while at least one task does.
-local tasks, timer, timerDue, dispatching = {}, nil, nil, false
-local ready = {}
+-- All Suite information displays share one deadline timer. A display owns one
+-- reusable task per owner key; the native timer exists only while a task is due.
+local tasks, taskPool, ready = {}, {}, {}
+local timer, timerDue, dispatching = nil, nil, false
+
 local function Now()
     local value = type(GetTime) == "function" and GetTime()
     return S.Public(value) and type(value) == "number" and value == value
         and value > -math.huge and value < math.huge and value or 0
 end
+
 local Arm
 local function FireTimer()
     timer, timerDue = nil, nil
@@ -21,25 +23,27 @@ local function FireTimer()
             ready[readyCount] = task.callback
         end
     end
+    -- Callbacks usually schedule their next tick. Arm once afterwards.
     dispatching = true
-    local failure
     for i = 1, readyCount do
         local callback = ready[i]
         ready[i] = nil
-        local ok, err = pcall(callback)
-        if not ok and not failure then failure = err end
+        callback()
     end
     dispatching = false
     Arm()
-    if failure then error(failure) end
 end
+
 Arm = function()
     local due
     for _, task in pairs(tasks) do
         if not due or task.due < due then due = task.due end
     end
     if timer and due and timerDue and math.abs(timerDue - due) <= 0.001 then return end
-    if timer then timer:Cancel(); timer = nil; timerDue = nil end
+    if timer then
+        timer:Cancel()
+        timer, timerDue = nil, nil
+    end
     if not due or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return end
     timerDue = due
     timer = C_Timer.NewTimer(math.max(0.05, due - Now()), FireTimer)
@@ -52,58 +56,80 @@ local function CancelTask(task)
         if not dispatching then Arm() end
     end
 end
+
+-- Schedules callback once after delay seconds, replacing the owner's pending
+-- tick. The returned handle is the owner's task table, reused for every tick;
+-- handle:Cancel() cancels the owner's pending tick.
 function S.ScheduleDataTick(owner, delay, callback)
     if type(owner) ~= "string" or type(callback) ~= "function" or type(delay) ~= "number"
-        or type(GetTime) ~= "function" or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return nil end
-    -- The task itself is the cancellation handle. Reusing one method avoids
-    -- allocating a second table and a closure at every sampled display tick.
-    local task = { owner = owner, due = Now() + math.max(0.05, delay), callback = callback, Cancel = CancelTask }
+        or type(GetTime) ~= "function" or not C_Timer or type(C_Timer.NewTimer) ~= "function" then
+        return nil
+    end
+    local task = taskPool[owner]
+    if not task then
+        task = { owner = owner, Cancel = CancelTask }
+        taskPool[owner] = task
+    end
+    task.due = Now() + math.max(0.05, delay)
+    task.callback = callback
     tasks[owner] = task
     if not dispatching then Arm() end
     return task
 end
 
+------------------------------------------------------------------ shared samples
 local snapshots = {}
--- Readers return at most a few values. Validate the protected-call results
--- before reusing the existing tuple, so a failed or secret read never poisons
--- the cached snapshot and steady refreshes allocate no Lua tables.
+
+-- Readers return at most a few values. Reject secret results before reusing
+-- the existing tuple, so steady refreshes allocate no Lua tables and a secret
+-- read never poisons the cached snapshot.
 local function StoreValues(saved, ...)
     local count = select("#", ...)
-    if count == 0 or select(1, ...) ~= true then return nil end
-    for i = 2, count do
-        local value = select(i, ...)
-        if not S.Public(value) then return nil end
+    for i = 1, count do
+        if not S.Public((select(i, ...))) then return nil end
     end
     local values = saved and saved.values or { n = 0 }
     local previous = values.n
-    values.n = count - 1
-    for i = 2, count do values[i - 1] = select(i, ...) end
-    for i = count, previous do values[i] = nil end
+    values.n = count
+    for i = 1, count do values[i] = (select(i, ...)) end
+    for i = count + 1, previous do values[i] = nil end
     return values
 end
+
 function S.ReadSharedData(key, ttl, reader)
     if type(key) ~= "string" or type(reader) ~= "function" then return nil end
     local now = Now()
     local saved = snapshots[key]
     if saved and saved.untilTime > now then return unpack(saved.values, 1, saved.values.n) end
-    local values = StoreValues(saved, pcall(reader))
+    local values = StoreValues(saved, reader())
     if not values then return nil end
     local untilTime = now + math.max(0.05, tonumber(ttl) or 0.05)
-    if saved then saved.untilTime = untilTime
-    else snapshots[key] = { untilTime = untilTime, values = values } end
+    if saved then
+        saved.untilTime = untilTime
+    else
+        snapshots[key] = { untilTime = untilTime, values = values }
+    end
     return unpack(values, 1, values.n)
 end
-function S.InvalidateSharedData(key) snapshots[key] = nil end
+
+function S.InvalidateSharedData(key)
+    snapshots[key] = nil
+end
 
 local function Number(value)
     return S.Public(value) and type(value) == "number" and value == value
         and value > -math.huge and value < math.huge
 end
+
 local function PublicText(reader)
     if type(reader) ~= "function" then return "" end
     local value = reader()
     return S.Public(value) and type(value) == "string" and value or ""
 end
+
+-- Client APIs missing on a flavor are captured as nil and skipped.
+local GetMapForUnit = C_Map and C_Map.GetBestMapForUnit
+local GetMapPosition = C_Map and C_Map.GetPlayerMapPosition
 local readers = {
     fps = function()
         if type(GetFramerate) ~= "function" then return nil end
@@ -127,13 +153,14 @@ local readers = {
         return Number(stamp) and stamp or nil
     end,
     coordinates = function()
-        if not C_Map or type(C_Map.GetBestMapForUnit) ~= "function"
-            or type(C_Map.GetPlayerMapPosition) ~= "function" then return nil end
-        local mapID = C_Map.GetBestMapForUnit("player")
+        if type(GetMapForUnit) ~= "function" or type(GetMapPosition) ~= "function" then return nil end
+        local mapID = GetMapForUnit("player")
         if not Number(mapID) or mapID <= 0 then return nil end
-        local position = C_Map.GetPlayerMapPosition(mapID, "player")
+        local position = GetMapPosition(mapID, "player")
         if not S.Public(position) or (type(position) ~= "table" and type(position) ~= "userdata")
-            or type(position.GetXY) ~= "function" then return nil end
+            or type(position.GetXY) ~= "function" then
+            return nil
+        end
         local x, y = position:GetXY()
         return Number(x) and x >= 0 and x <= 1 and x or nil,
             Number(y) and y >= 0 and y <= 1 and y or nil
@@ -153,7 +180,9 @@ local readers = {
         end
         return low, total, maximumTotal
     end,
-    location = function() return PublicText(GetZoneText), PublicText(GetSubZoneText) end,
+    location = function()
+        return PublicText(GetZoneText), PublicText(GetSubZoneText)
+    end,
     gold = function()
         if type(GetMoney) ~= "function" then return nil end
         local value = GetMoney()
@@ -173,12 +202,15 @@ local readers = {
         return free, total
     end,
     xp = function()
-        if type(UnitLevel) ~= "function" or type(UnitXP) ~= "function" or type(UnitXPMax) ~= "function" then return nil end
+        if type(UnitLevel) ~= "function" or type(UnitXP) ~= "function" or type(UnitXPMax) ~= "function" then
+            return nil
+        end
         local level, current, maximum = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
         if not Number(level) or not Number(current) or not Number(maximum) then return nil end
         return level, current, maximum
     end,
 }
+
 function S.ReadInfoSource(key)
     local reader = readers[key]
     if not reader then return nil end

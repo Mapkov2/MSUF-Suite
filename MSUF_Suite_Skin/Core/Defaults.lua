@@ -144,6 +144,9 @@ end
 NS.CopyValue = CopyValue
 NS.BaseColors = midnightColors
 
+-- Forever's Camelot bar has fourteen Micro Buttons, every other client 13.
+NS.MicroMenuMaxButtonsPerLine = NS.Client and NS.Client.isForever and 14 or 13
+
 NS.Defaults = {
     revision = 50,
     enabled = true,
@@ -243,7 +246,7 @@ NS.Defaults = {
             locked = true,
             orientation = "horizontal",
             growth = "LEFT_UP",
-            buttonsPerLine = NS.Client and NS.Client.isForever and 14 or 13,
+            buttonsPerLine = NS.MicroMenuMaxButtonsPerLine,
             spacing = -2,
             scale = 1.00,
             padding = 6,
@@ -415,6 +418,71 @@ NS.MicroMenuLookKeys = {
     "shape", "radius", "iconStyle", "buttonSize", "iconSize",
     "hoverStyle", "tint", "spacing", "padding", "normalOpacity",
     "hoverOpacity", "pressedOpacity", "disabledOpacity",
+}
+
+-- Micro Bar color tokens follow these base palette roles whenever a palette
+-- does not author them. Shared by the defaults, profile migrations and Theme.
+NS.MicroColorSources = {
+    microBarFill = "background",
+    microBarFillAlt = "ink",
+    microBarBorder = "border",
+    microButtonFill = "buttonFill",
+    microButtonFillAlt = "buttonFillAlt",
+    microButtonBorder = "buttonBorder",
+    microIcon = "text",
+    microIconHover = "accentBright",
+    microIconPressed = "accent",
+    microIconDisabled = "disabled",
+}
+
+-- Numeric setting ranges as { key, minimum, maximum, integer }. Profile
+-- normalization clamps to them; interactive setters reject values outside.
+NS.AppearanceRanges = {
+    { "gradientStrength", 0, 1 },
+    { "materialDepth", 0, 1 },
+    { "shellOpacity", 0.35, 1 },
+    { "panelOpacity", 0.35, 1 },
+    { "controlOpacity", 0.35, 1 },
+    { "borderOpacity", 0, 1 },
+    { "hoverIntensity", 0, 1 },
+    { "iconBorderThickness", 1, 3, true },
+    { "iconBorderPadding", 0, 3, true },
+    { "iconBorderOpacity", 0, 1 },
+}
+
+NS.WindowActionRanges = {
+    { "glyphSize", 8, 18, true },
+    { "closeGlyphSize", 6, 18, true },
+    { "glyphOffsetX", -4, 4, true },
+    { "glyphOffsetY", -4, 4, true },
+    { "surfaceInset", 0, 6, true },
+    { "opacity", 0.35, 1 },
+}
+
+-- iconSize is clamped separately because its maximum follows buttonSize.
+NS.MicroMenuRanges = {
+    { "buttonsPerLine", 1, NS.MicroMenuMaxButtonsPerLine, true },
+    { "spacing", -8, 16, true },
+    { "scale", 0.5, 1.5 },
+    { "padding", 0, 16, true },
+    { "layoutX", -4096, 4096, true },
+    { "layoutY", -4096, 4096, true },
+    { "barBorder", 0, 2, true },
+    { "buttonBorder", 0, 2, true },
+    { "buttonSize", 20, 32, true },
+    { "normalOpacity", 0, 1 },
+    { "hoverOpacity", 0, 1 },
+    { "pressedOpacity", 0, 1 },
+    { "disabledOpacity", 0, 1 },
+}
+
+-- Saved Blizzard window scales and positions.
+NS.WindowLayoutLimits = {
+    minScale = 0.70,
+    maxScale = 1.50,
+    maxOffset = 8192,
+    maxNameLength = 80,
+    maxEntries = 128,
 }
 
 NS.Materials = {
@@ -834,15 +902,8 @@ local foreverGlassTints = {
     microIcon = "D8B66A", microIconHover = "F1E3C4",
     microIconPressed = "D8B66A", microIconDisabled = "8F9999",
 }
-local foreverMicroSources = {
-    microBarFill = "background", microBarFillAlt = "ink", microBarBorder = "border",
-    microButtonFill = "buttonFill", microButtonFillAlt = "buttonFillAlt",
-    microButtonBorder = "buttonBorder", microIcon = "text",
-    microIconHover = "accentBright", microIconPressed = "accent",
-    microIconDisabled = "disabled",
-}
 for key, hex in pairs(foreverGlassTints) do
-    local color = foreverGlass[key] or foreverGlass[foreverMicroSources[key]]
+    local color = foreverGlass[key] or foreverGlass[NS.MicroColorSources[key]]
     foreverGlass[key] = Hex(hex, color[4])
 end
 NS.PresetOverrides.foreverGlass = foreverGlass
@@ -1137,14 +1198,7 @@ do
     for key, value in pairs(NS.PresetOverrides[look.palette]) do
         colors[key] = NS.CopyValue(value)
     end
-    local microSources = {
-        microBarFill = "background", microBarFillAlt = "ink", microBarBorder = "border",
-        microButtonFill = "buttonFill", microButtonFillAlt = "buttonFillAlt",
-        microButtonBorder = "buttonBorder", microIcon = "text",
-        microIconHover = "accentBright", microIconPressed = "accent",
-        microIconDisabled = "disabled",
-    }
-    for target, source in pairs(microSources) do
+    for target, source in pairs(NS.MicroColorSources) do
         if not NS.PresetOverrides[look.palette][target] then
             colors[target] = NS.CopyValue(colors[source])
         end

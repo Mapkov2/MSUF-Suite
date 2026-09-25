@@ -6,13 +6,16 @@ local QUESTION_MARK = 134400
 -- These spell IDs are already part of MSUF's long-term raid buff presets.
 -- The cast spell and observed aura can differ (notably Blessing of the Bronze).
 local CLASS_BUFF = {
-    DRUID   = { cast=1126,   auras={1126, 432661} },
-    MAGE    = { cast=1459,   auras={1459, 432778} },
-    PRIEST  = { cast=21562,  auras={21562} },
-    SHAMAN  = { cast=462854, auras={462854} },
-    WARRIOR = { cast=6673,   auras={6673} },
-    EVOKER  = { cast=364342, auras={381732, 381741, 381746, 381748, 381749,
-        381750, 381751, 381752, 381753, 381754, 381756, 381757, 381758} },
+    DRUID = { cast = 1126, auras = { 1126, 432661 } },
+    MAGE = { cast = 1459, auras = { 1459, 432778 } },
+    PRIEST = { cast = 21562, auras = { 21562 } },
+    SHAMAN = { cast = 462854, auras = { 462854 } },
+    WARRIOR = { cast = 6673, auras = { 6673 } },
+    EVOKER = {
+        cast = 364342,
+        auras = { 381732, 381741, 381746, 381748, 381749,
+            381750, 381751, 381752, 381753, 381754, 381756, 381757, 381758 }
+    },
 }
 -- Spell IDs are game identifiers. Assassination favors Deadly Poison;
 -- Outlaw and Subtlety favor Instant Poison. Any active poison of the same
@@ -36,10 +39,12 @@ local RUNES = { 259085, 243191 }
 local RUNE_AURAS = { 1264426, 453250, 1234969, 1242347, 393438, 347901 }
 local OILS = { 243733, 243734, 243735, 243736, 243737, 243738 }
 local OIL_WEAPON_LOCATIONS = {
-    INVTYPE_WEAPON=true, INVTYPE_2HWEAPON=true,
-    INVTYPE_WEAPONMAINHAND=true, INVTYPE_WEAPONOFFHAND=true,
+    INVTYPE_WEAPON = true,
+    INVTYPE_2HWEAPON = true,
+    INVTYPE_WEAPONMAINHAND = true,
+    INVTYPE_WEAPONOFFHAND = true,
 }
-local FOOD_ICONS = { [136000]=true, [133950]=true }
+local FOOD_ICONS = { [136000] = true, [133950] = true }
 local ANCHORS = { "CENTER", "TOP" }
 local itemCountAPI = (_G.C_Item and _G.C_Item.GetItemCount) or _G.GetItemCount
 
@@ -115,15 +120,20 @@ local function AuraExpiry(data)
     local expiration, duration = data.expirationTime, data.duration
     if S.Public(expiration) and S.Public(duration)
         and type(expiration) == "number" and type(duration) == "number"
-        and expiration > 0 and duration > 0 and expiration < math.huge then return expiration end
+        and expiration > 0 and duration > 0 and expiration < math.huge then
+        return expiration
+    end
 end
 
 local function PublicAuraSnapshot(data)
     local instanceID = data.auraInstanceID
     if not S.Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
     local expiration = AuraExpiry(data)
-    return { auraInstanceID=instanceID, expirationTime=expiration,
-        duration=expiration and data.duration or nil }
+    return {
+        auraInstanceID = instanceID,
+        expirationTime = expiration,
+        duration = expiration and data.duration or nil
+    }
 end
 
 local function AuraPresent(entry, scan)
@@ -138,7 +148,8 @@ local function AuraPresent(entry, scan)
         else
             local ok
             ok, data = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
-            if not ok or not S.Public(data) then unknown = true
+            if not ok or not S.Public(data) then
+                unknown = true
                 data = nil
             end
         end
@@ -174,7 +185,9 @@ local function AuraChangeAffects(entry, info)
             if not S.Public(aura) then return true end
             local spellID = aura.spellId
             if not S.Public(spellID) or type(spellID) ~= "number"
-                or MatchesAuraID(entry, spellID) then return true end
+                or MatchesAuraID(entry, spellID) then
+                return true
+            end
         end
     end
     if entry.present == false then return false end
@@ -185,7 +198,9 @@ local function AuraChangeAffects(entry, info)
     if removed then
         for _, removedID in ipairs(removed) do
             if not S.Public(removedID) or type(removedID) ~= "number"
-                or removedID == instanceID or (entry.instanceIDs and entry.instanceIDs[removedID]) then return true end
+                or removedID == instanceID or (entry.instanceIDs and entry.instanceIDs[removedID]) then
+                return true
+            end
         end
     end
     local updated = info.updatedAuraInstanceIDs
@@ -193,7 +208,9 @@ local function AuraChangeAffects(entry, info)
     if updated then
         for _, updatedID in ipairs(updated) do
             if not S.Public(updatedID) or type(updatedID) ~= "number"
-                or updatedID == instanceID or (entry.instanceIDs and entry.instanceIDs[updatedID]) then return true end
+                or updatedID == instanceID or (entry.instanceIDs and entry.instanceIDs[updatedID]) then
+                return true
+            end
         end
     end
     return false
@@ -221,15 +238,27 @@ end
 
 local function ScanFood(self)
     local get = C_UnitAuras.GetAuraDataByIndex
-    if type(get) ~= "function" then self.foodKnown = false; return end
+    if type(get) ~= "function" then
+        self.foodKnown = false
+        return
+    end
     local ids = self.foodIDs
     for id in pairs(ids) do ids[id] = nil end
     for index = 1, 255 do
         local ok, data = pcall(get, "player", index, "HELPFUL")
-        if not ok or not S.Public(data) then self.foodKnown = false; return end
-        if data == nil then self.foodKnown = true; return end
+        if not ok or not S.Public(data) then
+            self.foodKnown = false
+            return
+        end
+        if data == nil then
+            self.foodKnown = true
+            return
+        end
         local icon, instanceID = data.icon, data.auraInstanceID
-        if not S.Public(icon) or not S.Public(instanceID) then self.foodKnown = false; return end
+        if not S.Public(icon) or not S.Public(instanceID) then
+            self.foodKnown = false
+            return
+        end
         if type(icon) == "number" and FOOD_ICONS[icon]
             and (instanceID == nil or type(instanceID) == "number") then
             ids[instanceID or index] = PublicAuraSnapshot(data)
@@ -240,8 +269,14 @@ end
 
 local function FoodDelta(self, info)
     if not self.hasFood then return false end
-    if not S.Public(info) then self.foodKnown = false; return true end
-    if info == nil then self.foodKnown = nil; return true end
+    if not S.Public(info) then
+        self.foodKnown = false
+        return true
+    end
+    if info == nil then
+        self.foodKnown = nil
+        return true
+    end
     if type(info) ~= "table" or not S.Public(info.isFullUpdate) then
         self.foodKnown = false
         return true
@@ -255,23 +290,29 @@ local function FoodDelta(self, info)
     local changed = false
     local removed = info.removedAuraInstanceIDs
     if not S.Public(removed) or (removed ~= nil and type(removed) ~= "table") then
-        self.foodKnown = false; return true
+        self.foodKnown = false
+        return true
     end
     if removed then
         for _, id in ipairs(removed) do
-            if not S.Public(id) then self.foodKnown = false; return true end
+            if not S.Public(id) then
+                self.foodKnown = false
+                return true
+            end
             if ids[id] then changed = true end
             ids[id] = nil
         end
     end
     local added = info.addedAuras
     if not S.Public(added) or (added ~= nil and type(added) ~= "table") then
-        self.foodKnown = false; return true
+        self.foodKnown = false
+        return true
     end
     if added then
         for _, aura in ipairs(added) do
             if not S.Public(aura) or not S.Public(aura.icon) or not S.Public(aura.auraInstanceID) then
-                self.foodKnown = false; return true
+                self.foodKnown = false
+                return true
             end
             if type(aura.icon) == "number" and type(aura.auraInstanceID) == "number"
                 and FOOD_ICONS[aura.icon] then
@@ -282,12 +323,19 @@ local function FoodDelta(self, info)
     end
     local updated = info.updatedAuraInstanceIDs
     if not S.Public(updated) or (updated ~= nil and type(updated) ~= "table") then
-        self.foodKnown = false; return true
+        self.foodKnown = false
+        return true
     end
     if updated then
         for _, id in ipairs(updated) do
-            if not S.Public(id) then self.foodKnown = false; return true end
-            if ids[id] then self.foodKnown = nil; return true end
+            if not S.Public(id) then
+                self.foodKnown = false
+                return true
+            end
+            if ids[id] then
+                self.foodKnown = nil
+                return true
+            end
         end
     end
     return changed
@@ -316,7 +364,9 @@ local function EnchantPresent(slot)
         local remaining, timed = data.remainingTimeMs, data.hasExpirationTime
         if S.Public(remaining) and S.Public(timed) and timed == true
             and type(remaining) == "number" and remaining > 0 and remaining < math.huge
-            and type(_G.GetTime) == "function" then return true, GetTime() + remaining / 1000 end
+            and type(_G.GetTime) == "function" then
+            return true, GetTime() + remaining / 1000
+        end
         return true
     end
     if type(_G.GetWeaponEnchantInfo) == "function" then
@@ -335,7 +385,10 @@ local function EnchantPresent(slot)
 end
 
 local function ReadInstance(self)
-    if type(_G.GetInstanceInfo) ~= "function" then self.instanceType = nil; return end
+    if type(_G.GetInstanceInfo) ~= "function" then
+        self.instanceType = nil
+        return
+    end
     local _, instanceType = GetInstanceInfo()
     self.instanceType = S.Public(instanceType) and instanceType or false
 end
@@ -413,10 +466,15 @@ end
 local function Add(entries, seen, kind, itemID, auraID, slot, aliases, poison, poisonRank, candidates)
     if #entries >= MAX_ENTRIES or not itemID then return end
     local key
-    if poison then key = "poison:" .. poison .. ":" .. poisonRank
-    elseif slot then key = "weapon:" .. slot
-    elseif kind == "food" then key = "food"
-    else key = "aura:" .. auraID end
+    if poison then
+        key = "poison:" .. poison .. ":" .. poisonRank
+    elseif slot then
+        key = "weapon:" .. slot
+    elseif kind == "food" then
+        key = "food"
+    else
+        key = "aura:" .. auraID
+    end
     if seen[key] then return end
     if aliases and not (poison and poisonRank > 1) then
         for _, id in ipairs(aliases) do if seen["aura:" .. id] then return end end
@@ -425,8 +483,16 @@ local function Add(entries, seen, kind, itemID, auraID, slot, aliases, poison, p
     if aliases and not (poison and poisonRank > 1) then
         for _, id in ipairs(aliases) do seen["aura:" .. id] = true end
     end
-    entries[#entries + 1] = { kind=kind, id=itemID, aura=auraID, slot=slot,
-        aliases=aliases, poison=poison, poisonRank=poisonRank, candidates=candidates }
+    entries[#entries + 1] = {
+        kind = kind,
+        id = itemID,
+        aura = auraID,
+        slot = slot,
+        aliases = aliases,
+        poison = poison,
+        poisonRank = poisonRank,
+        candidates = candidates
+    }
 end
 
 local function SameEntries(left, right)
@@ -435,7 +501,9 @@ local function SameEntries(left, right)
         local a, b = left[index], right[index]
         if a.kind ~= b.kind or a.id ~= b.id or a.aura ~= b.aura
             or a.slot ~= b.slot or a.aliases ~= b.aliases or a.poison ~= b.poison
-            or a.poisonRank ~= b.poisonRank then return false end
+            or a.poisonRank ~= b.poisonRank then
+            return false
+        end
         if a.candidates or b.candidates then
             if not a.candidates or not b.candidates or #a.candidates ~= #b.candidates then return false end
             for offset = 1, #a.candidates do
@@ -467,9 +535,12 @@ function M:Compile()
             if S.Public(specID) and (specID == 259 or specID == 260 or specID == 261) then
                 local twoPerCategory = specID == 259 and Known(381801)
                 local groups = {
-                    { name="lethal", aliases=LETHAL_POISONS,
-                        priority=specID == 259 and ASSASSINATION_LETHAL_POISONS or OTHER_LETHAL_POISONS },
-                    { name="nonlethal", aliases=NONLETHAL_POISONS, priority=NONLETHAL_POISONS },
+                    {
+                        name = "lethal",
+                        aliases = LETHAL_POISONS,
+                        priority = specID == 259 and ASSASSINATION_LETHAL_POISONS or OTHER_LETHAL_POISONS
+                    },
+                    { name = "nonlethal", aliases = NONLETHAL_POISONS, priority = NONLETHAL_POISONS },
                 }
                 for _, group in ipairs(groups) do
                     local candidates = {}
@@ -553,22 +624,32 @@ function M:Compile()
         for id in pairs(wanted) do wanted[id] = nil end
         for index, entry in ipairs(entries) do
             entry.bit = 2 ^ (index - 1)
-            if entry.slot then hasWeapon = true
-            elseif entry.kind == "food" then hasFood = true
+            if entry.slot then
+                hasWeapon = true
+            elseif entry.kind == "food" then
+                hasFood = true
             else
                 hasAura = true
                 if entry.poison then
                     local state = self.poisonStates[entry.poison]
                     if not state then
-                        state = { aliases=entry.aliases, candidates=entry.candidates,
-                            active={}, instanceIDs={}, warnings={}, required=0 }
+                        state = {
+                            aliases = entry.aliases,
+                            candidates = entry.candidates,
+                            active = {},
+                            instanceIDs = {},
+                            warnings = {},
+                            required = 0
+                        }
                         self.poisonStates[entry.poison] = state
                     end
                     state.required = state.required + 1
                 end
                 if entry.aliases then
                     for _, id in ipairs(entry.aliases) do wanted[id] = true end
-                else wanted[entry.aura] = true end
+                else
+                    wanted[entry.aura] = true
+                end
             end
         end
         self.hasAura, self.hasFood = hasAura, hasFood
@@ -652,7 +733,10 @@ local function ReadPoisonState(state, scan, directAura)
         if directAura then
             local ok
             ok, data = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-            if not ok or not S.Public(data) then unknown = true; data = nil end
+            if not ok or not S.Public(data) then
+                unknown = true
+                data = nil
+            end
         elseif scan then
             data = scan[spellID]
         else
@@ -691,7 +775,10 @@ local function BuildPoisonWarnings(state, now, threshold)
         if #warnings >= missing then break end
         local inUse = false
         for _, aura in ipairs(active) do
-            if aura.spellID == candidate then inUse = true; break end
+            if aura.spellID == candidate then
+                inUse = true
+                break
+            end
         end
         if not inUse then warnings[#warnings + 1] = candidate end
     end
@@ -701,8 +788,11 @@ local function BuildPoisonWarnings(state, now, threshold)
             local aura = active[index]
             if aura.expiresAt and aura.duration and aura.duration > threshold then
                 local due = aura.expiresAt - threshold
-                if due <= now then warnings[#warnings + 1] = aura.spellID
-                elseif not nextDue or due < nextDue then nextDue = due end
+                if due <= now then
+                    warnings[#warnings + 1] = aura.spellID
+                elseif not nextDue or due < nextDue then
+                    nextDue = due
+                end
             end
         end
     end
@@ -754,10 +844,10 @@ function M:Update(mode, updateCounts, updateInfo, foodDirty)
                     end
                 elseif not usable then
                     entry.present, entry.auraInstanceID, entry.expiresAt,
-                        entry.instanceIDs, entry.totalDuration = nil, nil, nil, nil, nil
+                    entry.instanceIDs, entry.totalDuration = nil, nil, nil, nil, nil
                 elseif fullRefresh or not directAura or AuraChangeAffects(entry, updateInfo) then
                     entry.present, entry.auraInstanceID, entry.expiresAt,
-                        entry.instanceIDs, entry.totalDuration = AuraPresent(entry, scan)
+                    entry.instanceIDs, entry.totalDuration = AuraPresent(entry, scan)
                 end
             end
             if entry.present == false then
@@ -765,8 +855,11 @@ function M:Update(mode, updateCounts, updateInfo, foodDirty)
             elseif entry.present == true and threshold > 0 and now and entry.expiresAt
                 and (not entry.totalDuration or entry.totalDuration > threshold) then
                 local due = entry.expiresAt - threshold
-                if due <= now then mask = mask + entry.bit
-                elseif not nextDue or due < nextDue then nextDue = due end
+                if due <= now then
+                    mask = mask + entry.bit
+                elseif not nextDue or due < nextDue then
+                    nextDue = due
+                end
             end
         end
         self.needsFullRefresh = false
@@ -815,7 +908,9 @@ local function OnEvent(frame, event, unit, updateInfo)
     local self = frame.owner
     if not self.active then return end
     if (event == "UNIT_AURA" or event == "UNIT_INVENTORY_CHANGED"
-        or event == "PLAYER_SPECIALIZATION_CHANGED") and unit ~= "player" then return end
+            or event == "PLAYER_SPECIALIZATION_CHANGED") and unit ~= "player" then
+        return
+    end
     if NS.IsCombatLocked() then return end
     local foodDirty = event == "UNIT_AURA" and FoodDelta(self, updateInfo)
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
@@ -825,14 +920,20 @@ local function OnEvent(frame, event, unit, updateInfo)
     end
     if event == "SPELLS_CHANGED" or event == "PLAYER_REGEN_ENABLED"
         or event == "PLAYER_SPECIALIZATION_CHANGED" or event == "BAG_UPDATE_DELAYED"
-        or event == "PLAYER_EQUIPMENT_CHANGED" or event == "WEAPON_SLOT_CHANGED" then self:Compile() end
+        or event == "PLAYER_EQUIPMENT_CHANGED" or event == "WEAPON_SLOT_CHANGED" then
+        self:Compile()
+    end
     local mode = "visual"
-    if event == "UNIT_AURA" then mode = "aura"
+    if event == "UNIT_AURA" then
+        mode = "aura"
     elseif event == "UNIT_INVENTORY_CHANGED" or event == "WEAPON_ENCHANT_CHANGED"
-        or event == "WEAPON_SLOT_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then mode = "weapon"
+        or event == "WEAPON_SLOT_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
+        mode = "weapon"
     elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
         or event == "PLAYER_REGEN_ENABLED" or event == "SPELLS_CHANGED"
-        or event == "PLAYER_SPECIALIZATION_CHANGED" then mode = "all" end
+        or event == "PLAYER_SPECIALIZATION_CHANGED" then
+        mode = "all"
+    end
     self:Update(mode, event == "BAG_UPDATE_DELAYED", updateInfo, foodDirty)
 end
 
@@ -878,20 +979,45 @@ end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("buffReminders", "buffs", {
-        label="Buff reminders", order=620, getFrame=function() return self.host end,
-        xKey="x", yKey="y", pointKey="point",
-        point=function() return ANCHORS[self.config.point] or "CENTER" end,
-        historyKeys={"size","spacing","columns"},
-        extraControls={
-            {id="size",label="Icon size",kind="number",min=22,max=72,step=1,
-                get=function() return S.Config("buffReminders").size end,
-                set=function(value) return S.Set("buffReminders","size",value) end},
-            {id="spacing",label="Spacing",kind="number",min=0,max=20,step=1,
-                get=function() return S.Config("buffReminders").spacing end,
-                set=function(value) return S.Set("buffReminders","spacing",value) end},
-            {id="columns",label="Per row",kind="number",min=1,max=12,step=1,
-                get=function() return S.Config("buffReminders").columns end,
-                set=function(value) return S.Set("buffReminders","columns",value) end},
+        label = "Buff reminders",
+        order = 620,
+        getFrame = function() return self.host end,
+        xKey = "x",
+        yKey = "y",
+        pointKey = "point",
+        point = function() return ANCHORS[self.config.point] or "CENTER" end,
+        historyKeys = { "size", "spacing", "columns" },
+        extraControls = {
+            {
+                id = "size",
+                label = "Icon size",
+                kind = "number",
+                min = 22,
+                max = 72,
+                step = 1,
+                get = function() return S.Config("buffReminders").size end,
+                set = function(value) return S.Set("buffReminders", "size", value) end
+            },
+            {
+                id = "spacing",
+                label = "Spacing",
+                kind = "number",
+                min = 0,
+                max = 20,
+                step = 1,
+                get = function() return S.Config("buffReminders").spacing end,
+                set = function(value) return S.Set("buffReminders", "spacing", value) end
+            },
+            {
+                id = "columns",
+                label = "Per row",
+                kind = "number",
+                min = 1,
+                max = 12,
+                step = 1,
+                get = function() return S.Config("buffReminders").columns end,
+                set = function(value) return S.Set("buffReminders", "columns", value) end
+            },
         },
     })
 end

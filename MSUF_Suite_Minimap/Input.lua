@@ -40,7 +40,10 @@ local function ResetZoom()
 end
 -- Every manual zoom re-arms the one-shot reset; zoom level 0 needs none.
 local function ArmReset()
-    if resetTimer then resetTimer:Cancel(); resetTimer = nil end
+    if resetTimer then
+        resetTimer:Cancel()
+        resetTimer = nil
+    end
     local timer, map = _G.C_Timer, _G.Minimap
     local seconds = M.active and M.config.zoomResetSeconds or 0
     if seconds <= 0 or not timer or type(timer.NewTimer) ~= "function" or not MM.Usable(map) then return end
@@ -77,10 +80,17 @@ local function MouseUp(_, button)
     if action == 2 then
         local tracking = TrackingButton()
         if not tracking then return end
-        if type(tracking.IsMenuOpen) == "function" and tracking:IsMenuOpen() then tracking:CloseMenu() else tracking:OpenMenu() end
+        if type(tracking.IsMenuOpen) == "function" and tracking:IsMenuOpen() then
+            tracking:CloseMenu()
+        else
+            tracking
+                :OpenMenu()
+        end
     elseif action == 3 then
         if type(_G.ToggleCalendar) == "function" then _G.ToggleCalendar() end
-    elseif action == 4 and type(_G.ToggleWorldMap) == "function" then _G.ToggleWorldMap() end
+    elseif action == 4 and type(_G.ToggleWorldMap) == "function" then
+        _G.ToggleWorldMap()
+    end
 end
 
 local function RestoreMapInput()
@@ -98,10 +108,14 @@ end
 
 local function InstallMapInput(map)
     if not MM.Usable(map) or type(map.GetScript) ~= "function"
-        or type(map.SetScript) ~= "function" then return end
+        or type(map.SetScript) ~= "function" then
+        return
+    end
     if inputMap == map and inputScripts
         and map:GetScript("OnMouseUp") == inputScripts.mouseUp
-        and map:GetScript("OnMouseWheel") == inputScripts.mouseWheel then return end
+        and map:GetScript("OnMouseWheel") == inputScripts.mouseWheel then
+        return
+    end
     RestoreMapInput()
     local originalMouseUp = map:GetScript("OnMouseUp")
     local originalMouseWheel = map:GetScript("OnMouseWheel")
@@ -113,8 +127,10 @@ local function InstallMapInput(map)
     map:SetScript("OnMouseWheel", Wheel)
     inputMap = map
     inputScripts = {
-        originalMouseUp = originalMouseUp, originalMouseWheel = originalMouseWheel,
-        mouseUp = mouseUp, mouseWheel = Wheel,
+        originalMouseUp = originalMouseUp,
+        originalMouseWheel = originalMouseWheel,
+        mouseUp = mouseUp,
+        mouseWheel = Wheel,
     }
     MM.HookHover(map)
 end
@@ -136,21 +152,31 @@ local function LeaveCheck()
     if M.active and not Inside() then SetHovered(false) end
 end
 function MM.HoverEnter()
-    if leaveTimer then leaveTimer:Cancel(); leaveTimer = nil end
+    if leaveTimer then
+        leaveTimer:Cancel()
+        leaveTimer = nil
+    end
     if M.active and catcher and catcher:IsShown() then SetHovered(true) end
 end
+
 -- A short grace bridges the gap between the map and its rows or drawer.
 function MM.HoverLeave()
     if leaveTimer or not MM.hovered then return end
     local timer = _G.C_Timer
-    if timer and type(timer.NewTimer) == "function" then leaveTimer = timer.NewTimer(HOVER_GRACE, LeaveCheck) else LeaveCheck() end
+    if timer and type(timer.NewTimer) == "function" then
+        leaveTimer = timer.NewTimer(HOVER_GRACE, LeaveCheck)
+    else
+        LeaveCheck()
+    end
 end
 
 -- Native buttons stay above the passive hover area. Observe their own motion
 -- so moving from the map into a Blizzard button keeps mouseover controls open.
 function MM.HookHover(frame)
     if not MM.Usable(frame) or hoverHooked[frame]
-        or type(frame.HookScript) ~= "function" then return end
+        or type(frame.HookScript) ~= "function" then
+        return
+    end
     hoverHooked[frame] = true
     frame:HookScript("OnEnter", MM.HoverEnter)
     frame:HookScript("OnLeave", MM.HoverLeave)
@@ -260,7 +286,10 @@ local function ApplyCatcher()
     local wanted = MM.hoverCapable and NeedsHover(c) and true or false
     catcher:SetShown(wanted)
     if not wanted then
-        if leaveTimer then leaveTimer:Cancel(); leaveTimer = nil end
+        if leaveTimer then
+            leaveTimer:Cancel()
+            leaveTimer = nil
+        end
         SetHovered(false)
     end
     MM.Queue("hover")
@@ -270,10 +299,14 @@ MM.ApplyCatcher = ApplyCatcher
 -- Rows outside the map report how far they reach so the catcher covers them.
 function MM.SetExtent(key, left, right, top, bottom)
     local extent = extents[key]
-    if not extent then extent = {}; extents[key] = extent end
+    if not extent then
+        extent = {}
+        extents[key] = extent
+    end
     extent[1], extent[2], extent[3], extent[4] = left or 0, right or 0, top or 0, bottom or 0
     MM.Queue("hover")
 end
+
 MM.flushers.hover = function()
     if not catcher then return end
     local left, right, top, bottom = 0, 0, 0, 0
@@ -296,7 +329,11 @@ end)
 MM.flushers.rotate = function()
     local rotate = M.config.rotate
     if rotate == 1 then return end
-    if NS.IsCombatLocked() then MM.Force("input"); S.Queue("minimap"); return end
+    if NS.IsCombatLocked() then
+        MM.Force("input")
+        S.Queue("minimap")
+        return
+    end
     M.context:CVar("rotateMinimap", rotate == 2 and "1" or "0")
 end
 local function LayoutApplied() MM.Queue("rotate") end
@@ -309,7 +346,10 @@ function MM.ApplyInput()
         InstallMapInput(map)
         ctx:Property(map, "IsMouseWheelEnabled", "EnableMouseWheel", c.scrollZoom)
     end
-    if c.zoomResetSeconds <= 0 and resetTimer then resetTimer:Cancel(); resetTimer = nil end
+    if c.zoomResetSeconds <= 0 and resetTimer then
+        resetTimer:Cancel()
+        resetTimer = nil
+    end
     PlaceZoom(c.zoomButtons)
     holder:SetShown(c.zoomButtons == 2 or (c.zoomButtons == 1 and MM.Revealed()))
     -- 1 leaves Blizzard's own rotation setting alone (and returns a suite write).
@@ -324,8 +364,14 @@ function MM.ApplyInput()
 end
 
 function MM.ReleaseInput()
-    if resetTimer then resetTimer:Cancel(); resetTimer = nil end
-    if leaveTimer then leaveTimer:Cancel(); leaveTimer = nil end
+    if resetTimer then
+        resetTimer:Cancel()
+        resetTimer = nil
+    end
+    if leaveTimer then
+        leaveTimer:Cancel()
+        leaveTimer = nil
+    end
     MM.hovered = false
     for button in pairs(zoomShown) do
         if MM.owned[button] then

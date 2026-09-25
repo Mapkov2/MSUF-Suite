@@ -5,19 +5,39 @@ local ID = "dataTexts"
 local FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
-local SOURCES = { gold = true, sessionGold = true, bags = true, durability = true, clock = true, fps = true,
-    latency = true, coordinates = true, location = true, xp = true }
+local SOURCES = {
+    gold = true,
+    sessionGold = true,
+    bags = true,
+    durability = true,
+    clock = true,
+    fps = true,
+    latency = true,
+    coordinates = true,
+    location = true,
+    xp = true
+}
 local SAMPLED = { clock = true, fps = true, latency = true, coordinates = true }
 local INTERVAL = { fps = 2, latency = 5, coordinates = 0.5 }
 local EVENT_SOURCES = {
-    PLAYER_MONEY = { "gold", "sessionGold" }, BAG_UPDATE_DELAYED = { "bags" },
-    UPDATE_INVENTORY_DURABILITY = { "durability" }, PLAYER_EQUIPMENT_CHANGED = { "durability" },
-    ZONE_CHANGED = { "location", "coordinates" }, ZONE_CHANGED_INDOORS = { "location", "coordinates" },
+    PLAYER_MONEY = { "gold", "sessionGold" },
+    BAG_UPDATE_DELAYED = { "bags" },
+    UPDATE_INVENTORY_DURABILITY = { "durability" },
+    PLAYER_EQUIPMENT_CHANGED = { "durability" },
+    ZONE_CHANGED = { "location", "coordinates" },
+    ZONE_CHANGED_INDOORS = { "location", "coordinates" },
     ZONE_CHANGED_NEW_AREA = { "location", "coordinates" },
-    PLAYER_XP_UPDATE = { "xp" }, PLAYER_LEVEL_UP = { "xp" }, UPDATE_EXHAUSTION = { "xp" },
+    PLAYER_XP_UPDATE = { "xp" },
+    PLAYER_LEVEL_UP = { "xp" },
+    UPDATE_EXHAUSTION = { "xp" },
 }
-local CLICK = { gold = "OpenAllBags", sessionGold = "OpenAllBags", bags = "OpenAllBags", coordinates = "ToggleWorldMap",
-    location = "ToggleWorldMap" }
+local CLICK = {
+    gold = "OpenAllBags",
+    sessionGold = "OpenAllBags",
+    bags = "OpenAllBags",
+    coordinates = "ToggleWorldMap",
+    location = "ToggleWorldMap"
+}
 local nativeBagBar, nativeBagBarWasShown, nativeBagDriver, nativeBagHooked
 local nativeBagShowHooks = setmetatable({}, { __mode = "k" })
 
@@ -26,7 +46,10 @@ local nativeBagShowHooks = setmetatable({}, { __mode = "k" })
 -- Blizzard still owns item movement and the actual container windows.
 local function SyncNativeBagBar()
     if not NS.Client.isMainline then return end
-    if NS.IsCombatLocked() then S.Queue(ID); return end
+    if NS.IsCombatLocked() then
+        S.Queue(ID)
+        return
+    end
     local frame = _G.BagsBar
     if M.active and M.config and M.config.hideBlizzardBagBar == true and frame then
         if nativeBagBar ~= frame then
@@ -111,23 +134,35 @@ local function Format(key)
         if Number(a) and Number(b) then value = a .. "/" .. b end
     elseif key == "durability" then
         label = "Durability"
-        if Number(a) then value = math.floor(a * 100 + .5) .. "%"; severity = a <= .2 and "bad" or nil end
+        if Number(a) then
+            value = math.floor(a * 100 + .5) .. "%"
+            severity = a <= .2 and "bad" or nil
+        end
     elseif key == "clock" then
         label = "Time"
         if Number(a) and Number(b) then value = string.format("%02d:%02d", a, b) end
     elseif key == "fps" then
         label = "FPS"
-        if Number(a) then value = tostring(math.floor(a + .5)); severity = a < 30 and "bad" or nil end
+        if Number(a) then
+            value = tostring(math.floor(a + .5))
+            severity = a < 30 and "bad" or nil
+        end
     elseif key == "latency" then
         label = "World"
-        if Number(b) then value = math.floor(b + .5) .. " ms"; severity = b >= 200 and "bad" or nil end
+        if Number(b) then
+            value = math.floor(b + .5) .. " ms"
+            severity = b >= 200 and "bad" or nil
+        end
     elseif key == "coordinates" then
         label = "Coords"
         if Number(a) and Number(b) then value = string.format("%.1f, %.1f", a * 100, b * 100) end
     elseif key == "location" then
         label = "Zone"
-        if type(b) == "string" and b ~= "" then value = b
-        elseif type(a) == "string" and a ~= "" then value = a end
+        if type(b) == "string" and b ~= "" then
+            value = b
+        elseif type(a) == "string" and a ~= "" then
+            value = a
+        end
     elseif key == "xp" then
         label = "XP"
         if Number(b) and Number(c) and c > 0 then value = string.format("%.1f%%", b * 100 / c) end
@@ -154,7 +189,10 @@ local function Tooltip(button)
         end
     elseif key == "latency" then
         local home, world = S.ReadInfoSource("latency")
-        if Number(home) and Number(world) then GameTooltip:AddDoubleLine("Home / World", math.floor(home + .5) .. " / " .. math.floor(world + .5) .. " ms") end
+        if Number(home) and Number(world) then
+            GameTooltip:AddDoubleLine("Home / World",
+                math.floor(home + .5) .. " / " .. math.floor(world + .5) .. " ms")
+        end
     elseif key == "xp" then
         local level, current, maximum = S.ReadInfoSource("xp")
         if Number(level) and Number(current) and Number(maximum) then
@@ -168,9 +206,13 @@ end
 local function Click(button)
     if NS.IsCombatLocked() or not button.source then return end
     local name = CLICK[button.source]
-    if name and type(_G[name]) == "function" then _G[name]()
-    elseif button.source == "durability" and type(ToggleCharacter) == "function" then ToggleCharacter("PaperDollFrame")
-    elseif button.source == "clock" and type(ToggleCalendar) == "function" then ToggleCalendar() end
+    if name and type(_G[name]) == "function" then
+        _G[name]()
+    elseif button.source == "durability" and type(ToggleCharacter) == "function" then
+        ToggleCharacter("PaperDollFrame")
+    elseif button.source == "clock" and type(ToggleCalendar) == "function" then
+        ToggleCalendar()
+    end
 end
 local function HideTooltip(button)
     if GameTooltip and GameTooltip:IsOwned(button) then GameTooltip:Hide() end
@@ -183,17 +225,34 @@ local function CreateBar(index)
     local background = S.CreateTexture(frame, nil, "BACKGROUND")
     background:SetAllPoints(frame)
     local top = S.CreateTexture(frame, nil, "BORDER")
-    top:SetPoint("TOPLEFT"); top:SetPoint("TOPRIGHT"); top:SetHeight(1)
+    top:SetPoint("TOPLEFT")
+    top:SetPoint("TOPRIGHT")
+    top:SetHeight(1)
     local bottom = S.CreateTexture(frame, nil, "BORDER")
-    bottom:SetPoint("BOTTOMLEFT"); bottom:SetPoint("BOTTOMRIGHT"); bottom:SetHeight(1)
+    bottom:SetPoint("BOTTOMLEFT")
+    bottom:SetPoint("BOTTOMRIGHT")
+    bottom:SetHeight(1)
     local left = S.CreateTexture(frame, nil, "BORDER")
-    left:SetPoint("TOPLEFT"); left:SetPoint("BOTTOMLEFT"); left:SetWidth(1)
+    left:SetPoint("TOPLEFT")
+    left:SetPoint("BOTTOMLEFT")
+    left:SetWidth(1)
     local right = S.CreateTexture(frame, nil, "BORDER")
-    right:SetPoint("TOPRIGHT"); right:SetPoint("BOTTOMRIGHT"); right:SetWidth(1)
+    right:SetPoint("TOPRIGHT")
+    right:SetPoint("BOTTOMRIGHT")
+    right:SetWidth(1)
     local accent = S.CreateTexture(frame, nil, "ARTWORK")
-    accent:SetPoint("BOTTOMLEFT"); accent:SetPoint("BOTTOMRIGHT"); accent:SetHeight(1)
-    local bar = { frame = frame, background = background, border = { top, bottom, left, right },
-        accent = accent, dividers = {}, slots = {}, index = index }
+    accent:SetPoint("BOTTOMLEFT")
+    accent:SetPoint("BOTTOMRIGHT")
+    accent:SetHeight(1)
+    local bar = {
+        frame = frame,
+        background = background,
+        border = { top, bottom, left, right },
+        accent = accent,
+        dividers = {},
+        slots = {},
+        index = index
+    }
     M.bars[index] = bar
     for slot = 1, 6 do
         local button = S.CreateFrame("Button", nil, frame)
@@ -201,14 +260,18 @@ local function CreateBar(index)
         button:SetScript("OnClick", Click)
         button:SetScript("OnEnter", function(self)
             if M.config["bar" .. index .. "Visibility"] == 4 then
-                bar.hover = true; frame:SetAlpha(1); M:Rebind()
+                bar.hover = true
+                frame:SetAlpha(1)
+                M:Rebind()
             end
             Tooltip(self)
         end)
         button:SetScript("OnLeave", function(self)
             HideTooltip(self)
             if M.config["bar" .. index .. "Visibility"] == 4 and not frame:IsMouseOver() then
-                bar.hover = false; frame:SetAlpha(0); M:Rebind()
+                bar.hover = false
+                frame:SetAlpha(0)
+                M:Rebind()
             end
         end)
         local text = S.CreateFontString(button, nil, "OVERLAY", "GameFontHighlightSmall")
@@ -221,12 +284,16 @@ local function CreateBar(index)
     end
     frame:SetScript("OnEnter", function()
         if M.config["bar" .. index .. "Visibility"] == 4 then
-            bar.hover = true; frame:SetAlpha(1); M:Rebind()
+            bar.hover = true
+            frame:SetAlpha(1)
+            M:Rebind()
         end
     end)
     frame:SetScript("OnLeave", function()
         if M.config["bar" .. index .. "Visibility"] == 4 and not frame:IsMouseOver() then
-            bar.hover = false; frame:SetAlpha(0); M:Rebind()
+            bar.hover = false
+            frame:SetAlpha(0)
+            M:Rebind()
         end
     end)
     frame:SetScript("OnShow", function() if not M.styling then M:Rebind() end end)
@@ -355,13 +422,17 @@ function M:UpdateSource(key)
         end
     end
 end
+
 local function NextClock()
     local stamp = S.ReadInfoSource("clockStamp")
     return Number(stamp) and 60 - math.floor(stamp) % 60 or 60
 end
 local TickDataTexts
 function M:Schedule()
-    if self.timer then self.timer:Cancel(); self.timer = nil end
+    if self.timer then
+        self.timer:Cancel()
+        self.timer = nil
+    end
     local now, soonest = Time(), nil
     for key in pairs(self.activeSources or {}) do
         if SAMPLED[key] then
@@ -371,6 +442,7 @@ function M:Schedule()
     end
     if soonest then self.timer = S.ScheduleDataTick("datatexts", math.max(.05, soonest - now), TickDataTexts) end
 end
+
 function M:Tick()
     self.timer = nil
     local now = Time()
@@ -382,6 +454,7 @@ function M:Tick()
     end
     self:Schedule()
 end
+
 TickDataTexts = function() M:Tick() end
 local invalidated, invalidationMark = {}, 0
 local function OnEvent(self, event, unit)
@@ -421,7 +494,10 @@ local function OnEvent(self, event, unit)
         local key = keys[i]
         if self.activeSources and self.activeSources[key] then
             self:UpdateSource(key)
-            if key == "coordinates" then self.due[key] = Time() + INTERVAL.coordinates; self:Schedule() end
+            if key == "coordinates" then
+                self.due[key] = Time() + INTERVAL.coordinates
+                self:Schedule()
+            end
         end
     end
 end
@@ -438,22 +514,33 @@ function M:Rebind()
     end
     self.activeSources = active
     for event, keys in pairs(EVENT_SOURCES) do
-        for i = 1, #keys do if active[keys[i]] then wanted[event] = true; break end end
+        for i = 1, #keys do
+            if active[keys[i]] then
+                wanted[event] = true
+                break
+            end
+        end
     end
     if next(active) then wanted.PLAYER_ENTERING_WORLD = true end
     for i = 1, 3 do
         local prefix = "bar" .. i
         if self.config[prefix .. "Enabled"] and (self.config[prefix .. "Visibility"] == 2
-            or self.config[prefix .. "Visibility"] == 3) then
+                or self.config[prefix .. "Visibility"] == 3) then
             wanted.PLAYER_REGEN_DISABLED = true
             wanted.PLAYER_REGEN_ENABLED = true
         end
     end
     for event in pairs(self.events) do
-        if not wanted[event] then self.context:RemoveEvent(event); self.events[event] = nil end
+        if not wanted[event] then
+            self.context:RemoveEvent(event)
+            self.events[event] = nil
+        end
     end
     for event in pairs(wanted) do
-        if not self.events[event] then self.context:Event(event, OnEvent, true); self.events[event] = true end
+        if not self.events[event] then
+            self.context:Event(event, OnEvent, true)
+            self.events[event] = true
+        end
     end
     for key in pairs(active) do
         self.values[key] = nil
@@ -463,6 +550,7 @@ function M:Rebind()
     end
     self:Schedule()
 end
+
 function M:UpdateVisibility()
     self.styling = true
     for i = 1, 3 do
@@ -480,6 +568,7 @@ function M:UpdateVisibility()
     self.styling = false
     self:Rebind()
 end
+
 function M:Refresh()
     self.styling = true
     self.values = {}
@@ -520,6 +609,7 @@ function M:Refresh()
     self:RegisterMovers()
     SyncNativeBagBar()
 end
+
 function M:Enable()
     self:Refresh()
     SyncNativeBagBar()
@@ -529,34 +619,58 @@ function M:Enable()
         end, true)
     end
 end
+
 function M:Disable()
     SyncNativeBagBar()
-    if self.timer then self.timer:Cancel(); self.timer = nil end
-    for event in pairs(self.events) do self.context:RemoveEvent(event); self.events[event] = nil end
+    if self.timer then
+        self.timer:Cancel()
+        self.timer = nil
+    end
+    for event in pairs(self.events) do
+        self.context:RemoveEvent(event)
+        self.events[event] = nil
+    end
     self.activeSources, self.values, self.due = nil, {}, {}
     for _, bar in pairs(self.bars) do bar.frame:Hide() end
     if GameTooltip and GameTooltip:GetOwner() then
         for _, bar in pairs(self.bars) do
-            for i = 1, 6 do if GameTooltip:IsOwned(bar.slots[i]) then GameTooltip:Hide(); break end end
+            for i = 1, 6 do
+                if GameTooltip:IsOwned(bar.slots[i]) then
+                    GameTooltip:Hide()
+                    break
+                end
+            end
         end
     end
 end
+
 function M:RegisterMovers()
     for i = 1, 3 do
         local index, prefix = i, "bar" .. i
         S.RegisterOwnedMover(ID, prefix, {
-            label = "DataTexts bar " .. i, order = 690 + i,
+            label = "DataTexts bar " .. i,
+            order = 690 + i,
             getFrame = function() return self.bars[index] and self.bars[index].frame end,
             isEnabled = function() return self.config[prefix .. "Enabled"] == true end,
-            xKey = prefix .. "X", yKey = prefix .. "Y", pointKey = prefix .. "Point",
+            xKey = prefix .. "X",
+            yKey = prefix .. "Y",
+            pointKey = prefix .. "Point",
             point = function() return NS.DataTextPoints[self.config[prefix .. "Point"]] or "BOTTOM" end,
             historyKeys = { prefix .. "Width", prefix .. "Height" },
             extraControls = {
-                { id = "width", label = "Width", kind = "number", min = 180, max = 900, step = 1,
+                {
+                    id = "width",
+                    label = "Width",
+                    kind = "number",
+                    min = 180,
+                    max = 900,
+                    step = 1,
                     get = function() return S.Config(ID)[prefix .. "Width"] end,
-                    set = function(value) return S.Set(ID, prefix .. "Width", value) end },
+                    set = function(value) return S.Set(ID, prefix .. "Width", value) end
+                },
             },
         })
     end
 end
+
 S.Install(ID, M)

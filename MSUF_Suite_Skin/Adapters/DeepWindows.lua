@@ -259,12 +259,22 @@ end
 
 local function ApplyQuestAndGossip(state)
     if not state or not state.active then return false, "disabled" end
-    if not CategoryEnabled("quest") then return true, "disabled" end
+    if not CategoryEnabled("quest") then
+        if NS.QuestText then
+            NS.QuestText.Deactivate(_G.QuestFrame, state.skinOwner)
+            NS.QuestText.Deactivate(_G.QuestLogPopupDetailFrame, state.skinOwner)
+        end
+        return true, "disabled"
+    end
     if IsCombatLocked() then return false, "combat" end
 
     local faded = 0
     for index = 1, #QUEST_PANELS do
         faded = faded + FadeMaterialPanel(state, _G[QUEST_PANELS[index]])
+    end
+    if NS.QuestText then
+        NS.QuestText.Activate(_G.QuestFrame, state.skinOwner)
+        NS.QuestText.Activate(_G.QuestLogPopupDetailFrame, state.skinOwner)
     end
 
     local gossipPanel = Path(_G.GossipFrame, "GreetingPanel")
@@ -1082,6 +1092,10 @@ local function DisableNow(state)
     if not state then return true end
     state.active = false
     CancelDeferred(state)
+    if NS.QuestText then
+        NS.QuestText.Deactivate(_G.QuestFrame, state.skinOwner)
+        NS.QuestText.Deactivate(_G.QuestLogPopupDetailFrame, state.skinOwner)
+    end
 
     if NS.ControlSkin and type(NS.ControlSkin.DisableOwner) == "function" then
         pcall(NS.ControlSkin.DisableOwner, state.skinOwner)

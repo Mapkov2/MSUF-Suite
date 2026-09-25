@@ -39,6 +39,46 @@ function S.ClassRGB(classFile)
     return color.r, color.g, color.b
 end
 
+-- Short key text shared by action bars and cooldown icons: SHIFT/CTRL/ALT/META
+-- become S/C/A/M, mouse buttons M4, the wheel MwU/MwD, numpad N1 and N+.
+-- Gamepad keys keep Blizzard's glyph markup.
+local KEY_NAMES = {
+    MOUSEWHEELUP = "MwU", MOUSEWHEELDOWN = "MwD", MIDDLEMOUSE = "M3", CAPSLOCK = "Caps",
+    SPACE = "Spc", BACKSPACE = "Bs", INSERT = "Ins", DELETE = "Del", HOME = "Hm", END = "End",
+    PAGEUP = "PU", PAGEDOWN = "PD", ESCAPE = "Esc", ENTER = "Ent", TAB = "Tab",
+    NUMPADDECIMAL = "N.", NUMPADPLUS = "N+", NUMPADMINUS = "N-", NUMPADMULTIPLY = "N*", NUMPADDIVIDE = "N/",
+    UP = "Up", DOWN = "Dn", LEFT = "Lt", RIGHT = "Rt",
+}
+local KEY_MODIFIERS = { SHIFT = "S", CTRL = "C", ALT = "A", META = "M" }
+local keyTexts = {}
+
+local function ShortKey(key)
+    if key:find("PAD", 1, true) and not key:find("NUMPAD", 1, true) and type(GetBindingText) == "function" then
+        return GetBindingText(key, true)
+    end
+    local modifiers, base = "", key
+    while true do
+        local modifier, rest = base:match("^(%u+)%-(.+)$")
+        local short = modifier and KEY_MODIFIERS[modifier]
+        if not short then break end
+        modifiers, base = modifiers .. short, rest
+    end
+    local button = base:match("^BUTTON(%d+)$")
+    local numpad = base:match("^NUMPAD(%d)$")
+    return modifiers .. (KEY_NAMES[base] or button and "M" .. button or numpad and "N" .. numpad or base)
+end
+
+-- Binding keys are plain strings (never secret); "" for no key.
+function S.KeyText(key)
+    if type(key) ~= "string" or key == "" then return "" end
+    local text = keyTexts[key]
+    if not text then
+        text = ShortKey(key)
+        keyTexts[key] = text
+    end
+    return text
+end
+
 local function LSM()
     local stub = _G.LibStub
     return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibSharedMedia-3.0", true) or nil

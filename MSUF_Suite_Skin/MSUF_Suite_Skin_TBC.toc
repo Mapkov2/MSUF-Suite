@@ -39,7 +39,9 @@ Rendering\ControlSkin.lua
 Rendering\ScrollBarSkin.lua
 Adapters\UIPanelButtons.lua
 Adapters\Catalog.lua
+Adapters\SharedChrome.lua
 Adapters\GenericWindows.lua
+Adapters\QuestText.lua
 Adapters\MacroWindow.lua
 Adapters\DeepWindows.lua
 Adapters\SemanticHUD.lua
@@ -51,7 +53,6 @@ Adapters\EQoLCharacter.lua
 Adapters\CharacterPanel.lua
 Adapters\InspectPanel.lua
 Adapters\SocialUI.lua
-Adapters\SharedChrome.lua
 Adapters\LegacyWindows.lua
 Adapters\CommonMenus.lua
 Adapters\CommonArt.lua

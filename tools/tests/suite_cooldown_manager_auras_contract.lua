@@ -546,7 +546,7 @@ for _,file in ipairs({"Auras.lua","Alerts.lua"}) do
     local text=handle:read("*a")
     handle:close()
     local header=text:gsub("\r",""):match("^([^\n]*\n[^\n]*\n[^\n]*)\n")
-    assert(header=="local _,P=...\nlocal NS,S=P.NS,P.Suite\nlocal C=P.CDM",file.." header")
+    assert(header=="local _, P = ...\nlocal NS, S = P.NS, P.Suite\nlocal C = P.CDM",file.." header")
     -- No event registration of its own: no Lua runs per UNIT_AURA.
     for _,word in ipairs({"pcall","loadstring","setfenv","hooksecurefunc","HookScript","OnUpdate",
         "RegisterEvent","RegisterUnitEvent","NewTicker","SetAuraBorder","SetAuraSymbol","Claude","Anthropic"}) do
@@ -1080,7 +1080,7 @@ do
     local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/Controller.lua","rb"))
     local text=(handle:read("*a"):gsub("\r",""))
     handle:close()
-    local body=text:match("\n(local function Extent%(view,plan%)\n.-\nend)\n")
+    local body=text:match("\n(local function Extent%(view, plan%)\n.-\nend)\n")
     assert(body and body:find("FixedAuras(",1,true),"Controller.lua: Extent sizes aura bars by Layout.FixedAuras")
     local Extent=assert(loadstring("local C,probe,ceil=...\n"..body.."\nreturn Extent","=Controller.Extent"))(Cx,{},math.ceil)
     local UNIT={p="player",t="target",b="both",m="player"}
@@ -2402,12 +2402,12 @@ do
     local file=assert(io.open(root.."/MSUF_Suite_CooldownManager/Auras.lua","rb"))
     local text=file:read("*a"):gsub("\r","")
     file:close()
-    local look=assert(text:match("\nlocal LOOK=(%b{})"),"LOOK list")
+    local look=assert(text:match("\nlocal LOOK = (%b{})"),"LOOK list")
     local listed={}
     for name in look:gmatch('"(%w+)"') do listed[name]=true end
-    local body=assert(text:match("\nlocal function Look%(rec,view%)\n(.-)\n    return tconcat"),"Look body")
+    local body=assert(text:match("\nlocal function Look%(rec, view%)\n(.-)\n    return tconcat"),"Look body")
     local seen=0
-    for names in body:gmatch("\n%s*(lk%.[%w_.,lk]-)=") do
+    for names in body:gmatch("\n%s*(lk%.[%w_.,%s]-)%s*=") do
         for name in names:gmatch("lk%.(%w+)") do
             seen=seen+1
             assert(listed[name],"Look writes lk."..name.." but LOOK does not list it")

@@ -18,7 +18,7 @@ issecretvalue=IsSecret
 ------------------------------------------------------------------ static checks
 -- TOC order; Presets.lua is plain data plus one class lookup (CDM table only).
 local FILES={"Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua"}
-local HEADER,DATA_HEADER="local _,P=...\nlocal NS,S=P.NS,P.Suite\nlocal C=P.CDM\n","local _,P=...\nlocal C=P.CDM\n"
+local HEADER,DATA_HEADER="local _, P = ...\nlocal NS, S = P.NS, P.Suite\nlocal C = P.CDM\n","local _, P = ...\nlocal C = P.CDM\n"
 for _,file in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..file
     assert(loadfile(path))

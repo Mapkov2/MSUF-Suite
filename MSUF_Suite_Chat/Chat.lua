@@ -86,7 +86,10 @@ local function CreateVisual(frame)
 end
 
 local function ApplyEdge(edge, owner, side, size, pad, top, hex, alpha)
-    if size <= 0 or alpha <= 0 then edge:Hide(); return end
+    if size <= 0 or alpha <= 0 then
+        edge:Hide()
+        return
+    end
     edge:ClearAllPoints()
     if side == 1 then
         edge:SetPoint("TOPLEFT", owner, "TOPLEFT", -pad, top)
@@ -128,7 +131,10 @@ local function UpdateFriendsCount(self)
     if type(bn) ~= "number" or type(wow) ~= "number" then return end
     local total = bn + wow
     local value = total > 99 and "99+" or tostring(total)
-    if label.lastValue ~= value then label:SetText(value); label.lastValue = value end
+    if label.lastValue ~= value then
+        label:SetText(value)
+        label.lastValue = value
+    end
 end
 
 local function SyncNativeControls(self, hidden)
@@ -140,8 +146,11 @@ local function SyncNativeControls(self, hidden)
     for i = 1, #NATIVE_BORDER_PARTS do
         local texture = _G["ChatFrame1ButtonFrame" .. NATIVE_BORDER_PARTS[i]]
         if texture then
-            if hidden then self.context:Property(texture, "IsShown", "SetShown", false)
-            else self.context:RestoreProperty(texture, "SetShown") end
+            if hidden then
+                self.context:Property(texture, "IsShown", "SetShown", false)
+            else
+                self.context:RestoreProperty(texture, "SetShown")
+            end
         end
     end
 end
@@ -154,8 +163,11 @@ local function SetNativeChrome(self, frame, tab, input, enabled)
         local suffix = CHAT_CHROME[i]
         local texture = frame[suffix] or _G[name .. suffix]
         if texture then
-            if enabled then context:Property(texture, "IsShown", "SetShown", false)
-            else context:RestoreProperty(texture, "SetShown") end
+            if enabled then
+                context:Property(texture, "IsShown", "SetShown", false)
+            else
+                context:RestoreProperty(texture, "SetShown")
+            end
         end
     end
 
@@ -165,14 +177,20 @@ local function SetNativeChrome(self, frame, tab, input, enabled)
             local suffix = TAB_CHROME[i]
             local texture = tab[suffix] or _G[name .. "Tab" .. suffix]
             if texture then
-                if ownTabs then context:Alpha(texture, 0)
-                else context:RestoreProperty(texture, "SetAlpha") end
+                if ownTabs then
+                    context:Alpha(texture, 0)
+                else
+                    context:RestoreProperty(texture, "SetAlpha")
+                end
             end
         end
         local label = tab.Text or (type(tab.GetFontString) == "function" and tab:GetFontString())
         if label then
-            if ownTabs then context:Alpha(label, 0)
-            else context:RestoreProperty(label, "SetAlpha") end
+            if ownTabs then
+                context:Alpha(label, 0)
+            else
+                context:RestoreProperty(label, "SetAlpha")
+            end
         end
     end
 
@@ -182,8 +200,11 @@ local function SetNativeChrome(self, frame, tab, input, enabled)
             local suffix = INPUT_CHROME[i]
             local texture = input[suffix] or _G[name .. "EditBox" .. suffix]
             if texture then
-                if ownInput then context:Alpha(texture, 0)
-                else context:RestoreProperty(texture, "SetAlpha") end
+                if ownInput then
+                    context:Alpha(texture, 0)
+                else
+                    context:RestoreProperty(texture, "SetAlpha")
+                end
             end
         end
     end
@@ -191,8 +212,11 @@ local function SetNativeChrome(self, frame, tab, input, enabled)
     local quickBar = CombatLogBar(frame)
     local quickTexture = quickBar and (quickBar.Texture or _G.CombatLogQuickButtonFrame_CustomTexture)
     if quickTexture then
-        if enabled and self.config.tabPanel then context:Alpha(quickTexture, 0)
-        else context:RestoreProperty(quickTexture, "SetAlpha") end
+        if enabled and self.config.tabPanel then
+            context:Alpha(quickTexture, 0)
+        else
+            context:RestoreProperty(quickTexture, "SetAlpha")
+        end
     end
 end
 
@@ -455,7 +479,9 @@ end
 local function ShowCopyDialog(self, frame)
     if not self.config.copyMessages or not frame
         or NS.Safety.IsForbidden(frame) or type(frame.GetNumMessages) ~= "function"
-        or type(frame.GetMessageInfo) ~= "function" then return end
+        or type(frame.GetMessageInfo) ~= "function" then
+        return
+    end
     local count = frame:GetNumMessages()
     if not S.Public(count) or type(count) ~= "number" then return end
     local panel = self.copyDialog or CreateCopyDialog()
@@ -642,7 +668,10 @@ local function ForEachChatFrame(callback)
 end
 
 local function ApplyAll(self)
-    if NS.IsCombatLocked() then S.Queue("chat"); return end
+    if NS.IsCombatLocked() then
+        S.Queue("chat")
+        return
+    end
     ForEachChatFrame(function(frame) ApplyWindow(self, frame) end)
     self.selectedChat = _G.SELECTED_CHAT_FRAME
     self.selectedDock = DockSelection()
@@ -685,7 +714,9 @@ function M:Enable()
     self.context:Event("ADDON_LOADED", function(_, _, name)
         if name == "EllesmereUIChat" or name == "ElvUI" then S.Apply("chat") end
         if name == "Blizzard_QuickJoin" or name == "Blizzard_ChatFrame"
-            or name == "Blizzard_CombatLog" then ApplyAll(M) end
+            or name == "Blizzard_CombatLog" then
+            ApplyAll(M)
+        end
     end)
     -- Temporary whisper frames are created after the usual chat-window
     -- update events. Hook only this cold window-creation path, never messages.
@@ -710,7 +741,10 @@ function M:Enable()
         self.hookedNewWindow = pcall(function()
             hooksecurefunc("FCF_OpenNewWindow", function()
                 if not M.active then return end
-                if NS.IsCombatLocked() then S.Queue("chat"); return end
+                if NS.IsCombatLocked() then
+                    S.Queue("chat")
+                    return
+                end
                 local frame = DockSelection()
                 if frame then ApplyWindow(M, frame) end
                 RefreshSelection(M)

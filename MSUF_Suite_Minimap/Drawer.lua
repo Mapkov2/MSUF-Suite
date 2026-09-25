@@ -17,13 +17,29 @@ local GAP, MARGIN, RESCAN_DELAY = 4, 8, 0.1
 function MM.CollectsButtons()
     return M.config and M.config.collectButtons and not NS.Client.IsAddOnLoaded("MinimapButtonButton") or false
 end
+
 -- Blizzard frames, the suite's own and known replacements are never collected.
 local BLOCKED = {
-    MinimapBackdrop = true, MinimapZoomIn = true, MinimapZoomOut = true, GameTimeFrame = true, TimeManagerClockButton = true,
-    ExpansionLandingPageMinimapButton = true, AddonCompartmentFrame = true, MiniMapMailFrame = true,
-    MiniMapBattlefieldFrame = true, MiniMapTracking = true, MiniMapTrackingButton = true, LFGMinimapFrame = true,
-    MiniMapWorldMapButton = true, MinimapZoneTextButton = true, MinimapToggleButton = true, HybridMinimap = true,
-    QueueStatusButton = true, MiniMapInstanceDifficulty = true, GuildInstanceDifficulty = true, MiniMapChallengeMode = true,
+    MinimapBackdrop = true,
+    MinimapZoomIn = true,
+    MinimapZoomOut = true,
+    GameTimeFrame = true,
+    TimeManagerClockButton = true,
+    ExpansionLandingPageMinimapButton = true,
+    AddonCompartmentFrame = true,
+    MiniMapMailFrame = true,
+    MiniMapBattlefieldFrame = true,
+    MiniMapTracking = true,
+    MiniMapTrackingButton = true,
+    LFGMinimapFrame = true,
+    MiniMapWorldMapButton = true,
+    MinimapZoneTextButton = true,
+    MinimapToggleButton = true,
+    HybridMinimap = true,
+    QueueStatusButton = true,
+    MiniMapInstanceDifficulty = true,
+    GuildInstanceDifficulty = true,
+    MiniMapChallengeMode = true,
     PlumberLandingPageMinimapButton = true,
 }
 -- Map pins (HereBeDragons users and friends) are children of the map too.
@@ -86,7 +102,10 @@ local function ClickAway()
 end
 local function TogglePanel()
     if not M.active then return end
-    if panel:IsShown() then ClosePanel() return end
+    if panel:IsShown() then
+        ClosePanel()
+        return
+    end
     panel:Show()
     -- Registered only while the panel is open.
     MM.Listen("GLOBAL_MOUSE_DOWN", "drawer", ClickAway)
@@ -104,10 +123,18 @@ end
 local function Outline(frame, layer)
     local edges = {}
     for i = 1, 4 do edges[i] = S.CreateTexture(frame, nil, layer) end
-    edges[1]:SetPoint("TOPLEFT"); edges[1]:SetPoint("TOPRIGHT"); edges[1]:SetHeight(1)
-    edges[2]:SetPoint("BOTTOMLEFT"); edges[2]:SetPoint("BOTTOMRIGHT"); edges[2]:SetHeight(1)
-    edges[3]:SetPoint("TOPLEFT"); edges[3]:SetPoint("BOTTOMLEFT"); edges[3]:SetWidth(1)
-    edges[4]:SetPoint("TOPRIGHT"); edges[4]:SetPoint("BOTTOMRIGHT"); edges[4]:SetWidth(1)
+    edges[1]:SetPoint("TOPLEFT")
+    edges[1]:SetPoint("TOPRIGHT")
+    edges[1]:SetHeight(1)
+    edges[2]:SetPoint("BOTTOMLEFT")
+    edges[2]:SetPoint("BOTTOMRIGHT")
+    edges[2]:SetHeight(1)
+    edges[3]:SetPoint("TOPLEFT")
+    edges[3]:SetPoint("BOTTOMLEFT")
+    edges[3]:SetWidth(1)
+    edges[4]:SetPoint("TOPRIGHT")
+    edges[4]:SetPoint("BOTTOMRIGHT")
+    edges[4]:SetWidth(1)
     return edges
 end
 local function EnsureDrawer()
@@ -197,17 +224,20 @@ function MM.LayoutDrawer()
     StyleToggle(c)
     if count == 1 then
         -- A single button goes straight onto the row; no toggle.
-        toggle:Hide(); ClosePanel()
+        toggle:Hide()
+        ClosePanel()
         single:SetSize(c.elementSize, c.elementSize)
         single:Show()
-        MM.Place(visible[1], single, "CENTER", single, "CENTER", 0, 0, MM.Fit(visible[1], c.elementSize), nil, single:GetFrameLevel() + 1)
+        MM.Place(visible[1], single, "CENTER", single, "CENTER", 0, 0, MM.Fit(visible[1], c.elementSize), nil,
+            single:GetFrameLevel() + 1)
         rowItem[1] = single
         MM.LayoutRow(c.drawerRow, rowItem, 1, c.elementSize, c.elementSpacing, c.elementDistance, start, "drawer")
         return
     end
     single:Hide()
     if count == 0 then
-        toggle:Hide(); ClosePanel()
+        toggle:Hide()
+        ClosePanel()
         MM.SetExtent("drawer", 0, 0, 0, 0)
         return
     end
@@ -228,6 +258,7 @@ function MM.LayoutDrawer()
         MM.Place(button, panel, "CENTER", panel, "TOPLEFT", x, y, MM.Fit(button, cell), "DIALOG", level)
     end
 end
+
 MM.flushers.drawer = MM.LayoutDrawer
 
 MM.OnHover(function()
@@ -250,7 +281,8 @@ local function ScheduleRescan()
 end
 local function Library()
     local stub = _G.LibStub
-    return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibDBIcon-1.0", true) or nil
+    return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibDBIcon-1.0", true) or
+        nil
 end
 -- Without collection LibDBIcon lays its icons around the current shape and size.
 function MM.RefreshIcons()
@@ -289,8 +321,14 @@ function S.MinimapRescanButtons()
 end
 
 function MM.ReleaseDrawer()
-    if rescanTimer then rescanTimer:Cancel(); rescanTimer = nil end
-    if library and type(library.UnregisterCallback) == "function" then library.UnregisterCallback(libraryToken, "LibDBIcon_IconCreated") end
+    if rescanTimer then
+        rescanTimer:Cancel()
+        rescanTimer = nil
+    end
+    if library and type(library.UnregisterCallback) == "function" then
+        library.UnregisterCallback(libraryToken,
+            "LibDBIcon_IconCreated")
+    end
     library = nil
     ClosePanel()
     for i = #list, 1, -1 do
@@ -299,7 +337,10 @@ function MM.ReleaseDrawer()
         collected[button], list[i] = nil, nil
     end
     for i = #visible, 1, -1 do visible[i] = nil end
-    if toggle then toggle:Hide(); single:Hide() end
+    if toggle then
+        toggle:Hide()
+        single:Hide()
+    end
     if M.context then
         MM.Unlisten("ADDON_LOADED", "drawer")
         MM.Unlisten("PLAYER_ENTERING_WORLD", "drawer")

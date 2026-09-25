@@ -1,9 +1,8 @@
 local _, Private = ...
 local NS, O = Private.NS, Private.Options
+local L = NS.L
 
-local function Percent(value)
-    return tostring(math.floor((tonumber(value) or 0) * 100 + 0.5)) .. "%"
-end
+local WIDTH = 484
 
 local function LookLabel(value)
     if value == "classColor" then
@@ -13,96 +12,75 @@ local function LookLabel(value)
     return look and string.upper(look.label) or string.upper(tostring(value))
 end
 
-local function DirectionLabel(value)
-    return value == "HORIZONTAL" and "Horizontal" or "Vertical"
+local DirectionLabel = O.Labeler({ HORIZONTAL = L["Horizontal"], VERTICAL = L["Vertical"] })
+
+local function ThemeGetter(key)
+    return function() return NS.DB.theme[key] end
 end
 
-O.RegisterPage("looks", NS.L.LOOKS, function(page)
-    O.CreateSectionTitle(page, "Style",
-        "Choose Midnight Blue, Midnight Dark or MSUF Forever for Skinning and enabled Suite modules. Modules enabled later inherit it.")
+local function ThemeSetter(key)
+    return function(value) NS.Theme.SetAppearance(key, value) end
+end
 
+-- { label, theme key, minimum, essential in Guided mode }
+local MATERIAL_SLIDERS = {
+    { L["Shading strength"], "gradientStrength", 0, false },
+    { L["Surface depth"], "materialDepth", 0, false },
+}
+local OPACITY_SLIDERS = {
+    { L["Window opacity"], "shellOpacity", 0.35, true },
+    { L["Content opacity"], "panelOpacity", 0.35, true },
+    { L["Controls opacity"], "controlOpacity", 0.35, true },
+    { L["Outline opacity"], "borderOpacity", 0, false },
+}
+
+local function AddSliders(list, rows, specs)
+    for index = 1, #specs do
+        local spec = specs[index]
+        local slider = O.CreateSlider(list, spec[1], spec[3], 1, 0.05, ThemeGetter(spec[2]),
+            ThemeSetter(spec[2]), WIDTH, O.Percent)
+        rows[#rows + 1] = { slider, spec[4] }
+    end
+end
+
+-- The left column: every look control, stacked for the current mode.
+local function BuildControls(page)
     local controlsHost = CreateFrame("Frame", nil, page)
     controlsHost:SetPoint("TOPLEFT", 4, -70)
     controlsHost:SetPoint("BOTTOMLEFT", 4, 4)
     controlsHost:SetWidth(510)
-    local controlsScroll, controlsList = O.CreateScrollContainer(controlsHost, 660, 484)
+    local controlsScroll, list = O.CreateScrollContainer(controlsHost, 660, WIDTH)
     page._mskinLooksScroll = controlsScroll
-    page._mskinLooksContent = controlsList
+    page._mskinLooksContent = list
 
-    local look, lookButton = O.CreateDropdown(controlsList, "Style preset", NS.LookOrder, function()
-        return NS.DB.theme.look
-    end, function(value)
-        NS.Theme.ApplyLook(value)
-    end, 484, LookLabel, nil, { countLabel = "styles" })
-    look:SetPoint("TOPLEFT", 0, -2)
+    local rows = {}
+    local look, lookButton = O.CreateDropdown(list, L["Style preset"], NS.LookOrder,
+        ThemeGetter("look"), function(value) NS.Theme.ApplyLook(value) end,
+        WIDTH, LookLabel, nil, { countLabel = L["styles"], countSingular = L["style"] })
     page._mskinLookSelector = lookButton
-
-    local gradient = O.CreateToggle(controlsList, "Shaded surfaces", function()
-        return NS.DB.theme.gradient
-    end, function(value)
-        NS.Theme.SetAppearance("gradient", value)
-    end, 484)
-    gradient:SetPoint("TOPLEFT", look, "BOTTOMLEFT", 0, -8)
-
-    local direction = O.CreateCycle(controlsList, "Light direction", NS.GradientDirections, function()
-        return NS.DB.theme.gradientDirection
-    end, function(value)
-        NS.Theme.SetAppearance("gradientDirection", value)
-    end, 484, DirectionLabel)
-    direction:SetPoint("TOPLEFT", gradient, "BOTTOMLEFT", 0, -8)
-
-    local strength = O.CreateSlider(controlsList, "Shading strength", 0, 1, 0.05, function()
-        return NS.DB.theme.gradientStrength
-    end, function(value)
-        NS.Theme.SetAppearance("gradientStrength", value)
-    end, 484, Percent)
-    strength:SetPoint("TOPLEFT", direction, "BOTTOMLEFT", 0, -8)
-
-    local depth = O.CreateSlider(controlsList, "Surface depth", 0, 1, 0.05, function()
-        return NS.DB.theme.materialDepth
-    end, function(value)
-        NS.Theme.SetAppearance("materialDepth", value)
-    end, 484, Percent)
-    depth:SetPoint("TOPLEFT", strength, "BOTTOMLEFT", 0, -8)
-
-    local iconSettings = O.CreateButton(controlsList, "Customize icons and Micro Bar", 484, 32, function()
+    rows[#rows + 1] = { look, true }
+    rows[#rows + 1] = { O.CreateToggle(list, L["Shaded surfaces"], ThemeGetter("gradient"),
+        ThemeSetter("gradient"), WIDTH), false }
+    rows[#rows + 1] = { O.CreateCycle(list, L["Light direction"], NS.GradientDirections,
+        ThemeGetter("gradientDirection"), ThemeSetter("gradientDirection"), WIDTH, DirectionLabel), false }
+    AddSliders(list, rows, MATERIAL_SLIDERS)
+    rows[#rows + 1] = { O.CreateButton(list, L["Customize icons and Micro Bar"], WIDTH, 32, function()
         O.ShowPage("icons")
-    end, "navigation")
-    iconSettings:SetPoint("TOPLEFT", depth, "BOTTOMLEFT", 0, -8)
+    end, "navigation"), true }
+    AddSliders(list, rows, OPACITY_SLIDERS)
 
-    local shell = O.CreateSlider(controlsList, "Window opacity", 0.35, 1, 0.05, function()
-        return NS.DB.theme.shellOpacity
-    end, function(value)
-        NS.Theme.SetAppearance("shellOpacity", value)
-    end, 484, Percent)
-    shell:SetPoint("TOPLEFT", iconSettings, "BOTTOMLEFT", 0, -8)
+    local RefreshMode = O.StackRows(list, rows)
+    O.TrackMode(RefreshMode)
+    RefreshMode()
+end
 
-    local panels = O.CreateSlider(controlsList, "Content opacity", 0.35, 1, 0.05, function()
-        return NS.DB.theme.panelOpacity
-    end, function(value)
-        NS.Theme.SetAppearance("panelOpacity", value)
-    end, 484, Percent)
-    panels:SetPoint("TOPLEFT", shell, "BOTTOMLEFT", 0, -8)
-
-    local controls = O.CreateSlider(controlsList, "Controls opacity", 0.35, 1, 0.05, function()
-        return NS.DB.theme.controlOpacity
-    end, function(value)
-        NS.Theme.SetAppearance("controlOpacity", value)
-    end, 484, Percent)
-    controls:SetPoint("TOPLEFT", panels, "BOTTOMLEFT", 0, -8)
-
-    local borders = O.CreateSlider(controlsList, "Outline opacity", 0, 1, 0.05, function()
-        return NS.DB.theme.borderOpacity
-    end, function(value)
-        NS.Theme.SetAppearance("borderOpacity", value)
-    end, 484, Percent)
-    borders:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -8)
-
+-- The right column: a live sample of the shell, panel, card and buttons.
+local function BuildPreview(page)
     local preview = O.CreatePanel(page, "navigation")
     preview:SetPoint("TOPLEFT", 534, -70)
     preview:SetPoint("BOTTOMRIGHT", -4, 4)
 
-    local heading = O.CreateText(preview, "LIVE LOOK PREVIEW", 11, "muted")
+    local heading = O.CreateText(preview, L["LIVE LOOK PREVIEW"], 11, "muted")
     heading:SetPoint("TOPLEFT", 16, -16)
 
     local shellPreview = O.CreatePanel(preview, "shell")
@@ -110,9 +88,9 @@ O.RegisterPage("looks", NS.L.LOOKS, function(page)
     shellPreview:SetPoint("TOPRIGHT", -16, -46)
     shellPreview:SetHeight(224)
 
-    local title = O.CreateText(shellPreview, "Window shell", 16, "title")
+    local title = O.CreateText(shellPreview, L["Window shell"], 16, "title")
     title:SetPoint("TOPLEFT", 16, -16)
-    local subtitle = O.CreateText(shellPreview, "Opacity and material blending remain independent.", 11, "muted")
+    local subtitle = O.CreateText(shellPreview, L["Opacity and material blending remain independent."], 11, "muted")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -7)
     subtitle:SetPoint("RIGHT", -16, 0)
 
@@ -123,19 +101,22 @@ O.RegisterPage("looks", NS.L.LOOKS, function(page)
     card:SetPoint("TOPLEFT", 12, -12)
     card:SetPoint("TOPRIGHT", -12, -12)
     card:SetHeight(58)
-    local cardText = O.CreateText(card, "Panel and card layer", 12, "text")
+    local cardText = O.CreateText(card, L["Panel and card layer"], 12, "text")
     cardText:SetPoint("LEFT", 12, 0)
 
-    local primary = O.CreateButton(panelPreview, "Primary", 72, 28, nil, "buttonPrimary")
+    local primary = O.CreateButton(panelPreview, L["Primary"], 72, 28, nil, "buttonPrimary")
     primary:SetPoint("BOTTOMLEFT", 12, 12)
-    local secondary = O.CreateButton(panelPreview, "Secondary", 80, 28)
+    local secondary = O.CreateButton(panelPreview, L["Secondary"], 80, 28)
     secondary:SetPoint("LEFT", primary, "RIGHT", 8, 0)
+    return shellPreview
+end
 
-    local note = O.CreatePanel(preview, "status")
+local function BuildLookNote(page, shellPreview)
+    local note = O.CreatePanel(page, "status")
     note:SetPoint("TOPLEFT", shellPreview, "BOTTOMLEFT", 0, -12)
     note:SetPoint("TOPRIGHT", shellPreview, "BOTTOMRIGHT", 0, -12)
     note:SetHeight(94)
-    local noteTitle = O.CreateText(note, "CURRENT LOOK", 11, "accent")
+    local noteTitle = O.CreateText(note, L["CURRENT LOOK"], 11, "accent")
     noteTitle:SetPoint("TOPLEFT", 14, -14)
     local noteText = O.CreateText(note, "", 11, "text")
     noteText:SetPoint("TOPLEFT", noteTitle, "BOTTOMLEFT", 0, -8)
@@ -146,35 +127,17 @@ O.RegisterPage("looks", NS.L.LOOKS, function(page)
 
     local function RefreshLookNote()
         local selected = NS.LookPresets[NS.DB.theme.look] or NS.LookPresets.custom
-        noteTitle:SetText("CURRENT LOOK / " .. string.upper(selected.label or "Custom"))
+        noteTitle:SetText(L["CURRENT LOOK / %s"]:format(string.upper(selected.label or L["Custom"])))
         noteText:SetText(selected.description
-            or "Your current hand-tuned combination of palette, material and geometry.")
+            or L["Your current hand-tuned combination of palette, material and geometry."])
     end
     O.TrackRefresh(RefreshLookNote)
     RefreshLookNote()
+end
 
-    local rows = {
-        { look, true }, { gradient, false }, { direction, false }, { strength, false }, { depth, false },
-        { iconSettings, true }, { shell, true }, { panels, true }, { controls, true }, { borders, false },
-    }
-    local function RefreshMode()
-        local guided = O.GetMode() == "guided"
-        local previous
-        local contentHeight = 4
-        for index = 1, #rows do
-            local row, essential = rows[index][1], rows[index][2]
-            local show = not guided or essential
-            row:ClearAllPoints()
-            row:SetShown(show)
-            if show then
-                if previous then row:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -8)
-                else row:SetPoint("TOPLEFT", 0, -2) end
-                contentHeight = contentHeight + row:GetHeight() + (previous and 8 or 0)
-                previous = row
-            end
-        end
-        controlsList:SetHeight(math.max(1, contentHeight + 4))
-    end
-    O.TrackMode(RefreshMode)
-    RefreshMode()
+O.RegisterPage("looks", NS.L.LOOKS, function(page)
+    O.CreateSectionTitle(page, L["Style"],
+        L["Choose Midnight Blue, Midnight Dark or MSUF Forever for Skinning and enabled Suite modules. Modules enabled later inherit it."])
+    BuildControls(page)
+    BuildLookNote(page, BuildPreview(page))
 end)

@@ -8,7 +8,7 @@ local M = MM.M
 local owner, mode
 local waitingForItems = false
 local Changed
-local events = {"UPDATE_INSTANCE_INFO", "WEEKLY_REWARDS_UPDATE", "GET_ITEM_INFO_RECEIVED"}
+local events = { "UPDATE_INSTANCE_INFO", "WEEKLY_REWARDS_UPDATE", "GET_ITEM_INFO_RECEIVED" }
 
 local function Number(value)
     return S.Public(value) and type(value) == "number" and value == value and value >= 0 and value < math.huge
@@ -45,21 +45,29 @@ function S.HideMinimapInfoTooltip(button)
     if M.context then for _, event in ipairs(events) do MM.Unlisten(event, "tooltip") end end
     if previous and Owned(previous) then GameTooltip:Hide() end
 end
+
 MM.HideInfoTooltip = S.HideMinimapInfoTooltip
 
 local function ResetText(seconds, extended)
     if not Number(seconds) then return "--" end
     local text
-    if seconds <= 0 then text = S.Text("Expired")
-    elseif type(SecondsToTime) == "function" then text = SecondsToTime(seconds, true, nil, 2)
-    else text = math.ceil(seconds / 60) .. " " .. S.Text("minutes") end
+    if seconds <= 0 then
+        text = S.Text("Expired")
+    elseif type(SecondsToTime) == "function" then
+        text = SecondsToTime(seconds, true, nil, 2)
+    else
+        text = math.ceil(seconds / 60) .. " " .. S.Text("minutes")
+    end
     return extended and text .. " (" .. S.Text("Extended") .. ")" or text
 end
 
 local function Lockouts(tooltip)
     local c, shown, omitted = M.config, 0, 0
     local count = GetNumSavedInstances()
-    if not Number(count) then tooltip:AddLine(S.Text("Instance information unavailable.")); return end
+    if not Number(count) then
+        tooltip:AddLine(S.Text("Instance information unavailable."))
+        return
+    end
     for index = 1, math.min(math.floor(count), 200) do
         local name, _, reset, _, locked, extended, _, raid, _, difficulty, bosses, defeated = GetSavedInstanceInfo(index)
         if Text(name) and S.Public(locked) and S.Public(extended) and S.Public(raid)
@@ -73,7 +81,9 @@ local function Lockouts(tooltip)
                 end
                 tooltip:AddDoubleLine(label, ResetText(reset, extended), 1, 1, 1, .75, .8, .9)
                 shown = shown + 1
-            else omitted = omitted + 1 end
+            else
+                omitted = omitted + 1
+            end
         end
     end
     if c.tooltipWorldBosses and type(GetNumSavedWorldBosses) == "function" and type(GetSavedWorldBossInfo) == "function" then
@@ -83,20 +93,28 @@ local function Lockouts(tooltip)
                 local name, _, reset = GetSavedWorldBossInfo(index)
                 if Text(name) then
                     if shown < c.tooltipRows then
-                        tooltip:AddDoubleLine(name .. " (" .. S.Text("World boss") .. ")", ResetText(reset), 1, 1, 1, .75, .8, .9)
+                        tooltip:AddDoubleLine(name .. " (" .. S.Text("World boss") .. ")", ResetText(reset), 1, 1, 1, .75,
+                            .8, .9)
                         shown = shown + 1
-                    else omitted = omitted + 1 end
+                    else
+                        omitted = omitted + 1
+                    end
                 end
             end
         end
     end
     if shown == 0 then tooltip:AddLine(S.Text("No matching instance lockouts."), .75, .8, .9) end
-    if omitted > 0 then tooltip:AddLine(string.format(S.Text("%d more entries; increase the row limit to show them."), omitted), .75, .8, .9, true) end
+    if omitted > 0 then
+        tooltip:AddLine(
+            string.format(S.Text("%d more entries; increase the row limit to show them."), omitted), .75, .8, .9, true)
+    end
 end
 
 local function RewardLevel(activity)
     if not M.config.tooltipRewardLevels or not Number(activity.id)
-        or type(C_WeeklyRewards.GetExampleRewardItemHyperlinks) ~= "function" then return nil end
+        or type(C_WeeklyRewards.GetExampleRewardItemHyperlinks) ~= "function" then
+        return nil
+    end
     local reader = C_Item and C_Item.GetDetailedItemLevelInfo or GetDetailedItemLevelInfo
     if type(reader) ~= "function" then return nil end
     local link = C_WeeklyRewards.GetExampleRewardItemHyperlinks(activity.id)
@@ -123,11 +141,16 @@ local function ActivityLevel(activity)
     elseif activity.type == types.RankedPvP then
         local name = PVPUtil and type(PVPUtil.GetTierName) == "function" and PVPUtil.GetTierName(level)
         return Text(name) or S.Text("Tier") .. " " .. math.floor(level)
-    elseif activity.type == types.World then return S.Text("Tier") .. " " .. math.floor(level) end
+    elseif activity.type == types.World then
+        return S.Text("Tier") .. " " .. math.floor(level)
+    end
     if Number(activity.activityTierID) and type(C_WeeklyRewards.GetDifficultyIDForActivityTier) == "function" then
         local difficulty = C_WeeklyRewards.GetDifficultyIDForActivityTier(activity.activityTierID)
         local heroic = DifficultyUtil and DifficultyUtil.ID and DifficultyUtil.ID.DungeonHeroic
-        if Number(difficulty) and Number(heroic) and difficulty == heroic then return MM.Label("PLAYER_DIFFICULTY2", "Heroic") end
+        if Number(difficulty) and Number(heroic) and difficulty == heroic then
+            return MM.Label("PLAYER_DIFFICULTY2",
+                "Heroic")
+        end
     end
     return S.Text("Keystone level") .. " " .. math.floor(level)
 end
@@ -140,7 +163,8 @@ local function Vault(tooltip)
     end
     local activities = C_WeeklyRewards.GetActivities()
     if not S.Public(activities) or type(activities) ~= "table" then
-        tooltip:AddLine(S.Text("Weekly reward information unavailable.")); return
+        tooltip:AddLine(S.Text("Weekly reward information unavailable."))
+        return
     end
     local shown = 0
     for index = 1, math.min(#activities, 36) do
@@ -150,7 +174,8 @@ local function Vault(tooltip)
             local category = ActivityLabel(activity.type)
             if category then
                 local complete = activity.progress >= activity.threshold
-                local progress = math.floor(math.min(activity.progress, activity.threshold)) .. "/" .. math.floor(activity.threshold)
+                local progress = math.floor(math.min(activity.progress, activity.threshold)) ..
+                    "/" .. math.floor(activity.threshold)
                 local label = category .. " " .. math.floor(activity.index)
                 if complete and Number(activity.level) and activity.level > 0 then
                     label = label .. " - " .. ActivityLevel(activity)
@@ -169,15 +194,22 @@ end
 
 local function Draw()
     if not owner or not M.active or not S.IsMinimapInfoVisible() or NS.Safety.IsForbidden(owner) or not owner:IsVisible() or not Owned(owner) then
-        S.HideMinimapInfoTooltip(); return
+        S.HideMinimapInfoTooltip()
+        return
     end
     GameTooltip:ClearLines()
     GameTooltip:SetText(S.Text(mode == 2 and "Instance lockouts" or "Great Vault"))
     if S.CanShowMinimapTooltip(mode) then
         if mode == 2 then Lockouts(GameTooltip) else Vault(GameTooltip) end
-    else waitingForItems = false; GameTooltip:AddLine(S.Text("Unavailable on this client."), .85, .7, .45) end
-    if mode == 3 and waitingForItems then MM.Listen("GET_ITEM_INFO_RECEIVED", "tooltip", Changed)
-    else MM.Unlisten("GET_ITEM_INFO_RECEIVED", "tooltip") end
+    else
+        waitingForItems = false
+        GameTooltip:AddLine(S.Text("Unavailable on this client."), .85, .7, .45)
+    end
+    if mode == 3 and waitingForItems then
+        MM.Listen("GET_ITEM_INFO_RECEIVED", "tooltip", Changed)
+    else
+        MM.Unlisten("GET_ITEM_INFO_RECEIVED", "tooltip")
+    end
     GameTooltip:Show()
 end
 
@@ -199,7 +231,10 @@ function S.ShowMinimapInfoTooltip(button)
     if not M.active or not S.IsMinimapInfoVisible() then return true end
     local key = button.infoKey
     local selected = (key == "Clock" or key == "FPS" or key == "Latency") and M.config["info" .. key .. "Tooltip"] or 1
-    if selected == 1 then owner, mode = button, 1; return false end
+    if selected == 1 then
+        owner, mode = button, 1
+        return false
+    end
     if selected == 4 then return true end
     if not M.active or not GameTooltip or NS.Safety.IsForbidden(GameTooltip) then return true end
     owner, mode = button, selected

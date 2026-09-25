@@ -51,9 +51,9 @@ end
 assert(toc:find("## Title: MSUF Suite - Cooldown manager\n",1,true),"TOC title")
 assert(toc:find("## Dependencies: MSUF_Suite, MSUF_Suite_Modules\n",1,true),"TOC dependencies")
 assert(toc:find("## LoadOnDemand: 1\n",1,true),"runtime must load on demand")
-local HEADER="local _,P=...\nlocal NS,S=P.NS,P.Suite\nlocal C=P.CDM\n"
+local HEADER="local _, P = ...\nlocal NS, S = P.NS, P.Suite\nlocal C = P.CDM\n"
 -- Presets.lua is plain data plus one class lookup: it needs only the CDM table.
-local DATA_HEADER="local _,P=...\nlocal C=P.CDM\n"
+local DATA_HEADER="local _, P = ...\nlocal C = P.CDM\n"
 for _,file in ipairs(ORDER) do
     local text=Read(root.."/"..ADDON.."/"..file)
     if file=="Presets.lua" or file=="GuideProfiles.lua" then assert(text:sub(1,#DATA_HEADER)==DATA_HEADER,file.." header")

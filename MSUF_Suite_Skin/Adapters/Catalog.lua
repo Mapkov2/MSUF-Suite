@@ -2097,6 +2097,14 @@ local function EntryRootSignature(entry)
         and table.concat(entry.frames, "\31") or ""
 end
 
+local function Hash(text, seed, multiplier, modulus)
+    local value = seed
+    for index = 1, #text do
+        value = (value * multiplier + text:byte(index)) % modulus
+    end
+    return value
+end
+
 local function CatalogFingerprint(catalogEntries)
     local parts = { tostring(#catalogEntries) }
     for index = 1, #catalogEntries do
@@ -2110,29 +2118,14 @@ local function CatalogFingerprint(catalogEntries)
         }, "\30")
     end
     local text = table.concat(parts, "\29")
-    local function Hash(seed, multiplier, modulus)
-        local value = seed
-        for index = 1, #text do
-            value = (value * multiplier + text:byte(index)) % modulus
-        end
-        return value
-    end
     return ("%08x-%08x"):format(
-        Hash(216613626, 131, 2147483647),
-        Hash(16777619, 137, 2147483629))
+        Hash(text, 216613626, 131, 2147483647),
+        Hash(text, 16777619, 137, 2147483629))
 end
 
 local reviewedFingerprint = CatalogFingerprint(entries)
 local catalogSnapshotValid = reviewedFingerprint == REVIEWED_CATALOG_FINGERPRINT
     and #entries == REVIEWED_CATALOG_ENTRIES
-
-local catalogEntrySet = {}
-local reviewedEntrySignatures = {}
-for entryIndex = 1, #entries do
-    local entry = entries[entryIndex]
-    catalogEntrySet[entry] = true
-    reviewedEntrySignatures[entry] = EntryRootSignature(entry)
-end
 
 local glassByFrame = {}
 local glassCounts = {
@@ -2158,9 +2151,8 @@ local function AddGlassError(entry, frameName, reason)
 end
 
 local function ModeForFrame(entry, frameName)
-    local mode = type(entry.frameModes) == "table" and entry.frameModes[frameName]
+    return type(entry.frameModes) == "table" and entry.frameModes[frameName]
         or entry.mode
-    return mode
 end
 
 local function ResolveReviewedKind(entry, frameName)
@@ -2196,6 +2188,22 @@ local function ModeMatchesKind(entry, frameName, kind)
     return false
 end
 
+local kindReasons = {
+    ["generic-shell"] = "reviewed-catalog-glass-shell",
+    dedicated = "dedicated-clean-room-adapter",
+    ["semantic-chrome"] = "semantic-art-edge-only",
+    ["semantic-content"] = "native-semantic-content",
+    ["semantic-hud"] = "native-secure-or-semantic-hud",
+}
+
+local kindCounters = {
+    ["generic-shell"] = "genericShell",
+    dedicated = "dedicated",
+    ["semantic-content"] = "semanticContent",
+    ["semantic-chrome"] = "semanticChrome",
+    ["semantic-hud"] = "semanticHUD",
+}
+
 local function ResolveGlassContract(entry, frameName)
     local kind = ResolveReviewedKind(entry, frameName)
     if not kind then return nil, "root-classification-missing" end
@@ -2216,12 +2224,32 @@ local function ResolveGlassContract(entry, frameName)
         kind = kind,
         owner = owner,
         support = support,
-        reason = kind == "generic-shell" and "reviewed-catalog-glass-shell"
-            or kind == "dedicated" and "dedicated-clean-room-adapter"
-            or kind == "semantic-chrome" and "semantic-art-edge-only"
-            or kind == "semantic-content" and "native-semantic-content"
-            or "native-secure-or-semantic-hud",
+        reason = kindReasons[kind],
     }
+end
+
+local function ClassifyFrame(entry, frameName)
+    if type(frameName) ~= "string" or frameName == "" then
+        AddGlassError(entry, frameName, "frame-invalid")
+        return false
+    end
+    if glassByFrame[frameName] then
+        AddGlassError(entry, frameName, "frame-duplicate")
+        return false
+    end
+    local contract, reason = ResolveGlassContract(entry, frameName)
+    if not contract then
+        AddGlassError(entry, frameName, reason or "contract-missing")
+        return false
+    end
+    contract.id = entry.id
+    contract.frame = frameName
+    glassByFrame[frameName] = contract
+    glassCounts.total = glassCounts.total + 1
+    local counter = kindCounters[contract.kind]
+    glassCounts[counter] = glassCounts[counter] + 1
+    glassCounts[contract.support] = glassCounts[contract.support] + 1
+    return true
 end
 
 if not catalogSnapshotValid then
@@ -2236,37 +2264,7 @@ for entryIndex = 1, #entries do
         AddGlassError(entry, nil, "entry-invalid")
     else
         for frameIndex = 1, #entry.frames do
-            local frameName = entry.frames[frameIndex]
-            if type(frameName) ~= "string" or frameName == "" then
-                ready = false
-                AddGlassError(entry, frameName, "frame-invalid")
-            elseif glassByFrame[frameName] then
-                ready = false
-                AddGlassError(entry, frameName, "frame-duplicate")
-            else
-                local contract, reason = ResolveGlassContract(entry, frameName)
-                if not contract then
-                    ready = false
-                    AddGlassError(entry, frameName, reason or "contract-missing")
-                else
-                    contract.id = entry.id
-                    contract.frame = frameName
-                    glassByFrame[frameName] = contract
-                    glassCounts.total = glassCounts.total + 1
-                    if contract.kind == "generic-shell" then
-                        glassCounts.genericShell = glassCounts.genericShell + 1
-                    elseif contract.kind == "dedicated" then
-                        glassCounts.dedicated = glassCounts.dedicated + 1
-                    elseif contract.kind == "semantic-content" then
-                        glassCounts.semanticContent = glassCounts.semanticContent + 1
-                    elseif contract.kind == "semantic-chrome" then
-                        glassCounts.semanticChrome = glassCounts.semanticChrome + 1
-                    elseif contract.kind == "semantic-hud" then
-                        glassCounts.semanticHUD = glassCounts.semanticHUD + 1
-                    end
-                    glassCounts[contract.support] = glassCounts[contract.support] + 1
-                end
-            end
+            ready = ClassifyFrame(entry, entry.frames[frameIndex]) and ready
         end
     end
     glassReadyByEntry[entry] = ready
@@ -2324,12 +2322,30 @@ for index = 1, #sourceExclusions do
     exclusionSeen[item.frame] = true
 end
 
+if #flattened ~= REVIEWED_CATALOG_ROOTS then
+    AddGlassError(nil, nil, "catalog-root-count:" .. #flattened)
+end
+if glassCounts.total ~= #flattened then
+    AddGlassError(nil, nil, "catalog-glass-coverage:" .. glassCounts.total .. "/" .. #flattened)
+end
+
+-- The catalog is static after load, so the contract is validated exactly
+-- once here. Any failure keeps every entry closed and is listed, with its
+-- reason, by Catalog.GetGlassErrors().
+local glassContractValid = #glassErrors == 0
+local validatedEntries = {}
+if glassContractValid then
+    for entry, ready in pairs(glassReadyByEntry) do
+        validatedEntries[entry] = ready
+    end
+end
+
 local Catalog = {
     entries = entries,
     frames = flattened,
     byFrame = byFrame,
     glass = {
-        valid = #glassErrors == 0,
+        valid = glassContractValid,
         byFrame = glassByFrame,
         counts = glassCounts,
         errors = glassErrors,
@@ -2384,22 +2400,16 @@ function Catalog.GetGlassErrors()
 end
 
 function Catalog.IsGlassContractValid()
-    return #glassErrors == 0
-        and CatalogFingerprint(entries) == REVIEWED_CATALOG_FINGERPRINT
-        and #entries == REVIEWED_CATALOG_ENTRIES
-        and #flattened == REVIEWED_CATALOG_ROOTS
-        and glassCounts.total == #flattened
+    return glassContractValid
 end
 
+-- True for a catalog entry whose roots all passed review while the whole
+-- contract is valid.
 function Catalog.ValidateGlassEntry(entry)
-    return Catalog.IsGlassContractValid()
-        and catalogEntrySet[entry] == true
-        and reviewedEntrySignatures[entry] == EntryRootSignature(entry)
-        and glassReadyByEntry[entry] == true
+    return validatedEntries[entry] == true
 end
 
+-- True for a catalog entry whose roots all passed review.
 function Catalog.IsEntryGlassReady(entry)
-    return type(entry) == "table" and catalogEntrySet[entry] == true
-        and reviewedEntrySignatures[entry] == EntryRootSignature(entry)
-        and glassReadyByEntry[entry] == true
+    return glassReadyByEntry[entry] == true
 end

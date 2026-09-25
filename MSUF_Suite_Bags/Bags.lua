@@ -7,7 +7,9 @@ local function PublicMoney()
     if type(_G.GetMoney) ~= "function" then return nil end
     local ok, value = pcall(GetMoney)
     if not ok or not S.Public(value) or type(value) ~= "number" or value < 0
-        or value ~= value or value == math.huge then return nil end
+        or value ~= value or value == math.huge then
+        return nil
+    end
     return math.floor(value)
 end
 
@@ -93,8 +95,19 @@ local function NewWindowStyle(frame, combined)
     right:SetPoint("TOPRIGHT", shell, "TOPRIGHT", 0, 0)
     right:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", 0, 0)
     right:SetWidth(1)
-    return { shell = shell, shadow, body, header, line, footer, top, bottom, left, right,
-        goldLabel = goldLabel }
+    return {
+        shell = shell,
+        shadow,
+        body,
+        header,
+        line,
+        footer,
+        top,
+        bottom,
+        left,
+        right,
+        goldLabel = goldLabel
+    }
 end
 
 local function NewDragHandle(frame)
@@ -108,7 +121,10 @@ local function NewDragHandle(frame)
     handle:RegisterForDrag("LeftButton")
     handle:SetScript("OnMouseDown", function(self) self.ignoreClick = false end)
     handle:SetScript("OnClick", function(self, button)
-        if self.ignoreClick then self.ignoreClick = false; return end
+        if self.ignoreClick then
+            self.ignoreClick = false
+            return
+        end
         if button ~= "LeftButton" or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown()) then return end
         local menu = frame.PortraitButton
         if menu and type(menu.IsMenuOpen) == "function" and type(menu.SetMenuOpen) == "function" then
@@ -189,7 +205,10 @@ function M:UpdateGold()
     local style = self.windows and self.frame and self.windows[self.frame]
     local label = style and style.goldLabel
     if not label then return end
-    if not self.config.showSessionGold then label:Hide(); return end
+    if not self.config.showSessionGold then
+        label:Hide()
+        return
+    end
     local money = PublicMoney()
     local key
     if type(_G.UnitGUID) == "function" then
@@ -218,9 +237,13 @@ function M:UpdateGold()
     else
         local delta = money - baseline
         label:SetText(GoldDeltaText(delta))
-        if delta > 0 then label:SetTextColor(0.33, 0.86, 0.62)
-        elseif delta < 0 then label:SetTextColor(0.94, 0.43, 0.45)
-        else label:SetTextColor(0.72, 0.77, 0.82) end
+        if delta > 0 then
+            label:SetTextColor(0.33, 0.86, 0.62)
+        elseif delta < 0 then
+            label:SetTextColor(0.94, 0.43, 0.45)
+        else
+            label:SetTextColor(0.72, 0.77, 0.82)
+        end
     end
     label:Show()
 end
@@ -246,25 +269,37 @@ end
 -- works at any UI scale, including Blizzard's automatic bag scale.
 local function WindowOffset(frame)
     if type(frame.GetScaledRect) ~= "function" or type(frame.GetEffectiveScale) ~= "function"
-        or type(UIParent.GetScaledRect) ~= "function" then return nil end
+        or type(UIParent.GetScaledRect) ~= "function" then
+        return nil
+    end
     local left, bottom, width = frame:GetScaledRect()
     local parentLeft, parentBottom, parentWidth = UIParent:GetScaledRect()
     local scale = frame:GetEffectiveScale()
     if not Finite(left) or not Finite(bottom) or not Finite(width)
         or not Finite(parentLeft) or not Finite(parentBottom) or not Finite(parentWidth)
-        or not Finite(scale) or scale <= 0 then return nil end
+        or not Finite(scale) or scale <= 0 then
+        return nil
+    end
     return (left + width - parentLeft - parentWidth) / scale,
         (bottom - parentBottom) / scale, scale
 end
 
 function M:BeginWindowDrag(frame)
     if not self.active or NS.IsCombatLocked() or S.editMode or not frame:IsShown()
-        or type(_G.GetCursorPosition) ~= "function" or self.dragWindow then return end
+        or type(_G.GetCursorPosition) ~= "function" or self.dragWindow then
+        return
+    end
     local x, y, scale = WindowOffset(frame)
     local cursorX, cursorY = GetCursorPosition()
     if not x or not Finite(cursorX) or not Finite(cursorY) then return end
-    self.dragWindow = { frame = frame, x = x, y = y, scale = scale,
-        cursorX = cursorX, cursorY = cursorY }
+    self.dragWindow = {
+        frame = frame,
+        x = x,
+        y = y,
+        scale = scale,
+        cursorX = cursorX,
+        cursorY = cursorY
+    }
     local ok = pcall(frame.StartMoving, frame)
     if not ok then self.dragWindow = nil end
 end
@@ -284,7 +319,10 @@ function M:EndWindowDrag(frame)
     pcall(frame.StopMovingOrSizing, frame)
     if not self.active or NS.IsCombatLocked() then return end
     local cursorX, cursorY = GetCursorPosition()
-    if not Finite(cursorX) or not Finite(cursorY) then self:RefreshWindowLayout(); return end
+    if not Finite(cursorX) or not Finite(cursorY) then
+        self:RefreshWindowLayout()
+        return
+    end
     local x = math.floor((drag.x + (cursorX - drag.cursorX) / drag.scale) * 10 + 0.5) / 10
     local y = math.floor((drag.y + (cursorY - drag.cursorY) / drag.scale) * 10 + 0.5) / 10
     local values
@@ -342,7 +380,9 @@ end
 function M:RefreshWindowLayout()
     local reagent = _G.ContainerFrame6
     if NS.IsCombatLocked() or not ((self.frame and self.frame:IsShown())
-        or (reagent and reagent:IsShown())) then return end
+            or (reagent and reagent:IsShown())) then
+        return
+    end
     if type(_G.UpdateContainerFrameAnchors) == "function" then
         UpdateContainerFrameAnchors()
         if not self.nativeAnchorHooked then AfterNativeWindowLayout() end
@@ -376,10 +416,17 @@ end
 
 local function StyleSlot(self, button)
     local record = self.overlays[button]
-    if not record then record = {}; self.overlays[button] = record end
+    if not record then
+        record = {}
+        self.overlays[button] = record
+    end
     local activating = not record.slotNativeActive
     if not record.slotOuter or activating then
-        if NS.IsCombatLocked() then self.needsItemRefresh = true; S.Queue("bags"); return end
+        if NS.IsCombatLocked() then
+            self.needsItemRefresh = true
+            S.Queue("bags")
+            return
+        end
         if not record.slotOuter then
             local outer = WindowTexture(button, "BACKGROUND", -5)
             outer:SetAllPoints(button)
@@ -415,7 +462,11 @@ end
 local function EnsureLabel(self, button)
     local record = self.overlays[button]
     if record and record.label then return record end
-    if NS.IsCombatLocked() then self.needsItemRefresh = true; S.Queue("bags"); return nil end
+    if NS.IsCombatLocked() then
+        self.needsItemRefresh = true
+        S.Queue("bags")
+        return nil
+    end
     record = record or {}
     local label = S.CreateFontString(button, nil, "OVERLAY")
     label:SetDrawLayer("OVERLAY", 7)
@@ -443,17 +494,32 @@ local function Paint(self, button, pending)
     if not S.Public(bag) or not S.Public(slot) then return end
     local info = C_Container.GetContainerItemInfo(bag, slot)
     local record = self.overlays[button]
-    if not self.config.showItemLevel or not info or not S.Public(info) then Hide(record); return end
-    if S.Public(info.isFiltered) and info.isFiltered then Hide(record); return end
+    if not self.config.showItemLevel or not info or not S.Public(info) then
+        Hide(record)
+        return
+    end
+    if S.Public(info.isFiltered) and info.isFiltered then
+        Hide(record)
+        return
+    end
     local link, itemID, quality = info.hyperlink, info.itemID, info.quality
-    if not link or not S.Public(link) or not S.Public(itemID) or not S.Public(quality) then Hide(record); return end
-    if not record then record = {}; self.overlays[button] = record end
+    if not link or not S.Public(link) or not S.Public(itemID) or not S.Public(quality) then
+        Hide(record)
+        return
+    end
+    if not record then
+        record = {}
+        self.overlays[button] = record
+    end
     if record.link ~= link then
         record.link, record.level, record.gear = link, nil, nil
     end
     if record.gear == nil then
         local equippable = C_Item.IsEquippableItem(link)
-        if not S.Public(equippable) then Hide(record); return end
+        if not S.Public(equippable) then
+            Hide(record)
+            return
+        end
         record.gear = equippable == true
     end
     if not record.gear then
@@ -483,7 +549,10 @@ local function Paint(self, button, pending)
             end
         end
     end
-    if not record.level then record.label:Hide(); return end
+    if not record.level then
+        record.label:Hide()
+        return
+    end
     if record.quality ~= quality then
         local r, g, b = 1, 1, 1
         if self.config.qualityColor and type(quality) == "number" and type(GetItemQualityColor) == "function" then
@@ -593,8 +662,11 @@ function M:Enable()
     self.context:Event("USE_COMBINED_BAGS_CHANGED", function(module)
         local mode = GetCVar("combinedBags")
         if S.Public(mode) and mode == "0" then
-            if NS.IsCombatLocked() then S.Queue("bags")
-            else module.context:CVar("combinedBags", 1) end
+            if NS.IsCombatLocked() then
+                S.Queue("bags")
+            else
+                module.context:CVar("combinedBags", 1)
+            end
         end
     end, true)
     self.context:Event("PLAYER_REGEN_ENABLED", function(module)
@@ -695,27 +767,39 @@ end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("bags", "combined", {
-        label = "Combined bags", order = 875,
+        label = "Combined bags",
+        order = 875,
         getFrame = function() return self.frame end,
         isEnabled = function() return self.frame and self.frame:IsShown() end,
-        xKey = "windowX", yKey = "windowY", point = "BOTTOMRIGHT",
-        moveValues = { windowMoved = true }, resetKeys = { "windowMoved" },
+        xKey = "windowX",
+        yKey = "windowY",
+        point = "BOTTOMRIGHT",
+        moveValues = { windowMoved = true },
+        resetKeys = { "windowMoved" },
         historyKeys = { "windowMoved", "windowScale" },
         extraControls = {
             {
-                id = "size", label = "Size %", kind = "number",
-                min = 65, max = 150, step = 1,
+                id = "size",
+                label = "Size %",
+                kind = "number",
+                min = 65,
+                max = 150,
+                step = 1,
                 get = function() return math.floor(S.Config("bags").windowScale * 100 + 0.5) end,
                 set = function(value) return S.Set("bags", "windowScale", value / 100) end,
             },
         },
     })
     S.RegisterOwnedMover("bags", "reagent", {
-        label = "Reagent bag", order = 876,
+        label = "Reagent bag",
+        order = 876,
         getFrame = function() return _G.ContainerFrame6 end,
         isEnabled = function() return _G.ContainerFrame6 and _G.ContainerFrame6:IsShown() end,
-        xKey = "reagentWindowX", yKey = "reagentWindowY", point = "BOTTOMRIGHT",
-        moveValues = { reagentWindowMoved = true }, resetKeys = { "reagentWindowMoved" },
+        xKey = "reagentWindowX",
+        yKey = "reagentWindowY",
+        point = "BOTTOMRIGHT",
+        moveValues = { reagentWindowMoved = true },
+        resetKeys = { "reagentWindowMoved" },
         historyKeys = { "reagentWindowMoved" },
     })
 end

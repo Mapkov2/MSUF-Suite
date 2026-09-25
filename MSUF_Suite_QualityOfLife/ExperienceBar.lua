@@ -9,12 +9,33 @@ local MSUF_FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Ex
 -- Match the authored Blue, Dark and Forever palettes used by the Suite's MSUF chat
 -- looks. The XP and rested fills stay visually distinct within each palette.
 local LOOKS = {
-    { panel = "0a1220", track = "102033", border = "41627a", accent = "57c7df",
-      text = "f4f7fb", muted = "aab5c2", rested = "558bdd" },
-    { panel = "151719", track = "202326", border = "575b58", accent = "b9ab86",
-      text = "e9e9e4", muted = "b9bdb9", rested = "777d70" },
-    { panel = "14181b", track = "20272a", border = "9f8960", accent = "d8b66a",
-      text = "f4f3eb", muted = "d4dce2", rested = "668db8" },
+    {
+        panel = "0a1220",
+        track = "102033",
+        border = "41627a",
+        accent = "57c7df",
+        text = "f4f7fb",
+        muted = "aab5c2",
+        rested = "558bdd"
+    },
+    {
+        panel = "151719",
+        track = "202326",
+        border = "575b58",
+        accent = "b9ab86",
+        text = "e9e9e4",
+        muted = "b9bdb9",
+        rested = "777d70"
+    },
+    {
+        panel = "14181b",
+        track = "20272a",
+        border = "9f8960",
+        accent = "d8b66a",
+        text = "f4f3eb",
+        muted = "d4dce2",
+        rested = "668db8"
+    },
 }
 
 local function RGB(hex)
@@ -55,7 +76,9 @@ local function XP()
         return UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
     end)
     if not ok or not Number(level) or not Number(current) or not Number(maximum)
-        or level < 1 or current < 0 or maximum < 0 then return nil end
+        or level < 1 or current < 0 or maximum < 0 then
+        return nil
+    end
     return level, current, maximum
 end
 
@@ -108,15 +131,24 @@ local function Save(self)
     if not root or not key or not self.session then return end
     if type(root.suiteXP) ~= "table" then root.suiteXP = {} end
     root.suiteXP[key] = {
-        started = self.session.started, gained = self.session.gained,
-        lastLevel = self.session.lastLevel, lastXP = self.session.lastXP,
-        lastMax = self.session.lastMax, levelUps = self.session.levelUps,
+        started = self.session.started,
+        gained = self.session.gained,
+        lastLevel = self.session.lastLevel,
+        lastXP = self.session.lastXP,
+        lastMax = self.session.lastMax,
+        levelUps = self.session.levelUps,
     }
 end
 
 local function NewSession(level, current, maximum)
-    return { started = Clock(), gained = 0, levelUps = 0,
-        lastLevel = level, lastXP = current, lastMax = maximum }
+    return {
+        started = Clock(),
+        gained = 0,
+        levelUps = 0,
+        lastLevel = level,
+        lastXP = current,
+        lastMax = maximum
+    }
 end
 
 local function InitializeSession(self, level, current, maximum)
@@ -125,8 +157,12 @@ local function InitializeSession(self, level, current, maximum)
     local saved = root and key and type(root.suiteXP) == "table" and root.suiteXP[key]
     if NS.loginKind == "reload" and ValidSession(saved, level, now) then
         self.session = {
-            started = saved.started, gained = saved.gained, levelUps = saved.levelUps,
-            lastLevel = saved.lastLevel, lastXP = saved.lastXP, lastMax = saved.lastMax,
+            started = saved.started,
+            gained = saved.gained,
+            levelUps = saved.levelUps,
+            lastLevel = saved.lastLevel,
+            lastXP = saved.lastXP,
+            lastMax = saved.lastMax,
         }
     else
         self.session = NewSession(level, current, maximum)
@@ -139,8 +175,11 @@ local function Track(self, level, current, maximum)
     if not session then return end
     local delta = 0
     if level == session.lastLevel then
-        if current >= session.lastXP then delta = current - session.lastXP
-        else return end -- XP rolled over before PLAYER_LEVEL_UP; retain the old baseline.
+        if current >= session.lastXP then
+            delta = current - session.lastXP
+        else
+            return
+        end -- XP rolled over before PLAYER_LEVEL_UP; retain the old baseline.
     elseif level > session.lastLevel then
         if level == session.lastLevel + 1 then
             delta = math.max(0, session.lastMax - session.lastXP) + current
@@ -182,7 +221,8 @@ local function Tooltip(self)
             GameTooltip:AddDoubleLine("Session XP", "+" .. Exact(self.session.gained), 1, 1, 1, 1, 1, 1)
             GameTooltip:AddDoubleLine("Session time", Duration(elapsed), 1, 1, 1, 1, 1, 1)
             GameTooltip:AddDoubleLine("XP per hour", rate and Exact(rate) or "--", 1, 1, 1, 1, 1, 1)
-            GameTooltip:AddDoubleLine("Time to level", rate and rate > 0 and Duration(remaining * 3600 / rate) or "--", 1, 1, 1, 1, 1, 1)
+            GameTooltip:AddDoubleLine("Time to level", rate and rate > 0 and Duration(remaining * 3600 / rate) or "--", 1,
+                1, 1, 1, 1, 1)
             GameTooltip:AddDoubleLine("Levels this session", tostring(self.session.levelUps), 1, 1, 1, 1, 1, 1)
         end
     else
@@ -240,7 +280,8 @@ local function Create(self)
     local detailRule = host:CreateTexture(nil, "OVERLAY", nil, 1)
     detailRule:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -2)
     detailRule:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, -2)
-    self.host, self.bar, self.fill, self.rested, self.restedMarker, self.segments = host, bar, fill, rested, restedMarker, segments
+    self.host, self.bar, self.fill, self.rested, self.restedMarker, self.segments = host, bar, fill, rested, restedMarker,
+        segments
     self.levelText, self.percentText, self.details = levelText, percentText, details
     self.panel, self.background, self.edges, self.detailRule = panel, background, edges, detailRule
 end
@@ -282,7 +323,9 @@ local function KeepRateCurrent(self)
     if self.rateTimer or not self.active or not self.host or not self.host:IsShown()
         or not self.session or self.session.gained <= 0
         or not (self.config.showRate or self.config.showETA)
-        or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return end
+        or not C_Timer or type(C_Timer.NewTimer) ~= "function" then
+        return
+    end
     local timer
     timer = C_Timer.NewTimer(60, function()
         if self.rateTimer ~= timer then return end
@@ -319,8 +362,13 @@ Render = function(self)
     self.details:SetWidth(c.width)
     local level, current, maximum = XP()
     if not level then
-        if self.rateTimer then self.rateTimer:Cancel(); self.rateTimer = nil end
-        self.fill:Hide(); self.rested:Hide(); self.restedMarker:Hide()
+        if self.rateTimer then
+            self.rateTimer:Cancel()
+            self.rateTimer = nil
+        end
+        self.fill:Hide()
+        self.rested:Hide()
+        self.restedMarker:Hide()
         self.levelText:SetText("XP unavailable")
         self.percentText:SetText("")
         self.details:SetText("Experience data is currently unavailable")
@@ -333,10 +381,18 @@ Render = function(self)
         capped = ok and S.Public(result) and result == true or false
     end
     host:SetShown(S.editMode or not (c.hideAtMax and capped))
-    if not host:IsShown() and self.rateTimer then self.rateTimer:Cancel(); self.rateTimer = nil end
+    if not host:IsShown() and self.rateTimer then
+        self.rateTimer:Cancel()
+        self.rateTimer = nil
+    end
     if maximum <= 0 then
-        if self.rateTimer then self.rateTimer:Cancel(); self.rateTimer = nil end
-        self.fill:Hide(); self.rested:Hide(); self.restedMarker:Hide()
+        if self.rateTimer then
+            self.rateTimer:Cancel()
+            self.rateTimer = nil
+        end
+        self.fill:Hide()
+        self.rested:Hide()
+        self.restedMarker:Hide()
         self.levelText:SetText("Level " .. level)
         self.percentText:SetText("Max level")
         self.details:SetText(S.editMode and "Experience bar preview" or "")
@@ -398,8 +454,11 @@ function M:Enable()
     if NS.loginKind then
         local level, current, maximum = XP()
         if level then
-            if self.session then Track(self, level, current, maximum)
-            else InitializeSession(self, level, current, maximum) end
+            if self.session then
+                Track(self, level, current, maximum)
+            else
+                InitializeSession(self, level, current, maximum)
+            end
         end
     end
     Render(self)
@@ -409,24 +468,45 @@ end
 function M:Refresh() Render(self) end
 
 function M:Disable()
-    if self.rateTimer then self.rateTimer:Cancel(); self.rateTimer = nil end
+    if self.rateTimer then
+        self.rateTimer:Cancel()
+        self.rateTimer = nil
+    end
     if self.host then self.host:Hide() end
     if GameTooltip and self.host and GameTooltip:IsOwned(self.host) then GameTooltip:Hide() end
 end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "experience", {
-        label = "Experience bar", order = 630, getFrame = function() return self.host end,
-        xKey = "x", yKey = "y", pointKey = "point",
+        label = "Experience bar",
+        order = 630,
+        getFrame = function() return self.host end,
+        xKey = "x",
+        yKey = "y",
+        pointKey = "point",
         point = function() return POINTS[self.config.point] or "BOTTOM" end,
         historyKeys = { "width", "height", "scale" },
         extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 220, max = 800, step = 1,
-              get = function() return S.Config(ID).width end,
-              set = function(value) return S.Set(ID, "width", value) end },
-            { id = "height", label = "Height", kind = "number", min = 8, max = 40, step = 1,
-              get = function() return S.Config(ID).height end,
-              set = function(value) return S.Set(ID, "height", value) end },
+            {
+                id = "width",
+                label = "Width",
+                kind = "number",
+                min = 220,
+                max = 800,
+                step = 1,
+                get = function() return S.Config(ID).width end,
+                set = function(value) return S.Set(ID, "width", value) end
+            },
+            {
+                id = "height",
+                label = "Height",
+                kind = "number",
+                min = 8,
+                max = 40,
+                step = 1,
+                get = function() return S.Config(ID).height end,
+                set = function(value) return S.Set(ID, "height", value) end
+            },
         },
     })
 end

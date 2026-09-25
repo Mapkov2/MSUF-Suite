@@ -51,6 +51,7 @@ function MM.Pixel()
     if Number(factor) and factor > 0 and Number(scale) and scale > 0 then return factor / scale end
     return 1
 end
+
 function MM.Snap(value, pixel)
     pixel = pixel or MM.Pixel()
     return math.floor(value / pixel + 0.5) * pixel
@@ -65,7 +66,9 @@ end
 MM.hovered = false
 local hoverListeners = {}
 function MM.OnHover(callback) hoverListeners[#hoverListeners + 1] = callback end
+
 function MM.Revealed() return MM.hovered or S.editMode == true end
+
 function MM.NotifyHover()
     local shown = MM.Revealed()
     for i = 1, #hoverListeners do hoverListeners[i](shown) end
@@ -83,12 +86,16 @@ local function Route(module, event, ...)
 end
 function MM.Listen(event, key, handler)
     local set = routes[event]
-    if not set then set = {}; routes[event] = set end
+    if not set then
+        set = {}
+        routes[event] = set
+    end
     local found
     for i = 1, #set do if set[i].key == key then found = set[i] end end
     if found then found.handler = handler else set[#set + 1] = { key = key, handler = handler } end
     M.context:Event(event, Route, true)
 end
+
 function MM.Unlisten(event, key)
     local set = routes[event]
     if not set then return end
@@ -97,10 +104,17 @@ function MM.Unlisten(event, key)
         if set[i].key == key then set[i].handler = nil end
         if set[i].handler then live = true end
     end
-    if not live then routes[event] = nil; M.context:RemoveEvent(event) end
+    if not live then
+        routes[event] = nil
+        M.context:RemoveEvent(event)
+    end
 end
+
 function MM.UnlistenAll()
-    for event in pairs(routes) do routes[event] = nil; M.context:RemoveEvent(event) end
+    for event in pairs(routes) do
+        routes[event] = nil
+        M.context:RemoveEvent(event)
+    end
 end
 
 -- Deferred work runs once per frame in a fixed order. Hooks only queue, so no
@@ -139,11 +153,19 @@ local function Moved(frame)
     MM.Queue("stale")
 end
 local function Record(frame)
-    local record = { parent = frame:GetParent(), scale = frame:GetScale(), strata = frame:GetFrameStrata(),
-        level = frame:GetFrameLevel(), points = {} }
+    local record = {
+        parent = frame:GetParent(),
+        scale = frame:GetScale(),
+        strata = frame:GetFrameStrata(),
+        level = frame:GetFrameLevel(),
+        points = {}
+    }
     for i = 1, frame:GetNumPoints() do
         local point, relative, relativePoint, x, y = frame:GetPoint(i)
-        if not (S.Public(point) and S.Public(relative) and Number(x) and Number(y)) then record.points = nil; break end
+        if not (S.Public(point) and S.Public(relative) and Number(x) and Number(y)) then
+            record.points = nil
+            break
+        end
         record.points[i] = { point, relative, relativePoint, x, y }
     end
     return record
@@ -186,7 +208,10 @@ MM.Defer = Defer
 function MM.Place(frame, parent, point, relative, relativePoint, x, y, scale, strata, level)
     if not Usable(frame) then return false end
     x, y = x or 0, y or 0
-    if NS.IsCombatLocked() and frame:IsProtected() then Defer(); return false end
+    if NS.IsCombatLocked() and frame:IsProtected() then
+        Defer()
+        return false
+    end
     local record = owned[frame]
     if not record then
         record = Record(frame)
@@ -200,7 +225,9 @@ function MM.Place(frame, parent, point, relative, relativePoint, x, y, scale, st
     local want = record.want
     if want and not stale[frame] and frame:GetParent() == parent and want.point == point and want.relative == relative
         and want.relativePoint == relativePoint and want.x == x and want.y == y and want.scale == scale
-        and want.strata == strata and want.level == level then return true end
+        and want.strata == strata and want.level == level then
+        return true
+    end
     want = want or {}
     record.want = want
     want.parent, want.point, want.relative, want.relativePoint = parent, point, relative, relativePoint
@@ -216,16 +243,26 @@ function MM.Place(frame, parent, point, relative, relativePoint, x, y, scale, st
     end
     return true
 end
+
 function MM.Reassert(frame)
-    if owned[frame] then stale[frame] = true; MM.Queue("stale") end
+    if owned[frame] then
+        stale[frame] = true
+        MM.Queue("stale")
+    end
 end
+
 flushers.stale = function()
     local combat = NS.IsCombatLocked()
     for frame in pairs(stale) do
         local record = owned[frame]
-        if not record or not record.want or not Usable(frame) then stale[frame] = nil
-        elseif combat and frame:IsProtected() then Defer()
-        else stale[frame] = nil; Put(frame, record.want) end
+        if not record or not record.want or not Usable(frame) then
+            stale[frame] = nil
+        elseif combat and frame:IsProtected() then
+            Defer()
+        else
+            stale[frame] = nil
+            Put(frame, record.want)
+        end
     end
 end
 -- Returns the frame to its recorded placement unless another owner took it.
@@ -250,7 +287,10 @@ end
 
 local function HostShown()
     -- Buttons may have changed while the host was hidden; their scripts stayed quiet.
-    if M.active then MM.Queue("rows"); MM.Queue("drawer") end
+    if M.active then
+        MM.Queue("rows")
+        MM.Queue("drawer")
+    end
 end
 function MM.EnsureFrames()
     if MM.host then return MM.host end
@@ -328,6 +368,7 @@ local function BorderRGB()
 end
 MM.BorderRGB = BorderRGB
 function MM.BorderWidth() return M.config.borderSize * MM.Pixel() end
+
 local function EnsureShadows()
     if MM.shadows then return MM.shadows end
     local shadows = {}
@@ -351,11 +392,22 @@ function MM.ApplyBorder()
     local r, g, b = BorderRGB()
     local round = c.shape == 2
     local top, bottom, left, right = edges[1], edges[2], edges[3], edges[4]
-    top:ClearAllPoints(); top:SetPoint("BOTTOMLEFT", host, "TOPLEFT", -thickness, 0); top:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", thickness, 0)
-    bottom:ClearAllPoints(); bottom:SetPoint("TOPLEFT", host, "BOTTOMLEFT", -thickness, 0); bottom:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", thickness, 0)
-    left:ClearAllPoints(); left:SetPoint("TOPRIGHT", host, "TOPLEFT"); left:SetPoint("BOTTOMRIGHT", host, "BOTTOMLEFT")
-    right:ClearAllPoints(); right:SetPoint("TOPLEFT", host, "TOPRIGHT"); right:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT")
-    top:SetHeight(thickness); bottom:SetHeight(thickness); left:SetWidth(thickness); right:SetWidth(thickness)
+    top:ClearAllPoints()
+    top:SetPoint("BOTTOMLEFT", host, "TOPLEFT", -thickness, 0)
+    top:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", thickness, 0)
+    bottom:ClearAllPoints()
+    bottom:SetPoint("TOPLEFT", host, "BOTTOMLEFT", -thickness, 0)
+    bottom:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", thickness, 0)
+    left:ClearAllPoints()
+    left:SetPoint("TOPRIGHT", host, "TOPLEFT")
+    left:SetPoint("BOTTOMRIGHT", host, "BOTTOMLEFT")
+    right:ClearAllPoints()
+    right:SetPoint("TOPLEFT", host, "TOPRIGHT")
+    right:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT")
+    top:SetHeight(thickness)
+    bottom:SetHeight(thickness)
+    left:SetWidth(thickness)
+    right:SetWidth(thickness)
     for i = 1, 4 do
         edges[i]:SetColorTexture(r, g, b, c.borderAlpha / 100)
         edges[i]:SetShown(thickness > 0 and not round)
@@ -367,38 +419,38 @@ function MM.ApplyBorder()
     local shadow = c.shadowSize * MM.Pixel()
     local shadows = shadow > 0 and EnsureShadows() or MM.shadows
     if shadows then
-      local sr, sg, sb = S.RGB(c.shadowColor)
-      for step = 1, 3 do
-        local ring = shadows[step]
-        local inner = thickness + shadow * (step - 1) / 3
-        local outer = thickness + shadow * step / 3
-        local band = outer - inner
-        local alpha = c.shadowAlpha / 100 * SHADOW_STRENGTHS[step]
-        local topEdge, bottomEdge, leftEdge, rightEdge = unpack(ring.edges)
-        topEdge:ClearAllPoints()
-        topEdge:SetPoint("BOTTOMLEFT", host, "TOPLEFT", -outer, inner)
-        topEdge:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", outer, inner)
-        topEdge:SetHeight(band)
-        bottomEdge:ClearAllPoints()
-        bottomEdge:SetPoint("TOPLEFT", host, "BOTTOMLEFT", -outer, -inner)
-        bottomEdge:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", outer, -inner)
-        bottomEdge:SetHeight(band)
-        leftEdge:ClearAllPoints()
-        leftEdge:SetPoint("TOPRIGHT", host, "TOPLEFT", -inner, inner)
-        leftEdge:SetPoint("BOTTOMRIGHT", host, "BOTTOMLEFT", -inner, -inner)
-        leftEdge:SetWidth(band)
-        rightEdge:ClearAllPoints()
-        rightEdge:SetPoint("TOPLEFT", host, "TOPRIGHT", inner, inner)
-        rightEdge:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", inner, -inner)
-        rightEdge:SetWidth(band)
-        for i = 1, 4 do
-            ring.edges[i]:SetColorTexture(sr, sg, sb, alpha)
-            ring.edges[i]:SetShown(shadow > 0 and alpha > 0 and not round)
+        local sr, sg, sb = S.RGB(c.shadowColor)
+        for step = 1, 3 do
+            local ring = shadows[step]
+            local inner = thickness + shadow * (step - 1) / 3
+            local outer = thickness + shadow * step / 3
+            local band = outer - inner
+            local alpha = c.shadowAlpha / 100 * SHADOW_STRENGTHS[step]
+            local topEdge, bottomEdge, leftEdge, rightEdge = unpack(ring.edges)
+            topEdge:ClearAllPoints()
+            topEdge:SetPoint("BOTTOMLEFT", host, "TOPLEFT", -outer, inner)
+            topEdge:SetPoint("BOTTOMRIGHT", host, "TOPRIGHT", outer, inner)
+            topEdge:SetHeight(band)
+            bottomEdge:ClearAllPoints()
+            bottomEdge:SetPoint("TOPLEFT", host, "BOTTOMLEFT", -outer, -inner)
+            bottomEdge:SetPoint("TOPRIGHT", host, "BOTTOMRIGHT", outer, -inner)
+            bottomEdge:SetHeight(band)
+            leftEdge:ClearAllPoints()
+            leftEdge:SetPoint("TOPRIGHT", host, "TOPLEFT", -inner, inner)
+            leftEdge:SetPoint("BOTTOMRIGHT", host, "BOTTOMLEFT", -inner, -inner)
+            leftEdge:SetWidth(band)
+            rightEdge:ClearAllPoints()
+            rightEdge:SetPoint("TOPLEFT", host, "TOPRIGHT", inner, inner)
+            rightEdge:SetPoint("BOTTOMLEFT", host, "BOTTOMRIGHT", inner, -inner)
+            rightEdge:SetWidth(band)
+            for i = 1, 4 do
+                ring.edges[i]:SetColorTexture(sr, sg, sb, alpha)
+                ring.edges[i]:SetShown(shadow > 0 and alpha > 0 and not round)
+            end
+            ring.disc:SetSize(MM.width + outer * 2, MM.height + outer * 2)
+            ring.disc:SetVertexColor(sr, sg, sb, alpha)
+            ring.disc:SetShown(shadow > 0 and alpha > 0 and round)
         end
-        ring.disc:SetSize(MM.width + outer * 2, MM.height + outer * 2)
-        ring.disc:SetVertexColor(sr, sg, sb, alpha)
-        ring.disc:SetShown(shadow > 0 and alpha > 0 and round)
-      end
     end
     -- The clamp rect includes the border and shadow outside the map.
     local outer = thickness + shadow
@@ -443,6 +495,7 @@ function MM.ApplyHybrid()
     mask:SetTexture(texture, WRAP, WRAP)
     MM.hybridShaped = true
 end
+
 function MM.ReleaseHybrid()
     local hybrid = _G.HybridMinimap
     local mask = Usable(hybrid) and hybrid.CircleMask
@@ -459,11 +512,17 @@ function MM.ApplyMap(nudge)
     local size = math.max(width, height)
     local xBand, yBand = (size - width) / 2, (size - height) / 2
     MM.placingMap = true
-    if type(map.SetFixedFrameStrata) == "function" then map:SetFixedFrameStrata(false); map:SetFixedFrameLevel(false) end
+    if type(map.SetFixedFrameStrata) == "function" then
+        map:SetFixedFrameStrata(false)
+        map:SetFixedFrameLevel(false)
+    end
     if map:GetParent() ~= clip then map:SetParent(clip) end
     map:SetFrameStrata(MM.host:GetFrameStrata())
     map:SetFrameLevel(MM.mapLevel)
-    if type(map.SetFixedFrameStrata) == "function" then map:SetFixedFrameStrata(true); map:SetFixedFrameLevel(true) end
+    if type(map.SetFixedFrameStrata) == "function" then
+        map:SetFixedFrameStrata(true)
+        map:SetFixedFrameLevel(true)
+    end
     if map:GetScale() ~= 1 then map:SetScale(1) end
     map:ClearAllPoints()
     map:SetPoint("CENTER", clip, "CENTER", 0, 0)
@@ -545,12 +604,15 @@ function MM.Capture()
             local column = cx < screenW / 3 and 1 or cx > screenW * 2 / 3 and 3 or 2
             local row = cy > screenH * 2 / 3 and 1 or cy < screenH / 3 and 3 or 2
             values.size, values.point = math.floor(size + 0.5), (row - 1) * 3 + column
-            values.x = math.floor((column == 1 and cx - halfW or column == 3 and cx + halfW - screenW or cx - screenW / 2) + 0.5)
-            values.y = math.floor((row == 1 and cy + halfH - screenH or row == 3 and cy - halfH or cy - screenH / 2) + 0.5)
+            values.x = math.floor((column == 1 and cx - halfW or column == 3 and cx + halfW - screenW or cx - screenW / 2) +
+                0.5)
+            values.y = math.floor((row == 1 and cy + halfH - screenH or row == 3 and cy - halfH or cy - screenH / 2) +
+                0.5)
         end
     end
     S.SetMany("minimap", values)
 end
+
 -- Edit Mode applies the user's layout in its EDIT_MODE_LAYOUTS_UPDATED handler;
 -- until then Blizzard's map is still at its default place.
 function MM.PrepareCapture()
@@ -570,7 +632,10 @@ end
 
 flushers.claim = function()
     if M.mapOwned then return end
-    if NS.IsCombatLocked() then S.Queue("minimap"); return end
+    if NS.IsCombatLocked() then
+        S.Queue("minimap")
+        return
+    end
     local map = _G.Minimap
     if not Usable(map) or not MM.clip then return end
     if not M.config.captured then
@@ -597,13 +662,17 @@ function MM.ReleaseMap()
         if not Usable(parent) then return true end
     end
     MM.placingMap = true
-    if type(map.SetFixedFrameStrata) == "function" then map:SetFixedFrameStrata(false); map:SetFixedFrameLevel(false) end
+    if type(map.SetFixedFrameStrata) == "function" then
+        map:SetFixedFrameStrata(false)
+        map:SetFixedFrameLevel(false)
+    end
     map:SetParent(parent)
     map:SetFrameStrata(record.strata)
     map:SetFrameLevel(record.level)
     if Number(record.scale) and record.scale > 0 then map:SetScale(record.scale) end
     map:ClearAllPoints()
-    if lost then map:SetPoint("CENTER", parent, "CENTER")
+    if lost then
+        map:SetPoint("CENTER", parent, "CENTER")
     else
         for i = 1, #record.points do
             local point = record.points[i]
@@ -617,7 +686,10 @@ function MM.ReleaseMap()
     end
     MM.placingMap = false
     local insets = record.insets
-    if insets and Number(insets[1]) and Number(insets[3]) then map:SetHitRectInsets(insets[1], insets[2], insets[3], insets[4]) end
+    if insets and Number(insets[1]) and Number(insets[3]) then
+        map:SetHitRectInsets(insets[1], insets[2], insets[3],
+            insets[4])
+    end
     -- No getter exists for masks or blob scalars: Blizzard's defaults are known.
     -- WoW Forever's Camelot skin (marked by its underlay texture) uses its own mask.
     map:SetMaskTexture(_G.MinimapCompassTextureUnderlay and "ui-hud-minimap-frame-generic-mask" or MASKS[2])
@@ -636,6 +708,7 @@ function MM.InstallShape()
     installedShape, previousShape = true, _G.GetMinimapShape
     _G.GetMinimapShape = MinimapShape
 end
+
 function MM.RemoveShape()
     if installedShape and _G.GetMinimapShape == MinimapShape then _G.GetMinimapShape = previousShape end
     installedShape, previousShape = nil, nil
@@ -666,6 +739,7 @@ function MM.ApplyVisibility()
     if mode == 5 then host:Hide() elseif mode == 4 then host:SetShown(MM.hovered) else host:Show() end
     if MM.UpdateCatcherLayer then MM.UpdateCatcherLayer() end
 end
+
 MM.OnHover(function()
     if not M.active or not MM.host or Mode() ~= 4 then return end
     if NS.IsCombatLocked() then S.Queue("minimap") else MM.host:SetShown(MM.hovered) end
@@ -673,7 +747,10 @@ end)
 
 function MM.ReleaseHost()
     local host = MM.host
-    if host and M.driver and type(_G.UnregisterStateDriver) == "function" then _G.UnregisterStateDriver(host, "visibility") end
+    if host and M.driver and type(_G.UnregisterStateDriver) == "function" then
+        _G.UnregisterStateDriver(host,
+            "visibility")
+    end
     M.driver, M.captureWaiting = nil, nil
     MM.ReleaseHybrid()
     local lost = MM.ReleaseMap()

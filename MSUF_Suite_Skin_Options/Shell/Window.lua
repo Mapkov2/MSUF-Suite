@@ -1,5 +1,6 @@
 local _, Private = ...
 local NS, O = Private.NS, Private.Options
+local L = NS.L
 
 local pageDefinitions = {}
 local pageOrder = {}
@@ -17,6 +18,7 @@ function O.GetPageDefinition(key)
     return pageDefinitions[key]
 end
 
+------------------------------------------------------------------ scroll container
 function O.CreateScrollContainer(parent, contentHeight, contentWidth)
     local scroll = CreateFrame("ScrollFrame", nil, parent)
     scroll:SetPoint("TOPLEFT", 0, 0)
@@ -36,27 +38,14 @@ function O.CreateScrollContainer(parent, contentHeight, contentWidth)
     bar:SetWidth(8)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
-
-    local track = bar:CreateTexture(nil, "BACKGROUND")
-    track:SetAllPoints()
-    track:SetColorTexture(NS.Theme.GetColor("ink"))
-
-    local thumb = bar:CreateTexture(nil, "ARTWORK")
-    thumb:SetSize(8, 48)
-    thumb:SetTexture(NS.path .. "Media\\Shapes\\pill_h24_fill.png")
-    if thumb.SetTextureSliceMargins then
-        thumb:SetTextureSliceMargins(12, 0, 12, 0)
-    end
-    thumb:SetVertexColor(NS.Theme.GetColor("accent"))
-    bar:SetThumbTexture(thumb)
+    local track, thumb = O.CreateScrollThumb(bar, 48)
 
     local syncing = false
-    local function UpdateRange(_, _, verticalRange)
+    scroll:SetScript("OnScrollRangeChanged", function(_, _, verticalRange)
         local range = math.max(0, tonumber(verticalRange) or 0)
         bar:SetMinMaxValues(0, range)
         bar:SetShown(range > 0)
-    end
-    scroll:SetScript("OnScrollRangeChanged", UpdateRange)
+    end)
     scroll:SetScript("OnVerticalScroll", function(_, offset)
         if syncing then return end
         syncing = true
@@ -82,8 +71,16 @@ function O.CreateScrollContainer(parent, contentHeight, contentWidth)
     return scroll, child
 end
 
-local function CreateWindow()
-    local layout = O.Layout
+------------------------------------------------------------------ standalone window
+local GROUP_ORDER = { "start", "design", "coverage", "manage" }
+local GROUP_LABELS = {
+    start = L["START"],
+    design = L["DESIGN"],
+    coverage = L["BLIZZARD UI"],
+    manage = L["MANAGE"],
+}
+
+local function BuildFrame(layout)
     local window = CreateFrame("Frame", "MapkoSkinOptionsFrame", UIParent)
     window:SetSize(layout.width, layout.height)
     window:SetPoint("CENTER")
@@ -99,266 +96,271 @@ local function CreateWindow()
     end)
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     window:SetScript("OnShow", function() O.RefreshAll() end)
-    window:SetScript("OnHide", function()
-        if O.CloseDropdown then O.CloseDropdown() end
-    end)
+    window:SetScript("OnHide", function() O.CloseDropdown() end)
     window:Hide()
+    return window
+end
 
+-- Accent line, brand title, combat notice, close and mode buttons.
+local function BuildHeader(state)
+    local window = state.window
     local topAccent = window:CreateTexture(nil, "OVERLAY")
     topAccent:SetPoint("TOPLEFT", 12, -2)
     topAccent:SetPoint("TOPRIGHT", -12, -2)
     topAccent:SetHeight(2)
     topAccent:SetColorTexture(NS.Theme.GetColor("accent"))
+    state.topAccent = topAccent
 
-    local headerTitle = O.CreateText(window, "MAPKOSKIN", 14, "title")
-    headerTitle:SetPoint("TOPLEFT", 18, -18)
-    local headerSubtitle = O.CreateText(window, "Independent UI skinning engine", 11, "muted")
-    headerSubtitle:SetPoint("LEFT", headerTitle, "RIGHT", 12, 0)
+    state.headerTitle = O.CreateText(window, L["MAPKOSKIN"], 14, "title")
+    state.headerTitle:SetPoint("TOPLEFT", 18, -18)
+    state.headerSubtitle = O.CreateText(window, L["Independent UI skinning engine"], 11, "muted")
+    state.headerSubtitle:SetPoint("LEFT", state.headerTitle, "RIGHT", 12, 0)
+    state.status = O.CreateText(window, L["OUT OF COMBAT ONLY"], 9, "success", "RIGHT")
+    state.status:SetPoint("TOPRIGHT", -242, -20)
 
-    local status = O.CreateText(window, "OUT OF COMBAT ONLY", 9, "success", "RIGHT")
-    status:SetPoint("TOPRIGHT", -242, -20)
-
-    local close = O.CreateWindowActionButton(window, "close", 30, 28,
-        function() window:Hide() end)
+    local close = O.CreateWindowActionButton(window, "close", 30, 28, function() window:Hide() end)
     close:SetPoint("TOPRIGHT", -14, -12)
-
-    local expertMode = O.CreateButton(window, "Expert", 82, 28, function()
+    state.expertMode = O.CreateButton(window, L["Expert"], 82, 28, function()
         O.SetMode("expert")
     end, "navigation")
-    expertMode:SetPoint("TOPRIGHT", close, "TOPLEFT", -6, 0)
-
-    local guidedMode = O.CreateButton(window, "Guided", 82, 28, function()
+    state.expertMode:SetPoint("TOPRIGHT", close, "TOPLEFT", -6, 0)
+    state.guidedMode = O.CreateButton(window, L["Guided"], 82, 28, function()
         O.SetMode("guided")
     end, "navigation")
-    guidedMode:SetPoint("RIGHT", expertMode, "LEFT", -6, 0)
+    state.guidedMode:SetPoint("RIGHT", state.expertMode, "LEFT", -6, 0)
+end
 
-    local rail = O.CreatePanel(window, "navigation")
+-- Left rail: brand, grouped page navigation, profile status, undo and redo.
+local function BuildRail(state, layout)
+    local rail = O.CreatePanel(state.window, "navigation")
     rail:SetPoint("TOPLEFT", 10, -layout.header)
     rail:SetPoint("BOTTOMLEFT", 10, 10)
     rail:SetWidth(layout.rail)
+    state.rail = rail
 
-    local brand = O.CreateText(rail, "M  MAPKO", 13, "accent")
+    local brand = O.CreateText(rail, L["M  MAPKO"], 13, "accent")
     brand:SetPoint("TOPLEFT", 15, -16)
-    local brandSub = O.CreateText(rail, "SKIN ENGINE", 9, "dim")
+    local brandSub = O.CreateText(rail, L["SKIN ENGINE"], 9, "dim")
     brandSub:SetPoint("TOPLEFT", brand, "BOTTOMLEFT", 20, -4)
 
-    local content = O.CreatePanel(window, "panel")
-    content:SetPoint("TOPLEFT", rail, "TOPRIGHT", 10, 0)
+    for index = 1, #GROUP_ORDER do
+        local group = GROUP_ORDER[index]
+        local heading = O.CreateText(rail, GROUP_LABELS[group], 9, "dim")
+        heading:Hide()
+        state.navSections[group] = heading
+    end
+    for index = 1, #pageOrder do
+        local key = pageOrder[index]
+        local nav = O.CreateButton(rail, pageDefinitions[key].label, layout.rail - 20, 32, function()
+            state.showPage(key)
+        end, "navigation")
+        O.AlignButtonLabel(nav)
+        state.navButtons[key] = nav
+    end
+
+    local footer = O.CreateText(rail, ("v%s  |  API %s"):format(NS.version, tostring(NS.apiVersion)), 9, "dim")
+    footer:SetPoint("BOTTOMLEFT", 14, 12)
+    state.undo = O.CreateButton(rail, L["Undo"], 88, 26, function() O.Undo() end)
+    state.undo:SetPoint("BOTTOMLEFT", 10, 34)
+    state.redo = O.CreateButton(rail, L["Redo"], 88, 26, function() O.Redo() end)
+    state.redo:SetPoint("LEFT", state.undo, "RIGHT", 8, 0)
+    state.profileStatus = O.CreateText(rail, "", 9, "muted")
+    state.profileStatus:SetPoint("BOTTOMLEFT", state.undo, "TOPLEFT", 4, 8)
+    state.profileStatus:SetPoint("RIGHT", -12, 0)
+end
+
+-- Content panel: page title and context line, divider and the page host.
+local function BuildContent(state)
+    local content = O.CreatePanel(state.window, "panel")
+    content:SetPoint("TOPLEFT", state.rail, "TOPRIGHT", 10, 0)
     content:SetPoint("BOTTOMRIGHT", -10, 10)
+    state.content = content
 
-    local pageTitle = O.CreateText(content, "", 12, "accent")
-    pageTitle:SetPoint("TOPLEFT", 16, -10)
-    local pageContext = O.CreateText(content, "", 9, "dim")
-    pageContext:SetPoint("TOPLEFT", pageTitle, "BOTTOMLEFT", 0, -3)
-
-    local SearchChanged
-    local searchInput = O.CreateSearchBox(content, "Search every setting...", function(query)
-        if SearchChanged then SearchChanged(query) end
-    end, 310)
-    searchInput:SetPoint("TOPRIGHT", -12, -9)
+    state.pageTitle = O.CreateText(content, "", 12, "accent")
+    state.pageTitle:SetPoint("TOPLEFT", 16, -10)
+    state.pageContext = O.CreateText(content, "", 9, "dim")
+    state.pageContext:SetPoint("TOPLEFT", state.pageTitle, "BOTTOMLEFT", 0, -3)
 
     local divider = content:CreateTexture(nil, "ARTWORK")
     divider:SetPoint("TOPLEFT", 12, -45)
     divider:SetPoint("TOPRIGHT", -12, -45)
     divider:SetHeight(1)
     divider:SetColorTexture(NS.Theme.GetColor("borderSoft"))
+    state.divider = divider
 
     local pageHost = CreateFrame("Frame", nil, content)
     pageHost:SetPoint("TOPLEFT", 16, -59)
     pageHost:SetPoint("BOTTOMRIGHT", -16, 16)
     if pageHost.SetClipsChildren then pageHost:SetClipsChildren(true) end
+    state.pageHost = pageHost
+end
 
-    local searchPopup = O.CreatePanel(content, "popup")
-    searchPopup:SetPoint("TOPRIGHT", searchInput, "BOTTOMRIGHT", 0, -5)
-    searchPopup:SetSize(420, 254)
-    searchPopup:SetFrameLevel(100)
-    searchPopup:Hide()
+local SEARCH_ROWS = 8
 
-    local searchEmpty = O.CreateText(searchPopup, "No matching setting", 11, "muted", "CENTER")
-    searchEmpty:SetPoint("TOPLEFT", 12, -16)
-    searchEmpty:SetPoint("TOPRIGHT", -12, -16)
-    searchEmpty:Hide()
+local function SearchRowClick(row)
+    local state = O.windowState
+    local selected = row.searchResult
+    if not (state and selected) then return end
+    if selected.expert then O.SetMode("expert") end
+    state.searchInput:SetText("")
+    state.searchInput:ClearFocus()
+    state.showPage(selected.page, selected.label)
+end
 
-    local searchRows = {}
-    for index = 1, 8 do
-        local row = O.CreateButton(searchPopup, "", 396, 26, nil, "navigation")
+local function SearchChanged(state, query)
+    query = tostring(query or "")
+    local results = O.SearchSettings(query, SEARCH_ROWS)
+    state.searchEmpty:SetShown(query ~= "" and #results == 0)
+    for index = 1, SEARCH_ROWS do
+        local row = state.searchRows[index]
+        local result = results[index]
+        row.searchResult = result
+        if result then
+            row.caption:SetText(result.label .. "   |   " .. result.pageLabel
+                .. (result.expert and ("   [" .. L["Expert"] .. "]") or ""))
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    state.searchPopup:SetShown(query:match("%S") ~= nil)
+end
+
+-- Search box and its result popup with pooled result rows.
+local function BuildSearch(state)
+    local content = state.content
+    state.searchInput = O.CreateSearchBox(content, L["Search every setting..."], function(query)
+        SearchChanged(state, query)
+    end, 310)
+    state.searchInput:SetPoint("TOPRIGHT", -12, -9)
+
+    local popup = O.CreatePanel(content, "popup")
+    popup:SetPoint("TOPRIGHT", state.searchInput, "BOTTOMRIGHT", 0, -5)
+    popup:SetSize(420, 254)
+    popup:SetFrameLevel(100)
+    popup:Hide()
+    state.searchPopup = popup
+
+    state.searchEmpty = O.CreateText(popup, L["No matching setting"], 11, "muted", "CENTER")
+    state.searchEmpty:SetPoint("TOPLEFT", 12, -16)
+    state.searchEmpty:SetPoint("TOPRIGHT", -12, -16)
+    state.searchEmpty:Hide()
+
+    state.searchRows = {}
+    for index = 1, SEARCH_ROWS do
+        local row = O.CreateButton(popup, "", 396, 26, SearchRowClick, "navigation")
         row:SetPoint("TOPLEFT", 12, -12 - (index - 1) * 29)
-        local widgetState = O.widgetStates[row]
-        if widgetState and widgetState.label then widgetState.label:SetJustifyH("LEFT") end
+        row.caption = O.AlignButtonLabel(row)
         row:Hide()
-        searchRows[index] = row
+        state.searchRows[index] = row
+    end
+end
+
+local function ShowWindowPage(state, key, focusLabel)
+    local definition = pageDefinitions[key]
+    if not definition then return end
+    if O.GetPageMeta(key).simple == false and O.GetMode() ~= "expert" then
+        O.SetMode("expert")
+    end
+    O.CloseDropdown()
+    state.searchPopup:Hide()
+    local previous = state.activePage
+    if previous and state.pageFrames[previous] then
+        state.pageFrames[previous]:Hide()
+        O.SetButtonActive(state.navButtons[previous], false)
+    end
+    local page = state.pageFrames[key]
+    if not page then
+        page = CreateFrame("Frame", nil, state.pageHost)
+        page:SetAllPoints()
+        state.pageFrames[key] = page
+        O.BuildPage(page, state.window, definition.builder)
+    end
+    page:Show()
+    state.activePage = key
+    O.ui.lastPage = key
+    state.pageTitle:SetText(string.upper(definition.label))
+    state.pageContext:SetText(focusLabel and L["FOUND: %s"]:format(string.upper(focusLabel)) or "")
+    O.SetButtonActive(state.navButtons[key], true)
+    O.RefreshAll()
+end
+
+-- Guided mode hides the expert-only pages; group headings follow the pages.
+local function RefreshNavigation(state)
+    for _, heading in pairs(state.navSections) do heading:Hide() end
+    for _, button in pairs(state.navButtons) do button:Hide() end
+
+    local mode = O.GetMode()
+    local y = -68
+    local activeGroup
+    for index = 1, #pageOrder do
+        local key = pageOrder[index]
+        local meta = O.GetPageMeta(key)
+        if mode == "expert" or meta.simple ~= false then
+            if activeGroup ~= meta.group then
+                activeGroup = meta.group
+                local heading = state.navSections[activeGroup]
+                heading:ClearAllPoints()
+                heading:SetPoint("TOPLEFT", 14, y)
+                heading:Show()
+                y = y - 18
+            end
+            local nav = state.navButtons[key]
+            nav:ClearAllPoints()
+            nav:SetPoint("TOPLEFT", 10, y)
+            nav:Show()
+            y = y - 36
+        end
     end
 
+    local activeMeta = state.activePage and O.GetPageMeta(state.activePage)
+    if mode == "guided" and activeMeta and activeMeta.simple == false then
+        state.showPage("dashboard")
+    end
+end
+
+local function RefreshChrome(state)
+    state.topAccent:SetColorTexture(NS.Theme.GetColor("accent"))
+    state.divider:SetColorTexture(NS.Theme.GetColor("borderSoft"))
+    O.SetTextColor(state.headerTitle, "title")
+    O.SetTextColor(state.headerSubtitle, "muted")
+    O.SetTextColor(state.status, "success")
+    O.SetButtonActive(state.guidedMode, O.GetMode() == "guided")
+    O.SetButtonActive(state.expertMode, O.GetMode() == "expert")
+    local undoLabel, redoLabel = O.GetHistoryState()
+    O.SetButtonEnabled(state.undo, undoLabel ~= nil)
+    O.SetButtonEnabled(state.redo, redoLabel ~= nil)
+    local lookKey = NS.DB and NS.DB.theme and NS.DB.theme.look or "custom"
+    local look = NS.LookPresets[lookKey]
+    local lookLabel = look and look.label or L["Custom"]
+    state.profileStatus:SetText(L["Profile: %s\nStyle: %s"]:format(NS.Database.GetActiveProfileName(), lookLabel))
+end
+
+local function CreateWindow()
+    local layout = O.Layout
     local state = {
-        window = window,
-        rail = rail,
-        content = content,
-        pageHost = pageHost,
-        pageTitle = pageTitle,
-        pageContext = pageContext,
+        window = BuildFrame(layout),
         navButtons = {},
         navSections = {},
         pageFrames = {},
         activePage = nil,
     }
+    state.showPage = function(key, focusLabel) ShowWindowPage(state, key, focusLabel) end
+    O.windowState = state
 
-    local function ShowPage(key, focusLabel)
-        local definition = pageDefinitions[key]
-        if not definition then return end
-        local meta = O.GetPageMeta(key)
-        if meta.simple == false and O.GetMode() ~= "expert" then
-            O.SetMode("expert")
-        end
-        if O.CloseDropdown then O.CloseDropdown() end
-        searchPopup:Hide()
-        if state.activePage and state.pageFrames[state.activePage] then
-            state.pageFrames[state.activePage]:Hide()
-            O.SetButtonActive(state.navButtons[state.activePage], false)
-        end
-        local page = state.pageFrames[key]
-        if not page then
-            page = CreateFrame("Frame", nil, pageHost)
-            page:SetAllPoints()
-            state.pageFrames[key] = page
-            definition.builder(page)
-        end
-        page:Show()
-        state.activePage = key
-        O.ui.lastPage = key
-        pageTitle:SetText(string.upper(definition.label))
-        pageContext:SetText(focusLabel and ("FOUND: " .. string.upper(focusLabel)) or "")
-        O.SetButtonActive(state.navButtons[key], true)
-        O.RefreshAll()
-    end
-    state.showPage = ShowPage
+    BuildHeader(state)
+    BuildRail(state, layout)
+    BuildContent(state)
+    BuildSearch(state)
 
-    local groupLabels = {
-        start = "START",
-        design = "DESIGN",
-        coverage = "BLIZZARD UI",
-        manage = "MANAGE",
-    }
-    local groupOrder = { "start", "design", "coverage", "manage" }
-    for index = 1, #groupOrder do
-        local group = groupOrder[index]
-        local heading = O.CreateText(rail, groupLabels[group], 9, "dim")
-        heading:Hide()
-        state.navSections[group] = heading
-    end
-
-    for index = 1, #pageOrder do
-        local key = pageOrder[index]
-        local definition = pageDefinitions[key]
-        local nav = O.CreateButton(rail, definition.label, layout.rail - 20, 32, function()
-            ShowPage(key)
-        end, "navigation")
-        local widgetState = O.widgetStates[nav]
-        if widgetState and widgetState.label then
-            widgetState.label:SetJustifyH("LEFT")
-        end
-        state.navButtons[key] = nav
-    end
-
-    local function RefreshNavigation()
-        for _, heading in pairs(state.navSections) do heading:Hide() end
-        for _, button in pairs(state.navButtons) do button:Hide() end
-
-        local mode = O.GetMode()
-        local y = -68
-        local activeGroup
-        for index = 1, #pageOrder do
-            local key = pageOrder[index]
-            local meta = O.GetPageMeta(key)
-            if mode == "expert" or meta.simple ~= false then
-                if activeGroup ~= meta.group then
-                    activeGroup = meta.group
-                    local heading = state.navSections[activeGroup]
-                    heading:ClearAllPoints()
-                    heading:SetPoint("TOPLEFT", 14, y)
-                    heading:Show()
-                    y = y - 18
-                end
-                local nav = state.navButtons[key]
-                nav:ClearAllPoints()
-                nav:SetPoint("TOPLEFT", 10, y)
-                nav:Show()
-                y = y - 36
-            end
-        end
-
-        local activeMeta = state.activePage and O.GetPageMeta(state.activePage)
-        if mode == "guided" and activeMeta and activeMeta.simple == false then
-            ShowPage("dashboard")
-        end
-    end
-    state.refreshNavigation = RefreshNavigation
-    O.TrackMode(RefreshNavigation)
-    RefreshNavigation()
-
-    SearchChanged = function(query)
-        query = tostring(query or "")
-        local results = O.SearchSettings(query, #searchRows)
-        searchEmpty:SetShown(query ~= "" and #results == 0)
-        for index = 1, #searchRows do
-            local row = searchRows[index]
-            local result = results[index]
-            if result then
-                row.searchResult = result
-                local widgetState = O.widgetStates[row]
-                if widgetState and widgetState.label then
-                    widgetState.label:SetText(result.label .. "   |   " .. result.pageLabel
-                        .. (result.expert and "   [Expert]" or ""))
-                end
-                row:SetScript("OnClick", function(button)
-                    local selected = button.searchResult
-                    if not selected then return end
-                    if selected.expert then O.SetMode("expert") end
-                    searchInput:SetText("")
-                    searchInput:ClearFocus()
-                    ShowPage(selected.page, selected.label)
-                end)
-                row:Show()
-            else
-                row.searchResult = nil
-                row:Hide()
-            end
-        end
-        searchPopup:SetShown(query:match("%S") ~= nil)
-    end
-
-    local footer = O.CreateText(rail, "v" .. NS.version .. "  |  API " .. tostring(NS.apiVersion), 9, "dim")
-    footer:SetPoint("BOTTOMLEFT", 14, 12)
-
-    local undo = O.CreateButton(rail, "Undo", 88, 26, function() O.Undo() end)
-    undo:SetPoint("BOTTOMLEFT", 10, 34)
-    local redo = O.CreateButton(rail, "Redo", 88, 26, function() O.Redo() end)
-    redo:SetPoint("LEFT", undo, "RIGHT", 8, 0)
-
-    local profileStatus = O.CreateText(rail, "", 9, "muted")
-    profileStatus:SetPoint("BOTTOMLEFT", undo, "TOPLEFT", 4, 8)
-    profileStatus:SetPoint("RIGHT", -12, 0)
-
-    O.TrackRefresh(function()
-        topAccent:SetColorTexture(NS.Theme.GetColor("accent"))
-        divider:SetColorTexture(NS.Theme.GetColor("borderSoft"))
-        O.SetTextColor(headerTitle, "title")
-        O.SetTextColor(headerSubtitle, "muted")
-        O.SetTextColor(status, "success")
-        O.SetButtonActive(guidedMode, O.GetMode() == "guided")
-        O.SetButtonActive(expertMode, O.GetMode() == "expert")
-        local undoLabel, redoLabel = O.GetHistoryState()
-        O.SetButtonEnabled(undo, undoLabel ~= nil)
-        O.SetButtonEnabled(redo, redoLabel ~= nil)
-        local lookKey = NS.DB and NS.DB.theme and NS.DB.theme.look or "custom"
-        local look = NS.LookPresets[lookKey]
-        local lookLabel = look and look.label or "Custom"
-        profileStatus:SetText(("Profile: %s\nStyle: %s"):format(NS.Database.GetActiveProfileName(), lookLabel))
-    end)
+    local function RefreshMode() RefreshNavigation(state) end
+    O.TrackMode(RefreshMode)
+    RefreshMode()
+    O.TrackRefresh(function() RefreshChrome(state) end)
 
     if UISpecialFrames then
         UISpecialFrames[#UISpecialFrames + 1] = "MapkoSkinOptionsFrame"
     end
-    O.windowState = state
     return state
 end
 
@@ -367,12 +369,11 @@ function O.BuildWindow()
 end
 
 function O.ShowPage(key, focusLabel)
-    if O.embeddedHost and O.embeddedHost:IsShown() then
-        O.embeddedHost:ShowPage(key)
-        return
+    local host = O.embeddedHost
+    if host and host:IsShown() then
+        return host:ShowPage(key)
     end
-    local state = O.BuildWindow()
-    state.showPage(key, focusLabel)
+    O.BuildWindow().showPage(key, focusLabel)
 end
 
 function O.Open()
