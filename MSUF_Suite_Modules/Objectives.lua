@@ -307,11 +307,46 @@ local function OpenTaskMap(questID)
     end
 end
 
+local function WatchTogglePressed()
+    -- Blizzard's QUESTWATCHTOGGLE binding defaults to Shift. Keep Shift working
+    -- even when that binding has been customized by the player.
+    return Call(_G.IsModifiedClick, "QUESTWATCHTOGGLE") == true
+        or Call(_G.IsShiftKeyDown) == true
+end
+
+local function CanUntrack(button)
+    if Number(button.achievementID) then
+        local kind = Enum and Enum.ContentTrackingType and Enum.ContentTrackingType.Achievement
+        local stop = Enum and Enum.ContentTrackingStopType and Enum.ContentTrackingStopType.Manual
+        return kind and stop and C_ContentTracking
+            and type(C_ContentTracking.StopTracking) == "function"
+    end
+    if not Number(button.questID) or not button.tracked then return false end
+    if button.group == "world" then
+        return QuestUtil and type(QuestUtil.UntrackWorldQuest) == "function"
+    end
+    return button.group ~= "bonus"
+        and Call(QuestUtil and QuestUtil.CanRemoveQuestWatch) == true
+        and C_QuestLog and type(C_QuestLog.RemoveQuestWatch) == "function"
+end
+
+local function Untrack(button)
+    if not CanUntrack(button) then return end
+    if Number(button.achievementID) then
+        pcall(C_ContentTracking.StopTracking, Enum.ContentTrackingType.Achievement,
+            button.achievementID, Enum.ContentTrackingStopType.Manual)
+    elseif button.group == "world" then
+        pcall(QuestUtil.UntrackWorldQuest, button.questID)
+    else
+        pcall(C_QuestLog.RemoveQuestWatch, button.questID)
+    end
+end
+
 local function ShowContextMenu(button)
     local menu = _G.MenuUtil
     if not (menu and type(menu.CreateContextMenu) == "function") then return end
     local questID, achievementID, scenarioID = button.questID, button.achievementID, button.scenarioID
-    local group, title, tracked = button.group, button.menuTitle or "Objective", button.tracked
+    local group, title = button.group, button.menuTitle or "Objective"
     if not (Number(questID) or Number(achievementID) or group == "scenario") then return end
     menu.CreateContextMenu(button, function(_, root)
         root:CreateTitle(title or "Objective")
@@ -321,11 +356,9 @@ local function ShowContextMenu(button)
                     pcall(_G.ShowAchievementFrameForAchievement, achievementID)
                 end)
             end
-            local kind = Enum and Enum.ContentTrackingType and Enum.ContentTrackingType.Achievement
-            local stop = Enum and Enum.ContentTrackingStopType and Enum.ContentTrackingStopType.Manual
-            if kind and stop and C_ContentTracking and type(C_ContentTracking.StopTracking) == "function" then
+            if CanUntrack(button) then
                 root:CreateButton(_G.OBJECTIVES_STOP_TRACKING or "Stop tracking", function()
-                    pcall(C_ContentTracking.StopTracking, kind, achievementID, stop)
+                    Untrack(button)
                 end)
             end
         elseif group == "scenario" then
@@ -348,25 +381,17 @@ local function ShowContextMenu(button)
             end)
             local superTrack = C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID
             local current = Call(C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID)
-            if type(superTrack) == "function" and Number(current) then
-                local selected = current == questID
+            if type(superTrack) == "function" then
+                local selected = Number(current) and current == questID
                 root:CreateButton(selected and (_G.STOP_SUPER_TRACK_QUEST or "Stop super tracking")
                     or (_G.SUPER_TRACK_QUEST or "Super track quest"), function()
                     pcall(superTrack, selected and 0 or questID)
                 end)
             end
-            if tracked then
-                if group == "world" and QuestUtil and type(QuestUtil.UntrackWorldQuest) == "function" then
-                    root:CreateButton(_G.OBJECTIVES_STOP_TRACKING or "Stop tracking", function()
-                        pcall(QuestUtil.UntrackWorldQuest, questID)
-                    end)
-                elseif group ~= "world" and group ~= "bonus"
-                    and Call(QuestUtil and QuestUtil.CanRemoveQuestWatch) == true
-                    and C_QuestLog and type(C_QuestLog.RemoveQuestWatch) == "function" then
-                    root:CreateButton(_G.OBJECTIVES_STOP_TRACKING or "Stop tracking", function()
-                        pcall(C_QuestLog.RemoveQuestWatch, questID)
-                    end)
-                end
+            if CanUntrack(button) then
+                root:CreateButton(_G.OBJECTIVES_STOP_TRACKING or "Stop tracking", function()
+                    Untrack(button)
+                end)
             end
             if not task and Call(C_QuestLog and C_QuestLog.IsPushableQuest, questID) == true
                 and Call(_G.IsInGroup) == true and QuestUtil
@@ -401,6 +426,10 @@ local function NewRow(self, key, kind)
         if button.kind == "section" then
             self.collapsedGroups[button.group] = not self.collapsedGroups[button.group] or nil
             Render(self)
+            return
+        end
+        if WatchTogglePressed() and (Number(button.questID) or Number(button.achievementID)) then
+            Untrack(button)
             return
         end
         local questID = button.questID
@@ -447,9 +476,10 @@ local function NewRow(self, key, kind)
     row.stripe, row.text, row.progress = stripe, text, progress
     local collapse = S.CreateFrame("Button", nil, row)
     collapse:SetSize(18, 18)
-    collapse:RegisterForClicks("LeftButtonUp")
-    collapse:SetScript("OnClick", function(button)
+    collapse:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    collapse:SetScript("OnClick", function(button, mouseButton)
         local owner = button.ownerRow
+        if mouseButton == "RightButton" then ShowContextMenu(owner); return end
         if owner.kind == "section" then
             self.collapsedGroups[owner.group] = not self.collapsedGroups[owner.group] or nil
         elseif owner.collapseKey then
@@ -474,6 +504,7 @@ local function EnsureItemButton(row)
     button:RegisterForClicks("AnyUp")
     button:SetScript("OnClick", function(target, mouseButton)
         if mouseButton == "RightButton" then ShowContextMenu(target.ownerRow); return end
+        if WatchTogglePressed() then Untrack(target.ownerRow); return end
         local id = target.ownerRow.questID
         local index = Number(id) and Call(C_QuestLog and C_QuestLog.GetLogIndexForQuestID, id)
         if Number(index) and type(_G.UseQuestLogSpecialItem) == "function" then

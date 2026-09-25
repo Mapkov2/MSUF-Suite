@@ -1,4 +1,6 @@
 local root = assert(arg[1], "repository root required")
+local flavor = arg[2] or "Mainline"
+assert(flavor == "Mainline" or flavor == "Forever")
 local scheduled, frames, movers = {}, {}, {}
 local setPoints = 0
 local function Widget(parent, fontString)
@@ -82,6 +84,11 @@ local openedLog, openedQuest = 0, nil
 OpenQuestLog = function() openedLog = openedLog + 1 end
 QuestMapFrame_ShowQuestDetails = function(id) openedQuest = id end
 local lastMenu, stoppedQuest, stoppedWorld, stoppedAchievement, superTracked, shared, abandoned
+local modifiedWatchClick, shiftDown = false, false
+IsModifiedClick = function(binding)
+    return binding == "QUESTWATCHTOGGLE" and modifiedWatchClick
+end
+IsShiftKeyDown = function() return shiftDown end
 MenuUtil = { CreateContextMenu = function(owner, build)
     local root = { owner = owner, buttons = {} }
     function root:CreateTitle(title) self.title = title end
@@ -138,7 +145,7 @@ hooksecurefunc = function(object, method, callback)
         return unpack(result)
     end
 end
-local suite = { Client = { isMainline = true, isForever = false },
+local suite = { Client = { isMainline = true, isForever = flavor == "Forever" },
     Suite = { instances = {}, editMode = false },
     Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end }
 local S = suite.Suite
@@ -222,12 +229,47 @@ lastMenu.buttons["Share quest"]()
 lastMenu.buttons["Abandon quest"]()
 lastMenu.buttons["Super track quest"]()
 assert(stoppedQuest == 42 and shared == 42 and abandoned == 42 and superTracked == 42)
+stoppedQuest = nil
+shiftDown = true
+questRow.OnClick(questRow, "LeftButton")
+assert(stoppedQuest == 42 and openedLog == 3,
+    "Shift-left-click must untrack a quest without opening the quest log")
+stoppedQuest = nil
+shiftDown, modifiedWatchClick = false, true
+questRow.OnClick(questRow, "LeftButton")
+assert(stoppedQuest == 42 and openedLog == 3,
+    "the configured quest-watch modifier must also untrack")
+modifiedWatchClick = false
+lastMenu = nil
+questRow.collapse.OnClick(questRow.collapse, "RightButton")
+assert(lastMenu and lastMenu.title == "A New Hope"
+    and lastMenu.buttons["Super track quest"],
+    "the quest collapse button must preserve the right-click context menu")
+lastMenu = nil
+local superTrackGetter = C_SuperTrack.GetSuperTrackedQuestID
+C_SuperTrack.GetSuperTrackedQuestID = function() return nil end
+questRow.OnClick(questRow, "RightButton")
+assert(lastMenu and lastMenu.buttons["Super track quest"],
+    "the context menu must offer focus when the current focus is unavailable")
+C_SuperTrack.GetSuperTrackedQuestID = function() return 42 end
+questRow.OnClick(questRow, "RightButton")
+assert(lastMenu and lastMenu.buttons["Stop super tracking"],
+    "the focused quest must offer a stop-focus action")
+lastMenu.buttons["Stop super tracking"]()
+assert(superTracked == 0, "stop-focus must clear Blizzard super tracking")
+C_SuperTrack.GetSuperTrackedQuestID = superTrackGetter
 tracker.rows["line:quests:42:1"].OnClick(tracker.rows["line:quests:42:1"], "RightButton")
 assert(lastMenu.title == "A New Hope", "objective line must use its parent quest menu")
 questRow.OnClick({ questID = 77, group = "world", tracked = true, menuTitle = "World Task" }, "RightButton")
 assert(lastMenu.buttons["Stop tracking"] and not lastMenu.buttons["Abandon quest"])
 lastMenu.buttons["Stop tracking"]()
 assert(stoppedWorld == 77 and stoppedQuest == 42, "world quest used the wrong untrack API")
+stoppedWorld = nil
+shiftDown = true
+questRow.OnClick({ questID = 77, group = "world", tracked = true }, "LeftButton")
+assert(stoppedWorld == 77 and openedLog == 3,
+    "Shift-left-click must use the world quest untrack API")
+shiftDown = false
 questRow.OnClick({ questID = 88, group = "bonus", menuTitle = "Bonus" }, "RightButton")
 assert(lastMenu.buttons["Show on map"] and not lastMenu.buttons["Stop tracking"],
     "automatic bonus objective must not offer an invalid untrack action")
@@ -235,6 +277,12 @@ questRow.OnClick({ achievementID = 99, group = "achievements", menuTitle = "Hero
 assert(lastMenu.buttons["View achievement"] and lastMenu.buttons["Stop tracking"])
 lastMenu.buttons["Stop tracking"]()
 assert(stoppedAchievement == 99, "achievement menu did not use content tracking")
+stoppedAchievement = nil
+shiftDown = true
+questRow.OnClick({ achievementID = 99, group = "achievements", tracked = true }, "LeftButton")
+assert(stoppedAchievement == 99 and openedLog == 3,
+    "Shift-left-click must untrack an achievement")
+shiftDown = false
 questRow.OnClick({ group = "scenario", scenarioID = 123, menuTitle = "Delve" }, "RightButton")
 assert(lastMenu.buttons["Adventure Guide"] and lastMenu.buttons["Find group"])
 lastMenu.buttons["Find group"]()
@@ -423,6 +471,12 @@ assert(usedQuestItem == 42, "quest item button must use the current quest log in
 activeQuest.itemButton.OnClick(activeQuest.itemButton, "RightButton")
 assert(lastMenu.title == "A New Hope" and usedQuestItem == 42,
     "quest item right-click must open the parent quest menu")
+stoppedQuest = nil
+shiftDown = true
+activeQuest.itemButton.OnClick(activeQuest.itemButton, "LeftButton")
+assert(stoppedQuest == 42 and usedQuestItem == 42,
+    "Shift-left-click on the quest item must untrack instead of using it")
+shiftDown = false
 clock = 101
 Drain()
 assert(activeQuest.timer.text == "1:29", "visible quest timer must update without rebuilding rows")
@@ -463,6 +517,7 @@ tracker.config.showTimers = false
 tracker:Refresh()
 assert(not tracker.rows["entry:quests:43"].timerEnd,
     "disabling countdowns must stop active timer rows")
+if flavor == "Mainline" then
 local activeKey, elapsed, deaths, penalty = true, 600, 2, 10
 local ticker
 C_Timer.NewTicker = function(interval, callback)
@@ -579,10 +634,11 @@ assert(not tracker.mplusActive and disabledTicker.cancelled
     and tracker.rows["entry:quests:43"].shown,
     "turning off the M+ replacement must cancel its ticker and show quests")
 activeKey = false
+end
 tracker:Disable()
 Drain()
 tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")
 assert(ObjectiveTrackerFrame:GetParent() == UIParent,
     "disabling the MSUF tracker must restore Blizzard's original parent")
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
-print("Suite HUD: owned frames, full objectives, items, timers, collapse, row reuse and movers passed")
+print("Suite HUD: owned frames, full objectives, clicks, timers, collapse, row reuse and movers passed: " .. flavor)

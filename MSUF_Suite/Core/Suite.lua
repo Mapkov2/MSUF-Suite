@@ -192,11 +192,11 @@ function S.Normalize(profile)
     if NS.Client.isMainline and dataHadAnySlot and not dataHadBagChoice and not dataHadBagSlot then
         db.modules.dataTexts.hideBlizzardBagBar=false
     end
-    -- Existing Forever profiles predate the safer default. Disable ActionBars
-    -- once; a deliberate re-enable afterward remains the player's choice.
-    if NS.Client.isForever and (tonumber(db.actionBarsDefaultRevision) or 0) < 1 then
-        db.modules.actionbars.enabled = false
-        db.actionBarsDefaultRevision = 1
+    -- Activate ActionBars once for Forever profiles that were normalized with
+    -- the old disabled default. Later player choices remain untouched.
+    if NS.Client.isForever and (tonumber(db.actionBarsDefaultRevision) or 0) < 2 then
+        db.modules.actionbars.enabled = true
+        db.actionBarsDefaultRevision = 2
     end
     -- Repair the original Forever factory stack once, without moving bars
     -- whose position or size was customized in an existing profile.

@@ -23,7 +23,7 @@ end
 B.Module("actionbars", {
     title = "Action bars",
     description = "Ten action bars plus stance and pet bars with free layout, paging, visibility rules and button styling. Key bindings keep using Blizzard's commands.",
-    core = not NS.Client.isForever, defaultEnabled = not NS.Client.isForever,
+    core = true, defaultEnabled = true,
     page = "suite_actionbars",
     conflicts = { "ElvUI", "Bartender4", "Dominos", "EllesmereUIActionBars", "ConsolePort_Bar" },
     available = Available,

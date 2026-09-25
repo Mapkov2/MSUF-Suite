@@ -35,6 +35,8 @@ local function PreparedProfile()
     if xp then xp.point, xp.x, xp.y = 2, 0, -24 end
     local bars = modules.actionbars
     if bars then
+        -- The bundled Forever export predates the enabled default.
+        if selected == "forever" then bars.enabled = true end
         bars.bar1Point, bars.bar1X, bars.bar1Y = 8, 10, 48
         bars.bar2Point, bars.bar2X, bars.bar2Y = 8, 10, 92
         bars.bar3Point, bars.bar3X, bars.bar3Y = 7, 24, 210

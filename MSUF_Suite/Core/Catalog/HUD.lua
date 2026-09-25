@@ -1,7 +1,7 @@
 local _, NS = ...
 local B = NS.CatalogBuild
 
-local function Mainline()
+local function MainlineFamily()
     if not NS.Client.isMainline then
         return false, "Available in Retail and Forever"
     end
@@ -13,7 +13,7 @@ B.Module("objectives", {
     title = "Objective Tracker", page = "suite_hud", core = true,
     defaultEnabled = NS.Client.isMainline,
     description = "An MSUF-owned objective tracker with grouped, readable entries.",
-    available = Mainline,
+    available = MainlineFamily,
 })
 local objectiveContent = {
     B.Bool("showAchievements", "Tracked achievements", true),
@@ -74,7 +74,7 @@ B.Module("announcements", {
     title = "Announcements", page = "suite_hud", core = true,
     defaultEnabled = NS.Client.isMainline,
     description = "Cinematic zone and event announcements in the Suite look.",
-    available = Mainline,
+    available = MainlineFamily,
 })
 B.Section("announcements", "content", "Announcements", {
     B.Bool("zone", "Zone and subzone", true),

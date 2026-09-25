@@ -118,17 +118,17 @@ if flavor == "Forever" then
         and old.suite.modules.damageMeter.w2Y == 250
         and old.suite.modules.actionbars.bar1Visibility == 4
         and old.suite.modules.actionbars.bar12Visibility == 4
-        and old.suite.modules.actionbars.enabled == false
-        and old.suite.actionBarsDefaultRevision == 1
+        and old.suite.modules.actionbars.enabled == true
+        and old.suite.actionBarsDefaultRevision == 2
         and old.suite.paletteRevision == 1
         and old.suite.modules.chat.inputColor == "111517"
         and old.suite.modules.buffReminders.borderColor == "d8b66a"
         and old.suite.modules.cooldownManager.bar_barColor == "d8b66a",
         "old Forever factory layout was not repaired")
-    old.suite.modules.actionbars.enabled = true
+    old.suite.modules.actionbars.enabled = false
     S.Normalize(old)
-    assert(old.suite.modules.actionbars.enabled == true,
-        "a deliberate ActionBars re-enable must survive normalization")
+    assert(old.suite.modules.actionbars.enabled == false,
+        "a later ActionBars disable must survive normalization")
     local custom = { suite = { modules = {
         dataTexts = { bar1Width = 300, bar1Layout = 1, bar1Point = 9, bar1X = -20, bar1Y = 20 },
         damageMeter = { windowCount = 2, w1Width = 290, w1Y = 20, w2Y = 210 },

@@ -75,6 +75,20 @@ if flavor == "Mainline" or flavor == "Forever" then
             .. tostring(owner.Suite.catalog.objectives.available()) .. "/"
             .. tostring(owner.Suite.catalog.announcements.available()))
     if flavor == "Forever" then
+        assert(owner.Suite.Config("actionbars").enabled
+            and owner.Suite.catalog.actionbars.core
+            and owner.Suite.catalog.actionbars.rules.enabled.default,
+            "Forever ActionBars must be enabled by default")
+        local oldBars = { suite = { schema = 1, actionBarsDefaultRevision = 1,
+            modules = { actionbars = { enabled = false } } } }
+        owner.Suite.Normalize(oldBars)
+        assert(oldBars.suite.modules.actionbars.enabled
+            and oldBars.suite.actionBarsDefaultRevision == 2,
+            "older Forever profile did not activate ActionBars")
+        oldBars.suite.modules.actionbars.enabled = false
+        owner.Suite.Normalize(oldBars)
+        assert(not oldBars.suite.modules.actionbars.enabled,
+            "later player ActionBars choice was overwritten")
         local profile = { suite = { schema = 1, modules = {
             objectives = { enabled = false },
             announcements = { enabled = false },
@@ -93,6 +107,8 @@ if flavor == "Mainline" or flavor == "Forever" then
     owner.Suite.Normalize(owner.DB)
     owner.Suite.Config("objectives").enabled = false
     owner.Suite.Config("announcements").enabled = false
+    -- Secure ActionBars have their own contract fixture.
+    if flavor == "Forever" then owner.Suite.Config("actionbars").enabled = false end
 end
 frames[1]:callback("PLAYER_LOGIN")
 frames[2]:callback("PLAYER_ENTERING_WORLD", true, false)
@@ -112,12 +128,6 @@ end
 assert(owner.Suite.Config("chat").enabled == true
     and owner.Suite.Config("chat").look == (flavor == "Forever" and 3 or 2),
     "chat must start enabled with the client look")
-if flavor == "Forever" then
-    assert(not owner.Suite.Config("actionbars").enabled
-        and not owner.Suite.states.actionbars.active
-        and not loaded.MSUF_Suite_ActionBars,
-        "Forever must leave ActionBars off without loading the addon")
-end
 assert(#frames == 4 and loads == 1 and featureLoads == 1
     and not next(frames[1].events) and not next(frames[2].events))
 assert((owner.Suite.MythicPlus ~= nil) == (flavor == "Mainline"),
