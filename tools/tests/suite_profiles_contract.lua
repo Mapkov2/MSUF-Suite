@@ -286,4 +286,19 @@ assert(P.SyncActive("SwitchOnly") and P.OnLifecycle("delete", "Renamed")
 C_EncodingUtil = nil
 assert(not P.Export())
 assert(not DB.Delete("SwitchOnly") and DB.GetProfile("SwitchOnly"), "the active profile was deleted")
+encodings[#encodings + 1] = {
+    look = "forever",
+    icons = { microMenu = {
+        layoutPoint = "BOTTOMLEFT", layoutRelativePoint = "BOTTOMLEFT",
+        layoutX = 1791, layoutY = 20, positionPreset = "custom",
+    } },
+    windowControls = { positions = { CharacterFrame = { x = 333 } } },
+}
+local foreverSkin = "MSKIN1:" .. #encodings
+assert(P.InstallFactory("ForeverFactorySkin", "MSUF3:frames", DB.GetProfile("Raid"), foreverSkin))
+local factoryMenu = skinProfiles.ForeverFactorySkin.icons.microMenu
+assert(factoryMenu.layoutPoint == "BOTTOMLEFT" and factoryMenu.layoutRelativePoint == "BOTTOMLEFT"
+    and factoryMenu.layoutX == 1791 and factoryMenu.layoutY == 20
+    and not next(skinProfiles.ForeverFactorySkin.windowControls.positions),
+    "Forever installer overwrote the supplied Skin menu position")
 print("Standalone profiles: unified MSUF, module and skin sharing, lifecycle, migration, collision/combat guards, rollback and sanitization passed")

@@ -37,7 +37,12 @@ Suite.ProfileIO = {
         local modules = {}
         for _, id in ipairs(Suite.SuiteOrder) do modules[id] = { enabled = true } end
         modules.bags.enabled = text == Suite.RetailFactoryModuleCompact
-        modules.actionbars.enabled = text == Suite.RetailFactoryModuleCompact
+        modules.actionbars.enabled = true
+        if text == Suite.ForeverFactoryModuleCompact then
+            modules.actionbars.bar1Point = 8
+            modules.actionbars.bar3Point = 7
+            modules.actionbars.bar3X, modules.actionbars.bar3Y = 1039, 145
+        end
         if text == Suite.RetailFactoryModuleCompact then
             modules.cooldownManager.listsData = "MSUF3:factoryRogue"
         end
@@ -64,8 +69,11 @@ Suite.SuiteProfiles = {
         assert(skin == "MSKIN1:forever")
         assert(profile.suite.modules.chat.enabled)
         assert(profile.suite.modules.bags.enabled)
-        assert(profile.suite.modules.actionbars.enabled,
-            "Forever factory must enable ActionBars despite its old export")
+        assert(profile.suite.modules.actionbars.enabled
+            and profile.suite.modules.actionbars.bar3Point == 7
+            and profile.suite.modules.actionbars.bar3X == 1039
+            and profile.suite.modules.actionbars.bar3Y == 145,
+            "Forever factory must preserve exported Action Bars settings")
         assert(profile.suite.modules.minimap.x == -20
             and profile.suite.modules.xpBar.point == 2
             and profile.suite.modules.xpBar.y == -24

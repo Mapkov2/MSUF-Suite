@@ -57,7 +57,9 @@ end
 
 local function AdaptFactorySkin(profile, modules)
     if profile.windowControls then profile.windowControls.positions = {} end
-    PlaceFactoryMenu(profile, modules)
+    -- A Forever factory carries the selected menu position in its Skin export.
+    -- Modern supplies module geometry so its menu can follow the Damage Meter.
+    if modules then PlaceFactoryMenu(profile, modules) end
 end
 
 -- MSUF owns the selected profile in the unified UI. A Suite profile with the
