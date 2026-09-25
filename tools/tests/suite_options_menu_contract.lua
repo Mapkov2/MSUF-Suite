@@ -1094,6 +1094,17 @@ local glowLayer = previewControls["menu2.suite_minimap.minimap.preview.layer.glo
 assert(glowLayer and glowLayer.scripts.OnClick, "glow preview layer missing")
 glowLayer.scripts.OnClick(glowLayer, "RightButton")
 assert(focusedSection == "suite_minimap_style_glow", "right-clicking a layer did not open its settings")
+local drawerPreview = previewControls["menu2.suite_minimap.minimap.preview.drawer"]
+local originalIsAddOnLoaded = Suite.Client.IsAddOnLoaded
+Suite.Client.IsAddOnLoaded = function(name)
+    if name == "MinimapButtonButton" then return true end
+    return originalIsAddOnLoaded(name)
+end
+M.RequestRefresh()
+assert(not drawerPreview.shown, "MBB should hide the Suite drawer preview")
+Suite.Client.IsAddOnLoaded = originalIsAddOnLoaded
+M.RequestRefresh()
+assert(drawerPreview.shown, "Suite drawer preview did not return without MBB")
 S.Config("minimap").showLanding = 3
 M.RequestRefresh()
 assert(not folioPreview.shown, "disabled Folio still appears in the normal preview")
@@ -1196,7 +1207,6 @@ calendarPreview.scripts.OnDragStop(calendarPreview)
 assert(S.Config("minimap").buttonCalendarX == calendarX - 15
     and S.Config("minimap").buttonCalendarY == 20,
     "second Blizzard button did not keep its own position")
-local drawerPreview = previewControls["menu2.suite_minimap.minimap.preview.drawer"]
 cursorX, cursorY = 100, 100
 drawerPreview.scripts.OnDragStart(drawerPreview)
 cursorX, cursorY = 125, 90

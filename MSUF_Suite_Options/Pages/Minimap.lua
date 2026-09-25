@@ -13,7 +13,7 @@ local HELP = {
     behavior = "The mouse wheel zooms the map. Middle-click runs the chosen action; left and right clicks keep working as usual.",
     elements = "Blizzard's own buttons stay functional. The row is their starting position; drag each icon freely in the preview.",
     landing = "Omnium Folio is Midnight's expansion button. Choose Never to remove it, or Simple book for a smaller, quieter icon that still opens the feature.",
-    addons = "Buttons that addons place on the minimap are collected into a drawer. Drag its button in the preview; click it to open the icons in a grid.",
+    addons = "Buttons that addons place on the minimap are collected into a drawer. Drag its button in the preview; click it to open the icons in a grid. When MinimapButtonButton is loaded, it manages addon buttons instead.",
     info_colors = "Shared colors for the FPS and latency texts.",
     info_tooltips = "Used when a clock, FPS or latency text shows instance lockouts or the Great Vault on mouseover.",
 }
@@ -101,7 +101,8 @@ local function Build(ctx)
     P.BuildMinimapPreview(ctx, b, sections)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Collect addon buttons again", function() if S.MinimapRescanButtons then S.MinimapRescanButtons() end end,
-          function() return S.MinimapRescanButtons ~= nil and P.Get(ID, "enabled") and P.Get(ID, "collectButtons") end, key = "rescan" },
+          function() return S.MinimapRescanButtons ~= nil and P.Get(ID, "enabled") and P.Get(ID, "collectButtons")
+              and not Suite.Client.IsAddOnLoaded("MinimapButtonButton") end, key = "rescan" },
         { "Reload UI", function() if ReloadUI then ReloadUI() end end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
         { "Reset module", function()

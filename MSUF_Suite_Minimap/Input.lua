@@ -246,7 +246,7 @@ end
 
 local function NeedsHover(c)
     return c.visibility == 4 or c.zoomButtons == 1 or (c.hoverResize and c.visibility ~= 5)
-        or (c.collectButtons and c.drawerMouseover)
+        or (MM.CollectsButtons() and c.drawerMouseover)
         or (c.infoCoordinates and c.infoCoordinatesMode == 1)
         or (c.showLanding == 2 and S.MinimapElementAvailable and S.MinimapElementAvailable("Landing"))
 end

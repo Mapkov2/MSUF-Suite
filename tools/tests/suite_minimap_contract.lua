@@ -578,6 +578,38 @@ do
     print("Minimap drawer collection/exclusion, owner visibility, single button, debounced rescans and restore passed")
 end
 
+-- MBB collects and locks addon buttons itself. Its presence must not disable
+-- the map, and loading it after the Suite must release our drawer ownership.
+do
+    local mbbLoaded = true
+    local W = H.New(root, "Mists", { beforeModules = function(W)
+        W.G.C_AddOns.IsAddOnLoaded = function(name) return name == "MinimapButtonButton" and mbbLoaded end
+    end })
+    local icon = W.Button("LibDBIcon10_MBBStartup", W.map, 31, 31)
+    H.Enable(W, { captured = true })
+    W.Step()
+    check(W.S.Availability("minimap") and W.M.active and W.M.mapOwned, "MBB blocked the Suite minimap")
+    check(icon:GetParent() == W.map and W.MM.panel == nil and not W.S.MinimapRescanButtons(),
+        "Suite drawer claimed MBB's buttons at startup")
+
+    mbbLoaded = false
+    local late = H.New(root, "Mists", { beforeModules = function(W)
+        W.G.C_AddOns.IsAddOnLoaded = function(name) return name == "MinimapButtonButton" and mbbLoaded end
+    end })
+    local button = late.Button("LibDBIcon10_MBBLate", late.map, 31, 31)
+    H.Enable(late, { captured = true })
+    late.Step()
+    check(button:GetParent() ~= late.map, "Suite did not collect the button before MBB loaded")
+    mbbLoaded = true
+    late.Event("ADDON_LOADED", "MinimapButtonButton")
+    late.Step()
+    check(late.S.Availability("minimap") and late.M.active and late.M.mapOwned,
+        "late MBB load disabled the Suite minimap")
+    check(button:GetParent() == late.map and not late.S.MinimapRescanButtons(),
+        "Suite did not yield addon buttons to late MBB")
+    print("MinimapButtonButton startup and late-load button ownership passed")
+end
+
 -- Reclaim: another SetParent is undone one frame later, after combat when locked.
 do
     local W = H.New(root, "Mainline")
