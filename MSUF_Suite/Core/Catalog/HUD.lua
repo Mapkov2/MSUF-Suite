@@ -8,7 +8,7 @@ local function Mainline()
     return true
 end
 
--- The two HUDs own their frames. Horizon is a visual reference only.
+-- The two HUDs own their frames.
 B.Module("objectives", {
     title = "Objective Tracker", page = "suite_hud", core = true,
     defaultEnabled = NS.Client.isMainline and not NS.Client.isForever,

@@ -116,6 +116,62 @@ local DEFENSIVES={
 }
 Presets.DEFENSIVES=DEFENSIVES
 
+-- Raid essentials for Retail 12.1. Each row is a specialization ID and is
+-- intentionally short: major throughput windows and the buttons needed to
+-- prepare them. Talent alternatives may coexist; Resolve shows only learned
+-- spells. Personal defensives, consumables and racials have their own bars.
+-- Sources: current Wowhead Midnight Season 2 rotation/cooldown guides. The
+-- Warcraft Logs candidate reports in the local audit still need cast/buff
+-- verification. The client's CooldownViewer catalog decides which spell can
+-- be tracked.
+local RAID_ESSENTIALS={
+    [62]={365350,321507,12051},                         -- Arcane Mage
+    [63]={190319,153561,108853},                        -- Fire Mage
+    [64]={205021,153595,84714},                         -- Frost Mage: Comet Storm replaces Ray of Frost after use
+    [65]={31884,375576,31821,114165,200025,6940},      -- Holy Paladin, incl. Blessing of Sacrifice
+    [66]={31884,389539,375576,432472},                  -- Protection Paladin: Avenging Wrath / Sentinel choice
+    [70]={31884,375576,343527,255937,427453},          -- Retribution Paladin
+    [71]={107574,167105,227847,1269383},               -- Arms Warrior
+    [72]={1719,107574,227847,385059},                   -- Fury Warrior
+    [73]={107574,385952,2565},                          -- Protection Warrior
+    [102]={194223,102560,202770,205636,391528},        -- Balance Druid
+    [103]={106951,102543,274837,5217,391528},          -- Feral Druid: current Convoke talent spell
+    [104]={50334,204066,391528,1261870},                -- Guardian Druid
+    [105]={740,33891,391528,132158,102342},            -- Restoration Druid, incl. Nature's Swiftness and Ironbark
+    [250]={49028,439843},                               -- Blood Death Knight
+    [251]={51271,439843,47568,279302,1249658,196770}, -- Frost Death Knight: Deathbringer and Breath options
+    [252]={42650,1233448,1247378},                    -- Unholy Death Knight
+    [253]={19574,34026,466930},                       -- Beast Mastery Hunter
+    [254]={288613,19434,257044,212431,260243,466930}, -- Marksmanship Hunter: Explosive Shot / Volley choices
+    [255]={1250646,259495,1261193},                   -- Survival Hunter
+    [256]={472433,421453,194509,10060,62618,33206},   -- Discipline Priest, incl. Barrier and Pain Suppression
+    [257]={64843,47788,200183,120517,10060},           -- Holy Priest, incl. Power Infusion
+    [258]={10060,228260,263165,120644},                -- Shadow Priest
+    [259]={360194,385627,1856,5938},                    -- Assassination Rogue: Shiv for Deathstalker
+    [260]={13750,315508,1277933,51690,13877,381989},  -- Outlaw Rogue
+    [261]={185313,121471,280719,426591,1856},          -- Subtlety Rogue
+    [262]={191634,114050,198067,443454},               -- Elemental Shaman
+    [263]={384352,114051,197214,444995},               -- Enhancement Shaman: Ascendance replaces Doom Winds
+    [264]={114052,98008,108280,378081,444995},         -- Restoration Shaman: Surging Totem for Totemic
+    [265]={1257052,442726,205180},                     -- Affliction Warlock
+    [266]={265187,104316,1276452,1276467,1276672},     -- Demonology Warlock
+    [267]={1122,80240,152108,442726},                  -- Destruction Warlock
+    [268]={132578,325153,1241059,119582},              -- Brewmaster Monk
+    [269]={1249625,123904,1251001,322109,443028},      -- Windwalker Monk: Zenith, Xuen, Fists of Fury, Touch of Death, Conduit
+    [270]={116680,115310,388615,322118,325197,116849,443028}, -- Mistweaver Monk: Revival/Restoral, Yu'lon/Chi-Ji, Cocoon, Conduit
+    [577]={191427,198013,258860,370965},               -- Havoc Demon Hunter
+    [581]={212084,207407,390163},                       -- Vengeance Demon Hunter
+    [1467]={375087,357210,433874,357208,359073,370553}, -- Devastation Evoker: base and steerable Deep Breath
+    [1468]={370537,359816,363534,370553,357170},       -- Preservation Evoker, incl. Time Dilation
+    [1473]={395152,403631,409311,404977,370553},       -- Augmentation Evoker, incl. Tip the Scales
+    [1480]={1217605,473728,1221150,1246167},          -- Devourer Demon Hunter: cast, not the 1217607 aura
+}
+Presets.RAID_ESSENTIALS=RAID_ESSENTIALS
+
+function Presets.RaidEssentials(specID)
+    return RAID_ESSENTIALS[specID]
+end
+
 -- Active racial abilities, appended to the Potions and racials bar. Blizzard's
 -- catalog does not list them; only the character's own racial is known.
 local RACIALS={

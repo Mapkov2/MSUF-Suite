@@ -14,7 +14,9 @@ B.Module("minimap", {
     title = "Minimap",
     description = "A clean minimap in its own frame: size, shape, border, zoom, Blizzard buttons, an addon button drawer and information texts. Blizzard's minimap buttons keep working.",
     core = true, page = "suite_minimap",
-    conflicts = { "SexyMap", "MinimapButtonButton", "EllesmereUIMinimap", "ElvUI" },
+    -- A dedicated minimap button collector owns addon buttons, not the map. The
+    -- runtime lets it keep those buttons and leaves the Suite drawer dormant.
+    conflicts = { "SexyMap", "EllesmereUIMinimap", "ElvUI" },
     available = Available,
 })
 
@@ -195,14 +197,15 @@ B.Section(id, "addons", "Addon buttons", {
 -- Information texts keep their established keys and per-text styling.
 local infoFields = { {"Clock", 2, 0, -4, 120, "Show clock"}, {"FPS", 7, 4, 4, 100, "Show FPS"},
     {"Latency", 9, -4, 4, 110, "Show latency"}, {"Coordinates", 1, 4, -4, 100, "Show coordinates"},
-    {"Durability", 3, -4, -4, 110, "Show durability"}, {"Location", 8, 0, 4, 220, "Show location"} }
+    {"Durability", 3, -4, -4, 110, "Show durability"}, {"Location", 8, 0, 4, 220, "Show location"},
+    {"Weather", 11, 0, -4, 120, "Show weather"} }
 NS.MinimapInfoFields = {}
 for _, field in ipairs(infoFields) do
     local key = field[1]
     local prefix = "info" .. key
     NS.MinimapInfoFields[#NS.MinimapInfoFields + 1] = key
     local section = "info_" .. key:lower()
-    local shown = B.Add(id, Bool(prefix, field[6], key == "Clock" or key == "Location"), section, key)
+    local shown = B.Add(id, Bool(prefix, field[6], key == "Clock" or key == "Location" or key == "Weather" and NS.Client.isForever), section, key)
     shown.infoField = key
     local function Info(rule) rule.enableKey = prefix; return B.Add(id, rule, section, key) end
     Info(Font(prefix .. "Font", "Text font"))

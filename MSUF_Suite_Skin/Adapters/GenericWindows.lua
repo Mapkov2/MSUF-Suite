@@ -1228,20 +1228,23 @@ local function RegisterDynamicScrollBox(scrollBox, owner, allowImplicitProtected
         return false
     end
 
+    -- The callback can fire repeatedly while rows recycle in combat. Keep
+    -- its immutable mode beside the registration instead of allocating it
+    -- for every row, including rows we intentionally skip while locked.
+    local mode = {
+        role = "card",
+        radius = 4,
+        inset = 0,
+        listItem = true,
+        maxDepth = 4,
+        maxNodes = 120,
+        allowImplicitProtected = allowImplicitProtected == true,
+        menuPopup = menuPopup == true,
+    }
     local function SkinRow(_, row)
         if not ownerState.active or not row then
             return
         end
-        local mode = {
-            role = "card",
-            radius = 4,
-            inset = 0,
-            listItem = true,
-            maxDepth = 4,
-            maxNodes = 120,
-            allowImplicitProtected = allowImplicitProtected == true,
-            menuPopup = menuPopup == true,
-        }
         if NS.IsCombatLocked() then
             -- Optional pooled-row cosmetics never justify combat work or a
             -- post-combat backlog. A later OOC initialization/refresh handles

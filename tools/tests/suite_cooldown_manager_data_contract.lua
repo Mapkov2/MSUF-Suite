@@ -17,7 +17,7 @@ issecretvalue=IsSecret
 
 ------------------------------------------------------------------ static checks
 -- TOC order; Presets.lua is plain data plus one class lookup (CDM table only).
-local FILES={"Presets.lua","Catalog.lua","Resolve.lua","Index.lua"}
+local FILES={"Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua"}
 local HEADER,DATA_HEADER="local _,P=...\nlocal NS,S=P.NS,P.Suite\nlocal C=P.CDM\n","local _,P=...\nlocal C=P.CDM\n"
 for _,file in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..file
@@ -25,7 +25,7 @@ for _,file in ipairs(FILES) do
     local handle=assert(io.open(path,"rb"))
     local text=handle:read("*a"):gsub("\r","")
     handle:close()
-    local header=file=="Presets.lua" and DATA_HEADER or HEADER
+    local header=(file=="Presets.lua" or file=="GuideProfiles.lua") and DATA_HEADER or HEADER
     assert(text:sub(1,#header)==header,file.." header")
     -- The data plane only decides which unit an entry watches; it anchors no
     -- frame, so no aura container can be anchored (to another container or
@@ -162,7 +162,7 @@ end
 ------------------------------------------------------------------ bootstrap stub + files
 local S={Public=function(v) return not IsSecret(v) end,Text=function(v) return v end}
 local P={NS=NS,Suite=S}
-P.CDM={M={},EMPTY={},state={},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
+P.CDM={M={},EMPTY={},state={raidEssentials=false},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local C=P.CDM
 -- The shared constants and helpers load first, as in the TOC.
@@ -317,6 +317,27 @@ assert(Catalog.content==content+1,"a changed rebuild moves the content generatio
 CDM_HIDE_INVISIBLE_ITEMS=nil
 assert(Catalog.Rebuild()==true and recs[502] and Keys(Catalog.byBar.ext)=="501,502")
 
+-- Guide recommendations only affect Suite defaults for Utility and buffs.
+-- Current client IDs, saved Blizzard layout, and a spec without a guide
+-- profile remain authoritative in their own paths.
+local guideCount=0
+for spec in pairs(C.GuideProfiles) do guideCount=guideCount+1;assert(C.Presets.RAID_ESSENTIALS[spec]) end
+assert(guideCount==40 and next(C.GuideProfiles[256])==nil,"40 guide imports, Discipline stock fallback")
+local originalGuide=C.GuideProfiles[63]
+C.GuideProfiles[63]={order={203,103,202,111,999999},moves={[111]=-1,[103]=1,[202]=3,[203]=2}}
+C.state.specID=63
+assert(Catalog.Rebuild()==true)
+Same("guide utility",Keys(Catalog.defaultByBar.uti),"b103,b112")
+Same("guide buff icons",Keys(Catalog.defaultByBar.buf),"b203,b201,b801,b601")
+Same("guide buff bars",Keys(Catalog.defaultByBar.bar),"b202,b301")
+Same("guide leaves Blizzard layout",Keys(Catalog.byBar.uti),"111,112")
+C.GuideProfiles[63]=originalGuide
+C.state.specID=nil
+assert(Catalog.Rebuild()==true)
+Same("guide fallback utility",Keys(Catalog.defaultByBar.uti),"b111,b112")
+Same("guide fallback buff icons",Keys(Catalog.defaultByBar.buf),"b201,b202,b801,b601")
+Same("guide fallback buff bars",Keys(Catalog.defaultByBar.bar),"b301")
+
 ------------------------------------------------------------------ catalog: layout versions
 local function Layout(key,data) layouts[key]=data;layoutBlob="1|"..key;Catalog.Rebuild() end
 -- v5: saved order merge (unknown 999 dropped), pool item 7 -> Essential,
@@ -327,6 +348,9 @@ Same("v5 order",Keys(Catalog.order),"102,101,111,103,104,107,112,201,202,203,301
 Same("v5 ess",Keys(Catalog.byBar.ess),"102,101,107,701")
 Same("v5 uti",Keys(Catalog.byBar.uti),"103,112")
 Same("v5 ext",Keys(Catalog.byBar.ext),"501,502")
+Same("stock utility ignores saved moves",Keys(Catalog.defaultByBar.uti),"b111,b112")
+Same("stock buff icons",Keys(Catalog.defaultByBar.buf),"b201,b202,b801,b601")
+Same("stock buff bars",Keys(Catalog.defaultByBar.bar),"b301")
 assert(recs[111].category==-1 and recs[701].category==0 and recs[701].bar=="ess" and recs[103].bar=="uti")
 assert(Catalog.specTag==83)
 -- Decoded once per distinct string.
@@ -876,6 +900,22 @@ local function Unique(label,ids)
     end
 end
 for classID=1,13 do Unique("defensives "..classID,Presets.DEFENSIVES[classID]) end
+local raidSpecs={62,63,64,65,66,70,71,72,73,102,103,104,105,250,251,252,253,254,255,
+    256,257,258,259,260,261,262,263,264,265,266,267,268,269,270,577,581,1467,1468,1473,1480}
+local raidCount=0
+for _,spec in ipairs(raidSpecs) do
+    local ids=Presets.RaidEssentials(spec)
+    Unique("raid spec "..spec,ids)
+    -- Mistweaver stores Revival/Restoral and Yu'lon/Chi-Ji alternatives;
+    -- only the learned choice from each pair is shown to a character.
+    assert(#ids<=(spec==270 and 7 or 6),"raid default is too crowded: "..spec)
+    raidCount=raidCount+1
+end
+local actual=0
+for _ in pairs(Presets.RAID_ESSENTIALS) do actual=actual+1 end
+assert(actual==raidCount and raidCount==40,"raid defaults must cover the 40 Retail specializations")
+assert(Presets.RAID_ESSENTIALS[1480][1]==1217605,
+    "Devourer must track the Void Metamorphosis cast, not its aura")
 Unique("racials",Presets.RACIALS)
 for _,category in ipairs({4,30,1711,2566}) do Unique("category "..category,Presets.CATEGORY_ITEMS[category]) end
 -- The class is UnitClass's third return; an unknown class has no list.
@@ -1181,5 +1221,108 @@ Bars("stones gone",{ext="b501,b502,s28730"})
 -- Across every catalog generation, spec and preview above, each spell ID was
 -- asked whether it is harmful once.
 for id,count in pairs(harmfulCalls) do Same("asked once in the run "..id,count,1) end
+
+-- Default-on raid list, legacy explicit list and imported complete list are
+-- different modes. An empty imported Blizzard category stays intentionally
+-- empty instead of silently refilling from the raid or Blizzard fallback.
+names[190319],textures[190319],known[190319]="Combustion",{190319,190319},true
+C.state.specID,C.state.raidEssentials=63,true
+C.lists=CDM.CleanLists(nil)
+plans=Resolve.Build()
+Same("raid default keeps the on-use trinket",Keys(plans.ess.entries),"s190319,b701")
+C.lists=CDM.CleanLists({specs={[63]={c1={"e13"}}}})
+plans=Resolve.Build()
+Same("custom trinket home wins over raid default",Keys(plans.ess.entries),"s190319")
+assert(E.e13 and E.e13.slot=="c1" and E.b701==nil,"trinket must have one home")
+C.lists=CDM.CleanLists({specs={[63]={ess={"b101","b102"}}}})
+plans=Resolve.Build()
+assert(#plans.ess.entries>2 and plans.ess.entries[1].key=="b101"
+    and plans.ess.entries[2].key=="b102","existing explicit lists keep their append behavior")
+C.lists=CDM.CleanLists({specs={[63]={ess={}}},replace={[63]={ess=true}}})
+plans=Resolve.Build()
+assert(#plans.ess.entries==0 and C.lists.replace[63].ess,"an imported empty category is exact")
+C.state.raidEssentials=false
+C.lists=CDM.CleanLists(nil)
+plans=Resolve.Build()
+assert(#plans.ess.entries>0 and plans.ess.entries[1].key=="b101","onboarding can choose native Blizzard entries")
+
+-- The Suite profile uses stock spec categories for Utility and both buff
+-- rows, even when the active Blizzard layout moved a utility spell. An
+-- explicit import can still replace each row exactly.
+layoutBlob="1|L5"
+Catalog.Rebuild()
+C.state.raidEssentials=true
+C.lists=CDM.CleanLists(nil)
+plans=Resolve.Build()
+Same("spec utility excludes defensive preset",Keys(plans.uti.entries),"b111,b112")
+Same("spec defensives reclaim Blizzard utility spells",Keys(plans.def.entries),"b113,s342245,b105,b114")
+Same("spec buff icons",Keys(plans.buf.entries),"b201,b202,b801,b601")
+Same("spec buff bars",Keys(plans.bar.entries),"b301")
+C.lists=CDM.CleanLists({specs={[63]={uti={"b112"},buf={},bar={}}},
+    replace={[63]={uti=true,buf=true,bar=true}}})
+plans=Resolve.Build()
+Same("imported utility exact",Keys(plans.uti.entries),"b112")
+Same("imported buff icons may be empty",Keys(plans.buf.entries),"")
+Same("imported buff bars may be empty",Keys(plans.bar.entries),"")
+C.state.raidEssentials=false
+C.lists=CDM.CleanLists(nil)
+plans=Resolve.Build()
+Same("native utility follows saved Blizzard move",Keys(plans.uti.entries),"b103,b112")
+Layout("BuffMove",{[1]=5,[2]={[83]=7},[3]={[83]={[7]={[2]={[3]={201},[2]={301}}}}}})
+C.state.raidEssentials=true
+plans=Resolve.Build()
+Same("spec buff icons ignore saved move",Keys(plans.buf.entries),"b201,b202,b801,b601")
+Same("spec buff bars ignore saved move",Keys(plans.bar.entries),"b301")
+C.state.raidEssentials=false
+plans=Resolve.Build()
+Same("native buff icons follow saved move",Keys(plans.buf.entries),"b202,b301,b801,b601")
+Same("native buff bars follow saved move",Keys(plans.bar.entries),"b201")
+
+-- A defensive from every class must return to the dedicated row across all
+-- 40 raid specs, even if Blizzard categorizes its record as Utility.
+local classForSpec={}
+for classID,specs in pairs({
+    [1]={71,72,73},[2]={65,66,70},[3]={253,254,255},[4]={259,260,261},
+    [5]={256,257,258},[6]={250,251,252},[7]={262,263,264},[8]={62,63,64},
+    [9]={265,266,267},[10]={268,269,270},[11]={102,103,104,105},
+    [12]={577,581,1480},[13]={1467,1468,1473},
+}) do
+    for _,spec in ipairs(specs) do classForSpec[spec]=classID end
+end
+local firstDefensive={ [4]=1966, [8]=342245 }
+local defensiveRecord={}
+for classID=1,13 do
+    local spell=firstDefensive[classID] or Presets.DEFENSIVES[classID][1]
+    local id=200000+classID
+    infos[id]=Info(id,1,spell)
+    sets[1][#sets[1]+1]=id
+    names[spell],textures[spell],known[spell]="Defensive "..classID,{spell,spell},true
+    defensiveRecord[classID]=id
+end
+C.state.raidEssentials=true
+C.lists=CDM.CleanLists(nil)
+local checked=0
+for spec,classID in pairs(classForSpec) do
+    UnitClass=function() return "Class","CLASS",classID end
+    C.state.specID=spec
+    Catalog.Rebuild()
+    plans=Resolve.Build()
+    local key="b"..defensiveRecord[classID]
+    assert(E[key] and E[key].slot=="def", "spec "..spec.." lost its defensive row")
+    for _,entry in ipairs(plans.uti.entries) do
+        assert(entry.key~=key, "spec "..spec.." duplicated a defensive in Utility")
+    end
+    checked=checked+1
+end
+assert(checked==40,"all 40 raid specs must keep the defensive row")
+
+-- A user can still deliberately move a defensive to Utility through an
+-- imported row; the Suite default must not override that explicit choice.
+UnitClass=function() return "Rogue","ROGUE",4 end
+C.state.specID=259
+Catalog.Rebuild()
+C.lists=CDM.CleanLists({specs={[259]={uti={"b200004"}}},replace={[259]={uti=true}}})
+plans=Resolve.Build()
+assert(E.b200004 and E.b200004.slot=="uti","imported Rogue Feint move must remain in Utility")
 
 print("cooldown manager data contract ok: "..#Catalog.order.." records, "..#Index.cooldown.." cooldown entries")

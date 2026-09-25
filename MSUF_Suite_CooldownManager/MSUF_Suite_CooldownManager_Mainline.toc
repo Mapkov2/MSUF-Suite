@@ -9,6 +9,7 @@
 Bootstrap.lua
 Const.lua
 Presets.lua
+GuideProfiles.lua
 Catalog.lua
 Resolve.lua
 Index.lua

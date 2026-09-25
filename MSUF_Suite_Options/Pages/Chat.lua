@@ -11,6 +11,40 @@ end
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local GLYPHS = "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png"
 
+-- Blizzard owns chat timestamps through the global showTimestamps CVar. Keep
+-- this row bound to that native setting so Suite profiles cannot silently
+-- override a choice made in Blizzard's Social options.
+local TIMESTAMP_KEYS = {
+    "TIMESTAMP_FORMAT_HHMM", "TIMESTAMP_FORMAT_HHMMSS",
+    "TIMESTAMP_FORMAT_HHMM_AMPM", "TIMESTAMP_FORMAT_HHMMSS_AMPM",
+    "TIMESTAMP_FORMAT_HHMM_24HR", "TIMESTAMP_FORMAT_HHMMSS_24HR",
+}
+
+local function TimestampValues()
+    local values = { { value = "none", text = Tr("Off") } }
+    local example = { year = 2010, month = 12, day = 15, hour = 15, min = 27, sec = 32 }
+    local when = type(time) == "function" and time(example) or nil
+    for _, key in ipairs(TIMESTAMP_KEYS) do
+        local format = _G[key]
+        if type(format) == "string" and format ~= "" then
+            local label = _G.TimeUtil and type(_G.TimeUtil.BetterDate) == "function" and when
+                and _G.TimeUtil.BetterDate(format, when) or format
+            values[#values + 1] = { value = format, text = label }
+        end
+    end
+    return values
+end
+
+local function TimestampSetting()
+    local get = _G.C_CVar and _G.C_CVar.GetCVar or _G.GetCVar
+    return type(get) == "function" and get("showTimestamps") or "none"
+end
+
+local function SetTimestamp(value)
+    local set = _G.C_CVar and _G.C_CVar.SetCVar or _G.SetCVar
+    if type(set) == "function" and type(value) == "string" then set("showTimestamps", value) end
+end
+
 local function Color(texture, hex, alpha)
     local r, g, b = P.RGB(hex)
     texture:SetVertexColor(r, g, b, (alpha or 100) / 100)
@@ -134,6 +168,25 @@ local function Build(ctx)
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_text", Tr("Message text"),
         P.SectionRules(ID, "text"), {
             help = "Leave font and size at their defaults to follow Blizzard or MSUF Fonts. Choose an outline, shadow and Smooth, Sharp or Slug rendering for chat messages. Slug has no shadow.",
+        })
+    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_tools", Tr("Chat tools"),
+        P.SectionRules(ID, "tools"), {
+            help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, use Copy on a chat window, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on.",
+            extra = function(body, y, width)
+                local row = P.Meta(PAGE, ID, "timestamp", "setting", PAGE .. "_tools")
+                row.id = "timestamp"
+                row.label = Tr("Timestamps (Blizzard setting)")
+                row.kind = "dropdown"
+                row.values = TimestampValues
+                row.get = TimestampSetting
+                row.set = SetTimestamp
+                row.settingKey = "showTimestamps"
+                local grid = P.W.SettingsRows(ctx, body, {
+                    x = 16, y = y, width = width, columns = 2,
+                    rows = { row },
+                })
+                return grid.bottomY
+            end,
         })
 end
 

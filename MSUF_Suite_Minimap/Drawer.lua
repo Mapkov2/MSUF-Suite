@@ -12,6 +12,11 @@ local list, visible, rowItem = {}, {}, {}
 local toggle, panel, single, rescanTimer, library
 local libraryToken = {}
 local GAP, MARGIN, RESCAN_DELAY = 4, 8, 0.1
+-- MBB takes permanent ownership of the buttons it collects. Keep the map
+-- active, but never compete with its button container.
+function MM.CollectsButtons()
+    return M.config and M.config.collectButtons and not NS.Client.IsAddOnLoaded("MinimapButtonButton") or false
+end
 -- Blizzard frames, the suite's own and known replacements are never collected.
 local BLOCKED = {
     MinimapBackdrop = true, MinimapZoomIn = true, MinimapZoomOut = true, GameTimeFrame = true, TimeManagerClockButton = true,
@@ -172,7 +177,7 @@ end
 
 function MM.LayoutDrawer()
     local c = M.config
-    if not c.collectButtons or not toggle then return end
+    if not MM.CollectsButtons() or not toggle then return end
     local count, level = 0, panel:GetFrameLevel() + 2
     for i = 1, #list do
         local button = list[i]
@@ -226,14 +231,14 @@ end
 MM.flushers.drawer = MM.LayoutDrawer
 
 MM.OnHover(function()
-    if toggle and M.active and M.config.collectButtons and M.config.drawerMouseover and #visible > 1 then
+    if toggle and M.active and MM.CollectsButtons() and M.config.drawerMouseover and #visible > 1 then
         toggle:SetShown(ToggleShown(M.config))
     end
 end)
 
 local function Rescan()
     rescanTimer = nil
-    if not M.active or not M.config.collectButtons then return end
+    if not M.active or not MM.CollectsButtons() then return end
     -- Late ADDON_LOADED icons are placed right away: rescan, then relayout.
     Scan()
     MM.Queue("drawer")
@@ -249,6 +254,7 @@ local function Library()
 end
 -- Without collection LibDBIcon lays its icons around the current shape and size.
 function MM.RefreshIcons()
+    if NS.Client.IsAddOnLoaded("MinimapButtonButton") then return end
     local lib = Library()
     if not lib or type(lib.GetButtonList) ~= "function" or type(lib.Refresh) ~= "function" then return end
     local names = lib:GetButtonList()
@@ -258,7 +264,7 @@ end
 
 function MM.ApplyDrawer()
     local c = M.config
-    if not c.collectButtons then
+    if not MM.CollectsButtons() then
         MM.ReleaseDrawer()
         MM.RefreshIcons()
         return
@@ -276,7 +282,7 @@ function MM.ApplyDrawer()
 end
 
 function S.MinimapRescanButtons()
-    if not M.active or not M.config.collectButtons or not toggle or NS.IsCombatLocked() then return false end
+    if not M.active or not MM.CollectsButtons() or not toggle or NS.IsCombatLocked() then return false end
     Scan()
     MM.LayoutDrawer()
     return true

@@ -73,7 +73,12 @@ local function AddCooldown(e,view)
         Index.countedSet[e]=true
     end
     if e.hasRange and view and view.range then Push(Index.ranged,e) end
-    if spell and view and view.usable then Push(Index.usable,e) end
+    -- Equipment-slot entries have no usable query or tint state to refresh.
+    -- Explicit item entries still use IsUsableItem, even with an equip slot.
+    if spell and view and view.usable
+        and (e.src=="i" or not (e.equipSlot or e.src=="e")) then
+        Push(Index.usable,e)
+    end
     if spell and view and K.Pick(ov,view,"procGlow") then Push(Index.proc,e) end
     -- Ready glows flip on combat edges only where one is wanted.
     if view and K.Pick(ov,view,"readyGlow") then Push(Index.ready,e) end

@@ -234,14 +234,16 @@ local function ToastData(frame)
     return ToastKind(eventType), Text(title), Text(subtitle), Number(id) and id or nil
 end
 
+local ZONE_FRAMES = {
+    { "ZoneTextFrame", "zone" }, { "SubZoneTextFrame", "zone" },
+    { "LevelUpDisplay", "level" }, { "LevelUpDisplaySide", "level" },
+    { "ObjectiveTrackerTopBannerFrame", "quests" },
+    { "WorldQuestCompleteBannerFrame", "quests" },
+}
 local function NativeZone(self)
     if NS.IsCombatLocked() or not self.context then return end
-    for _, spec in ipairs({
-        { "ZoneTextFrame", "zone" }, { "SubZoneTextFrame", "zone" },
-        { "LevelUpDisplay", "level" }, { "LevelUpDisplaySide", "level" },
-        { "ObjectiveTrackerTopBannerFrame", "quests" },
-        { "WorldQuestCompleteBannerFrame", "quests" },
-    }) do
+    for i = 1, #ZONE_FRAMES do
+        local spec = ZONE_FRAMES[i]
         local frame = _G[spec[1]]
         if frame and not NS.Safety.IsForbidden(frame) then
             if self.config[spec[2]] then
@@ -259,19 +261,23 @@ local function NativeToasts(self)
     local frame = _G.EventToastManagerFrame
     if not frame or NS.Safety.IsForbidden(frame) then return end
     if not NS.IsCombatLocked() then
-        local kind = ToastData(frame)
-        local enabled = self.config.eventToasts and (kind == nil
-            or kind == "notice" or self.config[kind == "quest" and "quests" or kind])
+        local enabled = false
+        if self.config.eventToasts then
+            local kind = ToastData(frame)
+            enabled = kind == nil or kind == "notice"
+                or self.config[kind == "quest" and "quests" or kind]
+        end
         self.context:HideControl(frame, enabled == true)
     end
+    if not self.config.eventToasts then return end
     self.toastHooks = self.toastHooks or setmetatable({}, { __mode = "k" })
     if self.toastHooks[frame] or type(hooksecurefunc) ~= "function"
         or type(frame.DisplayToast) ~= "function" then return end
     local hooked = pcall(hooksecurefunc, frame, "DisplayToast", function(manager)
-        if not self.active or not self.context then return end
+        if not self.active or not self.context or not self.config.eventToasts then return end
         local kind, title, subtitle, id = ToastData(manager)
-        local allowed = self.config.eventToasts and (kind == nil
-            or kind == "notice" or self.config[kind == "quest" and "quests" or kind])
+        local allowed = kind == nil or kind == "notice"
+            or self.config[kind == "quest" and "quests" or kind]
         if not NS.IsCombatLocked() then self.context:HideControl(manager, allowed == true) end
         if not allowed or not title then return end
         local recent = self.lastDirect and self.lastDirect[kind]
@@ -285,14 +291,17 @@ local function SuppressAlerts(self, system, kind)
     if not self.active or not self.config[kind] or NS.IsCombatLocked() then return end
     local pool = system and system.alertFramePool
     if not pool or type(pool.EnumerateActive) ~= "function" then return end
-    local frames = {}
-    for frame in pool:EnumerateActive() do frames[#frames + 1] = frame end
-    for i = 1, #frames do
+    local frames = self.alertScratch
+    if not frames then frames = {}; self.alertScratch = frames end
+    local count = 0
+    for frame in pool:EnumerateActive() do count = count + 1; frames[count] = frame end
+    for i = 1, count do
         local frame = frames[i]
         if frame and not NS.Safety.IsForbidden(frame) then
             self.context:Property(frame, "GetParent", "SetParent", self.hiddenParent)
             self.alertFrames[frame] = kind
         end
+        frames[i] = nil
     end
 end
 
@@ -314,7 +323,7 @@ local function NativeAlerts(self)
         local spec = ALERT_SYSTEMS[i]
         local system = _G[spec[1]]
         if system then
-            if not self.alertHooks[system] and type(hooksecurefunc) == "function"
+            if self.config[spec[2]] and not self.alertHooks[system] and type(hooksecurefunc) == "function"
                 and type(system.ShowAlert) == "function" then
                 local kind = spec[2]
                 local hooked = pcall(hooksecurefunc, system, "ShowAlert", function(target, data)

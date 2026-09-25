@@ -36,11 +36,11 @@ local function Read(path)
     handle:close()
     return text
 end
-local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","Catalog.lua","Resolve.lua","Index.lua","Icons.lua","Time.lua",
+local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua","Icons.lua","Time.lua",
     "Effects.lua","Auras.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
     "Controller.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
-assert(#tocFiles==#ORDER,"runtime TOC must list the 17 files of spec section 1 (Presets.lua after Const.lua)")
+assert(#tocFiles==#ORDER,"runtime TOC must list the 18 cooldown manager files")
 for i=1,#ORDER do assert(tocFiles[i]==ORDER[i],"TOC order: expected "..ORDER[i].." at "..i) end
 local toc=Read(root.."/"..ADDON.."/"..ADDON.."_Mainline.toc")
 local chat=Read(root.."/MSUF_Suite_Chat/MSUF_Suite_Chat_Mainline.toc")
@@ -56,7 +56,7 @@ local HEADER="local _,P=...\nlocal NS,S=P.NS,P.Suite\nlocal C=P.CDM\n"
 local DATA_HEADER="local _,P=...\nlocal C=P.CDM\n"
 for _,file in ipairs(ORDER) do
     local text=Read(root.."/"..ADDON.."/"..file)
-    if file=="Presets.lua" then assert(text:sub(1,#DATA_HEADER)==DATA_HEADER,file.." header")
+    if file=="Presets.lua" or file=="GuideProfiles.lua" then assert(text:sub(1,#DATA_HEADER)==DATA_HEADER,file.." header")
     elseif file~="Bootstrap.lua" then assert(text:sub(1,#HEADER)==HEADER,file.." header") end
     for _,word in ipairs({"pcall","loadstring","setfenv","getfenv","OnUpdate","Claude","Anthropic"}) do
         assert(not text:find(word,1,true),file.." uses "..word)
@@ -413,7 +413,8 @@ C_Spell={
     GetSpellDisplayCount=function() return SECRET_TEXT end,
     IsSpellUsable=function(spell)
         usable.calls[spell]=(usable.calls[spell] or 0)+1
-        return usable[spell]~=false,false
+        if usable[spell]~=nil then return usable[spell],false end
+        return true,false
     end,
     IsSpellInRange=function(spell) return inRange[spell] end,
     EnableSpellRangeCheck=function(spell,on) Plain(spell,"range");Plain(on,"range");rangeLog[#rangeLog+1]={spell,on} end,
@@ -536,6 +537,9 @@ assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Su
 assert(Suite.Database.Initialize(nil))
 local S=Suite.Suite
 S.Normalize(Suite.DB)
+-- The legacy runtime assertions below exercise Blizzard's uncurated list.
+-- Raid-presets and their default-on gate have a focused data-plane contract.
+S.Config(ID).raidEssentials=false
 Support.Load(root,"MSUF_Suite_Modules",{})
 
 -- The runtime may add no globals.
@@ -606,6 +610,11 @@ assert(#coldRows==5 and coldRows[3].key=="b13" and coldRows[3].known==false and 
 -- Rows say which cooldowns track a buff (the popover's stack rows follow it).
 assert(coldRows[2].key=="b12" and coldRows[2].hasAura==true and coldRows[1].hasAura==false
     and coldRows[5].hasAura==false,"bar rows carry hasAura")
+coldRows=assert(S.CooldownManagerBlizzardSnapshot())
+assert(coldRows.ess[1]=="b11" and coldRows.ess[2]=="b12" and coldRows.ess[#coldRows.ess]=="b71"
+    and type(coldRows.uti)=="table" and type(coldRows.buf)=="table"
+    and type(coldRows.bar)=="table" and type(coldRows.ext)=="table",
+    "Blizzard snapshot follows the current native order and includes every built-in category")
 assert(#S.CooldownManagerBarEntries("nope")==0)
 local barStage=New("Frame",UIParent)
 local rowsCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200),"buff bar canvas")
@@ -690,6 +699,9 @@ assert(C.Icons.Count("ess")==4 and C.Icons.Count("uti")==2 and C.Icons.Count("ex
 local trinket=assert(C.entries.b71,"trinket entry")
 assert(trinket.slot=="ess" and trinket.index==4 and trinket.icon and trinket.equipSlot==13 and trinket.itemID==7777,
     "the trinket ends the Essential bar")
+for i=1,#C.Index.usable do
+    assert(C.Index.usable[i]~=trinket,"equipment slots must not enter usable broadcasts")
+end
 assert(trinket.icon.template=="PingReceiverAttributeTemplate" and trinket.icon:GetIsPingable()
     and trinket.icon:GetTargetInfo().itemID==7777 and not trinket.icon:GetAllowRadialWheel(),
     "the live trinket is a contextual item ping target")
@@ -880,6 +892,24 @@ assert(e21.icon.tex.vc[1]==.4 and (usable.calls[201] or 0)==usable.stormReads,
 Run(.1)
 assert(e21.icon.tex.vc[1]==1 and (usable.calls[201] or 0)==usable.stormReads+1,
     "usable event storm did not coalesce to one final refresh")
+usable[201]=SECRET_BOOL
+C.Effects.Usable(e21)
+assert(e21.icon.tint==1,"a secret usability answer changed the visible tint")
+usable[201]=nil
+-- All range-tinted entries are inert for this broadcast. A range edge still
+-- refreshes the actual usable state when the action becomes visible again.
+do
+    local rangeSnapshot={}
+    for i=1,#C.Index.usable do
+        local entry=C.Index.usable[i]
+        rangeSnapshot[i]=entry.outOfRange
+        entry.outOfRange=true
+    end
+    local pendingBefore=PendingTimers()
+    Fire("SPELL_UPDATE_USABLE")
+    assert(PendingTimers()==pendingBefore,"all out-of-range entries still scheduled a usable sweep")
+    for i=1,#C.Index.usable do C.Index.usable[i].outOfRange=rangeSnapshot[i] end
+end
 config.ess_vis=4
 module:Refresh();Run()
 assert(bars.ess.hidden==true,"hidden Essential bar still appeared visible")
@@ -907,6 +937,20 @@ Fire("SPELL_RANGE_CHECK_UPDATE",101,false,true)
 assert(e11.outOfRange==true)
 Fire("SPELL_RANGE_CHECK_UPDATE",101,true,true)
 assert(not e22.outOfRange,"no range check means no tint")
+-- An out-of-range icon shows the range tint regardless of usability. Defer
+-- native usability reads, then recover the current tint on the range edge.
+Fire("SPELL_RANGE_CHECK_UPDATE",101,false,true)
+usable.outOfRangeReads=usable.calls[101] or 0
+usable[101]=false
+Fire("SPELL_UPDATE_USABLE");Run(.1)
+assert((usable.calls[101] or 0)==usable.outOfRangeReads and e11.icon.tint==4,
+    "out-of-range icon still queried hidden usability state")
+Fire("SPELL_RANGE_CHECK_UPDATE",101,true,true)
+assert((usable.calls[101] or 0)==usable.outOfRangeReads+1 and e11.icon.tint==3,
+    "returning to range did not immediately recover unusable tint")
+usable[101]=nil
+Fire("SPELL_UPDATE_USABLE");Run(.1)
+assert(e11.icon.tint==1,"usable tint did not recover after range-edge refresh")
 assert(Fire("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",102))
 assert(e12.icon.glow and e12.icon.glow.shown and e12.icon.glow.flipAnim.playing,"proc glow")
 Fire("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",102)
@@ -915,6 +959,18 @@ inRange[202]=false
 targetExists=true
 assert(Fire("PLAYER_TARGET_CHANGED"))
 assert(e22.outOfRange==true,"target change re-reads range")
+usable.targetRangeReads=usable.calls[202] or 0
+usable[202]=false
+Fire("SPELL_UPDATE_USABLE");Run(.1)
+assert((usable.calls[202] or 0)==usable.targetRangeReads and e22.icon.tint==4,
+    "target range tint still spent usability reads")
+inRange[202]=true
+Fire("PLAYER_TARGET_CHANGED")
+assert((usable.calls[202] or 0)==usable.targetRangeReads+1 and e22.icon.tint==3,
+    "target change back into range did not recover usability tint")
+usable[202]=nil
+Fire("SPELL_UPDATE_USABLE");Run(.1)
+assert(e22.icon.tint==1,"target range usability tint did not recover")
 Run()
 local targetContainers=0
 for i=1,#all do

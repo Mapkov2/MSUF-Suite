@@ -4,6 +4,7 @@ local Installer = {}
 Suite.Installer = Installer
 local DB = Suite.Database
 local selected = "suite"
+local useRaidEssentials = true
 local useScale = false
 local scale = 1
 local scalePreset = "custom"
@@ -13,6 +14,9 @@ local moduleOverrides = { suite = {}, forever = {} }
 
 local de = type(GetLocale) == "function" and GetLocale() == "deDE"
 local function Tr(english, german) return de and german or english end
+local function RetailCooldowns()
+    return Suite.Client and Suite.Client.isMainline and selected == "suite"
+end
 
 local function FrameProfileName()
     return type(_G.MSUF_ActiveProfile) == "string" and _G.MSUF_ActiveProfile ~= ""
@@ -42,6 +46,22 @@ local function PreparedProfile()
         -- edges, so changing resolution or UI scale cannot push them away.
         local texts = modules.dataTexts
         if texts then texts.bar1Point, texts.bar1X, texts.bar1Y = 9, 0, 170 end
+        local cooldowns = modules.cooldownManager
+        if cooldowns and RetailCooldowns() then
+            cooldowns.raidEssentials = useRaidEssentials
+            -- The Retail factory already includes the Subtlety Suite layout.
+            -- Keep it on a fresh install; personal lists take precedence when
+            -- a user reruns Modern. Other specs use the raid fallback.
+            local active = DB.GetProfile(DB.GetActiveProfileName())
+            local old = active and active.suite and active.suite.modules
+                and active.suite.modules.cooldownManager
+            if old and type(old.listsData) == "string" then
+                cooldowns.listsData = old.listsData
+            end
+            if old and type(old.spellsData) == "string" then
+                cooldowns.spellsData = old.spellsData
+            end
+        end
     end
     local overrides = moduleOverrides[selected] or {}
     for id, enabled in pairs(overrides) do
@@ -143,6 +163,7 @@ function Installer.Apply()
         revision = 2, status = "complete", profile = selected,
         frameProfileName = FrameProfileName(),
         moduleOverrides = moduleOverrides[selected],
+        raidEssentials = RetailCooldowns() and useRaidEssentials,
         uiScaleEnabled = useScale, uiScale = useScale and scale or nil,
         uiScalePreset = useScale and scalePreset or nil,
     }
@@ -305,6 +326,15 @@ local function Build()
         Installer.Refresh()
     end)
     frame.profileNote = Label(frame, "GameFontHighlightSmall", 38, -373, 504, 27)
+    frame.cooldowns = Panel(frame, 36, 63, 508, 42, true)
+    frame.cooldowns.title = Label(frame.cooldowns, "GameFontNormal", 14, -7, 360, 17)
+    frame.cooldowns.detail = Label(frame.cooldowns, "GameFontHighlightSmall", 14, -24, 460, 15)
+    frame.cooldowns.mark = Label(frame.cooldowns, "GameFontNormalSmall", 388, -7, 105, 18)
+    frame.cooldowns.mark:SetJustifyH("RIGHT")
+    frame.cooldowns:SetScript("OnClick", function()
+        useRaidEssentials = not useRaidEssentials
+        Installer.Refresh()
+    end)
 
     frame.moduleRows = {}
     for index, id in ipairs(Suite.SuiteOrder or {}) do
@@ -413,7 +443,8 @@ function Installer.Refresh()
     for _, card in ipairs(f.intro) do card:SetShown(intro) end
     f.suite:SetShown(profiles)
     f.forever:SetShown(profiles)
-    f.profileNote:SetShown(profiles)
+    f.profileNote:SetShown(profiles and selected == "forever")
+    f.cooldowns:SetShown(profiles and RetailCooldowns())
     for _, row in ipairs(f.moduleRows) do row:SetShown(modules) end
     f.scaleToggle:SetShown(scaling)
     f.scaleHint:SetShown(scaling)
@@ -453,6 +484,11 @@ function Installer.Refresh()
                 "Forever erstellt ein neues Profil. Bestehende Profile bleiben gespeichert.")
             or Tr("Modern replaces active Suite and optional Skin settings. MSUF frames stay unchanged.",
                 "Modern ersetzt aktive Suite- und optionale Skin-Einstellungen. MSUF-Frames bleiben unverändert."))
+        f.cooldowns.title:SetText(Tr("MSUF spec cooldown profiles", "MSUF-Spec-Cooldown-Profile"))
+        f.cooldowns.detail:SetText(Tr("Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM.",
+            "Raid-Essentials, Utility und Buffs für deinen Spec; aus folgt dem Blizzard-CDM."))
+        f.cooldowns.mark:SetText(useRaidEssentials and Tr("ON", "AN") or Tr("OFF", "AUS"))
+        Style(f.cooldowns, useRaidEssentials)
     elseif modules then
         f.title:SetText(Tr("Choose Suite modules", "Suite-Module auswählen"))
         f.body:SetText(Tr("The chosen profile supplies all settings. Toggle which Suite modules are enabled in it.",
@@ -499,7 +535,13 @@ function Installer.Refresh()
             and Tr("Forever · complete MSUF and Suite factory", "Forever · vollständige MSUF- und Suite-Factory")
             or Tr("Modern · Suite profile, MSUF frames retained", "Modern · Suite-Profil, MSUF-Frames bleiben"))
         f.review[2].title:SetText(Tr("Modules", "Module"))
-        f.review[2].detail:SetText(("%d / %d %s"):format(enabled, total, Tr("enabled", "aktiv")))
+        local moduleSummary = ("%d / %d %s"):format(enabled, total, Tr("enabled", "aktiv"))
+        if RetailCooldowns() then
+            moduleSummary = moduleSummary .. "  ·  "
+                .. (useRaidEssentials and Tr("MSUF spec cooldowns", "MSUF-Spec-Cooldowns")
+                    or Tr("Blizzard cooldowns", "Blizzard-Cooldowns"))
+        end
+        f.review[2].detail:SetText(moduleSummary)
         f.review[3].title:SetText(Tr("UI scaling", "UI-Skalierung"))
         f.review[3].detail:SetText(useScale and (scalePreset == "pixel"
             and Tr("Pixel perfect · adapts to resolution", "Pixelgenau · passt sich der Auflösung an")
@@ -515,7 +557,11 @@ end
 function Installer.Open()
     if Suite.IsCombatLocked() then return false, "combat" end
     selected = Suite.Client and Suite.Client.isForever and "forever" or "suite"
+    local active = DB.GetProfile(DB.GetActiveProfileName())
+    local current = active and active.suite and active.suite.modules
+        and active.suite.modules.cooldownManager
     useScale, scale, scalePreset, page = false, 1, "custom", 1
+    useRaidEssentials = not (current and current.raidEssentials == false)
     moduleOverrides = { suite = {}, forever = {} }
     Installer.Refresh()
     frame:Show()

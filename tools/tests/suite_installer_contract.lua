@@ -37,6 +37,9 @@ Suite.ProfileIO = {
         local modules = {}
         for _, id in ipairs(Suite.SuiteOrder) do modules[id] = { enabled = true } end
         modules.bags.enabled = text == Suite.RetailFactoryModuleCompact
+        if text == Suite.RetailFactoryModuleCompact then
+            modules.cooldownManager.listsData = "MSUF3:factoryRogue"
+        end
         return { suite = { schema = 1, modules = modules } }
     end,
 }
@@ -116,6 +119,9 @@ assert(Suite.Installer.Apply())
 assert(factoryCalls == 0 and activations == 1)
 assert(Suite.RootDB.profiles.Default.suite.modules.chat.enabled)
 assert(Suite.RootDB.profiles.Default.suite.modules.bags.enabled)
+assert(Suite.RootDB.profiles.Default.suite.modules.cooldownManager.raidEssentials == true
+    and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData == "MSUF3:factoryRogue",
+    "fresh Modern install should keep the bundled Rogue layout and use spec defaults elsewhere")
 assert(MSUF_DB.general.UIScale.Enabled == false and MSUF_DB.general.msufUiScale == 1)
 assert(#scaleChanges == 2 and scaleChanges[1][1] == "frame" and scaleChanges[2][1] == "reset")
 assert(Suite.RootDB.installation.status == "complete"
@@ -132,7 +138,7 @@ MSUF_ResetGlobalUiScale = resetScale
 Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 local function CheckLayout()
-    local panels = { window.suite, window.forever, window.scaleToggle,
+    local panels = { window.suite, window.forever, window.cooldowns, window.scaleToggle,
         window.back, window.close, window.next, window.scaleSlider }
     for _, group in ipairs({ window.intro, window.moduleRows, window.presets, window.review, window.done }) do
         for _, panel in ipairs(group) do panels[#panels + 1] = panel end
@@ -156,7 +162,8 @@ assert(window.intro[1].shown and window.suite.shown == false and window.forever.
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.next.scripts.OnClick() -- welcome -> profile
-assert(window.suite.shown and window.forever.shown)
+assert(window.suite.shown and window.forever.shown and window.cooldowns.shown
+    and window.cooldowns.mark.text == "ON")
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.forever.scripts.OnClick() -- Retail can choose the full Forever factory
@@ -202,4 +209,20 @@ assert(Suite.RootDB.installation.uiScalePreset == "pixel"
     and Suite.RootDB.installation.uiScale == 768 / 2160
     and scaleChanges[#scaleChanges][2] == 768 / 2160,
     "pixel-perfect selection lost its exact screen scale")
+Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData = "MSUF3:rogue"
+Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData = "MSUF3:spells"
+Suite.Installer.Open()
+window.next.scripts.OnClick() -- profile: Modern is selected
+window.cooldowns.scripts.OnClick()
+assert(window.cooldowns.mark.text == "OFF", "Retail onboarding must allow Blizzard CDM")
+window.next.scripts.OnClick() -- modules
+window.next.scripts.OnClick() -- scaling
+window.next.scripts.OnClick() -- review
+assert(window.review[2].detail.text:find("Blizzard cooldowns",1,true), "review names the CDM choice")
+window.next.scripts.OnClick() -- install
+assert(Suite.RootDB.installation.raidEssentials == false
+    and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.raidEssentials == false
+    and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData == "MSUF3:rogue"
+    and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData == "MSUF3:spells",
+    "Modern onboarding must retain personal CDM lists while applying the chosen default")
 print("Suite installer: profiles, module selection, optional scaling, layout, and completion passed")

@@ -520,7 +520,7 @@ end
 local function UpdateTimers(self)
     if not self.active then return end
     local now, ticking = GetTime(), false
-    for _, row in pairs(self.rows) do
+    for row in pairs(self.timedRows or {}) do
         if row.timer and Number(row.timerEnd) then
             local left = row.timerEnd - now
             if left > 0 then
@@ -531,6 +531,7 @@ local function UpdateTimers(self)
             else
                 row.timer:Hide()
                 row.timerEnd = nil
+                self.timedRows[row] = nil
             end
         end
     end
@@ -605,43 +606,78 @@ local function Theme(self)
     end
 end
 
-local function AddFlat(flat, group, items, c, collapsedGroups, collapsedEntries)
-    if #items == 0 then return end
-    flat[#flat + 1] = { key = "section:" .. group, kind = "section", group = group,
-        text = GROUP[group][1], height = math.max(23, (c.sectionSize or 14) + 12),
-        collapsed = collapsedGroups[group] == true }
-    if collapsedGroups[group] then return end
+local function FlatSlot(flat, index)
+    local item = flat[index]
+    if not item then item = {}; flat[index] = item end
+    -- Both flat buffers survive refreshes. Clear fields that belong to another row kind.
+    item.key, item.kind, item.group, item.text, item.height = nil, nil, nil, nil, nil
+    item.collapsed, item.menuTitle, item.tracked, item.itemIcon = nil, nil, nil, nil
+    item.timeLeft, item.hasLines, item.collapseKey = nil, nil, nil
+    item.questID, item.achievementID, item.scenarioID = nil, nil, nil
+    item.done, item.percent = nil, nil
+    return item
+end
+
+local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedEntries)
+    if #items == 0 then return index end
+    index = index + 1
+    local section = FlatSlot(flat, index)
+    section.key, section.kind, section.group = "section:" .. group, "section", group
+    section.text = GROUP[group][1]
+    section.height = math.max(23, (c.sectionSize or 14) + 12)
+    section.collapsed = collapsedGroups[group] == true
+    if collapsedGroups[group] then return index end
     for i = 1, #items do
         local entry = items[i]
         local base = group .. ":" .. tostring(entry.id)
-        flat[#flat + 1] = { key = "entry:" .. base, kind = "entry", group = group,
-            text = entry.title, height = math.max(32, (c.entrySize or 15) + 19),
-            menuTitle = entry.title, tracked = entry.tracked,
-            itemIcon = entry.itemIcon, timeLeft = entry.timeLeft,
-            hasLines = #entry.lines > 0, collapsed = collapsedEntries[base] == true,
-            collapseKey = base,
-            questID = group ~= "achievements" and group ~= "scenario" and entry.id > 0 and entry.id or nil,
-            achievementID = group == "achievements" and entry.id or nil,
-            scenarioID = group == "scenario" and entry.scenarioID or nil }
+        local questID = group ~= "achievements" and group ~= "scenario" and entry.id > 0 and entry.id or nil
+        local achievementID = group == "achievements" and entry.id or nil
+        local scenarioID = group == "scenario" and entry.scenarioID or nil
+        index = index + 1
+        local item = FlatSlot(flat, index)
+        item.key, item.kind, item.group = "entry:" .. base, "entry", group
+        item.text, item.height = entry.title, math.max(32, (c.entrySize or 15) + 19)
+        item.menuTitle, item.tracked = entry.title, entry.tracked
+        item.itemIcon, item.timeLeft = entry.itemIcon, entry.timeLeft
+        item.hasLines, item.collapsed, item.collapseKey = #entry.lines > 0, collapsedEntries[base] == true, base
+        item.questID, item.achievementID, item.scenarioID = questID, achievementID, scenarioID
         if not collapsedEntries[base] then for j = 1, #entry.lines do
             local line = entry.lines[j]
-            flat[#flat + 1] = { key = "line:" .. base .. ":" .. j, kind = "line", group = group,
-                text = line.text, done = line.done, percent = line.percent,
-                menuTitle = entry.title, tracked = entry.tracked,
-                questID = group ~= "achievements" and group ~= "scenario" and entry.id > 0 and entry.id or nil,
-                achievementID = group == "achievements" and entry.id or nil,
-                scenarioID = group == "scenario" and entry.scenarioID or nil,
-                height = math.max(line.percent and 28 or 24,
-                    (c.objectiveSize or 13) + (line.percent and 17 or 13)) }
+            index = index + 1
+            item = FlatSlot(flat, index)
+            item.key, item.kind, item.group = "line:" .. base .. ":" .. j, "line", group
+            item.text, item.done, item.percent = line.text, line.done, line.percent
+            item.menuTitle, item.tracked = entry.title, entry.tracked
+            item.questID, item.achievementID, item.scenarioID = questID, achievementID, scenarioID
+            item.height = math.max(line.percent and 28 or 24,
+                (c.objectiveSize or 13) + (line.percent and 17 or 13))
         end end
     end
+    return index
+end
+
+local function SameItem(a, b)
+    return b and a.key == b.key and a.kind == b.kind and a.group == b.group
+        and a.text == b.text and a.height == b.height and a.done == b.done
+        and a.percent == b.percent and a.tracked == b.tracked
+        and a.questID == b.questID and a.achievementID == b.achievementID
+        and a.scenarioID == b.scenarioID and a.collapsed == b.collapsed
+        and a.itemIcon == b.itemIcon and a.timeLeft == b.timeLeft
+        and a.hasLines == b.hasLines and a.menuTitle == b.menuTitle
+        and a.collapseKey == b.collapseKey
 end
 
 Render = function(self)
     if not self.active then return end
     local c = self.config
-    local grouped = {}
-    for i = 1, #ORDER do grouped[ORDER[i]] = {} end
+    local grouped = self.grouped
+    if not grouped then grouped = {}; self.grouped = grouped end
+    for i = 1, #ORDER do
+        local group = ORDER[i]
+        local list = grouped[group]
+        if not list then list = {}; grouped[group] = list end
+        for j = #list, 1, -1 do list[j] = nil end
+    end
     for _, source in pairs(self.sources) do
         for i = 1, #source do
             local entry = source[i]
@@ -651,7 +687,10 @@ Render = function(self)
             end
         end
     end
-    local flat, totalEntries, liveEntries = {}, 0, {}
+    local flat, flatCount, totalEntries = self.flatWork or {}, 0, 0
+    local liveEntries = self.liveEntries
+    if not liveEntries then liveEntries = {}; self.liveEntries = liveEntries end
+    for key in pairs(liveEntries) do liveEntries[key] = nil end
     for i = 1, #ORDER do
         local group = ORDER[i]
         for j = 1, #grouped[group] do
@@ -663,41 +702,55 @@ Render = function(self)
     end
     for i = 1, #ORDER do
         local group = ORDER[i]
-        AddFlat(flat, group, grouped[group], c, self.collapsedGroups, self.collapsedEntries)
+        flatCount = AddFlat(flat, flatCount, group, grouped[group], c,
+            self.collapsedGroups, self.collapsedEntries)
         totalEntries = totalEntries + #grouped[group]
     end
-    if #flat == 0 and S.editMode then
-        flat[1] = { key = "preview", kind = "line", group = "quests",
-            text = "Tracked objectives appear here", height = 24 }
+    if flatCount == 0 and S.editMode then
+        flatCount = 1
+        local preview = FlatSlot(flat, 1)
+        preview.key, preview.kind, preview.group = "preview", "line", "quests"
+        preview.text, preview.height = "Tracked objectives appear here", 24
     end
-    local geometry = c.width .. ":" .. c.height .. ":" .. c.scale .. ":" .. c.x .. ":" .. c.y
-        .. ":" .. tostring(S.editMode)
+    for i = #flat, flatCount + 1, -1 do flat[i] = nil end
     local previous = self.previousFlat
-    local changed = self.retheme or self.geometry ~= geometry or not previous or #previous ~= #flat
+    local themeChanged = self.retheme or not self.font
+    local geometryChanged = self.lastWidth ~= c.width or self.lastHeight ~= c.height
+        or self.lastScale ~= c.scale or self.lastX ~= c.x or self.lastY ~= c.y
+        or self.lastEditMode ~= S.editMode
+    local changed = themeChanged or geometryChanged or not previous or #previous ~= flatCount
     if not changed then
-        for i = 1, #flat do
-            local a, b = flat[i], previous[i]
-            if a.key ~= b.key or a.text ~= b.text or a.done ~= b.done
-                or a.percent ~= b.percent or a.height ~= b.height
-                or a.tracked ~= b.tracked or a.questID ~= b.questID
-                or a.achievementID ~= b.achievementID or a.scenarioID ~= b.scenarioID
-                or a.collapsed ~= b.collapsed or a.itemIcon ~= b.itemIcon
-                or a.timeLeft ~= b.timeLeft or a.hasLines ~= b.hasLines then
-                changed = true; break
-            end
+        for i = 1, flatCount do
+            if not SameItem(flat[i], previous[i]) then changed = true; break end
         end
     end
-    if not changed then return end
-    self.previousFlat, self.geometry, self.retheme = flat, geometry, false
-    Theme(self)
-    self.headerClick:SetHeight(self.headerHeight - 5)
-    self.host:SetScale(c.scale / 100)
-    self.host:SetWidth(c.width)
-    self.host:ClearAllPoints()
-    self.host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", c.x, c.y)
-    self.content:SetWidth(c.width - 14)
-    local y, used = 0, {}
-    for i = 1, #flat do used[flat[i].key] = true end
+    if not changed then self.flatWork = flat; return end
+    self.previousFlat, self.flatWork = flat, previous or {}
+    self.lastWidth, self.lastHeight, self.lastScale = c.width, c.height, c.scale
+    self.lastX, self.lastY, self.lastEditMode = c.x, c.y, S.editMode
+    self.retheme = false
+    if themeChanged then Theme(self) end
+    if themeChanged or geometryChanged then
+        self.headerClick:SetHeight(self.headerHeight - 5)
+        self.host:SetScale(c.scale / 100)
+        self.host:SetWidth(c.width)
+        self.host:ClearAllPoints()
+        self.host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", c.x, c.y)
+        self.content:SetWidth(c.width - 14)
+    end
+    local y, used = 0, self.usedRows
+    if not used then used = {}; self.usedRows = used end
+    for key in pairs(used) do used[key] = nil end
+    for i = 1, flatCount do used[flat[i].key] = true end
+    local previousByKey = self.previousByKey
+    if not previousByKey then previousByKey = {}; self.previousByKey = previousByKey end
+    for key in pairs(previousByKey) do previousByKey[key] = nil end
+    if previous then
+        for i = 1, #previous do previousByKey[previous[i].key] = previous[i] end
+    end
+    local timedRows = self.timedRows
+    if not timedRows then timedRows = {}; self.timedRows = timedRows end
+    for row in pairs(timedRows) do timedRows[row] = nil end
     for key, row in pairs(self.rows) do
         if not used[key] then
             row:Hide()
@@ -709,81 +762,90 @@ Render = function(self)
             self.freeRows[#self.freeRows + 1] = row
         end
     end
-    for i = 1, #flat do
+    for i = 1, flatCount do
         local item = flat[i]
-        local row = self.rows[item.key] or NewRow(self, item.key, item.kind)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -y)
-        row:SetWidth(c.width - 14)
-        local color = self.groupRGB[item.group]
-        row.stripe:SetColorTexture(color[1], color[2], color[3], item.kind == "line" and .35 or .95)
-        local size = item.kind == "section" and (c.sectionSize or 14)
-            or item.kind == "entry" and (c.entrySize or 15) or (c.objectiveSize or 13)
-        if row.cachedSize ~= size or row.cachedFont ~= self.font then
-            S.SetStyledFont(row.text, self.font, size, "OUTLINE", 1, true, 70, 1)
-            row.cachedSize, row.cachedFont = size, self.font
-        end
-        if row.cachedText ~= item.text then row.text:SetText(item.text); row.cachedText = item.text end
-        row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
-        local rightInset = 4
-        if item.itemIcon and item.kind == "entry" then
-            local button = EnsureItemButton(row)
-            button.icon:SetTexture(item.itemIcon)
-            button:ClearAllPoints()
-            button:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
-            button:Show()
-            rightInset = rightInset + 27
-        elseif row.itemButton then row.itemButton:Hide() end
-        if Number(item.timeLeft) and item.timeLeft > 0 and item.kind == "entry" then
-            local timer = EnsureTimer(row)
-            if row.timerFont ~= self.font or row.timerSize ~= size then
-                S.SetStyledFont(timer, self.font, math.max(10, size - 1), "OUTLINE", 1, true, 70, 1)
-                row.timerFont, row.timerSize = self.font, size
-            end
-            timer:ClearAllPoints()
-            timer:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
-            timer:SetWidth(58)
-            timer:SetTextColor(unpack(self.mutedRGB))
-            row.timerEnd = GetTime() + item.timeLeft
-            rightInset = rightInset + 62
+        local row = self.rows[item.key]
+        if row and not themeChanged and row.layoutY == y and row.layoutWidth == c.width - 14
+            and SameItem(item, previousByKey[item.key]) then
+            if row.timerEnd then timedRows[row] = true end
+            y = y + row.layoutHeight
         else
-            row.timerEnd = nil
-            if row.timer then row.timer:Hide() end
+            row = row or NewRow(self, item.key, item.kind)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -y)
+            row:SetWidth(c.width - 14)
+            local color = self.groupRGB[item.group]
+            row.stripe:SetColorTexture(color[1], color[2], color[3], item.kind == "line" and .35 or .95)
+            local size = item.kind == "section" and (c.sectionSize or 14)
+                or item.kind == "entry" and (c.entrySize or 15) or (c.objectiveSize or 13)
+            if row.cachedSize ~= size or row.cachedFont ~= self.font then
+                S.SetStyledFont(row.text, self.font, size, "OUTLINE", 1, true, 70, 1)
+                row.cachedSize, row.cachedFont = size, self.font
+            end
+            if row.cachedText ~= item.text then row.text:SetText(item.text); row.cachedText = item.text end
+            row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
+            local rightInset = 4
+            if item.itemIcon and item.kind == "entry" then
+                local button = EnsureItemButton(row)
+                button.icon:SetTexture(item.itemIcon)
+                button:ClearAllPoints()
+                button:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
+                button:Show()
+                rightInset = rightInset + 27
+            elseif row.itemButton then row.itemButton:Hide() end
+            if Number(item.timeLeft) and item.timeLeft > 0 and item.kind == "entry" then
+                local timer = EnsureTimer(row)
+                if row.timerFont ~= self.font or row.timerSize ~= size then
+                    S.SetStyledFont(timer, self.font, math.max(10, size - 1), "OUTLINE", 1, true, 70, 1)
+                    row.timerFont, row.timerSize = self.font, size
+                end
+                timer:ClearAllPoints()
+                timer:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
+                timer:SetWidth(58)
+                timer:SetTextColor(unpack(self.mutedRGB))
+                row.timerEnd = GetTime() + item.timeLeft
+                timedRows[row] = true
+                rightInset = rightInset + 62
+            else
+                row.timerEnd = nil
+                if row.timer then row.timer:Hide() end
+            end
+            if item.kind == "section" or (item.kind == "entry" and item.hasLines) then
+                row.collapse:ClearAllPoints()
+                row.collapse:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
+                S.SetStyledFont(row.collapse.glyph, self.font, math.max(10, size), "OUTLINE", 1, true, 70, 1)
+                row.collapse.glyph:SetText(item.collapsed and "+" or "-")
+                row.collapse.glyph:SetTextColor(color[1], color[2], color[3])
+                row.collapse:Show()
+                rightInset = rightInset + 20
+            else row.collapse:Hide() end
+            row.text:ClearAllPoints()
+            row.text:SetPoint("LEFT", row, "LEFT", 12, 0)
+            row.text:SetPoint("RIGHT", row, "RIGHT", -(rightInset + 2), 0)
+            local textHeight = type(row.text.GetStringHeight) == "function" and row.text:GetStringHeight() or nil
+            local height = math.max(item.height, Number(textHeight) and textHeight + 10 or 0)
+            row:SetHeight(height)
+            if item.kind == "section" then
+                row.text:SetTextColor(color[1], color[2], color[3])
+            elseif item.kind == "line" then
+                local muted = self.mutedRGB
+                local lineColor = item.done and self.completeRGB or muted
+                row.text:SetTextColor(unpack(lineColor))
+            else row.text:SetTextColor(unpack(self.textRGB)) end
+            row.questID = item.questID
+            row.achievementID, row.scenarioID = item.achievementID, item.scenarioID
+            row.menuTitle, row.tracked = item.menuTitle, item.tracked
+            row:EnableMouse(item.kind == "section" or item.questID ~= nil or item.achievementID ~= nil
+                or (item.group == "scenario" and item.kind ~= "section"))
+            if item.percent then
+                row.progress:SetStatusBarColor(color[1], color[2], color[3], .95)
+                row.progress:SetValue(item.percent)
+                row.progress:Show()
+            else row.progress:Hide() end
+            row:Show()
+            row.layoutY, row.layoutWidth, row.layoutHeight = y, c.width - 14, height
+            y = y + height
         end
-        if item.kind == "section" or (item.kind == "entry" and item.hasLines) then
-            row.collapse:ClearAllPoints()
-            row.collapse:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
-            S.SetStyledFont(row.collapse.glyph, self.font, math.max(10, size), "OUTLINE", 1, true, 70, 1)
-            row.collapse.glyph:SetText(item.collapsed and "+" or "-")
-            row.collapse.glyph:SetTextColor(color[1], color[2], color[3])
-            row.collapse:Show()
-            rightInset = rightInset + 20
-        else row.collapse:Hide() end
-        row.text:ClearAllPoints()
-        row.text:SetPoint("LEFT", row, "LEFT", 12, 0)
-        row.text:SetPoint("RIGHT", row, "RIGHT", -(rightInset + 2), 0)
-        local textHeight = type(row.text.GetStringHeight) == "function" and row.text:GetStringHeight() or nil
-        local height = math.max(item.height, Number(textHeight) and textHeight + 10 or 0)
-        row:SetHeight(height)
-        if item.kind == "section" then
-            row.text:SetTextColor(color[1], color[2], color[3])
-        elseif item.kind == "line" then
-            local muted = self.mutedRGB
-            local lineColor = item.done and self.completeRGB or muted
-            row.text:SetTextColor(unpack(lineColor))
-        else row.text:SetTextColor(unpack(self.textRGB)) end
-        row.questID = item.questID
-        row.achievementID, row.scenarioID = item.achievementID, item.scenarioID
-        row.menuTitle, row.tracked = item.menuTitle, item.tracked
-        row:EnableMouse(item.kind == "section" or item.questID ~= nil or item.achievementID ~= nil
-            or (item.group == "scenario" and item.kind ~= "section"))
-        if item.percent then
-            row.progress:SetStatusBarColor(color[1], color[2], color[3], .95)
-            row.progress:SetValue(item.percent)
-            row.progress:Show()
-        else row.progress:Hide() end
-        row:Show()
-        y = y + height
     end
     self.content:SetHeight(math.max(1, y))
     self.host:SetHeight(math.min(c.height,
@@ -815,6 +877,7 @@ local function Request(self, key)
 end
 local function Event(self, event)
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+        self:SuppressNative()
         Request(self, "quests"); Request(self, "world"); Request(self, "bonus"); Request(self, "scenario")
         Request(self, "achievements")
     elseif event == "SCENARIO_UPDATE" or event == "SCENARIO_CRITERIA_UPDATE"
@@ -832,15 +895,22 @@ local function Event(self, event)
         Request(self, "bonus"); Request(self, "scenario")
     else Request(self, "quests"); Request(self, "world"); Request(self, "bonus") end
 end
-local function SuppressNative(self)
-    if NS.IsCombatLocked() then return end
+function M:SuppressNative()
+    if not self.active or NS.IsCombatLocked() then return end
     local native = _G.ObjectiveTrackerFrame
-    if native and not NS.Safety.IsForbidden(native) then self.context:HideControl(native, true) end
+    if not native or NS.Safety.IsForbidden(native) then return end
+    if not self.nativeHiddenParent then
+        self.nativeHiddenParent = S.CreateFrame("Frame", nil, UIParent)
+        self.nativeHiddenParent:Hide()
+    end
+    self.context:HideControl(native, true)
+    self.context:Property(native, "GetParent", "SetParent", self.nativeHiddenParent)
 end
 function M:Enable()
     self.generation = self.generation + 1
     Create(self)
     self.active = true
+    self.retheme = true
     local c = self.config
     c.collapsedGroups = type(c.collapsedGroups) == "table" and c.collapsedGroups or {}
     c.collapsedEntries = type(c.collapsedEntries) == "table" and c.collapsedEntries or {}
@@ -854,10 +924,11 @@ function M:Enable()
         self.context:Event(event, Event, true)
     end
     self.context:Event("ADDON_LOADED", function(module, _, name)
-        if name == "Blizzard_ObjectiveTracker" then SuppressNative(module) end
+        if name == "Blizzard_ObjectiveTracker" then module:SuppressNative() end
     end, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", SuppressNative, true)
-    SuppressNative(self)
+    self.context:Event("PLAYER_REGEN_ENABLED", M.SuppressNative, true)
+    self.context:Event("GROUP_ROSTER_UPDATE", M.SuppressNative, true)
+    self:SuppressNative()
     self.dirty = { quests = true, world = true, bonus = true, scenario = true, achievements = true }
     self.contentSignature = tostring(c.showWorldQuests) .. ":" .. tostring(c.showBonus) .. ":"
         .. tostring(c.showScenario) .. ":" .. tostring(c.showAchievements) .. ":"
@@ -882,7 +953,7 @@ function M:Refresh()
     else
         Render(self)
     end
-    SuppressNative(self)
+    self:SuppressNative()
 end
 function M:Disable()
     self.generation = self.generation + 1
@@ -892,6 +963,8 @@ function M:Disable()
     if self.host then self.host:Hide() end
     self.sources = {}
     self.previousFlat = nil
+    self.flatWork, self.grouped, self.liveEntries = nil, nil, nil
+    self.previousByKey, self.usedRows, self.timedRows = nil, nil, nil
 end
 function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "tracker", {

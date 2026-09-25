@@ -8,7 +8,8 @@ local OUTLINES = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
 local TEXTS = {
     { "Clock", "12:34", "clock" }, { "FPS", "60 FPS", "fps" }, { "Latency", "23 ms", "latency" },
     { "Coordinates", "42.1, 56.7", "coordinates" }, { "Durability", "100%", "durability" },
-    { "Location", "Current zone", "location" }, { "Difficulty", "5H", "difficulty" },
+    { "Location", "Current zone", "location" }, { "Weather", "Clear", "weather" },
+    { "Difficulty", "5H", "difficulty" },
 }
 local ICONS = {
     { "tracking", "Tracking", "elements", "showTracking", "blizzard", "ui-hud-minimap-tracking-up", "Interface\\Minimap\\Tracking\\None" },
@@ -654,6 +655,7 @@ function P.BuildMinimapPreview(ctx, b, sections)
             local spec, button = item.spec, item.button
             local key, layer = spec[1], spec[5]
             local wanted = key == "folio" and config.showLanding ~= 3 or spec[4] and config[spec[4]] == true
+            if key == "drawer" and Suite.Client.IsAddOnLoaded("MinimapButtonButton") then wanted = false end
             if spec[4] == false then
                 wanted = S.MinimapElementPreviewShown and S.MinimapElementPreviewShown(spec[2]) == true or false
             end

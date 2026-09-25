@@ -21,7 +21,7 @@ local LETHAL_POISONS = { 2823, 315584, 381664, 8679 }
 local ASSASSINATION_LETHAL_POISONS = { 2823, 381664, 315584, 8679 }
 local OTHER_LETHAL_POISONS = { 315584, 8679, 2823, 381664 }
 local NONLETHAL_POISONS = { 381637, 5761, 3408 }
--- Curated current-season item IDs. These are identifiers, not EUI source or logic.
+-- Current-season item IDs.
 -- Selection runs only on configuration/bag/equipment events, never on a timer.
 local FLASKS = {
     241324, 241325, 245931, 245930, 241322, 241323, 245933, 245932,

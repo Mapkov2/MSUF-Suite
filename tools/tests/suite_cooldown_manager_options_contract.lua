@@ -530,6 +530,9 @@ InstallRuntime = function()
         return true
     end
     S.CooldownManagerSpec = function() return runtime.specID, "Arcane", 135932 end
+    S.CooldownManagerBlizzardSnapshot = function()
+        return { ess={"b2","b1"},uti={"b4"},buf={"b10"},bar={},ext={"b30"} }
+    end
     S.CooldownManagerStatus = function() return "Blizzard's bars are off." end
     S.CooldownManagerPlaySound = function(value) runtime.played[#runtime.played + 1] = value end
     S.CooldownManagerConvertGrow = function(slot, grow) runtime.grow = slot; return { [slot .. "_grow"] = grow, [slot .. "_y"] = -123 } end
@@ -889,6 +892,29 @@ assert(grid.tiles[2].ruleMark.shown and not grid.tiles[1].ruleMark.shown, "hidde
 assert(grid.tiles[3].icon.desaturated and grid.tiles[3].alpha == 0.55, "unlearned entries must be dimmed")
 local function Lists() return CDM.Codec.DecodeLists(Config().listsData) end
 
+-- Import copies one Blizzard spec's built-in order, keeps Suite custom bars
+-- and every other spec, and its complete-list flags survive the codec.
+do
+    local before = Config().listsData
+    Config().listsData = assert(CDM.Codec.EncodeLists({specs={
+        [62]={c1={"b2"},ess={"i5512"}},[63]={ess={"b3"}}},
+        hidden={[62]={b1=true,s9001=true}}}))
+    local personal = Config().listsData
+    assert(Page.ImportBlizzardWithUndo())
+    local data = Lists()
+    assert(table.concat(data.specs[62].ess,",")=="b1" and data.specs[62].c1[1]=="b2"
+        and data.specs[63].ess[1]=="b3" and data.replace[62].ess and data.replace[62].bar
+        and data.hidden[62].b1==nil and data.hidden[62].s9001==true,
+        "Blizzard import must copy only the current spec's built-in bars")
+    local profile = assert(Suite.ProfileIO.PrepareTable(Suite.DB,false))
+    assert(profile.suite.modules.cooldownManager.listsData==Config().listsData
+        and profile.suite.modules.cooldownManager.raidEssentials==true,
+        "Suite profile export must carry the imported CDM layout and default choice")
+    Page.RunUndo()
+    assert(Config().listsData==personal,"Blizzard import Undo must restore the original list")
+    Config().listsData=before
+end
+
 -- Picker: filter, claim from another bar, keep open, custom IDs.
 Fire(grid.plus, "OnClick", "LeftButton")
 local pick = assert(Page.picker)
@@ -999,17 +1025,23 @@ assert(not (Lists().hidden[62] or {}).s133, "custom entries are never hidden")
 -- entry each and offer Undo (also one entry).
 do
     local buttons = ui.spellButtons
+    assert(Page.ClearLabel("uti") == "Restore spec defaults"
+        and Page.ClearLabel("buf") == "Restore spec defaults"
+        and Page.ClearLabel("bar") == "Restore spec defaults", "spec profile reset labels")
+    Config().raidEssentials = false
+    assert(Page.ClearLabel("uti") == "Reset to Blizzard's list", "native reset label")
+    Config().raidEssentials = true
     M.RequestRefresh()
-    assert(buttons.clear.text == "Reset to Blizzard's list" and buttons.clear.enabled and buttons.copy.enabled
+    assert(buttons.clear.text == "Restore raid essentials" and buttons.clear.enabled and buttons.copy.enabled
         and not buttons.restore.enabled, "Spell list actions on a built-in bar")
     Fire(buttons.clear, "OnEnter")
-    assert(tooltip.text == "Reset to Blizzard's list" and tooltip.line:find("you added", 1, true), "the reset must say what it drops")
+    assert(tooltip.text == "Restore raid essentials" and tooltip.line:find("other bars", 1, true), "the reset must say what it drops")
     Fire(buttons.clear, "OnLeave")
     local listsNow = Config().listsData
     local writes = historyWrites
     Click(buttons.clear, "LeftButton")
     assert(not (Lists().specs[62] and Lists().specs[62].ess) and historyWrites == writes + 1
-        and Page.note == "Essential cooldowns follows Blizzard's list again." and Page.undo, "reset to Blizzard's list")
+        and Page.note == "Essential cooldowns is back to its raid essentials." and Page.undo, "restore raid essentials")
     Page.RunUndo()
     assert(Config().listsData == listsNow and Keys("ess") == "b1,b2,b3,b4,i5512" and historyWrites == writes + 2,
         "undo did not bring the bar's list back")

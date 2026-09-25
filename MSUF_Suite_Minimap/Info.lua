@@ -3,12 +3,12 @@ local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
 -- Information texts on the map. One cancellable timer serves every sampled text
--- (clock, FPS, latency, coordinates); durability, location, difficulty and the
+-- (clock, FPS, latency, coordinates); durability, location, weather, difficulty and the
 -- calendar invite mark are event-driven. Hidden texts do no work and only
 -- remember that they are stale; coordinates stop sampling while no position
 -- exists and resume on the next zone change.
-local keys = { "Clock", "FPS", "Latency", "Coordinates", "Durability", "Location" }
-local eventFields = { Durability = true, Location = true }
+local keys = { "Clock", "FPS", "Latency", "Coordinates", "Durability", "Location", "Weather" }
+local eventFields = { Durability = true, Location = true, Weather = true }
 local DURABILITY_EVENTS = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_EQUIPMENT_CHANGED" }
 local ZONE_EVENTS = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" }
 local DIFFICULTY_EVENTS = { "PLAYER_DIFFICULTY_CHANGED", "GROUP_ROSTER_UPDATE", "INSTANCE_GROUP_SIZE_CHANGED",
@@ -18,7 +18,10 @@ local zoneColors = { sanctuary = "69ccf0", arena = "ff1a1a", friendly = "1aff1a"
 local outlines = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
 -- Blizzard's localized names where one exists, else the suite's own text.
 local TITLES = { Clock = { "TIMEMANAGER_TITLE", "Clock" }, FPS = { false, "FPS" }, Latency = { false, "Latency" },
-    Coordinates = { false, "Coordinates" }, Durability = { "DURABILITY", "Durability" }, Location = { "ZONE", "Location" } }
+    Coordinates = { false, "Coordinates" }, Durability = { "DURABILITY", "Durability" },
+    Location = { "ZONE", "Location" }, Weather = { false, "Weather" } }
+-- WeatherType values from Blizzard's Forever WeatherConstantsDocumentation.
+local WEATHER_TYPES = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm", [4] = "Other weather" }
 -- GetInstanceInfo difficulty IDs: tag and colour tier (1 normal, 2 heroic, 3
 -- mythic, 4 raid finder/follower, 5 timewalking, 6 keystone). Bare tags carry
 -- no group size. Unknown IDs fall back to GetDifficultyInfo's heroic/mythic flags.
@@ -45,6 +48,7 @@ end
 function S.CanShowMinimapInfo(key)
     if key == "Durability" then return type(GetInventoryItemDurability) == "function" end
     if key == "Location" then return type(GetZoneText) == "function" or type(GetSubZoneText) == "function" end
+    if key == "Weather" then return C_Weather and type(C_Weather.GetCurrentWeather) == "function" or false end
     if not C_Timer or type(C_Timer.NewTimer) ~= "function" or type(GetTime) ~= "function" then return false end
     if key == "Clock" then return type(date) == "function" or type(GetGameTime) == "function" end
     if key == "FPS" then return type(GetFramerate) == "function" end
@@ -141,7 +145,18 @@ local function Location(entry)
     end
     return entry.locationText, nil, nil, color
 end
-local readers = { Clock = Clock, FPS = FPS, Latency = Latency, Coordinates = Coordinates, Durability = Durability, Location = Location }
+local function Weather()
+    local api = C_Weather
+    if not api or type(api.GetCurrentWeather) ~= "function" then return "--" end
+    local ok, info = pcall(api.GetCurrentWeather)
+    if not ok or not S.Public(info) or type(info) ~= "table" then return "--" end
+    local kind = info.type
+    if not S.Public(kind) or type(kind) ~= "number" then return "--" end
+    local label = WEATHER_TYPES[kind]
+    return label and S.Text(label) or "--"
+end
+local readers = { Clock = Clock, FPS = FPS, Latency = Latency, Coordinates = Coordinates,
+    Durability = Durability, Location = Location, Weather = Weather }
 
 local function Color(hex)
     return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
@@ -310,10 +325,12 @@ local function ZoneChanged()
     S.InvalidateSharedData("location")
     S.InvalidateSharedData("coordinates")
     EventField("Location")
+    EventField("Weather")
     Rearm()
     UpdateDifficulty()
 end
 local function DifficultyChanged() UpdateDifficulty() end
+local function WeatherChanged() EventField("Weather") end
 local function WorldChanged()
     S.InvalidateSharedData("durability")
     EventField("Durability")
@@ -472,16 +489,19 @@ function MM.RefreshTexts()
     end
     local durability = c.infoDurability and S.CanShowMinimapInfo("Durability")
     local location = c.infoLocation and S.CanShowMinimapInfo("Location")
+    local weather = c.infoWeather and S.CanShowMinimapInfo("Weather")
     local coordinates = c.infoCoordinates and S.CanShowMinimapInfo("Coordinates")
     local difficulty = c.infoDifficulty and type(GetInstanceInfo) == "function"
     -- The mark stands in for Blizzard's calendar button while that is not shown.
     M.inviteWanted = c.infoClock and not (c.showCalendar and S.MinimapElementAvailable("Calendar"))
         and C_Calendar ~= nil and type(C_Calendar.GetNumPendingInvites) == "function"
     Listen(DURABILITY_EVENTS, DurabilityChanged, durability)
-    Listen(ZONE_EVENTS, ZoneChanged, location or coordinates or difficulty)
+    Listen(ZONE_EVENTS, ZoneChanged, location or coordinates or difficulty or weather)
+    if weather then MM.Listen("WEATHER_CHANGED", "info", WeatherChanged)
+    else MM.Unlisten("WEATHER_CHANGED", "info") end
     Listen(DIFFICULTY_EVENTS, DifficultyChanged, difficulty)
     if M.inviteWanted then MM.Listen(INVITE_EVENT, "info", UpdateInvite) else MM.Unlisten(INVITE_EVENT, "info") end
-    local world = durability or location or coordinates or difficulty or M.inviteWanted
+    local world = durability or location or coordinates or weather or difficulty or M.inviteWanted
     if world then MM.Listen("PLAYER_ENTERING_WORLD", "info", WorldChanged) else MM.Unlisten("PLAYER_ENTERING_WORLD", "info") end
     local any = difficulty
     for _, key in ipairs(keys) do

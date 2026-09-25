@@ -24,14 +24,15 @@ assert(Suite.Database.Initialize(nil))
 local private = {}
 Support.Load(root, "MSUF_Suite_Modules", private, nil, nil, "Vanilla")
 assert(private.NS == Suite and #frames == 0 and pixelVisits == 0)
-assert(not next(Suite.Suite.instances), "shared runtime eagerly registered optional modules")
+assert(Suite.Suite.instances.afkScreen and next(Suite.Suite.instances, "afkScreen") == nil,
+    "shared runtime registered modules beyond its AFK screen")
 Support.Load(root, "MSUF_Suite_QualityOfLife", {}, nil, nil, "Vanilla")
 local count = 0
 for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 5, "Quality of Life helpers did not register together")
+assert(count == 6, "AFK screen and Quality of Life helpers did not register together")
 local context = Suite.Suite.NewContext("qol")
 assert(context:Skin() == nil, "disabled skin should require no provider")
 local module, events = Suite.Suite.instances.qol, 0
@@ -84,4 +85,5 @@ assert(paints == 2, "previously created popup lost its skin after toggling")
 context:Release()
 context:RefreshOwnedSkins()
 assert(paints == 3 and released == 2, "module reactivation lost owned popup styling")
-print("Standalone runtime: " .. count .. " Quality of Life helpers register without skin or frames; event and property cleanup passed")
+print("Standalone runtime: AFK screen and " .. (count - 1)
+    .. " Quality of Life helpers register without skin or frames; event and property cleanup passed")

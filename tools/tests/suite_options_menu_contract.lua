@@ -472,6 +472,28 @@ assert(Suite.SuiteCatalog.damageMeter.rules.rendering.default == 3
 assert(Suite.SuiteCatalog.bags.rules.fontShadow.default == false,
     "Bags default enables a shadow that Slug cannot render")
 local savedChat = S.Config("chat")
+assert(Suite.SuiteCatalog.chat.rules.copyMessages.default == false and savedChat.copyMessages == false,
+    "chat message copying must be off by default")
+local timestampWidget
+for _, widget in ipairs(contexts.suite_chat.widgets) do
+    if widget.meta and widget.meta.settingKey == "showTimestamps" then timestampWidget = widget end
+end
+assert(timestampWidget and timestampWidget.rowKind == "dropdown"
+    and timestampWidget.meta.sectionId == "suite_chat_tools",
+    "chat timestamps must be a dropdown bound to Blizzard's setting")
+local nativeTimestamp = "none"
+GetCVar = function(key) assert(key == "showTimestamps"); return nativeTimestamp end
+SetCVar = function(key, value) assert(key == "showTimestamps"); nativeTimestamp = value end
+TIMESTAMP_FORMAT_HHMM = "format-hm"
+TIMESTAMP_FORMAT_HHMMSS = "format-hms"
+TIMESTAMP_FORMAT_HHMM_AMPM = "format-hm-ampm"
+TIMESTAMP_FORMAT_HHMMSS_AMPM = "format-hms-ampm"
+TIMESTAMP_FORMAT_HHMM_24HR = "format-hm-24"
+TIMESTAMP_FORMAT_HHMMSS_24HR = "format-hms-24"
+assert(#timestampWidget.meta.values() == 7 and timestampWidget.get() == "none")
+timestampWidget.set(TIMESTAMP_FORMAT_HHMM_24HR)
+assert(nativeTimestamp == TIMESTAMP_FORMAT_HHMM_24HR and timestampWidget.get() == nativeTimestamp
+    and savedChat.timestamp == nil, "Suite timestamp dropdown did not update the native CVar")
 savedChat.fontRendering = 1
 S.Normalize(Suite.DB)
 assert(savedChat.fontRendering == 1, "normalization overwrote an existing Smooth selection")
@@ -1060,7 +1082,7 @@ for key, section in pairs({ map = "layout", style = "shape", ornament = "style_a
     calendar = "elements", mail = "elements", crafting = "elements", difficulty = "elements",
     compartment = "elements", drawer = "addons", infoFPS = "info_fps",
     infoLatency = "info_latency", infoCoordinates = "info_coordinates",
-    infoDurability = "info_durability", infoLocation = "info_location",
+    infoDurability = "info_durability", infoLocation = "info_location", infoWeather = "info_weather",
     infoDifficulty = "info_difficulty", folio = "landing" }) do
     local target = previewControls["menu2.suite_minimap.minimap.preview." .. key]
     assert(target and target.scripts.OnClick, "minimap preview lacks " .. key)
@@ -1094,6 +1116,17 @@ local glowLayer = previewControls["menu2.suite_minimap.minimap.preview.layer.glo
 assert(glowLayer and glowLayer.scripts.OnClick, "glow preview layer missing")
 glowLayer.scripts.OnClick(glowLayer, "RightButton")
 assert(focusedSection == "suite_minimap_style_glow", "right-clicking a layer did not open its settings")
+local drawerPreview = previewControls["menu2.suite_minimap.minimap.preview.drawer"]
+local originalIsAddOnLoaded = Suite.Client.IsAddOnLoaded
+Suite.Client.IsAddOnLoaded = function(name)
+    if name == "MinimapButtonButton" then return true end
+    return originalIsAddOnLoaded(name)
+end
+M.RequestRefresh()
+assert(not drawerPreview.shown, "MBB should hide the Suite drawer preview")
+Suite.Client.IsAddOnLoaded = originalIsAddOnLoaded
+M.RequestRefresh()
+assert(drawerPreview.shown, "Suite drawer preview did not return without MBB")
 S.Config("minimap").showLanding = 3
 M.RequestRefresh()
 assert(not folioPreview.shown, "disabled Folio still appears in the normal preview")
@@ -1196,7 +1229,6 @@ calendarPreview.scripts.OnDragStop(calendarPreview)
 assert(S.Config("minimap").buttonCalendarX == calendarX - 15
     and S.Config("minimap").buttonCalendarY == 20,
     "second Blizzard button did not keep its own position")
-local drawerPreview = previewControls["menu2.suite_minimap.minimap.preview.drawer"]
 cursorX, cursorY = 100, 100
 drawerPreview.scripts.OnDragStart(drawerPreview)
 cursorX, cursorY = 125, 90

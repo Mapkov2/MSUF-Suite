@@ -359,6 +359,166 @@ local function ApplySidebar(self, visual, frame)
     UpdateFriendsCount(self)
 end
 
+local function PlainMessage(text)
+    -- GetMessageInfo returns Blizzard's rendered line, including a timestamp
+    -- if its native setting is enabled. Present readable text in the copy box.
+    local plain = text:gsub("|H.-|h(.-)|h", "%1")
+        :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        :gsub("|T.-|t", ""):gsub("|A.-|a", "")
+    return plain
+end
+
+local function HideCopyDialog(panel)
+    if not panel then return end
+    panel:Hide()
+    if panel.edit then
+        if type(panel.edit.ClearFocus) == "function" then panel.edit:ClearFocus() end
+        panel.edit:SetText("")
+    end
+    for _, row in ipairs(panel.rows or {}) do
+        row.message = nil
+        row.label:SetText("")
+        row:Hide()
+    end
+end
+
+local function CreateCopyDialog()
+    local panel = CreateFrame("Frame", nil, UIParent)
+    panel:SetSize(440, 345)
+    panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    panel:SetFrameStrata("DIALOG")
+    panel:EnableMouse(true)
+    panel:SetMovable(true)
+    if type(panel.SetClampedToScreen) == "function" then panel:SetClampedToScreen(true) end
+    local background = Fill(panel, "BACKGROUND")
+    background:SetAllPoints(panel)
+    Tint(background, "151719", 97)
+
+    -- A dedicated title drag area leaves message rows and the copy edit box
+    -- free for clicks, selection and Ctrl+C.
+    local dragHandle = CreateFrame("Button", nil, panel)
+    dragHandle:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
+    dragHandle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -34, 0)
+    dragHandle:SetHeight(56)
+    dragHandle:RegisterForDrag("LeftButton")
+    dragHandle:SetScript("OnDragStart", function() panel:StartMoving() end)
+    dragHandle:SetScript("OnDragStop", function() panel:StopMovingOrSizing() end)
+    panel.dragHandle = dragHandle
+
+    local title = dragHandle:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    title:SetPoint("TOPLEFT", dragHandle, "TOPLEFT", 15, -13)
+    title:SetText("Copy chat message (drag to move)")
+    local hint = dragHandle:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    hint:SetPoint("TOPLEFT", dragHandle, "TOPLEFT", 15, -36)
+    hint:SetText("Choose a line, then press Ctrl+C")
+    panel.hint = hint
+    local close = CreateFrame("Button", nil, panel)
+    close:SetSize(24, 22)
+    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
+    local closeLabel = close:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    closeLabel:SetPoint("CENTER", close, "CENTER")
+    closeLabel:SetText("X")
+    close:SetScript("OnClick", function() HideCopyDialog(panel) end)
+
+    local edit = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    edit:SetSize(400, 25)
+    edit:SetPoint("BOTTOM", panel, "BOTTOM", 0, 12)
+    edit:SetAutoFocus(false)
+    edit:SetScript("OnEscapePressed", function() HideCopyDialog(panel) end)
+    panel.edit = edit
+    panel.rows = {}
+    for i = 1, 10 do
+        local row = CreateFrame("Button", nil, panel)
+        row:SetSize(410, 23)
+        row:SetPoint("TOPLEFT", panel, "TOPLEFT", 15, -61 - (i - 1) * 25)
+        local shade = Fill(row, "BACKGROUND")
+        shade:SetAllPoints(row)
+        Tint(shade, i % 2 == 0 and "252a2d" or "1d2225", 100)
+        local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        label:SetPoint("LEFT", row, "LEFT", 7, 0)
+        label:SetWidth(394)
+        label:SetJustifyH("LEFT")
+        if type(label.SetMaxLines) == "function" then label:SetMaxLines(1) end
+        row.label = label
+        row:SetScript("OnClick", function(target)
+            if not target.message then return end
+            edit:SetText(target.message)
+            edit:SetFocus()
+            edit:HighlightText()
+        end)
+        panel.rows[i] = row
+    end
+    panel:Hide()
+    return panel
+end
+
+local function ShowCopyDialog(self, frame)
+    if not self.config.copyMessages or not frame
+        or NS.Safety.IsForbidden(frame) or type(frame.GetNumMessages) ~= "function"
+        or type(frame.GetMessageInfo) ~= "function" then return end
+    local count = frame:GetNumMessages()
+    if not S.Public(count) or type(count) ~= "number" then return end
+    local panel = self.copyDialog or CreateCopyDialog()
+    self.copyDialog = panel
+    local shown = 0
+    for index = count, math.max(1, count - 99), -1 do
+        if shown == #panel.rows then break end
+        local message = frame:GetMessageInfo(index)
+        if S.Public(message) and type(message) == "string" and message ~= "" then
+            shown = shown + 1
+            local row = panel.rows[shown]
+            row.message = PlainMessage(message)
+            row.label:SetText(row.message)
+            row:Show()
+        end
+    end
+    for i = shown + 1, #panel.rows do
+        panel.rows[i].message = nil
+        panel.rows[i]:Hide()
+    end
+    panel.hint:SetText(shown > 0 and "Choose a line, then press Ctrl+C" or "No recent messages to copy")
+    panel.edit:SetText("")
+    panel:Show()
+end
+
+local function ApplyCopyButton(self, visual, frame, top)
+    if not self.config.copyMessages then
+        if visual.copyButton then visual.copyButton:Hide() end
+        HideCopyDialog(self.copyDialog)
+        return
+    end
+    if not visual.copyButton then
+        local button = CreateFrame("Button", nil, frame)
+        button:SetSize(46, 19)
+        button:SetFrameStrata("MEDIUM")
+        local fill = Fill(button, "BACKGROUND")
+        fill:SetAllPoints(button)
+        Tint(fill, self.config.panelColor, 95)
+        button.fill = fill
+        local label = button:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        label:SetPoint("CENTER", button, "CENTER")
+        label:SetText("Copy")
+        button:SetScript("OnClick", function() ShowCopyDialog(self, frame) end)
+        button:SetScript("OnEnter", function(target)
+            if _G.GameTooltip then
+                _G.GameTooltip:SetOwner(target, "ANCHOR_RIGHT")
+                _G.GameTooltip:SetText("Copy a recent chat message")
+                _G.GameTooltip:Show()
+            end
+        end)
+        button:SetScript("OnLeave", function()
+            if _G.GameTooltip then _G.GameTooltip:Hide() end
+        end)
+        visual.copyButton = button
+    end
+    local button = visual.copyButton
+    button:ClearAllPoints()
+    button:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, math.max(21, top) - 3)
+    if type(frame.GetFrameLevel) == "function" then button:SetFrameLevel(frame:GetFrameLevel() + 4) end
+    Tint(button.fill, self.config.panelColor, 95)
+    button:Show()
+end
+
 local function ApplyWindow(self, frame)
     if not frame or NS.Safety.IsForbidden(frame) or type(frame.CreateTexture) ~= "function" then return end
     local c = self.config
@@ -397,6 +557,7 @@ local function ApplyWindow(self, frame)
     if frame == _G.ChatFrame1 then
         ApplySidebar(self, visual, frame)
     end
+    ApplyCopyButton(self, visual, frame, top)
 
     if input and type(input.CreateTexture) == "function" then
         if not visual.input then visual.input = Fill(input, "BACKGROUND") end
@@ -573,6 +734,7 @@ function M:Disable()
         if visual.tabOverlay then visual.tabOverlay:Hide() end
         if visual.sidebar then visual.sidebar:Hide() end
         if visual.sidebarFrame then visual.sidebarFrame:Hide() end
+        if visual.copyButton then visual.copyButton:Hide() end
         if visual.input then visual.input:Hide() end
         if visual.inputEdges then for i = 1, 4 do visual.inputEdges[i]:Hide() end end
         local frame = visual.frame
@@ -582,6 +744,7 @@ function M:Disable()
         if frame then SetNativeChrome(self, frame, tab, input, false) end
     end
     SyncNativeControls(self, false)
+    HideCopyDialog(self.copyDialog)
 end
 
 S.Install("chat", M)

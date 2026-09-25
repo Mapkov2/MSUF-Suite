@@ -14,7 +14,8 @@ local wipe=C.wipe
 
 -- generation moves with every rebuild, content only when a rebuild changed
 -- a record, an order or a bar list.
-local Catalog={records={},order={},generation=0,content=0,byBar={ess={},uti={},buf={},bar={},ext={}},byBase={},
+local Catalog={records={},order={},generation=0,content=0,byBar={ess={},uti={},buf={},bar={},ext={}},
+    defaultByBar={uti={},buf={},bar={}},byBase={},
     equipBars={}}
 C.Catalog=Catalog
 
@@ -239,6 +240,8 @@ Catalog.SpecTag=SpecTag
 ------------------------------------------------------------------ rebuild
 local fetched,defaultOrder,merged,kept,eff,linkedTmp={},{},{},{},{},{}
 local bars={ess={},uti={},buf={},bar={},ext={}}
+local defaultBars={uti={},buf={},bar={}}
+local defaultSeen={}
 local tailTmp,equipTmp={},{}
 local basePool={}
 local changed=false
@@ -407,7 +410,28 @@ function Catalog.Rebuild()
         if not fetched[id] then records[id]=nil; changed=true end
     end
     for _,list in pairs(bars) do wipe(list) end
+    for _,list in pairs(defaultBars) do wipe(list) end
     wipe(equipTmp)
+    -- Guide-authored order/category moves refine Utility and both buff rows
+    -- for this spec. Current client records are authoritative: guide IDs that
+    -- no longer exist disappear, while newly added client IDs append in stock
+    -- order. The player's saved Blizzard layout is still an explicit import.
+    local guide=C.GuideProfiles and C.GuideProfiles[C.state.specID]
+    local guideOrder=guide and guide.order
+    local guideMoves=guide and guide.moves
+    wipe(defaultSeen)
+    local function AddDefault(id)
+        if defaultSeen[id] then return end
+        defaultSeen[id]=true
+        local rec=records[id]
+        if not rec then return end
+        local category=guideMoves and guideMoves[id] or rec.defaultCategory
+        local slot=BAR_OF[category]
+        local list=defaultBars[slot]
+        if list then list[#list+1]=rec.key end
+    end
+    for i=1,#(guideOrder or EMPTY) do AddDefault(guideOrder[i]) end
+    for i=1,#defaultOrder do AddDefault(defaultOrder[i]) end
     local t=0
     for i=1,#order do
         local id=order[i]
@@ -432,6 +456,7 @@ function Catalog.Rebuild()
     for i=#tailTmp,t+1,-1 do tailTmp[i]=nil end
     Commit(Catalog.order,order)
     for key,list in pairs(bars) do Commit(Catalog.byBar[key],list) end
+    for key,list in pairs(defaultBars) do Commit(Catalog.defaultByBar[key],list) end
     local equipBars=Catalog.equipBars
     for key in pairs(equipBars) do
         if not equipTmp[key] then equipBars[key]=nil; changed=true end

@@ -35,7 +35,7 @@ local function NormalizeColor(color, fallback)
     return color
 end
 
--- Revision 38 briefly used the blue W2UI palette. Match its factory values
+-- Revision 38 briefly used a blue palette. Match its factory values
 -- when returning to the Forever look from the user's backup.
 local retiredForeverColors = {
     background = "09141F", ink = "0B1722", surface = "10202C", raised = "192B37",

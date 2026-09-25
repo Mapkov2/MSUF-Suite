@@ -72,6 +72,7 @@ CDM.SIDES = { "BELOW", "ABOVE", "LEFT", "RIGHT" }
 ------------------------------------------------------------------ module rules
 B.Section(id, "general", "General", {
     Choice("blizzard", "Blizzard's cooldown bars", 1, { "Turn off (fastest)", "Keep running invisibly" }),
+    Bool("raidEssentials", "Use MSUF cooldown profiles by specialization", true),
     Bool("showGCD", "Show the global cooldown on icons", false),
     Bool("readyGlowCombat", "Ready glows only in combat", true),
     Bool("muteSounds", "Mute cooldown manager sounds", false),
@@ -110,7 +111,7 @@ B.Section(id, "data", "Data", {
 -- 3: free bars count from the screen center instead of the same UIParent
 -- point (converted in place; unused custom bars start in the middle).
 CDM.DEFAULTS_VERSION = 3
-CDM.DEFAULTS_KEEP = { enabled = true, listsData = true, spellsData = true, captured = true, defaultsVersion = true,
+CDM.DEFAULTS_KEEP = { enabled = true, raidEssentials = true, listsData = true, spellsData = true, captured = true, defaultsVersion = true,
     essOnViewer = true }
 
 ------------------------------------------------------------------ per-slot rules
@@ -333,13 +334,13 @@ CDM.SPELL_FIELDS = {
 }
 -- What an absent per-spell field means where no bar setting stands behind it.
 CDM.SPELL_DEFAULTS = { stackColor = "ff5a3c" }
-CDM.LIMITS = { specs = 64, entries = 60, hidden = 400, spells = 600 }
+CDM.LIMITS = { specs = 64, entries = 120, hidden = 400, spells = 600 }
 
 local function ValidSpec(value) return type(value) == "number" and value > 0 and value < 100000 and math.floor(value) == value end
 
 -- Returns a clean copy; anything malformed is dropped rather than rejected.
 function CDM.CleanLists(data)
-    local out = { v = 1, specs = {}, hidden = {} }
+    local out = { v = 1, specs = {}, hidden = {}, replace = {} }
     if type(data) ~= "table" then return out end
     local specCount = 0
     if type(data.specs) == "table" then
@@ -375,6 +376,21 @@ function CDM.CleanLists(data)
                     end
                 end
                 if count > 0 then out.hidden[spec] = clean end
+            end
+        end
+    end
+    -- A copied Blizzard layout is a complete selection for each built-in bar.
+    -- Older saved lists have no replace map and retain append-new-spells.
+    if type(data.replace) == "table" then
+        for spec, slots in pairs(data.replace) do
+            if ValidSpec(spec) and type(slots) == "table" and out.specs[spec] then
+                local clean = {}
+                for slot, flag in pairs(slots) do
+                    if flag == true and CDM.SLOT_INDEX[slot] and out.specs[spec][slot] then
+                        clean[slot] = true
+                    end
+                end
+                if next(clean) then out.replace[spec] = clean end
             end
         end
     end
@@ -430,7 +446,7 @@ local function Encode(clean, check)
 end
 function Codec.EncodeLists(data)
     local clean = CDM.CleanLists(data)
-    return Encode(clean, Empty(clean.specs) and Empty(clean.hidden))
+    return Encode(clean, Empty(clean.specs) and Empty(clean.hidden) and Empty(clean.replace))
 end
 function Codec.EncodeSpells(data)
     local clean = CDM.CleanSpells(data)

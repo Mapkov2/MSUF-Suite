@@ -169,6 +169,8 @@ end
 local function ReadGlobals(c,all)
     local st=C.state
     local text=all
+    local raid=c.raidEssentials~=false
+    if all or st.raidEssentials~=raid then st.raidEssentials,D.resolve=raid,true end
     local font,flags=S.ResolveFont(c.font),OUTLINE[c.fontOutline] or "OUTLINE"
     if st.font~=font or st.fontFlags~=flags or st.fontRendering~=c.fontRendering
         or st.fontShadow~=c.fontShadow or st.fontShadowOpacity~=c.fontShadowOpacity
@@ -515,7 +517,7 @@ local function OnUsable()
     for i=1,#list do
         local e=list[i]
         local bar=C.bars[e.slot]
-        if e.icon and bar and bar.hidden~=true then
+        if e.icon and bar and bar.hidden~=true and not e.outOfRange then
             local now=GetTime()
             if now>=usableNext or not (_G.C_Timer and _G.C_Timer.NewTimer) then
                 usableNext=now+USABLE_INTERVAL
@@ -919,7 +921,7 @@ Flush=function()
         for i=1,#list do
             local e=list[i]
             local bar=C.bars[e.slot]
-            if e.icon and bar and bar.hidden~=true then C.Effects.Usable(e) end
+            if e.icon and bar and bar.hidden~=true and not e.outOfRange then C.Effects.Usable(e) end
         end
     end
     if D.effects then D.effects=false;C.Effects.CombatChanged() end
@@ -1100,6 +1102,35 @@ function S.CooldownManagerBarEntries(slot)
         end
     end
     return rows
+end
+
+-- Read the active Blizzard CooldownViewer layout for this specialization.
+-- Order and category moves come from Catalog.Rebuild; hidden pseudo-categories
+-- are absent. Include unlearned entries so a talent switch keeps its layout.
+-- This only returns a copy: importing is an explicit options-page action.
+function S.CooldownManagerBlizzardSnapshot()
+    Cold()
+    local catalog=C.Catalog
+    if not catalog.Ready() then return nil, "Blizzard's cooldown list is not ready yet." end
+    catalog.Rebuild()
+    if not C.state.specTag or catalog.specTag~=C.state.specTag then
+        return nil, "Blizzard's cooldown list is not ready yet."
+    end
+    local bars={ess={},uti={},buf={},bar={},ext={}}
+    local count=0
+    for slot,list in pairs(bars) do
+        for pass=1,2 do
+            for i=1,#catalog.order do
+                local rec=catalog.records[catalog.order[i]]
+                if rec and rec.bar==slot and (catalog.TAIL[rec.category]==true)==(pass==2) then
+                    list[#list+1]=rec.key
+                    count=count+1
+                end
+            end
+        end
+    end
+    if count==0 then return nil, "Blizzard's cooldown list is empty." end
+    return bars
 end
 
 -- Picker rows of one family; slot is the bar each entry lives on now.

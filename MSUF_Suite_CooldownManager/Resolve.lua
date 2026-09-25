@@ -3,9 +3,10 @@ local NS,S=P.NS,P.Suite
 local C=P.CDM
 -- Settings, spell lists and the Blizzard snapshot -> one plan per shown bar.
 -- Rules: explicit list entries claim their key for the first bar that lists
--- them ("one spell, one home"); built-in bars follow Blizzard's order for
--- their categories minus hidden and claimed entries, and append new Blizzard
--- entries after an explicit list; custom bars show their list only; an entry
+-- them ("one spell, one home"); built-in bars use the current specialization's
+-- stock categories for Suite profiles, or the saved Blizzard layout when that
+-- mode is selected. Explicit legacy lists append new Blizzard entries; Suite
+-- defaults and imported lists replace the built-in bar. Custom bars show their list only; an entry
 -- of the wrong family for the bar is skipped. Entry tables are reused by key
 -- so runtime fields (icon, cooling, glows) survive a rebuild. Cold path.
 local Public=S.Public
@@ -234,7 +235,7 @@ end
 -- learned one (covered: category -> the learned record with the lowest ID),
 -- so the healthstone shows once; standIn maps such a category to its item
 -- key, so an unlearned record never previews next to it.
-local presetKeys,presetGen,presetSeen,spellKey,presetSpell={},nil,{},{},{}
+local presetKeys,presetGen,presetSpec,presetRaid,presetSeen,spellKey,presetSpell={},nil,nil,nil,{},{},{}
 local covered,standIn={},{}
 local function Consumables(out)
     local n=0
@@ -250,8 +251,10 @@ local function Consumables(out)
 end
 local function PresetLists()
     local gen=Catalog.content
-    if presetGen==gen then return presetKeys end
-    presetGen=gen
+    local specID=C.state.specID
+    local raid=C.state.raidEssentials~=false
+    if presetGen==gen and presetSpec==specID and presetRaid==raid then return presetKeys end
+    presetGen,presetSpec,presetRaid=gen,specID,raid
     wipe(spellKey); wipe(presetSpell); wipe(covered); wipe(standIn)
     for _,rec in pairs(Catalog.records) do
         local category=rec.known and rec.spellCategory
@@ -270,7 +273,9 @@ local function PresetLists()
     local Presets=C.Presets
     for i=1,#SLOTS do
         local def=SLOTS[i]
-        local ids=Presets and (def.preset=="defensives" and Presets.Defensives()
+        local ids=Presets and (def.key=="ess" and raid
+                and Presets.RaidEssentials and Presets.RaidEssentials(specID)
+            or def.preset=="defensives" and Presets.Defensives()
             or def.preset=="racials" and Presets.RACIALS) or nil
         if ids then
             local out=presetKeys[def.key] or {}
@@ -289,6 +294,8 @@ local function PresetLists()
             end
             for j=#out,n+1,-1 do out[j]=nil end
             presetKeys[def.key]=out
+        elseif def.key=="ess" then
+            presetKeys.ess=nil
         end
     end
     return presetKeys
@@ -338,28 +345,34 @@ local usedSlot,slotHome={},{}
 
 local function SpecData()
     local specID,lists=C.state.specID,C.lists
-    local specLists,hidden=nil,EMPTY
+    local specLists,hidden,replaced=nil,EMPTY,EMPTY
     if specID~=nil and type(lists)=="table" then
         local specs=lists.specs
         specLists=type(specs)=="table" and specs[specID] or nil
         if type(specLists)~="table" then specLists=nil end
         local h=type(lists.hidden)=="table" and lists.hidden[specID]
         if type(h)=="table" then hidden=h end
+        local r=type(lists.replace)=="table" and lists.replace[specID]
+        if type(r)=="table" then replaced=r end
     end
-    return specLists,hidden
+    return specLists,hidden,replaced
 end
 local function KindOf(i)
     local def=SLOTS[i]
     local view=C.views[def.key]
     return view and view.kind or def.kind or 1
 end
--- The list a bar holds first: the user's list for this spec, or for the
--- Defensives row its preset while the user has none.
+-- The list a bar holds first: the user's list for this spec, then Suite
+-- defaults for Essential, Utility, Defensives and both buff rows.
 local function ListOf(i,specLists,presets)
     local def=SLOTS[i]
     local list=specLists and specLists[def.key]
     if type(list)=="table" then return list,true end
-    if def.preset=="defensives" then return presets[def.key],false end
+    if def.key=="ess" or def.preset=="defensives" then return presets[def.key],false end
+    if C.state.raidEssentials~=false then
+        local defaults=Catalog.defaultByBar[def.key]
+        if defaults then return defaults,false end
+    end
 end
 local function ClaimList(list,slot,family)
     for j=1,#list do
@@ -373,15 +386,24 @@ local function ClaimList(list,slot,family)
 end
 -- A key is claimed by the first bar (menu order) whose list holds it and whose
 -- kind can show it, so a bar switched to another kind releases its entries.
--- User lists claim first, presets take what is left.
+-- User lists claim first. Among Suite defaults, the dedicated Defensives row
+-- owns its spells before stock/guide Essential and Utility categories do.
 local function Claim(specLists,presets)
     wipe(claimed); wipe(slotHome)
     for pass=1,2 do
+        if pass==2 then
+            local i=CDM.SLOT_INDEX.def
+            local list,explicit=ListOf(i,specLists,presets)
+            local view=C.views.def
+            if list and not explicit and view and view.on then
+                ClaimList(list,"def",KIND_FAMILY[KindOf(i)])
+            end
+        end
         for i=1,#SLOTS do
             local def=SLOTS[i]
             local family=KIND_FAMILY[KindOf(i)]
             local list,explicit=ListOf(i,specLists,presets)
-            if list and explicit==(pass==1) then
+            if not (pass==2 and def.preset=="defensives") and list and explicit==(pass==1) then
                 -- A preset only claims while its bar is shown; switched off,
                 -- its spells go back to their Blizzard bars.
                 local view=C.views[def.key]
@@ -413,7 +435,7 @@ local function Offer(rec,slot,hidden,out,n)
     end
     return n
 end
-local function Collect(i,kind,specLists,hidden,preview,out,presets)
+local function Collect(i,kind,specLists,hidden,replaced,preview,out,presets)
     local def=SLOTS[i]
     local slot,family=def.key,KIND_FAMILY[kind]
     local n=0
@@ -429,7 +451,12 @@ local function Collect(i,kind,specLists,hidden,preview,out,presets)
             end
         end
     end
-    if def.builtin and family then
+    -- Suite spec defaults and explicitly imported Blizzard lists are complete
+    -- selections. Other user lists retain the older append-new-spells rule.
+    local strict=(list~=nil and not explicit and
+        (slot=="ess" or Catalog.defaultByBar[slot]~=nil))
+        or replaced[slot]==true
+    if def.builtin and family and not strict then
         local records=Catalog.records
         if preview then
             -- Unlearned entries too, in Blizzard's global order; pool entries
@@ -448,6 +475,17 @@ local function Collect(i,kind,specLists,hidden,preview,out,presets)
             for j=1,#source do
                 local rec=records[source[j]]
                 if rec and rec.bar==slot and rec.family==family then n=Offer(rec,slot,hidden,out,n) end
+            end
+        end
+    elseif slot=="ess" and not explicit then
+        -- The short raid preset replaces Blizzard's spell clutter, but an
+        -- equipped on-use trinket still belongs on Essential. User lists and
+        -- imported layouts remain exact, including deliberate removals.
+        local order,records=Catalog.order,Catalog.records
+        for j=1,#order do
+            local rec=records[order[j]]
+            if rec and rec.bar==slot and rec.family==family and rec.equipSlot then
+                n=Offer(rec,slot,hidden,out,n)
             end
         end
     end
@@ -566,7 +604,7 @@ function Resolve.Build()
     local preview=state.preview==true
     -- The options canvas redraws only when entries may have changed.
     state.entryGen=(state.entryGen or 0)+1
-    local specLists,hidden=SpecData()
+    local specLists,hidden,replaced=SpecData()
     local spells=type(C.spells)=="table" and type(C.spells.e)=="table" and C.spells.e or EMPTY
     local presets=PresetLists()
     Claim(specLists,presets)
@@ -579,7 +617,7 @@ function Resolve.Build()
             local kind=KindOf(i)
             local plan=planCache[slot]
             if not plan then plan={slot=slot,entries={},gen=0}; planCache[slot]=plan end
-            local count=Collect(i,kind,specLists,hidden,preview,keys,presets)
+            local count=Collect(i,kind,specLists,hidden,replaced,preview,keys,presets)
             local n=0
             for j=1,count do
                 local e=Materialize(keys[j],slot,n+1,preview,spells)
@@ -611,10 +649,10 @@ function Resolve.Keys(slot,out)
     out=out or {}
     local i=CDM.SLOT_INDEX[slot]
     if not i then wipe(out); return out end
-    local specLists,hidden=SpecData()
+    local specLists,hidden,replaced=SpecData()
     local presets=PresetLists()
     Claim(specLists,presets)
-    local n=Collect(i,KindOf(i),specLists,hidden,true,out,presets)
+    local n=Collect(i,KindOf(i),specLists,hidden,replaced,true,out,presets)
     -- Preset-only spells the character does not know, and healthstones the
     -- client has no item for, never show (Materialize).
     local m=0

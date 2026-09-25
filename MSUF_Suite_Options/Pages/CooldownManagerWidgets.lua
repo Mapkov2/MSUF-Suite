@@ -364,11 +364,16 @@ end
 local function Prune(lists, spec)
     local slots = lists.specs[spec]
     if slots then
-        for slot, list in pairs(slots) do if #list == 0 then slots[slot] = nil end end
+        local replace = lists.replace and lists.replace[spec]
+        for slot, list in pairs(slots) do
+            if #list == 0 and not (replace and replace[slot]) then slots[slot] = nil end
+        end
         if next(slots) == nil then lists.specs[spec] = nil end
     end
     local hidden = lists.hidden[spec]
     if hidden and next(hidden) == nil then lists.hidden[spec] = nil end
+    local replace = lists.replace and lists.replace[spec]
+    if replace and next(replace) == nil then lists.replace[spec] = nil end
 end
 -- An explicit order that matches what the bar shows now, followed by listed
 -- entries it cannot show right now (unlearned talents keep their place).
@@ -385,6 +390,11 @@ local function Materialize(lists, spec, slot)
         for i = 1, #old do if not IndexOf(list, old[i]) then list[#list + 1] = old[i] end end
     end
     slots[slot] = list
+    if slot == "ess" and not old and P.Get(ID, "raidEssentials") ~= false then
+        local replace = lists.replace[spec] or {}
+        replace.ess = true
+        lists.replace[spec] = replace
+    end
     return list
 end
 -- One home per entry: drop it from the other bars and from the removed set.
@@ -511,20 +521,68 @@ function Page.MoveEntry(key, slot, beforeKey, family)
     end)
 end
 
--- What dropping a bar's own list does: built-in bars go back to Blizzard's
--- list, Defensives to the class preset, custom bars are emptied.
+-- What dropping a bar's own list does: the Suite profile restores its spec
+-- defaults; with it off, built-ins follow the active Blizzard layout.
 function Page.ClearLabel(slot)
     local info = Page.SlotInfo(slot)
     if info.custom then return "Remove all spells" end
+    if P.Get(ID, "raidEssentials") ~= false then
+        if slot == "ess" then return "Restore raid essentials" end
+        if slot == "uti" or slot == "buf" or slot == "bar" then return "Restore spec defaults" end
+    end
     return info.preset == "defensives" and "Restore default spells" or "Reset to Blizzard's list"
 end
 function Page.ClearList(slot)
     return EditLists(function(lists, spec)
         local slots = lists.specs[spec]
-        if not (slots and slots[slot]) then return true end
-        slots[slot] = nil
+        local replace = lists.replace and lists.replace[spec]
+        if not (slots and slots[slot]) and not (replace and replace[slot]) then return true end
+        if slots then slots[slot] = nil end
+        if replace then replace[slot] = nil end
         return Page.ClearLabel(slot)
     end)
+end
+
+-- Transfer the active Blizzard CDM order and category assignments for the
+-- current specialization. Other specs and Suite custom/defensive bars stay as
+-- they are. A complete selection is marked so new Blizzard entries do not
+-- silently append after import; the user can restore a Suite spec default later.
+function Page.ImportBlizzard()
+    local spec, err = Ready()
+    if not spec then return false, err end
+    local snapshot = S.CooldownManagerBlizzardSnapshot
+    if type(snapshot) ~= "function" then return false, "Blizzard's cooldown list is not ready yet." end
+    local bars, reason = snapshot()
+    if not bars then return false, reason end
+    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
+    local slots = lists.specs[spec] or {}
+    local reserved = {}
+    local imported = {}
+    for slot, list in pairs(slots) do
+        if slot == "def" or (type(slot) == "string" and slot:match("^c[1-6]$")) then
+            for i = 1, #list do reserved[list[i]] = true end
+        end
+    end
+    local replace = lists.replace[spec] or {}
+    for _, slot in ipairs({ "ess", "uti", "buf", "bar", "ext" }) do
+        local source = bars[slot] or EMPTY
+        local list = {}
+        for i = 1, #source do
+            local key = source[i]
+            if not reserved[key] then list[#list + 1] = key; imported[key] = true end
+        end
+        if #list > CDM.LIMITS.entries then return false, "Blizzard's list has too many entries for one bar." end
+        slots[slot], replace[slot] = list, true
+    end
+    lists.specs[spec], lists.replace[spec] = slots, replace
+    -- Blizzard's active layout is authoritative for copied entries. Keep
+    -- removals of Suite-only entries and custom/defensive bar entries.
+    local hidden = lists.hidden[spec]
+    if hidden then
+        for key in pairs(imported) do hidden[key] = nil end
+    end
+    Prune(lists, spec)
+    return Page.Commit("Import Blizzard cooldown layout", lists)
 end
 function Page.RestoreHidden()
     return EditLists(function(lists, spec)
@@ -727,8 +785,16 @@ function Page.ClearWithUndo(slot)
     local label = Page.ClearLabel(slot)
     local text = label == "Remove all spells" and format(Tr("Removed every spell from %s."), Page.BarName(slot))
         or label == "Restore default spells" and format(Tr("%s is back to its default spells."), Page.BarName(slot))
+        or label == "Restore raid essentials" and format(Tr("%s is back to its raid essentials."), Page.BarName(slot))
+        or label == "Restore spec defaults" and format(Tr("%s is back to its spec defaults."), Page.BarName(slot))
         or format(Tr("%s follows Blizzard's list again."), Page.BarName(slot))
     local ok, reason = Page.WithUndo(text, LIST_KEYS, function() return Page.ClearList(slot) end)
+    if not ok then Page.Fail(reason) end
+    return ok
+end
+function Page.ImportBlizzardWithUndo()
+    local ok, reason = Page.WithUndo("Imported Blizzard's cooldown layout for this specialization.", LIST_KEYS,
+        Page.ImportBlizzard)
     if not ok then Page.Fail(reason) end
     return ok
 end

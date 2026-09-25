@@ -67,7 +67,7 @@ do
     end
 end
 -- Frame Basics: Blizzard's bars and sounds share a row, then the switches.
-local GENERAL_ORDER = { "blizzard", "soundChannel", "showGCD", "muteSounds", "readyGlowCombat" }
+local GENERAL_ORDER = { "blizzard", "raidEssentials", "soundChannel", "showGCD", "muteSounds", "readyGlowCombat" }
 
 ------------------------------------------------------------------ selected-bar rows
 -- Choice lists that follow the selected bar are edited in place: SettingsRows
@@ -411,6 +411,8 @@ end
 -- an Undo line.
 local CLEAR_TIPS = {
     ["Reset to Blizzard's list"] = "Drops this bar's own order and the spells and items you added to it, for this specialization. Spells you removed stay hidden: Show removed spells brings them back. You can undo it.",
+    ["Restore raid essentials"] = "Returns this specialization to its short raid essentials list. Your other bars and specializations stay as they are. You can undo it.",
+    ["Restore spec defaults"] = "Restores this bar's default spells and buffs for your specialization. Other bars and specializations stay as they are. You can undo it.",
     ["Restore default spells"] = "Goes back to your class's defensive cooldowns, for this specialization. You can undo it.",
     ["Remove all spells"] = "Empties this bar for this specialization. You can undo it.",
 }
@@ -425,6 +427,10 @@ end
 local function CopyEnter(self)
     Page.ShowTip(self, Tr("Copy to other specializations"),
         Tr("Copies the spells and items you added to this bar to the same bar in your other specializations. Blizzard's entries follow each specialization's own list. You can undo it."))
+end
+local function ImportEnter(self)
+    Page.ShowTip(self, Tr("Import Blizzard CDM"),
+        Tr("Copies the active Blizzard spell selection, bar assignment and order into this specialization's five built-in Suite bars. Your defensive and custom bars, other specializations, and Blizzard settings stay as they are. You can undo it."))
 end
 local function SpellButton(body, text, width, onClick, onEnter)
     local button = Page.Button(body, text, width, 24, onClick)
@@ -459,13 +465,17 @@ local function BuildSpells(ctx, b, ui)
     local copy = SpellButton(body, "Copy to other specializations", half,
         function() Page.CopyListWithUndo(Page.selected) end, CopyEnter)
     copy:SetPoint("LEFT", clear, "RIGHT", 8, 0)
+    local import = SpellButton(body, "Import Blizzard CDM", width,
+        Page.ImportBlizzardWithUndo, ImportEnter)
+    import:SetPoint("TOPLEFT", clear, "BOTTOMLEFT", 0, -6)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(addSpells, P.Meta(PAGE, ID, "spells.add", "action", sectionId), "Add spells", "button")
         M.RegisterControlMetadata(restore, P.Meta(PAGE, ID, "spells.restore", "action", sectionId), "Show removed spells", "button")
         M.RegisterControlMetadata(clear, P.Meta(PAGE, ID, "spells.clear", "action", sectionId), "Reset to Blizzard's list", "button")
         M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "spells.copy", "action", sectionId), "Copy to other specializations", "button")
+        M.RegisterControlMetadata(import, P.Meta(PAGE, ID, "spells.importBlizzard", "action", sectionId), "Import Blizzard CDM", "button")
     end
-    ui.spellButtons = { add = addSpells, restore = restore, clear = clear, copy = copy }
+    ui.spellButtons = { add = addSpells, restore = restore, clear = clear, copy = copy, import = import }
     -- The note shows here and under the preview.
     ui.PaintNote = function()
         Page.SetRaw(note, Page.note or "")
@@ -477,7 +487,7 @@ local function BuildSpells(ctx, b, ui)
     local function Layout(height)
         if height == ui.gridHeight then return end
         ui.gridHeight = height
-        P.FinishBody(b, body, top - height - 100)
+        P.FinishBody(b, body, top - height - 130)
     end
     M.TrackRefresh(ctx, function()
         if P.Combat() then return end
@@ -496,6 +506,7 @@ local function BuildSpells(ctx, b, ui)
         if body._cdmClear ~= label then body._cdmClear = label; clear:SetText(Tr(label)) end
         clear:SetEnabled(not blocked and Page.HasList(Page.selected))
         copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))
+        import:SetEnabled(not blocked and type(S.CooldownManagerBlizzardSnapshot) == "function")
         Header(body, "Spell list", false, "")
     end)
     ui.sections.spells = body

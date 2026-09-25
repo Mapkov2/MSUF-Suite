@@ -151,6 +151,9 @@ end
 
 ------------------------------------------------------------------ paint parts
 local function Usable(rec,usable,noMana)
+    -- The range color masks usability. A payload can still update the local
+    -- state without a native read; an unknown state is read on the range edge.
+    if usable==nil and rec.outOfRange then Tint(rec);return end
     if usable==nil then usable,noMana=api.Usable(rec.slot) end
     rec.usable=(Public(usable) and usable) and 1 or (Public(noMana) and noMana) and 2 or 3
     Tint(rec)
@@ -686,10 +689,9 @@ local function RangeChanged(_,_,slot,inRange,checksRange)
     local out=Public(inRange) and Public(checksRange) and checksRange and not inRange or nil
     for i=1,#list do
         local rec=list[i]
-        if rec.rangeSlot==slot then
+        if rec.rangeSlot==slot and rec.outOfRange~=out then
             rec.outOfRange=out
-            rec.tint=nil
-            if rec.native and not out then Usable(rec) else Tint(rec) end
+            if not out then Usable(rec) else Tint(rec) end
         end
     end
 end

@@ -60,7 +60,7 @@ local function Frame(name)
     function frame:SetWidth(width) self.width = width end
     function frame:SetHeight(height) self.height = height end
     function frame:ClearAllPoints() self.points = {} end
-    function frame:SetPoint(...) self.points[#self.points + 1] = { ... } end
+    function frame:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
     function frame:SetShown(shown) self.shown = shown end
     function frame:IsShown() return self.shown end
     function frame:Show() self.shown = true end
@@ -71,9 +71,22 @@ local function Frame(name)
     function frame:GetFrameLevel() return self.level or 1 end
     function frame:EnableMouse(enabled) self.mouse = enabled end
     function frame:IsMouseEnabled() return self.mouse end
+    function frame:SetMovable(value) self.movable = value end
+    function frame:RegisterForDrag(button) self.dragButton = button end
+    function frame:StartMoving() self.moving = true end
+    function frame:StopMovingOrSizing() self.moving = false end
     function frame:SetAlpha(alpha) self.alpha = alpha end
     function frame:GetAlpha() return self.alpha end
     function frame:RegisterForClicks() end
+    function frame:SetClampedToScreen(value) self.clamped = value end
+    function frame:SetAutoFocus(value) self.autoFocus = value end
+    function frame:SetFocus() self.focused = true end
+    function frame:ClearFocus() self.focused = false end
+    function frame:HighlightText() self.highlighted = true end
+    function frame:SetText(value) self.text = value end
+    function frame:GetText() return self.text end
+    function frame:GetNumMessages() return #(self.messages or {}) end
+    function frame:GetMessageInfo(index) return self.messages and self.messages[index] end
     function frame:SetScript(script, callback) self.scripts = self.scripts or {}; self.scripts[script] = callback end
     function frame:Click(mouseButton)
         self.clicks = (self.clicks or 0) + 1
@@ -186,6 +199,7 @@ module.config = {
     tabPanel = true, sidebarPanel = true, sidebarWidth = 28,
     inputPanel = true, inputColor = "0a1522", inputAlpha = 86, padding = 4, fontSize = 15,
     font = "", fontOutline = 1, fontRendering = 3, fontShadow = 1,
+    copyMessages = false,
 }
 module:Enable()
 assert(ChatFrame1.font[3] == "SLUG" and ChatFrame1.shadowColor[4] == 0,
@@ -224,6 +238,37 @@ assert(sidebar.tabLabel.value == "General" and sidebar.tabOverlay.alpha == 1,
     "Blizzard tab refresh dimmed the independent MSUF label")
 assert(sidebar.buttons[1].glyph.path == "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png",
     "MSUF glyph texture was replaced by a solid color")
+assert(not sidebar.copyButton, "copy UI must be absent by default")
+ChatFrame1.messages = {
+    "|cffaaaaaa[15:38]|r First message",
+    "secret",
+    "|cff00ff00[15:39]|r |Hplayer:Mapko|h[Mapko]|h: Good point!",
+}
+module.config.copyMessages = true
+module:Refresh()
+assert(sidebar.copyButton and sidebar.copyButton.shown, "opt-in Copy button is missing")
+sidebar.copyButton:Click("LeftButton")
+assert(module.copyDialog and module.copyDialog.shown and module.copyDialog.rows[1].message == "[15:39] [Mapko]: Good point!"
+    and module.copyDialog.rows[2].message == "[15:38] First message"
+    and not module.copyDialog.rows[3].shown, "copy chooser did not show recent public chat lines")
+local copyDialog = module.copyDialog
+assert(copyDialog.movable and copyDialog.dragHandle.dragButton == "LeftButton"
+    and copyDialog.dragHandle.scripts.OnDragStart and copyDialog.dragHandle.scripts.OnDragStop,
+    "copy chooser title is not draggable")
+copyDialog.dragHandle.scripts.OnDragStart(copyDialog.dragHandle)
+assert(copyDialog.moving, "dragging the title did not move the chooser")
+copyDialog.dragHandle.scripts.OnDragStop(copyDialog.dragHandle)
+assert(not copyDialog.moving and copyDialog.shown, "releasing the title did not stop moving")
+module.copyDialog.rows[1]:Click("LeftButton")
+assert(module.copyDialog.edit.text == "[15:39] [Mapko]: Good point!"
+    and module.copyDialog.edit.focused and module.copyDialog.edit.highlighted,
+    "choosing a line did not prepare its text for Ctrl+C")
+module.config.copyMessages = false
+module:Refresh()
+assert(not sidebar.copyButton.shown and not module.copyDialog.shown,
+    "turning off Copy left the button or chooser visible")
+assert(module.copyDialog.rows[1].message == nil and module.copyDialog.edit.text == "",
+    "turning off Copy retained the selected chat text")
 assert(QuickJoinToastButton.alpha == 0 and not QuickJoinToastButton.mouse)
 assert(ChatFrameToggleVoiceMuteButton.alpha == 0 and not ChatFrameToggleVoiceMuteButton.mouse)
 assert(sidebar.friendCount.value == "5", "friend count did not use the live Blizzard data")

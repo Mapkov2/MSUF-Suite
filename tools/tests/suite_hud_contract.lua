@@ -19,7 +19,11 @@ local function Widget(parent, fontString)
     function w:GetAlpha() return self.alpha or 1 end
     function w:GetParent() return self.parent end
     function w:SetParent(parent) self.parent = parent end
-    function w:SetPoint(...) self.point = { ... }; setPoints = setPoints + 1 end
+    function w:SetPoint(...)
+        self.point = { ... }
+        self.pointCalls = (self.pointCalls or 0) + 1
+        setPoints = setPoints + 1
+    end
     function w:ClearAllPoints() end
     function w:SetAllPoints() end
     function w:SetSize(a, b) self.width, self.height = a, b end
@@ -59,6 +63,7 @@ local function Widget(parent, fontString)
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetShown(value) self.shown = value end
+    function w:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     return w
 end
 UIParent = Widget()
@@ -173,7 +178,29 @@ local tracker = S.instances.objectives
 tracker.context = Context()
 tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
     showWorldQuests = true, showBonus = true, showAchievements = true, showScenario = true }
+ObjectiveTrackerFrame = Widget(UIParent)
 tracker:Enable()
+assert(tracker.nativeHiddenParent and ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
+    and not ObjectiveTrackerFrame:IsVisible(),
+    "native objective tracker must remain hidden by its parent")
+ObjectiveTrackerFrame:SetParent(UIParent)
+ObjectiveTrackerFrame:Show()
+tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
+assert(ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
+    and not ObjectiveTrackerFrame:IsVisible(),
+    "raid roster changes must restore native tracker suppression")
+local combatLocked = false
+suite.IsCombatLocked = function() return combatLocked end
+combatLocked = true
+ObjectiveTrackerFrame:SetParent(UIParent)
+tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
+assert(ObjectiveTrackerFrame:GetParent() == UIParent,
+    "protected combat transitions must defer native parent changes")
+combatLocked = false
+tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
+assert(ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
+    and not ObjectiveTrackerFrame:IsVisible(),
+    "native tracker must be hidden after combat ends")
 assert(movers.objectives.element == "tracker" and tracker.rows["entry:quests:42"])
 assert(tracker.host.shown and tracker.count.text == "1" and questUpdates == 1)
 tracker.rows["entry:quests:42"].OnClick(tracker.rows["entry:quests:42"])
@@ -234,6 +261,16 @@ assert(math.abs(tracker.background.color[1] - 34 / 255) < .001
     and tracker.rows["entry:quests:42"].text.textColor[1] == 1
     and tracker.rows["entry:quests:42"].text.fontSize == 18,
     "tracker custom colors must reach its owned frame")
+local sectionRow, entryRow = tracker.rows["section:quests"], tracker.rows["entry:quests:42"]
+local sectionPoints, entryPoints = sectionRow.pointCalls, entryRow.pointCalls
+C_QuestLog.GetQuestObjectives = function()
+    return { { text = "Collect 4 items", type = "monster", finished = false } }
+end
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+Drain()
+assert(tracker.rows["line:quests:42:1"].text.text == "Collect 4 items"
+    and sectionRow.pointCalls == sectionPoints and entryRow.pointCalls == entryPoints,
+    "changing one objective should leave unchanged row geometry alone")
 GetAchievementInfo = function(id) return id, "Heroic", 10, false end
 C_ContentTracking.GetTrackedIDs = function() return { 99 } end
 C_Scenario.GetInfo = function()
@@ -337,6 +374,11 @@ assert(banner.context.hidden[EventToastManagerFrame] == false
     and achievement:GetParent() == UIParent and worldQuest:GetParent() == UIParent
     and scenarioAlert:GetParent() == UIParent,
     "disabling replacements must restore Blizzard alerts")
+local mutedQueue = #banner.queue
+EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 8,
+    title = "Muted toast", subtitle = "Dornogal" })
+assert(#banner.queue == mutedQueue and banner.context.hidden[EventToastManagerFrame] == false,
+    "a disabled toast replacement must leave Blizzard's toast alone")
 banner.config.eventToasts, banner.config.achievements = true, true
 banner:Refresh()
 S.editMode = true
@@ -421,5 +463,8 @@ assert(not tracker.rows["entry:quests:43"].timerEnd,
     "disabling countdowns must stop active timer rows")
 tracker:Disable()
 Drain()
+tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")
+assert(ObjectiveTrackerFrame:GetParent() == UIParent,
+    "disabling the MSUF tracker must restore Blizzard's original parent")
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
 print("Suite HUD: owned frames, full objectives, items, timers, collapse, row reuse and movers passed")

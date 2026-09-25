@@ -94,6 +94,9 @@ B.Section(id, "text", "Message text", {
     B.Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     B.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
 })
+B.Section(id, "tools", "Chat tools", {
+    B.Bool("copyMessages", "Show Copy button for chat messages", false),
+})
 local textRules = NS.SuiteCatalog[id].rules
 textRules.font.defaultLabel = "Blizzard / MSUF Fonts (default)"
 for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do

@@ -218,15 +218,25 @@ function AB.StyleButton(rec)
     end
 end
 
--- Press state for native keys, routed keys and mouse presses; also drives
--- the "Border" pressed style. Visual only, allowed in combat.
+-- Press state for native and routed keys; also drives the "Border" pressed
+-- style. WoW manages the button state for physical mouse presses.
 function AB.SetPushed(rec,down)
     if rec.owned then rec.button:SetButtonState(down and "PUSHED" or "NORMAL") end
     if rec.pressBorder then ShowEdges(rec.pressEdges,down) end
 end
 
-local function MouseDown(button) local rec=AB.records[button];if rec and M.active then AB.SetPushed(rec,true) end end
-local function MouseUp(button) local rec=AB.records[button];if rec and M.active then AB.SetPushed(rec,false) end end
+-- WoW owns the pressed state during a physical mouse click. Forcing it back
+-- to NORMAL in OnMouseUp can cancel the release click before OnClick fires.
+-- Only the suite's custom border needs a mouse hook; keyboard presses still
+-- use SetPushed below because they do not generate mouse events.
+local function MouseDown(button)
+    local rec=AB.records[button]
+    if rec and M.active and rec.pressBorder then ShowEdges(rec.pressEdges,true) end
+end
+local function MouseUp(button)
+    local rec=AB.records[button]
+    if rec and M.active and rec.pressBorder then ShowEdges(rec.pressEdges,false) end
+end
 -- Routed keys arrive as "Keybind" clicks, which do not change the button
 -- state themselves.
 local function PreClick(button,mouse,down)

@@ -1,7 +1,6 @@
 """Generate original, small Forever Micro Bar chrome assets.
 
-The shapes are drawn from primitives so the Suite does not redistribute
-graphics from the W2UI visual reference.
+The shapes are drawn from primitives, so every asset is original.
 """
 
 from pathlib import Path

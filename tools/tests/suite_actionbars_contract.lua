@@ -430,7 +430,7 @@ local function Duration(slot,ignoreGCD)
     end
     return object
 end
-local calls,rangeEnabled,ranges={cooldown=0,duration=0,charges=0,loc=0,usable=0,texture=0},{},{}
+local calls,rangeEnabled,ranges={cooldown=0,duration=0,charges=0,loc=0,usable=0,texture=0,usableBySlot={}},{},{}
 local locCount=0
 C_LossOfControl={GetActiveLossOfControlDataCountByUnit=function(unit)
     assert(unit=="player")
@@ -461,7 +461,13 @@ C_ActionBar={
         return {isActive=false,shouldReplaceNormalCooldown=false}
     end,
     GetActionLossOfControlCooldownDuration=function(slot) return Duration(slot) end,
-    IsUsableAction=function(slot) calls.usable=calls.usable+1;local a=actions[slot];if not a then return false,false end;return a.usable~=false,a.noMana==true end,
+    IsUsableAction=function(slot)
+        calls.usable=calls.usable+1
+        calls.usableBySlot[slot]=(calls.usableBySlot[slot] or 0)+1
+        local a=actions[slot]
+        if not a then return false,false end
+        return a.usable~=false,a.noMana==true
+    end,
     IsCurrentAction=function(slot) local a=actions[slot];return a and a.current==true or false end,
     IsAutoRepeatAction=function() return false end,
     IsEquippedAction=function(slot) local a=actions[slot];return a and a.equipped==true or false end,
@@ -1076,6 +1082,26 @@ Event("ACTION_RANGE_CHECK_UPDATE",61,true,true)
 assert(b61.icon.vertex[1]==.5,"back in range restores the usable tint")
 Event("ACTION_RANGE_CHECK_UPDATE",61,Secret(),true)
 assert(b61.icon.vertex[1]==.5,"secret range payload never compared")
+-- An owned button should not query usability while range tint covers it;
+-- the return edge must read the current answer before repainting.
+Event("ACTION_RANGE_CHECK_UPDATE",1,false,true)
+calls.rangeGateReads=calls.usableBySlot[1] or 0
+actions[1].usable=false
+Event("ACTION_USABLE_CHANGED",{{slot=1}})
+assert((calls.usableBySlot[1] or 0)==calls.rangeGateReads
+    and Button(1,1).button.icon.vertex[1]==AB.style.rr,
+    "out-of-range owned action queried hidden usability")
+Event("ACTION_RANGE_CHECK_UPDATE",1,true,true)
+assert((calls.usableBySlot[1] or 0)==calls.rangeGateReads+1
+    and Button(1,1).button.icon.vertex[1]==.4,
+    "owned action did not recover unusable tint on range return")
+calls.rangeGateReads=calls.usableBySlot[1]
+Event("ACTION_RANGE_CHECK_UPDATE",1,true,true)
+assert(calls.usableBySlot[1]==calls.rangeGateReads,
+    "unchanged range event repeated an owned usability query")
+actions[1].usable=true
+Event("ACTION_USABLE_CHANGED",{{slot=1,usable=true,noMana=false}})
+assert(Button(1,1).button.icon.vertex[1]==1,"owned action did not accept usable payload")
 local references=AB.RangeReferences()
 assert(references>0)
 assert(S.Set("actionbars","bar2Visibility",6))

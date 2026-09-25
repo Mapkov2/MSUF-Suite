@@ -1,7 +1,7 @@
 local _, NS = ...
 
--- Optional, exact-owner integration. EnhanceQoL Init.lua / Settings/ItemInventory.lua
--- owns itemSlots, enchant, trackLabel, gems and ItemEnchantDisplay.Apply/Clear.
+-- Optional, exact-owner integration. The provider owns itemSlots, enchant,
+-- trackLabel, gems and ItemEnchantDisplay.Apply/Clear.
 -- We never change its settings, text, colors, item buttons, scripts or parents.
 -- Only the presentation of these verified cosmetic annotations is adjusted.
 local Compat = { records = {}, elements = {}, hooks = setmetatable({}, { __mode = "k" }) }
@@ -67,7 +67,7 @@ local function Layout(region, anchor, parent, relative, x, y, width, height, siz
     if not record then
         record = { region = region };Compat.records[region] = record
     end
-    -- An EQoL settings/update pass may have changed its native geometry/font.
+    -- A provider settings/update pass may have changed its native geometry/font.
     -- Save the incoming provider value, never our own previously applied one.
     if not SamePoint(region, record.appliedPoint) then record.points = SavePoints(region) end
     local currentWidth, currentHeight = Read(region.GetWidth, region), Read(region.GetHeight, region)
@@ -122,7 +122,7 @@ function Compat.RefreshElement(element)
     local anchor, relative = right and "TOPRIGHT" or "TOPLEFT", right and "TOPLEFT" or "TOPRIGHT"
     local direction = right and -1 or 1
     -- Fixed, non-overlapping info columns; full item/enchant details stay in
-    -- the original inventory and EQoL warning/socket tooltips.
+    -- the original inventory and the provider's warning/socket tooltips.
     if wide then
         local x=right and -172 or 45
         Layout(element.enchant,"TOPLEFT",element,"TOPLEFT",x+14,-17,150,12,10,"LEFT")

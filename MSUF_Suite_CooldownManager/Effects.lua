@@ -11,6 +11,7 @@ local K=C.Const
 local E={}
 C.Effects=E
 local Public=S.Public
+local issecret=type(_G.issecretvalue)=="function" and _G.issecretvalue or nil
 local EMPTY=C.EMPTY
 local Spell=_G.C_Spell or {}
 local IsUsable=Spell.IsSpellUsable
@@ -195,6 +196,9 @@ end
 local Tint=E.Tint
 
 function E.Usable(entry)
+    -- Range tint wins while the action is out of range. Defer the native
+    -- usability query until a range/target edge makes its result visible.
+    if entry.outOfRange then return end
     local view=C.views[entry.slot]
     local code=1
     if view and view.usable and entry.src~="p" then
@@ -206,10 +210,17 @@ function E.Usable(entry)
             if category and category~=0 then spell=entry.catSpell end
             if spell and IsUsable then usable,noPower=IsUsable(spell) end
         end
-        if Public(usable) and usable==false then code=(Public(noPower) and noPower) and 2 or 3 end
+        if not (issecret and issecret(usable)) and usable==false then
+            code=(not (issecret and issecret(noPower)) and noPower) and 2 or 3
+        end
     end
     entry.usableCode=code
-    Tint(entry)
+    local icon=entry.icon
+    -- Usability broadcasts usually leave the visible tint unchanged. Avoid
+    -- another Lua function call on that common path, while still repainting
+    -- after a range or behavior change. All compared values are local codes.
+    if icon and (icon.tint~=code
+        or icon.tintGen~=(view and view.behaviorGen or 0)) then Tint(entry) end
 end
 
 ------------------------------------------------------------------ range
@@ -255,8 +266,9 @@ function E.Range(entry,inRange)
     if not entry.rangeSpell then return end
     local out=(Public(inRange) and inRange==false) or nil
     if entry.outOfRange==out then return end
+    local wasOut=entry.outOfRange
     entry.outOfRange=out
-    Tint(entry)
+    if wasOut and not out then E.Usable(entry) else Tint(entry) end
 end
 
 -- Target changes: re-read the held check without touching references.
@@ -265,7 +277,9 @@ function E.ReadRange(entry)
     if not spell then return end
     local before=entry.outOfRange
     Seed(entry,spell)
-    if before~=entry.outOfRange then Tint(entry) end
+    if before~=entry.outOfRange then
+        if before and not entry.outOfRange then E.Usable(entry) else Tint(entry) end
+    end
 end
 
 ------------------------------------------------------------------ reasons

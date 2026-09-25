@@ -359,6 +359,7 @@ local function NextClock()
     local stamp = S.ReadInfoSource("clockStamp")
     return Number(stamp) and 60 - math.floor(stamp) % 60 or 60
 end
+local TickDataTexts
 function M:Schedule()
     if self.timer then self.timer:Cancel(); self.timer = nil end
     local now, soonest = Time(), nil
@@ -368,7 +369,7 @@ function M:Schedule()
             if not soonest or due < soonest then soonest = due end
         end
     end
-    if soonest then self.timer = S.ScheduleDataTick("datatexts", math.max(.05, soonest - now), function() self:Tick() end) end
+    if soonest then self.timer = S.ScheduleDataTick("datatexts", math.max(.05, soonest - now), TickDataTexts) end
 end
 function M:Tick()
     self.timer = nil
@@ -381,14 +382,19 @@ function M:Tick()
     end
     self:Schedule()
 end
+TickDataTexts = function() M:Tick() end
+local invalidated, invalidationMark = {}, 0
 local function OnEvent(self, event, unit)
     if event == "PLAYER_XP_UPDATE" and unit and unit ~= "player" then return end
     local keys = EVENT_SOURCES[event]
     if event == "PLAYER_ENTERING_WORLD" then
-        local invalidated = {}
+        invalidationMark = invalidationMark + 1
         for key in pairs(self.activeSources or {}) do
             local raw = key == "sessionGold" and "gold" or key == "clock" and "clockTime" or key
-            if not invalidated[raw] then S.InvalidateSharedData(raw); invalidated[raw] = true end
+            if invalidated[raw] ~= invalidationMark then
+                S.InvalidateSharedData(raw)
+                invalidated[raw] = invalidationMark
+            end
         end
         for key in pairs(self.activeSources or {}) do
             self:UpdateSource(key)
@@ -400,12 +406,15 @@ local function OnEvent(self, event, unit)
         return
     end
     if not keys then return end
-    local invalidated = {}
+    invalidationMark = invalidationMark + 1
     for i = 1, #keys do
         local key = keys[i]
         if self.activeSources and self.activeSources[key] then
             local raw = key == "sessionGold" and "gold" or key
-            if not invalidated[raw] then S.InvalidateSharedData(raw); invalidated[raw] = true end
+            if invalidated[raw] ~= invalidationMark then
+                S.InvalidateSharedData(raw)
+                invalidated[raw] = invalidationMark
+            end
         end
     end
     for i = 1, #keys do

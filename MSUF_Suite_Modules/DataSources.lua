@@ -4,12 +4,35 @@ local S = Private.Suite
 -- All Suite information displays share one deadline timer. A display owns a
 -- cancellable task; the native timer exists only while at least one task does.
 local tasks, timer, timerDue, dispatching = {}, nil, nil, false
+local ready = {}
 local function Now()
     local value = type(GetTime) == "function" and GetTime()
     return S.Public(value) and type(value) == "number" and value == value
         and value > -math.huge and value < math.huge and value or 0
 end
 local Arm
+local function FireTimer()
+    timer, timerDue = nil, nil
+    local now, readyCount = Now(), 0
+    for owner, task in pairs(tasks) do
+        if task.due <= now + 0.001 then
+            tasks[owner] = nil
+            readyCount = readyCount + 1
+            ready[readyCount] = task.callback
+        end
+    end
+    dispatching = true
+    local failure
+    for i = 1, readyCount do
+        local callback = ready[i]
+        ready[i] = nil
+        local ok, err = pcall(callback)
+        if not ok and not failure then failure = err end
+    end
+    dispatching = false
+    Arm()
+    if failure then error(failure) end
+end
 Arm = function()
     local due
     for _, task in pairs(tasks) do
@@ -19,53 +42,55 @@ Arm = function()
     if timer then timer:Cancel(); timer = nil; timerDue = nil end
     if not due or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return end
     timerDue = due
-    timer = C_Timer.NewTimer(math.max(0.05, due - Now()), function()
-        timer, timerDue = nil, nil
-        local now, ready = Now(), {}
-        for owner, task in pairs(tasks) do
-            if task.due <= now + 0.001 then
-                tasks[owner] = nil
-                ready[#ready + 1] = task.callback
-            end
-        end
-        dispatching = true
-        local failure
-        for i = 1, #ready do
-            local ok, err = pcall(ready[i])
-            if not ok and not failure then failure = err end
-        end
-        dispatching = false
-        Arm()
-        if failure then error(failure) end
-    end)
+    timer = C_Timer.NewTimer(math.max(0.05, due - Now()), FireTimer)
 end
 
+local function CancelTask(task)
+    local owner = task.owner
+    if tasks[owner] == task then
+        tasks[owner] = nil
+        if not dispatching then Arm() end
+    end
+end
 function S.ScheduleDataTick(owner, delay, callback)
     if type(owner) ~= "string" or type(callback) ~= "function" or type(delay) ~= "number"
         or type(GetTime) ~= "function" or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return nil end
-    local task = { due = Now() + math.max(0.05, delay), callback = callback }
+    -- The task itself is the cancellation handle. Reusing one method avoids
+    -- allocating a second table and a closure at every sampled display tick.
+    local task = { owner = owner, due = Now() + math.max(0.05, delay), callback = callback, Cancel = CancelTask }
     tasks[owner] = task
     if not dispatching then Arm() end
-    return { Cancel = function()
-        if tasks[owner] == task then tasks[owner] = nil; if not dispatching then Arm() end end
-    end }
+    return task
 end
 
 local snapshots = {}
-local function Pack(...) return { n = select("#", ...), ... } end
+-- Readers return at most a few values. Validate the protected-call results
+-- before reusing the existing tuple, so a failed or secret read never poisons
+-- the cached snapshot and steady refreshes allocate no Lua tables.
+local function StoreValues(saved, ...)
+    local count = select("#", ...)
+    if count == 0 or select(1, ...) ~= true then return nil end
+    for i = 2, count do
+        local value = select(i, ...)
+        if not S.Public(value) then return nil end
+    end
+    local values = saved and saved.values or { n = 0 }
+    local previous = values.n
+    values.n = count - 1
+    for i = 2, count do values[i - 1] = select(i, ...) end
+    for i = count, previous do values[i] = nil end
+    return values
+end
 function S.ReadSharedData(key, ttl, reader)
     if type(key) ~= "string" or type(reader) ~= "function" then return nil end
     local now = Now()
     local saved = snapshots[key]
     if saved and saved.untilTime > now then return unpack(saved.values, 1, saved.values.n) end
-    local result = Pack(pcall(reader))
-    if result[1] ~= true then return nil end
-    local values = { n = result.n - 1 }
-    for i = 2, result.n do
-        if not S.Public(result[i]) then return nil end
-        values[i - 1] = result[i]
-    end
-    snapshots[key] = { untilTime = now + math.max(0.05, tonumber(ttl) or 0.05), values = values }
+    local values = StoreValues(saved, pcall(reader))
+    if not values then return nil end
+    local untilTime = now + math.max(0.05, tonumber(ttl) or 0.05)
+    if saved then saved.untilTime = untilTime
+    else snapshots[key] = { untilTime = untilTime, values = values } end
     return unpack(values, 1, values.n)
 end
 function S.InvalidateSharedData(key) snapshots[key] = nil end

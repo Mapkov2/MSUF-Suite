@@ -2,6 +2,46 @@ local root = assert(arg[1], "repository root required")
 local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
 local function check(value, message) if not value then error(message, 2) end end
 
+-- Forever weather uses the client weather event and zone transitions, without
+-- adding a timer. Other clients keep the setting off when the API is absent.
+do
+    local kind, reads = 1, 0
+    local W = H.New(root, "Forever", { beforeModules = function(W)
+        W.G.C_Weather = { GetCurrentWeather = function()
+            reads = reads + 1
+            return { type = kind, intensity = 0.5 }
+        end }
+    end })
+    local S = W.S
+    check(W.config.infoWeather == true and S.CanShowMinimapInfo("Weather"), "Forever weather default or API gate")
+    H.Enable(W, { captured = true, infoLocation = false, infoClock = false })
+    W.Step()
+    local entry = W.M.infoEntries.Weather
+    check(entry and entry.label.text == "Rain" and W.M.context.frame.events.WEATHER_CHANGED,
+        "Forever weather did not appear or subscribe")
+    local initial = reads
+    W.Advance(30)
+    check(reads == initial and W.Pending() == 0, "weather polled without an event")
+    kind = 2; W.Event("WEATHER_CHANGED")
+    check(entry.label.text == "Snow" and reads == initial + 1, "weather event did not refresh")
+    kind = 3; W.Event("ZONE_CHANGED_NEW_AREA")
+    check(entry.label.text == "Sandstorm", "zone transition did not refresh weather")
+    assert(S.Set("minimap", "visibility", 5))
+    local hiddenReads = reads
+    kind = 0; W.Event("WEATHER_CHANGED")
+    check(reads == hiddenReads, "hidden weather still queried the client")
+    assert(S.Set("minimap", "visibility", 1))
+    check(entry.label.text == "Clear" and reads == hiddenReads + 1, "visible weather stayed stale")
+    kind = 99; W.Event("WEATHER_CHANGED")
+    check(entry.label.text == "--", "unknown weather was presented as known")
+    assert(S.Set("minimap", "infoWeather", false))
+    check(not W.M.context.frame.events.WEATHER_CHANGED, "weather event remained after disabling")
+    local retail = H.New(root, "Mainline")
+    check(retail.config.infoWeather == false and not retail.S.CanShowMinimapInfo("Weather"),
+        "non-Forever weather should stay off without the API")
+    print("Minimap Forever weather: default, event updates, visibility and API gate passed")
+end
+
 -- Sampled texts share one timer, hidden texts do no work, coordinates park
 -- without a position, and event-only texts never poll.
 do
