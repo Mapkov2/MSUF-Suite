@@ -137,6 +137,16 @@ M.navItems = {
     { key = "opt_misc", label = "Miscellaneous", group = "general" },
     { key = "profiles", label = "Profiles", group = "general" },
 }
+-- MSUF's shared Copy To popup; the stub keeps the page's options for the checks below.
+local copyPopups = {}
+M.UnitSectionsShared = { MakeScopeCopyPopup = function(button, opts)
+    local api = { button = button, opts = opts }
+    function api.Show() api.shown = true end
+    function api.Hide() api.shown = false end
+    function api.Refresh() api.refreshed = (api.refreshed or 0) + 1 end
+    copyPopups[#copyPopups + 1] = api
+    return api
+end }
 M.navPrimaryForKey = { home = "home", profiles = "profiles" }
 M.ALIASES = { meter = "opt_bars" }
 M.GlobalPage = { FontValues = function() return { { value = "Expressway", text = "Expressway" } } end }
@@ -194,6 +204,7 @@ W.SettingsRows = function(ctx, parent, spec)
     end
     return { controls = controls, bottomY = y }
 end
+W.RoleButton = function(_, text, role) local button = Widget("RoleButton"); button.text, button.role = text, role; return button end
 W.PageBuilder = function(ctx)
     local b = { width = ctx.width, y = -12 }
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
@@ -806,6 +817,10 @@ skin.ProfileIO = {
     ImportAll = function() return true end,
 }
 MapkoSkin = skin
+-- This harness cannot load the meter runtime; a failed module owns nothing.
+-- Skinning is checked with the meter running as in the client.
+local meterLoadError = S.states.damageMeter.error
+S.states.damageMeter.error = nil
 local skinContext = { key = "suite_skin", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
 current = skinContext
 M.pages.suite_skin.build(skinContext)
@@ -821,11 +836,15 @@ assert(table.concat(previewSurfaces, ",") == "shell,panel,card,buttonPrimary",
 assert(skinContext.sections[1].sectionId == "suite_skin_frame_basic"
     and skinContext.sections[1].headerSwitch
     and skinContext.sections[2].sectionId == "suite_skin_basic", "Skin Frame Basics is not first")
+-- The default Suite meter owns Blizzard's damage meter, so Skinning has no
+-- section for it; Glass follows the Micro Bar directly.
+assert(S.Config("damageMeter").enabled == true and S.OwnsBlizzardSurface("damageMeter"),
+    "the default Suite meter must own Blizzard's damage meter")
 assert(skinContext.sections[3].sectionId == "suite_skin_micro"
     and skinContext.sections[4].sectionId == "suite_skin_micro_load_conditions"
     and skinContext.sections[5].sectionId == "suite_skin_micro_details"
-    and skinContext.sections[6].sectionId == "suite_skin_hud",
-    "Micro Bar and Blizzard HUD setup must be immediately visible after the main look")
+    and skinContext.sections[6].sectionId == "suite_skin_material",
+    "Micro Bar setup must be immediately visible after the main look")
 local skinControls = {}
 for _, widget in ipairs(skinContext.widgets) do
     if widget.meta and widget.meta.settingKey then skinControls[widget.meta.settingKey] = widget end
@@ -836,25 +855,39 @@ assert(skinControls["msufsuite.skin.theme.look"] and skinControls["msufsuite.ski
     and skinControls["msufsuite.skin.icons.microMenu.loadHideMounted"]
     and skinControls["msufsuite.skin.icons.microMenu.loadShowWhenInjured"]
     and skinControls["msufsuite.skin.enabled"], "native Skinning controls missing")
-assert(skinControls["msufsuite.skin.icons.microMenu.preset"]
-    and not skinControls["msufsuite.skin.hud.objectiveTrackerStyle"]
+assert(not skinControls["msufsuite.skin.hud.objectiveTrackerStyle"]
     and not skinControls["msufsuite.skin.skins.objectiveTracker"],
     "retired Blizzard tracker controls remain in Skinning")
-local microPreset = skinControls["msufsuite.skin.icons.microMenu.preset"]
-local blizzardChoice = false
-for _, entry in ipairs(microPreset.row.values) do
-    if entry.value == "blizzard" and entry.text == "Blizzard original" then
-        blizzardChoice = true
-    end
-end
-assert(blizzardChoice, "Skinning menu did not offer the original Blizzard Micro Bar")
-microPreset.set("blizzard")
+assert(not skinControls["msufsuite.skin.skins.damageMeter"],
+    "Skinning styles Blizzard's damage meter while the Suite meter owns it")
+-- The preset buttons choose the Micro Bar style; details has no second picker.
+assert(not skinControls["msufsuite.skin.icons.microMenu.preset"],
+    "Micro Bar details still duplicates the preset buttons")
+do
+local blizzardPreset = registeredControls["menu2.suite_skin.skin.micro.preset.blizzard"]
+assert(blizzardPreset and blizzardPreset.text == "Blizzard original",
+    "Skinning menu did not offer the original Blizzard Micro Bar")
+blizzardPreset.scripts.OnClick()
 assert(skin.DB.icons.microMenu.layoutMode == "blizzard"
     and skin.DB.icons.microMenu.iconStyle == "blizzard",
     "Blizzard menu preset did not select Blizzard layout and icons")
-microPreset.set("modern")
+registeredControls["menu2.suite_skin.skin.micro.preset.modern"].scripts.OnClick()
 assert(skin.DB.icons.microMenu.layoutMode == "owned",
     "Suite menu preset did not restore its movable layout")
+skin.DB.icons.microMenu.preset = "custom"
+skin.Database.CreateFactoryProfile = function() return skin.CopyValue(skin.Defaults) end
+skin.Typography.ApplyConfigured = function() end
+skin.Adapters.ApplyAll = function() end
+skin.Registry.RefreshAll = function() end
+local microDetails
+for _, section in ipairs(skinContext.sections) do
+    if section.sectionId == "suite_skin_micro_details" then microDetails = section end
+end
+assert(microDetails and microDetails._msufSuiteSectionReset and microDetails._msufSuiteSectionReset(),
+    "Micro Bar details has no section reset")
+assert(skin.DB.icons.microMenu.preset == skin.Defaults.icons.microMenu.preset,
+    "Micro Bar details reset kept a stale preset name")
+end
 skinControls["msufsuite.skin.enabled"].set(false)
 assert(skin.DB.enabled == false and Suite.Skin.enabled == false,
     "Skinning header switch did not disable Blizzard and Suite surfaces")
@@ -873,10 +906,16 @@ assert(skin.DB.skins.settings == false, "Blizzard adapter control did not update
 for _, section in ipairs(skinContext.sections) do
     assert(section.finished and section.sectionId ~= "suite_skin_editor", "old nested Skinning editor remains")
 end
+-- MSUF Colors is the page for skin colors; Skinning keeps the palette choice
+-- and the full palette behind the three dots of Choose a look.
 local skinPaletteSection
 for _, section in ipairs(skinContext.sections) do
-    if section.sectionId == "suite_skin_colors" then skinPaletteSection = section; break end
+    assert(section.sectionId ~= "suite_skin_colors", "Main colors duplicates MSUF Colors > Suite skin")
+    if section.sectionId == "suite_skin_basic" then skinPaletteSection = section end
 end
+assert(skinControls["msufsuite.skin.theme.preset"]
+    and skinControls["msufsuite.skin.theme.preset"].meta.sectionId == "suite_skin_basic",
+    "Choose a look lost the color palette choice")
 assert(skinPaletteSection and skinPaletteSection.colorShortcut, "Skin colors lost their accordion shortcut")
 local skinPaletteTargets = skinPaletteSection.colorShortcut.options.getTargets()
 assert(#skinPaletteTargets == #skin.ColorOrder and #skinPaletteTargets > 4,
@@ -906,6 +945,42 @@ end
 for _, entry in ipairs(skin.ColorOrder) do
     assert(fullSkinKeys["msufsuite.skin." .. entry[1]], "MSUF Colors omitted Skin color " .. entry[1])
 end
+-- Switching the Suite meter off hands Blizzard's meter back: the next Suite
+-- refresh drops the built page, and the rebuilt page styles Blizzard's meter.
+-- (The header switch above re-applied every module, and the harness failed to
+-- load the meter again.)
+do
+S.states.damageMeter.error = nil
+local invalidated
+M.InvalidatePage = function(key) invalidated = key end
+local ownedSkinContext = { key = "suite_skin", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+current = ownedSkinContext
+M.pages.suite_skin.build(ownedSkinContext)
+optionsNS.Refresh()
+assert(invalidated == nil, "Skinning rebuilt without a damage meter change")
+S.Config("damageMeter").enabled = false
+assert(not S.OwnsBlizzardSurface("damageMeter"), "a disabled Suite meter still owns Blizzard's meter")
+optionsNS.Refresh()
+assert(invalidated == "suite_skin", "Skinning kept the Suite meter shape after the meter was switched off")
+local meterSkinContext = { key = "suite_skin", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+current = meterSkinContext
+M.pages.suite_skin.build(meterSkinContext)
+assert(meterSkinContext.sections[6].sectionId == "suite_skin_hud"
+    and meterSkinContext.sections[7].sectionId == "suite_skin_material",
+    "Blizzard damage meter styling is missing while Blizzard's meter is in use")
+local meterToggle
+for _, widget in ipairs(meterSkinContext.widgets) do
+    if widget.meta and widget.meta.settingKey == "msufsuite.skin.skins.damageMeter" then meterToggle = widget end
+end
+assert(meterToggle, "Blizzard damage meter toggle missing")
+S.Config("damageMeter").enabled = true
+invalidated = nil
+optionsNS.Refresh()
+assert(invalidated == "suite_skin", "Skinning kept Blizzard's meter section after the Suite meter returned")
+M.InvalidatePage = nil
+end
+S.states.damageMeter.error = meterLoadError
+current = skinContext
 MapkoSkin = nil
 local covered = {}
 for _, ctx in pairs(contexts) do
@@ -1513,11 +1588,95 @@ assert(optionsNS.ResetRules("actionbars", { actionRules.look })
     and S.Config("actionbars").look == defaultLook
     and S.Config("actionbars").borderColor == S.catalog.actionbars.look.presets[defaultLook].borderColor,
     "look section reset left custom visuals under a preset label")
+-- The per-bar section menus copy the selected bar's section to another bar;
+-- position never moves and other sections stay as they were.
+;(function()
+local barSections = {}
+for _, section in ipairs(contexts.suite_actionbars.sections) do barSections[section.sectionId] = section end
+for _, group in ipairs({ "visibility", "layout", "text", "background" }) do
+    assert(barSections["suite_actionbars_bar_" .. group]._msufSuiteSectionCopy, group .. " section has no Copy section")
+end
+local layoutCopy = barSections.suite_actionbars_bar_layout._msufSuiteSectionCopy
+assert(barSections.suite_actionbars_editor._msufSuiteSectionCopy == nil,
+    "Customize a bar copies through Copy To, like the Unit and Group pages, not its section menu")
+local source = layoutCopy.source()
+local target = source == 3 and 4 or 3
+local offered = false
+for _, item in ipairs(layoutCopy.targets(source)) do
+    assert(item.value ~= source, "a bar is offered as its own copy target")
+    offered = offered or item.value == target
+end
+assert(offered, "another bar is missing from the copy targets")
+local p, q = "bar" .. source, "bar" .. target
+assert(S.SetMany("actionbars", { [p .. "Size"] = 52, [p .. "X"] = 21, [q .. "X"] = 33,
+    [p .. "Background"] = true, [q .. "Background"] = false }))
+assert(layoutCopy.run(source, target) == true)
+local copiedConfig = S.Config("actionbars")
+assert(copiedConfig[q .. "Size"] == 52, "Layout copy missed the button size")
+assert(copiedConfig[q .. "X"] == 33, "Layout copy moved the target bar")
+assert(copiedConfig[q .. "Background"] == false, "Layout copy changed the Background section")
+assert(layoutCopy.run(source, source) == false, "a bar copied onto itself")
+assert(S.SetMany("actionbars", { [q .. "Visibility"] = 6 }))
+assert(layoutCopy.targetOff(target) == true and layoutCopy.targetOff(source) == false,
+    "a switched-off bar is not marked like a disabled frame")
+assert(S.SetMany("actionbars", { [q .. "Visibility"] = S.catalog.actionbars.rules[q .. "Visibility"].default }))
+
+-- Copy To next to the bar choice uses MSUF's own popup: a destination row
+-- without the source, one switch per section, Copy Selected, and a
+-- confirmation before All.
+local copyTo
+for _, api in ipairs(copyPopups) do if api.opts.controlPath == "actionbars.copy" then copyTo = api end end
+assert(copyTo, "Customize a bar has no Copy To")
+local o = copyTo.opts
+assert(o.runLabel == "Copy Selected" and o.sourceKey() == source, "Copy To does not copy from the selected bar")
+local categoryKeys = {}
+for _, category in ipairs(o.categories) do categoryKeys[#categoryKeys + 1] = category.key end
+assert(table.concat(categoryKeys, " ") == "visibility layout text background", "Copy To categories: " .. table.concat(categoryKeys, " "))
+assert(o.isTargetVisible(source, source) == false and o.isTargetVisible(target, source) == true
+    and o.isTargetVisible("all", source) == true, "Copy To destinations are wrong")
+o.onTargetClick(target)
+assert(o.selectedTarget(source) == target, "Copy To lost the chosen destination")
+for key in pairs(o.scopes) do o.scopes[key] = key == "background" end
+assert(S.SetMany("actionbars", { [p .. "Background"] = true, [q .. "Background"] = false, [q .. "Size"] = 40 }))
+local popupHidden
+local popupStub = { Hide = function() popupHidden = true end }
+o.onRun(nil, popupStub)
+copiedConfig = S.Config("actionbars")
+assert(popupHidden and copiedConfig[q .. "Background"] == true, "Copy Selected missed the chosen section")
+assert(copiedConfig[q .. "Size"] == 40 and copiedConfig[q .. "X"] == 33, "Copy Selected copied an unchosen section or the position")
+for key in pairs(o.scopes) do o.scopes[key] = false end
+popupHidden = false
+o.onRun(nil, popupStub)
+assert(not popupHidden, "Copy Selected ran without a category")
+for key in pairs(o.scopes) do o.scopes[key] = true end
+local previousShow, previousInstall = _G.StaticPopup_Show, M.InstallStaticPopup
+local confirmed
+M.InstallStaticPopup = function() end
+_G.StaticPopup_Show = function(name, _, _, accept) confirmed = name; accept() end
+o.onTargetClick("all")
+assert(S.SetMany("actionbars", { [p .. "Size"] = 44 }))
+o.onRun(nil, popupStub)
+_G.StaticPopup_Show, M.InstallStaticPopup = previousShow, previousInstall
+assert(confirmed == "MSUF_SUITE_COPY_BARS_CONFIRM", "Copy to All did not ask first")
+for index = 1, Suite.ActionBarCount do
+    if index ~= source and (not S.ActionBarAvailable or S.ActionBarAvailable(index)) then
+        assert(S.Config("actionbars")["bar" .. index .. "Size"] == 44, "Copy to All missed bar " .. index)
+    end
+end
+o.onTargetClick(target)
+end)()
 local sectionButtons = {}
-W.TopButton = function()
+W.TopButton = function(_, text)
     local button = Widget("SectionAction")
+    button.text = text
     sectionButtons[#sectionButtons + 1] = button
     return button
+end
+-- The newest section button with this text.
+local function SectionButton(text)
+    for i = #sectionButtons, 1, -1 do
+        if sectionButtons[i].text == text then return sectionButtons[i] end
+    end
 end
 M.CreateMenuPopupPanel = function() return Widget("SectionPopup") end
 local header, outer = Widget("SectionHeader"), Widget("SectionOuter")
@@ -1533,8 +1692,56 @@ end)
 assert(more and sectionButtons[1] == more and sectionBody._msuf2CollapsibleEntry._msuf2SectionActions == more,
     "accordion reset action was not attached to its header")
 more.scripts.OnClick()
-assert(sectionButtons[2] and sectionButtons[2].scripts.OnClick, "Reset section menu is missing")
-sectionButtons[2].scripts.OnClick()
+local resetButton = SectionButton(optionsNS.Tr("Reset section"))
+assert(resetButton and resetButton.scripts.OnClick, "Reset section menu is missing")
+assert(SectionButton("x"), "the section menu has no close button like the Unit and Group menus")
+resetButton.scripts.OnClick()
 assert(resetCalls == 1, "Reset section action did not run")
+-- With a copy spec the popup preselects the first target that is switched on,
+-- lists a switched-off one as locked, copies to the chosen one, and refuses
+-- once the source changed after it opened.
+;(function()
+local dropdowns = {}
+W.Dropdown = function(_, label)
+    local dropdown = Widget("Dropdown")
+    dropdown.label = label
+    function dropdown:SetValues(values) self.values = values end
+    function dropdown:SetValue(value) self.value = value end
+    function dropdown:SetOnValueChanged(fn) self.onChange = fn end
+    dropdowns[#dropdowns + 1] = dropdown
+    return dropdown
+end
+W.MoveWidget = function() end
+local copySource, copied = 1, {}
+local copyBody = { _msuf2CollapsibleEntry = { header = header, outer = outer,
+    _msuf2RefreshLayout = function() end } }
+local copyMore = optionsNS.AttachSectionReset(sectionContext, copyBody, "Copy test", function() return true end, {
+    source = function() return copySource end,
+    sourceLabel = function(index) return "Bar " .. index end,
+    targets = function(from)
+        return { { value = from + 1, text = "next" }, { value = from + 2, text = "after" }, { value = from + 3, text = "last" } }
+    end,
+    targetOff = function(value) return value == 2 end,
+    offLabel = "Bar disabled",
+    run = function(from, to) copied[#copied + 1] = from .. ">" .. to; return true end,
+})
+copyMore.scripts.OnClick()
+local targetSelect = assert(dropdowns[1], "Copy section has no target dropdown")
+assert(targetSelect.value == 3 and #targetSelect.values == 3, "the first switched-on target was not preselected")
+assert(targetSelect.values[1].disabled == true and targetSelect.values[1].text:find("Bar disabled", 1, true),
+    "a switched-off target is not listed as locked")
+local copyButton = assert(SectionButton(optionsNS.Tr("Copy section")), "Copy section button is missing")
+targetSelect.onChange(2)
+copyButton.scripts.OnClick()
+assert(#copied == 0, "Copy section copied onto a switched-off target")
+copyMore.scripts.OnClick()
+targetSelect.onChange(4)
+copyButton.scripts.OnClick()
+assert(copied[1] == "1>4", "Copy section did not copy to the chosen target")
+copyMore.scripts.OnClick()
+copySource = 2
+copyButton.scripts.OnClick()
+assert(#copied == 1, "Copy section used a source that changed after the popup opened")
+end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

@@ -70,6 +70,16 @@ local function CategoryEnabled()
     return NS.GenericWindows.IsCategoryEnabled("hud") ~= false
 end
 
+-- The Suite cooldown manager turns Blizzard's viewers off or runs them
+-- invisibly; while it runs the viewers stay unstyled (Core/SuiteOwnership.lua).
+-- Apply asks the Suite; the viewer hooks reuse that answer.
+local function CooldownsOwned(ask)
+    local ownership = NS.SuiteOwnership
+    if not ownership then return false end
+    if ask then return ownership.Owns("cooldownViewers") end
+    return ownership.Owned("cooldownViewers")
+end
+
 local function OwnerState(parentOwner)
     parentOwner = parentOwner or DEFAULT_OWNER
     local state = SemanticHUD.owners[parentOwner]
@@ -332,6 +342,7 @@ local function RunOrDefer(state, suffix, callback, argument)
 end
 
 local function RequestViewerForOwners(viewer)
+    if CooldownsOwned(false) then return end
     local definition = ViewerDefinition(viewer)
     if not definition then return end
     for _, state in pairs(SemanticHUD.owners) do
@@ -439,7 +450,9 @@ local function ApplyState(state)
 
     local applied = SkinLossOfControl(state) == true and 1 or 0
     local waiting = false
-    if CooldownViewerLoaded() then
+    if CooldownsOwned(true) then
+        applied = applied + 1 -- nothing to style: the Suite owns the viewers
+    elseif CooldownViewerLoaded() then
         InstallCooldownHooks()
         for index = 1, #viewerDefinitions do
             local viewer = _G[viewerDefinitions[index].name]

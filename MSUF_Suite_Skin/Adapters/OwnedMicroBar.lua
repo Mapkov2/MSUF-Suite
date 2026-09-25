@@ -786,14 +786,12 @@ local editElement = {
     end,
     resetPosition = function()
         local defaults = NS.Defaults.icons and NS.Defaults.icons.microMenu
-        local defaultName = defaults and defaults.positionPreset or "bottomRight"
-        local preset = NS.MicroMenuPositionPresets and NS.MicroMenuPositionPresets[defaultName]
         local settings = Settings()
-        if not preset or not settings or NS.IsCombatLocked() then return false end
-        settings.layoutPoint = preset.point
-        settings.layoutRelativePoint = preset.relativePoint or preset.point
-        settings.layoutX, settings.layoutY = preset.x or 0, preset.y or 0
-        settings.positionPreset = defaultName
+        if not defaults or not settings or NS.IsCombatLocked() then return false end
+        settings.layoutPoint = defaults.layoutPoint
+        settings.layoutRelativePoint = defaults.layoutRelativePoint
+        settings.layoutX, settings.layoutY = defaults.layoutX, defaults.layoutY
+        settings.positionPreset = defaults.positionPreset
         return ApplyPosition(settings)
     end,
     onSessionChanged = function(enabled)

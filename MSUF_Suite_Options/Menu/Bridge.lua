@@ -205,6 +205,7 @@ end
 -- Repaints the visible suite page; controller changes queued in combat reach
 -- the menu through Suite.Options.RefreshAll (set in Register.lua).
 function P.Refresh()
+    if P.RefreshSkinPageShape then P.RefreshSkinPageShape() end
     if M.RequestRefresh then M.RequestRefresh(nil, "suite") end
 end
 

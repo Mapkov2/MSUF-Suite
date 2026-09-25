@@ -1244,6 +1244,14 @@ do
         micro.layoutPoint, micro.layoutRelativePoint = position.point, position.relativePoint
         micro.layoutX, micro.layoutY = position.x, position.y
         micro.positionPreset = "bottomCenter"
+    elseif NS.Client and NS.Client.isMainline then
+        -- Retail Modern's two-column bar sits beside the factory Damage Meter.
+        micro.orientation = "vertical"
+        micro.buttonsPerLine = 6
+        micro.scale = 0.7
+        micro.layoutPoint, micro.layoutRelativePoint = "BOTTOMRIGHT", "BOTTOMRIGHT"
+        micro.layoutX, micro.layoutY = -522, 0
+        micro.positionPreset = "custom"
     end
     NS.Defaults.theme.preset = look.palette
     NS.Defaults.theme.look = defaultLookName

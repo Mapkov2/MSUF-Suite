@@ -551,17 +551,31 @@ local function LoadInstance(id, state)
     return false
 end
 
-function S.Apply(id)
-    if not S.started or not S.catalog[id] then return end
-    if NS.IsCombatLocked() then
-        S.Queue(id)
-        return
+-- Blizzard surfaces a running module replaces or hides. The skin leaves them
+-- to the module and styles Blizzard's original again once the module is off.
+local SURFACE_MODULES = {
+    damageMeter = "damageMeter", bagWindows = "bags",
+    cooldownViewers = "cooldownManager", bagBar = "dataTexts",
+}
+local SURFACE_OWNERS = {}
+for _, id in pairs(SURFACE_MODULES) do SURFACE_OWNERS[id] = true end
+
+-- True while the owning module is set to run: enabled in the active profile,
+-- available on this client and not failed. It answers before S.Start too, so
+-- the skin's first pass already leaves the surface alone.
+function S.OwnsBlizzardSurface(surface)
+    local id = SURFACE_MODULES[surface]
+    if not id or not ActiveSuite() or S.states[id].error then return false end
+    local config = S.Config(id)
+    if config.enabled ~= true then return false end
+    -- DataTexts hides the bag bar only on request, and only where it exists.
+    if surface == "bagBar" and (config.hideBlizzardBagBar ~= true or not NS.Client.isMainline) then
+        return false
     end
-    pending[id] = nil
-    if pendingListening and not next(pending) then
-        pendingFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
-        pendingListening = false
-    end
+    return S.Availability(id) == true
+end
+
+local function ApplyModule(id)
     local state, config = S.states[id], S.Config(id)
     local supported, reason = S.Availability(id)
     state.unavailable = not supported and reason or nil
@@ -584,6 +598,26 @@ function S.Apply(id)
     if instance.context.RefreshOwnedSkins then instance.context:RefreshOwnedSkins() end
     state.active = true
     if S.RefreshEditMover then S.RefreshEditMover(id) end
+end
+
+function S.Apply(id)
+    if not S.started or not S.catalog[id] then return end
+    if NS.IsCombatLocked() then
+        S.Queue(id)
+        return
+    end
+    pending[id] = nil
+    if pendingListening and not next(pending) then
+        pendingFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        pendingListening = false
+    end
+    -- The skin lets go of a surface before its module starts and takes it back
+    -- after the module stopped, so neither side records the other's change as
+    -- Blizzard's original.
+    local skin = SURFACE_OWNERS[id] and NS.Skin
+    if skin then skin.SurfacesChanged("before") end
+    ApplyModule(id)
+    if skin then skin.SurfacesChanged("after") end
 end
 
 function S.ApplyAll()

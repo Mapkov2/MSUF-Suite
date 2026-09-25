@@ -1140,8 +1140,38 @@ end
 
 local RegisterDynamicScrollBox
 
+-- While the Bags module paints the combined and reagent bag shell, the skin
+-- keeps only the window's contents: no root surface and Blizzard's root art
+-- left to the module. One derived mode per incoming mode.
+local bagShellModes = Kit.WeakSet()
+
+local function BagShellMode(mode)
+    local key = mode == nil and NO_MODE or mode
+    local result = bagShellModes[key]
+    if result then return result end
+    result = {}
+    if type(mode) == "table" then
+        for modeKey, value in pairs(mode) do result[modeKey] = value end
+    elseif type(mode) == "string" then
+        result.role = RootRole(mode)
+    end
+    result.rootSurface = false
+    result.preserveRootArt = true
+    bagShellModes[key] = result
+    return result
+end
+
+local function OwnedMode(frame, mode)
+    local ownership = NS.SuiteOwnership
+    if ownership and ownership.IsBagShell(frame) and ownership.Owns("bagWindows") then
+        return BagShellMode(mode)
+    end
+    return mode
+end
+
 local function ApplyFrameNow(frame, owner, mode)
     if not frame then return false, "invalid", nil end
+    mode = OwnedMode(frame, mode)
     local allowImplicitProtected = ModeValue(mode, "allowImplicitProtected", false) == true
     if not CanSkin(frame, allowImplicitProtected) then
         return false, Safety.IsCompositorManaged(frame) and "compositor" or "protected", nil
@@ -1331,13 +1361,21 @@ local function SetEntryStatus(entry, owner, state)
     entryStatus[entry.id] = { state = state, frames = 0, owner = owner }
 end
 
+-- A Suite module that replaces this entry's surface keeps it while it runs
+-- (Core/SuiteOwnership.lua).
+local function SuiteOwnsEntry(entry)
+    local ownership = NS.SuiteOwnership
+    local surface = ownership and ownership.EntrySurface(entry.id)
+    return surface ~= nil and ownership.Owns(surface)
+end
+
 -- Why an entry cannot be applied now, or nil when it can.
 local function EntryBlocker(entry, owner)
     if not Enabled() then
         SetEntryStatus(entry, owner, "disabled")
         return "disabled"
     end
-    if not GenericWindows.IsCategoryEnabled(entry.category) then
+    if not GenericWindows.IsCategoryEnabled(entry.category) or SuiteOwnsEntry(entry) then
         SetEntryStatus(entry, owner, "disabled")
         entryOwners[entry.id] = owner
         return "disabled"

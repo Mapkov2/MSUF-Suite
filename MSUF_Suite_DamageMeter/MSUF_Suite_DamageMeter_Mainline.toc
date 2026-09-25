@@ -2,9 +2,11 @@
 ## Title: MSUF Suite - Damage meter
 ## Notes: Optional Damage meter module for MSUF Suite.
 ## Author: Mapko
-## Version: 6.5-beta6
+## Version: 1.0-alpha1
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## Group: MSUF_Suite
 ## LoadOnDemand: 1
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
 Data.lua

@@ -215,7 +215,8 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
 end
 
 -- A collapsible section built from catalog rules, with optional help text.
--- opts: help, open, keyFn, columns, onEnsureVisible, extra(body, y) -> y
+-- opts: help, open, keyFn, columns, onEnsureVisible, extra(body, y) -> y,
+-- copy (see P.AttachSectionReset)
 function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     opts = opts or {}
     local body = b:CollapsibleSection(sectionId, title, 120, opts.open)
@@ -231,7 +232,7 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     P.AttachRuleColors(body, title, id, rules, opts.keyFn)
     P.AttachSectionReset(ctx, body, title, function()
         return P.ResetRules(id, rules, opts.keyFn, opts.resetKeys)
-    end)
+    end, opts.copy)
     local entry = body._msuf2CollapsibleEntry
     if entry and opts.onEnsureVisible then entry._msuf2EnsureVisible = opts.onEnsureVisible end
     P.FinishBody(b, body, y)
@@ -314,10 +315,22 @@ end
 
 -- Same header action pattern as the GF/UF accordions. The color shortcut in
 -- the body remains available for color sections.
-function P.AttachSectionReset(ctx, body, title, reset)
-    local entry = body and body._msuf2CollapsibleEntry
-    if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel and type(reset) == "function") then return end
-    body._msufSuiteSectionReset = reset
+-- copy (optional) adds "Copy section" below the reset, like the UF/GF popup:
+--   source() -> id, sourceLabel(id) -> text, targets(id) -> dropdown items,
+--   run(source, target) -> ok, label: dropdown title,
+--   targetOff(id) -> true keeps a switched-off target listed but locked (offLabel).
+local function OffTargetText(text, label)
+    text = text .. " - " .. Tr(label or "Disabled")
+    local c = T.colors and T.colors.danger
+    if not c then return text end
+    return ("|cff%02x%02x%02x%s|r"):format(math.floor(c[1] * 255 + 0.5), math.floor(c[2] * 255 + 0.5),
+        math.floor(c[3] * 255 + 0.5), text)
+end
+function P.AttachSectionReset(ctx, body, title, reset, copy)
+    if not body or type(reset) ~= "function" then return end
+    body._msufSuiteSectionReset, body._msufSuiteSectionCopy = reset, copy
+    local entry = body._msuf2CollapsibleEntry
+    if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel) then return end
     if entry._msufSuiteResetButton then return entry._msufSuiteResetButton end
     local more = W.TopButton(entry.header, "...", 24, 22)
     if W.StyleSectionActionButton then W.StyleSectionActionButton(more) end
@@ -337,11 +350,24 @@ function P.AttachSectionReset(ctx, body, title, reset)
     AlignSwitch()
     if ctx and M.TrackRefresh then M.TrackRefresh(ctx, AlignSwitch) end
     if entry._msuf2RefreshLayout then entry._msuf2RefreshLayout() end
-    local popup
+    local popup, popupSource
     local function Close() if popup then popup:Hide() end end
+    -- The source is fixed when the popup opens; Copy refuses once it changed.
+    local function Copy(target)
+        local spec = body._msufSuiteSectionCopy
+        if P.Combat() or not (spec and target) then return false end
+        local ok = spec.source() == popupSource and target ~= popupSource
+            and not (spec.targetOff and spec.targetOff(target))
+            and spec.run(popupSource, target) == true
+        if M.ShowStatusFeedback then M.ShowStatusFeedback(Tr(ok and "Section copied" or "Action failed"), ok and "ok" or "danger", 1.5) end
+        Close()
+        return ok
+    end
     more:SetScript("OnClick", function()
         if P.Combat() then return end
         if popup and popup:IsShown() then Close(); return end
+        local spec = body._msufSuiteSectionCopy
+        popupSource = spec and spec.source() or nil
         if not popup then
             popup = M.CreateMenuPopupPanel(_G.UIParent)
             popup:SetClampedToScreen(true)
@@ -349,6 +375,40 @@ function P.AttachSectionReset(ctx, body, title, reset)
             local heading = T.Font(popup, "GameFontHighlight", Tr(title), T.colors.text)
             heading:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -12)
             heading:SetWidth(242)
+            heading:SetWordWrap(false)
+            popup.heading = heading
+            local close = W.TopButton(popup, "x", 20, 20)
+            close:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -6, -6)
+            close:SetScript("OnClick", Close)
+            if spec and W.Dropdown and W.MoveWidget then
+                local select = W.Dropdown(popup, Tr(spec.label or "Copy to"), {}, 250)
+                W.MoveWidget(select, popup, 14, -76, 250)
+                select:SetOnValueChanged(function(value) popup.destination = value end)
+                local copyButton = W.TopButton(popup, Tr("Copy section"), 250, 24)
+                copyButton:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -132)
+                copyButton:SetScript("OnClick", function() Copy(popup.destination) end)
+                popup:SetHeight(174)
+                -- The destination defaults to the first target that is switched on;
+                -- with every target off the first one shows marked and Copy locks.
+                popup.RefreshTargets = function()
+                    local current = body._msufSuiteSectionCopy
+                    local choices, first = {}, nil
+                    for _, item in ipairs(current.targets(popupSource)) do
+                        if current.targetOff and current.targetOff(item.value) then
+                            item = { value = item.value, text = OffTargetText(item.text, current.offLabel),
+                                translate = false, disabled = true }
+                        elseif first == nil then
+                            first = item.value
+                        end
+                        choices[#choices + 1] = item
+                    end
+                    popup.destination = first
+                    select:SetValues(choices)
+                    select:SetValue(first or (choices[1] and choices[1].value))
+                    W.SetControlEnabled(copyButton, first ~= nil)
+                end
+                popup._msufSuiteCopySection = Copy
+            end
             local button = W.TopButton(popup, Tr("Reset section"), 250, 24)
             button:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -42)
             button:SetScript("OnClick", function()
@@ -360,6 +420,8 @@ function P.AttachSectionReset(ctx, body, title, reset)
             popup._msuf2ResetSection = function() return body._msufSuiteSectionReset() end
             entry.outer:HookScript("OnHide", Close)
         end
+        if popup.RefreshTargets then popup.RefreshTargets() end
+        popup.heading:SetText(popupSource ~= nil and (spec.sourceLabel(popupSource) .. " · " .. Tr(title)) or Tr(title))
         popup:ClearAllPoints()
         popup:SetPoint("TOPRIGHT", more, "BOTTOMRIGHT", 0, -4)
         if M.ApplyPopupFramePriority then M.ApplyPopupFramePriority(popup) end

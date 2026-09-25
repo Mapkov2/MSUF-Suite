@@ -76,6 +76,21 @@ function Suite.IsCombatLocked()
     return type(InCombatLockdown) == "function" and InCombatLockdown() == true
 end
 
+-- Runs code whose failure must not stop its caller (module callbacks, data
+-- ticks, deferred jobs) the way Blizzard's CallbackRegistry runs callbacks:
+-- the error is reported to the error handler (BugSack) and the caller goes
+-- on. Nothing is swallowed. Returns the results, or nothing after an error.
+-- Offline test harnesses have no securecallfunction and call directly.
+Suite.Dispatch = securecallfunction or function(callback, ...)
+    return callback(...)
+end
+
+-- MSUF's own media: the default font and bar texture of Suite surfaces.
+Suite.MSUFMedia = {
+    font = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf",
+    barTexture = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Bars\\MSUF_Lucent_v2.tga",
+}
+
 function Suite.Safety.IsForbidden(frame)
     return frame and type(frame.IsForbidden) == "function" and frame:IsForbidden() == true
 end

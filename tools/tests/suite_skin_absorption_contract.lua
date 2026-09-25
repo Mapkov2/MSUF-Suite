@@ -640,7 +640,10 @@ do
         and settings.layoutX == before.x and settings.layoutY == before.y,
         "Edit Mode discard did not restore the position")
     assert(registeredElement.resetPosition()
-        and settings.positionPreset == (simulateForever and "bottomCenter" or "bottomRight"))
+        and settings.positionPreset == (simulateForever and "bottomCenter" or "custom")
+        and settings.layoutX == namespace.Defaults.icons.microMenu.layoutX
+        and settings.layoutY == namespace.Defaults.icons.microMenu.layoutY,
+        "Edit Mode reset did not restore the client's factory position")
     assert(namespace.OwnedMicroBar.OpenEditMode()
         and enteredOwner == registeredOwner and enteredId == "microBar")
     local controls = registeredElement.extraControls

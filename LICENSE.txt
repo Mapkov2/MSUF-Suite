@@ -1,0 +1,8 @@
+Copyright (c) 2026 Mapko. All rights reserved.
+
+Personal use and playtesting of the unmodified MSUF Suite release are permitted.
+Redistribution, modification, sublicensing, and commercial use require prior
+written permission from the copyright holder.
+
+Third-party components remain under their own licenses and notices. See
+MSUF_Suite_Skin/THIRD_PARTY_NOTICES.txt and the headers of bundled libraries.

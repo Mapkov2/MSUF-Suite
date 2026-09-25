@@ -53,10 +53,10 @@ local function PlaceFactoryMenu(profile, modules)
         local leftEdge = MeterLeftEdge(modules)
         if leftEdge and leftEdge < 0 then
             -- Both the meter and menu follow UIParent's right edge. Use the
-            -- meter's configured left edge so the menu stays beside it at
-            -- every resolution and UI scale.
+            -- meter's configured left edge with a two-pixel visual gap so the
+            -- menu stays beside it at every resolution and UI scale.
             menu.layoutPoint, menu.layoutRelativePoint = "BOTTOMRIGHT", "BOTTOMRIGHT"
-            menu.layoutX, menu.layoutY = leftEdge, 0
+            menu.layoutX, menu.layoutY = leftEdge - 2, 0
         else
             menu.layoutPoint, menu.layoutRelativePoint = "BOTTOMLEFT", "BOTTOMLEFT"
             menu.layoutX, menu.layoutY = 18, 18

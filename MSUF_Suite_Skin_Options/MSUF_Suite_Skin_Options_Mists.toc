@@ -2,9 +2,11 @@
 ## Title: MSUF Suite - Skinning Options
 ## Notes: Suite skinning pages inside MSUF.
 ## Author: Mapko
-## Version: 6.5-beta6
+## Version: 1.0-alpha1
 ## Dependencies: MSUF_Suite_Skin, MSUF_Suite_Options
+## Group: MSUF_Suite
 ## LoadOnDemand: 1
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 MSKIN_OptionsBootstrap.lua
 Shell\Theme.lua

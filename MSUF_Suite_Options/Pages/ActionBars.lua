@@ -17,9 +17,23 @@ local GROUPS = {
     { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize" } },
     { id = "background", title = "Background for the selected bar", suffixes = { "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding" } },
 }
-local COPY_SCOPES = { layout = "layout", visibility = "visibility", appearance = { text = true, background = true } }
+local POSITION = { Point = true, X = true, Y = true }
+-- Copy To categories, one per section above, like the Unit and Group pages.
+local COPY_CATEGORIES = {
+    { key = "visibility", label = "Visibility", default = true,
+      description = "Copies when the bar is shown, its opacity, fade and click-through." },
+    { key = "layout", label = "Layout", default = true,
+      description = "Copies buttons, rows, size, spacing, growth direction and empty slots. Position is never copied." },
+    { key = "text", label = "Text", default = true,
+      description = "Copies keybind and macro name visibility and every text size." },
+    { key = "background", label = "Background", default = true,
+      description = "Copies the bar background with its color, opacity and padding." },
+}
 
-local selected, copyTarget, copyScope = 1, 2, "all"
+-- The Copy To choices last for the session, like the Unit and Group pages.
+local selected, copyDestination = 1, nil
+local copyScopes = {}
+for _, category in ipairs(COPY_CATEGORIES) do copyScopes[category.key] = category.default end
 local function BarKey(key)
     local suffix = key:match("^bar%d+(.+)$")
     return suffix and ("bar" .. selected .. suffix) or key
@@ -36,16 +50,16 @@ local function GroupOf(suffix)
         for _, candidate in ipairs(group.suffixes) do if candidate == suffix then return group.id end end
     end
 end
-local function CopyBar(from, to, scope)
-    if from == to then return end
-    local values = {}
+local function BarTitle(index) return Tr(Suite.ActionBarTitles[index]) end
+local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == 6 end
+
+-- Adds what bar `to` needs to match bar `from` in the chosen groups.
+local function CopyValues(values, from, to, groups)
     for _, group in ipairs(GROUPS) do
-        local wanted = scope == "all" or COPY_SCOPES[scope] == group.id
-            or type(COPY_SCOPES[scope]) == "table" and COPY_SCOPES[scope][group.id]
-        if wanted then
+        if groups[group.id] then
             for _, suffix in ipairs(group.suffixes) do
                 local rule = Rule("bar" .. to .. suffix)
-                if suffix ~= "Point" and suffix ~= "X" and suffix ~= "Y" and rule and not rule.hidden then
+                if not POSITION[suffix] and rule and not rule.hidden then
                     values["bar" .. to .. suffix] = P.Get(ID, "bar" .. from .. suffix)
                 end
             end
@@ -56,12 +70,38 @@ local function CopyBar(from, to, scope)
             end
         end
     end
-    P.SetMany(ID, values)
 end
-local function ResetBar(index)
+-- One undo step, named like the Unit and Group copies, for any number of bars.
+local function CopyBars(label, from, targets, groups)
+    if P.Combat() then return false end
     local values = {}
-    for _, rule in ipairs(P.SectionRules(ID, "bar" .. index)) do values[rule.key] = rule.default end
-    P.SetMany(ID, values)
+    for _, to in ipairs(targets) do
+        if to ~= from then CopyValues(values, from, to, groups) end
+    end
+    if not next(values) then return false end
+    return P.WithHistory(label, "suite:" .. ID .. ".copy", function()
+        return P.SetMany(ID, values) == true
+    end) == true
+end
+
+-- The section menu's "Copy section", like the Unit and Group sections: the
+-- selected bar is the source, a bar that is switched off is listed but locked.
+local function SectionCopy(group)
+    return {
+        label = "Copy to another bar",
+        offLabel = "Bar disabled",
+        source = function() return selected end,
+        sourceLabel = BarTitle,
+        targets = function(source)
+            local items = {}
+            for index = 1, COUNT do
+                if index ~= source and Available(index) then items[#items + 1] = { value = index, text = BarTitle(index) } end
+            end
+            return items
+        end,
+        targetOff = BarOff,
+        run = function(source, target) return CopyBars("Copy section", source, { target }, { [group] = true }) end,
+    }
 end
 local function Preset(index, kind)
     local p = "bar" .. index
@@ -204,6 +244,91 @@ local function BuildPreview(ctx, parent, y, width)
     return height
 end
 
+-- "Copy To" works like the Unit and Group pages: choose a destination (or
+-- All), switch the sections to copy, then Copy Selected.
+local TARGET_WIDTHS = { [10] = 32, [11] = 56, [12] = 40, all = 38 }
+local function ShortBarLabel(index)
+    local title = Suite.ActionBarTitles[index]
+    return title:match("^Action bar (%d+)$") or (title:gsub(" bar$", ""))
+end
+local function CopyTargets(source)
+    local targets = {}
+    for index = 1, COUNT do
+        if index ~= source and Available(index) then targets[#targets + 1] = index end
+    end
+    return targets
+end
+local function CopyDestination(source)
+    if copyDestination == "all" then return "all" end
+    if copyDestination and copyDestination ~= source and Available(copyDestination) then return copyDestination end
+    copyDestination = CopyTargets(source)[1]
+    return copyDestination
+end
+local function ConfirmCopyAll(run)
+    if not (M.InstallStaticPopup and _G.StaticPopup_Show) then return run() end
+    M.InstallStaticPopup("MSUF_SUITE_COPY_BARS_CONFIRM", {
+        text = Tr("Copy these settings to ALL action bars?\n\nThis overwrites the chosen settings on every other bar. Positions stay as they are."),
+        button1 = _G.YES or "Yes", button2 = _G.NO or "No",
+        OnAccept = function(_, data) if type(data) == "function" then data() end end,
+    })
+    _G.StaticPopup_Show("MSUF_SUITE_COPY_BARS_CONFIRM", nil, nil, run)
+end
+local function RunCopyTo(popup)
+    if P.Combat() then return false end
+    local function Feedback(text, kind) if M.ShowStatusFeedback then M.ShowStatusFeedback(text, kind, 1.8) end end
+    local groups, any = {}, false
+    for key, on in pairs(copyScopes) do
+        groups[key] = on == true
+        any = any or on == true
+    end
+    if not any then return Feedback(Tr("No copy categories selected."), "warning") end
+    local source, dest = selected, CopyDestination(selected)
+    if not dest then return Feedback(Tr("Nothing was copied."), "warning") end
+    local function Run()
+        if CopyBars("Copy Bar Settings", source, dest == "all" and CopyTargets(source) or { dest }, groups) then
+            Feedback(string.format(Tr("Copied to %s"), dest == "all" and Tr("All") or BarTitle(dest)), "ok")
+            popup:Hide()
+            P.Refresh()
+        else
+            Feedback(Tr("Nothing was copied."), "warning")
+        end
+    end
+    if dest == "all" then return ConfirmCopyAll(Run) end
+    return Run()
+end
+-- Uses MSUF's own Copy To popup, so the chrome is the same on every page.
+local function AttachCopyTo(ctx, body, y)
+    local Shared = M.UnitSectionsShared
+    if not (Shared and Shared.MakeScopeCopyPopup) then return nil end
+    local copy = (W.RoleButton and W.RoleButton(body, Tr("Copy To"), "success", 82, 24))
+        or W.TopButton(body, Tr("Copy To"), 82, 24)
+    copy:SetPoint("TOPRIGHT", body, "TOPRIGHT", -16, y - 24)
+    copy._msuf2AllowCombatClick = true
+    copy._msuf2SkipHistoryCheckpoint = true
+    local targets = {}
+    for index = 1, COUNT do targets[index] = { value = index, text = ShortBarLabel(index) } end
+    targets[#targets + 1] = { value = "all", text = "All" }
+    local api = Shared.MakeScopeCopyPopup(copy, {
+        controlDomain = "suite", controlPageKey = PAGE, controlPath = "actionbars.copy",
+        width = 480, height = 214, categoryRowsPerColumn = 2,
+        categories = COPY_CATEGORIES, scopes = copyScopes,
+        targets = targets, targetWidths = TARGET_WIDTHS, targetWidth = 26,
+        sourceKey = function() return selected end,
+        sourceLabel = BarTitle,
+        selectedTarget = CopyDestination,
+        isTargetVisible = function(key, source) return key == "all" or (key ~= source and Available(key)) end,
+        onTargetClick = function(key) copyDestination = key end,
+        runLabel = "Copy Selected", runWidth = 128,
+        onRun = function(_, popup) return RunCopyTo(popup) end,
+    })
+    copy:SetScript("OnClick", function(self) api.Show(self) end)
+    body:HookScript("OnHide", function() api.Hide() end)
+    if M.RegisterControlMetadata then
+        M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"), Tr("Copy To"), "button")
+    end
+    return api
+end
+
 local function BuildEditor(ctx, b)
     local body = b:CollapsibleSection("suite_actionbars_editor", Tr("Customize a bar"), 120, false)
     local width = math.max(260, (body._msuf2Width or b.width or 720) - 32)
@@ -212,11 +337,12 @@ local function BuildEditor(ctx, b)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     local bars = {}
     for i = 1, COUNT do bars[i] = { value = i, text = Tr(Suite.ActionBarTitles[i]) } end
+    local copyTo = AttachCopyTo(ctx, body, y)
     M.BindDropdownAt(ctx, body, Tr("Selected bar"), 16, y, bars, half,
         function() return selected end,
         function(value)
             selected = tonumber(value) or 1
-            if copyTarget == selected then copyTarget = selected == 1 and 2 or 1 end
+            if copyTo then copyTo.Refresh() end
             P.Refresh()
         end,
         P.Meta(PAGE, ID, "editor.selected", "ephemeral", "suite_actionbars_editor"))
@@ -238,37 +364,6 @@ local function BuildEditor(ctx, b)
     P.AttachSectionReset(ctx, body, "Customize a bar", function()
         return P.ResetPrefix(ID, "bar" .. selected)
     end)
-    P.FinishBody(b, body, y - 38)
-end
-
-local function BuildTools(ctx, b)
-    local section = "suite_actionbars_tools"
-    local body = b:CollapsibleSection(section, Tr("Advanced bar tools"), 120, false)
-    local width = math.max(260, (body._msuf2Width or b.width or 720) - 32)
-    local half = math.floor((width - 12) / 2)
-    local help = P.Text(body, "Copy the selected bar to another bar or reset it. Position is never copied.", 16, -18, width)
-    local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
-    local bars = {}
-    for i = 1, COUNT do bars[i] = { value = i, text = Tr(Suite.ActionBarTitles[i]) } end
-    M.BindDropdownAt(ctx, body, Tr("Copy to bar"), 16, y, bars, half,
-        function() return copyTarget end,
-        function(value)
-            copyTarget = tonumber(value) or 1
-            P.Refresh()
-        end,
-        P.Meta(PAGE, ID, "editor.copyTarget", "ephemeral", section))
-    local scopes = { { value = "all", text = Tr("Everything except position") }, { value = "layout", text = Tr("Layout") },
-        { value = "visibility", text = Tr("Visibility") }, { value = "appearance", text = Tr("Text and background") } }
-    M.BindDropdownAt(ctx, body, Tr("Settings to copy"), 28 + half, y, scopes, half,
-        function() return copyScope end, function(value) copyScope = value or "all" end,
-        P.Meta(PAGE, ID, "editor.copyScope", "ephemeral", section))
-    y = y - 62
-    P.Button(ctx, body, "Copy settings", 16, y, half, function() CopyBar(selected, copyTarget, copyScope) end,
-        function() return copyTarget ~= selected and S.Availability(ID) and true or false end,
-        P.Meta(PAGE, ID, "editor.copy", "action", section))
-    P.Button(ctx, body, "Reset selected bar", 28 + half, y, half, function() ResetBar(selected) end,
-        function() return S.Availability(ID) and true or false end,
-        P.Meta(PAGE, ID, "editor.reset", "action", section))
     P.FinishBody(b, body, y - 38)
 end
 
@@ -306,10 +401,9 @@ local function Build(ctx)
             if GroupOf(rule.key:sub(5)) == group.id then rules[#rules + 1] = rule end
         end
         P.RuleSection(ctx, b, PAGE, ID, "suite_actionbars_bar_" .. group.id, Tr(group.title), rules,
-            { keyFn = BarKey, open = false,
+            { keyFn = BarKey, open = false, copy = SectionCopy(group.id),
               help = group.id == "visibility" and "The quick switch above remembers this mode when you turn the bar off. Choose Never to keep it hidden." or nil })
     end
-    BuildTools(ctx, b)
     for _, section in ipairs({ "appearance", "cooldowns", "text", "behavior" }) do
         local rules = P.SectionRules(ID, section)
         P.RuleSection(ctx, b, PAGE, ID, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,

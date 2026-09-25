@@ -2,11 +2,12 @@
 ## Title: MSUF Suite - Skinning
 ## Notes: Suite-owned MapkoSkin skin engine.
 ## Author: Mapko
-## Version: 6.5-beta6
+## Version: 1.0-alpha1
 ## Dependencies: MSUF_Suite
+## Group: MSUF_Suite
 ## LoadOnDemand: 1
 ## SavedVariables: MSUFSuiteSkinDB
-## IconTexture: Interface\AddOns\MSUF_Suite_Skin\Media\Icon.png
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Libs\LibStub\LibStub.lua
 Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
@@ -22,6 +23,7 @@ Core\SharedMedia.lua
 Core\ProfileIO.lua
 Core\Safety.lua
 Core\Registry.lua
+Core\SuiteOwnership.lua
 Core\CombatGate.lua
 Core\Theme.lua
 Core\BlizzardFontCatalog.lua

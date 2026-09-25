@@ -34,6 +34,12 @@ function Safety.IsForbidden(target)
     return not Safety.Public(forbidden) or forbidden == true
 end
 
+-- True when target is a readable (not forbidden) table with a method of that
+-- name. Works for widgets and plain mixin tables alike.
+function Safety.HasMethod(target, name)
+    return type(target) == "table" and not Safety.IsForbidden(target) and type(target[name]) == "function"
+end
+
 -- Passes all results through; a call that returned nothing yields nil.
 local function AtLeastOne(first, ...)
     return first, ...

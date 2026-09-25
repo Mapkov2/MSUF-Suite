@@ -2,10 +2,12 @@
 ## Title: MSUF Suite
 ## Notes: Optional interface modules in the MSUF menu.
 ## Author: Mapko
-## Version: 6.5-beta6
+## Category: MSUF
+## Version: 1.0-alpha1
 ## Dependencies: MidnightSimpleUnitFrames
 ## OptionalDeps: MapkoSkin
 ## SavedVariables: MSUFSuiteDB
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Core\Platform.lua
 Core\ForeverFactory.lua

@@ -29,6 +29,10 @@ function S.Finite(value)
     return S.Number(value) and value > -math.huge and value < math.huge
 end
 
+-- Error isolation for callbacks whose failure must not stop the caller
+-- (MSUF_Suite/Core/Platform.lua).
+S.Dispatch = NS.Dispatch
+
 local function Accessible(frame)
     return frame and not NS.Safety.IsForbidden(frame)
 end

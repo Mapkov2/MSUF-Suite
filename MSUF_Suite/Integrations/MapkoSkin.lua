@@ -106,6 +106,16 @@ function Skin.SetEnabled(enabled)
     return true
 end
 
+-- A module that replaces a Blizzard surface starts ("before") or stopped
+-- ("after"); see S.OwnsBlizzardSurface. The engine rebuilds only surfaces that
+-- changed hands.
+function Skin.SurfacesChanged(phase)
+    local provider = _G.MapkoSkin
+    if type(provider) ~= "table" or provider.addonName ~= "MSUF_Suite_Skin" then return end
+    local ownership = provider.SuiteOwnership
+    if type(ownership) == "table" and type(ownership.Refresh) == "function" then ownership.Refresh(phase) end
+end
+
 function Skin.OpenEditor(parent, width, height)
     if Suite.IsCombatLocked and Suite.IsCombatLocked() then return false, "combat" end
     Skin.EnsureEngine()

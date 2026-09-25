@@ -10,6 +10,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SUITE_VERSION = "1.0-alpha1"
 SOURCE = Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\MSUF Beta Branch\MapkoSkin")
 CORE_SOURCE = SOURCE / "MapkoSkin"
 OPTIONS_SOURCE = SOURCE / "MapkoSkin_Options"
@@ -80,9 +81,9 @@ for flavor in ("Mainline", "Mists", "TBC", "Vanilla"):
             copy_entry(CORE_SOURCE, CORE_TARGET, entry, core_transforms)
     toc = [interface, "## Title: MSUF Suite - Skinning",
            "## Notes: Suite-owned MapkoSkin skin engine.", "## Author: Mapko",
-           "## Version: 6.5-beta6", "## Dependencies: MSUF_Suite",
+           f"## Version: {SUITE_VERSION}", "## Dependencies: MSUF_Suite", "## Group: MSUF_Suite",
            "## LoadOnDemand: 1", "## SavedVariables: MSUFSuiteSkinDB",
-           "## IconTexture: Interface\\AddOns\\MSUF_Suite_Skin\\Media\\Icon.png", ""]
+           "## IconTexture: Interface\\AddOns\\MSUF_Suite\\Media\\SuiteIcon.tga", ""]
     (CORE_TARGET / f"MSUF_Suite_Skin_{flavor}.toc").write_text(
         "\n".join(toc + copied) + "\n", encoding="utf-8")
 
@@ -104,8 +105,9 @@ for flavor in ("Mainline", "Mists", "TBC", "Vanilla"):
             copy_entry(OPTIONS_SOURCE, OPTIONS_TARGET, entry, options_transforms)
     toc = [interface, "## Title: MSUF Suite - Skinning Options",
            "## Notes: Suite skinning pages inside MSUF.", "## Author: Mapko",
-           "## Version: 6.5-beta6", "## Dependencies: MSUF_Suite_Skin, MSUF_Suite_Options",
-           "## LoadOnDemand: 1", ""]
+           f"## Version: {SUITE_VERSION}", "## Dependencies: MSUF_Suite_Skin, MSUF_Suite_Options",
+           "## Group: MSUF_Suite", "## LoadOnDemand: 1",
+           "## IconTexture: Interface\\AddOns\\MSUF_Suite\\Media\\SuiteIcon.tga", ""]
     (OPTIONS_TARGET / f"MSUF_Suite_Skin_Options_{flavor}.toc").write_text(
         "\n".join(toc + source_entries) + "\n", encoding="utf-8")
 

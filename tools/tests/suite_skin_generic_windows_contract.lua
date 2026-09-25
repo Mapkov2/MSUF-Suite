@@ -231,4 +231,62 @@ local catalogCount = GenericWindows.GetCatalogCount()
 table.sort = sort
 Check(sorted == 0 and catalogCount > 0, "catalog entries were rebuilt for a status query")
 
+-- Surfaces a running Suite module replaces stay with that module
+-- (Core/SuiteOwnership.lua); free ones keep their skin.
+local suiteOwned = {}
+MSUFSuite = { Suite = { OwnsBlizzardSurface = function(surface) return suiteOwned[surface] == true end } }
+assert(loadfile(skin .. "Core/SuiteOwnership.lua"))("MSUF_Suite_Skin", NS)
+
+local faded, fade = {}, NS.Cosmetics.Fade
+NS.Cosmetics.Fade = function(region, ...)
+    faded[region] = true
+    return fade(region, ...)
+end
+local freeBag = Frame("ContainerFrameCombinedBags")
+freeBag.Bg = {}
+ContainerFrameCombinedBags = freeBag
+Check(GenericWindows.ApplyFrame(freeBag, "bags", MODE) and freeBag.surfaceSpec and faded[freeBag.Bg],
+    "a bag window without the Bags module lost its skin")
+suiteOwned.bagWindows = true
+local ownedBag = Frame("ContainerFrameCombinedBags")
+ownedBag.Bg = {}
+ContainerFrameCombinedBags = ownedBag
+Check(GenericWindows.ApplyFrame(ownedBag, "bags", MODE) and ownedBag.surfaceSpec == nil
+    and not faded[ownedBag.Bg], "the skin painted a bag shell the Bags module owns")
+NS.Cosmetics.Fade = fade
+Check(MODE.rootSurface == nil and MODE.preserveRootArt == nil, "the owned bag mode changed the caller's mode")
+local otherWindow = Frame("ContractOtherWindow")
+Check(GenericWindows.ApplyFrame(otherWindow, "bags", MODE) and otherWindow.surfaceSpec,
+    "the bag shell rule reached another window")
+ContainerFrameCombinedBags = nil
+
+local bagBarEntry
+for _, entry in ipairs(NS.BlizzardCatalog.entries) do
+    if entry.id == "hud-bag-bar" then bagBarEntry = entry end
+end
+suiteOwned.bagBar = true
+local entryApplied, entryState = GenericWindows.ApplyEntry(bagBarEntry, "entries")
+Check(not entryApplied and entryState == "disabled" and GenericWindows.GetStatus("hud-bag-bar") == "disabled",
+    "the skin styled the bag bar DataTexts hides")
+suiteOwned.bagBar = false
+entryApplied, entryState = GenericWindows.ApplyEntry(bagBarEntry, "entries")
+Check(entryState ~= "disabled", "the skin left a visible bag bar unstyled")
+
+-- Cooldown viewers: Loss of Control keeps its skin, the viewers wait for
+-- Blizzard only while the Suite cooldown manager is off.
+local waits = 0
+EventUtil = { ContinueOnAddOnLoaded = function() waits = waits + 1 end }
+NS.Client.IsAddOnLoaded = function() return false end
+assert(loadfile(skin .. "Adapters/SemanticHUD.lua"))("MSUF_Suite_Skin", NS)
+suiteOwned.cooldownViewers = true
+local hudApplied, hudState = NS.SemanticHUD.Apply("ownedHud")
+Check(hudApplied and hudState == "applied" and waits == 0,
+    "the skin waited for cooldown viewers the Suite cooldown manager owns")
+NS.SemanticHUD.Disable("ownedHud")
+suiteOwned.cooldownViewers = false
+hudApplied, hudState = NS.SemanticHUD.Apply("freeHud")
+Check(hudApplied and hudState == "waiting" and waits == 1,
+    "the skin stopped styling cooldown viewers the Suite left to Blizzard")
+NS.SemanticHUD.Disable("freeHud")
+
 print("Suite skin generic windows: " .. checks .. " checks passed")

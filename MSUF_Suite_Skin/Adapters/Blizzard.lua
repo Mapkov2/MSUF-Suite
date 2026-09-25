@@ -97,6 +97,13 @@ local function DefinitionEnabled(definition)
     return configured == true
 end
 
+-- A Suite module that replaces this adapter's surface keeps it while it runs
+-- (Core/SuiteOwnership.lua).
+local function SuiteOwned(definition)
+    local ownership = NS.SuiteOwnership
+    return definition.suiteSurface ~= nil and ownership ~= nil and ownership.Owns(definition.suiteSurface)
+end
+
 -- Returns false with a status when the definition could not be applied.
 local function RunDefinition(definition, frame)
     local id = definition.id
@@ -121,7 +128,7 @@ end
 
 local function ApplyDefinition(definition)
     local id = definition.id
-    if not NS.DB.enabled or not DefinitionEnabled(definition) then
+    if not NS.DB.enabled or not DefinitionEnabled(definition) or SuiteOwned(definition) then
         local previous = Adapters.status[id]
         local frame = previous and previous.frame
         local disabled, reason = DisableDefinition(definition, frame)
@@ -436,6 +443,8 @@ Adapters.Register({
 Adapters.Register({
     id = "damageMeter",
     labelKey = "SKIN_DAMAGE_METER",
+    -- The Suite damage meter turns Blizzard's meter off while it runs.
+    suiteSurface = "damageMeter",
     allowImplicitProtected = true,
     trackIconTree = true,
     resolve = function() return _G.DamageMeter end,

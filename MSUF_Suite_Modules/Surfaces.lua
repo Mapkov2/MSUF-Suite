@@ -79,6 +79,16 @@ function S.KeyText(key)
     return text
 end
 
+-- Money as "12g 3s 4c" (zero parts left out, "0c" for nothing). The caller
+-- adds any sign; amount is a non-negative copper value.
+function S.MoneyText(amount)
+    local gold, silver, copper = math.floor(amount / 10000), math.floor(amount % 10000 / 100), amount % 100
+    local text = gold > 0 and gold .. "g" or nil
+    if silver > 0 then text = text and text .. " " .. silver .. "s" or silver .. "s" end
+    if copper > 0 or not text then text = text and text .. " " .. copper .. "c" or copper .. "c" end
+    return text
+end
+
 local function LSM()
     local stub = _G.LibStub
     return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibSharedMedia-3.0", true) or nil

@@ -199,8 +199,9 @@ assert(frameImports == beforeModernFrames and MSUF_ActiveProfile == "ModuleCopy"
     and skinProfiles.Default.look == "modern", "Modern import changed MSUF frames or missed Skin")
 local meter = DB.GetProfile("Raid").suite.modules.damageMeter
 local meterLeft = math.min(meter.w1X - meter.w1Width, meter.w2X - meter.w2Width)
+local menuX = meterLeft - 2
 assert(skinProfiles.Default.icons.microMenu.layoutPoint == "BOTTOMRIGHT"
-    and skinProfiles.Default.icons.microMenu.layoutX == meterLeft
+    and skinProfiles.Default.icons.microMenu.layoutX == menuX
     and skinProfiles.Default.icons.microMenu.layoutY == 0
     and skinProfiles.Default.icons.microMenu.scale == 0.7
     and not next(skinProfiles.Default.windowControls.positions),
@@ -213,7 +214,7 @@ skinProfiles.Default.icons.microMenu.layoutY = 18
 Suite.Client.AddOnEnabled = addonEnabled
 assert(P.SyncActive("Default") and skinActive == "Default")
 assert(skinProfiles.Default.icons.microMenu.layoutPoint == "BOTTOMRIGHT"
-    and skinProfiles.Default.icons.microMenu.layoutX == meterLeft
+    and skinProfiles.Default.icons.microMenu.layoutX == menuX
     and skinProfiles.Default.icons.microMenu.layoutY == 0
     and Suite.RootDB.installation.frameProfileName == "Default"
     and Suite.RootDB.installation.modernMeterMenuRevision == 2,
@@ -222,7 +223,7 @@ Suite.RootDB.installation.modernMeterMenuRevision = 1
 skinProfiles.Default.icons.microMenu.layoutX = meterLeft - 12
 skinProfiles.Default.icons.microMenu.layoutY = 18
 assert(P.SyncActive("Default")
-    and skinProfiles.Default.icons.microMenu.layoutX == meterLeft
+    and skinProfiles.Default.icons.microMenu.layoutX == menuX
     and skinProfiles.Default.icons.microMenu.layoutY == 0
     and Suite.RootDB.installation.modernMeterMenuRevision == 2,
     "previous meter-gap correction was not updated to the supplied profile position")

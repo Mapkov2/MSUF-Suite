@@ -153,6 +153,9 @@ local function ResetSkinSection(skin, id, rows, contextRows)
     end
     if id == "fonts" then
         changes[#changes + 1] = { row = { id = "typography.customPath" }, value = defaults.typography.customPath }
+    elseif id == "micro_details" then
+        -- The details section resets the preset name with its values.
+        changes[#changes + 1] = { row = { id = "icons.microMenu.preset" }, value = defaults.icons.microMenu.preset }
     end
     if #changes == 0 then return false end
     return Change(skin, "Reset section", "section." .. id, function()
@@ -179,7 +182,7 @@ local function ResetSkinSection(skin, id, rows, contextRows)
                 if type(parent) == "table" and last then parent[last] = Suite.CopyValue(item.value) end
             end
         end
-        if id == "material" or id == "shape" or id == "colors" or id == "icons" then
+        if id == "material" or id == "shape" or id == "icons" then
             skin.DB.theme.look = "custom"
         end
         skin.Typography.ApplyConfigured()
@@ -222,7 +225,7 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
 end
 
 local function SkinColorRow(skin, key, label)
-    local row = Meta("color." .. key, "colors")
+    local row = Meta("color." .. key, "basic")
     row.id, row.kind, row.label = key, "color", Tr(label)
     row.get = function()
         local color = skin.Theme.GetColorTable(key)
@@ -415,16 +418,9 @@ local function SetMicroDetail(skin, key, value)
     return skin.MicroMenuSkin.SetOption(key, value)
 end
 
+-- The style itself is chosen with the preset buttons in the Micro Bar section.
 local function MicroDetailRows(skin)
-    local styles = Values(skin.MicroMenuPresets, MICRO_PRESET_LABELS)
-    styles[#styles + 1] = { value = "custom", text = Tr("Custom"), disabled = true }
-    local details = {
-        Row("dropdown", "Style", "icons.microMenu.preset", "micro_details",
-            function() return skin.DB.icons.microMenu.preset end,
-            function(value)
-                Change(skin, "Micro Bar style", "micro.preset", function() return skin.MicroMenuSkin.ApplyPreset(value) end)
-            end, styles),
-    }
+    local details = {}
     for _, spec in ipairs(MicroDetailSpecs(skin)) do
         local label, key, kind = spec[1], spec[2], spec[3]
         local values = kind == "dropdown"
@@ -493,6 +489,14 @@ local function BuildLook(ctx, b, skin)
     looks[#looks + 1] = { value = "custom", text = Tr("Custom"), disabled = true }
     local defaultLook = skin.Defaults.theme.look
     local defaultLabel = Tr(skin.LookPresets[defaultLook].label)
+    local paletteValues = Values(skin.PaletteOrder, skin.PaletteLabels)
+    paletteValues[#paletteValues + 1] = { value = "custom", text = Tr("Custom"), disabled = true }
+    -- The section's three dots edit the whole skin palette; MSUF Colors lists
+    -- the same colors under Suite skin.
+    local paletteRows = {}
+    for _, entry in ipairs(skin.ColorOrder or {}) do
+        paletteRows[#paletteRows + 1] = SkinColorRow(skin, entry[1], (skin.L and skin.L[entry[2]]) or entry[1])
+    end
     Section(ctx, b, "basic", "Choose a look",
         format(Tr("Choosing a look updates Skinning and every enabled Suite module. Modules enabled later inherit it. New skin profiles start with %s."), defaultLabel), {
             Row("dropdown", "Style preset", "theme.look", "basic",
@@ -500,6 +504,11 @@ local function BuildLook(ctx, b, skin)
                 function(value)
                     Change(skin, "Skin look", "look", function() return skin.Theme.ApplyLook(value) end)
                 end, looks),
+            Row("dropdown", "Color palette", "theme.preset", "basic",
+                function() return skin.DB.theme.preset end,
+                function(value)
+                    Change(skin, "Skin color palette", "palette", function() return skin.Theme.ApplyPreset(value) end)
+                end, paletteValues),
         }, true, function(body, y, width)
             local half = math.floor((width - 12) / 2)
             local restore = format(Tr("Restore %s"), defaultLabel)
@@ -510,7 +519,7 @@ local function BuildLook(ctx, b, skin)
                 if M.SelectPage then M.SelectPage("opt_colors") end
             end, nil, P.Meta(PAGE, "skin", "colors", "navigation", "suite_skin_basic"))
             return y - 40
-        end)
+        end, paletteRows)
 end
 
 local HUD_TOGGLES = {
@@ -518,6 +527,26 @@ local HUD_TOGGLES = {
     { "Damage meter rows", "damageMeterRows" },
     { "Damage meter details", "damageMeterDetails" },
 }
+
+-- The Suite damage meter turns Blizzard's meter off, and the skin leaves it
+-- alone then. Its section is built only while Blizzard's meter is in use.
+local function BlizzardMeterInUse()
+    local owns = P.S and P.S.OwnsBlizzardSurface
+    return not (type(owns) == "function" and owns("damageMeter"))
+end
+
+-- Which meter the built page was made for; nil while no page is built.
+local builtForBlizzardMeter
+
+-- P.Refresh runs after every Suite change (module switch, profile, undo).
+-- When the meter changes hands the page is rebuilt: at once while it is
+-- shown, otherwise on its next visit.
+function P.RefreshSkinPageShape()
+    if builtForBlizzardMeter == nil or P.Combat() or BlizzardMeterInUse() == builtForBlizzardMeter then return end
+    builtForBlizzardMeter = nil
+    local rebuilt = M.activeKey == PAGE and M.RebuildPageKeepingScroll and M.RebuildPageKeepingScroll(PAGE)
+    if not rebuilt and M.InvalidatePage then M.InvalidatePage(PAGE) end
+end
 
 local function BuildHUD(ctx, b, skin)
     local hud = {
@@ -583,39 +612,6 @@ local function BuildShape(ctx, b, skin)
     ConfigRow(skin, shape, "shape", "Hover strength", "theme", "hoverIntensity", "slider", nil,
         0, 1, 0.05, skin.Theme.SetAppearance)
     Section(ctx, b, "shape", "Corners and hover", "Window shape, button shape, outlines and mouseover feedback.", shape, false)
-end
-
-local MAIN_COLORS = {
-    { "Window background", "background" }, { "Panel", "surface" }, { "Button", "buttonFill" },
-    { "Accent", "accent" }, { "Text", "text" }, { "Border", "border" },
-}
-
-local function BuildColors(ctx, b, skin)
-    local paletteValues = Values(skin.PaletteOrder, skin.PaletteLabels)
-    paletteValues[#paletteValues + 1] = { value = "custom", text = Tr("Custom"), disabled = true }
-    local colors = {
-        Row("dropdown", "Color palette", "theme.preset", "colors",
-            function() return skin.DB.theme.preset end,
-            function(value)
-                Change(skin, "Skin color palette", "palette", function() return skin.Theme.ApplyPreset(value) end)
-            end, paletteValues),
-    }
-    for _, spec in ipairs(MAIN_COLORS) do
-        colors[#colors + 1] = SkinColorRow(skin, spec[2], spec[1])
-    end
-    local paletteRows = {}
-    for _, entry in ipairs(skin.ColorOrder or {}) do
-        paletteRows[#paletteRows + 1] = SkinColorRow(skin, entry[1], (skin.L and skin.L[entry[2]]) or entry[1])
-    end
-    local defaultLabel = Tr(skin.LookPresets[skin.Defaults.theme.look].label)
-    Section(ctx, b, "colors", "Main colors",
-        "Use the color dots for the full skin palette. The same colors are under Appearance > Colors > Suite skin.",
-        colors, false, function(body, y, width)
-            P.Button(ctx, body, format(Tr("Reset skin colors to %s"), defaultLabel), 16, y, width, function()
-                Change(skin, "Reset skin colors", "colors.reset", skin.Theme.ResetColors)
-            end, nil, P.Meta(PAGE, "skin", "colors.reset", "action", "suite_skin_colors"))
-            return y - 40
-        end, paletteRows)
 end
 
 local FONT_TOGGLES = {
@@ -832,10 +828,10 @@ local function Build(ctx)
     BuildFrameBasics(ctx, b, skin)
     BuildLook(ctx, b, skin)
     BuildMicroBar(ctx, b, skin)
-    BuildHUD(ctx, b, skin)
+    builtForBlizzardMeter = BlizzardMeterInUse()
+    if builtForBlizzardMeter then BuildHUD(ctx, b, skin) end
     BuildMaterial(ctx, b, skin)
     BuildShape(ctx, b, skin)
-    BuildColors(ctx, b, skin)
     BuildFonts(ctx, b, skin)
     BuildIcons(ctx, b, skin)
     BuildWindowControls(ctx, b, skin)
