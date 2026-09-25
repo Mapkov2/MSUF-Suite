@@ -8,10 +8,13 @@ InCombatLockdown=function() return combat end
 IsShiftKeyDown=function() return shift end
 local secret={}
 issecretvalue=function(value) return value==secret end
+-- HookScript adds a separate post-call binding: SetScript replaces only the
+-- frame's own handler, and hooks run after it.
 local function Frame()
-    local f={scripts={},events={},shown=false}
+    local f={scripts={},hooks={OnShow={},OnHide={}},events={},shown=false}
     function f:GetScript(key) return self.scripts[key] end
     function f:SetScript(key,value) self.scripts[key]=value end
+    function f:HookScript(key,value) table.insert(self.hooks[key],value) end
     function f:RegisterEvent(key) self.events[key]=true end
     function f:UnregisterEvent(key) self.events[key]=nil end
     function f:UnregisterAllEvents() self.events={} end
@@ -21,12 +24,14 @@ local function Frame()
         if self.shown then return end
         self.shown=true
         if self.scripts.OnShow then self.scripts.OnShow(self) end
+        for _,hook in ipairs(self.hooks.OnShow) do hook(self) end
     end
     function f:Hide()
         assert(not combat,'history hidden in combat')
         if not self.shown then return end
         self.shown=false
         if self.scripts.OnHide then self.scripts.OnHide(self) end
+        for _,hook in ipairs(self.hooks.OnHide) do hook(self) end
     end
     return f
 end
@@ -122,8 +127,11 @@ module:Refresh()
 assert(type(module.context.callbacks.ADDON_LOADED)=='function','late history frame had no addon callback')
 GroupLootHistoryFrame=frame
 Event('ADDON_LOADED','Blizzard_UIPanels_Game')
-assert(module.history and module.history.frame==frame and not module.context.callbacks.ADDON_LOADED,
+assert(module.history==frame and not module.context.callbacks.ADDON_LOADED,
     'late history frame was not attached or kept its load listener')
+assert(frame:GetScript('OnShow')==originalShow and frame:GetScript('OnHide')==originalHide
+    and #frame.hooks.OnShow==1 and #frame.hooks.OnHide==1,
+    'history management replaced Blizzard handlers instead of hooking them')
 module:Refresh()
 assert(#timers==0,'hidden history started timer')
 frame:Show()
@@ -163,6 +171,7 @@ module.active=true
 module:Enable()
 frame:Show()
 assert(timers[#timers].delay==17,'reactivation lost history policy')
+assert(#frame.hooks.OnShow==1 and #frame.hooks.OnHide==1,'reactivation hooked the history frame again')
 module.config.manageHistory=false
 module:Refresh()
 assert(frame:GetScript('OnShow')==originalShow and frame:GetScript('OnHide')==originalHide)

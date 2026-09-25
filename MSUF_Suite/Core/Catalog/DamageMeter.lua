@@ -28,6 +28,7 @@ B.Module("damageMeter", {
     core = true, page = "suite_damageMeter",
     conflicts = { "EllesmereUIDamageMeters" },
     available = Available,
+    cvars = { damageMeterEnabled = true },
 })
 
 local id = "damageMeter"
@@ -52,6 +53,10 @@ local forever = {
 NS.DamageMeterLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever }
 NS.DamageMeterLookVisualKeys = {}
 for key in pairs(midnight) do NS.DamageMeterLookVisualKeys[key] = true end
+NS.SuiteCatalog[id].look = {
+    key = "look", presets = NS.DamageMeterLookPresets, visualKeys = NS.DamageMeterLookVisualKeys,
+    custom = 4, global = true,
+}
 local initial = NS.Client.isForever and forever or midnightDark
 B.Section(id, "look", "Choose a look", {
     Choice("look", "Style preset", NS.Client.isForever and 3 or 2,

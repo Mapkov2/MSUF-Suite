@@ -31,6 +31,20 @@ B.Module("dataTexts", {
 -- New Forever setups use the small information strip shown by the selected
 -- look. Existing profiles keep their explicit module switch and placement.
 NS.SuiteCatalog.dataTexts.rules.enabled.default = true
+-- A global look selects its palette for the shared style and for every bar
+-- with its own style, and drops custom colors that would hide it.
+NS.SuiteCatalog.dataTexts.look = {
+    key = "look", global = true,
+    extra = function(values, lookIndex, config)
+        values.customColors = false
+        for bar = 1, 3 do
+            if config["bar" .. bar .. "StyleOverride"] then
+                values["bar" .. bar .. "Look"] = lookIndex
+                values["bar" .. bar .. "CustomColors"] = false
+            end
+        end
+    end,
+}
 
 local barStyle = {
     Choice("look", "MSUF style", initialLook, { "Midnight Blue", "Midnight Dark", "MSUF Forever" }),

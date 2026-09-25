@@ -48,6 +48,8 @@ C_AddOns = {
             loaded[name] = true
             return true
         end
+        -- Like the client, report addons this fixture does not install.
+        if name == "MSUF_Suite_Skin" then return false, "MISSING" end
         -- The options addon's registration is covered by suite_options_menu_contract.
         assert(name == "MSUF_Suite_Options", name)
         optionLoads = optionLoads + 1

@@ -803,6 +803,18 @@ assert(host:ShowPage("looks") and host.key == "looks")
 assert(host:ShowPage("skins") and host.key == "skins")
 assert(host:ShowPage("profiles") and host.key == "profiles")
 assert(host:ShowPage("advanced") and host.key == "advanced")
+for _, key in ipairs(pages) do
+    assert(host:ShowPage(key) and host.key == key, "embedded skin page failed to build: " .. key)
+end
+local searchHits = options.SearchSettings("opacity", 4)
+assert(#searchHits > 0 and #searchHits <= 4 and searchHits[1].page and searchHits[1].pageLabel,
+    "skin settings search returned no usable results")
+host:Hide()
+assert(options.Open(), "standalone skin window did not open")
+for _, key in ipairs(pages) do
+    options.windowState.showPage(key)
+    assert(options.windowState.activePage == key, "standalone skin page failed to build: " .. key)
+end
 
 local forever = {}
 GameEvent = { RegisterCamelotEvents = function() end }

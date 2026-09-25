@@ -33,6 +33,20 @@ B.Module("cooldownManager", {
     core = true, page = "suite_cooldownManager", available = Available,
     conflicts = { "CooldownManagerCentered", "EllesmereUICooldownManager", "Ayije_CDM", "SkironCooldownManager",
         "QUI_CDM", "BetterCooldownManager", "MidnightCooldownManager" },
+    cvars = { cooldownViewerEnabled = true },
+    -- A global look recolors texts, borders, glows and bars from its palette.
+    look = {
+        extra = function(values, lookIndex)
+            local palette = NS.DataTextLooks[lookIndex]
+            values.cdColor, values.stackColor, values.keybindColor = palette.value, palette.value, palette.value
+            for _, slot in ipairs(CDM.SLOTS) do
+                local keys = CDM.KEYS[slot.key]
+                if keys.borderColor then values[keys.borderColor] = palette.border end
+                if keys.glowColor then values[keys.glowColor] = palette.accent end
+                if keys.barColor then values[keys.barColor] = palette.accent end
+            end
+        end,
+    },
 })
 local id = "cooldownManager"
 

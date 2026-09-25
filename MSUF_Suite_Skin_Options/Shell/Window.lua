@@ -111,7 +111,7 @@ local function BuildHeader(state)
     topAccent:SetColorTexture(NS.Theme.GetColor("accent"))
     state.topAccent = topAccent
 
-    state.headerTitle = O.CreateText(window, L["MAPKOSKIN"], 14, "title")
+    state.headerTitle = O.CreateText(window, "MAPKOSKIN", 14, "title")
     state.headerTitle:SetPoint("TOPLEFT", 18, -18)
     state.headerSubtitle = O.CreateText(window, L["Independent UI skinning engine"], 11, "muted")
     state.headerSubtitle:SetPoint("LEFT", state.headerTitle, "RIGHT", 12, 0)
@@ -138,7 +138,7 @@ local function BuildRail(state, layout)
     rail:SetWidth(layout.rail)
     state.rail = rail
 
-    local brand = O.CreateText(rail, L["M  MAPKO"], 13, "accent")
+    local brand = O.CreateText(rail, "M  MAPKO", 13, "accent")
     brand:SetPoint("TOPLEFT", 15, -16)
     local brandSub = O.CreateText(rail, L["SKIN ENGINE"], 9, "dim")
     brandSub:SetPoint("TOPLEFT", brand, "BOTTOMLEFT", 20, -4)

@@ -1,58 +1,101 @@
 local _, Private = ...
 local NS, O = Private.NS, Private.Options
+local L = NS.L
 
-local groups = {
-    { key = "surfaces", label = "Surfaces", keys = { "background", "ink", "surface", "raised", "card", "popup", "input", "microBarFill", "microBarFillAlt", "microButtonFill", "microButtonFillAlt" } },
-    { key = "text", label = "Text", keys = { "text", "title", "muted", "dim", "disabled", "blizzardYellow" } },
-    { key = "accents", label = "Accents", keys = { "blue", "accent", "accentBright", "success", "warning", "danger", "accentAlt" } },
-    { key = "borders", label = "Borders", keys = { "rim", "border", "borderSoft", "buttonBorder", "iconBorder", "microBarBorder", "microButtonBorder" } },
-    { key = "controls", label = "Controls", keys = { "buttonFill", "buttonFillAlt", "hover", "pressed", "active", "checkmark", "microIcon", "microIconHover", "microIconPressed", "microIconDisabled" } },
-    { key = "blizzard", label = "Blizzard", keys = { "blizzardArrow", "blizzardExpand", "blizzardExpandPressed", "blizzardExpandHover", "blizzardClose", "blizzardClosePressed", "blizzardCloseHover", "blizzardCloseDisabled" } },
+local ROW_HEIGHT = 56
+
+local GROUPS = {
+    { key = "surfaces", label = L["Surfaces"], keys = { "background", "ink", "surface", "raised", "card", "popup", "input", "microBarFill", "microBarFillAlt", "microButtonFill", "microButtonFillAlt" } },
+    { key = "text", label = L["Text"], keys = { "text", "title", "muted", "dim", "disabled", "blizzardYellow" } },
+    { key = "accents", label = L["Accents"], keys = { "blue", "accent", "accentBright", "success", "warning", "danger", "accentAlt" } },
+    { key = "borders", label = L["Borders"], keys = { "rim", "border", "borderSoft", "buttonBorder", "iconBorder", "microBarBorder", "microButtonBorder" } },
+    { key = "controls", label = L["Controls"], keys = { "buttonFill", "buttonFillAlt", "hover", "pressed", "active", "checkmark", "microIcon", "microIconHover", "microIconPressed", "microIconDisabled" } },
+    { key = "blizzard", label = L["Blizzard"], keys = { "blizzardArrow", "blizzardExpand", "blizzardExpandPressed", "blizzardExpandHover", "blizzardClose", "blizzardClosePressed", "blizzardCloseHover", "blizzardCloseDisabled" } },
 }
+local GROUP_BY_KEY = {}
+for index = 1, #GROUPS do
+    local group = GROUPS[index]
+    GROUP_BY_KEY[group.key] = group
+    group.members = {}
+    for member = 1, #group.keys do group.members[group.keys[member]] = true end
+end
 
-local simpleKeys = {
+local SIMPLE_KEYS = {
     background = true, surface = true, text = true, title = true, border = true,
     buttonFill = true, accent = true, hover = true, active = true,
     blizzardYellow = true, checkmark = true, microIcon = true,
 }
 
-local descriptions = {
-    background = "Main window backdrop", ink = "Navigation and deepest panels", surface = "Standard window panels",
-    raised = "Raised sections and emphasis", card = "Cards and grouped settings", popup = "Menus and floating panels",
-    input = "Search and text fields", blue = "Dark interactive accent", accent = "Primary brand and focus color",
-    accentBright = "Bright focus edge", text = "Normal readable text", title = "Headings and important labels",
-    muted = "Secondary explanations", dim = "Low-priority metadata", disabled = "Unavailable controls",
-    rim = "Outer structural edge", border = "Strong outlines", borderSoft = "Subtle separators and panels",
-    buttonFill = "Normal button surface", buttonFillAlt = "Second button shading color", buttonBorder = "Button outline",
-    iconBorder = "Theme-colored icon outline", hover = "Mouse-over highlight", pressed = "Pressed interaction state",
-    active = "Selected pages and list entries", success = "Success and enabled status", warning = "Warnings and attention",
-    danger = "Errors and destructive actions", accentAlt = "Secondary accent", blizzardYellow = "Gold UI text and system chat",
-    blizzardArrow = "Dropdown and previous/next arrows", blizzardExpand = "Plus/minus normal state",
-    blizzardExpandPressed = "Plus/minus pressed state", blizzardExpandHover = "Plus/minus mouse-over state",
-    checkmark = "Checkbox ticks and menu marks", blizzardClose = "Close X normal state",
-    blizzardClosePressed = "Close X pressed state", blizzardCloseHover = "Close X mouse-over state",
-    blizzardCloseDisabled = "Close X disabled state",
-    microBarFill = "Micro Bar shared background", microBarFillAlt = "Micro Bar second shading color",
-    microBarBorder = "Micro Bar shared outline", microButtonFill = "Individual Micro button background",
-    microButtonFillAlt = "Individual Micro button second shading color",
-    microButtonBorder = "Individual Micro button outline", microIcon = "Micro icon normal state",
-    microIconHover = "Micro icon mouse-over state", microIconPressed = "Micro icon pressed state",
-    microIconDisabled = "Micro icon disabled state",
+local DESCRIPTIONS = {
+    background = L["Main window backdrop"],
+    ink = L["Navigation and deepest panels"],
+    surface = L["Standard window panels"],
+    raised = L["Raised sections and emphasis"],
+    card = L["Cards and grouped settings"],
+    popup = L["Menus and floating panels"],
+    input = L["Search and text fields"],
+    blue = L["Dark interactive accent"],
+    accent = L["Primary brand and focus color"],
+    accentBright = L["Bright focus edge"],
+    text = L["Normal readable text"],
+    title = L["Headings and important labels"],
+    muted = L["Secondary explanations"],
+    dim = L["Low-priority metadata"],
+    disabled = L["Unavailable controls"],
+    rim = L["Outer structural edge"],
+    border = L["Strong outlines"],
+    borderSoft = L["Subtle separators and panels"],
+    buttonFill = L["Normal button surface"],
+    buttonFillAlt = L["Second button shading color"],
+    buttonBorder = L["Button outline"],
+    iconBorder = L["Theme-colored icon outline"],
+    hover = L["Mouse-over highlight"],
+    pressed = L["Pressed interaction state"],
+    active = L["Selected pages and list entries"],
+    success = L["Success and enabled status"],
+    warning = L["Warnings and attention"],
+    danger = L["Errors and destructive actions"],
+    accentAlt = L["Secondary accent"],
+    blizzardYellow = L["Gold UI text and system chat"],
+    blizzardArrow = L["Dropdown and previous/next arrows"],
+    blizzardExpand = L["Plus/minus normal state"],
+    blizzardExpandPressed = L["Plus/minus pressed state"],
+    blizzardExpandHover = L["Plus/minus mouse-over state"],
+    checkmark = L["Checkbox ticks and menu marks"],
+    blizzardClose = L["Close X normal state"],
+    blizzardClosePressed = L["Close X pressed state"],
+    blizzardCloseHover = L["Close X mouse-over state"],
+    blizzardCloseDisabled = L["Close X disabled state"],
+    microBarFill = L["Micro Bar shared background"],
+    microBarFillAlt = L["Micro Bar second shading color"],
+    microBarBorder = L["Micro Bar shared outline"],
+    microButtonFill = L["Individual Micro button background"],
+    microButtonFillAlt = L["Individual Micro button second shading color"],
+    microButtonBorder = L["Individual Micro button outline"],
+    microIcon = L["Micro icon normal state"],
+    microIconHover = L["Micro icon mouse-over state"],
+    microIconPressed = L["Micro icon pressed state"],
+    microIconDisabled = L["Micro icon disabled state"],
 }
 
-O.RegisterPage("colors", NS.L.COLORS, function(page)
-    O.CreateSectionTitle(page, "Colors", "Midnight Blue, Midnight Dark and MSUF Forever are complete looks in Style. Color palettes here change colors only; use Expert mode for every UI state.")
+local function PaletteLabel(value)
+    if value == "classColor" then
+        return string.upper(NS.Theme.GetClassLookLabel())
+    end
+    return string.upper(NS.PaletteLabels[value] or tostring(value))
+end
 
-    local preset = O.CreateDropdown(page, "Color palette (colors only)", NS.PaletteOrder, function()
+-- Lower-case text a search query is matched against, one per color row.
+local function SearchText(key, label)
+    return (key .. " " .. tostring(label) .. " " .. tostring(DESCRIPTIONS[key] or "")):lower()
+end
+
+local function BuildHeader(page, view)
+    local preset = O.CreateDropdown(page, L["Color palette (colors only)"], NS.PaletteOrder, function()
         return NS.DB.theme.preset
     end, function(value)
         NS.Theme.ApplyPreset(value)
-    end, 520, function(value)
-        if value == "classColor" then
-            return string.upper(NS.Theme.GetClassLookLabel())
-        end
-        return string.upper(NS.PaletteLabels[value] or tostring(value))
-    end, nil, { countLabel = "palettes" })
+    end, 520, PaletteLabel, nil, { countLabel = L["palettes"], countSingular = L["palette"] })
     preset:SetPoint("TOPLEFT", 4, -70)
 
     local reset = O.CreateButton(page, NS.L.RESET_COLORS, 150, 28, function()
@@ -62,27 +105,28 @@ O.RegisterPage("colors", NS.L.COLORS, function(page)
     end)
     reset:SetPoint("TOPRIGHT", -4, -77)
 
-    local query = ""
-    local RefreshRows
-    local search = O.CreateSearchBox(page, "Find a color or UI element...", function(value)
-        query = tostring(value or ""):lower():match("^%s*(.-)%s*$") or ""
-        if RefreshRows then RefreshRows() end
+    local search = O.CreateSearchBox(page, L["Find a color or UI element..."], function(value)
+        view.query = tostring(value or ""):lower():match("^%s*(.-)%s*$") or ""
+        if view.Refresh then view.Refresh() end
     end, 570)
     search:SetPoint("TOPLEFT", 4, -116)
 
-    local count = O.CreateText(page, "", 10, "muted", "RIGHT")
-    count:SetPoint("TOPRIGHT", -4, -123)
-    count:SetWidth(164)
+    view.count = O.CreateText(page, "", 10, "muted", "RIGHT")
+    view.count:SetPoint("TOPRIGHT", -4, -123)
+    view.count:SetWidth(164)
+end
 
-    local groupButtons = {}
-    for index = 1, #groups do
-        local item = groups[index]
-        local button = O.CreateButton(page, item.label, 118, 26, function()
-            O.ui.colorGroup = item.key
-            RefreshRows()
+-- Expert mode browses colors by group; Guided mode shows the essentials.
+local function BuildGroupBar(page, view)
+    view.groupButtons = {}
+    for index = 1, #GROUPS do
+        local group = GROUPS[index]
+        local button = O.CreateButton(page, group.label, 118, 26, function()
+            O.ui.colorGroup = group.key
+            view.Refresh()
         end, "navigation")
         button:SetPoint("TOPLEFT", 4 + (index - 1) * 124, -154)
-        groupButtons[item.key] = button
+        view.groupButtons[group.key] = button
     end
 
     local guided = O.CreatePanel(page, "status")
@@ -90,57 +134,75 @@ O.RegisterPage("colors", NS.L.COLORS, function(page)
     guided:SetPoint("TOPRIGHT", -4, -154)
     guided:SetHeight(30)
     local guidedText = O.CreateText(guided,
-        ("ESSENTIAL COLORS  |  Search finds all %d colors. Switch to Expert for grouped browsing."):format(#NS.ColorOrder),
+        L["ESSENTIAL COLORS  |  Search finds all %d colors. Switch to Expert for grouped browsing."]:format(#NS.ColorOrder),
         10, "accent")
     guidedText:SetPoint("LEFT", 12, 0)
+    view.guided = guided
+end
 
+local function BuildRows(page, view)
     local scrollHost = CreateFrame("Frame", nil, page)
     scrollHost:SetPoint("TOPLEFT", 4, -192)
     scrollHost:SetPoint("BOTTOMRIGHT", -4, 4)
-    local _, content = O.CreateScrollContainer(scrollHost, #NS.ColorOrder * 56 + 12)
-
-    local rows = {}
-    local entries = {}
+    local _, content = O.CreateScrollContainer(scrollHost, #NS.ColorOrder * ROW_HEIGHT + 12)
+    view.content = content
+    view.rows = {}
     for index = 1, #NS.ColorOrder do
         local entry = NS.ColorOrder[index]
-        entries[entry[1]] = entry
-        rows[entry[1]] = O.CreateColorRow(content, entry[1], NS.L[entry[2]], 750, descriptions[entry[1]])
+        local key = entry[1]
+        local label = NS.L[entry[2]]
+        view.rows[index] = {
+            key = key,
+            frame = O.CreateColorRow(content, key, label, 750, DESCRIPTIONS[key]),
+            search = SearchText(key, label),
+        }
     end
+end
 
-    local validGroup = {}
-    for index = 1, #groups do validGroup[groups[index].key] = groups[index] end
-    if not validGroup[O.ui.colorGroup] then O.ui.colorGroup = "surfaces" end
-
-    RefreshRows = function()
-        local mode = O.GetMode()
-        local selected = validGroup[O.ui.colorGroup] or groups[1]
-        local selectedKeys = {}
-        for index = 1, #selected.keys do selectedKeys[selected.keys[index]] = true end
-        local visible = 0
-        for index = 1, #NS.ColorOrder do
-            local entry = NS.ColorOrder[index]
-            local key, label = entry[1], tostring(NS.L[entry[2]] or entry[1])
-            local matches = query ~= "" and (key:lower() .. " " .. label:lower() .. " " .. tostring(descriptions[key] or ""):lower()):find(query, 1, true) ~= nil
-            local show = query ~= "" and matches
-                or query == "" and ((mode == "guided" and simpleKeys[key]) or (mode == "expert" and selectedKeys[key]))
-            local row = rows[key]
-            row:ClearAllPoints()
-            row:SetShown(show)
-            if show then
-                row:SetPoint("TOPLEFT", 0, -2 - visible * 56)
-                visible = visible + 1
-            end
+local function RefreshRows(view)
+    local mode = O.GetMode()
+    local query = view.query
+    local selected = GROUP_BY_KEY[O.ui.colorGroup] or GROUPS[1]
+    local visible = 0
+    for index = 1, #view.rows do
+        local row = view.rows[index]
+        local show
+        if query ~= "" then
+            show = row.search:find(query, 1, true) ~= nil
+        elseif mode == "guided" then
+            show = SIMPLE_KEYS[row.key] == true
+        else
+            show = selected.members[row.key] == true
         end
-        content:SetHeight(math.max(1, visible * 56 + 8))
-        count:SetText(("%d of %d colors"):format(visible, #NS.ColorOrder))
-        guided:SetShown(mode == "guided" and query == "")
-        for key, button in pairs(groupButtons) do
-            button:SetShown(mode == "expert" and query == "")
-            O.SetButtonActive(button, key == O.ui.colorGroup)
+        local frame = row.frame
+        frame:ClearAllPoints()
+        frame:SetShown(show)
+        if show then
+            frame:SetPoint("TOPLEFT", 0, -2 - visible * ROW_HEIGHT)
+            visible = visible + 1
         end
     end
+    view.content:SetHeight(math.max(1, visible * ROW_HEIGHT + 8))
+    view.count:SetText(L["%d of %d colors"]:format(visible, #NS.ColorOrder))
+    view.guided:SetShown(mode == "guided" and query == "")
+    for key, button in pairs(view.groupButtons) do
+        button:SetShown(mode == "expert" and query == "")
+        O.SetButtonActive(button, key == O.ui.colorGroup)
+    end
+end
 
-    O.TrackMode(RefreshRows)
-    O.TrackRefresh(RefreshRows)
-    RefreshRows()
+O.RegisterPage("colors", NS.L.COLORS, function(page)
+    O.CreateSectionTitle(page, L["Colors"],
+        L["Midnight Blue, Midnight Dark and MSUF Forever are complete looks in Style. Color palettes here change colors only; use Expert mode for every UI state."])
+    if not GROUP_BY_KEY[O.ui.colorGroup] then O.ui.colorGroup = "surfaces" end
+
+    local view = { query = "" }
+    BuildHeader(page, view)
+    BuildGroupBar(page, view)
+    BuildRows(page, view)
+    view.Refresh = function() RefreshRows(view) end
+    -- The page refresher also runs after every mode switch while the page is
+    -- shown; a hidden page lays its rows out when it is opened.
+    O.TrackRefresh(view.Refresh)
+    view.Refresh()
 end)

@@ -54,6 +54,10 @@ local forever = {
 NS.ChatLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever }
 NS.ChatLookVisualKeys = {}
 for key in pairs(midnight) do NS.ChatLookVisualKeys[key] = true end
+NS.SuiteCatalog[id].look = {
+    key = "look", presets = NS.ChatLookPresets, visualKeys = NS.ChatLookVisualKeys,
+    custom = 4, global = true,
+}
 local initial = NS.Client.isForever and forever or midnightDark
 
 B.Section(id, "look", "Choose a look", {

@@ -117,6 +117,8 @@ B.Module("xpBar", {
         return true
     end,
 })
+-- The XP bar paints its look itself; it has no Custom choice.
+NS.SuiteCatalog.xpBar.look = { key = "look", global = true }
 B.Section("xpBar", "xp_bar", "Experience bar", {
     Choice("look", "MSUF style", NS.Client.isForever and 3 or 2,
         { "Midnight Blue", "Midnight Dark", "MSUF Forever" }),
@@ -166,6 +168,10 @@ NS.SkyridingLookVisualKeys = {
     panelColor = true, borderColor = true, trackColor = true, accentColor = true,
     windColor = true, textColor = true, mutedColor = true, thrillColor = true,
     panelOpacity = true, trackOpacity = true, borderSize = true,
+}
+NS.SuiteCatalog.skyriding.look = {
+    key = "look", presets = NS.SkyridingLookPresets, visualKeys = NS.SkyridingLookVisualKeys,
+    custom = 4, global = true,
 }
 local initialSky = NS.SkyridingLookPresets[1]
 B.Section("skyriding", "flight_hud", "Skyriding HUD", {

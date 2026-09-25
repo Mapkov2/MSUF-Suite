@@ -8,9 +8,14 @@ local _, NS = ...
 local ChatFramesSkin = { owners = {}, hooks = {} }
 NS.ChatFramesSkin = ChatFramesSkin
 
+local Field = NS.Safety.Field
+local Call = NS.Safety.Call
+local Public = NS.Safety.Public
+
 local REFRESH_KEY = "chat-frames:refresh"
 local BUILTIN_CHAT_WINDOWS = 10
 local MAX_CHAT_FRAMES = 64
+local COLOR_TOLERANCE = 0.015
 local RefreshAll
 local changingChatColor = false
 
@@ -25,7 +30,7 @@ local messageColorRoles = {
 }
 
 -- ChangeChatColor is a persistent Blizzard setting (chat-cache.txt), unlike
--- the frame-local chrome below.  These are Retail's clean-profile defaults;
+-- the frame-local chrome below. These are Retail's clean-profile defaults;
 -- restoring them prevents a MapkoSkin preset from surviving a later addon
 -- disable. Keep this list deliberately limited to the categories we change.
 local blizzardMessageDefaults = {
@@ -38,24 +43,21 @@ local frameBorderSuffixes = {
     "TopLeftTexture", "BottomLeftTexture", "TopRightTexture", "BottomRightTexture",
     "LeftTexture", "RightTexture", "BottomTexture", "TopTexture",
 }
-
-local function SafeField(object, key)
-    if not object then return nil end
-    local ok, value = pcall(function() return object[key] end)
-    return ok and value or nil
-end
-
-local function Getter(object, method)
-    local getter = SafeField(object, method)
-    if type(getter) ~= "function" then return nil end
-    local ok, value = pcall(getter, object)
-    return ok and value or nil
-end
+local threeSliceSuffixes = { "Left", "Middle", "Right" }
+local highlightSuffixes = { "HighlightLeft", "HighlightMiddle", "HighlightRight" }
+local activeSuffixes = { "ActiveLeft", "ActiveMiddle", "ActiveRight" }
+local editBoxSuffixes = { "Left", "Mid", "Right" }
+local editBoxFocusSuffixes = { "FocusLeft", "FocusMid", "FocusRight" }
+local utilityButtonNames = {
+    "ChatFrameChannelButton",
+    "ChatFrameToggleVoiceDeafenButton",
+    "ChatFrameToggleVoiceMuteButton",
+}
 
 local function NamedRegion(object, suffix)
-    local direct = SafeField(object, suffix)
+    local direct = Field(object, suffix)
     if direct then return direct end
-    local name = Getter(object, "GetName")
+    local name = Call(object, "GetName")
     if type(name) ~= "string" or name == "" then return nil end
     return _G[name .. suffix]
 end
@@ -77,11 +79,15 @@ local function OwnerState(owner)
     return state
 end
 
+local function Near(left, right)
+    return math.abs(left - right) <= COLOR_TOLERANCE
+end
+
+-- Message colors ------------------------------------------------------------
+
 local function ReadMessageColor(chatType)
-    local info = SafeField(_G.ChatTypeInfo, chatType)
-    local r = SafeField(info, "r")
-    local g = SafeField(info, "g")
-    local b = SafeField(info, "b")
+    local info = Field(_G.ChatTypeInfo, chatType)
+    local r, g, b = Field(info, "r"), Field(info, "g"), Field(info, "b")
     if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
         return nil
     end
@@ -89,29 +95,22 @@ local function ReadMessageColor(chatType)
 end
 
 local function SameRGB(left, right)
-    if not left or not right then return false end
-    for index = 1, 3 do
-        if type(left[index]) ~= "number" or type(right[index]) ~= "number"
-            or math.abs(left[index] - right[index]) > 0.015 then
-            return false
-        end
-    end
-    return true
+    return left ~= nil and right ~= nil
+        and Near(left[1], right[1]) and Near(left[2], right[2]) and Near(left[3], right[3])
 end
 
 local function ChangeMessageColor(chatType, color)
-    local change = SafeField(_G, "ChangeChatColor")
+    local change = _G.ChangeChatColor
     if type(change) ~= "function" or not color then return false end
     changingChatColor = true
-    local ok = pcall(change, chatType, color[1], color[2], color[3])
+    change(chatType, color[1], color[2], color[3])
     changingChatColor = false
-    return ok == true
+    return true
 end
 
 local function ApplyMessageColor(state, chatType, recapture)
     local role = messageColorRoles[chatType]
-    if not role then return false end
-    local current = ReadMessageColor(chatType)
+    local current = role and ReadMessageColor(chatType)
     if not current then return false end
 
     local colorState = state.messageColors[chatType]
@@ -127,11 +126,7 @@ local function ApplyMessageColor(state, chatType, recapture)
     local r, g, b = NS.Theme.GetColor(role)
     local applied = { r, g, b }
     colorState.role = role
-    if SameRGB(current, applied) then
-        colorState.applied = applied
-        return true
-    end
-    if ChangeMessageColor(chatType, applied) then
+    if SameRGB(current, applied) or ChangeMessageColor(chatType, applied) then
         colorState.applied = applied
         return true
     end
@@ -147,12 +142,11 @@ end
 local function RestoreMessageColors(state)
     local restored = 0
     for chatType, colorState in pairs(state.messageColors) do
-        local current = ReadMessageColor(chatType)
         local nativeDefault = blizzardMessageDefaults[chatType]
         -- Fail closed if another addon changed the category after MapkoSkin.
         -- When our value still owns it, always restore Blizzard's clean default
         -- rather than a possibly contaminated value captured on this login.
-        if nativeDefault and SameRGB(current, colorState.applied)
+        if nativeDefault and SameRGB(ReadMessageColor(chatType), colorState.applied)
             and ChangeMessageColor(chatType, nativeDefault) then
             restored = restored + 1
         end
@@ -161,110 +155,108 @@ local function RestoreMessageColors(state)
     return restored
 end
 
+-- Text colors ----------------------------------------------------------------
+
 local function ReadTextColor(fontString)
-    local getter = SafeField(fontString, "GetTextColor")
-    if type(getter) ~= "function" then return nil end
-    local ok, r, g, b, a = pcall(getter, fontString)
-    if not ok or type(r) ~= "number" then return nil end
-    return { r, g, b, tonumber(a) or 1 }
+    local r, g, b, a = Call(fontString, "GetTextColor")
+    if type(r) ~= "number" or not Public(r) or not Public(g)
+        or not Public(b) or not Public(a) then
+        return nil
+    end
+    return r, g, b, tonumber(a) or 1
 end
 
-local function SameColor(left, right)
-    if not left or not right then return false end
-    for index = 1, 4 do
-        if type(left[index]) ~= "number" or type(right[index]) ~= "number"
-            or math.abs(left[index] - right[index]) > 0.015 then
-            return false
-        end
-    end
-    return true
+local function SameColor(color, r, g, b, a)
+    return color[1] ~= nil and r ~= nil
+        and Near(color[1], r) and Near(color[2], g) and Near(color[3], b) and Near(color[4], a)
+end
+
+local function ApplyTextRole(fontString, textState)
+    local r, g, b, a = NS.Theme.GetColor(textState.role)
+    fontString:SetTextColor(r, g, b, a)
+    local applied = textState.applied
+    applied[1], applied[2], applied[3], applied[4] = r, g, b, a
 end
 
 local function SetTextRole(state, fontString, role, recapture)
-    if not fontString or type(SafeField(fontString, "SetTextColor")) ~= "function" then
-        return false
-    end
-    local current = ReadTextColor(fontString)
-    if not current then return false end
+    if type(Field(fontString, "SetTextColor")) ~= "function" then return false end
+    local r, g, b, a = ReadTextColor(fontString)
+    if not r then return false end
     local textState = state.textStates[fontString]
     if not textState then
-        textState = { original = current }
+        textState = { original = { r, g, b, a }, applied = {} }
         state.textStates[fontString] = textState
-    elseif recapture and not SameColor(current, textState.applied) then
+    elseif recapture and not SameColor(textState.applied, r, g, b, a) then
         -- Preserve Blizzard's latest native tab color for cooperative restore.
-        textState.original = current
+        local original = textState.original
+        original[1], original[2], original[3], original[4] = r, g, b, a
     end
-    local applied = { NS.Theme.GetColor(role) }
-    local ok = pcall(fontString.SetTextColor, fontString, unpack(applied))
-    if ok then
-        textState.role = role
-        textState.applied = applied
-    end
-    return ok == true
+    textState.role = role
+    ApplyTextRole(fontString, textState)
+    return true
 end
 
 local function RefreshTextColors(state)
     for fontString, textState in pairs(state.textStates) do
-        if type(SafeField(fontString, "SetTextColor")) == "function" then
-            local applied = { NS.Theme.GetColor(textState.role) }
-            if pcall(fontString.SetTextColor, fontString, unpack(applied)) then
-                textState.applied = applied
-            end
+        if type(Field(fontString, "SetTextColor")) == "function" then
+            ApplyTextRole(fontString, textState)
         end
     end
 end
 
 local function RestoreTextColors(state)
     for fontString, textState in pairs(state.textStates) do
-        local current = ReadTextColor(fontString)
-        if textState.original and SameColor(current, textState.applied)
-            and type(SafeField(fontString, "SetTextColor")) == "function" then
-            pcall(fontString.SetTextColor, fontString, unpack(textState.original))
+        if SameColor(textState.applied, ReadTextColor(fontString)) then
+            local original = textState.original
+            fontString:SetTextColor(original[1], original[2], original[3], original[4])
         end
     end
     state.textStates = setmetatable({}, { __mode = "k" })
 end
 
+-- Textures -------------------------------------------------------------------
+
 local function TrackTexture(state, texture, role, recapture)
-    if not texture or not NS.Checkmarks then return false end
+    if not texture then return false end
     if not state.textureCaptured[texture] then
         state.textureCaptured[texture] = true
-        local getter = SafeField(texture, "IsDesaturated")
-        if type(getter) == "function" then
-            local ok, value = pcall(getter, texture)
-            if ok then state.nativeDesaturation[texture] = value == true end
+        if type(Field(texture, "IsDesaturated")) == "function" then
+            state.nativeDesaturation[texture] = Call(texture, "IsDesaturated") == true
         end
     end
-    if recapture and type(NS.Checkmarks.UntrackTexture) == "function" then
+    if recapture then
         NS.Checkmarks.UntrackTexture(texture, state.owner)
         -- Blizzard's refresh functions rewrite vertex RGB but do not own the
         -- desaturation flag. Rebase from the latest RGB while retaining the
         -- native desaturation state captured before MapkoSkin touched it.
         local originalDesaturated = state.nativeDesaturation[texture]
-        if originalDesaturated ~= nil
-            and type(SafeField(texture, "SetDesaturated")) == "function" then
-            pcall(texture.SetDesaturated, texture, originalDesaturated)
+        if originalDesaturated ~= nil then
+            Call(texture, "SetDesaturated", originalDesaturated)
         end
     end
-    if type(NS.Checkmarks.TrackTexture) ~= "function" then return false end
     return NS.Checkmarks.TrackTexture(texture, state.owner, role)
+end
+
+local function TrackSuffixes(state, object, suffixes, role, recapture)
+    for index = 1, #suffixes do
+        TrackTexture(state, NamedRegion(object, suffixes[index]), role, recapture)
+    end
 end
 
 local function TrackButtonTextures(state, button, normalRole, pushedRole, hoverRole, recapture)
     if not button then return end
-    TrackTexture(state, Getter(button, "GetNormalTexture"), normalRole, recapture)
-    TrackTexture(state, Getter(button, "GetPushedTexture"), pushedRole or normalRole, recapture)
-    TrackTexture(state, Getter(button, "GetDisabledTexture"), "disabled", recapture)
-    TrackTexture(state, Getter(button, "GetHighlightTexture"), hoverRole or normalRole, recapture)
+    TrackTexture(state, Call(button, "GetNormalTexture"), normalRole, recapture)
+    TrackTexture(state, Call(button, "GetPushedTexture"), pushedRole or normalRole, recapture)
+    TrackTexture(state, Call(button, "GetDisabledTexture"), "disabled", recapture)
+    TrackTexture(state, Call(button, "GetHighlightTexture"), hoverRole or normalRole, recapture)
 end
 
 local function SkinWindowAction(state, button, kind, recapture)
     if not button then return end
-    if NS.WindowActionSkin then
-        local action, reason = NS.WindowActionSkin.Apply(button, state.owner, kind)
-        if action then return end
-        if reason == "owned by another adapter"
-            or reason == "state texture ownership changed" then return end
+    local action, reason = NS.WindowActionSkin.Apply(button, state.owner, kind)
+    if action or reason == "owned by another adapter"
+        or reason == "state texture ownership changed" then
+        return
     end
     -- Protected or otherwise unsupported chat controls retain the previous
     -- reversible native-art tint instead of losing state feedback.
@@ -275,98 +267,106 @@ end
 local function SkinFrameChrome(state, frame, recapture)
     if not frame then return end
     TrackTexture(state, NamedRegion(frame, "Background"), "background", recapture)
-    for index = 1, #frameBorderSuffixes do
-        TrackTexture(state, NamedRegion(frame, frameBorderSuffixes[index]), "border", recapture)
-    end
+    TrackSuffixes(state, frame, frameBorderSuffixes, "border", recapture)
 end
 
-local function SkinFlash(state, flash)
-    if not flash or type(SafeField(flash, "GetRegions")) ~= "function" then return end
-    pcall(function()
-        local regions = { flash:GetRegions() }
-        for index = 1, #regions do
-            if Getter(regions[index], "GetObjectType") == "Texture" then
-                TrackTexture(state, regions[index], "warning")
-            end
+local function TrackFlashTextures(state, ...)
+    for index = 1, select("#", ...) do
+        local region = select(index, ...)
+        if Call(region, "GetObjectType") == "Texture" then
+            TrackTexture(state, region, "warning")
         end
-    end)
+    end
 end
 
 local function IsTabSelected(tab)
     local active = NamedRegion(tab, "ActiveMiddle")
         or NamedRegion(tab, "ActiveLeft") or NamedRegion(tab, "ActiveRight")
-    local shown = active and SafeField(active, "IsShown")
-    if type(shown) ~= "function" then return false end
-    local ok, selected = pcall(shown, active)
-    return ok and selected == true
+    return Call(active, "IsShown") == true
 end
 
 local function SkinMinimizedFrame(state, minimized, recapture)
     if not minimized then return end
-    for _, suffix in ipairs({ "Left", "Middle", "Right" }) do
-        TrackTexture(state, NamedRegion(minimized, suffix), "buttonFillAlt")
-    end
-    for _, suffix in ipairs({ "HighlightLeft", "HighlightMiddle", "HighlightRight" }) do
-        TrackTexture(state, NamedRegion(minimized, suffix), "hover", recapture)
-    end
+    TrackSuffixes(state, minimized, threeSliceSuffixes, "buttonFillAlt")
+    TrackSuffixes(state, minimized, highlightSuffixes, "hover", recapture)
     TrackTexture(state, NamedRegion(minimized, "glow"), "warning", recapture)
     SetTextRole(state, NamedRegion(minimized, "Text"), "title", recapture)
-    SkinWindowAction(state, SafeField(minimized, "MaximizeButton")
-        or NamedRegion(minimized, "MaximizeButton"), "maximize", recapture)
+    SkinWindowAction(state, NamedRegion(minimized, "MaximizeButton"), "maximize", recapture)
 end
 
 local function SkinTab(state, tab, selected, recapture)
     if not tab then return end
     if type(selected) ~= "boolean" then selected = IsTabSelected(tab) end
-    for _, suffix in ipairs({ "Left", "Middle", "Right" }) do
-        TrackTexture(state, NamedRegion(tab, suffix), "buttonFillAlt")
-    end
-    for _, suffix in ipairs({ "ActiveLeft", "ActiveMiddle", "ActiveRight" }) do
-        TrackTexture(state, NamedRegion(tab, suffix), "active", recapture)
-    end
-    for _, suffix in ipairs({ "HighlightLeft", "HighlightMiddle", "HighlightRight" }) do
-        TrackTexture(state, NamedRegion(tab, suffix), "hover", recapture)
-    end
+    TrackSuffixes(state, tab, threeSliceSuffixes, "buttonFillAlt")
+    TrackSuffixes(state, tab, activeSuffixes, "active", recapture)
+    TrackSuffixes(state, tab, highlightSuffixes, "hover", recapture)
     TrackTexture(state, NamedRegion(tab, "glow"), "warning", recapture)
-    SkinFlash(state, NamedRegion(tab, "Flash"))
-    SetTextRole(state, NamedRegion(tab, "Text") or Getter(tab, "GetFontString"),
+    TrackFlashTextures(state, Call(NamedRegion(tab, "Flash"), "GetRegions"))
+    SetTextRole(state, NamedRegion(tab, "Text") or Call(tab, "GetFontString"),
         selected and "title" or "text", recapture)
 
-    local name = Getter(tab, "GetName")
-    if type(name) == "string" then
-        local frameName = name:match("^(ChatFrame%d+)Tab$")
-        if frameName then SkinMinimizedFrame(state, _G[frameName .. "Minimized"], recapture) end
+    local name = Call(tab, "GetName")
+    local frameName = type(name) == "string" and name:match("^(ChatFrame%d+)Tab$")
+    if frameName then
+        SkinMinimizedFrame(state, _G[frameName .. "Minimized"], recapture)
     end
 end
 
-local function SkinEditBox(state, editBox, recapture)
+local SkinEditBox
+
+local function AnyActive()
+    for _, state in pairs(ChatFramesSkin.owners) do
+        if state.active then return true end
+    end
+    return false
+end
+
+-- Native chat hooks can fire in combat; they defer one full recapture instead.
+local function DeferIfCombat()
+    if not NS.IsCombatLocked() then return false end
+    if AnyActive() then NS.CombatGate.RunOrDefer(REFRESH_KEY, RefreshAll) end
+    return true
+end
+
+-- ChatFrameEditBoxMixin is copied onto each edit box when it is created, so
+-- a hook on the mixin table never reaches the edit boxes that existed before
+-- this load-on-demand addon. Hook each skinned instance instead.
+local function OnEditBoxHeader(editBox)
+    if DeferIfCombat() then return end
+    for _, state in pairs(ChatFramesSkin.owners) do
+        if state.active then SkinEditBox(state, editBox, true) end
+    end
+end
+
+local hookedEditBoxes = setmetatable({}, { __mode = "k" })
+
+SkinEditBox = function(state, editBox, recapture)
     if not editBox then return end
-    for _, suffix in ipairs({ "Left", "Mid", "Right" }) do
-        TrackTexture(state, NamedRegion(editBox, suffix), "input")
-    end
-    for _, suffix in ipairs({ "FocusLeft", "FocusMid", "FocusRight" }) do
-        TrackTexture(state, NamedRegion(editBox, suffix), "active", recapture)
-    end
+    TrackSuffixes(state, editBox, editBoxSuffixes, "input")
+    TrackSuffixes(state, editBox, editBoxFocusSuffixes, "active", recapture)
     TrackButtonTextures(state, NamedRegion(editBox, "Language"),
         "checkmark", "pressed", "hover")
+    if not hookedEditBoxes[editBox] and type(Field(editBox, "UpdateHeader")) == "function" then
+        hooksecurefunc(editBox, "UpdateHeader", OnEditBoxHeader)
+        hookedEditBoxes[editBox] = true
+    end
 end
 
 local function SkinChatFrame(state, frame, recapture)
-    if not frame then return end
     state.frames[frame] = true
     SkinFrameChrome(state, frame, recapture)
 
-    local buttonFrame = SafeField(frame, "buttonFrame") or NamedRegion(frame, "ButtonFrame")
+    local buttonFrame = Field(frame, "buttonFrame") or NamedRegion(frame, "ButtonFrame")
     SkinFrameChrome(state, buttonFrame, recapture)
-    SkinWindowAction(state, SafeField(buttonFrame, "minimizeButton")
+    SkinWindowAction(state, Field(buttonFrame, "minimizeButton")
         or NamedRegion(buttonFrame, "MinimizeButton"), "minimize", recapture)
-    TrackButtonTextures(state, SafeField(frame, "ResizeButton"),
+    TrackButtonTextures(state, Field(frame, "ResizeButton"),
         "border", "pressed", "hover")
-    TrackButtonTextures(state, SafeField(frame, "ScrollToBottomButton"),
+    TrackButtonTextures(state, Field(frame, "ScrollToBottomButton"),
         "blizzardArrow", "pressed", "hover")
-    SkinEditBox(state, SafeField(frame, "editBox") or NamedRegion(frame, "EditBox"), recapture)
+    SkinEditBox(state, Field(frame, "editBox") or NamedRegion(frame, "EditBox"), recapture)
 
-    local name = Getter(frame, "GetName")
+    local name = Call(frame, "GetName")
     if type(name) == "string" then
         SkinTab(state, _G[name .. "Tab"], nil, recapture)
         SkinMinimizedFrame(state, _G[name .. "Minimized"], recapture)
@@ -376,10 +376,10 @@ end
 local function SkinDock(state, recapture)
     local dock = _G.GeneralDockManager
     if not dock then return end
-    TrackTexture(state, SafeField(dock, "insertHighlight")
+    TrackTexture(state, Field(dock, "insertHighlight")
         or NamedRegion(dock, "InsertHighlight"), "active", recapture)
-    local overflow = SafeField(dock, "overflowButton") or NamedRegion(dock, "OverflowButton")
-    TrackButtonTextures(state, overflow,
+    TrackButtonTextures(state, Field(dock, "overflowButton")
+        or NamedRegion(dock, "OverflowButton"),
         "blizzardArrow", "pressed", "blizzardExpandHover")
 end
 
@@ -390,46 +390,40 @@ end
 -- gold chrome. No script, click action, visibility state or voice state changes.
 local function SkinChatUtilityButtons(state, recapture)
     SkinFrameChrome(state, _G.ChatFrame1ButtonFrame, recapture)
-    for _, globalName in ipairs({
-        "ChatFrameChannelButton",
-        "ChatFrameToggleVoiceDeafenButton",
-        "ChatFrameToggleVoiceMuteButton",
-    }) do
-        local button = _G[globalName]
+    for index = 1, #utilityButtonNames do
+        local button = _G[utilityButtonNames[index]]
         if button then
             TrackButtonTextures(state, button,
-                "blizzardExpand", "blizzardExpandPressed",
-                "blizzardExpandHover", recapture)
-            TrackTexture(state, SafeField(button, "Icon"), "blizzardExpand", recapture)
-            TrackTexture(state, SafeField(button, "Flash"), "warning", recapture)
+                "blizzardExpand", "blizzardExpandPressed", "blizzardExpandHover", recapture)
+            TrackTexture(state, Field(button, "Icon"), "blizzardExpand", recapture)
+            TrackTexture(state, Field(button, "Flash"), "warning", recapture)
         end
     end
 end
 
-local function EnumerateChatFrames(callback)
-    local seen, count = setmetatable({}, { __mode = "k" }), 0
+-- The ten built-in windows, any extra CHAT_FRAMES entry (temporary whisper
+-- windows) and the GM window, each once and at most MAX_CHAT_FRAMES in total.
+local function SkinChatFrames(state, recapture)
+    local seen, count = {}, 0
     local function Visit(frame)
         if not frame or seen[frame] or count >= MAX_CHAT_FRAMES then return end
         seen[frame] = true
         count = count + 1
-        callback(frame)
+        SkinChatFrame(state, frame, recapture)
     end
     for index = 1, BUILTIN_CHAT_WINDOWS do Visit(_G["ChatFrame" .. index]) end
     local names = _G.CHAT_FRAMES
     if type(names) == "table" then
-        pcall(function()
-            for _, name in pairs(names) do
-                if count >= MAX_CHAT_FRAMES then break end
-                if type(name) == "string" then Visit(_G[name]) end
-            end
-        end)
+        for _, name in pairs(names) do
+            if type(name) == "string" then Visit(_G[name]) end
+        end
     end
     Visit(_G.GMChatFrame)
 end
 
 local function ApplyAllNow(state, recapture)
     if not state or not state.active or NS.IsCombatLocked() then return false end
-    EnumerateChatFrames(function(frame) SkinChatFrame(state, frame, recapture) end)
+    SkinChatFrames(state, recapture)
     SkinDock(state, recapture)
     SkinChatUtilityButtons(state, recapture)
     TrackButtonTextures(state, _G.ChatFrameMenuButton,
@@ -438,94 +432,60 @@ local function ApplyAllNow(state, recapture)
     return true
 end
 
-local function AnyActive()
-    for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then return true end
-    end
-    return false
-end
-
-local function DeferRefresh()
-    if NS.CombatGate then
-        NS.CombatGate.RunOrDefer(REFRESH_KEY, function() RefreshAll(true) end)
-    end
-end
-
-local function ForEachActive(callback, object, value)
-    if NS.IsCombatLocked() then
-        if AnyActive() then DeferRefresh() end
-        return
-    end
-    for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then callback(state, object, value, true) end
-    end
-end
-
 local function OnTabColors(tab, selected)
-    ForEachActive(SkinTab, tab, selected == true)
+    if DeferIfCombat() then return end
+    for _, state in pairs(ChatFramesSkin.owners) do
+        if state.active then SkinTab(state, tab, selected == true, true) end
+    end
 end
 
 local function OnWindowColor(frame)
-    ForEachActive(function(state, target)
-        SkinFrameChrome(state, target, true)
-        SkinFrameChrome(state, SafeField(target, "buttonFrame")
-            or NamedRegion(target, "ButtonFrame"), true)
-    end, frame)
-end
-
-local function OnEditBoxHeader(editBox)
-    ForEachActive(function(state, target)
-        SkinEditBox(state, target, true)
-    end, editBox)
+    if DeferIfCombat() then return end
+    local buttonFrame = Field(frame, "buttonFrame") or NamedRegion(frame, "ButtonFrame")
+    for _, state in pairs(ChatFramesSkin.owners) do
+        if state.active then
+            SkinFrameChrome(state, frame, true)
+            SkinFrameChrome(state, buttonFrame, true)
+        end
+    end
 end
 
 local function OnTemporaryWindow()
-    if NS.IsCombatLocked() then
-        if AnyActive() then DeferRefresh() end
-        return
-    end
-    RefreshAll(true)
+    if DeferIfCombat() then return end
+    RefreshAll()
 end
 
 local function OnMessageColorChanged(chatType)
-    if changingChatColor or not messageColorRoles[chatType] then return end
-    if NS.IsCombatLocked() then
-        if AnyActive() then DeferRefresh() end
-        return
-    end
+    if changingChatColor or not messageColorRoles[chatType] or DeferIfCombat() then return end
     for _, state in pairs(ChatFramesSkin.owners) do
         if state.active then ApplyMessageColor(state, chatType, true) end
     end
 end
 
-local function RegisterGlobalHook(key, functionName, callback)
-    if ChatFramesSkin.hooks[key] or type(hooksecurefunc) ~= "function"
-        or type(_G[functionName]) ~= "function" then return false end
-    local ok = pcall(function() hooksecurefunc(functionName, callback) end)
-    if ok then ChatFramesSkin.hooks[key] = true end
-    return ok == true
-end
+-- These Blizzard functions are called through their globals, so a global
+-- post-hook reaches every chat window, including ones created earlier.
+local globalHooks = {
+    { "FCFTab_UpdateColors", OnTabColors },
+    { "FCF_SetWindowColor", OnWindowColor },
+    { "FCF_OpenTemporaryWindow", OnTemporaryWindow },
+    { "ChangeChatColor", OnMessageColorChanged },
+}
 
 local function RegisterHooks()
-    RegisterGlobalHook("tabs", "FCFTab_UpdateColors", OnTabColors)
-    RegisterGlobalHook("windowColor", "FCF_SetWindowColor", OnWindowColor)
-    RegisterGlobalHook("temporary", "FCF_OpenTemporaryWindow", OnTemporaryWindow)
-    RegisterGlobalHook("messageColor", "ChangeChatColor", OnMessageColorChanged)
-
-    local mixin = _G.ChatFrameEditBoxMixin
-    if not ChatFramesSkin.hooks.editBox and type(hooksecurefunc) == "function"
-        and type(SafeField(mixin, "UpdateHeader")) == "function" then
-        local ok = pcall(function()
-            hooksecurefunc(mixin, "UpdateHeader", OnEditBoxHeader)
-        end)
-        if ok then ChatFramesSkin.hooks.editBox = true end
+    for index = 1, #globalHooks do
+        local name, callback = globalHooks[index][1], globalHooks[index][2]
+        if not ChatFramesSkin.hooks[name] and type(_G[name]) == "function" then
+            hooksecurefunc(name, callback)
+            ChatFramesSkin.hooks[name] = true
+        end
     end
 end
 
-RefreshAll = function(recapture)
+-- Recaptures native colors first: every caller follows a Blizzard update.
+RefreshAll = function()
     if NS.IsCombatLocked() then return false end
     for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then ApplyAllNow(state, recapture == true) end
+        if state.active then ApplyAllNow(state, true) end
     end
     return true
 end
@@ -534,10 +494,7 @@ function ChatFramesSkin:OnThemeChanged(domain, key)
     if domain == "color" and key ~= "title" and key ~= "text"
         and key ~= "blizzardYellow" then return end
     if domain ~= "color" and domain ~= "theme" and domain ~= "profile" then return end
-    if NS.IsCombatLocked() then
-        if AnyActive() then DeferRefresh() end
-        return
-    end
+    if DeferIfCombat() then return end
     for _, state in pairs(ChatFramesSkin.owners) do
         if state.active then
             RefreshTextColors(state)
@@ -568,9 +525,9 @@ function ChatFramesSkin.Disable(_, owner)
         RestoreTextColors(state)
         RestoreMessageColors(state)
     end
-    if NS.Checkmarks then NS.Checkmarks.UntrackOwner(owner) end
+    NS.Checkmarks.UntrackOwner(owner)
     ChatFramesSkin.owners[owner] = nil
-    if not AnyActive() and NS.CombatGate then NS.CombatGate.Cancel(REFRESH_KEY) end
+    if not AnyActive() then NS.CombatGate.Cancel(REFRESH_KEY) end
     return true
 end
 

@@ -3,17 +3,20 @@ _G.MSUFSuite = Suite
 
 local initialized = false
 local events = CreateFrame("Frame")
+
+-- Remembers the money at login per character, so the Bags and DataTexts
+-- session gold survives /reload. Secret values are ignored.
 local function CaptureGoldStart(isReloadingUi)
     Suite.goldSessionCaptured = false
     local root = Suite.RootDB
     if type(root) ~= "table" or type(_G.UnitGUID) ~= "function" or type(_G.GetMoney) ~= "function" then return end
-    local okGuid, guid = pcall(UnitGUID, "player")
-    local okMoney, money = pcall(GetMoney)
-    if not okGuid or not okMoney then return end
+    local guid, money = UnitGUID("player"), GetMoney()
     local secret = _G.issecretvalue
     if type(secret) == "function" and (secret(guid) or secret(money)) then return end
     if type(guid) ~= "string" or guid == "" or type(money) ~= "number"
-        or money ~= money or money < 0 or money == math.huge then return end
+        or money ~= money or money < 0 or money == math.huge then
+        return
+    end
     if type(root.suiteGold) ~= "table" then root.suiteGold = {} end
     local previous = root.suiteGold[guid]
     if isReloadingUi == true and type(previous) == "number"
@@ -81,7 +84,10 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
     if event == "ADDON_LOADED" then
         if loadedAddon ~= addonName then return end
         self:UnregisterEvent("ADDON_LOADED")
-        if not Initialize() then self:UnregisterAllEvents(); return end
+        if not Initialize() then
+            self:UnregisterAllEvents()
+            return
+        end
         -- Load the Suite-owned skin engine before PLAYER_LOGIN so it can skin
         -- Blizzard's first visible frames without a reload.
         if Suite.Skin and Suite.RootDB.skinEnabled ~= false then Suite.Skin.EnsureEngine() end

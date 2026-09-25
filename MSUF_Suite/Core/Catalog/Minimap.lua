@@ -18,6 +18,7 @@ B.Module("minimap", {
     -- runtime lets it keep those buttons and leaves the Suite drawer dormant.
     conflicts = { "SexyMap", "EllesmereUIMinimap", "ElvUI" },
     available = Available,
+    cvars = { rotateMinimap = true },
 })
 
 local id = "minimap"
@@ -116,6 +117,12 @@ NS.MinimapStylePresets = {
 }
 NS.MinimapStyleVisualKeys = {}
 for key in pairs(clean) do NS.MinimapStyleVisualKeys[key] = true end
+-- The global looks Midnight Blue, Midnight Dark and MSUF Forever are the
+-- style presets 8, 9 and 7; Custom is the first choice here.
+NS.SuiteCatalog[id].look = {
+    key = "stylePreset", presets = NS.MinimapStylePresets, visualKeys = NS.MinimapStyleVisualKeys,
+    custom = 1, global = { 8, 9, 7 },
+}
 
 B.Section(id, "style_presets", "Choose a look", {
     Choice("stylePreset", "Style preset", 2, NS.MinimapStylePresetNames),

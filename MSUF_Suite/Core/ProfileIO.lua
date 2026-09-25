@@ -15,6 +15,18 @@ local function CodecAvailable()
         and Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate ~= nil
 end
 
+-- A copy keeps the migration state of its source, so one-time migrations
+-- never run again on already migrated values. Older data carries per-step
+-- flags instead of a revision; those are copied as they are.
+local function CopyMigrationState(source, target)
+    local revision, flags = Suite.Suite.MigrationState(source)
+    if revision then
+        target.revision = revision
+    elseif flags then
+        for key, value in pairs(flags) do target[key] = value end
+    end
+end
+
 -- Copy only documented module settings. Runtime history, skin configuration,
 -- unknown keys and sharing metadata cannot enter the module profile.
 function IO.PrepareTable(profile, shared)
@@ -23,6 +35,7 @@ function IO.PrepareTable(profile, shared)
         return nil, "Unsupported suite profile"
     end
     local result = { suite = { schema = 1, modules = {} } }
+    CopyMigrationState(data, result.suite)
     for _, id in ipairs(Suite.SuiteOrder) do
         local source = data.modules[id]
         if source ~= nil and type(source) ~= "table" then return nil, "Invalid module settings" end
@@ -60,7 +73,8 @@ function IO.ExportProfile(name)
 end
 
 -- A module-only string carries one catalog entry and leaves every other Suite
--- module and all MSUF frame settings alone when imported.
+-- module and all MSUF frame settings alone when imported. Its revision is the
+-- migration state of the exported settings; strings without one migrate fully.
 function IO.ExportModule(id)
     if not Suite.SuiteCatalog[id] then return nil, "Unknown suite module" end
     local profile = Suite.Database.GetProfile(Suite.Database.GetActiveProfileName())
@@ -68,7 +82,7 @@ function IO.ExportModule(id)
     if not clean then return nil, reason end
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
     local encoded = _G.MSUF_EncodeCompactTable({
-        addon = "MSUF_Suite", format = 2, module = id,
+        addon = "MSUF_Suite", format = 2, module = id, revision = clean.suite.revision,
         settings = clean.suite.modules[id],
     }, "MSUF3")
     if type(encoded) ~= "string" or #encoded > IO.maxBytes then return nil, "Suite module profile is too large" end
@@ -89,7 +103,10 @@ function IO.PrepareModuleProfile(text)
         return nil, nil, "Unsupported suite module profile"
     end
     local id = envelope.module
-    local clean, reason = IO.PrepareTable({ suite = { schema = 1, modules = { [id] = envelope.settings } } }, true)
+    local revision = type(envelope.revision) == "number" and envelope.revision or nil
+    local clean, reason = IO.PrepareTable({ suite = {
+        schema = 1, revision = revision, modules = { [id] = envelope.settings },
+    } }, true)
     if not clean then return nil, nil, reason end
     return id, clean.suite.modules[id]
 end

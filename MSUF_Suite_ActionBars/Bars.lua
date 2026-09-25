@@ -89,13 +89,19 @@ function AB.Cell(i, columns, rows, r, vertical, start)
     return col, row
 end
 
--- Rounds UI units to whole physical pixels at the root scale.
-function AB.Snap(value)
+-- One physical pixel in UI units at the root scale; nil while unreadable.
+function AB.PixelUnit()
     local height = type(GetPhysicalScreenSize) == "function" and select(2, GetPhysicalScreenSize())
     local scale = UIParent and UIParent:GetEffectiveScale()
     if not S.Public(height) or not S.Public(scale) or type(height) ~= "number" or type(scale) ~= "number"
-        or height <= 0 or scale <= 0 then return value end
-    local unit = 768 / height / scale
+        or height <= 0 or scale <= 0 then return nil end
+    return 768 / height / scale
+end
+
+-- Rounds UI units to whole physical pixels at the root scale.
+function AB.Snap(value)
+    local unit = AB.PixelUnit()
+    if not unit then return value end
     return floor(value / unit + .5) * unit
 end
 
@@ -112,11 +118,15 @@ end
 -- Menu preview description; plain values, no frames.
 function S.ActionBarPreviewInfo(index)
     if not AB.Available(index) then return nil end
-    local c, k = S.Config("actionbars"), AB.KEYS[index]
-    local n, size, spacing, vertical = c[k.Buttons], c[k.Size], c[k.Spacing], c[k.Vertical]
-    local columns, rows, r = AB.Grid(n, c[k.Rows], vertical)
-    return { buttons = n, rows = r, columns = columns, rowCount = rows, size = size, spacing = spacing, vertical = vertical,
-        start = c[k.Start], width = columns * size + (columns - 1) * spacing, height = rows * size + (rows - 1) * spacing }
+    local config, keys = S.Config("actionbars"), AB.KEYS[index]
+    local n, size, spacing, vertical = config[keys.Buttons], config[keys.Size], config[keys.Spacing], config[keys.Vertical]
+    local columns, rows, r = AB.Grid(n, config[keys.Rows], vertical)
+    return {
+        buttons = n, rows = r, columns = columns, rowCount = rows, size = size, spacing = spacing, vertical = vertical,
+        start = config[keys.Start],
+        width = columns * size + (columns - 1) * spacing,
+        height = rows * size + (rows - 1) * spacing,
+    }
 end
 
 -- Restricted snippets. Button visibility: inside the button count, and
@@ -189,6 +199,8 @@ if kind and action then
     return "action",action
 end
 ]]
+-- Re-runs BUTTON on every button of one header.
+AB.SNIPPET.GRID = [[self:ChildUpdate("grid")]]
 
 -- Runs a snippet against a header out of combat, so any Blizzard script a
 -- secure Show/Hide/SetParent triggers runs untainted.
@@ -220,8 +232,12 @@ local function NewHeader(index)
             end
         end
     end
-    local bar = { index = index, header = header, buttons = {}, filled = {}, background = background, key = AB.KEYS[index], owned = index <= 10,
-        native = native }
+    -- styleGen: bumped by this bar's style settings (Style.lua skips buttons
+    -- whose look is current).
+    local bar = {
+        index = index, header = header, buttons = {}, filled = {}, background = background, key = AB.KEYS[index],
+        owned = index <= 10, native = native, styleGen = 0,
+    }
     if native then header:SetAttribute("actionpage", math.floor((AB.FIRST_SLOT[index] - 1) / 12) + 1) end
     AB.bars[index] = bar
     AB.headers = AB.headers or {}
@@ -237,8 +253,10 @@ local function NewButton(bar, index)
     local slot = AB.FIRST_SLOT[bar.index] + index - 1
     if bar.native then
         local button = AB.Frame(AB.NATIVE_BUTTONS[bar.index] .. index)
-        local rec = { button = button, bar = bar, index = index, slot = slot, base = slot, name = button:GetName(), owned = true, native = true,
-            command = AB.COMMANDS[bar.index] .. index }
+        local rec = {
+            button = button, bar = bar, index = index, slot = slot, base = slot, name = button:GetName(),
+            owned = true, native = true, command = AB.COMMANDS[bar.index] .. index,
+        }
         AB.records[button] = rec
         bar.buttons[index] = rec
         AB.owned[#AB.owned + 1] = rec
@@ -258,8 +276,10 @@ local function NewButton(bar, index)
     SecureHandlerWrapScript(button, "OnClick", AB.grid, AB.SNIPPET.CLICK)
     SecureHandlerWrapScript(button, "OnDragStart", AB.grid, AB.SNIPPET.DRAG)
     SecureHandlerWrapScript(button, "OnReceiveDrag", AB.grid, AB.SNIPPET.RECEIVE)
-    local rec = { button = button, bar = bar, index = index, slot = slot, base = slot, name = name, owned = true,
-        command = AB.COMMANDS[bar.index] .. index }
+    local rec = {
+        button = button, bar = bar, index = index, slot = slot, base = slot, name = name,
+        owned = true, command = AB.COMMANDS[bar.index] .. index,
+    }
     AB.records[button] = rec
     bar.buttons[index] = rec
     AB.owned[#AB.owned + 1] = rec
@@ -300,16 +320,16 @@ end
 -- Positions a bar and its buttons from the layout contract. Protected
 -- geometry: callers run it out of combat only.
 function AB.LayoutBar(bar)
-    local c, k, header = M.config, bar.key, bar.header
-    local count = AB.Count(bar, c)
-    local vertical, start = c[k.Vertical], c[k.Start]
-    local columns, rows, r = AB.Grid(max(count, 1), c[k.Rows], vertical)
-    local size, spacing = AB.Snap(c[k.Size]), AB.Snap(c[k.Spacing])
+    local config, keys, header = M.config, bar.key, bar.header
+    local count = AB.Count(bar, config)
+    local vertical, start = config[keys.Vertical], config[keys.Start]
+    local columns, rows, r = AB.Grid(max(count, 1), config[keys.Rows], vertical)
+    local size, spacing = AB.Snap(config[keys.Size]), AB.Snap(config[keys.Spacing])
     local step = size + spacing
     header:SetSize(columns * size + (columns - 1) * spacing, rows * size + (rows - 1) * spacing)
-    local point = NS.ActionBarAnchorPoints[c[k.Point]] or "CENTER"
+    local point = NS.ActionBarAnchorPoints[config[keys.Point]] or "CENTER"
     header:ClearAllPoints()
-    header:SetPoint(point, UIParent, point, AB.Snap(c[k.X]), AB.Snap(c[k.Y]))
+    header:SetPoint(point, UIParent, point, AB.Snap(config[keys.X]), AB.Snap(config[keys.Y]))
     for i = 1, min(count, #bar.buttons) do
         local button = bar.buttons[i].button
         local col, row = AB.Cell(i - 1, columns, rows, r, vertical, start)
@@ -318,7 +338,7 @@ function AB.LayoutBar(bar)
         button:SetSize(size, size)
     end
     bar.count, bar.size = count, size
-    local mouse = not c[k.ClickThrough]
+    local mouse = not config[keys.ClickThrough]
     if bar.owned then
         local direction = FlyoutDirection(header, columns, rows)
         for i = 1, #bar.buttons do
@@ -327,19 +347,19 @@ function AB.LayoutBar(bar)
             button:EnableMouse(mouse)
         end
         header:SetAttribute("count", count)
-        header:SetAttribute("showempty", c[k.ShowEmpty] and true or false)
-        AB.Execute(header, [[self:ChildUpdate("grid")]])
+        header:SetAttribute("showempty", config[keys.ShowEmpty] and true or false)
+        AB.Execute(header, AB.SNIPPET.GRID)
     else
         for i = 1, #bar.buttons do bar.buttons[i].button:EnableMouse(mouse) end
     end
     local background = bar.background
-    if c[k.Background] then
-        local pad = AB.Snap(c[k.BackgroundPadding])
-        local red, green, blue = S.RGB(c[k.BackgroundColor])
+    if config[keys.Background] then
+        local pad = AB.Snap(config[keys.BackgroundPadding])
+        local red, green, blue = S.RGB(config[keys.BackgroundColor])
         background:ClearAllPoints()
         background:SetPoint("TOPLEFT", header, "TOPLEFT", -pad, pad)
         background:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", pad, -pad)
-        background:SetColorTexture(red, green, blue, c[k.BackgroundAlpha] / 100)
+        background:SetColorTexture(red, green, blue, config[keys.BackgroundAlpha] / 100)
         background:Show()
     else
         background:Hide()

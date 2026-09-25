@@ -61,6 +61,17 @@ end
 
 -- spec fields: title, description, conflicts, core (enabled by the core preset),
 -- defaultEnabled, optIn (never enabled by presets), page (menu page key), available() -> ok, reason.
+-- cvars: { [name] = true } CVars the runtime may set through its context; the
+-- controller hands them back even while the module addon is disabled.
+-- look (optional), shared by the controller and the menu:
+--   key         choice rule that selects a preset
+--   presets     [choice] = visual settings written together with that choice
+--   visualKeys  settings whose edit switches the choice to `custom`
+--   custom      the Custom choice, if the module has one
+--   global      part of the suite-wide Skinning look: true when the choice
+--               equals the look index (1 Midnight Blue, 2 Midnight Dark,
+--               3 MSUF Forever), or { choice per look index }
+--   extra(values, lookIndex, config) adds settings derived from a global look
 function Build.Module(id, spec)
     assert(not catalog[id], "duplicate suite module " .. tostring(id))
     assert(moduleAddons[id], "missing Suite addon for " .. tostring(id))

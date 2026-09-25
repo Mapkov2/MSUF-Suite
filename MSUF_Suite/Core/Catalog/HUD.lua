@@ -113,6 +113,15 @@ B.Section("announcements", "moreEventColors", "More headline colors", {
     B.Color("noticeColor", "Other events", "a8d6fa"),
 })
 
+-- Editing any HUD color switches the color source to Custom colors.
+for _, hud in ipairs({ "objectives", "announcements" }) do
+    local colors = {}
+    for key, rule in pairs(NS.SuiteCatalog[hud].rules) do
+        if rule.color then colors[key] = true end
+    end
+    NS.SuiteCatalog[hud].look = { key = "colorStyle", visualKeys = colors, custom = 2 }
+end
+
 -- This screen has deliberately no appearance or layout rules. The HUD page
 -- exposes only the module's standard enable switch.
 B.Module("afkScreen", {

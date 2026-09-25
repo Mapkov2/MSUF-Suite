@@ -7,14 +7,18 @@ local Skin = { enabled = false }
 Suite.Skin = Skin
 local clients = {}
 local appearanceHooked = false
+-- The HUD modules read skin colors and fonts when they paint.
+local SKINNED_HUD = { "objectives", "announcements" }
 
 local function HookOwnedHUD(api)
     if appearanceHooked or type(hooksecurefunc) ~= "function"
-        or type(api.OnAppearanceChanged) ~= "function" then return end
+        or type(api.OnAppearanceChanged) ~= "function" then
+        return
+    end
     hooksecurefunc(api, "OnAppearanceChanged", function()
         local controller = Suite.Suite
         if not controller or not controller.started then return end
-        for _, id in ipairs({ "objectives", "announcements" }) do
+        for _, id in ipairs(SKINNED_HUD) do
             if controller.states[id] and controller.states[id].active then controller.Apply(id) end
         end
     end)
@@ -32,8 +36,10 @@ function Skin.LoadLegacyDatabase()
     if not (Suite.Client and Suite.Client.HasAddOn and Suite.Client.HasAddOn("MapkoSkin")) then return false end
     local loader = C_AddOns and C_AddOns.LoadAddOn or _G.LoadAddOn
     if type(loader) ~= "function" then return false end
+    -- LoadAddOn reports a failed load in its results; the addon's own load
+    -- errors go to the client error handler. The database decides success.
     _G.MSUFSuiteSkinMigrating = true
-    pcall(loader, "MapkoSkin")
+    loader("MapkoSkin")
     _G.MSUFSuiteSkinMigrating = nil
     return type(_G.MapkoSkinDB) == "table"
 end
@@ -53,7 +59,7 @@ function Skin.EnsureEngine()
     if Suite.RootDB and not Suite.RootDB.skinMigrationDone then
         importedLegacy = Skin.LoadLegacyDatabase() or importedLegacy
     end
-    local ok, loaded, reason = pcall(loader, "MSUF_Suite_Skin")
+    local loaded, reason = loader("MSUF_Suite_Skin")
     if type(_G.MapkoSkin) == "table" and _G.MapkoSkin.addonName == "MSUF_Suite_Skin"
         and Skin.IsAvailable() then
         if type(_G.MapkoSkin.EnsureDatabaseReady) == "function" then
@@ -62,7 +68,7 @@ function Skin.EnsureEngine()
         if importedLegacy and Suite.RootDB then Suite.RootDB.skinMigrationDone = true end
         return true -- Forever may return a diagnostic.
     end
-    return false, ok and tostring(reason or loaded or "skin-engine-unavailable") or tostring(loaded)
+    return false, tostring(reason or loaded or "skin-engine-unavailable")
 end
 
 function Skin.Acquire(moduleID)

@@ -19,6 +19,12 @@ B.Module("buffReminders", {
 })
 
 local id = "buffReminders"
+-- A global look recolors the icon border from its palette.
+NS.SuiteCatalog[id].look = {
+    extra = function(values, lookIndex)
+        values.borderColor = NS.DataTextLooks[lookIndex].border
+    end,
+}
 B.Section(id, "tracking", "What to remind", {
     Bool("classBuff", "Remind me of my known class raid buff", true),
     String("spellIDs", "Additional self-buff spell IDs", "", 240),

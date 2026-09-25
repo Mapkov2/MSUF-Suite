@@ -57,6 +57,15 @@ local forever = {
 NS.ActionBarLookPresets = { [1] = blue, [2] = dark, [3] = forever }
 NS.ActionBarLookVisualKeys = {}
 for key in pairs(dark) do NS.ActionBarLookVisualKeys[key] = true end
+NS.SuiteCatalog[id].look = {
+    key = "look", presets = NS.ActionBarLookPresets, visualKeys = NS.ActionBarLookVisualKeys,
+    custom = 4, global = true,
+    -- A global look also tints every bar background in its palette.
+    extra = function(values, lookIndex)
+        local background = NS.DataTextLooks[lookIndex].background
+        for bar = 1, NS.ActionBarCount do values["bar" .. bar .. "BackgroundColor"] = background end
+    end,
+}
 local initial = NS.Client.isForever and forever or dark
 B.Section(id, "look", "Choose a look", {
     Choice("look", "Style preset", NS.Client.isForever and 3 or 2,

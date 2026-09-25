@@ -28,6 +28,7 @@ B.Module("bags", {
     description = "One combined bag with a clear Suite background and item levels shown directly on equipment. Blizzard keeps item use, sorting, search, and bank interactions.",
     core = true, page = "suite_bags", available = Available,
     conflicts = { "EllesmereUIBags", "ElvUI", "Bagnon", "BetterBags", "AdiBags", "ArkInventory", "Inventorian" },
+    cvars = { combinedBags = true },
 })
 
 NS.BagsLookPresets = {
@@ -36,6 +37,10 @@ NS.BagsLookPresets = {
     [3] = { backgroundColor = "14181b", backgroundOpacity = 98, accentColor = "9f8960" },
 }
 NS.BagsLookVisualKeys = { backgroundColor = true, backgroundOpacity = true, accentColor = true }
+NS.SuiteCatalog.bags.look = {
+    key = "look", presets = NS.BagsLookPresets, visualKeys = NS.BagsLookVisualKeys,
+    custom = 4, global = true,
+}
 local initial = NS.BagsLookPresets[NS.Client.isForever and 3 or 2]
 B.Section("bags", "look", "Choose a look", {
     B.Choice("look", "Style preset", NS.Client.isForever and 3 or 2,

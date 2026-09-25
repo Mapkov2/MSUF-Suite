@@ -1,236 +1,264 @@
 local _, Private = ...
 local NS, O = Private.NS, Private.Options
+local L = NS.L
 
-local BORDER_VALUES = { 0, 1, 2 }
-local MICRO_STYLE_VALUES = { "modern", "midnightDark", "forever", "custom" }
-local POSITION_VALUES = {
-    "bottomLeft", "bottomRight", "bottomCenter", "topRight", "topCenter", "custom",
-}
+local WIDTH = 484
+local Pixel, Percent = O.Pixel, O.Percent
 
-local function MicroMenuSettings()
-    return NS.DB.icons.microMenu
-end
-
-local function WindowActionSettings()
-    return NS.DB.icons.windowActions
-end
-
-local function Percent(value)
-    return tostring(math.floor((tonumber(value) or 0) * 100 + 0.5)) .. "%"
-end
-
-local function Pixel(value)
-    value = math.floor((tonumber(value) or 0) + 0.5)
-    return value == 1 and "1 px" or tostring(value) .. " px"
-end
-
-local function PresetLabel(value)
-    local labels = {
-        forever = "MSUF Forever",
-        modern = "Midnight Blue",
-        midnightDark = "Midnight Dark",
-        custom = "Custom",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function WindowActionStyleLabel(value)
-    local labels = {
-        bare = "Bare",
-        soft = "Soft",
-        outline = "Outline",
-        native = "Native",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function WindowActionGlyphLabel(value)
-    local labels = {
-        plusMinus = "+ / -",
-        chevrons = "Chevrons",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function WindowActionWeightLabel(value)
-    local labels = { fine = "Fine", bold = "Bold" }
-    return labels[value] or tostring(value)
-end
-
-local function IconStyleLabel(value)
-    local labels = {
-        line = "Line glyphs",
-        bold = "Bold glyphs",
-        blizzardIcons = "Blizzard icons",
-        blizzard = "Full Blizzard",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function HoverStyleLabel(value)
-    local labels = {
-        outline = "Outline",
-        softFill = "Soft",
-        solidFill = "Solid",
-        iconOnly = "Icon",
-        off = "Off",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function TintLabel(value)
-    local labels = {
-        native = "Native",
-        theme = "Theme",
-        class = "Class",
-        monochrome = "Mono",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function ShapeLabel(value)
-    local labels = {
-        global = "Global",
-        round = "Round",
-        continuous = "Smooth",
-        squircle = "Squircle",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function LayoutModeLabel(value)
-    local labels = {
-        owned = "MSKIN Bar",
-        blizzard = "Blizzard",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function VisibilityLabel(value)
-    local labels = {
-        always = "Always", combat = "In combat", outOfCombat = "Out of combat",
-        mouseover = "On mouseover", never = "Never",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function OrientationLabel(value)
-    local labels = {
-        horizontal = "Horizontal",
-        vertical = "Vertical",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function GrowthLabel(value)
-    local labels = {
-        RIGHT_DOWN = "Right / down",
-        LEFT_DOWN = "Left / down",
-        RIGHT_UP = "Right / up",
-        LEFT_UP = "Left / up",
-    }
-    return labels[value] or tostring(value)
-end
-
-local function PositionPresetLabel(value)
-    local labels = {
-        bottomLeft = "Bottom left",
-        bottomRight = "Bottom right",
-        bottomCenter = "Bottom center",
-        topRight = "Top right",
-        topCenter = "Top center",
-        custom = "Custom",
-    }
-    return labels[value] or tostring(value)
-end
+------------------------------------------------------------------ value labels
+local PresetLabel = O.Labeler({
+    forever = L["MSUF Forever"],
+    modern = L["Midnight Blue"],
+    midnightDark = L["Midnight Dark"],
+    custom = L["Custom"],
+})
+local WindowActionStyleLabel = O.Labeler({
+    bare = L["Bare"],
+    soft = L["Soft"],
+    outline = L["Outline"],
+    native = L["Native"],
+})
+local WindowActionGlyphLabel = O.Labeler({ plusMinus = "+ / -", chevrons = L["Chevrons"] })
+local WindowActionWeightLabel = O.Labeler({ fine = L["Fine"], bold = L["Bold"] })
+local IconStyleLabel = O.Labeler({
+    line = L["Line glyphs"],
+    bold = L["Bold glyphs"],
+    blizzardIcons = L["Blizzard icons"],
+    blizzard = L["Full Blizzard"],
+})
+local HoverStyleLabel = O.Labeler({
+    outline = L["Outline"],
+    softFill = L["Soft"],
+    solidFill = L["Solid"],
+    iconOnly = L["Icon"],
+    off = L["Off"],
+})
+local TintLabel = O.Labeler({
+    native = L["Native"],
+    theme = L["Theme"],
+    class = L["Class"],
+    monochrome = L["Mono"],
+})
+local ShapeLabel = O.Labeler({
+    global = L["Global"],
+    round = L["Round"],
+    continuous = L["Smooth"],
+    squircle = L["Squircle"],
+})
+local LayoutModeLabel = O.Labeler({ owned = L["MSKIN Bar"], blizzard = L["Blizzard"] })
+local OrientationLabel = O.Labeler({ horizontal = L["Horizontal"], vertical = L["Vertical"] })
+local GrowthLabel = O.Labeler({
+    RIGHT_DOWN = L["Right / down"],
+    LEFT_DOWN = L["Left / down"],
+    RIGHT_UP = L["Right / up"],
+    LEFT_UP = L["Left / up"],
+})
+local PositionPresetLabel = O.Labeler({
+    bottomLeft = L["Bottom left"],
+    bottomRight = L["Bottom right"],
+    bottomCenter = L["Bottom center"],
+    topRight = L["Top right"],
+    topCenter = L["Top center"],
+    custom = L["Custom"],
+})
+local IconBorderLabel = O.Labeler({ quality = L["Quality"], theme = L["Theme"], off = L["Off"] })
 
 local function ButtonCount(value)
     value = math.floor((tonumber(value) or 1) + 0.5)
-    return value == 1 and "1 button" or tostring(value) .. " buttons"
+    return value == 1 and L["1 button"] or L["%d buttons"]:format(value)
 end
 
 local function BorderLabel(value)
     value = tonumber(value) or 0
-    return value <= 0 and "Off" or Pixel(value)
+    return value <= 0 and L["Off"] or Pixel(value)
 end
 
-local function IconBorderLabel(value)
-    local labels = {
-        quality = "Quality",
-        theme = "Theme",
-        off = "Off",
-    }
-    return labels[value] or tostring(value)
+------------------------------------------------------------------ settings rows
+-- Rows in page order. kind: heading, preview, toggle, segmented or slider.
+-- source picks the setting table and its setter (micro, action, theme);
+-- set/get override them. essential rows stay in Guided mode. gate: "layout"
+-- rows need the Suite-owned bar, "micro" rows need Micro Bar skinning.
+local ROWS = {
+    { kind = "heading", label = L["WINDOW ACTIONS"], essential = true },
+    { kind = "segmented", label = L["Button style"], source = "action", key = "style",
+        values = NS.WindowActionStyles, format = WindowActionStyleLabel, essential = true },
+    { kind = "segmented", label = L["Maximize / minimize symbols"], source = "action", key = "glyphMode",
+        values = NS.WindowActionGlyphModes, format = WindowActionGlyphLabel, essential = true },
+    { kind = "segmented", label = L["Line weight"], source = "action", key = "weight",
+        values = NS.WindowActionWeights, format = WindowActionWeightLabel },
+    { kind = "slider", label = L["Maximize / minimize size"], source = "action", key = "glyphSize",
+        min = 8, max = 18, format = Pixel },
+    { kind = "slider", label = L["Close X size"], source = "action", key = "closeGlyphSize",
+        min = 6, max = 18, format = Pixel, essential = true },
+    { kind = "segmented", label = L["Button shape"], source = "action", key = "surfaceShape",
+        values = NS.WindowActionShapes, format = ShapeLabel },
+    { kind = "segmented", label = L["Button corner radius"], source = "action", key = "surfaceRadius",
+        values = NS.GeometryRadii, format = Pixel },
+    { kind = "slider", label = L["Visual inset (larger makes the button smaller)"], source = "action",
+        key = "surfaceInset", min = 0, max = 6, format = Pixel },
+    { kind = "slider", label = L["Glyph horizontal offset"], source = "action", key = "glyphOffsetX",
+        min = -4, max = 4, format = Pixel },
+    { kind = "slider", label = L["Glyph vertical offset"], source = "action", key = "glyphOffsetY",
+        min = -4, max = 4, format = Pixel },
+    { kind = "slider", label = L["Idle glyph opacity"], source = "action", key = "opacity",
+        min = 0.35, max = 1, step = 0.05, format = Percent },
+    { kind = "preview", essential = true },
+
+    { kind = "heading", label = L["MICRO BAR"], essential = true },
+    { kind = "toggle", label = L["Skin the Blizzard Micro Bar"], essential = true,
+        get = function() return NS.DB.skins.microMenu end,
+        set = function(value) NS.Adapters.SetEnabled("microMenu", value) end },
+
+    { kind = "heading", label = L["MSKIN-OWNED MICRO BAR"], essential = true },
+    { kind = "segmented", label = L["Layout engine"], source = "micro", key = "layoutMode",
+        values = NS.MicroMenuLayoutModes, format = LayoutModeLabel, essential = true, gate = "micro" },
+    { kind = "segmented", label = L["Screen position"], source = "micro", key = "positionPreset",
+        values = { "bottomLeft", "bottomRight", "bottomCenter", "topRight", "topCenter", "custom" },
+        format = PositionPresetLabel, essential = true, gate = "layout",
+        set = function(value)
+            if value ~= "custom" then NS.MicroMenuSkin.SetPositionPreset(value) end
+        end },
+    { kind = "segmented", label = L["Bar direction"], source = "micro", key = "orientation",
+        values = NS.MicroMenuOrientations, format = OrientationLabel, essential = true, gate = "layout" },
+    { kind = "toggle", label = L["Lock bar position (unlock to drag)"], source = "micro", key = "locked",
+        essential = true, gate = "layout" },
+    { kind = "slider", label = L["Bar scale"], source = "micro", key = "scale",
+        min = 0.5, max = 1.5, step = 0.05, format = Percent, essential = true, gate = "layout" },
+
+    { kind = "heading", label = L["ADVANCED BAR LAYOUT"] },
+    { kind = "segmented", label = L["Growth direction"], source = "micro", key = "growth",
+        values = NS.MicroMenuGrowthModes, format = GrowthLabel, gate = "layout" },
+    { kind = "slider", label = L["Buttons per line"], source = "micro", key = "buttonsPerLine",
+        min = 1, max = NS.Client and NS.Client.isForever and 14 or 13, format = ButtonCount, gate = "layout" },
+    { kind = "slider", label = L["Button spacing"], source = "micro", key = "spacing",
+        min = -8, max = 16, format = Pixel, gate = "layout" },
+    { kind = "slider", label = L["Bar padding"], source = "micro", key = "padding",
+        min = 0, max = 16, format = Pixel, gate = "layout" },
+    { kind = "slider", label = L["Horizontal offset"], source = "micro", key = "layoutX",
+        min = -4096, max = 4096, format = Pixel, gate = "layout" },
+    { kind = "slider", label = L["Vertical offset"], source = "micro", key = "layoutY",
+        min = -4096, max = 4096, format = Pixel, gate = "layout" },
+
+    { kind = "segmented", label = L["Micro Bar style"], source = "micro", key = "preset",
+        values = { "modern", "midnightDark", "forever", "custom" }, format = PresetLabel,
+        essential = true, gate = "micro",
+        set = function(value)
+            if value ~= "custom" then NS.MicroMenuSkin.ApplyPreset(value) end
+        end },
+    { kind = "segmented", label = L["Icon artwork"], source = "micro", key = "iconStyle",
+        values = NS.MicroMenuIconStyles, format = IconStyleLabel, essential = true, gate = "micro" },
+    { kind = "segmented", label = L["Icon colors"], source = "micro", key = "tint",
+        values = NS.MicroMenuTintModes, format = TintLabel, essential = true, gate = "micro" },
+    { kind = "slider", label = L["Visual button size"], source = "micro", key = "buttonSize",
+        min = 20, max = 32, format = Pixel, essential = true, gate = "micro" },
+    -- A glyph needs 4 px of room inside its button; bigger glyphs grow the button.
+    { kind = "slider", label = L["Glyph size"], source = "micro", key = "iconSize",
+        min = 10, max = 28, format = Pixel, essential = true, gate = "micro",
+        set = function(value)
+            if value > (NS.DB.icons.microMenu.buttonSize or 28) - 4 then
+                NS.MicroMenuSkin.SetOption("buttonSize", math.min(32, math.floor(value + 4.5)))
+            end
+            NS.MicroMenuSkin.SetOption("iconSize", value)
+        end },
+    { kind = "segmented", label = L["Mouse-over effect"], source = "micro", key = "hoverStyle",
+        values = NS.MicroMenuHoverStyles, format = HoverStyleLabel, essential = true, gate = "micro" },
+    { kind = "segmented", label = L["Verified item icon borders"], source = "theme", key = "iconBorderStyle",
+        values = NS.IconBorderStyles, format = IconBorderLabel, essential = true },
+
+    { kind = "heading", label = L["MICRO BAR MATERIALS"] },
+    { kind = "toggle", label = L["Bar background"], source = "micro", key = "barBackground", gate = "micro" },
+    { kind = "segmented", label = L["Bar border"], source = "micro", key = "barBorder",
+        values = { 0, 1, 2 }, format = BorderLabel, gate = "micro" },
+    { kind = "segmented", label = L["Bar material"], source = "micro", key = "barMaterial",
+        values = NS.MicroMenuBarMaterials, format = PresetLabel, gate = "micro" },
+    { kind = "toggle", label = L["Individual button backgrounds"], source = "micro", key = "buttonBackground",
+        gate = "micro" },
+    { kind = "segmented", label = L["Individual button borders"], source = "micro", key = "buttonBorder",
+        values = { 0, 1, 2 }, format = BorderLabel, gate = "micro" },
+    { kind = "segmented", label = L["Bar and button shape"], source = "micro", key = "shape",
+        values = NS.MicroMenuShapes, format = ShapeLabel, gate = "micro" },
+    { kind = "segmented", label = L["Corner radius"], source = "micro", key = "radius",
+        values = NS.GeometryRadii, format = Pixel, gate = "micro" },
+
+    { kind = "heading", label = L["MICRO ICON STATES"] },
+    { kind = "slider", label = L["Normal icon opacity"], source = "micro", key = "normalOpacity",
+        min = 0, max = 1, step = 0.05, format = Percent, gate = "micro" },
+    { kind = "slider", label = L["Mouse-over icon opacity"], source = "micro", key = "hoverOpacity",
+        min = 0, max = 1, step = 0.05, format = Percent, gate = "micro" },
+    { kind = "slider", label = L["Pressed icon opacity"], source = "micro", key = "pressedOpacity",
+        min = 0, max = 1, step = 0.05, format = Percent, gate = "micro" },
+    { kind = "slider", label = L["Disabled icon opacity"], source = "micro", key = "disabledOpacity",
+        min = 0, max = 1, step = 0.05, format = Percent, gate = "micro" },
+
+    { kind = "heading", label = L["GLOBAL ITEM ICON BORDERS"] },
+    { kind = "slider", label = L["Border thickness"], source = "theme", key = "iconBorderThickness",
+        min = 1, max = 3, format = Pixel },
+    { kind = "slider", label = L["Distance from icon"], source = "theme", key = "iconBorderPadding",
+        min = 0, max = 3, format = Pixel },
+    { kind = "slider", label = L["Border opacity"], source = "theme", key = "iconBorderOpacity",
+        min = 0, max = 1, step = 0.05, format = Percent },
+}
+
+local function SettingsTable(source)
+    if source == "micro" then return NS.DB.icons.microMenu end
+    if source == "action" then return NS.DB.icons.windowActions end
+    return NS.DB.theme
 end
 
-local function SetMicroOption(key, value)
-    return NS.MicroMenuSkin.SetOption(key, value)
+local SETTERS = {
+    micro = function(key, value) return NS.MicroMenuSkin.SetOption(key, value) end,
+    action = function(key, value) return NS.WindowActionSkin.SetOption(key, value) end,
+    theme = function(key, value) return NS.Theme.SetAppearance(key, value) end,
+}
+
+local function RowGetter(spec)
+    if spec.get then return spec.get end
+    local source, key = spec.source, spec.key
+    return function() return SettingsTable(source)[key] end
 end
 
-local function SetWindowActionOption(key, value)
-    return NS.WindowActionSkin.SetOption(key, value)
+local function RowSetter(spec)
+    if spec.set then return spec.set end
+    local setter, key = SETTERS[spec.source], spec.key
+    return function(value) setter(key, value) end
 end
 
-local function CreateSubheading(parent, text)
-    local row = CreateFrame("Frame", nil, parent)
-    row:SetSize(484, 26)
-    local label = O.CreateText(row, text, 10, "accent")
-    label:SetPoint("BOTTOMLEFT", 4, 3)
-    return row
+local function ResetWithHistory(label, reset)
+    O.BeginUserChange(label)
+    if reset() == false then
+        O.CancelUserChange()
+        return
+    end
+    O.CommitUserChange(label)
 end
 
-local function SeedWindowActionButton(button, kind)
-    local family = {
-        close = "RedButton-Exit",
-        maximize = "RedButton-Expand",
-        minimize = "RedButton-Condense",
-    }
-    local atlas = family[kind]
-    if not atlas then return end
-    local normal = button:CreateTexture(nil, "ARTWORK")
-    local pushed = button:CreateTexture(nil, "ARTWORK")
-    local disabled = button:CreateTexture(nil, "ARTWORK")
-    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
-    normal:SetAtlas(atlas)
-    pushed:SetAtlas(atlas .. "-Pressed")
-    disabled:SetAtlas(atlas .. "-Disabled")
-    highlight:SetAtlas("RedButton-Highlight")
-    button:SetNormalTexture(normal)
-    button:SetPushedTexture(pushed)
-    button:SetDisabledTexture(disabled)
-    button:SetHighlightTexture(highlight, "ADD")
-end
+------------------------------------------------------------------ window action preview
+local WINDOW_ACTION_KINDS = { "maximize", "minimize", "close" }
 
 local function CreateWindowActionPreview(parent)
     local row = O.CreatePanel(parent, "card")
-    row:SetSize(484, 82)
-    local label = O.CreateText(row, "Live window-action preview", 12, "text")
+    row:SetSize(WIDTH, 82)
+    local label = O.CreateText(row, L["Live window-action preview"], 12, "text")
     label:SetPoint("TOPLEFT", 12, -10)
-    local note = O.CreateText(row, "Native hit targets, independent artwork", 9, "dim")
+    local note = O.CreateText(row, L["Native hit targets, independent artwork"], 9, "dim")
     note:SetPoint("BOTTOMLEFT", 12, 12)
 
-    local reset = O.CreateButton(row, "Reset actions", 104, 24, function()
-        O.BeginUserChange("Reset Window Actions")
-        local ok = NS.WindowActionSkin.ResetRecommended()
-        if ok == false then
-            O.CancelUserChange()
-            return
-        end
-        O.CommitUserChange("Reset Window Actions")
+    local reset = O.CreateButton(row, L["Reset actions"], 104, 24, function()
+        ResetWithHistory(L["Reset Window Actions"], NS.WindowActionSkin.ResetRecommended)
     end)
     reset:SetPoint("BOTTOMRIGHT", -10, 8)
 
     local buttons = {}
-    for index, kind in ipairs({ "maximize", "minimize", "close" }) do
+    for index, kind in ipairs(WINDOW_ACTION_KINDS) do
         local button = CreateFrame("Button", nil, row)
         button:SetSize(28, 28)
-        button:SetPoint("RIGHT", -124 - (3 - index) * 34, 4)
-        SeedWindowActionButton(button, kind)
+        button:SetPoint("RIGHT", -124 - (#WINDOW_ACTION_KINDS - index) * 34, 4)
+        O.SeedWindowActionTextures(button, kind)
         buttons[index] = button
     end
 
     local function Refresh()
-        for index, kind in ipairs({ "maximize", "minimize", "close" }) do
+        for index, kind in ipairs(WINDOW_ACTION_KINDS) do
             local button = buttons[index]
             if NS.Checkmarks then NS.Checkmarks.TrackButton(button, "options-window-actions") end
             NS.WindowActionSkin.Apply(button, "options-window-actions", kind)
@@ -241,23 +269,135 @@ local function CreateWindowActionPreview(parent)
     return row
 end
 
-local function ResolvePreviewGeometry(settings)
-    if settings.shape == "global" then
-        return NS.DB.geometry.controlShape, NS.DB.geometry.radius
+local function CreateRow(list, spec)
+    local kind = spec.kind
+    if kind == "heading" then return O.CreateSubheading(list, spec.label, WIDTH) end
+    if kind == "preview" then return CreateWindowActionPreview(list) end
+    local get, set = RowGetter(spec), RowSetter(spec)
+    if kind == "toggle" then
+        return O.CreateToggle(list, spec.label, get, set, WIDTH)
+    elseif kind == "segmented" then
+        return O.CreateSegmented(list, spec.label, spec.values, get, set, WIDTH, spec.format)
     end
-    return settings.shape, settings.radius
+    return O.CreateSlider(list, spec.label, spec.min, spec.max, spec.step or 1, get, set, WIDTH, spec.format)
 end
 
-local function CreateItemBorderPreview(parent)
+-- The left column. Returns the widgets each gate enables.
+local function BuildControls(page)
+    local controlsHost = CreateFrame("Frame", nil, page)
+    controlsHost:SetPoint("TOPLEFT", 4, -70)
+    controlsHost:SetPoint("BOTTOMLEFT", 4, 4)
+    controlsHost:SetWidth(510)
+    local controlsScroll, list = O.CreateScrollContainer(controlsHost, 2500, WIDTH)
+    page._mskinIconsScroll = controlsScroll
+    page._mskinIconsContent = list
+
+    local rows, gates = {}, { layout = {}, micro = {} }
+    for index = 1, #ROWS do
+        local spec = ROWS[index]
+        local widget = CreateRow(list, spec)
+        rows[index] = { widget, spec.essential == true }
+        if spec.gate then
+            local gated = gates[spec.gate]
+            gated[#gated + 1] = widget
+        end
+    end
+    local RefreshMode = O.StackRows(list, rows)
+    O.TrackMode(RefreshMode)
+    RefreshMode()
+    return gates
+end
+
+------------------------------------------------------------------ live preview
+local PREVIEW_STATES = {
+    { key = "normal", label = L["Normal"], suffix = "Up", button = "ProfessionMicroButton" },
+    { key = "hover", label = L["Hover"], suffix = "Mouseover", button = "PlayerSpellsMicroButton" },
+    { key = "pressed", label = L["Pressed"], suffix = "Down", button = "QuestLogMicroButton" },
+    { key = "disabled", label = L["Disabled"], suffix = "Disabled", button = "GuildMicroButton" },
+}
+local BAR_ROLES = {
+    forever = "microBarForever",
+    modern = "microBarModern",
+    midnightDark = "microBarDark",
+}
+local ITEM_QUALITY_SAMPLE = { 0.639, 0.208, 0.933, 1 }
+
+local function BuildMicroPreview(preview, view)
+    local microPreview = O.CreatePanel(preview, "panel")
+    microPreview:SetPoint("TOPLEFT", 16, -44)
+    microPreview:SetPoint("TOPRIGHT", -16, -44)
+    microPreview:SetHeight(174)
+    local microTitle = O.CreateText(microPreview, L["Blizzard Micro Bar"], 12, "title")
+    microTitle:SetPoint("TOPLEFT", 12, -12)
+
+    local bar = CreateFrame("Frame", nil, microPreview)
+    bar:SetPoint("TOPLEFT", 12, -38)
+    bar:SetPoint("TOPRIGHT", -12, -38)
+    bar:SetHeight(70)
+    view.bar = bar
+    view.barSpec = { role = "microBar", shape = "continuous", radius = 6, border = 1 }
+    NS.Surface.Attach(bar, view.barSpec)
+
+    view.buttons = {}
+    local iconStyle = NS.DB.icons.microMenu.iconStyle
+    for index, stateInfo in ipairs(PREVIEW_STATES) do
+        local button = CreateFrame("Frame", nil, bar)
+        button:SetSize(42, 50)
+        if index == 1 then
+            button:SetPoint("LEFT", 8, 0)
+        else
+            button:SetPoint("LEFT", view.buttons[index - 1].frame, "RIGHT", 8, 0)
+        end
+        local spec = { role = "microButton", shape = "continuous", radius = 6, border = 1 }
+        NS.Surface.Attach(button, spec)
+        local icon = button:CreateTexture(nil, "ARTWORK")
+        icon:SetPoint("CENTER", 0, 1)
+        NS.MicroMenuVisual.ApplyIcon(icon, stateInfo.button, iconStyle)
+        icon:SetSize(18, 18)
+        view.buttons[index] = { frame = button, spec = spec, icon = icon, info = stateInfo }
+
+        local label = O.CreateText(microPreview, stateInfo.label, 9, "dim", "CENTER")
+        label:SetPoint("TOP", button, "BOTTOM", 0, -5)
+        label:SetWidth(48)
+    end
+
+    view.status = O.CreateText(microPreview, "", 10, "muted")
+    view.status:SetPoint("BOTTOMLEFT", 12, 10)
+    view.status:SetPoint("RIGHT", -12, 0)
+    return microPreview
+end
+
+-- Same line geometry as the item border primitive (Rendering/IconSkin.lua).
+local function AnchorBorderLines(lines, icon, thickness, padding)
+    local extent = padding + thickness
+    local top, bottom, left, right = lines[1], lines[2], lines[3], lines[4]
+    for index = 1, 4 do lines[index]:ClearAllPoints() end
+    top:SetPoint("BOTTOMLEFT", icon, "TOPLEFT", -extent, padding)
+    top:SetPoint("BOTTOMRIGHT", icon, "TOPRIGHT", extent, padding)
+    top:SetHeight(thickness)
+    bottom:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", -extent, -padding)
+    bottom:SetPoint("TOPRIGHT", icon, "BOTTOMRIGHT", extent, -padding)
+    bottom:SetHeight(thickness)
+    left:SetPoint("TOPRIGHT", icon, "TOPLEFT", -padding, extent)
+    left:SetPoint("BOTTOMRIGHT", icon, "BOTTOMLEFT", -padding, -extent)
+    left:SetWidth(thickness)
+    right:SetPoint("TOPLEFT", icon, "TOPRIGHT", padding, extent)
+    right:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", padding, -extent)
+    right:SetWidth(thickness)
+end
+
+local function ClampWhole(value, fallback, low, high)
+    return math.max(low, math.min(high, math.floor((tonumber(value) or fallback) + 0.5)))
+end
+
+local function CreateItemBorderSample(parent)
     local holder = CreateFrame("Frame", nil, parent)
     holder:SetSize(48, 48)
-
     local icon = holder:CreateTexture(nil, "ARTWORK")
     icon:SetPoint("CENTER")
     icon:SetSize(38, 38)
     icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
     if icon.SetTexCoord then icon:SetTexCoord(0.07, 0.93, 0.07, 0.93) end
-
     local lines = {}
     for index = 1, 4 do
         lines[index] = holder:CreateTexture(nil, "OVERLAY", nil, 1)
@@ -265,31 +405,12 @@ local function CreateItemBorderPreview(parent)
 
     local function Refresh()
         local theme = NS.DB.theme
-        local thickness = math.max(1, math.min(3,
-            math.floor((tonumber(theme.iconBorderThickness) or 1) + 0.5)))
-        local padding = math.max(0, math.min(3,
-            math.floor((tonumber(theme.iconBorderPadding) or 0) + 0.5)))
-        local extent = padding + thickness
-        local top, bottom, left, right = lines[1], lines[2], lines[3], lines[4]
-        for index = 1, 4 do lines[index]:ClearAllPoints() end
-
-        top:SetPoint("BOTTOMLEFT", icon, "TOPLEFT", -extent, padding)
-        top:SetPoint("BOTTOMRIGHT", icon, "TOPRIGHT", extent, padding)
-        top:SetHeight(thickness)
-        bottom:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", -extent, -padding)
-        bottom:SetPoint("TOPRIGHT", icon, "BOTTOMRIGHT", extent, -padding)
-        bottom:SetHeight(thickness)
-        left:SetPoint("TOPRIGHT", icon, "TOPLEFT", -padding, extent)
-        left:SetPoint("BOTTOMRIGHT", icon, "BOTTOMLEFT", -padding, -extent)
-        left:SetWidth(thickness)
-        right:SetPoint("TOPLEFT", icon, "TOPRIGHT", padding, extent)
-        right:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", padding, -extent)
-        right:SetWidth(thickness)
-
+        AnchorBorderLines(lines, icon, ClampWhole(theme.iconBorderThickness, 1, 1, 3),
+            ClampWhole(theme.iconBorderPadding, 0, 0, 3))
         local style = theme.iconBorderStyle
         local r, g, b, a
         if style == "quality" then
-            r, g, b, a = 0.639, 0.208, 0.933, 1
+            r, g, b, a = ITEM_QUALITY_SAMPLE[1], ITEM_QUALITY_SAMPLE[2], ITEM_QUALITY_SAMPLE[3], ITEM_QUALITY_SAMPLE[4]
         else
             r, g, b, a = NS.Theme.GetColor("iconBorder")
         end
@@ -299,512 +420,168 @@ local function CreateItemBorderPreview(parent)
             lines[index]:SetShown(style ~= "off")
         end
     end
-
     O.TrackRefresh(Refresh)
     Refresh()
     return holder
 end
 
-O.RegisterPage("icons", NS.L.ICONS or "Icons", function(page)
-    O.CreateSectionTitle(page, "Window actions, Micro Bar and icons",
-        "Choose clean window controls and a complete Micro Bar style, then tune individual artwork only when needed.")
-
-    local controlsHost = CreateFrame("Frame", nil, page)
-    controlsHost:SetPoint("TOPLEFT", 4, -70)
-    controlsHost:SetPoint("BOTTOMLEFT", 4, 4)
-    controlsHost:SetWidth(510)
-    local controlsScroll, controlsList = O.CreateScrollContainer(controlsHost, 2500, 484)
-    page._mskinIconsScroll = controlsScroll
-    page._mskinIconsContent = controlsList
-
-    local actionHeading = CreateSubheading(controlsList, "WINDOW ACTIONS")
-    local actionStyle = O.CreateSegmented(controlsList, "Button style",
-        NS.WindowActionStyles, function()
-            return WindowActionSettings().style
-        end, function(value)
-            SetWindowActionOption("style", value)
-        end, 484, WindowActionStyleLabel)
-    local actionGlyph = O.CreateSegmented(controlsList, "Maximize / minimize symbols",
-        NS.WindowActionGlyphModes, function()
-            return WindowActionSettings().glyphMode
-        end, function(value)
-            SetWindowActionOption("glyphMode", value)
-        end, 484, WindowActionGlyphLabel)
-    local actionWeight = O.CreateSegmented(controlsList, "Line weight",
-        NS.WindowActionWeights, function()
-            return WindowActionSettings().weight
-        end, function(value)
-            SetWindowActionOption("weight", value)
-        end, 484, WindowActionWeightLabel)
-    local actionSize = O.CreateSlider(controlsList, "Maximize / minimize size", 8, 18, 1, function()
-        return WindowActionSettings().glyphSize
-    end, function(value)
-        SetWindowActionOption("glyphSize", value)
-    end, 484, Pixel)
-    local closeSize = O.CreateSlider(controlsList, "Close X size", 6, 18, 1, function()
-        return WindowActionSettings().closeGlyphSize
-    end, function(value)
-        SetWindowActionOption("closeGlyphSize", value)
-    end, 484, Pixel)
-    local actionShape = O.CreateSegmented(controlsList, "Button shape",
-        NS.WindowActionShapes, function()
-            return WindowActionSettings().surfaceShape
-        end, function(value)
-            SetWindowActionOption("surfaceShape", value)
-        end, 484, ShapeLabel)
-    local actionRadius = O.CreateSegmented(controlsList, "Button corner radius",
-        NS.GeometryRadii, function()
-            return WindowActionSettings().surfaceRadius
-        end, function(value)
-            SetWindowActionOption("surfaceRadius", value)
-        end, 484, Pixel)
-    local actionInset = O.CreateSlider(controlsList,
-        "Visual inset (larger makes the button smaller)", 0, 6, 1, function()
-            return WindowActionSettings().surfaceInset
-        end, function(value)
-            SetWindowActionOption("surfaceInset", value)
-        end, 484, Pixel)
-    local actionOffsetX = O.CreateSlider(controlsList, "Glyph horizontal offset", -4, 4, 1, function()
-        return WindowActionSettings().glyphOffsetX
-    end, function(value)
-        SetWindowActionOption("glyphOffsetX", value)
-    end, 484, Pixel)
-    local actionOffsetY = O.CreateSlider(controlsList, "Glyph vertical offset", -4, 4, 1, function()
-        return WindowActionSettings().glyphOffsetY
-    end, function(value)
-        SetWindowActionOption("glyphOffsetY", value)
-    end, 484, Pixel)
-    local actionOpacity = O.CreateSlider(controlsList, "Idle glyph opacity", 0.35, 1, 0.05, function()
-        return WindowActionSettings().opacity
-    end, function(value)
-        SetWindowActionOption("opacity", value)
-    end, 484, Percent)
-    local actionPreview = CreateWindowActionPreview(controlsList)
-
-    local microHeading = CreateSubheading(controlsList, "MICRO BAR")
-    local enabled = O.CreateToggle(controlsList, "Skin the Blizzard Micro Bar", function()
-        return NS.DB.skins.microMenu
-    end, function(value)
-        NS.Adapters.SetEnabled("microMenu", value)
-    end, 484)
-
-    local layoutHeading = CreateSubheading(controlsList, "MSKIN-OWNED MICRO BAR")
-    local layoutMode = O.CreateSegmented(controlsList, "Layout engine", NS.MicroMenuLayoutModes, function()
-        return MicroMenuSettings().layoutMode
-    end, function(value)
-        SetMicroOption("layoutMode", value)
-    end, 484, LayoutModeLabel)
-    local visibility, visibilityButton = O.CreateDropdown(controlsList, "Show Micro Bar",
-        NS.MicroMenuVisibilityModes, function()
-            return MicroMenuSettings().visibility
-        end, function(value)
-            SetMicroOption("visibility", value)
-        end, 484, VisibilityLabel)
-    local positionPreset = O.CreateSegmented(controlsList, "Screen position",
-        POSITION_VALUES, function()
-        return MicroMenuSettings().positionPreset
-    end, function(value)
-        if value ~= "custom" then NS.MicroMenuSkin.SetPositionPreset(value) end
-    end, 484, PositionPresetLabel)
-    local orientation = O.CreateSegmented(controlsList, "Bar direction", NS.MicroMenuOrientations, function()
-        return MicroMenuSettings().orientation
-    end, function(value)
-        SetMicroOption("orientation", value)
-    end, 484, OrientationLabel)
-    local locked = O.CreateToggle(controlsList, "Lock bar position (unlock to drag)", function()
-        return MicroMenuSettings().locked
-    end, function(value)
-        SetMicroOption("locked", value)
-    end, 484)
-    local scale = O.CreateSlider(controlsList, "Bar scale", 0.5, 1.5, 0.05, function()
-        return MicroMenuSettings().scale
-    end, function(value)
-        SetMicroOption("scale", value)
-    end, 484, Percent)
-
-    local advancedLayoutHeading = CreateSubheading(controlsList, "ADVANCED BAR LAYOUT")
-    local growth = O.CreateSegmented(controlsList, "Growth direction", NS.MicroMenuGrowthModes, function()
-        return MicroMenuSettings().growth
-    end, function(value)
-        SetMicroOption("growth", value)
-    end, 484, GrowthLabel)
-    local buttonsPerLine = O.CreateSlider(controlsList, "Buttons per line", 1,
-        NS.Client and NS.Client.isForever and 14 or 13, 1, function()
-        return MicroMenuSettings().buttonsPerLine
-    end, function(value)
-        SetMicroOption("buttonsPerLine", value)
-    end, 484, ButtonCount)
-    local spacing = O.CreateSlider(controlsList, "Button spacing", -8, 16, 1, function()
-        return MicroMenuSettings().spacing
-    end, function(value)
-        SetMicroOption("spacing", value)
-    end, 484, Pixel)
-    local padding = O.CreateSlider(controlsList, "Bar padding", 0, 16, 1, function()
-        return MicroMenuSettings().padding
-    end, function(value)
-        SetMicroOption("padding", value)
-    end, 484, Pixel)
-    local layoutX = O.CreateSlider(controlsList, "Horizontal offset", -4096, 4096, 1, function()
-        return MicroMenuSettings().layoutX
-    end, function(value)
-        SetMicroOption("layoutX", value)
-    end, 484, Pixel)
-    local layoutY = O.CreateSlider(controlsList, "Vertical offset", -4096, 4096, 1, function()
-        return MicroMenuSettings().layoutY
-    end, function(value)
-        SetMicroOption("layoutY", value)
-    end, 484, Pixel)
-
-    local preset = O.CreateSegmented(controlsList, "Micro Bar style", MICRO_STYLE_VALUES, function()
-        return MicroMenuSettings().preset
-    end, function(value)
-        if value ~= "custom" then NS.MicroMenuSkin.ApplyPreset(value) end
-    end, 484, PresetLabel)
-
-    local iconStyle = O.CreateSegmented(controlsList, "Icon artwork",
-        NS.MicroMenuIconStyles, function()
-            return MicroMenuSettings().iconStyle
-        end, function(value)
-            SetMicroOption("iconStyle", value)
-        end, 484, IconStyleLabel)
-
-    local tint = O.CreateSegmented(controlsList, "Icon colors", NS.MicroMenuTintModes, function()
-        return MicroMenuSettings().tint
-    end, function(value)
-        SetMicroOption("tint", value)
-    end, 484, TintLabel)
-
-    local buttonSize = O.CreateSlider(controlsList, "Visual button size", 20, 32, 1, function()
-        return MicroMenuSettings().buttonSize
-    end, function(value)
-        SetMicroOption("buttonSize", value)
-    end, 484, Pixel)
-    local iconSize = O.CreateSlider(controlsList, "Glyph size", 10, 28, 1, function()
-        return MicroMenuSettings().iconSize
-    end, function(value)
-        local requiredButtonSize = math.min(32, math.floor(value + 4.5))
-        if value > (MicroMenuSettings().buttonSize or 28) - 4 then
-            SetMicroOption("buttonSize", requiredButtonSize)
-        end
-        SetMicroOption("iconSize", value)
-    end, 484, Pixel)
-    local hoverStyle = O.CreateSegmented(controlsList, "Mouse-over effect",
-        NS.MicroMenuHoverStyles, function()
-            return MicroMenuSettings().hoverStyle
-        end, function(value)
-            SetMicroOption("hoverStyle", value)
-        end, 484, HoverStyleLabel)
-
-    local itemStyle = O.CreateSegmented(controlsList, "Verified item icon borders", NS.IconBorderStyles, function()
-        return NS.DB.theme.iconBorderStyle
-    end, function(value)
-        NS.Theme.SetAppearance("iconBorderStyle", value)
-    end, 484, IconBorderLabel)
-
-    local materialHeading = CreateSubheading(controlsList, "MICRO BAR MATERIALS")
-    local barBackground = O.CreateToggle(controlsList, "Bar background", function()
-        return MicroMenuSettings().barBackground
-    end, function(value)
-        SetMicroOption("barBackground", value)
-    end, 484)
-    local barBorder = O.CreateSegmented(controlsList, "Bar border", BORDER_VALUES, function()
-        return MicroMenuSettings().barBorder
-    end, function(value)
-        SetMicroOption("barBorder", value)
-    end, 484, BorderLabel)
-    local barMaterial = O.CreateSegmented(controlsList, "Bar material",
-        NS.MicroMenuBarMaterials, function()
-            return MicroMenuSettings().barMaterial
-        end, function(value)
-            SetMicroOption("barMaterial", value)
-        end, 484, PresetLabel)
-    local buttonBackground = O.CreateToggle(controlsList, "Individual button backgrounds", function()
-        return MicroMenuSettings().buttonBackground
-    end, function(value)
-        SetMicroOption("buttonBackground", value)
-    end, 484)
-    local buttonBorder = O.CreateSegmented(controlsList, "Individual button borders", BORDER_VALUES, function()
-        return MicroMenuSettings().buttonBorder
-    end, function(value)
-        SetMicroOption("buttonBorder", value)
-    end, 484, BorderLabel)
-    local shape = O.CreateSegmented(controlsList, "Bar and button shape", NS.MicroMenuShapes, function()
-        return MicroMenuSettings().shape
-    end, function(value)
-        SetMicroOption("shape", value)
-    end, 484, ShapeLabel)
-    local radius = O.CreateSegmented(controlsList, "Corner radius", NS.GeometryRadii, function()
-        return MicroMenuSettings().radius
-    end, function(value)
-        SetMicroOption("radius", value)
-    end, 484, Pixel)
-
-    local stateHeading = CreateSubheading(controlsList, "MICRO ICON STATES")
-    local normalOpacity = O.CreateSlider(controlsList, "Normal icon opacity", 0, 1, 0.05, function()
-        return MicroMenuSettings().normalOpacity
-    end, function(value)
-        SetMicroOption("normalOpacity", value)
-    end, 484, Percent)
-    local hoverOpacity = O.CreateSlider(controlsList, "Mouse-over icon opacity", 0, 1, 0.05, function()
-        return MicroMenuSettings().hoverOpacity
-    end, function(value)
-        SetMicroOption("hoverOpacity", value)
-    end, 484, Percent)
-    local pressedOpacity = O.CreateSlider(controlsList, "Pressed icon opacity", 0, 1, 0.05, function()
-        return MicroMenuSettings().pressedOpacity
-    end, function(value)
-        SetMicroOption("pressedOpacity", value)
-    end, 484, Percent)
-    local disabledOpacity = O.CreateSlider(controlsList, "Disabled icon opacity", 0, 1, 0.05, function()
-        return MicroMenuSettings().disabledOpacity
-    end, function(value)
-        SetMicroOption("disabledOpacity", value)
-    end, 484, Percent)
-
-    local itemHeading = CreateSubheading(controlsList, "GLOBAL ITEM ICON BORDERS")
-    local itemThickness = O.CreateSlider(controlsList, "Border thickness", 1, 3, 1, function()
-        return NS.DB.theme.iconBorderThickness
-    end, function(value)
-        NS.Theme.SetAppearance("iconBorderThickness", value)
-    end, 484, Pixel)
-    local itemPadding = O.CreateSlider(controlsList, "Distance from icon", 0, 3, 1, function()
-        return NS.DB.theme.iconBorderPadding
-    end, function(value)
-        NS.Theme.SetAppearance("iconBorderPadding", value)
-    end, 484, Pixel)
-    local itemOpacity = O.CreateSlider(controlsList, "Border opacity", 0, 1, 0.05, function()
-        return NS.DB.theme.iconBorderOpacity
-    end, function(value)
-        NS.Theme.SetAppearance("iconBorderOpacity", value)
-    end, 484, Percent)
-
-    local rows = {
-        { actionHeading, true }, { actionStyle, true }, { actionGlyph, true },
-        { actionWeight, false }, { actionSize, false }, { closeSize, true },
-        { actionShape, false }, { actionRadius, false }, { actionInset, false },
-        { actionOffsetX, false }, { actionOffsetY, false }, { actionOpacity, false },
-        { actionPreview, true }, { microHeading, true },
-        { enabled, true },
-        { layoutHeading, true }, { layoutMode, true }, { positionPreset, true },
-        { orientation, true }, { locked, true }, { scale, true },
-        { advancedLayoutHeading, false }, { growth, false }, { buttonsPerLine, false },
-        { spacing, false }, { padding, false }, { layoutX, false }, { layoutY, false },
-        { preset, true }, { iconStyle, true }, { tint, true },
-        { buttonSize, true }, { iconSize, true }, { hoverStyle, true },
-        { itemStyle, true },
-        { materialHeading, false }, { barBackground, false }, { barBorder, false },
-        { barMaterial, false },
-        { buttonBackground, false }, { buttonBorder, false }, { shape, false }, { radius, false },
-        { stateHeading, false }, { normalOpacity, false }, { hoverOpacity, false },
-        { pressedOpacity, false }, { disabledOpacity, false },
-        { itemHeading, false }, { itemThickness, false }, { itemPadding, false }, { itemOpacity, false },
-    }
-
-    local function RefreshMode()
-        local guided = O.GetMode() == "guided"
-        local previous
-        local contentHeight = 4
-        for index = 1, #rows do
-            local row, essential = rows[index][1], rows[index][2]
-            local show = not guided or essential
-            row:ClearAllPoints()
-            row:SetShown(show)
-            if show then
-                if previous then
-                    row:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -8)
-                else
-                    row:SetPoint("TOPLEFT", 0, -2)
-                end
-                contentHeight = contentHeight + row:GetHeight() + (previous and 8 or 0)
-                previous = row
-            end
-        end
-        controlsList:SetHeight(math.max(1, contentHeight + 4))
-    end
-    O.TrackMode(RefreshMode)
-    RefreshMode()
-
-    local preview = O.CreatePanel(page, "navigation")
-    preview:SetPoint("TOPLEFT", 534, -70)
-    preview:SetPoint("BOTTOMRIGHT", -4, 4)
-
-    local previewHeading = O.CreateText(preview, "LIVE ICON PREVIEW", 11, "muted")
-    previewHeading:SetPoint("TOPLEFT", 16, -16)
-
-    local microPreview = O.CreatePanel(preview, "panel")
-    microPreview:SetPoint("TOPLEFT", 16, -44)
-    microPreview:SetPoint("TOPRIGHT", -16, -44)
-    microPreview:SetHeight(174)
-    local microTitle = O.CreateText(microPreview, "Blizzard Micro Bar", 12, "title")
-    microTitle:SetPoint("TOPLEFT", 12, -12)
-
-    local barPreview = CreateFrame("Frame", nil, microPreview)
-    barPreview:SetPoint("TOPLEFT", 12, -38)
-    barPreview:SetPoint("TOPRIGHT", -12, -38)
-    barPreview:SetHeight(70)
-    local barSpec = { role = "microBar", shape = "continuous", radius = 6, border = 1 }
-    NS.Surface.Attach(barPreview, barSpec)
-
-    local previewStates = {
-        { key = "normal", label = "Normal", suffix = "Up", button = "ProfessionMicroButton" },
-        { key = "hover", label = "Hover", suffix = "Mouseover", button = "PlayerSpellsMicroButton" },
-        { key = "pressed", label = "Pressed", suffix = "Down", button = "QuestLogMicroButton" },
-        { key = "disabled", label = "Disabled", suffix = "Disabled", button = "GuildMicroButton" },
-    }
-    local previewButtons = {}
-    for index = 1, #previewStates do
-        local stateInfo = previewStates[index]
-        local button = CreateFrame("Frame", nil, barPreview)
-        button:SetSize(42, 50)
-        if index == 1 then
-            button:SetPoint("LEFT", 8, 0)
-        else
-            button:SetPoint("LEFT", previewButtons[index - 1].frame, "RIGHT", 8, 0)
-        end
-        local buttonSpec = { role = "microButton", shape = "continuous", radius = 6, border = 1 }
-        NS.Surface.Attach(button, buttonSpec)
-
-        local icon = button:CreateTexture(nil, "ARTWORK")
-        icon:SetPoint("CENTER", 0, 1)
-        NS.MicroMenuVisual.ApplyIcon(icon, stateInfo.button,
-            MicroMenuSettings().iconStyle)
-        icon:SetSize(18, 18)
-        previewButtons[index] = { frame = button, spec = buttonSpec, icon = icon, state = stateInfo.key }
-    end
-
-    for index = 1, #previewStates do
-        local label = O.CreateText(microPreview, previewStates[index].label, 9, "dim", "CENTER")
-        label:SetPoint("TOP", previewButtons[index].frame, "BOTTOM", 0, -5)
-        label:SetWidth(48)
-    end
-
-    local previewStatus = O.CreateText(microPreview, "", 10, "muted")
-    previewStatus:SetPoint("BOTTOMLEFT", 12, 10)
-    previewStatus:SetPoint("RIGHT", -12, 0)
-
+local function BuildItemPreview(preview, microPreview)
     local itemPreview = O.CreatePanel(preview, "card")
     itemPreview:SetPoint("TOPLEFT", microPreview, "BOTTOMLEFT", 0, -12)
     itemPreview:SetPoint("TOPRIGHT", microPreview, "BOTTOMRIGHT", 0, -12)
     itemPreview:SetHeight(94)
-    local itemTitle = O.CreateText(itemPreview, "Global item borders", 12, "title")
+    local itemTitle = O.CreateText(itemPreview, L["Global item borders"], 12, "title")
     itemTitle:SetPoint("TOPLEFT", 12, -12)
-    local itemIcon = CreateItemBorderPreview(itemPreview)
-    itemIcon:SetPoint("BOTTOMLEFT", 12, 8)
+    local sample = CreateItemBorderSample(itemPreview)
+    sample:SetPoint("BOTTOMLEFT", 12, 8)
     local itemText = O.CreateText(itemPreview,
-        "Quality follows Blizzard's native item color. Theme uses your Icon Border color.", 10, "muted")
+        L["Quality follows Blizzard's native item color. Theme uses your Icon Border color."], 10, "muted")
     itemText:SetPoint("TOPLEFT", 72, -40)
     itemText:SetPoint("RIGHT", -10, 0)
     itemText:SetJustifyV("TOP")
+    return itemPreview
+end
 
+local function BuildSafetyNote(preview, itemPreview, view)
     local safety = O.CreatePanel(preview, "status")
     safety:SetPoint("TOPLEFT", itemPreview, "BOTTOMLEFT", 0, -12)
     safety:SetPoint("TOPRIGHT", itemPreview, "BOTTOMRIGHT", 0, -12)
     safety:SetHeight(116)
-    local safetyTitle = O.CreateText(safety, "NATIVE BEHAVIOR, INDEPENDENT ART", 10, "success")
+    local safetyTitle = O.CreateText(safety, L["NATIVE BEHAVIOR, INDEPENDENT ART"], 10, "success")
     safetyTitle:SetPoint("TOPLEFT", 12, -12)
-    local safetyText = O.CreateText(safety,
-        "Blizzard keeps the button artwork, clicks, tooltips, enabled states and notifications. Optional glyph artwork is available in the detail controls. Visual changes apply outside combat only.",
+    view.safetyText = O.CreateText(safety,
+        L["Blizzard keeps the button artwork, clicks, tooltips, enabled states and notifications. Optional glyph artwork is available in the detail controls. Visual changes apply outside combat only."],
         10, "text")
-    safetyText:SetPoint("TOPLEFT", safetyTitle, "BOTTOMLEFT", 0, -8)
-    safetyText:SetPoint("RIGHT", -12, 0)
-    safetyText:SetJustifyV("TOP")
+    view.safetyText:SetPoint("TOPLEFT", safetyTitle, "BOTTOMLEFT", 0, -8)
+    view.safetyText:SetPoint("RIGHT", -12, 0)
+    view.safetyText:SetJustifyV("TOP")
+end
 
-    local colors = O.CreateButton(preview, "Open Colors", 104, 28, function()
-        O.ShowPage("colors", "Micro Bar colors")
+local function BuildPreviewActions(preview)
+    local colors = O.CreateButton(preview, L["Open Colors"], 104, 28, function()
+        O.ShowPage("colors", L["Micro Bar colors"])
     end)
     colors:SetPoint("BOTTOMLEFT", 16, 14)
-    local reset = O.CreateButton(preview, "Reset recommended", 126, 28, function()
-        local began = O.BeginUserChange("Reset Micro Bar")
-        local ok = NS.MicroMenuSkin.ResetRecommended()
-        if ok == false then
-            O.CancelUserChange()
-            return
-        end
-        O.CommitUserChange("Reset Micro Bar")
+    local reset = O.CreateButton(preview, L["Reset recommended"], 126, 28, function()
+        ResetWithHistory(L["Reset Micro Bar"], NS.MicroMenuSkin.ResetRecommended)
     end)
     reset:SetPoint("LEFT", colors, "RIGHT", 8, 0)
+end
 
-    local function RefreshPreview()
-        local settings = MicroMenuSettings()
-        local enabledNow = NS.DB.skins.microMenu == true
-        local ownsLayout = enabledNow and settings.layoutMode == "owned"
-        O.SetWidgetEnabled(layoutMode, enabledNow)
-        O.SetWidgetEnabled(visibilityButton, ownsLayout)
-        visibility:SetAlpha(ownsLayout and 1 or 0.52)
-        for _, widget in ipairs({
-            positionPreset, orientation, locked, scale, growth, buttonsPerLine,
-            spacing, padding, layoutX, layoutY,
-        }) do
-            O.SetWidgetEnabled(widget, ownsLayout)
-        end
-        for _, widget in ipairs({
-            preset, iconStyle, tint, buttonSize, iconSize, hoverStyle,
-            barBackground, barBorder, barMaterial, buttonBackground, buttonBorder, shape,
-            radius, normalOpacity, hoverOpacity, pressedOpacity, disabledOpacity,
-        }) do
-            O.SetWidgetEnabled(widget, enabledNow)
-        end
-        local shapeValue, radiusValue = ResolvePreviewGeometry(settings)
-        barSpec.shape = shapeValue
-        barSpec.role = settings.barMaterial == "forever" and "microBarForever"
-            or settings.barMaterial == "modern" and "microBarModern"
-            or settings.barMaterial == "midnightDark" and "microBarDark"
-            or "microBar"
-        barSpec.radius = radiusValue
-        barSpec.border = settings.barBorder
-        barSpec.fillVisible = settings.barBackground == true
-        NS.Surface.Attach(barPreview, barSpec)
+-- Status line and safety note per layout owner and icon artwork.
+local STATUS_TEXT = {
+    owned = {
+        icons = L["Enabled - Blizzard icons in the Suite bar"],
+        art = L["Enabled - Blizzard artwork in the Suite bar"],
+        glyphs = L["Enabled - optional glyphs on native click targets"],
+    },
+    blizzard = {
+        icons = L["Enabled - Blizzard icons at Blizzard's position"],
+        art = L["Enabled - Blizzard position and artwork"],
+        glyphs = L["Enabled - Blizzard position with optional glyphs"],
+    },
+}
+local SAFETY_TEXT = {
+    owned = {
+        icons = L["Blizzard supplies the icons. The Suite keeps its own button plates, bar frame and spacing. Native clicks, tooltips and notifications stay intact."],
+        art = L["The Suite frames Blizzard's original Micro Buttons. Their artwork, clicks, tooltips, enabled states and notifications stay native. Queue and FPS indicators stay at Blizzard's Edit Mode position. No recurring MSKIN update runs."],
+        glyphs = L["The optional glyph layer changes appearance while Blizzard keeps clicks, tooltips, enabled states and notifications. Queue and FPS indicators stay at Blizzard's Edit Mode position. No recurring MSKIN update runs."],
+    },
+    blizzard = {
+        icons = L["Blizzard Edit Mode owns position. The Suite keeps its button plates and Blizzard supplies only the icons."],
+        art = L["Blizzard Edit Mode owns position and layout. The original button artwork, clicks and notifications stay intact."],
+        glyphs = L["Blizzard Edit Mode owns position and layout. The optional glyph layer changes appearance while native clicks and notifications stay intact."],
+    },
+}
 
-        for index = 1, #previewButtons do
-            local item = previewButtons[index]
-            item.frame:SetSize(settings.buttonSize, settings.buttonSize)
-            item.spec.shape = shapeValue
-            item.spec.radius = radiusValue
-            item.spec.border = settings.buttonBorder
-            item.spec.fillVisible = settings.buttonBackground == true
-            NS.Surface.Attach(item.frame, item.spec)
-            local stateInfo = previewStates[index]
-            if settings.iconStyle == "blizzard" and item.icon.SetAtlas then
-                item.icon:SetAtlas("UI-HUD-MicroMenu-Questlog-" .. stateInfo.suffix, true)
-                item.icon:SetSize(32, 40)
-            else
-                NS.MicroMenuVisual.ApplyIcon(item.icon, stateInfo.button,
-                    settings.iconStyle)
-                item.icon:SetSize(settings.iconStyle == "blizzardIcons"
-                    and settings.iconSize * 0.8 or settings.iconSize, settings.iconSize)
-            end
-            local r, g, b, a = NS.MicroMenuSkin.GetIconColor(item.state)
-            item.icon:SetVertexColor(tonumber(r) or 1, tonumber(g) or 1, tonumber(b) or 1, tonumber(a) or 1)
-            item.icon:SetDesaturated(settings.iconStyle == "blizzard"
-                and settings.tint == "monochrome")
-        end
-
-        barPreview:SetAlpha(enabledNow and 1 or 0.42)
-        local nativeArt = settings.iconStyle == "blizzard"
-        local nativeIcons = settings.iconStyle == "blizzardIcons"
-        if enabledNow and settings.layoutMode == "owned" then
-            previewStatus:SetText(nativeIcons and "Enabled - Blizzard icons in the Suite bar"
-                or nativeArt and "Enabled - Blizzard artwork in the Suite bar"
-                or "Enabled - optional glyphs on native click targets")
-            safetyText:SetText(nativeIcons
-                and "Blizzard supplies the icons. The Suite keeps its own button plates, bar frame and spacing. Native clicks, tooltips and notifications stay intact."
-                or nativeArt
-                and "The Suite frames Blizzard's original Micro Buttons. Their artwork, clicks, tooltips, enabled states and notifications stay native. Queue and FPS indicators stay at Blizzard's Edit Mode position. No recurring MSKIN update runs."
-                or "The optional glyph layer changes appearance while Blizzard keeps clicks, tooltips, enabled states and notifications. Queue and FPS indicators stay at Blizzard's Edit Mode position. No recurring MSKIN update runs.")
-        elseif enabledNow then
-            previewStatus:SetText(nativeIcons and "Enabled - Blizzard icons at Blizzard's position"
-                or nativeArt and "Enabled - Blizzard position and artwork"
-                or "Enabled - Blizzard position with optional glyphs")
-            safetyText:SetText(nativeIcons
-                and "Blizzard Edit Mode owns position. The Suite keeps its button plates and Blizzard supplies only the icons."
-                or nativeArt
-                and "Blizzard Edit Mode owns position and layout. The original button artwork, clicks and notifications stay intact."
-                or "Blizzard Edit Mode owns position and layout. The optional glyph layer changes appearance while native clicks and notifications stay intact.")
-        else
-            previewStatus:SetText("Preview only - Micro Bar skinning is off")
-        end
-        O.SetTextColor(previewStatus, enabledNow and "success" or "disabled")
+local function ResolvePreviewGeometry(settings)
+    if settings.shape == "global" then
+        return NS.DB.geometry.controlShape, NS.DB.geometry.radius
     end
-    O.TrackRefresh(RefreshPreview)
-    RefreshPreview()
+    return settings.shape, settings.radius
+end
+
+local function PaintGates(gates, enabled, ownsLayout)
+    for index = 1, #gates.layout do O.SetWidgetEnabled(gates.layout[index], ownsLayout) end
+    for index = 1, #gates.micro do O.SetWidgetEnabled(gates.micro[index], enabled) end
+end
+
+local function PaintBar(view, settings, shape, radius)
+    local spec = view.barSpec
+    spec.shape = shape
+    spec.role = BAR_ROLES[settings.barMaterial] or "microBar"
+    spec.radius = radius
+    spec.border = settings.barBorder
+    spec.fillVisible = settings.barBackground == true
+    NS.Surface.Attach(view.bar, spec)
+end
+
+local function PaintButton(item, settings, shape, radius)
+    item.frame:SetSize(settings.buttonSize, settings.buttonSize)
+    item.spec.shape = shape
+    item.spec.radius = radius
+    item.spec.border = settings.buttonBorder
+    item.spec.fillVisible = settings.buttonBackground == true
+    NS.Surface.Attach(item.frame, item.spec)
+    local icon = item.icon
+    if settings.iconStyle == "blizzard" and icon.SetAtlas then
+        icon:SetAtlas("UI-HUD-MicroMenu-Questlog-" .. item.info.suffix, true)
+        icon:SetSize(32, 40)
+    else
+        NS.MicroMenuVisual.ApplyIcon(icon, item.info.button, settings.iconStyle)
+        local width = settings.iconStyle == "blizzardIcons" and settings.iconSize * 0.8 or settings.iconSize
+        icon:SetSize(width, settings.iconSize)
+    end
+    local r, g, b, a = NS.MicroMenuSkin.GetIconColor(item.info.key)
+    icon:SetVertexColor(tonumber(r) or 1, tonumber(g) or 1, tonumber(b) or 1, tonumber(a) or 1)
+    icon:SetDesaturated(settings.iconStyle == "blizzard" and settings.tint == "monochrome")
+end
+
+local function PaintStatus(view, settings, enabled)
+    if enabled then
+        local owner = settings.layoutMode == "owned" and "owned" or "blizzard"
+        local art = settings.iconStyle == "blizzardIcons" and "icons"
+            or settings.iconStyle == "blizzard" and "art" or "glyphs"
+        view.status:SetText(STATUS_TEXT[owner][art])
+        view.safetyText:SetText(SAFETY_TEXT[owner][art])
+    else
+        view.status:SetText(L["Preview only - Micro Bar skinning is off"])
+    end
+    O.SetTextColor(view.status, enabled and "success" or "disabled")
+end
+
+local function PaintPreview(view, gates)
+    local settings = NS.DB.icons.microMenu
+    local enabled = NS.DB.skins.microMenu == true
+    PaintGates(gates, enabled, enabled and settings.layoutMode == "owned")
+    local shape, radius = ResolvePreviewGeometry(settings)
+    PaintBar(view, settings, shape, radius)
+    for index = 1, #view.buttons do
+        PaintButton(view.buttons[index], settings, shape, radius)
+    end
+    view.bar:SetAlpha(enabled and 1 or 0.42)
+    PaintStatus(view, settings, enabled)
+end
+
+local function BuildPreview(page, gates)
+    local preview = O.CreatePanel(page, "navigation")
+    preview:SetPoint("TOPLEFT", 534, -70)
+    preview:SetPoint("BOTTOMRIGHT", -4, 4)
+    local heading = O.CreateText(preview, L["LIVE ICON PREVIEW"], 11, "muted")
+    heading:SetPoint("TOPLEFT", 16, -16)
+
+    local view = {}
+    local microPreview = BuildMicroPreview(preview, view)
+    BuildSafetyNote(preview, BuildItemPreview(preview, microPreview), view)
+    BuildPreviewActions(preview)
+
+    local function Refresh() PaintPreview(view, gates) end
+    O.TrackRefresh(Refresh)
+    Refresh()
+end
+
+O.RegisterPage("icons", NS.L.ICONS, function(page)
+    O.CreateSectionTitle(page, L["Window actions, Micro Bar and icons"],
+        L["Choose clean window controls and a complete Micro Bar style, then tune individual artwork only when needed."])
+    BuildPreview(page, BuildControls(page))
 end)

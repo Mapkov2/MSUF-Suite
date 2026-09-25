@@ -3,21 +3,25 @@ local P = { prefix = "MSUFS2:", maxBytes = 3 * 1024 * 1024 }
 Suite.SuiteProfiles = P
 local DB, IO = Suite.Database, Suite.ProfileIO
 
-local function SkinEngine()
+-- Returns the Suite-owned skin engine once its database is ready. The second
+-- result tells whether the engine is loaded at all.
+local function LoadedSkin()
     local skin = _G.MapkoSkin
-    if type(skin) == "table" and rawget(skin, "addonName") == "MSUF_Suite_Skin" and skin.Database and skin.ProfileIO then
-        if type(skin.EnsureDatabaseReady) == "function" then skin.EnsureDatabaseReady() end
-        if type(skin.Database.GetRoot) == "function" and not skin.Database.GetRoot() then return nil end
-        return skin
+    if type(skin) ~= "table" or rawget(skin, "addonName") ~= "MSUF_Suite_Skin"
+        or not skin.Database or not skin.ProfileIO then
+        return nil, false
     end
+    if type(skin.EnsureDatabaseReady) == "function" then skin.EnsureDatabaseReady() end
+    if type(skin.Database.GetRoot) == "function" and not skin.Database.GetRoot() then return nil, true end
+    return skin, true
+end
+
+local function SkinEngine()
+    local skin, loaded = LoadedSkin()
+    if loaded then return skin end
     local enabled = Suite.Client and Suite.Client.AddOnEnabled and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     if enabled and Suite.Skin and Suite.Skin.EnsureEngine and Suite.Skin.EnsureEngine() then
-        skin = _G.MapkoSkin
-        if type(skin) == "table" and rawget(skin, "addonName") == "MSUF_Suite_Skin" and skin.Database and skin.ProfileIO then
-            if type(skin.EnsureDatabaseReady) == "function" then skin.EnsureDatabaseReady() end
-            if type(skin.Database.GetRoot) == "function" and not skin.Database.GetRoot() then return nil end
-            return skin
-        end
+        return (LoadedSkin())
     end
 end
 
@@ -28,19 +32,25 @@ local function SkinSnapshot(skin)
     return skin.ProfileIO.PrepareProfile(encoded)
 end
 
+-- Left edge of the Damage Meter windows, as an offset from the right screen
+-- edge they are anchored to; nil without measurable windows.
+local function MeterLeftEdge(modules)
+    local meter = modules and modules.damageMeter
+    if not meter or type(meter.windowCount) ~= "number" then return nil end
+    local leftEdge
+    for i = 1, math.min(meter.windowCount, 5) do
+        local x, width = meter["w" .. i .. "X"], meter["w" .. i .. "Width"]
+        if type(x) == "number" and type(width) == "number" then
+            leftEdge = math.min(leftEdge or 0, x - width)
+        end
+    end
+    return leftEdge
+end
+
 local function PlaceFactoryMenu(profile, modules)
     local menu = profile.icons and profile.icons.microMenu
     if menu then
-        local meter = modules and modules.damageMeter
-        local leftEdge
-        if meter and type(meter.windowCount) == "number" then
-            for i = 1, math.min(meter.windowCount, 5) do
-                local x, width = meter["w" .. i .. "X"], meter["w" .. i .. "Width"]
-                if type(x) == "number" and type(width) == "number" then
-                    leftEdge = math.min(leftEdge or 0, x - width)
-                end
-            end
-        end
+        local leftEdge = MeterLeftEdge(modules)
         if leftEdge and leftEdge < 0 then
             -- Both the meter and menu follow UIParent's right edge. Use the
             -- meter's configured left edge so the menu stays beside it at
@@ -93,16 +103,7 @@ function P.SyncActive(name)
             local menu = current and current.icons and current.icons.microMenu
             local modules = DB.GetProfile(name)
             modules = modules and modules.suite and modules.suite.modules
-            local meter = modules and modules.damageMeter
-            local leftEdge
-            if meter and type(meter.windowCount) == "number" then
-                for i = 1, math.min(meter.windowCount, 5) do
-                    local x, width = meter["w" .. i .. "X"], meter["w" .. i .. "Width"]
-                    if type(x) == "number" and type(width) == "number" then
-                        leftEdge = math.min(leftEdge or 0, x - width)
-                    end
-                end
-            end
+            local leftEdge = MeterLeftEdge(modules)
             local oldCorner = menu and menu.layoutPoint == "BOTTOMLEFT"
                 and menu.layoutRelativePoint == "BOTTOMLEFT"
                 and menu.layoutX == 18 and menu.layoutY == 18
@@ -304,11 +305,11 @@ local function Create(name, frames, profile, skinProfile, screenHeight)
     end
     local previousSkin = skin and skin.Database.GetActiveProfileName()
     -- Module settings have already been validated. MSUF validates its own
-    -- payload before creating a frame profile. Neither import overwrites data.
+    -- payload before creating a frame profile and reports a refusal as
+    -- false, reason. Neither import overwrites data.
     Suite.suppressProfileSync = true
-    local imported, ok, reason = pcall(ImportFramesIntoNewProfile, name, frames)
+    local ok, reason = ImportFramesIntoNewProfile(name, frames)
     Suite.suppressProfileSync = nil
-    if not imported then ok, reason = false, tostring(ok) end
     if ok and screenHeight and type(_G.MSUF_SetCurrentProfileScreenReferenceHeight) == "function" then
         ok = _G.MSUF_SetCurrentProfileScreenReferenceHeight(screenHeight)
         if not ok then reason = "Frame positions could not be adapted" end
@@ -418,8 +419,8 @@ function P.InstallSuiteFactory(name, modules, skinText)
     previousSkin = previousSkin and Suite.CopyValue(previousSkin)
     local previousSkinActive = skin and skin.Database.GetActiveProfileName()
     Suite.RootDB.profiles[name] = profile
-    local called, ok, why = pcall(DB.Activate, name)
-    if not called then ok, why = false, tostring(ok) end
+    -- Activation starts the profile's modules; their errors reach the client.
+    local ok, why = DB.Activate(name)
     if ok and skin then ok, why = skin.Database.SetProfile(name, skinProfile) end
     if ok and skin then ok, why = skin.Database.SetActiveProfile(name) end
     if ok then return true, name end

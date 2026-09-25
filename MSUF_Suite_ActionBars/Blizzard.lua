@@ -132,6 +132,19 @@ function AB.ReadBlizzard()
     return state
 end
 
+-- Blizzard's hidden bars still apply their own shown-button plan to the
+-- buttons the suite reuses: spellbook and Quick Keybind grids and Edit Mode
+-- icon counts call UpdateShownButtons, which caps them at Blizzard's icon
+-- count. The suite's plan runs again right after (out of combat; in combat
+-- it waits for combat to end). Blizzard's own fields stay untouched: a value
+-- written here would taint that secure pass and block its SetShown calls
+-- in combat.
+local suiteBarOf = {}
+local function AfterBlizzardPlan(blizzardBar)
+    local bar = suiteBarOf[blizzardBar]
+    if bar and M.active then AB.Regrid(bar) end
+end
+
 function AB.Dispose()
     if AB.disposed then return true end
     if NS.IsCombatLocked() or type(SecureHandlerExecute) ~= "function" or type(SecureHandlerSetFrameRef) ~= "function" then return false end
@@ -148,11 +161,11 @@ function AB.Dispose()
             bars = bars + 1
             SecureHandlerSetFrameRef(control, "bar" .. bars, bar)
             bar:UnregisterAllEvents()
-            -- Blizzard can still call UpdateShownButtons directly (for
-            -- example Quick Keybind). Keep its stale layout from capping a
-            -- button that the suite configured to show.
             local target = AB.bars[index]
-            if target and target.native then bar.numButtonsShowable = AB.BUTTONS end
+            if target and target.native and type(bar.UpdateShownButtons) == "function" then
+                suiteBarOf[bar] = target
+                hooksecurefunc(bar, "UpdateShownButtons", AfterBlizzardPlan)
+            end
         end
     end
     for _, name in ipairs({ "StanceBar", "PetActionBar" }) do
@@ -171,7 +184,11 @@ function AB.Dispose()
                 if target and target.native then
                     reused = reused + 1
                     -- The hidden original bar must not reapply its own shown
-                    -- button plan when the action changes on our header.
+                    -- button plan when the action changes on our header
+                    -- (ActionBarActionButtonMixin:UpdateAction). No attribute
+                    -- or snippet can stand in for this field: Blizzard also
+                    -- reads it for the proc glow art and tooltip anchoring,
+                    -- which stay as the suite has always shown them.
                     button.bar = nil
                     button:SetAttribute("_childupdate-grid", AB.SNIPPET.BUTTON)
                     SecureHandlerSetFrameRef(control, "reuse" .. reused, button)
@@ -231,7 +248,7 @@ end
 function AB.Adopt(index)
     local bar = AB.bars[index]
     if not bar or NS.IsCombatLocked() or not AB.control then return false end
-    local control, c = AB.control, M.config
+    local control, config = AB.control, M.config
     local prefix = index == 11 and "StanceButton" or "PetActionButton"
     if not bar.adopted then
         for i = 1, 10 do
@@ -244,8 +261,8 @@ function AB.Adopt(index)
         end
         bar.adopted = true
     end
-    local count = AB.Count(bar, c)
-    local showEmpty = c[bar.key.ShowEmpty] and true or false
+    local count = AB.Count(bar, config)
+    local showEmpty = config[bar.key.ShowEmpty] and true or false
     SecureHandlerSetFrameRef(control, "header", bar.header)
     for i = 1, 10 do
         local rec = bar.buttons[i]

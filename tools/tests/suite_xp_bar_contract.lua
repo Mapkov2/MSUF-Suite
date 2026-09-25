@@ -9,7 +9,7 @@ local function Widget()
     function w:SetScript(key, callback) self[key] = callback end
     function w:CreateTexture() return Widget() end
     function w:CreateFontString() return Widget() end
-    function w:SetPoint(...) self.point = { ... } end
+    function w:SetPoint(...) self.point = { ... }; self.anchors = (self.anchors or 0) + 1 end
     function w:ClearAllPoints() end
     function w:SetColorTexture(...) self.color = { ... } end
     function w:SetVertexColor(...) self.vertex = { ... } end
@@ -53,6 +53,12 @@ local function Load(kind)
     suite.Suite = { instances = {}, editMode = false }
     local runtime = suite.Suite
     runtime.Public = function(value) return value ~= "secret" end
+    runtime.Text = function(value) return value end
+    runtime.CreateFrame = CreateFrame
+    runtime.ResolveTexture = function(_, fallback) return fallback end
+    runtime.RGB = function(hex)
+        return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+    end
     runtime.Install = function(id, module)
         assert(id == "xpBar")
         runtime.instances[id] = module
@@ -65,8 +71,11 @@ local function Load(kind)
     runtime.Config = function() return runtime.instances.xpBar.config end
     runtime.Set = function(_, key, value) runtime.instances.xpBar.config[key] = value; return true end
     runtime.SetFont = function(fontString, path, size, flags) return fontString:SetFont(path, size, flags) end
-    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ExperienceBar.lua"))(
-        "MSUF_Suite_QualityOfLife", { NS = suite, Suite = runtime })
+    MSUFSuite = suite
+    local private = {}
+    for _, file in ipairs({ "Bootstrap", "ExperienceBar" }) do
+        assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
+    end
     local module = runtime.instances.xpBar
     module.active = true
     module.config = { enabled = true, look = 1, width = 400, height = 18, scale = 100,
@@ -130,8 +139,11 @@ assert(movers.experience and events.PLAYER_XP_UPDATE and events.PLAYER_LEVEL_UP)
 assert(module.levelText.text:find("100 / 1.0k", 1, true))
 
 xp = 250
+local dividerAnchors, savedRecord = module.segments[1].anchors, savedRoot.suiteXP["Player-test"]
 events.PLAYER_XP_UPDATE(module, "PLAYER_XP_UPDATE", "player")
 assert(module.session.gained == 150 and savedRoot.suiteXP["Player-test"].gained == 150)
+assert(module.segments[1].anchors == dividerAnchors and savedRoot.suiteXP["Player-test"] == savedRecord,
+    "an XP event re-anchored the dividers or replaced the saved session record")
 assert(module.details.text:find("Session +150", 1, true))
 assert(#timers == 1, "one rate refresh timer")
 xp = 900

@@ -30,7 +30,7 @@ local function Widget(parent)
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
     function w:Hide() self.shown = false end
-    function w:SetText(value) self.text = value end
+    function w:SetText(value) self.text = value; self.writes = (self.writes or 0) + 1 end
     function w:SetTextColor(...) self.textColor = { ... } end
     function w:SetJustifyH() end
     function w:SetScript(name, callback) self[name] = callback end
@@ -44,9 +44,10 @@ UIParent = Widget()
 CreateFrame = function(_, _, parent) return Widget(parent) end
 GetTime = function() return now end
 C_PlayerInfo = { GetGlidingInfo = function() return flying, capable, speed end }
+local chargeReads, cooldownReads = 0, 0
 C_Spell = {
-    GetSpellCharges = function(id) return charges[id] end,
-    GetSpellCooldown = function() return cooldown end,
+    GetSpellCharges = function(id) chargeReads = chargeReads + 1; return charges[id] end,
+    GetSpellCooldown = function() cooldownReads = cooldownReads + 1; return cooldown end,
     GetSpellTexture = function() return 12345 end,
 }
 
@@ -77,8 +78,16 @@ S.SetStyledFont = function(label, path, size, flags, rendering, shadow, opacity,
     label:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
     label:SetShadowOffset(shown and (distance or 1) or 0, shown and -(distance or 1) or 0)
 end
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/Skyriding.lua"))(
-    "MSUF_Suite_QualityOfLife", { NS = suite, Suite = S })
+S.Text = function(value) return value end
+S.CreateFrame = CreateFrame
+S.RGB = function(hex)
+    return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+end
+MSUFSuite = suite
+local private = {}
+for _, file in ipairs({ "Bootstrap", "Skyriding" }) do
+    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
+end
 local module = S.instances.skyriding
 module.active = true
 module.config = { look = 1, width = 350, scale = 100, point = 5, x = 0, y = -145,
@@ -129,8 +138,21 @@ assert(module.vigor.pips[4].value == 0.5 and module.wind.pips[2].value == 0.5,
 assert(module.surgeText.text == "12" and module.host.OnUpdate,
     "Whirling Surge countdown or active flight tick missing")
 now = 103
+local tick, reads, speedWrites = module.host.OnUpdate, chargeReads + cooldownReads, module.speedValue.writes
 module.host.OnUpdate(module.host, 0.1)
 assert(module.vigor.pips[4].value > 0.5, "Active recharge did not advance")
+assert(chargeReads + cooldownReads == reads and module.speedValue.writes == speedWrites,
+    "An unchanged flight tick re-read spell data or rewrote unchanged text")
+events.SPELL_UPDATE_COOLDOWN()
+assert(cooldownReads == reads - chargeReads, "A spell event drew a full update while the tick was running")
+module.host.OnUpdate(module.host, 0.1)
+assert(cooldownReads == reads - chargeReads + 1, "The next tick did not pick up the invalidated cooldown")
+capable = false
+events.PLAYER_CAN_GLIDE_CHANGED()
+assert(not module.host.OnUpdate, "A hidden HUD kept its flight tick")
+capable = true
+events.PLAYER_CAN_GLIDE_CHANGED()
+assert(module.host.OnUpdate == tick, "Restarting the flight tick allocated a new handler")
 
 -- The minimum HUD width must keep every caption, charge cell and Surge icon
 -- inside its own lane, even with the largest supported charge counts.
@@ -139,6 +161,8 @@ module:Refresh()
 charges[372610] = { currentCharges = 8, maxCharges = 8 }
 charges[425782] = { currentCharges = 4, maxCharges = 4 }
 events.SPELL_UPDATE_CHARGES()
+assert(module.vigor.count.text == "3/6", "A charge event redrew the HUD while the tick was running")
+module.host.OnUpdate(module.host, 0.1)
 assert(module.vigor.width == 148 and module.wind.width == 148 and module.speed.width == 148)
 assert(module.vigor.label.width + module.vigor.count.width <= module.vigor.width
     and module.speedText.width + module.speedValue.width <= module.speed.width,
@@ -197,6 +221,7 @@ module:Refresh()
 
 charges[372610] = { currentCharges = "secret", maxCharges = 6 }
 events.SPELL_UPDATE_CHARGES()
+module.host.OnUpdate(module.host, 0.1)
 assert(module.vigor.count.text == "--" and module.vigor.pips[1].alpha == 0.35,
     "Unknown charges must not be displayed as zero")
 

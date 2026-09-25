@@ -25,21 +25,23 @@ function Database.IsProfileName(name)
         and not name:find("[%z\1-\31]") and name:find("%S") ~= nil
 end
 
+-- New profiles start from the bundled factory of this client when MSUF's
+-- codec can read it, otherwise from catalog defaults at the current
+-- migration revision.
 local function NewProfile()
     local compact = Suite.Client and Suite.Client.isForever and Suite.ForeverFactoryModuleCompact
         or Suite.Client and Suite.Client.isMainline and Suite.RetailFactoryModuleCompact
-    if type(compact) == "string"
-        and type(_G.MSUF_TryDecodeCompactString) == "function"
+    if type(compact) == "string" and type(_G.MSUF_TryDecodeCompactString) == "function"
         and Suite.ProfileIO then
-        local ok, envelope = pcall(_G.MSUF_TryDecodeCompactString,
-            compact:sub(8))
-        if ok and type(envelope) == "table" and envelope.addon == "MSUF_Suite"
-            and envelope.format == 1 then
+        -- The bundled string is known-good; the codec returns nil on bad input.
+        local envelope = _G.MSUF_TryDecodeCompactString(compact:sub(8))
+        if type(envelope) == "table" and envelope.addon == "MSUF_Suite" and envelope.format == 1 then
             local profile = Suite.ProfileIO.PrepareTable(envelope.profile, false)
             if profile then return profile end
         end
     end
-    return { suite = { schema = 1, modules = {} } }
+    local revision = Suite.Suite and Suite.Suite.MigrationRevision
+    return { suite = { schema = 1, revision = revision, modules = {} } }
 end
 Database.CreateFactoryProfile = NewProfile
 
