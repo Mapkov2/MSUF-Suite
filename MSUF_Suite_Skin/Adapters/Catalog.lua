@@ -1314,16 +1314,6 @@ local entries = {
         mode = hudAccentMode,
     },
     {
-        id = "hud-objective-status",
-        category = "hud",
-        addon = "Blizzard_ObjectiveTracker",
-        frames = {
-            "ScenarioRewardsFrame", "ScenarioTimerFrame",
-            "ObjectiveTrackerTopBannerFrame", "ObjectiveTrackerUIWidgetContainer",
-        },
-        mode = hudAccentMode,
-    },
-    {
         id = "hud-pvp-status",
         category = "hud",
         addon = "Blizzard_PVPUI",
@@ -1918,9 +1908,9 @@ local entries = {
 -- order, ids, categories, addon owners, skip flags, and ordered root names.
 -- Any new, renamed, reordered, or re-owned root invalidates the whole catalog
 -- until this review and its classification are updated deliberately.
-local REVIEWED_CATALOG_FINGERPRINT = "7b0481aa-4dd0a23d"
-local REVIEWED_CATALOG_ENTRIES = 242
-local REVIEWED_CATALOG_ROOTS = 468
+local REVIEWED_CATALOG_FINGERPRINT = "71c8992a-6a8e1ad9"
+local REVIEWED_CATALOG_ENTRIES = 241
+local REVIEWED_CATALOG_ROOTS = 464
 
 local dedicatedGlassOwners = {
     ["talking-head"] = "SharedChrome",
@@ -1980,7 +1970,7 @@ MarkGlassKind("semantic-hud", {
     "hud-azerite-animation", "hud-commentator", "hud-action-status",
     "hud-covenant-toasts", "hud-major-faction-toasts", "hud-cooldown-viewers",
     "hud-encounter-timeline", "hud-encounter-warnings", "hud-mirror-timers",
-    "hud-quest-timer", "hud-objective-status", "hud-pvp-status",
+    "hud-quest-timer", "hud-pvp-status",
     "hud-plunderstorm-prematch", "hud-class-trial", "hud-subtitles",
     "hud-help-status", "hud-gm-status", "hud-housing", "hud-housing-banner",
     "hud-fullscreen-browser", "hud-chat-overlays", "hud-behavioral-message",
@@ -2063,8 +2053,6 @@ local standaloneGlass = {
         roots = { "GameMenuFrame" }, owner = "GameMenuSkin", support = "full" },
     { id = "playerSpells", addon = "Blizzard_PlayerSpells",
         roots = { "PlayerSpellsFrame" }, owner = "PlayerSpellsSkin", support = "full" },
-    { id = "objectiveTracker", addon = "Blizzard_ObjectiveTracker",
-        roots = { "ObjectiveTrackerFrame" }, owner = "ObjectiveTrackerSkin", support = "partial" },
     { id = "chatFrames", addon = "Blizzard_ChatFrameBase",
         roots = { "ChatFrame1" }, family = "ChatFrame%d", owner = "ChatFramesSkin", support = "partial" },
     { id = "damageMeter", addon = "Blizzard_DamageMeter",

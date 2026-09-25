@@ -761,7 +761,7 @@ assert(skinContext.sections[1].sectionId == "suite_skin_frame_basic"
 assert(skinContext.sections[3].sectionId == "suite_skin_micro"
     and skinContext.sections[4].sectionId == "suite_skin_micro_details"
     and skinContext.sections[5].sectionId == "suite_skin_hud",
-    "Micro Bar and tracker setup must be immediately visible after the main look")
+    "Micro Bar and Blizzard HUD setup must be immediately visible after the main look")
 local skinControls = {}
 for _, widget in ipairs(skinContext.widgets) do
     if widget.meta and widget.meta.settingKey then skinControls[widget.meta.settingKey] = widget end
@@ -771,8 +771,9 @@ assert(skinControls["msufsuite.skin.theme.look"] and skinControls["msufsuite.ski
     and skinControls["msufsuite.skin.icons.microMenu.layoutMode"]
     and skinControls["msufsuite.skin.enabled"], "native Skinning controls missing")
 assert(skinControls["msufsuite.skin.icons.microMenu.preset"]
-    and skinControls["msufsuite.skin.hud.objectiveTrackerStyle"],
-    "authored Micro Bar and tracker controls missing")
+    and not skinControls["msufsuite.skin.hud.objectiveTrackerStyle"]
+    and not skinControls["msufsuite.skin.skins.objectiveTracker"],
+    "retired Blizzard tracker controls remain in Skinning")
 local microPreset = skinControls["msufsuite.skin.icons.microMenu.preset"]
 local blizzardChoice = false
 for _, entry in ipairs(microPreset.row.values) do

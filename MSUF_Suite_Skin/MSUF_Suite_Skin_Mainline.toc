@@ -61,7 +61,6 @@ Adapters\GameMenu.lua
 Adapters\WorldMap.lua
 Adapters\PlayerSpells.lua
 Adapters\EncounterJournal.lua
-Adapters\ObjectiveTracker.lua
 Adapters\ChatFrames.lua
 Adapters\DamageMeter.lua
 Adapters\EditMode.lua

@@ -58,7 +58,7 @@ micro.buttonBackground, micro.buttonBorder = true, 1
 micro.iconSize, micro.spacing = 20, 3
 micro.iconStyle = "line"
 forever.Database.Normalize(legacy)
-assert(legacy.revision == 48 and legacy.geometry.radius == 12
+assert(legacy.revision == 49 and legacy.geometry.radius == 12
     and legacy.theme.shellOpacity == 0.92 and legacy.theme.hoverStyle == "softFill"
     and legacy.theme.colors.background[4] == forever.PresetOverrides.foreverGlass.background[4]
     and micro.positionPreset == "bottomCenter" and micro.layoutX == 0 and micro.layoutY == 120
@@ -96,7 +96,7 @@ tuned.icons.microMenu.positionPreset = "custom"
 tuned.icons.microMenu.layoutX = -75
 forever.Database.Normalize(retired)
 local original = forever.PresetOverrides.foreverGlass
-assert(retired.revision == 48 and retired.geometry.radius == 12
+assert(retired.revision == 49 and retired.geometry.radius == 12
     and retired.theme.gradientStrength == 0.50 and retired.theme.shellOpacity == 0.92
     and retired.theme.hoverStyle == "softFill" and retired.typography.face == "sharedMedia"
     and retired.theme.colors.background[1] == original.background[1]
@@ -172,7 +172,7 @@ end
 priorPalette.theme.colors.microIconHover = { 0.11, 0.22, 0.33, 0.47 }
 local microAlpha = priorPalette.theme.colors.microBarFill[4]
 forever.Database.Normalize(priorPalette)
-assert(priorPalette.revision == 48
+assert(priorPalette.revision == 49
     and MatchesHex(priorPalette.theme.colors.card, "292F31")
     and priorPalette.theme.colors.card[4] == 0.51
     and MatchesHex(priorPalette.theme.colors.microBarFill, "0E1C28")
@@ -195,6 +195,25 @@ customBar.icons.microMenu.layoutY = 84.7
 forever.Database.Normalize(customBar)
 assert(customBar.icons.microMenu.layoutY == 85,
     "hand-placed Micro Bar position was overwritten")
+local exportedFactoryBar = forever.CopyValue(forever.Defaults)
+exportedFactoryBar.revision = 48
+exportedFactoryBar.icons.microMenu.positionPreset = "custom"
+exportedFactoryBar.icons.microMenu.layoutX = 463
+exportedFactoryBar.icons.microMenu.layoutY = 0
+forever.Database.Normalize(exportedFactoryBar)
+assert(exportedFactoryBar.icons.microMenu.positionPreset == "bottomCenter"
+    and exportedFactoryBar.icons.microMenu.layoutPoint == "BOTTOM"
+    and exportedFactoryBar.icons.microMenu.layoutX == 0
+    and exportedFactoryBar.icons.microMenu.layoutY == 120,
+    "shipped Forever factory bar still overlaps the chat")
+local placedBar = forever.CopyValue(exportedFactoryBar)
+placedBar.revision = 48
+placedBar.icons.microMenu.positionPreset = "custom"
+placedBar.icons.microMenu.layoutX = 464
+forever.Database.Normalize(placedBar)
+assert(placedBar.icons.microMenu.positionPreset == "custom"
+    and placedBar.icons.microMenu.layoutX == 464,
+    "hand-placed Forever bar was overwritten")
 local oldGlyphs = forever.CopyValue(forever.Defaults)
 oldGlyphs.revision = 43
 oldGlyphs.icons.microMenu.iconStyle = "line"

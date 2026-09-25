@@ -10,6 +10,7 @@ Surfaces.lua
 Runtime.lua
 DataSources.lua
 EditMode.lua
+MythicPlus.lua
 Objectives.lua
 Announcements.lua
 AFKScreen.lua

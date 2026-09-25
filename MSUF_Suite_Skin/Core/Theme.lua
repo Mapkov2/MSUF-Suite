@@ -527,9 +527,6 @@ function Theme.ApplyLook(lookName)
         end
         micro.preset = look.microStyle
     end
-    if look.objectiveTrackerStyle then
-        NS.DB.hud.objectiveTrackerStyle = look.objectiveTrackerStyle
-    end
     NS.DB.theme.preset = look.palette
     NS.DB.theme.look = lookName
     local suite = _G.MSUFSuite
@@ -538,9 +535,6 @@ function Theme.ApplyLook(lookName)
         suite.Suite.ApplyGlobalLook(lookName)
     end
     NS.Registry.RefreshAll()
-    if NS.Adapters and NS.Adapters.Refresh then
-        NS.Adapters.Refresh("objectiveTracker")
-    end
     NS.Registry.NotifyListeners("theme", "look")
     return true
 end

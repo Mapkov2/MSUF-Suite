@@ -13,7 +13,7 @@ local pageMeta = {
     geometry = { group = "design", simple = false, keywords = "corner curve round continuous squircle radius border shape hover" },
     skins = { group = "coverage", simple = true, keywords = "blizzard windows adapters game menu settings map spellbook chat" },
     coverage = { group = "coverage", simple = false, keywords = "categories character inventory npc quest social group profession economy map housing" },
-    hud = { group = "coverage", simple = false, keywords = "objective tracker damage meter combat rows headers" },
+    hud = { group = "coverage", simple = false, keywords = "damage meter combat rows headers" },
     profiles = { group = "manage", simple = true, keywords = "profile copy delete import export share backup" },
     advanced = { group = "manage", simple = false, keywords = "runtime performance api reset factory diagnostics" },
 }

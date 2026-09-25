@@ -448,33 +448,6 @@ Adapters.Register({
 })
 
 Adapters.Register({
-    id = "objectiveTrackerAccents",
-    labelKey = "SKIN_OBJECTIVE_TRACKER_ACCENTS",
-    allowImplicitProtected = true,
-    resolve = function() return _G.ObjectiveTrackerFrame end,
-    apply = function(frame, owner)
-        return NS.ObjectiveTrackerSkin.ApplyAccents(frame, owner)
-    end,
-    disable = function(frame, owner)
-        return NS.ObjectiveTrackerSkin.Disable(frame, owner)
-    end,
-})
-
-Adapters.Register({
-    id = "objectiveTracker",
-    labelKey = "SKIN_OBJECTIVE_TRACKER",
-    allowImplicitProtected = true,
-    trackIconTree = true,
-    resolve = function() return _G.ObjectiveTrackerFrame end,
-    apply = function(frame, owner)
-        return NS.ObjectiveTrackerSkin.Apply(frame, owner)
-    end,
-    disable = function(frame, owner)
-        return NS.ObjectiveTrackerSkin.Disable(frame, owner)
-    end,
-})
-
-Adapters.Register({
     id = "chatFrames",
     labelKey = "SKIN_CHAT_FRAMES",
     allowImplicitProtected = true,

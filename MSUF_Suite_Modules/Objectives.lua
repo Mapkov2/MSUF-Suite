@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local MythicPlus = S.MythicPlus
 local ID = "objectives"
 local M = { sources = {}, rows = {}, freeRows = {}, dirty = {}, generation = 0, timerToken = 0 }
 local FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
@@ -670,6 +671,34 @@ end
 Render = function(self)
     if not self.active then return end
     local c = self.config
+    if self.mplusActive and self.mplus then
+        local themeChanged = self.retheme or not self.font
+        if themeChanged then
+            Theme(self)
+            MythicPlus.Theme(self)
+            self.retheme = false
+        end
+        local geometryChanged = self.lastWidth ~= c.width or self.lastHeight ~= c.height
+            or self.lastScale ~= c.scale or self.lastX ~= c.x or self.lastY ~= c.y
+            or self.lastEditMode ~= S.editMode
+        if themeChanged or geometryChanged then
+            self.lastWidth, self.lastHeight, self.lastScale = c.width, c.height, c.scale
+            self.lastX, self.lastY, self.lastEditMode = c.x, c.y, S.editMode
+            self.headerClick:SetHeight(self.headerHeight - 5)
+            self.host:SetScale(c.scale / 100)
+            self.host:SetWidth(c.width)
+            self.host:ClearAllPoints()
+            self.host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", c.x, c.y)
+            self.content:SetWidth(c.width - 14)
+        end
+        self.title:SetText("MYTHIC+")
+        self.count:SetText(self.mplus.level and ("+" .. self.mplus.level) or "")
+        self.content:SetHeight(self.mplus.height)
+        self.host:SetHeight(math.min(c.height, self.headerHeight + self.mplus.height + 5))
+        self.host:Show()
+        return
+    end
+    if self.mplus then self.mplus.frame:Hide() end
     local grouped = self.grouped
     if not grouped then grouped = {}; self.grouped = grouped end
     for i = 1, #ORDER do
@@ -730,6 +759,7 @@ Render = function(self)
     self.lastX, self.lastY, self.lastEditMode = c.x, c.y, S.editMode
     self.retheme = false
     if themeChanged then Theme(self) end
+    self.title:SetText("OBJECTIVES")
     if themeChanged or geometryChanged then
         self.headerClick:SetHeight(self.headerHeight - 5)
         self.host:SetScale(c.scale / 100)
@@ -857,7 +887,7 @@ end
 
 local function Flush(self)
     self.scheduled = false
-    if not self.active then return end
+    if not self.active or self.mplusActive then return end
     if self.dirty.quests then self.sources.quests = CollectQuests(self.config); self.dirty.quests = nil end
     if self.dirty.world then self.sources.world = self.config.showWorldQuests and CollectWorld(self.config) or {}; self.dirty.world = nil end
     if self.dirty.bonus then self.sources.bonus = self.config.showBonus and CollectBonus(self.config) or {}; self.dirty.bonus = nil end
@@ -875,9 +905,59 @@ local function Request(self, key)
     local generation = self.generation
     C_Timer.After(0, function() if self.generation == generation then Flush(self) end end)
 end
+local function StopMythicPlus(self)
+    if not self.mplusActive then return false end
+    MythicPlus.Stop(self)
+    self.previousFlat = nil
+    self.dirty = { quests = true, world = true, bonus = true,
+        scenario = true, achievements = true }
+    return true
+end
+local function StartMythicPlus(self, mapID)
+    if self.mplusActive and self.mplus and self.mplus.mapID == mapID
+        and not self.mplus.completed then return false end
+    for _, row in pairs(self.rows) do
+        row:Hide()
+        row.timerEnd = nil
+        if row.timer then row.timer:Hide() end
+    end
+    self.generation = self.generation + 1
+    self.scheduled = false
+    self.timerToken = self.timerToken + 1
+    self.timerPending, self.timedRows = false, nil
+    self.previousFlat = nil
+    MythicPlus.Start(self, mapID)
+    self.scroll:SetVerticalScroll(0)
+    Render(self)
+    return true
+end
 local function Event(self, event)
+    if event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_COMPLETED_REWARDS" then
+        if self.mplusActive then MythicPlus.Complete(self); Render(self) end
+        return
+    elseif event == "CHALLENGE_MODE_RESET" then
+        if StopMythicPlus(self) then Flush(self) end
+        return
+    elseif event == "CHALLENGE_MODE_START" or event == "WORLD_STATE_TIMER_START"
+        or event == "WORLD_STATE_TIMER_STOP" then
+        local mapID = MythicPlus and MythicPlus.Detect(self)
+        if mapID then StartMythicPlus(self, mapID) end
+        if self.mplusActive then MythicPlus.Tick(self) end
+        return
+    end
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         self:SuppressNative()
+        local mapID = MythicPlus and MythicPlus.Detect(self)
+        if mapID then StartMythicPlus(self, mapID)
+        elseif StopMythicPlus(self) then Flush(self); return end
+    end
+    if self.mplusActive then
+        if event == "CHALLENGE_MODE_DEATH_COUNT_UPDATED" then MythicPlus.UpdateDeaths(self)
+        elseif event == "SCENARIO_UPDATE" or event == "SCENARIO_CRITERIA_UPDATE"
+            or event == "SCENARIO_POI_UPDATE" then MythicPlus.UpdateObjectives(self) end
+        return
+    end
+    if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         Request(self, "quests"); Request(self, "world"); Request(self, "bonus"); Request(self, "scenario")
         Request(self, "achievements")
     elseif event == "SCENARIO_UPDATE" or event == "SCENARIO_CRITERIA_UPDATE"
@@ -893,6 +973,8 @@ local function Event(self, event)
         Request(self, "quests"); Request(self, "world")
     elseif event == "SCENARIO_BONUS_VISIBILITY_UPDATE" then
         Request(self, "bonus"); Request(self, "scenario")
+    elseif event == "SCENARIO_POI_UPDATE" or event == "CHALLENGE_MODE_DEATH_COUNT_UPDATED" then
+        return
     else Request(self, "quests"); Request(self, "world"); Request(self, "bonus") end
 end
 function M:SuppressNative()
@@ -920,8 +1002,17 @@ function M:Enable()
         "SUPER_TRACKING_CHANGED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS",
         "ZONE_CHANGED_NEW_AREA", "QUEST_POI_UPDATE", "SCENARIO_BONUS_VISIBILITY_UPDATE", "SCENARIO_UPDATE",
         "SCENARIO_CRITERIA_UPDATE", "ACTIVE_DELVE_DATA_UPDATE", "TRACKED_ACHIEVEMENT_UPDATE",
-        "CRITERIA_UPDATE", "ACHIEVEMENT_EARNED", "CONTENT_TRACKING_UPDATE" }) do
+        "CRITERIA_UPDATE", "ACHIEVEMENT_EARNED", "CONTENT_TRACKING_UPDATE",
+        "SCENARIO_POI_UPDATE" }) do
         self.context:Event(event, Event, true)
+    end
+    if MythicPlus then
+        for _, event in ipairs({ "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED",
+            "CHALLENGE_MODE_COMPLETED_REWARDS", "CHALLENGE_MODE_RESET",
+            "CHALLENGE_MODE_DEATH_COUNT_UPDATED", "WORLD_STATE_TIMER_START",
+            "WORLD_STATE_TIMER_STOP" }) do
+            self.context:Event(event, Event, true)
+        end
     end
     self.context:Event("ADDON_LOADED", function(module, _, name)
         if name == "Blizzard_ObjectiveTracker" then module:SuppressNative() end
@@ -933,19 +1024,31 @@ function M:Enable()
     self.contentSignature = tostring(c.showWorldQuests) .. ":" .. tostring(c.showBonus) .. ":"
         .. tostring(c.showScenario) .. ":" .. tostring(c.showAchievements) .. ":"
         .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers)
-    Flush(self)
+    local mapID = MythicPlus and MythicPlus.Detect(self)
+    if mapID then StartMythicPlus(self, mapID) else Flush(self) end
     self:RegisterMovers()
 end
 function M:Refresh()
     self.retheme = true
     local c = self.config
+    local mapID = MythicPlus and MythicPlus.Detect(self)
+    if mapID then StartMythicPlus(self, mapID) end
+    local stoppedMythicPlus = false
+    if self.mplusActive and not mapID and (not self.mplus.completed or not c.showMythicPlus) then
+        stoppedMythicPlus = StopMythicPlus(self)
+    end
+    if self.mplusActive then
+        Render(self)
+        self:SuppressNative()
+        return
+    end
     c.collapsedGroups = type(c.collapsedGroups) == "table" and c.collapsedGroups or {}
     c.collapsedEntries = type(c.collapsedEntries) == "table" and c.collapsedEntries or {}
     self.collapsedGroups, self.collapsedEntries = c.collapsedGroups, c.collapsedEntries
     local signature = tostring(c.showWorldQuests) .. ":" .. tostring(c.showBonus) .. ":"
         .. tostring(c.showScenario) .. ":" .. tostring(c.showAchievements) .. ":"
         .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers)
-    if self.contentSignature ~= signature then
+    if self.contentSignature ~= signature or stoppedMythicPlus then
         self.contentSignature = signature
         self.dirty.quests, self.dirty.world, self.dirty.bonus = true, true, true
         self.dirty.scenario, self.dirty.achievements = true, true
@@ -956,6 +1059,7 @@ function M:Refresh()
     self:SuppressNative()
 end
 function M:Disable()
+    if MythicPlus then MythicPlus.Stop(self) end
     self.generation = self.generation + 1
     self.timerToken = self.timerToken + 1
     self.timerPending = false

@@ -379,33 +379,12 @@ local function Build(ctx)
     BuildMicroBar(ctx, b, skin)
 
     local hud = {
-        Row("toggle", "Style objective tracker", "skins.objectiveTracker", "hud",
-            function() return skin.DB.skins.objectiveTracker end,
-            function(value) Change(skin, "Objective tracker", "skins.objectiveTracker",
-                function() return skin.Adapters.SetEnabled("objectiveTracker", value) end) end),
-        Row("dropdown", "Tracker style", "hud.objectiveTrackerStyle", "hud",
-            function() return skin.DB.hud.objectiveTrackerStyle end,
-            function(value) Change(skin, "Tracker style", "hud.objectiveTrackerStyle", function()
-                if value ~= "forever" and value ~= "modern" then return false end
-                skin.DB.hud.objectiveTrackerStyle = value
-                skin.Adapters.Refresh("objectiveTracker")
-                skin.Registry.NotifyListeners("hud", "objectiveTrackerStyle")
-                return true
-            end) end,
-            Values({ "forever", "modern" })),
-        Row("toggle", "MSUF colors on objectives", "skins.objectiveTrackerAccents", "hud",
-            function() return skin.DB.skins.objectiveTrackerAccents end,
-            function(value) Change(skin, "Objective colors", "skins.objectiveTrackerAccents",
-                function() return skin.Adapters.SetEnabled("objectiveTrackerAccents", value) end) end),
         Row("toggle", "Style Blizzard damage meter", "skins.damageMeter", "hud",
             function() return skin.DB.skins.damageMeter end,
             function(value) Change(skin, "Blizzard damage meter", "skins.damageMeter",
                 function() return skin.Adapters.SetEnabled("damageMeter", value) end) end),
     }
-    for _, spec in ipairs({ { "Tracker title background", "objectiveTrackerBackground", "objectiveTracker" },
-        { "Section headers", "objectiveTrackerHeaders", "objectiveTracker" },
-        { "Objective progress bars", "objectiveTrackerBars", "objectiveTracker" },
-        { "Damage meter windows", "damageMeterWindows", "damageMeter" },
+    for _, spec in ipairs({ { "Damage meter windows", "damageMeterWindows", "damageMeter" },
         { "Damage meter rows", "damageMeterRows", "damageMeter" },
         { "Damage meter details", "damageMeterDetails", "damageMeter" } }) do
         local label, key, adapter = spec[1], spec[2], spec[3]
@@ -419,7 +398,7 @@ local function Build(ctx)
             end) end)
     end
     Section(ctx, b, "hud", "Blizzard HUD",
-        "Objective headers use the selected look. Move the tracker in Blizzard Edit Mode; Blizzard keeps its position, tracking and actions.", hud, false)
+        "Style the Blizzard damage meter. Configure the Suite Objective Tracker and announcements on the HUD page.", hud, false)
 
     local material = {}
     for _, spec in ipairs({
@@ -573,8 +552,7 @@ local function Build(ctx)
     local windows = {}
     local order, definitions = skin.Adapters.GetDefinitions()
     for _, id in ipairs(order) do
-        if id ~= "microMenu" and id ~= "objectiveTracker"
-            and id ~= "objectiveTrackerAccents" and id ~= "damageMeter" then
+        if id ~= "microMenu" and id ~= "damageMeter" then
             local definition = definitions[id]
             local label = definition and definition.labelKey and skin.L[definition.labelKey] or id
             windows[#windows + 1] = Row("toggle", label, "skins." .. id, "windows",

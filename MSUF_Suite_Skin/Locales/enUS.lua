@@ -184,8 +184,6 @@ NS.RegisterLocale("enUS", {
     SKIN_PLAYER_SPELLS = "Spellbook and talents",
     SKIN_ENCOUNTER_JOURNAL = "Adventure Guide",
     SKIN_BLIZZARD_WINDOWS = "All Blizzard windows",
-    SKIN_OBJECTIVE_TRACKER = "Objective Tracker",
-    SKIN_OBJECTIVE_TRACKER_ACCENTS = "Objective Tracker text & icons",
     SKIN_CHAT_FRAMES = "Chat windows, tabs and system text",
     SKIN_DAMAGE_METER = "Damage Meter",
     SKIN_EDIT_MODE = "HUD Edit Mode",

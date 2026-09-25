@@ -175,6 +175,14 @@ function S.Normalize(profile)
             config[key]=value
         end
     end
+    -- Forever previously exposed these HUD settings while marking both modules
+    -- unavailable. Activate them once now that the Mainline-based runtime is
+    -- supported; subsequent user choices remain untouched.
+    if NS.Client.isForever and (tonumber(db.foreverHudRevision) or 0) < 1 then
+        db.modules.objectives.enabled = true
+        db.modules.announcements.enabled = true
+        db.foreverHudRevision = 1
+    end
     if oldAnnouncementFactory then
         local config = db.modules.announcements
         config.quests, config.achievements, config.level, config.scenario = true, true, true, true

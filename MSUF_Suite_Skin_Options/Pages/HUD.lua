@@ -25,23 +25,8 @@ end
 O.RegisterPage("hud", NS.L.HUD, function(page)
     O.CreateSectionTitle(page, "Blizzard HUD", "Skin high-visibility HUD surfaces while Blizzard keeps positioning, data and actions.")
 
-    local tracker = O.CreatePanel(page, "card")
-    tracker:SetPoint("TOPLEFT", 4, -70)
-    tracker:SetSize(390, 274)
-    local trackerTitle = O.CreateText(tracker, "OBJECTIVE TRACKER", 12, "accent")
-    trackerTitle:SetPoint("TOPLEFT", 14, -14)
-    local trackerText = O.CreateText(tracker,
-        "Edit Mode owns position. Headers stay light, quest rows stay readable, and colors follow the selected look.",
-        11, "muted")
-    trackerText:SetPoint("TOPLEFT", trackerTitle, "BOTTOMLEFT", 0, -7)
-    trackerText:SetPoint("RIGHT", -12, 0)
-
-    local trackerBackground = Toggle(tracker, "Container background", "objectiveTrackerBackground", "objectiveTracker", { 10, -70 })
-    local trackerHeaders = Toggle(tracker, "Primary and module headers", "objectiveTrackerHeaders", "objectiveTracker", nil, trackerBackground)
-    Toggle(tracker, "Current progress and timer plates", "objectiveTrackerBars", "objectiveTracker", nil, trackerHeaders)
-
     local meter = O.CreatePanel(page, "card")
-    meter:SetPoint("TOPLEFT", 410, -70)
+    meter:SetPoint("TOPLEFT", 4, -70)
     meter:SetPoint("TOPRIGHT", -4, -70)
     meter:SetHeight(274)
     local meterTitle = O.CreateText(meter, "BLIZZARD DAMAGE METER", 12, "accent")
@@ -55,7 +40,7 @@ O.RegisterPage("hud", NS.L.HUD, function(page)
     Toggle(meter, "Source detail window", "damageMeterDetails", "damageMeter", nil, meterRows, 356)
 
     local note = O.CreatePanel(page, "navigation")
-    note:SetPoint("TOPLEFT", tracker, "BOTTOMLEFT", 0, -12)
+    note:SetPoint("TOPLEFT", meter, "BOTTOMLEFT", 0, -12)
     note:SetPoint("BOTTOMRIGHT", -4, 4)
     local noteTitle = O.CreateText(note, "COMBAT-SAFE COVERAGE", 11, "success")
     noteTitle:SetPoint("TOPLEFT", 16, -16)

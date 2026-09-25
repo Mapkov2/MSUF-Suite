@@ -145,7 +145,7 @@ NS.CopyValue = CopyValue
 NS.BaseColors = midnightColors
 
 NS.Defaults = {
-    revision = 48,
+    revision = 49,
     enabled = true,
     characterDetails = { view = "modern", enabled = true, expanded = true, styleEQoL = true, inlineGear = true, wideLayout = true },
     characterStats = { enabled = true, diminishingReturns = true },
@@ -192,8 +192,6 @@ NS.Defaults = {
         worldMap = true,
         playerSpells = true,
         encounterJournal = true,
-        objectiveTrackerAccents = true,
-        objectiveTracker = true,
         chatFrames = true,
         damageMeter = true,
         editMode = true,
@@ -220,10 +218,6 @@ NS.Defaults = {
         tutorial = true,
     },
     hud = {
-        objectiveTrackerStyle = "forever",
-        objectiveTrackerBackground = true,
-        objectiveTrackerHeaders = true,
-        objectiveTrackerBars = true,
         damageMeterWindows = true,
         damageMeterRows = true,
         damageMeterDetails = true,
@@ -1130,7 +1124,6 @@ for name, look in pairs(NS.LookPresets) do
             or name == "midnight"
         look.microStyle = classic and name ~= "midnight" and "forever"
             or name == "midnightDark" and "midnightDark" or "modern"
-        look.objectiveTrackerStyle = (classic or name == "midnightDark") and "forever" or "modern"
     end
 end
 
@@ -1170,7 +1163,6 @@ do
         micro.layoutX, micro.layoutY = position.x, position.y
         micro.positionPreset = "bottomCenter"
     end
-    NS.Defaults.hud.objectiveTrackerStyle = look.objectiveTrackerStyle
     NS.Defaults.theme.preset = look.palette
     NS.Defaults.theme.look = defaultLookName
 end

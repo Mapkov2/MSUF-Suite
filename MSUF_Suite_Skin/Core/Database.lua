@@ -249,18 +249,15 @@ function Database.Normalize(db)
         db.skinCategories[key] = db.skinCategories[key] ~= false
     end
     for key in pairs(NS.Defaults.hud) do
-        if key ~= "objectiveTrackerStyle" then db.hud[key] = db.hud[key] ~= false end
+        db.hud[key] = db.hud[key] ~= false
     end
-    if previousRevision < 31 then
-        local look = NS.LookPresets[db.theme.look]
-        if look and look.objectiveTrackerStyle then
-            db.hud.objectiveTrackerStyle = look.objectiveTrackerStyle
-        end
-    end
-    if db.hud.objectiveTrackerStyle ~= "forever"
-        and db.hud.objectiveTrackerStyle ~= "modern" then
-        db.hud.objectiveTrackerStyle = NS.Defaults.hud.objectiveTrackerStyle
-    end
+    -- Retired Blizzard tracker decoration has no settings in Suite profiles.
+    db.skins.objectiveTracker = nil
+    db.skins.objectiveTrackerAccents = nil
+    db.hud.objectiveTrackerStyle = nil
+    db.hud.objectiveTrackerBackground = nil
+    db.hud.objectiveTrackerHeaders = nil
+    db.hud.objectiveTrackerBars = nil
     local windowActions = db.icons.windowActions
     local actionDefaults = NS.Defaults.icons.windowActions
     if not IsListed(NS.WindowActionStyles, windowActions.style) then
@@ -316,6 +313,20 @@ function Database.Normalize(db)
     windowActions.opacity = Clamp(windowActions.opacity, 0.35, 1)
     local microMenu = db.icons.microMenu
     local defaults = NS.Defaults.icons.microMenu
+    if NS.Client.isForever and previousRevision <= 48
+        and db.theme.look == "foreverGlass"
+        and microMenu.preset == "forever"
+        and microMenu.positionPreset == "custom"
+        and microMenu.layoutPoint == "BOTTOM"
+        and microMenu.layoutRelativePoint == "BOTTOM"
+        and microMenu.layoutX == 463 and microMenu.layoutY == 0 then
+        -- The shipped Forever factory export placed the bar beside the chat.
+        -- Move only that exact position; preserve every other custom layout.
+        local position = NS.MicroMenuPositionPresets.bottomCenter
+        microMenu.layoutPoint, microMenu.layoutRelativePoint = position.point, position.relativePoint
+        microMenu.layoutX, microMenu.layoutY = position.x, position.y
+        microMenu.positionPreset = "bottomCenter"
+    end
     if previousRevision == 38 and NS.Client.isForever
         and db.theme.look == "foreverGlass" then
         local wasMoved = microMenu.positionPreset == "bottomLeft"

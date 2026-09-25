@@ -2,8 +2,8 @@ local _, NS = ...
 local B = NS.CatalogBuild
 
 local function Mainline()
-    if not NS.Client.isMainline or NS.Client.isForever then
-        return false, "Available in Retail"
+    if not NS.Client.isMainline then
+        return false, "Available in Retail and Forever"
     end
     return true
 end
@@ -11,18 +11,23 @@ end
 -- The two HUDs own their frames.
 B.Module("objectives", {
     title = "Objective Tracker", page = "suite_hud", core = true,
-    defaultEnabled = NS.Client.isMainline and not NS.Client.isForever,
+    defaultEnabled = NS.Client.isMainline,
     description = "An MSUF-owned objective tracker with grouped, readable entries.",
     available = Mainline,
 })
-B.Section("objectives", "content", "What to track", {
+local objectiveContent = {
     B.Bool("showAchievements", "Tracked achievements", true),
     B.Bool("showScenario", "Scenario and delve steps", true),
     B.Bool("showWorldQuests", "World quests", true),
     B.Bool("showBonus", "Nearby bonus objectives", true),
     B.Bool("showQuestItems", "Usable quest items", true),
     B.Bool("showTimers", "Objective countdowns", true),
-})
+}
+if NS.Client.isMainline and not NS.Client.isForever then
+    table.insert(objectiveContent, 1,
+        B.Bool("showMythicPlus", "Replace objectives with the Mythic+ timer during a key", true))
+end
+B.Section("objectives", "content", "What to track", objectiveContent)
 B.Section("objectives", "layout", "Size and position", {
     B.Number("width", "Tracker width", 310, 220, 520, 5),
     B.Number("height", "Maximum tracker height", 570, 220, 900, 10),
@@ -67,7 +72,7 @@ B.Section("objectives", "extraColors", "Extra group colors", {
 
 B.Module("announcements", {
     title = "Announcements", page = "suite_hud", core = true,
-    defaultEnabled = NS.Client.isMainline and not NS.Client.isForever,
+    defaultEnabled = NS.Client.isMainline,
     description = "Cinematic zone and event announcements in the Suite look.",
     available = Mainline,
 })

@@ -198,8 +198,6 @@ NS.RegisterLocale("deDE", {
     SKIN_PLAYER_SPELLS = "Zauberbuch und Talente",
     SKIN_ENCOUNTER_JOURNAL = "Abenteuerf\195\188hrer",
     SKIN_BLIZZARD_WINDOWS = "Alle Blizzard-Fenster",
-    SKIN_OBJECTIVE_TRACKER = "Zielverfolgung",
-    SKIN_OBJECTIVE_TRACKER_ACCENTS = "Zielverfolgung: Text & Symbole",
     SKIN_CHAT_FRAMES = "Chatfenster, Tabs und Systemtexte",
     SKIN_DAMAGE_METER = "Schadensanzeige",
     SKIN_EDIT_MODE = "HUD-Bearbeitungsmodus",

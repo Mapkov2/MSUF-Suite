@@ -61,9 +61,41 @@ assert(#frames == 2 and frames[2].events.PLAYER_ENTERING_WORLD and loads == 0)
 frames[1]:callback("ADDON_LOADED", "MSUF_Suite")
 -- MSUF's options addon is not loaded yet, so one watcher waits for it.
 assert(#frames == 3 and frames[3].events.ADDON_LOADED and optionLoads == 0)
+local owner = assert(MSUFSuite)
+assert((owner.Suite.catalog.objectives.rules.showMythicPlus ~= nil) == (flavor == "Mainline"),
+    "Mythic+ HUD setting must be available only on Retail")
+if flavor == "Mainline" or flavor == "Forever" then
+    assert(owner.Suite.Config("objectives").enabled
+        and owner.Suite.Config("announcements").enabled
+        and owner.Suite.catalog.objectives.available()
+        and owner.Suite.catalog.announcements.available(),
+        "Suite-owned HUD must be available by default on Mainline and Forever: "
+            .. tostring(owner.Suite.Config("objectives").enabled) .. "/"
+            .. tostring(owner.Suite.Config("announcements").enabled) .. "/"
+            .. tostring(owner.Suite.catalog.objectives.available()) .. "/"
+            .. tostring(owner.Suite.catalog.announcements.available()))
+    if flavor == "Forever" then
+        local profile = { suite = { schema = 1, modules = {
+            objectives = { enabled = false },
+            announcements = { enabled = false },
+        } } }
+        owner.Suite.Normalize(profile)
+        assert(profile.suite.modules.objectives.enabled
+            and profile.suite.modules.announcements.enabled,
+            "older Forever profile did not activate the Suite-owned HUD")
+        profile.suite.modules.objectives.enabled = false
+        owner.Suite.Normalize(profile)
+        assert(not profile.suite.modules.objectives.enabled,
+            "later user HUD choice was overwritten")
+    end
+    -- This lightweight boot fixture has no WoW frame methods; the dedicated
+    -- HUD contract exercises both live module implementations.
+    owner.Suite.Normalize(owner.DB)
+    owner.Suite.Config("objectives").enabled = false
+    owner.Suite.Config("announcements").enabled = false
+end
 frames[1]:callback("PLAYER_LOGIN")
 frames[2]:callback("PLAYER_ENTERING_WORLD", true, false)
-local owner = assert(MSUFSuite)
 assert(owner.Suite.started and owner.RootDB == MSUFSuiteDB and owner.Skin.enabled)
 assert(owner.Suite.Config("combatLog").enabled == true
     and owner.Suite.Config("combatLog").dungeonMythicPlus == true
@@ -88,6 +120,8 @@ if flavor == "Forever" then
 end
 assert(#frames == 4 and loads == 1 and featureLoads == 1
     and not next(frames[1].events) and not next(frames[2].events))
+assert((owner.Suite.MythicPlus ~= nil) == (flavor == "Mainline"),
+    "Mythic+ runtime must be available only on Retail")
 frames[3]:callback("ADDON_LOADED", "SomeOtherAddon")
 assert(optionLoads == 0 and frames[3].events.ADDON_LOADED)
 loaded.MidnightSimpleUnitFrames_Options = true

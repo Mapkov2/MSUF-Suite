@@ -138,7 +138,8 @@ hooksecurefunc = function(object, method, callback)
         return unpack(result)
     end
 end
-local suite = { Suite = { instances = {}, editMode = false },
+local suite = { Client = { isMainline = true, isForever = false },
+    Suite = { instances = {}, editMode = false },
     Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end }
 local S = suite.Suite
 S.Public = function() return true end
@@ -172,6 +173,7 @@ local function Context()
     end
     return ctx
 end
+assert(loadfile(root .. "/MSUF_Suite_Modules/MythicPlus.lua"))("MSUF_Suite_Modules", { NS = suite, Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_Modules/Objectives.lua"))("MSUF_Suite_Modules", { NS = suite, Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_Modules/Announcements.lua"))("MSUF_Suite_Modules", { NS = suite, Suite = S })
 local tracker = S.instances.objectives
@@ -461,6 +463,122 @@ tracker.config.showTimers = false
 tracker:Refresh()
 assert(not tracker.rows["entry:quests:43"].timerEnd,
     "disabling countdowns must stop active timer rows")
+local activeKey, elapsed, deaths, penalty = true, 600, 2, 10
+local ticker
+C_Timer.NewTicker = function(interval, callback)
+    assert(interval == 1, "M+ clock must update once per second")
+    ticker = { callback = callback }
+    function ticker:Cancel() self.cancelled = true end
+    function ticker:Fire() if not self.cancelled then self.callback() end end
+    return ticker
+end
+Enum.WorldElapsedTimerTypes = { ChallengeMode = 1 }
+C_ChallengeMode = {
+    IsChallengeModeActive = function() return activeKey end,
+    GetActiveChallengeMapID = function() return activeKey and 500 or nil end,
+    GetMapUIInfo = function() return "The Test Dungeon", nil, 1800 end,
+    GetActiveKeystoneInfo = function() return 15, { 1, 2 } end,
+    GetAffixInfo = function(id) return id == 1 and "Fortified" or "Bursting" end,
+    GetDeathCount = function() return deaths, penalty end,
+    GetChallengeCompletionInfo = function()
+        return { time = 1100000, keystoneUpgradeLevels = 2, onTime = true }
+    end,
+}
+GetWorldElapsedTimers = function() return 7 end
+GetWorldElapsedTime = function(id)
+    assert(id == 7, "the challenge timer ID must come from Blizzard")
+    return "Challenge", elapsed, Enum.WorldElapsedTimerTypes.ChallengeMode
+end
+C_Scenario.GetStepInfo = function() return "Dungeon", "", 3 end
+local secondBossDone, forces = false, 63
+C_ScenarioInfo.GetCriteriaInfo = function(index)
+    if index == 1 then return { description = "First boss", completed = true, elapsed = 200 } end
+    if index == 2 then return { description = "Second boss", completed = secondBossDone,
+        elapsed = secondBossDone and 100 or nil } end
+    return { description = "Enemy forces", isWeightedProgress = true,
+        quantity = forces, totalQuantity = 100 }
+end
+tracker.config.showMythicPlus = true
+local beforeKeyUpdates = questUpdates
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+tracker.context.events.CHALLENGE_MODE_START(tracker, "CHALLENGE_MODE_START")
+Drain()
+assert(tracker.mplusActive and ticker and tracker.mplus.frame.shown
+    and tracker.title.text == "MYTHIC+" and tracker.count.text == "+15"
+    and tracker.mplus.clock.text == "10:00 / 30:00"
+    and tracker.mplus.chests[1].label.text == "+3  18:00"
+    and tracker.mplus.deaths.text == "DEATHS  2     TIME PENALTY  +0:10"
+    and tracker.mplus.forces.text == "ENEMY FORCES  63.0%"
+    and tracker.mplus.bosses[1].time.text == "6:40"
+    and not tracker.rows["entry:quests:43"].shown
+    and questUpdates == beforeKeyUpdates,
+    "active M+ must replace quest rows and cancel pending quest work")
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+assert(questUpdates == beforeKeyUpdates, "quest updates must not rebuild the hidden tracker")
+elapsed = 1100
+ticker:Fire()
+assert(tracker.mplus.clock.text == "18:20 / 30:00"
+    and tracker.mplus.chests[1].remaining.text == "missed"
+    and tracker.mplus.chests[2].remaining.text == "5:40 left",
+    "chest cutoffs must track Blizzard's elapsed challenge time")
+deaths, penalty, secondBossDone, forces = 3, 15, true, 80
+tracker.context.events.CHALLENGE_MODE_DEATH_COUNT_UPDATED(tracker, "CHALLENGE_MODE_DEATH_COUNT_UPDATED")
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.deaths.text == "DEATHS  3     TIME PENALTY  +0:15"
+    and tracker.mplus.forces.text == "ENEMY FORCES  80.0%"
+    and tracker.mplus.bosses[2].time.text == "16:40",
+    "deaths, penalty, forces and boss progress must update from their own events")
+local secret = {}
+S.Public = function(value) return value ~= secret end
+C_ChallengeMode.GetDeathCount = function() return secret, secret end
+forces = secret
+tracker.context.events.CHALLENGE_MODE_DEATH_COUNT_UPDATED(tracker, "CHALLENGE_MODE_DEATH_COUNT_UPDATED")
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.deaths.text == "DEATHS  --     TIME PENALTY  +--:--"
+    and tracker.mplus.forces.text == "ENEMY FORCES  --",
+    "unreadable challenge values must stay unknown")
+S.Public = function() return true end
+C_ChallengeMode.GetDeathCount = function() return deaths, penalty end
+forces = 80
+activeKey = false
+tracker.context.events.CHALLENGE_MODE_COMPLETED(tracker, "CHALLENGE_MODE_COMPLETED")
+assert(ticker.cancelled and tracker.mplus.remaining.text == "COMPLETE  +2"
+    and not tracker.rows["entry:quests:43"].shown,
+    "completed run must freeze its result without waking the ticker")
+C_ChallengeMode.GetChallengeCompletionInfo = function()
+    return { time = 1100000, keystoneUpgradeLevels = 3, onTime = true }
+end
+tracker.context.events.CHALLENGE_MODE_COMPLETED_REWARDS(tracker, "CHALLENGE_MODE_COMPLETED_REWARDS")
+assert(tracker.mplus.remaining.text == "COMPLETE  +3" and ticker.cancelled,
+    "late completion rewards must refresh the result without restarting the clock")
+tracker.context.events.PLAYER_ENTERING_WORLD(tracker, "PLAYER_ENTERING_WORLD")
+assert(not tracker.mplusActive and not tracker.mplus.frame.shown
+    and tracker.rows["entry:quests:43"].shown and questUpdates > beforeKeyUpdates,
+    "leaving a completed key must restore normal objectives")
+activeKey = true
+C_ChallengeMode.GetMapUIInfo = function() return nil end
+C_Scenario.GetStepInfo = function() return nil end
+tracker.context.events.CHALLENGE_MODE_START(tracker, "CHALLENGE_MODE_START")
+assert(tracker.mplusActive and tracker.mplus.remaining.text == "WAITING FOR TIMER"
+    and tracker.mplus.chests[1].label.text == "+3  --:--"
+    and tracker.mplus.forces.text == "ENEMY FORCES  --"
+    and not tracker.mplus.bosses[1].shown,
+    "a new run with late data must not show the previous run's values")
+C_ChallengeMode.GetMapUIInfo = function() return "The Test Dungeon", nil, 1800 end
+C_Scenario.GetStepInfo = function() return "Dungeon", "", 3 end
+elapsed = 610
+ticker:Fire()
+tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+assert(tracker.mplus.clock.text == "10:10 / 30:00"
+    and tracker.mplus.dungeon.text == "The Test Dungeon  +15",
+    "the active timer must pick up dungeon data when it becomes available")
+local disabledTicker = ticker
+tracker.config.showMythicPlus = false
+tracker:Refresh()
+assert(not tracker.mplusActive and disabledTicker.cancelled
+    and tracker.rows["entry:quests:43"].shown,
+    "turning off the M+ replacement must cancel its ticker and show quests")
+activeKey = false
 tracker:Disable()
 Drain()
 tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")
