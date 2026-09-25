@@ -11,7 +11,7 @@ local C=P.CDM
 local Public=S.Public
 local type,pairs,tonumber=type,pairs,tonumber
 local EMPTY=C.EMPTY
-local wipe=wipe or table.wipe or function(t) for k in pairs(t) do t[k]=nil end return t end
+local wipe=C.wipe
 local CDM=NS.CDM
 local SLOTS=CDM.SLOTS
 local Catalog=C.Catalog
@@ -62,7 +62,6 @@ local function FamilyOf(key)
     end
     return src and SOURCE_FAMILY[src] or nil
 end
-Resolve.FamilyOf=FamilyOf
 
 ------------------------------------------------------------------ plain lookups
 local function HasRange(spell)
@@ -225,9 +224,11 @@ end
 -- Preset rows (Presets.lua): spell IDs become the Blizzard entry that tracks
 -- the spell when the catalog has one (base, override or linked ID), so the
 -- row claims it off Essential/Utility; otherwise a plain spell entry. Built
--- once per catalog generation. Unlearned spells drop out in Materialize.
--- presetSpell: plain spell keys that come only from a preset; unlearned ones
--- stay hidden even in previews (every race's racial, other specs' spells).
+-- again only when the catalog's content changed (Catalog.content).
+-- Unlearned spells drop out in Materialize before anything is read.
+-- presetSpell: plain spell keys that come only from a preset, with their
+-- base spell; unlearned ones stay hidden even in previews (every race's
+-- racial, other specs' spells).
 -- The Potions and racials row starts with the Healthstones: each item key
 -- stands in for Blizzard's record of its category while the catalog has no
 -- learned one (covered: category -> the learned record with the lowest ID),
@@ -248,7 +249,7 @@ local function Consumables(out)
     return n
 end
 local function PresetLists()
-    local gen=Catalog.generation
+    local gen=Catalog.content
     if presetGen==gen then return presetKeys end
     presetGen=gen
     wipe(spellKey); wipe(presetSpell); wipe(covered); wipe(standIn)
@@ -282,7 +283,7 @@ local function PresetLists()
                     -- A replaced spell and its replacement share one entry.
                     local base=BaseSpell(id)
                     key=spellKey[base]
-                    if not key then key="s"..base; presetSpell[key]=true end
+                    if not key then key="s"..base; presetSpell[key]=base end
                 end
                 if not presetSeen[key] then presetSeen[key]=true; n=n+1; out[n]=key end
             end
@@ -292,6 +293,23 @@ local function PresetLists()
     end
     return presetKeys
 end
+-- Whether the character knows a preset-only spell (every race's racial,
+-- every spec's defensives): read once and kept until the spellbook may have
+-- changed (Resolve.SpellsChanged, from the catalog and loading-screen
+-- events). A module that is off gets no such events and reads live.
+local presetKnown={}
+local function PresetKnown(key)
+    local active=C.M.active==true
+    local known
+    if active then known=presetKnown[key] end
+    if known==nil then
+        known=Known(presetSpell[key])
+        if active then presetKnown[key]=known end
+    end
+    return known
+end
+function Resolve.SpellsChanged() wipe(presetKnown) end
+
 -- A healthstone has two keys, its item and Blizzard's record of its
 -- category, and a user list can hold either (the page saves the keys a bar
 -- shows). Both name the one that shows now: the learned record, else the
@@ -454,6 +472,11 @@ end
 -- whose aura IDs or watched unit changed (their containers need a sync).
 local WATCH={"spell","base","override","tooltip","texture","name","charges","hasRange","known","hasAura","selfAura",
     "unit","equipSlot","itemID","spellCategory","linked","family","category"}
+-- Where the aura-relevant fields sit in the snapshot.
+local UNIT_AT,HASAURA_AT
+for i=1,#WATCH do
+    if WATCH[i]=="unit" then UNIT_AT=i elseif WATCH[i]=="hasAura" then HASAURA_AT=i end
+end
 local touched,auraTouched,was,wasIDs={},{},{},{}
 Resolve.touched,Resolve.auraTouched=touched,auraTouched
 local function Snapshot(e)
@@ -478,14 +501,24 @@ local function Compare(e)
     for i=1,#WATCH do
         if was[i]~=e[WATCH[i]] then diff=true;break end
     end
-    local aura=was[12]~=e.unit or was[10]~=e.hasAura or not SameIDs(e.auraIDs)
+    local aura=was[UNIT_AT]~=e.unit or was[HASAURA_AT]~=e.hasAura or not SameIDs(e.auraIDs)
     if diff or aura then touched[#touched+1]=e end
     if aura then auraTouched[e]=true end
 end
 
 ------------------------------------------------------------------ build
+-- Only what can show is filled: an unlearned Blizzard record (outside the
+-- previews) and an unlearned preset-only spell are dropped before any entry
+-- table is made or any spell data is read.
 local function Materialize(key,slot,index,preview,spells)
     if placed[key] then return nil end
+    local src,id=Parse(key)
+    if src=="b" then
+        local rec=Catalog.records[id]
+        if not (rec and (rec.known or preview)) then return nil end
+    elseif presetSpell[key] and not PresetKnown(key) then
+        return nil
+    end
     local entries=C.entries
     local old=entries[key]
     local e=old or {key=key}
@@ -529,7 +562,10 @@ end
 -- their place but changed on refill. view.maxIcons is applied by the layout.
 function Resolve.Build()
     local views,plans,entries=C.views,C.plans,C.entries
-    local preview=C.state.preview==true
+    local state=C.state
+    local preview=state.preview==true
+    -- The options canvas redraws only when entries may have changed.
+    state.entryGen=(state.entryGen or 0)+1
     local specLists,hidden=SpecData()
     local spells=type(C.spells)=="table" and type(C.spells.e)=="table" and C.spells.e or EMPTY
     local presets=PresetLists()
@@ -585,7 +621,7 @@ function Resolve.Keys(slot,out)
     for j=1,n do
         local key=out[j]
         local _,id=Parse(key)
-        if (not presetSpell[key] or Known(BaseSpell(id))) and not (consumable[key] and not Catalog.ItemIcon(id)) then
+        if (not presetSpell[key] or PresetKnown(key)) and not (consumable[key] and not Catalog.ItemIcon(id)) then
             m=m+1; out[m]=key
         end
     end

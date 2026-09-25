@@ -189,6 +189,8 @@ local function Rules(slot)
         Add(Color(p .. "borderColor", "Border color", "000000"), "borderColor")
         Add(Bool(p .. "borderClass", "Class-colored border", false), "borderClass")
         Add(Bool(p .. "cdText", "Show countdown", true), "cdText")
+        Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
+        Add(Choice(p .. "textTop", "Text on top", 1, { "Stacks", "Countdown" }), "textTop")
         Add(Number(p .. "cdSize", "Countdown size (0 = automatic)", 0, 0, 40), "cdSize")
         Add(Number(p .. "stackSize", "Charges and stacks size (0 = automatic)", 0, 0, 40), "stackSize")
         Add(Choice(p .. "stackPos", "Charges and stacks position", 9, POINT_LABELS), "stackPos")
@@ -223,7 +225,13 @@ local function Rules(slot)
         Add(Bool(p .. "pandemic", "Highlight the refresh window", true), "pandemic")
     end
     if Has(slot, "bar") then
-        if not Has(slot, "icon") then Add(Choice(p .. "grow", "New rows", d.grow, { "Down", "Up" }), "grow") end
+        if not Has(slot, "icon") then
+            Add(Choice(p .. "grow", "New rows", d.grow, { "Down", "Up" }), "grow")
+            -- Text switches of every bar type (icon bars have them above).
+            Add(Bool(p .. "cdText", "Show countdown", true), "cdText")
+            Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
+            Add(Choice(p .. "textTop", "Text on top", 1, { "Stacks", "Countdown" }), "textTop")
+        end
         Add(Number(p .. "barWidth", "Bar width", slot.key == "bar" and 220 or 200, 60, 480), "barWidth")
         Add(Number(p .. "barHeight", "Bar height", slot.key == "bar" and 20 or 18, 8, 48), "barHeight")
         Add(Texture(p .. "barTexture", "Bar texture"), "barTexture")
@@ -319,6 +327,9 @@ CDM.SPELL_FIELDS = {
     -- Where a buff-bar aura is looked for: 1 automatic (harmful spells on the
     -- target, the rest on the player), 2 the player, 3 the target, 4 both.
     auraUnit = Range(1, 4),
+    -- Countdown and charge/stack text: 1 the bar's setting, 2 show, 3 hide.
+    -- textTop: 1 the bar's setting, 2 stacks on top, 3 countdown on top.
+    timeText = Range(1, 3), stackText = Range(1, 3), textTop = Range(1, 3),
 }
 -- What an absent per-spell field means where no bar setting stands behind it.
 CDM.SPELL_DEFAULTS = { stackColor = "ff5a3c" }

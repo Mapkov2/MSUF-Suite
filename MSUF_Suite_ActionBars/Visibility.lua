@@ -98,7 +98,7 @@ local function Enter(frame)
     local bar=rec and rec.bar or AB.headers[frame]
     if not bar then return end
     SetHover(bar,true)
-    if rec and rec.owned and AB.ShowTooltip then AB.ShowTooltip(rec) end
+    if rec and rec.owned and not rec.native and AB.ShowTooltip then AB.ShowTooltip(rec) end
     if rec and AB.OnButtonEnter then AB.OnButtonEnter(rec) end
 end
 local function Leave(frame)
@@ -106,7 +106,7 @@ local function Leave(frame)
     local rec=AB.records[frame]
     local bar=rec and rec.bar or AB.headers[frame]
     if not bar then return end
-    if rec and rec.owned and GameTooltip and GameTooltip:GetOwner()==frame then GameTooltip:Hide() end
+    if rec and rec.owned and not rec.native and GameTooltip and GameTooltip:GetOwner()==frame then GameTooltip:Hide() end
     if rec and AB.OnButtonLeave then AB.OnButtonLeave(rec) end
     SetHover(bar,bar.header:IsMouseOver() or FlyoutOpen(bar))
 end

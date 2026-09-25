@@ -162,8 +162,11 @@ end
 ------------------------------------------------------------------ bootstrap stub + files
 local S={Public=function(v) return not IsSecret(v) end,Text=function(v) return v end}
 local P={NS=NS,Suite=S}
-P.CDM={M={},EMPTY={},state={},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil)}
+P.CDM={M={},EMPTY={},state={},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
+    wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local C=P.CDM
+-- The shared constants and helpers load first, as in the TOC.
+assert(loadfile(root.."/MSUF_Suite_CooldownManager/Const.lua"))("MSUF_Suite_CooldownManager",P)
 for _,file in ipairs(FILES) do
     assert(loadfile(root.."/MSUF_Suite_CooldownManager/"..file))("MSUF_Suite_CooldownManager",P)
 end
@@ -278,14 +281,19 @@ Same("uti",Keys(Catalog.byBar.uti),"111,112")
 Same("buf",Keys(Catalog.byBar.buf),"201,202,801,601")
 Same("bar",Keys(Catalog.byBar.bar),"301")
 Same("ext",Keys(Catalog.byBar.ext),"501,502")
-Same("unknown",Keys(Catalog.unknown),"104,702")
 local recs=Catalog.records
-assert(recs[103].category==-1 and recs[103].hideByDefault and recs[103].family==1,"HideByDefault 0 -> -1")
+assert(recs[104].known==false and recs[702].known==false,"unlearned records stay in the catalog, off the bar lists")
+assert(recs[103].category==-1 and recs[103].family==1,"HideByDefault 0 -> -1")
 assert(recs[203].category==-2 and recs[203].family==2,"HideByDefault 2 -> -2 via bit test")
 assert(recs[107].spell==nil and recs[107].known and recs[701].spell==nil and recs[701].equipSlot==13,"nil spell records kept")
 assert(recs[111].override==nil,"secret override dropped")
 assert(recs[101]~=infos[101] and recs[201].linked~=infos[201].linkedSpellIDs and recs[201].linked[1]==2002,"whitelisted copies")
-assert(recs[102].linked==C.EMPTY and recs[801].buffSlot==1 and recs[501].spellCategory==30)
+assert(recs[102].linked==C.EMPTY and recs[501].spellCategory==30)
+-- Only fields the runtime reads are kept.
+for _,field in ipairs({"buffSlot","invisible","hideByDefault","pos"}) do
+    assert(recs[801][field]==nil and recs[103][field]==nil,"unread record field kept: "..field)
+end
+assert(Catalog.unknown==nil and Catalog.alerts==nil and Catalog.layoutActive==nil,"unread catalog lists kept")
 assert(recs[101].key=="b101" and recs[601].bar=="buf" and recs[601].family==2 and recs[501].bar=="ext")
 assert(recs[701].bar=="ess" and recs[701].category==7 and recs[701].family==1 and recs[702].bar=="ess","trinkets on Essential")
 -- Bars that hold an equipment slot, learned or not (gear changes matter there).
@@ -299,10 +307,13 @@ Same("equip bars",Set(Catalog.equipBars),"buf,ess")
 infos[101].spellID=424242
 assert(recs[101].spell==1001,"record does not alias Blizzard's table")
 infos[101].spellID=1001
+local content=Catalog.content
 assert(Catalog.Rebuild()==false and Catalog.generation==gen+1,"unchanged rebuild still counts a generation")
+assert(Catalog.content==content,"an unchanged rebuild keeps the content generation (preset lists stay)")
 -- Invisible entries follow Blizzard's own switch.
 CDM_HIDE_INVISIBLE_ITEMS=true
 assert(Catalog.Rebuild()==true and recs[502]==nil and Keys(Catalog.byBar.ext)=="501")
+assert(Catalog.content==content+1,"a changed rebuild moves the content generation")
 CDM_HIDE_INVISIBLE_ITEMS=nil
 assert(Catalog.Rebuild()==true and recs[502] and Keys(Catalog.byBar.ext)=="501,502")
 
@@ -317,7 +328,7 @@ Same("v5 ess",Keys(Catalog.byBar.ess),"102,101,107,701")
 Same("v5 uti",Keys(Catalog.byBar.uti),"103,112")
 Same("v5 ext",Keys(Catalog.byBar.ext),"501,502")
 assert(recs[111].category==-1 and recs[701].category==0 and recs[701].bar=="ess" and recs[103].bar=="uti")
-assert(Catalog.alerts and Catalog.alerts[101][1][3]==5 and Catalog.specTag==83)
+assert(Catalog.specTag==83)
 -- Decoded once per distinct string.
 local calls=cborCalls
 Catalog.Rebuild();Catalog.Rebuild()
@@ -779,7 +790,7 @@ local hits,last=0,nil
 local function Hit(entry) hits=hits+1;last=entry end
 Same("ForSpell shared base",Index.ForSpell(1001,nil,Hit),2)
 Same("ForItem",Index.ForItem(5555,Hit),1)
-Same("ForEquip",Index.ForEquip(13,Hit),1)
+Same("byEquip",#Index.byEquip[13],1)
 Same("ForCategory",Index.ForCategory(30,Hit),1)
 Same("ForSpell miss",Index.ForSpell(424242,nil,Hit),0)
 Same("ForSpell secret",Index.ForSpell(Secret(),Secret(),Hit),0)
@@ -835,7 +846,7 @@ assert(after==before,"ForSpell allocated "..((after-before)*1024).." bytes")
 local lateFrame
 local create=CreateFrame
 CreateFrame=function(...) lateFrame=create(...);return lateFrame end
-local late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={}}}
+local late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,wipe=C.wipe}}
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
 assert(lateFrame==nil and late.CDM.Catalog.Ready() and lateFrame==nil,"ready without a gate frame")
 assert(late.CDM.Catalog.Rebuild()==true and #late.CDM.Catalog.byBar.ess==4)
@@ -843,7 +854,7 @@ assert(late.CDM.Catalog.Rebuild()==true and #late.CDM.Catalog.byBar.ess==4)
 -- event is left to wait for.
 IsLoggedIn=function() return true end
 sets[0]={}
-late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={}}}
+late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,wipe=C.wipe}}
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
 assert(not late.CDM.Catalog.Ready() and lateFrame and lateFrame.events.COOLDOWN_VIEWER_DATA_LOADED
     and not lateFrame.events.VARIABLES_LOADED and not lateFrame.events.PLAYER_ENTERING_WORLD,"after login only the data event")

@@ -40,6 +40,54 @@ C_AddOns = {
 }
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua", nil, "Vanilla")
 assert(Suite.Database.Initialize(nil))
+local oldHud = { suite = { schema = 1, modules = { objectives = {
+    colorStyle = 1, backgroundOpacity = 82,
+}, announcements = {
+    enabled = true, zone = true, quests = false, achievements = false,
+    level = false, scenario = false, duration = 4, scale = 100, x = 0, y = -170,
+} } } }
+Suite.Suite.Normalize(oldHud)
+assert(oldHud.suite.modules.announcements.eventToasts == true
+    and oldHud.suite.modules.announcements.quests == true
+    and oldHud.suite.modules.announcements.achievements == true
+    and oldHud.suite.modules.announcements.anchor == 2
+    and oldHud.suite.modules.announcements.y == -170,
+    "previous announcements factory profile did not adopt the Blizzard replacement")
+assert(oldHud.suite.modules.objectives.backgroundOpacity == 0
+    and Suite.Defaults.suite.modules.objectives.backgroundOpacity == 0,
+    "tracker factory background must migrate to transparent")
+assert(oldHud.suite.modules.objectives.titleSize == 18
+    and oldHud.suite.modules.objectives.sectionSize == 14
+    and oldHud.suite.modules.objectives.entrySize == 15
+    and oldHud.suite.modules.objectives.objectiveSize == 13
+    and oldHud.suite.modules.announcements.subtitleSize == 16,
+    "previous HUD text sizes did not receive the readable defaults")
+local customHud = { suite = { schema = 1, modules = { objectives = {
+    colorStyle = 2, backgroundOpacity = 82, titleSize = 20, entrySize = 17,
+}, xpBar = { point = 8, x = 30, y = 200 } } } }
+Suite.Suite.Normalize(customHud)
+assert(customHud.suite.modules.objectives.backgroundOpacity == 82,
+    "explicit custom tracker opacity must survive the factory migration")
+assert(customHud.suite.modules.objectives.titleSize == 20
+    and customHud.suite.modules.objectives.entrySize == 17
+    and customHud.suite.modules.xpBar.point == 8
+    and customHud.suite.modules.xpBar.y == 200,
+    "custom HUD typography or XP placement was overwritten")
+for _, oldY in ipairs({ 148, 1040 }) do
+    local oldXP = { suite = { schema = 1, modules = { xpBar = {
+        point = 8, x = oldY == 1040 and 12 or 0, y = oldY,
+    } } } }
+    Suite.Suite.Normalize(oldXP)
+    assert(oldXP.suite.modules.xpBar.point == 2
+        and oldXP.suite.modules.xpBar.x == 0
+        and oldXP.suite.modules.xpBar.y == -24,
+        "old Suite or Forever XP placement remained at the bottom")
+end
+assert(Suite.Defaults.suite.modules.announcements.anchor == 1
+    and Suite.Defaults.suite.modules.announcements.y == -90
+    and Suite.Defaults.suite.modules.objectives.x == -35
+    and Suite.Defaults.suite.modules.objectives.y == -290,
+    "HUD factory positions must start top center and below the default minimap")
 Suite.DB.suite.modules.skyriding = { enabled = false, look = 3 }
 Suite.Suite.Normalize(Suite.DB)
 assert(Suite.Suite.Config("skyriding").look == 3
@@ -47,7 +95,8 @@ assert(Suite.Suite.Config("skyriding").look == 3
     and Suite.Suite.Config("skyriding").accentColor == "d8b66a",
     "older Skyriding profiles lost their selected colors")
 for _, id in ipairs(Suite.SuiteOrder) do
-    assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding"),
+    assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "objectives"
+        and id ~= "announcements"),
         id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end

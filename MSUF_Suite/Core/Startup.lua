@@ -31,11 +31,13 @@ loginEvent:RegisterEvent("PLAYER_ENTERING_WORLD")
 loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
     Suite.loginKind = isReloadingUi == true and "reload" or "login"
     CaptureGoldStart(isReloadingUi)
+    if Suite.Installer and Suite.Suite.started then Suite.Installer.MaybeShow() end
     self:UnregisterAllEvents()
 end)
 
 local function Initialize()
     if initialized then return true end
+    Suite.freshInstall = _G.MSUFSuiteDB == nil and _G.MapkoSkinDB == nil
     -- Older Suite profiles may live inside MapkoSkinDB. Load the legacy addon
     -- as data only before choosing the Suite profile, then hand skinning to the
     -- Suite-owned engine below.
@@ -72,6 +74,7 @@ local function Start()
         Suite.SuiteProfiles.SyncActive(_G.MSUF_ActiveProfile or "Default")
     end
     Suite.Suite.Start()
+    if Suite.Installer then Suite.Installer.MaybeShow() end
 end
 
 events:SetScript("OnEvent", function(self, event, loadedAddon)

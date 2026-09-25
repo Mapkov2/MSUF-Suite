@@ -28,11 +28,49 @@ local function SkinSnapshot(skin)
     return skin.ProfileIO.PrepareProfile(encoded)
 end
 
+local function PlaceFactoryMenu(profile, modules)
+    local menu = profile.icons and profile.icons.microMenu
+    if menu then
+        local meter = modules and modules.damageMeter
+        local leftEdge
+        if meter and type(meter.windowCount) == "number" then
+            for i = 1, math.min(meter.windowCount, 5) do
+                local x, width = meter["w" .. i .. "X"], meter["w" .. i .. "Width"]
+                if type(x) == "number" and type(width) == "number" then
+                    leftEdge = math.min(leftEdge or 0, x - width)
+                end
+            end
+        end
+        if leftEdge and leftEdge < 0 then
+            -- Both the meter and menu follow UIParent's right edge. Use the
+            -- meter's configured left edge so the menu stays beside it at
+            -- every resolution and UI scale.
+            menu.layoutPoint, menu.layoutRelativePoint = "BOTTOMRIGHT", "BOTTOMRIGHT"
+            menu.layoutX, menu.layoutY = leftEdge, 0
+        else
+            menu.layoutPoint, menu.layoutRelativePoint = "BOTTOMLEFT", "BOTTOMLEFT"
+            menu.layoutX, menu.layoutY = 18, 18
+        end
+        menu.positionPreset = "custom"
+    end
+end
+
+local function AdaptFactorySkin(profile, modules)
+    if profile.windowControls then profile.windowControls.positions = {} end
+    PlaceFactoryMenu(profile, modules)
+end
+
 -- MSUF owns the selected profile in the unified UI. A Suite profile with the
 -- same name is created from current settings on the first switch; older Suite
 -- profiles are retained, never renamed or discarded.
 function P.SyncActive(name)
     if Suite.suppressProfileSync or not Suite.RootDB or not DB.IsProfileName(name) then return false end
+    local installation = Suite.RootDB.installation
+    if installation and installation.status == "complete" and installation.profile == "suite"
+        and not installation.frameProfileName then
+        local previousName = DB.GetActiveProfileName()
+        if DB.IsProfileName(previousName) then installation.frameProfileName = previousName end
+    end
     if DB.GetActiveProfileName() ~= name then
         if not DB.GetProfile(name) then
             local ok = DB.Create(name, true)
@@ -46,7 +84,39 @@ function P.SyncActive(name)
             local ok = skin.Database.CreateProfile(name, true)
             if not ok then return false end
         end
-        if skin.Database.GetActiveProfileName() == name then return true end
+        local repaired = false
+        if installation and installation.status == "complete" and installation.profile == "suite"
+            and installation.frameProfileName == name and installation.modernMeterMenuRevision ~= 2 then
+            local current = skin.Database.GetProfile(name)
+            local menu = current and current.icons and current.icons.microMenu
+            local modules = DB.GetProfile(name)
+            modules = modules and modules.suite and modules.suite.modules
+            local meter = modules and modules.damageMeter
+            local leftEdge
+            if meter and type(meter.windowCount) == "number" then
+                for i = 1, math.min(meter.windowCount, 5) do
+                    local x, width = meter["w" .. i .. "X"], meter["w" .. i .. "Width"]
+                    if type(x) == "number" and type(width) == "number" then
+                        leftEdge = math.min(leftEdge or 0, x - width)
+                    end
+                end
+            end
+            local oldCorner = menu and menu.layoutPoint == "BOTTOMLEFT"
+                and menu.layoutRelativePoint == "BOTTOMLEFT"
+                and menu.layoutX == 18 and menu.layoutY == 18
+            local oldMeterGap = menu and leftEdge and menu.layoutPoint == "BOTTOMRIGHT"
+                and menu.layoutRelativePoint == "BOTTOMRIGHT"
+                and menu.layoutX == leftEdge - 12 and menu.layoutY == 18
+            if menu and menu.positionPreset == "custom" and (oldCorner or oldMeterGap) and modules then
+                local updated = Suite.CopyValue(current)
+                PlaceFactoryMenu(updated, modules)
+                repaired = skin.Database.SetProfile(name, updated) == true
+            end
+            if not oldCorner and not oldMeterGap or repaired then
+                installation.modernMeterMenuRevision = 2
+            end
+        end
+        if skin.Database.GetActiveProfileName() == name and not repaired then return true end
         return skin.Database.SetActiveProfile(name)
     end
     return true
@@ -224,7 +294,7 @@ function P.Export()
     return result
 end
 
-local function Create(name, frames, profile, skinProfile)
+local function Create(name, frames, profile, skinProfile, screenHeight)
     local _, previousFrames, previousModules = P.Active()
     local skin = skinProfile and SkinEngine()
     if skinProfile and (not skin or skin.Database.GetProfile(name)) then
@@ -237,6 +307,10 @@ local function Create(name, frames, profile, skinProfile)
     local imported, ok, reason = pcall(ImportFramesIntoNewProfile, name, frames)
     Suite.suppressProfileSync = nil
     if not imported then ok, reason = false, tostring(ok) end
+    if ok and screenHeight and type(_G.MSUF_SetCurrentProfileScreenReferenceHeight) == "function" then
+        ok = _G.MSUF_SetCurrentProfileScreenReferenceHeight(screenHeight)
+        if not ok then reason = "Frame positions could not be adapted" end
+    end
     if ok then ok, reason = DB.CreateFromProfile(name, profile) end
     if ok then ok, reason = DB.Activate(name) end
     if ok and skinProfile then ok, reason = skin.Database.SetProfile(name, skinProfile) end
@@ -291,6 +365,72 @@ function P.Import(name, text)
     end
     if skin and not skinProfile then return false, skinReason end
     return Create(clean, frames, profile, skinProfile)
+end
+
+-- Installer-owned factory data is already bundled and validated by the same
+-- catalog as normal profiles. Keep its module values, including explicit
+-- enabled choices, while MSUF's frame import remains transactional.
+function P.InstallFactory(name, frames, modules, skinText)
+    local clean, reason = NewName(name)
+    if not clean then return false, reason end
+    if type(frames) ~= "string" or not frames:match("^MSUF[234]:") then
+        return false, "Forever frame profile unavailable"
+    end
+    local profile, why = IO.PrepareTable(modules, false)
+    if not profile then return false, why end
+    local skin = SkinEngine()
+    local skinProfile
+    if skin then
+        if type(skinText) == "string" then
+            skinProfile, why = skin.ProfileIO.PrepareProfile(skinText)
+        else
+            skinProfile, why = SkinSnapshot(skin)
+        end
+        if not skinProfile then return false, why or "Skin profile unavailable" end
+        if type(skinText) == "string" then AdaptFactorySkin(skinProfile) end
+    end
+    return Create(clean, frames, profile, skinProfile,
+        Suite.ForeverFactoryScreenHeight)
+end
+
+-- Modern replaces only the active Suite and optional Skin settings. Prepare
+-- both payloads before changing either store; the MSUF frame profile is never
+-- imported or switched here.
+function P.InstallSuiteFactory(name, modules, skinText)
+    if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
+    local profile, reason = IO.PrepareTable(modules, false)
+    if not profile then return false, reason end
+    local skinEnabled = Suite.Client and Suite.Client.AddOnEnabled
+        and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    local skin, skinProfile
+    if skinEnabled then
+        skin = SkinEngine()
+        if not skin then return false, "Skin engine unavailable" end
+        skinProfile, reason = skin.ProfileIO.PrepareProfile(skinText)
+        if not skinProfile then return false, reason or "Modern Skin profile unavailable" end
+        AdaptFactorySkin(skinProfile, profile.suite.modules)
+    end
+    local previousModules = DB.GetProfile(name)
+    local previousActive = DB.GetActiveProfileName()
+    local previousSkin = skin and skin.Database.GetProfile(name)
+    previousSkin = previousSkin and Suite.CopyValue(previousSkin)
+    local previousSkinActive = skin and skin.Database.GetActiveProfileName()
+    Suite.RootDB.profiles[name] = profile
+    local called, ok, why = pcall(DB.Activate, name)
+    if not called then ok, why = false, tostring(ok) end
+    if ok and skin then ok, why = skin.Database.SetProfile(name, skinProfile) end
+    if ok and skin then ok, why = skin.Database.SetActiveProfile(name) end
+    if ok then return true, name end
+    Suite.RootDB.profiles[name] = previousModules
+    if previousActive and DB.GetProfile(previousActive) then DB.Activate(previousActive) end
+    if skin then
+        if previousSkin then skin.Database.SetProfile(name, previousSkin)
+        elseif skin.Database.GetProfile(name) then skin.Database.DeleteProfile(name) end
+        if previousSkinActive and skin.Database.GetProfile(previousSkinActive) then
+            skin.Database.SetActiveProfile(previousSkinActive)
+        end
+    end
+    return false, why or "Modern profile could not be activated"
 end
 
 function P.ExportModule(id)

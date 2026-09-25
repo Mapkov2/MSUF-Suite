@@ -7,16 +7,19 @@ local C=P.CDM
 -- and registers only while an array is non-empty. The For* lookups run
 -- inside combat events: no allocation, callbacks are prebuilt by the caller,
 -- and the two-list spell case dedupes through one reused set. A lookup that
--- matches nothing costs one or two table reads.
-local Public=S.Public
+-- matches nothing costs one or two table reads. Payload guards call the
+-- client's issecretvalue directly (no Lua wrapper on hot paths).
 local pairs=pairs
 local SLOTS=NS.CDM.SLOTS
+local K=C.Const
+local issecret=type(_G.issecretvalue)=="function" and _G.issecretvalue or nil
 
-local Index={bySpell={},byBase={},byCategory={},byItem={},byEquip={},
-    cooldown={},charged={},counted={},ranged={},usable={},proc={},items={},bags={},aura={},overlay={},assist={}}
+-- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
+local Index={bySpell={},byBase={},byCategory={},byItem={},byEquip={},countedSet={},
+    cooldown={},charged={},counted={},ranged={},usable={},proc={},ready={},items={},bags={},aura={},overlay={},assist={}}
 C.Index=Index
 
-local ARRAYS={"cooldown","charged","counted","ranged","usable","proc","items","bags","aura","overlay","assist"}
+local ARRAYS={"cooldown","charged","counted","ranged","usable","proc","ready","items","bags","aura","overlay","assist"}
 local MAPS={"bySpell","byBase","byCategory","byItem","byEquip"}
 local pool={}
 local seen={}
@@ -42,12 +45,6 @@ local function Add(map,key,e)
     if list[#list]~=e then list[#list+1]=e end
 end
 local function Push(list,e) list[#list+1]=e end
--- Per-spell choice first, then the bar setting.
-local function Option(e,view,field)
-    local value=e.ov[field]
-    if value==nil then value=view and view[field] end
-    return value==true
-end
 
 local function AddCooldown(e,view)
     local bySpell=Index.bySpell
@@ -66,20 +63,27 @@ local function AddCooldown(e,view)
     Add(Index.byItem,e.itemID,e)
     Add(Index.byEquip,e.equipSlot,e)
     local item=e.src=="i" or e.src=="e" or e.equipSlot~=nil
+    local ov=e.ov
     if e.charges then Push(Index.charged,e) end
-    -- Use counts (SPELL_UPDATE_USES) only matter where spell counts show;
-    -- items and potion categories show their bag count instead.
-    if spell and view and view.charges and not item and not category then Push(Index.counted,e) end
+    -- Use counts (SPELL_UPDATE_USES) only matter where spell counts show
+    -- (the entry's or the bar's choice); items and potion categories show
+    -- their bag count instead.
+    if spell and view and not item and not category and K.Choice(ov.stackText,K.BarStacks(view,true)) then
+        Push(Index.counted,e)
+        Index.countedSet[e]=true
+    end
     if e.hasRange and view and view.range then Push(Index.ranged,e) end
     if spell and view and view.usable then Push(Index.usable,e) end
-    if spell and Option(e,view,"procGlow") then Push(Index.proc,e) end
+    if spell and view and K.Pick(ov,view,"procGlow") then Push(Index.proc,e) end
+    -- Ready glows flip on combat edges only where one is wanted.
+    if view and K.Pick(ov,view,"readyGlow") then Push(Index.ready,e) end
     -- Item, equipment-slot (custom entries, or Blizzard's trinkets on whichever
     -- bar holds them, Essential by default) and potion-category entries follow
     -- bag contents; only real items follow item cooldowns
     -- (categories arrive through SPELL_UPDATE_COOLDOWN's category payload).
     if item or category then Push(Index.items,e) end
     if item then Push(Index.bags,e) end
-    if e.hasAura and e.auraIDs and Option(e,view,"showAura") then Push(Index.overlay,e) end
+    if e.hasAura and e.auraIDs and view and K.Pick(ov,view,"showAura") then Push(Index.overlay,e) end
     if spell and view and view.assist then Push(Index.assist,e) end
 end
 
@@ -90,6 +94,7 @@ function Index.Rebuild()
         for j=#list,1,-1 do list[j]=nil end
     end
     for e in pairs(seen) do seen[e]=nil end
+    C.wipe(Index.countedSet)
     local plans,views=C.plans,C.views
     local byBase=Index.byBase
     for i=1,#SLOTS do
@@ -139,8 +144,8 @@ end
 function Index.ForSpell(spellID,baseSpellID,fn)
     local bySpell=Index.bySpell
     local a,b
-    if Public(spellID) and spellID then a=bySpell[spellID] end
-    if Public(baseSpellID) and baseSpellID then b=bySpell[baseSpellID] end
+    if not (issecret and issecret(spellID)) and spellID then a=bySpell[spellID] end
+    if not (issecret and issecret(baseSpellID)) and baseSpellID then b=bySpell[baseSpellID] end
     if a==b then b=nil end
     if not a then a,b=b,nil end
     if not a then return 0 end
@@ -155,18 +160,14 @@ function Index.ForSpell(spellID,baseSpellID,fn)
     return n
 end
 function Index.ForBase(base,fn)
-    if not (Public(base) and base) then return 0 end
+    if (issecret and issecret(base)) or not base then return 0 end
     return Each(Index.byBase[base],fn)
 end
 function Index.ForCategory(category,fn)
-    if not (Public(category) and category) then return 0 end
+    if (issecret and issecret(category)) or not category then return 0 end
     return Each(Index.byCategory[category],fn)
 end
 function Index.ForItem(itemID,fn)
-    if not (Public(itemID) and itemID) then return 0 end
+    if (issecret and issecret(itemID)) or not itemID then return 0 end
     return Each(Index.byItem[itemID],fn)
-end
-function Index.ForEquip(slot,fn)
-    if not (Public(slot) and slot) then return 0 end
-    return Each(Index.byEquip[slot],fn)
 end

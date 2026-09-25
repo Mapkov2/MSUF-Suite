@@ -19,6 +19,63 @@ function S.Normalize(profile)
     if type(db.schema)=="number" and db.schema>1 then return end
     db.schema=1
     if type(db.modules)~="table" then db.modules={} end
+    -- The original tracker factory used an opaque card. Move that exact
+    -- standard value to the transparent HUD look once per saved profile.
+    if (tonumber(db.objectivesTransparentRevision) or 0) < 1 then
+        local objectives = db.modules.objectives
+        if type(objectives)=="table" and objectives.backgroundOpacity==82
+            and (objectives.colorStyle==nil or objectives.colorStyle==1) then
+            objectives.backgroundOpacity=0
+        end
+        db.objectivesTransparentRevision=1
+    end
+    -- Grow only the previous HUD factory text sizes. Explicitly different
+    -- user choices remain as they were.
+    if (tonumber(db.hudTypographyRevision) or 0) < 1 then
+        local objectives = db.modules.objectives
+        if type(objectives) == "table" then
+            if objectives.titleSize == nil or objectives.titleSize == 16 or objectives.titleSize == 17 then
+                objectives.titleSize = 18
+            end
+            if objectives.sectionSize == nil or objectives.sectionSize == 10 or objectives.sectionSize == 16 then
+                objectives.sectionSize = 14
+            end
+            if objectives.entrySize == nil or objectives.entrySize == 13 then objectives.entrySize = 15 end
+            if objectives.objectiveSize == nil or objectives.objectiveSize == 11 then
+                objectives.objectiveSize = 13
+            end
+        end
+        local announcements = db.modules.announcements
+        if type(announcements) == "table"
+            and (announcements.subtitleSize == nil or announcements.subtitleSize == 15) then
+            announcements.subtitleSize = 16
+        end
+        db.hudTypographyRevision = 1
+    end
+    -- The former Suite and Forever XP factory positions were at the bottom
+    -- of the screen. Move only those known positions to the top center.
+    if (tonumber(db.xpTopRevision) or 0) < 1 then
+        local xp = db.modules.xpBar
+        if type(xp) == "table" and (xp.point == nil or xp.point == 8)
+            and (xp.x == nil or xp.x == 0 or xp.x == 12)
+            and (xp.y == nil or xp.y == 148 or xp.y == 1040) then
+            xp.point, xp.x, xp.y = 2, 0, -24
+        end
+        db.xpTopRevision = 1
+    end
+    local oldAnnouncements = db.modules.announcements
+    -- Older announcement positions were offsets from screen center. Preserve
+    -- those coordinates when new profiles start from the top-center anchor.
+    if type(oldAnnouncements) == "table" and oldAnnouncements.anchor == nil
+        and type(oldAnnouncements.y) == "number" then
+        oldAnnouncements.anchor = 2
+    end
+    local oldAnnouncementFactory = type(oldAnnouncements)=="table"
+        and oldAnnouncements.eventToasts==nil and oldAnnouncements.zone==true
+        and oldAnnouncements.quests==false and oldAnnouncements.achievements==false
+        and oldAnnouncements.level==false and oldAnnouncements.scenario==false
+        and oldAnnouncements.duration==4 and oldAnnouncements.scale==100
+        and oldAnnouncements.x==0 and oldAnnouncements.y==-170
     local oldDataTexts = db.modules.dataTexts
     local dataHadBagChoice = type(oldDataTexts)=="table" and oldDataTexts.hideBlizzardBagBar ~= nil
     local dataHadAnySlot, dataHadBagSlot = false, false
@@ -117,6 +174,10 @@ function S.Normalize(profile)
             end
             config[key]=value
         end
+    end
+    if oldAnnouncementFactory then
+        local config = db.modules.announcements
+        config.quests, config.achievements, config.level, config.scenario = true, true, true, true
     end
     -- An older Retail profile may have DataTexts without a Bag space slot.
     -- Keep Blizzard's bag buttons until that player explicitly chooses this.

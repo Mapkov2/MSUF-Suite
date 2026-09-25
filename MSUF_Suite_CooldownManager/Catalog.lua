@@ -10,9 +10,11 @@ local C=P.CDM
 local Public=S.Public
 local type,pairs,tonumber,select,floor=type,pairs,tonumber,select,math.floor
 local EMPTY=C.EMPTY
-local wipe=wipe or table.wipe or function(t) for k in pairs(t) do t[k]=nil end return t end
+local wipe=C.wipe
 
-local Catalog={records={},order={},unknown={},generation=0,byBar={ess={},uti={},buf={},bar={},ext={}},byBase={},
+-- generation moves with every rebuild, content only when a rebuild changed
+-- a record, an order or a bar list.
+local Catalog={records={},order={},generation=0,content=0,byBar={ess={},uti={},buf={},bar={},ext={}},byBase={},
     equipBars={}}
 C.Catalog=Catalog
 
@@ -28,10 +30,9 @@ local FAMILY={[-1]=1,[0]=1,[1]=1,[5]=1,[7]=1,[-2]=2,[2]=2,[3]=2,[6]=2,[8]=2}
 -- Essential in Blizzard's settings (category 0) keeps its saved place.
 local BAR_OF={[0]="ess",[1]="uti",[2]="buf",[3]="bar",[5]="ext",[7]="ess",[6]="buf",[8]="buf"}
 local TAIL={[7]=true}
-Catalog.FAMILY,Catalog.BAR_OF,Catalog.TAIL=FAMILY,BAR_OF,TAIL
+Catalog.BAR_OF,Catalog.TAIL=BAR_OF,TAIL
 local HIDE_BY_DEFAULT=2
-local CATEGORY_ICON={[4]="Interface/ICONS/INV_POTION_114",[30]="Interface/ICONS/INV_POTION_54",
-    [1711]="Interface/ICONS/Warlock_ Healthstone",[2566]="Interface/ICONS/Warlock_ Bloodstone"}
+local CATEGORY_ICON=C.Const.CATEGORY_ICONS
 local CATEGORY_TITLE={[4]={"COOLDOWN_VIEWER_TOOLTIP_POTION_COMBAT_TITLE","Combat potion"},
     [30]={"COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTH_TITLE","Health potion"},
     [1711]={"COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTHSTONE_TITLE","Healthstone"},
@@ -202,7 +203,6 @@ local function Decode(blob)
     lastData=data
     return data
 end
-Catalog.Decode=Decode
 
 local function Lower(a,b)
     local ta,tb=type(a),type(b)
@@ -227,7 +227,6 @@ local function ActiveLayout(data,tag)
     end
     return best~=nil and mine[best] or nil
 end
-Catalog.ActiveLayout=ActiveLayout
 
 local function SpecTag()
     local classID=UnitClass and select(3,UnitClass("player"))
@@ -240,7 +239,7 @@ Catalog.SpecTag=SpecTag
 ------------------------------------------------------------------ rebuild
 local fetched,defaultOrder,merged,kept,eff,linkedTmp={},{},{},{},{},{}
 local bars={ess={},uti={},buf={},bar={},ext={}}
-local unknownTmp,tailTmp,equipTmp={},{},{}
+local tailTmp,equipTmp={},{}
 local basePool={}
 local changed=false
 
@@ -285,14 +284,11 @@ local function Copy(id,info,category)
     Put(rec,"override",Num(info.overrideSpellID))
     Put(rec,"tooltip",Num(info.overrideTooltipSpellID))
     Put(rec,"equipSlot",Num(info.equipSlot))
-    Put(rec,"buffSlot",Num(info.buffSlot))
     Put(rec,"spellCategory",Num(info.spellCategoryID))
     Put(rec,"selfAura",Flag(info.selfAura))
     Put(rec,"hasAura",Flag(info.hasAura))
     Put(rec,"charges",Flag(info.charges))
     Put(rec,"known",Flag(info.isKnown))
-    Put(rec,"invisible",Flag(info.isInvisible))
-    Put(rec,"hideByDefault",hidden)
     Put(rec,"defaultCategory",default)
     CopyLinked(rec,info.linkedSpellIDs)
     eff[id]=default
@@ -412,7 +408,7 @@ function Catalog.Rebuild()
     end
     for _,list in pairs(bars) do wipe(list) end
     wipe(equipTmp)
-    local u,t=0,0
+    local t=0
     for i=1,#order do
         local id=order[i]
         local rec=records[id]
@@ -420,12 +416,10 @@ function Catalog.Rebuild()
         Put(rec,"category",cat)
         Put(rec,"family",FAMILY[cat] or FAMILY[rec.defaultCategory])
         Put(rec,"bar",BAR_OF[cat])
-        Put(rec,"pos",i)
         -- Bars that hold an equipment slot, learned or not: a gear change
         -- there can add, remove or restyle an entry.
         if rec.equipSlot and rec.bar then equipTmp[rec.bar]=true end
-        if not rec.known then u=u+1; unknownTmp[u]=id
-        elseif rec.bar then
+        if rec.known and rec.bar then
             if TAIL[cat] then t=t+1; tailTmp[t]=id
             else local list=bars[rec.bar]; list[#list+1]=id end
         end
@@ -436,9 +430,7 @@ function Catalog.Rebuild()
         list[#list+1]=id
     end
     for i=#tailTmp,t+1,-1 do tailTmp[i]=nil end
-    for i=#unknownTmp,u+1,-1 do unknownTmp[i]=nil end
     Commit(Catalog.order,order)
-    Commit(Catalog.unknown,unknownTmp)
     for key,list in pairs(bars) do Commit(Catalog.byBar[key],list) end
     local equipBars=Catalog.equipBars
     for key in pairs(equipBars) do
@@ -449,10 +441,8 @@ function Catalog.Rebuild()
     end
     IndexBases()
     if Catalog.specTag~=tag then Catalog.specTag=tag; changed=true end
-    local alerts=layout and layout[3]
-    Catalog.alerts=type(alerts)=="table" and alerts or nil
-    Catalog.layoutActive=layout~=nil
     Catalog.generation=Catalog.generation+1
+    if changed then Catalog.content=Catalog.content+1 end
     return changed
 end
 
@@ -495,6 +485,8 @@ function Catalog.OnOverride(base,override)
             if (e.src=="b" or e.src=="s") and e.base==base and e.override~=override then Override(e,base,override); any=true end
         end
     end
+    -- Entry names and textures moved: the options canvas draws again.
+    if any then C.state.entryGen=(C.state.entryGen or 0)+1 end
     return any
 end
 

@@ -57,6 +57,7 @@ end
 Record("SetSize",function(self,w,h) Plain(w,"SetSize");self.w,self.h=w,h end)
 Record("SetTexCoord",function(self,l,r,t,b) self.tcL,self.tcR,self.tcT,self.tcB=l,r,t,b end)
 Record("SetFrameLevel",function(self,level) self.level=level end)
+Record("SetAttribute",function(self,key,value) self.attributes=self.attributes or {};self.attributes[key]=value end)
 Record("Show",function(self) self.shown=true end)
 Record("Hide",function(self) self.shown=false end)
 Record("SetShown",function(self,shown) Plain(shown,"SetShown");self.shown=shown and true or false end)
@@ -203,7 +204,7 @@ assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",
 S.Public=function(value) return not IsSecret(value) end
 
 ------------------------------------------------------------------ bootstrap stub and render files
-local C={M={},EMPTY={},views={},plans={},bars={},entries={},state={
+local C={M={},EMPTY={},views={},plans={},bars={},entries={},wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,state={
     px=1,font="Fonts\\TEST.TTF",fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,keyR=1,keyG=1,keyB=1,
     threshold=0,thR=1,thG=90/255,thB=60/255,showGCD=false,readyGlowCombat=true,inCombat=false,preview=false}}
 local P={NS=NS,Suite=S,CDM=C}
@@ -291,7 +292,7 @@ local b1=Entry("b1","ess",{spell=100,base=100,hasRange=true,texture=1001,charges
 local b2=Entry("b2","ess",{spell=200,base=200,texture=1002,charges=true})
 local b3=Entry("b3","ess",{spell=300,base=300,hasRange=true,texture=1003})
 local b4=Entry("b4","ess",{spellCategory=4,texture=K.CATEGORY_ICONS[4]})
-local e13=Entry("e13","ess",{equipSlot=13,texture=1013})
+local e13=Entry("e13","ess",{equipSlot=13,itemID=1013,texture=1013})
 local s300=Entry("s300","uti",{spell=300,base=300,hasRange=true,texture=1003})
 local b6=Entry("b6","uti",{spell=600,base=600,texture=1006,charges=false})
 Info(100,false,false);Info(200,false,false);Info(300,false,false);Info(600,false,false);Info(400,false,false)
@@ -301,6 +302,12 @@ C.plans.uti={slot="uti",kind=1,entries={s300,b6}}
 ------------------------------------------------------------------ Icons: pools, styling, memoization
 I.Sync("ess");I.Sync("uti")
 assert(I.Count("ess")==5 and I.Count("uti")==2)
+assert(b1.icon.template=="PingReceiverAttributeTemplate" and b1.icon.ping==true
+    and b1.icon.attributes["ping-receiver"]==true and not b1.icon:GetAllowRadialWheel(),"live icons are contextual ping receivers")
+assert(b1.icon:GetIsPingable() and b1.icon:GetTargetInfo().spellID==100,"spell ping target")
+assert(b4.icon:GetTargetInfo().spellCategoryID==4,"consumable category ping target")
+assert(e13.icon:GetTargetInfo().itemID==1013,"equipped trinket ping target")
+assert(Calls(b1.icon,"SetAttribute")==1,"ping receiver state is set once on binding")
 for _,entry in ipairs(C.plans.ess.entries) do
     local icon=entry.icon
     assert(icon and icon.entry==entry and icon.parent==C.bars.ess.frame,"icon must be pooled under its bar frame")
@@ -351,6 +358,7 @@ do
     I.SetBarMouse("ess",false)
     for _,entry in ipairs(C.plans.ess.entries) do
         assert(entry.icon.mouse==false and entry.icon.last.EnableMouseMotion==false,"hidden bar icons must drop the mouse")
+        assert(entry.icon.ping==false and entry.icon.attributes["ping-receiver"]==false,"hidden bar icons must release ping targets")
     end
     local quiet=writes
     I.SetBarMouse("ess",false);I.Style("ess");I.Sync("ess")
@@ -358,6 +366,7 @@ do
     C.bars.ess.hidden=nil
     I.SetBarMouse("ess",true)
     assert(b1.icon.mouse==true and b1.icon.last.EnableMouseMotion==true and s300.icon.mouse==false,"shown again: tooltips take the mouse back")
+    assert(b1.icon.ping==true and b1.icon.attributes["ping-receiver"]==true,"shown bar restores ping targets")
     quiet=writes
     I.SetBarMouse("ess",true);I.Style("ess")
     assert(writes==quiet,"bar mouse memoized")
@@ -365,6 +374,7 @@ do
     ess.tooltips=false
     I.Style("ess")
     assert(b1.icon.last.EnableMouseMotion==false)
+    assert(b1.icon.ping==true and b1.icon:GetIsPingable(),"ping remains available with tooltips off")
     b1.icon.scripts.OnEnter(b1.icon)
     assert(Calls(GameTooltip,"SetOwner")==before,"tooltips off")
 end
@@ -423,7 +433,9 @@ do
 end
 
 ------------------------------------------------------------------ Time: secret sinks and isolation
-T.RefreshAll()
+for _,plan in pairs(C.plans) do
+    if plan.kind==1 then for _,entry in ipairs(plan.entries) do T.Refresh(entry,"full") end end
+end
 assert(b1.cooling==false and b1.hidden==false and not b1.icon.cd.running)
 local function Snapshot(entry) local icon=entry.icon;return Calls(icon.cd,"SetCooldownFromDurationObject")+Calls(icon.cd,"Clear")+Calls(icon.tex,"SetDesaturation")+Calls(icon,"SetAlpha")+Calls(icon.count,"SetText") end
 do
@@ -631,11 +643,17 @@ do
     T.BagsChanged()
     T.Refresh(b4,"item")
     assert(count.last.SetText==5)
+    -- A behavior change (the controller bumps behaviorGen) re-applies the
+    -- icon's text switches on the next full refresh.
     ess.charges=false
+    ess.behaviorGen=ess.behaviorGen+1
+    T.Refresh(b4,"full")
+    assert(count.last.SetText=="" and b4.icon.countOff==true and b4.icon.stackOn==false,"charges off clears the count")
     T.Refresh(b4,"item")
-    assert(count.last.SetText=="" and b4.icon.countOff==true,"charges off clears the count")
+    assert(count.last.SetText=="" and b4.icon.countOff==true,"a hidden count is never written")
     ess.charges=true
-    T.Refresh(b4,"item")
+    ess.behaviorGen=ess.behaviorGen+1
+    T.Refresh(b4,"full")
     assert(count.last.SetText==5,"charges on shows it again")
     bag[items[1]],bag[items[2]],bag[items[3]]=0,nil,nil
     T.BagsChanged()
@@ -763,7 +781,10 @@ do
     T.BagsChanged()
     assert(T.Refresh(stone,"item")==false and stone.hidden==false and stone.icon.countOff==true,"one stone shows without a count")
     -- Counts off: the bags are still read for the hide rule, no count shows.
+    -- (A behavior change re-applies the icons' text switches.)
     uti.charges=false
+    uti.behaviorGen=uti.behaviorGen+1
+    I.Apply(stone);I.Apply(stoneCat)
     bag[5512]=nil
     T.BagsChanged()
     assert(T.Refresh(stone,"item")==true and stone.hidden==true,"counts off still hide an empty stone")
@@ -772,6 +793,8 @@ do
     T.BagsChanged()
     assert(T.Refresh(stoneCat,"item")==true and stoneCat.hidden==false and stoneCat.icon.countOff==true,"shown, no count")
     uti.charges=true
+    uti.behaviorGen=uti.behaviorGen+1
+    I.Apply(stone);I.Apply(stoneCat)
     T.Refresh(stoneCat,"item")
     bag[5512]=nil
     T.BagsChanged()
@@ -1101,16 +1124,87 @@ do
     ess.assist=false
 end
 
+------------------------------------------------------------------ Icons: text per entry
+-- Countdown, charges/stacks and Text on top per entry: the spell's choice
+-- (timeText, stackText, textTop: 2 yes, 3 no), else the bar's switches
+-- (stacks also follow "Show charges"). Memoized: a repeated pass writes
+-- nothing. A hidden count is cleared once and never written again (the
+-- time layer skips it); countdown on top lifts the swipe, which draws the
+-- countdown, above the text frame.
+do
+    local icon=b1.icon
+    local cd,count=icon.cd,icon.count
+    local level=icon.level
+    assert(icon.lastTime==true and icon.stackOn==true and icon.lastTop==true and cd.level==level+K.LEVEL.cd
+        and icon.over.level==level+K.LEVEL.text,"bar defaults: countdown and stacks shown, stacks on top")
+    assert(K.LEVEL.top>K.LEVEL.text and K.LEVEL.text>K.LEVEL.glow,"countdown on top sits above the text frame")
+    local function Choose(ov) b1.ov=ov;I.Apply(b1) end
+    local hides=Calls(cd,"SetHideCountdownNumbers")
+    Choose({timeText=3})
+    assert(cd.last.SetHideCountdownNumbers==true and Calls(cd,"SetHideCountdownNumbers")==hides+1,"spell: countdown hidden")
+    ess.styleGen=ess.styleGen+1
+    I.Style("ess")
+    assert(cd.last.SetHideCountdownNumbers==true and Calls(cd,"SetHideCountdownNumbers")==hides+1,
+        "a restyle keeps the spell's choice without writing it again")
+    ess.cdText=false;ess.styleGen=ess.styleGen+1
+    Choose({timeText=2})
+    assert(cd.last.SetHideCountdownNumbers==false,"spell: countdown shown on a bar without it")
+    Choose(C.EMPTY)
+    assert(cd.last.SetHideCountdownNumbers==true,"the bar's switch")
+    ess.cdText=true;ess.styleGen=ess.styleGen+1
+    Choose(C.EMPTY)
+    assert(cd.last.SetHideCountdownNumbers==false)
+    -- stacks: hidden once, then never written
+    Info(100,true,false)
+    Choose({stackText=3})
+    assert(icon.stackOn==false and icon.countOff==true and count.last.SetText=="","spell: stacks hidden and cleared")
+    local texts,queries=Calls(count,"SetText"),cooldownQueries
+    T.Refresh(b1,"cooldown");T.Refresh(b1,"full");T.Refresh(b1,"count")
+    assert(Calls(count,"SetText")==texts,"a hidden count is never written")
+    ess.stackText=false;ess.styleGen=ess.styleGen+1
+    Choose({stackText=2})
+    T.Refresh(b1,"cooldown")
+    assert(icon.stackOn==true and count.last.SetText==SECRET_COUNT,"spell: stacks shown on a bar without them")
+    Choose(C.EMPTY)
+    assert(icon.stackOn==false and count.last.SetText=="","the bar's switch")
+    ess.stackText=true;ess.styleGen=ess.styleGen+1
+    Choose(C.EMPTY)
+    -- SPELL_UPDATE_USES ("count"): the count alone, no cooldown query, no swipe
+    queries=cooldownQueries
+    local quiet,swipes=writes,Calls(cd,"SetCooldownFromDurationObject")
+    assert(T.Refresh(b1,"count")==false)
+    assert(cooldownQueries==queries and writes==quiet+1 and count.last.SetText==SECRET_COUNT
+        and Calls(cd,"SetCooldownFromDurationObject")==swipes,"a use count writes the count only ("..(writes-quiet)..")")
+    Info(100,false,false)
+    T.Refresh(b1,"full")
+    -- Text on top
+    Choose({textTop=3})
+    assert(icon.lastTop==false and cd.level==level+K.LEVEL.top and cd.level>icon.over.level,"spell: countdown on top")
+    local levels=Calls(cd,"SetFrameLevel")
+    Choose({textTop=3})
+    assert(Calls(cd,"SetFrameLevel")==levels,"the same choice writes no level")
+    Choose({textTop=2})
+    assert(cd.level==level+K.LEVEL.cd,"spell: stacks on top")
+    ess.textTop=2;ess.styleGen=ess.styleGen+1
+    Choose(C.EMPTY)
+    assert(cd.level==level+K.LEVEL.top,"bar: countdown on top")
+    ess.textTop=1;ess.styleGen=ess.styleGen+1
+    Choose(C.EMPTY)
+    assert(cd.level==level+K.LEVEL.cd and (not icon.chargeCd or icon.chargeCd.level==level+K.LEVEL.charge),"back")
+end
+
 ------------------------------------------------------------------ preview and release
 do
     local parent=CreateFrame("Frame",nil,nil)
     local icon=I.CreateStandalone(parent)
     I.StyleIcon(icon,uti)
     assert(icon.w==32 and icon.h==29 and icon.parent==parent and I.Count("ess")==5)
+    assert(icon.template==nil and icon.GetIsPingable==nil,"options preview is not a ping target")
     local placeholder=Entry("p1","ess",{texture=134400})
     table.insert(C.plans.ess.entries,placeholder)
     I.Sync("ess")
     assert(placeholder.icon and T.Refresh(placeholder,"full")==false and not placeholder.rangeSpell)
+    assert(placeholder.icon.ping==false and placeholder.icon.attributes["ping-receiver"]==false,"placeholder cannot be pinged")
     -- A bar that stops being a cooldown bar releases its icons.
     C.plans.uti.kind=2
     I.Sync("uti")

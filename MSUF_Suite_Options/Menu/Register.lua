@@ -7,6 +7,7 @@ local PAGE_ADDONS = {
     suite_damageMeter = { "damageMeter" },
     suite_bags = { "bags" },
     suite_qualityOfLife = { "qol", "quests", "loot", "combatLog", "xpBar", "skyriding" },
+    suite_hud = { "objectives", "announcements", "afkScreen" },
     suite_dataTexts = { "dataTexts" },
     suite_buffReminders = { "buffReminders" },
     suite_chat = { "chat" },

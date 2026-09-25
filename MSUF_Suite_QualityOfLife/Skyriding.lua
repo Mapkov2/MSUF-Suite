@@ -281,12 +281,29 @@ local function DrawRow(self, row, spellID, preview, maxPips)
     return recharging == true
 end
 
+local function SyncSpellEvents(self, visible, preview)
+    local watchCharges = visible and not preview and (self.config.showVigor or self.config.showSecondWind)
+    local watchCooldown = visible and not preview and self.config.showWhirlingSurge
+    local context = self.context
+    if watchCharges ~= self.watchCharges then
+        self.watchCharges = watchCharges
+        if watchCharges then context:Event("SPELL_UPDATE_CHARGES", self.spellChanged, true)
+        else context:RemoveEvent("SPELL_UPDATE_CHARGES") end
+    end
+    if watchCooldown ~= self.watchCooldown then
+        self.watchCooldown = watchCooldown
+        if watchCooldown then context:Event("SPELL_UPDATE_COOLDOWN", self.spellChanged, true)
+        else context:RemoveEvent("SPELL_UPDATE_COOLDOWN") end
+    end
+end
+
 local function Update(self)
     if not self.active then return end
     local flying, capable, speed = Glide()
     local preview = S.editMode == true
     local visible = preview or (capable == true and (not self.config.airborneOnly or flying == true))
     self.host:SetShown(visible)
+    SyncSpellEvents(self, visible, preview)
     if not visible then self.host:SetScript("OnUpdate", nil); self.ticking = false; return end
     self.state:SetText(preview and "PREVIEW" or (flying and "IN FLIGHT" or "READY"))
     local ticking = self.config.showSpeed and flying == true
@@ -332,12 +349,11 @@ function M:Enable()
     Layout(self)
     local context = self.context
     local function Changed() Update(self) end
+    self.spellChanged = Changed
     context:Event("PLAYER_ENTERING_WORLD", Changed, true)
     context:Event("PLAYER_CAN_GLIDE_CHANGED", Changed, true)
     context:Event("PLAYER_IS_GLIDING_CHANGED", Changed, true)
     context:Event("PLAYER_MOUNT_DISPLAY_CHANGED", Changed, true)
-    context:Event("SPELL_UPDATE_CHARGES", Changed, true)
-    context:Event("SPELL_UPDATE_COOLDOWN", Changed, true)
     Update(self)
     self:RegisterMovers()
 end
@@ -348,6 +364,11 @@ function M:Refresh()
 end
 
 function M:Disable()
+    if self.context then
+        self.context:RemoveEvent("SPELL_UPDATE_CHARGES")
+        self.context:RemoveEvent("SPELL_UPDATE_COOLDOWN")
+    end
+    self.watchCharges, self.watchCooldown = false, false
     if self.host then self.host:SetScript("OnUpdate", nil); self.host:Hide() end
     self.ticking, self.elapsed = false, 0
 end

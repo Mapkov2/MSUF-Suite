@@ -10,3 +10,6 @@ Surfaces.lua
 Runtime.lua
 DataSources.lua
 EditMode.lua
+Objectives.lua
+Announcements.lua
+AFKScreen.lua

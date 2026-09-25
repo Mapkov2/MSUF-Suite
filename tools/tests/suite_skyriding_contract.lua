@@ -93,19 +93,28 @@ module.config = { look = 1, width = 350, scale = 100, point = 5, x = 0, y = -145
 module.context = { Event = function(_, name, callback, combat)
     assert(combat and not events[name])
     events[name] = callback
-end }
+end, RemoveEvent = function(_, name) events[name] = nil end }
 module:Enable()
 assert(module.title.fontFlags == "SLUG", "default Skyriding HUD did not use Slug")
 assert(movers.flight and events.PLAYER_CAN_GLIDE_CHANGED and events.PLAYER_IS_GLIDING_CHANGED
-    and events.SPELL_UPDATE_CHARGES, "Skyriding events or Edit Mode mover missing")
+    and not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
+    "Grounded Skyriding registered global spell events or lost its mover")
 assert(not module.host:IsShown() and not module.host.OnUpdate, "Grounded HUD remained active")
 
 capable = true
 events.PLAYER_CAN_GLIDE_CHANGED()
 assert(module.host:IsShown() and not module.host.OnUpdate,
     "Mounted HUD should be visible without a continuous tick when idle")
+assert(events.SPELL_UPDATE_CHARGES and events.SPELL_UPDATE_COOLDOWN,
+    "Visible Skyriding HUD did not subscribe to spell changes")
 assert(module.vigor.label.text == "VIGOR" and module.vigor.count.text == "6/6"
     and module.wind.label.text == "WIND" and module.wind.count.text == "3/3")
+module.config.airborneOnly = true
+module:Refresh()
+assert(not module.host:IsShown() and not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
+    "Airborne-only HUD kept hot listeners while grounded")
+module.config.airborneOnly = false
+module:Refresh()
 
 flying, speed = true, 70
 charges[372610] = { currentCharges = 3, maxCharges = 6, cooldownStartTime = 95, cooldownDuration = 10 }
@@ -181,6 +190,8 @@ module:Refresh()
 assert(module.host.height == 88 and module.surge.shown
     and not module.speedText.shown and not module.speedValue.shown,
     "Surge-only layout clips the icon or leaves speed text visible")
+assert(not events.SPELL_UPDATE_CHARGES and events.SPELL_UPDATE_COOLDOWN,
+    "Surge-only HUD listened for unused charge events")
 module.config.showSecondWind, module.config.showVigor, module.config.showSpeed = true, true, true
 module:Refresh()
 
@@ -193,10 +204,14 @@ flying, capable = false, false
 events.PLAYER_CAN_GLIDE_CHANGED()
 assert(not module.host:IsShown() and not module.host.OnUpdate,
     "Dismount did not hide the HUD and release its tick")
+assert(not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
+    "Dismount retained global spell listeners")
 S.editMode = true
 module:Refresh()
 assert(module.host:IsShown() and module.vigor.count.text == "5/6"
     and not module.host.OnUpdate, "Edit Mode preview did not render safely")
+assert(not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
+    "Edit Mode preview retained global spell listeners")
 S.editMode = false
 module:Disable()
 assert(not module.host:IsShown() and not module.host.OnUpdate,

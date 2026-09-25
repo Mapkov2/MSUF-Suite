@@ -9,13 +9,12 @@ local _,P=...;local NS,S=P.NS,P.Suite
 --  * MultiBar1-7 move under a permanently hidden, full-screen parent with
 --    their events unregistered. They are never Hide()n: Hide on an Edit Mode
 --    bar routes through protected SetShownBase.
---  * Blizzard's action buttons stay under their bars (useparent-actionpage
---    keeps resolving there, so native binding commands keep firing them) and
---    are hidden securely (statehidden). Their own events are stripped.
+--  * Reused Retail buttons move into suite headers; other Blizzard action
+--    buttons stay under their bars and are hidden securely (statehidden).
 --  * The shared broadcasters (ActionBarButtonEventsFrame, ActionBarActions
---    EventsFrame, range/usable watchers) are left untouched: no suite button
---    is registered with them, and OverrideActionBar, ExtraActionButton1 and
---    the hidden twins' pressAndHoldAction depend on them.
+--    EventsFrame, range/usable watchers) are left untouched: reused Retail
+--    buttons were registered by Blizzard, while new suite buttons never join
+--    them. OverrideActionBar and ExtraActionButton1 also depend on them.
 --  * StanceBar and PetActionBar move under the hidden parent but keep their
 --    events: Blizzard keeps painting their buttons (secret-safe) after the
 --    suite adopts those buttons into its own headers.
@@ -37,6 +36,21 @@ while button do
     button:Hide()
     i=i+1
     button=self:GetFrameRef("twin"..i)
+end
+i=1
+button=self:GetFrameRef("reuse"..i)
+while button do
+    local header=self:GetFrameRef("reuseHeader"..i)
+    button:SetParent(header)
+    -- Reserve a showgrid bit that Blizzard never clears (its reasons are
+    -- 1/2/4). The suite's secure statehidden still decides empty/capped slots.
+    local mask=button:GetAttribute("showgrid") or 0
+    if floor(mask/8)%2==0 then button:SetAttribute("showgrid",mask+8) end
+    button:SetAttribute("index",self:GetAttribute("reuseIndex"..i))
+    button:SetAttribute("action",self:GetAttribute("reuseSlot"..i))
+    button:SetAttribute("statehidden",nil)
+    i=i+1
+    button=self:GetFrameRef("reuse"..i)
 end
 local main=self:GetFrameRef("main")
 if main then
@@ -126,20 +140,38 @@ function AB.Dispose()
             bars=bars+1
             SecureHandlerSetFrameRef(control,"bar"..bars,bar)
             bar:UnregisterAllEvents()
+            -- Blizzard can still call UpdateShownButtons directly (for
+            -- example Quick Keybind). Keep its stale layout from capping a
+            -- button that the suite configured to show.
+            local target=AB.bars[index]
+            if target and target.native then bar.numButtonsShowable=AB.BUTTONS end
         end
     end
     for _,name in ipairs({"StanceBar","PetActionBar"}) do
         local bar=AB.Frame(name)
         if bar then bars=bars+1;SecureHandlerSetFrameRef(control,"bar"..bars,bar) end
     end
-    local twins=0
+    local twins,reused=0,0
     for index=1,8 do
         for i=1,AB.BUTTONS do
             local button=AB.Frame(AB.NATIVE_BUTTONS[index]..i)
             if button then
-                twins=twins+1
-                SecureHandlerSetFrameRef(control,"twin"..twins,button)
-                button:UnregisterAllEvents()
+                local target=AB.bars[index]
+                if target and target.native then
+                    reused=reused+1
+                    -- The hidden original bar must not reapply its own shown
+                    -- button plan when the action changes on our header.
+                    button.bar=nil
+                    button:SetAttribute("_childupdate-grid",AB.SNIPPET.BUTTON)
+                    SecureHandlerSetFrameRef(control,"reuse"..reused,button)
+                    SecureHandlerSetFrameRef(control,"reuseHeader"..reused,target.header)
+                    control:SetAttribute("reuseIndex"..reused,i)
+                    control:SetAttribute("reuseSlot"..reused,target.buttons[i].slot)
+                else
+                    twins=twins+1
+                    SecureHandlerSetFrameRef(control,"twin"..twins,button)
+                    button:UnregisterAllEvents()
+                end
             end
         end
     end

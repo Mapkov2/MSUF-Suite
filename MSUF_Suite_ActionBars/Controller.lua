@@ -79,10 +79,11 @@ function M:Enable()
     AB.ResolveAPI()
     AB.Build()
     local state=not self.config.imported and AB.ReadBlizzard() or nil
+    local import=state and AB.BuildImport(state)
     AB.Dispose()
     AB.HookNativePresses()
     S.states.actionbars.reloadRequired=nil
-    if state and not AB.importQueued then QueueImport(AB.BuildImport(state)) end
+    if import and not AB.importQueued then QueueImport(import) end
     self:Refresh()
 end
 
@@ -93,6 +94,7 @@ function M:Refresh()
     AB.UpdateCurves()
     LayoutAll()
     AB.StyleAll()
+    AB.RefreshNative()
     AB.ApplyPaging()
     AB.ApplyVisibility()
     AB.UpdateClickAttributes()

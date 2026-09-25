@@ -340,7 +340,7 @@ NS.WindowActionStyles = { "bare", "soft", "outline", "native" }
 NS.WindowActionGlyphModes = { "plusMinus", "chevrons" }
 NS.WindowActionWeights = { "fine", "bold" }
 NS.WindowActionShapes = { "global", "round", "continuous", "squircle" }
-NS.MicroMenuPresets = { "modern", "midnightDark", "forever" }
+NS.MicroMenuPresets = { "modern", "midnightDark", "forever", "blizzard" }
 NS.MicroMenuBarMaterials = { "forever", "modern", "midnightDark", "theme" }
 NS.MicroMenuTintModes = { "native", "theme", "class", "monochrome" }
 NS.MicroMenuIconStyles = { "line", "bold", "blizzardIcons", "blizzard" }
@@ -373,6 +373,7 @@ NS.MicroMenuPositionPresets = {
 }
 NS.MicroMenuPresetValues = {
     forever = {
+        layoutMode = "owned",
         barBackground = true, barBorder = 1, barMaterial = "forever",
         buttonBackground = false, buttonBorder = 0,
         shape = "continuous", radius = 8,
@@ -382,6 +383,7 @@ NS.MicroMenuPresetValues = {
         normalOpacity = 1, hoverOpacity = 1, pressedOpacity = 1, disabledOpacity = 1,
     },
     modern = {
+        layoutMode = "owned",
         barBackground = true, barBorder = 1, barMaterial = "modern",
         buttonBackground = false, buttonBorder = 0,
         shape = "continuous", radius = 8,
@@ -391,6 +393,7 @@ NS.MicroMenuPresetValues = {
         normalOpacity = 1, hoverOpacity = 1, pressedOpacity = 1, disabledOpacity = 1,
     },
     midnightDark = {
+        layoutMode = "owned",
         barBackground = true, barBorder = 1, barMaterial = "midnightDark",
         buttonBackground = false, buttonBorder = 0,
         shape = "continuous", radius = 8,
@@ -399,10 +402,20 @@ NS.MicroMenuPresetValues = {
         spacing = 1, scale = 1.00, padding = 6,
         normalOpacity = 1, hoverOpacity = 1, pressedOpacity = 1, disabledOpacity = 1,
     },
+    blizzard = {
+        layoutMode = "blizzard",
+        barBackground = false, barBorder = 0, barMaterial = "theme",
+        buttonBackground = false, buttonBorder = 0,
+        shape = "global", radius = 8,
+        iconStyle = "blizzard", buttonSize = 32, iconSize = 24,
+        hoverStyle = "off", tint = "native",
+        spacing = 0, scale = 1, padding = 0,
+        normalOpacity = 1, hoverOpacity = 1, pressedOpacity = 1, disabledOpacity = 1,
+    },
 }
 
--- A complete look changes the bar's authored appearance, but never its
--- position, orientation, visibility or selected number of buttons per line.
+-- Presets choose the Suite or Blizzard layout without changing the saved
+-- position, orientation, visibility or number of buttons per line.
 NS.MicroMenuLookKeys = {
     "barBackground", "barBorder", "barMaterial", "buttonBackground", "buttonBorder",
     "shape", "radius", "iconStyle", "buttonSize", "iconSize",

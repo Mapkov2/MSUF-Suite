@@ -11,8 +11,8 @@ local N={}
 C.Native=N
 local M=C.M
 local CDM=NS.CDM
+local K=C.Const
 local Public=S.Public
-local floor=math.floor
 local CVAR="cooldownViewerEnabled"
 -- Lets S.RestoreSaved put the CVar back after a crash or a disable.
 M.cvars=M.cvars or {}
@@ -151,33 +151,21 @@ function N.FollowViewer()
 end
 
 ------------------------------------------------------------------ first-run capture
-local function Clamp(key,value)
-    local catalog=NS.SuiteCatalog and NS.SuiteCatalog.cooldownManager
-    local rule=catalog and catalog.rules[key]
-    value=floor(value+.5)
-    if rule and type(rule.min)=="number" and value<rule.min then value=rule.min end
-    if rule and type(rule.max)=="number" and value>rule.max then value=rule.max end
-    return value
-end
 local function Number(value) return Public(value) and type(value)=="number" and value==value end
-local probe={}
+-- A stand-in view for Layout.Point.
+local pointProbe={}
 
 -- Writes the x/y settings that put the Essential bar's center at (cx, cy)
 -- (UIParent units from its bottom left) for a w x h bar: x/y place the
 -- bar's growth edge relative to the screen center.
-local function Place(values,config,cx,cy,w,h,uiW,uiH)
+local function CaptureOffsets(values,config,cx,cy,w,h,uiW,uiH)
     local keys=CDM.KEYS.ess
-    probe.kind=1
-    probe.vertical=keys.vertical and config[keys.vertical]==true or false
-    probe.grow=keys.grow and config[keys.grow] or nil
-    local point=C.Layout.Point(probe)
-    local x,y=cx-uiW/2,cy-uiH/2
-    if point=="TOP" then y=y+h/2
-    elseif point=="BOTTOM" then y=y-h/2
-    elseif point=="LEFT" then x=x-w/2
-    else x=x+w/2 end
-    values[keys.x]=Clamp(keys.x,x)
-    values[keys.y]=Clamp(keys.y,y)
+    pointProbe.kind=1
+    pointProbe.vertical=keys.vertical and config[keys.vertical]==true or false
+    pointProbe.grow=keys.grow and config[keys.grow] or nil
+    local dx,dy=K.EdgeOffset(C.Layout.Point(pointProbe),w,h)
+    values[keys.x]=K.Clamp(keys.x,cx-uiW/2+dx)
+    values[keys.y]=K.Clamp(keys.y,cy-uiH/2+dy)
 end
 
 -- Center and size of Blizzard's shown Essential bar in UIParent units.
@@ -206,7 +194,7 @@ function N.Capture()
     local cx,cy,w,h
     if viewer then cx,cy,w,h=Read(viewer,ui) end
     if not cx then w,h=1,36; cx,cy=uiW/2,uiH/2-222-h/2 end
-    Place(values,config,cx,cy,w,h,uiW,uiH)
+    CaptureOffsets(values,config,cx,cy,w,h,uiW,uiH)
     values.captured=true
     return values
 end

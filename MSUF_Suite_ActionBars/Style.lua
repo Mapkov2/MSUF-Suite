@@ -159,8 +159,8 @@ function AB.StyleButton(rec)
     StyleInteraction(rec,"checked",button:GetCheckedTexture(),style.highlight==STYLE_BLIZZARD and STYLE_BLIZZARD or STYLE_FILL,.3)
     -- Text: keybind top right, count bottom right, macro name bottom.
     local fontScale=rec.owned and 0 or 2
-    local hotkey=rec.owned and button.HotKey or rec.keyText
-    if not rec.owned then
+    local hotkey=rec.owned and not rec.native and button.HotKey or rec.keyText
+    if not rec.owned or rec.native then
         Hide(button.HotKey)
         if not hotkey then hotkey=S.CreateFontString(button,nil,"OVERLAY");rec.keyText=hotkey end
     end
@@ -212,7 +212,10 @@ function AB.StyleButton(rec)
         button.Border:SetAllPoints(button)
     end
     local alert=button.SpellActivationAlert
-    if alert and rec.owned then alert:SetSize(size*1.4,size*1.4) end
+    if alert and rec.owned then
+        alert:SetSize(size*1.4,size*1.4)
+        if rec.native then alert:SetAlpha(c.procGlow==1 and 1 or 0) end
+    end
 end
 
 -- Press state for native keys, routed keys and mouse presses; also drives

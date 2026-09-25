@@ -71,6 +71,12 @@ assert(owner.Suite.Config("combatLog").enabled == true
     "combat logging did not keep safe, useful defaults")
 assert(owner.Host.build == (flavor == "Mainline" and "Main" or "Classic"))
 assert(owner.Client.flavor == flavor, "client detected as " .. tostring(owner.Client.flavor))
+if flavor == "Mainline" or flavor == "Forever" then
+    assert(type(owner.ForeverFactoryFramesCompact) == "string"
+        and owner.ForeverFactoryFramesCompact:match("^MSUF3:")
+        and type(owner.ForeverFactoryModuleCompact) == "string",
+        "Forever installer choice is unavailable on a Mainline client")
+end
 assert(owner.Suite.Config("chat").enabled == true
     and owner.Suite.Config("chat").look == (flavor == "Forever" and 3 or 2),
     "chat must start enabled with the client look")

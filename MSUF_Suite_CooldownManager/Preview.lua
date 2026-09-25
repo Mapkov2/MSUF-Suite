@@ -8,7 +8,8 @@ local C=P.CDM
 -- simulation: an 8 s cooldown on the first icon of each bar, a proc glow on
 -- the second and a buff glow on the third, from duration objects built out
 -- of plain numbers. The simulation runs only while the page is open and out
--- of combat; its one ticker exists only while it runs.
+-- of combat; its one ticker exists only while it runs. This file keeps its
+-- own small constants: the options contract loads it on its own.
 local Pv={mode=nil,sim=false}
 C.Preview=Pv
 local EMPTY=C.EMPTY
@@ -120,12 +121,14 @@ local function Unsim(entry,role)
     end
 end
 
+-- Sample icons that already run their role keep running (a repaint on a
+-- slider tick restarts nothing); the ticker restarts every sample.
 local ROLES={"cd","proc","aura"}
 local function Canvas(holder)
     local fakes=holder.fakes
     for i=1,3 do
-        local fake=fakes[i]
-        if fake and i<=holder.count and holder.kind~=3 then Sim(fake,ROLES[i]) end
+        local fake,role=fakes[i],ROLES[i]
+        if fake and i<=holder.count and holder.kind~=3 and touched[fake]~=role then Sim(fake,role) end
     end
 end
 
@@ -172,20 +175,21 @@ end
 
 ------------------------------------------------------------------ options canvas
 -- One holder per parent frame, reused: standalone icons (kinds 1 and 2) or
--- simple rows (kind 3), laid out with the live layout math.
+-- simple rows (kind 3), in bar order with the cooldown layout math
+-- (Layout.Offsets; aura bars without their player and target parts).
 -- The options page lays its own mouse buttons over the drawing and reads,
 -- after each Render: holder.count (items drawn), holder.kind, holder.items[i]
 -- (the icon or row region), holder.keys[i] (the entry key, false for a
 -- sample icon of an empty bar) and holder.dim[i] (unlearned or sample).
 -- Plain table fields written in place: no widget call, nothing allocated.
-local keyScratch,describe,textures,names={},{},{},{}
+local keyScratch,describe={},{}
 
 local function Holder(parent)
     local holder=canvases[parent]
     if not holder then
         holder=S.CreateFrame("Frame",nil,parent)
         holder.icons,holder.rows,holder.fakes,holder.out,holder.look={},{},{},{},{gen=0}
-        holder.keys,holder.dim={},{}
+        holder.keys,holder.dim,holder.textures,holder.names={},{},{},{}
         holder.items=holder.icons
         holder.count,holder.shown=0,false
         canvases[parent]=holder
@@ -193,12 +197,39 @@ local function Holder(parent)
     return holder
 end
 
+-- What a bar's content depends on besides its own slot and kind: which bars
+-- are on and their kinds (claims), by slot index.
+local WEIGHT={}
+for i=1,16 do WEIGHT[i]=8^(i-1) end
+local function Bars()
+    local sig=0
+    for _,view in pairs(C.views) do
+        local weight=view.index and WEIGHT[view.index]
+        if weight then sig=sig+((view.on and 4 or 0)+(view.kind or 0))*weight end
+    end
+    return sig
+end
+-- Resolving a bar's keys is the costly part of a repaint: it runs again only
+-- when the catalog, the entries, the spec, the lists, the spell choices,
+-- the preview mode or the bars moved (every settings tick repaints).
+local function SameContent(holder,slot,kind)
+    local catalog,state=C.Catalog,C.state
+    local gen,entries=catalog and catalog.generation or 0,state.entryGen or 0
+    local spec,bars,preview=state.specID or 0,Bars(),state.preview==true
+    local same=holder.cSlot==slot and holder.cKind==kind and holder.cGen==gen and holder.cEntries==entries
+        and holder.cSpec==spec and holder.cBars==bars and holder.cPreview==preview and holder.cLists==C.lists
+        and holder.cSpells==C.spells
+    holder.cSlot,holder.cKind,holder.cGen,holder.cEntries=slot,kind,gen,entries
+    holder.cSpec,holder.cBars,holder.cPreview,holder.cLists,holder.cSpells=spec,bars,preview,C.lists,C.spells
+    return same
+end
+
 -- Textures and names of what the bar holds now (or would hold when off);
 -- unlearned spells included, sample icons for an empty bar.
 local function Content(slot,kind,holder)
     local keys=C.Resolve.Keys(slot,keyScratch)
     local spells=type(C.spells)=="table" and type(C.spells.e)=="table" and C.spells.e or EMPTY
-    local itemKeys,dim=holder.keys,holder.dim
+    local itemKeys,dim,textures,names=holder.keys,holder.dim,holder.textures,holder.names
     local n=0
     for i=1,#keys do
         local key=keys[i]
@@ -244,7 +275,7 @@ local function HideFrom(list,first)
 end
 
 local function Icons(holder,view,count,slot)
-    local icons,fakes,out=holder.icons,holder.fakes,holder.out
+    local icons,fakes,out,textures=holder.icons,holder.fakes,holder.out,holder.textures
     for i=1,count do
         local icon=icons[i]
         if not icon then
@@ -336,7 +367,7 @@ local function Rows(holder,view,count)
     local lead=view.barIcon~=false and h or 0
     local size=max(8,math.floor(h*.55))
     local gen=Look(holder,w,h,tex,r,g,b,bgA,left,lead,size,st)
-    local out,named=holder.out,view.barName~=false
+    local out,named,textures,names=holder.out,view.barName~=false,holder.textures,holder.names
     for i=1,count do
         local row=Row(holder,i)
         if row.pvLook~=gen then
@@ -353,9 +384,10 @@ local function Rows(holder,view,count)
     HideFrom(holder.icons,1)
 end
 
-local function Rest(holder)
+-- Samples past the first keep ones stop (all of them for rows).
+local function Rest(holder,keep)
     local fakes=holder.fakes
-    for i=1,#fakes do
+    for i=keep+1,#fakes do
         local role=touched[fakes[i]]
         if role then touched[fakes[i]]=nil;Unsim(fakes[i],role) end
     end
@@ -367,9 +399,13 @@ function Pv.Render(parent,slot,maxWidth,maxHeight)
     if not view then return nil end
     local holder=Holder(parent)
     local kind=view.kind or 1
-    local n=Content(slot,kind,holder)
+    local n=holder.n
+    if not SameContent(holder,slot,kind) or not n then
+        n=Content(slot,kind,holder)
+        holder.n=n
+    end
     local width,height,count=C.Layout.Offsets(view,n,holder.out)
-    Rest(holder)
+    Rest(holder,kind~=3 and count or 0)
     if kind==3 then Rows(holder,view,count) else Icons(holder,view,count,slot) end
     holder.kind,holder.count,holder.slot=kind,count,slot
     holder.items=kind==3 and holder.rows or holder.icons
@@ -390,8 +426,8 @@ end
 function Pv.Release(parent)
     local holder=canvases[parent]
     if not holder then return end
-    Rest(holder)
-    holder.shown=false
+    Rest(holder,0)
+    holder.shown,holder.cSlot=false,nil
     holder:Hide()
 end
 

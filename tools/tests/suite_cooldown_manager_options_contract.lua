@@ -2,13 +2,16 @@ local root = assert(arg[1], "repository root required")
 -- Offline contract for the cooldown manager options page
 -- (MSUF_Suite_Options/Pages/CooldownManager*.lua): registration, setting
 -- coverage through custom bar 1's template rules, selected-bar key mapping,
--- attach targets (bars plus the player and target frames),
--- list edits (codec + one history entry per gesture), the spell picker, the
--- per-spell popover, the preview as spell editor (pooled icon buttons over
--- the runtime canvas), combat refusal and teardown when the page hides.
--- Budgets: a settings write that cannot change the spell tiles makes no
--- runtime call for them; navigation buttons take no history snapshot; the
--- only per-frame work is a drag, cleared on release, hide and combat.
+-- attach targets (bars plus the player and target frames, no loops), Frame
+-- Basics (module-wide rules, bar choice, name, type and bar actions), list
+-- edits (codec + one history entry per gesture, Undo for anything that
+-- drops data), the spell picker, the per-spell popover (text rows of the
+-- shared text contract, row help), the preview as spell editor (pooled icon
+-- buttons over the runtime canvas, marks), combat refusal and teardown when
+-- the page hides. Budgets: a settings write that cannot change the spell
+-- tiles makes no runtime call for them; a repaint of the same preview writes
+-- no layout; navigation buttons take no history snapshot; the only
+-- per-frame work is a drag, cleared on release, hide and combat.
 -- Menu2 is a stand-in modelled on suite_options_menu_contract.lua.
 
 ------------------------------------------------------------------ secrets
@@ -384,6 +387,20 @@ end
 local Suite = assert(MSUFSuite)
 local S = Suite.Suite
 local CDM = assert(Suite.CDM, "cooldown manager catalog missing")
+-- The shared text contract: per bar cdText, stackText ("Show charges and
+-- stacks") and textTop ("Text on top": Stacks, Countdown) on every bar kind;
+-- per spell timeText, stackText and textTop stored as 1..3.
+for _, slot in ipairs(CDM.SLOTS) do
+    local k = CDM.KEYS[slot.key]
+    assert(k.cdText and k.stackText and k.textTop, "the text rules must reach every bar kind: " .. slot.key)
+end
+local textTopRule = Suite.SuiteCatalog.cooldownManager.rules[CDM.KEYS.c1.textTop]
+assert(textTopRule.label == "Text on top" and textTopRule.default == 1 and textTopRule.choices[1] == "Stacks"
+    and textTopRule.choices[2] == "Countdown", "Text on top rule")
+for _, field in ipairs({ "timeText", "stackText", "textTop" }) do
+    local valid = CDM.SPELL_FIELDS[field]
+    assert(valid and not valid(0) and valid(1) and valid(3) and not valid(4), "spell text field " .. field)
+end
 local ID = "cooldownManager"
 Suite.Database.Initialize(nil)
 S.Start()
@@ -396,7 +413,8 @@ local encodeLists = CDM.Codec.EncodeLists
 CDM.Codec.EncodeLists = function(...) encodes = encodes + 1; return encodeLists(...) end
 
 ------------------------------------------------------------------ runtime stand-in
-local runtime = { played = {}, released = 0, specID = 62 }
+-- units: what "Automatic" resolved an entry's buff to (optional runtime field).
+local runtime = { played = {}, released = 0, specID = 62, units = {} }
 local CATALOG_ORDER = { "b1", "b2", "b3", "b4", "b5", "b6", "b10", "b11", "b20", "b30", "b40" }
 -- Rows carry their spell IDs where the runtime knows them (b1 has none, so
 -- both shapes are covered).
@@ -435,7 +453,7 @@ local function Resolve()
             seen[key] = true
             out[#out + 1] = { key = key, name = record and record.name or key, texture = record and record.texture,
                 known = not record or record.known, family = entryFamily, hidden = key == "b2",
-                hasAura = record and record.hasAura }
+                hiddenBy = key == "b2" and "ready" or nil, hasAura = record and record.hasAura, unit = runtime.units[key] }
         end
         for _, key in ipairs(explicit[slot] or {}) do if claimed[key] == slot then Add(key) end end
         if not info.custom then
@@ -555,8 +573,9 @@ spec.build(ctx)
 assert(ctx.pageItems[1] == "fixed-preview", "the docked preview must be the first page item")
 assert(ctx.sections[1].sectionId == PAGE .. "_cooldownManager_module" and ctx.sections[1].headerSwitch, "module card must follow the preview")
 -- Navigation clicks never take Menu2's full settings snapshot. Frame Basics
--- is one block: the three module actions, then the bar choice (selector and
--- + Add bar) and the selected bar's summary.
+-- is one block: the three module actions, the rules for every bar, then the
+-- bar choice (selector, + Add bar, Bar actions, name and type) and the
+-- selected bar's summary.
 local cardButtons = 0
 for _, child in ipairs(ctx.sections[1].children or {}) do
     if child.kind == "Button" then
@@ -564,8 +583,9 @@ for _, child in ipairs(ctx.sections[1].children or {}) do
         assert(child._msuf2SkipHistoryCheckpoint, "module card action takes a history snapshot: " .. tostring(child.text))
     end
 end
-assert(cardButtons == 4 and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].parent == ctx.sections[1],
-    "Frame Basics must hold the three module actions and + Add bar")
+assert(cardButtons == 5 and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].parent == ctx.sections[1]
+    and registered["menu2." .. PAGE .. ".cooldownManager.editor.actions"].parent == ctx.sections[1],
+    "Frame Basics must hold the three module actions, + Add bar and Bar actions")
 assert(ctx.sections[1].title == "Frame Basics" and ctx.sections[1].defaultOpen, "Frame Basics comes first and open")
 for _, section in ipairs(ctx.sections) do
     for _, child in ipairs(section.children or {}) do
@@ -590,8 +610,10 @@ assert(registered["menu2." .. PAGE .. ".cooldownManager.preview.bar.ess"] == ui.
     and registered["menu2." .. PAGE .. ".cooldownManager.preview.simulate"]
     and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"], "preview and bar actions lack search metadata")
 
--- Sections and coverage through template keys.
+-- Sections and coverage through template keys; the bar's name and type sit
+-- in Frame Basics.
 local suffixes = {}
+for _, suffix in ipairs(Page.CARD_SUFFIXES) do suffixes[suffix] = "card" end
 for _, section in ipairs(Page.SECTIONS) do
     for _, suffix in ipairs(section.suffixes) do
         assert(not suffixes[suffix], "suffix listed twice: " .. suffix)
@@ -599,6 +621,8 @@ for _, section in ipairs(Page.SECTIONS) do
     end
 end
 for suffix in pairs(CDM.KEYS.c1) do assert(suffixes[suffix], "no section for " .. suffix) end
+assert(suffixes.stackText == "text" and suffixes.textTop == "text" and suffixes.cdText == "text",
+    "the text switches and Text on top belong to Text")
 -- Every rule has exactly one control on the page (Basics takes its rules
 -- from the topic sections, it does not repeat them).
 local covered = {}
@@ -635,6 +659,39 @@ for key, rule in pairs(catalog.rules) do
 end
 assert(checked > 500, "coverage check is vacuous")
 local function Control(suffix) return assert(covered["msufsuite.cooldownManager." .. (CDM.KEYS.c1[suffix] or suffix)], suffix) end
+-- The former General section lives in Frame Basics, each rule once: the two
+-- lists side by side, then the switches; the bar's name and type follow.
+assert(not registered["menu2." .. PAGE .. ".section.suite_cooldownManager_general.expanded"], "General is no section any more")
+for _, section in ipairs(ctx.sections) do
+    assert(section.sectionId ~= "suite_cooldownManager_general", "General must live in Frame Basics")
+end
+local generalOrder = {}
+for i, key in ipairs({ "blizzard", "soundChannel", "showGCD", "muteSounds", "readyGlowCombat" }) do
+    local control = Control(key)
+    assert(control.parent == ctx.sections[1] and control.meta.sectionId == PAGE .. "_cooldownManager_module",
+        "Frame Basics lacks " .. key)
+    for index, widget in ipairs(ctx.widgets) do if widget == control then generalOrder[i] = index end end
+end
+for i = 2, #generalOrder do assert(generalOrder[i] > generalOrder[i - 1], "Frame Basics rules out of order") end
+for _, suffix in ipairs(Page.CARD_SUFFIXES) do
+    assert(Control(suffix).parent == ctx.sections[1], "Frame Basics lacks the bar's " .. suffix)
+end
+local kindList = Control("kind").row.values
+assert(kindList[1].text == "Cooldown bar" and kindList[2].text == "Buff icon bar" and kindList[3].text == "Timer bar",
+    "one name per bar type")
+-- Blizzard's choices explain themselves; the current one says what runs now.
+local blizzardList = Control("blizzard").row.values
+local offTip = blizzardList[1].tooltip(blizzardList[1])
+assert(offTip:find("stops completely", 1, true) and offTip:find("Right now: Blizzard's bars are off.", 1, true)
+    and not blizzardList[2].tooltip(blizzardList[2]):find("Right now", 1, true), "Blizzard's choices lack their reasons")
+-- The sound channel means nothing while the module's sounds are muted.
+M.RequestRefresh()
+assert(Control("soundChannel").enabled, "the sound channel must be editable")
+Config().muteSounds = true
+M.RequestRefresh()
+assert(not Control("soundChannel").enabled and Control("muteSounds").enabled, "muted sounds must grey the channel")
+Config().muteSounds = false
+M.RequestRefresh()
 
 ------------------------------------------------------------------ selected bar mapping
 local picker
@@ -659,20 +716,30 @@ for i, section in ipairs(ctx.sections) do
     order[i] = section.sectionId:gsub("^suite_cooldownManager_", "")
     if section.defaultOpen then openSections[#openSections + 1] = order[i] end
 end
-assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,layout,look,text,effects,buffs,barstyle,visibility,general",
+assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,layout,look,text,effects,buffs,barstyle,visibility",
     "unexpected section order: " .. table.concat(order, ","))
 assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only Frame Basics and Basics start open: "
     .. table.concat(openSections, ","))
 assert(ctx.sections[3].title == "Spell list", "the tile section is the Spell list")
+assert(ctx.sections[9].title == "Timer bar style", "the timer bar section says what it styles")
 assert(ctx.sections[2]._msuf2CollapsibleEntry.label.text == "Basics: Utility cooldowns"
     and ctx.sections[4]._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
     "section headers do not name the selected bar")
--- Basics holds the most used settings of the bar.
-for _, suffix in ipairs({ "on", "size", "perRow", "anchor", "side", "align", "alpha" }) do
+-- Basics holds the most used settings of the bar, the attachment complete.
+for _, suffix in ipairs({ "on", "size", "perRow", "anchor", "side", "gap", "align", "alpha" }) do
     assert(Control(suffix).parent == ctx.sections[2], "Basics lacks " .. suffix)
 end
-assert(Control("grow").parent == ctx.sections[4] and Control("oocAlpha").parent == ctx.sections[5],
+assert(Control("grow").parent == ctx.sections[4] and Control("zoom").parent == ctx.sections[5],
     "Layout and Look keep the rest")
+-- Opacity out of combat sits with the other visibility rules; the text
+-- switches and Text on top in Text.
+assert(Control("oocAlpha").parent == ctx.sections[10] and Control("vis").parent == ctx.sections[10],
+    "Visibility holds the fade out of combat")
+for _, suffix in ipairs({ "cdText", "stackText", "textTop", "stackPos" }) do
+    assert(Control(suffix).parent == ctx.sections[6], "Text lacks " .. suffix)
+end
+local textTop = Control("textTop").row.values
+assert(#textTop == 2 and textTop[1].text == "Stacks" and textTop[2].text == "Countdown", "Text on top choices")
 picker.set("bar")
 M.RequestRefresh()
 assert(not size.enabled and Control("barWidth").enabled and not Control("desat").enabled and Control("pandemic").enabled,
@@ -733,8 +800,27 @@ picker.set("c2")
 picker.set("ess")
 M.RequestRefresh()
 local anchor = Control("anchor")
-assert(anchor.row.values[2].disabled and anchor.row.values[2].text == "Essential cooldowns" and not anchor.row.values[3].disabled,
-    "a bar cannot attach to itself")
+assert(anchor.row.values[2].disabled and anchor.row.values[2].text == "Essential cooldowns"
+    and anchor.row.values[2].tooltip(anchor.row.values[2]) == "A bar cannot attach to itself.", "a bar cannot attach to itself")
+-- Utility follows Essential, Buffs follows Utility, Buff bars follows Buffs:
+-- attaching Essential to any of them would close a loop (the runtime then
+-- frees every bar of it). Defensives sit on the player frame.
+for i, slot in ipairs({ "uti", "buf", "bar" }) do
+    local item = anchor.row.values[CDM.SLOT_INDEX[slot] + 1]
+    assert(item.disabled and item.loopOf == slot, "attach loop offered: " .. slot)
+    local tip = item.tooltip(item)
+    assert(tip:find(Page.BarName(slot), 1, true) and tip:find("loop", 1, true), "the loop entry must say why: " .. tip)
+end
+assert(not anchor.row.values[CDM.SLOT_INDEX.def + 1].disabled and not anchor.row.values[CDM.SLOT_INDEX.c1 + 1].disabled
+    and anchor.row.values[CDM.SLOT_INDEX.def + 1].tooltip(anchor.row.values[CDM.SLOT_INDEX.def + 1]) == nil,
+    "bars outside the chain stay selectable")
+-- Old settings that already hold a loop say so in the summary.
+Config().ess_anchor = CDM.SLOT_INDEX.uti + 1
+assert(Page.InLoop("ess") and Page.InLoop("uti") and not Page.InLoop("buf")
+    and Page.Summary("ess"):find("loop", 1, true), "a loop in saved settings is not reported: " .. Page.Summary("ess"))
+Config().ess_anchor = 1
+M.RequestRefresh()
+assert(not Page.InLoop("ess") and not anchor.row.values[CDM.SLOT_INDEX.def + 1].disabled, "the loop check stuck")
 -- Attach targets: Free, the twelve bars, then MSUF's player and target frames.
 local anchors = anchor.row.values
 assert(#anchors == #CDM.SLOTS + 3 and #anchors == #CDM.ANCHOR_LABELS, "attach list must end with the two unit frames")
@@ -909,6 +995,60 @@ Click(grid.tiles[6], "MiddleButton")
 assert(Keys("ess") == "b1,b2,b3,b4,i5512", "custom entries leave the list")
 assert(not (Lists().hidden[62] or {}).s133, "custom entries are never hidden")
 
+-- The Spell list's list-wide actions say what they drop, are one history
+-- entry each and offer Undo (also one entry).
+do
+    local buttons = ui.spellButtons
+    M.RequestRefresh()
+    assert(buttons.clear.text == "Reset to Blizzard's list" and buttons.clear.enabled and buttons.copy.enabled
+        and not buttons.restore.enabled, "Spell list actions on a built-in bar")
+    Fire(buttons.clear, "OnEnter")
+    assert(tooltip.text == "Reset to Blizzard's list" and tooltip.line:find("you added", 1, true), "the reset must say what it drops")
+    Fire(buttons.clear, "OnLeave")
+    local listsNow = Config().listsData
+    local writes = historyWrites
+    Click(buttons.clear, "LeftButton")
+    assert(not (Lists().specs[62] and Lists().specs[62].ess) and historyWrites == writes + 1
+        and Page.note == "Essential cooldowns follows Blizzard's list again." and Page.undo, "reset to Blizzard's list")
+    Page.RunUndo()
+    assert(Config().listsData == listsNow and Keys("ess") == "b1,b2,b3,b4,i5512" and historyWrites == writes + 2,
+        "undo did not bring the bar's list back")
+    -- Removed Blizzard entries come back as one gesture, with Undo.
+    assert(Page.RemoveEntry("ess", "b2"))
+    local hiddenNow = Config().listsData
+    M.RequestRefresh()
+    assert(buttons.restore.enabled and buttons.restore.text == "Show removed spells, all bars (1)", "restore count")
+    Click(buttons.restore, "LeftButton")
+    assert(not Lists().hidden[62] and Page.note == "Brought back the removed spells (1)." and Page.undo, "show removed spells")
+    Page.RunUndo()
+    assert(Config().listsData == hiddenNow, "undo did not hide the spells again")
+    Config().listsData = listsNow
+    -- The player's own entries go to the same bar in the other specializations.
+    Fire(buttons.copy, "OnEnter")
+    assert(tooltip.line:find("other specializations", 1, true), "the copy must say what it copies")
+    Fire(buttons.copy, "OnLeave")
+    writes = historyWrites
+    Click(buttons.copy, "LeftButton")
+    assert(Lists().specs[63].ess[1] == "i5512" and Lists().specs[64].ess[1] == "i5512" and #Lists().specs[63].ess == 1
+        and historyWrites == writes + 1 and Page.note == "Copied 2 entries to 2 other specializations.", "copy the bar's list")
+    Click(buttons.copy, "LeftButton")
+    assert(historyWrites == writes + 1 and Page.note == "Your other specializations have them already." and not Page.undo,
+        "a second copy must change nothing")
+    Config().listsData = listsNow
+    picker.set("uti")
+    M.RequestRefresh()
+    assert(not buttons.copy.enabled, "a bar without entries of your own has nothing to copy")
+    picker.set("c3")
+    M.RequestRefresh()
+    assert(buttons.clear.text == "Remove all spells", "custom bars empty their list")
+    picker.set("def")
+    M.RequestRefresh()
+    assert(buttons.clear.text == "Restore default spells", "Defensives go back to their preset")
+    picker.set("ess")
+    Page.ClearNote()
+    M.RequestRefresh()
+end
+
 -- Drag: insert after the hovered tile's right half.
 local host = grid.host
 cursorX, cursorY = 100, 100
@@ -968,8 +1108,8 @@ assert(not pop.hasAura and not pop.rows.stackGlow and not pop.rows.stackColorAt 
     "a cooldown without a buff has no stack options and no Track on")
 -- Controls end left of the per-row reset button (the row is 290 wide).
 local resetLeft = pop.rows.readyGlow.reset.parent.width - pop.rows.readyGlow.reset.width
-assert(130 + pop.rows.glowStyle.choice.width <= resetLeft
-    and 130 + pop.rows.sound.choice.width + 2 + pop.rows.sound.play.width <= resetLeft, "a control runs under the reset button")
+assert(Page.POP_X + pop.rows.glowStyle.choice.width <= resetLeft
+    and Page.POP_X + pop.rows.sound.choice.width + 2 + pop.rows.sound.play.width <= resetLeft, "a control runs under the reset button")
 local lastSwatch = pop.rows.glowColor.swatches[#pop.rows.glowColor.swatches]
 assert(lastSwatch.points[1][4] + lastSwatch.width <= resetLeft, "color swatches run under the reset button")
 writes = historyWrites
@@ -1079,6 +1219,75 @@ assert(toggledBlizzard == settingsToggles, "the sound picker must never drive Bl
 writes = historyWrites
 Fire(pop.reset, "OnClick")
 assert(Page.SpellOverrides().e.b2 == nil and historyWrites == writes + 1, "reset spell failed")
+-- The text rows of the shared contract: Countdown, Charges and Text on top,
+-- each "Bar setting" by default and naming the bar's current choice; 2 and 3
+-- are stored, "Bar setting" clears. One history entry per pick.
+do
+    local countdown, charges, top = pop.rows.timeText, pop.rows.stackText, pop.rows.textTop
+    assert(countdown and countdown.shown and charges.shown and top.shown, "cooldowns offer the text rows")
+    assert(countdown.label.text == "Countdown" and charges.label.text == "Charges" and top.label.text == "Text on top",
+        "text row labels of a cooldown")
+    assert(countdown.points[1][5] == pop.rows.swipe.points[1][5] - 26 and pop.rows.threshold.points[1][5] == top.points[1][5] - 26,
+        "the text rows sit between Swipe and Warn below")
+    assert(countdown.choice.text == "Bar: Show" and charges.choice.text == "Bar: Show" and top.choice.text == "Bar: Stacks"
+        and not countdown.reset.shown, "text rows follow the bar and say how")
+    for _, row in ipairs({ countdown, charges, top }) do
+        assert(Page.POP_X + row.choice.width <= resetLeft, "a text choice runs under the reset button")
+        local menu = {}
+        for i, item in ipairs(row.field.menu) do menu[i] = item.value .. "=" .. item.text end
+        assert(menu[1] == "0=Bar setting" and #menu == 3, "text rows start with Bar setting: " .. table.concat(menu, ","))
+    end
+    writes = historyWrites
+    Fire(countdown.choice, "OnClick")
+    assert(lastDropdown.owner == countdown.choice and lastDropdown.current == 0, "the Countdown list did not open on Bar setting")
+    lastDropdown.onSelect(3)
+    assert(Page.SpellField("b2", "timeText") == 3 and countdown.choice.text == "Hide" and countdown.reset.shown
+        and countdown.label.textColor[1] == 0.2 and historyWrites == writes + 1, "Countdown: Hide failed")
+    Fire(top.choice, "OnClick")
+    lastDropdown.onSelect(3)
+    assert(Page.SpellField("b2", "textTop") == 3 and top.choice.text == "Countdown", "Text on top: Countdown failed")
+    Fire(charges.choice, "OnClick")
+    lastDropdown.onSelect(2)
+    assert(Page.SpellField("b2", "stackText") == 2 and charges.choice.text == "Show" and historyWrites == writes + 3,
+        "Charges: Show failed")
+    lastDropdown.onSelect(0)
+    assert(Page.SpellField("b2", "stackText") == nil and charges.choice.text == "Bar: Show" and not charges.reset.shown,
+        "Bar setting must clear the field")
+    -- The bar's own choice shows through while the spell follows it.
+    Config().ess_cdText, Config().ess_textTop = false, 2
+    Fire(countdown.reset, "OnClick")
+    assert(Page.SpellField("b2", "timeText") == nil and countdown.choice.text == "Bar: Hide", "the countdown hint must follow the bar")
+    Fire(top.reset, "OnClick")
+    assert(top.choice.text == "Bar: Countdown", "Text on top must name the bar's choice")
+    Config().ess_cdText, Config().ess_textTop = true, 1
+    M.RequestRefresh()
+    assert(countdown.choice.text == "Bar: Show" and Page.SpellOverrides().e.b2 == nil, "text rows did not follow the bar back")
+    -- Values outside the contract are refused.
+    assert(not Page.SetSpellField("b2", "timeText", 0) and not Page.SetSpellField("b2", "textTop", 4)
+        and not Page.SetSpellField("b2", "stackText", 1.5), "a text row stored an invalid value")
+    -- Every label explains its row; the hint of rows without a bar setting is right.
+    Fire(countdown.tip, "OnEnter")
+    assert(tooltip.shown and tooltip.owner == countdown.tip and tooltip.text == "Countdown"
+        and tooltip.line:find("countdown numbers", 1, true), "the Countdown label does not explain itself")
+    Fire(countdown.tip, "OnLeave")
+    assert(not tooltip.shown, "leaving the label must hide its tooltip")
+    for _, field in ipairs(Page.FIELDS) do assert(type(field.help) == "string" and field.help ~= "", "no help for " .. field.key) end
+    assert(pop.rows.threshold.hint.text == "All bars" and pop.rows.readyAlpha.hint.text == "Bar",
+        "Warn below follows the module-wide setting, not the bar")
+    -- Say the name: On, or nothing (there is no bar setting to follow).
+    local tts = pop.rows.tts
+    assert(tts.hint.text == "" and tts.off.active and not tts.on.active, "Say the name starts off, without a bar hint")
+    Fire(tts.on, "OnClick")
+    assert(Page.SpellField("b2", "tts") == true and tts.on.active and tts.reset.shown, "Say the name: On failed")
+    Fire(tts.on, "OnClick")
+    assert(Page.SpellField("b2", "tts") == true, "a second On keeps it on")
+    Fire(tts.off, "OnClick")
+    assert(Page.SpellField("b2", "tts") == nil and tts.off.active and not tts.reset.shown, "Off must clear, not store false")
+    -- Header actions fit their captions and wrap; a Blizzard entry has three.
+    assert(not pop.copy.shown and pop.remove.width == 90 and pop.move.points[1][4] == 106
+        and pop.reset.points[1][5] == -54, "the header actions must sit on one line")
+    assert(pop.scope.text:find("every bar and specialization", 1, true), "the popover must say where its choices apply")
+end
 -- Move to bar from the popover.
 Fire(pop.move, "OnClick")
 local names = {}
@@ -1103,7 +1312,7 @@ assert(trackOn and trackOn.shown and trackOn.label.text == "Track on" and trackO
     and not trackOn.reset.shown and trackOn.label.textColor[1] ~= 0.2, "a cooldown that shows its buff offers Track on, Automatic")
 assert(trackOn.points[1][5] == pop.rows.showAura.points[1][5] - 26 and stackGlow.points[1][5] == trackOn.points[1][5] - 26,
     "Track on sits under Show active buff duration, right before Glow at stacks")
-assert(130 + trackOn.choice.width <= resetLeft, "the Track on choice runs under the reset button")
+assert(Page.POP_X + trackOn.choice.width <= resetLeft, "the Track on choice runs under the reset button")
 do
     local field, index
     for i, candidate in ipairs(Page.FIELDS) do if candidate.key == "auraUnit" then field, index = candidate, i end end
@@ -1123,12 +1332,16 @@ do
     local units = assert(literal and loadstring("return " .. literal), "the runtime's Track on map is missing")()
     assert(units[1] == nil and units[2] == "player" and units[3] == "target" and units[4] == "both",
         "Me, Target and Both must be the runtime's player, target and both")
-    -- Stack-row gating: buffs and cooldowns that show their buff, never a
-    -- plain cooldown or an item.
+    -- Stack-row gating: Blizzard's buffs and cooldowns that show their buff,
+    -- never a plain cooldown or an item. Custom auras name their unit
+    -- themselves (a: on you, d: on your target), so Track on would break them.
     local Applies = Page.FieldApplies
-    assert(Applies(field, 2, "b", false) and Applies(field, 2, "a", false) and Applies(field, 2, "d", false)
+    assert(Applies(field, 2, "b", false) and not Applies(field, 2, "a", false) and not Applies(field, 2, "d", false)
         and Applies(field, 1, "b", true) and not Applies(field, 1, "b", false) and not Applies(field, 1, "s", false)
-        and not Applies(field, 1, "i", false) and not Applies(field, 1, "e", false), "Track on must follow the stack rows")
+        and not Applies(field, 1, "s", true) and not Applies(field, 1, "i", false) and not Applies(field, 1, "e", false),
+        "Track on must follow the stack rows of Blizzard's entries")
+    local stackField = Page.FIELDS[index + 1]
+    assert(Applies(stackField, 2, "a", false) and Applies(stackField, 2, "d", false), "custom auras keep their stack rows")
     -- Picks: one history entry each through the codec the runtime reads.
     local tileB1 = grid:Tile("b1")
     assert(tileB1 and not tileB1.mark.shown, "b1 starts without spell options")
@@ -1185,7 +1398,7 @@ do
     assert(Page.SpellOverrides().e.b1 == nil, "stepping back to Automatic must leave no spell options")
 end
 local stackReset = stackColor.reset.parent.width - stackColor.reset.width
-assert(130 + 22 + 2 + stackColor.value.width + 2 + 22 + 8 + stackColor.swatch.width <= stackReset,
+assert(Page.POP_X + 22 + 2 + stackColor.value.width + 2 + 22 + 8 + stackColor.swatch.width <= stackReset,
     "the stack color swatch runs under the reset button")
 local dr, dg, db = P.RGB("ff5a3c")
 assert(stackColor.swatch.fill.color[1] == dr and stackColor.swatch.fill.color[2] == dg and stackColor.swatch.fill.color[3] == db
@@ -1250,6 +1463,10 @@ assert(stackGlow.alpha == 1 and stackColor.alpha == 1 and trackOn.alpha == 1, "s
 Fire(pop.rows.showAura.off, "OnClick")
 assert(stackGlow.alpha == 0.45 and stackColor.alpha == 0.45 and trackOn.alpha == 0.45 and pop.rows.glowStyle.alpha == 1,
     "stack rows must dim while the spell hides its buff")
+Fire(stackGlow.tip, "OnEnter")
+assert(tooltip.text == "Glow at stacks" and tooltip.line:find("Show active buff duration", 1, true),
+    "a dimmed stack row must say why")
+Fire(stackGlow.tip, "OnLeave")
 Fire(trackOn.choice, "OnClick")
 lastDropdown.onSelect(3)
 assert(Page.SpellField("b1", "auraUnit") == 3 and trackOn.shown, "a dimmed Track on must stay editable")
@@ -1268,6 +1485,9 @@ Fire(pop.close, "OnClick")
 Click(grid.tiles[3], "LeftButton")
 assert(pop.key == "i5512" and pop.copy.shown and not pop.rows.procGlow.shown and pop.rows.readyGlow.shown,
     "item entries show item options and the copy action")
+-- Four header actions wrap onto a second line, and the rows move down.
+assert(pop.copy.points[1][4] == 12 and pop.copy.points[1][5] == -80 and pop.scroll.points[1][5] == -(54 + 52 + 20),
+    "the header actions must wrap")
 assert(not pop.hasAura and not pop.rows.stackGlow.shown and not pop.rows.stackColorAt.shown and not pop.rows.auraUnit.shown,
     "items have no stack options and no Track on")
 Fire(pop.copy, "OnClick")
@@ -1303,6 +1523,19 @@ assert(Page.SpellField("b10", "stackGlow") == 1 and Page.SpellField("b10", "stac
 Fire(pop.reset, "OnClick")
 assert(Page.SpellOverrides().e.b10 == nil and buffTrack.choice.text == "Automatic", "reset buff options failed")
 assert(pop.rows.icon.shown and pop.rows.icon.label.text == "Icon when missing (Enter)", "buff icon row must say when it applies")
+-- Buffs name their text rows for what they show.
+assert(pop.rows.timeText.shown and pop.rows.timeText.label.text == "Seconds" and pop.rows.stackText.label.text == "Stacks"
+    and pop.rows.textTop.label.text == "Text on top" and pop.rows.timeText.choice.text == "Bar: Show",
+    "buff text rows")
+-- What Automatic picked, when the runtime says it.
+runtime.units.b10 = "target"
+Page.ui.grid.valid = false
+M.RequestRefresh()
+assert(pop.shown and buffTrack.choice.text == "Automatic: target", "Track on must say what Automatic picked")
+runtime.units.b10 = nil
+Page.ui.grid.valid = false
+M.RequestRefresh()
+assert(buffTrack.choice.text == "Automatic", "Track on without the runtime's answer")
 picker.set("ess")
 assert(not pop.shown, "changing the bar closes the popover")
 M.RequestRefresh()
@@ -1347,6 +1580,14 @@ do
     M.RequestRefresh()
     assert(#frames == frameCount, "a preview repaint created frames")
     assert(hits[1].points == hitPoints and ui.plus.points == plusPoints, "a repaint of the same drawing re-anchored its buttons")
+    -- Nor does it rescale the stage, resize the canvas or move the chips.
+    local writesSeen = 0
+    local function Count(self, value) writesSeen = writesSeen + 1; self.scale, self.height = value, value end
+    ui.stage.SetScale, ui.canvas.SetHeight, ui.strip.SetHeight = Count, Count, Count
+    local chipPoints = ui.chips.ess.points
+    M.RequestRefresh()
+    ui.stage.SetScale, ui.canvas.SetHeight, ui.strip.SetHeight = nil, nil, nil
+    assert(writesSeen == 0 and ui.chips.ess.points == chipPoints, "a repaint of the same preview wrote layout")
 
     -- Hover: outline and a short tooltip, allocation-free.
     Fire(hits[2], "OnEnter")
@@ -1388,7 +1629,14 @@ do
     assert(Page.SpellField("b1", "readyGlow") == true and historyWrites == writes + 1 and pop.shown and pop.anchor == hits[2],
         "a popover edit is one history entry and keeps the popover on its icon")
     assert(grid:Tile("b1").edge.color[1] == 0.12, "the spell list must not light a tile for the preview's popover")
+    -- The drawn icon marks the spell's own options, as its tile does, and
+    -- its tooltip names them.
+    assert(hits[2].mark.shown and not hits[1].mark.shown and not hits[2].ruleMark.shown, "the preview must mark own options")
+    Fire(hits[2], "OnEnter")
+    assert(tooltip.line == "Own options: Glow when ready", "the tooltip must name the spell's own options: " .. tostring(tooltip.line))
+    Fire(hits[2], "OnLeave")
     Fire(pop.reset, "OnClick")
+    assert(not hits[2].mark.shown, "the mark must go with the options")
     Click(hits[1], "LeftButton")
     assert(pop.shown and pop.key == "b3" and pop.anchor == hits[1] and hits[1].lines[1].shown and not hits[2].lines[1].shown,
         "an unlearned entry opens its popover, and only its icon is outlined")
@@ -1539,6 +1787,16 @@ do
     Click(ui.plus, "LeftButton")
     assert(not pick.shown, "the + tile closes the picker again")
 
+    -- A spell a bar rule hides in play carries the amber strip, and its
+    -- tooltip names the rule.
+    picker.set("ext")
+    M.RequestRefresh()
+    assert(Keys("ext") == "b30,b2" and hits[2].key == "b2" and hits[2].ruleMark.shown and not hits[1].ruleMark.shown,
+        "the preview must mark spells a bar rule hides")
+    Fire(hits[2], "OnEnter")
+    assert(tooltip.line == "Hidden while ready (Hide icons that are ready).", "the hidden reason: " .. tostring(tooltip.line))
+    Fire(hits[2], "OnLeave")
+
     -- Buff bars (rows) and buff icons get the same buttons.
     picker.set("bar")
     M.RequestRefresh()
@@ -1595,20 +1853,181 @@ M.RequestRefresh()
 -- over (settings, name and spells) and does not land on the bar at 0, 0.
 for i = 2, 6 do Config()["c" .. i .. "_name"] = "Old " .. i end
 Config().c2_size, Config().c2_kind = 60, 3
+local listsBeforeReuse = Config().listsData
 local reused = Lists()
 reused.specs[62] = reused.specs[62] or {}
 reused.specs[62].c2 = { "s133" }
 Config().listsData = CDM.Codec.EncodeLists(reused)
+local listsReused = Config().listsData
 assert(Config().c1_x == 0 and Config().c1_y == 0, "c1 must sit at the screen center for this check")
+-- The list says which bar a new one starts over.
+Page.OpenAddBar(ui.addChip)
+local replacing = lastDropdown.values[1]
+assert(replacing.value == 1 and replacing.text == "Cooldown bar (replaces Old 2)" and replacing.translate == false
+    and replacing.tooltip:find("Old 2", 1, true) and lastDropdown.values[3].text == "Timer bar (replaces Old 2)",
+    "reusing a slot must say which bar it starts over")
 writes = historyWrites
 assert(Page.AddBar(1) and Page.selected == "c2" and historyWrites == writes + 1, "reusing a bar slot failed")
 assert(Config().c2_on and Config().c2_kind == 1 and Config().c2_name == "Cooldowns 2" and Config().c2_size == 36,
     "a reused bar kept its old settings")
 assert(not (Lists().specs[62] and Lists().specs[62].c2), "a reused bar kept its old spells")
 assert(Config().c2_x == 0 and Config().c2_y == -48, "a new bar landed on another bar")
+assert(focused == PAGE .. "_cooldownManager_module", "a new bar must bring its name input into view")
+-- Undo brings the old bar back, settings, name and spells, in one entry.
+assert(Page.note == "Old 2 was reset for the new bar." and Page.undo, "reusing a slot must offer Undo")
+Page.RunUndo()
+assert(not Config().c2_on and Config().c2_name == "Old 2" and Config().c2_kind == 3 and Config().c2_size == 60
+    and Config().c2_y == 0 and Config().listsData == listsReused and historyWrites == writes + 2,
+    "Undo did not bring the reused bar back")
+Config().listsData = listsBeforeReuse
+Config().c2_size, Config().c2_kind = 36, 1
 Config().c2_on = false
 for i = 2, 6 do Config()["c" .. i .. "_name"] = "" end
 Config().c2_y = 0
+Page.ClearNote()
+
+-- Bar actions, from a chip's right click or Frame Basics: show or hide,
+-- rename, move, reset, delete, and the settings of another bar.
+M.RequestRefresh()
+local function BarMenu(owner, button)
+    lastDropdown = nil
+    Fire(owner, "OnClick", button)
+    return assert(lastDropdown and lastDropdown.owner == owner and lastDropdown, "bar actions did not open")
+end
+local menu = BarMenu(ui.chips.c1, "RightButton")
+local menuValues = {}
+for i, item in ipairs(menu.values) do menuValues[i] = tostring(item.value) end
+assert(Page.selected == "c2" and table.concat(menuValues, ",")
+    == "hide,rename,move,reset,delete,copy,copy:ess,copy:uti,copy:def,copy:ext,copy:buf,copy:bar,copy:c2"
+    and menu.values[6].header and menu.values[7].translate == false and menu.values[7].text == "Essential cooldowns"
+    and not menu.values[3].disabled and menu.values[5].tooltip:find("undo", 1, true),
+    "bar actions of a custom bar: " .. table.concat(menuValues, ","))
+-- Copy: the look and behavior of another bar, never its name, type or place.
+Config().buf_zoom, Config().buf_border, Config().buf_size = 20, 3, 30
+local c1Anchor, c1Name = Config().c1_anchor, Config().c1_name
+writes = historyWrites
+menu.onSelect("copy:buf")
+assert(Config().c1_zoom == 20 and Config().c1_border == 3 and Config().c1_size == 30 and Config().c1_kind == 2
+    and Config().c1_anchor == c1Anchor and Config().c1_name == c1Name and Config().c1_on and historyWrites == writes + 1,
+    "copying bar settings failed")
+assert(Page.note == "Buffs 1 now uses the settings of Buffs." and Page.undo, "the copy must offer Undo")
+Page.RunUndo()
+assert(Config().c1_zoom == 8 and Config().c1_border == 1 and Config().c1_size == 36 and historyWrites == writes + 2,
+    "Undo did not take the copied settings back")
+Config().buf_zoom, Config().buf_border = 8, 1
+-- Reset, and an Undo refused once the bar changed since.
+Config().c1_size = 50
+BarMenu(ui.chips.c1, "RightButton").onSelect("reset")
+assert(Config().c1_size == 36 and Config().c1_name == c1Name and Config().c1_on and Page.undo, "reset this bar failed")
+Config().c1_size = 44
+Page.RunUndo()
+assert(Config().c1_size == 44 and Page.noteError and Page.note:find("changed since", 1, true), "a stale Undo must be refused")
+Config().c1_size = 36
+-- Hide and show: a built-in bar that is off stays in the strip, dimmed.
+BarMenu(ui.chips.uti, "RightButton").onSelect("hide")
+M.RequestRefresh()
+assert(not Config().uti_on and ui.chips.uti.shown and ui.chips.uti.alpha == 0.5, "a hidden built-in bar left the strip")
+local utiPoints = ui.chips.buf.points
+M.RequestRefresh()
+assert(ui.chips.buf.points == utiPoints, "a repaint of the same strip moved its chips")
+menu = BarMenu(ui.chips.uti, "RightButton")
+assert(menu.values[1].value == "show" and menu.values[2].value == "move" and menu.values[2].disabled
+    and menu.values[2].tooltip == "Show this bar first." and menu.values[4].value == "copy",
+    "a hidden bar offers Show and cannot move")
+menu.onSelect("show")
+assert(Config().uti_on, "showing a bar failed")
+-- Rename selects the bar and brings its name input into view.
+focused = nil
+BarMenu(ui.chips.c1, "RightButton").onSelect("rename")
+assert(Page.selected == "c1" and focused == PAGE .. "_cooldownManager_module", "rename did not open the bar's name")
+-- Delete, from Frame Basics: the slot is free again, the page moves on, Undo.
+local actionsButton = registered["menu2." .. PAGE .. ".cooldownManager.editor.actions"]
+local reusedLists = Lists()
+reusedLists.specs[62].c1 = { "s133" }
+Config().listsData = CDM.Codec.EncodeLists(reusedLists)
+local listsWithC1 = Config().listsData
+writes = historyWrites
+BarMenu(actionsButton).onSelect("delete")
+assert(not Config().c1_on and Config().c1_name == "" and Config().c1_kind == 1 and not Lists().specs[62].c1
+    and Page.selected == "ess" and historyWrites == writes + 1 and Page.note == "Deleted Buffs 1.", "deleting a bar failed")
+M.RequestRefresh()
+assert(not ui.chips.c1.shown and Page.FreeCustom() == "c1", "a deleted bar must free its slot")
+Page.RunUndo()
+M.RequestRefresh()
+assert(Config().c1_on and Config().c1_name == "Buffs 1" and Config().c1_kind == 2 and Config().listsData == listsWithC1
+    and ui.chips.c1.shown, "Undo did not bring the deleted bar back")
+Config().listsData = listsBeforeReuse
+Page.ClearNote()
+-- Reset module: everything, one history entry, and Undo brings it all back.
+local configBefore = {}
+for key, value in pairs(Config()) do configBefore[key] = value end
+Config().listsData = listsWithC1
+configBefore.listsData = listsWithC1
+writes = historyWrites
+Fire(registered["menu2." .. PAGE .. ".cooldownManager.action.reset"], "OnClick")
+assert(Config().listsData == "" and not Config().c1_on and historyWrites == writes + 1 and Page.undo
+    and Page.note:find("spell lists", 1, true), "reset module must say what it reset and offer Undo")
+Page.RunUndo()
+for key, value in pairs(configBefore) do
+    assert(Config()[key] == value, "Undo of the module reset lost " .. key)
+end
+assert(historyWrites == writes + 2, "the module reset Undo must be one history entry")
+Config().listsData = listsBeforeReuse
+Page.ClearNote()
+Page.selected = "c1"
+M.RequestRefresh()
+
+-- Greyed controls say why; sections a bar does not use drop the bar's name
+-- from their header; colors follow their own switch.
+do
+    local function Note(section)
+        for _, child in ipairs(section.children or {}) do
+            if child.kind == "FontString" and type(child.text) == "string"
+                and (child.text:find("Turn the cooldown manager on", 1, true) or child.text:find("Not used by", 1, true)
+                    or child.text:find("Greyed", 1, true) or child.text:find("own options", 1, true)) then
+                return child.text
+            end
+        end
+        return ""
+    end
+    local effects, text = ctx.sections[7], ctx.sections[6]
+    Page.Select("bar")
+    M.RequestRefresh()
+    assert(effects._msuf2CollapsibleEntry.label.text == "Cooldown effects"
+        and Note(effects) == "Not used by the Timer bar type. Pick another bar to edit these.",
+        "an unused section must keep its plain title: " .. effects._msuf2CollapsibleEntry.label.text)
+    assert(text._msuf2CollapsibleEntry.label.text == "Text: Buff bars", "the text switches apply to timer bars too")
+    Config().enabled = false
+    M.RequestRefresh()
+    assert(Note(ctx.sections[2]) == "Turn the cooldown manager on in Frame Basics to edit these.", "module off: " .. Note(ctx.sections[2]))
+    Config().enabled = true
+    Page.Select("ess")
+    M.RequestRefresh()
+    assert(Note(effects) == "" and effects._msuf2CollapsibleEntry.label.text == "Cooldown effects: Essential cooldowns",
+        "a used section names its bar")
+    local glow
+    for _, target in ipairs(effects.colorShortcut.options.getTargets()) do
+        if target.sourceSettingKey == "msufsuite.cooldownManager.c1_glowColor" then glow = target end
+    end
+    Config().ess_glowTint = false
+    assert(glow and not glow.isEnabled(), "Glow color must follow Tint glows")
+    Config().ess_glowTint = true
+    assert(glow.isEnabled(), "Glow color with Tint glows on")
+    Config().ess_glowTint = false
+    -- Custom timer bars keep the countdown switch the runtime reads for them.
+    Config().c3_kind = 3
+    assert(Page.Relevant("c3", "cdText") and Page.Relevant("c3", "stackText") and Page.Relevant("c3", "textTop")
+        and Page.Relevant("c3", "cdSize"), "custom timer bars use the text switches")
+    Config().c3_kind = 1
+    -- A named custom bar that is off stays in the strip; an unused slot does not.
+    Config().c3_name = "Spare"
+    M.RequestRefresh()
+    assert(ui.chips.c3.shown and ui.chips.c3.alpha == 0.5 and not ui.chips.c4.shown, "set-up bars stay listed, dimmed")
+    Config().c3_name = ""
+    M.RequestRefresh()
+end
+Page.selected = "c1"
+M.RequestRefresh()
 -- Attached to a bar that is off: the summary and the drag refusal say so,
 -- and Edit Mode opens on a bar it can move.
 Config().ess_on = false
@@ -1639,7 +2058,7 @@ local handle = ui.handle
 assert(handle.shown, "preview handle missing")
 Fire(handle, "OnMouseDown", "LeftButton")
 Fire(handle, "OnMouseUp", "LeftButton")
-assert(focused == PAGE .. "_layout", "clicking the preview did not open the layout")
+assert(focused == PAGE .. "_basics", "clicking the preview did not open Basics")
 assert(handle.scripts.OnUpdate == nil, "a click left the drag driver running")
 Config().ess_anchor = 1
 local x, y = Config().ess_x, Config().ess_y
@@ -1759,6 +2178,12 @@ assert(not Page.SetSpellField("b1", "stackGlow", 3) and not Page.ClearSpellField
 Click(grid.tiles[1], "MiddleButton")
 Fire(grid.tiles[1], "OnMouseDown", "LeftButton")
 assert(host.scripts.OnUpdate == nil, "drag armed in combat")
+lastDropdown = nil
+Fire(ui.chips.ess, "OnClick", "RightButton")
+assert(lastDropdown == nil and not Page.OpenBarMenu(ui.chips.ess, "ess") and not Page.OpenAddBar(ui.addChip)
+    and not Page.CopyBarSettings("uti", "ess") and not Page.ResetBar("ess") and not Page.DeleteBar("c1")
+    and not Page.ResetModule() and not Page.CopyListToSpecs("ess") and not Page.FocusName(),
+    "combat must refuse bar actions, resets and copies")
 size.set(30)
 assert(Config().listsData == text and historyWrites == writes and Config().ess_size ~= 30, "combat wrote settings")
 combat = false
@@ -1829,4 +2254,4 @@ end
 for key in pairs(_G) do
     if not globalsBefore[key] then error("options page created global " .. tostring(key)) end
 end
-print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets, Frame Basics with the bar choice, Basics, exactly-once coverage, tile memo, list edits, picker, popover, preview editor (hover, click, middle-click, drag, +, samples, buff bars), stack options, Track on, buff glow styles, Blizzard sounds, bar reuse, preview drag, simulation, layouts, combat refusal, teardown and the runtime canvas contract passed")
+print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets and loops, Frame Basics with the module rules and the bar choice, Basics, Text rules, exactly-once coverage, tile memo, list edits with Undo, picker, popover (text rows, row help, header actions), preview editor (hover, click, middle-click, drag, +, samples, buff bars, marks, write memo), stack options, Track on, buff glow styles, Blizzard sounds, bar reuse with Undo, bar actions (copy, reset, hide, rename, delete), module reset with Undo, greyed reasons, preview drag, simulation, layouts, combat refusal, teardown and the runtime canvas contract passed")

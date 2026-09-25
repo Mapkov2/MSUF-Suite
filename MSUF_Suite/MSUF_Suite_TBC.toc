@@ -16,6 +16,7 @@ Core\MinimapStyle.lua
 Core\Catalog\DamageMeter.lua
 Core\Catalog\Bags.lua
 Core\Catalog\QualityOfLife.lua
+Core\Catalog\HUD.lua
 Core\Catalog\DataTexts.lua
 Core\Catalog\BuffReminders.lua
 Core\Catalog\Chat.lua

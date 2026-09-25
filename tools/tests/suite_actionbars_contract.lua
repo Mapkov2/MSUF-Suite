@@ -190,7 +190,7 @@ function Frame:SetFrameLevel(value) self.level=value end
 function Frame:GetFrameLevel() return self.level end
 function Frame:RegisterForClicks(...) self.clickTypes={...} end
 function Frame:RegisterForDrag() end
-function Frame:GetID() return 0 end
+function Frame:GetID() return self.nativeID or 0 end
 function Frame:SetChecked(value) assert(not IsSecret(value));self.checked=value and true or false end
 function Frame:GetChecked() return self.checked end
 function Frame:SetButtonState(state) self.state=state end
@@ -205,7 +205,14 @@ function Frame:SetCooldown(start,duration,modRate)
     assert(not IsSecret(start) and not IsSecret(duration) and not IsSecret(modRate),"secret passed to SetCooldown")
     self.cooldown={start,duration};self.object=nil
 end
-function Frame:SetCooldownFromDurationObject(object) assert(type(object)=="table" and object.duration,"not a duration object");self.object=object;self.cooldown=nil end
+function Frame:SetCooldownFromDurationObject(object)
+    assert(type(object)=="table" and object.duration,"not a duration object")
+    if object.zero then
+        if self.object or self.cooldown then self:Clear() end
+    else
+        self.object=object;self.cooldown=nil
+    end
+end
 function Frame:Clear() self.object,self.cooldown=nil,nil;self.clears=(self.clears or 0)+1 end
 function Frame:SetSwipeColor(...) self.swipe={...} end
 function Frame:SetDrawEdge() end
@@ -409,7 +416,9 @@ local function Curve()
 end
 C_CurveUtil={CreateCurve=Curve}
 local function Duration(slot,ignoreGCD)
-    local object={duration=true,slot=slot,ignoreGCD=ignoreGCD}
+    local action=actions[slot]
+    local object={duration=true,slot=slot,ignoreGCD=ignoreGCD,
+        zero=not (action and action.cooldown and action.cooldown.isActive)}
     function object:EvaluateRemainingDuration(curve)
         assert(curve and curve.points,"curve required")
         if secretEval then return Secret() end
@@ -421,7 +430,12 @@ local function Duration(slot,ignoreGCD)
     end
     return object
 end
-local calls,rangeEnabled,ranges={cooldown=0,usable=0,texture=0},{},{}
+local calls,rangeEnabled,ranges={cooldown=0,duration=0,charges=0,loc=0,usable=0,texture=0},{},{}
+local locCount=0
+C_LossOfControl={GetActiveLossOfControlDataCountByUnit=function(unit)
+    assert(unit=="player")
+    return locCount
+end}
 local rangeOn,rangeOff=0,0
 C_ActionBar={
     HasAction=function(slot) return actions[slot]~=nil end,
@@ -432,10 +446,20 @@ C_ActionBar={
         local a=actions[slot]
         return a and a.cooldown or {isActive=false,isEnabled=true,startTime=0,duration=0,modRate=1}
     end,
-    GetActionCooldownDuration=function(slot,ignoreGCD) return Duration(slot,ignoreGCD) end,
-    GetActionCharges=function(slot) local a=actions[slot];return a and a.charges or {isActive=false,maxCharges=1,currentCharges=1} end,
+    GetActionCooldownDuration=function(slot,ignoreGCD)
+        calls.duration=calls.duration+1
+        return Duration(slot,ignoreGCD)
+    end,
+    GetActionCharges=function(slot)
+        calls.charges=calls.charges+1
+        local a=actions[slot]
+        return a and a.charges or {isActive=false,maxCharges=0,currentCharges=0}
+    end,
     GetActionChargeDuration=function(slot) return Duration(slot) end,
-    GetActionLossOfControlCooldownInfo=function() return {isActive=false,shouldReplaceNormalCooldown=false} end,
+    GetActionLossOfControlCooldownInfo=function()
+        calls.loc=calls.loc+1
+        return {isActive=false,shouldReplaceNormalCooldown=false}
+    end,
     GetActionLossOfControlCooldownDuration=function(slot) return Duration(slot) end,
     IsUsableAction=function(slot) calls.usable=calls.usable+1;local a=actions[slot];if not a then return false,false end;return a.usable~=false,a.noMana==true end,
     IsCurrentAction=function(slot) local a=actions[slot];return a and a.current==true or false end,
@@ -480,7 +504,14 @@ local forms=0
 GetNumShapeshiftForms=function() return forms end
 local petActions={}
 GetPetActionInfo=function(i) return petActions[i] end
-hooksecurefunc=function(name,hook)
+hooksecurefunc=function(target,method,hook)
+    if type(target)=="table" then
+        local original=assert(target[method],"hook method "..tostring(method))
+        target[method]=function(self,...) original(self,...);hook(self,...) end
+        return
+    end
+    local name=target
+    hook=method
     local original=assert(_G[name],"hook target "..name)
     _G[name]=function(...) original(...);hook(...) end
 end
@@ -489,6 +520,9 @@ ActionButtonDown=function(id) native[#native+1]="down"..id end
 ActionButtonUp=function(id) native[#native+1]="up"..id end
 MultiActionButtonDown=function(bar,id) native[#native+1]=bar..id end
 MultiActionButtonUp=function() end
+ActionButton_UpdateCooldownNumberHidden=function(button)
+    button.cooldown:SetHideCountdownNumbers(false)
+end
 local editElements={}
 MSUF_EditModeAPI={RegisterElement=function(owner,element) editElements[element.id]=element;return true end,
     RefreshOwner=function() end,UnregisterOwner=function() end,RegisterSessionListener=function() end,IsActive=function() return false end}
@@ -497,9 +531,22 @@ C_AddOns={IsAddOnLoaded=function() return false end,
 
 ------------------------------------------------------------------ Blizzard frames
 local function Buttons(prefix,parent,count,small)
+    parent.actionButtons=parent.actionButtons or {}
     for i=1,count do
         local button=NewFrame("CheckButton",prefix..i,parent,"SecureActionButtonTemplate")
-        if small then ActionRegions(button) end
+        button.nativeID=i
+        button.bar=parent
+        button.index=i
+        parent.actionButtons[i]=button
+        ActionRegions(button)
+        button.SpellActivationAlert=NewRegion("Texture",button)
+        button.UpdateUsable=function(self,action,usable,noMana)
+            if usable==nil then usable,noMana=C_ActionBar.IsUsableAction(self.attrs.action) end
+            self.icon:SetVertexColor(usable and 1 or noMana and .5 or .4,usable and 1 or noMana and .5 or .4,usable and 1 or noMana and 1 or .4)
+        end
+        button.UpdateState=function(self)
+            self:SetChecked(C_ActionBar.IsCurrentAction(self.attrs.action))
+        end
         button:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     end
 end
@@ -559,6 +606,10 @@ for _,file in ipairs({"Bootstrap","Bars","Paging","Blizzard","Visibility",
 end
 assert(created==before,"loading the runtime created frames")
 local S,AB=Suite.Suite,private.ActionBars
+-- The original full-feature contract exercises the suite-painted fallback.
+-- The Retail native-reuse path has a separate branch below.
+local nativeReuse=arg[2]=="native"
+AB.nativeReuse=nativeReuse
 Suite.Client.isForever=true
 assert(S.catalog.actionbars.available(),
     "Forever availability must not run the broken compiler or hard-block the module")
@@ -598,6 +649,125 @@ assert(M.active and S.states.actionbars.active and S.Status("actionbars")=="Acti
 RunTimers()
 local frames=created-builtBefore
 assert(c.imported==true,"first enable must import Blizzard's layout")
+
+if nativeReuse then
+    assert(not Bar(1).native and not Bar(9).native and not Bar(10).native,
+        "custom paging and extra bars lost their suite buttons")
+    for index=2,8 do
+        local bar=Bar(index)
+        assert(bar.native,"Retail bar did not choose native buttons: "..index)
+        assert(_G[AB.NATIVE_BARS[index]].numButtonsShowable==12,
+            "old Blizzard layout can cap suite buttons")
+        for i=1,12 do
+            local rec=Button(index,i)
+            local button=_G[AB.NATIVE_BUTTONS[index]..i]
+            assert(rec.button==button and rec.native and button.parent==bar.header and button.securelyReparented,
+                "native button not adopted securely: "..index..":"..i)
+            assert(_G[AB.NATIVE_BARS[index]].actionButtons[i]==button and button:GetID()==i
+                and button.bar==nil and bar.header.attrs.actionpage==math.floor((AB.FIRST_SLOT[index]-1)/12)+1,
+                "native command lookup or fixed page diverged")
+            assert(button.attrs.action==AB.FIRST_SLOT[index]+i-1 and button.attrs.index==i,
+                "native button lost its action slot")
+            assert(not button.strippedEvents,"native painter lost its events")
+            assert(math.floor((button.attrs.showgrid or 0)/8)%2==1,
+                "native showgrid guard missing")
+        end
+    end
+    assert(Button(4,11).button.attrs.statehidden and not Button(4,11).button.shown,
+        "suite count must cap native bar 4: "..tostring(c.bar4Buttons).."/"..tostring(Bar(4).count).."/"..tostring(Button(4,11).button.attrs.statehidden).."/"..tostring(Button(4,11).button.shown))
+    c.bar2ShowEmpty=false;M:Refresh()
+    assert(Button(2,2).button.attrs.statehidden and not Button(2,2).button.shown,
+        "suite must hide empty native slots")
+    c.bar4Buttons=12;M:Refresh()
+    assert(Button(4,11).button.shown and not Button(4,11).button.attrs.statehidden,
+        "suite must reveal buttons beyond the imported Blizzard count")
+    c.bar4Buttons=10;M:Refresh()
+    c.bar2ShowEmpty=true;M:Refresh()
+    assert(Button(2,2).button.shown and not Button(2,2).button.attrs.statehidden,
+        "suite show-empty option was lost")
+    c.bar2ShowEmpty=false;M:Refresh()
+    c.bar2Visibility=6;M:Refresh()
+    assert(not Bar(2).header:IsShown(),"suite visibility did not hide the native bar")
+    c.bar2Visibility=1;M:Refresh()
+    assert(Bar(2).header:IsShown(),"suite visibility did not reveal the native bar")
+    c.bar2Visibility=2;M:Refresh()
+    assert(not Bar(2).header:IsShown(),"combat-only native bar was shown out of combat")
+    conditions.combat=true;combat=true;Drivers()
+    assert(Bar(2).header:IsShown() and Button(2,1).button:IsVisible(),
+        "suite driver did not reveal native buttons in combat")
+    conditions.combat=nil;Drivers();combat=false
+    assert(not Bar(2).header:IsShown(),"suite driver did not hide native buttons after combat")
+    c.bar2Visibility=1;M:Refresh()
+    ranges[61]=false
+    Event("ACTION_RANGE_CHECK_UPDATE",61,false,true)
+    assert(Button(2,1).button.icon.vertex[1]==AB.style.rr,"native range color missing")
+    local usableBefore=calls.usable
+    Button(2,1).button:UpdateUsable()
+    assert(calls.usable==usableBefore+1 and Button(2,1).button.icon.vertex[1]==AB.style.rr,
+        "native usable hook either duplicated the API call or lost the range tint")
+    ranges[61]=true
+    Event("ACTION_RANGE_CHECK_UPDATE",61,true,true)
+    assert(Button(2,1).button.icon.vertex[1]==1,"native range reset did not restore usability")
+    c.bar2Visibility=2;M:Refresh()
+    ranges[61]=false
+    conditions.combat=true;combat=true;Drivers()
+    assert(Button(2,1).button.icon.vertex[1]==AB.style.rr,
+        "native range color was not reacquired when the bar appeared in combat")
+    conditions.combat=nil;Drivers();combat=false
+    c.bar2Visibility=1;c.rangeColoring=false;M:Refresh()
+    assert(Button(2,1).button.icon.vertex[1]==1,
+        "disabling suite range color left a native button tinted")
+    c.rangeColoring=true;M:Refresh()
+    c.castHighlight=false;M:Refresh()
+    actions[61].current=true
+    Button(2,1).button:UpdateState()
+    assert(not Button(2,1).button.checked,"suite cast-highlight setting was ignored")
+    c.castHighlight=true;M:Refresh()
+    Button(2,1).button:UpdateState()
+    assert(Button(2,1).button.checked,"native cast-highlight state was not restored")
+    c.procGlow=2;overlayed[61]=true;M:Refresh()
+    assert(Button(2,1).glow and Button(2,1).glowEdges and Button(2,1).button.SpellActivationAlert.alpha==0,
+        "pixel proc glow must replace Blizzard's glow")
+    c.procGlow=3;M:Refresh()
+    assert(not Button(2,1).glow and Button(2,1).button.SpellActivationAlert.alpha==0,
+        "none proc glow must hide native alert")
+    c.procGlow=1;M:Refresh()
+    assert(Button(2,1).button.SpellActivationAlert.alpha==1,
+        "Blizzard proc glow must be restored")
+    c.hideEmptyCharges=true;actions[61].charges={maxCharges=2,currentCharges=0};M:Refresh()
+    assert(Button(2,1).button.Count.alpha==0,"native empty-charge count did not hide")
+    local chargeCalls=calls.charges
+    actions[61].charges.currentCharges=1;Event("SPELL_UPDATE_CHARGES");RunTimers()
+    assert(Button(2,1).button.Count.alpha==1,"native charge count did not return: "..tostring(Button(2,1).button.Count.alpha).."/"..tostring(Button(2,1).button:IsVisible()).."/"..tostring(c.hideEmptyCharges).."/"..tostring(calls.charges-chargeCalls))
+    c.cooldownNumbers=false;M:Refresh()
+    ActionButton_UpdateCooldownNumberHidden(Button(2,1).button)
+    assert(Button(2,1).button.cooldown.hideNumbers,
+        "Blizzard CVAR update overrode suite cooldown-number setting")
+    c.cooldownNumbers=true;M:Refresh()
+    actions[61].cooldown={isActive=true,duration=8}
+    actions[61].remaining=8
+    c.desaturateCooldown=true;c.cooldownAlpha=50;M:Refresh()
+    local cooldownCalls=calls.cooldown
+    AB.RefreshNative()
+    assert(calls.cooldown==cooldownCalls,"native cooldown feedback allocated cooldown info tables")
+    assert(Button(2,1).button.icon.desaturation==1 and Button(2,1).button.alpha==.5,
+        "native duration feedback lost suite cooldown effects")
+    actions[61].remaining=0;AB.RefreshNative()
+    assert(Button(2,1).button.icon.desaturation==0 and Button(2,1).button.alpha==1,
+        "native duration feedback did not clear when ready")
+    assert(Button(1,1).button.name=="MSUFSuiteBar1Button1" and Button(9,1).button.name=="MSUFSuiteBar9Button1")
+    assert(not AB.ClickRouted(Button(3,1)),"adopted flyout still routed to a second button")
+    assert(overrides["CTRL-BUTTON4"]=="MSUFSuiteBar9Button1" and not overrides.F,
+        "native commands and extra-bar routing diverged")
+    RunTimers()
+    local painted=calls.texture
+    AB.MarkBar(Bar(2));RunTimers()
+    assert(calls.texture==painted,"suite repainted a native button")
+    now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    assert(calls.texture==painted,"native cooldown event repainted textures through suite")
+    print("Action bars native reuse: Retail bars 2-8 adopted, suite painter skipped, custom bars retained, routing passed")
+    return
+end
 
 -- Disposal: Blizzard bars neutralised, never destroyed or Hide()n.
 local hidden=AB.hidden
@@ -801,29 +971,62 @@ assert(not h3.shown and Bar(5).header.attrs.gridmask==0)
 
 ------------------------------------------------------------------ dispatcher
 RunTimers()
-local cooldownCalls=calls.cooldown
+local cooldownCalls=calls.duration
+local infoCalls=calls.cooldown
 for _=1,5 do Event("ACTIONBAR_UPDATE_COOLDOWN") end
 RunTimers()
-local walk=calls.cooldown-cooldownCalls
+local walk=calls.duration-cooldownCalls
 assert(walk>0,"cooldown walk ran")
-cooldownCalls=calls.cooldown
+assert(calls.cooldown==infoCalls,"default cooldown walk allocated info tables")
+cooldownCalls=calls.duration
 now=now+.2
-Event("ACTIONBAR_UPDATE_COOLDOWN");Event("SPELL_UPDATE_COOLDOWN")
+assert(not M.context.frame.events.SPELL_UPDATE_COOLDOWN,
+    "Retail action bars retained the redundant global spell cooldown event")
+assert(not M.context.frame.events.SPELL_UPDATE_USABLE,
+    "Retail action bars retained the redundant global spell usability event")
+Event("ACTIONBAR_UPDATE_COOLDOWN")
 assert(#timers==1,"one flush per burst")
 RunTimers()
-assert(calls.cooldown-cooldownCalls==walk,"same-frame events share one walk")
-cooldownCalls=calls.cooldown
+assert(calls.duration-cooldownCalls==walk,"same-frame events share one walk")
+calls.chargeBaseline=calls.charges
+now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+assert(calls.charges==calls.chargeBaseline,
+    "uncharged actions allocated a charge info table on every cooldown walk")
+cooldownCalls=calls.duration
 local start=now
 Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
-assert(calls.cooldown-cooldownCalls==walk and now>=start+.1-1e-9,"storm cap delays the next walk")
+assert(calls.duration-cooldownCalls==walk and now>=start+.1-1e-9,"storm cap delays the next walk")
 RunTimers()
+actions[61].cooldown={isActive=true,isEnabled=true,startTime=now,duration=8,modRate=1}
+now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+assert(b61.cooldown.object and b61.cooldown.object.slot==61,
+    "duration-only path did not show an active cooldown")
+actions[61].cooldown={isActive=false,isEnabled=true,startTime=0,duration=0,modRate=1}
+now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+assert(not b61.cooldown.object and not b61.cooldown.cooldown and calls.cooldown==infoCalls,
+    "duration-only path did not clear an inactive cooldown without info tables")
+local locReads=calls.loc
+now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+assert(calls.loc==locReads,"no active loss of control still scanned action slots")
+locCount=1
+Event("LOSS_OF_CONTROL_ADDED","player",1);RunTimers()
+assert(calls.loc>locReads,"active loss of control did not scan action slots")
+locReads=calls.loc
+locCount=0
+now=now+.2;Event("LOSS_OF_CONTROL_UPDATE","player");RunTimers()
+assert(calls.loc==locReads,"ended loss of control kept scanning action slots")
+now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+assert(calls.loc==locReads,"subsequent cooldown event resumed loss-of-control scans")
 -- Secret cooldowns: duration objects only, no comparisons.
 actions[61].cooldown={isActive=true,isEnabled=true,startTime=Secret(),duration=Secret(),modRate=Secret()}
 actions[61].charges={isActive=true,maxCharges=3,currentCharges=Secret(),cooldownStartTime=Secret(),cooldownDuration=Secret(),chargeModRate=Secret()}
 actions[61].count=Secret()
 actions[61].remaining=5
 assert(S.SetMany("actionbars",{desaturateCooldown=true,cooldownAlpha=40,hideEmptyCharges=true}))
+infoCalls=calls.cooldown
 now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");Event("SPELL_UPDATE_CHARGES");RunTimers()
+assert(calls.cooldown==infoCalls,
+    "cooldown feedback allocated action cooldown info tables")
 assert(b61.cooldown.object and b61.cooldown.object.slot==61 and not b61.cooldown.cooldown,"secret cooldown via duration object")
 assert(b61.chargeCooldown.object,"secret recharge via duration object")
 assert(IsSecret(b61.Count.text) and b61.Count.alpha==1,"secret count reaches SetText only")
@@ -833,10 +1036,24 @@ secretEval=true
 now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
 assert(IsSecret(b61.icon.desaturation) and IsSecret(b61.alpha),"secret evaluations go straight to the sinks")
 secretEval=false
+actions[61].savedCharges=actions[61].charges
+actions[61].charges=Secret()
+cooldownCalls=calls.cooldown
+now=now+1;Event("SPELL_UPDATE_CHARGES");RunTimers()
+assert(b61.chargeCooldown.object,
+    "an unreadable charge result cleared a previously visible recharge")
+assert(calls.cooldown==cooldownCalls,
+    "Retail charge-only event repeated the cooldown walk")
+actions[61].charges=actions[61].savedCharges
+actions[61].savedCharges=nil
 Fire(b61.cooldown,"OnCooldownDone")
 actions[61].remaining=0;actions[61].cooldown={isActive=false,isEnabled=true,startTime=0,duration=0,modRate=1}
 Fire(b61.cooldown,"OnCooldownDone")
 assert(b61.icon.desaturation==0 and b61.alpha==1 and b61.cooldown.clears,"cooldown end restores the button")
+local normalClears,chargeClears=b61.cooldown.clears,b61.chargeCooldown.clears
+now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+assert(b61.cooldown.clears==normalClears and b61.chargeCooldown.clears==chargeClears,
+    "Inactive cooldowns were repeatedly cleared during a spell storm")
 actions[61].charges={isActive=false,maxCharges=3,currentCharges=0}
 Event("SPELL_UPDATE_CHARGES");now=now+1;RunTimers()
 assert(b61.Count.alpha==0,"readable zero charges hide the count")
@@ -926,6 +1143,10 @@ now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
 assert(b61.icon.desaturation==0 and b61.alpha==1,"the global cooldown is excluded")
 Suite.Client.hasSecrets=true
 AB.ResolveAPI()
+actions[61].cooldown={isActive=true,isEnabled=true,startTime=now,duration=8,modRate=1}
+assert(S.SetMany("actionbars",{desaturateCooldown=false,cooldownAlpha=100}));RunTimers()
+assert(b61.icon.desaturation==0 and b61.alpha==1,
+    "duration-only path did not clear previous cooldown feedback")
 
 ------------------------------------------------------------------ style
 assert(Button(2,1).button.icon.unmasked,"square icons drop the template mask")

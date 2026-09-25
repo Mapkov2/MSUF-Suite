@@ -16,6 +16,7 @@ Pages\DamageMeter.lua
 Pages\Bags.lua
 Pages\DataTexts.lua
 Pages\QualityOfLife.lua
+Pages\HUD.lua
 Pages\BuffReminders.lua
 Pages\Appearance.lua
 Menu\Register.lua

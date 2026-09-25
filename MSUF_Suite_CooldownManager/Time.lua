@@ -12,7 +12,7 @@ local T={}
 C.Time=T
 local Public=S.Public
 local EMPTY=C.EMPTY
-local wipe=wipe or table.wipe or function(t) for k in pairs(t) do t[k]=nil end return t end
+local wipe=C.wipe
 local Spell=_G.C_Spell or {}
 local GetCooldown=Spell.GetSpellCooldown
 local GetDuration=Spell.GetSpellCooldownDuration
@@ -127,7 +127,7 @@ end
 -- charge is available, so only the recharge swipe and the count are read
 -- and the main state holds; a main swipe that shows (no charge left, or the
 -- GCD) is read in full.
-local function SpellState(entry,icon,spell,reason,view)
+local function SpellState(entry,icon,spell,reason)
     local cooling,exact=false,true
     if reason=="recharge" and icon.cdSet==true then reason="charges" end
     if reason=="expired" then
@@ -186,7 +186,7 @@ local function SpellState(entry,icon,spell,reason,view)
     -- Potion and healthstone entries show their bag count (CategoryCount).
     local category=entry.spellCategory
     if category and category~=0 then return cooling end
-    if view.charges and GetDisplayCount then
+    if icon.stackOn and GetDisplayCount then
         icon.count:SetText(GetDisplayCount(spell))
         icon.countOff,icon.lastCount=false,nil
     else
@@ -234,9 +234,9 @@ local function ItemCount(item)
 end
 -- Returns true when the bags hold none; a hideEmpty entry reads its total
 -- even while counts are off.
-local function CategoryCount(icon,category,view,entry)
-    local total=(view.charges or entry.hideEmpty) and Total(category) or 0
-    if total>0 and view.charges then
+local function CategoryCount(icon,category,entry)
+    local total=(icon.stackOn or entry.hideEmpty) and Total(category) or 0
+    if total>0 and icon.stackOn then
         ShowCount(icon,total)
     else
         icon.lastCount=nil
@@ -256,7 +256,7 @@ end
 -- counts as cooling, so no ready alert fires; the BAG_UPDATE_COOLDOWN that
 -- starts it arms the swipe as a new cooldown. Returns the cooling state and
 -- whether the bags hold none of the item.
-local function ItemState(entry,icon,view,reason)
+local function ItemState(entry,icon,reason)
     local slot=entry.equipSlot or (entry.src=="e" and entry.id) or nil
     local item=entry.itemID or entry.id
     local start,length,enable
@@ -313,8 +313,8 @@ local function ItemState(entry,icon,view,reason)
     end
     ClearCharge(icon)
     -- An empty healthstone (hideEmpty) shows no "0", not even in a preview.
-    local count=not slot and (view.charges or entry.hideEmpty) and ItemCount(item)
-    if count and count~=1 and view.charges and not (count==0 and entry.hideEmpty) then
+    local count=not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
+    if count and count~=1 and icon.stackOn and not (count==0 and entry.hideEmpty) then
         ShowCount(icon,count)
     else
         icon.lastCount=nil
@@ -351,20 +351,30 @@ local function Edge(entry,cooling)
 end
 
 -- reason: "cooldown" (SPELL_UPDATE_COOLDOWN, isOnGCD trustworthy),
--- "charges" (SPELL_UPDATE_USES), "recharge" (SPELL_UPDATE_CHARGES: the
--- charge part only, see SpellState), "item" (bag events), "done",
--- "expired" (the main swipe ran out, from Done), "full". Returns true when
--- entry.hidden changed.
+-- "count" (SPELL_UPDATE_USES: the count only, see below), "recharge"
+-- (SPELL_UPDATE_CHARGES: the charge part only, see SpellState), "charges"
+-- (state and count), "item" (bag events), "done", "expired" (the main swipe
+-- ran out, from Done), "full". Returns true when entry.hidden changed.
 function T.Refresh(entry,reason)
     local icon=entry.icon
     if not icon or icon.sim or entry.src=="p" then return false end
     local view=C.views[entry.slot]
     if not view then return false end
+    if reason=="count" then
+        -- A use count moved: the count alone, as Blizzard's viewer does;
+        -- swipes and state hold. Routed to spell entries that show counts.
+        local spell=entry.spell
+        if icon.stackOn and spell and GetDisplayCount then
+            icon.count:SetText(GetDisplayCount(spell))
+            icon.countOff,icon.lastCount=false,nil
+        end
+        return false
+    end
     if icon.curveEntry~=entry or icon.curveOv~=entry.ov or icon.curveGen~=view.behaviorGen then Curves(icon,entry,view) end
     if reason=="full" then C.Icons.Apply(entry) end
     local cooling,empty
     if entry.equipSlot or entry.src=="i" or entry.src=="e" then
-        cooling,empty=ItemState(entry,icon,view,reason)
+        cooling,empty=ItemState(entry,icon,reason)
     else
         -- Category entries (potions, healthstones) follow the spell that last
         -- started the category; the controller keeps entry.catSpell current.
@@ -376,13 +386,13 @@ function T.Refresh(entry,reason)
         if category and reason=="item" then
             cooling=entry.cooling==true
         elseif spell then
-            cooling=SpellState(entry,icon,spell,reason,view)
+            cooling=SpellState(entry,icon,spell,reason)
         else
             ClearMain(icon);ClearCharge(icon);Feedback(icon,nil)
             if not category then CountOff(icon) end
             cooling=false
         end
-        if category then empty=CategoryCount(icon,category,view,entry) end
+        if category then empty=CategoryCount(icon,category,entry) end
     end
     -- Healthstones (hideEmpty) leave their bar while the bags hold none;
     -- entry.empty keeps that answer for the options page.
@@ -400,20 +410,6 @@ function T.Refresh(entry,reason)
         if fx and fx.Update then fx.Update(entry) end
     end
     return changed
-end
-
-function T.RefreshAll()
-    local any=false
-    for slotKey,plan in pairs(C.plans) do
-        if plan.kind==1 then
-            local entries,changed=plan.entries,false
-            for i=1,#entries do
-                if T.Refresh(entries[i],"full") then changed=true end
-            end
-            if changed then any=true;Request(slotKey) end
-        end
-    end
-    return any
 end
 
 -- OnCooldownDone of an icon's swipe (cooldown = icon.cd) or recharge edge

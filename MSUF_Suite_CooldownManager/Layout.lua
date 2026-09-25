@@ -342,7 +342,6 @@ local function Rect(unit)
     end
     return left,bottom,right,top
 end
-L.Rect=Rect
 
 -- MSUF places its unit frames by our Essential bar when it follows the
 -- cooldown bars; then the Essential bar and every bar it attaches to stay
@@ -562,9 +561,9 @@ local function HideCells(bar)
     for i=1,#cells do Shown(cells[i],false) end
 end
 
--- The row an aura entry takes: the aura layer's rule (a "both" entry takes
--- the row its selfAura hint names), so containers and cells agree; plain
--- target entries without the aura layer.
+-- The part an aura entry takes: the aura layer's rule (e.unit=="target"
+-- entries the target part, a per-spell "both" the player part), so
+-- containers and cells agree; the same rule when the aura layer is absent.
 local function TargetRow(entry)
     local auras=C.Auras
     local rule=auras and auras.TargetRow

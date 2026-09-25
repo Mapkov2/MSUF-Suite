@@ -88,9 +88,18 @@ local function Paint(slot)
         if alpha<0 then alpha=0 elseif alpha>1 then alpha=1 end
     end
     hidden=alpha<=0
-    if bar.hidden~=hidden then
+    local wasHidden=bar.hidden
+    if wasHidden~=hidden then
         bar.hidden=hidden
         Mouse(slot,not hidden)
+        if C.M.active and wasHidden==true and not hidden then
+            -- Usability was not sampled while this bar was invisible.
+            local list=C.Index.usable
+            for i=1,#list do
+                local entry=list[i]
+                if entry.slot==slot and entry.icon then C.Effects.Usable(entry) end
+            end
+        end
     end
     if bar.alpha~=alpha then
         bar.alpha=alpha
@@ -279,7 +288,6 @@ end
 function V.CombatChanged()
     for i=1,#SLOTS do Paint(SLOTS[i].key) end
 end
-V.PaintAll=V.CombatChanged
 
 -- PLAYER_REGEN_ENABLED: apply parked (un)registrations.
 function V.FlushPending()

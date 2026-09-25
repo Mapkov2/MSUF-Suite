@@ -219,11 +219,12 @@ local function BuildMicroBar(ctx, b, skin)
                 { "modern", "Midnight Blue" },
                 { "midnightDark", "Midnight Dark" },
                 { "forever", "MSUF Forever" },
+                { "blizzard", "Blizzard original" },
             }) do
                 local style = entry[1]
                 P.Button(ctx, body, entry[2],
-                    index == 3 and 16 or 16 + (index - 1) * (half + 12),
-                    index == 3 and y - 38 or y, index == 3 and width or half, function()
+                    16 + ((index - 1) % 2) * (half + 12),
+                    y - math.floor((index - 1) / 2) * 38, half, function()
                         Change(skin, "Micro Bar " .. style, "micro.preset",
                             function() return skin.MicroMenuSkin.ApplyPreset(style) end)
                     end, nil, P.Meta(PAGE, "skin", "micro.preset." .. style,
@@ -235,8 +236,12 @@ local function BuildMicroBar(ctx, b, skin)
                 local label = selected == "forever" and "MSUF Forever"
                     or selected == "modern" and "Midnight Blue"
                     or selected == "midnightDark" and "Midnight Dark"
+                    or selected == "blizzard" and "Blizzard original"
                     or selected == "custom" and "Custom" or "Other style"
-                description:SetText("Selected: " .. label .. ". All three looks use MSUF glyphs and a player portrait. The selected look changes the bar, buttons and hover colors. Blizzard keeps every button action and tooltip.")
+                local detail = selected == "blizzard"
+                    and "Blizzard's original Micro Bar and buttons. Use Blizzard Edit Mode to move it."
+                    or "MSUF looks use Suite glyphs and a player portrait. Blizzard keeps every button action and tooltip."
+                description:SetText("Selected: " .. label .. ". " .. detail)
             end
             RefreshMicroHint()
             M.TrackRefresh(ctx, RefreshMicroHint)
@@ -259,6 +264,7 @@ local function BuildMicroBar(ctx, b, skin)
     local details = {}
     local styles = Values(skin.MicroMenuPresets, {
         forever = "MSUF Forever", modern = "Midnight Blue", midnightDark = "Midnight Dark",
+        blizzard = "Blizzard original",
     })
     styles[#styles + 1] = { value = "custom", text = Tr("Custom"), disabled = true }
     details[#details + 1] = Row("dropdown", "Style", "icons.microMenu.preset", "micro_details",

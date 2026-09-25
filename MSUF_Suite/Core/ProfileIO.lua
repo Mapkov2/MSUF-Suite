@@ -94,7 +94,7 @@ function IO.PrepareModuleProfile(text)
     return id, clean.suite.modules[id]
 end
 
-function IO.PrepareProfile(text)
+function IO.PrepareProfile(text, shared)
     if type(text) ~= "string" or #text > IO.maxBytes + #IO.prefix then return nil, "Invalid suite profile" end
     if text:sub(1, #IO.prefix) ~= IO.prefix then return nil, "Invalid suite profile prefix" end
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
@@ -104,7 +104,7 @@ function IO.PrepareProfile(text)
     if type(envelope) ~= "table" or envelope.addon ~= "MSUF_Suite" or envelope.format ~= 1 then
         return nil, "Unsupported suite profile"
     end
-    return IO.PrepareTable(envelope.profile, true)
+    return IO.PrepareTable(envelope.profile, shared ~= false)
 end
 
 -- Older development bundles embedded module settings in a MapkoSkin export.

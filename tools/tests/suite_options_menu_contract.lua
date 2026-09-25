@@ -244,7 +244,7 @@ assert(historyProvider and Suite.Options.BuildColorsCategory, "Suite did not reg
 for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .. tostring(k)) end
 
 -- Navigation: suite group right before MSUF's Features group, rows in order.
-local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_buffReminders", "suite_chat", "suite_cooldownManager", "suite_skin" }
+local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_cooldownManager", "suite_skin" }
 local at
 for i, item in ipairs(M.navItems) do if item.id == "suite_modules" then at = i end end
 assert(at and M.navItems[at].title == "UI Suite", "suite title row missing")
@@ -345,6 +345,32 @@ for pageKey, ctx in pairs(contexts) do
     end
 end
 assert(shortcutColorCount > 0, "suite color shortcut audit did not cover the catalog")
+local hudSections = {}
+for _, section in ipairs(contexts.suite_hud.sections) do
+    hudSections[section.sectionId] = true
+    local appearance = section.sectionId == "suite_hud_objectives_type"
+        or section.sectionId == "suite_hud_announcements_type"
+    assert((type(section.colorShortcut) == "table") == appearance,
+        "HUD appearance accordion is missing its three-dot colors")
+end
+assert(hudSections.suite_hud_objectives_type and hudSections.suite_hud_announcements_type
+    and not hudSections.suite_hud_objectives_quest_groups
+    and not hudSections.suite_hud_announcements_event_colors,
+    "HUD appearance was not condensed")
+local focusedColor, category
+M.ColorsSetPainterCategory = function(key) category = key end
+M.cache = { opt_colors = { sections = {
+    colors_suite_objectives = { name = "objectives" },
+    colors_suite_announcements = { name = "announcements" },
+} } }
+W.FocusCollapsibleSection = function(section) focusedColor = section.name end
+for _, id in ipairs({ "objectives", "announcements" }) do
+    local button = registeredControls["menu2.suite_hud." .. id .. ".action.colors"]
+    assert(button and button.scripts.OnClick, id .. " has no link to Colors")
+    button.scripts.OnClick()
+    assert(M.selectedPage == "opt_colors" and category == "suite" and focusedColor == id,
+        id .. " color link did not open its own Colors section")
+end
 for _, id in ipairs(Suite.SuiteOrder) do
     for _, rule in ipairs(Suite.SuiteCatalog[id].controls) do
         if rule.color and not rule.hidden and not rule.previewOnly then
@@ -578,7 +604,8 @@ local colorSections = {}
 for _, section in ipairs(colorContext.sections) do colorSections[section.sectionId] = true end
 assert(colorSections.colors_suite_minimap and colorSections.colors_suite_actionbars
     and colorSections.colors_suite_damageMeter and colorSections.colors_suite_buffReminders
-    and colorSections.colors_suite_chat and colorSections.colors_suite_dataTexts,
+    and colorSections.colors_suite_chat and colorSections.colors_suite_dataTexts
+    and colorSections.colors_suite_objectives and colorSections.colors_suite_announcements,
     "MSUF Colors missed Suite module colors")
 local globalColors = {}
 for _, widget in ipairs(colorContext.widgets) do
@@ -664,7 +691,13 @@ skin.Typography = {
 skin.WindowActionSkin = { SetOption = function(key, value) skin.DB.icons.windowActions[key] = value; return true end }
 skin.MicroMenuSkin = {
     SetOption = function(key, value) skin.DB.icons.microMenu[key] = value; return true end,
-    ApplyPreset = function(value) skin.DB.icons.microMenu.preset = value; return true end,
+    ApplyPreset = function(value)
+        local preset = skin.MicroMenuPresetValues[value]
+        if not preset then return false end
+        for key, item in pairs(preset) do skin.DB.icons.microMenu[key] = item end
+        skin.DB.icons.microMenu.preset = value
+        return true
+    end,
     SetPositionPreset = function(value) skin.DB.icons.microMenu.positionPreset = value; return true end,
 }
 skin.CharacterDetails = {
@@ -718,6 +751,21 @@ assert(skinControls["msufsuite.skin.theme.look"] and skinControls["msufsuite.ski
 assert(skinControls["msufsuite.skin.icons.microMenu.preset"]
     and skinControls["msufsuite.skin.hud.objectiveTrackerStyle"],
     "authored Micro Bar and tracker controls missing")
+local microPreset = skinControls["msufsuite.skin.icons.microMenu.preset"]
+local blizzardChoice = false
+for _, entry in ipairs(microPreset.row.values) do
+    if entry.value == "blizzard" and entry.text == "Blizzard original" then
+        blizzardChoice = true
+    end
+end
+assert(blizzardChoice, "Skinning menu did not offer the original Blizzard Micro Bar")
+microPreset.set("blizzard")
+assert(skin.DB.icons.microMenu.layoutMode == "blizzard"
+    and skin.DB.icons.microMenu.iconStyle == "blizzard",
+    "Blizzard menu preset did not select Blizzard layout and icons")
+microPreset.set("modern")
+assert(skin.DB.icons.microMenu.layoutMode == "owned",
+    "Suite menu preset did not restore its movable layout")
 skinControls["msufsuite.skin.enabled"].set(false)
 assert(skin.DB.enabled == false and Suite.Skin.enabled == false,
     "Skinning header switch did not disable Blizzard and Suite surfaces")
@@ -779,6 +827,7 @@ for _, ctx in pairs(contexts) do
     end
 end
 for key in pairs(shortcutColors) do covered[key] = true end
+for key in pairs(globalColors) do covered[key] = true end
 local checked = 0
 for _, id in ipairs(Suite.SuiteOrder) do
     for key, rule in pairs(Suite.SuiteCatalog[id].rules) do

@@ -80,18 +80,35 @@ local adapter = assert(namespace.ForeverGroupFinder)
 local applied, state = adapter.Apply()
 assert(applied and state == "waiting" and mockEventFrame.events.ADDON_LOADED)
 
-local roleArt, roleIcon, cardArt, cardLabel = {}, {}, {}, {}
-local card = { Icon = cardArt, Cover = {}, Label = cardLabel,
-    SelectedTexture = {}, HighlightTexture = {} }
+-- Blizzard_GroupFinder_VanillaStyle as of Forever 1.60.1.70009: the role strip's
+-- background has no parentKey (only its atlas names it), the insets carry
+-- CustomBG plus a Border, and browse, activity and Who lists gained a stone
+-- header (Bg) and two scroll lines.
+local function Texture(atlas)
+    return { GetAtlas = function() return atlas end }
+end
+local roleArt, roleIcon = Texture("groupfinder-roles-background"), Texture("groupfinder-icon-role-large-tank")
+local cardArt, cardLabel = {}, {}
+local card = { Icon = cardArt, Cover = {}, Label = cardLabel, HighlightTexture = {} }
+local rolesSection = { GetRegions = function() return roleArt, roleIcon end }
+local listingInset = { CustomBG = {}, Border = {} }
+local divider = {}
+local activityView = { BarTop = {}, BarMiddle = {} }
+local browseInset = { CustomBG = {}, Border = {} }
+local whoFilter = { Background = {} }
 _G.LFGParentFrame = { Tab1 = {}, Tab2 = {}, Tab3 = {},
     ListingTab = {}, BrowsingTab = {}, WhoListingTab = {} }
 _G.LFGListingFrame = {
-    RolesSection = { RoleBackground = roleArt, RoleIcon = roleIcon },
-    Inset = { CustomBG = {} },
+    RolesSection = rolesSection,
+    Inset = listingInset,
+    DividerFrame = { Divider = divider },
+    ActivityView = activityView,
     CategoryView = { CategoryButtons = { card } },
 }
-_G.LFGBrowseFrame = { BackgroundArt = {}, Inset = { CustomBG = {} }, ScrollBox = ScrollBox() }
-_G.LFGWhoListFrame = { headerBackground = {}, insideFrame = {}, ScrollBox = ScrollBox() }
+_G.LFGBrowseFrame = { BackgroundArt = {}, Bg = {}, BarTop = {}, BarMiddle = {},
+    Inset = browseInset, ScrollBox = ScrollBox() }
+_G.LFGWhoListFrame = { BackgroundArt = {}, headerBackground = {}, insideFrame = {},
+    BarTop = {}, BarMiddle = {}, FilterDropdown = whoFilter, ScrollBox = ScrollBox() }
 _G.LFGListingCategorySelection_UpdateCategoryButtons = function() end
 mockEventFrame.scripts.OnEvent(mockEventFrame, "ADDON_LOADED", "Other")
 assert(mockEventFrame.events.ADDON_LOADED and next(frames) == nil)
@@ -105,9 +122,23 @@ assert(frames[_G.LFGParentFrame].role == "shell"
 assert(faded[roleArt] and not faded[roleIcon]
     and buttons[card].role == "card" and not faded[cardLabel],
     "decorative LFG art or semantic controls were misidentified")
+local browse, who = _G.LFGBrowseFrame, _G.LFGWhoListFrame
+for label, region in pairs({
+    ["listing inset CustomBG"] = listingInset.CustomBG, ["listing inset Border"] = listingInset.Border,
+    ["listing divider"] = divider, ["activity BarTop"] = activityView.BarTop,
+    ["activity BarMiddle"] = activityView.BarMiddle, ["browse BackgroundArt"] = browse.BackgroundArt,
+    ["browse Bg"] = browse.Bg, ["browse BarTop"] = browse.BarTop, ["browse BarMiddle"] = browse.BarMiddle,
+    ["browse inset Border"] = browseInset.Border, ["who BackgroundArt"] = who.BackgroundArt,
+    ["who headerBackground"] = who.headerBackground, ["who insideFrame"] = who.insideFrame,
+    ["who BarTop"] = who.BarTop, ["who BarMiddle"] = who.BarMiddle,
+}) do
+    assert(faded[region] == "blizzardWindows:forever-group-finder", "70009 group finder art stayed visible: " .. label)
+end
+assert(buttons[whoFilter] and buttons[whoFilter].role == "button"
+    and buttons[whoFilter].regions[1] == "Background" and not faded[whoFilter],
+    "the Who filter dropdown must be skinned as a button, not faded")
 
-local later = { Icon = {}, Cover = {}, Label = {},
-    SelectedTexture = {}, HighlightTexture = {} }
+local later = { Icon = {}, Cover = {}, Label = {}, HighlightTexture = {} }
 _G.LFGListingFrame.CategoryView.CategoryButtons[2] = later
 hooks.LFGListingCategorySelection_UpdateCategoryButtons()
 assert(buttons[later] and buttons[later].role == "card",

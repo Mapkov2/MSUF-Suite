@@ -16,7 +16,6 @@ local pools={}
 local owner={}
 local formatters={}
 local syncGen=0
-local classR,classG,classB,classKnown
 
 ------------------------------------------------------------------ scripts
 -- Prebuilt handlers shared by every icon; the icon is looked up, never captured.
@@ -51,6 +50,31 @@ local function OnLeave(icon)
     if tip and tip:IsOwned(icon) then tip:Hide() end
 end
 
+-- Match Blizzard's CooldownViewer ping target order: equipped/bag items,
+-- consumable categories, then spells. IDs in the plan are plain values from
+-- Catalog/Resolve; an empty equipment slot has no item to ping.
+local function PingTarget(entry)
+    if not entry then return end
+    local item=entry.itemID
+    if item then return "itemID",item end
+    local category=entry.spellCategory
+    if category then return "spellCategoryID",category end
+    local spell=entry.spell or entry.base
+    if spell then return "spellID",spell end
+end
+
+local function IsPingable(icon)
+    return icon.entry~=nil and icon.ping==true and PingTarget(icon.entry)~=nil
+end
+
+local function NoRadialWheel() return false end
+
+local function PingInfo(icon)
+    local key,id=PingTarget(icon.entry)
+    if key then return {[key]=id} end
+    return {}
+end
+
 ------------------------------------------------------------------ creation
 local function NewCooldown(icon)
     local cooldown=S.CreateFrame("Cooldown",nil,icon,"CooldownFrameTemplate")
@@ -61,14 +85,20 @@ local function NewCooldown(icon)
     return cooldown
 end
 
-local function CreateIcon(parent)
-    local icon=S.CreateFrame("Frame",nil,parent)
+local function CreateIcon(parent,pingable)
+    local icon=S.CreateFrame("Frame",nil,parent,pingable and "PingReceiverAttributeTemplate" or nil)
+    if pingable then
+        icon.GetIsPingable=IsPingable
+        icon.GetAllowRadialWheel=NoRadialWheel
+        icon.GetTargetInfo=PingInfo
+    end
     icon.tex=S.CreateTexture(icon,nil,"ARTWORK")
     icon.cd=NewCooldown(icon)
     local edges={}
     for i=1,4 do edges[i]=S.CreateTexture(icon,nil,"OVERLAY",nil,7) end
     icon.edges=edges
-    -- Text sits on its own frame above the swipe and the glows.
+    -- Stacks and the keybind sit on their own frame above the swipe and the
+    -- glows; the countdown is the swipe's own text (see Texts).
     local over=S.CreateFrame("Frame",nil,icon)
     over:SetAllPoints(icon)
     icon.over=over
@@ -95,19 +125,6 @@ function I.ChargeCooldown(icon)
 end
 
 ------------------------------------------------------------------ styling
-local function ClassColor()
-    if not classKnown then
-        classKnown=true
-        local class
-        if type(_G.UnitClass)=="function" then
-            local _,token=_G.UnitClass("player")
-            if S.Public(token) then class=token end
-        end
-        classR,classG,classB=S.ClassRGB(class)
-    end
-    return classR,classG,classB
-end
-
 local function Font(fontString,size,r,g,b)
     local state=C.state
     S.SetStyledFont(fontString,state.font,size,state.fontFlags,state.fontRendering,
@@ -134,18 +151,23 @@ local function StyleKey(icon,view)
     key:SetShown(view.keybind==true)
 end
 
--- Texture crop: zoom percent is the total crop, split over both sides; the
--- shorter axis is cropped further so non-square icons keep the art's aspect.
-local function TexCoord(tex,view,w,h,border)
-    local crop=(view.zoom or 0)/200
-    local span=1-2*crop
-    local iw,ih=w-2*border,h-2*border
-    local left,right,top,bottom=crop,1-crop,crop,1-crop
-    if iw>0 and ih>0 then
-        if ih<iw then local v=span*ih/iw;top,bottom=.5-v/2,.5+v/2
-        elseif iw<ih then local u=span*iw/ih;left,right=.5-u/2,.5+u/2 end
+-- Countdown, charge/stack text and which of the two is on top, per entry
+-- (per-spell choices over the bar's switches; the preview's sample icons
+-- carry no choices). Memoized: a repeated pass writes nothing. A hidden
+-- count is cleared here and never written while hidden (icon.stackOn,
+-- read by Time). Countdown on top lifts the swipe, which draws the
+-- countdown, above the text frame.
+local function Texts(icon,view,ov)
+    local time=K.Choice(ov.timeText,K.BarTime(view))
+    if icon.lastTime~=time then icon.lastTime=time;icon.cd:SetHideCountdownNumbers(not time) end
+    local stack=K.Choice(ov.stackText,K.BarStacks(view,true))
+    icon.stackOn=stack
+    if not stack and icon.countOff~=true then icon.countOff,icon.lastCount=true,nil;icon.count:SetText("") end
+    local top=K.Choice(ov.textTop,K.BarStacksTop(view))
+    if icon.lastTop~=top then
+        icon.lastTop=top
+        icon.cd:SetFrameLevel(icon:GetFrameLevel()+(top and K.LEVEL.cd or K.LEVEL.top))
     end
-    tex:SetTexCoord(left,right,top,bottom)
 end
 
 -- Full style pass; callers gate it on view.styleGen (the preview calls it directly).
@@ -155,7 +177,6 @@ function I.StyleIcon(icon,view)
     icon.w,icon.h=w,h
     icon:SetSize(w,h)
     local level=icon:GetFrameLevel()
-    icon.cd:SetFrameLevel(level+K.LEVEL.cd)
     if icon.chargeCd then icon.chargeCd:SetFrameLevel(level+K.LEVEL.charge) end
     if icon.glow then icon.glow:SetFrameLevel(level+K.LEVEL.glow) end
     if icon.ants then icon.ants:SetFrameLevel(level+K.LEVEL.assist) end
@@ -164,7 +185,7 @@ function I.StyleIcon(icon,view)
     icon.border=border
     local r,g,b=view.borderR or 0,view.borderG or 0,view.borderB or 0
     if view.borderClass then
-        local cr,cg,cb=ClassColor()
+        local cr,cg,cb=K.ClassRGB()
         if cr then r,g,b=cr,cg,cb end
     end
     K.PlaceEdges(icon.edges,icon,border,r,g,b,1)
@@ -172,11 +193,12 @@ function I.StyleIcon(icon,view)
     tex:ClearAllPoints()
     tex:SetPoint("TOPLEFT",icon,"TOPLEFT",border,-border)
     tex:SetPoint("BOTTOMRIGHT",icon,"BOTTOMRIGHT",-border,border)
-    TexCoord(tex,view,w,h,border)
+    tex:SetTexCoord(K.Crop(view.zoom,w-2*border,h-2*border))
     local cooldown=icon.cd
     cooldown:SetSwipeColor(0,0,0,(view.swipeAlpha or 70)/100)
     cooldown:SetDrawEdge(view.edge==true)
-    cooldown:SetHideCountdownNumbers(not view.cdText)
+    local entry=icon.entry
+    Texts(icon,view,entry and entry.ov or EMPTY)
     local size=view.cdSize or 0
     if size<=0 then size=max(10,floor(h*.38)) end
     local text=cooldown.GetCountdownFontString and cooldown:GetCountdownFontString()
@@ -235,8 +257,8 @@ function I.Texture(entry)
     I.SetTexture(icon,ov.icon or entry.texture or K.QUESTION_ICON)
 end
 
--- Swipe mode, bling and threshold formatter depend on the entry's spell
--- choices; memoized per (entry, choices, generations).
+-- Swipe mode, bling, threshold formatter and the texts depend on the
+-- entry's spell choices; memoized per (entry, choices, generations).
 function I.Apply(entry)
     local icon=entry.icon
     local view=icon and C.views[entry.slot]
@@ -244,6 +266,7 @@ function I.Apply(entry)
     local ov=entry.ov or EMPTY
     if icon.esEntry==entry and icon.esOv==ov and icon.esStyle==view.styleGen and icon.esBehavior==view.behaviorGen then return end
     icon.esEntry,icon.esOv,icon.esStyle,icon.esBehavior=entry,ov,view.styleGen,view.behaviorGen
+    Texts(icon,view,ov)
     local cooldown,state=icon.cd,C.state
     local swipe=ov.swipe or 1
     if icon.lastSwipe~=swipe then
@@ -285,11 +308,18 @@ function I.SetKeybind(entry,text)
     if icon then ApplyKey(icon,text) end
 end
 
--- Tooltips need mouse motion only; clicks keep passing through the icon.
+-- Blizzard's ping hit test uses ping-receiver independently of mouse clicks.
+-- Keep normal clicks passing through while tooltips use mouse motion only.
 local function SetMouse(icon,on)
     if icon.mouse==on then return end
     icon.mouse=on
     if icon.EnableMouseMotion then icon:EnableMouseMotion(on) else icon:EnableMouse(on) end
+end
+local function SetPing(icon,on)
+    on=on==true and PingTarget(icon.entry)~=nil
+    if icon.ping==on then return end
+    icon.ping=on
+    icon:SetAttribute("ping-receiver",on)
 end
 -- A bar hidden by its visibility rule is only transparent: its icons must
 -- not keep catching the cursor over the frames and the world below.
@@ -307,7 +337,7 @@ end
 local function Acquire(pool,parent)
     local free=pool.free
     local icon=free[#free]
-    if icon then free[#free]=nil else icon=CreateIcon(parent) end
+    if icon then free[#free]=nil else icon=CreateIcon(parent,true) end
     icon:Show()
     return icon
 end
@@ -335,6 +365,7 @@ local function Recycle(pool,icon)
     if icon.countOff~=true then icon.countOff=true;icon.count:SetText("") end
     ApplyKey(icon,nil)
     SetMouse(icon,false)
+    SetPing(icon,false)
     icon:Hide()
     pool.free[#pool.free+1]=icon
 end
@@ -359,6 +390,7 @@ function I.Sync(slotKey)
     local byKey,entries=pool.byKey,plan.entries
     local time,fx=C.Time,C.Effects
     local mouse=MouseWanted(view,bar)
+    local ping=not bar.hidden
     local recount=false
     for i=1,#entries do
         local entry=entries[i]
@@ -375,6 +407,7 @@ function I.Sync(slotKey)
         I.Texture(entry)
         I.Apply(entry)
         SetMouse(icon,mouse)
+        SetPing(icon,ping)
         if fresh then
             -- Bag counts were not followed while nothing showed one: read
             -- them again, once per pass.
@@ -396,21 +429,27 @@ function I.Style(slotKey)
     local pool,view=pools[slotKey],C.views[slotKey]
     if not pool or not view then return end
     local mouse=MouseWanted(view,C.bars[slotKey])
+    local bar=C.bars[slotKey]
+    local ping=not (bar and bar.hidden)
     for _,icon in pairs(pool.byKey) do
         if icon.styleGen~=view.styleGen or icon.styleView~=view then I.StyleIcon(icon,view) end
         if icon.entry then I.Apply(icon.entry) end
         SetMouse(icon,mouse)
+        SetPing(icon,ping)
     end
 end
 
--- Visibility: on=false (bar hidden) takes mouse motion from every icon of the
--- bar, on=true gives it back where tooltips are on. Plain frames, so legal in
--- combat; memoized per icon, so a repeated call writes nothing.
+-- Visibility: a transparent bar must give up tooltips and ping targets.
+-- Plain icon frames remain safe to update in combat; unchanged state writes
+-- nothing.
 function I.SetBarMouse(slotKey,on)
     local pool,view=pools[slotKey],C.views[slotKey]
     if not pool then return end
-    on=on==true and view~=nil and view.tooltips==true
-    for _,icon in pairs(pool.byKey) do SetMouse(icon,on) end
+    local visible=on==true and view~=nil
+    for _,icon in pairs(pool.byKey) do
+        SetMouse(icon,visible and view.tooltips==true)
+        SetPing(icon,visible)
+    end
 end
 
 function I.Release(slotKey)
@@ -438,8 +477,4 @@ end
 
 ------------------------------------------------------------------ options preview
 -- Standalone icons live outside the pools; the preview styles and fills them.
-function I.CreateStandalone(parent)
-    local icon=CreateIcon(parent)
-    icon.standalone=true
-    return icon
-end
+function I.CreateStandalone(parent) return CreateIcon(parent) end

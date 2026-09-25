@@ -301,6 +301,13 @@ function ButtonMethods:SetApplicationCount(fs,opts)
     end
     b.count,b.countFormatter,b.countBinds=fs,opts and opts.formatter,(b.countBinds or 0)+1
 end
+-- Clear* drops the binding only; the region keeps its state (the addon
+-- hides it itself).
+function ButtonMethods:ClearDurationText() local b=R[self].bind;b.text,b.textOpts,b.textClears=nil,nil,(b.textClears or 0)+1 end
+function ButtonMethods:ClearApplicationCount()
+    local b=R[self].bind
+    b.count,b.countFormatter,b.countClears=nil,nil,(b.countClears or 0)+1
+end
 function ButtonMethods:SetApplicationBar(bar,opts)
     Descendant(bar,self,"StatusBar")
     assert(type(opts)=="table" and type(opts.maxApplications)=="number" and opts.maxApplications>=1,
@@ -382,6 +389,14 @@ end}
 local played={kits=0,files=0,speech=0}
 function PlaySound(kit,channel) played.kits=played.kits+1;played.kit,played.kitChannel=kit,channel;return true,1 end
 function PlaySoundFile(file,channel) played.files=played.files+1;played.file,played.fileChannel=file,channel;return true,2 end
+local kitParams
+C_Sound={PlaySoundWithOptions=function(params)
+    assert(not kitParams or kitParams==params,"kit playback reuses its parameters")
+    kitParams=params
+    played.kits=played.kits+1
+    played.kit,played.kitChannel=params.soundKitID,params.uiSoundSubType
+    return true,1
+end}
 C_VoiceChat={SpeakText=function(voice,text,rate,volume,overlap)
     assert(type(voice)=="number" and type(rate)=="number" and type(volume)=="number" and type(overlap)=="boolean","speech args")
     played.speech=played.speech+1;played.text=text
@@ -435,18 +450,22 @@ assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Sui
 local CDM=NS.CDM
 local S=NS.Suite or {}
 NS.Suite=S
+-- Run this contract with MSUF_TEST_FOREVER=1 as well: mapped Blizzard kit
+-- sounds must use the same file playback and native aura registration there.
+if os.getenv("MSUF_TEST_FOREVER")=="1" then NS.Client.isForever=true end
 function S.Public(value) return not issecretvalue(value) end
 function S.Text(value) return value end
 MSUFSuite=NS
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 
 ------------------------------------------------------------------ CDM private table
-local C={M={},EMPTY={},views={},plans={},bars={},entries={},spells={v=1,e={}},lists=CDM.CleanLists(nil)}
+local C={M={},EMPTY={},views={},plans={},bars={},entries={},spells={v=1,e={}},lists=CDM.CleanLists(nil),wipe=wipe}
 C.state={config={},px=1,fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,threshold=0,
     thR=1,thG=.35,thB=.24,muteSounds=false,soundChannel="Master",soundQuietUntil=0,inCombat=false,preview=false}
 local P={NS=NS,Suite=S,CDM=C}
 local function LoadRuntime(file,private)
-    local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/"..file))
+    local path=file=="Alerts.lua" and os.getenv("MSUF_TEST_ALERTS_FILE")
+    local chunk=assert(loadfile(path or root.."/MSUF_Suite_CooldownManager/"..file))
     chunk("MSUF_Suite_CooldownManager",private or P)
 end
 LoadRuntime("Const.lua")
@@ -1152,7 +1171,7 @@ end
 ------------------------------------------------------------------ alerts: ready sounds and speech
 local r1={key="b41",family=1,name="Fireball",ov={sound="kit:1234"}}
 Alerts.Ready(r1)
-assert(played.kits==1 and played.kit==1234 and played.kitChannel=="Master","ready kit sound")
+assert(played.kits==1 and played.kit==1234 and played.kitChannel=="Master","unknown kit fallback")
 Alerts.Ready(r1)
 assert(played.kits==1,"1 s throttle per entry")
 NOW=NOW+1.1
@@ -1177,11 +1196,17 @@ assert(played.speech==1 and played.text=="Frost Nova","speaks the name")
 local r3={key="b43",family=1,name=Secret(),ov={tts=true}}
 Alerts.Ready(r3)
 assert(played.speech==1,"secret names are never spoken")
+local files=played.files
+Alerts.Ready({key="b31518",family=1,name="Known CDM kit",ov={sound="kit:316531"}})
+assert(played.files==files+1 and played.file==7466901 and played.fileChannel=="SFX",
+    "CDM kit ready sound uses its mapped audio file")
+assert(Alerts.IsKit("kit:316531")==false and Alerts.IsKit("kit:5001")==true,
+    "only unknown kits need an aura-button sensor")
 Alerts.Ready({key="a9",family=2,ov={sound="kit:1"}})
 assert(played.kits==3,"aura entries sound natively")
 C.state.muteSounds=true
-assert(Alerts.Play("file:555")==false and played.files==1,"preview respects mute unless forced")
-assert(Alerts.Play("file:555",true)==true and played.files==2 and played.file==555,"forced preview")
+assert(Alerts.Play("file:555")==false and played.files==files+1,"preview respects mute unless forced")
+assert(Alerts.Play("file:555",true)==true and played.files==files+2 and played.file==555,"forced preview")
 assert(Alerts.Play("lsm:None",true)==false and Alerts.Play("bogus",true)==false,"silent values")
 C.state.muteSounds=false
 C.state.soundChannel="Master"
@@ -1219,6 +1244,29 @@ s1.ov={}
 Alerts.SyncAuraSounds()
 assert(SoundCount()==0,"released when unused")
 s1.ov={sound="file:777"}
+AURAS_SECRET=true
+Alerts.SyncAuraSounds()
+assert(SoundCount()==0 and Alerts.pending==true,"secret aura restriction defers sound registration")
+AURAS_SECRET=false
+A.FlushPending()
+assert(SoundCount()==1 and Alerts.pending==false,"sound registration retries when auras become public")
+s1.ov={}
+Alerts.SyncAuraSounds()
+s1.ov={sound="file:777"}
+local addSound=C_UnitAuras.AddAuraSound
+local refused=true
+C_UnitAuras.AddAuraSound=function(trigger,info)
+    if refused then refused=false;return nil end
+    return addSound(trigger,info)
+end
+Alerts.SyncAuraSounds()
+assert(SoundCount()==0 and Alerts.pending==true,"rejected native sound stays pending")
+A.FlushPending()
+assert(SoundCount()==1 and Alerts.pending==false,"native sound registration retries")
+C_UnitAuras.AddAuraSound=addSound
+s1.ov={}
+Alerts.SyncAuraSounds()
+s1.ov={sound="file:777"}
 COMBAT=true
 Alerts.SyncAuraSounds()
 assert(SoundCount()==0 and Alerts.pending==true,"out of combat only")
@@ -1243,6 +1291,21 @@ Alerts.ReleaseAll()
 NOW=NOW+3
 RunTimers()
 assert(SoundCount()==0,"release wins over a pending quiet timer")
+s1.ov={sound="kit:316446",lossSound="kit:316531"}
+Alerts.SyncAuraSounds()
+assert(SoundCount()==2,"mapped CDM kits register native gain and loss sounds")
+local nativeFiles={}
+for _,row in pairs(auraSounds) do nativeFiles[row.trigger]=row.file end
+assert(nativeFiles[0]==7466070 and nativeFiles[2]==7466901,
+    "native aura sounds use the Blizzard CDM kit's actual FileDataID")
+s1.ov={sound="kit:353387"}
+Alerts.SyncAuraSounds()
+assert(SoundCount()==1 and Alerts.IsKit("kit:353387")==false,
+    "Short CDM kit also uses native file registration on Retail and Forever")
+for _,row in pairs(auraSounds) do assert(row.file==7962208,"Short kit FileDataID") end
+s1.ov={}
+Alerts.SyncAuraSounds()
+assert(SoundCount()==0,"mapped kit registrations are released")
 
 ------------------------------------------------------------------ allocation-free retarget
 A.Sync("buf")
@@ -2099,7 +2162,7 @@ local kits,timers=played.kits,timerCount
 Fire(s1,"OnShow")
 assert(played.kits==kits and timerCount==timers+1,"an edge waits one frame")
 RunTimers()
-assert(played.kits==kits+1 and played.kit==5001 and played.kitChannel=="Master","gain kit")
+assert(played.kits==kits+1 and played.kit==5001 and played.kitChannel=="Master","gain kit fallback")
 NOW=NOW+.4
 Fire(s1,"OnHide")
 RunTimers()
@@ -2170,7 +2233,7 @@ C.state.soundChannel="SFX"
 NOW=NOW+2
 Fire(s1,"OnHide")
 RunTimers()
-assert(played.kits==kits+6 and played.kit==5002 and played.kitChannel=="SFX","chosen channel")
+assert(played.kits==kits+6 and played.kit==5002 and played.kitChannel=="SFX","unknown kits use the chosen channel")
 C.state.soundChannel="Master"
 -- kits are never registered natively; files still are
 Alerts.ReleaseAll()
@@ -2209,6 +2272,165 @@ end
 
 end
 Features()
+
+------------------------------------------------------------------ countdown and stack text per entry
+-- The bar's "Show countdown" and "Show charges and stacks" stand behind each
+-- spell's choice (timeText, stackText: 2 show, 3 hide). Hidden text is never
+-- bound: a bound region is cleared, then hidden by hand; the stack glow keeps
+-- its application bar. Text on top trades the levels of the two text frames
+-- above the glows. Every change runs through the out-of-combat sync; sealed
+-- buttons wait. The countdown regions exist while the bar or a spell shows
+-- the countdown (a region set change is a new container).
+local function TextChoices()
+    C.views.c5=View("c5",2)
+    local tv=C.views.c5
+    assert(tv.stackText==true and tv.textTop==1 and tv.cdText==true,"text defaults: shown, stacks on top")
+    local u1=Aura("c5","a5101","a","player",Set(5101))
+    local u2=Aura("c5","a5102","a","player",Set(5102),{ov={stackText=3,timeText=3,textTop=3,stackGlow=2}})
+    Plan("c5",2,{u1,u2})
+    A.Sync("c5")
+    local c=Live("c5","player")
+    local function First(container,key) return R[Buttons(container,key)[1]] end
+    local g1,g2=First(c,"g1"),First(c,"g2")
+    assert(g1.bind.text and g1.bind.count and g1.bind.textBinds==1 and g1.bind.countBinds==1,"bar default: both bound")
+    assert(not g2.bind.text and not g2.bind.count and (g2.bind.textBinds or 0)==0 and (g2.bind.countBinds or 0)==0,
+        "a hidden choice is never bound")
+    assert(g2.bind.appBar and g2.bind.appOpts.maxApplications==2,"the stack glow keeps its application bar")
+    -- the regions: stacks and countdown on two frames, stacks on top
+    local count,dur=g1.bind.count,g1.bind.text
+    local stacks,texts=R[count].parent,R[dur].parent
+    assert(stacks~=texts and R[stacks].parent==Buttons(c,"g1")[1] and R[texts].parent==Buttons(c,"g1")[1],
+        "two text frames in the button")
+    assert(R[stacks].level>R[texts].level,"stacks on top by default")
+    -- shown again: bound and shown; hidden again: cleared and hidden
+    u2.ov={stackGlow=2}
+    A.Sync("c5")
+    assert(Live("c5","player")==c,"a text choice changes no container")
+    assert(g2.bind.text and g2.bind.count and g2.bind.textBinds==1 and g2.bind.countBinds==1,"shown: bound in place")
+    local count2,dur2=g2.bind.count,g2.bind.text
+    assert(R[count2].shown and R[dur2].shown,"shown regions")
+    assert(R[R[count2].parent].level>R[R[dur2].parent].level,"back to the bar's order: stacks on top")
+    u2.ov={stackText=3,timeText=3,stackGlow=2}
+    A.Sync("c5")
+    assert(not g2.bind.count and not g2.bind.text and g2.bind.countClears==1 and g2.bind.textClears==1,"hidden: cleared")
+    assert(R[count2].shown==false and R[dur2].shown==false,"hidden: the regions hide")
+    assert(g1.bind.count==count and g1.bind.text==dur and g1.bind.countBinds==1,"the other entry keeps its bindings")
+    local writes=g2.bind.countBinds+g2.bind.countClears+g2.bind.textBinds+g2.bind.textClears
+    A.Sync("c5")
+    assert(g2.bind.countBinds+g2.bind.countClears+g2.bind.textBinds+g2.bind.textClears==writes,"unchanged: no call")
+    u2.ov={stackGlow=2}
+    A.Sync("c5")
+    assert(g2.bind.count==count2 and g2.bind.text==dur2 and g2.bind.countBinds==2 and g2.bind.textBinds==2
+        and R[count2].shown and R[dur2].shown,"shown again: rebound, shown")
+    -- Text on top per spell: the countdown frame above the stacks frame
+    u1.ov={textTop=3}
+    A.Sync("c5")
+    for _,b in ipairs(Buttons(c,"g1")) do
+        local bind=R[b].bind
+        assert(R[R[bind.text].parent].level>R[R[bind.count].parent].level,"countdown on top")
+    end
+    u1.ov={textTop=2}
+    A.Sync("c5")
+    assert(R[stacks].level>R[texts].level,"stacks on top again")
+    -- the bar's switches: stacks off hides every entry without a choice
+    tv.stackText=false;tv.styleGen=tv.styleGen+1
+    u1.ov=C.EMPTY
+    u2.ov={stackText=2,stackGlow=2}
+    A.Sync("c5")
+    assert(not g1.bind.count and R[count].shown==false and g2.bind.count==count2 and R[count2].shown,
+        "bar off: a spell that shows its stacks keeps them")
+    tv.textTop=2;tv.styleGen=tv.styleGen+1
+    A.Sync("c5")
+    assert(R[texts].level>R[stacks].level,"bar: countdown on top")
+    tv.stackText,tv.textTop=true,1;tv.styleGen=tv.styleGen+1
+    u2.ov={stackGlow=2}
+    A.Sync("c5")
+    assert(g1.bind.count==count and R[count].shown and R[stacks].level>R[texts].level,"bar on again")
+    -- countdown off on the bar with no spell asking for it: containers
+    -- without countdown regions; a spell that shows it brings them back
+    tv.cdText=false;tv.styleGen=tv.styleGen+1
+    A.Sync("c5")
+    local plain=Live("c5","player")
+    assert(plain~=c,"no countdown anywhere: a container without countdown regions")
+    local p1=First(plain,"g1")
+    assert(not p1.bind.text and p1.bind.count,"no countdown region, stacks bound")
+    u2.ov={timeText=2,stackGlow=2}
+    A.Sync("c5")
+    local back=Live("c5","player")
+    assert(back==c,"a spell that shows the countdown: the pooled container with the regions")
+    assert(g2.bind.text==dur2 and not g1.bind.text and R[dur].shown==false,"only that spell's countdown is bound")
+    tv.cdText=true;tv.styleGen=tv.styleGen+1
+    u2.ov={stackGlow=2}
+    A.Sync("c5")
+    assert(Live("c5","player")==c and g1.bind.text==dur and R[dur].shown,"bar countdown on again")
+    -- combat: nothing touches sealed buttons; the change waits for combat end
+    COMBAT=true
+    u1.ov={stackText=3}
+    A.Sync("c5")
+    assert(g1.bind.count==count and A.pending.c5==true,"combat: deferred")
+    COMBAT=false
+    A.FlushPending()
+    assert(not g1.bind.count and R[count].shown==false and A.pending.c5==nil,"after combat: cleared")
+    u1.ov=C.EMPTY
+    A.Sync("c5")
+    -- The look signature covers every field Look writes: a font shadow or
+    -- rendering change restyles aura buttons like a size change.
+    local function Shadows()
+        local n=0
+        for _,s in pairs(R) do if s.kind=="FontString" then n=n+(s.calls.SetShadowColor or 0) end end
+        return n
+    end
+    local before=Shadows()
+    C.state.fontShadow,C.state.fontRendering,C.state.fontShadowOpacity,C.state.fontShadowDistance=true,1,100,2
+    tv.styleGen=tv.styleGen+1
+    A.Restyle("c5")
+    assert(Shadows()>before,"a shadow change restyles the aura text")
+    local shadowed=Shadows()
+    A.Restyle("c5")
+    assert(Shadows()==shadowed,"the same look: no restyle")
+    C.state.fontShadowDistance=1
+    A.Restyle("c5")
+    assert(Shadows()>shadowed,"a shadow distance change restyles")
+    C.state.fontShadow,C.state.fontRendering,C.state.fontShadowOpacity,C.state.fontShadowDistance=nil,nil,nil,nil
+    A.Restyle("c5")
+    C.plans.c5=nil
+    A.Release("c5")
+end
+TextChoices()
+-- Every lk field Look writes is part of the look signature (LOOK).
+do
+    local file=assert(io.open(root.."/MSUF_Suite_CooldownManager/Auras.lua","rb"))
+    local text=file:read("*a"):gsub("\r","")
+    file:close()
+    local look=assert(text:match("\nlocal LOOK=(%b{})"),"LOOK list")
+    local listed={}
+    for name in look:gmatch('"(%w+)"') do listed[name]=true end
+    local body=assert(text:match("\nlocal function Look%(rec,view%)\n(.-)\n    return tconcat"),"Look body")
+    local seen=0
+    for names in body:gmatch("\n%s*(lk%.[%w_.,lk]-)=") do
+        for name in names:gmatch("lk%.(%w+)") do
+            seen=seen+1
+            assert(listed[name],"Look writes lk."..name.." but LOOK does not list it")
+        end
+    end
+    assert(seen>=30,"Look scan found "..seen.." fields")
+end
 OwnAnchors("every container")
+
+local nativeFile=PlaySoundFile
+PlaySoundFile=function(file,channel)
+    if file==7466901 then return false end
+    return nativeFile(file,channel)
+end
+local fallbackKits=played.kits
+assert(Alerts.Play("kit:316531",true)==true and played.kits==fallbackKits+1,
+    "a CDM file unavailable on this client falls back to the sound kit")
+PlaySoundFile=nativeFile
+local nativeSound=C_Sound.PlaySoundWithOptions
+C_Sound.PlaySoundWithOptions=nil
+local legacyKits=played.kits
+assert(Alerts.Play("kit:5001",true)==true and played.kits==legacyKits+1,
+    "older clients keep the PlaySound fallback")
+C_Sound.PlaySoundWithOptions=nativeSound
 
 print("suite_cooldown_manager_auras_contract: ok")

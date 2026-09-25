@@ -1,7 +1,8 @@
 local _, P = ...
--- Cooldown manager page, shared part: bar selection, list and per-spell edits
--- (one history entry per gesture) and the pooled editors used by the page:
--- spell tiles, spell picker, per-spell popover and sound picker.
+-- Cooldown manager page, shared part: bar selection, list, bar and per-spell
+-- edits (one history entry per gesture; gestures that drop data offer an
+-- Undo line) and the pooled editors used by the page: spell tiles, spell
+-- picker, per-spell popover and sound picker.
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local CDM = Suite and Suite.CDM
 local ID, PAGE = "cooldownManager", "suite_cooldownManager"
@@ -13,16 +14,22 @@ local EMPTY = {}
 local QUESTION = 134400
 local RUNTIME = "MSUF_Suite_CooldownManager"
 local TILE, GAP = 36, 6
+-- Icon crop of every spell texture the page draws.
+local CROP_MIN, CROP_MAX = 0.08, 0.92
 local floor, max, min, format = math.floor, math.max, math.min, string.format
 
 local Page = P.CDMPage or {}
 P.CDMPage = Page
-Page.ID, Page.PAGE, Page.TILE, Page.GAP = ID, PAGE, TILE, GAP
+Page.ID, Page.PAGE, Page.CROP_MIN, Page.CROP_MAX = ID, PAGE, CROP_MIN, CROP_MAX
 Page.popups = Page.popups or {}
 if not CDM.SLOT_INDEX[Page.selected or ""] then Page.selected = "ess" end
 
 ------------------------------------------------------------------ basics
+-- The suite's own check when the runtime modules are loaded; the same test
+-- otherwise.
 local function Public(value)
+    local public = S.Public
+    if public then return public(value) end
     local check = _G.issecretvalue
     return not (type(check) == "function" and check(value))
 end
@@ -45,7 +52,11 @@ local function Color(name, r, g, b)
     if type(color) == "table" and type(color[1]) == "number" then return color[1], color[2], color[3] end
     return r, g, b
 end
-Page.Color = Color
+-- Theme colors with the page's fallbacks.
+local function Accent() return Color("accent", 0.30, 0.74, 1.00) end
+local function TextColor() return Color("text", 0.92, 0.94, 0.98) end
+local function MutedColor() return Color("muted", 0.6, 0.65, 0.72) end
+Page.Color, Page.Accent, Page.TextColor, Page.MutedColor = Color, Accent, TextColor, MutedColor
 
 -- Spell and item names never go through the locale table: they are data, and
 -- a protected value must not become a table key.
@@ -63,6 +74,34 @@ function Page.Kind(slot)
 end
 function Page.Family(slot) return Page.Kind(slot) == 1 and 1 or 2 end
 function Page.IsOn(slot) return P.Get(ID, KEYS[slot].on) == true end
+-- Bars the strip and the bar list keep in view: every bar that is on or
+-- selected, the built-in bars, and custom bars that were set up (named).
+function Page.Listed(slot)
+    if slot == Page.selected or Page.IsOn(slot) or not Page.SlotInfo(slot).custom then return true end
+    return P.Get(ID, KEYS[slot].name) ~= ""
+end
+-- The bar a bar is attached to (nil: placed freely or on a unit frame).
+local function AnchorBar(slot)
+    local anchor = P.Get(ID, KEYS[slot].anchor)
+    local target = type(anchor) == "number" and anchor >= 2 and SLOTS[anchor - 1] or nil
+    return target and target.key or nil
+end
+-- The saved attachments lead from `from` to `slot`: attaching `slot` to
+-- `from` would close a loop, and the runtime places every bar of a loop
+-- freely.
+function Page.Follows(from, slot)
+    local cursor = from
+    for _ = 1, #SLOTS do
+        if cursor == slot then return true end
+        cursor = AnchorBar(cursor)
+        if not cursor then return false end
+    end
+    return false
+end
+function Page.InLoop(slot)
+    local first = AnchorBar(slot)
+    return first ~= nil and Page.Follows(first, slot)
+end
 -- The runtime's attach chain, read from the saved settings: the first shown
 -- bar up the chain, or nil plus the switched-off bar whose place this one
 -- takes (a bar that is off hands its attachment on to its own target).
@@ -115,16 +154,27 @@ function Page.BarName(slot)
     end
     return Tr(info.title)
 end
-local KIND_NAMES = { "Cooldown bar", "Buff icon bar", "Buff bar" }
+-- One name per bar type everywhere on the page: the bar type list, "+ Add
+-- bar", summaries and notes. Type 3 draws timer bars ("Buff bars" stays the
+-- name of the built-in bar that shows them).
+local KIND_NAMES = { "Cooldown bar", "Buff icon bar", "Timer bar" }
+Page.KIND_NAMES = KIND_NAMES
 function Page.KindName(kind) return Tr(KIND_NAMES[kind] or KIND_NAMES[1]) end
 function Page.Key(suffix) return KEYS[Page.selected][suffix] end
+-- Why an entry cannot go to a bar of the other family (untranslated).
+function Page.FamilyError(family)
+    return family == 1 and "That bar shows buffs." or "That bar shows cooldowns."
+end
 
 -- A template suffix applies to a bar when that bar's kind declares it.
--- Custom Buff bar bars also keep the icon rules the runtime reads for them
--- (spacing, cap, icon crop and border, text sizes); the built-in Buff bars
--- row has none of these and uses fixed values.
-local KIND3_EXTRA = { spacing = true, maxIcons = true, zoom = true, border = true, borderColor = true,
-    borderClass = true, cdSize = true, stackSize = true, stackPos = true }
+-- Custom timer bars also keep the icon rules the runtime reads for them
+-- (spacing, cap, icon crop and border, text switches and sizes); the
+-- built-in Buff bars row has none of these and uses fixed values.
+local KIND3_EXTRA = {}
+for _, suffix in ipairs({ "spacing", "maxIcons", "zoom", "border", "borderColor", "borderClass", "cdText", "cdSize",
+    "stackText", "stackSize", "stackPos", "textTop" }) do
+    if KEYS.c1[suffix] then KIND3_EXTRA[suffix] = true end
+end
 Page.KIND3_EXTRA = KIND3_EXTRA
 -- Custom buff bars of both types keep the bar's glow style and tint: the
 -- runtime styles their aura glows ("glow while active", stack glows) with
@@ -147,13 +197,14 @@ end
 -- keeps that control disabled.
 local TEMPLATE_SUFFIX = {}
 for suffix, key in pairs(KEYS.c1) do TEMPLATE_SUFFIX[key] = suffix end
-Page.TEMPLATE_SUFFIX = TEMPLATE_SUFFIX
 function Page.KeyFn(key)
     local suffix = TEMPLATE_SUFFIX[key]
     if not suffix then return key end
     return KEYS[Page.selected][suffix] or key
 end
+-- The sound channel means nothing while the module's sounds are muted.
 P.Gates[ID] = function(rule)
+    if rule.key == "soundChannel" then return P.Get(ID, "muteSounds") ~= true end
     if not TEMPLATE_SUFFIX[rule.key] then return true end
     return Page.Relevant(Page.selected, rule.suffix)
 end
@@ -279,6 +330,16 @@ function Page.HasList(slot)
     local slots = spec and Page.ListsView().specs[spec]
     return slots ~= nil and slots[slot] ~= nil
 end
+-- The bar's list holds spells or items the player added (not Blizzard's).
+function Page.HasOwnEntries(slot)
+    local spec = Page.Spec()
+    local slots = spec and Page.ListsView().specs[spec]
+    local list = slots and slots[slot]
+    for i = 1, list and #list or 0 do
+        if CDM.EntryKind(list[i]) ~= "b" then return true end
+    end
+    return false
+end
 function Page.HiddenCount()
     local spec = Page.Spec()
     local hidden = spec and Page.ListsView().hidden[spec]
@@ -375,94 +436,102 @@ end
 local function WrongFamily(family, slot)
     if family ~= 1 and family ~= 2 then return nil end
     if family == Page.Family(slot) then return nil end
-    return family == 1 and "That bar shows buffs." or "That bar shows cooldowns."
+    return Page.FamilyError(family)
+end
+-- One list gesture: decode, edit, prune, one history entry. `edit` returns
+-- the history label to commit, true when nothing changes, or false and why.
+local function EditLists(edit)
+    local spec, err = Ready()
+    if not spec then return false, err end
+    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
+    local label, reason = edit(lists, spec)
+    if type(label) ~= "string" then return label == true, reason end
+    Prune(lists, spec)
+    return Page.Commit(label, lists)
 end
 
 function Page.AddEntry(slot, key, family)
-    local spec, err = Ready()
-    if not spec then return false, err end
-    if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
-    local wrong = WrongFamily(family, slot)
-    if wrong then return false, wrong end
-    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
-    local hidden = lists.hidden[spec]
-    local list = Materialize(lists, spec, slot)
-    if IndexOf(list, key) and not (hidden and hidden[key]) then return true end
-    if not IndexOf(list, key) then
-        if #list >= CDM.LIMITS.entries then return false, "This bar is full." end
-        list[#list + 1] = key
-    end
-    Unclaim(lists, spec, key, slot)
-    Prune(lists, spec)
-    return Page.Commit("Add to cooldown bar", lists)
+    return EditLists(function(lists, spec)
+        if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
+        local wrong = WrongFamily(family, slot)
+        if wrong then return false, wrong end
+        local hidden = lists.hidden[spec]
+        local list = Materialize(lists, spec, slot)
+        if IndexOf(list, key) and not (hidden and hidden[key]) then return true end
+        if not IndexOf(list, key) then
+            if #list >= CDM.LIMITS.entries then return false, "This bar is full." end
+            list[#list + 1] = key
+        end
+        Unclaim(lists, spec, key, slot)
+        return "Add to cooldown bar"
+    end)
 end
 
 -- Built-in bars refill from Blizzard's list, so a Blizzard entry removed there
 -- is hidden for this specialization. Elsewhere it only leaves the list (a
 -- Blizzard entry then returns to its own bar).
 function Page.RemoveEntry(slot, key)
-    local spec, err = Ready()
-    if not spec then return false, err end
-    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
-    local slots = lists.specs[spec]
-    local list = slots and slots[slot]
-    local at = IndexOf(list, key)
-    if at then table.remove(list, at) end
-    -- Blizzard entries and preset spells come back unless hidden for this spec.
-    local info = Page.SlotInfo(slot)
-    if not info.custom and (CDM.EntryKind(key) == "b" or info.preset) then
-        local hidden = lists.hidden[spec] or {}
-        local count = 0
-        for _ in pairs(hidden) do count = count + 1 end
-        if count >= CDM.LIMITS.hidden then return false, "Too many removed spells." end
-        hidden[key] = true
-        lists.hidden[spec] = hidden
-    elseif not at then
-        return false, "It is not on this bar."
-    end
-    Prune(lists, spec)
-    return Page.Commit("Remove from cooldown bar", lists)
+    return EditLists(function(lists, spec)
+        local slots = lists.specs[spec]
+        local list = slots and slots[slot]
+        local at = IndexOf(list, key)
+        if at then table.remove(list, at) end
+        -- Blizzard entries and preset spells come back unless hidden for this spec.
+        local info = Page.SlotInfo(slot)
+        if not info.custom and (CDM.EntryKind(key) == "b" or info.preset) then
+            local hidden = lists.hidden[spec] or {}
+            local count = 0
+            for _ in pairs(hidden) do count = count + 1 end
+            if count >= CDM.LIMITS.hidden then return false, "Too many removed spells." end
+            hidden[key] = true
+            lists.hidden[spec] = hidden
+        elseif not at then
+            return false, "It is not on this bar."
+        end
+        return "Remove from cooldown bar"
+    end)
 end
 
 -- Moves (or reorders) an entry so it sits before `beforeKey` on `slot`, or last.
 function Page.MoveEntry(key, slot, beforeKey, family)
-    local spec, err = Ready()
-    if not spec then return false, err end
-    if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
-    local wrong = WrongFamily(family, slot)
-    if wrong then return false, wrong end
-    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
-    local list = Materialize(lists, spec, slot)
-    local at = IndexOf(list, key)
-    if at then table.remove(list, at)
-    elseif #list >= CDM.LIMITS.entries then return false, "This bar is full." end
-    local index = beforeKey and beforeKey ~= key and IndexOf(list, beforeKey) or (#list + 1)
-    local hidden = lists.hidden[spec]
-    if at and index == at and not (hidden and hidden[key]) then return true end
-    table.insert(list, index, key)
-    Unclaim(lists, spec, key, slot)
-    Prune(lists, spec)
-    return Page.Commit(at and "Reorder cooldown bar" or "Move to another bar", lists)
+    return EditLists(function(lists, spec)
+        if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
+        local wrong = WrongFamily(family, slot)
+        if wrong then return false, wrong end
+        local list = Materialize(lists, spec, slot)
+        local at = IndexOf(list, key)
+        if at then table.remove(list, at)
+        elseif #list >= CDM.LIMITS.entries then return false, "This bar is full." end
+        local index = beforeKey and beforeKey ~= key and IndexOf(list, beforeKey) or (#list + 1)
+        local hidden = lists.hidden[spec]
+        if at and index == at and not (hidden and hidden[key]) then return true end
+        table.insert(list, index, key)
+        Unclaim(lists, spec, key, slot)
+        return at and "Reorder cooldown bar" or "Move to another bar"
+    end)
 end
 
--- Built-in bars go back to Blizzard's order; custom bars are emptied.
+-- What dropping a bar's own list does: built-in bars go back to Blizzard's
+-- list, Defensives to the class preset, custom bars are emptied.
+function Page.ClearLabel(slot)
+    local info = Page.SlotInfo(slot)
+    if info.custom then return "Remove all spells" end
+    return info.preset == "defensives" and "Restore default spells" or "Reset to Blizzard's list"
+end
 function Page.ClearList(slot)
-    local spec, err = Ready()
-    if not spec then return false, err end
-    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
-    local slots = lists.specs[spec]
-    if not (slots and slots[slot]) then return true end
-    slots[slot] = nil
-    Prune(lists, spec)
-    return Page.Commit(Page.SlotInfo(slot).custom and "Clear cooldown bar" or "Use Blizzard's order", lists)
+    return EditLists(function(lists, spec)
+        local slots = lists.specs[spec]
+        if not (slots and slots[slot]) then return true end
+        slots[slot] = nil
+        return Page.ClearLabel(slot)
+    end)
 end
 function Page.RestoreHidden()
-    local spec, err = Ready()
-    if not spec then return false, err end
-    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
-    if not lists.hidden[spec] then return true end
-    lists.hidden[spec] = nil
-    return Page.Commit("Show removed spells", lists)
+    return EditLists(function(lists, spec)
+        if not lists.hidden[spec] then return true end
+        lists.hidden[spec] = nil
+        return "Show removed spells"
+    end)
 end
 -- Custom entries only: Blizzard entries follow each specialization's own list.
 function Page.CopyToSpecs(slot, key)
@@ -488,6 +557,43 @@ function Page.CopyToSpecs(slot, key)
     if changed == 0 then return true, 0 end
     local ok, reason = Page.Commit("Copy to all specializations", lists)
     return ok, ok and changed or reason
+end
+-- Every spell and item the player added to the bar goes to the same bar in
+-- the other specializations, in its order, as one history entry. Returns
+-- true plus the number of entries added and of specializations changed.
+function Page.CopyListToSpecs(slot)
+    local spec, err = Ready()
+    if not spec then return false, err end
+    local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
+    local own, keys = lists.specs[spec] and lists.specs[spec][slot], {}
+    for i = 1, own and #own or 0 do
+        if CDM.EntryKind(own[i]) ~= "b" then keys[#keys + 1] = own[i] end
+    end
+    if #keys == 0 then return false, "This bar has no spells or items you added." end
+    local added, specs = 0, 0
+    for _, other in ipairs(Page.ClassSpecs({})) do
+        if other ~= spec then
+            local slots = lists.specs[other] or {}
+            lists.specs[other] = slots
+            local before = added
+            for i = 1, #keys do
+                local key = keys[i]
+                Unclaim(lists, other, key, slot)
+                local list = slots[slot] or {}
+                slots[slot] = list
+                if not IndexOf(list, key) and #list < CDM.LIMITS.entries then
+                    list[#list + 1] = key
+                    added = added + 1
+                end
+            end
+            if added > before then specs = specs + 1 end
+            Prune(lists, other)
+        end
+    end
+    if added == 0 then return true, 0, 0 end
+    local ok, reason = Page.Commit("Copy bar to all specializations", lists)
+    if not ok then return false, reason end
+    return true, added, specs
 end
 
 function Page.SetSpellField(key, field, value)
@@ -555,20 +661,90 @@ function Page.Note(text, undo, isError)
 end
 function Page.Fail(reason) Page.Note(Tr(reason or "That did not work."), nil, true) end
 
-function Page.RemoveWithUndo(slot, key, name)
-    local before = P.Get(ID, "listsData")
-    local ok, reason = Page.RemoveEntry(slot, key)
-    if not ok then Page.Fail(reason); return false end
-    local after = P.Get(ID, "listsData")
-    Page.Note(format(Tr("Removed %s."), name or key), function()
-        if P.Combat() or P.Get(ID, "listsData") ~= after then return false end
-        local restored
-        P.WithHistory("Undo remove", "suite:cooldownManager.spells", function()
-            restored = P.Set(ID, "listsData", before)
-            return restored
-        end)
+-- A gesture that can drop data, with an 8 s Undo line. keys: the settings it
+-- may change. The Undo puts them back as one history entry, and only while
+-- nothing changed them since. Returns what `run` returned.
+local LIST_KEYS = { "listsData" }
+Page.LIST_KEYS = LIST_KEYS
+local function Snapshot(keys)
+    local out = {}
+    for i = 1, #keys do out[keys[i]] = P.Get(ID, keys[i]) end
+    return out
+end
+local function Restore(before, after)
+    if P.Combat() then return false end
+    local values = {}
+    for key, value in pairs(after) do
+        if P.Get(ID, key) ~= value then Page.Fail("That changed since, so it cannot be undone."); return false end
+        if before[key] ~= value then values[key] = before[key] end
+    end
+    local restored
+    P.WithHistory("Undo", "suite:cooldownManager.undo", function()
+        -- Turning the module back on applies the suite look first; the other
+        -- values follow it, so they come back exactly.
+        if values.enabled == true then
+            values.enabled = nil
+            if not P.Set(ID, "enabled", true) then return false end
+        end
+        restored = P.SetMany(ID, values)
         return restored
     end)
+    return restored
+end
+-- text: the note, or a function of run's extra results that returns it.
+function Page.WithUndo(text, keys, run)
+    local before = Snapshot(keys)
+    local ok, reason, extra = run()
+    if not ok then return false, reason end
+    local after = Snapshot(keys)
+    for key, value in pairs(after) do
+        if before[key] ~= value then
+            if type(text) == "function" then text = text(reason, extra) end
+            Page.Note(text, function() return Restore(before, after) end)
+            break
+        end
+    end
+    return ok, reason, extra
+end
+-- Keys of one bar (plus its spell lists) for Page.WithUndo.
+function Page.SlotKeys(slot, withLists)
+    local keys = {}
+    for _, key in pairs(KEYS[slot]) do keys[#keys + 1] = key end
+    if withLists then keys[#keys + 1] = "listsData" end
+    -- The Essential bar's x/y may count from Blizzard's bar.
+    if slot == "ess" and RULES.essOnViewer then keys[#keys + 1] = "essOnViewer" end
+    return keys
+end
+
+function Page.RemoveWithUndo(slot, key, name)
+    local ok, reason = Page.WithUndo(format(Tr("Removed %s."), name or key), LIST_KEYS,
+        function() return Page.RemoveEntry(slot, key) end)
+    if not ok then Page.Fail(reason) end
+    return ok
+end
+-- The Spell list's list-wide actions, each with its Undo line.
+function Page.ClearWithUndo(slot)
+    local label = Page.ClearLabel(slot)
+    local text = label == "Remove all spells" and format(Tr("Removed every spell from %s."), Page.BarName(slot))
+        or label == "Restore default spells" and format(Tr("%s is back to its default spells."), Page.BarName(slot))
+        or format(Tr("%s follows Blizzard's list again."), Page.BarName(slot))
+    local ok, reason = Page.WithUndo(text, LIST_KEYS, function() return Page.ClearList(slot) end)
+    if not ok then Page.Fail(reason) end
+    return ok
+end
+function Page.RestoreWithUndo()
+    local count = Page.HiddenCount()
+    local ok, reason = Page.WithUndo(format(Tr("Brought back the removed spells (%d)."), count), LIST_KEYS, Page.RestoreHidden)
+    if not ok then Page.Fail(reason) end
+    return ok
+end
+local function CopiedText(added, specs)
+    return format(Tr("Copied %d entries to %d other specializations."), added, specs)
+end
+function Page.CopyListWithUndo(slot)
+    local ok, added = Page.WithUndo(CopiedText, LIST_KEYS, function() return Page.CopyListToSpecs(slot) end)
+    if not ok then Page.Fail(added); return false end
+    if added == 0 then Page.Note(Tr("Your other specializations have them already.")) end
     return true
 end
 function Page.RunUndo()
@@ -589,19 +765,19 @@ function Page.Select(slot)
     return true
 end
 -- New bars prefer a custom slot that was never named; a used slot that is off
--- is reused only when no fresh one is left.
+-- is reused only when no fresh one is left (second result true).
 function Page.FreeCustom()
     local reuse
     for i = 1, #SLOTS do
         local info = SLOTS[i]
         if info.custom and not Page.IsOn(info.key) then
-            if P.Get(ID, KEYS[info.key].name) == "" then return info.key end
+            if P.Get(ID, KEYS[info.key].name) == "" then return info.key, false end
             reuse = reuse or info.key
         end
     end
-    return reuse
+    return reuse, reuse ~= nil
 end
-local DEFAULT_NAMES = { "Cooldowns", "Buffs", "Buff bars" }
+local DEFAULT_NAMES = { "Cooldowns", "Buffs", "Timers" }
 -- A free bar that would sit exactly on another shown free bar moves down a
 -- step, so several new bars never stack on one spot.
 local function Occupied(slot, x, y)
@@ -639,15 +815,10 @@ local function ResetSlot(slot, values)
     end
     if changed then values.listsData = CDM.Codec.EncodeLists(lists) end
 end
-function Page.AddBar(kind)
-    if P.Combat() then return false end
-    local slot = Page.FreeCustom()
-    if not slot then Page.Fail("All six custom bars are in use."); return false end
-    kind = (kind == 2 or kind == 3) and kind or 1
-    Page.CommitFocus()
+local function NewBarValues(slot, kind, reused)
     local keys = KEYS[slot]
     local values = {}
-    if P.Get(ID, keys.name) ~= "" then ResetSlot(slot, values) end
+    if reused then ResetSlot(slot, values) end
     values[keys.on], values[keys.kind] = true, kind
     local name = Tr(DEFAULT_NAMES[kind]) .. " " .. slot:sub(2)
     if #name > RULES[keys.name].maxLength then name = "Bar " .. slot:sub(2) end
@@ -658,13 +829,121 @@ function Page.AddBar(kind)
         local nx, ny = FreeSpot(slot, x, y)
         if nx ~= x or ny ~= y then values[keys.x], values[keys.y] = nx, ny end
     end
-    local ok = P.SetMany(ID, values)
+    return values
+end
+-- A reused slot starts over; its old settings and spells come back with Undo.
+function Page.AddBar(kind)
+    if P.Combat() then return false end
+    local slot, reused = Page.FreeCustom()
+    if not slot then Page.Fail("All six custom bars are in use."); return false end
+    kind = (kind == 2 or kind == 3) and kind or 1
+    Page.CommitFocus()
+    local ok
+    if reused then
+        ok = Page.WithUndo(format(Tr("%s was reset for the new bar."), Page.BarName(slot)), Page.SlotKeys(slot, true),
+            function() return P.SetMany(ID, NewBarValues(slot, kind, true)) end)
+    else
+        ok = P.SetMany(ID, NewBarValues(slot, kind, false))
+    end
     if ok then
         Page.selected = slot
         Page.ClosePopups()
         P.Refresh()
+        Page.FocusName()
     end
     return ok
+end
+-- The name input of the selected custom bar takes the keyboard (a new or
+-- renamed bar); Frame Basics comes into view first.
+function Page.FocusName()
+    local input = Page.ui and Page.ui.nameInput
+    if P.Combat() or not (input and input.SetFocus) or not Page.SlotInfo(Page.selected).custom then return false end
+    Page.FocusSection("bars")
+    input:SetFocus()
+    if input.HighlightText then input:HighlightText() end
+    return true
+end
+-- A custom bar goes back to a free slot: default settings, no name, off, and
+-- its spells gone from every specialization. One history entry, with Undo.
+function Page.DeleteBar(slot)
+    if P.Combat() or not Page.SlotInfo(slot).custom then return false end
+    Page.CommitFocus()
+    local ok, reason = Page.WithUndo(format(Tr("Deleted %s."), Page.BarName(slot)), Page.SlotKeys(slot, true), function()
+        local values = {}
+        ResetSlot(slot, values)
+        if next(values) == nil then return true end
+        return P.SetMany(ID, values)
+    end)
+    if not ok then Page.Fail(reason); return false end
+    if Page.selected == slot then
+        local first = "ess"
+        for i = 1, #SLOTS do
+            if Page.IsOn(SLOTS[i].key) then first = SLOTS[i].key; break end
+        end
+        Page.Select(first)
+    end
+    return true
+end
+-- Settings that make a bar what it is and where it sits never copy: name,
+-- type, attachment, position and how it grows.
+local COPY_SKIP = { on = true, name = true, kind = true, anchor = true, side = true, gap = true, x = true, y = true,
+    vertical = true, grow = true, align = true }
+function Page.CopyBarSettings(from, to)
+    if P.Combat() or from == to or not (KEYS[from] and KEYS[to]) then return false end
+    local values, keys = {}, {}
+    for suffix, key in pairs(KEYS[to]) do
+        local source = KEYS[from][suffix]
+        if source and not COPY_SKIP[suffix] and Page.Relevant(to, suffix) and Page.Relevant(from, suffix) then
+            local value = P.Get(ID, source)
+            if P.Get(ID, key) ~= value then values[key], keys[#keys + 1] = value, key end
+        end
+    end
+    if #keys == 0 then
+        Page.Note(format(Tr("%s already looks like %s."), Page.BarName(to), Page.BarName(from)))
+        return true
+    end
+    local ok, reason = Page.WithUndo(format(Tr("%s now uses the settings of %s."), Page.BarName(to), Page.BarName(from)),
+        keys, function() return P.SetMany(ID, values) end)
+    if not ok then Page.Fail(reason) end
+    return ok
+end
+-- Kept by "Reset this bar's settings": identity, bar type and position.
+local RESET_KEEP = { on = true, name = true, kind = true, x = true, y = true }
+function Page.ResetBar(slot)
+    if P.Combat() then return false end
+    local k = KEYS[slot]
+    local ok, reason = Page.WithUndo(format(Tr("Reset the settings of %s."), Page.BarName(slot)), Page.SlotKeys(slot),
+        function()
+            local values = {}
+            for suffix, key in pairs(k) do
+                if not RESET_KEEP[suffix] then values[key] = RULES[key].default end
+            end
+            -- x/y follow the attachment: an attached bar goes back flush on
+            -- its anchor, a bar that becomes free keeps its place on screen.
+            local anchor = RULES[k.anchor].default
+            if anchor ~= 1 or P.Get(ID, k.anchor) ~= 1 then
+                local moved = S.CooldownManagerConvertAnchor and S.CooldownManagerConvertAnchor(slot, anchor)
+                if type(moved) == "table" then for key, value in pairs(moved) do values[key] = value end end
+            end
+            return P.SetMany(ID, values)
+        end)
+    if not ok then Page.Fail(reason) end
+    return ok
+end
+-- Everything of the module: settings, every specialization's spell lists
+-- and every spell's options. One history entry, and an Undo line.
+function Page.ResetModule()
+    if P.Combat() then return false end
+    local keys = {}
+    for key in pairs(RULES) do keys[#keys + 1] = key end
+    return Page.WithUndo(Tr("The cooldown manager was reset: settings, spell lists and spell options."), keys, function()
+        local done
+        P.WithHistory("Reset cooldown manager", "suite:cooldownManager.reset", function()
+            done = S.Reset(ID)
+            return done
+        end)
+        return done == true
+    end)
 end
 function Page.EnableBar(slot)
     if P.Combat() or not Page.SlotInfo(slot).custom then return false end
@@ -682,7 +961,7 @@ local addValues = {}
 local function AddValue(n, value, text, header)
     local item = addValues[n] or {}
     addValues[n] = item
-    item.value, item.text, item.header, item.translate = value, text, header, nil
+    item.value, item.text, item.header, item.translate, item.tooltip = value, text, header, nil, nil
     -- Bar names are already translated (or typed by the player).
     if not header and type(value) == "string" then item.translate = false end
     return n
@@ -692,11 +971,20 @@ local function AddPicked(value)
 end
 function Page.OpenAddBar(owner)
     if P.Combat() then return false end
-    if not Page.FreeCustom() then Page.Fail("All six custom bars are in use."); return false end
+    local free, reused = Page.FreeCustom()
+    if not free then Page.Fail("All six custom bars are in use."); return false end
     if not (W.OpenDropdown and owner) then return Page.AddBar(1) end
-    local n = AddValue(1, 1, "Cooldown bar")
-    n = AddValue(n + 1, 2, "Buff icon bar")
-    n = AddValue(n + 1, 3, "Buff bar")
+    -- Every slot was used: a new bar starts one of them over, and says which.
+    local old = reused and Page.BarName(free) or nil
+    local n = 0
+    for kind = 1, #KIND_NAMES do
+        n = AddValue(n + 1, kind, KIND_NAMES[kind])
+        if old then
+            local item = addValues[n]
+            item.text, item.translate = format(Tr("%s (replaces %s)"), Tr(KIND_NAMES[kind]), old), false
+            item.tooltip = format(Tr("All six custom bars were used before. The new bar starts %s over: its settings, and its spells in every specialization. You can undo it."), old)
+        end
+    end
     local headed = false
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
@@ -708,6 +996,72 @@ function Page.OpenAddBar(owner)
     for i = n + 1, #addValues do addValues[i] = nil end
     Page.dropdownOpen = true
     return W.OpenDropdown(owner, addValues, nil, AddPicked)
+end
+
+-- Bar actions: right-click on a bar chip, or "Bar actions" in Frame Basics.
+-- One flat list (Menu2 lists do not nest): the actions, then the bars whose
+-- settings can be copied onto this one.
+local barMenu, COPY_VALUE, COPY_FROM = {}, {}, {}
+for i = 1, #SLOTS do
+    local key = SLOTS[i].key
+    COPY_VALUE[key] = "copy:" .. key
+    COPY_FROM[COPY_VALUE[key]] = key
+end
+local function MenuItem(n, value, text)
+    local item = barMenu[n] or {}
+    barMenu[n] = item
+    item.value, item.text, item.header, item.translate, item.disabled, item.tooltip = value, text, nil, nil, nil, nil
+    return item
+end
+local function BarPicked(value)
+    local slot = Page.menuSlot
+    if P.Combat() or not (slot and KEYS[slot]) then return end
+    local from = COPY_FROM[value]
+    if from then Page.CopyBarSettings(from, slot)
+    elseif value == "show" then
+        if Page.SlotInfo(slot).custom then Page.EnableBar(slot) else P.Set(ID, KEYS[slot].on, true) end
+    elseif value == "hide" then P.Set(ID, KEYS[slot].on, false)
+    elseif value == "rename" then
+        Page.Select(slot)
+        Page.FocusName()
+    elseif value == "move" then P.MoveOnScreen(ID, slot)
+    elseif value == "reset" then Page.ResetBar(slot)
+    elseif value == "delete" then Page.DeleteBar(slot) end
+end
+function Page.OpenBarMenu(owner, slot)
+    slot = slot or Page.selected
+    if P.Combat() or not (W.OpenDropdown and owner and KEYS[slot]) then return false end
+    local custom, on = Page.SlotInfo(slot).custom, Page.IsOn(slot)
+    local n = 1
+    MenuItem(n, on and "hide" or "show", on and "Hide this bar" or "Show this bar")
+    if custom then n = n + 1; MenuItem(n, "rename", "Rename this bar") end
+    n = n + 1
+    local move = MenuItem(n, "move", "Move on screen")
+    move.disabled = not (on and Page.Movable(slot) and P.Get(ID, "enabled"))
+    if move.disabled then move.tooltip = Tr(on and "This bar cannot be moved on its own right now." or "Show this bar first.") end
+    n = n + 1
+    MenuItem(n, "reset", "Reset this bar's settings").tooltip = Tr("Keeps its name, type and position. You can undo it.")
+    if custom then
+        n = n + 1
+        MenuItem(n, "delete", "Delete this bar").tooltip =
+            Tr("Frees this custom bar: its settings, and its spells in every specialization. You can undo it.")
+    end
+    n = n + 1
+    local header = MenuItem(n, "copy", "Copy settings from")
+    header.header = true
+    header.tooltip = Tr("Look, size, text, effects and visibility. The name, type and position stay.")
+    for i = 1, #SLOTS do
+        local other = SLOTS[i].key
+        if other ~= slot and Page.Listed(other) then
+            n = n + 1
+            local item = MenuItem(n, COPY_VALUE[other], Page.BarName(other))
+            item.translate = false
+        end
+    end
+    for i = n + 1, #barMenu do barMenu[i] = nil end
+    Page.menuSlot = slot
+    Page.dropdownOpen = true
+    return W.OpenDropdown(owner, barMenu, nil, BarPicked)
 end
 function Page.FocusSection(id)
     local body = Page.ui and Page.ui.sections and Page.ui.sections[id]
@@ -841,13 +1195,17 @@ local function Scale(frame)
 end
 Page.Cursor, Page.Scale = Cursor, Scale
 
-local function ShowTip(owner, title, first, second)
+local function ShowTip(owner, title, first, second, third)
     local tip = _G.GameTooltip
     if not (tip and tip.SetOwner) then return end
     tip:SetOwner(owner, "ANCHOR_RIGHT")
     tip:SetText(title or "", 1, 1, 1)
     if first and first ~= "" then tip:AddLine(first, 0.82, 0.82, 0.82, true) end
     if second and second ~= "" then tip:AddLine(second, 0.82, 0.82, 0.82, true) end
+    if third and third ~= "" then
+        local r, g, b = Accent()
+        tip:AddLine(third, r, g, b, true)
+    end
     tip:Show()
 end
 local function HideTip(owner)
@@ -995,9 +1353,7 @@ end
 ------------------------------------------------------------------ spell tiles
 local Grid = {}
 Grid.__index = Grid
-Page.GridMethods = Grid
 
-local function Accent() return Color("accent", 0.30, 0.74, 1.00) end
 local function PaintEdge(tile, lit)
     if lit then
         local r, g, b = Accent()
@@ -1017,6 +1373,14 @@ local function PopoverOn(anchor)
     return popover ~= nil and popover:IsShown() and popover.anchor == anchor
 end
 
+-- Why a listed entry is not shown in play (runtime rows may say which rule
+-- hides it: "cap", "ready" or "empty"); already translated.
+function Page.HiddenText(hiddenBy)
+    if hiddenBy == "cap" then return Tr("Beyond this bar's Maximum icons.") end
+    if hiddenBy == "ready" then return Tr("Hidden while ready (Hide icons that are ready).") end
+    if hiddenBy == "empty" then return Tr("None in your bags right now.") end
+    return Tr("Hidden right now by a bar rule.")
+end
 local function TileEnter(self)
     if self.grid.dragTile then return end
     PaintEdge(self, true)
@@ -1024,9 +1388,10 @@ local function TileEnter(self)
         ShowTip(self, Tr("Add spells"), format(Tr("Pick cooldowns, buffs, trinkets or custom IDs for %s."), Page.BarName(Page.selected)))
         return
     end
-    local state = not self.known and Tr("Not learned right now.") or self.hidden and Tr("Hidden right now by a bar rule.") or nil
+    local state = not self.known and Tr("Not learned right now.") or self.hidden and Page.HiddenText(self.hiddenBy) or nil
     ShowTip(self, Public(self.name) and self.name or self.key, Page.Identity(self.key) .. (state and ("\n" .. state) or ""),
-        Tr("Click: spell options. Middle-click: remove. Drag: reorder, or drop on a bar in the preview."))
+        Tr("Click: spell options. Middle-click: remove. Drag: reorder, or drop on a bar in the preview."),
+        Page.CustomLine(self.key))
 end
 local function TileLeave(self)
     PaintEdge(self, PopoverOn(self))
@@ -1074,7 +1439,7 @@ local function NewTile(grid, index, plus)
     tile.icon = tile:CreateTexture(nil, "ARTWORK")
     tile.icon:SetPoint("TOPLEFT", tile, "TOPLEFT", 1, -1)
     tile.icon:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -1, 1)
-    tile.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    tile.icon:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
     local r, g, b = Accent()
     if plus then
         tile.icon:SetColorTexture(0.05, 0.07, 0.11, 1)
@@ -1207,6 +1572,9 @@ function Grid:Refresh()
             -- An icon the client has not loaded yet: ask again next refresh.
             if Public(tile.texture) and tile.texture == nil then loading = true end
             tile.known, tile.hidden, tile.family = Plain(entry.known) ~= false, Plain(entry.hidden) == true, EntryFamily(entry, slot)
+            -- Optional runtime fields: the rule that hides it, and the unit
+            -- "Automatic" tracks its buff on.
+            tile.hiddenBy, tile.unit = Plain(entry.hiddenBy), Plain(entry.unit)
             -- A cooldown that tracks a buff shows it on the icon (stack options).
             tile.aura = tile.family == 2 or Plain(entry.hasAura) == true
             SetIcon(tile.icon, tile.texture)
@@ -1238,7 +1606,7 @@ function Grid:Refresh()
     self.message:SetShown(count == 0)
     if popover and popover:IsShown() then
         if openTile then
-            popover.hasAura = openTile.aura
+            popover.hasAura, popover.unit = openTile.aura, openTile.unit
             if fromGrid then Page.PlacePopup(popover, openTile) end
             Page.PaintPopover()
         else
@@ -1250,6 +1618,9 @@ function Grid:Refresh()
     self.host:SetHeight(height)
     self.height = height
     if loading then self.valid = false end
+    -- The preview marks its icons from these tiles.
+    local ui = self.ui
+    if ui and ui.PaintHitMarks then ui.PaintHitMarks() end
     return height
 end
 
@@ -1262,7 +1633,7 @@ function Page.ShowGhost(texture)
         ghost:SetSize(TILE, TILE)
         ghost.icon = ghost:CreateTexture(nil, "ARTWORK")
         ghost.icon:SetAllPoints(ghost)
-        ghost.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        ghost.icon:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
         ghost:SetAlpha(0.8)
         Page.ghost = ghost
     end
@@ -1450,7 +1821,7 @@ local function PickerRow(index)
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(20, 20)
     row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
-    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.icon:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
     row.text = Label(row, "GameFontHighlightSmall", "")
     row.text:SetPoint("LEFT", row, "LEFT", 28, 0)
     row.text:SetWidth(PICK_W - 170)
@@ -1466,7 +1837,7 @@ local function PickerRow(index)
 end
 local function PaintPickerRow(row, item)
     row.item = item
-    local r, g, b = Color("text", 0.92, 0.94, 0.98)
+    local r, g, b = TextColor()
     if item.kind == "header" then
         r, g, b = Accent()
         row.icon:Hide()
@@ -1621,7 +1992,7 @@ function Page.EchoCustom()
     -- entry, so it never shows twice.
     local blizzard = spellID and picker.bySpell[spellID] or nil
     picker.customSpell, picker.customItem, picker.customBlizzard = spellID, itemID, blizzard
-    local r, g, b = Color("muted", 0.6, 0.65, 0.72)
+    local r, g, b = MutedColor()
     if text == "" then
         picker.echo:SetText(Tr("Type an ID or a spell name."))
     elseif spellID or itemID then
@@ -1696,7 +2067,7 @@ local function EnsurePicker()
     picker.echoIcon = picker:CreateTexture(nil, "ARTWORK")
     picker.echoIcon:SetSize(16, 16)
     picker.echoIcon:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 56)
-    picker.echoIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    picker.echoIcon:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
     picker.echo = Label(picker, "GameFontHighlightSmall", "")
     picker.echo:SetPoint("LEFT", picker.echoIcon, "RIGHT", 6, 0)
     picker.echo:SetWidth(PICK_W - 50)
@@ -1774,9 +2145,9 @@ local function PaintSoundRow(row, item)
     row.item = item
     SetRaw(row.text, item.text)
     local r, g, b
-    if item.header == 2 then r, g, b = Color("muted", 0.6, 0.65, 0.72)
+    if item.header == 2 then r, g, b = MutedColor()
     elseif item.header or item.value == sounds.current then r, g, b = Accent()
-    else r, g, b = Color("text", 0.92, 0.94, 0.98) end
+    else r, g, b = TextColor() end
     row.text:SetTextColor(r, g, b)
     row.play:SetShown(not item.header and item.value ~= "")
     row.hover:Hide()
@@ -1905,41 +2276,83 @@ end
 -- alert, ready, buff while active and stack glows). Stack rows (0 = off)
 -- serve buffs and cooldowns that show their buff; "Color stacks from" also
 -- holds the stack color (its swatch opens a color list, reset clears both).
-local POP_W, POP_MAX = 330, 480
+-- Every row explains itself on its label (help), without allocating.
+local POP_W, POP_MAX = 360, 520
+-- Label column and the x where every row's control starts.
+local LABEL_W, POP_X = 150, 154
+Page.POP_X = POP_X
 local SWATCHES = { "ffd200", "ffffff", "ff4d4d", "4dff73", "4db8ff", "c78cff", "4dffff", "ff9933" }
 local SWATCH_NAMES = { "Gold", "White", "Red", "Green", "Blue", "Purple", "Cyan", "Orange" }
 local SWATCH, SWATCH_STEP, STACK_SWATCH = 13, 14, 18
 -- The stack color of an entry that has none.
 local STACK_COLOR = CDM.SPELL_DEFAULTS and CDM.SPELL_DEFAULTS.stackColor or "ff5a3c"
-local FIELDS = {
-    { key = "procGlow", label = "Spell alert glow", kind = "bool", cd = true, spellOnly = true, bar = "procGlow" },
-    { key = "readyGlow", label = "Glow when ready", kind = "bool", cd = true, bar = "readyGlow" },
-    { key = "auraGlow", label = "Glow while active", kind = "bool", aura = true, bar = "auraGlow" },
+local SHOW_HIDE = { { 0, "Bar setting" }, { 2, "Show" }, { 3, "Hide" } }
+local FROM_BOOL = { [true] = 2, [false] = 3 }
+-- bar: the bar setting a missing value follows. fromBar: that setting's
+-- value as a choice of the row. fallback: the hint when no bar setting
+-- stands behind the row. switch: On or nothing (no bar setting to follow).
+-- blizzardOnly: Blizzard's entries only (custom auras name their unit).
+local ALL_FIELDS = {
+    { key = "procGlow", label = "Spell alert glow", kind = "bool", cd = true, spellOnly = true, bar = "procGlow",
+      help = "Glow while the game highlights this spell (spell alert)." },
+    { key = "readyGlow", label = "Glow when ready", kind = "bool", cd = true, bar = "readyGlow",
+      help = "Glow while the spell is ready. \"Ready glows only in combat\" in Frame Basics limits it to combat." },
+    { key = "auraGlow", label = "Glow while active", kind = "bool", aura = true, bar = "auraGlow",
+      help = "Glow while the buff is active." },
     { key = "glowStyle", label = "Glow style", kind = "choice", cd = true, aura = true,
-      values = { { 0, "Bar setting" }, { 1, "Blizzard alert" }, { 2, "Marching ants" }, { 3, "Pulse" }, { 4, "Border" } } },
-    { key = "glowColor", label = "Glow color", kind = "color", cd = true, aura = true },
+      values = { { 0, "Bar setting" }, { 1, "Blizzard alert" }, { 2, "Marching ants" }, { 3, "Pulse" }, { 4, "Border" } },
+      help = "Style of every glow of this spell: spell alert, ready, active buff and stack glows." },
+    { key = "glowColor", label = "Glow color", kind = "color", cd = true, aura = true,
+      help = "Tints every glow of this spell. Click the chosen color again to follow the bar." },
     { key = "desat", label = "Desaturate on cooldown", kind = "choice", cd = true,
-      values = { { 0, "Bar setting" }, { 2, "Never" }, { 3, "Always" } } },
-    { key = "hideReady", label = "Hide when ready", kind = "bool", cd = true, bar = "hideReady" },
-    { key = "readyAlpha", label = "Opacity when ready", kind = "number", cd = true, bar = "readyAlpha", step = 1, max = 100 },
-    { key = "cdAlpha", label = "Opacity on cooldown", kind = "number", cd = true, bar = "cdAlpha", step = 1, max = 100 },
-    { key = "showAura", label = "Show active buff duration", kind = "bool", cd = true, spellOnly = true, bar = "showAura" },
-    { key = "showMissing", label = "Show dimmed when missing", kind = "bool", aura = true, bar = "showMissing" },
-    { key = "auraUnit", label = "Track on", kind = "choice", stack = true,
-      values = { { 0, "Automatic" }, { 2, "Me" }, { 3, "Target" }, { 4, "Both" } } },
-    { key = "stackGlow", label = "Glow at stacks", kind = "number", stack = true, off = true, step = 1, max = 99 },
+      values = { { 0, "Bar setting" }, { 2, "Never" }, { 3, "Always" } },
+      help = "Grey out the icon while the spell is on cooldown." },
+    { key = "hideReady", label = "Hide when ready", kind = "bool", cd = true, bar = "hideReady",
+      help = "Show the icon only while the spell is on cooldown." },
+    { key = "readyAlpha", label = "Opacity when ready", kind = "number", cd = true, bar = "readyAlpha", step = 1, max = 100,
+      help = "Icon opacity while the spell is ready. Shift steps by 5, Ctrl by 10." },
+    { key = "cdAlpha", label = "Opacity on cooldown", kind = "number", cd = true, bar = "cdAlpha", step = 1, max = 100,
+      help = "Icon opacity while the spell is on cooldown. Shift steps by 5, Ctrl by 10." },
+    { key = "showAura", label = "Show active buff duration", kind = "bool", cd = true, spellOnly = true, bar = "showAura",
+      help = "While the buff of this spell lasts, the icon shows its duration and stacks instead of the cooldown." },
+    { key = "showMissing", label = "Show dimmed when missing", kind = "bool", aura = true, bar = "showMissing",
+      help = "Keep the icon in its place, dimmed, while the buff is missing." },
+    { key = "auraUnit", label = "Track on", kind = "choice", stack = true, blizzardOnly = true,
+      values = { { 0, "Automatic" }, { 2, "Me" }, { 3, "Target" }, { 4, "Both" } },
+      help = "Where the buff or debuff is looked for. Automatic: harmful spells on your target, all others on you." },
+    { key = "stackGlow", label = "Glow at stacks", kind = "number", stack = true, off = true, step = 1, max = 99,
+      help = "Glow while the buff has at least this many stacks." },
     { key = "stackColorAt", label = "Color stacks from", kind = "number", stack = true, off = true, step = 1, max = 99,
-      color = "stackColor" },
+      color = "stackColor", help = "From this many stacks the number shows in the color on the right." },
     { key = "swipe", label = "Swipe", kind = "choice", cd = true, aura = true,
-      values = { { 0, "Normal" }, { 2, "Reversed" }, { 3, "Hidden" } } },
-    { key = "threshold", label = "Warn below (seconds)", kind = "number", cd = true, aura = true, step = 1, max = 10 },
-    { key = "sound", label = "Sound when ready", auraLabel = "Sound when gained", kind = "sound", cd = true, aura = true },
-    { key = "lossSound", label = "Sound when lost", kind = "sound", aura = true },
-    { key = "tts", label = "Say the name when ready", kind = "bool", cd = true },
+      values = { { 0, "Normal" }, { 2, "Reversed" }, { 3, "Hidden" } },
+      help = "The dark sweep over the icon while it counts down." },
+    { key = "timeText", label = "Countdown", auraLabel = "Seconds", kind = "choice", cd = true, aura = true,
+      bar = "cdText", fromBar = FROM_BOOL, values = SHOW_HIDE,
+      help = "Show or hide the countdown numbers of this spell. Bar setting follows the bar's Text section." },
+    { key = "stackText", label = "Charges", auraLabel = "Stacks", kind = "choice", cd = true, aura = true,
+      bar = "stackText", fromBar = FROM_BOOL, values = SHOW_HIDE,
+      help = "Show or hide the charges, stacks or item count of this spell." },
+    { key = "textTop", label = "Text on top", kind = "choice", cd = true, aura = true, bar = "textTop",
+      fromBar = { 2, 3 }, values = { { 0, "Bar setting" }, { 2, "Stacks" }, { 3, "Countdown" } },
+      help = "Which number is drawn on top when both show." },
+    { key = "threshold", label = "Warn below (seconds)", kind = "number", cd = true, aura = true, step = 1, max = 10,
+      fallback = "All bars",
+      help = "The countdown turns to the warning color below this many seconds. All bars: the Text section's setting." },
+    { key = "sound", label = "Sound when ready", auraLabel = "Sound when gained", kind = "sound", cd = true, aura = true,
+      help = "Plays when the spell becomes ready (a buff: when you gain it)." },
+    { key = "lossSound", label = "Sound when lost", kind = "sound", aura = true, help = "Plays when the buff ends." },
+    { key = "tts", label = "Say the name when ready", kind = "bool", cd = true, switch = true,
+      help = "Your computer says the spell's name when it becomes ready." },
     -- A buff shows the game's icon while active; its own icon only while missing.
     { key = "icon", label = "Icon file ID (Enter)", auraLabel = "Icon when missing (Enter)", kind = "icon", cd = true,
-      aura = true },
+      aura = true, help = "Type a texture file ID and press Enter to show another icon. Empty follows the game." },
 }
+-- Rows exist for the fields the catalog stores.
+local FIELDS = {}
+for _, field in ipairs(ALL_FIELDS) do
+    if CDM.SPELL_FIELDS[field.key] then FIELDS[#FIELDS + 1] = field end
+end
 Page.FIELDS = FIELDS
 local function SwatchItem(value, text, hex)
     local r, g, b = P.RGB(hex)
@@ -1960,6 +2373,7 @@ local pop
 
 -- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
 local function Applies(field, family, kind, aura)
+    if field.blizzardOnly and kind ~= "b" then return false end
     if field.stack then return family == 2 or aura == true end
     if family == 2 then return field.aura == true end
     if not field.cd then return false end
@@ -1970,6 +2384,31 @@ local function BarValue(field)
     if field.key == "threshold" then return P.Get(ID, "thresholdSeconds") end
     local key = field.bar and KEYS[pop.slot] and KEYS[pop.slot][field.bar]
     if key then return P.Get(ID, key) end
+end
+
+-- "Own options: ..." for tooltips, built once per entry and stored string.
+local customLines, customText = {}, nil
+function Page.CustomLine(key)
+    local text = P.Get(ID, "spellsData")
+    if customText ~= text then
+        for entry in pairs(customLines) do customLines[entry] = nil end
+        customText = text
+    end
+    local line = customLines[key]
+    if line == nil then
+        local fields = Page.SpellOverrides().e[key]
+        line = false
+        if fields then
+            local names = {}
+            for i = 1, #FIELDS do
+                local field = FIELDS[i]
+                if fields[field.key] ~= nil or (field.color and fields[field.color] ~= nil) then names[#names + 1] = Tr(field.label) end
+            end
+            if #names > 0 then line = Tr("Own options") .. ": " .. table.concat(names, ", ") end
+        end
+        customLines[key] = line
+    end
+    return line or nil
 end
 -- A cooldown shows its buff, and so its stacks, only while "Show active
 -- buff duration" applies to it; its stack rows are dimmed otherwise.
@@ -1992,8 +2431,10 @@ local function ResetClick(self)
     local ok, reason = Page.ClearSpellFields(pop.key, field.clears)
     if not ok then Page.Fail(reason) end
 end
+-- Three states follow, force on or force off; a switch is On or nothing.
 local function BoolClick(self)
     local field = self.row.field
+    if field.switch then SetField(field, self.value == true or nil); return end
     if Page.SpellField(pop.key, field.key) == self.value then SetField(field, nil) else SetField(field, self.value) end
 end
 local function ChoiceClick(self)
@@ -2093,13 +2534,19 @@ local function NumberControls(row, field, x)
         row.swatch:SetScript("OnEnter", ColorEnter)
         row.swatch:SetScript("OnLeave", HideTip)
     elseif not field.off then
-        -- "Bar" marks a value that follows the bar.
+        -- "Bar" (or the field's fallback) marks a value that follows the bar.
         row.hint = Label(row, "GameFontDisableSmall", "", "muted")
         row.hint:SetPoint("LEFT", row.plus, "RIGHT", 6, 0)
-        row.hint:SetWidth(30)
+        row.hint:SetWidth(60)
     end
 end
 
+-- The label explains its row; a dimmed stack row also says why.
+local STACK_DIM = "Needs \"Show active buff duration\": this icon shows the buff and its stacks only then."
+local function LabelEnter(self)
+    local row = self.row
+    ShowTip(self, row.label:GetText(), Tr(row.field.help), row.dimmed and Tr(STACK_DIM) or nil)
+end
 local function Row(field)
     local row = pop.rows[field.key]
     if row then return row end
@@ -2108,11 +2555,18 @@ local function Row(field)
     row.field = field
     row.label = Label(row, "GameFontHighlightSmall", "")
     row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.label:SetWidth(126)
+    row.label:SetWidth(LABEL_W)
+    row.tip = CreateFrame("Frame", nil, row)
+    row.tip:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.tip:SetSize(LABEL_W, 20)
+    row.tip:EnableMouse(true)
+    row.tip.row = row
+    row.tip:SetScript("OnEnter", LabelEnter)
+    row.tip:SetScript("OnLeave", HideTip)
     row.reset = Button(row, "Reset", 44, 20, ResetClick)
     row.reset.row = row
     row.reset:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-    local x, kind = 130, field.kind
+    local x, kind = POP_X, field.kind
     if kind == "bool" then
         row.on = Button(row, "On", 38, 20, BoolClick)
         row.on.row, row.on.value = row, true
@@ -2159,7 +2613,7 @@ local function Row(field)
         row.preview = row:CreateTexture(nil, "ARTWORK")
         row.preview:SetSize(20, 20)
         row.preview:SetPoint("LEFT", edit, "RIGHT", 8, 0)
-        row.preview:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.preview:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
     end
     pop.rows[field.key] = row
     return row
@@ -2170,7 +2624,7 @@ local function PaintNumber(row, field, value, companion)
     if shown == nil then shown = field.off and 0 or tonumber(BarValue(field)) or 0 end
     SetRaw(row.value, field.off and shown == 0 and Tr("Off") or tostring(shown))
     row.value:SetAlpha(value ~= nil and 1 or 0.6)
-    if row.hint then row.hint:SetText(value ~= nil and "" or Tr("Bar")) end
+    if row.hint then row.hint:SetText(value ~= nil and "" or Tr(field.fallback or "Bar")) end
     local swatch = row.swatch
     if swatch then
         local r, g, b = P.RGB(companion or STACK_COLOR)
@@ -2187,21 +2641,38 @@ local function PaintRow(row, fields)
     local custom = value ~= nil or companion ~= nil
     row.label:SetText(Tr(pop.family == 2 and field.auraLabel or field.label))
     local r, g, b
-    if custom then r, g, b = Accent() else r, g, b = Color("text", 0.92, 0.94, 0.98) end
+    if custom then r, g, b = Accent() else r, g, b = TextColor() end
     row.label:SetTextColor(r, g, b)
     row.reset:SetShown(custom)
     -- Stack rows of a cooldown whose buff is not shown stay editable, dimmed.
-    row:SetAlpha((not field.stack or StacksShown(fields)) and 1 or 0.45)
+    row.dimmed = field.stack == true and not StacksShown(fields)
+    row:SetAlpha(row.dimmed and 0.45 or 1)
     local kind = field.kind
     if kind == "bool" then
-        row.on:SetActive(value == true)
-        row.off:SetActive(value == false)
-        local bar = BarValue(field)
-        SetRaw(row.hint, custom and "" or (Tr("Bar") .. ": " .. Tr(bar == true and "On" or "Off")))
+        if field.switch then
+            row.on:SetActive(value == true)
+            row.off:SetActive(value ~= true)
+            row.hint:SetText("")
+        else
+            row.on:SetActive(value == true)
+            row.off:SetActive(value == false)
+            local bar = BarValue(field)
+            SetRaw(row.hint, custom and "" or (Tr("Bar") .. ": " .. Tr(bar == true and "On" or "Off")))
+        end
     elseif kind == "choice" then
-        local text = field.menu[1].text
-        for i = 1, #field.menu do if field.menu[i].value == (value or 0) then text = field.menu[i].text end end
-        row.choice:SetText(Tr(text))
+        local menu, shown = field.menu, value
+        -- A row that follows the bar names the bar's current choice.
+        if shown == nil and field.fromBar then shown = field.fromBar[BarValue(field)] end
+        local text = menu[1].text
+        for i = 1, #menu do if menu[i].value == (shown or 0) then text = menu[i].text end end
+        if value == nil and shown ~= nil then
+            ButtonText(row.choice, Tr("Bar") .. ": " .. Tr(text))
+        elseif value == nil and field.key == "auraUnit" and (pop.unit == "player" or pop.unit == "target") then
+            -- What Automatic picked, when the runtime says so.
+            ButtonText(row.choice, Tr(pop.unit == "target" and "Automatic: target" or "Automatic: you"))
+        else
+            row.choice:SetText(Tr(text))
+        end
     elseif kind == "number" then
         PaintNumber(row, field, value, companion)
     elseif kind == "color" then
@@ -2235,7 +2706,7 @@ local function MoveClick(self)
             values[n] = item
             item.value, item.text, item.translate = slot, Page.BarName(slot), false
             item.disabled = Page.Family(slot) ~= pop.family
-            item.tooltip = item.disabled and Tr(pop.family == 1 and "That bar shows buffs." or "That bar shows cooldowns.") or nil
+            item.tooltip = item.disabled and Tr(Page.FamilyError(pop.family)) or nil
         end
     end
     for i = n + 1, #values do values[i] = nil end
@@ -2269,7 +2740,7 @@ local function EnsurePopover()
     pop.icon = pop:CreateTexture(nil, "ARTWORK")
     pop.icon:SetSize(34, 34)
     pop.icon:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -12)
-    pop.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    pop.icon:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
     pop.title = Label(pop, "GameFontNormal", "")
     pop.title:SetPoint("TOPLEFT", pop.icon, "TOPRIGHT", 8, -2)
     pop.title:SetWidth(POP_W - 90)
@@ -2278,20 +2749,50 @@ local function EnsurePopover()
     pop.sub:SetWidth(POP_W - 90)
     pop.close = Button(pop, "x", 22, 20, function() pop:Hide() end)
     pop.close:SetPoint("TOPRIGHT", pop, "TOPRIGHT", -8, -8)
-    pop.remove = Button(pop, "Remove from bar", 100, 22, RemoveClick)
-    pop.remove:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -54)
-    pop.move = Button(pop, "Move to bar", 100, 22, MoveClick)
-    pop.move:SetPoint("LEFT", pop.remove, "RIGHT", 4, 0)
-    pop.reset = Button(pop, "Reset this spell", 102, 22, ResetSpellClick)
-    pop.reset:SetPoint("LEFT", pop.move, "RIGHT", 4, 0)
-    pop.copy = Button(pop, "Copy to all specs", 140, 22, CopyClick)
-    pop.copy:SetPoint("TOPLEFT", pop.remove, "BOTTOMLEFT", 0, -4)
+    -- Header actions fit their captions (longer in other languages) and
+    -- wrap onto a second line when they do not fit side by side.
+    pop.actions = {
+        Button(pop, "Remove from bar", 100, 22, RemoveClick), Button(pop, "Move to bar", 100, 22, MoveClick),
+        Button(pop, "Reset this spell", 102, 22, ResetSpellClick), Button(pop, "Copy to all specs", 140, 22, CopyClick),
+    }
+    pop.remove, pop.move, pop.reset, pop.copy = pop.actions[1], pop.actions[2], pop.actions[3], pop.actions[4]
+    for i = 1, #pop.actions do
+        local width = T.MeasureButtonWidth and T.MeasureButtonWidth(pop.actions[i], 60, POP_W - 24)
+        if type(width) == "number" and width > 0 then pop.actions[i]:SetWidth(width) end
+    end
+    pop.scope = Label(pop, "GameFontDisableSmall", Tr("These choices apply to this spell on every bar and specialization."),
+        "muted")
+    pop.scope:SetWidth(POP_W - 24)
     pop.scroll, pop.content = Page.ScrollArea(pop, POP_W - 40)
     pop.OnClosed = function(self)
         for _, row in pairs(self.rows) do if row.edit then row.edit:ClearFocus() end end
         Light(self.anchor, false)
     end
     return pop
+end
+-- Places the header actions (Copy only for the player's own entries) and
+-- returns where the rows start; moves nothing when the set did not change.
+local function PlaceActions(copy)
+    if pop.placedCopy == copy then return pop.top end
+    pop.placedCopy = copy
+    pop.copy:SetShown(copy)
+    local x, line = 12, 0
+    for i = 1, copy and 4 or 3 do
+        local button = pop.actions[i]
+        local width = tonumber((button:GetWidth())) or 100
+        if x > 12 and x + width > POP_W - 12 then x, line = 12, line + 1 end
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", pop, "TOPLEFT", x, -54 - line * 26)
+        x = x + width + 4
+    end
+    local y = 54 + (line + 1) * 26
+    pop.scope:ClearAllPoints()
+    pop.scope:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -y)
+    pop.top = y + 20
+    pop.scroll:ClearAllPoints()
+    pop.scroll:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -pop.top)
+    pop.scroll:SetPoint("BOTTOMRIGHT", pop, "BOTTOMRIGHT", -26, 10)
+    return pop.top
 end
 
 function Page.PaintPopover()
@@ -2302,11 +2803,7 @@ function Page.PaintPopover()
     SetRaw(pop.title, Public(pop.entryName) and pop.entryName or pop.key)
     SetRaw(pop.sub, Page.BarName(pop.slot) .. "  -  " .. Page.Identity(pop.key))
     pop.reset:SetEnabled(fields ~= nil)
-    pop.copy:SetShown(kind ~= "b")
-    local top = kind ~= "b" and 108 or 82
-    pop.scroll:ClearAllPoints()
-    pop.scroll:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -top)
-    pop.scroll:SetPoint("BOTTOMRIGHT", pop, "BOTTOMRIGHT", -26, 10)
+    local top = PlaceActions(kind ~= "b")
     local y = 0
     for i = 1, #FIELDS do
         local field = FIELDS[i]
@@ -2339,7 +2836,7 @@ function Page.TogglePopover(tile, anchor)
     Page.ClosePopups(pop)
     if pop:IsShown() and pop.anchor ~= anchor then Light(pop.anchor, false) end
     pop.key, pop.slot, pop.family, pop.hasAura = tile.key, Page.selected, tile.family, tile.aura == true
-    pop.entryName, pop.texture = tile.name, tile.texture
+    pop.entryName, pop.texture, pop.unit = tile.name, tile.texture, tile.unit
     Page.PlacePopup(pop, anchor)
     if pop.scroll.SetVerticalScroll then pop.scroll:SetVerticalScroll(0) end
     Page.PaintPopover()

@@ -101,6 +101,7 @@ Setter("SetScale",function(self,scale) self.scale=scale end,true)
 Setter("SetFrameLevel",function(self,level) self.level=level end,true)
 Setter("SetFrameStrata",function(self,strata) self.strata=strata end,true)
 Setter("SetScript",function(self,key,fn) self.scripts[key]=fn end)
+Setter("SetAttribute",function(self,key,value) self.attributes=self.attributes or {};self.attributes[key]=value end)
 Setter("HookScript")
 Setter("RegisterEvent",function(self,event) self.events[event]=true end)
 Setter("UnregisterEvent",function(self,event) self.events[event]=nil end)
@@ -379,6 +380,7 @@ local known={[101]=true,[102]=true,[104]=true,[201]=true,[202]=true,[301]=true,[
     [501]=true,[9001]=true}
 local ranged={[101]=true,[202]=true}
 local cdState,chargeState,usable,inRange,overlayed={},{[101]={isActive=false}},{},{},{}
+usable.calls={}
 local bagCounts={}
 local cdCalls,cdSpells,invCalls,rangeLog=0,{},0,{}
 local function CooldownInfo(spell)
@@ -409,7 +411,10 @@ C_Spell={
     end,
     GetSpellChargeDuration=function() return NewDuration(combat,now,8) end,
     GetSpellDisplayCount=function() return SECRET_TEXT end,
-    IsSpellUsable=function(spell) return usable[spell]~=false,false end,
+    IsSpellUsable=function(spell)
+        usable.calls[spell]=(usable.calls[spell] or 0)+1
+        return usable[spell]~=false,false
+    end,
     IsSpellInRange=function(spell) return inRange[spell] end,
     EnableSpellRangeCheck=function(spell,on) Plain(spell,"range");Plain(on,"range");rangeLog[#rangeLog+1]={spell,on} end,
     GetLastCategoryCooldownSource=function(category)
@@ -685,10 +690,15 @@ assert(C.Icons.Count("ess")==4 and C.Icons.Count("uti")==2 and C.Icons.Count("ex
 local trinket=assert(C.entries.b71,"trinket entry")
 assert(trinket.slot=="ess" and trinket.index==4 and trinket.icon and trinket.equipSlot==13 and trinket.itemID==7777,
     "the trinket ends the Essential bar")
+assert(trinket.icon.template=="PingReceiverAttributeTemplate" and trinket.icon:GetIsPingable()
+    and trinket.icon:GetTargetInfo().itemID==7777 and not trinket.icon:GetAllowRadialWheel(),
+    "the live trinket is a contextual item ping target")
 assert(C.entries.b51.slot=="ext" and C.entries.b52.slot=="ext","potions and racials stay")
 assert(not C.entries.b13,"unlearned spells stay out of live bars")
 local e11,e12,e14,e21,e22=C.entries.b11,C.entries.b12,C.entries.b14,C.entries.b21,C.entries.b22
 assert(e11.icon and e12.icon and e14.icon and e21.icon and e22.icon)
+assert(e11.icon:GetTargetInfo().spellID==e11.spell and e11.icon.attributes["ping-receiver"]==true,
+    "live spell icons expose their spell ping target even with tooltips off")
 assert(C.entries.b52.catSpell==431932,"category entries are seeded from the last category source")
 -- Every Blizzard aura entry gets one unit: the target when an aura ID is
 -- harmful (Ignite, a DoT), else the player. Blizzard's selfAura flag plays
@@ -847,18 +857,44 @@ Fire("SPELL_UPDATE_COOLDOWN",SECRET_NUM,SECRET_NUM,SECRET_NUM,SECRET_NUM,SECRET_
 Fire("SPELL_UPDATE_COOLDOWN",101,SECRET_NUM,SECRET_NUM,SECRET_NUM,SECRET_NUM)
 
 ------------------------------------------------------------------ charges, usable, range, procs, target
+-- Spending a charge arrives with the spell's own cooldown event, which arms
+-- the recharge swipe; SPELL_UPDATE_CHARGES (no payload, never registered by
+-- Blizzard's viewer) refreshes only recharge swipes that already run.
 chargeState[101].isActive=true
+cdCalls=0
 assert(Fire("SPELL_UPDATE_CHARGES"))
 Run()
-assert(e11.icon.chargeCd and e11.icon.chargeCd.running,"charge recharge edge")
+assert(e11.icon.chargeCd and not e11.icon.chargeCd.running and cdCalls==0,"a charge event refreshed an entry with every charge")
+Fire("SPELL_UPDATE_COOLDOWN",101)
+assert(e11.icon.chargeCd.running and e11.icon.chargeSet==true,"charge recharge edge")
 usable[201]=false
 assert(Fire("SPELL_UPDATE_USABLE"))
 Run()
 assert(e21.icon.tex.vc and e21.icon.tex.vc[1]==.4,"unusable tint")
+usable.stormReads=usable.calls[201] or 0
 usable[201]=nil
-Fire("SPELL_UPDATE_USABLE")
+for _=1,30 do Fire("SPELL_UPDATE_USABLE") end
 Run()
-assert(e21.icon.tex.vc[1]==1)
+assert(e21.icon.tex.vc[1]==.4 and (usable.calls[201] or 0)==usable.stormReads,
+    "usable event storm repainted before the trailing deadline")
+Run(.1)
+assert(e21.icon.tex.vc[1]==1 and (usable.calls[201] or 0)==usable.stormReads+1,
+    "usable event storm did not coalesce to one final refresh")
+config.ess_vis=4
+module:Refresh();Run()
+assert(bars.ess.hidden==true,"hidden Essential bar still appeared visible")
+usable.hiddenCallCount=usable.calls[101] or 0
+usable[101]=false
+Fire("SPELL_UPDATE_USABLE");Run()
+assert((usable.calls[101] or 0)==usable.hiddenCallCount,
+    "a hidden cooldown bar still queried spell usability")
+config.ess_vis=1
+module:Refresh();Run()
+assert(bars.ess.hidden==false and (usable.calls[101] or 0)>usable.hiddenCallCount
+    and e11.icon.tint==3,"a shown cooldown bar did not restore its current usability tint")
+usable[101]=nil
+Fire("SPELL_UPDATE_USABLE");Run(.1)
+assert(e11.icon.tint==1,"visible usability tint did not recover")
 Fire("SPELL_RANGE_CHECK_UPDATE",202,false,true)
 assert(e22.outOfRange==true and e22.icon.tint==4,"out-of-range tint is immediate")
 Fire("SPELL_RANGE_CHECK_UPDATE",202,SECRET_BOOL,true)
@@ -937,6 +973,9 @@ do
         return table.concat(reasons,",")
     end
     assert(Registered("SPELL_UPDATE_CHARGES") and Registered("BAG_UPDATE_DELAYED"))
+    -- A running recharge swipe (the potion stands in for a charge spell).
+    local armed=entry.icon.chargeSet
+    entry.icon.chargeSet=true
     local got=Marks("SPELL_UPDATE_CHARGES","BAG_UPDATE_DELAYED")
     assert(got=="recharge","a bag mark replaced a pending recharge mark ("..got..")")
     got=Marks("BAG_UPDATE_DELAYED","SPELL_UPDATE_CHARGES")
@@ -945,6 +984,7 @@ do
     assert(got=="item","bag contents refresh the entry once ("..got..")")
     C.Time.Refresh=realRefresh
     charged[#charged]=nil
+    entry.icon.chargeSet=armed
 end
 -- SPELL_UPDATE_CHARGES names no spell. While a charge is available (the
 -- main swipe is clear) it reads only the recharge swipe and the count, no
@@ -965,11 +1005,22 @@ do
     assert(table.concat(reasons,",")=="recharge" and cdCalls==0,"a charge event queried the main cooldown ("..cdCalls..")")
     assert(e11.icon.chargeCd.running,"the recharge swipe follows the charge event")
     assert(Registered("SPELL_UPDATE_USES"))
+    -- SPELL_UPDATE_USES: the count alone, as Blizzard's viewer does: no
+    -- cooldown, charge or duration query, one count write.
+    for i=#reasons,1,-1 do reasons[i]=nil end
+    cdCalls=0
+    local countWrites=e11.icon.count.calls.SetText or 0
+    local swipes=e11.icon.cd.calls.SetCooldownFromDurationObject or 0
+    Fire("SPELL_UPDATE_USES",101)
+    Run()
+    assert(table.concat(reasons,",")=="count" and cdCalls==0 and (e11.icon.count.calls.SetText or 0)==countWrites+1
+        and (e11.icon.cd.calls.SetCooldownFromDurationObject or 0)==swipes,"a use count refreshed more than the count")
+    -- A pending count mark is covered by a recharge refresh in the same frame.
     for i=#reasons,1,-1 do reasons[i]=nil end
     Fire("SPELL_UPDATE_USES",101)
     Fire("SPELL_UPDATE_CHARGES")
     Run()
-    assert(table.concat(reasons,",")=="charges","a recharge mark replaced a pending use-count mark")
+    assert(table.concat(reasons,",")=="recharge","a count mark replaced a pending recharge mark")
     C.Time.Refresh=realRefresh
 end
 

@@ -9,6 +9,9 @@
 
 Core\Platform.lua
 Core\ForeverFactory.lua
+Core\ForeverFrames.lua
+Core\RetailFactory.lua
+Core\RetailSkinFactory.lua
 Core\Database.lua
 Core\SuiteCatalog.lua
 Core\Catalog\ActionBars.lua
@@ -17,6 +20,7 @@ Core\MinimapStyle.lua
 Core\Catalog\DamageMeter.lua
 Core\Catalog\Bags.lua
 Core\Catalog\QualityOfLife.lua
+Core\Catalog\HUD.lua
 Core\Catalog\DataTexts.lua
 Core\Catalog\BuffReminders.lua
 Core\Catalog\Chat.lua
@@ -25,5 +29,6 @@ Core\Suite.lua
 Integrations\MapkoSkin.lua
 Core\ProfileIO.lua
 Core\Profiles.lua
+Core\Installer.lua
 Core\Menu.lua
 Core\Startup.lua

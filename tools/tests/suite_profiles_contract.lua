@@ -43,13 +43,33 @@ Suite.DB.suite.modules.minimap.enabled = true
 assert(P.SaveAs(" Raid "))
 assert(P.Active() == "Raid" and Suite.DB.suite.modules.qol.repair)
 assert(Suite.DB ~= DB.GetProfile("Default"))
+Suite.DB.suite.modules.objectives.enabled = true
+Suite.DB.suite.modules.objectives.titleSize = 21
+Suite.DB.suite.modules.objectives.objectiveSize = 14
+Suite.DB.suite.modules.objectives.focusedColor = "a1b2c3"
+Suite.DB.suite.modules.announcements.enabled = true
+Suite.DB.suite.modules.announcements.subtitleSize = 18
+Suite.DB.suite.modules.announcements.zoneColor = "d4e5f6"
 local bundle = assert(P.Export())
 assert(bundle:match("^MSUFS2:MSUF3:frames\nMSUFM1:MSUF3:"))
 assert(P.Import("Shared", bundle))
 assert(P.Active() == "Shared" and not Suite.DB.suite.modules.qol.repair
     and not Suite.DB.suite.modules.combatLog.enabled)
 assert(Suite.DB.suite.modules.minimap.enabled)
+assert(Suite.DB.suite.modules.objectives.enabled
+    and Suite.DB.suite.modules.objectives.titleSize == 21
+    and Suite.DB.suite.modules.objectives.objectiveSize == 14
+    and Suite.DB.suite.modules.objectives.focusedColor == "a1b2c3"
+    and Suite.DB.suite.modules.announcements.enabled
+    and Suite.DB.suite.modules.announcements.subtitleSize == 18
+    and Suite.DB.suite.modules.announcements.zoneColor == "d4e5f6",
+    "full profile export/import lost the new HUD settings")
 assert(DB.GetProfile("Raid").suite.modules.qol.repair)
+assert(P.InstallFactory("FactoryRetail", "MSUF3:frames", DB.GetProfile("Raid"), nil))
+assert(P.Active() == "FactoryRetail" and Suite.DB.suite.modules.qol.repair
+    and Suite.DB.suite.modules.combatLog.enabled,
+    "trusted factory import lost its selected module values")
+assert(P.Activate("Shared"))
 local imports = frameImports
 assert(not P.Import("Raid", bundle) and frameImports == imports)
 assert(not P.Import("Broken", "MSUFS2:MSUF3:frames\nMSUFM1:MSUF3:missing"))
@@ -89,18 +109,31 @@ end
 assert(P.Available())
 assert(P.Import("MainHost", bundle))
 assert(external == 1 and P.Active() == "MainHost" and DB.GetProfile("MainHost"))
+assert(P.InstallFactory("RetailForever", "MSUF3:frames", DB.GetProfile("Raid"), nil))
+assert(external == 2 and P.Active() == "RetailForever"
+    and Suite.DB.suite.modules.qol.repair,
+    "Retail host did not install the complete trusted Forever factory")
 assert(not P.Import("MainBroken", (bundle:gsub("^MSUFS2:MSUF3:frames", "MSUFS2:MSUF3:broken"))))
-assert(external == 2 and P.Active() == "MainHost" and not MSUF_GlobalDB.profiles.MainBroken and not DB.GetProfile("MainBroken"))
+assert(external == 3 and P.Active() == "RetailForever" and not MSUF_GlobalDB.profiles.MainBroken and not DB.GetProfile("MainBroken"))
 local switch = MSUF_SwitchProfile
 MSUF_SwitchProfile = function(name) if name == "MainSwitch" then return false end;return switch(name) end
 assert(not P.Import("MainSwitch", bundle))
-assert(P.Active() == "MainHost" and not MSUF_GlobalDB.profiles.MainSwitch and not DB.GetProfile("MainSwitch"))
+assert(P.Active() == "RetailForever" and not MSUF_GlobalDB.profiles.MainSwitch and not DB.GetProfile("MainSwitch"))
 MSUF_SwitchProfile, MSUF_Profiles_ImportIntoNewProfile, MSUF_Profiles_ImportExternal = switch, classicImport, nil
 local minimap = assert(P.ExportModule("minimap"))
 assert(minimap:match("^MSUFM2:MSUF3:"), "module export has no standalone prefix")
 Suite.DB.suite.modules.minimap.enabled = false
 assert(P.ImportModule(minimap) and Suite.DB.suite.modules.minimap.enabled,
     "single-module import failed to restore its setting")
+Suite.DB.suite.modules.objectives.titleSize = 23
+Suite.DB.suite.modules.objectives.focusedColor = "b2c3d4"
+local hudModule = assert(P.ExportModule("objectives"))
+Suite.DB.suite.modules.objectives.titleSize = 12
+Suite.DB.suite.modules.objectives.focusedColor = "ffffff"
+assert(P.ImportModule(hudModule)
+    and Suite.DB.suite.modules.objectives.titleSize == 23
+    and Suite.DB.suite.modules.objectives.focusedColor == "b2c3d4",
+    "single-module HUD export/import lost typography or colors")
 Suite.DB.suite.modules.dataTexts.bar1Slot4 = 11
 Suite.DB.suite.modules.dataTexts.bar1StyleOverride = true
 Suite.DB.suite.modules.dataTexts.bar1BackgroundTexture = "Flat"
@@ -126,11 +159,11 @@ skin.Database = {
     GetProfile = function(name) return skinProfiles[name] end,
     CreateProfile = function(name, copy)
         if skinProfiles[name] then return false, "exists" end
-        skinProfiles[name] = { look = copy and skinProfiles[skinActive].look or "default" }
+        skinProfiles[name] = copy and Suite.CopyValue(skinProfiles[skinActive]) or { look = "default" }
         return true, name
     end,
     SetProfile = function(name, profile)
-        skinProfiles[name] = { look = profile.look }
+        skinProfiles[name] = Suite.CopyValue(profile)
         return true, name
     end,
     SetActiveProfile = function(name)
@@ -148,11 +181,61 @@ skin.ProfileIO = {
     PrepareProfile = function(text)
         local profile = encodings[tonumber(type(text) == "string" and text:match("^MSKIN1:(%d+)$"))]
         if not profile or type(profile.look) ~= "string" then return nil, "bad skin" end
-        return { look = profile.look }
+        return Suite.CopyValue(profile)
     end,
 }
 MapkoSkin = skin
+local addonEnabled = Suite.Client.AddOnEnabled
+Suite.Client.AddOnEnabled = function() return true end
+encodings[#encodings + 1] = {
+    look = "modern",
+    icons = { microMenu = { layoutPoint = "BOTTOM", layoutX = 900, scale = 0.7 } },
+    windowControls = { positions = { CharacterFrame = { x = 1000 } } },
+}
+local modernSkin = "MSKIN1:" .. #encodings
+local beforeModernFrames = frameImports
+assert(P.InstallSuiteFactory("Default", DB.GetProfile("Raid"), modernSkin))
+assert(frameImports == beforeModernFrames and MSUF_ActiveProfile == "ModuleCopy"
+    and skinProfiles.Default.look == "modern", "Modern import changed MSUF frames or missed Skin")
+local meter = DB.GetProfile("Raid").suite.modules.damageMeter
+local meterLeft = math.min(meter.w1X - meter.w1Width, meter.w2X - meter.w2Width)
+assert(skinProfiles.Default.icons.microMenu.layoutPoint == "BOTTOMRIGHT"
+    and skinProfiles.Default.icons.microMenu.layoutX == meterLeft
+    and skinProfiles.Default.icons.microMenu.layoutY == 0
+    and skinProfiles.Default.icons.microMenu.scale == 0.7
+    and not next(skinProfiles.Default.windowControls.positions),
+    "Modern Skin menu is not beside the Damage Meter")
+Suite.RootDB.installation = { status = "complete", profile = "suite" }
+skinProfiles.Default.icons.microMenu.layoutPoint = "BOTTOMLEFT"
+skinProfiles.Default.icons.microMenu.layoutRelativePoint = "BOTTOMLEFT"
+skinProfiles.Default.icons.microMenu.layoutX = 18
+skinProfiles.Default.icons.microMenu.layoutY = 18
+Suite.Client.AddOnEnabled = addonEnabled
+assert(P.SyncActive("Default") and skinActive == "Default")
+assert(skinProfiles.Default.icons.microMenu.layoutPoint == "BOTTOMRIGHT"
+    and skinProfiles.Default.icons.microMenu.layoutX == meterLeft
+    and skinProfiles.Default.icons.microMenu.layoutY == 0
+    and Suite.RootDB.installation.frameProfileName == "Default"
+    and Suite.RootDB.installation.modernMeterMenuRevision == 2,
+    "previous Modern installs were not moved beside the Damage Meter")
+Suite.RootDB.installation.modernMeterMenuRevision = 1
+skinProfiles.Default.icons.microMenu.layoutX = meterLeft - 12
+skinProfiles.Default.icons.microMenu.layoutY = 18
+assert(P.SyncActive("Default")
+    and skinProfiles.Default.icons.microMenu.layoutX == meterLeft
+    and skinProfiles.Default.icons.microMenu.layoutY == 0
+    and Suite.RootDB.installation.modernMeterMenuRevision == 2,
+    "previous meter-gap correction was not updated to the supplied profile position")
 assert(P.SyncActive("ModuleCopy") and skinActive == "ModuleCopy")
+skinProfiles.ModuleCopy.icons = { microMenu = {
+    positionPreset = "custom", layoutPoint = "BOTTOMLEFT", layoutRelativePoint = "BOTTOMLEFT",
+    layoutX = 18, layoutY = 18,
+} }
+Suite.RootDB.installation.modernMeterMenuRevision = 1
+assert(P.SyncActive("ModuleCopy") and skinActive == "ModuleCopy"
+    and skinProfiles.ModuleCopy.icons.microMenu.layoutPoint == "BOTTOMLEFT",
+    "unrelated MSUF profile had its micro menu moved by the Modern repair")
+Suite.RootDB.installation.modernMeterMenuRevision = 2
 skinProfiles.ModuleCopy.look = "silver"
 local fullSkin = assert(P.Export())
 assert(fullSkin:match("^MSUFS3:MSUF3:frames\nMSUFM1:MSUF3:%d+\nMSKIN1:%d+$"),

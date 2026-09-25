@@ -1,7 +1,7 @@
 local _,P=...;local NS,S=P.NS,P.Suite
--- Key routing. Bars 2-8 (and bar 1 while it follows Blizzard's page) keep
--- the native commands: the key fires the hidden Blizzard button, which is the
--- only queue-safe route for empowered spells and press-and-hold repeat.
+-- Key routing. Bars 2-8 keep Blizzard's native command on their adopted
+-- buttons. Bar 1 keeps the native command while it follows Blizzard's page.
+-- These are the queue-safe routes for empower and press-and-hold spells.
 -- One owner frame routes keys to the suite buttons with override click
 -- bindings where a native command cannot express the slot: bars 9/10 (their
 -- own commands), bar 1 with custom paging or paging opt-outs (Blizzard's
@@ -62,6 +62,7 @@ AB.IsFlyoutSlot=IsFlyout
 
 -- Whether a suite button's keys must click it instead of the native command.
 function AB.ClickRouted(rec)
+    if rec.native then return false end
     local index=rec.bar.index
     if index>=9 then return true end
     if index==1 and AB.CustomPaging(M.config) then return true end

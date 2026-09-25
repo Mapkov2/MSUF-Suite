@@ -129,10 +129,10 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Bool("showRate", "Show XP per hour", true),
     Bool("showETA", "Show time to level", true),
     Bool("hideAtMax", "Hide at maximum level", true),
-    Choice("point", "Screen anchor", 8,
+    Choice("point", "Screen anchor", 2,
         { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }),
     Number("x", "Horizontal position", 0, -4000, 4000),
-    Number("y", "Vertical position", 148, -3000, 3000),
+    Number("y", "Vertical position", -24, -3000, 3000),
 })
 
 -- The flight HUD is Retail-only and remains dormant until explicitly enabled.

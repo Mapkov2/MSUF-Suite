@@ -4,19 +4,18 @@ local C=P.CDM
 -- Sounds and speech. Ready alerts for cooldowns play from Lua with a 1 s
 -- throttle per entry; aura gain and loss sounds from files are registered
 -- with C_UnitAuras.AddAuraSound, so Blizzard plays them without any Lua per
--- aura event. That API takes files only: sound kits (Blizzard's Cooldown
--- Manager sounds) on aura entries play from a sensor in the aura button
--- (Auras.lua) through PlayAura. Nothing plays while muted or during the
--- short silence after a loading screen (C.state.soundQuietUntil, set by the
--- controller).
+-- aura event. Known Blizzard CDM kits resolve to their sound files; only
+-- unknown kits need the aura-button sensor (Auras.lua) through PlayAura.
+-- Nothing plays while muted or during the short silence after a loading
+-- screen (C.state.soundQuietUntil, set by the controller).
 local L={pending=false}
 C.Alerts=L
 
 local GetTime,InCombatLockdown=GetTime,InCombatLockdown
 local pairs,type,tonumber=pairs,type,tonumber
-local wipe=table.wipe or wipe
+local wipe=C.wipe
 local Public=S.Public
-local EMPTY=C.EMPTY or {}
+local EMPTY=C.EMPTY
 local THROTTLE=1
 -- Container switches (ours, or an ancestor such as the UI being hidden for
 -- a cinematic) show and hide aura buttons: their sensors keep quiet this
@@ -37,7 +36,49 @@ local have={}                            -- registration key -> {id, refs}
 local want={}                            -- scratch: registration key -> refs
 local regs={}                            -- registration key -> what to register
 local info={}                            -- reused UnitAuraSoundInfo
+local kitParams={}                       -- reused Blizzard cooldown alert params
 local armed=false
+
+-- Retail SoundKitEntry.db2, build 12.1.0.69933: the FileDataID behind each
+-- kit offered by Blizzard's Cooldown Viewer. Forever 1.60.1.70009 has the
+-- same files: 67 mappings match its SoundKitEntry.db2, and the remaining 26
+-- Short sound files are present in its CASC although their kits are absent
+-- from that table. Each mapped kit has one file.
+-- Files can be played by the same runtime path as SharedMedia and registered
+-- with C_UnitAuras.AddAuraSound; unknown kits retain the PlaySound fallback.
+-- Data: https://wago.tools/db2/SoundKitEntry/csv?build=12.1.0.69933
+-- PATCH CHECK: After Retail or Forever patches, compare Blizzard's
+-- CooldownViewerSoundAlertData.lua with SoundKitEntry.db2 in both clients;
+-- also check that the Forever Short files remain in CASC. Update this map
+-- when kits or FileDataIDs change, then test cooldown-ready and aura gain/loss
+-- playback in each game client. These IDs are client assets, not user files.
+local KIT_FILE={
+    [316401]=7466002,[316406]=7466004,[316407]=7466006,[316409]=7466010,
+    [316411]=7466012,[316412]=7466014,[316413]=7466016,[316414]=7466018,
+    [316415]=7466020,[316419]=7466026,[316425]=7466036,[316430]=7466046,
+    [316433]=7466048,[316434]=7466050,[316436]=7466054,[316442]=7466062,
+    [316446]=7466070,[316447]=7466072,[316453]=7466082,[316460]=7466092,
+    [316476]=7466096,[316477]=7466098,[316482]=7466108,[316484]=7466112,
+    [316486]=7466116,[316492]=7466124,[316493]=7466126,[316501]=7466138,
+    [316509]=7466148,[316528]=7466899,[316531]=7466901,[316532]=7466903,
+    [316535]=7466911,[316536]=7466913,[316540]=7466915,[316712]=7466945,
+    [316713]=7466947,[316715]=7466951,[316717]=7466955,[316718]=7466957,
+    [316719]=7466959,[316722]=7466965,[316723]=7466967,[316731]=7467017,
+    [316733]=7467021,[316735]=7467023,[316736]=7467025,[316737]=7467027,
+    [316738]=7467029,[316739]=7467031,[316740]=7467033,[316745]=7464792,
+    [316746]=7464794,[316748]=7464798,[316749]=7464800,[316765]=7467074,
+    [316766]=7467076,[316768]=7467080,[316769]=7467082,[316770]=7467072,
+    [316771]=7467084,[316773]=7467088,[316774]=7467090,[316775]=7467092,
+    [316776]=7467094,[316778]=7467098,[316779]=7467100,[353387]=7962208,
+    [353388]=7962210,[353389]=7962212,[353392]=7962218,[353393]=7962222,
+    [353395]=7962224,[353397]=7962228,[353399]=7962230,[353400]=7962232,
+    [353402]=7962234,[353404]=7962236,[353405]=7962238,[353406]=7962240,
+    [353407]=7962242,[353408]=7962244,[353410]=7962246,[353417]=7962256,
+    [353419]=7962258,[353420]=7962260,[353421]=7962262,[353423]=7962266,
+    [353424]=7962220,[353425]=7962248,[353426]=7962268,[353427]=7962270,
+    [353428]=7962272,
+}
+local kitFiles=KIT_FILE
 
 ------------------------------------------------------------------ sound values
 -- "lsm:<name>", "kit:<soundKitID>", "file:<fileID>"; anything else is silent.
@@ -77,6 +118,13 @@ local function Emit(value)
     if not kind then return false end
     local channel=Channel()
     if kind=="kit" then
+        local file=kitFiles[arg]
+        if file and type(PlaySoundFile)=="function" and PlaySoundFile(file,channel)==true then return true end
+        local sound=_G.C_Sound
+        if sound and type(sound.PlaySoundWithOptions)=="function" then
+            kitParams.soundKitID,kitParams.uiSoundSubType=arg,channel
+            return sound.PlaySoundWithOptions(kitParams)==true
+        end
         return type(PlaySound)=="function" and PlaySound(arg,channel)==true
     end
     if kind=="lsm" then
@@ -133,7 +181,11 @@ end
 
 ------------------------------------------------------------------ aura kit sounds
 -- "kit:<soundKitID>" values: aura entries play these from a sensor.
-local function IsKit(value) return type(value)=="string" and Parse(value)=="kit" end
+local function IsKit(value)
+    if type(value)~="string" then return false end
+    local kind,id=Parse(value)
+    return kind=="kit" and kitFiles[id]==nil
+end
 L.IsKit=IsKit
 
 -- A container was switched (retarget, pause, rebuild, bar or UI shown or
@@ -231,10 +283,10 @@ local function Wanted(set,unit,trigger,channel,value)
 end
 local function Want(e,trigger,value,channel)
     if type(value)~="string" or value=="" then return end
-    -- AddAuraSound takes files only; sound kits cannot be registered.
-    -- Kits play from the aura button's sensor instead (PlayAura).
-    local kind=Parse(value)
-    if kind~="lsm" and kind~="file" then return end
+    -- The shipped CDM kits resolve to files. Unknown kits still play from
+    -- the aura button's sensor instead (PlayAura).
+    local kind,id=Parse(value)
+    if kind~="lsm" and kind~="file" and not (kind=="kit" and kitFiles[id]) then return end
     local auras=C.Auras
     local set=auras and auras.Ids(e)
     if not set then return end
@@ -251,6 +303,7 @@ end
 local function Register(add,reg)
     local kind,file=Parse(reg.value)
     if kind=="lsm" then file=Media(file) end
+    if kind=="kit" then file=kitFiles[file] end
     if not file then return nil end
     info.unitToken,info.spellID,info.outputChannel=reg.unit,reg.spell,reg.channel
     if type(file)=="number" then info.soundFileID,info.soundFileName=file,nil
@@ -278,6 +331,9 @@ function L.SyncAuraSounds()
     local add,remove=auras and auras.AddAuraSound,auras and auras.RemoveAuraSound
     if type(add)~="function" or type(remove)~="function" then return end
     if InCombatLockdown() then L.pending=true;return end
+    local secrets=_G.C_Secrets
+    local restricted=secrets and secrets.ShouldAurasBeSecret and secrets.ShouldAurasBeSecret()
+    if restricted~=nil and (not Public(restricted) or restricted) then L.pending=true;return end
     L.pending=false
     wipe(want)
     local st=C.state
@@ -313,6 +369,7 @@ function L.SyncAuraSounds()
         else
             local id=Register(add,regs[key])
             if id then have[key]={id=id,refs=refs} end
+            if not id then L.pending=true end
         end
     end
     if wait>0 and not st.muteSounds then Arm(wait) end

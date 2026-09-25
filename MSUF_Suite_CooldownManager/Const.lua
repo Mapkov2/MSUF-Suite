@@ -1,10 +1,11 @@
 local _,P=...
 local NS,S=P.NS,P.Suite
 local C=P.CDM
--- Shared constants and cold-path factories for the render plane: glow
--- styles and their flipbook animations, step curves for desaturation and
--- cooldown opacity (cached per value pair), pixel snapping, the 9-point
--- anchor table, tint colors and the hardcoded spell-category icons.
+-- Shared constants and cold-path helpers for the render plane: glow styles
+-- and their flipbook animations, step curves for desaturation and cooldown
+-- opacity (cached per value pair), pixel snapping, the 9-point anchor table,
+-- tint colors, the hardcoded spell-category icons, the icon crop, the class
+-- color, the per-spell choice rules and the growth-edge offset.
 local K={}
 C.Const=K
 local floor,max=math.floor,math.max
@@ -13,6 +14,9 @@ local floor,max=math.floor,math.max
 local consts=_G.Constants and _G.Constants.SpellCooldownConsts
 K.GCD_CATEGORY=consts and consts.GLOBAL_RECOVERY_CATEGORY or 133
 K.QUESTION_ICON=134400
+-- Catalog choice "Frame layer" and the default bar texture.
+K.STRATA={"BACKGROUND","LOW","MEDIUM","HIGH"}
+K.BAR_TEXTURE="Interface\\TargetingFrame\\UI-StatusBar"
 
 -- Blizzard's viewers use these file paths for bag-item categories (potions,
 -- healthstones); the space in the Warlock paths is part of the file name.
@@ -30,8 +34,35 @@ K.POINT_X={1,0,-1,1,0,-1,1,0,-1}
 K.POINT_Y={-1,-1,-1,0,0,0,1,1,1}
 K.JUSTIFY={"LEFT","CENTER","RIGHT","LEFT","CENTER","RIGHT","LEFT","CENTER","RIGHT"}
 
--- Frame levels above the icon frame: swipe, recharge edge, glow, text.
-K.LEVEL={cd=1,charge=2,glow=3,assist=4,text=5}
+-- Frame levels above the icon frame: swipe, recharge edge, glow, text. The
+-- swipe (with its countdown) moves to top, above the text, for entries that
+-- show the countdown on top.
+K.LEVEL={cd=1,charge=2,glow=3,assist=4,text=5,top=6}
+
+------------------------------------------------------------------ choices
+-- A per-spell yes/no choice (ov: the entry's choices), else the bar's.
+function K.Pick(ov,view,field)
+    local value=ov[field]
+    if value==nil then value=view[field] end
+    return value==true
+end
+-- Per-spell text choices (timeText, stackText, textTop): 2 yes, 3 no,
+-- anything else the bar's answer.
+function K.Choice(value,bar)
+    if value==2 then return true elseif value==3 then return false end
+    return bar==true
+end
+-- The bar's countdown switch; timer bars also follow "Show time".
+function K.BarTime(view)
+    return view.cdText~=false and (view.kind~=3 or view.barTime~=false)
+end
+-- The bar's charge and stack switch; counts on cooldown icons also follow
+-- the cooldown bar's "Show charges".
+function K.BarStacks(view,counts)
+    return view.stackText~=false and not (counts and view.charges==false)
+end
+-- Text on top: 1 stacks (true), 2 countdown.
+function K.BarStacksTop(view) return view.textTop~=2 end
 
 ------------------------------------------------------------------ tints
 -- Usable/range codes: 1 usable, 2 not enough power, 3 unusable,
@@ -129,6 +160,53 @@ function K.IconSize(view)
     local w=max(px,K.Snap(size))
     local h=max(px,K.Snap(size*(view.height or 100)/100))
     return w,h
+end
+
+-- Texture crop for an iw x ih art area: zoom percent is the total crop,
+-- split over both sides; the shorter axis is cropped further so non-square
+-- icons keep the art's aspect. Returns left, right, top, bottom.
+function K.Crop(zoom,iw,ih)
+    local crop=(zoom or 0)/200
+    local span=1-2*crop
+    local left,right,top,bottom=crop,1-crop,crop,1-crop
+    if iw>0 and ih>0 then
+        if ih<iw then local v=span*ih/iw;top,bottom=.5-v/2,.5+v/2
+        elseif iw<ih then local u=span*iw/ih;left,right=.5-u/2,.5+u/2 end
+    end
+    return left,right,top,bottom
+end
+
+-- The player's class color; nil while the class token is unreadable. The
+-- token is read once, the color on every call (a class color addon may
+-- change it).
+local classToken
+function K.ClassRGB()
+    if classToken==nil then
+        local token=false
+        if type(_G.UnitClass)=="function" then
+            local _,file=_G.UnitClass("player")
+            if S.Public(file) and type(file)=="string" then token=file end
+        end
+        classToken=token
+    end
+    if classToken then return S.ClassRGB(classToken) end
+end
+
+-- From a bar's center to its growth-edge point (Layout.Point) for a w x h bar.
+function K.EdgeOffset(point,w,h)
+    if point=="TOP" then return 0,h/2 elseif point=="BOTTOM" then return 0,-h/2
+    elseif point=="LEFT" then return -w/2,0 end
+    return w/2,0
+end
+
+-- A position setting rounded and clamped to its catalog rule.
+function K.Clamp(key,value)
+    local catalog=NS.SuiteCatalog and NS.SuiteCatalog.cooldownManager
+    local rule=catalog and catalog.rules[key]
+    value=floor(value+.5)
+    if rule and type(rule.min)=="number" and value<rule.min then value=rule.min end
+    if rule and type(rule.max)=="number" and value>rule.max then value=rule.max end
+    return value
 end
 
 -- Four edges inside owner's rect; the side edges stop short of the top and

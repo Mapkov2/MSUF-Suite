@@ -974,6 +974,7 @@ end
 function MicroMenuVisual.Prepare(button, buttonName, settings)
     if not button or not settings then return false end
     local nativeStyle = settings.iconStyle == "blizzard"
+        or settings.iconStyle == "blizzardIcons"
     local state = EnsureState(button, buttonName,
         nativeStyle and "line" or settings.iconStyle)
     if not state then return false end
@@ -998,7 +999,7 @@ end
 
 function MicroMenuVisual.Apply(button, buttonName, settings, stateName)
     if not button or not settings then return false, "invalid" end
-    if settings.iconStyle == "blizzard" then
+    if settings.iconStyle == "blizzard" or settings.iconStyle == "blizzardIcons" then
         MicroMenuVisual.Restore(button)
         return false, "native"
     end

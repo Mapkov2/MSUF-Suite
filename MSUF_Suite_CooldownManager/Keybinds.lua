@@ -5,13 +5,13 @@ local C=P.CDM
 -- cached per spell (items per item ID); icons get theirs through
 -- Icons.SetKeybind. Binding and action slot events drop the cache, bar
 -- content changes only push cached texts (new spells are looked up once);
--- both arrive coalesced 0.2 s after the last request. Nothing here runs per
--- cooldown event.
+-- a burst of requests shares one pass 0.2 s after its first request.
+-- Nothing here runs per cooldown event.
 local KB={map={}}
 C.Keybinds=KB
 local Public=S.Public
 local type,pairs=type,pairs
-local wipe=table.wipe or wipe or function(t) for k in pairs(t) do t[k]=nil end return t end
+local wipe=C.wipe
 local DELAY=0.2
 
 -- Action slot ranges and the binding command each range presses (in the
@@ -46,7 +46,6 @@ local function Short(key)
     shortCache[key]=text
     return text
 end
-KB.Short=Short
 
 local function BoundKey(command)
     if type(GetBindingKey)~="function" then return nil end
@@ -145,8 +144,8 @@ function KB.Rebuild()
     KB.Refresh()
 end
 
--- One pass 0.2 s after the last request of a burst; stale (binding and
--- action slot events) drops the cache first.
+-- One pass 0.2 s after the first request of a burst (requests in between
+-- join it); stale (binding and action slot events) drops the cache first.
 local armed,stale=false,false
 local function Fire()
     armed=false

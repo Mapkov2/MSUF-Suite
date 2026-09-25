@@ -619,7 +619,10 @@ end
 local function ApplyButton(button, buttonName, settings)
     if not CanControl(button) then return false end
     local success = true
+    -- Blizzard icons use the live native textures. Copying their atlas into a
+    -- smaller overlay loses portrait, state and client-specific artwork.
     local clean = settings.iconStyle ~= "blizzard"
+        and settings.iconStyle ~= "blizzardIcons"
 
     if clean then
         success = RestoreButtonTextures(button) and success
@@ -627,13 +630,7 @@ local function ApplyButton(button, buttonName, settings)
             local member = CLEAN_HIDDEN_MEMBERS[index]
             local region = ReadMember(button, member)
             if region then
-                if settings.iconStyle == "blizzardIcons"
-                    and (member == "Emblem" or member == "HighlightEmblem") then
-                    local saved = alphaStates[region]
-                    if saved then success = RestoreAlpha(region, saved) and success end
-                else
-                    success = FadeExact(button, region) and success
-                end
+                success = FadeExact(button, region) and success
             end
         end
         for index = 1, #TEXTURE_STATES do
@@ -656,13 +653,12 @@ local function ApplyButton(button, buttonName, settings)
     success = RestoreButtonAlphas(button) and success
     success = RestoreButtonTextures(button) and success
 
-    -- Blizzard's native atlases are complete button art, including portrait,
-    -- background and hover state. An authored bar style frames those buttons;
-    -- it does not repaint them unless the user explicitly requests a tint or
-    -- extra button plate in the detail controls.
+    -- Full Blizzard keeps the original button background. Blizzard icons keep
+    -- the original icon and state textures, while the Suite bar supplies the
+    -- surrounding frame.
     local extraPlate = settings.buttonBackground == true
         or BorderValue(settings.buttonBorder) > 0
-    if extraPlate then
+    if extraPlate or settings.iconStyle == "blizzardIcons" then
         local background = ReadMember(button, "Background")
         local pushedBackground = ReadMember(button, "PushedBackground")
         if background then success = FadeExact(button, background) and success end
@@ -1167,6 +1163,9 @@ function MicroMenuSkin.SetOption(key, value)
 
     settings[key] = value
     if VISUAL_OPTION_KEYS[key] then
+        settings.preset = "custom"
+    elseif key == "layoutMode" and settings.preset == "blizzard"
+        and value ~= "blizzard" then
         settings.preset = "custom"
     elseif key == "layoutPoint" or key == "layoutRelativePoint"
         or key == "layoutX" or key == "layoutY" then

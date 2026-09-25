@@ -271,15 +271,11 @@ end
 ------------------------------------------------------------------ reasons
 local function ProcWanted(entry,view)
     if not entry.procOn then return false end
-    local on=(entry.ov or EMPTY).procGlow
-    if on==nil then on=view.procGlow==true end
-    return on
+    return K.Pick(entry.ov or EMPTY,view,"procGlow")
 end
 
 local function ReadyWanted(entry,view)
-    local on=(entry.ov or EMPTY).readyGlow
-    if on==nil then on=view.readyGlow==true end
-    if not on or entry.cooling or entry.hidden then return false end
+    if not K.Pick(entry.ov or EMPTY,view,"readyGlow") or entry.cooling or entry.hidden then return false end
     local state=C.state
     if state.readyGlowCombat and not state.inCombat and not state.preview then return false end
     return true
@@ -367,8 +363,11 @@ local function ReadyEntry(entry)
 end
 
 -- Ready glows gated to combat flip here; everything else is untouched.
-function E.CombatChanged()
-    Walk(C.Index and C.Index.cooldown,ReadyEntry)
+-- Only entries that want a ready glow (Index.ready) are walked; on a combat
+-- edge (edge set) only while those glows wait for combat.
+function E.CombatChanged(edge)
+    if edge and not C.state.readyGlowCombat then return end
+    Walk(C.Index and C.Index.ready,ReadyEntry)
 end
 
 -- Size changes from the icon style pass.

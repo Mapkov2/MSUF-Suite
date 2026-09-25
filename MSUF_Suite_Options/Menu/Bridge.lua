@@ -131,7 +131,11 @@ end
 -- last refusal per module is shown in that module's status line.
 P.feedback = {}
 function P.Set(id, key, value)
-    if id == "bags" and key == "look" then
+    if (id == "objectives" or id == "announcements")
+        and P.catalog[id].rules[key] and P.catalog[id].rules[key].color
+        and P.Get(id, "colorStyle") ~= 2 then
+        return P.SetMany(id, { [key] = value, colorStyle = 2 })
+    elseif id == "bags" and key == "look" then
         local preset = Suite.BagsLookPresets and Suite.BagsLookPresets[tonumber(value)]
         if preset then
             local values = { look = value }

@@ -5,8 +5,12 @@ Private.NS,Private.Suite=NS,S
 S.editMode=_G.MSUF_UnitEditModeActive==true
 local Context={}
 Context.__index=Context
-local function Public(value)
-    return not (type(issecretvalue)=="function" and issecretvalue(value))
+local Public
+if type(issecretvalue)=="function" then
+    local secretTest=issecretvalue
+    Public=function(value) return not secretTest(value) end
+else
+    Public=function() return true end
 end
 local function Accessible(frame)
     return frame and not NS.Safety.IsForbidden(frame)
@@ -55,7 +59,7 @@ function S.RestoreCVar(id,key) S.RestoreSaved(id,key) end
 function S.NewContext(id)
     return setmetatable({id=id,properties={},points={},callbacks={},fields={}},Context)
 end
-function S.Public(value) return Public(value) end
+S.Public=Public
 function S.Text(value) return NS.L and NS.L[value] or value end
 function Context:Field(frame,key,value,refresh)
     if NS.IsCombatLocked() then S.Queue(self.id); return false end

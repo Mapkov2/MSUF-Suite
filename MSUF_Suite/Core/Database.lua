@@ -26,12 +26,13 @@ function Database.IsProfileName(name)
 end
 
 local function NewProfile()
-    if Suite.Client and Suite.Client.isForever
-        and type(Suite.ForeverFactoryModuleCompact) == "string"
+    local compact = Suite.Client and Suite.Client.isForever and Suite.ForeverFactoryModuleCompact
+        or Suite.Client and Suite.Client.isMainline and Suite.RetailFactoryModuleCompact
+    if type(compact) == "string"
         and type(_G.MSUF_TryDecodeCompactString) == "function"
         and Suite.ProfileIO then
         local ok, envelope = pcall(_G.MSUF_TryDecodeCompactString,
-            Suite.ForeverFactoryModuleCompact:sub(8))
+            compact:sub(8))
         if ok and type(envelope) == "table" and envelope.addon == "MSUF_Suite"
             and envelope.format == 1 then
             local profile = Suite.ProfileIO.PrepareTable(envelope.profile, false)

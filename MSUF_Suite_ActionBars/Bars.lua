@@ -1,6 +1,8 @@
 local _,P=...;local NS,S=P.NS,P.Suite
--- Action bars. Bars 1-10 are suite-owned SecureHandlerStateTemplate headers
--- holding twelve "ActionButtonTemplate, SecureActionButtonTemplate" buttons.
+-- Action bars. Bars 1-10 use suite-owned SecureHandlerStateTemplate headers.
+-- On Retail, bars 2-8 reuse Blizzard's existing action buttons so their
+-- native painter is the only painter for those slots. Bar 1 keeps the suite
+-- buttons for custom combat paging; bars 9/10 have no native counterparts.
 -- That pair is the combination Blizzard's own flyout code supports: the
 -- template supplies the visual regions and the secure flyout plumbing, but
 -- not ActionBarActionButtonMixin, so no suite button ever joins Blizzard's
@@ -16,6 +18,7 @@ S.Install("actionbars",M)
 local floor,ceil,max,min=math.floor,math.ceil,math.max,math.min
 local BAR_COUNT,BUTTONS=12,12
 AB.BAR_COUNT,AB.BUTTONS=BAR_COUNT,BUTTONS
+AB.nativeReuse=NS.Client.isMainline and not NS.Client.isForever
 
 -- Slot of button 1 per owned bar; bar 1 pages from slot 1.
 AB.FIRST_SLOT={1,61,49,25,37,145,157,169,13,109}
@@ -203,7 +206,15 @@ local function NewHeader(index)
     header:SetAttribute("_onstate-vis",AB.SNIPPET.VIS)
     local background=S.CreateTexture(header,nil,"BACKGROUND",nil,-8)
     background:Hide()
-    local bar={index=index,header=header,buttons={},filled={},background=background,key=AB.KEYS[index],owned=index<=10}
+    local native=AB.nativeReuse and index>=2 and index<=8
+    if native then
+        for i=1,BUTTONS do
+            if not AB.Frame(AB.NATIVE_BUTTONS[index]..i) then native=false;break end
+        end
+    end
+    local bar={index=index,header=header,buttons={},filled={},background=background,key=AB.KEYS[index],owned=index<=10,
+        native=native}
+    if native then header:SetAttribute("actionpage",math.floor((AB.FIRST_SLOT[index]-1)/12)+1) end
     AB.bars[index]=bar
     AB.headers=AB.headers or {}
     AB.headers[header]=bar
@@ -215,8 +226,17 @@ end
 
 local function NewButton(bar,index)
     local name="MSUFSuiteBar"..bar.index.."Button"..index
-    local button=S.CreateFrame("CheckButton",name,bar.header,"ActionButtonTemplate, SecureActionButtonTemplate")
     local slot=AB.FIRST_SLOT[bar.index]+index-1
+    if bar.native then
+        local button=AB.Frame(AB.NATIVE_BUTTONS[bar.index]..index)
+        local rec={button=button,bar=bar,index=index,slot=slot,base=slot,name=button:GetName(),owned=true,native=true,
+            command=AB.COMMANDS[bar.index]..index}
+        AB.records[button]=rec
+        bar.buttons[index]=rec
+        AB.owned[#AB.owned+1]=rec
+        return rec
+    end
+    local button=S.CreateFrame("CheckButton",name,bar.header,"ActionButtonTemplate, SecureActionButtonTemplate")
     button:SetAttribute("type","action")
     button:SetAttribute("typerelease","actionrelease")
     button:SetAttribute("checkselfcast",true)

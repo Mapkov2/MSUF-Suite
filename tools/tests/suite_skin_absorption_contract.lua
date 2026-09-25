@@ -342,18 +342,24 @@ end
 for _, name in ipairs(namespace.MicroMenuPresets) do
     local preset = namespace.MicroMenuPresetValues[name]
     assert(preset, "Missing micro menu preset " .. name)
-    assert(preset.iconStyle == "bold"
-        and preset.tint == "theme"
-        and preset.buttonBackground == false
-        and preset.buttonBorder == 0
-        and preset.scale == 1 and preset.barMaterial == name,
-        "Micro Bar preset mismatch: " .. name)
+    if name == "blizzard" then
+        assert(preset.layoutMode == "blizzard" and preset.iconStyle == "blizzard"
+            and preset.tint == "native" and preset.barBackground == false
+            and preset.buttonBackground == false and preset.barBorder == 0,
+            "Blizzard preset does not restore the native Micro Bar")
+    else
+        assert(preset.layoutMode == "owned" and preset.iconStyle == "bold"
+            and preset.tint == "theme" and preset.buttonBackground == false
+            and preset.buttonBorder == 0 and preset.scale == 1
+            and preset.barMaterial == name,
+            "Micro Bar preset mismatch: " .. name)
+    end
 end
-assert(#namespace.MicroMenuPresets == 3
+assert(#namespace.MicroMenuPresets == 4
     and namespace.MicroMenuPresetValues.forever.spacing ~= namespace.MicroMenuPresetValues.modern.spacing
     and namespace.MicroMenuPresetValues.forever.padding ~= namespace.MicroMenuPresetValues.modern.padding
     and namespace.Materials.microBarDark.border == "microBarBorder",
-    "Micro Bar styles must have three selectable frame materials")
+    "Micro Bar styles must keep three authored looks and Blizzard original")
 do
     local colors = {}
     for _, entry in ipairs({ { "modern", "midnight" }, { "midnightDark", "midnightDark" },
@@ -496,7 +502,7 @@ do
     root.BackgroundArt = root:CreateTexture(nil, "BACKGROUND")
     function root:MarkDirty() end
     function root:Layout() end
-    function root:ResetMicroMenuPosition() end
+    function root:ResetMicroMenuPosition() self:SetParent(container) end
     function root:UpdateHelpTicketButtonAnchor() end
 
     local buttonNames = {
@@ -554,7 +560,7 @@ do
         assert(namespace.MicroMenuSkin.SetOption("buttonsPerLine", 14))
     end
 
-    for _, preset in ipairs(namespace.MicroMenuPresets) do
+    for _, preset in ipairs({ "modern", "midnightDark", "forever" }) do
         assert(namespace.MicroMenuSkin.ApplyPreset(preset))
         local applied = namespace.MicroMenuSkin.Apply(root, "native-art-contract")
         assert(applied, "Micro Bar native art did not apply: " .. preset)
@@ -616,6 +622,25 @@ do
             end
         end
     end
+    assert(namespace.MicroMenuSkin.ApplyPreset("blizzard"))
+    assert(namespace.DB.icons.microMenu.layoutMode == "blizzard"
+        and not namespace.OwnedMicroBar.active and root:GetParent() == container
+        and root.BorderArt:GetAlpha() == 1 and root.BackgroundArt:GetAlpha() == 1
+        and buttons[2]:GetNormalTexture():GetAlpha() == 1,
+        "Blizzard preset did not restore the original bar and icons: "
+            .. tostring(namespace.DB.icons.microMenu.layoutMode) .. " / "
+            .. tostring(namespace.OwnedMicroBar.active) .. " / "
+            .. tostring(root:GetParent() == container) .. " / "
+            .. tostring(root.BorderArt:GetAlpha()) .. " / "
+            .. tostring(root.BackgroundArt:GetAlpha()) .. " / "
+            .. tostring(buttons[2]:GetNormalTexture():GetAlpha()))
+    assert(namespace.MicroMenuSkin.SetOption("layoutMode", "owned")
+        and namespace.DB.icons.microMenu.preset == "custom",
+        "changing the Blizzard preset layout kept a misleading preset label")
+    assert(namespace.MicroMenuSkin.ApplyPreset("forever")
+        and namespace.OwnedMicroBar.active
+        and root:GetParent() == namespace.OwnedMicroBar.GetFrames(),
+        "Suite preset did not restore its own bar after Blizzard")
     if simulateForever then
         assert(namespace.MicroMenuSkin.ApplyPreset("forever"))
         local profession = _G.ProfessionMicroButton
@@ -639,25 +664,26 @@ do
         local visual = namespace.MicroMenuVisual.GetState(profession)
         local characterVisual = namespace.MicroMenuVisual.GetState(character)
         local owned = namespace.OwnedMicroBar.GetFrames()
-        assert(visual and visual.icon:GetAtlas() == "UI-HUD-MicroMenu-Professions-Up",
-            "Blizzard icon mode did not copy the native icon atlas")
-        assert(visual.plate:IsShown() and profession.Background:GetAlpha() == 0
-            and nativeProfession:GetAlpha() == 0,
-            "Blizzard icon mode restored the native button plate")
+        assert(visual and not visual.visible and not visual.icon:IsShown()
+            and nativeProfession:GetAtlas() == "UI-HUD-MicroMenu-Professions-Up"
+            and nativeProfession:GetAlpha() == 1,
+            "Blizzard icon mode did not show the native icon")
+        assert(profession.Background:GetAlpha() == 0,
+            "Blizzard icon mode kept the native button background")
         assert(root.BorderArt:GetAlpha() == 0,
             "Blizzard icon mode restored the native Forever frame")
         assert(owned._msufForeverPortraitRing:IsShown(),
             "Blizzard icon mode hid the Suite portrait ring")
-        assert(characterVisual and characterVisual.icon.texture
-            == "Interface\\CharacterFrame\\CharacterPortrait"
-            and characterVisual.icon:IsShown(),
-            "Character button did not reuse Blizzard's live portrait")
+        assert(characterVisual and not characterVisual.visible
+            and character.Portrait:GetAlpha() == 1,
+            "Character button hid Blizzard's live portrait")
         assert(guild.Emblem:GetAlpha() == 1 and guild.HighlightEmblem:GetAlpha() == 1,
             "Blizzard icon mode hid the native guild tabard emblem")
         nativeProfession:SetAtlas("UI-HUD-MicroMenu-Professions-Variant-Up")
         namespace.MicroMenuSkin.RefreshActive()
-        assert(visual.icon:GetAtlas() == "UI-HUD-MicroMenu-Professions-Variant-Up",
-            "Blizzard icon mode did not follow a native icon update")
+        assert(nativeProfession:GetAtlas() == "UI-HUD-MicroMenu-Professions-Variant-Up"
+            and nativeProfession:GetAlpha() == 1,
+            "Blizzard icon mode did not preserve a native icon update")
         assert(namespace.MicroMenuSkin.SetOption("iconStyle", "bold")
             and visual.icon.texture:find("MapkoSkinMicroGlyphsBoldAtlas.png", 1, true),
             "Switching from Blizzard icons did not restore Suite glyphs")

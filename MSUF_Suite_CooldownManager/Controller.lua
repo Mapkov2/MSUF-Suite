@@ -15,16 +15,19 @@ local C=P.CDM
 -- Events register only while something consumes them. Cooldown events
 -- refresh their entries at once, inside the event, because isOnGCD is only
 -- trustworthy there; the other hot events mark entries and share the flush.
+-- Hot handlers guard payloads with the client's issecretvalue directly.
 local M=C.M
 local CDM=NS.CDM
 local SLOTS,KEYS=CDM.SLOTS,CDM.KEYS
 local ID="cooldownManager"
 local Public=S.Public
+local issecret=type(_G.issecretvalue)=="function" and _G.issecretvalue or nil
 local EMPTY=C.EMPTY
 local pairs,type,next=pairs,type,next
-local floor,ceil,huge=math.floor,math.ceil,math.huge
-local wipe=table.wipe or wipe or function(t) for k in pairs(t) do t[k]=nil end return t end
-local GCD=C.Const.GCD_CATEGORY
+local ceil,huge=math.ceil,math.huge
+local wipe=C.wipe
+local K=C.Const
+local GCD=K.GCD_CATEGORY
 local QUIET=2   -- seconds without sounds after loading screens and activation
 
 ------------------------------------------------------------------ settings work (spec 8.1)
@@ -52,13 +55,16 @@ Work({"size","height","barWidth","barHeight"},{layout=true,flow=true,style=true}
 Work({"on"},{layout=true,resolve=true,visible=true})
 Work({"kind"},{layout=true,flow=true,resolve=true,style=true,behavior=true,bar=true})
 Work({"zoom","border","borderColor","borderClass","swipeAlpha","edge","cdText","cdSize","stackSize","stackPos",
-    "keybindSize","keybindPos"},{style=true})
+    "keybindSize","keybindPos","textTop"},{style=true})
+-- Counts: the icon's text switch (style), the count read back when shown
+-- again (behavior) and use-count routing (index).
+Work({"stackText"},{style=true,behavior=true,index=true})
 Work({"keybind"},{style=true,keybind=true})
-Work({"desat","cdAlpha","readyAlpha","hideReady","readyGlow","rangeColor","bling"},{behavior=true})
+Work({"desat","cdAlpha","readyAlpha","hideReady","rangeColor","bling"},{behavior=true})
 -- The glow look also styles aura glows: aura buttons of aura bars and the
 -- overlays of cooldown bars restyle through their diffed sync.
 Work({"glowStyle","glowColor","glowTint"},{behavior=true,restyle=true})
-Work({"range","usable","procGlow","charges","assist"},{behavior=true,index=true})
+Work({"range","usable","procGlow","readyGlow","charges","assist"},{behavior=true,index=true})
 Work({"showAura"},{behavior=true,index=true,overlay=true})
 Work({"showMissing","keepSlots","auraGlow","pandemic"},{behavior=true,aura=true})
 Work({"vis","hideMounted","hideVehicle","alpha","oocAlpha"},{visible=true})
@@ -106,6 +112,11 @@ local events={}
 local specName,specIcon
 local lastLists,lastSpells
 local seenHex={}
+-- SPELL_UPDATE_USABLE has no spell payload. Bound its visible-icon sweep to
+-- ten times per second in combat storms, with one trailing refresh so the
+-- final state is never lost. Other events and show edges still paint now.
+local USABLE_INTERVAL=.1
+local usableNext,usableTimer=0,nil
 
 local Flush
 local function Schedule()
@@ -134,9 +145,10 @@ end
 
 -- Marks in one frame merge to the one that refreshes most: "full" (texture,
 -- state, effects) over "charges" (state and count) over "recharge" (the
--- recharge swipe and count, SPELL_UPDATE_CHARGES) over "item" (bag contents:
--- potion and healthstone entries keep their cooldown).
-local RANK={item=1,recharge=2,charges=3,full=4}
+-- recharge swipe and count, SPELL_UPDATE_CHARGES) over "count" (the count
+-- alone, SPELL_UPDATE_USES) over "item" (bag contents: potion and
+-- healthstone entries keep their cooldown).
+local RANK={item=1,count=2,recharge=3,charges=4,full=5}
 local function Mark(e,reason)
     local pending=marked[e]
     if pending==nil or RANK[reason]>RANK[pending] then marked[e]=reason end
@@ -292,17 +304,13 @@ local function PersistCapture()
     pendingCapture=nil
     S.SetMany(ID,values)
 end
--- Plain finite numbers; settings rounded and clamped to their rule.
+-- Plain finite numbers; settings rounded and clamped to their rule (K.Clamp).
 local function Finite(value)
     return Public(value) and type(value)=="number" and value==value and value>-huge and value<huge
 end
-local function Clamp(key,value)
-    local rule=S.catalog[ID].rules[key]
-    value=floor(value+.5)
-    if value<rule.min then value=rule.min elseif value>rule.max then value=rule.max end
-    return value
-end
-local probe={}
+local Clamp=K.Clamp
+-- A stand-in view for Layout.Point while converting saved positions.
+local pointProbe={}
 
 -- Saved settings from before CDM.DEFAULTS_VERSION: every bar setting goes
 -- back to its current default once; bar contents and spell choices stay.
@@ -333,14 +341,11 @@ local function ResetDefaults(values,config)
                     values[k.x],values[k.y]=0,0
                 else
                     -- Free x/y used to count from the same point of UIParent.
-                    probe.kind=config[k.kind] or def.kind or 1
-                    probe.vertical=k.vertical and config[k.vertical]==true or false
-                    probe.grow=k.grow and config[k.grow] or nil
-                    local point=C.Layout.Point(probe)
-                    local x,y=config[k.x] or 0,config[k.y] or 0
-                    if point=="TOP" then y=y+uiH/2 elseif point=="BOTTOM" then y=y-uiH/2
-                    elseif point=="LEFT" then x=x-uiW/2 else x=x+uiW/2 end
-                    values[k.x],values[k.y]=Clamp(k.x,x),Clamp(k.y,y)
+                    pointProbe.kind=config[k.kind] or def.kind or 1
+                    pointProbe.vertical=k.vertical and config[k.vertical]==true or false
+                    pointProbe.grow=k.grow and config[k.grow] or nil
+                    local dx,dy=K.EdgeOffset(C.Layout.Point(pointProbe),uiW,uiH)
+                    values[k.x],values[k.y]=Clamp(k.x,(config[k.x] or 0)+dx),Clamp(k.y,(config[k.y] or 0)+dy)
                 end
             end
         end
@@ -447,32 +452,41 @@ local function SetCategorySpell(e) e.catSpell=curSpell end
 
 -- SPELL_UPDATE_COOLDOWN: nil or unreadable spell = all; category payloads
 -- (potions, healthstones) name the spell that started the category; a GCD
--- start touches every icon only while icons show the GCD.
+-- start touches every icon only while icons show the GCD. A payload value
+-- that is secret counts as absent.
 local function OnCooldown(_,_,spellID,baseSpellID,category,recovery,itemID)
     stamp=stamp+1
-    if not Public(spellID) or spellID==nil then return EachCooldown(RefreshCooldown) end
+    if (issecret and issecret(spellID)) or spellID==nil then return EachCooldown(RefreshCooldown) end
     local X=C.Index
-    if Public(category) and category and category~=0 and Public(itemID) and itemID then
-        curSpell=Public(baseSpellID) and baseSpellID or spellID
+    local item=not (issecret and issecret(itemID)) and itemID or nil
+    if item and not (issecret and issecret(category)) and category and category~=0 then
+        curSpell=not (issecret and issecret(baseSpellID)) and baseSpellID or spellID
         if X.ForCategory(category,SetCategorySpell)>0 then X.ForCategory(category,RefreshCooldown) end
     end
-    if Public(recovery) and recovery==GCD and C.state.showGCD then return EachCooldown(RefreshCooldown) end
+    if C.state.showGCD and not (issecret and issecret(recovery)) and recovery==GCD then return EachCooldown(RefreshCooldown) end
     X.ForSpell(spellID,baseSpellID,RefreshCooldown)
-    if Public(itemID) and itemID then X.ForItem(itemID,RefreshCooldown) end
+    if item then X.ForItem(item,RefreshCooldown) end
 end
 
-local function MarkCharges(e) Mark(e,"charges") end
-local function MarkRecharge(e) Mark(e,"recharge") end
+local countedSet=C.Index.countedSet
+local function MarkCount(e) if countedSet[e] then Mark(e,"count") end end
 local function MarkItem(e) Mark(e,"item") end
--- SPELL_UPDATE_CHARGES names no spell: charge entries refresh their
--- recharge swipe and count only (Time "recharge"); spending and regaining
--- charges also reach them through SPELL_UPDATE_COOLDOWN, SPELL_UPDATE_USES
--- and the swipes' OnCooldownDone.
+-- SPELL_UPDATE_CHARGES names no spell. Spending a charge arrives with the
+-- spell's SPELL_UPDATE_COOLDOWN and a charge coming back with the recharge
+-- swipe's OnCooldownDone (Blizzard's viewer never registers this event), so
+-- only entries whose recharge swipe runs refresh it and their count (Time
+-- "recharge"); entries with every charge cost one read each.
 local function OnCharges()
     local list=C.Index.charged
-    for i=1,#list do MarkRecharge(list[i]) end
+    for i=1,#list do
+        local e=list[i]
+        local icon=e.icon
+        if icon and icon.chargeSet then Mark(e,"recharge") end
+    end
 end
-local function OnUses(_,_,spellID,baseSpellID) C.Index.ForSpell(spellID,baseSpellID,MarkCharges) end
+-- SPELL_UPDATE_USES: the count alone (Time "count"), for entries that show
+-- counts; the cooldown stays with SPELL_UPDATE_COOLDOWN.
+local function OnUses(_,_,spellID,baseSpellID) C.Index.ForSpell(spellID,baseSpellID,MarkCount) end
 -- Item cooldowns: items and equipment slots only. Potion and healthstone
 -- entries follow their category payload in SPELL_UPDATE_COOLDOWN.
 local function OnBag()
@@ -486,7 +500,34 @@ local function OnBagContents()
     local list=C.Index.items
     for i=1,#list do MarkItem(list[i]) end
 end
-local function OnUsable() D.usable=true;Schedule() end
+-- Visibility keeps transparent bars in the plan. Only visible icons need
+-- a usability read; Visibility.Paint catches up on the show edge.
+local function UsableTimerDone()
+    usableTimer=nil
+    if not M.active then return end
+    usableNext=GetTime()+USABLE_INTERVAL
+    D.usable=true
+    Schedule()
+end
+local function OnUsable()
+    if D.usable or usableTimer then return end
+    local list=C.Index.usable
+    for i=1,#list do
+        local e=list[i]
+        local bar=C.bars[e.slot]
+        if e.icon and bar and bar.hidden~=true then
+            local now=GetTime()
+            if now>=usableNext or not (_G.C_Timer and _G.C_Timer.NewTimer) then
+                usableNext=now+USABLE_INTERVAL
+                D.usable=true
+                Schedule()
+            else
+                usableTimer=_G.C_Timer.NewTimer(usableNext-now,UsableTimerDone)
+            end
+            return
+        end
+    end
+end
 
 -- SPELL_UPDATE_ICON names the base spell (nil = all).
 local function Retexture(e)
@@ -497,10 +538,14 @@ local function Retexture(e)
     elseif e.src=="s" then
         tex=catalog.SpellTexture(e.base)
     end
-    if tex and tex~=e.texture then e.texture=tex;C.Icons.Texture(e) end
+    if tex and tex~=e.texture then
+        e.texture=tex
+        C.state.entryGen=(C.state.entryGen or 0)+1
+        C.Icons.Texture(e)
+    end
 end
 local function OnIcon(_,_,spellID)
-    if not Public(spellID) or spellID==nil then return EachCooldown(Retexture) end
+    if (issecret and issecret(spellID)) or spellID==nil then return EachCooldown(Retexture) end
     C.Index.ForSpell(spellID,nil,Retexture)
 end
 
@@ -514,9 +559,9 @@ local function RangeEntry(e)
     if e.rangeSpell==curSpell then C.Effects.Range(e,curRange) end
 end
 local function OnRange(_,_,spell,inRange,checksRange)
-    if not Public(spell) or spell==nil then return end
+    if (issecret and issecret(spell)) or spell==nil then return end
     curSpell,curRange=spell,nil
-    if Public(checksRange) and checksRange and Public(inRange) then curRange=inRange end
+    if not (issecret and (issecret(checksRange) or issecret(inRange))) and checksRange then curRange=inRange end
     C.Index.ForSpell(spell,nil,RangeEntry)
 end
 
@@ -528,7 +573,7 @@ end
 -- The target's disposition can flip without a retarget (a duel, a charm):
 -- target aura containers pause while it is friendly. Other units: one compare.
 local function OnFaction(_,_,unit)
-    if Public(unit) and unit=="target" then
+    if not (issecret and issecret(unit)) and unit=="target" then
         local react=C.Auras.TargetReaction
         if react then react() end
     end
@@ -538,7 +583,7 @@ end
 -- Registered only while aura containers or overlays exist.
 local RESTRICTION_OFF=_G.Enum and _G.Enum.AddOnRestrictionState and _G.Enum.AddOnRestrictionState.Inactive or 0
 local function OnRestriction(_,_,_,state)
-    if Public(state) and state==RESTRICTION_OFF and next(C.Auras.pending) then
+    if Public(state) and state==RESTRICTION_OFF and (next(C.Auras.pending) or C.Alerts.pending) then
         local timer=_G.C_Timer
         if timer and timer.After then timer.After(0,C.Auras.FlushPending) else C.Auras.FlushPending() end
     end
@@ -566,7 +611,7 @@ local RESOLVING={SPELLS_CHANGED=true,TRAIT_CONFIG_UPDATED=true,ACTIVE_PLAYER_SPE
 local function OnCatalog(_,event)
     D.catalog=true
     -- Learned state of custom spells and per-spec lists follow these.
-    if RESOLVING[event] then D.resolve=true end
+    if RESOLVING[event] then D.resolve=true;C.Resolve.SpellsChanged() end
     Schedule()
 end
 -- Blizzard's layout callbacks carry no payload here and also fire for its
@@ -599,6 +644,7 @@ local function OnWorld()
     st.inCombat=NS.IsCombatLocked()
     st.soundQuietUntil=GetTime()+QUIET
     if AlertsWanted() then C.Alerts.SyncAuraSounds() end
+    C.Resolve.SpellsChanged()
     D.catalog,D.resolve,D.visibility=true,true,true
     Schedule()
 end
@@ -693,7 +739,7 @@ local function OnCombatStart()
     local st=C.state
     st.inCombat=true
     C.Preview.Simulate(false)
-    C.Effects.CombatChanged()
+    C.Effects.CombatChanged(true)
     C.Visibility.CombatChanged()
     UpdateAssist()
 end
@@ -702,7 +748,7 @@ end
 -- and category seeds combat held back.
 local function OnCombatEnd()
     C.state.inCombat=false
-    C.Effects.CombatChanged()
+    C.Effects.CombatChanged(true)
     C.Visibility.CombatChanged()
     C.Visibility.FlushPending()
     C.Auras.FlushPending()
@@ -870,7 +916,11 @@ Flush=function()
     if D.usable then
         D.usable=false
         local list=C.Index.usable
-        for i=1,#list do C.Effects.Usable(list[i]) end
+        for i=1,#list do
+            local e=list[i]
+            local bar=C.bars[e.slot]
+            if e.icon and bar and bar.hidden~=true then C.Effects.Usable(e) end
+        end
     end
     if D.effects then D.effects=false;C.Effects.CombatChanged() end
     -- Keybind setting changes push cached texts now; resolves wait for the
@@ -899,7 +949,6 @@ Flush=function()
     scheduled=false
     if Pending() or next(C.Layout.dirty) then Schedule() end
 end
-C.Flush=Flush
 
 ------------------------------------------------------------------ lifecycle (spec 8.1)
 function M:Enable()
@@ -907,6 +956,7 @@ function M:Enable()
     st.inCombat=NS.IsCombatLocked()
     st.soundQuietUntil=GetTime()+QUIET
     C.Layout.InvalidateScale()
+    C.Resolve.SpellsChanged()
     first,captureWait,pendingCapture=true,false,nil
     -- Blizzard's layout is read before the takeover touches its bars; on a
     -- fresh login the capture waits for Blizzard's data.
@@ -922,7 +972,6 @@ function M:Refresh()
     local config=self.config
     local all=first
     first=false
-    C.state.config=config
     local text=ReadGlobals(config,all)
     ReadViews(config,all,text)
     DecodeData(config)
@@ -937,6 +986,8 @@ end
 -- The options page's preview request outlives a disable: the page turns it
 -- off when it closes, and a re-enable while it is open applies it again.
 function M:Disable()
+    if usableTimer then usableTimer:Cancel();usableTimer=nil end
+    usableNext=0
     C.Preview.SetMode(nil)
     C.Preview.ReleaseAll()
     StopPoll()
@@ -1005,7 +1056,6 @@ local function Cold()
     if M.active then return end
     local config=S.Config(ID)
     if type(config)~="table" then return end
-    C.state.config=config
     ReadGlobals(config,false)
     ReadViews(config,false,false)
     DecodeData(config)
@@ -1095,8 +1145,15 @@ end
 -- Moves with every Blizzard catalog rebuild; the page's tile memo keys on it.
 function S.CooldownManagerGeneration() return C.Catalog.generation end
 
+-- The page asks several times per repaint: the client is read at most once
+-- per frame (catalog events keep the state current while the module runs).
+local specFrame
 function S.CooldownManagerSpec()
-    if UpdateSpec() and M.active then D.catalog,D.resolve=true,true;Schedule() end
+    local now=GetTime()
+    if specFrame~=now then
+        specFrame=now
+        if UpdateSpec() and M.active then D.catalog,D.resolve=true,true;Schedule() end
+    end
     return C.state.specID,specName,specIcon
 end
 
@@ -1113,6 +1170,7 @@ function S.CooldownManagerPlaySound(value)
     return C.Alerts.Play(value,true)
 end
 
+local offsetScratch={}
 -- Size of a bar's content as the layout will draw it. Cooldown bars count
 -- their shown icons; aura bars reserve every entry within maxIcons, player
 -- entries first and target-row entries (Auras.TargetRow) from a new line,
@@ -1125,7 +1183,7 @@ local function Extent(view,plan)
             local e=list[i]
             if e.icon and (preview or not e.hidden) then n=n+1 end
         end
-        return C.Layout.Offsets(view,n,probe)
+        return C.Layout.Offsets(view,n,offsetScratch)
     end
     local cap=view.maxIcons
     if type(cap)~="number" or cap<=0 then cap=#list end
@@ -1168,12 +1226,8 @@ Convert=function(slot,grow,vertical,anyAnchor)
     local nw,nh=Extent(view,plan)
     local point=C.Layout.Point(view)
     view.grow,view.vertical=oldGrow,oldVertical
-    local x,y=left+w/2-uiW/2,bottom+h/2-uiH/2
-    if point=="TOP" then y=y+nh/2
-    elseif point=="BOTTOM" then y=y-nh/2
-    elseif point=="LEFT" then x=x-nw/2
-    else x=x+nw/2 end
-    values[k.x],values[k.y]=Clamp(k.x,x),Clamp(k.y,y)
+    local dx,dy=K.EdgeOffset(point,nw,nh)
+    values[k.x],values[k.y]=Clamp(k.x,left+w/2-uiW/2+dx),Clamp(k.y,bottom+h/2-uiH/2+dy)
     return values
 end
 function S.CooldownManagerConvertGrow(slot,grow)

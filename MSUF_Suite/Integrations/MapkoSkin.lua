@@ -6,6 +6,20 @@ local _, Suite = ...
 local Skin = { enabled = false }
 Suite.Skin = Skin
 local clients = {}
+local appearanceHooked = false
+
+local function HookOwnedHUD(api)
+    if appearanceHooked or type(hooksecurefunc) ~= "function"
+        or type(api.OnAppearanceChanged) ~= "function" then return end
+    hooksecurefunc(api, "OnAppearanceChanged", function()
+        local controller = Suite.Suite
+        if not controller or not controller.started then return end
+        for _, id in ipairs({ "objectives", "announcements" }) do
+            if controller.states[id] and controller.states[id].active then controller.Apply(id) end
+        end
+    end)
+    appearanceHooked = true
+end
 
 function Skin.IsAvailable()
     local provider = _G.MapkoSkin
@@ -59,6 +73,7 @@ function Skin.Acquire(moduleID)
     if not Skin.EnsureEngine() then return nil end
     local api = _G.MapkoSkin.GetAPI(2, 0)
     if not api or type(api.RegisterAddon) ~= "function" then return nil end
+    HookOwnedHUD(api)
     local client = api:RegisterAddon("MSUF_Suite_" .. moduleID)
     if client then clients[moduleID] = client end
     return client

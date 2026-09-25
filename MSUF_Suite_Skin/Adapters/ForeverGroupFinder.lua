@@ -24,7 +24,7 @@ local PANEL_MODE = {
 local CARD_SPEC = {
     role = "card", activeRole = "navigationActive", radius = 5,
     inset = 0, listItem = true, allowImplicitProtected = true,
-    regions = { "Icon", "Cover", "SelectedTexture", "HighlightTexture" },
+    regions = { "Icon", "Cover", "HighlightTexture" },
 }
 local TAB_SPEC = {
     role = "navigation", activeRole = "navigationActive", radius = 4,
@@ -40,6 +40,12 @@ local WHO_SPEC = {
     inset = 0, listItem = true, allowImplicitProtected = true,
     regions = { "Background", "Selected" },
 }
+local FILTER_SPEC = {
+    role = "button", radius = 4, inset = 1, allowImplicitProtected = true,
+    regions = { "Background" },
+}
+-- The role strip's background has no parentKey, so it is found by its atlas.
+local ROLE_BACKGROUND_ATLAS = "groupfinder-roles-background"
 
 local function Ready()
     return ForeverGroupFinder.active and NS.Client and NS.Client.isForever
@@ -53,11 +59,32 @@ local function Fade(region)
     end
 end
 
+-- Forever 1.60.1.70009 rebuilt the insets: LFGListingInsetTemplate and the
+-- browse inset carry CustomBG plus a common-insideframe Border instead of
+-- InsetFrameTemplate's Bg and NineSlice. Both shapes are faded.
 local function FadeInset(inset)
     if not inset then return end
     Fade(inset.CustomBG)
     Fade(inset.Bg)
+    Fade(inset.Border)
     NS.Cosmetics.FadeNineSlice(inset.NineSlice, OWNER)
+end
+
+-- Stone header and the two scroll lines above a result list.
+local function FadeListChrome(frame)
+    if not frame then return end
+    Fade(frame.Bg)
+    Fade(frame.BarTop)
+    Fade(frame.BarMiddle)
+end
+
+local function FadeRoleBackground(roles)
+    if not roles or type(roles.GetRegions) ~= "function" then return end
+    for _, region in ipairs({ roles:GetRegions() }) do
+        if type(region.GetAtlas) == "function" and region:GetAtlas() == ROLE_BACKGROUND_ATLAS then
+            Fade(region)
+        end
+    end
 end
 
 local function SkinCategoryCards()
@@ -118,14 +145,23 @@ local function SkinLoadedWindow()
     SkinFrame(browse, PANEL_MODE)
     SkinFrame(_G.LFGWhoListFrame, PANEL_MODE)
 
-    Fade(listing.RolesSection and listing.RolesSection.RoleBackground)
+    FadeRoleBackground(listing.RolesSection)
     FadeInset(listing.Inset)
+    Fade(listing.DividerFrame and listing.DividerFrame.Divider)
+    FadeListChrome(listing.ActivityView)
     Fade(browse.BackgroundArt)
+    FadeListChrome(browse)
     FadeInset(browse.Inset)
     local who = _G.LFGWhoListFrame
     if who then
+        Fade(who.BackgroundArt)
         Fade(who.headerBackground)
         Fade(who.insideFrame)
+        FadeListChrome(who)
+        local filter = who.FilterDropdown
+        if filter and NS.Safety.CanCreateRegions(filter, true) then
+            NS.ControlSkin.ApplyButton(filter, OWNER, FILTER_SPEC)
+        end
     end
 
     for _, key in ipairs({ "Tab1", "Tab2", "Tab3" }) do

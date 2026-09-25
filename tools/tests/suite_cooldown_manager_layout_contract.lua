@@ -3,9 +3,12 @@ local root=assert(arg[1],"repository root required")
 -- Visibility.lua, Native.lua, Preview.lua): pixel math, diffed writes,
 -- anchoring chains, MSUF unit frame anchors with cached rectangles, riding
 -- Blizzard's invisible Essential bar, Edit Mode drag previews, aura overlay
--- edges, visibility sources (events for "Always", shared drivers for the
--- rest) with mouse gating, Blizzard viewer takeover and restore, first-run
--- capture and the options canvas. Free bars place their growth edge
+-- edges, aura bar cells and footprints under the one fixed/ordered/split
+-- rule (Layout.FixedAuras, checked against the aura layer's container
+-- placement and the controller's Extent), visibility sources (events for
+-- "Always", shared drivers for the rest) with mouse gating, Blizzard viewer
+-- takeover and restore, first-run capture and the options canvas. Free
+-- bars place their growth edge
 -- relative to UIParent's center; x/y of an attached bar are an offset from
 -- its attach point. Budgets: repeated passes make no widget calls, no
 -- geometry reads and no garbage.
@@ -185,10 +188,12 @@ NS.Suite=S
 local config={}
 for key,rule in pairs(rules) do config[key]=rule.default end
 local M={active=true,config=config,id="cooldownManager"}
-local C={M=M,EMPTY={},state={inCombat=false,preview=false},views={},plans={},bars={},entries={}}
+local C={M=M,EMPTY={},state={inCombat=false,preview=false},views={},plans={},bars={},entries={},
+    Index={usable={}},Effects={},
+    wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local P={NS=NS,Suite=S,CDM=C}
 
-local FILES={"Layout","Visibility","Native","Preview"}
+local FILES={"Const","Layout","Visibility","Native","Preview"}
 local createdBefore=created
 for _,name in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..name..".lua"
@@ -395,7 +400,7 @@ do
         "\nlocal UNITS={\"player\",\"target\"}\n",
         "    if layout~=nil and layout.Cell~=nil and layout.FixedAuras~=nil then fixed,_,split=layout.FixedAuras(view,entries) end\n",
         "    m.fixed,m.split=fixed==true,split==true\n",
-        "        local w,h,sp,per,vertical,grow,align=Metrics(view,m.lk)\n",
+        "        local w,h,sp,per,vertical,grow,align=layout.Metrics(view)\n",
         "        local flow=FLOW[vertical][grow==2 and 2 or 1]\n",
         "        geo.w,geo.h,geo.gp,geo.gc=w,h,max(0,sp),sp\n",
         "        geo.flow,geo.point=flow,flow[4][align] or flow[4][1]\n",
@@ -407,7 +412,6 @@ do
         "                local side=m.split and (u==1 and \"lead\" or \"tail\") or nil\n",
         "                Run(slot,\"aura\",unit,role,m.fixed,view,n,force,(u==2 and not side) and lines or 0,side)\n",
         "    if not fixed then Place(rec,offset,split) end\n    if Build(rec,view,n) then return end\n",
-        "    if layout and layout.Metrics then return layout.Metrics(view) end\n",
     }) do
         assert(text:find(line,1,true),"Auras.lua SyncAura: "..line)
     end
@@ -1558,6 +1562,13 @@ assert(V.Binding({vis=4,hideMounted=true})==V.HIDDEN,"hidden is static")
 assert(V.Binding({vis=2})==Expr(2,false,false) and V.Binding({vis=3,hideVehicle=true})==Expr(3,false,true),"combat and target rules")
 do
     local ON={"ess","uti","def","ext","buf","bar"}
+    local usableEntry={slot="ess",icon={}}
+    local usableRefresh=0
+    C.Index.usable[1]=usableEntry
+    C.Effects.Usable=function(entry)
+        assert(entry==usableEntry,"only the newly visible usable entry is refreshed")
+        usableRefresh=usableRefresh+1
+    end
     local function Listener()
         for _,frame in ipairs(frames) do if frame.scripts.OnEvent then return frame end end
     end
@@ -1595,6 +1606,7 @@ do
     assert(#mouseLog==edges,"no repeated mouse edge")
     Fire("PET_BATTLE_CLOSE")
     AllHidden(false,"after the pet battle")
+    assert(usableRefresh==1,"newly visible usable icon is refreshed once")
     assert(Logged(mouseLog,"ess+") and #mouseLog==edges+6,"the mouse comes back once per bar")
     -- vehicles and override bars, the player's only
     vehicleUI=true

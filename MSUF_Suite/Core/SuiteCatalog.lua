@@ -21,6 +21,9 @@ local moduleAddons = {
     buffReminders = "MSUF_Suite_BuffReminders",
     chat = "MSUF_Suite_Chat",
     cooldownManager = "MSUF_Suite_CooldownManager",
+    objectives = "MSUF_Suite_Modules",
+    announcements = "MSUF_Suite_Modules",
+    afkScreen = "MSUF_Suite_Modules",
 }
 local Build = {}
 NS.CatalogBuild = Build
