@@ -578,15 +578,16 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         P.AttachRuleColors(body, title, id, opts.rules)
     end
     M.TrackRefresh(ctx, function()
-        local ok = P.Available(id)
+        local ok, why = P.Available(id)
         -- The preference remains editable even when this client cannot run the
         -- module. S.Apply still enforces Availability before starting it.
         W.SetControlEnabled(toggle, not P.Combat())
         status:SetText(P.StatusText(id))
         local entry = body._msuf2CollapsibleEntry
         if entry and entry.label then
-            local suffix = not ok and " - Unavailable" or not P.Get(id, "enabled") and " - Off" or ""
-            entry.label:SetText(Tr(title) .. Tr(suffix))
+            local suffix = not ok and (" - " .. Suite.StatusText(why or "Unavailable on this client", Tr))
+                or not P.Get(id, "enabled") and Tr(" - Off") or ""
+            entry.label:SetText(Tr(title) .. suffix)
         end
     end)
     P.AttachSectionReset(ctx, body, title, function()
