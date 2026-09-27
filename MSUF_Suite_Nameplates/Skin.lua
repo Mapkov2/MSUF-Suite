@@ -286,7 +286,9 @@ local function ApplyCVars(self)
         self.context:CVar("nameplateForceShowUnitName", "1")
         LowBits("nameplateSimplifiedTypes", 0, 2)
     end
-    if textMode == 1 then S.RestoreCVar("nameplates", "nameplateInfoDisplay") end
+    if textMode == 1 and (rarityMode == 1 or self.infoTextApplied) then
+        S.RestoreCVar("nameplates", "nameplateInfoDisplay")
+    end
     if textMode ~= 1 or rarityMode ~= 1 then
         -- Blizzard's rarity icon is bit 3 of the same CVar as the two health
         -- text flags. Compose one write so either control preserves the other.
@@ -297,12 +299,18 @@ local function ApplyCVars(self)
             if byte >= 64 and byte <= 127 then
                 local flags = byte - 64
                 local textBits = textMode == 1 and flags % 4 or textMode - 1
-                local rarityBit = rarityMode == 1 and (flags % 8 - flags % 4)
+                local currentRarity = flags % 8 - flags % 4
+                if rarityMode ~= 1 and self.rarityBefore == nil then self.rarityBefore = currentRarity end
+                local rarityBit = rarityMode == 1 and (self.rarityBefore or currentRarity)
                     or (rarityMode == 2 and 4 or 0)
                 LowBits("nameplateInfoDisplay", textBits + rarityBit, 3)
+                if rarityMode == 1 then self.rarityBefore = nil end
             end
         end
+    else
+        self.rarityBefore = nil
     end
+    self.infoTextApplied = textMode ~= 1
 
     local castEnabled = self.config.look == 2 and 1 or self.config.enemyCastEnabled
     if castEnabled == 1 then
@@ -640,6 +648,8 @@ end
 function M:Disable()
     CancelQuestRefresh(self)
     self.active = false
+    self.rarityBefore = nil
+    self.infoTextApplied = nil
     Layout.RestoreAll()
     self.targetUF, self.focusUF = nil, nil
     Textures.RestoreAll()

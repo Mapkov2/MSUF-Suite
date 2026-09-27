@@ -126,6 +126,9 @@ MSUF_NS = {}
 assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
 
 local bar, cast, name, aura = Region(), Region(), Region(), Region()
+local raidFrame, raidIcon = Region(), Region()
+raidIcon:SetAlpha(0.8)
+raidFrame.RaidTargetIcon = raidIcon
 NamePlateSetupOptions = { unitNameAnchorStyle = 1, useClassicCastBar = false, spellNameInsideCastBar = false }
 -- Inspect the mock's anchor plus displacement directly. The production code
 -- must never invoke GetPoint, which raises the reported FrameMeasurement error.
@@ -172,6 +175,7 @@ function cast:CreateTexture() error("do not create cast overlays") end
 function cast:UpdateBarFillTexture() error("do not invoke native cast logic") end
 local uf = {
     isFriend = false, isPlayer = false, name = name, AurasFrame = aura,
+    RaidTargetFrame = raidFrame,
     HealthBarsContainer = { healthBar = bar }, CastBarsContainer = { castBar = cast },
 }
 uf.CreateTexture, uf.CreateFontString = bar.CreateTexture, bar.CreateFontString
@@ -256,6 +260,7 @@ module.context = context
 module.config = {
     look = 1, enemy = true, friendly = true,
     nativeStyle = 2, nativeSize = 3, enemyTextMode = 4,
+    enemyRarityIcon = 1, enemyRaidIcon = true,
     enemyRoleColors = true, enemyMeleeColor = "be301d", enemyCasterColor = "00bfff",
     enemyMinibossColor = "9370db", enemyBossColor = "ff00ff",
     enemyQuestColors = true, enemyQuestColor = "ff7e00", enemyTappedColor = "6e6e6e",
@@ -535,6 +540,19 @@ assert(cast.statusTexture.texture == "native-cast" and cast.Background:GetAlpha(
     "disabling nameplates changed native cast rendering")
 assert(events.NAME_PLATE_UNIT_ADDED and events.NAME_PLATE_UNIT_REMOVED and events.PLAYER_REGEN_ENABLED)
 module.active = true
+module.config.enemyRarityIcon = 3
+module.config.enemyRaidIcon = false
+module:Refresh()
+assert(cvars.nameplateInfoDisplay == string.char(1, 67)
+    and raidIcon:GetAlpha() == 0, "enemy icon switches did not hide native icons")
+module.config.enemyRarityIcon = 2
+module:Refresh()
+assert(cvars.nameplateInfoDisplay == string.char(1, 71), "rarity icon switch lost health text flags")
+module.config.enemyRarityIcon = 1
+module.config.enemyRaidIcon = true
+module:Refresh()
+assert(cvars.nameplateInfoDisplay == string.char(1, 71) and raidIcon:GetAlpha() == 0.8,
+    "native icon switches did not restore their prior state")
 module.config.enemyNameOffsetX, module.config.enemyNameOffsetY = 22, -6
 module.config.enemyCastOffsetX, module.config.enemyCastOffsetY = 0, -10
 module:Refresh()
