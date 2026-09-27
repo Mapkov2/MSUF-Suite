@@ -16,17 +16,15 @@ local Fill, Tint, CombatLogBar, HeaderTop = C.Fill, C.Tint, C.CombatLogBar, C.He
 local OwnBorderedParts = C.OwnBorderedParts
 local DockSelection, ApplySidebar, ApplyCopyButton = C.DockSelection, C.ApplySidebar, C.ApplyCopyButton
 local RGB, Finite = S.RGB, S.Finite
+local TAB_MIN_ALPHA = 0.8
 
-local function Anchor(texture, owner, left, bottom, right, top)
-    texture:ClearAllPoints()
-    texture:SetPoint("TOPLEFT", owner, "TOPLEFT", left, top)
-    texture:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", right, bottom)
+local function IsWhisper(frame)
+    return frame.isTemporary and (frame.chatType == "WHISPER" or frame.chatType == "BN_WHISPER")
 end
 
 local function CreateVisual(frame)
     local visual = { frame = frame }
     visual.panel = Fill(frame, "BACKGROUND")
-    visual.header = Fill(frame, "BORDER")
     visual.headerRule = Fill(frame, "ARTWORK")
     visual.edges = {}
     for i = 1, 4 do visual.edges[i] = Fill(frame, "BORDER") end
@@ -78,9 +76,9 @@ local function OwnAlpha(context, owner, parts, globalPrefix, own)
     end
 end
 
-local function OwnTab(context, tab, name, own)
+local function OwnTab(context, tab, name, own, ownText)
     OwnAlpha(context, tab, TAB_CHROME, name .. "Tab", own)
-    if own then
+    if ownText then
         context:Alpha(tab.Text, 0)
     else
         context:RestoreProperty(tab.Text, "SetAlpha")
@@ -90,8 +88,14 @@ end
 local function SetNativeChrome(self, frame, tab, input, enabled)
     local context, c = self.context, self.config
     local name = frame:GetName()
+    local whisper = IsWhisper(frame)
+    -- Only the primary static title is safe to replace. Blizzard places every
+    -- additional tab in its dynamic dock strip, and whisper titles can be
+    -- secret: keep their native FontString and click behavior untouched.
+    local ownArt = enabled and c.tabPanel
+    local ownText = ownArt and frame.isStaticDocked and not whisper
     OwnBorderedParts(context, frame, enabled)
-    OwnTab(context, tab, name, enabled and c.tabPanel)
+    OwnTab(context, tab, name, ownArt, ownText)
     OwnAlpha(context, input, INPUT_CHROME, name .. "EditBox", enabled and c.inputPanel)
     local quickTexture = CombatLogBar(frame) and _G.CombatLogQuickButtonFrame_CustomTexture
     if quickTexture then
@@ -119,6 +123,25 @@ function C.TabSelected(frame, chat, dock)
 end
 local TabSelected = C.TabSelected
 
+-- Blizzard fades idle tabs to 0.2 alpha. The Suite strip keeps their labels
+-- readable while leaving the native title, target and click behavior intact.
+function C.KeepTabVisible(self, frame, release)
+    local tab = _G[frame:GetName() .. "Tab"]
+    local context = self.context
+    if release or not (self.config.tabPanel and self.config.panelAlpha > 0) then
+        context:RestoreFields(tab)
+        context:RestoreProperty(tab, "SetAlpha")
+        return
+    end
+    context:Field(tab, "noMouseAlpha", TAB_MIN_ALPHA)
+    context:Field(tab, "mouseOverAlpha", 1)
+    local alpha = tab:GetAlpha()
+    if Finite(alpha) and alpha < TAB_MIN_ALPHA then
+        context:Alpha(tab, TAB_MIN_ALPHA)
+    end
+end
+local KeepTabVisible = C.KeepTabVisible
+
 -- The overlay is a child of the tab: it hides with the tab (FCF_Close hides
 -- tabs directly) and follows Blizzard's tab alpha fading.
 local function CreateTabOverlay(visual, tab)
@@ -132,9 +155,11 @@ local function CreateTabOverlay(visual, tab)
     visual.tabLine = Fill(overlay, "ARTWORK")
 end
 
-local function ApplyTabOverlay(self, visual, tab, selected)
+local function ApplyTabOverlay(self, visual, tab, selected, nativeTab)
     local c = self.config
-    if not (c.tabPanel and c.panelAlpha > 0) then
+    -- Blizzard owns temporary whisper titles, including secret player names.
+    -- Keep its native text visible and its tab unobstructed.
+    if nativeTab or not (c.tabPanel and c.panelAlpha > 0) then
         if visual.tabOverlay then visual.tabOverlay:Hide() end
         return
     end
@@ -144,8 +169,7 @@ local function ApplyTabOverlay(self, visual, tab, selected)
     overlay:SetFrameStrata("MEDIUM")
     overlay:SetFrameLevel(tab:GetFrameLevel() + 1)
     local label, nativeLabel = visual.tabLabel, tab.Text
-    local text = nativeLabel:GetText()
-    if text and S.Public(text) then label:SetText(text) end
+    label:SetText(nativeLabel:GetText())
     local path, size, flags = nativeLabel:GetFont()
     if type(path) == "string" and type(size) == "number" then label:SetFont(path, size, flags) end
     label:SetWidth(math.max(20, tab:GetWidth() - 4))
@@ -164,15 +188,28 @@ end
 
 local function ApplyPanel(self, visual, frame, top)
     local c = self.config
-    Anchor(visual.panel, frame, -c.padding, -c.padding, c.padding, top)
+    visual.panel:ClearAllPoints()
+    -- The chat body's backdrop ends at the frame edge. Any texture extending
+    -- into the dock row can cover native dynamic tabs in Retail.
+    visual.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, 0)
+    visual.panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", c.padding, -c.padding)
     Tint(visual.panel, c.panelColor, c.panelAlpha)
     visual.panel:SetShown(c.panelAlpha > 0)
-    visual.header:ClearAllPoints()
-    visual.header:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, top)
-    visual.header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", c.padding, top)
-    visual.header:SetHeight(top)
-    Tint(visual.header, c.panelColor, math.min(100, c.panelAlpha + 12))
-    visual.header:SetShown(c.tabPanel and c.panelAlpha > 0)
+    if frame == _G.ChatFrame1 then
+        local strip = M.dockStrip
+        if not strip then
+            strip = Fill(_G.GENERAL_CHAT_DOCK, "BACKGROUND")
+            M.dockStrip = strip
+        end
+        -- Blizzard anchors the dock three pixels above its primary chat frame.
+        -- Match the Suite body's padded width and its border top so neither
+        -- side leaves a short corner or a gap above the message area.
+        strip:ClearAllPoints()
+        strip:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, top)
+        strip:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", c.padding, 0)
+        Tint(strip, c.panelColor, math.min(100, c.panelAlpha + 12))
+        strip:SetShown(c.tabPanel and c.panelAlpha > 0)
+    end
     visual.headerRule:ClearAllPoints()
     visual.headerRule:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, 0)
     visual.headerRule:SetPoint("TOPRIGHT", frame, "TOPRIGHT", c.padding, 0)
@@ -257,8 +294,11 @@ function C.ApplyWindow(self, frame)
     local top = HeaderTop(c, frame)
     ApplyPanel(self, visual, frame, top)
     local tab, input = _G[frame:GetName() .. "Tab"], frame.editBox
+    local whisper = IsWhisper(frame)
     SetNativeChrome(self, frame, tab, input, c.panelAlpha > 0)
-    ApplyTabOverlay(self, visual, tab, TabSelected(frame, _G.SELECTED_CHAT_FRAME, DockSelection()))
+    ApplyTabOverlay(self, visual, tab, TabSelected(frame, _G.SELECTED_CHAT_FRAME, DockSelection()),
+        not frame.isStaticDocked or whisper)
+    KeepTabVisible(self, frame)
     if frame == _G.ChatFrame1 then ApplySidebar(self, visual, frame) end
     ApplyCopyButton(self, visual, frame, top)
     ApplyInput(self, visual, frame, input)
@@ -267,7 +307,7 @@ end
 
 local function HideVisual(visual)
     visual.panel:Hide()
-    visual.header:Hide()
+    if visual.frame == _G.ChatFrame1 and M.dockStrip then M.dockStrip:Hide() end
     visual.headerRule:Hide()
     for i = 1, 4 do visual.edges[i]:Hide() end
     if visual.tabLine then visual.tabLine:Hide() end
@@ -284,4 +324,5 @@ function C.ReleaseWindow(self, visual)
     HideVisual(visual)
     local frame = visual.frame
     SetNativeChrome(self, frame, _G[frame:GetName() .. "Tab"], frame.editBox, false)
+    KeepTabVisible(self, frame, true)
 end

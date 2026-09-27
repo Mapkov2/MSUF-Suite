@@ -46,6 +46,7 @@ local function Texture()
     function texture:SetAllPoints(owner) self.allPoints = owner end
     function texture:SetShown(shown) self.shown = shown end
     function texture:IsShown() return self.shown end
+    function texture:IsVisible() return self.shown and (not self.owner or self.owner:IsShown()) end
     function texture:SetAlpha(alpha) self.alpha = alpha end
     function texture:GetAlpha() return self.alpha end
     function texture:Show() self.shown = true end
@@ -127,6 +128,7 @@ end
 UIParent = Frame("UIParent")
 ChatFrame1 = Frame("ChatFrame1")
 ChatFrame1.isDocked = true
+ChatFrame1.isStaticDocked = true
 ChatFrame1.Background = Texture()
 ChatFrame1TopLeftTexture = Texture()
 -- The button frame's chrome is a named texture of ChatFrame1.buttonFrame.
@@ -150,7 +152,8 @@ ChatFrameToggleVoiceMuteButton = Frame("ChatFrameToggleVoiceMuteButton")
 BNGetNumFriends = function() return 5, 3 end
 C_FriendList = { GetNumOnlineFriends = function() return 2 end }
 SELECTED_CHAT_FRAME = ChatFrame1
-GENERAL_CHAT_DOCK = { selected = ChatFrame1 }
+GENERAL_CHAT_DOCK = Frame("GeneralDockManager")
+GENERAL_CHAT_DOCK.selected = ChatFrame1
 CHAT_FRAMES = { "ChatFrame1" }
 -- One built-in window, so later windows arrive through CHAT_FRAMES like
 -- Blizzard's temporary windows. NUM_CHAT_WINDOWS is only a deprecation alias.
@@ -159,16 +162,18 @@ Constants = { ChatFrameConstants = { MaxChatWindows = 1 } }
 GameTooltip = Frame("GameTooltip")
 GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
-local temporaryHook, selectHook, newWindowHook
+local temporaryHook, selectHook, newWindowHook, tabAlphaHook
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
 FCFDock_SelectWindow = function() end
+FCFTab_UpdateAlpha = function() end
 hooksecurefunc = function(name, callback)
     assert(name == "FCF_OpenTemporaryWindow" or name == "FCF_OpenNewWindow"
-        or name == "FCFDock_SelectWindow",
+        or name == "FCFDock_SelectWindow" or name == "FCFTab_UpdateAlpha",
         "chat touched the message path")
     if name == "FCF_OpenTemporaryWindow" then temporaryHook = callback
     elseif name == "FCF_OpenNewWindow" then newWindowHook = callback
+    elseif name == "FCFTab_UpdateAlpha" then tabAlphaHook = callback
     else selectHook = callback end
 end
 
@@ -256,24 +261,49 @@ module.config = {
     copyMessages = false,
 }
 module:Enable()
+-- Regression: the dock texture must join the body and border exactly. The
+-- dock itself is offset above ChatFrame1, so matching its own bounds leaves
+-- the short right corner and the gap seen in the live client.
+local function AssertJoinedDockShell()
+    local shell = module.visuals[ChatFrame1]
+    local strip = module.dockStrip
+    local bodyLeft, bodyRight = shell.panel.points[1], shell.panel.points[2]
+    local edgeLeft, edgeRight = shell.edges[1].points[1], shell.edges[1].points[2]
+    local stripLeft, stripRight = strip.points[1], strip.points[2]
+    assert(strip and strip.owner == GENERAL_CHAT_DOCK and strip:IsVisible()
+        and strip.color[4] > 0,
+        "Suite dock background disappears when the primary chat frame is hidden")
+    assert(stripLeft[1] == "TOPLEFT" and stripLeft[2] == ChatFrame1 and stripLeft[3] == "TOPLEFT"
+        and stripRight[1] == "BOTTOMRIGHT" and stripRight[2] == ChatFrame1
+        and stripRight[3] == "TOPRIGHT" and stripLeft[4] == bodyLeft[4]
+        and stripLeft[4] == edgeLeft[4] and stripRight[4] == bodyRight[4]
+        and stripRight[4] == edgeRight[4] and stripLeft[5] == edgeLeft[5]
+        and stripRight[5] == bodyLeft[5],
+        "Suite tab strip leaves a gap or short corner beside the chat body")
+end
 assert(ChatFrame1.font[3] == "SLUG" and ChatFrame1.shadowColor[4] == 0,
     "default chat messages did not use Slug")
 assert(ctx.callbacks.UPDATE_CHAT_WINDOWS and ctx.callbacks.UPDATE_FLOATING_CHAT_WINDOWS
-    and temporaryHook and newWindowHook and selectHook)
+    and temporaryHook and newWindowHook and selectHook and tabAlphaHook)
 assert(not ctx.callbacks.CHAT_MSG_SAY and not ctx.callbacks.CHAT_MSG_CHANNEL)
 assert(ChatFrame1.font[2] == 15)
 assert(module.visuals[ChatFrame1].panel.shown and module.visuals[ChatFrame1].tabLine.shown)
+assert(module.visuals[ChatFrame1].panel.owner == ChatFrame1
+    and module.visuals[ChatFrame1].panel.points[1][5] == 0,
+    "Suite chat body did not stay on the chat frame below its tabs")
+AssertJoinedDockShell()
+assert(ChatFrame1Tab.noMouseAlpha == 0.8 and ChatFrame1Tab:GetAlpha() >= 0.8,
+    "ordinary chat tabs were left unreadably dim")
 assert(module.visuals[ChatFrame1].input.shown)
-assert(module.visuals[ChatFrame1].sidebar.shown and module.visuals[ChatFrame1].header.shown
+assert(module.visuals[ChatFrame1].sidebar.shown
     and module.visuals[ChatFrame1].headerRule.shown)
 local sidebar = module.visuals[ChatFrame1]
 assert(sidebar.sidebarFrame.shown and #sidebar.buttons == 5, "MSUF sidebar did not replace the native buttons")
 assert(sidebar.sidebarFrame.strata == "MEDIUM", "sidebar icons render behind native chat")
 assert(sidebar.sidebar.owner == sidebar.sidebarFrame and sidebar.sidebar.allPoints == sidebar.sidebarFrame,
     "sidebar background disappears when General is not the active tab")
-assert(sidebar.header.points[1][1] == "TOPLEFT" and sidebar.header.points[2][1] == "TOPRIGHT"
-    and sidebar.header.height == 24,
-    "default chat header is not a straight full-width strip")
+assert(private.Chat.HeaderTop(module.config, ChatFrame1) == 24,
+    "default chat header height changed")
 assert(not ChatFrame1.Background.shown and not ChatFrame1TopLeftTexture.shown,
     "Blizzard frame chrome covers the MSUF panel")
 assert(not ChatFrame1ButtonFrameBackground.shown,
@@ -288,7 +318,7 @@ assert(sidebar.input.points[1][2] == ChatFrame1 and sidebar.input.points[1][3] =
     and sidebar.inputEdges[1].points[1][2] == sidebar.input,
     "input backdrop and border do not align with the chat panel width")
 -- The label overlay is a child of the tab: FCF_Close hides the tab itself
--- and Blizzard fades the tab's alpha (0.2 / 0.4), both of which the child follows.
+-- and a tab alpha change also affects the child until the native update hook runs.
 ChatFrame1Tab:SetAlpha(0.4)
 assert(sidebar.tabLabel.value == "General" and sidebar.tabOverlay.parent == ChatFrame1Tab
     and sidebar.tabOverlay.alpha == 1 and sidebar.tabOverlay.shown,
@@ -447,8 +477,12 @@ assert(ChatFrame1.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1.font[2] == 16 a
     and ChatFrame1.shadowColor[4] == 0, "chat text ownership did not restore Blizzard's font and size")
 ChatFrame2 = Frame("ChatFrame2")
 ChatFrame2.isDocked = true
+-- Synthetic second static tab keeps the overlay selection contract covered;
+-- Retail's additional tabs use the dynamic path exercised by ChatFrame3.
+ChatFrame2.isStaticDocked = true
 ChatFrame2.editBox = Frame("ChatFrame2EditBox")
 ChatFrame2Tab = Frame("ChatFrame2Tab")
+ChatFrame2Tab.Left = Texture()
 ChatFrame2Tab.Text = ChatFrame2Tab:CreateFontString()
 ChatFrame2Tab.Text:SetText("Combat Log")
 CHAT_FRAMES[2] = "ChatFrame2"
@@ -456,17 +490,39 @@ temporaryHook()
 assert(module.visuals[ChatFrame2], "new Blizzard chat window was not styled")
 assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log",
     "Combat Log did not receive a readable MSUF tab label")
+-- Retail whisper targets can be secret. The temporary whisper tab must keep
+-- Blizzard's native title and avoid the Suite overlay altogether.
+ChatFrame2.chatType = "WHISPER"
+ChatFrame2.isTemporary = true
+ChatFrame2Tab.Text:SetText("secret")
+temporaryHook()
+assert(ChatFrame2Tab.Text.value == "secret" and ChatFrame2Tab.Text.alpha == 1
+    and ChatFrame2Tab.Left.alpha == 0
+    and not module.visuals[ChatFrame2].tabOverlay.shown,
+    "a secret whisper target lost Blizzard's native title")
+ChatFrame2.chatType = "BN_WHISPER"
+temporaryHook()
+assert(ChatFrame2Tab.Text.alpha == 1 and not module.visuals[ChatFrame2].tabOverlay.shown,
+    "a Battle.net whisper lost Blizzard's visible native tab")
+ChatFrame2.chatType = nil
+ChatFrame2.isTemporary = nil
+ChatFrame2Tab.Text:SetText("Combat Log")
+temporaryHook()
+assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log"
+    and ChatFrame2Tab.Text.alpha == 0 and ChatFrame2Tab.Left.alpha == 0
+    and module.visuals[ChatFrame2].tabOverlay.shown,
+    "a reused whisper tab kept its previous title")
 CombatLogQuickButtonFrame_Custom = Frame("CombatLogQuickButtonFrame_Custom")
 CombatLogQuickButtonFrame_Custom:SetHeight(24)
 CombatLogQuickButtonFrame_CustomTexture = Texture()
 ChatFrame2.CombatLogQuickButtonFrame = CombatLogQuickButtonFrame_Custom
 ctx.callbacks.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_CombatLog")
-assert(module.visuals[ChatFrame2].header.height == 51
+assert(private.Chat.HeaderTop(module.config, ChatFrame2) == 51
     and CombatLogQuickButtonFrame_CustomTexture.alpha == 0,
     "Combat Log filter row did not join the MSUF header")
 CombatLogQuickButtonFrame_Custom:SetHeight(math.huge)
 module:Refresh()
-assert(module.visuals[ChatFrame2].header.height == 24, "an unreadable Combat Log row height reached the chat header")
+assert(private.Chat.HeaderTop(module.config, ChatFrame2) == 24, "an unreadable Combat Log row height reached the chat header")
 CombatLogQuickButtonFrame_Custom:SetHeight(24)
 module:Refresh()
 GENERAL_CHAT_DOCK.selected = ChatFrame2
@@ -505,22 +561,32 @@ ChatFrame3 = Frame("ChatFrame3")
 ChatFrame3.isDocked = true
 ChatFrame3.editBox = Frame("ChatFrame3EditBox")
 ChatFrame3Tab = Frame("ChatFrame3Tab")
+ChatFrame3Tab.Left = Texture()
 ChatFrame3Tab.Text = ChatFrame3Tab:CreateFontString()
 ChatFrame3Tab.Text:SetText("Loot")
 CHAT_FRAMES[3] = "ChatFrame3"
 GENERAL_CHAT_DOCK.selected = ChatFrame3
 newWindowHook()
 assert(module.visuals[ChatFrame3] and module.visuals[ChatFrame3].panel.shown
-    and module.visuals[ChatFrame3].header.height == 24
-    and module.visuals[ChatFrame3].tabLabel.value == "Loot"
+    and private.Chat.HeaderTop(module.config, ChatFrame3) == 24
+    and ChatFrame3Tab.Text.value == "Loot" and ChatFrame3Tab.Text:GetAlpha() == 1
+    and ChatFrame3Tab.Left.alpha == 0 and not module.visuals[ChatFrame3].tabOverlay
     and sidebar.sidebarFrame.points[1][2] == ChatFrame3,
-    "a newly opened chat tab did not inherit the General styling")
+    "a newly opened dynamic chat tab lost Blizzard's native title")
 -- A chat window that fails to style is reported; the later windows are styled.
 assert(#reports == 0, "chat styling raised: " .. tostring(reports[1]))
 ChatFrame4 = Frame("ChatFrame4")
+ChatFrame4.isDocked = true
+ChatFrame4.isTemporary = true
+ChatFrame4.chatType = "WHISPER"
 ChatFrame4.editBox = Frame("ChatFrame4EditBox")
 ChatFrame4Tab = Frame("ChatFrame4Tab")
+ChatFrame4Tab.Left = Texture()
 ChatFrame4Tab.Text = ChatFrame4Tab:CreateFontString()
+ChatFrame4Tab.Text:SetText("secret")
+ChatFrame4Tab.noMouseAlpha = 0.2
+ChatFrame4Tab.mouseOverAlpha = 0.6
+ChatFrame4Tab:SetAlpha(0.2)
 CHAT_FRAMES[4] = "ChatFrame4"
 local getName = ChatFrame2.GetName
 ChatFrame2.GetName = function() error("another addon replaced a chat frame part") end
@@ -528,9 +594,59 @@ temporaryHook()
 ChatFrame2.GetName = getName
 assert(#reports == 1 and module.visuals[ChatFrame4] and module.visuals[ChatFrame4].panel.shown,
     "a chat window that failed to style stopped the later windows")
+assert(ChatFrame4Tab.Text:GetAlpha() == 1 and ChatFrame4Tab.Left.alpha == 0
+    and not module.visuals[ChatFrame4].tabOverlay,
+    "a new whisper window hid its native tab")
+assert(ChatFrame4Tab.noMouseAlpha == 0.8 and ChatFrame4Tab.mouseOverAlpha == 1
+    and ChatFrame4Tab:GetAlpha() == 0.8,
+    "an idle whisper tab remained too dark to find")
+-- Regression: selecting a new whisper hides the primary chat frame. The Suite
+-- body must follow the selected window; the dock strip must remain on the
+-- Blizzard dock; and no replacement overlay may intercept its native tab.
+GENERAL_CHAT_DOCK.selected = ChatFrame4
+SELECTED_CHAT_FRAME = ChatFrame4
+ChatFrame1:Hide()
+selectHook()
+assert(not sidebar.panel:IsVisible() and module.visuals[ChatFrame4].panel:IsVisible()
+    and module.visuals[ChatFrame4].panel.owner == ChatFrame4
+    and module.visuals[ChatFrame4].panel.color[4] > 0
+    and sidebar.sidebarFrame.points[1][2] == ChatFrame4,
+    "selecting a whisper removed the Suite chat body or sidebar")
+AssertJoinedDockShell()
+assert(ChatFrame4Tab:IsMouseEnabled() and ChatFrame4Tab.Text:GetAlpha() == 1
+    and ChatFrame4Tab:GetAlpha() >= 0.8 and not module.visuals[ChatFrame4].tabOverlay,
+    "selected whisper tab is hidden, dimmed or covered")
+ChatFrame4Tab:Click("LeftButton")
+assert(ChatFrame4Tab.clicks == 1, "selected whisper tab cannot be clicked")
+-- The corner must remain joined after the user changes Suite padding.
+module.config.padding = 9
+module:Refresh()
+AssertJoinedDockShell()
+assert(module.dockStrip.points[1][4] == -9 and module.dockStrip.points[2][4] == 9,
+    "Suite dock strip did not follow the changed padding")
+module.config.padding = 4
+module:Refresh()
+AssertJoinedDockShell()
+ChatFrame4.chatType = "BN_WHISPER"
+temporaryHook()
+assert(ChatFrame4Tab.Text:GetAlpha() == 1 and ChatFrame4Tab.Left.alpha == 0
+    and not module.visuals[ChatFrame4].tabOverlay,
+    "Battle.net whisper title was hidden by Suite tab styling")
+ChatFrame4.chatType = "WHISPER"
+-- Blizzard resets these fields on dock changes. Its post-hook must restore
+-- the Suite minimum without affecting the title or message path.
+ChatFrame4Tab.noMouseAlpha = 0.2
+ChatFrame4Tab.mouseOverAlpha = 0.6
+ChatFrame4Tab:SetAlpha(0.2)
+tabAlphaHook(ChatFrame4)
+assert(ChatFrame4Tab.noMouseAlpha == 0.8 and ChatFrame4Tab:GetAlpha() == 0.8,
+    "Blizzard's tab update dimmed the whisper again")
 module:Disable()
+assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
+    and ChatFrame4Tab:GetAlpha() == 0.2,
+    "disabling Chat did not restore Blizzard's whisper-tab fading")
 assert(not module.visuals[ChatFrame1].panel.shown and not module.visuals[ChatFrame2].panel.shown
-    and not module.visuals[ChatFrame3].panel.shown)
+    and not module.visuals[ChatFrame3].panel.shown and not module.dockStrip.shown)
 assert(not module.visuals[ChatFrame1].input.shown)
 assert(not module.visuals[ChatFrame1].sidebar.shown)
 assert(not sidebar.sidebarFrame.shown and QuickJoinToastButton.alpha == 1 and QuickJoinToastButton.mouse)
@@ -567,4 +683,4 @@ for i = 2, #CHAT_FILES do
     assert(not guarded, file .. " guards " .. tostring(guarded) .. " as if a client lacked it")
     assert(file == "Controller.lua" or not source:find("S.Install(", 1, true), file .. " installs the module")
 end
-print("Chat styling, native font restore and event-only refresh passed")
+print("Chat styling, whisper tab and joined dock regression, native font restore and event-only refresh passed")

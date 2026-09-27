@@ -11,6 +11,7 @@ local FRIEND_EVENTS = {
     "BN_FRIEND_ACCOUNT_OFFLINE", "BN_CONNECTED", "BN_DISCONNECTED",
 }
 local ApplyWindow, ReleaseWindow, ColorTab, TabSelected = C.ApplyWindow, C.ReleaseWindow, C.ColorTab, C.TabSelected
+local KeepTabVisible = C.KeepTabVisible
 local PlaceSidebar, SyncNativeControls, UpdateFriendsCount = C.PlaceSidebar, C.SyncNativeControls, C.UpdateFriendsCount
 local HideCopyDialog, DockSelection = C.HideCopyDialog, C.DockSelection
 local Dispatch = S.Dispatch
@@ -90,6 +91,10 @@ local function DockSelectionChanged()
     if M.active then RefreshSelection(M) end
 end
 
+local function TabAlphaUpdated(frame)
+    if M.active and frame then KeepTabVisible(M, frame) end
+end
+
 local function NewWindowOpened()
     if not M.active then return end
     if NS.IsCombatLocked() then
@@ -118,6 +123,7 @@ function M:Enable()
     Hook(self, "hookedTemporary", "FCF_OpenTemporaryWindow", TemporaryWindowOpened)
     Hook(self, "hookedSelect", "FCFDock_SelectWindow", DockSelectionChanged)
     Hook(self, "hookedNewWindow", "FCF_OpenNewWindow", NewWindowOpened)
+    Hook(self, "hookedTabAlpha", "FCFTab_UpdateAlpha", TabAlphaUpdated)
     ApplyAll(self)
 end
 
