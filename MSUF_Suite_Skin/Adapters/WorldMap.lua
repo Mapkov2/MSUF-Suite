@@ -19,9 +19,10 @@ local WorldMapSkin = {
 }
 NS.WorldMapSkin = WorldMapSkin
 
-local Field = NS.Safety.Field
+local Safety = NS.Safety
+local Field = Safety.Field
+local Dispatch = Safety.Dispatch
 local Kit = NS.AdapterKit
-local Path = Kit.Path
 local Fade = Kit.Fade
 local FadeFields = Kit.FadeFields
 local Attach = Kit.Attach
@@ -33,6 +34,7 @@ local DISPLAY_MODE_CALLBACK = "QuestLog.SetDisplayMode"
 local frameStates = setmetatable({}, { __mode = "k" })
 local activeFrames = setmetatable({}, { __mode = "k" })
 local callbacksRegistered = false
+local questLogUpdateHooked = false
 
 local SHELL_SPEC = { role = "shell", radius = 8, inset = 0 }
 local TITLE_SPEC = { role = "navigation", radius = 6, inset = 0 }
@@ -76,12 +78,39 @@ local QUEST_LOG_MODE = {
     allowImplicitProtected = true,
 }
 
+-- Quest log rows come from QuestScrollFrame's pools, which only
+-- QuestLogQuests_Update fills (Blizzard_UIPanels_Game QuestMapFrame.lua,
+-- Retail and Forever). The rows sit four levels below the quest log, so a
+-- row keeps QUEST_LOG_MODE's depth with two levels of its own.
+local QUEST_ROW_POOLS = {
+    "titleFramePool", "objectiveFramePool", "headerFramePool",
+    "campaignHeaderFramePool", "campaignHeaderMinimalFramePool",
+    "covenantCallingsHeaderFramePool",
+}
+local QUEST_ROW_LIMIT = 256
+local QUEST_ROW_MODE = {
+    role = "panel",
+    rootSurface = false,
+    childSurfaces = false,
+    maxDepth = 2,
+    maxNodes = 60,
+    allowImplicitProtected = true,
+}
+
 local BORDER_FRAME_ART = { "Border", "TopDetail", "Shadow" }
 local QUEST_TABS = { "QuestsTab", "EventsTab", "MapLegendTab" }
 local NAV_BAR_INSET_BORDERS = {
     "InsetBorderBottomLeft", "InsetBorderBottomRight", "InsetBorderBottom",
     "InsetBorderLeft", "InsetBorderRight",
 }
+local WINDOW_BORDER_ART = { "Bg", "TopTileStreaks", "InsetBorderTop", "Underlay" }
+local QUEST_TAB_ART = { "Background", "SelectedTexture" }
+local SCROLL_ART = { "Background", "Edge" }
+local STORY_ART = { "Background", "Divider" }
+local DETAILS_ART = { "Bg", "SealMaterialBG" }
+local REWARDS_ART = { "Background", "Bottom", "Top" }
+local CAMPAIGN_SCROLL_ART = { "TopShadow", "BottomShadow" }
+local EVENTS_SCROLL_ART = { "Background" }
 
 local function SkinNavButton(state, button, active)
     -- The active flag is copied by ControlSkin before this shared spec changes.
@@ -91,7 +120,7 @@ local function SkinNavButton(state, button, active)
     -- NavButtonTemplate's tiled normal texture is anonymous and otherwise
     -- remains above the replacement material. Arrow and menu glyph textures
     -- are separate and remain semantic.
-    Fade(state, NS.Safety.Call(button, "GetNormalTexture"))
+    Fade(state, Safety.Call(button, "GetNormalTexture"))
     SkinControl(state, Field(button, "MenuArrowButton"), MENU_ARROW_SPEC)
 end
 
@@ -114,7 +143,7 @@ local function SkinNavBar(state, navBar)
     local overflow = Field(navBar, "overflow") or Field(navBar, "overflowButton")
     if overflow then
         SkinControl(state, overflow, OVERFLOW_SPEC)
-        Fade(state, NS.Safety.Call(overflow, "GetNormalTexture"))
+        Fade(state, Safety.Call(overflow, "GetNormalTexture"))
     end
 end
 
@@ -145,15 +174,53 @@ local function SkinQuestTabs(state, questLog)
         if tab then
             local active = displayMode ~= nil and Field(tab, "displayMode") == displayMode
             Attach(state, tab, active and ACTIVE_TAB_SPEC or TAB_SPEC)
-            FadeFields(state, tab, { "Background", "SelectedTexture" })
+            FadeFields(state, tab, QUEST_TAB_ART)
         end
+    end
+end
+
+-- Row visitors: callback(row, state, generation) for Kit.ForEachActive.
+-- questRows maps each pooled row to the skin generation of its node pass.
+-- Only rows within the quest log pass's depth took that pass; the caller
+-- skips marking when its node limit cut the pass short.
+local function MarkQuestRow(row, state, generation)
+    if Kit.IsDescendantOf(row, state.questLog, QUEST_LOG_MODE.maxDepth) then
+        state.questRows[row] = generation
+    end
+end
+
+-- QuestLogQuests_Update repaints every reused title in Blizzard's quest
+-- colors, so a row with its pass only has its gold text tracked again.
+local function SkinQuestRow(row, state, generation)
+    if state.questRows[row] == generation then
+        NS.GenericWindows.RefreshDescendant(row, state.owner, QUEST_ROW_MODE)
+        return
+    end
+    state.questRows[row] = generation
+    NS.GenericWindows.ApplyDescendant(row, state.owner, QUEST_ROW_MODE)
+end
+
+-- Bounded and allocation-free: Blizzard's pools enumerate their active rows.
+local function VisitQuestRows(state, questLog, visit)
+    local scroll = Field(Field(questLog, "QuestsFrame"), "ScrollFrame")
+    if not scroll then return end
+    local generation = Kit.SkinGeneration()
+    local budget = QUEST_ROW_LIMIT
+    for index = 1, #QUEST_ROW_POOLS do
+        if budget <= 0 then return end
+        budget = budget - Kit.ForEachActive(Field(scroll, QUEST_ROW_POOLS[index]), budget,
+            visit, state, generation)
     end
 end
 
 local function SkinQuestLog(state, questLog)
     if not questLog then return end
 
-    NS.GenericWindows.ApplyFrame(questLog, state.owner, QUEST_LOG_MODE)
+    local applied, _, metrics = NS.GenericWindows.ApplyFrame(questLog, state.owner, QUEST_LOG_MODE)
+    if applied and metrics and not metrics.nodeLimited then
+        state.questLog = questLog
+        VisitQuestRows(state, questLog, MarkQuestRow)
+    end
     Attach(state, questLog, QUEST_LOG_SPEC)
     Fade(state, Field(questLog, "VerticalSeparator"))
     SkinQuestTabs(state, questLog)
@@ -162,8 +229,8 @@ local function SkinQuestLog(state, questLog)
     local scroll = Field(quests, "ScrollFrame")
     local details = Field(quests, "DetailsFrame")
     local campaign = Field(quests, "CampaignOverview")
-    local story = Path(scroll, "Contents", "StoryHeader")
-    local rewards = Path(details, "RewardsFrameContainer", "RewardsFrame")
+    local story = Kit.Path(scroll, "Contents", "StoryHeader")
+    local rewards = Kit.Path(details, "RewardsFrameContainer", "RewardsFrame")
     local events = Field(questLog, "EventsFrame")
     local legend = Field(questLog, "MapLegend")
 
@@ -174,32 +241,32 @@ local function SkinQuestLog(state, questLog)
     Attach(state, story, STORY_SPEC)
     Attach(state, rewards, REWARDS_SPEC)
 
-    FadeFields(state, scroll, { "Background", "Edge" })
+    FadeFields(state, scroll, SCROLL_ART)
     FadeFields(state, Field(scroll, "BorderFrame"), BORDER_FRAME_ART)
-    FadeFields(state, story, { "Background", "Divider" })
-    FadeFields(state, details, { "Bg", "SealMaterialBG" })
+    FadeFields(state, story, STORY_ART)
+    FadeFields(state, details, DETAILS_ART)
     FadeFields(state, Field(details, "BorderFrame"), BORDER_FRAME_ART)
     Kit.FadeNativeTextures(state, Field(details, "BackFrame"))
-    FadeFields(state, rewards, { "Background", "Bottom", "Top" })
+    FadeFields(state, rewards, REWARDS_ART)
     Fade(state, Field(campaign, "BG"))
     FadeFields(state, Field(campaign, "BorderFrame"), BORDER_FRAME_ART)
-    FadeFields(state, Field(campaign, "ScrollFrame"), { "TopShadow", "BottomShadow" })
-    FadeFields(state, Field(events, "ScrollBox"), { "Background" })
+    FadeFields(state, Field(campaign, "ScrollFrame"), CAMPAIGN_SCROLL_ART)
+    FadeFields(state, Field(events, "ScrollBox"), EVENTS_SCROLL_ART)
     FadeFields(state, Field(events, "BorderFrame"), BORDER_FRAME_ART)
     Kit.FadeNativeTextures(state, events)
-    FadeFields(state, Field(legend, "ScrollFrame"), { "Background", "Edge" })
+    FadeFields(state, Field(legend, "ScrollFrame"), SCROLL_ART)
     FadeFields(state, Field(legend, "BorderFrame"), BORDER_FRAME_ART)
-    Fade(state, Path(questLog, "QuestSessionManagement", "BG"))
+    Fade(state, Kit.Path(questLog, "QuestSessionManagement", "BG"))
 end
 
 local function SkinFrame(frame, state)
     if not frame or NS.IsCombatLocked() then return false, "combat" end
-    if not NS.Safety.CanDecorate(frame, true) then return false, "protected-frame" end
+    if not Safety.CanDecorate(frame, true) then return false, "protected-frame" end
     if not Attach(state, frame, SHELL_SPEC) then return false, "shell-failed" end
     Attach(state, Field(frame, "TitleCanvasSpacerFrame"), TITLE_SPEC)
 
     local border = Field(frame, "BorderFrame")
-    FadeFields(state, border, { "Bg", "TopTileStreaks", "InsetBorderTop", "Underlay" })
+    FadeFields(state, border, WINDOW_BORDER_ART)
     Kit.FadeNineSlice(state, Field(border, "NineSlice"))
 
     SkinControl(state, Field(border, "CloseButton"), WINDOW_BUTTON_SPEC)
@@ -210,14 +277,43 @@ local function SkinFrame(frame, state)
     SkinNavBar(state, Field(frame, "NavBar"))
     SkinOverlayControls(state, frame)
     SkinQuestLog(state, Field(frame, "QuestLog"))
+    state.generation = Kit.SkinGeneration()
     return true
 end
 
+-- WorldMapMixin:OnShow sets the player's map first, which can rebuild the
+-- navigation bar. The rest of the window keeps what this skin generation
+-- applied: the quest log's display-mode callback covers its panels, and
+-- QuestLogQuests_Update its pooled rows. Rows Blizzard acquired in combat,
+-- when that hook stays quiet, take their pass now.
 function WorldMapSkin:OnWorldMapShown()
     if NS.IsCombatLocked() then return end
     for frame, state in pairs(activeFrames) do
-        if state.active then SkinFrame(frame, state) end
+        if state.active then
+            if state.generation == Kit.SkinGeneration() then
+                SkinNavBar(state, Field(frame, "NavBar"))
+                VisitQuestRows(state, Field(frame, "QuestLog"), SkinQuestRow)
+            else
+                SkinFrame(frame, state)
+            end
+        end
     end
+end
+
+-- QuestLogQuests_Update releases and refills every row pool on opening and
+-- on each quest log change; rows its pools created since take their pass.
+local function OnQuestLogUpdated()
+    if NS.IsCombatLocked() then return end
+    for frame, state in pairs(activeFrames) do
+        if state.active and state.generation ~= nil then
+            VisitQuestRows(state, Field(frame, "QuestLog"), SkinQuestRow)
+        end
+    end
+end
+
+-- Runs inside Blizzard's update, so the pass is its own error boundary.
+local function OnQuestLogUpdatedHook()
+    Dispatch(OnQuestLogUpdated)
 end
 
 function WorldMapSkin:OnQuestLogModeChanged()
@@ -229,18 +325,16 @@ end
 
 local function RegisterCallbacks()
     if callbacksRegistered then return end
-    callbacksRegistered = Kit.RegisterEventCallback(SHOW_CALLBACK,
-        WorldMapSkin.OnWorldMapShown, WorldMapSkin)
-    if callbacksRegistered then
-        Kit.RegisterEventCallback(DISPLAY_MODE_CALLBACK, WorldMapSkin.OnQuestLogModeChanged, WorldMapSkin)
-    end
+    EventRegistry:RegisterCallback(SHOW_CALLBACK, WorldMapSkin.OnWorldMapShown, WorldMapSkin)
+    EventRegistry:RegisterCallback(DISPLAY_MODE_CALLBACK, WorldMapSkin.OnQuestLogModeChanged, WorldMapSkin)
+    callbacksRegistered = true
 end
 
 local function UnregisterCallbacksIfIdle()
     if not callbacksRegistered or next(activeFrames) ~= nil then return end
     callbacksRegistered = false
-    Kit.UnregisterEventCallback(SHOW_CALLBACK, WorldMapSkin)
-    Kit.UnregisterEventCallback(DISPLAY_MODE_CALLBACK, WorldMapSkin)
+    EventRegistry:UnregisterCallback(SHOW_CALLBACK, WorldMapSkin)
+    EventRegistry:UnregisterCallback(DISPLAY_MODE_CALLBACK, WorldMapSkin)
 end
 
 function WorldMapSkin.Apply(frame, owner)
@@ -251,7 +345,7 @@ function WorldMapSkin.Apply(frame, owner)
 
     local state = frameStates[frame]
     if not state then
-        state = { surfaces = Kit.WeakSet() }
+        state = { surfaces = Kit.WeakSet(), questRows = Kit.WeakSet() }
         frameStates[frame] = state
     end
     state.owner = owner
@@ -265,7 +359,10 @@ function WorldMapSkin.Apply(frame, owner)
         return false, reason
     end
     RegisterCallbacks()
-    if NS.QuestText then NS.QuestText.Activate(frame, owner) end
+    if not questLogUpdateHooked then
+        questLogUpdateHooked = Kit.HookGlobal("QuestLogQuests_Update", OnQuestLogUpdatedHook)
+    end
+    NS.QuestText.Activate(frame, owner)
     return true
 end
 
@@ -278,13 +375,15 @@ function WorldMapSkin.Disable(frame, owner)
     local state = frameStates[frame]
     if state then
         state.active = false
+        state.generation = nil
+        state.questRows = Kit.WeakSet()
         activeFrames[frame] = nil
     end
 
     NS.GenericWindows.Disable(owner)
 
     if state then
-        if NS.QuestText then NS.QuestText.Deactivate(frame, owner) end
+        NS.QuestText.Deactivate(frame, owner)
         Kit.HideSurfaces(state)
     end
     UnregisterCallbacksIfIdle()

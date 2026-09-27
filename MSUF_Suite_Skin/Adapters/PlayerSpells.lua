@@ -30,12 +30,6 @@ local DROPDOWN_SPEC = { role = "button", shape = "round", radius = 6, inset = 2 
 local WINDOW_BUTTON_SPEC = { role = "button", shape = "round", radius = 6, inset = 2 }
 local PREVIOUS_PAGE_SPEC = { role = "button", shape = "round", radius = 6, inset = 3 }
 local NEXT_PAGE_SPEC = { role = "buttonPrimary", shape = "round", radius = 6, inset = 3 }
-local SEARCH_SPEC = {
-    role = "input",
-    useControlShape = true,
-    pillHeight = 28,
-    inset = 1,
-}
 local TAB_SPEC = {
     role = "navigation",
     activeRole = "navigationActive",
@@ -108,8 +102,7 @@ local function GetState(frame, owner)
             surfaces = Kit.WeakSet(),
             glyphs = Kit.WeakSet(),
             buttonGlyphs = Kit.WeakSet(),
-            textColors = Kit.WeakSet(),
-            textRoles = Kit.WeakSet(),
+            textColors = Kit.NewTextColors(),
             vertexColors = Kit.WeakSet(),
         }
         PlayerSpellsSkin.states[frame] = state
@@ -117,19 +110,11 @@ local function GetState(frame, owner)
     return state
 end
 
+-- The kit's reversible text colors: with recapture, a native color Blizzard
+-- painted since our last paint becomes the one restored on disable, while
+-- our own color is never mistaken for it.
 local function SetThemeTextColor(state, fontObject, colorKey, recapture)
-    if type((Field(fontObject, "SetTextColor"))) ~= "function" then
-        return false
-    end
-    if recapture or not state.textColors[fontObject] then
-        local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")
-        if r then
-            state.textColors[fontObject] = { r, g, b, a }
-        end
-    end
-    state.textRoles[fontObject] = colorKey
-    fontObject:SetTextColor(NS.Theme.GetColor(colorKey))
-    return true
+    return Kit.SetTextColor(state.textColors, fontObject, colorKey, recapture)
 end
 
 local function SuppressVertexAlpha(state, texture)
@@ -174,7 +159,7 @@ local function SkinGlyphButton(state, button, glyphText, spec)
     if not button or not CanCreateRegions(button) then
         return false
     end
-    if NS.Checkmarks and NS.Checkmarks.GetWindowAction(button) then
+    if NS.Checkmarks.GetWindowAction(button) then
         return Kit.SkinControl(state, button, spec)
     end
     if not Kit.Attach(state, button, spec) then
@@ -184,15 +169,6 @@ local function SkinGlyphButton(state, button, glyphText, spec)
     AddButtonGlyph(state, button, glyphText,
         glyphText == "X" and "blizzardClose" or "accentBright")
     return true
-end
-
-local function SkinSearchBox(state, searchBox)
-    if not searchBox or not CanCreateRegions(searchBox) then
-        return
-    end
-    Kit.SkinControl(state, searchBox, SEARCH_SPEC, "ApplySearchBox")
-    SetThemeTextColor(state, searchBox, "text")
-    SetThemeTextColor(state, Field(searchBox, "Instructions"), "muted")
 end
 
 local function SkinSearchPreview(state, preview)
@@ -287,7 +263,7 @@ local function SkinSpellBookStatic(state, spellBook)
     Kit.Attach(state, spellBook, SPELL_BOOK_SPEC)
     Kit.FadeFields(state, spellBook, spellBookArt)
     SkinTabSystem(state, spellBook.CategoryTabSystem)
-    SkinSearchBox(state, spellBook.SearchBox)
+    Kit.SkinSearchBox(state, spellBook.SearchBox)
     SkinSearchPreview(state, spellBook.SearchPreviewContainer)
 
     local settingsDropdown = spellBook.SettingsDropdown
@@ -333,7 +309,7 @@ local function SkinSpecializationAndTalentPages(state)
             SuppressVertexAlpha(state, talentsFrame[talentsAnimatedArt[index]])
         end
         ApplyPageOnce(state, talentsFrame, TALENTS_MODE, true)
-        SkinSearchBox(state, talentsFrame.SearchBox)
+        Kit.SkinSearchBox(state, talentsFrame.SearchBox)
         SkinSearchPreview(state, talentsFrame.SearchPreviewContainer)
     end
 
@@ -371,9 +347,7 @@ local function SkinRootStatic(state)
 end
 
 local function RefreshThemeColors(state)
-    for fontObject, colorKey in pairs(state.textRoles) do
-        fontObject:SetTextColor(NS.Theme.GetColor(colorKey))
-    end
+    Kit.RefreshTextColors(state.textColors)
     for glyph, colorKey in pairs(state.glyphs) do
         glyph:SetTextColor(NS.Theme.GetColor(colorKey))
     end
@@ -437,36 +411,21 @@ local function RegisterCallbacks()
     if PlayerSpellsSkin.callbacksRegistered then
         return
     end
-    if Kit.RegisterEventCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin.OnFrameTabSet, PlayerSpellsSkin) then
-        Kit.RegisterEventCallback(CALLBACK_DISPLAYED_SPELLS,
-            PlayerSpellsSkin.OnDisplayedSpellsChanged, PlayerSpellsSkin)
-        NS.Registry.AddListener(PlayerSpellsSkin, PlayerSpellsSkin.OnThemeChanged)
-        PlayerSpellsSkin.callbacksRegistered = true
-    end
+    EventRegistry:RegisterCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin.OnFrameTabSet, PlayerSpellsSkin)
+    EventRegistry:RegisterCallback(CALLBACK_DISPLAYED_SPELLS,
+        PlayerSpellsSkin.OnDisplayedSpellsChanged, PlayerSpellsSkin)
+    NS.Registry.AddListener(PlayerSpellsSkin, PlayerSpellsSkin.OnThemeChanged)
+    PlayerSpellsSkin.callbacksRegistered = true
 end
 
 local function UnregisterCallbacks()
     if not PlayerSpellsSkin.callbacksRegistered then
         return
     end
-    Kit.UnregisterEventCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin)
-    Kit.UnregisterEventCallback(CALLBACK_DISPLAYED_SPELLS, PlayerSpellsSkin)
+    EventRegistry:UnregisterCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin)
+    EventRegistry:UnregisterCallback(CALLBACK_DISPLAYED_SPELLS, PlayerSpellsSkin)
     NS.Registry.RemoveListener(PlayerSpellsSkin)
     PlayerSpellsSkin.callbacksRegistered = false
-end
-
--- Restores a native color only while our themed color is still installed.
-local function RestoreTextColors(state)
-    for fontObject, color in pairs(state.textColors) do
-        local role = state.textRoles[fontObject]
-        if role then
-            local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")
-            local themeR, themeG, themeB, themeA = NS.Theme.GetColor(role)
-            if r and r == themeR and g == themeG and b == themeB and a == themeA then
-                fontObject:SetTextColor(color[1], color[2], color[3], color[4])
-            end
-        end
-    end
 end
 
 local function RestoreVertexColors(state)
@@ -487,7 +446,8 @@ local function RestoreState(state)
     for glyph in pairs(state.glyphs) do
         glyph:Hide()
     end
-    RestoreTextColors(state)
+    -- A native color comes back only while our themed color is still shown.
+    Kit.RestoreTextColors(state.textColors)
     RestoreVertexColors(state)
     NS.Cosmetics.RestoreOwner(state.owner)
 end

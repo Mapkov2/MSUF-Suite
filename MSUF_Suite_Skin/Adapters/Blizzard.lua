@@ -45,8 +45,7 @@ local function ScheduleLoadOnDemand(definition)
     -- EventUtil invokes its callback synchronously when the addon is already
     -- loaded. If a Blizzard build has loaded the addon but omitted/renamed the
     -- expected root, rescheduling from that callback would recurse forever.
-    if not EventUtil or type(EventUtil.ContinueOnAddOnLoaded) ~= "function"
-        or NS.Client.IsAddOnLoaded(addon) then
+    if NS.Client.IsAddOnLoaded(addon) then
         return false
     end
 
@@ -62,8 +61,8 @@ end
 -- callbacks run through Safety.Dispatch: a failing adapter is reported and the
 -- other adapters still apply. The leading true tells a finished call from an
 -- error, which returns nothing.
-local function Finish(callback, frame, id)
-    return true, callback(frame, id)
+local function Finish(callback, ...)
+    return true, callback(...)
 end
 
 local function RunCallback(callback, frame, id)
@@ -100,8 +99,7 @@ end
 -- A Suite module that replaces this adapter's surface keeps it while it runs
 -- (Core/SuiteOwnership.lua).
 local function SuiteOwned(definition)
-    local ownership = NS.SuiteOwnership
-    return definition.suiteSurface ~= nil and ownership ~= nil and ownership.Owns(definition.suiteSurface)
+    return definition.suiteSurface ~= nil and NS.SuiteOwnership.Owns(definition.suiteSurface)
 end
 
 -- Returns false with a status when the definition could not be applied.
@@ -162,16 +160,39 @@ local function ApplyDefinition(definition)
     return true
 end
 
+local function RefreshDefinition(definition)
+    local id = definition.id
+    local previous = Adapters.status[id]
+    local frame = previous and previous.frame
+    local disabled, reason = DisableDefinition(definition, frame)
+    if not disabled then
+        Adapters.status[id] = { state = reason or "disable-failed", frame = frame }
+        return false
+    end
+    return ApplyDefinition(definition)
+end
+
+-- The whole apply of one adapter, including the icon tree and window
+-- controls after its own callbacks, is one boundary: an error is reported,
+-- the adapter reads "error" and the next adapter still applies.
+local function RunIsolated(operation, definition)
+    local finished, result = NS.Safety.Dispatch(Finish, operation, definition)
+    if finished then return result end
+    local previous = Adapters.status[definition.id]
+    Adapters.status[definition.id] = { state = "error", frame = previous and previous.frame }
+    return false
+end
+
 function Adapters.Apply(id)
     local definition = Adapters.definitions[id]
     if not definition then
         return false
     end
     if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer("adapter:" .. id, function() ApplyDefinition(definition) end)
+        NS.CombatGate.RunOrDefer("adapter:" .. id, function() RunIsolated(ApplyDefinition, definition) end)
         return false
     end
-    return ApplyDefinition(definition)
+    return RunIsolated(ApplyDefinition, definition)
 end
 
 function Adapters.ApplyAll()
@@ -180,7 +201,7 @@ function Adapters.ApplyAll()
         return false
     end
     for index = 1, #Adapters.order do
-        ApplyDefinition(Adapters.definitions[Adapters.order[index]])
+        RunIsolated(ApplyDefinition, Adapters.definitions[Adapters.order[index]])
     end
     return true
 end
@@ -192,14 +213,7 @@ function Adapters.Refresh(id)
         NS.CombatGate.RunOrDefer("adapter-refresh:" .. id, function() Adapters.Refresh(id) end)
         return false
     end
-    local previous = Adapters.status[id]
-    local frame = previous and previous.frame
-    local disabled, reason = DisableDefinition(definition, frame)
-    if not disabled then
-        Adapters.status[id] = { state = reason or "disable-failed", frame = frame }
-        return false
-    end
-    return ApplyDefinition(definition)
+    return RunIsolated(RefreshDefinition, definition)
 end
 
 function Adapters.SetEnabled(id, enabled)
@@ -208,21 +222,24 @@ function Adapters.SetEnabled(id, enabled)
         return false
     end
     NS.DB.skins[id] = enabled == true
-    ApplyDefinition(definition)
+    RunIsolated(ApplyDefinition, definition)
     NS.Registry.NotifyListeners("adapter", id)
     return true
 end
 
+-- Each stage is its own boundary: a stage that raises is reported and the
+-- later stages still apply (or release) the skin and notify the listeners.
 function Adapters.SetMasterEnabled(enabled)
     if NS.IsCombatLocked() then
         return false
     end
     NS.DB.enabled = enabled == true
-    NS.BlizzardYellow.Apply()
-    NS.Checkmarks.Apply()
-    NS.Typography.ApplyConfigured()
-    Adapters.ApplyAll()
-    NS.Registry.RefreshAll()
+    local dispatch = NS.Safety.Dispatch
+    dispatch(NS.BlizzardYellow.Apply)
+    dispatch(NS.Checkmarks.Apply)
+    dispatch(NS.Typography.ApplyConfigured)
+    dispatch(Adapters.ApplyAll)
+    dispatch(NS.Registry.RefreshAll)
     NS.Registry.NotifyListeners("adapter", "master")
     return true
 end
@@ -246,10 +263,9 @@ end
 
 -- Sub-skins of the Blizzard window adapter, applied in this order after the
 -- generic catalog. A failure whose reason is `tolerated` (combat deferral, a
--- pending load-on-demand addon) still counts as applied; any other failure
--- reports the adapter as "partial". `category` gates a part on its catalog
--- category; skipped parts, and parts the client's TOC does not load (the
--- Forever group finder on Classic), count as applied.
+-- pending load-on-demand addon) still counts as applied; any other failure,
+-- including a part that raised, reports the adapter as "partial". `category`
+-- gates a part on its catalog category; skipped parts count as applied.
 local COMBAT_OR_WAITING = { combat = true, waiting = true }
 local COMBAT_ONLY = { combat = true }
 local windowParts = {
@@ -269,11 +285,65 @@ local windowParts = {
     { module = "ForeverGroupFinder", tolerated = COMBAT_ONLY },
 }
 
+-- The same parts in their release order; the generic catalog goes last.
+local windowPartsDisableOrder = {
+    "UIPanelButtons", "SharedChrome", "Commerce", "CommonArt", "ForeverGroupFinder",
+    "CommonMenus", "SocialUISkin", "CharacterPanel", "InspectPanel", "LegacyWindows",
+    "MajorWindows", "SemanticHUD", "DeepWindows",
+}
+
 local function PartEnabled(part)
-    if not NS[part.module] or part.excludeForever and NS.Client.isForever then
+    if part.excludeForever and NS.Client.isForever then
         return false
     end
     return not part.category or NS.GenericWindows.IsCategoryEnabled(part.category)
+end
+
+-- Calls NS[moduleName][method](owner). Every part module loads before this
+-- file (TOC order).
+local function CallPart(moduleName, method, owner)
+    return NS[moduleName][method](owner)
+end
+
+-- Each part, including the lookup of its module, is its own boundary: a
+-- part that raises is reported (nil, "error") and the other parts still
+-- apply or release.
+local function RunPart(moduleName, method, owner)
+    local finished, first, second = NS.Safety.Dispatch(Finish, CallPart, moduleName, method, owner)
+    if not finished then return nil, "error" end
+    return first, second
+end
+
+-- Like RunPart, for a release whose results do not matter: true when the
+-- part finished.
+local function ReleasePart(moduleName, owner)
+    return NS.Safety.Dispatch(Finish, CallPart, moduleName, "Disable", owner) == true
+end
+
+-- True when a part failed for a reason its entry does not tolerate.
+local function ApplyWindowParts(owner)
+    local partial = false
+    for index = 1, #windowParts do
+        local part = windowParts[index]
+        if PartEnabled(part) then
+            local applied, reason = RunPart(part.module, "Apply", owner)
+            if not applied and not part.tolerated[reason] then
+                partial = true
+            end
+        end
+    end
+    return partial
+end
+
+-- True when a part raised while it released its skin.
+local function DisableWindowParts(owner)
+    local failed = false
+    for index = 1, #windowPartsDisableOrder do
+        if not ReleasePart(windowPartsDisableOrder[index], owner) then
+            failed = true
+        end
+    end
+    return failed
 end
 
 Adapters.Register({
@@ -281,45 +351,25 @@ Adapters.Register({
     labelKey = "SKIN_BLIZZARD_WINDOWS",
     resolve = function() return NS.BlizzardCatalog end,
     apply = function(_, owner)
-        local genericApplied, genericReason = NS.GenericWindows.ApplyAll(owner)
+        local genericApplied, genericReason = RunPart("GenericWindows", "ApplyAll", owner)
         if NS.GenericWindows.IsCategoryEnabled("character") then
-            NS.MacroWindow.Start(owner)
+            RunPart("MacroWindow", "Start", owner)
         end
         if not genericApplied then
             return false, genericReason
         end
-        local partial = false
-        for index = 1, #windowParts do
-            local part = windowParts[index]
-            if PartEnabled(part) then
-                local applied, reason = NS[part.module].Apply(owner)
-                if not applied and not part.tolerated[reason] then
-                    partial = true
-                end
-            end
-        end
-        if partial then
+        if ApplyWindowParts(owner) then
             return true, "partial"
         end
         return true, genericReason
     end,
     disable = function(_, owner)
-        NS.UIPanelButtons.Disable()
-        NS.SharedChrome.Disable(owner)
-        NS.Commerce.Disable(owner)
-        NS.CommonArt.Disable(owner)
-        if NS.ForeverGroupFinder then
-            NS.ForeverGroupFinder.Disable(owner)
+        local failed = DisableWindowParts(owner)
+        local finished, disabled, reason = NS.Safety.Dispatch(Finish, CallPart, "GenericWindows", "Disable", owner)
+        if failed or not finished then
+            return false, "error"
         end
-        NS.CommonMenus.Disable(owner)
-        NS.SocialUISkin.Disable(owner)
-        NS.CharacterPanel.Disable(owner)
-        NS.InspectPanel.Disable(owner)
-        NS.LegacyWindows.Disable(owner)
-        NS.MajorWindows.Disable(owner)
-        NS.SemanticHUD.Disable(owner)
-        NS.DeepWindows.Disable(owner)
-        return NS.GenericWindows.Disable(owner)
+        return disabled, reason
     end,
 })
 
@@ -328,10 +378,9 @@ Adapters.Register({
     labelKey = "SKIN_COLOR_PICKER",
     resolve = function() return _G.ColorPickerFrame end,
     apply = function(frame, owner)
+        -- OpacityFrame ships in the same addon (ColorPickerFrame.xml).
         local applied, reason = NS.GenericWindows.ApplyFrame(frame, owner, "dialog")
-        if _G.OpacityFrame then
-            NS.GenericWindows.ApplyFrame(_G.OpacityFrame, owner, "dialog")
-        end
+        NS.GenericWindows.ApplyFrame(_G.OpacityFrame, owner, "dialog")
         return applied, reason
     end,
     disable = function(_, owner)
@@ -345,7 +394,7 @@ Adapters.Register({
     resolve = function() return _G.SettingsPanel end,
     apply = function(frame, owner)
         local applied, reason = NS.GenericWindows.ApplyFrame(frame, owner, "window")
-        if applied and NS.Checkmarks then
+        if applied then
             NS.Checkmarks.TrackSettingsCategories(frame.CategoryList, owner, frame)
         end
         return applied, reason
@@ -359,12 +408,9 @@ Adapters.Register({
     id = "addonList",
     labelKey = "SKIN_ADDON_LIST",
     resolve = function() return _G.AddonList end,
+    -- AddonDialog is glue-only: AddonList's OnLoad clears it in game.
     apply = function(frame, owner)
-        local applied, reason = NS.GenericWindows.ApplyFrame(frame, owner, "window")
-        if _G.AddonDialog then
-            NS.GenericWindows.ApplyFrame(_G.AddonDialog, owner, "dialog")
-        end
-        return applied, reason
+        return NS.GenericWindows.ApplyFrame(frame, owner, "window")
     end,
     disable = function(_, owner)
         return NS.GenericWindows.Disable(owner)

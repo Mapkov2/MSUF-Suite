@@ -13,8 +13,8 @@ local _, NS = ...
 -- outside combat and without changing geometry.
 local SocialUISkin = {
     owners = {},
-    waiting = false,
     hooksInstalled = false,
+    frameHooks = setmetatable({}, { __mode = "k" }),
 }
 NS.SocialUISkin = SocialUISkin
 
@@ -22,7 +22,6 @@ local Field = NS.Safety.Field
 local Kit = NS.AdapterKit
 
 local DEFAULT_OWNER = "socialUI"
-local SOCIAL_ADDON = "Blizzard_SocialUI"
 local TAB_LIMIT = 64
 
 -- SocialUIFrameMixin:InitializeTabDefinitions creates these exact parentKeys.
@@ -85,6 +84,8 @@ local function OwnerState(parentOwner)
             surfaces = Kit.WeakSet(),
             cards = Kit.WeakSet(),
             tabs = Kit.WeakSet(),
+            -- tabs carrying this owner's surface
+            skinnedTabs = Kit.WeakSet(),
             scrollBoxes = Kit.WeakSet(),
             deferred = {},
         }
@@ -155,6 +156,7 @@ local function SkinSocialTab(state, tab)
     -- Keep Icon, Count, SelectedTexture, TabGlow and HighlightTexture native.
     Kit.Fade(state, Field(tab, "Background"))
     if attached then
+        state.skinnedTabs[tab] = true
         NS.Surface.SetActive(tab, Kit.IsShown(Field(tab, "SelectedTexture")))
     end
     return attached
@@ -174,6 +176,8 @@ local function SkinTabs(state)
     return true
 end
 
+-- The friends ScrollBox reports every new and recycled card here, after
+-- FriendsListSocialCardMixin:Initialize, so this is the one card pass.
 local function OnFriendCardInitialized(state, card)
     SkinSocialCard(state, card)
 end
@@ -187,14 +191,6 @@ local function RegisterFriendCards(state)
     end
     Kit.ForEachRow(scrollBox, state.visitCard)
     return state.scrollBoxes[scrollBox] ~= nil
-end
-
-local function OnCardInitialize(card)
-    for _, state in pairs(SocialUISkin.owners) do
-        if state.active and Kit.IsDescendantOf(card, Field(state.frame, "FriendsList")) then
-            SkinSocialCard(state, card)
-        end
-    end
 end
 
 -- Mirrors Blizzard's own selection into the active state of our surface.
@@ -215,20 +211,71 @@ local function OnTabChecked(tab, checked)
     SyncActive(tab, "tabs", checked)
 end
 
-local function OnTabsRefreshed(frame)
-    if NS.IsCombatLocked() then return end
-    for _, state in pairs(SocialUISkin.owners) do
-        if state.active and state.frame == frame then SkinTabs(state) end
+-- RefreshTabStates only checks the selected tab (SetChecked on each), so a
+-- tab this owner already skinned just follows its selection. Tabs from
+-- before the SetChecked mixin hook are synced here as well.
+local function SyncTabStates(state)
+    local frame = state.frame
+    if NS.Safety.IsForbidden(frame) or type((Field(frame, "EnumerateTabs"))) ~= "function" then
+        return
+    end
+    local count = 0
+    for tab in frame:EnumerateTabs() do
+        if count >= TAB_LIMIT then break end
+        count = count + 1
+        if state.skinnedTabs[tab] then
+            NS.Surface.SetActive(tab, Kit.IsShown(Field(tab, "SelectedTexture")))
+        else
+            SkinSocialTab(state, tab)
+        end
     end
 end
 
-local function InstallLifecycleHooks()
+-- SocialUIFrameMixin:RefreshTabs releases the tab pool and acquires one tab
+-- per available tab type; RefreshTabStates then checks the selected one.
+-- Both run on SocialUIFrame's own copy of the mixin (Mixin() copied it when
+-- Blizzard_SocialUI created the frame), so the frame instance is hooked.
+local function OnTabsRefreshed(frame, statesOnly)
+    if NS.IsCombatLocked() then return end
+    for _, state in pairs(SocialUISkin.owners) do
+        if state.active and state.frame == frame then
+            if statesOnly then SyncTabStates(state) else SkinTabs(state) end
+        end
+    end
+end
+
+local function OnTabsRebuilt(frame)
+    OnTabsRefreshed(frame, false)
+end
+
+local function OnTabStatesRefreshed(frame)
+    OnTabsRefreshed(frame, true)
+end
+
+-- Every hook runs inside Blizzard's own call (RefreshTabStates checks each
+-- tab in a loop), so each is its own error boundary.
+local function Isolated(callback)
+    return function(...) NS.Safety.Dispatch(callback, ...) end
+end
+
+local OnTabsRebuiltHook = Isolated(OnTabsRebuilt)
+local OnTabStatesRefreshedHook = Isolated(OnTabStatesRefreshed)
+local OnCardSelectedHook = Isolated(OnCardSelected)
+local OnTabCheckedHook = Isolated(OnTabChecked)
+
+local function HookFrameTabs(frame)
+    if not frame or SocialUISkin.frameHooks[frame] then return end
+    local installed = Kit.HookFunction(frame, "RefreshTabs", OnTabsRebuiltHook)
+    installed = Kit.HookFunction(frame, "RefreshTabStates", OnTabStatesRefreshedHook) or installed
+    SocialUISkin.frameHooks[frame] = installed
+end
+
+-- Pooled cards and tabs are created later from their (hooked) mixins.
+local function InstallLifecycleHooks(frame)
+    HookFrameTabs(frame)
     if SocialUISkin.hooksInstalled then return end
-    local installed = Kit.HookFunction(_G.FriendsListSocialCardMixin, "Initialize", OnCardInitialize)
-    installed = Kit.HookFunction(_G.FriendsListSocialCardMixin, "SetSelected", OnCardSelected)
-        or installed
-    installed = Kit.HookFunction(_G.SocialUITabMixin, "SetChecked", OnTabChecked) or installed
-    installed = Kit.HookFunction(_G.SocialUIFrameMixin, "RefreshTabs", OnTabsRefreshed) or installed
+    local installed = Kit.HookFunction(_G.FriendsListSocialCardMixin, "SetSelected", OnCardSelectedHook)
+    installed = Kit.HookFunction(_G.SocialUITabMixin, "SetChecked", OnTabCheckedHook) or installed
     SocialUISkin.hooksInstalled = installed
 end
 
@@ -251,7 +298,7 @@ local function ApplyState(state)
     for index = 1, #CONTENT_KEYS do
         SkinContent(state, Field(frame, CONTENT_KEYS[index]))
     end
-    InstallLifecycleHooks()
+    InstallLifecycleHooks(frame)
     RegisterFriendCards(state)
     SkinTabs(state)
 
@@ -287,36 +334,6 @@ local function ApplyOrDefer(state, suffix)
     return ApplyState(state)
 end
 
-local function ApplyForActiveOwners()
-    local frame = _G.SocialUIFrame
-    if not frame then return false end
-    for _, state in pairs(SocialUISkin.owners) do
-        if state.active then
-            state.frame = frame
-            ApplyOrDefer(state, "load")
-        end
-    end
-    return true
-end
-
-local function OnSocialLoaded()
-    SocialUISkin.waiting = false
-    if not ApplyForActiveOwners() then
-        NS.ReportError("social UI addon load", "SocialUIFrame is missing")
-    end
-end
-
-local function ScheduleLoad()
-    if SocialUISkin.waiting then return true end
-    if NS.Client.IsAddOnLoaded(SOCIAL_ADDON) then return false end
-    SocialUISkin.waiting = true
-    if not Kit.ContinueOnAddOnLoaded(SOCIAL_ADDON, OnSocialLoaded) then
-        SocialUISkin.waiting = false
-        return false
-    end
-    return true
-end
-
 local function DisableNow(state)
     if not state then return true end
     state.active = false
@@ -328,6 +345,7 @@ local function DisableNow(state)
     state.scrollBoxes = Kit.WeakSet()
     state.cards = Kit.WeakSet()
     state.tabs = Kit.WeakSet()
+    state.skinnedTabs = Kit.WeakSet()
 
     NS.ControlSkin.DisableOwner(state.owner)
     NS.Cosmetics.RestoreOwner(state.owner)
@@ -341,11 +359,10 @@ function SocialUISkin.Apply(parentOwner)
     local state = OwnerState(parentOwner)
     Kit.CancelDeferred(state)
     state.active = true
+    -- Blizzard_SocialUI is not load-on-demand on 12.1.0, 12.1.5 and Forever:
+    -- SocialUIFrame exists before this load-on-demand skin loads.
     state.frame = _G.SocialUIFrame
-    if not state.frame then
-        if ScheduleLoad() then return true, "waiting" end
-        return false, "missing"
-    end
+    if not state.frame then return false, "missing" end
     return ApplyOrDefer(state, "apply")
 end
 

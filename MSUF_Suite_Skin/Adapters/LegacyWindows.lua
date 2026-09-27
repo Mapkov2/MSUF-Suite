@@ -284,7 +284,11 @@ local function ApplyGroup(spec, state)
     if not root then
         return false, NS.Client.IsAddOnLoaded(spec.addon) and "missing" or "waiting"
     end
-    return groupSkinners[spec.id](root, GroupState(state, spec))
+    -- Each group is its own error boundary: a raising group is reported and
+    -- the other groups still apply.
+    local finished, applied, reason = Kit.Isolate(groupSkinners[spec.id], root, GroupState(state, spec))
+    if not finished then return false, "error" end
+    return applied, reason
 end
 
 local function DeferredKey(state, suffix)
@@ -323,12 +327,11 @@ Schedule = function(spec)
     if LegacyWindows.waiting[spec.id] then return true end
     if NS.Client.IsAddOnLoaded(spec.addon) then return false end
     LegacyWindows.waiting[spec.id] = true
-    local scheduled = Kit.ContinueOnAddOnLoaded(spec.addon, function()
+    EventUtil.ContinueOnAddOnLoaded(spec.addon, function()
         LegacyWindows.waiting[spec.id] = nil
         ApplyGroupForOwners(spec)
     end)
-    if not scheduled then LegacyWindows.waiting[spec.id] = nil end
-    return scheduled
+    return true
 end
 
 local function DisableNow(owner)

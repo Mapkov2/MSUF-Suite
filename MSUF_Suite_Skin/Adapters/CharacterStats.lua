@@ -7,7 +7,8 @@ local _, NS = ...
 local Stats = { views = setmetatable({}, { __mode = "k" }) }
 NS.CharacterStats = Stats
 
-local Public = NS.Safety.Public
+-- Blizzard getters called with valid arguments; secret results read as nil.
+local Read = NS.AdapterKit.ReadValues
 
 local RATING_CURVE = 21024
 local MAX_STAT_ROWS = 64
@@ -27,18 +28,6 @@ function Stats.IsHost(frame)
     return hosts[frame] == true
 end
 
-local function Accessible(value)
-    if Public(value) then return value end
-    return nil
-end
-
--- Calls a Blizzard getter with valid arguments; secret results become nil.
-local function Read(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    local a, b, c, d = fn(...)
-    return Accessible(a), Accessible(b), Accessible(c), Accessible(d)
-end
-
 local function Number(value)
     return type(value) == "number" and value == value and value >= 0 and value < 1e9 and value or nil
 end
@@ -48,11 +37,11 @@ local function Config()
 end
 
 local function Modern()
-    return not NS.CharacterDetails or NS.CharacterDetails.IsModern()
+    return NS.CharacterDetails.IsModern()
 end
 
 local function Enabled(v)
-    if NS.Client and not NS.Client.modernEquipment then return false end
+    if not NS.Client.modernEquipment then return false end
     return v.active and NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character") and Config().enabled and Modern()
 end
@@ -67,11 +56,30 @@ function Stats.StylesRows(pane)
 end
 
 local function FontPath()
-    return Read(GameFontNormal and GameFontNormal.GetFont, GameFontNormal)
+    return Read(GameFontNormal.GetFont, GameFontNormal)
         or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
 end
 
 -- Diminishing returns ---------------------------------------------------------------------
+
+-- C_CurveUtil.EvaluateGameCurve raises for a curve the client does not ship.
+-- The rating curve is probed once as its own error boundary (the error is
+-- reported, not swallowed) and an unusable curve is remembered, so the DR
+-- details fail closed without raising on every refresh.
+local ratingCurve -- nil: not probed yet, false: unavailable, else the function
+
+local function ProbeCurve(curve)
+    curve(RATING_CURVE, 1)
+    return true
+end
+
+local function RatingCurve()
+    if ratingCurve == nil then
+        local curve = C_CurveUtil.EvaluateGameCurve
+        ratingCurve = NS.Safety.Dispatch(ProbeCurve, curve) == true and curve or false
+    end
+    return ratingCurve or nil
+end
 
 -- Reuse one result per rating. DR describes the marginal return of the NEXT
 -- rating point, not a blanket penalty on all existing rating or the total stat.
@@ -102,8 +110,9 @@ function Stats.ReadRating(index, result)
     result.rating, result.bonus = rating, bonus
     if not rating or not bonus or Read(PlayerIsTimerunning) == true then return result end
     local perPoint = Number(Read(GetCombatRatingBonusForCombatRatingValue, index, 1))
-    local curve = C_CurveUtil and C_CurveUtil.EvaluateGameCurve
-    if not perPoint or perPoint <= 0 or type(curve) ~= "function" then return result end
+    if not perPoint or perPoint <= 0 then return result end
+    local curve = RatingCurve()
+    if not curve then return result end
     local baseline = Number(Read(curve, RATING_CURVE, 1))
     if not baseline or math.abs(baseline - 1) > .001 then return result end
     local raw = rating * perPoint
@@ -236,7 +245,6 @@ end
 -- DR help tooltip and view ----------------------------------------------------------------
 
 local function Help(v)
-    if not GameTooltip then return end
     GameTooltip:SetOwner(v.help, "ANCHOR_RIGHT")
     GameTooltip:SetText(NS.L.STATS_DR_TITLE)
     GameTooltip:AddLine(NS.L.STATS_DR_EXPLAIN, .75, .8, .85, true)
@@ -270,7 +278,7 @@ local function HideMetadata(v)
         record.accent:Hide()
     end
     v.help:Hide()
-    if GameTooltip and GameTooltip:IsOwned(v.help) then GameTooltip:Hide() end
+    if GameTooltip:IsOwned(v.help) then GameTooltip:Hide() end
 end
 
 local function RefreshIfShown(v)
@@ -307,7 +315,7 @@ local function Create(pane, owner)
     v.helpText:SetText("DR")
     help:SetScript("OnEnter", function() Help(v) end)
     help:SetScript("OnLeave", function()
-        if GameTooltip and GameTooltip:IsOwned(help) then GameTooltip:Hide() end
+        if GameTooltip:IsOwned(help) then GameTooltip:Hide() end
     end)
 
     host:SetScript("OnShow", function()
@@ -318,13 +326,21 @@ local function Create(pane, owner)
     end)
     host:SetScript("OnHide", function()
         host:UnregisterEvent("PLAYER_REGEN_DISABLED")
+        host:UnregisterEvent("PLAYER_REGEN_ENABLED")
         NS.CombatGate.Cancel(v.deferKey)
         HideMetadata(v)
     end)
-    -- PLAYER_REGEN_DISABLED: hide the extra rows for combat, rebuild after.
-    host:SetScript("OnEvent", function()
-        HideMetadata(v)
-        NS.CombatGate.RunOrDefer(v.deferKey, v.refresh)
+    -- PLAYER_REGEN_DISABLED fires just before the lockdown starts, so a
+    -- refresh there would rebuild the rows it is meant to hide. Only hide;
+    -- the rows come back on PLAYER_REGEN_ENABLED.
+    host:SetScript("OnEvent", function(_, event)
+        if event == "PLAYER_REGEN_DISABLED" then
+            HideMetadata(v)
+            host:RegisterEvent("PLAYER_REGEN_ENABLED")
+        else
+            host:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            RefreshIfShown(v)
+        end
     end)
     return v
 end
@@ -528,6 +544,7 @@ function Stats.Disable(pane, owner)
     v.host:Hide()
     HideMetadata(v)
     v.host:UnregisterEvent("PLAYER_REGEN_DISABLED")
+    v.host:UnregisterEvent("PLAYER_REGEN_ENABLED")
     for font, saved in pairs(v.fonts) do
         local r, g, b, a = Read(font.GetTextColor, font)
         if saved.object and font.SetFontObject then

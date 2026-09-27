@@ -5,7 +5,8 @@ local _, NS = ...
 -- The addon and global names below are intentionally explicit. They were
 -- verified against Gethe/wow-ui-source upstream/live at
 -- 78282522143e25c3540583734fd192c3d69be910. This file is data only: it does
--- not load addons, scan UIParent, hook scripts, or register events.
+-- not load addons, scan UIParent, hook scripts, or register events. The
+-- Glass review at the end is checked by CatalogGlass.lua.
 --
 -- Secure action, unit-frame, nameplate and aura behavior stays outside this
 -- catalog.  User-facing HUD systems are represented by accent-only entries:
@@ -1908,9 +1909,11 @@ local entries = {
 -- order, ids, categories, addon owners, skip flags, and ordered root names.
 -- Any new, renamed, reordered, or re-owned root invalidates the whole catalog
 -- until this review and its classification are updated deliberately.
+-- CatalogGlass.lua, which loads next, checks this review once at load.
 local REVIEWED_CATALOG_FINGERPRINT = "71c8992a-6a8e1ad9"
 local REVIEWED_CATALOG_ENTRIES = 241
 local REVIEWED_CATALOG_ROOTS = 464
+local REVIEWED_SOURCE_REVISION = "8ea15b61e45c0ed4eba01439c90757f86eb78d34"
 
 local dedicatedGlassOwners = {
     ["talking-head"] = "SharedChrome",
@@ -1938,53 +1941,59 @@ local partialDedicatedGlass = {
     ["hud-addon-compartment"] = true,
 }
 
-local homogeneousGlassKinds = {}
-local function MarkGlassKind(kind, ids)
-    for index = 1, #ids do
-        homogeneousGlassKinds[ids[index]] = kind
-    end
-end
-
-MarkGlassKind("dedicated", {
-    "talking-head", "communities", "social-ui", "battle-net-toasts",
-    "combat-log-navigation", "encounter-journal", "pvp", "profession-book",
-    "inspect", "item-interaction", "item-socketing", "item-upgrade",
-    "world-map", "quick-keybind", "hud-addon-compartment", "housing-dashboard",
-})
-
-MarkGlassKind("semantic-content", {
-    "end-of-match", "plunderstorm-basics", "pet-battle",
-    "islands-party-pose", "match-celebration-party-pose",
-    "warfronts-party-pose", "spectate", "perks-program", "catalog-shop",
-    "character-customization", "splash-frame",
-    "wow-survey", "housing-controls",
-})
-
-MarkGlassKind("semantic-chrome", {
-    "battlefield-map", "anima-diversion",
-})
-
-MarkGlassKind("semantic-hud", {
-    "group-finder-status", "hud-core-alerts", "hud-core-fullscreen",
-    "hud-core-transient", "hud-report-screenshot", "hud-visual-alerts",
-    "hud-azerite-animation", "hud-commentator", "hud-action-status",
-    "hud-covenant-toasts", "hud-major-faction-toasts", "hud-cooldown-viewers",
-    "hud-encounter-timeline", "hud-encounter-warnings", "hud-mirror-timers",
-    "hud-quest-timer", "hud-pvp-status",
-    "hud-plunderstorm-prematch", "hud-class-trial", "hud-subtitles",
-    "hud-help-status", "hud-gm-status", "hud-housing", "hud-housing-banner",
-    "hud-fullscreen-browser", "hud-chat-overlays", "hud-behavioral-message",
-    "hud-arrow-callouts", "hud-world-loot-list", "hud-item-belt",
-    "hud-super-tracked", "hud-raid-warnings", "hud-widget-center-display",
-    "hud-widget-containers", "hud-spell-pickup", "hud-motion-sickness",
-    "hud-extra-abilities", "hud-zone-ability", "hud-buffs", "hud-action-bars",
-    "hud-action-reminders", "hud-override-action-bar", "hud-unit-frames",
-    "hud-class-resources", "hud-nameplate-resources", "hud-personal-resource",
-    "hud-bag-bar", "hud-minimap", "hud-durability", "hud-vehicle-seat",
-    "hud-pet-battle-splash", "hud-compact-raid", "hud-account-store-container",
-    "tutorial-help-plate", "tutorial-remix-artifact",
-    "expansion-garrison-template-placer", "expansion-artifact-underlay",
-})
+-- Kinds shared by every root of an entry, applied in this order. Entries
+-- missing here and in mixedGlassKinds are generic Glass shells.
+local homogeneousGlassKinds = {
+    {
+        kind = "dedicated",
+        ids = {
+            "talking-head", "communities", "social-ui", "battle-net-toasts",
+            "combat-log-navigation", "encounter-journal", "pvp", "profession-book",
+            "inspect", "item-interaction", "item-socketing", "item-upgrade",
+            "world-map", "quick-keybind", "hud-addon-compartment", "housing-dashboard",
+        },
+    },
+    {
+        kind = "semantic-content",
+        ids = {
+            "end-of-match", "plunderstorm-basics", "pet-battle",
+            "islands-party-pose", "match-celebration-party-pose",
+            "warfronts-party-pose", "spectate", "perks-program", "catalog-shop",
+            "character-customization", "splash-frame",
+            "wow-survey", "housing-controls",
+        },
+    },
+    {
+        kind = "semantic-chrome",
+        ids = {
+            "battlefield-map", "anima-diversion",
+        },
+    },
+    {
+        kind = "semantic-hud",
+        ids = {
+            "group-finder-status", "hud-core-alerts", "hud-core-fullscreen",
+            "hud-core-transient", "hud-report-screenshot", "hud-visual-alerts",
+            "hud-azerite-animation", "hud-commentator", "hud-action-status",
+            "hud-covenant-toasts", "hud-major-faction-toasts", "hud-cooldown-viewers",
+            "hud-encounter-timeline", "hud-encounter-warnings", "hud-mirror-timers",
+            "hud-quest-timer", "hud-pvp-status",
+            "hud-plunderstorm-prematch", "hud-class-trial", "hud-subtitles",
+            "hud-help-status", "hud-gm-status", "hud-housing", "hud-housing-banner",
+            "hud-fullscreen-browser", "hud-chat-overlays", "hud-behavioral-message",
+            "hud-arrow-callouts", "hud-world-loot-list", "hud-item-belt",
+            "hud-super-tracked", "hud-raid-warnings", "hud-widget-center-display",
+            "hud-widget-containers", "hud-spell-pickup", "hud-motion-sickness",
+            "hud-extra-abilities", "hud-zone-ability", "hud-buffs", "hud-action-bars",
+            "hud-action-reminders", "hud-override-action-bar", "hud-unit-frames",
+            "hud-class-resources", "hud-nameplate-resources", "hud-personal-resource",
+            "hud-bag-bar", "hud-minimap", "hud-durability", "hud-vehicle-seat",
+            "hud-pet-battle-splash", "hud-compact-raid", "hud-account-store-container",
+            "tutorial-help-plate", "tutorial-remix-artifact",
+            "expansion-garrison-template-placer", "expansion-artifact-underlay",
+        },
+    },
+}
 
 local mixedGlassKinds = {
     ["player-choice"] = {
@@ -2092,324 +2101,19 @@ local sourceExclusions = {
     { frame = "AccountSaveFrame", disposition = "glue-only" },
 }
 
-local function EntryRootSignature(entry)
-    return type(entry) == "table" and type(entry.frames) == "table"
-        and table.concat(entry.frames, "\31") or ""
-end
-
-local function Hash(text, seed, multiplier, modulus)
-    local value = seed
-    for index = 1, #text do
-        value = (value * multiplier + text:byte(index)) % modulus
-    end
-    return value
-end
-
-local function CatalogFingerprint(catalogEntries)
-    local parts = { tostring(#catalogEntries) }
-    for index = 1, #catalogEntries do
-        local entry = catalogEntries[index]
-        parts[#parts + 1] = table.concat({
-            type(entry.id) == "string" and entry.id or "",
-            type(entry.category) == "string" and entry.category or "",
-            type(entry.addon) == "string" and entry.addon or "",
-            entry.skipGeneric == true and "1" or "0",
-            EntryRootSignature(entry),
-        }, "\30")
-    end
-    local text = table.concat(parts, "\29")
-    return ("%08x-%08x"):format(
-        Hash(text, 216613626, 131, 2147483647),
-        Hash(text, 16777619, 137, 2147483629))
-end
-
-local reviewedFingerprint = CatalogFingerprint(entries)
-local catalogSnapshotValid = reviewedFingerprint == REVIEWED_CATALOG_FINGERPRINT
-    and #entries == REVIEWED_CATALOG_ENTRIES
-
-local glassByFrame = {}
-local glassCounts = {
-    total = 0,
-    genericShell = 0,
-    dedicated = 0,
-    semanticContent = 0,
-    semanticChrome = 0,
-    semanticHUD = 0,
-    full = 0,
-    partial = 0,
-    none = 0,
-}
-local glassErrors = {}
-local glassReadyByEntry = {}
-
-local function AddGlassError(entry, frameName, reason)
-    glassErrors[#glassErrors + 1] = {
-        id = entry and entry.id,
-        frame = frameName,
-        reason = reason,
-    }
-end
-
-local function ModeForFrame(entry, frameName)
-    return type(entry.frameModes) == "table" and entry.frameModes[frameName]
-        or entry.mode
-end
-
-local function ResolveReviewedKind(entry, frameName)
-    local mixed = mixedGlassKinds[entry.id]
-    if mixed then return mixed[frameName] end
-    return homogeneousGlassKinds[entry.id] or "generic-shell"
-end
-
-local function ModeMatchesKind(entry, frameName, kind)
-    local mode = ModeForFrame(entry, frameName)
-    if kind == "dedicated" then
-        return entry.skipGeneric == true and dedicatedGlassOwners[entry.id] ~= nil
-    end
-    if entry.skipGeneric == true then return false end
-    if kind == "semantic-hud" then
-        return type(mode) == "table" and mode.rootSurface == false
-            and mode.accentOnly == true
-    end
-    if kind == "semantic-content" then
-        return type(mode) == "table" and mode.rootSurface == false
-            and mode.accentOnly ~= true
-    end
-    if kind == "semantic-chrome" then
-        return type(mode) == "table" and mode.rootSurface ~= false
-            and mode.preserveRootArt == true and mode.fillVisible == false
-            and mode.accentOnly ~= true
-    end
-    if kind == "generic-shell" then
-        return type(mode) ~= "table" or (mode.rootSurface ~= false
-            and mode.accentOnly ~= true
-            and not (mode.preserveRootArt == true and mode.fillVisible == false))
-    end
-    return false
-end
-
-local kindReasons = {
-    ["generic-shell"] = "reviewed-catalog-glass-shell",
-    dedicated = "dedicated-clean-room-adapter",
-    ["semantic-chrome"] = "semantic-art-edge-only",
-    ["semantic-content"] = "native-semantic-content",
-    ["semantic-hud"] = "native-secure-or-semantic-hud",
-}
-
-local kindCounters = {
-    ["generic-shell"] = "genericShell",
-    dedicated = "dedicated",
-    ["semantic-content"] = "semanticContent",
-    ["semantic-chrome"] = "semanticChrome",
-    ["semantic-hud"] = "semanticHUD",
-}
-
-local function ResolveGlassContract(entry, frameName)
-    local kind = ResolveReviewedKind(entry, frameName)
-    if not kind then return nil, "root-classification-missing" end
-    if not ModeMatchesKind(entry, frameName, kind) then
-        return nil, "root-mode-contract-mismatch"
-    end
-    local owner = kind == "dedicated" and dedicatedGlassOwners[entry.id]
-        or "GenericWindows"
-    if not owner then return nil, "dedicated-owner-missing" end
-    local support = "full"
-    if kind == "semantic-hud" then
-        support = "none"
-    elseif kind == "semantic-content" or kind == "semantic-chrome"
-        or (kind == "dedicated" and partialDedicatedGlass[entry.id]) then
-        support = "partial"
-    end
-    return {
-        kind = kind,
-        owner = owner,
-        support = support,
-        reason = kindReasons[kind],
-    }
-end
-
-local function ClassifyFrame(entry, frameName)
-    if type(frameName) ~= "string" or frameName == "" then
-        AddGlassError(entry, frameName, "frame-invalid")
-        return false
-    end
-    if glassByFrame[frameName] then
-        AddGlassError(entry, frameName, "frame-duplicate")
-        return false
-    end
-    local contract, reason = ResolveGlassContract(entry, frameName)
-    if not contract then
-        AddGlassError(entry, frameName, reason or "contract-missing")
-        return false
-    end
-    contract.id = entry.id
-    contract.frame = frameName
-    glassByFrame[frameName] = contract
-    glassCounts.total = glassCounts.total + 1
-    local counter = kindCounters[contract.kind]
-    glassCounts[counter] = glassCounts[counter] + 1
-    glassCounts[contract.support] = glassCounts[contract.support] + 1
-    return true
-end
-
-if not catalogSnapshotValid then
-    AddGlassError(nil, nil, "catalog-snapshot-unreviewed:" .. reviewedFingerprint)
-end
-
-for entryIndex = 1, #entries do
-    local entry = entries[entryIndex]
-    local ready = catalogSnapshotValid and type(entry.id) == "string"
-        and type(entry.frames) == "table"
-    if not ready then
-        AddGlassError(entry, nil, "entry-invalid")
-    else
-        for frameIndex = 1, #entry.frames do
-            ready = ClassifyFrame(entry, entry.frames[frameIndex]) and ready
-        end
-    end
-    glassReadyByEntry[entry] = ready
-end
-
-local flattened = {}
-local byFrame = {}
-
-for entryIndex = 1, #entries do
-    local entry = entries[entryIndex]
-    for frameIndex = 1, #entry.frames do
-        local frameName = entry.frames[frameIndex]
-        if not byFrame[frameName] then
-            flattened[#flattened + 1] = frameName
-            byFrame[frameName] = entry
-        end
-    end
-end
-
-local standaloneRootCount = 0
-local standaloneSeen = {}
-for index = 1, #standaloneGlass do
-    local item = standaloneGlass[index]
-    local valid = type(item.id) == "string" and type(item.addon) == "string"
-        and type(item.owner) == "string" and type(item.roots) == "table"
-        and (item.support == "full" or item.support == "partial")
-    for rootIndex = 1, #(item.roots or {}) do
-        local root = item.roots[rootIndex]
-        standaloneRootCount = standaloneRootCount + 1
-        if type(root) ~= "string" or root == "" or byFrame[root] or standaloneSeen[root] then
-            valid = false
-        end
-        standaloneSeen[root] = true
-    end
-    if not valid then AddGlassError(item, nil, "standalone-contract-invalid") end
-end
-
-for index = 1, #nestedGlass do
-    local item = nestedGlass[index]
-    if type(item.id) ~= "string" or type(item.parent) ~= "string"
-        or type(item.path) ~= "table" or #item.path == 0
-        or type(item.owner) ~= "string" or not byFrame[item.parent] then
-        AddGlassError(item, nil, "nested-contract-invalid")
-    end
-end
-
-local exclusionSeen = {}
-for index = 1, #sourceExclusions do
-    local item = sourceExclusions[index]
-    if type(item.frame) ~= "string" or item.frame == "" or byFrame[item.frame]
-        or standaloneSeen[item.frame] or exclusionSeen[item.frame]
-        or type(item.disposition) ~= "string" or item.disposition == "" then
-        AddGlassError(item, item.frame, "source-exclusion-invalid")
-    end
-    exclusionSeen[item.frame] = true
-end
-
-if #flattened ~= REVIEWED_CATALOG_ROOTS then
-    AddGlassError(nil, nil, "catalog-root-count:" .. #flattened)
-end
-if glassCounts.total ~= #flattened then
-    AddGlassError(nil, nil, "catalog-glass-coverage:" .. glassCounts.total .. "/" .. #flattened)
-end
-
--- The catalog is static after load, so the contract is validated exactly
--- once here. Any failure keeps every entry closed and is listed, with its
--- reason, by Catalog.GetGlassErrors().
-local glassContractValid = #glassErrors == 0
-local validatedEntries = {}
-if glassContractValid then
-    for entry, ready in pairs(glassReadyByEntry) do
-        validatedEntries[entry] = ready
-    end
-end
-
-local Catalog = {
+-- Private to CatalogGlass.lua, which builds NS.BlizzardCatalog from it and
+-- takes it off NS again.
+NS.BlizzardCatalogData = {
     entries = entries,
-    frames = flattened,
-    byFrame = byFrame,
-    glass = {
-        valid = glassContractValid,
-        byFrame = glassByFrame,
-        counts = glassCounts,
-        errors = glassErrors,
-        reviewedFingerprint = REVIEWED_CATALOG_FINGERPRINT,
-        sourceRevision = "8ea15b61e45c0ed4eba01439c90757f86eb78d34",
-        standalone = standaloneGlass,
-        standaloneRootCount = standaloneRootCount,
-        nested = nestedGlass,
-        sourceExclusions = sourceExclusions,
-    },
+    reviewedFingerprint = REVIEWED_CATALOG_FINGERPRINT,
+    reviewedEntries = REVIEWED_CATALOG_ENTRIES,
+    reviewedRoots = REVIEWED_CATALOG_ROOTS,
+    sourceRevision = REVIEWED_SOURCE_REVISION,
+    dedicatedOwners = dedicatedGlassOwners,
+    partialDedicated = partialDedicatedGlass,
+    homogeneousKinds = homogeneousGlassKinds,
+    mixedKinds = mixedGlassKinds,
+    standalone = standaloneGlass,
+    nested = nestedGlass,
+    sourceExclusions = sourceExclusions,
 }
-NS.BlizzardCatalog = Catalog
-
-function Catalog.GetEntries()
-    return entries
-end
-
-function Catalog.GetFrames()
-    return flattened
-end
-
-function Catalog.FindByFrame(frameName)
-    return byFrame[frameName]
-end
-
-function Catalog.GetGlassContract(frameName)
-    return glassByFrame[frameName]
-end
-
-function Catalog.GetGlassCounts()
-    return {
-        total = glassCounts.total,
-        genericShell = glassCounts.genericShell,
-        dedicated = glassCounts.dedicated,
-        semanticContent = glassCounts.semanticContent,
-        semanticChrome = glassCounts.semanticChrome,
-        semanticHUD = glassCounts.semanticHUD,
-        full = glassCounts.full,
-        partial = glassCounts.partial,
-        none = glassCounts.none,
-        standalone = standaloneRootCount,
-        nested = #nestedGlass,
-    }
-end
-
-function Catalog.GetGlassErrors()
-    local result = {}
-    for index = 1, #glassErrors do
-        result[index] = glassErrors[index]
-    end
-    return result
-end
-
-function Catalog.IsGlassContractValid()
-    return glassContractValid
-end
-
--- True for a catalog entry whose roots all passed review while the whole
--- contract is valid.
-function Catalog.ValidateGlassEntry(entry)
-    return validatedEntries[entry] == true
-end
-
--- True for a catalog entry whose roots all passed review.
-function Catalog.IsEntryGlassReady(entry)
-    return glassReadyByEntry[entry] == true
-end

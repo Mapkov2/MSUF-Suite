@@ -12,7 +12,7 @@ local _, NS = ...
 -- item icons, quality state, sockets, tabs, scripts and geometry. This adapter
 -- only replaces explicitly named decorative chrome with reversible surfaces.
 -- Owner state, deferral and the shared primitives come from PaperDollChrome
--- (CharacterPanel.lua).
+-- (PaperDollChrome.lua).
 local Chrome = NS.PaperDollChrome
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
@@ -96,10 +96,8 @@ local function SkinModel(state)
 end
 
 local function SelectedTab()
-    if type(_G.PanelTemplates_GetSelectedTab) ~= "function" or not _G.InspectFrame then
-        return nil
-    end
-    local selected = _G.PanelTemplates_GetSelectedTab(_G.InspectFrame)
+    if not _G.InspectFrame then return nil end
+    local selected = PanelTemplates_GetSelectedTab(_G.InspectFrame)
     if not Public(selected) then return nil end
     return tonumber(selected)
 end
@@ -135,6 +133,20 @@ end
 
 local panel
 
+-- InspectPaperDollItemSlotButtonTemplate keeps its icon only as the
+-- $parentIconTexture global. Resolved once per slot: slot updates repeat.
+local slotIcons = setmetatable({}, { __mode = "k" })
+
+local function SlotIcon(slot)
+    local icon = slotIcons[slot]
+    if icon == nil then
+        local name = Call(slot, "GetName")
+        icon = type(name) == "string" and _G[name .. "IconTexture"] or false
+        slotIcons[slot] = icon
+    end
+    return icon or nil
+end
+
 local function ApplyNow(state)
     local root = _G.InspectFrame
     if not root or not state.active then return false, "missing" end
@@ -168,10 +180,7 @@ panel = Chrome.New({
     initState = function(state)
         state.modelOverlayOwner = tostring(state.owner) .. ":inspect-model-overlay"
     end,
-    slotIcon = function(slot)
-        local name = Call(slot, "GetName")
-        return name and _G[name .. "IconTexture"]
-    end,
+    slotIcon = SlotIcon,
 })
 panel.skinAllSlots = function(state) return panel:SkinAllSlots(state) end
 

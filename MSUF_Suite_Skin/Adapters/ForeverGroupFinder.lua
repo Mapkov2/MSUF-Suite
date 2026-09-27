@@ -10,6 +10,9 @@ local ForeverGroupFinder = {
 }
 NS.ForeverGroupFinder = ForeverGroupFinder
 
+local Safety = NS.Safety
+local Kit = NS.AdapterKit
+
 local ADDON = "Blizzard_GroupFinder_VanillaStyle"
 local OWNER = "blizzardWindows:forever-group-finder"
 local ROOT_MODE = {
@@ -47,15 +50,16 @@ local FILTER_SPEC = {
 }
 -- The role strip's background has no parentKey, so it is found by its atlas.
 local ROLE_BACKGROUND_ATLAS = "groupfinder-roles-background"
+local PANEL_TABS = { "Tab1", "Tab2", "Tab3" }
+local MODE_TABS = { "ListingTab", "BrowsingTab", "WhoListingTab" }
 
+-- Apply activates the adapter on Forever only.
 local function Ready()
-    return ForeverGroupFinder.active and NS.Client and NS.Client.isForever
-        and NS.GenericWindows and NS.ControlSkin and NS.Cosmetics
-        and not NS.IsCombatLocked()
+    return ForeverGroupFinder.active and not NS.IsCombatLocked()
 end
 
 local function Fade(region)
-    if region and NS.Safety.CanDecorate(region, true) then
+    if region and Safety.CanDecorate(region, true) then
         NS.Cosmetics.Fade(region, OWNER)
     end
 end
@@ -82,16 +86,14 @@ end
 local function FadeRoleRegions(...)
     for index = 1, select("#", ...) do
         local region = select(index, ...)
-        if type(region.GetAtlas) == "function" and region:GetAtlas() == ROLE_BACKGROUND_ATLAS then
+        if Safety.Read(region, "GetAtlas") == ROLE_BACKGROUND_ATLAS then
             Fade(region)
         end
     end
 end
 
 local function FadeRoleBackground(roles)
-    if roles and type(roles.GetRegions) == "function" then
-        FadeRoleRegions(roles:GetRegions())
-    end
+    FadeRoleRegions(Safety.Call(roles, "GetRegions"))
 end
 
 local function SkinCategoryCards()
@@ -103,14 +105,20 @@ local function SkinCategoryCards()
     for index = 1, #buttons do
         local button = buttons[index]
         if button and button.Icon and button.Cover and button.Label
-            and NS.Safety.CanCreateRegions(button, true) then
+            and Safety.CanCreateRegions(button, true) then
             NS.ControlSkin.ApplyButton(button, OWNER, CARD_SPEC)
         end
     end
 end
 
+-- A post-hook on Blizzard's global: the card pass is its own error boundary,
+-- so a raising pass never reaches Blizzard's caller.
+local function OnCategoryButtonsUpdated()
+    Safety.Dispatch(SkinCategoryCards)
+end
+
 local function SkinResultRow(row, kind)
-    if not Ready() or not row or not NS.Safety.CanCreateRegions(row, true) then return end
+    if not Ready() or not row or not Safety.CanCreateRegions(row, true) then return end
     if kind == "browse" and row.ResultBG and row.Name then
         NS.ControlSkin.ApplyButton(row, OWNER, RESULT_SPEC)
     elseif kind == "who" and row.Background and row.Name then
@@ -118,28 +126,24 @@ local function SkinResultRow(row, kind)
     end
 end
 
+-- One registration per list, built once: CallbackRegistry passes it first.
+local function OnRowInitialized(registration, row)
+    SkinResultRow(row, registration.kind)
+end
+
 local function RegisterRows(scrollBox, kind)
-    local event = ScrollBoxListMixin and ScrollBoxListMixin.Event
-        and ScrollBoxListMixin.Event.OnInitializedFrame
-    if not scrollBox or not event or ForeverGroupFinder.scrollBoxes[scrollBox]
-        or type(scrollBox.RegisterCallback) ~= "function"
-        or type(scrollBox.ForEachFrame) ~= "function" then
-        return
-    end
-    local token = { kind = kind }
-    scrollBox:RegisterCallback(event, function(_, row)
-        SkinResultRow(row, kind)
-    end, token)
-    ForeverGroupFinder.scrollBoxes[scrollBox] = token
-    -- ForEachFrame indexes the list view, which exists only once Blizzard
-    -- initialized the ScrollBox.
-    if type(scrollBox.HasView) ~= "function" or scrollBox:HasView() then
-        scrollBox:ForEachFrame(function(row) SkinResultRow(row, kind) end)
-    end
+    if not scrollBox or ForeverGroupFinder.scrollBoxes[scrollBox] then return end
+    local registration = { kind = kind }
+    registration.visit = function(row) SkinResultRow(row, kind) end
+    registration.event = Kit.RegisterRowCallback(scrollBox, OnRowInitialized, registration)
+    if not registration.event then return end
+    ForeverGroupFinder.scrollBoxes[scrollBox] = registration
+    -- ForEachRow waits for the list view Blizzard builds on initialization.
+    Kit.ForEachRow(scrollBox, registration.visit)
 end
 
 local function SkinFrame(frame, mode)
-    if frame and NS.Safety.CanCreateRegions(frame, true) then
+    if frame and Safety.CanCreateRegions(frame, true) then
         NS.GenericWindows.ApplyFrame(frame, OWNER, mode)
     end
 end
@@ -170,20 +174,20 @@ local function SkinLoadedWindow()
         Fade(who.insideFrame)
         FadeListChrome(who)
         local filter = who.FilterDropdown
-        if filter and NS.Safety.CanCreateRegions(filter, true) then
+        if filter and Safety.CanCreateRegions(filter, true) then
             NS.ControlSkin.ApplyButton(filter, OWNER, FILTER_SPEC)
         end
     end
 
-    for _, key in ipairs({ "Tab1", "Tab2", "Tab3" }) do
-        local tab = parent[key]
-        if tab and NS.Safety.CanCreateRegions(tab, true) then
+    for index = 1, #PANEL_TABS do
+        local tab = parent[PANEL_TABS[index]]
+        if tab and Safety.CanCreateRegions(tab, true) then
             NS.ControlSkin.ApplyTab(tab, OWNER, TAB_SPEC)
         end
     end
-    for _, key in ipairs({ "ListingTab", "BrowsingTab", "WhoListingTab" }) do
-        local tab = parent[key]
-        if tab and NS.Safety.CanCreateRegions(tab, true) then
+    for index = 1, #MODE_TABS do
+        local tab = parent[MODE_TABS[index]]
+        if tab and Safety.CanCreateRegions(tab, true) then
             NS.ControlSkin.ApplyButton(tab, OWNER, TAB_SPEC)
         end
     end
@@ -191,11 +195,10 @@ local function SkinLoadedWindow()
     RegisterRows(browse.ScrollBox, "browse")
     RegisterRows(who and who.ScrollBox, "who")
 
-    if not ForeverGroupFinder.hooked
-        and type(_G.LFGListingCategorySelection_UpdateCategoryButtons) == "function"
-        and type(hooksecurefunc) == "function" then
-        hooksecurefunc("LFGListingCategorySelection_UpdateCategoryButtons", SkinCategoryCards)
-        ForeverGroupFinder.hooked = true
+    if not ForeverGroupFinder.hooked then
+        -- Retail (12.1.0, 12.1.5) lacks this function; this runs on Forever only.
+        ForeverGroupFinder.hooked = Kit.HookGlobal("LFGListingCategorySelection_UpdateCategoryButtons",
+            OnCategoryButtonsUpdated)
     end
     return true, "applied"
 end
@@ -213,7 +216,8 @@ eventFrame:SetScript("OnEvent", function(_, event, addon)
 end)
 
 function ForeverGroupFinder.Apply()
-    if not NS.Client or not NS.Client.isForever then return true, "disabled" end
+    -- Blizzard_GroupFinder_VanillaStyle ships with Forever only.
+    if not NS.Client.isForever then return true, "disabled" end
     if not NS.GenericWindows.IsCategoryEnabled("group") then
         ForeverGroupFinder.Disable()
         return true, "disabled"
@@ -234,15 +238,9 @@ function ForeverGroupFinder.Disable()
     eventFrame:UnregisterEvent("ADDON_LOADED")
     NS.CombatGate.Cancel(OWNER .. ":load")
     NS.CombatGate.Cancel(OWNER .. ":apply")
-    local event = ScrollBoxListMixin and ScrollBoxListMixin.Event
-        and ScrollBoxListMixin.Event.OnInitializedFrame
-    if event then
-        for scrollBox, token in pairs(ForeverGroupFinder.scrollBoxes) do
-            if type(scrollBox.UnregisterCallback) == "function" then
-                scrollBox:UnregisterCallback(event, token)
-            end
-            ForeverGroupFinder.scrollBoxes[scrollBox] = nil
-        end
+    for scrollBox, registration in pairs(ForeverGroupFinder.scrollBoxes) do
+        Kit.UnregisterRowCallback(scrollBox, registration.event, registration)
+        ForeverGroupFinder.scrollBoxes[scrollBox] = nil
     end
     return NS.GenericWindows.Disable(OWNER)
 end

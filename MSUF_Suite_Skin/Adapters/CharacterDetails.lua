@@ -8,7 +8,10 @@ local _, NS = ...
 local Details = { views = setmetatable({}, { __mode = "k" }) }
 NS.CharacterDetails = Details
 
-local Public = NS.Safety.Public
+-- Blizzard getters called with valid arguments; secret results read as nil.
+local Read = NS.AdapterKit.ReadValues
+local Accessible = NS.AdapterKit.PublicValue
+local After = C_Timer.After
 
 local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
 local ROW_HEIGHT = 28
@@ -33,18 +36,6 @@ function Details.IsHost(frame)
     return hosts[frame] == true
 end
 
-local function Accessible(value)
-    if Public(value) then return value end
-    return nil
-end
-
--- Calls a Blizzard getter with valid arguments; secret results become nil.
-local function Read(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    local a, b, c = fn(...)
-    return Accessible(a), Accessible(b), Accessible(c)
-end
-
 local function Text(value)
     return type(value) == "string" and value or nil
 end
@@ -62,7 +53,7 @@ function Details.GetView()
 end
 
 function Details.IsModern()
-    return (not NS.Client or NS.Client.modernEquipment)
+    return NS.Client.modernEquipment
         and (Config().view == nil or Config().view == "modern")
 end
 
@@ -74,7 +65,7 @@ local function NeedsData(v)
 end
 
 local function Enabled(v)
-    if NS.Client and not NS.Client.modernEquipment then return false end
+    if not NS.Client.modernEquipment then return false end
     local config = Config()
     return v.active and NS.DB and NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character")
@@ -87,7 +78,7 @@ local function Color(region, token)
 end
 
 local function FontPath()
-    return Read(GameFontNormal and GameFontNormal.GetFont, GameFontNormal)
+    return Read(GameFontNormal.GetFont, GameFontNormal)
         or STANDARD_TEXT_FONT or DEFAULT_FONT
 end
 
@@ -160,7 +151,6 @@ local function Unregister(v)
 end
 
 local function HideTooltip(v)
-    if not GameTooltip or type(GameTooltip.IsOwned) ~= "function" then return end
     if GameTooltip:IsOwned(v.toggle) then
         GameTooltip:Hide()
         return
@@ -255,11 +245,12 @@ local function ProviderElement(v, slot)
     return element
 end
 
--- Reads one slot (or reuses its snapshot when another slot changed).
+-- Reads one slot, or reuses its snapshot when only other slots changed
+-- (dirtySlots is then the set of changed slot ids).
 -- Returns itemLevel, enchanted, gems, durability, pending.
-local function ReadRow(v, row, slot, onlySlot)
+local function ReadRow(v, row, slot, dirtySlots)
     local id = slot[1]
-    if onlySlot and onlySlot ~= id and row.audit then
+    if dirtySlots and not dirtySlots[id] and row.audit then
         return row.audit.itemLevel, row.audit.enchanted, row.audit.gems, row.durability, row.audit.pending
     end
     local link = Text(Read(GetInventoryItemLink, v.unit, id))
@@ -274,7 +265,7 @@ local function ReadRow(v, row, slot, onlySlot)
     local itemName, itemLevel, pending = info.name, info.itemLevel, info.pending
     row.name:SetText(itemName or ((link or texture) and NS.L.DOSSIER_LOADING or NS.L.DOSSIER_EMPTY))
     row.level:SetText(itemLevel and string.format("%d", itemLevel) or "--")
-    local qualityColor = quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality]
+    local qualityColor = quality and ITEM_QUALITY_COLORS[quality]
     if qualityColor then
         row.name:SetTextColor(qualityColor.r, qualityColor.g, qualityColor.b, 1)
     else
@@ -351,7 +342,6 @@ local function RefreshDurability(v)
 end
 
 local function SpecializationName(v, unit)
-    if not C_SpecializationInfo then return nil end
     local sex = Number(Read(UnitSex, unit))
     if v.kind == "character" then
         local index = Number(Read(C_SpecializationInfo.GetSpecialization))
@@ -370,7 +360,7 @@ local function AverageItemLevel(v, unit)
         local _, equipped = Read(GetAverageItemLevel)
         return Number(equipped)
     end
-    return Number(Read(C_PaperDollInfo and C_PaperDollInfo.GetInspectItemLevel, unit))
+    return Number(Read(C_PaperDollInfo.GetInspectItemLevel, unit))
 end
 
 local function UpdateCheckSummary(v)
@@ -393,7 +383,8 @@ local function UpdateCheckSummary(v)
         or unknown > 0 and "muted" or "success")
 end
 
-function Details.Refresh(v, onlySlot, durabilityOnly)
+-- dirtySlots: nil for a full read, or the set of slot ids that changed.
+function Details.Refresh(v, dirtySlots, durabilityOnly)
     if NS.IsCombatLocked() then
         Queue(v)
         return
@@ -441,7 +432,7 @@ function Details.Refresh(v, onlySlot, durabilityOnly)
     if guid ~= v.guid then
         HideTooltip(v)
         Clear(v)
-        onlySlot = nil
+        dirtySlots = nil
     end
     v.unit, v.guid = unit, guid
     local name = Text(Read(UnitName, unit)) or NS.L.DOSSIER_LOADING
@@ -459,7 +450,7 @@ function Details.Refresh(v, onlySlot, durabilityOnly)
     local loaded, enchantCount, gemCount, lowest, waiting = 0, 0, 0, nil, false
     for id in pairs(v.pending) do v.pending[id] = nil end
     for index, slot in ipairs(slots) do
-        local itemLevel, enchanted, gems, durability, pending = ReadRow(v, v.rows[index], slot, onlySlot)
+        local itemLevel, enchanted, gems, durability, pending = ReadRow(v, v.rows[index], slot, dirtySlots)
         if itemLevel then loaded = loaded + 1 end
         if enchanted then enchantCount = enchantCount + 1 end
         gemCount = gemCount + (gems or 0)
@@ -499,6 +490,52 @@ local function OnHide(v)
     Clear(v)
 end
 
+local function WipeSlots(slots)
+    for slot in pairs(slots) do slots[slot] = nil end
+end
+
+-- The one refresh for everything requested since the last frame. The
+-- requests are taken before the refresh reads them: the slot set is swapped
+-- with a spare one, so a request raised while the refresh runs lands in a
+-- fresh set and schedules the next frame's refresh.
+local function FlushRequests(v)
+    v.refreshScheduled = false
+    local all, durability = v.refreshAll, v.refreshDurability
+    local slots = v.refreshSlots
+    v.refreshSlots, v.spareSlots = v.spareSlots, slots
+    v.refreshAll, v.refreshDurability = false, false
+    if not Enabled(v) or not v.host:IsVisible() then
+        WipeSlots(slots)
+        return
+    end
+    if all then
+        WipeSlots(slots)
+        Details.Refresh(v)
+        return
+    end
+    if next(slots) ~= nil then Details.Refresh(v, slots) end
+    WipeSlots(slots)
+    -- A slot read reuses the other rows' snapshots, durability included.
+    if durability then Details.Refresh(v, nil, true) end
+end
+
+-- Item events arrive in bursts: a gear swap fires PLAYER_EQUIPMENT_CHANGED,
+-- UNIT_INVENTORY_CHANGED, PLAYER_AVG_ITEM_LEVEL_UPDATE and a run of
+-- GET_ITEM_INFO_RECEIVED. Each only records what changed; one refresh runs
+-- on the next frame. slot is a changed slot id, all asks for a full read.
+local function RequestRefresh(v, all, slot, durability)
+    if all then
+        v.refreshAll = true
+    elseif slot then
+        v.refreshSlots[slot] = true
+    elseif durability then
+        v.refreshDurability = true
+    end
+    if v.refreshScheduled then return end
+    v.refreshScheduled = true
+    After(0, v.flushRequests)
+end
+
 local function OnEvent(v, event, arg1)
     if not Enabled(v) or not v.host:IsVisible() then return end
     if event == "GET_ITEM_INFO_RECEIVED" and not v.pending[Accessible(arg1)] then return end
@@ -515,15 +552,21 @@ local function OnEvent(v, event, arg1)
     if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "PLAYER_LEVEL_UP" then
         for _, row in ipairs(v.rows) do NS.EquipmentInfo.Invalidate(row.audit) end
     end
-    Details.Refresh(v, event == "PLAYER_EQUIPMENT_CHANGED" and Number(Accessible(arg1)) or nil,
-        event == "UPDATE_INVENTORY_DURABILITY")
+    if event == "UPDATE_INVENTORY_DURABILITY" then
+        RequestRefresh(v, false, nil, true)
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        local slot = Number(Accessible(arg1))
+        RequestRefresh(v, slot == nil, slot, false)
+    else
+        RequestRefresh(v, true)
+    end
 end
 
 -- Row tooltips: each row button knows its row (frame.dossierRow).
 local function OnRowEnter(frame)
     local row = frame.dossierRow
     local v = row.view
-    if row.link and v.unit and GameTooltip and GUID(v.unit) == v.guid then
+    if row.link and v.unit and GUID(v.unit) == v.guid then
         GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
         GameTooltip:SetInventoryItem(v.unit, row.slot)
         NS.EquipmentInfo.AddTooltip(row.audit)
@@ -532,7 +575,7 @@ local function OnRowEnter(frame)
 end
 
 local function OnOwnedLeave(frame)
-    if GameTooltip and GameTooltip:IsOwned(frame) then GameTooltip:Hide() end
+    if GameTooltip:IsOwned(frame) then GameTooltip:Hide() end
 end
 
 local function OnToggleClick()
@@ -540,7 +583,6 @@ local function OnToggleClick()
 end
 
 local function OnToggleEnter(toggle)
-    if not GameTooltip then return end
     GameTooltip:SetOwner(toggle, "ANCHOR_RIGHT")
     GameTooltip:SetText(Config().expanded and NS.L.DOSSIER_COLLAPSE or NS.L.DOSSIER_EXPAND)
     GameTooltip:Show()
@@ -640,10 +682,13 @@ local function Create(root, parent, kind, owner)
     local v = {
         root = root, kind = kind, owner = owner, rows = {}, bySlot = {}, pending = {}, active = true,
         deferKey = "character-details:" .. kind, actionOwner = "character-details:" .. kind,
+        refreshSlots = {}, spareSlots = {},
+        refreshAll = false, refreshDurability = false, refreshScheduled = false,
     }
     v.deferredRefresh = function()
         if v.active and v.host:IsVisible() then Details.Refresh(v) end
     end
+    v.flushRequests = function() FlushRequests(v) end
     local host = CreateFrame("Frame", nil, parent)
     v.host = host
     hosts[host] = true
@@ -668,9 +713,10 @@ end
 
 function Details.Apply(root, kind, owner)
     Details.StyleChrome(root, owner)
-    if NS.Client and not NS.Client.modernEquipment then return end
-    if NS.IsCombatLocked() or type(GetInventoryItemLink) ~= "function" then return end
-    local parent = kind == "character" and _G.PaperDollFrame or _G.InspectPaperDollFrame
+    if not NS.Client.modernEquipment or NS.IsCombatLocked() then return end
+    -- InspectPaperDollFrame loads with Blizzard_InspectUI (load-on-demand).
+    local parent = _G.InspectPaperDollFrame
+    if kind == "character" then parent = PaperDollFrame end
     if not root or not parent or not NS.Safety.CanCreateRegions(parent, true) then return end
     local v = Details.views[root]
     if v and v.owner ~= owner and v.active then return end
@@ -724,7 +770,6 @@ end
 function Details.SetView(value)
     if NS.IsCombatLocked() or not VIEWS[value] then return false end
     if Config().view == value then return true end
-    if type(ReloadUI) ~= "function" then return false end
     Config().view = value
     -- This selector is reload-only: persist first, then let Blizzard rebuild
     -- every native frame before applying the new layout. Do not hot-swap or

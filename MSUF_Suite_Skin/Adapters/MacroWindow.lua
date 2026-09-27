@@ -7,6 +7,12 @@ NS.MacroWindow = MacroWindow
 local loadFrame = CreateFrame("Frame")
 local requestedOwner
 
+local Safety = NS.Safety
+local Read = Safety.Read
+local Public = Safety.Public
+local Dispatch = Safety.Dispatch
+local Kit = NS.AdapterKit
+
 local MACRO_ADDON = "Blizzard_MacroUI"
 local divider = "interface\\classtrainerframe\\ui-classtrainer-horizontalbar"
 local slotBackdrop = "interface\\buttons\\ui-emptyslot-disabled"
@@ -32,22 +38,17 @@ local TEXT_SPEC = {
     inset = 0, allowImplicitProtected = true,
 }
 
-local function IsSecret(value)
-    return type(issecretvalue) == "function" and issecretvalue(value)
-end
-
 -- MacroFrame's native art is laid out above its background. Keep exact
 -- original alpha values like Bags does, so the adapter can restore them when
 -- Blizzard-window skinning is disabled without depending on another owner.
 local function HideNative(state, region)
-    if not region or type(region.GetAlpha) ~= "function"
-        or type(region.SetAlpha) ~= "function"
-        or not NS.Safety.CanDecorate(region, true) then
+    if not region or not Safety.HasMethod(region, "SetAlpha")
+        or not Safety.CanDecorate(region, true) then
         return false
     end
     if state.nativeAlpha[region] == nil then
-        local alpha = region:GetAlpha()
-        if type(alpha) ~= "number" or IsSecret(alpha) then
+        local alpha = Read(region, "GetAlpha")
+        if type(alpha) ~= "number" then
             return false
         end
         state.nativeAlpha[region] = alpha
@@ -58,14 +59,13 @@ end
 
 local function RestoreNative(state)
     for region, alpha in pairs(state.nativeAlpha) do
-        if region:GetAlpha() == 0 then region:SetAlpha(alpha) end
+        if Read(region, "GetAlpha") == 0 then region:SetAlpha(alpha) end
         state.nativeAlpha[region] = nil
     end
 end
 
 local function TexturePath(region)
-    if not region or type(region.GetTexture) ~= "function" then return nil end
-    local path = region:GetTexture()
+    local path = Read(region, "GetTexture")
     if type(path) ~= "string" then return nil end
     return path:gsub("/", "\\"):lower():gsub("%.blp$", "")
 end
@@ -73,9 +73,8 @@ end
 -- The divider's right half is an anonymous texture anchored to the named
 -- left half; secret anchors are never compared.
 local function FollowsDividerLeft(region)
-    if type(region.GetPoint) ~= "function" then return false end
-    local point, relativeTo, relativePoint = region:GetPoint(1)
-    if IsSecret(point) or IsSecret(relativeTo) or IsSecret(relativePoint) then return false end
+    local point, relativeTo, relativePoint = Safety.Call(region, "GetPoint", 1)
+    if not Public(point) or not Public(relativeTo) or not Public(relativePoint) then return false end
     return point == "LEFT" and relativeTo == _G.MacroHorizontalBarLeft
         and relativePoint == "RIGHT"
 end
@@ -83,21 +82,18 @@ end
 local function FadeDividerRegions(state, ...)
     for index = 1, select("#", ...) do
         local region = select(index, ...)
-        if region and type(region.GetTexture) == "function"
+        if Safety.HasMethod(region, "GetTexture")
             and (TexturePath(region) == divider or FollowsDividerLeft(region)) then
             HideNative(state, region)
         end
     end
 end
 
-local function HasReadyView(scrollBox)
-    return scrollBox and type(scrollBox.HasView) == "function"
-        and scrollBox:HasView() == true
-end
-
 local function HasTemplateCoords(region)
-    if type(region.GetTexCoord) ~= "function" then return false end
-    local left, right, top, bottom = region:GetTexCoord()
+    local left, right, top, bottom = Safety.Call(region, "GetTexCoord")
+    if not Public(left) or not Public(right) or not Public(top) or not Public(bottom) then
+        return false
+    end
     return left == 0.140625 and right == 0.84375
         and top == 0.140625 and bottom == 0.84375
 end
@@ -107,8 +103,7 @@ end
 local function FadeBackgroundRegions(state, ...)
     for index = 1, select("#", ...) do
         local region = select(index, ...)
-        if region and type(region.GetDrawLayer) == "function"
-            and region:GetDrawLayer() == "BACKGROUND"
+        if Read(region, "GetDrawLayer") == "BACKGROUND"
             and (TexturePath(region) == slotBackdrop or HasTemplateCoords(region)) then
             HideNative(state, region)
         end
@@ -116,21 +111,30 @@ local function FadeBackgroundRegions(state, ...)
 end
 
 local function Selected(button)
-    local texture = button and button.SelectedTexture
-    if not texture or type(texture.IsShown) ~= "function" then return false end
-    local shown = texture:IsShown()
-    return not IsSecret(shown) and shown == true
+    return Read(button and button.SelectedTexture, "IsShown") == true
+end
+
+-- True while a pooled slot still carries the art and surface of this pass.
+-- A slot whose surface another skin replaced meanwhile takes a new one.
+local function SlotStyled(state, button)
+    local surface = state.slotSurfaces[button]
+    return state.styledSlots[button] == state.pass and surface ~= nil
+        and surface.spec == SLOT_SPEC and surface.visible ~= false
 end
 
 local function StyleSlot(state, button)
     if not state.active or NS.IsCombatLocked() or not button
-        or not NS.Safety.CanCreateRegions(button, true)
+        or not Safety.CanCreateRegions(button, true)
         or not button.Icon or not button.SelectedTexture then
         return false
     end
-    if type(button.GetRegions) == "function" then
-        FadeBackgroundRegions(state, button:GetRegions())
+    -- Blizzard initializes pooled slots on every scroll and Update; a slot
+    -- styled in this pass only follows the selection.
+    if SlotStyled(state, button) then
+        NS.Surface.SetActive(button, Selected(button))
+        return true
     end
+    FadeBackgroundRegions(state, Safety.Call(button, "GetRegions"))
     HideNative(state, button.SelectedTexture)
     HideNative(state, button.Highlight)
     local surface = NS.Surface.Attach(button, SLOT_SPEC)
@@ -139,8 +143,10 @@ local function StyleSlot(state, button)
     -- retaining Blizzard's normal icon, name, drag and click behavior.
     surface.edge:SetDrawLayer("OVERLAY", 2)
     state.buttons[button] = true
+    state.slotSurfaces[button] = surface
+    state.styledSlots[button] = state.pass
     NS.Surface.SetActive(button, Selected(button))
-    if not state.clickHooks[button] and type(button.HookScript) == "function" then
+    if not state.clickHooks[button] and Safety.HasMethod(button, "HookScript") then
         button:HookScript("OnClick", state.refreshSelection)
         state.clickHooks[button] = true
     end
@@ -152,13 +158,12 @@ local function SyncSelection(state, button)
 end
 
 local function RefreshVisibleSelection(state)
-    if not state.active or NS.IsCombatLocked() or not HasReadyView(state.scrollBox) then return end
-    state.scrollBox:ForEachFrame(state.syncSelection)
+    if not state.active or NS.IsCombatLocked() then return end
+    Kit.ForEachRow(state.scrollBox, state.syncSelection)
 end
 
 local function StyleFrame(state, frame)
-    local previous = NS.Registry and NS.Registry.GetSurface
-        and NS.Registry.GetSurface(frame)
+    local previous = NS.Registry.GetSurface(frame)
     if NS.Surface.Attach(frame, FRAME_SPEC) and not previous then state.rootOwned = true end
     HideNative(state, frame.Bg)
     HideNative(state, frame.NineSlice)
@@ -168,21 +173,52 @@ local function StyleFrame(state, frame)
     HideNative(state, portraitContainer and portraitContainer.portrait)
     HideNative(state, _G.MacroFrameSelectedMacroBackground)
     HideNative(state, _G.MacroHorizontalBarLeft)
-    if type(frame.GetRegions) == "function" then
-        FadeDividerRegions(state, frame:GetRegions())
-    end
+    FadeDividerRegions(state, Safety.Call(frame, "GetRegions"))
     local inset = frame.Inset
-    if inset and NS.Safety.CanCreateRegions(inset, true) then
+    if inset and Safety.CanCreateRegions(inset, true) then
         HideNative(state, inset.Bg)
         HideNative(state, inset.NineSlice)
         if NS.Surface.Attach(inset, INSET_SPEC) then state.inset = inset end
     end
     local background = _G.MacroFrameTextBackground
-    if background and NS.Safety.CanCreateRegions(background, true) then
+    if background and Safety.CanCreateRegions(background, true) then
         HideNative(state, background.NineSlice)
         if NS.Surface.Attach(background, TEXT_SPEC) then state.textBackground = background end
     end
     StyleSlot(state, frame.SelectedMacroButton)
+end
+
+-- CallbackRegistry passes the registration owner first: the frame state.
+local function OnRowInitialized(state, button)
+    if state.active then StyleSlot(state, button) end
+end
+
+-- Styles the window chrome once per pass, then the visible slots. The first
+-- pass waits until Blizzard shows the window: ADDON_LOADED fires while the
+-- hidden MacroFrame still has no selector view.
+local function Refresh(state)
+    local frame = state.frame
+    if not state.active or NS.IsCombatLocked() or not Safety.CanCreateRegions(frame, true) then
+        return false
+    end
+    if Safety.HasMethod(frame, "IsShown") and Read(frame, "IsShown") ~= true then return true end
+    if state.chromePass ~= state.pass then
+        StyleFrame(state, frame)
+        state.chromePass = state.pass
+    end
+    local selector = frame.MacroSelector
+    local scrollBox = selector and selector.ScrollBox
+    -- The selector can finish initializing after ADDON_LOADED. OnShow retries
+    -- once Blizzard has built it.
+    if not Safety.HasMethod(scrollBox, "ForEachFrame") then return true end
+    state.scrollBox = scrollBox
+    if not state.event then
+        state.event = Kit.RegisterRowCallback(scrollBox, OnRowInitialized, state)
+    end
+    -- ForEachRow waits for Blizzard's list view; the row callback covers the
+    -- rows Blizzard initializes once the view exists.
+    Kit.ForEachRow(scrollBox, state.styleSlot)
+    return true
 end
 
 -- Per-frame state; its callbacks are built once, never per row or click.
@@ -193,61 +229,44 @@ local function FrameState(frame)
         buttons = setmetatable({}, { __mode = "k" }),
         clickHooks = setmetatable({}, { __mode = "k" }),
         nativeAlpha = setmetatable({}, { __mode = "k" }),
+        -- pooled slot -> the pass that styled it, and its surface
+        styledSlots = setmetatable({}, { __mode = "k" }),
+        slotSurfaces = setmetatable({}, { __mode = "k" }),
+        pass = 0,
     }
     state.styleSlot = function(button) StyleSlot(state, button) end
     state.syncSelection = function(button) SyncSelection(state, button) end
     state.refreshSelection = function() RefreshVisibleSelection(state) end
-    state.onRowInitialized = function(_, button)
-        if state.active then StyleSlot(state, button) end
-    end
-    state.reapply = function()
-        if state.active then MacroWindow.Apply(frame, state.owner) end
-    end
+    -- Blizzard's OnShow and Update run this inside their own call chain.
+    state.refresh = function() Dispatch(Refresh, state) end
     MacroWindow.states[frame] = state
     return state
 end
 
 local function HookFrame(state, frame)
-    if not state.showHooked and type(frame.HookScript) == "function" then
-        frame:HookScript("OnShow", state.reapply)
+    if not state.showHooked and Safety.HasMethod(frame, "HookScript") then
+        frame:HookScript("OnShow", state.refresh)
         state.showHooked = true
     end
     -- Blizzard rebuilds the macro selector on opening, tab changes and
     -- UPDATE_MACROS. As with Bags:UpdateItems, finish its native Update first.
-    if not state.updateHooked and type(hooksecurefunc) == "function"
-        and type(frame.Update) == "function" then
-        hooksecurefunc(frame, "Update", state.reapply)
+    if not state.updateHooked and Kit.HookFunction(frame, "Update", state.refresh) then
         state.updateHooked = true
     end
 end
 
+-- A full pass: each enable, and the catalog pass (GenericWindows applies this
+-- again after its own pass over the window). Blizzard's OnShow and Update
+-- only style what the current pass has not styled yet.
 function MacroWindow.Apply(frame, owner)
-    if not frame or NS.IsCombatLocked() or not NS.Safety.CanCreateRegions(frame, true) then
+    if not frame or NS.IsCombatLocked() or not Safety.CanCreateRegions(frame, true) then
         return false
     end
     local state = FrameState(frame)
     state.active, state.owner, state.frame = true, owner, frame
+    state.pass = state.pass + 1
     HookFrame(state, frame)
-    -- ADDON_LOADED fires while the hidden MacroFrame still has no selector
-    -- view. The frame's OnShow hook applies chrome after Blizzard opens it.
-    if type(frame.IsShown) == "function" and frame:IsShown() ~= true then return true end
-    StyleFrame(state, frame)
-    local selector = frame.MacroSelector
-    local scrollBox = selector and selector.ScrollBox
-    -- The selector can finish initializing after ADDON_LOADED. OnShow retries
-    -- once Blizzard has built it; older clients keep the generic window skin.
-    if not scrollBox or type(scrollBox.ForEachFrame) ~= "function" then return true end
-    state.scrollBox = scrollBox
-    local event = ScrollBoxListMixin and ScrollBoxListMixin.Event
-        and ScrollBoxListMixin.Event.OnInitializedFrame
-    if event and not state.registered and type(scrollBox.RegisterCallback) == "function" then
-        scrollBox:RegisterCallback(event, state.onRowInitialized, state)
-        state.registered, state.event = true, event
-    end
-    if HasReadyView(scrollBox) then
-        scrollBox:ForEachFrame(state.styleSlot)
-    end
-    return true
+    return Refresh(state)
 end
 
 function MacroWindow.Start(owner)
@@ -257,7 +276,7 @@ function MacroWindow.Start(owner)
         loadFrame:UnregisterEvent("ADDON_LOADED")
         return MacroWindow.Apply(frame, owner)
     end
-    if NS.Client and NS.Client.HasAddOn(MACRO_ADDON) == false then
+    if NS.Client.HasAddOn(MACRO_ADDON) == false then
         return false
     end
     loadFrame:RegisterEvent("ADDON_LOADED")
@@ -274,11 +293,10 @@ end)
 
 local function ReleaseState(state)
     state.active = false
-    if state.registered and state.scrollBox
-        and type(state.scrollBox.UnregisterCallback) == "function" then
-        state.scrollBox:UnregisterCallback(state.event, state)
+    if state.event then
+        Kit.UnregisterRowCallback(state.scrollBox, state.event, state)
+        state.event = nil
     end
-    state.registered = false
     RestoreNative(state)
     for button in pairs(state.buttons) do NS.Surface.SetVisible(button, false) end
     if state.rootOwned then NS.Surface.SetVisible(state.frame, false) end

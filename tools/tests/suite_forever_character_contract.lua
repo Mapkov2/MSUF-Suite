@@ -1,5 +1,16 @@
 local rootPath = assert(arg[1], "Suite root required")
 
+-- Blizzard's callback isolation: an error is reported and the caller goes on.
+local reported = {}
+securecallfunction = function(callback, ...)
+    local results = { pcall(callback, ...) }
+    if not results[1] then
+        reported[#reported + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2, table.maxn(results))
+end
+
 local function Texture(atlas)
     return { atlas = atlas, vertex = { 1, 1, 1, 1 },
         GetAtlas = function(self) return self.atlas end,
@@ -77,6 +88,8 @@ function character:SetSelectedModeTabByFrame(index) self.selectedTab = index end
 character.TitleText = Texture()
 CharacterFrame = character
 CharacterModelScene = Frame()
+-- Blizzard_UIPanels_Game creates the stat pane with CharacterFrame.
+CharacterStatsPane = Frame()
 local modelBackgrounds = {}
 for _, name in ipairs({ "CharacterModelFrameBackgroundTopLeft",
     "CharacterModelFrameBackgroundTopRight", "CharacterModelFrameBackgroundBotLeft",
@@ -88,10 +101,20 @@ end
 local hooks = {}
 local themeListener
 hooksecurefunc = function(target, method, callback)
+    if type(target) == "string" then
+        hooks[target] = method
+        return
+    end
     assert(target == character and (method == "SetSelectedModeTabByFrame"
         or method == "UpdateTabLayout"))
     hooks[method] = callback
 end
+-- PaperDoll slot updates arrive through this global.
+PaperDollItemSlotButton_Update = function() end
+local headSlot = Frame()
+headSlot.Icon, headSlot.IconBorder = Texture(), Texture()
+CharacterHeadSlot = headSlot
+local iconSpecs = {}
 local ns = {
     Client = { isForever = true },
     DB = { theme = { look = "foreverGlass" } },
@@ -109,15 +132,21 @@ local ns = {
         SetActive = function(target, active) target.active = active; return true end,
         SetVisible = function(target, shown) target.surfaceVisible = shown; return true end,
     },
-    CharacterStats = { Disable = function() end },
+    CharacterStats = { Apply = function() end, Disable = function() end },
     GearAnnotations = { IsWide = function() return false end },
     CharacterDetails = { Apply = function() end, Disable = function() end, views = {} },
     EQoLCharacter = { Apply = function() end, Disable = function() end },
     GenericWindows = { IsCategoryEnabled = function() return true end },
     CombatGate = { RunOrDefer = function(_, callback) callback(); return true end,
         Cancel = function() end },
+    IconSkin = { Apply = function(_, _, spec)
+        iconSpecs[#iconSpecs + 1] = spec
+        return {}
+    end },
 }
-assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Adapters/CharacterPanel.lua"))("MSUF_Suite_Skin", ns)
+for _, file in ipairs({ "AdapterKit", "SharedChrome", "PaperDollChrome", "CharacterPanel" }) do
+    assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
+end
 assert(ns.CharacterPanel.Apply("blizzardWindows"))
 assert(left.surface.role == "panel" and right.surface.role == "panel"
     and leftArt.alpha == 0 and rightArt.alpha == 0 and right.StoneBg.alpha == 0,
@@ -193,6 +222,23 @@ themeListener(nil, "profile", nil)
 assert(character.ModeTabs.frameStrata == "HIGH"
     and tabs[2]._msufForeverLabel.shown == true,
     "expanded Forever panel did not restore visible top tabs")
+
+-- Blizzard's PaperDoll post-hooks: a raising pass is reported and never
+-- reaches Blizzard's caller.
+local getColor = ns.Theme.GetColor
+ns.Theme.GetColor = function() error("contract: theme raised") end
+local before = #reported
+local finished = pcall(hooks.UpdateTabLayout)
+ns.Theme.GetColor = getColor
+assert(finished and #reported == before + 1,
+    "a raising PaperDoll pass escaped into Blizzard's tab layout caller")
+
+-- Slot updates repeat for every equipment change; the icon skin reuses one spec.
+local specCount = #iconSpecs
+hooks.PaperDollItemSlotButton_Update(headSlot)
+hooks.PaperDollItemSlotButton_Update(headSlot)
+assert(#iconSpecs == specCount + 2 and iconSpecs[#iconSpecs] == iconSpecs[#iconSpecs - 1],
+    "every PaperDoll slot update built a new icon spec")
 assert(ns.CharacterPanel.Disable("blizzardWindows")
     and left.surfaceVisible == false and right.surfaceVisible == false
     and character.ModeTabs.points[1][3] == "TOPRIGHT"

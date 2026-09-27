@@ -24,6 +24,7 @@ local CommonArt = {
 NS.CommonArt = CommonArt
 
 local Field = NS.Safety.Field
+local Dispatch = NS.Safety.Dispatch
 local Kit = NS.AdapterKit
 local Fade = Kit.Fade
 local SurfaceSpec = Kit.SurfaceSpec
@@ -220,9 +221,12 @@ local rowSpecs = {
 
 local panelArtFields = { "Bg", "Background" }
 
+-- The exact root, or the exact frame at path below it; nil when a link is
+-- missing, never the root in its place.
 local function Resolve(rootName, path)
     local root = _G[rootName]
-    return path and Kit.PathOf(root, path) or root
+    if path then return Kit.PathOf(root, path) end
+    return root
 end
 
 local function OwnerState(owner)
@@ -292,10 +296,12 @@ local function ScheduleCategoryCards(selection, state)
     return ran == true, reason
 end
 
+-- A post-hook on Blizzard's global: each owner's pass is its own error
+-- boundary, so a raising pass never reaches Blizzard's caller.
 local function OnCategoryButtonsUpdated(selection)
     for _, state in pairs(CommonArt.owners) do
         if state.active then
-            ScheduleCategoryCards(selection, state)
+            Dispatch(ScheduleCategoryCards, selection, state)
         end
     end
 end
@@ -344,8 +350,9 @@ local function ApplyPanelSpec(spec, state)
         Kit.FadeNineSlice(state, Field(target, "NineSlice"))
         Kit.FadeFields(state, target, panelArtFields)
     end
-    for index = 1, #(spec.nineSliceFields or {}) do
-        local field = Field(target, spec.nineSliceFields[index])
+    local nineSliceFields = spec.nineSliceFields
+    for index = 1, nineSliceFields and #nineSliceFields or 0 do
+        local field = Field(target, nineSliceFields[index])
         Kit.FadeNineSlice(state, field)
         Kit.FadeFields(state, field, panelArtFields)
     end
@@ -399,6 +406,7 @@ local function ApplyNow(state)
         local spec = scrollBoxSpecs[index]
         RegisterScrollBox(Resolve(spec.root, spec.path), spec.kind)
     end
+    -- Forever lacks PVEFrame: Blizzard_GroupFinder excludes the camelot game type.
     return _G.PVEFrame ~= nil, _G.PVEFrame and "applied" or "missing"
 end
 

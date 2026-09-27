@@ -18,6 +18,7 @@ local CommonMenus = {
 NS.CommonMenus = CommonMenus
 
 local Field = NS.Safety.Field
+local Dispatch = NS.Safety.Dispatch
 local Kit = NS.AdapterKit
 
 local DEFAULT_OWNER = "blizzardWindows"
@@ -71,7 +72,11 @@ local function OwnerState(owner)
         state = {
             owner = owner,
             active = false,
+            -- bag frame / pooled item button -> skin generation of its pass
             frames = Kit.WeakSet(),
+            items = Kit.WeakSet(),
+            -- pooled item button -> the ItemSlotBackground its pass faded (or false)
+            slotBackgrounds = Kit.WeakSet(),
             surfaces = Kit.WeakSet(),
             deferred = {},
         }
@@ -95,25 +100,38 @@ local function SkinBagItem(state, frame, button)
     return control ~= nil and iconSkinned
 end
 
--- ContainerFrame item buttons come from its itemButtonPool; older layouts
--- keep them in the Items array instead.
-local function SkinBagItems(state, frame)
-    local pool = Field(frame, "itemButtonPool")
-    local count = 0
-    if type((Field(pool, "EnumerateActive"))) == "function" then
-        local visited = 0
-        for button in pool:EnumerateActive() do
-            if visited >= BAG_ITEM_LIMIT then break end
-            visited = visited + 1
-            if SkinBagItem(state, frame, button) then count = count + 1 end
-        end
-        return count
+-- A pooled item button keeps its control skin while Blizzard reuses it, so
+-- that takes one pass per skin generation, or again when Initialize gave the
+-- button an ItemSlotBackground (combined bags) after that pass. Its quality
+-- border follows its contents: the SetItemButtonQuality post-hook
+-- (DeepWindows) repaints it when UpdateItems sets it. Only without that hook
+-- is it repainted here on every opening; IconSkin reads the native
+-- IconBorder while it skins, and on a button it owns that repaint creates no
+-- regions and no tables.
+local function RefreshBagItem(state, frame, button, generation)
+    local slotBackground = Field(button, "ItemSlotBackground") or false
+    if state.items[button] ~= generation or state.slotBackgrounds[button] ~= slotBackground then
+        if not SkinBagItem(state, frame, button) then return false end
+        state.items[button] = generation
+        state.slotBackgrounds[button] = slotBackground
+        return true
     end
-    local items = Field(frame, "Items")
-    if type(items) == "table" then
-        for index = 1, math.min(#items, BAG_ITEM_LIMIT) do
-            if SkinBagItem(state, frame, items[index]) then count = count + 1 end
-        end
+    if CommonMenus.callbackState.qualityHook then return true end
+    local icon, qualityBorder = Field(button, "icon"), Field(button, "IconBorder")
+    return icon ~= nil and qualityBorder ~= nil and Kit.ParentIs(button, frame)
+        and Kit.SkinItemIcon(button, state.owner, icon, qualityBorder, true)
+end
+
+-- ContainerFrame item buttons come from its itemButtonPool (Retail and
+-- Forever: Blizzard_UIPanels_Game/Mainline/ContainerFrame.lua).
+local function RefreshBagItems(state, frame, generation)
+    local pool = Field(frame, "itemButtonPool")
+    if type((Field(pool, "EnumerateActive"))) ~= "function" then return 0 end
+    local count, visited = 0, 0
+    for button in pool:EnumerateActive() do
+        if visited >= BAG_ITEM_LIMIT then break end
+        visited = visited + 1
+        if RefreshBagItem(state, frame, button, generation) then count = count + 1 end
     end
     return count
 end
@@ -128,24 +146,34 @@ local function SkinMoneyFrame(state, frame)
     return true
 end
 
-local function ApplyBagFrame(state, frame)
+-- Opening a bag reaches here twice: the OpenBag callback fires in
+-- ContainerFrame_OnShow, before UpdateItems has filled the reused buttons,
+-- and the post-hook runs once ContainerFrame_GenerateFrame has finished. The
+-- bag window's static tree takes one full pass per skin generation; the item
+-- buttons (refreshItems) are handled from the post-hook, once their contents
+-- and quality borders are current. The shared search/sort controls follow
+-- the bag that currently holds them.
+local function ApplyBagFrame(state, frame, refreshItems)
     local owner = state.owner
-    if not NS.GenericWindows.ApplyFrame(frame, owner, BAG_MODE) then return false end
-    state.frames[frame] = true
-    SkinBagItems(state, frame)
-    SkinMoneyFrame(state, frame)
+    local generation = Kit.SkinGeneration()
+    if state.frames[frame] ~= generation then
+        if not NS.GenericWindows.ApplyFrame(frame, owner, BAG_MODE) then return false end
+        state.frames[frame] = generation
+        SkinMoneyFrame(state, frame)
+        local close = Field(frame, "CloseButton")
+        if close then NS.WindowActionSkin.Apply(close, owner, "close") end
+    end
+    if refreshItems then RefreshBagItems(state, frame, generation) end
     -- ContainerFrameMixin:UpdateSearchBox reparents these shared controls after
     -- the initial traversal. Revisit only their exact current bag owner.
-    local search, sort = _G.BagItemSearchBox, _G.BagItemAutoSortButton
-    if search and Kit.ParentIs(search, frame) then
+    local search, sort = BagItemSearchBox, BagItemAutoSortButton
+    if Kit.ParentIs(search, frame) then
         NS.ControlSkin.ApplySearchBox(search, owner, BAG_SEARCH_SPEC)
     end
-    if sort and Kit.ParentIs(sort, frame) and NS.Surface.Attach(sort, BAG_ACTION_SPEC) then
+    if Kit.ParentIs(sort, frame) and NS.Surface.Attach(sort, BAG_ACTION_SPEC) then
         -- Keep the native sort icon, scripts and highlight; just add its plate.
         state.surfaces[sort] = true
     end
-    local close = Field(frame, "CloseButton")
-    if close then NS.WindowActionSkin.Apply(close, owner, "close") end
     return true
 end
 
@@ -164,25 +192,31 @@ local function FadeCosmeticGlobals(state)
     return faded
 end
 
-function CommonMenus:OnBagOpened(frame)
+local function ApplyBagForOwners(frame, refreshItems)
     -- Bag windows are usable in combat. Cosmetic traversal is optional, so do
     -- absolutely no queueing or mutation there; the next out-of-combat open
-    -- refreshes the rebuilt item pool. ContainerFrame builds its item pool
-    -- before firing OpenBag, so this one dynamic root is rescanned without
-    -- touching every catalog window.
+    -- refreshes the rebuilt item pool. Only this one dynamic root is visited,
+    -- never every catalog window.
     if not frame or NS.IsCombatLocked() or not NS.GenericWindows.IsCategoryEnabled("inventory") then
         return
     end
-    for _, state in pairs(self.owners) do
-        if state.active then ApplyBagFrame(state, frame) end
+    -- Each owner's pass is its own error boundary: this runs from Blizzard's
+    -- OpenBag callback and ContainerFrame_GenerateFrame post-hook.
+    for _, state in pairs(CommonMenus.owners) do
+        if state.active then Dispatch(ApplyBagFrame, state, frame, refreshItems) end
     end
 end
 
+-- The item buttons wait for the post-hook when it is installed.
+function CommonMenus:OnBagOpened(frame)
+    ApplyBagForOwners(frame, CommonMenus.callbackState.generateHook ~= true)
+end
+
 -- ContainerFrame_GenerateFrame finishes after search/sort controls, money,
--- optional add-slot controls and the final item update have all run. This
--- exact post-hook complements the earlier OpenBag callback without polling.
+-- optional add-slot controls and the item update have run. This exact
+-- post-hook complements the earlier OpenBag callback without polling.
 function CommonMenus:OnBagGenerated(frame)
-    self:OnBagOpened(frame)
+    ApplyBagForOwners(frame, true)
 end
 
 local function OnContainerGenerated(frame)
@@ -191,14 +225,19 @@ end
 
 local function RegisterCallbacks()
     local registered = false
-    if not CommonMenus.callbackState.bags
-        and Kit.RegisterEventCallback(BAG_OPEN_CALLBACK, CommonMenus.OnBagOpened, CommonMenus) then
-        CommonMenus.callbackState.bags = true
+    local callbackState = CommonMenus.callbackState
+    if not callbackState.bags then
+        EventRegistry:RegisterCallback(BAG_OPEN_CALLBACK, CommonMenus.OnBagOpened, CommonMenus)
+        callbackState.bags = true
         registered = true
     end
-    if not CommonMenus.callbackState.generateHook
+    if not callbackState.generateHook
         and NS.DeepWindows.InstallContainerGenerateHook(OnContainerGenerated) then
-        CommonMenus.callbackState.generateHook = true
+        callbackState.generateHook = true
+        registered = true
+    end
+    if not callbackState.qualityHook and NS.DeepWindows.InstallItemQualityHook() then
+        callbackState.qualityHook = true
         registered = true
     end
     return registered
@@ -206,12 +245,14 @@ end
 
 local function UnregisterCallbacks()
     if CommonMenus.callbackState.bags then
-        Kit.UnregisterEventCallback(BAG_OPEN_CALLBACK, CommonMenus)
+        EventRegistry:UnregisterCallback(BAG_OPEN_CALLBACK, CommonMenus)
     end
-    -- Secure hooks cannot be removed. Keep the installation marker while the
-    -- inert callback waits for a later owner enable.
-    local generateHook = CommonMenus.callbackState.generateHook == true
-    CommonMenus.callbackState = { generateHook = generateHook }
+    -- Secure hooks cannot be removed. Keep the installation markers while the
+    -- inert callbacks wait for a later owner enable.
+    CommonMenus.callbackState = {
+        generateHook = CommonMenus.callbackState.generateHook == true,
+        qualityHook = CommonMenus.callbackState.qualityHook == true,
+    }
 end
 
 local function ApplyNow(state)

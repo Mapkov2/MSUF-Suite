@@ -20,6 +20,10 @@ local _, NS = ...
 -- semantic textures and selection state. All paint work is outside combat;
 -- permanent secure hooks and callbacks are installed once and are inert when
 -- no owner is active. No timer, polling loop or frame OnUpdate is installed.
+--
+-- This file owns the owner lifecycle and the quest, gossip, bank and warband
+-- windows; DeepWindowsProfessions.lua adds the profession, customer-order
+-- and generic-trait windows.
 local DeepWindows = {
     owners = {},
     waiting = {},
@@ -29,82 +33,20 @@ local DeepWindows = {
 }
 NS.DeepWindows = DeepWindows
 
-local Field = NS.Safety.Field
+local Safety = NS.Safety
+local Field = Safety.Field
+local Dispatch = Safety.Dispatch
 local Kit = NS.AdapterKit
 local Path = Kit.Path
 local Fade = Kit.Fade
 
 local DEFAULT_OWNER = "blizzardWindows"
-local DESCENDANT_DEPTH = 12
 local BANK_TAB_LIMIT = 32
 local BANK_ITEM_LIMIT = 128
 local WARBAND_CARD_LIMIT = 64
 
 local UI_PANELS_ADDON = "Blizzard_UIPanels_Game"
-local PROFESSIONS_ADDON = "Blizzard_Professions"
-local CUSTOMER_ORDERS_ADDON = "Blizzard_ProfessionsCustomerOrders"
 local COLLECTIONS_ADDON = "Blizzard_Collections"
-local GENERIC_TRAITS_ADDON = "Blizzard_GenericTraitUI"
-
-local PROFESSION_MODE = {
-    role = "shell",
-    maxDepth = 10,
-    maxNodes = 1200,
-    allowImplicitProtected = true,
-}
-
-local CUSTOMER_ORDERS_MODE = {
-    role = "shell",
-    maxDepth = 10,
-    maxNodes = 1200,
-    allowImplicitProtected = true,
-    -- Customer-order rows have exact mixin contracts below. Keeping their
-    -- lifecycle here avoids the generic ScrollBox callback overwriting the
-    -- category selection role after Blizzard initializes a recycled row.
-    registerDynamicRows = false,
-}
-
-local GENERIC_TRAITS_MODE = {
-    role = "shell",
-    maxDepth = 4,
-    maxNodes = 480,
-    allowImplicitProtected = true,
-    -- Trait buttons, edges, FX and currency are semantic Blizzard content.
-    -- Only the exact shell fields below need a late lifecycle repaint.
-    childSurfaces = false,
-    registerDynamicRows = false,
-}
-
-local FOREVER_BOOK_MODE = {
-    role = "panel", maxDepth = 0, maxNodes = 1,
-    fillVisible = false, childSurfaces = false, registerDynamicRows = false,
-    allowImplicitProtected = true,
-}
-
-local FOREVER_CARD_MODE = {
-    role = "card", maxDepth = 0, maxNodes = 1,
-    childSurfaces = false, registerDynamicRows = false,
-    allowImplicitProtected = true,
-}
-
-local CUSTOMER_CATEGORY_SPEC = {
-    role = "navigation",
-    activeRole = "navigationActive",
-    radius = 4,
-    inset = 0,
-    listItem = true,
-    regions = { "NormalTexture", "HighlightTexture", "SelectedTexture" },
-    allowImplicitProtected = true,
-}
-
-local CUSTOMER_ROW_SPEC = {
-    role = "card",
-    radius = 4,
-    inset = 0,
-    listItem = true,
-    regions = { "HighlightTexture" },
-    allowImplicitProtected = true,
-}
 
 local BANK_TAB_SPEC = {
     role = "navigation",
@@ -146,18 +88,6 @@ local GOSSIP_MATERIAL_GLOBALS = {
     "GossipFrameGreetingPanelMaterialBotRight",
 }
 
-local PROFESSION_DETAIL_FIELDS = {
-    "BackgroundTop", "BackgroundMiddle", "BackgroundBottom", "BackgroundMinimized",
-}
-
-local FOREVER_PROFESSION_CARDS = {
-    "PrimaryProfession1", "PrimaryProfession2", "SecondaryProfession1",
-    "SecondaryProfession2", "SecondaryProfession3",
-}
-
-local CUSTOMER_CATEGORY_FIELDS = {
-    "Text", "NormalTexture", "HighlightTexture", "SelectedTexture", "Lines", "SpacerLine",
-}
 
 local WARBAND_CARD_FIELDS = {
     "Icon", "Name", "NameBackground", "Border", "SlotFavorite", "HighlightTexture",
@@ -168,11 +98,10 @@ local function CategoryEnabled(category)
 end
 
 local function CanCreateRegions(target)
-    return NS.Safety.CanCreateRegions(target, true)
+    return Safety.CanCreateRegions(target, true)
 end
 
-local SkinCustomerCategory
-local SkinCustomerRow
+local SkinWarbandCard
 
 local function OwnerState(parentOwner)
     parentOwner = parentOwner or DEFAULT_OWNER
@@ -184,18 +113,21 @@ local function OwnerState(parentOwner)
             active = false,
             deferred = {},
             cardSurfaces = Kit.WeakSet(),
+            cardsVisited = 0,
+            cardsDecorated = 0,
         }
-        -- Row visitors are built once per owner, not per refresh.
-        state.visitCategory = function(button) SkinCustomerCategory(state, button) end
-        state.visitRow = function(button) SkinCustomerRow(state, button) end
+        -- Built once per owner, not per refresh. Returning true ends the
+        -- page walk after WARBAND_CARD_LIMIT cards.
+        state.visitCard = function(card)
+            state.cardsVisited = state.cardsVisited + 1
+            if SkinWarbandCard(state, card) then state.cardsDecorated = state.cardsDecorated + 1 end
+            return state.cardsVisited >= WARBAND_CARD_LIMIT
+        end
         DeepWindows.owners[parentOwner] = state
     end
     return state
 end
 
-local function FadeRegion(region, state)
-    Fade(state, region)
-end
 
 local function FadeMaterialPanel(state, panel)
     if not panel then return 0 end
@@ -210,7 +142,6 @@ end
 
 local function SetQuestText(state, active)
     local questText = NS.QuestText
-    if not questText then return end
     local method = active and questText.Activate or questText.Deactivate
     method(_G.QuestFrame, state.owner)
     method(_G.GossipFrame, state.owner)
@@ -243,233 +174,20 @@ local function ApplyQuestAndGossip(state)
     return faded > 0, faded > 0 and "applied" or "missing"
 end
 
-local function ApplyDeepRoot(state, root, mode)
-    if not state or not state.active or not root then return false, "missing" end
-    if NS.IsCombatLocked() then return false, "combat" end
-    -- Use the parent catalog owner deliberately. GenericWindows already owns
-    -- these roots and therefore remains the sole restorer for its surfaces,
-    -- controls, dynamic ScrollBox callbacks and cosmetic state.
-    local applied, reason = NS.GenericWindows.ApplyFrame(root, state.parentOwner, mode or PROFESSION_MODE)
-    return applied == true, reason
-end
-
-local function FadePanelChrome(state, panel)
-    if not panel then return end
-    Fade(state, Field(panel, "Bg"))
-    Fade(state, Field(panel, "Background"))
-    Kit.FadeNineSlice(state, Field(panel, "NineSlice"))
-end
-
-local function FadeProfessionRecipeList(state, recipeList)
-    if not recipeList then return end
-    Fade(state, Field(recipeList, "Background"))
-    Kit.FadeNineSlice(state, Field(recipeList, "BackgroundNineSlice"))
-end
-
-local function FadeProfessionSchematic(state, schematic, hasOwnNineSlice)
-    if not schematic then return end
-    Fade(state, Field(schematic, "Background"))
-    Fade(state, Field(schematic, "MinimalBackground"))
-    if hasOwnNineSlice then
-        Kit.FadeNineSlice(state, Field(schematic, "NineSlice"))
-    end
-    Kit.FadeFields(state, Field(schematic, "Details"), PROFESSION_DETAIL_FIELDS)
-end
-
--- Camelot puts its professions book inside ProfessionsFrame instead of
--- loading the standalone ProfessionsBookFrame. The anonymous atlas on
--- CraftingPage and the five book cards are exact decorative regions; spell
--- buttons, rank bars, recipes, and profession icons stay native.
-local function FadeForeverProfessionBook(state, root, crafting)
-    Kit.FadeAtlas(state, crafting, "Profession-Background-Template2")
-    local content = Path(root, "BookPage", "ProfessionsContentFrame")
-    if not content then return end
-    NS.GenericWindows.ApplyFrame(content, state.parentOwner, FOREVER_BOOK_MODE)
-    for index = 1, #FOREVER_PROFESSION_CARDS do
-        local card = Field(content, FOREVER_PROFESSION_CARDS[index])
-        if card then
-            NS.GenericWindows.ApplyFrame(card, state.parentOwner, FOREVER_CARD_MODE)
-            Fade(state, Field(card, "Background"))
-        end
-    end
-end
-
-local function FadeProfessionChrome(state, root)
-    -- These exact parentKey-only frames are anonymous in Blizzard's XML, so
-    -- the generic name-token traversal cannot identify their decorative art.
-    -- Keep recipe, reagent, quality, reward and order-state content native.
-    local crafting = Field(root, "CraftingPage")
-    FadeProfessionRecipeList(state, Field(crafting, "RecipeList"))
-    FadeProfessionSchematic(state, Field(crafting, "SchematicForm"), true)
-
-    if NS.Client.isForever then
-        FadeForeverProfessionBook(state, root, crafting)
-    end
-
-    Fade(state, Path(root, "SpecPage", "TreeView", "Background"))
-    Fade(state, Path(root, "SpecPage", "DetailedView", "Background"))
-    Fade(state, Path(root, "SpecPage", "TreePreview", "Background"))
-
-    local orders = Field(root, "OrdersPage")
-    local browse = Field(orders, "BrowseFrame")
-    FadeProfessionRecipeList(state, Field(browse, "RecipeList"))
-    local orderList = Field(browse, "OrderList")
-    Fade(state, Field(orderList, "Background"))
-    Kit.FadeNineSlice(state, Field(orderList, "NineSlice"))
-
-    local orderView = Field(orders, "OrderView")
-    local orderInfo = Field(orderView, "OrderInfo")
-    Fade(state, Field(orderInfo, "Background"))
-    Kit.FadeNineSlice(state, Field(orderInfo, "NineSlice"))
-    local orderDetails = Field(orderView, "OrderDetails")
-    Fade(state, Field(orderDetails, "Background"))
-    Kit.FadeNineSlice(state, Field(orderDetails, "NineSlice"))
-    -- This concrete order SchematicForm has no own NineSlice in Retail.
-    FadeProfessionSchematic(state, Field(orderDetails, "SchematicForm"), false)
-end
-
-SkinCustomerCategory = function(state, button)
-    if not state or not state.active or not button or Field(button, "isSpacer") == true
-        or NS.IsCombatLocked() or not CanCreateRegions(button)
-        or not Kit.HasFields(button, CUSTOMER_CATEGORY_FIELDS) then
-        return false
-    end
-    -- ControlSkin copies the spec synchronously, so the shared table can
-    -- carry this row's selection for exactly one call.
-    CUSTOMER_CATEGORY_SPEC.active = Kit.IsShown(Field(button, "SelectedTexture"))
-    local applied = NS.ControlSkin.ApplyButton(button, state.owner, CUSTOMER_CATEGORY_SPEC)
-    CUSTOMER_CATEGORY_SPEC.active = nil
-    return applied ~= nil
-end
-
-SkinCustomerRow = function(state, button)
-    if not state or not state.active or not button or NS.IsCombatLocked()
-        or not CanCreateRegions(button) or not Field(button, "HighlightTexture") then
-        return false
-    end
-    return NS.ControlSkin.ApplyButton(button, state.owner, CUSTOMER_ROW_SPEC) ~= nil
-end
-
-local function SkinVisibleCustomerRows(state, root)
-    local browse = Field(root, "BrowseOrders")
-    Kit.ForEachRow(Path(browse, "CategoryList", "ScrollBox"), state.visitCategory)
-    Kit.ForEachRow(Path(browse, "RecipeList", "ScrollBox"), state.visitRow)
-    Kit.ForEachRow(Path(root, "MyOrdersPage", "OrderList", "ScrollBox"), state.visitRow)
-    Kit.ForEachRow(Path(root, "Form", "CurrentListings", "OrderList", "ScrollBox"), state.visitRow)
-end
-
-local function FadeCustomerOrdersChrome(state, root)
-    -- Standalone customer orders copies Auction House chrome into anonymous
-    -- parentKey frames. Fade only those source-confirmed decorative members;
-    -- recipe icons, favorites, text, money and order state remain native.
-    FadePanelChrome(state, Field(root, "MoneyFrameInset"))
-    Kit.ForEachRegion(Field(root, "MoneyFrameBorder"), FadeRegion, state)
-
-    local browse = Field(root, "BrowseOrders")
-    FadePanelChrome(state, Field(browse, "CategoryList"))
-    FadePanelChrome(state, Field(browse, "RecipeList"))
-
-    FadePanelChrome(state, Path(root, "MyOrdersPage", "OrderList"))
-
-    local form = Field(root, "Form")
-    Fade(state, Field(form, "RecipeHeader"))
-    FadePanelChrome(state, Field(form, "LeftPanelBackground"))
-    FadePanelChrome(state, Field(form, "RightPanelBackground"))
-    Fade(state, Path(form, "PaymentContainer", "NoteEditBox", "Border"))
-    local listings = Field(form, "CurrentListings")
-    FadePanelChrome(state, listings)
-    FadePanelChrome(state, Field(listings, "OrderList"))
-
-    SkinVisibleCustomerRows(state, root)
-end
-
-local function ApplyProfessionRoot(state, root)
-    local applied, reason = ApplyDeepRoot(state, root)
-    if applied and root == _G.ProfessionsFrame then
-        FadeProfessionChrome(state, root)
-    end
-    return applied, reason
-end
-
-local function ApplyCustomerOrdersRoot(state, root)
-    local applied, reason = ApplyDeepRoot(state, root, CUSTOMER_ORDERS_MODE)
-    if applied then FadeCustomerOrdersChrome(state, root) end
-    return applied, reason
-end
-
-local function FadeGenericTraitChrome(state, root)
-    -- GenericTraitFrameMixin:ApplyLayout assigns these atlases after the
-    -- catalog pass. They are exact decorative shell members; ButtonsParent,
-    -- talent nodes, edges, FX, currency text/icon and scripts stay native.
-    Fade(state, Field(root, "Background"))
-    Fade(state, Field(root, "BorderOverlay"))
-    Kit.FadeNineSlice(state, Field(root, "NineSlice"))
-    Fade(state, Path(root, "NineSlice", "DetailTop"))
-    Fade(state, Path(root, "Header", "TitleDivider"))
-    Fade(state, Path(root, "Inset", "Bg"))
-    Kit.FadeNineSlice(state, Path(root, "Inset", "NineSlice"))
-    Fade(state, Path(root, "Currency", "CurrencyBackground"))
-end
-
-local function ApplyGenericTraitRoot(state, root)
-    local applied, reason = ApplyDeepRoot(state, root, GENERIC_TRAITS_MODE)
-    if applied then FadeGenericTraitChrome(state, root) end
-    return applied, reason
-end
-
--- True when frame is nil (a whole-window refresh) or lies inside root.
-local function Covers(root, frame)
-    return root ~= nil and (frame == nil or frame == root
-        or Kit.IsDescendantOf(frame, root, DESCENDANT_DEPTH))
-end
 
 -- apply(state, a, b) for every active owner while the category is enabled.
+-- These run from Blizzard's lifecycle hooks, so each owner's pass is its
+-- own error boundary and a raising pass never reaches Blizzard's caller.
 local function ForActiveOwners(category, apply, a, b)
     if NS.IsCombatLocked() or not CategoryEnabled(category) then return end
     for _, state in pairs(DeepWindows.owners) do
-        if state.active then apply(state, a, b) end
+        if state.active then Dispatch(apply, state, a, b) end
     end
 end
 
-local function RefreshProfessions(frame)
-    local root = _G.ProfessionsFrame
-    if Covers(root, frame) then
-        ForActiveOwners("profession", ApplyProfessionRoot, root)
-    end
-end
 
-local function RefreshCustomerOrders(frame)
-    local root = _G.ProfessionsCustomerOrdersFrame
-    if Covers(root, frame) then
-        ForActiveOwners("profession", ApplyCustomerOrdersRoot, root)
-    end
-end
-
-local function RefreshGenericTraits(frame)
-    local root = _G.GenericTraitFrame
-    if Covers(root, frame) then
-        ForActiveOwners("character", ApplyGenericTraitRoot, root)
-    end
-end
-
-local function RefreshCustomerCategory(button)
-    local root = _G.ProfessionsCustomerOrdersFrame
-    if root and Kit.IsDescendantOf(button, root, DESCENDANT_DEPTH) then
-        ForActiveOwners("profession", SkinCustomerCategory, button)
-    end
-end
-
-local function RefreshCustomerRow(button)
-    local root = _G.ProfessionsCustomerOrdersFrame
-    if root and Kit.IsDescendantOf(button, root, DESCENDANT_DEPTH) then
-        ForActiveOwners("profession", SkinCustomerRow, button)
-    end
-end
-
-function DeepWindows:OnProfessionsTabSet(frame)
-    if frame == _G.ProfessionsFrame then RefreshProfessions(frame) end
-end
-
+-- Pooled row templates only: Blizzard creates those rows later from the
+-- (then hooked) mixin, so each new row carries the hook.
 local function HookMixin(key, mixinName, methodName, callback)
     if DeepWindows.hooks[key] then return true end
     if not Kit.HookFunction(_G[mixinName], methodName, callback) then return false end
@@ -477,9 +195,12 @@ local function HookMixin(key, mixinName, methodName, callback)
     return true
 end
 
+
+-- A post-hook on Blizzard's function: the bag renderer is its own error
+-- boundary so a raising pass never reaches ContainerFrame_GenerateFrame's caller.
 local function DispatchContainerGenerate(frame)
     local callback = DeepWindows.containerGenerateCallback
-    if callback then callback(frame) end
+    if callback then Dispatch(callback, frame) end
 end
 
 -- CommonMenus owns the exact bag renderer and active-owner gate. This audited
@@ -496,52 +217,36 @@ function DeepWindows.InstallContainerGenerateHook(callback)
     return true
 end
 
-local function InstallProfessionsHooks()
-    if not DeepWindows.hooks.professionsTabSet
-        and Kit.RegisterEventCallback("ProfessionsFrame.TabSet",
-            DeepWindows.OnProfessionsTabSet, DeepWindows) then
-        DeepWindows.hooks.professionsTabSet = true
-    end
-
-    HookMixin("professions-show", "ProfessionsMixin", "OnShow", RefreshProfessions)
-    HookMixin("professions-refresh", "ProfessionsMixin", "Refresh", RefreshProfessions)
-    HookMixin("crafting-init", "ProfessionsCraftingPageMixin", "Init", RefreshProfessions)
-    HookMixin("crafting-refresh", "ProfessionsCraftingPageMixin", "Refresh", RefreshProfessions)
-    HookMixin("crafting-schematic", "ProfessionsCraftingPageMixin",
-        "SchematicPostInit", RefreshProfessions)
-    HookMixin("orders-init", "ProfessionsCraftingOrderPageMixin", "Init", RefreshProfessions)
-    HookMixin("orders-refresh", "ProfessionsCraftingOrderPageMixin", "Refresh", RefreshProfessions)
-    HookMixin("order-view-schematic", "ProfessionsCrafterOrderViewMixin",
-        "SchematicPostInit", RefreshProfessions)
+-- IconSkin reads the native quality border only while it skins. Repaint a
+-- border IconSkin owns (bags, bank, catalog item buttons) from the one
+-- Blizzard just set; on an owned button that creates no regions and no tables.
+local function RepaintItemBorder(button)
+    local iconState = NS.IconSkin.GetState(button)
+    local owner = NS.IconSkin.GetOwner(button)
+    if owner == nil or not iconState then return end
+    Kit.SkinItemIcon(button, owner, iconState.icon, iconState.nativeBorder, true)
 end
 
-local function InstallCustomerOrderHooks()
-    HookMixin("customer-show", "ProfessionsCustomerOrdersMixin",
-        "OnShow", RefreshCustomerOrders)
-    HookMixin("customer-browse-init", "ProfessionsCustomerOrdersBrowsePageMixin",
-        "Init", RefreshCustomerOrders)
-    HookMixin("customer-orders-refresh", "ProfessionsCustomerOrdersMyOrdersMixin",
-        "RefreshOrders", RefreshCustomerOrders)
-    HookMixin("customer-form-init", "ProfessionsCustomerOrderFormMixin",
-        "Init", RefreshCustomerOrders)
-    HookMixin("customer-category-init", "ProfessionsCustomerOrdersCategoryButtonMixin",
-        "Init", RefreshCustomerCategory)
-    HookMixin("customer-category-selected", "ProfessionsCustomerOrdersCategoryButtonMixin",
-        "UpdateSelected", RefreshCustomerCategory)
-    HookMixin("customer-recipe-row-init", "ProfessionsCustomerOrdersRecipeListElementMixin",
-        "Init", RefreshCustomerRow)
-    HookMixin("customer-order-row-init", "ProfessionsCustomerOrderListElementMixin",
-        "Init", RefreshCustomerRow)
-    HookMixin("customer-listing-row-init", "ProfessionsCustomerListingsElementMixin",
-        "Init", RefreshCustomerRow)
+-- Buttons IconSkin does not own return at once. The repaint runs inside
+-- Blizzard's item update loop, so it is its own error boundary. Combat
+-- updates wait for the next out-of-combat one.
+local function OnItemQualitySet(button)
+    if NS.IsCombatLocked() or NS.IconSkin.GetOwner(button) == nil then return end
+    Dispatch(RepaintItemBorder, button)
 end
 
-local function InstallGenericTraitHooks()
-    HookMixin("generic-trait-layout", "GenericTraitFrameMixin",
-        "ApplyLayout", RefreshGenericTraits)
-    HookMixin("generic-trait-show", "GenericTraitFrameMixin",
-        "OnShow", RefreshGenericTraits)
+-- Every item button takes its quality border from the global
+-- SetItemButtonQuality (Blizzard_ItemButton, Retail and Forever):
+-- ContainerFrameMixin:UpdateItems (also after BAG_UPDATE and item data that
+-- loads while the bag is open), BankPanelItemButtonMixin:Refresh and the
+-- other item windows. The post-hook is permanent and inert without owners.
+function DeepWindows.InstallItemQualityHook()
+    if DeepWindows.hooks.itemQuality then return true end
+    if not Kit.HookGlobal("SetItemButtonQuality", OnItemQualitySet) then return false end
+    DeepWindows.hooks.itemQuality = true
+    return true
 end
+
 
 local function SkinBankTab(state, tab, panel)
     if not state or not state.active or not tab or not panel
@@ -612,9 +317,11 @@ end
 local function InstallBankHooks()
     HookMixin("bank-tab-init", "BankPanelTabMixin", "Init", RefreshBankTab)
     HookMixin("bank-item-init", "BankPanelItemButtonMixin", "Init", RefreshBankItem)
+    -- RefreshAllItemsForSelectedTab refreshes each button's border in place.
+    DeepWindows.InstallItemQualityHook()
 end
 
-local function SkinWarbandCard(state, card)
+SkinWarbandCard = function(state, card)
     if not state or not state.active or not card or NS.IsCombatLocked()
         or not CategoryEnabled("journal") or not CanCreateRegions(card)
         or not Kit.HasFields(card, WARBAND_CARD_FIELDS) then
@@ -654,14 +361,9 @@ local function ApplyWarbandCards(state, icons)
     icons = icons or WarbandIcons()
     if not icons or icons ~= WarbandIcons() then return false, "missing" end
 
-    local count, decorated = 0, 0
-    local visited = Kit.ForEachRow(icons, function(card)
-        count = count + 1
-        if SkinWarbandCard(state, card) then decorated = decorated + 1 end
-        return count >= WARBAND_CARD_LIMIT
-    end)
-    if not visited then return false, "missing" end
-    return true, decorated > 0 and "applied" or "waiting"
+    state.cardsVisited, state.cardsDecorated = 0, 0
+    if not Kit.ForEachRow(icons, state.visitCard) then return false, "missing" end
+    return true, state.cardsDecorated > 0 and "applied" or "waiting"
 end
 
 function DeepWindows:OnWarbandSceneUpdate()
@@ -680,17 +382,6 @@ local function RegisterWarbandCallback(icons)
     return true
 end
 
-local function ApplyProfessions(state)
-    if not CategoryEnabled("profession") then return true, "disabled" end
-    InstallProfessionsHooks()
-    return ApplyProfessionRoot(state, _G.ProfessionsFrame)
-end
-
-local function ApplyCustomerOrders(state)
-    if not CategoryEnabled("profession") then return true, "disabled" end
-    InstallCustomerOrderHooks()
-    return ApplyCustomerOrdersRoot(state, _G.ProfessionsCustomerOrdersFrame)
-end
 
 local function ApplyCollections(state)
     if not CategoryEnabled("journal") then return true, "disabled" end
@@ -700,11 +391,6 @@ local function ApplyCollections(state)
     return ApplyWarbandCards(state, icons)
 end
 
-local function ApplyGenericTraits(state)
-    if not CategoryEnabled("character") then return true, "disabled" end
-    InstallGenericTraitHooks()
-    return ApplyGenericTraitRoot(state, _G.GenericTraitFrame)
-end
 
 -- Adds one sub-apply result to the running applied/waiting counts.
 local function Tally(applied, waiting, ok, reason)
@@ -731,45 +417,49 @@ local function ApplyUIPanels(state)
     return false, "missing"
 end
 
-local addonSpecs = {
-    {
-        addon = UI_PANELS_ADDON,
-        relevant = function()
-            return CategoryEnabled("quest") or CategoryEnabled("inventory")
-        end,
-        ready = function() return _G.QuestFrame ~= nil or _G.BankFrame ~= nil end,
-        apply = ApplyUIPanels,
-    },
-    {
-        addon = PROFESSIONS_ADDON,
-        relevant = function() return CategoryEnabled("profession") end,
-        ready = function() return _G.ProfessionsFrame ~= nil end,
-        apply = ApplyProfessions,
-    },
-    {
-        addon = CUSTOMER_ORDERS_ADDON,
-        relevant = function() return CategoryEnabled("profession") end,
-        ready = function() return _G.ProfessionsCustomerOrdersFrame ~= nil end,
-        apply = ApplyCustomerOrders,
-    },
-    {
-        addon = COLLECTIONS_ADDON,
-        relevant = function() return CategoryEnabled("journal") end,
-        ready = function() return _G.WarbandSceneJournal ~= nil end,
-        apply = ApplyCollections,
-    },
-    {
-        addon = GENERIC_TRAITS_ADDON,
-        relevant = function() return CategoryEnabled("character") end,
-        ready = function() return _G.GenericTraitFrame ~= nil end,
-        apply = ApplyGenericTraits,
-    },
+-- The window families in apply order: quest and bank, professions, customer
+-- orders, the warband collection, then generic traits. DeepWindowsProfessions.lua
+-- (loads next) adds the specs of the profession, customer-order and
+-- generic-trait windows into their places.
+local FAMILY_ORDER = {
+    UI_PANELS_ADDON,
+    "Blizzard_Professions",
+    "Blizzard_ProfessionsCustomerOrders",
+    COLLECTIONS_ADDON,
+    "Blizzard_GenericTraitUI",
 }
-
+local addonSpecs = {}
 local addonSpecByName = {}
-for index = 1, #addonSpecs do
-    addonSpecByName[addonSpecs[index].addon] = addonSpecs[index]
+
+-- Adds a window family, { addon, relevant(), ready(), apply(state) }, at its
+-- place in FAMILY_ORDER.
+local function AddAddonSpec(spec)
+    addonSpecByName[spec.addon] = spec
+    local count = 0
+    for index = 1, #FAMILY_ORDER do
+        local listed = addonSpecByName[FAMILY_ORDER[index]]
+        if listed then
+            count = count + 1
+            addonSpecs[count] = listed
+        end
+    end
 end
+
+AddAddonSpec({
+    addon = UI_PANELS_ADDON,
+    relevant = function()
+        return CategoryEnabled("quest") or CategoryEnabled("inventory")
+    end,
+    -- Not load-on-demand (12.1.0, 12.1.5, Forever): loaded before this skin.
+    ready = function() return true end,
+    apply = ApplyUIPanels,
+})
+AddAddonSpec({
+    addon = COLLECTIONS_ADDON,
+    relevant = function() return CategoryEnabled("journal") end,
+    ready = function() return _G.WarbandSceneJournal ~= nil end,
+    apply = ApplyCollections,
+})
 
 local ApplyState
 
@@ -791,13 +481,15 @@ local function DeferApply(state, suffix)
     return ran == true, reason
 end
 
+-- Each addon spec is its own error boundary per owner: a raising window is
+-- reported and the other windows and owners still apply.
 local function ApplyAddonForOwners(spec)
     for _, state in pairs(DeepWindows.owners) do
         if state.active and spec.relevant() then
             if NS.IsCombatLocked() then
                 DeferApply(state, "load-" .. spec.addon)
             else
-                spec.apply(state)
+                Dispatch(spec.apply, state)
             end
         end
     end
@@ -807,12 +499,11 @@ local function ScheduleAddon(addon)
     if DeepWindows.waiting[addon] then return true end
     if NS.Client.IsAddOnLoaded(addon) then return false end
     DeepWindows.waiting[addon] = true
-    local scheduled = Kit.ContinueOnAddOnLoaded(addon, function()
+    EventUtil.ContinueOnAddOnLoaded(addon, function()
         DeepWindows.waiting[addon] = nil
         ApplyAddonForOwners(addonSpecByName[addon])
     end)
-    if not scheduled then DeepWindows.waiting[addon] = nil end
-    return scheduled
+    return true
 end
 
 ApplyState = function(state)
@@ -824,8 +515,10 @@ ApplyState = function(state)
         local spec = addonSpecs[index]
         if spec.relevant() then
             if NS.Client.IsAddOnLoaded(spec.addon) or spec.ready() then
-                local result, reason = spec.apply(state)
-                if result and reason == "waiting" then
+                local finished, result, reason = Kit.Isolate(spec.apply, state)
+                if not finished then
+                    failed = failed + 1
+                elseif result and reason == "waiting" then
                     waiting = waiting + 1
                 elseif result then
                     applied = applied + 1
@@ -901,5 +594,15 @@ function DeepWindows.Disable(parentOwner)
 
     return DisableNow(state)
 end
+
+-- Private to DeepWindowsProfessions.lua, which loads next and takes it off
+-- NS again, so no other addon can add a window family.
+NS.DeepWindowsShared = {
+    CategoryEnabled = CategoryEnabled,
+    CanCreateRegions = CanCreateRegions,
+    ForActiveOwners = ForActiveOwners,
+    HookMixin = HookMixin,
+    AddAddonSpec = AddAddonSpec,
+}
 
 return DeepWindows

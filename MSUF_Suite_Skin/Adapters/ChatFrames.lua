@@ -8,19 +8,18 @@ local _, NS = ...
 local ChatFramesSkin = { owners = {}, hooks = {} }
 NS.ChatFramesSkin = ChatFramesSkin
 
-local Field = NS.Safety.Field
-local Call = NS.Safety.Call
-local Public = NS.Safety.Public
-
--- Exactly one boolean, also for a missing target (Field returns no value then).
-local function HasMethod(target, name)
-    return type(target) == "table" and type(target[name]) == "function"
-end
+local Safety = NS.Safety
+local Field = Safety.Field
+local Call = Safety.Call
+local HasMethod = Safety.HasMethod
+local Dispatch = Safety.Dispatch
+local ColorMatches = Safety.ColorMatches
+local COLOR_OWN = Safety.COLOR_OWN
+local Kit = NS.AdapterKit
 
 local REFRESH_KEY = "chat-frames:refresh"
 local BUILTIN_CHAT_WINDOWS = 10
 local MAX_CHAT_FRAMES = 64
-local COLOR_TOLERANCE = 0.015
 local RefreshAll
 local changingChatColor = false
 
@@ -84,10 +83,6 @@ local function OwnerState(owner)
     return state
 end
 
-local function Near(left, right)
-    return math.abs(left - right) <= COLOR_TOLERANCE
-end
-
 -- Message colors ------------------------------------------------------------
 
 local function ReadMessageColor(chatType)
@@ -99,18 +94,15 @@ local function ReadMessageColor(chatType)
     return { r, g, b }
 end
 
-local function SameRGB(left, right)
-    return left ~= nil and right ~= nil
-        and Near(left[1], right[1]) and Near(left[2], right[2]) and Near(left[3], right[3])
-end
-
+-- changingChatColor keeps our own ChangeChatColor post-hook quiet during the
+-- call. The call is its own error boundary, so the flag is cleared even when
+-- it raises and later user color changes are still observed.
 local function ChangeMessageColor(chatType, color)
-    local change = _G.ChangeChatColor
-    if type(change) ~= "function" or not color then return false end
+    if not color then return false end
     changingChatColor = true
-    change(chatType, color[1], color[2], color[3])
+    local finished = Kit.Isolate(ChangeChatColor, chatType, color[1], color[2], color[3])
     changingChatColor = false
-    return true
+    return finished == true
 end
 
 local function ApplyMessageColor(state, chatType, recapture)
@@ -122,7 +114,7 @@ local function ApplyMessageColor(state, chatType, recapture)
     if not colorState then
         colorState = { original = current, role = role }
         state.messageColors[chatType] = colorState
-    elseif recapture and not SameRGB(current, colorState.applied) then
+    elseif recapture and not ColorMatches(colorState.applied, current[1], current[2], current[3], nil, COLOR_OWN) then
         -- A user or Blizzard changed this chat category after MapkoSkin.
         -- Preserve that latest native choice for cooperative disable/restore.
         colorState.original = current
@@ -131,7 +123,8 @@ local function ApplyMessageColor(state, chatType, recapture)
     local r, g, b = NS.Theme.GetColor(role)
     local applied = { r, g, b }
     colorState.role = role
-    if SameRGB(current, applied) or ChangeMessageColor(chatType, applied) then
+    if ColorMatches(applied, current[1], current[2], current[3], nil, COLOR_OWN)
+        or ChangeMessageColor(chatType, applied) then
         colorState.applied = applied
         return true
     end
@@ -151,7 +144,9 @@ local function RestoreMessageColors(state)
         -- Fail closed if another addon changed the category after MapkoSkin.
         -- When our value still owns it, always restore Blizzard's clean default
         -- rather than a possibly contaminated value captured on this login.
-        if nativeDefault and SameRGB(ReadMessageColor(chatType), colorState.applied)
+        local current = ReadMessageColor(chatType)
+        if nativeDefault and current
+            and ColorMatches(colorState.applied, current[1], current[2], current[3], nil, COLOR_OWN)
             and ChangeMessageColor(chatType, nativeDefault) then
             restored = restored + 1
         end
@@ -163,17 +158,7 @@ end
 -- Text colors ----------------------------------------------------------------
 
 local function ReadTextColor(fontString)
-    local r, g, b, a = Call(fontString, "GetTextColor")
-    if type(r) ~= "number" or not Public(r) or not Public(g)
-        or not Public(b) or not Public(a) then
-        return nil
-    end
-    return r, g, b, tonumber(a) or 1
-end
-
-local function SameColor(color, r, g, b, a)
-    return color[1] ~= nil and r ~= nil
-        and Near(color[1], r) and Near(color[2], g) and Near(color[3], b) and Near(color[4], a)
+    return Safety.ReadColor(fontString, "GetTextColor")
 end
 
 local function ApplyTextRole(fontString, textState)
@@ -191,7 +176,7 @@ local function SetTextRole(state, fontString, role, recapture)
     if not textState then
         textState = { original = { r, g, b, a }, applied = {} }
         state.textStates[fontString] = textState
-    elseif recapture and not SameColor(textState.applied, r, g, b, a) then
+    elseif recapture and not ColorMatches(textState.applied, r, g, b, a, COLOR_OWN) then
         -- Preserve Blizzard's latest native tab color for cooperative restore.
         local original = textState.original
         original[1], original[2], original[3], original[4] = r, g, b, a
@@ -211,7 +196,8 @@ end
 
 local function RestoreTextColors(state)
     for fontString, textState in pairs(state.textStates) do
-        if SameColor(textState.applied, ReadTextColor(fontString)) then
+        local r, g, b, a = ReadTextColor(fontString)
+        if ColorMatches(textState.applied, r, g, b, a, COLOR_OWN) then
             local original = textState.original
             fontString:SetTextColor(original[1], original[2], original[3], original[4])
         end
@@ -343,6 +329,12 @@ local function OnEditBoxHeader(editBox)
     end
 end
 
+-- Every chat hook runs inside Blizzard's own call (FCFTab_UpdateColors runs
+-- once per tab in FCFDock_UpdateTabs's loop), so each is its own error boundary.
+local function OnEditBoxHeaderHook(editBox)
+    Dispatch(OnEditBoxHeader, editBox)
+end
+
 local hookedEditBoxes = setmetatable({}, { __mode = "k" })
 
 SkinEditBox = function(state, editBox, recapture)
@@ -352,7 +344,7 @@ SkinEditBox = function(state, editBox, recapture)
     TrackButtonTextures(state, NamedRegion(editBox, "Language"),
         "checkmark", "pressed", "hover")
     if not hookedEditBoxes[editBox] and HasMethod(editBox, "UpdateHeader") then
-        hooksecurefunc(editBox, "UpdateHeader", OnEditBoxHeader)
+        hooksecurefunc(editBox, "UpdateHeader", OnEditBoxHeaderHook)
         hookedEditBoxes[editBox] = true
     end
 end
@@ -379,8 +371,7 @@ local function SkinChatFrame(state, frame, recapture)
 end
 
 local function SkinDock(state, recapture)
-    local dock = _G.GeneralDockManager
-    if not dock then return end
+    local dock = GeneralDockManager
     TrackTexture(state, Field(dock, "insertHighlight")
         or NamedRegion(dock, "InsertHighlight"), "active", recapture)
     TrackButtonTextures(state, Field(dock, "overflowButton")
@@ -417,11 +408,8 @@ local function SkinChatFrames(state, recapture)
         SkinChatFrame(state, frame, recapture)
     end
     for index = 1, BUILTIN_CHAT_WINDOWS do Visit(_G["ChatFrame" .. index]) end
-    local names = _G.CHAT_FRAMES
-    if type(names) == "table" then
-        for _, name in pairs(names) do
-            if type(name) == "string" then Visit(_G[name]) end
-        end
+    for _, name in pairs(CHAT_FRAMES) do
+        if type(name) == "string" then Visit(_G[name]) end
     end
     Visit(_G.GMChatFrame)
 end
@@ -470,10 +458,10 @@ end
 -- These Blizzard functions are called through their globals, so a global
 -- post-hook reaches every chat window, including ones created earlier.
 local globalHooks = {
-    { "FCFTab_UpdateColors", OnTabColors },
-    { "FCF_SetWindowColor", OnWindowColor },
-    { "FCF_OpenTemporaryWindow", OnTemporaryWindow },
-    { "ChangeChatColor", OnMessageColorChanged },
+    { "FCFTab_UpdateColors", function(tab, selected) Dispatch(OnTabColors, tab, selected) end },
+    { "FCF_SetWindowColor", function(frame) Dispatch(OnWindowColor, frame) end },
+    { "FCF_OpenTemporaryWindow", function() Dispatch(OnTemporaryWindow) end },
+    { "ChangeChatColor", function(chatType) Dispatch(OnMessageColorChanged, chatType) end },
 }
 
 local function RegisterHooks()

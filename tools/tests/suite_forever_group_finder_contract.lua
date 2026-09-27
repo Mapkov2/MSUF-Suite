@@ -1,4 +1,5 @@
 local root = assert(arg[1], "Suite root required")
+securecallfunction = function(callback, ...) return callback(...) end
 local events, hooks, frames, buttons, faded = {}, {}, {}, {}, {}
 local categoryEnabled = true
 local mockEventFrame
@@ -14,8 +15,9 @@ local function ScrollBox()
     function box:ForEachFrame(callback)
         for _, row in ipairs(self.rows) do callback(row) end
     end
+    -- CallbackRegistry passes the registration owner first.
     function box:Initialize(row)
-        for _, callback in pairs(self.callbacks) do callback(nil, row) end
+        for token, callback in pairs(self.callbacks) do callback(token, row) end
     end
     return box
 end
@@ -39,10 +41,6 @@ local namespace = {
         return true
     end },
     IsCombatLocked = function() return false end,
-    Safety = {
-        CanCreateRegions = function() return true end,
-        CanDecorate = function() return true end,
-    },
     GenericWindows = {
         IsCategoryEnabled = function(category)
             assert(category == "group")
@@ -74,6 +72,10 @@ local namespace = {
     CombatGate = { Cancel = function() end },
 }
 
+-- The real guards and ScrollBox row helpers.
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", namespace)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AdapterKit.lua"))("MSUF_Suite_Skin", namespace)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/SharedChrome.lua"))("MSUF_Suite_Skin", namespace)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/ForeverGroupFinder.lua"))(
     "MSUF_Suite_Skin", namespace)
 local adapter = assert(namespace.ForeverGroupFinder)
@@ -159,4 +161,12 @@ assert(buttons[later] == nil, "disabled skin repainted a card")
 
 categoryEnabled = false
 assert(adapter.Apply() and not mockEventFrame.events.ADDON_LOADED)
+
+-- Retail has no Blizzard_GroupFinder_VanillaStyle: the client guard is the
+-- only one, and it keeps the adapter off.
+categoryEnabled = true
+namespace.Client.isForever = false
+local retailApplied, retailState = adapter.Apply()
+assert(retailApplied and retailState == "disabled" and not adapter.active
+    and not mockEventFrame.events.ADDON_LOADED, "the Forever group finder skin ran on Retail")
 print("Forever group finder load, cards, semantic art, and disable passed")

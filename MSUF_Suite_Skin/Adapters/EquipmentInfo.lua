@@ -11,6 +11,9 @@ local Info = {}
 NS.EquipmentInfo = Info
 
 local Public = NS.Safety.Public
+-- Blizzard getters called with valid arguments; secret results read as nil.
+local Read = NS.AdapterKit.ReadValues
+local Accessible = NS.AdapterKit.PublicValue
 
 local MAX_GEM_SLOTS = 4
 local MAX_TOOLTIP_LINES = 80
@@ -48,18 +51,6 @@ local statKeys = {
 }
 Info.statKeys = statKeys
 
-local function Accessible(value)
-    if Public(value) then return value end
-    return nil
-end
-
--- Calls a Blizzard getter with valid arguments; secret results become nil.
-local function Read(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    local a, b, c = fn(...)
-    return Accessible(a), Accessible(b), Accessible(c)
-end
-
 local function Number(value)
     value = Accessible(value)
     return type(value) == "number" and value == value and value >= 0 and value < 1e9 and value or nil
@@ -76,7 +67,6 @@ local function Field(object, key)
 end
 
 local function ItemIdentity(link, result)
-    if not C_Item or type(C_Item.GetItemInfo) ~= "function" then return end
     local name, _, quality, _, _, _, _, _, equip, texture, _, class, subclass, _, expansion =
         C_Item.GetItemInfo(link)
     result.name, result.quality = Text(name), Number(quality)
@@ -96,10 +86,6 @@ local function Reset(result)
 end
 
 local function ReadGems(link, result)
-    if not C_Item or type(C_Item.GetItemGemID) ~= "function" then
-        result.gems = nil
-        return
-    end
     result.gems = 0
     for index = 1, MAX_GEM_SLOTS do
         local gem = result.gemInfo[index]
@@ -116,8 +102,8 @@ local function ReadGems(link, result)
             local name, gemLink = Read(C_Item.GetItemGem, link, index)
             gem.name, gem.link = Text(name), Text(gemLink)
             gem.texture = Number(Read(C_Item.GetItemIconByID, gem.id))
-            gem.pending = (type(C_Item.GetItemGem) == "function" and not gem.link)
-                or (type(C_Item.GetItemIconByID) == "function" and not gem.texture)
+            -- Gem item data loads asynchronously; missing parts are read again.
+            gem.pending = not gem.link or not gem.texture
             result.gemsPending = result.gemsPending or gem.pending
         end
     end
@@ -125,7 +111,7 @@ local function ReadGems(link, result)
 end
 
 local function ReadUpgrade(link, result)
-    local upgrade = Read(C_Item and C_Item.GetItemUpgradeInfo, link)
+    local upgrade = Read(C_Item.GetItemUpgradeInfo, link)
     result.upgradeCurrent = Number(Field(upgrade, "currentLevel"))
     result.upgradeMax = Number(Field(upgrade, "maxLevel"))
     result.upgradeTrack = Text(Field(upgrade, "trackString"))
@@ -142,10 +128,10 @@ end
 
 -- Returns the tooltip line table (nil when unavailable).
 local function ReadTooltip(unit, slot, result)
-    local tooltip = Read(C_TooltipInfo and C_TooltipInfo.GetInventoryItem, unit, slot)
+    local tooltip = Read(C_TooltipInfo.GetInventoryItem, unit, slot)
     local lines = Field(tooltip, "lines")
-    local types = Enum and Enum.TooltipDataLineType
-    if type(lines) ~= "table" or not types then return lines end
+    if type(lines) ~= "table" then return lines end
+    local types = Enum.TooltipDataLineType
     local socketLines, filledLines = 0, 0
     for index = 1, math.min(#lines, MAX_TOOLTIP_LINES) do
         local line = Field(lines, index)
@@ -187,11 +173,11 @@ function Info.Read(link, unit, slot, result, identity)
     result.enchanted = result.enchantID and result.enchantID > 0 or false
     result.enchantRank = result.enchantID and rank[result.enchantID]
     ItemIdentity(link, result)
-    result.itemLevel = Number(Read(C_Item and C_Item.GetDetailedItemLevelInfo, link))
-    result.sockets = Number(Read(C_Item and C_Item.GetItemNumSockets, link))
+    result.itemLevel = Number(Read(C_Item.GetDetailedItemLevelInfo, link))
+    result.sockets = Number(Read(C_Item.GetItemNumSockets, link))
     ReadGems(link, result)
     ReadUpgrade(link, result)
-    local stats = Read(C_Item and C_Item.GetItemStats, link)
+    local stats = Read(C_Item.GetItemStats, link)
     if type(stats) == "table" then
         for _, key in ipairs(statKeys) do result.stats[key] = Number(Field(stats, key)) end
     end
@@ -200,13 +186,10 @@ function Info.Read(link, unit, slot, result, identity)
         result.emptySockets = result.sockets - result.gems
     end
     result.gemSlotsKnown = not result.gemsRestricted
-        and ((C_Item and type(C_Item.GetItemGemID) == "function") or result.gems == 0)
     -- No socketability guess: actual empty sockets are not the same thing as
     -- optional sockets that a season-specific consumable might add later.
     result.pending = not result.name or not result.itemLevel or result.gemsPending
-        or result.gemsRestricted
-        or (C_TooltipInfo and type(C_TooltipInfo.GetInventoryItem) == "function"
-            and type(lines) ~= "table")
+        or result.gemsRestricted or type(lines) ~= "table"
     result.settled = not result.pending
     return result
 end
@@ -243,7 +226,7 @@ function Info.Check(result, level)
 end
 
 function Info.AddTooltip(result)
-    if not result or not GameTooltip or type(GameTooltip.AddLine) ~= "function" then return end
+    if not result then return end
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine(NS.L.GEAR_TOOLTIP_TITLE, NS.Theme.GetColor("accent"))
     local quality = result.quality and _G["ITEM_QUALITY" .. result.quality .. "_DESC"]

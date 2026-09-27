@@ -1,14 +1,16 @@
 local _, NS = ...
 
 -- The current mainline Game Menu rebuilds its buttons from buttonPool whenever
--- it is shown. Styling a fixed set of globals therefore cannot cover it. We
--- prime a bounded set of pooled frames once, outside combat, and release only
--- the objects acquired here. Blizzard's scripts, callbacks and layout data
--- are never replaced.
+-- it is shown (GameMenuFrameMixin:InitButtons, Blizzard_GameMenu/Shared/
+-- GameMenuFrame.lua). Styling a fixed set of globals therefore cannot cover it.
+-- A post-hook on the menu's own InitButtons skins the buttons Blizzard just
+-- acquired. The pool is never driven from here: frames that addon code
+-- acquires are created in addon (tainted) execution. Blizzard's scripts,
+-- callbacks and layout data are never replaced.
 
 local GameMenuSkin = {
-    reserveCount = 24,
     directChildLimit = 64,
+    hookedFrames = setmetatable({}, { __mode = "k" }),
 }
 NS.GameMenuSkin = GameMenuSkin
 
@@ -41,6 +43,7 @@ local function SkinButton(button, owner)
 end
 
 local function SkinActiveButtons(pool, owner)
+    if type(Field(pool, "EnumerateActive")) ~= "function" then return end
     for button in pool:EnumerateActive() do
         SkinButton(button, owner)
     end
@@ -59,27 +62,6 @@ local function SkinDirectThreeSliceButtons(owner, ...)
     end
 end
 
-local function ActiveCount(pool)
-    local count = Safety.Read(pool, "GetNumActive")
-    return type(count) == "number" and math.max(0, count) or 0
-end
-
-local function PrimeButtonPool(pool, owner)
-    local acquired = {}
-    for _ = 1, math.max(0, GameMenuSkin.reserveCount - ActiveCount(pool)) do
-        local button = pool:Acquire()
-        if not button then break end
-        acquired[#acquired + 1] = button
-        SkinButton(button, owner)
-    end
-
-    -- Release exactly the frames acquired above; active menu buttons are never
-    -- disturbed when a theme is reapplied while the menu is open.
-    for index = #acquired, 1, -1 do
-        pool:Release(acquired[index])
-    end
-end
-
 local function FadeShell(frame, owner)
     local border = frame.Border
     if border then
@@ -93,23 +75,12 @@ local function HeaderText(frame)
     return frame.Header and frame.Header.Text
 end
 
-local function CaptureFrameState(frame, state)
-    local r, g, b, a = Safety.ReadColor(HeaderText(frame), "GetTextColor")
-    if r then
-        state.headerColor = { r, g, b, a }
-    end
-end
-
-local function RefreshFrameText(frame)
-    local text = HeaderText(frame)
-    if text and type(text.SetTextColor) == "function" then
-        text:SetTextColor(NS.Theme.GetColor("title"))
-    end
-end
-
+-- The header title takes the theme's title color. Its native color comes
+-- back on disable only while ours is still shown (AdapterKit text colors).
 local function RefreshActiveFrames()
     for frame in pairs(activeFrames) do
-        RefreshFrameText(frame)
+        local frameState = frameStates[frame]
+        if frameState then Kit.RefreshTextColors(frameState.textColors) end
     end
 end
 
@@ -119,6 +90,20 @@ local function RegisterThemeListener()
     end
     listenerRegistered = true
     NS.Registry.AddListener(GameMenuSkin, RefreshActiveFrames)
+end
+
+-- Buttons appear when Blizzard shows the menu, which can happen in combat.
+-- Their cosmetic skin waits for the next out-of-combat opening then; the
+-- pooled buttons keep it for every later one.
+local function OnButtonsInitialized(frame)
+    local frameState = frameStates[frame]
+    if not frameState or not activeFrames[frame] or NS.IsCombatLocked() then return end
+    Safety.Dispatch(SkinActiveButtons, frame.buttonPool, frameState.owner)
+end
+
+local function HookInitButtons(frame)
+    if GameMenuSkin.hookedFrames[frame] then return end
+    GameMenuSkin.hookedFrames[frame] = Kit.HookFunction(frame, "InitButtons", OnButtonsInitialized)
 end
 
 function GameMenuSkin.Apply(frame, owner)
@@ -135,18 +120,14 @@ function GameMenuSkin.Apply(frame, owner)
     end
 
     local pool = frame.buttonPool
-    if not pool or type(pool.Acquire) ~= "function" or type(pool.Release) ~= "function"
-        or type(pool.EnumerateActive) ~= "function" then
+    if type(Field(pool, "EnumerateActive")) ~= "function" then
         return false, "missing-pool"
     end
 
     local frameState = frameStates[frame]
     if not frameState then
-        frameState = {}
+        frameState = { textColors = Kit.NewTextColors() }
         frameStates[frame] = frameState
-    end
-    if not frameState.applied then
-        CaptureFrameState(frame, frameState)
     end
 
     if not NS.Surface.Attach(frame, SHELL_SPEC) then
@@ -157,14 +138,13 @@ function GameMenuSkin.Apply(frame, owner)
     end
 
     FadeShell(frame, owner)
-    RefreshFrameText(frame)
+    Kit.SetTextColor(frameState.textColors, HeaderText(frame), "title")
     SkinActiveButtons(pool, owner)
-    PrimeButtonPool(pool, owner)
     SkinDirectThreeSliceButtons(owner, Safety.Call(frame, "GetChildren"))
 
-    frameState.applied = true
     frameState.owner = owner
     activeFrames[frame] = true
+    HookInitButtons(frame)
     RegisterThemeListener()
     return true
 end
@@ -187,12 +167,8 @@ function GameMenuSkin.Disable(frame, owner)
     NS.Cosmetics.RestoreOwner(owner)
 
     local frameState = frameStates[frame]
-    local text = HeaderText(frame)
-    if frameState and frameState.headerColor and text and type(text.SetTextColor) == "function" then
-        text:SetTextColor(unpack(frameState.headerColor))
-    end
     if frameState then
-        frameState.applied = false
+        Kit.RestoreTextColors(frameState.textColors)
     end
     activeFrames[frame] = nil
     return true

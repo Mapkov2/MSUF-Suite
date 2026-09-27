@@ -27,7 +27,7 @@ local function ProviderSlots()
 end
 
 local function FontPath()
-    return GameFontNormal and GameFontNormal:GetFont() or STANDARD_TEXT_FONT or DEFAULT_FONT
+    return GameFontNormal:GetFont() or STANDARD_TEXT_FONT or DEFAULT_FONT
 end
 
 -- Reversible geometry -------------------------------------------------------------------
@@ -42,11 +42,25 @@ local function Points(frame)
     return points
 end
 
+-- Geometry is stored with less precision than Lua numbers, so offsets, sizes
+-- and scales read back after Set* differ slightly from the values set. Only
+-- a larger difference means Blizzard (or another addon) changed the value.
+local GEOMETRY_EPSILON = 0.01
+local SCALE_EPSILON = 0.0001
+
+local function Near(current, applied, epsilon)
+    if type(current) == "number" and type(applied) == "number" then
+        return NS.Safety.Public(current) and math.abs(current - applied) <= epsilon
+    end
+    return current == applied
+end
+
 local function SamePoints(frame, points)
     if not points or frame:GetNumPoints() ~= #points then return false end
     for index, point in ipairs(points) do
         local a, b, c, d, e = frame:GetPoint(index)
-        if a ~= point[1] or b ~= point[2] or c ~= point[3] or d ~= point[4] or e ~= point[5] then
+        if a ~= point[1] or b ~= point[2] or c ~= point[3]
+            or not Near(d, point[4], GEOMETRY_EPSILON) or not Near(e, point[5], GEOMETRY_EPSILON) then
             return false
         end
     end
@@ -87,14 +101,14 @@ local function Size(v, frame, width, height)
     local record = RecordGeometry(v, frame)
     if width then
         local current = frame:GetWidth()
-        if current ~= record.appliedWidth then record.width = current end
-        if current ~= width then frame:SetWidth(width) end
+        if not Near(current, record.appliedWidth, GEOMETRY_EPSILON) then record.width = current end
+        if not Near(current, width, GEOMETRY_EPSILON) then frame:SetWidth(width) end
         record.appliedWidth = width
     end
     if height then
         local current = frame:GetHeight()
-        if current ~= record.appliedHeight then record.height = current end
-        if current ~= height then frame:SetHeight(height) end
+        if not Near(current, record.appliedHeight, GEOMETRY_EPSILON) then record.height = current end
+        if not Near(current, height, GEOMETRY_EPSILON) then frame:SetHeight(height) end
         record.appliedHeight = height
     end
 end
@@ -108,14 +122,14 @@ end
 
 local function Scale(v, frame, value)
     local record = RecordGeometry(v, frame)
-    if frame:GetScale() ~= record.appliedScale then record.scale = frame:GetScale() end
-    if frame:GetScale() ~= value then frame:SetScale(value) end
+    local current = frame:GetScale()
+    if not Near(current, record.appliedScale, SCALE_EPSILON) then record.scale = current end
+    if not Near(current, value, SCALE_EPSILON) then frame:SetScale(value) end
     record.appliedScale = value
 end
 
 local function RepositionPanels(root, oldWidth, oldHeight)
-    if type(UpdateUIPanelPositions) == "function"
-        and (root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight) then
+    if root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight then
         UpdateUIPanelPositions(root)
     end
 end
@@ -123,7 +137,7 @@ end
 -- Called by the existing exact-provider hooks too, after it refreshes a slot.
 -- Keep its content intact; only suppress duplicate annotations in list mode.
 function Gear.SuppressListProvider(element, slotID)
-    local v = NS.CharacterDetails and NS.CharacterDetails.views[_G.CharacterFrame]
+    local v = NS.CharacterDetails.views[_G.CharacterFrame]
     if not v or not v.list or not v.host:IsVisible() or NS.IsCombatLocked() then return end
     local slots = ProviderSlots()
     local row = slotID and v.bySlot[slotID]
@@ -142,7 +156,7 @@ function Gear.SuppressListProvider(element, slotID)
 end
 
 function Gear.IsWide()
-    local v = NS.CharacterDetails and NS.CharacterDetails.views[_G.CharacterFrame]
+    local v = NS.CharacterDetails.views[_G.CharacterFrame]
     return v and v.wide == true or false
 end
 
@@ -165,9 +179,15 @@ function Gear.RestoreLayout(v)
             frame:ClearAllPoints()
             for _, point in ipairs(record.points) do frame:SetPoint(unpack(point)) end
         end
-        if record.width and frame:GetWidth() == record.appliedWidth then frame:SetWidth(record.width) end
-        if record.height and frame:GetHeight() == record.appliedHeight then frame:SetHeight(record.height) end
-        if record.scale and frame:GetScale() == record.appliedScale then frame:SetScale(record.scale) end
+        if record.width and Near(frame:GetWidth(), record.appliedWidth, GEOMETRY_EPSILON) then
+            frame:SetWidth(record.width)
+        end
+        if record.height and Near(frame:GetHeight(), record.appliedHeight, GEOMETRY_EPSILON) then
+            frame:SetHeight(record.height)
+        end
+        if record.scale and Near(frame:GetScale(), record.appliedScale, SCALE_EPSILON) then
+            frame:SetScale(record.scale)
+        end
         if record.shown ~= nil and not frame:IsShown() then frame:SetShown(record.shown) end
         v.geometry[frame] = nil
     end
@@ -301,7 +321,7 @@ function Gear.UpdateSummary(v)
 end
 
 local function Leave(owner)
-    if GameTooltip and GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
+    if GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
 end
 
 local function HideAnnotation(a)
@@ -312,7 +332,7 @@ local function HideAnnotation(a)
 end
 
 local function ShowDetails(v, row, owner)
-    if not row.link or not v.unit or not GameTooltip then return end
+    if not row.link or not v.unit then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetInventoryItem(v.unit, row.slot)
     NS.EquipmentInfo.AddTooltip(row.audit)
@@ -448,7 +468,6 @@ local function Layout(a, row, legacy, wide)
 end
 
 local function ShowGemTooltip(gem)
-    if not GameTooltip then return end
     GameTooltip:SetOwner(gem, "ANCHOR_RIGHT")
     if gem.link then
         GameTooltip:SetHyperlink(gem.link)
@@ -542,7 +561,7 @@ function Gear.Paint(v, row)
         or (info.upgradeCurrent == info.upgradeMax and "dim" or "muted")))
     local r, g, b, alpha = NS.Theme.GetColor("ink")
     a.levelBack:SetColorTexture(r, g, b, alpha * NS.Theme.GetMaterialOpacity(NS.Materials.input))
-    local color = info.quality and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[info.quality]
+    local color = info.quality and ITEM_QUALITY_COLORS[info.quality]
     if color then
         a.level:SetTextColor(color.r, color.g, color.b, 1)
         a.name:SetTextColor(color.r, color.g, color.b, 1)

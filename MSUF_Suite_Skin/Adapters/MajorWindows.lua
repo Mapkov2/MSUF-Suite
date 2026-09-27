@@ -27,11 +27,13 @@ local MajorWindows = {
     indicators = setmetatable({}, { __mode = "k" }),
     activeOwnerCount = 0,
     housingCallbacksRegistered = false,
-    housingRewardEventFrame = nil,
+    -- HouseUpgradeFrame instances whose SetRewards is post-hooked
+    rewardHooks = setmetatable({}, { __mode = "k" }),
 }
 NS.MajorWindows = MajorWindows
 
 local Field = NS.Safety.Field
+local Dispatch = NS.Safety.Dispatch
 local Kit = NS.AdapterKit
 local Path = Kit.Path
 local Fade = Kit.Fade
@@ -41,7 +43,6 @@ local SkinControl = Kit.SkinControl
 local SurfaceSpec = Kit.SurfaceSpec
 
 local DEFAULT_OWNER = "blizzardWindows"
-local HOUSING_REWARDS_EVENT = "RECEIVED_HOUSE_LEVEL_REWARDS"
 local HOUSING_SHOWN_CALLBACK = "HousingUpgradeFrame.Shown"
 
 local groups = {
@@ -193,6 +194,18 @@ local GROUP_FINDER_PANEL_ART = {
     "InfoBackground", "CustomBG",
 }
 local INSET_ART = { "Background", "Bg" }
+-- PVPQueueFrame's CategoryButton1..5 select these panels, in this order.
+local PVP_CATEGORY_COUNT = 5
+local GREAT_VAULT_ART = { "Background", "BorderShadow", "Divider1", "Divider2" }
+local GREAT_VAULT_BORDER_ART = { "Border", "TopDecor" }
+local GREAT_VAULT_HEADER_ART = { "HeaderDivider" }
+local VAULT_WARNING_ART = { "ExtraBG" }
+local SOCKET_FILIGREE = { "LeftFiligree", "RightFiligree" }
+local ITEM_INTERACTION_FOOTER_ART = { "BlackBorder", "ButtonBorder", "ButtonBottomBorder" }
+local INITIATIVE_TASKS_ART = { "BG", "BorderTop", "BorderRight", "TitleCornerTR" }
+local INITIATIVE_ACTIVITY_ART = { "BG", "BGTexture", "BorderTop", "TitleCornerTR" }
+local HOUSING_CATALOG_CARDS = { "Filters", "Categories", "OptionsContainer", "PreviewFrame" }
+local HOUSING_COLLECTION_CARDS = { "Categories", "BlueprintCollection", "BlueprintDetails" }
 local VAULT_TYPE_FRAMES = { "RaidFrame", "MythicFrame", "PVPFrame", "WorldFrame" }
 local BACKGROUND_AND_BORDER = { "Background", "Border" }
 local ITEM_SERVICE_SHELL_ART = { "Bg", "TopTileStreaks", "Portrait", "portrait" }
@@ -234,7 +247,6 @@ local function OwnerState(owner)
             active = false,
             surfaces = Kit.WeakSet(),
             textColors = Kit.NewTextColors(),
-            housingPoolsPrepared = Kit.WeakSet(),
         }
         MajorWindows.owners[owner] = state
     end
@@ -296,72 +308,43 @@ local function GetHousingUpgrade(root)
     return Path(root, "HouseInfoContent", "ContentFrame", "HouseUpgradeFrame")
 end
 
-local function HousingRewardsLoaded(upgrade)
-    local infos = Field(upgrade, "houseLevelRewardInfos")
-    -- AllRewardsLoaded iterates this list and raises before it exists.
-    if type(infos) ~= "table" then return false end
-    if type((Field(upgrade, "AllRewardsLoaded"))) == "function" then
-        return upgrade:AllRewardsLoaded() == true
-    end
-    if #infos == 0 then return false end
-    for index = 1, #infos do
-        local info = infos[index]
-        if type(info) == "table" and not info.isMax and type(info.rewards) ~= "table" then
-            return false
-        end
-    end
-    return true
-end
-
-local function SkinAndReserveHousingPool(state, pool, required)
-    if not pool or required <= 0 then return end
-    local activeCount = 0
-    if type((Field(pool, "EnumerateActive"))) == "function" then
-        for reward in pool:EnumerateActive() do
-            activeCount = activeCount + 1
-            SkinHousingReward(state, reward)
-        end
-    end
-
-    if type((Field(pool, "Acquire"))) ~= "function" or type((Field(pool, "Release"))) ~= "function" then
-        return
-    end
-    local acquired = {}
-    for _ = activeCount + 1, required do
-        local reward = pool:Acquire()
-        if not reward then break end
-        acquired[#acquired + 1] = reward
+local function SkinHousingPool(state, pool)
+    if type((Field(pool, "EnumerateActive"))) ~= "function" then return end
+    for reward in pool:EnumerateActive() do
         SkinHousingReward(state, reward)
     end
-    for index = #acquired, 1, -1 do
-        pool:Release(acquired[index])
+end
+
+-- The reward cards Blizzard itself acquired for the selected level. The
+-- pools are never driven from here: frames that addon code acquires are
+-- created in addon (tainted) execution.
+local function SkinHousingPools(state, upgrade)
+    SkinHousingPool(state, Field(upgrade, "rewardPoolLarge"))
+    SkinHousingPool(state, Field(upgrade, "rewardPoolSmall"))
+end
+
+local RefreshHousingRewards
+
+-- HousingUpgradeFrameMixin:SetRewards (Blizzard_HousingDashboardHouseUpgrade.lua)
+-- releases both pools and acquires, fills and shows the cards of the selected
+-- level; its post-hook skins them before they are drawn. Each owner's pass is
+-- its own error boundary.
+local function OnHousingRewardsSet(upgrade)
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer("major-windows:housing-rewards", RefreshHousingRewards)
+        return
+    end
+    if not CategoryEnabled("housing") then return end
+    for _, state in pairs(MajorWindows.owners) do
+        if state.active then Dispatch(SkinHousingPools, state, upgrade) end
     end
 end
 
-local function PrepareHousingRewardPools(root, state)
-    local upgrade = GetHousingUpgrade(root)
-    if not upgrade or state.housingPoolsPrepared[upgrade] then return false end
-    if not HousingRewardsLoaded(upgrade) then return false end
-
-    local maximumLarge, maximumSmall = 0, 0
-    local infos = Field(upgrade, "houseLevelRewardInfos")
-    for index = 1, type(infos) == "table" and #infos or 0 do
-        local rewards = type(infos[index]) == "table" and infos[index].rewards or nil
-        local count = type(rewards) == "table" and #rewards or 0
-        if count > 0 and count <= 4 then
-            maximumLarge = math.max(maximumLarge, count)
-        elseif count > 4 then
-            maximumSmall = math.max(maximumSmall, count)
-        end
-    end
-
-    -- Prewarm exactly the largest data-driven layout in each Blizzard pool.
-    -- Every later level selection therefore reuses an already skinned frame;
-    -- no hook, polling loop or per-click addon callback is necessary.
-    SkinAndReserveHousingPool(state, Field(upgrade, "rewardPoolLarge"), maximumLarge)
-    SkinAndReserveHousingPool(state, Field(upgrade, "rewardPoolSmall"), maximumSmall)
-    state.housingPoolsPrepared[upgrade] = true
-    return true
+-- The HouseUpgradeFrame carries its own copy of HousingUpgradeFrameMixin and
+-- self:SetRewards() resolves on it, so the instance is hooked, once.
+local function HookHousingRewards(upgrade)
+    if not upgrade or MajorWindows.rewardHooks[upgrade] then return end
+    MajorWindows.rewardHooks[upgrade] = Kit.HookFunction(upgrade, "SetRewards", OnHousingRewardsSet)
 end
 
 -- GetLayoutChildren returns one list table; GetChildren returns frames.
@@ -387,7 +370,9 @@ local function SkinHousingRewards(root, state)
     local method = type((Field(rewards, "GetLayoutChildren"))) == "function" and "GetLayoutChildren"
         or "GetChildren"
     SkinHousingRewardList(state, NS.Safety.Call(rewards, method))
-    PrepareHousingRewardPools(root, state)
+    local upgrade = GetHousingUpgrade(root)
+    SkinHousingPools(state, upgrade)
+    HookHousingRewards(upgrade)
 end
 
 local function SkinHousingInitiatives(root, state)
@@ -404,8 +389,8 @@ local function SkinHousingInitiatives(root, state)
     local activity = Field(setFrame, "InitiativeActivity")
     Attach(state, tasks, CARD)
     Attach(state, activity, CARD)
-    FadeFields(state, tasks, { "BG", "BorderTop", "BorderRight", "TitleCornerTR" })
-    FadeFields(state, activity, { "BG", "BGTexture", "BorderTop", "TitleCornerTR" })
+    FadeFields(state, tasks, INITIATIVE_TASKS_ART)
+    FadeFields(state, activity, INITIATIVE_ACTIVITY_ART)
 end
 
 local function SkinHousingCollection(state, collection, cardKeys)
@@ -435,11 +420,9 @@ local function SkinHousingContent(root, state)
     Attach(state, Field(upgrade, "TrackFrame"), CARD)
     Fade(state, Path(upgrade, "TrackFrame", "Background"))
 
-    SkinHousingCollection(state, Field(root, "CatalogContent"),
-        { "Filters", "Categories", "OptionsContainer", "PreviewFrame" })
+    SkinHousingCollection(state, Field(root, "CatalogContent"), HOUSING_CATALOG_CARDS)
     local collection = Field(root, "CollectionContent")
-    SkinHousingCollection(state, collection,
-        { "Categories", "BlueprintCollection", "BlueprintDetails" })
+    SkinHousingCollection(state, collection, HOUSING_COLLECTION_CARDS)
     Fade(state, Path(collection, "BlueprintDetails", "PreviewBackground"))
 
     SkinHousingInitiatives(root, state)
@@ -475,12 +458,23 @@ local function SkinInsetCard(state, inset)
     Fade(state, Field(inset, "Bg"))
 end
 
-local function SkinPVPCategories(state, queue, panels)
-    for index = 1, #panels do
+-- The five panels in category order; reused, and a missing panel stays a
+-- nil slot instead of shortening the list (the length of a table with nil
+-- holes is undefined in Lua).
+local pvpPanels = {}
+
+local function SkinPVPCategories(state, queue)
+    for index = 1, PVP_CATEGORY_COUNT do
         local button = Field(queue, "CategoryButton" .. index)
         SkinControl(state, button, PVP_CATEGORY_BUTTON)
-        Kit.SelectionIndicator(state, MajorWindows.indicators, button, panels[index])
+        Kit.SelectionIndicator(state, MajorWindows.indicators, button, pvpPanels[index])
+        pvpPanels[index] = nil
     end
+end
+
+local function SkinPVPQueuePanel(state, panel)
+    SkinInsetCard(state, Field(panel, "Inset"))
+    SkinPVPStatus(state, Field(panel, "ConquestBar"))
 end
 
 local function SkinPVPContent(root, state)
@@ -491,22 +485,17 @@ local function SkinPVPContent(root, state)
     local conquest = _G.ConquestFrame or Field(queue, "ConquestFrame")
     local training = _G.TrainingGroundsFrame or Field(queue, "TrainingGroundsFrame")
     local plunder = _G.PlunderstormFrame or Field(queue, "PlunderstormFrame")
-    SkinPVPCategories(state, queue, {
-        honor,
-        conquest,
-        _G.LFGListPVPStub or Field(queue, "LFGListPVPStub"),
-        training,
-        plunder,
-    })
+    pvpPanels[1], pvpPanels[2], pvpPanels[3], pvpPanels[4], pvpPanels[5] = honor, conquest,
+        _G.LFGListPVPStub or Field(queue, "LFGListPVPStub"), training, plunder
+    SkinPVPCategories(state, queue)
 
     -- The category panels are visibility/controller frames, not visual
     -- panels. In Blizzard's PvP layout their content uses the same frame
     -- level as the controller, so a late full-frame surface can composite
     -- above and hide the Rated queue rows. Skin the concrete Insets/cards.
-    for _, panel in ipairs({ honor, conquest, training }) do
-        SkinInsetCard(state, Field(panel, "Inset"))
-        SkinPVPStatus(state, Field(panel, "ConquestBar"))
-    end
+    SkinPVPQueuePanel(state, honor)
+    SkinPVPQueuePanel(state, conquest)
+    SkinPVPQueuePanel(state, training)
 
     local bonus = Field(honor, "BonusFrame")
     Attach(state, bonus, PANEL)
@@ -576,13 +565,14 @@ local function SkinGroupFinder(root, state)
     -- state or region order; PVEFrame_ShowLeftInset only toggles Show/Hide.
     Fade(state, Field(root, "shadows"))
 
-    local navigation = _G.GroupFinderFrame
-    if navigation then
-        for index = 1, 4 do
-            local button = Field(navigation, "groupButton" .. index)
-                or _G["GroupFinderFrameGroupButton" .. index]
-            SkinControl(state, button, GROUP_FINDER_NAVIGATION)
-        end
+    -- PVEFrame.xml defines GroupFinderFrame with the root, so it exists
+    -- whenever this runs (Forever has neither: Blizzard_GroupFinder
+    -- excludes the camelot game type, and the root is never resolved there).
+    local navigation = GroupFinderFrame
+    for index = 1, 4 do
+        local button = Field(navigation, "groupButton" .. index)
+            or _G["GroupFinderFrameGroupButton" .. index]
+        SkinControl(state, button, GROUP_FINDER_NAVIGATION)
     end
 
     for index = 1, #GROUP_FINDER_PANELS do
@@ -599,9 +589,9 @@ local function SkinGreatVault(root, state)
     local applied, reason = ApplyGeneric(root, state.owner, GREAT_VAULT_MODE)
     if not applied then return false, reason end
 
-    FadeFields(state, root, { "Background", "BorderShadow", "Divider1", "Divider2" })
-    FadeFields(state, Field(root, "BorderContainer"), { "Border", "TopDecor" })
-    FadeFields(state, Field(root, "HeaderFrame"), { "HeaderDivider" })
+    FadeFields(state, root, GREAT_VAULT_ART)
+    FadeFields(state, Field(root, "BorderContainer"), GREAT_VAULT_BORDER_ART)
+    FadeFields(state, Field(root, "HeaderFrame"), GREAT_VAULT_HEADER_ART)
 
     for index = 1, #VAULT_TYPE_FRAMES do
         local typeFrame = Field(root, VAULT_TYPE_FRAMES[index])
@@ -631,7 +621,7 @@ local function SkinGreatVault(root, state)
     if warning then
         Attach(state, warning, POPUP)
         FadeNineSlice(state, warning)
-        FadeFields(state, warning, { "ExtraBG" })
+        FadeFields(state, warning, VAULT_WARNING_ART)
     end
     return true, "applied"
 end
@@ -663,7 +653,7 @@ local function SkinItemSocketing(root, state)
             local socket = sockets[index]
             if socket then
                 Attach(state, socket, SOCKET)
-                FadeFields(state, socket, { "LeftFiligree", "RightFiligree" })
+                FadeFields(state, socket, SOCKET_FILIGREE)
             end
         end
     end
@@ -678,7 +668,7 @@ local function SkinItemInteraction(root, state)
     -- along with conversion borders and celebration layers, as native state.
     local footer = Field(root, "ButtonFrame")
     Attach(state, footer, FOOTER)
-    FadeFields(state, footer, { "BlackBorder", "ButtonBorder", "ButtonBottomBorder" })
+    FadeFields(state, footer, ITEM_INTERACTION_FOOTER_ART)
     Kit.FadeNativeTextures(state, Field(footer, "MoneyFrameEdge"))
     SkinControl(state, Field(footer, "ActionButton"), PRIMARY_BUTTON)
 
@@ -738,7 +728,11 @@ local function ApplyGroup(spec, state)
     if not CategoryEnabled(spec.category) then return true, "disabled" end
     local root = _G[spec.root]
     if not root then return false, NS.Client.IsAddOnLoaded(spec.addon) and "missing" or "waiting" end
-    return groupSkinners[spec.id](root, state)
+    -- Each group is its own error boundary: a raising group is reported and
+    -- the other groups (and owners) still apply.
+    local finished, applied, reason = Kit.Isolate(groupSkinners[spec.id], root, state)
+    if not finished then return false, "error" end
+    return applied, reason
 end
 
 local function ApplyGroupForOwners(spec)
@@ -753,7 +747,7 @@ local function ApplyGroupForOwners(spec)
     end
 end
 
-local function RefreshHousingRewards()
+RefreshHousingRewards = function()
     if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer("major-windows:housing-rewards", RefreshHousingRewards)
         return
@@ -765,67 +759,37 @@ local function RefreshHousingRewards()
     end
 end
 
-local function StopHousingRewardEvent()
-    local frame = MajorWindows.housingRewardEventFrame
-    if frame then frame:UnregisterEvent(HOUSING_REWARDS_EVENT) end
-end
-
-local function OnHousingRewardsReceived()
-    local root = _G.HousingDashboardFrame
-    local upgrade = root and GetHousingUpgrade(root)
-    if upgrade and HousingRewardsLoaded(upgrade) then
-        StopHousingRewardEvent()
-        RefreshHousingRewards()
-    end
-end
-
--- The reward data arrives asynchronously; listen only until it has.
-local function EnsureHousingRewardEvent()
-    local root = _G.HousingDashboardFrame
-    local upgrade = root and GetHousingUpgrade(root)
-    if not upgrade or HousingRewardsLoaded(upgrade) then return end
-    local frame = MajorWindows.housingRewardEventFrame
-    if not frame then
-        frame = CreateFrame("Frame")
-        frame:SetScript("OnEvent", OnHousingRewardsReceived)
-        MajorWindows.housingRewardEventFrame = frame
-    end
-    frame:RegisterEvent(HOUSING_REWARDS_EVENT)
-end
-
 local function Schedule(spec)
     if MajorWindows.waiting[spec.id] then return true end
     if NS.Client.IsAddOnLoaded(spec.addon) then return false end
     MajorWindows.waiting[spec.id] = true
-    local scheduled = Kit.ContinueOnAddOnLoaded(spec.addon, function()
+    EventUtil.ContinueOnAddOnLoaded(spec.addon, function()
         MajorWindows.waiting[spec.id] = nil
         ApplyGroupForOwners(spec)
         if spec.id == "housing-dashboard" then MajorWindows.RegisterHousingCallbacks() end
     end)
-    if not scheduled then MajorWindows.waiting[spec.id] = nil end
-    return scheduled
+    return true
 end
 
+-- Reward cards that arrive later (their data loads asynchronously) come
+-- through the SetRewards post-hook.
 local function OnHousingUpgradeShown()
     RefreshHousingRewards()
-    EnsureHousingRewardEvent()
 end
 
 function MajorWindows.RegisterHousingCallbacks()
-    if MajorWindows.housingCallbacksRegistered or not _G.HousingDashboardFrame
-        or not Kit.RegisterEventCallback(HOUSING_SHOWN_CALLBACK, OnHousingUpgradeShown, MajorWindows) then
+    if MajorWindows.housingCallbacksRegistered or not _G.HousingDashboardFrame then
         return false
     end
+    EventRegistry:RegisterCallback(HOUSING_SHOWN_CALLBACK, OnHousingUpgradeShown, MajorWindows)
     MajorWindows.housingCallbacksRegistered = true
-    EnsureHousingRewardEvent()
     return true
 end
 
 local function UnregisterHousingCallbacks()
     if not MajorWindows.housingCallbacksRegistered then return end
-    Kit.UnregisterEventCallback(HOUSING_SHOWN_CALLBACK, MajorWindows)
+    EventRegistry:UnregisterCallback(HOUSING_SHOWN_CALLBACK, MajorWindows)
     MajorWindows.housingCallbacksRegistered = false
-    StopHousingRewardEvent()
 end
 
 function MajorWindows.OnThemeChanged(_, domain)

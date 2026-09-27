@@ -22,11 +22,9 @@ NS.SemanticHUD = SemanticHUD
 
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
-
--- Exactly one boolean, also for a missing target (Field returns no value then).
-local function HasMethod(target, name)
-    return type(target) == "table" and type(target[name]) == "function"
-end
+local HasMethod = NS.Safety.HasMethod
+local Dispatch = NS.Safety.Dispatch
+local Kit = NS.AdapterKit
 
 local DEFAULT_OWNER = "blizzardWindows"
 local COOLDOWN_ADDON = "Blizzard_CooldownViewer"
@@ -75,7 +73,6 @@ end
 -- Apply asks the Suite; the viewer hooks reuse that answer.
 local function CooldownsOwned(ask)
     local ownership = NS.SuiteOwnership
-    if not ownership then return false end
     if ask then return ownership.Owns("cooldownViewers") end
     return ownership.Owned("cooldownViewers")
 end
@@ -205,11 +202,8 @@ local function SkinExactIcon(state, button, icon, overlay)
         or not IconOwnerAvailable(button, state.skinOwner, overlay) then
         return false
     end
-    return NS.IconSkin.Apply(button, state.skinOwner, {
-        icon = icon,
-        nativeBorder = overlay,
-        allowImplicitProtected = true,
-    }) ~= nil
+    -- The kit's scratch spec: no table per icon.
+    return Kit.SkinItemIcon(button, state.skinOwner, icon, overlay, true)
 end
 
 local function SkinIconItem(state, item)
@@ -270,9 +264,9 @@ local function SkinLossOfControl(state)
     if NS.IsCombatLocked() then return false, "combat" end
     if not CategoryEnabled() then return true, "disabled" end
 
-    local root = _G.LossOfControlFrame
+    local root = LossOfControlFrame
     local background = Field(root, "blackBg")
-    if not root or not background then return false, "missing" end
+    if not background then return false, "missing" end
 
     -- Icon, Cooldown, RedLineTop, RedLineBottom, AbilityName, TimeLeft and Anim
     -- are intentionally never read by the styling path.
@@ -362,6 +356,26 @@ local function RequestAllViewersForOwners()
     end
 end
 
+-- CooldownViewerMixin:RefreshLayout (which OnShow runs too) is the only place
+-- that acquires items, and it calls OnAcquireItemFrame for each one (Retail
+-- and Forever). Styling just the acquired item styles each item once per
+-- layout pass. In combat the viewer's single deferred pass covers it.
+local function RequestItemForOwners(viewer, item)
+    if not item or CooldownsOwned(false) then return end
+    local definition = ViewerDefinition(viewer)
+    if not definition then return end
+    local skinItem = definition.kind == "bar" and SkinBarItem or SkinIconItem
+    for _, state in pairs(SemanticHUD.owners) do
+        if state.active then
+            if NS.IsCombatLocked() then
+                RunOrDefer(state, definition.name, ApplyViewer, viewer)
+            elseif CategoryEnabled() then
+                skinItem(state, item)
+            end
+        end
+    end
+end
+
 local function HookViewerMethod(definition, method)
     local key = definition.name .. ":" .. method
     if SemanticHUD.hooks[key] then return end
@@ -378,9 +392,23 @@ local function HookViewerMethod(definition, method)
         or viewerMethod ~= Field(_G[definition.mixin], method) then
         return
     end
-    hooksecurefunc(viewer, method, function(self)
-        if self == viewer then RequestViewerForOwners(viewer) end
-    end)
+    -- The hooks run inside Blizzard's layout pass, so each request is its own
+    -- error boundary.
+    if method == "OnAcquireItemFrame" then
+        hooksecurefunc(viewer, method, function(self, item)
+            if self == viewer then Dispatch(RequestItemForOwners, viewer, item) end
+        end)
+    else
+        -- Once the acquire hook is in place every item is already styled
+        -- when RefreshLayout returns; walking the pool would style it twice.
+        -- Without it the whole pool is styled here.
+        local acquireKey = definition.name .. ":OnAcquireItemFrame"
+        hooksecurefunc(viewer, method, function(self)
+            if self == viewer and not SemanticHUD.hooks[acquireKey] then
+                Dispatch(RequestViewerForOwners, viewer)
+            end
+        end)
+    end
     SemanticHUD.hooks[key] = true
 end
 
@@ -429,10 +457,7 @@ local function ScheduleCooldownViewer()
         OnCooldownViewerLoaded()
         return true
     end
-    if SemanticHUD.waitingForCooldownViewer or not EventUtil
-        or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then
-        return false
-    end
+    if SemanticHUD.waitingForCooldownViewer then return false end
     SemanticHUD.waitingForCooldownViewer = true
     EventUtil.ContinueOnAddOnLoaded(COOLDOWN_ADDON, OnCooldownViewerLoaded)
     return true

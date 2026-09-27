@@ -13,11 +13,9 @@ NS.EditModeSkin = EditModeSkin
 
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
-
--- Exactly one boolean, also for a missing target (Field returns no value then).
-local function HasMethod(target, name)
-    return type(target) == "table" and type(target[name]) == "function"
-end
+local HasMethod = NS.Safety.HasMethod
+local Dispatch = NS.Safety.Dispatch
+local Kit = NS.AdapterKit
 
 local dialogRoots = {
     "EditModeLayoutDialog",
@@ -89,7 +87,21 @@ end
 -- (EditModeManager.xml, EditModeTemplates.xml, MinimalSlider.xml), so a hook
 -- on the mixin table never reaches frames that already existed when this
 -- load-on-demand addon loaded. Hook the exact instances this skin tracks.
+-- Each hook runs inside Blizzard's own call (MinimalSliderWithSteppersMixin
+-- updates its steppers before it fires OnValueChanged, which carries the Edit
+-- Mode change), so each is its own error boundary. One wrapper per callback.
 local instanceHooks = {}
+local isolatedCallbacks = {}
+
+local function Isolated(callback)
+    local wrapper = isolatedCallbacks[callback]
+    if not wrapper then
+        wrapper = function(...) Dispatch(callback, ...) end
+        isolatedCallbacks[callback] = wrapper
+    end
+    return wrapper
+end
+
 local function HookInstance(frame, method, callback)
     local hooked = instanceHooks[method]
     if not hooked then
@@ -97,7 +109,7 @@ local function HookInstance(frame, method, callback)
         instanceHooks[method] = hooked
     end
     if hooked[frame] or not HasMethod(frame, method) then return end
-    hooksecurefunc(frame, method, callback)
+    hooksecurefunc(frame, method, Isolated(callback))
     hooked[frame] = true
 end
 
@@ -107,9 +119,10 @@ local function OwnerState(owner)
         state = {
             owner = owner,
             active = false,
-            primed = false,
             callbackRegistered = false,
             surfaces = setmetatable({}, { __mode = "k" }),
+            -- pooled setting frame -> skin generation of its pass
+            skinned = setmetatable({}, { __mode = "k" }),
         }
         EditModeSkin.owners[owner] = state
     end
@@ -296,94 +309,56 @@ local function SkinExtraButton(state, button)
     SkinButton(state, button, "button", 28)
 end
 
-local function SettingReserveCounts()
-    local counts = {}
-    for index = 1, #settingTemplates do counts[settingTemplates[index]] = 4 end
-
-    local manager = _G.EditModeSettingDisplayInfoManager
-    local display = Field(manager, "systemSettingDisplayInfo")
-    local enum = _G.Enum
-    local editTypes = enum and enum.EditModeSettingDisplayType
-    local characterTypes = enum and enum.ChrCustomizationOptionType
-    if type(display) ~= "table" or not editTypes then
-        counts.EditModeSettingDropdownTemplate = 10
-        counts.EditModeSettingSliderTemplate = 12
-        counts.EditModeSettingCheckboxTemplate = 12
-        return counts
-    end
-
-    for _, systemInfo in pairs(display) do
-        local dropdowns, sliders, checkboxes = 0, 0, 0
-        if type(systemInfo) == "table" then
-            for _, setting in ipairs(systemInfo) do
-                if setting.type == editTypes.Dropdown then
-                    dropdowns = dropdowns + 1
-                elseif setting.type == editTypes.Slider then
-                    sliders = sliders + 1
-                elseif characterTypes and setting.type == characterTypes.Checkbox then
-                    checkboxes = checkboxes + 1
-                end
-            end
-        end
-        counts.EditModeSettingDropdownTemplate = math.max(counts.EditModeSettingDropdownTemplate, dropdowns + 1)
-        counts.EditModeSettingSliderTemplate = math.max(counts.EditModeSettingSliderTemplate, sliders + 1)
-        counts.EditModeSettingCheckboxTemplate = math.max(counts.EditModeSettingCheckboxTemplate, checkboxes + 1)
-    end
-
-    for template, count in pairs(counts) do
-        counts[template] = math.max(1, math.min(32, count))
-    end
-    return counts
+-- Pooled setting frames keep their skin while Blizzard releases and acquires
+-- them again; their own state hooks follow value and enabled changes. A
+-- refresh therefore skins only frames without a pass in this skin
+-- generation. A full apply (refresh false) skins every active frame.
+local function NeedsSkin(state, frame, generation, refresh)
+    if refresh and state.skinned[frame] == generation then return false end
+    state.skinned[frame] = generation
+    return true
 end
 
--- Skin enough pooled frames up front that the dialog never has to create
--- regions while it is being shown.
-local function PrimePool(state, pools, template, count, skin)
-    local pool = Call(pools, "GetPool", template)
-    if not pool or not HasMethod(pool, "Acquire")
-        or not HasMethod(pool, "Release") then
-        return
-    end
-    local active = Call(pool, "GetNumActive")
-    active = type(active) == "number" and active or 0
-    local acquired = {}
-    for _ = 1, count - math.max(0, active) do
-        local frame = pool:Acquire()
-        if not frame then break end
-        acquired[#acquired + 1] = frame
-        skin(state, frame)
-    end
-    for index = #acquired, 1, -1 do
-        pool:Release(acquired[index])
-    end
-end
-
-local function SkinActiveSettings(state, dialog)
+local function SkinActiveSettings(state, dialog, refresh)
     local pools = Field(dialog, "pools")
     if not HasMethod(pools, "EnumerateActiveByTemplate") then return end
+    local generation = Kit.SkinGeneration()
     for index = 1, #settingTemplates do
         for settingFrame in pools:EnumerateActiveByTemplate(settingTemplates[index]) do
-            SkinSettingFrame(state, settingFrame)
+            if NeedsSkin(state, settingFrame, generation, refresh) then
+                SkinSettingFrame(state, settingFrame)
+            end
         end
     end
     for button in pools:EnumerateActiveByTemplate(EXTRA_BUTTON_TEMPLATE) do
-        SkinExtraButton(state, button)
+        if NeedsSkin(state, button, generation, refresh) then
+            SkinExtraButton(state, button)
+        end
     end
 end
 
-local function PrimeSettings(state, dialog)
-    if not state.primed then
-        local pools = Field(dialog, "pools")
-        if not pools then return end
-        local reserve = SettingReserveCounts()
-        for index = 1, #settingTemplates do
-            local template = settingTemplates[index]
-            PrimePool(state, pools, template, reserve[template] or 4, SkinSettingFrame)
-        end
-        PrimePool(state, pools, EXTRA_BUTTON_TEMPLATE, 8, SkinExtraButton)
-        state.primed = true
+-- EditModeSystemSettingsDialogMixin:UpdateDialog acquires the setting and
+-- extra-button frames for the selected system (Blizzard_EditMode/Shared/
+-- EditModeDialogs.lua). The dialog's own UpdateDialog is post-hooked and the
+-- frames Blizzard acquired are skinned then. The pools are never driven from
+-- here: frames acquired by addon code are created in addon (tainted)
+-- execution, and Edit Mode's slider callbacks drive the system layout.
+-- UpdateSystems and every slider step call UpdateDialog for all systems;
+-- Blizzard changes the dialog only for the attached one.
+local function OnSettingsDialogUpdated(dialog, systemFrame)
+    if NS.IsCombatLocked() or systemFrame == nil
+        or systemFrame ~= Field(dialog, "attachedToSystem") then
+        return
     end
-    SkinActiveSettings(state, dialog)
+    for _, state in pairs(EditModeSkin.owners) do
+        if state.active then Dispatch(SkinActiveSettings, state, dialog, true) end
+    end
+end
+
+local function SkinSettingsDialog(state, dialog)
+    if not dialog then return end
+    HookInstance(dialog, "UpdateDialog", OnSettingsDialogUpdated)
+    SkinActiveSettings(state, dialog, false)
 end
 
 local function SkinManagerExplicit(state, frame)
@@ -436,7 +411,7 @@ local function ApplyRoots(state, frame)
         end
     end
 
-    PrimeSettings(state, _G.EditModeSystemSettingsDialog)
+    SkinSettingsDialog(state, _G.EditModeSystemSettingsDialog)
     return true
 end
 
@@ -447,10 +422,7 @@ local function OnEditModeEnter(state)
 end
 
 local function RegisterCallback(state)
-    if state.callbackRegistered or not EventRegistry
-        or type(EventRegistry.RegisterCallback) ~= "function" then
-        return
-    end
+    if state.callbackRegistered then return end
     EventRegistry:RegisterCallback("EditMode.Enter", OnEditModeEnter, state)
     state.callbackRegistered = true
 end
@@ -479,7 +451,7 @@ function EditModeSkin.Disable(_, owner)
     if not state then return true end
     state.active = false
     state.frame = nil
-    state.primed = false
+    state.skinned = setmetatable({}, { __mode = "k" })
     if state.callbackRegistered then
         EventRegistry:UnregisterCallback("EditMode.Enter", state)
         state.callbackRegistered = false

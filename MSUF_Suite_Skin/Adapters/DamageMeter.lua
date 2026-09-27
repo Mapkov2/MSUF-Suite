@@ -10,11 +10,9 @@ local DamageMeterSkin = {
 NS.DamageMeterSkin = DamageMeterSkin
 
 local Field = NS.Safety.Field
-
--- Exactly one boolean, also for a missing target (Field returns no value then).
-local function HasMethod(target, name)
-    return type(target) == "table" and type(target[name]) == "function"
-end
+local HasMethod = NS.Safety.HasMethod
+local Dispatch = NS.Safety.Dispatch
+local Kit = NS.AdapterKit
 
 local ROW_SPEC = {
     role = "card", shape = "continuous", radius = 4, inset = 0, listItem = true,
@@ -95,19 +93,19 @@ local function OnWindowMinimized(window, minimized)
     end
 end
 
+-- Runs inside Blizzard's SetMinimized, so the repaint is its own error boundary.
+local function OnWindowMinimizedHook(window, minimized)
+    Dispatch(OnWindowMinimized, window, minimized)
+end
+
 -- SetMinimized is an instance method of each exact session window.
 local function HookWindow(window)
     if DamageMeterSkin.hookedWindows[window]
         or not HasMethod(window, "SetMinimized") then
         return
     end
-    hooksecurefunc(window, "SetMinimized", OnWindowMinimized)
+    hooksecurefunc(window, "SetMinimized", OnWindowMinimizedHook)
     DamageMeterSkin.hookedWindows[window] = true
-end
-
-local function InitializedFrameEvent()
-    return ScrollBoxListMixin and ScrollBoxListMixin.Event
-        and ScrollBoxListMixin.Event.OnInitializedFrame
 end
 
 -- CallbackRegistry passes the registration owner first: the owner state.
@@ -118,16 +116,12 @@ local function OnRowInitialized(state, row)
 end
 
 local function RegisterScrollBox(state, scrollBox)
-    local event = InitializedFrameEvent()
-    if not scrollBox or not event or state.scrollBoxes[scrollBox]
-        or not HasMethod(scrollBox, "RegisterCallback") then
-        return false
-    end
-    scrollBox:RegisterCallback(event, OnRowInitialized, state)
-    state.scrollBoxes[scrollBox] = true
-    if HasMethod(scrollBox, "ForEachFrame") and not NS.IsCombatLocked() then
-        scrollBox:ForEachFrame(state.skinRow)
-    end
+    if not scrollBox or state.scrollBoxes[scrollBox] then return false end
+    local event = Kit.RegisterRowCallback(scrollBox, OnRowInitialized, state)
+    if not event then return false end
+    state.scrollBoxes[scrollBox] = event
+    -- ForEachRow waits for the list view Blizzard builds on initialization.
+    if not NS.IsCombatLocked() then Kit.ForEachRow(scrollBox, state.skinRow) end
     return true
 end
 
@@ -186,13 +180,8 @@ function DamageMeterSkin.Disable(_, owner)
     local state = DamageMeterSkin.owners[owner]
     if not state then return true end
     state.active = false
-    local event = InitializedFrameEvent()
-    if event then
-        for scrollBox in pairs(state.scrollBoxes) do
-            if HasMethod(scrollBox, "UnregisterCallback") then
-                scrollBox:UnregisterCallback(event, state)
-            end
-        end
+    for scrollBox, event in pairs(state.scrollBoxes) do
+        Kit.UnregisterRowCallback(scrollBox, event, state)
     end
     for target in pairs(state.surfaces) do
         NS.Surface.SetVisible(target, false)

@@ -2,400 +2,7 @@ local _, NS = ...
 
 local Safety = NS.Safety
 local Field = Safety.Field
-local Call = Safety.Call
-
--- Shared helpers for the Blizzard window adapters. This file loads before
--- every adapter that uses them (see the TOC). Visual helpers take the
--- adapter's skin context: { owner = cosmetic/control owner key, surfaces =
--- optional weak set of surfaces to hide on disable }. They only act outside
--- combat, skip forbidden and protected targets, and never replace Blizzard
--- code. Adapters own implicitly protected Blizzard trees outside combat, so
--- every spec passed here is marked allowImplicitProtected.
-local AdapterKit = {}
-NS.AdapterKit = AdapterKit
-
-local WEAK_KEYS = { __mode = "k" }
-
-function AdapterKit.WeakSet()
-    return setmetatable({}, WEAK_KEYS)
-end
-
--- Follows a parentKey chain; nil as soon as one link is missing.
-function AdapterKit.Path(object, ...)
-    for index = 1, select("#", ...) do
-        object = Field(object, (select(index, ...)))
-        if not object then return nil end
-    end
-    return object
-end
-
--- Same as Path for a key list stored as data.
-function AdapterKit.PathOf(object, keys)
-    for index = 1, #keys do
-        object = Field(object, keys[index])
-        if not object then return nil end
-    end
-    return object
-end
-
--- True when every listed member is present: an exact template contract.
-function AdapterKit.HasFields(object, fields)
-    for index = 1, #fields do
-        if not Field(object, fields[index]) then return false end
-    end
-    return true
-end
-
-function AdapterKit.ObjectType(object)
-    local objectType = Safety.Read(object, "GetObjectType")
-    return type(objectType) == "string" and objectType or nil
-end
-
-function AdapterKit.IsShown(region)
-    return Safety.Read(region, "IsShown") == true
-end
-
-function AdapterKit.ParentIs(frame, parent)
-    return parent ~= nil and Call(frame, "GetParent") == parent
-end
-
-function AdapterKit.IsDescendantOf(frame, ancestor, maxDepth)
-    if not frame or not ancestor then return false end
-    local current = frame
-    for _ = 1, maxDepth or 12 do
-        if current == ancestor then return true end
-        local parent = Call(current, "GetParent")
-        if not parent or parent == current then return false end
-        current = parent
-    end
-    return current == ancestor
-end
-
-local function VisitValues(callback, a, b, c, ...)
-    for index = 1, select("#", ...) do
-        callback((select(index, ...)), a, b, c)
-    end
-end
-
--- callback(region, a, b, c) for each direct region, without a result table.
-function AdapterKit.ForEachRegion(frame, callback, a, b, c)
-    if Safety.IsForbidden(frame) or type((Field(frame, "GetRegions"))) ~= "function" then return end
-    VisitValues(callback, a, b, c, frame:GetRegions())
-end
-
--- callback(object, a, b) for at most limit active objects of a Blizzard pool.
-function AdapterKit.ForEachActive(pool, limit, callback, a, b)
-    if type((Field(pool, "EnumerateActive"))) ~= "function" then return 0 end
-    local count = 0
-    for object in pool:EnumerateActive() do
-        if count >= limit then break end
-        count = count + 1
-        callback(object, a, b)
-    end
-    return count
-end
-
--- Fires after Blizzard's row initializer, for new and for recycled rows.
-function AdapterKit.RowInitializedEvent()
-    local mixin = _G.ScrollBoxListMixin
-    local events = type(mixin) == "table" and mixin.Event
-    local event = type(events) == "table" and events.OnInitializedFrame
-    return type(event) == "string" and event or nil
-end
-
--- Registers callback(owner, row) for initialized rows. Returns the event
--- name needed for unregistration, or nil when the ScrollBox cannot register.
-function AdapterKit.RegisterRowCallback(scrollBox, callback, owner)
-    local event = AdapterKit.RowInitializedEvent()
-    if not event or Safety.IsForbidden(scrollBox)
-        or type((Field(scrollBox, "RegisterCallback"))) ~= "function" then
-        return nil
-    end
-    scrollBox:RegisterCallback(event, callback, owner)
-    return event
-end
-
-function AdapterKit.UnregisterRowCallback(scrollBox, event, owner)
-    if type(event) == "string" and owner ~= nil
-        and Safety.Invoke(scrollBox, "UnregisterCallback", event, owner) then
-        return true
-    end
-    return false
-end
-
--- ScrollBox:ForEachFrame indexes its view, which exists only after Blizzard
--- initialized the list. Paged content frames have no view and are always ready.
-function AdapterKit.ForEachRow(scrollBox, callback)
-    if Safety.IsForbidden(scrollBox) or type((Field(scrollBox, "ForEachFrame"))) ~= "function" then
-        return false
-    end
-    if type(scrollBox.HasView) == "function" and scrollBox:HasView() ~= true then return false end
-    scrollBox:ForEachFrame(callback)
-    return true
-end
-
--- hooksecurefunc raises when the hooked member is not a function, so both
--- helpers check first. A missing target (mixin not loaded) hooks nothing.
-function AdapterKit.HookFunction(target, method, callback)
-    if type(hooksecurefunc) ~= "function" or type((Field(target, method))) ~= "function" then
-        return false
-    end
-    hooksecurefunc(target, method, callback)
-    return true
-end
-
-function AdapterKit.HookGlobal(name, callback)
-    if type(hooksecurefunc) ~= "function" or type(_G[name]) ~= "function" then return false end
-    hooksecurefunc(name, callback)
-    return true
-end
-
-function AdapterKit.RegisterEventCallback(event, callback, owner)
-    local registry = _G.EventRegistry
-    if type(registry) ~= "table" or type(registry.RegisterCallback) ~= "function" then return false end
-    registry:RegisterCallback(event, callback, owner)
-    return true
-end
-
-function AdapterKit.UnregisterEventCallback(event, owner)
-    local registry = _G.EventRegistry
-    if type(registry) == "table" and type(registry.UnregisterCallback) == "function" then
-        registry:UnregisterCallback(event, owner)
-    end
-end
-
--- Runs callback at once when the addon is loaded, otherwise once on its
--- ADDON_LOADED. False when the client has no EventUtil continuation.
-function AdapterKit.ContinueOnAddOnLoaded(addon, callback)
-    local util = _G.EventUtil
-    if type(util) ~= "table" or type(util.ContinueOnAddOnLoaded) ~= "function" then return false end
-    util.ContinueOnAddOnLoaded(addon, callback)
-    return true
-end
-
-function AdapterKit.CancelDeferred(state)
-    for key in pairs(state.deferred) do
-        NS.CombatGate.Cancel(key)
-        state.deferred[key] = nil
-    end
-end
-
-local function CanPaint(target)
-    return type(target) == "table" and not NS.IsCombatLocked() and Safety.CanDecorate(target, true)
-end
-
-local function CanCreateRegions(target)
-    return type(target) == "table" and not NS.IsCombatLocked()
-        and Safety.CanCreateRegions(target, true)
-end
-
-function AdapterKit.Fade(context, region)
-    return CanPaint(region) and NS.Cosmetics.Fade(region, context.owner) == true
-end
-
-function AdapterKit.FadeFields(context, target, fields)
-    for index = 1, #fields do
-        AdapterKit.Fade(context, Field(target, fields[index]))
-    end
-end
-
--- Fades the nine standard pieces stored directly on nineSlice.
-function AdapterKit.FadeNineSlice(context, nineSlice)
-    if not CanPaint(nineSlice) then return false end
-    NS.Cosmetics.FadeNineSlice(nineSlice, context.owner)
-    return true
-end
-
--- Zero vertex alpha survives Blizzard's own region-alpha animations.
-function AdapterKit.SuppressVertexAlpha(context, region)
-    return CanPaint(region) and NS.Cosmetics.SuppressVertexAlpha(region, context.owner) == true
-end
-
-local function IsSurfaceTexture(surface, region)
-    return surface ~= nil and (region == surface.fill or region == surface.edge
-        or region == surface.depth or region == surface.highlight
-        or region == surface.pushed or region == surface.disabled)
-end
-
-local function FadeTextureRegion(region, context, exception, surface)
-    if region ~= exception and not IsSurfaceTexture(surface, region)
-        and AdapterKit.ObjectType(region) == "Texture" then
-        AdapterKit.Fade(context, region)
-    end
-end
-
--- Fades every direct Texture region of an exact, verified decorative frame
--- except one semantic exception.
-function AdapterKit.FadeTextures(context, frame, exception)
-    AdapterKit.ForEachRegion(frame, FadeTextureRegion, context, exception, nil)
-end
-
--- Same, but keeps the textures of the frame's own MapkoSkin surface.
-function AdapterKit.FadeNativeTextures(context, frame)
-    AdapterKit.ForEachRegion(frame, FadeTextureRegion, context, nil, NS.Registry.GetSurface(frame))
-end
-
-local function FadeAtlasRegion(region, context, atlas)
-    if Safety.Read(region, "GetAtlas") == atlas then AdapterKit.Fade(context, region) end
-end
-
-function AdapterKit.FadeAtlas(context, frame, atlas)
-    AdapterKit.ForEachRegion(frame, FadeAtlasRegion, context, atlas)
-end
-
-local function Track(context, target)
-    local surfaces = context.surfaces
-    if surfaces then surfaces[target] = true end
-end
-
--- Surface keeps a reference to spec: pass tables that are not changed later.
-function AdapterKit.Attach(context, target, spec)
-    if not CanCreateRegions(target) then return false end
-    spec.allowImplicitProtected = true
-    local surface = NS.Surface.Attach(target, spec)
-    if not surface then return false end
-    Track(context, target)
-    return true, surface
-end
-
--- ControlSkin copies spec. method defaults to ApplyButton; other values are
--- ApplyTab, ApplySearchBox and ApplyThreeSliceButton.
-function AdapterKit.SkinControl(context, control, spec, method)
-    if not CanCreateRegions(control) then return false end
-    spec.allowImplicitProtected = true
-    if not NS.ControlSkin[method or "ApplyButton"](control, context.owner, spec) then return false end
-    Track(context, control)
-    return true
-end
-
--- IconSkin reads its spec only during the call, so one scratch spec serves
--- every item button without a table per button.
-local itemIconSpec = {}
-
-function AdapterKit.SkinItemIcon(button, owner, icon, nativeBorder, allowImplicitProtected)
-    itemIconSpec.icon = icon
-    itemIconSpec.nativeBorder = nativeBorder
-    itemIconSpec.allowImplicitProtected = allowImplicitProtected == true
-    local state = NS.IconSkin.Apply(button, owner, itemIconSpec)
-    itemIconSpec.icon = nil
-    itemIconSpec.nativeBorder = nil
-    return state ~= nil
-end
-
-function AdapterKit.HideSurfaces(context)
-    for target in pairs(context.surfaces) do
-        NS.Surface.SetVisible(target, false)
-    end
-end
-
--- A surface spec built once at load. Unset flags keep Surface's defaults:
--- no list-item transparency, no forced edge and a visible fill.
-function AdapterKit.SurfaceSpec(role, radius, inset, listItem, forceEdge, fillVisible)
-    return {
-        role = role,
-        radius = radius,
-        inset = inset or 0,
-        listItem = listItem == true,
-        forceEdge = forceEdge == true,
-        fillVisible = fillVisible ~= false,
-        allowImplicitProtected = true,
-    }
-end
-
-local SELECTION_INDICATOR_SPEC = AdapterKit.SurfaceSpec("navigationActive", 8, 2, true, true)
-
--- An owned, mouse-transparent frame over a navigation button, parented to
--- the content panel Blizzard shows while that button is selected. Panel
--- visibility then mirrors the selection without a hook, timer or polling;
--- the transparent center keeps the native icon and label readable.
--- matchLevel also copies the button's strata and level.
-function AdapterKit.SelectionIndicator(context, indicators, button, panel, matchLevel)
-    if not button or not panel or not Safety.CanDecorate(panel, true) then return false end
-    local indicator = indicators[button]
-    if not indicator then
-        indicator = CreateFrame("Frame", nil, panel)
-        indicators[button] = indicator
-    end
-    indicator:SetParent(panel)
-    indicator:ClearAllPoints()
-    indicator:SetAllPoints(button)
-    if matchLevel then
-        local strata = Safety.Read(button, "GetFrameStrata")
-        if type(strata) == "string" then indicator:SetFrameStrata(strata) end
-        local level = Safety.Read(button, "GetFrameLevel")
-        if type(level) == "number" then indicator:SetFrameLevel(level) end
-    end
-    indicator:EnableMouse(false)
-    indicator:Show()
-    if AdapterKit.Attach(context, indicator, SELECTION_INDICATOR_SPEC) then return true end
-    indicator:Hide()
-    return false
-end
-
-function AdapterKit.HideIndicators(indicators)
-    for _, indicator in pairs(indicators) do
-        indicator:Hide()
-    end
-end
-
--- Reversible theme text colors. The native color is captured once, or again
--- with recapture when Blizzard repainted the text since our last paint, and
--- is restored only while our color is still installed.
-function AdapterKit.NewTextColors()
-    return {
-        originals = AdapterKit.WeakSet(),
-        roles = AdapterKit.WeakSet(),
-        installed = AdapterKit.WeakSet(),
-    }
-end
-
-local function InstallTextColor(colors, fontObject, role)
-    local installed = colors.installed[fontObject]
-    if not installed then
-        installed = {}
-        colors.installed[fontObject] = installed
-    end
-    installed[1], installed[2], installed[3], installed[4] = NS.Theme.GetColor(role)
-    fontObject:SetTextColor(installed[1], installed[2], installed[3], installed[4])
-end
-
-local function MatchesColor(color, r, g, b, a)
-    return color ~= nil and r ~= nil
-        and color[1] == r and color[2] == g and color[3] == b and color[4] == a
-end
-
-function AdapterKit.SetTextColor(colors, fontObject, role, recapture)
-    if Safety.IsForbidden(fontObject) or type((Field(fontObject, "SetTextColor"))) ~= "function" then
-        return false
-    end
-    local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")
-    local original = colors.originals[fontObject]
-    if not original then
-        if r then colors.originals[fontObject] = { r, g, b, a } end
-    elseif recapture and r and not MatchesColor(colors.installed[fontObject], r, g, b, a) then
-        original[1], original[2], original[3], original[4] = r, g, b, a
-    end
-    colors.roles[fontObject] = role
-    InstallTextColor(colors, fontObject, role)
-    return true
-end
-
-function AdapterKit.RefreshTextColors(colors)
-    for fontObject, role in pairs(colors.roles) do
-        InstallTextColor(colors, fontObject, role)
-    end
-end
-
-function AdapterKit.RestoreTextColors(colors)
-    for fontObject, original in pairs(colors.originals) do
-        if MatchesColor(colors.installed[fontObject], Safety.ReadColor(fontObject, "GetTextColor")) then
-            fontObject:SetTextColor(original[1], original[2], original[3], original[4])
-        end
-    end
-    colors.originals = AdapterKit.WeakSet()
-    colors.roles = AdapterKit.WeakSet()
-    colors.installed = AdapterKit.WeakSet()
-end
+local Kit = NS.AdapterKit
 
 -- Exact shared chrome adapters, verified clean-room against
 -- Gethe/wow-ui-source upstream/live at
@@ -425,7 +32,6 @@ local SharedChrome = {
 }
 NS.SharedChrome = SharedChrome
 
-local Kit = AdapterKit
 local DEFAULT_OWNER = "blizzardWindows"
 local QUEUE_ENTRY_LIMIT = 64
 
@@ -537,7 +143,10 @@ local function OwnerState(owner)
             owner = owner,
             active = false,
             deferred = {},
+            jobs = {},
             surfaces = Kit.WeakSet(),
+            -- pooled queue entry -> skin generation of its pass
+            queueEntries = Kit.WeakSet(),
         }
         SharedChrome.owners[owner] = state
     end
@@ -591,8 +200,7 @@ end
 
 local function SkinAddonCompartment(state)
     if not NS.GenericWindows.IsCategoryEnabled("hud") then return false end
-    local button = _G.AddonCompartmentFrame
-    if not button then return false end
+    local button = AddonCompartmentFrame
 
     -- A plain surface keeps the minimap atlas, addon count and DropdownButton
     -- semantics native; ControlSkin would replace interactive state textures.
@@ -635,18 +243,32 @@ local function SkinRaid(state)
     return ApplyGeneric(_G.RaidParentFrame, state.owner, RAID_MODE)
 end
 
+-- QueueStatusFrameMixin:Update rebuilds the entry pool on every queue event.
+-- The root and each pooled entry take one skin pass per look generation;
+-- later updates only reach entries the pool created since.
 local function SkinQueueStatus(state)
     if not NS.GenericWindows.IsCategoryEnabled("hud") then return false end
     local root = _G.QueueStatusFrame
     if not root then return false end
-    local applied = ApplyGeneric(root, state.owner, QUEUE_MODE)
+    local generation = Kit.SkinGeneration()
+    local applied = state.queueRootGeneration == generation
+    if not applied and ApplyGeneric(root, state.owner, QUEUE_MODE) then
+        state.queueRootGeneration = generation
+        applied = true
+    end
     local pool = Field(root, "statusEntriesPool")
     if type((Field(pool, "EnumerateActive"))) == "function" then
+        local entries = state.queueEntries
         local count = 0
         for entry in pool:EnumerateActive() do
             if count >= QUEUE_ENTRY_LIMIT then break end
             count = count + 1
-            applied = ApplyGeneric(entry, state.owner, QUEUE_ENTRY_MODE) or applied
+            if entries[entry] == generation then
+                applied = true
+            elseif ApplyGeneric(entry, state.owner, QUEUE_ENTRY_MODE) then
+                entries[entry] = generation
+                applied = true
+            end
         end
     end
     return applied
@@ -688,32 +310,52 @@ local kindSkinners = {
     ["combat-log"] = SkinCombatLog,
 }
 
+-- Each kind is its own error boundary, so one failing kind leaves the others.
 local function ApplyKind(state, kind)
     if not state.active then return false, "disabled" end
     if NS.IsCombatLocked() then return false, "combat" end
-    local applied = kindSkinners[kind](state) == true
+    local finished, applied = Kit.Isolate(kindSkinners[kind], state)
+    if not finished then return false, "error" end
+    applied = applied == true
     return applied, applied and "applied" or "missing"
 end
 
-local function RunOrDefer(state, suffix, callback)
+-- One job per kind, built once: job(state) applies that kind.
+local kindJobs = {}
+for index = 1, #allKinds do
+    local kind = allKinds[index]
+    kindJobs[kind] = function(state) ApplyKind(state, kind) end
+end
+
+-- Runs job(state) now, or once after combat. A suffix always maps to the
+-- same job, so its combat callback and key are built once per owner.
+local function RunOrDefer(state, suffix, job)
     if not state.active then return false, "disabled" end
-    local owner = state.owner
-    local key = "shared-chrome:" .. tostring(owner) .. ":" .. tostring(suffix)
-    state.deferred[key] = true
-    local ran, reason = NS.CombatGate.RunOrDefer(key, function()
-        local current = SharedChrome.owners[owner]
-        if current then current.deferred[key] = nil end
-        if current and current.active then callback(current) end
-    end)
+    if not NS.IsCombatLocked() then
+        job(state)
+        return true
+    end
+    local deferred = state.jobs[suffix]
+    if not deferred then
+        local owner = state.owner
+        local key = "shared-chrome:" .. tostring(owner) .. ":" .. tostring(suffix)
+        deferred = { key = key }
+        deferred.run = function()
+            local current = SharedChrome.owners[owner]
+            if current then current.deferred[key] = nil end
+            if current and current.active then job(current) end
+        end
+        state.jobs[suffix] = deferred
+    end
+    state.deferred[deferred.key] = true
+    local ran, reason = NS.CombatGate.RunOrDefer(deferred.key, deferred.run)
     return ran == true, reason
 end
 
 local function RequestKindForOwners(kind)
     for _, state in pairs(SharedChrome.owners) do
         if state.active then
-            RunOrDefer(state, kind, function(current)
-                ApplyKind(current, kind)
-            end)
+            RunOrDefer(state, kind, kindJobs[kind])
         end
     end
 end
@@ -726,25 +368,23 @@ local function ApplyAllNow(state)
     return applied
 end
 
-local function HookMixinMethod(key, mixin, method, callback)
-    if SharedChrome.hooks[key] then return true end
-    if not Kit.HookFunction(mixin, method, callback) then return false end
-    SharedChrome.hooks[key] = true
-    return true
-end
-
 local function OnPlayerChoicePoolReady(frame)
     if frame == _G.PlayerChoiceFrame then
         RequestKindForOwners("player-choice")
     end
 end
 
+-- Mixin() copied PlayerChoiceFrameMixin onto PlayerChoiceFrame when
+-- Blizzard_PlayerChoice created it, and self:SetupOptions() resolves on the
+-- frame, so the frame instance is hooked (once) rather than the mixin.
 local function InstallHooks()
-    local mixin = _G.PlayerChoiceFrameMixin
-    HookMixinMethod("player-choice-options", mixin, "SetupOptions", OnPlayerChoicePoolReady)
+    local frame = _G.PlayerChoiceFrame
+    if not frame or SharedChrome.hooks[frame] then return end
+    local installed = Kit.HookFunction(frame, "SetupOptions", OnPlayerChoicePoolReady)
     -- Grid pages can repopulate nested reward/button pools without rebuilding
     -- the outer option pool.
-    HookMixinMethod("player-choice-page", mixin, "OnPageChanged", OnPlayerChoicePoolReady)
+    installed = Kit.HookFunction(frame, "OnPageChanged", OnPlayerChoicePoolReady) or installed
+    SharedChrome.hooks[frame] = installed
 end
 
 -- QueueStatusFrameMixin:Update releases/rebuilds the pool and then fires
@@ -792,8 +432,8 @@ local callbacks = {
 local function RegisterCallbacks()
     for index = 1, #callbacks do
         local callback = callbacks[index]
-        if not SharedChrome.callbackState[callback.key]
-            and Kit.RegisterEventCallback(callback.event, callback.method, SharedChrome) then
+        if not SharedChrome.callbackState[callback.key] then
+            EventRegistry:RegisterCallback(callback.event, callback.method, SharedChrome)
             SharedChrome.callbackState[callback.key] = true
         end
     end
@@ -803,7 +443,7 @@ local function UnregisterCallbacks()
     for index = 1, #callbacks do
         local callback = callbacks[index]
         if SharedChrome.callbackState[callback.key] then
-            Kit.UnregisterEventCallback(callback.event, SharedChrome)
+            EventRegistry:UnregisterCallback(callback.event, SharedChrome)
             SharedChrome.callbackState[callback.key] = nil
         end
     end
@@ -824,10 +464,7 @@ local function ScheduleAddonLoads()
     for addon in pairs(addonKinds) do
         if not SharedChrome.waitingAddons[addon] and not NS.Client.IsAddOnLoaded(addon) then
             SharedChrome.waitingAddons[addon] = true
-            if not Kit.ContinueOnAddOnLoaded(addon, function() OnAddonLoaded(addon) end) then
-                SharedChrome.waitingAddons[addon] = nil
-                return
-            end
+            EventUtil.ContinueOnAddOnLoaded(addon, function() OnAddonLoaded(addon) end)
         end
     end
 end
@@ -843,11 +480,11 @@ function SharedChrome.Apply(owner)
     RegisterCallbacks()
     InstallHooks()
 
-    local applied = 0
-    local ran, reason = RunOrDefer(state, "apply", function(current)
-        applied = ApplyAllNow(current)
-    end)
-    if not ran then return false, reason or "combat" end
+    if NS.IsCombatLocked() then
+        local _, reason = RunOrDefer(state, "apply", ApplyAllNow)
+        return false, reason or "combat"
+    end
+    local applied = ApplyAllNow(state)
     return true, applied > 0 and "applied" or "waiting"
 end
 

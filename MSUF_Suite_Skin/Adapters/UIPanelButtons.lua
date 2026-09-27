@@ -27,11 +27,10 @@ NS.UIPanelButtons = UIPanelButtons
 
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
-
--- Exactly one boolean, also for a missing target (Field returns no value then).
-local function HasMethod(target, name)
-    return type(target) == "table" and type(target[name]) == "function"
-end
+local Read = NS.Safety.Read
+local HasMethod = NS.Safety.HasMethod
+local CanControl = NS.Safety.CanControl
+local Dispatch = NS.Safety.Dispatch
 
 local OWNER = "uipanel-buttons"
 local DEFER_KEY = "uipanel-buttons:late"
@@ -97,7 +96,7 @@ local function SkinButton(button, family)
         NS.CombatGate.RunOrDefer(DEFER_KEY, UIPanelButtons.Refresh)
         return false, "combat"
     end
-    if not NS.Safety.CanControl(button, family == "staticpopup") then
+    if not CanControl(button, family == "staticpopup") then
         return false, "protected"
     end
 
@@ -203,7 +202,6 @@ end
 
 local function RegisterStaticPopupLoad()
     if UIPanelButtons.staticPopupLoadRegistered then return end
-    if not EventUtil or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then return end
     UIPanelButtons.staticPopupLoadRegistered = true
     EventUtil.ContinueOnAddOnLoaded("Blizzard_StaticPopup_Game", function()
         InstallHooks()
@@ -216,6 +214,9 @@ local function RegisterStaticPopupLoad()
     end)
 end
 
+-- The show hooks below track a button even while the skin is off: Refresh
+-- skins every tracked button once the skin is enabled, including the
+-- buttons shown between this file's load and Apply.
 local function OnUIPanelButtonShown(button)
     -- Visibility callbacks can run while opening combat UI. Do not retain or
     -- mutate a foreign control in that path; the next out-of-combat show (or a
@@ -230,12 +231,16 @@ local function IsSharedRedButton(button)
         and button.Left ~= nil and button.Center ~= nil and button.Right ~= nil
 end
 
-local function OnSharedButtonShown(controller)
-    if NS.IsCombatLocked() then return end
-    local button = Call(controller, "GetParent")
+-- button is the parent of a shown ButtonController (nil when secret).
+local function TrackSharedButton(button)
     if not IsSharedRedButton(button) then return end
     UIPanelButtons.tracked[button] = "shared"
     SkinButton(button, "shared")
+end
+
+local function OnSharedButtonShown(controller)
+    if NS.IsCombatLocked() then return end
+    TrackSharedButton(Read(controller, "GetParent"))
 end
 
 local function OnIconArtChanged(button, artKit)
@@ -294,34 +299,54 @@ local function OnAdoptedPanelButtonShown(button)
 end
 
 local function OnAdoptedControllerShown(controller)
-    if not OwnedElsewhere(Call(controller, "GetParent")) then OnSharedButtonShown(controller) end
+    if NS.IsCombatLocked() then return end
+    local button = Read(controller, "GetParent")
+    if not OwnedElsewhere(button) then TrackSharedButton(button) end
 end
 
 local function OnAdoptedArtKitChanged(button, artKit)
     if not OwnedElsewhere(button) then OnIconArtChanged(button, artKit) end
 end
 
+-- Every hook below runs inside Blizzard's own call (GameDialogMixin runs
+-- SetupButtons in the middle of a StaticPopup's Init), so each is its own
+-- error boundary: a failing skin is reported and Blizzard's setup goes on.
+local function Isolated(callback)
+    return function(...) Dispatch(callback, ...) end
+end
+
+local OnGameDialogButtonsSetupHook = Isolated(OnGameDialogButtonsSetup)
+local OnGameDialogCloseSetupHook = Isolated(OnGameDialogCloseSetup)
+local OnUIPanelButtonShownHook = Isolated(OnUIPanelButtonShown)
+local OnSharedButtonShownHook = Isolated(OnSharedButtonShown)
+local OnIconArtChangedHook = Isolated(OnIconArtChanged)
+local OnCloseButtonBorderChangedHook = Isolated(OnCloseButtonBorderChanged)
+local OnAdoptedPanelButtonShownHook = Isolated(OnAdoptedPanelButtonShown)
+local OnAdoptedControllerShownHook = Isolated(OnAdoptedControllerShown)
+local OnAdoptedArtKitChangedHook = Isolated(OnAdoptedArtKitChanged)
+
 -- Mixin copies and XML key values are plain instance fields: rawget reads them
 -- without running any foreign __index handler.
 local function AdoptFrame(frame)
     if native.setButtonArtKit and rawget(frame, "SetButtonArtKit") == native.setButtonArtKit then
-        hooksecurefunc(frame, "SetButtonArtKit", OnAdoptedArtKitChanged)
+        hooksecurefunc(frame, "SetButtonArtKit", OnAdoptedArtKitChangedHook)
         -- A later-created button reports its initial art kit from InitButton;
         -- an adopted one is caught up with the kit it already shows.
         local artKit = rawget(frame, "buttonArtKit")
         if NS.Checkmarks.IsRedButtonArtKit(artKit) then OnAdoptedArtKitChanged(frame, artKit) end
     end
     if native.controllerOnShow and rawget(frame, "OnShow") == native.controllerOnShow then
-        hooksecurefunc(frame, "OnShow", OnAdoptedControllerShown)
+        hooksecurefunc(frame, "OnShow", OnAdoptedControllerShownHook)
     end
     if native.legacyOnShow and HasMethod(frame, "HookScript")
         and frame:GetScript("OnShow") == native.legacyOnShow then
-        frame:HookScript("OnShow", OnAdoptedPanelButtonShown)
+        frame:HookScript("OnShow", OnAdoptedPanelButtonShownHook)
     end
 end
 
 -- One bounded pass over the existing frames, once per session and only after
--- the feature is first enabled.
+-- the feature is first enabled. EnumerateFrames is in neither client's API
+-- documentation, so a client without it adopts nothing.
 local function AdoptExistingButtons()
     if UIPanelButtons.adopted or type(EnumerateFrames) ~= "function" then return end
     UIPanelButtons.adopted = true
@@ -342,11 +367,11 @@ local function HookStaticPopups()
         local popup = _G["StaticPopup" .. index]
         if popup and not hooked[popup] then
             if HasMethod(popup, "SetupButtons") then
-                hooksecurefunc(popup, "SetupButtons", OnGameDialogButtonsSetup)
+                hooksecurefunc(popup, "SetupButtons", OnGameDialogButtonsSetupHook)
                 hooked.staticPopup = true
             end
             if HasMethod(popup, "SetupCloseButton") then
-                hooksecurefunc(popup, "SetupCloseButton", OnGameDialogCloseSetup)
+                hooksecurefunc(popup, "SetupCloseButton", OnGameDialogCloseSetupHook)
             end
             hooked[popup] = true
         end
@@ -355,16 +380,16 @@ end
 
 InstallHooks = function()
     local hooked = UIPanelButtons.hooks
-    if not hooked.legacy and type(_G.UIPanelButton_OnShow) == "function" then
-        native.legacyOnShow = _G.UIPanelButton_OnShow
-        hooksecurefunc("UIPanelButton_OnShow", OnUIPanelButtonShown)
+    if not hooked.legacy then
+        native.legacyOnShow = UIPanelButton_OnShow
+        hooksecurefunc("UIPanelButton_OnShow", OnUIPanelButtonShownHook)
         hooked.legacy = true
     end
 
     local controller = _G.ButtonControllerMixin
     if not hooked.shared and HasMethod(controller, "OnShow") then
         native.controllerOnShow = controller.OnShow
-        hooksecurefunc(controller, "OnShow", OnSharedButtonShown)
+        hooksecurefunc(controller, "OnShow", OnSharedButtonShownHook)
         hooked.shared = true
     end
 
@@ -374,14 +399,14 @@ InstallHooks = function()
         for index = 1, #artKitMixins do
             local mixin = _G[artKitMixins[index]]
             if Field(mixin, "SetButtonArtKit") == setArtKit then
-                hooksecurefunc(mixin, "SetButtonArtKit", OnIconArtChanged)
+                hooksecurefunc(mixin, "SetButtonArtKit", OnIconArtChangedHook)
             end
         end
         hooked.icon = true
     end
 
-    if not hooked.closeBorder and type(_G.UIPanelCloseButton_SetBorderAtlas) == "function" then
-        hooksecurefunc("UIPanelCloseButton_SetBorderAtlas", OnCloseButtonBorderChanged)
+    if not hooked.closeBorder then
+        hooksecurefunc("UIPanelCloseButton_SetBorderAtlas", OnCloseButtonBorderChangedHook)
         hooked.closeBorder = true
     end
 

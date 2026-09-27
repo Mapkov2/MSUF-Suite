@@ -11,6 +11,8 @@ NS.EncounterJournalSkin = EncounterJournalSkin
 
 local Safety = NS.Safety
 local Field = Safety.Field
+local Dispatch = Safety.Dispatch
+local SameColor = Safety.SameColor
 local Kit = NS.AdapterKit
 local Path = Kit.Path
 local Fade = Kit.Fade
@@ -20,11 +22,8 @@ local SetTextColor = Kit.SetTextColor
 local CALLBACK_TAB_SET = "EncounterJournal.TabSet"
 local CALLBACK_JOURNEY_CHANGED = "JourneysFrameMixin.FactionChanged"
 local ROWS_JOB = "encounterJournal:rows"
+local JOURNEY_POOLS_JOB = "encounterJournal:journey-pools"
 local POOL_LIMIT = 64
-local PREWARM_LIMIT = 32
-local JOURNEY_REWARD_PREWARM = 4
-
-local GetMajorFactionData = C_MajorFactions and C_MajorFactions.GetMajorFactionData
 
 local ROOT_MODE = {
     role = "shell",
@@ -64,12 +63,6 @@ local TAB_SPEC = {
     pillHeight = 28,
     inset = 1,
 }
-local SEARCH_SPEC = {
-    role = "input",
-    useControlShape = true,
-    pillHeight = 28,
-    inset = 1,
-}
 
 -- Exact atlases for the only region enumerations in this adapter. Parent
 -- identity plus atlas and a minimum size keep unrelated semantic art native.
@@ -99,6 +92,25 @@ local rowMutedFields = {
     "SpecName", "HighlightLevel", "TimeLeft", "ProgressText", "Points",
 }
 
+-- Row labels carry meaning in their color: completed, expired or unmet
+-- Monthly Activities (MonthlyActivitiesButtonTextContainerMixin:UpdateTextColor),
+-- legendary or unavailable powers (Blizzard_LootJournal.lua) and item set
+-- quality (Blizzard_LootJournalItems.lua). Only the templates' plain colors
+-- are themed: GameFontNormal gold, GameFontHighlight white and the parchment
+-- brown of Blizzard_EncounterJournal.xml (Blizzard_Fonts_Shared FontStyles.xml
+-- for the font objects), plus the skin's own Blizzard-yellow retint of that
+-- gold (BlizzardYellow, read from the theme). Any other color stays
+-- Blizzard's. Black (GameFontBlack) is Monthly Activities' completion signal:
+-- it becomes the muted role, readable on the skin yet distinct from open
+-- activities.
+local PLAIN_ROW_COLORS = {
+    { 1, 0.82, 0 },
+    { 1, 1, 1 },
+    { 0.25, 0.1484375, 0.02 },
+}
+local COMPLETED_ROW_COLOR = { 0, 0, 0 }
+local COMPLETED_ROW_ROLE = "muted"
+
 local scrollBoxPaths = {
     { "instanceSelect", "ScrollBox" },
     { "searchResults", "ScrollBox" },
@@ -125,8 +137,9 @@ local function GetState(frame, owner)
             owner = owner,
             active = false,
             surfaces = Kit.WeakSet(),
-            rows = Kit.WeakSet(),
             textColors = Kit.NewTextColors(),
+            -- row label -> the role of its field
+            rowLabels = Kit.WeakSet(),
             scrollBoxes = Kit.WeakSet(),
             eventCallbacks = {},
             deferred = {},
@@ -194,15 +207,6 @@ local function SkinTab(state, tab)
     NS.ControlSkin.Refresh(tab)
     SetTextColor(state.textColors, ButtonText(tab), TabSelected(tab) and "accentBright" or "muted", true)
     return true
-end
-
-local function SkinSearchBox(state, searchBox)
-    if not searchBox or not CanCreateRegions(searchBox) then
-        return
-    end
-    Kit.SkinControl(state, searchBox, SEARCH_SPEC, "ApplySearchBox")
-    SetTextColor(state.textColors, searchBox, "text")
-    SetTextColor(state.textColors, Field(searchBox, "Instructions"), "muted")
 end
 
 local function SkinTutorial(state)
@@ -372,7 +376,7 @@ local function SkinRootStatic(state)
     FadeChrome(state, frame)
     FadeChrome(state, Field(frame, "inset"))
     SetTextColor(state.textColors, Path(frame, "TitleContainer", "TitleText"), "title")
-    SkinSearchBox(state, Field(frame, "searchBox"))
+    Kit.SkinSearchBox(state, Field(frame, "searchBox"))
 
     for index = 1, #rootTabs do
         SkinTab(state, Field(frame, rootTabs[index]))
@@ -388,9 +392,58 @@ local function SkinRootStatic(state)
     return true
 end
 
+-- Blizzard's template colors are classified; alpha does not matter.
+local function IsNativeColor(r, g, b, color)
+    return SameColor(r, g, b, nil, color[1], color[2], color[3], nil, Safety.COLOR_NATIVE)
+end
+
+local function IsPlainRowColor(r, g, b)
+    for index = 1, #PLAIN_ROW_COLORS do
+        if IsNativeColor(r, g, b, PLAIN_ROW_COLORS[index]) then return true end
+    end
+    -- BlizzardYellow wrote this one, so it reads back at our own precision.
+    local yellowR, yellowG, yellowB = NS.Theme.GetColor("blizzardYellow")
+    return SameColor(r, g, b, nil, yellowR, yellowG, yellowB, nil, Safety.COLOR_OWN)
+end
+
+-- Themes a row label while it shows a plain template color (or still our
+-- color). Once Blizzard paints a meaningful color the label is released to it.
+local function SetRowTextColor(state, fontObject, role)
+    local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")
+    if not r then return end
+    local colors = state.textColors
+    state.rowLabels[fontObject] = role
+    if IsNativeColor(r, g, b, COMPLETED_ROW_COLOR) then
+        SetTextColor(colors, fontObject, COMPLETED_ROW_ROLE, true)
+    elseif IsPlainRowColor(r, g, b) then
+        SetTextColor(colors, fontObject, role, true)
+    elseif Kit.ShowsTextColor(colors, fontObject, r, g, b, a) then
+        -- Blizzard has not repainted since our pass: keep the role we chose.
+        SetTextColor(colors, fontObject, colors.roles[fontObject] or role, true)
+    else
+        Kit.ForgetTextColor(colors, fontObject)
+    end
+end
+
+-- A look change repaints every themed text. Row labels follow the same rule
+-- as on initialization: one Blizzard recolored in place since our pass (an
+-- activity that turned unmet, completed or expired) keeps Blizzard's color.
+-- Clearing entries during pairs() is allowed; nothing is added meanwhile.
+local function RefreshTextColors(state)
+    local colors = state.textColors
+    for fontObject, role in pairs(colors.roles) do
+        local rowRole = state.rowLabels[fontObject]
+        if rowRole then
+            SetRowTextColor(state, fontObject, rowRole)
+        else
+            SetTextColor(colors, fontObject, role)
+        end
+    end
+end
+
 local function SetRowTextColors(state, row, fields, role)
     for index = 1, #fields do
-        SetTextColor(state.textColors, Field(row, fields[index]), role, true)
+        SetRowTextColor(state, Field(row, fields[index]), role)
     end
 end
 
@@ -399,7 +452,6 @@ SkinDynamicRow = function(state, row)
         return
     end
     Attach(state, row, ROW_SPEC)
-    state.rows[row] = true
 
     -- These are verified decorative card layers; icon, portrait, encounter
     -- image, reward and status textures are intentionally left untouched.
@@ -411,8 +463,8 @@ SkinDynamicRow = function(state, row)
     SetRowTextColors(state, row, rowMutedFields, "muted")
 
     local textContainer = Field(row, "TextContainer")
-    SetTextColor(state.textColors, Field(textContainer, "NameText"), "title", true)
-    SetTextColor(state.textColors, Field(textContainer, "ConditionsText"), "text", true)
+    SetRowTextColor(state, Field(textContainer, "NameText"), "title")
+    SetRowTextColor(state, Field(textContainer, "ConditionsText"), "text")
 end
 
 local function SkinActivePool(state, pool)
@@ -432,72 +484,80 @@ local function SkinActivePool(state, pool)
     return count
 end
 
--- Acquires and releases up to desiredCount pooled frames once, so frames
--- Blizzard shows later are already skinned.
-local function PrewarmPool(state, pool, desiredCount)
-    desiredCount = math.max(0, math.min(PREWARM_LIMIT, tonumber(desiredCount) or 0))
-    if desiredCount == 0 or not pool then
-        return
-    end
-
-    local active = SkinActivePool(state, pool)
-    if type((Field(pool, "Acquire"))) ~= "function" or type((Field(pool, "Release"))) ~= "function" then
-        return
-    end
-
-    local acquired = {}
-    for _ = active + 1, desiredCount do
-        local object = pool:Acquire()
-        if not object then
-            break
-        end
-        acquired[#acquired + 1] = object
-        SkinDynamicRow(state, object)
-    end
-    for index = #acquired, 1, -1 do
-        pool:Release(acquired[index])
-    end
-end
-
-local function RefreshJourneyPools(state, factionID)
+-- The reward and highlight cards Blizzard itself acquired. The pools are
+-- never driven from here: frames that addon code acquires are created in
+-- addon (tainted) execution.
+local function RefreshJourneyPools(state)
     local journeys = Field(state.frame, "JourneysFrame")
     SkinActivePool(state, Path(journeys, "JourneyProgress", "rewardPool"))
+    SkinActivePool(state, Path(journeys, "JourneyOverview", "Highlights", "highlightPool"))
+end
 
-    local highlightsPool = Path(journeys, "JourneyOverview", "Highlights", "highlightPool")
-    SkinActivePool(state, highlightsPool)
-    if type(factionID) == "number" and GetMajorFactionData then
-        local data = GetMajorFactionData(factionID)
-        local highlights = type(data) == "table" and data.highlights
-        if type(highlights) == "table" then
-            PrewarmPool(state, highlightsPool, #highlights)
+-- Cards acquired in combat are painted in one pass once it ends.
+local function FlushJourneyPools()
+    local state = EncounterJournalSkin.activeState
+    if not state then return end
+    state.deferred[JOURNEY_POOLS_JOB] = nil
+    if state.active then RefreshJourneyPools(state) end
+end
+
+-- JourneyProgressFrameMixin:SetRewards and JourneyOverviewHighlightsFrameMixin:
+-- DisplayHighlights (Blizzard_Journeys.lua) release their pool, then acquire,
+-- fill and show every card; their post-hooks skin the cards before they are
+-- drawn. The pass is its own error boundary.
+local function OnJourneyCardsAcquired()
+    local state = EncounterJournalSkin.activeState
+    if not state or not state.active then return end
+    if NS.IsCombatLocked() then
+        if not state.deferred[JOURNEY_POOLS_JOB] then
+            state.deferred[JOURNEY_POOLS_JOB] = true
+            NS.CombatGate.RunOrDefer(JOURNEY_POOLS_JOB, FlushJourneyPools)
         end
+        return
+    end
+    Dispatch(RefreshJourneyPools, state)
+end
+
+-- Blizzard_Journeys.xml gives JourneyProgress and JourneyOverview.Highlights
+-- their own copies of these mixins, and self:SetRewards() and
+-- self.Highlights:DisplayHighlights() resolve on them, so the instances are
+-- hooked, once each.
+local journeyHooks = setmetatable({}, { __mode = "k" })
+
+local function HookJourneyCards(frame, method)
+    if not frame or journeyHooks[frame] then return end
+    journeyHooks[frame] = Kit.HookFunction(frame, method, OnJourneyCardsAcquired)
+end
+
+local function HookJourneyPools(state)
+    local journeys = Field(state.frame, "JourneysFrame")
+    HookJourneyCards(Field(journeys, "JourneyProgress"), "SetRewards")
+    HookJourneyCards(Path(journeys, "JourneyOverview", "Highlights"), "DisplayHighlights")
+end
+
+local function SkinRowCollection(state, collection)
+    if type(collection) ~= "table" then return end
+    for _, row in pairs(collection) do
+        SkinDynamicRow(state, row)
     end
 end
 
-local function RefreshDynamicTables(state, factionID)
+local function RefreshDynamicTables(state)
     local encounter = Field(state.frame, "encounter")
-    for _, collection in ipairs({
-        Field(encounter, "usedHeaders"),
-        Field(encounter, "freeHeaders"),
-        Path(state.frame, "MonthlyActivitiesFrame", "thresholdFrames"),
-    }) do
-        if type(collection) == "table" then
-            for _, row in pairs(collection) do
-                SkinDynamicRow(state, row)
-            end
-        end
-    end
-    RefreshJourneyPools(state, factionID)
+    SkinRowCollection(state, Field(encounter, "usedHeaders"))
+    SkinRowCollection(state, Field(encounter, "freeHeaders"))
+    SkinRowCollection(state, Path(state.frame, "MonthlyActivitiesFrame", "thresholdFrames"))
+    RefreshJourneyPools(state)
 end
 
-local function Refresh(state, includeStatic, factionID)
+local function Refresh(state, includeStatic)
     if not state or not state.active then
         return
     end
     if includeStatic then
         SkinRootStatic(state)
     end
-    RefreshDynamicTables(state, factionID)
+    RefreshDynamicTables(state)
 end
 
 local function QueueRefresh(state, suffix, callback)
@@ -529,13 +589,13 @@ function EncounterJournalSkin:OnTabSet(frame)
     end)
 end
 
-function EncounterJournalSkin:OnJourneyChanged(factionID)
+function EncounterJournalSkin:OnJourneyChanged()
     local state = self.activeState
     if not state then
         return
     end
     QueueRefresh(state, "journey", function()
-        Refresh(state, false, factionID)
+        Refresh(state, false)
     end)
 end
 
@@ -569,7 +629,7 @@ end
 function EncounterJournalSkin:OnThemeChanged()
     local state = self.activeState
     if state and state.active and not NS.IsCombatLocked() then
-        Kit.RefreshTextColors(state.textColors)
+        RefreshTextColors(state)
         NS.ControlSkin.RefreshOwner(state.owner)
     end
 end
@@ -594,8 +654,8 @@ RegisterAllScrollBoxes = function(state)
 end
 
 local function RegisterEventCallback(state, event, method)
-    if not state.eventCallbacks[event]
-        and Kit.RegisterEventCallback(event, method, EncounterJournalSkin) then
+    if not state.eventCallbacks[event] then
+        EventRegistry:RegisterCallback(event, method, EncounterJournalSkin)
         state.eventCallbacks[event] = true
     end
 end
@@ -604,12 +664,13 @@ local function RegisterCallbacks(state)
     RegisterEventCallback(state, CALLBACK_TAB_SET, EncounterJournalSkin.OnTabSet)
     RegisterEventCallback(state, CALLBACK_JOURNEY_CHANGED, EncounterJournalSkin.OnJourneyChanged)
     RegisterAllScrollBoxes(state)
+    HookJourneyPools(state)
     NS.Registry.AddListener(EncounterJournalSkin, EncounterJournalSkin.OnThemeChanged)
 end
 
 local function UnregisterCallbacks(state)
     for event in pairs(state.eventCallbacks) do
-        Kit.UnregisterEventCallback(event, EncounterJournalSkin)
+        EventRegistry:UnregisterCallback(event, EncounterJournalSkin)
     end
     state.eventCallbacks = {}
 
@@ -628,10 +689,10 @@ local function RestoreState(state)
     NS.ControlSkin.DisableOwner(state.owner)
     Kit.HideSurfaces(state)
     Kit.RestoreTextColors(state.textColors)
+    state.rowLabels = Kit.WeakSet()
     NS.Cosmetics.RestoreOwner(state.owner)
     NS.GenericWindows.Disable(state.owner)
     state.genericApplied = false
-    state.rows = Kit.WeakSet()
 end
 
 function EncounterJournalSkin.Apply(frame, owner)
@@ -670,7 +731,6 @@ function EncounterJournalSkin.Apply(frame, owner)
 
     RegisterCallbacks(state)
     RefreshDynamicTables(state)
-    PrewarmPool(state, Path(frame, "JourneysFrame", "JourneyProgress", "rewardPool"), JOURNEY_REWARD_PREWARM)
     return true
 end
 

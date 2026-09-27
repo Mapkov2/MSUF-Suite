@@ -255,14 +255,18 @@ local function SkinColumnHeaders(state, columnDisplay)
     end
 end
 
+local function OnColumnsLaidOut(state, columnDisplay)
+    if state.active and not NS.IsCombatLocked() then
+        SkinColumnHeaders(state, columnDisplay)
+    end
+end
+
+-- The post-hook runs inside Blizzard's LayoutColumns, so the pass is its own
+-- error boundary. One closure per column display, built once.
 local function HookColumnDisplay(state, columnDisplay)
     if CommunitiesSkin.columnDisplayHooks[columnDisplay] then return end
     CommunitiesSkin.columnDisplayHooks[columnDisplay] = Kit.HookFunction(columnDisplay, "LayoutColumns",
-        function()
-            if state.active and not NS.IsCombatLocked() then
-                SkinColumnHeaders(state, columnDisplay)
-            end
-        end) or nil
+        function() Safety.Dispatch(OnColumnsLaidOut, state, columnDisplay) end) or nil
 end
 
 local function SkinColumnDisplay(state, columns)
@@ -457,9 +461,7 @@ local function SkinStatic(state)
     SkinDialogSurface(state, Field(frame, "EditStreamDialog"), "BG")
     SkinDialogSurface(state, Field(frame, "RecruitmentDialog"), "BG")
     SkinFixedPanelButtons(state)
-    if NS.Checkmarks then
-        NS.Checkmarks.TrackControlTree(frame, state.owner, CONTROL_TREE_OPTIONS)
-    end
+    NS.Checkmarks.TrackControlTree(frame, state.owner, CONTROL_TREE_OPTIONS)
 end
 
 function CommunitiesSkin:OnDisplayChanged()
@@ -483,11 +485,9 @@ local function RegisterFrameCallback(state, event, method)
 end
 
 local function RegisterCallbacks(state)
-    local events = _G.CommunitiesFrameMixin and _G.CommunitiesFrameMixin.Event
-    if type(events) == "table" then
-        RegisterFrameCallback(state, events.DisplayModeChanged, CommunitiesSkin.OnDisplayChanged)
-        RegisterFrameCallback(state, events.ClubSelected, CommunitiesSkin.OnClubSelected)
-    end
+    local events = CommunitiesFrameMixin.Event
+    RegisterFrameCallback(state, events.DisplayModeChanged, CommunitiesSkin.OnDisplayChanged)
+    RegisterFrameCallback(state, events.ClubSelected, CommunitiesSkin.OnClubSelected)
 end
 
 local function UnregisterCallbacks(state)
@@ -517,7 +517,7 @@ function CommunitiesSkin.Apply(frame, owner)
     if not Safety.CanDecorate(frame, true) then return false, "protected" end
     if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer("communities:apply", function()
-            CommunitiesSkin.Apply(_G.CommunitiesFrame or frame, owner)
+            CommunitiesSkin.Apply(frame, owner)
         end)
         return false, "combat"
     end

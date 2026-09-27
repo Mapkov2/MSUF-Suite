@@ -7,7 +7,10 @@ local _, NS = ...
 local Compat = { records = {}, elements = {}, hooks = setmetatable({}, { __mode = "k" }) }
 NS.EQoLCharacter = Compat
 
+-- Getters called with valid arguments; secret results read as nil.
+local Read = NS.AdapterKit.ReadValues
 local Public = NS.Safety.Public
+local Dispatch = NS.Safety.Dispatch
 
 local KEY = "character-eqol"
 local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
@@ -22,16 +25,6 @@ local definitions = {
     { 16, "MainHandSlot", true }, { 17, "SecondaryHandSlot", false },
 }
 
--- Calls a getter; nil when it is missing or any result is secret.
-local function Read(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    local a, b, c, d, e = fn(...)
-    if not Public(a) or not Public(b) or not Public(c) or not Public(d) or not Public(e) then
-        return nil
-    end
-    return a, b, c, d, e
-end
-
 local function Enabled()
     return Compat.active and NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
         and NS.DB.characterDetails.styleEQoL ~= false and NS.GenericWindows.IsCategoryEnabled("character")
@@ -42,7 +35,7 @@ local function Visible()
 end
 
 local function FontPath()
-    return Read(GameFontNormal and GameFontNormal.GetFont, GameFontNormal)
+    return Read(GameFontNormal.GetFont, GameFontNormal)
         or STANDARD_TEXT_FONT or DEFAULT_FONT
 end
 
@@ -52,19 +45,29 @@ local function SamePoint(region, point)
     return a == point[1] and b == point[2] and c == point[3] and d == point[4] and e == point[5]
 end
 
+-- The region's anchors and whether they were all readable. A point with a
+-- secret value (its anchor region included) ends the snapshot: it cannot be
+-- restored, and nil would silently mean "relative to the parent".
 local function SavePoints(region)
     local points = {}
-    for index = 1, math.min(Read(region.GetNumPoints, region) or 0, MAX_POINTS) do
-        points[index] = { Read(region.GetPoint, region, index) }
+    local count = math.min(Read(region.GetNumPoints, region) or 0, MAX_POINTS)
+    for index = 1, count do
+        local point, relativeTo, relativePoint, x, y = NS.Safety.Call(region, "GetPoint", index)
+        if point == nil or not Public(point) or not Public(relativeTo) or not Public(relativePoint)
+            or not Public(x) or not Public(y) then
+            return points, false
+        end
+        points[index] = { point, relativeTo, relativePoint, x, y }
     end
-    return points
+    return points, true
 end
 
--- Restores only values we still own; a newer provider change is kept.
+-- Restores only values we still own; a newer provider change is kept. An
+-- incomplete anchor snapshot keeps our anchor rather than guessing one.
 local function Restore(record)
     local region = record.region
     if not NS.Safety.CanDecorate(region, true) then return end
-    if SamePoint(region, record.appliedPoint) then
+    if record.pointsComplete and SamePoint(region, record.appliedPoint) then
         region:ClearAllPoints()
         for _, point in ipairs(record.points) do region:SetPoint(unpack(point)) end
     end
@@ -111,7 +114,9 @@ local function Layout(region, anchor, parent, relative, x, y, width, height, siz
     end
     -- An EQoL settings/update pass may have changed its native geometry/font.
     -- Save the incoming provider value, never our own previously applied one.
-    if not SamePoint(region, record.appliedPoint) then record.points = SavePoints(region) end
+    if not SamePoint(region, record.appliedPoint) then
+        record.points, record.pointsComplete = SavePoints(region)
+    end
     local currentWidth, currentHeight = Read(region.GetWidth, region), Read(region.GetHeight, region)
     if currentWidth ~= record.appliedWidth then record.width = currentWidth end
     if currentHeight ~= record.appliedHeight then record.height = currentHeight end
@@ -204,6 +209,16 @@ function Compat.Refresh()
     end
 end
 
+-- Post-hooks on EnhanceQoL's functions: each pass is its own error boundary,
+-- so a raising layout never reaches EnhanceQoL's caller.
+local function OnDisplayChanged(element)
+    Dispatch(Compat.RefreshElement, element)
+end
+
+local function OnCharacterFrameSet()
+    Dispatch(Compat.Refresh)
+end
+
 local function Install()
     local provider = _G.EnhanceQoL
     if not provider then return end
@@ -212,13 +227,13 @@ local function Install()
         and type(display.Clear) == "function" then
         -- Apply also calls Clear. Both are bounded to this one equipment slot;
         -- no frame scan, tooltip query, global SetText hook, timer or polling.
-        hooksecurefunc(display, "Apply", Compat.RefreshElement)
-        hooksecurefunc(display, "Clear", Compat.RefreshElement)
+        hooksecurefunc(display, "Apply", OnDisplayChanged)
+        hooksecurefunc(display, "Clear", OnDisplayChanged)
         Compat.hooks[display] = true
     end
     local funcs = provider.functions
     if funcs and not Compat.hooks[funcs] and type(funcs.setCharFrame) == "function" then
-        hooksecurefunc(funcs, "setCharFrame", Compat.Refresh)
+        hooksecurefunc(funcs, "setCharFrame", OnCharacterFrameSet)
         Compat.hooks[funcs] = true
     end
 end
@@ -233,8 +248,8 @@ function Compat.IsHost(frame)
 end
 
 function Compat.Apply(owner)
-    local paperDoll = _G.PaperDollFrame
-    if NS.IsCombatLocked() or not paperDoll or not NS.Safety.CanCreateRegions(paperDoll, true) then return end
+    local paperDoll = PaperDollFrame
+    if NS.IsCombatLocked() or not NS.Safety.CanCreateRegions(paperDoll, true) then return end
     Compat.owner = owner
     if NS.DB.characterDetails.styleEQoL == false or NS.CharacterDetails.GetView() == "classic" then
         Compat.Disable(owner)
@@ -250,7 +265,7 @@ function Compat.Apply(owner)
         host:SetScript("OnShow", InstallAndRefresh)
         host:SetScript("OnHide", function() NS.CombatGate.Cancel(KEY) end)
     end
-    if not Compat.waiting and EventUtil and type(EventUtil.ContinueOnAddOnLoaded) == "function" then
+    if not Compat.waiting then
         Compat.waiting = true
         EventUtil.ContinueOnAddOnLoaded("EnhanceQoL", InstallAndRefresh)
     end

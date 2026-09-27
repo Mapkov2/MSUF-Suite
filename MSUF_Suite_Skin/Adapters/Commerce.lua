@@ -127,7 +127,7 @@ local function SkinMailAttachment(group, globalName)
 end
 
 local function SkinMail(owner)
-    if NS.IsCombatLocked() or not _G.MailFrame then return false, "missing" end
+    if NS.IsCombatLocked() then return false, "combat" end
     local group = Group(owner)
     Fade(group, _G.InboxFrameBg)
     for index = 1, MAIL_ROW_COUNT do
@@ -144,9 +144,7 @@ local function SkinMail(owner)
     -- beyond the visible inbox. Generic window skinning may have attached a
     -- surface to it; keep that surface hidden and skin the seven visible rows
     -- instead, otherwise the mailbox grows a large empty dark rectangle.
-    if _G.InboxFrame then
-        NS.Surface.SetVisible(_G.InboxFrame, false)
-    end
+    NS.Surface.SetVisible(InboxFrame, false)
     SkinPanel(group, _G.SendMailScrollFrame, PANEL_SPEC)
     SkinPanel(group, _G.OpenMailScrollFrame, PANEL_SPEC)
     Kit.SkinControl(group, _G.SendMailNameEditBox, MAIL_INPUT_SPEC, "ApplySearchBox")
@@ -253,11 +251,9 @@ end
 
 local function ScheduleAuction(parentOwner, auctionOwner)
     local state = Commerce.owners[parentOwner]
-    if not state or state.auctionWaiting then
-        return false
-    end
+    if not state or state.auctionWaiting then return end
     state.auctionWaiting = true
-    local scheduled = Kit.ContinueOnAddOnLoaded(AUCTION_ADDON, function()
+    EventUtil.ContinueOnAddOnLoaded(AUCTION_ADDON, function()
         local current = Commerce.owners[parentOwner]
         if not current then return end
         current.auctionWaiting = nil
@@ -266,8 +262,6 @@ local function ScheduleAuction(parentOwner, auctionOwner)
             SkinAuction(auctionOwner)
         end
     end)
-    if not scheduled then state.auctionWaiting = nil end
-    return scheduled
 end
 
 function Commerce.Apply(parentOwner)

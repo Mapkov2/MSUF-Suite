@@ -4,6 +4,8 @@ local _, NS = ...
 -- sets parchment-dark text in QuestInfo_Display. Our quest and map adapters
 -- fade that parchment, so recolor only text currently parented to a skinned
 -- quest window. The Blizzard display function remains responsible for content.
+-- Blizzard_UIPanels_Game is not load-on-demand (12.1.0, 12.1.5, Forever), so
+-- the quest, QuestInfo and gossip frames exist before this skin loads.
 local QuestText = {
     roots = setmetatable({}, { __mode = "k" }),
     colors = setmetatable({}, { __mode = "k" }),
@@ -13,7 +15,6 @@ NS.QuestText = QuestText
 
 local Safety = NS.Safety
 
-local COLOR_TOLERANCE = 0.015
 local MAX_PARENT_DEPTH = 20
 local MAX_OBJECTIVES = 40
 
@@ -45,21 +46,15 @@ local function ActiveRoot(region)
     for _ = 1, MAX_PARENT_DEPTH do
         if not current then return nil end
         if QuestText.roots[current] then return current end
-        current = Safety.Call(current, "GetParent")
+        current = Safety.Read(current, "GetParent")
     end
     return nil
 end
 
--- Compares a stored { r, g, b, a } with four values.
-local function SameColor(color, r, g, b, a)
-    return color ~= nil and color[1] ~= nil and r ~= nil
-        and math.abs(color[1] - r) <= COLOR_TOLERANCE and math.abs(color[2] - g) <= COLOR_TOLERANCE
-        and math.abs(color[3] - b) <= COLOR_TOLERANCE and math.abs(color[4] - a) <= COLOR_TOLERANCE
-end
-
 -- Puts Blizzard's color back while ours is still showing, then forgets it.
 local function Release(region, record)
-    if SameColor(record.applied, Safety.ReadColor(region, "GetTextColor")) then
+    local r, g, b, a = Safety.ReadColor(region, "GetTextColor")
+    if Safety.ColorMatches(record.applied, r, g, b, a, Safety.COLOR_OWN) then
         local original = record.original
         Safety.Invoke(region, "SetTextColor", original[1], original[2], original[3], original[4])
     end
@@ -82,7 +77,7 @@ local function Paint(region, role)
     if not record then
         record = { original = { currentR, currentG, currentB, currentA }, applied = {} }
         QuestText.colors[region] = record
-    elseif not SameColor(record.applied, currentR, currentG, currentB, currentA) then
+    elseif not Safety.ColorMatches(record.applied, currentR, currentG, currentB, currentA, Safety.COLOR_OWN) then
         -- Blizzard has repainted for a different quest/material since our pass.
         local original = record.original
         original[1], original[2], original[3], original[4] = currentR, currentG, currentB, currentA
@@ -96,7 +91,7 @@ end
 
 local function PaintRewards(rewards)
     for key, role in pairs(rewardFields) do Paint(rewards[key], role) end
-    if rewards.XPFrame then Paint(rewards.XPFrame.ReceiveText, "text") end
+    Paint(rewards.XPFrame.ReceiveText, "text")
 end
 
 local function PaintGreetingButtons(pool)
@@ -109,39 +104,43 @@ end
 -- globals. Blizzard registers each row and repaints all registered text in
 -- UpdateTheme, including after a questTextContrast change.
 local function PaintGossip()
-    local gossip = _G.GossipFrame
-    local fontStrings = gossip and gossip.fontStrings
-    if not gossip or not QuestText.roots[gossip] or type(fontStrings) ~= "table" then return end
-    for region in pairs(fontStrings) do Paint(region, "text") end
+    if not QuestText.roots[GossipFrame] then return end
+    for region in pairs(GossipFrame.fontStrings) do Paint(region, "text") end
+end
+
+local function OnGossipFontString(region)
+    if not NS.IsCombatLocked() then Paint(region, "text") end
+end
+
+local function OnGossipTheme()
+    if not NS.IsCombatLocked() then PaintGossip() end
+end
+
+-- Every hook runs inside Blizzard's own call (QuestInfo_Display, the NPC
+-- greeting setup, GossipFrame's row setup), so each paint is its own error
+-- boundary and Blizzard's display goes on.
+local function Isolated(callback)
+    return function(...) Safety.Dispatch(callback, ...) end
 end
 
 local function EnsureGossipHooks(root)
-    if root ~= _G.GossipFrame or QuestText.hooks[root] then return end
+    if root ~= GossipFrame or QuestText.hooks[root] then return end
     if type(root.RegisterFontString) ~= "function" or type(root.UpdateTheme) ~= "function" then return end
     hooksecurefunc(root, "RegisterFontString", function(_, region)
-        if not NS.IsCombatLocked() then Paint(region, "text") end
+        Safety.Dispatch(OnGossipFontString, region)
     end)
-    hooksecurefunc(root, "UpdateTheme", function()
-        if not NS.IsCombatLocked() then PaintGossip() end
-    end)
+    hooksecurefunc(root, "UpdateTheme", Isolated(OnGossipTheme))
     QuestText.hooks[root] = true
 end
 
 local function PaintCurrent()
     if NS.IsCombatLocked() then return end
     for name, role in pairs(fields) do Paint(_G[name], role) end
-    local rewards = _G.QuestInfoRewardsFrame
-    if rewards then PaintRewards(rewards) end
-    local objectives = _G.QuestInfoObjectivesFrame
-    local list = objectives and objectives.Objectives
-    if type(list) == "table" then
-        for index = 1, math.min(#list, MAX_OBJECTIVES) do Paint(list[index], "text") end
-    end
-    local seal = _G.QuestInfoSealFrame
-    if seal then Paint(seal.Text, "text") end
-    local greeting = _G.QuestFrameGreetingPanel
-    local pool = greeting and greeting.titleButtonPool
-    if pool and type(pool.EnumerateActive) == "function" then PaintGreetingButtons(pool) end
+    PaintRewards(QuestInfoRewardsFrame)
+    local list = QuestInfoObjectivesFrame.Objectives
+    for index = 1, math.min(#list, MAX_OBJECTIVES) do Paint(list[index], "text") end
+    Paint(QuestInfoSealFrame.Text, "text")
+    PaintGreetingButtons(QuestFrameGreetingPanel.titleButtonPool)
     PaintGossip()
 end
 
@@ -161,14 +160,26 @@ local function OnGreetingTitle(region)
     if not NS.IsCombatLocked() then Paint(region, "title") end
 end
 
+-- These Blizzard functions are called through their globals. QUEST_LOG_UPDATE
+-- also refreshes the greeting list through QuestFrameGreetingPanel_OnShow.
+local PaintCurrentHook = Isolated(PaintCurrent)
 local globalHooks = {
-    { "QuestInfo_Display", PaintCurrent },
-    { "QuestFrame_SetTextColor", OnGreetingText },
-    { "QuestFrame_SetTitleTextColor", OnGreetingTitle },
-    { "QuestFrameGreetingPanel_OnShow", PaintCurrent },
+    { "QuestInfo_Display", PaintCurrentHook },
+    { "QuestFrame_SetTextColor", Isolated(OnGreetingText) },
+    { "QuestFrame_SetTitleTextColor", Isolated(OnGreetingTitle) },
+    { "QuestFrameGreetingPanel_OnShow", PaintCurrentHook },
 }
 
--- These Blizzard functions are called through their globals.
+-- QuestFrame.xml binds the panel's OnShow as function="...", so the script
+-- holds the function value from load time and never reaches the global
+-- hook above. Opening the greeting is observed on the panel itself.
+local function EnsureGreetingShowHook()
+    local panel = QuestFrameGreetingPanel
+    if QuestText.hooks[panel] then return end
+    panel:HookScript("OnShow", PaintCurrentHook)
+    QuestText.hooks[panel] = true
+end
+
 local function EnsureHooks()
     for index = 1, #globalHooks do
         local name, callback = globalHooks[index][1], globalHooks[index][2]
@@ -177,6 +188,7 @@ local function EnsureHooks()
             QuestText.hooks[name] = true
         end
     end
+    EnsureGreetingShowHook()
 end
 
 function QuestText.Activate(root, owner)
