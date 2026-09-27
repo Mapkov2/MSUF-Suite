@@ -353,6 +353,18 @@ local function NameplateNativeCastOpacity(modules)
     if plates and plates.look == 1 and plates.enemyCastFillAlpha == 35 then plates.enemyCastFillAlpha = 100 end
 end
 
+local function FriendlyPlayerDisplay(modules)
+    local plates = Module(modules, "nameplates")
+    if not plates then return end
+    -- The former group-only switch overrode the friendly plate dropdown.
+    -- Preserve that visible result before removing the second control.
+    if plates.friendlyGroupOnly == true then
+        plates.friendlyNamesOnly = 3
+    elseif plates.friendlyNamesOnly == 3 then
+        plates.friendlyNamesOnly = 4
+    end
+    plates.friendlyGroupOnly = nil
+end
 -- legacy: flag key of profiles saved before suite.revision; done: flag value
 -- that marked the step as applied. forever: step applies only on WoW Forever.
 local MIGRATIONS = {
@@ -371,6 +383,7 @@ local MIGRATIONS = {
     { run = NameplateCastVisibility },
     { run = JundiesNameplatePalette },
     { run = NameplateNativeCastOpacity },
+    { run = FriendlyPlayerDisplay },
 }
 S.MigrationRevision = #MIGRATIONS
 

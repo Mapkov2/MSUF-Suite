@@ -92,7 +92,7 @@ end
 local function CastOffsets(state, uf, plan, setup, force)
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     if not cast then return end
-    local bar, text, icon = plan.Cast, plan.CastText, plan.CastIcon
+    local bar, text, time, icon = plan.Cast, plan.CastText, plan.CastTime, plan.CastIcon
     local shield, target = plan.CastShield, plan.CastTarget
     local classic, inside = setup.useClassicCastBar == true, setup.spellNameInsideCastBar == true
     Offset(state, cast, bar[1], bar[2], force)
@@ -106,6 +106,8 @@ local function CastOffsets(state, uf, plan, setup, force)
     end
     local parent = classic and bar or icon
     Offset(state, cast.Text, text[1] - parent[1], text[2] - parent[2], force)
+    local castTime = module.castTimes[cast]
+    Offset(state, castTime and castTime.label, time[1] - bar[1], time[2] - bar[2], force)
     Offset(state, cast.BorderShield, shield[1] - parent[1], shield[2] - parent[2], force)
     Offset(state, cast.CastTargetNameText, target[1] - bar[1], target[2] - bar[2], force)
     if not classic then
@@ -148,8 +150,15 @@ function Layout.Apply(uf, prefix, config, force)
         end
         if point then Link(state, uf.name, point, health.Text, relative, -2, 0, value[1], value[2]) end
     end
-    local debuffs = uf.AurasFrame and uf.AurasFrame.DebuffListFrame
+    local auraFrame = uf.AurasFrame
+    local debuffs = auraFrame and auraFrame.DebuffListFrame
     Offset(state, debuffs, auras[1], auras[2], force)
+    Offset(state, auraFrame and auraFrame.BuffListFrame, plan.Buffs[1], plan.Buffs[2], force)
+    Offset(state, auraFrame and auraFrame.CrowdControlListFrame,
+        plan.ControlAura[1], plan.ControlAura[2], force)
+    Offset(state, auraFrame and auraFrame.LossOfControlFrame,
+        plan.ControlAura[1], plan.ControlAura[2], force)
+    Offset(state, uf.SoftTargetFrame, plan.SoftTarget[1], plan.SoftTarget[2], force)
     if debuffs and anchor ~= 1 and (name[1] ~= 0 or name[2] ~= 0) then
         local key = _G.NamePlateConstants and NamePlateConstants.DEBUFF_PADDING_CVAR
         local padding = key and CVarCallbackRegistry and CVarCallbackRegistry:GetCVarNumberOrDefault(key)

@@ -373,6 +373,19 @@ for _, case in ipairs({ { 1, 35, 100 }, { 3, 35, 35 }, { 1, 80, 80 } }) do
     S.Normalize(profile)
     assert(profile.suite.modules.nameplates.enemyCastFillAlpha == 35, "native cast opacity migration repeated")
 end
+for _, case in ipairs({
+    { true, 3, 3 }, { false, 3, 4 }, { false, 2, 2 }, { false, 1, 1 },
+}) do
+    local profile = { suite = { schema = 1, revision = 15, modules = { nameplates = {
+        friendlyGroupOnly = case[1], friendlyNamesOnly = case[2],
+    } } } }
+    S.Normalize(profile)
+    local plates = profile.suite.modules.nameplates
+    assert(plates.friendlyNamesOnly == case[3] and plates.friendlyGroupOnly == nil,
+        "friendly player display migration changed the old visible mode")
+    S.Normalize(profile)
+    assert(plates.friendlyNamesOnly == case[3], "friendly player display migration repeated")
+end
 local oldJundies = { suite = { schema = 1, revision = 10,
     modules = { nameplates = { look = 1, nativeStyle = 2, nativeSize = 2,
         enemyEliteMarker = true, enemyQuestMarker = true } } } }

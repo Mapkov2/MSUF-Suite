@@ -4,11 +4,14 @@ local PAGE, ID = "suite_nameplates", "nameplates"
 
 local HELP = {
     general = "Jundies uses Modern plates and Medium size. Guild names and titles also affect names in the world. Bind Toggle friendly NPC nameplates under MSUF Suite in Blizzard Key Bindings. Import protection keeps your current nameplates when importing a full Suite profile; explicit nameplate imports still replace them.",
-    enemy = "Blizzard supplies the name and health values. Jundies requests full enemy plates and both health values so normal enemies show text too. Role colors use the saved Platynator DEFAULT palette; mana is only a caster hint. Open the three-dot menu here or Nameplates in MSUF Colors to change the palette.",
-    friendly = "Party / raid members shows friendly player names without bars and hides names of other friendly players. The Group / outsider preview button tests the filter. Blizzard can forbid changes to friendly plates in instances; those frames stay under Blizzard's control.",
+    enemy = "Blizzard supplies the name and health values. Jundies requests full enemy plates and both health values so normal enemies show text too. Backdrop, border and role fill are separate live skin layers in the preview; right-click a layer for its setting. Role colors use the saved Platynator DEFAULT palette; mana is only a caster hint. Open the three-dot menu here or Nameplates in MSUF Colors to change the palette.",
+    friendly = "Friendly player display chooses Blizzard's setting, names for all friendly players, names for party / raid only, or health bars. Names only hides Blizzard bars, casts and auras for friendly players; it does not change NPC or enemy plates. Group / outsider in the preview only changes the sample. Blizzard can forbid changes to friendly plates in instances; those frames stay under Blizzard's control.",
     castbar = "Blizzard supplies the castbar texture, colors, progress and interrupts. Customize its text and details here. Select and move each cast element in the preview; positions apply outside combat.",
     roleColors = "Priority: focus, safe tank aggro, threat, tapped, quest, neutral, then NPC type. Turning focus off allows the next rule. Disabled threat overrides preserve Blizzard's active threat color. Tank mode uses your effective role; warnings also work for damage/healers. Secret values stay with Blizzard.",
     elements = "Blizzard owns these elements. The rarity icon setting applies to all nameplates; raid target icons are hidden only on enemy plates. Castbar details control Blizzard's own castbar. The preview and live plates use the same switches.",
+    auras = "Blizzard owns the aura icons and updates. Choose Keep Blizzard setting or Customize for each unit type. Buffs, debuffs and control effects can be selected and dragged separately in the preview. Aura size uses Blizzard's own setting.",
+    signals = "Blizzard owns aggro flashes, progressive highlights and soft target icons. Optional colors tint Blizzard's existing threat textures; its health bar threat color stays under the Jundies role-color overlay. Soft target icons also need the nameplate icon switch enabled and a matching soft target in game.",
+    personal = "Skin only Blizzard's own personal mana and alternate-power status bars. Blizzard still owns their values, fill and visibility. Class-specific resource points retain Blizzard's layout. Select and drag the power bar in the personal preview.",
 }
 
 local ELEMENT_KEYS = { enemyTextMode = true, enemyRarityIcon = true, enemyRaidIcon = true }
@@ -111,7 +114,7 @@ local function Build(ctx)
     local sections = {}
     P.BuildNameplatesPreview(ctx, builder, sections)
     P.ModuleCard(ctx, builder, PAGE, ID, nil, { rules = P.SectionRules(ID, "general"), help = HELP.general })
-    for _, section in ipairs({ "enemy", "roleColors", "castbar", "friendly" }) do
+    for _, section in ipairs({ "enemy", "roleColors", "castbar", "auras", "signals", "friendly", "personal" }) do
         local allRules = P.SectionRules(ID, section)
         local rules = VisibleRules(allRules)
         if section == "castbar" then

@@ -11,6 +11,21 @@ function Style.CVarFlags(value)
     if byte < 64 or byte > 127 then return nil end
     return byte - 64
 end
+function Style.NativeBit(cvar, index, fallback)
+    local api = _G.C_CVar
+    local value = api and type(api.GetCVar) == "function" and api.GetCVar(cvar)
+    local flags = Style.CVarFlags(value)
+    if flags == nil then return fallback end
+    return math.floor(flags / 2 ^ (index - 1)) % 2 == 1
+end
+function Style.NativeToggle(cvar, fallback)
+    local api = _G.C_CVar
+    local value = api and type(api.GetCVar) == "function" and api.GetCVar(cvar)
+    if not NS.Public(value) or type(value) ~= "string" then return fallback end
+    local number = tonumber(value)
+    if number then return number > 0 end
+    return value ~= "0"
+end
 -- Offset keys describe existing Blizzard regions, relative to their native
 -- layout. The same descriptors drive the settings and preview handles.
 Style.Elements = {
@@ -18,6 +33,7 @@ Style.Elements = {
     { key = "HealthText", label = "Health text", section = "enemy" },
     { key = "Cast", label = "Castbar", section = "castbar" },
     { key = "CastText", label = "Spell name", section = "castbar" },
+    { key = "CastTime", label = "Cast time", section = "castbar" },
     { key = "Auras", label = "Auras", section = "enemy" },
     { key = "RaidIcon", label = "Raid marker", section = "enemy" },
     { key = "Classification", label = "Blizzard elite / rare icon", section = "enemy" },
@@ -25,7 +41,21 @@ Style.Elements = {
     { key = "CastShield", label = "Blizzard interrupt shield", section = "castbar" },
     { key = "CastTarget", label = "Spell target", section = "castbar" },
     { key = "Health", label = "Health bar", section = "enemy" },
+    { key = "Buffs", label = "Buffs", section = "auras" },
+    { key = "ControlAura", label = "Control effect", section = "auras" },
+    { key = "SoftTarget", label = "Soft target icon", section = "signals" },
 }
+Style.AuraGroups = {
+    { key = "enemyNpc", label = "Enemy NPC", control = "Crowd control",
+      cvar = "nameplateEnemyNpcAuraDisplay" },
+    { key = "enemyPlayer", label = "Enemy player", control = "Loss of control",
+      cvar = "nameplateEnemyPlayerAuraDisplay" },
+    { key = "friendlyPlayer", label = "Friendly player", control = "Loss of control",
+      cvar = "nameplateFriendlyPlayerAuraDisplay" },
+}
+Style.AuraCVar = {}
+for _, group in ipairs(Style.AuraGroups) do Style.AuraCVar[group.key] = group.cvar end
+Style.AuraBits = { Buffs = 1, Debuffs = 2, Control = 3 }
 -- Stable order: the first seven entries were already stored as preview choices.
 Style.Roles = {
     { key = "Melee", label = "Melee", sample = "Mire Laborer", color = "be301d" },

@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
-assert(table.concat(toc, ",") == "Bootstrap.lua,Layout.lua,Roles.lua,Text.lua,Skin.lua",
+assert(table.concat(toc, ",") == "Bootstrap.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -64,7 +64,11 @@ local function Region()
     function r:AddMaskTexture(mask) self.mask = mask end
     function r:RemoveMaskTexture(mask) if self.mask == mask then self.mask = nil end end
     function r:SetColorTexture(...) self.color = { ... } end
-    function r:SetVertexColor(...) self.vertexColor = { ... } end
+    function r:SetVertexColor(...)
+        self.vertexColor = { ... }
+        self.vertexColorWrites = (self.vertexColorWrites or 0) + 1
+    end
+    function r:GetVertexColor() return unpack(self.vertexColor or { 1, 1, 1, 1 }) end
     function r:SetAllPoints(target) self.allPoints = target end
     function r:SetPoint(point, ...)
         for i, old in ipairs(self.points) do
@@ -84,6 +88,7 @@ local function Region()
     function r:SetSize(width, height) self.width, self.height = width, height end
     function r:Show() self.shown = true end
     function r:Hide() self.shown = false end
+    function r:SetShown(value) self.shown = value end
     function r:IsShown() return self.shown end
     function r:SetAlpha(value) self.alpha = value end
     function r:GetAlpha() return self.alpha or 1 end
@@ -99,13 +104,15 @@ local function Region()
         self.created = (self.created or 0) + 1
         local texture = Region()
         texture.layer, texture.sublevel = layer, sublevel or 0
+        self.textures = self.textures or {}
+        self.textures[#self.textures + 1] = texture
         return texture
     end
     function r:CreateMaskTexture()
         self.masksCreated = (self.masksCreated or 0) + 1
         return Region()
     end
-    function r:CreateFontString() return Region() end
+    function r:CreateFontString() local font = Region(); font.parent = self; return font end
     function r:SetFont(path, size, flags) self.font, self.fontSize, self.flags = path, size, flags or ""; return true end
     function r:GetFont()
         self.fontReads = (self.fontReads or 0) + 1
@@ -159,10 +166,42 @@ bar.barTexture = Region()
 bar.barTexture:SetTexture("native-health")
 bar.barColor = { 0.5, 0.5, 0.5 }
 bar.Text = Region()
-function bar:GetStatusBarTexture() return self.barTexture end
+function bar:GetStatusBarTexture()
+    self.textureReads = (self.textureReads or 0) + 1
+    return self.barTexture
+end
 cast.statusTexture = Region()
 cast.Text = Region()
 cast.Text:SetFont("native-cast-font", 10, "")
+function cast:SetCastTimeTextShown() error("do not activate Blizzard's secret-unsafe cast time path") end
+function cast:UpdateCastTimeText() error("do not run Blizzard's secret-unsafe cast time formatter") end
+function cast:GetMinMaxValues() error("do not read secret cast progress") end
+local castDuration, channelDuration, rejectDuration
+UnitCastingDuration = function(unit) assert(unit == "nameplate1"); return castDuration end
+UnitChannelDuration = function(unit) assert(unit == "nameplate1"); return channelDuration end
+C_StringUtil = { CreateSecondsFormatter = function()
+    return { SetMillisecondsThreshold = function(self, threshold) self.threshold = threshold end }
+end }
+C_DurationUtil = { CreateDurationTextBinding = function()
+    local binding = {}
+    function binding:SetFontString(label) self.label = label end
+    function binding:SetFormatter(formatter) self.formatter = formatter end
+    function binding:SetUpdateInterval(interval) self.interval = interval end
+    function binding:SetZeroDurationText(text) self.zero = text end
+    function binding:SetExpiredText(text) self.expired = text end
+    function binding:SetDuration(duration)
+        assert(duration ~= nil, "no active cast duration")
+        assert(not rejectDuration, "secret duration rejected by binding")
+        self.duration = duration
+    end
+    function binding:Disable() self.enabled = false end
+    function binding:Enable()
+        assert(self.duration, "duration binding enabled without a cast")
+        self.enabled = true
+        self.label:SetText("2.3s")
+    end
+    return binding
+end }
 cast.statusTexture:SetTexture("native-cast")
 cast.Background = Region()
 cast.Background:SetAlpha(.8)
@@ -204,13 +243,16 @@ local liveCVars = {
     nameplateCastBarDisplay = string.char(1, 96), -- future sixth flag must survive
 }
 C_CVar = { GetCVar = function(key) return liveCVars[key] end }
-NamePlateUnitFrameMixin = { ApplyFrameOptions = function() error("do not invoke native setup") end }
-local layoutHook, fontHook
+NamePlateUnitFrameMixin = { ApplyFrameOptions = function() error("do not invoke native setup") end,
+    UpdateAggroHighlight = function() end }
+local layoutHook, fontHook, powerHook, threatColorHook
 local layoutCallbacks = {}
 MSUF_UpdateCastbarVisuals = function() end
 hooksecurefunc = function(frame, method, callback)
     if type(frame) == "string" then error("do not install cast media hooks") end
     if frame == NamePlateUnitFrameMixin and method == "ApplyFrameOptions" then fontHook = callback; return end
+    if frame == NamePlateUnitFrameMixin and method == "UpdateAggroHighlight" then threatColorHook = callback; return end
+    if frame == NamePlateDriverFrame and method == "SetupClassNameplateBars" then powerHook = callback; return end
     if frame == cast then error("do not hook native cast logic") end
     if frame == uf and method == "UpdateAnchors" then
         layoutCallbacks[#layoutCallbacks + 1] = callback
@@ -255,7 +297,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Layout.lua"))("MSUF_Suite_Nameplates", private)
-for _, file in ipairs({ "Roles", "Text" }) do
+for _, file in ipairs({ "Roles", "Text", "Power", "Threat" }) do
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("MSUF_Suite_Nameplates", private)
 end
 chunk("MSUF_Suite_Nameplates", private)
@@ -360,6 +402,17 @@ do
     classification, instanceType = "normal", "none"
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
     assert(scans == 1, "role refresh scanned all plates")
+end
+do
+    local visual = module.visuals[bar]
+    module.config.enemyBackdropEnabled, module.config.enemyBorderEnabled = false, false
+    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(not visual.back:IsShown() and visual.borderSize == 0
+        and not visual.edges[1]:IsShown(), "skin backdrop/border switches did not hide the live layers")
+    module.config.enemyBackdropEnabled, module.config.enemyBorderEnabled = true, true
+    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(visual.back:IsShown() and visual.borderSize == 1 and visual.edges[1]:IsShown(),
+        "skin backdrop/border switches did not restore the live layers")
 end
 do
     local previousPvp = C_PvP
@@ -524,6 +577,10 @@ assert(name.fontReads == threatFontReads, "threat color update repainted namepla
 threatStatus = 2
 events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
 assert(module.visuals[bar].fill.color[2] == 0xbd / 255, "tank warning color missing")
+local unchangedTextureReads = bar.textureReads
+events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
+assert(bar.textureReads == unchangedTextureReads,
+    "unchanged threat role repainted the health skin")
 module.config.enemyTankMode, threatStatus = false, nil
 instanceType = "none"
 isBoss, classification, hasMana, questUnit, tappedUnit = false, "secret", "secret", "secret", "secret"
@@ -795,7 +852,7 @@ combat = false
 -- Group name filtering is roster/event driven and restores the original alpha.
 uf.isFriend, uf.isPlayer, grouped = true, true, false
 name:SetAlpha(.7)
-module.config.friendlyGroupOnly = true
+module.config.friendlyNamesOnly = 3
 module:Refresh()
 assert(name:GetAlpha() == 0 and cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "1")
 local groupScans = scans
@@ -810,9 +867,16 @@ UnitInRaid = function() return "secret" end
 events.GROUP_ROSTER_UPDATE(module, "GROUP_ROSTER_UPDATE")
 assert(name:GetAlpha() == .7, "secret membership was used for filtering")
 UnitInRaid = function() return nil end
-events.GROUP_ROSTER_UPDATE(module, "GROUP_ROSTER_UPDATE")
-assert(name:GetAlpha() == 0)
-module:Disable()
+    events.GROUP_ROSTER_UPDATE(module, "GROUP_ROSTER_UPDATE")
+    assert(name:GetAlpha() == 0)
+    module.config.friendlyNamesOnly = 4
+    module:Refresh()
+    assert(name:GetAlpha() == .7 and cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "0",
+        "switching from group names to health bars did not restore the name and native bar")
+    module.config.friendlyNamesOnly = 3
+    module:Refresh()
+    assert(name:GetAlpha() == 0 and cvars.nameplateShowOnlyNameForFriendlyPlayerUnits == "1")
+    module:Disable()
 assert(name:GetAlpha() == .7, "group filter not restored on disable")
 
 -- The native classification texture is independently movable and reversible.
@@ -1057,7 +1121,189 @@ do
     assert(NS.NameplateStyle.TargetConfig(c).atlas[1] == "pvptalents-selectedarrow"
         and visual.targetHost._msufBossTargetIndicator._suiteAtlas.atlas == "pvptalents-selectedarrow")
 end
+-- New Blizzard-owned controls preserve unrelated bits and add no unit scans.
+do
+    local c = module.config
+    liveCVars.nameplateEnemyNpcAuraDisplay = string.char(1, 64)
+    liveCVars.nameplateEnemyPlayerAuraDisplay = string.char(1, 64)
+    liveCVars.nameplateFriendlyPlayerAuraDisplay = string.char(1, 64)
+    liveCVars.nameplateThreatDisplay = string.char(1, 68) -- native health color bit
+    c.enemyNpcAuraMode, c.enemyNpcBuffs, c.enemyNpcDebuffs, c.enemyNpcControl = 2, false, true, true
+    c.enemyPlayerAuraMode, c.enemyPlayerBuffs, c.enemyPlayerDebuffs, c.enemyPlayerControl = 2, true, false, true
+    c.friendlyPlayerAuraMode = 2
+    c.friendlyPlayerBuffs, c.friendlyPlayerDebuffs, c.friendlyPlayerControl = false, true, false
+    c.friendlyNpcDebuffs, c.auraScaleMode, c.auraScalePercent = 3, 2, 120
+    c.threatSignalMode, c.threatFlash, c.threatHighlight = 2, true, false
+    c.softTargetEnemy, c.softTargetFriend, c.softTargetInteract = 2, 3, 2
+    c.softTargetIconGate = 2
+    module:Refresh()
+    assert(cvars.nameplateEnemyNpcAuraDisplay == string.char(1, 70)
+        and cvars.nameplateEnemyPlayerAuraDisplay == string.char(1, 69)
+        and cvars.nameplateFriendlyPlayerAuraDisplay == string.char(1, 66),
+        "Blizzard aura category bits were not applied")
+    assert(cvars.nameplateThreatDisplay == string.char(1, 70),
+        "aggro signals overwrote Blizzard's health-color bit")
+    assert(cvars.nameplateShowDebuffsOnFriendly == "0" and cvars.nameplateAuraScale == "1.2"
+        and cvars.SoftTargetIconEnemy == "1" and cvars.SoftTargetIconFriend == "0"
+        and cvars.SoftTargetIconInteract == "1" and cvars.SoftTargetNameplateSize == "1",
+        "native aura/soft-target CVars were not applied")
+    c.enemyNpcAuraMode, c.enemyPlayerAuraMode, c.friendlyPlayerAuraMode = 1, 1, 1
+    c.friendlyNpcDebuffs, c.auraScaleMode, c.threatSignalMode = 1, 1, 1
+    c.softTargetEnemy, c.softTargetFriend, c.softTargetInteract = 1, 1, 1
+    c.softTargetIconGate = 1
+    module:Refresh()
+    for _, key in ipairs({ "nameplateEnemyNpcAuraDisplay", "nameplateEnemyPlayerAuraDisplay",
+        "nameplateFriendlyPlayerAuraDisplay", "nameplateShowDebuffsOnFriendly", "nameplateAuraScale",
+        "nameplateThreatDisplay", "SoftTargetIconEnemy", "SoftTargetIconFriend", "SoftTargetIconInteract",
+        "SoftTargetNameplateSize" }) do
+        assert(restored[key], "Blizzard CVar was not released: " .. key)
+    end
+end
+
+-- Custom warning colors tint Blizzard's existing textures and restore their
+-- previous colors. The progressive pieces must be repainted after Blizzard.
+do
+    local c = module.config
+    private.Threat.Enable(module)
+    uf.isFriend = false
+    uf.aggroFlash, uf.aggroHighlight = Region(), Region()
+    uf.aggroHighlightBase, uf.aggroHighlightAdditive = Region(), Region()
+    uf.aggroFlash:SetVertexColor(1, 1, 0, 1)
+    uf.aggroHighlight:SetVertexColor(1, .45, 0, 1)
+    c.threatFlashColorEnabled, c.threatFlashColor = true, "00ff00"
+    c.threatHighlightColorEnabled, c.threatHighlightColor = true, "0000ff"
+    module:Refresh()
+    assert(threatColorHook and uf.aggroFlash.vertexColor[2] == 1
+        and uf.aggroHighlightBase.vertexColor[3] == 1
+        and uf.aggroHighlightAdditive.vertexColor[3] == 1,
+        "native threat textures did not receive the configured colors")
+    local flashWrites = uf.aggroFlash.vertexColorWrites
+    local highlightWrites = uf.aggroHighlightBase.vertexColorWrites
+    module:Refresh()
+    assert(uf.aggroFlash.vertexColorWrites == flashWrites
+        and uf.aggroHighlightBase.vertexColorWrites == highlightWrites,
+        "unchanged nameplates repainted native threat textures")
+    uf.aggroHighlightBase:SetVertexColor(1, .45, 0)
+    threatColorHook(uf)
+    assert(uf.aggroHighlightBase.vertexColor[3] == 1,
+        "Blizzard's threat update replaced the custom progressive color")
+    c.threatFlashColorEnabled, c.threatHighlightColorEnabled = false, false
+    module:Refresh()
+    assert(uf.aggroFlash.vertexColor[1] == 1 and uf.aggroFlash.vertexColor[2] == 1
+        and uf.aggroFlash.vertexColor[3] == 0 and uf.aggroHighlightBase.vertexColor[2] == .45,
+        "native threat texture colors did not restore")
+end
+
+-- Move each native aura category and the soft-target frame independently.
+do
+    uf.isFriend = false
+    aura.BuffListFrame, aura.CrowdControlListFrame, aura.LossOfControlFrame = Region(), Region(), Region()
+    uf.SoftTargetFrame = Region()
+    module.config.enemyAurasOffsetX = -320
+    module.config.enemyBuffsOffsetX, module.config.enemyControlAuraOffsetY = 340, -360
+    module.config.enemySoftTargetOffsetX = -11
+    module:Refresh()
+    assert(aura.DebuffListFrame.offsetX == -320 and aura.BuffListFrame.offsetX == 340
+        and aura.CrowdControlListFrame.offsetY == -360
+        and aura.LossOfControlFrame.offsetY == -360 and uf.SoftTargetFrame.offsetX == -11,
+        "native aura/soft-target preview offsets did not reach runtime")
+    module.config.enemyAurasOffsetX = 0
+    module.config.enemyBuffsOffsetX, module.config.enemyControlAuraOffsetY = 0, 0
+    module.config.enemySoftTargetOffsetX = 0
+    module:Refresh()
+    assert(aura.DebuffListFrame.offsetX == 0 and aura.BuffListFrame.offsetX == 0
+        and aura.CrowdControlListFrame.offsetY == 0
+        and aura.LossOfControlFrame.offsetY == 0 and uf.SoftTargetFrame.offsetX == 0,
+        "native element offsets did not restore")
+end
+
+-- Personal mana and alternate power remain Blizzard StatusBars. Skin only
+-- their static border and offset, then reapply after native anchoring.
+do
+    local mana, alternate = Region(), Region()
+    local nativeMana = Region()
+    nativeMana:SetTexture("native-mana")
+    function mana:GetStatusBarTexture() return nativeMana end
+    function alternate:GetStatusBarTexture() return Region() end
+    NamePlateDriverFrame = {
+        GetClassNameplateManaBar = function() return mana end,
+        GetClassNameplateAlternatePowerBar = function() return alternate end,
+        SetupClassNameplateBars = function() end,
+    }
+    local c = module.config
+    c.personalPowerSkin, c.personalPowerBorderSize = true, 1
+    c.personalPowerBorderColor = "000000"
+    c.personalPowerOffsetX, c.personalPowerOffsetY = 12, -3
+    private.Power.Enable(module)
+    assert(powerHook and mana.created == 4 and alternate.created == 4
+        and mana.offsetX == 12 and mana.offsetY == -3 and alternate.offsetX == nil
+        and nativeMana.texture == "native-mana",
+        "personal bars were not skinned without replacing native fill")
+    mana:Hide()
+    private.Power.Refresh(true)
+    assert(alternate.offsetX == 12 and alternate.offsetY == -3,
+        "alternate power did not move when Blizzard attached it directly to health")
+    mana:Show()
+    private.Power.Refresh(true)
+    assert(alternate.offsetX == 0 and alternate.offsetY == 0,
+        "alternate power retained a second offset when attached to mana")
+    local created = mana.created
+    powerHook()
+    assert(mana.created == created and mana.offsetX == 12, "native power reanchor created duplicate skin")
+    c.personalPowerSkin, c.personalPowerOffsetX, c.personalPowerOffsetY = false, 0, 0
+    private.Power.Refresh()
+    assert(mana.offsetX == 0 and mana.offsetY == 0 and not mana.textures[1]:IsShown()
+        and nativeMana.texture == "native-mana", "personal power state was not restored")
+end
+do
+    module.config.look, module.config.enemy, module.config.enemyCastTimeEnabled = 1, true, true
+    uf.isFriend = false
+    module.active = true
+    module:Refresh()
+    local state = assert(module.castTimes[cast], "duration text binding was not created")
+    local label = state.label
+    assert(cast.CastTimeText == nil and label.parent == cast and not label:IsShown(),
+        "Suite tainted Blizzard's native CastTimeText field")
+    castDuration = setmetatable({}, { __sub = function() error("secret cast arithmetic") end })
+    events.UNIT_SPELLCAST_START(module, "UNIT_SPELLCAST_START", "nameplate1")
+    assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown()
+        and label.text == "2.3s" and cast.CastTimeText == nil,
+        "cast duration did not reach the engine text binding")
+    events.UNIT_SPELLCAST_STOP(module, "UNIT_SPELLCAST_STOP", "nameplate1")
+    assert(not state.binding.enabled and not label:IsShown(), "cast stop left a stale time")
+    rejectDuration = true
+    events.UNIT_SPELLCAST_START(module, "UNIT_SPELLCAST_START", "nameplate1")
+    assert(not state.binding.enabled and not label:IsShown() and cast.CastTimeText == nil,
+        "rejected secret duration reactivated the unsafe timer")
+    rejectDuration = false
+    events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
+    assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown(),
+        "a non-interruptible cast did not recover its duration after cast start")
+    events.UNIT_SPELLCAST_STOP(module, "UNIT_SPELLCAST_STOP", "nameplate1")
+    castDuration = nil
+    channelDuration = setmetatable({}, { __sub = function() error("secret channel arithmetic") end })
+    events.UNIT_SPELLCAST_CHANNEL_START(module, "UNIT_SPELLCAST_CHANNEL_START", "nameplate1")
+    assert(state.binding.duration == channelDuration and label:IsShown(), "channel duration was not bound")
+    events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
+    assert(state.binding.duration == channelDuration and state.binding.enabled and label:IsShown(),
+        "a non-interruptible channel lost its duration text")
+    module.config.enemyCastTimeEnabled = false
+    module:Refresh()
+    assert(cast.CastTimeText == nil and not label:IsShown() and not state.binding.enabled,
+        "cast time toggle did not disable the binding")
+    module.config.enemyCastTimeEnabled = true
+    module:Refresh()
+    assert(module.castTimes[cast] == state, "pooled cast created another duration binding")
+    module.config.look = 2
+    module:Refresh()
+    assert(cast.CastTimeText == nil and not label:IsShown(), "Blizzard look retained Suite's time region")
+    module.config.look = 1
+    module:Refresh()
+    assert(module.castTimes[cast] == state, "returning from Blizzard look created another binding")
+end
 module:Disable()
+assert(cast.CastTimeText == nil and not module.castTimes[cast].binding.enabled,
+    "disabled Suite left its cast duration binding active")
 local disabledFontReads = name.fontReads
 fontHook(uf)
 assert(name.fontReads == disabledFontReads, "disabled nameplate hook still inspected plate fonts")

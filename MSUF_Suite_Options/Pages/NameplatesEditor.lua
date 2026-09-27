@@ -1,38 +1,107 @@
 local _, P = ...
 local M, W, T, Tr = P.M, P.W, P.T, P.Tr
+local Style = P.Suite.NameplateStyle
 local ID, PAGE = "nameplates", "suite_nameplates"
 local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
+local NativeBit = Style.NativeBit
 local Editor = {}
 P.NameplatesEditor = Editor
 local DELTA = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
 local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diamond",
     [4] = "Triangle", [5] = "Moon", [6] = "Blue square", [7] = "Cross", [8] = "Skull" }
 local ENEMY_ELEMENT_SETTINGS = { Name = true, HealthText = true, Classification = true,
-    RaidIcon = true, Cast = true, CastText = true, CastIcon = true, CastShield = true, CastTarget = true }
+    RaidIcon = true, Cast = true, CastText = true, CastTime = true,
+    CastIcon = true, CastShield = true, CastTarget = true }
 local LAYERS = {
-    { "guides", "Guides", "enemy" }, { "health", "Health", "enemy" },
+    { "guides", "Guides", "enemy" }, { "health", "Blizzard health", "enemy" },
+    { "backdrop", "Skin backdrop", "enemy" }, { "border", "Skin border", "enemy" },
+    { "roleFill", "Role fill", "enemy" },
     { "name", "Name", "elements" }, { "healthText", "HP text", "elements" },
     { "cast", "Castbar", "castbar" },
-    { "castText", "Spell name", "elements" }, { "auras", "Auras", "enemy" },
+    { "castText", "Spell name", "elements" }, { "castTime", "Cast time", "castbar" },
+    { "auras", "Debuffs", "auras" },
+    { "buffs", "Buffs", "auras" }, { "controlAura", "Control", "auras" },
     { "classification", "Elite / rare", "elements" }, { "raidIcon", "Raid mark", "elements" },
-    { "castIcon", "Spell icon", "elements" }, { "castShield", "Shield", "elements" },
+    { "castIcon", "Spell icon", "elements" }, { "castShield", "Blizzard shield", "castbar" },
     { "castTarget", "Cast target", "elements" }, { "target", "Target arrows", "enemy" },
     { "eliteMarker", "MSUF elite", "enemy" }, { "questMarker", "MSUF quest", "enemy" },
+    { "threatFlash", "Aggro flash", "signals" },
+    { "threatHighlight", "Aggro highlight", "signals" },
+    { "softTarget", "Soft target", "signals" },
+    { "power", "Power skin", "personal" },
 }
 local ELEMENT_SETTING = {
     Name = "enemyTextMode", HealthText = "enemyTextMode", Cast = "enemyCastEnabled",
-    CastText = "enemyCastSpellName", RaidIcon = "enemyRaidIcon",
+    CastText = "enemyCastSpellName", CastTime = "enemyCastTimeEnabled", RaidIcon = "enemyRaidIcon",
     Classification = "enemyRarityIcon", CastIcon = "enemyCastSpellIcon",
     CastTarget = "enemyCastSpellTarget",
 }
 local LAYER_SETTING = {
+    health = "nativeStyle", backdrop = "enemyBackdropEnabled", border = "enemyBorderEnabled",
+    roleFill = "enemyRoleColors", target = "enemyTargetMarker",
     name = "enemyTextMode", healthText = "enemyTextMode",
-    cast = "enemyCastEnabled", castText = "enemyCastSpellName",
+    cast = "enemyCastEnabled", castText = "enemyCastSpellName", castTime = "enemyCastTimeEnabled",
     classification = "enemyRarityIcon", raidIcon = "enemyRaidIcon",
-    castIcon = "enemyCastSpellIcon", castTarget = "enemyCastSpellTarget",
+    castIcon = "enemyCastSpellIcon", castShield = "enemyCastEnabled",
+    castTarget = "enemyCastSpellTarget",
 }
 local function Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function Round(v) return math.floor(v + 0.5) end
+local function NativeToggle(key, cvar)
+    local mode = P.Get(ID, "look") ~= 2 and P.Get(ID, key) or 1
+    if mode ~= 1 then return mode == 2 end
+    return Style.NativeToggle(cvar, false)
+end
+
+local function ThreatOn(key)
+    if P.Get(ID, "look") ~= 2 and P.Get(ID, "threatSignalMode") == 2 then
+        return P.Get(ID, key)
+    end
+    return NativeBit("nameplateThreatDisplay", key == "threatHighlight" and 1 or 2, false)
+end
+
+local function SoftOn(ui)
+    local name = ui.sampleKind == "enemy" and (ui.softInteract and "Interact" or "Enemy") or "Friend"
+    return NativeToggle("softTargetIconGate", "SoftTargetNameplateSize")
+        and NativeToggle("softTarget" .. name, "SoftTargetIcon" .. name)
+end
+
+local function AuraGroup(ui)
+    if ui.sampleKind == "enemy" then return ui.enemyPlayer and "enemyPlayer" or "enemyNpc" end
+    if ui.friendlyElite and not ui.personal then return nil end
+    return "friendlyPlayer"
+end
+
+local AURA_KIND = { auras = "Debuffs", buffs = "Buffs", controlAura = "Control" }
+local function AuraOn(ui, key)
+    local group = AuraGroup(ui)
+    if not group then return key == "auras" and NativeToggle("friendlyNpcDebuffs", "nameplateShowDebuffsOnFriendly") end
+    local kind = AURA_KIND[key]
+    if P.Get(ID, "look") ~= 2 and P.Get(ID, group .. "AuraMode") == 2 then
+        return P.Get(ID, group .. kind)
+    end
+    return NativeBit(Style.AuraCVar[group], Style.AuraBits[kind], true)
+end
+
+local function ToggleAura(ui, key)
+    local group = AuraGroup(ui)
+    if not group then
+        if key ~= "auras" then return end
+        P.Set(ID, "friendlyNpcDebuffs", AuraOn(ui, key) and 3 or 2)
+    elseif P.Get(ID, group .. "AuraMode") == 2 then
+        local setting = group .. AURA_KIND[key]
+        P.Set(ID, setting, not P.Get(ID, setting))
+    else
+        local values = { [group .. "AuraMode"] = 2 }
+        for kind, bit in pairs(Style.AuraBits) do
+            values[group .. kind] = NativeBit(Style.AuraCVar[group], bit, true)
+        end
+        local setting = group .. AURA_KIND[key]
+        values[setting] = not values[setting]
+        P.SetMany(ID, values)
+    end
+    ui.layers[key] = true
+end
 local function Register(widget, key, label)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(widget, P.Meta(PAGE, ID, "preview." .. key, "action", "suite_nameplates_preview"), label, "button")
@@ -48,7 +117,18 @@ local function Focus(ui, handle)
         section = P.SelectNameplatesEnemyTab(handle._npSettingsTab) or section
     end
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
-    if handle then OpenSetting(handle._npSettingKey, handle._label) end
+    if handle then
+        local key = handle._npSettingKey
+        local kind = handle._key and handle._key:match("%.([%a]+)$")
+        if kind and AURA_KIND[kind] then
+            local group = AuraGroup(ui)
+            key = group and group .. AURA_KIND[kind] or "friendlyNpcDebuffs"
+        elseif handle._key and handle._key:find("%.SoftTarget$", 1, false) then
+            key = ui.sampleKind == "enemy" and (ui.softInteract and "softTargetInteract" or "softTargetEnemy")
+                or "softTargetFriend"
+        end
+        OpenSetting(key, handle._label)
+    end
 end
 local function Write(ui, handle, x, y)
     if P.Combat() then return false end
@@ -161,6 +241,16 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
         handle._npSettingKey = ELEMENT_SETTING[element]
     elseif id == "friendly.Name" or id == "friendly.HealthText" then
         handle._npSettingKey = "friendlyNamesOnly"
+    elseif id == "personal.Power" then
+        handle._npSettingKey = "personalPowerSkin"
+    elseif id == "enemy.elite" or id == "enemy.quest"
+        or id == "friendly.elite" or id == "friendly.quest" then
+        handle._npSettingKey = id:match("^enemy") and (id:find("elite") and "enemyEliteMarker" or "enemyQuestMarker")
+            or (id:find("elite") and "friendlyEliteMarker" or "friendlyQuestMarker")
+    elseif id:match("%.SoftTarget$") then
+        handle._npSettingKey = id:match("^enemy") and "softTargetEnemy" or "softTargetFriend"
+    elseif AURA_KIND[id:match("%.([%a]+)$")] then
+        handle._npSettingKey = "enemyNpcAuraMode"
     end
     local border = P.Suite.NameplateStyle.CreateBorder(handle)
     handle.outline = function(size, color) P.Suite.NameplateStyle.PaintBorder(border, handle, size, color) end
@@ -214,12 +304,21 @@ function Editor:Paint()
         if button.Refresh then button:Refresh()
         else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.42) end
     end
-    if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy") end
-    if self.friendlyTypeButton then self.friendlyTypeButton:SetShown(self.sampleKind == "friendly") end
+    if self.sampleButton then
+        self.sampleButton:SetText(Tr(self.personal and "Personal plate" or self.sampleKind == "enemy"
+            and "Enemy plate" or "Friendly plate"))
+    end
+    if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy" and not self.enemyPlayer) end
+    if self.enemyTypeButton then self.enemyTypeButton:SetShown(self.sampleKind == "enemy") end
+    if self.softTypeButton then self.softTypeButton:SetShown(self.sampleKind == "enemy") end
+    if self.questButton then self.questButton:SetShown(self.sampleKind == "enemy") end
+    if self.friendlyTypeButton then self.friendlyTypeButton:SetShown(self.sampleKind == "friendly" and not self.personal) end
     for _, choice in ipairs(self.raidChoices or {}) do
         choice.outline(self.raidMarked and self.raidIndex == choice.index and 1 or 0, "4ebaff")
     end
-    for _, button in ipairs(self.friendlyButtons or {}) do button:SetShown(self.sampleKind == "friendly") end
+    for _, button in ipairs(self.friendlyButtons or {}) do
+        button:SetShown(self.sampleKind == "friendly" and not self.personal)
+    end
     local selected = self.body._selectedHandle
     if selected and not selected:IsShown() then self:Select(nil) end
     self:RefreshSelection()
@@ -229,12 +328,23 @@ function Editor:LayerOn(key) return self.layers[key] ~= false end
 
 function Editor:LayerAvailable(key)
     local skinned = P.Get(ID, "look") ~= 2
+    if key == "backdrop" or key == "border" then return skinned end
+    if key == "roleFill" then return skinned and self.sampleKind == "enemy" end
+    if key == "power" then return self.personal == true end
+    if key == "threatFlash" or key == "threatHighlight" then return self.sampleKind == "enemy" end
+    if (key == "buffs" or key == "controlAura") and self.sampleKind == "friendly"
+        and self.friendlyElite and not self.personal then return false end
+    if AURA_KIND[key] and self.sampleKind == "friendly" and not self.personal and not self.friendlyElite then
+        local display = P.Get(ID, "friendlyNamesOnly")
+        if display == 2 or display == 3 or display == 1
+            and Style.NativeToggle("nameplateShowOnlyNameForFriendlyPlayerUnits", false) then return false end
+    end
     if key == "classification" then return not skinned or P.Get(ID, "enemyRarityIcon") ~= 3 end
     if key == "raidIcon" then return self.sampleKind == "friendly" or not skinned or P.Get(ID, "enemyRaidIcon") end
     if key == "cast" then return not skinned or P.Get(ID, "enemyCastEnabled") ~= 3 end
+    if key == "castTime" then return skinned and P.Get(ID, self.sampleKind .. "CastTimeEnabled") end
     if key == "eliteMarker" or key == "questMarker" then
-        local kind = key == "eliteMarker" and "Elite" or "Quest"
-        return skinned and P.Get(ID, self.sampleKind .. kind .. "Marker")
+        return skinned
     end
     if skinned and P.Get(ID, "enemyCastDisplay") == 2 then
         if key == "castText" then return P.Get(ID, "enemyCastSpellName") end
@@ -246,6 +356,23 @@ end
 
 function Editor:LayerActive(key)
     if not self:LayerOn(key) or not self:LayerAvailable(key) then return false end
+    if key == "backdrop" then
+        return P.Get(ID, self.sampleKind .. "BackdropEnabled")
+            and P.Get(ID, self.sampleKind .. "BackdropAlpha") > 0
+    end
+    if key == "border" then
+        return P.Get(ID, self.sampleKind .. "BorderEnabled")
+            and P.Get(ID, self.sampleKind .. "BorderSize") > 0
+    end
+    if key == "roleFill" then return P.Get(ID, "enemyRoleColors") end
+    if AURA_KIND[key] then return AuraOn(self, key) end
+    if key == "threatFlash" or key == "threatHighlight" then
+        return self.aggroSample and ThreatOn(key)
+    end
+    if key == "softTarget" then
+        return self.softTargetSample and SoftOn(self)
+    end
+    if key == "power" then return P.Get(ID, "look") ~= 2 and P.Get(ID, "personalPowerSkin") end
     if key == "raidIcon" then return self.raidMarked == true end
     if key == "castShield" then return self.uninterruptible == true end
     if key == "classification" then
@@ -254,6 +381,8 @@ function Editor:LayerActive(key)
             or self.sampleKind == "enemy" and (role == 3 or role == 4))
     end
     if key == "eliteMarker" or key == "questMarker" then
+        local kind = key == "eliteMarker" and "Elite" or "Quest"
+        if not P.Get(ID, self.sampleKind .. kind .. "Marker") then return false end
         if self.sampleKind == "friendly" then return self.friendlyElite == true end
         local role = self.previewRole or P.Get(ID, "enemyPreviewRole")
         return key == "eliteMarker" and (role == 3 or role == 4) or key == "questMarker" and role == 5
@@ -271,17 +400,109 @@ end
 
 local function FocusLayer(ui, section, key)
     if section == "enemy" and ui.sampleKind == "friendly" then section = "friendly" end
+    if section == "elements" and ui.sampleKind == "friendly"
+        and (key == "name" or key == "healthText") then section = "friendly" end
     local target = section == "elements" and P.SelectNameplatesEnemyTab
         and P.SelectNameplatesEnemyTab("elements") or ui.sections and ui.sections[section]
     if target and W.FocusCollapsibleSection then
         W.FocusCollapsibleSection(target, { persist = true, flash = true })
     end
-    OpenSetting(LAYER_SETTING[key], key)
+    local setting = LAYER_SETTING[key]
+    if key == "backdrop" or key == "border" then
+        setting = ui.sampleKind .. (key == "backdrop" and "BackdropEnabled" or "BorderEnabled")
+    elseif ui.sampleKind == "friendly" and (key == "name" or key == "healthText") then
+        setting = key == "name" and "friendlyTextEnabled" or "friendlyNamesOnly"
+    end
+    if AURA_KIND[key] then
+        local group = AuraGroup(ui)
+        setting = group and group .. AURA_KIND[key] or key == "auras" and "friendlyNpcDebuffs" or "friendlyNPCs"
+        if not ui:LayerAvailable(key) and ui.sampleKind == "friendly" and not ui.personal and not ui.friendlyElite then
+            section, setting = "friendly", "friendlyNamesOnly"
+        end
+    elseif key == "softTarget" then
+        local name = ui.sampleKind == "enemy" and (ui.softInteract and "Interact" or "Enemy") or "Friend"
+        setting = "softTarget" .. name
+    elseif key == "threatFlash" or key == "threatHighlight" then setting = key
+    elseif key == "eliteMarker" or key == "questMarker" then
+        setting = ui.sampleKind .. (key == "eliteMarker" and "Elite" or "Quest") .. "Marker"
+    elseif key == "power" then setting = "personalPowerSkin" end
+    OpenSetting(setting, key)
+end
+
+local function ToggleSkinLayer(ui, key)
+    if P.Get(ID, "look") == 2 then OpenSetting("look", "Look"); return end
+    if key == "roleFill" then
+        P.Set(ID, "enemyRoleColors", not P.Get(ID, "enemyRoleColors"))
+    else
+        local prefix = ui.sampleKind
+        local enabledKey = prefix .. (key == "backdrop" and "BackdropEnabled" or "BorderEnabled")
+        local enabled = P.Get(ID, enabledKey)
+        local amountKey = prefix .. (key == "backdrop" and "BackdropAlpha" or "BorderSize")
+        local amount = P.Get(ID, amountKey)
+        if enabled and amount > 0 then P.Set(ID, enabledKey, false)
+        else P.SetMany(ID, { [enabledKey] = true,
+            [amountKey] = amount > 0 and amount or (key == "backdrop" and 50 or 1) }) end
+    end
+    ui.layers[key] = true
+    ui:Paint()
+end
+
+local function ToggleMarkerLayer(ui, key)
+    local kind = key == "eliteMarker" and "Elite" or "Quest"
+    local setting = ui.sampleKind .. kind .. "Marker"
+    local enabled = P.Get(ID, setting)
+    if ui.sampleKind == "friendly" then
+        if not ui.friendlyElite then ui.friendlyElite = true
+        elseif enabled then P.Set(ID, setting, false) end
+    else
+        local desired = key == "eliteMarker" and 4 or 5
+        ui.enemyPlayer = false
+        if (ui.previewRole or P.Get(ID, "enemyPreviewRole")) ~= desired then
+            ui.previewRole, ui.previewRoleSource = desired, P.Get(ID, "enemyPreviewRole")
+        elseif enabled then P.Set(ID, setting, false) end
+    end
+    if not enabled then P.Set(ID, setting, true) end
+    ui.layers[key] = true
 end
 
 local function ToggleLayer(ui, key)
     if not ui:LayerAvailable(key) then
-        FocusLayer(ui, (key == "eliteMarker" or key == "questMarker") and "enemy" or "elements", key)
+        local section = "elements"
+        for _, layer in ipairs(LAYERS) do if layer[1] == key then section = layer[3]; break end end
+        FocusLayer(ui, section, key)
+        return
+    end
+    if key == "backdrop" or key == "border" or key == "roleFill" then
+        ToggleSkinLayer(ui, key)
+        return
+    end
+    if AURA_KIND[key] or key == "threatFlash" or key == "threatHighlight"
+        or key == "softTarget" or key == "power" then
+        if P.Get(ID, "look") == 2 then OpenSetting("look", "Look"); return end
+        if AURA_KIND[key] then ToggleAura(ui, key)
+        elseif key == "threatFlash" or key == "threatHighlight" then
+            local active = ThreatOn(key)
+            if ui.aggroSample or not active then
+                local other = key == "threatFlash" and "threatHighlight" or "threatFlash"
+                P.SetMany(ID, { threatSignalMode = 2, [key] = not active,
+                    [other] = ThreatOn(other) })
+            end
+            ui.aggroSample, ui.layers[key] = true, true
+        elseif key == "softTarget" then
+            local name = ui.sampleKind == "enemy" and (ui.softInteract and "Interact" or "Enemy") or "Friend"
+            local setting = "softTarget" .. name
+            if ui.softTargetSample or not SoftOn(ui) then
+                local show = not SoftOn(ui)
+                local values = { [setting] = show and 2 or 3 }
+                if show then values.softTargetIconGate = 2 end
+                P.SetMany(ID, values)
+            end
+            ui.softTargetSample, ui.layers[key] = true, true
+        else
+            P.Set(ID, "personalPowerSkin", not P.Get(ID, "personalPowerSkin"))
+            ui.layers[key] = true
+        end
+        ui:Paint()
         return
     end
     if key == "classification" then
@@ -304,18 +525,12 @@ local function ToggleLayer(ui, key)
     elseif key == "castShield" then
         ui.uninterruptible, ui.layers[key] = not ui.uninterruptible, true
     elseif key == "eliteMarker" or key == "questMarker" then
-        if ui.sampleKind == "friendly" then
-            if not ui.friendlyElite then ui.friendlyElite, ui.layers[key] = true, true
-            else ui.layers[key] = not ui:LayerOn(key) end
-        else
-            local desired = key == "eliteMarker" and 4 or 5
-            if (ui.previewRole or P.Get(ID, "enemyPreviewRole")) ~= desired then
-                ui.previewRole, ui.previewRoleSource = desired, P.Get(ID, "enemyPreviewRole")
-                ui.layers[key] = true
-            else ui.layers[key] = not ui:LayerOn(key) end
-        end
+        ToggleMarkerLayer(ui, key)
     else ui.layers[key] = not ui:LayerOn(key) end
     ui:Paint()
+    if key == "questMarker" and ui.sampleKind == "enemy" and ui:LayerActive(key) and ui.questMarkerHandle then
+        ui:Select(ui.questMarkerHandle)
+    end
 end
 
 local function BuildLayers(ui)
@@ -356,7 +571,13 @@ local function BuildLayers(ui)
                 return ui:LayerActive(key) == desired
             end }
         button:SetScript("OnEnter", function()
-            ui.hint:SetText(Tr(label) .. " · " .. Tr("Click: show or hide; right-click: settings"))
+            local live = AURA_KIND[key] or key == "threatFlash" or key == "threatHighlight"
+                or key == "softTarget" or key == "power" or key == "eliteMarker" or key == "questMarker"
+                or key == "backdrop" or key == "border" or key == "roleFill"
+            local help = live and "Click: change live setting; right-click: settings"
+                or key == "guides" and "Click: show or hide preview guides"
+                or "Click: show or hide preview; right-click: settings"
+            ui.hint:SetText(Tr(label) .. " · " .. Tr(help))
         end)
         button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
         Register(button, "layer." .. key, label .. " preview layer")
@@ -403,8 +624,14 @@ local function BuildTools(ui)
     local samples = CreateFrame("Frame", nil, body)
     samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
     samples:SetSize(540, 20)
-    Button(ui, samples, "plateKind", "Enemy / Friendly", 124, 0, function()
-        ui.sampleKind = ui.sampleKind == "enemy" and "friendly" or "enemy"
+    ui.sampleButton = Button(ui, samples, "plateKind", "Enemy / Friendly / Personal", 124, 0, function()
+        if ui.sampleKind == "enemy" then
+            ui.sampleKind, ui.personal = "friendly", false
+        elseif not ui.personal then
+            ui.sampleKind, ui.personal = "friendly", true
+        else
+            ui.sampleKind, ui.personal = "enemy", false
+        end
         ui:Select(nil)
         ui:Paint()
     end)
@@ -413,10 +640,28 @@ local function BuildTools(ui)
         P.Set(ID, "enemyPreviewRole", P.Get(ID, "enemyPreviewRole") % #P.Suite.NameplateStyle.Roles + 1)
         ui:Paint()
     end)
-    ui.friendlyButtons = {}
-    ui.friendlyButtons[1] = Button(ui, samples, "friendlyMode", "Friendly: bars / names", 146, 130, function()
-        P.Set(ID, "friendlyNamesOnly", P.Get(ID, "friendlyNamesOnly") == 2 and 3 or 2)
+    ui.enemyTypeButton = Button(ui, samples, "enemyType", "NPC / player", 112, 224, function()
+        ui.enemyPlayer = not ui.enemyPlayer
+        ui:Select(nil)
         ui:Paint()
+    end)
+    ui.softTypeButton = Button(ui, samples, "softType", "Soft: enemy / interact", 126, 342, function()
+        ui.softInteract = not ui.softInteract
+        ui:Select(nil)
+        ui:Paint()
+    end)
+    ui.questButton = Button(ui, samples, "questSample", "Quest", 58, 472, function()
+        if P.Get(ID, "look") == 2 then OpenSetting("look", "Look"); return end
+        ui.enemyPlayer = false
+        ui.previewRole, ui.previewRoleSource = 5, P.Get(ID, "enemyPreviewRole")
+        ui.raidMarked, ui.layers.questMarker = false, true
+        if not P.Get(ID, "enemyQuestMarker") then P.Set(ID, "enemyQuestMarker", true) end
+        ui:Paint()
+        if ui.questMarkerHandle and ui.questMarkerHandle:IsShown() then ui:Select(ui.questMarkerHandle) end
+    end)
+    ui.friendlyButtons = {}
+    ui.friendlyButtons[1] = Button(ui, samples, "friendlyMode", "Friendly player display", 146, 130, function()
+        OpenSetting("friendlyNamesOnly", "Friendly player display")
     end)
     ui.friendlyButtons[2] = Button(ui, samples, "friendlyGroup", "Group / outsider", 114, 282, function()
         ui.friendlyOutsider = not ui.friendlyOutsider
@@ -563,6 +808,7 @@ function Editor.Create(ctx, builder, sections)
         and inInstance == true and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
     local ui = setmetatable({ ctx = ctx, sections = sections, handles = {}, renderers = {}, layers = {},
         sampleKind = "enemy", zoom = 1, panX = 0, panY = 0,
+        softTargetSample = true, aggroSample = true,
         layoutWidth = math.max(640, (section._msuf2Width or builder.width or 720) - 28),
         inDungeon = inDungeon, help = "Drag elements · Arrows: move · Shift: 5 · Ctrl: 10 · Tab: select · Wheel: zoom" }, { __index = Editor })
     ui.previewRole, ui.previewRoleSource = 4, P.Get(ID, "enemyPreviewRole")

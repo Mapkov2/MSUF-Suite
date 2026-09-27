@@ -478,7 +478,10 @@ end
     for _, element in ipairs({ "Classification", "CastIcon", "CastShield", "CastTarget" }) do
         assert(Control("enemy." .. element).scripts.OnMouseDown, "missing native icon drag handle: " .. element)
     end
-    S.Set("nameplates", "friendlyGroupOnly", true)
+    assert(S.catalog.nameplates.rules.friendlyNamesOnly.section == "friendly"
+        and S.catalog.nameplates.rules.friendlyGroupOnly == nil,
+        "friendly player display must be one control in Friendly appearance")
+    S.Set("nameplates", "friendlyNamesOnly", 3)
     assert(ui.sampleCells.enemy:IsShown() and not ui.sampleCells.friendly:IsShown(),
         "preview must show only one plate at a time")
     Control("plateKind").scripts.OnClick()
@@ -491,7 +494,7 @@ end
     assert(not Control("friendly.Name"):IsShown(), "outsider name survived group-only preview")
     groupButton.scripts.OnClick(groupButton)
     assert(Control("friendly.Name"):IsShown(), "group member name missing in preview")
-    S.Set("nameplates", "friendlyGroupOnly", false)
+    S.Set("nameplates", "friendlyNamesOnly", 2)
     assert(ui.body.selectionDeps and ui.body.selectionBar:IsShown()
         and name.scripts.OnMouseDown and cast.scripts.OnMouseDown
         and Control("friendly.Name").scripts.OnDragStart,
@@ -738,6 +741,12 @@ do
         assert(page == "suite_nameplates")
         return true
     end
+    local beforeDisplay = S.Config("nameplates").friendlyNamesOnly
+    local displayButton = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.friendlyMode"])
+    displayButton.scripts.OnClick(displayButton)
+    assert(exactSetting == "msufsuite.nameplates.friendlyNamesOnly"
+        and S.Config("nameplates").friendlyNamesOnly == beforeDisplay,
+        "friendly preview button must open its sole display control without changing the mode")
     GetCursorPosition = function() return 40, 40 end
     elite.scripts.OnMouseDown(elite, "LeftButton")
     elite.scripts.OnMouseUp(elite, "LeftButton")
