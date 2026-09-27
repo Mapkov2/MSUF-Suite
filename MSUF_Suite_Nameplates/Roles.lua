@@ -29,8 +29,10 @@ function Roles.RefreshContext()
     Roles.inInstance = not public or instanceType ~= "none"
     Roles.instanced = public and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
     local pvp = Read(_G.C_PvP and _G.C_PvP.GetZonePVPInfo)
+    -- Zone PvP flags describe the outdoor zone and can remain "combat" while
+    -- inside a party/raid/scenario instance. Instance type is authoritative.
     Roles.allowed = public and instanceType ~= "pvp" and instanceType ~= "arena"
-        and pvp ~= "arena" and pvp ~= "combat" and pvp ~= "ffapvp"
+        and (Roles.instanced or pvp ~= "arena" and pvp ~= "combat" and pvp ~= "ffapvp")
     local c = Roles.config
     Roles.allowed = Roles.allowed and ((Roles.instanced and c.enemyColorsInDungeons ~= false)
         or (not Roles.instanced and c.enemyColorsOutside ~= false))
@@ -151,7 +153,7 @@ function Roles.Classify(unit, classification)
     if classification == "trivial" or classification == "minus" or Read(_G.UnitIsTrivial, unit) == true then
         return "Trivial"
     end
-    if classification ~= "normal" and classification ~= "elite"
+    if classification ~= nil and classification ~= "normal" and classification ~= "elite"
         and classification ~= "rare" and classification ~= "rareelite" then return nil end
     local mana = _G.Enum and _G.Enum.PowerType and _G.Enum.PowerType.Mana or 0
     -- Match Platynator's Jundies classifier: mana capability takes precedence

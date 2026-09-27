@@ -143,16 +143,12 @@ local function Side(prefix, title, size)
         appearance[#appearance + 1] = B.Number("enemyQuestMarkerSize", "Quest marker size", 15, 8, 48)
         appearance[#appearance + 1] = B.Number("enemyQuestOffsetX", "Quest marker X", -14, -80, 80)
         appearance[#appearance + 1] = B.Number("enemyQuestOffsetY", "Quest marker Y", 0, -40, 40)
-        appearance[#appearance + 1] = B.Texture("enemyHealthTexture", "Enemy health fill texture")
-        appearance[#appearance + 1] = B.Texture("enemyFocusHealthTexture", "Focus health fill texture")
         appearance[#appearance + 1] = B.Number("enemyHealthTextSize", "Health text size (0 = Blizzard)", 11, 0, 32)
         appearance[#appearance + 1] = B.Choice("enemyPreviewRole", "Enemy preview type", 1,
             NS.NameplateStyle.RoleLabels)
     end
     if prefix == "friendly" then
         appearance[#appearance + 1] = B.Bool("friendlyGroupOnly", "Player names only: party / raid members", false)
-        appearance[#appearance + 1] = B.Texture("friendlyHealthTexture", "Friendly health fill texture")
-        appearance[#appearance + 1] = B.Texture("friendlyFocusHealthTexture", "Friendly focus health fill texture")
         for _, kind in ipairs({ "Elite", "Quest" }) do
             local label = kind == "Elite" and "Elite / rare / boss marker" or "Quest marker"
             appearance[#appearance + 1] = B.Bool(prefix .. kind .. "Marker", label, false)

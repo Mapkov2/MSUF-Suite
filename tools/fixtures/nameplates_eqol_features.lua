@@ -1,5 +1,5 @@
--- EQoL 13.0.5: 47 DEFAULT_NAMEPLATE_FEATURE_KEYS plus four settings from
--- UIOptions/Profiles/Bindings outside that export allowlist.
+-- EQoL 13.0.5 settings except the two texture groups removed at the user's
+-- request; four settings from UIOptions/Profiles/Bindings are also included.
 -- Snapshot audited 2026-09-27; schema coverage only. Runtime behavior has separate tests.
 return {
     auraClickthrough = { "auraClickthrough" },
@@ -25,8 +25,6 @@ return {
     targetMarkerAtlas = { "enemyTargetStyle" },
     targetMarkerHideFriendly = { "enemyTargetHideFriendly" },
     targetMarkerSize = { "enemyTargetMarkerSize" },
-    healthbarTexture = { "enemyHealthTexture", "friendlyHealthTexture" },
-    focusHealthbarTexture = { "enemyFocusHealthTexture", "friendlyFocusHealthTexture" },
     UnitNamePlayerGuild = { "playerGuildNames" },
     UnitNamePlayerPVPTitle = { "playerTitles" },
     EQOL_TOGGLE_FRIENDLY_NPCS = { "friendlyNPCs" },

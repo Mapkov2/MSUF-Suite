@@ -3,6 +3,14 @@ local _, NS = ...
 -- this file creates no frames, hooks, timers or event listeners.
 local Style = {}
 NS.NameplateStyle = Style
+-- Blizzard's array CVars store six bits per data byte after a version byte.
+-- Keep one decoder for the runtime and preview; callers choose their flags.
+function Style.CVarFlags(value)
+    if not NS.Public(value) or type(value) ~= "string" or #value == 0 then return nil end
+    local byte = value:byte(2) or 64
+    if byte < 64 or byte > 127 then return nil end
+    return byte - 64
+end
 -- Offset keys describe existing Blizzard regions, relative to their native
 -- layout. The same descriptors drive the settings and preview handles.
 Style.Elements = {
@@ -148,7 +156,7 @@ Style.Markers = {
 }
 
 -- Core media helpers are available before any optional module is loaded.
-Style.ResolveFont, Style.ResolveTexture = NS.ResolveFont, NS.ResolveTexture
+Style.ResolveFont = NS.ResolveFont
 
 function Style.Font(key)
     if key == "" and type(_G.MSUF_GetFontPath) == "function" then

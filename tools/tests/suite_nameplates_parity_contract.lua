@@ -7,7 +7,8 @@ local spec = assert(NS.SuiteCatalog.nameplates)
 -- Removed on request: native cast appearance cannot be reenabled by a preset
 -- or offered through the menu/import schema. Cast text and dragging remain.
 for _, key in ipairs({ "enemyCastSkin", "enemyCastFollowMSUF", "enemyCastTexture", "enemyCastBorderSize",
-    "enemyCastBackdropAlpha", "enemyCastFillAlpha", "enemyCastBorderColor", "enemyCastBackdropColor", "enemyCastFillColor" }) do
+    "enemyCastBackdropAlpha", "enemyCastFillAlpha", "enemyCastBorderColor", "enemyCastBackdropColor", "enemyCastFillColor",
+    "enemyHealthTexture", "enemyFocusHealthTexture", "friendlyHealthTexture", "friendlyFocusHealthTexture" }) do
     assert(not spec.rules[key], "retired cast appearance control remains: " .. key)
     for _, preset in pairs(spec.look.presets) do assert(preset[key] == nil, "preset restores retired cast appearance: " .. key) end
 end
@@ -20,7 +21,7 @@ for feature, keys in pairs(fixture) do
         assert(spec.rules[key].section, key .. " has no options section")
     end
 end
-assert(count == 51, "EQoL 13.0.5 must cover 47 exported settings plus names, binding and import protection")
+assert(count == 49, "EQoL coverage must retain the requested controls except retired health textures")
 
 local function Default(key, expected)
     assert(spec.rules[key].default == expected, key .. " diverged from the confirmed Platynator DEFAULT")
@@ -44,7 +45,7 @@ assert(spec.rules.enemyEliteMarkerSize.max == 48 and spec.rules.enemyCastSize.ma
 
 -- The concrete runtime test covers behavior. Keep engine ownership and the
 -- no-polling constraint visible here when adding new files to the addon.
-for _, name in ipairs({ "Skin", "Layout", "Roles", "Text", "Textures" }) do
+for _, name in ipairs({ "Skin", "Layout", "Roles", "Text" }) do
     local file = assert(io.open(root .. "/MSUF_Suite_Nameplates/" .. name .. ".lua", "rb"))
     local source = file:read("*a"); file:close()
     for _, forbidden in ipairs({ '"OnUpdate"', "NewTicker", '"UNIT_HEALTH"', '"COMBAT_LOG_EVENT_UNFILTERED"',
@@ -53,4 +54,4 @@ for _, name in ipairs({ "Skin", "Layout", "Roles", "Text", "Textures" }) do
         assert(not source:find(forbidden, 1, true), name .. " bypasses Blizzard ownership: " .. forbidden)
     end
 end
-print("Suite nameplate coverage: 47 EQoL exported settings + 4 other controls, Jundies defaults and ownership passed")
+print("Suite nameplate coverage: 45 EQoL setting groups + 4 other controls, Jundies defaults and ownership passed")

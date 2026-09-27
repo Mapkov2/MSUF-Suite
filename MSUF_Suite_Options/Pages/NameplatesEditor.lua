@@ -5,6 +5,8 @@ local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
 local Editor = {}
 P.NameplatesEditor = Editor
 local DELTA = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
+local ENEMY_ELEMENT_SETTINGS = { Name = true, HealthText = true, Classification = true,
+    RaidIcon = true, Cast = true, CastText = true, CastIcon = true, CastTarget = true }
 local function Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function Round(v) return math.floor(v + 0.5) end
 local function Register(widget, key, label)
@@ -14,6 +16,9 @@ local function Register(widget, key, label)
 end
 local function Focus(ui, handle)
     local section = handle and ui.sections and ui.sections[handle.section]
+    if handle and handle._npSettingsTab and P.SelectNameplatesEnemyTab then
+        section = P.SelectNameplatesEnemyTab(handle._npSettingsTab) or section
+    end
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
 end
 local function Write(ui, handle, x, y)
@@ -87,6 +92,7 @@ local function Start(self, button)
     local ui = self.previewUI
     if P.Combat() or self._npDrag then return end
     ui:Select(self)
+    self._npDragged = false
     local x, y = GetCursorPosition()
     local ox, oy = Read(self)
     self._npDrag = { x = x, y = y, ox = ox, oy = oy, scale = self:GetEffectiveScale() }
@@ -102,7 +108,9 @@ local function Stop(self, button)
     self._npDrag, ui.dragging = nil, nil
     local x, y = GetCursorPosition()
     local dx, dy = x - drag.x, y - drag.y
-    if not P.Combat() and math.abs(dx) + math.abs(dy) >= 3 then
+    local moved = math.abs(dx) + math.abs(dy) >= 3
+    self._npDragged = moved
+    if not P.Combat() and moved then
         Write(ui, self, drag.ox + dx / drag.scale, drag.oy + dy / drag.scale)
         if H.NotePreviewElementMoved then H.NotePreviewElementMoved() end
     else
@@ -113,6 +121,8 @@ end
 function Editor:Bind(handle, id, label, keyX, keyY, section)
     handle.previewUI, handle._key, handle._label = self, id, label
     handle._color, handle.keyX, handle.keyY, handle.section = { 0.3, 0.74, 1 }, keyX, keyY, section
+    local enemyElement = id:match("^enemy%.(.+)$")
+    if enemyElement and ENEMY_ELEMENT_SETTINGS[enemyElement] then handle._npSettingsTab = "elements" end
     local border = P.Suite.NameplateStyle.CreateBorder(handle)
     handle.outline = function(size, color) P.Suite.NameplateStyle.PaintBorder(border, handle, size, color) end
     handle:EnableMouse(true)
@@ -130,11 +140,14 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     handle:SetScript("OnDragStop", Stop)
     handle:SetScript("OnClick", function(_, button)
         self:Select(handle)
-        if button == "RightButton" then Focus(self, handle) end
+        if button == "RightButton" or button == "LeftButton" and handle._npSettingsTab and not handle._npDragged then
+            Focus(self, handle)
+        end
     end)
     handle:SetScript("OnEnter", function()
         handle.outline(1, "4ebaff")
-        self.hint:SetText(Tr(label) .. " · " .. Tr("Drag to move; right-click for settings"))
+        self.hint:SetText(Tr(label) .. " · " .. Tr(handle._npSettingsTab
+            and "Drag to move; click for Blizzard settings" or "Drag to move; right-click for settings"))
     end)
     handle:SetScript("OnLeave", function() self:RefreshSelection(); self.hint:SetText(Tr(self.help)) end)
     handle:SetScript("OnKeyDown", Key)
@@ -152,6 +165,9 @@ function Editor:Paint()
     self.stage:SetPoint("CENTER", self.canvas, "CENTER", self.panX, self.panY)
     self.stage:SetScale(self.zoom)
     for _, render in ipairs(self.renderers) do render() end
+    if self.contextButton then
+        self.contextButton:SetText(Tr(self.inDungeon and "Dungeon / raid" or "Outdoor"))
+    end
     if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
     self:RefreshSelection()
 end
@@ -180,15 +196,17 @@ local function BuildTools(ui)
     ui.zoomLabel = T.Font(tools, "GameFontDisableSmall", "100%", T.colors.text)
     ui.zoomLabel:SetPoint("LEFT", tools, "LEFT", 112, 0)
     Button(ui, tools, "zoomIn", "+", 24, 156, function() ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2); ui:Paint() end)
-    Button(ui, tools, "context", "Outdoor / Dungeon", 128, 188, function() ui.inDungeon = not ui.inDungeon; ui:Paint() end)
+    ui.contextButton = Button(ui, tools, "context", "Outdoor", 128, 188,
+        function() ui.inDungeon = not ui.inDungeon; ui:Paint() end)
     Button(ui, tools, "health", "Health", 56, 320, function() ui.health = ui.health == 100 and 53 or 100; ui:Paint() end)
     Button(ui, tools, "cast", "Cast", 48, 380, function() ui.hideCast = not ui.hideCast; ui:Paint() end)
     Button(ui, tools, "target", "Target", 54, 432, function() ui.hideTarget = not ui.hideTarget; ui:Paint() end)
     Button(ui, tools, "interrupt", "Shield", 54, 490, function() ui.uninterruptible = not ui.uninterruptible; ui:Paint() end)
     local samples = CreateFrame("Frame", nil, body)
     samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
-    samples:SetSize(300, 20)
+    samples:SetSize(690, 20)
     Button(ui, samples, "role", "Enemy type", 88, 0, function()
+        ui.previewRole = nil
         P.Set(ID, "enemyPreviewRole", P.Get(ID, "enemyPreviewRole") % #P.Suite.NameplateStyle.Roles + 1)
         ui:Paint()
     end)
@@ -203,6 +221,14 @@ local function BuildTools(ui)
     Button(ui, samples, "friendlyFocus", "Friendly focus", 106, 366, function()
         ui.friendlyFocus = not ui.friendlyFocus
         ui:Paint()
+    end)
+    Button(ui, samples, "raidMarked", "Raid mark", 86, 478, function()
+        ui.raidMarked = not ui.raidMarked
+        ui:Paint()
+    end)
+    Button(ui, samples, "enemyElements", "Icons & text", 106, 570, function()
+        local section = P.SelectNameplatesEnemyTab and P.SelectNameplatesEnemyTab("elements")
+        if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
     end)
     if H.EnsurePreviewBackgroundButton then
         local background = H.EnsurePreviewBackgroundButton(body, samples)
@@ -293,8 +319,18 @@ end
 function Editor.Create(ctx, builder, sections)
     local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 348, gap = 8 })
     if not section then return end
+    local inInstance, instanceType = false, "none"
+    if type(_G.IsInInstance) == "function" then inInstance, instanceType = _G.IsInInstance() end
+    local inDungeon = P.Suite.Public(instanceType) and P.Suite.Public(inInstance)
+        and inInstance == true and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
     local ui = setmetatable({ ctx = ctx, sections = sections, handles = {}, renderers = {}, zoom = 1, panX = 0, panY = 0,
-        inDungeon = false, help = "Drag elements · Arrows: move · Shift: 5 · Ctrl: 10 · Tab: select · Wheel: zoom" }, { __index = Editor })
+        inDungeon = inDungeon, help = "Drag elements · Arrows: move · Shift: 5 · Ctrl: 10 · Tab: select · Wheel: zoom" }, { __index = Editor })
+    P.ShowNameplatesElementsSample = function()
+        ui.previewRole = 3 -- rare/elite, so the Blizzard icon toggle is visible
+        ui.previewRoleSource = P.Get(ID, "enemyPreviewRole")
+        ui.raidMarked = true -- show the raid target icon switch at the same time
+        ui:Paint()
+    end
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 14, -38)
     body:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, -38)

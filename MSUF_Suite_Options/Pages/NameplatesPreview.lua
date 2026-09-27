@@ -6,6 +6,21 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 local SIZE_SCALE = { [2] = { 0.75, 0.8 }, [3] = { 1, 1 },
     [4] = { 1.25, 1.25 }, [5] = { 1.4, 1.4 }, [6] = { 1.6, 1.6 } }
 
+local function NativeBit(cvar, index, fallback)
+    local api = _G.C_CVar
+    local value = api and type(api.GetCVar) == "function" and api.GetCVar(cvar)
+    local flags = Style.CVarFlags(value)
+    if flags == nil then return fallback end
+    return math.floor(flags / 2 ^ (index - 1)) % 2 == 1
+end
+
+local function NativeCastDetail(key, index, fallback)
+    if P.Get(ID, "look") ~= 2 and P.Get(ID, "enemyCastDisplay") == 2 then
+        return P.Get(ID, key)
+    end
+    return NativeBit("nameplateCastBarDisplay", index, fallback)
+end
+
 local function Fill(owner, layer)
     local texture = owner:CreateTexture(nil, layer or "ARTWORK")
     texture:SetTexture(WHITE)
@@ -198,10 +213,13 @@ local function Sample(editor, prefix, x)
         local availableNameWidth = math.max(20, barWidth - 88)
         local show = P.Get(ID, prefix)
         cell:SetAlpha(show and 1 or 0.4)
-        local role = prefix == "enemy" and P.Get(ID, "enemyPreviewRole") or nil
+        local savedRole = prefix == "enemy" and P.Get(ID, "enemyPreviewRole") or nil
+        if editor.previewRole and editor.previewRoleSource ~= savedRole then editor.previewRole = nil end
+        local role = editor.previewRole or savedRole
         local descriptor = role and Style.Roles[role]
         if descriptor then
-            title:SetText(Tr("ENEMY / TARGET") .. " · " .. Tr(descriptor.label))
+            title:SetText(Tr("ENEMY / TARGET") .. " · " .. Tr(descriptor.label)
+                .. (editor.raidMarked and " · " .. Tr("Raid marked") or ""))
             nameText:SetText(descriptor.sample)
         end
         local groupOnly = prefix == "friendly" and P.Get(ID, "friendlyGroupOnly") and P.Get(ID, "look") ~= 2
@@ -212,10 +230,11 @@ local function Sample(editor, prefix, x)
                 .. (editor.friendlyFocus and " · " .. Tr("Focus") or ""))
         end
         bar:SetShown(not namesOnly)
-        local showCast = not namesOnly and state.cast and P.Get(ID, "enemyCastEnabled") ~= 3
+        local castMode = P.Get(ID, "look") == 2 and 1 or P.Get(ID, "enemyCastEnabled")
+        local nativeCast = _G.C_CVar and _G.C_CVar.GetCVar and _G.C_CVar.GetCVar("nameplateShowCastBars")
+        local showCast = not namesOnly and state.cast and castMode ~= 3
+            and (castMode ~= 1 or not P.Suite.Public(nativeCast) or nativeCast ~= "0")
         cast:SetShown(showCast)
-        castIcon:SetShown(showCast and prefix == "enemy"
-            and P.Get(ID, "enemyCastSpellIcon"))
         auras:SetShown(not namesOnly)
         name:ClearAllPoints()
         if namesOnly then
@@ -233,31 +252,21 @@ local function Sample(editor, prefix, x)
         local scopeColor = previewContext.inDungeon and P.Get(ID, "enemyColorsInDungeons")
             or not previewContext.inDungeon and P.Get(ID, "enemyColorsOutside")
         local kindColor = role and (role ~= 5 or P.Get(ID, "enemyQuestColors"))
-        local texture = Style.ResolveTexture(P.Get(ID, prefix .. "HealthTexture"))
-        if role == 7 or prefix == "friendly" and editor.friendlyFocus then
-            texture = Style.ResolveTexture(P.Get(ID, prefix .. "FocusHealthTexture")) or texture
-        end
         if kindColor and scopeColor and P.Get(ID, "look") ~= 2 and P.Get(ID, "enemyRoleColors")
             and (role == 12 and P.Get(ID, "enemyTankMode") or role ~= 12 and P.Get(ID, "enemy" .. descriptor.key .. "Enabled")) then
             local color = P.Get(ID, "enemy" .. descriptor.key .. "Color")
-            if type(texture) == "string" and texture ~= "" then
-                progress:SetTexture(texture)
-                local r, g, b = P.RGB(color)
-                progress:SetVertexColor(r, g, b)
-            else Tint(progress, color) end
+            Tint(progress, color)
         else
-            if texture and P.Get(ID, "look") ~= 2 then
-                progress:SetTexture(texture)
-                local r, g, b = P.RGB(prefix == "enemy" and "c64b52" or "52a873")
-                progress:SetVertexColor(r, g, b)
-            else Tint(progress, prefix == "enemy" and "c64b52" or "52a873") end
+            Tint(progress, prefix == "enemy" and "c64b52" or "52a873")
         end
         progress:SetWidth(barWidth * state.health / 100)
-        local mode = prefix == "enemy" and P.Get(ID, "enemyTextMode") or 2
+        local mode = prefix == "enemy" and (P.Get(ID, "look") == 2 and 1 or P.Get(ID, "enemyTextMode")) or 2
         local amount = string.format("%.1fM", 3.5 * state.health / 100)
-        value:SetText(mode == 3 and amount or mode == 4 and (amount .. " " .. state.health .. "%")
-            or (state.health .. "%"))
-        value:SetShown(not namesOnly)
+        local showPercent = mode == 1 and NativeBit("nameplateInfoDisplay", 1, true) or mode == 2 or mode == 4
+        local showValue = mode == 1 and NativeBit("nameplateInfoDisplay", 2, false) or mode == 3 or mode == 4
+        value:SetText(showValue and (amount .. (showPercent and " " .. state.health .. "%" or ""))
+            or (showPercent and state.health .. "%" or ""))
+        value:SetShown(not namesOnly and (showPercent or showValue))
         local borderColor = P.Get(ID, prefix .. "BorderColor")
         border(P.Get(ID, "look") == 2 and 0 or P.Get(ID, prefix .. "BorderSize"), borderColor)
         local arrows = (prefix == "enemy" or not P.Get(ID, "enemyTargetHideFriendly")) and state.target and P.Get(ID, "enemyTargetMarker")
@@ -291,21 +300,30 @@ local function Sample(editor, prefix, x)
         PreviewFont(castTargetText, prefix .. "Cast", P.Get(ID, prefix .. "CastSize"), P.Get(ID, prefix .. "CastOutline"), 11)
         if prefix == "enemy" then
             PreviewFont(value, prefix, P.Get(ID, "enemyHealthTextSize"), P.Get(ID, "enemyTextOutline"), 11)
-            castName:SetShown(P.Get(ID, "enemyCastSpellName"))
+            castName:SetShown(showCast and NativeCastDetail("enemyCastSpellName", 1, true))
         end
         Place(cast, "TOP", bar, "BOTTOM", 0, -2, "Cast")
         Place(castName, "TOPLEFT", cast, "BOTTOMLEFT", 0, -1, "CastText")
         Place(auras, "BOTTOM", bar, "TOP", 0, 14, "Auras")
-        Place(raid, "RIGHT", bar, "LEFT", -25, 0, "RaidIcon")
-        raid:SetShown(not namesOnly and (prefix ~= "enemy" or P.Get(ID, "enemyRaidIcon")))
+        if namesOnly then Place(raid, "BOTTOM", name, "TOP", 0, 8, "RaidIcon")
+        else Place(raid, "RIGHT", bar, "LEFT", -25, 0, "RaidIcon") end
+        raid:SetShown(editor.raidMarked and (prefix ~= "enemy" or P.Get(ID, "look") == 2
+            or P.Get(ID, "enemyRaidIcon")))
         Place(classification, "RIGHT", bar, "LEFT", -3, 0, "Classification")
-        classification:SetShown(not namesOnly and (prefix ~= "enemy" or P.Get(ID, "enemyRarityIcon") ~= 3))
+        if role == 3 then nativeElite:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn-Boss-Rare-Star")
+        else nativeElite:SetAtlas("nameplates-icon-elite-gold") end
+        local rarityMode = P.Get(ID, "look") == 2 and 1 or P.Get(ID, "enemyRarityIcon")
+        local showRarity = rarityMode == 2 or rarityMode == 1
+            and NativeBit("nameplateInfoDisplay", 3, true)
+        classification:SetShown(prefix == "enemy" and (role == 3 or role == 4) and showRarity)
         Place(castIcon, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastIcon")
         Place(shield, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastShield")
         shield:SetShown(editor.uninterruptible and showCast)
-        castIcon:SetShown(not editor.uninterruptible and showCast and P.Get(ID, "enemyCastSpellIcon"))
+        local classicCast = P.Get(ID, "nativeStyle") == 7 or P.Get(ID, "nativeStyle") == 8
+        castIcon:SetShown(showCast and (not editor.uninterruptible or classicCast)
+            and NativeCastDetail("enemyCastSpellIcon", 2, false))
         Place(castTarget, "TOPRIGHT", cast, "BOTTOMRIGHT", 0, -1, "CastTarget")
-        castTarget:SetShown(showCast and P.Get(ID, "enemyCastSpellTarget"))
+        castTarget:SetShown(showCast and NativeCastDetail("enemyCastSpellTarget", 3, false))
     end
     editor.renderers[#editor.renderers + 1] = Render
 end

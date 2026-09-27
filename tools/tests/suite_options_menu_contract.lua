@@ -238,7 +238,7 @@ W.SegmentTabs = function(ctx, parent, opts)
     ctx.tabControls = ctx.tabControls or {}
     ctx.tabControls[#ctx.tabControls + 1] = { segment = segment, frames = opts.frames }
     M.TrackRefresh(ctx, Refresh)
-    return segment, Refresh
+    return segment, Refresh, function() return opts.get() end, function(tab) segment:Choose(tab) end
 end
 W.ControlCard = function() return Widget("Card") end
 W.SectionSwitch = function(section, label)
@@ -699,7 +699,79 @@ do
     assert(tabs.frames.elements.shown and not tabs.frames.appearance.shown,
         "Blizzard elements tab did not switch")
     tabs.segment:Choose("appearance")
-    for _, key in ipairs({ "enemyTextMode", "enemyRarityIcon", "enemyRaidIcon" }) do
+    local shortcut = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemyElements"])
+    shortcut.scripts.OnClick(shortcut)
+    assert(tabs.segment.value == "elements", "preview shortcut did not open Blizzard elements")
+    tabs.segment:Choose("appearance")
+    local elite = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Classification"])
+    local raid = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.RaidIcon"])
+    local raidSample = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.raidMarked"])
+    local function Setting(key)
+        for _, widget in ipairs(contexts.suite_nameplates.widgets) do
+            if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then return widget end
+        end
+        error("missing Blizzard element control: " .. key)
+    end
+    local raritySetting, raidSetting = Setting("enemyRarityIcon"), Setting("enemyRaidIcon")
+    elite.previewUI.previewRole, elite.previewUI.raidMarked = nil, false
+    S.Set("nameplates", "enemyPreviewRole", 3)
+    elite.previewUI:Paint()
+    assert(elite:IsShown() and not raid:IsShown(), "rare preview did not follow Blizzard's icon conditions")
+    GetCursorPosition = function() return 40, 40 end
+    elite.scripts.OnMouseDown(elite, "LeftButton")
+    elite.scripts.OnMouseUp(elite, "LeftButton")
+    elite.scripts.OnClick(elite, "LeftButton")
+    assert(tabs.segment.value == "elements" and tabs.frames.elements.shown,
+        "clicking the native elite icon did not open its Blizzard settings tab")
+    tabs.segment:Choose("appearance")
+    current = contexts.suite_nameplates
+    raritySetting.set(3)
+    assert(not elite:IsShown(), "preview elite icon did not follow its Blizzard visibility setting")
+    raritySetting.set(1)
+    assert(elite:IsShown(), "preview elite icon did not return after re-enabling it")
+    elite.previewUI.raidMarked = false
+    raidSample.scripts.OnClick(raidSample)
+    assert(raid:IsShown() and elite:IsShown(),
+        "Blizzard raid and classification switches must remain independently visible")
+    tabs.segment:Choose("appearance")
+    raid.previewUI.body.selectionDeps.OpenSettings(raid.previewUI.body, raid)
+    assert(tabs.segment.value == "elements", "Open settings did not route the raid icon to its switch")
+    raidSetting.set(false)
+    assert(not raid:IsShown(), "preview raid icon did not follow its runtime switch")
+    raidSetting.set(true)
+    assert(raid:IsShown(), "preview raid icon did not return after re-enabling it")
+    raidSample.scripts.OnClick(raidSample)
+    S.Set("nameplates", "enemyPreviewRole", 1)
+    elite.previewUI:Paint()
+    assert(not elite:IsShown() and not raid:IsShown(), "normal enemy preview showed special icons")
+    local nativeGet = C_CVar.GetCVar
+    C_CVar.GetCVar = function(key)
+        if key == "nameplateShowCastBars" then return "0" end
+        if key == "nameplateInfoDisplay" or key == "nameplateCastBarDisplay" then return string.char(1, 64) end
+    end
+    S.Set("nameplates", "enemyPreviewRole", 3)
+    S.Set("nameplates", "enemyTextMode", 1)
+    S.Set("nameplates", "enemyCastEnabled", 1)
+    S.Set("nameplates", "enemyCastDisplay", 1)
+    elite.previewUI:Paint()
+    local cast = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Cast"])
+    assert(not elite:IsShown() and not cast:IsShown(),
+        "Keep Blizzard setting preview ignored native rarity or castbar flags")
+    S.Set("nameplates", "enemyRarityIcon", 2)
+    S.Set("nameplates", "enemyCastEnabled", 2)
+    S.Set("nameplates", "enemyCastDisplay", 2)
+    elite.previewUI:Paint()
+    assert(elite:IsShown() and cast:IsShown(), "preview did not show forced Blizzard elements")
+    C_CVar.GetCVar = nativeGet
+    S.Set("nameplates", "enemyPreviewRole", 1)
+    S.Set("nameplates", "enemyTextMode", 4)
+    S.Set("nameplates", "enemyRarityIcon", 1)
+    S.Set("nameplates", "enemyCastEnabled", 2)
+    S.Set("nameplates", "enemyCastDisplay", 2)
+    elite.previewUI:Paint()
+    for _, key in ipairs({ "enemyTextMode", "enemyRarityIcon", "enemyRaidIcon",
+        "enemyCastEnabled", "enemyCastDisplay", "enemyCastSpellName", "enemyCastSpellIcon",
+        "enemyCastSpellTarget" }) do
         local control
         for _, widget in ipairs(contexts.suite_nameplates.widgets) do
             if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then

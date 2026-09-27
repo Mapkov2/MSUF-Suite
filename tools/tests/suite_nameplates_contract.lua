@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
-assert(table.concat(toc, ",") == "Bootstrap.lua,Layout.lua,Roles.lua,Text.lua,Textures.lua,Skin.lua",
+assert(table.concat(toc, ",") == "Bootstrap.lua,Layout.lua,Roles.lua,Text.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -236,7 +236,10 @@ local S = {
     end,
     SetFont = function(region, path, size, flags) region:SetFont(path or "fallback-font", size, flags) end,
     ResolveFont = function(key) return key ~= "" and key or nil end,
-    RestoreCVar = function(_, key) restored[key] = true end,
+    RestoreCVar = function(_, key)
+        restored[key] = true
+        if key == "nameplateInfoDisplay" then liveCVars[key] = string.char(1, 68) end
+    end,
     Install = function(_, module) installed = module end,
 }
 local context = {
@@ -246,12 +249,11 @@ local context = {
 local chunk = assert(loadfile(root .. "/MSUF_Suite_Nameplates/Skin.lua"))
 NS.Suite = S
 NS.RGB, NS.Public, NS.Finite, NS.ResolveFont = S.RGB, S.Public, S.Finite, S.ResolveFont
-NS.ResolveTexture = function(key) return key and key ~= "" and key or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Layout.lua"))("MSUF_Suite_Nameplates", private)
-for _, file in ipairs({ "Roles", "Text", "Textures" }) do
+for _, file in ipairs({ "Roles", "Text" }) do
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("MSUF_Suite_Nameplates", private)
 end
 chunk("MSUF_Suite_Nameplates", private)
@@ -306,6 +308,8 @@ assert(module.visuals[bar].borderColor == "111418"
     and module.visuals[bar].fill.color[1] == 0xbe / 255
     and module.visuals[bar].fill.allPoints == bar.barTexture and bar.barColor[1] == 0.5,
     "melee overlay must follow Blizzard's fill without recoloring its StatusBar")
+assert(module.visuals[bar].fill.layer == "ARTWORK" and module.visuals[bar].fill.sublevel == 3,
+    "role tint must remain above a native StatusBar texture reapplied after setup")
 do
     local nameWrites, castWrites = name.shadowColorWrites, cast.Text.shadowColorWrites
     events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
@@ -354,6 +358,22 @@ do
     classification, instanceType = "normal", "none"
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
     assert(scans == 1, "role refresh scanned all plates")
+end
+do
+    local previousPvp = C_PvP
+    C_PvP = { GetZonePVPInfo = function() return "combat" end }
+    classification, instanceType, hasMana = "normal", "party", true
+    events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
+    assert(module.roles[bar] == "Caster" and module.visuals[bar].fill:IsShown(),
+        "an outdoor PvP zone flag suppressed caster color inside a party instance")
+    classification = nil
+    events.UNIT_CLASSIFICATION_CHANGED(module, "UNIT_CLASSIFICATION_CHANGED", "nameplate1")
+    assert(module.roles[bar] == "Caster", "public mana hint lost caster color when classification was unavailable")
+    instanceType, hasMana, classification = "none", false, "normal"
+    events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
+    assert(module.roles[bar] == nil, "outdoor PvP zone inherited dungeon role colors")
+    C_PvP = previousPvp
+    events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
 end
 do
     local nativeTimer, nativeClassification = C_Timer, UnitClassification
@@ -530,8 +550,13 @@ assert(auraButton.mouseWrites == auraWrites, "unchanged aura clickthrough repeat
 module.config.auraClickthrough = false
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(auraButton.mouseClickEnabled == true, "aura clickthrough did not restore native clicks")
+module.config.enemyRaidIcon = false
+events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+assert(raidIcon:GetAlpha() == 0, "native raid icon was not hidden on an existing enemy plate")
 module.active = false
 module:Disable()
+assert(raidIcon:GetAlpha() == 0.8, "disabling the module did not restore Blizzard's raid icon")
+module.config.enemyRaidIcon = true
 assert(scans == 5 and bar.barTexture.texture == "native-health"
     and not module.visuals[bar].back:IsShown(), "native frame was not restored")
 assert(not module.visuals[bar].fill:IsShown() and name.font == "native-font" and name.fontSize == 10,
@@ -553,6 +578,14 @@ module.config.enemyRaidIcon = true
 module:Refresh()
 assert(cvars.nameplateInfoDisplay == string.char(1, 71) and raidIcon:GetAlpha() == 0.8,
     "native icon switches did not restore their prior state")
+module.config.enemyTextMode, module.config.enemyRarityIcon = 1, 3
+module:Refresh()
+assert(cvars.nameplateInfoDisplay == string.char(1),
+    "hiding the rarity icon while keeping Blizzard health text did not restore the original text flags")
+module.config.enemyTextMode, module.config.enemyRarityIcon = 4, 1
+module:Refresh()
+assert(cvars.nameplateInfoDisplay == string.char(1, 71),
+    "reverting the rarity switch did not restore the native icon with Jundies health text")
 module.config.enemyNameOffsetX, module.config.enemyNameOffsetY = 22, -6
 module.config.enemyCastOffsetX, module.config.enemyCastOffsetY = 0, -10
 module:Refresh()
@@ -657,27 +690,27 @@ events.UNIT_FACTION(module, "UNIT_FACTION", "nameplate1")
 assert(module.roles[bar] == "Melee", "secret player-control hint suppressed an NPC role")
 UnitPlayerControlled = nil
 
--- Normal and focus textures work without any role tint and follow native reanchoring.
+-- Role tint is an owned overlay; no user texture may replace Blizzard's fill.
 module.config.enemyRoleColors = false
-module.config.enemyHealthTexture, module.config.enemyFocusHealthTexture = "custom-health", "custom-focus"
 module:Refresh()
-assert(bar.barTexture.texture == "custom-health" and not module.visuals[bar].fill:IsShown())
+assert(bar.barTexture.texture == "native-health" and not module.visuals[bar].fill:IsShown())
 focusUnit = "nameplate1"
 events.PLAYER_FOCUS_CHANGED(module, "PLAYER_FOCUS_CHANGED")
-assert(bar.barTexture.texture == "custom-focus", "focus texture incorrectly depends on focus tint")
+assert(bar.barTexture.texture == "native-health", "focus changed Blizzard's native texture")
 module.config.enemyRoleColors = true
+module.config.enemyFocusEnabled = true
 module:Refresh()
-assert(module.visuals[bar].fill.texture == "custom-focus" and module.roles[bar] == "Melee",
-    "base role overlay hid the independent focus texture when focus tint was off")
+assert(module.roles[bar] == "Focus" and module.visuals[bar].fill:IsShown(),
+    "focus role overlay was not restored")
 module.config.enemyRoleColors = false
+module.config.enemyFocusEnabled = false
 
 bar.barTexture:SetAtlas("new-native-atlas")
 layoutHook(uf)
-assert(bar.barTexture.texture == "custom-focus", "Blizzard layout reset the custom focus texture")
+assert(bar.barTexture.atlas == "new-native-atlas", "layout altered Blizzard's native texture")
 focusUnit = nil
 events.PLAYER_FOCUS_CHANGED(module, "PLAYER_FOCUS_CHANGED")
-assert(bar.barTexture.texture == "custom-health", "former focus kept the focus texture")
-module.config.enemyHealthTexture, module.config.enemyFocusHealthTexture = "", ""
+assert(bar.barTexture.atlas == "new-native-atlas", "former focus altered Blizzard's native texture")
 module:Refresh()
 assert(bar.barTexture.atlas == "new-native-atlas", "texture reset lost the latest native atlas")
 
@@ -963,53 +996,16 @@ module:Refresh()
 assert(not marker:IsShown() and module.visuals[bar].targetBorder.edges[1]:IsShown())
 module:Disable()
 
--- Health textures retain native masks/coordinates; focus works on both sides.
 do
-    local c = module.config
     module.active, uf.isFriend, uf.isPlayer = true, false, false
-    c.look = 3
-    c.enemyHealthTexture, c.enemyFocusHealthTexture = "shape-fill", "focus-fill"
-    c.enemyRoleColors, c.enemyQuestColors = true, false
+    module.config.look = 3
+    module.config.enemyRoleColors, module.config.enemyQuestColors = true, false
     classification, unitLevel, targetUnit, focusUnit = "normal", 90, nil, nil
-    bar.barTexture:SetTexture("native-shaped-health")
-    bar.barTexture:SetTexCoord(.1, .9, .2, .8)
+    local nativeTexture = bar.barTexture.texture
     module:Refresh()
-    local mask = assert(bar.barTexture.mask)
-    assert(mask.texture == "native-shaped-health" and mask.coords[1] == .1 and mask.coords[8] == .8
-        and bar.barTexture.coords[1] == 0 and bar.barTexture.coords[8] == 1,
-        "custom health texture did not preserve the native silhouette")
-    assert(module.visuals[bar].fill.mask == mask, "role color overlay escaped the native shape")
-    local masks = bar.masksCreated
-    for _ = 1, 5 do layoutHook(uf) end
-    assert(bar.masksCreated == masks, "layout allocated a fresh mask each time")
-    c.enemyHealthTexture, c.enemyFocusHealthTexture = "", ""
-    c.friendlyHealthTexture, c.friendlyFocusHealthTexture = "friendly-fill", "friendly-focus"
-    module:Refresh()
-    assert(bar.barTexture.texture == "native-shaped-health" and not bar.barTexture.mask
-        and not module.visuals[bar].fill.mask and bar.barTexture.coords[1] == .1,
-        "enemy inherited friendly texture or did not restore its own mask/coordinates")
+    assert(bar.barTexture.texture == nativeTexture and module.visuals[bar].fill:IsShown(),
+        "role skin replaced Blizzard's health texture")
     uf.isFriend = true
-    module:Refresh()
-    assert(bar.barTexture.texture == "friendly-fill")
-    focusUnit = "nameplate1"
-    events.PLAYER_FOCUS_CHANGED(module, "PLAYER_FOCUS_CHANGED")
-    assert(bar.barTexture.texture == "friendly-focus", "friendly focus texture did not react to focus change")
-    local old = bar.barTexture
-    bar.barTexture = Region()
-    bar.barTexture:SetAtlas("replacement-native")
-    layoutHook(uf)
-    assert(bar.barTexture.texture == "friendly-focus" and bar.barTexture.mask.atlas == "replacement-native"
-        and old.texture == "native-shaped-health" and not old.mask, "replaced native fill was not restored/rebound")
-    c.friendlyHealthTexture, c.friendlyFocusHealthTexture = "", ""
-    module:Refresh()
-    assert(bar.barTexture.atlas == "replacement-native" and not bar.barTexture.mask)
-    c.friendlyHealthTexture = "unsafe-override"
-    bar.barTexture.coords[1] = "secret"
-    module:Refresh()
-    assert(bar.barTexture.atlas == "replacement-native" and not private.Textures.saved[bar],
-        "secret texture coordinates were retained or used to skin a region")
-    c.friendlyHealthTexture = ""
-    bar.barTexture:SetTexCoord(0, 1, 0, 1)
 end
 
 -- Friendly NPC markers and cast text have their own live settings and restore.

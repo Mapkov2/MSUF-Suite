@@ -12,5 +12,4 @@ Bootstrap.lua
 Layout.lua
 Roles.lua
 Text.lua
-Textures.lua
 Skin.lua
