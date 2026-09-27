@@ -425,7 +425,8 @@ local function IndexBases()
 end
 
 -- Stock bar contents for this spec (what a reset restores). Guide-authored
--- order/category moves refine Utility and both buff rows for this spec.
+-- order/category moves refine Utility and both buff rows for this spec; one
+-- profile can also choose the exact default Buffs row.
 -- Current client records are authoritative: guide IDs that no longer exist
 -- disappear, while newly added client IDs append in stock order. The
 -- player's saved Blizzard layout is still an explicit import.
@@ -446,6 +447,20 @@ local function FillDefaults(records)
     wipe(defaultSeen)
     for i = 1, #(guideOrder or EMPTY) do AddDefault(records, guideMoves, guideOrder[i]) end
     for i = 1, #defaultOrder do AddDefault(records, guideMoves, defaultOrder[i]) end
+    -- A guide may name one exact tracked-buff row. This affects only Suite's
+    -- default contents: the saved Blizzard layout and user lists stay intact.
+    local buffIcons = guide and guide.buffIcons
+    if buffIcons then
+        local list = defaultBars.buf
+        wipe(list)
+        for i = 1, #buffIcons do
+            local id = buffIcons[i]
+            local rec = records[id]
+            if rec and BAR_OF[guideMoves and guideMoves[id] or rec.defaultCategory] == "buf" then
+                list[#list + 1] = rec.key
+            end
+        end
+    end
 end
 
 -- Category, family and bar of every record in the effective order; known

@@ -347,6 +347,27 @@ Same("guide fallback utility",Keys(Catalog.defaultByBar.uti),"b111,b112")
 Same("guide fallback buff icons",Keys(Catalog.defaultByBar.buf),"b201,b202,b801,b601")
 Same("guide fallback buff bars",Keys(Catalog.defaultByBar.bar),"b301")
 
+-- CDMC's Assassination tracked-buff assignments form one short Suite default
+-- row. Hidden-by-default entries are eligible there, while Blizzard's own
+-- layout and absent client records remain authoritative in their paths.
+local assaIDs={42046,105492,31054}
+for _,id in ipairs(assaIDs) do
+    sets[2][#sets[2]+1]=id
+    infos[id]=Info(id,2,id,{flags=id==105492 and 0 or 2})
+end
+C.state.specID=259
+Catalog.Rebuild()
+Same("Assassination CDMC buff row",Keys(Catalog.defaultByBar.buf),"b42046,b105492,b31054")
+assert(recs[42046].category==-2 and recs[31054].category==-2,
+    "the Suite default must not move the saved Blizzard layout")
+infos[105492]=nil
+Catalog.Rebuild()
+Same("Assassination absent client buff",Keys(Catalog.defaultByBar.buf),"b42046,b31054")
+for _=1,#assaIDs do sets[2][#sets[2]]=nil end
+for _,id in ipairs(assaIDs) do infos[id]=nil end
+C.state.specID=nil
+Catalog.Rebuild()
+
 ------------------------------------------------------------------ catalog: layout versions
 local function Layout(key,data) layouts[key]=data;layoutBlob="1|"..key;Catalog.Rebuild() end
 -- v5: saved order merge (unknown 999 dropped), pool item 7 -> Essential,
@@ -1324,5 +1345,23 @@ Catalog.Rebuild()
 C.lists=CDM.CleanLists({specs={[259]={uti={"b200004"}}},replace={[259]={uti=true}}})
 plans=Resolve.Build()
 assert(E.b200004 and E.b200004.slot=="uti","imported Rogue Feint move must remain in Utility")
+
+-- The three CDMC assignments become the visible Suite row when Assassination
+-- has no saved row. A deliberate per-spec Suite list still replaces it.
+for _,id in ipairs(assaIDs) do
+    sets[2][#sets[2]+1]=id
+    infos[id]=Info(id,2,id,{flags=id==105492 and 0 or 2})
+    names[id],textures[id]="Assassination buff "..id,{id,id}
+end
+C.lists=CDM.CleanLists(nil)
+Catalog.Rebuild()
+plans=Resolve.Build()
+Same("Assassination visible CDMC row",Keys(plans.buf.entries),"b42046,b105492,b31054")
+C.lists=CDM.CleanLists({specs={[259]={buf={"b201"}}},replace={[259]={buf=true}}})
+plans=Resolve.Build()
+Same("Assassination saved Suite row",Keys(plans.buf.entries),"b201")
+for _=1,#assaIDs do sets[2][#sets[2]]=nil end
+for _,id in ipairs(assaIDs) do infos[id],names[id],textures[id]=nil,nil,nil end
+Catalog.Rebuild()
 
 print("cooldown manager data contract ok: "..#Catalog.order.." records, "..#Index.cooldown.." cooldown entries")

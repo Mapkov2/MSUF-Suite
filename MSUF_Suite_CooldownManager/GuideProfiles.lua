@@ -3,9 +3,10 @@ local C = P.CDM
 
 -- Guide-authored Cooldown Manager layout recommendations for Retail 12.1.
 -- Derived from the public Wowhead UI & Macros imports audited on 2026-09-25.
--- Only cooldownID order and category moves are kept. The client's current
--- catalog decides which IDs still exist; unknown IDs are ignored. The
--- user's saved Blizzard layout and Suite per-spec lists are untouched.
+-- Only cooldownID order, category moves and an optional exact buff row are
+-- kept. The client's current catalog decides which IDs still exist; unknown
+-- IDs are ignored. The user's saved Blizzard layout and Suite per-spec lists
+-- are untouched.
 -- Discipline Priest's very short guide import contains no category moves
 -- or order, so its Utility and buff rows use client defaults.
 C.GuideProfiles = {
@@ -400,6 +401,10 @@ C.GuideProfiles = {
     },
     [259] = { -- Assassination Rogue
         -- https://www.wowhead.com/guide/classes/rogue/assassination/addons-macro-ui-imports
+        -- The local CooldownManagerCentered Assassination profile assigns these
+        -- Blizzard tracked buffs to its first container in this order. Keep
+        -- the Suite default row equally short; personal Suite lists still win.
+        buffIcons = { 42046, 105492, 31054 },
         order = {
         30844, 30847, 30853, 30838, 30835, 30870, 103939, 103940, 103941, 104172, 62774, 104173,
         30850, 104034, 90620, 31024, 34594, 30875, 35159, 31035, 31019, 62964, 31029, 30858,
@@ -412,13 +417,15 @@ C.GuideProfiles = {
         },
         moves = {
             -- category -2
-            [35257] = -2, [42046] = -2, [35224] = -2, [31054] = -2,
+            [35257] = -2, [35224] = -2,
             -- category -1
             [62774] = -1, [104173] = -1, [30850] = -1, [104034] = -1, [90620] = -1, [31024] = -1,
             [34594] = -1, [31035] = -1, [31019] = -1, [62964] = -1, [31029] = -1, [30858] = -1,
             [30864] = -1, [37665] = -1, [30825] = -1, [30867] = -1, [31032] = -1, [30861] = -1,
             -- category 0
             [30870] = 0,
+            -- CDMC's first tracked-buff container
+            [42046] = 2, [105492] = 2, [31054] = 2,
         },
     },
     [260] = { -- Outlaw Rogue
