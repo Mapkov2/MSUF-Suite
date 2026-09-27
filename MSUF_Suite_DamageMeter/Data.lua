@@ -251,23 +251,26 @@ local function TargetIndex(session)
         if not Public(name) or type(name) ~= "string" or not Public(class) or type(class) ~= "string" then
             return nil
         end
-        if class ~= "" then
-            local player = { name = name, class = class }
-            if full[name] ~= nil then full[name] = false else full[name] = player end
-            local abbreviated = Ambiguate(name, "short")
-            if not Public(abbreviated) or type(abbreviated) ~= "string" then return nil end
-            if short[abbreviated] ~= nil then short[abbreviated] = false else short[abbreviated] = player end
-        end
+        local player = { name = name, class = class }
+        if full[name] ~= nil then full[name] = false else full[name] = player end
+        local abbreviated = Ambiguate(name, "short")
+        if not Public(abbreviated) or type(abbreviated) ~= "string" then return nil end
+        if short[abbreviated] ~= nil then short[abbreviated] = false else short[abbreviated] = player end
     end
     return full, short
 end
 
 local function TargetPlayer(full, short, name, class)
     local player = full[name]
-    -- A realm-less name is ambiguous when several roster entries share it.
-    if short[name] == false then player = nil end
+    -- A complete realm-qualified name remains usable when its short form is
+    -- ambiguous; only short-name lookups must fail closed in that case.
     if not player then player = short[name] end
-    if not player or player == false or (class ~= "" and player.class ~= class) then return nil end
+    if not player then
+        local abbreviated = Ambiguate(name, "short")
+        if not Public(abbreviated) or type(abbreviated) ~= "string" then return nil end
+        player = short[abbreviated]
+    end
+    if not player or player == false or (class ~= "" and player.class ~= "" and player.class ~= class) then return nil end
     return player.name
 end
 
@@ -282,10 +285,22 @@ local function EnemySession(win)
 end
 
 local function EnemySource(win, guid, creature)
-    if win.sessionID then
-        return C_DamageMeter.GetCombatSessionSourceFromID(win.sessionID, D.ENEMY, guid, creature)
+    local function Fetch(sourceGUID, sourceCreatureID)
+        if win.sessionID then
+            return C_DamageMeter.GetCombatSessionSourceFromID(win.sessionID, D.ENEMY, sourceGUID, sourceCreatureID)
+        end
+        return C_DamageMeter.GetCombatSessionSourceFromType(win.sessionType, D.ENEMY, sourceGUID, sourceCreatureID)
     end
-    return C_DamageMeter.GetCombatSessionSourceFromType(win.sessionType, D.ENEMY, guid, creature)
+    -- The enemy view is keyed by creature ID on some clients. Prefer that
+    -- lookup, then fall back to the exact identity used by Blizzard's UI.
+    if creature then
+        local detail = Fetch(nil, creature)
+        if type(detail) == "table" and D.Count(detail.combatSpells) > 0 then return detail end
+    end
+    local detail = Fetch(guid, creature)
+    if type(detail) == "table" and D.Count(detail.combatSpells) > 0 then return detail end
+    if guid and creature then return Fetch(guid, nil) end
+    return detail
 end
 
 local function BuildTargets(win)
@@ -321,10 +336,10 @@ local function BuildTargets(win)
             if attacker ~= "" then
                 local playerName = TargetPlayer(full, short, attacker, class)
                 if playerName then
-                    local amount = data.amount
-                    if not Public(amount) then return nil end
-                    if amount == nil then amount = spell.totalAmount end
-                    if not Finite(amount) then return nil end
+                    -- The enemy entry's spell total is the amount represented
+                    -- by this attacker row in the native meter.
+                    local amount = spell.totalAmount
+                    if not Public(amount) or not Finite(amount) then return nil end
                     if amount > 0 then
                         local player = players[playerName]
                         if not player then
@@ -351,23 +366,73 @@ local function BuildTargets(win)
     return players
 end
 
+-- HealingDone/Hps source spells can contain one recipient in their unit
+-- details. Aggregate those public values only when the tooltip is opened.
+-- A secret field cannot be used as a table key or summed by addon Lua.
+local function HealingTargets(detail)
+    local spells = detail and detail.combatSpells
+    if type(spells) ~= "table" or not Public(spells) then return nil end
+    local count = #spells
+    if not Public(count) then return nil end
+    local index, list, sum = {}, {}, 0
+    for i = 1, count do
+        local spell = spells[i]
+        if type(spell) ~= "table" or not Public(spell) then return nil end
+        local data = spell.combatSpellDetails
+        if not Public(data) then return nil end
+        if type(data) == "table" then
+            local name, amount = data.unitName, data.amount
+            if not Public(name) or not Public(amount) then return nil end
+            if type(name) == "string" and name ~= "" and Finite(amount) and amount > 0 then
+                local entry = index[name]
+                if not entry then
+                    local class, spec = data.unitClassFilename, data.specIconID
+                    entry = { name = name, amount = 0,
+                        class = Public(class) and type(class) == "string" and class or "",
+                        spec = Finite(spec) and spec or 0 }
+                    index[name] = entry
+                    list[#list + 1] = entry
+                end
+                entry.amount = entry.amount + amount
+                sum = sum + amount
+            end
+        end
+    end
+    if #list == 0 then return nil end
+    table.sort(list, ByAmount)
+    return list, #list, sum
+end
+
 function D.InvalidateTargets()
     M.targetRevision = (M.targetRevision or 0) + 1
 end
 
-function D.TargetGroups(win, source)
-    if M.inCombat or NS.IsCombatLocked() or M.preview or (win.meterType ~= 0 and win.meterType ~= 1) then return nil end
+function D.TargetGroups(win, source, detail)
+    if M.inCombat or NS.IsCombatLocked() or M.preview then return nil end
+    if win.meterType == 2 or win.meterType == 3 then return HealingTargets(detail) end
+    if win.meterType ~= 0 and win.meterType ~= 1 then return nil end
+    if not source then return nil end
     local name = source.name
     if not Public(name) or type(name) ~= "string" then return nil end
     local cache = win.targetCache
     if not cache or cache.revision ~= M.targetRevision or cache.sessionID ~= win.sessionID
         or cache.sessionType ~= win.sessionType then
-        cache = { revision = M.targetRevision, sessionID = win.sessionID, sessionType = win.sessionType,
-            players = BuildTargets(win) or {} }
+        cache = { revision = M.targetRevision, sessionID = win.sessionID, sessionType = win.sessionType }
         win.targetCache = cache
     end
-    local player = cache.players[name]
+    -- The inverse view can arrive shortly after the damage view at a combat
+    -- edge. A failed read gets a short cooldown instead of being cached for
+    -- the rest of the fight/session.
+    local now = GetTime()
+    if not cache.players and (not cache.retryAt or now >= cache.retryAt) then
+        local players = BuildTargets(win)
+        if players and next(players) then
+            cache.players, cache.retryAt = players, nil
+        else
+            cache.retryAt = now + 1
+        end
+    end
+    local player = cache.players and cache.players[name]
     if not player then return nil end
-    local total = Finite(source.totalAmount) and source.totalAmount or player.sum
-    return player.list, #player.list, total
+    return player.list, #player.list, player.sum
 end

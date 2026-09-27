@@ -249,13 +249,23 @@ local function Session(meterType)
     return {combatSources=list,maxAmount=V(api.roster[1].total,"max"),totalAmount=V(sum,"sum"),durationSeconds=V(100,"duration")}
 end
 local function Detail(meterType, creature)
+    if (meterType==2 or meterType==3) and api.healTargetMode then
+        local function Heal(id,amount,unit,class)
+            return {spellID=V(id,"healspell"),totalAmount=V(amount,"healtotal"),amountPerSecond=V(amount/100,"healpps"),
+                creatureName="",combatSpellDetails={unitName=V(unit,"healunit"),unitClassFilename=class,
+                    amount=V(amount,"healamount"),specIconID=0}}
+        end
+        return {combatSpells={Heal(2061,600,"Me","MAGE"),Heal(2061,400,"Me","MAGE"),
+            Heal(2060,300,"Healer-Realm","PRIEST")},maxAmount=600,totalAmount=1300}
+    end
     if meterType==10 then
-        local function Hit(id,amount,unit,class) return {spellID=V(id,"spell"),totalAmount=V(amount,"hit"),amountPerSecond=V(amount/100,"hitpps"),
-            creatureName="",combatSpellDetails={unitName=V(unit,"unit"),unitClassFilename=class,amount=V(amount,"detail"),specIconID=0}} end
+        local function Hit(id,amount,unit,class,detailAmount) return {spellID=V(id,"spell"),totalAmount=V(amount,"hit"),amountPerSecond=V(amount/100,"hitpps"),
+            creatureName="",combatSpellDetails={unitName=V(unit,"unit"),unitClassFilename=class,
+                amount=V(detailAmount or amount,"detail"),specIconID=0}} end
         if api.targetMode and creature==100 then
             return {combatSpells={Hit(133,400,"Tank","WARRIOR"),Hit(116,300,"Me","MAGE")},maxAmount=400,totalAmount=700}
         end
-        return {combatSpells={Hit(133,1000,"Tank","WARRIOR"),Hit(116,700,"Me","MAGE"),Hit(6343,600,"Tank","WARRIOR")},maxAmount=V(1000,"smax"),totalAmount=V(2300,"ssum")}
+        return {combatSpells={Hit(133,1000,"Tank","WARRIOR",100),Hit(116,700,"Me","MAGE"),Hit(6343,600,"Tank","WARRIOR")},maxAmount=V(1000,"smax"),totalAmount=V(2300,"ssum")}
     end
     return {combatSpells={
         {spellID=V(133,"spell1"),totalAmount=V(600000,"spelltotal1"),amountPerSecond=V(6000,"spellpps1"),creatureName="",combatSpellDetails={}},
@@ -586,7 +596,9 @@ assert(win.timer.text=="(0:02)","live header timer should follow the combat cloc
 
 -- Breakdown: another player's secret row is blocked; the own row maps to UnitGUID("player").
 local sources=api.source
+strictFontText=true
 Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
+strictFontText=false
 assert(win.bd.open and win.bd.blocked and win.panel.shown,"blocked breakdown did not open")
 assert(win.panel.message.text=="Details are available after combat." and api.source==sources,"secret identity queried the API")
 win.panel.scripts.OnClick(win.panel,"RightButton")
@@ -607,7 +619,9 @@ assert(not win.bd.open)
 
 -- Hover tooltip: built once per hover with the same rules.
 sources=api.source
+strictFontText=true
 Row(win,1).scripts.OnEnter(Row(win,1))
+strictFontText=false
 assert(M.tip.shown and M.tip.message.text=="Details are available after combat." and api.source==sources)
 Row(win,1).scripts.OnLeave(Row(win,1))
 assert(not M.tip.shown)
@@ -926,30 +940,53 @@ api.targetMode=true
 D.InvalidateTargets()
 local targetSources,targetFetches=api.source,api.fetch
 Row(win,1).scripts.OnEnter(Row(win,1))
-assert(M.tip.title.text=="Tank - Targets" and M.tip.rows[1].nameText.text=="Boss"
-    and M.tip.rows[1].valueText.text:find("1.60K",1,true)
-    and M.tip.rows[2].nameText.text=="Add" and M.tip.rows[2].valueText.text:find("400",1,true),
-    "hover did not show the player's damage per target")
-assert(api.source==targetSources+2 and api.fetch==targetFetches+1,
-    "target hover did not use one enemy session and one source per enemy")
+assert(M.tip.title.text=="Tank - Damage Done" and M.tip.rows[1].nameText.text=="Spell133"
+    and M.tip.rows[2].nameText.text=="Spell2136 (Pet)" and M.tip.section.shown
+    and M.tip.rows[3].nameText.text=="Boss" and M.tip.rows[3].valueText.text:find("1.60K",1,true)
+    and M.tip.rows[4].nameText.text=="Add" and M.tip.rows[4].valueText.text:find("400",1,true),
+    "hover did not keep abilities above the target breakdown")
+assert(api.source==targetSources+3 and api.fetch==targetFetches+1,
+    "target hover did not fetch one ability source and one source per enemy")
 Row(win,1).scripts.OnLeave(Row(win,1))
+-- Abilities remain the default; the visible Targets tab opens the percentages.
+Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
+assert(win.bd.open and win.bdRows[1].nameText.text=="Spell133"
+    and win.panel.targetsTab.shown and win.panel.spellsTab.shown,
+    "clicked damage breakdown hid abilities or its target tab")
+win.panel.targetsTab.scripts.OnClick(win.panel.targetsTab)
+assert(win.bd.open and win.panel.title.text=="Tank"
+    and win.bdRows[1].nameText.text=="Boss" and win.bdRows[1].valueText.text=="1.60K 80%"
+    and win.bdRows[2].nameText.text=="Add" and win.bdRows[2].valueText.text=="400 20%",
+    "target tab did not show target percentages")
+win.panel.spellsTab.scripts.OnClick(win.panel.spellsTab)
+assert(win.bd.open and win.bdRows[1].nameText.text=="Spell133",
+    "abilities tab did not restore the spell breakdown")
+win.panel.scripts.OnClick(win.panel,"LeftButton")
+assert(not win.bd.open,"left click did not close the breakdown")
 targetSources,targetFetches=api.source,api.fetch
 Row(win,2).scripts.OnEnter(Row(win,2))
-assert(M.tip.title.text=="Me - Targets" and M.tip.rows[1].nameText.text=="Boss"
-    and M.tip.rows[2].nameText.text=="Add" and api.source==targetSources and api.fetch==targetFetches,
+assert(M.tip.title.text=="Me - Damage Done" and M.tip.rows[1].nameText.text=="Spell133"
+    and M.tip.rows[3].nameText.text=="Boss" and M.tip.rows[4].nameText.text=="Add"
+    and api.source==targetSources+1 and api.fetch==targetFetches,
     "another player's hover rebuilt the unchanged target cache")
 Row(win,2).scripts.OnLeave(Row(win,2))
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",10,0)
 Row(win,1).scripts.OnEnter(Row(win,1))
-assert(api.source==targetSources+2 and api.fetch==targetFetches+1,
+assert(api.source==targetSources+4 and api.fetch==targetFetches+1,
     "enemy damage update did not invalidate the hover cache")
 Row(win,1).scripts.OnLeave(Row(win,1))
 S.Set("damageMeter","numberFormat",1)
 Row(win,1).scripts.OnEnter(Row(win,1))
-assert(M.tip.rows[1].valueText.text:find("1.60K",1,true),
+assert(M.tip.rows[3].valueText.text:find("1.60K",1,true),
     "DPS-only number format hid the target damage amount")
 Row(win,1).scripts.OnLeave(Row(win,1))
 S.Set("damageMeter","numberFormat",3)
+local className=win.session.combatSources[1].classFilename
+win.session.combatSources[1].classFilename=""
+D.InvalidateTargets()
+assert(D.TargetGroups(win,win.session.combatSources[1])~=nil,
+    "a source without a class lost its native enemy target data")
+win.session.combatSources[1].classFilename=className
 api.secret=true
 D.InvalidateTargets()
 targetSources=api.source
@@ -958,7 +995,54 @@ assert(D.TargetGroups(win,win.session.combatSources[1])==nil and api.source==tar
 api.secret=false
 api.targetMode=false
 D.InvalidateTargets()
+api.empty=true
+Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
+assert(win.bdRows[1].nameText.text=="Spell133","missing target data hid abilities")
+win.panel.targetsTab.scripts.OnClick(win.panel.targetsTab)
+assert(win.panel.title.text=="Tank" and win.panel.message.text=="Target data unavailable"
+    and not win.bdRows[1].shown,"missing target data silently fell back to abilities")
+win.panel.spellsTab.scripts.OnClick(win.panel.spellsTab)
+assert(win.bdRows[1].nameText.text=="Spell133","abilities were not available after switching views")
+api.empty=false
+now=now+2
+win.panel.targetsTab.scripts.OnClick(win.panel.targetsTab)
+assert(win.bdRows[1].nameText.text=="Boss" and win.bdRows[1].valueText.text=="1.60K 100%",
+    "a temporarily empty enemy view remained cached after native data arrived")
+win.panel.scripts.OnClick(win.panel,"LeftButton")
+-- A source panel opened from a restricted snapshot must refresh its session
+-- when the player asks for targets after that snapshot becomes readable.
+api.targetMode=true
+api.secret=true
+win.session=Session(0)
+D.OpenBreakdown(win,2)
+assert(win.bd.open and not win.bd.blocked,"own restricted row did not open")
+api.secret=false
+D.InvalidateTargets()
+win.panel.targetsTab.scripts.OnClick(win.panel.targetsTab)
+assert(win.bdRows[1].nameText.text=="Boss" and win.bdRows[2].nameText.text=="Add",
+    "targets used a secret-bearing combat snapshot after the restriction lifted")
+win.panel.scripts.OnClick(win.panel,"LeftButton")
+api.targetMode=false
+-- Healing uses recipients supplied by the native source details.
+api.healTargetMode=true
+S.Set("damageMeter","w1Type",3)
+targetSources=api.source
+Row(win,1).scripts.OnEnter(Row(win,1))
+assert(M.tip.title.text=="Tank - "..D.TypeName(2) and M.tip.rows[1].nameText.text=="Spell2061 - Me"
+    and M.tip.rows[4].nameText.text=="Me" and M.tip.rows[4].valueText.text:find("1.00K",1,true)
+    and M.tip.rows[5].nameText.text=="Healer" and api.source==targetSources+1,
+    "healing recipients were not aggregated from one native source read")
+Row(win,1).scripts.OnLeave(Row(win,1))
+api.secret=true
+assert(D.TargetGroups(win,win.session.combatSources[1],Detail(2))==nil,
+    "secret healing recipients were aggregated")
+api.secret=false
+api.healTargetMode=false
+S.Set("damageMeter","w1Type",1)
 combat=true;Event("PLAYER_REGEN_DISABLED")
+Row(win,1).scripts.OnEnter(Row(win,1))
+assert(M.tip.message.text=="Targets after combat", "combat target restriction was not explained")
+Row(win,1).scripts.OnLeave(Row(win,1))
 Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
 assert(win.bd.open and api.lastGUID=="Player-Tank" and win.bdRows[1].nameText.text=="Spell133" and win.bdRows[1].icon.shown,
     "plain data must allow any breakdown in combat")
@@ -967,6 +1051,24 @@ assert(win.bdRows[2].nameText.text=="Spell2136 (Pet)","pet suffix missing")
 win.bdRows[1].scripts.OnEnter(win.bdRows[1])
 assert(GameTooltip.owner==win.bdRows[1] and GameTooltip.spell==133,"spell tooltip missing")
 win.bdRows[1].scripts.OnLeave(win.bdRows[1])
+local enemyDetail=Detail(10,99)
+D.PaintSpell(win.bdRows[1],enemyDetail.combatSpells[1],enemyDetail,10,"")
+assert(win.bdRows[1].nameText.text=="Spell133 - Tank", "enemy spell omitted the attacking unit")
+api.secret=true
+local secretEnemy=Detail(10,99)
+D.PaintSpell(win.bdRows[1],secretEnemy.combatSpells[1],secretEnemy,10,"")
+assert(type(win.bdRows[1].nameText.text)=="table" and IsSecret(win.bdRows[1].nameText.text.args[2]),
+    "secret attacker name was not passed directly to the text sink")
+api.healTargetMode=true
+local secretHealing=Detail(2)
+D.PaintSpell(win.bdRows[1],secretHealing.combatSpells[1],secretHealing,2,"")
+assert(type(win.bdRows[1].nameText.text)=="table" and IsSecret(win.bdRows[1].nameText.text.args[2]),
+    "secret healing recipient was not passed directly to the text sink")
+api.secret=false
+D.PaintSpell(win.bdRows[1],Detail(0).combatSpells[1],Detail(0),0,"")
+assert(win.bdRows[1].nameText.text=="Spell133", "recycled row kept an attacker or recipient suffix")
+api.healTargetMode=false
+D.RefreshBreakdown(win)
 combat=false;Event("PLAYER_REGEN_ENABLED")
 -- Visibility "Never" without the standalone timer: a combat that starts in
 -- Edit Mode must still end, or the options preview is refused afterwards.
@@ -1009,4 +1111,4 @@ for _,file in ipairs(files) do
 end
 -- Paints and clock seconds never create timer objects (C_Timer.NewTimer).
 assert(#timers==0,"the meter created "..#timers.." timer objects for paints or clock ticks")
-print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, target hover and breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")
+print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, damage and healing targets, combat spell unit labels, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

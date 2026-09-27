@@ -1,5 +1,6 @@
 local _, P = ...
 local S = P.Suite
+local NS = P.NS
 -- Spell breakdowns: the in-window panel (click a row) and the hover tooltip.
 -- Both fetch a source only with a plain identity (D.Identity); a row whose
 -- identity is secret shows an explanation instead of querying the API.
@@ -9,9 +10,18 @@ local Public, Finite = S.Public, S.Finite
 local max, min = math.max, math.min
 local TIP_WIDTH, TIP_PAD, TIP_ROW = 260, 6, 17
 
+local function StyleTabs(panel, view)
+    local selected = M.style
+    panel.targetsTab.text:SetTextColor(view == "targets" and selected.leftR or .6,
+        view == "targets" and selected.leftG or .6, view == "targets" and selected.leftB or .6)
+    panel.spellsTab.text:SetTextColor(view == "spells" and selected.leftR or .6,
+        view == "spells" and selected.leftG or .6, view == "spells" and selected.leftB or .6)
+end
+
 local function StylePanel(win)
     local panel, style = win.panel, M.style
     panel.styleGen = M.styleGen
+    panel.styledType = win.meterType
     local height = style.barHeight
     panel.back:ClearAllPoints()
     panel.back:SetSize(height, height)
@@ -20,7 +30,19 @@ local function StylePanel(win)
     panel.title:SetTextColor(style.leftR, style.leftG, style.leftB)
     panel.title:ClearAllPoints()
     panel.title:SetPoint("LEFT", panel.back, "RIGHT", 3, style.baseline)
-    panel.title:SetPoint("RIGHT", panel, "RIGHT", -3, style.baseline)
+    panel.spellsTab:ClearAllPoints()
+    panel.spellsTab:SetSize(58, height)
+    panel.spellsTab:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, 0)
+    panel.targetsTab:ClearAllPoints()
+    panel.targetsTab:SetSize(58, height)
+    panel.targetsTab:SetPoint("RIGHT", panel.spellsTab, "LEFT", -2, 0)
+    D.FontStyle(panel.targetsTab.text, 10)
+    D.FontStyle(panel.spellsTab.text, 10)
+    if win.meterType <= 3 then
+        panel.title:SetPoint("RIGHT", panel.targetsTab, "LEFT", -3, style.baseline)
+    else
+        panel.title:SetPoint("RIGHT", panel, "RIGHT", -3, style.baseline)
+    end
     D.FontStyle(panel.message, style.leftSize)
     panel.message:SetTextColor(.8, .8, .8)
     local top = -(height + style.spacing + 6)
@@ -45,6 +67,19 @@ function D.EnsurePanel(win)
     panel.title = S.CreateFontString(panel, nil, "OVERLAY")
     panel.title:SetJustifyH("LEFT")
     panel.title:SetWordWrap(false)
+    local function Tab(text, view)
+        local button = S.CreateFrame("Button", nil, panel)
+        button.win = win
+        button:RegisterForClicks("LeftButtonUp")
+        button.text = S.CreateFontString(button, nil, "OVERLAY")
+        button.text:SetAllPoints(button)
+        button.text:SetJustifyH("CENTER")
+        D.FontStyle(button.text, 10)
+        button.text:SetText(S.Text(text))
+        button:SetScript("OnClick", function() D.SetBreakdownView(win, view) end)
+        return button
+    end
+    panel.targetsTab, panel.spellsTab = Tab("Targets", "targets"), Tab("Spells", "spells")
     panel.message = S.CreateFontString(panel, nil, "OVERLAY")
     panel.message:SetJustifyH("CENTER")
     panel:Hide()
@@ -60,9 +95,11 @@ end
 
 function D.ShowPanel(win, blocked)
     local panel = D.EnsurePanel(win)
-    if panel.styleGen ~= M.styleGen then StylePanel(win) end
+    if panel.styleGen ~= M.styleGen or panel.styledType ~= win.meterType then StylePanel(win) end
     local bd = win.bd
     bd.open, bd.blocked, bd.offset = true, blocked, 0
+    panel.targetsTab:SetShown(not blocked and win.meterType <= 3)
+    panel.spellsTab:SetShown(not blocked and win.meterType <= 3)
     local name = bd.name
     panel.title:SetText(D.Short(name))
     D.HideTip()
@@ -85,7 +122,8 @@ function D.OpenBreakdown(win, index)
     bd.guid, bd.creature = D.Identity(source)
     local class = source.classFilename
     bd.class = Public(class) and type(class) == "string" and class or ""
-    bd.name, bd.duration = source.name, session.durationSeconds
+    bd.name, bd.duration, bd.listSource, bd.targetRevision = source.name, session.durationSeconds, source, nil
+    bd.view = "spells"
     D.ShowPanel(win, not bd.guid and not bd.creature)
     D.RefreshBreakdown(win)
 end
@@ -109,6 +147,7 @@ function D.CloseBreakdown(win, quiet)
     local bd = win.bd
     if not bd.open then return end
     bd.open, bd.source, bd.name, bd.guid, bd.creature, bd.duration = false, nil, nil, nil, nil, nil
+    bd.listSource, bd.view, bd.targetRevision = nil, nil, nil
     if win.bdRows then
         local owner = GameTooltip:GetOwner()
         for _, row in pairs(win.bdRows) do
@@ -123,6 +162,28 @@ function D.CloseBreakdown(win, quiet)
     if not quiet and win.shown then D.Paint(win) end
 end
 
+-- A panel opened during combat holds a secret-bearing session snapshot. Once
+-- the restriction lifts, get a fresh native session before aggregating targets.
+local function RefreshTargetSession(win)
+    local bd = win.bd
+    if M.inCombat or NS.IsCombatLocked() or bd.targetRevision == M.targetRevision then return end
+    bd.targetRevision = M.targetRevision
+    local session = D.FetchSession(win)
+    if not session or D.IsSample(session) then return end
+    win.session, bd.listSource = session, nil
+    local sources = session.combatSources
+    for i = 1, D.Count(sources) do
+        local source = sources[i]
+        local guid, creature = D.Identity(source)
+        local name = source.name
+        if (bd.guid and guid == bd.guid) or (bd.creature and creature == bd.creature)
+            or (Public(bd.name) and Public(name) and name == bd.name) then
+            bd.listSource, bd.name, bd.duration = source, name, session.durationSeconds
+            break
+        end
+    end
+end
+
 -- Refetch with the stored plain identity (the window paint path while open).
 function D.RefreshBreakdown(win)
     local bd = win.bd
@@ -132,6 +193,7 @@ function D.RefreshBreakdown(win)
         SetMessage(win.panel, D.Blocked())
         return
     end
+    if bd.view == "targets" then RefreshTargetSession(win) end
     bd.source = D.FetchSource(win, bd.guid, bd.creature)
     D.RenderBreakdown(win)
 end
@@ -139,13 +201,19 @@ end
 function D.RenderBreakdown(win)
     local bd, panel = win.bd, win.panel
     if bd.blocked then return end
-    if panel.styleGen ~= M.styleGen then StylePanel(win) end
+    if panel.styleGen ~= M.styleGen or panel.styledType ~= win.meterType then StylePanel(win) end
     local source = bd.source
     local capacity = max(0, win.capacity - 1)
-    local groups, count, sum
-    if win.meterType == D.ENEMY then groups, count, sum = D.GroupSpells(source) end
-    local spells = not groups and source and source.combatSpells
+    local groups, count, sum, targets
+    if bd.view == "targets" then
+        groups, count, sum = D.TargetGroups(win, bd.listSource, source)
+        targets = groups ~= nil
+    end
+    if bd.view == "spells" and win.meterType == D.ENEMY then groups, count, sum = D.GroupSpells(source) end
+    local spells = bd.view == "spells" and not groups and source and source.combatSpells
     if not groups then count = D.Count(spells) end
+    panel.title:SetText(D.Short(bd.name))
+    StyleTabs(panel, bd.view)
     bd.offset = min(bd.offset, max(0, count - capacity))
     local duration = Finite(bd.duration) and bd.duration or 0
     local rows = win.bdRows
@@ -158,7 +226,7 @@ function D.RenderBreakdown(win)
                 D.AnchorRow(row, panel, slot + 1)
             end
             if groups then
-                D.PaintGroup(row, groups[index], groups[1].amount, sum, duration, win.meterType)
+                D.PaintGroup(row, groups[index], groups[1].amount, sum, duration, win.meterType, targets)
             else
                 D.PaintSpell(row, spells[index], source, win.meterType, bd.class)
             end
@@ -168,7 +236,10 @@ function D.RenderBreakdown(win)
         end
     end
     for slot, row in pairs(rows) do if slot > capacity then row:Hide() end end
-    SetMessage(panel, count == 0 and S.Text("No details for this entry.") or "")
+    local message = count == 0 and S.Text(bd.view == "targets"
+        and ((M.inCombat or NS.IsCombatLocked()) and "Targets after combat" or "Target data unavailable")
+        or "No details for this entry.") or ""
+    SetMessage(panel, message)
 end
 
 function D.ScrollBreakdown(win, delta)
@@ -201,13 +272,30 @@ local function EnsureTip()
     tip.message:SetPoint("TOPLEFT", tip.title, "BOTTOMLEFT", 0, -4)
     tip.message:SetPoint("TOPRIGHT", tip.title, "BOTTOMRIGHT", 0, -4)
     tip.message:SetJustifyH("LEFT")
+    tip.section = S.CreateFontString(tip, nil, "OVERLAY")
+    D.FontStyle(tip.section, 11)
+    tip.section:SetText(S.Text("Targets"))
+    tip.section:Hide()
     tip.rows = {}
     M.tip = tip
     return tip
 end
 
--- Fills the tooltip rows; returns the row count and an optional message.
+local function TipRow(frame, index, y)
+    local row = frame.rows[index]
+    if not row then
+        row = D.CreateRow(frame, nil, "tip")
+        frame.rows[index] = row
+    end
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", frame, "TOPLEFT", TIP_PAD, y)
+    row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, y)
+    return row
+end
+
+-- Keep abilities visible and append the native target breakdown when readable.
 local function TipContent(frame, win, source, session)
+    frame.section:Hide()
     if win.meterType == D.DEATHS then
         local id = source.deathRecapID
         if not Finite(id) or id <= 0 then return 0, nil end
@@ -217,32 +305,43 @@ local function TipContent(frame, win, source, session)
     if not guid and not creature then return 0, D.Blocked() end
     local class = source.classFilename
     class = Public(class) and type(class) == "string" and class or ""
-    local groups, count, sum = D.TargetGroups(win, source)
-    local targets = groups ~= nil
-    local detail
-    if not groups then detail = D.FetchSource(win, guid, creature) end
-    if not groups and win.meterType == D.ENEMY then groups, count, sum = D.GroupSpells(detail) end
-    local spells = not groups and detail and detail.combatSpells
-    if not groups then count = D.Count(spells) end
-    local shown = min(count, M.config.tooltipRows)
+    local detail = D.FetchSource(win, guid, creature)
+    local targetGroups, targetCount, targetSum = D.TargetGroups(win, source, detail)
+    local spellGroups, spellCount, spellSum
+    if win.meterType == D.ENEMY then spellGroups, spellCount, spellSum = D.GroupSpells(detail) end
+    local spells = not spellGroups and detail and detail.combatSpells
+    if not spellGroups then spellCount = D.Count(spells) end
+    local spellShown = min(spellCount, M.config.tooltipRows)
     local duration = Finite(session.durationSeconds) and session.durationSeconds or 0
-    for i = 1, shown do
-        local row = frame.rows[i]
-        if not row then
-            row = D.CreateRow(frame, nil, "tip")
-            frame.rows[i] = row
-            local y = -(TIP_PAD + 18 + (i - 1) * TIP_ROW)
-            row:SetPoint("TOPLEFT", frame, "TOPLEFT", TIP_PAD, y)
-            row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, y)
-        end
-        if groups then
-            D.PaintGroup(row, groups[i], groups[1].amount, sum, duration, win.meterType, targets)
+    for i = 1, spellShown do
+        local row = TipRow(frame, i, -(TIP_PAD + 18 + (i - 1) * TIP_ROW))
+        if spellGroups then
+            D.PaintGroup(row, spellGroups[i], spellGroups[1].amount, spellSum, duration, win.meterType)
         else
             D.PaintSpell(row, spells[i], detail, win.meterType, class)
         end
         row:Show()
     end
-    return shown, shown == 0 and S.Text("No details for this entry.") or nil, targets
+    local targetShown = targetGroups and min(targetCount, M.config.tooltipRows) or 0
+    local sectionHeight = targetShown > 0 and TIP_ROW or 0
+    frame.section:SetShown(targetShown > 0)
+    if targetShown > 0 then
+        frame.section:ClearAllPoints()
+        frame.section:SetPoint("TOPLEFT", frame, "TOPLEFT", TIP_PAD, -(TIP_PAD + 18 + spellShown * TIP_ROW))
+        frame.section:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, -(TIP_PAD + 18 + spellShown * TIP_ROW))
+        for i = 1, targetShown do
+            local row = TipRow(frame, spellShown + i,
+                -(TIP_PAD + 18 + (spellShown + i - 1) * TIP_ROW + sectionHeight))
+            D.PaintGroup(row, targetGroups[i], targetGroups[1].amount, targetSum, duration, win.meterType, true)
+            row:Show()
+        end
+    end
+    local shown = spellShown + targetShown
+    local note
+    if not targetGroups and (win.meterType == 0 or win.meterType == 1 or win.meterType == 2 or win.meterType == 3) then
+        note = S.Text((M.inCombat or NS.IsCombatLocked()) and "Targets after combat" or "Target data unavailable")
+    end
+    return shown, note or (shown == 0 and S.Text("No details for this entry.") or nil), sectionHeight
 end
 
 -- Built once per hover, never live-updated.
@@ -256,18 +355,25 @@ function D.ShowTip(win, row)
         frame.styleGen = M.styleGen
         D.FontStyle(frame.title, 12)
         D.FontStyle(frame.message, 11)
+        D.FontStyle(frame.section, 11)
+        frame.section:SetTextColor(M.style.leftR, M.style.leftG, M.style.leftB)
         frame.message:SetTextColor(.8, .8, .8)
         frame.title:ClearAllPoints()
         frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", TIP_PAD, -TIP_PAD + M.style.baseline)
         frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, -TIP_PAD + M.style.baseline)
     end
     local name = source.name
-    local shown, message, targets = TipContent(frame, win, source, session)
-    frame.title:SetFormattedText("%s - %s", D.Short(name), targets and S.Text("Targets") or D.TypeName(win.meterType))
+    local shown, message, sectionHeight = TipContent(frame, win, source, session)
+    sectionHeight = sectionHeight or 0
+    frame.title:SetFormattedText("%s - %s", D.Short(name), D.TypeName(win.meterType))
     for i = shown + 1, #frame.rows do frame.rows[i]:Hide() end
     frame.message:SetText(message or "")
     frame.message:SetShown(message ~= nil)
-    frame:SetHeight(TIP_PAD * 2 + 16 + (message and 18 or 0) + shown * TIP_ROW)
+    frame.message:ClearAllPoints()
+    local messageY = -(TIP_PAD + 18 + shown * TIP_ROW + sectionHeight)
+    frame.message:SetPoint("TOPLEFT", frame, "TOPLEFT", TIP_PAD, messageY)
+    frame.message:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, messageY)
+    frame:SetHeight(TIP_PAD * 2 + 16 + (message and 18 or 0) + shown * TIP_ROW + sectionHeight)
     frame:SetScale(M.config.tooltipScale / 100)
     frame:ClearAllPoints()
     frame:SetPoint("BOTTOMLEFT", row, "TOPLEFT", 0, 4)
@@ -313,7 +419,26 @@ function D.SpellLeave(row)
     D.HoverLeave(row)
 end
 
-function D.BreakdownBack(region) D.CloseBreakdown(region.win) end
+function D.SetBreakdownView(win, view)
+    if not win.bd.open or win.bd.blocked or win.meterType > 3 then return end
+    if win.bd.view == view and view ~= "targets" then return end
+    win.bd.view, win.bd.offset = view, 0
+    if view == "targets" then
+        win.bd.targetRevision = nil
+        D.RefreshBreakdown(win)
+    else
+        D.RenderBreakdown(win)
+    end
+end
+
+function D.BreakdownBack(region, button)
+    local win = region.win
+    if button == "RightButton" and win.bd.open and not win.bd.blocked and win.meterType <= 3 then
+        D.SetBreakdownView(win, win.bd.view == "targets" and "spells" or "targets")
+    else
+        D.CloseBreakdown(win)
+    end
+end
 
 function D.BreakdownWheel(region, delta) D.ScrollBreakdown(region.win, delta) end
 

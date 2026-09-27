@@ -397,6 +397,15 @@ function D.PaintSpell(row, spell, source, meterType, class)
         D.RowColors(row, class)
     end
     row.rawName, row.iconKey = nil, nil
+    -- Native spell details may identify the recipient, or the attacker for
+    -- EnemyDamageTaken. Names may be secret in combat; keep them in a C sink.
+    local details = spell.combatSpellDetails
+    local unitName = details and details.unitName
+    local unitLabel = (meterType == 0 or meterType == 1 or meterType == 2 or meterType == 3 or meterType == D.ENEMY) and
+        (not Public(unitName) or (type(unitName) == "string" and unitName ~= ""))
+    -- Recycled rows must repaint their plain spell name when that suffix ends.
+    if row.unitSpellLabel and not unitLabel then row.spellID = nil end
+    row.unitSpellLabel = unitLabel
     local id = spell.spellID
     if Finite(id) then
         if id ~= row.spellID then
@@ -412,6 +421,7 @@ function D.PaintSpell(row, spell, source, meterType, class)
             local name, pet = C_Spell.GetSpellName(id), spell.creatureName
             if not Public(name) or type(name) ~= "string" then name = "" end
             if name ~= "" and Public(pet) and type(pet) == "string" and pet ~= "" then name = format("%s (%s)", name, pet) end
+            row.spellName = name
             row.nameText:SetText(name)
         end
     else
@@ -420,10 +430,15 @@ function D.PaintSpell(row, spell, source, meterType, class)
         row.spellID = nil
         row.icon:Hide()
         if Public(id) then
+            row.spellName = ""
             row.nameText:SetText("")
         else
-            row.nameText:SetText(C_Spell.GetSpellName(id))
+            row.spellName = C_Spell.GetSpellName(id)
+            row.nameText:SetText(row.spellName)
         end
+    end
+    if unitLabel and (not Public(id) or id ~= nil) then
+        row.nameText:SetFormattedText("%s - %s", row.spellName, D.Short(unitName))
     end
     D.SetBar(row, source.maxAmount, spell.totalAmount)
     D.SetValueText(row, meterType, spell.totalAmount, spell.amountPerSecond, source.totalAmount, true)
