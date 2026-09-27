@@ -52,7 +52,7 @@ end
 
 -- The bag windows whose shell the Bags module paints.
 function SuiteOwnership.IsBagShell(frame)
-    return frame ~= nil and (frame == _G.ContainerFrameCombinedBags or frame == _G.ContainerFrame6)
+    return frame ~= nil and (frame == ContainerFrameCombinedBags or frame == ContainerFrame6)
 end
 
 -- "before" a module starts or stops, the skin lets go of surfaces that became

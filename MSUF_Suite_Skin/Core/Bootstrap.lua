@@ -1,9 +1,5 @@
 local addonName, NS = ...
 
-if type(NS) ~= "table" then
-    NS = {}
-end
-
 -- MSUF Suite can load this legacy addon once for its SavedVariables. In that
 -- case the Suite-owned engine keeps the public API and this copy stays inert.
 NS.migrationOnly = _G.MSUFSuiteSkinMigrating == true
@@ -13,7 +9,7 @@ if not NS.migrationOnly then
     _G.MidnightSkin = NS -- Legacy integrations; canonical API is MapkoSkin.
 end
 
-NS.addonName = addonName or "MapkoSkin"
+NS.addonName = addonName
 NS.version = "0.35.1"
 -- Legacy API v1 remains stable for existing integrations.  The versioned
 -- client API is negotiated separately through MapkoSkin.GetAPI(2, 0).
@@ -21,27 +17,17 @@ NS.apiVersion = 1
 NS.publicAPIMajor = 2
 NS.publicAPIMinor = 1
 NS.path = "Interface\\AddOns\\MSUF_Suite_Skin\\"
-NS.internal = NS.internal or {}
 
 function NS.IsCombatLocked()
-    return type(InCombatLockdown) == "function" and InCombatLockdown() or false
+    return InCombatLockdown()
 end
 
+-- Reported like a Lua error (BugSack shows it); the caller goes on.
 function NS.ReportError(context, message)
-    local handler = type(geterrorhandler) == "function" and geterrorhandler() or nil
     local text = ("MapkoSkin %s: %s"):format(tostring(context or "error"), tostring(message or "unknown error"))
-    if type(handler) == "function" then
-        handler(text)
-    elseif type(print) == "function" then
-        print(text)
-    end
+    geterrorhandler()(text)
 end
 
 function NS.Print(message)
-    local prefix = "|cff3b82f6MapkoSkin|r"
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage(prefix .. ": " .. tostring(message or ""))
-    elseif type(print) == "function" then
-        print("MapkoSkin: " .. tostring(message or ""))
-    end
+    DEFAULT_CHAT_FRAME:AddMessage("|cff3b82f6MapkoSkin|r: " .. tostring(message or ""))
 end

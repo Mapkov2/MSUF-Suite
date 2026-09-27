@@ -19,11 +19,16 @@ MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
 local starts, initializations, notifications = 0, 0, 0
 local Suite = {
     IsCombatLocked = function() return false end,
+    -- Platform.lua's offline boundary helpers (no securecallfunction here).
+    Dispatch = function(callback, ...) return callback(...) end,
+    Finish = function(callback, ...) return true, callback(...) end,
     Client = {
         HasAddOn = function() return false end,
         AddOnEnabled = function() return true end,
     },
     Suite = { Start = function() starts = starts + 1 end },
+    Menu = { Watch = function() end },
+    Installer = { MaybeShow = function() end },
     Print = function(message) error(message) end,
 }
 Suite.Database = {
@@ -96,5 +101,45 @@ ok, reason = early.Database.SetActiveProfile("early")
 assert(ok == false and reason == "database-not-ready")
 ok, reason = early.Database.DeleteProfile("early")
 assert(ok == false and reason == "database-not-ready")
+ok, reason = early.Database.ReplaceProfiles({ Default = {} }, "Default")
+assert(ok == false and reason == "database-not-ready", "all profiles were replaced before the database was ready")
+
+-- Profile creation and deletion wait out combat like every other skin write.
+local locked = false
+local fighting = {
+    IsCombatLocked = function() return locked end,
+    Client = { isForever = false },
+    FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" },
+}
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", fighting)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Database.lua"))("MSUF_Suite_Skin", fighting)
+fighting.RootDB = { activeProfile = "Default", profiles = { Default = {}, Spare = {} } }
+fighting.DB = fighting.RootDB.profiles.Default
+locked = true
+ok, reason = fighting.Database.CreateProfile("Raid", false)
+assert(ok == false and reason == "combat" and not fighting.RootDB.profiles.Raid,
+    "a skin profile was created in combat")
+ok, reason = fighting.Database.DeleteProfile("Spare")
+assert(ok == false and reason == "combat" and fighting.RootDB.profiles.Spare,
+    "a skin profile was deleted in combat")
+locked = false
+ok = fighting.Database.DeleteProfile("Spare")
+assert(ok and not fighting.RootDB.profiles.Spare, "a skin profile could not be deleted out of combat")
+
+-- Replacing one profile or all of them waits out combat too, and says so.
+local active = fighting.DB
+locked = true
+ok, reason = fighting.Database.SetProfile("Default", fighting.CopyValue(fighting.Defaults))
+assert(ok == false and reason == "combat" and fighting.RootDB.profiles.Default == active
+    and fighting.DB == active, "the active skin profile was replaced in combat")
+ok, reason = fighting.Database.ReplaceProfiles({ Default = fighting.CopyValue(fighting.Defaults) }, "Default")
+assert(ok == false and reason == "combat" and fighting.DB == active,
+    "replacing every skin profile in combat did not report combat: " .. tostring(reason))
+locked = false
+ok, reason = fighting.Database.ReplaceProfiles("not profiles")
+assert(ok == false and reason == "invalid-profiles", "invalid profiles were not refused as invalid")
+ok = fighting.Database.SetProfile("Default", fighting.CopyValue(fighting.Defaults))
+assert(ok and fighting.DB ~= active and fighting.DB == fighting.RootDB.profiles.Default,
+    "the active skin profile could not be replaced out of combat")
 
 print("Suite skin profile startup: provider database ready before sync, modules start, late event idempotent")

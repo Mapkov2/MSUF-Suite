@@ -54,6 +54,8 @@ local buttonArtKitSuffixes = {
 }
 
 local Safety = NS.Safety
+local Checkmarks = NS.Checkmarks
+local IsListed = NS.IsListed
 
 local function Field(object, key)
     return Safety.Field(object, key) or nil
@@ -71,13 +73,6 @@ end
 local function Wipe(target)
     for key in pairs(target) do target[key] = nil end
     return target
-end
-
-local function IsListed(list, value)
-    for index = 1, #list do
-        if list[index] == value then return true end
-    end
-    return false
 end
 
 local function Settings()
@@ -261,12 +256,8 @@ end
 local function CreateGlyph(button, layer, subLevel)
     local texture = button:CreateTexture(nil, layer, nil, subLevel)
     texture:SetPoint("CENTER", button, "CENTER", 0, 0)
-    if type(texture.SetSnapToPixelGrid) == "function" then
-        texture:SetSnapToPixelGrid(false)
-    end
-    if type(texture.SetTexelSnappingBias) == "function" then
-        texture:SetTexelSnappingBias(0)
-    end
+    texture:SetSnapToPixelGrid(false)
+    texture:SetTexelSnappingBias(0)
     return texture
 end
 
@@ -434,8 +425,7 @@ local function ApplyNow(button, owner, kind)
         WindowActionSkin.states[button] = state
         BindOwner(button, state, owner)
     elseif state.nativeCaptured and not WindowActionSkin.HasOwnedStates(button) then
-        local detected = NS.Checkmarks and NS.Checkmarks.DetectWindowAction
-            and NS.Checkmarks.DetectWindowAction(button) or nil
+        local detected = Checkmarks.DetectWindowAction(button)
         if detected then
             RebaseNative(state)
             kind = detected
@@ -455,9 +445,9 @@ local function ApplyNow(button, owner, kind)
         RestoreNative(button, state)
         RefreshSurface(button, settings)
         state.visible = true
-        if restoredModern and NS.Checkmarks and not state.repaintingNative then
+        if restoredModern and not state.repaintingNative then
             state.repaintingNative = true
-            NS.Checkmarks.TrackButton(button, owner)
+            Checkmarks.TrackButton(button, owner)
             state.repaintingNative = false
         end
         return state
@@ -488,8 +478,8 @@ function WindowActionSkin.Apply(button, owner, kind)
 end
 
 function WindowActionSkin.Track(button, owner, kind)
-    if kind == nil and NS.Checkmarks then
-        kind = NS.Checkmarks.DetectWindowAction(button)
+    if kind == nil then
+        kind = Checkmarks.DetectWindowAction(button)
             or (WindowActionSkin.HasOwnedStates(button)
                 and WindowActionSkin.GetKind(button) or nil)
     end
@@ -713,8 +703,7 @@ function WindowActionSkin.OnNativeChanged(button)
         end)
         return false, reason or "combat"
     end
-    local kind = NS.Checkmarks and NS.Checkmarks.DetectWindowAction
-        and NS.Checkmarks.DetectWindowAction(button) or nil
+    local kind = Checkmarks.DetectWindowAction(button)
     if not kind then return WindowActionSkin.Disable(button, state.owner) end
     return WindowActionSkin.Apply(button, state.owner, kind) ~= nil
 end
@@ -757,7 +746,7 @@ function WindowActionSkin.SetOption(key, value)
     end
     settings[key] = value
     WindowActionSkin.RefreshAll()
-    if NS.Registry then NS.Registry.NotifyListeners("windowAction", key) end
+    NS.Registry.NotifyListeners("windowAction", key)
     return true
 end
 
@@ -767,7 +756,7 @@ function WindowActionSkin.ResetRecommended()
     local settings = Settings()
     for key, value in pairs(defaults) do settings[key] = value end
     local refreshed, reason = WindowActionSkin.RefreshAll()
-    if NS.Registry then NS.Registry.NotifyListeners("windowAction", "reset") end
+    NS.Registry.NotifyListeners("windowAction", "reset")
     return refreshed, reason
 end
 
@@ -795,11 +784,27 @@ function WindowActionSkin.GetStatus()
     return { applied = count, style = Settings().style }
 end
 
-function WindowActionSkin:OnThemeChanged(domain)
-    if domain == "windowAction" then return end
-    if domain == "color" or domain == "theme" or domain == "appearance"
-        or domain == "geometry" or domain == "profile" then
-        WindowActionSkin.RefreshAll()
+-- The color roles ColorRole gives the glyphs. The action surfaces follow the
+-- Registry's own surface refreshes (appearance, geometry and their colors);
+-- SetOption and ResetRecommended re-apply after a window-action setting.
+local GLYPH_COLORS = {
+    blizzardClose = true,
+    blizzardClosePressed = true,
+    blizzardCloseHover = true,
+    blizzardCloseDisabled = true,
+    blizzardExpand = true,
+    blizzardExpandPressed = true,
+    blizzardExpandHover = true,
+    disabled = true,
+}
+
+-- Re-applies only for what the glyphs depend on, once per frame however many
+-- settings a color-picker drag writes.
+function WindowActionSkin:OnThemeChanged(domain, key)
+    if domain == "color" and GLYPH_COLORS[key]
+        or domain == "theme" and key ~= "gradient"
+        or domain == "profile" then
+        NS.Registry.QueueJob(WindowActionSkin.RefreshAll)
     end
 end
 

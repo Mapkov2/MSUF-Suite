@@ -7,7 +7,7 @@ local shapePath = NS.path .. "Media\\Shapes\\"
 local pillHeights = { 20, 24, 28, 32 }
 local emptySpec = {}
 local assets = {}
-local STRETCHED = Enum and Enum.UITextureSliceMode and Enum.UITextureSliceMode.Stretched or 0
+local STRETCHED = Enum.UITextureSliceMode.Stretched
 
 local function ClosestValue(values, requested)
     requested = tonumber(requested) or values[1]
@@ -97,16 +97,12 @@ function Geometry.ConfigureShape(texture, asset, geometry)
     if not texture or not asset then
         return
     end
-    if texture.ClearTextureSlice then
-        texture:ClearTextureSlice()
-    end
+    texture:ClearTextureSlice()
     texture:SetTexture(asset)
-    if geometry.slice and texture.SetTextureSliceMargins then
+    if geometry.slice then
         local margins = geometry.margins
         texture:SetTextureSliceMargins(margins[1], margins[2], margins[3], margins[4])
-        if texture.SetTextureSliceMode then
-            texture:SetTextureSliceMode(STRETCHED)
-        end
+        texture:SetTextureSliceMode(STRETCHED)
     end
 end
 

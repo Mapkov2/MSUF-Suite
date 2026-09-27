@@ -141,11 +141,30 @@ local function CopyValue(value, seen)
     return copy
 end
 
+-- Value helpers the settings code shares (Database, Theme, rendering). This
+-- file loads before all of them.
+local function IsListed(list, value)
+    for index = 1, #list do
+        if list[index] == value then return true end
+    end
+    return false
+end
+
+-- A number between minimum and maximum; minimum for anything else.
+local function Clamp(value, minimum, maximum)
+    value = tonumber(value) or minimum
+    if value < minimum then return minimum end
+    if value > maximum then return maximum end
+    return value
+end
+
 NS.CopyValue = CopyValue
+NS.IsListed = IsListed
+NS.Clamp = Clamp
 NS.BaseColors = midnightColors
 
 -- Forever's Camelot bar has fourteen Micro Buttons, every other client 13.
-NS.MicroMenuMaxButtonsPerLine = NS.Client and NS.Client.isForever and 14 or 13
+NS.MicroMenuMaxButtonsPerLine = NS.Client.isForever and 14 or 13
 
 NS.Defaults = {
     revision = 50,
@@ -1220,7 +1239,7 @@ end
 -- Normalization fills missing fields on existing profiles but never replaces
 -- their saved palette, look, opacity, or geometry.
 do
-    local defaultLookName = NS.Client and NS.Client.isForever and "foreverGlass" or "midnightDark"
+    local defaultLookName = NS.Client.isForever and "foreverGlass" or "midnightDark"
     local look = NS.LookPresets[defaultLookName]
     local colors = NS.CopyValue(NS.BaseColors)
     for key, value in pairs(NS.PresetOverrides[look.palette]) do
@@ -1239,12 +1258,12 @@ do
         micro[key] = NS.MicroMenuPresetValues[look.microStyle][key]
     end
     micro.preset = look.microStyle
-    if NS.Client and NS.Client.isForever then
+    if NS.Client.isForever then
         local position = NS.MicroMenuPositionPresets.bottomCenter
         micro.layoutPoint, micro.layoutRelativePoint = position.point, position.relativePoint
         micro.layoutX, micro.layoutY = position.x, position.y
         micro.positionPreset = "bottomCenter"
-    elseif NS.Client and NS.Client.isMainline then
+    elseif NS.Client.isMainline then
         -- Retail Modern's two-column bar sits beside the factory Damage Meter.
         micro.orientation = "vertical"
         micro.buttonsPerLine = 6

@@ -1,7 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local S = {}
 MSUFSuite = { Suite = S }
-STANDARD_TEXT_FONT = "Native.ttf"
+GameFontHighlightSmall = { GetFont = function() return "Native.ttf", 12, "" end }
 local scaleFlags
 MSUF_ApplyFontScaleAnimationMode = function(_, flags) scaleFlags = flags end
 assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})

@@ -4,7 +4,8 @@ local _, NS = ...
 -- and close-button assets, and replace the exact Settings category highlight
 -- with owned button states. Blizzard uses the same fields for unrelated
 -- semantic art, so blanket texture passes remain unsafe. Ownership is
--- external, weak and reversible.
+-- external, weak and reversible. Dropdown popups, the Settings panel and
+-- legacy dropdown lists are tracked in CheckmarksMenus.lua.
 local Checkmarks = {
     states = setmetatable({}, { __mode = "k" }),
     buttons = setmetatable({}, { __mode = "k" }),
@@ -101,14 +102,10 @@ local acceptedPaths = {
     ["common-button-dropdown-closedpressed"] = "blizzardExpandPressed",
 }
 
-local function Close(left, right)
-    return math.abs(left - right) <= 0.015
-end
-
-local function MatchesColor(color, r, g, b, a)
-    return color ~= nil and Close(r, color[1]) and Close(g, color[2])
-        and Close(b, color[3]) and Close(a, color[4])
-end
+-- A texture still shows our tint within COLOR_OWN; its native color is
+-- classified within COLOR_NATIVE.
+local ColorMatches = Safety.ColorMatches
+local COLOR_OWN, COLOR_NATIVE = Safety.COLOR_OWN, Safety.COLOR_NATIVE
 
 -- Vertex color as plain numbers; nil when missing or secret.
 local function ReadVertex(texture)
@@ -124,9 +121,37 @@ local function Getter(object, name)
     return (Safety.Call(object, name))
 end
 
+-- Settings rows and pooled buttons show the same few atlases and files on
+-- every visit. Each distinct name is lowered (and each path matched) once;
+-- a cache is dropped when it reaches LOOKUP_CACHE_LIMIT names.
+local LOOKUP_CACHE_LIMIT = 512
+local lowerAtlases = { values = {}, count = 0 }
+local pathRoles = { values = {}, count = 0 }
+
+local function Remember(cache, key, value)
+    if cache.count >= LOOKUP_CACHE_LIMIT then
+        for oldKey in pairs(cache.values) do cache.values[oldKey] = nil end
+        cache.count = 0
+    end
+    cache.values[key] = value
+    cache.count = cache.count + 1
+    return value
+end
+
 local function AtlasKey(texture)
     local atlas = Safety.Read(texture, "GetAtlas")
-    return type(atlas) == "string" and atlas:lower() or nil
+    if type(atlas) ~= "string" then return nil end
+    return lowerAtlases.values[atlas] or Remember(lowerAtlases, atlas, atlas:lower())
+end
+
+-- The color role of a texture file path, or false.
+local function PathRole(path)
+    local role = pathRoles.values[path]
+    if role == nil then
+        local key = path:gsub("/", "\\"):lower():gsub("%.blp$", ""):gsub("%.tga$", "")
+        role = Remember(pathRoles, path, acceptedPaths[key] or false)
+    end
+    return role
 end
 
 local function AssetRole(texture)
@@ -136,8 +161,8 @@ local function AssetRole(texture)
     for index = 1, #texturePathGetters do
         local path = Safety.Read(texture, texturePathGetters[index])
         if type(path) == "string" then
-            path = path:gsub("/", "\\"):lower():gsub("%.blp$", ""):gsub("%.tga$", "")
-            if acceptedPaths[path] then return acceptedPaths[path] end
+            local role = PathRole(path)
+            if role then return role end
         end
     end
     return false
@@ -179,8 +204,8 @@ local function ApplyTexture(texture, owner, forcedRole)
     local r, g, b, a = ReadVertex(texture)
     if not r then return false end
     local state = Checkmarks.states[texture]
-    if state and not MatchesColor(state.applied, r, g, b, a)
-        and not MatchesColor(state.original, r, g, b, a) then
+    if state and not ColorMatches(state.applied, r, g, b, a, COLOR_OWN)
+        and not ColorMatches(state.original, r, g, b, a, COLOR_NATIVE) then
         return false
     end
     if not state then
@@ -213,7 +238,7 @@ local function RestoreTexture(texture, state)
     state = state or Checkmarks.states[texture]
     if not state then return false end
     local r, g, b, a = ReadVertex(texture)
-    if r and MatchesColor(state.applied, r, g, b, a) then
+    if r and ColorMatches(state.applied, r, g, b, a, COLOR_OWN) then
         if state.appliedDesaturated ~= nil and type(texture.SetDesaturated) == "function"
             and ReadDesaturated(texture) == state.appliedDesaturated then
             texture:SetDesaturated(state.originalDesaturated == true)
@@ -297,7 +322,7 @@ end
 function Checkmarks.GetWindowAction(button)
     local detected = Checkmarks.DetectWindowAction(button)
     if detected then return detected end
-    if NS.WindowActionSkin and NS.WindowActionSkin.HasOwnedStates(button) then
+    if NS.WindowActionSkin.HasOwnedStates(button) then
         return NS.WindowActionSkin.GetKind(button)
     end
     return nil
@@ -322,8 +347,7 @@ function Checkmarks.TrackButton(button, owner)
     local changed = false
     local recognized = false
     local actionKind = Checkmarks.DetectWindowAction(button)
-    if not actionKind and NS.WindowActionSkin
-        and NS.WindowActionSkin.HasOwnedStates(button) then
+    if not actionKind and NS.WindowActionSkin.HasOwnedStates(button) then
         actionKind = NS.WindowActionSkin.GetKind(button)
     end
     local normalRole = AssetRole(Getter(button, "GetNormalTexture"))
@@ -349,11 +373,11 @@ function Checkmarks.TrackButton(button, owner)
             changed = ApplyTexture(texture, owner, role) or changed
         end
     end
-    if actionKind and NS.WindowActionSkin then
+    if actionKind then
         local action = NS.WindowActionSkin.Track(button, owner, actionKind)
         recognized = action ~= nil or recognized
         changed = action ~= nil or changed
-    elseif NS.WindowActionSkin and NS.WindowActionSkin.IsApplied(button)
+    elseif NS.WindowActionSkin.IsApplied(button)
         and not NS.WindowActionSkin.HasOwnedStates(button) then
         -- A dynamic UIButton art kit changed to a non-action family. Keep the
         -- new semantic art and drop only our previous action layer.
@@ -376,7 +400,7 @@ end
 
 function Checkmarks.UntrackButton(button, owner)
     if not button then return false end
-    if NS.WindowActionSkin then NS.WindowActionSkin.Disable(button, owner) end
+    NS.WindowActionSkin.Disable(button, owner)
     -- RestoreTexture drops each state, so a texture reached through two
     -- getters is restored once.
     local restored = false
@@ -406,9 +430,14 @@ local function HasReadableChildren(frame)
     return type(Safety.Field(frame, "GetChildren")) == "function" and not Safety.IsForbidden(frame)
 end
 
+-- A secret child (12.1 Hierarchy aspect) is skipped.
 local function TrackChildButtons(owner, changed, ...)
+    local Public = Safety.Public
     for index = 1, select("#", ...) do
-        changed = Checkmarks.TrackButton(select(index, ...), owner) or changed
+        local child = select(index, ...)
+        if Public(child) then
+            changed = Checkmarks.TrackButton(child, owner) or changed
+        end
     end
     return changed
 end
@@ -419,10 +448,13 @@ function Checkmarks.TrackFrame(frame, owner)
     return TrackChildButtons(owner, changed, frame:GetChildren())
 end
 
+-- 12.1 can return a secret child (Hierarchy aspect); a secret is never used
+-- as a key or visited.
 local function AppendChildren(queue, depths, visited, depth, maxNodes, ...)
+    local Public = Safety.Public
     for index = 1, select("#", ...) do
         local child = select(index, ...)
-        if child and not visited[child] and #queue < maxNodes then
+        if Public(child) and child and not visited[child] and #queue < maxNodes then
             queue[#queue + 1] = child
             depths[#depths + 1] = depth
         end
@@ -444,14 +476,7 @@ end
 
 -- Breadth-first walk over a bounded Blizzard frame tree. With trackableOnly,
 -- a node that cannot be decorated is neither visited, counted nor expanded.
-local function WalkControlTree(root, owner, maxDepth, maxNodes, trackableOnly, visit)
-    local queue, depths, visited = walkQueue, walkDepths, walkVisited
-    local shared = not walkBusy
-    if shared then
-        walkBusy = true
-    else
-        queue, depths, visited = {}, {}, {}
-    end
+local function Walk(queue, depths, visited, root, owner, maxDepth, maxNodes, trackableOnly, visit)
     queue[1], depths[1] = root, 0
     local head, nodes, changed = 1, 0, false
     while head <= #queue and nodes < maxNodes do
@@ -468,10 +493,25 @@ local function WalkControlTree(root, owner, maxDepth, maxNodes, trackableOnly, v
             end
         end
     end
-    if shared then
-        ClearWalk(queue, depths, visited)
-        walkBusy = false
+    return changed, nodes
+end
+
+local function FinishWalk(...)
+    return true, Walk(...)
+end
+
+-- One walk is one boundary: a visit that raises is reported, and the shared
+-- scratch is cleared and released either way.
+local function WalkControlTree(root, owner, maxDepth, maxNodes, trackableOnly, visit)
+    if walkBusy then
+        return Walk({}, {}, {}, root, owner, maxDepth, maxNodes, trackableOnly, visit)
     end
+    walkBusy = true
+    local finished, changed, nodes = Safety.Dispatch(FinishWalk, walkQueue, walkDepths, walkVisited,
+        root, owner, maxDepth, maxNodes, trackableOnly, visit)
+    ClearWalk(walkQueue, walkDepths, walkVisited)
+    walkBusy = false
+    if not finished then return false, 0 end
     return changed, nodes
 end
 
@@ -492,320 +532,8 @@ function Checkmarks.TrackControlTree(root, owner, options)
     return WalkControlTree(root, owner, maxDepth, maxNodes, true, TrackSingleFrame)
 end
 
-local function DropdownEvent()
-    return DropdownButtonMixin and DropdownButtonMixin.Event
-        and DropdownButtonMixin.Event.OnMenuOpen
-end
-
-local function LooksLikeDropdown(button)
-    return button and type(button.RegisterCallback) == "function"
-        and type(button.UnregisterCallback) == "function"
-        and type(button.IsMenuOpen) == "function"
-        and type(button.GetMenuDescription) == "function"
-end
-
-Checkmarks.IsDropdown = LooksLikeDropdown
-
--- Blizzard pools the same MenuTemplateBase frames across unrelated dropdowns.
--- A shared owner prevents disabling dropdown A from hiding a pooled popup
--- currently reused by dropdown B.
-local DROPDOWN_MENU_OWNER = "blizzard-dropdown-menus"
-
-local DROPDOWN_POPUP_SPEC = {
-    role = "popup",
-    radius = 6,
-    inset = 0,
-    maxDepth = 6,
-    maxNodes = 320,
-    menuPopup = true,
-    registerDynamicRows = true,
-    allowImplicitProtected = true,
-}
-
--- DropdownButtonMixin passes the registration owner (the state) first.
-local function OnMenuOpen(state, dropdown)
-    if NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled then return end
-    dropdown = dropdown or state.button
-    if NS.BlizzardYellow then NS.BlizzardYellow.TrackDropdown(dropdown) end
-    local menu = Field(dropdown, "menu")
-    if not menu or not Safety.CanDecorate(menu, true) then return end
-    -- Modern Blizzard_Menu proxies are compositor-managed: existing
-    -- check/text regions remain safe to tint, but owned Surface creation is
-    -- forbidden for their lifetime.
-    if NS.GenericWindows and not Safety.IsCompositorManaged(menu) then
-        NS.GenericWindows.ApplyFrame(menu, state.menuOwner, DROPDOWN_POPUP_SPEC)
-    end
-    Checkmarks.TrackFrame(menu, state.menuOwner)
-end
-
-function Checkmarks.UntrackDropdown(button)
-    local state = Checkmarks.dropdowns[button]
-    if not state then return false end
-    if state.event and type(button.UnregisterCallback) == "function" then
-        button:UnregisterCallback(state.event, state)
-    end
-    Checkmarks.dropdowns[button] = nil
-    local ownerSet = Checkmarks.owners[state.owner]
-    if ownerSet then ownerSet[button] = nil end
-    if not next(Checkmarks.dropdowns) and NS.GenericWindows then
-        NS.GenericWindows.Disable(DROPDOWN_MENU_OWNER)
-    end
-    return true
-end
-
-function Checkmarks.TrackDropdown(button, owner)
-    local event = DropdownEvent()
-    if NS.IsCombatLocked() or not event or not LooksLikeDropdown(button)
-        or not CanTrack(button) then
-        return false
-    end
-    if NS.BlizzardYellow then NS.BlizzardYellow.TrackDropdown(button) end
-    local existing = Checkmarks.dropdowns[button]
-    if existing and existing.owner == owner and existing.event == event then
-        return true
-    end
-    if existing then Checkmarks.UntrackDropdown(button) end
-
-    local state = { owner = owner, event = event, menuOwner = DROPDOWN_MENU_OWNER, button = button }
-    button:RegisterCallback(event, OnMenuOpen, state)
-    Checkmarks.dropdowns[button] = state
-    local ownerSet = OwnerSet(owner)
-    if ownerSet then ownerSet[button] = true end
-    return true
-end
-
-local SETTINGS_CATEGORY_EVENT = "Settings.CategoryChanged"
-local SETTINGS_TAB_KEYS = { "GameTab", "AddOnsTab" }
-
-local SETTINGS_CATEGORY_SPEC = {
-    role = "navigation",
-    activeRole = "navigationActive",
-    useControlShape = true,
-    pillHeight = 20,
-    radius = 4,
-    inset = 0,
-    listItem = true,
-    activeEdge = true,
-    allowImplicitProtected = true,
-}
-
-local function SettingsCategoryScrollEvent()
-    return ScrollBoxListMixin and ScrollBoxListMixin.Event
-        and ScrollBoxListMixin.Event.OnInitializedFrame
-end
-
-local function SettingsTabSelectedEvent()
-    return ButtonGroupBaseMixin and ButtonGroupBaseMixin.Event
-        and ButtonGroupBaseMixin.Event.Selected
-end
-
-local function CategorySelected(row)
-    local texture = Field(row, "Texture")
-    if Safety.Read(texture, "GetAtlas") ~= "Options_List_Active" then return false end
-    local shown = Safety.Read(texture, "IsShown")
-    return shown == nil or shown == true
-end
-
-local function SkinSettingsCategoryRow(state, row)
-    if not state.active or NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled
-        or not row or not CanTrack(row) then
-        return false
-    end
-    -- The Settings ScrollBox dispatches its header and spacer Frame templates
-    -- through the same initializer callback as actual category Buttons. Only
-    -- SettingsCategoryListButtonTemplate owns this selection texture.
-    local texture = Field(row, "Texture")
-    if not texture then return false end
-    if NS.Cosmetics then NS.Cosmetics.Fade(texture, state.owner) end
-    Checkmarks.TrackButton(Field(row, "Toggle"), state.owner)
-    if not NS.ControlSkin then return false end
-    local applied = NS.ControlSkin.ApplyButton(row, state.owner, SETTINGS_CATEGORY_SPEC)
-    if applied and NS.Surface then NS.Surface.SetActive(row, CategorySelected(row)) end
-    return applied ~= nil
-end
-
-local function TrackSettingsButton(button, owner)
-    return Checkmarks.TrackButton(button, owner)
-end
-
-local function TrackSettingsControlTree(state, root)
-    if not state or not state.active or NS.IsCombatLocked() or not root then return false end
-    return (WalkControlTree(root, state.owner, 4, 96, false, TrackSettingsButton))
-end
-
--- ScrollBox:ForEachFrame passes only the row; the walked state rides along
--- here instead of in a closure per walk.
-local walkingState
-
-local function SkinWalkedCategoryRow(row)
-    SkinSettingsCategoryRow(walkingState, row)
-end
-
-local function TrackWalkedControlRow(row)
-    TrackSettingsControlTree(walkingState, row)
-end
-
-local function ForEachStateRow(state, scrollBox, visit)
-    local previous = walkingState
-    walkingState = state
-    scrollBox:ForEachFrame(visit)
-    walkingState = previous
-end
-
-local function RefreshSettingsCategories(state)
-    if not state or not state.active or NS.IsCombatLocked() then return false end
-    local scrollBox = state.scrollBox
-    if type(Field(scrollBox, "ForEachFrame")) ~= "function" then return false end
-    ForEachStateRow(state, scrollBox, SkinWalkedCategoryRow)
-    return true
-end
-
-local function RefreshSettingsControls(state)
-    if not state or not state.active or NS.IsCombatLocked() then return false end
-    local scrollBox = state.settingsScrollBox
-    if type(Field(scrollBox, "ForEachFrame")) ~= "function" then return false end
-    ForEachStateRow(state, scrollBox, TrackWalkedControlRow)
-    return true
-end
-
-local function RefreshSettingsTabs(state)
-    if not state or not state.active or NS.IsCombatLocked() or not NS.ControlSkin then
-        return false
-    end
-    local panel = state.settingsPanel
-    if not panel then return false end
-    local changed = false
-    for index = 1, #SETTINGS_TAB_KEYS do
-        local tab = Field(panel, SETTINGS_TAB_KEYS[index])
-        if tab and NS.ControlSkin.IsApplied(tab) then
-            changed = NS.ControlSkin.Refresh(tab) == true or changed
-        end
-    end
-    return changed
-end
-
--- Callback registries pass the registration owner (the state) first.
-local function OnCategoryChanged(state)
-    RefreshSettingsCategories(state)
-    -- Blizzard finishes DisplayCategory (including ScrollBox row
-    -- initialization) before this event. Revisit the active rows so the
-    -- very first Settings open receives the selected theme colors.
-    RefreshSettingsControls(state)
-    RefreshSettingsTabs(state)
-end
-
-local function OnTabSelected(state)
-    RefreshSettingsTabs(state)
-end
-
-local function OnCategoryRowInitialized(state, row)
-    SkinSettingsCategoryRow(state, row)
-end
-
-local function OnSettingsRowInitialized(state, row)
-    TrackSettingsControlTree(state, row)
-end
-
-local function CanRegister(registry)
-    return type(Field(registry, "RegisterCallback")) == "function"
-end
-
-local function CanUnregister(registry)
-    return type(Field(registry, "UnregisterCallback")) == "function"
-end
-
-function Checkmarks.UntrackSettingsCategories(categoryList)
-    local state = Checkmarks.settingsCategoryLists[categoryList]
-    if not state then return false end
-    state.active = false
-    if state.settingsRegistered and CanUnregister(EventRegistry) then
-        EventRegistry:UnregisterCallback(SETTINGS_CATEGORY_EVENT, state)
-    end
-    if state.scrollRegistered and state.scrollEvent and CanUnregister(state.scrollBox) then
-        state.scrollBox:UnregisterCallback(state.scrollEvent, state)
-    end
-    if state.settingsScrollRegistered and state.scrollEvent
-        and CanUnregister(state.settingsScrollBox) then
-        state.settingsScrollBox:UnregisterCallback(state.scrollEvent, state)
-    end
-    if state.tabRegistered and state.tabEvent and CanUnregister(state.tabGroup) then
-        state.tabGroup:UnregisterCallback(state.tabEvent, state)
-    end
-    Checkmarks.settingsCategoryLists[categoryList] = nil
-    local ownerSet = Checkmarks.owners[state.owner]
-    if ownerSet then ownerSet[categoryList] = nil end
-    return true
-end
-
-local function ResolveSettingsList(settingsPanel)
-    return Getter(settingsPanel, "GetSettingsList")
-        or Field(Field(settingsPanel, "Container"), "SettingsList")
-end
-
-local function RegisterSettingsCallbacks(state)
-    if CanRegister(EventRegistry) then
-        EventRegistry:RegisterCallback(SETTINGS_CATEGORY_EVENT, OnCategoryChanged, state)
-        state.settingsRegistered = true
-    end
-    if state.scrollEvent then
-        state.scrollBox:RegisterCallback(state.scrollEvent, OnCategoryRowInitialized, state)
-        state.scrollRegistered = true
-        local settingsScrollBox = state.settingsScrollBox
-        if CanRegister(settingsScrollBox)
-            and type(Field(settingsScrollBox, "ForEachFrame")) == "function" then
-            settingsScrollBox:RegisterCallback(state.scrollEvent, OnSettingsRowInitialized, state)
-            state.settingsScrollRegistered = true
-        end
-    end
-    if state.tabEvent and CanRegister(state.tabGroup) then
-        state.tabGroup:RegisterCallback(state.tabEvent, OnTabSelected, state)
-        state.tabRegistered = true
-    end
-end
-
-function Checkmarks.TrackSettingsCategories(categoryList, owner, settingsPanel)
-    if NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled or not categoryList
-        or not CanTrack(categoryList) then
-        return false
-    end
-    local scrollBox = Field(categoryList, "ScrollBox")
-    if not CanRegister(scrollBox) or type(Field(scrollBox, "ForEachFrame")) ~= "function" then
-        return false
-    end
-    local existing = Checkmarks.settingsCategoryLists[categoryList]
-    if existing and existing.owner == owner then
-        OnCategoryChanged(existing)
-        return true
-    elseif existing then
-        Checkmarks.UntrackSettingsCategories(categoryList)
-    end
-
-    local state = {
-        owner = owner,
-        categoryList = categoryList,
-        scrollBox = scrollBox,
-        scrollEvent = SettingsCategoryScrollEvent(),
-        settingsPanel = settingsPanel,
-        active = true,
-    }
-    state.settingsScrollBox = Field(ResolveSettingsList(settingsPanel), "ScrollBox")
-    state.tabGroup = Field(settingsPanel, "tabsGroup")
-    state.tabEvent = SettingsTabSelectedEvent()
-    RegisterSettingsCallbacks(state)
-    if not state.settingsRegistered and not state.scrollRegistered then
-        state.active = false
-        return false
-    end
-
-    Checkmarks.settingsCategoryLists[categoryList] = state
-    local ownerSet = OwnerSet(owner)
-    if ownerSet then ownerSet[categoryList] = true end
-    OnCategoryChanged(state)
-    return true
-end
-
 function Checkmarks.UntrackOwner(owner)
-    if NS.WindowActionSkin then NS.WindowActionSkin.DisableOwner(owner) end
+    NS.WindowActionSkin.DisableOwner(owner)
     local set = Checkmarks.owners[owner]
     local dropdowns, categoryLists, textures = {}, {}, {}
     if set then
@@ -834,38 +562,6 @@ function Checkmarks.UntrackOwner(owner)
     return true
 end
 
-local LEGACY_DROPDOWN_OWNER = "legacy-dropdown-menu"
-local LEGACY_DROPDOWN_EVENT = "UIDropDownMenu.Show"
-
-local LEGACY_DROPDOWN_SPEC = {
-    role = "popup",
-    radius = 6,
-    inset = 0,
-    maxDepth = 5,
-    maxNodes = 260,
-    menuPopup = true,
-    legacyDropdown = true,
-    registerDynamicRows = false,
-    allowImplicitProtected = true,
-}
-
-function Checkmarks:OnLegacyDropdownShown(listFrame)
-    if NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled or not listFrame then return end
-    if NS.GenericWindows then
-        NS.GenericWindows.ApplyFrame(listFrame, LEGACY_DROPDOWN_OWNER, LEGACY_DROPDOWN_SPEC)
-    end
-    Checkmarks.TrackFrame(listFrame, LEGACY_DROPDOWN_OWNER)
-end
-
-function Checkmarks.RegisterLegacyDropdowns()
-    if Checkmarks.legacyRegistered or not CanRegister(EventRegistry) then
-        return Checkmarks.legacyRegistered
-    end
-    EventRegistry:RegisterCallback(LEGACY_DROPDOWN_EVENT, Checkmarks.OnLegacyDropdownShown, Checkmarks)
-    Checkmarks.legacyRegistered = true
-    return true
-end
-
 function Checkmarks.Apply()
     if not NS.DB then return false, "uninitialized" end
     if NS.IsCombatLocked() then
@@ -886,29 +582,13 @@ function Checkmarks.Apply()
     return true, count
 end
 
-local function Keys(set)
-    local keys = {}
-    for key in pairs(set) do keys[#keys + 1] = key end
-    return keys
-end
-
 function Checkmarks.Restore()
     if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer("checkmarks:restore", Checkmarks.Restore)
         return false, "combat"
     end
-    if NS.WindowActionSkin then NS.WindowActionSkin.Restore() end
-    local dropdowns = Keys(Checkmarks.dropdowns)
-    for index = 1, #dropdowns do Checkmarks.UntrackDropdown(dropdowns[index]) end
-    local categoryLists = Keys(Checkmarks.settingsCategoryLists)
-    for index = 1, #categoryLists do
-        Checkmarks.UntrackSettingsCategories(categoryLists[index])
-    end
-    if Checkmarks.legacyRegistered and CanUnregister(EventRegistry) then
-        EventRegistry:UnregisterCallback(LEGACY_DROPDOWN_EVENT, Checkmarks)
-    end
-    Checkmarks.legacyRegistered = false
-    if NS.GenericWindows then NS.GenericWindows.Disable(LEGACY_DROPDOWN_OWNER) end
+    NS.WindowActionSkin.Restore()
+    Checkmarks.ReleaseMenus()
     for texture, state in pairs(Checkmarks.states) do RestoreTexture(texture, state) end
     Checkmarks.count = 0
     return true
@@ -931,5 +611,15 @@ end
 function Checkmarks.GetStatus() return { applied = Checkmarks.count } end
 
 NS.Registry.AddListener(Checkmarks, Checkmarks.OnThemeChanged)
+
+-- Private to CheckmarksMenus.lua, which loads next (TOC order) and takes it
+-- off NS again.
+NS.CheckmarksShared = {
+    Field = Field,
+    Getter = Getter,
+    CanTrack = CanTrack,
+    OwnerSet = OwnerSet,
+    WalkControlTree = WalkControlTree,
+}
 
 return Checkmarks

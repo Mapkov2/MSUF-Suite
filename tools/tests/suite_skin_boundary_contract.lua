@@ -1,6 +1,9 @@
 local root = assert(arg[1], "repository root required")
 local locked, Suite, checks = false, {}, 0
 Suite.IsCombatLocked = function() return locked end
+Suite.Suite = { started = false }
+-- No skin addon is installed until the migration fixture below.
+C_AddOns = { LoadAddOn = function() return false, "MISSING" end }
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
 local Skin = Suite.Skin
 local function Check(value, message) assert(value, message);checks = checks + 1 end

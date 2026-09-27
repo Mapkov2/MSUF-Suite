@@ -15,8 +15,9 @@ local BlizzardYellow = {
 NS.BlizzardYellow = BlizzardYellow
 
 local Safety = NS.Safety
+local SameColor, ColorMatches = Safety.SameColor, Safety.ColorMatches
+local COLOR_OWN = Safety.COLOR_OWN
 
-local EPSILON = 0.015
 -- Native GameFontNormal-family gold.
 local NATIVE_R, NATIVE_G, NATIVE_B = 1.000, 0.820, 0.000
 
@@ -28,16 +29,9 @@ local function RefreshDesiredColor()
     desired[1], desired[2], desired[3], desired[4] = NS.Theme.GetColor("blizzardYellow")
 end
 
-local function Close(left, right)
-    return math.abs(left - right) <= EPSILON
-end
-
-local function MatchesColor(color, r, g, b, a)
-    return Close(r, color[1]) and Close(g, color[2]) and Close(b, color[3]) and Close(a, color[4])
-end
-
+-- Classifies Blizzard's own gold; its alpha does not matter.
 local function IsNativeYellow(r, g, b)
-    return Close(r, NATIVE_R) and Close(g, NATIVE_G) and Close(b, NATIVE_B)
+    return SameColor(r, g, b, nil, NATIVE_R, NATIVE_G, NATIVE_B, nil, Safety.COLOR_NATIVE)
 end
 
 local function CopyColor(target, source)
@@ -56,21 +50,41 @@ local function ReadTextColor(object)
     return Safety.ReadColor(object, "GetTextColor")
 end
 
+-- A region's object type never changes. Surfaces rescan their regions on
+-- every re-attach (pooled rows are re-initialized with native gold), so each
+-- region is asked once.
+local fontStringRegions = setmetatable({}, { __mode = "k" })
+
 local function IsFontString(region)
-    return type(region) == "table" and Safety.Read(region, "GetObjectType") == "FontString"
+    if type(region) ~= "table" then return false end
+    local known = fontStringRegions[region]
+    if known == nil then
+        known = Safety.Read(region, "GetObjectType") == "FontString"
+        fontStringRegions[region] = known
+    end
+    return known
 end
 
-local function LoadedFontSet()
-    local loaded = {}
-    local names = type(GetFonts) == "function" and GetFonts() or nil
-    if type(names) ~= "table" then return loaded end
-    for index = 1, #names do loaded[names[index]] = true end
-    return loaded
+-- Catalog fonts by name, verified once. A name whose font does not exist
+-- yet (its load-on-demand addon has not loaded) is checked again on the
+-- next apply; no apply enumerates every client font.
+local fontObjects = {}
+
+local function CatalogFont(name)
+    local object = fontObjects[name]
+    if object == nil then
+        local candidate = _G[name]
+        if type(candidate) == "table" and Safety.Read(candidate, "GetObjectType") == "Font" then
+            object = candidate
+            fontObjects[name] = object
+        end
+    end
+    return object
 end
 
 local function RestoreObject(object, state)
     local r, g, b, a = ReadTextColor(object)
-    if not r or not MatchesColor(state.applied, r, g, b, a) then
+    if not r or not ColorMatches(state.applied, r, g, b, a, COLOR_OWN) then
         return false
     end
     SetTextColor(object, state.original)
@@ -83,7 +97,7 @@ local function ApplyObject(object, states)
     if not r then return false end
     local state = states[object]
     if state then
-        if not MatchesColor(state.applied, r, g, b, a) and not IsNativeYellow(r, g, b) then
+        if not ColorMatches(state.applied, r, g, b, a, COLOR_OWN) and not IsNativeYellow(r, g, b) then
             return false
         end
     elseif IsNativeYellow(r, g, b) then
@@ -106,7 +120,7 @@ local function ApplyKnownNativeObject(object)
     if BlizzardYellow.directStates[object] then
         return ApplyObject(object, BlizzardYellow.directStates)
     end
-    if not IsNativeYellow(r, g, b) and not MatchesColor(desired, r, g, b, a) then return false end
+    if not IsNativeYellow(r, g, b) and not ColorMatches(desired, r, g, b, a, COLOR_OWN) then return false end
 
     SetTextColor(object, desired)
     BlizzardYellow.directStates[object] = {
@@ -145,11 +159,15 @@ local function CanTrack(frame)
         and type(frame) == "table" and not Safety.IsForbidden(frame)
 end
 
+-- 12.1 can return secret regions (Hierarchy aspect); they are skipped before
+-- any comparison or lookup.
 local function TrackRegions(...)
     local count = 0
+    local Public = Safety.Public
     for index = 1, select("#", ...) do
         local region = select(index, ...)
-        if IsFontString(region) and ApplyObject(region, BlizzardYellow.directStates) then
+        if Public(region) and IsFontString(region)
+            and ApplyObject(region, BlizzardYellow.directStates) then
             count = count + 1
         end
     end
@@ -169,11 +187,14 @@ end
 -- Returns the number recolored and whether text was one of the regions.
 local function TrackKnownRegions(text, ...)
     local count, textSeen = 0, false
+    local Public = Safety.Public
     for index = 1, select("#", ...) do
         local region = select(index, ...)
-        if region == text then textSeen = true end
-        if IsFontString(region) and ApplyKnownNativeObject(region) then
-            count = count + 1
+        if Public(region) then
+            if region == text then textSeen = true end
+            if IsFontString(region) and ApplyKnownNativeObject(region) then
+                count = count + 1
+            end
         end
     end
     return count, textSeen
@@ -221,12 +242,11 @@ function BlizzardYellow.Apply()
     if not NS.DB.enabled then return BlizzardYellow.Restore() end
 
     RefreshDesiredColor()
-    local loaded = LoadedFontSet()
-    local names = NS.BlizzardFontNames or {}
+    local names = NS.BlizzardFontNames
     local count = 0
     for index = 1, #names do
-        local name = names[index]
-        if loaded[name] and ApplyObject(_G[name], BlizzardYellow.states) then
+        local object = CatalogFont(names[index])
+        if object and ApplyObject(object, BlizzardYellow.states) then
             count = count + 1
         end
     end

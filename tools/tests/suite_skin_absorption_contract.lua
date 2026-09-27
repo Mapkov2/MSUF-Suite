@@ -35,6 +35,45 @@ oldLifecycle.scripts.OnEvent(oldLifecycle, "PLAYER_LOGIN")
 assert(_G.MapkoSkinDB and old.DB and not old.PublicAPI.playerReady,
     "Old engine applied skins during the data-only migration")
 _G.MSUFSuiteSkinMigrating = nil
+-- Retail and Forever always have these APIs, so the Suite skin calls them
+-- without an existence check. The stand-ins keep what this fixture did
+-- without them: timers run at once, the player is not logged in yet, no
+-- font object is listed, every event and installed addon is known.
+C_Timer = { After = function(_, callback) callback() end }
+securecallfunction = function(callback, ...) return callback(...) end
+IsLoggedIn = function() return false end
+GetFonts = function() return {} end
+RAID_CLASS_COLORS = {}
+EventUtil.ContinueAfterAllEvents = function() end
+C_AddOns.DoesAddOnExist = function() return true end
+C_EventUtils = { IsEventValid = function() return true end }
+UIPanelWindows = {}
+UpdateUIPanelPositions = function() end
+ShowUIPanel = function(frame) frame:Show() end
+HideUIPanel = function(frame) frame:Hide() end
+IsMouseButtonDown = function() return true end
+GameTooltip = { SetOwner = function() end, SetText = function() end, Show = function() end,
+    Hide = function() end }
+PlaySound = function() end
+IsControlKeyDown = function() return false end
+IsShiftKeyDown = function() return false end
+-- Setters every client has that the fixture's regions lack; the skin calls
+-- them on its own textures, font strings and frames.
+do
+    local function Noop() end
+    local fixtureRegion = new_region
+    new_region = function(...)
+        local region = fixtureRegion(...)
+        region.SetWordWrap = region.SetWordWrap or Noop
+        region.SetMaxLines = region.SetMaxLines or Noop
+        region.SetClipsChildren = region.SetClipsChildren or Noop
+        region.SetSnapToPixelGrid = region.SetSnapToPixelGrid or Noop
+        region.SetTexelSnappingBias = region.SetTexelSnappingBias or Noop
+        return region
+    end
+end
+-- Every frame has a level; the fixture's SetFrameLevel only records calls.
+function Frame:GetFrameLevel() return 0 end
 -- SharedXML grid utilities and unit events used by the owned Micro Bar.
 GridLayoutUtil = { calls = {} }
 function GridLayoutUtil.CreateStandardGridLayout(stride, xPadding, yPadding, xMultiplier, yMultiplier)
@@ -51,11 +90,57 @@ end
 AnchorUtil = { CreateAnchor = function(point, relativeTo, relativePoint)
     return { point = point, relativeTo = relativeTo, relativePoint = relativePoint }
 end }
+-- Client APIs the Blizzard window adapters and the owned Micro Bar call
+-- without an existence check (Retail and Forever have them). The stand-ins
+-- keep this fixture's former results: no global callback ever fires, the
+-- hover grace ends at once, no instance or house, full-alpha health gate,
+-- plain reparenting, and no secure driver or portrait art to model.
+EventRegistry = { RegisterCallback = function() end, UnregisterCallback = function() end }
+C_Timer.NewTimer = function(_, callback)
+    callback()
+    return { Cancel = function() end }
+end
+IsInInstance = function() return false end
+C_Housing = { IsInsideHouseOrPlot = function() return false end }
+Enum = Enum or {}
+Enum.LuaCurveType = { Step = 1 }
+C_CurveUtil = { CreateCurve = function()
+    return { SetType = function(self, kind) self.kind = kind end,
+        AddPoint = function(self, x, y) self[x] = y end }
+end }
+UnitHealthPercent = function() return 1 end
+RegisterStateDriver = function() end
+UnregisterStateDriver = function() end
+SetPortraitTexture = function() end
+FrameUtil = FrameUtil or {}
+FrameUtil.SetParentMaintainRenderLayering = FrameUtil.SetParentMaintainRenderLayering
+    or function(frame, parent) frame:SetParent(parent) end
+EditModeSystemMixin = EditModeSystemMixin or { IsInDefaultPosition = function() return true end }
 function Frame:RegisterUnitEvent(event, unit)
     self.events[event] = true
     self.unitEvents = self.unitEvents or {}
     self.unitEvents[event] = unit
 end
+-- Frames and globals of Blizzard addons that load at startup on 12.1.0,
+-- 12.1.5 and Forever (none is load-on-demand); the skin reads them without a
+-- check.
+CommunitiesFrame = new_frame("Frame", "CommunitiesFrame", UIParent)
+CommunitiesFrame.Chat = new_frame("Frame", nil, CommunitiesFrame)
+CommunitiesFrameMixin = { Event = { DisplayModeChanged = "DisplayModeChanged", ClubSelected = "ClubSelected" } }
+DeveloperConsole = new_frame("Frame", "DeveloperConsole", UIParent)
+GeneralDockManager = new_frame("Frame", "GeneralDockManager", UIParent)
+CHAT_FRAMES = {}
+ChangeChatColor = ChangeChatColor or function() end
+CharacterModelScene = CharacterModelScene or new_frame("ModelScene", "CharacterModelScene", UIParent)
+CharacterStatsPane = CharacterStatsPane or new_frame("Frame", "CharacterStatsPane", UIParent)
+QuestInfoRewardsFrame = new_frame("Frame", "QuestInfoRewardsFrame", UIParent)
+QuestInfoRewardsFrame.XPFrame = new_frame("Frame", "QuestInfoXPFrame", QuestInfoRewardsFrame)
+QuestInfoObjectivesFrame = new_frame("Frame", "QuestInfoObjectivesFrame", UIParent)
+QuestInfoObjectivesFrame.Objectives = {}
+QuestInfoSealFrame = new_frame("Frame", "QuestInfoSealFrame", UIParent)
+QuestFrameGreetingPanel = QuestFrameGreetingPanel or new_frame("Frame", "QuestFrameGreetingPanel", UIParent)
+QuestFrameGreetingPanel.titleButtonPool = QuestFrameGreetingPanel.titleButtonPool
+    or { EnumerateActive = function() return function() end end }
 -- Blizzard frames created before the load-on-demand skin keep the native
 -- handlers and mixin copies they were built with.
 local preexisting = {
@@ -74,6 +159,16 @@ preexisting.icon = new_frame("Button", "ContractPreexistingIconButton", UIParent
 preexisting.icon.SetButtonArtKit = preexisting.setArtKit
 preexisting.controller = new_frame("Frame", nil, preexisting.icon)
 preexisting.controller.OnShow = preexisting.controllerOnShow
+-- A SharedButtonTemplate red button: its controller's show skins it.
+local function SharedRedButton(name)
+    local button = new_frame("Button", name, UIParent)
+    button.atlasName = "128-RedButton"
+    button.Left, button.Center, button.Right = button:CreateTexture(), button:CreateTexture(), button:CreateTexture()
+    local controller = new_frame("Frame", nil, button)
+    controller.OnShow = ButtonControllerMixin.OnShow
+    return button, controller
+end
+preexisting.shared, preexisting.sharedController = SharedRedButton("ContractPreexistingSharedButton")
 _G.StaticPopup1 = new_frame("Frame", "StaticPopup1", UIParent)
 StaticPopup1.SetupButtons = preexisting.setupButtons
 function EnumerateFrames(previous)
@@ -95,6 +190,14 @@ for line in toc:gmatch("[^\r\n]+") do
     end
 end
 assert(namespace.ready and namespace.addonName == "MSUF_Suite_Skin")
+-- The split files' private bridge tables (NS.*Shared, the catalog data) are
+-- taken off the namespace by the files that read them, so nothing internal
+-- stays reachable through _G.MapkoSkin: no other addon can reach the public
+-- API's client registry or add a DeepWindows window family.
+for key in pairs(namespace) do
+    assert(type(key) ~= "string" or not key:find("Shared$") and key ~= "BlizzardCatalogData",
+        "a private bridge table stayed on _G.MapkoSkin: " .. tostring(key))
+end
 local macroStarts = 0
 local originalMacroStart = assert(namespace.MacroWindow.Start)
 namespace.MacroWindow.Start = function(...)
@@ -131,6 +234,15 @@ do
     assert(preexisting.icon.SetButtonArtKit ~= preexisting.setArtKit
         and preexisting.controller.OnShow ~= preexisting.controllerOnShow,
         "existing red button art-kit and shared-button controllers were not hooked")
+    -- Shown shared red buttons are skinned, adopted and new ones alike.
+    preexisting.sharedController:OnShow()
+    local laterShared, laterController = SharedRedButton("ContractLaterSharedButton")
+    laterController:OnShow()
+    for _, button in ipairs({ preexisting.shared, laterShared }) do
+        assert(panelButtons.tracked[button] == "shared"
+            and namespace.ControlSkin.GetOwner(button) == "uipanel-buttons",
+            "a shown shared red button was not skinned: " .. button:GetName())
+    end
     assert(StaticPopup1.SetupButtons ~= preexisting.setupButtons
         and GameDialogMixin.SetupButtons == preexisting.setupButtons,
         "StaticPopup1 kept its unhooked GameDialogMixin copy")
@@ -171,6 +283,19 @@ do
     local surface = namespace.Registry.GetSurface(nav)
     assert(surface and surface.spec.activeRole == "button",
         "Suite provider kept the bright blue MSUF navigation highlight")
+    client:ReleaseAll()
+
+    -- A button whose icon border an adapter skins through IconSkin belongs
+    -- to that adapter: a public API client cannot claim it.
+    local iconButton = new_frame("Button", "AdapterIconOwnerContract", UIParent)
+    iconButton.Icon = iconButton:CreateTexture()
+    iconButton.IconBorder = iconButton:CreateTexture()
+    assert(namespace.IconSkin.Apply(iconButton, "adapter-icon-contract"),
+        "IconSkin did not skin the adapter's item button")
+    local claimed, claimReason = client:SkinFrame(iconButton, { role = "panel" })
+    assert(not claimed and claimReason == "already-owned",
+        "a public API client claimed a button IconSkin owns: " .. tostring(claimReason))
+    namespace.IconSkin.DisableOwner("adapter-icon-contract")
     client:ReleaseAll()
 end
 assert(namespace.DB.typography.sharedMediaFont == "MapkoSkin - Expressway ExtraBold")
@@ -385,6 +510,416 @@ do
     namespace.Checkmarks.UntrackOwner("secret-contract")
 end
 do
+    -- 12.1 hierarchy getters (GetParent, GetRegions, GetChildren) can return
+    -- secrets. A secret is skipped before it is compared, used as a key or
+    -- indexed; indexing this stand-in raises the way a secret would.
+    local previousSecret, previousAccess = issecretvalue, canaccessvalue
+    local secret = setmetatable({}, { __index = function() error("a secret was indexed") end })
+    issecretvalue = function(value) return value == secret end
+    canaccessvalue = function() return false end
+
+    local previousShell = namespace.DB.theme.shellOpacity
+    namespace.DB.theme.shellOpacity = 0.4
+    local panel = CreateFrame("Frame", "SecretParentPanel", UIParent)
+    function panel:GetParent() return secret end
+    assert(namespace.Surface.Attach(panel, { role = "panel" }),
+        "a glass panel whose parent is secret was not skinned")
+    namespace.DB.theme.shellOpacity = previousShell
+
+    local holder = CreateFrame("Frame", "SecretRegionFrame", UIParent)
+    local gold = holder:CreateFontString()
+    gold:SetTextColor(1, 0.82, 0, 1)
+    holder.regions = { secret, gold }
+    assert(namespace.BlizzardYellow.TrackFrame(holder) == 1,
+        "a secret region stopped the gold text pass")
+    local dropdown = CreateFrame("Button", "SecretRegionDropdown", UIParent)
+    dropdown.Text = dropdown:CreateFontString()
+    dropdown.Text:SetTextColor(1, 0.82, 0, 1)
+    dropdown.regions = { secret, dropdown.Text }
+    assert(namespace.BlizzardYellow.TrackDropdown(dropdown) == 1,
+        "a secret region stopped the dropdown label pass")
+
+    local tree = CreateFrame("Frame", "SecretChildTree", UIParent)
+    local visibleChild = CreateFrame("Button", "SecretTreeVisibleChild")
+    function tree:GetChildren() return secret, visibleChild end
+    local _, nodes = namespace.Checkmarks.TrackControlTree(tree, "secret-tree")
+    assert(nodes == 2, "a secret child stopped the control tree walk")
+    namespace.Checkmarks.TrackFrame(tree, "secret-tree")
+    local iconButton = CreateFrame("Button", "SecretParentIconButton", UIParent)
+    local icon = iconButton:CreateTexture(nil, "ARTWORK")
+    icon.GetParent = function() return secret end
+    local iconClient = assert(namespace.GetAPI(2, 1):RegisterAddon("SecretParentIconContract", { integrationVersion = 1 }))
+    local skinned, iconReason = iconClient:SkinIcon(iconButton, { icon = icon, nativeBorder = icon })
+    assert(not skinned and iconReason == "foreign-region",
+        "an icon whose parent is secret was not refused as foreign: " .. tostring(iconReason))
+    iconClient:ReleaseAll()
+
+    -- A tab whose IsSelected answer is secret falls back to its active art.
+    local tab = CreateFrame("Button", "SecretSelectedTab", UIParent)
+    for _, key in ipairs({ "Left", "Middle", "Right", "LeftActive", "MiddleActive", "RightActive" }) do
+        tab[key] = tab:CreateTexture(nil, "BACKGROUND")
+    end
+    function tab:IsSelected() return secret end
+    assert(namespace.ControlSkin.ApplyTab(tab, "secret-tab", {}),
+        "a tab with a secret selection was not skinned")
+    assert(namespace.Registry.GetSurface(tab).active == true,
+        "a tab whose IsSelected answer is secret ignored its shown active art")
+    -- Later refreshes of these frames must not meet the stand-in again.
+    panel.GetParent, tree.GetChildren, tab.IsSelected = nil, nil, nil
+    holder.regions, dropdown.regions = { gold }, { dropdown.Text }
+    issecretvalue, canaccessvalue = previousSecret, previousAccess
+    namespace.ControlSkin.DisableOwner("secret-tab")
+    namespace.Checkmarks.UntrackOwner("secret-tree")
+    namespace.BlizzardYellow.Restore()
+end
+do
+    -- Repeated visits reuse what they learned: atlas names are lowered once,
+    -- a region's type is asked once, and no apply lists every client font.
+    local lower, lowered = string.lower, 0
+    local checkbox = CreateFrame("CheckButton", "CachedAtlasCheckbox", UIParent)
+    local check = checkbox:CreateTexture(nil, "ARTWORK")
+    check:SetAtlas("checkmark-minimal")
+    checkbox:SetCheckedTexture(check)
+    namespace.Checkmarks.TrackButton(checkbox, "cache-contract")
+    string.lower = function(...) lowered = lowered + 1; return lower(...) end
+    namespace.Checkmarks.TrackButton(checkbox, "cache-contract")
+    string.lower = lower
+    assert(lowered == 0, "a revisited button lowered its atlas names again: " .. lowered)
+    namespace.Checkmarks.UntrackOwner("cache-contract")
+
+    local row = CreateFrame("Button", "CachedRegionRow", UIParent)
+    local label = row:CreateFontString()
+    label:SetTextColor(1, 0.82, 0, 1)
+    row.regions = { label }
+    namespace.Surface.Attach(row, { role = "card" })
+    local objectType, typeReads = label.GetObjectType, 0
+    function label:GetObjectType()
+        typeReads = typeReads + 1
+        return objectType(self)
+    end
+    namespace.Surface.Attach(row, { role = "card" })
+    assert(typeReads == 0, "a re-attached surface asked its regions for their type again")
+    label:SetTextColor(1, 0.82, 0, 1)
+    namespace.Surface.Attach(row, { role = "card" })
+    local r, g = label:GetTextColor()
+    assert(not (r == 1 and g == 0.82), "a re-initialized row kept native gold after re-attach")
+
+    local previousFonts = GetFonts
+    local fontLists = 0
+    GetFonts = function()
+        fontLists = fontLists + 1
+        return { "ContractCatalogFont" }
+    end
+    local font = new_region("Font")
+    font:SetTextColor(1, 0.82, 0, 1)
+    _G.ContractCatalogFont = font
+    local names = namespace.BlizzardFontNames
+    names[#names + 1] = "ContractCatalogFont"
+    namespace.BlizzardYellow.Apply()
+    namespace.BlizzardYellow.Apply()
+    names[#names] = nil
+    local fontR, fontG = font:GetTextColor()
+    assert(not (fontR == 1 and fontG == 0.82), "a catalog font kept native gold")
+    assert(fontLists <= 1, "every gold text apply listed all client fonts again: " .. fontLists)
+    GetFonts, _G.ContractCatalogFont = previousFonts, nil
+    namespace.BlizzardYellow.Restore()
+end
+-- An exact Retail MinimalScrollBar contract (ScrollBarSkin's minimal kind).
+local function MinimalScrollBar(name)
+    local scroll = new_frame("EventFrame", name)
+    local track = new_frame("Frame", name .. "Track", scroll)
+    local thumb = new_frame("Frame", name .. "Thumb", track)
+    local back = new_frame("Button", name .. "Back", scroll)
+    local forward = new_frame("Button", name .. "Forward", scroll)
+    track.Begin, track.Middle, track.End = new_region(), new_region(), new_region()
+    track.Begin.alpha, track.Middle.alpha, track.End.alpha = 1, 1, 1
+    track.Thumb = thumb
+    thumb.Begin, thumb.Middle, thumb.End = new_region(), new_region(), new_region()
+    thumb.Begin:SetVertexColor(0.12, 0.23, 0.34, 0.91)
+    back.Texture, forward.Texture = new_region(), new_region()
+    local nativeFields = {
+        [thumb] = {
+            upBeginTexture = "minimal-scrollbar-small-thumb-top",
+            upMiddleTexture = "minimal-scrollbar-small-thumb-middle",
+            upEndTexture = "minimal-scrollbar-small-thumb-bottom",
+            overBeginTexture = "minimal-scrollbar-small-thumb-top-over",
+            overMiddleTexture = "minimal-scrollbar-small-thumb-middle-over",
+            overEndTexture = "minimal-scrollbar-small-thumb-bottom-over",
+            downBeginTexture = "minimal-scrollbar-small-thumb-top-down",
+            downMiddleTexture = "minimal-scrollbar-small-thumb-middle-down",
+            downEndTexture = "minimal-scrollbar-small-thumb-bottom-down",
+        },
+        [back] = {
+            normalTexture = "minimal-scrollbar-arrow-top",
+            overTexture = "minimal-scrollbar-arrow-top-over",
+            downTexture = "minimal-scrollbar-arrow-top-down",
+            disabledTexture = "minimal-scrollbar-arrow-top",
+        },
+        [forward] = {
+            normalTexture = "minimal-scrollbar-arrow-bottom",
+            overTexture = "minimal-scrollbar-arrow-bottom-over",
+            downTexture = "minimal-scrollbar-arrow-bottom-down",
+            disabledTexture = "minimal-scrollbar-bottom-top",
+        },
+    }
+    for object, fields in pairs(nativeFields) do
+        for key, atlas in pairs(fields) do object[key] = atlas end
+    end
+    scroll.Track, scroll.Back, scroll.Forward = track, back, forward
+    function scroll:SetScrollPercentage(value) self.scrollPercentage = value end
+    function scroll:GetScrollPercentage() return self.scrollPercentage or 0 end
+    function scroll:GetTrack() return self.Track end
+    function scroll:GetThumb() return self.Track.Thumb end
+    function scroll:GetBackStepper() return self.Back end
+    function scroll:GetForwardStepper() return self.Forward end
+    return scroll, thumb, back, forward
+end
+do
+    -- Color ownership (Safety.SameColor): a color we wrote still counts as
+    -- ours when it reads back at 8-bit precision (COLOR_OWN), a color another
+    -- addon set close to ours does not, and Blizzard's own gold is classified
+    -- with the looser COLOR_NATIVE.
+    local function Near(value) return value < 0.5 and value + 0.001 or value - 0.001 end
+    local function Away(value) return value < 0.5 and value + 0.01 or value - 0.01 end
+    local holder = CreateFrame("Frame", "ColorOwnershipHolder", UIParent)
+    local foreignText = holder:CreateFontString()
+    foreignText:SetTextColor(1, 0.825, 0.005, 1)
+    local ownText = holder:CreateFontString()
+    ownText:SetTextColor(1, 0.82, 0, 1)
+    holder.regions = { foreignText, ownText }
+    assert(namespace.BlizzardYellow.TrackFrame(holder) == 2, "near-native gold was not recognized")
+    local r, g, b, a = foreignText:GetTextColor()
+    foreignText:SetTextColor(Away(r), g, b, a)
+    r, g, b, a = ownText:GetTextColor()
+    ownText:SetTextColor(Near(r), g, b, a)
+    namespace.BlizzardYellow.Restore()
+    assert(foreignText:GetTextColor() ~= 1, "gold text restore took back a foreign color close to ours")
+    r, g = ownText:GetTextColor()
+    assert(r == 1 and g == 0.82, "gold text restore missed our color read back at 8-bit precision")
+
+    local foreignMark = holder:CreateTexture(nil, "ARTWORK")
+    foreignMark:SetVertexColor(1, 0.82, 0, 1)
+    local ownMark = holder:CreateTexture(nil, "ARTWORK")
+    ownMark:SetVertexColor(1, 0.82, 0, 1)
+    assert(namespace.Checkmarks.TrackTexture(foreignMark, "color-contract", "checkmark")
+        and namespace.Checkmarks.TrackTexture(ownMark, "color-contract", "checkmark"))
+    r, g, b, a = foreignMark:GetVertexColor()
+    foreignMark:SetVertexColor(Away(r), g, b, a)
+    r, g, b, a = ownMark:GetVertexColor()
+    ownMark:SetVertexColor(Near(r), g, b, a)
+    namespace.Checkmarks.UntrackOwner("color-contract")
+    assert(foreignMark:GetVertexColor() ~= 1, "checkmark restore took back a foreign color close to ours")
+    r, g = ownMark:GetVertexColor()
+    assert(r == 1 and g == 0.82, "checkmark restore missed our color read back at 8-bit precision")
+
+    local faded = holder:CreateTexture(nil, "BORDER")
+    faded:SetVertexColor(0.3, 0.5, 0.7, 1)
+    assert(namespace.Cosmetics.SuppressVertexAlpha(faded, "color-contract"))
+    faded:SetVertexColor(Near(0.3), 0.5, Near(0.7), 0)
+    assert(namespace.Cosmetics.Restore(faded, "color-contract"))
+    assert(select(4, faded:GetVertexColor()) == 1,
+        "a suppressed vertex alpha read back at 8-bit precision was not restored")
+
+    -- Scroll bar tints read back at 8-bit precision are still ours on a
+    -- theme refresh and on disable.
+    local scroll, thumb, back, forward = MinimalScrollBar("ColorOwnershipScrollBar")
+    local tintedRegions = { thumb.Begin, thumb.Middle, thumb.End, back.Texture, forward.Texture }
+    local function ReadTintsBack()
+        for _, region in ipairs(tintedRegions) do
+            local tintR, tintG, tintB, tintA = region:GetVertexColor()
+            region:SetVertexColor(Near(tintR), tintG, tintB, tintA)
+        end
+    end
+    assert(namespace.ScrollBarSkin.Apply(scroll, "scroll-color-contract"), "the color contract scroll bar was not skinned")
+    ReadTintsBack()
+    assert(namespace.ScrollBarSkin.Refresh(scroll) == true,
+        "a scroll bar refresh took its own tints read back at 8-bit precision for foreign ones")
+    ReadTintsBack()
+    assert(namespace.ScrollBarSkin.DisableOwner("scroll-color-contract")
+        and thumb.Begin:GetVertexColor() == 0.12,
+        "scroll bar disable left its tints read back at 8-bit precision behind")
+
+    -- A secret channel never matches: it is rejected before any arithmetic.
+    local previousSecret, previousAccess = issecretvalue, canaccessvalue
+    issecretvalue = function(value) return value == 0.5 end
+    canaccessvalue = function() return false end
+    local secretMatched = namespace.Safety.SameColor(0.5, 0.2, 0.2, 1, 0.5, 0.2, 0.2, 1)
+        or namespace.Safety.SameColor(0.2, 0.2, 0.2, 0.5, 0.2, 0.2, 0.2, 0.5)
+    issecretvalue, canaccessvalue = previousSecret, previousAccess
+    assert(not secretMatched, "Safety.SameColor compared a secret color channel")
+
+    -- Rendering and API code use Safety's shared readers, not local copies;
+    -- color matches go through Safety.ColorMatches with one argument order.
+    for _, file in ipairs({ "Rendering/MicroMenuVisual.lua", "Core/PublicAPI.lua" }) do
+        assert(not read("MSUF_Suite_Skin/" .. file):find("local function HasMethod", 1, true),
+            file .. " keeps its own copy of Safety.HasMethod")
+    end
+    for _, file in ipairs({ "Core/BlizzardYellow.lua", "Core/Checkmarks.lua", "Rendering/ScrollBarSkin.lua" }) do
+        local source = read("MSUF_Suite_Skin/" .. file)
+        assert(not source:find("local function ShowsColor", 1, true)
+            and not source:find("local function ShowsOwnColor", 1, true)
+            and not source:find("local function MatchesColor", 1, true),
+            file .. " keeps its own color match wrapper")
+    end
+    assert(not read("MSUF_Suite_Skin_Options/Shell/Widgets.lua"):find("local function SameColor", 1, true),
+        "the options' 8-bit color check shadows the shared Safety.SameColor name")
+    assert(not read("MSUF_Suite_Skin/Rendering/IconSkin.lua"):find("hook quality update functions", 1, true),
+        "IconSkin still claims that no quality update is hooked")
+end
+do
+    -- Engine listeners react only to the settings they depend on, and the
+    -- writes of one frame (slider ticks, color-picker moves) refresh once.
+    local Registry = namespace.Registry
+    local owner = "listener-contract"
+    local counts = { icon = 0, scroll = 0, action = 0 }
+    local function Count(region, method, key)
+        local original = region[method]
+        region[method] = function(self, ...)
+            counts[key] = counts[key] + 1
+            return original(self, ...)
+        end
+    end
+    local iconButton = CreateFrame("Button", "ListenerContractIconButton", UIParent)
+    iconButton.Icon = iconButton:CreateTexture(nil, "ARTWORK")
+    iconButton.IconBorder = iconButton:CreateTexture(nil, "OVERLAY")
+    local iconState = assert(namespace.IconSkin.Apply(iconButton, owner, {}), "the item border was not skinned")
+    Count(iconState.lines[1], "SetColorTexture", "icon")
+    local scroll, thumb = MinimalScrollBar("ListenerContractScrollBar")
+    assert(namespace.ScrollBarSkin.Apply(scroll, owner), "the scroll bar was not skinned")
+    Count(thumb.Begin, "SetVertexColor", "scroll")
+    local action = CreateFrame("Button", "ListenerContractCloseButton", UIParent)
+    for _, slot in ipairs({ "Normal", "Pushed", "Disabled", "Highlight" }) do
+        local texture = action:CreateTexture(nil, "ARTWORK")
+        texture:SetAtlas(slot == "Normal" and "RedButton-Exit" or "RedButton-Exit-" .. slot)
+        action["Set" .. slot .. "Texture"](action, texture)
+    end
+    local actionState = assert(namespace.WindowActionSkin.Apply(action, owner, "close"),
+        "the window action was not skinned")
+    Count(actionState.glyphs.normal, "SetVertexColor", "action")
+    local function ResetCounts() counts.icon, counts.scroll, counts.action = 0, 0, 0 end
+
+    ResetCounts()
+    Registry.NotifyListeners("color", "accent")
+    Registry.NotifyListeners("appearance", "shellOpacity")
+    Registry.NotifyListeners("geometry", "radius")
+    assert(counts.icon == 0 and counts.scroll == 0 and counts.action == 0,
+        ("an unrelated setting repainted item borders %d, scroll bars %d, window actions %d times")
+            :format(counts.icon, counts.scroll, counts.action))
+    Registry.NotifyListeners("color", "iconBorder")
+    Registry.NotifyListeners("color", "accentBright")
+    Registry.NotifyListeners("color", "blizzardClose")
+    assert(counts.icon > 0 and counts.scroll > 0 and counts.action > 0,
+        "a color an engine surface uses did not repaint it")
+
+    local theme = namespace.DB.theme
+    local look, preset, opacity = theme.look, theme.preset, theme.shellOpacity
+    local borderR, borderG, borderB, borderA = namespace.Theme.GetColor("iconBorder")
+    local queued = {}
+    local previousTimer = _G.C_Timer
+    _G.C_Timer = { After = function(_, callback) queued[#queued + 1] = callback end }
+    local refreshAll, fullRefreshes = Registry.RefreshAll, 0
+    Registry.RefreshAll = function(...)
+        fullRefreshes = fullRefreshes + 1
+        return refreshAll(...)
+    end
+    ResetCounts()
+    for step = 1, 5 do
+        assert(namespace.Theme.SetAppearance("shellOpacity", 0.5 + step * 0.05))
+        assert(namespace.Theme.SetColor("iconBorder", step * 0.1, borderG, borderB, borderA))
+    end
+    assert(fullRefreshes == 0 and counts.icon == 0,
+        "every settings write refreshed the surfaces and item borders at once")
+    local index = 1
+    while queued[index] do
+        queued[index]()
+        index = index + 1
+    end
+    assert(fullRefreshes == 1 and counts.icon == 1,
+        ("a frame of settings writes refreshed the surfaces %d and the item borders %d times")
+            :format(fullRefreshes, counts.icon))
+    Registry.RefreshAll = refreshAll
+    _G.C_Timer = previousTimer
+    namespace.Theme.SetAppearance("shellOpacity", opacity)
+    namespace.Theme.SetColor("iconBorder", borderR, borderG, borderB, borderA)
+    theme.look, theme.preset = look, preset
+    namespace.IconSkin.DisableOwner(owner)
+    namespace.ScrollBarSkin.DisableOwner(owner)
+    namespace.WindowActionSkin.DisableOwner(owner)
+end
+do
+    -- Micro Button state changes (SetNormal, SetPushed, hover) repaint the
+    -- overlay and re-check the borrowed performance bar without allocating.
+    -- These stand-in regions store what is written and allocate nothing, so
+    -- any growth below comes from the skin.
+    local function Noop() end
+    local quiet = { IsForbidden = function() return false end,
+        IsProtected = function() return false, false end }
+    for _, name in ipairs({ "ClearAllPoints", "SetPoint", "SetSize", "SetTexture", "SetTexCoord",
+        "SetVertexColor", "SetGradient", "SetDesaturated", "SetShown", "Show", "Hide", "SetAtlas",
+        "SetIgnoreParentAlpha", "SetIgnoreParentScale", "SetAllPoints", "SetColorTexture",
+        "AddMaskTexture", "RemoveMaskTexture", "ClearTextureSlice", "SetTextureSliceMargins",
+        "SetTextureSliceMode", "SetDrawLayer" }) do
+        quiet[name] = Noop
+    end
+    local quietMeta = { __index = quiet }
+    local function Quiet() return setmetatable({}, quietMeta) end
+    local button = Quiet()
+    function button.CreateTexture() return Quiet() end
+    function button.CreateMaskTexture() return Quiet() end
+    local stateTextures = { Normal = Quiet(), Highlight = Quiet(), Pushed = Quiet(), Disabled = Quiet() }
+    function button.GetNormalTexture() return stateTextures.Normal end
+    function button.GetHighlightTexture() return stateTextures.Highlight end
+    function button.GetPushedTexture() return stateTextures.Pushed end
+    function button.GetDisabledTexture() return stateTextures.Disabled end
+    local bar = setmetatable({ texture = "bar", layer = "ARTWORK", subLevel = 0,
+        left = 0, right = 1, top = 0, bottom = 1, width = 2, height = 10,
+        point = "LEFT", relativeTo = button, relativePoint = "LEFT", x = 0, y = 0 }, quietMeta)
+    function bar:GetNumPoints() return 1 end
+    function bar:GetPoint() return self.point, self.relativeTo, self.relativePoint, self.x, self.y end
+    function bar:SetPoint(point, relativeTo, relativePoint, x, y)
+        self.point, self.relativeTo, self.relativePoint, self.x, self.y = point, relativeTo, relativePoint, x, y
+    end
+    function bar:GetAtlas() return self.atlas end
+    function bar:GetTexture() return self.texture end
+    function bar:SetColorTexture() self.atlas, self.texture = nil, "flat" end
+    function bar:SetTexture(texture) self.atlas, self.texture = nil, texture end
+    function bar:SetAtlas(atlas) self.atlas = atlas end
+    function bar:GetTexCoord() return self.left, self.right, self.top, self.bottom end
+    function bar:SetTexCoord(left, right, top, bottom)
+        self.left, self.right, self.top, self.bottom = left, right, top, bottom
+    end
+    function bar:GetDrawLayer() return self.layer, self.subLevel end
+    function bar:SetDrawLayer(layer, subLevel) self.layer, self.subLevel = layer, subLevel end
+    function bar:GetWidth() return self.width end
+    function bar:GetHeight() return self.height end
+    function bar:SetSize(width, height) self.width, self.height = width, height end
+    function bar:GetVertexColor() return 0.2, 0.9, 0.2, 1 end
+    button.MainMenuBarPerformanceBar = bar
+
+    local settings = namespace.CopyValue(namespace.DB.icons.microMenu)
+    settings.iconStyle, settings.hoverStyle, settings.buttonBackground = "bold", "softFill", true
+    local visual = namespace.MicroMenuVisual
+    local STATES = { "normal", "pushed", "normal", "highlight", "pressed", "disabled" }
+    local function Cycle()
+        for _, stateName in ipairs(STATES) do
+            visual.Apply(button, "MainMenuMicroButton", settings, stateName)
+            visual.Refresh(button, settings, stateName)
+        end
+    end
+    Cycle()
+    assert(bar.width == 2 and bar.layer == "OVERLAY" and bar.texture == "flat",
+        "the Micro Bar did not borrow the performance bar")
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local before = collectgarbage("count")
+    for _ = 1, 25 do Cycle() end
+    local grown = collectgarbage("count") - before
+    collectgarbage("restart")
+    assert(grown < 1, ("Micro Button state changes allocated %.1f KB"):format(grown))
+    assert(visual.Restore(button) and bar.layer == "ARTWORK" and bar.texture == "bar"
+        and bar.point == "LEFT", "the performance bar was not returned as found")
+end
+do
     local previousSuite, appliedLook = _G.MSUFSuite, nil
     _G.MSUFSuite = { Suite = { ApplyGlobalLook = function(name)
         appliedLook = name
@@ -549,6 +1084,7 @@ do
     local registeredOwner, registeredElement, enteredOwner, enteredId
     local previousEnum, previousCurve, previousPercent, previousHousing =
         _G.Enum, _G.C_CurveUtil, _G.UnitHealthPercent, _G.C_Housing
+    local previousDriver, previousUndriver = _G.RegisterStateDriver, _G.UnregisterStateDriver
     _G.RegisterStateDriver = function(frame, attribute, driver)
         assert(attribute == "visibility")
         frame.visibilityDriver = driver
@@ -796,7 +1332,7 @@ do
     assert(not registeredElement.isEnabled(), "disabled Micro Bar remained movable")
     _G.Enum, _G.C_CurveUtil, _G.UnitHealthPercent, _G.C_Housing =
         previousEnum, previousCurve, previousPercent, previousHousing
-    _G.RegisterStateDriver, _G.UnregisterStateDriver = nil, nil
+    _G.RegisterStateDriver, _G.UnregisterStateDriver = previousDriver, previousUndriver
     FrameUtil = previousFrameUtil
 end
 do
@@ -1112,6 +1648,30 @@ assert(host:ShowPage("advanced") and host.key == "advanced")
 for _, key in ipairs(pages) do
     assert(host:ShowPage(key) and host.key == key, "embedded skin page failed to build: " .. key)
 end
+do
+    -- The look note belongs to the preview panel it is drawn on.
+    local looksPage = host.pages.looks
+    local note = looksPage._mskinLookNoteTitle:GetParent()
+    local noteParent = note:GetParent()
+    local parentSurface = namespace.Registry.GetSurface(noteParent)
+    assert(noteParent ~= looksPage and parentSurface and parentSurface.spec.role == "navigation",
+        "the look note is not a child of the preview panel")
+    -- Showing the host again repaints the current page.
+    local repaints = 0
+    options.TrackRefresh(function() repaints = repaints + 1 end)
+    local onShow = host:GetScript("OnShow")
+    assert(type(onShow) == "function", "the embedded host does not repaint when it is shown")
+    onShow(host)
+    assert(repaints == 1, "showing the embedded host did not refresh the options")
+end
+do
+    -- A query is split into words once, not once per search record.
+    local gmatch, splits = string.gmatch, 0
+    string.gmatch = function(...) splits = splits + 1; return gmatch(...) end
+    options.SearchSettings("window opacity", 8)
+    string.gmatch = gmatch
+    assert(splits <= 1, "the skin search split the query once per record: " .. splits)
+end
 local searchHits = options.SearchSettings("opacity", 4)
 assert(#searchHits > 0 and #searchHits <= 4 and searchHits[1].page and searchHits[1].pageLabel,
     "skin settings search returned no usable results")
@@ -1137,12 +1697,56 @@ GameEvent = { RegisterCamelotEvents = function() end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Client.lua"))("MSUF_Suite_Skin", forever)
 assert(forever.Client.flavor == "Forever" and forever.Client.isMainline
     and not forever.Client.modernEquipment, "Forever skin adapter route changed")
-for _, flavor in ipairs({ "Mainline", "Mists", "TBC", "Vanilla" }) do
-    local clientProfile = { Client = { flavor = flavor, isForever = false } }
-    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", clientProfile)
-    assert(clientProfile.Defaults.theme.look == "midnightDark"
-        and #clientProfile.LookOrder == 3,
-        "non-Forever skin client did not start with Midnight Dark: " .. flavor)
+do
+    local retail = { Client = { flavor = "Mainline", isMainline = true, isForever = false } }
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", retail)
+    assert(retail.Defaults.theme.look == "midnightDark" and #retail.LookOrder == 3,
+        "the Retail skin client did not start with Midnight Dark")
+end
+do
+    -- Classic project IDs are no Suite client any more.
+    local classic = {}
+    local previousProject, previousEvent = WOW_PROJECT_ID, GameEvent
+    WOW_PROJECT_ID, WOW_PROJECT_CLASSIC, GameEvent = 2, 2, nil
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Client.lua"))("MSUF_Suite_Skin", classic)
+    WOW_PROJECT_ID, WOW_PROJECT_CLASSIC, GameEvent = previousProject, nil, previousEvent
+    assert(classic.Client.flavor == "Unknown" and not classic.Client.isMainline,
+        "the skin engine still maps a Classic client")
+    -- The Suite copy is canonical: the vendor script refuses to overwrite it
+    -- unless it is told to on purpose. The run points at a checkout that does
+    -- not exist, so even a script without the guard could not copy anything.
+    local guarded = assert(io.open(root .. "/tools/vendor-suite-skin.py", "rb"))
+    local guardedSource = guarded:read("*a")
+    guarded:close()
+    assert(guardedSource:find('"--force-overwrite-suite"', 1, true),
+        "the vendor script has no --force-overwrite-suite guard")
+    local python = os.getenv("MSUF_PYTHON")
+        or [[C:\Users\Marco\AppData\Local\Programs\Python\Python312-32\python.exe]]
+    local pythonFile = io.open(python, "rb")
+    if pythonFile then
+        pythonFile:close()
+        local run = assert(io.popen('""' .. python .. '" "' .. root .. '/tools/vendor-suite-skin.py" "'
+            .. root .. '/no-such-mapkoskin-checkout" 2>&1"'))
+        local output = run:read("*a")
+        run:close()
+        assert(output:find("Refusing to vendor", 1, true)
+            and output:find("--force-overwrite-suite", 1, true),
+            "the vendor script ran without --force-overwrite-suite: " .. output)
+    end
+    local vendor = assert(io.open(root .. "/tools/vendor-suite-skin.py", "rb"))
+
+    local vendorSource = vendor:read("*a")
+    vendor:close()
+    assert(not vendorSource:find('"Vanilla"', 1, true) and not vendorSource:find('"Mists"', 1, true)
+        and not vendorSource:find('"TBC"', 1, true), "the vendor script still writes Classic TOCs")
+end
+-- The Suite ships the Mainline TOC only; Forever loads it too.
+for _, addon in ipairs({ "MSUF_Suite_Skin", "MSUF_Suite_Skin_Options" }) do
+    for _, flavor in ipairs({ "Vanilla", "TBC", "Mists" }) do
+        local stale = io.open(root .. "/" .. addon .. "/" .. addon .. "_" .. flavor .. ".toc", "rb")
+        if stale then stale:close() end
+        assert(not stale, addon .. " still ships a " .. flavor .. " TOC")
+    end
 end
 print("Suite skin: " .. looks .. " looks, " .. palettes .. " palettes, all submenus, migration and Forever route passed")
 ]=]

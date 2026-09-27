@@ -3,6 +3,9 @@
 -- module by the skin, and styled again once the module is off. The skin lets
 -- go before the module starts and takes the surface back after it stopped.
 local root = assert(arg[1], "repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local checks = 0
 local function Check(value, message)
@@ -53,7 +56,9 @@ Check(not S.OwnsBlizzardSurface("chatFrames") and not S.OwnsBlizzardSurface("min
 -- Start and stop order around a surface module; other modules never notify.
 Suite.Skin = { SurfacesChanged = function(phase) events[#events + 1] = "skin:" .. phase end }
 S.started = true
-S.NewContext = function() return { Release = function() end } end
+S.NewContext = function() return { Release = function() end, RefreshOwnedSkins = function() end } end
+S.RefreshEditMover = function() end
+S.UnregisterEditElements = function() end
 S.instances.bags = {
     Enable = function() events[#events + 1] = "enable" end,
     Refresh = function() events[#events + 1] = "refresh" end,

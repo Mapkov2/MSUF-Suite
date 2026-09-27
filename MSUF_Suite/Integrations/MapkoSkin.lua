@@ -11,15 +11,13 @@ local appearanceHooked = false
 local SKINNED_HUD = { "objectives", "announcements" }
 
 local function HookOwnedHUD(api)
-    if appearanceHooked or type(hooksecurefunc) ~= "function"
-        or type(api.OnAppearanceChanged) ~= "function" then
-        return
-    end
+    -- hooksecurefunc raises when the hooked field is not a function.
+    if appearanceHooked or type(api.OnAppearanceChanged) ~= "function" then return end
     hooksecurefunc(api, "OnAppearanceChanged", function()
         local controller = Suite.Suite
-        if not controller or not controller.started then return end
+        if not controller.started then return end
         for _, id in ipairs(SKINNED_HUD) do
-            if controller.states[id] and controller.states[id].active then controller.Apply(id) end
+            if controller.states[id].active then controller.Apply(id) end
         end
     end)
     appearanceHooked = true
@@ -33,13 +31,11 @@ end
 function Skin.LoadLegacyDatabase()
     if type(_G.MapkoSkinDB) == "table" then return true end
     if type(_G.MapkoSkin) == "table" and not _G.MapkoSkin.migrationOnly then return false end
-    if not (Suite.Client and Suite.Client.HasAddOn and Suite.Client.HasAddOn("MapkoSkin")) then return false end
-    local loader = C_AddOns and C_AddOns.LoadAddOn or _G.LoadAddOn
-    if type(loader) ~= "function" then return false end
+    if not Suite.Client.HasAddOn("MapkoSkin") then return false end
     -- LoadAddOn reports a failed load in its results; the addon's own load
     -- errors go to the client error handler. The database decides success.
     _G.MSUFSuiteSkinMigrating = true
-    loader("MapkoSkin")
+    C_AddOns.LoadAddOn("MapkoSkin")
     _G.MSUFSuiteSkinMigrating = nil
     return type(_G.MapkoSkinDB) == "table"
 end
@@ -51,15 +47,13 @@ function Skin.EnsureEngine()
         return true
     end
     if Skin.IsAvailable() and not provider.migrationOnly then return true, "legacy-session" end
-    local loader = C_AddOns and C_AddOns.LoadAddOn or _G.LoadAddOn
-    if type(loader) ~= "function" then return false, "loader-unavailable" end
     local importedLegacy = type(_G.MapkoSkinDB) == "table"
     -- The old addon is now load-on-demand. Load it only once as a data bridge:
     -- its skin hooks are suppressed by migrationOnly before PLAYER_LOGIN.
     if Suite.RootDB and not Suite.RootDB.skinMigrationDone then
         importedLegacy = Skin.LoadLegacyDatabase() or importedLegacy
     end
-    local loaded, reason = loader("MSUF_Suite_Skin")
+    local loaded, reason = C_AddOns.LoadAddOn("MSUF_Suite_Skin")
     if type(_G.MapkoSkin) == "table" and _G.MapkoSkin.addonName == "MSUF_Suite_Skin"
         and Skin.IsAvailable() then
         if type(_G.MapkoSkin.EnsureDatabaseReady) == "function" then
@@ -92,8 +86,10 @@ function Skin.Release(moduleID)
     clients[moduleID] = nil
 end
 
-function Skin.SetEnabled(enabled)
-    if Suite.IsCombatLocked and Suite.IsCombatLocked() then return false, "combat" end
+-- Re-applies the started modules so they pick up or drop the skin. A caller
+-- that applies them itself right after (undo) passes deferApply.
+function Skin.SetEnabled(enabled, deferApply)
+    if Suite.IsCombatLocked() then return false, "combat" end
     enabled = enabled == true
     if enabled then Skin.EnsureEngine() end
     if not enabled then
@@ -101,8 +97,7 @@ function Skin.SetEnabled(enabled)
     end
     Skin.enabled = enabled
     if Suite.RootDB then Suite.RootDB.skinEnabled = enabled end
-    if Suite.Suite and Suite.Suite.started then Suite.Suite.ApplyAll() end
-    if Suite.Suite and Suite.Suite.RefreshCopySkin then Suite.Suite.RefreshCopySkin() end
+    if not deferApply and Suite.Suite.started then Suite.Suite.ApplyAll() end
     return true
 end
 
@@ -117,7 +112,7 @@ function Skin.SurfacesChanged(phase)
 end
 
 function Skin.OpenEditor(parent, width, height)
-    if Suite.IsCombatLocked and Suite.IsCombatLocked() then return false, "combat" end
+    if Suite.IsCombatLocked() then return false, "combat" end
     Skin.EnsureEngine()
     local provider = _G.MapkoSkin
     if type(provider) ~= "table" or type(provider.MountOptions) ~= "function" then

@@ -15,12 +15,7 @@ local ScrollBarSkin = {
 NS.ScrollBarSkin = ScrollBarSkin
 
 local Safety = NS.Safety
-
-local listenerOwner = {}
-local listenerRegistered = false
-
--- Tinted colors are compared with what the client reports back.
-local COLOR_EPSILON = 0.0001
+local WatchSettings = NS.Registry.WatchSettings
 
 local TRACK_SURFACE_SPEC = {
     role = "input",
@@ -305,12 +300,10 @@ local function CanDecorate(contract)
         and (not contract.background or Safety.CanDecorate(contract.background, false))
 end
 
-local function SameColor(color, r, g, b, a)
-    return math.abs(color[1] - r) <= COLOR_EPSILON
-        and math.abs(color[2] - g) <= COLOR_EPSILON
-        and math.abs(color[3] - b) <= COLOR_EPSILON
-        and math.abs(color[4] - a) <= COLOR_EPSILON
-end
+-- A region still shows a tint this module wrote, or the native color it
+-- read, within COLOR_OWN: both are the client's own read-back values.
+local ColorMatches = Safety.ColorMatches
+local COLOR_OWN = Safety.COLOR_OWN
 
 local function TintRegion(state, region, role, alphaScale)
     local held = ScrollBarSkin.regionOwners[region]
@@ -322,8 +315,8 @@ local function TintRegion(state, region, role, alphaScale)
     if not tint then
         tint = { original = { r, g, b, a }, applied = {} }
         state.tints[region] = tint
-    elseif tint.applied[1] and not SameColor(tint.applied, r, g, b, a)
-        and not SameColor(tint.original, r, g, b, a) then
+    elseif tint.applied[1] and not ColorMatches(tint.applied, r, g, b, a, COLOR_OWN)
+        and not ColorMatches(tint.original, r, g, b, a, COLOR_OWN) then
         return false
     end
 
@@ -364,7 +357,7 @@ end
 local function RestoreTints(state)
     for region, tint in pairs(state.tints) do
         local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
-        if r and tint.applied[1] and SameColor(tint.applied, r, g, b, a) then
+        if r and tint.applied[1] and ColorMatches(tint.applied, r, g, b, a, COLOR_OWN) then
             local original = tint.original
             region:SetVertexColor(original[1], original[2], original[3], original[4])
         end
@@ -421,7 +414,7 @@ local function ClearPendingTarget(target, cancel)
         end
         ScrollBarSkin.pendingTargets[target] = nil
     end
-    if cancel and NS.CombatGate then NS.CombatGate.Cancel(TargetKey(target)) end
+    if cancel then NS.CombatGate.Cancel(TargetKey(target)) end
 end
 
 local function RestoreNative(state)
@@ -524,15 +517,22 @@ local function RefreshAll()
     return true
 end
 
-local function EnsureListener()
-    if listenerRegistered then return end
-    NS.Registry.AddListener(listenerOwner, RefreshAll)
-    listenerRegistered = true
-end
+-- The color roles ApplyTints paints. The track surface itself follows the
+-- Registry's own surface refreshes. Tints repaint only for these (see
+-- Registry.WatchSettings), once per frame however many settings a
+-- color-picker drag writes.
+local TINT_SETTINGS = {
+    color = {
+        accentBright = true,
+        blizzardArrow = true,
+        borderSoft = true,
+        hover = true,
+    },
+}
 
 local function ApplyAndListen(target, owner)
     local state, reason = ApplyNow(target, owner)
-    if state then EnsureListener() end
+    if state then WatchSettings(RefreshAll, TINT_SETTINGS) end
     return state, reason
 end
 

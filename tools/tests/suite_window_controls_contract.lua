@@ -5,6 +5,23 @@ local function Check(value, label)
     checks = checks + 1
 end
 
+-- The client's securecallfunction reports an error and returns nothing.
+local reported = {}
+securecallfunction = function(callback, ...)
+    local results = { pcall(callback, ...) }
+    if not results[1] then
+        reported[#reported + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2)
+end
+local function Reported(text)
+    for index = 1, #reported do
+        if reported[index]:find(text, 1, true) then return true end
+    end
+    return false
+end
+
 local function Frame(name, parent, kind)
     local frame = {
         name = name, parent = parent, kind = kind or "Frame", shown = true,
@@ -80,6 +97,9 @@ UIParent = Frame("UIParent")
 UIParent.width, UIParent.height = 1920, 1080
 GetCursorPosition = function() return _G.cursorX or 0, _G.cursorY or 0 end
 InCombatLockdown = function() return _G.combat or false end
+-- Retail and Forever always have this; the left button stays held unless a
+-- check below releases it.
+IsMouseButtonDown = function() return true end
 UIPanelWindows = { CharacterFrame = { area = "left" }, MerchantFrame = { area = "left" },
     ContainerFrameCombinedBags = { area = "left" } }
 HideUIPanel = function(frame) frame:Hide() end
@@ -100,6 +120,7 @@ MSUF2 = { RunWithHistory = function(_, _, fn)
     return fn()
 end }
 
+local adapterPasses = 0
 local NS = {
     DB = { enabled = true, skins = { blizzardWindows = true },
         windowControls = { enabled = true, scales = {}, positions = {} } },
@@ -111,6 +132,10 @@ local NS = {
         if name == "ContainerFrameCombinedBags" then return { category = "inventory" } end
     end },
     IsCombatLocked = function() return InCombatLockdown() end,
+    -- Retail until the Forever check below; Client.lua loads before Defaults.
+    Client = { isForever = false },
+    -- Blizzard.lua's adapter registry, which always loads with this file.
+    Adapters = { ApplyAll = function() adapterPasses = adapterPasses + 1 end },
 }
 -- The real guards and layout limits, not stubs.
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
@@ -178,6 +203,7 @@ Check(NS.WindowControls.SetEnabled(false) and not state.grip.shown
     "disabling controls left live buttons")
 Check(NS.WindowControls.SetEnabled(true) and state.grip.shown
     and state.minimize.shown and state.titleDrag.shown, "reenabling controls failed")
+Check(adapterPasses == 1, "reenabling controls did not reapply the adapters")
 NS.DB.windowControls.scales.CharacterFrame = 1.11
 NS.WindowControls:OnThemeChanged("profile")
 Check(character.scale == 1.11, "profile restore did not reapply saved scale")
@@ -287,8 +313,87 @@ state.grip.scripts.OnUpdate(state.grip)
 Check(state.grip.scripts.OnUpdate == nil and state.drag == nil,
     "hiding the panel left the scale drag running")
 character:Show()
-IsMouseButtonDown = nil
+IsMouseButtonDown = function() return true end
 Check(state.grip.scripts.OnMouseDown == settingsGrip.scripts.OnMouseDown
     and state.titleDrag.scripts.OnDragStart == settingsTitle.scripts.OnDragStart,
     "window controls allocate script handlers per panel")
+
+-- A Blizzard panel layout that raises while a reset returns a panel to its
+-- native anchors is reported, the reset says it failed, and the layout hook
+-- still re-places saved panels afterwards.
+NS.DB.windowControls.positions.CharacterFrame = { x = 200, y = -100 }
+NS.WindowControls:OnThemeChanged("profile")
+local nativeLayout = UpdateUIPanelPositions
+local failLayout = true
+UpdateUIPanelPositions = function(frame)
+    if failLayout then
+        failLayout = false
+        error("panel layout failed")
+    end
+    return nativeLayout(frame)
+end
+Check(NS.WindowControls.ResetPositions() == false and Reported("panel layout failed"),
+    "a failed native restore was reported as a successful reset")
+NS.DB.windowControls.positions.CharacterFrame = { x = 150, y = -60 }
+NS.WindowControls:OnThemeChanged("profile")
+UpdateUIPanelPositions(character)
+Check(character.point[4] == 150 / character.scale,
+    "the panel layout hook stayed suspended after a failed reset")
+UpdateUIPanelPositions = nativeLayout
+
+-- Stored scales wait out combat and never touch a protected panel; a panel
+-- that became protected loses its grip and title strip.
+local scaleBefore = character.scale
+NS.DB.windowControls.scales.CharacterFrame = 1.25
+combat = true
+NS.WindowControls.Refresh()
+Check(character.scale == scaleBefore, "a profile refresh scaled a panel in combat")
+combat = false
+character.protected = true
+NS.WindowControls.Refresh()
+Check(character.scale == scaleBefore and not state.grip.shown and not state.titleDrag.shown,
+    "a protected panel was scaled or kept its window controls")
+character.protected = false
+NS.WindowControls.Refresh()
+Check(character.scale == 1.25 and state.grip.shown and state.titleDrag.shown,
+    "a panel that is no longer protected did not get its controls back")
+character.protected = true
+Check(not NS.WindowControls.Attach(character, "blizzardWindows")
+    and not state.grip.shown and not state.titleDrag.shown,
+    "a panel that became protected kept its grip and drag strip")
+character.protected = false
+Check(#reported == 1, "window controls reported unexpected errors: " .. table.concat(reported, "; "))
+
+-- The invisible title strip takes the title area's clicks: reopening a panel
+-- brings it back only while the controls are on for a skinning owner and
+-- the panel can be controlled.
+Check(NS.WindowControls.Attach(character, "blizzardWindows") and state.titleDrag.shown,
+    "the character panel did not get its controls back")
+NS.WindowControls.DisableOwner("blizzardWindows")
+character:Hide()
+character:Show()
+Check(not state.titleDrag.shown, "reopening a released panel showed its title strip")
+Check(NS.WindowControls.Attach(character, "blizzardWindows") and state.titleDrag.shown,
+    "the character panel was not controllable again")
+NS.DB.enabled = false
+NS.WindowControls.Refresh()
+character:Hide()
+character:Show()
+Check(not state.titleDrag.shown, "reopening a panel with skinning off showed its title strip")
+NS.DB.enabled = true
+NS.WindowControls.Refresh()
+character.protected = true
+character:Hide()
+character:Show()
+Check(not state.titleDrag.shown, "reopening a protected panel showed its title strip")
+character.protected = false
+
+-- Surface keeps a reference to each spec: the contract that callers own it
+-- and share or rewrite it only as documented is written next to Attach.
+local surfaceFile = assert(io.open(root .. "/MSUF_Suite_Skin/Rendering/Surface.lua", "rb"))
+local surfaceSource = surfaceFile:read("*a")
+surfaceFile:close()
+Check(surfaceSource:find("A spec is caller-owned and read-only here", 1, true)
+    and surfaceSource:find("Surface never writes to a spec", 1, true),
+    "Surface.Attach does not document who owns a surface spec")
 print("Suite window controls: " .. checks .. " checks passed")

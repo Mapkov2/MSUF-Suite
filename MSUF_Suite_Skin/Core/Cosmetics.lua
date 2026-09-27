@@ -93,8 +93,9 @@ end
 local function RestoreRegion(region, state)
     if state.kind == "vertex" then
         local vertex = state.vertex
-        local r, g, b, a = NS.Safety.ReadColor(region, "GetVertexColor")
-        if a == 0 and r == vertex[1] and g == vertex[2] and b == vertex[3] then
+        local Safety = NS.Safety
+        local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
+        if Safety.SameColor(r, g, b, a, vertex[1], vertex[2], vertex[3], 0, Safety.COLOR_OWN) then
             region:SetVertexColor(vertex[1], vertex[2], vertex[3], vertex[4])
         end
     elseif AccessibleAlpha(region) == 0 then

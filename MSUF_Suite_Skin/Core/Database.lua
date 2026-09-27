@@ -7,20 +7,15 @@ NS.Database = Database
 -- /255 conversion; this tolerance absorbs the float noise.
 local EPSILON = 0.000001
 
-local function Clamp(value, minimum, maximum)
-    value = tonumber(value)
-    if not value then return minimum end
-    if value < minimum then return minimum end
-    if value > maximum then return maximum end
-    return value
-end
+local Clamp = NS.Clamp
+local IsListed = NS.IsListed
 
 local function Round(value)
     return math.floor(value + 0.5)
 end
 
 local function IsForever()
-    return NS.Client and NS.Client.isForever
+    return NS.Client.isForever
 end
 
 local function MergeDefaults(target, defaults)
@@ -32,13 +27,6 @@ local function MergeDefaults(target, defaults)
             target[key] = value
         end
     end
-end
-
-local function IsListed(list, value)
-    for index = 1, #list do
-        if list[index] == value then return true end
-    end
-    return false
 end
 
 -- Settings which are true unless explicitly disabled.
@@ -92,10 +80,11 @@ local function HexChannel(hex, index)
     return tonumber(hex:sub(index * 2 - 1, index * 2), 16) / 255
 end
 
+-- True when color has this RGB within EPSILON; alpha is not compared.
+-- Safety loads after this file; colors are only compared from
+-- Database.Initialize on.
 local function SameRGB(color, r, g, b)
-    return math.abs(color[1] - r) < EPSILON
-        and math.abs(color[2] - g) < EPSILON
-        and math.abs(color[3] - b) < EPSILON
+    return NS.Safety.SameColor(color[1], color[2], color[3], nil, r, g, b, nil, EPSILON)
 end
 
 -- Moves a color that still has the old factory RGB to the new one.
@@ -193,12 +182,9 @@ local RETIRED_FOREVER_CARD = { 32 / 255, 39 / 255, 42 / 255 }
 -- Replaces a color that still holds the retired factory RGB (and alpha, when
 -- one is given) with the current preset value. Edited colors stay untouched.
 local function RestoreForeverColor(current, hex, desired, retiredAlpha)
-    if type(current) ~= "table" or not hex or not desired then return end
-    for index = 1, 3 do
-        if type(current[index]) ~= "number"
-            or math.abs(current[index] - HexChannel(hex, index)) > EPSILON then
-            return
-        end
+    if type(current) ~= "table" or not hex or not desired
+        or not SameRGB(current, HexChannel(hex, 1), HexChannel(hex, 2), HexChannel(hex, 3)) then
+        return
     end
     current[1], current[2], current[3] = desired[1], desired[2], desired[3]
     if retiredAlpha and type(current[4]) == "number"
@@ -762,17 +748,24 @@ function Database.GetProfileNames()
     return names
 end
 
-local function ApplyActiveSettings(reason)
-    if NS.Theme and NS.Theme.RefreshDynamicLook then NS.Theme.RefreshDynamicLook() end
-    if NS.Typography then NS.Typography.ApplyConfigured() end
-    if NS.Adapters then NS.Adapters.ApplyAll() end
-    if NS.Registry then
-        NS.Registry.RefreshAll()
-        NS.Registry.NotifyListeners("profile", reason or "changed")
-    end
+-- Applies the active profile everywhere after it was replaced, and tells the
+-- listeners (domain "profile" unless given; the factory reset says "theme").
+-- Each stage is its own boundary: a stage that raises is reported and the
+-- later stages still apply the profile and notify the listeners.
+function Database.ApplyActiveSettings(reason, domain)
+    local dispatch = NS.Safety.Dispatch
+    dispatch(NS.Theme.RefreshDynamicLook)
+    dispatch(NS.Typography.ApplyConfigured)
+    dispatch(NS.Adapters.ApplyAll)
+    dispatch(NS.Registry.RefreshAll)
+    NS.Registry.NotifyListeners(domain or "profile", reason or "changed")
 end
+local ApplyActiveSettings = Database.ApplyActiveSettings
 
+-- Replacing the active profile swaps the settings every skin reads, so it
+-- waits out combat like every other skin write.
 function Database.SetProfile(name, profile)
+    if NS.IsCombatLocked() then return false, "combat" end
     name = Database.NormalizeProfileName(name)
     profile = Database.SanitizeProfile(profile)
     if not name or not profile or not NS.RootDB then return false, "invalid-profile" end
@@ -784,6 +777,7 @@ end
 function Database.CreateProfile(name, copyCurrent)
     name = Database.NormalizeProfileName(name)
     if not name then return false, "invalid-name" end
+    if NS.IsCombatLocked() then return false, "combat" end
     if not NS.RootDB then return false, "database-not-ready" end
     if NS.RootDB.profiles[name] then return false, "profile-exists" end
     NS.RootDB.profiles[name] = copyCurrent and Database.SanitizeProfile(NS.DB)
@@ -796,7 +790,7 @@ function Database.SetActiveProfile(name)
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.RootDB then return false, "database-not-ready" end
     if not name or not NS.RootDB.profiles[name] then return false, "missing-profile" end
-    if NS.Typography then NS.Typography.Restore() end
+    NS.Typography.Restore()
     NS.RootDB.activeProfile = name
     NS.DB = NS.RootDB.profiles[name]
     ApplyActiveSettings("activate")
@@ -805,6 +799,7 @@ end
 
 function Database.DeleteProfile(name)
     name = Database.NormalizeProfileName(name)
+    if NS.IsCombatLocked() then return false, "combat" end
     if not NS.RootDB then return false, "database-not-ready" end
     if not name or not NS.RootDB.profiles[name] then return false, "missing-profile" end
     local count = 0
@@ -822,7 +817,9 @@ function Database.DeleteProfile(name)
 end
 
 function Database.ReplaceProfiles(profiles, activeName)
-    if NS.IsCombatLocked() or type(profiles) ~= "table" then return false, "invalid-profiles" end
+    if NS.IsCombatLocked() then return false, "combat" end
+    if type(profiles) ~= "table" then return false, "invalid-profiles" end
+    if not NS.RootDB then return false, "database-not-ready" end
     local clean = {}
     local count = 0
     for rawName, profile in pairs(profiles) do
@@ -836,7 +833,7 @@ function Database.ReplaceProfiles(profiles, activeName)
     if not activeName or not clean[activeName] then
         activeName = clean.Default and "Default" or next(clean)
     end
-    if NS.Typography then NS.Typography.Restore() end
+    NS.Typography.Restore()
     NS.RootDB.profiles = clean
     NS.RootDB.activeProfile = activeName
     NS.DB = clean[activeName]

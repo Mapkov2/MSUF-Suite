@@ -3,6 +3,8 @@ local _, NS = ...
 local Surface = {}
 NS.Surface = Surface
 
+local BlizzardYellow = NS.BlizzardYellow
+
 -- Blizzard's special highlight must remain on HIGHLIGHT so it renders above
 -- the normal button edge. Text safety comes from the outline asset's fully
 -- transparent center, not from burying the highlight below other regions.
@@ -62,7 +64,7 @@ local function ApplyFill(texture, material, state)
     local toB = from[3] + (to[3] - from[3]) * strength
     local toA = from[4] + (to[4] - from[4]) * strength
     texture:SetVertexColor(1, 1, 1, 1)
-    if NS.DB.theme.gradient and texture.SetGradient and type(CreateColor) == "function" then
+    if NS.DB.theme.gradient then
         -- Still call SetGradient every time to repair native resets.
         state.gradientFrom = NS.Theme.ReuseColor(state.gradientFrom, from[1], from[2], from[3], from[4] * opacity)
         state.gradientTo = NS.Theme.ReuseColor(state.gradientTo, toR, toG, toB, toA * opacity)
@@ -140,7 +142,9 @@ local function HasFilledStructuralSurfaceAncestor(state)
     local count = 0
     local current = state.target
     for _ = 1, MAX_ANCESTOR_DEPTH do
-        local parent = NS.Safety.Call(current, "GetParent")
+        -- 12.1 can return a secret parent (Hierarchy aspect); Read gives nil
+        -- for it, so it is never used as a registry key.
+        local parent = NS.Safety.Read(current, "GetParent")
         if not parent then break end
         local ancestor = NS.Registry.GetSurface(parent)
         if ancestor and ancestor.visible ~= false and SupportsDepth(ancestor) then
@@ -369,7 +373,7 @@ local function RefreshState(state)
 end
 
 local function AttachNow(target, spec, deferRefresh)
-    if NS.BlizzardYellow then NS.BlizzardYellow.TrackFrame(target) end
+    BlizzardYellow.TrackFrame(target)
     local state = NS.Registry.GetSurface(target)
     if state then
         state.spec = spec or state.spec
@@ -400,6 +404,11 @@ local function AttachNow(target, spec, deferRefresh)
     return state
 end
 
+-- A spec is caller-owned and read-only here: Surface keeps a reference and
+-- reads it again on every refresh (theme and token changes). Callers may
+-- share one spec between surfaces and rewrite it in place only when they
+-- attach every surface that uses it again right afterwards (WindowActionSkin
+-- and ControlSkin do); Surface never writes to a spec.
 function Surface.Attach(target, spec)
     if not target then
         return nil, "invalid target"
@@ -480,7 +489,7 @@ function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
     spec = spec or {}
     local state = NS.Registry.GetSurface(button)
     if state and state.kind == "button" then
-        if NS.BlizzardYellow then NS.BlizzardYellow.TrackFrame(button) end
+        BlizzardYellow.TrackFrame(button)
         state.spec = spec
         state.visible = true
     else

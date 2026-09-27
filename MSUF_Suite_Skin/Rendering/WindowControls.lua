@@ -44,7 +44,7 @@ local function Limits()
 end
 
 local function IsCombat()
-    return NS.IsCombatLocked and NS.IsCombatLocked()
+    return NS.IsCombatLocked()
 end
 
 local function Enabled()
@@ -74,9 +74,9 @@ local function Eligible(frame)
     if protected or IsCombat() then return nil end
     local name = Safety.Read(frame, "GetName")
     if type(name) ~= "string" or name == "" or IsBag(name) then return nil end
-    local entry = NS.BlizzardCatalog and NS.BlizzardCatalog.FindByFrame(name)
+    local entry = NS.BlizzardCatalog.FindByFrame(name)
     local standalone = specialPanels[name]
-    local panel = UIPanelWindows and UIPanelWindows[name]
+    local panel = UIPanelWindows[name]
     if not (entry or standalone) or not (panel or standalone) then return nil end
     if panel and panel.area == "full" then return nil end
     if entry and excludedCategories[entry.category] then return nil end
@@ -107,7 +107,15 @@ local function ClampScale(value)
     return math.max(limits.minScale, math.min(limits.maxScale, value))
 end
 
+-- A panel is moved or scaled only out of combat and while it is not
+-- protected: a panel that gained a secure descendant keeps Blizzard's
+-- geometry.
+local function CanChangeGeometry(state)
+    return not IsCombat() and not Safety.GetProtection(state.frame)
+end
+
 local function ApplyStoredScale(state)
+    if not CanChangeGeometry(state) then return end
     local limits = Limits()
     local scales = NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales
     local stored = scales and scales[state.name]
@@ -146,7 +154,7 @@ local function RestoreNativePosition(state)
     state.customPosition = false
     state.defaultPosition = false
     positionedStates[state.frame] = nil
-    if state.panel and type(UpdateUIPanelPositions) == "function" then
+    if state.panel then
         UpdateUIPanelPositions(state.frame)
     elseif state.nativePoints then
         state.frame:ClearAllPoints()
@@ -165,7 +173,7 @@ local function ApplyStoredPosition(state)
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
     local point = positions and positions[state.name]
     local defaultPosition = not point and state.name == "CharacterFrame"
-        and NS.Client and NS.Client.isForever and NS.DB.theme.look == "foreverGlass"
+        and NS.Client.isForever and NS.DB.theme.look == "foreverGlass"
     if defaultPosition then point = FOREVER_CHARACTER_DOCK end
     if not point then
         if state.customPosition then RestoreNativePosition(state) end
@@ -200,8 +208,7 @@ local function OnPanelPositionsUpdated()
 end
 
 local function InstallPanelPositionHook()
-    if positionHooked or type(hooksecurefunc) ~= "function"
-        or type(UpdateUIPanelPositions) ~= "function" then return end
+    if positionHooked then return end
     positionHooked = true
     hooksecurefunc("UpdateUIPanelPositions", OnPanelPositionsUpdated)
 end
@@ -246,7 +253,7 @@ local function Restore(state)
     if IsCombat() or not state or not state.minimized then return false end
     state.minimized = false
     state.restore:Hide()
-    if state.panel and type(ShowUIPanel) == "function" then
+    if state.panel then
         ShowUIPanel(state.frame)
     else
         state.frame:Show()
@@ -268,7 +275,7 @@ local function Minimize(state)
         state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
     end
     state.minimized = true
-    if state.panel and type(HideUIPanel) == "function" then
+    if state.panel then
         HideUIPanel(frame)
     else
         frame:Hide()
@@ -353,7 +360,7 @@ end
 local function UpdateDrag(state)
     local drag = state.drag
     if not drag then return end
-    if type(IsMouseButtonDown) == "function" and not IsMouseButtonDown("LeftButton") then
+    if not IsMouseButtonDown("LeftButton") then
         EndDrag(state)
         return
     end
@@ -404,15 +411,13 @@ local function OnGripRelease(grip)
 end
 
 local function OnGripEnter(grip)
-    if GameTooltip then
-        GameTooltip:SetOwner(grip, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Drag to scale this window")
-        GameTooltip:Show()
-    end
+    GameTooltip:SetOwner(grip, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Drag to scale this window")
+    GameTooltip:Show()
 end
 
 local function OnGripLeave()
-    if GameTooltip then GameTooltip:Hide() end
+    GameTooltip:Hide()
 end
 
 local function CreateGrip(state)
@@ -528,7 +533,9 @@ local function CreateMinimize(state, close)
     return button
 end
 
--- Hooked once per panel.
+-- Hooked once per panel. The invisible title strip takes the clicks of the
+-- title area, so it only comes back while the controls are on, an owner
+-- still skins the panel and the panel can be controlled.
 local function OnPanelShow(frame)
     local state = WindowControls.states[frame]
     if not state then return end
@@ -536,8 +543,12 @@ local function OnPanelShow(frame)
         state.minimized = false
         state.restore:Hide()
     end
-    state.titleDrag:SetFrameLevel(frame:GetFrameLevel() + CONTROL_LEVEL_OFFSET)
-    state.titleDrag:Show()
+    if Enabled() and next(state.owners) and not Safety.GetProtection(frame) then
+        state.titleDrag:SetFrameLevel(frame:GetFrameLevel() + CONTROL_LEVEL_OFFSET)
+        state.titleDrag:Show()
+    else
+        state.titleDrag:Hide()
+    end
     ApplyStoredPosition(state)
 end
 
@@ -551,8 +562,12 @@ end
 function WindowControls.Attach(frame, owner)
     if not Enabled() or IsCombat() then return false end
     local name, _, panel = Eligible(frame)
-    if not name then return false end
     local state = WindowControls.states[frame]
+    if not name then
+        -- A panel that became protected keeps no grip or drag strip.
+        if state and Safety.GetProtection(frame) then HideControls(state) end
+        return false
+    end
     if state then
         state.owners[owner or "blizzardWindows"] = true
         ApplyStoredScale(state)
@@ -580,7 +595,7 @@ function WindowControls.Attach(frame, owner)
     state.titleDrag = CreateTitleDrag(state)
     state.titleDrag:Show()
     if NS.DB.windowControls.positions[name] or (name == "CharacterFrame"
-        and NS.Client and NS.Client.isForever) then InstallPanelPositionHook() end
+        and NS.Client.isForever) then InstallPanelPositionHook() end
     ApplyStoredPosition(state)
     frame:HookScript("OnShow", OnPanelShow)
     frame:HookScript("OnHide", OnPanelHide)
@@ -599,17 +614,16 @@ end
 function WindowControls.SetEnabled(enabled)
     if IsCombat() then return false, "combat" end
     NS.DB.windowControls.enabled = enabled == true
-    if enabled then
-        if NS.Adapters then NS.Adapters.ApplyAll() end
-    end
+    if enabled then NS.Adapters.ApplyAll() end
     WindowControls.Refresh()
     return true
 end
 
 function WindowControls.Refresh()
+    if IsCombat() then return false, "combat" end
     local enabled = Enabled()
     for _, state in pairs(WindowControls.states) do
-        if enabled and next(state.owners) then
+        if enabled and next(state.owners) and not Safety.GetProtection(state.frame) then
             if not state.drag then ApplyStoredScale(state) end
             if not state.moving then ApplyStoredPosition(state) end
             ShowControls(state)
@@ -617,6 +631,7 @@ function WindowControls.Refresh()
             HideControls(state)
         end
     end
+    return true
 end
 
 function WindowControls:OnThemeChanged(domain, key)
@@ -638,11 +653,17 @@ function WindowControls.ResetScales()
     if IsCombat() then return false, "combat" end
     NS.DB.windowControls.scales = {}
     for _, state in pairs(WindowControls.states) do
-        if type(state.originalScale) == "number" then
+        if type(state.originalScale) == "number" and CanChangeGeometry(state) then
             state.frame:SetScale(state.originalScale)
         end
         state.customScale = false
     end
+    return true
+end
+
+-- RestoreNativePosition runs Blizzard's panel layout; true when it finished.
+local function FinishRestore(state)
+    RestoreNativePosition(state)
     return true
 end
 
@@ -653,16 +674,21 @@ function WindowControls.ResetPositions()
     end
     NS.DB.windowControls.positions = {}
     -- Blizzard's layout pass must not move panels back while they return
-    -- to their native anchors.
+    -- to their native anchors. Each restore is its own boundary, so a failed
+    -- one is reported and the layout hook always resumes.
+    local failed = false
     suspendPositionHook = true
     for _, state in pairs(WindowControls.states) do
-        if state.customPosition then RestoreNativePosition(state) end
+        if state.customPosition and not Safety.Dispatch(FinishRestore, state) then
+            failed = true
+        end
     end
     suspendPositionHook = false
     -- Reset returns to the selected look's default placement on Forever.
     for _, state in pairs(WindowControls.states) do
         if next(state.owners) then ApplyStoredPosition(state) end
     end
+    if failed then return false, "error" end
     return true
 end
 

@@ -4,6 +4,8 @@ local Theme = {}
 NS.Theme = Theme
 
 local unpack = unpack
+local Clamp = NS.Clamp
+local IsListed = NS.IsListed
 
 local WHITE = { 1, 1, 1 }
 
@@ -11,27 +13,13 @@ local cachedClassToken
 local cachedClassName
 local cachedClassColor
 
-local function Clamp01(value)
-    value = tonumber(value) or 0
-    if value < 0 then return 0 end
-    if value > 1 then return 1 end
-    return value
-end
-
 local function Mix(first, second, amount)
-    return Clamp01(first + (second - first) * amount)
+    return Clamp(first + (second - first) * amount, 0, 1)
 end
 
 -- A new color moved from r, g, b toward target by amount.
 local function Blend(r, g, b, target, amount, alpha)
     return { Mix(r, target[1], amount), Mix(g, target[2], amount), Mix(b, target[3], amount), alpha }
-end
-
-local function IsListed(list, value)
-    for index = 1, #list do
-        if list[index] == value then return true end
-    end
-    return false
 end
 
 local function LinearChannel(value)
@@ -82,7 +70,7 @@ local function ReadColor(color)
     if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
         return nil
     end
-    return Clamp01(r), Clamp01(g), Clamp01(b), Clamp01(type(a) == "number" and a or 1)
+    return Clamp(r, 0, 1), Clamp(g, 0, 1), Clamp(b, 0, 1), Clamp(type(a) == "number" and a or 1, 0, 1)
 end
 
 local function ResolvePlayerClassColor(refresh)
@@ -94,20 +82,14 @@ local function ResolvePlayerClassColor(refresh)
             cachedClassToken, cachedClassName
     end
 
-    local className, classToken
-    if type(UnitClass) == "function" then
-        className, classToken = UnitClass("player")
-    end
-
+    local className, classToken = UnitClass("player")
     local r, g, b, a
-    if classToken and C_ClassColor and type(C_ClassColor.GetClassColor) == "function" then
+    if classToken then
         r, g, b, a = ReadColor(C_ClassColor.GetClassColor(classToken))
-    end
-    if not r and classToken and type(RAID_CLASS_COLORS) == "table" then
-        r, g, b, a = ReadColor(RAID_CLASS_COLORS[classToken])
+        if not r then r, g, b, a = ReadColor(RAID_CLASS_COLORS[classToken]) end
     end
     if not r then
-        local fallback = (NS.BaseColors or NS.Defaults.theme.colors).accent
+        local fallback = NS.BaseColors.accent
         r, g, b, a = fallback[1], fallback[2], fallback[3], fallback[4]
     end
 
@@ -148,7 +130,7 @@ local CLASS_TINTS = {
 
 function Theme.BuildClassPalette(refresh)
     local r, g, b = ResolvePlayerClassColor(refresh == true)
-    local defaults = NS.BaseColors or NS.Defaults.theme.colors
+    local defaults = NS.BaseColors
     local palette = {}
     for index = 1, #CLASS_TINTS do
         local key, amount, alpha = CLASS_TINTS[index][1], CLASS_TINTS[index][2], CLASS_TINTS[index][3]
@@ -182,7 +164,7 @@ end
 
 function Theme.BuildGlassPalette(refresh)
     local r, g, b = ResolvePlayerClassColor(refresh == true)
-    local palette = NS.CopyValue(NS.PresetOverrides.glass or {})
+    local palette = NS.CopyValue(NS.PresetOverrides.glass)
     local dark = palette.background or { 0, 0, 0, 1 }
     local focusR, focusG, focusB = BrightenForContrast(r, g, b,
         palette.surface or dark, 4.6)
@@ -223,7 +205,7 @@ local microNamedPalettes = {
 -- or look change should still produce a coherent result: tokens the palette
 -- does not author are re-seeded from their base roles.
 local function InstallPalette(overrides)
-    local colors = NS.CopyValue(NS.BaseColors or NS.Defaults.theme.colors)
+    local colors = NS.CopyValue(NS.BaseColors)
     for key, value in pairs(overrides) do
         colors[key] = NS.CopyValue(value)
     end
@@ -285,21 +267,41 @@ function Theme.GetBorderOpacity()
     return theme.borderOpacity
 end
 
-function Theme.SetColor(key, r, g, b, a)
-    if NS.IsCombatLocked() or not NS.Defaults.theme.colors[key] then
-        return false
-    end
+local function WriteColor(key, r, g, b, a)
     local color = NS.DB.theme.colors[key]
     color[1] = math.max(0, math.min(1, tonumber(r) or color[1]))
     color[2] = math.max(0, math.min(1, tonumber(g) or color[2]))
     color[3] = math.max(0, math.min(1, tonumber(b) or color[3]))
     color[4] = math.max(0, math.min(1, tonumber(a) or color[4]))
+end
+
+-- The setters below run on every slider tick and color-picker move: the
+-- surfaces they affect repaint once on the next frame (Registry.QueueRefresh).
+function Theme.SetColor(key, r, g, b, a)
+    if NS.IsCombatLocked() or not NS.Defaults.theme.colors[key] then
+        return false
+    end
+    WriteColor(key, r, g, b, a)
     if NS.MicroColorSources[key] and NS.DB.icons and NS.DB.icons.microMenu then
         NS.DB.icons.microMenu.preset = "custom"
     end
     NS.DB.theme.preset = "custom"
     NS.DB.theme.look = "custom"
-    NS.Registry.RefreshToken(key)
+    NS.Registry.QueueRefresh(key)
+    NS.Registry.NotifyListeners("color", key)
+    return true
+end
+
+-- Undoes a cancelled color edit: the color and the palette and look names
+-- that SetColor replaced return together, announced once.
+function Theme.RestoreColor(key, r, g, b, a, preset, look)
+    if NS.IsCombatLocked() or not NS.Defaults.theme.colors[key] then
+        return false
+    end
+    WriteColor(key, r, g, b, a)
+    NS.DB.theme.preset = preset or NS.DB.theme.preset
+    NS.DB.theme.look = look or NS.DB.theme.look
+    NS.Registry.QueueRefresh(key)
     NS.Registry.NotifyListeners("color", key)
     return true
 end
@@ -310,7 +312,7 @@ function Theme.SetGradient(enabled)
     end
     NS.DB.theme.gradient = enabled == true
     NS.DB.theme.look = "custom"
-    NS.Registry.RefreshAll()
+    NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("theme", "gradient")
     return true
 end
@@ -438,9 +440,9 @@ function Theme.SetAppearance(key, value)
     NS.DB.theme[key] = value
     NS.DB.theme.look = "custom"
     if key == "hoverStyle" or key == "hoverIntensity" then
-        NS.Registry.RefreshToken("hover")
+        NS.Registry.QueueRefresh("hover")
     else
-        NS.Registry.RefreshAll()
+        NS.Registry.QueueRefresh()
     end
     NS.Registry.NotifyListeners("appearance", key)
     return true
@@ -455,7 +457,7 @@ function Theme.SetGeometry(key, value)
 
     NS.DB.geometry[key] = value
     NS.DB.theme.look = "custom"
-    NS.Registry.RefreshAll()
+    NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("geometry", key)
     return true
 end
@@ -467,7 +469,7 @@ function Theme.ApplyPreset(presetName)
     InstallPalette(ResolvePaletteOverrides(presetName, presetName == "classColor"))
     NS.DB.theme.preset = presetName
     NS.DB.theme.look = "custom"
-    NS.Registry.RefreshAll()
+    NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("theme", "preset")
     return true
 end
@@ -478,21 +480,23 @@ function Theme.ApplyLook(lookName)
     InstallPalette(ResolvePaletteOverrides(look.palette, look.dynamicPalette ~= nil, look.dynamicPalette))
     InstallLookValues(look)
     local micro = NS.DB.icons and NS.DB.icons.microMenu
-    local microPreset = NS.MicroMenuPresetValues and NS.MicroMenuPresetValues[look.microStyle]
+    local microPreset = NS.MicroMenuPresetValues[look.microStyle]
     if micro and microPreset then
-        for _, key in ipairs(NS.MicroMenuLookKeys or {}) do
+        for _, key in ipairs(NS.MicroMenuLookKeys) do
             if microPreset[key] ~= nil then micro[key] = microPreset[key] end
         end
         micro.preset = look.microStyle
     end
     NS.DB.theme.preset = look.palette
     NS.DB.theme.look = lookName
+    -- The Suite's modules follow the look. Their code is foreign here: an
+    -- error is reported and the skin still repaints with the new look.
     local suite = _G.MSUFSuite
     if type(suite) == "table" and suite.Suite
         and type(suite.Suite.ApplyGlobalLook) == "function" then
-        suite.Suite.ApplyGlobalLook(lookName)
+        NS.Safety.Dispatch(suite.Suite.ApplyGlobalLook, lookName)
     end
-    NS.Registry.RefreshAll()
+    NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("theme", "look")
     return true
 end
@@ -515,7 +519,7 @@ function Theme.ResetColors()
     end
     NS.Database.ResetColors()
     NS.DB.theme.look = "custom"
-    NS.Registry.RefreshAll()
+    NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("theme", "colors")
     return true
 end

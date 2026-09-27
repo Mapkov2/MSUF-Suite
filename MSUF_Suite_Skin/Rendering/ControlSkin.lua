@@ -12,6 +12,8 @@ local ControlSkin = {
 NS.ControlSkin = ControlSkin
 
 local Safety = NS.Safety
+local Checkmarks = NS.Checkmarks
+local WindowActionSkin = NS.WindowActionSkin
 
 local nineSlicePieces = {
     "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner",
@@ -52,6 +54,8 @@ local function Wipe(target)
 end
 
 -- The surface part of a caller spec, copied into the control's own table.
+-- That table is also the Surface spec (Surface reads it on every refresh),
+-- so it is rewritten here only right before the control is painted again.
 local function CopySpec(spec, target)
     if spec == target then return target end
     target = Wipe(target or {})
@@ -270,9 +274,12 @@ local function RestoreButtonStates(button, state)
     ForgetNativeStates(state)
 end
 
+-- IsSelected when it answers; otherwise (no method, forbidden or a secret
+-- answer) whether the tab shows its active art.
 local function DetectSelected(tab)
-    if type(tab.IsSelected) == "function" then
-        return Safety.Read(tab, "IsSelected") == true
+    local selected = Safety.Read(tab, "IsSelected")
+    if type(selected) == "boolean" then
+        return selected
     end
     local active = tab.MiddleActive or tab.LeftActive or tab.RightActive
     return Safety.Read(active, "IsShown") == true
@@ -311,11 +318,9 @@ local function SkinButtonSurface(button, state, active)
 end
 
 local function TrackNativeAssets(button, owner)
-    local actionKind = NS.Checkmarks and NS.Checkmarks.GetWindowAction(button) or nil
-    if NS.Checkmarks then
-        NS.Checkmarks.TrackButton(button, owner)
-        NS.Checkmarks.TrackDropdown(button, owner)
-    end
+    local actionKind = Checkmarks.GetWindowAction(button)
+    Checkmarks.TrackButton(button, owner)
+    Checkmarks.TrackDropdown(button, owner)
     return actionKind
 end
 
@@ -335,8 +340,8 @@ local function ApplyButtonNow(button, owner, kind, spec)
     state.spec = DefaultButtonSpec(kind, spec, state.spec)
     state.cosmeticSpec = CopyCosmeticSpec(spec, state.cosmeticSpec)
     state.requestedActive = spec.active
-    if actionKind and NS.WindowActionSkin then
-        local action, actionReason = NS.WindowActionSkin.Apply(button, owner, actionKind)
+    if actionKind then
+        local action, actionReason = WindowActionSkin.Apply(button, owner, actionKind)
         if not action then return nil, actionReason or "window action unavailable" end
         MarkWindowAction(state, actionKind)
         return state
@@ -431,11 +436,11 @@ end
 -- whose native art kit has changed to a non-action family.
 local function RepaintButton(target, state, active, dropStaleAction)
     local actionKind = TrackNativeAssets(target, state.owner)
-    if actionKind and NS.WindowActionSkin then
+    if actionKind then
         return nil, actionKind
     end
-    if dropStaleAction and state.windowAction and NS.WindowActionSkin then
-        NS.WindowActionSkin.Disable(target, state.owner)
+    if dropStaleAction and state.windowAction then
+        WindowActionSkin.Disable(target, state.owner)
     end
     state.windowAction = false
     state.actionKind = nil
@@ -463,7 +468,7 @@ local function RefreshNow(target, state, active)
         local painted, detail = RepaintButton(target, state, active, true)
         if painted == nil then
             if state.nativeCaptured then RestoreButtonStates(target, state) end
-            local action, reason = NS.WindowActionSkin.Apply(target, state.owner, detail)
+            local action, reason = WindowActionSkin.Apply(target, state.owner, detail)
             if not action then return false, reason or "window action unavailable" end
             MarkWindowAction(state, detail)
             return true
@@ -500,7 +505,7 @@ local function EnableNow(target, state, active)
     else
         local painted, detail = RepaintButton(target, state, active, false)
         if painted == nil then
-            local action, reason = NS.WindowActionSkin.Apply(target, state.owner, detail)
+            local action, reason = WindowActionSkin.Apply(target, state.owner, detail)
             if not action then return nil, reason or "window action unavailable" end
             MarkWindowAction(state, detail)
             return true
@@ -527,13 +532,9 @@ function ControlSkin.Enable(target, active)
 end
 
 local function DisableNow(target, state)
-    if NS.Checkmarks then NS.Checkmarks.UntrackDropdown(target) end
+    Checkmarks.UntrackDropdown(target)
     if state.windowAction then
-        if NS.Checkmarks and type(NS.Checkmarks.UntrackButton) == "function" then
-            NS.Checkmarks.UntrackButton(target, state.owner)
-        elseif NS.WindowActionSkin then
-            NS.WindowActionSkin.Disable(target, state.owner)
-        end
+        Checkmarks.UntrackButton(target, state.owner)
         state.windowAction = false
         state.actionKind = nil
     elseif state.kind ~= "searchBox" then
@@ -602,7 +603,7 @@ function ControlSkin.RefreshOwner(owner)
 end
 
 function ControlSkin.DisableOwner(owner)
-    if NS.Checkmarks then NS.Checkmarks.UntrackOwner(owner) end
+    Checkmarks.UntrackOwner(owner)
     if not ControlSkin.owners[owner] then
         return true
     end

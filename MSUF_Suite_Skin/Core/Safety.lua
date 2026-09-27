@@ -83,6 +83,38 @@ function Safety.ReadColor(target, name)
     return r, g, b, a
 end
 
+-- Colour comparison tolerances. OWN matches a colour this addon wrote itself
+-- (read back at the widget's 8-bit precision). NATIVE classifies a Blizzard
+-- colour against a known font colour (Blizzard's constants are not exact
+-- 8-bit values either).
+Safety.COLOR_OWN = 1 / 255
+Safety.COLOR_NATIVE = 0.015
+
+local function PublicNumber(value)
+    return type(value) == "number" and Safety.Public(value)
+end
+
+-- True when both colours are readable numbers within tolerance on every
+-- channel. A missing alpha counts as 1. A secret channel never matches: it
+-- is rejected before any arithmetic.
+function Safety.SameColor(r1, g1, b1, a1, r2, g2, b2, a2, tolerance)
+    if not PublicNumber(r1) or not PublicNumber(g1) or not PublicNumber(b1)
+        or not PublicNumber(r2) or not PublicNumber(g2) or not PublicNumber(b2) then
+        return false
+    end
+    if type(a1) ~= "number" then a1 = 1 elseif not Safety.Public(a1) then return false end
+    if type(a2) ~= "number" then a2 = 1 elseif not Safety.Public(a2) then return false end
+    local limit = tolerance or Safety.COLOR_OWN
+    return math.abs(r1 - r2) <= limit and math.abs(g1 - g2) <= limit
+        and math.abs(b1 - b2) <= limit and math.abs(a1 - a2) <= limit
+end
+
+-- SameColor against a stored { r, g, b, a } table; false without one.
+function Safety.ColorMatches(color, r, g, b, a, tolerance)
+    return type(color) == "table"
+        and Safety.SameColor(r, g, b, a, color[1], color[2], color[3], color[4], tolerance)
+end
+
 -- The compositor's permitted Attach* redirects identify its frames without
 -- touching a disallowed member.
 function Safety.IsCompositorManaged(target)
@@ -112,8 +144,7 @@ function Safety.CanDecorate(target, allowImplicitProtected)
     local protected, explicit = ReadProtection(target)
     if explicit then return false end
     if protected then
-        return allowImplicitProtected == true
-            and (type(InCombatLockdown) ~= "function" or not InCombatLockdown())
+        return allowImplicitProtected == true and not InCombatLockdown()
     end
     return true
 end
@@ -130,9 +161,6 @@ end
 -- the public API) the way Blizzard's CallbackRegistry runs its callbacks: an
 -- error is reported to the error handler (BugSack) and the caller's loop goes
 -- on. Nothing is swallowed. Returns the results, or nothing after an error.
--- Offline test harnesses have no securecallfunction and call directly.
-Safety.Dispatch = securecallfunction or function(callback, ...)
-    return callback(...)
-end
+Safety.Dispatch = securecallfunction
 
 return Safety

@@ -7,37 +7,18 @@ local ProfileIO = {
 }
 NS.ProfileIO = ProfileIO
 
-local function Codec()
-    local codec = C_EncodingUtil
-    if not codec or type(codec.SerializeCBOR) ~= "function"
-        or type(codec.DeserializeCBOR) ~= "function"
-        or type(codec.EncodeBase64) ~= "function"
-        or type(codec.DecodeBase64) ~= "function" then
-        return nil
-    end
-    return codec
-end
-
-local function CompressionMethod()
-    return Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate
-end
-
--- C_EncodingUtil returns nothing for input it cannot encode or decode; every
--- result is type-checked below instead of trusting it.
+-- C_EncodingUtil (Retail and Forever) returns nothing for input it cannot
+-- encode or decode; every result is type-checked below instead of trusting it.
 local function Encode(envelope)
-    local codec = Codec()
-    if not codec then return nil, "codec-unavailable" end
+    local codec = C_EncodingUtil
     local serialized = codec.SerializeCBOR(envelope)
     if type(serialized) ~= "string" or #serialized > ProfileIO.maxDecodedBytes then
         return nil, "serialize-failed"
     end
     local payload = serialized
-    local method = CompressionMethod()
-    if method and type(codec.CompressString) == "function" then
-        local compressed = codec.CompressString(serialized, method)
-        if type(compressed) == "string" and #compressed < #serialized then
-            payload = compressed
-        end
+    local compressed = codec.CompressString(serialized, Enum.CompressionMethod.Deflate)
+    if type(compressed) == "string" and #compressed < #serialized then
+        payload = compressed
     end
     local encoded = codec.EncodeBase64(payload)
     if type(encoded) ~= "string" then return nil, "encode-failed" end
@@ -50,16 +31,12 @@ local function Decode(text)
     text = text:match("^%s*(.-)%s*$") or ""
     if #text > ProfileIO.maxEncodedBytes + #ProfileIO.prefix then return nil, "import-too-large" end
     if text:sub(1, #ProfileIO.prefix) ~= ProfileIO.prefix then return nil, "invalid-prefix" end
-    local codec = Codec()
-    if not codec then return nil, "codec-unavailable" end
+    local codec = C_EncodingUtil
     local decoded = codec.DecodeBase64(text:sub(#ProfileIO.prefix + 1))
     if type(decoded) ~= "string" then return nil, "decode-failed" end
     local payload = decoded
-    local method = CompressionMethod()
-    if method and type(codec.DecompressString) == "function" then
-        local inflated = codec.DecompressString(decoded, method)
-        if type(inflated) == "string" then payload = inflated end
-    end
+    local inflated = codec.DecompressString(decoded, Enum.CompressionMethod.Deflate)
+    if type(inflated) == "string" then payload = inflated end
     if #payload > ProfileIO.maxDecodedBytes then return nil, "import-too-large" end
     -- DecodeBase64 and DecompressString return nothing for bad input and
     -- DeserializeCBOR declares a nilable result (EncodingUtilDocumentation).

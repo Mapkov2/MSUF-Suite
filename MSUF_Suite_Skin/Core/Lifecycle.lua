@@ -10,7 +10,7 @@ local function InitializeDatabase()
     end
     NS.InitializeLocalization()
     NS.Database.Initialize()
-    if NS.PublicAPI then NS.PublicAPI.OnDatabaseReady() end
+    NS.PublicAPI.OnDatabaseReady()
     initialized = true
 end
 
@@ -18,18 +18,21 @@ end
 -- this frame. The Suite can need profiles during that gap.
 NS.EnsureDatabaseReady = InitializeDatabase
 
+-- A Suite user can enable skinning after PLAYER_LOGIN. The same startup
+-- path must work whether the load-on-demand engine starts early or late.
+-- Each stage is its own boundary: login runs once, so a stage that raises
+-- is reported and the later stages (and API clients) still start.
 local function ApplyLogin()
     if loginApplied then return end
     InitializeDatabase()
     loginApplied = true
-    -- A Suite user can enable skinning after PLAYER_LOGIN. The same startup
-    -- path must work whether the load-on-demand engine starts early or late.
-    NS.Theme.RefreshDynamicLook()
-    NS.BlizzardYellow.Apply()
-    NS.Checkmarks.Apply()
-    NS.Typography.ApplyConfigured()
-    NS.Adapters.ApplyAll()
-    if NS.PublicAPI then NS.PublicAPI.OnPlayerLogin() end
+    local dispatch = NS.Safety.Dispatch
+    dispatch(NS.Theme.RefreshDynamicLook)
+    dispatch(NS.BlizzardYellow.Apply)
+    dispatch(NS.Checkmarks.Apply)
+    dispatch(NS.Typography.ApplyConfigured)
+    dispatch(NS.Adapters.ApplyAll)
+    dispatch(NS.PublicAPI.OnPlayerLogin)
 end
 
 eventFrame:SetScript("OnEvent", function(self, event, loadedAddon)
@@ -39,7 +42,7 @@ eventFrame:SetScript("OnEvent", function(self, event, loadedAddon)
         end
         InitializeDatabase()
         self:UnregisterEvent("ADDON_LOADED")
-        if type(IsLoggedIn) == "function" and IsLoggedIn() then ApplyLogin() end
+        if IsLoggedIn() then ApplyLogin() end
         return
     end
 
@@ -50,10 +53,7 @@ eventFrame:SetScript("OnEvent", function(self, event, loadedAddon)
     end
 
     if event == "PLAYER_LOGOUT" then
-        local chatFrames = NS.ChatFramesSkin
-        if chatFrames and type(chatFrames.RestoreBlizzardMessageColors) == "function" then
-            chatFrames.RestoreBlizzardMessageColors()
-        end
+        NS.ChatFramesSkin.RestoreBlizzardMessageColors()
     end
 end)
 

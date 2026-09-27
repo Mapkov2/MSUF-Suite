@@ -2,15 +2,16 @@ local _, NS = ...
 
 -- A deliberately small, OOC-only icon primitive. Blizzard remains the owner
 -- of item identity and quality: we read its existing IconBorder color and
--- never query item data, replace scripts, or hook quality update functions.
+-- never query item data or replace scripts. Adapters repaint a border after
+-- Blizzard's own quality update (a SetItemButtonQuality post-hook, see
+-- DeepWindows.InstallItemQualityHook); this module installs no hooks itself.
 local IconSkin = {
     states = setmetatable({}, { __mode = "k" }),
     owners = {},
 }
 NS.IconSkin = IconSkin
 
-local listenerOwner = {}
-local listenerRegistered = false
+local WatchSettings = NS.Registry.WatchSettings
 local emptySpec = {}
 
 -- true, false, or nil when unknown (missing method, forbidden or secret).
@@ -18,15 +19,6 @@ local function IsShown(region)
     local shown = NS.Safety.Read(region, "IsShown")
     if shown == nil then return nil end
     return shown == true
-end
-
-local function SetLineColor(line, r, g, b, a)
-    if type(line.SetColorTexture) == "function" then
-        line:SetColorTexture(r, g, b, a)
-    else
-        line:SetTexture("Interface\\Buttons\\WHITE8X8")
-        line:SetVertexColor(r, g, b, a)
-    end
 end
 
 -- Places the four border lines (top, bottom, left, right) around icon.
@@ -72,7 +64,7 @@ local function RefreshState(state)
     a = a * (tonumber(theme.iconBorderOpacity) or 1)
     for index = 1, #state.lines do
         local line = state.lines[index]
-        SetLineColor(line, r, g, b, a)
+        line:SetColorTexture(r, g, b, a)
         if visible then line:Show() else line:Hide() end
     end
     return true
@@ -85,11 +77,18 @@ local function RefreshAll()
     end
 end
 
-local function EnsureListener()
-    if listenerRegistered then return end
-    NS.Registry.AddListener(listenerOwner, RefreshAll)
-    listenerRegistered = true
-end
+-- The border settings RefreshState reads. Borders repaint only for these
+-- (see Registry.WatchSettings), once per frame however many settings a
+-- slider drag writes.
+local BORDER_SETTINGS = {
+    appearance = {
+        iconBorderStyle = true,
+        iconBorderThickness = true,
+        iconBorderPadding = true,
+        iconBorderOpacity = true,
+    },
+    color = { iconBorder = true },
+}
 
 local function CreateLines(button, icon)
     local lines = {
@@ -136,7 +135,7 @@ function IconSkin.Apply(button, owner, spec)
         IconSkin.owners[owner] = owned
     end
     owned[button] = true
-    EnsureListener()
+    WatchSettings(RefreshAll, BORDER_SETTINGS)
     RefreshState(state)
     return state
 end

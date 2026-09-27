@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Skinning
 ## Notes: Suite-owned MapkoSkin skin engine.
 ## Author: Mapko
@@ -29,11 +29,13 @@ Core\Theme.lua
 Core\BlizzardFontCatalog.lua
 Core\BlizzardYellow.lua
 Core\Checkmarks.lua
+Core\CheckmarksMenus.lua
 Core\Typography.lua
 Rendering\Geometry.lua
 Rendering\Surface.lua
 Rendering\WindowActionSkin.lua
 Rendering\WindowControls.lua
+Rendering\MicroMenuPerformance.lua
 Rendering\MicroMenuVisual.lua
 Core\Cosmetics.lua
 Rendering\IconSkin.lua
@@ -41,17 +43,23 @@ Rendering\ControlSkin.lua
 Rendering\ScrollBarSkin.lua
 Adapters\UIPanelButtons.lua
 Adapters\Catalog.lua
+Adapters\CatalogGlass.lua
+Adapters\AdapterKit.lua
 Adapters\SharedChrome.lua
 Adapters\GenericWindows.lua
+Adapters\GenericWindowsFrames.lua
+Adapters\GenericWindowsCatalog.lua
 Adapters\QuestText.lua
 Adapters\MacroWindow.lua
 Adapters\DeepWindows.lua
+Adapters\DeepWindowsProfessions.lua
 Adapters\SemanticHUD.lua
 Adapters\EquipmentInfo.lua
 Adapters\GearAnnotations.lua
 Adapters\CharacterDetails.lua
 Adapters\CharacterStats.lua
 Adapters\EQoLCharacter.lua
+Adapters\PaperDollChrome.lua
 Adapters\CharacterPanel.lua
 Adapters\InspectPanel.lua
 Adapters\SocialUI.lua
@@ -69,11 +77,14 @@ Adapters\DamageMeter.lua
 Adapters\EditMode.lua
 Adapters\Communities.lua
 Adapters\MajorWindows.lua
+Adapters\OwnedMicroBarLayout.lua
+Adapters\OwnedMicroBarVisibility.lua
 Adapters\OwnedMicroBar.lua
 Adapters\MicroMenu.lua
+Adapters\MicroMenuSettings.lua
 Adapters\Blizzard.lua
-Adapters\ClientWindows.lua
 Core\PublicAPI.lua
+Core\PublicAPIMethods.lua
 Shell\OptionsLoader.lua
 Core\Lifecycle.lua
 Core\Finalize.lua

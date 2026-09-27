@@ -10,19 +10,19 @@ NS.CombatGate = CombatGate
 
 local eventFrame = CreateFrame("Frame")
 
+-- Each deferred job is its own boundary: a job that raises is reported and
+-- the remaining jobs still run in the same drain.
 local function DrainPending()
     if NS.IsCombatLocked() then
         return
     end
-    -- Each job leaves the queue before it runs. A job that raises therefore
-    -- surfaces its error without taking the remaining jobs with it: they stay
-    -- queued for the next PLAYER_REGEN_ENABLED.
     local pending = CombatGate.pending
+    local dispatch = NS.Safety.Dispatch
     local key, callback = next(pending)
     while key ~= nil do
         pending[key] = nil
         CombatGate.count = CombatGate.count - 1
-        callback()
+        dispatch(callback)
         key, callback = next(pending)
     end
     CombatGate.count = 0

@@ -48,16 +48,8 @@ local loadOnDemandOwners = {
     "Blizzard_Communities",
 }
 
-local function IsLoaded(addon)
-    if not C_AddOns or type(C_AddOns.IsAddOnLoaded) ~= "function" then
-        return false
-    end
-    local first, second = C_AddOns.IsAddOnLoaded(addon)
-    return second == true or (second == nil and first == true)
-end
-
 local function LocaleFallback(kind)
-    local locale = type(GetLocale) == "function" and GetLocale() or "enUS"
+    local locale = GetLocale()
     if locale == "ruRU" then
         if kind == "morpheus" then return "Fonts\\MORPHEUS_CYR.TTF" end
         if kind == "skurri" then return "Fonts\\SKURRI_CYR.TTF" end
@@ -88,7 +80,7 @@ local function ConfiguredPath()
         return path ~= "" and path or nil
     end
     if config.face == "sharedMedia" then
-        return NS.SharedMedia and NS.SharedMedia.FetchFont(config.sharedMediaFont) or nil
+        return NS.SharedMedia.FetchFont(config.sharedMediaFont)
     end
     return LocaleFallback(config.face)
 end
@@ -124,7 +116,7 @@ end
 function Typography.GetSelectionPath(selection)
     if type(selection) ~= "string" then return nil end
     if selection:sub(1, #selectionPrefix) == selectionPrefix then
-        return NS.SharedMedia and NS.SharedMedia.FetchFont(selection:sub(#selectionPrefix + 1)) or nil
+        return NS.SharedMedia.FetchFont(selection:sub(#selectionPrefix + 1))
     end
     if selection == "custom" then
         local path = NS.DB and NS.DB.typography and tostring(NS.DB.typography.customPath or "") or ""
@@ -138,7 +130,7 @@ function Typography.SetSelection(selection)
     if NS.IsCombatLocked() or type(selection) ~= "string" or not NS.DB then return false end
     if selection:sub(1, #selectionPrefix) == selectionPrefix then
         local name = selection:sub(#selectionPrefix + 1)
-        if not (NS.SharedMedia and NS.SharedMedia.FetchFont(name)) then return false end
+        if not NS.SharedMedia.FetchFont(name) then return false end
         NS.DB.typography.sharedMediaFont = name
         NS.DB.typography.face = "sharedMedia"
     elseif selection == "custom" or selection == "friz" or selection == "arial"
@@ -216,17 +208,14 @@ end
 
 local function BlizzardFontSet()
     local set = {}
-    for index = 1, #(NS.BlizzardFontNames or {}) do
+    for index = 1, #NS.BlizzardFontNames do
         set[NS.BlizzardFontNames[index]] = true
     end
     return set
 end
 
 local function ApplyFontObjects(path)
-    local names = type(GetFonts) == "function" and GetFonts() or nil
-    if type(names) ~= "table" then
-        return 0
-    end
+    local names = GetFonts()
     local allowed = BlizzardFontSet()
     local includeSpecial = NS.DB.typography.includeSpecial ~= false
     local count = 0
@@ -259,13 +248,9 @@ local function DirectTargets()
     AddDirectTarget(_G.DEFAULT_CHAT_FRAME, targets, seen)
     AddDirectTarget(_G.GMChatFrame, targets, seen)
 
-    local communities = _G.CommunitiesFrame
-    local chat = communities and communities.Chat
-    AddDirectTarget(chat and chat.MessageFrame, targets, seen)
-
-    local console = _G.DeveloperConsole
-    AddDirectTarget(console and console.EditBox, targets, seen)
-    AddDirectTarget(console and console.MessageFrame, targets, seen)
+    AddDirectTarget(CommunitiesFrame.Chat.MessageFrame, targets, seen)
+    AddDirectTarget(DeveloperConsole.EditBox, targets, seen)
+    AddDirectTarget(DeveloperConsole.MessageFrame, targets, seen)
     return targets
 end
 
@@ -284,12 +269,9 @@ local function ApplyDirect(path)
 end
 
 local function ScheduleLateFonts()
-    if not EventUtil or type(EventUtil.ContinueOnAddOnLoaded) ~= "function" then
-        return
-    end
     for index = 1, #loadOnDemandOwners do
         local addon = loadOnDemandOwners[index]
-        if not IsLoaded(addon) and not Typography.waiting[addon] then
+        if not NS.Client.IsAddOnLoaded(addon) and not Typography.waiting[addon] then
             Typography.waiting[addon] = true
             EventUtil.ContinueOnAddOnLoaded(addon, function()
                 Typography.waiting[addon] = nil
@@ -302,10 +284,7 @@ local function ScheduleLateFonts()
 end
 
 local function ScheduleStartupSettle()
-    if Typography.startupSettleScheduled or not EventUtil
-        or type(EventUtil.ContinueAfterAllEvents) ~= "function" then
-        return
-    end
+    if Typography.startupSettleScheduled then return end
     Typography.startupSettleScheduled = true
     EventUtil.ContinueAfterAllEvents(function()
         if NS.DB and NS.DB.enabled and NS.DB.typography.enabled then
@@ -349,8 +328,8 @@ function Typography.ApplyConfigured()
     end
     ScheduleLateFonts()
     ScheduleStartupSettle()
-    if NS.CharacterDetails then NS.CharacterDetails.RefreshFonts() end
-    if NS.CharacterStats then NS.CharacterStats.RefreshFonts() end
+    NS.CharacterDetails.RefreshFonts()
+    NS.CharacterStats.RefreshFonts()
     return fonts > 0, Typography.lastError
 end
 
@@ -367,8 +346,8 @@ function Typography.Restore()
     NS.CombatGate.Cancel("typography:apply")
     NS.CombatGate.Cancel("typography:late")
     NS.CombatGate.Cancel("typography:shared-media")
-    if NS.CharacterDetails then NS.CharacterDetails.RefreshFonts() end
-    if NS.CharacterStats then NS.CharacterStats.RefreshFonts() end
+    NS.CharacterDetails.RefreshFonts()
+    NS.CharacterStats.RefreshFonts()
     return true, restored
 end
 
@@ -399,7 +378,7 @@ function Typography.SetCustomPath(path)
 end
 
 function Typography.SetSharedMediaFont(name)
-    local path = NS.SharedMedia and NS.SharedMedia.FetchFont(name)
+    local path = NS.SharedMedia.FetchFont(name)
     if not path then return false end
     NS.DB.typography.sharedMediaFont = name
     if NS.DB.typography.face == "sharedMedia" then Typography.ApplyConfigured() end
@@ -407,7 +386,7 @@ function Typography.SetSharedMediaFont(name)
 end
 
 function Typography.GetSharedMediaFontNames()
-    return NS.SharedMedia and NS.SharedMedia.GetFontNames() or { "Friz Quadrata TT" }
+    return NS.SharedMedia.GetFontNames()
 end
 
 function Typography.SetApplyChat(enabled)

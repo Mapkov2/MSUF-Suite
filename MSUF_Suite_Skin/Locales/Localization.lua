@@ -10,8 +10,8 @@ function NS.RegisterLocale(locale, values)
 end
 
 function NS.InitializeLocalization()
-    local activeLocale = type(GetLocale) == "function" and GetLocale() or "enUS"
-    local fallback = localeTables.enUS or {}
+    local activeLocale = GetLocale()
+    local fallback = localeTables.enUS
     local active = localeTables[activeLocale] or fallback
     local resolved = {}
 
