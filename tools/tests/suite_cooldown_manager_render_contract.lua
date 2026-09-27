@@ -1,4 +1,7 @@
 local root=assert(arg[1],"repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 -- Offline contract for the cooldown manager render plane (Const, Presets, Icons,
 -- Time, Effects). Secret values are sentinels that raise on comparison,
 -- arithmetic, concatenation, indexing and tostring, and report their WoW
@@ -92,6 +95,8 @@ CreateFrame=function(kind,_,parent,template)
     return frame
 end
 GameTooltip=New("GameTooltip")
+-- Like Blizzard's (SharedTooltipTemplates.lua): owner first, then its corner.
+GameTooltip_SetDefaultAnchor=function(tip,owner) tip:SetOwner(owner,"ANCHOR_NONE") end
 function GameTooltip:IsOwned(frame) return self.last.SetOwner==frame end
 
 ------------------------------------------------------------------ durations and curves
@@ -134,6 +139,7 @@ FormatterMT.__index=FormatterMT
 function FormatterMT:SetBreakpoints(points) self.points=points end
 local createdFormatters=0
 C_StringUtil={CreateNumericRuleFormatter=function() createdFormatters=createdFormatters+1;return setmetatable({},FormatterMT) end}
+Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
 Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2}}
 
 ------------------------------------------------------------------ spell and item APIs
@@ -181,6 +187,8 @@ WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
 C_CooldownViewer={GetCooldownViewerCategorySet=function() return {} end,GetCooldownViewerCooldownInfo=function() end}
 MSUF_EncodeCompactTable=function() return "" end
 MSUF_TryDecodeCompactString=function() return nil end
+-- The client's securecallfunction (Platform.lua's Dispatch): errors raise here.
+securecallfunction=function(fn,...) return fn(...) end
 local NS={}
 for _,file in ipairs({"Core/Platform.lua","Core/Database.lua","Core/SuiteCatalog.lua"}) do
     assert(loadfile(root.."/MSUF_Suite/"..file))("MSUF_Suite",NS)
@@ -200,8 +208,12 @@ assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Sui
 local S={}
 NS.Suite=S
 MSUFSuite=NS
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 S.Public=function(value) return not IsSecret(value) end
+-- Runtime.lua is not loaded here: its S.Dispatch is Platform's NS.Dispatch.
+S.Dispatch=NS.Dispatch
 
 ------------------------------------------------------------------ bootstrap stub and render files
 local C={M={},EMPTY={},views={},plans={},bars={},entries={},wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,state={
@@ -225,8 +237,26 @@ end
 local K,I,T,E,Presets=C.Const,C.Icons,C.Time,C.Effects,C.Presets
 assert(K and I and T and E and Presets,"render tables missing")
 local requests,ready={},{}
-C.Layout={Request=function(slot) requests[slot]=(requests[slot] or 0)+1 end,PixelScale=function() return 1 end}
+-- Stand-ins for the layout, aura and alert layers (Layout.lua, Auras.lua, Alerts.lua).
+local function Noop() end
+C.Layout={Request=function(slot) requests[slot]=(requests[slot] or 0)+1 end,PixelScale=function() return 1 end,
+    Forget=Noop}
 C.Alerts={Ready=function(entry) ready[entry.key]=(ready[entry.key] or 0)+1 end}
+C.Auras={OverlayShown=Noop}
+-- Index.lua's consumer arrays for ready glows and assist ants, filled with
+-- every entry of the icon bars (the index is not loaded here).
+C.Index={ready={},assist={}}
+local function IndexIconEntries()
+    for _,list in pairs(C.Index) do for i=#list,1,-1 do list[i]=nil end end
+    for _,plan in pairs(C.plans) do
+        if plan.kind==1 then
+            for i=1,#plan.entries do
+                C.Index.ready[#C.Index.ready+1]=plan.entries[i]
+                C.Index.assist[#C.Index.assist+1]=plan.entries[i]
+            end
+        end
+    end
+end
 
 ------------------------------------------------------------------ Const
 assert(K.GCD_CATEGORY==133 and #K.POINTS==9 and K.POINTS[9]=="BOTTOMRIGHT")
@@ -418,7 +448,7 @@ end
 -- placed and reported again.
 do
     local overlays,forgot={},{}
-    C.Auras={OverlayShown=function(entry,on,icon) overlays[#overlays+1]={entry,on,icon} end}
+    C.Auras.OverlayShown=function(entry,on,icon) overlays[#overlays+1]={entry,on,icon} end
     C.Layout.Forget=function(icon) forgot[#forgot+1]=icon end
     local icon=b6.icon
     C.plans.uti.entries={s300}
@@ -429,7 +459,7 @@ do
     C.plans.uti.entries={s300,b6}
     I.Sync("uti")
     assert(b6.icon and #overlays==1 and #forgot==1,"binding does not release")
-    C.Auras,C.Layout.Forget=nil,nil
+    C.Auras.OverlayShown,C.Layout.Forget=Noop,Noop
 end
 
 ------------------------------------------------------------------ Time: secret sinks and isolation
@@ -962,6 +992,7 @@ do
     Info(400,true,false)
     T.Refresh(b4,"cooldown")
     E.Update(b1)
+    IndexIconEntries()
     local function Pass()
         T.Refresh(e13,"item")
         T.Refresh(b4,"item")
@@ -1038,6 +1069,7 @@ end
 
 ------------------------------------------------------------------ Effects: glows
 do
+    IndexIconEntries()
     local icon=b1.icon
     overlayed[100]=true;E.Proc(b1,true)
     local glow=icon.glow
@@ -1101,6 +1133,7 @@ do
 end
 -- Assisted combat: ants only on the suggestion, painted on change only.
 do
+    IndexIconEntries()
     ess.assist=true
     E.Assist(100)
     local ants=b1.icon.ants
@@ -1212,6 +1245,7 @@ do
     C.plans.uti.kind=1
     I.Sync("uti")
     assert(b6.icon and b6.icon.shown)
+    IndexIconEntries()
     overlayed[100]=true
     E.Proc(b1,true)
     ess.assist=true

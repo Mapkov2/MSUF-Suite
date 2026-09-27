@@ -11,16 +11,13 @@ local K = C.Const
 local E = {}
 C.Effects = E
 local Public = S.Public
-local issecret = type(_G.issecretvalue) == "function" and _G.issecretvalue or nil
+local issecret = _G.issecretvalue
 local EMPTY = C.EMPTY
-local Spell = _G.C_Spell or {}
-local IsUsable = Spell.IsSpellUsable
-local InRange = Spell.IsSpellInRange
-local EnableRangeCheck = Spell.EnableSpellRangeCheck
-local Overlay = _G.C_SpellActivationOverlay
-local IsOverlayed = Overlay and Overlay.IsSpellOverlayed
-local Item = _G.C_Item
-local IsUsableItem = Item and Item.IsUsableItem
+local IsUsable = C_Spell.IsSpellUsable
+local InRange = C_Spell.IsSpellInRange
+local EnableRangeCheck = C_Spell.EnableSpellRangeCheck
+local IsOverlayed = C_SpellActivationOverlay.IsSpellOverlayed
+local IsUsableItem = C_Item.IsUsableItem
 local rangeRefs = {}
 local ranged = {}
 local fxIcons = {}
@@ -222,14 +219,14 @@ function E.Usable(entry)
     if view and view.usable and entry.src ~= "p" then
         local usable, noPower
         if entry.src == "i" then
-            if IsUsableItem then usable, noPower = IsUsableItem(entry.itemID or entry.id) end
+            usable, noPower = IsUsableItem(entry.itemID or entry.id)
         elseif not (entry.equipSlot or entry.src == "e") then
             local spell, category = entry.spell, entry.spellCategory
             if category and category ~= 0 then spell = entry.catSpell end
-            if spell and IsUsable then usable, noPower = IsUsable(spell) end
+            if spell then usable, noPower = IsUsable(spell) end
         end
-        if not (issecret and issecret(usable)) and usable == false then
-            code = (not (issecret and issecret(noPower)) and noPower) and 2 or 3
+        if not issecret(usable) and usable == false then
+            code = (not issecret(noPower) and noPower) and 2 or 3
         end
     end
     entry.usableCode = code
@@ -245,7 +242,7 @@ end
 local function Hold(spell)
     local count = rangeRefs[spell] or 0
     rangeRefs[spell] = count + 1
-    if count == 0 and EnableRangeCheck then EnableRangeCheck(spell, true) end
+    if count == 0 then EnableRangeCheck(spell, true) end
 end
 
 local function Drop(spell)
@@ -255,11 +252,11 @@ local function Drop(spell)
         return
     end
     rangeRefs[spell] = nil
-    if EnableRangeCheck then EnableRangeCheck(spell, false) end
+    EnableRangeCheck(spell, false)
 end
 
 local function Seed(entry, spell)
-    local inRange = InRange and InRange(spell)
+    local inRange = InRange(spell)
     entry.outOfRange = (Public(inRange) and inRange == false) or nil
 end
 
@@ -338,7 +335,7 @@ local function Bind(entry, icon, view)
     icon.fxEntry, icon.fxOv, icon.fxGen, icon.fxSpell = entry, entry.ov, view.behaviorGen, entry.spell
     if entry.src == "p" then return end
     local spell = entry.spell
-    if spell and IsOverlayed then
+    if spell then
         local shown = IsOverlayed(spell)
         entry.procOn = (Public(shown) and shown) and true or false
     end
@@ -395,7 +392,7 @@ function E.Assist(spell)
     if spell ~= nil and not (Public(spell) and type(spell) == "number") then spell = nil end
     if spell == assistSpell then return end
     assistSpell = spell
-    Walk(C.Index and C.Index.assist, AssistEntry, spell)
+    Walk(C.Index.assist, AssistEntry, spell)
 end
 
 ------------------------------------------------------------------ combat and release
@@ -410,7 +407,7 @@ end
 -- edge (edge set) only while those glows wait for combat.
 function E.CombatChanged(edge)
     if edge and not C.state.readyGlowCombat then return end
-    Walk(C.Index and C.Index.ready, ReadyEntry)
+    Walk(C.Index.ready, ReadyEntry)
 end
 
 -- Size changes from the icon style pass.

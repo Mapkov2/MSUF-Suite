@@ -1,4 +1,9 @@
 local root = assert(arg[1], "repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
+-- The client's table.wipe (Preview.lua uses it).
+table.wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
 -- Offline contract for the cooldown manager options page
 -- (MSUF_Suite_Options/Pages/CooldownManager*.lua): registration, setting
 -- coverage through custom bar 1's template rules, selected-bar key mapping,
@@ -24,6 +29,8 @@ SecretMT.__index = Raise("index"); SecretMT.__newindex = Raise("assignment"); Se
 local function Secret() return setmetatable({}, SecretMT) end
 local function IsSecret(value) return getmetatable(value) == SecretMT end
 issecretvalue = IsSecret
+-- Both clients have UnitClass; the preview canvas reads the player's class.
+UnitClass = function() return "Mage", "MAGE", 8 end
 
 ------------------------------------------------------------------ frames
 local frames = {}
@@ -126,6 +133,10 @@ local combat = false
 InCombatLockdown = function() return combat end
 SlashCmdList = {}
 IsLoggedIn = function() return false end
+DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+-- No combinedBags setting: the Bags module stays unavailable in this fixture.
+C_CVar = { GetCVar = function() return nil end }
+C_EventUtils = { IsEventValid = function() return true end }
 LoggingCombat = function() return false end
 GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "enUS" end
@@ -158,6 +169,9 @@ C_SpecializationInfo = {
 GetNumSpecializations = function() return 3 end
 local cursorX, cursorY = 100, 100
 GetCursorPosition = function() return cursorX, cursorY end
+-- No modifier key is down unless a step says so.
+local function NoKey() return false end
+IsShiftKeyDown, IsControlKeyDown = NoKey, NoKey
 local tooltip = { shown = false }
 function tooltip:SetOwner(owner) self.owner = owner end
 function tooltip:SetText(text) self.text = text end
@@ -200,9 +214,11 @@ MSUF_TryDecodeCompactString = function(text) local n = tonumber(text:match("^MSU
 local runtimeLoads = 0
 local loaded = { MidnightSimpleUnitFrames = true, MidnightSimpleUnitFrames_Options = true, MSUF_Suite_Options = true }
 local InstallRuntime
+UnitGUID = function() return "Player-Test" end
 C_AddOns = {
     IsAddOnLoaded = function(name) return loaded[name] == true, loaded[name] == true end,
     DoesAddOnExist = function(name) return name ~= "MapkoSkin" end,
+    GetAddOnEnableState = function() return 2 end,
     LoadAddOn = function(name)
         if name == "MSUF_Suite_CooldownManager" then
             runtimeLoads = runtimeLoads + 1
@@ -355,6 +371,8 @@ end
 
 ------------------------------------------------------------------ suite core
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+-- The client's securecallfunction (Platform.lua's Dispatch): errors raise here.
+securecallfunction = function(fn, ...) return fn(...) end
 local NS = {}
 local files = Support.TocFiles(root, "MSUF_Suite", "Mainline")
 local listed = false
@@ -546,8 +564,9 @@ for key in pairs(_G) do globalsBefore[key] = true end
 local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
 for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Pages/CooldownManagerData.lua",
-    "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPopover.lua",
-    "Pages/CooldownManagerPreview.lua", "Pages/CooldownManager.lua", "Menu/Register.lua" }) do
+    "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua", "Pages/CooldownManagerPopover.lua",
+    "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManager.lua",
+    "Pages/Appearance.lua", "Menu/Register.lua" }) do
     local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))
     if file:find("CooldownManager", 1, true) then setfenv(chunk, strict) end
     chunk("MSUF_Suite_Options", P)
@@ -1163,11 +1182,11 @@ assert(Page.SpellField("b2", "readyAlpha") == 99, "stepper must start from the b
 IsShiftKeyDown = function() return true end
 Fire(pop.rows.readyAlpha.minus, "OnClick")
 assert(Page.SpellField("b2", "readyAlpha") == 94, "Shift stepper must move by five")
-IsShiftKeyDown = nil
+IsShiftKeyDown = NoKey
 IsControlKeyDown = function() return true end
 Fire(pop.rows.readyAlpha.minus, "OnClick")
 assert(Page.SpellField("b2", "readyAlpha") == 84, "Ctrl stepper must move by ten")
-IsControlKeyDown = nil
+IsControlKeyDown = NoKey
 Fire(pop.rows.glowColor.swatches[3], "OnClick")
 assert(Page.SpellField("b2", "glowColor") == "ff4d4d", "color swatch failed")
 Fire(pop.rows.icon.edit, "OnEnterPressed")
@@ -1238,16 +1257,6 @@ assert(listText:find("^None|Blizzard Cooldown Manager|") and listed[5].item.valu
 assert(#frames == soundFrames and sounds.items == soundItems and Page.BlizzardSounds() == kits,
     "reopening the sound picker must reuse its rows, items and Blizzard's list")
 Fire(sounds.close, "OnClick")
--- Without Blizzard's list the section is hidden and a kit keeps a plain label.
-CooldownViewerSoundData = nil
-Fire(pop.rows.sound.choice, "OnClick")
-_, listText = SoundRows()
-assert(listText == "None|Sound kit 316406|Shared media|Boom|Bell|Chime", "sound list without Blizzard's data: " .. listText)
-assert(#frames == soundFrames, "the sound picker without Blizzard's list must reuse its rows")
-Fire(sounds.close, "OnClick")
-CooldownViewerSoundData = blizzardSounds
-M.RequestRefresh()
-assert(pop.rows.sound.choice.text == "Chicken", "the sound label did not come back with Blizzard's list")
 assert(toggledBlizzard == settingsToggles, "the sound picker must never drive Blizzard's settings panel")
 writes = historyWrites
 Fire(pop.reset, "OnClick")
@@ -1442,11 +1451,11 @@ assert(Page.SpellField("b1", "stackGlow") == 1 and historyWrites == writes + 1 a
     and stackGlow.reset.shown and stackGlow.label.textColor[1] == 0.2, "glow at stacks must step up from Off")
 IsShiftKeyDown = function() return true end
 Fire(stackGlow.plus, "OnClick")
-IsShiftKeyDown = nil
+IsShiftKeyDown = NoKey
 assert(Page.SpellField("b1", "stackGlow") == 6, "Shift steps five stacks")
 IsControlKeyDown = function() return true end
 Fire(stackGlow.minus, "OnClick")
-IsControlKeyDown = nil
+IsControlKeyDown = NoKey
 assert(Page.SpellField("b1", "stackGlow") == nil and stackGlow.value.text == "Off" and not stackGlow.reset.shown,
     "stepping back to 0 must turn the stack glow off, not store 0")
 assert(Page.SetSpellField("b1", "stackGlow", 99))
@@ -2261,6 +2270,13 @@ do
             return count * 40, 36, count
         end,
         Metrics = function() return 200, 20 end,
+        -- Layout.lua's memoized show/hide, which the canvas shares.
+        Shown = function(region, shown)
+            if region.layShown ~= shown then
+                region.layShown = shown
+                if shown then region:Show() else region:Hide() end
+            end
+        end,
     }
     C.views.ess = { kind = 1, styleGen = 1, maxIcons = 2 }
     C.views.bar = { kind = 3, styleGen = 1 }
@@ -2289,8 +2305,8 @@ for key in pairs(_G) do
     if not globalsBefore[key] then error("options page created global " .. tostring(key)) end
 end
 -- Each page file keeps real headroom below Lua 5.1's 200 locals per chunk.
-for _, file in ipairs({ "CooldownManagerData", "CooldownManagerWidgets", "CooldownManagerPopover",
-    "CooldownManagerPreview", "CooldownManager" }) do
+for _, file in ipairs({ "CooldownManagerData", "CooldownManagerBars", "CooldownManagerWidgets", "CooldownManagerPicker", "CooldownManagerPopover",
+    "CooldownManagerPreviewIcons", "CooldownManagerPreview", "CooldownManager" }) do
     local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/" .. file .. ".lua", "rb"))
     local names = 0
     for line in handle:read("*a"):gmatch("[^\r\n]+") do

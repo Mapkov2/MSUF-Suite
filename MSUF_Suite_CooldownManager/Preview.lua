@@ -9,17 +9,14 @@ local C = P.CDM
 -- the second and a buff glow on the third, from duration objects built out
 -- of plain numbers. The simulation runs only while the page is open and out
 -- of combat; its one ticker exists only while it runs. This file keeps its
--- own small constants: the options contract loads it on its own.
+-- own small constants; at load it reads only C.EMPTY and C.Layout.Shown
+-- (Layout.lua loads first), so the options contract loads it with a stub
+-- CDM table that has both.
 local Pv = { mode = nil, sim = false }
 C.Preview = Pv
 local EMPTY = C.EMPTY
 local pairs, type, max, min = pairs, type, math.max, math.min
-local wipe = table.wipe or wipe or function(t)
-    for k in pairs(t) do
-        t[k] = nil
-    end
-    return t
-end
+local wipe = table.wipe
 local QUESTION = 134400
 local SIM_LENGTH, SIM_LOOP = 8, 10
 local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
@@ -81,8 +78,7 @@ function Pv.SetMode(mode)
     if mode ~= "options" then Pv.Simulate(false) end
     C.state.preview = on
     if was == on then return false end
-    local auras = C.Auras
-    if auras and auras.SetPreview then auras.SetPreview(on) end
+    C.Auras.SetPreview(on)
     return true
 end
 
@@ -95,11 +91,10 @@ local ticker
 local function Duration(icon)
     local d = durations[icon]
     if d == nil then
-        local util = _G.C_DurationUtil
-        d = util and util.CreateDuration and util.CreateDuration() or false
+        d = C_DurationUtil.CreateDuration()
         durations[icon] = d
     end
-    return d or nil
+    return d
 end
 
 local function Sim(entry, role)
@@ -179,8 +174,7 @@ function Pv.Simulate(on)
         ticker = nil
     end
     if on then
-        local timer = _G.C_Timer
-        if timer and timer.NewTicker then ticker = timer.NewTicker(SIM_LOOP, Restart) end
+        ticker = C_Timer.NewTicker(SIM_LOOP, Restart)
         Restart()
     else
         StopAll()
@@ -274,21 +268,14 @@ local function Content(slot, kind, holder)
 end
 
 -- Canvas writes are memoized like the live bars: a repaint of an unchanged
--- bar (every settings tick repaints the page) makes no widget calls.
+-- bar (every settings tick repaints the page) makes no widget calls. The
+-- shown state uses the layout's memo (Layout.Shown).
+local Shown = C.Layout.Shown
 local function Place(region, parent, x, y)
     if region.pvX == x and region.pvY == y then return end
     region.pvX, region.pvY = x, y
     region:ClearAllPoints()
     region:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-end
-local function Shown(region, shown)
-    if region.pvShown == shown then return end
-    region.pvShown = shown
-    if shown then
-        region:Show()
-    else
-        region:Hide()
-    end
 end
 local function HideFrom(list, first)
     for i = first, #list do Shown(list[i], false) end
@@ -377,7 +364,7 @@ local function Rows(holder, view, count)
     local state = C.state
     local tex = S.ResolveTexture(view.barTexture, BAR_TEXTURE)
     local r, g, b
-    if view.barClass ~= false and type(UnitClass) == "function" then
+    if view.barClass ~= false then
         local _, file = UnitClass("player")
         if S.Public(file) then r, g, b = S.ClassRGB(file) end
     end

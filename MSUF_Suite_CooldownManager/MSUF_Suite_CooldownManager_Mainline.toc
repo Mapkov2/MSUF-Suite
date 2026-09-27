@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Cooldown manager
 ## Notes: Optional cooldown, buff and buff bar manager for Retail and Forever.
 ## Author: Mapko
@@ -18,6 +18,7 @@ Index.lua
 Icons.lua
 Time.lua
 Effects.lua
+AuraButtons.lua
 Auras.lua
 Alerts.lua
 Layout.lua
@@ -25,4 +26,8 @@ Visibility.lua
 Native.lua
 Keybinds.lua
 Preview.lua
+Flush.lua
+Settings.lua
+Events.lua
 Controller.lua
+Exports.lua

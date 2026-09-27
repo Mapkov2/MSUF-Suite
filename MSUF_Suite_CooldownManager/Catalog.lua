@@ -46,54 +46,44 @@ end
 local function Flag(v) return Public(v) and v == true end
 Catalog.Num, Catalog.Flag = Num, Flag
 
-local band = bit and bit.band
 local function HiddenByDefault(flags)
     if not (Public(flags) and type(flags) == "number") then return false end
-    if band then return band(flags, HIDE_BY_DEFAULT) ~= 0 end
     return floor(flags / HIDE_BY_DEFAULT) % 2 == 1
 end
 
 local function SpellTexture(spell)
-    local get = spell and C_Spell and C_Spell.GetSpellTexture
-    if not get then return nil end
-    local icon, _, conditional = get(spell)
+    if not spell then return nil end
+    local icon, _, conditional = C_Spell.GetSpellTexture(spell)
     if Public(conditional) and conditional then return conditional end
     if Public(icon) and icon then return icon end
 end
 local function SpellName(spell)
-    local get = spell and C_Spell and C_Spell.GetSpellName
-    local name = get and get(spell)
+    local name = spell and C_Spell.GetSpellName(spell)
     if Public(name) and type(name) == "string" and name ~= "" then return name end
 end
 local function EquipItem(slot)
-    local id = slot and GetInventoryItemID and GetInventoryItemID("player", slot)
+    local id = slot and GetInventoryItemID("player", slot)
     return Num(id)
 end
 local function EquipTexture(slot)
     if not slot then return nil end
-    local tex = GetInventoryItemTexture and GetInventoryItemTexture("player", slot)
+    local tex = GetInventoryItemTexture("player", slot)
     if Public(tex) and tex then return tex end
     -- Empty slot: the paper-doll slot art, as Blizzard's viewer shows it.
-    local info = C_PaperDollInfo and C_PaperDollInfo.GetInventorySlotInfoForInvSlot
-    if info then
-        local _, icon = info(slot)
-        if Public(icon) and icon then return icon end
-    end
+    local _, icon = C_PaperDollInfo.GetInventorySlotInfoForInvSlot(slot)
+    if Public(icon) and icon then return icon end
 end
 local function ItemName(item)
-    local get = item and C_Item and C_Item.GetItemNameByID
-    local name = get and get(item)
+    local name = item and C_Item.GetItemNameByID(item)
     if Public(name) and type(name) == "string" and name ~= "" then return name end
 end
 local function ItemIcon(item)
-    local get = item and C_Item and C_Item.GetItemIconByID
-    local icon = get and get(item)
+    local icon = item and C_Item.GetItemIconByID(item)
     if Public(icon) and icon then return icon end
 end
 local function ItemSpell(item)
-    local get = item and C_Item and C_Item.GetItemSpell
-    if not get then return nil end
-    local _, spell = get(item)
+    if not item then return nil end
+    local _, spell = C_Item.GetItemSpell(item)
     return Num(spell)
 end
 local function SlotLabel(slot)
@@ -158,11 +148,11 @@ local function OnGate(_, event)
     if GateComplete() then SetReady() end
 end
 local function Watch()
-    if gateFrame or type(CreateFrame) ~= "function" then return end
-    local valid = C_EventUtils and C_EventUtils.IsEventValid
-    local logged = type(IsLoggedIn) == "function" and IsLoggedIn() == true
+    if gateFrame then return end
+    local valid = C_EventUtils.IsEventValid
+    local logged = IsLoggedIn() == true
     for event in pairs(gate) do
-        if (valid and not valid(event)) or (logged and event ~= "COOLDOWN_VIEWER_DATA_LOADED") then gate[event] = true end
+        if not valid(event) or (logged and event ~= "COOLDOWN_VIEWER_DATA_LOADED") then gate[event] = true end
     end
     if GateComplete() then
         SetReady()
@@ -176,13 +166,12 @@ local function Watch()
 end
 function Catalog.Ready()
     if ready then return true end
-    local viewer = C_CooldownViewer
-    local get = viewer and viewer.GetCooldownViewerCategorySet
+    local get = C_CooldownViewer.GetCooldownViewerCategorySet
     -- A spec can have no Essential entry. Any populated spell or aura category
     -- proves the viewer data exists, including after a late module load.
     local populated = false
     for category = 0, 3 do
-        local ids = get and get(category, true)
+        local ids = get(category, true)
         if Public(ids) and type(ids) == "table" and #ids > 0 then
             populated = true
             break
@@ -208,13 +197,11 @@ local function Decode(blob)
     lastBlob, lastData = blob, nil
     if blob == "" then return nil end
     local util = C_EncodingUtil
-    if not (util and util.DecodeBase64 and util.DecompressString and util.DeserializeCBOR) then return nil end
     local bar = blob:find("|", 1, true)
     if not bar or tonumber(blob:sub(1, bar - 1)) ~= 1 then return nil end
     local raw = util.DecodeBase64(blob:sub(bar + 1))
     if type(raw) ~= "string" or raw == "" then return nil end
-    local deflate = Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate or 0
-    local inflated = util.DecompressString(raw, deflate)
+    local inflated = util.DecompressString(raw, Enum.CompressionMethod.Deflate)
     if type(inflated) ~= "string" or inflated == "" then return nil end
     local data = util.DeserializeCBOR(inflated)
     if type(data) ~= "table" then return nil end
@@ -250,9 +237,8 @@ local function ActiveLayout(data, tag)
 end
 
 local function SpecTag()
-    local classID = UnitClass and select(3, UnitClass("player"))
-    local info = C_SpecializationInfo
-    local spec = info and info.GetSpecialization and info.GetSpecialization()
+    local classID = select(3, UnitClass("player"))
+    local spec = C_SpecializationInfo.GetSpecialization()
     if Num(classID) and Public(spec) and type(spec) == "number" then return classID * 10 + spec end
 end
 Catalog.SpecTag = SpecTag
@@ -337,7 +323,7 @@ local function Fetch()
     local viewer = C_CooldownViewer
     local getSet, getInfo = viewer.GetCooldownViewerCategorySet, viewer.GetCooldownViewerCooldownInfo
     -- Blizzard currently shows invisible entries (CDM_HIDE_INVISIBLE_ITEMS is false).
-    local hideInvisible = _G.CDM_HIDE_INVISIBLE_ITEMS == true
+    local hideInvisible = CDM_HIDE_INVISIBLE_ITEMS == true
     local n = 0
     for c = 1, #CAT_ORDER do
         local category = CAT_ORDER[c]
@@ -438,51 +424,33 @@ local function IndexBases()
     end
 end
 
-function Catalog.Rebuild()
-    if not Catalog.Ready() then return false end
-    local viewer = C_CooldownViewer
-    if not (viewer and viewer.GetCooldownViewerCategorySet and viewer.GetCooldownViewerCooldownInfo) then return false end
-    changed = false
-    local tag = SpecTag()
-    -- Decode first: if the client rejects the string, nothing is half-built.
-    local getLayout, blob = viewer.GetLayoutData, nil
-    if getLayout then blob = getLayout() end
-    local data = Decode(blob)
-    local layout = ActiveLayout(data, tag)
-    wipe(fetched)
-    wipe(eff)
-    Fetch()
-    local order = ApplyLayout(layout)
-    local records = Catalog.records
-    for id, rec in pairs(records) do
-        if not fetched[id] then
-            records[id] = nil
-            changed = true
-        end
-    end
-    for _, list in pairs(bars) do wipe(list) end
-    for _, list in pairs(defaultBars) do wipe(list) end
-    wipe(equipTmp)
-    -- Guide-authored order/category moves refine Utility and both buff rows
-    -- for this spec. Current client records are authoritative: guide IDs that
-    -- no longer exist disappear, while newly added client IDs append in stock
-    -- order. The player's saved Blizzard layout is still an explicit import.
-    local guide = C.GuideProfiles and C.GuideProfiles[C.state.specID]
+-- Stock bar contents for this spec (what a reset restores). Guide-authored
+-- order/category moves refine Utility and both buff rows for this spec.
+-- Current client records are authoritative: guide IDs that no longer exist
+-- disappear, while newly added client IDs append in stock order. The
+-- player's saved Blizzard layout is still an explicit import.
+local function AddDefault(records, moves, id)
+    if defaultSeen[id] then return end
+    defaultSeen[id] = true
+    local rec = records[id]
+    if not rec then return end
+    local category = moves and moves[id] or rec.defaultCategory
+    local slot = BAR_OF[category]
+    local list = defaultBars[slot]
+    if list then list[#list + 1] = rec.key end
+end
+local function FillDefaults(records)
+    local guide = C.GuideProfiles[C.state.specID]
     local guideOrder = guide and guide.order
     local guideMoves = guide and guide.moves
     wipe(defaultSeen)
-    local function AddDefault(id)
-        if defaultSeen[id] then return end
-        defaultSeen[id] = true
-        local rec = records[id]
-        if not rec then return end
-        local category = guideMoves and guideMoves[id] or rec.defaultCategory
-        local slot = BAR_OF[category]
-        local list = defaultBars[slot]
-        if list then list[#list + 1] = rec.key end
-    end
-    for i = 1, #(guideOrder or EMPTY) do AddDefault(guideOrder[i]) end
-    for i = 1, #defaultOrder do AddDefault(defaultOrder[i]) end
+    for i = 1, #(guideOrder or EMPTY) do AddDefault(records, guideMoves, guideOrder[i]) end
+    for i = 1, #defaultOrder do AddDefault(records, guideMoves, defaultOrder[i]) end
+end
+
+-- Category, family and bar of every record in the effective order; known
+-- records join their bar, tail categories after that bar's own entries.
+local function FillBars(records, order)
     local t = 0
     for i = 1, #order do
         local id = order[i]
@@ -510,9 +478,10 @@ function Catalog.Rebuild()
         list[#list + 1] = id
     end
     for i = #tailTmp, t + 1, -1 do tailTmp[i] = nil end
-    Commit(Catalog.order, order)
-    for key, list in pairs(bars) do Commit(Catalog.byBar[key], list) end
-    for key, list in pairs(defaultBars) do Commit(Catalog.defaultByBar[key], list) end
+end
+
+-- Bars that hold an equipment slot record (the gear-change watch).
+local function CommitEquipBars()
     local equipBars = Catalog.equipBars
     for key in pairs(equipBars) do
         if not equipTmp[key] then
@@ -526,6 +495,35 @@ function Catalog.Rebuild()
             changed = true
         end
     end
+end
+
+function Catalog.Rebuild()
+    if not Catalog.Ready() then return false end
+    changed = false
+    local tag = SpecTag()
+    -- Decode first: if the client rejects the string, nothing is half-built.
+    local data = Decode(C_CooldownViewer.GetLayoutData())
+    local layout = ActiveLayout(data, tag)
+    wipe(fetched)
+    wipe(eff)
+    Fetch()
+    local order = ApplyLayout(layout)
+    local records = Catalog.records
+    for id, rec in pairs(records) do
+        if not fetched[id] then
+            records[id] = nil
+            changed = true
+        end
+    end
+    for _, list in pairs(bars) do wipe(list) end
+    for _, list in pairs(defaultBars) do wipe(list) end
+    wipe(equipTmp)
+    FillDefaults(records)
+    FillBars(records, order)
+    Commit(Catalog.order, order)
+    for key, list in pairs(bars) do Commit(Catalog.byBar[key], list) end
+    for key, list in pairs(defaultBars) do Commit(Catalog.defaultByBar[key], list) end
+    CommitEquipBars()
     IndexBases()
     if Catalog.specTag ~= tag then
         Catalog.specTag = tag
@@ -559,8 +557,7 @@ function Catalog.OnOverride(base, override)
     base, override = Num(base), Num(override)
     if not base then return false end
     local recs = Catalog.byBase[base]
-    local index = C.Index
-    local list = index and index.byBase and index.byBase[base]
+    local list = C.Index.byBase[base]
     if not recs and not list then return false end
     local any = false
     if recs then
@@ -589,10 +586,7 @@ end
 -- The saved Blizzard layout differs from the last one decoded (cold; the
 -- layout callbacks rebuild only then).
 function Catalog.LayoutStale()
-    local viewer = C_CooldownViewer
-    local get = viewer and viewer.GetLayoutData
-    if not get then return false end
-    local blob = get()
+    local blob = C_CooldownViewer.GetLayoutData()
     if not Public(blob) then return true end
     if type(blob) ~= "string" then blob = "" end
     return blob ~= lastBlob

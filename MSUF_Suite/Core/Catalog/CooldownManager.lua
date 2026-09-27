@@ -1,6 +1,6 @@
 local _, NS = ...
 local B = NS.CatalogBuild
-local Number, Bool, Choice, String, Color, Font, Texture = B.Number, B.Bool, B.Choice, B.String, B.Color, B.Font, B.Texture
+local Number, Bool, Choice, String, Color, Texture = B.Number, B.Bool, B.Choice, B.String, B.Color, B.Texture
 
 -- Settings for the cooldown manager. Bars are fixed slots: six built-in bars
 -- (Blizzard's Cooldown Manager categories plus two preset rows) and six custom bars.
@@ -10,16 +10,9 @@ local Number, Bool, Choice, String, Color, Font, Texture = B.Number, B.Bool, B.C
 local CDM = {}
 NS.CDM = CDM
 
+-- Blizzard's Cooldown Manager API exists on Retail and Forever. The data
+-- strings need MSUF's codec, which older MSUF builds do not export.
 local function Available()
-    if not NS.Client.isMainline then return false, "Cooldown manager needs Retail or WoW Forever" end
-    local viewer, spell = _G.C_CooldownViewer, _G.C_Spell
-    if type(viewer) ~= "table" or type(viewer.GetCooldownViewerCategorySet) ~= "function"
-        or type(viewer.GetCooldownViewerCooldownInfo) ~= "function" then
-        return false, "Blizzard's Cooldown Manager is not available on this client"
-    end
-    if type(spell) ~= "table" or type(spell.GetSpellCooldownDuration) ~= "function" then
-        return false, "Cooldown manager needs Retail or WoW Forever"
-    end
     if type(_G.MSUF_EncodeCompactTable) ~= "function" or type(_G.MSUF_TryDecodeCompactString) ~= "function" then
         return false, "Update MSUF to use the cooldown manager"
     end
@@ -72,8 +65,8 @@ for i = 1, 6 do
 end
 CDM.SLOT_INDEX = {}
 for i, slot in ipairs(CDM.SLOTS) do CDM.SLOT_INDEX[slot.key] = i end
-CDM.POINTS = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
-local POINT_LABELS = { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }
+CDM.POINTS = NS.AnchorPoints
+local POINT_LABELS = NS.AnchorLabels
 -- Attach targets: 1 free, 2..#SLOTS+1 another bar, then MSUF's unit frames.
 local ANCHOR_LABELS = { "Free" }
 for i, slot in ipairs(CDM.SLOTS) do ANCHOR_LABELS[i + 1] = slot.title end
@@ -92,25 +85,13 @@ B.Section(id, "general", "General", {
     Bool("muteSounds", "Mute cooldown manager sounds", false),
     Choice("soundChannel", "Sound channel", 1, { "Master", "Sound effects", "Dialog" }),
 })
-B.Section(id, "text", "Text", {
-    Font("font", "Font"),
-    Choice("fontOutline", "Text outline", 1, { "Outline", "Thick outline", "None" }),
-    Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
-    Bool("fontShadow", "Text shadow"),
-    Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
-    Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
+B.TextSection(id, {
     Color("cdColor", "Countdown color", "ffffff"),
     Color("stackColor", "Charges and stacks color", "ffffff"),
     Color("keybindColor", "Keybind color", "ffffff"),
     Number("thresholdSeconds", "Warn when fewer seconds remain (0 = off)", 0, 0, 10),
     Color("thresholdColor", "Warning countdown color", "ff5a3c"),
 })
-local textRules = NS.SuiteCatalog[id].rules
-textRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
-for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
-    textRules[key].enableKey = "fontShadow"
-    textRules[key].requiresChoice = textRules.fontShadow.requiresChoice
-end
 B.Section(id, "data", "Data", {
     String("listsData", "Bar contents", "", 60000),
     String("spellsData", "Per-spell choices", "", 60000),
@@ -166,15 +147,9 @@ end
 
 CDM.KEYS = {}
 CDM.SUFFIXES = {}
-local function Rules(slot)
-    local d = D[slot.key] or CUSTOM
-    local p = slot.key .. "_"
-    local list = {}
-    local function Add(rule, suffix)
-        rule.suffix = suffix
-        list[#list + 1] = rule
-    end
-    -- common
+-- Per-bar rules by group, in menu order. Add(rule, suffix) appends to the
+-- bar's list; p is the bar's key prefix and d its defaults.
+local function CommonRules(Add, p, d, slot)
     Add(Bool(p .. "on", "Show this bar", d.on), "on")
     Add(String(p .. "name", "Bar name", "", 24), "name")
     Add(Choice(p .. "kind", "Bar type", slot.kind or 1, { "Cooldowns", "Buff icons", "Buff bars" }), "kind")
@@ -190,75 +165,90 @@ local function Rules(slot)
     Add(Bool(p .. "hideVehicle", "Hide in vehicles", true), "hideVehicle")
     Add(Bool(p .. "tooltips", "Show tooltips", false), "tooltips")
     Add(Choice(p .. "strata", "Frame layer", 3, { "Background", "Low", "Medium", "High" }), "strata")
-    if Has(slot, "icon") then
-        Add(Number(p .. "size", "Icon size", d.size, 12, 96), "size")
-        Add(Number(p .. "height", "Icon height (percent)", d.height or 100, 40, 100, 5), "height")
-        Add(Number(p .. "spacing", "Icon spacing", 2, -2, 30), "spacing")
-        Add(Number(p .. "perRow", "Icons per row", d.perRow, 1, 40), "perRow")
-        Add(Number(p .. "maxIcons", "Maximum icons (0 = all)", 0, 0, 40), "maxIcons")
-        Add(Bool(p .. "vertical", "Vertical", false), "vertical")
-        Add(Choice(p .. "align", "Alignment", d.align or 1, { "Center", "Start", "End" }), "align")
+end
+local function IconRules(Add, p, d)
+    Add(Number(p .. "size", "Icon size", d.size, 12, 96), "size")
+    Add(Number(p .. "height", "Icon height (percent)", d.height or 100, 40, 100, 5), "height")
+    Add(Number(p .. "spacing", "Icon spacing", 2, -2, 30), "spacing")
+    Add(Number(p .. "perRow", "Icons per row", d.perRow, 1, 40), "perRow")
+    Add(Number(p .. "maxIcons", "Maximum icons (0 = all)", 0, 0, 40), "maxIcons")
+    Add(Bool(p .. "vertical", "Vertical", false), "vertical")
+    Add(Choice(p .. "align", "Alignment", d.align or 1, { "Center", "Start", "End" }), "align")
+    Add(Choice(p .. "grow", "New rows", d.grow, { "Down", "Up" }), "grow")
+    Add(Number(p .. "zoom", "Icon zoom (percent)", 8, 0, 30), "zoom")
+    Add(Number(p .. "border", "Border", 1, 0, 4), "border")
+    Add(Color(p .. "borderColor", "Border color", "000000"), "borderColor")
+    Add(Bool(p .. "borderClass", "Class-colored border", false), "borderClass")
+    Add(Bool(p .. "cdText", "Show countdown", true), "cdText")
+    Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
+    Add(Choice(p .. "textTop", "Text on top", 1, { "Stacks", "Countdown" }), "textTop")
+    Add(Number(p .. "cdSize", "Countdown size (0 = automatic)", 0, 0, 40), "cdSize")
+    Add(Number(p .. "stackSize", "Charges and stacks size (0 = automatic)", 0, 0, 40), "stackSize")
+    Add(Choice(p .. "stackPos", "Charges and stacks position", 9, POINT_LABELS), "stackPos")
+    Add(Number(p .. "swipeAlpha", "Swipe opacity (percent)", d.swipeAlpha, 0, 100, 5), "swipeAlpha")
+    Add(Bool(p .. "edge", "Show the swipe edge", false), "edge")
+end
+local function CooldownRules(Add, p, d)
+    Add(Bool(p .. "desat", "Desaturate on cooldown", true), "desat")
+    Add(Number(p .. "cdAlpha", "Opacity on cooldown (percent)", 100, 0, 100, 5), "cdAlpha")
+    Add(Number(p .. "readyAlpha", "Opacity when ready (percent)", 100, 0, 100, 5), "readyAlpha")
+    Add(Bool(p .. "hideReady", "Hide icons that are ready", false), "hideReady")
+    Add(Bool(p .. "procGlow", "Spell alert glow", true), "procGlow")
+    Add(Bool(p .. "readyGlow", "Glow when ready", false), "readyGlow")
+    Add(Choice(p .. "glowStyle", "Glow style", 1, { "Blizzard alert", "Marching ants", "Pulse", "Border" }), "glowStyle")
+    Add(Bool(p .. "glowTint", "Tint glows", false), "glowTint")
+    Add(Color(p .. "glowColor", "Glow color", "ffd200"), "glowColor")
+    Add(Bool(p .. "usable", "Color unusable spells", d.usable ~= false), "usable")
+    Add(Bool(p .. "range", "Color out-of-range spells", d.range ~= false), "range")
+    Add(Color(p .. "rangeColor", "Out-of-range color", "cc2e2e"), "rangeColor")
+    Add(Bool(p .. "showAura", "Show active buff duration", true), "showAura")
+    Add(Bool(p .. "charges", "Show charges", true), "charges")
+    Add(Bool(p .. "keybind", "Show keybinds", d.keybind == true), "keybind")
+    Add(Number(p .. "keybindSize", "Keybind size (0 = automatic)", 0, 0, 30), "keybindSize")
+    Add(Choice(p .. "keybindPos", "Keybind position", 3, POINT_LABELS), "keybindPos")
+    Add(Bool(p .. "assist", "Highlight the assisted combat suggestion", false), "assist")
+    Add(Bool(p .. "bling", "Flash when ready", false), "bling")
+end
+local function AuraRules(Add, p)
+    Add(Bool(p .. "showMissing", "Show missing buffs dimmed", false), "showMissing")
+    Add(Bool(p .. "keepSlots", "Keep buffs in fixed places", false), "keepSlots")
+    Add(Bool(p .. "auraGlow", "Glow while active", false), "auraGlow")
+    Add(Bool(p .. "pandemic", "Highlight the refresh window", true), "pandemic")
+end
+local function BarRules(Add, p, d, slot)
+    if not Has(slot, "icon") then
         Add(Choice(p .. "grow", "New rows", d.grow, { "Down", "Up" }), "grow")
-        Add(Number(p .. "zoom", "Icon zoom (percent)", 8, 0, 30), "zoom")
-        Add(Number(p .. "border", "Border", 1, 0, 4), "border")
-        Add(Color(p .. "borderColor", "Border color", "000000"), "borderColor")
-        Add(Bool(p .. "borderClass", "Class-colored border", false), "borderClass")
+        -- Text switches of every bar type (icon bars have them above).
         Add(Bool(p .. "cdText", "Show countdown", true), "cdText")
         Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
         Add(Choice(p .. "textTop", "Text on top", 1, { "Stacks", "Countdown" }), "textTop")
-        Add(Number(p .. "cdSize", "Countdown size (0 = automatic)", 0, 0, 40), "cdSize")
-        Add(Number(p .. "stackSize", "Charges and stacks size (0 = automatic)", 0, 0, 40), "stackSize")
-        Add(Choice(p .. "stackPos", "Charges and stacks position", 9, POINT_LABELS), "stackPos")
-        Add(Number(p .. "swipeAlpha", "Swipe opacity (percent)", d.swipeAlpha, 0, 100, 5), "swipeAlpha")
-        Add(Bool(p .. "edge", "Show the swipe edge", false), "edge")
     end
-    if Has(slot, "cooldown") then
-        Add(Bool(p .. "desat", "Desaturate on cooldown", true), "desat")
-        Add(Number(p .. "cdAlpha", "Opacity on cooldown (percent)", 100, 0, 100, 5), "cdAlpha")
-        Add(Number(p .. "readyAlpha", "Opacity when ready (percent)", 100, 0, 100, 5), "readyAlpha")
-        Add(Bool(p .. "hideReady", "Hide icons that are ready", false), "hideReady")
-        Add(Bool(p .. "procGlow", "Spell alert glow", true), "procGlow")
-        Add(Bool(p .. "readyGlow", "Glow when ready", false), "readyGlow")
-        Add(Choice(p .. "glowStyle", "Glow style", 1, { "Blizzard alert", "Marching ants", "Pulse", "Border" }), "glowStyle")
-        Add(Bool(p .. "glowTint", "Tint glows", false), "glowTint")
-        Add(Color(p .. "glowColor", "Glow color", "ffd200"), "glowColor")
-        Add(Bool(p .. "usable", "Color unusable spells", d.usable ~= false), "usable")
-        Add(Bool(p .. "range", "Color out-of-range spells", d.range ~= false), "range")
-        Add(Color(p .. "rangeColor", "Out-of-range color", "cc2e2e"), "rangeColor")
-        Add(Bool(p .. "showAura", "Show active buff duration", true), "showAura")
-        Add(Bool(p .. "charges", "Show charges", true), "charges")
-        Add(Bool(p .. "keybind", "Show keybinds", d.keybind == true), "keybind")
-        Add(Number(p .. "keybindSize", "Keybind size (0 = automatic)", 0, 0, 30), "keybindSize")
-        Add(Choice(p .. "keybindPos", "Keybind position", 3, POINT_LABELS), "keybindPos")
-        Add(Bool(p .. "assist", "Highlight the assisted combat suggestion", false), "assist")
-        Add(Bool(p .. "bling", "Flash when ready", false), "bling")
+    Add(Number(p .. "barWidth", "Bar width", slot.key == "bar" and 220 or 200, 60, 480), "barWidth")
+    Add(Number(p .. "barHeight", "Bar height", slot.key == "bar" and 20 or 18, 8, 48), "barHeight")
+    Add(Texture(p .. "barTexture", "Bar texture"), "barTexture")
+    Add(Color(p .. "barColor", "Bar color", NS.Client.isForever and "d8b66a" or "e8b855"), "barColor")
+    Add(Bool(p .. "barClass", "Class-colored bars", true), "barClass")
+    Add(Number(p .. "barBgAlpha", "Bar background opacity (percent)", 55, 0, 100, 5), "barBgAlpha")
+    Add(Bool(p .. "barIcon", "Show icon", true), "barIcon")
+    Add(Choice(p .. "barIconSide", "Icon side", 1, { "Left", "Right" }), "barIconSide")
+    Add(Bool(p .. "barName", "Show name", true), "barName")
+    Add(Bool(p .. "barTime", "Show time", true), "barTime")
+    Add(Choice(p .. "barFill", "Bar direction", 1, { "Drain", "Fill" }), "barFill")
+end
+
+local function Rules(slot)
+    local d = D[slot.key] or CUSTOM
+    local p = slot.key .. "_"
+    local list = {}
+    local function Add(rule, suffix)
+        rule.suffix = suffix
+        list[#list + 1] = rule
     end
-    if Has(slot, "aura") then
-        Add(Bool(p .. "showMissing", "Show missing buffs dimmed", false), "showMissing")
-        Add(Bool(p .. "keepSlots", "Keep buffs in fixed places", false), "keepSlots")
-        Add(Bool(p .. "auraGlow", "Glow while active", false), "auraGlow")
-        Add(Bool(p .. "pandemic", "Highlight the refresh window", true), "pandemic")
-    end
-    if Has(slot, "bar") then
-        if not Has(slot, "icon") then
-            Add(Choice(p .. "grow", "New rows", d.grow, { "Down", "Up" }), "grow")
-            -- Text switches of every bar type (icon bars have them above).
-            Add(Bool(p .. "cdText", "Show countdown", true), "cdText")
-            Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
-            Add(Choice(p .. "textTop", "Text on top", 1, { "Stacks", "Countdown" }), "textTop")
-        end
-        Add(Number(p .. "barWidth", "Bar width", slot.key == "bar" and 220 or 200, 60, 480), "barWidth")
-        Add(Number(p .. "barHeight", "Bar height", slot.key == "bar" and 20 or 18, 8, 48), "barHeight")
-        Add(Texture(p .. "barTexture", "Bar texture"), "barTexture")
-        Add(Color(p .. "barColor", "Bar color", NS.Client.isForever and "d8b66a" or "e8b855"), "barColor")
-        Add(Bool(p .. "barClass", "Class-colored bars", true), "barClass")
-        Add(Number(p .. "barBgAlpha", "Bar background opacity (percent)", 55, 0, 100, 5), "barBgAlpha")
-        Add(Bool(p .. "barIcon", "Show icon", true), "barIcon")
-        Add(Choice(p .. "barIconSide", "Icon side", 1, { "Left", "Right" }), "barIconSide")
-        Add(Bool(p .. "barName", "Show name", true), "barName")
-        Add(Bool(p .. "barTime", "Show time", true), "barTime")
-        Add(Choice(p .. "barFill", "Bar direction", 1, { "Drain", "Fill" }), "barFill")
-    end
+    CommonRules(Add, p, d, slot)
+    if Has(slot, "icon") then IconRules(Add, p, d) end
+    if Has(slot, "cooldown") then CooldownRules(Add, p, d) end
+    if Has(slot, "aura") then AuraRules(Add, p) end
+    if Has(slot, "bar") then BarRules(Add, p, d, slot) end
     return list
 end
 

@@ -25,7 +25,7 @@ C.Resolve = Resolve
 -- records of their categories hide while the bags hold none (hideEmpty,
 -- read by Time). Potion categories never hide: their item lists may miss a
 -- rank. Keys are built once.
-local CONSUMABLES = C.Presets and C.Presets.CONSUMABLES or EMPTY
+local CONSUMABLES = C.Presets.CONSUMABLES
 local consumableKeys, consumable, itemCategory, hideItem, hideCategory = {}, {}, {}, {}, {}
 for i = 1, #CONSUMABLES do
     local item, category = CONSUMABLES[i].item, CONSUMABLES[i].category
@@ -66,36 +66,29 @@ end
 
 ------------------------------------------------------------------ plain lookups
 local function HasRange(spell)
-    local has = spell and C_Spell and C_Spell.SpellHasRange
-    local result = has and has(spell)
+    local result = spell and C_Spell.SpellHasRange(spell)
     return Public(result) and result == true
 end
 -- maxCharges is NeverSecret; checked anyway.
 local function Charged(spell)
-    local get = spell and C_Spell and C_Spell.GetSpellCharges
-    local info = get and get(spell)
+    local info = spell and C_Spell.GetSpellCharges(spell)
     if not (Public(info) and type(info) == "table") then return false end
     local max = info.maxCharges
     return Public(max) and type(max) == "number" and max > 1
 end
+-- The player's spell book, then the pet's.
 local function Known(spell)
-    local book = C_SpellBook
-    local check = book and (book.IsSpellKnownOrInSpellBook or book.IsSpellKnown)
-    if not check then return true end
+    local check = C_SpellBook.IsSpellKnownOrInSpellBook
     local known = check(spell)
     if Public(known) and known == true then return true end
-    local pet = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet
-    if pet == nil then return false end
-    known = check(spell, pet)
+    known = check(spell, Enum.SpellBookSpellBank.Pet)
     return Public(known) and known == true
 end
 local function BaseSpell(id)
-    local get = C_Spell and C_Spell.GetBaseSpell
-    return get and Num(get(id)) or id
+    return Num(C_Spell.GetBaseSpell(id)) or id
 end
 local function OverrideOf(base)
-    local find = C_SpellBook and C_SpellBook.FindSpellOverrideByID
-    local id = find and Num(find(base))
+    local id = Num(C_SpellBook.FindSpellOverrideByID(base))
     if id and id ~= base then return id end
 end
 
@@ -139,9 +132,7 @@ local function Harmful(id)
     if not id then return false end
     local known = harmfulCache[id]
     if known ~= nil then return known end
-    local spell = C_Spell
-    local check = spell and spell.IsSpellHarmful or IsHarmfulSpell
-    local result = check and check(id)
+    local result = C_Spell.IsSpellHarmful(id)
     known = Public(result) and result == true or false
     harmfulCache[id] = known
     return known
@@ -257,6 +248,15 @@ end
 -- key, so an unlearned record never previews next to it.
 local presetKeys, presetGen, presetSpec, presetRaid, presetSeen, spellKey, presetSpell = {}, nil, nil, nil, {}, {}, {}
 local covered, standIn = {}, {}
+-- Appends key to a preset list once.
+local function AddPreset(out, n, key)
+    if not presetSeen[key] then
+        presetSeen[key] = true
+        n = n + 1
+        out[n] = key
+    end
+    return n
+end
 local function Consumables(out)
     local n = 0
     for i = 1, #CONSUMABLES do
@@ -264,11 +264,7 @@ local function Consumables(out)
         if not covered[category] then
             local key = consumableKeys[i]
             standIn[category] = key
-            if not presetSeen[key] then
-                presetSeen[key] = true
-                n = n + 1
-                out[n] = key
-            end
+            n = AddPreset(out, n, key)
         end
     end
     return n
@@ -304,10 +300,9 @@ local function PresetLists()
     local Presets = C.Presets
     for i = 1, #SLOTS do
         local def = SLOTS[i]
-        local ids = Presets and (def.key == "ess" and raid
-                and Presets.RaidEssentials and Presets.RaidEssentials(specID)
+        local ids = def.key == "ess" and raid and Presets.RaidEssentials(specID)
             or def.preset == "defensives" and Presets.Defensives()
-            or def.preset == "racials" and Presets.RACIALS) or nil
+            or def.preset == "racials" and Presets.RACIALS or nil
         if ids then
             local out = presetKeys[def.key] or {}
             wipe(presetSeen)
@@ -324,11 +319,7 @@ local function PresetLists()
                         presetSpell[key] = base
                     end
                 end
-                if not presetSeen[key] then
-                    presetSeen[key] = true
-                    n = n + 1
-                    out[n] = key
-                end
+                n = AddPreset(out, n, key)
             end
             for j = #out, n + 1, -1 do out[j] = nil end
             presetKeys[def.key] = out
@@ -476,6 +467,83 @@ local function Offer(rec, slot, hidden, out, n)
     end
     return n
 end
+-- The bar's own list: keys this bar claimed, in list order.
+local function CollectList(list, explicit, slot, hidden, out, n)
+    for j = 1, #list do
+        local key = Canon(list[j])
+        if claimed[key] == slot and not used[key] and (explicit or not hidden[key]) then
+            used[key] = true
+            n = n + 1
+            out[n] = key
+            local src, id = Parse(key)
+            if src == "e" then usedSlot[id] = true end
+        end
+    end
+    return n
+end
+-- Blizzard's entries of a built-in bar after its list.
+local function CollectBlizzard(slot, family, preview, hidden, out, n)
+    local records = Catalog.records
+    if preview then
+        -- Unlearned entries too, in Blizzard's global order; pool entries
+        -- (trinkets on Essential) after the bar's own, as in byBar.
+        local order, tail = Catalog.order, Catalog.TAIL
+        for pass = 1, 2 do
+            for j = 1, #order do
+                local rec = records[order[j]]
+                if rec and rec.bar == slot and rec.family == family and (tail[rec.category] == true) == (pass == 2) then
+                    n = Offer(rec, slot, hidden, out, n)
+                end
+            end
+        end
+    else
+        local source = Catalog.byBar[slot] or EMPTY
+        for j = 1, #source do
+            local rec = records[source[j]]
+            if rec and rec.bar == slot and rec.family == family then n = Offer(rec, slot, hidden, out, n) end
+        end
+    end
+    return n
+end
+-- Some talent variants are absent from the short raid preset. Fill a
+-- sparse Essential row with up to four learned spells from the guide and
+-- Blizzard's Essential category, after the preferred raid buttons. Keep
+-- dedicated Defensives claims and explicit user lists authoritative.
+local function FillEssential(slot, family, hidden, out, n)
+    local knownCount = 0
+    for j = 1, n do
+        local key = out[j]
+        local src, id = Parse(key)
+        local rec = src == "b" and Catalog.records[id]
+        if rec and rec.known and not rec.equipSlot
+            or src == "s" and presetSpell[key] and PresetKnown(key) then
+            knownCount = knownCount + 1
+        end
+    end
+    local defaults = Catalog.defaultByBar.ess or EMPTY
+    for j = 1, #defaults do
+        if knownCount >= 4 then break end
+        local key = defaults[j]
+        local src, id = Parse(key)
+        local rec = src == "b" and Catalog.records[id]
+        if rec and rec.known and not rec.equipSlot
+            and rec.family == family then
+            local before = n
+            n = Offer(rec, slot, hidden, out, n)
+            if n > before then knownCount = knownCount + 1 end
+        end
+    end
+    -- An equipped on-use trinket still belongs at the end of Essential.
+    -- User lists and imported layouts remain exact, including removals.
+    local order, records = Catalog.order, Catalog.records
+    for j = 1, #order do
+        local rec = records[order[j]]
+        if rec and rec.bar == slot and rec.family == family and rec.equipSlot then
+            n = Offer(rec, slot, hidden, out, n)
+        end
+    end
+    return n
+end
 local function Collect(i, kind, specLists, hidden, replaced, preview, out, presets)
     local def = SLOTS[i]
     local slot, family = def.key, KIND_FAMILY[kind]
@@ -483,81 +551,16 @@ local function Collect(i, kind, specLists, hidden, replaced, preview, out, prese
     wipe(used)
     wipe(usedSlot)
     local list, explicit = ListOf(i, specLists, presets)
-    if list then
-        for j = 1, #list do
-            local key = Canon(list[j])
-            if claimed[key] == slot and not used[key] and (explicit or not hidden[key]) then
-                used[key] = true
-                n = n + 1
-                out[n] = key
-                local src, id = Parse(key)
-                if src == "e" then usedSlot[id] = true end
-            end
-        end
-    end
+    if list then n = CollectList(list, explicit, slot, hidden, out, n) end
     -- Suite spec defaults and explicitly imported Blizzard lists are complete
     -- selections. Other user lists retain the older append-new-spells rule.
     local strict = (list ~= nil and not explicit and
         (slot == "ess" or Catalog.defaultByBar[slot] ~= nil))
         or replaced[slot] == true
     if def.builtin and family and not strict then
-        local records = Catalog.records
-        if preview then
-            -- Unlearned entries too, in Blizzard's global order; pool entries
-            -- (trinkets on Essential) after the bar's own, as in byBar.
-            local order, tail = Catalog.order, Catalog.TAIL
-            for pass = 1, 2 do
-                for j = 1, #order do
-                    local rec = records[order[j]]
-                    if rec and rec.bar == slot and rec.family == family and (tail[rec.category] == true) == (pass == 2) then
-                        n = Offer(rec, slot, hidden, out, n)
-                    end
-                end
-            end
-        else
-            local source = Catalog.byBar[slot] or EMPTY
-            for j = 1, #source do
-                local rec = records[source[j]]
-                if rec and rec.bar == slot and rec.family == family then n = Offer(rec, slot, hidden, out, n) end
-            end
-        end
+        n = CollectBlizzard(slot, family, preview, hidden, out, n)
     elseif slot == "ess" and not explicit then
-        -- Some talent variants are absent from the short raid preset. Fill a
-        -- sparse Essential row with up to four learned spells from the guide
-        -- and Blizzard's Essential category, after the preferred raid buttons. Keep
-        -- dedicated Defensives claims and explicit user lists authoritative.
-        local knownCount = 0
-        for j = 1, n do
-            local key = out[j]
-            local src, id = Parse(key)
-            local rec = src == "b" and Catalog.records[id]
-            if rec and rec.known and not rec.equipSlot
-                or src == "s" and presetSpell[key] and PresetKnown(key) then
-                knownCount = knownCount + 1
-            end
-        end
-        local defaults = Catalog.defaultByBar.ess or EMPTY
-        for j = 1, #defaults do
-            if knownCount >= 4 then break end
-            local key = defaults[j]
-            local src, id = Parse(key)
-            local rec = src == "b" and Catalog.records[id]
-            if rec and rec.known and not rec.equipSlot
-                and rec.family == family then
-                local before = n
-                n = Offer(rec, slot, hidden, out, n)
-                if n > before then knownCount = knownCount + 1 end
-            end
-        end
-        -- An equipped on-use trinket still belongs at the end of Essential.
-        -- User lists and imported layouts remain exact, including removals.
-        local order, records = Catalog.order, Catalog.records
-        for j = 1, #order do
-            local rec = records[order[j]]
-            if rec and rec.bar == slot and rec.family == family and rec.equipSlot then
-                n = Offer(rec, slot, hidden, out, n)
-            end
-        end
+        n = FillEssential(slot, family, hidden, out, n)
     end
     -- Potions and racials: the Healthstones, then the racial, after
     -- Blizzard's entries (and after a user list, which they survive).

@@ -5,7 +5,7 @@ local C = P.CDM
 -- throttle per entry; aura gain and loss sounds from files are registered
 -- with C_UnitAuras.AddAuraSound, so Blizzard plays them without any Lua per
 -- aura event. Known Blizzard CDM kits resolve to their sound files; only
--- unknown kits need the aura-button sensor (Auras.lua) through PlayAura.
+-- unknown kits need the aura-button sensor (AuraButtons.lua) through PlayAura.
 -- Nothing plays while muted or during the short silence after a loading
 -- screen (C.state.soundQuietUntil, set by the controller).
 local L = { pending = false }
@@ -21,8 +21,8 @@ local THROTTLE = 1
 -- a cinematic) show and hide aura buttons: their sensors keep quiet this
 -- long after one.
 local HUSH = .3
-local TRIGGER = _G.Enum and _G.Enum.UnitAuraSoundTrigger or EMPTY
-local ADDED, REMOVED = TRIGGER.Added or 0, TRIGGER.Removed or 2
+local TRIGGER = Enum.UnitAuraSoundTrigger
+local ADDED, REMOVED = TRIGGER.Added, TRIGGER.Removed
 
 local kinds, args = {}, {}                   -- parsed sound values, once per distinct value
 local last = setmetatable({}, { __mode = "k" }) -- entry -> time of its last ready alert
@@ -45,7 +45,8 @@ local armed = false
 -- Short sound files are present in its CASC although their kits are absent
 -- from that table. Each mapped kit has one file.
 -- Files can be played by the same runtime path as SharedMedia and registered
--- with C_UnitAuras.AddAuraSound; unknown kits retain the PlaySound fallback.
+-- with C_UnitAuras.AddAuraSound; unknown kits play through
+-- C_Sound.PlaySoundWithOptions, as Blizzard's viewer plays them.
 -- Data: https://wago.tools/db2/SoundKitEntry/csv?build=12.1.0.69933
 -- PATCH CHECK: After Retail or Forever patches, compare Blizzard's
 -- CooldownViewerSoundAlertData.lua with SoundKitEntry.db2 in both clients;
@@ -101,8 +102,7 @@ end
 
 -- LibSharedMedia path or file ID; LSM maps its "None" entry to 1.
 local function Media(name)
-    local stub = _G.LibStub
-    local media = type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibSharedMedia-3.0", true)
+    local media = NS.SharedMedia()
     local path = media and media:Fetch("sound", name, true)
     if type(path) == "string" and path ~= "" then return path end
     if type(path) == "number" and path > 1 then return path end
@@ -113,6 +113,8 @@ local function Channel()
     return (channel == "SFX" or channel == "Dialog") and channel or "Master"
 end
 
+-- PlaySoundFile is not in Blizzard's UI source mirror, so its presence on
+-- both clients is not verified there: it keeps its probe.
 local function Emit(value)
     local kind, arg = Parse(value)
     if not kind then return false end
@@ -120,12 +122,8 @@ local function Emit(value)
     if kind == "kit" then
         local file = kitFiles[arg]
         if file and type(PlaySoundFile) == "function" and PlaySoundFile(file, channel) == true then return true end
-        local sound = _G.C_Sound
-        if sound and type(sound.PlaySoundWithOptions) == "function" then
-            kitParams.soundKitID, kitParams.uiSoundSubType = arg, channel
-            return sound.PlaySoundWithOptions(kitParams) == true
-        end
-        return type(PlaySound) == "function" and PlaySound(arg, channel) == true
+        kitParams.soundKitID, kitParams.uiSoundSubType = arg, channel
+        return C_Sound.PlaySoundWithOptions(kitParams) == true
     end
     if kind == "lsm" then
         arg = Media(arg)
@@ -136,17 +134,11 @@ end
 
 -- Blizzard's text-to-speech with the player's chosen voice, rate and volume.
 local function Speak(text)
-    local voice, tts = _G.C_VoiceChat, _G.C_TTSSettings
     if type(text) ~= "string" or text == "" or not Public(text) then return false end
-    if not (voice and type(voice.SpeakText) == "function") then return false end
-    local id, rate, volume = 0, 0, 100
-    if tts then
-        local types = _G.Enum and _G.Enum.TtsVoiceType
-        if tts.GetVoiceOptionID then id = tts.GetVoiceOptionID(types and types.Standard or 0) or 0 end
-        if tts.GetSpeechRate then rate = tts.GetSpeechRate() or 0 end
-        if tts.GetSpeechVolume then volume = tts.GetSpeechVolume() or 100 end
-    end
-    voice.SpeakText(id, text, rate, volume, true)
+    local tts = C_TTSSettings
+    local id = tts.GetVoiceOptionID(Enum.TtsVoiceType.Standard) or 0
+    local rate, volume = tts.GetSpeechRate() or 0, tts.GetSpeechVolume() or 100
+    C_VoiceChat.SpeakText(id, text, rate, volume, true)
     return true
 end
 
@@ -271,13 +263,8 @@ function L.PlayAura(key, which, gate)
         gainAt[key], gainGate[key] = now, gate
     end
     if flushArmed then return true end
-    local timer = _G.C_Timer
-    if timer and timer.After then
-        flushArmed = true
-        timer.After(0, FlushAura)
-    else
-        FlushAura()
-    end
+    flushArmed = true
+    C_Timer.After(0, FlushAura)
     return true
 end
 
@@ -298,7 +285,7 @@ local function Want(entry, trigger, value, channel)
     local kind, id = Parse(value)
     if kind ~= "lsm" and kind ~= "file" and not (kind == "kit" and kitFiles[id]) then return end
     local auras = C.Auras
-    local set = auras and auras.Ids(entry)
+    local set = auras.Ids(entry)
     if not set then return end
     local unit = auras.UnitOf(entry)
     if unit ~= "both" then return Wanted(set, unit, trigger, channel, value) end
@@ -330,25 +317,21 @@ local function QuietOver()
     if not L.released then L.SyncAuraSounds() end
 end
 local function Arm(wait)
-    local timer = _G.C_Timer
-    if armed or not (timer and timer.After) then return end
+    if armed then return end
     armed = true
-    timer.After(wait + .05, QuietOver)
+    C_Timer.After(wait + .05, QuietOver)
 end
 
 -- Cold: after resolve, spell choices, mute/channel changes and loading
 -- screens. Out of combat only; in combat it waits for FlushPending.
 function L.SyncAuraSounds()
     L.released = false
-    local auras = _G.C_UnitAuras
-    local add, remove = auras and auras.AddAuraSound, auras and auras.RemoveAuraSound
-    if type(add) ~= "function" or type(remove) ~= "function" then return end
+    local add, remove = C_UnitAuras.AddAuraSound, C_UnitAuras.RemoveAuraSound
     if NS.IsCombatLocked() then
         L.pending = true
         return
     end
-    local secrets = _G.C_Secrets
-    local restricted = secrets and secrets.ShouldAurasBeSecret and secrets.ShouldAurasBeSecret()
+    local restricted = C_Secrets.ShouldAurasBeSecret()
     if restricted ~= nil and (not Public(restricted) or restricted) then
         L.pending = true
         return
@@ -395,11 +378,10 @@ function L.SyncAuraSounds()
 end
 
 function L.ReleaseAll()
-    local auras = _G.C_UnitAuras
-    local remove = auras and auras.RemoveAuraSound
+    local remove = C_UnitAuras.RemoveAuraSound
     for key, reg in pairs(have) do
         have[key] = nil
-        if remove then remove(reg.id) end
+        remove(reg.id)
     end
     wipe(gained)
     wipe(lost)

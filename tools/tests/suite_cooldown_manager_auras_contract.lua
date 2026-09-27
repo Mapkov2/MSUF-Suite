@@ -1,5 +1,9 @@
 local root=assert(arg[1],"repository root required")
--- Offline contract for the cooldown manager aura layer: Auras.lua (buff icon
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
+-- Offline contract for the cooldown manager aura layer: Auras.lua and
+-- AuraButtons.lua (buff icon
 -- bars, buff bars and cooldown overlays on AuraContainer) and Alerts.lua
 -- (ready sounds, speech, native aura sounds). Blizzard objects are fakes that
 -- refuse addon field writes, validate every binding, and refuse any touch of
@@ -350,9 +354,11 @@ function CreateFrame(kind,name,parent,template)
     return New(kind,parent)
 end
 UIParent=New("Frame",nil)
+-- One physical pixel is one UI unit (S.PixelUnit reads both clients' API).
+GetPhysicalScreenSize=function() return 1024,768 end
 
 ------------------------------------------------------------------ WoW API
-AuraContainerInbound={}
+Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
 Enum={StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpolation={Immediate=0,ExponentialEaseOut=1},
     NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},UnitAuraSoundTrigger={Added=0,ApplicationsIncreased=1,Removed=2},
     TtsVoiceType={Standard=0,Alternate=1}}
@@ -387,7 +393,6 @@ C_StringUtil={CreateNumericRuleFormatter=function()
     return formatter
 end}
 local played={kits=0,files=0,speech=0}
-function PlaySound(kit,channel) played.kits=played.kits+1;played.kit,played.kitChannel=kit,channel;return true,1 end
 function PlaySoundFile(file,channel) played.files=played.files+1;played.file,played.fileChannel=file,channel;return true,2 end
 local kitParams
 C_Sound={PlaySoundWithOptions=function(params)
@@ -456,6 +461,8 @@ if os.getenv("MSUF_TEST_FOREVER")=="1" then NS.Client.isForever=true end
 function S.Public(value) return not issecretvalue(value) end
 function S.Text(value) return value end
 MSUFSuite=NS
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 
 ------------------------------------------------------------------ CDM private table
@@ -529,6 +536,7 @@ end
 
 -- Strict globals from here on: the runtime files may not create any.
 setmetatable(_G,{__newindex=function(_,key) error("global write: "..tostring(key),2) end})
+LoadRuntime("AuraButtons.lua")
 LoadRuntime("Auras.lua")
 LoadRuntime("Alerts.lua")
 local A,Alerts=C.Auras,C.Alerts
@@ -541,7 +549,10 @@ assert(type(A.pending)=="table","C.Auras.pending")
 for _,name in ipairs({"Ready","SyncAuraSounds","ReleaseAll","Play"}) do assert(type(Alerts[name])=="function","C.Alerts."..name) end
 
 -- Static rules on the source text.
-for _,file in ipairs({"Auras.lua","Alerts.lua"}) do
+-- Scripts per file: the kit sensors in the buttons (AuraButtons.lua) and
+-- the watchers beside kit containers (Auras.lua), OnShow/OnHide each.
+local SCRIPTS={["AuraButtons.lua"]=2,["Auras.lua"]=2,["Alerts.lua"]=0}
+for _,file in ipairs({"AuraButtons.lua","Auras.lua","Alerts.lua"}) do
     local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..file,"rb"))
     local text=handle:read("*a")
     handle:close()
@@ -558,13 +569,13 @@ for _,file in ipairs({"Auras.lua","Alerts.lua"}) do
         ":GetMinMaxValues("}) do
         assert(not text:find(word,1,true),file.." must not read "..word)
     end
-    -- Scripts: kit sensors only (OnShow/OnHide on our own frames, Auras.lua).
+    -- Scripts: kit sensors and their watchers only (OnShow/OnHide on our own frames).
     local scripts=0
     for key in text:gmatch(":SetScript%(\"(%a+)\"") do
-        assert(file=="Auras.lua" and (key=="OnShow" or key=="OnHide"),file..": script "..key)
+        assert(SCRIPTS[file]>0 and (key=="OnShow" or key=="OnHide"),file..": script "..key)
         scripts=scripts+1
     end
-    assert(scripts==(file=="Auras.lua" and 4 or 0) and select(2,text:gsub(":SetScript%(",""))==scripts,
+    assert(scripts==SCRIPTS[file] and select(2,text:gsub(":SetScript%(",""))==scripts,
         file..": only the sensor and watcher scripts")
 end
 
@@ -1037,7 +1048,8 @@ assert(Live("buf","player")==compactP,"re-enable reuses the pool")
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1}}
+        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+            Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         local L2=C2.Layout
         assert(type(L2.EnsureBar)=="function" and type(L2.Cell)=="function" and type(L2.Metrics)=="function","Layout interface")
@@ -1070,19 +1082,20 @@ end
 -- it. Ordered or split: one sequence of n1+n2 cells, each entry on its plan
 -- position. Otherwise the player part first and the target part from a new
 -- line. Checked on the real Layout.lua, against the stand-in's statement of
--- the rule and against the real Extent from Controller.lua.
+-- the rule and against the real Extent from Exports.lua.
 do
     local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua"))
-    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow}}
+    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+        Visibility={Paint=function() end}}
     chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     local L2=Cx.Layout
     assert(type(L2.FixedAuras)=="function","Layout.FixedAuras")
-    local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/Controller.lua","rb"))
+    local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/Exports.lua","rb"))
     local text=(handle:read("*a"):gsub("\r",""))
     handle:close()
     local body=text:match("\n(local function Extent%(view, plan%)\n.-\nend)\n")
-    assert(body and body:find("FixedAuras(",1,true),"Controller.lua: Extent sizes aura bars by Layout.FixedAuras")
-    local Extent=assert(loadstring("local C,probe,ceil=...\n"..body.."\nreturn Extent","=Controller.Extent"))(Cx,{},math.ceil)
+    assert(body and body:find("FixedAuras(",1,true),"Exports.lua: Extent sizes aura bars by Layout.FixedAuras")
+    local Extent=assert(loadstring("local C,probe,ceil=...\n"..body.."\nreturn Extent","=Exports.Extent"))(Cx,{},math.ceil)
     local UNIT={p="player",t="target",b="both",m="player"}
     -- p player, t target, b both (player part), m player with a per-spell showMissing
     local function Entries(units)
@@ -1383,7 +1396,8 @@ assert(#bt.points==1 and bt.points[1][1]=="TOP" and bt.points[1][2]==c2Host and 
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow}}
+        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+            Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         C3.Layout.Apply("c2")
         local lb=C3.bars.c2
@@ -1915,13 +1929,16 @@ assert(b1.bind.countFormatter==nil and A.pending.c4==true,"combat: deferred")
 COMBAT=false
 A.FlushPending()
 assert(b1.bind.countFormatter==f1 and A.pending.c4==nil,"after combat: the shared formatter")
--- without the formatter API the plain binding stays
-local strings=C_StringUtil
-C_StringUtil=nil
-t2.ov={stackColorAt=5,stackColor="123456"}
-A.Sync("c4")
-rawset(_G,"C_StringUtil",strings)
-assert(R[Buttons(sc,"g2")[1]].bind.countFormatter==nil,"no formatter API: plain binding")
+-- Both clients have the formatter API (C_StringUtil.CreateNumericRuleFormatter):
+-- the runtime calls it without a probe.
+for _,file in ipairs({"AuraButtons.lua","Icons.lua"}) do
+    local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..file,"rb"))
+    local text=handle:read("*a")
+    handle:close()
+    for _,probe in ipairs({"_G.C_StringUtil","_G.C_DurationUtil","AddBreakpoint","formatter.SetBreakpoints then"}) do
+        assert(not text:find(probe,1,true),file.." probes "..probe)
+    end
+end
 
 ------------------------------------------------------------------ stack glow: clip gate and application bar
 -- stackGlow N: a gate that clips its children, an invisible StatusBar
@@ -2399,7 +2416,7 @@ end
 TextChoices()
 -- Every lk field Look writes is part of the look signature (LOOK).
 do
-    local file=assert(io.open(root.."/MSUF_Suite_CooldownManager/Auras.lua","rb"))
+    local file=assert(io.open(root.."/MSUF_Suite_CooldownManager/AuraButtons.lua","rb"))
     local text=file:read("*a"):gsub("\r","")
     file:close()
     local look=assert(text:match("\nlocal LOOK = (%b{})"),"LOOK list")
@@ -2426,11 +2443,9 @@ local fallbackKits=played.kits
 assert(Alerts.Play("kit:316531",true)==true and played.kits==fallbackKits+1,
     "a CDM file unavailable on this client falls back to the sound kit")
 PlaySoundFile=nativeFile
-local nativeSound=C_Sound.PlaySoundWithOptions
-C_Sound.PlaySoundWithOptions=nil
-local legacyKits=played.kits
-assert(Alerts.Play("kit:5001",true)==true and played.kits==legacyKits+1,
-    "older clients keep the PlaySound fallback")
-C_Sound.PlaySoundWithOptions=nativeSound
+-- A kit without a mapped file plays like Blizzard's viewer plays it.
+local kits=played.kits
+assert(Alerts.Play("kit:5001",true)==true and played.kits==kits+1 and played.kit==5001,
+    "an unmapped kit did not play through C_Sound.PlaySoundWithOptions")
 
 print("suite_cooldown_manager_auras_contract: ok")

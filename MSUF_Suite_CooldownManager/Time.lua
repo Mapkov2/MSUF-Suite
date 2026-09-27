@@ -11,22 +11,19 @@ local K = C.Const
 local T = {}
 C.Time = T
 local Public = S.Public
+local Dispatch = S.Dispatch
 local EMPTY = C.EMPTY
 local wipe = C.wipe
-local Spell = _G.C_Spell or {}
-local GetCooldown = Spell.GetSpellCooldown
-local GetDuration = Spell.GetSpellCooldownDuration
-local GetCharges = Spell.GetSpellCharges
-local GetChargeDuration = Spell.GetSpellChargeDuration
-local GetDisplayCount = Spell.GetSpellDisplayCount
-local Item = _G.C_Item or {}
-local Container = _G.C_Container or {}
-local GetItemCooldown = Item.GetItemCooldown or Container.GetItemCooldown
-local GetItemCount = Item.GetItemCount
-local GetInventoryItemCooldown = _G.GetInventoryItemCooldown
-local DurationUtil = _G.C_DurationUtil
-local CreateDuration = DurationUtil and DurationUtil.CreateDuration
-local GetTime = _G.GetTime
+local GetCooldown = C_Spell.GetSpellCooldown
+local GetDuration = C_Spell.GetSpellCooldownDuration
+local GetCharges = C_Spell.GetSpellCharges
+local GetChargeDuration = C_Spell.GetSpellChargeDuration
+local GetDisplayCount = C_Spell.GetSpellDisplayCount
+local GetItemCooldown = C_Item.GetItemCooldown
+local GetItemCount = C_Item.GetItemCount
+local GetInventoryItemCooldown = GetInventoryItemCooldown
+local CreateDuration = C_DurationUtil.CreateDuration
+local GetTime = GetTime
 -- Ready alerts need a real cooldown of at least this long; items treat
 -- anything up to a global cooldown as no cooldown.
 local READY_MIN, GCD_MAX = 2, 1.5
@@ -160,11 +157,11 @@ local function SpellState(entry, icon, spell, reason)
     elseif reason == "recharge" then
         cooling, exact = entry.cooling == true, false
     else
-        local info = GetCooldown and GetCooldown(spell)
+        local info = GetCooldown(spell)
         local active = info and info.isActive
         if Public(active) and active then
             local ignoreGCD = C.state.showGCD ~= true
-            local duration = GetDuration and GetDuration(spell, ignoreGCD)
+            local duration = GetDuration(spell, ignoreGCD)
             if duration then
                 icon.cd:SetCooldownFromDurationObject(duration, true)
                 icon.cdSet, icon.cdReal = true, ignoreGCD
@@ -173,7 +170,7 @@ local function SpellState(entry, icon, spell, reason)
             end
             -- Desaturation, opacity and the ready check ignore the GCD.
             local base = duration
-            if not ignoreGCD and GetDuration and (icon.desatCurve or icon.alphaCurve or reason ~= "cooldown") then
+            if not ignoreGCD and (icon.desatCurve or icon.alphaCurve or reason ~= "cooldown") then
                 base = GetDuration(spell, true)
             end
             Feedback(icon, base)
@@ -183,12 +180,12 @@ local function SpellState(entry, icon, spell, reason)
             Feedback(icon, nil)
         end
     end
-    local charges = entry.charges ~= false and GetCharges and GetCharges(spell)
+    local charges = entry.charges ~= false and GetCharges(spell)
     local maximum = charges and charges.maxCharges
     if Public(maximum) and type(maximum) == "number" and maximum > 1 then
         local state = charges.isActive
         local recharging = Public(state) and state == true
-        if recharging and GetChargeDuration then
+        if recharging then
             local duration = GetChargeDuration(spell)
             if duration then
                 local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
@@ -214,7 +211,7 @@ local function SpellState(entry, icon, spell, reason)
     -- Potion and healthstone entries show their bag count (CategoryCount).
     local category = entry.spellCategory
     if category and category ~= 0 then return cooling end
-    if icon.stackOn and GetDisplayCount then
+    if icon.stackOn then
         icon.count:SetText(GetDisplayCount(spell))
         icon.countOff, icon.lastCount = false, nil
     else
@@ -242,8 +239,7 @@ local function Total(category)
     local total = totals[category]
     if total then return total end
     total = 0
-    local presets = C.Presets
-    local items = GetItemCount and presets and presets.CATEGORY_ITEMS[category]
+    local items = C.Presets.CATEGORY_ITEMS[category]
     if items then
         for i = 1, #items do
             local count = GetItemCount(items[i], false, true)
@@ -258,7 +254,7 @@ local function ItemCount(item)
     Fresh()
     local count = counts[item]
     if count == nil then
-        count = GetItemCount and GetItemCount(item, false, true)
+        count = GetItemCount(item, false, true)
         if not (Public(count) and type(count) == "number") then count = false end
         counts[item] = count
     end
@@ -293,8 +289,8 @@ local function ItemState(entry, icon, reason)
     local item = entry.itemID or entry.id
     local start, length, enable
     if slot then
-        if GetInventoryItemCooldown then start, length, enable = GetInventoryItemCooldown("player", slot) end
-    elseif GetItemCooldown then
+        start, length, enable = GetInventoryItemCooldown("player", slot)
+    else
         start, length, enable = GetItemCooldown(item)
     end
     local cooling = false
@@ -327,7 +323,7 @@ local function ItemState(entry, icon, reason)
             local shown = false
             if not over and (cooling or gcd) then
                 local duration = icon.itemDur
-                if not duration and CreateDuration then
+                if not duration then
                     duration = CreateDuration()
                     icon.itemDur = duration
                 end
@@ -363,8 +359,7 @@ end
 
 ------------------------------------------------------------------ edges
 local function Request(slotKey)
-    local layout = C.Layout
-    if layout and layout.Request then layout.Request(slotKey) end
+    C.Layout.Request(slotKey)
 end
 
 -- Cooling edges drive ready alerts and ready glows; the start time is
@@ -377,15 +372,9 @@ local function Edge(entry, cooling)
     elseif was then
         local start = entry.coolStart
         entry.coolStart = nil
-        if start and GetTime() - start >= READY_MIN then
-            local alerts = C.Alerts
-            if alerts and alerts.Ready then alerts.Ready(entry) end
-        end
+        if start and GetTime() - start >= READY_MIN then C.Alerts.Ready(entry) end
     end
-    if was ~= cooling then
-        local fx = C.Effects
-        if fx and fx.Update then fx.Update(entry) end
-    end
+    if was ~= cooling then C.Effects.Update(entry) end
 end
 
 -- reason: "cooldown" (SPELL_UPDATE_COOLDOWN, isOnGCD trustworthy),
@@ -402,7 +391,7 @@ function T.Refresh(entry, reason)
         -- A use count moved: the count alone, as Blizzard's viewer does;
         -- swipes and state hold. Routed to spell entries that show counts.
         local spell = entry.spell
-        if icon.stackOn and spell and GetDisplayCount then
+        if icon.stackOn and spell then
             icon.count:SetText(GetDisplayCount(spell))
             icon.countOff, icon.lastCount = false, nil
         end
@@ -445,10 +434,7 @@ function T.Refresh(entry, reason)
     Edge(entry, cooling)
     -- A flip without a cooling edge (a Healthstone leaving or joining the
     -- bags) re-evaluates the glows as well; Edge covers the others.
-    if changed and was == cooling then
-        local fx = C.Effects
-        if fx and fx.Update then fx.Update(entry) end
-    end
+    if changed and was == cooling then C.Effects.Update(entry) end
     return changed
 end
 
@@ -464,9 +450,10 @@ function T.Done(icon, cooldown)
     end
     local reason = "done"
     if cooldown ~= nil and cooldown == icon.cd and icon.cdReal then reason = "expired" end
-    -- Guard: a swipe re-armed during the refresh must not re-enter.
+    -- Guard: a swipe re-armed during the refresh must not re-enter. A
+    -- raising refresh is reported (Dispatch) and the guard still clears.
     icon.inDone = true
-    local changed = T.Refresh(entry, reason)
+    local changed = Dispatch(T.Refresh, entry, reason)
     icon.inDone = nil
     if changed then Request(entry.slot) end
 end

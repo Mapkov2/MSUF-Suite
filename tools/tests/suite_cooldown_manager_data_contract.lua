@@ -1,4 +1,7 @@
 local root=assert(arg[1],"repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 -- Offline contract for the cooldown manager data plane (Presets, Catalog,
 -- Resolve, Index in MSUF_Suite_CooldownManager). Blizzard APIs are
 -- identity-style stubs over prepared tables; secret values are sentinel tables
@@ -62,6 +65,7 @@ assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Sui
 local CDM=NS.CDM
 
 ------------------------------------------------------------------ WoW world
+Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
 Enum={SpellBookSpellBank={Player=0,Pet=1},CompressionMethod={Deflate=0}}
 local SECRET_ID=Secret()
 local sets={[0]={101,102,103,104,107},[1]={111,112,SECRET_ID},[2]={201,202,203},[3]={301},[4]={},
@@ -149,6 +153,8 @@ C_Item={
     GetItemSpell=function(id) if id==7001 then return "Drink",7101 end end,
 }
 C_EventUtils={IsEventValid=function() return true end}
+-- Before login until the late-load cases below (both clients have IsLoggedIn).
+IsLoggedIn=function() return false end
 local gateFrame
 CreateFrame=function()
     local frame={events={},scripts={}}
@@ -602,35 +608,17 @@ Same("selfAura moves no container",AuraTouchedKeys(),"")
 infos[201].selfAura,infos[202].selfAura=true,false
 Catalog.Rebuild()
 Resolve.Build()
--- Without C_Spell.IsSpellHarmful the global IsHarmfulSpell answers; without
--- either, an aura is the player's. Cached answers are not asked again.
--- While C_Spell.IsSpellHarmful exists it answers and the global is never asked.
-local globalAsked=0
-IsHarmfulSpell=function() globalAsked=globalAsked+1;return false end
+-- C_Spell.IsSpellHarmful (every client has it) answers a new linked ID;
+-- cached answers are not asked again.
 harmful[3004]=true
 infos[301].linkedSpellIDs={3004}
 Catalog.Rebuild()
 Resolve.Build()
-assert(E.b301.unit=="target" and harmfulCalls[3004]==1 and globalAsked==0,"C_Spell.IsSpellHarmful answers first")
-local isSpellHarmful=C_Spell.IsSpellHarmful
-C_Spell.IsSpellHarmful=nil
-harmful[3005]=true
-IsHarmfulSpell=AskHarmful
-infos[301].linkedSpellIDs={3005}
-Catalog.Rebuild()
-Resolve.Build()
-assert(E.b301.unit=="target" and harmfulCalls[3005]==1 and harmfulCalls[3001]==1,"the global answers new IDs")
-IsHarmfulSpell=nil
-harmful[3006]=true
-infos[301].linkedSpellIDs={3006}
-Catalog.Rebuild()
-Resolve.Build()
-assert(E.b301.unit=="player" and harmfulCalls[3006]==nil,"no API, no target")
-C_Spell.IsSpellHarmful=isSpellHarmful
+assert(E.b301.unit=="target" and harmfulCalls[3004]==1 and harmfulCalls[3001]==1,"C_Spell.IsSpellHarmful answers")
 infos[301].linkedSpellIDs={}
 Catalog.Rebuild()
 Resolve.Build()
-assert(E.b301.unit=="player" and not E.b301.auraIDs[3006] and Resolve.auraTouched[E.b301],"linked IDs cleared")
+assert(E.b301.unit=="player" and not E.b301.auraIDs[3004] and Resolve.auraTouched[E.b301],"linked IDs cleared")
 for id,count in pairs(harmfulCalls) do Same("asked once "..id,count,1) end
 
 -- Per-spell "Track on" (auraUnit): 1 automatic, 2 me, 3 target, 4 both.
@@ -873,7 +861,8 @@ assert(after==before,"ForSpell allocated "..((after-before)*1024).." bytes")
 local lateFrame
 local create=CreateFrame
 CreateFrame=function(...) lateFrame=create(...);return lateFrame end
-local late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,wipe=C.wipe}}
+local late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,GuideProfiles=C.GuideProfiles,
+    wipe=C.wipe}}
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
 assert(lateFrame==nil and late.CDM.Catalog.Ready() and lateFrame==nil,"ready without a gate frame")
 assert(late.CDM.Catalog.Rebuild()==true and #late.CDM.Catalog.byBar.ess==4)
@@ -881,18 +870,20 @@ assert(late.CDM.Catalog.Rebuild()==true and #late.CDM.Catalog.byBar.ess==4)
 -- event is left to wait for.
 IsLoggedIn=function() return true end
 sets[0]={}
-late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,wipe=C.wipe}}
+late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,GuideProfiles=C.GuideProfiles,
+    wipe=C.wipe}}
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
 assert(late.CDM.Catalog.Ready() and lateFrame==nil,
     "a spec with no Essential IDs but populated Utility must be ready")
 for category=0,3 do sets[category]={} end
-late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,wipe=C.wipe}}
+late={NS=NS,Suite=S,CDM={EMPTY={},state={},views={},plans={},entries={},Const=C.Const,GuideProfiles=C.GuideProfiles,
+    wipe=C.wipe}}
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Catalog.lua"))("MSUF_Suite_CooldownManager",late)
 assert(not late.CDM.Catalog.Ready() and lateFrame and lateFrame.events.COOLDOWN_VIEWER_DATA_LOADED
     and not lateFrame.events.VARIABLES_LOADED and not lateFrame.events.PLAYER_ENTERING_WORLD,"after login only the data event")
 lateFrame.scripts.OnEvent(lateFrame,"COOLDOWN_VIEWER_DATA_LOADED")
 assert(late.CDM.Catalog.Ready() and next(lateFrame.events)==nil,"the data event completes the gate")
-CreateFrame,IsLoggedIn=create,nil
+CreateFrame,IsLoggedIn=create,function() return false end
 for category=0,3 do sets[category]=spellSets[category] end
 
 ------------------------------------------------------------------ presets: data

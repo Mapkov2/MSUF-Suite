@@ -10,9 +10,8 @@ local K = {}
 C.Const = K
 local floor, max = math.floor, math.max
 
--- Constants.SpellCooldownConsts.GLOBAL_RECOVERY_CATEGORY; 133 on every client.
-local consts = _G.Constants and _G.Constants.SpellCooldownConsts
-K.GCD_CATEGORY = consts and consts.GLOBAL_RECOVERY_CATEGORY or 133
+-- The GCD's recovery category (133 on every client).
+K.GCD_CATEGORY = Constants.SpellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
 K.QUESTION_ICON = 134400
 -- Catalog choice "Frame layer" and the default bar texture.
 K.STRATA = { "BACKGROUND", "LOW", "MEDIUM", "HIGH" }
@@ -127,15 +126,9 @@ function K.StepCurve(from, to)
     from, to = floor(from + .5), floor(to + .5)
     local key = from * 1000 + to
     local curve = curves[key]
-    if curve ~= nil then return curve or nil end
-    local util = _G.C_CurveUtil
-    if type(util) ~= "table" or type(util.CreateCurve) ~= "function" then
-        curves[key] = false
-        return nil
-    end
-    curve = util.CreateCurve()
-    local step = _G.Enum and _G.Enum.LuaCurveType and _G.Enum.LuaCurveType.Step
-    if step then curve:SetType(step) end
+    if curve then return curve end
+    curve = C_CurveUtil.CreateCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
     curve:AddPoint(0, from / 100)
     curve:AddPoint(.001, to / 100)
     curves[key] = curve
@@ -148,8 +141,7 @@ function K.DesatCurve() return K.StepCurve(0, 100) end
 function K.Px()
     local px = C.state.px
     if type(px) ~= "number" or px <= 0 then
-        local layout = C.Layout
-        px = layout and layout.PixelScale and layout.PixelScale() or 1
+        px = C.Layout.PixelScale()
         if type(px) ~= "number" or px <= 0 then px = 1 end
     end
     return px
@@ -195,10 +187,8 @@ local classToken
 function K.ClassRGB()
     if classToken == nil then
         local token = false
-        if type(_G.UnitClass) == "function" then
-            local _, file = _G.UnitClass("player")
-            if S.Public(file) and type(file) == "string" then token = file end
-        end
+        local _, file = UnitClass("player")
+        if S.Public(file) and type(file) == "string" then token = file end
         classToken = token
     end
     if classToken then return S.ClassRGB(classToken) end
@@ -218,8 +208,7 @@ end
 
 -- A position setting rounded and clamped to its catalog rule.
 function K.Clamp(key, value)
-    local catalog = NS.SuiteCatalog and NS.SuiteCatalog.cooldownManager
-    local rule = catalog and catalog.rules[key]
+    local rule = NS.SuiteCatalog.cooldownManager.rules[key]
     value = floor(value + .5)
     if rule and type(rule.min) == "number" and value < rule.min then value = rule.min end
     if rule and type(rule.max) == "number" and value > rule.max then value = rule.max end
@@ -233,33 +222,8 @@ function K.NewEdges(owner, sublevel)
     return set
 end
 
--- Four edges inside owner's rect; the side edges stop short of the top and
--- bottom ones so translucent colors do not double at the corners. No width
--- only hides them: points and color are written when they show again.
-function K.PlaceEdges(set, owner, width, r, g, b, a)
-    if not (width > 0) then
-        for i = 1, 4 do set[i]:SetShown(false) end
-        return
-    end
-    for i = 1, 4 do
-        local edge = set[i]
-        edge:ClearAllPoints()
-        edge:SetColorTexture(r, g, b, a or 1)
-        edge:SetShown(true)
-    end
-    set[1]:SetPoint("TOPLEFT", owner, "TOPLEFT")
-    set[1]:SetPoint("TOPRIGHT", owner, "TOPRIGHT")
-    set[1]:SetHeight(width)
-    set[2]:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT")
-    set[2]:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT")
-    set[2]:SetHeight(width)
-    set[3]:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, -width)
-    set[3]:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT", 0, width)
-    set[3]:SetWidth(width)
-    set[4]:SetPoint("TOPRIGHT", owner, "TOPRIGHT", 0, -width)
-    set[4]:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", 0, width)
-    set[4]:SetWidth(width)
-end
+-- Four edges inside owner's rect (shared with the action bars).
+K.PlaceEdges = S.PlaceEdges
 
 -- Hex -> rgb for per-spell glow colors; each distinct hex decoded once.
 local hexCache = {}

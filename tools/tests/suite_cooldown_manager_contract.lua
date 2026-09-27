@@ -29,6 +29,18 @@ local SECRET_NUM,SECRET_BOOL,SECRET_TEXT=Secret("number"),Secret("boolean"),Secr
 local PINNED_METAFIELD="__metatable"
 local function Plain(value,what) if IsSecret(value) then error("secret value reached "..what,3) end end
 
+------------------------------------------------------------------ callback isolation
+-- The client's securecallfunction reports an error to the error handler and
+-- returns nothing; the caller goes on. Here errors still raise unless a test
+-- expects one.
+local dispatch={expect=false,errors={}}
+securecallfunction=function(fn,...)
+    if not dispatch.expect then return fn(...) end
+    local results={pcall(fn,...)}
+    if results[1] then return unpack(results,2,table.maxn(results)) end
+    dispatch.errors[#dispatch.errors+1]=tostring(results[2])
+end
+
 ------------------------------------------------------------------ static checks
 local function Read(path)
     local handle=assert(io.open(path,"rb"),"missing "..path)
@@ -37,11 +49,59 @@ local function Read(path)
     return text
 end
 local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua","Icons.lua","Time.lua",
-    "Effects.lua","Auras.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
-    "Controller.lua"}
+    "Effects.lua","AuraButtons.lua","Auras.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
+    "Flush.lua","Settings.lua","Events.lua","Controller.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
-assert(#tocFiles==#ORDER,"runtime TOC must list the 18 cooldown manager files")
+assert(#tocFiles==#ORDER,"runtime TOC must list the 24 cooldown manager files")
 for i=1,#ORDER do assert(tocFiles[i]==ORDER[i],"TOC order: expected "..ORDER[i].." at "..i) end
+-- The controller is split along its seams: the dirty mask and flush, the
+-- settings reader, the event map, then the lifecycle. Each file resolves
+-- what it uses from the earlier ones once at load, so hot handlers keep
+-- plain upvalue calls; the one late binding is the flush's data units.
+-- The aura layer splits the same way: button regions and look
+-- (AuraButtons.lua) before the containers that call them (Auras.lua).
+do
+    local at={}
+    for i=1,#tocFiles do at[tocFiles[i]]=i end
+    local USES={["Settings.lua"]={"Flush.lua"},["Events.lua"]={"Flush.lua","Settings.lua"},
+        ["Controller.lua"]={"Flush.lua","Settings.lua","Events.lua"},["Exports.lua"]={"Controller.lua"},
+        ["Auras.lua"]={"AuraButtons.lua"}}
+    for file,deps in pairs(USES) do
+        for _,dep in ipairs(deps) do assert(at[dep] and at[dep]<at[file],dep.." must load before "..file) end
+    end
+    local function Source(file)
+        local handle=assert(io.open(root.."/"..ADDON.."/"..file,"rb"))
+        local text=handle:read("*a"):gsub("\r","")
+        handle:close()
+        return text
+    end
+    local events=Source("Events.lua")
+    assert(events:find("\nlocal Mark, Schedule = F.Mark, F.Schedule\n",1,true),"hot handlers resolve Mark and Schedule at load")
+    assert(events:find("\nF.BindDataUnits(CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit)\n",1,true),
+        "Events.lua binds the flush's data units")
+    -- The hot handlers reach Time, Layout, Index and Effects through
+    -- upvalues resolved at load: only that one line names them.
+    for lookup,allowed in pairs({["C.Time.Refresh"]=1,["C.Layout.Request"]=1,["C.Index.For"]=0,["C.Index.AddSpell"]=0,
+        ["C.Effects.Proc"]=0,["C.Effects.Range"]=0,["C.Effects.ReadRange"]=0,["C.Effects.Assist"]=0}) do
+        local n=0
+        for _ in events:gmatch((lookup:gsub("%.","%%."))) do n=n+1 end
+        assert(n==allowed,"Events.lua looks up "..lookup.." "..n.." times (hot handlers use load-time upvalues)")
+    end
+    local controller=Source("Controller.lua")
+    for _,name in ipairs({"local function Flush","local function Schedule","local function OnCooldown",
+        "function St.ReadViews","local function Capture"}) do
+        assert(not controller:find(name,1,true),"Controller.lua is back to holding "..name)
+    end
+    -- Main-chunk locals stay at most 150 (Lua 5.1 allows 200).
+    for _,file in ipairs({"Flush.lua","Settings.lua","Events.lua","Controller.lua","AuraButtons.lua","Auras.lua"}) do
+        local n=0
+        for line in Source(file):gmatch("[^\n]+") do
+            local names=line:match("^local function ([%w_]+)") or line:match("^local ([%w_, ]+)")
+            if names then n=n+select(2,names:gsub("[%w_]+","")) end
+        end
+        assert(n<=150,file.." declares "..n.." main-chunk locals")
+    end
+end
 local toc=Read(root.."/"..ADDON.."/"..ADDON.."_Mainline.toc")
 local chat=Read(root.."/MSUF_Suite_Chat/MSUF_Suite_Chat_Mainline.toc")
 for _,field in ipairs({"## Interface:[^\n]*","## Version:[^\n]*","## Author:[^\n]*"}) do
@@ -62,6 +122,32 @@ for _,file in ipairs(ORDER) do
         assert(not text:find(word,1,true),file.." uses "..word)
     end
     if file~="Native.lua" then assert(not text:find("hooksecurefunc",1,true),file.." hooks Blizzard code") end
+    -- Globals both clients always have are called, never probed.
+    for _,api in ipairs({"GetBindingKey","GetActionInfo"}) do
+        assert(not text:find("type("..api..")",1,true) and not text:find("_G."..api,1,true),file.." probes "..api)
+    end
+    for _,api in ipairs({"IsLoggedIn","CreateFrame","PlaySound","UnitClass","sound.PlaySoundWithOptions"}) do
+        assert(not text:find("type("..api..")",1,true) and not text:find("type(_G."..api..")",1,true),
+            file.." probes "..api)
+    end
+    -- Namespaces and globals every client defines (12.1.0, 12.1.5 and
+    -- Forever) are used directly; only per-version button methods, the other
+    -- addons' exports and PlaySoundFile (not in the UI source) are checked.
+    for _,probe in ipairs({"_G.C_","_G.Enum","_G.GameTooltip","_G.EventRegistry","_G.UnitHasVehicleUI",
+        "_G.HasOverrideActionBar","_G.AssistedCombatManager","timer.After","timer.NewTicker","C_Spell and","C_Item and",
+        "C_SpellBook and","C_Timer and","UnitCanAssist and","bit and","AddBreakpoint","type(C.Schedule)",
+        "type(C.AnchorChanged)"}) do
+        assert(not text:find(probe,1,true),file.." probes: "..probe)
+    end
+    -- Every runtime file has loaded before one of its functions runs, and the
+    -- core catalog before the addon: their modules are used, never probed.
+    local plain=text:gsub("\r","")
+    for _,probe in ipairs({"C%.(%u%w*) and C%.%1","if C%.%u%w* then","local (%l%w*) = C%.%u%w*\n[^\n]*%f[%w]%1 and %1%.",
+        "NS%.SuiteCatalog and","P%.NS or","P%.Suite or","NS%.CooldownManager or","C%.Presets and","C%.Index and"}) do
+        assert(not plain:find(probe),file.." probes one of its own modules: "..probe)
+    end
+    -- The flush runs its units through the suite's shared runner (Runtime.lua).
+    if file=="Flush.lua" then assert(text:find("S.NewUnitRunner()",1,true),"the flush lost the shared unit runner") end
     assert(loadfile(root.."/"..ADDON.."/"..file),file.." does not compile")
 end
 
@@ -104,6 +190,7 @@ Setter("SetScript",function(self,key,fn) self.scripts[key]=fn end)
 Setter("SetAttribute",function(self,key,value) self.attributes=self.attributes or {};self.attributes[key]=value end)
 Setter("HookScript")
 Setter("RegisterEvent",function(self,event) self.events[event]=true end)
+Setter("RegisterUnitEvent",function(self,event) self.events[event]=true end)
 Setter("UnregisterEvent",function(self,event) self.events[event]=nil end)
 Setter("UnregisterAllEvents",function(self) self.events={} end)
 Setter("SetTexture",function(self,tex) self.tex=tex end,true)
@@ -167,7 +254,7 @@ do
     local initSlots=false
     function Widget.InitSlots(on) initSlots=on==true end
     local BUTTON={"SetIcon","SetDurationCooldown","SetDurationText","SetDurationBar","SetSpellName","SetApplicationCount",
-        "SetApplicationBar"}
+        "SetApplicationBar","AddPandemicRegion"}
     local function Ignore() end
     Setter("AddAuraSlot",function(self,key,_,opts)
         local group=self:Group(key)
@@ -201,6 +288,8 @@ function Widget:GetChildren() return unpack(self.children) end
 function Widget:GetNumPoints() return self.points end
 function Widget:GetAttribute(key) return self.attributes and self.attributes[key] end
 function Widget:IsForbidden() return false end
+-- Aura buttons are never sealed here (the aura contract drives sealing).
+function Widget:CanBeAccessedInContext() return true end
 function Widget:IsMouseOver() return false end
 function Widget:IsOwned() return false end
 function Widget:CreateTexture() return New("Texture",self) end
@@ -277,6 +366,8 @@ InCombatLockdown=function() return combat end
 UnitName=function() return "Tester" end
 GetRealmName=function() return "Realm" end
 UnitClass=function() return "Mage","MAGE",8 end
+-- The target is never friendly here (the aura contract drives that rule).
+UnitCanAssist=function() return false end
 RAID_CLASS_COLORS={MAGE={r=.25,g=.78,b=.92}}
 SlashCmdList={}
 local cvars={cooldownViewerEnabled="1",assistedCombatHighlight="0"}
@@ -290,7 +381,8 @@ C_SpecializationInfo={
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
 Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},
     UnitAuraSoundTrigger={Added=0,Removed=2},StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},
-    StatusBarInterpolation={Immediate=0},SpellBookSpellBank={Player=0,Pet=1},CompressionMethod={Deflate=0}}
+    StatusBarInterpolation={Immediate=0},SpellBookSpellBank={Player=0,Pet=1},CompressionMethod={Deflate=0},
+    AddOnRestrictionState={Inactive=0,Activating=1,Active=2}}
 local hooks={}
 hooksecurefunc=function(object,method,fn) hooks[#hooks+1]={object,method,fn} end
 local drivers={}
@@ -344,7 +436,6 @@ MSUF_EditModeAPI={
 local store={}
 MSUF_EncodeCompactTable=function(value,prefix) store[#store+1]=value;return prefix..":"..#store end
 MSUF_TryDecodeCompactString=function(text) local n=tonumber(text:match("^MSUF3:(%d+)$"));return n and store[n] or nil end
-AuraContainerInbound={}
 
 ------------------------------------------------------------------ durations, curves, formatters
 DurationMT={}
@@ -361,7 +452,14 @@ function DurationMT:SetTimeFromStart(start,length)
     Plain(start,"SetTimeFromStart");Plain(length,"SetTimeFromStart")
     self.start,self.length,self.secret=start,length,false
 end
-C_DurationUtil={CreateDuration=function() return NewDuration(false) end}
+-- Duration text bindings (aura buttons) take a formatter and plain options.
+local BindingMT={}
+BindingMT.__index=BindingMT
+for _,name in ipairs({"SetFormatter","SetZeroDurationText","SetExpiredText","SetUpdateInterval","SetEnabled"}) do
+    BindingMT[name]=function(self,value) self[name]=value end
+end
+C_DurationUtil={CreateDuration=function() return NewDuration(false) end,
+    CreateDurationTextBinding=function() return setmetatable({},BindingMT) end}
 local CurveMT={}
 CurveMT.__index=CurveMT
 function CurveMT:SetType(kind) self.type=kind end
@@ -449,18 +547,28 @@ C_Item={
 }
 GetInventoryItemID=function(_,slot) if slot==13 then return 7777 end end
 GetInventoryItemTexture=function(_,slot) if slot==13 then return 4444 end end
+-- The paper-doll art of an empty equipment slot (slot 14 is empty here).
+C_PaperDollInfo={GetInventorySlotInfoForInvSlot=function(slot) return slot,136528,false,"SLOT" end}
 GetInventoryItemCooldown=function(unit,slot) assert(unit=="player" and slot==13);invCalls=invCalls+1;return 0,0,1 end
 local actionSlots={[102]={2},[101]={62}}
 local bindings={ACTIONBUTTON2="SHIFT-2",MULTIACTIONBAR1BUTTON2="NUMPAD4"}
-C_ActionBar={FindSpellActionButtons=function(spell) local list=actionSlots[spell];return list and {unpack(list)} or {} end}
+C_ActionBar={FindSpellActionButtons=function(spell) local list=actionSlots[spell];return list and {unpack(list)} or {} end,
+    HasOverrideActionBar=function() return false end}
+-- No pet battle, vehicle or restricted auras in this contract (the layout and
+-- aura contracts drive those states).
+C_PetBattles={IsInBattle=function() return false end}
+UnitHasVehicleUI=function() return false end
+C_Secrets={ShouldAurasBeSecret=function() return false end}
 GetBindingKey=function(command) return bindings[command] end
+-- An empty action slot has no action info (both clients have GetActionInfo).
+GetActionInfo=function() end
 local nextCast
 C_AssistedCombat={IsAvailable=function() return true end,GetNextCastSpell=function() return nextCast end}
 AssistedCombatManager={}
 local auraSounds={}
 C_UnitAuras={AddAuraSound=function() auraSounds[#auraSounds+1]=true;return #auraSounds end,RemoveAuraSound=function() end}
 PlaySoundFile=function() return true end
-PlaySound=function() return true end
+C_Sound={PlaySoundWithOptions=function() return true end}
 
 local infos,sets={},{[0]={11,12,13,14},[1]={21,22},[2]={31,32},[3]={41},[5]={51,52},[6]={},[7]={71},[8]={}}
 local function Info(id,spell,category,fields)
@@ -486,6 +594,8 @@ C_CooldownViewer={
     GetCooldownViewerCooldownInfo=function(id) return infos[id] end,
     GetLayoutData=function() return "" end,
 }
+-- Saved layout strings decode to nothing here (the data contract decodes them).
+C_EncodingUtil={DecodeBase64=function() return "" end,DecompressString=function() end,DeserializeCBOR=function() end}
 
 -- Blizzard's viewers: read for the first-run capture, alpha-zeroed in mode 2.
 local function Viewer(name,cx,cy,w,h,fields)
@@ -540,11 +650,16 @@ S.Normalize(Suite.DB)
 -- The legacy runtime assertions below exercise Blizzard's uncurated list.
 -- Raid-presets and their default-on gate have a focused data-plane contract.
 S.Config(ID).raidEssentials=false
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 Support.Load(root,"MSUF_Suite_Modules",{})
 
 -- The runtime may add no globals.
 local globalsBefore={}
 for key in pairs(_G) do globalsBefore[key]=true end
+-- A bar setting without a work mapping (as a new catalog key would be): it
+-- exists in KEYS only, so the controller builds its work table with it.
+Suite.CDM.KEYS.ess.workProbe="ess_workProbe"
 local private={}
 Support.Load(root,ADDON,private)
 for key in pairs(_G) do assert(globalsBefore[key],"runtime created the global "..tostring(key)) end
@@ -1183,6 +1298,109 @@ Step("ess_strata",4)
 assert(bars.ess.frame.strata=="HIGH" and Calls("iconSync")+Calls("index")+Calls("layoutAll")==0 and Calls("vis")==1,
     "the frame layer restyles and repaints")
 Step("ess_strata",3)
+-- A setting nobody mapped does every kind of work, like the action bars.
+do
+    local styleGen,layoutGen,behaviorGen=ess.styleGen,ess.layoutGen,ess.behaviorGen
+    Step("ess_workProbe",1)
+    assert(ess.styleGen==styleGen+1 and ess.layoutGen==layoutGen+1 and ess.behaviorGen==behaviorGen+1
+        and Calls("resolve")==1 and Calls("index")==1 and Calls("iconSync")>=1 and Calls("layoutAll")==1
+        and Calls("vis")+Calls("visAll")>=1,"a setting without a work mapping was silently ignored")
+    Step("ess_workProbe",nil)
+end
+
+------------------------------------------------------------------ a raising flush step
+-- The error is reported and the flush flag still clears: the next change
+-- flushes normally (no freeze until a reload), and the failed flush does
+-- not re-arm itself (no error every frame).
+do
+    local style=C.Icons.Style
+    C.Icons.Style=function() C.Icons.Style=style;error("icon style failed") end
+    dispatch.expect=true
+    Step("ess_zoom",config.ess_zoom+1)
+    dispatch.expect=false
+    assert(#dispatch.errors==1 and dispatch.errors[1]:find("icon style failed",1,true),"a raising flush step was not reported")
+    assert(PendingTimers()==0,"a failed flush re-armed itself")
+    local texCoords=e11.icon.tex.calls.SetTexCoord or 0
+    Step("ess_zoom",config.ess_zoom-1)
+    assert((e11.icon.tex.calls.SetTexCoord or 0)==texCoords+1,"a raising flush step froze every later flush")
+end
+-- The raising step keeps its work: the next flush retries it even when
+-- nothing marks that work again. A step that raises on its retry as well
+-- is dropped, so it does not raise with every later flush.
+do
+    local build,errors=C.Resolve.Build,#dispatch.errors
+    local raid=config.raidEssentials
+    C.Resolve.Build=function() C.Resolve.Build=build;error("resolve failed") end
+    dispatch.expect=true
+    Step("raidEssentials",not raid)
+    assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("resolve failed",1,true),
+        "a raising resolve was not reported")
+    assert(PendingTimers()==0,"a failed flush re-armed itself")
+    Step("ess_zoom",config.ess_zoom+1)
+    assert(Calls("resolve")==1,"the work of a raising flush step was lost")
+    local raised=0
+    C.Resolve.Build=function() raised=raised+1;error("resolve keeps failing") end
+    Step("raidEssentials",raid)
+    Step("ess_zoom",config.ess_zoom-1)
+    Step("ess_zoom",config.ess_zoom+1)
+    assert(raised==2,"a step that keeps raising ran "..raised.." times (expected once plus one retry)")
+    C.Resolve.Build=build
+    Step("ess_zoom",config.ess_zoom-1)
+    dispatch.expect=false
+    Step("raidEssentials",not raid)
+    Step("raidEssentials",raid)
+    assert(Calls("resolve")==1 and C.state.raidEssentials==(raid~=false),"the resolve did not recover")
+    -- The layout's own requests (Layout.Request) are kept the same way.
+    local apply=C.Layout.Apply
+    -- The pass clears its request first, as Layout.Apply does, then raises.
+    C.Layout.Apply=function(slot) C.Layout.Apply=apply;apply(slot);error("layout failed") end
+    dispatch.expect=true
+    C.Layout.Request("ess")
+    Run()
+    dispatch.expect=false
+    assert(#dispatch.errors==errors+4 and dispatch.errors[errors+4]:find("layout failed",1,true),"a raising layout pass was not reported")
+    assert(C.Layout.dirty.ess==true,"a raising layout pass dropped its request")
+    ResetCalls()
+    Step("ess_zoom",config.ess_zoom+1)
+    assert(Calls("layout")>=1 and not C.Layout.dirty.ess,"the kept layout request did not run")
+    Step("ess_zoom",config.ess_zoom-1)
+end
+-- Every unit runs isolated: one that keeps raising (and is marked again)
+-- never stops the units after it in the same flush.
+do
+    local combatChanged,raised,errors=C.Effects.CombatChanged,0,#dispatch.errors
+    C.Effects.CombatChanged=function() raised=raised+1;error("effects keep failing") end
+    dispatch.expect=true
+    config.readyGlowCombat=not config.readyGlowCombat
+    config.ess_alpha=60
+    ResetCalls();module:Refresh();Run()
+    assert(raised==1 and #dispatch.errors==errors+1,"the raising unit was not reported once")
+    assert(Calls("vis")==1 and bars.ess.frame.alpha==1,"a raising unit stopped the visibility after it")
+    config.readyGlowCombat=not config.readyGlowCombat
+    ResetCalls();module:Refresh();Run()
+    assert(raised==2 and Calls("vis")==0,"the raising unit was not retried once")
+    C.Effects.CombatChanged=combatChanged
+    dispatch.expect=false
+    config.ess_alpha=100
+    ResetCalls();module:Refresh();Run()
+    assert(Calls("vis")==1)
+end
+-- A refresh that raises in a swipe's OnCooldownDone is reported and the
+-- re-entry guard still clears: the next swipe end refreshes again. The
+-- client reports a raising script the way the dispatch stub does.
+do
+    local refresh,refreshed,errors=C.Time.Refresh,0,#dispatch.errors
+    C.Time.Refresh=function() C.Time.Refresh=refresh;error("done refresh failed") end
+    dispatch.expect=true
+    securecallfunction(e11.icon.cd.scripts.OnCooldownDone,e11.icon.cd)
+    dispatch.expect=false
+    C.Time.Refresh=function(...) refreshed=refreshed+1;return refresh(...) end
+    e11.icon.cd.scripts.OnCooldownDone(e11.icon.cd)
+    C.Time.Refresh=refresh
+    assert(refreshed==1,"a raising refresh left the swipe's re-entry guard set")
+    assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("done refresh failed",1,true),
+        "a raising refresh in OnCooldownDone was not reported")
+end
 
 ------------------------------------------------------------------ list and spell data
 local lists62={v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"}},[63]={c1={"s9001","i9002"}}}}
@@ -1333,6 +1551,7 @@ assert(S.CooldownManagerSetPreview(false))
 Run()
 assert(not C.state.preview)
 assert(S.CooldownManagerPlaySound("kit:12345")==true,"sound preview plays")
+assert(C.Catalog.EquipTexture(14)==136528,"an empty slot shows its paper-doll art")
 
 ------------------------------------------------------------------ grow conversion keeps the bar in place
 bars.ess.frame.rect={362,500,300,50}
@@ -1354,12 +1573,14 @@ assert(S.CooldownManagerConvertGrow("ess",3)==nil,"invalid grow")
 -- Attach changes keep the bar on screen: to Free, the x/y of the place it
 -- has now; to a bar or unit frame, a zero offset from that anchor.
 bars.uti.frame.rect={412,420,200,30}
-local utiShown=0
-for _,e in ipairs(C.plans.uti.entries) do if e.icon and not e.hidden then utiShown=utiShown+1 end end
-local _,utiHeight=C.Layout.Offsets(C.views.uti,utiShown,{})
-values=assert(S.CooldownManagerConvertAnchor("uti",1))
-assert(values.uti_anchor==1 and values.uti_x==0 and values.uti_y==math.floor(435-384+utiHeight/2+.5),
-    "attached to free keeps the bar where it is (center 512/435, top edge from the screen center)")
+do
+    local utiShown=0
+    for _,e in ipairs(C.plans.uti.entries) do if e.icon and not e.hidden then utiShown=utiShown+1 end end
+    local _,utiHeight=C.Layout.Offsets(C.views.uti,utiShown,{})
+    values=assert(S.CooldownManagerConvertAnchor("uti",1))
+    assert(values.uti_anchor==1 and values.uti_x==0 and values.uti_y==math.floor(435-384+utiHeight/2+.5),
+        "attached to free keeps the bar where it is (center 512/435, top edge from the screen center)")
+end
 bars.uti.frame.rect=nil
 values=assert(S.CooldownManagerConvertAnchor("c1",2))
 assert(KeyList(values)=="c1_anchor,c1_x,c1_y" and values.c1_anchor==2 and values.c1_x==0 and values.c1_y==0,
@@ -1893,7 +2114,7 @@ actionItems[64]=nil
 assert(Fire("UPDATE_BINDINGS"))
 Run(.2)
 assert(trinketIcon.lastKey=="","no key without an item action")
-GetActionInfo=nil
+GetActionInfo=function() end
 bindings.ACTIONBUTTON5,bindings.MULTIACTIONBAR1BUTTON4=nil,nil
 -- The suite's bar 9 presses slots 13-24 and bar 10 slots 109-120 with their
 -- own commands; key labels are the action bars' own (S.KeyText).
@@ -1919,6 +2140,28 @@ assert(KB.Text(9101)=="MwU","without running action bars the slot table applies"
 S.ActionBarsBindingForSpell=nil
 bindings.MSUFSUITE_BAR9_BUTTON1=nil
 actionSlots[9101],actionSlots[9103]=nil,nil
+KB.Clear()
+end
+-- The suite action bars start, stop or change their form pages: the key
+-- texts they answered are dropped and looked up again.
+do
+local KB=C.Keybinds
+actionSlots[9101]={13}
+bindings.MSUFSUITE_BAR9_BUTTON1="MOUSEWHEELUP"
+KB.Clear()
+assert(KB.Text(9101)=="MwU")
+local changed=assert(registry["MSUFSuite.ActionBars.BindingsChanged"],"the cooldown manager ignores the action bars' key changes")
+S.ActionBarsBindingForSpell=function(spell) return spell==9101 and "X" or "" end
+ResetCalls()
+changed.fn()
+Run(.2)
+assert(Calls("keysRebuild")==1 and KB.Text(9101)=="X","starting the action bars kept the old key texts")
+S.ActionBarsBindingForSpell=nil
+changed.fn()
+Run(.2)
+assert(KB.Text(9101)=="MwU","stopping the action bars kept their key texts")
+bindings.MSUFSUITE_BAR9_BUTTON1=nil
+actionSlots[9101]=nil
 KB.Clear()
 end
 
@@ -2390,8 +2633,23 @@ assert(essViewer.alpha==0,"mode 2 keeps the viewer invisible")
 local acquired=New("Frame",essViewer)
 acquireHook(essViewer,acquired)
 assert((acquired.calls.EnableMouse or 0)==1,"acquired items lose the mouse")
-module.active=false
-module:Disable()
+-- Every release step runs isolated: one that raises is reported, and the
+-- steps after it (icons, bars, viewers, events, plans) still run.
+do
+    local releaseAuras,errors=C.Auras.ReleaseAll,#dispatch.errors
+    C.Auras.ReleaseAll=function() error("aura release failed") end
+    dispatch.expect=true
+    module.active=false
+    module:Disable()
+    dispatch.expect=false
+    C.Auras.ReleaseAll=releaseAuras
+    assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("aura release failed",1,true),
+        "the raising release step was not reported")
+    assert(C.Icons.Count("ess")==0 and not bars.ess.frame.shown and next(C.plans)==nil and next(C.entries)==nil,
+        "a raising release step stopped the icon, bar and plan release after it")
+    assert(not next(module.context.frame.events),"a raising release step kept the events")
+    releaseAuras()
+end
 module.context:Release()
 assert(not next(module.context.frame.events) and cvars.cooldownViewerEnabled=="1")
 assert(essViewer.alpha==1,"viewer alpha restored")
@@ -2438,9 +2696,11 @@ Deactivate()
 config.defaultsVersion=0
 config.ess_size,config.ess_perRow,config.uti_x=50,5,7
 Activate()
-local rules=S.catalog[ID].rules
-assert(config.defaultsVersion==3 and config.ess_size==rules.ess_size.default and config.ess_perRow==rules.ess_perRow.default
-    and config.uti_x==0 and config.listsData==keptLists and config.ess_y==141,"version 0 resets bar settings and keeps contents")
+do
+    local rules=S.catalog[ID].rules
+    assert(config.defaultsVersion==3 and config.ess_size==rules.ess_size.default and config.ess_perRow==rules.ess_perRow.default
+        and config.uti_x==0 and config.listsData==keptLists and config.ess_y==141,"version 0 resets bar settings and keeps contents")
+end
 Deactivate()
 config.ess_size=50
 Activate()
@@ -2451,17 +2711,19 @@ assert(not C.state.preview)
 config.fontOutline,config.fontRendering,config.fontShadow=2,2,true
 config.fontShadowOpacity,config.fontShadowDistance=70,2
 module:Refresh();Run()
-local effectCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200))
-assert(effectCanvas.rows[1].name.fontFlags=="THICKOUTLINE,MONOCHROME"
-    and effectCanvas.rows[1].name.shadowColor[4]==0.7
-    and effectCanvas.rows[1].name.shadowOffset[1]==2,
-    "Cooldown Manager preview text effects did not apply")
-config.fontRendering=3
-module:Refresh();Run()
-effectCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200))
-assert(effectCanvas.rows[1].name.fontFlags=="OUTLINE,SLUG"
-    and effectCanvas.rows[1].name.shadowColor[4]==0,
-    "Cooldown Manager Slug retained a shadow")
+do
+    local effectCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200))
+    assert(effectCanvas.rows[1].name.fontFlags=="THICKOUTLINE,MONOCHROME"
+        and effectCanvas.rows[1].name.shadowColor[4]==0.7
+        and effectCanvas.rows[1].name.shadowOffset[1]==2,
+        "Cooldown Manager preview text effects did not apply")
+    config.fontRendering=3
+    module:Refresh();Run()
+    effectCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200))
+    assert(effectCanvas.rows[1].name.fontFlags=="OUTLINE,SLUG"
+        and effectCanvas.rows[1].name.shadowColor[4]==0,
+        "Cooldown Manager Slug retained a shadow")
+end
 S.CooldownManagerReleasePreview(barStage)
 Deactivate()
 for key in pairs(_G) do assert(globalsBefore[key] or key=="MSUF_DB","runtime created the global "..tostring(key)) end

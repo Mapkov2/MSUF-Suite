@@ -1,4 +1,7 @@
 local root=assert(arg[1],"repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 -- Offline contract for the cooldown manager's layout plane (Layout.lua,
 -- Visibility.lua, Native.lua, Preview.lua): pixel math, diffed writes,
 -- anchoring chains, MSUF unit frame anchors with cached rectangles, riding
@@ -13,6 +16,8 @@ local root=assert(arg[1],"repository root required")
 -- its attach point. Budgets: repeated passes make no widget calls, no
 -- geometry reads and no garbage.
 local floor=math.floor
+-- The client's table.wipe (Preview.lua uses it).
+table.wipe=function(t) for k in pairs(t) do t[k]=nil end return t end
 
 ------------------------------------------------------------------ secrets
 local SecretMT={}
@@ -101,7 +106,7 @@ UIParent.scale=1
 local inPetBattle,vehicleUI,overrideBar=false,false,false
 C_PetBattles={IsInBattle=function() return inPetBattle end}
 UnitHasVehicleUI=function(unit) assert(unit=="player","vehicle state is read for the player"); return vehicleUI end
-HasOverrideActionBar=function() return overrideBar end
+C_ActionBar={HasOverrideActionBar=function() return overrideBar end}
 local hooks={}
 hooksecurefunc=function(target,name,hook)
     hooks[#hooks+1]=name
@@ -151,6 +156,7 @@ MSUF_NS={Client={Family="Mainline",Flavor="Mainline",IsRetail=true,SupportsEvent
 WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
 C_CooldownViewer={GetCooldownViewerCategorySet=function() return {} end,GetCooldownViewerCooldownInfo=function() end}
 C_Spell={GetSpellCooldownDuration=function() end}
+Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
 MSUF_EncodeCompactTable=function() return "" end
 MSUF_TryDecodeCompactString=function() return nil end
 local NS={}
@@ -188,11 +194,18 @@ local S={
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
 S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
 NS.Suite=S
+-- The shared surface helpers the layout uses (S.PixelUnit).
+MSUFSuite=NS
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 local config={}
 for key,rule in pairs(rules) do config[key]=rule.default end
 local M={active=true,config=config,id="cooldownManager"}
+-- The controller's flush request (Flush.lua) is a no-op here: the test runs
+-- the layout's requests itself through L.Flush with a direct runner.
 local C={M=M,EMPTY={},state={inCombat=false,preview=false},views={},plans={},bars={},entries={},
-    Index={usable={}},Effects={},
+    Index={usable={}},Effects={},Schedule=function() end,
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local P={NS=NS,Suite=S,CDM=C}
 
@@ -207,6 +220,8 @@ end
 assert(created==createdBefore,"loading the layout plane created frames")
 local L,V,N,Pv=C.Layout,C.Visibility,C.Native,C.Preview
 assert(L and V and N and Pv,"exports missing")
+-- The unit runner's contract (S.NewUnitRunner): run(set, key, value, fn, a).
+local function Direct(_,_,_,fn,a) return fn(a) end
 for _,name in ipairs({"PixelScale","InvalidateScale","EnsureBar","Apply","ApplyAll","Offsets","Cell","Hide","HideAll",
     "Metrics","Point","Parent","FrameTarget","Free","Movable","RidesViewer","ViewerPoint","DragPlace","ForgetAnchors",
     "CombatEnded","Request","Flush","FixedAuras"}) do
@@ -280,6 +295,16 @@ assert(L.InvalidateScale()==1,"secret scale falls back to 1")
 UIParent.scale=1
 physicalHeight=768
 assert(L.InvalidateScale()==1)
+-- The unit is the suite's shared one (S.PixelUnit); 1 while it is unknown.
+do
+    local unit=S.PixelUnit
+    S.PixelUnit=function() return .625 end
+    assert(L.InvalidateScale()==.625 and C.state.px==.625,"the layout ignores the shared pixel unit")
+    S.PixelUnit=function() return nil end
+    assert(L.InvalidateScale()==1,"an unknown pixel unit falls back to 1")
+    S.PixelUnit=unit
+    assert(L.InvalidateScale()==1)
+end
 
 ------------------------------------------------------------------ offsets (pure)
 local out={}
@@ -374,7 +399,7 @@ C.AnchorChanged=function() anchorChanges=anchorChanges+1 end
 local overlayLog,mouseLog,auraMouseLog={},{},{}
 -- The aura layer's row rule (A.TargetRow), its flow table and its compact
 -- container placement (Place) run from Auras.lua's own source, and the
--- controller's footprint (Extent) from Controller.lua's, so the layout is
+-- controller's footprint (Extent) from Exports.lua's, so the layout is
 -- checked against them. SyncAura's arguments to Place are pinned below.
 local AuraRule={}
 local auraGeo={}
@@ -401,28 +426,30 @@ do
     -- target container starts the reserved player lines further.
     for _,line in ipairs({
         "\nlocal UNITS = { \"player\", \"target\" }\n",
-        "    if layout ~= nil and layout.Cell ~= nil and layout.FixedAuras ~= nil then fixed, _, split = layout.FixedAuras(view, entries) end\n",
+        "    local fixed, _, split = layout.FixedAuras(view, entries)\n",
         "    barMeta.fixed, barMeta.split = fixed == true, split == true\n",
-        "        local w, h, sp, per, vertical, grow, align = layout.Metrics(view)\n",
-        "        local flow = FLOW[vertical][grow == 2 and 2 or 1]\n",
-        "        geo.w, geo.h, geo.gp, geo.gc = w, h, max(0, sp), sp\n",
-        "        geo.flow, geo.point = flow, flow[4][align] or flow[4][1]\n",
-        "        if vertical then\n            dir = grow == 2 and -1 or 1\n        else\n            dir = grow == 2 and 1 or -1\n        end\n",
-        "        geo.step = (cross + sp) * dir\n",
-        "        geo.host = bar.auraHost or bar.frame\n",
-        "        for i = 1, cap do\n            if not TargetRow(entries[i]) then\n                players = players + 1\n            end\n        end\n",
-        "        local lines = ceil(players / per)\n",
-        "                local side = barMeta.split and (u == 1 and \"lead\" or \"tail\") or nil\n",
-        "                Run(slot, \"aura\", unit, role, barMeta.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)\n",
+        "    local w, h, sp, per, vertical, grow, align = layout.Metrics(view)\n",
+        "    local flow = FLOW[vertical][grow == 2 and 2 or 1]\n",
+        "    geo.w, geo.h, geo.gp, geo.gc = w, h, max(0, sp), sp\n",
+        "    geo.flow, geo.point = flow, flow[4][align] or flow[4][1]\n",
+        "    if vertical then\n        dir = grow == 2 and -1 or 1\n    else\n        dir = grow == 2 and 1 or -1\n    end\n",
+        "    geo.step = (cross + sp) * dir\n",
+        "    geo.host = bar.auraHost or bar.frame\n",
+        "    for i = 1, cap do\n        if not TargetRow(entries[i]) then\n            players = players + 1\n        end\n    end\n",
+        "    local lines = ceil(players / per)\n",
+        "            local side = barMeta.split and (u == 1 and \"lead\" or \"tail\") or nil\n",
+        "            Run(slot, \"aura\", unit, role, barMeta.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)\n",
         "    if not fixed then Place(rec, offset, split) end\n    if Build(rec, view, n) then return end\n",
     }) do
         assert(text:find(line,1,true),"Auras.lua SyncAura: "..line)
     end
     -- Containers are only ever anchored to our own frames: Place to the aura
     -- host, a fixed-places container to its own parent (bar frame or host),
-    -- never to another container (Blizzard forbids it).
+    -- never to another container (Blizzard forbids it). The scans cover the
+    -- whole aura layer: containers (Auras.lua) and buttons (AuraButtons.lua).
+    local layer=text.."\n"..Source("AuraButtons.lua")
     local anchors={}
-    for call in text:gmatch("[%w_]+:SetPoint%b()") do
+    for call in layer:gmatch("[%w_]+:SetPoint%b()") do
         if call:sub(1,10)=="container:" then anchors[#anchors+1]=call end
     end
     assert(#anchors==2 and anchors[1]=='container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)' and anchors[2]=="container:SetPoint(point, host, rel, dx, dy)",
@@ -430,17 +457,17 @@ do
     assert(text:find("\n            local parent = fam == \"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
         and text:find("\n    local point, host = g.point, g.host\n",1,true),"container parents and hosts are the bar's own frames")
     local rels=0
-    for rel in text:gmatch("[%w_]+:SetPoint%(%s*[^,]+,%s*([%w_%.%[%]]+)") do
+    for rel in layer:gmatch("[%w_]+:SetPoint%(%s*[^,]+,%s*([%w_%.%[%]]+)") do
         rels=rels+1
         assert(rel~="container" and not rel:find("%.frame$"),"a region anchored to a container: "..rel)
     end
-    for rel in text:gmatch("[%w_]+:SetAllPoints%(([%w_%.%[%]]+)") do
+    for rel in layer:gmatch("[%w_]+:SetAllPoints%(([%w_%.%[%]]+)") do
         rels=rels+1
         assert(rel~="container" and not rel:find("%.frame$"),"a region stretched over a container: "..rel)
     end
     assert(rels>20,"anchor scan found "..rels.." calls")
-    local controller=Source("Controller.lua")
-    local extent=assert(controller:match("\n(local function Extent%(view, plan%)\n.-\nend)\n"),"Controller.lua Extent source")
+    local exports=Source("Exports.lua")
+    local extent=assert(exports:match("\n(local function Extent%(view, plan%)\n.-\nend)\n"),"Exports.lua Extent source")
     assert(extent:find("\n    local _, ordered, split = C.Layout.FixedAuras(view, list)\n    if ordered or split then n1, n2 = n1 + n2, 0 end\n",1,true),
         "Extent takes the one rule: one line when ordered or split")
     AuraRule.Extent=assert(loadstring("local C,probe,ceil=...\n"..extent.."\nreturn Extent"))(C,{},math.ceil)
@@ -594,16 +621,13 @@ BothLines("both entries over three lines")
 Plan("buf",{{unit="both",selfAura=false},Entry("target"),{unit="both",selfAura=true},Entry("player")})
 L.Apply("buf")
 BothLines("selfAura ignored")
--- without the aura layer's rule the layout's own rule gives the same parts
-local rowRule=C.Auras.TargetRow
-C.Auras.TargetRow=nil
+-- the parts follow the plan again after the hint, and one line again at ten per row
 Plan("buf",bothPlan)
 L.Apply("buf")
-BothLines("fallback")
+BothLines("plan again")
 buf.perRow=10; Touch("buf"); L.Apply("buf")
-Rule(buf,bothPlan,"fallback rule",false,false,true)
-for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"fallback cell "..i) end
-C.Auras.TargetRow=rowRule
+Rule(buf,bothPlan,"one line again",false,false,true)
+for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"one line cell "..i) end
 Plan("buf",{Both(),Both()})
 L.Apply("buf")
 Rule(buf,C.plans.buf.entries,"own buffs only",false,false,false)
@@ -1059,7 +1083,7 @@ assert(anchorChanges==1,"repeat passes do not notify MSUF")
 Clear(overlayLog)
 collectgarbage("collect"); collectgarbage("stop")
 local before=collectgarbage("count")
-for _=1,200 do L.Apply("ess"); L.Apply("buf"); L.ApplyAll(); L.Flush() end
+for _=1,200 do L.Apply("ess"); L.Apply("buf"); L.ApplyAll(); L.Flush(Direct) end
 local grown=collectgarbage("count")-before
 collectgarbage("restart")
 assert(grown<1,"unchanged layout passes allocated "..grown.." KB")
@@ -1381,7 +1405,7 @@ ResetCalls()
 probes[1].scripts.OnSizeChanged(probes[1],1,1)
 assert(L.dirty.def and L.dirty.ext,"FrameMoved requests the frame-anchored bars")
 assert(not L.dirty.ess and not L.dirty.uti and not L.dirty.buf and not L.dirty.bar,"bars off the frames stay clean")
-L.Flush()
+L.Flush(Direct)
 assert(next(L.dirty)==nil,"flush clears the requests")
 CheckPoint(defBar.frame,"BOTTOMRIGHT",UIParent,"BOTTOMLEFT",450,344,"def follows the moved frame")
 CheckPoint(C.bars.ext.frame,"TOPLEFT",UIParent,"BOTTOMLEFT",150,218,"ext follows the moved frame")
@@ -1391,10 +1415,10 @@ player.rect[1],player.rect[4]=80,60
 probes[2].scripts.OnSizeChanged(probes[2],1,1)
 L.Apply("ess")
 CheckPoint(defBar.frame,"BOTTOMRIGHT",UIParent,"BOTTOMLEFT",420,374,"a frame move re-anchors on any pass")
-L.Flush()
+L.Flush(Direct)
 player.rect[4]=40
 probes[1].scripts.OnSizeChanged(probes[1],1,1)
-L.Flush()
+L.Flush(Direct)
 CheckPoint(defBar.frame,"BOTTOMRIGHT",UIParent,"BOTTOMLEFT",420,344,"def back in place")
 
 -- every side and alignment on the target frame: UIParent at scale .8 (1.25
@@ -1539,7 +1563,7 @@ assert(Writes()==0,"repeat after frame anchors wrote "..Writes().." times")
 -- request/flush
 L.Request("ess")
 assert(L.dirty.ess,"request marks dirty")
-L.Flush()
+L.Flush(Direct)
 assert(not L.dirty.ess,"flush clears dirty")
 L.HideAll()
 for _,slot in ipairs({"ess","uti","def","ext","buf","bar"}) do assert(not C.bars[slot].frame.shown,"HideAll "..slot) end
@@ -2031,7 +2055,7 @@ do
     essential.rect[1]=420
     Moved(essential)
     assert(L.dirty.ess and not L.dirty.uti,"a move of Blizzard's bar requests the riding bar")
-    L.Flush()
+    L.Flush(Direct)
     CheckPoint(essBar.frame,"TOP",UIParent,"BOTTOMLEFT",940,430,"the riding bar follows")
     -- Essential off: Utility takes its placement, riding included
     ess.on=false; Touch("ess"); C.plans.ess=nil
@@ -2040,7 +2064,7 @@ do
     essential.rect[1]=400
     Moved(essential)
     assert(L.dirty.uti,"a move of Blizzard's bar requests the stand-in")
-    L.Flush()
+    L.Flush(Direct)
     CheckPoint(C.bars.uti.frame,"TOP",UIParent,"BOTTOMLEFT",910,430,"the stand-in follows")
     ess.on=true; Touch("ess"); Plan("ess",essEntries)
     L.Apply("ess")

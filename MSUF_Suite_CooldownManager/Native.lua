@@ -72,7 +72,7 @@ local function Hook(viewer)
     if hooked[viewer] then return end
     hooked[viewer] = true
     hooksecurefunc(viewer, "SetAlpha", AlphaHook)
-    if type(viewer.OnAcquireItemFrame) == "function" then hooksecurefunc(viewer, "OnAcquireItemFrame", AcquireHook) end
+    hooksecurefunc(viewer, "OnAcquireItemFrame", AcquireHook)
 end
 -- Items acquired before the hook existed: acquired items carry a layout
 -- index, Edit Mode's selection frame does not.
@@ -190,7 +190,7 @@ end
 -- below the screen center (under MSUF's default unit frames and castbar).
 -- Sizes stay ours. Returns settings plus captured=true for S.SetMany.
 function N.Capture()
-    if NS.IsCombatLocked() or not UIParent then return nil end
+    if NS.IsCombatLocked() then return nil end
     local ui = UIParent:GetEffectiveScale()
     local uiW, uiH = UIParent:GetWidth(), UIParent:GetHeight()
     if not (Number(ui) and Number(uiW) and Number(uiH)) or ui <= 0 then return nil end

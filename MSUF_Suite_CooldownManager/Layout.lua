@@ -40,16 +40,12 @@ local frameGen = 0
 
 ------------------------------------------------------------------ pixel scale
 local px
--- UI units per physical pixel for UIParent children. Cached; recomputed only
--- after InvalidateScale (UI_SCALE_CHANGED / DISPLAY_SIZE_CHANGED).
+-- UI units per physical pixel for UIParent children (S.PixelUnit, 1 while
+-- unreadable). Cached; recomputed only after InvalidateScale
+-- (UI_SCALE_CHANGED / DISPLAY_SIZE_CHANGED).
 function L.PixelScale()
     if px then return px end
-    local value, height = 1, nil
-    if type(GetPhysicalScreenSize) == "function" then height = select(2, GetPhysicalScreenSize()) end
-    local scale = UIParent and UIParent:GetEffectiveScale()
-    if Public(height) and Public(scale) and type(height) == "number" and type(scale) == "number" and height > 0 and scale > 0 then
-        value = 768 / height / scale
-    end
+    local value = S.PixelUnit() or 1
     px = value
     C.state.px = value
     return value
@@ -185,8 +181,7 @@ function L.EnsureBar(slot)
     local view = C.views[slot]
     if view and (view.kind == 2 or view.kind == 3) then Host(bar) end
     -- A driver may have reported before the bar existed.
-    local visibility = C.Visibility
-    if visibility and visibility.Paint then visibility.Paint(slot) end
+    C.Visibility.Paint(slot)
     return bar
 end
 
@@ -197,6 +192,8 @@ local function Size(region, w, h)
     end
 end
 
+-- Shows or hides a region once per change (memo: layShown); the options
+-- canvas (Preview.lua) shares it.
 local function Shown(region, shown)
     if region.layShown ~= shown then
         region.layShown = shown
@@ -207,6 +204,7 @@ local function Shown(region, shown)
         end
     end
 end
+L.Shown = Shown
 
 -- One TOPLEFT point per region; the first write after a memo reset also
 -- clears foreign points.
@@ -528,9 +526,7 @@ end
 -- an icon handed to another entry). Edges only, so a steady pass calls
 -- nothing.
 local function Overlay(entry, on)
-    local auras = C.Auras
-    local shown = auras and auras.OverlayShown
-    if type(shown) == "function" then shown(entry, on) end
+    C.Auras.OverlayShown(entry, on)
 end
 
 -- Cooldown icons: visible entries (hideReady hides; preview shows all) up
@@ -589,12 +585,9 @@ end
 
 -- The part an aura entry takes: the aura layer's rule (e.unit=="target"
 -- entries the target part, a per-spell "both" the player part), so
--- containers and cells agree; the same rule when the aura layer is absent.
+-- containers and cells agree.
 local function TargetRow(entry)
-    local auras = C.Auras
-    local rule = auras and auras.TargetRow
-    if rule then return rule(entry) end
-    return entry.unit == "target"
+    return C.Auras.TargetRow(entry)
 end
 
 -- Aura bars in fixed places: keepSlots or showMissing on the bar or a
@@ -607,7 +600,9 @@ end
 -- horizontal row that mixes both fits on one line split at its center
 -- (player auras end there, target auras start there), compact and growing
 -- from the middle. Shared by Auras, the layout and the controller.
-function L.FixedAuras(view, entries)
+-- Entries within maxIcons by part: n1 the player part ("both" included),
+-- n2 the target part.
+local function Parts(view, entries)
     local cap = view.maxIcons
     if type(cap) ~= "number" or cap <= 0 or cap > #entries then cap = #entries end
     local n1, n2 = 0, 0
@@ -618,6 +613,10 @@ function L.FixedAuras(view, entries)
             n1 = n1 + 1
         end
     end
+    return n1, n2
+end
+function L.FixedAuras(view, entries)
+    local n1, n2 = Parts(view, entries)
     local _, _, _, per, vertical, _, align = Grid(view, px or L.PixelScale())
     local n = n1 + n2
     local single = n <= per or per == 1
@@ -651,17 +650,7 @@ end
 -- order. Fixed cells follow entry positions in the plan.
 local function PlaceAuras(bar, view, plan)
     local entries = plan.entries
-    local cap = view.maxIcons
-    if type(cap) ~= "number" or cap <= 0 then cap = #entries end
-    local n1, n2 = 0, 0
-    for i = 1, #entries do
-        if n1 + n2 >= cap then break end
-        if TargetRow(entries[i]) then
-            n2 = n2 + 1
-        else
-            n1 = n1 + 1
-        end
-    end
+    local n1, n2 = Parts(view, entries)
     local unit = px or L.PixelScale()
     local w, h, sp, per, vertical, grow, align = Grid(view, unit)
     local out = bar.out
@@ -733,7 +722,7 @@ end
 ------------------------------------------------------------------ passes
 -- MSUF follows the Essential bar: tell it when that bar appears or goes.
 local function Notify(slot)
-    if slot == "ess" and type(C.AnchorChanged) == "function" then C.AnchorChanged() end
+    if slot == "ess" then C.AnchorChanged() end
 end
 function L.Hide(slot)
     local bar = C.bars[slot]
@@ -795,15 +784,17 @@ function L.ApplyAll()
 end
 
 -- Relayout request from runtime paths (hideReady edges); the controller's
--- flush calls Flush once per frame.
+-- flush calls Flush once per frame with its runner, which isolates each
+-- pass and gives a raising pass its request back.
 function L.Request(slot)
     L.dirty[slot] = true
-    if type(C.Schedule) == "function" then C.Schedule() end
+    C.Schedule()
 end
-function L.Flush()
-    if next(L.dirty) == nil then return end
+function L.Flush(run)
+    local requests = L.dirty
+    if next(requests) == nil then return end
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
-        if L.dirty[slot] then L.Apply(slot) end
+        if requests[slot] then run(requests, slot, true, L.Apply, slot) end
     end
 end

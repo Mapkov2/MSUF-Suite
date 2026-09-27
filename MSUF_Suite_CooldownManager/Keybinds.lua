@@ -3,7 +3,8 @@ local NS, S = P.NS, P.Suite
 local C = P.CDM
 -- Spell -> short key text for icons on bars that show keybinds. Texts are
 -- cached per spell (items per item ID); icons get theirs through
--- Icons.SetKeybind. Binding and action slot events drop the cache, bar
+-- Icons.SetKeybind. Binding and action slot events and changes of the suite
+-- action bars (MSUFSuite.ActionBars.BindingsChanged) drop the cache, bar
 -- content changes only push cached texts (new spells are looked up once);
 -- a burst of requests shares one pass 0.2 s after its first request.
 -- Nothing here runs per cooldown event. Key texts are the action bars' own
@@ -39,7 +40,6 @@ for i = 1, #RANGES do
 end
 
 local function BoundKey(command)
-    if type(GetBindingKey) ~= "function" then return nil end
     local key = GetBindingKey(command)
     if Public(key) and type(key) == "string" and key ~= "" then return key end
 end
@@ -62,9 +62,7 @@ local function Lookup(spell)
         local text = export(spell)
         if Public(text) and type(text) == "string" then return text end
     end
-    local actionBar = _G.C_ActionBar
-    local find = actionBar and actionBar.FindSpellActionButtons
-    local slots = find and find(spell)
+    local slots = C_ActionBar.FindSpellActionButtons(spell)
     if not (Public(slots) and type(slots) == "table") then return "" end
     wipe(spellSlots)
     for i = 1, #slots do
@@ -90,13 +88,11 @@ end
 -- like spells.
 local itemMap, itemSlots = {}, {}
 local function ItemLookup(item)
-    local info = _G.GetActionInfo
-    if type(info) ~= "function" then return "" end
     wipe(itemSlots)
     for i = 1, #SLOTS do
         local slot = SLOTS[i]
         if itemSlots[slot] == nil then
-            local kind, id = info(slot)
+            local kind, id = GetActionInfo(slot)
             itemSlots[slot] = Public(kind) and kind == "item" and Public(id) and id == item or false
         end
     end
@@ -162,10 +158,8 @@ end
 function KB.Request(bindings)
     if bindings then stale = true end
     if armed then return end
-    local timer = _G.C_Timer
-    if not (timer and timer.After) then return Fire() end
     armed = true
-    timer.After(DELAY, Fire)
+    C_Timer.After(DELAY, Fire)
 end
 
 function KB.Clear()

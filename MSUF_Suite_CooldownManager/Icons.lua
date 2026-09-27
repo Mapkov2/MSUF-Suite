@@ -22,8 +22,7 @@ local syncGen = 0
 -- Time needs to know which swipe ran out (main swipe or recharge edge).
 local function CooldownDone(cooldown)
     local icon = owner[cooldown]
-    local time = C.Time
-    if icon and time and time.Done then time.Done(icon, cooldown) end
+    if icon then C.Time.Done(icon, cooldown) end
 end
 
 local function OnEnter(icon)
@@ -31,13 +30,8 @@ local function OnEnter(icon)
     if not entry then return end
     local view, bar = C.views[entry.slot], C.bars[entry.slot]
     if not view or not view.tooltips or (bar and bar.hidden) then return end
-    local tip = _G.GameTooltip
-    if not tip then return end
-    if _G.GameTooltip_SetDefaultAnchor then
-        _G.GameTooltip_SetDefaultAnchor(tip, icon)
-    else
-        tip:SetOwner(icon, "ANCHOR_RIGHT")
-    end
+    local tip = GameTooltip
+    GameTooltip_SetDefaultAnchor(tip, icon)
     local slot = entry.equipSlot or (entry.src == "e" and entry.id)
     if slot then
         tip:SetInventoryItem("player", slot)
@@ -55,8 +49,7 @@ local function OnEnter(icon)
 end
 
 local function OnLeave(icon)
-    local tip = _G.GameTooltip
-    if tip and tip:IsOwned(icon) then tip:Hide() end
+    if GameTooltip:IsOwned(icon) then GameTooltip:Hide() end
 end
 
 -- Match Blizzard's CooldownViewer ping target order: equipped/bag items,
@@ -214,7 +207,7 @@ function I.StyleIcon(icon, view)
     Texts(icon, view, entry and entry.ov or EMPTY)
     local size = view.cdSize or 0
     if size <= 0 then size = max(10, floor(h * .38)) end
-    local text = cooldown.GetCountdownFontString and cooldown:GetCountdownFontString()
+    local text = cooldown:GetCountdownFontString()
     if text then Font(text, size, state.cdR, state.cdG, state.cdB) end
     local stack = view.stackSize or 0
     if stack <= 0 then stack = max(9, floor(h * .3)) end
@@ -222,17 +215,11 @@ function I.StyleIcon(icon, view)
     PlaceText(icon.count, icon, view.stackPos or 9, K.Pixels(1) + border)
     StyleKey(icon, view)
     icon.styleGen, icon.styleView = view.styleGen, view
-    local fx = C.Effects
-    if fx and fx.Refit and (icon.glow or icon.ants) then fx.Refit(icon) end
+    if icon.glow or icon.ants then C.Effects.Refit(icon) end
 end
 
 ------------------------------------------------------------------ threshold formatter
-local function Rounding(name, fallback)
-    local enum = _G.Enum and _G.Enum.NumericRuleFormatRounding
-    return enum and enum[name] or fallback
-end
-
--- One formatter per (seconds, color); nil when off or unsupported.
+-- One formatter per (seconds, color); nil when off.
 function I.Formatter(seconds, r, g, b)
     if type(seconds) ~= "number" or seconds <= 0 then return nil end
     seconds = floor(seconds + .5)
@@ -240,26 +227,16 @@ function I.Formatter(seconds, r, g, b)
     local key = seconds * 16777216 + R * 65536 + G * 256 + B
     local formatter = formatters[key]
     if formatter ~= nil then return formatter or nil end
-    local util = _G.C_StringUtil
-    if type(util) ~= "table" or type(util.CreateNumericRuleFormatter) ~= "function" then
-        formatters[key] = false
-        return nil
-    end
-    formatter = util.CreateNumericRuleFormatter()
-    local up, down = Rounding("Up", 1), Rounding("Down", 2)
+    formatter = C_StringUtil.CreateNumericRuleFormatter()
+    local rounding = Enum.NumericRuleFormatRounding
+    local up, down = rounding.Up, rounding.Down
     local points = {
         { threshold = 0, format = ("|cff%02x%02x%02x%%.0f|r"):format(R, G, B), rounding = up },
         { threshold = seconds, format = "%.0f", rounding = up },
         { threshold = 60, format = "%d:%02d", rounding = down, components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } },
         { threshold = 3600, format = "%dh", rounding = down, components = { { div = 3600, rounding = down } } },
     }
-    if formatter.SetBreakpoints then
-        formatter:SetBreakpoints(points)
-    else
-        for i = 1, #points do
-            formatter:AddBreakpoint(points[i])
-        end
-    end
+    formatter:SetBreakpoints(points)
     formatters[key] = formatter
     return formatter
 end
@@ -305,7 +282,7 @@ function I.Apply(entry)
     local formatter = seconds > 0 and I.Formatter(seconds, state.thR, state.thG, state.thB) or nil
     if icon.lastFmt ~= formatter then
         icon.lastFmt = formatter
-        if cooldown.SetCountdownFormatter then cooldown:SetCountdownFormatter(formatter) end
+        cooldown:SetCountdownFormatter(formatter)
     end
 end
 
@@ -337,11 +314,7 @@ end
 local function SetMouse(icon, on)
     if icon.mouse == on then return end
     icon.mouse = on
-    if icon.EnableMouseMotion then
-        icon:EnableMouseMotion(on)
-    else
-        icon:EnableMouse(on)
-    end
+    icon:EnableMouseMotion(on)
 end
 local function SetPing(icon, on)
     on = on == true and PingTarget(icon.entry) ~= nil
@@ -383,14 +356,13 @@ local function Recycle(pool, icon)
     -- Its aura overlay goes off with it at once (combat too), so a rebound
     -- icon never shows the old aura; the layout memo goes as well, so an
     -- icon rebound within the same flush is placed and reported again.
-    local auras, layout = C.Auras, C.Layout
-    if auras and auras.OverlayShown then auras.OverlayShown(entry, false, icon) end
-    if layout and layout.Forget then layout.Forget(icon) end
+    C.Auras.OverlayShown(entry, false, icon)
+    C.Layout.Forget(icon)
     local fx = C.Effects
-    if fx and fx.ResetIcon then fx.ResetIcon(icon) end
+    fx.ResetIcon(icon)
     if entry and entry.icon == icon then
         entry.icon = nil
-        if fx and fx.Detach then fx.Detach(entry) end
+        fx.Detach(entry)
     end
     icon.entry, icon.sim = nil, nil
     -- Time memos (item cooldown, real-swipe flag) belong to the old entry.
@@ -430,7 +402,7 @@ function I.Sync(slotKey)
         return
     end
     local bar = C.bars[slotKey]
-    if not (bar and bar.frame) and C.Layout and C.Layout.EnsureBar then bar = C.Layout.EnsureBar(slotKey) end
+    if not (bar and bar.frame) then bar = C.Layout.EnsureBar(slotKey) end
     if not (bar and bar.frame) then return end
     local pool = Pool(slotKey)
     syncGen = syncGen + 1
@@ -458,12 +430,12 @@ function I.Sync(slotKey)
         if fresh then
             -- Bag counts were not followed while nothing showed one: read
             -- them again, once per pass.
-            if not recount and time and time.BagsChanged and (entry.src == "i" or (entry.spellCategory or 0) ~= 0) then
+            if not recount and (entry.src == "i" or (entry.spellCategory or 0) ~= 0) then
                 recount = true
                 time.BagsChanged()
             end
-            if time and time.Refresh then time.Refresh(entry, "full") end
-            if fx and fx.Update then fx.Update(entry) end
+            time.Refresh(entry, "full")
+            fx.Update(entry)
         end
     end
     for key, icon in pairs(byKey) do
@@ -514,8 +486,7 @@ end
 function I.ReleaseAll()
     for slotKey in pairs(pools) do I.Release(slotKey) end
     -- Bag events stop with the module: counts are read again next time.
-    local time = C.Time
-    if time and time.BagsChanged then time.BagsChanged() end
+    C.Time.BagsChanged()
 end
 
 -- Test and diagnostics hook: live icons of a bar.

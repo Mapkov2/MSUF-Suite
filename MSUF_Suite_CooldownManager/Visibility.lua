@@ -58,11 +58,8 @@ local function Driven(bind) return bind ~= nil and bind ~= EVENTS and bind ~= HI
 -- A hidden or fully transparent bar gives the mouse back to whatever lies
 -- below it; the icon and aura layers apply it to their frames.
 local function Mouse(slot, on)
-    local icons, auras = C.Icons, C.Auras
-    local set = icons and icons.SetBarMouse
-    if type(set) == "function" then set(slot, on) end
-    set = auras and auras.SetBarMouse
-    if type(set) == "function" then set(slot, on) end
+    C.Icons.SetBarMouse(slot, on)
+    C.Auras.SetBarMouse(slot, on)
 end
 
 -- Preview (Edit Mode, options page) suspends the rules: plain bar opacity.
@@ -128,16 +125,16 @@ local VEHICLE_EVENTS = { "UNIT_ENTERED_VEHICLE", "UNIT_EXITED_VEHICLE", "UPDATE_
 local UNIT_EVENT = { UNIT_ENTERED_VEHICLE = true, UNIT_EXITED_VEHICLE = true }
 
 local function InPetBattle()
-    local api = _G.C_PetBattles
-    local value = api and api.IsInBattle and api.IsInBattle()
+    local value = C_PetBattles.IsInBattle()
     return Public(value) and value == true
 end
--- [vehicleui][overridebar]: vehicle interface or an override bar.
+-- [vehicleui][overridebar]: vehicle interface or an override bar. The
+-- global HasOverrideActionBar exists only with Blizzard's deprecation
+-- fallbacks loaded; C_ActionBar has it on both clients.
 local function InVehicle()
-    local ui, over = _G.UnitHasVehicleUI, _G.HasOverrideActionBar
-    local value = type(ui) == "function" and ui("player")
+    local value = UnitHasVehicleUI("player")
     if Public(value) and value then return true end
-    value = type(over) == "function" and over()
+    value = C_ActionBar.HasOverrideActionBar()
     return Public(value) and value and true or false
 end
 
@@ -173,7 +170,7 @@ local function Listen(list, on)
         if NS.Client.SupportsEvent(event) then
             if not on then
                 listener:UnregisterEvent(event)
-            elseif UNIT_EVENT[event] and listener.RegisterUnitEvent then
+            elseif UNIT_EVENT[event] then
                 listener:RegisterUnitEvent(event, "player")
             else
                 listener:RegisterEvent(event)
@@ -299,7 +296,7 @@ local function Settle(slot)
         local driver = V.drivers[bind]
         V.state[slot] = driver and driver.value
     end
-    if C.Layout then C.Layout.Strata(slot) end
+    C.Layout.Strata(slot)
     Paint(slot)
 end
 

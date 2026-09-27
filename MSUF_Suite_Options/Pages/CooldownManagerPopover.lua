@@ -196,9 +196,9 @@ function Page.OpenSoundPicker(anchor, current, onPick)
     sounds.count, sounds.current, sounds.onPick = n, current, onPick
     Page.ClosePopups(Page.popover)
     Page.PlacePopup(sounds, anchor)
-    if Page.popover and sounds.SetFrameLevel then sounds:SetFrameLevel((Page.popover:GetFrameLevel() or 0) + 20) end
+    if Page.popover then sounds:SetFrameLevel(Page.popover:GetFrameLevel() + 20) end
     sounds.search:SetText("")
-    if sounds.scroll.SetVerticalScroll then sounds.scroll:SetVerticalScroll(0) end
+    sounds.scroll:SetVerticalScroll(0)
     Page.FilterSounds()
     sounds:Show()
     return true
@@ -221,7 +221,7 @@ local SWATCHES = { "ffd200", "ffffff", "ff4d4d", "4dff73", "4db8ff", "c78cff", "
 local SWATCH_NAMES = { "Gold", "White", "Red", "Green", "Blue", "Purple", "Cyan", "Orange" }
 local SWATCH, SWATCH_STEP, STACK_SWATCH = 13, 14, 18
 -- The stack color of an entry that has none.
-local STACK_COLOR = CDM.SPELL_DEFAULTS and CDM.SPELL_DEFAULTS.stackColor or "ff5a3c"
+local STACK_COLOR = CDM.SPELL_DEFAULTS.stackColor
 local SHOW_HIDE = { { 0, "Bar setting" }, { 2, "Show" }, { 3, "Hide" } }
 local FROM_BOOL = { [true] = 2, [false] = 3 }
 -- bar: the bar setting a missing value follows. fromBar: that setting's
@@ -401,8 +401,7 @@ local function StepClick(self)
     local field = self.row.field
     local current = Page.SpellField(pop.key, field.key)
     if current == nil then current = field.off and 0 or tonumber(BarValue(field)) or 0 end
-    local multiplier = IsControlKeyDown and IsControlKeyDown() and 10
-        or IsShiftKeyDown and IsShiftKeyDown() and 5 or 1
+    local multiplier = IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1
     local value = max(0, min(field.max, current + self.delta * field.step * multiplier))
     value = floor(value / field.step + 0.5) * field.step
     SetField(field, not (field.off and value == 0) and value or nil)
@@ -794,7 +793,7 @@ function Page.TogglePopover(tile, anchor)
     pop.key, pop.slot, pop.family, pop.hasAura = tile.key, Page.selected, tile.family, tile.aura == true
     pop.entryName, pop.texture, pop.unit = tile.name, tile.texture, tile.unit
     Page.PlacePopup(pop, anchor)
-    if pop.scroll.SetVerticalScroll then pop.scroll:SetVerticalScroll(0) end
+    pop.scroll:SetVerticalScroll(0)
     Page.PaintPopover()
     pop:Show()
     Light(anchor, true)

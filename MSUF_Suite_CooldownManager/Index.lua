@@ -12,7 +12,7 @@ local C = P.CDM
 local pairs = pairs
 local SLOTS = NS.CDM.SLOTS
 local K = C.Const
-local issecret = type(_G.issecretvalue) == "function" and _G.issecretvalue or nil
+local issecret = _G.issecretvalue
 
 -- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
 local Index = { bySpell = {}, byBase = {}, byCategory = {}, byItem = {}, byEquip = {}, countedSet = {},
@@ -157,8 +157,8 @@ end
 function Index.ForSpell(spellID, baseSpellID, fn)
     local bySpell = Index.bySpell
     local a, b
-    if not (issecret and issecret(spellID)) and spellID then a = bySpell[spellID] end
-    if not (issecret and issecret(baseSpellID)) and baseSpellID then b = bySpell[baseSpellID] end
+    if not issecret(spellID) and spellID then a = bySpell[spellID] end
+    if not issecret(baseSpellID) and baseSpellID then b = bySpell[baseSpellID] end
     if a == b then b = nil end
     if not a then a, b = b, nil end
     if not a then return 0 end
@@ -180,15 +180,15 @@ function Index.ForSpell(spellID, baseSpellID, fn)
     return n
 end
 function Index.ForBase(base, fn)
-    if (issecret and issecret(base)) or not base then return 0 end
+    if issecret(base) or not base then return 0 end
     return Each(Index.byBase[base], fn)
 end
 function Index.ForCategory(category, fn)
-    if (issecret and issecret(category)) or not category then return 0 end
+    if issecret(category) or not category then return 0 end
     return Each(Index.byCategory[category], fn)
 end
 function Index.ForItem(itemID, fn)
-    if (issecret and issecret(itemID)) or not itemID then return 0 end
+    if issecret(itemID) or not itemID then return 0 end
     return Each(Index.byItem[itemID], fn)
 end
 

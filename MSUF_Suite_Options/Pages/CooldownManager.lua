@@ -93,6 +93,7 @@ local BLIZZARD_TIPS = {
     "Blizzard's Cooldown Manager stops completely. While your MSUF frames follow its bars, MSUF keeps it running invisibly.",
     "Blizzard's bars keep running, invisible, so frames that other addons attach to them stay in place.",
 }
+-- S.CooldownManager* come with the cooldown manager addon (Exports.lua).
 local function BlizzardTip(item)
     local tip = Tr(BLIZZARD_TIPS[item.value] or "")
     local status = P.Get(ID, "blizzard") == item.value and S.CooldownManagerStatus and S.CooldownManagerStatus()
@@ -100,7 +101,7 @@ local function BlizzardTip(item)
     return tip
 end
 local blizzardValues = {}
-for i, choice in ipairs(RULES.blizzard and RULES.blizzard.choices or {}) do
+for i, choice in ipairs(RULES.blizzard.choices) do
     blizzardValues[i] = { value = i, text = choice, tooltip = BlizzardTip }
 end
 
@@ -226,7 +227,7 @@ local function SectionState(spec)
     return 6
 end
 local function StateText(state, why, kind)
-    if state == 1 then return Tr(why or "Unavailable on this client") end
+    if state == 1 then return Suite.StatusText(why or "Unavailable on this client", Tr) end
     if state == 2 then return Tr("Turn the cooldown manager on in Frame Basics to edit these.") end
     if state == 4 then return format(Tr("Not used by the %s type. Pick another bar to edit these."), kind) end
     if state == 5 then
@@ -520,7 +521,7 @@ local function BuildSpells(ctx, b, ui)
     end)
     ui.sections.spells = body
     P.AttachSectionReset(ctx, body, "Spell list", function()
-        return Page.ClearWithUndo and Page.ClearWithUndo(Page.selected) or false
+        return Page.ClearWithUndo(Page.selected) or false
     end)
     Layout(grid:Refresh())
 end
