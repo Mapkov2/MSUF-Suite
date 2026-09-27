@@ -2,14 +2,6 @@ local _, NS = ...
 local B = NS.CatalogBuild
 local Number, Bool, Choice, String, Color, Font = B.Number, B.Bool, B.Choice, B.String, B.Color, B.Font
 
-local function Available()
-    local map = _G.Minimap
-    if type(map) ~= "table" or type(map.SetMaskTexture) ~= "function" then
-        return false, "This client has no configurable minimap"
-    end
-    return true
-end
-
 B.Module("minimap", {
     title = "Minimap",
     description = "A clean minimap in its own frame: size, shape, border, zoom, Blizzard buttons, an addon button drawer and information texts. Blizzard's minimap buttons keep working.",
@@ -17,13 +9,12 @@ B.Module("minimap", {
     -- A dedicated minimap button collector owns addon buttons, not the map. The
     -- runtime lets it keep those buttons and leaves the Suite drawer dormant.
     conflicts = { "SexyMap", "EllesmereUIMinimap", "ElvUI" },
-    available = Available,
     cvars = { rotateMinimap = true },
 })
 
 local id = "minimap"
-NS.MinimapAnchorLabels = { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }
-NS.MinimapAnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+NS.MinimapAnchorLabels = NS.AnchorLabels
+NS.MinimapAnchorPoints = NS.AnchorPoints
 -- The preview and runtime consume the same row geometry. Coordinates are:
 -- item point, map point, outward X/Y, then growth X/Y.
 NS.MinimapRowGeometry = {
@@ -37,7 +28,8 @@ NS.MinimapRowLabels = {
     "Bottom left, upward", "Bottom left, rightward", "Bottom right, upward", "Bottom right, leftward",
 }
 -- Text anchors: the nine inside points plus above and below the map.
-NS.MinimapTextAnchorLabels = { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right", "Above the map", "Below the map" }
+NS.MinimapTextAnchorLabels = { "Above the map", "Below the map" }
+for i = #NS.AnchorLabels, 1, -1 do table.insert(NS.MinimapTextAnchorLabels, 1, NS.AnchorLabels[i]) end
 
 B.Section(id, "layout", "Size and position", {
     Number("size", "Minimap size", 190, 100, 600),
@@ -179,8 +171,7 @@ B.Section(id, "elements", "Blizzard buttons", {
 })
 -- Row placement remains the default. Each native button can then be moved
 -- independently in the preview without replacing Blizzard's click handler.
-for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Battlefield",
-    "Queue", "WorldMap", "Compartment" }) do
+for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Compartment" }) do
     local prefix = "button" .. name
     B.Add(id, Number(prefix .. "X", name .. " horizontal offset", 0, -600, 600), "elements").category = "advanced"
     B.Add(id, Number(prefix .. "Y", name .. " vertical offset", 0, -600, 600), "elements").category = "advanced"
@@ -240,6 +231,7 @@ end
 InfoOption("Clock", Choice("infoClockSource", "Clock source", 1, { "Realm time", "Local time", "Realm and local time" }))
 InfoOption("Clock", Bool("infoClock24Hour", "Use 24-hour format", true))
 InfoOption("Clock", Bool("infoClockSeconds", "Show seconds"))
+InfoOption("Clock", Bool("infoClockDate", "Show date (day-month-year)"))
 InfoOption("Clock", Choice("infoClockClick", "Clock left-click action", 2, { "Calendar", "Clock" }))
 for _, field in ipairs({ "Clock", "FPS", "Latency" }) do
     InfoOption(field, Choice("info" .. field .. "Tooltip", "Hover tooltip", 1, { "Value and actions", "Instance lockouts", "Great Vault", "No tooltip" })).infoTooltip = true

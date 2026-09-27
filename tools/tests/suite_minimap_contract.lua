@@ -14,6 +14,12 @@ do
     G.GetMinimapShape = foreign
     H.Enable(W)
     local MM, M, c = W.MM, W.M, W.config
+    check(M.cvars == nil and W.S.catalog.minimap.cvars.rotateMinimap == true,
+        "rotateMinimap must be declared once, on the catalog entry")
+    -- The Minimap and ChatFrame1 frames exist on every supported client, so
+    -- neither catalog entry declares an availability check.
+    check(W.S.catalog.minimap.available == nil and W.S.catalog.chat.available == nil,
+        "the minimap or chat catalog entry probes frames every client has")
     check(MM.host and MM.host:GetName() == "MSUFSuiteMinimap" and MM.host.roleset == "minimap", "host frame missing")
     check(map:GetParent() == W.container, "minimap reparented synchronously")
     W.Step()
@@ -29,6 +35,12 @@ do
     check(point == "TOPRIGHT" and relative == W.UIParent and relativePoint == "TOPRIGHT" and x == -11 and y == -31, "host position")
     check(map.width == 198 and map.height == 198 and map.scale == 1 and map.fixedStrata and map.fixedLevel, "map geometry/locks")
     check(map.strata == "LOW" and map.level == MM.mapLevel, "map strata/level")
+    -- The options page asks whether the shape can be changed at all.
+    check(S.CanShapeMinimap() == true, "a usable minimap reported that it cannot be shaped")
+    local isForbidden = map.IsForbidden
+    map.IsForbidden = function() return true end
+    check(S.CanShapeMinimap() == false, "a forbidden minimap reported that it can be shaped")
+    map.IsForbidden = isForbidden
     check(map.mask == SQUARE and map.arch == 0 and map.quest == 0 and map.task == 0, "square mask and blob scalars")
     check(W.calls.zoom == 2 and map.zoom == 0, "claim did not nudge the zoom once")
     check(cluster.shown and cluster.alpha == 0 and not cluster.mouse, "cluster must stay shown at alpha 0 without mouse")
@@ -176,6 +188,14 @@ do
     check(not MM.shadows[1].disc.shown and MM.host.clampInsets[1] == -3, "shadow can be removed")
     assert(S.Set("minimap", "borderSize", 0))
     check(not disc.shown and not edges[1].shown, "zero border")
+    -- The border and each shadow step are one ring: the same edge geometry
+    -- from an inner to an outer distance around the host.
+    assert(S.SetMany("minimap", { shape = 1, borderSize = 2, shadowSize = 6 }))
+    local ring = MM.shadows[2].edges
+    check(edges[3].points[1][4] == 0 and edges[1].points[1][4] == -2 and edges[1].points[1][5] == 0
+        and H.Near(ring[1].points[1][4], -6) and H.Near(ring[1].points[1][5], 4) and H.Near(ring[1].height, 2)
+        and H.Near(ring[3].points[1][4], -4) and H.Near(ring[3].width, 2), "border and shadow rings")
+    assert(S.SetMany("minimap", { shape = 2, borderSize = 0, shadowSize = 0 }))
     -- Split apply: only the touched category re-runs; only geometry nudges the map.
     local masks, zooms, sizes = W.calls.mask, W.calls.zoom, W.calls["SetSize:Minimap"]
     assert(S.Set("minimap", "infoClockColor", "00ff00"))
@@ -360,7 +380,7 @@ do
     local previewFrame, previewMode = S.MinimapDifficultyPreviewSource()
     check(previewFrame == difficulty and previewMode == defaultMode and S.MinimapElementPreviewShown("Difficulty") == true,
         "preview must use the active Blizzard difficulty content")
-    difficulty.ContentModes = nil
+    difficulty.ContentModes = {}
     local trackingSlot, calendarSlot = tracking:GetParent(), calendar:GetParent()
     check(trackingSlot:GetParent() == host and trackingSlot ~= calendarSlot, "tracking/calendar slots")
     check(MM.catcher.level < tracking.level and MM.catcher.level < calendar.level
@@ -406,6 +426,16 @@ do
     check(x == 31 and y == 7 and select(4, Anchor(calendarSlot)) == 23,
         "tracking offset moves only its native slot")
     assert(S.SetMany("minimap", { buttonTrackingX = 0, buttonTrackingY = 0 }))
+    local nativePixel = MM.Pixel
+    MM.Pixel = function() return 0.8 end
+    MM.LayoutElements()
+    local _, _, _, snappedX, snappedY = Anchor(trackingSlot)
+    check(H.Near(snappedX, MM.Snap(snappedX, 0.8))
+        and H.Near(snappedY, MM.Snap(snappedY, 0.8))
+        and H.Near(trackingSlot.width, MM.Snap(21, 0.8)),
+        "row icon and offset did not align to physical pixels")
+    MM.Pixel = nativePixel
+    MM.LayoutElements()
     -- Corners: difficulty flag top-right, landing button bottom-left.
     local difficultySlot = difficulty:GetParent()
     p, rel, rp, x, y = Anchor(difficultySlot)
@@ -523,6 +553,17 @@ do
     check(select(4, Anchor(toggle)) == 15 and select(5, Anchor(toggle)) == 11,
         "drawer preview offsets need to reach the native toggle")
     assert(S.SetMany("minimap", { drawerX = 0, drawerY = 0 }))
+    -- The toggle names the drawer and its action; the panel keeps an opaque
+    -- one-pixel outline in the border color.
+    local tip = W.G.GameTooltip
+    W.Fire(toggle, "OnEnter")
+    check(tip.shown and tip.owner == toggle and tip.lines[1] == "Addon buttons"
+        and tip.lines[2] == "Click to show or hide the collected buttons.", "drawer toggle tooltip")
+    W.Fire(toggle, "OnLeave")
+    check(not tip.shown, "leaving the drawer toggle kept its tooltip")
+    local outline = MM.panel.edges
+    check(outline[1].height == 1 and outline[3].width == 1 and outline[1].color[4] == 1
+        and outline[1].color[1] == outline[3].color[1], "drawer panel outline")
     toggle:Click()
     check(panel.shown and W.M.context.frame.events.GLOBAL_MOUSE_DOWN, "panel/click-away")
     local iconClicks = 0
@@ -582,7 +623,7 @@ end
 -- the map, and loading it after the Suite must release our drawer ownership.
 do
     local mbbLoaded = true
-    local W = H.New(root, "Mists", { beforeModules = function(W)
+    local W = H.New(root, "Mainline", { beforeModules = function(W)
         W.G.C_AddOns.IsAddOnLoaded = function(name) return name == "MinimapButtonButton" and mbbLoaded end
     end })
     local icon = W.Button("LibDBIcon10_MBBStartup", W.map, 31, 31)
@@ -593,7 +634,7 @@ do
         "Suite drawer claimed MBB's buttons at startup")
 
     mbbLoaded = false
-    local late = H.New(root, "Mists", { beforeModules = function(W)
+    local late = H.New(root, "Mainline", { beforeModules = function(W)
         W.G.C_AddOns.IsAddOnLoaded = function(name) return name == "MinimapButtonButton" and mbbLoaded end
     end })
     local button = late.Button("LibDBIcon10_MBBLate", late.map, 31, 31)
@@ -679,44 +720,66 @@ do
     print("Minimap full restore on disable, Edit Mode mover, suppression and reload fallback passed")
 end
 
--- Classic family: per-client names, Classic decorations and dropdown differences.
-for _, client in ipairs({ "Vanilla", "TBC", "Mists" }) do
-    local W = H.New(root, client)
+-- Features share one hover notification, one event route and one deferred
+-- flush. A callback that raises is reported and the other features still run.
+do
+    local reports = {}
+    local W = H.New(root, "Mainline", { dispatchErrors = reports })
     W.editModeReady = true
-    H.Enable(W, { captured = true, collectButtons = true })
+    H.Enable(W, { captured = true })
     W.Step()
-    local G, S, MM, map = W.G, W.S, W.MM, W.map
-    check(map:GetParent() == MM.clip and map.width == S.Config("minimap").size and map.mask == SQUARE, client .. " claim")
-    check(G.MinimapBorder.alpha == 0 and G.MinimapNorthTag.alpha == 0 and G.MinimapCompassTexture.alpha == 0, client .. " decorations")
-    check(G.TimeManagerClockButton.alpha == 0 and not G.TimeManagerClockButton.mouse, client .. " clock button")
-    check(G.MinimapZoneTextButton.alpha == 0 and not G.MinimapToggleButton.mouse and G.MinimapBackdrop.shown, client .. " cluster controls")
-    local tracking, calendar = G.MiniMapTracking, G.GameTimeFrame
-    check(tracking:GetParent():GetParent() == MM.host and calendar:GetParent():GetParent() == MM.host, client .. " tracking/calendar slots")
-    check(H.Near(tracking.scale, 21 / 33) and G.MinimapZoomIn:GetParent() == MM.zoomHolder, client .. " scale/zoom holder")
-    check(G.MiniMapMailFrame:GetParent() ~= map and G.MiniMapBattlefieldFrame:GetParent() ~= map, client .. " mail/battlefield moved")
-    check(not S.MinimapElementAvailable("Crafting") and not S.MinimapElementAvailable("Landing") and not S.MinimapElementAvailable("Compartment"), client .. " availability")
-    check(S.MinimapElementAvailable("Difficulty") == (client == "Mists"), client .. " difficulty availability")
-    local mouseUp = map:GetScript("OnMouseUp")
-    mouseUp(map, "MiddleButton")
-    if client == "Vanilla" then
-        check(G.MiniMapTrackingButton == nil, "era has no tracking dropdown")
-    else
-        check(G.MiniMapTrackingButton.menuOpen, client .. " tracking dropdown")
-    end
-    if client == "Mists" then
-        check(G.MiniMapInstanceDifficulty:GetParent() == G.GuildInstanceDifficulty:GetParent(), "mists difficulty frames share a corner")
-        check(select(1, Anchor(G.MiniMapInstanceDifficulty:GetParent())) == "TOPRIGHT", "mists difficulty corner")
-        check(select(5, Anchor(G.MiniMapWorldMapButton:GetParent())) == -46, "mists world map button in the row")
-    end
-    W.Blizzard(function() G.MiniMapMailFrame:Show() end)
+    local MM, catcher = W.MM, W.MM.catcher
+    local landingSlot = W.G.ExpansionLandingPageMinimapButton:GetParent()
+    check(W.config.showLanding == 2 and not landingSlot.shown, "mouseover Folio must start hidden")
+    -- Input's hover listener runs before the Folio's; make it raise.
+    local setLevel = catcher.SetFrameLevel
+    catcher.SetFrameLevel = function() error("hover listener failed") end
+    W.Fire(catcher, "OnEnter")
+    catcher.SetFrameLevel = setLevel
+    check(#reports == 1 and landingSlot.shown, "a raising hover listener stopped the later listeners")
+    local reached = false
+    MM.Listen("MSUF_TEST_EVENT", "first", function() error("route handler failed") end)
+    MM.Listen("MSUF_TEST_EVENT", "second", function() reached = true end)
+    W.Event("MSUF_TEST_EVENT")
+    check(#reports == 2 and reached, "a raising event handler stopped the other features' handlers")
+    local rows, drawer = MM.flushers.rows, MM.flushers.drawer
+    local drawn = false
+    MM.flushers.rows = function() error("flusher failed") end
+    MM.flushers.drawer = function() drawn = true end
+    MM.Queue("rows")
+    MM.Queue("drawer")
     W.Step()
-    check(G.MiniMapMailFrame:IsVisible(), client .. " mail shown in its slot")
-    assert(S.Set("minimap", "enabled", false))
-    check(map:GetParent() == W.container and map.width == 140 and tracking:GetParent() == G.MinimapBackdrop, client .. " restore")
-    check(G.MiniMapMailFrame:GetParent() == map and G.MinimapZoomIn:GetParent() == G.MinimapBackdrop and G.MinimapZoomIn.shown, client .. " restore buttons")
-    check(G.MinimapBorder.alpha == 1 and G.MinimapToggleButton.mouse, client .. " restore decorations")
+    MM.flushers.rows, MM.flushers.drawer = rows, drawer
+    check(#reports == 3 and drawn, "a raising flusher stranded the queued work after it")
+    -- A placement that raises (a foreign frame rejecting SetPoint) must not
+    -- leave the placement flag set, or later moves of other owned buttons
+    -- would never be re-asserted.
+    local tracking, calendar = W.cluster.Tracking, W.G.GameTimeFrame
+    local calendarSlot = calendar:GetParent()
+    check(MM.owned[tracking] and MM.owned[calendar], "row buttons are not owned")
+    local setPoint = tracking.SetPoint
+    tracking.SetPoint = function() error("foreign anchor failed") end
+    MM.Reassert(tracking)
+    W.Step()
+    tracking.SetPoint = setPoint
+    check(#reports == 4, "the raising placement was not reported")
+    W.Blizzard(function() calendar:SetPoint("CENTER", W.UIParent, "CENTER", 0, 0) end)
+    W.Step()
+    check(calendar:GetNumPoints() == 1 and calendar:GetPoint(1) == "CENTER" and select(2, calendar:GetPoint(1)) == calendarSlot,
+        "a raising placement left later moves of owned buttons unasserted")
+    -- The same holds for the map: a raising map placement must not hide a
+    -- later reparent by Blizzard, or the map would stay lost.
+    local map, setSize = W.map, W.map.SetSize
+    map.SetSize = function() error("map placement failed") end
+    MM.Queue("mask")
+    W.Step()
+    map.SetSize = setSize
+    check(#reports == 5, "the raising map placement was not reported")
+    W.Blizzard(function() map:SetParent(W.container) end)
+    W.Step()
+    check(map:GetParent() == MM.clip and W.M.mapOwned, "a raising map placement left the map unclaimed after a reparent")
+    print("Minimap hover listeners, event routes and deferred flushers isolate a raising callback passed")
 end
-print("Minimap Classic-family adapter (Era, TBC, Mists names) passed")
 
 -- WoW Forever: Mainline names with the Camelot skin deltas.
 do
@@ -743,7 +806,8 @@ do
     check(map.mask == SQUARE, "forever skin mask not overridden")
     assert(S.Set("minimap", "enabled", false))
     check(map.mask == "ui-hud-minimap-frame-generic-mask" and coords.shown, "forever restore")
-print("Minimap WoW Forever deltas (landing, coordinates, skin mask) passed")
+    print("Minimap WoW Forever deltas (landing, coordinates, skin mask) passed")
+end
 
 -- Original ornamental art uses the same saved values as the options preview;
 -- WoW Forever swaps the map mask when rotation changes. A change inside
@@ -793,4 +857,53 @@ do
     check(not MM.style.artUnder.shown and not MM.style.backdrop.shown, "ornament remained after disable")
     print("Minimap presets, layered art, native rotation and release passed")
 end
+
+-- Retail and WoW Forever always have the client APIs the minimap calls. Only
+-- the optional LibDBIcon library and C_Weather (not on 12.1.0) are checked first.
+do
+    for _, name in ipairs(H.MODULES) do
+        local file = assert(io.open(root .. "/MSUF_Suite_Minimap/" .. name .. ".lua", "rb"))
+        local source = file:read("*a")
+        file:close()
+        for guarded in source:gmatch("type%(([^)]*)%)%s*[~=]=%s*\"function\"") do
+            check(guarded == "stub.GetLibrary" or guarded:find("^lib%.") or guarded:find("^library%."),
+                name .. ".lua guards " .. guarded .. " as if a client lacked it")
+        end
+        for namespace in source:gmatch("(C_%w+) and C_%w+%.") do
+            check(namespace == "C_Weather", name .. ".lua guards " .. namespace .. " as if a client lacked it")
+        end
+    end
+    -- Button and map placements share one exception-safe flag helper.
+    local file = assert(io.open(root .. "/MSUF_Suite_Minimap/Host.lua", "rb"))
+    local host = file:read("*a")
+    file:close()
+    local _, wrappers = host:gsub("Dispatch%(write", "")
+    check(wrappers == 1, "Host.lua keeps " .. wrappers .. " copies of the placement flag wrapper")
+    -- One ring placer serves the border and the three shadow steps.
+    local _, rings = host:gsub('SetPoint%("BOTTOMLEFT", host, "TOPLEFT"', "")
+    check(rings == 1, "Host.lua keeps " .. rings .. " copies of the ring geometry")
+    -- GameTooltip and the minimap files' own functions always exist once the
+    -- TOC has loaded: nothing probes them.
+    local sources, functions = {}, {}
+    for _, name in ipairs(H.MODULES) do
+        local handle = assert(io.open(root .. "/MSUF_Suite_Minimap/" .. name .. ".lua", "rb"))
+        sources[name] = handle:read("*a"):gsub("%-%-[^\n]*", "")
+        handle:close()
+        for defined in sources[name]:gmatch("function (MM%.%w+)%(") do functions[defined] = true end
+        for defined in sources[name]:gmatch("\n(MM%.%u%w*) = %u%w*\n") do functions[defined] = true end
+        for defined in sources[name]:gmatch("function (S%.%w+)%(") do functions[defined] = true end
+    end
+    for _, name in ipairs(H.MODULES) do
+        local code = sources[name]
+        local probe = code:match("(GameTooltip) and") or code:match("not (GameTooltip) then")
+            or code:match("and (UIParent) then")
+        for used in code:gmatch("if ([MS]M?%.%w+) then") do
+            if functions[used] then probe = probe or used end
+        end
+        for used in code:gmatch("([MS]M?%.%w+) and [MS]M?%.%w+%(") do
+            if functions[used] then probe = probe or used end
+        end
+        check(not probe, name .. ".lua probes " .. tostring(probe) .. " as if it could be missing")
+    end
+    print("Minimap calls the client APIs both clients have without existence checks passed")
 end

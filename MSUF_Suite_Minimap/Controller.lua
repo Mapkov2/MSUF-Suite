@@ -39,7 +39,7 @@ local CATEGORIES = {
     },
     { name = "texts", keys = { "borderSize", "borderColor", "borderClassColor", "showCalendar" } },
 }
-for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Battlefield", "Queue", "WorldMap", "Compartment" }) do
+for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Compartment" }) do
     local keys = CATEGORIES[5].keys
     keys[#keys + 1] = "button" .. name .. "X"
     keys[#keys + 1] = "button" .. name .. "Y"
@@ -131,6 +131,7 @@ function M:Enable()
     MM.InstallShape()
     MM.Listen("ADDON_LOADED", "host", AddonLoaded)
     MM.Listen("PLAYER_ENTERING_WORLD", "elements", MM.ReassertElements)
+    -- The underlay exists on WoW Forever's Camelot skin only.
     if _G.MinimapCompassTextureUnderlay then MM.Listen("CVAR_UPDATE", "mask", CVarChanged) end
     S.SuppressHostElement("minimap", HOST_ELEMENT, true)
     MM.PrepareCapture()
@@ -154,7 +155,7 @@ function M:Refresh()
     if dirty.input then MM.ApplyInput() end
     if dirty.elements or dirty.geometry then MM.LayoutElements() end
     if dirty.drawer then MM.ApplyDrawer() elseif dirty.geometry then MM.LayoutDrawer() end
-    if dirty.texts then MM.RefreshTexts() elseif MM.HideInfoTooltip then MM.HideInfoTooltip() end
+    if dirty.texts then MM.RefreshTexts() else MM.HideInfoTooltip() end
     MM.ApplyVisibility()
     MM.NotifyHover()
     Commit(self)
@@ -163,7 +164,7 @@ end
 function M:Disable()
     if MM.style then MM.style:Hide() end
     MM.ReleaseTexts()
-    if MM.HideInfoTooltip then MM.HideInfoTooltip() end
+    MM.HideInfoTooltip()
     MM.ReleaseDrawer()
     MM.ReleaseElements()
     MM.ReleaseInput()
@@ -172,12 +173,13 @@ function M:Disable()
     MM.UnlistenAll()
     S.SuppressHostElement("minimap", HOST_ELEMENT, false)
     self.applied, self.force = {}, {}
-    if lost then S.states.minimap.reloadRequired = S.Text("Reload the UI to restore Blizzard's minimap layout") end
+    -- Stored in English; the menu translates statuses when it shows them.
+    if lost then S.states.minimap.reloadRequired = "Reload the UI to restore Blizzard's minimap layout" end
 end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("minimap", "map", {
-        label = MM.Label("MINIMAP_LABEL", "Minimap"), order = 500,
+        label = S.BlizzardText("MINIMAP_LABEL", "Minimap"), order = 500,
         getFrame = function() return MM.host end,
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return MM.ANCHORS[M.config.point] or "TOPRIGHT" end,
@@ -192,8 +194,7 @@ function M:RegisterMovers()
 end
 
 function S.CanShapeMinimap()
-    local map = _G.Minimap
-    return MM.Usable(map) and type(map.SetMaskTexture) == "function" and type(map.SetParent) == "function" or false
+    return MM.Usable(_G.Minimap)
 end
 
 S.Install("minimap", M)

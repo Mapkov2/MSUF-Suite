@@ -18,16 +18,16 @@ local HOVER_GRACE = 0.15
 
 local function ZoomButtons()
     local map = _G.Minimap
-    local zoomIn = MM.Usable(map) and map.ZoomIn or _G.MinimapZoomIn
-    local zoomOut = MM.Usable(map) and map.ZoomOut or _G.MinimapZoomOut
+    if not MM.Usable(map) then return nil, nil end
+    local zoomIn, zoomOut = map.ZoomIn, map.ZoomOut
     return MM.Usable(zoomIn) and zoomIn or nil, MM.Usable(zoomOut) and zoomOut or nil
 end
 MM.ZoomButtons = ZoomButtons
 
 local function SyncButtons(zoom, levels)
     local zoomIn, zoomOut = ZoomButtons()
-    if zoomIn and type(zoomIn.SetEnabled) == "function" then zoomIn:SetEnabled(zoom < levels - 1) end
-    if zoomOut and type(zoomOut.SetEnabled) == "function" then zoomOut:SetEnabled(zoom > 0) end
+    if zoomIn then zoomIn:SetEnabled(zoom < levels - 1) end
+    if zoomOut then zoomOut:SetEnabled(zoom > 0) end
 end
 local function ResetZoom()
     resetTimer = nil
@@ -45,11 +45,11 @@ local function ArmReset()
         resetTimer:Cancel()
         resetTimer = nil
     end
-    local timer, map = _G.C_Timer, _G.Minimap
+    local map = _G.Minimap
     local seconds = M.active and M.config.zoomResetSeconds or 0
-    if seconds <= 0 or not timer or type(timer.NewTimer) ~= "function" or not MM.Usable(map) then return end
+    if seconds <= 0 or not MM.Usable(map) then return end
     local zoom = map:GetZoom()
-    if Finite(zoom) and zoom > 0 then resetTimer = timer.NewTimer(seconds, ResetZoom) end
+    if Finite(zoom) and zoom > 0 then resetTimer = C_Timer.NewTimer(seconds, ResetZoom) end
 end
 MM.ArmZoomReset = ArmReset
 local function Zoom(step)
@@ -67,35 +67,34 @@ local function Wheel(_, delta)
     if M.active and M.config.scrollZoom and Finite(delta) and delta ~= 0 then Zoom(delta > 0 and 1 or -1) end
 end
 
--- Blizzard's own tracking dropdown (Retail, TBC, Mists); Classic Era has none.
+-- Blizzard's own tracking DropdownButton.
 local function TrackingButton()
     local cluster = _G.MinimapCluster
     local tracking = MM.Usable(cluster) and cluster.Tracking
-    local button = MM.Usable(tracking) and tracking.Button or _G.MiniMapTrackingButton
-    if MM.Usable(button) and type(button.OpenMenu) == "function" then return button end
+    local button = MM.Usable(tracking) and tracking.Button
+    if MM.Usable(button) then return button end
 end
-MM.TrackingButton = TrackingButton
 local function MouseUp(_, button)
     if button ~= "MiddleButton" or not M.active or NS.IsCombatLocked() then return end
     local action = M.config.middleClick
     if action == 2 then
         local tracking = TrackingButton()
         if not tracking then return end
-        if type(tracking.IsMenuOpen) == "function" and tracking:IsMenuOpen() then
+        if tracking:IsMenuOpen() then
             tracking:CloseMenu()
         else
             tracking:OpenMenu()
         end
     elseif action == 3 then
-        if type(_G.ToggleCalendar) == "function" then _G.ToggleCalendar() end
-    elseif action == 4 and type(_G.ToggleWorldMap) == "function" then
-        _G.ToggleWorldMap()
+        ToggleCalendar()
+    elseif action == 4 then
+        ToggleWorldMap()
     end
 end
 
 local function RestoreMapInput()
     local map, scripts = inputMap, inputScripts
-    if map and scripts and MM.Usable(map) and type(map.GetScript) == "function" then
+    if map and scripts and MM.Usable(map) then
         if map:GetScript("OnMouseUp") == scripts.mouseUp then
             map:SetScript("OnMouseUp", scripts.originalMouseUp)
         end
@@ -111,10 +110,7 @@ end
 -- through its zoom buttons with a sound; a post-hook could not suppress either.
 -- Other buttons still reach Blizzard's handler, and disable restores both.
 local function InstallMapInput(map)
-    if not MM.Usable(map) or type(map.GetScript) ~= "function"
-        or type(map.SetScript) ~= "function" then
-        return
-    end
+    if not MM.Usable(map) then return end
     if inputMap == map and inputScripts
         and map:GetScript("OnMouseUp") == inputScripts.mouseUp
         and map:GetScript("OnMouseWheel") == inputScripts.mouseWheel then
@@ -166,21 +162,13 @@ end
 -- A short grace bridges the gap between the map and its rows or drawer.
 function MM.HoverLeave()
     if leaveTimer or not MM.hovered then return end
-    local timer = _G.C_Timer
-    if timer and type(timer.NewTimer) == "function" then
-        leaveTimer = timer.NewTimer(HOVER_GRACE, LeaveCheck)
-    else
-        LeaveCheck()
-    end
+    leaveTimer = C_Timer.NewTimer(HOVER_GRACE, LeaveCheck)
 end
 
 -- Native buttons stay above the passive hover area. Observe their own motion
 -- so moving from the map into a Blizzard button keeps mouseover controls open.
 function MM.HookHover(frame)
-    if not MM.Usable(frame) or hoverHooked[frame]
-        or type(frame.HookScript) ~= "function" then
-        return
-    end
+    if not MM.Usable(frame) or hoverHooked[frame] then return end
     hoverHooked[frame] = true
     frame:HookScript("OnEnter", MM.HoverEnter)
     frame:HookScript("OnLeave", MM.HoverLeave)
@@ -210,15 +198,11 @@ local function EnsureInput()
         if zoomOut and MM.owned[zoomOut] and not zoomOut:IsShown() then zoomOut:Show() end
     end)
     catcher = S.CreateFrame("Frame", nil, host)
-    if type(catcher.SetMouseMotionEnabled) == "function" and type(catcher.SetMouseClickEnabled) == "function"
-        and type(catcher.SetPropagateMouseMotion) == "function" then
-        catcher:SetMouseClickEnabled(false)
-        catcher:SetMouseMotionEnabled(true)
-        catcher:SetPropagateMouseMotion(true)
-        catcher:SetScript("OnEnter", MM.HoverEnter)
-        catcher:SetScript("OnLeave", MM.HoverLeave)
-        MM.hoverCapable = true
-    end
+    catcher:SetMouseClickEnabled(false)
+    catcher:SetMouseMotionEnabled(true)
+    catcher:SetPropagateMouseMotion(true)
+    catcher:SetScript("OnEnter", MM.HoverEnter)
+    catcher:SetScript("OnLeave", MM.HoverLeave)
     catcher:Hide()
     MM.zoomHolder, MM.catcher = holder, catcher
 end
@@ -278,7 +262,7 @@ local function NeedsHover(c)
     return c.visibility == 4 or c.zoomButtons == 1 or (c.hoverResize and c.visibility ~= 5)
         or (MM.CollectsButtons() and c.drawerMouseover)
         or (c.infoCoordinates and c.infoCoordinatesMode == 1)
-        or (c.showLanding == 2 and S.MinimapElementAvailable and S.MinimapElementAvailable("Landing"))
+        or (c.showLanding == 2 and S.MinimapElementAvailable("Landing"))
 end
 -- In mouseover visibility the host is hidden, so the catcher cannot be its child.
 local function ApplyCatcher()
@@ -287,7 +271,7 @@ local function ApplyCatcher()
     if catcher:GetParent() ~= parent then catcher:SetParent(parent) end
     catcher:SetFrameStrata(host:GetFrameStrata())
     LayerCatcher()
-    local wanted = MM.hoverCapable and NeedsHover(c) and true or false
+    local wanted = NeedsHover(c) and true or false
     catcher:SetShown(wanted)
     if not wanted then
         if leaveTimer then

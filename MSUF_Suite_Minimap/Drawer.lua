@@ -21,25 +21,12 @@ end
 -- Blizzard frames, the suite's own and known replacements are never collected.
 local BLOCKED = {
     MinimapBackdrop = true,
-    MinimapZoomIn = true,
-    MinimapZoomOut = true,
     GameTimeFrame = true,
     TimeManagerClockButton = true,
     ExpansionLandingPageMinimapButton = true,
     AddonCompartmentFrame = true,
-    MiniMapMailFrame = true,
-    MiniMapBattlefieldFrame = true,
-    MiniMapTracking = true,
-    MiniMapTrackingButton = true,
-    LFGMinimapFrame = true,
-    MiniMapWorldMapButton = true,
-    MinimapZoneTextButton = true,
-    MinimapToggleButton = true,
     HybridMinimap = true,
     QueueStatusButton = true,
-    MiniMapInstanceDifficulty = true,
-    GuildInstanceDifficulty = true,
-    MiniMapChallengeMode = true,
     PlumberLandingPageMinimapButton = true,
 }
 -- Map pins (HereBeDragons users and friends) are children of the map too.
@@ -52,13 +39,13 @@ local PANEL_ANCHORS = {
 }
 
 local function Candidate(frame)
-    if not MM.Usable(frame) or collected[frame] or type(frame.GetName) ~= "function" then return false end
+    if not MM.Usable(frame) or collected[frame] then return false end
     local name = frame:GetName()
     if not S.Public(name) or type(name) ~= "string" or name == "" or frame:IsProtected() then return false end
     if name:find("^LibDBIcon10_") then return true end
     if BLOCKED[name] or name:find("^MSUFSuite") or name:find("%d$") then return false end
     for i = 1, #PINS do if name:find(PINS[i]) then return false end end
-    return type(frame.GetObjectType) == "function" and frame:GetObjectType() == "Button"
+    return frame:GetObjectType() == "Button"
 end
 local function ByLabel(a, b) return labels[a] < labels[b] end
 local function OwnerChanged(frame)
@@ -78,7 +65,7 @@ local function Scan()
                 hooked[frame] = true
                 hooksecurefunc(frame, "Show", OwnerChanged)
                 hooksecurefunc(frame, "Hide", OwnerChanged)
-                if type(frame.SetShown) == "function" then hooksecurefunc(frame, "SetShown", OwnerChanged) end
+                hooksecurefunc(frame, "SetShown", OwnerChanged)
             end
         end
     end
@@ -111,31 +98,13 @@ local function TogglePanel()
     MM.Listen("GLOBAL_MOUSE_DOWN", "drawer", ClickAway)
 end
 local function ShowTip(self)
-    if not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-    GameTooltip:SetText(MM.Label("ADDONS", "Addon buttons"))
+    GameTooltip:SetText(S.BlizzardText("ADDONS", "Addon buttons"))
     GameTooltip:AddLine(S.Text("Click to show or hide the collected buttons."), 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end
 local function HideTip(self)
-    if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
-end
-local function Outline(frame, layer)
-    local edges = {}
-    for i = 1, 4 do edges[i] = S.CreateTexture(frame, nil, layer) end
-    edges[1]:SetPoint("TOPLEFT")
-    edges[1]:SetPoint("TOPRIGHT")
-    edges[1]:SetHeight(1)
-    edges[2]:SetPoint("BOTTOMLEFT")
-    edges[2]:SetPoint("BOTTOMRIGHT")
-    edges[2]:SetHeight(1)
-    edges[3]:SetPoint("TOPLEFT")
-    edges[3]:SetPoint("BOTTOMLEFT")
-    edges[3]:SetWidth(1)
-    edges[4]:SetPoint("TOPRIGHT")
-    edges[4]:SetPoint("BOTTOMRIGHT")
-    edges[4]:SetWidth(1)
-    return edges
+    if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
 end
 local function EnsureDrawer()
     if toggle then return end
@@ -167,7 +136,8 @@ local function EnsureDrawer()
     panel.back = S.CreateTexture(panel, nil, "BACKGROUND")
     panel.back:SetAllPoints(panel)
     panel.back:SetColorTexture(0.05, 0.05, 0.05, 0.92)
-    panel.edges = Outline(panel, "BORDER")
+    panel.edges = {}
+    for i = 1, 4 do panel.edges[i] = S.CreateTexture(panel, nil, "BORDER") end
     panel:SetScript("OnEnter", MM.HoverEnter)
     panel:SetScript("OnLeave", MM.HoverLeave)
     panel:SetScript("OnHide", function()
@@ -196,7 +166,8 @@ local function StyleToggle(c)
     end
     local r, g, b = MM.BorderRGB()
     toggle.back:SetColorTexture(r, g, b, 0.8)
-    for i = 1, 4 do panel.edges[i]:SetColorTexture(r, g, b, 1) end
+    -- An opaque one-pixel outline inside the panel, in the border color.
+    S.PlaceEdges(panel.edges, panel, 1, r, g, b, 1)
 end
 local function ToggleShown(c)
     return not c.drawerMouseover or MM.Revealed() or panel:IsShown()
@@ -276,12 +247,7 @@ local function Rescan()
 end
 local function ScheduleRescan()
     if rescanTimer then rescanTimer:Cancel() end
-    local timer = _G.C_Timer
-    if timer and type(timer.NewTimer) == "function" then
-        rescanTimer = timer.NewTimer(RESCAN_DELAY, Rescan)
-    else
-        Rescan()
-    end
+    rescanTimer = C_Timer.NewTimer(RESCAN_DELAY, Rescan)
 end
 local function Library()
     local stub = _G.LibStub

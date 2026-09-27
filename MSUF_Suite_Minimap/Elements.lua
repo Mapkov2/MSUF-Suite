@@ -2,11 +2,10 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
--- Blizzard's own minimap buttons, moved into suite slots around the map. A
--- per-client adapter resolves the frames and skips missing ones. Blizzard keeps
--- deciding when each button is shown (nothing here force-shows a button): a
--- hidden button keeps an empty slot outside the row, and its show/hide re-packs
--- the row one frame later.
+-- Blizzard's own minimap buttons, moved into suite slots around the map.
+-- Missing buttons are skipped. Blizzard keeps deciding when each button is
+-- shown (nothing here force-shows a button): a hidden button keeps an empty
+-- slot outside the row, and its show/hide re-packs the row one frame later.
 local Finite = S.Finite
 local weak = { __mode = "k" }
 local mine, watched = setmetatable({}, weak), setmetatable({}, weak)
@@ -24,145 +23,103 @@ local function Global(name)
     local frame = _G[name]
     return MM.Usable(frame) and frame or nil
 end
--- Row order. Retail names come from MinimapCluster's parent keys, the Classic
--- family (Era, TBC, Mists) uses globals; queue and world-map buttons exist on
--- Classic only and follow Blizzard's visibility without a setting.
+-- Retail and WoW Forever share these names: MinimapCluster's parent keys
+-- and a few globals.
+local DIFFICULTY = {
+    key = "Difficulty",
+    toggle = "showDifficulty",
+    corner = "TOPRIGHT",
+    frame = function() return Cluster("InstanceDifficulty") end,
+}
+-- Row order, then the two corner buttons.
 local SPECS = {
-    {
-        key = "Tracking",
-        toggle = "showTracking",
-        frames = function()
-            return Cluster("Tracking") or
-                Global("MiniMapTracking")
-        end
-    },
-    -- Era and TBC: the day/night indicator; Mists and Retail: the calendar button.
-    { key = "Calendar", toggle = "showCalendar", frames = function() return Global("GameTimeFrame") end },
-    {
-        key = "Mail",
-        toggle = "showMail",
-        frames = function()
-            return Cluster("IndicatorFrame", "MailFrame") or
-                Global("MiniMapMailFrame")
-        end
-    },
+    { key = "Tracking", toggle = "showTracking", frame = function() return Cluster("Tracking") end },
+    { key = "Calendar", toggle = "showCalendar", frame = function() return Global("GameTimeFrame") end },
+    { key = "Mail", toggle = "showMail", frame = function() return Cluster("IndicatorFrame", "MailFrame") end },
     {
         key = "Crafting",
         toggle = "showCrafting",
-        frames = function()
-            return Cluster("IndicatorFrame",
-                "CraftingOrderFrame")
-        end
+        frame = function() return Cluster("IndicatorFrame", "CraftingOrderFrame") end,
     },
-    { key = "Battlefield", frames = function() return Global("MiniMapBattlefieldFrame") end },
-    { key = "Queue", frames = function() return Global("LFGMinimapFrame") end },
-    { key = "WorldMap", frames = function() return Global("MiniMapWorldMapButton") end },
-    { key = "Compartment", toggle = "showCompartment", frames = function() return Global("AddonCompartmentFrame") end },
-    {
-        key = "Difficulty",
-        toggle = "showDifficulty",
-        corner = "TOPRIGHT",
-        frames = function()
-            local retail = Cluster("InstanceDifficulty")
-            if retail then return retail end
-            return Global("MiniMapInstanceDifficulty"), Global("GuildInstanceDifficulty"), Global("MiniMapChallengeMode")
-        end
-    },
+    { key = "Compartment", toggle = "showCompartment", frame = function() return Global("AddonCompartmentFrame") end },
+    DIFFICULTY,
     -- WoW Forever's landing refresh path fails with foreign placement; left alone there.
     {
         key = "Landing",
         toggle = "showLanding",
         corner = "BOTTOMLEFT",
-        frames = function()
+        frame = function()
             if not NS.Client.isForever then return Global("ExpansionLandingPageMinimapButton") end
-        end
+        end,
     },
 }
 
-local function Available(spec)
-    local showDifficulty = _G.MiniMap_ShouldShowDifficulty
-    if spec.key == "Difficulty" and type(showDifficulty) == "function" and not showDifficulty() then return false end
-    return spec.frames() ~= nil
-end
-function S.MinimapElementAvailable(key)
+local function Spec(key)
     for i = 1, #SPECS do
-        local spec = SPECS[i]
-        if spec.key == key and spec.toggle then return Available(spec) end
+        if SPECS[i].key == key then return SPECS[i] end
     end
-    return false
+end
+
+function S.MinimapElementAvailable(key)
+    local spec = Spec(key)
+    return spec ~= nil and spec.frame() ~= nil
 end
 
 -- Read-only preview hint. `nil` means Blizzard has not made this button yet;
 -- `false` means it exists but its owner currently hides it (mail, crafting, etc.).
--- The Retail difficulty widget keeps its outer frame shown even when all
+-- Blizzard's difficulty widget keeps its outer frame shown even when all
 -- content modes are hidden. The preview needs the visible mode, not the
 -- outer frame's visibility or a generic replacement icon.
-local function ActiveDifficulty(frame, second, third)
-    local modes = frame and frame.ContentModes
-    if type(modes) == "table" then
-        for i = 1, #modes do
-            local mode = modes[i]
-            if MM.Usable(mode) then
-                local shown = mode:IsShown()
-                if S.Public(shown) and shown then return mode end
-            end
+-- ContentModes is the widget's parentArray on both clients (InstanceDifficulty.xml).
+local function ActiveDifficulty(frame)
+    local modes = frame.ContentModes
+    for i = 1, #modes do
+        local mode = modes[i]
+        if MM.Usable(mode) then
+            local shown = mode:IsShown()
+            if S.Public(shown) and shown then return mode end
         end
-        return nil
-    end
-    local shown = frame:IsShown()
-    if S.Public(shown) and shown then return frame end
-    if MM.Usable(second) then
-        shown = second:IsShown()
-        if S.Public(shown) and shown then return second end
-    end
-    if MM.Usable(third) then
-        shown = third:IsShown()
-        if S.Public(shown) and shown then return third end
     end
 end
 function S.MinimapDifficultyPreviewSource()
-    local frame, second, third = SPECS[9].frames()
-    if not MM.Usable(frame) then return end
-    local mode = ActiveDifficulty(frame, second, third)
-    if mode and type(frame.ContentModes) ~= "table" then return mode, mode end
-    return frame, mode
+    local frame = DIFFICULTY.frame()
+    if not frame then return end
+    return frame, ActiveDifficulty(frame)
 end
 
 function S.MinimapElementPreviewShown(key)
-    for i = 1, #SPECS do
-        local spec = SPECS[i]
-        if spec.key == key then
-            local frame, second, third = spec.frames()
-            if not MM.Usable(frame) then return nil end
-            local shown
-            if key == "Difficulty" then
-                shown = ActiveDifficulty(frame, second, third) ~= nil
-            else
-                shown = frame:IsShown()
-            end
-            if S.Public(shown) then return shown end
-            return nil
-        end
+    local spec = Spec(key)
+    local frame = spec and spec.frame()
+    if not frame then return nil end
+    local shown
+    if spec == DIFFICULTY then
+        shown = ActiveDifficulty(frame) ~= nil
+    else
+        shown = frame:IsShown()
     end
+    if S.Public(shown) then return shown end
+    return nil
 end
 
 local function Wanted(spec, c)
-    if not spec.toggle then return true end
     local value = c[spec.toggle]
     if spec.key == "Landing" then return value ~= 3 end
     -- The difficulty text replaces Blizzard's flag.
-    if spec.key == "Difficulty" then return value and not c.infoDifficulty and Available(spec) end
+    if spec == DIFFICULTY then return value and not c.infoDifficulty end
     return value
 end
 
 local function RowsChanged()
     if M.active then MM.Queue("rows") end
 end
+local function OwnedVisibilityChanged(frame)
+    if mine[frame] then RowsChanged() end
+end
 local function Watch(frame)
     if watched[frame] then return end
     watched[frame] = true
-    frame:HookScript("OnShow", function(self) if mine[self] then RowsChanged() end end)
-    frame:HookScript("OnHide", function(self) if mine[self] then RowsChanged() end end)
+    frame:HookScript("OnShow", OwnedVisibilityChanged)
+    frame:HookScript("OnHide", OwnedVisibilityChanged)
 end
 local function Slot(key)
     local slot = slots[key]
@@ -171,6 +128,8 @@ local function Slot(key)
     slot:SetFrameLevel(MM.mapLevel + 14)
     slot:EnableMouse(false)
     slot:SetSize(1, 1)
+    -- Settings prefix of the row offsets (MM.LayoutRow).
+    slot.minimapOffsetKey = "button" .. key
     -- Blizzard's mail and crafting indicators call their parent's Layout().
     slot.Layout = RowsChanged
     slots[key] = slot
@@ -190,11 +149,9 @@ local function Own(frame, parent, point, relative, relativePoint, x, y, scale)
         Watch(frame)
     end
 end
-local function Park(a, b, c)
+local function Park(frame)
     local park = MM.park
-    Own(a, park, "CENTER", park, "CENTER", 0, 0)
-    Own(b, park, "CENTER", park, "CENTER", 0, 0)
-    Own(c, park, "CENTER", park, "CENTER", 0, 0)
+    Own(frame, park, "CENTER", park, "CENTER", 0, 0)
 end
 
 -- A plain book badge covers Blizzard's artwork without changing the native
@@ -265,8 +222,10 @@ function MM.LayoutRow(mode, frames, count, size, spacing, distance, start, exten
         local prefix = frame.minimapOffsetKey
         local dx = prefix and (M.config[prefix .. "X"] or 0) or 0
         local dy = prefix and (M.config[prefix .. "Y"] or 0) or 0
-        local x = row[3] * out + row[5] * index * step + dx
-        local y = row[4] * out + row[6] * index * step + dy
+        -- Snap the final coordinate too: per-button offsets may be fractional
+        -- in host units even when the row's base spacing is pixel aligned.
+        local x = MM.Snap(row[3] * out + row[5] * index * step + dx, pixel)
+        local y = MM.Snap(row[4] * out + row[6] * index * step + dy, pixel)
         -- A slot holding a protected button is protected itself until combat ends.
         if combat and frame:IsProtected() then
             MM.Defer()
@@ -299,7 +258,7 @@ local function HideSlot(key)
     if slot and not Locked(slot) then slot:Hide() end
 end
 
-local function PlaceCorner(spec, c, a, b, d)
+local function PlaceCorner(spec, c, frame)
     local slot, corner = Slot(spec.key), spec.corner
     if Locked(slot) then return end
     local scale = c.elementSize / BASE_SIZE
@@ -309,36 +268,33 @@ local function PlaceCorner(spec, c, a, b, d)
     if spec.key == "Landing" then scale = scale * 0.8 end
     slot:ClearAllPoints()
     slot:SetPoint(corner, MM.host, corner, x, y)
-    Own(a, slot, corner, slot, corner, 0, 0, scale)
-    Own(b, slot, corner, slot, corner, 0, 0, scale)
-    Own(d, slot, corner, slot, corner, 0, 0, scale)
+    Own(frame, slot, corner, slot, corner, 0, 0, scale)
     -- Mouseover mode shows the slot on hover; Blizzard still decides the button.
     slot:SetShown(spec.key ~= "Landing" or c.showLanding == 1 or MM.Revealed())
 end
 
 function MM.LayoutElements()
     local c = M.config
-    local size, count = c.elementSize, 0
+    local size, count = MM.Snap(c.elementSize, MM.Pixel()), 0
     for i = 1, #SPECS do
         local spec = SPECS[i]
-        local a, b, d = spec.frames()
-        if spec.key == "Landing" then StyleLanding(a, c) end
-        if not a then
+        local frame = spec.frame()
+        if spec.key == "Landing" then StyleLanding(frame, c) end
+        if not frame then
             HideSlot(spec.key)
         elseif not Wanted(spec, c) then
-            Park(a, b, d)
+            Park(frame)
             HideSlot(spec.key)
         elseif spec.corner then
-            PlaceCorner(spec, c, a, b, d)
+            PlaceCorner(spec, c, frame)
         else
             local slot = Slot(spec.key)
-            local shown = a:IsShown()
+            local shown = frame:IsShown()
             shown = not S.Public(shown) or shown
             if not Locked(slot) then
-                slot.minimapOffsetKey = "button" .. spec.key
                 slot:SetSize(size, size)
                 slot:Show()
-                Own(a, slot, "CENTER", slot, "CENTER", 0, 0, Fit(a, size))
+                Own(frame, slot, "CENTER", slot, "CENTER", 0, 0, Fit(frame, size))
                 if not shown then
                     -- Kept shown so Blizzard's later Show still fires OnShow.
                     slot:ClearAllPoints()

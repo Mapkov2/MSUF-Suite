@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Minimap
 ## Notes: Optional Minimap module for MSUF Suite.
 ## Author: Mapko

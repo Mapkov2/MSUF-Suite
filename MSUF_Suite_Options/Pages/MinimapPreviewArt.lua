@@ -8,9 +8,8 @@ local SHADOW_STRENGTH = { 0.45, 0.25, 0.12 }
 -- Pixel width of one world-map tile row at minimap zoom.
 local TERRAIN_SPAN = 384
 
-local function Public(value)
-    return not S.Public or S.Public(value)
-end
+-- Secret-safe reader from MSUF_Suite (always loaded, also without the runtime).
+local Public = Suite.Public
 
 local function Texture(parent, layer, sub)
     return parent:CreateTexture(nil, layer, nil, sub)
@@ -62,12 +61,7 @@ end
 -- The C_Map calls take plain arguments ("player" and a validated map ID) and
 -- report missing data through nil or empty returns, which are checked below.
 local function ReadTerrain()
-    local api = _G.C_Map
-    if type(api) ~= "table" or type(api.GetBestMapForUnit) ~= "function"
-        or type(api.GetMapArtLayers) ~= "function" or type(api.GetMapArtLayerTextures) ~= "function"
-        or type(api.GetPlayerMapPosition) ~= "function" then
-        return nil
-    end
+    local api = C_Map
     local mapID = api.GetBestMapForUnit("player")
     if not PositiveNumber(mapID) then return nil end
     local layers = api.GetMapArtLayers(mapID)
@@ -82,8 +76,9 @@ local function ReadTerrain()
     end
     local files = api.GetMapArtLayerTextures(mapID, 1)
     if not Public(files) or type(files) ~= "table" then return nil end
+    -- nil where the map has no player position (instances).
     local position = api.GetPlayerMapPosition(mapID, "player")
-    if not Public(position) or type(position) ~= "table" or type(position.GetXY) ~= "function" then return nil end
+    if not position then return nil end
     local u, v = position:GetXY()
     if not (UnitInterval(u) and UnitInterval(v)) then return nil end
     return {
@@ -97,14 +92,17 @@ local function ReadTerrain()
     }
 end
 
+-- The player's class color, or r, g, b while the module runtime (which
+-- defines S.ClassRGB) is not loaded. Shared by the preview painters.
 local function PlayerClassRGB(r, g, b)
-    if type(_G.UnitClass) ~= "function" or not S.ClassRGB then return r, g, b end
-    local _, token = _G.UnitClass("player")
+    if not S.ClassRGB then return r, g, b end
+    local _, token = UnitClass("player")
     if not Public(token) then return r, g, b end
     local cr, cg, cb = S.ClassRGB(token)
     if cr then return cr, cg, cb end
     return r, g, b
 end
+P.MinimapPlayerClassRGB = PlayerClassRGB
 
 -- The map clip: fallback artwork, 3x3 terrain tiles, shape mask and arrow.
 local function BuildMap(art, canvas, canvasLevel)
@@ -119,7 +117,7 @@ local function BuildMap(art, canvas, canvasLevel)
     clip:SetFrameLevel(canvasLevel + 3)
     clip:EnableMouse(false)
     clip:SetAllPoints(map)
-    if clip.SetClipsChildren then clip:SetClipsChildren(true) end
+    clip:SetClipsChildren(true)
     art.clip = clip
 
     local fallback = Texture(clip, "BACKGROUND", -8)
@@ -130,17 +128,11 @@ local function BuildMap(art, canvas, canvasLevel)
     for i = 1, 9 do tiles[i] = Texture(clip, "BACKGROUND", -7) end
     art.tiles = tiles
 
-    if type(clip.CreateMaskTexture) == "function" then
-        local mask = clip:CreateMaskTexture()
-        if mask and type(mask.SetTexture) == "function" then
-            mask:SetAllPoints(clip)
-            for i = 1, #tiles do
-                if tiles[i].AddMaskTexture then tiles[i]:AddMaskTexture(mask) end
-            end
-            if fallback.AddMaskTexture then fallback:AddMaskTexture(mask) end
-            art.mask = mask
-        end
-    end
+    local mask = clip:CreateMaskTexture()
+    mask:SetAllPoints(clip)
+    for i = 1, #tiles do tiles[i]:AddMaskTexture(mask) end
+    fallback:AddMaskTexture(mask)
+    art.mask = mask
 
     local arrow = Texture(clip, "OVERLAY", 2)
     arrow:SetPoint("CENTER", clip, "CENTER")
@@ -245,13 +237,13 @@ function Art:Paint(config, scale, layerOn)
 
     local showMap = layerOn("map")
     self.clip:SetShown(showMap)
-    if self.mask then self.mask:SetTexture(round and CIRCLE or SQUARE_MASK) end
+    self.mask:SetTexture(round and CIRCLE or SQUARE_MASK)
     PaintTerrain(self, width, showMap)
     self.arrow:SetShown(showMap)
 
     local border = PaintBorder(self, config, scale, width, height, round, layerOn("border"))
     PaintShadow(self, config, scale, width, height, round, border, layerOn("shadow"))
-    if self.style then self.style:Paint(config, scale, layerOn, false) end
+    self.style:Paint(config, scale, layerOn, false)
 end
 
 function P.CreateMinimapPreviewArt(canvas)
@@ -261,8 +253,6 @@ function P.CreateMinimapPreviewArt(canvas)
     BuildFrame(art, canvas)
     art.terrain = ReadTerrain()
     art.terrainAvailable = art.terrain ~= nil
-    if Suite.MinimapStyle then
-        art.style = Suite.MinimapStyle.Create(canvas, canvasLevel + 1, canvasLevel + 4)
-    end
+    art.style = Suite.MinimapStyle.Create(canvas, canvasLevel + 1, canvasLevel + 4)
     return art
 end

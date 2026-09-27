@@ -78,16 +78,13 @@ local TIER_COLORS = { "e0a060", "4aa8ff", "b36bff", "a0a0a0", "40d8d8", "ff9a33"
 local FLEX = { [14] = true, [15] = true, [17] = true, [33] = true }
 
 local Finite = S.Finite
+-- 12.1.0 lacks C_Weather (12.1.5 and WoW Forever have it).
+local GetCurrentWeather = C_Weather and C_Weather.GetCurrentWeather
 
+-- Retail and WoW Forever have every other text's API.
 function S.CanShowMinimapInfo(key)
-    if key == "Durability" then return type(GetInventoryItemDurability) == "function" end
-    if key == "Location" then return type(GetZoneText) == "function" or type(GetSubZoneText) == "function" end
-    if key == "Weather" then return C_Weather and type(C_Weather.GetCurrentWeather) == "function" or false end
-    if not C_Timer or type(C_Timer.NewTimer) ~= "function" or type(GetTime) ~= "function" then return false end
-    if key == "Clock" then return type(date) == "function" or type(GetGameTime) == "function" end
-    if key == "FPS" then return type(GetFramerate) == "function" end
-    if key == "Latency" then return type(GetNetStats) == "function" end
-    return C_Map and type(C_Map.GetBestMapForUnit) == "function" and type(C_Map.GetPlayerMapPosition) == "function"
+    if key == "Weather" then return GetCurrentWeather ~= nil end
+    return true
 end
 
 local function Clock(entry)
@@ -95,7 +92,7 @@ local function Clock(entry)
     local stamp = S.ReadInfoSource("clockStamp")
     local second = Finite(stamp) and math.floor(stamp) % 60 or nil
     local server, localTime
-    if c.infoClockSource ~= 2 and type(GetGameTime) == "function" then
+    if c.infoClockSource ~= 2 then
         local hour, minute = S.ReadInfoSource("clockTime")
         if Finite(hour) and Finite(minute) then
             local suffix = ""
@@ -109,9 +106,15 @@ local function Clock(entry)
             server = server .. suffix
         end
     end
-    if c.infoClockSource ~= 1 and type(date) == "function" then localTime = date(entry.clockFormat) end
+    if c.infoClockSource ~= 1 then localTime = date(entry.clockFormat) end
     local text = c.infoClockSource == 1 and server or c.infoClockSource == 2 and localTime
         or server and localTime and server .. " / " .. localTime
+    if c.infoClockDate then
+        local calendarDate = date("%d-%m-%Y")
+        if type(calendarDate) == "string" and calendarDate ~= "" then
+            text = text and text .. "  " .. calendarDate or calendarDate
+        end
+    end
     return text or "--", c.infoClockSeconds and 1 or second and 60 - second or 1
 end
 
@@ -181,17 +184,14 @@ local function Location(entry)
     end
     local color
     if entry.useZoneColor then
-        local reader = C_PvP and C_PvP.GetZonePVPInfo or GetZonePVPInfo
-        local kind = type(reader) == "function" and reader()
+        local kind = C_PvP.GetZonePVPInfo()
         color = S.Public(kind) and type(kind) == "string" and zoneColors[kind] or "ffd100"
     end
     return entry.locationText, nil, nil, color
 end
--- C_Weather exists on WoW Forever only.
+-- Runs only while S.CanShowMinimapInfo("Weather") allows the text (C_Weather).
 local function Weather()
-    local api = C_Weather
-    if not api or type(api.GetCurrentWeather) ~= "function" then return "--" end
-    local info = api.GetCurrentWeather()
+    local info = GetCurrentWeather()
     if not S.Public(info) or type(info) ~= "table" then return "--" end
     local kind = info.type
     if not S.Public(kind) or type(kind) ~= "number" then return "--" end
@@ -204,24 +204,19 @@ local readers = {
 }
 local Color = S.RGB
 
+-- The player's class color as six hex digits (texts store colors as hex).
 local function ClassColor()
-    if type(UnitClass) ~= "function" then return end
     local _, token = UnitClass("player")
-    if not S.Public(token) or type(token) ~= "string" then return end
-    local palette = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
-    local color = type(palette) == "table" and palette[token]
-    if not S.Public(color) or type(color) ~= "table" or not Finite(color.r) or not Finite(color.g)
-        or not Finite(color.b) then
-        return
-    end
-    return string.format("%02x%02x%02x", math.floor(math.max(0, math.min(1, color.r)) * 255 + .5),
-        math.floor(math.max(0, math.min(1, color.g)) * 255 + .5),
-        math.floor(math.max(0, math.min(1, color.b)) * 255 + .5))
+    if not S.Public(token) then return end
+    local r, g, b = S.ClassRGB(token)
+    if not Finite(r) or not Finite(g) or not Finite(b) then return end
+    return string.format("%02x%02x%02x", math.floor(math.max(0, math.min(1, r)) * 255 + .5),
+        math.floor(math.max(0, math.min(1, g)) * 255 + .5),
+        math.floor(math.max(0, math.min(1, b)) * 255 + .5))
 end
 
 -- Group size and difficulty letter, e.g. "20M", "5H", "M+12", "25LFR".
 local function DifficultyText()
-    if type(GetInstanceInfo) ~= "function" then return "" end
     local _, kind, difficulty, _, maxPlayers, _, dynamic, _, groupSize = GetInstanceInfo()
     if not S.Public(kind) or kind == "none" or kind == "interior" or kind == "neighborhood"
         or not Finite(difficulty) then
@@ -230,7 +225,7 @@ local function DifficultyText()
     local tag, letter, tier = TAGS[difficulty], nil, 1
     if tag then
         letter, tier = tag[1], tag[2]
-    elseif type(GetDifficultyInfo) == "function" then
+    else
         local _, _, heroic, _, displayHeroic, displayMythic = GetDifficultyInfo(difficulty)
         if S.Public(displayMythic) and displayMythic then
             letter, tier = "M", 3
@@ -239,12 +234,9 @@ local function DifficultyText()
         else
             letter = "N"
         end
-    else
-        return ""
     end
     if difficulty == 8 then
-        local reader = C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo
-        local level = type(reader) == "function" and reader()
+        local level = C_ChallengeMode.GetActiveKeystoneInfo()
         return Finite(level) and level > 0 and letter .. math.floor(level) or letter, tier
     end
     if tag and tag[3] then return letter, tier end
@@ -254,8 +246,7 @@ local function DifficultyText()
 end
 
 local function Invites()
-    local calendar = C_Calendar
-    local count = calendar and type(calendar.GetNumPendingInvites) == "function" and calendar.GetNumPendingInvites()
+    local count = C_Calendar.GetNumPendingInvites()
     return Finite(count) and count > 0
 end
 
@@ -265,7 +256,7 @@ local function Cancel()
         M.infoTimer = nil
     end
     M.infoVisible = false
-    if S.HideMinimapInfoTooltip then S.HideMinimapInfoTooltip() end
+    MM.HideInfoTooltip()
 end
 
 local function Visible()
@@ -274,20 +265,10 @@ local function Visible()
         or not frame:IsVisible() then
         return false
     end
-    if type(frame.GetEffectiveAlpha) == "function" then
-        local alpha = frame:GetEffectiveAlpha()
-        return Finite(alpha) and alpha > 0
-    end
-    -- Legacy clients may lack GetEffectiveAlpha; still honor faded ancestors.
-    while frame do
-        if NS.Safety.IsForbidden(frame) then return false end
-        local alpha = frame:GetAlpha()
-        if not Finite(alpha) or alpha <= 0 then return false end
-        frame = frame:GetParent()
-    end
-    return true
+    local alpha = frame:GetEffectiveAlpha()
+    return Finite(alpha) and alpha > 0
 end
-S.IsMinimapInfoVisible = Visible
+MM.InfoVisible = Visible
 
 -- The box and the invite mark follow the text's width, re-measured on change only.
 local function Decorate(entry)
@@ -355,13 +336,13 @@ local Tick
 Tick = function()
     M.infoTimer = nil
     if not Visible() then return end
-    local now, soonest = type(GetTime) == "function" and GetTime(), nil
+    local now, soonest = GetTime(), nil
     for _, key in ipairs(keys) do
         local entry = M.infoEntries[key]
         if entry and entry.active and entry.button:IsShown() then
             if eventFields[key] then
                 if entry.dirty then Sample(entry, key) end
-            elseif Finite(now) then
+            else
                 if entry.due == nil or (entry.due and entry.due <= now) then
                     local delay = Sample(entry, key)
                     entry.due = delay and now + delay or false
@@ -374,7 +355,7 @@ Tick = function()
     if soonest then M.infoTimer = S.ScheduleDataTick("minimap", math.max(.05, soonest - now), Tick) end
 end
 
-function S.UpdateMinimapInfoVisibility()
+function MM.UpdateInfoVisibility()
     if not Visible() then
         Cancel()
         return
@@ -439,46 +420,27 @@ local function WorldChanged()
     end
 end
 
-local function OpenCalendar()
-    if type(ToggleCalendar) == "function" then
-        ToggleCalendar()
-        return
-    end
-    if GameTimeFrame and not NS.Safety.IsForbidden(GameTimeFrame) and type(GameTimeFrame.Click) == "function" then
-        GameTimeFrame:Click()
-    end
-end
+-- ToggleCalendar and ToggleTimeManager are the bootstrap entry points of
+-- Blizzard's load-on-demand calendar and clock (they load the addon first).
 local function Click(button, mouseButton)
     if not M.active or NS.IsCombatLocked() then return end
     if button.infoKey == "Clock" then
         local calendar = M.config.infoClockClick == 1
         if mouseButton == "RightButton" then calendar = not calendar end
-        if calendar then
-            OpenCalendar()
-        elseif type(ToggleTimeManager) == "function" then
-            ToggleTimeManager()
-        else
-            if type(TimeManager_Toggle) ~= "function" then
-                local loader = C_AddOns and C_AddOns.LoadAddOn or LoadAddOn
-                if type(loader) == "function" then loader("Blizzard_TimeManager") end
-            end
-            if type(TimeManager_Toggle) == "function" then TimeManager_Toggle() end
-        end
-    elseif (button.infoKey == "Coordinates" or button.infoKey == "Location" and M.config.infoLocationClick)
-        and type(ToggleWorldMap) == "function" then
+        if calendar then ToggleCalendar() else ToggleTimeManager() end
+    elseif button.infoKey == "Coordinates" or button.infoKey == "Location" and M.config.infoLocationClick then
         ToggleWorldMap()
-    elseif button.infoKey == "Durability" and type(ToggleCharacter) == "function" then
+    elseif button.infoKey == "Durability" then
         ToggleCharacter("PaperDollFrame")
     end
 end
 
 local function Tooltip(button)
-    if not M.active or not GameTooltip then return end
-    if S.ShowMinimapInfoTooltip and S.ShowMinimapInfoTooltip(button) then return end
+    if not M.active or MM.ShowInfoTooltip(button) then return end
     local key = button.infoKey
     local entry, title = M.infoEntries[key], TITLES[key]
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
-    GameTooltip:SetText(MM.Label(title[1], title[2]))
+    GameTooltip:SetText(S.BlizzardText(title[1], title[2]))
     GameTooltip:AddLine(entry.text or "--", 1, 1, 1)
     if key == "Clock" then
         if entry.invite and entry.invite:IsShown() then
@@ -495,11 +457,7 @@ local function Tooltip(button)
 end
 
 local function LeaveTooltip(button)
-    if S.HideMinimapInfoTooltip then
-        S.HideMinimapInfoTooltip(button)
-    elseif GameTooltip and GameTooltip:GetOwner() == button then
-        GameTooltip:Hide()
-    end
+    MM.HideInfoTooltip(button)
 end
 
 local function CreateEntry(key)
@@ -522,7 +480,7 @@ local function EnsureFrame()
     if not M.infoFrame then
         M.infoFrame = S.CreateFrame("Frame", nil, host)
         M.infoFrame:EnableMouse(false)
-        M.infoFrame:SetScript("OnShow", S.UpdateMinimapInfoVisibility)
+        M.infoFrame:SetScript("OnShow", MM.UpdateInfoVisibility)
         M.infoFrame:SetScript("OnHide", Cancel)
         M.infoEntries = {}
     end
@@ -620,7 +578,7 @@ end
 -- Coordinates can be set to hide inside instances.
 local function CoordinatesHidden(c)
     if not (c.infoCoordinates and c.infoCoordinatesHideInstance) then return false end
-    local inside = type(IsInInstance) == "function" and IsInInstance()
+    local inside = IsInInstance()
     return not S.Public(inside) or inside == true
 end
 
@@ -635,10 +593,9 @@ local function SyncTextEvents(c)
     local location = c.infoLocation and S.CanShowMinimapInfo("Location")
     local weather = c.infoWeather and S.CanShowMinimapInfo("Weather")
     local coordinates = c.infoCoordinates and S.CanShowMinimapInfo("Coordinates")
-    local difficulty = c.infoDifficulty and type(GetInstanceInfo) == "function"
+    local difficulty = c.infoDifficulty
     -- The mark stands in for Blizzard's calendar button while that is not shown.
     M.inviteWanted = c.infoClock and not (c.showCalendar and S.MinimapElementAvailable("Calendar"))
-        and C_Calendar ~= nil and type(C_Calendar.GetNumPendingInvites) == "function"
     Listen(DURABILITY_EVENTS, DurabilityChanged, durability)
     Listen(ZONE_EVENTS, ZoneChanged, location or coordinates or difficulty or weather)
     ListenOne("WEATHER_CHANGED", WeatherChanged, weather)
@@ -742,7 +699,7 @@ function MM.RefreshTexts()
     MM.SetExtent("texts", 0, 0, above > 0 and above + border or 0, below > 0 and below + border or 0)
     M.infoFrame:Show()
     M.infoConfiguring = false
-    S.UpdateMinimapInfoVisibility()
+    MM.UpdateInfoVisibility()
 end
 
 MM.OnHover(function(shown)

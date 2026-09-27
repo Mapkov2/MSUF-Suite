@@ -51,7 +51,10 @@ do
         local G = W.G
         G.GetServerTime = function() return 1700000000 + W.now end
         G.GetGameTime = function() reads.clock = reads.clock + 1; return 14, 3 end
-        G.date = function(format) return format:find("%%S") and "15:03:20" or "15:03" end
+        G.date = function(format)
+            if format == "%d-%m-%Y" then return "26-09-2026" end
+            return format:find("%%S") and "15:03:20" or "15:03"
+        end
         G.GetFramerate = function() reads.fps = reads.fps + 1; return fps end
         G.GetNetStats = function() reads.latency = reads.latency + 1; return 0, 0, home, world end
         G.C_Map = { GetBestMapForUnit = function() reads.map = (reads.map or 0) + 1; return mapID end, GetPlayerMapPosition = function()
@@ -72,6 +75,9 @@ do
         and not frame.mouse and MM.overlay == nil, "text layer leaves native map clicks free")
     local clock = M.infoEntries.Clock
     check(clock.label.text == "14:03" and W.Pending() == 1 and W.Pending(40) == 1, "clock scheduling")
+    assert(S.Set("minimap", "infoClockDate", true))
+    check(clock.label.text == "14:03  26-09-2026", "optional date on minimap clock")
+    assert(S.Set("minimap", "infoClockDate", false))
     check(clock.button.points[1][1] == "TOP" and clock.label.justify == "CENTER", "clock anchor")
     check(clock.label.font[1] == "Fonts\\FRIZQT__.TTF" and clock.label.font[2] == 12
         and clock.label.font[3] == "OUTLINE,SLUG", "native Slug font")
@@ -178,10 +184,9 @@ do
     local keystone, invites = 12, 0
     local W = H.New(root, "Mainline", { beforeModules = function(W)
         local G = W.G
-        -- A client without C_Timer.NewTimer: sampled texts are unavailable,
-        -- next-frame deferrals run immediately.
+        -- Next-frame deferrals run immediately; the texts here never poll.
         W.timerAPI = G.C_Timer
-        G.C_Timer = { After = function(_, callback) callback() end }
+        G.C_Timer = { After = function(_, callback) callback() end, NewTimer = W.timerAPI.NewTimer }
         G.GetInventoryItemDurability = function(slot)
             durabilityReads = durabilityReads + 1
             if slot == 1 then return current, 100 elseif slot == 5 then return 200, 200 end
@@ -199,7 +204,10 @@ do
     local G, S = W.G, W.S
     H.Enable(W, { captured = true, infoClock = false, infoDurability = true })
     local M, MM = W.M, W.MM
-    check(S.CanShowMinimapInfo("Durability") and S.CanShowMinimapInfo("Location") and not S.CanShowMinimapInfo("FPS"), "no-timer capabilities")
+    -- Retail has every text's API except Forever's weather.
+    check(S.CanShowMinimapInfo("Durability") and S.CanShowMinimapInfo("Location") and S.CanShowMinimapInfo("FPS")
+        and not S.CanShowMinimapInfo("Weather"), "Retail text capabilities")
+    check(W.Pending() == 0, "event-only texts started a timer")
     local durability, location = M.infoEntries.Durability, M.infoEntries.Location
     check(durability.text:find("10%", 1, true) and durability.text:find("|TInterface", 1, true) and durabilityReads == 19, "durability")
     check(location.text == "Stormwind" and location.label.textColor[1] == 1, "location")
@@ -283,7 +291,7 @@ do
     check(not M.context.frame.events.UPDATE_INVENTORY_DURABILITY and not M.context.frame.events.ZONE_CHANGED, "events retained")
     check(not M.context.frame.events.PLAYER_ENTERING_WORLD or M.context.callbacks.PLAYER_ENTERING_WORLD, "world event bookkeeping")
     check(not M.infoFrame.shown, "texts frame shown without texts")
-    print("Minimap event texts: durability, location, click option, difficulty tags, invite mark and no-timer clients passed")
+    print("Minimap event texts: durability, location, click option, difficulty tags, invite mark and no polling passed")
 end
 
 -- Hover details subscribe and query only during an owned hover.
@@ -307,7 +315,8 @@ do
         G.GetSavedWorldBossInfo = function() return "World boss", 1, 7200 end
         G.RequestRaidInfo = function() requests = requests + 1 end
         G.Enum = { WeeklyRewardChestThresholdType = { Raid = 1, Activities = 2, RankedPvP = 3, World = 4, Concession = 5 } }
-        G.C_AddOns = { IsAddOnLoaded = function() return false end,
+        G.C_AddOns = { IsAddOnLoaded = function() return false end, LoadAddOn = function() end,
+            GetAddOnEnableState = function() return 2 end,
             DoesAddOnExist = function(name)
                 return name == "MSUF_Suite_Minimap" or (name == "Blizzard_WeeklyRewards" and vaultAvailable)
             end }
@@ -358,7 +367,16 @@ do
     Leave()
     check(not events.WEEKLY_REWARDS_UPDATE, "vault event leaked")
     vaultAvailable = false; Enter()
-    check(tip.lines[2] == "Unavailable on this client.", "vault unavailable"); Leave(); vaultAvailable = true
+    check(tip.lines[2] == "Unavailable on this client.", "vault unavailable"); Leave()
+    -- The options page offers the vault only where Blizzard's weekly rewards exist.
+    check(S.CanShowMinimapTooltip(3) == false and S.CanShowMinimapTooltip(2) == true
+        and S.CanShowMinimapTooltip(1) == true, "tooltip choices offered without their data")
+    vaultAvailable = true
+    check(S.CanShowMinimapTooltip(3) == true, "vault tooltip choice hidden although the data exists")
+    -- The detail tooltip helpers are minimap internals, not Suite exports.
+    check(S.ShowMinimapInfoTooltip == nil and S.HideMinimapInfoTooltip == nil and S.IsMinimapInfoVisible == nil
+        and S.UpdateMinimapInfoVisibility == nil and W.MM.ShowInfoTooltip and W.MM.HideInfoTooltip
+        and W.MM.InfoVisible and W.MM.UpdateInfoVisibility, "minimap tooltip internals leak into the Suite API")
     assert(S.Set("minimap", "infoClockTooltip", 4)); tip:Hide(); Enter()
     check(not tip.shown, "no tooltip")
     assert(S.Set("minimap", "infoClockTooltip", 1)); Enter()

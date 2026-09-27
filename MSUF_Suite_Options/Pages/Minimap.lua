@@ -34,12 +34,12 @@ P.Gates[ID] = function(rule, key)
     local element = ELEMENTS[rule.key]
     -- Retail creates the expansion button lazily; its setting must be editable
     -- before the Blizzard_ExpansionLandingPage addon has loaded.
-    if element == "Landing" and Suite.Client and Suite.Client.isMainline and not Suite.Client.isForever then return true end
+    if element == "Landing" and not Suite.Client.isForever then return true end
     if element and S.MinimapElementAvailable and not S.MinimapElementAvailable(element) then return false end
     return true
 end
 
--- Lockout and Great Vault tooltips depend on client APIs (no vault on Classic).
+-- Lockout and Great Vault tooltips depend on client APIs.
 local function TooltipChoice(index)
     if index ~= 2 and index ~= 3 then return true end
     return not S.CanShowMinimapTooltip or S.CanShowMinimapTooltip(index) and true or false
@@ -64,7 +64,7 @@ local function PresetButton(body, spec, index, width)
         label:SetPoint("BOTTOM", button, "BOTTOM", 0, 5)
         label:SetJustifyH("CENTER")
     end
-    local path = Suite.MinimapStyle and Suite.MinimapStyle.paths[spec[1] - 1]
+    local path = Suite.MinimapStyle.paths[spec[1] - 1]
     local swatch = button:CreateTexture(nil, "ARTWORK")
     swatch:SetPoint("CENTER", button, "CENTER", 0, 10)
     swatch:SetSize(index == 1 and 17 or 24, index == 1 and 17 or 24)
@@ -118,7 +118,7 @@ local function Build(ctx)
         { "Collect addon buttons again", function() if S.MinimapRescanButtons then S.MinimapRescanButtons() end end,
           function() return S.MinimapRescanButtons ~= nil and P.Get(ID, "enabled") and P.Get(ID, "collectButtons")
               and not Suite.Client.IsAddOnLoaded("MinimapButtonButton") end, key = "rescan" },
-        { "Reload UI", function() if ReloadUI then ReloadUI() end end,
+        { "Reload UI", function() ReloadUI() end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
     })
     sections.style_presets = BuildStylePresets(ctx, b)
@@ -132,7 +132,7 @@ local function Build(ctx)
         sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = false })
     end
-    for _, field in ipairs(Suite.MinimapInfoFields or {}) do
+    for _, field in ipairs(Suite.MinimapInfoFields) do
         local section = "info_" .. field:lower()
         sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(field == "FPS" and "FPS" or field), P.SectionRules(ID, section),
             { open = false })

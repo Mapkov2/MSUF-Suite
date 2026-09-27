@@ -19,23 +19,19 @@ local function Text(value)
     return S.Public(value) and type(value) == "string" and value or nil
 end
 
+-- The vault tooltip reads the data of Blizzard's weekly rewards addon.
 function S.CanShowMinimapTooltip(value)
-    if value == 2 then
-        return type(GetNumSavedInstances) == "function" and type(GetSavedInstanceInfo) == "function"
-    elseif value == 3 then
-        return NS.Client.HasAddOn("Blizzard_WeeklyRewards") and C_WeeklyRewards
-            and type(C_WeeklyRewards.GetActivities) == "function"
-            and Enum and type(Enum.WeeklyRewardChestThresholdType) == "table" or false
-    end
+    if value == 3 then return NS.Client.HasAddOn("Blizzard_WeeklyRewards") end
     return true
 end
 
 local function Owned(button)
-    return GameTooltip and not NS.Safety.IsForbidden(GameTooltip) and type(GameTooltip.GetOwner) == "function"
-        and GameTooltip:GetOwner() == button
+    return not NS.Safety.IsForbidden(GameTooltip) and GameTooltip:GetOwner() == button
 end
 
-function S.HideMinimapInfoTooltip(button)
+-- Hides the button's tooltip; without a button (or for the owner) it also
+-- ends the detail tooltip and releases its data events.
+function MM.HideInfoTooltip(button)
     if button and owner and button ~= owner then
         if Owned(button) then GameTooltip:Hide() end
         return
@@ -47,17 +43,13 @@ function S.HideMinimapInfoTooltip(button)
     if previous and Owned(previous) then GameTooltip:Hide() end
 end
 
-MM.HideInfoTooltip = S.HideMinimapInfoTooltip
-
 local function ResetText(seconds, extended)
     if not NonNegative(seconds) then return "--" end
     local text
     if seconds <= 0 then
         text = S.Text("Expired")
-    elseif type(SecondsToTime) == "function" then
-        text = SecondsToTime(seconds, true, nil, 2)
     else
-        text = math.ceil(seconds / 60) .. " " .. S.Text("minutes")
+        text = SecondsToTime(seconds, true, nil, 2)
     end
     return extended and text .. " (" .. S.Text("Extended") .. ")" or text
 end
@@ -88,7 +80,7 @@ local function Lockouts(tooltip)
             end
         end
     end
-    if c.tooltipWorldBosses and type(GetNumSavedWorldBosses) == "function" and type(GetSavedWorldBossInfo) == "function" then
+    if c.tooltipWorldBosses then
         local total = GetNumSavedWorldBosses()
         if NonNegative(total) then
             for index = 1, math.min(math.floor(total), 100) do
@@ -113,23 +105,18 @@ local function Lockouts(tooltip)
 end
 
 local function RewardLevel(activity)
-    if not M.config.tooltipRewardLevels or not NonNegative(activity.id)
-        or type(C_WeeklyRewards.GetExampleRewardItemHyperlinks) ~= "function" then
-        return nil
-    end
-    local reader = C_Item and C_Item.GetDetailedItemLevelInfo or GetDetailedItemLevelInfo
-    if type(reader) ~= "function" then return nil end
+    if not M.config.tooltipRewardLevels or not NonNegative(activity.id) then return nil end
     local link = C_WeeklyRewards.GetExampleRewardItemHyperlinks(activity.id)
     if not Text(link) or link == "" then return nil end
-    local level = reader(link)
+    local level = C_Item.GetDetailedItemLevelInfo(link)
     if S.Public(level) and level == nil then waitingForItems = true end
     return NonNegative(level) and math.floor(level) or nil
 end
 
 local function ActivityLabel(kind)
     local types = Enum.WeeklyRewardChestThresholdType
-    if kind == types.Raid then return MM.Label("RAIDS", "Raids") end
-    if kind == types.Activities then return MM.Label("DUNGEONS", "Dungeons") end
+    if kind == types.Raid then return S.BlizzardText("RAIDS", "Raids") end
+    if kind == types.Activities then return S.BlizzardText("DUNGEONS", "Dungeons") end
     if kind == types.RankedPvP then return S.Text("Rated PvP") end
     if kind == types.World then return S.Text("World activities") end
 end
@@ -138,20 +125,18 @@ local function ActivityLevel(activity)
     local types = Enum.WeeklyRewardChestThresholdType
     local level = activity.level
     if activity.type == types.Raid then
-        local name = type(GetDifficultyInfo) == "function" and GetDifficultyInfo(level)
+        local name = GetDifficultyInfo(level)
         return Text(name) or S.Text("Difficulty") .. " " .. math.floor(level)
     elseif activity.type == types.RankedPvP then
-        local name = PVPUtil and type(PVPUtil.GetTierName) == "function" and PVPUtil.GetTierName(level)
+        local name = PVPUtil.GetTierName(level)
         return Text(name) or S.Text("Tier") .. " " .. math.floor(level)
     elseif activity.type == types.World then
         return S.Text("Tier") .. " " .. math.floor(level)
     end
-    if NonNegative(activity.activityTierID) and type(C_WeeklyRewards.GetDifficultyIDForActivityTier) == "function" then
+    if NonNegative(activity.activityTierID) then
         local difficulty = C_WeeklyRewards.GetDifficultyIDForActivityTier(activity.activityTierID)
-        local heroic = DifficultyUtil and DifficultyUtil.ID and DifficultyUtil.ID.DungeonHeroic
-        if NonNegative(difficulty) and NonNegative(heroic) and difficulty == heroic then
-            return MM.Label("PLAYER_DIFFICULTY2",
-                "Heroic")
+        if NonNegative(difficulty) and difficulty == DifficultyUtil.ID.DungeonHeroic then
+            return S.BlizzardText("PLAYER_DIFFICULTY2", "Heroic")
         end
     end
     return S.Text("Keystone level") .. " " .. math.floor(level)
@@ -159,10 +144,8 @@ end
 
 local function Vault(tooltip)
     waitingForItems = false
-    if type(C_WeeklyRewards.HasAvailableRewards) == "function" then
-        local ready = C_WeeklyRewards.HasAvailableRewards()
-        if S.Public(ready) and ready == true then tooltip:AddLine(S.Text("A weekly reward is available."), .45, 1, .45) end
-    end
+    local ready = C_WeeklyRewards.HasAvailableRewards()
+    if S.Public(ready) and ready == true then tooltip:AddLine(S.Text("A weekly reward is available."), .45, 1, .45) end
     local activities = C_WeeklyRewards.GetActivities()
     if not S.Public(activities) or type(activities) ~= "table" then
         tooltip:AddLine(S.Text("Weekly reward information unavailable."))
@@ -195,9 +178,9 @@ local function Vault(tooltip)
 end
 
 local function Draw()
-    if not owner or not M.active or not S.IsMinimapInfoVisible() or NS.Safety.IsForbidden(owner)
+    if not owner or not M.active or not MM.InfoVisible() or NS.Safety.IsForbidden(owner)
         or not owner:IsVisible() or not Owned(owner) then
-        S.HideMinimapInfoTooltip()
+        MM.HideInfoTooltip()
         return
     end
     GameTooltip:ClearLines()
@@ -222,16 +205,17 @@ Changed = function() Draw() end
 local RAID_INFO_INTERVAL = 30
 local lastRequest
 local function RequestLockouts()
-    if type(RequestRaidInfo) ~= "function" then return end
-    local now = type(GetTime) == "function" and GetTime()
-    if NonNegative(now) and lastRequest and now - lastRequest < RAID_INFO_INTERVAL then return end
-    lastRequest = NonNegative(now) and now or nil
+    local now = GetTime()
+    if lastRequest and now - lastRequest < RAID_INFO_INTERVAL then return end
+    lastRequest = now
     RequestRaidInfo()
 end
 
-function S.ShowMinimapInfoTooltip(button)
-    S.HideMinimapInfoTooltip()
-    if not M.active or not S.IsMinimapInfoVisible() then return true end
+-- Returns true when the button's tooltip is handled here (shown or
+-- suppressed); false leaves the plain text tooltip to Info.lua.
+function MM.ShowInfoTooltip(button)
+    MM.HideInfoTooltip()
+    if not M.active or not MM.InfoVisible() then return true end
     local key = button.infoKey
     local selected = (key == "Clock" or key == "FPS" or key == "Latency") and M.config["info" .. key .. "Tooltip"] or 1
     if selected == 1 then
@@ -239,7 +223,7 @@ function S.ShowMinimapInfoTooltip(button)
         return false
     end
     if selected == 4 then return true end
-    if not M.active or not GameTooltip or NS.Safety.IsForbidden(GameTooltip) then return true end
+    if NS.Safety.IsForbidden(GameTooltip) then return true end
     owner, mode = button, selected
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     Draw()

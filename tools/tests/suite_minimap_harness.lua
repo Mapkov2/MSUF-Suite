@@ -1,9 +1,11 @@
 -- Offline WoW stand-in for the minimap contracts. Each New() call builds an
--- isolated global environment (setfenv), a Blizzard minimap world for one
--- client family and a loaded suite, so Retail, Forever and Classic scenarios
--- run side by side in one process. Protected frames (the Minimap and every
--- ancestor of it) reject layout and visibility writes during combat unless a
--- secure state driver performs them.
+-- isolated global environment (setfenv), Blizzard's minimap world and a loaded
+-- suite, so Retail and WoW Forever scenarios run side by side in one process.
+-- Protected frames (the Minimap and every ancestor of it) reject layout and
+-- visibility writes during combat unless a secure state driver performs them.
+-- options.dispatchErrors (a list) installs securecallfunction: a callback
+-- that raises is reported into the list and its caller goes on. Without it,
+-- securecallfunction calls directly and errors propagate.
 local H = {}
 
 -- Runtime files in load order across the shared and minimap AddOns.
@@ -16,7 +18,21 @@ function H.New(root, client, options)
     G._G = G
     local W = { G = G, combat = false, secure = false, now = 0, timers = {}, frames = {}, drivers = {},
         hooks = 0, movers = {}, hostRecords = {}, cvars = { rotateMinimap = "0" }, calls = {} }
-    local classic = client == "Vanilla" or client == "TBC" or client == "Mists"
+    assert(client == "Mainline" or client == "Forever", "the Suite supports Retail and WoW Forever only")
+    local reports = options.dispatchErrors
+    if reports then
+        -- A coroutine keeps the raising callback's error from unwinding the caller.
+        G.securecallfunction = function(callback, ...)
+            local results = { coroutine.resume(coroutine.create(callback), ...) }
+            if not results[1] then
+                reports[#reports + 1] = tostring(results[2])
+                return
+            end
+            return unpack(results, 2, table.maxn(results))
+        end
+    else
+        G.securecallfunction = function(callback, ...) return callback(...) end
+    end
 
     local function Count(key) W.calls[key] = (W.calls[key] or 0) + 1 end
     local function Visible(frame)
@@ -112,6 +128,8 @@ function H.New(root, client, options)
     function R:SetJustifyV(value) self.justifyV = value end
     function R:SetWordWrap(value) self.wrapWords = value end
     function R:GetStringWidth() return self.text and #tostring(self.text) * 6 or 0 end
+    -- The width without any truncation; a region here never truncates.
+    R.GetUnboundedStringWidth = R.GetStringWidth
     local function Region(parent, name, layer)
         local region = setmetatable({ parent = parent, name = name, layer = layer, shown = true, alpha = 1, points = {} }, R)
         if name then G[name] = region end
@@ -345,6 +363,29 @@ function H.New(root, client, options)
     end
     G.C_Timer = { After = function(delay, callback) Schedule(delay, callback) end, NewTimer = Schedule }
     G.GetTime = function() return W.now end
+    -- Client APIs Retail and WoW Forever always have, with neutral values (open
+    -- world, no invites, no keystone). Scenarios replace the ones they test.
+    G.date = os.date
+    G.GetServerTime = function() return 1700000000 end
+    G.GetGameTime = function() return 12, 0 end
+    G.GetFramerate = function() return 60 end
+    G.GetNetStats = function() return 0, 0, 20, 20 end
+    G.GetInventoryItemDurability = function() end
+    G.GetZoneText, G.GetSubZoneText = function() return "" end, function() return "" end
+    G.C_Map = { GetBestMapForUnit = function() end, GetPlayerMapPosition = function() end }
+    G.GetMoney = function() return 0 end
+    G.IsInInstance = function() return false end
+    G.GetInstanceInfo = function() return "Azeroth", "none", 0, "", 0, 0, false, 0, 0 end
+    G.GetDifficultyInfo = function() end
+    G.C_PvP = { GetZonePVPInfo = function() end }
+    G.C_ChallengeMode = { GetActiveKeystoneInfo = function() end }
+    G.C_Calendar = { GetNumPendingInvites = function() return 0 end }
+    G.C_Housing = { IsInsideHouseOrPlot = function() return false end }
+    G.OpenAllBags = function() end
+    G.SecondsToTime = function(seconds) return math.ceil(seconds / 60) .. " minutes" end
+    G.RequestRaidInfo = function() end
+    G.ToggleCalendar, G.ToggleTimeManager = function() end, function() end
+    G.ToggleWorldMap, G.ToggleCharacter = function() end, function() end
     G.GetCVar = function(key) return W.cvars[key] end
     G.SetCVar = function(key, value) W.cvars[key] = tostring(value) end
     G.C_CVar = { GetCVar = G.GetCVar, SetCVar = G.SetCVar }
@@ -353,8 +394,11 @@ function H.New(root, client, options)
     G.GetRealmName = function() return "Realm" end
     G.RAID_CLASS_COLORS = { MAGE = { r = 0.2, g = 0.4, b = 0.8 } }
     G.PixelUtil = { GetPixelToUIUnitFactor = function() return 1 end }
-    G.C_AddOns = { IsAddOnLoaded = function() return false end,
-        DoesAddOnExist = function(name) return type(name) == "string" and name:match("^MSUF_Suite") ~= nil end }
+    -- The harness loads the modules itself; LoadAddOn has nothing left to load.
+    G.C_AddOns = { IsAddOnLoaded = function() return false end, LoadAddOn = function() end,
+        DoesAddOnExist = function(name) return type(name) == "string" and name:match("^MSUF_Suite") ~= nil end,
+        GetAddOnEnableState = function() return 2 end }
+    G.UnitGUID = function() return "Player-Test" end
     G.EditModeManagerFrame = { IsInitialized = function() return W.editModeReady == true end }
     G.MSUF_PixelLayoutRegion = function(region) return region end
     G.MSUF_EditModeAPI = {
@@ -376,28 +420,29 @@ function H.New(root, client, options)
     function G.GameTooltip:AddLine(text) self.lines[#self.lines + 1] = text end
     function G.GameTooltip:AddDoubleLine(left, right) self.lines[#self.lines + 1] = left .. " | " .. right end
     G.GameTooltip.lines = {}
-    G.MSUF_NS = { Client = { Family = classic and "Classic" or "Mainline", Flavor = client == "Forever" and "Mainline" or client,
-        IsForever = client == "Forever", IsRetail = not classic, SupportsEvent = function() return true end } }
+    G.MSUF_NS = { Client = { Family = "Mainline", Flavor = "Mainline", IsForever = client == "Forever",
+        IsRetail = true, SupportsEvent = function() return true end } }
     local ui = New("Frame", "UIParent")
     ui.width, ui.height, ui.strata, ui.level = 1366, 768, "MEDIUM", 0
     W.UIParent = ui
 
-    -- Blizzard's minimap world (names from the mirror, per client family).
+    -- Blizzard's minimap world (names from the mirror; Forever uses the
+    -- Mainline minimap with the Camelot underlay and coordinate readout).
     local cluster = New("Frame", "MinimapCluster", ui)
     cluster.strata, cluster.mouse = "LOW", true
     cluster:SetSize(256, 256)
     local container = New("Frame", nil, cluster)
-    container:SetSize(classic and 140 or 215, classic and 140 or 226)
+    container:SetSize(215, 226)
     cluster.MinimapContainer = container
     local map = New("Minimap", "Minimap", container)
     map.protected = true
-    map:SetSize(classic and 140 or 198, classic and 140 or 198)
+    map:SetSize(198, 198)
     map:SetPoint("CENTER", container, "CENTER", 0, 0)
     map.center = { 1256, 638 }
     map.mouse = true
-    map.wheel = not classic
+    map.wheel = true
     local backdrop = New("Frame", "MinimapBackdrop", map)
-    backdrop:SetSize(classic and 192 or 215, classic and 192 or 226)
+    backdrop:SetSize(215, 226)
     backdrop:CreateTexture("MinimapCompassTexture", "OVERLAY")
     local function Button(name, parent, w, h, hidden)
         local button = New("Button", name, parent)
@@ -408,59 +453,32 @@ function H.New(root, client, options)
         return button
     end
     W.Button = Button
-    if classic then
-        cluster.ZoneTextButton = Button("MinimapZoneTextButton", cluster, 140, 12)
-        Button("MinimapToggleButton", cluster, 32, 32)
-        backdrop:CreateTexture("MinimapBorder", "ARTWORK")
-        backdrop:CreateTexture("MinimapNorthTag", "OVERLAY")
-        Button("MiniMapMailFrame", map, 33, 33, true).kind = "Frame"
-        Button("MiniMapBattlefieldFrame", map, 33, 33, true)
-        Button("MiniMapWorldMapButton", backdrop, 33, 33, client ~= "Mists")
-        Button("MinimapZoomIn", backdrop, 32, 32)
-        Button("MinimapZoomOut", backdrop, 32, 32)
-        local tracking = Button("MiniMapTracking", backdrop, 33, 33)
-        tracking.kind = "Frame"
-        if client ~= "Vanilla" then
-            local dropdown = Button("MiniMapTrackingButton", tracking, 32, 32)
-            function dropdown:OpenMenu() self.menuOpen = true end
-            function dropdown:CloseMenu() self.menuOpen = false end
-            function dropdown:IsMenuOpen() return self.menuOpen == true end
-        end
-        if client == "Mists" then Button("GameTimeFrame", cluster, 40, 40)
-        else Button("GameTimeFrame", backdrop, 50, 50).kind = "Frame" end
-        Button("MiniMapInstanceDifficulty", container, 38, 46, true).kind = "Frame"
-        Button("GuildInstanceDifficulty", container, 38, 46, true).kind = "Frame"
-        Button("MiniMapChallengeMode", container, 27, 36, true).kind = "Frame"
-        Button("LFGMinimapFrame", backdrop, 33, 33, true)
-        Button("TimeManagerClockButton", backdrop, 60, 28)
-        local mists = client == "Mists"
-        G.MiniMap_ShouldShowDifficulty = function() return mists end
-    else
-        cluster.BorderTop = New("Frame", nil, cluster)
-        cluster.ZoneTextButton = Button(nil, cluster, 135, 12)
-        local tracking = New("Frame", nil, cluster)
-        tracking:SetSize(17, 17)
-        tracking:SetPoint("RIGHT", cluster.BorderTop, "LEFT", -2, 0)
-        tracking.Button = Button(nil, tracking, 13, 14)
-        function tracking.Button:OpenMenu() self.menuOpen = true end
-        function tracking.Button:CloseMenu() self.menuOpen = false end
-        function tracking.Button:IsMenuOpen() return self.menuOpen == true end
-        cluster.Tracking = tracking
-        local indicator = New("Frame", nil, cluster)
-        cluster.IndicatorFrame = indicator
-        indicator.MailFrame = Button(nil, indicator, 20, 15, true)
-        indicator.CraftingOrderFrame = Button(nil, indicator, 20, 15, true)
-        local zoomIn, zoomOut = Button(nil, map, 17, 17, true), Button(nil, map, 17, 9, true)
-        map.ZoomIn, map.ZoomOut = zoomIn, zoomOut
-        cluster.InstanceDifficulty = Button(nil, cluster, 35.5, 36.5)
-        Button("GameTimeFrame", cluster, 19, 18)
-        Button("AddonCompartmentFrame", cluster, 16, 16, true)
-        Button("TimeManagerClockButton", cluster, 40, 16)
-        Button("ExpansionLandingPageMinimapButton", backdrop, 53, 53)
-        if client == "Forever" then
-            backdrop:CreateTexture("MinimapCompassTextureUnderlay", "OVERLAY")
-            container.PlayerCoords = New("Frame", nil, container)
-        end
+    cluster.BorderTop = New("Frame", nil, cluster)
+    cluster.ZoneTextButton = Button(nil, cluster, 135, 12)
+    local tracking = New("Frame", nil, cluster)
+    tracking:SetSize(17, 17)
+    tracking:SetPoint("RIGHT", cluster.BorderTop, "LEFT", -2, 0)
+    tracking.Button = Button(nil, tracking, 13, 14)
+    function tracking.Button:OpenMenu() self.menuOpen = true end
+    function tracking.Button:CloseMenu() self.menuOpen = false end
+    function tracking.Button:IsMenuOpen() return self.menuOpen == true end
+    cluster.Tracking = tracking
+    local indicator = New("Frame", nil, cluster)
+    cluster.IndicatorFrame = indicator
+    indicator.MailFrame = Button(nil, indicator, 20, 15, true)
+    indicator.CraftingOrderFrame = Button(nil, indicator, 20, 15, true)
+    local zoomIn, zoomOut = Button(nil, map, 17, 17, true), Button(nil, map, 17, 9, true)
+    map.ZoomIn, map.ZoomOut = zoomIn, zoomOut
+    cluster.InstanceDifficulty = Button(nil, cluster, 35.5, 36.5)
+    -- The widget's content modes (a parentArray on both clients); none here.
+    cluster.InstanceDifficulty.ContentModes = {}
+    Button("GameTimeFrame", cluster, 19, 18)
+    Button("AddonCompartmentFrame", cluster, 16, 16, true)
+    Button("TimeManagerClockButton", cluster, 40, 16)
+    Button("ExpansionLandingPageMinimapButton", backdrop, 53, 53)
+    if client == "Forever" then
+        backdrop:CreateTexture("MinimapCompassTextureUnderlay", "OVERLAY")
+        container.PlayerCoords = New("Frame", nil, container)
     end
     W.map, W.cluster, W.container, W.backdrop = map, cluster, container, backdrop
 
@@ -473,7 +491,7 @@ function H.New(root, client, options)
     G.MSUFSuite = W.Suite
     -- Core files follow the TOC up to the controller (shared test support).
     local support = dofile(root .. "/tools/tests/suite_test_support.lua")
-    for _, file in ipairs(support.TocFiles(root, "MSUF_Suite", classic and client or "Mainline")) do
+    for _, file in ipairs(support.TocFiles(root, "MSUF_Suite", "Mainline")) do
         if file:match("%.lua$") then Load("MSUF_Suite/" .. file, "MSUF_Suite", W.Suite) end
         if file == "Core/Suite.lua" then break end
     end
@@ -483,6 +501,8 @@ function H.New(root, client, options)
     W.S.Normalize(W.Suite.DB)
     W.private = {}
     if options.beforeModules then options.beforeModules(W) end
+    -- Blizzard builds its shared font objects at startup on every client.
+    G.GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
     for _, file in ipairs({ "Surfaces", "Runtime", "DataSources", "EditMode" }) do
         Load("MSUF_Suite_Modules/" .. file .. ".lua", "MSUF_Suite_Modules", W.private)
     end
