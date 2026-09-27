@@ -1,6 +1,8 @@
 local _, P = ...
 -- Shared glue for the suite pages. Everything here uses Menu2's public table
 -- (_G.MSUF2), which the Main and the Classic MSUF build expose identically.
+-- Pages check a Menu2 helper before use: an older MSUF install may lack it.
+-- S.* functions of a load-on-demand module addon exist only once it loaded.
 local Suite = assert(_G.MSUFSuite, "MSUF_Suite is required")
 local M = assert(_G.MSUF2, "MSUF options are required")
 P.Suite, P.S, P.M, P.host = Suite, Suite.Suite, M, _G.MSUF_NS
@@ -94,18 +96,21 @@ function P.RestoreHistoryState(state)
     if type(active) ~= "table" then return false end
     Suite.DB = active
     S.Normalize(active)
-    if previousProfile ~= Suite.RootDB.activeProfile and Suite.OnProfileChanged then
-        Suite.OnProfileChanged(Suite.RootDB.activeProfile)
-    end
     local skin, skinRoot = SkinRoot()
     if type(state.skinRoot) == "table" and type(skinRoot) == "table" and type(skinRoot.profiles) == "table" then
         RestoreRoot(skinRoot, state.skinRoot, SKIN_ROOT_SKIP)
         skin.Database.SetActiveProfile(skinRoot.activeProfile)
     end
-    if Suite.Skin and Suite.Skin.enabled ~= (Suite.RootDB.skinEnabled == true) then
-        Suite.Skin.SetEnabled(Suite.RootDB.skinEnabled == true)
+    -- The restored state reaches the modules in one pass: the skin switch
+    -- defers its own pass, then either the controller's profile listener or
+    -- ApplyAll applies everything.
+    local skinEnabled = Suite.RootDB.skinEnabled == true
+    if Suite.Skin.enabled ~= skinEnabled then Suite.Skin.SetEnabled(skinEnabled, true) end
+    if previousProfile ~= Suite.RootDB.activeProfile then
+        Suite.OnProfileChanged(Suite.RootDB.activeProfile)
+    else
+        S.ApplyAll()
     end
-    S.ApplyAll()
     P.Refresh()
     return true
 end
@@ -123,10 +128,10 @@ function P.ApplyForeverStyle()
     if P.Combat() then return false end
     -- Load the dormant skin database before the history snapshot so undo also
     -- includes its palette even when Skinning was previously switched off.
-    if Suite.Skin and Suite.Skin.EnsureEngine then Suite.Skin.EnsureEngine() end
+    Suite.Skin.EnsureEngine()
     return P.WithHistory("MSUF Forever suite look", "suite:forever-look", function()
         if not S.ApplyGlobalLook("foreverGlass") then return false end
-        if Suite.Skin and Suite.Skin.EnsureEngine and Suite.Skin.EnsureEngine() then
+        if Suite.Skin.EnsureEngine() then
             local skin = _G.MapkoSkin
             if skin and skin.addonName == "MSUF_Suite_Skin" and skin.Theme and skin.Theme.ApplyLook then
                 if skin.Theme.ApplyLook("foreverGlass") == false then return false end
@@ -202,10 +207,31 @@ function P.SetMany(id, values)
     return ok, reason
 end
 
+-- Module availability, kept for one menu refresh. Every control asks through
+-- P.RuleEnabled, and each answer costs AddOn API calls (and a status string
+-- while the AddOn is off). The first refresher of every Suite page and of the
+-- Colors category (Register.lua, Controls.lua) starts a new pass.
+local availableOk, availableWhy = {}, {}
+function P.ForgetAvailability()
+    for id in pairs(availableOk) do availableOk[id], availableWhy[id] = nil, nil end
+end
+
+function P.Available(id)
+    local ok = availableOk[id]
+    if ok == nil then
+        local why
+        ok, why = S.Availability(id)
+        ok = ok == true
+        availableOk[id], availableWhy[id] = ok, why
+    end
+    return ok, availableWhy[id]
+end
+
 -- Repaints the visible suite page; controller changes queued in combat reach
 -- the menu through Suite.Options.RefreshAll (set in Register.lua).
 function P.Refresh()
-    if P.RefreshSkinPageShape then P.RefreshSkinPageShape() end
+    P.ForgetAvailability()
+    P.RefreshSkinPageShape()
     if M.RequestRefresh then M.RequestRefresh(nil, "suite") end
 end
 
@@ -226,7 +252,7 @@ P.ChoiceGates = {}
 function P.RuleEnabled(id, rule, resolve)
     if P.Combat() then return false end
     if rule.key == "enabled" then return true end
-    local available = S.Availability(id)
+    local available = P.Available(id)
     if not available or not P.Get(id, "enabled") then return false end
     local function Key(key) return resolve and resolve(key) or key end
     local seen = 0
@@ -262,7 +288,7 @@ function P.Text(parent, text, x, y, width, color)
     label:SetPoint("TOPLEFT", x or 16, y or 0)
     label:SetWidth(width or 300)
     label:SetJustifyH("LEFT")
-    if label.SetWordWrap then label:SetWordWrap(true) end
+    label:SetWordWrap(true)
     return label
 end
 
@@ -290,12 +316,13 @@ function P.FinishBody(b, body, bottomY, pad)
 end
 
 -- Module status line: availability, controller status and page feedback.
+-- Statuses arrive as English text and are translated here, once.
 function P.StatusText(id)
     local reason = P.feedback[id]
-    if reason then return Tr(reason) end
-    local ok, why = S.Availability(id)
-    if not ok then return Tr(why or "Unavailable on this client") end
-    return Tr(S.Status(id))
+    if reason then return Suite.StatusText(reason, Tr) end
+    local ok, why = P.Available(id)
+    if not ok then return Suite.StatusText(why or "Unavailable on this client", Tr) end
+    return Suite.StatusText(S.Status(id), Tr)
 end
 
 function P.RegisterPage(spec)
@@ -303,8 +330,20 @@ function P.RegisterPage(spec)
     P.pages[#P.pages + 1] = spec
 end
 
+-- S.OpenEditMode is an export of the load-on-demand runtime (EditMode.lua),
+-- which loads with the first active module. Edit Mode buttons stay disabled
+-- until it exists.
+function P.EditModeReady()
+    return S.OpenEditMode ~= nil
+end
+
+-- Opens MSUF Edit Mode with a module's element selected.
+function P.OpenEditMode(id, element)
+    if P.Combat() or not S.OpenEditMode then return false end
+    return S.OpenEditMode(id, element)
+end
+
 -- Opens MSUF Edit Mode with a module's element selected; closes the menu.
 function P.MoveOnScreen(id, element)
-    if P.Combat() or not S.OpenEditMode then return end
-    if S.OpenEditMode(id, element) and M.frame and M.frame.Hide then M.frame:Hide() end
+    if P.OpenEditMode(id, element) and M.frame and M.frame.Hide then M.frame:Hide() end
 end

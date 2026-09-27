@@ -1,8 +1,29 @@
 local root = assert(arg[1], "repository root required")
 local money = 100000
+-- The client's securecallfunction reports an error to the error handler and
+-- returns nothing; this harness models exactly that.
+local reported = {}
+local function Dispatch(callback, ...)
+    local results = { pcall(callback, ...) }
+    if not results[1] then
+        reported[#reported + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2)
+end
 GetMoney = function() return money end
 UnitGUID = function() return "Player-test" end
-local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading)
+-- The core's secret-safe readers (MSUF_Suite/Core/Platform.lua). This harness
+-- loads no Platform and switches issecretvalue late, so it checks at call time.
+local function Public(value) return not (issecretvalue and issecretvalue(value)) end
+local function PublicText(value)
+    return Public(value) and type(value) == "string" and value ~= "" and value or nil
+end
+local function Finite(value)
+    return Public(value) and type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+local function Noop() end
+local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing)
     local frame, loginFrame, starts, messages = nil, nil, 0, 0
     CreateFrame = function()
         local created = { events = {} }
@@ -17,10 +38,29 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     MSUFSuiteDB, MapkoSkinDB = stored, legacy
     MapkoSkin = oldRunning and { Suite = { started = true } } or nil
     local owner = {
+        Client = { isForever = false },
         IsCombatLocked = function() return combat == true end,
         Suite = { Start = function() starts = starts + 1 end },
         Print = function() messages = messages + 1 end,
+        Dispatch = Dispatch,
+        PublicText = PublicText,
+        Finite = Finite,
+        -- The modules Startup.lua drives (MapkoSkin.lua, Profiles.lua, Menu.lua,
+        -- Installer.lua): no legacy skin database, nothing else to do here.
+        Skin = { LoadLegacyDatabase = function() return false end, EnsureEngine = Noop, SetEnabled = Noop },
+        SuiteProfiles = { EnsureNewCharacterProfile = Noop, SyncActive = Noop,
+            EnsureRetailForeverCooldownLayout = Noop, EnsureRetailResourceStack = Noop },
+        Menu = { Watch = Noop },
+        Installer = { MaybeShow = Noop },
     }
+    if failing then
+        owner.Skin = {
+            LoadLegacyDatabase = function() return false end,
+            EnsureEngine = function() error("skin engine failed") end,
+            SetEnabled = function() error("skin switch failed") end,
+        }
+        owner.Menu = { Watch = function() error("menu watch failed") end }
+    end
     if legacyOnDemand then
         owner.Skin = {
             LoadLegacyDatabase = function()
@@ -32,6 +72,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         }
     end
     assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", owner)
     assert(MSUFSuite == owner)
     frame:callback("ADDON_LOADED", "Unrelated")
@@ -69,6 +110,10 @@ owner, starts, messages = Scenario(future, legacy, false, false)
 assert(starts == 0 and messages == 1 and MSUFSuiteDB == future and owner.DB == nil)
 owner, starts, messages = Scenario(nil, legacy, true, true)
 assert(starts == 0 and messages == 1 and owner.startupError == "legacy-runtime-active")
+-- Startup steps run isolated: failing skin and menu steps are reported and
+-- the modules still start.
+owner, starts = Scenario(nil, nil, false, false, false, nil, false, true)
+assert(starts == 1 and #reported == 3 and owner.DB, "a failing startup step kept the modules from starting")
 local first = Scenario(nil, nil, false, false)
 assert(first.RootDB.suiteGold["Player-test"] == 100000,
     "fresh login did not capture the starting gold")

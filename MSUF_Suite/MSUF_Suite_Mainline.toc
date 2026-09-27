@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite
 ## Notes: Optional interface modules in the MSUF menu.
 ## Author: Mapko
@@ -15,6 +15,7 @@ Core\ForeverFrames.lua
 Core\RetailFactory.lua
 Core\RetailSkinFactory.lua
 Core\Database.lua
+Core\SessionGold.lua
 Core\SuiteCatalog.lua
 Core\Catalog\ActionBars.lua
 Core\Bindings.lua
@@ -27,6 +28,8 @@ Core\Catalog\HUD.lua
 Core\Catalog\DataTexts.lua
 Core\Catalog\BuffReminders.lua
 Core\Catalog\Chat.lua
+Core\NameplateStyle.lua
+Core\Catalog\Nameplates.lua
 Core\Catalog\CooldownManager.lua
 Core\Suite.lua
 Integrations\MapkoSkin.lua

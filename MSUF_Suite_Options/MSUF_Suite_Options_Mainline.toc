@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
@@ -12,6 +12,7 @@ Menu\Bridge.lua
 Menu\Controls.lua
 Pages\ActionBars.lua
 Pages\MinimapPreviewArt.lua
+Pages\MinimapPreviewPaint.lua
 Pages\MinimapPreview.lua
 Pages\Minimap.lua
 Pages\DamageMeter.lua
@@ -21,9 +22,15 @@ Pages\QualityOfLife.lua
 Pages\HUD.lua
 Pages\BuffReminders.lua
 Pages\Chat.lua
+Pages\NameplatesEditor.lua
+Pages\NameplatesPreview.lua
+Pages\Nameplates.lua
 Pages\CooldownManagerData.lua
+Pages\CooldownManagerBars.lua
 Pages\CooldownManagerWidgets.lua
+Pages\CooldownManagerPicker.lua
 Pages\CooldownManagerPopover.lua
+Pages\CooldownManagerPreviewIcons.lua
 Pages\CooldownManagerPreview.lua
 Pages\CooldownManager.lua
 Pages\Appearance.lua

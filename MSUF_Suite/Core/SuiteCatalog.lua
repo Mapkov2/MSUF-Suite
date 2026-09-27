@@ -20,6 +20,7 @@ local moduleAddons = {
     dataTexts = "MSUF_Suite_DataTexts",
     buffReminders = "MSUF_Suite_BuffReminders",
     chat = "MSUF_Suite_Chat",
+    nameplates = "MSUF_Suite_Nameplates",
     cooldownManager = "MSUF_Suite_CooldownManager",
     objectives = "MSUF_Suite_Modules",
     announcements = "MSUF_Suite_Modules",
@@ -27,6 +28,12 @@ local moduleAddons = {
 }
 local Build = {}
 NS.CatalogBuild = Build
+
+-- The nine anchor points of every "Screen anchor" and position choice, with
+-- their choice labels. Saved profiles store the choice index, so this order
+-- never changes.
+NS.AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+NS.AnchorLabels = { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }
 
 function Build.Number(key, label, value, min, max, step)
     return { key=key, label=label, default=value, min=min, max=max, step=step or 1 }
@@ -101,6 +108,33 @@ end
 
 function Build.Section(id, section, sectionTitle, rules, opts)
     for i = 1, #rules do Build.Add(id, rules[i], section, sectionTitle, opts) end
+end
+
+-- Only Smooth and Sharp rendering draw a text shadow; its opacity and
+-- distance also follow the shadow switch.
+function Build.LinkFontShadow(rules)
+    local rendering = { key = "fontRendering", values = { [1] = true, [2] = true } }
+    rules.fontShadow.requiresChoice = rendering
+    for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
+        rules[key].enableKey = "fontShadow"
+        rules[key].requiresChoice = rendering
+    end
+end
+
+-- The "Text" section of the action bars and the cooldown manager: font,
+-- outline, rendering and shadow, followed by the module's own `extra` rules.
+function Build.TextSection(id, extra)
+    local rules = {
+        Build.Font("font", "Font"),
+        Build.Choice("fontOutline", "Text outline", 1, { "Outline", "Thick outline", "None" }),
+        Build.Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+        Build.Bool("fontShadow", "Text shadow"),
+        Build.Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
+        Build.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
+    }
+    for i = 1, #extra do rules[#rules + 1] = extra[i] end
+    Build.Section(id, "text", "Text", rules)
+    Build.LinkFontShadow(catalog[id].rules)
 end
 
 function NS.FinalizeCatalog()

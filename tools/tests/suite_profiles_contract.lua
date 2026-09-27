@@ -1,10 +1,25 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local Suite, combat, encodings, frameImports = {}, false, {}, 0
-MSUF_NS = { Client = { Family = "Classic", Flavor = "Vanilla" } }
+-- The client's securecallfunction reports an error to the error handler and
+-- returns nothing; this harness models exactly that.
+local reported = {}
+securecallfunction = function(callback, ...)
+    local results = { pcall(callback, ...) }
+    if not results[1] then
+        reported[#reported + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2)
+end
+-- Main MSUF (Retail-only) publishes no client model.
+MSUF_NS = {}
+WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 SlashCmdList = {}
 InCombatLockdown = function() return combat end
 Minimap = { SetMaskTexture = function() end }
+-- Neither MapkoSkin nor the Suite skin is installed.
+C_AddOns = { DoesAddOnExist = function() return false end, IsAddOnLoaded = function() return false end }
 MapkoSkin = setmetatable({}, { __index = function() error("profiles read the skin owner") end })
 Enum = { CompressionMethod = { Deflate = 1 } }
 C_EncodingUtil = {}
@@ -33,7 +48,7 @@ MSUF_SwitchProfile = function(name)
     return true
 end
 MSUF_DeleteProfile = function(name) assert(name ~= MSUF_ActiveProfile);MSUF_GlobalDB.profiles[name] = nil;return true end
-Support.Load(root, "MSUF_Suite", Suite, "Core/Profiles.lua", nil, "Vanilla")
+Support.Load(root, "MSUF_Suite", Suite, "Core/Profiles.lua")
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
 local P, DB, IO = Suite.SuiteProfiles, Suite.Database, Suite.ProfileIO
@@ -82,6 +97,26 @@ local activate = DB.Activate
 DB.Activate = function(name) if name == "Rollback" then return false, "injected activation failure" end;return activate(name) end
 assert(not P.Import("Rollback", bundle))
 assert(P.Active() == "Shared" and not DB.GetProfile("Rollback") and not MSUF_GlobalDB.profiles.Rollback)
+-- Errors during an import or an installation are reported and rolled back
+-- like a refusal, and profile sync always resumes.
+local importFrames, errors = MSUF_Profiles_ImportIntoNewProfile, #reported
+MSUF_Profiles_ImportIntoNewProfile = function(name)
+    MSUF_GlobalDB.profiles[name], MSUF_ActiveProfile = {}, name
+    error("frame import failed")
+end
+assert(not P.Import("RaisedImport", bundle) and #reported == errors + 1 and Suite.suppressProfileSync == nil
+    and P.Active() == "Shared" and not DB.GetProfile("RaisedImport") and not MSUF_GlobalDB.profiles.RaisedImport,
+    "a raising frame import left profile sync suppressed or a partial profile behind")
+MSUF_Profiles_ImportIntoNewProfile = importFrames
+DB.Activate = function(name) if name == "RaisedActivation" then error("activation failed") end;return activate(name) end
+assert(not P.Import("RaisedActivation", bundle) and #reported == errors + 2 and P.Active() == "Shared"
+    and not DB.GetProfile("RaisedActivation") and not MSUF_GlobalDB.profiles.RaisedActivation,
+    "a raising activation left a partial profile behind")
+local raid = DB.GetProfile("Raid")
+DB.Activate = function(name) if name == "Raid" then error("activation failed") end;return activate(name) end
+assert(not P.InstallSuiteFactory("Raid", raid, nil) and #reported == errors + 3
+    and DB.GetProfile("Raid") == raid and DB.GetActiveProfileName() == "Shared",
+    "a raising installer activation skipped the rollback")
 DB.Activate = activate
 assert(P.Activate("Default"))
 local clean = assert(IO.PrepareTable({ suite = { schema = 1, modules = {
@@ -295,6 +330,70 @@ local function Same(a, b)
 end
 local function Encoded(text) return encodings[tonumber(text:match("(%d+)$"))] end
 local S = Suite.Suite
+do
+    for _, look in ipairs({ 1, 3 }) do
+        local profile = { suite = { schema = 1, revision = 13, modules = { nameplates = {
+            look = look, enemyTextOutline = 1, enemyNeutralColor = "e5bd45", enemyTrivialColor = "777777",
+            enemyNeutralEnabled = false, enemyThreatWarningColor = "123456",
+        } } } }
+        S.Normalize(profile)
+        local plates = profile.suite.modules.nameplates
+        assert(plates.enemyTextOutline == (look == 1 and 4 or 1)
+            and plates.enemyNeutralColor == (look == 1 and "e5db00" or "e5bd45")
+            and plates.enemyTrivialColor == (look == 1 and "be301d" or "777777")
+            and plates.enemyNeutralEnabled == (look == 1)
+            and plates.enemyThreatWarningColor == "123456", "Jundies migration overwrote custom choices or missed old defaults")
+        plates.enemyTextOutline = 1
+        S.Normalize(profile)
+        assert(plates.enemyTextOutline == 1, "Jundies palette migration was not one-time")
+    end
+end
+for _, case in ipairs({
+    { look = 3, mode = 1, expected = 2 },
+    { look = 1, mode = 3, expected = 3 },
+    { look = 2, mode = 1, expected = 1 },
+}) do
+    local profile = { suite = { schema = 1, revision = 12, modules = { nameplates = {
+        look = case.look, enemyCastEnabled = case.mode, enemyCastSkin = true, enemyCastDisplay = 2,
+    } } } }
+    S.Normalize(profile)
+    assert(profile.suite.modules.nameplates.enemyCastEnabled == case.expected,
+        "legacy castbar visibility migration ignored Hide or Blizzard settings")
+    profile.suite.modules.nameplates.enemyCastEnabled = 1
+    S.Normalize(profile)
+    assert(profile.suite.modules.nameplates.enemyCastEnabled == 1, "castbar repair repeated after later user choice")
+end
+for _, case in ipairs({ { 1, 35, 100 }, { 3, 35, 35 }, { 1, 80, 80 } }) do
+    local profile = { suite = { schema = 1, revision = 14, modules = { nameplates = {
+        look = case[1], enemyCastFillAlpha = case[2],
+    } } } }
+    S.Normalize(profile)
+    assert(profile.suite.modules.nameplates.enemyCastFillAlpha == case[3], "native cast opacity migration lost custom values")
+    profile.suite.modules.nameplates.enemyCastFillAlpha = 35
+    S.Normalize(profile)
+    assert(profile.suite.modules.nameplates.enemyCastFillAlpha == 35, "native cast opacity migration repeated")
+end
+local oldJundies = { suite = { schema = 1, revision = 10,
+    modules = { nameplates = { look = 1, nativeStyle = 2, nativeSize = 2,
+        enemyEliteMarker = true, enemyQuestMarker = true } } } }
+local customSmall = { suite = { schema = 1, revision = 10,
+    modules = { nameplates = { look = 3, nativeStyle = 2, nativeSize = 2,
+        enemyEliteMarker = true, enemyQuestMarker = true } } } }
+S.Normalize(oldJundies)
+S.Normalize(customSmall)
+assert(oldJundies.suite.modules.nameplates.nativeSize == 3
+    and customSmall.suite.modules.nameplates.nativeSize == 2
+    and oldJundies.suite.revision == S.MigrationRevision,
+    "Jundies size migration changed a custom Small plate or skipped the old preset")
+assert(not oldJundies.suite.modules.nameplates.enemyEliteMarker
+    and oldJundies.suite.modules.nameplates.enemyQuestMarker
+    and customSmall.suite.modules.nameplates.enemyEliteMarker
+    and customSmall.suite.modules.nameplates.enemyQuestMarker,
+    "Jundies marker migration must remove old factory glyphs and preserve custom settings")
+oldJundies.suite.modules.nameplates.enemyEliteMarker = true
+S.Normalize(oldJundies)
+assert(oldJundies.suite.modules.nameplates.enemyEliteMarker,
+    "completed marker migration must not override later choices")
 local live = Suite.DB.suite.modules
 live.chat.look, live.damageMeter.look, live.dataTexts.look, live.xpBar.look = 2, 2, 2, 2
 live.xpBar.point, live.xpBar.x, live.xpBar.y = 8, 0, 148
@@ -347,8 +446,11 @@ Suite.Client.isForever = false
 assert(not foreverCopy.actionbars.enabled and not foreverCopy.objectives.enabled
     and not foreverCopy.announcements.enabled, "a Forever copy switched modules back on")
 
-C_EncodingUtil = nil
+-- A host without MSUF's codec exports nothing.
+local encodeCompact = MSUF_EncodeCompactTable
+MSUF_EncodeCompactTable = nil
 assert(not P.Export())
+MSUF_EncodeCompactTable = encodeCompact
 assert(not DB.Delete("SwitchOnly") and DB.GetProfile("SwitchOnly"), "the active profile was deleted")
 encodings[#encodings + 1] = {
     look = "forever",
@@ -436,4 +538,24 @@ foreverCooldowns.ext_y = -380
 Suite.RootDB.installation = { status = "complete", profile = "forever" }
 assert(not P.EnsureRetailForeverCooldownLayout() and foreverCooldowns.ext_anchor == 3,
     "actual Forever client received a Retail-only CDM anchor migration")
-print("Standalone profiles: unified MSUF, module and skin sharing, lifecycle, migration, collision/combat guards, rollback and sanitization passed")
+do
+    Suite.Client.isForever = false
+    local source = Suite.DB.suite.modules.nameplates
+    source.look, source.protectImport, source.enemyNameOffsetX = 3, false, 44
+    local plateModule, plateBundle = assert(P.ExportModule("nameplates")), assert(P.Export())
+    source.protectImport, source.enemyNameOffsetX = true, 17
+    assert(P.Import("ProtectedNameplates", plateBundle))
+    local copied = Suite.DB.suite.modules.nameplates
+    assert(copied.protectImport and copied.enemyNameOffsetX == 17 and copied ~= source,
+        "full Suite import did not preserve the protected module independently")
+    assert(P.ImportModule(plateModule) and Suite.DB.suite.modules.nameplates.enemyNameOffsetX == 44,
+        "explicit nameplate import was blocked by full-profile protection")
+    local incoming = Suite.DB.suite.modules.nameplates
+    incoming.protectImport = true
+    plateBundle = assert(P.Export())
+    incoming.protectImport, incoming.enemyNameOffsetX = false, 5
+    assert(P.Import("UnprotectedNameplates", plateBundle))
+    assert(Suite.DB.suite.modules.nameplates.enemyNameOffsetX == 44,
+        "incoming protection flag incorrectly preserved the old profile")
+end
+print("Standalone profiles: unified profiles, nameplate import protection, lifecycle and sanitization passed")

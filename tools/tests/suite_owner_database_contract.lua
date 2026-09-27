@@ -1,5 +1,6 @@
 local root = assert(arg[1], "repository root required")
-local Suite = {}
+-- The parts of the core the database uses (Platform.lua and the controller).
+local Suite = { Client = { isForever = false }, OnProfileChanged = function() end, Suite = { MigrationRevision = 0 } }
 assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", Suite)
 local DB, checks = Suite.Database, 0
 local function Check(value, message)

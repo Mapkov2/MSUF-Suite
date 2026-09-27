@@ -4,38 +4,16 @@ _G.MSUFSuite = Suite
 local initialized = false
 local events = CreateFrame("Frame")
 
--- Remembers the money at login per character, so the Bags and DataTexts
--- session gold survives /reload. Secret values are ignored.
-local function CaptureGoldStart(isReloadingUi)
-    Suite.goldSessionCaptured = false
-    local root = Suite.RootDB
-    if type(root) ~= "table" or type(_G.UnitGUID) ~= "function" or type(_G.GetMoney) ~= "function" then return end
-    local guid, money = UnitGUID("player"), GetMoney()
-    local secret = _G.issecretvalue
-    if type(secret) == "function" and (secret(guid) or secret(money)) then return end
-    if type(guid) ~= "string" or guid == "" or type(money) ~= "number"
-        or money ~= money or money < 0 or money == math.huge then
-        return
-    end
-    if type(root.suiteGold) ~= "table" then root.suiteGold = {} end
-    local previous = root.suiteGold[guid]
-    if isReloadingUi == true and type(previous) == "number"
-        and previous >= 0 and previous == previous and previous < math.huge then
-        Suite.goldSessionCaptured = true
-        return
-    end
-    root.suiteGold[guid] = money
-    Suite.goldSessionCaptured = true
-end
 -- PLAYER_ENTERING_WORLD distinguishes a real login from /reload. Optional
 -- modules loaded later can use this without keeping their own startup frame.
 local loginEvent = CreateFrame("Frame")
 loginEvent:RegisterEvent("PLAYER_ENTERING_WORLD")
 loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
-    Suite.loginKind = isReloadingUi == true and "reload" or "login"
-    CaptureGoldStart(isReloadingUi)
-    if Suite.Installer and Suite.Suite.started then Suite.Installer.MaybeShow() end
+    -- Only the first world entry counts; later ones are zone changes.
     self:UnregisterAllEvents()
+    Suite.loginKind = isReloadingUi == true and "reload" or "login"
+    Suite.CaptureSessionGold(isReloadingUi)
+    if Suite.Suite.started then Suite.Installer.MaybeShow() end
 end)
 
 local function Initialize()
@@ -44,9 +22,7 @@ local function Initialize()
     -- Older Suite profiles may live inside MapkoSkinDB. Load the legacy addon
     -- as data only before choosing the Suite profile, then hand skinning to the
     -- Suite-owned engine below.
-    if _G.MSUFSuiteDB == nil and Suite.Skin and Suite.Skin.LoadLegacyDatabase then
-        Suite.Skin.LoadLegacyDatabase()
-    end
+    if _G.MSUFSuiteDB == nil then Suite.Skin.LoadLegacyDatabase() end
     local ok, reason = Suite.Database.Initialize(_G.MSUFSuiteDB, _G.MapkoSkinDB)
     if not ok then
         Suite.startupError = reason
@@ -58,9 +34,15 @@ local function Initialize()
     return true
 end
 
+-- Startup steps run isolated: a step that raises is reported and the others,
+-- above all the module start, still run.
+local function Step(owner, name, ...)
+    Suite.Dispatch(owner[name], ...)
+end
+
 local function Start()
     if not Initialize() then return end
-    if Suite.IsCombatLocked and Suite.IsCombatLocked() then
+    if Suite.IsCombatLocked() then
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
@@ -72,21 +54,14 @@ local function Start()
         Suite.Print("Reload the interface to start the standalone suite.")
         return
     end
-    if Suite.Skin then Suite.Skin.SetEnabled(Suite.RootDB.skinEnabled ~= false) end
-    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureNewCharacterProfile then
-        Suite.SuiteProfiles.EnsureNewCharacterProfile()
-    end
-    if Suite.SuiteProfiles and Suite.SuiteProfiles.SyncActive then
-        Suite.SuiteProfiles.SyncActive(_G.MSUF_ActiveProfile or "Default")
-    end
-    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureRetailForeverCooldownLayout then
-        Suite.SuiteProfiles.EnsureRetailForeverCooldownLayout()
-    end
-    Suite.Suite.Start()
-    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureRetailResourceStack then
-        Suite.SuiteProfiles.EnsureRetailResourceStack(false)
-    end
-    if Suite.Installer then Suite.Installer.MaybeShow() end
+    local profiles = Suite.SuiteProfiles
+    Step(Suite.Skin, "SetEnabled", Suite.RootDB.skinEnabled ~= false)
+    Step(profiles, "EnsureNewCharacterProfile")
+    Step(profiles, "SyncActive", _G.MSUF_ActiveProfile or "Default")
+    Step(profiles, "EnsureRetailForeverCooldownLayout")
+    Step(Suite.Suite, "Start")
+    Step(profiles, "EnsureRetailResourceStack", false)
+    Step(Suite.Installer, "MaybeShow")
 end
 
 events:SetScript("OnEvent", function(self, event, loadedAddon)
@@ -99,9 +74,9 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
         end
         -- Load the Suite-owned skin engine before PLAYER_LOGIN so it can skin
         -- Blizzard's first visible frames without a reload.
-        if Suite.Skin and Suite.RootDB.skinEnabled ~= false then Suite.Skin.EnsureEngine() end
-        if Suite.Menu then Suite.Menu.Watch() end
-        if type(IsLoggedIn) == "function" and IsLoggedIn() then
+        if Suite.RootDB.skinEnabled ~= false then Step(Suite.Skin, "EnsureEngine") end
+        Step(Suite.Menu, "Watch")
+        if IsLoggedIn() then
             self:UnregisterEvent("PLAYER_LOGIN")
             Start()
         end

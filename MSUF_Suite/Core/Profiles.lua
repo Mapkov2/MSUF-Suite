@@ -2,6 +2,7 @@ local _, Suite = ...
 local P = { prefix = "MSUFS2:", maxBytes = 3 * 1024 * 1024 }
 Suite.SuiteProfiles = P
 local DB, IO = Suite.Database, Suite.ProfileIO
+local Dispatch, Finish = Suite.Dispatch, Suite.Finish
 
 -- Returns the Suite-owned skin engine once its database is ready. The second
 -- result tells whether the engine is loaded at all.
@@ -19,8 +20,7 @@ end
 local function SkinEngine()
     local skin, loaded = LoadedSkin()
     if loaded then return skin end
-    local enabled = Suite.Client and Suite.Client.AddOnEnabled and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
-    if enabled and Suite.Skin and Suite.Skin.EnsureEngine and Suite.Skin.EnsureEngine() then
+    if Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and Suite.Skin.EnsureEngine() then
         return (LoadedSkin())
     end
 end
@@ -164,8 +164,7 @@ function P.EnsureRetailResourceStack(force)
     local installation = Suite.RootDB and Suite.RootDB.installation
     local module = Suite.DB and Suite.DB.suite and Suite.DB.suite.modules
     module = module and module.cooldownManager
-    if not (Suite.Client and Suite.Client.isMainline)
-        or type(installation) ~= "table" or installation.status ~= "complete"
+    if type(installation) ~= "table" or installation.status ~= "complete"
         or (installation.profile ~= "suite" and installation.profile ~= "forever")
         or (installation.profile == "forever" and Suite.Client.isForever == true)
         or type(module) ~= "table"
@@ -213,8 +212,7 @@ end
 -- changes and the authored Forever icon sizes/positions.
 function P.EnsureRetailForeverCooldownLayout()
     local installation = Suite.RootDB and Suite.RootDB.installation
-    if not (Suite.Client and Suite.Client.isMainline and Suite.Client.isForever ~= true)
-        or type(installation) ~= "table" or installation.status ~= "complete"
+    if Suite.Client.isForever or type(installation) ~= "table" or installation.status ~= "complete"
         or installation.profile ~= "forever" or installation.foreverAnchorRevision == 1 then
         return false
     end
@@ -222,7 +220,7 @@ function P.EnsureRetailForeverCooldownLayout()
     config = config and config.cooldownManager
     if type(config) ~= "table" or config.enabled == false then return false end
     local anchor
-    for index, unit in pairs(Suite.CDM and Suite.CDM.FRAME_ANCHORS or {}) do
+    for index, unit in pairs(Suite.CDM.FRAME_ANCHORS) do
         if unit == "player" then anchor = index; break end
     end
     if not anchor then return false end
@@ -236,9 +234,7 @@ function P.EnsureRetailForeverCooldownLayout()
     config.ext_x, config.ext_y = 0, 0
     config.captured = true
     config.defaultsVersion = Suite.CDM.DEFAULTS_VERSION
-    if Suite.Suite and Suite.Suite.started and Suite.Suite.Apply then
-        Suite.Suite.Apply("cooldownManager")
-    end
+    if Suite.Suite.started then Suite.Suite.Apply("cooldownManager") end
     return true
 end
 
@@ -413,6 +409,26 @@ function P.Export()
     return result
 end
 
+-- Activates a stored Suite profile and publishes its skin profile. Activation
+-- starts the profile's modules.
+local function ActivateProfiles(name, skin, skinProfile)
+    local ok, reason = DB.Activate(name)
+    if ok and skinProfile then ok, reason = skin.Database.SetProfile(name, skinProfile) end
+    if ok and skinProfile then ok, reason = skin.Database.SetActiveProfile(name) end
+    return ok, reason
+end
+
+-- The steps after MSUF created the frame profile.
+local function PublishCreated(name, profile, skin, skinProfile, screenHeight)
+    if screenHeight and type(_G.MSUF_SetCurrentProfileScreenReferenceHeight) == "function"
+        and not _G.MSUF_SetCurrentProfileScreenReferenceHeight(screenHeight) then
+        return false, "Frame positions could not be adapted"
+    end
+    local ok, reason = DB.CreateFromProfile(name, profile)
+    if not ok then return false, reason end
+    return ActivateProfiles(name, skin, skinProfile)
+end
+
 local function Create(name, frames, profile, skinProfile, screenHeight)
     local _, previousFrames, previousModules = P.Active()
     local skin = skinProfile and SkinEngine()
@@ -422,19 +438,17 @@ local function Create(name, frames, profile, skinProfile, screenHeight)
     local previousSkin = skin and skin.Database.GetActiveProfileName()
     -- Module settings have already been validated. MSUF validates its own
     -- payload before creating a frame profile and reports a refusal as
-    -- false, reason. Neither import overwrites data.
+    -- false, reason. Neither import overwrites data. An error in any step is
+    -- reported and rolled back like a refusal; profile sync always resumes.
     Suite.suppressProfileSync = true
-    local ok, reason = ImportFramesIntoNewProfile(name, frames)
+    local finished, ok, reason = Dispatch(Finish, ImportFramesIntoNewProfile, name, frames)
     Suite.suppressProfileSync = nil
-    if ok and screenHeight and type(_G.MSUF_SetCurrentProfileScreenReferenceHeight) == "function" then
-        ok = _G.MSUF_SetCurrentProfileScreenReferenceHeight(screenHeight)
-        if not ok then reason = "Frame positions could not be adapted" end
+    if finished and ok then
+        finished, ok, reason = Dispatch(Finish, PublishCreated, name, profile, skin, skinProfile, screenHeight)
     end
-    if ok then ok, reason = DB.CreateFromProfile(name, profile) end
-    if ok then ok, reason = DB.Activate(name) end
-    if ok and skinProfile then ok, reason = skin.Database.SetProfile(name, skinProfile) end
-    if ok and skinProfile then ok, reason = skin.Database.SetActiveProfile(name) end
-    if ok and _G.MSUF_ActiveProfile == name and DB.GetActiveProfileName() == name then return true, name end
+    if finished and ok and _G.MSUF_ActiveProfile == name and DB.GetActiveProfileName() == name then
+        return true, name
+    end
     if skin and previousSkin and skin.Database.GetProfile(previousSkin) then
         skin.Database.SetActiveProfile(previousSkin)
     end
@@ -474,6 +488,14 @@ function P.Import(name, text)
     local decode = version == "1" and IO.PrepareLegacyProfile or IO.PrepareProfile
     local profile, why = decode(modules)
     if not profile then return false, why end
+    -- User preference belongs to the active profile, never to the incoming
+    -- payload. Full imports carry this module forward when protection is on;
+    -- explicit module imports and factory resets remain deliberate replacements.
+    local current = Suite.DB and Suite.DB.suite and Suite.DB.suite.modules
+    local plates = current and current.nameplates
+    if plates and plates.protectImport then
+        profile.suite.modules.nameplates = Suite.CopyValue(plates)
+    end
     local skin = SkinEngine()
     local skinProfile, skinReason
     if version == "3" or (version == "1" and skin) then
@@ -519,8 +541,7 @@ function P.InstallSuiteFactory(name, modules, skinText)
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
     local profile, reason = IO.PrepareTable(modules, false)
     if not profile then return false, reason end
-    local skinEnabled = Suite.Client and Suite.Client.AddOnEnabled
-        and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     local skin, skinProfile
     if skinEnabled then
         skin = SkinEngine()
@@ -535,11 +556,9 @@ function P.InstallSuiteFactory(name, modules, skinText)
     previousSkin = previousSkin and Suite.CopyValue(previousSkin)
     local previousSkinActive = skin and skin.Database.GetActiveProfileName()
     Suite.RootDB.profiles[name] = profile
-    -- Activation starts the profile's modules; their errors reach the client.
-    local ok, why = DB.Activate(name)
-    if ok and skin then ok, why = skin.Database.SetProfile(name, skinProfile) end
-    if ok and skin then ok, why = skin.Database.SetActiveProfile(name) end
-    if ok then return true, name end
+    -- An error in any step is reported and rolled back like a refusal.
+    local finished, ok, why = Dispatch(Finish, ActivateProfiles, name, skin, skinProfile)
+    if finished and ok then return true, name end
     Suite.RootDB.profiles[name] = previousModules
     if previousActive and DB.GetProfile(previousActive) then DB.Activate(previousActive) end
     if skin then

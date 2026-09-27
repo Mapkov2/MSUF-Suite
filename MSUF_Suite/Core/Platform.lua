@@ -1,40 +1,27 @@
 local _, Suite = ...
 local MSUF = assert(_G.MSUF_NS, "MSUF_Suite requires MSUF")
 
--- Classic MSUF publishes MSUF.Client; Main (Retail-only) MSUF does not. The
--- suite derives the same facts from the client when its host does not provide
--- them, so it runs unchanged under either MSUF build.
+-- The Suite runs on Retail and on WoW Forever, which runs Blizzard's Mainline
+-- code from the _Mainline.toc. Classic MSUF (the multi-client build that hosts
+-- the Suite on Forever) publishes MSUF.Client; Main (Retail-only) MSUF does
+-- not, so the suite derives the same facts itself under that host.
 local host = type(MSUF.Client) == "table" and MSUF.Client or nil
 
-local function ProjectFlavor()
-    local project = _G.WOW_PROJECT_ID
-    if project == nil then return "Unknown" end
-    if project == _G.WOW_PROJECT_MAINLINE then return "Mainline" end
-    if project == _G.WOW_PROJECT_CLASSIC then return "Vanilla" end
-    if project == _G.WOW_PROJECT_BURNING_CRUSADE_CLASSIC then return "TBC" end
-    if project == _G.WOW_PROJECT_MISTS_CLASSIC then return "Mists" end
-    return "Unknown"
-end
-
--- WoW Forever runs Blizzard's Mainline code. Blizzard_Game defines this camelot
--- marker before any addon loads, and only on Forever (same probe as Classic MSUF).
+-- Blizzard_Game defines this camelot marker before any addon loads, and only
+-- on Forever (same probe as Classic MSUF).
 local function HasForeverMarker()
     local gameEvent = _G.GameEvent
     return type(gameEvent) == "table" and type(gameEvent.RegisterCamelotEvents) == "function"
 end
 
-local flavor, family, isForever, isRetail
+local isMainline, isForever
 if host and type(host.Flavor) == "string" then
+    isMainline = host.Flavor == "Mainline"
     isForever = host.IsForever == true
-    flavor = host.Flavor
-    family = host.Family or (flavor == "Mainline" and "Mainline" or "Classic")
-    isRetail = host.IsRetail == true
 else
-    flavor = ProjectFlavor()
-    isForever = HasForeverMarker() and flavor ~= "Vanilla" and flavor ~= "TBC" and flavor ~= "Mists"
-    if isForever then flavor = "Mainline" end
-    family = flavor == "Mainline" and "Mainline" or flavor == "Unknown" and "Unknown" or "Classic"
-    isRetail = flavor == "Mainline"
+    -- The marker places Forever whatever project ID the client reports.
+    isForever = HasForeverMarker()
+    isMainline = isForever or _G.WOW_PROJECT_ID ~= nil and _G.WOW_PROJECT_ID == _G.WOW_PROJECT_MAINLINE
 end
 
 local eventValidity = {}
@@ -42,47 +29,153 @@ local function SupportsEvent(event)
     if type(event) ~= "string" or event == "" then return false end
     local valid = eventValidity[event]
     if valid ~= nil then return valid end
-    local utils = _G.C_EventUtils
-    if type(utils) ~= "table" or type(utils.IsEventValid) ~= "function" then return true end
-    valid = utils.IsEventValid(event) == true
+    valid = C_EventUtils.IsEventValid(event) == true
     eventValidity[event] = valid
     return valid
 end
 
 Suite.Client = {
-    flavor = isForever and "Forever" or flavor,
-    family = family,
-    isMainline = family == "Mainline",
-    isClassic = family == "Classic",
+    -- "Mainline" (Retail), "Forever", or "Unknown" for an unidentified client.
+    flavor = isForever and "Forever" or isMainline and "Mainline" or "Unknown",
+    isMainline = isMainline,
     isForever = isForever,
-    modernEquipment = isRetail and not isForever,
+    -- Retail's own items and equipment rules; Forever has its own.
+    modernEquipment = isMainline and not isForever,
     hasSecrets = type(_G.issecretvalue) == "function",
     SupportsEvent = host and type(host.SupportsEvent) == "function" and host.SupportsEvent or SupportsEvent,
 }
 
--- Which MSUF build hosts the suite. Only used for status text and diagnostics;
--- every integration below probes the capability it needs instead.
-local getMetadata = _G.C_AddOns and _G.C_AddOns.GetAddOnMetadata or _G.GetAddOnMetadata
-Suite.Host = {
-    build = host and "Classic" or "Main",
-    version = type(getMetadata) == "function" and getMetadata("MidnightSimpleUnitFrames", "Version") or nil,
-}
+-- Which MSUF build hosts the suite, for diagnostics; every integration below
+-- probes the capability it needs instead.
+Suite.Host = { build = host and "Classic" or "Main" }
 
 Suite.Defaults = {}
 Suite.L = type(MSUF.L) == "table" and MSUF.L or {}
 Suite.Safety = {}
 
+-- English source text through MSUF's locale table; a missing or empty
+-- translation stays English.
+function Suite.Text(english)
+    local value = Suite.L[english]
+    return type(value) == "string" and value ~= "" and value or english
+end
+
+-- Statuses and refusal reasons are stored and returned as English text and
+-- translated once, where they are shown. A status that names an addon or a
+-- module is built here, so its display can translate the English format and
+-- fill in the names again.
+local statusSources = {}
+function Suite.FormatStatus(format, ...)
+    local text = format:format(...)
+    if not statusSources[text] then statusSources[text] = { format, ... } end
+    return text
+end
+
+-- A status in the reader's language. translate(english) defaults to
+-- Suite.Text; the options pages pass their menu translation.
+function Suite.StatusText(text, translate)
+    translate = translate or Suite.Text
+    local source = statusSources[text]
+    if not source then return translate(text) end
+    return translate(source[1]):format(unpack(source, 2))
+end
+
+------------------------------------------------------------------ secret values
+-- Retail and Forever return secret values from many getters in combat. A
+-- secret must never be compared, used in arithmetic, used as a table key or
+-- passed to tonumber; it may only flow into C sinks such as SetText. These
+-- readers live here (always loaded) so the options pages share them with the
+-- module runtime (MSUF_Suite_Modules/Runtime.lua aliases them as S.*).
+local Public
+if type(issecretvalue) == "function" then
+    local IsSecret = issecretvalue
+    Public = function(value) return not IsSecret(value) end
+else
+    Public = function() return true end
+end
+
+-- A readable number: not secret, not NaN.
+local function Number(value)
+    return Public(value) and type(value) == "number" and value == value
+end
+
+-- A readable number that is also not infinite.
+local function Finite(value)
+    return Number(value) and value > -math.huge and value < math.huge
+end
+
+-- Readable text: a non-empty, non-secret string, else nil.
+local function PublicText(value)
+    return Public(value) and type(value) == "string" and value ~= "" and value or nil
+end
+
+-- The first result of a client text API as readable text.
+local function ReadText(fn, ...)
+    return PublicText((fn(...)))
+end
+
+Suite.Public, Suite.Number, Suite.Finite = Public, Number, Finite
+Suite.PublicText, Suite.ReadText = PublicText, ReadText
+
+------------------------------------------------------------------ shared media
+-- Settings store colors as six hex digits (validated by the controller).
+-- Shared by the module runtime (S.RGB), the minimap style and the menu.
+function Suite.RGB(hex)
+    if type(hex) ~= "string" or #hex ~= 6 then return 1, 1, 1 end
+    return (tonumber(hex:sub(1, 2), 16) or 255) / 255,
+        (tonumber(hex:sub(3, 4), 16) or 255) / 255,
+        (tonumber(hex:sub(5, 6), 16) or 255) / 255
+end
+
+-- LibSharedMedia when another addon loaded it, else nil.
+function Suite.SharedMedia()
+    local stub = _G.LibStub
+    return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibSharedMedia-3.0", true) or nil
+end
+
+-- Font keys are MSUF/SharedMedia font keys; "" means the native font (nil).
+-- Shared by the module runtime (S.ResolveFont) and the menu previews.
+function Suite.ResolveFont(key)
+    if type(key) ~= "string" or key == "" then return nil end
+    -- MSUF's font list may hand out file paths as selection values.
+    if key:find("\\", 1, true) or key:find("/", 1, true) then return key end
+    local resolve = _G.MSUF_ResolveFontKeyPath or _G.MSUF_GetFontPathForKey
+    local path = type(resolve) == "function" and resolve(key) or nil
+    if type(path) ~= "string" or path == "" then
+        local media = Suite.SharedMedia()
+        path = media and media:Fetch("font", key, true) or nil
+    end
+    return type(path) == "string" and path ~= "" and path or nil
+end
+
+-- Texture keys are MSUF/SharedMedia statusbar keys; "" means the caller's default.
+function Suite.ResolveTexture(key, fallback)
+    if type(key) ~= "string" or key == "" then return fallback end
+    local resolve = _G.MSUF_ResolveStatusbarTextureKey
+    if type(resolve) == "function" then
+        local path = resolve(key)
+        if type(path) == "string" and path ~= "" then return path end
+    end
+    local media = Suite.SharedMedia()
+    local path = media and media:Fetch("statusbar", key, true) or nil
+    return type(path) == "string" and path ~= "" and path or fallback
+end
+
 function Suite.IsCombatLocked()
-    return type(InCombatLockdown) == "function" and InCombatLockdown() == true
+    return InCombatLockdown() == true
 end
 
 -- Runs code whose failure must not stop its caller (module callbacks, data
 -- ticks, deferred jobs) the way Blizzard's CallbackRegistry runs callbacks:
 -- the error is reported to the error handler (BugSack) and the caller goes
 -- on. Nothing is swallowed. Returns the results, or nothing after an error.
--- Offline test harnesses have no securecallfunction and call directly.
-Suite.Dispatch = securecallfunction or function(callback, ...)
-    return callback(...)
+Suite.Dispatch = securecallfunction
+
+-- Dispatch returns nothing when the call raised. Routing a call through
+-- Finish tells the two apart: Dispatch(Suite.Finish, fn, ...) returns true
+-- and fn's results, or nothing.
+function Suite.Finish(callback, ...)
+    return true, callback(...)
 end
 
 -- MSUF's own media: the default font and bar texture of Suite surfaces.
@@ -96,46 +189,32 @@ function Suite.Safety.IsForbidden(frame)
 end
 
 function Suite.Client.IsAddOnLoaded(name)
-    local query = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
-    if not query then return false end
-    local loaded, finished = query(name)
+    local loaded, finished = C_AddOns.IsAddOnLoaded(name)
     if finished ~= nil then return finished == true end
     return loaded == true
 end
 
 function Suite.Client.HasAddOn(name)
-    if C_AddOns and type(C_AddOns.DoesAddOnExist) == "function" then
-        return C_AddOns.DoesAddOnExist(name) == true
-    end
-    local query = C_AddOns and C_AddOns.GetAddOnInfo or GetAddOnInfo
-    if query then return query(name) ~= nil end
-    return Suite.Client.IsAddOnLoaded(name)
+    return C_AddOns.DoesAddOnExist(name) == true
 end
 
 -- Match Blizzard's current-character AddOns checkbox. The GUID argument is
 -- used by upstream/live's Blizzard_SharedXMLBase/AddOnUtil.lua; nil means the
 -- all-characters list, so avoid it when a player GUID is available.
+-- Enum.AddOnEnableState.None is 0 on both clients.
 function Suite.Client.AddOnEnabled(name)
-    if not Suite.Client.HasAddOn(name) then return false, "Install " .. name .. " to use this module" end
-    local query = C_AddOns and C_AddOns.GetAddOnEnableState or GetAddOnEnableState
-    if type(query) ~= "function" then return true end
-    local guid = type(UnitGUID) == "function" and UnitGUID("player") or nil
-    if type(issecretvalue) == "function" and issecretvalue(guid) then return false, "AddOn state unavailable in combat" end
-    local state = query(name, guid)
-    local none = Enum and Enum.AddOnEnableState and Enum.AddOnEnableState.None or 0
-    if type(state) == "number" and state > none then return true end
-    return false, "Disabled in Blizzard's AddOns list: " .. name
+    if not Suite.Client.HasAddOn(name) then
+        return false, Suite.FormatStatus("Install %s to use this module", name)
+    end
+    local guid = UnitGUID("player")
+    if not Public(guid) then return false, "AddOn state unavailable in combat" end
+    local state = C_AddOns.GetAddOnEnableState(name, guid)
+    if type(state) == "number" and state > 0 then return true end
+    return false, Suite.FormatStatus("Disabled in Blizzard's AddOns list: %s", name)
 end
 
 function Suite.Print(message)
-    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
-        DEFAULT_CHAT_FRAME:AddMessage("MSUF Suite: " .. tostring(message))
-    end
-end
-
-function Suite.ReportError(label, message)
-    if type(MSUF.ReportError) == "function" then return MSUF.ReportError(label, message) end
-    geterrorhandler()("MSUF Suite " .. tostring(label) .. ": " .. tostring(message))
+    DEFAULT_CHAT_FRAME:AddMessage("MSUF Suite: " .. tostring(message))
 end
 
 -- Listeners are configuration-only. Registering one allocates no frame and
@@ -149,8 +228,10 @@ end
 function Suite.Registry.RemoveListener(owner)
     listeners[owner] = nil
 end
+-- One failing listener is reported and does not stop the others.
 function Suite.Registry.NotifyListeners(domain, reason)
-    for owner, callback in pairs(listeners) do callback(owner, domain, reason) end
+    local dispatch = Suite.Dispatch
+    for owner, callback in pairs(listeners) do dispatch(callback, owner, domain, reason) end
 end
 function Suite.OnProfileChanged(name)
     Suite.Registry.NotifyListeners("profile", name)

@@ -15,12 +15,8 @@ function P.SliderStep(minimum, maximum, default, declaredStep)
     return 0.01
 end
 
-function P.RGB(hex)
-    if type(hex) ~= "string" or #hex ~= 6 then return 1, 1, 1 end
-    return (tonumber(hex:sub(1, 2), 16) or 255) / 255,
-        (tonumber(hex:sub(3, 4), 16) or 255) / 255,
-        (tonumber(hex:sub(5, 6), 16) or 255) / 255
-end
+-- Settings store colors as six hex digits (MSUF_Suite/Core/Platform.lua).
+P.RGB = P.Suite.RGB
 
 local function Byte(value)
     return math.floor(math.max(0, math.min(1, tonumber(value) or 0)) * 255 + 0.5)
@@ -326,12 +322,8 @@ local function OffTargetText(text, label)
     return ("|cff%02x%02x%02x%s|r"):format(math.floor(c[1] * 255 + 0.5), math.floor(c[2] * 255 + 0.5),
         math.floor(c[3] * 255 + 0.5), text)
 end
-function P.AttachSectionReset(ctx, body, title, reset, copy)
-    if not body or type(reset) ~= "function" then return end
-    body._msufSuiteSectionReset, body._msufSuiteSectionCopy = reset, copy
-    local entry = body._msuf2CollapsibleEntry
-    if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel) then return end
-    if entry._msufSuiteResetButton then return entry._msufSuiteResetButton end
+-- The "..." button in a section header; the feature switch moves left of it.
+local function SectionActionButton(ctx, entry)
     local more = W.TopButton(entry.header, "...", 24, 22)
     if W.StyleSectionActionButton then W.StyleSectionActionButton(more) end
     more:SetPoint("RIGHT", entry.header, "RIGHT", -10, 0)
@@ -350,84 +342,123 @@ function P.AttachSectionReset(ctx, body, title, reset, copy)
     AlignSwitch()
     if ctx and M.TrackRefresh then M.TrackRefresh(ctx, AlignSwitch) end
     if entry._msuf2RefreshLayout then entry._msuf2RefreshLayout() end
-    local popup, popupSource
-    local function Close() if popup then popup:Hide() end end
-    -- The source is fixed when the popup opens; Copy refuses once it changed.
-    local function Copy(target)
-        local spec = body._msufSuiteSectionCopy
-        if P.Combat() or not (spec and target) then return false end
-        local ok = spec.source() == popupSource and target ~= popupSource
-            and not (spec.targetOff and spec.targetOff(target))
-            and spec.run(popupSource, target) == true
-        if M.ShowStatusFeedback then M.ShowStatusFeedback(Tr(ok and "Section copied" or "Action failed"), ok and "ok" or "danger", 1.5) end
-        Close()
-        return ok
-    end
-    more:SetScript("OnClick", function()
-        if P.Combat() then return end
-        if popup and popup:IsShown() then Close(); return end
-        local spec = body._msufSuiteSectionCopy
-        popupSource = spec and spec.source() or nil
-        if not popup then
-            popup = M.CreateMenuPopupPanel(_G.UIParent)
-            popup:SetClampedToScreen(true)
-            popup:SetSize(288, 82)
-            local heading = T.Font(popup, "GameFontHighlight", Tr(title), T.colors.text)
-            heading:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -12)
-            heading:SetWidth(242)
-            heading:SetWordWrap(false)
-            popup.heading = heading
-            local close = W.TopButton(popup, "x", 20, 20)
-            close:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -6, -6)
-            close:SetScript("OnClick", Close)
-            if spec and W.Dropdown and W.MoveWidget then
-                local select = W.Dropdown(popup, Tr(spec.label or "Copy to"), {}, 250)
-                W.MoveWidget(select, popup, 14, -76, 250)
-                select:SetOnValueChanged(function(value) popup.destination = value end)
-                local copyButton = W.TopButton(popup, Tr("Copy section"), 250, 24)
-                copyButton:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -132)
-                copyButton:SetScript("OnClick", function() Copy(popup.destination) end)
-                popup:SetHeight(174)
-                -- The destination defaults to the first target that is switched on;
-                -- with every target off the first one shows marked and Copy locks.
-                popup.RefreshTargets = function()
-                    local current = body._msufSuiteSectionCopy
-                    local choices, first = {}, nil
-                    for _, item in ipairs(current.targets(popupSource)) do
-                        if current.targetOff and current.targetOff(item.value) then
-                            item = { value = item.value, text = OffTargetText(item.text, current.offLabel),
-                                translate = false, disabled = true }
-                        elseif first == nil then
-                            first = item.value
-                        end
-                        choices[#choices + 1] = item
-                    end
-                    popup.destination = first
-                    select:SetValues(choices)
-                    select:SetValue(first or (choices[1] and choices[1].value))
-                    W.SetControlEnabled(copyButton, first ~= nil)
-                end
-                popup._msufSuiteCopySection = Copy
-            end
-            local button = W.TopButton(popup, Tr("Reset section"), 250, 24)
-            button:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -42)
-            button:SetScript("OnClick", function()
-                if P.Combat() then return end
-                local ok = body._msufSuiteSectionReset()
-                if M.ShowStatusFeedback then M.ShowStatusFeedback(Tr(ok and "Section reset" or "Action failed"), ok and "ok" or "danger", 1.5) end
-                Close()
-            end)
-            popup._msuf2ResetSection = function() return body._msufSuiteSectionReset() end
-            entry.outer:HookScript("OnHide", Close)
+    return more
+end
+
+-- A section's popup state: body, title, header entry, "..." button, the
+-- popup once built and the copy source fixed when it opened.
+local function ClosePopup(state)
+    if state.popup then state.popup:Hide() end
+end
+
+local function ShowFeedback(ok, done)
+    if M.ShowStatusFeedback then M.ShowStatusFeedback(Tr(ok and done or "Action failed"), ok and "ok" or "danger", 1.5) end
+end
+
+-- The source is fixed when the popup opens; Copy refuses once it changed.
+local function CopySection(state, target)
+    local spec = state.body._msufSuiteSectionCopy
+    if P.Combat() or not (spec and target) then return false end
+    local source = state.source
+    local ok = spec.source() == source and target ~= source
+        and not (spec.targetOff and spec.targetOff(target))
+        and spec.run(source, target) == true
+    ShowFeedback(ok, "Section copied")
+    ClosePopup(state)
+    return ok
+end
+
+-- The destination defaults to the first target that is switched on; with
+-- every target off the first one shows marked and Copy locks.
+local function RefreshCopyTargets(state, select, copyButton)
+    local current = state.body._msufSuiteSectionCopy
+    local choices, first = {}, nil
+    for _, item in ipairs(current.targets(state.source)) do
+        if current.targetOff and current.targetOff(item.value) then
+            item = { value = item.value, text = OffTargetText(item.text, current.offLabel),
+                translate = false, disabled = true }
+        elseif first == nil then
+            first = item.value
         end
-        if popup.RefreshTargets then popup.RefreshTargets() end
-        popup.heading:SetText(popupSource ~= nil and (spec.sourceLabel(popupSource) .. " · " .. Tr(title)) or Tr(title))
-        popup:ClearAllPoints()
-        popup:SetPoint("TOPRIGHT", more, "BOTTOMRIGHT", 0, -4)
-        if M.ApplyPopupFramePriority then M.ApplyPopupFramePriority(popup) end
-        popup:Show()
+        choices[#choices + 1] = item
+    end
+    state.popup.destination = first
+    select:SetValues(choices)
+    select:SetValue(first or (choices[1] and choices[1].value))
+    W.SetControlEnabled(copyButton, first ~= nil)
+end
+
+-- "Copy section": the destination dropdown and its button.
+local function BuildCopyRow(state, spec)
+    local popup = state.popup
+    local select = W.Dropdown(popup, Tr(spec.label or "Copy to"), {}, 250)
+    W.MoveWidget(select, popup, 14, -76, 250)
+    select:SetOnValueChanged(function(value) popup.destination = value end)
+    local copyButton = W.TopButton(popup, Tr("Copy section"), 250, 24)
+    copyButton:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -132)
+    copyButton:SetScript("OnClick", function() CopySection(state, popup.destination) end)
+    popup:SetHeight(174)
+    popup.RefreshTargets = function() RefreshCopyTargets(state, select, copyButton) end
+    popup._msufSuiteCopySection = function(target) return CopySection(state, target) end
+end
+
+local function BuildSectionPopup(state, spec)
+    local popup = M.CreateMenuPopupPanel(_G.UIParent)
+    state.popup = popup
+    popup:SetClampedToScreen(true)
+    popup:SetSize(288, 82)
+    local heading = T.Font(popup, "GameFontHighlight", Tr(state.title), T.colors.text)
+    heading:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -12)
+    heading:SetWidth(242)
+    heading:SetWordWrap(false)
+    popup.heading = heading
+    local close = W.TopButton(popup, "x", 20, 20)
+    close:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -6, -6)
+    close:SetScript("OnClick", function() ClosePopup(state) end)
+    if spec and W.Dropdown and W.MoveWidget then BuildCopyRow(state, spec) end
+    local button = W.TopButton(popup, Tr("Reset section"), 250, 24)
+    button:SetPoint("TOPLEFT", popup, "TOPLEFT", 14, -42)
+    button:SetScript("OnClick", function()
+        if P.Combat() then return end
+        ShowFeedback(state.body._msufSuiteSectionReset(), "Section reset")
+        ClosePopup(state)
     end)
-    more._msuf2GetSectionPopup = function() return popup end
+    popup._msuf2ResetSection = function() return state.body._msufSuiteSectionReset() end
+    state.entry.outer:HookScript("OnHide", function() ClosePopup(state) end)
+end
+
+local function ToggleSectionPopup(state)
+    if P.Combat() then return end
+    local popup = state.popup
+    if popup and popup:IsShown() then
+        ClosePopup(state)
+        return
+    end
+    local spec = state.body._msufSuiteSectionCopy
+    state.source = spec and spec.source() or nil
+    if not popup then
+        BuildSectionPopup(state, spec)
+        popup = state.popup
+    end
+    if popup.RefreshTargets then popup.RefreshTargets() end
+    local title = Tr(state.title)
+    popup.heading:SetText(state.source ~= nil and (spec.sourceLabel(state.source) .. " \194\183 " .. title) or title)
+    popup:ClearAllPoints()
+    popup:SetPoint("TOPRIGHT", state.more, "BOTTOMRIGHT", 0, -4)
+    if M.ApplyPopupFramePriority then M.ApplyPopupFramePriority(popup) end
+    popup:Show()
+end
+
+function P.AttachSectionReset(ctx, body, title, reset, copy)
+    if not body or type(reset) ~= "function" then return end
+    body._msufSuiteSectionReset, body._msufSuiteSectionCopy = reset, copy
+    local entry = body._msuf2CollapsibleEntry
+    if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel) then return end
+    if entry._msufSuiteResetButton then return entry._msufSuiteResetButton end
+    local more = SectionActionButton(ctx, entry)
+    local state = { body = body, title = title, entry = entry, more = more }
+    more:SetScript("OnClick", function() ToggleSectionPopup(state) end)
+    more._msuf2GetSectionPopup = function() return state.popup end
     if M.AddTooltip then M.AddTooltip(more, "Section actions", nil, { hook = true }) end
     return more
 end
@@ -466,7 +497,7 @@ end
 -- The skin palette joins MSUF Colors once the skin engine is loaded.
 local function BuildSkinColors(ctx, b)
     local skin = _G.MapkoSkin
-    if not skin and P.Suite.Skin and P.Suite.Skin.EnsureEngine and not P.Combat() then
+    if not skin and not P.Combat() then
         P.Suite.Skin.EnsureEngine()
         skin = _G.MapkoSkin
     end
@@ -490,6 +521,8 @@ end
 -- bound color rows as Suite pages, so both locations share live values and the
 -- native color picker/history path.
 function P.BuildColorsCategory(ctx, b)
+    -- A refresh pass starts with fresh module availability (Bridge.lua).
+    M.TrackRefresh(ctx, P.ForgetAvailability)
     for _, id in ipairs(P.order) do
         local colors = {}
         for _, rule in ipairs(P.catalog[id].controls) do
@@ -532,12 +565,20 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         local column = (i - 1) % columns
         if column == 0 and i > 1 then y = y - 34 end
         P.Button(ctx, body, action[1], 16 + column * (buttonWidth + 12), y, buttonWidth, action[2],
-            action[3] or function() return S.Availability(id) and P.Get(id, "enabled") end,
+            action[3] or function() return P.Available(id) and P.Get(id, "enabled") end,
             P.Meta(pageKey, id, "action." .. (action.key or i), "action", sectionId))
     end
     if actions and #actions > 0 then y = y - 38 end
+    if opts.help then
+        local help = P.Text(body, opts.help, 16, y, width)
+        y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
+    end
+    if opts.rules then
+        y = P.RuleGrid(ctx, body, pageKey, id, opts.rules, y, width, nil, sectionId)
+        P.AttachRuleColors(body, title, id, opts.rules)
+    end
     M.TrackRefresh(ctx, function()
-        local ok = S.Availability(id)
+        local ok = P.Available(id)
         -- The preference remains editable even when this client cannot run the
         -- module. S.Apply still enforces Availability before starting it.
         W.SetControlEnabled(toggle, not P.Combat())
@@ -549,7 +590,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         end
     end)
     P.AttachSectionReset(ctx, body, title, function()
-        return P.ResetRules(id, {}, nil, { "enabled" })
+        return P.ResetRules(id, opts.rules or {}, nil, { "enabled" })
     end)
     P.FinishBody(b, body, y)
     return body

@@ -9,9 +9,7 @@ local SUITE_OPTIONS = "MSUF_Suite_Options"
 local watcher
 
 local function LoadAddOnByName(name)
-    local loader = C_AddOns and C_AddOns.LoadAddOn or _G.LoadAddOn
-    if type(loader) ~= "function" then return false, "LoadAddOn unavailable" end
-    local loaded, reason = loader(name)
+    local loaded, reason = C_AddOns.LoadAddOn(name)
     return Suite.Client.IsAddOnLoaded(name) or loaded == true, reason
 end
 

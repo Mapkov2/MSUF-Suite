@@ -5,7 +5,7 @@ local Suite, M, T, S = P.Suite, P.M, P.T, P.S
 -- fallback group, or gets the group title in front of its last group.
 local NAV_GROUPS = {
     { id = "combat", title = "Combat",
-        pages = { "suite_cooldownManager", "suite_buffReminders", "suite_hud" } },
+        pages = { "suite_nameplates", "suite_cooldownManager", "suite_buffReminders", "suite_hud" } },
     { id = "interface", title = "Interface",
         pages = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_chat", "suite_dataTexts" } },
     { id = "style", title = "Style", fallback = "appearance", pages = { "suite_skin" } },
@@ -21,6 +21,7 @@ local PAGE_ADDONS = {
     suite_dataTexts = { "dataTexts" },
     suite_buffReminders = { "buffReminders" },
     suite_chat = { "chat" },
+    suite_nameplates = { "nameplates" },
     suite_cooldownManager = { "cooldownManager" },
 }
 if type(M.RegisterHistoryProvider) == "function" then
@@ -133,9 +134,18 @@ local function AddNavigation()
     return true
 end
 
+-- Each refresh pass of a Suite page starts with fresh module availability
+-- (Bridge.lua): the first refresher a page registers clears it.
+local function PageBuilder(page)
+    return function(ctx, ...)
+        M.TrackRefresh(ctx, P.ForgetAvailability)
+        return page.build(ctx, ...)
+    end
+end
+
 local function RegisterPages()
     for _, page in ipairs(P.pages) do
-        M.RegisterPage(page.key, { title = page.title, build = page.build, version = 1 })
+        M.RegisterPage(page.key, { title = page.title, build = PageBuilder(page), version = 1 })
     end
 end
 
@@ -162,10 +172,9 @@ local function InstallPageResets()
     function M.ResetPageToDefaults(key)
         if not IsSuitePage(key) then return oldReset and oldReset(key) or false end
         if P.Combat() then return false end
-        if key == "suite_skin" and Suite.Skin and Suite.Skin.EnsureEngine
-            and not Suite.Skin.EnsureEngine() then return false end
+        if key == "suite_skin" and not Suite.Skin.EnsureEngine() then return false end
         local ok = P.WithHistory("Reset " .. tostring(key), "page:reset:" .. tostring(key), function()
-            if key == "suite_skin" then return P.ResetSkinPage and P.ResetSkinPage() or false end
+            if key == "suite_skin" then return P.ResetSkinPage() or false end
             local modules = PAGE_ADDONS[key]
             if not modules then return false end
             for _, id in ipairs(modules) do if not S.Reset(id) then return false end end
@@ -181,16 +190,16 @@ local function InstallPageResets()
         if not IsSuitePage(key) then return oldConfirm and oldConfirm(key) or false end
         if P.Combat() then return false end
         local message = M.BuildPageResetWarning(key)
-        if not (_G.StaticPopupDialogs and _G.StaticPopup_Show and M.InstallStaticPopup) then
+        if not M.InstallStaticPopup then
             return M.ResetPageToDefaults(key)
         end
         M.InstallStaticPopup("MSUF_SUITE_PAGE_RESET_CONFIRM", {
-            text = "%s", button1 = _G.YES or "Yes", button2 = _G.NO or "No",
+            text = "%s", button1 = YES, button2 = NO,
             OnAccept = function(_, data)
                 if data and data.pageKey then M.ResetPageToDefaults(data.pageKey) end
             end,
         })
-        _G.StaticPopup_Show("MSUF_SUITE_PAGE_RESET_CONFIRM", message, nil, { pageKey = key })
+        StaticPopup_Show("MSUF_SUITE_PAGE_RESET_CONFIRM", message, nil, { pageKey = key })
         return true
     end
     if M.RefreshToolbarPageReset then M.RefreshToolbarPageReset() end
@@ -206,12 +215,9 @@ if added and M.frame then
     Suite.Print(P.Tr("Reload the interface to show the Suite pages in the MSUF menu."))
 end
 
-Suite.Options = Suite.Options or {}
-Suite.Options.RefreshAll = function() P.Refresh() end
-if type(P.BuildColorsCategory) == "function" then
-    Suite.Options.BuildColorsCategory = function(ctx, builder) return P.BuildColorsCategory(ctx, builder) end
-end
-if type(P.ApplyForeverStyle) == "function" then
-    Suite.Options.ApplyForeverStyle = function() return P.ApplyForeverStyle() end
-end
+Suite.Options = {
+    RefreshAll = function() P.Refresh() end,
+    BuildColorsCategory = function(ctx, builder) return P.BuildColorsCategory(ctx, builder) end,
+    ApplyForeverStyle = function() return P.ApplyForeverStyle() end,
+}
 Suite.Menu.attached = true

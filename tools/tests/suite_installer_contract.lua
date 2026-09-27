@@ -15,9 +15,27 @@ local Suite = {
     SuiteCatalog = {},
 }
 for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id } end
-local factoryCalls, activations, scaleChanges = 0, 0, {}
+local factoryCalls, activations, scaleChanges, decodes = 0, 0, {}, 0
 
 Suite.IsCombatLocked = function() return false end
+-- The core's translation lookup and status display (MSUF_Suite/Core/Platform.lua).
+Suite.Text = function(english)
+    local value = Suite.L and Suite.L[english]
+    return type(value) == "string" and value ~= "" and value or english
+end
+Suite.StatusText = function(text, translate) return translate(text) end
+-- MSUF_Suite/Core/Database.lua's deep copy.
+local function Copy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, item in pairs(value) do result[key] = Copy(item) end
+    return result
+end
+local copies = 0
+Suite.CopyValue = function(value)
+    copies = copies + 1
+    return Copy(value)
+end
 Suite.Print = function() end
 Suite.Client.AddOnEnabled = function() return true end
 Suite.Database = {
@@ -33,6 +51,7 @@ Suite.Database = {
 }
 Suite.ProfileIO = {
     PrepareProfile = function(text, shared)
+        decodes = decodes + 1
         assert(shared == false, "installer factory was sanitized as an external import")
         assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact)
         local modules = {}
@@ -56,6 +75,9 @@ Suite.ProfileIO = {
     end,
 }
 Suite.SuiteProfiles = {
+    -- The follow-up repairs belong to suite_profiles_contract.
+    EnsureNewCharacterProfile = function() return false end,
+    EnsureRetailResourceStack = function() return false end,
     InstallSuiteFactory = function(name, profile, skin)
         assert(name == "Default" and skin == Suite.RetailFactorySkinCompact)
         assert(profile.suite.modules.dataTexts.bar1Point == 9
@@ -134,11 +156,16 @@ local function FakeFrame()
     }
     return setmetatable(frame, { __index = function(_, key) return methods[key] or function() end end })
 end
-CreateFrame = function(_, name)
+CreateFrame = function(_, name, _, template)
     local frame = FakeFrame()
     if name then _G[name] = frame end
+    if template == "OptionsSliderTemplate" then frame.Low, frame.High, frame.Text = FakeFrame(), FakeFrame(), FakeFrame() end
     return frame
 end
+GameTooltip = FakeFrame()
+IsLoggedIn = function() return true end
+ReloadUI = function() end
+GetLocale = function() return "enUS" end
 
 assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
 assert(Suite.Installer.Apply())
@@ -163,6 +190,7 @@ MSUF_ResetGlobalUiScale = resetScale
 
 Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
+copies = 0
 local function CheckLayout()
     local panels = { window.suite, window.forever, window.cooldowns, window.scaleToggle,
         window.back, window.close, window.next, window.scaleSlider }
@@ -212,6 +240,10 @@ assert(window.review[1].shown and window.next.caption.text == "Install")
 CheckLayout()
 window.next.scripts.OnClick() -- install
 assert(factoryCalls == 1 and Suite.RootDB.installation.profile == "forever")
+-- Each factory string is decoded once, not on every module click and repaint.
+assert(decodes == 2, "the installer decoded a factory profile " .. decodes .. " times")
+-- The module and review pages read the cached profile; only the install copies it.
+assert(copies == 1, "the installer copied the factory profile " .. copies .. " times")
 assert(Suite.RootDB.installation.raidEssentials == true
     and Suite.RootDB.installation.foreverAnchorRevision == 1,
     "Retail Forever did not record its CDM spec and anchor defaults")
@@ -257,6 +289,26 @@ assert(Suite.RootDB.installation.raidEssentials == false
     and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData == "MSUF3:spells",
     "Modern onboarding must retain personal CDM lists while applying the chosen default")
 
+-- The profile install is the commit point: nothing after it refuses, so a
+-- scale step that MSUF refuses can neither fail the install nor let a retry
+-- create a second Forever profile.
+local created, installFactory = {}, Suite.SuiteProfiles.InstallFactory
+Suite.SuiteProfiles.InstallFactory = function(name)
+    created[#created + 1] = name
+    MSUF_GlobalDB.profiles[name] = {}
+    return true, name
+end
+MSUF_ResetGlobalUiScale = function() return false end
+Suite.Client.isForever = true
+Suite.Installer.Open()
+if not Suite.Installer.Apply() then Suite.Installer.Apply() end
+assert(#created == 1 and created[1] == "MSUF Suite Forever"
+    and Suite.RootDB.installation.profile == "forever",
+    "a refused step after the Forever install left a retry that installs a second profile")
+Suite.SuiteProfiles.InstallFactory, MSUF_ResetGlobalUiScale = installFactory, resetScale
+Suite.Client.isForever = false
+MSUF_GlobalDB.profiles["MSUF Suite Forever"] = nil
+
 -- Texts use the Suite localization (MSUF's table by English key); German
 -- clients keep the installer's own reviewed wording.
 local function OpenLocalized(locale, L)
@@ -270,8 +322,16 @@ end
 window = OpenLocalized("deDE", { Continue = "Fortfahren" })
 assert(window.title.text == "Willkommen bei MSUF Suite" and window.next.caption.text == "Weiter"
     and window.close.caption.text == "Später", "German installer wording regressed")
+-- A refusal stays English until the status line shows it, translated once.
+Suite.IsCombatLocked = function() return true end
+local refused, refusal = Suite.Installer.Apply()
+assert(not refused and refusal == "Finish combat first.", "the installer translated a refusal before showing it")
+for _ = 1, 5 do window.next.scripts.OnClick() end
+assert(window.status.text == "|cffff6666Bitte zuerst den Kampf beenden.|r",
+    "the installer status line did not translate the refusal")
+Suite.IsCombatLocked = function() return false end
 window = OpenLocalized("frFR", { Continue = "Continuer" })
 assert(window.next.caption.text == "Continuer" and window.title.text == "Welcome to MSUF Suite",
     "installer ignored the Suite localization table")
-GetLocale, Suite.L = nil, nil
+GetLocale, Suite.L = function() return "enUS" end, nil
 print("Suite installer: profiles, module selection, optional scaling, layout, localization and completion passed")

@@ -1,18 +1,24 @@
 local root, flavor = assert(arg[1]), assert(arg[2])
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
+assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local tocFlavor = flavor == "Forever" and "Mainline" or flavor
 local frames, loads, featureLoads, optionLoads, loaded = {}, 0, 0, 0, {}
 SlashCmdList = {}
 MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
--- Mainline boots under the Main MSUF build (no client model); the other clients
--- and Forever boot under the Classic build, which publishes MSUF_NS.Client.
+-- Both clients load the Mainline TOCs. Retail boots under the Main MSUF build
+-- (no client model); Forever under the Classic build, which publishes
+-- MSUF_NS.Client.
 if flavor == "Mainline" then
     MSUF_NS = {}
     WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 else
     MSUF_NS = { Client = {
-        Family = tocFlavor == "Mainline" and "Mainline" or "Classic", Flavor = tocFlavor,
-        IsRetail = tocFlavor == "Mainline", IsForever = flavor == "Forever", SupportsEvent = function() return true end,
+        Family = "Mainline", Flavor = "Mainline", IsRetail = true, IsForever = true,
+        SupportsEvent = function() return true end,
     } }
     MSUF_PixelLayoutRegion = function(frame) return frame end
 end
@@ -26,7 +32,15 @@ CreateFrame = function()
     return frame
 end
 IsLoggedIn = function() return false end
+InCombatLockdown = function() return false end
+C_EventUtils = { IsEventValid = function() return true end }
+UnitGUID = function() return "Player-Test" end
+UnitName = function() return "Tester" end
+GetRealmName = function() return "Realm" end
+GetMoney = function() return 0 end
+GetLocale = function() return "enUS" end
 LoggingCombat = function(value) if value ~= nil then return value end; return false end
+C_ChatInfo = { IsLoggingCombat = function() return false end }
 GetInstanceInfo = function() return "outside", "none", 0 end
 C_AddOns = {
     DoesAddOnExist = function(name)
@@ -34,17 +48,18 @@ C_AddOns = {
             or flavor == "Forever" and name == "MSUF_Suite_ActionBars"
     end,
     IsAddOnLoaded = function(name) return loaded[name] == true end,
+    GetAddOnEnableState = function() return 2 end,
     LoadAddOn = function(name)
         if name == "MSUF_Suite_Modules" then
             loads = loads + 1
-            Support.Load(root, name, {}, nil, nil, tocFlavor)
+            Support.Load(root, name, {})
             loaded[name] = true
             -- Forever can return a diagnostic even though the addon ran.
             return nil, "FOREVER_DIAGNOSTIC"
         end
         if name == "MSUF_Suite_QualityOfLife" then
             featureLoads = featureLoads + 1
-            Support.Load(root, name, {}, nil, nil, tocFlavor)
+            Support.Load(root, name, {})
             loaded[name] = true
             return true
         end
@@ -58,10 +73,10 @@ C_AddOns = {
         return true
     end,
 }
-Support.Load(root, "MSUF_Suite", {}, nil, nil, tocFlavor)
+Support.Load(root, "MSUF_Suite", {})
 assert(#frames == 2 and frames[2].events.PLAYER_ENTERING_WORLD and loads == 0)
 -- The key binding labels load with the core, right after the bar titles.
-local coreFiles, bindingsAt, barsAt = Support.TocFiles(root, "MSUF_Suite", tocFlavor), nil, nil
+local coreFiles, bindingsAt, barsAt = Support.TocFiles(root, "MSUF_Suite"), nil, nil
 for index, file in ipairs(coreFiles) do
     if file == "Core/Bindings.lua" then bindingsAt = index end
     if file == "Core/Catalog/ActionBars.lua" then barsAt = index end
@@ -76,16 +91,12 @@ assert(#frames == 3 and frames[3].events.ADDON_LOADED and optionLoads == 0)
 local owner = assert(MSUFSuite)
 assert((owner.Suite.catalog.objectives.rules.showMythicPlus ~= nil) == (flavor == "Mainline"),
     "Mythic+ HUD setting must be available only on Retail")
-if flavor == "Mainline" or flavor == "Forever" then
+do
     assert(owner.Suite.Config("objectives").enabled
         and owner.Suite.Config("announcements").enabled
-        and owner.Suite.catalog.objectives.available()
-        and owner.Suite.catalog.announcements.available(),
-        "Suite-owned HUD must be available by default on Mainline and Forever: "
-            .. tostring(owner.Suite.Config("objectives").enabled) .. "/"
-            .. tostring(owner.Suite.Config("announcements").enabled) .. "/"
-            .. tostring(owner.Suite.catalog.objectives.available()) .. "/"
-            .. tostring(owner.Suite.catalog.announcements.available()))
+        and owner.Suite.catalog.objectives.available == nil
+        and owner.Suite.catalog.announcements.available == nil,
+        "Suite-owned HUD must be enabled by default and have no client gate on Retail and Forever")
     if flavor == "Forever" then
         assert(owner.Suite.Config("actionbars").enabled
             and owner.Suite.catalog.actionbars.core
@@ -119,8 +130,9 @@ if flavor == "Mainline" or flavor == "Forever" then
     owner.Suite.Normalize(owner.DB)
     owner.Suite.Config("objectives").enabled = false
     owner.Suite.Config("announcements").enabled = false
-    -- Secure ActionBars have their own contract fixture.
+    -- Secure ActionBars and the XP bar have their own contract fixtures.
     if flavor == "Forever" then owner.Suite.Config("actionbars").enabled = false end
+    owner.Suite.Config("xpBar").enabled = false
 end
 frames[1]:callback("PLAYER_LOGIN")
 frames[2]:callback("PLAYER_ENTERING_WORLD", true, false)
@@ -131,12 +143,10 @@ assert(owner.Suite.Config("combatLog").enabled == true
     "combat logging did not keep safe, useful defaults")
 assert(owner.Host.build == (flavor == "Mainline" and "Main" or "Classic"))
 assert(owner.Client.flavor == flavor, "client detected as " .. tostring(owner.Client.flavor))
-if flavor == "Mainline" or flavor == "Forever" then
-    assert(type(owner.ForeverFactoryFramesCompact) == "string"
-        and owner.ForeverFactoryFramesCompact:match("^MSUF3:")
-        and type(owner.ForeverFactoryModuleCompact) == "string",
-        "Forever installer choice is unavailable on a Mainline client")
-end
+assert(type(owner.ForeverFactoryFramesCompact) == "string"
+    and owner.ForeverFactoryFramesCompact:match("^MSUF3:")
+    and type(owner.ForeverFactoryModuleCompact) == "string",
+    "Forever installer choice is unavailable on a Mainline client")
 assert(owner.Suite.Config("chat").enabled == true
     and owner.Suite.Config("chat").look == (flavor == "Forever" and 3 or 2),
     "chat must start enabled with the client look")

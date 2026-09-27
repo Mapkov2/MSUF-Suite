@@ -29,10 +29,10 @@ end
 -- codec can read it, otherwise from catalog defaults at the current
 -- migration revision.
 local function NewProfile()
-    local compact = Suite.Client and Suite.Client.isForever and Suite.ForeverFactoryModuleCompact
-        or Suite.Client and Suite.Client.isMainline and Suite.RetailFactoryModuleCompact
-    if type(compact) == "string" and type(_G.MSUF_TryDecodeCompactString) == "function"
-        and Suite.ProfileIO then
+    local compact = Suite.Client.isForever and Suite.ForeverFactoryModuleCompact
+        or Suite.RetailFactoryModuleCompact
+    -- Older MSUF builds do not export the codec.
+    if type(compact) == "string" and type(_G.MSUF_TryDecodeCompactString) == "function" then
         -- The bundled string is known-good; the codec returns nil on bad input.
         local envelope = _G.MSUF_TryDecodeCompactString(compact:sub(8))
         if type(envelope) == "table" and envelope.addon == "MSUF_Suite" and envelope.format == 1 then
@@ -40,8 +40,7 @@ local function NewProfile()
             if profile then return profile end
         end
     end
-    local revision = Suite.Suite and Suite.Suite.MigrationRevision
-    return { suite = { schema = 1, revision = revision, modules = {} } }
+    return { suite = { schema = 1, revision = Suite.Suite.MigrationRevision, modules = {} } }
 end
 Database.CreateFactoryProfile = NewProfile
 
@@ -113,18 +112,18 @@ function Database.GetProfile(name)
 end
 
 function Database.Activate(name)
-    if Suite.IsCombatLocked and Suite.IsCombatLocked() then return false, "combat" end
+    if Suite.IsCombatLocked() then return false, "combat" end
     if not Database.IsProfileName(name) or not Database.GetProfile(name) then
         return false, "missing-profile"
     end
     Suite.RootDB.activeProfile = name
     Suite.DB = Suite.RootDB.profiles[name]
-    if Suite.OnProfileChanged then Suite.OnProfileChanged(name) end
+    Suite.OnProfileChanged(name)
     return true
 end
 
 function Database.Create(name, copyCurrent)
-    if Suite.IsCombatLocked and Suite.IsCombatLocked() then return false, "combat" end
+    if Suite.IsCombatLocked() then return false, "combat" end
     if not Suite.RootDB then return false, "database-unavailable" end
     if not Database.IsProfileName(name) then return false, "invalid-profile-name" end
     if Database.GetProfile(name) then return false, "profile-exists" end
@@ -135,7 +134,7 @@ end
 -- Staged imports may create a new profile only. Existing names, including the
 -- active profile, are never overwritten by a shared configuration.
 function Database.CreateFromProfile(name, profile)
-    if Suite.IsCombatLocked and Suite.IsCombatLocked() then return false, "combat" end
+    if Suite.IsCombatLocked() then return false, "combat" end
     if not Suite.RootDB then return false, "database-unavailable" end
     if not Database.IsProfileName(name) then return false, "invalid-profile-name" end
     if Database.GetProfile(name) then return false, "profile-exists" end
@@ -148,7 +147,7 @@ function Database.CreateFromProfile(name, profile)
 end
 
 function Database.Delete(name)
-    if Suite.IsCombatLocked and Suite.IsCombatLocked() then return false, "combat" end
+    if Suite.IsCombatLocked() then return false, "combat" end
     if not Database.GetProfile(name) then return false, "missing-profile" end
     if Database.GetActiveProfileName() == name then return false, "active-profile" end
     Suite.RootDB.profiles[name] = nil

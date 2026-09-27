@@ -2,17 +2,11 @@ local _, Suite = ...
 local IO = { prefix = "MSUFM1:", maxBytes = 2 * 1024 * 1024 }
 Suite.ProfileIO = IO
 
+-- MSUF's codec (older MSUF builds do not export it). It runs on
+-- C_EncodingUtil, which Retail and Forever both have.
 local function CodecAvailable()
-    local codec = _G.C_EncodingUtil
     return type(_G.MSUF_EncodeCompactTable) == "function"
         and type(_G.MSUF_TryDecodeCompactString) == "function"
-        and codec and type(codec.SerializeCBOR) == "function"
-        and type(codec.DeserializeCBOR) == "function"
-        and type(codec.EncodeBase64) == "function"
-        and type(codec.DecodeBase64) == "function"
-        and type(codec.CompressString) == "function"
-        and type(codec.DecompressString) == "function"
-        and Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate ~= nil
 end
 
 -- A copy keeps the migration state of its source, so one-time migrations
@@ -46,7 +40,7 @@ function IO.PrepareTable(profile, shared)
                 local value = source[key]
                 if value ~= nil then
                     if type(value) ~= type(rule.default) then return nil, "Invalid module setting" end
-                    if type(value) == "number" and (value ~= value or math.abs(value) == math.huge) then
+                    if type(value) == "number" and not Suite.Finite(value) then
                         return nil, "Invalid module number"
                     end
                     if type(value) == "string" and #value > rule.maxLength then

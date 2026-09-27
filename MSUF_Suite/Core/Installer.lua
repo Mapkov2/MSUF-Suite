@@ -79,20 +79,22 @@ local GERMAN = {
     ["Installation complete"] = "Installation abgeschlossen",
     ["Your new setup is active. Reload the interface to finish loading all selected modules."] = "Deine neue Einrichtung ist aktiv. Lade die Oberfläche neu, damit alle gewählten Module geladen werden.",
 }
-local german = type(GetLocale) == "function" and GetLocale() == "deDE"
+local german = GetLocale() == "deDE"
 local function Text(english)
-    local value = german and GERMAN[english] or Suite.L and Suite.L[english]
-    return type(value) == "string" and value ~= "" and value or english
+    return german and GERMAN[english] or Suite.Text(english)
+end
+
+-- Refusal reasons arrive as English text and are translated where shown.
+local function ReasonText(reason)
+    return Suite.StatusText(tostring(reason), Text)
 end
 
 local function RetailCooldowns()
-    return Suite.Client and Suite.Client.isMainline
-        and (selected == "suite" or Suite.Client.isForever ~= true)
+    return selected == "suite" or not Suite.Client.isForever
 end
 
 local function PlayerCooldownAnchor()
-    local anchors = Suite.CDM and Suite.CDM.FRAME_ANCHORS
-    for index, unit in pairs(anchors or {}) do
+    for index, unit in pairs(Suite.CDM.FRAME_ANCHORS) do
         if unit == "player" then return index end
     end
 end
@@ -102,11 +104,46 @@ local function FrameProfileName()
         and _G.MSUF_ActiveProfile or DB.GetActiveProfileName()
 end
 
-local function PreparedProfile()
+-- Decoding a factory string is costly, so each one is decoded once. The
+-- cached profile stays pristine: previews read it and installs copy it.
+local decodedFactories = {}
+local function FactoryProfile()
     local compact = selected == "forever" and Suite.ForeverFactoryModuleCompact
         or Suite.RetailFactoryModuleCompact
-    local profile, reason = Suite.ProfileIO.PrepareProfile(compact, false)
-    if not profile then return false, reason end
+    local profile = decodedFactories[compact]
+    if profile then return profile end
+    local reason
+    profile, reason = Suite.ProfileIO.PrepareProfile(compact, false)
+    if not profile then return nil, reason end
+    decodedFactories[compact] = profile
+    return profile
+end
+
+-- Whether a module starts enabled in the chosen profile: the choice made on
+-- the modules page, else the factory value. nil for a module the factory
+-- does not carry.
+local function ModuleEnabled(profile, id)
+    local config = profile.suite.modules[id]
+    if not config then return nil end
+    local override = moduleOverrides[selected][id]
+    if override ~= nil then return override == true end
+    return config.enabled == true
+end
+
+-- A reason the chosen factory profile cannot be installed on this client.
+local function InstallBlocker(factory)
+    if selected == "forever" and RetailCooldowns() and factory.suite.modules.cooldownManager
+        and not PlayerCooldownAnchor() then
+        return "CDM player-frame anchor unavailable"
+    end
+end
+
+local function PreparedProfile()
+    local factory, reason = FactoryProfile()
+    if not factory then return false, reason end
+    reason = InstallBlocker(factory)
+    if reason then return false, reason end
+    local profile = Suite.CopyValue(factory)
     local modules = profile.suite.modules
     local minimap = modules.minimap
     if minimap then minimap.point, minimap.x, minimap.y = 3, -20, -20 end
@@ -144,7 +181,6 @@ local function PreparedProfile()
         end
         if selected == "forever" then
             local playerAnchor = PlayerCooldownAnchor()
-            if not playerAnchor then return nil, "CDM player-frame anchor unavailable" end
             -- The authored Forever rows must survive the runtime's legacy
             -- defaults migration. Its old Potions row followed Utility far
             -- below the player; both side rows now follow the Player frame.
@@ -158,10 +194,9 @@ local function PreparedProfile()
             cooldowns.ext_x, cooldowns.ext_y = 0, 0
         end
     end
-    local overrides = moduleOverrides[selected] or {}
-    for id, enabled in pairs(overrides) do
-        local module = profile.suite.modules[id]
-        if module then module.enabled = enabled == true end
+    for id, enabled in pairs(moduleOverrides[selected]) do
+        local config = modules[id]
+        if config then config.enabled = enabled == true end
     end
     return profile
 end
@@ -187,7 +222,7 @@ end
 
 local function ApplyForever(profile)
     local msuf = _G.MSUF_NS
-    local frames = Suite.Client and Suite.Client.isForever and msuf
+    local frames = Suite.Client.isForever and msuf
         and msuf.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
         or Suite.ForeverFactoryFramesCompact
     local skin = Suite.ForeverFactorySkinCompact
@@ -199,32 +234,25 @@ local function ApplyForever(profile)
         skinEnabled and skin or nil)
 end
 
+-- Runs after the profile install. Installer.Apply has checked the scale
+-- controls (ScaleControlsReady) and combat, the only reason MSUF refuses a
+-- scale change, so this step cannot refuse.
 local function ApplyScale()
-    local general = type(_G.MSUF_DB) == "table" and _G.MSUF_DB.general
-    if type(general) ~= "table" then return false, "MSUF scale settings unavailable" end
-    if type(_G.MSUF_ResetGlobalUiScale) ~= "function"
-        or type(_G.MSUF_ApplyMsufScale) ~= "function" then
-        return false, "MSUF scale controls unavailable"
-    end
-    if useScale and type(_G.MSUF_SetGlobalUiScale) ~= "function" then
-        return false, "MSUF UI scale control unavailable"
-    end
+    local general = _G.MSUF_DB.general
     general.msufUiScale = 1
     general.uiScale = nil
     _G.MSUF_ApplyMsufScale(1)
-    if _G.MSUF_ResetGlobalUiScale(true) == false then return false, "Cannot change scale in combat" end
-    if useScale then
-        if scalePreset == "pixel" and type(_G.MSUF_GetPixelPerfectScale) == "function" then
-            scale = tonumber(_G.MSUF_GetPixelPerfectScale()) or scale
-        end
-        general.UIScale = type(general.UIScale) == "table" and general.UIScale or {}
-        general.UIScale.Enabled = true
-        general.UIScale.Scale = scale
-        general.globalUiScalePreset = scalePreset
-        general.globalUiScaleValue = scale
-        _G.MSUF_SetGlobalUiScale(scale, true)
+    _G.MSUF_ResetGlobalUiScale(true)
+    if not useScale then return end
+    if scalePreset == "pixel" and type(_G.MSUF_GetPixelPerfectScale) == "function" then
+        scale = tonumber(_G.MSUF_GetPixelPerfectScale()) or scale
     end
-    return true
+    general.UIScale = type(general.UIScale) == "table" and general.UIScale or {}
+    general.UIScale.Enabled = true
+    general.UIScale.Scale = scale
+    general.globalUiScalePreset = scalePreset
+    general.globalUiScaleValue = scale
+    _G.MSUF_SetGlobalUiScale(scale, true)
 end
 
 local function ScaleControlsReady()
@@ -241,19 +269,25 @@ local function ScaleControlsReady()
     return true
 end
 
+-- The profile install is the commit point. Every check that can refuse runs
+-- before it, and the profile helpers roll a refused install back, so a
+-- failed attempt changed nothing and a retry never installs a second
+-- Forever profile. Nothing after the install can refuse.
 function Installer.Apply()
-    if Suite.IsCombatLocked() then return false, Text("Finish combat first.") end
+    if Suite.IsCombatLocked() then return false, "Finish combat first." end
     if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
     local ready, why = ScaleControlsReady()
     if not ready then return false, why end
     local profile, reason = PreparedProfile()
     if not profile then return false, reason end
-    local ok, reason
-    if selected == "forever" then ok, reason = ApplyForever(profile)
-    else ok, reason = ApplySuiteOnly(profile) end
+    local ok
+    if selected == "forever" then
+        ok, reason = ApplyForever(profile)
+    else
+        ok, reason = ApplySuiteOnly(profile)
+    end
     if not ok then return false, reason end
-    ok, reason = ApplyScale()
-    if not ok then return false, reason end
+    ApplyScale()
     local previous = Suite.RootDB.installation
     local getDefault = _G.MSUF_GetDefaultProfileForNewCharacters
     local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
@@ -272,12 +306,8 @@ function Installer.Apply()
         Suite.RootDB.installation.newCharacterProfileRevision = 1
         Suite.RootDB.installation.newCharacterProfileOwned = true
     end
-    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureNewCharacterProfile then
-        Suite.SuiteProfiles.EnsureNewCharacterProfile()
-    end
-    if Suite.SuiteProfiles and Suite.SuiteProfiles.EnsureRetailResourceStack then
-        Suite.SuiteProfiles.EnsureRetailResourceStack(true)
-    end
+    Suite.SuiteProfiles.EnsureNewCharacterProfile()
+    Suite.SuiteProfiles.EnsureRetailResourceStack(true)
     return true
 end
 
@@ -355,30 +385,26 @@ local function ModuleRow(parent, id, index, count)
     card.state = Label(card, "GameFontNormalSmall", 198, -4, 42, 16)
     card.state:SetJustifyH("RIGHT")
     card:SetScript("OnClick", function()
-        local profile = PreparedProfile()
-        local config = profile and profile.suite and profile.suite.modules[id]
-        if not config then return end
-        moduleOverrides[selected][id] = not config.enabled
+        local profile = FactoryProfile()
+        local enabled = profile and ModuleEnabled(profile, id)
+        if enabled == nil then return end
+        moduleOverrides[selected][id] = not enabled
         Installer.Refresh()
     end)
     card:SetScript("OnEnter", function(self)
         local spec = Suite.SuiteCatalog[id]
-        local tooltip = _G.GameTooltip
-        if not (spec and tooltip) then return end
+        if not spec then return end
+        local tooltip = GameTooltip
         tooltip:SetOwner(self, "ANCHOR_RIGHT")
         tooltip:SetText(spec.title or id)
         if type(spec.description) == "string" and spec.description ~= "" then
             tooltip:AddLine(spec.description, 0.78, 0.84, 0.89, true)
         end
-        if Suite.Suite and type(Suite.Suite.Availability) == "function" then
-            local available, reason = Suite.Suite.Availability(id)
-            if not available and reason then tooltip:AddLine(reason, 1, 0.45, 0.4, true) end
-        end
+        local available, reason = Suite.Suite.Availability(id)
+        if not available and reason then tooltip:AddLine(ReasonText(reason), 1, 0.45, 0.4, true) end
         tooltip:Show()
     end)
-    card:SetScript("OnLeave", function()
-        if _G.GameTooltip then _G.GameTooltip:Hide() end
-    end)
+    card:SetScript("OnLeave", function() GameTooltip:Hide() end)
     return card
 end
 
@@ -397,7 +423,7 @@ local function CreateWindow()
     window:SetBackdropBorderColor(0.25, 0.43, 0.52, 1)
     window:EnableMouse(true)
     window:SetMovable(true)
-    if window.SetClampedToScreen then window:SetClampedToScreen(true) end
+    window:SetClampedToScreen(true)
     window:RegisterForDrag("LeftButton")
     window:SetScript("OnDragStart", function(self) self:StartMoving() end)
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
@@ -454,7 +480,7 @@ local function BuildProfileSteps(window)
     end)
     window.cooldowns = cooldowns
     window.moduleRows = {}
-    for index, id in ipairs(Suite.SuiteOrder or {}) do
+    for index, id in ipairs(Suite.SuiteOrder) do
         window.moduleRows[index] = ModuleRow(window, id, index, #Suite.SuiteOrder)
     end
 end
@@ -476,11 +502,11 @@ local function BuildScaleSlider(window)
     slider:SetSize(346, 18)
     slider:SetMinMaxValues(0.3, 1.15)
     slider:SetValueStep(0.01)
-    for _, suffix in ipairs({ "Low", "High", "Text" }) do
-        local label = _G["MSUFSuiteInstallScaleSlider" .. suffix]
-        if label then label:Hide() end
-    end
-    if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
+    -- UISliderTemplateWithLabels (via OptionsSliderTemplate) on both clients.
+    slider.Low:Hide()
+    slider.High:Hide()
+    slider.Text:Hide()
+    slider:SetObeyStepOnDrag(true)
     window.scaleSlider = slider
     slider:SetValue(scale)
     slider:SetScript("OnValueChanged", function(_, value)
@@ -536,15 +562,13 @@ local function OnContinue(window)
     elseif page == 5 then
         local ok, reason = Installer.Apply()
         if not ok then
-            window.status:SetText("|cffff6666" .. tostring(reason or "Installation failed") .. "|r")
+            window.status:SetText("|cffff6666" .. ReasonText(reason or "Installation failed") .. "|r")
             return
         end
         page = 6
         Installer.Refresh()
-    elseif type(_G.ReloadUI) == "function" then
-        _G.ReloadUI()
     else
-        window:Hide()
+        ReloadUI()
     end
 end
 
@@ -618,9 +642,15 @@ local function SetPageText(f, title, body)
 end
 
 -- The profile of the current choice; a failure is shown in the status line.
+-- The chosen factory profile for the preview pages, read-only (never
+-- copied). A reason the install would refuse is shown in the status line.
 local function PreviewProfile(f)
-    local profile, reason = PreparedProfile()
-    if not profile then f.status:SetText("|cffff6666" .. tostring(reason) .. "|r") end
+    local profile, reason = FactoryProfile()
+    if profile then reason = InstallBlocker(profile) end
+    if reason then
+        f.status:SetText("|cffff6666" .. ReasonText(reason) .. "|r")
+        return nil
+    end
     return profile
 end
 
@@ -654,8 +684,7 @@ local function PaintModules(f)
         "The chosen profile supplies all settings. Toggle which Suite modules are enabled in it.")
     local profile = PreviewProfile(f)
     for _, row in ipairs(f.moduleRows) do
-        local config = profile and profile.suite.modules[row.id]
-        local enabled = config and config.enabled == true
+        local enabled = profile ~= nil and ModuleEnabled(profile, row.id) == true
         Style(row, enabled)
         row.state:SetText(enabled and Text("ON") or Text("OFF"))
     end
@@ -676,11 +705,9 @@ end
 
 local function ModuleSummary(profile)
     local enabled, total = 0, 0
-    for _, id in ipairs(Suite.SuiteOrder or {}) do
+    for _, id in ipairs(Suite.SuiteOrder) do
         total = total + 1
-        if profile and profile.suite.modules[id] and profile.suite.modules[id].enabled then
-            enabled = enabled + 1
-        end
+        if profile and ModuleEnabled(profile, id) then enabled = enabled + 1 end
     end
     local summary = ("%d / %d %s"):format(enabled, total, Text("enabled"))
     if RetailCooldowns() then
@@ -723,7 +750,7 @@ end
 
 function Installer.Open()
     if Suite.IsCombatLocked() then return false, "combat" end
-    selected = Suite.Client and Suite.Client.isForever and "forever" or "suite"
+    selected = Suite.Client.isForever and "forever" or "suite"
     local active = DB.GetProfile(DB.GetActiveProfileName())
     local current = active and active.suite and active.suite.modules
         and active.suite.modules.cooldownManager
@@ -735,8 +762,8 @@ function Installer.Open()
     return true
 end
 function Installer.MaybeShow()
-    if type(_G.IsLoggedIn) == "function" and not _G.IsLoggedIn() then return false end
-    if frame and frame.IsShown and frame:IsShown() then return false end
+    if not IsLoggedIn() then return false end
+    if frame and frame:IsShown() then return false end
     if Suite.freshInstall and Suite.RootDB and not Suite.RootDB.installation then
         return Installer.Open()
     end

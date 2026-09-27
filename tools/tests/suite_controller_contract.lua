@@ -1,7 +1,20 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local Suite, loads, frames, combat = {}, 0, {}, false
-MSUF_NS = { Client = { Family = "Classic", Flavor = "Vanilla" } }
+-- The client's securecallfunction reports an error to the error handler and
+-- returns nothing; this harness models exactly that.
+local reported = {}
+securecallfunction = function(callback, ...)
+    local results = { pcall(callback, ...) }
+    if not results[1] then
+        reported[#reported + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2)
+end
+-- Main MSUF (Retail-only) publishes no client model.
+MSUF_NS = {}
+WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 SlashCmdList = {}
 InCombatLockdown = function() return combat end
 Minimap = { SetMaskTexture = function() end }
@@ -17,28 +30,40 @@ CreateFrame = function()
     frames[#frames + 1] = frame
     return frame
 end
+local function Instance()
+    return {
+        Enable = function(self) self.starts = (self.starts or 0) + 1 end,
+        Refresh = function(self) self.refreshes = (self.refreshes or 0) + 1 end,
+        Disable = function(self) self.stops = (self.stops or 0) + 1 end,
+    }
+end
+local INSTALLED, loaded = { MSUF_Suite_Minimap = "minimap", MSUF_Suite_DataTexts = "dataTexts" }, {}
+UnitGUID = function() return "Player-Test" end
 C_AddOns = {
-    IsAddOnLoaded = function() return false end,
-    DoesAddOnExist = function(name) return name == "MSUF_Suite_Minimap" end,
+    IsAddOnLoaded = function(name) return loaded[name] == true end,
+    DoesAddOnExist = function(name) return INSTALLED[name] ~= nil end,
+    GetAddOnEnableState = function() return 2 end,
     LoadAddOn = function(name)
-        assert(name == "MSUF_Suite_Modules" or name == "MSUF_Suite_Minimap")
+        assert(name == "MSUF_Suite_Modules" or INSTALLED[name], name)
+        loaded[name] = true
         local controller = Suite.Suite
         if name == "MSUF_Suite_Modules" then
+            -- The shared runtime: contexts (Runtime.lua) and movers (EditMode.lua).
             loads = loads + 1
             controller.NewContext = function()
-                return { Release = function(self) self.released = true end }
+                return { Release = function(self) self.released = true end, RefreshOwnedSkins = function() end }
             end
+            controller.RefreshEditMover = function() end
+            controller.UnregisterEditElements = function() end
         else
-            controller.instances.minimap = {
-                Enable = function(self) self.starts = (self.starts or 0) + 1 end,
-                Refresh = function(self) self.refreshes = (self.refreshes or 0) + 1 end,
-                Disable = function(self) self.stops = (self.stops or 0) + 1 end,
-            }
+            controller.instances[INSTALLED[name]] = Instance()
         end
         -- Forever can register successfully without returning a loaded flag.
     end,
 }
-Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua", nil, "Vanilla")
+Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
+-- The skin boundary loads right after the controller (no skin is installed).
+assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
 assert(Suite.Database.Initialize(nil))
 local oldHud = { suite = { schema = 1, modules = { objectives = {
     colorStyle = 1, backgroundOpacity = 82,
@@ -95,8 +120,7 @@ assert(Suite.Suite.Config("skyriding").look == 3
     and Suite.Suite.Config("skyriding").accentColor == "d8b66a",
     "older Skyriding profiles lost their selected colors")
 for _, id in ipairs(Suite.SuiteOrder) do
-    assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "objectives"
-        and id ~= "announcements"),
+    assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "nameplates"),
         id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end
@@ -122,11 +146,19 @@ assert(Suite.Suite.Config("skyriding").enabled == false,
     "new profile enabled the Retail flight HUD without a user choice")
 assert(Suite.Suite.Set("minimap", "enabled", false))
 assert(module.stops == 1 and module.context.released and not module.active)
+-- A module whose Enable raises is reported, releases what it took at once and
+-- shows the failure until one of its settings changes.
 module.Enable = function(self) error("deliberate partial activation") end
-local ok = pcall(Suite.Suite.Set, "minimap", "enabled", true)
-assert(not ok and module.active and not Suite.Suite.states.minimap.active)
+module.context.released = nil
+assert(Suite.Suite.Set("minimap", "enabled", true), "a failing module raised out of the setter")
+assert(#reported == 1 and reported[1]:find("deliberate partial activation", 1, true)
+    and module.stops == 2 and module.context.released and not module.active
+    and not Suite.Suite.states.minimap.active
+    and Suite.Suite.Status("minimap") == "Stopped after an error",
+    "partial activation was not released or its failure was not recorded")
 assert(Suite.Suite.Set("minimap", "enabled", false))
-assert(module.stops == 2 and not module.active, "partial activation leaked on disable")
+assert(module.stops == 2 and not module.active and Suite.Suite.Status("minimap") == "Off",
+    "a failed module was stopped twice or kept its failure after a change")
 assert(loads == 1 and type(SlashCmdList.MSUFSUITE) == "function")
 -- Setup enables available core modules. Other factory-enabled modules keep
 -- their saved switch, and unavailable modules still show their reason.
@@ -154,4 +186,109 @@ assert(module.active and S.Status("minimap") == "Active",
     "re-enabled Blizzard AddOn did not restore the module")
 assert(S.Preset("off") and not S.Config("minimap").enabled and not S.Config("qol").enabled and not module.active)
 assert(not S.Preset("everything"))
-print("Standalone suite controller: dormant startup, own loader, combat coalescing, profile switch, partial cleanup and setup presets passed")
+
+-- One failing module neither stops the modules after it nor the skin's
+-- surface hand-back, and a combat queue drains completely.
+local phases = {}
+local surfacesChanged = Suite.Skin.SurfacesChanged
+Suite.Skin.SurfacesChanged = function(phase) phases[#phases + 1] = phase end
+reported = {}
+S.Config("minimap").enabled, S.Config("dataTexts").enabled = true, true
+module.Enable = function() error("minimap failed") end
+local texts = assert(S.instances.dataTexts)
+local textStarts = texts.starts
+S.ApplyAll()
+assert(#reported == 1 and texts.starts == textStarts + 1 and S.states.dataTexts.active and not module.active
+    and S.Status("minimap") == "Stopped after an error",
+    "a failing module stopped the modules after it")
+module.Enable = function(self) self.starts = self.starts + 1 end
+assert(S.Set("minimap", "enabled", true) and module.active)
+phases = {}
+texts.Refresh = function() error("dataTexts failed") end
+S.Apply("dataTexts")
+assert(#reported == 2 and phases[1] == "before" and phases[2] == "after" and not texts.active,
+    "the skin did not take its surface back after the module failed")
+assert(S.Set("dataTexts", "enabled", true) and texts.active)
+texts.Refresh = function(self) self.refreshes = (self.refreshes or 0) + 1 end
+local queue = frames[1]
+combat = true
+module.Refresh = function() error("minimap refresh failed") end
+S.Apply("minimap")
+S.Apply("dataTexts")
+assert(queue.events.PLAYER_REGEN_ENABLED and S.Status("dataTexts") == "Waiting for combat to end")
+combat = false
+local refreshes = texts.refreshes or 0
+queue:callback()
+assert(#reported == 3 and texts.refreshes == refreshes + 1 and not queue.events.PLAYER_REGEN_ENABLED
+    and S.Status("dataTexts") == "Active" and S.Status("minimap") == "Stopped after an error",
+    "a failing queued module left the rest of the combat queue behind")
+Suite.Skin.SurfacesChanged = surfacesChanged
+-- A menu repaint that raises is reported; the applied change still succeeds.
+Suite.Options = { RefreshAll = function() error("menu failed") end }
+assert(S.Set("dataTexts", "enabled", false) and #reported == 4 and not texts.active,
+    "a menu error failed a setting that was already applied")
+Suite.Options = nil
+
+-- Stopping a module runs every step isolated: a release that raises is
+-- reported, the module stops cleanly and its CVars are still handed back.
+local restoredCVars = {}
+S.RestoreSaved = function(id) restoredCVars[id] = (restoredCVars[id] or 0) + 1 end
+module.Refresh = function(self) self.refreshes = (self.refreshes or 0) + 1 end
+assert(S.Set("minimap", "enabled", true) and module.active)
+local release = module.context.Release
+module.context.Release = function() error("release failed") end
+local errors = #reported
+assert(S.Set("minimap", "enabled", false))
+module.context.Release = release
+assert(#reported == errors + 1 and restoredCVars.minimap == 1 and not module.active
+    and S.Status("minimap") == "Off", "a raising release kept the module's CVars applied")
+S.RestoreSaved = nil
+
+-- Statuses stay English source text like every other status; the menu
+-- translates them once, when it shows them (suite_options_menu_contract).
+Suite.L["Stopped after an error"] = "Nach einem Fehler gestoppt"
+module.Enable = function() error("minimap failed again") end
+assert(S.Set("minimap", "enabled", true))
+assert(S.Status("minimap") == "Stopped after an error" and not module.active,
+    "the failure status was translated before the menu translates it")
+Suite.L["Stopped after an error"] = nil
+-- A profile switch starts afresh: the failed module is tried again.
+module.Enable = function(self) self.starts = self.starts + 1 end
+assert(Suite.Database.Create("Retry", true) and Suite.Database.Activate("Retry"))
+assert(module.active and S.Status("minimap") == "Active", "a profile switch kept a failed module stopped")
+
+-- Modules queued in combat apply in catalog order, like S.ApplyAll.
+local apply, appliedOrder = S.Apply, {}
+for i = #S.order, 1, -1 do S.Queue(S.order[i]) end
+S.Apply = function(id)
+    appliedOrder[#appliedOrder + 1] = id
+    return apply(id)
+end
+queue:callback()
+S.Apply = apply
+assert(#appliedOrder == #S.order and not queue.events.PLAYER_REGEN_ENABLED, "the combat queue did not drain")
+for i, id in ipairs(S.order) do
+    assert(appliedOrder[i] == id, "the combat queue applied modules out of catalog order")
+end
+
+-- The Bags catalog reads combinedBags through C_CVar like every other file;
+-- the global GetCVar/SetCVar are not needed (and not stubbed here).
+ContainerFrameCombinedBags = { EnumerateValidItems = function() end, UpdateItems = function() end }
+hooksecurefunc = function() end
+C_Container = { GetContainerItemInfo = function() end }
+C_Item = { GetDetailedItemLevelInfo = function() end, IsEquippableItem = function() end }
+local bagMode = "1"
+C_CVar = { GetCVar = function(key) assert(key == "combinedBags"); return bagMode end }
+GetCVar, SetCVar = nil, nil
+local bagsAvailable, bagsReason = S.catalog.bags.available()
+assert(bagsAvailable == true, "the Bags catalog needs the global GetCVar: " .. tostring(bagsReason))
+bagMode = nil
+assert(select(2, S.catalog.bags.available()) == "This client has no combined bag setting")
+ContainerFrameCombinedBags, hooksecurefunc, C_Container, C_Item, C_CVar = nil, nil, nil, nil, nil
+-- The controller calls only helpers that exist.
+for _, file in ipairs({ "MSUF_Suite/Core/Suite.lua", "MSUF_Suite/Integrations/MapkoSkin.lua" }) do
+    local source = assert(io.open(root .. "/" .. file, "rb")):read("*a")
+    assert(not source:find("CloseMovers", 1, true) and not source:find("RefreshCopySkin", 1, true),
+        file .. " still guards a helper nothing defines")
+end
+print("Standalone suite controller: dormant startup, own loader, combat coalescing, profile switch, error isolation and setup presets passed")

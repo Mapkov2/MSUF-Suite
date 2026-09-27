@@ -3,11 +3,15 @@
 -- placement, page registration, control coverage of every catalog setting,
 -- per-bar/per-window key mapping, enable gating and the locale merge.
 local root = assert(arg[1], "repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 local flavor = arg[2] or "Mainline"
+assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }
     return setmetatable(f, { __index = function(_, key)
-        if type(key) == "string" and key:sub(1, 1) == "_" then return nil end
+        if key == "mirror" or type(key) == "string" and key:sub(1, 1) == "_" then return nil end
         return function() end
     end })
 end
@@ -23,12 +27,19 @@ local function Widget(kind)
     function w:GetWidth() return self.width end
     function w:SetHeight(v) self.height = v end
     function w:GetHeight() return self.height end
+    function w:GetFrameLevel() return rawget(self, "level") or 1 end
+    function w:SetFrameLevel(value) self.level = value end
+    function w:CreateLine() return Widget("Line") end
     function w:SetSize(a, b) self.width, self.height = a, b end
     function w:StartMoving() self.moving = true end
     function w:StopMovingOrSizing() self.moving = false end
     function w:EnableKeyboard(v) self.keyboardEnabled = v and true or false end
     function w:SetPropagateKeyboardInput(v) self.propagateKeyboard = v and true or false end
     function w:GetStringHeight() return 14 end
+    -- An unloaded font measures 0; the preview then estimates the width.
+    function w:GetStringWidth() return 0 end
+    function w:CreateMaskTexture() return Widget("MaskTexture") end
+    function w:GetEffectiveScale() return 1 end
     function w:SetScript(name, fn) self.scripts[name] = fn end
     function w:GetScript(name) return self.scripts[name] end
     function w:SetEnabled(v) self.enabled = v and true or false end
@@ -40,23 +51,51 @@ local function Widget(kind)
     function w:CreateTexture() return Widget("Texture") end
     function w:CreateFontString() return Widget("FontString") end
     function w:SetValue(v) self.value = v end
+    function w:SetMinMaxValues(lo, hi) self.minValue, self.maxValue = lo, hi end
+    function w:SetStatusBarTexture(path)
+        self.statusTexture = rawget(self, "statusTexture") or Widget("Texture")
+        self.statusTexture:SetTexture(path)
+    end
+    function w:GetStatusBarTexture() return self.statusTexture end
+    function w:SetStatusBarColor(...) self.barColor = { ... } end
     return w
 end
 CreateFrame = function(kind) return Widget(kind) end
 
--- WoW client stand-ins
+-- WoW client stand-ins. The neutral ones: no class, zone, map position,
+-- atlas, modifier key, keyboard focus or rotating minimap.
+local neutralTooltip = setmetatable({}, { __index = function() return function() end end })
+GameTooltip = neutralTooltip
+-- Blizzard_EditMode loads at startup; until a step allows it, Edit Mode
+-- cannot be entered.
+local lockedEditMode = { CanEnterEditMode = function() return false end }
+EditModeManagerFrame = lockedEditMode
+UnitClass = function() return nil end
+GetZoneText = function() return "" end
+GetGameTime = function() return 12, 34 end
+GetCVarBool = function() return false end
+C_Texture = { GetAtlasInfo = function() return nil end }
+C_Map = { GetBestMapForUnit = function() return nil end }
+IsShiftKeyDown, IsControlKeyDown = function() return false end, function() return false end
+GetCurrentKeyBoardFocus = function() return nil end
+time = os.time
+TimeUtil = { BetterDate = function(format) return format end }
 SlashCmdList = {}
 IsLoggedIn = function() return false end
 InCombatLockdown = function() return false end
 LoggingCombat = function() return false end
 GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "deDE" end
-WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = flavor == "Mainline" and 1 or 2, 1
+-- The specialization is not known yet at this point of the login.
+C_SpecializationInfo = { GetSpecialization = function() return nil end }
+WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
+-- Forever loads the Mainline TOCs; Blizzard's camelot marker tells it apart.
+GameEvent = flavor == "Forever" and { RegisterCamelotEvents = function() end } or nil
 GameFontHighlightSmall = {}
 local loaded = { MidnightSimpleUnitFrames = true, MidnightSimpleUnitFrames_Options = true }
 local optionsNS
-local function LoadTOC(addon, flavor, ns)
-    local toc = assert(io.open(root .. "/" .. addon .. "/" .. addon .. "_" .. flavor .. ".toc"))
+local function LoadTOC(addon, ns)
+    local toc = assert(io.open(root .. "/" .. addon .. "/" .. addon .. "_Mainline.toc"))
     for line in toc:lines() do
         line = line:gsub("\r", ""):match("^%s*(.-)%s*$")
         if line ~= "" and line:sub(1, 1) ~= "#" then
@@ -65,14 +104,20 @@ local function LoadTOC(addon, flavor, ns)
     end
     toc:close()
 end
+-- No combinedBags setting: the Bags module stays unavailable in this fixture.
+C_CVar = { GetCVar = function() return nil end }
+-- Every installed AddOn is enabled for every character unless a step says otherwise.
+local function AllEnabled() return 2 end
+UnitGUID = function() return "Player-Test" end
 C_AddOns = {
     IsAddOnLoaded = function(name) return loaded[name] == true, loaded[name] == true end,
     DoesAddOnExist = function(name) return name ~= "MapkoSkin" end,
+    GetAddOnEnableState = AllEnabled,
     LoadAddOn = function(name)
         if name == "MSUF_Suite_Options" then
             loaded[name] = true
             optionsNS = {}
-            LoadTOC(name, flavor, optionsNS)
+            LoadTOC(name, optionsNS)
             return true
         end
         return false, "MISSING"
@@ -82,6 +127,7 @@ C_AddOns = {
 -- MSUF host (Main build shape: no MSUF.Client) with its locale table.
 local L = setmetatable({ ["Enable module"] = "MSUF-eigene Übersetzung" }, { __index = function(_, k) return k end })
 MSUF_NS = { L = L, GetEffectiveLocale = function() return "deDE" end }
+assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
 
 -- Menu2 public surface
 local M, W, T = {}, {}, {}
@@ -252,7 +298,7 @@ Enum = { DamageMeterType = { DamageDone = 0 } }
 Minimap = { SetMaskTexture = function() end }
 
 -- Boot the suite core as the client would, then attach the menu.
-LoadTOC("MSUF_Suite", flavor, {})
+LoadTOC("MSUF_Suite", {})
 local Suite = assert(MSUFSuite)
 local S = Suite.Suite
 Suite.Database.Initialize(nil)
@@ -263,7 +309,7 @@ assert(Suite.Menu.Attach(), "suite menu did not attach")
 assert(Suite.Menu.attached == true)
 assert(historyProvider and Suite.Options.BuildColorsCategory, "Suite did not register MSUF history and colors")
 for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .. tostring(k)) end
-if flavor ~= "Mainline" then
+if flavor == "Forever" then
     assert(M.PageHasReset("suite_dataTexts") and M.PageHasReset("suite_skin"),
         "Forever Suite pages lack Reset page")
     local rule = S.catalog.dataTexts.rules.bar1X
@@ -281,7 +327,7 @@ if flavor ~= "Mainline" then
 end
 
 -- Navigation: suite pages join MSUF's groups by id and MSUF rows keep their places.
-local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_cooldownManager", "suite_skin" }
+local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_nameplates", "suite_cooldownManager", "suite_skin" }
 local function NavShape(items)
     local out = {}
     for _, item in ipairs(items) do
@@ -289,7 +335,7 @@ local function NavShape(items)
     end
     return table.concat(out, " ")
 end
-local COMBAT_ROWS = "#combat suite_cooldownManager@combat suite_buffReminders@combat suite_hud@combat"
+local COMBAT_ROWS = "#combat suite_nameplates@combat suite_cooldownManager@combat suite_buffReminders@combat suite_hud@combat"
 local INTERFACE_ROWS = "#interface suite_actionbars@interface suite_minimap@interface suite_damageMeter@interface"
     .. " suite_bags@interface suite_chat@interface suite_dataTexts@interface"
 local hostShape = "home@nil #frames uf_player@frames " .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
@@ -310,7 +356,6 @@ assert(Suite.SuiteCatalog.qol.addon == "MSUF_Suite_QualityOfLife"
     "Quality of Life should have one Blizzard AddOn checkbox")
 assert(Suite.SuiteCatalog.dataTexts.addon == "MSUF_Suite_DataTexts",
     "DataTexts should have its own Blizzard AddOn checkbox")
-UnitGUID = function() return "Player-Test" end
 C_AddOns.GetAddOnEnableState = function(name, guid)
     assert(guid == "Player-Test", "AddOn enable state must use the current character")
     return name == "MSUF_Suite_ActionBars" and 0 or 1
@@ -319,7 +364,7 @@ assert(rows.suite_actionbars.availability() == false
     and rows.suite_minimap.availability() == true
     and rows.suite_qualityOfLife.availability() == true,
     "Suite navigation does not reflect Blizzard's disabled AddOn state")
-C_AddOns.GetAddOnEnableState = nil
+C_AddOns.GetAddOnEnableState = AllEnabled
 assert(M.ALIASES.meter == "opt_bars", "suite overrode an MSUF alias")
 assert(M.ALIASES.damage_meter == "suite_damageMeter" and M.ALIASES.minimap == "suite_minimap")
 assert(M.ALIASES.chat == "suite_chat", "chat page alias is missing")
@@ -328,6 +373,8 @@ local function Reattach()
     Suite.Menu.attached = false
     assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", {
         Suite = Suite, M = M, T = T, pages = optionsNS.pages, Tr = M.Tr, host = MSUF_NS, Refresh = function() end,
+        BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
+        ForgetAvailability = optionsNS.ForgetAvailability,
     })
 end
 Reattach()
@@ -369,6 +416,166 @@ for _, key in ipairs(expected) do
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
 end
+-- A page refresh asks for module availability once per module, not once per
+-- control; the next refresh asks again.
+do
+    local availability, calls = S.Availability, {}
+    S.Availability = function(id)
+        calls[id] = (calls[id] or 0) + 1
+        return availability(id)
+    end
+    current = contexts.suite_damageMeter
+    M.RequestRefresh()
+    assert(calls.damageMeter == 1, "one Damage Meter refresh asked its availability "
+        .. tostring(calls.damageMeter) .. " times")
+    M.RequestRefresh()
+    assert(calls.damageMeter == 2, "a second Damage Meter refresh asked its availability "
+        .. tostring(calls.damageMeter - 1) .. " times")
+    S.Availability = availability
+end
+(function()
+    assert(S.Config("nameplates").look == 1
+        and S.Config("nameplates").enemyEliteMarker == false
+        and S.Config("nameplates").enemyQuestMarker == true
+        and S.Config("nameplates").enemyNeutralEnabled == true
+        and S.Config("nameplates").enemyNeutralColor == "e5db00"
+        and S.Config("nameplates").enemyTextOutline == 4,
+        "fresh Jundies nameplates must match DEFAULT neutral color and SLUG without extra elite markers")
+    local function Control(key) return assert(registeredControls["menu2.suite_nameplates.nameplates.preview." .. key], key) end
+    local name, cast = Control("enemy.Name"), Control("enemy.Cast")
+    local ui = name.previewUI
+    for _, prefix in ipairs({ "enemy", "friendly" }) do
+        for _, element in ipairs(Suite.NameplateStyle.Elements) do
+            local handle = Control(prefix .. "." .. element.key)
+            assert(handle.keyX == prefix .. element.key .. "OffsetX"
+                and handle.keyY == prefix .. element.key .. "OffsetY"
+                and handle.scripts.OnMouseDown and handle.scripts.OnMouseUp
+                and handle.scripts.OnKeyDown,
+                "nameplate element has no interactive drag or keyboard editor: " .. prefix .. "." .. element.key)
+        end
+    end
+    assert(cast._npProgress.kind == "StatusBar" and cast._npProgress.minValue == 0
+        and cast._npProgress.maxValue == 100 and cast._npProgress.value == 65
+        and cast._npProgress:GetStatusBarTexture().texture,
+        "cast preview must have an actual Blizzard StatusBar fill")
+    assert(cast._npProgress:GetStatusBarTexture().texture == "ui-castingbar-filling-standard",
+        "cast preview must show Blizzard's cast appearance")
+    for _, element in ipairs({ "Classification", "CastIcon", "CastShield", "CastTarget" }) do
+        assert(Control("enemy." .. element).scripts.OnMouseDown, "missing native icon drag handle: " .. element)
+    end
+    S.Set("nameplates", "friendlyGroupOnly", true)
+    ui:Paint()
+    assert(Control("friendly.Name"):IsShown())
+    local groupButton = Control("friendlyGroup")
+    groupButton.scripts.OnClick(groupButton)
+    assert(not Control("friendly.Name"):IsShown(), "outsider name survived group-only preview")
+    groupButton.scripts.OnClick(groupButton)
+    assert(Control("friendly.Name"):IsShown(), "group member name missing in preview")
+    S.Set("nameplates", "friendlyGroupOnly", false)
+    assert(ui.body.selectionDeps and name.scripts.OnMouseDown and cast.scripts.OnMouseDown
+        and Control("friendly.Name").scripts.OnDragStart,
+        "nameplate preview must use the shared selection bar and direct UF/GF mouse handles")
+    local elite = Control("enemy.Classification")
+    local ex, ey = 10, 20
+    GetCursorPosition = function() return ex, ey end
+    elite.scripts.OnMouseDown(elite, "LeftButton")
+    ex, ey = 30, 11
+    elite.scripts.OnMouseUp(elite, "LeftButton")
+    assert(S.Config("nameplates").enemyClassificationOffsetX == 20
+        and S.Config("nameplates").enemyClassificationOffsetY == -9, "native elite icon drag did not save")
+    ui.body.selectionDeps.ResetOffsets(ui.body, elite)
+    assert(S.Config("nameplates").enemyClassificationOffsetX == 0)
+    local cx, cy = 100, 200
+    GetCursorPosition = function() return cx, cy end
+    name.GetEffectiveScale = function() return 0.75 end
+    name.scripts.OnMouseDown(name, "LeftButton")
+    assert(ui.body._selectedHandle == name and name.moving, "click/drag did not select the element")
+    cx, cy = 115, 194
+    name.scripts.OnMouseUp(name, "LeftButton")
+    assert(S.Config("nameplates").enemyNameOffsetX == 20 and S.Config("nameplates").enemyNameOffsetY == -8,
+        "scaled mouse drag did not persist name offsets")
+    local historyBefore = historyWrites
+    name.scripts.OnMouseDown(name, "LeftButton")
+    name.scripts.OnMouseUp(name, "LeftButton")
+    assert(historyWrites == historyBefore, "selection-only click wrote a profile/history entry")
+    name.scripts.OnKeyDown(name, "RIGHT")
+    assert(S.Config("nameplates").enemyNameOffsetX == 21, "arrow key did not nudge selected name")
+    ui.body.selectionDeps.WriteOffsets(ui.body, name, 35, -14)
+    assert(S.Config("nameplates").enemyNameOffsetX == 35, "exact X/Y controls use different settings")
+    ui.body.selectionDeps.ResetOffsets(ui.body, name)
+    assert(S.Config("nameplates").enemyNameOffsetX == 0, "selected-element reset failed")
+    cast.scripts.OnMouseDown(cast, "LeftButton")
+    cx = cx + 12
+    cast.scripts.OnKeyDown(cast, "ESCAPE")
+    cast.scripts.OnMouseUp(cast, "LeftButton")
+    assert(S.Config("nameplates").enemyCastOffsetX == 0 and not ui.dragging,
+        "Escape must cancel an unfinished drag")
+    local oldZoom = ui.zoom
+    ui.canvas.scripts.OnMouseWheel(ui.canvas, 1)
+    assert(ui.zoom > oldZoom, "preview wheel must zoom the canvas")
+    ui.canvas.scripts.OnMouseDown(ui.canvas, "LeftButton")
+    cx = cx + 20
+    ui.canvas.scripts.OnMouseUp(ui.canvas, "LeftButton")
+    assert(ui.panX == 20 and S.Config("nameplates").enemyCastOffsetX == 0,
+        "background pan must move only the viewport")
+    Control("context").scripts.OnClick()
+    assert(ui.inDungeon, "outdoor/dungeon sample control failed")
+    for role = 2, 12 do
+        Control("role").scripts.OnClick()
+        assert(S.Config("nameplates").enemyPreviewRole == role, "preview did not reach every EQoL role")
+    end
+    Control("role").scripts.OnClick()
+    assert(S.Config("nameplates").enemyPreviewRole == 1)
+    local friendly = Control("friendly.Name")
+    friendly.GetEffectiveScale = function() return 1 end
+    friendly.scripts.OnMouseDown(friendly, "LeftButton")
+    cx = cx + 15
+    friendly.scripts.OnMouseUp(friendly, "LeftButton")
+    assert(S.Config("nameplates").friendlyNameOffsetX == 15, "friendly preview was not directly draggable")
+    for _, kind in ipairs({ "Elite", "Quest" }) do
+        S.Set("nameplates", "friendly" .. kind .. "Marker", true)
+        ui:Paint()
+        local handle = Control("friendly." .. kind:lower())
+        assert(handle:IsShown(), "friendly marker missing from preview")
+        local before = S.Config("nameplates")["friendly" .. kind .. "OffsetX"]
+        handle.scripts.OnMouseDown(handle, "LeftButton")
+        cx = cx + 9
+        handle.scripts.OnMouseUp(handle, "LeftButton")
+        assert(S.Config("nameplates")["friendly" .. kind .. "OffsetX"] == before + 9,
+            "friendly marker drag did not write its runtime setting")
+        ui.body.selectionDeps.ResetOffsets(ui.body, handle)
+        S.Set("nameplates", "friendly" .. kind .. "Marker", false)
+    end
+    Control("friendlyFocus").scripts.OnClick()
+    assert(ui.friendlyFocus, "friendly focus sample cannot be selected")
+    Control("friendlyFocus").scripts.OnClick()
+    cast.GetEffectiveScale = function() return 1 end
+    cast.scripts.OnMouseDown(cast, "LeftButton")
+    cy = cy - 9
+    cast.scripts.OnMouseUp(cast, "LeftButton")
+    assert(S.Config("nameplates").enemyCastOffsetY == -9, "cast drag did not save the live offset")
+    name.scripts.OnMouseDown(name, "LeftButton")
+    ui.body.scripts.OnHide(ui.body)
+    assert(not ui.dragging and not ui.body._selectedHandle, "hidden preview retained a drag or keyboard capture")
+    S.Set("nameplates", "look", 1)
+
+end)()
+-- The extra-action control delegates to Blizzard's Edit Mode only when that
+-- manager allows entry; the Suite never reparents the protected button.
+local extraButton = registeredControls["menu2.suite_actionbars.actionbars.editor.extraAbility"]
+assert(extraButton and not extraButton.enabled, "extra-action move control was not gated")
+local editModeOpens = 0
+EditModeManagerFrame = { CanEnterEditMode = function() return true end }
+ShowUIPanel = function(frame)
+    assert(frame == EditModeManagerFrame)
+    editModeOpens = editModeOpens + 1
+end
+extraButton.scripts.OnClick()
+assert(editModeOpens == 1, "extra-action move did not open Blizzard Edit Mode")
+EditModeManagerFrame.CanEnterEditMode = function() return false end
+extraButton.scripts.OnClick()
+assert(editModeOpens == 1, "blocked Edit Mode was opened")
+EditModeManagerFrame, ShowUIPanel = lockedEditMode, nil
 local sliderCount = 0
 for pageKey, ctx in pairs(contexts) do
     for _, widget in ipairs(ctx.widgets) do
@@ -436,14 +643,57 @@ M.ColorsSetPainterCategory = function(key) category = key end
 M.cache = { opt_colors = { sections = {
     colors_suite_objectives = { name = "objectives" },
     colors_suite_announcements = { name = "announcements" },
+    colors_suite_nameplates = { name = "nameplates" },
 } } }
 W.FocusCollapsibleSection = function(section) focusedColor = section.name end
 for _, id in ipairs({ "objectives", "announcements" }) do
-    local button = registeredControls["menu2.suite_hud." .. id .. ".action.colors"]
+    local page = id == "nameplates" and "suite_nameplates" or "suite_hud"
+    local button = registeredControls["menu2." .. page .. "." .. id .. ".action.colors"]
     assert(button and button.scripts.OnClick, id .. " has no link to Colors")
     button.scripts.OnClick()
     assert(M.selectedPage == "opt_colors" and category == "suite" and focusedColor == id,
         id .. " color link did not open its own Colors section")
+end
+local plateSections = {}
+for _, section in ipairs(contexts.suite_nameplates.sections) do
+    plateSections[section.sectionId] = section
+end
+(function()
+    local plateControls = {}
+    for _, widget in ipairs(contexts.suite_nameplates.widgets) do
+        if widget.meta and widget.meta.settingKey then plateControls[widget.meta.settingKey] = true end
+    end
+    for feature, keys in pairs(dofile(root .. "/tools/fixtures/nameplates_eqol_features.lua")) do
+        for _, key in ipairs(keys) do
+            local path = "msufsuite.nameplates." .. key
+            local rule = assert(Suite.SuiteCatalog.nameplates.rules[key], feature .. ": " .. key)
+            assert(rule.color and shortcutColors[path] or plateControls[path],
+                "EQoL nameplate setting has no menu control: " .. feature .. " / " .. key)
+        end
+    end
+end)()
+assert(plateSections.suite_nameplates_enemy and plateSections.suite_nameplates_enemy.colorShortcut
+    and plateSections.suite_nameplates_roleColors and plateSections.suite_nameplates_roleColors.colorShortcut
+    and plateSections.suite_nameplates_castbar and plateSections.suite_nameplates_castbar.colorShortcut
+    and plateSections.suite_nameplates_friendly and plateSections.suite_nameplates_friendly.colorShortcut,
+    "nameplate section lost its three-dot color shortcut")
+assert(not plateSections.suite_nameplates_general and plateSections.suite_nameplates_nameplates_module,
+    "Start here must be merged into the existing Frame Basics card")
+for _, key in ipairs({ "look", "nativeSize", "friendlyNPCs", "playerGuildNames", "playerTitles", "protectImport" }) do
+    local control
+    for _, widget in ipairs(contexts.suite_nameplates.widgets) do
+        if widget.meta and widget.meta.controlId == "menu2.suite_nameplates.nameplates." .. key then control = widget; break end
+    end
+    assert(control, key)
+    assert(control.meta.sectionId == "suite_nameplates_nameplates_module", key .. " escaped Frame Basics")
+end
+assert(not registeredControls["menu2.suite_nameplates.nameplates.action.colors"], "standalone color button survived")
+for section, key in pairs({ enemy = "enemyTargetColor", roleColors = "enemyCasterColor", friendly = "friendlyBorderColor" }) do
+    local found
+    for _, target in ipairs(plateSections["suite_nameplates_" .. section].colorShortcut.options.getTargets()) do
+        if target.sourceSettingKey == "msufsuite.nameplates." .. key then found = true; break end
+    end
+    assert(found, key .. " is absent from its three-dot color menu")
 end
 for _, id in ipairs(Suite.SuiteOrder) do
     for _, rule in ipairs(Suite.SuiteCatalog[id].controls) do
@@ -474,8 +724,7 @@ S.Config("cooldownManager").ess_borderColor = previousCDMColor
 -- An unavailable module must still let users change its saved switch. The
 -- runtime stays off until its client capability or AddOn is available.
 local actionBarsHeader = contexts.suite_actionbars.sections[1].headerSwitch
-local secureRef = SecureHandlerSetFrameRef
-SecureHandlerSetFrameRef = nil
+loaded.Bartender4 = true
 current = contexts.suite_actionbars
 M.RequestRefresh()
 assert(S.Availability("actionbars") == false and actionBarsHeader.enabled,
@@ -485,7 +734,7 @@ actionBarsHeader.set(true)
 assert(S.Config("actionbars").enabled and not S.states.actionbars.active,
     "unavailable action bars started or failed to save their enabled preference")
 actionBarsHeader.set(false)
-SecureHandlerSetFrameRef = secureRef
+loaded.Bartender4 = nil
 M.RequestRefresh()
 local qolHeader = contexts.suite_qualityOfLife.sections[3].headerSwitch
 C_AddOns.GetAddOnEnableState = function(name)
@@ -499,8 +748,46 @@ qolHeader.set(true)
 assert(S.Config("qol").enabled and S.Config("qol").repair and not S.states.qol.active,
     "unavailable Quality of Life feature did not save its switch")
 qolHeader.set(false)
-C_AddOns.GetAddOnEnableState = nil
+C_AddOns.GetAddOnEnableState = AllEnabled
 M.RequestRefresh()
+-- The Edit Mode buttons call S.OpenEditMode, an export of the load-on-demand
+-- runtime: until MSUF_Suite_Modules loads they stay disabled and do nothing.
+do
+    local EDIT_BUTTONS = {
+        { "suite_bags", "bags.action.move", "bags", "combined" },
+        { "suite_buffReminders", "buffReminders.action.edit", "buffReminders", "buffs" },
+        { "suite_dataTexts", "dataTexts.bar1.move", "dataTexts", "bar1" },
+        { "suite_dataTexts", "dataTexts.action.move", "dataTexts", "bar1" },
+        { "suite_qualityOfLife", "xpBar.action.edit", "xpBar", "experience" },
+        { "suite_qualityOfLife", "skyriding.action.edit", "skyriding", "flight" },
+    }
+    local status, availability = S.Status, S.Availability
+    assert(S.OpenEditMode == nil, "this fixture must not load the Suite runtime")
+    S.Status, S.Availability = function() return "Active" end, function() return true end
+    local bagsEnabled, bar1Enabled = S.Config("bags").enabled, S.Config("dataTexts").bar1Enabled
+    S.Config("bags").enabled, S.Config("dataTexts").bar1Enabled = true, true
+    OpenAllBags = function() end
+    local opened
+    for _, entry in ipairs(EDIT_BUTTONS) do
+        local button = assert(registeredControls["menu2." .. entry[1] .. "." .. entry[2]], entry[2] .. " is missing")
+        current = contexts[entry[1]]
+        S.OpenEditMode = nil
+        M.RequestRefresh()
+        assert(button.enabled == false, entry[2] .. " stayed enabled without the Suite runtime")
+        button.scripts.OnClick(button)
+        S.OpenEditMode = function(id, element) opened = { id, element }; return true end
+        M.RequestRefresh()
+        assert(button.enabled == true, entry[2] .. " stayed disabled with the Suite runtime")
+        opened = nil
+        button.scripts.OnClick(button)
+        assert(opened and opened[1] == entry[3] and opened[2] == entry[4],
+            entry[2] .. " did not open Edit Mode on its element")
+    end
+    S.OpenEditMode, OpenAllBags = nil, nil
+    S.Status, S.Availability = status, availability
+    S.Config("bags").enabled, S.Config("dataTexts").bar1Enabled = bagsEnabled, bar1Enabled
+    M.RequestRefresh()
+end
 assert(contexts.suite_minimap.pageItems[1] == "fixed-preview"
     and contexts.suite_minimap.pageItems[2] == "suite_minimap_minimap_module"
     and contexts.suite_minimap.fixedPreview.section.expander.expanded,
@@ -530,6 +817,48 @@ assert(Suite.Suite.Config("dataTexts").bar1StyleOverride
 ownStyle.set(false)
 assert(not Suite.Suite.Config("dataTexts").bar1StyleOverride,
     "own style did not return to shared settings")
+-- A place tile opens Blizzard's context menu (Blizzard_Menu's MenuUtil exists
+-- on every supported client) with one radio per data source.
+do
+    local tile = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar1Slot2.preview"],
+        "DataTexts place tile is missing")
+    local menuOwner, radios
+    MenuUtil = { CreateContextMenu = function(owner, generator)
+        menuOwner, radios = owner, {}
+        generator(owner, { CreateRadio = function(_, text, isSelected, select)
+            radios[#radios + 1] = { text = text, isSelected = isSelected, select = select }
+        end })
+    end }
+    local before = S.Config("dataTexts").bar1Slot2
+    tile.scripts.OnClick(tile)
+    assert(menuOwner == tile and #radios == #Suite.DataTextSources, "a place tile did not open its source menu")
+    radios[3].select()
+    assert(S.Config("dataTexts").bar1Slot2 == 3 and radios[3].isSelected() and not radios[2].isSelected(),
+        "choosing a source in the place menu did not set the place")
+    assert(S.Set("dataTexts", "bar1Slot2", before))
+    MenuUtil = nil
+end
+-- Shadow opacity and distance follow the shadow switch, in the shared text
+-- style and in a bar's own style, like every other module's text settings.
+do
+    local config, rules = Suite.Suite.Config("dataTexts"), Suite.SuiteCatalog.dataTexts.rules
+    local keys = { "enabled", "fontRendering", "fontShadow", "bar1Enabled", "bar1StyleOverride",
+        "bar1FontRendering", "bar1FontShadow" }
+    local saved = {}
+    for _, key in ipairs(keys) do saved[key] = config[key] end
+    config.enabled, config.fontRendering = true, 1
+    config.bar1Enabled, config.bar1StyleOverride, config.bar1FontRendering = true, true, 1
+    for _, prefix in ipairs({ "font", "bar1Font" }) do
+        for _, shadow in ipairs({ false, true }) do
+            config[prefix .. "Shadow"] = shadow
+            for _, suffix in ipairs({ "ShadowOpacity", "ShadowDistance" }) do
+                assert(optionsNS.RuleEnabled("dataTexts", rules[prefix .. suffix]) == shadow,
+                    "DataTexts " .. prefix .. suffix .. " ignores the text shadow switch")
+            end
+        end
+    end
+    for _, key in ipairs(keys) do config[key] = saved[key] end
+end
 local qolPage = contexts.suite_qualityOfLife
 for _, id in ipairs({ "actionbars", "cooldownManager", "bags", "dataTexts", "skyriding", "chat" }) do
     local rules = Suite.SuiteCatalog[id].rules
@@ -556,8 +885,14 @@ assert(timestampWidget and timestampWidget.rowKind == "dropdown"
     and timestampWidget.meta.sectionId == "suite_chat_tools",
     "chat timestamps must be a dropdown bound to Blizzard's setting")
 local nativeTimestamp = "none"
-GetCVar = function(key) assert(key == "showTimestamps"); return nativeTimestamp end
-SetCVar = function(key, value) assert(key == "showTimestamps"); nativeTimestamp = value end
+C_CVar = {
+    GetCVar = function(key)
+        if key == "combinedBags" then return nil end
+        assert(key == "showTimestamps")
+        return nativeTimestamp
+    end,
+    SetCVar = function(key, value) assert(key == "showTimestamps"); nativeTimestamp = value end,
+}
 TIMESTAMP_FORMAT_HHMM = "format-hm"
 TIMESTAMP_FORMAT_HHMMSS = "format-hms"
 TIMESTAMP_FORMAT_HHMM_AMPM = "format-hm-ampm"
@@ -701,7 +1036,8 @@ for _, section in ipairs(colorContext.sections) do colorSections[section.section
 assert(colorSections.colors_suite_minimap and colorSections.colors_suite_actionbars
     and colorSections.colors_suite_damageMeter and colorSections.colors_suite_buffReminders
     and colorSections.colors_suite_chat and colorSections.colors_suite_dataTexts
-    and colorSections.colors_suite_objectives and colorSections.colors_suite_announcements,
+    and colorSections.colors_suite_objectives and colorSections.colors_suite_announcements
+    and colorSections.colors_suite_nameplates,
     "MSUF Colors missed Suite module colors")
 local globalColors = {}
 for _, widget in ipairs(colorContext.widgets) do
@@ -750,7 +1086,9 @@ assert(skinColor[1] == 0.1 and skinColor[4] == 0.4, "MSUF Colors did not write S
 MapkoSkin = nil
 -- The primary Skinning page owns native MSUF controls and a fixed preview;
 -- it must not mount the old second navigation rail or require its options addon.
-local skin = { addonName = "MSUF_Suite_Skin", L = setmetatable({}, { __index = function(_, key) return key end }) }
+-- Core/Client.lua loads before Core/Defaults.lua in the skin's TOC.
+local skin = { addonName = "MSUF_Suite_Skin", Client = { isMainline = true, isForever = false },
+    L = setmetatable({}, { __index = function(_, key) return key end }) }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", skin)
 assert(skin.Defaults.theme.look == "midnightDark" and skin.Defaults.theme.preset == "midnightDark")
 skin.DB = skin.CopyValue(skin.Defaults)
@@ -1208,6 +1546,25 @@ bagsLook.set(2)
 assert(S.Config("bags").look == 2 and S.Config("bags").backgroundColor == "151719")
 bagsLook.set(3)
 assert(S.Config("bags").look == 3 and S.Config("bags").accentColor == "9f8960")
+-- The minimap preview draws an information text in its chosen font through
+-- the core resolver, also while the module runtime is not loaded.
+do
+    assert(S.ResolveFont == nil, "this check needs the module runtime unloaded")
+    local config, styled, fonts = S.Config("minimap"), optionsNS.StylePreviewFont, {}
+    local shown, font = config.infoClock, config.infoClockFont
+    config.infoClock, config.infoClockFont = true, "Interface\\AddOns\\Test\\Clock.ttf"
+    optionsNS.StylePreviewFont = function(label, path, ...)
+        fonts[#fonts + 1] = path
+        return styled(label, path, ...)
+    end
+    current = mm
+    M.RequestRefresh()
+    optionsNS.StylePreviewFont = styled
+    config.infoClock, config.infoClockFont = shown, font
+    local found = false
+    for _, path in ipairs(fonts) do if path == "Interface\\AddOns\\Test\\Clock.ttf" then found = true end end
+    assert(found, "the minimap preview ignored the clock's chosen font")
+end
 local focusedSection, focusOpts
 W.FocusCollapsibleSection = function(section, opts)
     focusedSection, focusOpts = section.sectionId, opts
@@ -1220,7 +1577,7 @@ local locationPreview = previewControls["menu2.suite_minimap.minimap.preview.inf
 assert(folioPreview and stylePreview and clockPreview and locationPreview, "minimap preview targets missing")
 for key, section in pairs({ map = "layout", style = "shape", ornament = "style_art", ornament_bottom = "style_art",
     ornament_left = "style_art", ornament_right = "style_art", zoomIn = "behavior", zoomOut = "behavior",
-    compass = "behavior", tracking = "elements", battlefield = "elements", queue = "elements", worldMap = "elements",
+    compass = "behavior", tracking = "elements",
     calendar = "elements", mail = "elements", crafting = "elements", difficulty = "elements",
     compartment = "elements", drawer = "addons", infoFPS = "info_fps",
     infoLatency = "info_latency", infoCoordinates = "info_coordinates",
@@ -1441,17 +1798,17 @@ assert(S.Config("minimap").infoLocationX == arrowX,
     "focused location handle did not accept arrow keys")
 IsShiftKeyDown = function() return true end
 selectionBox.scripts.OnKeyDown(selectionBox, "UP")
-IsShiftKeyDown = nil
+IsShiftKeyDown = function() return false end
 assert(S.Config("minimap").infoLocationY == arrowY + 5 and selectionBox.selectionY == arrowY + 5,
     "Shift+Up did not move the selected preview element by five")
 IsControlKeyDown = function() return true end
 arrowBinding.spec.onClick(selectionBox, -1, 0)
-IsControlKeyDown = nil
+IsControlKeyDown = function() return false end
 assert(S.Config("minimap").infoLocationX == arrowX - 10,
     "Ctrl+Left secure preview binding did not move the selected element by ten")
 GetCurrentKeyBoardFocus = function() return { IsObjectType = function(_, kind) return kind == "EditBox" end } end
 selectionBox.scripts.OnKeyDown(selectionBox, "RIGHT")
-GetCurrentKeyBoardFocus = nil
+GetCurrentKeyBoardFocus = function() return nil end
 assert(S.Config("minimap").infoLocationX == arrowX - 10,
     "preview arrow key moved an element while a text field had focus")
 selectionBox.shown = false
@@ -1468,8 +1825,8 @@ assert(not arrowBinding.enabled and not locationPreview.keyboardEnabled,
 selectionBox.scripts.OnKeyDown(selectionBox, "RIGHT")
 assert(S.Config("minimap").infoLocationX == arrowX - 10,
     "arrow key moved an element after the preview selection was cleared")
-GameTooltip = nil
-GetZoneText = nil
+GameTooltip = neutralTooltip
+GetZoneText = function() return "" end
 for _, id in ipairs({ "minimap", "actionbars", "damageMeter", "bags", "dataTexts", "xpBar", "skyriding", "chat" }) do
     S.Config(id).enabled = true
 end
@@ -1742,6 +2099,55 @@ copyMore.scripts.OnClick()
 copySource = 2
 copyButton.scripts.OnClick()
 assert(#copied == 1, "Copy section used a source that changed after the popup opened")
+end)()
+
+-- Undo applies the restored settings to the modules once, also when it
+-- switches the Suite profile back (the controller's profile listener applies
+-- them then). Functions keep the main chunk under Lua's local limit.
+;(function()
+    local applies, applyAll = 0, S.ApplyAll
+    S.ApplyAll = function(...)
+        applies = applies + 1
+        return applyAll(...)
+    end
+    local original = Suite.RootDB.activeProfile
+    local snapshot = assert(historyProvider.capture())
+    assert(historyProvider.restore(snapshot) and applies == 1, "undo applied the modules more than once")
+    assert(Suite.Database.Create("Undo test", true) and Suite.Database.Activate("Undo test"))
+    applies = 0
+    assert(historyProvider.restore(snapshot) and Suite.RootDB.activeProfile == original,
+        "undo did not switch the profile back")
+    assert(applies == 1, "undoing a profile switch applied the modules more than once")
+    -- An undo that also switches the skin (on in this snapshot) still applies
+    -- the modules once.
+    assert(snapshot.root.skinEnabled == true and Suite.Skin.enabled)
+    assert(Suite.Database.Activate("Undo test") and Suite.Skin.SetEnabled(false) and not Suite.Skin.enabled)
+    applies = 0
+    assert(historyProvider.restore(snapshot) and Suite.RootDB.activeProfile == original
+        and Suite.Skin.enabled, "undo did not restore the profile and the skin switch")
+    assert(applies == 1, "undoing a profile and skin switch applied the modules more than once")
+    assert(Suite.Skin.SetEnabled(false))
+    applies = 0
+    assert(historyProvider.restore(snapshot) and Suite.Skin.enabled and applies == 1,
+        "undoing a skin switch applied the modules more than once")
+    S.ApplyAll = applyAll
+end)()
+
+-- Statuses are English source text; the menu translates them when it shows
+-- them, exactly once.
+;(function()
+    local shown
+    for _, id in ipairs(S.order) do
+        if not shown and S.Availability(id) then shown = id end
+    end
+    assert(shown, "no module is available in this fixture")
+    local state = S.states[shown]
+    local error = state.error
+    state.error = "Stopped after an error"
+    rawset(L, "Stopped after an error", "Nach einem Fehler gestoppt")
+    assert(optionsNS.StatusText(shown) == "Nach einem Fehler gestoppt", "the menu did not translate the status")
+    rawset(L, "Stopped after an error", nil)
+    state.error = error
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

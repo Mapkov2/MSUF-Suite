@@ -14,9 +14,7 @@ local function ValidText(rule, value)
         and not (rule.color and (#value ~= 6 or value:find("[^%x]")))
 end
 
-local function Finite(value)
-    return value == value and value ~= math.huge and value ~= -math.huge
-end
+local Finite = NS.Finite
 
 local function ClampNumber(rule, value)
     value = math.max(rule.min, math.min(rule.max, value))
@@ -137,7 +135,7 @@ local function DataTextsBagButtons(modules)
     -- An older Retail profile may have DataTexts without a Bag space slot.
     -- Keep Blizzard's bag buttons until that player explicitly chooses this.
     local data = Module(modules, "dataTexts")
-    if not NS.Client.isMainline or not data or data.hideBlizzardBagBar ~= nil then return end
+    if not data or data.hideBlizzardBagBar ~= nil then return end
     local anySlot = false
     for bar = 1, 3 do
         for slot = 1, 6 do
@@ -303,6 +301,58 @@ local function ObjectivesCollapseState(modules, db)
     if type(entries) == "table" then state.collapsedEntries = entries end
 end
 
+local function JundiesNameplateSize(modules)
+    -- The first Jundies preset selected Small, shrinking Blizzard's Modern
+    -- plate to 75% width. Update only that preset's former size. Editing a
+    -- visual setting in the Suite UI switches the look to Custom.
+    local plates = Module(modules, "nameplates")
+    if plates and plates.look == 1 and plates.nativeStyle == 2 and plates.nativeSize == 2 then
+        plates.nativeSize = 3
+    end
+end
+
+local function JundiesNameplateMarkers(modules)
+    -- Early Jundies builds enabled a text star in the middle of the bar.
+    -- Custom profiles keep their choice; the preset uses Blizzard's marker.
+    local plates = Module(modules, "nameplates")
+    if plates and plates.look == 1 then
+        plates.enemyEliteMarker, plates.enemyQuestMarker = false, false
+    end
+end
+
+local function NameplateCastVisibility(modules)
+    local plates = Module(modules, "nameplates")
+    -- Early profiles styled castbars before the visibility setting existed.
+    -- Repair that combination once; explicit Hide and Blizzard look survive.
+    if plates and plates.look ~= 2 and plates.enemyCastSkin == true
+        and plates.enemyCastDisplay == 2 and plates.enemyCastEnabled == 1 then
+        plates.enemyCastEnabled = 2
+    end
+end
+
+local function JundiesNameplatePalette(modules)
+    local plates = Module(modules, "nameplates")
+    if not plates or plates.look ~= 1 then return end
+    local corrections = {
+        enemyTextOutline = { 1, 4 }, friendlyTextOutline = { 1, 4 }, enemyCastOutline = { 1, 4 },
+        enemyNeutralColor = { "e5bd45", "e5db00" }, enemyTrivialColor = { "777777", "be301d" },
+        enemyThreatLostColor = { "ff4d32", "dd6f00" }, enemyThreatWarningColor = { "ffbd38", "ffe93a" },
+        enemyNeutralEnabled = { false, true }, enemyTrivialEnabled = { false, true },
+        enemyQuestMarker = { false, true }, enemyQuestOffsetX = { 0, -14 }, enemyQuestOffsetY = { 17, 0 },
+        enemyQuestMarkerAnchor = { 1, 5 },
+    }
+    for key, values in pairs(corrections) do
+        if plates[key] == values[1] then plates[key] = values[2] end
+    end
+end
+
+local function NameplateNativeCastOpacity(modules)
+    local plates = Module(modules, "nameplates")
+    -- The old preset used a translucent overlay above an opaque native fill.
+    -- A replacement fill must be opaque by default. Preserve custom choices.
+    if plates and plates.look == 1 and plates.enemyCastFillAlpha == 35 then plates.enemyCastFillAlpha = 100 end
+end
+
 -- legacy: flag key of profiles saved before suite.revision; done: flag value
 -- that marked the step as applied. forever: step applies only on WoW Forever.
 local MIGRATIONS = {
@@ -316,6 +366,11 @@ local MIGRATIONS = {
     { run = ForeverActionBars, legacy = "actionBarsDefaultRevision", done = 2, forever = true },
     { run = ForeverLayout, legacy = "layoutRevision", done = 2, forever = true },
     { run = ForeverPalette, legacy = "paletteRevision", forever = true },
+    { run = JundiesNameplateSize },
+    { run = JundiesNameplateMarkers },
+    { run = NameplateCastVisibility },
+    { run = JundiesNameplatePalette },
+    { run = NameplateNativeCastOpacity },
 }
 S.MigrationRevision = #MIGRATIONS
 
@@ -482,40 +537,78 @@ function S.Availability(id)
         if not ok then return false, why or "Unavailable on this client" end
     end
     for i = 1, #spec.conflicts do
-        if NS.Client.IsAddOnLoaded(spec.conflicts[i]) then return false, "Managed by " .. spec.conflicts[i] end
+        local conflict = spec.conflicts[i]
+        if NS.Client.IsAddOnLoaded(conflict) then return false, NS.FormatStatus("Managed by %s", conflict) end
     end
     return true
 end
 
 ------------------------------------------------------------------ lifecycle
+-- Module code runs isolated (NS.Dispatch): an error reaches the client error
+-- handler and stops only the module that raised it.
+local Dispatch, Finish = NS.Dispatch, NS.Finish
+-- Statuses are English source text; the menu translates them once, when it
+-- shows them (NS.StatusText through MSUF_Suite_Options/Menu/Bridge.lua).
+local FAILED = "Stopped after an error"
+
+-- Repaints the menu. A menu error is reported without failing the change
+-- that was already applied.
+-- NS.Options exists once the load-on-demand options addon has loaded.
 local function Changed()
-    if NS.Options and NS.Options.RefreshAll then NS.Options.RefreshAll() end
+    local options = NS.Options
+    if options then Dispatch(options.RefreshAll) end
 end
 
+-- Hands a module's saved CVars back. The load-on-demand runtime defines
+-- S.RestoreSaved; before it loads, no module has saved a CVar this session.
+local function RestoreCVars(id)
+    if S.RestoreSaved then S.RestoreSaved(id) end
+end
+
+-- Every step runs isolated, so a raising Disable or release never skips the
+-- steps after it, and the module's CVars are always handed back.
 local function Stop(id)
     local state, instance = S.states[id], S.instances[id]
-    if S.CloseMovers then S.CloseMovers(id) end
-    if S.UnregisterEditElements then S.UnregisterEditElements(id) end
     state.active = false
+    Dispatch(S.UnregisterEditElements, id)
     if instance then
         instance.active = false
-        instance:Disable()
-        if instance.context then instance.context:Release() end
+        Dispatch(instance.Disable, instance)
+        local context = instance.context
+        if context then Dispatch(context.Release, context) end
     end
+    RestoreCVars(id)
 end
 
-local function Flush(self)
+-- A failed module releases what it took and stays off until the player
+-- changes one of its settings or the profile (both clear state.error).
+local function Fail(id)
+    local state, instance = S.states[id], S.instances[id]
+    state.error = state.error or FAILED
+    if state.active or (instance and instance.active) then Dispatch(Stop, id) end
+end
+
+-- Applies the modules queued in combat, in catalog order like S.ApplyAll.
+-- S.Apply isolates each module; the listener stays until the queue is empty.
+local function Flush(frame)
     if NS.IsCombatLocked() then return end
-    self:UnregisterAllEvents()
-    pendingListening = false
-    for id in pairs(pending) do
-        pending[id] = nil
-        S.Apply(id)
+    local order = S.order
+    for i = 1, #order do
+        local id = order[i]
+        if pending[id] then
+            pending[id] = nil
+            S.Apply(id)
+        end
+    end
+    if pendingListening and not next(pending) then
+        frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        pendingListening = false
     end
     Changed()
 end
 
 function S.Queue(id)
+    if not S.catalog[id] then return end
     pending[id] = true
     if not pendingFrame then
         pendingFrame = CreateFrame("Frame")
@@ -527,26 +620,21 @@ function S.Queue(id)
     end
 end
 
-local function LoadAddOnByName(name)
-    local loader = C_AddOns and C_AddOns.LoadAddOn or LoadAddOn
-    if type(loader) ~= "function" then return nil end
-    return loader(name)
-end
-
 -- Loads the shared runtime and the module's addon. Returns false after
 -- recording why the module could not register.
 local function LoadInstance(id, state)
     local spec = S.catalog[id]
     local loaded, why
-    if not NS.Client.IsAddOnLoaded(RUNTIME_ADDON) then loaded, why = LoadAddOnByName(RUNTIME_ADDON) end
-    if type(S.NewContext) == "function" then loaded, why = LoadAddOnByName(spec.addon) end
+    if not NS.Client.IsAddOnLoaded(RUNTIME_ADDON) then loaded, why = C_AddOns.LoadAddOn(RUNTIME_ADDON) end
+    -- A runtime that could not load leaves S.NewContext unset.
+    if type(S.NewContext) == "function" then loaded, why = C_AddOns.LoadAddOn(spec.addon) end
     -- Some Forever builds return an empty/diagnostic result even after the
     -- addon ran. Successful registration is the authoritative outcome.
     if S.instances[id] then return true end
     if NS.Client.IsAddOnLoaded(spec.addon) then
-        state.error = spec.title .. " is missing from " .. spec.addon
+        state.error = NS.FormatStatus("%s is missing from %s", spec.title, spec.addon)
     else
-        state.error = "Cannot load " .. spec.addon .. ": " .. tostring(why or loaded or "not installed")
+        state.error = NS.FormatStatus("Cannot load %s: %s", spec.addon, tostring(why or loaded or "not installed"))
     end
     return false
 end
@@ -568,10 +656,8 @@ function S.OwnsBlizzardSurface(surface)
     if not id or not ActiveSuite() or S.states[id].error then return false end
     local config = S.Config(id)
     if config.enabled ~= true then return false end
-    -- DataTexts hides the bag bar only on request, and only where it exists.
-    if surface == "bagBar" and (config.hideBlizzardBagBar ~= true or not NS.Client.isMainline) then
-        return false
-    end
+    -- DataTexts hides the bag bar only on request.
+    if surface == "bagBar" and config.hideBlizzardBagBar ~= true then return false end
     return S.Availability(id) == true
 end
 
@@ -580,24 +666,23 @@ local function ApplyModule(id)
     local supported, reason = S.Availability(id)
     state.unavailable = not supported and reason or nil
     if not ActiveSuite() or not config.enabled or not supported or state.error then
-        if state.active or (S.instances[id] and S.instances[id].active) then Stop(id) end
-        if S.RestoreSaved then S.RestoreSaved(id) end
+        if state.active or (S.instances[id] and S.instances[id].active) then
+            Stop(id)
+        else
+            RestoreCVars(id)
+        end
         return
     end
     if not S.instances[id] and not LoadInstance(id, state) then return end
     local instance = S.instances[id]
-    -- A previous callback may have raised a client-visible error after taking
-    -- ownership. Release that partial activation before a deliberate retry.
-    if instance.active and not state.active then Stop(id) end
     instance.config = config
     instance.active = true
     instance.context = instance.context or S.NewContext(id)
-    -- Follow MSUF error reporting: Lua errors reach the client error handler.
-    -- A successful callback is required before publishing an active state.
+    -- A completed callback is required before publishing an active state.
     if state.active then instance:Refresh() else instance:Enable() end
-    if instance.context.RefreshOwnedSkins then instance.context:RefreshOwnedSkins() end
+    instance.context:RefreshOwnedSkins()
     state.active = true
-    if S.RefreshEditMover then S.RefreshEditMover(id) end
+    S.RefreshEditMover(id)
 end
 
 function S.Apply(id)
@@ -614,10 +699,10 @@ function S.Apply(id)
     -- The skin lets go of a surface before its module starts and takes it back
     -- after the module stopped, so neither side records the other's change as
     -- Blizzard's original.
-    local skin = SURFACE_OWNERS[id] and NS.Skin
-    if skin then skin.SurfacesChanged("before") end
-    ApplyModule(id)
-    if skin then skin.SurfacesChanged("after") end
+    local surface = SURFACE_OWNERS[id]
+    if surface then Dispatch(NS.Skin.SurfacesChanged, "before") end
+    if not Dispatch(Finish, ApplyModule, id) then Fail(id) end
+    if surface then Dispatch(NS.Skin.SurfacesChanged, "after") end
 end
 
 function S.ApplyAll()
@@ -658,20 +743,29 @@ function S.Set(id, key, value)
     return true
 end
 
+-- Checks every value against its rule before storing any: a batch is written
+-- completely or not at all. Returns the config and the stored values, or nil
+-- and why.
+local function StoreValues(spec, id, values)
+    local clean = {}
+    for key, value in pairs(values) do
+        local checked, reason = CheckedValue(spec.rules[key], value)
+        if checked == nil then return nil, reason end
+        clean[key] = checked
+    end
+    local config = S.Config(id)
+    for key, value in pairs(clean) do config[key] = value end
+    return config, clean
+end
+
 function S.SetMany(id, values)
     if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
     local db = ActiveSuite()
     if not db or type(values) ~= "table" then return false, "Invalid settings" end
     local spec = S.catalog[id]
     if not spec then return false, "Unknown module" end
-    local clean = {}
-    for key, value in pairs(values) do
-        local checked, reason = CheckedValue(spec.rules[key], value)
-        if checked == nil then return false, reason end
-        clean[key] = checked
-    end
-    local config = S.Config(id)
-    for key, value in pairs(clean) do config[key] = value end
+    local config, clean = StoreValues(spec, id, values)
+    if not config then return false, clean end
     if clean.enabled == true then ApplyLookToConfig(id, config, db.globalLook) end
     S.states[id].error = nil
     S.Apply(id)
@@ -687,14 +781,8 @@ function S.ResetKeys(id, values)
     local db = ActiveSuite()
     local spec = S.catalog[id]
     if not db or not spec or type(values) ~= "table" then return false, "Invalid settings" end
-    local clean = {}
-    for key, value in pairs(values) do
-        local checked, reason = CheckedValue(spec.rules[key], value)
-        if checked == nil then return false, reason end
-        clean[key] = checked
-    end
-    local config = S.Config(id)
-    for key, value in pairs(clean) do config[key] = value end
+    local config, reason = StoreValues(spec, id, values)
+    if not config then return false, reason end
     S.states[id].error = nil
     S.Apply(id)
     Changed()
@@ -703,15 +791,9 @@ end
 
 function S.AddSpellFromCursor(id, key)
     local rule = S.catalog[id] and S.catalog[id].rules[key]
-    if not rule or not (rule.spells or rule.items) or NS.IsCombatLocked()
-        or type(GetCursorInfo) ~= "function" then
-        return false
-    end
+    if not rule or not (rule.spells or rule.items) or NS.IsCombatLocked() then return false end
     local kind, cursorID, _, spellID = GetCursorInfo()
-    if type(issecretvalue) == "function"
-        and (issecretvalue(kind) or issecretvalue(cursorID) or issecretvalue(spellID)) then
-        return false
-    end
+    if not NS.Public(kind) or not NS.Public(cursorID) or not NS.Public(spellID) then return false end
     if rule.items then
         if kind ~= "item" then return false end
         spellID = cursorID
@@ -724,7 +806,7 @@ function S.AddSpellFromCursor(id, key)
         if tonumber(token) == spellID then return false end
     end
     local ok = S.Set(id, key, text == "" and tostring(spellID) or text .. " " .. tostring(spellID))
-    if ok and type(ClearCursor) == "function" then ClearCursor() end
+    if ok then ClearCursor() end
     return ok
 end
 
@@ -760,21 +842,24 @@ function S.Preset(kind)
     return true
 end
 
+-- A profile switch starts every module afresh: a module stopped after an
+-- error in the previous profile is tried again with the new settings.
+local function ApplyProfile(_, domain)
+    if domain ~= "profile" then return end
+    if NS.DB then S.Normalize(NS.DB) end
+    for i = 1, #S.order do S.states[S.order[i]].error = nil end
+    S.ApplyAll()
+end
+
 function S.Start()
     if S.started then return end
     S.started = true
     if NS.DB then S.Normalize(NS.DB) end
     -- Saved CVars wait in the runtime until their owner hands them back.
     if NS.RootDB and type(NS.RootDB.suiteRecovery) == "table" and next(NS.RootDB.suiteRecovery) then
-        LoadAddOnByName(RUNTIME_ADDON)
+        C_AddOns.LoadAddOn(RUNTIME_ADDON)
     end
-    NS.Registry.AddListener(S, function(_, domain)
-        if domain == "profile" then
-            if S.CloseMovers then S.CloseMovers() end
-            if NS.DB then S.Normalize(NS.DB) end
-            S.ApplyAll()
-        end
-    end)
+    NS.Registry.AddListener(S, ApplyProfile)
     S.ApplyAll()
 end
 
@@ -794,7 +879,7 @@ end
 function S.Open(id)
     local spec = type(id) == "string" and S.catalog[id]
     local page = spec and (spec.page or ("suite_" .. id)) or "suite_actionbars"
-    if NS.Menu and NS.Menu.Open and NS.Menu.Open(page) then return end
+    if NS.Menu.Open(page) then return end
     NS.Print("Open the MSUF menu to find the Suite pages. MSUF must be installed and enabled.")
 end
 
