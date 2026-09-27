@@ -120,7 +120,7 @@ B.Section(id, "window", "Window and header", {
     Bool("headerMouseover", "Show header buttons only on mouseover", false),
 })
 B.Section(id, "details", "Details", {
-    Bool("hoverTooltip", "Show a spell breakdown on mouseover", true),
+    Bool("hoverTooltip", "Show target damage on mouseover (spells when unavailable)", true),
     Number("tooltipRows", "Breakdown rows", 10, 3, 20),
     Number("tooltipScale", "Breakdown scale (percent)", 100, 80, 150, 5),
     Bool("spellTooltips", "Show spell tooltips in the breakdown", true),

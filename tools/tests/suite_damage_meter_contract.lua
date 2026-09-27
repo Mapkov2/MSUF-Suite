@@ -232,9 +232,12 @@ api.roster=roster
 local function Session(meterType)
     if api.empty then return {combatSources={},maxAmount=0,totalAmount=0} end
     if meterType==10 then
-        return {combatSources={{name=V("Boss","bossname"),classFilename="",specIconID=0,sourceGUID=V("Creature-0-99","bossguid"),
+        local enemies={{name=V("Boss","bossname"),classFilename="",specIconID=0,sourceGUID=V("Creature-0-99","bossguid"),
             sourceCreatureID=V(99,"bossid"),totalAmount=V(2300,"bosstotal"),amountPerSecond=V(23,"bosspps"),isLocalPlayer=false,
-            deathRecapID=0,deathTimeSeconds=V(0,"bossdeath")}},maxAmount=V(2300,"bossmax"),totalAmount=V(2300,"bosssum"),durationSeconds=V(100,"duration")}
+            deathRecapID=0,deathTimeSeconds=V(0,"bossdeath")}}
+        if api.targetMode then enemies[2]={name="Add",classFilename="",sourceGUID="Creature-0-100",
+            sourceCreatureID=100,totalAmount=700,amountPerSecond=7,isLocalPlayer=false} end
+        return {combatSources=enemies,maxAmount=V(2300,"bossmax"),totalAmount=V(2300,"bosssum"),durationSeconds=V(100,"duration")}
     end
     local list,sum={},0
     for i,unit in ipairs(api.roster) do
@@ -245,10 +248,13 @@ local function Session(meterType)
     end
     return {combatSources=list,maxAmount=V(api.roster[1].total,"max"),totalAmount=V(sum,"sum"),durationSeconds=V(100,"duration")}
 end
-local function Detail(meterType)
+local function Detail(meterType, creature)
     if meterType==10 then
         local function Hit(id,amount,unit,class) return {spellID=V(id,"spell"),totalAmount=V(amount,"hit"),amountPerSecond=V(amount/100,"hitpps"),
-            creatureName="",combatSpellDetails={unitName=V(unit,"unit"),unitClassFilename=class,specIconID=0}} end
+            creatureName="",combatSpellDetails={unitName=V(unit,"unit"),unitClassFilename=class,amount=V(amount,"detail"),specIconID=0}} end
+        if api.targetMode and creature==100 then
+            return {combatSpells={Hit(133,400,"Tank","WARRIOR"),Hit(116,300,"Me","MAGE")},maxAmount=400,totalAmount=700}
+        end
         return {combatSpells={Hit(133,1000,"Tank","WARRIOR"),Hit(116,700,"Me","MAGE"),Hit(6343,600,"Tank","WARRIOR")},maxAmount=V(1000,"smax"),totalAmount=V(2300,"ssum")}
     end
     return {combatSpells={
@@ -261,10 +267,10 @@ C_DamageMeter={
     GetCombatSessionFromType=function(sessionType,meterType) Plain(sessionType,meterType);api.fetch=api.fetch+1;api.lastSession=sessionType;return Session(meterType) end,
     GetCombatSessionFromID=function(id,meterType) Plain(id,meterType);api.fetchID=api.fetchID+1;api.lastID=id;return Session(meterType) end,
     GetCombatSessionSourceFromType=function(sessionType,meterType,guid,creature)
-        Plain(sessionType,meterType,guid,creature);api.source=api.source+1;api.lastGUID,api.lastCreature=guid,creature;return Detail(meterType)
+        Plain(sessionType,meterType,guid,creature);api.source=api.source+1;api.lastGUID,api.lastCreature=guid,creature;return Detail(meterType,creature)
     end,
     GetCombatSessionSourceFromID=function(id,meterType,guid,creature)
-        Plain(id,meterType,guid,creature);api.source=api.source+1;api.lastGUID,api.lastCreature=guid,creature;return Detail(meterType)
+        Plain(id,meterType,guid,creature);api.source=api.source+1;api.lastGUID,api.lastCreature=guid,creature;return Detail(meterType,creature)
     end,
     GetSessionDurationSeconds=function() api.durationReads=(api.durationReads or 0)+1;return api.duration end,
     GetAvailableCombatSessions=function() return {{sessionID=6,name="Trash",durationSeconds=20},{sessionID=7,name="Boss",durationSeconds=65}} end,
@@ -913,6 +919,45 @@ S.SetMany("damageMeter",{w1Type=6,percent=true})
 assert(Row(win,1).valueText.text=="56% - 1.50M","hyphen layout must collapse a count-only rate")
 S.SetMany("damageMeter",{numberFormat=3,w1Type=2})
 S.Set("damageMeter","w1Type",1)
+-- Hovering a damage row shows damage by enemy, aggregated from Blizzard's
+-- EnemyDamageTaken view. The inverse session is read once and shared by later
+-- hovers; a meter data event invalidates that snapshot.
+api.targetMode=true
+D.InvalidateTargets()
+local targetSources,targetFetches=api.source,api.fetch
+Row(win,1).scripts.OnEnter(Row(win,1))
+assert(M.tip.title.text=="Tank - Targets" and M.tip.rows[1].nameText.text=="Boss"
+    and M.tip.rows[1].valueText.text:find("1.60K",1,true)
+    and M.tip.rows[2].nameText.text=="Add" and M.tip.rows[2].valueText.text:find("400",1,true),
+    "hover did not show the player's damage per target")
+assert(api.source==targetSources+2 and api.fetch==targetFetches+1,
+    "target hover did not use one enemy session and one source per enemy")
+Row(win,1).scripts.OnLeave(Row(win,1))
+targetSources,targetFetches=api.source,api.fetch
+Row(win,2).scripts.OnEnter(Row(win,2))
+assert(M.tip.title.text=="Me - Targets" and M.tip.rows[1].nameText.text=="Boss"
+    and M.tip.rows[2].nameText.text=="Add" and api.source==targetSources and api.fetch==targetFetches,
+    "another player's hover rebuilt the unchanged target cache")
+Row(win,2).scripts.OnLeave(Row(win,2))
+Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",10,0)
+Row(win,1).scripts.OnEnter(Row(win,1))
+assert(api.source==targetSources+2 and api.fetch==targetFetches+1,
+    "enemy damage update did not invalidate the hover cache")
+Row(win,1).scripts.OnLeave(Row(win,1))
+S.Set("damageMeter","numberFormat",1)
+Row(win,1).scripts.OnEnter(Row(win,1))
+assert(M.tip.rows[1].valueText.text:find("1.60K",1,true),
+    "DPS-only number format hid the target damage amount")
+Row(win,1).scripts.OnLeave(Row(win,1))
+S.Set("damageMeter","numberFormat",3)
+api.secret=true
+D.InvalidateTargets()
+targetSources=api.source
+assert(D.TargetGroups(win,win.session.combatSources[1])==nil and api.source==targetSources,
+    "restricted enemy data was inspected or returned as a target breakdown")
+api.secret=false
+api.targetMode=false
+D.InvalidateTargets()
 combat=true;Event("PLAYER_REGEN_DISABLED")
 Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
 assert(win.bd.open and api.lastGUID=="Player-Tank" and win.bdRows[1].nameText.text=="Spell133" and win.bdRows[1].icon.shown,
@@ -964,4 +1009,4 @@ for _,file in ipairs(files) do
 end
 -- Paints and clock seconds never create timer objects (C_Timer.NewTimer).
 assert(#timers==0,"the meter created "..#timers.." timer objects for paints or clock ticks")
-print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")
+print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, target hover and breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

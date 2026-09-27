@@ -232,3 +232,142 @@ function D.GroupSpells(source)
     table.sort(groups, ByAmount)
     return groups, n, sum
 end
+
+-- The DamageDone source exposes spells, not a per-target total. The inverse
+-- EnemyDamageTaken session exposes each enemy's attackers. Build the target
+-- totals once, on the first out-of-combat hover, and reuse them until the
+-- meter reports new data. Secret or ambiguous identities fail closed.
+local function TargetIndex(session)
+    if not Public(session) then return nil end
+    local sources = session and session.combatSources
+    if type(sources) ~= "table" or not Public(sources) then return nil end
+    local count = #sources
+    if not Public(count) then return nil end
+    local full, short = {}, {}
+    for index = 1, count do
+        local source = sources[index]
+        if type(source) ~= "table" or not Public(source) then return nil end
+        local name, class = source.name, source.classFilename
+        if not Public(name) or type(name) ~= "string" or not Public(class) or type(class) ~= "string" then
+            return nil
+        end
+        if class ~= "" then
+            local player = { name = name, class = class }
+            if full[name] ~= nil then full[name] = false else full[name] = player end
+            local abbreviated = Ambiguate(name, "short")
+            if not Public(abbreviated) or type(abbreviated) ~= "string" then return nil end
+            if short[abbreviated] ~= nil then short[abbreviated] = false else short[abbreviated] = player end
+        end
+    end
+    return full, short
+end
+
+local function TargetPlayer(full, short, name, class)
+    local player = full[name]
+    -- A realm-less name is ambiguous when several roster entries share it.
+    if short[name] == false then player = nil end
+    if not player then player = short[name] end
+    if not player or player == false or (class ~= "" and player.class ~= class) then return nil end
+    return player.name
+end
+
+local function EnemySession(win)
+    local session
+    if win.sessionID then
+        session = C_DamageMeter.GetCombatSessionFromID(win.sessionID, D.ENEMY)
+    else
+        session = C_DamageMeter.GetCombatSessionFromType(win.sessionType, D.ENEMY)
+    end
+    return type(session) == "table" and Public(session) and session or nil
+end
+
+local function EnemySource(win, guid, creature)
+    if win.sessionID then
+        return C_DamageMeter.GetCombatSessionSourceFromID(win.sessionID, D.ENEMY, guid, creature)
+    end
+    return C_DamageMeter.GetCombatSessionSourceFromType(win.sessionType, D.ENEMY, guid, creature)
+end
+
+local function BuildTargets(win)
+    local full, short = TargetIndex(win.session)
+    if not full then return nil end
+    local enemies = EnemySession(win)
+    local sources = enemies and enemies.combatSources
+    if type(sources) ~= "table" or not Public(sources) then return nil end
+    local count = #sources
+    if not Public(count) then return nil end
+    local players = {}
+    for index = 1, count do
+        local enemy = sources[index]
+        if type(enemy) ~= "table" or not Public(enemy) then return nil end
+        local target = enemy.name
+        if not Public(target) or type(target) ~= "string" or target == "" then return nil end
+        local guid, creature = D.Identity(enemy)
+        if not guid and not creature then return nil end
+        local detail = EnemySource(win, guid, creature)
+        if type(detail) ~= "table" or not Public(detail) then return nil end
+        local spells = detail.combatSpells
+        if type(spells) ~= "table" or not Public(spells) then return nil end
+        local spellCount = #spells
+        if not Public(spellCount) then return nil end
+        for spellIndex = 1, spellCount do
+            local spell = spells[spellIndex]
+            if type(spell) ~= "table" or not Public(spell) then return nil end
+            local data = spell.combatSpellDetails
+            if type(data) ~= "table" or not Public(data) then return nil end
+            local attacker, class = data.unitName, data.unitClassFilename
+            if not Public(attacker) or type(attacker) ~= "string"
+                or not Public(class) or type(class) ~= "string" then return nil end
+            if attacker ~= "" then
+                local playerName = TargetPlayer(full, short, attacker, class)
+                if playerName then
+                    local amount = data.amount
+                    if not Public(amount) then return nil end
+                    if amount == nil then amount = spell.totalAmount end
+                    if not Finite(amount) then return nil end
+                    if amount > 0 then
+                        local player = players[playerName]
+                        if not player then
+                            player = { list = {}, index = {}, sum = 0 }
+                            players[playerName] = player
+                        end
+                        local entry = player.index[target]
+                        if not entry then
+                            entry = { name = target, amount = 0, class = "", spec = 0 }
+                            player.index[target] = entry
+                            player.list[#player.list + 1] = entry
+                        end
+                        entry.amount = entry.amount + amount
+                        player.sum = player.sum + amount
+                    end
+                end
+            end
+        end
+    end
+    for _, player in pairs(players) do
+        table.sort(player.list, ByAmount)
+        player.index = nil
+    end
+    return players
+end
+
+function D.InvalidateTargets()
+    M.targetRevision = (M.targetRevision or 0) + 1
+end
+
+function D.TargetGroups(win, source)
+    if M.inCombat or NS.IsCombatLocked() or M.preview or (win.meterType ~= 0 and win.meterType ~= 1) then return nil end
+    local name = source.name
+    if not Public(name) or type(name) ~= "string" then return nil end
+    local cache = win.targetCache
+    if not cache or cache.revision ~= M.targetRevision or cache.sessionID ~= win.sessionID
+        or cache.sessionType ~= win.sessionType then
+        cache = { revision = M.targetRevision, sessionID = win.sessionID, sessionType = win.sessionType,
+            players = BuildTargets(win) or {} }
+        win.targetCache = cache
+    end
+    local player = cache.players[name]
+    if not player then return nil end
+    local total = Finite(source.totalAmount) and source.totalAmount or player.sum
+    return player.list, #player.list, total
+end

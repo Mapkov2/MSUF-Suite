@@ -430,7 +430,7 @@ function D.PaintSpell(row, spell, source, meterType, class)
 end
 
 -- EnemyDamageTaken breakdown row: one attacking unit (plain data only).
-function D.PaintGroup(row, entry, maxAmount, total, duration, meterType)
+function D.PaintGroup(row, entry, maxAmount, total, duration, meterType, targetAmount)
     if row.styleGen ~= M.styleGen then D.StyleRow(row) end
     if entry.class ~= row.class then
         row.class = entry.class
@@ -443,5 +443,12 @@ function D.PaintGroup(row, entry, maxAmount, total, duration, meterType)
         row.nameText:SetText(D.Short(entry.name))
     end
     D.SetBar(row, maxAmount, entry.amount)
+    if targetAmount then
+        -- Target hover always shows damage, even when the meter displays only DPS.
+        local percent = Percent(entry.amount, total, true)
+        row.valueText:SetText(percent and format("%s %d%%", D.Compact(entry.amount), percent) or D.Compact(entry.amount))
+        row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
+        return
+    end
     D.SetValueText(row, meterType, entry.amount, duration > 0 and entry.amount / duration or 0, total, true)
 end

@@ -215,11 +215,13 @@ local function TipContent(frame, win, source, session)
     end
     local guid, creature = D.Identity(source)
     if not guid and not creature then return 0, D.Blocked() end
-    local detail = D.FetchSource(win, guid, creature)
     local class = source.classFilename
     class = Public(class) and type(class) == "string" and class or ""
-    local groups, count, sum
-    if win.meterType == D.ENEMY then groups, count, sum = D.GroupSpells(detail) end
+    local groups, count, sum = D.TargetGroups(win, source)
+    local targets = groups ~= nil
+    local detail
+    if not groups then detail = D.FetchSource(win, guid, creature) end
+    if not groups and win.meterType == D.ENEMY then groups, count, sum = D.GroupSpells(detail) end
     local spells = not groups and detail and detail.combatSpells
     if not groups then count = D.Count(spells) end
     local shown = min(count, M.config.tooltipRows)
@@ -234,13 +236,13 @@ local function TipContent(frame, win, source, session)
             row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, y)
         end
         if groups then
-            D.PaintGroup(row, groups[i], groups[1].amount, sum, duration, win.meterType)
+            D.PaintGroup(row, groups[i], groups[1].amount, sum, duration, win.meterType, targets)
         else
             D.PaintSpell(row, spells[i], detail, win.meterType, class)
         end
         row:Show()
     end
-    return shown, shown == 0 and S.Text("No details for this entry.") or nil
+    return shown, shown == 0 and S.Text("No details for this entry.") or nil, targets
 end
 
 -- Built once per hover, never live-updated.
@@ -260,8 +262,8 @@ function D.ShowTip(win, row)
         frame.title:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, -TIP_PAD + M.style.baseline)
     end
     local name = source.name
-    frame.title:SetFormattedText("%s - %s", D.Short(name), D.TypeName(win.meterType))
-    local shown, message = TipContent(frame, win, source, session)
+    local shown, message, targets = TipContent(frame, win, source, session)
+    frame.title:SetFormattedText("%s - %s", D.Short(name), targets and S.Text("Targets") or D.TypeName(win.meterType))
     for i = shown + 1, #frame.rows do frame.rows[i]:Hide() end
     frame.message:SetText(message or "")
     frame.message:SetShown(message ~= nil)

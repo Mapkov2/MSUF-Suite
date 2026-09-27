@@ -227,6 +227,7 @@ end
 
 local function SessionUpdated(self, _, meterType, sessionID)
     if not Public(meterType) or not Public(sessionID) then return end
+    D.InvalidateTargets()
     local dirty = false
     for i = 1, self.config.windowCount do
         local win = D.windows[i]
@@ -238,6 +239,7 @@ local function SessionUpdated(self, _, meterType, sessionID)
     if dirty then D.RequestPaint() end
 end
 local function CurrentUpdated(self)
+    D.InvalidateTargets()
     local dirty = false
     for i = 1, self.config.windowCount do
         local win = D.windows[i]
@@ -246,6 +248,7 @@ local function CurrentUpdated(self)
     if dirty then D.RequestPaint() end
 end
 local function Reset()
+    D.InvalidateTargets()
     for i = 1, D.MAX do
         local win = D.windows[i]
         if win then
@@ -262,6 +265,7 @@ local function Reset()
     D.PaintDirty()
 end
 local function CombatStart(self)
+    D.InvalidateTargets()
     M.inCombat = true
     M.combatStart = GetTime()
     M.nextPaint = nil
@@ -287,6 +291,7 @@ local function LateRepaint()
     D.PaintDirty()
 end
 local function CombatEnd()
+    D.InvalidateTargets()
     M.inCombat = false
     M.lastDuration = D.Duration(D.CURRENT) or M.lastDuration
     D.StopClock()
@@ -302,11 +307,13 @@ local function CombatEnd()
     C_Timer.After(.5, LateRepaint)
 end
 local function Encounter(self, event)
+    D.InvalidateTargets()
     if event == "ENCOUNTER_START" and self.config.autoCurrent then D.ClearPins() end
     D.MarkAll()
     D.RequestPaint()
 end
 local function World(self)
+    D.InvalidateTargets()
     local combat = NS.IsCombatLocked()
     if combat and not M.inCombat then CombatStart(self) elseif not combat and M.inCombat then CombatEnd() end
     M.available, M.reason = S.DamageMeterAvailability()
@@ -324,6 +331,7 @@ end
 -- Fires after a restriction lifted: session data is readable again.
 local function Restriction(_, _, _, state)
     if Public(state) and state == Enum.AddOnRestrictionState.Inactive then
+        D.InvalidateTargets()
         if not M.inCombat then CloseBlocked() end
         D.MarkAll()
         D.RequestPaint()
@@ -405,6 +413,7 @@ end
 
 function M:Refresh()
     local c = self.config
+    D.InvalidateTargets()
     -- Blizzard's own meter UI stays hidden (reversible CVar; the data API keeps
     -- working) and MSUF's mover for it steps aside while this module is active.
     self.context:CVar("damageMeterEnabled", 0)
@@ -430,6 +439,7 @@ function M:Disable()
         local win = D.windows[i]
         if win then
             D.CloseBreakdown(win, true)
+            win.targetCache = nil
             win.shown, win.hover = false, false
             win.frame:Hide()
         end
@@ -496,6 +506,7 @@ function S.DamageMeterPreview(on)
     if on and (not M.active or M.inCombat or NS.IsCombatLocked()) then return false end
     if (M.preview == true) == on then return true end
     M.preview = on
+    D.InvalidateTargets()
     if not M.active then return true end
     for i = 1, D.MAX do
         local win = D.windows[i]
