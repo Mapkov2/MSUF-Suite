@@ -5,11 +5,26 @@ local NS = {
 }
 local S = {}
 S.Public = function(value) return value ~= "secret" end
+-- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
+S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
+S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
+-- securecallfunction: a raising callback is reported and its caller goes on.
+local reports = {}
+S.Dispatch = function(callback, ...)
+    local results = { coroutine.resume(coroutine.create(callback), ...) }
+    if not results[1] then
+        reports[#reports + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2, table.maxn(results))
+end
 S.Text = function(value) return value end
 S.RGB = function(hex)
     return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
 end
 S.CreateFrame = function(...) return CreateFrame(...) end
+S.CreateTexture = function(parent, ...) return parent:CreateTexture(...) end
+S.CreateFontString = function(parent, ...) return parent:CreateFontString(...) end
 S.ResolveFont = function(key) return key == "TestFont" and "Test.ttf" or nil end
 S.FontFlags = function(outline, rendering)
     if rendering == 3 then return outline == "" and "SLUG" or "OUTLINE,SLUG" end
@@ -46,10 +61,13 @@ local function Frame(name)
             GetText = function(label) return label.value end,
             SetTextColor = function(label, ...) label.color = { ... } end,
             SetJustifyH = function() end, SetWidth = function(label, width) label.width = width end,
+            SetHeight = function(label, height) label.height = height end,
+            GetHeight = function(label) return label.height or 12 end,
             SetFont = function(label, ...) label.font = { ... } end,
             GetFont = function(label) return unpack(label.font or { "Fonts/FRIZQT__.TTF", 12, "" }) end,
             SetAlpha = function(label, alpha) label.alpha = alpha end,
-            GetAlpha = function(label) return label.alpha or 1 end }
+            GetAlpha = function(label) return label.alpha or 1 end,
+            SetMaxLines = function(label, lines) label.maxLines = lines end }
     end
     function frame:GetName() return self.name end
     function frame:GetParent() return self.parent end
@@ -111,6 +129,8 @@ ChatFrame1 = Frame("ChatFrame1")
 ChatFrame1.isDocked = true
 ChatFrame1.Background = Texture()
 ChatFrame1TopLeftTexture = Texture()
+-- The button frame's chrome is a named texture of ChatFrame1.buttonFrame.
+ChatFrame1.buttonFrame = Frame("ChatFrame1ButtonFrame")
 ChatFrame1ButtonFrameBackground = Texture()
 ChatFrame1Tab = Frame("ChatFrame1Tab")
 ChatFrame1Tab.Left = Texture()
@@ -132,7 +152,13 @@ C_FriendList = { GetNumOnlineFriends = function() return 2 end }
 SELECTED_CHAT_FRAME = ChatFrame1
 GENERAL_CHAT_DOCK = { selected = ChatFrame1 }
 CHAT_FRAMES = { "ChatFrame1" }
-NUM_CHAT_WINDOWS = 1
+-- One built-in window, so later windows arrive through CHAT_FRAMES like
+-- Blizzard's temporary windows. NUM_CHAT_WINDOWS is only a deprecation alias.
+Constants = { ChatFrameConstants = { MaxChatWindows = 1 } }
+-- Blizzard_GameTooltip builds GameTooltip at startup on both clients.
+GameTooltip = Frame("GameTooltip")
+GameTooltip.shown = false
+function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
 local temporaryHook, selectHook, newWindowHook
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
@@ -152,8 +178,18 @@ function S.Install(id, module)
 end
 function S.Queue() error("chat update should not poll or queue out of combat") end
 local private = { NS = NS, Suite = S }
-assert(loadfile(root .. "/MSUF_Suite_Chat/Chat.lua"))("MSUF_Suite_Chat", private)
+-- The runtime files load in TOC order into one private table (Bootstrap only
+-- fills it from _G.MSUFSuite, which this fixture passes in directly).
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Sidebar.lua", "Copy.lua", "Window.lua", "Controller.lua" }
+local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
+assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
+for i = 1, #CHAT_FILES do
+    assert(tocFiles[i] == CHAT_FILES[i], "Chat TOC order: expected " .. CHAT_FILES[i] .. " at " .. i)
+end
+Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(S.module)
+assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
 local ctx = { callbacks = {}, restored = 0, original = {}, properties = {}, fields = {} }
 function ctx:Event(event, fn) self.callbacks[event] = fn end
 function ctx:Property(frame, getter, setter, value)
@@ -192,13 +228,21 @@ function ctx:Tuple(frame, getter, setter, ...)
     local record = self.original[frame] or {}
     self.original[frame] = record
     record[setter] = record[setter] or { before = { frame[getter](frame) } }
-    self.tuples = self.original
     frame[setter](frame, ...)
+    record[setter].applied = { frame[getter](frame) }
 end
 function ctx:RestoreTuple(frame, setter)
     self.restored = self.restored + 1
     local record = self.original[frame]
     if record and record[setter] then frame[setter](frame, unpack(record[setter].before)); record[setter] = nil end
+end
+-- The runtime's contract (MSUF_Suite_Modules/Runtime.lua): the module never
+-- reaches into the context's private tuple records.
+function ctx:UpdateTupleBefore(frame, setter, index, current)
+    local record = self.original[frame] and self.original[frame][setter]
+    if not record then return false end
+    if record.applied and current ~= record.applied[index] then record.before[index] = current end
+    return true, unpack(record.before)
 end
 module.context = ctx
 module.active = true
@@ -252,6 +296,18 @@ assert(sidebar.tabLabel.value == "General" and sidebar.tabOverlay.parent == Chat
 ChatFrame1Tab:SetAlpha(1)
 assert(sidebar.buttons[1].glyph.path == "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png",
     "MSUF glyph texture was replaced by a solid color")
+UnitClass = function() return "Mage", "MAGE" end
+S.ClassRGB = function(token)
+    assert(token == "MAGE")
+    return 0.2, 0.4, 0.8
+end
+module.config.sidebarClassColor = true
+module:Refresh()
+assert(math.abs(sidebar.buttons[1].glyph.color[1] - 0.2) < 0.01
+    and math.abs(sidebar.friendCount.color[3] - 0.8) < 0.01,
+    "sidebar icon and friend count did not use the player class color")
+module.config.sidebarClassColor = false
+module:Refresh()
 assert(not sidebar.copyButton, "copy UI must be absent by default")
 ChatFrame1.messages = {
     "|cffaaaaaa[15:38]|r First message",
@@ -261,6 +317,17 @@ ChatFrame1.messages = {
 module.config.copyMessages = true
 module:Refresh()
 assert(sidebar.copyButton and sidebar.copyButton.shown, "opt-in Copy button is missing")
+local copyX, copyY = sidebar.copyButton.points[1][4], sidebar.copyButton.points[1][5]
+module.config.copyButtonX, module.config.copyButtonY = 18, -12
+module:Refresh()
+assert(sidebar.copyButton.points[1][4] == copyX + 18
+    and sidebar.copyButton.points[1][5] == copyY - 12,
+    "Copy button X/Y settings did not move the button")
+sidebar.copyButton.scripts.OnEnter(sidebar.copyButton)
+assert(GameTooltip.owner == sidebar.copyButton and GameTooltip.text == "Copy a recent chat message"
+    and GameTooltip.shown, "the Copy button did not explain itself")
+sidebar.copyButton.scripts.OnLeave(sidebar.copyButton)
+assert(not GameTooltip.shown, "leaving the Copy button kept its tooltip")
 sidebar.copyButton:Click("LeftButton")
 assert(module.copyDialog and module.copyDialog.shown and module.copyDialog.rows[1].message == "[15:39] [Mapko]: Good point!"
     and module.copyDialog.rows[2].message == "[15:38] First message"
@@ -294,6 +361,28 @@ sidebar.buttons[5].button:Click("LeftButton")
 assert(QuickJoinToastButton.clicks == 1 and ChatFrameChannelButton.clicks == 1
     and TextToSpeechButton.clicks == 1 and ChatFrameMenuButton.clicks == 1
     and ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
+-- Hovering a sidebar button lights its glyph in the accent color and names it.
+local channels = sidebar.buttons[2]
+channels.button.scripts.OnEnter(channels.button)
+assert(GameTooltip.owner == channels.button and GameTooltip.text == "Channels and voice" and GameTooltip.shown
+    and channels.glyph.color[4] == 1 and channels.highlight.color[4] == 0.2,
+    "sidebar hover did not show the button's tooltip and highlight")
+channels.button.scripts.OnLeave(channels.button)
+assert(not GameTooltip.shown and channels.glyph.color[4] == 0.94 and channels.highlight.color[4] == 0,
+    "leaving a sidebar button kept its tooltip or highlight")
+-- Friend events update the count in combat too; it caps at 99+ and keeps
+-- the last public value when Blizzard's counts are unreadable.
+BNGetNumFriends = function() return 90, 60 end
+C_FriendList.GetNumOnlineFriends = function() return 40 end
+ctx.callbacks.BN_FRIEND_ACCOUNT_ONLINE(module, "BN_FRIEND_ACCOUNT_ONLINE")
+assert(sidebar.friendCount.value == "99+", "friend count did not cap at 99+")
+BNGetNumFriends = function() return 5, "secret" end
+ctx.callbacks.FRIENDLIST_UPDATE(module, "FRIENDLIST_UPDATE")
+assert(sidebar.friendCount.value == "99+", "an unreadable friend count replaced the last public count")
+BNGetNumFriends = function() return 5, 3 end
+C_FriendList.GetNumOnlineFriends = function() return 2 end
+ctx.callbacks.FRIENDLIST_UPDATE(module, "FRIENDLIST_UPDATE")
+assert(sidebar.friendCount.value == "5", "friend count did not follow Blizzard's counts again")
 assert(module.visuals[ChatFrame1].panel.color[1] < 0.1
     and module.visuals[ChatFrame1].panel.color[2] < 0.1
     and module.visuals[ChatFrame1].panel.color[3] < 0.2,
@@ -307,6 +396,15 @@ assert(edges[1].points[2][1] == "TOPRIGHT" and edges[2].points[2][1] == "BOTTOMR
 local count = #textures
 module:Refresh()
 assert(#textures == count, "refresh created another visual layer")
+-- Focused or unreadable edit-box sizes keep only the cosmetic panel compact.
+ChatFrame1EditBox:SetHeight(math.huge)
+module:Refresh()
+assert(sidebar.input.points[2][5] == -30, "an unreadable input height reached the input backdrop")
+ChatFrame1EditBox:SetHeight(60)
+module:Refresh()
+assert(sidebar.input.points[2][5] == -30, "focused edit box enlarged the input backdrop")
+ChatFrame1EditBox.height = nil
+module:Refresh()
 module.config.sidebarPanel = false
 module:Refresh()
 assert(not sidebar.sidebarFrame.shown and QuickJoinToastButton.alpha == 1 and QuickJoinToastButton.mouse,
@@ -327,6 +425,17 @@ assert(ChatFrame1.font[1] == "Test.ttf" and ChatFrame1.font[2] == 12
     and ChatFrame1.font[3] == "THICKOUTLINE,MONOCHROME"
     and ChatFrame1.shadowColor[4] == 0.6 and ChatFrame1.shadowOffset[1] == 2,
     "chat font effects were not applied")
+-- Blizzard's chat menu resizes the font we set. With size 0 that size stays,
+-- an explicit size still wins, and size 0 then follows Blizzard's size again.
+ChatFrame1:SetFont(ChatFrame1.font[1], 16, ChatFrame1.font[3])
+module:Refresh()
+assert(ChatFrame1.font[2] == 16, "font size 0 reverted Blizzard's chat font size")
+module.config.fontSize = 20
+module:Refresh()
+assert(ChatFrame1.font[2] == 20, "an explicit chat font size did not apply")
+module.config.fontSize = 0
+module:Refresh()
+assert(ChatFrame1.font[2] == 16, "font size 0 did not return to Blizzard's chat font size")
 module.config.fontRendering = 3
 module:Refresh()
 assert(ChatFrame1.font[3] == "OUTLINE,SLUG" and ChatFrame1.shadowColor[4] == 0
@@ -334,10 +443,11 @@ assert(ChatFrame1.font[3] == "OUTLINE,SLUG" and ChatFrame1.shadowColor[4] == 0
 module.config.font, module.config.fontOutline = "", 1
 module.config.fontRendering, module.config.fontShadow = 1, 1
 module:Refresh()
-assert(ChatFrame1.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1.font[3] == ""
-    and ChatFrame1.shadowColor[4] == 0, "chat text ownership did not restore")
+assert(ChatFrame1.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1.font[2] == 16 and ChatFrame1.font[3] == ""
+    and ChatFrame1.shadowColor[4] == 0, "chat text ownership did not restore Blizzard's font and size")
 ChatFrame2 = Frame("ChatFrame2")
 ChatFrame2.isDocked = true
+ChatFrame2.editBox = Frame("ChatFrame2EditBox")
 ChatFrame2Tab = Frame("ChatFrame2Tab")
 ChatFrame2Tab.Text = ChatFrame2Tab:CreateFontString()
 ChatFrame2Tab.Text:SetText("Combat Log")
@@ -348,12 +458,17 @@ assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log",
     "Combat Log did not receive a readable MSUF tab label")
 CombatLogQuickButtonFrame_Custom = Frame("CombatLogQuickButtonFrame_Custom")
 CombatLogQuickButtonFrame_Custom:SetHeight(24)
-CombatLogQuickButtonFrame_Custom.Texture = Texture()
+CombatLogQuickButtonFrame_CustomTexture = Texture()
 ChatFrame2.CombatLogQuickButtonFrame = CombatLogQuickButtonFrame_Custom
 ctx.callbacks.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_CombatLog")
 assert(module.visuals[ChatFrame2].header.height == 51
-    and CombatLogQuickButtonFrame_Custom.Texture.alpha == 0,
+    and CombatLogQuickButtonFrame_CustomTexture.alpha == 0,
     "Combat Log filter row did not join the MSUF header")
+CombatLogQuickButtonFrame_Custom:SetHeight(math.huge)
+module:Refresh()
+assert(module.visuals[ChatFrame2].header.height == 24, "an unreadable Combat Log row height reached the chat header")
+CombatLogQuickButtonFrame_Custom:SetHeight(24)
+module:Refresh()
 GENERAL_CHAT_DOCK.selected = ChatFrame2
 module.config.tabAccent = true
 local panelColorUpdates = sidebar.panel.colorUpdates
@@ -363,7 +478,7 @@ assert(module.visuals[ChatFrame2].tabLine.shown and not sidebar.tabLine.shown,
     "selected tab accent did not follow Blizzard tab selection")
 assert(module.visuals[ChatFrame2].tabLabel.color[4] == 1,
     "selected Combat Log tab is dimmed")
-assert(sidebar.tabLabel.color[4] == 0.78 and sidebar.panel.colorUpdates == panelColorUpdates,
+assert(sidebar.tabLabel.color[4] == 1 and sidebar.panel.colorUpdates == panelColorUpdates,
     "selecting a chat tab unnecessarily restyled the whole chat panel")
 assert(sidebar.sidebar.shown and sidebar.sidebarFrame.shown
     and sidebar.sidebarFrame.points[1][2] == ChatFrame2
@@ -388,6 +503,7 @@ assert(sidebar.sidebarFrame.points[1][2] == ChatFrame2
     "switching again to Combat Log lost the MSUF shell")
 ChatFrame3 = Frame("ChatFrame3")
 ChatFrame3.isDocked = true
+ChatFrame3.editBox = Frame("ChatFrame3EditBox")
 ChatFrame3Tab = Frame("ChatFrame3Tab")
 ChatFrame3Tab.Text = ChatFrame3Tab:CreateFontString()
 ChatFrame3Tab.Text:SetText("Loot")
@@ -399,6 +515,19 @@ assert(module.visuals[ChatFrame3] and module.visuals[ChatFrame3].panel.shown
     and module.visuals[ChatFrame3].tabLabel.value == "Loot"
     and sidebar.sidebarFrame.points[1][2] == ChatFrame3,
     "a newly opened chat tab did not inherit the General styling")
+-- A chat window that fails to style is reported; the later windows are styled.
+assert(#reports == 0, "chat styling raised: " .. tostring(reports[1]))
+ChatFrame4 = Frame("ChatFrame4")
+ChatFrame4.editBox = Frame("ChatFrame4EditBox")
+ChatFrame4Tab = Frame("ChatFrame4Tab")
+ChatFrame4Tab.Text = ChatFrame4Tab:CreateFontString()
+CHAT_FRAMES[4] = "ChatFrame4"
+local getName = ChatFrame2.GetName
+ChatFrame2.GetName = function() error("another addon replaced a chat frame part") end
+temporaryHook()
+ChatFrame2.GetName = getName
+assert(#reports == 1 and module.visuals[ChatFrame4] and module.visuals[ChatFrame4].panel.shown,
+    "a chat window that failed to style stopped the later windows")
 module:Disable()
 assert(not module.visuals[ChatFrame1].panel.shown and not module.visuals[ChatFrame2].panel.shown
     and not module.visuals[ChatFrame3].panel.shown)
@@ -410,6 +539,32 @@ assert(ChatFrame1.Background.shown and ChatFrame1TopLeftTexture.shown
     "disabling chat did not restore Blizzard chrome")
 assert(ChatFrame1Tab.Left.alpha == 1 and ChatFrame1Tab.noMouseAlpha == 0.4
     and ChatFrame1Tab.Text.alpha == 1 and ChatFrame1EditBox.Left.alpha == 1
-    and CombatLogQuickButtonFrame_Custom.Texture.alpha == 1,
+    and CombatLogQuickButtonFrame_CustomTexture.alpha == 1,
     "disabling chat did not restore Blizzard tab/input")
+-- Every runtime file starts with the shared private-table header, and
+-- Suite-created regions go through the shared S.CreateTexture/S.CreateFontString.
+for i = 2, #CHAT_FILES do
+    local file = CHAT_FILES[i]
+    local sourceFile = assert(io.open(root .. "/MSUF_Suite_Chat/" .. file, "rb"))
+    local source = sourceFile:read("*a"):gsub("\r", "")
+    sourceFile:close()
+    local first, _, third = source:match("^([^\n]*)\n([^\n]*)\n([^\n]*)\n")
+    assert(first == "local _, P = ...", file .. " does not start with the Chat file header")
+    if file == "Shared.lua" then
+        assert(source:find("\nlocal C = {}\nP.Chat = C\n", 1, true), "Shared.lua does not create P.Chat")
+    else
+        assert(third == "local C = P.Chat", file .. " does not read P.Chat in its header")
+    end
+    assert(not source:find(":CreateTexture%(") and not source:find(":CreateFontString%("),
+        file .. " creates regions without S.CreateTexture/S.CreateFontString")
+    -- Retail and WoW Forever always have the APIs, widget methods and frames
+    -- Chat calls (GameTooltip, the chat templates' tab, Text and editBox),
+    -- and the FCF_* hook targets exist at login on both clients.
+    source = source:gsub("%-%-[^\n]*", "")
+    local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("([%w_]+%.GetName) and")
+        or source:match("if not (_G%.GameTooltip)") or source:match("if (_G%.GameTooltip) then")
+        or source:match("(NUM_CHAT_WINDOWS)") or source:match("(GetFontString)")
+    assert(not guarded, file .. " guards " .. tostring(guarded) .. " as if a client lacked it")
+    assert(file == "Controller.lua" or not source:find("S.Install(", 1, true), file .. " installs the module")
+end
 print("Chat styling, native font restore and event-only refresh passed")

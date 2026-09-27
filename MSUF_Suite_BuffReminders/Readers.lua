@@ -1,0 +1,393 @@
+local _, P = ...
+local S = P.Suite
+local R = P.BuffReminders
+-- Client readers: known spells, item counts, icons, auras, food, temporary
+-- weapon enchants and poison states. Every reader checks each returned value
+-- with S.Public and reports a restricted (secret) read as unknown (nil),
+-- never as missing.
+local Public = S.Public
+local QUESTION_MARK = 134400
+local FOOD_ICONS = R.FOOD_ICONS
+local FOOD_AURAS = R.FOOD_AURAS
+local GetItemCount = C_Item.GetItemCount
+local PLAYER_BANK = Enum.SpellBookSpellBank.Player
+
+function R.Clear(t)
+    for key in pairs(t) do t[key] = nil end
+end
+local Clear = R.Clear
+
+-- C_SpellBook directly: the global IsPlayerSpell and IsSpellKnown shims exist
+-- only while Blizzard's deprecation fallbacks are loaded.
+function R.Known(spellID)
+    local known = C_SpellBook.IsSpellKnown(spellID, PLAYER_BANK)
+    if Public(known) and known == true then return true end
+    local inBook = C_SpellBook.IsSpellInSpellBook(spellID, PLAYER_BANK, false)
+    return Public(inBook) and inBook == true
+end
+
+function R.ItemCount(itemID)
+    local count = GetItemCount(itemID)
+    if Public(count) and type(count) == "number" then return count end
+end
+
+function R.Texture(kind, id)
+    local value
+    if kind == "spell" then
+        value = C_Spell.GetSpellTexture(id)
+    else
+        value = C_Item.GetItemIconByID(id)
+    end
+    return Public(value) and value or QUESTION_MARK
+end
+
+local function AuraExpiry(data)
+    local expiration, duration = data.expirationTime, data.duration
+    if Public(expiration) and Public(duration)
+        and type(expiration) == "number" and type(duration) == "number"
+        and expiration > 0 and duration > 0 and expiration < math.huge then
+        return expiration
+    end
+end
+
+-- Copies the public identity and timing of an aura into target.
+local function FillSnapshot(target, data)
+    local instanceID = data.auraInstanceID
+    if not Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
+    local expiration = AuraExpiry(data)
+    target.auraInstanceID, target.expirationTime = instanceID, expiration
+    target.duration = expiration and data.duration or nil
+    return target
+end
+
+-- Food snapshots are recycled: a rescan or an aura delta reuses the tables
+-- of the food auras that went away instead of allocating new ones.
+local spareSnapshots = {}
+local function Snapshot(data)
+    local count = #spareSnapshots
+    local target = spareSnapshots[count]
+    if target then
+        spareSnapshots[count] = nil
+    else
+        target = {}
+    end
+    return FillSnapshot(target, data)
+end
+
+local function ReleaseSnapshot(ids, key)
+    local snapshot = ids[key]
+    if not snapshot then return false end
+    ids[key] = nil
+    spareSnapshots[#spareSnapshots + 1] = snapshot
+    return true
+end
+
+-- One targeted lookup per aura ID. nil when a lookup was restricted (secret),
+-- else whether the player has one of the entry's auras, with its timing.
+function R.AuraPresent(entry)
+    local ids = entry.aliases
+    local count = ids and #ids or 1
+    local unknown = false
+    for index = 1, count do
+        local data = C_UnitAuras.GetPlayerAuraBySpellID(ids and ids[index] or entry.aura)
+        if not Public(data) then
+            unknown = true
+        elseif data then
+            local instanceID = data.auraInstanceID
+            if not Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
+            local expiration = AuraExpiry(data)
+            return true, instanceID, expiration, nil, expiration and data.duration or nil
+        end
+    end
+    if unknown then return nil end
+    return false
+end
+
+local function MatchesAuraID(entry, spellID)
+    local aliases = entry.aliases
+    if not aliases then return entry.aura == spellID end
+    for index = 1, #aliases do
+        if aliases[index] == spellID then return true end
+    end
+    return false
+end
+
+-- A public list of aura instance IDs, nil (absent), or false (unreadable).
+local function IDList(list)
+    if not Public(list) or (list ~= nil and type(list) ~= "table") then return false end
+    return list
+end
+
+local function ListTouches(list, entry, instanceID)
+    for _, id in ipairs(list) do
+        if not Public(id) or type(id) ~= "number" or id == instanceID
+            or (entry.instanceIDs and entry.instanceIDs[id]) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Whether one UNIT_AURA delta can change an entry (or a poison state): only
+-- its own auras, or data the delta could not show, need a fresh lookup.
+function R.AuraChangeAffects(entry, info)
+    if not Public(info) or type(info) ~= "table" then return true end
+    local full = info.isFullUpdate
+    if not Public(full) or full then return true end
+    if entry.present == nil then return true end
+    local added = IDList(info.addedAuras)
+    if added == false then return true end
+    if added then
+        for _, aura in ipairs(added) do
+            if not Public(aura) then return true end
+            local spellID = aura.spellId
+            if not Public(spellID) or type(spellID) ~= "number" or MatchesAuraID(entry, spellID) then return true end
+        end
+    end
+    if entry.present == false then return false end
+    local instanceID = entry.auraInstanceID
+    if not instanceID then return true end
+    local removed = IDList(info.removedAuraInstanceIDs)
+    if removed == false or (removed and ListTouches(removed, entry, instanceID)) then return true end
+    local updated = IDList(info.updatedAuraInstanceIDs)
+    if updated == false or (updated and ListTouches(updated, entry, instanceID)) then return true end
+    return false
+end
+
+-- Food auras are known two ways: a UNIT_AURA delta learns any added aura with
+-- a food icon (R.FoodDelta), and a rescan runs targeted player lookups. An
+-- indexed aura read can itself raise under Midnight's secret/taint rules,
+-- before Public can inspect the result, so the rescan never scans by index.
+-- A rescan (enable, combat end, zone change, full update) keeps what a delta
+-- learned: it re-checks each known aura by its instance ID and drops only the
+-- auras that are gone. After a reload nothing is learned yet: the listed IDs
+-- and their spell name (Well Fed) find the usual variants, but no targeted
+-- lookup finds a food aura with another name and an unlisted ID, so such an
+-- aura reads as missing until its next UNIT_AURA delta.
+local foodNames
+
+local function FoodNames()
+    if foodNames then return foodNames end
+    foodNames = {}
+    for index = 1, #FOOD_AURAS do
+        local name = C_Spell.GetSpellName(FOOD_AURAS[index])
+        if Public(name) and type(name) == "string" then
+            local seen = false
+            for known = 1, #foodNames do
+                if foodNames[known] == name then seen = true end
+            end
+            if not seen then foodNames[#foodNames + 1] = name end
+        end
+    end
+    return foodNames
+end
+
+-- Stores one looked-up food aura under its instance ID (or under the lookup
+-- key while the ID is not a number). False when the lookup was restricted.
+local function LearnFood(ids, data, lookupKey)
+    if not Public(data) then return false end
+    if not data then return true end
+    local instanceID = data.auraInstanceID
+    if not Public(instanceID) then return false end
+    local key = type(instanceID) == "number" and instanceID or lookupKey
+    ids[key] = ids[key] and FillSnapshot(ids[key], data) or Snapshot(data)
+    return true
+end
+
+local function ScanFood(self)
+    local ids = self.foodIDs
+    local known = true
+    for key, snapshot in pairs(ids) do
+        local instanceID = snapshot.auraInstanceID
+        local data = instanceID and C_UnitAuras.GetAuraDataByAuraInstanceID("player", instanceID)
+        if not Public(data) then
+            known = false
+        elseif data then
+            FillSnapshot(snapshot, data)
+        else
+            -- Gone, or stored under a lookup key: the lookups below re-add it.
+            ReleaseSnapshot(ids, key)
+        end
+    end
+    for index = 1, #FOOD_AURAS do
+        local spellID = FOOD_AURAS[index]
+        if not LearnFood(ids, C_UnitAuras.GetPlayerAuraBySpellID(spellID), spellID) then known = false end
+    end
+    local names = FoodNames()
+    for index = 1, #names do
+        local name = names[index]
+        if not LearnFood(ids, C_UnitAuras.GetAuraDataBySpellName("player", name, "HELPFUL"), name) then
+            known = false
+        end
+    end
+    self.foodKnown = known
+end
+
+-- Removed and added food auras of one delta; false when a list is unreadable.
+local function ApplyFoodLists(ids, info)
+    local changed = false
+    local removed = IDList(info.removedAuraInstanceIDs)
+    if removed == false then return false end
+    if removed then
+        for _, id in ipairs(removed) do
+            if not Public(id) then return false end
+            if ReleaseSnapshot(ids, id) then changed = true end
+        end
+    end
+    local added = IDList(info.addedAuras)
+    if added == false then return false end
+    if added then
+        for _, aura in ipairs(added) do
+            if not Public(aura) or not Public(aura.icon) or not Public(aura.auraInstanceID) then return false end
+            local id = aura.auraInstanceID
+            if type(aura.icon) == "number" and type(id) == "number" and FOOD_ICONS[aura.icon] then
+                ids[id] = ids[id] and FillSnapshot(ids[id], aura) or Snapshot(aura)
+                changed = true
+            end
+        end
+    end
+    return true, changed
+end
+
+-- Applies one UNIT_AURA delta to the known food auras. Returns true when the
+-- food reminder must be re-evaluated; foodKnown nil forces a rescan, false
+-- keeps the reminder unknown. A delta is applied in every state: a pending
+-- rescan re-checks what it learned instead of forgetting it.
+function R.FoodDelta(self, info)
+    if not self.hasFood then return false end
+    if not Public(info) then
+        self.foodKnown = false
+        return true
+    end
+    if info == nil then
+        self.foodKnown = nil
+        return true
+    end
+    if type(info) ~= "table" or not Public(info.isFullUpdate) then
+        self.foodKnown = false
+        return true
+    end
+    if info.isFullUpdate then
+        self.foodKnown = nil
+        return true
+    end
+    local ids = self.foodIDs
+    local readable, changed = ApplyFoodLists(ids, info)
+    if not readable then
+        self.foodKnown = false
+        return true
+    end
+    local updated = IDList(info.updatedAuraInstanceIDs)
+    if updated == false then
+        self.foodKnown = false
+        return true
+    end
+    if updated then
+        for _, id in ipairs(updated) do
+            if not Public(id) then
+                self.foodKnown = false
+                return true
+            end
+            if ids[id] then
+                self.foodKnown = nil
+                return true
+            end
+        end
+    end
+    return changed
+end
+
+function R.FoodPresent(self)
+    if self.foodKnown == nil then ScanFood(self) end
+    if not self.foodKnown then return nil end
+    local present, expiresAt, totalDuration = false, nil, nil
+    for _, aura in pairs(self.foodIDs) do
+        present = true
+        local expiration = aura.expirationTime
+        if expiration and (not expiresAt or expiration > expiresAt) then
+            expiresAt, totalDuration = expiration, aura.duration
+        end
+    end
+    return present, expiresAt, totalDuration
+end
+
+function R.EnchantPresent(slot)
+    local data = C_PaperDollInfo.GetTemporaryEnchantmentInfo(slot)
+    if not Public(data) then return nil end
+    if data == nil then return false end
+    local remaining, timed = data.remainingTimeMs, data.hasExpirationTime
+    if Public(remaining) and Public(timed) and timed == true
+        and type(remaining) == "number" and remaining > 0 and remaining < math.huge then
+        return true, GetTime() + remaining / 1000
+    end
+    return true
+end
+
+local function PoisonLatestFirst(left, right)
+    return (left.expiresAt or math.huge) > (right.expiresAt or math.huge)
+end
+
+-- The active poisons of one category (lethal or nonlethal), latest first.
+function R.ReadPoisonState(state)
+    local active, instanceIDs = state.active, state.instanceIDs
+    Clear(instanceIDs)
+    local count, unknown = 0, false
+    state.auraInstanceID = nil
+    for _, spellID in ipairs(state.aliases) do
+        local data = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+        if not Public(data) then
+            unknown = true
+        elseif data then
+            count = count + 1
+            local record = active[count] or {}
+            active[count] = record
+            record.spellID = spellID
+            record.expiresAt = AuraExpiry(data)
+            record.duration = record.expiresAt and data.duration or nil
+            local instanceID = data.auraInstanceID
+            if Public(instanceID) and type(instanceID) == "number" then
+                instanceIDs[instanceID] = true
+                state.auraInstanceID = instanceID
+            end
+        end
+    end
+    for index = count + 1, #active do active[index] = nil end
+    if count > 1 then table.sort(active, PoisonLatestFirst) end
+    if unknown then state.present = nil else state.present = count > 0 end
+    state.unknown = unknown
+end
+
+-- Fills state.warnings with the poison each missing or expiring slot should
+-- cast; returns the next advance-warning deadline.
+function R.BuildPoisonWarnings(state, now, threshold)
+    local active, warnings = state.active, state.warnings
+    for index = #warnings, 1, -1 do warnings[index] = nil end
+    if state.unknown then return end
+    local missing = math.max(0, state.required - #active)
+    for _, candidate in ipairs(state.candidates) do
+        if #warnings >= missing then break end
+        local inUse = false
+        for _, aura in ipairs(active) do
+            if aura.spellID == candidate then
+                inUse = true
+                break
+            end
+        end
+        if not inUse then warnings[#warnings + 1] = candidate end
+    end
+    local nextDue
+    if now and threshold > 0 then
+        for index = 1, math.min(state.required, #active) do
+            local aura = active[index]
+            if aura.expiresAt and aura.duration and aura.duration > threshold then
+                local due = aura.expiresAt - threshold
+                if due <= now then
+                    warnings[#warnings + 1] = aura.spellID
+                elseif not nextDue or due < nextDue then
+                    nextDue = due
+                end
+            end
+        end
+    end
+    return nextDue
+end

@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Chat
 ## Notes: Optional native chat styling for Retail and Forever.
 ## Author: Mapko
@@ -9,4 +9,8 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
-Chat.lua
+Shared.lua
+Sidebar.lua
+Copy.lua
+Window.lua
+Controller.lua

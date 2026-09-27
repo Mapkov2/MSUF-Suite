@@ -5,12 +5,12 @@ local PAGE, ID = "suite_bags", "bags"
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
     P.ModuleCard(ctx, b, PAGE, ID, {
-        { "Open bags", function() if type(_G.OpenAllBags) == "function" then OpenAllBags() end end,
+        { "Open bags", function() OpenAllBags() end,
           function() return P.Get(ID, "enabled") and S.Availability(ID) end, key = "open" },
         { "Move bag windows", function()
-            if type(_G.OpenAllBags) == "function" then OpenAllBags() end
-            S.OpenEditMode(ID, "combined")
-          end, function() return P.Get(ID, "enabled") and S.Availability(ID) end, key = "move" },
+            OpenAllBags()
+            P.OpenEditMode(ID, "combined")
+          end, function() return P.EditModeReady() and P.Get(ID, "enabled") and S.Availability(ID) end, key = "move" },
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {

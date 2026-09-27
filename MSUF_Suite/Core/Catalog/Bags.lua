@@ -1,20 +1,12 @@
 local _, NS = ...
 local B = NS.CatalogBuild
 
+-- The combined bag window and the item APIs exist on Retail and Forever. The
+-- combinedBags setting may be missing from a client build; Blizzard's own
+-- settings panel checks it the same way.
 local function Available()
-    local frame = _G.ContainerFrameCombinedBags
-    if not frame or type(frame.EnumerateValidItems) ~= "function"
-        or type(frame.UpdateItems) ~= "function"
-        or type(_G.hooksecurefunc) ~= "function"
-        or type(_G.GetCVar) ~= "function"
-        or type(_G.SetCVar) ~= "function"
-        or not _G.C_Container or type(C_Container.GetContainerItemInfo) ~= "function"
-        or not _G.C_Item or type(C_Item.GetDetailedItemLevelInfo) ~= "function"
-        or type(C_Item.IsEquippableItem) ~= "function" then
-        return false, "This client has no supported combined bag and item level API"
-    end
-    local value = GetCVar("combinedBags")
-    if type(_G.issecretvalue) == "function" and issecretvalue(value) then
+    local value = C_CVar.GetCVar("combinedBags")
+    if not NS.Public(value) then
         return false, "The combined bag setting is protected on this client"
     end
     if type(value) ~= "string" then
@@ -63,12 +55,7 @@ B.Section("bags", "itemLevels", "Item levels", {
     B.Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     B.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
 })
-local textRules = NS.SuiteCatalog.bags.rules
-textRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
-for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
-    textRules[key].enableKey = "fontShadow"
-    textRules[key].requiresChoice = textRules.fontShadow.requiresChoice
-end
+B.LinkFontShadow(NS.SuiteCatalog.bags.rules)
 
 B.Section("bags", "window", "Combined bag window", {
     B.Bool("showSessionGold", "Show gold change since login", true),

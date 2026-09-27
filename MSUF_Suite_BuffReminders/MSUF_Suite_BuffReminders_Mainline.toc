@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Buff reminders
 ## Notes: Optional Buff reminders module for MSUF Suite.
 ## Author: Mapko
@@ -9,4 +9,7 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
-BuffReminders.lua
+Data.lua
+Readers.lua
+Entries.lua
+Controller.lua

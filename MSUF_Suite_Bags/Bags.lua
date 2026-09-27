@@ -3,7 +3,7 @@ local NS, S = Private.NS, Private.Suite
 -- The bags catalog entry declares combinedBags, so the controller hands the
 -- player's value back when the module is disabled.
 local M = { overlays = setmetatable({}, { __mode = "k" }), pending = {}, pendingPool = {}, requested = {} }
-local GOLD_FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
+local GOLD_FONT = NS.MSUFMedia.font
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
 local floor = math.floor
 local TEXT = {
@@ -16,22 +16,14 @@ local NO_VALUE = "—"
 local Finite = S.Finite
 
 local function PublicMoney()
-    if type(_G.GetMoney) ~= "function" then return nil end
     local value = GetMoney()
     if not Finite(value) or value < 0 then return nil end
     return floor(value)
 end
 
-local function MoneyText(amount)
-    local gold, silver, copper = floor(amount / 10000), floor(amount % 10000 / 100), amount % 100
-    local text = gold > 0 and gold .. "g" or nil
-    if silver > 0 then text = text and text .. " " .. silver .. "s" or silver .. "s" end
-    if copper > 0 or not text then text = text and text .. " " .. copper .. "c" or copper .. "c" end
-    return text
-end
-
+-- Losses use the ASCII hyphen-minus.
 local function GoldDeltaText(delta)
-    return TEXT.session .. " " .. (delta > 0 and "+" or delta < 0 and "-" or "") .. MoneyText(math.abs(delta))
+    return TEXT.session .. " " .. (delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta))
 end
 
 -- Own the window surface while Blizzard keeps the item buttons and controls.
@@ -59,7 +51,7 @@ local function NewGoldLabel(frame)
     -- at 168px, leaving this area clear of its clickable coin buttons.
     goldLabel:SetWidth(210)
     goldLabel:SetJustifyH("LEFT")
-    if type(goldLabel.SetWordWrap) == "function" then goldLabel:SetWordWrap(false) end
+    goldLabel:SetWordWrap(false)
     goldLabel:Hide()
     return goldLabel
 end
@@ -122,11 +114,10 @@ local function HandleClick(handle, button)
         handle.ignoreClick = false
         return
     end
-    if button ~= "LeftButton" or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown()) then return end
+    if button ~= "LeftButton" or IsShiftKeyDown() then return end
+    -- The portrait button is Blizzard's bag menu DropdownButton.
     local menu = handle.window.PortraitButton
-    if menu and type(menu.IsMenuOpen) == "function" and type(menu.SetMenuOpen) == "function" then
-        menu:SetMenuOpen(not menu:IsMenuOpen())
-    end
+    menu:SetMenuOpen(not menu:IsMenuOpen())
 end
 
 local function HandleDragStart(handle) M:BeginWindowDrag(handle.window) end
@@ -141,7 +132,6 @@ local function HandleHide(handle)
 end
 
 local function HandleEnter(handle)
-    if not GameTooltip then return end
     GameTooltip:SetOwner(handle, "ANCHOR_TOP")
     GameTooltip:SetText(TEXT.drag)
     GameTooltip:AddLine(TEXT.options, 0.75, 0.8, 0.85)
@@ -149,7 +139,7 @@ local function HandleEnter(handle)
 end
 
 local function HandleLeave()
-    if GameTooltip then GameTooltip:Hide() end
+    GameTooltip:Hide()
 end
 
 local function NewDragHandle(frame)
@@ -199,14 +189,12 @@ local function OwnChrome(self, frame, textures)
     if frame.PortraitButton then context:HideControl(frame.PortraitButton, true) end
     local title = frame.TitleContainer
     if not title or NS.IsCombatLocked() then return end
-    if type(frame.SetTitleOffsets) == "function" then
-        if not textures.titlePoints then
-            local points = {}
-            for point = 1, title:GetNumPoints() do points[point] = { title:GetPoint(point) } end
-            textures.titlePoints = points
-        end
-        frame:SetTitleOffsets(8)
+    if not textures.titlePoints then
+        local points = {}
+        for point = 1, title:GetNumPoints() do points[point] = { title:GetPoint(point) } end
+        textures.titlePoints = points
     end
+    frame:SetTitleOffsets(8)
     if not textures.dragHandle then textures.dragHandle = NewDragHandle(frame) end
 end
 
@@ -226,22 +214,16 @@ local function StyleWindows(self)
     end
 end
 
--- The login baseline is captured by MSUF Suite at PLAYER_ENTERING_WORLD.
--- When it is unreadable, the first public amount seen here becomes it.
+-- The login baseline is captured by MSUF Suite at PLAYER_ENTERING_WORLD
+-- (MSUF_Suite/Core/SessionGold.lua). When it is unreadable, the first public
+-- amount seen here becomes it.
 local function GoldBaseline(self, money)
-    local key = type(_G.UnitGUID) == "function" and UnitGUID("player") or nil
-    if not S.Public(key) or type(key) ~= "string" then key = nil end
-    local root = NS.RootDB
-    local baseline = type(root) == "table" and type(root.suiteGold) == "table" and key and root.suiteGold[key] or nil
+    local baseline = NS.StoredSessionGold()
     if NS.loginKind == "login" and NS.goldSessionCaptured ~= true then baseline = nil end
-    if Finite(baseline) and baseline >= 0 then return baseline end
+    if baseline then return baseline end
     if not money then return nil end
     self.goldFallback = self.goldFallback or money
-    if NS.loginKind and type(root) == "table" and key then
-        if type(root.suiteGold) ~= "table" then root.suiteGold = {} end
-        root.suiteGold[key] = self.goldFallback
-        NS.goldSessionCaptured = true
-    end
+    if NS.loginKind then NS.SetSessionGold(self.goldFallback) end
     return self.goldFallback
 end
 
@@ -285,12 +267,10 @@ end
 
 -- GetScaledRect and GetCursorPosition are both in screen pixels. Convert the
 -- window's current bottom-right edge into its own anchor units so dragging
--- works at any UI scale, including Blizzard's automatic bag scale.
+-- works at any UI scale, including Blizzard's automatic bag scale. The screen
+-- rect covers every native anchor: Blizzard anchors only the first open bag
+-- to the screen and chains the others into bag columns.
 local function WindowOffset(frame)
-    if type(frame.GetScaledRect) ~= "function" or type(frame.GetEffectiveScale) ~= "function"
-        or type(UIParent.GetScaledRect) ~= "function" then
-        return nil
-    end
     local left, bottom, width = frame:GetScaledRect()
     local parentLeft, parentBottom, parentWidth = UIParent:GetScaledRect()
     local scale = frame:GetEffectiveScale()
@@ -303,12 +283,11 @@ local function WindowOffset(frame)
 end
 
 function M:BeginWindowDrag(frame)
-    if not self.active or NS.IsCombatLocked() or S.editMode or not frame:IsShown()
-        or type(_G.GetCursorPosition) ~= "function" or self.dragWindow then
+    if not self.active or NS.IsCombatLocked() or S.editMode or not frame:IsShown() or self.dragWindow then
         return
     end
     -- StartMoving raises on a frame that is not movable.
-    if type(frame.IsMovable) == "function" and not frame:IsMovable() then return end
+    if not frame:IsMovable() then return end
     local x, y, scale = WindowOffset(frame)
     local cursorX, cursorY = GetCursorPosition()
     if not x or not Finite(cursorX) or not Finite(cursorY) then return end
@@ -346,66 +325,32 @@ function M:EndWindowDrag(frame)
     if not S.SetMany("bags", values) then self:RefreshWindowLayout() end
 end
 
--- The value S.Set would store: offsets are whole units within the rule's range.
-local function OffsetSetting(key, value)
-    local rule = S.catalog and S.catalog.bags and S.catalog.bags.rules[key]
-    if rule then value = math.max(rule.min, math.min(rule.max, value)) end
-    return floor(value)
+-- MSUF Edit Mode starts a drag from the captured offsets. While a window
+-- follows Blizzard's anchor, its saved offsets are unused: start from the
+-- live window instead, or the first drag would jump to the saved position.
+local function CaptureLiveOffset(values, frame, movedKey, xKey, yKey)
+    if not frame or M.config[movedKey] then return end
+    local x, y = WindowOffset(frame)
+    if x then values[xKey], values[yKey] = x, y end
 end
 
--- Blizzard anchors the combined bag's BOTTOMRIGHT to UIParent's BOTTOMRIGHT.
--- Other anchors (a chained bag column) are no UIParent offset and are skipped.
-local function NativeOffset(frame)
-    local point, relative, relativePoint, x, y = frame:GetPoint(1)
-    if not S.Public(point) or not S.Public(relative) or not S.Public(relativePoint)
-        or point ~= "BOTTOMRIGHT" or relative ~= UIParent or relativePoint ~= "BOTTOMRIGHT"
-        or not Finite(x) or not Finite(y) then
-        return nil
-    end
-    return OffsetSetting("windowX", x), OffsetSetting("windowY", y)
+local function CaptureCombinedOffset(values)
+    CaptureLiveOffset(values, M.frame, "windowMoved", "windowX", "windowY")
 end
 
--- MSUF Edit Mode starts a drag from windowX/windowY. While the window follows
--- Blizzard's anchor, those settings mirror it through the normal settings
--- path one frame later (never inside Enable/Refresh); a combat defers the
--- write until PLAYER_REGEN_ENABLED.
-local function SyncNativeOffset()
-    M.nativeSyncQueued = nil
-    local c = M.config
-    if not M.active or not c or c.windowMoved or not M.nativeX then return end
-    if c.windowX == M.nativeX and c.windowY == M.nativeY then return end
-    if NS.IsCombatLocked() then
-        M.nativeSyncPending = true
-        return
-    end
-    M.nativeSyncPending = nil
-    S.SetMany("bags", { windowX = M.nativeX, windowY = M.nativeY })
+local function CaptureReagentOffset(values)
+    CaptureLiveOffset(values, _G.ContainerFrame6, "reagentWindowMoved", "reagentWindowX", "reagentWindowY")
 end
 
-local function RecordNativeOffset(frame)
-    local x, y = NativeOffset(frame)
-    if not x then return end
-    M.nativeX, M.nativeY = x, y
-    if (x ~= M.config.windowX or y ~= M.config.windowY) and not M.nativeSyncQueued
-        and C_Timer and type(C_Timer.After) == "function" then
-        M.nativeSyncQueued = true
-        C_Timer.After(0, SyncNativeOffset)
-    end
-end
-
--- Blizzard recalculates the combined bag's anchor and scale whenever its
--- container layout changes. Reapply the Suite adjustment after that native
--- layout, while leaving the window's item grid and click handlers untouched.
+-- Blizzard recalculates the bag anchors and scale whenever its container
+-- layout changes. Reapply the Suite adjustment after that native layout,
+-- while leaving the window's item grid and click handlers untouched.
 local function AfterNativeWindowLayout()
     if not M.active or NS.IsCombatLocked() then return end
     local frame = M.frame
     if frame and frame:IsShown() then
         local scale = frame:GetScale()
-        if (type(_G.UpdateContainerFrameAnchors) == "function" or not M.nativeScale)
-            and Finite(scale) and scale > 0 then
-            M.nativeScale = scale
-        end
-        if not M.config.windowMoved then RecordNativeOffset(frame) end
+        if Finite(scale) and scale > 0 then M.nativeScale = scale end
     end
     M:ApplyWindowLayout()
 end
@@ -431,12 +376,8 @@ function M:RefreshWindowLayout()
         or (reagent and reagent:IsShown())) then
         return
     end
-    if type(_G.UpdateContainerFrameAnchors) == "function" then
-        UpdateContainerFrameAnchors()
-        if not self.nativeAnchorHooked then AfterNativeWindowLayout() end
-    else
-        AfterNativeWindowLayout()
-    end
+    -- The post-hook reapplies the Suite layout after Blizzard's layout pass.
+    UpdateContainerFrameAnchors()
 end
 
 local function Hide(record)
@@ -546,7 +487,7 @@ local function WaitForItem(self, pending, itemID, button)
         pending[itemID] = waiting
     end
     waiting[#waiting + 1] = button
-    if not self.requested[itemID] and type(C_Item.RequestLoadItemDataByID) == "function" then
+    if not self.requested[itemID] then
         self.requested[itemID] = true
         C_Item.RequestLoadItemDataByID(itemID)
     end
@@ -555,8 +496,9 @@ end
 local function PaintQuality(self, record, quality)
     if record.quality == quality then return end
     local r, g, b = 1, 1, 1
-    if self.config.qualityColor and type(quality) == "number" and type(GetItemQualityColor) == "function" then
-        r, g, b = GetItemQualityColor(quality)
+    -- WoW Forever has no global GetItemQualityColor; C_Item has it on both clients.
+    if self.config.qualityColor and type(quality) == "number" then
+        r, g, b = C_Item.GetItemQualityColor(quality)
         if not S.Public(r) or not S.Public(g) or not S.Public(b) then r, g, b = 1, 1, 1 end
     end
     record.label:SetTextColor(r, g, b)
@@ -676,7 +618,7 @@ function M:UpdateVisible(nativeItemsReady)
 end
 
 local function RefreshMovers()
-    if M.active and S.RefreshOwnedMovers then S.RefreshOwnedMovers("bags") end
+    if M.active then S.RefreshOwnedMovers("bags") end
 end
 
 local function CombinedItemsUpdated()
@@ -713,15 +655,12 @@ local function InstallHooks(self)
         reagent:HookScript("OnShow", ReagentShown)
         reagent:HookScript("OnHide", RefreshMovers)
     end
-    if type(_G.UpdateContainerFrameAnchors) == "function" then
-        hooksecurefunc("UpdateContainerFrameAnchors", AfterNativeWindowLayout)
-        self.nativeAnchorHooked = true
-    end
+    hooksecurefunc("UpdateContainerFrameAnchors", AfterNativeWindowLayout)
     self.hooked = true
 end
 
 local function CombinedModeChanged(module)
-    local mode = GetCVar("combinedBags")
+    local mode = C_CVar.GetCVar("combinedBags")
     if S.Public(mode) and mode == "0" then
         if NS.IsCombatLocked() then
             S.Queue("bags")
@@ -733,7 +672,6 @@ end
 
 local function CombatEnded(module)
     module:RefreshWindowLayout()
-    if module.nativeSyncPending then SyncNativeOffset() end
 end
 
 function M:Enable()
@@ -833,10 +771,8 @@ function M:Disable()
     RestoreWindows(self)
     ClearPending(self)
     self.pending, self.pendingPool, self.requested = {}, {}, {}
-    if type(_G.UpdateContainerFrameAnchors) == "function" and not NS.IsCombatLocked() then
-        UpdateContainerFrameAnchors()
-    end
-    self.nativeScale, self.nativeX, self.nativeY, self.nativeSyncPending = nil, nil, nil, nil
+    if not NS.IsCombatLocked() then UpdateContainerFrameAnchors() end
+    self.nativeScale = nil
     self.frame = nil
 end
 
@@ -846,6 +782,7 @@ function M:RegisterMovers()
         getFrame = function() return self.frame end,
         isEnabled = function() return self.frame and self.frame:IsShown() end,
         xKey = "windowX", yKey = "windowY", point = "BOTTOMRIGHT",
+        capture = CaptureCombinedOffset,
         moveValues = { windowMoved = true }, resetKeys = { "windowMoved" },
         historyKeys = { "windowMoved", "windowScale" },
         extraControls = {
@@ -861,6 +798,7 @@ function M:RegisterMovers()
         getFrame = function() return _G.ContainerFrame6 end,
         isEnabled = function() return _G.ContainerFrame6 and _G.ContainerFrame6:IsShown() end,
         xKey = "reagentWindowX", yKey = "reagentWindowY", point = "BOTTOMRIGHT",
+        capture = CaptureReagentOffset,
         moveValues = { reagentWindowMoved = true }, resetKeys = { "reagentWindowMoved" },
         historyKeys = { "reagentWindowMoved" },
     })

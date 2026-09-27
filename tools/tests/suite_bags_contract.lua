@@ -107,6 +107,17 @@ local reagentButton = {
     SetItemButtonTexture = buttons[1].SetItemButtonTexture,
 }
 UIParent = { GetScaledRect = function() return 0, 0, 1000, 800 end }
+-- Screen rect of a bag anchored by its BOTTOMRIGHT to UIParent's BOTTOMRIGHT
+-- or to another bag's BOTTOMLEFT (Blizzard's next bag column).
+local function BagRect(frame, width, height)
+    local scale, point = frame.scale, frame.point
+    local right, bottom = 1000 + point[4] * scale, point[5] * scale
+    if point[2] ~= UIParent then
+        local relativeLeft, relativeBottom = point[2]:GetScaledRect()
+        right, bottom = relativeLeft + point[4] * scale, relativeBottom + point[5] * scale
+    end
+    return right - width * scale, bottom, width * scale, height * scale
+end
 ContainerFrameCombinedBags = {
     Bg = VisualFrame(), NineSlice = VisualFrame(), MoneyFrame = VisualFrame(),
     PortraitContainer = VisualFrame(), PortraitButton = PortraitButton(),
@@ -117,12 +128,8 @@ ContainerFrameCombinedBags = {
     GetScale = function(self) return self.scale end,
     SetScale = function(self, value) self.scale = value end,
     GetEffectiveScale = function(self) return self.scale end,
-    GetScaledRect = function(self)
-        local scale = self.scale
-        local right = 1000 + self.point[4] * scale
-        local bottom = self.point[5] * scale
-        return right - 430 * scale, bottom, 430 * scale, 700 * scale
-    end,
+    GetScaledRect = function(self) return BagRect(self, 430, 700) end,
+    IsMovable = function() return true end,
     StartMoving = function(self) self.moving = true end,
     StopMovingOrSizing = function(self) self.moving = false end,
     GetPoint = function(self) return unpack(self.point) end,
@@ -139,12 +146,8 @@ ContainerFrame6 = {
     point = { "BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -500, 32 },
     IsShown = function(self) return self.shown end,
     GetEffectiveScale = function(self) return self.scale end,
-    GetScaledRect = function(self)
-        local scale = self.scale
-        local right = 1000 + self.point[4] * scale
-        local bottom = self.point[5] * scale
-        return right - 180 * scale, bottom, 180 * scale, 400 * scale
-    end,
+    GetScaledRect = function(self) return BagRect(self, 180, 400) end,
+    IsMovable = function() return true end,
     GetPoint = function(self) return unpack(self.point) end,
     SetPoint = function(self, ...) self.point = { ... } end,
     ClearAllPoints = function(self) self.point = {} end,
@@ -182,13 +185,26 @@ C_Container = { GetContainerItemInfo = function(_, slot)
     infoCalls = infoCalls + 1
     return items[slot]
 end }
+-- WoW Forever has no global GetItemQualityColor (Retail keeps it only as a
+-- deprecated alias): quality colours come from C_Item on both clients.
 C_Item = {
     IsEquippableItem = function(link) return link ~= "food" end,
     GetDetailedItemLevelInfo = function(link) levelCalls = levelCalls + 1; return levels[link] end,
     RequestLoadItemDataByID = function(id) requests[id] = (requests[id] or 0) + 1 end,
+    GetItemQualityColor = function(quality) return quality == 4 and 0.7 or 1, 0.5, 1, "ffb380ff" end,
 }
-GetCVar = function() return bagMode end
-GetItemQualityColor = function(quality) return quality == 4 and 0.7 or 1, 0.5, 1 end
+C_CVar = { GetCVar = function(name)
+    assert(name == "combinedBags")
+    return bagMode
+end }
+-- Blizzard_GameTooltip builds GameTooltip at startup on both clients.
+local tooltip = { lines = {} }
+GameTooltip = tooltip
+function tooltip:SetOwner(owner, anchor) self.owner, self.anchor, self.lines = owner, anchor, {} end
+function tooltip:SetText(text) self.lines[1] = text end
+function tooltip:AddLine(text) self.lines[#self.lines + 1] = text end
+function tooltip:Show() self.shown = true end
+function tooltip:Hide() self.shown = false end
 
 local deferred, setManyCalls = {}, 0
 C_Timer = { After = function(_, callback) deferred[#deferred + 1] = callback end }
@@ -209,7 +225,7 @@ local S = {
             tonumber(hex:sub(5, 6), 16) / 255
     end,
     ResolveFont = function() return nil end,
-    SetFont = function(font, _, size) font.size = size end,
+    SetFont = function(font, path, size) font.path, font.size = path, size end,
     Queue = function(id) assert(id == "bags"); queued = queued + 1 end,
     Install = function(id, instance) assert(id == "bags"); module = instance end,
     RegisterOwnedMover = function(id, element, spec)
@@ -242,9 +258,25 @@ S.SetStyledFont = function(font, _, size, flags, rendering, shadow, opacity, dis
     font:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
     font:SetShadowOffset(shown and (distance or 1) or 0, shown and -(distance or 1) or 0)
 end
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+-- Money text comes from the shared helper in MSUF_Suite_Modules/Surfaces.lua.
+local shared = { Suite = {} }
+MSUFSuite = shared
+assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
+MSUFSuite = nil
+local moneyTexts = 0
+S.MoneyText = function(amount)
+    moneyTexts = moneyTexts + 1
+    return shared.Suite.MoneyText(amount)
+end
 local state = { IsCombatLocked = function() return combat end,
     RootDB = { suiteGold = { ["Player-test"] = 100000 } }, loginKind = "login",
-    goldSessionCaptured = true }
+    goldSessionCaptured = true, MSUFMedia = { font = "Interface\\AddOns\\Test\\Media\\MSUF.ttf" } }
+-- The session gold baseline is owned by the core (MSUF_Suite/Core/SessionGold.lua).
+state.Finite = S.Finite
+state.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
+assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state)
 assert(loadfile(root .. "/MSUF_Suite_Bags/Bags.lua"))("MSUF_Suite_Bags", {
     NS = state, Suite = S,
 })
@@ -338,6 +370,8 @@ context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
 assert(combinedStyle.goldLabel.text == "Session -1g"
     and combinedStyle.goldLabel.color[1] > combinedStyle.goldLabel.color[2],
     "gold losses did not update from the money event")
+assert(moneyTexts > 0 and combinedStyle.goldLabel.path == state.MSUFMedia.font,
+    "session gold did not use the shared S.MoneyText and MSUF media font")
 money = "secret"
 context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
 assert(combinedStyle.goldLabel.text == "Session —", "unknown money showed a stale gain or loss")
@@ -418,29 +452,51 @@ module.config.backgroundOpacity = 90
 module:Refresh()
 assert(combinedStyle.shell.shown and reagentStyle.shell.shown,
     "legacy disabled styling hid the new default bag window")
-assert(module.config.windowX == 0 and module.config.windowY == 0 and #deferred > 0,
-    "Blizzard's native bag anchor was written straight into the profile")
+-- Blizzard's anchor is module state: no settings write, now or after combat.
 local nativeWrites = setManyCalls
 RunDeferred()
-assert(setManyCalls == nativeWrites + 1 and #deferred == 0,
-    "the native bag anchor did not go through the settings path exactly once")
-assert(hooks.NativeAnchors and nativeLayouts > 0 and module.config.windowX == -40
-    and module.config.windowY == 32 and ContainerFrameCombinedBags.scale == 0.9,
-    "the Suite bag window did not preserve Blizzard's initial placement")
--- A native anchor recorded just before combat is written after combat ends.
-module.config.windowX = 5
 UpdateContainerFrameAnchors()
 combat = true
-nativeWrites = setManyCalls
-RunDeferred()
-assert(module.config.windowX == 5 and setManyCalls == nativeWrites,
-    "the native bag anchor was written during combat")
+UpdateContainerFrameAnchors()
 combat = false
 context.events.PLAYER_REGEN_ENABLED(module)
 RunDeferred()
-assert(module.config.windowX == -40 and setManyCalls == nativeWrites + 1,
-    "the native bag anchor was not written after combat")
+assert(setManyCalls == nativeWrites and #deferred == 0
+    and module.config.windowX == 0 and module.config.windowY == 0,
+    "Blizzard's native bag anchor was written into the profile")
+assert(hooks.NativeAnchors and nativeLayouts > 0 and ContainerFrameCombinedBags.point[4] == -40
+    and ContainerFrameCombinedBags.scale == 0.9,
+    "the Suite bag window did not preserve Blizzard's initial placement")
 module:RegisterMovers()
+local function Near(value, expected) return math.abs(value - expected) < 0.001 end
+-- An Edit Mode drag of the unmoved window starts from Blizzard's anchor.
+local captured = { windowX = module.config.windowX, windowY = module.config.windowY }
+mover.capture(captured)
+assert(Near(captured.windowX, -40) and Near(captured.windowY, 32),
+    "Edit Mode did not start the unmoved bag drag at Blizzard's anchor")
+-- Blizzard chains a bag opened after another one into that bag's column, so
+-- the drag start is read from the live window, whatever its anchor.
+ContainerFrameCombinedBags.point = { "BOTTOMRIGHT", ContainerFrame6, "BOTTOMLEFT", -11, 0 }
+hooks.NativeAnchors()
+captured = { windowX = module.config.windowX, windowY = module.config.windowY }
+mover.capture(captured)
+assert(Near(captured.windowX, -691) and Near(captured.windowY, 32),
+    "Edit Mode started the drag of a chained bag window from a stale anchor")
+UpdateContainerFrameAnchors()
+-- The same holds for the reagent bag: a never-moved one must not jump to the
+-- saved (unused) offsets in the screen corner when its drag starts.
+assert(type(movers.reagent.capture) == "function",
+    "the reagent bag Edit Mode drag does not start from its live position")
+local reagentStart = { reagentWindowX = 0, reagentWindowY = 0 }
+movers.reagent.capture(reagentStart)
+assert(Near(reagentStart.reagentWindowX, -500) and Near(reagentStart.reagentWindowY, 32),
+    "Edit Mode did not start the unmoved reagent bag drag at Blizzard's anchor")
+module.config.reagentWindowMoved = true
+reagentStart = { reagentWindowX = -300, reagentWindowY = 90 }
+movers.reagent.capture(reagentStart)
+assert(reagentStart.reagentWindowX == -300 and reagentStart.reagentWindowY == 90,
+    "a moved reagent bag drag did not start from its saved position")
+module.config.reagentWindowMoved = false
 assert(mover and mover.moveValues.windowMoved and mover.resetKeys[1] == "windowMoved"
     and mover.extraControls[1].id == "size" and mover.isEnabled(),
     "combined bag Edit Mode popup lacks size and position controls")
@@ -454,6 +510,13 @@ assert(combinedHandle and reagentHandle and combinedHandle.shown and reagentHand
     and reagentHandle.allPoints == ContainerFrame6.TitleContainer
     and combinedHandle.drags == "LeftButton" and reagentHandle.drags == "LeftButton",
     "open bag titles are not draggable")
+-- The title explains both of its actions: drag to move, click for the menu.
+combinedHandle.scripts.OnEnter(combinedHandle)
+assert(tooltip.shown and tooltip.owner == combinedHandle and tooltip.anchor == "ANCHOR_TOP"
+    and tooltip.lines[1] == "Drag to move" and tooltip.lines[2] == "Click for bag options",
+    "the bag title did not explain dragging and its menu")
+combinedHandle.scripts.OnLeave(combinedHandle)
+assert(not tooltip.shown, "leaving the bag title kept its tooltip")
 combinedHandle.scripts.OnMouseDown(combinedHandle)
 combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
 assert(ContainerFrameCombinedBags.PortraitButton.menuOpen,
@@ -545,6 +608,9 @@ assert(#fonts == 2 and module.overlays[buttons[1]].label.text == "640"
 assert(module.overlays[buttons[1]].label.flags == "OUTLINE,SLUG"
     and module.overlays[buttons[1]].label.shadowColor[4] == 0,
     "default item level text did not use shadow-free Slug")
+local qualityColor = module.overlays[buttons[1]].label.color
+assert(qualityColor[1] == 0.7 and qualityColor[2] == 0.5 and qualityColor[3] == 1,
+    "item level text lost its quality colour where the deprecated global is missing")
 assert(module.overlays[buttons[2]].label == nil, "non-equipment allocated a font")
 local firstCalls = levelCalls
 local pendingBefore = module.pending
@@ -739,5 +805,41 @@ do
     assert(registered.restoreState(before) and values.windowX == -40
         and values.windowY == 32 and values.windowMoved == false,
         "bag window Edit Mode undo did not restore position ownership")
+
+    -- A capture hook moves only the drag start: undo restores the saved
+    -- offsets, never the live (native) anchor the drag started from.
+    local liveRegistered
+    registered = nil
+    assert(bridge.RegisterOwnedMover("bags", "live", {
+        label = "Live bag", getFrame = function() return editFrame end,
+        xKey = "windowX", yKey = "windowY", point = "BOTTOMRIGHT",
+        capture = function(origin) origin.windowX, origin.windowY = -500, 90 end,
+    }))
+    liveRegistered = registered
+    values.windowX, values.windowY = 0, 0
+    local start = liveRegistered.captureState()
+    assert(liveRegistered.movePosition({ state = start, deltaX = 10, deltaY = -5, phase = "commit" })
+        and values.windowX == -490 and values.windowY == 85,
+        "a capture hook did not move the drag start")
+    assert(liveRegistered.restoreState(start) and values.windowX == 0 and values.windowY == 0,
+        "undo wrote the live drag start into the profile instead of the saved offsets")
+end
+-- Retail and WoW Forever always have these APIs: Bags calls them directly
+-- instead of guarding against a client that lacks them.
+do
+    local file = assert(io.open(root .. "/MSUF_Suite_Bags/Bags.lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    for _, name in ipairs({ "GetMoney", "UnitGUID", "IsShiftKeyDown", "GetCursorPosition",
+        "UpdateContainerFrameAnchors", "RequestLoadItemDataByID", "GetItemQualityColor", "SetWordWrap",
+        "IsMenuOpen", "SetMenuOpen", "SetTitleOffsets", "GetScaledRect", "GetEffectiveScale", "IsMovable" }) do
+        assert(not source:find("type%([%w_%.]*" .. name .. "%)"), name .. " is guarded as if a client lacked it")
+    end
+    -- GameTooltip and the shared runtime's mover refresh always exist, and
+    -- CVars are read through C_CVar like everywhere else in the Suite.
+    local code = source:gsub("%-%-[^\n]*", "")
+    local probe = code:match("(GameTooltip) then") or code:match("(S%.RefreshOwnedMovers) then")
+        or code:match("[^_.](GetCVar)%(")
+    assert(not probe, "Bags probes or bypasses " .. tostring(probe))
 end
 print("Suite bags: window styling, native bag layout, item levels, cache, and disable passed")

@@ -1,7 +1,8 @@
 local _, P = ...
 local S, Tr = P.S, P.Tr
 local PAGE, ID = "suite_buffReminders", "buffReminders"
-P.Requires.buffRemindersMainline = function() return P.Suite.Client.modernEquipment == true end
+-- The recommended consumables use Retail's items and equipment rules.
+P.Requires.modernEquipment = function() return P.Suite.Client.modernEquipment == true end
 
 local HELP = {
     tracking = "The class buff is included only when your character knows it. Enter self-buff spell IDs separated by spaces or commas. For a consumable, enter item ID:aura ID; separate pairs with commas. Up to 12 total reminders are shown. Weapon enchant items use the main-hand or off-hand enchant state.",
@@ -23,8 +24,8 @@ local SECTIONS = {
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
     P.ModuleCard(ctx, b, PAGE, ID, {
-        { "Edit Mode", function() S.OpenEditMode(ID, "buffs") end,
-            function() return S.Status(ID) == "Active" end, key = "edit" },
+        { "Edit Mode", function() P.OpenEditMode(ID, "buffs") end,
+            function() return P.EditModeReady() and S.Status(ID) == "Active" end, key = "edit" },
     })
     for _, section in ipairs(SECTIONS) do
         P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),

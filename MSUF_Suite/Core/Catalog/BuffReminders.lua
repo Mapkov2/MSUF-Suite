@@ -2,19 +2,10 @@ local _, NS = ...
 local B = NS.CatalogBuild
 local Bool, Number, Choice, String, Color = B.Bool, B.Number, B.Choice, B.String, B.Color
 
-local function Available()
-    local auras = _G.C_UnitAuras
-    if type(_G.RegisterStateDriver) ~= "function" or type(_G.UnregisterStateDriver) ~= "function" or not auras or
-        (type(auras.GetPlayerAuraBySpellID) ~= "function" and type(auras.GetAuraDataByIndex) ~= "function") then
-        return false, "This client lacks the aura or secure visibility API"
-    end
-    return true
-end
-
 B.Module("buffReminders", {
     title = "Buff reminders",
     description = "Clickable reminders for missing personal buffs, chosen aura spells, consumables and weapon enchants. Checks only while out of combat.",
-    optIn = true, page = "suite_buffReminders", available = Available,
+    optIn = true, page = "suite_buffReminders",
     conflicts = { "EllesmereUIAuraBuffReminders" },
 })
 
@@ -38,7 +29,7 @@ B.Section(id, "recommended", "Recommended consumables (Mainline)", {
     Bool("autoFood", "Food from my bags", true),
     Bool("autoRune", "Augment rune from my bags", true),
     Bool("autoWeapon", "Weapon oils for equipped weapons", true),
-}, { requires="buffRemindersMainline" })
+}, { requires = "modernEquipment" })
 B.Section(id, "visibility", "When to show", {
     Bool("instancesOnly", "Show only in dungeons and raids", false),
     Bool("hideMounted", "Hide while mounted", true),

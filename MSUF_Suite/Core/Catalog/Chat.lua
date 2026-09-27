@@ -1,21 +1,10 @@
 local _, NS = ...
 local B = NS.CatalogBuild
 
-local function Available()
-    if not NS.Client.isMainline then
-        return false, "Chat styling is available in Retail and Forever"
-    end
-    local frame = _G.ChatFrame1
-    if not frame or type(frame.CreateTexture) ~= "function" then
-        return false, "Blizzard chat is not ready"
-    end
-    return true
-end
-
 B.Module("chat", {
     title = "Chat",
     description = "Style Blizzard's native chat windows, tabs and input line. Links, channels, filters, docking and message delivery remain Blizzard-owned.",
-    page = "suite_chat", optIn = true, available = Available,
+    page = "suite_chat", optIn = true,
     conflicts = { "EllesmereUIChat", "ElvUI" },
 })
 
@@ -83,6 +72,7 @@ B.Section(id, "tabs", "Tabs and accent", {
 B.Section(id, "sidebar", "Button sidebar", {
     B.Bool("sidebarPanel", "Use MSUF chat icons and button sidebar", initial.sidebarPanel),
     B.Number("sidebarWidth", "Sidebar width", initial.sidebarWidth, 20, 48),
+    B.Bool("sidebarClassColor", "Use class color for sidebar icons", false),
 })
 B.Section(id, "input", "Input line", {
     B.Bool("inputPanel", "Show input background", initial.inputPanel),
@@ -100,6 +90,8 @@ B.Section(id, "text", "Message text", {
 })
 B.Section(id, "tools", "Chat tools", {
     B.Bool("copyMessages", "Show Copy button for chat messages", false),
+    B.Number("copyButtonX", "Copy button X", 0, -200, 200),
+    B.Number("copyButtonY", "Copy button Y", 0, -200, 200),
 })
 local textRules = NS.SuiteCatalog[id].rules
 textRules.font.defaultLabel = "Blizzard / MSUF Fonts (default)"
