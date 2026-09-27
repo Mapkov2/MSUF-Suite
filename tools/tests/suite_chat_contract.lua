@@ -61,6 +61,7 @@ local function Frame(name)
         return { SetPoint = function() end, SetText = function(label, value) label.value = value end,
             GetText = function(label) return label.value end,
             SetTextColor = function(label, ...) label.color = { ... } end,
+            GetTextColor = function(label) return unpack(label.color or { 1, 1, 1, 1 }) end,
             SetJustifyH = function() end, SetWidth = function(label, width) label.width = width end,
             SetHeight = function(label, height) label.height = height end,
             GetHeight = function(label) return label.height or 12 end,
@@ -162,18 +163,21 @@ Constants = { ChatFrameConstants = { MaxChatWindows = 1 } }
 GameTooltip = Frame("GameTooltip")
 GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
-local temporaryHook, selectHook, newWindowHook, tabAlphaHook
+local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
 FCFDock_SelectWindow = function() end
 FCFTab_UpdateAlpha = function() end
+FCFTab_UpdateColors = function() end
 hooksecurefunc = function(name, callback)
     assert(name == "FCF_OpenTemporaryWindow" or name == "FCF_OpenNewWindow"
-        or name == "FCFDock_SelectWindow" or name == "FCFTab_UpdateAlpha",
+        or name == "FCFDock_SelectWindow" or name == "FCFTab_UpdateAlpha"
+        or name == "FCFTab_UpdateColors",
         "chat touched the message path")
     if name == "FCF_OpenTemporaryWindow" then temporaryHook = callback
     elseif name == "FCF_OpenNewWindow" then newWindowHook = callback
     elseif name == "FCFTab_UpdateAlpha" then tabAlphaHook = callback
+    elseif name == "FCFTab_UpdateColors" then tabColorsHook = callback
     else selectHook = callback end
 end
 
@@ -284,7 +288,7 @@ end
 assert(ChatFrame1.font[3] == "SLUG" and ChatFrame1.shadowColor[4] == 0,
     "default chat messages did not use Slug")
 assert(ctx.callbacks.UPDATE_CHAT_WINDOWS and ctx.callbacks.UPDATE_FLOATING_CHAT_WINDOWS
-    and temporaryHook and newWindowHook and selectHook and tabAlphaHook)
+    and temporaryHook and newWindowHook and selectHook and tabAlphaHook and tabColorsHook)
 assert(not ctx.callbacks.CHAT_MSG_SAY and not ctx.callbacks.CHAT_MSG_CHANNEL)
 assert(ChatFrame1.font[2] == 15)
 assert(module.visuals[ChatFrame1].panel.shown and module.visuals[ChatFrame1].tabLine.shown)
@@ -308,22 +312,28 @@ assert(not ChatFrame1.Background.shown and not ChatFrame1TopLeftTexture.shown,
     "Blizzard frame chrome covers the MSUF panel")
 assert(not ChatFrame1ButtonFrameBackground.shown,
     "Blizzard button frame covers the MSUF icons")
-assert(ChatFrame1Tab.Left.alpha == 0 and ChatFrame1Tab.Text.alpha == 0
-    and sidebar.tabOverlay.strata == "MEDIUM" and sidebar.tabLabel.value == "General"
-    and sidebar.tabLabel.color[4] == 1 and not sidebar.tabOverlay.mouse,
-    "native tab fading still dims or hides the MSUF label")
+assert(ChatFrame1Tab.Left.alpha == 0 and ChatFrame1Tab.Text.alpha == 1
+    and sidebar.tabLabel == ChatFrame1Tab.Text and sidebar.tabLabel.value == "General"
+    and sidebar.tabLabel.color[4] == 1 and sidebar.tabLine.owner == ChatFrame1Tab
+    and not sidebar.tabOverlay,
+    "Suite must style the native tab title without drawing a duplicate")
 assert(ChatFrame1EditBox.Left.alpha == 0, "native input art covers the MSUF input")
 assert(sidebar.input.points[1][2] == ChatFrame1 and sidebar.input.points[1][3] == "BOTTOMLEFT"
     and sidebar.input.points[2][2] == ChatFrame1 and sidebar.input.points[2][3] == "BOTTOMRIGHT"
     and sidebar.inputEdges[1].points[1][2] == sidebar.input,
     "input backdrop and border do not align with the chat panel width")
--- The label overlay is a child of the tab: FCF_Close hides the tab itself
--- and a tab alpha change also affects the child until the native update hook runs.
-ChatFrame1Tab:SetAlpha(0.4)
-assert(sidebar.tabLabel.value == "General" and sidebar.tabOverlay.parent == ChatFrame1Tab
-    and sidebar.tabOverlay.alpha == 1 and sidebar.tabOverlay.shown,
-    "the MSUF tab label does not follow the tab's visibility and alpha fading")
-ChatFrame1Tab:SetAlpha(1)
+-- Another addon may give the tab a longer title and repaint Blizzard's native
+-- color. Suite must keep that one FontString and recolor it after Blizzard.
+ChatFrame1Tab.Text:SetText("General Chat")
+ChatFrame1Tab.Text:SetTextColor(0.1, 0.2, 0.3, 1)
+tabColorsHook(ChatFrame1Tab, true)
+local activeR, activeG, activeB = S.RGB(module.config.tabActiveColor)
+assert(sidebar.tabLabel == ChatFrame1Tab.Text and sidebar.tabLabel:GetText() == "General Chat"
+    and not sidebar.tabOverlay and math.abs(sidebar.tabLabel.color[1] - activeR) < 0.001
+    and math.abs(sidebar.tabLabel.color[2] - activeG) < 0.001
+    and math.abs(sidebar.tabLabel.color[3] - activeB) < 0.001,
+    "a renamed tab gained duplicate text or lost its configured color")
+ChatFrame1Tab.Text:SetText("General")
 assert(sidebar.buttons[1].glyph.path == "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png",
     "MSUF glyph texture was replaced by a solid color")
 UnitClass = function() return "Mage", "MAGE" end
@@ -477,7 +487,7 @@ assert(ChatFrame1.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1.font[2] == 16 a
     and ChatFrame1.shadowColor[4] == 0, "chat text ownership did not restore Blizzard's font and size")
 ChatFrame2 = Frame("ChatFrame2")
 ChatFrame2.isDocked = true
--- Synthetic second static tab keeps the overlay selection contract covered;
+-- Synthetic second static tab covers the native title selection contract;
 -- Retail's additional tabs use the dynamic path exercised by ChatFrame3.
 ChatFrame2.isStaticDocked = true
 ChatFrame2.editBox = Frame("ChatFrame2EditBox")
@@ -488,29 +498,31 @@ ChatFrame2Tab.Text:SetText("Combat Log")
 CHAT_FRAMES[2] = "ChatFrame2"
 temporaryHook()
 assert(module.visuals[ChatFrame2], "new Blizzard chat window was not styled")
-assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log",
-    "Combat Log did not receive a readable MSUF tab label")
+assert(module.visuals[ChatFrame2].tabLabel == ChatFrame2Tab.Text
+    and module.visuals[ChatFrame2].tabLabel.value == "Combat Log"
+    and not module.visuals[ChatFrame2].tabOverlay,
+    "Combat Log gained duplicate tab text")
 -- Retail whisper targets can be secret. The temporary whisper tab must keep
--- Blizzard's native title and avoid the Suite overlay altogether.
+-- Blizzard's native title without copying its text.
 ChatFrame2.chatType = "WHISPER"
 ChatFrame2.isTemporary = true
 ChatFrame2Tab.Text:SetText("secret")
 temporaryHook()
 assert(ChatFrame2Tab.Text.value == "secret" and ChatFrame2Tab.Text.alpha == 1
     and ChatFrame2Tab.Left.alpha == 0
-    and not module.visuals[ChatFrame2].tabOverlay.shown,
+    and not module.visuals[ChatFrame2].tabOverlay,
     "a secret whisper target lost Blizzard's native title")
 ChatFrame2.chatType = "BN_WHISPER"
 temporaryHook()
-assert(ChatFrame2Tab.Text.alpha == 1 and not module.visuals[ChatFrame2].tabOverlay.shown,
+assert(ChatFrame2Tab.Text.alpha == 1 and not module.visuals[ChatFrame2].tabOverlay,
     "a Battle.net whisper lost Blizzard's visible native tab")
 ChatFrame2.chatType = nil
 ChatFrame2.isTemporary = nil
 ChatFrame2Tab.Text:SetText("Combat Log")
 temporaryHook()
 assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log"
-    and ChatFrame2Tab.Text.alpha == 0 and ChatFrame2Tab.Left.alpha == 0
-    and module.visuals[ChatFrame2].tabOverlay.shown,
+    and ChatFrame2Tab.Text.alpha == 1 and ChatFrame2Tab.Left.alpha == 0
+    and not module.visuals[ChatFrame2].tabOverlay,
     "a reused whisper tab kept its previous title")
 CombatLogQuickButtonFrame_Custom = Frame("CombatLogQuickButtonFrame_Custom")
 CombatLogQuickButtonFrame_Custom:SetHeight(24)

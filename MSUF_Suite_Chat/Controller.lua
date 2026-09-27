@@ -95,6 +95,11 @@ local function TabAlphaUpdated(frame)
     if M.active and frame then KeepTabVisible(M, frame) end
 end
 
+local function TabColorsUpdated(tab, selected)
+    local visual = M.active and tab and M.tabs[tab]
+    if visual then ColorTab(M, visual, selected) end
+end
+
 local function NewWindowOpened()
     if not M.active then return end
     if NS.IsCombatLocked() then
@@ -124,6 +129,7 @@ function M:Enable()
     Hook(self, "hookedSelect", "FCFDock_SelectWindow", DockSelectionChanged)
     Hook(self, "hookedNewWindow", "FCF_OpenNewWindow", NewWindowOpened)
     Hook(self, "hookedTabAlpha", "FCFTab_UpdateAlpha", TabAlphaUpdated)
+    Hook(self, "hookedTabColors", "FCFTab_UpdateColors", TabColorsUpdated)
     ApplyAll(self)
 end
 
