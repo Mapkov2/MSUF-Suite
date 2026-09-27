@@ -8,7 +8,7 @@ P.DamageMeter = D
 -- damageMeterEnabled is declared on the catalog entry (restored on disable).
 local M = { styleGen = 0, events = {} }
 D.M = M
-local Public = S.Public
+local Public, Finite = S.Public, S.Finite
 local floor, format = math.floor, string.format
 
 -- Enum.DamageMeterType values are identical on every client (catalog choice
@@ -27,12 +27,9 @@ for i = 1, D.MAX do
     D.KEYS[i] = keys
 end
 
--- A readable, finite number.
-D.Plain = S.Finite
-
 -- Plain junk (nil, NaN) becomes 0; secret values pass through for C sinks.
 function D.Num(value)
-    if Public(value) and not D.Plain(value) then return 0 end
+    if Public(value) and not Finite(value) then return 0 end
     return value
 end
 
@@ -47,10 +44,7 @@ end
 function D.Short(name)
     if Public(name) and type(name) ~= "string" then return "" end
     local config = M.config
-    if not (config and config.showRealm) then
-        local ambiguate = _G.Ambiguate
-        name = type(ambiguate) == "function" and ambiguate(name, "short") or name
-    end
+    if not (config and config.showRealm) then name = Ambiguate(name, "short") end
     if not Public(name) then return name end
     local maxChars = config and config.nameMaxChars or 0
     if maxChars <= 0 then return name end
@@ -84,12 +78,7 @@ function D.Clock(seconds)
 end
 
 -- Blizzard ships localized meter strings with Blizzard_DamageMeter on every
--- client; English fallbacks go through the suite locale.
-function D.Text(global, english)
-    local value = global and _G[global]
-    if type(value) == "string" and value ~= "" then return value end
-    return S.Text(english)
-end
+-- client; S.BlizzardText falls back to the suite locale.
 
 local typeGlobals = { "DAMAGE_METER_TYPE_DAMAGE_DONE", "DAMAGE_METER_TYPE_DPS", "DAMAGE_METER_TYPE_HEALING_DONE",
     "DAMAGE_METER_TYPE_HPS", "DAMAGE_METER_TYPE_ABSORBS", "DAMAGE_METER_TYPE_INTERRUPTS", "DAMAGE_METER_TYPE_DISPELS",
@@ -97,52 +86,37 @@ local typeGlobals = { "DAMAGE_METER_TYPE_DAMAGE_DONE", "DAMAGE_METER_TYPE_DPS", 
     "DAMAGE_METER_TYPE_ENEMY_DAMAGE_TAKEN" }
 function D.TypeName(meterType)
     local labels = NS.DamageMeterTypeLabels
-    return D.Text(typeGlobals[meterType + 1], labels and labels[meterType + 1] or "")
+    return S.BlizzardText(typeGlobals[meterType + 1], labels and labels[meterType + 1] or "")
 end
 
 function D.Blocked() return S.Text("Details are available after combat.") end
 
-function D.API()
-    local api = _G.C_DamageMeter
-    if type(api) == "table" and type(api.GetCombatSessionFromType) == "function" then return api end
-end
-
 function D.SessionTypes()
-    local enum = type(Enum) == "table" and Enum.DamageMeterSessionType
-    D.OVERALL = enum and enum.Overall or 0
-    D.CURRENT = enum and enum.Current or 1
+    local sessionTypes = Enum.DamageMeterSessionType
+    D.OVERALL, D.CURRENT = sessionTypes.Overall, sessionTypes.Current
 end
 
 -- GetSessionDurationSeconds is not SecretWhenInCombat; the value is still checked.
 function D.Duration(sessionType)
-    local api = D.API()
-    local get = api and api.GetSessionDurationSeconds
-    if type(get) ~= "function" then return nil end
-    local value = get(sessionType)
-    if D.Plain(value) and value >= 0 then return value end
+    local value = C_DamageMeter.GetSessionDurationSeconds(sessionType)
+    if Finite(value) and value >= 0 then return value end
 end
 
 -- A new Current session can lag the combat edge by a moment; the local
 -- combat clock caps a stale reading from the previous fight.
 function D.LiveDuration()
     local value = D.Duration(D.CURRENT)
-    if not M.inCombat or not M.combatStart or type(GetTime) ~= "function" then return value end
+    if not M.inCombat or not M.combatStart then return value end
     local elapsed = GetTime() - M.combatStart
     if not value or value > elapsed + 2 then return elapsed end
     return value
 end
 
 function S.DamageMeterAvailability()
-    local api = D.API()
-    if not api or type(Enum) ~= "table" or type(Enum.DamageMeterType) ~= "table" then
-        return false, S.Text("This client has no combat meter data")
-    end
-    if type(api.IsDamageMeterAvailable) == "function" then
-        local ok, reason = api.IsDamageMeterAvailable()
-        if Public(ok) and ok == false then
-            if Public(reason) and type(reason) == "string" and reason ~= "" then return false, reason end
-            return false, S.Text("Combat meter data is unavailable")
-        end
+    local ok, reason = C_DamageMeter.IsDamageMeterAvailable()
+    if Public(ok) and ok == false then
+        if Public(reason) and type(reason) == "string" and reason ~= "" then return false, reason end
+        return false, S.Text("Combat meter data is unavailable")
     end
     return true
 end
@@ -151,14 +125,12 @@ end
 -- data; the options preview always shows them.
 function D.FetchSession(win)
     if M.preview then return D.Sample(win.meterType) end
-    local api = D.API()
-    if not api or not M.available then return nil end
+    if not M.available then return nil end
     local session
     if win.sessionID then
-        if type(api.GetCombatSessionFromID) ~= "function" then return nil end
-        session = api.GetCombatSessionFromID(win.sessionID, win.meterType)
+        session = C_DamageMeter.GetCombatSessionFromID(win.sessionID, win.meterType)
     else
-        session = api.GetCombatSessionFromType(win.sessionType, win.meterType)
+        session = C_DamageMeter.GetCombatSessionFromType(win.sessionType, win.meterType)
     end
     if type(session) ~= "table" then session = nil end
     if M.forced and D.Count(session and session.combatSources) == 0 then return D.Sample(win.meterType) end
@@ -166,11 +138,13 @@ function D.FetchSession(win)
 end
 
 function D.FetchSource(win, guid, creature)
-    local api = D.API()
-    if not api or not (guid or creature) then return nil end
-    local get = win.sessionID and api.GetCombatSessionSourceFromID or api.GetCombatSessionSourceFromType
-    if type(get) ~= "function" then return nil end
-    local source = get(win.sessionID or win.sessionType, win.meterType, guid, creature)
+    if not (guid or creature) then return nil end
+    local source
+    if win.sessionID then
+        source = C_DamageMeter.GetCombatSessionSourceFromID(win.sessionID, win.meterType, guid, creature)
+    else
+        source = C_DamageMeter.GetCombatSessionSourceFromType(win.sessionType, win.meterType, guid, creature)
+    end
     return type(source) == "table" and source or nil
 end
 
@@ -180,10 +154,10 @@ end
 function D.Identity(source)
     local guid, creature = source.sourceGUID, source.sourceCreatureID
     if not Public(guid) or type(guid) ~= "string" or guid == "" then guid = nil end
-    if not D.Plain(creature) or creature <= 0 then creature = nil end
+    if not Finite(creature) or creature <= 0 then creature = nil end
     if not guid and not creature then
         local isLocal = source.isLocalPlayer
-        if Public(isLocal) and isLocal == true and type(UnitGUID) == "function" then
+        if Public(isLocal) and isLocal == true then
             local own = UnitGUID("player")
             if Public(own) and type(own) == "string" and own ~= "" then guid = own end
         end
@@ -202,7 +176,7 @@ function D.Sample(meterType)
     local list, total = {}, 0
     for i, class in ipairs(sampleClasses) do
         local amount = kind == "count" and 15 - 2 * i or floor(52e6 / (i + .35))
-        local name = type(names) == "table" and names[class] or class
+        local name = names[class] or class
         list[i] = {
             name = name,
             classFilename = class,
@@ -240,7 +214,7 @@ function D.GroupSpells(source)
         local spell = spells[i]
         local details = spell.combatSpellDetails
         local name, amount = details and details.unitName, spell.totalAmount
-        if not Public(name) or type(name) ~= "string" or name == "" or not D.Plain(amount) then return nil end
+        if not Public(name) or type(name) ~= "string" or name == "" or not Finite(amount) then return nil end
         local entry = groupIndex[name]
         if not entry then
             n = n + 1
@@ -249,7 +223,7 @@ function D.GroupSpells(source)
             local class, spec = details.unitClassFilename, details.specIconID
             entry.name, entry.amount = name, 0
             entry.class = Public(class) and type(class) == "string" and class or ""
-            entry.spec = D.Plain(spec) and spec or 0
+            entry.spec = Finite(spec) and spec or 0
         end
         entry.amount = entry.amount + amount
         sum = sum + amount

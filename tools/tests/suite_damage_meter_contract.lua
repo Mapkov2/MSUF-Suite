@@ -1,4 +1,7 @@
 local root=assert(arg[1],"repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 -- Offline contract for the damage meter runtime (MSUF_Suite_DamageMeter).
 -- Secret values are sentinel tables that raise on comparison, arithmetic,
 -- concatenation, indexing and tostring; the runtime may only hand them to sinks.
@@ -113,6 +116,10 @@ MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() re
 IsInInstance=function() return inside,instanceType end
 IsInGroup=function() return grouped end
 UnitGUID=function(unit) return unit=="player" and "Player-1" or nil end
+UnitName=function() return "Tester" end
+GetRealmName=function() return "Realm" end
+-- No other AddOn is loaded, so no conflict claims the meter.
+C_AddOns={IsAddOnLoaded=function() return false end}
 Ambiguate=function(name,context)
     assert(context=="short")
     if IsSecret(name) then return Secret("short:"..Label(name)) end
@@ -124,6 +131,9 @@ AbbreviateNumbers=function(value)
 end
 RAID_CLASS_COLORS={WARRIOR={r=.78,g=.61,b=.43},MAGE={r=.25,g=.78,b=.92},PRIEST={r=1,g=1,b=1}}
 CLASS_ICON_TCOORDS={WARRIOR={0,.25,0,.25},MAGE={.25,.5,0,.25},PRIEST={.5,.75,.25,.5}}
+-- FrameXML's localized class names exist on both clients; empty here, so
+-- sample rows fall back to the class token.
+LOCALIZED_CLASS_NAMES_MALE={}
 Enum={DamageMeterType={DamageDone=0,Dps=1,HealingDone=2,Hps=3,Absorbs=4,Interrupts=5,Dispels=6,DamageTaken=7,
     AvoidableDamageTaken=8,Deaths=9,EnemyDamageTaken=10},DamageMeterSessionType={Overall=0,Current=1,Expired=2},
     AddOnRestrictionState={Inactive=0,Activating=1,Active=2}}
@@ -149,16 +159,14 @@ C_Timer={
     end,
     After=function(delay,callback) afters[#afters+1]={delay=delay,callback=callback} end,
 }
-local function LiveTimers()
-    local count=0
-    for _,timer in ipairs(timers) do if not timer.cancelled then count=count+1 end end
-    return count
-end
-local function Fire(timer)
-    if not timer or timer.cancelled then return false end
-    timer.cancelled=true
-    timer.callback()
-    return true
+-- Runs (and removes) the queued C_Timer.After calls made with callback.
+local function RunCalls(callback)
+    local list,ran=afters,0
+    afters={}
+    for _,entry in ipairs(list) do
+        if entry.callback==callback then entry.callback();ran=ran+1 else afters[#afters+1]=entry end
+    end
+    return ran
 end
 local function RunAfters(delay)
     local list,ran=afters,0
@@ -273,6 +281,8 @@ assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
 local files={"Data","Rows","Window","Breakdown","Menus","Timer","Controller"}
 local private={}
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
@@ -283,8 +293,34 @@ end
 local S,D=Suite.Suite,private.DamageMeter
 local M=S.instances.damageMeter
 Suite.Client.AddOnEnabled=function() return true end -- the test loaded this optional addon directly
-local function RunPaint() return Fire(M.paintTimer) and 1 or 0 end
-local function RunClock() return Fire(M.clockTimer) and 1 or 0 end
+-- Paints and clock ticks are C_Timer.After calls with one shared callback
+-- each (D.DeferredPaint, D.ClockTick); a request is pending while its flag is
+-- set and returns the call in flight that will serve it.
+local function Request(pending,callback)
+    if not pending then return nil end
+    for _,entry in ipairs(afters) do if entry.callback==callback then return entry end end
+    return {delay="no call in flight"}
+end
+local function PaintRequest() return Request(M.pendingPaint,D.DeferredPaint) end
+local function ClockRequest() return Request(M.clockRunning,D.ClockTick) end
+local function LiveTimers() return (M.pendingPaint and 1 or 0)+(M.clockRunning and 1 or 0) end
+local function OtherCalls()
+    local count=0
+    for _,entry in ipairs(afters) do
+        if entry.callback~=D.DeferredPaint and entry.callback~=D.ClockTick then count=count+1 end
+    end
+    return count
+end
+local function RunPaint()
+    local pending=M.pendingPaint
+    RunCalls(D.DeferredPaint)
+    return pending and 1 or 0
+end
+local function RunClock()
+    local running=M.clockRunning
+    RunCalls(D.ClockTick)
+    return running and 1 or 0
+end
 assert(M and D and S.catalog.damageMeter.cvars.damageMeterEnabled,"module did not install")
 assert(#frames==baseFrames and Created("Texture")==0 and #timers==0 and #afters==0,"loading allocated frames or timers")
 
@@ -376,15 +412,6 @@ assert(overlays.gradientRight.allPoints==bar.statusTexture
 assert(S.SetMany("damageMeter",{gradientEnabled=false,barAlpha=100}))
 assert(not overlays.gradientRight.shown and not overlays.gradientDown.shown,
     "turning gradient off left an overlay visible")
-local modernGradient,modernColor=Region.SetGradient,CreateColor
-Region.SetGradient,CreateColor=nil,nil
-assert(S.Set("damageMeter","gradientEnabled",true))
-assert(overlays.gradientRight.gradientAlpha[1]=="HORIZONTAL"
-    and overlays.gradientRight.gradientAlpha[5]==0
-    and overlays.gradientRight.gradientAlpha[9]==.6,
-    "older-client gradient alpha fallback failed")
-Region.SetGradient,CreateColor=modernGradient,modernColor
-assert(S.Set("damageMeter","gradientEnabled",false))
 assert(win.title.text=="Damage Done","title should use Blizzard's localized type name")
 assert(win.timer.text=="(0:42)","header timer should show the Current duration")
 strictFontText=true
@@ -487,10 +514,10 @@ assert(Row(win,1).valueText.writes==writes and Row(win,1).nameText.writes==nameW
 local fetches=api.fetch
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,7)
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",2,0)
-assert(not M.paintTimer and not win.dirty,"current-session copy or other meter type repainted a Current window")
+assert(not PaintRequest() and not win.dirty,"current-session copy or other meter type repainted a Current window")
 for _=1,4 do Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0) end
 Event("DAMAGE_METER_CURRENT_SESSION_UPDATED")
-assert(M.paintTimer and M.paintTimer.delay==.1 and LiveTimers()==1,
+assert(PaintRequest() and PaintRequest().delay==.1 and LiveTimers()==1,
     "event burst was not coalesced into one deferred paint")
 RunPaint()
 assert(api.fetch==fetches+1,"coalesced repaint should fetch once")
@@ -504,7 +531,7 @@ assert(win.sessionID==7 and api.lastID==7 and win.buttons.session.label.text=="#
 assert(win.timer.text=="(1:05)","pinned fight should show its stored duration")
 assert(c.w1Session==1,"a pinned fight keeps Current as the saved fallback")
 fetches=api.fetchID
-Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0);assert(not M.paintTimer,"pinned window reacted to the overall copy")
+Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0);assert(not PaintRequest(),"pinned window reacted to the overall copy")
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,7);RunPaint()
 assert(api.fetchID==fetches+1,"pinned window missed its own session update")
 
@@ -513,7 +540,7 @@ api.secret,combat=true,true
 now=200
 Event("PLAYER_REGEN_DISABLED")
 assert(not win.sessionID,"autoCurrent did not return to the current fight")
-assert(LiveTimers()==1 and M.clockTimer and not M.paintTimer,
+assert(LiveTimers()==1 and ClockRequest() and not PaintRequest(),
     "combat start must schedule only the visible clock")
 local name1=Row(win,1).nameText.text
 assert(Label(name1)=="short:name1","secret name was not shortened by native Ambiguate")
@@ -537,18 +564,18 @@ value=Row(win,1).valueText.text
 assert(type(value)=="table" and value.format=="%s - %s" and Label(value.args[1])=="abbr:hyphentotal"
     and Label(value.args[2])=="abbr:hyphenrate","hyphen layout must keep secrets in C sinks")
 M.style.numberFormat,M.style.valueOrder,M.style.valueSeparator=3,1,2
-assert(#afters==0 and not M.paintTimer,"combat start left a deferred paint")
+assert(OtherCalls()==0 and not PaintRequest(),"combat start left a deferred paint")
 -- Mixed readability: plain row values with a secret total never compute a share.
 D.SetValueText(Row(win,1),0,1000,10,Secret("sessiontotal"),true)
 assert(Row(win,1).valueText.text=="1.00K (10)","secret denominator produced a share")
 fetches=api.fetch
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
-assert(M.paintTimer and M.paintTimer.delay==1 and api.fetch==fetches,
+assert(PaintRequest() and PaintRequest().delay==1 and api.fetch==fetches,
     "combat event must schedule one paint at refreshRate")
 now=201;RunPaint()
 assert(api.fetch==fetches+1,"one-shot did not paint the dirty window")
 now=202;RunClock()
-assert(api.fetch==fetches+1 and not M.paintTimer,"clock repainted a clean window")
+assert(api.fetch==fetches+1 and not PaintRequest(),"clock repainted a clean window")
 assert(win.timer.text=="(0:02)","live header timer should follow the combat clock: "..tostring(win.timer.text))
 
 -- Breakdown: another player's secret row is blocked; the own row maps to UnitGUID("player").
@@ -597,12 +624,12 @@ combat,api.secret=false,false
 fetches=api.fetch
 Event("PLAYER_REGEN_ENABLED")
 assert(not win.bd.open and Row(win,1).shown,"blocked panel must close once data is readable")
-assert(LiveTimers()==0 and not M.clockTimer and not M.paintTimer,"timers survived combat")
+assert(LiveTimers()==0 and not ClockRequest() and not PaintRequest(),"timers survived combat")
 assert(c.w1Type==3 and not M.pendingWrites,"combat pick was not saved after combat")
 assert(api.fetch>fetches and Row(win,1).nameText.text=="Tank","no final paint after combat")
 assert(RunAfters(.5)==1,"no declassification repaint scheduled")
 Event("ADDON_RESTRICTION_STATE_CHANGED",0,0)
-assert(M.paintTimer,"declassification edge did not request a repaint");RunPaint()
+assert(PaintRequest(),"declassification edge did not request a repaint");RunPaint()
 S.Set("damageMeter","w1Type",1)
 
 ------------------------------------------------------------------ geometry, visibility, movers
@@ -661,16 +688,15 @@ combat=true;Event("PLAYER_REGEN_DISABLED")
 assert(LiveTimers()==0,"fully faded mouseover meters kept a timer")
 fetches=api.fetch
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
-assert(not M.paintTimer and api.fetch==fetches and win.dirty,
+assert(not PaintRequest() and api.fetch==fetches and win.dirty,
     "hidden combat updates scheduled a needless repaint")
 frame.mouseOver=true;frame.scripts.OnEnter(frame)
-assert(LiveTimers()==1 and M.clockTimer and api.fetch==fetches+1,
+assert(LiveTimers()==1 and ClockRequest() and api.fetch==fetches+1,
     "revealing a meter did not paint and resume its visible clock")
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
-local hiddenPaint=M.paintTimer
-assert(hiddenPaint,"visible dirty meter did not schedule a paint")
+assert(PaintRequest(),"visible dirty meter did not schedule a paint")
 frame.mouseOver=false;Row(win,1).scripts.OnLeave(Row(win,1))
-assert(LiveTimers()==0 and hiddenPaint.cancelled and not M.paintTimer,
+assert(LiveTimers()==0 and not PaintRequest(),
     "fading the last meter did not cancel clock and pending paint")
 frame.mouseOver=true;frame.scripts.OnEnter(frame)
 assert(api.fetch==fetches+2 and not win.dirty,"revealed meter did not catch up after a canceled paint")
@@ -798,11 +824,11 @@ Event("PLAYER_REGEN_ENABLED")
 assert(S.Set("damageMeter","combatTime",true))
 now,combat=300,true
 Event("PLAYER_REGEN_DISABLED")
-assert(LiveTimers()==1 and M.clockTimer,"a shown timer needs a visible clock timer")
+assert(LiveTimers()==1 and ClockRequest(),"a shown timer needs a visible clock timer")
 assert(M.timerFrame.shown and M.timerFrame.text.text=="0:00","standalone timer not live in combat")
 fetches=api.fetch
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
-assert(M.paintTimer and M.paintTimer.delay==2,"data paint was not capped by refreshRate")
+assert(PaintRequest() and PaintRequest().delay==2,"data paint was not capped by refreshRate")
 local durationReads=api.durationReads or 0
 now=301;RunClock()
 assert(api.fetch==fetches and M.timerFrame.text.text=="0:01",
@@ -828,13 +854,12 @@ RunAfters()
 ------------------------------------------------------------------ disable and reuse
 S.Set("damageMeter","timer",false)
 combat=true;Event("PLAYER_REGEN_DISABLED");combat=false
-assert(LiveTimers()==1 and M.clockTimer and not M.paintTimer)
+assert(LiveTimers()==1 and ClockRequest() and not PaintRequest())
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
-local disabledPaint=M.paintTimer
-assert(disabledPaint,"combat event did not schedule a paint before disable")
+assert(PaintRequest(),"combat event did not schedule a paint before disable")
 local framesBefore=#frames
 assert(S.Set("damageMeter","enabled",false))
-assert(not M.active and LiveTimers()==0 and disabledPaint.cancelled
+assert(not M.active and LiveTimers()==0 and not PaintRequest()
     and not next(Frame().events) and not next(M.context.callbacks),"disable leaked events or timers")
 for i=1,5 do if D.windows[i] then assert(not D.windows[i].frame.shown,"window left visible") end end
 assert(cvars.damageMeterEnabled=="1","CVar not restored")
@@ -843,7 +868,7 @@ RunAfters();assert(RunAfters()==0,"inactive module scheduled work")
 assert(S.Set("damageMeter","enabled",true))
 assert(#frames==framesBefore+0 and D.windows[1]==win and win.frame.shown,"re-enable must reuse frames")
 
------------------------------------------------------------------- classic path: no secret API, percent
+------------------------------------------------------------------ plain path: readable values, percent
 issecretvalue=nil
 roster={
     {name="Tank-Realm",class="WARRIOR",guid="Player-Tank",total=1500000,pps=15000,death=17},
@@ -852,7 +877,7 @@ roster={
 }
 api.roster=roster
 assert(S.Set("damageMeter","percent",true))
-assert(Row(win,1).valueText.text=="1.50M (15.0K) 56%","classic percent missing: "..tostring(Row(win,1).valueText.text))
+assert(Row(win,1).valueText.text=="1.50M (15.0K) 56%","plain-value percent missing: "..tostring(Row(win,1).valueText.text))
 S.Set("damageMeter","numberFormat",4)
 assert(Row(win,1).valueText.text=="1.50M | 15.0K 56%")
 S.Set("damageMeter","numberFormat",1)
@@ -915,4 +940,28 @@ D.OpenTypeMenu(win,win.header)
 assert(typePanel.shown and typePanel.events.GLOBAL_MOUSE_DOWN)
 assert(S.Set("damageMeter","enabled",false))
 assert(not typePanel.shown and not typePanel.events.GLOBAL_MOUSE_DOWN,"module disable must dismiss the tile picker")
-print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, breakdown rules, movers, window shifting, visibility, preview and classic percent passed")
+-- Retail and WoW Forever always have the APIs, frame methods, GameTooltip and
+-- FrameXML tables the meter calls, and no pre-10.0 gradient remains. Text
+-- effects (flags, shadow, MSUF's optional font scale helper) come from the
+-- shared S.SetStyledFont, so no meter file builds font flags of its own.
+for _,file in ipairs(files) do
+    local handle=assert(io.open(root.."/MSUF_Suite_DamageMeter/"..file..".lua","rb"))
+    local source=handle:read("*a"):gsub("%-%-[^\n]*","")
+    handle:close()
+    local guarded=source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("(_G%.GameTooltip)")
+        or source:match("if frame%.(Set%w+) then") or source:match("type%((CLASS_ICON_TCOORDS)%)")
+        or source:match("type%((_G%.YES)%)") or source:match("(NS%.Client) and")
+    assert(not guarded,file..".lua guards "..tostring(guarded).." as if a client lacked it")
+    assert(not source:find("SetGradientAlpha",1,true),file..".lua keeps a pre-10.0 gradient fallback")
+    assert(not source:find("MSUF_ApplyFontScaleAnimationMode",1,true) and not source:find("\"MONOCHROME\"",1,true),
+        file..".lua applies text effects without S.SetStyledFont")
+    -- Readable numbers go through the shared S.Finite under its own name.
+    assert(not source:find("[^%w_]Plain =") and not source:find("D.Plain",1,true),file..".lua renames S.Finite")
+    -- A row update reads M.style once: the percent helper gets the flag passed in.
+    local percentBody=source:match("local function Percent%(.-\nend\n")
+    assert(file~="Rows" or (percentBody and not percentBody:find("M.style",1,true)),
+        "the per-row percent helper re-reads M.style")
+end
+-- Paints and clock seconds never create timer objects (C_Timer.NewTimer).
+assert(#timers==0,"the meter created "..#timers.." timer objects for paints or clock ticks")
+print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

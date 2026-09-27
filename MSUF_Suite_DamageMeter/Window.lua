@@ -6,7 +6,7 @@ local NS, S = P.NS, P.Suite
 -- BOTTOMRIGHT, the same format MSUF Edit Mode writes.
 local D = P.DamageMeter
 local M = D.M
-local Public = S.Public
+local Public, Finite = S.Public, S.Finite
 local floor, max, min, format = math.floor, math.max, math.min, string.format
 local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
 local ORDER = { "settings", "reset", "session", "type" }
@@ -52,7 +52,7 @@ function D.EnsureWindow(index)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:SetResizable(true)
-    if frame.SetDontSavePosition then frame:SetDontSavePosition(true) end
+    frame:SetDontSavePosition(true)
     frame:EnableMouse(true)
     frame:SetScript("OnEnter", D.HoverEnter)
     frame:SetScript("OnLeave", D.HoverLeave)
@@ -219,10 +219,8 @@ function D.StyleWindow(win)
     frame:SetSize(c[keys.Width], height)
     D.PlaceWindow(win)
     local rules = S.catalog[M.id].rules
-    if frame.SetResizeBounds then
-        frame:SetResizeBounds(rules[keys.Width].min, rules[keys.Height].min, rules[keys.Width].max,
-            rules[keys.Height].max)
-    end
+    frame:SetResizeBounds(rules[keys.Width].min, rules[keys.Height].min, rules[keys.Width].max,
+        rules[keys.Height].max)
     header:ClearAllPoints()
     header:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
@@ -255,7 +253,7 @@ end
 
 function D.UpdateTitle(win)
     local text = D.TypeName(win.meterType)
-    if win.overall then text = format("%s (%s)", text, D.Text("DAMAGE_METER_OVERALL_SESSION", "Overall")) end
+    if win.overall then text = format("%s (%s)", text, S.BlizzardText("DAMAGE_METER_OVERALL_SESSION", "Overall")) end
     if text ~= win.titleText then
         win.titleText = text
         win.title:SetText(text)
@@ -264,9 +262,9 @@ function D.UpdateTitle(win)
     if win.sessionID then
         label:SetText("#")
     elseif win.overall then
-        label:SetText(D.Text("DAMAGE_METER_OVERALL_SESSION_SHORT", "O"))
+        label:SetText(S.BlizzardText("DAMAGE_METER_OVERALL_SESSION_SHORT", "O"))
     else
-        label:SetText(D.Text("DAMAGE_METER_CURRENT_SESSION_SHORT", "C"))
+        label:SetText(S.BlizzardText("DAMAGE_METER_CURRENT_SESSION_SHORT", "C"))
     end
 end
 
@@ -461,14 +459,14 @@ function D.SaveGeometry(win, sized)
     local frame, keys = win.frame, D.KEYS[win.index]
     local right, bottom = frame:GetRight(), frame:GetBottom()
     local parentRight, parentBottom = UIParent:GetRight(), UIParent:GetBottom()
-    if not (D.Plain(right) and D.Plain(bottom) and D.Plain(parentRight) and D.Plain(parentBottom)) then
+    if not (Finite(right) and Finite(bottom) and Finite(parentRight) and Finite(parentBottom)) then
         D.PlaceWindow(win)
         return
     end
     local values = { [keys.X] = Round(right - parentRight), [keys.Y] = Round(bottom - parentBottom) }
     if sized then
         local width, height = frame:GetWidth(), frame:GetHeight()
-        if D.Plain(width) and D.Plain(height) then values[keys.Width], values[keys.Height] = Round(width), Round(height) end
+        if Finite(width) and Finite(height) then values[keys.Width], values[keys.Height] = Round(width), Round(height) end
     end
     if not S.SetMany(M.id, values) then D.PlaceWindow(win) end
 end
@@ -508,7 +506,7 @@ end
 -- Live resizing: recompute how many rows fit and repaint from the cache.
 function D.WindowSized(frame, _, height)
     local win = frame.win
-    if win.styleGen ~= M.styleGen or not D.Plain(height) then return end
+    if win.styleGen ~= M.styleGen or not Finite(height) then return end
     local capacity = D.Capacity(height)
     if capacity == win.capacity then return end
     win.capacity = capacity

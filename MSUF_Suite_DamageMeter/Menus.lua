@@ -7,7 +7,7 @@ local NS, S = P.NS, P.Suite
 -- hides, new/close window) are writes only and stay disabled in combat.
 local D = P.DamageMeter
 local M = D.M
-local Public = S.Public
+local Public, Finite = S.Public, S.Finite
 local format, max, min = string.format, math.max, math.min
 local HIDES = { "HideDungeon", "HideRaid", "HidePvP", "HideWorld" }
 -- Blizzard's grouping of meter types; Absorbs joins the healing group.
@@ -16,10 +16,6 @@ local GROUPS = {
     { "DAMAGE_METER_CATEGORY_HEALING", "Healing", { 2, 3, 4 } },
     { "DAMAGE_METER_CATEGORY_ACTIONS", "Actions", { 5, 6, 9 } },
 }
-local function MenuAPI()
-    local util = _G.MenuUtil
-    if type(util) == "table" and type(util.CreateContextMenu) == "function" then return util end
-end
 -- Menu entry data per window, created once.
 local function Choices(win)
     local data = win.menuData
@@ -91,7 +87,7 @@ local function TypePalette()
     local accent
     if c.borderColor == "9f8960" and c.barColor == "d8b66a" then
         accent = border
-    elseif NS.Client and NS.Client.isForever and c.barColor == "598ccc" then
+    elseif NS.Client.isForever and c.barColor == "598ccc" then
         accent = { .95, .74, .36 }
     else
         accent = { ar, ag, ab }
@@ -191,7 +187,7 @@ local function EnsureTypePanel()
     for groupIndex, group in ipairs(GROUPS) do
         local heading = TypeFontString(panel)
         heading:SetPoint("TOPLEFT", panel, "TOPLEFT", TYPE_PAD, y)
-        heading:SetText(D.Text(group[1], group[2]))
+        heading:SetText(S.BlizzardText(group[1], group[2]))
         heading:SetJustifyH("LEFT")
         panel.headings[groupIndex] = heading
         y = y - TYPE_HEADING
@@ -253,16 +249,11 @@ function D.OpenTypeMenu(win, owner)
         button.arrow:SetTextColor(unpack(panel.palette.accent))
     end
     panel:ClearAllPoints()
-    local cursor = _G.GetCursorPosition
-    if type(cursor) == "function" then
-        local x, y = cursor()
-        local scale = panel:GetEffectiveScale()
-        local width, height = UIParent:GetWidth(), UIParent:GetHeight()
-        panel:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", max(8, min(x / scale, width - panel:GetWidth() - 8)),
-            max(8, min(y / scale, height - panel:GetHeight() - 8)))
-    else
-        panel:SetPoint("BOTTOMLEFT", owner or UIParent, "TOPLEFT", 0, 4)
-    end
+    local x, y = GetCursorPosition()
+    local scale = panel:GetEffectiveScale()
+    local width, height = UIParent:GetWidth(), UIParent:GetHeight()
+    panel:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", max(8, min(x / scale, width - panel:GetWidth() - 8)),
+        max(8, min(y / scale, height - panel:GetHeight() - 8)))
     panel:RegisterEvent("GLOBAL_MOUSE_DOWN")
     panel:Show()
 end
@@ -273,28 +264,27 @@ local function PinSelected(data) return data.win.sessionID == data.id end
 local function PinChosen(data) D.SetWindowSession(data.win, 1, data.id, data.duration) end
 -- The 20 most recent tracked fights (the list is oldest first), then Current and Overall.
 local function SessionMenu(_, root, win)
-    local api = D.API()
-    local list = api and type(api.GetAvailableCombatSessions) == "function" and api.GetAvailableCombatSessions()
+    local list = C_DamageMeter.GetAvailableCombatSessions()
     local count = D.Count(list)
     if count > 0 then
         for i = max(1, count - 19), count do
             local entry = list[i]
             local id = type(entry) == "table" and entry.sessionID
-            if D.Plain(id) then
+            if Finite(id) then
                 local name, duration = entry.name, entry.durationSeconds
                 if not Public(name) or type(name) ~= "string" or name == "" then
-                    name = format(D.Text("DAMAGE_METER_COMBAT_NUMBER", "Fight %d"), id)
+                    name = format(S.BlizzardText("DAMAGE_METER_COMBAT_NUMBER", "Fight %d"), id)
                 end
-                if D.Plain(duration) and duration > 0 then name = format("%s [%s]", name, D.Clock(duration)) else duration = nil end
+                if Finite(duration) and duration > 0 then name = format("%s [%s]", name, D.Clock(duration)) else duration = nil end
                 root:CreateRadio(name, PinSelected, PinChosen, { win = win, id = id, duration = duration })
             end
         end
         root:CreateDivider()
     end
     local data = Choices(win)
-    root:CreateRadio(D.Text("DAMAGE_METER_CURRENT_SESSION", "Current fight"), SessionSelected, SessionChosen,
+    root:CreateRadio(S.BlizzardText("DAMAGE_METER_CURRENT_SESSION", "Current fight"), SessionSelected, SessionChosen,
         data.current)
-    root:CreateRadio(D.Text("DAMAGE_METER_OVERALL_SESSION", "Overall"), SessionSelected, SessionChosen, data.overall)
+    root:CreateRadio(S.BlizzardText("DAMAGE_METER_OVERALL_SESSION", "Overall"), SessionSelected, SessionChosen, data.overall)
 end
 
 -- Every per-window key of the catalog (window 1 section) moves on close.
@@ -352,7 +342,7 @@ local function OpenOptions() S.Open(M.id) end
 local function SettingsMenu(_, root, win)
     local c, data, rules, keys = M.config, Choices(win), S.catalog[M.id].rules, D.KEYS[win.index]
     local locked = M.inCombat or NS.IsCombatLocked()
-    local item = root:CreateCheckbox(D.Text("DAMAGE_METER_LOCK_WINDOW", rules[keys.Locked].label), KeyChecked, KeyToggled,
+    local item = root:CreateCheckbox(S.BlizzardText("DAMAGE_METER_LOCK_WINDOW", rules[keys.Locked].label), KeyChecked, KeyToggled,
         data.keys.Locked)
     if locked then item:SetEnabled(false) end
     root:CreateDivider()
@@ -362,10 +352,10 @@ local function SettingsMenu(_, root, win)
     end
     root:CreateDivider()
     if win.index == 1 then
-        item = root:CreateButton(D.Text("DAMAGE_METER_SHOW_NEW_WINDOW", "New window"), NewWindow)
+        item = root:CreateButton(S.BlizzardText("DAMAGE_METER_SHOW_NEW_WINDOW", "New window"), NewWindow)
         if locked or c.windowCount >= D.MAX then item:SetEnabled(false) end
     else
-        item = root:CreateButton(D.Text("DAMAGE_METER_HIDE_WINDOW", "Close window"), CloseChosen, win)
+        item = root:CreateButton(S.BlizzardText("DAMAGE_METER_HIDE_WINDOW", "Close window"), CloseChosen, win)
         if locked or c[keys.Locked] then item:SetEnabled(false) end
     end
     item = root:CreateButton(S.Text("Open settings"), OpenOptions)
@@ -373,26 +363,23 @@ local function SettingsMenu(_, root, win)
 end
 
 local function ResetNow()
-    local api = D.API()
-    if api and type(api.ResetAllCombatSessions) == "function" then api.ResetAllCombatSessions() end
+    C_DamageMeter.ResetAllCombatSessions()
 end
 -- Resets every tracked fight. Confirms first unless skipConfirm or the
 -- confirmReset setting is off. The popup is added as one new field of
 -- StaticPopupDialogs; the table itself is never replaced.
 function S.DamageMeterReset(skipConfirm)
-    local api = D.API()
-    if not api or type(api.ResetAllCombatSessions) ~= "function" then return false end
     local config = M.config or S.Config("damageMeter")
-    local dialogs, show = _G.StaticPopupDialogs, _G.StaticPopup_Show
-    if skipConfirm or not config.confirmReset or type(dialogs) ~= "table" or type(show) ~= "function" then
+    if skipConfirm or not config.confirmReset then
         ResetNow()
         return true
     end
+    local dialogs = StaticPopupDialogs
     if not dialogs.MSUF_SUITE_DAMAGE_METER_RESET then
         dialogs.MSUF_SUITE_DAMAGE_METER_RESET = {
-            text = format("%s?", D.Text("DAMAGE_METER_RESET_ALL_SESSIONS", "Reset all sessions")),
-            button1 = type(_G.YES) == "string" and _G.YES or S.Text("Yes"),
-            button2 = type(_G.NO) == "string" and _G.NO or S.Text("No"),
+            text = format("%s?", S.BlizzardText("DAMAGE_METER_RESET_ALL_SESSIONS", "Reset all sessions")),
+            button1 = S.BlizzardText("YES", "Yes"),
+            button2 = S.BlizzardText("NO", "No"),
             OnAccept = ResetNow,
             timeout = 0,
             whileDead = 1,
@@ -400,7 +387,7 @@ function S.DamageMeterReset(skipConfirm)
             preferredIndex = 3,
         }
     end
-    show("MSUF_SUITE_DAMAGE_METER_RESET")
+    StaticPopup_Show("MSUF_SUITE_DAMAGE_METER_RESET")
     return true
 end
 
@@ -415,28 +402,24 @@ function D.HeaderButtonClick(button)
         D.OpenTypeMenu(win, button)
         return
     end
-    local util = MenuAPI()
-    if util then util.CreateContextMenu(button, menus[kind], win) end
+    MenuUtil.CreateContextMenu(button, menus[kind], win)
 end
 
 local function ButtonLabel(kind)
     local rules = S.catalog[M.id].rules
     if kind == "type" then return S.Text(rules.w1Type.label) end
     if kind == "session" then return S.Text(rules.w1Session.label) end
-    if kind == "reset" then return D.Text("DAMAGE_METER_RESET_ALL_SESSIONS", "Reset all sessions") end
+    if kind == "reset" then return S.BlizzardText("DAMAGE_METER_RESET_ALL_SESSIONS", "Reset all sessions") end
     return S.Text("Window settings")
 end
 function D.HeaderButtonEnter(button)
     D.HoverEnter(button)
-    local tooltip = _G.GameTooltip
-    if not tooltip then return end
-    tooltip:SetOwner(button, "ANCHOR_TOP")
-    tooltip:SetText(ButtonLabel(button.kind))
-    tooltip:Show()
+    GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    GameTooltip:SetText(ButtonLabel(button.kind))
+    GameTooltip:Show()
 end
 
 function D.HeaderButtonLeave(button)
-    local tooltip = _G.GameTooltip
-    if tooltip and tooltip:GetOwner() == button then tooltip:Hide() end
+    if GameTooltip:GetOwner() == button then GameTooltip:Hide() end
     D.HoverLeave(button)
 end

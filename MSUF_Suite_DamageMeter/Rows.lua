@@ -6,7 +6,7 @@ local S = P.Suite
 -- AbbreviateNumbers). Secrets are never compared, stored as memo or used as keys.
 local D = P.DamageMeter
 local M = D.M
-local Public, Plain, Num = S.Public, D.Plain, D.Num
+local Public, Finite, Num = S.Public, S.Finite, D.Num
 local floor, format = math.floor, string.format
 local CLASS_SHEET = "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -35,8 +35,7 @@ local customPatterns = {
 }
 
 function D.Atlas(texture, atlas)
-    local api = _G.C_Texture
-    if type(api) == "table" and type(api.GetAtlasInfo) == "function" and api.GetAtlasInfo(atlas) then
+    if C_Texture.GetAtlasInfo(atlas) then
         texture:SetAtlas(atlas)
         return true
     end
@@ -45,16 +44,9 @@ end
 
 function D.FontStyle(fontString, size)
     local style = M.style
-    local appliedFlags = S.SetFont(fontString, style.font, size, style.flags)
-    local applyScaleMode = _G.MSUF_ApplyFontScaleAnimationMode
-    if type(applyScaleMode) == "function" then applyScaleMode(fontString, appliedFlags) end
+    S.SetStyledFont(fontString, style.font, size, style.outline, style.rendering,
+        style.shadow, style.shadowOpacity, style.shadowDistance)
     fontString:SetAlpha(style.textAlpha)
-    fontString:SetShadowColor(0, 0, 0, style.shadow and style.shadowAlpha or 0)
-    if style.shadow then
-        fontString:SetShadowOffset(style.shadowDistance, -style.shadowDistance)
-    else
-        fontString:SetShadowOffset(0, 0)
-    end
 end
 
 -- kind: "list" (meter rows), "spell" (breakdown panel) or "tip" (hover breakdown).
@@ -129,19 +121,8 @@ local function StyleGradient(bar, style)
             texture:SetAllPoints(fill)
             texture:SetAlpha(style.barAlpha)
             local first, second = style.gradientClear, style.gradientTint
-            local minAlpha, maxAlpha = 0, style.gradientStrength
-            if reverse then
-                first, second = second, first
-                minAlpha, maxAlpha = maxAlpha, minAlpha
-            end
-            if texture.SetGradient and first and second then
-                texture:SetGradient(orientation, first, second)
-            elseif texture.SetGradientAlpha then
-                local r, g, b = style.gradientR, style.gradientG, style.gradientB
-                texture:SetGradientAlpha(orientation, r, g, b, minAlpha, r, g, b, maxAlpha)
-            else
-                texture:SetColorTexture(style.gradientR, style.gradientG, style.gradientB, style.gradientStrength)
-            end
+            if reverse then first, second = second, first end
+            texture:SetGradient(orientation, first, second)
             texture:Show()
         elseif texture then
             texture:Hide()
@@ -231,7 +212,7 @@ function D.UnitIcon(row, spec, class, iconStyle)
         icon:Show()
         return
     end
-    local coords = class ~= "" and type(CLASS_ICON_TCOORDS) == "table" and CLASS_ICON_TCOORDS[class]
+    local coords = class ~= "" and CLASS_ICON_TCOORDS[class]
     if type(coords) ~= "table" then
         icon:Hide()
         return
@@ -267,11 +248,17 @@ function D.SetBar(row, maxValue, value)
     end
 end
 
-local function Abbreviate(value)
-    local abbreviate = _G.AbbreviateNumbers
-    if type(abbreviate) == "function" then return abbreviate(value) end
-    return value
+-- The rounded share of denominator while percent is shown; nil unless both
+-- values are plain (a secret is never used in arithmetic). Callers pass the
+-- style they already hold, so a row update reads M.style once.
+local function Percent(total, denominator, shown)
+    if not shown then return nil end
+    denominator = Num(denominator)
+    if Public(total) and Public(denominator) and denominator > 0 then
+        return floor(total / denominator * 100 + .5)
+    end
 end
+
 -- Custom layout keeps values in their chosen order. A secret value is only
 -- passed through AbbreviateNumbers and SetFormattedText, never formatted in Lua.
 local function SetCustomValueText(row, meterType, total, perSecond, denominator, alwaysPercent)
@@ -279,13 +266,7 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
     local countOnly = D.countOnly[meterType]
     local rate
     if not countOnly then rate = perSecond end
-    local percent
-    if alwaysPercent or style.percent then
-        denominator = Num(denominator)
-        if Public(total) and Public(denominator) and denominator > 0 then
-            percent = floor(total / denominator * 100 + .5)
-        end
-    end
+    local percent = Percent(total, denominator, alwaysPercent or style.percent)
     local order, separator = style.valueOrder or 1, style.valueSeparator or 2
     local allPlain = Public(total) and (countOnly or Public(rate))
     if allPlain and total == row.mA and rate == row.mB and percent == row.mP
@@ -303,7 +284,7 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
         if kind == 1 or (kind == 2 and not countOnly) or (kind == 3 and percent ~= nil) then
             local value
             if kind == 1 then value = total elseif kind == 2 then value = rate else value = percentText end
-            value = kind == 3 and value or (Public(value) and D.Compact(value) or Abbreviate(value))
+            value = kind == 3 and value or (Public(value) and D.Compact(value) or AbbreviateNumbers(value))
             count = count + 1
             if count == 1 then first = value elseif count == 2 then second = value else third = value end
         end
@@ -343,13 +324,7 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
     end
     local text = row.valueText
     if Public(a) and (not two or Public(b)) then
-        local percent
-        if alwaysPercent or style.percent then
-            denominator = Num(denominator)
-            if Public(total) and Public(denominator) and denominator > 0 then
-                percent = floor(total / denominator * 100 + .5)
-            end
-        end
+        local percent = Percent(total, denominator, alwaysPercent or style.percent)
         if a == row.mA and b == row.mB and percent == row.mP and fmt == row.mF then return end
         row.mA, row.mB, row.mP, row.mF = a, b, percent, fmt
         local value = D.Compact(a)
@@ -359,9 +334,9 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
         return
     end
     row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
-    local first = Public(a) and D.Compact(a) or Abbreviate(a)
+    local first = Public(a) and D.Compact(a) or AbbreviateNumbers(a)
     if two then
-        text:SetFormattedText(separators[fmt], first, Public(b) and D.Compact(b) or Abbreviate(b))
+        text:SetFormattedText(separators[fmt], first, Public(b) and D.Compact(b) or AbbreviateNumbers(b))
     else
         text:SetText(first)
     end
@@ -392,7 +367,7 @@ function D.PaintSource(row, source, index, session, win)
     end
     if row.hasIcon then
         local spec = source.specIconID
-        D.UnitIcon(row, Plain(spec) and spec or 0, class, style.iconStyle)
+        D.UnitIcon(row, Finite(spec) and spec or 0, class, style.iconStyle)
     end
     if meterType == D.DEATHS then
         if not row.full then
@@ -402,7 +377,7 @@ function D.PaintSource(row, source, index, session, win)
         end
         row.mA = nil
         local seconds = source.deathTimeSeconds
-        seconds = (Plain(seconds) and seconds >= 0 and not win.overall) and floor(seconds) or -1
+        seconds = (Finite(seconds) and seconds >= 0 and not win.overall) and floor(seconds) or -1
         if seconds ~= row.mDeath then
             row.mDeath = seconds
             row.valueText:SetText(seconds >= 0 and D.Clock(seconds) or "")
@@ -414,16 +389,6 @@ function D.PaintSource(row, source, index, session, win)
     D.SetValueText(row, meterType, source.totalAmount, source.amountPerSecond, session.totalAmount, false)
 end
 
-local function SpellTexture(id)
-    local api = _G.C_Spell
-    if type(api) == "table" and type(api.GetSpellTexture) == "function" then return api.GetSpellTexture(id) end
-    if type(GetSpellTexture) == "function" then return GetSpellTexture(id) end
-end
-local function SpellName(id)
-    local api = _G.C_Spell
-    if type(api) == "table" and type(api.GetSpellName) == "function" then return api.GetSpellName(id) end
-    if type(GetSpellInfo) == "function" then return (GetSpellInfo(id)) end
-end
 -- Breakdown spell row; percent of the source total whenever values are plain.
 function D.PaintSpell(row, spell, source, meterType, class)
     if row.styleGen ~= M.styleGen then D.StyleRow(row) end
@@ -433,10 +398,10 @@ function D.PaintSpell(row, spell, source, meterType, class)
     end
     row.rawName, row.iconKey = nil, nil
     local id = spell.spellID
-    if Plain(id) then
+    if Finite(id) then
         if id ~= row.spellID then
             row.spellID = id
-            local texture, zoom = SpellTexture(id), M.style.zoom
+            local texture, zoom = C_Spell.GetSpellTexture(id), M.style.zoom
             if texture then
                 row.icon:SetTexture(texture)
                 row.icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
@@ -444,7 +409,7 @@ function D.PaintSpell(row, spell, source, meterType, class)
             else
                 row.icon:Hide()
             end
-            local name, pet = SpellName(id), spell.creatureName
+            local name, pet = C_Spell.GetSpellName(id), spell.creatureName
             if not Public(name) or type(name) ~= "string" then name = "" end
             if name ~= "" and Public(pet) and type(pet) == "string" and pet ~= "" then name = format("%s (%s)", name, pet) end
             row.nameText:SetText(name)
@@ -454,11 +419,10 @@ function D.PaintSpell(row, spell, source, meterType, class)
         -- some clients); C_Spell.GetSpellName accepts them and returns a secret.
         row.spellID = nil
         row.icon:Hide()
-        local api = _G.C_Spell
-        if not Public(id) and type(api) == "table" and type(api.GetSpellName) == "function" then
-            row.nameText:SetText(api.GetSpellName(id))
-        else
+        if Public(id) then
             row.nameText:SetText("")
+        else
+            row.nameText:SetText(C_Spell.GetSpellName(id))
         end
     end
     D.SetBar(row, source.maxAmount, spell.totalAmount)

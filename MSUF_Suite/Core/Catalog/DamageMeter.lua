@@ -2,9 +2,8 @@ local _, NS = ...
 local B = NS.CatalogBuild
 local Number, Bool, Choice, Color, Font, Texture = B.Number, B.Bool, B.Choice, B.Color, B.Font, B.Texture
 
--- Meter windows read the client's own combat data (C_DamageMeter). The API
--- ships on Retail, WoW Forever and every Classic-family client; values are
--- secret during combat only on Retail/Forever, which the runtime handles.
+-- Meter windows read the client's own combat data (C_DamageMeter). Its values
+-- are secret during combat, which the runtime handles.
 local MAX_WINDOWS = 5
 NS.DamageMeterMaxWindows = MAX_WINDOWS
 -- Choice index = Enum.DamageMeterType value + 1 (identical on all clients).
@@ -13,21 +12,11 @@ NS.DamageMeterTypeLabels = {
     "Interrupts", "Dispels", "Damage taken", "Avoidable damage taken", "Deaths", "Enemy damage taken",
 }
 
-local function Available()
-    local api = _G.C_DamageMeter
-    if type(api) ~= "table" or type(api.GetCombatSessionFromType) ~= "function"
-        or type(_G.Enum) ~= "table" or type(_G.Enum.DamageMeterType) ~= "table" then
-        return false, "This client has no combat meter data"
-    end
-    return true
-end
-
 B.Module("damageMeter", {
     title = "Damage meter",
     description = "Lightweight meter windows for damage, healing, interrupts, dispels, deaths and damage taken. They read the client's own combat data; Blizzard's meter window stays hidden while this module is active.",
     core = true, page = "suite_damageMeter",
     conflicts = { "EllesmereUIDamageMeters" },
-    available = Available,
     cvars = { damageMeterEnabled = true },
 })
 

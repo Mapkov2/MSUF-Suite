@@ -5,7 +5,7 @@ local S = P.Suite
 -- identity is secret shows an explanation instead of querying the API.
 local D = P.DamageMeter
 local M = D.M
-local Public = S.Public
+local Public, Finite = S.Public, S.Finite
 local max, min = math.max, math.min
 local TIP_WIDTH, TIP_PAD, TIP_ROW = 260, 6, 17
 
@@ -93,10 +93,10 @@ end
 -- Blizzard's recap panel reads the recap in the calling (addon) context and
 -- would receive secrets during combat; it opens once the row is readable.
 function D.OpenRecap(win, source)
-    local id, open = source.deathRecapID, _G.OpenDeathRecapUI
-    if not D.Plain(id) or id <= 0 or type(open) ~= "function" then return end
+    local id = source.deathRecapID
+    if not Finite(id) or id <= 0 then return end
     if Public(source.deathTimeSeconds) then
-        open(id)
+        OpenDeathRecapUI(id)
         return
     end
     local bd = win.bd
@@ -109,12 +109,11 @@ function D.CloseBreakdown(win, quiet)
     local bd = win.bd
     if not bd.open then return end
     bd.open, bd.source, bd.name, bd.guid, bd.creature, bd.duration = false, nil, nil, nil, nil, nil
-    local tooltip = _G.GameTooltip
-    if tooltip and win.bdRows then
-        local owner = tooltip:GetOwner()
+    if win.bdRows then
+        local owner = GameTooltip:GetOwner()
         for _, row in pairs(win.bdRows) do
             if owner == row then
-                tooltip:Hide()
+                GameTooltip:Hide()
                 break
             end
         end
@@ -148,7 +147,7 @@ function D.RenderBreakdown(win)
     local spells = not groups and source and source.combatSpells
     if not groups then count = D.Count(spells) end
     bd.offset = min(bd.offset, max(0, count - capacity))
-    local duration = D.Plain(bd.duration) and bd.duration or 0
+    local duration = Finite(bd.duration) and bd.duration or 0
     local rows = win.bdRows
     for slot = 1, capacity do
         local index, row = bd.offset + slot, rows[slot]
@@ -211,7 +210,7 @@ end
 local function TipContent(frame, win, source, session)
     if win.meterType == D.DEATHS then
         local id = source.deathRecapID
-        if type(_G.OpenDeathRecapUI) ~= "function" or not D.Plain(id) or id <= 0 then return 0, nil end
+        if not Finite(id) or id <= 0 then return 0, nil end
         return 0, Public(source.deathTimeSeconds) and S.Text("Click to open the death recap.") or D.Blocked()
     end
     local guid, creature = D.Identity(source)
@@ -224,7 +223,7 @@ local function TipContent(frame, win, source, session)
     local spells = not groups and detail and detail.combatSpells
     if not groups then count = D.Count(spells) end
     local shown = min(count, M.config.tooltipRows)
-    local duration = D.Plain(session.durationSeconds) and session.durationSeconds or 0
+    local duration = Finite(session.durationSeconds) and session.durationSeconds or 0
     for i = 1, shown do
         local row = frame.rows[i]
         if not row then
@@ -301,16 +300,14 @@ function D.RowWheel(row, delta) D.Scroll(row.win, delta) end
 
 function D.SpellEnter(row)
     D.HoverEnter(row)
-    local tooltip = _G.GameTooltip
-    if not M.config.spellTooltips or not row.spellID or not tooltip then return end
-    tooltip:SetOwner(row, "ANCHOR_LEFT")
-    if type(tooltip.SetSpellByID) == "function" then tooltip:SetSpellByID(row.spellID) end
-    tooltip:Show()
+    if not M.config.spellTooltips or not row.spellID then return end
+    GameTooltip:SetOwner(row, "ANCHOR_LEFT")
+    GameTooltip:SetSpellByID(row.spellID)
+    GameTooltip:Show()
 end
 
 function D.SpellLeave(row)
-    local tooltip = _G.GameTooltip
-    if tooltip and tooltip:GetOwner() == row then tooltip:Hide() end
+    if GameTooltip:GetOwner() == row then GameTooltip:Hide() end
     D.HoverLeave(row)
 end
 

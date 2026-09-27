@@ -23,17 +23,12 @@ function D.BuildStyle()
     local style = M.style or {}
     M.style = style
     style.font = S.ResolveFont(c.font)
-    local outline = (c.outline == 2 or c.outline == 5) and "OUTLINE"
+    -- outline 1 shadow only, 2/3 outline/thick, 4 none, 5/6 outline/thick with shadow.
+    style.outline = (c.outline == 2 or c.outline == 5) and "OUTLINE"
         or (c.outline == 3 or c.outline == 6) and "THICKOUTLINE" or ""
-    if c.rendering == 3 then
-        style.flags = outline == "" and "SLUG" or "OUTLINE,SLUG"
-    elseif c.rendering == 2 then
-        style.flags = outline == "" and "MONOCHROME" or outline .. ",MONOCHROME"
-    else
-        style.flags = outline
-    end
+    style.rendering = c.rendering
     style.shadow = (c.outline == 1 or c.outline == 5 or c.outline == 6) and c.rendering ~= 3
-    style.shadowAlpha, style.shadowDistance = c.shadowOpacity / 100, c.shadowDistance
+    style.shadowOpacity, style.shadowDistance = c.shadowOpacity, c.shadowDistance
     style.textAlpha, style.baseline = c.textOpacity / 100, c.baseline
     style.leftSize, style.rightSize, style.barHeight, style.spacing = c.leftSize, c.rightSize, c.barHeight, c.barSpacing
     style.texture = S.ResolveTexture(c.barTexture, WHITE)
@@ -45,10 +40,9 @@ function D.BuildStyle()
         and (style.gradientLeft or style.gradientRight or style.gradientUp or style.gradientDown)
     style.gradientStrength = c.gradientStrength / 100
     style.gradientR, style.gradientG, style.gradientB = S.RGB(c.gradientColor)
-    local createColor = _G.CreateColor
-    if style.gradientEnabled and type(createColor) == "function" then
-        style.gradientClear = createColor(style.gradientR, style.gradientG, style.gradientB, 0)
-        style.gradientTint = createColor(style.gradientR, style.gradientG, style.gradientB, style.gradientStrength)
+    if style.gradientEnabled then
+        style.gradientClear = CreateColor(style.gradientR, style.gradientG, style.gradientB, 0)
+        style.gradientTint = CreateColor(style.gradientR, style.gradientG, style.gradientB, style.gradientStrength)
     else
         style.gradientClear, style.gradientTint = nil, nil
     end
@@ -102,10 +96,13 @@ function D.UpdateTimers()
     D.UpdateTimer(current, currentResolved and M.inCombat and not M.forced)
 end
 
+-- Deferred paints and clock ticks use C_Timer.After with one shared callback
+-- each and keep at most one call in flight: no timer object per paint or per
+-- second. The pending flag is the request; cancelling clears it, so a call
+-- still in flight finds nothing to do, and a newer request reuses that call
+-- instead of scheduling another.
 function D.CancelPaint()
-    local timer = M.paintTimer
-    M.paintTimer, M.pendingPaint = nil, false
-    if timer then timer:Cancel() end
+    M.pendingPaint = false
 end
 
 function D.PaintDirty()
@@ -135,7 +132,7 @@ function D.PaintDirty()
         end
     end
     D.UpdateTimers()
-    if M.inCombat and type(GetTime) == "function" then M.nextPaint = GetTime() + max(.2, c.refreshRate) end
+    if M.inCombat then M.nextPaint = GetTime() + max(.2, c.refreshRate) end
 end
 
 -- Mouseover-only windows retain dirty data while faded. There is no data
@@ -164,50 +161,49 @@ function D.NeedClock()
 end
 
 function D.StopClock()
-    local timer = M.clockTimer
-    M.clockTimer = nil
-    if timer then timer:Cancel() end
+    M.clockRunning = false
 end
 
-local function ClockStep()
-    M.clockTimer = nil
+function D.ClockTick()
+    M.clockInFlight = false
+    if not M.clockRunning then return end
+    M.clockRunning = false
     if not D.NeedClock() then return end
     D.UpdateTimers()
     D.SyncClock()
 end
+
 function D.SyncClock()
     if not D.NeedClock() then
         D.StopClock()
         return
     end
-    if M.clockTimer then return end
-    local timer = _G.C_Timer
-    if type(timer) ~= "table" or type(timer.NewTimer) ~= "function" then return end
-    local now = type(GetTime) == "function" and GetTime() or 0
+    if M.clockRunning then return end
+    M.clockRunning = true
+    if M.clockInFlight then return end
+    M.clockInFlight = true
     local origin = M.combatStart or 0
-    local delay = 1 - ((now - origin) % 1) + .02
-    M.clockTimer = timer.NewTimer(delay, ClockStep)
+    C_Timer.After(1 - ((GetTime() - origin) % 1) + .02, D.ClockTick)
 end
 
 function D.DeferredPaint()
-    M.paintTimer, M.pendingPaint = nil, false
+    M.paintInFlight = false
+    if not M.pendingPaint then return end
+    M.pendingPaint = false
     if M.active and D.HasDirtyVisible() then D.PaintDirty() end
 end
 
 function D.RequestPaint()
     if M.pendingPaint or not M.active or not D.HasDirtyVisible() then return end
-    local timer = _G.C_Timer
-    if type(timer) ~= "table" or type(timer.NewTimer) ~= "function" then
-        D.PaintDirty()
-        return
-    end
+    M.pendingPaint = true
+    if M.paintInFlight then return end
+    M.paintInFlight = true
     local delay = .1
     if M.inCombat then
-        local now = type(GetTime) == "function" and GetTime() or 0
+        local now = GetTime()
         delay = max(.01, (M.nextPaint or now) - now)
     end
-    M.pendingPaint = true
-    M.paintTimer = timer.NewTimer(delay, D.DeferredPaint)
+    C_Timer.After(delay, D.DeferredPaint)
 end
 
 -- A pinned historic fight returns to Current (autoCurrent, resets).
@@ -224,9 +220,7 @@ function D.ClearPins()
 end
 
 function D.ZoneKey()
-    local query = _G.IsInInstance
-    if type(query) ~= "function" then return "HideWorld" end
-    local inside, kind = query()
+    local inside, kind = IsInInstance()
     if not Public(inside) or not Public(kind) or not inside then return "HideWorld" end
     return ZONES[kind] or "HideWorld"
 end
@@ -269,7 +263,7 @@ local function Reset()
 end
 local function CombatStart(self)
     M.inCombat = true
-    M.combatStart = type(GetTime) == "function" and GetTime() or nil
+    M.combatStart = GetTime()
     M.nextPaint = nil
     M.preview = false
     if self.config.autoCurrent then D.ClearPins() end
@@ -305,8 +299,7 @@ local function CombatEnd()
         D.MarkAll()
         D.PaintDirty()
     end
-    local timer = _G.C_Timer
-    if type(timer) == "table" and type(timer.After) == "function" then timer.After(.5, LateRepaint) end
+    C_Timer.After(.5, LateRepaint)
 end
 local function Encounter(self, event)
     if event == "ENCOUNTER_START" and self.config.autoCurrent then D.ClearPins() end
@@ -326,14 +319,11 @@ local function Roster()
     D.RequestPaint()
 end
 local function KeyStart(self)
-    if not self.config.mythicReset then return end
-    local api = D.API()
-    if api and type(api.ResetAllCombatSessions) == "function" then api.ResetAllCombatSessions() end
+    if self.config.mythicReset then C_DamageMeter.ResetAllCombatSessions() end
 end
 -- Fires after a restriction lifted: session data is readable again.
 local function Restriction(_, _, _, state)
-    local enum = type(Enum) == "table" and Enum.AddOnRestrictionState
-    if Public(state) and state == (enum and enum.Inactive or 0) then
+    if Public(state) and state == Enum.AddOnRestrictionState.Inactive then
         if not M.inCombat then CloseBlocked() end
         D.MarkAll()
         D.RequestPaint()
@@ -383,7 +373,7 @@ function D.EvaluateVisibility()
     elseif c.visibility == 2 then
         base = M.inCombat == true
     elseif c.visibility == 3 then
-        local grouped = type(IsInGroup) == "function" and IsInGroup()
+        local grouped = IsInGroup()
         base = Public(grouped) and grouped == true
     else
         base = true
@@ -457,7 +447,7 @@ local movers
 local function Movers()
     if movers then return movers end
     movers = {}
-    local label = D.Text("DAMAGE_METER_LABEL", "Damage meter")
+    local label = S.BlizzardText("DAMAGE_METER_LABEL", "Damage meter")
     for i = 1, D.MAX do
         local index = i
         local keys = D.KEYS[i]

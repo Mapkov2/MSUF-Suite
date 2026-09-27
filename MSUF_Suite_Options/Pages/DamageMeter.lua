@@ -80,6 +80,7 @@ end
 
 local function Build(ctx)
     local b = W.PageBuilder(ctx)
+    -- S.DamageMeterReset comes with the damage meter addon.
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Reset combat data", function() if S.DamageMeterReset then S.DamageMeterReset() end end,
           function() return S.DamageMeterReset ~= nil and P.Get(ID, "enabled") end, key = "reset_data" },
@@ -106,7 +107,7 @@ local function Build(ctx)
     local help = P.Text(body, HELP.window_settings, 16, -18, width)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     local choices = {}
-    for i = 1, Suite.DamageMeterMaxWindows or 5 do choices[i] = { value = i, text = string.format(Tr("Window %d"), i) } end
+    for i = 1, Suite.DamageMeterMaxWindows do choices[i] = { value = i, text = string.format(Tr("Window %d"), i) } end
     local picker = M.BindDropdownAt(ctx, body, Tr("Window"), 16, y, choices, math.floor(width / 2),
         function() return selected end,
         function(value)
