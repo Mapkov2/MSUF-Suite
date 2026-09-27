@@ -500,6 +500,7 @@ function Page.MoveEntry(key, slot, beforeKey, family)
         if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
         local wrong = WrongFamily(family, slot)
         if wrong then return false, wrong end
+        if beforeKey == key then return true end
         local list = Materialize(lists, spec, slot)
         local at = IndexOf(list, key)
         if at then

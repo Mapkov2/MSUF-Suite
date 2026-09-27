@@ -124,6 +124,38 @@ local function Fill(w, h, sp, per, vertical, grow, align, n1, n2, out, unit)
     return extent * unit, depth * unit
 end
 
+-- Cooldown icons with Center keep the first visible icon on the bar's
+-- midpoint. Later icons occupy right, left, right, left in plan order.
+-- The symmetric footprint keeps that midpoint stable when the count changes.
+-- Aura buttons use Blizzard's own compact flow instead (Fill above).
+local function CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
+    if n == 0 then return w * unit, h * unit end
+    local along, across = w, h
+    if vertical then along, across = h, w end
+    local count = n > per and per or n
+    local radius = floor(count / 2)
+    local stride = along + sp
+    local extent = (2 * radius + 1) * along + 2 * radius * sp
+    local lines = ceil(n / per)
+    local depth = lines * across + (lines - 1) * sp
+    local middle = radius * stride
+    for i = 0, n - 1 do
+        local line = floor(i / per)
+        local ordinal = i - line * per
+        local side = ordinal == 0 and 0 or (ordinal % 2 == 1 and (ordinal + 1) / 2 or -ordinal / 2)
+        local a = middle + side * stride
+        local g = grow == 2 and lines - 1 - line or line
+        local b = g * (across + sp)
+        if vertical then
+            out[2 * i + 1], out[2 * i + 2] = b * unit, -a * unit
+        else
+            out[2 * i + 1], out[2 * i + 2] = a * unit, -b * unit
+        end
+    end
+    if vertical then return depth * unit, extent * unit end
+    return extent * unit, depth * unit
+end
+
 -- Pure: offsets of the first `count` cells (capped by maxIcons) relative to
 -- the bar's TOPLEFT. Returns width, height and the laid-out count.
 function L.Offsets(view, count, out)
@@ -133,7 +165,12 @@ function L.Offsets(view, count, out)
     local cap = view.maxIcons
     if type(cap) == "number" and cap > 0 and n > cap then n = cap end
     if n < 0 then n = 0 end
-    local width, height = Fill(w, h, sp, per, vertical, grow, align, n, 0, out, unit)
+    local width, height
+    if view.kind == 1 and align == 1 then
+        width, height = CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
+    else
+        width, height = Fill(w, h, sp, per, vertical, grow, align, n, 0, out, unit)
+    end
     return width, height, n
 end
 
@@ -596,10 +633,10 @@ end
 -- containers that cannot interleave, so in a column every entry keeps its
 -- own cell in the bar's order. Horizontal rows stay compact and grow from
 -- their alignment point like Blizzard's. Second value: the cells follow the
--- bar's order on that single line or column. Third value: a centered
--- horizontal row that mixes both fits on one line split at its center
--- (player auras end there, target auras start there), compact and growing
--- from the middle. Shared by Auras, the layout and the controller.
+-- bar's order on that single line or column. A centered horizontal row
+-- with both units fits on one line: the two compact containers grow away
+-- from the midpoint. The third value marks that split row.
+-- Shared by Auras, the layout and the controller.
 -- Entries within maxIcons by part: n1 the player part ("both" included),
 -- n2 the target part.
 local function Parts(view, entries)
@@ -635,11 +672,7 @@ function L.FixedAuras(view, entries)
         if (vertical and n <= per) or (not vertical and per == 1) then
             fixed = true
         elseif not vertical and n <= per then
-            if align == 1 then
-                split = true
-            else
-                fixed = true
-            end
+            if align == 1 then split = true else fixed = true end
         end
     end
     return fixed, fixed and single, split

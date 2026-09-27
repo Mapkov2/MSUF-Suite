@@ -312,12 +312,19 @@ local grid={kind=1,size=10,height=100,spacing=2,perRow=4,maxIcons=0,vertical=fal
 ResetCalls()
 local w,h,n=L.Offsets(grid,6,out)
 assert(Writes()==0,"Offsets must not touch widgets")
-assert(w==46 and h==22 and n==6,"footprint 4x2 rows: "..w.."x"..h)
-local expect={0,0,12,0,24,0,36,0,12,-12,24,-12}
-for i=1,12 do assert(Near(out[i],expect[i]),"centered partial row at "..i..": "..tostring(out[i])) end
+assert(w==58 and h==22 and n==6,"center-out footprint 4x2 rows: "..w.."x"..h)
+local expect={24,0,36,0,12,0,48,0,24,-12,36,-12}
+for i=1,12 do assert(Near(out[i],expect[i]),"center-out row at "..i..": "..tostring(out[i])) end
+for count=1,5 do
+    local width=L.Offsets(grid,count,out)
+    assert(out[1]+5==width/2,"first icon stays at the bar midpoint for "..count.." visible icons")
+end
+L.Offsets(grid,5,out)
+assert(out[3]>out[1] and out[5]<out[1] and out[7]>out[3] and out[9]==out[1],
+    "new icons alternate right and left; the next row starts at the midpoint")
 grid.grow=2
 L.Offsets(grid,6,out)
-expect={0,-12,12,-12,24,-12,36,-12,12,0,24,0}
+expect={24,-12,36,-12,12,-12,48,-12,24,0,36,0}
 for i=1,12 do assert(Near(out[i],expect[i]),"grow up at "..i) end
 grid.grow,grid.align=1,2
 L.Offsets(grid,6,out)
@@ -326,16 +333,16 @@ grid.align=3
 L.Offsets(grid,6,out)
 assert(out[9]==24 and out[11]==36,"end aligned partial row")
 grid.align=1
--- odd free space: the centering origin is floored once
+-- Center-out keeps the first visible icon at the midpoint as counts change.
 grid.spacing=1
 L.Offsets(grid,5,out)
-assert(out[9]==16 and out[10]==-11,"floored centering origin")
+assert(out[9]==22 and out[10]==-11,"second row starts at the midpoint")
 grid.spacing=2
 -- vertical: columns of perRow, grow right, then left
 grid.vertical=true
 w,h=L.Offsets(grid,6,out)
-assert(w==22 and h==46,"vertical footprint")
-expect={0,0,0,-12,0,-24,0,-36,12,-12,12,-24}
+assert(w==22 and h==58,"vertical center-out footprint")
+expect={0,-24,0,-36,0,-12,0,-48,12,-24,12,-36}
 for i=1,12 do assert(Near(out[i],expect[i]),"vertical at "..i) end
 grid.grow=2
 L.Offsets(grid,6,out)
@@ -355,7 +362,7 @@ grid.height=100
 -- negative spacing overlaps borders
 grid.spacing=-2
 w=L.Offsets(grid,4,out)
-assert(w==34 and out[3]==8,"negative spacing")
+assert(w==42 and out[3]==24,"negative spacing")
 grid.spacing=2
 -- pixel snapping at a fractional scale: every value is a whole pixel
 physicalHeight=1080
@@ -365,7 +372,7 @@ w,h=L.Offsets(grid,7,out)
 local function Whole(value) local p=value/px; return math.abs(p-floor(p+.5))<1e-6 end
 assert(Whole(w) and Whole(h),"snapped footprint")
 for i=1,14 do assert(Whole(out[i]),"snapped offset "..i) end
-assert(Near(w,(4*59+3*4)*px),"42.3 units = 59 px, 3 units = 4 px")
+assert(Near(w,(5*59+4*4)*px),"42.3 units = 59 px, 3 units = 4 px")
 local mw,mh,msp,mper=L.Metrics(grid)
 assert(Near(mw,59*px) and Near(mh,59*px) and Near(msp,4*px) and mper==4,"metrics are pixel exact")
 assert(Near(L.Snap(10),14*px),"Snap rounds to whole pixels")
@@ -500,9 +507,10 @@ assert(anchorChanges==1,"showing the Essential bar notifies MSUF once, got "..an
 -- 40 units at 90 percent height: 36 units tall, 2 units apart
 assert(essBar.frame.w==208 and essBar.frame.h==36,"ess content size "..tostring(essBar.frame.w).."x"..tostring(essBar.frame.h))
 CheckPoint(essBar.frame,"TOP",UIParent,"CENTER",0,ESS_Y,"free ess bar: top edge from the screen center")
+local centerPositions={84,126,42,168,0}
 for i=1,5 do
     local icon=essEntries[i].icon
-    CheckPoint(icon,"TOPLEFT",essBar.frame,"TOPLEFT",(i-1)*42,0,"ess icon "..i)
+    CheckPoint(icon,"TOPLEFT",essBar.frame,"TOPLEFT",centerPositions[i],0,"ess icon "..i)
     assert(icon.shown,"ess icon shown")
 end
 -- every icon's first placement switches its aura overlay on, once
@@ -1107,8 +1115,9 @@ ResetCalls()
 L.Apply("ess")
 assert(not essEntries[2].icon.shown,"hidden entry's icon hides")
 assert(#overlayLog==1 and overlayLog[1][1]==essEntries[2] and overlayLog[1][2]==false,"hiding an icon hides its overlay")
-assert(essBar.frame.w==4*40+3*2,"bar shrinks to visible icons")
-CheckPoint(essEntries[3].icon,"TOPLEFT",essBar.frame,"TOPLEFT",42,0,"next icon moves up")
+assert(essBar.frame.w==5*40+4*2,"an even count retains the symmetric footprint")
+CheckPoint(essEntries[1].icon,"TOPLEFT",essBar.frame,"TOPLEFT",84,0,"first icon remains centered")
+CheckPoint(essEntries[3].icon,"TOPLEFT",essBar.frame,"TOPLEFT",126,0,"next icon moves right")
 assert((calls.ClearAllPoints or 0)==0,"moving a placed icon keeps its single point")
 -- the dependent chain follows without writes of its own
 assert(Point(C.bars.uti.frame)[2]==essBar.frame,"uti still attached")
@@ -1131,19 +1140,19 @@ moved:ClearAllPoints(); moved:Hide()
 local newcomer={key="s99",icon=moved}
 essEntries[5]=newcomer
 L.Apply("ess")
-CheckPoint(moved,"TOPLEFT",essBar.frame,"TOPLEFT",168,0,"returning pooled icon is re-placed")
+CheckPoint(moved,"TOPLEFT",essBar.frame,"TOPLEFT",0,0,"returning pooled icon is re-placed")
 assert(moved.shown,"returning pooled icon shown")
 local swapped=essEntries[1].icon
 essEntries[1].icon,essEntries[4].icon=essEntries[4].icon,swapped
 swapped:ClearAllPoints()
 L.Apply("ess")
-CheckPoint(swapped,"TOPLEFT",essBar.frame,"TOPLEFT",126,0,"icon handed to another entry is re-placed")
+CheckPoint(swapped,"TOPLEFT",essBar.frame,"TOPLEFT",168,0,"icon handed to another entry is re-placed")
 -- same slot, new entry, same pooled icon, no pass in between
 local last=essEntries[5]
 last.icon:ClearAllPoints(); last.icon:Hide()
 essEntries[5]={key="s77",icon=last.icon}
 L.Apply("ess")
-CheckPoint(last.icon,"TOPLEFT",essBar.frame,"TOPLEFT",168,0,"icon reused in place is re-placed")
+CheckPoint(last.icon,"TOPLEFT",essBar.frame,"TOPLEFT",0,0,"icon reused in place is re-placed")
 assert(last.icon.shown,"icon reused in place is shown")
 -- the same entry leaves and comes back with its pooled icon
 local back=essEntries[5]
@@ -1152,7 +1161,7 @@ L.Apply("ess")
 back.icon:ClearAllPoints(); back.icon:Hide()
 essEntries[5]=back
 L.Apply("ess")
-CheckPoint(back.icon,"TOPLEFT",essBar.frame,"TOPLEFT",168,0,"returning entry is re-placed")
+CheckPoint(back.icon,"TOPLEFT",essBar.frame,"TOPLEFT",0,0,"returning entry is re-placed")
 assert(back.icon.shown,"returning entry is shown")
 -- icons handed over or back always show their (new) entry's overlay
 local handed={}

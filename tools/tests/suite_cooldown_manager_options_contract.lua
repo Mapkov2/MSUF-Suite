@@ -1705,20 +1705,26 @@ do
     assert(Keys("ess") == "b3,b1,i5512" and historyWrites == writes + 2 and PendingTasks() == 0 and not ui.previewUndo.shown
         and ui.previewLine.text == HINT, "Undo under the preview must bring the spell back")
 
-    -- Drag: 3 px, an insert marker, before or after the hovered icon.
-    for i = 1, 3 do hits[i].cx, hits[i].cy = 60 + 40 * i, 50 end
+    -- Center-out cooldowns are drawn in list order: center, right, left.
+    -- The outer half of each icon inserts after it; the inner half before.
+    hits[1].cx, hits[2].cx, hits[3].cx = 100, 140, 60
+    for i = 1, 3 do hits[i].cy = 50 end
     cursorX, cursorY = 100, 50
     Fire(hits[1], "OnMouseDown", "LeftButton")
     assert(drag.host.scripts.OnUpdate and not drag.active, "a press must arm the drag driver")
     cursorX = 101
     Fire(drag.host, "OnUpdate", 0.01)
     assert(not drag.active and not Page.ghost.shown, "the drag started below 3 px")
-    cursorX = 185
+    cursorX = 65
     hits[3].mouseOver = true
     Fire(drag.host, "OnUpdate", 0.01)
-    assert(drag.active and Page.ghost.shown and hits[1].dim.shown and drag.dropHit == hits[3] and drag.dropAfter
+    assert(drag.active and Page.ghost.shown and hits[1].dim.shown and drag.dropHit == hits[3] and not drag.dropAfter
         and drag.marker.shown and drag.marker.points[1][2] == hits[3] and drag.marker.points[1][3] == "RIGHT",
-        "the right half of an icon must mark the place after it")
+        "the inner half of a left-side icon must mark the place before it")
+    cursorX = 45
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.dropAfter and drag.marker.points[1][3] == "LEFT",
+        "the outer half of a left-side icon must mark the place after it")
     writes = historyWrites
     Fire(hits[1], "OnMouseUp", "LeftButton")
     Fire(hits[1], "OnClick", "LeftButton")
@@ -1726,7 +1732,7 @@ do
     assert(Keys("ess") == "b1,i5512,b3" and historyWrites == writes + 1, "preview reorder failed: " .. Keys("ess"))
     assert(Idle() and not Page.ghost.shown and not drag.marker.shown and not pop.shown,
         "the drop must end the drag without opening the popover")
-    cursorX = 180
+    cursorX = 60
     Fire(hits[3], "OnMouseDown", "LeftButton")
     cursorX = 95
     hits[1].mouseOver = true
@@ -1736,6 +1742,18 @@ do
     Fire(hits[3], "OnMouseUp", "LeftButton")
     hits[1].mouseOver = false
     assert(Keys("ess") == "b3,b1,i5512", "dropping before the first icon failed: " .. Keys("ess"))
+    -- A short drag onto the source icon's inner half is a no-op.
+    writes = historyWrites
+    cursorX = 100
+    Fire(hits[1], "OnMouseDown", "LeftButton")
+    cursorX = 95
+    hits[1].mouseOver = true
+    Fire(drag.host, "OnUpdate", 0.01)
+    assert(drag.dropHit == hits[1] and not drag.dropAfter, "the source icon marks before itself")
+    Fire(hits[1], "OnMouseUp", "LeftButton")
+    hits[1].mouseOver = false
+    assert(Keys("ess") == "b3,b1,i5512" and historyWrites == writes,
+        "dropping before the source icon must not move it or write history")
     cursorX = 100
     Fire(hits[1], "OnMouseDown", "LeftButton")
     cursorX = 240

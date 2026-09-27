@@ -89,6 +89,15 @@ local function Flow(drag, ui)
         end
     end
     drag.axis, drag.sign = axis, sign
+    drag.centerOut = ui.kind == 1 and P.Get(ID, Page.Key("align")) == 1
+    drag.perRow = drag.centerOut and (tonumber(P.Get(ID, Page.Key("perRow"))) or 1) or 1
+end
+-- Center-out cooldowns alternate sides of the midpoint in list order.
+-- Each hit's outer half inserts after it; its inner half inserts before it.
+local function TargetSign(drag, target)
+    if not drag.centerOut or target.plus then return drag.sign end
+    local ordinal = (target.index - 1) % max(1, drag.perRow)
+    return ordinal > 0 and ordinal % 2 == 0 and -drag.sign or drag.sign
 end
 local function DragStart(drag)
     local hit = drag.hit
@@ -111,7 +120,7 @@ local function Mark(drag, target, after)
         return
     end
     marker:ClearAllPoints()
-    local lead = after == (drag.sign > 0)
+    local lead = after == (TargetSign(drag, target) > 0)
     if drag.axis == "y" and not target.plus then
         marker:SetSize(max(8, (tonumber((target:GetWidth())) or 20) + 4), 2)
         marker:SetPoint("CENTER", target, lead and "TOP" or "BOTTOM", 0, 0)
@@ -144,7 +153,7 @@ local function DragTarget(drag, x, y)
             local scale = Page.Scale(hit)
             if type(cx) == "number" and type(cy) == "number" then
                 local delta = drag.axis == "y" and (y / scale - cy) or (x / scale - cx)
-                after = delta * drag.sign > 0
+                after = delta * TargetSign(drag, hit) > 0
             end
             break
         end

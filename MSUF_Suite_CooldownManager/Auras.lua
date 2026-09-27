@@ -448,8 +448,8 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
     return rec
 end
 
--- Compact containers: flow layout and host anchor from geo; the target row
--- starts `offset` lines further in growth direction. Container writes only.
+-- Compact containers: flow layout and host anchor from geo. A centered
+-- horizontal row with both units uses opposite sides of the midpoint.
 local function Place(rec, offset, split)
     local container, g = rec.frame, geo
     if rec.gw ~= g.w or rec.gh ~= g.h or rec.gp ~= g.gp or rec.gc ~= g.gc then
@@ -481,9 +481,8 @@ local function Place(rec, offset, split)
     local point, host = g.point, g.host
     local rel = point
     if split then
-        -- Centered row with both parts: player auras end at the center,
-        -- target auras start there. Blizzard sizes each container to its
-        -- shown auras, so both grow from the middle.
+        -- Blizzard sizes each container to its visible auras. Anchoring
+        -- opposite edges to the host midpoint keeps both on one row.
         rel = flow[1]:find("BOTTOM") and "BOTTOM" or "TOP"
         if split == "lead" then
             point, dx = rel .. "RIGHT", -g.gp / 2
@@ -873,6 +872,4 @@ function A.SetPreview(on)
         end
     end
 end
-
-
 
