@@ -16,10 +16,12 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua"}
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
-    "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin")]],
+    "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin")], [str(BRANCH / "MapkoSkin"), "Forever"]],
     "suite_skin_msuf_bridge_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames"),
                                              str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_datatexts_load_conditions_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_actionbars_contract.lua": [[], ["native"]],
 }
 
