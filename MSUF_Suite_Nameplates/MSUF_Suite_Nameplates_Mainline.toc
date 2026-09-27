@@ -1,0 +1,16 @@
+## Interface: 120007, 120100, 120105, 16001
+## Title: MSUF Suite - Nameplates
+## Notes: Optional styling for Blizzard's native nameplates.
+## Author: Mapko
+## Version: 1.0-alpha1
+## Dependencies: MSUF_Suite, MSUF_Suite_Modules
+## Group: MSUF_Suite
+## LoadOnDemand: 1
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
+
+Bootstrap.lua
+Layout.lua
+Roles.lua
+Text.lua
+Textures.lua
+Skin.lua

@@ -1,4 +1,7 @@
 <Bindings>
+	<Binding name="MSUFSUITE_TOGGLE_FRIENDLY_NPCS" header="MSUFSUITE" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.ToggleFriendlyNPCNameplates then MSUFSuite.ToggleFriendlyNPCNameplates() end
+	</Binding>
 	<!-- Commands for the suite-only action bars 9 and 10. They have no bodies:
 	     MSUF Suite routes keys bound here to its buttons with override click
 	     bindings while the action bar module is active. -->
