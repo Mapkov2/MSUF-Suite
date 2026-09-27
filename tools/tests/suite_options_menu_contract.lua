@@ -226,6 +226,20 @@ M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta) 
 M.BindDropdownWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
 W.Dropdown = function(parent, label) local d = Widget("Dropdown"); d.label = label; return d end
 W.MoveWidget = function() end
+W.SegmentTabs = function(ctx, parent, opts)
+    local segment = Widget("SegmentTabs")
+    local function Refresh()
+        local tab = opts.get and opts.get() or opts.defaultTab
+        for key, panel in pairs(opts.frames) do panel:SetShown(key == tab) end
+        segment:SetValue(tab)
+        if opts.afterRefresh then opts.afterRefresh(tab) end
+    end
+    function segment:Choose(tab) opts.set(tab); Refresh() end
+    ctx.tabControls = ctx.tabControls or {}
+    ctx.tabControls[#ctx.tabControls + 1] = { segment = segment, frames = opts.frames }
+    M.TrackRefresh(ctx, Refresh)
+    return segment, Refresh
+end
 W.ControlCard = function() return Widget("Card") end
 W.SectionSwitch = function(section, label)
     local widget = Widget("Switch")
@@ -658,7 +672,7 @@ local plateSections = {}
 for _, section in ipairs(contexts.suite_nameplates.sections) do
     plateSections[section.sectionId] = section
 end
-(function()
+do
     local plateControls = {}
     for _, widget in ipairs(contexts.suite_nameplates.widgets) do
         if widget.meta and widget.meta.settingKey then plateControls[widget.meta.settingKey] = true end
@@ -671,12 +685,30 @@ end
                 "EQoL nameplate setting has no menu control: " .. feature .. " / " .. key)
         end
     end
-end)()
+end
 assert(plateSections.suite_nameplates_enemy and plateSections.suite_nameplates_enemy.colorShortcut
     and plateSections.suite_nameplates_roleColors and plateSections.suite_nameplates_roleColors.colorShortcut
     and plateSections.suite_nameplates_castbar and plateSections.suite_nameplates_castbar.colorShortcut
     and plateSections.suite_nameplates_friendly and plateSections.suite_nameplates_friendly.colorShortcut,
     "nameplate section lost its three-dot color shortcut")
+do
+    local tabs = assert(contexts.suite_nameplates.tabControls[1], "enemy tabs missing")
+    assert(tabs.segment.value == "appearance" and tabs.frames.appearance.shown
+        and not tabs.frames.elements.shown, "enemy appearance tab did not open")
+    tabs.segment:Choose("elements")
+    assert(tabs.frames.elements.shown and not tabs.frames.appearance.shown,
+        "Blizzard elements tab did not switch")
+    tabs.segment:Choose("appearance")
+    for _, key in ipairs({ "enemyTextMode", "enemyRarityIcon", "enemyRaidIcon" }) do
+        local control
+        for _, widget in ipairs(contexts.suite_nameplates.widgets) do
+            if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then
+                control = widget; break
+            end
+        end
+        assert(control and control.meta.sectionId == "suite_nameplates_enemy", key .. " is absent from enemy tabs")
+    end
+end
 assert(not plateSections.suite_nameplates_general and plateSections.suite_nameplates_nameplates_module,
     "Start here must be merged into the existing Frame Basics card")
 for _, key in ipairs({ "look", "nativeSize", "friendlyNPCs", "playerGuildNames", "playerTitles", "protectImport" }) do
