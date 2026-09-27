@@ -51,11 +51,14 @@ local function AuraExpiry(data)
 end
 
 -- Copies the public identity and timing of an aura into target.
-local function FillSnapshot(target, data)
+local function FillSnapshot(target, data, spellID)
     local instanceID = data.auraInstanceID
     if not Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
+    local auraSpellID = data.spellId
+    if Public(auraSpellID) and type(auraSpellID) == "number" then spellID = auraSpellID end
     local expiration = AuraExpiry(data)
     target.auraInstanceID, target.expirationTime = instanceID, expiration
+    target.spellID = spellID
     target.duration = expiration and data.duration or nil
     return target
 end
@@ -63,7 +66,7 @@ end
 -- Food snapshots are recycled: a rescan or an aura delta reuses the tables
 -- of the food auras that went away instead of allocating new ones.
 local spareSnapshots = {}
-local function Snapshot(data)
+local function Snapshot(data, spellID)
     local count = #spareSnapshots
     local target = spareSnapshots[count]
     if target then
@@ -71,7 +74,7 @@ local function Snapshot(data)
     else
         target = {}
     end
-    return FillSnapshot(target, data)
+    return FillSnapshot(target, data, spellID)
 end
 
 local function ReleaseSnapshot(ids, key)
@@ -159,8 +162,9 @@ end
 -- indexed aura read can itself raise under Midnight's secret/taint rules,
 -- before Public can inspect the result, so the rescan never scans by index.
 -- A rescan (enable, combat end, zone change, full update) keeps what a delta
--- learned: it re-checks each known aura by its instance ID and drops only the
--- auras that are gone. After a reload nothing is learned yet: the listed IDs
+-- learned: it re-checks each known aura by spell ID and drops only the auras
+-- that are gone. Instance-ID queries can raise on secret auras even before
+-- Public can inspect the result. After a reload, the listed IDs
 -- and their spell name (Well Fed) find the usual variants, but no targeted
 -- lookup finds a food aura with another name and an unlisted ID, so such an
 -- aura reads as missing until its next UNIT_AURA delta.
@@ -189,24 +193,47 @@ local function LearnFood(ids, data, lookupKey)
     if not data then return true end
     local instanceID = data.auraInstanceID
     if not Public(instanceID) then return false end
+    local spellID = data.spellId
+    if not Public(spellID) then return false end
+    if type(spellID) ~= "number" then spellID = type(lookupKey) == "number" and lookupKey or nil end
+    if not spellID then return false end
     local key = type(instanceID) == "number" and instanceID or lookupKey
-    ids[key] = ids[key] and FillSnapshot(ids[key], data) or Snapshot(data)
+    ids[key] = ids[key] and FillSnapshot(ids[key], data, spellID) or Snapshot(data, spellID)
     return true
 end
 
 local function ScanFood(self)
     local ids = self.foodIDs
+    local keys = self.foodScanKeys
+    if not keys then
+        keys = {}
+        self.foodScanKeys = keys
+    end
+    for index = #keys, 1, -1 do keys[index] = nil end
+    for key in pairs(ids) do keys[#keys + 1] = key end
     local known = true
-    for key, snapshot in pairs(ids) do
-        local instanceID = snapshot.auraInstanceID
-        local data = instanceID and C_UnitAuras.GetAuraDataByAuraInstanceID("player", instanceID)
-        if not Public(data) then
-            known = false
-        elseif data then
-            FillSnapshot(snapshot, data)
-        else
-            -- Gone, or stored under a lookup key: the lookups below re-add it.
-            ReleaseSnapshot(ids, key)
+    for index = 1, #keys do
+        local key = keys[index]
+        local snapshot = ids[key]
+        if snapshot then
+            local spellID = snapshot.spellID
+            local data = spellID and C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+            if not spellID or not Public(data) then
+                known = false
+            elseif data then
+                local instanceID = data.auraInstanceID
+                if not Public(instanceID) or not Public(data.spellId) then
+                    known = false
+                elseif type(instanceID) == "number" and instanceID ~= key then
+                    ReleaseSnapshot(ids, key)
+                    if not LearnFood(ids, data, spellID) then known = false end
+                else
+                    FillSnapshot(snapshot, data, spellID)
+                end
+            else
+                -- Gone, or stored under a lookup key: the lookups below re-add it.
+                ReleaseSnapshot(ids, key)
+            end
         end
     end
     for index = 1, #FOOD_AURAS do
@@ -241,7 +268,9 @@ local function ApplyFoodLists(ids, info)
             if not Public(aura) or not Public(aura.icon) or not Public(aura.auraInstanceID) then return false end
             local id = aura.auraInstanceID
             if type(aura.icon) == "number" and type(id) == "number" and FOOD_ICONS[aura.icon] then
-                ids[id] = ids[id] and FillSnapshot(ids[id], aura) or Snapshot(aura)
+                local spellID = aura.spellId
+                if not Public(spellID) or type(spellID) ~= "number" then return false end
+                ids[id] = ids[id] and FillSnapshot(ids[id], aura, spellID) or Snapshot(aura, spellID)
                 changed = true
             end
         end

@@ -101,20 +101,16 @@ C_PaperDollInfo = { GetTemporaryEnchantmentInfo = function(slot)
     enchantReads = enchantReads + 1
     return enchant[slot]
 end }
--- Auras by instance ID and by spell name; only the food reader uses these
--- lookups, so each one counts as a food read.
-local instanceAuras, namedAuras = {}, {}
+-- A targeted name lookup finds Well Fed variants after reload. Instance-ID
+-- lookups are forbidden: they raise on tainted secret auras in live M+.
+local namedAuras = {}
 C_UnitAuras = {
     GetPlayerAuraBySpellID = function(id)
         auraReads = auraReads + 1
-        if id == 104280 or id == 1219179 or id == 1285644 then foodReads = foodReads + 1 end
+        if FOOD_NAME_IDS[id] or id == 990001 or id == 990002 then foodReads = foodReads + 1 end
         return auras[id]
     end,
-    GetAuraDataByAuraInstanceID = function(unit, id)
-        assert(unit == "player" and type(id) == "number", "food re-check must name the player and an instance ID")
-        foodReads = foodReads + 1
-        return instanceAuras[id]
-    end,
+    GetAuraDataByAuraInstanceID = function() error("instance-ID aura read is forbidden") end,
     GetAuraDataBySpellName = function(unit, name, filter)
         assert(unit == "player" and type(name) == "string" and filter == "HELPFUL",
             "food name lookup must be a targeted helpful player lookup")
@@ -612,13 +608,13 @@ auras[104280] = nil
 
 -- A food aura learned from a UNIT_AURA delta by its icon, whose spell ID is
 -- not in FOOD_AURAS, survives combat end, zone changes and full updates: a
--- rescan re-checks it by its instance ID instead of forgetting it.
+-- rescan re-checks it by spell ID instead of forgetting it.
 local learnedFood = { spellId=990001, icon=136000, auraInstanceID=700 }
 module.active = true
 module:Enable()
 assert(#module.entries == 1 and module.entries[1].kind == "food" and module.mask == 1,
     "missing food did not show its reminder")
-instanceAuras[700] = learnedFood
+auras[990001] = learnedFood
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ learnedFood } })
 assert(module.mask == 0 and module.foodIDs[700], "a food aura learned by icon did not hide the reminder")
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
@@ -631,17 +627,28 @@ for _, event in ipairs({ "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" }) do
 end
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
 assert(module.mask == 0 and module.foodIDs[700], "a full aura update forgot a food aura learned by icon")
+-- A recreated food aura gets a new instance ID without ever using an
+-- instance-ID lookup; the next removal must address the new ID.
+local replacedFood = { spellId=990001, icon=136000, auraInstanceID=702 }
+auras[990001] = replacedFood
+eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
+assert(module.mask == 0 and module.foodIDs[702] and not module.foodIDs[700],
+    "a food aura with a new instance ID kept its old key")
+auras[990001] = learnedFood
+eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
+assert(module.mask == 0 and module.foodIDs[700] and not module.foodIDs[702],
+    "the food snapshot did not follow a second instance-ID change")
 -- An update of the learned aura refreshes it in place.
 learnedFood.expirationTime, learnedFood.duration = now + 3000, 3600
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { updatedAuraInstanceIDs={ 700 } })
 assert(module.mask == 0 and module.foodIDs[700] and module.foodIDs[700].expirationTime == now + 3000,
     "an updated food aura learned by icon was dropped or kept stale timing")
 -- A restricted re-check is unknown, never missing, and keeps the aura.
-instanceAuras[700] = { secret=true }
+auras[990001] = { secret=true }
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
 assert(module.mask == 0 and module.foodIDs[700], "a restricted food re-check created a false reminder")
 -- Food that ran out in combat (no aura listener then) is dropped by the re-check.
-instanceAuras[700] = nil
+auras[990001] = nil
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
 assert(module.mask == 1 and not module.foodIDs[700], "an expired learned food aura was kept")
@@ -649,11 +656,11 @@ module:Disable()
 -- After a reload nothing is learned yet: the targeted lookup by the listed
 -- Well Fed spell name finds a variant whose spell ID is not in the list.
 local renamedFood = { spellId=990002, icon=133950, auraInstanceID=701 }
-namedAuras["Well Fed"], instanceAuras[701] = renamedFood, renamedFood
+namedAuras["Well Fed"], auras[990002] = renamedFood, renamedFood
 module.active = true
 module:Enable()
 assert(module.mask == 0 and module.foodIDs[701], "an unlisted Well Fed aura was not found after a reload")
-namedAuras["Well Fed"], instanceAuras[701] = nil, nil
+namedAuras["Well Fed"], auras[990002] = nil, nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 701 } })
 assert(module.mask == 1 and not next(module.foodIDs), "a removed Well Fed aura kept the food satisfied")
 module:Disable()
@@ -664,7 +671,7 @@ module.active = true
 module:Enable()
 assert(module.mask == 0 and module.foodKnown == nil, "the open world ran a food scan under instances only")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ learnedFood } })
-instanceAuras[700] = learnedFood
+auras[990001] = learnedFood
 GetInstanceInfo = function() return "Dungeon", "party" end
 eventFrame.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 assert(module.mask == 0 and module.foodIDs[700],
@@ -672,7 +679,7 @@ assert(module.mask == 0 and module.foodIDs[700],
 module:Disable()
 GetInstanceInfo = function() return "World", "none" end
 module.config.instancesOnly = false
-instanceAuras[700] = nil
+auras[990001] = nil
 
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip
 -- included). The seasonal ID tables live only in Data.lua; every runtime file
