@@ -1,12 +1,12 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local ID = "afkScreen"
 
 -- A cinematic screen while the player is AFK: the character model between
 -- the equipped items, the regular UI faded out and a slow camera orbit.
 -- It never opens or does work in combat.
 local M = {}
-local FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
+local FONT = NS.MSUFMedia.font
 local GOLD = { .88, .69, .42 }
 local WHITE = { .96, .95, .91 }
 local MUTED = { .67, .72, .76 }
@@ -17,14 +17,7 @@ local SLOT_NAMES = {
     "Waist", "Legs", "Feet", "Ring", "Ring", "Trinket", "Trinket", "Main Hand", "Off Hand",
 }
 
-local function PublicText(value)
-    return S.Public(value) and type(value) == "string" and value ~= "" and value or nil
-end
-
-local function ReadText(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    return PublicText((fn(...)))
-end
+local Public, Number, PublicText = S.Public, S.Number, S.PublicText
 
 local function Fill(parent, layer, r, g, b, a)
     local texture = S.CreateTexture(parent, nil, layer)
@@ -71,12 +64,9 @@ local function CreateSlot(parent, index, left)
     return icon, name, caption
 end
 
--- Blizzard's character sheet setup and the NonInteractableModelSceneMixinTemplate
--- both come with SharedXML; clients without the setup keep the portrait.
+-- Blizzard's character sheet setup (ModelSceneUtil) and this template load
+-- with Blizzard's SharedXML on Retail and Forever.
 local function CreateModel(stage)
-    if type(ModelSceneUtil) ~= "table" or type(ModelSceneUtil.SetUpCharacterSheetScene) ~= "function" then
-        return nil
-    end
     local model = S.CreateFrame("ModelScene", nil, stage, "NonInteractableModelSceneMixinTemplate")
     model:SetPoint("TOPLEFT", stage, "TOPLEFT", 575, -34)
     model:SetSize(900, 1020)
@@ -87,7 +77,7 @@ end
 local function Create(self)
     if self.host then return end
     -- Keep the AFK scene outside UIParent so the regular UI can fade away.
-    local host = S.CreateFrame("Frame", "MSUFSuiteAFKScreen", WorldFrame or UIParent)
+    local host = S.CreateFrame("Frame", "MSUFSuiteAFKScreen", WorldFrame)
     host:SetAllPoints(UIParent)
     host:SetFrameStrata("TOOLTIP")
     host:SetFrameLevel(1000)
@@ -163,13 +153,13 @@ end
 local function RefreshPortrait(self)
     self.fallback:SetTexture(EMPTY_ICON)
     self.fallback:SetTexCoord(0, 1, 0, 1)
-    if type(SetPortraitTexture) == "function" then SetPortraitTexture(self.fallback, "player") end
+    SetPortraitTexture(self.fallback, "player")
 end
 
 local function CheckModel(self, actor)
     if not self.host or not self.host:IsShown() or actor ~= self.modelActor then return end
     local fileID = actor:GetModelFileID()
-    if S.Public(fileID) and type(fileID) == "number" and fileID > 0 then
+    if Number(fileID) and fileID > 0 then
         self.fallback:Hide()
         self.fallbackNote:Hide()
     end
@@ -177,10 +167,12 @@ end
 
 -- Blizzard's sheet setup may pick a separate animal-form actor for a druid in
 -- flight or travel form; that actor is used when it is the only one.
+-- ANIMAL_FORMS comes from Blizzard_FrameXMLBase/Constants.lua and the actor
+-- methods from ModelSceneMixin and the ModelSceneActor API, which Retail and
+-- Forever both have.
 local function FormActor(model)
-    if type(GetShapeshiftFormID) ~= "function" or type(ANIMAL_FORMS) ~= "table" then return nil end
     local form = GetShapeshiftFormID()
-    if not S.Public(form) or type(form) ~= "number" then return nil end
+    if not Number(form) then return nil end
     local formData = ANIMAL_FORMS[form]
     local tag = formData and formData.actorTag
     if type(tag) ~= "string" then return nil end
@@ -191,9 +183,9 @@ local function SceneActor(model)
     local actor = model:GetPlayerActor()
     local formActor = FormActor(model)
     actor = actor or formActor
-    if not actor and type(model.EnumerateActiveActors) == "function" then
+    if not actor then
         local iterator, state, initial = model:EnumerateActiveActors()
-        if type(iterator) == "function" then actor = iterator(state, initial) end
+        actor = iterator(state, initial)
     end
     return actor, formActor
 end
@@ -202,32 +194,27 @@ local function RefreshModel(self)
     self.fallback:Show()
     self.fallbackNote:Show()
     local model = self.model
-    if not model then return end
     ModelSceneUtil.SetUpCharacterSheetScene(model)
     local actor, formActor = SceneActor(model)
     if not actor then return end
     -- Show the equipped character: dress the available actor from the
     -- player's native model and clear a separate animal-form actor.
-    if formActor and formActor ~= actor and type(formActor.ClearModel) == "function" then formActor:ClearModel() end
-    if type(actor.UseUnitSheatheCategory) == "function" then actor:UseUnitSheatheCategory(true) end
-    if type(actor.SetModelByUnit) == "function" then actor:SetModelByUnit("player", true, true, false, true) end
-    if actor ~= self.modelActor and type(actor.HookScript) == "function" then
-        actor:HookScript("OnModelLoaded", function() CheckModel(self, actor) end)
-    end
+    if formActor and formActor ~= actor then formActor:ClearModel() end
     self.modelActor = actor
+    -- SetUpCharacterSheetScene releases actors, which clears their load callback.
+    actor:SetOnModelLoadedCallback(function(loadedActor) CheckModel(self, loadedActor) end)
+    actor:UseUnitSheatheCategory(true)
+    actor:SetModelByUnit("player", true, true, false, true)
     CheckModel(self, actor)
 end
 
 local function RefreshEquipment(self)
-    local getTexture = type(GetInventoryItemTexture) == "function" and GetInventoryItemTexture
-    local getLink = type(GetInventoryItemLink) == "function" and GetInventoryItemLink
     for index, slot in ipairs(SLOTS) do
-        local texture = getTexture and getTexture("player", slot)
-        local usable = S.Public(texture) and (type(texture) == "number" or type(texture) == "string")
-        self.icons[index]:SetTexture(usable and texture or nil)
+        -- A texture ID (or nil for an empty slot) goes straight to the sink.
+        self.icons[index]:SetTexture(GetInventoryItemTexture("player", slot))
         local itemName
         local red, green, blue = WHITE[1], WHITE[2], WHITE[3]
-        local link = getLink and PublicText(getLink("player", slot))
+        local link = PublicText(GetInventoryItemLink("player", slot))
         if link then
             itemName = link:match("|h%[(.-)%]|h")
             local r, g, b = link:match("^|cff(%x%x)(%x%x)(%x%x)")
@@ -239,6 +226,8 @@ local function RefreshEquipment(self)
     end
 end
 
+-- The camera functions are not referenced anywhere in Blizzard's UI source,
+-- so their presence is checked instead of assumed.
 local function StartCamera(self)
     if self.cameraSpinning or type(MoveViewLeftStart) ~= "function" then return end
     MoveViewLeftStart(.035)
@@ -252,10 +241,9 @@ local function StopCamera(self)
 end
 
 local function FadeUI(self)
-    if self.uiAlpha ~= nil or not WorldFrame then return end
-    if type(UIParent.GetAlpha) ~= "function" or type(UIParent.SetAlpha) ~= "function" then return end
+    if self.uiAlpha ~= nil then return end
     local alpha = UIParent:GetAlpha()
-    if not S.Public(alpha) or type(alpha) ~= "number" then return end
+    if not Public(alpha) then return end
     UIParent:SetAlpha(0)
     self.uiAlpha = alpha
 end
@@ -263,7 +251,7 @@ end
 local function RestoreUI(self)
     if self.uiAlpha == nil then return end
     local current = UIParent:GetAlpha()
-    if S.Public(current) and type(current) == "number" and current ~= 0 then
+    if Public(current) and current ~= 0 then
         -- Another addon changed the UI while AFK; keep its newer value.
         self.uiAlpha = nil
         return
@@ -274,41 +262,34 @@ end
 
 local function HideMinimap(self)
     -- Native POI markers ignore alpha fading, so hide their drawing widget.
-    if self.minimapWasShown or not Minimap then return end
-    if type(Minimap.IsShown) ~= "function" or type(Minimap.Hide) ~= "function" then return end
+    if self.minimapWasShown then return end
     local shown = Minimap:IsShown()
-    if S.Public(shown) and shown == true then
+    if Public(shown) and shown == true then
         Minimap:Hide()
         self.minimapWasShown = true
     end
 end
 
 local function RestoreMinimap(self)
-    if not self.minimapWasShown or not Minimap then return end
+    if not self.minimapWasShown then return end
     local shown = Minimap:IsShown()
-    if not S.Public(shown) then return end
-    if shown == false then
-        if type(Minimap.Show) ~= "function" then return end
-        Minimap:Show()
-    end
+    if not Public(shown) then return end
+    if shown == false then Minimap:Show() end
     -- Shown again by someone else, or by us: either way it is not ours anymore.
     self.minimapWasShown = nil
 end
 
 local function Hide(self)
     StopCamera(self)
-    if self.model then self.model:Hide() end
-    if self.host then self.host:Hide() end
+    if self.host then
+        self.model:Hide()
+        self.host:Hide()
+    end
     RestoreMinimap(self)
     RestoreUI(self)
 end
 
-local function CombatActive()
-    if type(InCombatLockdown) ~= "function" then return false end
-    local value = InCombatLockdown()
-    -- An unreadable combat state must never open the AFK scene.
-    return not S.Public(value) or value ~= false
-end
+local CombatActive = NS.IsCombatLocked
 
 local OnEvent
 
@@ -329,37 +310,28 @@ local function EnterCombat(self)
     Hide(self)
 end
 
+-- The panel fits the screen at the UIParent visual scale, although the host
+-- lives under WorldFrame.
 local function PanelScale(self)
-    local width, height = UIParent:GetWidth(), UIParent:GetHeight()
-    if type(width) ~= "number" or type(height) ~= "number" or width <= 0 or height <= 0 then return nil end
-    local scale = math.min(1, width / 2120, height / 1180)
-    -- The host lives under WorldFrame; keep the UIParent visual scale.
-    if WorldFrame and type(UIParent.GetEffectiveScale) == "function"
-        and type(self.host.GetEffectiveScale) == "function" then
-        local uiScale, hostScale = UIParent:GetEffectiveScale(), self.host:GetEffectiveScale()
-        if type(uiScale) == "number" and type(hostScale) == "number" and hostScale > 0 then
-            scale = scale * uiScale / hostScale
-        end
-    end
-    return scale
+    local scale = math.min(1, UIParent:GetWidth() / 2120, UIParent:GetHeight() / 1180)
+    return scale * UIParent:GetEffectiveScale() / self.host:GetEffectiveScale()
 end
 
 local function Show(self)
     Create(self)
-    self.name:SetText(ReadText(UnitName, "player") or "ADVENTURER")
-    local class = ReadText(UnitClass, "player") or ""
-    local level = type(UnitLevel) == "function" and UnitLevel("player")
-    if S.Public(level) and type(level) == "number" and level > 0 then
+    self.name:SetText(PublicText(UnitName("player")) or "ADVENTURER")
+    local class = PublicText((UnitClass("player"))) or ""
+    local level = UnitLevel("player")
+    if Number(level) and level > 0 then
         class = "LEVEL " .. level .. (class ~= "" and "  /  " .. class or "")
     end
     self.class:SetText(class)
-    self.zone:SetText(ReadText(GetZoneText) or "")
+    self.zone:SetText(PublicText(GetZoneText()) or "")
     RefreshPortrait(self)
     RefreshEquipment(self)
-    local scale = PanelScale(self)
-    if scale then self.panel:SetScale(scale) end
+    self.panel:SetScale(PanelScale(self))
     self.host:Show()
-    if self.model then self.model:Show() end
+    self.model:Show()
     FadeUI(self)
     HideMinimap(self)
     RefreshModel(self)
@@ -369,7 +341,7 @@ end
 local Update
 
 local function ScheduleRecheck(self)
-    if self.recheckScheduled or not C_Timer or type(C_Timer.After) ~= "function" then return end
+    if self.recheckScheduled then return end
     self.recheckScheduled = true
     local token = self.recheckToken or 0
     C_Timer.After(0, function()
@@ -385,11 +357,10 @@ Update = function(self, deferred)
         EnterCombat(self)
         return
     end
-    if type(UnitIsAFK) ~= "function" then return end
     local value = UnitIsAFK("player")
     -- Chat lockdown after /afk can make the result secret. Keep the last
     -- visible state and retry once after the command has finished.
-    if not S.Public(value) or type(value) ~= "boolean" then
+    if not Public(value) or type(value) ~= "boolean" then
         if not deferred then ScheduleRecheck(self) end
         return
     end
@@ -425,7 +396,7 @@ OnEvent = function(self, event, unit)
     end
     if self.inCombat then return end
     if event == "PLAYER_FLAGS_CHANGED" or event == "UNIT_FLAGS" then
-        if not S.Public(unit) then
+        if not Public(unit) then
             Update(self)
             return
         end

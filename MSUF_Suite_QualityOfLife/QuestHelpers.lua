@@ -4,15 +4,10 @@ local M = {}
 local Public = S.Public
 local MAX_GOSSIP_QUESTS = 100
 
-local function ShiftHeld()
-    return type(IsShiftKeyDown) == "function" and IsShiftKeyDown()
-end
-
 local function Allowed(self, id)
     if not Public(id) or type(id) ~= "number" or id <= 0 or self.skip[id] then return false end
     if self.hasOnly and not self.only[id] then return false end
     if self.config.firstTime then
-        if not C_QuestLog or type(C_QuestLog.IsQuestFlaggedCompletedOnAccount) ~= "function" then return false end
         local done = C_QuestLog.IsQuestFlaggedCompletedOnAccount(id)
         if not Public(done) or done then return false end
     end
@@ -38,43 +33,43 @@ local function Gossip(self, event)
         self.gossipChosen = nil
         return
     end
-    if NS.IsCombatLocked() or ShiftHeld() or not C_GossipInfo or self.gossipChosen then return end
-    local selected, selector
-    if self.config.complete and type(C_GossipInfo.GetActiveQuests) == "function" then
-        selected = FirstQuest(self, C_GossipInfo.GetActiveQuests(), true)
-        selector = C_GossipInfo.SelectActiveQuest
+    if NS.IsCombatLocked() or IsShiftKeyDown() or self.gossipChosen then return end
+    if self.config.complete then
+        local questID = FirstQuest(self, C_GossipInfo.GetActiveQuests(), true)
+        if questID then
+            self.gossipChosen = true
+            C_GossipInfo.SelectActiveQuest(questID)
+            return
+        end
     end
-    if not selected and self.config.accept and type(C_GossipInfo.GetAvailableQuests) == "function" then
-        selected = FirstQuest(self, C_GossipInfo.GetAvailableQuests(), false)
-        selector = C_GossipInfo.SelectAvailableQuest
-    end
-    if selected and type(selector) == "function" then
-        self.gossipChosen = true
-        selector(selected)
+    if self.config.accept then
+        local questID = FirstQuest(self, C_GossipInfo.GetAvailableQuests(), false)
+        if questID then
+            self.gossipChosen = true
+            C_GossipInfo.SelectAvailableQuest(questID)
+        end
     end
 end
 
 local function Quest(self, event)
     if event == "QUEST_FINISHED" then
-        self.handled = {}
+        for key in pairs(self.handled) do self.handled[key] = nil end
         return
     end
-    if NS.IsCombatLocked() or ShiftHeld() then return end
-    local cost = type(GetQuestMoneyToGet) == "function" and GetQuestMoneyToGet() or nil
-    -- A missing cost contract cannot authorize spending on a quest turn-in.
+    if NS.IsCombatLocked() or IsShiftKeyDown() then return end
+    local cost = GetQuestMoneyToGet()
+    -- An unreadable cost cannot authorize spending on a quest turn-in.
     if event ~= "QUEST_DETAIL" and (not Public(cost) or type(cost) ~= "number" or cost > 0) then return end
-    local questID = type(GetQuestID) == "function" and GetQuestID()
+    local questID = GetQuestID()
     if not Allowed(self, questID) or self.handled[event] == questID then return end
     self.handled[event] = questID
     local c = self.config
-    if event == "QUEST_DETAIL" and c.accept and type(AcceptQuest) == "function" then
+    if event == "QUEST_DETAIL" and c.accept then
         AcceptQuest()
-    elseif event == "QUEST_PROGRESS" and c.complete and type(IsQuestCompletable) == "function"
-        and type(CompleteQuest) == "function" then
+    elseif event == "QUEST_PROGRESS" and c.complete then
         local ready = IsQuestCompletable()
         if Public(ready) and ready then CompleteQuest() end
-    elseif event == "QUEST_COMPLETE" and c.reward and type(GetNumQuestChoices) == "function"
-        and type(GetQuestReward) == "function" then
+    elseif event == "QUEST_COMPLETE" and c.reward then
         local choices = GetNumQuestChoices()
         if Public(choices) and type(choices) == "number" and choices >= 0 and choices <= 1 then
             GetQuestReward(choices)

@@ -10,40 +10,86 @@ S.editMode = _G.MSUF_UnitEditModeActive == true
 local Context = {}
 Context.__index = Context
 
-local Public
-if type(issecretvalue) == "function" then
-    local IsSecret = issecretvalue
-    Public = function(value) return not IsSecret(value) end
-else
-    Public = function() return true end
-end
-S.Public = Public
-
--- A readable number: not secret, not NaN.
-function S.Number(value)
-    return Public(value) and type(value) == "number" and value == value
-end
-
--- A readable number that is also not infinite.
-function S.Finite(value)
-    return S.Number(value) and value > -math.huge and value < math.huge
-end
-
--- Error isolation for callbacks whose failure must not stop the caller
--- (MSUF_Suite/Core/Platform.lua).
+-- Secret-safe readers, the translation lookup and error isolation are
+-- defined once in MSUF_Suite/Core/Platform.lua, which is always loaded.
+S.Public, S.Number, S.Finite = NS.Public, NS.Number, NS.Finite
+S.PublicText, S.ReadText, S.Text = NS.PublicText, NS.ReadText, NS.Text
 S.Dispatch = NS.Dispatch
+local Public, Dispatch = S.Public, S.Dispatch
 
 local function Accessible(frame)
     return frame and not NS.Safety.IsForbidden(frame)
 end
 
-function S.Text(value)
-    return NS.L and NS.L[value] or value
+------------------------------------------------------------------ isolated work units
+-- A module's deferred work (its flush) as units, each marked in a table
+-- (set[key] = value). The caller clears a mark before its unit runs, because
+-- the unit may mark its own work again, then calls run(set, key, value, fn,
+-- a, b): fn(a, b) runs isolated (Dispatch), so a raising unit is reported and
+-- the caller goes on with the next one. settle(), after the pass, gives each
+-- raising unit its mark back once (a restore inside a pairs() walk would be
+-- undefined) and returns true when a unit raised; a unit that raises again on
+-- that retry is dropped. reset() forgets both. Nothing allocates unless a
+-- unit raises.
+function S.NewUnitRunner()
+    local Finish = NS.Finish
+    local failSets, failKeys, failValues, failCount = {}, {}, {}, 0
+    -- set -> key -> true: units whose mark came back after they raised.
+    local retried, retrying = {}, 0
+
+    local function run(set, key, value, fn, a, b)
+        if Dispatch(Finish, fn, a, b) then
+            if retrying > 0 then
+                local seen = retried[set]
+                if seen and seen[key] then
+                    seen[key] = nil
+                    retrying = retrying - 1
+                end
+            end
+            return
+        end
+        failCount = failCount + 1
+        failSets[failCount], failKeys[failCount], failValues[failCount] = set, key, value
+    end
+
+    local function remark(set, key, value)
+        local seen = retried[set]
+        if seen and seen[key] then
+            seen[key] = nil
+            retrying = retrying - 1
+            return
+        end
+        if not seen then
+            seen = {}
+            retried[set] = seen
+        end
+        seen[key] = true
+        retrying = retrying + 1
+        if not set[key] then set[key] = value end
+    end
+
+    local function settle()
+        if failCount == 0 then return false end
+        for i = 1, failCount do
+            remark(failSets[i], failKeys[i], failValues[i])
+            failSets[i], failKeys[i], failValues[i] = nil, nil, nil
+        end
+        failCount = 0
+        return true
+    end
+
+    local function reset()
+        for i = 1, failCount do failSets[i], failKeys[i], failValues[i] = nil, nil, nil end
+        failCount, retrying = 0, 0
+        for set in pairs(retried) do retried[set] = nil end
+    end
+
+    return run, settle, reset
 end
 
 ------------------------------------------------------------------ CVar ownership
-local getCVar = C_CVar and C_CVar.GetCVar or GetCVar
-local setCVar = C_CVar and C_CVar.SetCVar or SetCVar
+-- Retail and Forever both have C_CVar; its functions are looked up per call.
+local CVars = C_CVar
 
 -- Applied CVars are recorded per character in MSUFSuiteDB.suiteRecovery, so a
 -- crash or a disabled module addon can still hand them back later.
@@ -52,8 +98,7 @@ local function Recovery(create)
     local root = NS.RootDB
     if not root then return nil end
     if not recoveryKey then
-        local name = type(UnitName) == "function" and UnitName("player") or "player"
-        local realm = type(GetRealmName) == "function" and GetRealmName() or "realm"
+        local name, realm = UnitName("player"), GetRealmName()
         if not Public(name) or not Public(realm) then return nil end
         recoveryKey = tostring(realm) .. "/" .. tostring(name)
     end
@@ -94,15 +139,15 @@ function S.RestoreSaved(id, onlyKey)
     if saved == nil then return end
     if type(saved) ~= "table" then
         recovery[id] = nil
-    elseif getCVar and setCVar then
+    else
         for key, entry in pairs(saved) do
             if not onlyKey or key == onlyKey then
                 if not ValidRecord(entry) then
                     saved[key] = nil
                 elseif OwnsCVar(id, key) then
-                    local current = getCVar(key)
+                    local current = CVars.GetCVar(key)
                     if Public(current) and type(current) == "string" then
-                        if current == entry.applied then setCVar(key, entry.before) end
+                        if current == entry.applied then CVars.SetCVar(key, entry.before) end
                         saved[key] = nil
                     end
                 end
@@ -120,8 +165,8 @@ end
 -- Sets a CVar the module declared. The first value seen is kept as the one
 -- to restore; later calls only update the value this module applied.
 function Context:CVar(key, value)
-    if not getCVar or not setCVar or not OwnsCVar(self.id, key) then return false end
-    local current = getCVar(key)
+    if not OwnsCVar(self.id, key) then return false end
+    local current = CVars.GetCVar(key)
     if not Public(current) or current == nil then return false end
     local recovery = Recovery(true)
     if not recovery then return false end
@@ -137,8 +182,8 @@ function Context:CVar(key, value)
         owned[key] = record
     end
     record.applied = value
-    if current ~= value then setCVar(key, value) end
-    local applied = getCVar(key)
+    if current ~= value then CVars.SetCVar(key, value) end
+    local applied = CVars.GetCVar(key)
     if Public(applied) and type(applied) == "string" then record.applied = applied end
     return true
 end
@@ -171,40 +216,52 @@ function Context:Field(frame, key, value, refresh)
     return changed
 end
 
+-- Plain field writes cannot raise, so the record is finished once the values
+-- are back; the module's refresh runs after that and has nothing to redo.
 function Context:RestoreFields(frame)
     local record = self.fields[frame]
     if not record then return end
+    local changed = false
     if Accessible(frame) then
-        local changed = false
         for key, saved in pairs(record.values) do
             if Public(frame[key]) and frame[key] == saved.applied then
                 frame[key] = saved.before
                 changed = true
             end
         end
-        if changed and record.refresh then record.refresh(frame) end
     end
     self.fields[frame] = nil
+    if changed and record.refresh then record.refresh(frame) end
 end
 
 function Context:Skin()
     return NS.Skin.Acquire(self.id)
 end
 
+-- MapkoSkin is another addon: every call into it runs through Dispatch, so
+-- its error is reported and never stops the module that owns the frame.
+local function AcquireSkin(self)
+    return Dispatch(NS.Skin.Acquire, self.id)
+end
+
+local function PaintOwnedSkin(skin, method, target, options)
+    skin[method](skin, target, options)
+end
+
 -- Remembers a MapkoSkin call so it is repeated after the skin is re-enabled.
 function Context:OwnSkin(method, target, options)
     self.ownedSkins = self.ownedSkins or {}
     self.ownedSkins[target] = { method = method, options = options }
-    local skin = self:Skin()
-    if skin then skin[method](skin, target, options) end
+    local skin = AcquireSkin(self)
+    if skin then Dispatch(PaintOwnedSkin, skin, method, target, options) end
 end
 
 function Context:RefreshOwnedSkins()
     if not self.ownedSkins then return end
-    local skin = self:Skin()
+    local skin = AcquireSkin(self)
     if not skin then return end
     for target, entry in pairs(self.ownedSkins) do
-        skin[entry.method](skin, target, entry.options)
+        Dispatch(PaintOwnedSkin, skin, entry.method, target, entry.options)
     end
 end
 
@@ -242,16 +299,15 @@ function Context:Alpha(frame, value)
     self:Property(frame, "GetAlpha", "SetAlpha", value)
 end
 
-local function RestoreRecord(frame, setter, record)
-    local current = frame[record.getter](frame)
-    if Public(current) and current == record.applied then frame[setter](frame, record.before) end
-end
-
+-- Leaves a later foreign change alone: only our applied value is undone.
 function Context:RestoreProperty(frame, setter)
     local properties = self.properties[frame]
     local record = properties and properties[setter]
     if not record then return end
-    if Accessible(frame) then RestoreRecord(frame, setter, record) end
+    if Accessible(frame) then
+        local current = frame[record.getter](frame)
+        if Public(current) and current == record.applied then frame[setter](frame, record.before) end
+    end
     properties[setter] = nil
     if not next(properties) then self.properties[frame] = nil end
 end
@@ -308,6 +364,22 @@ function Context:RestoreTuple(frame, setter)
     if not next(values) then self.tuples[frame] = nil end
 end
 
+-- Adopts a foreign change of one owned tuple value as the value to restore:
+-- when value `index` of the tuple differs from the one this context applied
+-- (for example Blizzard's chat menu resizing a font we set), `current`
+-- replaces the saved original. Returns true and the saved original values,
+-- or false while this context does not own the tuple.
+function Context:UpdateTupleBefore(frame, setter, index, current)
+    local values = self.tuples and self.tuples[frame]
+    local record = values and values[setter]
+    if not record then return false end
+    local before, applied = record.before, record.applied
+    if applied and Public(current) and Public(applied[index]) and current ~= applied[index] then
+        before[index] = current
+    end
+    return true, unpack(before, 1, before.n)
+end
+
 -- Hides a native control without Hide(), so Blizzard's own show logic keeps
 -- working and the control returns exactly as it was.
 function Context:HideControl(frame, hidden)
@@ -360,7 +432,8 @@ function Context:RestorePoints(frame)
 end
 
 ------------------------------------------------------------------ events
-local function Dispatch(frame, event, ...)
+-- OnEvent of every context frame: hands the event to the module callback.
+local function RouteEvent(frame, event, ...)
     local ctx = frame.context
     local module = S.instances[ctx.id]
     if not module.active then return end
@@ -382,7 +455,7 @@ function Context:Event(event, callback, allowCombat, unit)
     if not self.frame then
         self.frame = S.CreateFrame("Frame")
         self.frame.context = self
-        self.frame:SetScript("OnEvent", Dispatch)
+        self.frame:SetScript("OnEvent", RouteEvent)
     end
     self.combatEvents = self.combatEvents or {}
     self.combatEvents[event] = allowCombat or nil
@@ -404,7 +477,6 @@ end
 
 -- EventRegistry callbacks. callback(module).
 function Context:Callback(event, callback)
-    if not EventRegistry or type(EventRegistry.RegisterCallback) ~= "function" then return false end
     self.registryCallbacks = self.registryCallbacks or {}
     if self.registryCallbacks[event] then return true end
     local id = self.id
@@ -422,14 +494,8 @@ function Context:Callback(event, callback)
     return true
 end
 
--- Undoes everything this context changed, in reverse order of risk: events
--- first, then native frame state, the skin client and saved CVars.
-function Context:Release()
-    if self.tuples then
-        for frame, values in pairs(self.tuples) do
-            for setter in pairs(values) do self:RestoreTuple(frame, setter) end
-        end
-    end
+------------------------------------------------------------------ release
+local function ReleaseEvents(self)
     if self.frame then self.frame:UnregisterAllEvents() end
     for key in pairs(self.callbacks) do self.callbacks[key] = nil end
     if self.combatEvents then
@@ -441,15 +507,28 @@ function Context:Release()
             self.registryCallbacks[event] = nil
         end
     end
-    for frame in pairs(self.fields) do self:RestoreFields(frame) end
-    for frame, properties in pairs(self.properties) do
-        if Accessible(frame) then
-            for setter, record in pairs(properties) do RestoreRecord(frame, setter, record) end
+end
+
+-- Undoes everything this context changed: native frame state, events, the
+-- skin client and saved CVars. Every record (one tuple or property setter,
+-- one frame's fields or anchor points) is restored on its own through
+-- Dispatch: a restore that raises is reported, every other record is still
+-- restored and the CVars are always handed back. A record is dropped once
+-- its restore finished, so one whose native setter raised stays for the
+-- next release.
+function Context:Release()
+    if self.tuples then
+        for frame, values in pairs(self.tuples) do
+            for setter in pairs(values) do Dispatch(Context.RestoreTuple, self, frame, setter) end
         end
-        self.properties[frame] = nil
     end
-    for frame in pairs(self.points) do self:RestorePoints(frame) end
-    NS.Skin.Release(self.id)
+    Dispatch(ReleaseEvents, self)
+    for frame in pairs(self.fields) do Dispatch(Context.RestoreFields, self, frame) end
+    for frame, properties in pairs(self.properties) do
+        for setter in pairs(properties) do Dispatch(Context.RestoreProperty, self, frame, setter) end
+    end
+    for frame in pairs(self.points) do Dispatch(Context.RestorePoints, self, frame) end
+    Dispatch(NS.Skin.Release, self.id)
     S.RestoreSaved(self.id)
 end
 

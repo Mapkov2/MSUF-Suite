@@ -16,6 +16,7 @@ local function Widget()
     function w:SetTexture(value) self.texture = value end
     function w:SetAllPoints() end
     function w:SetScale() end
+    function w:GetEffectiveScale() return 1 end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
@@ -39,6 +40,19 @@ UnitXPMax = function() return maximum end
 GetXPExhaustion = function() return rested end
 UnitGUID = function() return "Player-test" end
 BreakUpLargeNumbers = tostring
+-- Blizzard_GameTooltip builds GameTooltip at startup on both clients.
+local tooltip = { lines = {}, draws = 0 }
+GameTooltip = tooltip
+function tooltip:SetOwner(owner) self.owner, self.draws = owner, self.draws + 1 end
+function tooltip:IsOwned(owner) return self.shown and self.owner == owner end
+function tooltip:ClearLines() self.lines = {} end
+function tooltip:AddLine(text) self.lines[#self.lines + 1] = text end
+function tooltip:AddDoubleLine(left, right) self.lines[#self.lines + 1] = left .. " | " .. right end
+function tooltip:Show() self.shown = true end
+function tooltip:Hide() self.shown = false end
+-- Blizzard_SharedXML defines GameRulesUtil on both clients.
+local uncappedRules = { IsPlayerAtEffectiveMaxLevel = function() return false end }
+GameRulesUtil = uncappedRules
 C_Timer = { NewTimer = function(_, callback)
     local timer = { callback = callback }
     function timer:Cancel() self.canceled = true end
@@ -46,10 +60,14 @@ C_Timer = { NewTimer = function(_, callback)
     return timer
 end }
 
+-- MSUF's media comes from the suite's shared table (NS.MSUFMedia); the real
+-- paths are covered by suite_platform_contract.
+local MEDIA = { font = "Interface\\AddOns\\Test\\Media\\MSUF.ttf", barTexture = "Interface\\AddOns\\Test\\Media\\MSUF.tga" }
 local savedRoot = {}
 local function Load(kind)
     local callbacks, movers = {}, {}
-    local suite = { editMode = false, loginKind = kind, RootDB = savedRoot }
+    local suite = { editMode = false, loginKind = kind, RootDB = savedRoot, MSUFMedia = MEDIA,
+        AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
     suite.Suite = { instances = {}, editMode = false }
     local runtime = suite.Suite
     runtime.Public = function(value) return value ~= "secret" end
@@ -58,6 +76,8 @@ local function Load(kind)
     runtime.Finite = function(value) return runtime.Number(value) and value > -math.huge and value < math.huge end
     runtime.Text = function(value) return value end
     runtime.CreateFrame = CreateFrame
+    runtime.CreateTexture = function(parent, ...) return parent:CreateTexture(...) end
+    runtime.CreateFontString = function(parent, ...) return parent:CreateFontString(...) end
     runtime.ResolveTexture = function(_, fallback) return fallback end
     runtime.RGB = function(hex)
         return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
@@ -74,6 +94,8 @@ local function Load(kind)
     runtime.Config = function() return runtime.instances.xpBar.config end
     runtime.Set = function(_, key, value) runtime.instances.xpBar.config[key] = value; return true end
     runtime.SetFont = function(fontString, path, size, flags) return fontString:SetFont(path, size, flags) end
+    -- The shared anchor list comes from the core catalog builders.
+    assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", suite)
     MSUFSuite = suite
     local private = {}
     for _, file in ipairs({ "Bootstrap", "ExperienceBar" }) do
@@ -97,13 +119,10 @@ assert(module.session.gained == 0 and module.host:IsShown())
 assert(module.restedMarker:IsShown() and module.restedMarker.point[4] == 160
     and module.restedMarker.height == 22,
     "rested marker must sit at current XP plus rested XP")
-assert(module.fill.texture:find("MSUF_Lucent_v2.tga", 1, true)
-    and module.rested.texture == module.fill.texture, "both XP fills must use MSUF bar art")
-assert(module.levelText.font[1]:find("Expressway SemiBold.ttf", 1, true)
-    and module.details.font[1] == module.levelText.font[1], "XP texts must use the MSUF font")
-assert(module.fill.texture == "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Bars\\MSUF_Lucent_v2.tga"
-    and module.levelText.font[1] == "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf",
-    "XP media paths lost their separators when Lua parsed them")
+assert(module.fill.texture == MEDIA.barTexture
+    and module.rested.texture == module.fill.texture, "both XP fills must use MSUF bar art from NS.MSUFMedia")
+assert(module.levelText.font[1] == MEDIA.font
+    and module.details.font[1] == module.levelText.font[1], "XP texts must use the MSUF font from NS.MSUFMedia")
 assert(math.abs(module.edges[1].color[1] - 0x57 / 255) < 0.001
     and math.abs(module.panel.color[3] - 0x20 / 255) < 0.001, "Midnight colors")
 module.config.look = 2
@@ -114,7 +133,7 @@ module.config.look = 3
 module:Refresh()
 assert(math.abs(module.edges[1].color[1] - 0xd8 / 255) < 0.001
     and math.abs(module.panel.color[1] - 0x14 / 255) < 0.001, "MSUF Forever colors")
-assert(module.fill.texture:find("MSUF_Lucent_v2.tga", 1, true) and module.levelText.text:find("100 / 1.0k", 1, true),
+assert(module.fill.texture == MEDIA.barTexture and module.levelText.text:find("100 / 1.0k", 1, true),
     "switching styles must keep the MSUF texture and XP values")
 assert(module.restedMarker.color[3] > module.restedMarker.color[1],
     "Forever style must keep a distinct rested marker")
@@ -151,6 +170,22 @@ assert(module.session.gained == 150 and savedRoot.suiteXP["Player-test"].gained 
 assert(module.segments[1].anchors == dividerAnchors and savedRoot.suiteXP["Player-test"] == savedRecord,
     "an XP event re-anchored the dividers or replaced the saved session record")
 assert(module.details.text:find("Session +150", 1, true))
+-- Hovering the bar lists the progress and this session; a rested change
+-- while it is open redraws it, leaving hides it.
+module.host.OnEnter(module.host)
+assert(tooltip.shown and tooltip.owner == module.host and tooltip.lines[1] == "Experience"
+    and tooltip.lines[2] == "Level | 10" and tooltip.lines[3] == "Current XP | 250 / 1000"
+    and tooltip.lines[5] == "Rested XP | 300" and tooltip.lines[8] == "Session XP | +150",
+    "the XP tooltip did not list progress and session")
+local draws = tooltip.draws
+rested = 400
+events.UPDATE_EXHAUSTION(module, "UPDATE_EXHAUSTION")
+assert(tooltip.draws == draws + 1 and tooltip.lines[5] == "Rested XP | 400",
+    "an open XP tooltip did not follow the new values")
+module.host.OnLeave(module.host)
+rested = 300
+events.UPDATE_EXHAUSTION(module, "UPDATE_EXHAUSTION")
+assert(not tooltip.shown and tooltip.draws == draws + 1, "a hidden XP tooltip was redrawn")
 assert(#timers == 1, "one rate refresh timer")
 xp = 900
 events.PLAYER_XP_UPDATE(module, "PLAYER_XP_UPDATE", "target")
@@ -170,6 +205,25 @@ timers[1].callback()
 assert(module.details.text:find("XP/h 980", 1, true))
 assert(module.details.text:find("To level", 1, true))
 
+-- The effective maximum level can change without a level change (party sync,
+-- Timewalking, a new cap): world entry and Refresh read it again.
+local capped = false
+GameRulesUtil = { IsPlayerAtEffectiveMaxLevel = function() return capped end }
+module:Refresh()
+assert(module.host:IsShown(), "an uncapped character hid the XP bar")
+capped = true
+module:Refresh()
+assert(not module.host:IsShown(), "Refresh kept a stale maximum-level state")
+capped = false
+module:Refresh()
+assert(module.host:IsShown(), "Refresh kept a stale maximum-level state")
+capped = true
+events.PLAYER_ENTERING_WORLD(module, "PLAYER_ENTERING_WORLD")
+assert(not module.host:IsShown(), "entering the world kept a stale maximum-level state")
+capped = false
+module:Refresh()
+GameRulesUtil = uncappedRules
+
 module:Disable()
 local reloaded, reloadedRuntime = Load("reload")
 assert(reloaded.session.gained == 980 and reloaded.session.levelUps == 1)
@@ -187,4 +241,19 @@ assert(not nextLogin.restedMarker:IsShown(), "maximum level left a rested marker
 nextRuntime.editMode = true
 nextLogin:Refresh()
 assert(nextLogin.host:IsShown(), "Edit Mode still previews the bar")
+-- Suite-created regions go through the shared S.CreateTexture/S.CreateFontString.
+local sourceFile = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/ExperienceBar.lua", "rb"))
+local source = sourceFile:read("*a")
+sourceFile:close()
+assert(not source:find(":CreateTexture%(") and not source:find(":CreateFontString%("),
+    "the XP bar creates regions without S.CreateTexture/S.CreateFontString")
+-- Retail and WoW Forever always have the APIs the XP bar calls.
+for _, name in ipairs({ "ExperienceBar" }) do
+    local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/" .. name .. ".lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("(C_%w+) and C_%w+%.")
+        or source:match("(GameTooltip) and") or source:match("not (GameTooltip) then")
+    assert(not guarded, name .. ".lua guards " .. tostring(guarded) .. " as if a client lacked it")
+end
 print("suite_xp_bar_contract: OK")

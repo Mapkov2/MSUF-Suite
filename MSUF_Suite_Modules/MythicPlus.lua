@@ -1,26 +1,19 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-if not NS.Client or not NS.Client.isMainline or NS.Client.isForever then return end
+-- Forever has no Mythic+.
+if NS.Client.isForever then return end
 
 -- The Mythic+ view replaces the objective list while a keystone runs. The
 -- objectives module owns the frame and calls these helpers from its events;
 -- the clock ticks once per second only while a run is active.
 local H = {}
-local FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
+local FONT = NS.MSUFMedia.font
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local TEXT_RGB, MUTED_RGB = { .95, .96, .98 }, { .78, .81, .85 }
 local COMPLETE_RGB, SCENARIO_RGB, FOCUSED_RGB, LATE_RGB = { .39, .86, .54 }, { .39, .64, .90 }, { .98, .84, .42 },
     { .92, .36, .36 }
 
-local function Public(value)
-    return S.Public(value)
-end
-
-local Finite = S.Finite
-
-local function Text(value)
-    return Public(value) and type(value) == "string" and value ~= "" and value or nil
-end
+local Public, Finite, Text = S.Public, S.Finite, S.PublicText
 
 -- Criteria and completion info are plain tables whose fields may be secret.
 local function Field(info, key)
@@ -198,12 +191,10 @@ local function ScanTimerIDs(view, wanted, ...)
 end
 
 local function ReadTimer(view)
-    if type(GetWorldElapsedTime) ~= "function" then return nil end
-    local wanted = Enum and Enum.WorldElapsedTimerTypes and Enum.WorldElapsedTimerTypes.ChallengeMode
+    local wanted = Enum.WorldElapsedTimerTypes.ChallengeMode
     local elapsed = ReadTimerID(view, view.timerID, wanted)
     if elapsed then return elapsed end
     view.timerID = nil
-    if type(GetWorldElapsedTimers) ~= "function" then return nil end
     return ScanTimerIDs(view, wanted, GetWorldElapsedTimers())
 end
 
@@ -259,9 +250,7 @@ end
 
 function H.UpdateDeaths(owner)
     local view = owner.mplus
-    if not view or type(C_ChallengeMode) ~= "table" or type(C_ChallengeMode.GetDeathCount) ~= "function" then
-        return
-    end
+    if not view then return end
     local count, lost = C_ChallengeMode.GetDeathCount()
     local countText = Finite(count) and tostring(count) or "--"
     local lostText = Finite(lost) and Clock(lost) or "--:--"
@@ -270,10 +259,9 @@ end
 
 local function ReadAffixes(view)
     local challenge = C_ChallengeMode
-    if type(challenge) ~= "table" or type(challenge.GetActiveKeystoneInfo) ~= "function" then return end
     local level, affixes = challenge.GetActiveKeystoneInfo()
     view.level = Finite(level) and level or nil
-    if not Public(affixes) or type(affixes) ~= "table" or type(challenge.GetAffixInfo) ~= "function" then
+    if not Public(affixes) or type(affixes) ~= "table" then
         SetText(view.affixes, "AFFIXES  --")
         return
     end
@@ -289,11 +277,8 @@ local function ReadAffixes(view)
 end
 
 local function ReadMapInfo(view)
-    local challenge = C_ChallengeMode
-    if type(challenge) ~= "table" or type(challenge.GetMapUIInfo) ~= "function" or not Finite(view.mapID) then
-        return
-    end
-    local name, _, limit = challenge.GetMapUIInfo(view.mapID)
+    if not Finite(view.mapID) then return end
+    local name, _, limit = C_ChallengeMode.GetMapUIInfo(view.mapID)
     if Text(name) then view.name = name end
     if Finite(limit) and limit > 0 then view.limit = limit end
 end
@@ -306,9 +291,11 @@ end
 -- or objective row with its split time.
 local function PaintCriterion(view, info, bossCount, elapsed)
     if Field(info, "isWeightedProgress") == true then
-        local quantity, total = Field(info, "quantity"), Field(info, "totalQuantity")
-        if Finite(quantity) and Finite(total) and total > 0 then
-            return bossCount, math.max(0, math.min(100, quantity / total * 100)), false
+        -- Blizzard's scenario tracker treats weighted quantity as a percent,
+        -- not a count to divide by totalQuantity (live and ptr2).
+        local quantity = Field(info, "quantity")
+        if Finite(quantity) then
+            return bossCount, math.max(0, math.min(100, quantity)), false
         end
         return bossCount, nil, false
     end
@@ -336,10 +323,7 @@ end
 
 function H.UpdateObjectives(owner)
     local view = owner.mplus
-    if not view or type(C_Scenario) ~= "table" or type(C_Scenario.GetStepInfo) ~= "function"
-        or type(C_ScenarioInfo) ~= "table" or type(C_ScenarioInfo.GetCriteriaInfo) ~= "function" then
-        return
-    end
+    if not view then return end
     local _, _, count = C_Scenario.GetStepInfo()
     if not Finite(count) or count < 0 then return end
     local bossCount, forcesPercent, newRows = 0, nil, false
@@ -403,11 +387,7 @@ end
 -- Returns the active keystone's map ID when the M+ view should replace the list.
 function H.Detect(owner)
     local challenge = C_ChallengeMode
-    if not owner.config.showMythicPlus or type(challenge) ~= "table"
-        or type(challenge.IsChallengeModeActive) ~= "function"
-        or type(challenge.GetActiveChallengeMapID) ~= "function" then
-        return nil
-    end
+    if not owner.config.showMythicPlus then return nil end
     local active = challenge.IsChallengeModeActive()
     if not Public(active) or active ~= true then return nil end
     local mapID = challenge.GetActiveChallengeMapID()
@@ -444,7 +424,7 @@ function H.Start(owner, mapID)
     PaintClock(owner, nil)
     H.Tick(owner)
     H.UpdateObjectives(owner)
-    if C_Timer and type(C_Timer.NewTicker) == "function" then view.ticker = C_Timer.NewTicker(1, view.tick) end
+    view.ticker = C_Timer.NewTicker(1, view.tick)
 end
 
 function H.Complete(owner)
@@ -452,14 +432,11 @@ function H.Complete(owner)
     if not view or not owner.mplusActive then return end
     StopTicker(view)
     view.completed = true
-    local challenge = C_ChallengeMode
-    if challenge and type(challenge.GetChallengeCompletionInfo) == "function" then
-        local info = challenge.GetChallengeCompletionInfo()
-        local milliseconds = Field(info, "time")
-        local upgrades = Field(info, "keystoneUpgradeLevels")
-        if Finite(milliseconds) and milliseconds > 0 then view.lastElapsed = milliseconds / 1000 end
-        view.upgrades = Finite(upgrades) and upgrades or nil
-    end
+    local info = C_ChallengeMode.GetChallengeCompletionInfo()
+    local milliseconds = Field(info, "time")
+    local upgrades = Field(info, "keystoneUpgradeLevels")
+    if Finite(milliseconds) and milliseconds > 0 then view.lastElapsed = milliseconds / 1000 end
+    view.upgrades = Finite(upgrades) and upgrades or nil
     H.UpdateDeaths(owner)
     H.UpdateObjectives(owner)
     PaintClock(owner, view.lastElapsed)

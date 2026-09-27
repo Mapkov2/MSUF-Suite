@@ -117,7 +117,16 @@ local function Element(id, elementID, spec)
             local values = { [spec.xKey] = config[spec.xKey], [spec.yKey] = config[spec.yKey] }
             if spec.pointKey then values[spec.pointKey] = config[spec.pointKey] end
             for _, key in ipairs(spec.historyKeys or EMPTY) do values[key] = config[key] end
-            return { epoch = Epoch(), values = values }
+            local state = { epoch = Epoch(), values = values }
+            -- A module may start a drag from its live position (Bags: Blizzard's
+            -- anchor while the bag never moved). Undo still restores the saved
+            -- values, so a native anchor never reaches the profile.
+            if spec.capture then
+                local origin = { [spec.xKey] = values[spec.xKey], [spec.yKey] = values[spec.yKey] }
+                spec.capture(origin)
+                state.origin = origin
+            end
+            return state
         end,
         restoreState = function(state)
             if not ValidState(state) then return false end
@@ -127,8 +136,9 @@ local function Element(id, elementID, spec)
             local state = request and request.state
             if not ValidState(state) then return false end
             local scale = Scale()
-            local x = state.values[spec.xKey] + (request.deltaX or 0) / scale
-            local y = state.values[spec.yKey] + (request.deltaY or 0) / scale
+            local origin = state.origin or state.values
+            local x = origin[spec.xKey] + (request.deltaX or 0) / scale
+            local y = origin[spec.yKey] + (request.deltaY or 0) / scale
             if not Finite(x) or not Finite(y) then return false end
             if request.phase ~= "commit" then
                 -- Elements whose x/y are not UIParent offsets place themselves.
@@ -162,7 +172,8 @@ end
 
 -- spec: label, getFrame(), xKey, yKey, point (string or function), pointKey,
 -- isEnabled(), order, extraControls, historyKeys, moveValues, resetKeys,
--- place(x, y) (drag preview for x/y that are not UIParent offsets).
+-- place(x, y) (drag preview for x/y that are not UIParent offsets),
+-- capture(origin) (live drag start x/y; undo keeps the saved values).
 -- Returns true when MSUF Edit Mode accepted the element.
 function S.RegisterOwnedMover(id, elementID, spec)
     local api = API()
@@ -221,9 +232,8 @@ function S.SetEditMode(active)
     end
 end
 
+-- The controller calls this right after the module started or refreshed.
 function S.RefreshEditMover(id)
     local instance = S.instances[id]
-    if S.states[id] and S.states[id].active and instance and instance.RegisterMovers then
-        instance:RegisterMovers()
-    end
+    if instance.RegisterMovers then instance:RegisterMovers() end
 end

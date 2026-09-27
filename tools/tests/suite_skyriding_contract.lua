@@ -52,7 +52,10 @@ C_Spell = {
 }
 
 local events, movers = {}, {}
-local suite = { ChatLookPresets = {} }
+-- MSUF's media comes from the suite's shared table (NS.MSUFMedia).
+local MEDIA = { font = "Interface\\AddOns\\Test\\Media\\MSUF.ttf", barTexture = "Interface\\AddOns\\Test\\Media\\MSUF.tga" }
+local suite = { ChatLookPresets = {}, MSUFMedia = MEDIA,
+    AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
 suite.Suite = { instances = {}, editMode = false }
 local S = suite.Suite
 S.Public = function(value) return value ~= "secret" end
@@ -83,9 +86,13 @@ S.SetStyledFont = function(label, path, size, flags, rendering, shadow, opacity,
 end
 S.Text = function(value) return value end
 S.CreateFrame = CreateFrame
+S.CreateTexture = function(parent, ...) return parent:CreateTexture(...) end
+S.CreateFontString = function(parent, ...) return parent:CreateFontString(...) end
 S.RGB = function(hex)
     return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
 end
+-- The shared anchor list comes from the core catalog builders.
+assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", suite)
 MSUFSuite = suite
 local private = {}
 for _, file in ipairs({ "Bootstrap", "Skyriding" }) do
@@ -108,6 +115,8 @@ module.context = { Event = function(_, name, callback, combat)
 end, RemoveEvent = function(_, name) events[name] = nil end }
 module:Enable()
 assert(module.title.fontFlags == "SLUG", "default Skyriding HUD did not use Slug")
+assert(module.title.font == MEDIA.font and module.speed.texture == MEDIA.barTexture,
+    "the Skyriding HUD did not use MSUF's font and bar texture from NS.MSUFMedia")
 assert(movers.flight and events.PLAYER_CAN_GLIDE_CHANGED and events.PLAYER_IS_GLIDING_CHANGED
     and not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
     "Grounded Skyriding registered global spell events or lost its mover")
@@ -227,6 +236,28 @@ events.SPELL_UPDATE_CHARGES()
 module.host.OnUpdate(module.host, 0.1)
 assert(module.vigor.count.text == "--" and module.vigor.pips[1].alpha == 0.35,
     "Unknown charges must not be displayed as zero")
+-- A restricted read stays pending: readable charges return on the next
+-- update without another charge event.
+charges[372610] = { currentCharges = 4, maxCharges = 6, cooldownStartTime = now - 5, cooldownDuration = 10 }
+module.host.OnUpdate(module.host, 0.1)
+assert(module.vigor.count.text == "4/6", "a restricted charge read cleared the pending refresh")
+-- An unreadable recharge start has no progress to animate: no 10 Hz tick.
+flying = false
+cooldown = { startTime = 0, duration = 0 }
+charges[372610] = { currentCharges = 3, maxCharges = 6, cooldownStartTime = "secret", cooldownDuration = 10 }
+charges[425782] = { currentCharges = 3, maxCharges = 3 }
+events.PLAYER_IS_GLIDING_CHANGED()
+assert(module.vigor.count.text == "3/6" and not module.host.OnUpdate,
+    "an unreadable recharge start kept the 10 Hz tick running")
+-- The Whirling Surge cooldown follows the same rule.
+charges[372610] = { currentCharges = 6, maxCharges = 6 }
+events.PLAYER_IS_GLIDING_CHANGED()
+cooldown = "secret"
+events.SPELL_UPDATE_COOLDOWN()
+assert(module.surgeText.text == "--", "a restricted Surge cooldown was displayed")
+cooldown = { startTime = now, duration = 14 }
+events.SPELL_UPDATE_CHARGES()
+assert(module.surgeText.text == "14", "a restricted Surge read cleared the pending refresh")
 
 flying, capable = false, false
 events.PLAYER_CAN_GLIDE_CHANGED()
@@ -244,4 +275,18 @@ S.editMode = false
 module:Disable()
 assert(not module.host:IsShown() and not module.host.OnUpdate,
     "Disabling the module left its frame or tick active")
+-- Suite-created regions go through the shared S.CreateTexture/S.CreateFontString.
+local sourceFile = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/Skyriding.lua", "rb"))
+local source = sourceFile:read("*a")
+sourceFile:close()
+assert(not source:find(":CreateTexture%(") and not source:find(":CreateFontString%("),
+    "the Skyriding HUD creates regions without S.CreateTexture/S.CreateFontString")
+-- Retail and WoW Forever always have the APIs the Skyriding HUD calls.
+for _, name in ipairs({ "Skyriding" }) do
+    local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/" .. name .. ".lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("(C_%w+) and C_%w+%.")
+    assert(not guarded, name .. ".lua guards " .. tostring(guarded) .. " as if a client lacked it")
+end
 print("suite_skyriding_contract: OK")

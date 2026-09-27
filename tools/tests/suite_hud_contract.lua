@@ -82,7 +82,11 @@ GetTasksTable = function() return {} end
 GetAchievementInfo = function() return nil end
 local openedLog, openedQuest = 0, nil
 OpenQuestLog = function() openedLog = openedLog + 1 end
-QuestMapFrame_ShowQuestDetails = function(id) openedQuest = id end
+-- Blizzard's function opens the quest log on the quest's details.
+QuestMapFrame_OpenToQuestDetails = function(id)
+    openedLog = openedLog + 1
+    openedQuest = id
+end
 local lastMenu, stoppedQuest, stoppedWorld, stoppedAchievement, superTracked, shared, abandoned
 local modifiedWatchClick, shiftDown = false, false
 IsModifiedClick = function(binding)
@@ -134,6 +138,46 @@ C_Scenario = { GetInfo = function() return nil end }
 Enum = { ContentTrackingType = { Achievement = 1 }, ContentTrackingStopType = { Manual = 2 } }
 C_ContentTracking = { GetTrackedIDs = function() return {} end }
 C_ContentTracking.StopTracking = function(_, id) stoppedAchievement = id end
+-- Neutral answers of the other quest APIs Retail and Forever both have: no
+-- timers, quest items, classification, tasks or achievement criteria.
+C_QuestLog.GetTimeAllowed = function() return nil end
+C_QuestLog.GetLogIndexForQuestID = function() return nil end
+C_QuestLog.GetInfo = function() return nil end
+C_QuestInfoSystem = { GetQuestClassification = function() return nil end }
+C_TaskQuest = { GetQuestTimeLeftSeconds = function() return nil end,
+    GetQuestInfoByQuestID = function() return nil end, GetQuestZoneID = function() return nil end }
+C_ScenarioInfo = { GetCriteriaInfo = function() return nil end }
+C_Scenario.GetStepInfo = function() return nil end
+QuestUtil.QuestShowsItemByIndex = function() return false end
+QuestUtils_IsQuestWorldQuest = function() return false end
+GetQuestProgressBarPercent = function() return nil end
+GetAchievementNumCriteria = function() return 0 end
+GetAchievementCriteriaInfo = function() return nil end
+GetTaskInfo = function() return nil end
+GetQuestObjectiveInfo = function() return nil end
+GetQuestLogSpecialItemInfo = function() return nil end
+UseQuestLogSpecialItem = function() end
+-- Blizzard's global strings for the context menu labels.
+OBJECTIVES_VIEW_ACHIEVEMENT, OBJECTIVES_STOP_TRACKING = "View achievement", "Stop tracking"
+ENCOUNTER_JOURNAL, FIND_A_GROUP = "Adventure Guide", "Find group"
+OBJECTIVES_SHOW_QUEST_MAP, OBJECTIVES_VIEW_IN_QUESTLOG = "Show on map", "View in Quest Log"
+STOP_SUPER_TRACK_QUEST, SUPER_TRACK_QUEST = "Stop super tracking", "Super track quest"
+SHARE_QUEST, ABANDON_QUEST_ABBREV = "Share quest", "Abandon quest"
+-- No keystone runs until the Mythic+ section below replaces this.
+C_ChallengeMode = { IsChallengeModeActive = function() return false end }
+-- Blizzard_GameTooltip builds GameTooltip, with its data accessors, at startup
+-- on every supported client.
+GameTooltip = { shown = false }
+function GameTooltip:SetOwner(owner) self.owner, self.link, self.achievement, self.item, self.text = owner end
+function GameTooltip:GetOwner() return self.owner end
+function GameTooltip:SetHyperlink(link) self.link = link end
+function GameTooltip:SetAchievementByID(id) self.achievement = id end
+function GameTooltip:SetQuestLogSpecialItem(index) self.item = index end
+function GameTooltip:SetText(text) self.text = text end
+function GameTooltip:Show() self.shown = true end
+function GameTooltip:Hide() self.shown = false end
+EventRegistry = { TriggerEvent = function() end }
+IsInInstance = function() return false end
 Enum.EventToastEventType = { QuestTurnedIn = 12, Scenario = 14, LevelUp = 0,
     LevelUpSpell = 1, LevelUpDungeon = 2, LevelUpRaid = 3, LevelUpPvP = 4,
     LevelUpOther = 15, FlightpointDiscovered = 25 }
@@ -145,18 +189,43 @@ hooksecurefunc = function(object, method, callback)
         return unpack(result)
     end
 end
+-- A distinct media path proves the modules read MSUF's shared font constant.
+local SUITE_FONT = "Interface\\AddOns\\Test\\SuiteFont.ttf"
 local suite = { Client = { isMainline = true, isForever = flavor == "Forever" },
+    MSUFMedia = { font = SUITE_FONT },
     Suite = { instances = {}, editMode = false },
     Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end }
 local S = suite.Suite
-S.Public = function() return true end
+-- The modules capture the readers when they load; this value stands in for a
+-- secret one.
+local secret = {}
+S.Public = function(value) return value ~= secret end
 -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
 S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
+-- Shared text readers as defined by MSUF_Suite_Modules/Runtime.lua.
+S.PublicText = function(value)
+    return S.Public(value) and type(value) == "string" and value ~= "" and value or nil
+end
+S.ReadText = function(fn, ...)
+    if type(fn) ~= "function" then return nil end
+    return S.PublicText((fn(...)))
+end
+-- The client's securecallfunction (S.Dispatch) reports an error and returns
+-- nothing; the caller goes on.
+local reported = {}
+S.Dispatch = function(callback, ...)
+    local results = { pcall(callback, ...) }
+    if not results[1] then
+        reported[#reported + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2)
+end
 S.CreateFrame = CreateFrame
 S.CreateTexture = function(parent) return parent:CreateTexture() end
 S.CreateFontString = function(parent) return parent:CreateFontString() end
-S.SetStyledFont = function(widget, path, size) widget:SetFont(path, size) end
+S.SetStyledFont = function(widget, path, size) widget.fontPath = path; widget:SetFont(path, size) end
 S.ResolveFont = function(key) return key ~= "" and key or nil end
 S.RGB = function(hex)
     return tonumber(hex:sub(1, 2), 16) / 255,
@@ -186,9 +255,11 @@ local function Context()
     end
     return ctx
 end
-assert(loadfile(root .. "/MSUF_Suite_Modules/MythicPlus.lua"))("MSUF_Suite_Modules", { NS = suite, Suite = S })
-assert(loadfile(root .. "/MSUF_Suite_Modules/Objectives.lua"))("MSUF_Suite_Modules", { NS = suite, Suite = S })
-assert(loadfile(root .. "/MSUF_Suite_Modules/Announcements.lua"))("MSUF_Suite_Modules", { NS = suite, Suite = S })
+-- The HUD files load in TOC order and share the runtime's private table.
+local private = { NS = suite, Suite = S }
+for _, file in ipairs({ "MythicPlus", "ObjectivesData", "ObjectivesTracker", "Objectives", "Announcements" }) do
+    assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
+end
 local tracker = S.instances.objectives
 tracker.context = Context()
 tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
@@ -226,6 +297,22 @@ assert(openedLog == 2 and openedQuest == 42, "objective line did not open its qu
 tracker.headerClick.OnClick()
 assert(openedLog == 3, "tracker header did not open the quest log")
 local questRow = tracker.rows["entry:quests:42"]
+-- Hovering a row shows the quest link, the achievement, or the title.
+questRow.OnEnter(questRow)
+assert(GameTooltip.shown and GameTooltip.owner == questRow and GameTooltip.link == "quest:42",
+    "a quest row did not show its quest tooltip")
+questRow.OnLeave(questRow)
+assert(not GameTooltip.shown, "leaving a quest row kept its tooltip")
+local achievementHover = { achievementID = 99, menuTitle = "Heroic" }
+questRow.OnEnter(achievementHover)
+assert(GameTooltip.owner == achievementHover and GameTooltip.achievement == 99 and not GameTooltip.link,
+    "an achievement row did not show its achievement tooltip")
+local scenarioHover = { menuTitle = "Delve" }
+questRow.OnEnter(scenarioHover)
+assert(GameTooltip.owner == scenarioHover and GameTooltip.text == "Delve", "a scenario row did not show its title")
+questRow.OnLeave(questRow)
+assert(GameTooltip.shown, "leaving another row hid a tooltip it does not own")
+questRow.OnLeave(scenarioHover)
 questRow.OnClick(questRow, "RightButton")
 assert(lastMenu.title == "A New Hope" and lastMenu.buttons["Stop tracking"]
     and lastMenu.buttons["Share quest"] and lastMenu.buttons["Abandon quest"]
@@ -405,6 +492,8 @@ banner.context.events.ZONE_CHANGED_INDOORS(banner, "ZONE_CHANGED_INDOORS")
 assert(#scheduled == 1, "zone burst should be coalesced")
 Drain()
 assert(banner.host.shown and banner.title.text == "The Coreway")
+assert(banner.title.fontPath == SUITE_FONT and tracker.font == SUITE_FONT,
+    "HUD text must default to MSUF's shared font")
 assert(banner.subtitle.text == "Dornogal" and movers.announcements.spec.point() == "TOP"
     and banner.host.point[1] == "TOP", "new announcements should start at top center")
 banner.config.anchor, banner.config.y = 2, -170
@@ -431,6 +520,14 @@ banner.config.quests, banner.config.scenario = true, true
 banner:Refresh()
 WorldQuestCompleteAlertSystem:ShowAlert({ taskName = "World task" })
 ScenarioAlertSystem:ShowAlert({ name = "Scenario reward" })
+-- The hooks run inside Blizzard's DisplayToast and ShowAlert: an error in
+-- them is reported and Blizzard's call still completes.
+local broken = setmetatable({}, { __index = function() error("unreadable Blizzard data") end })
+local toastCompleted = pcall(EventToastManagerFrame.DisplayToast, EventToastManagerFrame, broken)
+EventToastManagerFrame.currentDisplayingToast = nil
+local alertCompleted = pcall(WorldQuestCompleteAlertSystem.ShowAlert, WorldQuestCompleteAlertSystem, broken)
+assert(toastCompleted and alertCompleted and #reported == 2,
+    "a raising announcement hook broke Blizzard's toast or alert call")
 assert(worldQuest:GetParent() == banner.hiddenParent
     and scenarioAlert:GetParent() == banner.hiddenParent and #banner.queue == 3,
     "quest and scenario alerts must be hidden and represented in MSUF")
@@ -485,6 +582,11 @@ assert(activeQuest.itemButton and activeQuest.itemButton.shown and activeQuest.t
     "quest item and time remaining must be visible on the active quest")
 activeQuest.itemButton.OnClick(activeQuest.itemButton)
 assert(usedQuestItem == 42, "quest item button must use the current quest log index")
+activeQuest.itemButton.OnEnter(activeQuest.itemButton)
+assert(GameTooltip.shown and GameTooltip.owner == activeQuest.itemButton and GameTooltip.item == 42,
+    "the quest item button did not show its item tooltip")
+activeQuest.itemButton.OnLeave(activeQuest.itemButton)
+assert(not GameTooltip.shown, "leaving the quest item button kept its tooltip")
 activeQuest.itemButton.OnClick(activeQuest.itemButton, "RightButton")
 assert(lastMenu.title == "A New Hope" and usedQuestItem == 42,
     "quest item right-click must open the parent quest menu")
@@ -520,7 +622,7 @@ C_QuestLog.GetQuestIDForWorldQuestWatchIndex = function() return 77 end
 C_QuestLog.GetTitleForQuestID = function(id)
     return id == 43 and "Another Quest" or id == 77 and "World Task" or nil
 end
-C_TaskQuest = { GetQuestTimeLeftSeconds = function(id) return id == 77 and 300 or nil end }
+C_TaskQuest.GetQuestTimeLeftSeconds = function(id) return id == 77 and 300 or nil end
 C_Scenario.GetStepInfo = function() return "Stage one", "Do the thing", 1 end
 C_ScenarioInfo = { GetCriteriaInfo = function()
     return { description = "Finish before time runs out", completed = false,
@@ -558,6 +660,14 @@ C_ChallengeMode = {
         return { time = 1100000, keystoneUpgradeLevels = 2, onTime = true }
     end,
 }
+local priorSubzone = GetSubZoneText
+GetSubZoneText = function() return "Keystone Hall" end
+local zoneQueue = #banner.queue
+banner.context.events.ZONE_CHANGED(banner, "ZONE_CHANGED")
+Drain()
+assert(banner.lastZone == "Dornogal/Keystone Hall" and #banner.queue == zoneQueue,
+    "keystone subzone added a zone banner")
+GetSubZoneText = priorSubzone
 GetWorldElapsedTimers = function() return 7 end
 GetWorldElapsedTime = function(id)
     assert(id == 7, "the challenge timer ID must come from Blizzard")
@@ -570,7 +680,7 @@ C_ScenarioInfo.GetCriteriaInfo = function(index)
     if index == 2 then return { description = "Second boss", completed = secondBossDone,
         elapsed = secondBossDone and 100 or nil } end
     return { description = "Enemy forces", isWeightedProgress = true,
-        quantity = forces, totalQuantity = 100 }
+        quantity = forces, totalQuantity = 500 }
 end
 tracker.config.showMythicPlus = true
 local beforeKeyUpdates = questUpdates
@@ -602,8 +712,6 @@ assert(tracker.mplus.deaths.text == "DEATHS  3     TIME PENALTY  +0:15"
     and tracker.mplus.forces.text == "ENEMY FORCES  80.0%"
     and tracker.mplus.bosses[2].time.text == "16:40",
     "deaths, penalty, forces and boss progress must update from their own events")
-local secret = {}
-S.Public = function(value) return value ~= secret end
 C_ChallengeMode.GetDeathCount = function() return secret, secret end
 forces = secret
 tracker.context.events.CHALLENGE_MODE_DEATH_COUNT_UPDATED(tracker, "CHALLENGE_MODE_DEATH_COUNT_UPDATED")
@@ -611,7 +719,6 @@ tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDA
 assert(tracker.mplus.deaths.text == "DEATHS  --     TIME PENALTY  +--:--"
     and tracker.mplus.forces.text == "ENEMY FORCES  --",
     "unreadable challenge values must stay unknown")
-S.Public = function() return true end
 C_ChallengeMode.GetDeathCount = function() return deaths, penalty end
 forces = 80
 activeKey = false

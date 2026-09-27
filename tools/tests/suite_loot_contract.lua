@@ -1,4 +1,7 @@
 local root=assert(arg[1])
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 local Support=dofile(root..'/tools/tests/suite_test_support.lua')
 local Suite,combat,shift={},false,false
 MSUFSuite=Suite
@@ -6,6 +9,8 @@ MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() re
 SlashCmdList={}
 InCombatLockdown=function() return combat end
 IsShiftKeyDown=function() return shift end
+UnitName=function() return 'Tester' end
+GetRealmName=function() return 'Realm' end
 local secret={}
 issecretvalue=function(value) return value==secret end
 -- HookScript adds a separate post-call binding: SetScript replaces only the
@@ -48,6 +53,8 @@ Support.Load(root,'MSUF_Suite',Suite,'Core/Suite.lua')
 assert(loadfile(root..'/MSUF_Suite/Integrations/MapkoSkin.lua'))('MSUF_Suite',Suite)
 assert(Suite.Database.Initialize(nil))
 local private={}
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 for _,file in ipairs({'Surfaces','Runtime'}) do
     assert(loadfile(root..'/MSUF_Suite_Modules/'..file..'.lua'))('MSUF_Suite_Modules',private)
 end
@@ -176,4 +183,12 @@ module.config.manageHistory=false
 module:Refresh()
 assert(frame:GetScript('OnShow')==originalShow and frame:GetScript('OnHide')==originalHide)
 assert(timers[#timers].cancelled and not module.context.callbacks.ADDON_LOADED)
+-- Retail and WoW Forever always have the APIs the loot, merchant and quest helpers calls.
+for _, name in ipairs({ "Loot", "Merchant", "QuestHelpers" }) do
+    local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/" .. name .. ".lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("(C_%w+) and C_%w+%.")
+    assert(not guarded, name .. ".lua guards " .. tostring(guarded) .. " as if a client lacked it")
+end
 print('Loot: collection rules, secret/locked slots, synchronous close, history timers, native handlers, disable and import passed')

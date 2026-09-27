@@ -1,21 +1,17 @@
 local _, Private = ...
 local S = Private.Suite
+local Dispatch, Finite, PublicText = S.Dispatch, S.Finite, S.PublicText
 
 -- All Suite information displays share one deadline timer. A display owns one
 -- reusable task per owner key; the native timer exists only while a task is due.
 local tasks, taskPool, ready = {}, {}, {}
 local timer, timerDue, dispatching = nil, nil, false
 
-local function Now()
-    local value = type(GetTime) == "function" and GetTime()
-    return S.Public(value) and type(value) == "number" and value == value
-        and value > -math.huge and value < math.huge and value or 0
-end
 
 local Arm
 local function FireTimer()
     timer, timerDue = nil, nil
-    local now, readyCount = Now(), 0
+    local now, readyCount = GetTime(), 0
     for owner, task in pairs(tasks) do
         if task.due <= now + 0.001 then
             tasks[owner] = nil
@@ -23,12 +19,14 @@ local function FireTimer()
             ready[readyCount] = task.callback
         end
     end
-    -- Callbacks usually schedule their next tick. Arm once afterwards.
+    -- Callbacks usually schedule their next tick. Arm once afterwards. Each
+    -- runs isolated: one that raises is reported, the others still run and
+    -- the timer is armed again.
     dispatching = true
     for i = 1, readyCount do
         local callback = ready[i]
         ready[i] = nil
-        callback()
+        Dispatch(callback)
     end
     dispatching = false
     Arm()
@@ -44,9 +42,9 @@ Arm = function()
         timer:Cancel()
         timer, timerDue = nil, nil
     end
-    if not due or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return end
+    if not due then return end
     timerDue = due
-    timer = C_Timer.NewTimer(math.max(0.05, due - Now()), FireTimer)
+    timer = C_Timer.NewTimer(math.max(0.05, due - GetTime()), FireTimer)
 end
 
 local function CancelTask(task)
@@ -61,16 +59,13 @@ end
 -- tick. The returned handle is the owner's task table, reused for every tick;
 -- handle:Cancel() cancels the owner's pending tick.
 function S.ScheduleDataTick(owner, delay, callback)
-    if type(owner) ~= "string" or type(callback) ~= "function" or type(delay) ~= "number"
-        or type(GetTime) ~= "function" or not C_Timer or type(C_Timer.NewTimer) ~= "function" then
-        return nil
-    end
+    if type(owner) ~= "string" or type(callback) ~= "function" or type(delay) ~= "number" then return nil end
     local task = taskPool[owner]
     if not task then
         task = { owner = owner, Cancel = CancelTask }
         taskPool[owner] = task
     end
-    task.due = Now() + math.max(0.05, delay)
+    task.due = GetTime() + math.max(0.05, delay)
     task.callback = callback
     tasks[owner] = task
     if not dispatching then Arm() end
@@ -98,7 +93,7 @@ end
 
 function S.ReadSharedData(key, ttl, reader)
     if type(key) ~= "string" or type(reader) ~= "function" then return nil end
-    local now = Now()
+    local now = GetTime()
     local saved = snapshots[key]
     if saved and saved.untilTime > now then return unpack(saved.values, 1, saved.values.n) end
     local values = StoreValues(saved, reader())
@@ -116,54 +111,37 @@ function S.InvalidateSharedData(key)
     snapshots[key] = nil
 end
 
-local Finite = S.Finite
-
-local function PublicText(reader)
-    if type(reader) ~= "function" then return "" end
-    local value = reader()
-    return S.Public(value) and type(value) == "string" and value or ""
-end
-
--- Client APIs missing on a flavor are captured as nil and skipped.
-local GetMapForUnit = C_Map and C_Map.GetBestMapForUnit
-local GetMapPosition = C_Map and C_Map.GetPlayerMapPosition
+-- The readers call client APIs Retail and Forever both have; results that
+-- are secret or out of range read as nil.
 local readers = {
     fps = function()
-        if type(GetFramerate) ~= "function" then return nil end
         local value = GetFramerate()
         return Finite(value) and value >= 0 and value or nil
     end,
     latency = function()
-        if type(GetNetStats) ~= "function" then return nil end
         local _, _, home, world = GetNetStats()
         return Finite(home) and home >= 0 and home or nil,
             Finite(world) and world >= 0 and world or nil
     end,
     clockTime = function()
-        if type(GetGameTime) ~= "function" then return nil end
         local hour, minute = GetGameTime()
         return Finite(hour) and hour or nil, Finite(minute) and minute or nil
     end,
     clockStamp = function()
-        if type(GetServerTime) ~= "function" then return nil end
         local stamp = GetServerTime()
         return Finite(stamp) and stamp or nil
     end,
     coordinates = function()
-        if type(GetMapForUnit) ~= "function" or type(GetMapPosition) ~= "function" then return nil end
-        local mapID = GetMapForUnit("player")
+        local mapID = C_Map.GetBestMapForUnit("player")
         if not Finite(mapID) or mapID <= 0 then return nil end
-        local position = GetMapPosition(mapID, "player")
-        if not S.Public(position) or (type(position) ~= "table" and type(position) ~= "userdata")
-            or type(position.GetXY) ~= "function" then
-            return nil
-        end
+        -- nil where the map has no player position (instances).
+        local position = C_Map.GetPlayerMapPosition(mapID, "player")
+        if not position then return nil end
         local x, y = position:GetXY()
         return Finite(x) and x >= 0 and x <= 1 and x or nil,
             Finite(y) and y >= 0 and y <= 1 and y or nil
     end,
     durability = function()
-        if type(GetInventoryItemDurability) ~= "function" then return nil end
         local low, total, maximumTotal = nil, 0, 0
         for slot = 1, 19 do
             local current, maximum = GetInventoryItemDurability(slot)
@@ -178,18 +156,14 @@ local readers = {
         return low, total, maximumTotal
     end,
     location = function()
-        return PublicText(GetZoneText), PublicText(GetSubZoneText)
+        return PublicText(GetZoneText()) or "", PublicText(GetSubZoneText()) or ""
     end,
     gold = function()
-        if type(GetMoney) ~= "function" then return nil end
         local value = GetMoney()
         return Finite(value) and value >= 0 and math.floor(value) or nil
     end,
     bags = function()
-        local container = C_Container
-        local slots = container and container.GetContainerNumSlots or _G.GetContainerNumSlots
-        local freeSlots = container and container.GetContainerNumFreeSlots or _G.GetContainerNumFreeSlots
-        if type(slots) ~= "function" or type(freeSlots) ~= "function" then return nil end
+        local slots, freeSlots = C_Container.GetContainerNumSlots, C_Container.GetContainerNumFreeSlots
         local free, total = 0, 0
         for bag = 0, 4 do
             local capacity, available = slots(bag), freeSlots(bag)
@@ -199,9 +173,6 @@ local readers = {
         return free, total
     end,
     xp = function()
-        if type(UnitLevel) ~= "function" or type(UnitXP) ~= "function" or type(UnitXPMax) ~= "function" then
-            return nil
-        end
         local level, current, maximum = UnitLevel("player"), UnitXP("player"), UnitXPMax("player")
         if not Finite(level) or not Finite(current) or not Finite(maximum) then return nil end
         return level, current, maximum

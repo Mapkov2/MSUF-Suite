@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Quality of Life
 ## Notes: Optional Skyriding and experience displays, merchant, quest, loot and combat logging helpers for MSUF Suite.
 ## Author: Mapko

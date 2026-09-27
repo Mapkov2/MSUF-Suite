@@ -72,12 +72,6 @@ B.Module("combatLog", {
     title = "Automatic combat logging",
     description = "Start the combat log in the instance types you choose. A log you started manually stays on when you leave.",
     optIn = true, page = "suite_qualityOfLife",
-    available = function()
-        if type(LoggingCombat) ~= "function" or type(GetInstanceInfo) ~= "function" then
-            return false, "Combat logging is unavailable on this client"
-        end
-        return true
-    end,
 })
 B.Section("combatLog", "log_dungeons", "Dungeons", {
     Bool("dungeonNormal", "Normal dungeons"),
@@ -110,12 +104,6 @@ B.Module("xpBar", {
     title = "Experience bar",
     description = "Movable experience bar with rested XP, session gain, XP per hour and time to level.",
     optIn = true, page = "suite_qualityOfLife",
-    available = function()
-        if type(UnitXP) ~= "function" or type(UnitXPMax) ~= "function" or type(UnitLevel) ~= "function" then
-            return false, "Experience data is unavailable on this client"
-        end
-        return true
-    end,
 })
 -- The XP bar paints its look itself; it has no Custom choice.
 NS.SuiteCatalog.xpBar.look = { key = "look", global = true }
@@ -131,8 +119,7 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Bool("showRate", "Show XP per hour", true),
     Bool("showETA", "Show time to level", true),
     Bool("hideAtMax", "Hide at maximum level", true),
-    Choice("point", "Screen anchor", 2,
-        { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }),
+    Choice("point", "Screen anchor", 2, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", -24, -3000, 3000),
 })
@@ -143,13 +130,7 @@ B.Module("skyriding", {
     description = "Movable MSUF flight display for speed, Vigor, Second Wind and Whirling Surge.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
-        if not NS.Client.isMainline or NS.Client.isForever then
-            return false, "Skyriding is available only in Retail"
-        end
-        if not (C_PlayerInfo and type(C_PlayerInfo.GetGlidingInfo) == "function"
-            and C_Spell and type(C_Spell.GetSpellCharges) == "function") then
-            return false, "Skyriding data is unavailable on this client"
-        end
+        if NS.Client.isForever then return false, "Skyriding is available only in Retail" end
         return true
     end,
 })
@@ -185,8 +166,7 @@ B.Section("skyriding", "flight_hud", "Skyriding HUD", {
     Bool("showWhirlingSurge", "Show Whirling Surge cooldown", true),
     Number("speedMax", "Speed bar maximum (percent)", 1200, 500, 2000, 50),
     Number("thrillSpeed", "Thrill speed (percent)", 830, 300, 1500, 10),
-    Choice("point", "Screen anchor", 5,
-        { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", -145, -3000, 3000),
 })
@@ -203,12 +183,7 @@ B.Section("skyriding", "flight_typography", "Text and bars", {
     Number("rowGap", "Space between rows", 0, 0, 12),
 })
 NS.SuiteCatalog.skyriding.rules.font.defaultLabel = "MSUF Expressway (default)"
-local skyTextRules = NS.SuiteCatalog.skyriding.rules
-skyTextRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
-for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
-    skyTextRules[key].enableKey = "fontShadow"
-    skyTextRules[key].requiresChoice = skyTextRules.fontShadow.requiresChoice
-end
+B.LinkFontShadow(NS.SuiteCatalog.skyriding.rules)
 B.Section("skyriding", "flight_colors", "Colors and panel", {
     B.Color("panelColor", "Panel color", initialSky.panelColor),
     Number("panelOpacity", "Panel opacity (percent)", 94, 0, 100),

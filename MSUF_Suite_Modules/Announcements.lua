@@ -5,7 +5,7 @@ local ID = "announcements"
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
 -- alerts for the enabled kinds are hidden; their content is shown here.
 local M = { queue = {}, generation = 0 }
-local FALLBACK_FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
+local FALLBACK_FONT = NS.MSUFMedia.font
 local COLORS = {
     zone = { .96, .88, .67 }, quest = { .98, .79, .39 },
     achievement = { .88, .69, .41 }, level = { .47, .81, .98 },
@@ -16,17 +16,8 @@ local COLOR_KEYS = {
     level = "levelColor", scenario = "scenarioColor", notice = "noticeColor",
 }
 
-local function Text(value)
-    return S.Public(value) and type(value) == "string" and value ~= "" and value or nil
-end
-
-local Number = S.Number
-
--- Optional client text APIs; secret or missing text reads as nil.
-local function ReadText(fn, ...)
-    if type(fn) ~= "function" then return nil end
-    return Text((fn(...)))
-end
+local Text, ReadText, Number = S.PublicText, S.ReadText, S.Number
+local Dispatch = S.Dispatch
 
 local function Create(self)
     if self.host then return end
@@ -171,6 +162,11 @@ local function Zone(self)
     local key = zone .. "/" .. (subzone or "")
     if self.lastZone == key then return end
     self.lastZone = key
+    -- A keystone changes subzones repeatedly. The zone banner is useful in
+    -- the world, but competes with objectives and combat in an active run.
+    -- Retail and WoW Forever both have C_ChallengeMode (Forever runs no keystones).
+    local active = C_ChallengeMode.IsChallengeModeActive()
+    if S.Public(active) and active == true then return end
     Enqueue(self, "zone", subzone or zone, subzone and zone or "NEW AREA", "zone:" .. key)
 end
 
@@ -190,7 +186,8 @@ end
 
 local function Event(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
-        if self.ApplyNative then self:ApplyNative() end
+        -- M.ApplyNative (below) is set when this file loads.
+        self:ApplyNative()
         local initialLogin, reload = ...
         if initialLogin or reload then
             self.lastZone = CurrentZoneKey()
@@ -207,28 +204,28 @@ local function Event(self, event, ...)
         local arg1, arg2 = ...
         local id = Number(arg2) and arg2 or Number(arg1) and arg1
         if not id then return end
-        local title = ReadText(C_QuestLog and C_QuestLog.GetTitleForQuestID, id)
+        local title = ReadText(C_QuestLog.GetTitleForQuestID, id)
         if title then
             Direct(self, "quest", title, event == "QUEST_ACCEPTED" and "QUEST ACCEPTED" or "QUEST COMPLETE",
                 event .. ":" .. id)
         end
     elseif event == "ACHIEVEMENT_EARNED" and self.config.achievements then
         local id = ...
-        if not Number(id) or type(GetAchievementInfo) ~= "function" then return end
+        if not Number(id) then return end
         local _, name = GetAchievementInfo(id)
         if Text(name) then Direct(self, "achievement", name, "ACHIEVEMENT EARNED", "achievement:" .. id) end
     elseif event == "PLAYER_LEVEL_UP" and self.config.level then
         local level = ...
         if Number(level) then Direct(self, "level", "LEVEL " .. tostring(level), "LEVEL UP", "level:" .. level) end
     elseif event == "SCENARIO_COMPLETED" and self.config.scenario then
-        Direct(self, "scenario", "SCENARIO COMPLETE", ReadText(C_Scenario and C_Scenario.GetInfo), "scenario")
+        Direct(self, "scenario", "SCENARIO COMPLETE", ReadText(C_Scenario.GetInfo), "scenario")
     end
 end
 
 ------------------------------------------------------------------ Blizzard banners
 local function ToastKind(eventType)
-    local types = Enum and Enum.EventToastEventType
-    if not types or not Number(eventType) then return "notice" end
+    local types = Enum.EventToastEventType
+    if not Number(eventType) then return "notice" end
     if eventType == types.QuestTurnedIn then return "quest" end
     if eventType == types.Scenario then return "scenario" end
     if eventType == types.LevelUp or eventType == types.LevelUpSpell
@@ -277,6 +274,24 @@ local function NativeZone(self)
     end
 end
 
+-- The post-hooks below run inside Blizzard's call chains: each goes through
+-- S.Dispatch, so an error in our handler is reported and never breaks the
+-- Blizzard code that called it. One shared function per hook; the module
+-- table is the only instance.
+local function OnDisplayToast(manager)
+    local self = M
+    if not self.active or not self.context or not self.config.eventToasts then return end
+    local kind, title, subtitle, id = ToastData(manager)
+    local allowed = ToastAllowed(self, kind)
+    if not NS.IsCombatLocked() then self.context:HideControl(manager, allowed == true) end
+    if not allowed or not title or RecentlyDirect(self, kind) then return end
+    Enqueue(self, kind, title, subtitle, "toast:" .. tostring(id or title))
+end
+
+local function DisplayToastHook(manager)
+    Dispatch(OnDisplayToast, manager)
+end
+
 local function NativeToasts(self)
     local frame = _G.EventToastManagerFrame
     if not frame or NS.Safety.IsForbidden(frame) then return end
@@ -287,17 +302,9 @@ local function NativeToasts(self)
     end
     if not self.config.eventToasts then return end
     self.toastHooks = self.toastHooks or setmetatable({}, { __mode = "k" })
-    if self.toastHooks[frame] or type(hooksecurefunc) ~= "function" or type(frame.DisplayToast) ~= "function" then
-        return
-    end
-    hooksecurefunc(frame, "DisplayToast", function(manager)
-        if not self.active or not self.context or not self.config.eventToasts then return end
-        local kind, title, subtitle, id = ToastData(manager)
-        local allowed = ToastAllowed(self, kind)
-        if not NS.IsCombatLocked() then self.context:HideControl(manager, allowed == true) end
-        if not allowed or not title or RecentlyDirect(self, kind) then return end
-        Enqueue(self, kind, title, subtitle, "toast:" .. tostring(id or title))
-    end)
+    -- hooksecurefunc raises when the hooked field is not a function.
+    if self.toastHooks[frame] or type(frame.DisplayToast) ~= "function" then return end
+    hooksecurefunc(frame, "DisplayToast", DisplayToastHook)
     self.toastHooks[frame] = true
 end
 
@@ -331,17 +338,27 @@ local ALERT_SYSTEMS = {
     { "WorldQuestCompleteAlertSystem", "quests" },
 }
 
+-- self.alertHooks maps each hooked alert system to its announcement kind.
+local function OnShowAlert(system, data)
+    local self = M
+    local kind = self.alertHooks[system]
+    if not kind then return end
+    SuppressAlerts(self, system, kind)
+    if not self.active or not self.config[kind] or not S.Public(data) or type(data) ~= "table" then return end
+    local title = kind == "quests" and Text(data.taskName) or kind == "scenario" and Text(data.name)
+    if title and not RecentlyDirect(self, kind) then
+        Enqueue(self, kind, title, kind == "quests" and "QUEST COMPLETE" or "SCENARIO COMPLETE",
+            "alert:" .. kind .. ":" .. title)
+    end
+end
+
+local function ShowAlertHook(system, data)
+    Dispatch(OnShowAlert, system, data)
+end
+
 local function HookAlerts(self, system, kind)
-    hooksecurefunc(system, "ShowAlert", function(target, data)
-        SuppressAlerts(self, target, kind)
-        if not self.active or not self.config[kind] or not S.Public(data) or type(data) ~= "table" then return end
-        local title = kind == "quests" and Text(data.taskName) or kind == "scenario" and Text(data.name)
-        if title and not RecentlyDirect(self, kind) then
-            Enqueue(self, kind, title, kind == "quests" and "QUEST COMPLETE" or "SCENARIO COMPLETE",
-                "alert:" .. kind .. ":" .. title)
-        end
-    end)
-    self.alertHooks[system] = true
+    self.alertHooks[system] = kind
+    hooksecurefunc(system, "ShowAlert", ShowAlertHook)
 end
 
 local function NativeAlerts(self)
@@ -357,8 +374,7 @@ local function NativeAlerts(self)
         local spec = ALERT_SYSTEMS[i]
         local system = _G[spec[1]]
         if system then
-            if self.config[spec[2]] and not self.alertHooks[system] and type(hooksecurefunc) == "function"
-                and type(system.ShowAlert) == "function" then
+            if self.config[spec[2]] and not self.alertHooks[system] and type(system.ShowAlert) == "function" then
                 HookAlerts(self, system, spec[2])
             end
             SuppressAlerts(self, system, spec[2])

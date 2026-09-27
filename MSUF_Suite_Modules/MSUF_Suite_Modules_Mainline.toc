@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Shared runtime
 ## Notes: Shared runtime required by enabled Suite modules.
 ## Author: Mapko
@@ -13,6 +13,8 @@ Runtime.lua
 DataSources.lua
 EditMode.lua
 MythicPlus.lua
+ObjectivesData.lua
+ObjectivesTracker.lua
 Objectives.lua
 Announcements.lua
 AFKScreen.lua

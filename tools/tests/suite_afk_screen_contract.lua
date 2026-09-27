@@ -11,8 +11,7 @@ function actor:SetModelByUnit(unit, sheathe, dress, hideWeapons, native)
     self.nativeCalls = (self.nativeCalls or 0) + 1
 end
 function actor:UseUnitSheatheCategory(value) assert(value == true) end
-function actor:HookScript(event, callback)
-    assert(event == "OnModelLoaded")
+function actor:SetOnModelLoadedCallback(callback)
     self.onModelLoaded = callback
 end
 local deferred
@@ -75,6 +74,9 @@ end
 ModelSceneUtil = { SetUpCharacterSheetScene = function(scene)
     assert(scene.kind == "ModelScene")
     sceneSetups = sceneSetups + 1
+    -- Blizzard releases scene actors and clears their load callbacks here.
+    actor.onModelLoaded = nil
+    formActor.onModelLoaded = nil
 end }
 MoveViewLeftStart = function(speed)
     assert(speed > 0 and speed < .1)
@@ -98,6 +100,8 @@ C_Timer = { After = function(delay, callback)
 end }
 
 local events = {}
+-- A distinct media path proves the screen reads MSUF's shared font constant.
+local SUITE_FONT = "Interface\\AddOns\\Test\\SuiteFont.ttf"
 local suite = {
     Public = function(value) return value ~= secret end,
     CreateFrame = function(kind, name, parent)
@@ -107,10 +111,19 @@ local suite = {
     end,
     CreateTexture = function(_, ...) return Frame("Texture") end,
     CreateFontString = function(_, ...) return Frame("FontString") end,
-    SetFont = function() return true end,
+    SetFont = function(label, path) label.fontPath = path; return true end,
     Install = function(id, module) assert(id == "afkScreen"); installed = module end,
 }
-local private = { NS = {}, Suite = suite }
+-- Shared readers as defined by MSUF_Suite/Core/Platform.lua (aliased by Runtime.lua).
+function suite.PublicText(value)
+    return suite.Public(value) and type(value) == "string" and value ~= "" and value or nil
+end
+function suite.Number(value)
+    return suite.Public(value) and type(value) == "number" and value == value
+end
+local NS = { MSUFMedia = { font = SUITE_FONT } }
+function NS.IsCombatLocked() return InCombatLockdown() == true end
+local private = { NS = NS, Suite = suite }
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
 local module = assert(installed)
 module.active = true
@@ -139,6 +152,7 @@ assert(module.host:IsShown() and module.model and module.fallback.portraitUnit =
         .. tostring(module.model and module.model.kind) .. ", "
         .. tostring(module.fallback.portraitUnit) .. ", "
         .. tostring(module.name.text) .. ", " .. tostring(module.class.text))
+assert(module.name.fontPath == SUITE_FONT, "AFK text must use MSUF's shared font")
 assert(module.host.parent == WorldFrame and UIParent.alpha == 0,
     "AFK presentation should remain visible while regular UI fades out")
 assert(not Minimap:IsShown(), "native minimap markers should hide while AFK")
@@ -153,7 +167,8 @@ assert(#module.icons == 18 and module.icons[1].texture == 1001
 assert(sceneSetups == 1 and cameraStarts == 1 and cameraStops == 0,
     "AFK should set up the model scene and start one camera orbit")
 actor.fileID = 12345
-actor.onModelLoaded()
+assert(type(actor.onModelLoaded) == "function", "actor load callback must use the ModelSceneActor API")
+actor.onModelLoaded(actor)
 assert(not module.fallback:IsShown() and not module.fallbackNote:IsShown(),
     "loaded 3D actor should replace the portrait fallback")
 assert(actor.nativeCalls == 1, "the AFK scene should request the equipped native model")
@@ -184,6 +199,7 @@ afk = secret
 events.PLAYER_FLAGS_CHANGED(module, "PLAYER_FLAGS_CHANGED", "player")
 assert(deferred, "a slash-command event with a secret value needs one deferred check")
 afk = true
+actor.fileID = 0
 recheck = deferred
 deferred = nil
 recheck()
@@ -191,6 +207,11 @@ assert(module.host:IsShown() and deferred == nil,
     "deferred check should show AFK when chat lockdown ends")
 assert(cameraStarts == 2, "returning to AFK should restart the orbit")
 assert(UIParent.alpha == 0, "returning to AFK should fade the UI again")
+assert(module.fallback:IsShown() and type(actor.onModelLoaded) == "function",
+    "a released and reacquired actor must receive a new load callback")
+actor.fileID = 12345
+actor.onModelLoaded(actor)
+assert(not module.fallback:IsShown(), "a reloaded actor should replace the portrait fallback")
 
 afk = false
 events.UNIT_FLAGS(module, "UNIT_FLAGS", "player")
@@ -213,26 +234,7 @@ module:Disable()
 assert(not module.host:IsShown() and cameraStops == 4,
     "disabling should dismiss the screen and stop the camera")
 assert(UIParent.alpha == .85, "disabling should restore the UI")
-ModelSceneUtil = nil
 portraitFails = false
-installed = nil
-assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
-local classic = assert(installed)
-classic.active = true
-classic.context = module.context
-afk = true
-classic:Enable()
-assert(classic.host:IsShown() and classic.model == nil
-    and classic.fallback.portraitUnit == "player"
-    and classic.fallback:IsShown(),
-    "clients without the ModelScene utility should retain a portrait fallback")
-classic:Disable()
-assert(UIParent.alpha == .85, "fallback mode should also restore the UI")
-
-ModelSceneUtil = { SetUpCharacterSheetScene = function(scene)
-    assert(scene.kind == "ModelScene")
-    sceneSetups = sceneSetups + 1
-end }
 installed = nil
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
 local combatModule = assert(installed)
@@ -289,12 +291,15 @@ assert(not combatModule.host:IsShown() and combatEvents.PLAYER_FLAGS_CHANGED,
 afk = true
 combatEvents.PLAYER_FLAGS_CHANGED(combatModule, "PLAYER_FLAGS_CHANGED", "player")
 assert(combatModule.host:IsShown(), "AFK should work again after combat")
-combat = secret
+-- Combat that starts before PLAYER_REGEN_DISABLED arrives closes the scene
+-- on the next status event without querying AFK (InCombatLockdown is never
+-- secret: Blizzard's secure code tests it directly).
+combat = true
 beforeChecks = checks
 combatEvents.UNIT_FLAGS(combatModule, "UNIT_FLAGS", "player")
 assert(checks == beforeChecks and not combatModule.host:IsShown()
     and UIParent.alpha == .85,
-    "an unreadable combat state must fail closed without querying AFK")
+    "combat must close the scene without querying AFK")
 combat = false
 combatEvents.PLAYER_REGEN_ENABLED(combatModule, "PLAYER_REGEN_ENABLED")
 combatModule:Disable()

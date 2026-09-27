@@ -18,19 +18,11 @@ local function Collect(self, event, autoLoot)
     if not Public(autoLoot) or autoLoot then return end
     local mode = self.config.lootModifier
     if mode ~= 1 then
-        if type(IsShiftKeyDown) ~= "function" then return end
         local shift = IsShiftKeyDown()
         if not Public(shift) or (mode == 2 and shift) or (mode == 3 and not shift) then return end
     end
-    if type(GetNumLootItems) ~= "function" or type(GetLootSlotInfo) ~= "function"
-        or type(LootSlot) ~= "function" then
-        return
-    end
     local count = GetNumLootItems()
-    if not Public(count) or type(count) ~= "number" or count ~= count or count < 1 or count > 200
-        or count ~= math.floor(count) then
-        return
-    end
+    if not S.Number(count) or count < 1 or count > 200 or count ~= math.floor(count) then return end
     self.attempted = true
     local session = self.session
     -- Descending slot order remains valid when native collection removes rows.
@@ -44,8 +36,6 @@ end
 
 local function Accessible(frame)
     return frame and not NS.Safety.IsForbidden(frame)
-        and type(frame.HookScript) == "function" and type(frame.IsShown) == "function"
-        and type(frame.Hide) == "function"
 end
 
 local function CancelHistory(self)
@@ -79,10 +69,7 @@ end
 
 local function ScheduleHistory(self)
     CancelHistory(self)
-    if not self.active or not self.config.manageHistory
-        or not (C_Timer and type(C_Timer.NewTimer) == "function") then
-        return
-    end
+    if not self.active or not self.config.manageHistory then return end
     local delay = self.config.historyMode == 1 and 0 or self.config.historyDelay
     local timer
     -- Defer even immediate suppression until native OnShow and its caller finish.

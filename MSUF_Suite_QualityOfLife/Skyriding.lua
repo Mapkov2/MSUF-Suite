@@ -1,19 +1,15 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local M = {}
 local ID = "skyriding"
 local ASCENT, SECOND_WIND, SURGE = 372610, 425782, 361584
 local RUN_SPEED = 7
 local TICK_SECONDS = 0.1
-local POINTS = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+local POINTS = NS.AnchorPoints
 local OUTLINES = { "", "OUTLINE", "THICKOUTLINE" }
-local BAR_TEXTURE = P.MSUF_BAR_TEXTURE
-local FONT = P.MSUF_FONT
+local BAR_TEXTURE = NS.MSUFMedia.barTexture
+local FONT = NS.MSUFMedia.font
 local PADDING = 12
-local GetGlidingInfo = C_PlayerInfo and C_PlayerInfo.GetGlidingInfo
-local GetSpellCharges = C_Spell and C_Spell.GetSpellCharges
-local GetSpellCooldown = C_Spell and C_Spell.GetSpellCooldown
-local GetSpellTexture = C_Spell and C_Spell.GetSpellTexture
 local Public, RGB = S.Public, S.RGB
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local TEXT = {
@@ -54,37 +50,41 @@ local function SetText(fontString, text)
 end
 
 local function Glide()
-    if not GetGlidingInfo then return nil end
-    local flying, capable, speed = GetGlidingInfo()
+    local flying, capable, speed = C_PlayerInfo.GetGlidingInfo()
     if not Public(flying) or not Public(capable) then return nil end
     return flying == true, capable == true, Finite(speed) and max(0, speed) or nil
 end
 
 -- Charge and cooldown tables are read once per spell event and cached; the
--- 10 Hz tick only advances the cached recharge progress.
+-- 10 Hz tick only advances the cached recharge progress. A restricted (secret)
+-- read stays dirty, so the next update reads it again instead of showing
+-- "--" until the next spell event.
 local function ReadCharges(row)
-    row.dirty = false
     row.current, row.maximum, row.start, row.duration = nil, nil, nil, nil
-    local info = GetSpellCharges and GetSpellCharges(row.spellID)
-    if not Public(info) or type(info) ~= "table" then return end
+    local info = C_Spell.GetSpellCharges(row.spellID)
+    row.dirty = not Public(info)
+    if row.dirty or type(info) ~= "table" then return end
     local current, maximum = info.currentCharges, info.maxCharges
+    local start, duration = info.cooldownStartTime, info.cooldownDuration
+    row.dirty = not (Public(current) and Public(maximum) and Public(start) and Public(duration))
     if not Finite(current) or not Finite(maximum) or maximum < 1 then return end
     current, maximum = max(0, floor(current)), floor(maximum)
     row.current, row.maximum = current, maximum
-    local start, duration = info.cooldownStartTime, info.cooldownDuration
-    if current < maximum and Finite(duration) and duration > 0 then
-        row.duration = duration
-        row.start = Finite(start) and start or nil
+    -- Without a readable start there is no progress to animate, so nothing
+    -- keeps the tick running for this row.
+    if current < maximum and Finite(duration) and duration > 0 and Finite(start) then
+        row.start, row.duration = start, duration
     end
 end
 
 -- surgeEnd: nil when unknown, 0 when ready, otherwise the cooldown end time.
 local function ReadSurge(self)
-    self.surgeDirty = false
     self.surgeEnd = nil
-    local info = GetSpellCooldown and GetSpellCooldown(SURGE)
-    if not Public(info) or type(info) ~= "table" then return end
+    local info = C_Spell.GetSpellCooldown(SURGE)
+    self.surgeDirty = not Public(info)
+    if self.surgeDirty or type(info) ~= "table" then return end
     local start, duration = info.startTime, info.duration
+    self.surgeDirty = not (Public(start) and Public(duration))
     if not Finite(start) or not Finite(duration) then return end
     self.surgeEnd = duration > 1.5 and start + duration or 0
 end
@@ -97,7 +97,7 @@ local function NewBar(parent)
     local bar = S.CreateFrame("StatusBar", nil, parent)
     bar:SetStatusBarTexture(S.ResolveTexture("MSUF Lucent", BAR_TEXTURE))
     bar:SetMinMaxValues(0, 1)
-    local track = bar:CreateTexture(nil, "BACKGROUND")
+    local track = S.CreateTexture(bar, nil, "BACKGROUND")
     track:SetAllPoints(bar)
     bar.track = track
     return bar
@@ -106,11 +106,11 @@ end
 local function NewRow(parent, label, count, spellID)
     local row = S.CreateFrame("Frame", nil, parent)
     row.spellID, row.dirty, row.shownCurrent = spellID, true, false
-    row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.label = S.CreateFontString(row, nil, "OVERLAY", "GameFontHighlightSmall")
     row.label:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -1)
     row.label:SetJustifyH("LEFT")
     row.label:SetText(label)
-    row.count = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.count = S.CreateFontString(row, nil, "OVERLAY", "GameFontHighlightSmall")
     row.count:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, -1)
     row.count:SetJustifyH("RIGHT")
     row.pips = {}
@@ -120,7 +120,7 @@ end
 
 local function CreateEdges(host)
     local edges = {}
-    for i = 1, 4 do edges[i] = host:CreateTexture(nil, "OVERLAY") end
+    for i = 1, 4 do edges[i] = S.CreateTexture(host, nil, "OVERLAY") end
     edges[1]:SetPoint("TOPLEFT")
     edges[1]:SetPoint("TOPRIGHT")
     edges[2]:SetPoint("BOTTOMLEFT")
@@ -133,7 +133,7 @@ local function CreateEdges(host)
 end
 
 local function CreateHeaderText(host, point, x, justify)
-    local text = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local text = S.CreateFontString(host, nil, "OVERLAY", "GameFontHighlightSmall")
     text:SetPoint(point, host, point, x, -7)
     text:SetJustifyH(justify)
     return text
@@ -141,18 +141,18 @@ end
 
 local function CreateSurge(self, host)
     local surge = S.CreateFrame("Frame", nil, host)
-    local surgeLabel = surge:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local surgeLabel = S.CreateFontString(surge, nil, "OVERLAY", "GameFontHighlightSmall")
     surgeLabel:SetPoint("TOP", surge, "TOP", 0, 0)
     surgeLabel:SetText(TEXT.surge)
-    local surgeTrack = surge:CreateTexture(nil, "BACKGROUND")
+    local surgeTrack = S.CreateTexture(surge, nil, "BACKGROUND")
     surgeTrack:SetPoint("BOTTOM", surge, "BOTTOM", 0, -2)
     surgeTrack:SetSize(32, 32)
-    local icon = surge:CreateTexture(nil, "ARTWORK")
+    local icon = S.CreateTexture(surge, nil, "ARTWORK")
     icon:SetPoint("BOTTOM", surge, "BOTTOM", 0, 0)
     icon:SetSize(28, 28)
-    local texture = GetSpellTexture and GetSpellTexture(SURGE)
+    local texture = C_Spell.GetSpellTexture(SURGE)
     if Public(texture) and texture then icon:SetTexture(texture) end
-    local surgeText = surge:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local surgeText = S.CreateFontString(surge, nil, "OVERLAY", "GameFontHighlightSmall")
     surgeText:SetPoint("CENTER", icon, "CENTER")
     self.surge, self.surgeLabel, self.surgeTrack, self.surgeIcon, self.surgeText =
         surge, surgeLabel, surgeTrack, icon, surgeText
@@ -162,9 +162,9 @@ local function Create(self)
     if self.host then return end
     local host = S.CreateFrame("Frame", nil, UIParent)
     host:SetFrameStrata("MEDIUM")
-    local panel = host:CreateTexture(nil, "BACKGROUND")
+    local panel = S.CreateTexture(host, nil, "BACKGROUND")
     panel:SetAllPoints(host)
-    local divider = host:CreateTexture(nil, "ARTWORK")
+    local divider = S.CreateTexture(host, nil, "ARTWORK")
     divider:SetPoint("TOPLEFT", host, "TOPLEFT", PADDING, -23)
     divider:SetPoint("TOPRIGHT", host, "TOPRIGHT", -PADDING, -23)
     local title = CreateHeaderText(host, "TOPLEFT", PADDING, "LEFT")
@@ -173,11 +173,11 @@ local function Create(self)
     local vigor = NewRow(host, TEXT.vigor, 8, ASCENT)
     local wind = NewRow(host, TEXT.wind, 4, SECOND_WIND)
     local speed = NewBar(host)
-    local speedText = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local speedText = S.CreateFontString(host, nil, "OVERLAY", "GameFontHighlightSmall")
     speedText:SetText(TEXT.speed)
     speedText:SetPoint("BOTTOMLEFT", speed, "TOPLEFT", 0, 3)
     speedText:SetJustifyH("LEFT")
-    local speedValue = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local speedValue = S.CreateFontString(host, nil, "OVERLAY", "GameFontHighlightSmall")
     speedValue:SetPoint("BOTTOMRIGHT", speed, "TOPRIGHT", 0, 3)
     speedValue:SetJustifyH("RIGHT")
     self.host, self.panel, self.edges, self.divider = host, panel, CreateEdges(host), divider

@@ -22,12 +22,15 @@ function S.CreateFontString(parent, ...)
     return PixelLayoutRegion(parent:CreateFontString(...))
 end
 
--- Settings store colors as six hex digits (validated by the controller).
-function S.RGB(hex)
-    if type(hex) ~= "string" or #hex ~= 6 then return 1, 1, 1 end
-    return (tonumber(hex:sub(1, 2), 16) or 255) / 255,
-        (tonumber(hex:sub(3, 4), 16) or 255) / 255,
-        (tonumber(hex:sub(5, 6), 16) or 255) / 255
+-- Settings store colors as six hex digits (MSUF_Suite/Core/Platform.lua).
+S.RGB = Suite.RGB
+
+-- Blizzard's client-localized global string, else the English text through
+-- the suite locale. Shared by the damage meter and the minimap.
+function S.BlizzardText(global, english)
+    local value = global and _G[global]
+    if type(value) == "string" and value ~= "" then return value end
+    return S.Text(english)
 end
 
 -- Class colors come from NeverSecret class tokens only; unknown tokens return nil.
@@ -53,7 +56,7 @@ local KEY_MODIFIERS = { SHIFT = "S", CTRL = "C", ALT = "A", META = "M" }
 local keyTexts = {}
 
 local function ShortKey(key)
-    if key:find("PAD", 1, true) and not key:find("NUMPAD", 1, true) and type(GetBindingText) == "function" then
+    if key:find("PAD", 1, true) and not key:find("NUMPAD", 1, true) then
         return GetBindingText(key, true)
     end
     local modifiers, base = "", key
@@ -89,44 +92,51 @@ function S.MoneyText(amount)
     return text
 end
 
-local function LSM()
-    local stub = _G.LibStub
-    return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibSharedMedia-3.0", true) or nil
+-- One physical screen pixel in UI units at UIParent's scale; nil when the
+-- client cannot tell (unreadable or zero sizes).
+function S.PixelUnit()
+    local _, height = GetPhysicalScreenSize()
+    local scale = UIParent:GetEffectiveScale()
+    if not Suite.Number(height) or not Suite.Number(scale) or height <= 0 or scale <= 0 then return nil end
+    return 768 / height / scale
 end
 
--- Font keys are MSUF/SharedMedia font keys; "" means the native font.
-function S.ResolveFont(key)
-    if type(key) ~= "string" or key == "" then return nil end
-    -- MSUF's font list may hand out file paths as selection values.
-    if key:find("\\", 1, true) or key:find("/", 1, true) then return key end
-    local resolve = _G.MSUF_ResolveFontKeyPath or _G.MSUF_GetFontPathForKey
-    local path = type(resolve) == "function" and resolve(key) or nil
-    if type(path) ~= "string" or path == "" then
-        local media = LSM()
-        path = media and media:Fetch("font", key, true) or nil
+-- Four edge textures (set[1..4]) inside owner's rect; the side edges stop
+-- short of the top and bottom ones so translucent colors do not double at
+-- the corners. No width only hides them: points and color are written when
+-- they show again. Shared by the action bars and the cooldown manager.
+function S.PlaceEdges(set, owner, width, r, g, b, a)
+    if not (width > 0) then
+        for i = 1, 4 do set[i]:SetShown(false) end
+        return
     end
-    return type(path) == "string" and path ~= "" and path or nil
-end
-
--- Texture keys are MSUF/SharedMedia statusbar keys; "" means the caller's default.
-function S.ResolveTexture(key, fallback)
-    if type(key) ~= "string" or key == "" then return fallback end
-    local resolve = _G.MSUF_ResolveStatusbarTextureKey
-    if type(resolve) == "function" then
-        local path = resolve(key)
-        if type(path) == "string" and path ~= "" then return path end
+    for i = 1, 4 do
+        local edge = set[i]
+        edge:ClearAllPoints()
+        edge:SetColorTexture(r, g, b, a or 1)
+        edge:SetShown(true)
     end
-    local media = LSM()
-    local path = media and media:Fetch("statusbar", key, true) or nil
-    return type(path) == "string" and path ~= "" and path or fallback
+    set[1]:SetPoint("TOPLEFT", owner, "TOPLEFT")
+    set[1]:SetPoint("TOPRIGHT", owner, "TOPRIGHT")
+    set[1]:SetHeight(width)
+    set[2]:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT")
+    set[2]:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT")
+    set[2]:SetHeight(width)
+    set[3]:SetPoint("TOPLEFT", owner, "TOPLEFT", 0, -width)
+    set[3]:SetPoint("BOTTOMLEFT", owner, "BOTTOMLEFT", 0, width)
+    set[3]:SetWidth(width)
+    set[4]:SetPoint("TOPRIGHT", owner, "TOPRIGHT", 0, -width)
+    set[4]:SetPoint("BOTTOMRIGHT", owner, "BOTTOMRIGHT", 0, width)
+    set[4]:SetWidth(width)
 end
 
+-- Font and texture keys of MSUF and SharedMedia (MSUF_Suite/Core/Platform.lua).
+S.ResolveFont, S.ResolveTexture = Suite.ResolveFont, Suite.ResolveTexture
+
+-- Blizzard builds its shared font objects at startup on every supported client.
 local nativeFont
 local function NativeFont()
-    if not nativeFont then
-        local object = _G.GameFontHighlightSmall or _G.GameFontNormal
-        nativeFont = object and object:GetFont() or _G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-    end
+    if not nativeFont then nativeFont = GameFontHighlightSmall:GetFont() end
     return nativeFont
 end
 S.NativeFontPath = NativeFont

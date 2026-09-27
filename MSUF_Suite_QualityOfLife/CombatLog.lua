@@ -2,10 +2,6 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = {}
 local Public = S.Public
--- LoggingCombat(state) exists on every client; the C_ChatInfo query is newer.
-local SetLogging = type(LoggingCombat) == "function" and LoggingCombat or nil
-local QueryLogging = C_ChatInfo and C_ChatInfo.IsLoggingCombat or SetLogging
-local GetInstanceInfo = GetInstanceInfo
 local STOP_DELAY = 30
 local EVENTS = {
     "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_DIFFICULTY_CHANGED", "UPDATE_INSTANCE_INFO",
@@ -41,14 +37,12 @@ local raid = {
 }
 
 local function LoggingState()
-    if not QueryLogging then return nil end
-    local enabled = QueryLogging()
+    local enabled = C_ChatInfo.IsLoggingCombat()
     if not Public(enabled) or type(enabled) ~= "boolean" then return nil end
     return enabled
 end
 
 local function Decision(config)
-    if type(GetInstanceInfo) ~= "function" then return nil end
     local _, instanceType, difficulty = GetInstanceInfo()
     if not Public(instanceType) then return nil end
     if instanceType == "none" then return false end
@@ -63,7 +57,7 @@ local function Decision(config)
 end
 
 local function Notice(self, enabled)
-    if self.config.chatNotice and type(NS.Print) == "function" then
+    if self.config.chatNotice then
         NS.Print(S.Text(enabled and "Combat logging started." or "Combat logging stopped."))
     end
 end
@@ -77,7 +71,7 @@ end
 local function StopOwned(self)
     if not self.startedBySuite then return end
     if LoggingState() == true then
-        SetLogging(false)
+        LoggingCombat(false)
         if LoggingState() == false then Notice(self, false) end
     end
     self.startedBySuite = false
@@ -91,8 +85,8 @@ local function StartLogging(self, current)
         self.startedBySuite = false
         self.manualStop = true
     end
-    if current or self.manualStop or not SetLogging then return end
-    SetLogging(true)
+    if current or self.manualStop then return end
+    LoggingCombat(true)
     if LoggingState() == true then
         self.startedBySuite = true
         Notice(self, true)
@@ -100,7 +94,7 @@ local function StartLogging(self, current)
 end
 
 local function ScheduleStop(self)
-    if self.stopTimer or not C_Timer or type(C_Timer.NewTimer) ~= "function" then return end
+    if self.stopTimer then return end
     local timer
     timer = C_Timer.NewTimer(STOP_DELAY, function()
         if self.stopTimer ~= timer or not self.active then return end
@@ -133,7 +127,7 @@ local function Evaluate(self)
         -- Leave the log running: the player now owns it.
         CancelStop(self)
         self.startedBySuite = false
-    elseif policy == 2 and C_Timer and type(C_Timer.NewTimer) == "function" then
+    elseif policy == 2 then
         ScheduleStop(self)
     else
         CancelStop(self)

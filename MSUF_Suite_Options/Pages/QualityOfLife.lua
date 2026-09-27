@@ -79,10 +79,11 @@ local function FeatureAccordion(ctx, b, group)
     end
     if id == "xpBar" then
         P.Button(ctx, body, "Move in Edit Mode", 16, y, width,
-            function() S.OpenEditMode(id, "experience") end,
-            function() return S.Status(id) == "Active" end,
+            function() P.OpenEditMode(id, "experience") end,
+            function() return P.EditModeReady() and S.Status(id) == "Active" end,
             P.Meta(PAGE, id, "action.edit", "action", sectionId))
         y = y - 34
+        -- S.ResetXPSession comes with the Quality of Life addon.
         P.Button(ctx, body, "Reset session", 16, y, width,
             function() if S.ResetXPSession then S.ResetXPSession() end end,
             function() return S.Status(id) == "Active" end,
@@ -90,8 +91,8 @@ local function FeatureAccordion(ctx, b, group)
         y = y - 38
     elseif id == "skyriding" then
         P.Button(ctx, body, "Move in Edit Mode", 16, y, width,
-            function() S.OpenEditMode(id, "flight") end,
-            function() return S.Status(id) == "Active" end,
+            function() P.OpenEditMode(id, "flight") end,
+            function() return P.EditModeReady() and S.Status(id) == "Active" end,
             P.Meta(PAGE, id, "action.edit", "action", sectionId))
         y = y - 38
     end

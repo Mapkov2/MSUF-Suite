@@ -2,18 +2,11 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = {}
 local Public = S.Public
-local container = C_Container
--- Poor quality is 0 on every client (Enum.ItemQuality.Poor where it exists).
-local POOR = Enum and Enum.ItemQuality and Enum.ItemQuality.Poor or 0
 local BATCH = 12
 
 local Number = S.Number
 
 local function GuildRepair(cost)
-    if type(CanGuildBankRepair) ~= "function" or type(GetGuildBankWithdrawMoney) ~= "function"
-        or type(GetGuildBankMoney) ~= "function" then
-        return false
-    end
     local allowed = CanGuildBankRepair()
     local allowance, funds = GetGuildBankWithdrawMoney(), GetGuildBankMoney()
     if Public(allowed) and allowed and Number(allowance) and Number(funds)
@@ -26,11 +19,7 @@ end
 
 local function Repair(self)
     local c = self.config
-    if not c.repair or type(CanMerchantRepair) ~= "function" or not CanMerchantRepair()
-        or type(GetRepairAllCost) ~= "function" or type(RepairAllItems) ~= "function"
-        or type(GetMoney) ~= "function" then
-        return
-    end
+    if not c.repair or not CanMerchantRepair() then return end
     local cost, canRepair = GetRepairAllCost()
     local money = GetMoney()
     if not Public(cost) or not Public(canRepair) or not Public(money) then return end
@@ -43,42 +32,43 @@ local function Repair(self)
 end
 
 local function SlotInfo(bag, slot)
-    local info = container.GetContainerItemInfo(bag, slot)
+    local info = C_Container.GetContainerItemInfo(bag, slot)
     if not Public(info) or type(info) ~= "table" then return nil end
     return info
 end
 
 local SellJunk
+local function ClearRequested(self)
+    for key in pairs(self.requested) do self.requested[key] = nil end
+end
+
 local function BagsChanged(module)
-    for key in pairs(module.requested) do module.requested[key] = nil end
+    ClearRequested(module)
     SellJunk(module)
 end
 
 -- One bounded pass: at most BATCH poor items per bag update, each slot
 -- re-read immediately before selling. Locked or valueless items are skipped.
 SellJunk = function(self)
-    if not self.merchantOpen or not self.config.autoJunk or NS.IsCombatLocked()
-        or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown())
-        or not container or type(container.GetContainerNumSlots) ~= "function"
-        or type(container.GetContainerItemInfo) ~= "function"
-        or type(container.UseContainerItem) ~= "function" then
+    if not self.merchantOpen or not self.config.autoJunk or NS.IsCombatLocked() or IsShiftKeyDown() then
         self.context:RemoveEvent("BAG_UPDATE_DELAYED")
         return
     end
     local sold, remaining = 0, false
     local requested = self.requested
+    local poor = Enum.ItemQuality.Poor
     local lastBag = Number(NUM_BAG_SLOTS) and NUM_BAG_SLOTS or 4
     for bag = 0, math.min(lastBag + 1, 6) do
-        local slots = container.GetContainerNumSlots(bag)
+        local slots = C_Container.GetContainerNumSlots(bag)
         if Number(slots) then
             for slot = 1, math.min(slots, 200) do
                 local info = SlotInfo(bag, slot)
                 local key = bag * 1000 + slot
-                if info and info.quality == POOR and info.hasNoValue ~= true and info.isLocked ~= true
+                if info and info.quality == poor and info.hasNoValue ~= true and info.isLocked ~= true
                     and Number(info.itemID) and not requested[key] then
                     if sold < BATCH then
                         requested[key] = true
-                        container.UseContainerItem(bag, slot)
+                        C_Container.UseContainerItem(bag, slot)
                         sold = sold + 1
                         self.soldCount = self.soldCount + (Number(info.stackCount) and info.stackCount or 1)
                     else
@@ -107,7 +97,7 @@ local function Merchant(self, event)
     end
     if self.merchantOpen or NS.IsCombatLocked() then return end
     self.merchantOpen = true
-    self.requested = {}
+    ClearRequested(self)
     self.soldCount = 0
     Repair(self)
     SellJunk(self)

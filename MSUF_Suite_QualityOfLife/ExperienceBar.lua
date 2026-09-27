@@ -4,11 +4,9 @@ local M = {}
 local ID = "xpBar"
 local SEGMENT_COUNT = 20
 local SESSION_MAX_AGE = 604800
-local POINTS = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
-local MSUF_BAR, MSUF_FONT = P.MSUF_BAR_TEXTURE, P.MSUF_FONT
+local POINTS = NS.AnchorPoints
+local MSUF_BAR, MSUF_FONT = NS.MSUFMedia.barTexture, NS.MSUFMedia.font
 local DETAIL_SEPARATOR = "   •   "
-local GetServerTime = type(GetServerTime) == "function" and GetServerTime or time
-local GetXPExhaustion = GetXPExhaustion
 local RGB = S.RGB
 local floor, max, min = math.floor, math.max, math.min
 -- Match the authored Blue, Dark and Forever palettes used by the Suite's MSUF chat
@@ -74,14 +72,12 @@ local function XP()
 end
 
 local function Rested()
-    if type(GetXPExhaustion) ~= "function" then return 0 end
     local value = GetXPExhaustion()
     return Finite(value) and max(0, value) or 0
 end
 
 local function Exact(value)
-    value = max(0, floor(value or 0))
-    return type(BreakUpLargeNumbers) == "function" and BreakUpLargeNumbers(value) or tostring(value)
+    return BreakUpLargeNumbers(max(0, floor(value or 0)))
 end
 
 local function Compact(value)
@@ -113,7 +109,7 @@ local function ValidSession(saved, level, now)
 end
 
 local function CharacterKey()
-    local guid = type(UnitGUID) == "function" and UnitGUID("player")
+    local guid = UnitGUID("player")
     return S.Public(guid) and type(guid) == "string" and guid ~= "" and guid or nil
 end
 
@@ -190,7 +186,7 @@ local function AddSessionLines(self, remaining)
 end
 
 local function Tooltip(self)
-    if not self.host or not self.host:IsShown() or not GameTooltip then return end
+    if not self.host or not self.host:IsShown() then return end
     local level, current, maximum = XP()
     GameTooltip:SetOwner(self.host, "ANCHOR_TOP")
     GameTooltip:ClearLines()
@@ -217,7 +213,7 @@ end
 local function HostEnter() Tooltip(M) end
 
 local function HostLeave(host)
-    if GameTooltip and GameTooltip:IsOwned(host) then GameTooltip:Hide() end
+    if GameTooltip:IsOwned(host) then GameTooltip:Hide() end
 end
 
 local function Create(self)
@@ -227,37 +223,37 @@ local function Create(self)
     host:EnableMouse(true)
     host:SetScript("OnEnter", HostEnter)
     host:SetScript("OnLeave", HostLeave)
-    local panel = host:CreateTexture(nil, "BACKGROUND")
+    local panel = S.CreateTexture(host, nil, "BACKGROUND")
     panel:SetAllPoints(host)
     local bar = S.CreateFrame("Frame", nil, host)
     bar:SetPoint("TOPLEFT")
-    local background = bar:CreateTexture(nil, "BACKGROUND")
+    local background = S.CreateTexture(bar, nil, "BACKGROUND")
     background:SetAllPoints()
     local texture = S.ResolveTexture("MSUF Lucent", MSUF_BAR)
-    local rested = bar:CreateTexture(nil, "ARTWORK", nil, 1)
+    local rested = S.CreateTexture(bar, nil, "ARTWORK", nil, 1)
     rested:SetPoint("LEFT")
     rested:SetTexture(texture)
-    local fill = bar:CreateTexture(nil, "ARTWORK", nil, 2)
+    local fill = S.CreateTexture(bar, nil, "ARTWORK", nil, 2)
     fill:SetPoint("LEFT")
     fill:SetTexture(texture)
-    local restedMarker = bar:CreateTexture(nil, "OVERLAY", nil, 3)
+    local restedMarker = S.CreateTexture(bar, nil, "OVERLAY", nil, 3)
     -- Blizzard's XP frame uses a decorated atlas. Separate divider textures
     -- keep the familiar 20-part rhythm crisp at every user-selected width.
     local segments = {}
     for index = 1, SEGMENT_COUNT - 1 do
-        local divider = bar:CreateTexture(nil, "OVERLAY", nil, 1)
+        local divider = S.CreateTexture(bar, nil, "OVERLAY", nil, 1)
         divider:SetColorTexture(1, 1, 1, 0.28)
         segments[index] = divider
     end
-    local levelText = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local levelText = S.CreateFontString(bar, nil, "OVERLAY", "GameFontHighlightSmall")
     levelText:SetPoint("LEFT", bar, "LEFT", 6, 0)
-    local percentText = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local percentText = S.CreateFontString(bar, nil, "OVERLAY", "GameFontHighlightSmall")
     percentText:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
-    local details = host:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local details = S.CreateFontString(host, nil, "OVERLAY", "GameFontHighlightSmall")
     details:SetPoint("TOP", bar, "BOTTOM", 0, -4)
     details:SetJustifyH("CENTER")
     local edges = {}
-    for index = 1, 4 do edges[index] = host:CreateTexture(nil, "OVERLAY", nil, 2) end
+    for index = 1, 4 do edges[index] = S.CreateTexture(host, nil, "OVERLAY", nil, 2) end
     edges[1]:SetPoint("TOPLEFT", host, "TOPLEFT")
     edges[1]:SetPoint("TOPRIGHT", host, "TOPRIGHT")
     edges[2]:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT")
@@ -266,7 +262,7 @@ local function Create(self)
     edges[3]:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT")
     edges[4]:SetPoint("TOPRIGHT", host, "TOPRIGHT")
     edges[4]:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT")
-    local detailRule = host:CreateTexture(nil, "OVERLAY", nil, 1)
+    local detailRule = S.CreateTexture(host, nil, "OVERLAY", nil, 1)
     detailRule:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -2)
     detailRule:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, -2)
     self.host, self.bar, self.panel, self.background = host, bar, panel, background
@@ -316,7 +312,7 @@ local function Layout(self)
     host:ClearAllPoints()
     host:SetPoint(point, UIParent, point, c.x, c.y)
     bar:SetSize(c.width, c.height)
-    local effectiveScale = type(bar.GetEffectiveScale) == "function" and bar:GetEffectiveScale() or 1
+    local effectiveScale = bar:GetEffectiveScale()
     local pixel = Finite(effectiveScale) and effectiveScale > 0 and 1 / effectiveScale or 1
     self.pixel = pixel
     self.edges[1]:SetHeight(pixel)
@@ -345,8 +341,7 @@ local PaintValues
 local function KeepRateCurrent(self)
     if self.rateTimer or not self.active or not self.host:IsShown()
         or not self.session or self.session.gained <= 0
-        or not (self.config.showRate or self.config.showETA)
-        or not C_Timer or type(C_Timer.NewTimer) ~= "function" then
+        or not (self.config.showRate or self.config.showETA) then
         return
     end
     local timer
@@ -368,12 +363,12 @@ local function HideProgress(self, levelText, percentText, detailsText)
     self.details:SetText(detailsText)
 end
 
--- The effective maximum level only changes with the level itself.
+-- Read once per level. The effective maximum can also change without a level
+-- change (party sync, Timewalking, a new cap): world entry and Refresh clear
+-- the cache (cappedLevel).
 local function AtEffectiveMaxLevel(self, level)
     if self.cappedLevel ~= level then
-        local rules = GameRulesUtil
-        local result = type(rules) == "table" and type(rules.IsPlayerAtEffectiveMaxLevel) == "function"
-            and rules.IsPlayerAtEffectiveMaxLevel()
+        local result = GameRulesUtil.IsPlayerAtEffectiveMaxLevel()
         self.cappedLevel, self.capped = level, S.Public(result) and result == true
     end
     return self.capped
@@ -437,7 +432,8 @@ PaintValues = function(self)
     self.levelText:SetText(TEXT.short .. " " .. level .. "  " .. Compact(current) .. " / " .. Compact(maximum))
     self.percentText:SetText(("%.1f%%"):format(fraction * 100))
     self.details:SetText(DetailsText(self, current, maximum))
-    if GameTooltip and GameTooltip:IsOwned(host) then Tooltip(self) end
+    -- An open tooltip follows the new values.
+    if GameTooltip:IsOwned(host) then Tooltip(self) end
     KeepRateCurrent(self)
 end
 
@@ -461,6 +457,7 @@ end
 local function EnterWorld(self)
     local level, current, maximum = XP()
     if level then InitializeSession(self, level, current, maximum) end
+    self.cappedLevel = nil
     Render(self)
 end
 
@@ -485,7 +482,10 @@ function M:Enable()
     self:RegisterMovers()
 end
 
-function M:Refresh() Render(self) end
+function M:Refresh()
+    self.cappedLevel = nil
+    Render(self)
+end
 
 function M:Disable()
     CancelRateTimer(self)

@@ -123,4 +123,12 @@ assert(not logOn and #calls == 6)
 module.active = false
 module:Disable()
 assert(#messages == 6 and #calls == 6)
+-- Retail and WoW Forever always have the APIs combat logging calls.
+for _, name in ipairs({ "CombatLog" }) do
+    local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/" .. name .. ".lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("(C_%w+) and C_%w+%.")
+    assert(not guarded, name .. ".lua guards " .. tostring(guarded) .. " as if a client lacked it")
+end
 print("Combat logging: event routing, difficulty choices, ownership, timer and manual override passed")
