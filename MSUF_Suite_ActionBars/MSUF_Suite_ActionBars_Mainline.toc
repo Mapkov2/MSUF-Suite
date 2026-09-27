@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Action bars
 ## Notes: Optional Action bars module for MSUF Suite.
 ## Author: Mapko
@@ -16,4 +16,7 @@ Visibility.lua
 Bindings.lua
 Style.lua
 Paint.lua
+NativeButtons.lua
+Flush.lua
+Events.lua
 Controller.lua

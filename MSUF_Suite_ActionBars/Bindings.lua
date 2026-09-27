@@ -13,16 +13,9 @@ local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
 
-local function Keys(command, ...)
-    if type(GetBindingKey) ~= "function" then return end
-    return GetBindingKey(command, ...)
-end
-
--- Short key text is shared with the cooldown icons (Surfaces.lua). No range dot.
-AB.KeyText = S.KeyText
-
+-- Short key text, shared with the cooldown icons (S.KeyText). No range dot.
 function AB.BindingText(rec)
-    return AB.KeyText((Keys(rec.command)))
+    return S.KeyText((GetBindingKey(rec.command)))
 end
 
 -- Key text of the suite button that presses a spell, for the cooldown
@@ -36,9 +29,7 @@ local FORM_FIRST, FORM_LAST = 73, 108
 local spellSlots = {}
 function S.ActionBarsBindingForSpell(spell)
     if not M.active then return nil end
-    local actionBar = _G.C_ActionBar
-    local find = actionBar and actionBar.FindSpellActionButtons
-    local slots = find and spell and find(spell)
+    local slots = spell and C_ActionBar.FindSpellActionButtons(spell)
     if not (Public(slots) and type(slots) == "table") then return "" end
     for slot in pairs(spellSlots) do spellSlots[slot] = nil end
     for i = 1, #slots do
@@ -70,7 +61,7 @@ function S.ActionBarsBindingForSpell(spell)
 end
 
 local function IsFlyout(slot)
-    if not slot or type(GetActionInfo) ~= "function" then return false end
+    if not slot then return false end
     local kind = GetActionInfo(slot)
     return Public(kind) and kind == "flyout"
 end
@@ -108,7 +99,7 @@ end
 -- rebuild waits for PLAYER_REGEN_ENABLED.
 function AB.UpdateRouting(force)
     if not M.active then return end
-    if NS.IsCombatLocked() or type(SetOverrideBindingClick) ~= "function" then
+    if NS.IsCombatLocked() then
         AB.routingPending = true
         return
     end
@@ -117,7 +108,7 @@ function AB.UpdateRouting(force)
     for i = 1, #AB.owned do
         local rec = AB.owned[i]
         if AB.ClickRouted(rec) then
-            local first, second = Keys(rec.command)
+            local first, second = GetBindingKey(rec.command)
             if first then count = Want(count, first, rec.name) end
             if second then count = Want(count, second, rec.name) end
         end
@@ -137,7 +128,7 @@ function AB.UpdateRouting(force)
 end
 
 function AB.ClearRouting()
-    if AB.bindingOwner and type(ClearOverrideBindings) == "function" then ClearOverrideBindings(AB.bindingOwner) end
+    if AB.bindingOwner then ClearOverrideBindings(AB.bindingOwner) end
     routed, AB.routingPending = false, nil
 end
 
@@ -146,15 +137,17 @@ end
 function AB.UpdateClickAttributes()
     local grid = AB.grid
     if not grid or NS.IsCombatLocked() then return end
-    local keydown = type(GetCVarBool) == "function" and GetCVarBool("ActionButtonUseKeyDown") and true or false
-    local unlocked = not (type(GetCVarBool) == "function" and GetCVarBool("lockActionBars"))
+    local keydown = GetCVarBool("ActionButtonUseKeyDown") and true or false
+    local unlocked = not GetCVarBool("lockActionBars")
     if grid:GetAttribute("keydown") ~= keydown then grid:SetAttribute("keydown", keydown) end
     if grid:GetAttribute("unlocked") ~= unlocked then grid:SetAttribute("unlocked", unlocked) end
 end
 
 -- Native keys press the hidden Blizzard button, so the visible suite button
 -- gets its pushed state from post-hooks on Blizzard's binding handlers. The
--- Up hooks restore it; no polling.
+-- Up hooks restore it; no polling. Each hook runs isolated (Dispatch): an
+-- error is reported and never stops Blizzard's handler.
+local Dispatch = S.Dispatch
 local NATIVE_BAR = {}
 for index = 2, 8 do NATIVE_BAR[AB.NATIVE_BARS[index]] = index end
 local function Native(index, id, down)
@@ -164,29 +157,23 @@ local function Native(index, id, down)
     if not rec or AB.ClickRouted(rec) then return end
     AB.SetPushed(rec, down)
 end
+local function MainDown(id) Dispatch(Native, 1, id, true) end
+local function MainUp(id) Dispatch(Native, 1, id, false) end
+local function MultiDown(bar, id)
+    local index = NATIVE_BAR[bar]
+    if index then Dispatch(Native, index, id, true) end
+end
+local function MultiUp(bar, id)
+    local index = NATIVE_BAR[bar]
+    if index then Dispatch(Native, index, id, false) end
+end
+-- Blizzard_ActionBar's binding handlers (Shared/ActionButton.lua and
+-- MultiActionBars.lua) exist on Retail and Forever before this loads.
 function AB.HookNativePresses()
-    if AB.nativeHooked or type(hooksecurefunc) ~= "function" then return end
+    if AB.nativeHooked then return end
     AB.nativeHooked = true
-    if type(ActionButtonDown) == "function" then
-        hooksecurefunc("ActionButtonDown", function(id) Native(1, id, true) end)
-    end
-    if type(ActionButtonUp) == "function" then
-        hooksecurefunc("ActionButtonUp", function(id) Native(1, id, false) end)
-    end
-    if type(MultiActionButtonDown) == "function" then
-        hooksecurefunc("MultiActionButtonDown", function(bar, id)
-            local index = NATIVE_BAR[bar]
-            if index then
-                Native(index, id, true)
-            end
-        end)
-    end
-    if type(MultiActionButtonUp) == "function" then
-        hooksecurefunc("MultiActionButtonUp", function(bar, id)
-            local index = NATIVE_BAR[bar]
-            if index then
-                Native(index, id, false)
-            end
-        end)
-    end
+    hooksecurefunc("ActionButtonDown", MainDown)
+    hooksecurefunc("ActionButtonUp", MainUp)
+    hooksecurefunc("MultiActionButtonDown", MultiDown)
+    hooksecurefunc("MultiActionButtonUp", MultiUp)
 end

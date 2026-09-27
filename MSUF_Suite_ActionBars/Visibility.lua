@@ -26,7 +26,7 @@ for _, bit in ipairs({ 2, 4, 8 }) do
 end
 
 local function HasForms()
-    local forms = type(GetNumShapeshiftForms) == "function" and GetNumShapeshiftForms() or 0
+    local forms = GetNumShapeshiftForms()
     return S.Public(forms) and type(forms) == "number" and forms > 0
 end
 AB.HasForms = HasForms
@@ -81,8 +81,8 @@ function AB.UpdateAllAlpha()
 end
 
 local function FlyoutOpen(bar)
-    local flyout = _G.SpellFlyout
-    if not flyout or not flyout:IsShown() then return false end
+    local flyout = SpellFlyout
+    if not flyout:IsShown() then return false end
     local parent = flyout:GetParent()
     local rec = parent and AB.records[parent]
     return rec ~= nil and rec.bar == bar and flyout:IsMouseOver()
@@ -113,7 +113,7 @@ local function Leave(frame)
     local rec = AB.records[frame]
     local bar = rec and rec.bar or AB.headers[frame]
     if not bar then return end
-    if rec and rec.owned and not rec.native and GameTooltip and GameTooltip:GetOwner() == frame then GameTooltip:Hide() end
+    if rec and rec.owned and not rec.native and GameTooltip:GetOwner() == frame then GameTooltip:Hide() end
     SetHover(bar, bar.header:IsMouseOver() or FlyoutOpen(bar))
 end
 function AB.HookHover(frame)
@@ -135,11 +135,8 @@ end
 -- show while something placeable is on the cursor. Out of combat only;
 -- combat drags from suite buttons use the secure bit 4 instead.
 function AB.ApplyDrag()
-    local dragging = false
-    if type(GetCursorInfo) == "function" then
-        local kind = GetCursorInfo()
-        dragging = S.Public(kind) and PLACEABLE[kind] or false
-    end
+    local kind = GetCursorInfo()
+    local dragging = S.Public(kind) and PLACEABLE[kind] or false
     AB.dragging = dragging
     AB.UpdateAllAlpha()
     if NS.IsCombatLocked() then
@@ -162,7 +159,7 @@ local function Settle()
     if M.active then AB.ApplyDrag() end
 end
 function AB.CursorChanged()
-    if AB.settling or not C_Timer then return end
+    if AB.settling then return end
     AB.settling = true
     C_Timer.After(0.05, Settle)
 end
@@ -184,7 +181,7 @@ local function ApplyBarVisibility(bar, config, forms)
     -- EnableMouseMotion alone leaves the header non-interactive on
     -- Forever. Buttons continue to receive their own clicks.
     bar.header:EnableMouse(fade and not config[keys.ClickThrough])
-    if bar.header.EnableMouseMotion then bar.header:EnableMouseMotion(fade) end
+    bar.header:EnableMouseMotion(fade)
     AB.HookHover(bar.header)
     for i = 1, #bar.buttons do AB.HookHover(bar.buttons[i].button) end
     if not fade then bar.hover = nil end

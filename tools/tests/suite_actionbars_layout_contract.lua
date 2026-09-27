@@ -1,6 +1,9 @@
 local root=assert(arg[1],"repository root required")
+-- The client's securecallfunction reports an error and returns nothing;
+-- this stand-in lets errors raise, so a failing callback fails the test.
+securecallfunction = function(callback, ...) return callback(...) end
 -- Offline contract for the action bar layout math, slot/page tables, bar 1
--- paging drivers (Mainline and Classic), visibility drivers and key text.
+-- paging drivers (Retail and Forever), visibility drivers and key text.
 -- The grid is checked against an independent implementation of the layout
 -- contract the menu preview shares.
 local Suite={}
@@ -21,11 +24,13 @@ end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil));Suite.Suite.Normalize(Suite.DB)
 local private={}
+-- Blizzard builds its shared font objects at startup on every client.
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
-local files={"Bootstrap","Bars","Paging","Blizzard","Visibility",
-    "Bindings","Style","Paint","Controller"}
+local files={"Bootstrap","Bars","Blizzard","Paging","Visibility",
+    "Bindings","Style","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(files) do assert(loadfile(root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private) end
 local S,AB=Suite.Suite,private.ActionBars
 assert(created==0,"loading the runtime created frames")
@@ -51,7 +56,13 @@ for bar,button in xml:gmatch('name="MSUFSUITE_BAR(%d+)_BUTTON(%d+)"') do
     commands=commands+1
     assert(_G["BINDING_NAME_MSUFSUITE_BAR"..bar.."_BUTTON"..button],"binding without a label")
 end
-assert(commands==24 and not xml:find("</Binding>",1,true),"Bindings.xml must declare 24 commands without bodies")
+local emptyCommands=0
+for tag in xml:gmatch('<Binding%s+name="MSUFSUITE_BAR%d+_BUTTON%d+"[^>]*>') do
+    if tag:match('/>$') then emptyCommands=emptyCommands+1 end
+end
+assert(commands==24 and emptyCommands==24,"Bindings.xml must declare 24 action bar commands without bodies")
+assert(BINDING_NAME_MSUFSUITE_TOGGLE_FRIENDLY_NPCS and xml:find('name="MSUFSUITE_TOGGLE_FRIENDLY_NPCS"',1,true),
+    "friendly NPC toggle binding is missing")
 -- The page handler assigns index + (page - 1) * 12; the Lua mirror agrees.
 local bar={buttons={}}
 for i=1,12 do bar.buttons[i]={index=i} end
@@ -152,11 +163,40 @@ assert(bg.shown and bg.points[1][4]==-3 and bg.points[1][5]==3 and bg.color[1]==
 GetPhysicalScreenSize=function() return 800,512 end
 assert(AB.Snap(40)==40.5 and AB.Snap(-4)==-4.5 and AB.Snap(0)==0)
 GetPhysicalScreenSize=function() return 1024,768 end
+-- The unit is the suite's shared one (S.PixelUnit); unknown leaves values.
+do
+    local unit=S.PixelUnit
+    S.PixelUnit=function() return .5 end
+    assert(AB.Snap(40.3)==40.5,"snapping ignores the shared pixel unit")
+    S.PixelUnit=function() return nil end
+    assert(AB.Snap(40.3)==40.3,"an unknown pixel unit changed the value")
+    S.PixelUnit=unit
+end
 
 -- Menu preview uses the same math without frames.
 local info=S.ActionBarPreviewInfo(4)
 assert(info.buttons==7 and info.rows==3 and info.columns==3 and info.rowCount==3 and info.width==52 and info.height==52 and info.start==4)
 assert(S.ActionBarPreviewInfo(13)==nil and not S.ActionBarAvailable(0) and not S.ActionBarAvailable(1.5))
+
+------------------------------------------------------------------ edges
+-- Same contract as the cooldown manager's K.PlaceEdges: no width only hides
+-- the edges; points and color are written when they show again.
+do
+    local edgeWrites=0
+    local function Edge()
+        local edge={}
+        for _,name in ipairs({"ClearAllPoints","SetColorTexture","SetPoint","SetWidth","SetHeight"}) do
+            edge[name]=function() edgeWrites=edgeWrites+1 end
+        end
+        function edge:SetShown(on) self.shown=on end
+        return edge
+    end
+    local set={Edge(),Edge(),Edge(),Edge()}
+    AB.PlaceEdges(set,{},0,1,0,0,1)
+    assert(edgeWrites==0 and set[1].shown==false and set[4].shown==false,"hidden action bar edges were rewritten")
+    AB.PlaceEdges(set,{},2,1,0,0)
+    assert(edgeWrites>0 and set[1].shown and set[4].shown,"shown action bar edges were not placed")
+end
 
 ------------------------------------------------------------------ paging drivers
 local base="[vehicleui] vehicle; [overridebar] override; [possessbar] possess; [shapeshift] shapeshift; "
@@ -172,12 +212,11 @@ assert(AB.PageDriver(c2)==base..manual..forms.."1" and AB.CustomPaging(c2),"skyr
 c2.disableSkyridingPaging,c2.pagingModifiers,c2.pageShift=false,true,6
 assert(AB.PageDriver(c2)==base.."[mod:shift] 6; [mod:ctrl] 3; [mod:alt] 4; "..manual..forms.."[bonusbar:5] 11; 1")
 assert(AB.CustomPaging(c2),"modifier paging must route bar 1 keys to suite buttons")
--- Classic: bonus bar 5 is the possess bar and always pages.
-local flavor=Suite.Client.flavor
-Suite.Client.flavor="Vanilla"
+-- Forever: bonus bar 5 is the possess bar and always pages.
+Suite.Client.isForever=true
 c2.pagingModifiers,c2.disableSkyridingPaging=false,true
-assert(AB.PageDriver(c2)==base..manual..forms.."[bonusbar:5] 11; 1" and not AB.CustomPaging(c2),"Classic keeps possess paging")
-Suite.Client.flavor=flavor
+assert(AB.PageDriver(c2)==base..manual..forms.."[bonusbar:5] 11; 1" and not AB.CustomPaging(c2),"Forever keeps possess paging")
+Suite.Client.isForever=false
 
 ------------------------------------------------------------------ visibility drivers
 local modes={"show","[combat] show; hide","[combat] hide; show","fade","[combat] show; fade"}
@@ -195,6 +234,7 @@ GetBindingText=function(key) return "<"..key..">" end
 local keyText={["SHIFT-1"]="S1",["CTRL-ALT-2"]="CA2",["BUTTON4"]="M4",["SHIFT-BUTTON5"]="SM5",["MOUSEWHEELUP"]="MwU",
     ["MOUSEWHEELDOWN"]="MwD",["CAPSLOCK"]="Caps",["NUMPAD5"]="N5",["NUMPADPLUS"]="N+",["NUMPADDECIMAL"]="N.",
     ["META-Q"]="MQ",["F"]="F",["SHIFT--"]="S-",["PAD1"]="<PAD1>",["SHIFT-PADLTRIGGER"]="<SHIFT-PADLTRIGGER>"}
-for key,text in pairs(keyText) do assert(AB.KeyText(key)==text,key.." -> "..tostring(AB.KeyText(key))) end
-assert(AB.KeyText(nil)=="" and AB.KeyText("")=="")
+for key,text in pairs(keyText) do assert(S.KeyText(key)==text,key.." -> "..tostring(S.KeyText(key))) end
+assert(S.KeyText(nil)=="" and S.KeyText("")=="")
+assert(AB.KeyText==nil,"the action bars keep a second name for S.KeyText")
 print("Action bars: slot/page tables, binding commands, layout contract (all 1152 grids), geometry, pixel snap, preview, paging and visibility drivers, key text passed")

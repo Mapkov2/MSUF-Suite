@@ -19,7 +19,8 @@ S.Install("actionbars", M)
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local BAR_COUNT, BUTTONS = 12, 12
 AB.BAR_COUNT, AB.BUTTONS = BAR_COUNT, BUTTONS
-AB.nativeReuse = NS.Client.isMainline and not NS.Client.isForever
+-- Retail reuses Blizzard's buttons on bars 2-8; Forever keeps suite buttons.
+AB.nativeReuse = not NS.Client.isForever
 
 -- Slot of button 1 per owned bar; bar 1 pages from slot 1.
 AB.FIRST_SLOT = { 1, 61, 49, 25, 37, 145, 157, 169, 13, 109 }
@@ -49,18 +50,12 @@ function AB.Frame(name)
     if frame and not NS.Safety.IsForbidden(frame) then return frame end
 end
 
-local function ToggleCount()
-    if type(GetActionBarToggles) ~= "function" then return 4 end
-    return select("#", GetActionBarToggles())
-end
-
--- Whether a bar exists on this client. Slots 145-180 (bars 6-8) exist only
--- where the client ships MultiBar5-7 and offers their seven visibility toggles.
+-- Whether a bar exists on this client. Retail and Forever ship all eight
+-- Blizzard action bars, so only the stance and pet bars are checked.
 function AB.Available(index)
     if type(index) ~= "number" or index < 1 or index > BAR_COUNT or index ~= floor(index) then return false end
     if index == 11 then return AB.Frame("StanceBar") ~= nil and AB.Frame("StanceButton1") ~= nil end
     if index == 12 then return AB.Frame("PetActionBar") ~= nil and AB.Frame("PetActionButton1") ~= nil end
-    if index >= 6 and index <= 8 then return AB.Frame(AB.NATIVE_BARS[index]) ~= nil and ToggleCount() >= index - 1 end
     return true
 end
 S.ActionBarAvailable = AB.Available
@@ -89,18 +84,10 @@ function AB.Cell(i, columns, rows, r, vertical, start)
     return col, row
 end
 
--- One physical pixel in UI units at the root scale; nil while unreadable.
-function AB.PixelUnit()
-    local height = type(GetPhysicalScreenSize) == "function" and select(2, GetPhysicalScreenSize())
-    local scale = UIParent and UIParent:GetEffectiveScale()
-    if not S.Public(height) or not S.Public(scale) or type(height) ~= "number" or type(scale) ~= "number"
-        or height <= 0 or scale <= 0 then return nil end
-    return 768 / height / scale
-end
-
--- Rounds UI units to whole physical pixels at the root scale.
+-- Rounds UI units to whole physical pixels at the root scale (S.PixelUnit,
+-- Surfaces.lua: nil while unreadable).
 function AB.Snap(value)
-    local unit = AB.PixelUnit()
+    local unit = S.PixelUnit()
     if not unit then return value end
     return floor(value / unit + .5) * unit
 end
@@ -109,7 +96,7 @@ end
 function AB.Count(bar, config)
     local n = config[bar.key.Buttons]
     if bar.index == 11 then
-        local forms = type(GetNumShapeshiftForms) == "function" and GetNumShapeshiftForms() or 0
+        local forms = GetNumShapeshiftForms()
         n = min(n, S.Public(forms) and type(forms) == "number" and forms or 0)
     end
     return n
@@ -205,14 +192,14 @@ AB.SNIPPET.GRID = [[self:ChildUpdate("grid")]]
 -- Runs a snippet against a header out of combat, so any Blizzard script a
 -- secure Show/Hide/SetParent triggers runs untainted.
 function AB.Execute(frame, body)
-    if not frame or NS.IsCombatLocked() or type(SecureHandlerExecute) ~= "function" then return false end
+    if not frame or NS.IsCombatLocked() then return false end
     SecureHandlerExecute(frame, body)
     return true
 end
 
+-- NewHeader records the header before it hooks it; Events.lua defines the handler.
 local function HeaderAttribute(header, name, value)
-    local bar = AB.headers and AB.headers[header]
-    if bar and AB.OnHeaderAttribute then AB.OnHeaderAttribute(bar, name, value) end
+    AB.OnHeaderAttribute(AB.headers[header], name, value)
 end
 
 local function NewHeader(index)
@@ -248,19 +235,23 @@ local function NewHeader(index)
     return bar
 end
 
+-- Every owned button record: by button, in its bar and in AB.owned.
+local function Own(rec)
+    AB.records[rec.button] = rec
+    rec.bar.buttons[rec.index] = rec
+    AB.owned[#AB.owned + 1] = rec
+    return rec
+end
+
 local function NewButton(bar, index)
     local name = "MSUFSuiteBar" .. bar.index .. "Button" .. index
     local slot = AB.FIRST_SLOT[bar.index] + index - 1
     if bar.native then
         local button = AB.Frame(AB.NATIVE_BUTTONS[bar.index] .. index)
-        local rec = {
+        return Own({
             button = button, bar = bar, index = index, slot = slot, base = slot, name = button:GetName(),
             owned = true, native = true, command = AB.COMMANDS[bar.index] .. index,
-        }
-        AB.records[button] = rec
-        bar.buttons[index] = rec
-        AB.owned[#AB.owned + 1] = rec
-        return rec
+        })
     end
     local button = S.CreateFrame("CheckButton", name, bar.header, "ActionButtonTemplate, SecureActionButtonTemplate")
     button:SetAttribute("type", "action")
@@ -276,14 +267,10 @@ local function NewButton(bar, index)
     SecureHandlerWrapScript(button, "OnClick", AB.grid, AB.SNIPPET.CLICK)
     SecureHandlerWrapScript(button, "OnDragStart", AB.grid, AB.SNIPPET.DRAG)
     SecureHandlerWrapScript(button, "OnReceiveDrag", AB.grid, AB.SNIPPET.RECEIVE)
-    local rec = {
+    return Own({
         button = button, bar = bar, index = index, slot = slot, base = slot, name = name,
         owned = true, command = AB.COMMANDS[bar.index] .. index,
-    }
-    AB.records[button] = rec
-    bar.buttons[index] = rec
-    AB.owned[#AB.owned + 1] = rec
-    return rec
+    })
 end
 
 -- Creates every suite frame once per session (out of combat, on enable).

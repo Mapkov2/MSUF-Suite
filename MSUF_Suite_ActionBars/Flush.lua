@@ -1,0 +1,260 @@
+local _, P = ...
+local NS, S = P.NS, P.Suite
+-- One dirty mask with a single next-frame flush: the event map (Events.lua)
+-- marks work, the flush paints it (Paint.lua, NativeButtons.lua). Same-frame
+-- marks merge for free; cooldown and usable storms get a 0.1 s leading-edge
+-- cap with one trailing flush; per-bar filled-button lists and a slot map
+-- keep targeted events targeted; dormant (hidden) bars are skipped.
+local AB = P.ActionBars
+local M = AB.M
+local Pa, NB = AB.Painter, AB.NativeButtons
+local slotMap, Visible = Pa.slotMap, Pa.Visible
+local Walk, WalkNative, Paint, Icon, Refill, PaintBar = Pa.Walk, Pa.WalkNative, Pa.Paint, Pa.Icon, Pa.Refill, Pa.PaintBar
+local Cooldown, Usable, State, Count, GlowCheck, AllKeyTexts = Pa.Cooldown, Pa.Usable, Pa.State, Pa.Count, Pa.GlowCheck,
+    Pa.AllKeyTexts
+local NativeFeedback, NativeState, NativeCount, NativeColor, Retint = NB.Feedback, NB.State, NB.Count, NB.Color, NB.Retint
+-- tint: re-applies the range color after a color change; keys: binding
+-- texts; usable: every suite button's usability; unreported: only those on
+-- slots ACTION_USABLE_CHANGED never named.
+local dirty = {
+    cooldown = false, usable = false, unreported = false, state = false, count = false, icon = false, tint = false,
+    keys = false, full = false,
+}
+local dirtySlots, dirtyBars, refillBars, gridBars = {}, {}, {}, {}
+-- Protected work for the next flush out of combat: every bar's shown-button
+-- plan (grid) and the key routing (routing).
+local protected = { grid = false, routing = false }
+-- scheduled: the next-frame flush is pending. throttled: the trailing flush
+-- of the cooldown/usable cap is pending. Separate flags, so next-frame work
+-- (a page change, a slot change) never waits for the cap.
+local scheduled, throttled = false, false
+local last = { cooldown = 0, usable = 0, unreported = 0 }
+-- Slots ACTION_USABLE_CHANGED has named: the client tracks their usability.
+local reported = {}
+local CAP = 0.1
+
+------------------------------------------------------------------ flush
+-- Every unit of flush work (a paint kind, one bar, one slot, one bar's
+-- shown-button plan, the key routing) clears its mark first and runs
+-- isolated with one retry (S.NewUnitRunner, Runtime.lua). A paint kind is
+-- one unit for all buttons: the cooldown walk is the hot path.
+local Run, Settle, ResetUnits = S.NewUnitRunner()
+
+local Flush
+local function Schedule()
+    if scheduled then return end
+    scheduled = true
+    C_Timer.After(0, Flush)
+end
+
+local function CapDone()
+    throttled = false
+    -- A pending next-frame flush runs the capped walks as well.
+    if not scheduled then Flush() end
+end
+
+local function Throttle(wait)
+    if throttled then return end
+    throttled = true
+    C_Timer.After(wait, CapDone)
+end
+
+local function CooldownWalk()
+    Walk(Cooldown)
+    if not AB.directDuration then WalkNative(NativeFeedback) end
+end
+local function UsableWalk() Walk(Usable) end
+-- ACTION_USABLE_CHANGED names the slots it tracks; a suite button on a slot
+-- it never named (bars 9/10 have no Blizzard button) follows
+-- ACTIONBAR_UPDATE_USABLE instead.
+local function UsableIfUnreported(rec)
+    if not reported[rec.slot] then Usable(rec) end
+end
+local function UnreportedWalk() Walk(UsableIfUnreported) end
+
+-- Leading edge next frame, then at most one walk per CAP seconds.
+local function Capped(kind, now, fn)
+    if not dirty[kind] then return end
+    local wait = last[kind] + CAP - now
+    if wait > 0 then
+        Throttle(wait)
+        return
+    end
+    dirty[kind] = false
+    last[kind] = now
+    Run(dirty, kind, true, fn)
+end
+
+-- A full refresh repaints every bar and absorbs the same-frame marks.
+local function ExpandFull()
+    dirty.full = false
+    for kind in pairs(dirty) do dirty[kind] = false end
+    for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
+    for index = 1, AB.BAR_COUNT do
+        local bar = AB.bars[index]
+        if bar then dirtyBars[bar] = true end
+    end
+    dirty.keys = true
+    -- Suite paint skips native buttons, so their optional effects still
+    -- need one pass when a global refresh absorbs same-frame events.
+    if M.config.hideEmptyCharges then dirty.count = true end
+    if not M.config.castHighlight then dirty.state = true end
+    if not AB.directDuration then dirty.cooldown = true end
+end
+
+local function PaintVisibleBar(bar)
+    if Visible(bar) then PaintBar(bar) end
+end
+
+local function PaintSlot(slot)
+    local list = slotMap[slot]
+    if not list then return end
+    for i = 1, #list do
+        local rec = list[i]
+        if not rec.native and Visible(rec.bar) then
+            Paint(rec)
+            refillBars[rec.bar] = true
+        end
+    end
+end
+
+local function PaintDirty()
+    for bar in pairs(dirtyBars) do
+        dirtyBars[bar] = nil
+        Run(dirtyBars, bar, true, PaintVisibleBar, bar)
+    end
+    for slot in pairs(dirtySlots) do
+        dirtySlots[slot] = nil
+        Run(dirtySlots, slot, true, PaintSlot, slot)
+    end
+    for bar in pairs(refillBars) do
+        refillBars[bar] = nil
+        Run(refillBars, bar, true, Refill, bar)
+    end
+end
+
+local function StateWalk()
+    Walk(State)
+    if not M.config.castHighlight then WalkNative(NativeState) end
+end
+local function CountWalk()
+    Walk(Count)
+    if M.config.hideEmptyCharges then WalkNative(NativeCount) end
+end
+local function IconWalk()
+    Walk(Icon)
+    for index = 1, 10 do
+        local bar = AB.bars[index]
+        if bar and not bar.native and Visible(bar) then Refill(bar) end
+    end
+end
+local function TintWalk()
+    Walk(Retint)
+    WalkNative(Retint)
+end
+local function NativeFullWalk()
+    WalkNative(NativeColor)
+    if M.config.procGlow == 2 then WalkNative(GlowCheck) end
+end
+
+-- The uncapped paint kinds, in this order.
+local WALK_KINDS = { "state", "count", "icon", "tint", "keys" }
+local WALKS = { state = StateWalk, count = CountWalk, icon = IconWalk, tint = TintWalk, keys = AllKeyTexts }
+
+local function WalkDirty(now)
+    Capped("cooldown", now, CooldownWalk)
+    -- The full usability walk covers the unreported slots.
+    if dirty.usable then dirty.unreported = false end
+    Capped("usable", now, UsableWalk)
+    Capped("unreported", now, UnreportedWalk)
+    for i = 1, #WALK_KINDS do
+        local kind = WALK_KINDS[i]
+        if dirty[kind] then
+            dirty[kind] = false
+            Run(dirty, kind, true, WALKS[kind])
+        end
+    end
+end
+
+-- Shown/empty state and key routing are protected: out of combat only.
+local function GridUnit(bar)
+    AB.Execute(bar.header, AB.SNIPPET.GRID)
+end
+local function FlushProtected()
+    if NS.IsCombatLocked() then return end
+    if protected.grid then
+        protected.grid = false
+        for index = 1, 10 do
+            local bar = AB.bars[index]
+            if bar then gridBars[bar] = true end
+        end
+    end
+    for index = 1, 10 do
+        local bar = AB.bars[index]
+        if bar and gridBars[bar] then
+            gridBars[bar] = nil
+            Run(gridBars, bar, true, GridUnit, bar)
+        end
+    end
+    if protected.routing then
+        protected.routing = false
+        Run(protected, "routing", true, AB.UpdateRouting)
+    end
+end
+
+-- Raising units get their marks back at the end (Settle); only the next
+-- mark schedules the flush that retries them, so a unit that keeps raising
+-- never repeats every frame.
+Flush = function()
+    scheduled = false
+    if not M.active then return end
+    local now = GetTime()
+    local nativeFull = dirty.full
+    if nativeFull then ExpandFull() end
+    PaintDirty()
+    WalkDirty(now)
+    if nativeFull then Run(dirty, "full", true, NativeFullWalk) end
+    FlushProtected()
+    Settle()
+end
+
+local function Mark(kind)
+    dirty[kind] = true
+    Schedule()
+end
+AB.Mark = Mark
+function AB.MarkAll()
+    dirty.full = true
+    protected.routing = true
+    protected.grid = true
+    Schedule()
+end
+function AB.MarkBar(bar)
+    dirtyBars[bar] = true
+    Schedule()
+end
+
+-- Re-runs the suite's shown-button plan on one bar after Blizzard applied
+-- its own (Blizzard.lua); in combat it waits for combat to end.
+function AB.Regrid(bar)
+    if not AB.Execute(bar.header, AB.SNIPPET.GRID) then
+        gridBars[bar] = true
+        Schedule()
+    end
+end
+
+-- StopDispatcher: every mark and every parked unit is dropped.
+local function Reset()
+    for kind in pairs(dirty) do dirty[kind] = false end
+    for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
+    for bar in pairs(dirtyBars) do dirtyBars[bar] = nil end
+    for bar in pairs(gridBars) do gridBars[bar] = nil end
+    protected.routing, protected.grid = false, false
+    ResetUnits()
+end
+
+-- What the event map (Events.lua) marks directly.
+AB.Dirty = {
+    slots = dirtySlots, grid = gridBars, protected = protected, reported = reported,
+    Schedule = Schedule, Mark = Mark, Reset = Reset,
+}

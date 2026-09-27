@@ -21,6 +21,7 @@ local NS, S = P.NS, P.Suite
 --    suite adopts those buttons into its own headers.
 local AB = P.ActionBars
 local M = AB.M
+local Dispatch = S.Dispatch
 
 local DISPOSE = [[
 local hidden=self:GetFrameRef("hidden")
@@ -92,7 +93,7 @@ end
 ]]
 
 local function Unmouse(frame)
-    if frame and not NS.Safety.IsForbidden(frame) and not frame:IsProtected() and frame.EnableMouse then
+    if frame and not NS.Safety.IsForbidden(frame) and not frame:IsProtected() then
         frame:EnableMouse(false)
     end
 end
@@ -115,8 +116,7 @@ end
 -- Reads what Blizzard currently shows, for the first-enable import. Must run
 -- before disposal moves the bars.
 function AB.ReadBlizzard()
-    local toggles = {}
-    if type(GetActionBarToggles) == "function" then toggles = { GetActionBarToggles() } end
+    local toggles = { GetActionBarToggles() }
     local state = {}
     for index = 1, 12 do
         local frame
@@ -138,25 +138,24 @@ end
 -- buttons the suite reuses: spellbook and Quick Keybind grids and Edit Mode
 -- icon counts call UpdateShownButtons, which caps them at Blizzard's icon
 -- count. The suite's plan runs again right after (out of combat; in combat
--- it waits for combat to end). Blizzard's own fields stay untouched: a value
--- written here would taint that secure pass and block its SetShown calls
--- in combat.
+-- it waits for combat to end). This hook writes nothing on Blizzard's bar
+-- (numButtonsShowable and the like): its secure pass reads those fields, and
+-- a tainted value would block its SetShown calls in combat. The one field
+-- the suite does clear is each reused button's `bar` (AB.Dispose).
 local suiteBarOf = {}
 local function AfterBlizzardPlan(blizzardBar)
     local bar = suiteBarOf[blizzardBar]
     if bar and M.active then AB.Regrid(bar) end
 end
+-- Both hooks run inside Blizzard's call chains (UpdateShownButtons, the
+-- main bar's OnShow): isolated, so an error never stops Blizzard's caller.
+local function AfterBlizzardPlanHook(blizzardBar) Dispatch(AfterBlizzardPlan, blizzardBar) end
+local function ReassertHook() Dispatch(Reassert) end
 
-function AB.Dispose()
-    if AB.disposed then return true end
-    if NS.IsCombatLocked() or type(SecureHandlerExecute) ~= "function"
-        or type(SecureHandlerSetFrameRef) ~= "function" then return false end
-    local control = S.CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
-    local hidden = S.CreateFrame("Frame", nil, UIParent, "SecureFrameTemplate")
-    hidden:SetAllPoints(UIParent)
-    hidden:Hide()
-    AB.hidden, AB.control = hidden, control
-    SecureHandlerSetFrameRef(control, "hidden", hidden)
+-- Bars 2-8 and the stance and pet bars go under the hidden parent. Bars
+-- 2-8 lose their events; a reused bar keeps a post-hook on its own
+-- shown-button plan (AfterBlizzardPlan).
+local function DisposeBars(control)
     local bars = 0
     for index = 2, 8 do
         local bar = AB.Frame(AB.NATIVE_BARS[index])
@@ -165,9 +164,9 @@ function AB.Dispose()
             SecureHandlerSetFrameRef(control, "bar" .. bars, bar)
             bar:UnregisterAllEvents()
             local target = AB.bars[index]
-            if target and target.native and type(bar.UpdateShownButtons) == "function" then
+            if target and target.native then
                 suiteBarOf[bar] = target
-                hooksecurefunc(bar, "UpdateShownButtons", AfterBlizzardPlan)
+                hooksecurefunc(bar, "UpdateShownButtons", AfterBlizzardPlanHook)
             end
         end
     end
@@ -178,6 +177,11 @@ function AB.Dispose()
             SecureHandlerSetFrameRef(control, "bar" .. bars, bar)
         end
     end
+end
+
+-- Reused buttons move into the suite headers; the other Blizzard action
+-- buttons (twins) are hidden securely and lose their events.
+local function DisposeButtons(control)
     local twins, reused = 0, 0
     for index = 1, 8 do
         for i = 1, AB.BUTTONS do
@@ -187,11 +191,29 @@ function AB.Dispose()
                 if target and target.native then
                     reused = reused + 1
                     -- The hidden original bar must not reapply its own shown
-                    -- button plan when the action changes on our header
-                    -- (ActionBarActionButtonMixin:UpdateAction). No attribute
-                    -- or snippet can stand in for this field: Blizzard also
-                    -- reads it for the proc glow art and tooltip anchoring,
-                    -- which stay as the suite has always shown them.
+                    -- button plan when the action changes on our header:
+                    -- ActionBarActionButtonMixin:UpdateAction calls
+                    -- self.bar:UpdateShownButtons, also in combat, where the
+                    -- suite's plan cannot answer until combat ends (the
+                    -- post-hook above re-applies it out of combat only).
+                    -- Clearing the field is an insecure write, so Blizzard
+                    -- code that reads `bar` on these buttons runs tainted
+                    -- from that read on (line numbers live/Forever): proc
+                    -- alerts (ActionButtonSpellAlerts.lua:47,
+                    -- CheckAndSetArtStyle; the alert art is never downgraded
+                    -- here), action changes (ActionButton.lua:549/561,
+                    -- UpdateAction, which the assisted-combat rotation frame
+                    -- also forces at its update rate while it shows),
+                    -- tooltips with enhanced tooltips off (1075/1119,
+                    -- SetTooltip) and the rotation frame's tutorial check
+                    -- (1916/1993, EvaluateTutorials). The flyout read
+                    -- (1630/1689) never happens: every reused button carries
+                    -- a flyoutDirection attribute (Bars.lua).
+                    -- Keeping `bar` instead would let Blizzard's hidden bar
+                    -- show and hide these buttons by its own icon count in
+                    -- combat, and would change their proc alert art and
+                    -- tooltip anchor; a secure OnShow/OnHide wrap could only
+                    -- undo the show/hide, not those. So the field is cleared.
                     button.bar = nil
                     button:SetAttribute("_childupdate-grid", AB.SNIPPET.BUTTON)
                     SecureHandlerSetFrameRef(control, "reuse" .. reused, button)
@@ -206,25 +228,30 @@ function AB.Dispose()
             end
         end
     end
+end
+
+function AB.Dispose()
+    if AB.disposed then return true end
+    if NS.IsCombatLocked() then return false end
+    local control = S.CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
+    local hidden = S.CreateFrame("Frame", nil, UIParent, "SecureFrameTemplate")
+    hidden:SetAllPoints(UIParent)
+    hidden:Hide()
+    AB.hidden, AB.control = hidden, control
+    SecureHandlerSetFrameRef(control, "hidden", hidden)
+    DisposeBars(control)
+    DisposeButtons(control)
     local main = AB.Frame("MainActionBar")
     if main then SecureHandlerSetFrameRef(control, "main", main) end
     SecureHandlerExecute(control, DISPOSE)
     AB.disposed = true
     if main then
         Reassert()
-        main:HookScript("OnShow", Reassert)
+        main:HookScript("OnShow", ReassertHook)
         -- The vehicle leave button (taxis, unskinned vehicles) is parented
         -- to the invisible main bar. It is not protected; move it only when
         -- that causes no show/hide transition, else on a later refresh.
         AB.ReparentLeaveButton()
-    end
-    -- Classic's MainMenuBar is unprotected end-cap art that Blizzard shows
-    -- and hides through MainActionBar. Invisible art must not catch clicks.
-    local art = AB.Frame("MainMenuBar")
-    if art and art ~= main and not art:IsProtected() then
-        art:SetAlpha(0)
-        Unmouse(AB.Frame("MainMenuBarMaxLevelBar"))
-        Unmouse(AB.Frame("MainMenuBarPerformanceBarFrameButton"))
     end
     return true
 end
@@ -242,7 +269,7 @@ function AB.ReparentLeaveButton()
 end
 
 local function PetHasAction(i)
-    return type(GetPetActionInfo) == "function" and GetPetActionInfo(i) ~= nil
+    return GetPetActionInfo(i) ~= nil
 end
 
 -- Adopts Blizzard's stance (11) or pet (12) buttons into the suite header
@@ -303,7 +330,7 @@ if frame then frame:Show() end
 ]]
 function S.OpenQuickKeybind()
     local frame = AB.Frame("QuickKeybindFrame")
-    if not frame or NS.IsCombatLocked() or type(SecureHandlerExecute) ~= "function" then return false end
+    if not frame or NS.IsCombatLocked() then return false end
     local control = AB.control
     if not control then
         control = S.CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")

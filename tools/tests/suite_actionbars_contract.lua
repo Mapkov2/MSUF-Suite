@@ -18,6 +18,18 @@ local function Secret() return setmetatable({},SecretMT) end
 local function IsSecret(value) return getmetatable(value)==SecretMT end
 issecretvalue=IsSecret
 
+------------------------------------------------------------------ callback isolation
+-- The client's securecallfunction reports an error to the error handler and
+-- returns nothing; the caller goes on. Here errors still raise unless a test
+-- expects one; a coroutine then holds the error back from the caller.
+local dispatch={expect=false,errors={}}
+securecallfunction=function(fn,...)
+    if not dispatch.expect then return fn(...) end
+    local results={coroutine.resume(coroutine.create(fn),...)}
+    if results[1] then return unpack(results,2,table.maxn(results)) end
+    dispatch.errors[#dispatch.errors+1]=tostring(results[2])
+end
+
 ------------------------------------------------------------------ clock, timers, combat
 local combat,secure=false,0
 local now=100
@@ -503,11 +515,34 @@ GetActionInfo=function(slot)
     local a=actions[slot]
     if a then return a.kind,a.id,a.sub end
 end
-local overlayed,alerts={},{}
+-- Flyout 7 (slot 49) holds two spells; both clients have these globals.
+local flyoutSpells={[7]={701,702}}
+GetFlyoutInfo=function(id) local list=flyoutSpells[id];return "Flyout","",list and #list or 0,true end
+GetFlyoutSlotInfo=function(id,index) local list=flyoutSpells[id];return list and list[index] end
+local overlayed,alerts,assistedAction={},{},{}
 C_SpellActivationOverlay={IsSpellOverlayed=function(id) assert(not IsSecret(id));return overlayed[id]==true end}
 ActionButtonSpellAlertManager={
-    ShowAlert=function(_,button) alerts[button]=true end,
+    ShowAlert=function(_,button)
+        alerts[button]=true
+        -- Like the manager's GetAlertFrame: the frame appears on the first
+        -- proc; the assisted-combat rotation action's alert lives on the
+        -- button's AssistedCombatRotationFrame.
+        local host=button
+        if assistedAction[button] then
+            button.AssistedCombatRotationFrame=button.AssistedCombatRotationFrame or NewFrame("Frame",nil,button)
+            host=button.AssistedCombatRotationFrame
+        end
+        host.SpellActivationAlert=host.SpellActivationAlert or NewRegion("Texture",host)
+        host.SpellActivationAlert:Show()
+    end,
     HideAlert=function(_,button) alerts[button]=nil end,
+}
+-- The cooldown manager learns from this event that the key texts of the
+-- suite bars changed.
+local BINDINGS_EVENT,triggered="MSUFSuite.ActionBars.BindingsChanged",{}
+EventRegistry={
+    RegisterCallback=function() end,UnregisterCallback=function() end,
+    TriggerEvent=function(_,event) triggered[event]=(triggered[event] or 0)+1 end,
 }
 local tooltip={}
 GameTooltip={SetOwner=function(self,owner) self.owner=owner end,GetOwner=function(self) return self.owner end,
@@ -561,8 +596,12 @@ end
 local editElements={}
 MSUF_EditModeAPI={RegisterElement=function(owner,element) editElements[element.id]=element;return true end,
     RefreshOwner=function() end,UnregisterOwner=function() end,RegisterSessionListener=function() end,IsActive=function() return false end}
-C_AddOns={IsAddOnLoaded=function() return false end,
-    DoesAddOnExist=function(name) return type(name)=="string" and name:match("^MSUF_Suite")~=nil end}
+C_AddOns={IsAddOnLoaded=function() return false end,LoadAddOn=function() end,
+    DoesAddOnExist=function(name) return type(name)=="string" and name:match("^MSUF_Suite")~=nil end,
+    GetAddOnEnableState=function() return 2 end}
+UnitGUID=function() return "Player-Test" end
+UnitName=function() return "Tester" end
+GetRealmName=function() return "Realm" end
 
 ------------------------------------------------------------------ Blizzard frames
 local function Buttons(prefix,parent,count,small)
@@ -647,18 +686,62 @@ local before=created
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
-for _,file in ipairs({"Bootstrap","Bars","Paging","Blizzard","Visibility",
-    "Bindings","Style","Paint","Controller"}) do
+local RUNTIME={"Bootstrap","Bars","Blizzard","Paging","Visibility",
+    "Bindings","Style","Paint","NativeButtons","Flush","Events","Controller"}
+for _,file in ipairs(RUNTIME) do
     assert(loadfile(root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
 end
+-- The TOC lists the runtime in this order. The paint passes split along
+-- their seams: button painting (Paint), Blizzard's reused buttons
+-- (NativeButtons), the dirty mask and flush (Flush), the event map
+-- (Events); each resolves what it uses from the earlier ones at load.
+do
+    local handle=assert(io.open(root.."/MSUF_Suite_ActionBars/MSUF_Suite_ActionBars_Mainline.toc","rb"))
+    local toc=handle:read("*a"):gsub("\r","")
+    handle:close()
+    local listed={}
+    for line in toc:gmatch("[^\n]+") do
+        if line:sub(1,1)~="#" and line:match("%.lua$") then listed[#listed+1]=line:gsub("%.lua$","") end
+    end
+    assert(#listed==#RUNTIME,"the TOC lists "..#listed.." runtime files")
+    for i=1,#RUNTIME do assert(listed[i]==RUNTIME[i],"TOC order: expected "..RUNTIME[i].." at "..i) end
+end
 assert(created==before,"loading the runtime created frames")
+-- Globals both clients always have (Blizzard's Retail and Forever UI source)
+-- are called, never probed; the harness above stubs them.
+for _,file in ipairs({"Bars","Blizzard","Visibility","Bindings","Style","Paint","NativeButtons","Flush","Events",
+    "Controller"}) do
+    local handle=assert(io.open(root.."/MSUF_Suite_ActionBars/"..file..".lua","rb"))
+    local text=handle:read("*a")
+    handle:close()
+    for _,api in ipairs({"GetBindingKey","GetActionInfo","SetOverrideBindingClick","ClearOverrideBindings","GetCVarBool",
+        "hooksecurefunc","ActionButtonDown","ActionButtonUp","MultiActionButtonDown","MultiActionButtonUp",
+        "GetFlyoutInfo","GetFlyoutSlotInfo","GetNumShapeshiftForms","SecureHandlerExecute","SecureHandlerSetFrameRef",
+        "GetPetActionInfo","GetCursorInfo","UnitClass","GetTime","C_Timer"}) do
+        assert(not text:find("type("..api..")",1,true),file..".lua probes "..api)
+    end
+    assert(not text:find("not C_Timer",1,true),file..".lua probes C_Timer")
+    for _,probe in ipairs({"if C_Timer","_G.C_Timer","_G.EventRegistry","_G.C_ActionBar","_G.C_LossOfControl",
+        "_G.SpellFlyout","_G.ActionButtonSpellAlertManager","type(_G.ActionButtonSpellAlertMixin)",
+        "type(ActionButton_UpdateCooldownNumberHidden)","if GameTooltip_SetDefaultAnchor",".UpdateShownButtons) ==",
+        ".UpdateUsable) ==",".UpdateState) =="}) do
+        assert(not text:find(probe,1,true),file..".lua probes: "..probe)
+    end
+    -- The runtime files load before any of their functions runs: modules of
+    -- this addon are used, never probed.
+    for _,probe in ipairs({"AB%.(%u%w*) and AB%.%1","if AB%.%u%w* then","and AB%.%u%w* then AB%."}) do
+        assert(not text:find(probe),file..".lua probes one of its own modules: "..probe)
+    end
+    -- The flush runs its units through the suite's shared runner (Runtime.lua).
+    if file=="Flush" then assert(text:find("S.NewUnitRunner()",1,true),"the flush lost the shared unit runner") end
+end
 local S,AB=Suite.Suite,private.ActionBars
 -- The original full-feature contract exercises the suite-painted fallback.
 -- The Retail native-reuse path has a separate branch below.
 local nativeReuse=arg[2]=="native"
 AB.nativeReuse=nativeReuse
 Suite.Client.isForever=true
-assert(S.catalog.actionbars.available(),
+assert(S.catalog.actionbars.available==nil and S.Availability("actionbars"),
     "Forever availability must not run the broken compiler or hard-block the module")
 Suite.Client.isForever=false
 local M=AB.M
@@ -696,6 +779,7 @@ assert(M.active and S.states.actionbars.active and S.Status("actionbars")=="Acti
 RunTimers()
 local frames=created-builtBefore
 assert(c.imported==true,"first enable must import Blizzard's layout")
+assert((triggered[BINDINGS_EVENT] or 0)>0,"starting the bars did not tell the cooldown manager its key texts changed")
 
 if nativeReuse then
     assert(not Bar(1).native and not Bar(9).native and not Bar(10).native,
@@ -718,6 +802,9 @@ if nativeReuse then
             assert(not button.strippedEvents,"native painter lost its events")
             assert(math.floor((button.attrs.showgrid or 0)/8)%2==1,
                 "native showgrid guard missing")
+            -- With `bar` cleared, Blizzard's flyout code must take the
+            -- direction from the attribute and never read the field.
+            assert(button.attrs.flyoutDirection~=nil,"a reused button has no flyoutDirection attribute")
         end
     end
     assert(Button(4,11).button.attrs.statehidden and not Button(4,11).button.shown,
@@ -792,6 +879,51 @@ if nativeReuse then
     c.procGlow=1;M:Refresh()
     assert(Button(2,1).button.SpellActivationAlert.alpha==1,
         "Blizzard proc glow must be restored")
+    -- Blizzard creates a reused button's alert on its first proc, after the
+    -- style pass: the Pixel border and None glows keep it invisible.
+    local late=Button(2,3).button
+    for mode=2,3 do
+        c.procGlow=mode;M:Refresh()
+        late.SpellActivationAlert=nil
+        ActionButtonSpellAlertManager:ShowAlert(late)
+        assert(late.SpellActivationAlert and late.SpellActivationAlert.alpha==0,
+            "Blizzard's spell alert showed on a reused button with glow mode "..mode)
+    end
+    c.procGlow=1;M:Refresh()
+    late.SpellActivationAlert=nil
+    ActionButtonSpellAlertManager:ShowAlert(late)
+    assert(late.SpellActivationAlert.alpha==1,"the Blizzard glow mode hid Blizzard's spell alert")
+    -- The assisted-combat rotation action's alert sits on the rotation frame
+    -- and follows the same rule, whether it already shows or appears later.
+    local rotation=Button(2,4).button
+    assistedAction[rotation]=true
+    ActionButtonSpellAlertManager:ShowAlert(rotation)
+    local rotationAlert=rotation.AssistedCombatRotationFrame.SpellActivationAlert
+    assert(rotationAlert.alpha==1,"the Blizzard glow mode hid the rotation frame's spell alert")
+    c.procGlow=2;M:Refresh()
+    assert(rotationAlert.alpha==0,"the Pixel border glow left the rotation frame's spell alert showing")
+    for mode=2,3 do
+        c.procGlow=mode;M:Refresh()
+        rotation.AssistedCombatRotationFrame.SpellActivationAlert=nil
+        ActionButtonSpellAlertManager:ShowAlert(rotation)
+        assert(rotation.AssistedCombatRotationFrame.SpellActivationAlert.alpha==0,
+            "the rotation frame's spell alert showed with glow mode "..mode)
+    end
+    c.procGlow=1;M:Refresh()
+    assert(rotation.AssistedCombatRotationFrame.SpellActivationAlert.alpha==1,
+        "the Blizzard glow mode did not restore the rotation frame's spell alert")
+    assistedAction[rotation]=nil
+    -- Post-hooks inside Blizzard's call chains run isolated: an error is
+    -- reported and never reaches the alert manager's caller.
+    c.procGlow=2;M:Refresh()
+    local alert,errors=late.SpellActivationAlert,#dispatch.errors
+    alert.SetAlpha=function() alert.SetAlpha=nil;error("alert hook failed") end
+    dispatch.expect=true
+    ActionButtonSpellAlertManager:ShowAlert(late)
+    dispatch.expect=false
+    assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("alert hook failed",1,true),
+        "a raising alert hook reached Blizzard's alert manager")
+    c.procGlow=1;M:Refresh()
     c.hideEmptyCharges=true;actions[61].charges={maxCharges=2,currentCharges=0};M:Refresh()
     assert(Button(2,1).button.Count.alpha==0,"native empty-charge count did not hide")
     local chargeCalls=calls.charges
@@ -924,7 +1056,9 @@ assert(bindingReads==pageKeyReads and Button(1,1).slot==73,"a page flip re-read 
 combat=false
 RunTimers()
 -- Custom paging: modifiers and opt-outs stop the mirror and route bar 1 keys.
+local bindingEvents=triggered[BINDINGS_EVENT] or 0
 assert(S.SetMany("actionbars",{disableFormPaging=true}))
+assert((triggered[BINDINGS_EVENT] or 0)>bindingEvents,"the forms opt-out did not tell the cooldown manager its key texts changed")
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==1 and Bar(1).header.attrs.mirror==false,"forms opt-out keeps page 1")
 assert(overrides["1"]=="MSUFSuiteBar1Button1" and overrides["2"]=="MSUFSuiteBar1Button2","opt-out routes bar 1 keys")
@@ -1175,6 +1309,50 @@ assert(calls.usableBySlot[1]==calls.rangeGateReads,
 actions[1].usable=true
 Event("ACTION_USABLE_CHANGED",{{slot=1,usable=true,noMana=false}})
 assert(Button(1,1).button.icon.vertex[1]==1,"owned action did not accept usable payload")
+-- Usability follows Blizzard's buttons (ActionButton.lua, Retail and
+-- Forever): slot payloads, plus one full re-read when the mount display
+-- changes; target changes walk nothing. Suite buttons on slots the payload
+-- never named (bar 9: slots 13-24 have no Blizzard button) follow
+-- ACTIONBAR_UPDATE_USABLE, which re-reads only those.
+do
+    local events=M.context.frame.events
+    assert(not events.PLAYER_TARGET_CHANGED,"a target change walks every button's usability")
+    actions[1].usable=false
+    local reads=calls.usableBySlot[1] or 0
+    now=now+1;Event("PLAYER_MOUNT_DISPLAY_CHANGED");RunTimers()
+    assert(calls.usableBySlot[1]==reads+1 and Button(1,1).button.icon.vertex[1]==.4,
+        "a mount display change did not re-read usability")
+    actions[1].usable=true
+    now=now+1;Event("PLAYER_MOUNT_DISPLAY_CHANGED");RunTimers()
+    assert(Button(1,1).button.icon.vertex[1]==1)
+    actions[13].usable=false
+    local named,unnamed=calls.usableBySlot[1] or 0,calls.usableBySlot[13] or 0
+    now=now+1;Event("ACTIONBAR_UPDATE_USABLE");RunTimers()
+    assert(calls.usableBySlot[13]==unnamed+1 and Button(9,1).button.icon.vertex[1]==.4,
+        "a suite button on a slot ACTION_USABLE_CHANGED never named went stale")
+    assert((calls.usableBySlot[1] or 0)==named,"ACTIONBAR_UPDATE_USABLE re-read a slot the payload tracks")
+    actions[13].usable=true
+    now=now+1;Event("ACTIONBAR_UPDATE_USABLE");RunTimers()
+    assert(Button(9,1).button.icon.vertex[1]==1)
+end
+-- Every flush unit runs isolated: a raising bar paint is reported, the
+-- units after it still run, and the bar gets its paint back once.
+do
+    local info,errors=GetActionInfo,#dispatch.errors
+    GetActionInfo=function() GetActionInfo=info;error("paint failed") end
+    bindings.MSUFSUITE_BAR9_BUTTON1={"F9"}
+    dispatch.expect=true
+    AB.MarkBar(Bar(9));AB.Mark("keys");RunTimers()
+    dispatch.expect=false
+    assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("paint failed",1,true),
+        "a raising bar paint was not reported")
+    assert(Button(9,1).button.HotKey.text==S.KeyText("F9"),"a raising bar paint stopped the key texts after it")
+    local reads=infoReads
+    AB.Mark("state");RunTimers()
+    assert(infoReads>reads,"the raising bar paint was not retried")
+    bindings.MSUFSUITE_BAR9_BUTTON1={"CTRL-BUTTON4","MOUSEWHEELUP"}
+    AB.Mark("keys");RunTimers()
+end
 local references=AB.RangeReferences()
 assert(references>0)
 assert(S.Set("actionbars","bar2Visibility",6))
@@ -1209,6 +1387,13 @@ Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",Secret());RunTimers()
 assert(S.Set("actionbars","procGlow",2))
 overlayed[61]=true;Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
 assert(not alerts[b61] and Button(2,1).glowEdges and Button(2,1).glowEdges[1].shown,"pixel border glow")
+-- A new highlight color reaches a pixel glow that is already showing.
+local highlightColor=c.interactionColor
+assert(not c.interactionClassColor and S.Set("actionbars","interactionColor","00ff00"))
+local glowEdge=Button(2,1).glowEdges[1]
+assert(glowEdge.shown and glowEdge.color[1]==0 and glowEdge.color[2]==1 and glowEdge.color[3]==0,
+    "a showing pixel glow kept the old highlight color")
+assert(S.Set("actionbars","interactionColor",highlightColor))
 overlayed[61]=nil;Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61)
 assert(not Button(2,1).glowEdges[1].shown)
 assert(S.Set("actionbars","procGlow",3));RunTimers()
@@ -1236,6 +1421,18 @@ ActionButtonDown(2)
 assert(Button(1,2).button.state=="PUSHED" and native[#native]=="down2")
 ActionButtonUp(2)
 assert(Button(1,2).button.state=="NORMAL")
+-- The press hooks run inside Blizzard's binding handlers, isolated: an
+-- error is reported and never reaches Blizzard's handler.
+do
+    local button,errors=Button(1,2).button,#dispatch.errors
+    button.SetButtonState=function() button.SetButtonState=nil;error("press hook failed") end
+    dispatch.expect=true
+    ActionButtonDown(2)
+    dispatch.expect=false
+    assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("press hook failed",1,true),
+        "a raising press hook reached Blizzard's binding handler")
+    ActionButtonUp(2)
+end
 MultiActionButtonDown("MultiBarBottomLeft",1)
 assert(b61.state=="PUSHED")
 -- Checked state and equipped border.
@@ -1245,20 +1442,12 @@ assert(b61.checked==true and b61.Border.shown)
 assert(S.Set("actionbars","castHighlight",false));RunTimers()
 assert(b61.checked==false)
 
------------------------------------------------------------------- plain (Classic) cooldowns
-Suite.Client.hasSecrets=false
-AB.ResolveAPI()
-actions[61].cooldown={isActive=true,isEnabled=true,startTime=10,duration=8,modRate=1}
-actions[61].remaining=nil
-now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
-assert(b61.cooldown.cooldown and b61.cooldown.cooldown[2]==8 and not b61.cooldown.object,"plain cooldown numbers")
-assert(b61.icon.desaturation==1 and b61.alpha==.4)
-actions[61].cooldown={isActive=true,isEnabled=true,startTime=10,duration=1.2,modRate=1}
-now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
-assert(b61.icon.desaturation==0 and b61.alpha==1,"the global cooldown is excluded")
-Suite.Client.hasSecrets=true
-AB.ResolveAPI()
+------------------------------------------------------------------ cooldown feedback off
+-- Turning the feedback off clears what the duration curves painted.
 actions[61].cooldown={isActive=true,isEnabled=true,startTime=now,duration=8,modRate=1}
+actions[61].remaining=5
+now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+assert(b61.icon.desaturation==1 and b61.alpha==.4 and not b61.cooldown.cooldown,"duration curves paint the feedback")
 assert(S.SetMany("actionbars",{desaturateCooldown=false,cooldownAlpha=100}));RunTimers()
 assert(b61.icon.desaturation==0 and b61.alpha==1,
     "duration-only path did not clear previous cooldown feedback")
@@ -1349,6 +1538,27 @@ M:RegisterMovers();M:RegisterMovers()
 assert(specs.bar3 and specs.bar3[1]==specs.bar3[2],"mover specs were rebuilt")
 S.RegisterOwnedMover=register
 
+------------------------------------------------------------------ UI scale
+-- A new UI scale or resolution moves the pixel grid: one refresh per burst,
+-- next frame, snaps every bar again (here 1.5 UI units per pixel).
+RunTimers()
+assert(S.Set("actionbars","bar3Size",40) and Button(3,1).button.width==40)
+GetPhysicalScreenSize=function() return 800,512 end
+Event("UI_SCALE_CHANGED");Event("DISPLAY_SIZE_CHANGED")
+assert(#timers==1,"a scale burst must share one refresh")
+RunTimers()
+assert(Button(3,1).button.width==40.5,"a UI scale change left the bars on the old pixel grid")
+GetPhysicalScreenSize=function() return 1024,768 end
+combat=true
+local queue,queued=S.Queue,nil
+S.Queue=function(id) queued=id;return queue(id) end
+Event("DISPLAY_SIZE_CHANGED");RunTimers()
+S.Queue=queue
+assert(queued=="actionbars" and Button(3,1).button.width==40.5,"a scale refresh in combat must wait for combat to end")
+combat=false
+S.Apply("actionbars")
+assert(Button(3,1).button.width==40,"the queued scale refresh did not re-snap the bars")
+
 ------------------------------------------------------------------ movers and exports
 M:RegisterMovers()
 local element=assert(editElements.bar3,"mover for bar 3")
@@ -1390,7 +1600,23 @@ combat=true;assert(not S.OpenQuickKeybind());combat=false
 
 ------------------------------------------------------------------ disable and re-enable
 local clears=overrideClears
-assert(S.Set("actionbars","enabled",false))
+local enabledEvents=triggered[BINDINGS_EVENT] or 0
+-- Every release step runs isolated: the first one raising is reported, and
+-- the steps after it still stop paging, hide the bars, clear the override
+-- bindings and tell the cooldown manager (asserted below).
+do
+    local stopDispatcher,errors=AB.StopDispatcher,#dispatch.errors
+    AB.StopDispatcher=function() error("dispatcher stop failed") end
+    dispatch.expect=true
+    assert(S.Set("actionbars","enabled",false))
+    dispatch.expect=false
+    AB.StopDispatcher=stopDispatcher
+    assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("dispatcher stop failed",1,true),
+        "the raising release step was not reported")
+    stopDispatcher()
+end
+assert((triggered[BINDINGS_EVENT] or 0)>enabledEvents and not S.ActionBarsBindingForSpell(1001),
+    "stopping the bars did not tell the cooldown manager its key texts changed")
 assert(overrideClears==clears+1 and not next(overrides),"disable clears override bindings")
 assert(S.Status("actionbars")==AB.RELOAD_MESSAGE,"reload message after disable")
 for index=1,12 do assert(not Bar(index).header.shown,"suite bars hide on disable") end

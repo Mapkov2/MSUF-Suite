@@ -1,6 +1,6 @@
 local _, NS = ...
 local B = NS.CatalogBuild
-local Number, Bool, Choice, Color, Font = B.Number, B.Bool, B.Choice, B.Color, B.Font
+local Number, Bool, Choice, Color = B.Number, B.Bool, B.Choice, B.Color
 
 -- Twelve bars: ten action bars with suite-owned secure buttons, then the
 -- stance and pet bars, which keep Blizzard's own buttons in suite headers.
@@ -12,21 +12,14 @@ NS.ActionBarTitles = {
 local BAR_COUNT = #NS.ActionBarTitles
 NS.ActionBarCount = BAR_COUNT
 
-local function Available()
-    if type(_G.SecureHandlerSetFrameRef) ~= "function"
-        or type(_G.RegisterStateDriver) ~= "function" then
-        return false, "This client has no secure state drivers"
-    end
-    return true
-end
-
+-- No client check: Blizzard_RestrictedAddOnEnvironment (secure handlers and
+-- state drivers) loads on Retail and on Forever.
 B.Module("actionbars", {
     title = "Action bars",
     description = "Ten action bars plus stance and pet bars with free layout, paging, visibility rules and button styling. Key bindings keep using Blizzard's commands.",
     core = true, defaultEnabled = true,
     page = "suite_actionbars",
     conflicts = { "ElvUI", "Bartender4", "Dominos", "EllesmereUIActionBars", "ConsolePort_Bar" },
-    available = Available,
 })
 
 local id = "actionbars"
@@ -96,24 +89,12 @@ B.Section(id, "cooldowns", "Cooldowns and states", {
     Color("rangeColor", "Out-of-range color", "cc1a1a"),
     Bool("hideEmptyCharges", "Hide the charge count at zero", false),
 })
-B.Section(id, "text", "Text", {
-    Font("font", "Font"),
-    Choice("fontOutline", "Text outline", 1, { "Outline", "Thick outline", "None" }),
-    Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
-    Bool("fontShadow", "Text shadow"),
-    Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
-    Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
+B.TextSection(id, {
     Color("keybindColor", "Keybind color", initial.keybindColor),
     Color("macroColor", "Macro name color", initial.macroColor),
     Color("countColor", "Count color", initial.countColor),
     Color("cooldownColor", "Cooldown number color", initial.cooldownColor),
 })
-local textRules = NS.SuiteCatalog[id].rules
-textRules.fontShadow.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
-for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
-    textRules[key].enableKey = "fontShadow"
-    textRules[key].requiresChoice = textRules.fontShadow.requiresChoice
-end
 B.Section(id, "behavior", "Behavior", {
     Bool("mouseoverShowAll", "Hovering one mouseover bar reveals all of them", false),
     Bool("showOnDrag", "Show hidden bars while dragging a spell", true),
@@ -135,10 +116,9 @@ local defaults = {
     { 4, 12, 1, "BOTTOM", 0, 292 }, { 4, 12, 1, "BOTTOM", 0, 334 },
     { 4, 10, 1, "BOTTOM", -240, 170 }, { 4, 10, 1, "BOTTOM", 240, 170 },
 }
-local anchorLabels = { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }
 local anchorIndex = {}
-for i, label in ipairs({ "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }) do anchorIndex[label] = i end
-NS.ActionBarAnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+for i, point in ipairs(NS.AnchorPoints) do anchorIndex[point] = i end
+NS.ActionBarAnchorPoints = NS.AnchorPoints
 
 for i = 1, BAR_COUNT do
     local p = "bar" .. i
@@ -160,7 +140,7 @@ for i = 1, BAR_COUNT do
         Choice(p .. "Start", "First button corner", 1, { "Top left", "Top right", "Bottom left", "Bottom right" }),
         Bool(p .. "ShowEmpty", "Show empty buttons", not special),
         Bool(p .. "ClickThrough", "Click through", false),
-        Choice(p .. "Point", "Screen anchor", anchorIndex[d[4]], anchorLabels),
+        Choice(p .. "Point", "Screen anchor", anchorIndex[d[4]], NS.AnchorLabels),
         Number(p .. "X", "Horizontal position", d[5], -4000, 4000),
         Number(p .. "Y", "Vertical position", d[6], -3000, 3000),
         Bool(p .. "Keybind", "Show keybinds", true),

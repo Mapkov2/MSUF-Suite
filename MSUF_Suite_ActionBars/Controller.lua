@@ -6,6 +6,7 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
+local Dispatch = S.Dispatch
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
 AB.RELOAD_MESSAGE = "Reload the UI to restore Blizzard's action bars"
 
@@ -61,11 +62,7 @@ local function QueueImport(values)
         if not M.active or M.config.imported then return end
         if not S.SetMany("actionbars", values) then AB.importQueued = nil end
     end
-    if C_Timer then
-        C_Timer.After(0, Write)
-    else
-        Write()
-    end
+    C_Timer.After(0, Write)
 end
 
 ------------------------------------------------------------------ settings work
@@ -170,7 +167,7 @@ local function Collect(config)
         for index = 1, AB.BAR_COUNT do Merge(barWork[index], FULL_BAR) end
     end
     -- A new pixel grid moves and restyles every bar.
-    local unit = AB.PixelUnit()
+    local unit = S.PixelUnit()
     if unit ~= appliedUnit then
         appliedUnit = unit
         for index = 1, AB.BAR_COUNT do
@@ -183,7 +180,7 @@ local function Collect(config)
         appliedEditMode = editMode
         work.visible = true
     end
-    -- The stance bar follows the class's forms (FormsChanged in Paint.lua).
+    -- The stance bar follows the class's forms (FormsChanged in Events.lua).
     local stance = AB.bars[11]
     if stance and (stance.forms ~= AB.HasForms() or stance.count ~= AB.Count(stance, config)) then
         barWork[11].layout, barWork[11].visible = true, true
@@ -213,7 +210,7 @@ local function ApplyStyle()
     if any then AB.StyleAll(work.style) end
 end
 
--- Paint walks a setting can ask for (Paint.lua dirty kinds).
+-- Paint walks a setting can ask for (Flush.lua dirty kinds).
 local PAINT_WALKS = { "state", "count", "cooldown", "tint" }
 local visibleBars = {}
 local function ApplyVisibilityWork()
@@ -263,6 +260,13 @@ local function ClearWork()
     end
 end
 
+-- The cooldown manager caches the key texts these bars give it
+-- (S.ActionBarsBindingForSpell). Their answers change when the bars start
+-- or stop and with the paging settings (form pages).
+local function BindingsChanged()
+    EventRegistry:TriggerEvent("MSUFSuite.ActionBars.BindingsChanged")
+end
+
 function M:Enable()
     AB.ResolveAPI()
     AB.Build()
@@ -293,7 +297,10 @@ function M:Refresh()
     ApplyVisibilityWork()
     AB.UpdateClickAttributes()
     ApplyPaint()
-    if work.paging then AB.UpdateRouting() end
+    if work.paging then
+        AB.UpdateRouting()
+        BindingsChanged()
+    end
     if work.drag or AB.dragPending then AB.ApplyDrag() end
     ClearWork()
     rebuild = false
@@ -301,17 +308,20 @@ end
 
 -- Blizzard's bars cannot be rebuilt at runtime: the suite bars hide, their
 -- drivers and override bindings go, and a reload restores Blizzard's bars.
--- A later enable in the same session reuses every frame.
+-- A later enable in the same session reuses every frame. Each release step
+-- runs isolated (Dispatch), as Context:Release does: one that raises is
+-- reported and every later step still runs.
 function M:Disable()
-    AB.StopDispatcher()
+    Dispatch(AB.StopDispatcher)
     AB.dispatching = nil
-    AB.StopPaging()
-    AB.StopVisibility()
-    AB.ClearRouting()
+    Dispatch(AB.StopPaging)
+    Dispatch(AB.StopVisibility)
+    Dispatch(AB.ClearRouting)
     AB.importQueued = nil
     for key in pairs(applied) do applied[key] = nil end
     rebuild, appliedUnit, appliedEditMode = true, nil, nil
     if AB.disposed then S.states.actionbars.reloadRequired = AB.RELOAD_MESSAGE end
+    Dispatch(BindingsChanged)
 end
 
 ------------------------------------------------------------------ movers

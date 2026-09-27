@@ -18,7 +18,6 @@ local EXTRA_COOLDOWNS = { "chargeCooldown", "lossOfControlCooldown" }
 AB.styleGen = 0
 
 local function Class()
-    if type(UnitClass) ~= "function" then return nil end
     local _, class = UnitClass("player")
     return S.Public(class) and class or nil
 end
@@ -70,30 +69,8 @@ function AB.Edges(rec, key, layer, sublevel)
     return set
 end
 
--- Four edges inside the button rect; the side edges stop short of the top
--- and bottom ones so translucent colors do not double at the corners.
-function AB.PlaceEdges(set, button, width, r, g, b, a)
-    local shown = width > 0
-    for i = 1, 4 do
-        local edge = set[i]
-        edge:ClearAllPoints()
-        edge:SetColorTexture(r, g, b, a)
-        edge:SetShown(shown)
-    end
-    if not shown then return end
-    set[1]:SetPoint("TOPLEFT", button, "TOPLEFT")
-    set[1]:SetPoint("TOPRIGHT", button, "TOPRIGHT")
-    set[1]:SetHeight(width)
-    set[2]:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT")
-    set[2]:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT")
-    set[2]:SetHeight(width)
-    set[3]:SetPoint("TOPLEFT", button, "TOPLEFT", 0, -width)
-    set[3]:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, width)
-    set[3]:SetWidth(width)
-    set[4]:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, -width)
-    set[4]:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, width)
-    set[4]:SetWidth(width)
-end
+-- Four edges inside the button rect (shared with the cooldown manager).
+AB.PlaceEdges = S.PlaceEdges
 
 function AB.ShowEdges(set, shown)
     if not set then return end
@@ -107,7 +84,7 @@ local function Remember(rec, key, texture)
     rec.art = rec.art or {}
     if texture and rec.art[key] == nil then
         rec.art[key] = {
-            atlas = texture.GetAtlas and texture:GetAtlas(),
+            atlas = texture:GetAtlas(),
             file = texture:GetTexture(),
             blend = texture:GetBlendMode(),
         }
@@ -152,13 +129,24 @@ local function Hide(region)
     if region then region:SetAlpha(0) end
 end
 
+-- Blizzard's proc alerts on a reused button. ActionButtonSpellAlertManager
+-- puts the alert of the assisted-combat rotation action on the button's
+-- AssistedCombatRotationFrame instead of the button itself.
+function AB.SetNativeAlertAlpha(button, alpha)
+    local alert = button.SpellActivationAlert
+    if alert then alert:SetAlpha(alpha) end
+    local rotation = button.AssistedCombatRotationFrame
+    alert = rotation and rotation.SpellActivationAlert
+    if alert then alert:SetAlpha(alpha) end
+end
+
 -- Icon crop, hidden template art and the empty-slot fill behind the icon
 -- (filled slots cover it).
 local function StyleIcon(rec, border)
     local button, style = rec.button, AB.style
     local icon = button.icon
     if icon then
-        if button.IconMask and not rec.unmasked and icon.RemoveMaskTexture then
+        if button.IconMask and not rec.unmasked then
             icon:RemoveMaskTexture(button.IconMask)
             rec.unmasked = true
         end
@@ -257,7 +245,7 @@ local function StyleCooldowns(rec, fontScale)
         cooldown:SetDrawEdge(false)
         cooldown:SetDrawBling(false)
         cooldown:SetHideCountdownNumbers(not config.cooldownNumbers)
-        local text = cooldown.GetCountdownFontString and cooldown:GetCountdownFontString()
+        local text = cooldown:GetCountdownFontString()
         if text then
             Text(text, max(6, config[rec.bar.key.CooldownSize] - fontScale), style.dr, style.dg, style.db, true)
         end
@@ -290,10 +278,10 @@ function AB.StyleButton(rec)
         button.Border:SetAllPoints(button)
     end
     local alert = button.SpellActivationAlert
-    if alert and rec.owned then
-        alert:SetSize(size * 1.4, size * 1.4)
-        if rec.native then alert:SetAlpha(M.config.procGlow == 1 and 1 or 0) end
-    end
+    if alert and rec.owned then alert:SetSize(size * 1.4, size * 1.4) end
+    if rec.native then AB.SetNativeAlertAlpha(button, M.config.procGlow == 1 and 1 or 0) end
+    -- A showing pixel glow takes the new interaction color.
+    AB.RecolorGlow(rec)
     rec.styleGen, rec.barStyleGen = AB.styleGen, bar.styleGen
 end
 

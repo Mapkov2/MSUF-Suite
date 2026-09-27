@@ -1,7 +1,7 @@
 local _, P = ...
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local PAGE, ID = "suite_actionbars", "actionbars"
-local COUNT = Suite.ActionBarCount or 12
+local COUNT = Suite.ActionBarCount
 
 local HELP = {
     appearance = "Shared look of every suite action button. Blizzard's own highlight art is used when you pick Blizzard.",
@@ -39,6 +39,7 @@ local function BarKey(key)
     return suffix and ("bar" .. selected .. suffix) or key
 end
 local function Rule(key) return P.catalog[ID].rules[key] end
+-- S.ActionBarAvailable and S.OpenQuickKeybind come with the action bar addon.
 local function Available(index)
     return not S.ActionBarAvailable or S.ActionBarAvailable(index) and true or false
 end
@@ -52,6 +53,17 @@ local function GroupOf(suffix)
 end
 local function BarTitle(index) return Tr(Suite.ActionBarTitles[index]) end
 local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == 6 end
+
+-- Blizzard owns the extra-action/zone-ability container and exposes it in
+-- native Edit Mode. Moving that container directly would taint its secure bars.
+-- Blizzard_EditMode loads at startup on every supported client.
+local function CanMoveExtraAbility()
+    return EditModeManagerFrame:CanEnterEditMode() and not P.Combat()
+end
+
+local function MoveExtraAbility()
+    if CanMoveExtraAbility() then ShowUIPanel(EditModeManagerFrame) end
+end
 
 -- Adds what bar `to` needs to match bar `from` in the chosen groups.
 local function CopyValues(values, from, to, groups)
@@ -265,13 +277,14 @@ local function CopyDestination(source)
     return copyDestination
 end
 local function ConfirmCopyAll(run)
-    if not (M.InstallStaticPopup and _G.StaticPopup_Show) then return run() end
+    -- MSUF's popup helper is a host export; StaticPopup_Show exists everywhere.
+    if not M.InstallStaticPopup then return run() end
     M.InstallStaticPopup("MSUF_SUITE_COPY_BARS_CONFIRM", {
         text = Tr("Copy these settings to ALL action bars?\n\nThis overwrites the chosen settings on every other bar. Positions stay as they are."),
-        button1 = _G.YES or "Yes", button2 = _G.NO or "No",
+        button1 = YES, button2 = NO,
         OnAccept = function(_, data) if type(data) == "function" then data() end end,
     })
-    _G.StaticPopup_Show("MSUF_SUITE_COPY_BARS_CONFIRM", nil, nil, run)
+    StaticPopup_Show("MSUF_SUITE_COPY_BARS_CONFIRM", nil, nil, run)
 end
 local function RunCopyTo(popup)
     if P.Combat() then return false end
@@ -361,6 +374,10 @@ local function BuildEditor(ctx, b)
     P.Button(ctx, body, "Key bindings", 28 + half, y, half, function() if S.OpenQuickKeybind then S.OpenQuickKeybind() end end,
         function() return S.OpenQuickKeybind ~= nil end,
         P.Meta(PAGE, ID, "editor.bindings", "action", "suite_actionbars_editor"))
+    y = y - 40
+    P.Button(ctx, body, "Move extra action button", 16, y, width - 32, MoveExtraAbility,
+        CanMoveExtraAbility,
+        P.Meta(PAGE, ID, "editor.extraAbility", "action", "suite_actionbars_editor"))
     P.AttachSectionReset(ctx, body, "Customize a bar", function()
         return P.ResetPrefix(ID, "bar" .. selected)
     end)
@@ -383,7 +400,7 @@ local function Build(ctx)
         { "Key bindings", function() if S.OpenQuickKeybind then S.OpenQuickKeybind() end end,
           function() return S.OpenQuickKeybind ~= nil end, key = "bindings" },
         { "Move on screen", function() P.MoveOnScreen(ID, "bar1") end, nil, key = "move" },
-        { "Reload UI", function() if ReloadUI then ReloadUI() end end,
+        { "Reload UI", function() ReloadUI() end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_actionbars_look", Tr("Choose a look"),

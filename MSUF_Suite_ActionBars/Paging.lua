@@ -40,10 +40,10 @@ local SPECIAL = "[vehicleui] vehicle; [overridebar] override; [possessbar] posse
 local MANUAL = "[bar:2] 2; [bar:3] 3; [bar:4] 4; [bar:5] 5; [bar:6] 6; "
 local FORMS = "[bonusbar:1] 7; [bonusbar:2] 8; [bonusbar:3] 9; [bonusbar:4] 10; "
 
--- Skyriding only exists on the Mainline client. Elsewhere bonus bar 5 is
--- the possess bar, which must keep paging.
+-- Skyriding only exists on Retail. On Forever bonus bar 5 is the possess
+-- bar, which must keep paging.
 local function SkyridingOptOut(config)
-    return config.disableSkyridingPaging and NS.Client.flavor == "Mainline"
+    return config.disableSkyridingPaging and not NS.Client.isForever
 end
 
 -- True when bar 1 must not follow Blizzard's native page: its keys then
