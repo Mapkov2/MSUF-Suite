@@ -19,11 +19,7 @@ local function AdapterLabel(definitions, id)
 end
 
 local function BuildToggleList(page, order, definitions)
-    local listHost = CreateFrame("Frame", nil, page)
-    listHost:SetPoint("TOPLEFT", 4, -70)
-    listHost:SetPoint("BOTTOMLEFT", 4, 4)
-    listHost:SetWidth(500)
-    local listScroll, list = O.CreateScrollContainer(listHost, (#order + 1) * 46 + 10, LIST_WIDTH)
+    local listScroll, list = O.CreateLeftColumn(page, 500, (#order + 1) * 46 + 10, LIST_WIDTH)
     page._mskinSkinListScroll = listScroll
     page._mskinSkinListContent = list
 
@@ -55,8 +51,8 @@ local function BuildStatusLines(page, statusCard, order, definitions)
         local y = -42 - (index - 1) * 20
         local line = O.CreateText(statusCard, AdapterLabel(definitions, id), 10, "muted")
         line:SetPoint("TOPLEFT", 16, y)
-        if line.SetWordWrap then line:SetWordWrap(false) end
-        if line.SetMaxLines then line:SetMaxLines(1) end
+        line:SetWordWrap(false)
+        line:SetMaxLines(1)
         local value = O.CreateText(statusCard, "", 10, "muted", "RIGHT")
         value:SetPoint("TOPRIGHT", -14, y)
         value:SetWidth(72)
@@ -86,11 +82,9 @@ local function BuildStatusCard(page, order, definitions)
     coverage:SetPoint("TOPLEFT", 16, -54 - #order * 20)
     coverage:SetPoint("RIGHT", -16, 0)
     O.TrackRefresh(function()
-        local counts = NS.GenericWindows and NS.GenericWindows.GetCounts()
-        if counts then
-            coverage:SetText(L["GENERIC  %d groups  |  %d roots applied  |  %d LoD pending"]:format(
-                counts.total or 0, counts.frames or 0, counts.pendingAddons or 0))
-        end
+        local counts = NS.GenericWindows.GetCounts()
+        coverage:SetText(L["GENERIC  %d groups  |  %d roots applied  |  %d LoD pending"]:format(
+            counts.total or 0, counts.frames or 0, counts.pendingAddons or 0))
     end)
 
     -- What the adapters promise about Blizzard frames and background work.
@@ -103,7 +97,7 @@ local function BuildStatusCard(page, order, definitions)
 end
 
 O.RegisterPage("skins", NS.L.BLIZZARD_SKINS, function(page)
-    local catalogFrames = NS.BlizzardCatalog and #NS.BlizzardCatalog.GetFrames() or 0
+    local catalogFrames = #NS.BlizzardCatalog.GetFrames()
     O.CreateSectionTitle(page, L["Blizzard UI coverage"],
         L["%d verified 12.1 window roots plus dedicated adapters for pooled and unique interfaces."]:format(catalogFrames))
     local order, definitions = NS.Adapters.GetDefinitions()

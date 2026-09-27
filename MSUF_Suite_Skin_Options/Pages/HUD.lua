@@ -51,7 +51,7 @@ local function BuildCombatNote(page, meter)
     local noteTitle = O.CreateText(note, L["COMBAT-SAFE COVERAGE"], 11, "success")
     noteTitle:SetPoint("TOPLEFT", 16, -16)
     local noteText = O.CreateText(note,
-        L["Static HUD surfaces are compiled out of combat. Dynamic meter rows never trigger skin mutations or queued work during combat. Newly opened secondary meter windows can be picked up safely with /mskin refresh outside combat."],
+        L["Static HUD surfaces are compiled out of combat. Dynamic meter rows never trigger skin mutations or queued work during combat. Meter windows opened later are styled after the next reload or when a setting on this page changes."],
         12, "text")
     noteText:SetPoint("TOPLEFT", noteTitle, "BOTTOMLEFT", 0, -10)
     noteText:SetPoint("RIGHT", -16, 0)

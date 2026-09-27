@@ -45,11 +45,7 @@ end
 
 -- The left column: every look control, stacked for the current mode.
 local function BuildControls(page)
-    local controlsHost = CreateFrame("Frame", nil, page)
-    controlsHost:SetPoint("TOPLEFT", 4, -70)
-    controlsHost:SetPoint("BOTTOMLEFT", 4, 4)
-    controlsHost:SetWidth(510)
-    local controlsScroll, list = O.CreateScrollContainer(controlsHost, 660, WIDTH)
+    local controlsScroll, list = O.CreateLeftColumn(page, 510, 660, WIDTH)
     page._mskinLooksScroll = controlsScroll
     page._mskinLooksContent = list
 
@@ -108,11 +104,13 @@ local function BuildPreview(page)
     primary:SetPoint("BOTTOMLEFT", 12, 12)
     local secondary = O.CreateButton(panelPreview, L["Secondary"], 80, 28)
     secondary:SetPoint("LEFT", primary, "RIGHT", 8, 0)
-    return shellPreview
+    return preview, shellPreview
 end
 
-local function BuildLookNote(page, shellPreview)
-    local note = O.CreatePanel(page, "status")
+-- The note sits on the preview panel, below the shell sample; a child of the
+-- page would hide behind the opaque preview.
+local function BuildLookNote(page, preview, shellPreview)
+    local note = O.CreatePanel(preview, "status")
     note:SetPoint("TOPLEFT", shellPreview, "BOTTOMLEFT", 0, -12)
     note:SetPoint("TOPRIGHT", shellPreview, "BOTTOMRIGHT", 0, -12)
     note:SetHeight(94)
@@ -131,8 +129,7 @@ local function BuildLookNote(page, shellPreview)
         noteText:SetText(selected.description
             or L["Your current hand-tuned combination of palette, material and geometry."])
     end
-    O.TrackRefresh(RefreshLookNote)
-    RefreshLookNote()
+    O.TrackAndRefresh(RefreshLookNote)
 end
 
 O.RegisterPage("looks", NS.L.LOOKS, function(page)

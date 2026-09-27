@@ -99,7 +99,7 @@ local function BuildCurveComparison(page)
         local note = O.CreateText(sample, noteText, 11, "muted")
         note:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -8)
         note:SetPoint("RIGHT", -14, 0)
-        if note.SetMaxLines then note:SetMaxLines(2) end
+        note:SetMaxLines(2)
         local button = O.CreateButton(sample, L["Preview"], 104, 28)
         button:SetPoint("BOTTOMRIGHT", -12, 12)
         y = y - 122

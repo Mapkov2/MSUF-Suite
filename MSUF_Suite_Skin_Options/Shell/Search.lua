@@ -24,7 +24,7 @@ local defaultMeta = { group = "manage", simple = true, keywords = "" }
 -- palettes become searchable without duplicating their names in this LoD file.
 local function CatalogKeywords(order, labelOf)
     local terms = {}
-    for index = 1, #(order or {}) do
+    for index = 1, #order do
         local key = order[index]
         terms[#terms + 1] = tostring(key)
         terms[#terms + 1] = tostring(labelOf(key) or "")
@@ -33,62 +33,65 @@ local function CatalogKeywords(order, labelOf)
 end
 
 local lookCatalogKeywords = CatalogKeywords(NS.LookOrder, function(key)
-    local look = NS.LookPresets and NS.LookPresets[key]
+    local look = NS.LookPresets[key]
     return look and look.label
 end)
 local paletteCatalogKeywords = CatalogKeywords(NS.PaletteOrder, function(key)
-    return NS.PaletteLabels and NS.PaletteLabels[key]
+    return NS.PaletteLabels[key]
 end)
 
--- { page, label, extra keywords }. Labels are the visible control names.
+-- Marks a control Guided mode hides on its page: opening the result
+-- switches to Expert mode first, as an Expert-only page does.
+local EXPERT = true
+
+-- { page, label, extra keywords, EXPERT or nil }. Labels are the visible
+-- control names on that page, so a result reads like the control it opens.
 local entries = {
     { "dashboard", NS.L.MASTER_ENABLE, "master on off engine" },
     { "looks", L["Style preset"], "complete coordinated authored look " .. lookCatalogKeywords },
-    { "looks", L["Shaded surfaces"], "material gradient on off" },
-    { "looks", L["Light direction"], "gradient horizontal vertical" },
-    { "looks", L["Shading strength"], "gradient intensity" },
-    { "looks", L["Surface depth"], "material depth relief" },
+    { "looks", L["Shaded surfaces"], "material gradient on off", EXPERT },
+    { "looks", L["Light direction"], "gradient horizontal vertical", EXPERT },
+    { "looks", L["Shading strength"], "gradient intensity", EXPERT },
+    { "looks", L["Surface depth"], "material depth relief", EXPERT },
     { "looks", L["Window opacity"], "shell transparency alpha" },
     { "looks", L["Content opacity"], "panel card transparency alpha" },
     { "looks", L["Controls opacity"], "button navigation transparency alpha" },
-    { "looks", L["Outline opacity"], "border transparency alpha" },
-    { "icons", L["Window action style"], "close x add remove maximize minimize bare soft outline native button" },
-    { "icons", L["Window action symbols"], "close x plus minus chevrons glyph fine bold size offset opacity shape radius inset smaller" },
-    { "icons", L["Skin Micro Bar"], "micro menu micromenu minimenu buttons hud" },
+    { "looks", L["Outline opacity"], "border transparency alpha", EXPERT },
+    { "icons", L["Button style"], "window action close x add remove maximize minimize bare soft outline native button" },
+    { "icons", L["Maximize / minimize symbols"], "window action close x plus minus chevrons glyph fine bold size offset opacity shape radius inset smaller" },
+    { "icons", L["Skin the Blizzard Micro Bar"], "micro menu micromenu minimenu buttons hud" },
     { "icons", L["Micro Bar style"], "forever modern compact glass preset" },
-    { "icons", L["Micro Bar visibility"], "always combat out of combat mouseover never hide show" },
-    { "icons", L["Micro icon colors"], "native theme class monochrome tint normal hover pressed disabled" },
-    { "icons", L["Micro Bar backgrounds"], "bar button plates surfaces" },
-    { "icons", L["Micro Bar shape and border"], "round continuous squircle radius outline" },
-    { "icons", L["Micro icon state opacity"], "normal hover pressed disabled alpha" },
-    { "icons", L["Item icon border style"], "item quality theme off icons" },
-    { "icons", L["Item icon border geometry"], "thickness padding opacity" },
-    { "colors", L["Window and panel colors"], "background ink surface raised card popup input" },
-    { "colors", L["Color palette"], "preset coordinated colors " .. paletteCatalogKeywords },
-    { "colors", L["Text colors"], "title muted dim disabled blizzard yellow gold chat system" },
-    { "colors", L["Accent and status colors"], "accent bright blue success warning danger secondary" },
-    { "colors", L["Border colors"], "rim soft button icon outline" },
-    { "colors", L["Button interaction colors"], "fill hover pressed active checkmark selection" },
-    { "colors", L["Blizzard symbol colors"], "arrow dropdown plus minus expand close x pressed hover disabled" },
-    { "colors", L["Exact RGBA / hex entry"], "hex alpha color picker precise" },
+    { "icons", L["Icon colors"], "micro native theme class monochrome tint normal hover pressed disabled" },
+    { "icons", L["Bar background"], "micro bar button plates surfaces backgrounds individual", EXPERT },
+    { "icons", L["Bar and button shape"], "micro round continuous squircle radius outline border", EXPERT },
+    { "icons", L["Normal icon opacity"], "micro icon state hover mouse-over pressed disabled alpha", EXPERT },
+    { "icons", L["Verified item icon borders"], "item icon border style quality theme off" },
+    { "icons", L["Border thickness"], "item icon border geometry distance padding opacity", EXPERT },
+    { "colors", L["Surfaces"], "window panel colors background ink surface raised card popup input", EXPERT },
+    { "colors", L["Color palette (colors only)"], "preset coordinated colors " .. paletteCatalogKeywords },
+    { "colors", L["Text"], "text colors title muted dim disabled blizzard yellow gold chat system", EXPERT },
+    { "colors", L["Accents"], "accent status colors bright blue success warning danger secondary", EXPERT },
+    { "colors", L["Borders"], "border colors rim soft button icon outline", EXPERT },
+    { "colors", L["Controls"], "button interaction colors fill hover pressed active checkmark selection", EXPERT },
+    { "colors", L["Blizzard"], "blizzard symbol colors arrow dropdown plus minus expand close x pressed hover disabled", EXPERT },
+    { "colors", L["Find a color or UI element..."], "exact rgba hex alpha color picker precise entry" },
     { "typography", L["Override Blizzard fonts"], "global font typeface enable disable" },
     { "typography", L["Font"], "typeface dropdown sharedmedia media addons" },
-    { "typography", L["Chat and Communities font"], "console text" },
-    { "typography", L["Quest, mail and combat font"], "number special styles" },
-    { "typography", L["Custom font path"], "file ttf otf" },
+    { "typography", L["Chat, Communities and console text"], "chat font" },
+    { "typography", L["Quest, mail, number and combat styles"], "font special" },
+    { "typography", L["Custom font path (used by Custom path)"], "file ttf otf" },
     { "geometry", L["Window corner style"], "panel curve round continuous squircle" },
     { "geometry", L["Button corner style"], "control curve pill round continuous squircle" },
     { "geometry", L["Corner radius"], "4 6 8 12 px" },
     { "geometry", L["Outline thickness"], "border 0 1 2 px" },
-    { "geometry", L["Hover highlight style"], "border only soft fill solid fill off" },
+    { "geometry", L["Hover highlight"], "hover style border only soft fill solid fill off" },
     { "geometry", L["Hover intensity"], "highlight strength" },
     { "skins", NS.L.SKIN_GAME_MENU, "escape esc buttons" },
-    { "skins", L["Blizzard Settings"], "options addon list dropdown scroll" },
+    { "skins", NS.L.SKIN_SETTINGS, "blizzard settings options addon list dropdown scroll" },
     { "skins", NS.L.SKIN_WORLD_MAP, "map" },
     { "skins", NS.L.SKIN_PLAYER_SPELLS, "player spells" },
     { "skins", NS.L.SKIN_ENCOUNTER_JOURNAL, "encounter journal" },
-    { "skins", L["Objective Tracker text and icons"], "quest tracker" },
-    { "skins", L["Chat windows and tabs"], "system npc colors" },
+    { "skins", NS.L.SKIN_CHAT_FRAMES, "chat windows tabs system npc colors" },
     { "skins", NS.L.SKIN_DAMAGE_METER, "combat meter" },
     { "skins", NS.L.SKIN_EDIT_MODE, "editmode" },
     { "skins", NS.L.SKIN_COMMUNITIES, "community mail guild roster" },
@@ -102,16 +105,13 @@ local entries = {
     { "coverage", L["Professions and crafting"], "trade skill" },
     { "coverage", L["Auction and economy"], "auction house merchant" },
     { "coverage", L["Housing interfaces"], "house dashboard" },
-    { "hud", L["Objective Tracker background"], "container" },
-    { "hud", L["Objective Tracker headers"], "module title" },
-    { "hud", L["Objective Tracker progress"], "timer bars" },
-    { "hud", L["Damage Meter windows"], "header surfaces" },
-    { "hud", L["Damage Meter rows"], "class color plates" },
-    { "hud", L["Damage Meter detail window"], "source detail" },
+    { "hud", L["Window and header surfaces"], "damage meter windows header surfaces" },
+    { "hud", L["Class-colored row plates"], "damage meter rows class color plates" },
+    { "hud", L["Source detail window"], "damage meter source detail" },
     { "profiles", L["Active profile"], "switch" },
-    { "profiles", L["Create or copy profile"], "new duplicate" },
-    { "profiles", L["Delete profile"], "remove" },
-    { "profiles", L["Import / export"], "share backup MSKIN1 all profiles" },
+    { "profiles", L["Create clean"], "create copy current new duplicate profile" },
+    { "profiles", L["Delete active"], "delete remove profile" },
+    { "profiles", L["IMPORT / EXPORT"], "import export share backup MSKIN1 all profiles" },
     { "advanced", NS.L.RESET_ALL, "reset all defaults" },
     { "advanced", L["Runtime contract"], "no polling ticker onupdate combat performance" },
 }
@@ -133,7 +133,7 @@ local function BuildRecords()
     for index = 1, #entries do
         local item = entries[index]
         local key = item[1]
-        local definition = O.GetPageDefinition and O.GetPageDefinition(key)
+        local definition = O.GetPageDefinition(key)
         local pageLabel = definition and definition.label or key
         local meta = O.GetPageMeta(key)
         local label = Normalize(item[2])
@@ -141,7 +141,7 @@ local function BuildRecords()
             page = key,
             label = item[2],
             pageLabel = pageLabel,
-            expert = meta.simple == false,
+            expert = meta.simple == false or item[4] == EXPERT,
             lowerLabel = label,
             haystack = label .. " " .. Normalize(pageLabel) .. " " .. Normalize(item[3]) .. " " .. Normalize(meta.keywords),
             score = 0,
@@ -149,9 +149,22 @@ local function BuildRecords()
     end
 end
 
-local function MatchTokens(haystack, query)
+-- The words of the current query, split once per query and reused.
+local queryTokens = {}
+
+local function Tokenize(query)
+    local count = 0
     for token in query:gmatch("%S+") do
-        if not haystack:find(token, 1, true) then return false end
+        count = count + 1
+        queryTokens[count] = token
+    end
+    for index = #queryTokens, count + 1, -1 do queryTokens[index] = nil end
+    return count
+end
+
+local function MatchTokens(haystack, count)
+    for index = 1, count do
+        if not haystack:find(queryTokens[index], 1, true) then return false end
     end
     return true
 end
@@ -178,9 +191,10 @@ function O.SearchSettings(query, limit)
     query = Normalize(query):match("^%s*(.-)%s*$") or ""
     if #query < 2 then return results end
     if not records then BuildRecords() end
+    local tokenCount = Tokenize(query)
     for index = 1, #records do
         local record = records[index]
-        if MatchTokens(record.haystack, query) then
+        if MatchTokens(record.haystack, tokenCount) then
             record.score = Score(record.lowerLabel, query)
             results[#results + 1] = record
         end

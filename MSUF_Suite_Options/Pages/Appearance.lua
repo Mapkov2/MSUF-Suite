@@ -7,8 +7,7 @@ local format = string.format
 -- is built.
 local function Engine()
     local skin = _G.MapkoSkin
-    if not (skin and skin.addonName == "MSUF_Suite_Skin") and Suite.Skin and Suite.Skin.EnsureEngine
-        and not P.Combat() then
+    if not (skin and skin.addonName == "MSUF_Suite_Skin") and not P.Combat() then
         Suite.Skin.EnsureEngine()
         skin = _G.MapkoSkin
     end
@@ -167,7 +166,7 @@ local function ResetSkinSection(skin, id, rows, contextRows)
         for _, item in ipairs(changes) do
             local path = item.row.id
             if path == "suiteEnabled" then
-                if Suite.Skin then Suite.Skin.SetEnabled(item.value == true) end
+                Suite.Skin.SetEnabled(item.value == true)
             else
                 if path == "enabled.windows" then path = "enabled" end
                 if path:sub(1, 5) == "font." then path = "typography." .. path:sub(6) end
@@ -462,14 +461,14 @@ local function BuildFrameBasics(ctx, b, skin)
                         function() return skin.Adapters.SetMasterEnabled(value) end)
                 end),
             Row("toggle", "Skin Suite windows and buttons", "suiteEnabled", "frame_basic",
-                function() return Suite.Skin and Suite.Skin.enabled end,
+                function() return Suite.Skin.enabled end,
                 function(value)
                     Change(skin, "Skin Suite windows", "suiteEnabled", function() return Suite.Skin.SetEnabled(value) end)
                 end),
         }, true)
     local enable = W.SectionSwitch(basics, Tr("Enable Skinning"), Tr("Enable"))
     M.BindBoolWidget(ctx, enable,
-        function() return skin.DB.enabled == true or Suite.Skin and Suite.Skin.enabled == true end,
+        function() return skin.DB.enabled == true or Suite.Skin.enabled == true end,
         function(value)
             Change(skin, "Skinning", "enabled", function()
                 local windows = skin.Adapters.SetMasterEnabled(value)
@@ -531,8 +530,7 @@ local HUD_TOGGLES = {
 -- The Suite damage meter turns Blizzard's meter off, and the skin leaves it
 -- alone then. Its section is built only while Blizzard's meter is in use.
 local function BlizzardMeterInUse()
-    local owns = P.S and P.S.OwnsBlizzardSurface
-    return not (type(owns) == "function" and owns("damageMeter"))
+    return not P.S.OwnsBlizzardSurface("damageMeter")
 end
 
 -- Which meter the built page was made for; nil while no page is built.
@@ -798,8 +796,7 @@ P.ResetSkinPage = function()
     local skin = Engine()
     if not skin or P.Combat() then return false end
     if not ResetSkinProfile(skin) then return false end
-    if Suite.Skin then return Suite.Skin.SetEnabled(true) end
-    return true
+    return Suite.Skin.SetEnabled(true)
 end
 
 local function BuildMaintenance(ctx, b, skin)

@@ -3,15 +3,30 @@ local NS, O = Private.NS, Private.Options
 local L = NS.L
 
 -- Profile switches, creation and import replace the whole skin database, so
--- they drop the undo step instead of recording one.
+-- a successful one drops the undo step instead of recording one (and
+-- ClearHistory repaints the options once); a refused one (combat, invalid
+-- name, bad import) keeps it.
+local function Replaced(ok, ...)
+    if ok then O.ClearHistory() end
+    return ok, ...
+end
+
+-- Readable text for a refusal met in normal play; other reasons show as the
+-- engine reports them.
+local REFUSAL_TEXT = {
+    combat = L["Profiles can only change outside combat."],
+}
+
 local function BuildProfileControls(page, view)
     local names = view.names
+    -- A switch reports its outcome on the page like every profile action; a
+    -- click refused in combat does too.
     local active = O.CreateCycle(page, L["Active profile"], names, function()
         return NS.Database.GetActiveProfileName()
     end, function(value)
-        O.ClearHistory()
-        NS.Database.SetActiveProfile(value)
-    end, 520, nil, { history = false })
+        local ok, reason = Replaced(NS.Database.SetActiveProfile(value))
+        view.Result(ok, reason, ok and L["Active: %s"]:format(reason) or nil)
+    end, 520, nil, { history = false, refused = view.Refused })
     active:SetPoint("TOPLEFT", 4, -70)
 
     local nameRow = O.CreateInput(page, L["Profile name"], function() return view.draftName end,
@@ -23,23 +38,21 @@ local function BuildProfileControls(page, view)
     view.status:SetPoint("RIGHT", -4, 0)
 
     local function CreateProfile(copyCurrent, successText)
-        O.ClearHistory()
         local ok, reason = NS.Database.CreateProfile(view.draftName, copyCurrent)
-        if ok then ok, reason = NS.Database.SetActiveProfile(reason) end
+        if ok then ok, reason = Replaced(NS.Database.SetActiveProfile(reason)) end
         view.Result(ok, reason, successText)
     end
-    local create = O.CreateButton(page, L["Create clean"], 126, 28, function()
+    local create = O.CreateSettingButton(page, L["Create clean"], 126, 28, function()
         CreateProfile(false, L["Clean profile created"])
-    end)
+    end, nil, view.Refused)
     create:SetPoint("TOPLEFT", nameRow, "BOTTOMLEFT", 0, -8)
-    local copy = O.CreateButton(page, L["Copy current"], 126, 28, function()
+    local copy = O.CreateSettingButton(page, L["Copy current"], 126, 28, function()
         CreateProfile(true, L["Current profile copied"])
-    end)
+    end, nil, view.Refused)
     copy:SetPoint("LEFT", create, "RIGHT", 8, 0)
-    local remove = O.CreateButton(page, L["Delete active"], 126, 28, function()
-        O.ClearHistory()
-        view.Result(NS.Database.DeleteProfile(NS.Database.GetActiveProfileName()))
-    end)
+    local remove = O.CreateSettingButton(page, L["Delete active"], 126, 28, function()
+        view.Result(Replaced(NS.Database.DeleteProfile(NS.Database.GetActiveProfileName())))
+    end, nil, view.Refused)
     remove:SetPoint("LEFT", copy, "RIGHT", 8, 0)
     return create
 end
@@ -54,7 +67,7 @@ local function CreateTransferBox(transfer)
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
     edit:SetMaxLetters(NS.ProfileIO.maxEncodedBytes + 16)
-    edit:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
+    edit:SetFontObject(ChatFontNormal)
     edit:SetWidth(736)
     edit:SetHeight(180)
     edit:SetTextInsets(8, 8, 8, 8)
@@ -95,15 +108,14 @@ local function BuildTransfer(page, anchor, view)
     end)
     exportAll:SetPoint("LEFT", exportProfile, "RIGHT", 8, 0)
 
-    local importProfile = O.CreateButton(transfer, L["Import profile"], 134, 28, function()
-        O.ClearHistory()
-        view.Result(NS.ProfileIO.ImportProfile(edit:GetText(), view.draftName ~= "" and view.draftName or nil))
-    end, "buttonPrimary")
+    local importProfile = O.CreateSettingButton(transfer, L["Import profile"], 134, 28, function()
+        view.Result(Replaced(NS.ProfileIO.ImportProfile(edit:GetText(),
+            view.draftName ~= "" and view.draftName or nil)))
+    end, "buttonPrimary", view.Refused)
     importProfile:SetPoint("LEFT", exportAll, "RIGHT", 18, 0)
-    local importAll = O.CreateButton(transfer, L["Import all"], 118, 28, function()
-        O.ClearHistory()
-        view.Result(NS.ProfileIO.ImportAll(edit:GetText()))
-    end)
+    local importAll = O.CreateSettingButton(transfer, L["Import all"], 118, 28, function()
+        view.Result(Replaced(NS.ProfileIO.ImportAll(edit:GetText())))
+    end, nil, view.Refused)
     importAll:SetPoint("LEFT", importProfile, "RIGHT", 8, 0)
 end
 
@@ -119,12 +131,22 @@ O.RegisterPage("profiles", NS.L.PROFILES, function(page)
         for index = 1, #current do names[index] = current[index] end
     end
     RefreshNames()
+    -- Shows the outcome. A replaced profile was repainted by ClearHistory;
+    -- an export or a refused operation changed no setting to repaint.
     view.Result = function(ok, value, successText)
-        view.status:SetText(ok and (successText or tostring(value or L["Done"]))
-            or L["Error: %s"]:format(tostring(value)))
+        local text
+        if ok then
+            text = successText or tostring(value or L["Done"])
+        else
+            text = REFUSAL_TEXT[value] or L["Error: %s"]:format(tostring(value))
+        end
+        view.status:SetText(text)
         O.SetTextColor(view.status, ok and "success" or "danger")
         RefreshNames()
-        O.RefreshAll()
+    end
+    -- A profile button refused in combat reports it like the engine would.
+    view.Refused = function(_, reason)
+        view.Result(false, reason)
     end
 
     BuildTransfer(page, BuildProfileControls(page, view), view)

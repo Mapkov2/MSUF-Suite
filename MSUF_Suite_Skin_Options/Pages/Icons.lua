@@ -129,7 +129,7 @@ local ROWS = {
     { kind = "segmented", label = L["Growth direction"], source = "micro", key = "growth",
         values = NS.MicroMenuGrowthModes, format = GrowthLabel, gate = "layout" },
     { kind = "slider", label = L["Buttons per line"], source = "micro", key = "buttonsPerLine",
-        min = 1, max = NS.Client and NS.Client.isForever and 14 or 13, format = ButtonCount, gate = "layout" },
+        min = 1, max = NS.MicroMenuMaxButtonsPerLine, format = ButtonCount, gate = "layout" },
     { kind = "slider", label = L["Button spacing"], source = "micro", key = "spacing",
         min = -8, max = 16, format = Pixel, gate = "layout" },
     { kind = "slider", label = L["Bar padding"], source = "micro", key = "padding",
@@ -243,7 +243,7 @@ local function CreateWindowActionPreview(parent)
     local note = O.CreateText(row, L["Native hit targets, independent artwork"], 9, "dim")
     note:SetPoint("BOTTOMLEFT", 12, 12)
 
-    local reset = O.CreateButton(row, L["Reset actions"], 104, 24, function()
+    local reset = O.CreateSettingButton(row, L["Reset actions"], 104, 24, function()
         ResetWithHistory(L["Reset Window Actions"], NS.WindowActionSkin.ResetRecommended)
     end)
     reset:SetPoint("BOTTOMRIGHT", -10, 8)
@@ -257,15 +257,19 @@ local function CreateWindowActionPreview(parent)
         buttons[index] = button
     end
 
+    -- Once skinned, the engine keeps these buttons current itself (setting,
+    -- color, look and profile changes refresh every applied window action).
+    -- A refresh only skins a button again after a restore took it back.
     local function Refresh()
         for index, kind in ipairs(WINDOW_ACTION_KINDS) do
             local button = buttons[index]
-            if NS.Checkmarks then NS.Checkmarks.TrackButton(button, "options-window-actions") end
-            NS.WindowActionSkin.Apply(button, "options-window-actions", kind)
+            if not NS.WindowActionSkin.IsApplied(button) then
+                NS.Checkmarks.TrackButton(button, "options-window-actions")
+                NS.WindowActionSkin.Apply(button, "options-window-actions", kind)
+            end
         end
     end
-    O.TrackRefresh(Refresh)
-    Refresh()
+    O.TrackAndRefresh(Refresh)
     return row
 end
 
@@ -284,11 +288,7 @@ end
 
 -- The left column. Returns the widgets each gate enables.
 local function BuildControls(page)
-    local controlsHost = CreateFrame("Frame", nil, page)
-    controlsHost:SetPoint("TOPLEFT", 4, -70)
-    controlsHost:SetPoint("BOTTOMLEFT", 4, 4)
-    controlsHost:SetWidth(510)
-    local controlsScroll, list = O.CreateScrollContainer(controlsHost, 2500, WIDTH)
+    local controlsScroll, list = O.CreateLeftColumn(page, 510, 2500, WIDTH)
     page._mskinIconsScroll = controlsScroll
     page._mskinIconsContent = list
 
@@ -309,11 +309,16 @@ local function BuildControls(page)
 end
 
 ------------------------------------------------------------------ live preview
+-- atlas: Blizzard's own Quest Log icon in that state (Full Blizzard artwork).
 local PREVIEW_STATES = {
-    { key = "normal", label = L["Normal"], suffix = "Up", button = "ProfessionMicroButton" },
-    { key = "hover", label = L["Hover"], suffix = "Mouseover", button = "PlayerSpellsMicroButton" },
-    { key = "pressed", label = L["Pressed"], suffix = "Down", button = "QuestLogMicroButton" },
-    { key = "disabled", label = L["Disabled"], suffix = "Disabled", button = "GuildMicroButton" },
+    { key = "normal", label = L["Normal"], atlas = "UI-HUD-MicroMenu-Questlog-Up",
+        button = "ProfessionMicroButton" },
+    { key = "hover", label = L["Hover"], atlas = "UI-HUD-MicroMenu-Questlog-Mouseover",
+        button = "PlayerSpellsMicroButton" },
+    { key = "pressed", label = L["Pressed"], atlas = "UI-HUD-MicroMenu-Questlog-Down",
+        button = "QuestLogMicroButton" },
+    { key = "disabled", label = L["Disabled"], atlas = "UI-HUD-MicroMenu-Questlog-Disabled",
+        button = "GuildMicroButton" },
 }
 local BAR_ROLES = {
     forever = "microBarForever",
@@ -374,7 +379,7 @@ local function CreateItemBorderSample(parent)
     icon:SetPoint("CENTER")
     icon:SetSize(38, 38)
     icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
-    if icon.SetTexCoord then icon:SetTexCoord(0.07, 0.93, 0.07, 0.93) end
+    icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     local lines = {}
     for index = 1, 4 do
         lines[index] = holder:CreateTexture(nil, "OVERLAY", nil, 1)
@@ -397,8 +402,7 @@ local function CreateItemBorderSample(parent)
             lines[index]:SetShown(style ~= "off")
         end
     end
-    O.TrackRefresh(Refresh)
-    Refresh()
+    O.TrackAndRefresh(Refresh)
     return holder
 end
 
@@ -439,7 +443,7 @@ local function BuildPreviewActions(preview)
         O.ShowPage("colors", L["Micro Bar colors"])
     end)
     colors:SetPoint("BOTTOMLEFT", 16, 14)
-    local reset = O.CreateButton(preview, L["Reset recommended"], 126, 28, function()
+    local reset = O.CreateSettingButton(preview, L["Reset recommended"], 126, 28, function()
         ResetWithHistory(L["Reset Micro Bar"], NS.MicroMenuSkin.ResetRecommended)
     end)
     reset:SetPoint("LEFT", colors, "RIGHT", 8, 0)
@@ -478,31 +482,45 @@ local function ResolvePreviewGeometry(settings)
     return settings.shape, settings.radius
 end
 
+-- The gated rows change only when Micro Bar skinning or the layout owner
+-- changes, not on every setting refresh. SetButtonEnabled keeps each
+-- segmented label's active color, so painting once is enough.
 local function PaintGates(gates, enabled, ownsLayout)
+    if gates.paintedEnabled == enabled and gates.paintedOwnsLayout == ownsLayout then return end
+    gates.paintedEnabled, gates.paintedOwnsLayout = enabled, ownsLayout
     for index = 1, #gates.layout do O.SetWidgetEnabled(gates.layout[index], ownsLayout) end
     for index = 1, #gates.micro do O.SetWidgetEnabled(gates.micro[index], enabled) end
 end
 
+-- Writes the preview geometry into a surface spec; true when it changed. The
+-- Surface registry repaints an attached surface on theme changes by itself,
+-- so a surface is attached again only when its spec changed.
+local function UpdateSpec(spec, role, shape, radius, border, fillVisible)
+    if spec.role == role and spec.shape == shape and spec.radius == radius
+        and spec.border == border and spec.fillVisible == fillVisible then
+        return false
+    end
+    spec.role, spec.shape, spec.radius = role, shape, radius
+    spec.border, spec.fillVisible = border, fillVisible
+    return true
+end
+
 local function PaintBar(view, settings, shape, radius)
-    local spec = view.barSpec
-    spec.shape = shape
-    spec.role = BAR_ROLES[settings.barMaterial] or "microBar"
-    spec.radius = radius
-    spec.border = settings.barBorder
-    spec.fillVisible = settings.barBackground == true
-    NS.Surface.Attach(view.bar, spec)
+    local role = BAR_ROLES[settings.barMaterial] or "microBar"
+    if UpdateSpec(view.barSpec, role, shape, radius, settings.barBorder, settings.barBackground == true) then
+        NS.Surface.Attach(view.bar, view.barSpec)
+    end
 end
 
 local function PaintButton(item, settings, shape, radius)
     item.frame:SetSize(settings.buttonSize, settings.buttonSize)
-    item.spec.shape = shape
-    item.spec.radius = radius
-    item.spec.border = settings.buttonBorder
-    item.spec.fillVisible = settings.buttonBackground == true
-    NS.Surface.Attach(item.frame, item.spec)
+    local spec = item.spec
+    if UpdateSpec(spec, spec.role, shape, radius, settings.buttonBorder, settings.buttonBackground == true) then
+        NS.Surface.Attach(item.frame, spec)
+    end
     local icon = item.icon
-    if settings.iconStyle == "blizzard" and icon.SetAtlas then
-        icon:SetAtlas("UI-HUD-MicroMenu-Questlog-" .. item.info.suffix, true)
+    if settings.iconStyle == "blizzard" then
+        icon:SetAtlas(item.info.atlas, true)
         icon:SetSize(32, 40)
     else
         NS.MicroMenuVisual.ApplyIcon(icon, item.info.button, settings.iconStyle)
@@ -553,8 +571,7 @@ local function BuildPreview(page, gates)
     BuildPreviewActions(preview)
 
     local function Refresh() PaintPreview(view, gates) end
-    O.TrackRefresh(Refresh)
-    Refresh()
+    O.TrackAndRefresh(Refresh)
 end
 
 O.RegisterPage("icons", NS.L.ICONS, function(page)

@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Skinning Options
 ## Notes: Suite skinning pages inside MSUF.
 ## Author: Mapko
@@ -11,6 +11,9 @@
 MSKIN_OptionsBootstrap.lua
 Shell\Theme.lua
 Shell\Widgets.lua
+Shell\WidgetsDropdown.lua
+Shell\WidgetsInput.lua
+Shell\WidgetsColor.lua
 Shell\Search.lua
 Shell\Window.lua
 Pages\Dashboard.lua

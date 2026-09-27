@@ -98,7 +98,7 @@ local function BuildHeader(page, view)
     end, 520, PaletteLabel, nil, { countLabel = L["palettes"], countSingular = L["palette"] })
     preset:SetPoint("TOPLEFT", 4, -70)
 
-    local reset = O.CreateButton(page, NS.L.RESET_COLORS, 150, 28, function()
+    local reset = O.CreateSettingButton(page, NS.L.RESET_COLORS, 150, 28, function()
         local began = O.BeginUserChange(NS.L.RESET_COLORS)
         NS.Theme.ResetColors()
         if began then O.CommitUserChange(NS.L.RESET_COLORS) end
@@ -107,6 +107,7 @@ local function BuildHeader(page, view)
 
     local search = O.CreateSearchBox(page, L["Find a color or UI element..."], function(value)
         view.query = tostring(value or ""):lower():match("^%s*(.-)%s*$") or ""
+        -- The color list below sets Refresh; the box can report text first.
         if view.Refresh then view.Refresh() end
     end, 570)
     search:SetPoint("TOPLEFT", 4, -116)
@@ -159,10 +160,16 @@ local function BuildRows(page, view)
     end
 end
 
+-- The layout depends only on the mode, the query and the selected group. A
+-- setting change (every frame of a color drag) repaints the rows' swatches
+-- through their own refreshers and finds the layout unchanged.
 local function RefreshRows(view)
     local mode = O.GetMode()
     local query = view.query
-    local selected = GROUP_BY_KEY[O.ui.colorGroup] or GROUPS[1]
+    local group = O.ui.colorGroup
+    if view.laidMode == mode and view.laidQuery == query and view.laidGroup == group then return end
+    view.laidMode, view.laidQuery, view.laidGroup = mode, query, group
+    local selected = GROUP_BY_KEY[group] or GROUPS[1]
     local visible = 0
     for index = 1, #view.rows do
         local row = view.rows[index]
@@ -187,7 +194,7 @@ local function RefreshRows(view)
     view.guided:SetShown(mode == "guided" and query == "")
     for key, button in pairs(view.groupButtons) do
         button:SetShown(mode == "expert" and query == "")
-        O.SetButtonActive(button, key == O.ui.colorGroup)
+        O.SetButtonActive(button, key == group)
     end
 end
 
@@ -203,6 +210,5 @@ O.RegisterPage("colors", NS.L.COLORS, function(page)
     view.Refresh = function() RefreshRows(view) end
     -- The page refresher also runs after every mode switch while the page is
     -- shown; a hidden page lays its rows out when it is opened.
-    O.TrackRefresh(view.Refresh)
-    view.Refresh()
+    O.TrackAndRefresh(view.Refresh)
 end)

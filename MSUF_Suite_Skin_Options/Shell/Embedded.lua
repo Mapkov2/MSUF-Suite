@@ -95,7 +95,7 @@ local function BuildSearch(host)
     local popup = O.CreatePanel(host, "popup")
     popup:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -4)
     popup:SetSize(420, 196)
-    popup:SetFrameLevel((host.GetFrameLevel and host:GetFrameLevel() or 0) + 25)
+    popup:SetFrameLevel(host:GetFrameLevel() + 25)
     popup:Hide()
     host.searchPopup = popup
 
@@ -118,7 +118,10 @@ local function CreateHost(parent)
     BuildSearch(host)
     host.content = CreateFrame("Frame", nil, host)
     host.content:SetPoint("TOPLEFT", host.rail, "TOPRIGHT", 10, -46)
-    if host.content.SetClipsChildren then host.content:SetClipsChildren(true) end
+    host.content:SetClipsChildren(true)
+    -- A hidden host skips page refreshers; showing it again repaints the
+    -- current page (settings may have changed through MSUF or a profile).
+    host:SetScript("OnShow", function() O.RefreshAll() end)
     host:SetScript("OnHide", function(self)
         self.searchPopup:Hide()
         O.CloseDropdown()

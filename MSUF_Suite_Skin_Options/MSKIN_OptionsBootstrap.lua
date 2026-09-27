@@ -1,14 +1,14 @@
 local addonName, Private = ...
 local NS = assert(_G.MapkoSkin, "Suite skin engine is required")
 
-local O = NS.Options or {}
+local O = {}
 NS.Options = O
 Private.NS = NS
 Private.Options = O
 
 O.addonName = addonName
-O.widgetStates = O.widgetStates or setmetatable({}, { __mode = "k" })
-O.textRoles = O.textRoles or setmetatable({}, { __mode = "k" })
+O.widgetStates = setmetatable({}, { __mode = "k" })
+O.textRoles = setmetatable({}, { __mode = "k" })
 
 local root = NS.Database.GetRoot()
 root.optionsUI = type(root.optionsUI) == "table" and root.optionsUI or {}
@@ -54,7 +54,14 @@ local function RunList(list)
     end
 end
 
+-- Engine notifications arrive once per setting write, so a slider drag or a
+-- color picker move sends many per frame. They share one repaint on the next
+-- frame; a direct RefreshAll (a finished user change, a page switch) makes a
+-- pending one unnecessary.
+local refreshQueued = false
+
 function O.RefreshAll()
+    refreshQueued = false
     RunList(shellRefreshers)
     for index = 1, #pageRefreshers do
         local entry = pageRefreshers[index]
@@ -62,6 +69,16 @@ function O.RefreshAll()
             RunList(entry)
         end
     end
+end
+
+local function RunQueuedRefresh()
+    if refreshQueued then O.RefreshAll() end
+end
+
+function O.QueueRefresh()
+    if refreshQueued then return end
+    refreshQueued = true
+    C_Timer.After(0, RunQueuedRefresh)
 end
 
 ------------------------------------------------------------------ mode
@@ -179,6 +196,13 @@ function O.ClearHistory()
     O.RefreshAll()
 end
 
+-- True with the result of restoring `data` into the active profile.
+local function ApplyHistoryItem(profile, data)
+    local ok = NS.Database.SetProfile(profile, data)
+    if ok then ok = NS.Database.SetActiveProfile(profile) end
+    return true, ok
+end
+
 local function RestoreHistory(sourceKey, destinationKey)
     if NS.IsCombatLocked() then return false end
     local item = history[sourceKey]
@@ -187,8 +211,9 @@ local function RestoreHistory(sourceKey, destinationKey)
     history.restoring = true
     history[destinationKey] = { label = item.label, profile = profile, data = NS.CopyValue(NS.DB) }
     history[sourceKey] = nil
-    local ok = NS.Database.SetProfile(profile, item.data)
-    if ok then ok = NS.Database.SetActiveProfile(profile) end
+    -- The restore applies the whole profile; if it raises, the error is
+    -- reported and the history still accepts new changes afterwards.
+    local _, ok = NS.Safety.Dispatch(ApplyHistoryItem, profile, item.data)
     history.restoring = false
     O.RefreshAll()
     return ok == true
@@ -224,6 +249,4 @@ function O.DiscardLastChange(label)
     return false
 end
 
-NS.Registry.AddListener(O, function()
-    O.RefreshAll()
-end)
+NS.Registry.AddListener(O, O.QueueRefresh)

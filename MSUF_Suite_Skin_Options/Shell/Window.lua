@@ -24,7 +24,7 @@ function O.CreateScrollContainer(parent, contentHeight, contentWidth)
     scroll:SetPoint("TOPLEFT", 0, 0)
     scroll:SetPoint("BOTTOMRIGHT", -16, 0)
     scroll:EnableMouseWheel(true)
-    if scroll.SetClipsChildren then scroll:SetClipsChildren(true) end
+    scroll:SetClipsChildren(true)
 
     local child = CreateFrame("Frame", nil, scroll)
     child:SetWidth(contentWidth or 790)
@@ -160,9 +160,9 @@ local function BuildRail(state, layout)
 
     local footer = O.CreateText(rail, ("v%s  |  API %s"):format(NS.version, tostring(NS.apiVersion)), 9, "dim")
     footer:SetPoint("BOTTOMLEFT", 14, 12)
-    state.undo = O.CreateButton(rail, L["Undo"], 88, 26, function() O.Undo() end)
+    state.undo = O.CreateSettingButton(rail, L["Undo"], 88, 26, function() O.Undo() end)
     state.undo:SetPoint("BOTTOMLEFT", 10, 34)
-    state.redo = O.CreateButton(rail, L["Redo"], 88, 26, function() O.Redo() end)
+    state.redo = O.CreateSettingButton(rail, L["Redo"], 88, 26, function() O.Redo() end)
     state.redo:SetPoint("LEFT", state.undo, "RIGHT", 8, 0)
     state.profileStatus = O.CreateText(rail, "", 9, "muted")
     state.profileStatus:SetPoint("BOTTOMLEFT", state.undo, "TOPLEFT", 4, 8)
@@ -191,7 +191,7 @@ local function BuildContent(state)
     local pageHost = CreateFrame("Frame", nil, content)
     pageHost:SetPoint("TOPLEFT", 16, -59)
     pageHost:SetPoint("BOTTOMRIGHT", -16, 16)
-    if pageHost.SetClipsChildren then pageHost:SetClipsChildren(true) end
+    pageHost:SetClipsChildren(true)
     state.pageHost = pageHost
 end
 
@@ -358,9 +358,7 @@ local function CreateWindow()
     RefreshMode()
     O.TrackRefresh(function() RefreshChrome(state) end)
 
-    if UISpecialFrames then
-        UISpecialFrames[#UISpecialFrames + 1] = "MapkoSkinOptionsFrame"
-    end
+    UISpecialFrames[#UISpecialFrames + 1] = "MapkoSkinOptionsFrame"
     return state
 end
 

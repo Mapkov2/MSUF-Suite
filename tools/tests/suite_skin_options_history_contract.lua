@@ -17,9 +17,23 @@ skin = {
         SetProfile = function(_, data) skin.DB = Copy(data); return true end,
         SetActiveProfile = function() return true end,
     },
-    Registry = { AddListener = function() end },
     ReportError = function(_, message) error(message) end,
 }
+-- The client's securecallfunction reports an error and returns nothing.
+local reported = {}
+skin.Safety = { Dispatch = function(callback, ...)
+    local results = { pcall(callback, ...) }
+    if not results[1] then
+        reported[#reported + 1] = tostring(results[2])
+        return
+    end
+    return unpack(results, 2)
+end }
+local engineListener
+skin.Registry = { AddListener = function(_, callback) engineListener = callback end }
+-- Retail and Forever always have C_Timer; this stand-in repaints at once.
+local function RunAtOnce(_, callback) callback() end
+C_Timer = { After = RunAtOnce }
 MapkoSkin = skin
 local private = {}
 assert(loadfile("MSUF_Suite_Skin_Options/MSKIN_OptionsBootstrap.lua"))("MSUF_Suite_Skin_Options", private)
@@ -46,6 +60,15 @@ assert(options.BeginUserChange("Standalone color"))
 skin.DB.color = 3
 assert(options.CommitUserChange("Standalone color"))
 assert(options.Undo() and skin.DB.color == 2, "standalone history fallback failed")
+-- A restore that raises is reported and does not lock the history.
+local setProfile = skin.Database.SetProfile
+skin.Database.SetProfile = function() error("profile restore failed") end
+assert(not options.Redo() and #reported == 1 and reported[1]:find("profile restore failed", 1, true),
+    "a failing history restore was not reported")
+skin.Database.SetProfile = setProfile
+assert(options.BeginUserChange("After a failed restore"),
+    "a failing history restore left the history locked")
+options.CancelUserChange()
 print("Suite Skinning history: embedded MSUF and standalone fallback passed")
 
 -- Refreshers register once and belong to the page being built: a hidden page,
@@ -120,4 +143,161 @@ for _, path in ipairs({ "MSUF_Suite_Skin_Options/Pages/Advanced.lua", "MSUF_Suit
         assert(not source:find(stale, 1, true), path .. " still claims: " .. stale)
     end
 end
+
+-- Engine notifications arrive once per setting write (every slider tick and
+-- color picker move); they repaint once on the next frame. A finished user
+-- change repaints once, not again for its own notification.
+local timers = {}
+C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+local repaints = 0
+options.TrackRefresh(function() repaints = repaints + 1 end)
+for _ = 1, 5 do engineListener(options, "color", "accent") end
+assert(repaints == 0 and #timers == 1,
+    "setting notifications repainted at once or scheduled several repaints")
+timers[1]()
+assert(repaints == 1, "the coalesced repaint did not run")
+timers, repaints = {}, 0
+assert(options.BeginUserChange("Click"))
+skin.DB.color = 9
+engineListener(options, "color", "accent")
+options.CommitUserChange("Click")
+for index = 1, #timers do timers[index]() end
+assert(repaints == 1, "one click repainted the options " .. repaints .. " times")
+C_Timer = { After = RunAtOnce }
+
+-- Every search entry names a control that exists on the page it opens, and
+-- no text points to a command the Suite does not ship.
+local PAGE_FILES = {
+    dashboard = "Dashboard", looks = "Looks", icons = "Icons", colors = "Colors",
+    typography = "Typography", geometry = "Geometry", skins = "Skins", coverage = "Coverage",
+    hud = "HUD", profiles = "Profiles", advanced = "Advanced",
+}
+local function PageSource(key)
+    return ReadFile("MSUF_Suite_Skin_Options/Pages/" .. assert(PAGE_FILES[key], key) .. ".lua")
+end
+local searchSource = ReadFile("MSUF_Suite_Skin_Options/Shell/Search.lua")
+local adapterSource = ReadFile("MSUF_Suite_Skin/Adapters/Blizzard.lua")
+local entriesChecked = 0
+for key, label in searchSource:gmatch('{ "(%w+)", (L%b[]),') do
+    assert(PageSource(key):find(label, 1, true),
+        "search entry names no control on its page: " .. key .. " / " .. label)
+    entriesChecked = entriesChecked + 1
+end
+for key, name in searchSource:gmatch('{ "(%w+)", NS%.L%.([%w_]+),') do
+    assert(PageSource(key):find("NS.L." .. name, 1, true)
+        or key == "skins" and adapterSource:find('labelKey = "' .. name .. '"', 1, true),
+        "search entry names no control on its page: " .. key .. " / " .. name)
+    entriesChecked = entriesChecked + 1
+end
+assert(entriesChecked > 50, "search entry check is vacuous")
+
+-- A result for a control Guided mode hides opens in Expert mode, like a
+-- result on an Expert-only page.
+-- The engine's look and palette catalogs (Defaults.lua) are loaded; no page
+-- has registered yet (Window.lua), so results carry the page key.
+local searchNS = {
+    L = setmetatable({}, { __index = function(_, key) return key end }),
+    Client = { isForever = false },
+}
+assert(loadfile("MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", searchNS)
+local searchOptions = { GetPageDefinition = function() return nil end }
+assert(loadfile("MSUF_Suite_Skin_Options/Shell/Search.lua"))("MSUF_Suite_Skin_Options", {
+    NS = searchNS,
+    Options = searchOptions,
+})
+local function SearchRecord(label)
+    local results = searchOptions.SearchSettings(label, 100)
+    for index = 1, #results do
+        if results[index].label == label then return results[index] end
+    end
+    error("search found no entry " .. label)
+end
+for _, label in ipairs({ "Shaded surfaces", "Light direction", "Shading strength", "Surface depth",
+    "Outline opacity", "Bar background", "Bar and button shape", "Normal icon opacity",
+    "Border thickness", "Surfaces", "Text", "Accents", "Borders", "Controls", "Blizzard" }) do
+    assert(SearchRecord(label).expert == true,
+        "a result for a control Guided mode hides does not switch to Expert: " .. label)
+end
+for _, label in ipairs({ "Style preset", "Window opacity", "Button style", "Micro Bar style",
+    "Verified item icon borders", "Color palette (colors only)", "Find a color or UI element..." }) do
+    assert(SearchRecord(label).expert == false, "a result for a Guided control switches to Expert: " .. label)
+end
+for line in ReadFile("MSUF_Suite_Skin_Options/MSUF_Suite_Skin_Options_Mainline.toc"):gmatch("[^\n]+") do
+    if line:match("%.lua$") then
+        assert(not ReadFile("MSUF_Suite_Skin_Options/" .. line:gsub("\\", "/")):find("/mskin", 1, true),
+            line .. " points to the /mskin command, which the Suite does not ship")
+    end
+end
+
+-- A profile operation the engine refuses (combat, bad input) keeps the undo
+-- step; only a replaced profile drops it. A replaced profile repaints the
+-- options once (through ClearHistory), a refused one not at all.
+local cleared, profileRepaints = 0, 0
+local pageBuilder
+local captured = {}
+local function Widget()
+    return setmetatable({}, { __index = function(_, key)
+        if type(key) == "string" and key:match("^%u") then return function() end end
+    end })
+end
+CreateFrame = function() return Widget() end
+local profileOptions = {
+    CreateSectionTitle = function() end,
+    CreatePanel = function() return Widget() end,
+    CreateText = function() return Widget() end,
+    SetTextColor = function() end,
+    TrackRefresh = function() end,
+    RefreshAll = function() profileRepaints = profileRepaints + 1 end,
+    -- Like the real one, clearing the history repaints the options.
+    ClearHistory = function()
+        cleared = cleared + 1
+        profileRepaints = profileRepaints + 1
+    end,
+    RegisterPage = function(_, _, builder) pageBuilder = builder end,
+    CreateCycle = function(_, label, _, _, setter) captured[label] = setter; return Widget() end,
+    CreateInput = function() return Widget() end,
+}
+local function Button(_, label, _, _, callback)
+    captured[label] = callback
+    return Widget()
+end
+profileOptions.CreateButton = Button
+profileOptions.CreateSettingButton = Button
+local refuse = true
+local profileNS = {
+    L = setmetatable({}, { __index = function(_, key) return key end }),
+    Surface = { Attach = function() end },
+    Database = {
+        GetActiveProfileName = function() return "Default" end,
+        GetProfileNames = function() return { "Default", "Raid" } end,
+        CreateProfile = function(name) if refuse then return false, "combat" end; return true, name end,
+        SetActiveProfile = function(name) if refuse then return false, "combat" end; return true, name end,
+        DeleteProfile = function(name) if refuse then return false, "combat" end; return true, name end,
+    },
+    ProfileIO = {
+        maxEncodedBytes = 100,
+        ImportProfile = function() if refuse then return false, "combat" end; return true, "Raid" end,
+        ImportAll = function() if refuse then return false, "combat" end; return true, "Default" end,
+    },
+}
+assert(loadfile("MSUF_Suite_Skin_Options/Pages/Profiles.lua"))("MSUF_Suite_Skin_Options",
+    { NS = profileNS, Options = profileOptions })
+pageBuilder(Widget())
+local PROFILE_ACTIONS = { "Active profile", "Create clean", "Copy current", "Delete active",
+    "Import profile", "Import all" }
+local function RunProfileAction(label)
+    profileRepaints = 0
+    captured[label]("Raid")
+    return profileRepaints
+end
+for _, label in ipairs(PROFILE_ACTIONS) do
+    assert(RunProfileAction(label) == 0, label .. ": a refused profile operation repainted the options")
+end
+assert(cleared == 0, "a refused profile operation dropped the undo step")
+refuse = false
+for _, label in ipairs(PROFILE_ACTIONS) do
+    local repaints = RunProfileAction(label)
+    assert(repaints == 1, label .. " repainted the options " .. repaints .. " times")
+end
+assert(cleared == #PROFILE_ACTIONS, "a replaced profile kept the undo step")
 print("Suite Skinning options: refresher scoping and " .. checked .. " localized strings passed")
