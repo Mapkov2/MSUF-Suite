@@ -58,6 +58,15 @@ local function Load(file)
     setfenv(chunk, G)
     chunk("MSUF_Suite_DataTexts", W.private)
 end
+-- MSUF's font comes from the shared media table and money text from the
+-- shared helper; DataTexts keeps its own sign characters.
+local MEDIA_FONT = "Interface\\AddOns\\Test\\Media\\MSUF.ttf"
+W.Suite.MSUFMedia.font = MEDIA_FONT
+local sharedMoneyText, moneyTexts = S.MoneyText, 0
+S.MoneyText = function(amount)
+    moneyTexts = moneyTexts + 1
+    return sharedMoneyText(amount)
+end
 Load("Bootstrap")
 Load("DataTexts")
 local M = assert(S.instances.dataTexts)
@@ -192,6 +201,8 @@ assert(S.states.dataTexts.active and M.bars[1].frame:IsShown()
     and M.bars[1].slots[2].text == "Durability: 80%"
     and M.bars[1].slots[3].text == "FPS: 80",
     "starter bar did not render its selected sources")
+assert(M.bars[1].slots[1].label.font[1] == MEDIA_FONT,
+    "DataTexts did not take MSUF's font from the shared media table")
 assert(reads.fps == before and W.Pending() == 1,
     "minimap and DataTexts did not reuse the FPS sample and timer")
 local fpsRecord = M.values.fps
@@ -244,6 +255,26 @@ assert(W.movers["MSUFSuite.dataTexts/bar1"], "DataTexts bar is missing in Edit M
 money = 112345
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[1].text == "Gold: 11g", "gold event did not update the bar")
+-- A slot opens Blizzard's matching window out of combat (bags for gold, the
+-- character sheet for durability; FPS has none) and explains its value.
+do
+    local opened, slots = {}, M.bars[1].slots
+    W.G.OpenAllBags = function() opened[#opened + 1] = "bags" end
+    W.G.ToggleCharacter = function(tab) opened[#opened + 1] = tab end
+    for i = 1, 3 do W.Fire(slots[i], "OnClick", "LeftButton") end
+    assert(#opened == 2 and opened[1] == "bags" and opened[2] == "PaperDollFrame",
+        "DataText clicks did not open the gold and durability windows")
+    W.combat = true
+    W.Fire(slots[1], "OnClick", "LeftButton")
+    W.combat = false
+    assert(#opened == 2, "a DataText click opened a window in combat")
+    local tip = W.G.GameTooltip
+    W.Fire(slots[1], "OnEnter")
+    assert(tip.shown and tip.owner == slots[1] and tip.lines[1] == W.Suite.DataTextSources[slots[1].sourceIndex]
+        and tip.lines[2] == "Current | 11g 23s 45c", "the gold DataText tooltip did not show the full amount")
+    W.Fire(slots[1], "OnLeave")
+    assert(not tip.shown, "leaving a DataText kept its tooltip")
+end
 money = W.secret
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[1].text == "Gold: —", "secret gold was formatted")
@@ -260,6 +291,7 @@ assert(M.bars[1].slots[4].text == "Session: +1g 23s 45c",
 money = 99901
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[4].text == "Session: −99c", "session gold loss was formatted incorrectly")
+assert(moneyTexts > 0, "session gold did not use the shared S.MoneyText")
 money = 100000
 G.UnitGUID = function() return W.secret end
 W.Event("PLAYER_MONEY")
@@ -296,6 +328,48 @@ assert(rebinds == 0 and M.bars[1].frame.alpha == 1 and W.Pending() == 1,
 W.Fire(M.bars[1].frame, "OnLeave")
 assert(M.bars[1].frame.alpha == 0 and W.Pending() == 0,
     "mouse exit did not cancel sampled data")
+-- Auto-layout bars relayout on every changed value, so the relayout itself
+-- must not allocate. The widgets are allocation-free stand-ins here.
+do
+    local Layout
+    for index = 1, 60 do
+        local name, value = debug.getupvalue(M.UpdateSource, index)
+        if not name or name == "Layout" then
+            Layout = value
+            break
+        end
+    end
+    assert(type(Layout) == "function", "DataTexts relayout function not found")
+    local function Quiet() end
+    local function Label() return 30 end
+    local function Widget()
+        return { ClearAllPoints = Quiet, SetPoint = Quiet, SetSize = Quiet, Show = Quiet, Hide = Quiet,
+            GetStringWidth = Label, GetUnboundedStringWidth = Label }
+    end
+    local config = S.Config("dataTexts")
+    local layout = config.bar1Layout
+    local bar = { prefix = "bar1", widthKey = "bar1Width", heightKey = "bar1Height", layoutKey = "bar1Layout",
+        style = { gap = 6, padding = 8, separatorEnabled = true, separatorSize = 2 },
+        frame = { GetWidth = function() return config.bar1Width end, SetWidth = Quiet },
+        slots = {}, dividers = {} }
+    for slot = 1, 6 do
+        local button = Widget()
+        button.source, button.label = "fps", Widget()
+        bar.slots[slot], bar.dividers[slot] = button, Widget()
+    end
+    for _, mode in ipairs({ 1, 2 }) do
+        config.bar1Layout = mode
+        Layout(bar)
+        collectgarbage("collect")
+        collectgarbage("stop")
+        local before = collectgarbage("count")
+        for _ = 1, 200 do Layout(bar) end
+        local grown = collectgarbage("count") - before
+        collectgarbage("restart")
+        assert(grown < 1, "a DataTexts relayout allocated tables (" .. grown .. " KB for 200 relayouts)")
+    end
+    config.bar1Layout = layout
+end
 assert(S.Set("dataTexts", "enabled", false))
 if nativeBag then
     assert(nativeBag.shown and not nativeBag.driver,
@@ -305,4 +379,40 @@ assert(not M.bars[1].frame:IsShown() and not M.bars[2].frame:IsShown()
     and not M.context.callbacks.PLAYER_MONEY,
     "disabling DataTexts left a frame or money event active")
 assert(W.Pending() == 0, "disabled information displays kept a timer")
+-- New choices append to the existing index table so saved slot selections
+-- retain their meaning. Both sampled values share the active bar's timer.
+G.date = function(format)
+    assert(format == "%d-%m-%Y")
+    return "26-09-2026"
+end
+assert(S.SetMany("dataTexts", { bar1Slot1 = 12, bar1Slot2 = 13,
+    bar1Slot3 = 1, bar1Visibility = 1, valueClassColor = true }))
+assert(S.Set("dataTexts", "enabled", true))
+assert(M.bars[1].slots[1].text == "Date: 26-09-2026"
+    and M.bars[1].slots[2].text == "FPS / World: 40 / 50 ms"
+    and M.bars[1].style.valueColor == "3366cc"
+    and W.Pending() == 1, "date, combined FPS/latency or class-color DataText failed")
+assert(S.Set("dataTexts", "enabled", false) and W.Pending() == 0,
+    "new sampled sources remained active after disable")
+-- Retail and WoW Forever always have the APIs DataTexts calls. The one
+-- client-specific hook target (Forever's MainActionBar_InitializeMKB) is a
+-- plain existence check, not a type guard.
+do
+    local file = assert(io.open(root .. "/MSUF_Suite_DataTexts/DataTexts.lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"")
+    assert(not guarded, "DataTexts guards " .. tostring(guarded) .. " as if a client lacked it")
+    assert(not source:find("C_Housing and", 1, true), "DataTexts guards C_Housing as if a client lacked it")
+    -- GameTooltip and FontString:GetUnboundedStringWidth exist on both clients.
+    local code = source:gsub("%-%-[^\n]*", "")
+    local probe = code:match("(GameTooltip) and") or code:match("not (GameTooltip) or")
+        or code:match("%.(GetUnboundedStringWidth) or")
+    assert(not probe, "DataTexts probes " .. tostring(probe) .. " as if a client lacked it")
+    -- Per-bar setting names are built once (BAR_KEYS); the event paths that
+    -- sync events and visibility read them instead of concatenating keys.
+    local _, enabledKeys = code:gsub('%.%. "Enabled"', "")
+    local _, hideKeys = code:gsub('%.%. "LoadCondHideIn', "")
+    assert(enabledKeys == 1 and hideKeys == 2, "DataTexts concatenates per-bar setting keys outside BAR_KEYS")
+end
 print("Suite DataTexts: starter bars, shared samples/timer, events, secrets, Edit Mode and disable passed: " .. flavor)

@@ -3,15 +3,16 @@ local NS, S = P.NS, P.Suite
 local M = { bars = {}, due = {}, values = {}, events = {} }
 local ID = "dataTexts"
 local BAR_COUNT, SLOT_COUNT = 3, 6
-local FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
+local FONT = NS.MSUFMedia.font
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local SOURCES = {
     gold = true, sessionGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
+    date = true, fpsLatency = true,
 }
-local SAMPLED = { clock = true, fps = true, latency = true, coordinates = true }
-local INTERVAL = { fps = 2, latency = 5, coordinates = 0.5 }
+local SAMPLED = { clock = true, fps = true, latency = true, coordinates = true, date = true, fpsLatency = true }
+local INTERVAL = { fps = 2, latency = 5, coordinates = 0.5, fpsLatency = 2 }
 -- Displays that read another shared data source.
 local READER = { clock = "clockTime", sessionGold = "gold" }
 local EVENT_SOURCES = {
@@ -28,12 +29,13 @@ local EVENT_SOURCES = {
 }
 local CLICK = {
     gold = "OpenAllBags", sessionGold = "OpenAllBags", bags = "OpenAllBags",
-    coordinates = "ToggleWorldMap", location = "ToggleWorldMap",
+    coordinates = "ToggleWorldMap", location = "ToggleWorldMap", date = "ToggleCalendar",
 }
 local LABELS = {
     gold = S.Text("Gold"), sessionGold = S.Text("Session"), bags = S.Text("Bags"),
     durability = S.Text("Durability"), clock = S.Text("Time"), fps = S.Text("FPS"),
     latency = S.Text("World"), coordinates = S.Text("Coords"), location = S.Text("Zone"), xp = S.Text("XP"),
+    date = S.Text("Date"), fpsLatency = S.Text("FPS / World"),
 }
 local TEXT = {
     current = S.Text("Current"),
@@ -43,65 +45,65 @@ local TEXT = {
 }
 local NO_VALUE = "—"
 local floor = math.floor
+local MoneyText = S.MoneyText
 local nativeBagBar, nativeBagBarWasShown, nativeBagDriver, nativeBagHooked
 local nativeBagShowHooks = setmetatable({}, { __mode = "k" })
 local healthCurve
 -- Rebind alternates between two active-source sets and reuses its event set.
 local activeSetA, activeSetB, wantedEvents = {}, {}, {}
+-- Layout reuses these for the shown slots of a bar and their widths.
+local layoutSlots, layoutWidths = {}, {}
+-- Per-bar setting names, built once so event paths never concatenate keys.
+local BAR_KEYS = {}
+for i = 1, BAR_COUNT do
+    local prefix = "bar" .. i
+    BAR_KEYS[i] = {
+        prefix = prefix, enabled = prefix .. "Enabled", visibility = prefix .. "Visibility",
+        injured = prefix .. "LoadCondShowWhenInjured", instance = prefix .. "LoadCondHideInInstance",
+        housing = prefix .. "LoadCondHideInHousing",
+    }
+end
 
 local function Clear(t)
     for key in pairs(t) do t[key] = nil end
 end
 
 local function InInstance()
-    if type(IsInInstance) ~= "function" then return false end
     local inside = IsInInstance()
     return inside == true or inside == 1
 end
 
 local function InHousing()
-    local fn = C_Housing and C_Housing.IsInsideHouseOrPlot
-    return type(fn) == "function" and fn() == true
+    return C_Housing.IsInsideHouseOrPlot() == true
+end
+
+-- Full health maps to 0 (hidden), anything less to 1 (shown). Retail and
+-- WoW Forever both have UnitHealthPercent with curve support.
+local function HealthCurve()
+    if not healthCurve then
+        healthCurve = C_CurveUtil.CreateCurve()
+        healthCurve:SetType(Enum.LuaCurveType.Step)
+        healthCurve:AddPoint(0, 1)
+        healthCurve:AddPoint(1, 0)
+    end
+    return healthCurve
 end
 
 local function RefreshHealthAlpha(bar)
     if not bar or not bar.visual then return end
-    if S.editMode or not M.config[bar.prefix .. "LoadCondShowWhenInjured"] then
+    if S.editMode or not M.config[bar.injuredKey] then
         bar.visual:SetAlpha(1)
         return
     end
-    local percent = UnitHealthPercent
-    local curveAPI = C_CurveUtil
-    local curveType = Enum and Enum.LuaCurveType
-    if type(percent) == "function" and curveAPI and type(curveAPI.CreateCurve) == "function"
-        and curveType and curveType.Step then
-        if not healthCurve then
-            healthCurve = curveAPI.CreateCurve()
-            healthCurve:SetType(curveType.Step)
-            healthCurve:AddPoint(0, 1)
-            healthCurve:AddPoint(1, 0)
-        end
-        -- Midnight health can be secret. The curve result goes straight into
-        -- SetAlpha without Lua comparison, arithmetic or string conversion.
-        bar.visual:SetAlpha(percent("player", false, healthCurve))
-    elseif type(UnitHealth) == "function" and type(UnitHealthMax) == "function" then
-        local current, maximum = UnitHealth("player"), UnitHealthMax("player")
-        if not S.Public(current) or not S.Public(maximum) then
-            bar.visual:SetAlpha(1)
-        else
-            bar.visual:SetAlpha(maximum > 0 and current < maximum and 1 or 0)
-        end
-    else
-        -- If this client lacks a safe health path, keep the bar usable.
-        bar.visual:SetAlpha(1)
-    end
+    -- Health can be secret. The curve result goes straight into SetAlpha
+    -- without Lua comparison, arithmetic or string conversion.
+    bar.visual:SetAlpha(UnitHealthPercent("player", false, HealthCurve()))
 end
 
 -- Retail and Forever keep backpack and bag slots on a separate BagsBar.
 -- The bag DataText is the visible entry point while this option is on;
 -- Blizzard still owns item movement and the actual container windows.
 local function SyncNativeBagBar()
-    if not NS.Client.isMainline then return end
     if NS.IsCombatLocked() then
         S.Queue(ID)
         return
@@ -112,24 +114,22 @@ local function SyncNativeBagBar()
             nativeBagBar = frame
             nativeBagBarWasShown = frame:IsShown() == true
         end
-        if not nativeBagDriver and type(RegisterStateDriver) == "function" then
+        if not nativeBagDriver then
             RegisterStateDriver(frame, "visibility", "hide")
             nativeBagDriver = true
         end
         frame:Hide()
-        if not nativeBagShowHooks[frame] and type(frame.HookScript) == "function" then
+        if not nativeBagShowHooks[frame] then
             frame:HookScript("OnShow", SyncNativeBagBar)
             nativeBagShowHooks[frame] = true
         end
-        if not nativeBagHooked and type(hooksecurefunc) == "function"
-            and type(_G.MainActionBar_InitializeMKB) == "function" then
+        -- WoW Forever only: its mouse-and-keyboard action bar setup shows the bag bar.
+        if not nativeBagHooked and _G.MainActionBar_InitializeMKB then
             hooksecurefunc("MainActionBar_InitializeMKB", SyncNativeBagBar)
             nativeBagHooked = true
         end
     elseif nativeBagBar then
-        if nativeBagDriver and type(UnregisterStateDriver) == "function" then
-            UnregisterStateDriver(nativeBagBar, "visibility")
-        end
+        if nativeBagDriver then UnregisterStateDriver(nativeBagBar, "visibility") end
         nativeBagDriver = nil
         local restoreFrame, wasShown = nativeBagBar, nativeBagBarWasShown
         nativeBagBar, nativeBagBarWasShown = nil, nil
@@ -139,30 +139,15 @@ end
 
 local Finite = S.Finite
 
-local function Time()
-    local value = type(GetTime) == "function" and GetTime()
-    return Finite(value) and value or 0
-end
-
-local function MoneyText(amount)
-    local gold, silver, copper = floor(amount / 10000), floor(amount % 10000 / 100), amount % 100
-    local text = gold > 0 and gold .. "g" or nil
-    if silver > 0 then text = text and text .. " " .. silver .. "s" or silver .. "s" end
-    if copper > 0 or not text then text = text and text .. " " .. copper .. "c" or copper .. "c" end
-    return text
-end
-
+-- Losses use the typographic minus sign (U+2212).
 local function SignedMoneyText(delta)
     return (delta > 0 and "+" or delta < 0 and "−" or "") .. MoneyText(math.abs(delta))
 end
 
+-- This session's login gold (MSUF_Suite/Core/SessionGold.lua), or nil.
 local function SessionBaseline()
-    if NS.goldSessionCaptured ~= true or type(UnitGUID) ~= "function" then return nil end
-    local guid = UnitGUID("player")
-    if not S.Public(guid) or type(guid) ~= "string" then return nil end
-    local root = NS.RootDB
-    local baseline = type(root) == "table" and type(root.suiteGold) == "table" and root.suiteGold[guid] or nil
-    return Finite(baseline) and baseline or nil
+    if NS.goldSessionCaptured ~= true then return nil end
+    return NS.StoredSessionGold()
 end
 
 local function ApplyColor(region, hex, alpha)
@@ -213,12 +198,22 @@ local FORMATTERS = {
 }
 
 local function Format(key)
+    if key == "date" then return LABELS[key], date("%d-%m-%Y") end
+    if key == "fpsLatency" then
+        local fps = S.ReadInfoSource("fps")
+        local _, world = S.ReadInfoSource("latency")
+        if Finite(fps) and Finite(world) then
+            return LABELS[key], floor(fps + .5) .. " / " .. floor(world + .5) .. " ms",
+                (fps < 30 or world >= 200) and "bad" or nil
+        end
+        return LABELS[key], NO_VALUE
+    end
     local value, severity = FORMATTERS[key](S.ReadInfoSource(READER[key] or key))
     return LABELS[key], value or NO_VALUE, severity
 end
 
 local function Tooltip(button)
-    if not M.active or not GameTooltip or not button.source then return end
+    if not M.active or not button.source then return end
     local key = button.source
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip:ClearLines()
@@ -230,7 +225,7 @@ local function Tooltip(button)
             local baseline = SessionBaseline()
             if baseline then GameTooltip:AddDoubleLine(TEXT.sinceLogin, SignedMoneyText(amount - baseline)) end
         end
-    elseif key == "latency" then
+    elseif key == "latency" or key == "fpsLatency" then
         local home, world = S.ReadInfoSource("latency")
         if Finite(home) and Finite(world) then
             GameTooltip:AddDoubleLine(TEXT.homeWorld, floor(home + .5) .. " / " .. floor(world + .5) .. " ms")
@@ -247,17 +242,17 @@ local function Tooltip(button)
 end
 
 local function HideTooltip(button)
-    if GameTooltip and GameTooltip:IsOwned(button) then GameTooltip:Hide() end
+    if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
 end
 
 local function Click(button)
     if NS.IsCombatLocked() or not button.source then return end
     local name = CLICK[button.source]
-    if name and type(_G[name]) == "function" then
+    if name then
         _G[name]()
-    elseif button.source == "durability" and type(ToggleCharacter) == "function" then
+    elseif button.source == "durability" then
         ToggleCharacter("PaperDollFrame")
-    elseif button.source == "clock" and type(ToggleCalendar) == "function" then
+    elseif button.source == "clock" then
         ToggleCalendar()
     end
 end
@@ -332,11 +327,14 @@ local function CreateBar(index)
     right:SetWidth(1)
     local accent = CreateEdge(visual, "ARTWORK", "BOTTOMLEFT", "BOTTOMRIGHT")
     accent:SetHeight(1)
-    local prefix = "bar" .. index
+    local keys = BAR_KEYS[index]
+    local prefix = keys.prefix
     local bar = {
         frame = frame, visual = visual, background = background, border = { top, bottom, left, right },
         accent = accent, dividers = {}, slots = {}, index = index, prefix = prefix,
-        visibilityKey = prefix .. "Visibility", layoutKey = prefix .. "Layout",
+        enabledKey = keys.enabled, visibilityKey = keys.visibility, layoutKey = prefix .. "Layout",
+        widthKey = prefix .. "Width", heightKey = prefix .. "Height",
+        injuredKey = keys.injured, instanceKey = keys.instance, housingKey = keys.housing,
     }
     frame.bar = bar
     M.bars[index] = bar
@@ -391,26 +389,27 @@ local function Display(label, value, severity, style)
     return value, "|cff" .. valueColor .. value .. "|r"
 end
 
--- Slot widths: equal shares, or (auto layout) text widths scaled to fill the bar.
-local function SlotWidths(bar, visible, widths)
-    local c, style = M.config, bar.style
-    local configuredWidth = c[bar.prefix .. "Width"]
-    local gaps = (#visible - 1) * style.gap
+-- Widths of the first count layout slots: equal shares, or (auto layout)
+-- text widths scaled to fill the bar.
+local function SlotWidths(bar, count)
+    local c, style, widths = M.config, bar.style, layoutWidths
+    local configuredWidth = c[bar.widthKey]
+    local gaps = (count - 1) * style.gap
     if c[bar.layoutKey] ~= 2 then
         if bar.frame:GetWidth() ~= configuredWidth then bar.frame:SetWidth(configuredWidth) end
-        for i = 1, #visible do widths[i] = (configuredWidth - gaps) / #visible end
+        for i = 1, count do widths[i] = (configuredWidth - gaps) / count end
         return
     end
     local total = 0
-    for i, button in ipairs(visible) do
-        local measure = button.label.GetUnboundedStringWidth or button.label.GetStringWidth
-        widths[i] = math.max(44, math.ceil(measure(button.label)) + 2 * style.padding)
+    for i = 1, count do
+        -- The unbounded width: the label may be truncated by its current slot.
+        widths[i] = math.max(44, math.ceil(layoutSlots[i].label:GetUnboundedStringWidth()) + 2 * style.padding)
         total = total + widths[i]
     end
     local needed = math.min(900, math.max(configuredWidth, total + gaps))
     if bar.frame:GetWidth() ~= needed then bar.frame:SetWidth(needed) end
     local ratio = (needed - gaps) / total
-    for i = 1, #widths do widths[i] = widths[i] * ratio end
+    for i = 1, count do widths[i] = widths[i] * ratio end
 end
 
 local function PlaceDivider(bar, index, x, height)
@@ -427,28 +426,33 @@ local function PlaceDivider(bar, index, x, height)
     divider:Show()
 end
 
+-- Auto-layout bars relayout on value changes, so this allocates nothing.
 local function Layout(bar)
-    local style = bar.style
-    local visible, widths = {}, {}
+    local style, slots, widths = bar.style, layoutSlots, layoutWidths
+    local count = 0
     for i = 1, SLOT_COUNT do
         local button = bar.slots[i]
-        if button.source then visible[#visible + 1] = button end
+        if button.source then
+            count = count + 1
+            slots[count] = button
+        end
     end
     for _, divider in pairs(bar.dividers) do divider:Hide() end
-    if #visible == 0 then return end
-    SlotWidths(bar, visible, widths)
-    local height = M.config[bar.prefix .. "Height"]
+    if count == 0 then return end
+    SlotWidths(bar, count)
+    local height = M.config[bar.heightKey]
     local x = 0
-    for i, button in ipairs(visible) do
+    for i = 1, count do
+        local button, width = slots[i], widths[i]
         button:ClearAllPoints()
         button:SetPoint("LEFT", bar.frame, "LEFT", x, 0)
-        button:SetSize(widths[i], height)
-        local inset = math.max(0, math.min(style.padding, floor((widths[i] - 4) / 2)))
+        button:SetSize(width, height)
+        local inset = math.max(0, math.min(style.padding, floor((width - 4) / 2)))
         button.label:ClearAllPoints()
         button.label:SetPoint("LEFT", button, "LEFT", inset, 0)
         button.label:SetPoint("RIGHT", button, "RIGHT", -inset, 0)
-        x = x + widths[i]
-        if i < #visible then
+        x = x + width
+        if i < count then
             if style.separatorEnabled then PlaceDivider(bar, i, x, height) end
             x = x + style.gap
         end
@@ -495,7 +499,7 @@ local function NextClock()
 end
 
 local function NextSample(key, now)
-    return now + (key == "clock" and NextClock() or INTERVAL[key])
+    return now + ((key == "clock" or key == "date") and NextClock() or INTERVAL[key])
 end
 
 local TickDataTexts
@@ -504,7 +508,7 @@ function M:Schedule()
         self.timer:Cancel()
         self.timer = nil
     end
-    local now, soonest = Time(), nil
+    local now, soonest = GetTime(), nil
     for key in pairs(self.activeSources or {}) do
         if SAMPLED[key] then
             local due = self.due[key] or now
@@ -516,7 +520,7 @@ end
 
 function M:Tick()
     self.timer = nil
-    local now = Time()
+    local now = GetTime()
     for key in pairs(self.activeSources or {}) do
         if SAMPLED[key] and (self.due[key] or 0) <= now + .001 then
             self:UpdateSource(key)
@@ -576,7 +580,7 @@ local function OnEvent(self, event, unit)
         if active[key] then
             self:UpdateSource(key)
             if key == "coordinates" then
-                self.due[key] = Time() + INTERVAL.coordinates
+                self.due[key] = GetTime() + INTERVAL.coordinates
                 self:Schedule()
             end
         end
@@ -594,26 +598,23 @@ local function SyncEvents(self, active)
         end
     end
     if next(active) then wantedEvents.PLAYER_ENTERING_WORLD = true end
+    local c = self.config
     for i = 1, BAR_COUNT do
-        local prefix = "bar" .. i
-        local mode = self.config[prefix .. "Visibility"]
-        if self.config[prefix .. "Enabled"] and (mode == 2 or mode == 3)
-            and not (self.bars[i] and self.bars[i].visibilityDriver) then
+        local keys = BAR_KEYS[i]
+        local enabled, mode, housing = c[keys.enabled], c[keys.visibility], c[keys.housing]
+        if enabled and (mode == 2 or mode == 3) and not (self.bars[i] and self.bars[i].visibilityDriver) then
             wantedEvents.PLAYER_REGEN_DISABLED = true
             wantedEvents.PLAYER_REGEN_ENABLED = true
         end
-        if self.config[prefix .. "Enabled"] and self.config[prefix .. "LoadCondShowWhenInjured"] then
+        if enabled and c[keys.injured] then
             wantedEvents.UNIT_HEALTH = true
             wantedEvents.UNIT_MAXHEALTH = true
         end
-        local housingAPI = C_Housing and C_Housing.IsInsideHouseOrPlot
-        local housing = self.config[prefix .. "LoadCondHideInHousing"] and type(housingAPI) == "function"
-        if self.config[prefix .. "Enabled"] and (self.config[prefix .. "LoadCondHideInInstance"]
-            or housing) then
+        if enabled and (c[keys.instance] or housing) then
             wantedEvents.PLAYER_ENTERING_WORLD = true
             wantedEvents.ZONE_CHANGED_NEW_AREA = true
         end
-        if self.config[prefix .. "Enabled"] and housing then
+        if enabled and housing then
             wantedEvents.HOUSE_PLOT_ENTERED = true
             wantedEvents.HOUSE_PLOT_EXITED = true
         end
@@ -651,7 +652,7 @@ function M:Rebind()
     end
     self.activeSources = active
     SyncEvents(self, active)
-    local now, sampledChanged = Time(), false
+    local now, sampledChanged = GetTime(), false
     for key in pairs(active) do
         self:UpdateSource(key, true)
         if SAMPLED[key] and not (previous and previous[key]) then
@@ -675,7 +676,7 @@ end
 
 local function MacroVisibility(c, bar)
     local rules, n = {}, 0
-    local injured = c[bar.prefix .. "LoadCondShowWhenInjured"] == true
+    local injured = c[bar.injuredKey] == true
     for _, condition in ipairs(NS.DataTextLoadConditions) do
         local suffix, macro = condition[1], condition[3]
         if macro and c[bar.prefix .. "LoadCond" .. suffix] == true
@@ -693,15 +694,24 @@ local function MacroVisibility(c, bar)
     return table.concat(rules, "; ")
 end
 
+-- Visibility macros depend on settings only: they are built when a bar is
+-- refreshed, and UpdateVisibility (combat, zone and housing events) reads
+-- the cached strings. Edit Mode reveals bars out of combat.
+local EDIT_PREFIX = "[nocombat] show; "
+local BLOCKED, BLOCKED_EDIT = "hide", EDIT_PREFIX .. "hide"
+local function CacheVisibility(c, bar)
+    local expression = MacroVisibility(c, bar)
+    bar.visibilityMacro = expression
+    bar.visibilityEditMacro = expression and EDIT_PREFIX .. expression
+end
+
 local function SetVisibilityDriver(bar, expression)
     if bar.visibilityDriver == expression then return true end
     if NS.IsCombatLocked() then
         S.Queue(ID)
         return false
     end
-    if bar.visibilityDriver and type(UnregisterStateDriver) == "function" then
-        UnregisterStateDriver(bar.frame, "visibility")
-    end
+    if bar.visibilityDriver then UnregisterStateDriver(bar.frame, "visibility") end
     bar.visibilityDriver = nil
     if expression then
         RegisterStateDriver(bar.frame, "visibility", expression)
@@ -719,14 +729,13 @@ function M:UpdateVisibility()
         if bar then
             local mode = c[bar.visibilityKey]
             if mode ~= 4 then bar.hover = false end
-            local enabled = c[bar.prefix .. "Enabled"] == true
-            local blocked = enabled and (c[bar.prefix .. "LoadCondHideInInstance"] and InInstance()
-                or c[bar.prefix .. "LoadCondHideInHousing"] and InHousing())
+            local enabled = c[bar.enabledKey] == true
+            local blocked = enabled and (c[bar.instanceKey] and InInstance()
+                or c[bar.housingKey] and InHousing())
             local expression
-            if enabled and type(RegisterStateDriver) == "function" then
-                expression = MacroVisibility(c, bar)
-                if expression and blocked then expression = "hide" end
-                if expression and S.editMode then expression = "[nocombat] show; " .. expression end
+            if enabled then
+                expression = S.editMode and bar.visibilityEditMacro or bar.visibilityMacro
+                if expression and blocked then expression = S.editMode and BLOCKED_EDIT or BLOCKED end
             end
             if SetVisibilityDriver(bar, expression) and not expression then
                 bar.frame:SetShown(enabled and (S.editMode or not blocked and (mode ~= 2 and mode ~= 3
@@ -755,8 +764,18 @@ local function RefreshBar(index)
     frame:ClearAllPoints()
     local point = NS.DataTextPoints[c[prefix .. "Point"]] or "BOTTOM"
     frame:SetPoint(point, UIParent, point, c[prefix .. "X"], c[prefix .. "Y"])
-    frame:SetSize(c[prefix .. "Width"], c[prefix .. "Height"])
+    frame:SetSize(c[bar.widthKey], c[bar.heightKey])
     bar.style = NS.DataTextEffectiveStyle(c, index)
+    if bar.style.valueClassColor then
+        local _, class = UnitClass("player")
+        if S.Public(class) then
+            local r, g, b = S.ClassRGB(class)
+            if Finite(r) and Finite(g) and Finite(b) then
+                bar.style.valueColor = string.format("%02x%02x%02x",
+                    floor(r * 255 + .5), floor(g * 255 + .5), floor(b * 255 + .5))
+            end
+        end
+    end
     ApplyStyle(bar)
     local style = bar.style
     local font = S.ResolveFont(style.font) or FONT
@@ -770,13 +789,14 @@ local function RefreshBar(index)
         if button.source then StyleSlot(button, style, font) end
     end
     Layout(bar)
+    CacheVisibility(c, bar)
 end
 
 function M:Refresh()
     self.styling = true
     Clear(self.values)
     for i = 1, BAR_COUNT do
-        if self.config["bar" .. i .. "Enabled"] then RefreshBar(i) end
+        if self.config[BAR_KEYS[i].enabled] then RefreshBar(i) end
     end
     self.styling = false
     self:UpdateVisibility()
@@ -791,7 +811,7 @@ end
 function M:Enable()
     self:Refresh()
     SyncNativeBagBar()
-    if NS.Client.isMainline then self.context:Event("ADDON_LOADED", AddonLoaded, true) end
+    self.context:Event("ADDON_LOADED", AddonLoaded, true)
 end
 
 function M:Disable()
@@ -807,7 +827,7 @@ function M:Disable()
     self.activeSources = nil
     Clear(self.values)
     Clear(self.due)
-    local owned = GameTooltip and GameTooltip:GetOwner()
+    local owned = GameTooltip:GetOwner()
     for _, bar in pairs(self.bars) do
         SetVisibilityDriver(bar, nil)
         bar.frame:Hide()
@@ -823,11 +843,12 @@ function M:RegisterMovers()
     if not movers then
         movers = {}
         for i = 1, BAR_COUNT do
-            local index, prefix = i, "bar" .. i
+            local index, keys = i, BAR_KEYS[i]
+            local prefix = keys.prefix
             movers[i] = {
                 label = "DataTexts bar " .. i, order = 690 + i,
                 getFrame = function() return M.bars[index] and M.bars[index].frame end,
-                isEnabled = function() return M.config[prefix .. "Enabled"] == true end,
+                isEnabled = function() return M.config[keys.enabled] == true end,
                 xKey = prefix .. "X", yKey = prefix .. "Y", pointKey = prefix .. "Point",
                 point = function() return NS.DataTextPoints[M.config[prefix .. "Point"]] or "BOTTOM" end,
                 historyKeys = { prefix .. "Width", prefix .. "Height" },

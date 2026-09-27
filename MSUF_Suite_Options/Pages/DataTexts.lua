@@ -2,7 +2,7 @@ local _, P = ...
 local S, M, T, Tr = P.S, P.M, P.T, P.Tr
 local PAGE, ID = "suite_dataTexts", "dataTexts"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local DEFAULT_FONT = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf"
+local DEFAULT_FONT = P.Suite.MSUFMedia.font
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local PLACES = 6
@@ -10,19 +10,10 @@ local PLACES = 6
 local EDGE_POINTS = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" },
     { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
 
+-- Font and texture keys through the core resolvers (MSUF_Suite/Core/Platform.lua).
 local function ResolveMedia(kind, key)
-    if type(key) ~= "string" or key == "" then return nil end
-    local shared = kind == "font" and S.ResolveFont or S.ResolveTexture
-    if shared then return shared(key) end
-    if key:find("\\", 1, true) or key:find("/", 1, true) then return key end
-    local resolve = kind == "font" and (_G.MSUF_ResolveFontKeyPath or _G.MSUF_GetFontPathForKey)
-        or _G.MSUF_ResolveStatusbarTextureKey
-    local path = type(resolve) == "function" and resolve(key) or nil
-    if type(path) == "string" and path ~= "" then return path end
-    local stub = _G.LibStub
-    local media = type(stub) == "table" and type(stub.GetLibrary) == "function"
-        and stub:GetLibrary("LibSharedMedia-3.0", true)
-    return media and media:Fetch(kind == "font" and "font" or "statusbar", key, true) or nil
+    if kind == "font" then return P.Suite.ResolveFont(key) end
+    return P.Suite.ResolveTexture(key)
 end
 
 local function Color(texture, hex, alpha)
@@ -128,19 +119,15 @@ local function AddPlace(bar)
     end
 end
 
+-- Blizzard_Menu's MenuUtil exists on every supported client.
 local function OpenChoice(button, bar, slot)
     local key = "bar" .. bar .. "Slot" .. slot
-    if MenuUtil and type(MenuUtil.CreateContextMenu) == "function" then
-        MenuUtil.CreateContextMenu(button, function(_, root)
-            for index, name in ipairs(P.Suite.DataTextSources) do
-                root:CreateRadio(Tr(name), function() return P.Get(ID, key) == index end,
-                    function() P.Set(ID, key, index) end)
-            end
-        end)
-        return
-    end
-    -- The dropdown rows below remain the primary picker on older clients.
-    P.Set(ID, key, P.Get(ID, key) % #P.Suite.DataTextSources + 1)
+    MenuUtil.CreateContextMenu(button, function(_, root)
+        for index, name in ipairs(P.Suite.DataTextSources) do
+            root:CreateRadio(Tr(name), function() return P.Get(ID, key) == index end,
+                function() P.Set(ID, key, index) end)
+        end
+    end)
 end
 
 -- One tile per place; a click opens the source menu.
@@ -181,8 +168,8 @@ local function BuildBarActions(ctx, body, bar, sectionId, y, width)
         function() return P.Get(ID, prefix .. "Enabled") and HasEmptyPlace(prefix) end,
         P.Meta(PAGE, ID, prefix .. ".addPlace", "action", sectionId))
     P.Button(ctx, body, "Move in Edit Mode", 22 + buttonWidth, y, buttonWidth,
-        function() S.OpenEditMode(ID, prefix) end,
-        function() return S.Status(ID) == "Active" and P.Get(ID, prefix .. "Enabled") end,
+        function() P.OpenEditMode(ID, prefix) end,
+        function() return P.EditModeReady() and S.Status(ID) == "Active" and P.Get(ID, prefix .. "Enabled") end,
         P.Meta(PAGE, ID, prefix .. ".move", "action", sectionId))
     P.Button(ctx, body, "Hide bar", 28 + buttonWidth * 2, y, buttonWidth,
         function() P.Set(ID, prefix .. "Enabled", false) end,
@@ -262,8 +249,9 @@ local function Build(ctx)
             local index = NextBar()
             if index then P.Set(ID, "bar" .. index .. "Enabled", true) end
         end, function() return S.Availability(ID) and P.Get(ID, "enabled") and NextBar() ~= nil end, key = "addBar" },
-        { "Move first bar", function() S.OpenEditMode(ID, "bar1") end,
-          function() return S.Status(ID) == "Active" and P.Get(ID, "bar1Enabled") end, key = "move" },
+        { "Move first bar", function() P.OpenEditMode(ID, "bar1") end,
+          function() return P.EditModeReady() and S.Status(ID) == "Active" and P.Get(ID, "bar1Enabled") end,
+          key = "move" },
     })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_appearance", Tr("Shared bar style"),
         P.SectionRules(ID, "appearance"), {

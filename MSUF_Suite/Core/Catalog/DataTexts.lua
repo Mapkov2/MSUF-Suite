@@ -3,12 +3,12 @@ local B = NS.CatalogBuild
 local Choice, Bool, Number, Color, Font, Texture = B.Choice, B.Bool, B.Number, B.Color, B.Font, B.Texture
 
 NS.DataTextSources = {
-    "None", "Gold", "Bag space", "Durability", "Clock", "FPS", "Latency", "Coordinates", "Location", "XP", "Session gold",
+    "None", "Gold", "Bag space", "Durability", "Clock", "FPS", "Latency", "Coordinates", "Location", "XP", "Session gold", "Date", "FPS / latency",
 }
 NS.DataTextSourceKeys = {
-    false, "gold", "bags", "durability", "clock", "fps", "latency", "coordinates", "location", "xp", "sessionGold",
+    false, "gold", "bags", "durability", "clock", "fps", "latency", "coordinates", "location", "xp", "sessionGold", "date", "fpsLatency",
 }
-NS.DataTextPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+NS.DataTextPoints = NS.AnchorPoints
 -- The same player-state choices as the unit-frame Load Conditions. Every bar
 -- owns its settings so one information strip can stay visible independently.
 NS.DataTextLoadConditions = {
@@ -93,16 +93,9 @@ local textStyle = {
     Bool("showLabels", "Show data names", true),
     Color("labelColor", "Label color", initial.label),
     Color("valueColor", "Value color", initial.value),
+    Bool("valueClassColor", "Use class color for values", false),
     Color("warningColor", "Warning color", initial.warning),
 }
-for _, rule in ipairs(textStyle) do
-    if rule.key == "fontShadow" then
-        rule.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
-    elseif rule.key == "fontShadowOpacity" or rule.key == "fontShadowDistance" then
-        rule.enableKey = "fontShadow"
-        rule.requiresChoice = { key = "fontRendering", values = { [1] = true, [2] = true } }
-    end
-end
 local dependencies = {
     backgroundTexture = "backgroundEnabled", backgroundOpacity = "backgroundEnabled",
     borderSize = "borderEnabled", separatorSize = "separatorEnabled",
@@ -119,11 +112,12 @@ for _, group in ipairs({ barStyle, textStyle }) do
 end
 B.Section("dataTexts", "appearance", "Shared bar style", barStyle)
 B.Section("dataTexts", "textStyle", "Shared text style", textStyle)
-if NS.Client.isMainline then
-    B.Section("dataTexts", "bags", "Blizzard bag buttons", {
-        Bool("hideBlizzardBagBar", "Hide Blizzard bag buttons; use the Bag space DataText", true),
-    })
-end
+-- After the dependency table, which would clear the shadow's enable keys;
+-- each bar's own style copies the linked rules below.
+B.LinkFontShadow(NS.SuiteCatalog.dataTexts.rules)
+B.Section("dataTexts", "bags", "Blizzard bag buttons", {
+    Bool("hideBlizzardBagBar", "Hide Blizzard bag buttons; use the Bag space DataText", true),
+})
 
 -- Settings are copied from the shared style when an override is switched on.
 local function AddBarStyle(bar)
@@ -147,7 +141,7 @@ local function AddBarStyle(bar)
     end
 end
 
-local defaults = { NS.Client.isMainline and { 3, 4, 5 } or { 2, 4, 6 }, { 5, 8, 9 }, { 3, 7, 10 } }
+local defaults = { { 3, 4, 5 }, { 5, 8, 9 }, { 3, 7, 10 } }
 for bar = 1, 3 do
     local prefix, section = "bar" .. bar, "bar" .. bar
     B.Section("dataTexts", section, "Bar " .. bar, {
@@ -156,9 +150,7 @@ for bar = 1, 3 do
         Number(prefix .. "Height", "Height", NS.Client.isForever and bar == 1 and 28 or 26, 18, 50),
         Choice(prefix .. "Layout", "Slot sizing", NS.Client.isForever and bar == 1 and 2 or 1, { "Equal", "Fit text" }),
         Choice(prefix .. "Visibility", "Visibility", 1, { "Always", "Out of combat", "In combat", "Mouseover" }),
-        Choice(prefix .. "Point", "Screen anchor", NS.Client.isForever and bar == 1 and 9 or 8, {
-            "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right",
-        }),
+        Choice(prefix .. "Point", "Screen anchor", NS.Client.isForever and bar == 1 and 9 or 8, NS.AnchorLabels),
         Number(prefix .. "X", "Horizontal position", NS.Client.isForever and bar == 1 and -20 or 0, -4000, 4000),
         Number(prefix .. "Y", "Vertical position", NS.Client.isForever and bar == 1 and 20 or 85 + (bar - 1) * 36, -3000, 3000),
     })
@@ -201,5 +193,6 @@ function NS.DataTextEffectiveStyle(config, bar)
         fontShadowOpacity = Value("fontShadowOpacity"), fontShadowDistance = Value("fontShadowDistance"),
         textAlign = Value("textAlign"), showLabels = Value("showLabels"),
         labelColor = ColorValue("label"), valueColor = ColorValue("value"), warningColor = ColorValue("warning"),
+        valueClassColor = Value("valueClassColor"),
     }
 end
