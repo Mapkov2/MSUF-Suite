@@ -90,6 +90,15 @@ B.Section(id, "general", "Frame Basics", {
     B.Bool("protectImport", "Keep current nameplates on full profile import", false),
 })
 
+local function AddEnemyNativeRules(appearance)
+    appearance[#appearance + 1] = B.Choice("enemyTextMode", "Enemy names and health text", 4,
+        { "Keep Blizzard settings", "Always show name + percent", "Always show name + value",
+          "Always show name + value and percent" })
+    appearance[#appearance + 1] = B.Choice("enemyRarityIcon", "Blizzard elite / rare icon (all nameplates)", 1,
+        { "Keep Blizzard setting", "Show", "Hide" })
+    appearance[#appearance + 1] = B.Bool("enemyRaidIcon", "Blizzard raid target icon on enemy plates", true)
+end
+
 local function Side(prefix, title, size)
     local font = B.Font(prefix .. "NameFont", "Name font")
     font.default = prefix == "enemy" and EXPRESSWAY_BOLD or EXPRESSWAY
@@ -107,9 +116,7 @@ local function Side(prefix, title, size)
         font,
     }
     if prefix == "enemy" then
-        appearance[#appearance + 1] = B.Choice("enemyTextMode", "Enemy names and health text", 4,
-            { "Keep Blizzard settings", "Always show name + percent", "Always show name + value",
-              "Always show name + value and percent" })
+        AddEnemyNativeRules(appearance)
         appearance[#appearance + 1] = B.Bool("enemyRoleColors", "Color enemy health fill by type", true)
         appearance[#appearance + 1] = B.Bool("enemyColorsInDungeons", "Role colors in dungeons and raids", true)
         appearance[#appearance + 1] = B.Bool("enemyColorsOutside", "Role colors outdoors", true)

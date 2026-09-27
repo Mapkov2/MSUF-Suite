@@ -15,6 +15,7 @@ local M = {
     auraHooks = setmetatable({}, { __mode = "k" }),
     auraButtons = setmetatable({}, { __mode = "k" }),
     friendlyNames = setmetatable({}, { __mode = "k" }),
+    raidIcons = setmetatable({}, { __mode = "k" }),
 }
 
 local function Safe(frame)
@@ -192,6 +193,21 @@ local function FilterFriendlyName(uf, prefix)
     end
 end
 
+local function PaintRaidIcon(uf, prefix)
+    local frame = uf.RaidTargetFrame
+    local icon = frame and frame.RaidTargetIcon
+    if not Safe(icon) then return end
+    local original = M.raidIcons[icon]
+    local hide = M.active and M.config.look ~= 2 and M.config.enemy and prefix == "enemy"
+        and M.config.enemyRaidIcon == false
+    if not hide then
+        if original ~= nil and pcall(icon.SetAlpha, icon, original) then M.raidIcons[icon] = nil end
+    elseif original == nil then
+        local alpha = icon:GetAlpha()
+        if S.Finite(alpha) and pcall(icon.SetAlpha, icon, 0) then M.raidIcons[icon] = alpha end
+    end
+end
+
 local function PaintFonts(uf, health, cast, prefix)
     Text.Apply(uf.name, Text.styles[prefix], M.config[prefix .. "NameSize"] or 0)
     if prefix == "enemy" then
@@ -220,6 +236,7 @@ local function Paint(uf)
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local prefix = Prefix(uf)
     FilterFriendlyName(uf, prefix)
+    PaintRaidIcon(uf, prefix)
     Layout.Apply(uf, prefix, M.config)
     Textures.Apply(uf, health)
     if M.config.look == 2 or not prefix or not M.config[prefix] then
@@ -259,15 +276,32 @@ local function ApplyCVars(self)
         self.context:CVar(key, value)
     end
     local textMode = self.config.enemy and self.config.enemyTextMode or 1
+    local rarityMode = self.config.enemy and self.config.enemyRarityIcon or 1
     if self.config.look == 2 then textMode = 1 end
+    if self.config.look == 2 then rarityMode = 1 end
     if textMode == 1 then
         S.RestoreCVar("nameplates", "nameplateForceShowUnitName")
         S.RestoreCVar("nameplates", "nameplateSimplifiedTypes")
-        S.RestoreCVar("nameplates", "nameplateInfoDisplay")
     else
         self.context:CVar("nameplateForceShowUnitName", "1")
         LowBits("nameplateSimplifiedTypes", 0, 2)
-        LowBits("nameplateInfoDisplay", textMode - 1, 2)
+    end
+    if textMode == 1 then S.RestoreCVar("nameplates", "nameplateInfoDisplay") end
+    if textMode ~= 1 or rarityMode ~= 1 then
+        -- Blizzard's rarity icon is bit 3 of the same CVar as the two health
+        -- text flags. Compose one write so either control preserves the other.
+        local api = _G.C_CVar
+        local current = api and type(api.GetCVar) == "function" and api.GetCVar("nameplateInfoDisplay")
+        if S.Public(current) and type(current) == "string" and #current > 0 then
+            local byte = current:byte(2) or 64
+            if byte >= 64 and byte <= 127 then
+                local flags = byte - 64
+                local textBits = textMode == 1 and flags % 4 or textMode - 1
+                local rarityBit = rarityMode == 1 and (flags % 8 - flags % 4)
+                    or (rarityMode == 2 and 4 or 0)
+                LowBits("nameplateInfoDisplay", textBits + rarityBit, 3)
+            end
+        end
     end
 
     local castEnabled = self.config.look == 2 and 1 or self.config.enemyCastEnabled
@@ -312,6 +346,7 @@ end
 
 local function RestorePlate(uf)
     RestoreFriendlyName(uf.name)
+    PaintRaidIcon(uf)
     Layout.Restore(uf)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
