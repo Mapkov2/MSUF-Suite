@@ -5,8 +5,32 @@ local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
 local Editor = {}
 P.NameplatesEditor = Editor
 local DELTA = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
+local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diamond",
+    [4] = "Triangle", [5] = "Moon", [6] = "Blue square", [7] = "Cross", [8] = "Skull" }
 local ENEMY_ELEMENT_SETTINGS = { Name = true, HealthText = true, Classification = true,
-    RaidIcon = true, Cast = true, CastText = true, CastIcon = true, CastTarget = true }
+    RaidIcon = true, Cast = true, CastText = true, CastIcon = true, CastShield = true, CastTarget = true }
+local LAYERS = {
+    { "guides", "Guides", "enemy" }, { "health", "Health", "enemy" },
+    { "name", "Name", "elements" }, { "healthText", "HP text", "elements" },
+    { "cast", "Castbar", "castbar" },
+    { "castText", "Spell name", "elements" }, { "auras", "Auras", "enemy" },
+    { "classification", "Elite / rare", "elements" }, { "raidIcon", "Raid mark", "elements" },
+    { "castIcon", "Spell icon", "elements" }, { "castShield", "Shield", "elements" },
+    { "castTarget", "Cast target", "elements" }, { "target", "Target arrows", "enemy" },
+    { "eliteMarker", "MSUF elite", "enemy" }, { "questMarker", "MSUF quest", "enemy" },
+}
+local ELEMENT_SETTING = {
+    Name = "enemyTextMode", HealthText = "enemyTextMode", Cast = "enemyCastEnabled",
+    CastText = "enemyCastSpellName", RaidIcon = "enemyRaidIcon",
+    Classification = "enemyRarityIcon", CastIcon = "enemyCastSpellIcon",
+    CastTarget = "enemyCastSpellTarget",
+}
+local LAYER_SETTING = {
+    name = "enemyTextMode", healthText = "enemyTextMode",
+    cast = "enemyCastEnabled", castText = "enemyCastSpellName",
+    classification = "enemyRarityIcon", raidIcon = "enemyRaidIcon",
+    castIcon = "enemyCastSpellIcon", castTarget = "enemyCastSpellTarget",
+}
 local function Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function Round(v) return math.floor(v + 0.5) end
 local function Register(widget, key, label)
@@ -14,12 +38,17 @@ local function Register(widget, key, label)
         M.RegisterControlMetadata(widget, P.Meta(PAGE, ID, "preview." .. key, "action", "suite_nameplates_preview"), label, "button")
     end
 end
+local function OpenSetting(key, label)
+    if not key or type(M.OpenExactSettingControl) ~= "function" then return false end
+    return M.OpenExactSettingControl("msufsuite.nameplates." .. key, Tr(label), PAGE) ~= false
+end
 local function Focus(ui, handle)
     local section = handle and ui.sections and ui.sections[handle.section]
     if handle and handle._npSettingsTab and P.SelectNameplatesEnemyTab then
         section = P.SelectNameplatesEnemyTab(handle._npSettingsTab) or section
     end
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
+    if handle then OpenSetting(handle._npSettingKey, handle._label) end
 end
 local function Write(ui, handle, x, y)
     if P.Combat() then return false end
@@ -122,7 +151,17 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     handle.previewUI, handle._key, handle._label = self, id, label
     handle._color, handle.keyX, handle.keyY, handle.section = { 0.3, 0.74, 1 }, keyX, keyY, section
     local enemyElement = id:match("^enemy%.(.+)$")
-    if enemyElement and ENEMY_ELEMENT_SETTINGS[enemyElement] then handle._npSettingsTab = "elements" end
+    if enemyElement and ENEMY_ELEMENT_SETTINGS[enemyElement] then
+        handle._npSettingsTab = "elements"
+        handle._npSettingKey = ELEMENT_SETTING[enemyElement]
+    elseif id == "friendly.Classification" or id == "friendly.Cast" or id == "friendly.CastText"
+        or id == "friendly.CastIcon" or id == "friendly.CastTarget" then
+        local element = id:match("^friendly%.(.+)$")
+        handle._npSettingsTab = "elements"
+        handle._npSettingKey = ELEMENT_SETTING[element]
+    elseif id == "friendly.Name" or id == "friendly.HealthText" then
+        handle._npSettingKey = "friendlyNamesOnly"
+    end
     local border = P.Suite.NameplateStyle.CreateBorder(handle)
     handle.outline = function(size, color) P.Suite.NameplateStyle.PaintBorder(border, handle, size, color) end
     handle:EnableMouse(true)
@@ -140,7 +179,8 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     handle:SetScript("OnDragStop", Stop)
     handle:SetScript("OnClick", function(_, button)
         self:Select(handle)
-        if button == "RightButton" or button == "LeftButton" and handle._npSettingsTab and not handle._npDragged then
+        if button == "RightButton" or button == "LeftButton"
+            and (handle._npSettingsTab or handle._npSettingKey) and not handle._npDragged then
             Focus(self, handle)
         end
     end)
@@ -169,7 +209,56 @@ function Editor:Paint()
         self.contextButton:SetText(Tr(self.inDungeon and "Dungeon / raid" or "Outdoor"))
     end
     if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
+    if self.LayoutLayerRail then self:LayoutLayerRail() end
+    for _, button in ipairs(self.layerButtons or {}) do
+        if button.Refresh then button:Refresh()
+        else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.42) end
+    end
+    if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy") end
+    if self.friendlyTypeButton then self.friendlyTypeButton:SetShown(self.sampleKind == "friendly") end
+    for _, choice in ipairs(self.raidChoices or {}) do
+        choice.outline(self.raidMarked and self.raidIndex == choice.index and 1 or 0, "4ebaff")
+    end
+    for _, button in ipairs(self.friendlyButtons or {}) do button:SetShown(self.sampleKind == "friendly") end
+    local selected = self.body._selectedHandle
+    if selected and not selected:IsShown() then self:Select(nil) end
     self:RefreshSelection()
+end
+
+function Editor:LayerOn(key) return self.layers[key] ~= false end
+
+function Editor:LayerAvailable(key)
+    local skinned = P.Get(ID, "look") ~= 2
+    if key == "classification" then return not skinned or P.Get(ID, "enemyRarityIcon") ~= 3 end
+    if key == "raidIcon" then return self.sampleKind == "friendly" or not skinned or P.Get(ID, "enemyRaidIcon") end
+    if key == "cast" then return not skinned or P.Get(ID, "enemyCastEnabled") ~= 3 end
+    if key == "eliteMarker" or key == "questMarker" then
+        local kind = key == "eliteMarker" and "Elite" or "Quest"
+        return skinned and P.Get(ID, self.sampleKind .. kind .. "Marker")
+    end
+    if skinned and P.Get(ID, "enemyCastDisplay") == 2 then
+        if key == "castText" then return P.Get(ID, "enemyCastSpellName") end
+        if key == "castIcon" then return P.Get(ID, "enemyCastSpellIcon") end
+        if key == "castTarget" then return P.Get(ID, "enemyCastSpellTarget") end
+    end
+    return true
+end
+
+function Editor:LayerActive(key)
+    if not self:LayerOn(key) or not self:LayerAvailable(key) then return false end
+    if key == "raidIcon" then return self.raidMarked == true end
+    if key == "castShield" then return self.uninterruptible == true end
+    if key == "classification" then
+        local role = self.previewRole or P.Get(ID, "enemyPreviewRole")
+        return not self.raidMarked and (self.sampleKind == "friendly" and self.friendlyElite
+            or self.sampleKind == "enemy" and (role == 3 or role == 4))
+    end
+    if key == "eliteMarker" or key == "questMarker" then
+        if self.sampleKind == "friendly" then return self.friendlyElite == true end
+        local role = self.previewRole or P.Get(ID, "enemyPreviewRole")
+        return key == "eliteMarker" and (role == 3 or role == 4) or key == "questMarker" and role == 5
+    end
+    return true
 end
 
 local function Button(ui, parent, key, label, width, x, action)
@@ -178,6 +267,119 @@ local function Button(ui, parent, key, label, width, x, action)
     button:SetScript("OnClick", action)
     Register(button, key, label)
     return button
+end
+
+local function FocusLayer(ui, section, key)
+    if section == "enemy" and ui.sampleKind == "friendly" then section = "friendly" end
+    local target = section == "elements" and P.SelectNameplatesEnemyTab
+        and P.SelectNameplatesEnemyTab("elements") or ui.sections and ui.sections[section]
+    if target and W.FocusCollapsibleSection then
+        W.FocusCollapsibleSection(target, { persist = true, flash = true })
+    end
+    OpenSetting(LAYER_SETTING[key], key)
+end
+
+local function ToggleLayer(ui, key)
+    if not ui:LayerAvailable(key) then
+        FocusLayer(ui, (key == "eliteMarker" or key == "questMarker") and "enemy" or "elements", key)
+        return
+    end
+    if key == "classification" then
+        if ui.sampleKind == "friendly" then
+            if not ui.friendlyElite then ui.friendlyElite, ui.layers[key] = true, true
+            else ui.layers[key] = not ui:LayerOn(key) end
+            ui:Paint()
+            return
+        end
+        local wasFriendly = ui.sampleKind ~= "enemy"
+        ui.sampleKind = "enemy"
+        local role = ui.previewRole or P.Get(ID, "enemyPreviewRole")
+        if wasFriendly or role ~= 3 and role ~= 4 or ui.raidMarked then
+            ui.previewRole, ui.previewRoleSource, ui.raidMarked = 4, P.Get(ID, "enemyPreviewRole"), false
+            ui.layers[key] = true
+        else ui.layers[key] = not ui:LayerOn(key) end
+    elseif key == "raidIcon" then
+        ui.raidMarked, ui.layers[key] = not ui.raidMarked, true
+        ui.raidIndex = ui.raidMarked and 8 or 0
+    elseif key == "castShield" then
+        ui.uninterruptible, ui.layers[key] = not ui.uninterruptible, true
+    elseif key == "eliteMarker" or key == "questMarker" then
+        if ui.sampleKind == "friendly" then
+            if not ui.friendlyElite then ui.friendlyElite, ui.layers[key] = true, true
+            else ui.layers[key] = not ui:LayerOn(key) end
+        else
+            local desired = key == "eliteMarker" and 4 or 5
+            if (ui.previewRole or P.Get(ID, "enemyPreviewRole")) ~= desired then
+                ui.previewRole, ui.previewRoleSource = desired, P.Get(ID, "enemyPreviewRole")
+                ui.layers[key] = true
+            else ui.layers[key] = not ui:LayerOn(key) end
+        end
+    else ui.layers[key] = not ui:LayerOn(key) end
+    ui:Paint()
+end
+
+local function BuildLayers(ui)
+    local rail = CreateFrame("Frame", nil, ui.body, "BackdropTemplate")
+    local anchor = ui.selection or ui.tools
+    rail:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -6)
+    rail:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -6)
+    rail:SetHeight(80)
+    local background = rail:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(rail)
+    background:SetColorTexture(0.04, 0.06, 0.09, 0.96)
+    local border = P.Suite.NameplateStyle.CreateBorder(rail)
+    P.Suite.NameplateStyle.PaintBorder(border, rail, 1, "9e997f")
+    local title = T.Font(rail, "GameFontDisableSmall", Tr("LAYERS"), T.colors.muted)
+    title:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -8)
+    ui.layerButtons = {}
+    for i, def in ipairs(LAYERS) do
+        local key, label, section = def[1], def[2], def[3]
+        local button
+        if H.CreateLayerButton then
+            button = H.CreateLayerButton(rail, ui,
+                { key = key, label = label, color = { 0.43, 0.76, 1 } }, i, 95,
+                { Tr = Tr, layout = "chip", height = 20, showOffText = false, quiet = true,
+                    IsAvailable = function(owner, layer) return owner:LayerAvailable(layer) end,
+                    IsOn = function(owner, layer) return owner:LayerActive(layer) end })
+        else button = T.Button(rail, Tr(label), 95, 20); button:SetSize(95, 20) end
+        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        button.layerKey = key
+        button:SetScript("OnClick", function(_, mouseButton)
+            if mouseButton == "RightButton" then FocusLayer(ui, section, key); return end
+            ToggleLayer(ui, key)
+        end)
+        button._msuf2CommandAction = { kind = "toggle", historyMode = "none",
+            get = function() return ui:LayerActive(key) end,
+            set = function(desired)
+                desired = desired == true
+                if ui:LayerActive(key) ~= desired then ToggleLayer(ui, key) end
+                return ui:LayerActive(key) == desired
+            end }
+        button:SetScript("OnEnter", function()
+            ui.hint:SetText(Tr(label) .. " · " .. Tr("Click: show or hide; right-click: settings"))
+        end)
+        button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
+        Register(button, "layer." .. key, label .. " preview layer")
+        ui.layerButtons[#ui.layerButtons + 1] = button
+    end
+    function ui:LayoutLayerRail()
+        local width = rail:GetWidth()
+        if not width or width < 300 then width = self.layoutWidth end
+        if H.FlowLayerChips then
+            H.FlowLayerChips(rail, self.layerButtons, { width = width, padX = 64,
+                padXRight = 8, padY = 6, gapX = 5, gapY = 4, rowHeight = 20 })
+        else
+            local perRow = math.max(1, math.floor((width - 64) / 100))
+            for i, button in ipairs(self.layerButtons) do
+                local row, col = math.floor((i - 1) / perRow), (i - 1) % perRow
+                button:ClearAllPoints()
+                button:SetPoint("TOPLEFT", rail, "TOPLEFT", 64 + col * 100, -6 - row * 24)
+            end
+            rail:SetHeight(12 + math.ceil(#self.layerButtons / perRow) * 20
+                + math.max(0, math.ceil(#self.layerButtons / perRow) - 1) * 4)
+        end
+    end
+    ui.layerRail = rail
 end
 
 local function BuildTools(ui)
@@ -198,43 +400,78 @@ local function BuildTools(ui)
     Button(ui, tools, "zoomIn", "+", 24, 156, function() ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2); ui:Paint() end)
     ui.contextButton = Button(ui, tools, "context", "Outdoor", 128, 188,
         function() ui.inDungeon = not ui.inDungeon; ui:Paint() end)
-    Button(ui, tools, "health", "Health", 56, 320, function() ui.health = ui.health == 100 and 53 or 100; ui:Paint() end)
-    Button(ui, tools, "cast", "Cast", 48, 380, function() ui.hideCast = not ui.hideCast; ui:Paint() end)
-    Button(ui, tools, "target", "Target", 54, 432, function() ui.hideTarget = not ui.hideTarget; ui:Paint() end)
-    Button(ui, tools, "interrupt", "Shield", 54, 490, function() ui.uninterruptible = not ui.uninterruptible; ui:Paint() end)
     local samples = CreateFrame("Frame", nil, body)
     samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
-    samples:SetSize(690, 20)
-    Button(ui, samples, "role", "Enemy type", 88, 0, function()
+    samples:SetSize(540, 20)
+    Button(ui, samples, "plateKind", "Enemy / Friendly", 124, 0, function()
+        ui.sampleKind = ui.sampleKind == "enemy" and "friendly" or "enemy"
+        ui:Select(nil)
+        ui:Paint()
+    end)
+    ui.roleButton = Button(ui, samples, "role", "Enemy type", 88, 130, function()
         ui.previewRole = nil
         P.Set(ID, "enemyPreviewRole", P.Get(ID, "enemyPreviewRole") % #P.Suite.NameplateStyle.Roles + 1)
         ui:Paint()
     end)
-    Button(ui, samples, "friendlyMode", "Friendly: bars / names", 146, 94, function()
+    ui.friendlyButtons = {}
+    ui.friendlyButtons[1] = Button(ui, samples, "friendlyMode", "Friendly: bars / names", 146, 130, function()
         P.Set(ID, "friendlyNamesOnly", P.Get(ID, "friendlyNamesOnly") == 2 and 3 or 2)
         ui:Paint()
     end)
-    Button(ui, samples, "friendlyGroup", "Group / outsider", 114, 246, function()
+    ui.friendlyButtons[2] = Button(ui, samples, "friendlyGroup", "Group / outsider", 114, 282, function()
         ui.friendlyOutsider = not ui.friendlyOutsider
         ui:Paint()
     end)
-    Button(ui, samples, "friendlyFocus", "Friendly focus", 106, 366, function()
-        ui.friendlyFocus = not ui.friendlyFocus
+    ui.friendlyTypeButton = Button(ui, samples, "friendlyType", "Player / elite NPC", 112, 402, function()
+        ui.friendlyElite = not ui.friendlyElite
+        ui:Select(nil)
         ui:Paint()
-    end)
-    Button(ui, samples, "raidMarked", "Raid mark", 86, 478, function()
-        ui.raidMarked = not ui.raidMarked
-        ui:Paint()
-    end)
-    Button(ui, samples, "enemyElements", "Icons & text", 106, 570, function()
-        local section = P.SelectNameplatesEnemyTab and P.SelectNameplatesEnemyTab("elements")
-        if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
     end)
     if H.EnsurePreviewBackgroundButton then
         local background = H.EnsurePreviewBackgroundButton(body, samples)
         if background then background:ClearAllPoints(); background:SetPoint("RIGHT", canvas, "TOPRIGHT", -8, -18) end
     end
     ui.tools = tools
+end
+
+local function BuildRaidPalette(ui)
+    local strip = CreateFrame("Frame", nil, ui.canvas)
+    strip:SetPoint("TOPRIGHT", ui.canvas, "TOPRIGHT", -8, -39)
+    strip:SetSize(165, 22)
+    local title = T.Font(strip, "GameFontDisableSmall", Tr("RAID MARKS"), T.colors.muted)
+    title:SetPoint("BOTTOMRIGHT", strip, "TOPRIGHT", 0, 1)
+    ui.raidChoices = {}
+    for index = 1, 8 do
+        local button = CreateFrame("Button", nil, strip)
+        button:SetSize(18, 18)
+        button:SetPoint("LEFT", strip, "LEFT", (index - 1) * 21, 0)
+        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        button.index = index
+        local icon = button:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints(button)
+        icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. index)
+        local border = P.Suite.NameplateStyle.CreateBorder(button)
+        button.outline = function(size, color)
+            P.Suite.NameplateStyle.PaintBorder(border, button, size, color)
+        end
+        button:SetScript("OnClick", function(_, mouseButton)
+            if mouseButton == "RightButton" or not ui:LayerAvailable("raidIcon") then
+                FocusLayer(ui, "elements", "raidIcon")
+                return
+            end
+            ui.raidMarked = not (ui.raidMarked and ui.raidIndex == index)
+            ui.raidIndex = ui.raidMarked and index or 0
+            ui.layers.raidIcon = true
+            ui:Paint()
+        end)
+        button:SetScript("OnEnter", function()
+            ui.hint:SetText(Tr("Raid mark: " .. RAID_MARK_NAMES[index]) .. " · "
+                .. Tr("Click to preview; right-click for settings"))
+        end)
+        button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
+        Register(button, "raidMark." .. index, "Raid mark: " .. RAID_MARK_NAMES[index])
+        ui.raidChoices[index] = button
+    end
 end
 
 local function BuildSelection(ui)
@@ -266,6 +503,7 @@ local function BuildSelection(ui)
             picker:SetPoint("RIGHT", tools, "RIGHT", 0, 0)
             picker:SetWidth(152)
         end
+        ui.selection = bar
     end
 end
 
@@ -305,10 +543,11 @@ local function BuildExpander(ui, section, toolbar, record)
             canvas:SetHeight(compact and 108 or 226)
             tools:SetShown(not compact)
             if SB then SB.SetShown(body, not compact) end
+            if ui.layerRail then ui.layerRail:SetShown(not compact) end
             ui:Paint()
         end
         local expander = W.AttachFixedPreviewExpander(section, toolbar, body, { pageKey = ctx.key, wrapper = ctx.wrapper,
-            compactHeight = 116, compactTop = -38, expandedHeight = 300, expandedTop = -38, expandedSectionHeight = 348 })
+            compactHeight = 116, compactTop = -38, expandedHeight = 370, expandedTop = -38, expandedSectionHeight = 416 })
         if record then record.onActivate = function()
             if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview() then expander:Open("NAMEPLATES_PREVIEW") end
             ui:Paint()
@@ -317,24 +556,26 @@ local function BuildExpander(ui, section, toolbar, record)
 end
 
 function Editor.Create(ctx, builder, sections)
-    local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 348, gap = 8 })
+    local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 416, gap = 8 })
     if not section then return end
-    local inInstance, instanceType = false, "none"
-    if type(_G.IsInInstance) == "function" then inInstance, instanceType = _G.IsInInstance() end
+    local inInstance, instanceType = _G.IsInInstance()
     local inDungeon = P.Suite.Public(instanceType) and P.Suite.Public(inInstance)
         and inInstance == true and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
-    local ui = setmetatable({ ctx = ctx, sections = sections, handles = {}, renderers = {}, zoom = 1, panX = 0, panY = 0,
+    local ui = setmetatable({ ctx = ctx, sections = sections, handles = {}, renderers = {}, layers = {},
+        sampleKind = "enemy", zoom = 1, panX = 0, panY = 0,
+        layoutWidth = math.max(640, (section._msuf2Width or builder.width or 720) - 28),
         inDungeon = inDungeon, help = "Drag elements · Arrows: move · Shift: 5 · Ctrl: 10 · Tab: select · Wheel: zoom" }, { __index = Editor })
+    ui.previewRole, ui.previewRoleSource = 4, P.Get(ID, "enemyPreviewRole")
     P.ShowNameplatesElementsSample = function()
-        ui.previewRole = 3 -- rare/elite, so the Blizzard icon toggle is visible
+        ui.sampleKind = "enemy"
+        ui.previewRole = 4 -- Blizzard's elite atlas, independently of the saved sample role
         ui.previewRoleSource = P.Get(ID, "enemyPreviewRole")
-        ui.raidMarked = true -- show the raid target icon switch at the same time
         ui:Paint()
     end
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 14, -38)
     body:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, -38)
-    body:SetHeight(300)
+    body:SetHeight(370)
     ui.body, body.previewUI, body._handleList = body, ui, ui.handles
     local canvas = CreateFrame("Frame", nil, body, "BackdropTemplate")
     canvas:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
@@ -354,7 +595,9 @@ function Editor.Create(ctx, builder, sections)
     ui.hint:SetPoint("RIGHT", toolbar, "RIGHT", -26, 0)
     ui.hint:SetJustifyH("LEFT")
     BuildTools(ui)
+    BuildRaidPalette(ui)
     BuildSelection(ui)
+    BuildLayers(ui)
     BuildInput(ui)
     BuildExpander(ui, section, toolbar, record)
     M.TrackRefresh(ctx, function() ui:Paint() end)

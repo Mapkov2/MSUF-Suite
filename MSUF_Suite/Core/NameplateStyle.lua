@@ -24,6 +24,7 @@ Style.Elements = {
     { key = "CastIcon", label = "Blizzard spell icon", section = "castbar" },
     { key = "CastShield", label = "Blizzard interrupt shield", section = "castbar" },
     { key = "CastTarget", label = "Spell target", section = "castbar" },
+    { key = "Health", label = "Health bar", section = "enemy" },
 }
 -- Stable order: the first seven entries were already stored as preview choices.
 Style.Roles = {

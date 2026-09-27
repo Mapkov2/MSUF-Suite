@@ -60,7 +60,7 @@ local function Widget(kind)
     function w:SetStatusBarColor(...) self.barColor = { ... } end
     return w
 end
-CreateFrame = function(kind) return Widget(kind) end
+CreateFrame = function(kind, _, parent) local widget = Widget(kind); widget.parent = parent; return widget end
 
 -- WoW client stand-ins. The neutral ones: no class, zone, map position,
 -- atlas, modifier key, keyboard focus or rotating minimap.
@@ -74,6 +74,7 @@ UnitClass = function() return nil end
 GetZoneText = function() return "" end
 GetGameTime = function() return 12, 34 end
 GetCVarBool = function() return false end
+IsInInstance = function() return false, "none" end
 C_Texture = { GetAtlasInfo = function() return nil end }
 C_Map = { GetBestMapForUnit = function() return nil end }
 IsShiftKeyDown, IsControlKeyDown = function() return false end, function() return false end
@@ -478,6 +479,11 @@ end
         assert(Control("enemy." .. element).scripts.OnMouseDown, "missing native icon drag handle: " .. element)
     end
     S.Set("nameplates", "friendlyGroupOnly", true)
+    assert(ui.sampleCells.enemy:IsShown() and not ui.sampleCells.friendly:IsShown(),
+        "preview must show only one plate at a time")
+    Control("plateKind").scripts.OnClick()
+    assert(not ui.sampleCells.enemy:IsShown() and ui.sampleCells.friendly:IsShown(),
+        "friendly sample did not replace the enemy sample")
     ui:Paint()
     assert(Control("friendly.Name"):IsShown())
     local groupButton = Control("friendlyGroup")
@@ -486,9 +492,11 @@ end
     groupButton.scripts.OnClick(groupButton)
     assert(Control("friendly.Name"):IsShown(), "group member name missing in preview")
     S.Set("nameplates", "friendlyGroupOnly", false)
-    assert(ui.body.selectionDeps and name.scripts.OnMouseDown and cast.scripts.OnMouseDown
+    assert(ui.body.selectionDeps and ui.body.selectionBar:IsShown()
+        and name.scripts.OnMouseDown and cast.scripts.OnMouseDown
         and Control("friendly.Name").scripts.OnDragStart,
-        "nameplate preview must use the shared selection bar and direct UF/GF mouse handles")
+        "nameplate preview must expose the UF/GF selection strip and direct drag handles")
+    Control("plateKind").scripts.OnClick()
     local elite = Control("enemy.Classification")
     local ex, ey = 10, 20
     GetCursorPosition = function() return ex, ey end
@@ -514,8 +522,6 @@ end
     assert(historyWrites == historyBefore, "selection-only click wrote a profile/history entry")
     name.scripts.OnKeyDown(name, "RIGHT")
     assert(S.Config("nameplates").enemyNameOffsetX == 21, "arrow key did not nudge selected name")
-    ui.body.selectionDeps.WriteOffsets(ui.body, name, 35, -14)
-    assert(S.Config("nameplates").enemyNameOffsetX == 35, "exact X/Y controls use different settings")
     ui.body.selectionDeps.ResetOffsets(ui.body, name)
     assert(S.Config("nameplates").enemyNameOffsetX == 0, "selected-element reset failed")
     cast.scripts.OnMouseDown(cast, "LeftButton")
@@ -541,11 +547,15 @@ end
     Control("role").scripts.OnClick()
     assert(S.Config("nameplates").enemyPreviewRole == 1)
     local friendly = Control("friendly.Name")
+    Control("plateKind").scripts.OnClick()
     friendly.GetEffectiveScale = function() return 1 end
     friendly.scripts.OnMouseDown(friendly, "LeftButton")
     cx = cx + 15
     friendly.scripts.OnMouseUp(friendly, "LeftButton")
     assert(S.Config("nameplates").friendlyNameOffsetX == 15, "friendly preview was not directly draggable")
+    Control("friendlyType").scripts.OnClick()
+    assert(Control("friendly.Classification"):IsShown(),
+        "friendly elite NPC sample must expose Blizzard's classification handle")
     for _, kind in ipairs({ "Elite", "Quest" }) do
         S.Set("nameplates", "friendly" .. kind .. "Marker", true)
         ui:Paint()
@@ -560,9 +570,7 @@ end
         ui.body.selectionDeps.ResetOffsets(ui.body, handle)
         S.Set("nameplates", "friendly" .. kind .. "Marker", false)
     end
-    Control("friendlyFocus").scripts.OnClick()
-    assert(ui.friendlyFocus, "friendly focus sample cannot be selected")
-    Control("friendlyFocus").scripts.OnClick()
+    Control("plateKind").scripts.OnClick()
     cast.GetEffectiveScale = function() return 1 end
     cast.scripts.OnMouseDown(cast, "LeftButton")
     cy = cy - 9
@@ -698,14 +706,21 @@ do
     tabs.segment:Choose("elements")
     assert(tabs.frames.elements.shown and not tabs.frames.appearance.shown,
         "Blizzard elements tab did not switch")
-    tabs.segment:Choose("appearance")
-    local shortcut = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemyElements"])
-    shortcut.scripts.OnClick(shortcut)
-    assert(tabs.segment.value == "elements", "preview shortcut did not open Blizzard elements")
-    tabs.segment:Choose("appearance")
     local elite = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Classification"])
     local raid = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.RaidIcon"])
-    local raidSample = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.raidMarked"])
+    assert(elite:IsShown() and not raid:IsShown(),
+        "Blizzard elements tab must display an unmarked elite sample")
+    elite.previewUI:Paint()
+    assert(elite:IsShown() and elite.previewUI.previewRole == 4,
+        "the inactive friendly renderer erased the elite preview state")
+    tabs.segment:Choose("appearance")
+    local eliteLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.classification"])
+    local raidLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.raidIcon"])
+    assert(elite.previewUI.layerRail:IsShown() and elite.previewUI.layerRail.parent == elite.previewUI.body,
+        "UF/GF layer rail must stay visible below the nameplate canvas")
+    eliteLayer.scripts.OnClick(eliteLayer, "RightButton")
+    assert(tabs.segment.value == "elements", "elite layer did not open Blizzard elements")
+    tabs.segment:Choose("appearance")
     local function Setting(key)
         for _, widget in ipairs(contexts.suite_nameplates.widgets) do
             if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then return widget end
@@ -717,12 +732,21 @@ do
     S.Set("nameplates", "enemyPreviewRole", 3)
     elite.previewUI:Paint()
     assert(elite:IsShown() and not raid:IsShown(), "rare preview did not follow Blizzard's icon conditions")
+    local exactSetting
+    M.OpenExactSettingControl = function(key, _, page)
+        exactSetting = key
+        assert(page == "suite_nameplates")
+        return true
+    end
     GetCursorPosition = function() return 40, 40 end
     elite.scripts.OnMouseDown(elite, "LeftButton")
     elite.scripts.OnMouseUp(elite, "LeftButton")
     elite.scripts.OnClick(elite, "LeftButton")
     assert(tabs.segment.value == "elements" and tabs.frames.elements.shown,
         "clicking the native elite icon did not open its Blizzard settings tab")
+    assert(exactSetting == "msufsuite.nameplates.enemyRarityIcon",
+        "clicking the elite icon did not link its exact setting")
+    M.OpenExactSettingControl = nil
     tabs.segment:Choose("appearance")
     current = contexts.suite_nameplates
     raritySetting.set(3)
@@ -730,9 +754,9 @@ do
     raritySetting.set(1)
     assert(elite:IsShown(), "preview elite icon did not return after re-enabling it")
     elite.previewUI.raidMarked = false
-    raidSample.scripts.OnClick(raidSample)
-    assert(raid:IsShown() and elite:IsShown(),
-        "Blizzard raid and classification switches must remain independently visible")
+    raidLayer.scripts.OnClick(raidLayer)
+    assert(raid:IsShown() and not elite:IsShown(),
+        "Blizzard hides the classification icon on raid-marked nameplates")
     tabs.segment:Choose("appearance")
     raid.previewUI.body.selectionDeps.OpenSettings(raid.previewUI.body, raid)
     assert(tabs.segment.value == "elements", "Open settings did not route the raid icon to its switch")
@@ -740,10 +764,56 @@ do
     assert(not raid:IsShown(), "preview raid icon did not follow its runtime switch")
     raidSetting.set(true)
     assert(raid:IsShown(), "preview raid icon did not return after re-enabling it")
-    raidSample.scripts.OnClick(raidSample)
+    raidLayer.scripts.OnClick(raidLayer)
+    assert(not raid:IsShown() and elite:IsShown(), "removing the raid mark did not restore the elite icon")
+    local skullChoice = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.raidMark.8"])
+    local squareChoice = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.raidMark.6"])
+    assert(#raid.previewUI.raidChoices == 8, "preview must offer all Blizzard raid markers")
+    skullChoice.scripts.OnClick(skullChoice)
+    assert(raid:IsShown() and raid._npTexture.texture:match("UI%-RaidTargetingIcon_8$"),
+        "raid preview palette did not show Blizzard's skull marker")
+    squareChoice.scripts.OnClick(squareChoice)
+    assert(raid:IsShown() and raid._npTexture.texture:match("UI%-RaidTargetingIcon_6$"),
+        "raid preview palette did not show Blizzard's blue square marker")
+    squareChoice.scripts.OnClick(squareChoice)
+    assert(not raid:IsShown() and elite:IsShown(), "raid preview palette did not restore the elite example")
+    local auras = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Auras"])
+    local auraLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.auras"])
+    local auraOffset = S.Config("nameplates").enemyAurasOffsetX
+    auraLayer.scripts.OnClick(auraLayer)
+    assert(not auras:IsShown() and S.Config("nameplates").enemyAurasOffsetX == auraOffset,
+        "preview layer wrote a runtime setting")
+    auraLayer.scripts.OnClick(auraLayer)
+    assert(auras:IsShown(), "preview layer did not restore the aura sample")
+    local nameHandle = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Name"])
+    local valueHandle = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.HealthText"])
+    local nameLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.name"])
+    local valueLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.healthText"])
+    nameLayer.scripts.OnClick(nameLayer)
+    assert(not nameHandle:IsShown() and valueHandle:IsShown(), "name layer also hid Blizzard's health text")
+    nameLayer.scripts.OnClick(nameLayer)
+    valueLayer.scripts.OnClick(valueLayer)
+    assert(nameHandle:IsShown() and not valueHandle:IsShown(), "health text layer also hid the name")
+    valueLayer.scripts.OnClick(valueLayer)
+    local spellIcon = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastIcon"])
+    local spellLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.castIcon"])
+    assert(not spellIcon:IsShown() and S.Config("nameplates").enemyCastSpellIcon == false)
+    tabs.segment:Choose("appearance")
+    spellLayer.scripts.OnClick(spellLayer)
+    assert(tabs.segment.value == "elements" and S.Config("nameplates").enemyCastSpellIcon == false,
+        "a disabled Blizzard layer should open its switch without altering runtime settings")
+    S.Set("nameplates", "enemyCastSpellIcon", true)
+    elite.previewUI:Paint()
+    assert(spellIcon:IsShown(), "enabling Blizzard's spell icon did not update the preview")
+    S.Set("nameplates", "enemyCastSpellIcon", false)
     S.Set("nameplates", "enemyPreviewRole", 1)
     elite.previewUI:Paint()
     assert(not elite:IsShown() and not raid:IsShown(), "normal enemy preview showed special icons")
+    eliteLayer.scripts.OnClick(eliteLayer)
+    assert(elite:IsShown() and elite.previewUI.previewRole == 4 and not elite.previewUI.raidMarked,
+        "elite preview layer did not summon the native elite scenario: " .. tostring(elite:IsShown())
+        .. "/" .. tostring(elite.previewUI.previewRole) .. "/" .. tostring(elite.previewUI.raidMarked))
+    elite.previewUI.previewRole = nil
     local nativeGet = C_CVar.GetCVar
     C_CVar.GetCVar = function(key)
         if key == "nameplateShowCastBars" then return "0" end
@@ -1434,13 +1504,26 @@ for _, ctx in pairs(contexts) do
 end
 for key in pairs(shortcutColors) do covered[key] = true end
 for key in pairs(globalColors) do covered[key] = true end
+covered._nameplatePreviewPositions = {}
+for _, widget in pairs(registeredControls) do
+    if widget.previewUI and widget.keyX and widget.keyY then
+        covered._nameplatePreviewPositions[widget.keyX] = true
+        covered._nameplatePreviewPositions[widget.keyY] = true
+    end
+end
 local checked = 0
 for _, id in ipairs(Suite.SuiteOrder) do
     for key, rule in pairs(Suite.SuiteCatalog[id].rules) do
         local template = key:gsub("^bar%d+", "bar1"):gsub("^w%d+", "w1")
         if id == "cooldownManager" and rule.suffix then template = "c1_" .. rule.suffix end
         if not rule.hidden and not rule.previewOnly then
-            assert(covered["msufsuite." .. id .. "." .. template], "no menu control for " .. id .. "." .. key)
+            if id == "nameplates" and key:match("Offset[XY]$") then
+                assert(covered._nameplatePreviewPositions[key], "nameplate position has no preview handle: " .. key)
+                assert(not covered["msufsuite.nameplates." .. key],
+                    "nameplate X/Y slider survived outside the preview: " .. key)
+            else
+                assert(covered["msufsuite." .. id .. "." .. template], "no menu control for " .. id .. "." .. key)
+            end
             checked = checked + 1
         end
     end

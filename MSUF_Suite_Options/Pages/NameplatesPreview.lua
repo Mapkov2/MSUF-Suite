@@ -70,13 +70,13 @@ local function Sample(editor, prefix, x)
     local cell = CreateFrame("Frame", nil, canvas)
     cell:SetSize(260, 124)
     cell:SetPoint("CENTER", canvas, "CENTER", x, 0)
+    editor.sampleCells[prefix] = cell
     local title = Text(cell, prefix == "enemy" and Tr("ENEMY / TARGET") or Tr("FRIENDLY"), 10, { 0.7, 0.75, 0.8 })
     title:SetPoint("TOP", cell, "TOP", 0, 0)
 
     local bar = CreateFrame("Button", nil, cell)
     bar:SetSize(206, 20)
     bar:SetPoint("CENTER", cell, "CENTER", 0, -4)
-    bar:EnableMouse(false)
     bar._msufPreviewState = state
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(bar,
@@ -168,6 +168,7 @@ local function Sample(editor, prefix, x)
     local raidTexture = Fill(raid, "ARTWORK")
     raidTexture:SetAllPoints(raid)
     raidTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_8")
+    raid._npTexture = raidTexture
     local classification = SampleRegion(cell, 20, 20)
     local nativeElite = Fill(classification, "OVERLAY")
     nativeElite:SetAllPoints(classification)
@@ -179,7 +180,7 @@ local function Sample(editor, prefix, x)
     local castTarget = SampleRegion(castProgress, 64, 14)
     local castTargetText = Text(castTarget, "Mapko", 10, { 1, 1, 1 })
     castTargetText:SetAllPoints(castTarget)
-    local regions = { Name = name, HealthText = healthText, Cast = cast, CastText = castName, Auras = auras,
+    local regions = { Health = bar, Name = name, HealthText = healthText, Cast = cast, CastText = castName, Auras = auras,
         RaidIcon = raid, Classification = classification, CastIcon = castIcon, CastShield = shield, CastTarget = castTarget }
     local side = prefix == "enemy" and "Enemy " or "Friendly "
     for _, element in ipairs(Style.Elements) do
@@ -198,6 +199,8 @@ local function Sample(editor, prefix, x)
     end
 
     local function Render()
+        cell:SetShown(editor.sampleKind == prefix)
+        title:SetShown(editor:LayerOn("guides"))
         -- Match Blizzard's content width (230 minus two 12px insets) and
         -- Modern bar heights. The old fixed preview hid the Small-size bug.
         local sizeScale = SIZE_SCALE[P.Get(ID, "nativeSize")] or SIZE_SCALE[3]
@@ -205,37 +208,41 @@ local function Sample(editor, prefix, x)
         local barHeight = 20 * sizeScale[2]
         local castHeight = 10 * sizeScale[2]
         bar:SetSize(barWidth, barHeight)
+        bar:ClearAllPoints()
+        bar:SetPoint("CENTER", cell, "CENTER", P.Get(ID, prefix .. "HealthOffsetX"),
+            -4 + P.Get(ID, prefix .. "HealthOffsetY"))
         cast:SetSize(barWidth, castHeight)
         castName:SetWidth(barWidth)
-        state.health = editor.health or (prefix == "enemy" and 53 or 100)
-        state.cast, state.target = not editor.hideCast, not editor.hideTarget
-
         local availableNameWidth = math.max(20, barWidth - 88)
         local show = P.Get(ID, prefix)
         cell:SetAlpha(show and 1 or 0.4)
         local savedRole = prefix == "enemy" and P.Get(ID, "enemyPreviewRole") or nil
-        if editor.previewRole and editor.previewRoleSource ~= savedRole then editor.previewRole = nil end
-        local role = editor.previewRole or savedRole
+        if prefix == "enemy" and editor.previewRole and editor.previewRoleSource ~= savedRole then
+            editor.previewRole = nil
+        end
+        local role = prefix == "enemy" and (editor.previewRole or savedRole) or nil
         local descriptor = role and Style.Roles[role]
         if descriptor then
             title:SetText(Tr("ENEMY / TARGET") .. " · " .. Tr(descriptor.label)
                 .. (editor.raidMarked and " · " .. Tr("Raid marked") or ""))
             nameText:SetText(descriptor.sample)
         end
-        local groupOnly = prefix == "friendly" and P.Get(ID, "friendlyGroupOnly") and P.Get(ID, "look") ~= 2
-        local namesOnly = prefix == "friendly" and (P.Get(ID, "friendlyNamesOnly") == 2 or groupOnly)
-        name:SetShown(not (groupOnly and editor.friendlyOutsider))
+        local friendlyNPC = prefix == "friendly" and editor.friendlyElite
+        local groupOnly = prefix == "friendly" and not friendlyNPC and P.Get(ID, "friendlyGroupOnly") and P.Get(ID, "look") ~= 2
+        local namesOnly = prefix == "friendly" and not friendlyNPC and (P.Get(ID, "friendlyNamesOnly") == 2 or groupOnly)
+        name:SetShown(editor:LayerOn("name") and not (groupOnly and editor.friendlyOutsider))
         if prefix == "friendly" then
-            title:SetText(Tr(editor.friendlyOutsider and "FRIENDLY / OUTSIDE GROUP" or "FRIENDLY / GROUP")
-                .. (editor.friendlyFocus and " · " .. Tr("Focus") or ""))
+            title:SetText(Tr(friendlyNPC and "FRIENDLY / ELITE NPC"
+                or editor.friendlyOutsider and "FRIENDLY / OUTSIDE GROUP" or "FRIENDLY / GROUP"))
+            nameText:SetText(friendlyNPC and "Friendly Elite" or "Friendly Player")
         end
-        bar:SetShown(not namesOnly)
+        bar:SetShown(not namesOnly and editor:LayerOn("health"))
         local castMode = P.Get(ID, "look") == 2 and 1 or P.Get(ID, "enemyCastEnabled")
         local nativeCast = _G.C_CVar and _G.C_CVar.GetCVar and _G.C_CVar.GetCVar("nameplateShowCastBars")
-        local showCast = not namesOnly and state.cast and castMode ~= 3
+        local showCast = not namesOnly and state.cast and editor:LayerOn("cast") and castMode ~= 3
             and (castMode ~= 1 or not P.Suite.Public(nativeCast) or nativeCast ~= "0")
         cast:SetShown(showCast)
-        auras:SetShown(not namesOnly)
+        auras:SetShown(not namesOnly and editor:LayerOn("auras"))
         name:ClearAllPoints()
         if namesOnly then
             Place(name, "CENTER", cell, "CENTER", 0, -4, "Name")
@@ -246,7 +253,7 @@ local function Sample(editor, prefix, x)
         end
         nameText:SetWidth(namesOnly and 170 or availableNameWidth)
         Place(healthText, "RIGHT", bar, "RIGHT", -4, 0, "HealthText")
-        healthText:SetShown(not namesOnly)
+        healthText:SetShown(not namesOnly and editor:LayerOn("healthText"))
         Tint(back, P.Get(ID, prefix .. "BackdropColor"),
             (P.Get(ID, prefix .. "BackdropAlpha") or 100) / 100)
         local scopeColor = previewContext.inDungeon and P.Get(ID, "enemyColorsInDungeons")
@@ -266,10 +273,11 @@ local function Sample(editor, prefix, x)
         local showValue = mode == 1 and NativeBit("nameplateInfoDisplay", 2, false) or mode == 3 or mode == 4
         value:SetText(showValue and (amount .. (showPercent and " " .. state.health .. "%" or ""))
             or (showPercent and state.health .. "%" or ""))
-        value:SetShown(not namesOnly and (showPercent or showValue))
+        value:SetShown(not namesOnly and editor:LayerOn("healthText") and (showPercent or showValue))
         local borderColor = P.Get(ID, prefix .. "BorderColor")
         border(P.Get(ID, "look") == 2 and 0 or P.Get(ID, prefix .. "BorderSize"), borderColor)
-        local arrows = (prefix == "enemy" or not P.Get(ID, "enemyTargetHideFriendly")) and state.target and P.Get(ID, "enemyTargetMarker")
+        local arrows = (prefix == "enemy" or not P.Get(ID, "enemyTargetHideFriendly")) and state.target
+            and editor:LayerOn("target") and P.Get(ID, "enemyTargetMarker")
             and P.Get(ID, "look") ~= 2
         local targetConfig = {}
         for _, key in ipairs({ "Style", "Layout", "Anchor", "Direction", "MarkerSize", "OffsetX", "OffsetY", "Color" }) do
@@ -289,8 +297,8 @@ local function Sample(editor, prefix, x)
                 Style.PlaceMarker(m.handle, bar, m.kind, P.Get(ID, m.x), P.Get(ID, m.y),
                     P.Get(ID, prefix .. (m.kind == "elite" and "EliteMarkerAnchor" or "QuestMarkerAnchor")))
                 Style.PaintMarker(m.icon, m.kind, P.Get(ID, m.size), P.Get(ID, m.color), role == 4 and "boss" or "elite")
-                m.handle:SetShown(P.Get(ID, "look") ~= 2 and P.Get(ID, m.enabled)
-                    and (prefix == "friendly" or m.roles[role] == true))
+                m.handle:SetShown(editor:LayerOn(m.kind .. "Marker") and P.Get(ID, "look") ~= 2 and P.Get(ID, m.enabled)
+                    and (prefix == "friendly" and friendlyNPC or m.roles[role] == true))
                 m.handle:EnableMouse(true)
                 m.back:Hide()
             end
@@ -300,14 +308,17 @@ local function Sample(editor, prefix, x)
         PreviewFont(castTargetText, prefix .. "Cast", P.Get(ID, prefix .. "CastSize"), P.Get(ID, prefix .. "CastOutline"), 11)
         if prefix == "enemy" then
             PreviewFont(value, prefix, P.Get(ID, "enemyHealthTextSize"), P.Get(ID, "enemyTextOutline"), 11)
-            castName:SetShown(showCast and NativeCastDetail("enemyCastSpellName", 1, true))
         end
-        Place(cast, "TOP", bar, "BOTTOM", 0, -2, "Cast")
+        castName:SetShown(showCast and editor:LayerOn("castText")
+            and NativeCastDetail("enemyCastSpellName", 1, true))
+        -- Blizzard anchors the castbar to the plate, not the movable health container.
+        Place(cast, "CENTER", cell, "CENTER", 0, -4 - barHeight / 2 - castHeight / 2 - 2, "Cast")
         Place(castName, "TOPLEFT", cast, "BOTTOMLEFT", 0, -1, "CastText")
         Place(auras, "BOTTOM", bar, "TOP", 0, 14, "Auras")
         if namesOnly then Place(raid, "BOTTOM", name, "TOP", 0, 8, "RaidIcon")
         else Place(raid, "RIGHT", bar, "LEFT", -25, 0, "RaidIcon") end
-        raid:SetShown(editor.raidMarked and (prefix ~= "enemy" or P.Get(ID, "look") == 2
+        raidTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. (editor.raidIndex or 8))
+        raid:SetShown(editor:LayerOn("raidIcon") and editor.raidMarked and (prefix ~= "enemy" or P.Get(ID, "look") == 2
             or P.Get(ID, "enemyRaidIcon")))
         Place(classification, "RIGHT", bar, "LEFT", -3, 0, "Classification")
         if role == 3 then nativeElite:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn-Boss-Rare-Star")
@@ -315,15 +326,18 @@ local function Sample(editor, prefix, x)
         local rarityMode = P.Get(ID, "look") == 2 and 1 or P.Get(ID, "enemyRarityIcon")
         local showRarity = rarityMode == 2 or rarityMode == 1
             and NativeBit("nameplateInfoDisplay", 3, true)
-        classification:SetShown(prefix == "enemy" and (role == 3 or role == 4) and showRarity)
+        classification:SetShown(not editor.raidMarked and editor:LayerOn("classification")
+            and (prefix == "enemy" and (role == 3 or role == 4) or friendlyNPC)
+            and showRarity)
         Place(castIcon, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastIcon")
         Place(shield, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastShield")
-        shield:SetShown(editor.uninterruptible and showCast)
+        shield:SetShown(editor.uninterruptible and showCast and editor:LayerOn("castShield"))
         local classicCast = P.Get(ID, "nativeStyle") == 7 or P.Get(ID, "nativeStyle") == 8
-        castIcon:SetShown(showCast and (not editor.uninterruptible or classicCast)
+        castIcon:SetShown(showCast and editor:LayerOn("castIcon") and (not editor.uninterruptible or classicCast)
             and NativeCastDetail("enemyCastSpellIcon", 2, false))
         Place(castTarget, "TOPRIGHT", cast, "BOTTOMRIGHT", 0, -1, "CastTarget")
-        castTarget:SetShown(showCast and NativeCastDetail("enemyCastSpellTarget", 3, false))
+        castTarget:SetShown(showCast and editor:LayerOn("castTarget")
+            and NativeCastDetail("enemyCastSpellTarget", 3, false))
     end
     editor.renderers[#editor.renderers + 1] = Render
 end
@@ -331,7 +345,8 @@ end
 function P.BuildNameplatesPreview(ctx, builder, sections)
     local editor = P.NameplatesEditor.Create(ctx, builder, sections)
     if not editor then return end
-    Sample(editor, "enemy", -150)
-    Sample(editor, "friendly", 150)
+    editor.sampleCells = {}
+    Sample(editor, "enemy", 0)
+    Sample(editor, "friendly", 0)
     editor:Paint()
 end

@@ -173,10 +173,12 @@ function cast:GetStatusBarColor() error("do not inspect native cast color") end
 function cast:SetStatusBarColor() error("do not replace native cast color") end
 function cast:CreateTexture() error("do not create cast overlays") end
 function cast:UpdateBarFillTexture() error("do not invoke native cast logic") end
+local healthContainer = Region()
+healthContainer.healthBar = bar
 local uf = {
     isFriend = false, isPlayer = false, name = name, AurasFrame = aura,
     RaidTargetFrame = raidFrame,
-    HealthBarsContainer = { healthBar = bar }, CastBarsContainer = { castBar = cast },
+    HealthBarsContainer = healthContainer, CastBarsContainer = { castBar = cast },
 }
 uf.CreateTexture, uf.CreateFontString = bar.CreateTexture, bar.CreateFontString
 function uf:UpdateAnchors()
@@ -815,6 +817,17 @@ assert(name:GetAlpha() == .7, "group filter not restored on disable")
 
 -- The native classification texture is independently movable and reversible.
 module.active, uf.isPlayer, uf.isFriend = true, false, false
+module.config.enemyHealthOffsetX, module.config.enemyHealthOffsetY = 13, -4
+module:Refresh()
+assert(healthContainer.offsetX == 13 and healthContainer.offsetY == -4,
+    "health drag did not move Blizzard's health container")
+layoutHook(uf)
+assert(healthContainer.offsetX == 13 and healthContainer.offsetY == -4,
+    "Blizzard anchor rebuild lost the health position")
+module.config.enemyHealthOffsetX, module.config.enemyHealthOffsetY = 0, 0
+module:Refresh()
+assert(healthContainer.offsetX == 0 and healthContainer.offsetY == 0,
+    "reset did not restore Blizzard's health container")
 local nativeElite = Region()
 uf.ClassificationFrame = { classificationIndicator = nativeElite }
 module.config.enemyClassificationOffsetX, module.config.enemyClassificationOffsetY = 17, -5

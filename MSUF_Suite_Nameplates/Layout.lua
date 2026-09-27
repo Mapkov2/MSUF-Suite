@@ -127,7 +127,9 @@ function Layout.Apply(uf, prefix, config, force)
     states[uf] = state
     force = force or state.nativeReset
     RestoreLinks(state)
-    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+    local container = uf.HealthBarsContainer
+    local health = container and container.healthBar
+    Offset(state, container, plan.Health[1], plan.Health[2], force)
     local name, value, auras, raid, classification = plan.Name, plan.HealthText, plan.Auras, plan.RaidIcon, plan.Classification
     local namesOnly, anchor = uf.showOnlyName == true, setup.unitNameAnchorStyle
     Offset(state, uf.name, name[1], name[2], force)

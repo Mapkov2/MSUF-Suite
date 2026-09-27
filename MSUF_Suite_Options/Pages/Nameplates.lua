@@ -6,7 +6,7 @@ local HELP = {
     general = "Jundies uses Modern plates and Medium size. Guild names and titles also affect names in the world. Bind Toggle friendly NPC nameplates under MSUF Suite in Blizzard Key Bindings. Import protection keeps your current nameplates when importing a full Suite profile; explicit nameplate imports still replace them.",
     enemy = "Blizzard supplies the name and health values. Jundies requests full enemy plates and both health values so normal enemies show text too. Role colors use the saved Platynator DEFAULT palette; mana is only a caster hint. Open the three-dot menu here or Nameplates in MSUF Colors to change the palette.",
     friendly = "Party / raid members shows friendly player names without bars and hides names of other friendly players. The Group / outsider preview button tests the filter. Blizzard can forbid changes to friendly plates in instances; those frames stay under Blizzard's control.",
-    castbar = "Blizzard supplies the castbar texture, colors, progress and interrupts. Customize its text and details here. Drag elements or use X/Y; positions apply outside combat.",
+    castbar = "Blizzard supplies the castbar texture, colors, progress and interrupts. Customize its text and details here. Select and move each cast element in the preview; positions apply outside combat.",
     roleColors = "Priority: focus, safe tank aggro, threat, tapped, quest, neutral, then NPC type. Turning focus off allows the next rule. Disabled threat overrides preserve Blizzard's active threat color. Tank mode uses your effective role; warnings also work for damage/healers. Secret values stay with Blizzard.",
     elements = "Blizzard owns these elements. The rarity icon setting applies to all nameplates; raid target icons are hidden only on enemy plates. Castbar details control Blizzard's own castbar. The preview and live plates use the same switches.",
 }
@@ -17,11 +17,33 @@ local CAST_ELEMENT_KEYS = { enemyCastEnabled = true, enemyCastDisplay = true,
     enemyCastImportant = true, enemyCastTargetHighlight = true }
 local enemyTab = "appearance"
 
+local function IsPositionRule(rule)
+    return rule.key:match("Offset[XY]$") ~= nil
+end
+
+local function VisibleRules(rules)
+    local visible = {}
+    for _, rule in ipairs(rules) do
+        if not IsPositionRule(rule) then visible[#visible + 1] = rule end
+    end
+    return visible
+end
+
+local function PositionKeys(rules)
+    local keys = {}
+    for _, rule in ipairs(rules) do
+        if IsPositionRule(rule) then keys[#keys + 1] = rule.key end
+    end
+    return keys
+end
+
 local function EnemySection(ctx, builder, rules)
     local appearance, elements = {}, {}
     for _, rule in ipairs(rules) do
-        local target = ELEMENT_KEYS[rule.key] and elements or appearance
-        target[#target + 1] = rule
+        if not IsPositionRule(rule) then
+            local target = ELEMENT_KEYS[rule.key] and elements or appearance
+            target[#target + 1] = rule
+        end
     end
     for _, rule in ipairs(P.SectionRules(ID, "castbar")) do
         if CAST_ELEMENT_KEYS[rule.key] then elements[#elements + 1] = rule end
@@ -29,7 +51,7 @@ local function EnemySection(ctx, builder, rules)
     local sectionId = PAGE .. "_enemy"
     if type(P.W.SegmentTabs) ~= "function" then
         local body = P.RuleSection(ctx, builder, PAGE, ID, sectionId, Tr("Enemy appearance"), appearance,
-            { help = HELP.enemy, open = true })
+            { help = HELP.enemy, open = true, resetKeys = PositionKeys(rules) })
         local elementsBody = P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_enemyElements", Tr("Blizzard elements"), elements,
             { help = HELP.elements })
         P.SelectNameplatesEnemyTab = function(tab) return tab == "elements" and elementsBody or body end
@@ -90,7 +112,8 @@ local function Build(ctx)
     P.BuildNameplatesPreview(ctx, builder, sections)
     P.ModuleCard(ctx, builder, PAGE, ID, nil, { rules = P.SectionRules(ID, "general"), help = HELP.general })
     for _, section in ipairs({ "enemy", "roleColors", "castbar", "friendly" }) do
-        local rules = P.SectionRules(ID, section)
+        local allRules = P.SectionRules(ID, section)
+        local rules = VisibleRules(allRules)
         if section == "castbar" then
             local styled = {}
             for _, rule in ipairs(rules) do
@@ -101,14 +124,17 @@ local function Build(ctx)
         if section ~= "friendly" then
             for _, rule in ipairs(P.SectionRules(ID, "enemyColors")) do
                 local owner = rule.key == "enemyTargetColor" and "enemy" or "roleColors"
-                if owner == section then rules[#rules + 1] = rule end
+                if owner == section then
+                    rules[#rules + 1] = rule
+                    allRules[#allRules + 1] = rule
+                end
             end
         end
         if section == "enemy" then
-            sections.enemy = EnemySection(ctx, builder, rules)
+            sections.enemy = EnemySection(ctx, builder, allRules)
         else
             sections[section] = P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. section, Tr(rules[1].sectionTitle), rules,
-                { help = HELP[section] })
+                { help = HELP[section], resetKeys = PositionKeys(allRules) })
         end
     end
 end
