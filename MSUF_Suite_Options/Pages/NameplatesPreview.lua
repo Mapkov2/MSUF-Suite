@@ -45,6 +45,25 @@ local function AuraScale()
     return P.Suite.Public(value) and tonumber(value) or 1
 end
 
+-- The sample uses Blizzard's current public setup values. Its element offsets
+-- then start from the same native anchors that Layout.lua displaces at runtime.
+local function SetupNumber(key, fallback)
+    local setup = _G.NamePlateSetupOptions
+    local value = setup and setup[key]
+    if P.Suite.Public(value) and type(value) == "number" and value == value then return value end
+    return fallback
+end
+
+local function DebuffPadding()
+    local constants, registry = _G.NamePlateConstants, _G.CVarCallbackRegistry
+    local key = constants and constants.DEBUFF_PADDING_CVAR
+    if key and registry and type(registry.GetCVarNumberOrDefault) == "function" then
+        local ok, value = pcall(registry.GetCVarNumberOrDefault, registry, key)
+        if ok and P.Suite.Public(value) and type(value) == "number" and value == value then return value end
+    end
+    return 0
+end
+
 local function Fill(owner, layer)
     local texture = owner:CreateTexture(nil, layer or "ARTWORK")
     texture:SetTexture(WHITE)
@@ -233,11 +252,13 @@ local function Sample(editor, prefix, x)
     Tint(powerFill, "397fe3")
     local powerBorder = Border(power)
 
-    local raid = SampleRegion(cell, 18, 18)
+    local raid = SampleRegion(cell, 22, 22)
     local raidTexture = Fill(raid, "ARTWORK")
     raidTexture:SetAllPoints(raid)
     raidTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_8")
     raid._npTexture = raidTexture
+    local classificationBase = SampleRegion(cell, 20, 20)
+    classificationBase:EnableMouse(false)
     local classification = SampleRegion(cell, 20, 20)
     local nativeElite = Fill(classification, "OVERLAY")
     nativeElite:SetAllPoints(classification)
@@ -277,12 +298,20 @@ local function Sample(editor, prefix, x)
     local function Render()
         cell:SetShown(editor.sampleKind == prefix)
         title:SetShown(editor:LayerOn("guides"))
-        -- Match Blizzard's content width (230 minus two 12px insets) and
-        -- Modern bar heights. The old fixed preview hid the Small-size bug.
+        -- Match Blizzard's current content width and layout. Classic uses a
+        -- narrower plate; the native frame reserves the same side insets.
         local sizeScale = SIZE_SCALE[P.Get(ID, "nativeSize")] or SIZE_SCALE[3]
-        local barWidth = 206 * sizeScale[1]
-        local barHeight = 20 * sizeScale[2]
-        local castHeight = 10 * sizeScale[2]
+        local setup = _G.NamePlateSetupOptions
+        local selectedStyle = P.Get(ID, "nativeStyle")
+        local classic = selectedStyle == 8 or selectedStyle == 1 and setup
+            and P.Suite.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
+        local barWidth = (classic and 152 or 230) * SetupNumber("horizontalScale", sizeScale[1])
+            - 2 * SetupNumber("insetWidth", 12)
+        local barHeight = SetupNumber("healthBarHeight", 20 * sizeScale[2])
+        local castHeight = SetupNumber("castBarHeight", 10 * sizeScale[2])
+        local nameAnchor = SetupNumber("unitNameAnchorStyle", 1)
+        local nameSpacing = SetupNumber("healthBarToNameAboveSpacing", 2 * sizeScale[2])
+        local castSpacing = SetupNumber("castBarToHealthBarSpacing", 2 * sizeScale[2])
         bar:SetSize(barWidth, barHeight)
         bar:ClearAllPoints()
         bar:SetPoint("CENTER", cell, "CENTER", P.Get(ID, prefix .. "HealthOffsetX"),
@@ -338,15 +367,25 @@ local function Sample(editor, prefix, x)
             and AuraShown(auraGroup, "Buffs"))
         control:SetShown(not namesOnly and not friendlyNPC and editor:LayerOn("controlAura")
             and AuraShown(auraGroup, "Control"))
+        name:SetHeight(P.Get(ID, prefix .. "TextEnabled") and P.Get(ID, prefix .. "NameSize") > 0
+            and P.Get(ID, prefix .. "NameSize") or SetupNumber("healthBarFontHeight", 12 * sizeScale[2]))
         name:ClearAllPoints()
         if namesOnly then
-            Place(name, "CENTER", cell, "CENTER", 0, -4, "Name")
+            if nameAnchor == 1 then Place(name, "CENTER", bar, "CENTER", 0, 0, "Name")
+            else Place(name, "BOTTOM", bar, "TOP", 0, 2, "Name") end
             name:SetWidth(170)
+        elseif nameAnchor == 3 then
+            Place(name, "BOTTOM", bar, "TOP", 0, nameSpacing, "Name")
+            name:SetWidth(barWidth - 8)
+        elseif nameAnchor == 2 then
+            Place(name, "BOTTOMLEFT", bar, "TOPLEFT", 4, nameSpacing, "Name")
+            name:SetWidth(availableNameWidth)
         else
             Place(name, "LEFT", bar, "LEFT", 4, 0, "Name")
             name:SetWidth(availableNameWidth)
         end
-        nameText:SetWidth(namesOnly and 170 or availableNameWidth)
+        nameText:SetWidth(namesOnly and 170 or nameAnchor == 3 and barWidth - 8 or availableNameWidth)
+        nameText:SetJustifyH((namesOnly or nameAnchor == 3) and "CENTER" or "LEFT")
         Place(healthText, "RIGHT", bar, "RIGHT", -4, 0, "HealthText")
         healthText:SetShown(not namesOnly and editor:LayerOn("healthText"))
         Tint(back, P.Get(ID, prefix .. "BackdropColor"),
@@ -425,13 +464,15 @@ local function Sample(editor, prefix, x)
         castName:SetShown(showCast and editor:LayerOn("castText")
             and NativeCastDetail("enemyCastSpellName", 1, true))
         -- Blizzard anchors the castbar to the plate, not the movable health container.
-        Place(cast, "CENTER", cell, "CENTER", 0, -4 - barHeight / 2 - castHeight / 2 - 2, "Cast")
+        Place(cast, "TOP", cell, "CENTER", 0, -4 - barHeight / 2 - castSpacing, "Cast")
         Place(castName, "TOPLEFT", cast, "BOTTOMLEFT", 0, -1, "CastText")
         Place(castTime, "LEFT", cast, "RIGHT", 4, 0, "CastTime")
         castTime:SetShown(showCast and P.Get(ID, "look") ~= 2
             and P.Get(ID, prefix .. "CastTimeEnabled") and editor:LayerOn("castTime"))
-        Place(auras, "BOTTOMLEFT", bar, "TOPLEFT", 0, 14, "Auras")
-        Place(buffs, "RIGHT", classification, "LEFT", -5, 0, "Buffs")
+        local auraY = DebuffPadding()
+        if nameAnchor ~= 1 then auraY = auraY + nameSpacing + name:GetHeight() end
+        Place(auras, "BOTTOMLEFT", bar, "TOPLEFT", 0, auraY, "Auras")
+        Place(buffs, "RIGHT", classificationBase, "LEFT", -5, 0, "Buffs")
         Place(control, "LEFT", bar, "RIGHT", 5, 0, "ControlAura")
         -- Blizzard anchors this to the nameplate root, independently of a
         -- dragged health container.
@@ -449,20 +490,33 @@ local function Sample(editor, prefix, x)
                 and P.Get(ID, "personalPowerBorderSize") or 0,
                 P.Get(ID, "personalPowerBorderColor"))
         end
-        if namesOnly then Place(raid, "BOTTOM", name, "TOP", 0, 8, "RaidIcon")
-        else Place(raid, "RIGHT", bar, "LEFT", -25, 0, "RaidIcon") end
+        if namesOnly then
+            -- Runtime subtracts the name displacement from this native link.
+            raid:ClearAllPoints()
+            raid:SetPoint("BOTTOM", name, "TOP",
+                P.Get(ID, prefix .. "RaidIconOffsetX") - P.Get(ID, prefix .. "NameOffsetX"),
+                10 + P.Get(ID, prefix .. "RaidIconOffsetY") - P.Get(ID, prefix .. "NameOffsetY"))
+        else Place(raid, "RIGHT", bar, "LEFT", 0, 0, "RaidIcon") end
         raidTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. (editor.raidIndex or 8))
-        raid:SetShown(editor:LayerOn("raidIcon") and editor.raidMarked and (prefix ~= "enemy" or P.Get(ID, "look") == 2
-            or P.Get(ID, "enemyRaidIcon")))
-        Place(classification, "RIGHT", bar, "LEFT", -3, 0, "Classification")
+        local showRaid = editor:LayerOn("raidIcon") and editor.raidMarked
+            and (prefix ~= "enemy" or P.Get(ID, "look") == 2 or P.Get(ID, "enemyRaidIcon"))
+        raid:SetShown(showRaid)
+        -- Hiding the icon with Suite alpha does not collapse Blizzard's frame.
+        raid:SetWidth(editor.raidMarked and 22 or 0)
+        classificationBase:ClearAllPoints()
+        classificationBase:SetPoint("RIGHT", raid, "LEFT", 0, 0)
+        Place(classification, "CENTER", classificationBase, "CENTER",
+            -P.Get(ID, prefix .. "RaidIconOffsetX"), -P.Get(ID, prefix .. "RaidIconOffsetY"), "Classification")
         if role == 3 then nativeElite:SetAtlas("UI-HUD-UnitFrame-Target-PortraitOn-Boss-Rare-Star")
         else nativeElite:SetAtlas("nameplates-icon-elite-gold") end
         local rarityMode = P.Get(ID, "look") == 2 and 1 or P.Get(ID, "enemyRarityIcon")
         local showRarity = rarityMode == 2 or rarityMode == 1
             and NativeBit("nameplateInfoDisplay", 3, true)
-        classification:SetShown(not editor.raidMarked and editor:LayerOn("classification")
+        local showClassification = not editor.raidMarked and editor:LayerOn("classification")
             and (prefix == "enemy" and (role == 3 or role == 4) or friendlyNPC)
-            and showRarity)
+            and showRarity
+        classification:SetShown(showClassification)
+        classificationBase:SetWidth(showClassification and 20 or 0) -- Blizzard ClassificationFrame collapsesLayout.
         Place(castIcon, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastIcon")
         Place(shield, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastShield")
         shield:SetShown(editor.uninterruptible and showCast and editor:LayerOn("castShield"))

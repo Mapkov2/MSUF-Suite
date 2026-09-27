@@ -1269,6 +1269,11 @@ do
     assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown()
         and label.text == "2.3s" and cast.CastTimeText == nil,
         "cast duration did not reach the engine text binding")
+    rejectDuration = true
+    events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
+    assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown(),
+        "interruptibility change hid a valid cast time while duration was unavailable")
+    rejectDuration = false
     events.UNIT_SPELLCAST_STOP(module, "UNIT_SPELLCAST_STOP", "nameplate1")
     assert(not state.binding.enabled and not label:IsShown(), "cast stop left a stale time")
     rejectDuration = true

@@ -58,6 +58,7 @@ local function RestoreCastTime(cast)
     local state = cast and M.castTimes[cast]
     if not state or not state.unit then return end
     state.unit = nil
+    state.active = false
     state.binding:Disable()
     if Safe(state.label) then state.label:Hide() end
 end
@@ -67,11 +68,15 @@ local function ApplyCastDuration(state, unit, getter)
     local queried, duration = pcall(getter, unit)
     if not queried or not pcall(state.binding.SetDuration, state.binding, duration) then return false end
     if not pcall(state.binding.Enable, state.binding) then return false end
+    state.active = true
     state.label:Show()
     return true
 end
 
 local function RefreshCastTime(state, unit, event)
+    if state.active and (event == "UNIT_SPELLCAST_INTERRUPTIBLE"
+        or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE") then return end
+    state.active = false
     state.binding:Disable()
     state.label:Hide()
     if not unit then return end
