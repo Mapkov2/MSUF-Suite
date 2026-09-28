@@ -59,7 +59,8 @@ UIParent.GetAlpha = function(self) return self.alpha end
 UIParent.SetAlpha = function(self, value) self.alpha = value end
 WorldFrame = Frame("WorldFrame")
 Minimap = Frame("Minimap")
-UnitName = function() return "Tester" end
+local firstName, surname = "Tester", nil
+UnitName = function() return firstName, surname end
 GetZoneText = function() return "Test zone" end
 UnitClass = function() return "Mage" end
 UnitLevel = function() return 80 end
@@ -95,7 +96,7 @@ UnitIsAFK = function(unit)
     return afk
 end
 C_Timer = { After = function(delay, callback)
-    assert(delay == 0 and deferred == nil)
+    assert(delay == .1 and deferred == nil)
     deferred = callback
 end }
 
@@ -121,7 +122,7 @@ end
 function suite.Number(value)
     return suite.Public(value) and type(value) == "number" and value == value
 end
-local NS = { MSUFMedia = { font = SUITE_FONT } }
+local NS = { MSUFMedia = { font = SUITE_FONT }, Client = { isForever = false } }
 function NS.IsCombatLocked() return InCombatLockdown() == true end
 local private = { NS = NS, Suite = suite }
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
@@ -135,7 +136,7 @@ module.context = { Event = function(_, event, callback, allowCombat, unit)
 end, RemoveEvent = function(_, event) events[event] = nil end }
 
 module:Enable()
-assert(events.PLAYER_FLAGS_CHANGED and events.UNIT_FLAGS
+assert(events.PLAYER_FLAGS_CHANGED and events.UNIT_FLAGS and events.PLAYER_STARTED_MOVING
     and events.PLAYER_ENTERING_WORLD and events.PLAYER_LEAVING_WORLD
     and events.PLAYER_REGEN_DISABLED and events.PLAYER_REGEN_ENABLED)
 assert(not module.host and checks == 1, "inactive players should allocate no screen")
@@ -153,6 +154,10 @@ assert(module.host:IsShown() and module.model and module.fallback.portraitUnit =
         .. tostring(module.fallback.portraitUnit) .. ", "
         .. tostring(module.name.text) .. ", " .. tostring(module.class.text))
 assert(module.name.fontPath == SUITE_FONT, "AFK text must use MSUF's shared font")
+Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+NS.Client.isForever, firstName, surname = true, "Torven", "Steinweg"
+events.UNIT_FLAGS(module, "UNIT_FLAGS", "player")
+assert(module.name.text == "Tester", "the active AFK screen should not be rebuilt on status events")
 assert(module.host.parent == WorldFrame and UIParent.alpha == 0,
     "AFK presentation should remain visible while regular UI fades out")
 assert(not Minimap:IsShown(), "native minimap markers should hide while AFK")
@@ -205,6 +210,7 @@ deferred = nil
 recheck()
 assert(module.host:IsShown() and deferred == nil,
     "deferred check should show AFK when chat lockdown ends")
+assert(module.name.text == "Torven Steinweg", "Forever AFK should show both name parts")
 assert(cameraStarts == 2, "returning to AFK should restart the orbit")
 assert(UIParent.alpha == 0, "returning to AFK should fade the UI again")
 assert(module.fallback:IsShown() and type(actor.onModelLoaded) == "function",
@@ -218,8 +224,10 @@ events.UNIT_FLAGS(module, "UNIT_FLAGS", "player")
 
 portraitFails = true
 actor.fileID = 0
+surname = secret
 afk = true
 events.PLAYER_ENTERING_WORLD(module, "PLAYER_ENTERING_WORLD")
+assert(module.name.text == "Torven", "secret surname should leave the public first name readable")
 assert(module.host:IsShown()
     and module.fallback.texture == "Interface\\Icons\\INV_Misc_QuestionMark"
     and module.fallback:IsShown(),
@@ -229,7 +237,9 @@ assert(not module.host:IsShown() and cameraStops == 3,
     "world exit should dismiss the screen and stop camera movement")
 assert(UIParent.alpha == .85, "world exit should restore the UI")
 afk = true
+firstName, surname = "Torven Steinweg", "Steinweg"
 events.PLAYER_ENTERING_WORLD(module, "PLAYER_ENTERING_WORLD")
+assert(module.name.text == "Torven Steinweg", "merged Forever name should not repeat the surname")
 module:Disable()
 assert(not module.host:IsShown() and cameraStops == 4,
     "disabling should dismiss the screen and stop the camera")
@@ -254,7 +264,8 @@ combatModule:Refresh()
 assert(not combatModule.host and checks == beforeChecks
     and sceneSetups == beforeScenes and cameraStarts == beforeStarts,
     "combat during enable and refresh must not query AFK or create a scene")
-assert(not combatEvents.PLAYER_FLAGS_CHANGED and not combatEvents.UNIT_FLAGS,
+assert(not combatEvents.PLAYER_FLAGS_CHANGED and not combatEvents.UNIT_FLAGS
+    and not combatEvents.PLAYER_STARTED_MOVING,
     "AFK status events should not be registered during combat")
 
 combat = false
@@ -262,7 +273,8 @@ combatEvents.PLAYER_REGEN_ENABLED(combatModule, "PLAYER_REGEN_ENABLED")
 assert(combatModule.host:IsShown() and combatModule.model:IsShown()
     and sceneSetups == beforeScenes + 1 and cameraStarts == beforeStarts + 1,
     "AFK can appear after combat ends")
-assert(combatEvents.PLAYER_FLAGS_CHANGED and combatEvents.UNIT_FLAGS,
+assert(combatEvents.PLAYER_FLAGS_CHANGED and combatEvents.UNIT_FLAGS
+    and combatEvents.PLAYER_STARTED_MOVING,
     "AFK status events should resume after combat")
 
 afk = secret
@@ -274,7 +286,8 @@ assert(not combatModule.host:IsShown() and not combatModule.model:IsShown()
     and UIParent.alpha == .85 and Minimap:IsShown()
     and not combatModule.cameraSpinning,
     "combat start must hide the model, stop the camera and restore the UI/minimap")
-assert(not combatEvents.PLAYER_FLAGS_CHANGED and not combatEvents.UNIT_FLAGS,
+assert(not combatEvents.PLAYER_FLAGS_CHANGED and not combatEvents.UNIT_FLAGS
+    and not combatEvents.PLAYER_STARTED_MOVING,
     "combat should unregister frequent AFK status events")
 beforeChecks = checks
 local pending = deferred
@@ -349,5 +362,58 @@ assert(formActor.nativeCalls == 1 and not formOnly.fallback:IsShown(),
     "a form-tagged active actor should be reused for the native model")
 formOnly:Disable()
 assert(UIParent.alpha == .85, "form previews should restore the UI")
+
+installed = nil
+assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
+local exitModule = assert(installed)
+local exitEvents = {}
+exitModule.active = true
+exitModule.context = {
+    Event = function(_, event, callback) exitEvents[event] = callback end,
+    RemoveEvent = function(_, event) exitEvents[event] = nil end,
+}
+afk = true
+exitModule:Enable()
+assert(exitModule.host:IsShown(), "AFK exit scenario should start with a visible screen")
+afk = secret
+exitEvents.UNIT_FLAGS(exitModule, "UNIT_FLAGS", "player")
+assert(deferred and exitModule.host:IsShown(), "a secret AFK read should get one grace recheck")
+local unknownRecheck = deferred
+deferred = nil
+unknownRecheck()
+assert(not exitModule.host:IsShown() and UIParent.alpha == .85 and Minimap:IsShown()
+    and not exitModule.cameraSpinning,
+    "an unreadable AFK state after the grace check must restore the UI")
+
+afk = true
+exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
+assert(exitModule.host:IsShown(), "a later public AFK event may reopen the screen")
+afk = secret
+exitEvents.UNIT_FLAGS(exitModule, "UNIT_FLAGS", "player")
+local staleRecheck = assert(deferred)
+deferred = nil
+local checksBeforeMove = checks
+exitEvents.PLAYER_STARTED_MOVING(exitModule, "PLAYER_STARTED_MOVING")
+assert(not exitModule.host:IsShown() and UIParent.alpha == .85 and Minimap:IsShown()
+    and not exitModule.cameraSpinning and not exitModule.recheckScheduled,
+    "movement must dismiss the screen immediately, even while AFK is secret")
+staleRecheck()
+assert(checks == checksBeforeMove and not exitModule.host:IsShown(),
+    "a cancelled secret-state callback must not reopen the screen")
+afk = false
+exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
+afk = secret
+exitEvents.UNIT_FLAGS(exitModule, "UNIT_FLAGS", "player")
+local hiddenRecheck = assert(deferred)
+deferred = nil
+exitEvents.PLAYER_STARTED_MOVING(exitModule, "PLAYER_STARTED_MOVING")
+afk = true
+checksBeforeMove = checks
+hiddenRecheck()
+assert(checks == checksBeforeMove and not exitModule.host:IsShown(),
+    "movement must also cancel an unknown-state check before the screen appears")
+afk = false
+exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
+exitModule:Disable()
 
 print("Suite AFK screen: native/form models, equipment, camera, secrets, fallback and combat quiescence passed")

@@ -19,6 +19,19 @@ local SLOT_NAMES = {
 
 local Public, Number, PublicText = S.Public, S.Number, S.PublicText
 
+local function PlayerDisplayName()
+    local first, surname = UnitName("player")
+    first = PublicText(first)
+    if not first then return "ADVENTURER" end
+    if not NS.Client.isForever then return first end
+    surname = PublicText(surname)
+    if not surname then return first end
+    local separator = PublicText(Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR) or " "
+    local suffix = separator .. surname
+    if first:sub(-#suffix) == suffix then return first end
+    return first .. suffix
+end
+
 local function Fill(parent, layer, r, g, b, a)
     local texture = S.CreateTexture(parent, nil, layer)
     texture:SetColorTexture(r, g, b, a)
@@ -280,6 +293,10 @@ local function RestoreMinimap(self)
 end
 
 local function Hide(self)
+    if self.recheckScheduled then
+        self.recheckToken = (self.recheckToken or 0) + 1
+        self.recheckScheduled = false
+    end
     StopCamera(self)
     if self.host then
         self.model:Hide()
@@ -298,6 +315,7 @@ local OnEvent
 local function StartStatusEvents(self)
     self.context:Event("PLAYER_FLAGS_CHANGED", OnEvent, true)
     self.context:Event("UNIT_FLAGS", OnEvent, true, "player")
+    self.context:Event("PLAYER_STARTED_MOVING", OnEvent, true)
 end
 
 local function EnterCombat(self)
@@ -307,6 +325,7 @@ local function EnterCombat(self)
     self.recheckScheduled = false
     self.context:RemoveEvent("PLAYER_FLAGS_CHANGED")
     self.context:RemoveEvent("UNIT_FLAGS")
+    self.context:RemoveEvent("PLAYER_STARTED_MOVING")
     Hide(self)
 end
 
@@ -319,7 +338,7 @@ end
 
 local function Show(self)
     Create(self)
-    self.name:SetText(PublicText(UnitName("player")) or "ADVENTURER")
+    self.name:SetText(PlayerDisplayName())
     local class = PublicText((UnitClass("player"))) or ""
     local level = UnitLevel("player")
     if Number(level) and level > 0 then
@@ -344,7 +363,7 @@ local function ScheduleRecheck(self)
     if self.recheckScheduled then return end
     self.recheckScheduled = true
     local token = self.recheckToken or 0
-    C_Timer.After(0, function()
+    C_Timer.After(.1, function()
         if token ~= (self.recheckToken or 0) then return end
         self.recheckScheduled = false
         if self.active and not self.inCombat then Update(self, true) end
@@ -358,10 +377,11 @@ Update = function(self, deferred)
         return
     end
     local value = UnitIsAFK("player")
-    -- Chat lockdown after /afk can make the result secret. Keep the last
-    -- visible state and retry once after the command has finished.
+    -- Chat lockdown after /afk can make the result secret. Retry once after
+    -- the command; if it remains unreadable, close the overlay so it cannot
+    -- strand the player behind a faded UI.
     if not Public(value) or type(value) ~= "boolean" then
-        if not deferred then ScheduleRecheck(self) end
+        if deferred then Hide(self) else ScheduleRecheck(self) end
         return
     end
     if value then
@@ -392,6 +412,10 @@ OnEvent = function(self, event, unit)
     end
     if event == "PLAYER_LEAVING_WORLD" then
         Hide(self)
+        return
+    end
+    if event == "PLAYER_STARTED_MOVING" then
+        if self.recheckScheduled or (self.host and self.host:IsShown()) then Hide(self) end
         return
     end
     if self.inCombat then return end
