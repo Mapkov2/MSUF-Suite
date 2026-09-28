@@ -142,4 +142,17 @@ ok = fighting.Database.SetProfile("Default", fighting.CopyValue(fighting.Default
 assert(ok and fighting.DB ~= active and fighting.DB == fighting.RootDB.profiles.Default,
     "the active skin profile could not be replaced out of combat")
 
+-- A Suite reset must also clear skin profiles when this load-on-demand addon
+-- was disabled during the reset and its old SavedVariables load only now.
+local oldSkin = { activeProfile = "Raid", profiles = { Raid = { private = "old" } } }
+MSUFSuiteDB = { pendingSkinFactoryReset = true }
+MSUFSuiteSkinDB = oldSkin
+MapkoSkinDB = { activeProfile = "Legacy", profiles = { Legacy = {} } }
+fighting.Database.Initialize()
+assert(fighting.RootDB.activeProfile == "Default" and fighting.RootDB.profiles.Raid == nil
+    and fighting.RootDB.profiles.Legacy == nil and MSUFSuiteDB.pendingSkinFactoryReset == nil,
+    "pending Suite reset did not discard old and legacy skin profiles")
+assert(oldSkin.profiles.Raid.private == "old" and MapkoSkinDB.profiles.Legacy,
+    "pending Suite reset mutated unrelated old or legacy data")
+
 print("Suite skin profile startup: provider database ready before sync, modules start, late event idempotent")

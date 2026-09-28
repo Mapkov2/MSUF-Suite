@@ -49,4 +49,22 @@ Check(empty.activeProfile == "Default" and empty.profiles.Default.suite.modules.
 local established = { schema = 1, activeProfile = "Default", profiles = { Default = { suite = { schema = 1, modules = {} } } } }
 local resumed = assert(DB.Prepare(established, legacy))
 Check(resumed.profiles.Raid == nil and resumed.migration == nil, "existing suite databases are never reimported from the skin")
+
+local oldRoot = Suite.RootDB
+local oldSkin = { profiles = { Raid = { theme = { private = "skin" } } } }
+MSUFSuiteDB, MSUFSuiteSkinDB = oldRoot, oldSkin
+MSUF_GlobalDB = { profiles = { Raid = { player = "untouched" } } }
+locked = true
+Check(not DB.StageFactoryReset() and MSUFSuiteDB == oldRoot and MSUFSuiteSkinDB == oldSkin,
+    "factory reset refuses combat without changing saved variables")
+locked = false
+Check(DB.StageFactoryReset() and Suite.RootDB == MSUFSuiteDB and Suite.RootDB ~= oldRoot,
+    "factory reset replaces all Suite profiles")
+Check(Suite.RootDB.activeProfile == "Default" and Suite.RootDB.profiles.Raid == nil
+    and Suite.RootDB.profiles.Default.suite.modules.chat == nil and Suite.RootDB.pendingSkinFactoryReset == true,
+    "factory reset stages a fresh Suite profile")
+Check(type(MSUFSuiteSkinDB) == "table" and next(MSUFSuiteSkinDB) == nil and oldSkin.profiles.Raid ~= nil,
+    "factory reset stages a fresh skin root without mutating the old one")
+Check(MSUF_GlobalDB.profiles.Raid.player == "untouched" and legacy.profiles.Raid.suite.modules.chat.enabled == true,
+    "factory reset leaves MSUF and legacy addon data alone")
 print("Standalone suite database: " .. checks .. " checks passed")

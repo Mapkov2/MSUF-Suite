@@ -5,6 +5,9 @@ local Suite = {
     RetailFactoryModuleCompact = "MSUFM1:MSUF3:retail",
     RetailFactorySkinCompact = "MSKIN1:modern",
     ForeverFactoryModuleCompact = "MSUFM1:MSUF3:forever",
+    Defaults = { suite = { modules = { nameplates = {
+        enabled = false, look = 1, nativeStyle = 2, nativeSize = 3,
+    } } } },
     ForeverFactorySkinCompact = "MSKIN1:forever",
     ForeverFactoryFramesCompact = "MSUF3:frames",
     CDM = { DEFAULTS_VERSION = 3, FRAME_ANCHORS = { [14] = "player" } },
@@ -96,6 +99,10 @@ Suite.SuiteProfiles = {
         assert(frames == "MSUF3:frames")
         assert(skin == "MSKIN1:forever")
         assert(profile.suite.modules.chat.enabled)
+        assert(profile.suite.modules.nameplates.enabled
+            and profile.suite.modules.nameplates.look == 1
+            and profile.suite.modules.nameplates.nativeStyle == 2,
+            "Forever factory omitted the Jundies nameplate preset")
         assert(profile.suite.modules.bags.enabled)
         assert(profile.suite.modules.actionbars.enabled
             and profile.suite.modules.actionbars.bar3Point == 7
@@ -242,8 +249,8 @@ window.next.scripts.OnClick() -- install
 assert(factoryCalls == 1 and Suite.RootDB.installation.profile == "forever")
 -- Each factory string is decoded once, not on every module click and repaint.
 assert(decodes == 2, "the installer decoded a factory profile " .. decodes .. " times")
--- The module and review pages read the cached profile; only the install copies it.
-assert(copies == 1, "the installer copied the factory profile " .. copies .. " times")
+-- One copy adds the missing Jundies defaults; the install copies the cached factory.
+assert(copies == 2, "the installer copied the factory profile " .. copies .. " times")
 assert(Suite.RootDB.installation.raidEssentials == true
     and Suite.RootDB.installation.foreverAnchorRevision == 1,
     "Retail Forever did not record its CDM spec and anchor defaults")

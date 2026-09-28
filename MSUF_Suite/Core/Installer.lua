@@ -115,6 +115,15 @@ local function FactoryProfile()
     local reason
     profile, reason = Suite.ProfileIO.PrepareProfile(compact, false)
     if not profile then return nil, reason end
+    if selected == "forever" then
+        -- The bundled Forever export predates Nameplates. Include the current
+        -- Jundies preset in new installs without changing saved profiles.
+        local modules = profile.suite.modules
+        if not modules.nameplates then
+            modules.nameplates = Suite.CopyValue(Suite.Defaults.suite.modules.nameplates)
+            modules.nameplates.enabled = true
+        end
+    end
     decodedFactories[compact] = profile
     return profile
 end

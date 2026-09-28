@@ -103,6 +103,25 @@ function Database.Initialize(stored, legacy)
     return true, reason
 end
 
+-- Stage a clean Suite installation for the next UI load. Publish a real root
+-- instead of nil so legacy MapkoSkin data cannot be imported again on reload.
+-- The marker makes the load-on-demand skin engine rebuild its own factory
+-- profile even when its old SavedVariables load after this function returns.
+function Database.StageFactoryReset()
+    if Suite.IsCombatLocked() then return false, "combat" end
+    if not Suite.RootDB then return false, "database-unavailable" end
+    local root, reason = Database.Prepare(nil, nil)
+    if not root then return false, reason end
+    -- The skin addon is load-on-demand and may be disabled when this runs.
+    -- Its SavedVariables might therefore not be loaded or written this session.
+    root.pendingSkinFactoryReset = true
+    _G.MSUFSuiteDB = root
+    _G.MSUFSuiteSkinDB = {}
+    Suite.RootDB = root
+    Suite.DB = root.profiles[root.activeProfile]
+    return true
+end
+
 function Database.GetActiveProfileName()
     return Suite.RootDB and Suite.RootDB.activeProfile
 end

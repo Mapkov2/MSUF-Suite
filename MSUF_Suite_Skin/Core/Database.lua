@@ -709,9 +709,15 @@ local function NormalizeRoot(root)
 end
 
 function Database.Initialize()
+    local suiteRoot = _G.MSUFSuiteDB
+    local resetPending = type(suiteRoot) == "table" and suiteRoot.pendingSkinFactoryReset == true
     local stored = _G.MSUFSuiteSkinDB
-    if type(stored) ~= "table" then stored = _G.MapkoSkinDB end
-    if type(stored) ~= "table" then stored = _G.MidnightSkinDB end
+    if resetPending then
+        stored = nil
+    else
+        if type(stored) ~= "table" then stored = _G.MapkoSkinDB end
+        if type(stored) ~= "table" then stored = _G.MidnightSkinDB end
+    end
     local root
     if type(stored) == "table" and type(stored.profiles) == "table" then
         root = NormalizeRoot(stored)
@@ -724,6 +730,7 @@ function Database.Initialize()
     end
     _G.MSUFSuiteSkinDB = root
     _G.MidnightSkinDB = nil
+    if resetPending then suiteRoot.pendingSkinFactoryReset = nil end
     NS.RootDB = root
     NS.DB = root.profiles[root.activeProfile]
     return NS.DB
