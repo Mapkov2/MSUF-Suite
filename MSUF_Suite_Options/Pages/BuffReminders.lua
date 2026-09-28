@@ -28,8 +28,10 @@ local function Build(ctx)
             function() return P.EditModeReady() and S.Status(ID) == "Active" end, key = "edit" },
     })
     for _, section in ipairs(SECTIONS) do
-        P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
-            P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = section[1] == "tracking" })
+        if section[1] ~= "recommended" or P.Requires.modernEquipment() then
+            P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
+                P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = section[1] == "tracking" })
+        end
     end
 end
 
