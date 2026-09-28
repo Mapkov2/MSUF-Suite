@@ -1669,6 +1669,12 @@
   },
   {
    "file": "MSUF_Suite_Skin/Core/Database.lua",
+   "symbol": "suiteRoot (= MSUFSuiteDB)",
+   "kind": "state",
+   "reason": "Suite-owned saved variables: the skin addon can load before the Suite database is ready"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Core/Database.lua",
    "symbol": "stored (= MSUFSuiteSkinDB)",
    "kind": "state",
    "reason": "saved variables: nil until their addon has loaded them"
@@ -1936,6 +1942,54 @@
    "symbol": "widgets.OpenContextColors",
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "dbm.GetStage",
+   "kind": "addon",
+   "reason": "DBM is optional; its current stage API is read once at encounter start when available"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "dbm.RegisterCallback",
+   "kind": "addon",
+   "reason": "DBM is optional and its public phase callback API must be checked before registration"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "loader (= BigWigsLoader)",
+   "kind": "addon",
+   "reason": "BigWigs is an optional boss mod; its message loader may be absent"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "loader.RegisterMessage (= BigWigsLoader)",
+   "kind": "addon",
+   "reason": "BigWigs is optional and its public stage message API must be checked before registration"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "view.dbm.UnregisterCallback",
+   "kind": "addon",
+   "reason": "DBM's optional callback is removed when the raid HUD stops"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "view.bigWigs.UnregisterMessage",
+   "kind": "addon",
+   "reason": "BigWigs' optional stage message is removed when the raid HUD stops"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "bigWigs (= BigWigs)",
+   "kind": "addon",
+   "reason": "BigWigs is optional; current stage is read only when its core is loaded"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "symbol": "bigWigs.IterateBossModules (= BigWigs)",
+   "kind": "addon",
+   "reason": "BigWigs is optional; its active module iterator is read once at encounter start when available"
   }
  ]
 }

@@ -150,6 +150,11 @@ M.PreviewSelectionBar = {
     Create = function(box, deps)
         box.selectionDeps = deps
         local bar = Widget("SelectionBar")
+        bar:SetSize(785, 24)
+        bar.axisY, bar.label = Widget("AxisY"), Widget("SelectionLabel")
+        bar.axisY.plusButton = Widget("YPlus")
+        bar.openButton, bar.resetButton = Widget("OpenSettings"), Widget("Reset")
+        bar.resetButton.SetPoint = function(self, ...) self.lastPoint = { ... } end
         box.selectionBar = bar
         return bar
     end,
@@ -325,6 +330,12 @@ assert(Suite.Menu.attached == true)
 assert(historyProvider and Suite.Options.BuildColorsCategory, "Suite did not register MSUF history and colors")
 for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .. tostring(k)) end
 if flavor == "Forever" then
+    local plates = S.Config("nameplates")
+    assert(plates.enemyLevelEnabled == true, "Forever Jundies default omitted enemy levels")
+    plates.enabled, plates.look = false, 2
+    assert(optionsNS.Set("nameplates", "look", 1)
+        and plates.enabled and plates.look == 1 and plates.enemyLevelEnabled,
+        "selecting Jundies on Forever did not enable nameplates and levels")
     assert(M.PageHasReset("suite_dataTexts") and M.PageHasReset("suite_skin"),
         "Forever Suite pages lack Reset page")
     local rule = S.catalog.dataTexts.rules.bar1X
@@ -431,6 +442,15 @@ for _, key in ipairs(expected) do
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
 end
+do
+    local plates = S.Config("nameplates")
+    local enabled, look = plates.enabled, plates.look
+    plates.enabled, plates.look = false, 2
+    assert(optionsNS.Set("nameplates", "look", 1)
+        and plates.enabled and plates.look == 1,
+        "choosing Jundies left an older Forever nameplate module disabled")
+    plates.enabled, plates.look = enabled, look
+end
 -- A page refresh asks for module availability once per module, not once per
 -- control; the next refresh asks again.
 do
@@ -457,8 +477,56 @@ end
         and S.Config("nameplates").enemyTextOutline == 4,
         "fresh Jundies nameplates must match DEFAULT neutral color and SLUG without extra elite markers")
     local function Control(key) return assert(registeredControls["menu2.suite_nameplates.nameplates.preview." .. key], key) end
-    local name, cast = Control("enemy.Name"), Control("enemy.Cast")
+    local name, cast, health = Control("enemy.Name"), Control("enemy.Cast"), Control("enemy.Health")
     local ui = name.previewUI
+    assert(ui.previewRole == nil, "nameplate preview must start with the saved enemy type")
+    local plates = S.Config("nameplates")
+    if flavor == "Forever" then
+        assert(plates.levelAppearance == 1,
+            "Forever Jundies did not default to the plain level number")
+    end
+    local originalSize = plates.nativeSize
+    plates.nativeSize = 2
+    ui:Paint()
+    local smallWidth = health.width
+    plates.nativeSize = 6
+    ui:Paint()
+    assert(health.width > smallWidth, "Blizzard plate size did not scale preview health bars")
+    plates.nativeSize = originalSize
+    ui:Paint()
+    local nativeWidth, nativeHeight, castWidth = health.width, health.height, cast.width
+    plates.enemyHealthWidthDelta, plates.enemyHealthHeightDelta = 73, 7
+    ui:Paint()
+    assert(health.width == nativeWidth + 73 and health.height == nativeHeight + 7
+        and cast.width == castWidth,
+        "enemy health dimensions diverged from the native preview geometry")
+    plates.enemyHealthWidthDelta, plates.enemyHealthHeightDelta = 0, 0
+    ui:Paint()
+    if flavor == "Forever" then
+        local level = Control("enemy.Level")
+        assert(health.width == 133 and cast.width == 166 and cast.height == 6 and level.width == 24,
+            "Forever preview ignored Jundies' plain number or Camelot bar width")
+        assert(level:IsShown() and level.points[1][1] == "RIGHT"
+            and level.points[1][2] == health,
+            "Forever Jundies preview did not place the plain number left of health")
+        plates.levelAppearance = 2
+        ui:Paint()
+        assert(level.width == 28 and level.points[1][1] == "LEFT"
+            and level.points[1][2] == health,
+            "Forever Blizzard badge option did not move the preview level right")
+        plates.levelAppearance = 1
+        ui:Paint()
+        local oldSetup = NamePlateSetupOptions
+        NamePlateSetupOptions = { useClassicHealthBar = true, horizontalScale = 1,
+            verticalScale = 1, classificationScale = 1, insetWidth = 12,
+            playerLevelDiffWidth = 28 }
+        ui:Paint()
+        assert(health.width == 70.75 and cast.width == 103.75
+            and Suite.NameplateStyle.ClassicNativePlate(2),
+            "Forever preview ignored the effective Classic layout")
+        NamePlateSetupOptions = oldSetup
+        ui:Paint()
+    end
     for _, prefix in ipairs({ "enemy", "friendly" }) do
         for _, element in ipairs(Suite.NameplateStyle.Elements) do
             local handle = Control(prefix .. "." .. element.key)
@@ -499,6 +567,67 @@ end
         and name.scripts.OnMouseDown and cast.scripts.OnMouseDown
         and Control("friendly.Name").scripts.OnDragStart,
         "nameplate preview must expose the UF/GF selection strip and direct drag handles")
+    ui:Select(health)
+    assert(ui.sizeFields[1].frame:IsShown() and ui.sizeFields[2].frame:IsShown()
+        and ui.sizeFields[1].caption.text == "W" and ui.sizeFields[2].caption.text == "H"
+        and tonumber(ui.sizeFields[1].edit.text) == nativeWidth
+        and tonumber(ui.sizeFields[2].edit.text) == nativeHeight
+        and ui.body.selectionBar.height == 24 and ui.body.selectionBar.openButton:IsShown(),
+        "health selection did not reveal width and height beside X/Y")
+    local selectionBar = ui.body.selectionBar
+    selectionBar:SetWidth(640)
+    selectionBar.scripts.OnSizeChanged()
+    assert(selectionBar.label.width == 108 and not selectionBar.openButton:IsShown()
+        and selectionBar.resetButton.lastPoint[2] == selectionBar,
+        "narrow selection bar did not make room for inline width and height")
+    selectionBar:SetWidth(785)
+    selectionBar.scripts.OnSizeChanged()
+    assert(selectionBar.label.width == 132 and selectionBar.openButton:IsShown()
+        and selectionBar.resetButton.lastPoint[2] == selectionBar.openButton,
+        "wide selection bar did not restore Open settings")
+    ui.sizeFields[1].plus.scripts.OnClick()
+    ui.sizeFields[2].edit:SetText(tostring(nativeHeight + 5))
+    ui.sizeFields[2].edit.scripts.OnEnterPressed(ui.sizeFields[2].edit)
+    assert(plates.enemyHealthWidthDelta == 1 and plates.enemyHealthHeightDelta == 5
+        and health.width == nativeWidth + 1 and health.height == nativeHeight + 5,
+        "selected health size controls did not change runtime settings and preview")
+    ui.body.selectionDeps.ResetOffsets(ui.body, health)
+    assert(plates.enemyHealthWidthDelta == 0 and plates.enemyHealthHeightDelta == 0,
+        "selected health reset did not restore its dimensions")
+    S.Set("nameplates", "friendlyNamesOnly", 4)
+    ui:Paint()
+    local friendlyHealth = Control("friendly.Health")
+    local friendlyNativeWidth, friendlyNativeHeight = friendlyHealth.width, friendlyHealth.height
+    ui:Select(friendlyHealth)
+    assert(ui.sizeFields[1].frame:IsShown() and ui.sizeFields[2].frame:IsShown()
+        and tonumber(ui.sizeFields[1].edit.text) == friendlyNativeWidth
+        and tonumber(ui.sizeFields[2].edit.text) == friendlyNativeHeight,
+        "friendly health selection did not expose its native dimensions")
+    ui.sizeFields[1].plus.scripts.OnClick()
+    assert(plates.friendlyHealthWidthDelta == 1 and friendlyHealth.width == friendlyNativeWidth + 1,
+        "friendly health width did not update its preview and runtime setting: "
+            .. tostring(plates.friendlyHealthWidthDelta) .. "/" .. tostring(friendlyHealth.width)
+            .. "/" .. tostring(friendlyNativeWidth) .. "/" .. tostring(friendlyHealth:IsShown()))
+    ui.body.selectionDeps.ResetOffsets(ui.body, friendlyHealth)
+    assert(plates.friendlyHealthWidthDelta == 0, "friendly health size reset failed")
+    S.Set("nameplates", "friendlyNamesOnly", 2)
+    ui:Select(name)
+    assert(ui.sizeFields[1].frame:IsShown() and not ui.sizeFields[2].frame:IsShown()
+        and ui.sizeFields[1].caption.text == "Font",
+        "name selection showed an unsupported independent width or height")
+    ui:Select(cast)
+    assert(not ui.sizeFields[1].frame:IsShown() and not ui.sizeFields[2].frame:IsShown(),
+        "native cast geometry was advertised as independently resizable")
+    ui:Select(Control("enemy.Auras"))
+    assert(ui.sizeFields[1].caption.text == "Size %" and not ui.sizeFields[2].frame:IsShown(),
+        "Blizzard aura scale did not appear as a single uniform size")
+    ui.sizeFields[1].plus.scripts.OnClick()
+    assert(plates.auraScaleMode == 2 and plates.auraScalePercent == 110,
+        "aura size control did not activate the shared Blizzard scale")
+    ui.body.selectionDeps.ResetOffsets(ui.body, Control("enemy.Auras"))
+    assert(plates.auraScalePercent == 100 and plates.auraScaleMode == 1,
+        "aura reset did not restore the Blizzard size mode")
+    ui:Select(nil)
     Control("plateKind").scripts.OnClick()
     local elite = Control("enemy.Classification")
     local ex, ey = 10, 20
@@ -527,6 +656,36 @@ end
     assert(S.Config("nameplates").enemyNameOffsetX == 21, "arrow key did not nudge selected name")
     ui.body.selectionDeps.ResetOffsets(ui.body, name)
     assert(S.Config("nameplates").enemyNameOffsetX == 0, "selected-element reset failed")
+    local previousSampleKind, previousPersonal = ui.sampleKind, ui.personal
+    ui.sampleKind, ui.personal = "enemy", false
+    ui:Paint()
+    local target, targetLayer = Control("enemy.target"), Control("layer.target")
+    assert(plates.enemyTargetMarker and target:IsShown()
+        and target._npSettingKey == "enemyTargetMarker",
+        "target arrows did not start from the saved nameplate setting")
+    targetLayer.scripts.OnClick(targetLayer, "LeftButton")
+    assert(plates.enemyTargetMarker == false and not target:IsShown()
+        and not ui:LayerActive("target"),
+        "target arrow preview toggle did not save the live setting")
+    local savedRoot = assert(Suite.Database.Prepare(Suite.CopyValue(Suite.RootDB), nil))
+    S.Normalize(savedRoot.profiles[savedRoot.activeProfile])
+    assert(savedRoot.profiles[savedRoot.activeProfile].suite.modules.nameplates.enemyTargetMarker == false,
+        "target arrow setting was lost while preparing a reload")
+    targetLayer.scripts.OnClick(targetLayer, "LeftButton")
+    assert(plates.enemyTargetMarker and target:IsShown() and ui:LayerActive("target"),
+        "re-enabled target arrows did not return in the preview")
+    target.scripts.OnMouseDown(target, "LeftButton")
+    cx = cx + 20
+    target.scripts.OnMouseUp(target, "LeftButton")
+    assert(plates.enemyTargetOffsetX == 20, "target arrow drag did not save its position")
+    savedRoot = assert(Suite.Database.Prepare(Suite.CopyValue(Suite.RootDB), nil))
+    S.Normalize(savedRoot.profiles[savedRoot.activeProfile])
+    assert(savedRoot.profiles[savedRoot.activeProfile].suite.modules.nameplates.enemyTargetOffsetX == 20,
+        "target arrow position was lost while preparing a reload")
+    ui.body.selectionDeps.ResetOffsets(ui.body, target)
+    assert(plates.enemyTargetOffsetX == 0, "target arrow reset did not restore its position")
+    ui.sampleKind, ui.personal = previousSampleKind, previousPersonal
+    ui:Paint()
     cast.scripts.OnMouseDown(cast, "LeftButton")
     cx = cx + 12
     cast.scripts.OnKeyDown(cast, "ESCAPE")
@@ -652,11 +811,15 @@ assert(hudSections.suite_hud_objectives_type and hudSections.suite_hud_announcem
     and not hudSections.suite_hud_objectives_quest_groups
     and not hudSections.suite_hud_announcements_event_colors,
     "HUD appearance was not condensed")
+assert(hudSections.suite_hud_objectives_raid == (flavor == "Mainline"),
+    "raid encounter accordion must exist only on Retail")
 local raidPause
 for _, widget in ipairs(contexts.suite_hud.widgets) do
+    if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.showRaid" then
+        hudSections.raidControl = widget
+    end
     if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.pauseInRaidCombat" then
         raidPause = widget
-        break
     end
 end
 assert(raidPause and raidPause.row and raidPause.row.kind == "toggle"
@@ -683,6 +846,10 @@ local plateSections = {}
 for _, section in ipairs(contexts.suite_nameplates.sections) do
     plateSections[section.sectionId] = section
 end
+assert((hudSections.raidControl ~= nil) == (flavor == "Mainline")
+    and (not hudSections.raidControl
+        or hudSections.raidControl.meta.sectionId == "suite_hud_objectives_raid"),
+    "raid encounter option must resolve to its own exact accordion")
 do
     local plateControls = {}
     for _, widget in ipairs(contexts.suite_nameplates.widgets) do
@@ -711,11 +878,11 @@ do
         "Blizzard elements tab did not switch")
     local elite = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Classification"])
     local raid = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.RaidIcon"])
-    assert(elite:IsShown() and not raid:IsShown(),
-        "Blizzard elements tab must display an unmarked elite sample")
+    assert(not elite:IsShown() and not raid:IsShown(),
+        "opening Blizzard elements changed the normal enemy sample")
     elite.previewUI:Paint()
-    assert(elite:IsShown() and elite.previewUI.previewRole == 4,
-        "the inactive friendly renderer erased the elite preview state")
+    assert(not elite:IsShown() and elite.previewUI.previewRole == nil,
+        "the inactive friendly renderer changed the normal enemy sample")
     tabs.segment:Choose("appearance")
     local eliteLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.classification"])
     local raidLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.raidIcon"])
@@ -741,6 +908,15 @@ do
         assert(page == "suite_nameplates")
         return true
     end
+    local healthLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.health"])
+    healthLayer.scripts.OnClick(healthLayer, "RightButton")
+    assert(exactSetting == "msufsuite.nameplates.enemyHealthWidthDelta",
+        "enemy health preview did not open its width control")
+    local levelLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.level"])
+    levelLayer.scripts.OnClick(levelLayer, "RightButton")
+    assert(exactSetting == "msufsuite.nameplates."
+        .. (flavor == "Forever" and "levelAppearance" or "enemyLevelEnabled"),
+        "level preview opened the wrong client-specific setting")
     local beforeDisplay = S.Config("nameplates").friendlyNamesOnly
     local displayButton = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.friendlyMode"])
     displayButton.scripts.OnClick(displayButton)
@@ -979,6 +1155,21 @@ assert(contexts.suite_minimap.sections[1].title == "Frame Basics"
     and contexts.suite_minimap.sections[1].headerSwitch,
     "minimap enable switch is not in the Frame Basics header")
 local dataPage = contexts.suite_dataTexts
+do
+    local original = Suite.Client.modernEquipment
+    for _, modern in ipairs({ false, true }) do
+        Suite.Client.modernEquipment = modern
+        local ctx = { key = "suite_buffReminders", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+        M.pages.suite_buffReminders.build(ctx)
+        local recommended = false
+        for _, section in ipairs(ctx.sections) do
+            if section.sectionId == "suite_buffReminders_recommended" then recommended = true end
+        end
+        assert(recommended == modern,
+            "Retail consumables section should appear only with modern equipment")
+    end
+    Suite.Client.modernEquipment = original
+end
 assert(dataPage.sections[1].title == "Frame Basics"
     and dataPage.sections[2].title == "Shared bar style"
     and dataPage.sections[3].title == "Shared text style",
@@ -1727,6 +1918,15 @@ stylePreset.set(9)
 assert(S.Config("minimap").stylePreset == 9
     and S.Config("minimap").borderColor == "575b58",
     "Midnight Dark minimap preset did not apply")
+assert(registeredControls["menu2.suite_minimap.minimap.style.preset.10"],
+    "Antique Map tile is missing from the minimap page")
+registeredControls["menu2.suite_minimap.minimap.style.preset.10"].scripts.OnClick()
+assert(S.Config("minimap").stylePreset == 10 and S.Config("minimap").styleTexture == 7
+    and S.Config("minimap").styleScale == 130 and S.Config("minimap").styleX == 0
+    and S.Config("minimap").borderSize == 0 and S.Config("minimap").shape == 1,
+    "Antique Map tile did not apply its complete style")
+assert(stylePreset.get() == 10, "Antique Map selection did not persist in the menu")
+stylePreset.set(2)
 local barsLook = Find(contexts.suite_actionbars, function(w)
     return w.meta and w.meta.settingKey == "msufsuite.actionbars.look"
 end)
@@ -2344,6 +2544,20 @@ end)()
     assert(optionsNS.StatusText(shown) == "Nach einem Fehler gestoppt", "the menu did not translate the status")
     rawset(L, "Stopped after an error", nil)
     state.error = error
+end)()
+
+;(function()
+    local button = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2.antiqueFooter"],
+        "Antique Footer action is missing from DataTexts bar 2")
+    local c = S.Config("dataTexts")
+    local untouchedWidth = c.bar1Width
+    button.scripts.OnClick()
+    assert(c.bar2Enabled and c.bar2StyleOverride and c.bar2BagBadge
+        and c.bar2BagsPercent and not c.bar2ClockLabel and c.bar2Width == 380
+        and c.bar2Height == 36 and c.bar2BagBadgeSize == 38
+        and c.bar2Slot1 == 3 and c.bar2Slot2 == 4 and c.bar2Slot3 == 5
+        and c.bar1Width == untouchedWidth,
+        "Antique Footer menu action changed the wrong bar or missed its settings")
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")
