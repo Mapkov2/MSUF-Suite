@@ -76,6 +76,7 @@ CreateFrame = function(_, name, parent)
 end
 local clock = 100
 GetTime = function() return clock end
+GetDifficultyInfo = function(id) return id == 16 and "Mythic" or "Normal" end
 GetZoneText = function() return "Dornogal" end
 GetSubZoneText = function() return "" end
 GetTasksTable = function() return {} end
@@ -257,7 +258,7 @@ local function Context()
 end
 -- The HUD files load in TOC order and share the runtime's private table.
 local private = { NS = suite, Suite = S }
-for _, file in ipairs({ "MythicPlus", "ObjectivesData", "ObjectivesTracker", "Objectives", "Announcements" }) do
+for _, file in ipairs({ "MythicPlus", "Raid", "ObjectivesData", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
@@ -802,6 +803,139 @@ tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
 assert(not tracker.pausedForRaidCombat and tracker.context.events.QUEST_LOG_UPDATE,
     "an off toggle must leave raid combat tracker updates enabled")
 combatLocked = false
+if flavor == "Mainline" then
+    local raidTicker
+    C_Timer.NewTicker = function(interval, callback)
+        assert(interval == 1, "raid clock must tick once per second")
+        raidTicker = { callback = callback }
+        function raidTicker:Cancel() self.cancelled = true end
+        function raidTicker:Fire() if not self.cancelled then self.callback() end end
+        return raidTicker
+    end
+    local activeBoss = "First Guardian"
+    UnitExists = function(unit) return unit == "boss1" and activeBoss == "First Guardian"
+        or unit == "boss2" and activeBoss == "Second Guardian" end
+    UnitName = function() return activeBoss end
+    UnitHealthPercent = function() return 70 end
+    local dbmStage, bigWigsStage, unboundDBM, unboundBigWigs
+    local initialDBMStage = true
+    DBM = {
+        GetStage = function() if initialDBMStage then return 1, 1, 800 end end,
+        RegisterCallback = function(_, event, callback)
+            assert(event == "DBM_SetStage")
+            dbmStage = callback
+        end,
+        UnregisterCallback = function(_, event, callback)
+            assert(event == "DBM_SetStage" and callback == dbmStage)
+            unboundDBM = true
+        end,
+    }
+    BigWigsLoader = {
+        RegisterMessage = function(_, event, callback)
+            assert(event == "BigWigs_SetStage")
+            bigWigsStage = callback
+        end,
+        UnregisterMessage = function(_, event)
+            assert(event == "BigWigs_SetStage")
+            unboundBigWigs = true
+        end,
+    }
+    moduleStates.objectives.raidRecords = {
+        ["900:16"] = {
+            best = { defeated = 0, remaining = .16, boss = "Zul'jan" },
+            bestPhases = { BigWigs = { stage = 1, step = 1, remaining = .16, boss = "Zul'jan" } },
+        },
+    }
+    tracker.config.showRaid = true
+    tracker.config.pauseInRaidCombat = true
+    tracker:Refresh()
+    assert(tracker.raidActive and tracker.title.text == "RAID"
+        and tracker.raid.name.text == "Waiting for raid encounter",
+        "raid option must provide its own objective HUD view")
+    assert(tracker.raid.records["900:16"].best.remaining == 16
+        and tracker.raid.records["900:16"].bestPhases.BigWigs.remaining == 16,
+        "stored fractional wipe health must migrate to display percent")
+    tracker:Refresh()
+    assert(tracker.raid.records["900:16"].best.remaining == 16,
+        "wipe health migration must run only once")
+    combatLocked = true
+    tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+    assert(not tracker.pausedForRaidCombat and tracker.raidActive,
+        "raid view must stay visible when objective pause is enabled")
+    clock = 200
+    tracker.context.events.ENCOUNTER_START(tracker, "ENCOUNTER_START", 800, "Twin Guardians", 16, 20)
+    assert(tracker.raid.pull and tracker.raid.name.text == "Twin Guardians"
+        and tracker.count.text == "Mythic"
+        and tracker.raid.current.text:find("First Guardian 70.0%%", 1, false)
+        and tracker.context.events.UNIT_HEALTH and raidTicker and dbmStage and bigWigsStage,
+        "raid pull must show its boss and subscribe to live health only while active")
+    assert(tracker.raid.phase.text == "PHASE  1  ·  DBM",
+        "raid view must recover a stage that DBM reported before ENCOUNTER_START")
+    dbmStage("DBM_SetStage", {}, "test-mod", 1, 800, 1)
+    dbmStage("DBM_SetStage", {}, "test-mod", 2, 800, 2)
+    assert(tracker.raid.phase.text == "PHASE  2  ·  DBM",
+        "same-boss stage transition must come from the encounter module")
+    clock = 211
+    raidTicker:Fire()
+    assert(tracker.raid.elapsed.text == "0:11", "raid clock did not advance")
+    UnitHealthPercent = function() return secret end
+    tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+    assert(not tracker.raid.live[1].percent,
+        "secret boss health must never be compared, formatted or stored")
+    clock = 220
+    tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0,
+        { { creatureName = "First Guardian", remainingHealthPercent = .16 } })
+    assert(raidTicker.cancelled and not tracker.context.events.UNIT_HEALTH
+        and tracker.raid.records["800:16"].best.remaining == 16
+        and tracker.raid.records["800:16"].bestPhases.DBM.stage == 2
+        and tracker.raid.current.text:find("16.0%", 1, true)
+        and tracker.raid.best.text:find("16.0%", 1, true),
+        "first wipe must display 0.16 encounter-end health as 16.0 percent")
+    initialDBMStage = false
+    activeBoss = "Second Guardian"
+    clock = 230
+    tracker.context.events.ENCOUNTER_START(tracker, "ENCOUNTER_START", 800, "Twin Guardians", 16, 20)
+    dbmStage("DBM_SetStage", {}, "test-mod", 3, 800, 3)
+    bigWigsStage("BigWigs_SetStage", { IsEncounterID = function(_, id) return id == 800 end }, 4)
+    tracker.context.events.INSTANCE_ENCOUNTER_ENGAGE_UNIT(tracker, "INSTANCE_ENCOUNTER_ENGAGE_UNIT")
+    assert(tracker.raid.current.text:find("Second Guardian", 1, true)
+        and tracker.raid.phase.text == "PHASE  3  ·  DBM",
+        "a later boss phase must replace the active boss row")
+    clock = 250
+    tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0,
+        { { creatureName = "First Guardian", remainingHealthPercent = 0 },
+          { creatureName = "Second Guardian", remainingHealthPercent = .75 } })
+    local best = tracker.raid.records["800:16"].best
+    assert(best.defeated == 1 and best.remaining == 75 and best.boss == "Second Guardian",
+        "a later phase must beat an earlier boss at 16 percent")
+    assert(tracker.raid.records["800:16"].bestPhases.DBM.stage == 3
+        and tracker.raid.best.text:find("PHASE 3", 1, true),
+        "a later phase of the same boss must beat an earlier phase at 16 percent")
+    clock = 251
+    tracker.context.events.ENCOUNTER_START(tracker, "ENCOUNTER_START", 800, "Twin Guardians", 16, 20)
+    bigWigsStage("BigWigs_SetStage", { IsEncounterID = function(_, id) return id == 800 end }, 4)
+    clock = 256
+    tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0,
+        { { creatureName = "First Guardian", remainingHealthPercent = .60 },
+          { creatureName = "Second Guardian", remainingHealthPercent = .50 } })
+    assert(tracker.raid.records["800:16"].bestPhases.BigWigs.stage == 4
+        and tracker.raid.records["800:16"].bestPhases.BigWigs.remaining == 50
+        and tracker.raid.records["800:16"].bestPhases.DBM.stage == 3,
+        "a phased-out boss must not replace the current boss percent in phase records")
+    clock = 260
+    tracker.context.events.ENCOUNTER_START(tracker, "ENCOUNTER_START", 800, "Twin Guardians", 16, 20)
+    clock = 285
+    tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 1, {})
+    assert(tracker.raid.records["800:16"].fastest == 25,
+        "successful encounter must save fastest kill time")
+    combatLocked = false
+    tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
+    tracker.config.showRaid = false
+    tracker:Refresh()
+    assert(not tracker.raidActive and not tracker.raid.frame.shown
+        and tracker.rows["entry:quests:43"].shown and unboundDBM and unboundBigWigs,
+        "disabling raid view must restore objectives without losing records")
+end
 tracker:Disable()
 Drain()
 tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")

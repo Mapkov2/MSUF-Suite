@@ -3,6 +3,7 @@ local NS, S = P.NS, P.Suite
 local O = P.Objectives
 local M, SOURCES, Read = O.M, O.SOURCES, O.Read
 local MythicPlus = S.MythicPlus
+local Raid = S.Raid
 local Finite = S.Finite
 
 -- The objective tracker's frame: rows, clicks and context menus, countdowns,
@@ -590,6 +591,21 @@ local function RenderMythicPlus(self, c)
     self.host:Show()
 end
 
+local function RenderRaid(self, c)
+    local themeChanged = self.retheme or not self.font
+    if themeChanged then
+        Theme(self)
+        Raid.Theme(self)
+        self.retheme = false
+    end
+    PlaceHost(self, c, themeChanged)
+    self.title:SetText("RAID")
+    self.count:SetText(self.raid.difficultyName or "")
+    self.content:SetHeight(self.raid.height)
+    self.host:SetHeight(math.min(c.height, self.headerHeight + self.raid.height + 5))
+    self.host:Show()
+end
+
 -- Groups the collected entries in display order and forgets collapse state
 -- of entries that are gone.
 local function GroupEntries(self)
@@ -754,6 +770,11 @@ end
 Render = function(self)
     if not self.active then return end
     local c = self.config
+    if self.raidActive and self.raid then
+        RenderRaid(self, c)
+        return
+    end
+    if self.raid then self.raid.frame:Hide() end
     if self.mplusActive and self.mplus then
         RenderMythicPlus(self, c)
         return

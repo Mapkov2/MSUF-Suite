@@ -20,6 +20,11 @@ if not NS.Client.isForever then
         B.Bool("showMythicPlus", "Replace objectives with the Mythic+ timer during a key", true))
 end
 B.Section("objectives", "content", "What to track", objectiveContent)
+if not NS.Client.isForever then
+    B.Section("objectives", "raid", "Raid encounters", {
+        B.Bool("showRaid", "Show raid encounters in the objective tracker", false),
+    })
+end
 B.Section("objectives", "layout", "Size and position", {
     B.Number("width", "Tracker width", 310, 220, 520, 5),
     B.Number("height", "Maximum tracker height", 570, 220, 900, 10),

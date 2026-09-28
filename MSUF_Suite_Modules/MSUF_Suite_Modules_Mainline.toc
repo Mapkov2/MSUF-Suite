@@ -13,6 +13,7 @@ Runtime.lua
 DataSources.lua
 EditMode.lua
 MythicPlus.lua
+Raid.lua
 ObjectivesData.lua
 ObjectivesTracker.lua
 Objectives.lua

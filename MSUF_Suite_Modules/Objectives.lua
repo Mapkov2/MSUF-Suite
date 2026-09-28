@@ -4,6 +4,7 @@ local O = P.Objectives
 local M, SOURCES = O.M, O.SOURCES
 local Create, Render, CollectDirty = O.Create, O.Render, O.CollectDirty
 local MythicPlus = S.MythicPlus
+local Raid = S.Raid
 local Public = S.Public
 local ID = "objectives"
 
@@ -13,7 +14,7 @@ local ID = "objectives"
 ------------------------------------------------------------------ refresh flow
 local function Flush(self)
     self.scheduled = false
-    if not self.active or self.pausedForRaidCombat or self.mplusActive then return end
+    if not self.active or self.pausedForRaidCombat or self.mplusActive or self.raidActive then return end
     CollectDirty(self)
     Render(self)
 end
@@ -28,7 +29,7 @@ local function FlushScheduled()
 end
 
 local function Request(self, key)
-    if self.pausedForRaidCombat then return end
+    if self.pausedForRaidCombat or self.raidActive then return end
     self.dirty[key] = true
     if self.scheduled then return end
     self.scheduled = true
@@ -56,6 +57,30 @@ local function StopMythicPlus(self)
     MythicPlus.Stop(self)
     self.previousFlat = nil
     MarkAllDirty(self)
+    return true
+end
+
+local function StopRaid(self)
+    if not self.raidActive then return false end
+    Raid.Stop(self)
+    self.previousFlat = nil
+    MarkAllDirty(self)
+    return true
+end
+
+local function ShowRaid(self)
+    if not Raid or not Raid.Detect(self) then return false end
+    if self.raidActive then return true end
+    for _, row in pairs(self.rows) do
+        row:Hide()
+        row.timerEnd = nil
+        if row.timer then row.timer:Hide() end
+    end
+    CancelPending(self)
+    self.timedRows, self.previousFlat = nil, nil
+    Raid.Show(self)
+    self.scroll:SetVerticalScroll(0)
+    Render(self)
     return true
 end
 
@@ -108,7 +133,20 @@ local function MythicPlusEvent(self, event)
 end
 
 local UpdateRaidCombatPause
-local function Event(self, event)
+local function Event(self, event, ...)
+    if event == "ENCOUNTER_START" then
+        local encounterID, encounterName, difficultyID = ...
+        if ShowRaid(self) and Raid.Start(self, encounterID, encounterName, difficultyID) then
+            Render(self)
+        end
+        return
+    elseif event == "ENCOUNTER_END" then
+        if self.raidActive then
+            Raid.End(self, ...)
+            Render(self)
+        end
+        return
+    end
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         if UpdateRaidCombatPause(self) then return end
     elseif self.pausedForRaidCombat then
@@ -125,7 +163,10 @@ local function Event(self, event)
         return
     elseif event == "CHALLENGE_MODE_START" or event == "WORLD_STATE_TIMER_START" or event == "WORLD_STATE_TIMER_STOP" then
         local mapID = MythicPlus and MythicPlus.Detect(self)
-        if mapID then StartMythicPlus(self, mapID) end
+        if mapID then
+            StopRaid(self)
+            StartMythicPlus(self, mapID)
+        end
         if self.mplusActive then MythicPlus.Tick(self) end
         return
     end
@@ -134,12 +175,20 @@ local function Event(self, event)
         self:SuppressNative()
         local mapID = MythicPlus and MythicPlus.Detect(self)
         if mapID then
+            StopRaid(self)
             StartMythicPlus(self, mapID)
-        elseif StopMythicPlus(self) then
-            Flush(self)
-            return
+        elseif Raid and Raid.Detect(self) then
+            StopMythicPlus(self)
+            ShowRaid(self)
+        else
+            local stoppedKey, stoppedRaid = StopMythicPlus(self), StopRaid(self)
+            if stoppedKey or stoppedRaid then
+                Flush(self)
+                return
+            end
         end
     end
+    if self.raidActive then return end
     if self.mplusActive then
         MythicPlusEvent(self, event)
         return
@@ -195,6 +244,7 @@ local MYTHIC_PLUS_EVENTS = {
 
 local function RaidCombatPauseWanted(self)
     if not self.config.pauseInRaidCombat or not NS.IsCombatLocked() then return false end
+    if Raid and Raid.Detect(self) then return false end
     local inside, kind = IsInInstance()
     return Public(inside) and Public(kind) and inside == true and kind == "raid"
 end
@@ -227,12 +277,14 @@ UpdateRaidCombatPause = function(self)
     MarkAllDirty(self)
     if wanted then
         if self.mplusActive then MythicPlus.Stop(self) end
+        if self.raidActive then Raid.Stop(self) end
         self.host:Hide()
     else
         self.retheme = true
         self.contentSignature = ContentSignature(self.config)
         local mapID = MythicPlus and MythicPlus.Detect(self)
-        if mapID then StartMythicPlus(self, mapID) else Flush(self) end
+        if mapID then StartMythicPlus(self, mapID)
+        elseif not ShowRaid(self) then Flush(self) end
     end
     return true
 end
@@ -244,6 +296,7 @@ end
 
 local function NativeAddonLoaded(module, _, name)
     if name == "Blizzard_ObjectiveTracker" then module:SuppressNative() end
+    if Raid and module.raidActive then Raid.Bind(module) end
 end
 
 function M:Enable()
@@ -256,6 +309,10 @@ function M:Enable()
     self.context:Event("ZONE_CHANGED_NEW_AREA", Event, true)
     self.context:Event("PLAYER_REGEN_DISABLED", RaidCombatEvent, true)
     self.context:Event("PLAYER_REGEN_ENABLED", RaidCombatEvent, true)
+    if Raid then
+        self.context:Event("ENCOUNTER_START", Event, true)
+        self.context:Event("ENCOUNTER_END", Event, true)
+    end
     SetWorkEvents(self, true)
     self.context:Event("ADDON_LOADED", NativeAddonLoaded, true)
     self:SuppressNative()
@@ -266,7 +323,8 @@ function M:Enable()
         return
     end
     local mapID = MythicPlus and MythicPlus.Detect(self)
-    if mapID then StartMythicPlus(self, mapID) else Flush(self) end
+    if mapID then StartMythicPlus(self, mapID)
+    elseif not ShowRaid(self) then Flush(self) end
     self:RegisterMovers()
 end
 
@@ -275,7 +333,19 @@ function M:Refresh()
     if UpdateRaidCombatPause(self) then return end
     local c = self.config
     local mapID = MythicPlus and MythicPlus.Detect(self)
-    if mapID then StartMythicPlus(self, mapID) end
+    if mapID then
+        StopRaid(self)
+        StartMythicPlus(self, mapID)
+    end
+    local raidWanted = not mapID and Raid and Raid.Detect(self)
+    if raidWanted then
+        StopMythicPlus(self)
+        ShowRaid(self)
+        Render(self)
+        self:SuppressNative()
+        return
+    end
+    local stoppedRaid = StopRaid(self)
     local stoppedMythicPlus = false
     if self.mplusActive and not mapID and (not self.mplus.completed or not c.showMythicPlus) then
         stoppedMythicPlus = StopMythicPlus(self)
@@ -287,7 +357,7 @@ function M:Refresh()
     end
     LoadCollapseState(self)
     local signature = ContentSignature(c)
-    if self.contentSignature ~= signature or stoppedMythicPlus then
+    if self.contentSignature ~= signature or stoppedMythicPlus or stoppedRaid then
         self.contentSignature = signature
         MarkAllDirty(self)
         Flush(self)
@@ -299,6 +369,7 @@ end
 
 function M:Disable()
     if MythicPlus then MythicPlus.Stop(self) end
+    if Raid then Raid.Stop(self) end
     CancelPending(self)
     self.pausedForRaidCombat = false
     if self.host then self.host:Hide() end

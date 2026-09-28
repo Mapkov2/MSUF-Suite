@@ -37,9 +37,16 @@ local function Build(ctx)
     }, { title = "Objective Tracker" })
     P.RuleSection(ctx, b, PAGE, "objectives", "suite_hud_objectives_content",
         Tr("What to track"), P.SectionRules("objectives", "content"), {
-            help = "A Suite-owned tracker with grouped quests, world quests, scenario steps and tracked achievements. The raid combat option hides this tracker and suspends its updates until combat ends. Click a group heading or the small button on an entry to collapse it. Quest titles open their quest log page; right-click opens its actions. The Blizzard tracker is hidden while this module is active.",
+            help = "A Suite-owned tracker with grouped quests, world quests, scenario steps and tracked achievements. The raid combat option pauses ordinary objectives; the optional raid encounter view stays active during boss pulls. Click a group heading or the small button on an entry to collapse it. Quest titles open their quest log page; right-click opens its actions. The Blizzard tracker is hidden while this module is active.",
             open = true,
         })
+    local raidRules = P.SectionRules("objectives", "raid")
+    if raidRules and #raidRules > 0 then
+        P.RuleSection(ctx, b, PAGE, "objectives", "suite_hud_objectives_raid",
+            Tr("Raid encounters"), raidRules, {
+                help = "During a raid encounter, show the boss name, pull time, active boss units, best wipe progress and fastest kill. DBM or BigWigs can supply phases of the same boss; without them, the phase stays unknown. Multi-boss progress counts defeated bosses before comparing the remaining health of surviving bosses. Records begin with pulls observed by this Suite profile. Boss health appears live only when the client exposes a readable value. This view uses the Objective Tracker position and replaces ordinary objectives while inside a raid.",
+            })
+    end
     P.RuleSection(ctx, b, PAGE, "objectives", "suite_hud_objectives_layout",
         Tr("Size and position"), P.SectionRules("objectives", "layout"), {
             help = "Drag the tracker in MSUF Edit Mode, or enter exact size and position here.",
