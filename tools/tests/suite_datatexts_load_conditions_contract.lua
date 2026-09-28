@@ -34,6 +34,7 @@ local function Load(file)
     chunk("MSUF_Suite_DataTexts", W.private)
 end
 Load("Bootstrap")
+Load("Appearance")
 Load("DataTexts")
 H.Enable(W, { infoFPS = false, infoClock = false, infoLocation = false })
 assert(S.Set("dataTexts", "enabled", true))

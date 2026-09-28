@@ -2,6 +2,7 @@ local _, P = ...
 local S, M, T, Tr = P.S, P.M, P.T, P.Tr
 local PAGE, ID = "suite_dataTexts", "dataTexts"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
+local BAG_BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.tga"
 local DEFAULT_FONT = P.Suite.MSUFMedia.font
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
@@ -24,9 +25,17 @@ end
 ------------------------------------------------------------------ preview
 local function PaintPreview(view, style)
     local fill, edges = view.fill, view.edges
+    local fade = style.backgroundEnabled and style.backgroundGradient
     fill:SetTexture(ResolveMedia("texture", style.backgroundTexture) or WHITE)
     Color(fill, style.backgroundColor, style.backgroundOpacity / 100)
-    fill:SetShown(style.backgroundEnabled)
+    fill:SetShown(style.backgroundEnabled and not fade)
+    view.gradient:SetShown(fade == true)
+    if fade then
+        local r, g, b = P.RGB(style.backgroundColor)
+        local fr, fg, fb = P.RGB(style.backgroundFadeColor)
+        local alpha = style.backgroundOpacity / 100
+        view.gradient:SetGradient("VERTICAL", CreateColor(fr, fg, fb, alpha), CreateColor(r, g, b, alpha))
+    end
     for i = 1, 4 do
         local edge = edges[i]
         Color(edge, style.borderColor, .85)
@@ -35,35 +44,62 @@ local function PaintPreview(view, style)
     end
     Color(view.accent, style.accentColor, .9)
     view.accent:SetShown(style.accentEnabled)
-    Color(view.divider, style.separatorColor, .8)
-    view.divider:SetSize(style.separatorSize, math.max(6, 32 - 2 * style.padding))
-    view.divider:SetShown(style.separatorEnabled)
+    view.accent:ClearAllPoints()
+    local contentX = style.bagBadge and 64 or 0
+    if style.accentPosition == 2 then
+        view.accent:SetPoint("TOPLEFT", view.sample, "TOPLEFT", contentX, 0)
+        view.accent:SetPoint("TOPRIGHT", view.sample, "TOPRIGHT", 0, 0)
+    else
+        view.accent:SetPoint("BOTTOMLEFT", view.sample, "BOTTOMLEFT")
+        view.accent:SetPoint("BOTTOMRIGHT", view.sample, "BOTTOMRIGHT")
+    end
+    view.badge:SetShown(style.bagBadge == true)
     local font = ResolveMedia("font", style.font) or DEFAULT_FONT
     local flags = OUTLINES[style.textOutline] or "OUTLINE"
     local align = ALIGN[style.textAlign] or "CENTER"
-    local half = math.floor(view.width / 2)
+    local count = style.bagBadge and 3 or 2
+    local slotWidth = (view.width - contentX) / count
+    for i, divider in ipairs(view.dividers) do
+        Color(divider, style.separatorColor, .8)
+        divider:SetSize(style.separatorSize, math.max(6, 60 - 2 * style.padding))
+        divider:ClearAllPoints()
+        divider:SetPoint("CENTER", view.sample, "LEFT", contentX + slotWidth * i, 0)
+        divider:SetShown(style.separatorEnabled and i < count)
+    end
     for i, label in ipairs(view.labels) do
+        label:SetShown(i <= count)
         label:ClearAllPoints()
-        label:SetPoint("LEFT", view.sample, "LEFT", (i - 1) * half + style.padding + (i == 2 and style.gap / 2 or 0), 0)
-        label:SetWidth(half - 2 * style.padding - style.gap / 2)
+        label:SetPoint("LEFT", view.sample, "LEFT", contentX + (i - 1) * slotWidth + style.padding, 0)
+        label:SetWidth(slotWidth - 2 * style.padding)
         label:SetJustifyH(align)
         P.StylePreviewFont(label, font, style.fontSize, flags, style.fontRendering,
             style.fontShadow, style.fontShadowOpacity, style.fontShadowDistance)
-        local name, value = i == 1 and Tr("Gold") or "FPS", i == 1 and "124g" or "75"
-        label:SetText((style.showLabels and ("|cff" .. style.labelColor .. name .. ": |r") or "")
+        local name, value
+        if style.bagBadge then
+            name, value = ({ Tr("Bags"), Tr("Durability"), Tr("Time") })[i],
+                ({ "48%", "100%", "11:39" })[i]
+        else
+            name, value = i == 1 and Tr("Gold") or "FPS", i == 1 and "124g" or "75"
+        end
+        local hasLabel = style.showLabels and not (style.bagBadge and i == 3 and not style.clockLabel)
+        local separator = style.labelColon and ": " or " "
+        label:SetText((hasLabel and ("|cff" .. style.labelColor .. name .. separator .. "|r") or "")
             .. "|cff" .. style.valueColor .. value .. "|r")
     end
 end
 
 -- A sample bar (shared style, or `bar`'s own) with two example texts.
 local function Preview(ctx, body, y, width, bar)
-    local view = { width = math.min(width, 520), edges = {}, labels = {} }
+    local view = { width = math.min(width, 520), edges = {}, labels = {}, dividers = {} }
     local sample = CreateFrame("Frame", nil, body)
     sample:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
-    sample:SetSize(view.width, 32)
+    sample:SetSize(view.width, 60)
     view.sample = sample
     view.fill = sample:CreateTexture(nil, "BACKGROUND")
     view.fill:SetAllPoints(sample)
+    view.gradient = sample:CreateTexture(nil, "BACKGROUND")
+    view.gradient:SetTexture(WHITE)
+    view.gradient:SetAllPoints(sample)
     for i = 1, 4 do
         local edge = sample:CreateTexture(nil, "BORDER")
         edge:SetTexture(WHITE)
@@ -76,10 +112,16 @@ local function Preview(ctx, body, y, width, bar)
     view.accent:SetPoint("BOTTOMLEFT")
     view.accent:SetPoint("BOTTOMRIGHT")
     view.accent:SetHeight(1)
-    view.divider = sample:CreateTexture(nil, "ARTWORK")
-    view.divider:SetTexture(WHITE)
-    view.divider:SetPoint("CENTER")
     for i = 1, 2 do
+        local divider = sample:CreateTexture(nil, "ARTWORK")
+        divider:SetTexture(WHITE)
+        view.dividers[i] = divider
+    end
+    view.badge = sample:CreateTexture(nil, "OVERLAY")
+    view.badge:SetTexture(BAG_BADGE)
+    view.badge:SetPoint("LEFT", sample, "LEFT", 3, 0)
+    view.badge:SetSize(56, 56)
+    for i = 1, 3 do
         local label = sample:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         label:SetWordWrap(false)
         view.labels[i] = label
@@ -87,7 +129,7 @@ local function Preview(ctx, body, y, width, bar)
     M.TrackRefresh(ctx, function()
         PaintPreview(view, P.Suite.DataTextEffectiveStyle(S.Config(ID), bar or 1))
     end)
-    return y - 44
+    return y - 72
 end
 
 ------------------------------------------------------------------ bars
@@ -175,7 +217,11 @@ local function BuildBarActions(ctx, body, bar, sectionId, y, width)
         function() P.Set(ID, prefix .. "Enabled", false) end,
         function() return P.Get(ID, prefix .. "Enabled") end,
         P.Meta(PAGE, ID, prefix .. ".hide", "action", sectionId))
-    return y - 43
+    P.Button(ctx, body, "Antique Footer preset", 16, y - 43, width,
+        function() P.SetMany(ID, P.Suite.DataTextAntiqueFooterValues(bar, S.Config(ID))) end,
+        function() return S.Availability(ID) and not P.Combat() end,
+        P.Meta(PAGE, ID, prefix .. ".antiqueFooter", "action", sectionId))
+    return y - 86
 end
 
 -- Switching a bar to its own style starts from the current shared settings.
@@ -222,7 +268,7 @@ local function BarSection(ctx, b, bar)
         P.W.SetControlEnabled(toggle, not P.Combat())
     end)
     local y = -18
-    local help = P.Text(body, "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear.",
+    local help = P.Text(body, "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear. The Antique Footer preset creates a bag, durability and clock strip on this bar only.",
         16, y, width)
     y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 10
     y = BuildPlaces(ctx, body, bar, sectionId, y, width)

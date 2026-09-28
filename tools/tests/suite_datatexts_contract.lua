@@ -68,6 +68,7 @@ S.MoneyText = function(amount)
     return sharedMoneyText(amount)
 end
 Load("Bootstrap")
+Load("Appearance")
 Load("DataTexts")
 local M = assert(S.instances.dataTexts)
 assert(not M.bars[1] and W.Pending() == 0, "dormant DataTexts allocated a visible bar or timer")
@@ -394,6 +395,77 @@ assert(M.bars[1].slots[1].text == "Date: 26-09-2026"
     and W.Pending() == 1, "date, combined FPS/latency or class-color DataText failed")
 assert(S.Set("dataTexts", "enabled", false) and W.Pending() == 0,
     "new sampled sources remained active after disable")
+-- The optional antique strip owns its style and values without changing the
+-- other bars. Its toggles repaint in the current session on both clients.
+do
+    local c = S.Config("dataTexts")
+    local bar1Width = c.bar1Width
+    assert(S.SetMany("dataTexts", W.Suite.DataTextAntiqueFooterValues(2, c)))
+    local ornate = M.bars[2]
+    assert(c.bar1Width == bar1Width and c.bar2StyleOverride and c.bar2Width == 380
+        and c.bar2Height == 36 and c.bar2FontSize == 11 and c.bar2BagBadgeSize == 38
+        and c.bar2Slot1 == 3 and c.bar2Slot2 == 4 and c.bar2Slot3 == 5
+        and ornate.frame:IsShown() and ornate.badge:IsShown() and ornate.gradient:IsShown()
+        and not ornate.background:IsShown(), "antique footer did not apply to bar 2 alone")
+    assert(ornate.slots[1].text == "Bags 60%" and ornate.slots[2].text == "Durability 80%"
+        and ornate.slots[3].text == "14:03",
+        "antique footer labels, used-bag percent or clock did not render")
+    assert(ornate.slots[1].points[1][4] == 46 and ornate.accent.points[1][1] == "TOPLEFT"
+        and ornate.dividers[1]:IsShown() and ornate.dividers[2]:IsShown(),
+        "antique footer badge spacing, top line or separators did not render")
+    local opens = 0
+    G.OpenAllBags = function() opens = opens + 1 end
+    W.Fire(ornate.badge, "OnClick", "LeftButton")
+    assert(opens == 1 and ornate.badge.text == "Bags 60%",
+        "antique footer badge did not open bags or show the current usage")
+    assert(S.Set("dataTexts", "bar2Slot1", 1))
+    assert(M.activeSources.bags and ornate.badge.text == "Bags 60%",
+        "bag badge stopped updating after its text slot was removed")
+    assert(S.Set("dataTexts", "bar2Slot1", 3))
+    assert(S.Set("dataTexts", "bar2BagsPercent", false))
+    assert(ornate.slots[1].text == "Bags 40/100", "bag percent toggle did not repaint")
+    assert(S.Set("dataTexts", "bar2BagsPercent", true))
+    assert(ornate.slots[1].text == "Bags 60%", "bag percent toggle did not restore")
+    assert(S.Set("dataTexts", "bar2LabelColon", true))
+    assert(ornate.slots[1].text == "Bags: 60%" and ornate.slots[2].text == "Durability: 80%",
+        "label punctuation toggle did not repaint")
+    assert(S.Set("dataTexts", "bar2LabelColon", false))
+    assert(ornate.slots[1].text == "Bags 60%", "label punctuation toggle did not restore")
+    assert(S.Set("dataTexts", "bar2ClockLabel", true))
+    assert(ornate.slots[3].text == "Time 14:03", "clock label toggle did not repaint")
+    assert(S.Set("dataTexts", "bar2ClockLabel", false))
+    assert(ornate.slots[3].text == "14:03", "clock label toggle did not restore")
+    assert(S.Set("dataTexts", "bar2BagBadge", false))
+    assert(not ornate.badge:IsShown() and ornate.slots[1].points[1][4] == 0,
+        "bag medallion toggle did not release its layout space")
+    assert(S.Set("dataTexts", "bar2BagBadge", true))
+    assert(ornate.badge:IsShown() and ornate.slots[1].points[1][4] == 46,
+        "bag medallion toggle did not restore its layout space")
+    assert(S.Set("dataTexts", "bar2BagBadgeSize", 80))
+    assert(ornate.badge.width == 80 and ornate.slots[1].points[1][4] == 88,
+        "bag medallion size did not resize the icon and its content inset")
+    assert(S.Set("dataTexts", "bar2BagBadgeSize", 38))
+    assert(S.Set("dataTexts", "bar2BackgroundGradient", false))
+    assert(not ornate.gradient:IsShown() and ornate.background:IsShown(),
+        "background fade toggle did not reveal the plain background")
+    assert(S.Set("dataTexts", "bar2BackgroundGradient", true))
+    assert(ornate.gradient:IsShown() and not ornate.background:IsShown(),
+        "background fade toggle did not restore the gradient")
+    assert(S.Set("dataTexts", "bar2BackgroundFadeColor", "224466"))
+    assert(ornate.gradient.gradient[2][1] == 0x22 / 255,
+        "background fade color did not repaint")
+    assert(S.Set("dataTexts", "bar2SeparatorEnabled", false))
+    assert(not ornate.dividers[1]:IsShown() and not ornate.dividers[2]:IsShown(),
+        "separator toggle did not hide the dividers")
+    assert(S.Set("dataTexts", "bar2SeparatorEnabled", true))
+    assert(ornate.dividers[1]:IsShown() and ornate.dividers[2]:IsShown(),
+        "separator toggle did not restore the dividers")
+    assert(S.Set("dataTexts", "bar2AccentPosition", 1))
+    assert(ornate.accent.points[1][1] == "BOTTOMLEFT", "accent position toggle did not repaint")
+    assert(S.Set("dataTexts", "bar2AccentPosition", 2))
+    assert(ornate.accent.points[1][1] == "TOPLEFT", "accent position toggle did not restore")
+    assert(S.Set("dataTexts", "bar2Enabled", false))
+end
 -- Retail and WoW Forever always have the APIs DataTexts calls. The one
 -- client-specific hook target (Forever's MainActionBar_InitializeMKB) is a
 -- plain existence check, not a type guard.

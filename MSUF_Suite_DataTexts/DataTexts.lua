@@ -1,9 +1,11 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local Appearance = assert(P.Appearance)
 local M = { bars = {}, due = {}, values = {}, events = {} }
 local ID = "dataTexts"
 local BAR_COUNT, SLOT_COUNT = 3, 6
 local FONT = NS.MSUFMedia.font
+local BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.tga"
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local SOURCES = {
@@ -169,7 +171,10 @@ local FORMATTERS = {
         end
     end,
     bags = function(free, total)
-        if Finite(free) and Finite(total) then return free .. "/" .. total end
+        if Finite(free) and Finite(total) then
+            return free .. "/" .. total, nil,
+                total > 0 and floor((total - free) / total * 100 + .5) .. "%" or NO_VALUE
+        end
     end,
     durability = function(lowest)
         if Finite(lowest) then return floor(lowest * 100 + .5) .. "%", lowest <= .2 and "bad" or nil end
@@ -208,8 +213,8 @@ local function Format(key)
         end
         return LABELS[key], NO_VALUE
     end
-    local value, severity = FORMATTERS[key](S.ReadInfoSource(READER[key] or key))
-    return LABELS[key], value or NO_VALUE, severity
+    local value, severity, alternate = FORMATTERS[key](S.ReadInfoSource(READER[key] or key))
+    return LABELS[key], value or NO_VALUE, severity, alternate
 end
 
 local function Tooltip(button)
@@ -317,6 +322,9 @@ local function CreateBar(index)
     visual:SetAllPoints(frame)
     local background = S.CreateTexture(visual, nil, "BACKGROUND")
     background:SetAllPoints(visual)
+    local gradient = S.CreateTexture(visual, nil, "BACKGROUND")
+    gradient:SetAllPoints(visual)
+    gradient:SetTexture("Interface\\Buttons\\WHITE8X8")
     local top = CreateEdge(visual, "BORDER", "TOPLEFT", "TOPRIGHT")
     top:SetHeight(1)
     local bottom = CreateEdge(visual, "BORDER", "BOTTOMLEFT", "BOTTOMRIGHT")
@@ -330,7 +338,8 @@ local function CreateBar(index)
     local keys = BAR_KEYS[index]
     local prefix = keys.prefix
     local bar = {
-        frame = frame, visual = visual, background = background, border = { top, bottom, left, right },
+        frame = frame, visual = visual, background = background, gradient = gradient,
+        border = { top, bottom, left, right },
         accent = accent, dividers = {}, slots = {}, index = index, prefix = prefix,
         enabledKey = keys.enabled, visibilityKey = keys.visibility, layoutKey = prefix .. "Layout",
         widthKey = prefix .. "Width", heightKey = prefix .. "Height",
@@ -338,6 +347,16 @@ local function CreateBar(index)
     }
     frame.bar = bar
     M.bars[index] = bar
+    local badge = S.CreateFrame("Button", nil, visual)
+    badge.bar, badge.source, badge.sourceIndex, badge.text = bar, "bags", 3, LABELS.bags
+    badge:RegisterForClicks("LeftButtonUp")
+    badge:SetScript("OnClick", Click)
+    badge:SetScript("OnEnter", SlotEnter)
+    badge:SetScript("OnLeave", SlotLeave)
+    local badgeArt = S.CreateTexture(badge, nil, "OVERLAY")
+    badgeArt:SetAllPoints(badge)
+    badgeArt:SetTexture(BADGE)
+    bar.badge = badge
     for slot = 1, SLOT_COUNT do bar.slots[slot] = CreateSlot(bar) end
     frame:SetScript("OnEnter", BarEnter)
     frame:SetScript("OnLeave", BarLeave)
@@ -353,38 +372,13 @@ local function Visible(bar)
     return bar.frame:GetAlpha() > 0
 end
 
-local function ApplyStyle(bar)
-    local style = bar.style
-    local background = bar.background
-    background:SetShown(style.backgroundEnabled == true)
-    if style.backgroundEnabled then
-        local path = style.backgroundTexture ~= "" and S.ResolveTexture(style.backgroundTexture)
-        if path then
-            background:SetTexture(path)
-            local r, g, b = S.RGB(style.backgroundColor)
-            background:SetVertexColor(r, g, b, style.backgroundOpacity / 100)
-        else
-            ApplyColor(background, style.backgroundColor, style.backgroundOpacity / 100)
-        end
-    end
-    for i = 1, 4 do
-        local edge = bar.border[i]
-        edge:SetShown(style.borderEnabled == true)
-        if style.borderEnabled then
-            ApplyColor(edge, style.borderColor, .85)
-            if i <= 2 then edge:SetHeight(style.borderSize) else edge:SetWidth(style.borderSize) end
-        end
-    end
-    bar.accent:SetShown(style.accentEnabled == true)
-    if style.accentEnabled then ApplyColor(bar.accent, style.accentColor, .9) end
-    for _, divider in pairs(bar.dividers) do ApplyColor(divider, style.separatorColor, .8) end
-end
-
-local function Display(label, value, severity, style)
+local function Display(label, value, severity, style, key, alternate)
+    if key == "bags" and style.bagsPercent then value = alternate or NO_VALUE end
     local valueColor = severity == "bad" and style.warningColor or style.valueColor
-    if style.showLabels then
-        return label .. ": " .. value,
-            "|cff" .. style.labelColor .. label .. ": |r|cff" .. valueColor .. value .. "|r"
+    if style.showLabels and (key ~= "clock" or style.clockLabel) then
+        local separator = style.labelColon and ": " or " "
+        return label .. separator .. value,
+            "|cff" .. style.labelColor .. label .. separator .. "|r|cff" .. valueColor .. value .. "|r"
     end
     return value, "|cff" .. valueColor .. value .. "|r"
 end
@@ -394,10 +388,11 @@ end
 local function SlotWidths(bar, count)
     local c, style, widths = M.config, bar.style, layoutWidths
     local configuredWidth = c[bar.widthKey]
+    local inset = style.bagBadge and style.bagBadgeSize + 8 or 0
     local gaps = (count - 1) * style.gap
     if c[bar.layoutKey] ~= 2 then
         if bar.frame:GetWidth() ~= configuredWidth then bar.frame:SetWidth(configuredWidth) end
-        for i = 1, count do widths[i] = (configuredWidth - gaps) / count end
+        for i = 1, count do widths[i] = (configuredWidth - inset - gaps) / count end
         return
     end
     local total = 0
@@ -406,9 +401,9 @@ local function SlotWidths(bar, count)
         widths[i] = math.max(44, math.ceil(layoutSlots[i].label:GetUnboundedStringWidth()) + 2 * style.padding)
         total = total + widths[i]
     end
-    local needed = math.min(900, math.max(configuredWidth, total + gaps))
+    local needed = math.min(900, math.max(configuredWidth, total + gaps + inset))
     if bar.frame:GetWidth() ~= needed then bar.frame:SetWidth(needed) end
-    local ratio = (needed - gaps) / total
+    local ratio = (needed - inset - gaps) / total
     for i = 1, count do widths[i] = widths[i] * ratio end
 end
 
@@ -441,7 +436,7 @@ local function Layout(bar)
     if count == 0 then return end
     SlotWidths(bar, count)
     local height = M.config[bar.heightKey]
-    local x = 0
+    local x = style.bagBadge and style.bagBadgeSize + 8 or 0
     for i = 1, count do
         local button, width = slots[i], widths[i]
         button:ClearAllPoints()
@@ -463,24 +458,27 @@ end
 -- shows whatever it displayed before it was hidden.
 function M:UpdateSource(key, force)
     if not self.activeSources or not self.activeSources[key] then return end
-    local label, value, severity = Format(key)
+    local label, value, severity, alternate = Format(key)
     local record = self.values[key]
     if record and not force and record.label == label and record.value == value
-        and record.severity == severity then
+        and record.severity == severity and record.alternate == alternate then
         return
     end
     if not record then
         record = {}
         self.values[key] = record
     end
-    record.label, record.value, record.severity = label, value, severity
+    record.label, record.value, record.severity, record.alternate = label, value, severity, alternate
     for _, bar in pairs(self.bars) do
         if Visible(bar) then
             local relayout = false
+            if key == "bags" and bar.badge:IsShown() then
+                bar.badge.text = Display(label, value, severity, bar.style, key, alternate)
+            end
             for i = 1, SLOT_COUNT do
                 local button = bar.slots[i]
                 if button.source == key then
-                    local text, display = Display(label, value, severity, bar.style)
+                    local text, display = Display(label, value, severity, bar.style, key, alternate)
                     if button.display ~= display then
                         button.label:SetText(display)
                         button.text, button.display = text, display
@@ -644,6 +642,7 @@ function M:Rebind()
     Clear(active)
     for _, bar in pairs(self.bars) do
         if Visible(bar) then
+            if bar.badge:IsShown() then active.bags = true end
             for i = 1, SLOT_COUNT do
                 local key = bar.slots[i].source
                 if key then active[key] = true end
@@ -776,7 +775,7 @@ local function RefreshBar(index)
             end
         end
     end
-    ApplyStyle(bar)
+    Appearance.Paint(bar)
     local style = bar.style
     local font = S.ResolveFont(style.font) or FONT
     for slot = 1, SLOT_COUNT do

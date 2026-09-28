@@ -68,13 +68,18 @@ local barStyle = {
     Bool("backgroundEnabled", "Show background", true),
     Texture("backgroundTexture", "Background texture"),
     Number("backgroundOpacity", "Background opacity (percent)", NS.Client.isForever and 94 or 82, 0, 100, 5),
+    Bool("backgroundGradient", "Fade background vertically", false),
+    Color("backgroundFadeColor", "Background fade color", "10283a"),
     Bool("borderEnabled", "Show outline", true),
     Number("borderSize", "Outline thickness", 1, 1, 4),
     Bool("accentEnabled", "Show accent line", true),
+    Choice("accentPosition", "Accent position", 1, { "Bottom", "Top" }),
     Bool("separatorEnabled", "Separate places", false),
     Number("separatorSize", "Separator thickness", 1, 1, 3),
     Number("padding", "Text padding", 5, 0, 20),
     Number("gap", "Space between places", 0, 0, 20),
+    Bool("bagBadge", "Show bag medallion", false),
+    Number("bagBadgeSize", "Bag medallion size", 68, 36, 96),
     Bool("customColors", "Custom colors", false),
     Color("backgroundColor", "Background color", initial.background),
     Color("borderColor", "Outline color", initial.border),
@@ -91,6 +96,9 @@ local textStyle = {
     Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Choice("textAlign", "Text alignment", 2, { "Left", "Center", "Right" }),
     Bool("showLabels", "Show data names", true),
+    Bool("labelColon", "Colon after data names", true),
+    Bool("clockLabel", "Show Time before clock", true),
+    Bool("bagsPercent", "Show used bag space as percent", false),
     Color("labelColor", "Label color", initial.label),
     Color("valueColor", "Value color", initial.value),
     Bool("valueClassColor", "Use class color for values", false),
@@ -98,7 +106,9 @@ local textStyle = {
 }
 local dependencies = {
     backgroundTexture = "backgroundEnabled", backgroundOpacity = "backgroundEnabled",
-    borderSize = "borderEnabled", separatorSize = "separatorEnabled",
+    backgroundFadeColor = "backgroundGradient", borderSize = "borderEnabled",
+    accentPosition = "accentEnabled", separatorSize = "separatorEnabled",
+    bagBadgeSize = "bagBadge",
     backgroundColor = "customColors", borderColor = "customColors", accentColor = "customColors",
     separatorColor = "customColors", labelColor = "customColors", valueColor = "customColors",
     warningColor = "customColors",
@@ -147,7 +157,7 @@ for bar = 1, 3 do
     B.Section("dataTexts", section, "Bar " .. bar, {
         Bool(prefix .. "Enabled", "Show bar", bar == 1),
         Number(prefix .. "Width", "Width", NS.Client.isForever and bar == 1 and 340 or 390, 180, 900, 5),
-        Number(prefix .. "Height", "Height", NS.Client.isForever and bar == 1 and 28 or 26, 18, 50),
+        Number(prefix .. "Height", "Height", NS.Client.isForever and bar == 1 and 28 or 26, 18, 100),
         Choice(prefix .. "Layout", "Slot sizing", NS.Client.isForever and bar == 1 and 2 or 1, { "Equal", "Fit text" }),
         Choice(prefix .. "Visibility", "Visibility", 1, { "Always", "Out of combat", "In combat", "Mouseover" }),
         Choice(prefix .. "Point", "Screen anchor", NS.Client.isForever and bar == 1 and 9 or 8, NS.AnchorLabels),
@@ -167,6 +177,37 @@ for bar = 1, 3 do
     AddBarStyle(bar)
 end
 
+-- A per-bar starting point based on the three-source antique footer. The
+-- resulting ordinary settings remain editable, and other bars are untouched.
+function NS.DataTextAntiqueFooterValues(bar, config)
+    local prefix, values = "bar" .. bar, { enabled = true }
+    values[prefix .. "Enabled"] = true
+    values[prefix .. "Width"] = 380
+    values[prefix .. "Height"] = 36
+    values[prefix .. "Layout"] = 1
+    values[prefix .. "StyleOverride"] = true
+    for slot = 1, 6 do values[prefix .. "Slot" .. slot] = ({ 3, 4, 5 })[slot] or 1 end
+    for _, key in ipairs(NS.DataTextStyleKeys) do
+        values[NS.DataTextBarStyleKey(bar, key)] = config[key]
+    end
+    local ornate = {
+        backgroundEnabled = true, backgroundTexture = "", backgroundOpacity = 100,
+        backgroundGradient = true, backgroundColor = "06101c", backgroundFadeColor = "153247",
+        borderEnabled = true, borderSize = 1, borderColor = "3c5260",
+        accentEnabled = true, accentPosition = 2, accentColor = "c49a55",
+        separatorEnabled = true, separatorSize = 1, separatorColor = "715a3b",
+        padding = 5, gap = 0, bagBadge = true, bagBadgeSize = 38,
+        customColors = true, fontSize = 11, textAlign = 2, showLabels = true,
+        labelColon = false, clockLabel = false, bagsPercent = true,
+        labelColor = "d6aa69", valueColor = "d6aa69", warningColor = "ff8b74",
+        valueClassColor = false,
+    }
+    for key, value in pairs(ornate) do
+        values[NS.DataTextBarStyleKey(bar, key)] = value
+    end
+    return values
+end
+
 for _, rule in ipairs(NS.SuiteCatalog.dataTexts.controls) do
     if rule.section and rule.section:match("^bar[123]$") and not rule.key:match("Enabled$") then
         rule.enableKey = rule.section .. "Enabled"
@@ -184,14 +225,18 @@ function NS.DataTextEffectiveStyle(config, bar)
     return {
         backgroundEnabled = Value("backgroundEnabled"), backgroundTexture = Value("backgroundTexture"),
         backgroundOpacity = Value("backgroundOpacity"), backgroundColor = ColorValue("background"),
+        backgroundGradient = Value("backgroundGradient"), backgroundFadeColor = Value("backgroundFadeColor"),
         borderEnabled = Value("borderEnabled"), borderSize = Value("borderSize"), borderColor = ColorValue("border"),
-        accentEnabled = Value("accentEnabled"), accentColor = ColorValue("accent"),
+        accentEnabled = Value("accentEnabled"), accentPosition = Value("accentPosition"),
+        accentColor = ColorValue("accent"),
         separatorEnabled = Value("separatorEnabled"), separatorSize = Value("separatorSize"),
         separatorColor = ColorValue("separator"), padding = Value("padding"), gap = Value("gap"),
+        bagBadge = Value("bagBadge"), bagBadgeSize = Value("bagBadgeSize"),
         font = Value("font"), fontSize = Value("fontSize"), textOutline = Value("textOutline"),
         fontRendering = Value("fontRendering"), fontShadow = Value("fontShadow"),
         fontShadowOpacity = Value("fontShadowOpacity"), fontShadowDistance = Value("fontShadowDistance"),
         textAlign = Value("textAlign"), showLabels = Value("showLabels"),
+        labelColon = Value("labelColon"), clockLabel = Value("clockLabel"), bagsPercent = Value("bagsPercent"),
         labelColor = ColorValue("label"), valueColor = ColorValue("value"), warningColor = ColorValue("warning"),
         valueClassColor = Value("valueClassColor"),
     }
