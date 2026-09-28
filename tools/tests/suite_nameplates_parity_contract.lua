@@ -1,9 +1,16 @@
 local root = assert(arg[1])
-local NS = {}
+local NS = { Client = { isForever = false, isMainline = true } }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", NS)
 local spec = assert(NS.SuiteCatalog.nameplates)
+local forever = { Client = { isForever = true, isMainline = true } }
+assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", forever)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", forever)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", forever)
+assert(forever.SuiteCatalog.nameplates.look.presets[1].enemyLevelEnabled == true
+    and forever.SuiteCatalog.nameplates.look.presets[1].friendlyLevelEnabled == false,
+    "Forever Jundies should show enemy levels without forcing friendly levels")
 NS.Public = function(value) return value ~= "secret" end
 local nativeValue = "0.00"
 C_CVar = { GetCVar = function() return nativeValue end }
@@ -56,6 +63,28 @@ assert(#spec.rules.enemyTargetStyle.choices == 15 and #spec.rules.enemyEliteMark
 assert(#NS.NameplateStyle.TargetAtlases == 8)
 assert(NS.NameplateStyle.TargetAtlases[8][1] == "pvptalents-selectedarrow")
 assert(spec.rules.enemyEliteMarkerSize.max == 48 and spec.rules.enemyCastSize.max == 32)
+assert(not spec.rules.levelAppearance and not spec.look.presets[1].levelAppearance,
+    "Retail's working Jundies level controls changed")
+assert(forever.SuiteCatalog.nameplates.rules.levelAppearance.default == 1
+    and forever.SuiteCatalog.nameplates.look.presets[1].levelAppearance == 1
+    and forever.SuiteCatalog.nameplates.look.presets[2].levelAppearance == 2,
+    "Forever Jundies number and optional Blizzard badge lost their look defaults")
+for _, side in ipairs({ "enemy", "friendly" }) do
+    assert(spec.rules[side .. "LevelEnabled"].default == false,
+        side .. " Retail level visibility changed")
+    assert(spec.rules[side .. "LevelOffsetX"] and spec.rules[side .. "LevelOffsetY"],
+        side .. " level needs the same movable position in preview and runtime")
+end
+for _, catalog in ipairs({ spec, forever.SuiteCatalog.nameplates }) do
+    for _, key in ipairs({ "enemyHealthWidthDelta", "enemyHealthHeightDelta",
+        "friendlyHealthWidthDelta", "friendlyHealthHeightDelta" }) do
+        assert(catalog.rules[key].default == 0 and catalog.look.presets[1][key] == 0
+            and catalog.look.presets[2][key] == 0,
+            key .. " must preserve native dimensions until the user changes them")
+    end
+    assert(catalog.rules.enemyLevelSize.default == 0 and catalog.rules.friendlyLevelSize.default == 0,
+        "Jundies level sizing changed the native default")
+end
 for _, key in ipairs({ "enemyBorderEnabled", "enemyBackdropEnabled",
     "friendlyBorderEnabled", "friendlyBackdropEnabled" }) do
     assert(spec.look.presets[2][key] == false,

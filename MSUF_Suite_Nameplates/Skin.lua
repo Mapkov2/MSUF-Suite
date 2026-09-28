@@ -15,6 +15,8 @@ local M = {
     friendlyNames = setmetatable({}, { __mode = "k" }),
     raidIcons = setmetatable({}, { __mode = "k" }),
     castTimes = setmetatable({}, { __mode = "k" }),
+    levelLabels = setmetatable({}, { __mode = "k" }),
+    nativeLevelAlphas = setmetatable({}, { __mode = "k" }),
 }
 
 local function Safe(frame)
@@ -28,6 +30,115 @@ local function Color(texture, hex, alpha)
 end
 
 local RestoreFont = Text.Restore
+
+local function HideLevel(uf)
+    local label = M.levelLabels[uf]
+    if Safe(label) then label:Hide() end
+end
+
+local function NativeLevelAlpha(frame, hide)
+    if not Safe(frame) then return end
+    local previous = M.nativeLevelAlphas[frame]
+    if hide then
+        if previous ~= nil and frame:GetAlpha() == 0 then return end
+        if previous == nil then
+            previous = frame:GetAlpha()
+            if not S.Finite(previous) then return end
+            M.nativeLevelAlphas[frame] = previous
+        end
+        if NS.IsCombatLocked() then M.needsRefresh = true; return end
+        frame:SetAlpha(0)
+    elseif previous ~= nil then
+        if NS.IsCombatLocked() then M.needsRefresh = true; return end
+        frame:SetAlpha(previous)
+        M.nativeLevelAlphas[frame] = nil
+    end
+end
+
+local function PaintNativeLevel(uf, prefix)
+    if not NS.Client.isForever then return end
+    local hide = prefix and M.config.look ~= 2 and M.config[prefix]
+        and (M.config[prefix .. "LevelEnabled"] == false or M.config.levelAppearance ~= 2)
+    NativeLevelAlpha(uf.PlayerLevelDiffFrame, hide)
+    -- Camelot already draws its own badge in Classic style. Keep its legacy
+    -- LevelFrame out of the Suite look so the level is never duplicated.
+    NativeLevelAlpha(uf.LevelFrame, hide or NS.Client.isForever and prefix
+        and M.config.look ~= 2 and M.config[prefix])
+end
+
+local function RestoreNativeLevels()
+    if not next(M.nativeLevelAlphas) then return end
+    if NS.IsCombatLocked() then
+        if not M.nativeLevelRestoreFrame then
+            local frame = CreateFrame("Frame")
+            frame:SetScript("OnEvent", function(self)
+                if NS.IsCombatLocked() then return end
+                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                if not M.active then RestoreNativeLevels() end
+            end)
+            M.nativeLevelRestoreFrame = frame
+        end
+        M.nativeLevelRestoreFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    for frame, alpha in pairs(M.nativeLevelAlphas) do
+        if Safe(frame) then frame:SetAlpha(alpha) end
+        M.nativeLevelAlphas[frame] = nil
+    end
+end
+
+local function PaintLevel(uf, prefix, unit)
+    local setup = _G.NamePlateSetupOptions
+    local native = setup and S.Public(setup.useClassicHealthBar)
+        and setup.useClassicHealthBar == true
+    local namesOnly = S.Public(uf.showOnlyName) and uf.showOnlyName == true
+    if not prefix or M.config.look == 2 or not M.config[prefix]
+        or not M.config[prefix .. "LevelEnabled"] or not unit
+        or NS.Client.isForever and (M.config.levelAppearance == 2 or namesOnly)
+        or not NS.Client.isForever and native then
+        HideLevel(uf)
+        return
+    end
+    if not NS.Client.isForever then
+        local levelDiff = uf.PlayerLevelDiffFrame
+        if Safe(levelDiff) then
+            local shown = levelDiff:IsShown()
+            if not S.Public(shown) or shown then HideLevel(uf); return end
+        end
+    end
+    local label = M.levelLabels[uf]
+    if not label then
+        if NS.IsCombatLocked() or not Safe(uf) then M.needsRefresh = true; return end
+        local container = uf.HealthBarsContainer
+        if not Safe(container) then return end
+        label = uf:CreateFontString(nil, "OVERLAY", "SystemFont_NamePlateLevel")
+        label:SetPoint("RIGHT", container, "LEFT", -4, 0)
+        label:SetWidth(24)
+        label:SetJustifyH("RIGHT")
+        label:SetTextColor(1, 1, 1)
+        M.levelLabels[uf] = label
+    end
+    if not Safe(label) then M.needsRefresh = true; return end
+    local customHeight = M.config[prefix .. "LevelSize"]
+    local height = S.Finite(customHeight) and customHeight > 0 and customHeight
+        or setup and setup.levelFontHeight or 10
+    if S.Finite(height) and label._suiteLevelHeight ~= height then
+        label:SetTextHeight(height)
+        local width = math.max(24, height * 2)
+        label:SetWidth(width)
+        label._suiteLevelWidth = width
+        label._suiteLevelHeight = height
+    end
+    local levelAPI = NS.Client.isForever and _G.UnitEffectiveLevel or _G.UnitLevel
+    if type(levelAPI) ~= "function" then levelAPI = _G.UnitLevel end
+    local ok, value = pcall(levelAPI, unit)
+    if not ok then label:Hide(); return end
+    if S.Public(value) and type(value) == "number" and value <= 0 then value = "??" end
+    -- SetText accepts secret text in the engine; never compare or format a
+    -- secret level in addon Lua.
+    label:SetText(value)
+    label:Show()
+end
 
 -- Nameplate casts can carry secret values. Never assign CastTimeText to the
 -- native bar: its Lua formatter then reads secret StatusBar values in tainted
@@ -262,7 +373,27 @@ local function PaintTarget(uf, health, visual, prefix)
     local visible = M.config.enemyTargetMarker and (prefix == "enemy" or M.config.enemyTargetHideFriendly == false)
         and S.Public(target) and target == true
     if visible then M.targetUF = uf elseif M.targetUF == uf then M.targetUF = nil end
-    Style.PaintTarget(visual, health, visible, M.targetConfig, uf)
+    local setup = _G.NamePlateSetupOptions
+    local badge = not NS.Client.isForever or M.config.levelAppearance == 2
+    local classic = badge and setup and S.Public(setup.useClassicHealthBar)
+        and setup.useClassicHealthBar == true
+    local width = classic and setup.levelIconWidth
+    local rightGap = S.Finite(width) and width + 4 or classic and 19 or 0
+    local levelDiff = uf.PlayerLevelDiffFrame
+    local shown = Safe(levelDiff) and levelDiff:IsShown()
+    if NS.Client.isForever and Safe(levelDiff) and type(levelDiff.ShouldDisplay) == "function" then
+        local ok, display = pcall(levelDiff.ShouldDisplay, levelDiff, unit)
+        if ok and S.Public(display) then shown = display end
+    end
+    local leftWidth = setup and setup.playerLevelDiffWidth
+    local diffGap = badge and S.Public(shown) and shown
+        and (S.Finite(leftWidth) and leftWidth > 0 and leftWidth + (NS.Client.isForever and 5 or 4)
+            or (NS.Client.isForever and 33 or 20)) or 0
+    local label = M.levelLabels[uf]
+    local number = Safe(label) and label:IsShown()
+    local leftGap = NS.Client.isForever and (number and (label._suiteLevelWidth or 24) + 4 or 0) or diffGap
+    if NS.Client.isForever then rightGap = math.max(rightGap, diffGap) end
+    Style.PaintTarget(visual, health, visible, M.targetConfig, uf, rightGap, leftGap)
 end
 
 local function RestoreFriendlyName(name)
@@ -345,6 +476,8 @@ local function Paint(uf)
     Threat.Apply(uf)
     FilterFriendlyName(uf, prefix)
     PaintRaidIcon(uf, prefix)
+    PaintNativeLevel(uf, prefix)
+    PaintLevel(uf, prefix, M.units[health])
     Layout.Apply(uf, prefix, M.config)
     if M.config.look == 2 or not prefix or not M.config[prefix] then
         if M.targetUF == uf then M.targetUF = nil end
@@ -483,6 +616,7 @@ local function ApplyCVars(self)
         { "friendlyNamesOnly", "nameplateShowOnlyNameForFriendlyPlayerUnits" },
         { "classColors", "ShowClassColorInNameplate" },
         { "classColors", "nameplateShowClassColor" },
+        { "classColors", "nameplateShowFriendlyClassColor" },
         { "friendlyNameClassColor", "nameplateUseClassColorForFriendlyPlayerUnitNames" },
         { "friendlyRealm", "nameplateShowFriendlyRealmName" },
         { "personalAuras", "nameplateShowAllPersonalAuras" },
@@ -503,6 +637,8 @@ end
 local function RestorePlate(uf)
     Threat.Restore(uf)
     RestoreFriendlyName(uf.name)
+    PaintNativeLevel(uf, nil)
+    HideLevel(uf)
     PaintRaidIcon(uf)
     Layout.Restore(uf)
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
@@ -709,7 +845,7 @@ local function OnUnitChanged(module, event, unit)
     if not Safe(health) then return end
     local previousRole, previousElite, previousQuest = module.roles[health], module.elites[health], module.quests[health]
     SetRole(uf, unit)
-    if event == "UNIT_FACTION" or event == "UNIT_FLAGS" then Paint(uf)
+    if event == "UNIT_FACTION" or event == "UNIT_FLAGS" or event == "UNIT_LEVEL" then Paint(uf)
     elseif not module.visuals[health] or previousRole ~= module.roles[health]
         or previousElite ~= module.elites[health] or previousQuest ~= module.quests[health] then
         RefreshRole(uf)
@@ -834,6 +970,7 @@ function M:Disable()
     for _, visual in pairs(self.visuals) do
         HideVisual(visual)
     end
+    RestoreNativeLevels()
     RestoreAuraButtons()
 end
 

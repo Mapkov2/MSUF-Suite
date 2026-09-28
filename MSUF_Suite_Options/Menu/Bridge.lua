@@ -163,6 +163,9 @@ local function LookEdit(id, key, value)
         if not preset then return nil end
         local values = { [key] = value }
         for setting, choice in pairs(preset) do values[setting] = choice end
+        -- Choosing Jundies is an explicit request to use the nameplate skin.
+        -- Older Forever profiles started with this optional module disabled.
+        if id == "nameplates" and tonumber(value) == 1 then values.enabled = true end
         return values
     end
     if look.custom and look.visualKeys and look.visualKeys[key] and P.Get(id, look.key) ~= look.custom then

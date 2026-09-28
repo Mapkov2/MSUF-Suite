@@ -22,6 +22,8 @@ Pages\QualityOfLife.lua
 Pages\HUD.lua
 Pages\BuffReminders.lua
 Pages\Chat.lua
+Pages\NameplatesSize.lua
+Pages\NameplatesEditorMarkers.lua
 Pages\NameplatesEditor.lua
 Pages\NameplatesPreview.lua
 Pages\Nameplates.lua

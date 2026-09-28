@@ -3,20 +3,22 @@ local M, W, T, Tr = P.M, P.W, P.T, P.Tr
 local Style = P.Suite.NameplateStyle
 local ID, PAGE = "nameplates", "suite_nameplates"
 local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
+local Markers = P.NameplatesEditorMarkers
 local NativeBit = Style.NativeBit
 local Editor = {}
 P.NameplatesEditor = Editor
 local DELTA = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
 local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diamond",
     [4] = "Triangle", [5] = "Moon", [6] = "Blue square", [7] = "Cross", [8] = "Skull" }
-local ENEMY_ELEMENT_SETTINGS = { Name = true, HealthText = true, Classification = true,
+local ENEMY_ELEMENT_SETTINGS = { Name = true, Level = true, HealthText = true, Classification = true,
     RaidIcon = true, Cast = true, CastText = true, CastTime = true,
     CastIcon = true, CastShield = true, CastTarget = true }
 local LAYERS = {
     { "guides", "Guides", "enemy" }, { "health", "Blizzard health", "enemy" },
     { "backdrop", "Skin backdrop", "enemy" }, { "border", "Skin border", "enemy" },
     { "roleFill", "Role fill", "enemy" },
-    { "name", "Name", "elements" }, { "healthText", "HP text", "elements" },
+    { "name", "Name", "elements" }, { "level", "Level", "elements" },
+    { "healthText", "HP text", "elements" },
     { "cast", "Castbar", "castbar" },
     { "castText", "Spell name", "elements" }, { "castTime", "Cast time", "castbar" },
     { "auras", "Debuffs", "auras" },
@@ -31,15 +33,16 @@ local LAYERS = {
     { "power", "Power skin", "personal" },
 }
 local ELEMENT_SETTING = {
-    Name = "enemyTextMode", HealthText = "enemyTextMode", Cast = "enemyCastEnabled",
+    Name = "enemyTextMode", Level = "enemyLevelEnabled", HealthText = "enemyTextMode", Cast = "enemyCastEnabled",
     CastText = "enemyCastSpellName", CastTime = "enemyCastTimeEnabled", RaidIcon = "enemyRaidIcon",
     Classification = "enemyRarityIcon", CastIcon = "enemyCastSpellIcon",
     CastTarget = "enemyCastSpellTarget",
 }
 local LAYER_SETTING = {
-    health = "nativeStyle", backdrop = "enemyBackdropEnabled", border = "enemyBorderEnabled",
+    health = "enemyHealthWidthDelta", backdrop = "enemyBackdropEnabled", border = "enemyBorderEnabled",
     roleFill = "enemyRoleColors", target = "enemyTargetMarker",
-    name = "enemyTextMode", healthText = "enemyTextMode",
+    name = "enemyTextMode", level = P.Suite.Client.isForever and "levelAppearance" or "enemyLevelEnabled",
+    healthText = "enemyTextMode",
     cast = "enemyCastEnabled", castText = "enemyCastSpellName", castTime = "enemyCastTimeEnabled",
     classification = "enemyRarityIcon", raidIcon = "enemyRaidIcon",
     castIcon = "enemyCastSpellIcon", castShield = "enemyCastEnabled",
@@ -161,6 +164,7 @@ function Editor:RefreshSelection()
         handle.outline(handle == selected and 1 or 0, "4ebaff")
     end
     if SB then SB.Refresh(self.body) end
+    if self.RefreshSizeSelection then self:RefreshSizeSelection() end
 end
 
 local function Nudge(ui, dx, dy)
@@ -234,15 +238,21 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     if enemyElement and ENEMY_ELEMENT_SETTINGS[enemyElement] then
         handle._npSettingsTab = "elements"
         handle._npSettingKey = ELEMENT_SETTING[enemyElement]
+    elseif id == "enemy.Health" then
+        handle._npSettingKey = "enemyHealthWidthDelta"
+    elseif id == "friendly.Health" then
+        handle._npSettingKey = "friendlyHealthWidthDelta"
     elseif id == "friendly.Classification" or id == "friendly.Cast" or id == "friendly.CastText"
         or id == "friendly.CastIcon" or id == "friendly.CastTarget" then
         local element = id:match("^friendly%.(.+)$")
         handle._npSettingsTab = "elements"
         handle._npSettingKey = ELEMENT_SETTING[element]
-    elseif id == "friendly.Name" or id == "friendly.HealthText" then
-        handle._npSettingKey = "friendlyNamesOnly"
+    elseif id == "friendly.Name" or id == "friendly.HealthText" or id == "friendly.Level" then
+        handle._npSettingKey = id == "friendly.Level" and "friendlyLevelEnabled" or "friendlyNamesOnly"
     elseif id == "personal.Power" then
         handle._npSettingKey = "personalPowerSkin"
+    elseif id == "enemy.target" or id == "friendly.target" then
+        handle._npSettingKey = id == "enemy.target" and "enemyTargetMarker" or "enemyTargetHideFriendly"
     elseif id == "enemy.elite" or id == "enemy.quest"
         or id == "friendly.elite" or id == "friendly.quest" then
         handle._npSettingKey = id:match("^enemy") and (id:find("elite") and "enemyEliteMarker" or "enemyQuestMarker")
@@ -328,9 +338,11 @@ function Editor:LayerOn(key) return self.layers[key] ~= false end
 
 function Editor:LayerAvailable(key)
     local skinned = P.Get(ID, "look") ~= 2
+    if key == "target" then return skinned end
     if key == "backdrop" or key == "border" then return skinned end
     if key == "roleFill" then return skinned and self.sampleKind == "enemy" end
     if key == "power" then return self.personal == true end
+    if key == "level" then return true end
     if key == "threatFlash" or key == "threatHighlight" then return self.sampleKind == "enemy" end
     if (key == "buffs" or key == "controlAura") and self.sampleKind == "friendly"
         and self.friendlyElite and not self.personal then return false end
@@ -365,6 +377,7 @@ function Editor:LayerActive(key)
             and P.Get(ID, self.sampleKind .. "BorderSize") > 0
     end
     if key == "roleFill" then return P.Get(ID, "enemyRoleColors") end
+    if key == "target" then return Markers.TargetActive(self) end
     if AURA_KIND[key] then return AuraOn(self, key) end
     if key == "threatFlash" or key == "threatHighlight" then
         return self.aggroSample and ThreatOn(key)
@@ -373,6 +386,22 @@ function Editor:LayerActive(key)
         return self.softTargetSample and SoftOn(self)
     end
     if key == "power" then return P.Get(ID, "look") ~= 2 and P.Get(ID, "personalPowerSkin") end
+    if key == "level" then
+        local classic = P.Suite.NameplateStyle.ClassicNativePlate(P.Get(ID, "nativeStyle"))
+        if not P.Suite.Client.isForever then
+            return classic or P.Get(ID, "look") ~= 2
+                and P.Get(ID, self.sampleKind .. "LevelEnabled")
+        end
+        local namesOnly = self.sampleKind == "friendly" and not self.personal
+            and not self.friendlyElite and (P.Get(ID, "friendlyNamesOnly") == 2
+                or P.Get(ID, "friendlyNamesOnly") == 3
+                or P.Get(ID, "friendlyNamesOnly") == 1 and P.Suite.NameplateStyle.NativeToggle(
+                    "nameplateShowOnlyNameForFriendlyPlayerUnits", false))
+        if namesOnly then return false end
+        local badge = P.Get(ID, "look") == 2 or P.Get(ID, "levelAppearance") == 2
+        if badge and not (P.Suite.Client.isForever or classic) then return false end
+        return P.Get(ID, "look") == 2 or P.Get(ID, self.sampleKind .. "LevelEnabled")
+    end
     if key == "raidIcon" then return self.raidMarked == true end
     if key == "castShield" then return self.uninterruptible == true end
     if key == "classification" then
@@ -401,7 +430,7 @@ end
 local function FocusLayer(ui, section, key)
     if section == "enemy" and ui.sampleKind == "friendly" then section = "friendly" end
     if section == "elements" and ui.sampleKind == "friendly"
-        and (key == "name" or key == "healthText") then section = "friendly" end
+        and (key == "name" or key == "level" or key == "healthText") then section = "friendly" end
     local target = section == "elements" and P.SelectNameplatesEnemyTab
         and P.SelectNameplatesEnemyTab("elements") or ui.sections and ui.sections[section]
     if target and W.FocusCollapsibleSection then
@@ -410,8 +439,14 @@ local function FocusLayer(ui, section, key)
     local setting = LAYER_SETTING[key]
     if key == "backdrop" or key == "border" then
         setting = ui.sampleKind .. (key == "backdrop" and "BackdropEnabled" or "BorderEnabled")
-    elseif ui.sampleKind == "friendly" and (key == "name" or key == "healthText") then
-        setting = key == "name" and "friendlyTextEnabled" or "friendlyNamesOnly"
+    elseif ui.sampleKind == "friendly" and key == "health" then
+        setting = "friendlyHealthWidthDelta"
+    elseif ui.sampleKind == "friendly" and key == "target" then
+        setting = "enemyTargetHideFriendly"
+    elseif ui.sampleKind == "friendly" and (key == "name" or key == "healthText" or key == "level") then
+        setting = key == "level" and (P.Suite.Client.isForever and "levelAppearance"
+            or "friendlyLevelEnabled")
+            or key == "name" and "friendlyTextEnabled" or "friendlyNamesOnly"
     end
     if AURA_KIND[key] then
         local group = AuraGroup(ui)
@@ -447,25 +482,19 @@ local function ToggleSkinLayer(ui, key)
     ui:Paint()
 end
 
-local function ToggleMarkerLayer(ui, key)
-    local kind = key == "eliteMarker" and "Elite" or "Quest"
-    local setting = ui.sampleKind .. kind .. "Marker"
-    local enabled = P.Get(ID, setting)
-    if ui.sampleKind == "friendly" then
-        if not ui.friendlyElite then ui.friendlyElite = true
-        elseif enabled then P.Set(ID, setting, false) end
-    else
-        local desired = key == "eliteMarker" and 4 or 5
-        ui.enemyPlayer = false
-        if (ui.previewRole or P.Get(ID, "enemyPreviewRole")) ~= desired then
-            ui.previewRole, ui.previewRoleSource = desired, P.Get(ID, "enemyPreviewRole")
-        elseif enabled then P.Set(ID, setting, false) end
-    end
-    if not enabled then P.Set(ID, setting, true) end
-    ui.layers[key] = true
-end
-
 local function ToggleLayer(ui, key)
+    if key == "level" then
+        local classic = P.Suite.NameplateStyle.ClassicNativePlate(P.Get(ID, "nativeStyle"))
+        if P.Get(ID, "look") == 2 or classic and not P.Suite.Client.isForever then
+            FocusLayer(ui, "elements", key)
+        else
+            P.Set(ID, ui.sampleKind .. "LevelEnabled", not P.Get(ID, ui.sampleKind .. "LevelEnabled"))
+            ui.layers.level = true
+            ui:Paint()
+        end
+        return
+    end
+    if key == "target" then Markers.ToggleTarget(ui, OpenSetting); return end
     if not ui:LayerAvailable(key) then
         local section = "elements"
         for _, layer in ipairs(LAYERS) do if layer[1] == key then section = layer[3]; break end end
@@ -525,7 +554,7 @@ local function ToggleLayer(ui, key)
     elseif key == "castShield" then
         ui.uninterruptible, ui.layers[key] = not ui.uninterruptible, true
     elseif key == "eliteMarker" or key == "questMarker" then
-        ToggleMarkerLayer(ui, key)
+        Markers.ToggleMarker(ui, key)
     else ui.layers[key] = not ui:LayerOn(key) end
     ui:Paint()
     if key == "questMarker" and ui.sampleKind == "enemy" and ui:LayerActive(key) and ui.questMarkerHandle then
@@ -571,7 +600,7 @@ local function BuildLayers(ui)
                 return ui:LayerActive(key) == desired
             end }
         button:SetScript("OnEnter", function()
-            local live = AURA_KIND[key] or key == "threatFlash" or key == "threatHighlight"
+            local live = AURA_KIND[key] or key == "target" or key == "threatFlash" or key == "threatHighlight"
                 or key == "softTarget" or key == "power" or key == "eliteMarker" or key == "questMarker"
                 or key == "backdrop" or key == "border" or key == "roleFill"
             local help = live and "Click: change live setting; right-click: settings"
@@ -731,7 +760,14 @@ local function BuildSelection(ui)
             SelectHandle = function(_, handle) ui:Select(handle); return true end,
             ResetOffsets = function(_, handle)
                 local rules = P.catalog[ID].rules
-                return Write(ui, handle, rules[handle.keyX].default, rules[handle.keyY].default)
+                local values = {
+                    [handle.keyX] = rules[handle.keyX].default,
+                    [handle.keyY] = rules[handle.keyY].default,
+                }
+                P.NameplatesSize.ResetValues(handle, values, rules)
+                local ok = P.SetMany(ID, values)
+                ui:Paint()
+                return ok ~= false
             end,
             NudgeDelta = function(_, dx, dy)
                 local handle = body._selectedHandle
@@ -743,6 +779,7 @@ local function BuildSelection(ui)
         })
         bar:SetPoint("TOPLEFT", tools, "BOTTOMLEFT", 0, -5)
         bar:SetPoint("TOPRIGHT", tools, "BOTTOMRIGHT", 0, -5)
+        P.NameplatesSize.Build(ui, bar, body)
         if SB.CreatePicker then
             local picker = SB.CreatePicker(body, tools)
             picker:SetPoint("RIGHT", tools, "RIGHT", 0, 0)
@@ -810,11 +847,11 @@ function Editor.Create(ctx, builder, sections)
         sampleKind = "enemy", zoom = 1, panX = 0, panY = 0,
         softTargetSample = true, aggroSample = true,
         layoutWidth = math.max(640, (section._msuf2Width or builder.width or 720) - 28),
-        inDungeon = inDungeon, help = "Drag elements · Arrows: move · Shift: 5 · Ctrl: 10 · Tab: select · Wheel: zoom" }, { __index = Editor })
-    ui.previewRole, ui.previewRoleSource = 4, P.Get(ID, "enemyPreviewRole")
+        inDungeon = inDungeon, help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom" }, { __index = Editor })
+    ui.previewRole, ui.previewRoleSource = nil, P.Get(ID, "enemyPreviewRole")
     P.ShowNameplatesElementsSample = function()
         ui.sampleKind = "enemy"
-        ui.previewRole = 4 -- Blizzard's elite atlas, independently of the saved sample role
+        ui.previewRole = nil
         ui.previewRoleSource = P.Get(ID, "enemyPreviewRole")
         ui:Paint()
     end

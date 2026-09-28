@@ -123,6 +123,7 @@ local function Region()
     function r:SetShadowColor(...) self.shadow = { ... }; self.shadowColorWrites = (self.shadowColorWrites or 0) + 1 end
     function r:SetShadowOffset(...) self.shadowOffset = { ... }; self.shadowOffsetWrites = (self.shadowOffsetWrites or 0) + 1 end
     function r:SetText(value) self.text = value end
+    function r:SetTextHeight(value) self.textHeight = value end
     function r:SetTextColor(...) self.textColor = { ... } end
     function r:SetJustifyH(value) self.justify = value end
     return r
@@ -136,7 +137,8 @@ local bar, cast, name, aura = Region(), Region(), Region(), Region()
 local raidFrame, raidIcon = Region(), Region()
 raidIcon:SetAlpha(0.8)
 raidFrame.RaidTargetIcon = raidIcon
-NamePlateSetupOptions = { unitNameAnchorStyle = 1, useClassicCastBar = false, spellNameInsideCastBar = false }
+NamePlateSetupOptions = { unitNameAnchorStyle = 1, useClassicCastBar = false,
+    spellNameInsideCastBar = false, castBarToHealthBarSpacing = 2, healthBarHeight = 13 }
 -- Inspect the mock's anchor plus displacement directly. The production code
 -- must never invoke GetPoint, which raises the reported FrameMeasurement error.
 local function Placed(region, index, axis)
@@ -216,7 +218,7 @@ local healthContainer = Region()
 healthContainer.healthBar = bar
 local uf = {
     isFriend = false, isPlayer = false, name = name, AurasFrame = aura,
-    RaidTargetFrame = raidFrame,
+    RaidTargetFrame = raidFrame, LevelFrame = Region(),
     HealthBarsContainer = healthContainer, CastBarsContainer = { castBar = cast },
 }
 uf.CreateTexture, uf.CreateFontString = bar.CreateTexture, bar.CreateFontString
@@ -305,7 +307,7 @@ local module = assert(installed)
 module.context = context
 module.config = {
     look = 1, enemy = true, friendly = true,
-    nativeStyle = 2, nativeSize = 3, enemyTextMode = 4,
+    nativeStyle = 2, nativeSize = 3, levelAppearance = 1, enemyTextMode = 4,
     enemyRarityIcon = 1, enemyRaidIcon = true,
     enemyRoleColors = true, enemyMeleeColor = "be301d", enemyCasterColor = "00bfff",
     enemyMinibossColor = "9370db", enemyBossColor = "ff00ff",
@@ -554,12 +556,23 @@ local marker = module.visuals[bar].targetHost._msufBossTargetIndicator
 assert(marker:IsShown() and marker.mirror:IsShown() and marker.width == 16
     and #marker.lines == 4 and marker._style == "DOUBLE_ARROW",
     "target arrows missing")
+local initialTarget = NS.NameplateStyle.TargetConfig(module.config)
+assert(marker.offsetX == initialTarget.bossTargetX and marker.offsetY == initialTarget.bossTargetY
+    and marker.mirror.offsetX == -initialTarget.bossTargetX,
+    "fresh target arrows ignored saved offsets while applying level clearance")
 module.config.enemyTargetOffsetX = 9
 module.config.enemyTargetOffsetY = -4
 module:Refresh()
 assert(marker.points[1][4] == -10
-    and marker.points[1][5] == -4,
+    and marker.points[1][5] == -4 and marker.offsetX == -10 and marker.offsetY == -4,
     "dragged target marker offsets did not reach the live skin")
+local freshTargetVisual = {}
+local freshTargetConfig = NS.NameplateStyle.TargetConfig(module.config)
+local freshTarget = NS.NameplateStyle.PaintTarget(freshTargetVisual, bar, true, freshTargetConfig, uf, 0, 0)
+assert(freshTarget.offsetX == freshTargetConfig.bossTargetX
+    and freshTarget.offsetY == freshTargetConfig.bossTargetY
+    and freshTarget.mirror.offsetX == -freshTargetConfig.bossTargetX,
+    "fresh target renderer lost saved arrow position after reload")
 targetUnit = nil
 targetFontReads = name.fontReads
 events.PLAYER_TARGET_CHANGED(module, "PLAYER_TARGET_CHANGED")
@@ -892,6 +905,47 @@ module.config.enemyHealthOffsetX, module.config.enemyHealthOffsetY = 0, 0
 module:Refresh()
 assert(healthContainer.offsetX == 0 and healthContainer.offsetY == 0,
     "reset did not restore Blizzard's health container")
+local function HealthLeft()
+    for _, point in ipairs(healthContainer.points) do
+        if point[1] == "BOTTOMLEFT" then return point end
+    end
+end
+module.config.enemyHealthWidthDelta, module.config.enemyHealthHeightDelta = 73, 7
+module:Refresh()
+assert(HealthLeft()[4] == -73 and healthContainer.height == 20,
+    "enemy health width and height did not reach Blizzard's anchored bar")
+layoutHook(uf)
+assert(HealthLeft()[4] == -73 and healthContainer.height == 20,
+    "Blizzard anchor rebuild lost enemy health dimensions")
+module.config.look = 2
+module:Refresh()
+assert(HealthLeft()[4] == 0 and healthContainer.height == 13,
+    "Blizzard look retained the custom enemy health dimensions")
+module.config.look = 1
+module:Refresh()
+assert(HealthLeft()[4] == -73 and healthContainer.height == 20,
+    "Jundies did not restore its enemy health dimensions")
+uf.isFriend = true
+module:Refresh()
+assert(HealthLeft()[4] == 0 and healthContainer.height == 13,
+    "enemy health dimensions leaked onto a friendly nameplate")
+module.config.friendlyHealthWidthDelta, module.config.friendlyHealthHeightDelta = 28, 4
+module:Refresh()
+assert(HealthLeft()[4] == -28 and healthContainer.height == 17,
+    "friendly health dimensions did not reach Blizzard's anchored bar")
+layoutHook(uf)
+assert(HealthLeft()[4] == -28 and healthContainer.height == 17,
+    "Blizzard anchor rebuild lost friendly health dimensions")
+module.config.friendlyHealthWidthDelta, module.config.friendlyHealthHeightDelta = 0, 0
+module:Refresh()
+assert(HealthLeft()[4] == 0 and healthContainer.height == 13,
+    "friendly health dimensions did not restore the native anchors and height")
+uf.isFriend = false
+module:Refresh()
+module.config.enemyHealthWidthDelta, module.config.enemyHealthHeightDelta = 0, 0
+module:Refresh()
+assert(HealthLeft()[4] == 0 and healthContainer.height == 13,
+    "enemy health dimensions did not restore the native anchors and height")
 local nativeElite = Region()
 uf.ClassificationFrame = { classificationIndicator = nativeElite }
 module.config.enemyClassificationOffsetX, module.config.enemyClassificationOffsetY = 17, -5
@@ -1124,6 +1178,21 @@ end
 -- New Blizzard-owned controls preserve unrelated bits and add no unit scans.
 do
     local c = module.config
+    c.classColors = 2
+    module:Refresh()
+    assert(cvars.nameplateShowClassColor == "1"
+        and cvars.nameplateShowFriendlyClassColor == "1",
+        "player class colors missed Forever's friendly health bar CVar")
+    c.classColors = 3
+    module:Refresh()
+    assert(cvars.nameplateShowClassColor == "0"
+        and cvars.nameplateShowFriendlyClassColor == "0",
+        "turning off class colors did not reach both Forever plate types")
+    restored.nameplateShowClassColor, restored.nameplateShowFriendlyClassColor = nil, nil
+    c.classColors = 1
+    module:Refresh()
+    assert(restored.nameplateShowClassColor and restored.nameplateShowFriendlyClassColor,
+        "class color CVars were not released back to Blizzard")
     liveCVars.nameplateEnemyNpcAuraDisplay = string.char(1, 64)
     liveCVars.nameplateEnemyPlayerAuraDisplay = string.char(1, 64)
     liveCVars.nameplateFriendlyPlayerAuraDisplay = string.char(1, 64)
@@ -1215,6 +1284,172 @@ do
         and aura.CrowdControlListFrame.offsetY == 0
         and aura.LossOfControlFrame.offsetY == 0 and uf.SoftTargetFrame.offsetX == 0,
         "native element offsets did not restore")
+end
+
+do
+    module.config.enemyLevelEnabled = true
+    module.config.enemyLevelOffsetX = -8
+    module:Refresh()
+    local label = assert(module.levelLabels[uf], "modern nameplate level label was not created")
+    assert(label.text == 90 and label:IsShown() and label.offsetX == -8,
+        "modern level or its preview offset did not reach the nameplate")
+    module.config.enemyLevelSize = 18
+    module:Refresh()
+    assert(label.textHeight == 18 and label.width == 36,
+        "selected Jundies level font size did not reach Retail runtime")
+    module.config.enemyLevelSize = 0
+    module:Refresh()
+    unitLevel = 72
+    events.UNIT_LEVEL(module, "UNIT_LEVEL", "nameplate1")
+    assert(label.text == 72, "UNIT_LEVEL did not refresh the displayed level")
+    unitLevel = -1
+    events.UNIT_LEVEL(module, "UNIT_LEVEL", "nameplate1")
+    assert(label.text == "??", "unknown unit level was shown as a negative number")
+    unitLevel = "secret"
+    events.UNIT_LEVEL(module, "UNIT_LEVEL", "nameplate1")
+    assert(label.text == "secret" and label:IsShown(),
+        "secret level was compared or hidden instead of passed to SetText")
+    unitLevel = 90
+    targetUnit = "nameplate1"
+    module.config.enemyTargetLayout, module.config.enemyTargetAnchor = 2, 4
+    NamePlateSetupOptions.playerLevelDiffWidth = 18
+    uf.PlayerLevelDiffFrame:Show()
+    module:Refresh()
+    assert(not label:IsShown() and uf.PlayerLevelDiffFrame.offsetX == -8,
+        "Retail player level indicator was duplicated or ignored the level offset")
+    local target = module.visuals[bar].targetHost._msufBossTargetIndicator
+    local targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
+    assert(target.offsetX == targetX - 22 and target.mirror.offsetX == -targetX,
+        "Retail's left level indicator overlapped the paired target arrow")
+    module.config.enemyTargetLayout, module.config.enemyTargetAnchor = 1, 4
+    module:Refresh()
+    targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
+    assert(target.offsetX == targetX - 22 and not target.mirror:IsShown(),
+        "single left target arrow overlapped Retail's player level indicator")
+    module.config.enemyTargetLayout, module.config.enemyTargetAnchor = 2, 4
+    uf.PlayerLevelDiffFrame:Hide()
+    module:Refresh()
+    targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
+    assert(label:IsShown() and uf.PlayerLevelDiffFrame.offsetX == 0 and target.offsetX == targetX,
+        "Retail NPC level did not return after the player indicator disappeared")
+    NamePlateSetupOptions.levelIconWidth = 15
+    NamePlateSetupOptions.useClassicHealthBar = true
+    module:Refresh()
+    assert(not label:IsShown() and uf.LevelFrame.offsetX == -8,
+        "Retail Classic style duplicated the native level or lost its drag offset")
+    assert(target.mirror.offsetX == -targetX + 19,
+        "Retail Classic level plaque overlapped the mirrored target arrow")
+    module.config.enemyTargetLayout, module.config.enemyTargetAnchor = 1, 6
+    module:Refresh()
+    targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
+    assert(target.offsetX == targetX + 19 and not target.mirror:IsShown(),
+        "single right target arrow overlapped Classic's level plaque")
+    module.config.enemyTargetLayout, module.config.enemyTargetAnchor = 2, 4
+    NamePlateSetupOptions.useClassicHealthBar = false
+    module:Refresh()
+    assert(label:IsShown() and uf.LevelFrame.offsetX == 0,
+        "switching back to Retail Modern left the native Classic level displaced")
+    targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
+    assert(target.mirror.offsetX == -targetX,
+        "switching back to Retail Modern left the mirrored arrow displaced")
+    targetUnit = nil
+    module.config.enemyLevelEnabled = false
+    module.config.enemyLevelOffsetX = 0
+    module:Refresh()
+    assert(not label:IsShown() and label.offsetX == 0,
+        "disabling level left a visible or displaced custom label")
+    uf.isFriend = true
+    module.config.friendlyLevelEnabled = true
+    module:Refresh()
+    assert(label:IsShown() and label.text == 90,
+        "friendly nameplates did not display their enabled level")
+    module.config.friendlyLevelEnabled = false
+    uf.isFriend = false
+    module:Refresh()
+end
+
+-- Forever reserves a right badge slot, but Jundies uses the same plain number
+-- as Retail. The native Camelot badge remains an explicit appearance choice.
+do
+    NS.Client.isForever = true
+    NamePlateSetupOptions.playerLevelDiffWidth = 28
+    uf.PlayerLevelDiffFrame:Show()
+    module.config.enemyLevelEnabled = true
+    module.config.enemyLevelOffsetX = 6
+    module.config.levelAppearance = 1
+    targetUnit = "nameplate1"
+    module:Refresh()
+    local label = assert(module.levelLabels[uf])
+    local target = module.visuals[bar].targetHost._msufBossTargetIndicator
+    local targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
+    assert(label:IsShown() and label.offsetX == 6 and uf.PlayerLevelDiffFrame:GetAlpha() == 0
+        and target.offsetX == targetX - 28 and target.mirror.offsetX == -targetX,
+        "Forever Jundies did not use Retail's plain level number")
+    module.config.enemyLevelSize = 20
+    module:Refresh()
+    assert(label.textHeight == 20 and label.width == 40 and target.offsetX == targetX - 44,
+        "selected Jundies level size did not reach Forever runtime and arrow gap")
+    module.config.enemyLevelSize = 0
+    module:Refresh()
+    local originalEffectiveLevel = UnitEffectiveLevel
+    UnitEffectiveLevel = function() return 13 end
+    module:Refresh()
+    assert(label.text == 13, "Forever Jundies ignored Blizzard's effective unit level")
+    UnitEffectiveLevel = originalEffectiveLevel
+    module.config.enemyLevelEnabled = false
+    module:Refresh()
+    assert(uf.PlayerLevelDiffFrame:GetAlpha() == 0 and not label:IsShown(),
+        "Forever level switch did not hide the native badge")
+    module.config.enemyLevelEnabled = true
+    module.config.levelAppearance = 2
+    module:Refresh()
+    assert(uf.PlayerLevelDiffFrame:GetAlpha() == 1 and not label:IsShown()
+        and uf.PlayerLevelDiffFrame.offsetX == 6 and target.offsetX == targetX
+        and target.mirror.offsetX == -targetX + 33,
+        "Forever Blizzard badge option did not restore Camelot's level layout")
+    NamePlateSetupOptions.useClassicHealthBar = true
+    module:Refresh()
+    assert(uf.PlayerLevelDiffFrame:GetAlpha() == 1 and uf.LevelFrame:GetAlpha() == 0
+        and uf.PlayerLevelDiffFrame.offsetX == 6,
+        "Forever Classic style duplicated Camelot's badge with the legacy level frame")
+    NamePlateSetupOptions.useClassicHealthBar = false
+    module:Refresh()
+    module.config.look = 2
+    module:Refresh()
+    assert(uf.PlayerLevelDiffFrame:GetAlpha() == 1 and uf.LevelFrame:GetAlpha() == 1,
+        "Blizzard look did not restore both native level frames")
+    module.config.look = 1
+    module:Refresh()
+    uf.PlayerLevelDiffFrame:Hide()
+    uf.PlayerLevelDiffFrame.ShouldDisplay = function() return not uf.showOnlyName end
+    module:Refresh()
+    assert(not label:IsShown() and uf.PlayerLevelDiffFrame.offsetX == 6
+        and target.mirror.offsetX == -targetX + 33,
+        "Forever drew a second level while Camelot's native badge was temporarily hidden")
+    uf.showOnlyName = true
+    module:Refresh()
+    assert(not label:IsShown() and target.mirror.offsetX == -targetX,
+        "Forever names-only plate gained a custom level or reserved an empty badge")
+    uf.showOnlyName = false
+    NamePlateSetupOptions.unitNameAnchorStyle = 2
+    NamePlateSetupOptions.nameJustificationWhenAboveHealthBar = "CENTER"
+    module.config.enemyHealthTextOffsetX = 10
+    name:ClearAllPoints()
+    name:SetPoint("BOTTOMLEFT", nativeAnchor, "TOPLEFT", 0, 2)
+    name:SetPoint("RIGHT", uf.PlayerLevelDiffFrame, "RIGHT", 0, 0)
+    module:Refresh()
+    assert(name.points[2][2] == uf.PlayerLevelDiffFrame,
+        "Forever preview offsets replaced Camelot's future level-frame name anchor")
+    NamePlateSetupOptions.unitNameAnchorStyle = 1
+    NamePlateSetupOptions.nameJustificationWhenAboveHealthBar = nil
+    module.config.enemyHealthTextOffsetX = 0
+    targetUnit = nil
+    module.config.enemyLevelEnabled = false
+    module.config.enemyLevelOffsetX = 0
+    module.config.levelAppearance = 1
+    uf.PlayerLevelDiffFrame.ShouldDisplay = nil
+    NS.Client.isForever = false
+    module:Refresh()
 end
 
 -- Personal mana and alternate power remain Blizzard StatusBars. Skin only

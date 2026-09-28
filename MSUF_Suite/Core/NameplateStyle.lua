@@ -30,6 +30,7 @@ end
 -- layout. The same descriptors drive the settings and preview handles.
 Style.Elements = {
     { key = "Name", label = "Name", section = "enemy" },
+    { key = "Level", label = "Level", section = "enemy" },
     { key = "HealthText", label = "Health text", section = "enemy" },
     { key = "Cast", label = "Castbar", section = "castbar" },
     { key = "CastText", label = "Spell name", section = "castbar" },
@@ -56,6 +57,26 @@ Style.AuraGroups = {
 Style.AuraCVar = {}
 for _, group in ipairs(Style.AuraGroups) do Style.AuraCVar[group.key] = group.cvar end
 Style.AuraBits = { Buffs = 1, Debuffs = 2, Control = 3 }
+
+-- The active Blizzard setup is authoritative for the preview. A profile
+-- choice can be ahead of the CVar update that has reached visible plates.
+function Style.NativeStyleValue(choice)
+    local api = _G.C_CVar
+    local value = api and type(api.GetCVar) == "function" and api.GetCVar("nameplateStyle")
+    if NS.Public(value) then
+        local number = tonumber(value)
+        if number and number >= 0 and number <= 6 then return number end
+    end
+    if type(choice) == "number" and choice >= 2 and choice <= 8 then return choice - 2 end
+    return 0
+end
+
+function Style.ClassicNativePlate(choice)
+    local setup = _G.NamePlateSetupOptions
+    local classic = setup and setup.useClassicHealthBar
+    if NS.Public(classic) and type(classic) == "boolean" then return classic end
+    return Style.NativeStyleValue(choice) == 6
+end
 -- Stable order: the first seven entries were already stored as preview choices.
 Style.Roles = {
     { key = "Melee", label = "Melee", sample = "Mire Laborer", color = "be301d" },
@@ -147,9 +168,33 @@ local function TargetAtlas(frame, direction, cfg)
     end
 end
 
+local function TargetLevelGaps(marker, cfg, rightGap, leftGap, reanchored)
+    if not marker then return end
+    local paired = cfg.bossTargetLayout ~= "SINGLE"
+    local anchor = cfg.bossTargetAnchor or "LEFT"
+    local primary = 0
+    if paired or anchor:find("LEFT", 1, true) then primary = -(leftGap or 0)
+    elseif anchor:find("RIGHT", 1, true) then primary = rightGap or 0 end
+    local scale = marker._scale or 1
+    local y = (cfg.bossTargetY or 0) * scale
+    local x = ((cfg.bossTargetX or -28) - (marker._leftExtent or 0)) * scale + primary
+    if reanchored or marker._suiteTargetX ~= x or marker._suiteTargetY ~= y then
+        marker:SetPointsOffset(x, y)
+        marker._suiteTargetX, marker._suiteTargetY = x, y
+    end
+    local mirror = marker.mirror
+    if mirror and paired then
+        local mx = (-(cfg.bossTargetX or -28) + (marker._rightExtent or 0)) * scale + (rightGap or 0)
+        if reanchored or mirror._suiteTargetX ~= mx or mirror._suiteTargetY ~= y then
+            mirror:SetPointsOffset(mx, y)
+            mirror._suiteTargetX, mirror._suiteTargetY = mx, y
+        end
+    end
+end
+
 -- Use the same renderer as MSUF's boss frame. Only our own host receives its
 -- fields; no Blizzard frame state or MSUF profile is modified.
-function Style.PaintTarget(visual, owner, visible, cfg, parent)
+function Style.PaintTarget(visual, owner, visible, cfg, parent, rightLevelGap, leftLevelGap)
     if not visible then
         if visual.targetHost then visual.targetHost:Hide() end
         return
@@ -164,7 +209,11 @@ function Style.PaintTarget(visual, owner, visible, cfg, parent)
         visual.targetHost, visual.targetBorder = host, Style.CreateBorder(host)
     end
     host:Show()
-    if visual.targetConfig == cfg then return indicator.HasMarker(cfg) and host._msufBossTargetIndicator or nil end
+    if visual.targetConfig == cfg then
+        local marker = indicator.HasMarker(cfg) and host._msufBossTargetIndicator or nil
+        TargetLevelGaps(marker, cfg, rightLevelGap, leftLevelGap)
+        return marker
+    end
     local previous = visual.targetConfig
     visual.targetConfig = cfg
     if previous and previous.atlas ~= cfg.atlas and host._msufBossTargetIndicator then
@@ -179,6 +228,9 @@ function Style.PaintTarget(visual, owner, visible, cfg, parent)
     local direction = paired and (cfg.bossTargetLayout == "BOTH_OUT" and "LEFT" or "RIGHT") or cfg.bossTargetDirection
     TargetAtlas(marker, direction, cfg)
     TargetAtlas(marker.mirror, direction == "RIGHT" and "LEFT" or "RIGHT", cfg)
+    -- Camelot's native level badge sits on the right. The base client can
+    -- place its player level indicator on the left.
+    TargetLevelGaps(marker, cfg, rightLevelGap, leftLevelGap, true)
     return marker
 end
 Style.Markers = {

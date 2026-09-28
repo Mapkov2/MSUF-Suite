@@ -26,6 +26,7 @@ B.Module("nameplates", {
         nameplateShowOnlyNameForFriendlyPlayerUnits = true,
         ShowClassColorInNameplate = true,
         nameplateShowClassColor = true,
+        nameplateShowFriendlyClassColor = true,
         nameplateUseClassColorForFriendlyPlayerUnitNames = true,
         nameplateShowFriendlyRealmName = true,
         nameplateShowAllPersonalAuras = true,
@@ -59,9 +60,12 @@ local native = {
     enemyEliteMarker = false, enemyQuestMarker = false,
     enemyColorsInDungeons = false, enemyColorsOutside = false,
     enemyBorderSize = 0, friendlyBorderSize = 0,
+    enemyHealthWidthDelta = 0, enemyHealthHeightDelta = 0,
+    friendlyHealthWidthDelta = 0, friendlyHealthHeightDelta = 0,
     enemyBorderEnabled = false, friendlyBorderEnabled = false,
     enemyBackdropEnabled = false, friendlyBackdropEnabled = false,
     enemyNameSize = 0, friendlyNameSize = 0,
+    enemyLevelSize = 0, friendlyLevelSize = 0,
     enemyTextOutline = 1, friendlyTextOutline = 1, enemyCastOutline = 1,
     enemyCastSize = 0, enemyHealthTextSize = 0,
     enemyTextEnabled = false, friendlyTextEnabled = false, enemyCastTextEnabled = false,
@@ -88,14 +92,14 @@ end
 for _, role in ipairs(roles) do
     if role.key ~= "TankMode" then native["enemy" .. role.key .. "Enabled"] = false end
 end
-B.Section(id, "general", "Frame Basics", {
+local generalRules = {
     B.Choice("look", "Look", 1, { "Jundies", "Blizzard", "Custom" }),
     B.Bool("enemy", "Skin enemy nameplates", true),
     B.Bool("friendly", "Skin friendly nameplates", true),
     B.Choice("nativeStyle", "Blizzard plate style", 2,
         { "Keep Blizzard setting", "Modern (text inside)", "Thin", "Block (text inside)",
           "Health focus", "Cast focus", "Legacy", "Classic" }),
-    B.Choice("nativeSize", "Blizzard plate size", 3,
+    B.Choice("nativeSize", "Blizzard plate size (health bar + elements)", 3,
         { "Keep Blizzard setting", "Small", "Medium", "Large", "Extra large", "Huge" }),
     B.Choice("classColors", "Player class colors", 2, { "Keep Blizzard setting", "On", "Off" }),
     B.Choice("personalAuras", "Blizzard personal auras", 1, { "Keep Blizzard setting", "Show all", "Blizzard filter" }),
@@ -104,7 +108,13 @@ B.Section(id, "general", "Frame Basics", {
     B.Choice("playerGuildNames", "Player guild names", 1, { "Keep Blizzard setting", "Show", "Hide" }),
     B.Choice("playerTitles", "Player titles", 1, { "Keep Blizzard setting", "Show", "Hide" }),
     B.Bool("protectImport", "Keep current nameplates on full profile import", false),
-})
+}
+if NS.Client.isForever then
+    native.levelAppearance = 2
+    table.insert(generalRules, 6, B.Choice("levelAppearance", "Level appearance", 1,
+        { "Jundies number", "Blizzard badge" }))
+end
+B.Section(id, "general", "Frame Basics", generalRules)
 
 local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Choice("enemyTextMode", "Enemy names and health text", 4,
@@ -156,6 +166,9 @@ local function Side(prefix, title, size)
         B.Color(prefix .. "BackdropColor", "Health backdrop", "000000"),
         B.Number(prefix .. "BackdropAlpha", "Health backdrop opacity (%)", 50, 0, 100, 5),
         B.Bool(prefix .. "TextEnabled", "Customize nameplate text", true),
+        B.Bool(prefix .. "LevelEnabled", "Show unit level",
+            prefix == "enemy" and NS.Client.isForever),
+        B.Number(prefix .. "LevelSize", "Jundies level number size (0 = Blizzard)", 0, 0, 32),
         B.Bool(prefix .. "CustomFont", "Override Blizzard font (empty font = MSUF)", true),
         B.Bool(prefix .. "TextShadow", "Text shadow", prefix == "friendly"),
         B.Number(prefix .. "NameSize", "Name font size (0 = Blizzard)", size, 0, 32),
@@ -163,6 +176,10 @@ local function Side(prefix, title, size)
             NS.NameplateStyle.OutlineLabels),
         font,
     }
+    table.insert(appearance, 1, B.Number(prefix .. "HealthHeightDelta",
+        "Health bar height change (px; 0 = Blizzard)", 0, -4, 24))
+    table.insert(appearance, 1, B.Number(prefix .. "HealthWidthDelta",
+        "Health bar width change (px; 0 = Blizzard)", 0, -30, 160))
     if prefix == "enemy" then
         AddEnemyNativeRules(appearance)
         appearance[#appearance + 1] = B.Bool("enemyRoleColors", "Color enemy health fill by type", true)
@@ -292,6 +309,7 @@ local spec = NS.SuiteCatalog[id]
 local appearanceSections = { enemy = true, friendly = true, roleColors = true, castbar = true,
     enemyColors = true, auras = true, signals = true, personal = true }
 local preset, visual = {}, { nativeStyle = true, nativeSize = true, auraClickthrough = true }
+if NS.Client.isForever then visual.levelAppearance = true end
 for key, rule in pairs(spec.rules) do
     if visual[key] or appearanceSections[rule.section] and key ~= "enemyPreviewRole" then
         preset[key], visual[key] = rule.default, true
