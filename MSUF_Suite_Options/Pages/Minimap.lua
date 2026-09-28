@@ -49,7 +49,8 @@ P.ChoiceGates[ID] = { infoClockTooltip = TooltipChoice, infoFPSTooltip = Tooltip
 -- { stylePreset value, label, swatch color } of the one-click minimap looks.
 local STYLE_PRESETS = {
     { 8, "Midnight Blue", "57c7df" }, { 9, "Midnight Dark", "b9ab86" },
-    { 7, "MSUF Forever", "d8b66a" }, { 2, "Clean", "aab5c2" },
+    { 7, "MSUF Forever", "d8b66a" }, { 10, "Antique Map", "c9a46d" },
+    { 2, "Clean", "aab5c2" },
     { 3, "Arcane", "b7a4ff" }, { 4, "Ember", "ffc078" },
     { 5, "Astral", "a7e8ff" }, { 6, "Steel", "c1d6df" },
 }
@@ -64,7 +65,8 @@ local function PresetButton(body, spec, index, width)
         label:SetPoint("BOTTOM", button, "BOTTOM", 0, 5)
         label:SetJustifyH("CENTER")
     end
-    local path = Suite.MinimapStyle.paths[spec[1] - 1]
+    local preset = Suite.MinimapStylePresets[spec[1]]
+    local path = preset and Suite.MinimapStyle.paths[preset.styleTexture]
     local swatch = button:CreateTexture(nil, "ARTWORK")
     swatch:SetPoint("CENTER", button, "CENTER", 0, 10)
     swatch:SetSize(index == 1 and 17 or 24, index == 1 and 17 or 24)
@@ -103,7 +105,7 @@ local function BuildStylePresets(ctx, b)
                     buttons[i]:SetAlpha(selected == spec[1] and 1 or 0.58)
                 end
             end)
-            return y - 130
+            return y - math.ceil(#STYLE_PRESETS / PRESET_COLUMNS) * 62 - 6
         end,
     })
 end

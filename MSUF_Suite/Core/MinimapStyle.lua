@@ -5,7 +5,8 @@ local Style = {}
 NS.MinimapStyle = Style
 local MEDIA = "Interface\\AddOns\\MSUF_Suite_Modules\\Media\\Minimap\\"
 Style.paths = { false, MEDIA .. "ArcaneRing.tga", MEDIA .. "EmberRing.tga",
-    MEDIA .. "AstralRing.tga", MEDIA .. "SteelFrame.tga" }
+    MEDIA .. "AstralRing.tga", MEDIA .. "SteelFrame.tga", false,
+    MEDIA .. "AntiqueScrollFrame.tga" }
 local HALO, CIRCLE = MEDIA .. "Halo.tga", MEDIA .. "Circle.tga"
 local RGB = NS.RGB
 
@@ -105,7 +106,9 @@ local function PaintArt(self, texture, shown, path, c, scale, width, height, ani
         local factor = (tonumber(c.styleScale) or 100) / 100
         texture:SetSize(width * factor, height * factor)
         texture:ClearAllPoints()
-        texture:SetPoint("CENTER", self.parent, "CENTER", (tonumber(c.styleX) or 0) * scale,
+        -- The scroll is asymmetric. Keep its paper opening aligned as the map resizes.
+        local scrollX = tonumber(c.styleTexture) == 7 and width * (11 / 190) or 0
+        texture:SetPoint("CENTER", self.parent, "CENTER", scrollX + (tonumber(c.styleX) or 0) * scale,
             (tonumber(c.styleY) or 0) * scale)
         local r, g, b = RGB(c.styleColor)
         texture:SetVertexColor(r, g, b, (tonumber(c.styleAlpha) or 0) / 100)

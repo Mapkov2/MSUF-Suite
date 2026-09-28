@@ -56,9 +56,10 @@ B.Section(id, "shape", "Shape, border and shadow", {
 -- A preset writes ordinary settings so every result can be tuned afterwards.
 -- The texture paths are Suite-owned original art; Custom accepts a local WoW
 -- texture path or a file ID. Existing profiles retain the clean default.
-NS.MinimapStyleTextureNames = { "None", "Arcane ring", "Ember ring", "Astral ring", "Steel frame", "Custom texture" }
+NS.MinimapStyleTextureNames = { "None", "Arcane ring", "Ember ring", "Astral ring", "Steel frame",
+    "Custom texture", "Parchment scroll" }
 NS.MinimapStylePresetNames = { "Custom", "Clean", "Arcane", "Ember", "Astral", "Steel",
-    "MSUF Forever", "Midnight Blue", "Midnight Dark" }
+    "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map" }
 local clean = {
     shape = 1, borderSize = 1, borderColor = "000000", borderClassColor = false, borderAlpha = 100,
     shadowSize = 0, shadowColor = "000000", shadowAlpha = 45,
@@ -106,6 +107,9 @@ NS.MinimapStylePresets = {
         styleGlow = true, styleGlowColor = "b9ab86", styleGlowAlpha = 13,
         styleGlowScale = 115, styleBackdrop = true,
         styleBackdropColor = "151719", styleBackdropAlpha = 80 }),
+    [10] = Preset(10, { shape = 1, borderSize = 0, shadowSize = 0,
+        styleTexture = 7, styleScale = 130, styleX = 0, styleY = 0,
+        stylePlacement = 1, styleBackdrop = false, styleGlow = false }),
 }
 NS.MinimapStyleVisualKeys = {}
 for key in pairs(clean) do NS.MinimapStyleVisualKeys[key] = true end

@@ -828,6 +828,39 @@ do
     print("Minimap mask flush waits for combat passed")
 end
 
+-- The Antique Map artwork is local Suite art, and the same preset paints on
+-- Retail and Forever without a dependency on another UI addon.
+do
+    for _, client in ipairs({ "Mainline", "Forever" }) do
+        local W = H.New(root, client)
+        W.editModeReady = true
+        H.Enable(W, { captured = true })
+        W.Step()
+        local S, MM, c = W.S, W.MM, W.config
+        assert(S.SetMany("minimap", W.Suite.MinimapStylePresets[10]))
+        check(c.stylePreset == 10 and c.shape == 1 and c.styleTexture == 7
+            and MM.style.artOver.shown and not MM.style.artUnder.shown
+            and MM.style.artOver.texture:find("AntiqueScrollFrame.tga", 1, true),
+            client .. " Antique Map art was not painted above the map")
+        check(not MM.style.backdrop.shown and not MM.style.glow.shown
+            and c.styleScale == 130 and c.styleX == 0 and c.borderSize == 0,
+            client .. " Antique Map scroll geometry differs from the preset")
+        local _, _, _, offsetX = MM.style.artOver:GetPoint()
+        check(math.abs(offsetX - c.size * 11 / 190) < 0.01,
+            client .. " Antique Map scroll opening is not aligned with the map")
+        assert(S.Set("minimap", "size", 380))
+        _, _, _, offsetX = MM.style.artOver:GetPoint()
+        check(math.abs(offsetX - 22) < 0.01,
+            client .. " Antique Map scroll opening did not follow map resizing")
+        assert(S.Set("minimap", "styleTexture", 1))
+        check(c.styleTexture == 1 and not MM.style.artOver.shown,
+            client .. " Antique Map art did not clear after choosing no artwork")
+        assert(S.Set("minimap", "enabled", false))
+        check(not MM.style.artOver.shown, client .. " Antique Map art remained after disable")
+    end
+    print("Antique Map Retail/Forever runtime preset passed")
+end
+
 -- Blizzard's map remains owned by the existing host and animation is native.
 do
     local W = H.New(root, "Mainline")

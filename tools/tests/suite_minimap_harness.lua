@@ -16,6 +16,7 @@ function H.New(root, client, options)
     options = options or {}
     local G = setmetatable({}, { __index = _G })
     G._G = G
+    G.CreateColor = function(r, g, b, a) return { r, g, b, a } end
     local W = { G = G, combat = false, secure = false, now = 0, timers = {}, frames = {}, drivers = {},
         hooks = 0, movers = {}, hostRecords = {}, cvars = { rotateMinimap = "0" }, calls = {} }
     assert(client == "Mainline" or client == "Forever", "the Suite supports Retail and WoW Forever only")
@@ -96,6 +97,7 @@ function H.New(root, client, options)
     function R:SetTexture(value, ...) self.texture = value; self.wrap = { ... }; return true end
     function R:GetTexture() return self.texture end
     function R:SetColorTexture(...) self.color = { ... } end
+    function R:SetGradient(...) self.gradient = { ... } end
     function R:SetVertexColor(...) self.vertex = { ... } end
     function R:SetBlendMode(value) self.blend = value end
     function R:SetRotation(value) self.rotation = value end

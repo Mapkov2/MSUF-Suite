@@ -34,3 +34,16 @@ for name in ('ArcaneRing', 'EmberRing', 'AstralRing', 'SteelFrame', 'Halo'):
     assert alpha[128 * width + 128] == 0  # artwork leaves the map visible
     assert max(alpha) > 100 and sum(value > 0 for value in alpha) > 100
 print('Minimap ornament TGA format and alpha geometry passed')
+
+data = (root / 'AntiqueScrollFrame.tga').read_bytes()
+width, height = struct.unpack_from('<HH', data, 12)
+assert data[:3] == bytes((0, 0, 2))
+assert (width, height, data[16], data[17]) == (512, 512, 32, 0x28)
+assert len(data) == 18 + width * height * 4
+alpha = data[21::4]
+assert alpha[256 * width + 256] == 0  # live terrain remains visible
+assert max(alpha) == 255 and sum(value > 0 for value in alpha) > 10000
+assert alpha[256 * width + 460] > 200  # the rolled parchment on the right
+assert alpha[256 * width + 128] == 0  # no painted terrain in the opening
+assert alpha[460 * width + 256] > 200  # lower torn paper edge
+print('Antique Map scroll TGA format and transparent opening passed')
