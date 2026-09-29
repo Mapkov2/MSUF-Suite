@@ -221,8 +221,57 @@ M.ControlMeta = function(page, domain, path, classification, exact)
 end
 local previewControls, registeredControls = {}, {}
 M.RegisterControlMetadata = function(widget, meta)
-    if meta and meta.controlId then registeredControls[meta.controlId] = widget end
+    if meta and meta.controlId then
+        registeredControls[meta.controlId] = widget
+        widget.registeredMeta = meta
+    end
     if meta and meta.controlId and meta.controlId:find("%.preview%.") then previewControls[meta.controlId] = widget end
+end
+
+-- Compare cold provider targets with metadata produced by real page builders.
+-- This catches nonexistent sections and controls that moved into custom UI.
+local function CheckSearchTargets(searchRows, pageContexts, requireReverse)
+    local bySetting, byId, sections, indexed = {}, {}, {}, {}
+    local function Collect(meta)
+        if not meta then return end
+        if meta.settingKey then bySetting[meta.settingKey] = meta end
+        if meta.controlId then byId[meta.controlId] = meta end
+    end
+    for _, widget in pairs(registeredControls) do Collect(widget.registeredMeta) end
+    for pageKey, ctx in pairs(pageContexts) do
+        sections[pageKey] = {}
+        for _, section in ipairs(ctx.sections) do sections[pageKey][section.sectionId] = true end
+        for _, id in ipairs(ctx.qualityOfLifeFeatureOrder or {}) do sections[pageKey][id] = true end
+        if ctx.fixedPreview then sections[pageKey][pageKey .. "_preview"] = true end
+        for _, widget in ipairs(ctx.widgets) do Collect(widget.meta) end
+    end
+    local checked = 0
+    for _, row in ipairs(searchRows) do
+        if pageContexts[row.pageKey] then
+            local target = row.controlId or row.settingKey
+            if target then
+                local actual = row.controlId and byId[row.controlId] or bySetting[row.settingKey]
+                assert(actual, "cold search target has no built control: " .. target)
+                assert(actual.sectionId == row.sectionId,
+                    "cold search target points to the wrong section: " .. target)
+                if row.settingKey then indexed[row.settingKey] = true end
+                checked = checked + 1
+            end
+            if row.sectionId then
+                assert(sections[row.pageKey][row.sectionId],
+                    "cold search target has no built section: " .. row.sectionId)
+            end
+        end
+    end
+    if requireReverse then
+        for _, ctx in pairs(pageContexts) do
+            for _, widget in ipairs(ctx.widgets) do
+                local key = widget.meta and widget.meta.settingKey
+                assert(not key or indexed[key], "built setting has no cold search target: " .. tostring(key))
+            end
+        end
+    end
+    return checked
 end
 M.RegisterSearchWidget = function(widget, meta)
     assert(widget and type(meta) == "table" and type(meta.pageKey) == "string")
@@ -281,6 +330,10 @@ W.AttachContextColorShortcut = function(section, opts)
     return shortcut
 end
 W.SetControlEnabled = function(widget, enabled) widget.enabled = enabled and true or false end
+W.SetCollapsibleSummary = function(body, text)
+    body.summary = text
+    body._msuf2CollapsibleEntry._msuf2UXSummary = true
+end
 W.SettingsRows = function(ctx, parent, spec)
     local controls, y = {}, spec.y
     for _, row in ipairs(spec.rows) do
@@ -1391,9 +1444,35 @@ assert(Suite.SuiteCatalog.bags.rules.fontShadow.default == false,
 local savedChat = S.Config("chat")
 assert(Suite.SuiteCatalog.chat.rules.copyMessages.default == false and savedChat.copyMessages == false,
     "chat message copying must be off by default")
+assert(contexts.suite_chat.fixedPreview and contexts.suite_chat.pageItems[1] == "fixed-preview",
+    "chat preview must stay visible while other chat sections are edited")
 local timestampWidget
+local chatFontSizes = {}
 for _, widget in ipairs(contexts.suite_chat.widgets) do
     if widget.meta and widget.meta.settingKey == "showTimestamps" then timestampWidget = widget end
+    if type(widget.row) == "table" and (widget.row.id == "tabFontSize" or widget.row.id == "fontSize") then
+        chatFontSizes[widget.row.id] = widget.row
+    end
+end
+for _, key in ipairs({ "tabFontSize", "fontSize" }) do
+    local row = assert(chatFontSizes[key], "missing chat font size control: " .. key)
+    assert(row.format and row.format(0) == optionsNS.Tr("Default") and row.format(18) == "18",
+        "chat font size does not explain its inherited default value: " .. key)
+end
+do
+local chatTabs
+for _, section in ipairs(contexts.suite_chat.sections) do
+    if section.sectionId == "suite_chat_tabs" then chatTabs = section end
+end
+assert(chatTabs and type(chatTabs.summary) == "string" and chatTabs.summary ~= "",
+    "closed chat section does not expose its current settings")
+local originalTabSize, originalSummary = savedChat.tabFontSize, chatTabs.summary
+savedChat.tabFontSize = 18
+for _, refresh in ipairs(contexts.suite_chat.refreshers) do refresh() end
+assert(chatTabs.summary ~= originalSummary and chatTabs.summary:find("18", 1, true),
+    "section summary stayed stale after a setting changed")
+savedChat.tabFontSize = originalTabSize
+for _, refresh in ipairs(contexts.suite_chat.refreshers) do refresh() end
 end
 assert(timestampWidget and timestampWidget.rowKind == "dropdown"
     and timestampWidget.meta.sectionId == "suite_chat_tools",
@@ -1900,6 +1979,14 @@ assert(skinControls["msufsuite.skin.theme.look"] and skinControls["msufsuite.ski
     and skinControls["msufsuite.skin.icons.microMenu.loadHideMounted"]
     and skinControls["msufsuite.skin.icons.microMenu.loadShowWhenInjured"]
     and skinControls["msufsuite.skin.enabled"], "native Skinning controls missing")
+do
+    local createFrame = CreateFrame
+    CreateFrame = function() error("cold Skinning search must not create widgets") end
+    local searchRows = optionsNS.SkinSearchRows()
+    CreateFrame = createFrame
+    assert(CheckSearchTargets(searchRows, { suite_skin = skinContext }, true) > 90,
+        "cold Skinning search omitted settings or actions")
+end
 assert(not skinControls["msufsuite.skin.hud.objectiveTrackerStyle"]
     and not skinControls["msufsuite.skin.skins.objectiveTracker"],
     "retired Blizzard tracker controls remain in Skinning")
@@ -2138,6 +2225,74 @@ local windowType = Find(dm, function(w) return w.meta and w.meta.settingKey == "
 windowPicker.set(3)
 assert(windowType.get() == S.Config("damageMeter").w3Type)
 local dmConfig = S.Config("damageMeter")
+;(function()
+    local function Prepare(widget, config)
+        local before, historyBefore = {}, historyWrites
+        for key, value in pairs(config) do before[key] = value end
+        assert(type(widget._msuf2PrepareExactSearchTarget) == "function", "shared editor lacks search preparation")
+        widget:_msuf2PrepareExactSearchTarget()
+        for key, value in pairs(before) do assert(config[key] == value, "search changed " .. key) end
+        for key in pairs(config) do assert(before[key] ~= nil, "search added " .. key) end
+        assert(historyWrites == historyBefore, "search preparation wrote history")
+    end
+
+    current = bars
+    local barConfig = S.Config("actionbars")
+    picker.set(12)
+    Prepare(size, barConfig)
+    assert(picker.get() == 12, "generic bar search changed a compatible selection")
+    Prepare(macro, barConfig)
+    assert(picker.get() == 1 and macro.enabled, "macro search remained on an incompatible pet bar")
+    picker.set(2)
+    Prepare(size, barConfig)
+    assert(picker.get() == 2, "bar search reset the current bar to its metadata template")
+    local sizeBefore, templateBefore = barConfig.bar2Size, barConfig.bar1Size
+    size.set(sizeBefore + 1)
+    assert(barConfig.bar2Size == sizeBefore + 1 and barConfig.bar1Size == templateBefore,
+        "searched bar control wrote the metadata template instead of the selected bar")
+    barConfig.bar2Size = sizeBefore
+    picker.set(1)
+
+    current = dm
+    local countBefore = dmConfig.windowCount
+    dmConfig.windowCount = 3
+    windowPicker.set(3)
+    Prepare(windowType, dmConfig)
+    assert(windowPicker.get() == 3, "window search changed an active selection")
+    dmConfig.windowCount = 1
+    Prepare(windowType, dmConfig)
+    assert(windowPicker.get() == 1, "window search stayed on a disabled extra window")
+    dmConfig.windowCount = countBefore
+
+    current = contexts.suite_cooldownManager
+    local page, config = optionsNS.CDMPage, S.Config("cooldownManager")
+    local function Control(key)
+        return assert(Find(current, function(widget)
+            return widget.meta and widget.meta.settingKey == "msufsuite.cooldownManager." .. key
+        end), key)
+    end
+    local name, iconSize, timerWidth = Control("c1_name"), Control("c1_size"), Control("c1_barWidth")
+    page.Select("ess")
+    Prepare(iconSize, config)
+    assert(page.selected == "ess", "cooldown search changed a compatible built-in selection")
+    local oldSize, customSize = config.ess_size, config.c1_size
+    iconSize.set(oldSize + 1)
+    assert(config.ess_size == oldSize + 1 and config.c1_size == customSize,
+        "searched cooldown control wrote the custom template instead of the selected bar")
+    config.ess_size = oldSize
+    Prepare(name, config)
+    assert(page.SlotInfo(page.selected).custom and page.Relevant(page.selected, "name"),
+        "bar name search stayed on an unrenameable built-in bar")
+    local custom = page.selected
+    Prepare(name, config)
+    assert(page.selected == custom, "bar name search changed an already compatible custom bar")
+    page.Select("ess")
+    Prepare(timerWidth, config)
+    assert(page.selected ~= "ess" and page.Relevant(page.selected, "barWidth"),
+        "timer bar search stayed on an incompatible icon bar")
+    page.Select("ess")
+    current = dm
+end)()
 local meterLook = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.look" end)
 local meterBorder = ColorTarget(dm, "suite_damageMeter_window", "msufsuite.damageMeter.borderColor")
 assert(meterLook and meterBorder and dmConfig.look == 5 and dmConfig.borderColor == "333333",
@@ -2942,6 +3097,24 @@ end)()
     assert(firstCombat == "suite_qualityOfLife_combatPetStatus_pet_status",
         "Quality of Life features did not re-sort after a locale change")
     M.Tr = original
+end)()
+
+-- The action and catalog providers must be independent of visiting a page.
+-- Build lazy QoL details only for the separate, authoritative widget inventory.
+;(function()
+    M.RegisterSearchProvider = function() return true end
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Search.lua"))("MSUF_Suite_Options", optionsNS)
+    local searchRows = optionsNS.SearchRows()
+    local qol = contexts.suite_qualityOfLife
+    for _, sectionId in ipairs(qol.qualityOfLifeFeatureOrder) do
+        qol.entry._msuf2ResolveMissingSection(sectionId)
+    end
+    local pageContexts = {}
+    for key, ctx in pairs(contexts) do
+        if key ~= "suite_skin" then pageContexts[key] = ctx end
+    end
+    assert(CheckSearchTargets(searchRows, pageContexts) > 1200,
+        "cold Suite search omitted catalog settings or editor actions")
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

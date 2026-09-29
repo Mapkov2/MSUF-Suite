@@ -234,6 +234,7 @@ end
 -- the menu through Suite.Options.RefreshAll (set in Register.lua).
 function P.Refresh()
     P.ForgetAvailability()
+    if M.InvalidateSearchProvider then M.InvalidateSearchProvider("MSUF_Suite") end
     P.RefreshSkinPageShape()
     if M.RequestRefresh then M.RequestRefresh(nil, "suite") end
 end
@@ -245,6 +246,9 @@ function P.Combat() return Suite.IsCombatLocked() end
 P.Requires = {}
 -- Per-module extra gates: function(rule, key) -> boolean.
 P.Gates = {}
+-- Shared editors may select a compatible instance before search focuses its
+-- widget. These callbacks change only the page's current selection.
+P.SearchPreparers = {}
 -- Per-module, per-key choice gates: function(choiceIndex) -> boolean.
 P.ChoiceGates = {}
 
@@ -293,6 +297,11 @@ function P.Text(parent, text, x, y, width, color)
     label:SetJustifyH("LEFT")
     label:SetWordWrap(true)
     return label
+end
+
+function P.Description(parent, text, x, y, width, title)
+    if P.W.Description then return P.W.Description(parent, text, x, y, width, title) end
+    return P.Text(parent, text, x, y, width)
 end
 
 -- Buttons follow the page's enable rules: pass `enabled` (function) to gate.

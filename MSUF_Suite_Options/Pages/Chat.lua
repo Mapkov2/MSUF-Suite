@@ -47,6 +47,24 @@ local function Color(texture, hex, alpha)
     texture:SetVertexColor(r, g, b, (alpha or 100) / 100)
 end
 
+local function RefreshSampleText(label, otherTab, lines, fonts)
+    local ar, ag, ab = P.RGB(P.Get(ID, "tabActiveColor"))
+    local ir, ig, ib = P.RGB(P.Get(ID, "tabInactiveColor"))
+    label:SetTextColor(ar, ag, ab)
+    otherTab:SetTextColor(ir, ig, ib)
+    local selectedTabSize = tonumber(P.Get(ID, "tabFontSize")) or 0
+    local selectedMessageSize = tonumber(P.Get(ID, "fontSize")) or 0
+    if fonts.tab then
+        local size = selectedTabSize > 0 and selectedTabSize or fonts.tabSize
+        label:SetFont(fonts.tab, size, fonts.tabFlags)
+        otherTab:SetFont(fonts.tab, size, fonts.tabFlags)
+    end
+    if fonts.message then
+        lines:SetFont(fonts.message, selectedMessageSize > 0 and selectedMessageSize or fonts.messageSize,
+            fonts.messageFlags)
+    end
+end
+
 local function Sample(body, y, width, ctx)
     local sample = CreateFrame("Frame", nil, body)
     sample:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
@@ -80,6 +98,9 @@ local function Sample(body, y, width, ctx)
     local label = sample:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     label:SetPoint("TOPLEFT", sample, "TOPLEFT", 38, -8)
     label:SetText(Tr("General"))
+    local otherTab = sample:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    otherTab:SetPoint("LEFT", label, "RIGHT", 16, 0)
+    otherTab:SetText(Tr("Party"))
     local lines = sample:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     lines:SetPoint("TOPLEFT", sample, "TOPLEFT", 39, -43)
     lines:SetWidth(width - 50)
@@ -94,6 +115,9 @@ local function Sample(body, y, width, ctx)
     local prompt = sample:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     prompt:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 43, 10)
     prompt:SetText(Tr("Say:"))
+    local fonts = {}
+    fonts.tab, fonts.tabSize, fonts.tabFlags = label:GetFont()
+    fonts.message, fonts.messageSize, fonts.messageFlags = lines:GetFont()
     M.TrackRefresh(ctx, function()
         Color(fill, P.Get(ID, "panelColor"), P.Get(ID, "panelAlpha"))
         Color(sidebar, P.Get(ID, "panelColor"), math.min(100, P.Get(ID, "panelAlpha") + 8))
@@ -110,6 +134,7 @@ local function Sample(body, y, width, ctx)
         Color(accent, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
         accent:SetShown(P.Get(ID, "tabPanel") and P.Get(ID, "tabAccent")
             and P.Get(ID, "accentAlpha") > 0)
+        RefreshSampleText(label, otherTab, lines, fonts)
         Color(input, P.Get(ID, "inputColor"), P.Get(ID, "inputAlpha"))
         input:SetShown(P.Get(ID, "inputPanel"))
     end)
@@ -118,14 +143,19 @@ end
 
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
+    local preview = P.W.FixedPreviewSection(ctx, b, {
+        title = Tr("Preview"), height = 176, gap = 8,
+    })
+    if preview then
+        local width = math.max(240, (preview._msuf2Width or b.width or 720) - 32)
+        Sample(preview, -48, width, ctx)
+    end
     P.ModuleCard(ctx, b, PAGE, ID)
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
             help = "Clean Modern is the Retail default; MSUF Forever is the Forever default. Midnight Blue keeps the original blue glass. Open a section's three-dot menu to change its colors, or use MSUF Colors for the full palette. Your own color changes become Custom.",
-            extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look", function(body, y, width)
-                return Sample(body, y, width, ctx)
-            end),
+            extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look"),
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_window", Tr("Chat window"),
         P.SectionRules(ID, "window"), {

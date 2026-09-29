@@ -24,6 +24,15 @@ local function IsPositionRule(rule)
     return rule.key:match("Offset[XY]$") ~= nil
 end
 
+-- Search follows the same placement rules as the page and preview.
+function P.NameplateSearchTarget(rule)
+    if IsPositionRule(rule) then return PAGE .. "_preview", nil, false end
+    if ELEMENT_KEYS[rule.key] or CAST_ELEMENT_KEYS[rule.key] then return PAGE .. "_enemy" end
+    if rule.section == "enemyColors" then
+        return PAGE .. (rule.key == "enemyTargetColor" and "_enemy" or "_roleColors")
+    end
+end
+
 local function VisibleRules(rules)
     local visible = {}
     for _, rule in ipairs(rules) do
@@ -68,9 +77,18 @@ local function EnemySection(ctx, builder, rules)
         local panel = CreateFrame("Frame", nil, body)
         panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -59)
         panel:SetSize(width + 32, 100)
-        local help = P.Text(panel, spec[3], 16, -18, width)
+        local help = P.Description(panel, spec[3], 16, -18, width, "Enemy appearance")
         local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
-        y = P.RuleGrid(ctx, panel, PAGE, ID, spec[2], y, width, nil, sectionId)
+        local entries
+        y, entries = P.RuleGrid(ctx, panel, PAGE, ID, spec[2], y, width, nil, sectionId)
+        local tab = spec[1]
+        for _, entry in ipairs(entries or {}) do
+            if entry.widget then
+                entry.widget._msuf2PrepareExactSearchTarget = function()
+                    if P.SelectNameplatesEnemyTab then P.SelectNameplatesEnemyTab(tab) end
+                end
+            end
+        end
         heights[spec[1]] = -y + 14
         panel:SetHeight(heights[spec[1]])
         panels[spec[1]] = panel

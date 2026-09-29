@@ -28,8 +28,11 @@ end
 
 ------------------------------------------------------------------ source contract
 local toc = Read(root .. "/MSUF_Suite_Options/MSUF_Suite_Options_Mainline.toc")
-Check(toc:find("\nMenu\\Register.lua\nMenu\\Search.lua\n", 1, true),
-    "Menu\\Search.lua must load right after Menu\\Register.lua")
+local registerAt = toc:find("\nMenu\\Register.lua\n", 1, true)
+local actionsAt = toc:find("\nMenu\\SearchActions.lua\n", 1, true)
+local searchAt = toc:find("\nMenu\\Search.lua\n", 1, true)
+Check(registerAt and actionsAt and searchAt and registerAt < actionsAt and actionsAt < searchAt,
+    "Suite search must load after page registration and the action inventory")
 local source = Read(root .. "/MSUF_Suite_Options/Menu/Search.lua")
 Check(source:find('if type(M.RegisterSearchProvider) ~= "function" then return end', 1, true),
     "the provider must register only where the MSUF menu has the hook")
@@ -71,13 +74,14 @@ Check(failure == nil, "MSUF did not boot: " .. tostring(failure and failure.file
 local env = world.env
 env.InCombatLockdown = function() return false end
 env.UnitAffectingCombat = function() return false end
-local missing = {}
+env.C_NamePlate = { GetNamePlates = function() return {} end, GetNamePlateForUnit = function() end }
+local missing, disabled = {}, {}
 local loaded = { MidnightSimpleUnitFrames = true, MidnightSimpleUnitFrames_Options = true }
 env.C_AddOns = {
     GetAddOnMetadata = function() return nil end,
     IsAddOnLoaded = function(name) return loaded[name] == true, loaded[name] == true end,
     DoesAddOnExist = function(name) return name:find("^MSUF_Suite") ~= nil and not missing[name] end,
-    GetAddOnEnableState = function() return 2 end,
+    GetAddOnEnableState = function(name) return disabled[name] and 0 or 2 end,
     LoadAddOn = function() return false, "MISSING" end,
     GetNumAddOns = function() return 0 end,
 }
@@ -92,8 +96,44 @@ local function LoadAddOn(addon, namespace)
     loaded[addon] = true
 end
 LoadAddOn("MSUF_Suite", {})
+local Suite = env.MSUFSuite
+Check(Suite.Database.Initialize(nil), "Suite test profile did not initialize")
+for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = true end
 local P = {}
 LoadAddOn("MSUF_Suite_Options", P)
+for _, feature in ipairs(P.QualityOfLifeSearchFeatures or {}) do
+    Suite.Suite.Config(feature.id)[feature.switch] = true
+end
+
+-- Disabling a module/feature hides its details, but its real setting key must
+-- still identify the switch used to turn it back on (cold or visited page).
+do
+    local chat = Suite.Suite.Config("chat")
+    chat.enabled = false
+    Check(P.SearchRowAvailable("suite_chat", "msufsuite.chat.enabled", {
+        kind = "toggle", suiteModuleId = "chat",
+    }), "a disabled module's enable switch disappeared from cold search")
+    Check(P.SearchRowAvailable("suite_chat", "msufsuite.chat.enabled", { kind = "toggle" }),
+        "a disabled module's enable switch disappeared from visited-page search")
+    Check(not P.SearchRowAvailable("suite_chat", "msufsuite.chat.fontSize", { kind = "slider" }),
+        "a disabled module still exposed its detail settings")
+    chat.enabled = true
+
+    local checkedFeature = false
+    for _, feature in ipairs(P.QualityOfLifeSearchFeatures or {}) do
+        if feature.switch ~= "enabled" then
+            local config = Suite.Suite.Config(feature.id)
+            config[feature.switch] = false
+            Check(P.SearchRowAvailable("suite_qualityOfLife",
+                "msufsuite." .. feature.id .. "." .. feature.switch, { kind = "toggle" }),
+                "a disabled QoL feature's switch disappeared from visited-page search")
+            config[feature.switch] = true
+            checkedFeature = true
+            break
+        end
+    end
+    Check(checkedFeature, "the QoL fixture had no independent feature switch")
+end
 
 local M = world.core.MSUF2
 local api = M.Search._CoreAPI
@@ -130,6 +170,25 @@ for _, case in ipairs(PAGE_QUERIES) do
     local first = Show(case[1])[1]
     Check(first and first.key == case[2], "'" .. case[1] .. "' opens " .. tostring(first and first.key)
         .. " first, not " .. case[2])
+end
+for _, query in ipairs({ "mythic plus", "mythic+", "m+", "m+ mythic plus" }) do
+    local results = Search(query)
+    local timer, summary
+    for i = 1, math.min(6, #results) do
+        local rec = results[i]
+        if rec.key == "suite_hud" and rec.label == "Mythic+ settings" then timer = rec end
+        if rec.key == "suite_hud" and rec.label == "Mythic+ run summaries" then summary = rec end
+    end
+    if flavor == "Mainline" then
+        Check(timer and timer.route and timer.route.accordion["suite_hud:suite_hud_objectives_content"],
+            "'" .. query .. "' did not put the timer section in the search palette")
+        Check(summary and summary.route and summary.route.accordion["suite_hud:suite_hud_summary_content"],
+            "'" .. query .. "' did not put run summaries in the search palette")
+        Check(timer.hint:find("^MSUF Suite > ") and summary.hint:find("^MSUF Suite > "),
+            "'" .. query .. "' did not identify the Suite in its result breadcrumbs")
+    else
+        Check(not timer and not summary, "'" .. query .. "' exposed Retail-only HUD options")
+    end
 end
 Check(api.GetSearchProviderCache().skipped == 0, "the host skipped Suite rows as malformed")
 
@@ -248,6 +307,90 @@ for _, row in ipairs(P.SearchRows()) do
 end
 missing.MSUF_Suite_Chat = nil
 
+-- Exercise the actual host cache through controller setters, addon availability
+-- and profile activation. Calling the predicate alone cannot catch stale rows.
+local function FindSetting(key)
+    for _, record in ipairs(api.GetSearchRecords()) do
+        if record.settingKey == key or record.exactTarget and record.exactTarget.settingKey == key then
+            return record
+        end
+    end
+end
+if M.RegisterSearchAvailability then
+    local switches, byModule = {}, {}
+    for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
+        switches["msufsuite." .. feature.id .. "." .. feature.switch] = true
+    end
+    local function Identity(record)
+        return table.concat({ record.key or "", record.kind or "", record.label or "",
+            record.settingKey or record.exactTarget and record.exactTarget.settingKey or "",
+            record.exactTarget and record.exactTarget.controlId or "", record.sectionId or "" }, "|")
+    end
+    for _, record in ipairs(api.GetSearchRecords()) do
+        local row = record.providerRow or {}
+        local key = record.settingKey or record.exactTarget and record.exactTarget.settingKey
+        local id, field
+        if key then id, field = key:match("^msufsuite%.([^.]+)%.(.+)$") end
+        id = row.suiteModuleId or id
+        if id and catalog[id] and record.kind ~= "page" and field ~= "enabled"
+            and not row.suiteModuleSwitch and not switches[key] then
+            byModule[id] = byModule[id] or {}
+            byModule[id][#byModule[id] + 1] = Identity(record)
+        end
+    end
+    local checked = 0
+    for _, id in ipairs(Suite.SuiteOrder) do
+        local details = byModule[id]
+        if details then
+            local hadMaster = FindSetting("msufsuite." .. id .. ".enabled")
+            Check(Suite.Suite.Set(id, "enabled", false), "could not disable " .. id)
+            local indexed = {}
+            for _, record in ipairs(api.GetSearchRecords()) do indexed[Identity(record)] = true end
+            for _, identity in ipairs(details) do
+                Check(not indexed[identity], "disabled module retained a cold detail: " .. id .. " " .. identity)
+            end
+            if hadMaster then
+                Check(FindSetting("msufsuite." .. id .. ".enabled"), "disabled module lost its switch: " .. id)
+            else
+                local featureSwitches = 0
+                for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
+                    if feature.id == id then
+                        local record = FindSetting("msufsuite." .. id .. "." .. feature.switch)
+                        Check(record and record.providerRow and record.providerRow.suiteModuleSwitch,
+                            "disabled aggregate module lost its feature switch: " .. id)
+                        featureSwitches = featureSwitches + 1
+                    end
+                end
+                Check(featureSwitches > 0, "module has neither a master nor a real feature switch: " .. id)
+            end
+            Check(Suite.Suite.Set(id, "enabled", true), "could not reenable " .. id)
+            indexed = {}
+            for _, record in ipairs(api.GetSearchRecords()) do indexed[Identity(record)] = true end
+            for _, identity in ipairs(details) do
+                Check(indexed[identity], "reenabled module lost a cold detail: " .. id .. " " .. identity)
+            end
+            checked = checked + 1
+        end
+    end
+    Check(checked >= 20, "module filtering fixture covered too few available modules: " .. checked)
+    Check(FindSetting("msufsuite.chat.fontSize"), "chat fixture has no font setting")
+    disabled.MSUF_Suite_Chat = true
+    P.Refresh()
+    Check(not FindSetting("msufsuite.chat.fontSize"), "disabled addon retained cached details")
+    disabled.MSUF_Suite_Chat = nil
+    P.Refresh()
+    Check(FindSetting("msufsuite.chat.fontSize"), "available addon did not regain its details")
+
+    local original = Suite.Database.GetActiveProfileName()
+    Check(Suite.Database.Create("Search disabled module", true), "could not create test profile")
+    Suite.Database.GetProfile("Search disabled module").suite.modules.chat.enabled = false
+    Check(Suite.Database.Activate("Search disabled module"), "could not activate test profile")
+    Check(not FindSetting("msufsuite.chat.fontSize"), "profile activation retained previous module details")
+    Check(FindSetting("msufsuite.chat.enabled"), "profile activation hid the module switch")
+    Check(Suite.Database.Activate(original), "could not restore test profile")
+    Check(FindSetting("msufsuite.chat.fontSize"), "profile restoration did not rebuild search")
+end
+
 -- Search navigation must open a cold QoL page, select its category/tab, and
 -- build the exact setting widget before resolving it. The client-world harness
 -- omits a few native Widget methods and window chrome; supply only those API
@@ -282,6 +425,30 @@ do
     M.scrollChild = env.CreateFrame("Frame", nil, env.UIParent)
     M.frame = env.CreateFrame("Frame", nil, env.UIParent)
     M.frame:Show()
+
+    if flavor == "Mainline" then
+        for _, case in ipairs({
+            { label = "Mythic+ settings", sectionId = "suite_hud_objectives_content" },
+            { label = "Mythic+ run summaries", sectionId = "suite_hud_summary_content" },
+        }) do
+            local target
+            for i, record in ipairs(Search("mythic plus")) do
+                if i <= 6 and record.key == "suite_hud" and record.label == case.label then
+                    target = record
+                    break
+                end
+            end
+            Check(target, "Mythic+ HUD shortcut disappeared after its page was built")
+            local selected, anchored = api.OpenSearchTarget(target.key, target.label,
+                target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+            world.widgets:RunTimers(80)
+            local entry = M.cache and M.cache.suite_hud
+            local section = entry and entry.sections and entry.sections[case.sectionId]
+            Check(selected and anchored and M.activeKey == "suite_hud"
+                and section and section._msuf2CollapsibleEntry.open == true,
+                "Mythic+ search did not open the HUD section: " .. case.sectionId)
+        end
+    end
 
     local function RouteExact(settingKey, expectedTab)
         local target
@@ -332,6 +499,44 @@ do
         Check(first and first.key == "suite_qualityOfLife" and first.exactTarget
             and first.exactTarget.settingKey == case[2],
             "Quality of Life search did not put the feature first: " .. case[1])
+    end
+    if M.RegisterSearchAvailability then
+        Check(Suite.Suite.Set("qol", "autoJunk", false), "could not disable visited QoL subfeature")
+        Check(not FindSetting("msufsuite.qol.junkReport"), "disabled subfeature retained its live detail")
+        Check(FindSetting("msufsuite.qol.autoJunk") and FindSetting("msufsuite.qol.guildRepair"),
+            "disabling one subfeature hid its switch or another feature in the same module")
+        Check(Suite.Suite.Set("qol", "autoJunk", true), "could not reenable visited QoL subfeature")
+        Check(FindSetting("msufsuite.qol.junkReport"), "reenabled subfeature did not return")
+        Check(Suite.Suite.Set("actionTracker", "enabled", false), "could not disable visited feature")
+        Check(not FindSetting("msufsuite.actionTracker.rows"), "visited disabled feature retained a live setting")
+        Check(FindSetting("msufsuite.actionTracker.enabled"), "visited disabled feature lost its switch")
+        for _, record in ipairs(api.GetSearchRecords()) do
+            Check(not (record.key == "suite_qualityOfLife" and record.kind ~= "toggle"
+                and record.sectionId == "suite_qualityOfLife_actionTracker_main"),
+                "visited disabled feature retained a live action or section")
+        end
+        Check(Suite.Suite.Set("actionTracker", "enabled", true), "could not reenable visited feature")
+        Check(FindSetting("msufsuite.actionTracker.rows"), "visited reenabled feature did not return")
+
+        -- The visited Repair/Sell junk rows own separate switches; there is
+        -- no qol.enabled widget. Both survive when their backing module is off.
+        Check(Suite.Suite.Set("qol", "enabled", false), "could not disable visited aggregate module")
+        Check(not FindSetting("msufsuite.qol.junkReport"), "visited disabled aggregate retained a detail")
+        local featureSwitches = 0
+        for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
+            if feature.id == "qol" then
+                local settingKey = "msufsuite.qol." .. feature.switch
+                local record = FindSetting(settingKey)
+                Check(record, "visited disabled aggregate lost its feature switch: " .. feature.switch)
+                local _, widget = M.RuntimeControlCatalog.FindBySettingKey(
+                    settingKey, "suite_qualityOfLife", record.exactTarget)
+                Check(widget, "aggregate search switch has no real visited widget: " .. feature.switch)
+                featureSwitches = featureSwitches + 1
+            end
+        end
+        Check(featureSwitches > 0, "visited aggregate fixture exercised no feature switches")
+        Check(Suite.Suite.Set("qol", "enabled", true), "could not reenable visited aggregate module")
+        Check(FindSetting("msufsuite.qol.junkReport"), "visited reenabled aggregate detail did not return")
     end
 end
 

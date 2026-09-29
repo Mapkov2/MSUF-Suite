@@ -203,6 +203,18 @@ P.Gates[ID] = function(rule)
     return Page.Relevant(Page.selected, rule.suffix)
 end
 
+P.SearchPreparers[ID] = function(rule)
+    if not rule.suffix or Page.Relevant(Page.selected, rule.suffix) then return end
+    local fallback
+    for _, slot in ipairs(SLOTS) do
+        if Page.Relevant(slot.key, rule.suffix) then
+            if Page.IsOn(slot.key) then return Page.Select(slot.key) end
+            fallback = fallback or slot.key
+        end
+    end
+    if fallback then Page.Select(fallback) end
+end
+
 -- Text inputs commit on blur. An input remembers the bar it was focused on,
 -- and a bar switch commits the pending text first, so a typed name always
 -- lands on the bar it was typed for.

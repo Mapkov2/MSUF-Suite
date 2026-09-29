@@ -189,7 +189,7 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
 end
 
 local function Help(body, text, y, width)
-    local label = P.Text(body, text, 16, y, width)
+    local label = P.Description(body, text, 16, y, width)
     return y - max(14, ceil(label:GetStringHeight() or 14)) - 8
 end
 local function Divider(body, y)
@@ -243,6 +243,8 @@ local function ColorEnabled(rule) return P.RuleEnabled(ID, rule, Page.KeyFn) end
 local function BuildSection(ctx, b, ui, spec)
     local sectionId = "suite_cooldownManager_" .. spec.id
     local body = b:CollapsibleSection(sectionId, Tr(spec.title), 120, spec.open == true)
+    -- The selected bar and availability badge already summarize this header.
+    body._msufSuiteSkipSummary = true
     local width = max(240, (body._msuf2Width or b.width or 720) - 32)
     local y = Help(body, HELP[spec.id], -18, width)
     local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)

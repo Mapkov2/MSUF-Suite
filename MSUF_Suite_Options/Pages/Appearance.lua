@@ -2,6 +2,7 @@ local _, P = ...
 local Suite, M, W, T, Tr = P.Suite, P.M, P.W, P.T, P.Tr
 local PAGE = "suite_skin"
 local format = string.format
+local SearchRow, Button = P.SkinSearchRow, P.SkinSearchButton
 
 -- The skin engine loads on demand (never in combat) the first time this page
 -- is built.
@@ -81,6 +82,7 @@ end
 
 local function Row(kind, label, key, section, get, set, values, min, max, step)
     local row = Meta(key, section)
+    row.searchLabel = label
     row.id, row.kind, row.label, row.get, row.set = key, kind, Tr(label), get, set
     if kind == "dropdown" then
         row.values = values
@@ -195,11 +197,19 @@ end
 -- One accordion: help, a settings grid of the non-color rows, an optional
 -- `extra(body, y, width) -> y` builder, and the color shortcut.
 local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
+    if ctx.searchRows then
+        local sectionId = "suite_skin_" .. id
+        SearchRow(ctx, { kind = "section", label = Tr(title), searchLabel = title }, sectionId, Tr(title), Tr(help))
+        for _, row in ipairs(rows) do SearchRow(ctx, row, sectionId, Tr(title), Tr(help)) end
+        for _, row in ipairs(contextRows or {}) do SearchRow(ctx, row, sectionId, Tr(title), Tr(help)) end
+        if extra then extra(nil, 0, 720) end
+        return
+    end
     local body = b:CollapsibleSection("suite_skin_" .. id, Tr(title), 120, open)
     local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
     local y = -18
     if help then
-        local hint = P.Text(body, help, 16, y, width)
+        local hint = P.Description(body, help, 16, y, width, title)
         y = y - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
     end
     local visibleRows = {}
@@ -213,6 +223,7 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
         y = grid.bottomY
     end
     if extra then y = extra(body, y, width) or y end
+    P.AttachRowsSummary(ctx, body, visibleRows)
     AttachColors(body, title, contextRows or rows)
     if id ~= "advanced" then
         P.AttachSectionReset(ctx, body, title, function()
@@ -363,11 +374,16 @@ local function MicroPresetExtra(ctx, skin)
     return function(body, y, width)
         local half = math.floor((width - 12) / 2)
         for index, style in ipairs(MICRO_PRESETS) do
-            P.Button(ctx, body, MICRO_PRESET_LABELS[style],
+            Button(ctx, body, MICRO_PRESET_LABELS[style],
                 16 + ((index - 1) % 2) * (half + 12), y - math.floor((index - 1) / 2) * 38, half, function()
                     Change(skin, "Micro Bar " .. style, "micro.preset",
                         function() return skin.MicroMenuSkin.ApplyPreset(style) end)
                 end, nil, P.Meta(PAGE, "skin", "micro.preset." .. style, "action", "suite_skin_micro"))
+        end
+        if ctx.searchRows then
+            Button(ctx, body, "Move in MSUF Edit Mode", 0, 0, width, nil, nil,
+                P.Meta(PAGE, "skin", "micro.move", "action", "suite_skin_micro"))
+            return y
         end
         local description = P.Text(body, "", 16, y - 72, width)
         local function RefreshMicroHint()
@@ -376,7 +392,7 @@ local function MicroPresetExtra(ctx, skin)
         RefreshMicroHint()
         M.TrackRefresh(ctx, RefreshMicroHint)
         local descHeight = math.max(22, math.ceil(description:GetStringHeight() or 22))
-        P.Button(ctx, body, "Move in MSUF Edit Mode", 16, y - 82 - descHeight, width,
+        Button(ctx, body, "Move in MSUF Edit Mode", 16, y - 82 - descHeight, width,
             function() MoveMicroBar(skin) end, nil, P.Meta(PAGE, "skin", "micro.move", "action", "suite_skin_micro"))
         return y - 120 - descHeight
     end
@@ -443,7 +459,7 @@ local function BuildMicroBar(ctx, b, skin)
     Section(ctx, b, "micro_details", "Micro Bar details",
         "Optional artwork and spacing controls. Use MSUF Edit Mode for position, nudging, reset, undo and redo.",
         MicroDetailRows(skin), false, function(body, y, width)
-            P.Button(ctx, body, "Reset Micro Bar to client default", 16, y, width, function()
+            Button(ctx, body, "Reset Micro Bar to client default", 16, y, width, function()
                 Change(skin, "Reset Micro Bar", "micro.reset", skin.MicroMenuSkin.ResetRecommended)
             end, nil, P.Meta(PAGE, "skin", "micro.reset", "action", "suite_skin_micro_details"))
             return y - 40
@@ -484,6 +500,11 @@ local function BuildFrameBasics(ctx, b, skin)
                     Change(skin, "Skin Suite windows", "suiteEnabled", function() return Suite.Skin.SetEnabled(value) end)
                 end),
         }, true)
+    if ctx.searchRows then
+        SearchRow(ctx, Row("toggle", "Enable Skinning", "enabled", "frame_basic"),
+            "suite_skin_frame_basic", Tr("Frame Basics"))
+        return
+    end
     local enable = W.SectionSwitch(basics, Tr("Enable Skinning"), Tr("Enable"))
     M.BindBoolWidget(ctx, enable, P.SkinningEnabled, P.SetSkinningEnabled, Meta("enabled", "frame_basic"))
     M.TrackRefresh(ctx, function() W.SetControlEnabled(enable, not P.Combat()) end)
@@ -520,10 +541,10 @@ local function BuildLook(ctx, b, skin)
         }, true, function(body, y, width)
             local half = math.floor((width - 12) / 2)
             local restore = format(Tr("Restore %s"), defaultLabel)
-            P.Button(ctx, body, restore, 16, y, half, function()
+            Button(ctx, body, restore, 16, y, half, function()
                 Change(skin, restore, "look.default", function() return skin.Theme.ApplyLook(defaultLook) end)
             end, nil, P.Meta(PAGE, "skin", "look.default", "action", "suite_skin_basic"))
-            P.Button(ctx, body, "All skin colors", 28 + half, y, half, function()
+            Button(ctx, body, "All skin colors", 28 + half, y, half, function()
                 if M.SelectPage then M.SelectPage("opt_colors") end
             end, nil, P.Meta(PAGE, "skin", "colors", "navigation", "suite_skin_basic"))
             return y - 40
@@ -655,6 +676,11 @@ local function BuildFonts(ctx, b, skin)
     end
     Section(ctx, b, "fonts", "Fonts", "Blizzard keeps its text sizes and outlines.", fonts, false,
         function(body, y, width)
+            if ctx.searchRows then
+                SearchRow(ctx, Row("textinput", "Custom font path", "font.path", "fonts"),
+                    "suite_skin_fonts", Tr("Fonts"))
+                return y
+            end
             M.BindTextInputAt(ctx, body, Tr("Custom font path"), 16, y, width,
                 function() return skin.DB.typography.customPath or "" end,
                 function(value)
@@ -702,7 +728,7 @@ local function BuildIcons(ctx, b, skin)
     Section(ctx, b, "icons", "Window buttons and icon borders",
         "Close, expand and minimize symbols plus item borders.", icons, false,
         function(body, y, width)
-            P.Button(ctx, body, "Reset window buttons", 16, y, width, function()
+            Button(ctx, body, "Reset window buttons", 16, y, width, function()
                 Change(skin, "Reset window buttons", "icons.windowActions.reset",
                     skin.WindowActionSkin.ResetRecommended)
             end, nil, P.Meta(PAGE, "skin", "icons.windowActions.reset", "action", "suite_skin_icons"))
@@ -713,16 +739,16 @@ end
 local function BuildWindowControls(ctx, b, skin)
     Section(ctx, b, "window_controls", "Window position, size and minimize",
         "Drag a window by its top edge; drag the bottom-right corner to scale it. The top-right minus button collapses compatible windows to a restore tab. Bags and protected windows keep their native behavior.", {
-            Row("toggle", "Move, resize and minimize Blizzard windows", "windowControls.enabled", "icons",
+            Row("toggle", "Move, resize and minimize Blizzard windows", "windowControls.enabled", "window_controls",
                 function() return skin.DB.windowControls.enabled end,
                 function(value)
                     Change(skin, "Blizzard window controls", "windowControls.enabled",
                         function() return skin.WindowControls.SetEnabled(value) end)
                 end),
         }, false, function(body, y, width)
-            P.Button(ctx, body, "Reset Blizzard window positions and sizes", 16, y, width, function()
+            Button(ctx, body, "Reset Blizzard window positions and sizes", 16, y, width, function()
                 Change(skin, "Reset Blizzard window layout", "windowControls.layout", skin.WindowControls.ResetLayout)
-            end, nil, P.Meta(PAGE, "skin", "windowControls.layout", "action", "suite_skin_icons"))
+            end, nil, P.Meta(PAGE, "skin", "windowControls.layout", "action", "suite_skin_window_controls"))
             return y - 40
         end)
 end
@@ -812,11 +838,43 @@ local function BuildMaintenance(ctx, b, skin)
     Section(ctx, b, "advanced", "Maintenance",
         "Refresh newly opened Blizzard windows. Use Reset page in the menu toolbar to restore this skin profile.",
         {}, false, function(body, y, width)
-            P.Button(ctx, body, "Refresh Blizzard skins", 16, y, width, function()
+            Button(ctx, body, "Refresh Blizzard skins", 16, y, width, function()
                 if skin.Adapters.ApplyAll then skin.Adapters.ApplyAll() end
             end, nil, P.Meta(PAGE, "skin", "maintenance.refresh", "action", "suite_skin_advanced"))
             return y - 40
         end)
+end
+
+-- Keep visible controls and indexed metadata in the same section order.
+local function BuildSections(ctx, b, skin)
+    BuildFrameBasics(ctx, b, skin)
+    BuildLook(ctx, b, skin)
+    BuildMicroBar(ctx, b, skin)
+    local blizzardMeter = BlizzardMeterInUse()
+    if not ctx.searchRows then builtForBlizzardMeter = blizzardMeter end
+    if blizzardMeter then BuildHUD(ctx, b, skin) end
+    BuildMaterial(ctx, b, skin)
+    BuildShape(ctx, b, skin)
+    BuildFonts(ctx, b, skin)
+    BuildIcons(ctx, b, skin)
+    BuildWindowControls(ctx, b, skin)
+    BuildWindows(ctx, b, skin)
+    BuildCoverage(ctx, b, skin)
+    BuildCharacter(ctx, b, skin)
+    BuildMaintenance(ctx, b, skin)
+end
+
+function P.SkinSearchRows()
+    local ctx, b = { searchRows = {} }, {}
+    local skin = _G.MapkoSkin
+    if not (skin and skin.addonName == "MSUF_Suite_Skin" and skin.DB and skin.Theme) then
+        -- The switch remains discoverable before the optional engine loads.
+        SearchRow(ctx, Row("toggle", "Enable Skinning", "enabled", "frame_basic"),
+            "suite_skin_frame_basic", Tr("Frame Basics"))
+        return ctx.searchRows
+    end
+    BuildSections(ctx, b, skin)
+    return ctx.searchRows
 end
 
 local function Build(ctx)
@@ -831,20 +889,7 @@ local function Build(ctx)
     -- FixedPreviewSection must own the first builder slot so its reserved
     -- header space contains the preview instead of leaving a blank gap.
     Preview(ctx, b, skin)
-    BuildFrameBasics(ctx, b, skin)
-    BuildLook(ctx, b, skin)
-    BuildMicroBar(ctx, b, skin)
-    builtForBlizzardMeter = BlizzardMeterInUse()
-    if builtForBlizzardMeter then BuildHUD(ctx, b, skin) end
-    BuildMaterial(ctx, b, skin)
-    BuildShape(ctx, b, skin)
-    BuildFonts(ctx, b, skin)
-    BuildIcons(ctx, b, skin)
-    BuildWindowControls(ctx, b, skin)
-    BuildWindows(ctx, b, skin)
-    BuildCoverage(ctx, b, skin)
-    BuildCharacter(ctx, b, skin)
-    BuildMaintenance(ctx, b, skin)
+    BuildSections(ctx, b, skin)
 end
 
 P.RegisterPage({ key = PAGE, label = "Skinning", title = "Skinning", build = Build, icon = { 4, 1 },

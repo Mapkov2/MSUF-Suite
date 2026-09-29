@@ -16,6 +16,18 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_Options/Menu/Search.lua",
+   "symbol": "M.RegisterSearchAvailability",
+   "kind": "addon",
+   "reason": "The external MSUF Menu2 availability hook is optional; older hosts only support the base search provider."
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "symbol": "M.InvalidateSearchProvider (= MSUF2)",
+   "kind": "addon",
+   "reason": "The external MSUF Menu2 search invalidation API is optional on older hosts; those hosts retain their existing search behavior."
+  },
+  {
    "file": "MSUF_Suite/Locales/deDE.lua",
    "symbol": "MSUF.RegisterLocale",
    "kind": "addon",
@@ -848,6 +860,12 @@
    "symbol": "M.ControlMeta (= MSUF2)",
    "kind": "addon",
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "symbol": "P.W.Description",
+   "kind": "addon",
+   "reason": "Older MSUF hosts lack compact descriptions; preserve their readable inline help until the host is updated"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",

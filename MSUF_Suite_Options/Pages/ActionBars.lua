@@ -18,6 +18,7 @@ local GROUPS = {
     { id = "background", title = "Background for the selected bar", suffixes = { "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding" } },
 }
 local POSITION = { Point = true, X = true, Y = true }
+P.ActionBarSearchGroups = GROUPS
 -- Copy To categories, one per section above, like the Unit and Group pages.
 local COPY_CATEGORIES = {
     { key = "visibility", label = "Visibility", default = true,
@@ -392,6 +393,19 @@ P.Gates[ID] = function(rule, key)
     local live = Rule(key)
     if not live or live.hidden then return false end
     return Available(index)
+end
+
+P.SearchPreparers[ID] = function(rule)
+    if not rule.bar or P.Gates[ID](rule, BarKey(rule.key)) then return end
+    local suffix = rule.key:match("^bar%d+(.+)$")
+    for index = 1, COUNT do
+        local candidate = Rule("bar" .. index .. suffix)
+        if candidate and not candidate.hidden and Available(index) then
+            selected = index
+            P.Refresh()
+            return
+        end
+    end
 end
 
 local function Build(ctx)

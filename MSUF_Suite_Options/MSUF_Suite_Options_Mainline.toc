@@ -37,4 +37,5 @@ Pages\CooldownManagerPreview.lua
 Pages\CooldownManager.lua
 Pages\Appearance.lua
 Menu\Register.lua
+Menu\SearchActions.lua
 Menu\Search.lua

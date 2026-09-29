@@ -2,6 +2,30 @@ local _, P = ...
 local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 local Controller = P.Suite.Client
 
+-- The Skinning declarations feed the cold search index and visible controls.
+-- Collection reads metadata only: callbacks and widget builders never run.
+function P.SkinSearchRow(ctx, row, section, title, help)
+    local keywords = { "suite", "skinning", "skin", row.searchLabel or row.label, title }
+    for _, value in ipairs(type(row.values) == "table" and row.values or {}) do
+        keywords[#keywords + 1] = value.text
+    end
+    ctx.searchRows[#ctx.searchRows + 1] = {
+        pageKey = "suite_skin", suiteModuleId = "skin", label = row.label,
+        kind = row.kind, section = title, keywords = keywords, help = help,
+        settingKey = row.kind ~= "color" and row.settingKey or nil,
+        controlId = row.kind ~= "color" and row.controlId or nil,
+        sectionId = section or row.sectionId,
+        anchorText = row.kind == "color" and title or nil,
+    }
+end
+
+function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, meta)
+    if not ctx.searchRows then return P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta) end
+    local row = { label = Tr(label), searchLabel = label, kind = "button",
+        controlId = meta and meta.controlId, sectionId = meta and meta.sectionId }
+    P.SkinSearchRow(ctx, row)
+end
+
 -- Slider increments are a UI choice. Keep catalog steps intact so existing
 -- fractional profile values are not rounded during database normalization.
 local function Whole(value)
@@ -97,6 +121,7 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
     local function Key() return keyFn and keyFn(rule.key) or rule.key end
     local row = P.Meta(pageKey, id, rule.key, "setting", sectionId)
     row.id, row.label = rule.key, Tr(rule.label)
+    row.summary = not rule.font and not rule.texture and not rule.color
     if rule.color then
         row.kind = "color"
         row.get = function() return P.RGB(P.Get(id, Key())) end
@@ -130,8 +155,15 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
         row.min, row.max, row.default = rule.min, rule.max, rule.default
         row.step = P.SliderStep(rule.min, rule.max, rule.default, rule.step)
         row.roundStep = row.step >= 1
+        if id == "chat" and (rule.key == "tabFontSize" or rule.key == "fontSize") then
+            row.valueBoxWidth = 72
+            row.format = function(value)
+                if (tonumber(value) or 0) <= 0 then return Tr("Default") end
+                return tostring(math.floor((tonumber(value) or 0) + 0.5))
+            end
+        end
         -- Old half-step values stay visible until the slider is moved.
-        if row.step == 1 and (rule.step or 1) < 1 then row.format = DecimalFormat end
+        if not row.format and row.step == 1 and (rule.step or 1) < 1 then row.format = DecimalFormat end
         row.get = function() return P.Get(id, Key()) end
         row.set = function(value) P.Set(id, Key(), tonumber(value) or rule.default) end
     else
@@ -142,6 +174,15 @@ end
 
 -- Enables/disables every control of a grid from its rule on each page refresh.
 function P.GateControls(ctx, id, entries, keyFn)
+    local prepare = P.SearchPreparers[id]
+    if prepare then
+        for _, entry in ipairs(entries) do
+            if entry.widget then
+                local rule = entry.rule
+                entry.widget._msuf2PrepareExactSearchTarget = function() prepare(rule) end
+            end
+        end
+    end
     M.TrackRefresh(ctx, function()
         for i = 1, #entries do
             local entry = entries[i]
@@ -169,7 +210,9 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
     end
     local entries = {}
     if #rows > 0 then
-        local grid = W.SettingsRows(ctx, parent, { x = 16, y = y, width = width, columns = columns or 2, rows = rows })
+        local grid = W.SettingsRows(ctx, parent, {
+            x = 16, y = y, width = width, columns = columns or (width >= 560 and 2 or 1), rows = rows,
+        })
         for _, rule in ipairs(pending) do entries[#entries + 1] = { rule = rule, widget = grid.controls[rule.key] } end
         y = grid.bottomY
     end
@@ -183,7 +226,48 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
         y = y - 58
     end
     P.GateControls(ctx, id, entries, keyFn)
+    P.AttachRowsSummary(ctx, parent, rows)
     return y, entries
+end
+
+-- A collapsed section still answers what it currently does. Read the same
+-- declared getters as its controls, including the selected bar/window scope.
+function P.AttachRowsSummary(ctx, body, rows)
+    if not W.SetCollapsibleSummary or not body._msuf2CollapsibleEntry
+        or body._msufSuiteSummary or body._msufSuiteSkipSummary then return end
+    local selected, toggles = {}, {}
+    for _, row in ipairs(rows) do
+        if row.summary ~= false and row.get then
+            if (row.kind == "dropdown" or row.kind == "slider") and #selected < 2 then
+                selected[#selected + 1] = row
+            elseif row.kind == "toggle" then toggles[#toggles + 1] = row end
+        end
+    end
+    if #selected == 0 and #toggles == 0 then return end
+    body._msufSuiteSummary = true
+    W.SetCollapsibleSummary(body, "")
+    local previous
+    M.TrackRefresh(ctx, function()
+        local parts = {}
+        for _, row in ipairs(selected) do
+            local value = row.get()
+            local shown = row.format and row.format(value) or tostring(value or "")
+            if row.kind == "dropdown" then
+                local values = type(row.values) == "function" and row.values() or row.values
+                for _, item in ipairs(values or {}) do
+                    if item.value == value then shown = item.text; break end
+                end
+            elseif not row.format and type(value) == "number" then shown = DecimalFormat(value) end
+            parts[#parts + 1] = (row.label or "") .. ": " .. tostring(shown or "")
+        end
+        if #parts == 0 then
+            local enabled = 0
+            for _, row in ipairs(toggles) do if row.get() then enabled = enabled + 1 end end
+            parts[1] = Tr("%d/%d enabled"):format(enabled, #toggles)
+        end
+        local text = table.concat(parts, " \194\183 ")
+        if previous ~= text then W.SetCollapsibleSummary(body, text); previous = text end
+    end)
 end
 
 -- Suite accordions use this shortcut as their sole color entry point.
@@ -227,7 +311,7 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
     local y = -18
     if opts.help then
-        local help = P.Text(body, opts.help, 16, y, width)
+        local help = P.Description(body, opts.help, 16, y, width, title)
         y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     end
     local entries
@@ -344,7 +428,9 @@ local function SectionActionButton(ctx, entry)
     entry._msuf2SectionActions = more
     entry._msufSuiteResetButton = more
     entry._msuf2ActionReserve = 34
-    entry._msuf2ColorSwatchReserve = (entry._msuf2ColorSwatchReserve or 0) + 34
+    if not entry._msuf2UXSummary then
+        entry._msuf2ColorSwatchReserve = (entry._msuf2ColorSwatchReserve or 0) + 34
+    end
     local function AlignSwitch()
         if entry.featureSwitch then
             entry.featureSwitch:ClearAllPoints()
@@ -576,7 +662,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         function(value) P.Set(id, "enabled", value == true) end,
         P.Meta(pageKey, id, "enabled", "setting", sectionId))
     local status = P.Text(body, "", 16, -18, width, T.colors.text)
-    local description = P.Text(body, spec.description, 16, -42, width, T.colors.dim or T.colors.muted)
+    local description = P.Description(body, spec.description, 16, -42, width, title)
     local y = -42 - math.max(14, math.ceil(description:GetStringHeight() or 14)) - 14
     local columns = width >= 560 and 3 or 2
     local buttonWidth = math.floor((width - (columns - 1) * 12) / columns)
@@ -589,7 +675,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
     end
     if actions and #actions > 0 then y = y - 38 end
     if opts.help then
-        local help = P.Text(body, opts.help, 16, y, width)
+        local help = P.Description(body, opts.help, 16, y, width, title)
         y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     end
     if opts.rules then
