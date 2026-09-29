@@ -16,7 +16,10 @@ local moduleAddons = {
     loot = "MSUF_Suite_QualityOfLife",
     combatLog = "MSUF_Suite_QualityOfLife",
     xpBar = "MSUF_Suite_QualityOfLife",
+    innervateCue = "MSUF_Suite_QualityOfLife",
     skyriding = "MSUF_Suite_QualityOfLife",
+    durabilityAlert = "MSUF_Suite_QualityOfLife",
+    battleRes = "MSUF_Suite_QualityOfLife",
     dataTexts = "MSUF_Suite_DataTexts",
     buffReminders = "MSUF_Suite_BuffReminders",
     chat = "MSUF_Suite_Chat",
@@ -54,7 +57,8 @@ function Build.Color(key, label, value)
     rule.color = true
     return rule
 end
--- Empty font/texture keys mean "use the native or module default".
+-- Empty font keys inherit the MSUF font. Chat offers an explicit Blizzard
+-- choice; empty texture keys keep the module default.
 function Build.Font(key, label)
     local rule = Build.String(key, label, "", 260)
     rule.font = true

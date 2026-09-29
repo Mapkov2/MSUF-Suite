@@ -36,6 +36,7 @@ InCombatLockdown = function() return false end
 C_EventUtils = { IsEventValid = function() return true end }
 UnitGUID = function() return "Player-Test" end
 UnitName = function() return "Tester" end
+UnitClass = function() return "Druid", "DRUID" end
 GetRealmName = function() return "Realm" end
 GetMoney = function() return 0 end
 GetLocale = function() return "enUS" end
@@ -91,6 +92,8 @@ assert(#frames == 3 and frames[3].events.ADDON_LOADED and optionLoads == 0)
 local owner = assert(MSUFSuite)
 assert((owner.Suite.catalog.objectives.rules.showMythicPlus ~= nil) == (flavor == "Mainline"),
     "Mythic+ HUD setting must be available only on Retail")
+assert(owner.Suite.Availability("innervateCue") == (flavor == "Mainline"),
+    "Innervate cue must be restricted to Retail Druids")
 do
     assert(owner.Suite.Config("objectives").enabled
         and owner.Suite.Config("announcements").enabled

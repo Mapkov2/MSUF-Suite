@@ -31,6 +31,8 @@ local function Widget(kind)
     function w:SetFrameLevel(value) self.level = value end
     function w:CreateLine() return Widget("Line") end
     function w:SetSize(a, b) self.width, self.height = a, b end
+    function w:ClearAllPoints() self.points = {} end
+    function w:SetPoint(...) self.points[#self.points + 1] = { ... } end
     function w:StartMoving() self.moving = true end
     function w:StopMovingOrSizing() self.moving = false end
     function w:EnableKeyboard(v) self.keyboardEnabled = v and true or false end
@@ -71,6 +73,7 @@ GameTooltip = neutralTooltip
 local lockedEditMode = { CanEnterEditMode = function() return false end }
 EditModeManagerFrame = lockedEditMode
 UnitClass = function() return nil end
+UnitIsPlayer = function() return false end
 GetZoneText = function() return "" end
 GetGameTime = function() return 12, 34 end
 GetCVarBool = function() return false end
@@ -502,6 +505,28 @@ end
         "enemy health dimensions diverged from the native preview geometry")
     plates.enemyHealthWidthDelta, plates.enemyHealthHeightDelta = 0, 0
     ui:Paint()
+    local debuffs = Control("enemy.Auras")
+    local buffs, control = Control("enemy.Buffs"), Control("enemy.ControlAura")
+    local debuffBaseY = debuffs.points[1][5]
+    local buffBaseX, controlBaseY = buffs.points[1][4], control.points[1][5]
+    assert(debuffs.points[1][1] == "BOTTOMLEFT" and debuffs.points[1][2] == health
+        and debuffs.points[1][3] == "TOPLEFT" and debuffs.points[1][4] == 0,
+        "debuff preview must start at Blizzard's health container left edge")
+    assert(buffs.points[1][1] == "RIGHT" and buffBaseX == -5
+        and control.points[1][1] == "LEFT" and control.points[1][2] == health,
+        "buff and control preview lost their native side anchors")
+    plates.enemyAurasOffsetX, plates.enemyAurasOffsetY = -14, 9
+    plates.enemyBuffsOffsetX, plates.enemyControlAuraOffsetY = 13, -7
+    plates.enemyNameOffsetX, plates.enemyNameOffsetY = 25, -8
+    ui:Paint()
+    assert(debuffs.points[1][4] == -14 and debuffs.points[1][5] == debuffBaseY + 9
+        and buffs.points[1][4] == buffBaseX + 13
+        and control.points[1][5] == controlBaseY - 7,
+        "aura preview positions must follow their own saved offsets")
+    plates.enemyAurasOffsetX, plates.enemyAurasOffsetY = 0, 0
+    plates.enemyBuffsOffsetX, plates.enemyControlAuraOffsetY = 0, 0
+    plates.enemyNameOffsetX, plates.enemyNameOffsetY = 0, 0
+    ui:Paint()
     if flavor == "Forever" then
         local level = Control("enemy.Level")
         assert(health.width == 133 and cast.width == 166 and cast.height == 6 and level.width == 24,
@@ -524,6 +549,8 @@ end
         assert(health.width == 70.75 and cast.width == 103.75
             and Suite.NameplateStyle.ClassicNativePlate(2),
             "Forever preview ignored the effective Classic layout")
+        assert(debuffs.points[1][4] == -3.5,
+            "Classic debuffs must start at the container edge, left of the inset bar")
         NamePlateSetupOptions = oldSetup
         ui:Paint()
     end
@@ -1095,7 +1122,15 @@ assert(S.Config("actionbars").enabled and not S.states.actionbars.active,
 actionBarsHeader.set(false)
 loaded.Bartender4 = nil
 M.RequestRefresh()
-local qolHeader = contexts.suite_qualityOfLife.sections[3].headerSwitch
+local qolPage = contexts.suite_qualityOfLife
+function qolPage.Section(name)
+    local id = "suite_qualityOfLife_" .. name
+    for _, section in ipairs(qolPage.sections) do
+        if section.sectionId == id then return section end
+    end
+    error("missing Quality of Life section: " .. name)
+end
+local qolHeader = qolPage.Section("qol_repair").headerSwitch
 C_AddOns.GetAddOnEnableState = function(name)
     return name == "MSUF_Suite_QualityOfLife" and 0 or 1
 end
@@ -1233,7 +1268,6 @@ do
     end
     for _, key in ipairs(keys) do config[key] = saved[key] end
 end
-local qolPage = contexts.suite_qualityOfLife
 for _, id in ipairs({ "actionbars", "cooldownManager", "bags", "dataTexts", "skyriding", "chat" }) do
     local rules = Suite.SuiteCatalog[id].rules
     for _, key in ipairs({ "font", "fontRendering", "fontShadow", "fontShadowOpacity", "fontShadowDistance" }) do
@@ -1304,13 +1338,16 @@ for bar = 1, 3 do
     assert(Suite.SuiteCatalog.dataTexts.rules["bar" .. bar .. "FontRendering"].default == 3,
         "DataText bar " .. bar .. " did not default to Slug")
 end
-local qolGroups = { "xpBar_xp_bar", "skyriding_flight_hud", "qol_repair", "qol_junk", "quests_automation", "loot_collection",
-    "loot_history", "combatLog_log_dungeons" }
+local qolGroups = { "battleRes_battle_res", "loot_collection", "combatLog_log_dungeons", "xpBar_xp_bar",
+    "innervateCue_innervate_cue", "loot_history", "durabilityAlert_durability_warning", "quests_automation", "qol_repair",
+    "qol_junk", "skyriding_flight_hud" }
 assert(#qolPage.sections == #qolGroups, "Quality of Life retained Module Basics or nested accordions")
 for i, name in ipairs(qolGroups) do
     local section = qolPage.sections[i]
     assert(section.sectionId == "suite_qualityOfLife_" .. name and section.headerSwitch,
         "Quality of Life feature has no independent header switch: " .. name)
+    assert(i == 1 or qolPage.sections[i - 1].title < section.title,
+        "Quality of Life feature names are not alphabetically sorted")
 end
 local route = {
     ["msufsuite.xpBar.width"] = "xpBar_xp_bar",
@@ -1325,6 +1362,8 @@ local route = {
     ["msufsuite.loot.lootModifier"] = "loot_collection",
     ["msufsuite.loot.historyMode"] = "loot_history",
     ["msufsuite.combatLog.raidNormal"] = "combatLog_log_dungeons",
+    ["msufsuite.durabilityAlert.threshold"] = "durabilityAlert_durability_warning",
+    ["msufsuite.battleRes.point"] = "battleRes_battle_res",
 }
 local routed = 0
 for _, widget in ipairs(qolPage.widgets) do
@@ -1335,13 +1374,13 @@ for _, widget in ipairs(qolPage.widgets) do
         routed = routed + 1
     end
 end
-assert(routed == 12, "Quality of Life settings lost their search routes")
-local xpBar = qolPage.sections[1].headerSwitch
+assert(routed == 14, "Quality of Life settings lost their search routes")
+local xpBar = qolPage.Section("xpBar_xp_bar").headerSwitch
 xpBar.set(true)
 assert(xpBar.get() and S.Config("xpBar").enabled, "XP bar header switch did not enable its module")
 xpBar.set(false)
 assert(not xpBar.get(), "XP bar header switch did not disable its module")
-local skyride = qolPage.sections[2].headerSwitch
+local skyride = qolPage.Section("skyriding_flight_hud").headerSwitch
 skyride.set(true)
 assert(skyride.get() and S.Config("skyriding").enabled, "Skyriding switch did not save its preference")
 local skyControls = {}
@@ -1355,11 +1394,11 @@ assert(skyControls.font.rowKind == "dropdown" and skyControls.barTexture.rowKind
     and not skyControls.panelColor and skyControls.fontSize.rowKind == "slider",
     "Skyriding styling controls are missing from the Quality of Life accordion")
 local skyPanelColor
-for _, target in ipairs(qolPage.sections[2].colorShortcut.options.getTargets()) do
+for _, target in ipairs(qolPage.Section("skyriding_flight_hud").colorShortcut.options.getTargets()) do
     if target.settingKey == "msufsuite.skyriding.panelColor" then skyPanelColor = target; break end
 end
 assert(skyPanelColor, "Skyriding panel color is missing from its three-dot picker")
-assert(skyControls.font.row.values()[1].text == "MSUF Expressway (default)",
+assert(skyControls.font.row.values()[1].text == "MSUF global font (default)",
     "Skyriding font picker does not describe its real default")
 skyControls.font.set("Test font")
 skyControls.barTexture.set("Test bars")
@@ -1377,7 +1416,7 @@ assert(S.Config("skyriding").look == 4 and S.Config("skyriding").panelColor == "
     "Changing a Skyriding color did not keep it as Custom")
 skyride.set(false)
 assert(not skyride.get(), "Skyriding switch did not turn off")
-local repair, junk = qolPage.sections[3].headerSwitch, qolPage.sections[4].headerSwitch
+local repair, junk = qolPage.Section("qol_repair").headerSwitch, qolPage.Section("qol_junk").headerSwitch
 repair.set(true)
 assert(repair.get() and S.Config("qol").enabled and S.Config("qol").repair)
 junk.set(true)
@@ -1386,7 +1425,7 @@ assert(not repair.get() and junk.get() and S.Config("qol").enabled,
     "turning off repair disabled active junk selling")
 junk.set(false)
 assert(not S.Config("qol").enabled, "inactive merchant helpers retained their runtime gate")
-local collect, history = qolPage.sections[6].headerSwitch, qolPage.sections[7].headerSwitch
+local collect, history = qolPage.Section("loot_collection").headerSwitch, qolPage.Section("loot_history").headerSwitch
 collect.set(true)
 history.set(true)
 collect.set(false)
@@ -1394,7 +1433,7 @@ assert(not collect.get() and history.get() and S.Config("loot").enabled,
     "turning off collection disabled active loot history")
 history.set(false)
 assert(not S.Config("loot").enabled, "inactive loot helpers retained their runtime gate")
-local quests, combatLog = qolPage.sections[5].headerSwitch, qolPage.sections[8].headerSwitch
+local quests, combatLog = qolPage.Section("quests_automation").headerSwitch, qolPage.Section("combatLog_log_dungeons").headerSwitch
 quests.set(true)
 combatLog.set(true)
 assert(quests.get() and combatLog.get() and S.Config("quests").enabled
@@ -1402,6 +1441,24 @@ assert(quests.get() and combatLog.get() and S.Config("quests").enabled
 quests.set(false)
 combatLog.set(false)
 assert(not quests.get() and not combatLog.get(), "quest or combat logging header switch did not disable its module")
+do
+    local durability = qolPage.Section("durabilityAlert_durability_warning").headerSwitch
+    durability.set(true)
+    assert(durability.get() and S.Config("durabilityAlert").enabled,
+        "durability warning switch did not enable its module")
+    durability.set(false)
+    assert(not durability.get(), "durability warning switch did not disable its module")
+end
+do
+    local battleRes = qolPage.Section("battleRes_battle_res").headerSwitch
+    assert(S.Availability("battleRes") == (flavor == "Mainline"),
+        "shared battle resurrection must be Retail-only")
+    battleRes.set(true)
+    assert(battleRes.get() and S.Config("battleRes").enabled,
+        "battle resurrection switch did not enable its module")
+    battleRes.set(false)
+    assert(not battleRes.get(), "battle resurrection switch did not disable its module")
+end
 local colorContext = { key = "opt_colors", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
 current = colorContext
 Suite.Options.BuildColorsCategory(colorContext, W.PageBuilder(colorContext))
@@ -2558,6 +2615,20 @@ end)()
         and c.bar2Slot1 == 3 and c.bar2Slot2 == 4 and c.bar2Slot3 == 5
         and c.bar1Width == untouchedWidth,
         "Antique Footer menu action changed the wrong bar or missed its settings")
+end)()
+
+;(function()
+    local chatFont
+    for _, widget in ipairs(contexts.suite_chat.widgets) do
+        if widget.meta and widget.meta.settingKey == "msufsuite.chat.font" then chatFont = widget end
+    end
+    assert(chatFont and chatFont.row.values()[1].text == "MSUF global font (default)",
+        "chat font picker must show the inherited MSUF default")
+    local count = 0
+    for _, entry in ipairs(chatFont.row.values()) do
+        if entry.value == "__BLIZZARD_CHAT_FONT__" then count = count + 1 end
+    end
+    assert(count == 1, "chat font picker must offer Blizzard's font once")
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

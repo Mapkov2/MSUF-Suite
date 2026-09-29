@@ -4,15 +4,13 @@ local root = assert(arg[1], "repository root required")
 local secret = {}
 issecretvalue = function(value) return value == secret end
 local combat, shift = false, false
-local repairs, used, messages = {}, {}, {}
+local repairs, messages = {}, {}
 local money, repairCost, canRepair, merchantRepairs = 500000, 30000, true, true
 local guildAllowed, guildAllowance, guildFunds = false, 0, 0
-local bags = {}
+local nativeJunk, nativeEnabled, nativeRequests = 3, true, 0
 
 InCombatLockdown = function() return combat end
 IsShiftKeyDown = function() return shift end
-NUM_BAG_SLOTS = 4
-Enum = { ItemQuality = { Poor = 0 } }
 CanMerchantRepair = function() return merchantRepairs end
 GetRepairAllCost = function() return repairCost, canRepair end
 GetMoney = function() return money end
@@ -20,18 +18,16 @@ RepairAllItems = function(guild) repairs[#repairs + 1] = guild == true and "guil
 CanGuildBankRepair = function() return guildAllowed end
 GetGuildBankWithdrawMoney = function() return guildAllowance end
 GetGuildBankMoney = function() return guildFunds end
-C_Container = {
-    GetContainerNumSlots = function(bag) return bags[bag] and bags[bag].size or 0 end,
-    GetContainerItemInfo = function(bag, slot) return bags[bag] and bags[bag][slot] or nil end,
-    UseContainerItem = function(bag, slot)
-        used[#used + 1] = bag * 1000 + slot
-        bags[bag][slot] = nil
-    end,
+C_MerchantFrame = {
+    IsSellAllJunkEnabled = function() return nativeEnabled end,
+    GetNumJunkItems = function() return nativeJunk end,
+    SellAllJunkItems = function() nativeRequests = nativeRequests + 1 end,
 }
 
 local suite = { instances = {} }
 suite.Public = function(value) return not issecretvalue(value) end
 suite.Number = function(value) return suite.Public(value) and type(value) == "number" and value == value end
+suite.Finite = function(value) return suite.Number(value) and value > -math.huge and value < math.huge end
 suite.Text = function(value) return value end
 function suite.Install(id, module)
     assert((id == "qol" or id == "quests") and not suite.instances[id])
@@ -56,12 +52,6 @@ local function Fire(module, name, ...)
     local callback = assert(module.context.events[name], "missing event " .. name)
     callback(module, name, ...)
 end
-local function Junk(itemID, count, flags)
-    local item = { quality = 0, itemID = itemID, stackCount = count }
-    for key, value in pairs(flags or {}) do item[key] = value end
-    return item
-end
-
 ------------------------------------------------------------------ merchant
 local merchant = assert(suite.instances.qol)
 merchant.active = true
@@ -72,18 +62,21 @@ merchant:Enable()
 assert(merchant.context.events.MERCHANT_SHOW and merchant.context.events.MERCHANT_CLOSED
     and not merchant.context.events.BAG_UPDATE_DELAYED, "merchant events were not registered on demand")
 
--- A visit repairs within the limit and sells readable, unlocked poor items.
-bags[0] = { size = 4, Junk(1, 3), { quality = 2, itemID = 2 }, Junk(3, 1, { isLocked = true }),
-    Junk(4, 1, { hasNoValue = true }) }
+-- A visit repairs within the limit and delegates the eligible junk list to
+-- Blizzard's native action (which applies backpack and bag exclusions).
 Fire(merchant, "MERCHANT_SHOW")
 assert(#repairs == 1 and repairs[1] == "own", "a repair within the limit did not use the player's money")
-assert(#used == 1 and used[1] == 1, "junk selling touched a non-junk, locked or valueless item")
+assert(nativeRequests == 1 and merchant.saleRequested,
+    "junk was not delegated to Blizzard's native merchant API")
+Fire(merchant, "MERCHANT_SHOW")
+assert(nativeRequests == 1, "duplicate merchant event repeated the sale")
 Fire(merchant, "MERCHANT_CLOSED")
-assert(messages[1] == "Sold 3 junk items." and merchant.soldCount == 0
-    and not merchant.context.events.BAG_UPDATE_DELAYED, "closing the merchant did not report the sold count")
+assert(messages[1] == "Junk sale requested." and not merchant.saleRequested
+    and not merchant.context.events.BAG_UPDATE_DELAYED, "closing the merchant misreported the request")
+nativeJunk = 0
 
 -- Costs above the limit or above the player's money are never paid.
-repairs, used = {}, {}
+repairs = {}
 repairCost = 600000
 Fire(merchant, "MERCHANT_SHOW")
 Fire(merchant, "MERCHANT_CLOSED")
@@ -115,30 +108,35 @@ Fire(merchant, "MERCHANT_SHOW")
 Fire(merchant, "MERCHANT_CLOSED")
 repairCost = 30000
 assert(#repairs == 0, "a secret repair cost was paid")
+merchantRepairs = secret
+Fire(merchant, "MERCHANT_SHOW")
+Fire(merchant, "MERCHANT_CLOSED")
+merchantRepairs = true
+assert(#repairs == 0, "an unreadable merchant repair capability authorized spending")
 
--- More junk than one batch continues on the next bag update, which clears
--- the requests of the previous batch in place.
-repairs, used, messages = {}, {}, {}
+-- Native availability, unreadable counts, Shift and combat all fail closed.
+repairs, messages = {}, {}
 merchant.config.repair = false
-bags[0] = { size = 14 }
-for slot = 1, 14 do bags[0][slot] = Junk(100 + slot, 1) end
+nativeJunk = 14
+nativeEnabled = false
 Fire(merchant, "MERCHANT_SHOW")
-local requested = merchant.requested
-assert(#used == 12 and merchant.context.events.BAG_UPDATE_DELAYED and #repairs == 0,
-    "a large junk pass was not split into bounded batches")
-Fire(merchant, "BAG_UPDATE_DELAYED")
-assert(#used == 14 and not merchant.context.events.BAG_UPDATE_DELAYED and merchant.requested == requested,
-    "the second junk batch did not finish or replaced the request table")
 Fire(merchant, "MERCHANT_CLOSED")
-assert(messages[1] == "Sold 14 junk items.", "junk count across batches")
+nativeEnabled = secret
 Fire(merchant, "MERCHANT_SHOW")
-assert(merchant.requested == requested and not next(requested),
-    "a new merchant visit allocated or kept the previous request table")
 Fire(merchant, "MERCHANT_CLOSED")
-
--- Shift pauses selling; combat blocks the whole visit.
-bags[0] = { size = 1, Junk(200, 1) }
-used = {}
+nativeEnabled, nativeJunk = true, secret
+Fire(merchant, "MERCHANT_SHOW")
+Fire(merchant, "MERCHANT_CLOSED")
+nativeJunk = math.huge
+Fire(merchant, "MERCHANT_SHOW")
+Fire(merchant, "MERCHANT_CLOSED")
+nativeJunk = 0
+Fire(merchant, "MERCHANT_SHOW")
+Fire(merchant, "MERCHANT_CLOSED")
+nativeJunk = 14
+shift = secret
+Fire(merchant, "MERCHANT_SHOW")
+Fire(merchant, "MERCHANT_CLOSED")
 shift = true
 Fire(merchant, "MERCHANT_SHOW")
 Fire(merchant, "MERCHANT_CLOSED")
@@ -146,14 +144,20 @@ shift, combat = false, true
 Fire(merchant, "MERCHANT_SHOW")
 combat = false
 Fire(merchant, "MERCHANT_CLOSED")
-assert(#used == 0, "Shift or combat did not pause junk selling")
+assert(nativeRequests == 1 and #messages == 0,
+    "native gating, unreadable count, Shift or combat did not pause junk selling")
+
+Fire(merchant, "MERCHANT_SHOW")
+Fire(merchant, "MERCHANT_CLOSED")
+assert(nativeRequests == 2 and messages[1] == "Junk sale requested.",
+    "normal merchant visit did not resume native junk selling")
 
 -- Turning both helpers off releases the merchant events.
 merchant.config.repair, merchant.config.autoJunk = false, false
 merchant:Refresh()
 assert(not next(merchant.context.events), "disabled merchant helpers kept their events")
 merchant:Disable()
-print("Suite merchant: repair limits, guild order, junk batches, pauses and events passed")
+print("Suite merchant: repair limits, guild order, native junk, pauses and events passed")
 
 ------------------------------------------------------------------ quests
 local accepted, completed, rewards, selected = 0, 0, {}, {}

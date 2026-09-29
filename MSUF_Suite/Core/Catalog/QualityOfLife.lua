@@ -21,7 +21,7 @@ B.Section("qol", "repair", "Repair", {
 })
 B.Section("qol", "junk", "Junk", {
     Bool("autoJunk", "Sell poor-quality items"),
-    Bool("junkReport", "Report sold junk in chat", true),
+    Bool("junkReport", "Report junk sale requests in chat", true),
 })
 NS.SuiteCatalog.qol.rules.repairLimit.enableKey = "repair"
 NS.SuiteCatalog.qol.rules.guildRepair.enableKey = "repair"
@@ -124,6 +124,73 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Number("y", "Vertical position", -24, -3000, 3000),
 })
 
+-- Incoming whispers are only a cue: chat text can be secret in combat, so
+-- this feature never tries to infer whether a message requests Innervate.
+B.Module("innervateCue", {
+    title = "Innervate whisper cue",
+    description = "Alert a Druid to incoming combat whispers when Innervate may be ready. Optionally outline a chosen MSUF group frame.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Innervate whisper cue is available only in Retail" end
+        local _, class = UnitClass("player")
+        if not NS.Public(class) or class ~= "DRUID" then return false, "Available only to Druids" end
+        return true
+    end,
+})
+B.Section("innervateCue", "innervate_cue", "Innervate whisper cue", {
+    Bool("openWorld", "Alert in the open world", true),
+    Bool("party", "Alert in dungeons, delves and PvP", true),
+    Bool("raid", "Alert in raids", true),
+    Bool("sound", "Play a warning sound", true),
+    Bool("highlightTarget", "Outline preferred target's MSUF group frame", true),
+    String("targetName", "Preferred target (Name or Name-Realm)", "", 100),
+    Number("duration", "Alert duration (seconds)", 4, 2, 10),
+    Number("width", "Alert width", 280, 180, 500),
+    Number("height", "Alert height", 54, 44, 90),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 180, -3000, 3000),
+})
+NS.SuiteCatalog.innervateCue.rules.targetName.enableKey = "highlightTarget"
+
+-- The warning reads equipped durability only when its events fire. Its own
+-- position is stored in the active Suite profile and exposed to MSUF Edit Mode.
+B.Module("durabilityAlert", {
+    title = "Low durability warning",
+    description = "Show a movable warning when equipped gear needs repair. Hidden during combat.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("durabilityAlert", "durability_warning", "Low durability warning", {
+    Number("threshold", "Warn below (percent)", 40, 1, 99),
+    Number("width", "Warning width", 250, 180, 500),
+    Number("height", "Warning height", 62, 56, 90),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 180, -3000, 3000),
+})
+
+-- The shared battle-resurrection pool is only meaningful during an active
+-- Mythic+ run or raid encounter. Blizzard owns the charge countdown itself.
+B.Module("battleRes", {
+    title = "Battle resurrection",
+    description = "Show available shared battle resurrections and the next recharge in Mythic+ and raid encounters.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Shared battle resurrection charges are available only in Retail" end
+        return true
+    end,
+})
+B.Section("battleRes", "battle_res", "Battle resurrection", {
+    Number("width", "Display width", 146, 146, 350),
+    Number("height", "Display height", 44, 44, 80),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 120, -3000, 3000),
+})
+
 -- The flight HUD is Retail-only and remains dormant until explicitly enabled.
 B.Module("skyriding", {
     title = "Skyriding HUD",
@@ -171,7 +238,7 @@ B.Section("skyriding", "flight_hud", "Skyriding HUD", {
     Number("y", "Vertical position", -145, -3000, 3000),
 })
 B.Section("skyriding", "flight_typography", "Text and bars", {
-    B.Font("font", "Font (MSUF Expressway by default)"),
+    B.Font("font", "Font (empty: MSUF global font)"),
     Number("fontSize", "Font size", 11, 9, 18),
     Choice("fontOutline", "Text outline", 1, { "None", "Outline", "Thick outline" }),
     Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
@@ -182,7 +249,7 @@ B.Section("skyriding", "flight_typography", "Text and bars", {
     Number("barHeight", "Bar height", 10, 6, 18),
     Number("rowGap", "Space between rows", 0, 0, 12),
 })
-NS.SuiteCatalog.skyriding.rules.font.defaultLabel = "MSUF Expressway (default)"
+NS.SuiteCatalog.skyriding.rules.font.defaultLabel = "MSUF global font (default)"
 B.LinkFontShadow(NS.SuiteCatalog.skyriding.rules)
 B.Section("skyriding", "flight_colors", "Colors and panel", {
     B.Color("panelColor", "Panel color", initialSky.panelColor),

@@ -410,6 +410,13 @@ assert(oldJundies.suite.modules.nameplates.enemyEliteMarker,
 local live = Suite.DB.suite.modules
 live.chat.look, live.damageMeter.look, live.dataTexts.look, live.xpBar.look = 2, 2, 2, 2
 live.xpBar.point, live.xpBar.x, live.xpBar.y = 8, 0, 148
+live.xpBar.width, live.xpBar.height, live.xpBar.scale = 450, 24, 125
+live.durabilityAlert.x, live.durabilityAlert.width = -34, 320
+live.durabilityAlert.height, live.durabilityAlert.scale = 72, 110
+live.battleRes.y, live.battleRes.width = 96, 210
+live.battleRes.height, live.battleRes.scale = 60, 120
+live.skyriding.x, live.skyriding.width = 32, 390
+live.skyriding.barHeight, live.skyriding.scale = 14, 115
 live.objectives.titleSize, live.objectives.sectionSize = 16, 16
 live.objectives.colorStyle, live.objectives.backgroundOpacity = 1, 82
 live.announcements.subtitleSize = 15
@@ -422,6 +429,14 @@ assert(copied.revision == S.MigrationRevision
     and copied.modules.chat.look == 2 and copied.modules.damageMeter.look == 2
     and copied.modules.dataTexts.look == 2 and copied.modules.xpBar.look == 2
     and copied.modules.xpBar.point == 8 and copied.modules.xpBar.y == 148
+    and copied.modules.xpBar.width == 450 and copied.modules.xpBar.height == 24
+    and copied.modules.xpBar.scale == 125
+    and copied.modules.durabilityAlert.x == -34 and copied.modules.durabilityAlert.width == 320
+    and copied.modules.durabilityAlert.height == 72 and copied.modules.durabilityAlert.scale == 110
+    and copied.modules.battleRes.y == 96 and copied.modules.battleRes.width == 210
+    and copied.modules.battleRes.height == 60 and copied.modules.battleRes.scale == 120
+    and copied.modules.skyriding.x == 32 and copied.modules.skyriding.width == 390
+    and copied.modules.skyriding.barHeight == 14 and copied.modules.skyriding.scale == 115
     and copied.modules.objectives.titleSize == 16 and copied.modules.objectives.sectionSize == 16
     and copied.modules.objectives.backgroundOpacity == 82
     and copied.modules.announcements.subtitleSize == 15,
