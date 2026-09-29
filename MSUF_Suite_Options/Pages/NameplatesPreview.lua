@@ -554,12 +554,11 @@ local function Sample(editor, prefix, x)
         castTime:SetShown(showCast and P.Get(ID, "look") ~= 2
             and P.Get(ID, prefix .. "CastTimeEnabled") and editor:LayerOn("castTime"))
         local auraY = DebuffPadding()
-        if nameAnchor == 1 then
-            Place(auras, "BOTTOM", bar, "TOP", 0, auraY, "Auras")
-        else
-            Place(auras, "BOTTOM", name, "TOP", -P.Get(ID, prefix .. "NameOffsetX"),
-                auraY - P.Get(ID, prefix .. "NameOffsetY"), "Auras")
-        end
+        -- Blizzard's DebuffListFrame starts at HealthBarsContainer.LEFT, not
+        -- at the middle of the visible bar. Its BOTTOM follows bar/name TOP;
+        -- the Suite name offset is compensated independently at runtime.
+        Place(auras, "BOTTOMLEFT", bar, "TOPLEFT", classic and -3.5 * horizontal or 0,
+            auraY + (nameAnchor == 1 and 0 or nameSpacing + name:GetHeight()), "Auras")
         Place(buffs, "RIGHT", classificationBase, "LEFT", -5, 0, "Buffs")
         Place(control, "LEFT", bar, "RIGHT", 5 + reserve
             + (classic and 20.75 * horizontal or 0), 0, "ControlAura")

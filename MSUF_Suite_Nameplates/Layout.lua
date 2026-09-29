@@ -47,6 +47,18 @@ local function Link(state, region, point, owner, relative, x, y, dx, dy)
     Point(region, point, owner, relative, x - dx, y - dy)
 end
 
+-- Blizzard's aura list anchors include fixed offsets (-5, +5 and the debuff
+-- padding). SetPointsOffset replaces those offsets on every point, so move
+-- each known native anchor from its own base instead.
+local function AuraAnchor(state, region, point, owner, relative, x, y, dx, dy, nativeFixed)
+    if dx == 0 and dy == 0 then return end
+    if not Accessible(region) or not owner then module.needsRefresh = true; return end
+    local link = { region, point, owner, relative, x, y }
+    link.nativeFixed = nativeFixed
+    state.links[#state.links + 1] = link
+    Point(region, point, owner, relative, x + dx, y + dy)
+end
+
 local function RestoreLinks(state)
     for i = #state.links, 1, -1 do
         local link = state.links[i]
@@ -115,15 +127,26 @@ end
 
 local function OnAnchors(uf)
     local state = states[uf]
+    local locked = NS.IsCombatLocked() or NS.Safety.IsForbidden(uf)
     if state then
-        -- Blizzard has just rebuilt these links. Old style anchors must not
-        -- be restored over its new ones (Modern/Classic/names-only changes).
-        state.links = {}
+        -- UpdateAnchors rebuilds dynamic links, but leaves the aura XML
+        -- anchors untouched. Restore only those fixed links before applying
+        -- saved offsets again; old name/cast anchors belong to Blizzard.
+        local pending = {}
+        for _, link in ipairs(state.links) do
+            if link.nativeFixed then
+                if locked then pending[#pending + 1] = link
+                elseif Accessible(link[1]) then Point(unpack(link))
+                else module.needsRefresh = true end
+            end
+        end
+        state.links = pending
         state.generation = nil
         state.nativeReset = true
     end
+    if locked then module.needsRefresh = true; return end
     if not module.active then Layout.Restore(uf); return end
-    if NS.Safety.IsForbidden(uf) or not NS.Public(uf.isFriend) then return end
+    if not NS.Public(uf.isFriend) then return end
     Layout.Apply(uf, uf.isFriend and "friendly" or "enemy", module.config, true)
 end
 
@@ -216,18 +239,26 @@ function Layout.Apply(uf, prefix, config, force)
     end
     local auraFrame = uf.AurasFrame
     local debuffs = auraFrame and auraFrame.DebuffListFrame
-    Offset(state, debuffs, auras[1], auras[2], force)
-    Offset(state, auraFrame and auraFrame.BuffListFrame, plan.Buffs[1], plan.Buffs[2], force)
-    Offset(state, auraFrame and auraFrame.CrowdControlListFrame,
-        plan.ControlAura[1], plan.ControlAura[2], force)
-    Offset(state, auraFrame and auraFrame.LossOfControlFrame,
-        plan.ControlAura[1], plan.ControlAura[2], force)
+    AuraAnchor(state, debuffs, "LEFT", container, "LEFT", 0, 0, auras[1], auras[2], true)
+    local buff = plan.Buffs
+    AuraAnchor(state, auraFrame and auraFrame.BuffListFrame, "RIGHT", uf.ClassificationFrame,
+        "LEFT", -5, 0, buff[1], buff[2], true)
+    local control = plan.ControlAura
+    AuraAnchor(state, auraFrame and auraFrame.CrowdControlListFrame, "LEFT", container,
+        "RIGHT", 5, 0, control[1], control[2], true)
+    AuraAnchor(state, auraFrame and auraFrame.LossOfControlFrame, "LEFT", container,
+        "RIGHT", 5, 0, control[1], control[2], true)
     Offset(state, uf.SoftTargetFrame, plan.SoftTarget[1], plan.SoftTarget[2], force)
-    if debuffs and anchor ~= 1 and (name[1] ~= 0 or name[2] ~= 0) then
+    local debuffX = auras[1] - (anchor ~= 1 and name[1] or 0)
+    local debuffY = auras[2] - (anchor ~= 1 and name[2] or 0)
+    if debuffs and (debuffX ~= 0 or debuffY ~= 0) then
         local key = _G.NamePlateConstants and NamePlateConstants.DEBUFF_PADDING_CVAR
         local padding = key and CVarCallbackRegistry and CVarCallbackRegistry:GetCVarNumberOrDefault(key)
         if NS.Finite(padding) then
-            Link(state, debuffs, "BOTTOM", uf.name, "TOP", 0, padding, name[1], name[2])
+            AuraAnchor(state, debuffs, "BOTTOM", anchor == 1 and health or uf.name,
+                "TOP", 0, padding, debuffX, debuffY)
+        else
+            module.needsRefresh = true
         end
     end
     Offset(state, uf.RaidTargetFrame, raid[1] - (namesOnly and name[1] or 0),

@@ -50,8 +50,6 @@ local id = "nameplates"
 -- The user's Retail Platynator profile is stored under the technical key
 -- DEFAULT. Its selected design is Enemy Nameplates, known to the user as
 -- Jundies. Keep this preset as the fresh Suite default.
-local EXPRESSWAY_BOLD = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\Fonts\\Expressway ExtraBold.ttf"
-local EXPRESSWAY = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\Fonts\\Expressway Regular.ttf"
 local native = {
     nativeStyle = 1, nativeSize = 1, enemyTextMode = 1,
     enemyRoleColors = false,
@@ -143,7 +141,6 @@ local function AddFriendlyRules(appearance)
         appearance[#appearance + 1] = B.Number("friendly" .. kind .. "OffsetY", label .. " Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
     end
     local friendlyCastFont = B.Font("friendlyCastFont", "Friendly cast font")
-    friendlyCastFont.default = EXPRESSWAY
     for _, rule in ipairs({
         B.Bool("friendlyCastTextEnabled", "Customize friendly cast text", false),
         B.Bool("friendlyCastTimeEnabled", "Show friendly cast time", true),
@@ -157,7 +154,6 @@ end
 
 local function Side(prefix, title, size)
     local font = B.Font(prefix .. "NameFont", "Name font")
-    font.default = prefix == "enemy" and EXPRESSWAY_BOLD or EXPRESSWAY
     local appearance = {
         B.Bool(prefix .. "BackdropEnabled", "Skin health backdrop", true),
         B.Bool(prefix .. "BorderEnabled", "Skin health border", true),
@@ -273,7 +269,6 @@ end
 B.Section(id, "roleColors", "Enemy color rules", toggles)
 
 local castFont = B.Font("enemyCastFont", "Cast font")
-castFont.default = EXPRESSWAY_BOLD
 local castRules = {
     B.Choice("enemyCastEnabled", "Show Blizzard nameplate castbars", 2,
         { "Keep Blizzard setting", "Show", "Hide" }),

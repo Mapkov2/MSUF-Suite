@@ -1075,6 +1075,8 @@ assert(Placed(name, 2, 4) == 25 and Placed(name, 2, 5) == -8)
 assert(bar.LeftText.offsetX == -12 and bar.LeftText.offsetY == 5)
 assert(Placed(aura.DebuffListFrame, 1, 4) == 2 and Placed(aura.DebuffListFrame, 2, 4) == -13
     and Placed(aura.DebuffListFrame, 2, 5) == 17)
+assert(aura.DebuffListFrame.offsetX == nil and aura.DebuffListFrame.offsetY == nil,
+    "debuff positioning must preserve both native anchor bases")
 module:Disable()
 assert(name.points[2][4] == -2 and name.points[2][5] == 0 and name.offsetX == 0
     and aura.DebuffListFrame.points[2][4] == 0 and aura.DebuffListFrame.points[2][5] == 6)
@@ -1267,23 +1269,51 @@ end
 do
     uf.isFriend = false
     aura.BuffListFrame, aura.CrowdControlListFrame, aura.LossOfControlFrame = Region(), Region(), Region()
+    aura.BuffListFrame:ClearAllPoints()
+    aura.BuffListFrame:SetPoint("RIGHT", uf.ClassificationFrame, "LEFT", -5, 0)
+    aura.CrowdControlListFrame:ClearAllPoints()
+    aura.CrowdControlListFrame:SetPoint("LEFT", uf.HealthBarsContainer, "RIGHT", 5, 0)
+    aura.LossOfControlFrame:ClearAllPoints()
+    aura.LossOfControlFrame:SetPoint("LEFT", uf.HealthBarsContainer, "RIGHT", 5, 0)
     uf.SoftTargetFrame = Region()
     module.config.enemyAurasOffsetX = -320
     module.config.enemyBuffsOffsetX, module.config.enemyControlAuraOffsetY = 340, -360
     module.config.enemySoftTargetOffsetX = -11
     module:Refresh()
-    assert(aura.DebuffListFrame.offsetX == -320 and aura.BuffListFrame.offsetX == 340
-        and aura.CrowdControlListFrame.offsetY == -360
-        and aura.LossOfControlFrame.offsetY == -360 and uf.SoftTargetFrame.offsetX == -11,
-        "native aura/soft-target preview offsets did not reach runtime")
+    assert(aura.DebuffListFrame.points[1][4] == -320
+        and aura.BuffListFrame.points[1][4] == 335
+        and aura.CrowdControlListFrame.points[1][4] == 5
+        and aura.CrowdControlListFrame.points[1][5] == -360
+        and aura.LossOfControlFrame.points[1][4] == 5
+        and aura.LossOfControlFrame.points[1][5] == -360
+        and uf.SoftTargetFrame.offsetX == -11,
+        "native aura positions lost their Blizzard anchor spacing")
+    layoutHook(uf)
+    assert(aura.BuffListFrame.points[1][4] == 335
+        and aura.CrowdControlListFrame.points[1][5] == -360,
+        "Blizzard anchor rebuild lost the saved aura positions")
+    module.needsRefresh = false
+    combat = true
+    layoutHook(uf)
+    assert(module.needsRefresh and aura.BuffListFrame.points[1][4] == 335,
+        "aura anchor rebuild attempted a protected edit in combat")
+    combat = false
+    events.PLAYER_REGEN_ENABLED(module)
+    assert(aura.BuffListFrame.points[1][4] == 335,
+        "deferred aura positions did not recover after combat")
     module.config.enemyAurasOffsetX = 0
     module.config.enemyBuffsOffsetX, module.config.enemyControlAuraOffsetY = 0, 0
     module.config.enemySoftTargetOffsetX = 0
+    private.Layout.Configure(module.config)
+    aura.DebuffListFrame:SetPoint("BOTTOM", name, "TOP", 0, 6)
+    layoutHook(uf)
     module:Refresh()
-    assert(aura.DebuffListFrame.offsetX == 0 and aura.BuffListFrame.offsetX == 0
-        and aura.CrowdControlListFrame.offsetY == 0
-        and aura.LossOfControlFrame.offsetY == 0 and uf.SoftTargetFrame.offsetX == 0,
-        "native element offsets did not restore")
+    assert(aura.DebuffListFrame.points[1][4] == 0 and aura.BuffListFrame.points[1][4] == -5
+        and aura.CrowdControlListFrame.points[1][4] == 5
+        and aura.CrowdControlListFrame.points[1][5] == 0
+        and aura.LossOfControlFrame.points[1][4] == 5
+        and aura.LossOfControlFrame.points[1][5] == 0 and uf.SoftTargetFrame.offsetX == 0,
+        "native aura spacing did not restore")
 end
 
 do
