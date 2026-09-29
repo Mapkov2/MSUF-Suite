@@ -148,6 +148,7 @@ Enum = { DamageMeterType = { DamageDone = 0 } }
 Minimap = { SetMaskTexture = function() end }
 C_CooldownViewer = { GetCooldownViewerCategorySet = function() return {} end, GetCooldownViewerCooldownInfo = function() end }
 local SPELLS = { [133] = { "Fireball", 1001 }, [1459] = { "Arcane Intellect", 1002 }, [122] = { "Frost Nova", 1004 },
+    [10060] = { "Power Infusion", 1010 }, [29166] = { "Innervate", 1011 },
     [382440] = { "Shifting Power", 1006 } }
 C_Spell = {
     GetSpellCooldownDuration = function() end,
@@ -444,7 +445,7 @@ local CATALOG = {
     b4 = { name = "Frost Nova", texture = 104, family = 1, known = true, spell = 122 },
     b5 = { name = "Blink", texture = Secret(), family = 1, known = true },
     b6 = { name = Secret(), texture = 106, family = 1, known = Secret() },
-    b10 = { name = "Arcane Intellect", texture = 110, family = 2, known = true },
+    b10 = { name = "Arcane Intellect", texture = 110, family = 2, known = true, spell = 1459 },
     b11 = { name = "Ice Barrier", texture = 111, family = 2, known = true },
     b20 = { name = "Clearcasting", texture = 120, family = 2, known = true },
     b30 = { name = "Berserking", texture = 130, family = 1, known = true },
@@ -1578,6 +1579,36 @@ runtime.units.b10 = nil
 Page.ui.grid.valid = false
 M.RequestRefresh()
 assert(buffTrack.choice.text == "Automatic", "Track on without the runtime's answer")
+-- Received buffs use their aura IDs even when Blizzard also knows the
+-- spell. The suggestions and name/ID input both stay on the any-caster path.
+local beforeReceived = Config().listsData
+assert(Page.TogglePicker(grid.plus), "buff picker did not open")
+local received = Page.picker
+received.search:SetText("10060")
+Fire(received.search, "OnTextChanged", true)
+local receivedRows = VisibleRows()
+assert(#receivedRows == 2 and receivedRows[2].key == "a10060", "Power Infusion suggestion missing")
+for _, row in ipairs(received.rows) do
+    if row.shown and row.item and row.item.key == "a10060" then Fire(row, "OnClick"); break end
+end
+assert(Keys("buf") == "b10,b11,a10060", "received Power Infusion was not added as a player buff")
+received.search:SetText("innervate")
+Fire(received.search, "OnTextChanged", true)
+receivedRows = VisibleRows()
+assert(#receivedRows == 2 and receivedRows[2].key == "a29166", "Innervate suggestion missing")
+for _, row in ipairs(received.rows) do
+    if row.shown and row.item and row.item.key == "a29166" then Fire(row, "OnClick"); break end
+end
+assert(Keys("buf") == "b10,b11,a10060,a29166", "received Innervate was not added")
+received.idBox:SetText("1459")
+Fire(received.idBox, "OnTextChanged", true)
+assert(received.customBlizzard == nil and not received.echo.text:find("Blizzard's entry", 1, true),
+    "received buff was redirected to Blizzard's caster entry")
+Fire(received.addA, "OnClick")
+assert(Keys("buf") == "b10,b11,a10060,a29166,a1459", "custom received buff did not keep its aura key")
+Fire(received.close, "OnClick")
+Config().listsData = beforeReceived
+M.RequestRefresh()
 picker.set("ess")
 assert(not pop.shown, "changing the bar closes the popover")
 M.RequestRefresh()

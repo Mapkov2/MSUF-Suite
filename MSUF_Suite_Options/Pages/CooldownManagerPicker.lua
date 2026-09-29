@@ -16,6 +16,21 @@ local Button, Label, ShowTip, HideTip = Page.Button, Page.Label, Page.ShowTip, P
 local PICK_W, PICK_H = 340, 470
 local picker
 
+-- Suggestions for buffs received from another player. These are aura IDs,
+-- not the caster's cooldown entries: the player AuraContainer accepts every
+-- caster. Only selected IDs become live aura groups; this list is options-only.
+local RECEIVED_BUFFS = {
+    10060,  -- Power Infusion
+    29166,  -- Innervate
+    6940,   -- Blessing of Sacrifice
+    1022,   -- Blessing of Protection
+    1044,   -- Blessing of Freedom
+    33206,  -- Pain Suppression
+    47788,  -- Guardian Spirit
+    102342, -- Ironbark
+    116849, -- Life Cocoon
+}
+
 local function SortCatalog(a, b)
     if a.rank ~= b.rank then return a.rank < b.rank end
     if a.known ~= b.known then return a.known end
@@ -238,6 +253,24 @@ function Page.RebuildPicker()
         if record.spell and not bySpell[record.spell] then bySpell[record.spell] = item end
         if record.override and not bySpell[record.override] then bySpell[record.override] = item end
     end
+    if family == 2 then
+        local headerAdded = false
+        for i = 1, #RECEIVED_BUFFS do
+            local id = RECEIVED_BUFFS[i]
+            local name = C_Spell.GetSpellName(id)
+            if Public(name) and type(name) == "string" then
+                if not headerAdded then
+                    n = n + 1
+                    Item(n, "header", Tr("Received buffs (any caster)"))
+                    headerAdded = true
+                end
+                local texture = C_Spell.GetSpellTexture(id)
+                n = n + 1
+                Item(n, "entry", name, "a" .. id, Public(texture) and texture or nil,
+                    true, Page.WhereIs("a" .. id), 2, id)
+            end
+        end
+    end
     if family == 1 then
         n = n + 1
         Item(n, "header", Tr("Trinkets and items"))
@@ -277,9 +310,9 @@ function Page.EchoCustom()
     local spellID, spellName, spellIcon = ResolveSpell(text)
     local itemID, itemName, itemIcon
     if picker.family == 1 then itemID, itemName, itemIcon = ResolveItem(text) end
-    -- A spell Blizzard's Cooldown Manager already tracks is added as that
-    -- entry, so it never shows twice.
-    local blizzard = spellID and picker.bySpell[spellID] or nil
+    -- Cooldowns reuse Blizzard's entry. A received buff must keep its own
+    -- a<spellID> key: Blizzard's entry can be unlearned or caster-filtered.
+    local blizzard = picker.family == 1 and spellID and picker.bySpell[spellID] or nil
     picker.customSpell, picker.customItem, picker.customBlizzard = spellID, itemID, blizzard
     local r, g, b = MutedColor()
     if text == "" then
