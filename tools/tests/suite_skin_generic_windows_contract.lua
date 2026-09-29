@@ -201,6 +201,12 @@ NS = {
             counters.yellow = counters.yellow + 1
             if yellowFrames then yellowFrames[frame] = true end
         end,
+        TrackFrames = function(frames, count)
+            for index = 1, count do
+                counters.yellow = counters.yellow + 1
+                if yellowFrames then yellowFrames[frames[index]] = true end
+            end
+        end,
         TrackMenuSelection = function() end,
     },
     Checkmarks = {
@@ -309,6 +315,10 @@ end
 local grown = collectgarbage("count") - before
 collectgarbage("restart")
 Check(grown < 1, ("pooled row refresh allocated %.2f KB for 4000 callbacks"):format(grown))
+rowOne.childReads, counters.yellow = 0, 0
+scrollBox:Initialize(rowOne)
+Check(rowOne.childReads == 0 and counters.yellow > 0,
+    "a recycled row enumerated its children again instead of revisiting its recorded subtree")
 
 locked = true
 rowOne.childReads, counters.yellow = 0, 0

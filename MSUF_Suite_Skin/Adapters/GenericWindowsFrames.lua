@@ -446,21 +446,21 @@ end
 -- the yellow refresh follows the row's own subtree within the depth and node
 -- bounds of its first pass (the row mode). Varargs keep the walk
 -- allocation-free; children the full pass skips are skipped here too.
-local TrackRowChildren
+local CollectRowChildren
 
-local function TrackRowTree(yellow, frame, mode, depth, budget)
-    yellow.TrackFrame(frame)
+local function CollectRowTree(nodes, frame, mode, depth, budget)
+    nodes[#nodes + 1] = frame
     if depth >= mode.maxDepth or budget <= 0 then return budget end
-    return TrackRowChildren(yellow, mode, depth + 1, budget, Call(frame, "GetChildren"))
+    return CollectRowChildren(nodes, mode, depth + 1, budget, Call(frame, "GetChildren"))
 end
 
-TrackRowChildren = function(yellow, mode, depth, budget, ...)
+CollectRowChildren = function(nodes, mode, depth, budget, ...)
     for index = 1, select("#", ...) do
         if budget <= 0 then return 0 end
         local child = select(index, ...)
         if Safety.Public(child) and type(child) == "table" and not IsOwnedEquipmentHost(child)
             and CanSkin(child, mode.allowImplicitProtected) then
-            budget = TrackRowTree(yellow, child, mode, depth, budget - 1)
+            budget = CollectRowTree(nodes, child, mode, depth, budget - 1)
         end
     end
     return budget
@@ -470,15 +470,38 @@ end
 -- refresh. A recycled row keeps every surface and faded region from its
 -- first pass, so only element-dependent state is refreshed: Blizzard's
 -- yellow text, the selected menu entry and the native check/expand glyphs.
-local function RefreshTrackedRow(row, owner, mode)
+local function RefreshRowNodes(row, owner, mode, nodes)
     local yellow = NS.BlizzardYellow
-    TrackRowTree(yellow, row, mode, 0, mode.maxNodes - 1)
+    yellow.TrackFrames(nodes, #nodes)
     if mode.menuPopup then yellow.TrackMenuSelection(row) end
     NS.Checkmarks.TrackFrame(row, owner)
 end
 
+-- Descendant refreshes walk afresh (their pools can add children); the
+-- scratch list keeps them allocation-free.
+local scratchNodes = {}
+
+local function RefreshTrackedRow(row, owner, mode)
+    for index = #scratchNodes, 1, -1 do scratchNodes[index] = nil end
+    CollectRowTree(scratchNodes, row, mode, 0, mode.maxNodes - 1)
+    RefreshRowNodes(row, owner, mode, scratchNodes)
+end
+
+-- A pooled ScrollBox row keeps its template children, so the frames its walk
+-- accepts are recorded once per skin generation and mode. Later refreshes of
+-- that row revisit exactly those frames without enumerating children and
+-- repeating the eligibility checks. Weak keys: released rows drop the list.
+local rowNodes = setmetatable({}, { __mode = "k" })
+
 local function RefreshRecycledRow(row, registration)
-    RefreshTrackedRow(row, registration.owner, registration.mode)
+    local mode, generation = registration.mode, registration.ownerState.generation
+    local nodes = rowNodes[row]
+    if not nodes or nodes.generation ~= generation or nodes.mode ~= mode then
+        nodes = { generation = generation, mode = mode }
+        CollectRowTree(nodes, row, mode, 0, mode.maxNodes - 1)
+        rowNodes[row] = nodes
+    end
+    RefreshRowNodes(row, registration.owner, mode, nodes)
 end
 
 -- Registered once per ScrollBox as callback(registration, row).

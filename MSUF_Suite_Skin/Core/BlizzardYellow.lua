@@ -184,6 +184,21 @@ function BlizzardYellow.TrackFrame(frame)
     return TrackRegions(frame:GetRegions())
 end
 
+-- TrackFrame over frames[1..count] (a pooled row's subtree): the enable and
+-- combat gates and the configured color are read once for the whole list.
+function BlizzardYellow.TrackFrames(frames, count)
+    if not (NS.DB and NS.DB.enabled) or NS.IsCombatLocked() then return 0 end
+    RefreshDesiredColor()
+    local tracked = 0
+    for index = 1, count do
+        local frame = frames[index]
+        if type(frame) == "table" and not Safety.IsForbidden(frame) and type(frame.GetRegions) == "function" then
+            tracked = tracked + TrackRegions(frame:GetRegions())
+        end
+    end
+    return tracked
+end
+
 -- Returns the number recolored and whether text was one of the regions.
 local function TrackKnownRegions(text, ...)
     local count, textSeen = 0, false
