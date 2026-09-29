@@ -5,7 +5,6 @@ local ID = "announcements"
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
 -- alerts for the enabled kinds are hidden; their content is shown here.
 local M = { queue = {}, generation = 0 }
-local FALLBACK_FONT = NS.MSUFMedia.font
 local COLORS = {
     zone = { .96, .88, .67 }, quest = { .98, .79, .39 },
     achievement = { .88, .69, .41 }, level = { .47, .81, .98 },
@@ -71,7 +70,7 @@ end
 local function Theme(self)
     local c = self.config
     local skin = self.context and self.context:Skin()
-    local font = S.ResolveFont(c.font) or (skin and skin:GetFont()) or FALLBACK_FONT
+    local font = S.ResolveFont(c.font) or S.GlobalFontPath()
     S.SetStyledFont(self.title, font, c.titleSize or 31, "OUTLINE", 1, true, 80, 2)
     S.SetStyledFont(self.subtitle, font, c.subtitleSize or 16, "OUTLINE", 1, true, 75, 1)
     local dark = not skin or skin:GetLook() == "midnightDark"
@@ -451,6 +450,11 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "anchor",
         point = function() return self.config.anchor == 2 and "CENTER" or "TOP" end,
         historyKeys = { "scale" },
+        extraControls = {
+            { id = "scale", label = "Scale %", kind = "number", min = 60, max = 160, step = 1,
+                get = function() return S.Config(ID).scale end,
+                set = function(value) return S.Set(ID, "scale", value) end },
+        },
     })
 end
 

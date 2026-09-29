@@ -15,7 +15,7 @@ local function Widget()
     function w:SetVertexColor(...) self.vertex = { ... } end
     function w:SetTexture(value) self.texture = value end
     function w:SetAllPoints() end
-    function w:SetScale() end
+    function w:SetScale(value) self.scale = value end
     function w:GetEffectiveScale() return 1 end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetShown(value) self.shown = value end
@@ -70,6 +70,7 @@ local function Load(kind)
         AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
     suite.Suite = { instances = {}, editMode = false }
     local runtime = suite.Suite
+    runtime.GlobalFontPath = function() return MEDIA.font end
     runtime.Public = function(value) return value ~= "secret" end
     -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
     runtime.Number = function(value) return runtime.Public(value) and type(value) == "number" and value == value end
@@ -161,6 +162,16 @@ module:Refresh()
 assert(module.segments[1]:IsShown() and module.segments[1].point[4] == 11,
     "divisions did not follow the configured width")
 assert(movers.experience and events.PLAYER_XP_UPDATE and events.PLAYER_LEVEL_UP)
+assert(movers.experience.quickPosition and #movers.experience.extraControls == 3
+    and movers.experience.extraControls[1].id == "width"
+    and movers.experience.extraControls[2].id == "height"
+    and movers.experience.extraControls[3].id == "scale",
+    "XP Edit Mode popup is missing exact position or size controls")
+movers.experience.extraControls[3].set(125)
+module:Refresh()
+assert(module.host.scale == 1.25, "XP popup scale did not reach runtime")
+movers.experience.extraControls[3].set(100)
+module:Refresh()
 assert(module.levelText.text:find("100 / 1.0k", 1, true))
 
 xp = 250

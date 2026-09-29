@@ -1562,12 +1562,19 @@ assert(Button(3,1).button.width==40,"the queued scale refresh did not re-snap th
 ------------------------------------------------------------------ movers and exports
 M:RegisterMovers()
 local element=assert(editElements.bar3,"mover for bar 3")
-assert(element.getFrame()==Bar(3).header and element.label=="Action bar 3" and #element.extraControls==7)
+local function PopupControl(mover, id)
+    for _, control in ipairs(mover.extraControls) do
+        if control.id == id then return control end
+    end
+end
+assert(element.getFrame()==Bar(3).header and element.label=="Action bar 3" and #element.extraControls==9)
+assert(PopupControl(element,"bar3X") and PopupControl(element,"bar3Y"),
+    "action bar popup omitted exact position controls")
 for _,control in ipairs(element.extraControls) do assert(#control.label<=40 and control.id:match("^[%w_]+$")) end
 assert(element.isEnabled() and not editElements.bar6.isEnabled(),"Never bars have no mover")
-local horizontal,vertical=element.extraControls[5],element.extraControls[6]
+local horizontal,vertical=PopupControl(element,"horizontal"),PopupControl(element,"vertical")
 assert(S.SetMany("actionbars",{bar4Buttons=12,bar4Rows=1,bar4Vertical=true})
-    and editElements.bar4.extraControls[5].get() and not editElements.bar4.extraControls[6].get(),
+    and PopupControl(editElements.bar4,"horizontal").get() and not PopupControl(editElements.bar4,"vertical").get(),
     "popup orientation follows the visible row even with column-first fill")
 assert(horizontal.id=="horizontal" and vertical.id=="vertical" and horizontal.get() and not vertical.get(),
     "popup starts in horizontal layout")
@@ -1575,15 +1582,15 @@ assert(vertical.set(true) and c.bar3Vertical and c.bar3Rows==c.bar3Buttons and v
     "vertical popup control makes a single column")
 assert(Bar(3).header.width==40 and Bar(3).header.height==502,"vertical popup control lays out the bar")
 assert(vertical.set(false)==false and vertical.get(),"active orientation cannot be deselected")
-element.extraControls[1].set(4)
+PopupControl(element,"buttons").set(4)
 assert(c.bar3Buttons==4 and c.bar3Rows==4 and Bar(3).header.width==40 and Bar(3).header.height==166,
     "changing button count keeps a vertical bar in one column")
 assert(horizontal.set(true) and not c.bar3Vertical and c.bar3Rows==1 and horizontal.get() and not vertical.get(),
     "horizontal popup control makes a single row")
 assert(Bar(3).header.width==166 and Bar(3).header.height==40,"horizontal popup control lays out the bar")
-assert(element.extraControls[2].set(2) and not horizontal.get() and not vertical.get(),
+assert(PopupControl(element,"rows").set(2) and not horizontal.get() and not vertical.get(),
     "custom grids remain available without a misleading orientation selection")
-local mouseover=element.extraControls[7]
+local mouseover=PopupControl(element,"mouseover")
 assert(S.Set("actionbars","bar3Visibility",2) and not mouseover.get())
 mouseover.set(true);assert(c.bar3Visibility==5,"mouseover keeps the combat rule")
 mouseover.set(false);assert(c.bar3Visibility==2)

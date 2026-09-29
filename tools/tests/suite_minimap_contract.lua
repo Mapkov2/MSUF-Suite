@@ -686,10 +686,11 @@ do
     local mover = W.movers["MSUFSuite.minimap/map"]
     local state = mover.captureState()
     check(state.values.x == -20 and state.values.point == 3, "mover state")
-    check(state.values.size == W.config.size and #mover.extraControls == 1
-        and mover.extraControls[1].get() == W.config.size,
-        "minimap popup did not expose size with Edit Mode history")
-    check(mover.extraControls[1].set(230) and W.config.size == 230
+    check(state.values.size == W.config.size and #mover.extraControls == 3
+        and mover.extraControls[1].id == "x" and mover.extraControls[2].id == "y"
+        and mover.extraControls[3].get() == W.config.size,
+        "minimap popup did not expose position and size with Edit Mode history")
+    check(mover.extraControls[3].set(230) and W.config.size == 230
         and mover.restoreState(state) and W.config.size == state.values.size,
         "minimap popup size did not apply and restore")
     check(mover.movePosition({ state = state, deltaX = 10, deltaY = -5, phase = "preview" }), "mover preview")

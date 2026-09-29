@@ -58,6 +58,7 @@ local suite = { ChatLookPresets = {}, MSUFMedia = MEDIA,
     AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
 suite.Suite = { instances = {}, editMode = false }
 local S = suite.Suite
+S.GlobalFontPath = function() return MEDIA.font end
 S.Public = function(value) return value ~= "secret" end
 -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
@@ -120,6 +121,21 @@ assert(module.title.font == MEDIA.font and module.speed.texture == MEDIA.barText
 assert(movers.flight and events.PLAYER_CAN_GLIDE_CHANGED and events.PLAYER_IS_GLIDING_CHANGED
     and not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
     "Grounded Skyriding registered global spell events or lost its mover")
+assert(movers.flight.quickPosition and #movers.flight.extraControls == 3
+    and movers.flight.extraControls[1].id == "width"
+    and movers.flight.extraControls[2].id == "barHeight"
+    and movers.flight.extraControls[3].id == "scale",
+    "Skyriding popup omitted coordinates, width, bar height or scale")
+movers.flight.extraControls[1].set(400)
+movers.flight.extraControls[2].set(12)
+movers.flight.extraControls[3].set(125)
+module:Refresh()
+assert(module.host.width == 400 and module.speed.height == 12 and module.host.scale == 1.25,
+    "Skyriding popup size did not reach runtime")
+movers.flight.extraControls[1].set(350)
+movers.flight.extraControls[2].set(10)
+movers.flight.extraControls[3].set(100)
+module:Refresh()
 assert(not module.host:IsShown() and not module.host.OnUpdate, "Grounded HUD remained active")
 
 capable = true

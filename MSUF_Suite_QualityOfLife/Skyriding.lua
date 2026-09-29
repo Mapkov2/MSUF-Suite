@@ -8,7 +8,6 @@ local TICK_SECONDS = 0.1
 local POINTS = NS.AnchorPoints
 local OUTLINES = { "", "OUTLINE", "THICKOUTLINE" }
 local BAR_TEXTURE = NS.MSUFMedia.barTexture
-local FONT = NS.MSUFMedia.font
 local PADDING = 12
 local Public, RGB = S.Public, S.RGB
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
@@ -192,7 +191,7 @@ end
 local function Style(self)
     local c = self.config
     local texture = S.ResolveTexture(c.barTexture, BAR_TEXTURE)
-    local font = S.ResolveFont(c.font) or FONT
+    local font = S.ResolveFont(c.font) or S.GlobalFontPath()
     local flags = OUTLINES[c.fontOutline] or ""
     Paint(self.panel, c.panelColor, c.panelOpacity / 100)
     for _, edge in ipairs(self.edges) do Paint(edge, c.borderColor, c.borderSize > 0 and 1 or 0) end
@@ -521,11 +520,17 @@ function M:RegisterMovers()
         label = "Skyriding HUD", order = 640, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
-        historyKeys = { "width", "scale" },
+        quickPosition = true, historyKeys = { "width", "scale", "barHeight" },
         extraControls = {
             { id = "width", label = "Width", kind = "number", min = 220, max = 600, step = 1,
                 get = function() return S.Config(ID).width end,
                 set = function(value) return S.Set(ID, "width", value) end },
+            { id = "barHeight", label = "Bar H", kind = "number", min = 6, max = 18, step = 1,
+                get = function() return S.Config(ID).barHeight end,
+                set = function(value) return S.Set(ID, "barHeight", value) end },
+            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
+                get = function() return S.Config(ID).scale end,
+                set = function(value) return S.Set(ID, "scale", value) end },
         },
     })
 end

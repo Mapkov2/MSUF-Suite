@@ -394,6 +394,9 @@ function M:RegisterMovers()
             { id = "height", label = "Maximum height", kind = "number", min = 220, max = 900, step = 10,
                 get = function() return S.Config(ID).height end,
                 set = function(value) return S.Set(ID, "height", value) end },
+            { id = "scale", label = "Scale %", kind = "number", min = 60, max = 160, step = 1,
+                get = function() return S.Config(ID).scale end,
+                set = function(value) return S.Set(ID, "scale", value) end },
         },
     })
 end

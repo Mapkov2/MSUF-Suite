@@ -90,6 +90,42 @@ local function ValidState(state)
         and type(state.values) == "table"
 end
 
+-- MSUF's external popup shows X/Y in its summary; owner controls make them
+-- editable. Every Suite mover with numeric profile coordinates gets fields. A
+-- native bag window starts at Blizzard's live position until first moved.
+local function PositionValues(id, spec)
+    local config = S.Config(id)
+    local values = { [spec.xKey] = config[spec.xKey], [spec.yKey] = config[spec.yKey] }
+    if spec.capture then spec.capture(values) end
+    return values
+end
+
+local function SetPositionValue(id, spec, key, value)
+    if not spec.moveValues then return S.Set(id, key, value) end
+    local values = PositionValues(id, spec)
+    values[key] = value
+    for flag, enabled in pairs(spec.moveValues) do values[flag] = enabled end
+    return S.SetMany(id, values)
+end
+
+local function PopupControls(id, spec)
+    if spec.quickPosition == false then return spec.extraControls end
+    local controls, rules = {}, S.catalog[id].rules
+    for _, axis in ipairs({ { spec.xKey, "X" }, { spec.yKey, "Y" } }) do
+        local key, label = axis[1], axis[2]
+        local rule = rules[key]
+        if rule and rule.min and rule.max then
+            controls[#controls + 1] = {
+                id = key, label = label, kind = "number", min = rule.min, max = rule.max, step = 1,
+                get = function() return PositionValues(id, spec)[key] end,
+                set = function(value) return SetPositionValue(id, spec, key, value) end,
+            }
+        end
+    end
+    for _, control in ipairs(spec.extraControls or EMPTY) do controls[#controls + 1] = control end
+    return controls
+end
+
 local function Element(id, elementID, spec)
     local function Frame()
         local frame = spec.getFrame()
@@ -107,6 +143,7 @@ local function Element(id, elementID, spec)
         id = elementID,
         label = S.Text(spec.label),
         group = "MSUF Suite",
+        centerPopup = spec.centerPopup == true,
         order = spec.order or 1000,
         getFrame = Frame,
         isEnabled = function()
@@ -162,7 +199,7 @@ local function Element(id, elementID, spec)
             for _, key in ipairs(spec.resetKeys or EMPTY) do values[key] = rules[key].default end
             return S.SetMany(id, values)
         end,
-        extraControls = spec.extraControls,
+        extraControls = PopupControls(id, spec),
         openSettings = function()
             S.Open(id)
             return true
@@ -171,7 +208,7 @@ local function Element(id, elementID, spec)
 end
 
 -- spec: label, getFrame(), xKey, yKey, point (string or function), pointKey,
--- isEnabled(), order, extraControls, historyKeys, moveValues, resetKeys,
+-- isEnabled(), order, quickPosition=false opt-out, extraControls, historyKeys, moveValues, resetKeys,
 -- place(x, y) (drag preview for x/y that are not UIParent offsets),
 -- capture(origin) (live drag start x/y; undo keeps the saved values).
 -- Returns true when MSUF Edit Mode accepted the element.

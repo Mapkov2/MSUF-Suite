@@ -197,6 +197,7 @@ local suite = { Client = { isMainline = true, isForever = flavor == "Forever" },
     Suite = { instances = {}, editMode = false },
     Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end }
 local S = suite.Suite
+S.GlobalFontPath = function() return SUITE_FONT end
 -- The modules capture the readers when they load; this value stands in for a
 -- secret one.
 local secret = {}
@@ -240,8 +241,8 @@ S.Set = function(id, key, value) S.Config(id)[key] = value; return true end
 local moduleStates = {}
 S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return moduleStates[id] end
 local function Context()
-    local ctx = { events = {}, hidden = {}, parents = {} }
-    function ctx:Event(event, callback) self.events[event] = callback end
+    local ctx = { events = {}, eventUnits = {}, hidden = {}, parents = {} }
+    function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
     function ctx:RemoveEvent(event) self.events[event] = nil end
     function ctx:Skin() return nil end
     function ctx:HideControl(frame, value) self.hidden[frame] = value end
@@ -446,6 +447,13 @@ assert(lastMenu.buttons["View achievement"], "achievement row did not expose its
 scenarioRow.OnClick(scenarioRow, "RightButton")
 assert(lastMenu.buttons["Find group"], "scenario row did not expose its menu")
 assert(movers.objectives.spec.xKey == "x" and movers.objectives.spec.yKey == "y")
+assert(#movers.objectives.spec.extraControls == 3
+    and movers.objectives.spec.extraControls[1].id == "width"
+    and movers.objectives.spec.extraControls[2].id == "height"
+    and movers.objectives.spec.extraControls[3].id == "scale",
+    "objective tracker popup omitted its scale control")
+assert(movers.objectives.spec.extraControls[3].set(125) and tracker.config.scale == 125)
+assert(movers.objectives.spec.extraControls[3].set(100))
 local banner = S.instances.announcements
 banner.context = Context()
 banner.config = { zone = true, eventToasts = true, quests = false,
@@ -482,6 +490,11 @@ ScenarioAlertSystem = { alertFramePool = {
 function ScenarioAlertSystem:ShowAlert() scenarioAlert:SetParent(UIParent) end
 banner:Enable()
 assert(movers.announcements.element == "banner" and banner.context.hidden[ZoneTextFrame])
+assert(movers.announcements.spec.extraControls[1].id == "scale"
+    and movers.announcements.spec.extraControls[1].set(125)
+    and banner.config.scale == 125,
+    "announcements popup omitted its scale control")
+assert(movers.announcements.spec.extraControls[1].set(100))
 assert(ZoneTextFrame:GetParent() == banner.hiddenParent and banner.context.hidden[EventToastManagerFrame])
 AchievementAlertSystem:ShowAlert()
 assert(achievement:GetParent() == banner.hiddenParent, "native achievement alert must be hidden")
@@ -878,6 +891,25 @@ if flavor == "Mainline" then
     clock = 211
     raidTicker:Fire()
     assert(tracker.raid.elapsed.text == "0:11", "raid clock did not advance")
+    local bossUnits = tracker.context.eventUnits.UNIT_HEALTH
+    assert(type(bossUnits) == "table" and #bossUnits == 5 and bossUnits[1] == "boss1" and bossUnits[5] == "boss5",
+        "live boss health must subscribe to the five boss tokens, not every raid member")
+    -- Health ticks only move the boss row: several ticks share one deferred
+    -- redraw, and a raid member's tick never reaches the view.
+    local livePercent, pendingCallbacks = 70, #scheduled
+    UnitHealthPercent = function() return livePercent end
+    tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "raid7")
+    assert(#scheduled == pendingCallbacks, "a raid member's health tick reached the raid view")
+    for _, value in ipairs({ 60, 55, 50 }) do
+        livePercent = value
+        tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+    end
+    assert(#scheduled == pendingCallbacks + 1 and tracker.raid.live[1].percent == 50
+        and tracker.raid.current.text:find("First Guardian 70.0%%", 1, false),
+        "boss health ticks must update the data at once and share one deferred redraw")
+    table.remove(scheduled)()
+    assert(tracker.raid.current.text:find("First Guardian 50.0%%", 1, false),
+        "the deferred redraw did not show the latest boss health")
     UnitHealthPercent = function() return secret end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
     assert(not tracker.raid.live[1].percent,

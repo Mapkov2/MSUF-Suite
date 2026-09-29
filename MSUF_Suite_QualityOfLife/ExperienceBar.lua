@@ -5,7 +5,7 @@ local ID = "xpBar"
 local SEGMENT_COUNT = 20
 local SESSION_MAX_AGE = 604800
 local POINTS = NS.AnchorPoints
-local MSUF_BAR, MSUF_FONT = NS.MSUFMedia.barTexture, NS.MSUFMedia.font
+local MSUF_BAR = NS.MSUFMedia.barTexture
 local DETAIL_SEPARATOR = "   •   "
 local RGB = S.RGB
 local floor, max, min = math.floor, math.max, math.min
@@ -295,16 +295,23 @@ local function ApplyLook(self)
     self.levelText:SetTextColor(textR, textG, textB, 1)
     self.percentText:SetTextColor(textR, textG, textB, 1)
     self.details:SetTextColor(mutedR, mutedG, mutedB, 1)
-    S.SetFont(self.levelText, MSUF_FONT, 11, "OUTLINE")
-    S.SetFont(self.percentText, MSUF_FONT, 11, "OUTLINE")
-    S.SetFont(self.details, MSUF_FONT, 11, "")
     self.appliedLook = index
+end
+
+local function ApplyFont(self)
+    local path, epoch = S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
+    if self.fontPath == path and self.fontEpoch == epoch then return end
+    S.SetFont(self.levelText, path, 11, "OUTLINE")
+    S.SetFont(self.percentText, path, 11, "OUTLINE")
+    S.SetFont(self.details, path, 11, "")
+    self.fontPath, self.fontEpoch = path, epoch
 end
 
 -- Geometry and style: settings, scale and Edit Mode changes only.
 local function Layout(self)
     Create(self)
     ApplyLook(self)
+    ApplyFont(self)
     local c, host, bar = self.config, self.host, self.bar
     local point = POINTS[c.point] or "BOTTOM"
     host:SetScale(c.scale / 100)
@@ -499,6 +506,7 @@ function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "experience", {
         label = "Experience bar", order = 630, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", pointKey = "point",
+        quickPosition = true,
         point = function() return POINTS[self.config.point] or "BOTTOM" end,
         historyKeys = { "width", "height", "scale" },
         extraControls = {
@@ -508,6 +516,9 @@ function M:RegisterMovers()
             { id = "height", label = "Height", kind = "number", min = 8, max = 40, step = 1,
                 get = function() return S.Config(ID).height end,
                 set = function(value) return S.Set(ID, "height", value) end },
+            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
+                get = function() return S.Config(ID).scale end,
+                set = function(value) return S.Set(ID, "scale", value) end },
         },
     })
 end

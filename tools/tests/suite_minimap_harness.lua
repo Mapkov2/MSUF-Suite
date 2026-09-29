@@ -372,6 +372,7 @@ function H.New(root, client, options)
     G.GetGameTime = function() return 12, 0 end
     G.GetFramerate = function() return 60 end
     G.GetNetStats = function() return 0, 0, 20, 20 end
+    G.GetPhysicalScreenSize = function() return 1024, 768 end
     G.GetInventoryItemDurability = function() end
     G.GetZoneText, G.GetSubZoneText = function() return "" end, function() return "" end
     G.C_Map = { GetBestMapForUnit = function() end, GetPlayerMapPosition = function() end }
