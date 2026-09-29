@@ -18,6 +18,8 @@ local LOOKS = {
         text = "e9e9e4", muted = "b9bdb9", rested = "777d70" },
     { panel = "14181b", track = "20272a", border = "9f8960", accent = "d8b66a",
         text = "f4f3eb", muted = "d4dce2", rested = "668db8" },
+    [5] = { panel = "101010", track = "191919", border = "333333", accent = "e6ecf2",
+        text = "f5f5f5", muted = "bfc4c9", rested = "9eabb8" },
 }
 local TEXT = {
     experience = S.Text("Experience"),
@@ -310,6 +312,8 @@ end
 -- Geometry and style: settings, scale and Edit Mode changes only.
 local function Layout(self)
     Create(self)
+    local restored = S.ApplyOwnedLayer(self.host, self.config.layer)
+    S.ApplyOwnedChildLayer(self.bar, self.host, self.config.layer, 1, restored)
     ApplyLook(self)
     ApplyFont(self)
     local c, host, bar = self.config, self.host, self.bar

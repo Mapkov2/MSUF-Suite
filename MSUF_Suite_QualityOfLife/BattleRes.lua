@@ -57,11 +57,18 @@ local function Create(self)
     maximum:SetTextColor(.7, .84, .88)
 
     host:Hide()
-    self.host, self.cooldown, self.title, self.count, self.maximum = host, cooldown, title, count, maximum
+    self.host, self.panel, self.edges, self.cooldown, self.title, self.count, self.maximum =
+        host, panel, edges, cooldown, title, count, maximum
 end
 
 local function Place(self)
     local c = self.config
+    local style = S.QoLStyle(c)
+    S.QoLColor(self.panel, style.background, .92)
+    for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.border, .95) end
+    self.title:SetTextColor(S.RGB(style.muted))
+    self.count:SetTextColor(S.RGB(style.text))
+    self.maximum:SetTextColor(S.RGB(style.muted))
     local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(c.width, c.height)
     self.host:SetScale(c.scale / 100)

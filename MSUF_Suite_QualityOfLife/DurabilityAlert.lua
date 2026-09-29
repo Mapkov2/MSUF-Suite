@@ -40,11 +40,14 @@ local function Create(self)
     value:SetTextColor(1, .36, .33)
 
     host:Hide()
-    self.host, self.title, self.value = host, title, value
+    self.host, self.panel, self.edges, self.title, self.value = host, panel, edges, title, value
 end
 
 local function Place(self)
     local c = self.config
+    local style = S.QoLStyle(c)
+    S.QoLColor(self.panel, style.background, .92)
+    for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.border, .9) end
     local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(c.width, c.height)
     self.host:SetScale(c.scale / 100)

@@ -65,7 +65,21 @@ local function Create(self)
     S.SetFont(detail, nil, 11, "")
     host:SetPoint("TOP", UIParent, "TOP", 0, -155)
     host:Hide()
-    self.host, self.border, self.title, self.detail = host, border, title, detail
+    self.host, self.background, self.border, self.title, self.detail =
+        host, background, border, title, detail
+end
+
+local function Paint(self, mismatch)
+    local style = S.QoLStyle(self.config)
+    S.QoLColor(self.background, style.background, .94)
+    if mismatch then
+        self.title:SetTextColor(1, .54, .42)
+        self.border:SetColorTexture(1, .42, .28, 1)
+    else
+        self.title:SetTextColor(S.RGB(style.accent))
+        S.QoLColor(self.border, style.accent)
+    end
+    self.detail:SetTextColor(S.RGB(style.text))
 end
 
 local function Show(self)
@@ -87,10 +101,9 @@ local function Show(self)
     end
     Create(self)
     self.title:SetText(S.Text(mismatch and "Check your loadout" or "Current loadout"))
-    self.title:SetTextColor(mismatch and 1 or .9, mismatch and .54 or .81, mismatch and .42 or .62)
-    self.border:SetColorTexture(mismatch and 1 or .83, mismatch and .42 or .68, mismatch and .28 or .4, 1)
+    self.lastMismatch = mismatch
+    Paint(self, mismatch)
     self.detail:SetText(buildName .. "  |  " .. S.Text("Loot") .. ": " .. lootName)
-    self.detail:SetTextColor(.9, .92, .94)
     self.host:Show()
     CancelHide(self)
     self.generation = self.generation + 1
@@ -107,6 +120,10 @@ end
 
 local function OnReady(self)
     if self.config.onReadyCheck then Show(self) end
+end
+
+local function OnProposal(self)
+    if self.config.onLfgProposal then Show(self) end
 end
 
 local function OnZone(self, event)
@@ -155,6 +172,8 @@ local function SyncEvents(self)
     end
     if self.config.onReadyCheck then context:Event("READY_CHECK", OnReady, true)
     else context:RemoveEvent("READY_CHECK") end
+    if self.config.onLfgProposal then context:Event("LFG_PROPOSAL_SHOW", OnProposal, true)
+    else context:RemoveEvent("LFG_PROPOSAL_SHOW") end
     for _, event in ipairs(INSTANCE_EVENTS) do
         if watchInstance then context:Event(event, OnZone, true)
         else context:RemoveEvent(event) end
@@ -170,7 +189,8 @@ end
 function M:Refresh()
     local newlyWatching = SyncEvents(self)
     if self.host then S.SetFont(self.title, nil, 13, "OUTLINE"); S.SetFont(self.detail, nil, 11, "") end
-    if not self.config.onReadyCheck and not self.config.onInstanceEntry then
+    if self.host then Paint(self, self.lastMismatch) end
+    if not self.config.onReadyCheck and not self.config.onInstanceEntry and not self.config.onLfgProposal then
         CancelHide(self)
         if self.host then self.host:Hide() end
     end

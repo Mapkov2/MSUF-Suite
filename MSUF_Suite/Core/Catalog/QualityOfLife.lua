@@ -2,6 +2,20 @@ local _, NS = ...
 local B = NS.CatalogBuild
 local Number, Bool, Choice, String = B.Number, B.Bool, B.Choice, B.String
 
+-- Small Suite-owned notices and buttons share the same four authored looks.
+-- Status colors (low durability, missing pet, Bloodlust lockout) stay semantic.
+NS.QoLVisualStyles = {
+    [1] = { background = "0a1220", border = "41627a", accent = "57c7df", text = "f4f7fb", muted = "aab5c2" },
+    [2] = { background = "151719", border = "575b58", accent = "b9ab86", text = "e9e9e4", muted = "b9bdb9" },
+    [3] = { background = "14181b", border = "9f8960", accent = "d8b66a", text = "f4f3eb", muted = "d4dce2" },
+    [4] = { background = "101010", border = "333333", accent = "e6ecf2", text = "f5f5f5", muted = "bfc4c9" },
+}
+function NS.AddQoLVisualStyle(id, section, title)
+    NS.SuiteCatalog[id].look = { key = "look", global = { 1, 2, 3, [5] = 4 } }
+    B.Add(id, Choice("look", "MSUF style", 1,
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern" }), section, title)
+end
+
 -- This independent recent-cast display starts with a restrained game-like
 -- palette, regardless of the profile's global Suite look.
 B.Module("actionTracker", {
@@ -18,15 +32,18 @@ NS.ActionTrackerLooks = {
         accentColor = "b9ab86", textColor = "e9e9e4" },
     [4] = { panelColor = "14181b", panelOpacity = 90, borderColor = "9f8960",
         accentColor = "d8b66a", textColor = "f4f3eb" },
+    [6] = { panelColor = "101010", panelOpacity = 90, borderColor = "333333",
+        accentColor = "e6ecf2", textColor = "f5f5f5" },
 }
 NS.SuiteCatalog.actionTracker.look = {
     key = "look", presets = NS.ActionTrackerLooks,
     visualKeys = { panelColor = true, panelOpacity = true, borderColor = true,
         accentColor = true, textColor = true }, custom = 5,
+    global = { 2, 3, 4, [5] = 6 },
 }
 local actionLook = NS.ActionTrackerLooks[1]
 B.Section("actionTracker", "action_tracker", "Recent actions", {
-    Choice("look", "Style", 1, { "Classic UI", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+    Choice("look", "Style", 1, { "Classic UI", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
     Choice("displayPreset", "Display preset", 1, { "Standard rows", "Icons only" }),
     Number("rows", "Visible actions", 5, 1, 8),
     Number("width", "Display width", 210, 150, 420, 5),
@@ -127,12 +144,31 @@ B.Module("vaultSpec", {
 
 B.Module("tooltipIDs", {
     title = "Tooltip IDs",
-    description = "Hold Alt to show item, spell and creature IDs on the main tooltip.",
+    description = "Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
         if NS.Client.isForever then return false, "Tooltip IDs are available only in Retail" end
         return true
     end,
+})
+B.Section("tooltipIDs", "tooltip_ids", "Tooltip IDs", {
+    Bool("showQuestCurrency", "Show quest and currency IDs", true),
+    Bool("showSpellIcon", "Show spell icon ID"),
+    Bool("showTempEnchant", "Show temporary weapon enchant ID", true),
+    Bool("showAccountCurrency", "Show currency on other characters"),
+})
+
+B.Module("tooltipVisibility", {
+    title = "Tooltip visibility",
+    description = "Optionally hide the main tooltip in combat, instances or for selected content types.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("tooltipVisibility", "tooltip_visibility", "Tooltip visibility", {
+    Bool("inCombat", "Hide main tooltip in combat"),
+    Bool("inInstances", "Hide main tooltip in instances"),
+    Bool("hideItems", "Hide item tooltips"),
+    Bool("hideSpells", "Hide spell tooltips"),
+    Bool("hideUnits", "Hide unit tooltips"),
 })
 
 B.Module("itemCounts", {
@@ -144,6 +180,318 @@ B.Module("itemCounts", {
         return true
     end,
 })
+B.Section("itemCounts", "item_counts", "Item counts", {
+    Bool("byLocation", "Separate bags, bank and Warband bank"),
+})
+
+B.Module("socketGemSuggestions", {
+    title = "Gems in bags",
+    description = "Show carried gems beside Blizzard's socket window for manual review.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "The socket window is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("tooltipSpellCopy", {
+    title = "Copy spell ID",
+    description = "Select the last public spell tooltip ID for copying with /msufcopyspell.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Spell ID copying is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("tooltipMPlusScore", {
+    title = "Mythic+ score in tooltips",
+    description = "Show a player's public current-season Mythic+ score on their main tooltip.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Mythic+ scores are available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("tooltipClassColors", {
+    title = "Class-colored player names",
+    description = "Color player names by class on the main tooltip.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Class-colored player names are available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("macroBuilder", {
+    title = "Macro builder",
+    description = "Preview a mouseover or focus spell macro and create it on your character with /msufmacro.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "The macro builder is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("chatProfileLinks", {
+    title = "Character profile links",
+    description = "Copy Raider.IO or Warcraft Logs profile URLs from native character context menus.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Character profile links are available only in Retail" end
+        return true
+    end,
+})
+B.Section("chatProfileLinks", "profile_links", "Character profile links", {
+    Bool("raiderIO", "Show Raider.IO link", true),
+    Bool("warcraftLogs", "Show Warcraft Logs link", true),
+})
+
+B.Module("waypoints", {
+    title = "Waypoint command",
+    description = "Set a native map waypoint with /way x y or /msufway x y.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Native waypoints are available only in Retail" end
+        return true
+    end,
+})
+B.Section("waypoints", "waypoint_command", "Waypoint command", {
+    Bool("openMap", "Open the map after setting a waypoint"),
+    Bool("superTrack", "Track the new waypoint", true),
+})
+
+B.Module("dailyComfort", {
+    title = "Daily UI comforts",
+    description = "Optional shortcuts for tutorials, item deletion and screenshot notices.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    cvars = {
+        showTutorials = true, chatMouseScroll = true, chatClassColorOverride = true, mapFade = true,
+        worldMapShowPlayerCoords = true, worldMapShowCursorCoords = true,
+        doNotFlashLowHealthWarning = true, overrideScreenFlash = true,
+        Sound_EnableMusic = true, Sound_EnableAmbience = true,
+        Sound_EnableDialog = true, Sound_EnableErrorSpeech = true,
+        whisperMode = true,
+    },
+})
+B.Section("dailyComfort", "daily_comfort", "Daily UI comforts", {
+    Bool("hideTutorials", "Hide tutorial prompts"),
+    Bool("fillDelete", "Fill DELETE in item confirmations"),
+    Bool("hideScreenshotSuccess", "Hide screenshot success notice"),
+    Bool("vendorCharacter", "Open equipment window at merchants"),
+    Bool("auctionExpansion", "Current expansion filter at the auction house (Retail)"),
+})
+B.Section("dailyComfort", "daily_cvars", "Chat, map and sound", {
+    Bool("chatWheel", "Scroll chat with the mouse wheel"),
+    Bool("chatClassColors", "Color chat names by class"),
+    Bool("noChatFade", "Keep chat messages visible"),
+    Choice("whisperWindows", "Whisper windows", 1,
+        { "Follow Blizzard settings", "Separate window", "Window and main chat" }),
+    Bool("keepMapVisible", "Keep world map visible while moving"),
+    Bool("playerMapCoords", "Show player coordinates on the world map"),
+    Bool("cursorMapCoords", "Show cursor coordinates on the world map"),
+    Bool("hideLowHealthFlash", "Hide low-health screen flash"),
+    Bool("alternateScreenFlash", "Use alternate screen flashes (Retail)"),
+    Bool("muteMusic", "Mute music"),
+    Bool("muteAmbience", "Mute ambience"),
+    Bool("muteDialog", "Mute spoken dialogue"),
+    Bool("muteErrorSpeech", "Mute error speech"),
+})
+
+B.Module("collectionNewMarkers", {
+    title = "Collection new markers",
+    description = "Clear new mount, pet and toy fanfares acquired while this helper is active.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Collection markers are available only in Retail" end
+        return true
+    end,
+})
+B.Section("collectionNewMarkers", "collection_markers", "Collection new markers", {
+    Bool("mounts", "Clear new mount markers", true),
+    Bool("pets", "Clear new pet markers", true),
+    Bool("toys", "Clear new toy markers", true),
+})
+
+B.Module("guildChatPrivacy", {
+    title = "Guild chat privacy cover",
+    description = "Manually cover whole chat windows that contain guild or officer messages.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Guild chat privacy is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("uiErrorFilter", {
+    title = "Quiet repeated errors",
+    description = "Choose individual recurring UI errors to hide with Blizzard's own message filter.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("uiErrorFilter", "ui_error_filter", "UI error messages", {
+    Bool("range", "Hide spell out of range"),
+    Bool("target", "Hide no valid target"),
+    Bool("mana", "Hide not enough mana"),
+    Bool("item", "Hide item cooldown and cannot use item"),
+})
+
+B.Module("cursorEffects", {
+    title = "Cursor highlight",
+    description = "Show a small pointer ring with optional trail, global cooldown and cast progress.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Cursor highlight is available only in Retail" end
+        return true
+    end,
+})
+B.Section("cursorEffects", "cursor_effects", "Cursor highlight", {
+    B.Color("color", "Ring color", "ffffff"),
+    Number("size", "Ring size", 36, 20, 72),
+    Number("opacity", "Opacity (percent)", 85, 10, 100, 5),
+    Bool("showTrail", "Show cursor trail"),
+    Bool("showGCD", "Show global cooldown"),
+    Bool("showCast", "Show cast progress"),
+    Bool("combatOnly", "Show only in combat"),
+})
+NS.SuiteCatalog.cursorEffects.look = {
+    key = "look", global = { 1, 2, 3, [5] = 4 }, custom = 5,
+    visualKeys = { color = true }, presets = {},
+}
+for index, palette in pairs(NS.QoLVisualStyles) do
+    NS.SuiteCatalog.cursorEffects.look.presets[index] = { color = palette.accent }
+end
+B.Add("cursorEffects", Choice("look", "MSUF style", 5,
+    { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Custom" }),
+    "cursor_effects", "Cursor highlight")
+
+B.Module("mapQuickSwitch", {
+    title = "Minimap specialization menu",
+    description = "A small minimap button for changing specialization and loot specialization.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "The specialization menu is available only in Retail" end
+        return true
+    end,
+})
+B.Section("mapQuickSwitch", "map_quick_switch", "Minimap specialization menu", {
+    Bool("showSpec", "Show specialization choices", true),
+    Bool("showLoot", "Show loot specialization choices", true),
+    Choice("corner", "Minimap corner", 1, { "Top right", "Top left", "Bottom right", "Bottom left" }),
+    Number("size", "Button size", 24, 18, 40),
+    Number("x", "Horizontal offset", 0, -100, 100),
+    Number("y", "Vertical offset", 0, -100, 100),
+})
+
+B.Module("mapLandingShortcuts", {
+    title = "Expansion shortcuts",
+    description = "Open expansion, Great Vault, Adventure Guide and map pages from a small menu by the minimap.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Expansion shortcuts are available only in Retail" end
+        return true
+    end,
+})
+B.Section("mapLandingShortcuts", "expansion_shortcuts", "Expansion shortcuts", {
+    Bool("showLandingPage", "Include expansion landing page", true),
+    Bool("showVault", "Include Great Vault", true),
+    Bool("showJournal", "Include Adventure Guide", true),
+    Bool("showMap", "Include world map", true),
+    Number("size", "Button size", 18, 14, 32),
+    Number("offsetX", "Horizontal offset", 4, -60, 60),
+    Number("offsetY", "Vertical offset", 0, -60, 60),
+})
+
+B.Module("combatStatsHUD", {
+    title = "Secondary stats",
+    description = "A movable strip for critical strike, haste, mastery and versatility.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Secondary stats are available only in Retail" end
+        return true
+    end,
+})
+B.Section("combatStatsHUD", "secondary_stats", "Secondary stats", {
+    Bool("showCrit", "Show critical strike", true),
+    Bool("showHaste", "Show haste", true),
+    Bool("showMastery", "Show mastery", true),
+    Bool("showVersatility", "Show versatility", true),
+    Bool("combatOnly", "Show only in combat"),
+    Number("width", "Display width", 300, 180, 480),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    B.Color("backgroundColor", "Background color", "10151b"),
+    B.Color("accentColor", "Accent color", "d9ad60"),
+    Number("opacity", "Background opacity (percent)", 90, 0, 100, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 0, -3000, 3000),
+})
+for _, key in ipairs({ "point", "x", "y" }) do
+    NS.SuiteCatalog.combatStatsHUD.rules[key].hidden = true
+end
+
+B.Module("combatPetStatus", {
+    title = "Pet status warning",
+    description = "Show a movable warning when your pet is missing or dead.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("combatPetStatus", "pet_status", "Pet status warning", {
+    Bool("showMissing", "Warn when pet is missing", true),
+    Bool("showDead", "Warn when pet is dead", true),
+    Bool("combatOnly", "Show only in combat"),
+    Bool("anyClass", "Warn on classes without a permanent pet"),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 0, -3000, 3000),
+})
+for _, key in ipairs({ "point", "x", "y" }) do
+    NS.SuiteCatalog.combatPetStatus.rules[key].hidden = true
+end
+
+B.Module("combatMovementCue", {
+    title = "Movement ability cue",
+    description = "Briefly show a ready movement spell from your chosen IDs when you start moving.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Movement ability cue is available only in Retail" end
+        return true
+    end,
+})
+local movementIDs = String("spellIDs", "Movement spell IDs", "", 128)
+movementIDs.ids = true
+B.Section("combatMovementCue", "movement_cue", "Movement ability cue", {
+    movementIDs,
+    Bool("combatOnly", "Show only in combat", true),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", -120, -3000, 3000),
+})
+for _, key in ipairs({ "point", "x", "y" }) do
+    NS.SuiteCatalog.combatMovementCue.rules[key].hidden = true
+end
+
+B.Module("burningRushCue", {
+    title = "Burning Rush cue",
+    description = "Show the active Burning Rush aura during combat through Blizzard's native aura container.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Burning Rush cue is available only in Retail" end
+        local _, class = UnitClass("player")
+        if not NS.Public(class) or class ~= "WARLOCK" then return false, "Available only to Warlocks" end
+        return true
+    end,
+})
+B.Section("burningRushCue", "burning_rush_cue", "Burning Rush cue", {
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", -170, -3000, 3000),
+})
+for _, key in ipairs({ "point", "x", "y" }) do
+    NS.SuiteCatalog.burningRushCue.rules[key].hidden = true
+end
 
 B.Module("loadoutReminder", {
     title = "Talent and loot spec reminder",
@@ -156,6 +504,7 @@ B.Module("loadoutReminder", {
 })
 B.Section("loadoutReminder", "loadout_reminder", "When to remind", {
     Bool("onReadyCheck", "On ready check", true),
+    Bool("onLfgProposal", "When a dungeon queue pops"),
     Bool("onInstanceEntry", "On instance entry", true),
     Bool("onlyMismatch", "Show only when saved selection differs"),
     Number("duration", "Display duration (seconds)", 8, 3, 20),
@@ -199,6 +548,95 @@ NS.SuiteCatalog.loot.rules.lootModifier.enableKey = "quickLoot"
 NS.SuiteCatalog.loot.rules.historyMode.enableKey = "manageHistory"
 NS.SuiteCatalog.loot.rules.historyDelay.enableKey = "manageHistory"
 
+B.Module("lootContainers", {
+    title = "Open new containers",
+    description = "Open newly acquired loot containers one at a time outside combat. Hold Shift to leave them manual.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Automatic container opening is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("lootVendorRules", {
+    title = "Sell marked items",
+    description = "At a merchant, review and confirm sales from an explicit item ID list.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Marked item selling is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("lootToastFilter", {
+    title = "Filtered loot notice",
+    description = "Show extra compact item notices for Blizzard personal loot toasts matching your rarity and item list.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Filtered loot notice is available only in Retail" end
+        return true
+    end,
+})
+local toastIDs = String("itemIDs", "Item IDs (empty: all qualifying items)", "", 800)
+toastIDs.ids = true
+B.Section("lootToastFilter", "filtered_loot", "Filtered loot notice", {
+    Number("minQuality", "Minimum item quality", 4, 0, 6),
+    Choice("kindFilter", "Item type filter", 1,
+        { "All matching items", "Mount items only", "Pet items only", "Mount and pet items" }),
+    toastIDs,
+})
+
+B.Module("trainerLearnAll", {
+    title = "Learn all at trainer",
+    description = "Review the total cost, then learn available non-profession abilities at a trainer.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Trainer learning is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("characterUpgradeWindow", {
+    title = "Equipment window at upgrades",
+    description = "Open your equipment window beside an item upgrade merchant and close only the window MSUF opened.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Item upgrade window is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("professionAppearance", {
+    title = "Profession appearance remover",
+    description = "Remove selected profession outfit auras outside combat. Fishing is excluded to preserve fishing-rod effects.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Profession appearance removal is available only in Retail" end
+        return true
+    end,
+})
+B.Section("professionAppearance", "profession_outfits", "Profession appearance remover", {
+    Bool("alchemy", "Remove alchemy outfit", true),
+    Bool("blacksmithing", "Remove blacksmithing outfit", true),
+    Bool("cooking", "Remove cooking outfit", true),
+    Bool("enchanting", "Remove enchanting outfit", true),
+    Bool("engineering", "Remove engineering outfit", true),
+    Bool("herbalism", "Remove herbalism outfit", true),
+    Bool("inscription", "Remove inscription outfit", true),
+    Bool("jewelcrafting", "Remove jewelcrafting outfit", true),
+    Bool("mining", "Remove mining outfit", true),
+    Bool("skinning", "Remove skinning outfit", true),
+    Bool("tailoring", "Remove tailoring outfit", true),
+    Bool("leatherworking", "Remove leatherworking outfit", true),
+})
+local vendorIDs = String("itemIDs", "Item IDs to offer for sale", "", 1600)
+vendorIDs.ids = true
+B.Section("lootVendorRules", "marked_sales", "Sell marked items", {
+    vendorIDs,
+    Number("maxQuality", "Highest allowed quality", 2, 0, 3),
+    Bool("includeGear", "Allow equippable items"),
+})
+
 B.Module("combatLog", {
     title = "Automatic combat logging",
     description = "Start the combat log in the instance types you choose. A log you started manually stays on when you leave.",
@@ -240,10 +678,11 @@ B.Module("xpBar", {
 NS.SuiteCatalog.xpBar.look = { key = "look", global = true }
 B.Section("xpBar", "xp_bar", "Experience bar", {
     Choice("look", "MSUF style", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
     Number("width", "Bar width", 400, 220, 800, 5),
     Number("height", "Bar height", 18, 8, 40),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Number("layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
     Bool("showSegments", "Show XP bar divisions", true),
     Bool("showRested", "Show rested XP", true),
     Bool("showSession", "Show session XP", true),
@@ -342,6 +781,9 @@ NS.SkyridingLookPresets = {
     [3] = { panelColor = "14181b", borderColor = "9f8960", trackColor = "20272a",
         accentColor = "d8b66a", windColor = "668db8", textColor = "f4f3eb",
         mutedColor = "d4dce2", thrillColor = "f0d284" },
+    [5] = { panelColor = "101010", borderColor = "333333", trackColor = "191919",
+        accentColor = "e6ecf2", windColor = "b7c2cd", textColor = "f5f5f5",
+        mutedColor = "bfc4c9", thrillColor = "e6ecf2" },
 }
 NS.SkyridingLookVisualKeys = {
     panelColor = true, borderColor = true, trackColor = true, accentColor = true,
@@ -354,7 +796,7 @@ NS.SuiteCatalog.skyriding.look = {
 }
 local initialSky = NS.SkyridingLookPresets[1]
 B.Section("skyriding", "flight_hud", "Skyriding HUD", {
-    Choice("look", "MSUF style", 1, { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+    Choice("look", "MSUF style", 1, { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
     Number("width", "HUD width", 350, 220, 600, 5),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Bool("airborneOnly", "Show only while airborne"),
@@ -397,3 +839,32 @@ B.Section("skyriding", "flight_colors", "Colors and panel", {
 })
 NS.SuiteCatalog.skyriding.rules.speedMax.enableKey = "showSpeed"
 NS.SuiteCatalog.skyriding.rules.thrillSpeed.enableKey = "showSpeed"
+
+for _, entry in ipairs({
+    { "mapQuickSwitch", "map_quick_switch", "Minimap specialization menu" },
+    { "mapLandingShortcuts", "expansion_shortcuts", "Expansion shortcuts" },
+    { "combatStatsHUD", "secondary_stats", "Secondary stats" },
+    { "combatPetStatus", "pet_status", "Pet status warning" },
+    { "combatMovementCue", "movement_cue", "Movement ability cue" },
+    { "burningRushCue", "burning_rush_cue", "Burning Rush cue" },
+    { "loadoutReminder", "loadout_reminder", "When to remind" },
+    { "lootToastFilter", "filtered_loot", "Filtered loot notice" },
+    { "innervateCue", "innervate_cue", "Innervate whisper cue" },
+    { "durabilityAlert", "durability_warning", "Low durability warning" },
+    { "battleRes", "battle_res", "Battle resurrection" },
+}) do
+    NS.AddQoLVisualStyle(entry[1], entry[2], entry[3])
+end
+
+-- The stats strip already exposes direct colors. Keep those existing values
+-- as Custom, and let the menu's look bridge copy authored colors on selection.
+local statsLook = NS.SuiteCatalog.combatStatsHUD.look
+statsLook.presets = {}
+for index, palette in pairs(NS.QoLVisualStyles) do
+    statsLook.presets[index] = { backgroundColor = palette.background, accentColor = palette.accent }
+end
+statsLook.visualKeys, statsLook.custom = { backgroundColor = true, accentColor = true }, 5
+local statsRule = NS.SuiteCatalog.combatStatsHUD.rules.look
+statsRule.default = 5
+statsRule.max = 5
+statsRule.choices[5] = "Custom"

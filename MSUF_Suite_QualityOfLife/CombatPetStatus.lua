@@ -1,0 +1,130 @@
+local _, P = ...
+local NS, S = P.NS, P.Suite
+local M = {}
+local ID = "combatPetStatus"
+local PET_CLASSES = { HUNTER = true, WARLOCK = true }
+
+local function Create(self)
+    if self.host then return end
+    local host = S.CreateFrame("Frame", nil, UIParent)
+    host:SetSize(200, 34)
+    host:SetFrameStrata("HIGH")
+    host:EnableMouse(false)
+    local bg = S.CreateTexture(host, nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(.08, .07, .08, .91)
+    local stripe = S.CreateTexture(host, nil, "BORDER")
+    stripe:SetPoint("TOPLEFT")
+    stripe:SetPoint("BOTTOMLEFT")
+    stripe:SetWidth(3)
+    local label = S.CreateFontString(host, nil, "OVERLAY")
+    label:SetPoint("CENTER")
+    S.SetFont(label, nil, 14, "OUTLINE")
+    host:Hide()
+    self.host, self.bg, self.stripe, self.label = host, bg, stripe, label
+end
+
+local function Place(self)
+    local c = self.config
+    S.QoLColor(self.bg, S.QoLStyle(c).background, .91)
+    local point = NS.AnchorPoints[c.point] or "CENTER"
+    self.host:ClearAllPoints()
+    self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    self.host:SetScale(c.scale / 100)
+end
+
+local function Update(self)
+    if not self.active or not self.host then return end
+    if S.editMode then
+        self.label:SetText(S.Text("Pet missing"))
+        self.label:SetTextColor(1, .8, .43)
+        self.stripe:SetColorTexture(1, .68, .3)
+        self.host:Show()
+        return
+    end
+    if self.config.combatOnly and not NS.IsCombatLocked() then
+        self.host:Hide()
+        return
+    end
+    local exists = UnitExists("pet")
+    if not S.Public(exists) then self.host:Hide() return end
+    if exists == true then
+        local dead = UnitIsDeadOrGhost("pet")
+        if not S.Public(dead) or dead ~= true or not self.config.showDead then
+            self.host:Hide()
+            return
+        end
+        self.label:SetText(S.Text("Pet dead"))
+        self.label:SetTextColor(1, .48, .42)
+        self.stripe:SetColorTexture(1, .32, .28)
+    else
+        if not self.config.showMissing or not self.petClass and not self.config.anyClass then
+            self.host:Hide()
+            return
+        end
+        self.label:SetText(S.Text("Pet missing"))
+        self.label:SetTextColor(1, .8, .43)
+        self.stripe:SetColorTexture(1, .68, .3)
+    end
+    self.host:Show()
+end
+
+local function OnEvent(self)
+    Update(self)
+end
+
+local function SyncEvents(self)
+    local c, context = self.config, self.context
+    if c.showMissing or c.showDead then
+        context:Event("UNIT_PET", OnEvent, true, "player")
+    else
+        context:RemoveEvent("UNIT_PET")
+    end
+    for _, event in ipairs({ "UNIT_HEALTH", "UNIT_FLAGS" }) do
+        if c.showDead then context:Event(event, OnEvent, true, "pet")
+        else context:RemoveEvent(event) end
+    end
+    for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
+        if c.combatOnly then context:Event(event, OnEvent, true)
+        else context:RemoveEvent(event) end
+    end
+end
+
+function M:Enable()
+    local class = UnitClassBase("player")
+    self.petClass = S.PublicText(class) and PET_CLASSES[class] == true or false
+    Create(self)
+    Place(self)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, true)
+    SyncEvents(self)
+    Update(self)
+    self:RegisterMovers()
+end
+
+function M:Refresh()
+    S.SetFont(self.label, nil, 14, "OUTLINE")
+    Place(self)
+    SyncEvents(self)
+    Update(self)
+end
+
+function M:Disable()
+    if self.host then self.host:Hide() end
+end
+
+function M:RegisterMovers()
+    S.RegisterOwnedMover(ID, "warning", {
+        label = "Pet status", order = 646,
+        getFrame = function() return self.host end,
+        xKey = "x", yKey = "y", pointKey = "point",
+        point = function() return NS.AnchorPoints[self.config.point] or "CENTER" end,
+        quickPosition = true, historyKeys = { "scale" },
+        extraControls = {
+            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
+                get = function() return S.Config(ID).scale end,
+                set = function(value) return S.Set(ID, "scale", value) end },
+        },
+    })
+end
+
+S.Install(ID, M)

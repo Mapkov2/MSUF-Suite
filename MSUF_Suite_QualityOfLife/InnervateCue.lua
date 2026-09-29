@@ -44,7 +44,7 @@ local function Create(self)
     S.SetFont(subtitle, nil, 11, "OUTLINE")
     subtitle:SetTextColor(.68, .82, .92)
     host:Hide()
-    self.host, self.title, self.subtitle = host, title, subtitle
+    self.host, self.panel, self.edges, self.title, self.subtitle = host, panel, edges, title, subtitle
 
     -- This inert Suite-owned overlay never changes the protected unit frame.
     local glow = S.CreateFrame("Frame", nil, UIParent)
@@ -54,11 +54,17 @@ local function Create(self)
     for i = 1, 4 do glowEdges[i] = S.CreateTexture(glow, nil, "OVERLAY") end
     S.PlaceEdges(glowEdges, glow, 3, .24, .65, 1, 1)
     glow:Hide()
-    self.glow = glow
+    self.glow, self.glowEdges = glow, glowEdges
 end
 
 local function Place(self)
     local c = self.config
+    local style = S.QoLStyle(c)
+    S.QoLColor(self.panel, style.background, .94)
+    for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.accent) end
+    for _, edge in ipairs(self.glowEdges) do S.QoLColor(edge, style.accent) end
+    self.title:SetTextColor(S.RGB(style.text))
+    self.subtitle:SetTextColor(S.RGB(style.muted))
     local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(c.width, c.height)
     self.host:SetScale(c.scale / 100)
