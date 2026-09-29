@@ -25,7 +25,10 @@ CreateFrame = function()
     local frame = { events = {}, registrations = 0, unregistrations = 0 }
     function frame:SetScript(_, callback) self.callback = callback end
     function frame:RegisterEvent(event) self.events[event] = true; self.registrations = self.registrations + 1 end
-    function frame:RegisterUnitEvent(event, unit) self.events[event] = unit; self.registrations = self.registrations + 1 end
+    function frame:RegisterUnitEvent(event, ...)
+        self.events[event] = select("#", ...) > 1 and { ... } or ...
+        self.registrations = self.registrations + 1
+    end
     function frame:UnregisterEvent(event) self.events[event] = nil; self.unregistrations = self.unregistrations + 1 end
     function frame:UnregisterAllEvents() self.events = {} end
     frames[#frames + 1] = frame
@@ -61,7 +64,9 @@ for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 9, "shared HUD modules and Quality of Life helpers did not register together")
+assert(count == 12 and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
+    and Suite.Suite.instances.innervateCue,
+    "shared HUD modules and Quality of Life helpers did not register together")
 local context = Suite.Suite.NewContext("qol")
 assert(context:Skin() == nil, "disabled skin should require no provider")
 local module, events = Suite.Suite.instances.qol, 0
@@ -96,6 +101,28 @@ context:Scale(native, 1.2)
 native.scale = 1.5
 context:Release()
 assert(native.scale == 1.5, "release overwrote a later external change")
+-- One RegisterUnitEvent filters at most four units: a longer list (the five
+-- boss tokens) is split over routing frames that reach the same callback.
+local bossHits = {}
+context:Event("UNIT_HEALTH", function(self, event, unit)
+    assert(self == module and event == "UNIT_HEALTH")
+    bossHits[#bossHits + 1] = unit
+end, true, { "boss1", "boss2", "boss3", "boss4", "boss5" })
+local overflow = context.unitFrames and context.unitFrames[1]
+local firstUnits = context.frame.events.UNIT_HEALTH
+assert(type(firstUnits) == "table" and #firstUnits == 4 and firstUnits[1] == "boss1" and firstUnits[4] == "boss4"
+    and overflow and overflow.events.UNIT_HEALTH == "boss5",
+    "a boss unit list was not split into four-unit registrations")
+overflow:callback("UNIT_HEALTH", "boss5")
+context.frame:callback("UNIT_HEALTH", "boss2")
+assert(bossHits[1] == "boss5" and bossHits[2] == "boss2", "a routing frame did not reach the event callback")
+context:RemoveEvent("UNIT_HEALTH")
+assert(not context.frame.events.UNIT_HEALTH and not overflow.events.UNIT_HEALTH,
+    "removing a unit list left a routing frame registered")
+context:Event("UNIT_HEALTH", function() end, true, { "boss1", "boss2", "boss3", "boss4", "boss5" })
+assert(context.unitFrames[1] == overflow, "a routing frame was created again instead of reused")
+context:Release()
+assert(not next(overflow.events), "release left a routing frame registered")
 local paints, released = 0, 0
 local owned = {}
 context:OwnSkin("SkinFrame", owned, { role = "popup" })

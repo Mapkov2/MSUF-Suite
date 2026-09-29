@@ -447,21 +447,46 @@ local function RouteEvent(frame, event, ...)
     if callback then callback(module, event, ...) end
 end
 
+local function RoutingFrame(ctx)
+    local frame = S.CreateFrame("Frame")
+    frame.context = ctx
+    frame:SetScript("OnEvent", RouteEvent)
+    return frame
+end
+
+-- One RegisterUnitEvent filters at most Constants.UnitEventConstants
+-- .MAX_UNIT_TOKENS_IN_EVENT (4) units, and a second call on the same frame
+-- replaces the first filter. A longer unit list therefore gets one extra
+-- routing frame per further chunk of four.
+local UNITS_PER_FRAME = 4
+
+local function RegisterUnitList(ctx, event, units)
+    for first = 1, #units, UNITS_PER_FRAME do
+        local chunk = (first - 1) / UNITS_PER_FRAME
+        local frame = ctx.frame
+        if chunk > 0 then
+            ctx.unitFrames = ctx.unitFrames or {}
+            frame = ctx.unitFrames[chunk] or RoutingFrame(ctx)
+            ctx.unitFrames[chunk] = frame
+        end
+        frame:RegisterUnitEvent(event, unpack(units, first, math.min(#units, first + UNITS_PER_FRAME - 1)))
+    end
+end
+
 -- callback(module, event, ...). allowCombat lets geometry modules receive the
--- event in combat; unit (for example "player") limits a unit event to that unit.
+-- event in combat; unit (for example "player", or a list such as the boss
+-- tokens) limits a unit event to those units.
 function Context:Event(event, callback, allowCombat, unit)
     if not NS.Client.SupportsEvent(event) then return end
     local alreadyRegistered = self.callbacks[event] ~= nil
-    if not self.frame then
-        self.frame = S.CreateFrame("Frame")
-        self.frame.context = self
-        self.frame:SetScript("OnEvent", RouteEvent)
-    end
+    if not self.frame then self.frame = RoutingFrame(self) end
     self.combatEvents = self.combatEvents or {}
     self.combatEvents[event] = allowCombat or nil
     self.callbacks[event] = callback
     if alreadyRegistered then return end
-    if unit and self.frame.RegisterUnitEvent then
+    if type(unit) == "table" then
+        RegisterUnitList(self, event, unit)
+    elseif unit and self.frame.RegisterUnitEvent then
         self.frame:RegisterUnitEvent(event, unit)
     else
         self.frame:RegisterEvent(event)
@@ -473,6 +498,9 @@ function Context:RemoveEvent(event)
     self.callbacks[event] = nil
     if self.combatEvents then self.combatEvents[event] = nil end
     if self.frame then self.frame:UnregisterEvent(event) end
+    if self.unitFrames then
+        for _, frame in ipairs(self.unitFrames) do frame:UnregisterEvent(event) end
+    end
 end
 
 -- EventRegistry callbacks. callback(module).
@@ -497,6 +525,9 @@ end
 ------------------------------------------------------------------ release
 local function ReleaseEvents(self)
     if self.frame then self.frame:UnregisterAllEvents() end
+    if self.unitFrames then
+        for _, frame in ipairs(self.unitFrames) do frame:UnregisterAllEvents() end
+    end
     for key in pairs(self.callbacks) do self.callbacks[key] = nil end
     if self.combatEvents then
         for key in pairs(self.combatEvents) do self.combatEvents[key] = nil end

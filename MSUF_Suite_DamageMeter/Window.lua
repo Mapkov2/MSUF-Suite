@@ -394,6 +394,8 @@ function D.Render(win)
 end
 
 function D.Paint(win, session, reuseSession)
+    -- A clean window must hear session updates again (see Controller.lua).
+    if M.sessionMuted then D.ResumeSessionUpdates() end
     win.dirty = false
     if win.bd.open then
         D.RefreshBreakdown(win)

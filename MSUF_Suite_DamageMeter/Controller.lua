@@ -96,6 +96,29 @@ function D.UpdateTimers()
     D.UpdateTimer(current, currentResolved and M.inCombat and not M.forced)
 end
 
+-- DAMAGE_METER_COMBAT_SESSION_UPDATED fires twice per change, hundreds of
+-- times per second in raid combat. While a paint is pending and every shown
+-- window is already dirty, further updates cannot change what that paint
+-- draws: it fetches the session when it runs. The event is unregistered for
+-- that span and registered again, with the target cache invalidated, as
+-- soon as the pending paint clears or any window paints, before anything is
+-- drawn. So a muted meter always has every shown window dirty.
+local SESSION_EVENT = "DAMAGE_METER_COMBAT_SESSION_UPDATED"
+local SessionUpdated
+
+local function MuteSessionUpdates()
+    if M.sessionMuted or not M.events[SESSION_EVENT] then return end
+    M.sessionMuted = true
+    M.context:RemoveEvent(SESSION_EVENT)
+end
+
+function D.ResumeSessionUpdates()
+    if not M.sessionMuted then return end
+    M.sessionMuted = false
+    D.InvalidateTargets()
+    if M.events[SESSION_EVENT] then M.context:Event(SESSION_EVENT, SessionUpdated, true) end
+end
+
 -- Deferred paints and clock ticks use C_Timer.After with one shared callback
 -- each and keep at most one call in flight: no timer object per paint or per
 -- second. The pending flag is the request; cancelling clears it, so a call
@@ -103,6 +126,7 @@ end
 -- instead of scheduling another.
 function D.CancelPaint()
     M.pendingPaint = false
+    D.ResumeSessionUpdates()
 end
 
 function D.PaintDirty()
@@ -190,6 +214,7 @@ function D.DeferredPaint()
     M.paintInFlight = false
     if not M.pendingPaint then return end
     M.pendingPaint = false
+    D.ResumeSessionUpdates()
     if M.active and D.HasDirtyVisible() then D.PaintDirty() end
 end
 
@@ -225,18 +250,22 @@ function D.ZoneKey()
     return ZONES[kind] or "HideWorld"
 end
 
-local function SessionUpdated(self, _, meterType, sessionID)
+SessionUpdated = function(self, _, meterType, sessionID)
     if not Public(meterType) or not Public(sessionID) then return end
     D.InvalidateTargets()
-    local dirty = false
+    local dirty, clean = false, false
     for i = 1, self.config.windowCount do
         local win = D.windows[i]
-        if win and win.shown and win.meterType == meterType then
-            local id = win.sessionID
-            if (id and id == sessionID) or (not id and sessionID == 0) then win.dirty, dirty = true, true end
+        if win and win.shown then
+            if win.meterType == meterType then
+                local id = win.sessionID
+                if (id and id == sessionID) or (not id and sessionID == 0) then win.dirty, dirty = true, true end
+            end
+            clean = clean or not win.dirty
         end
     end
     if dirty then D.RequestPaint() end
+    if M.pendingPaint and not clean then MuteSessionUpdates() end
 end
 local function CurrentUpdated(self)
     D.InvalidateTargets()

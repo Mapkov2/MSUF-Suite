@@ -6,7 +6,14 @@ if NS.Client.isForever then return end
 -- engaged boss list at ENCOUNTER_END, including bosses from earlier phases.
 local H = {}
 local Finite, Public, Text = S.Finite, S.Public, S.PublicText
-local FONT = NS.MSUFMedia.font
+-- 12.1 has five boss unit tokens (UnitTokenType Boss1-Boss5). Live health
+-- listens to exactly these instead of every raid member's UNIT_HEALTH.
+local BOSS_UNITS = { "boss1", "boss2", "boss3", "boss4", "boss5" }
+local BOSS_INDEX = {}
+for index, unit in ipairs(BOSS_UNITS) do BOSS_INDEX[unit] = index end
+-- Boss health changes with every damage tick. The boss row is redrawn at
+-- most five times per second; the one-second ticker redraws the rest.
+local LIVE_PAINT_DELAY = .2
 
 local function SetText(widget, value)
     if widget.cachedText ~= value then
@@ -26,12 +33,32 @@ end
 
 local function Line(parent, size, y)
     local line = S.CreateFontString(parent, nil, "OVERLAY")
-    S.SetStyledFont(line, FONT, size, "OUTLINE", 1, true, 70, 1)
+    S.SetStyledFont(line, S.GlobalFontPath(), size, "OUTLINE", 1, true, 70, 1)
     line:SetPoint("TOPLEFT", 4, y)
     line:SetPoint("TOPRIGHT", -4, y)
     line:SetJustifyH("LEFT")
     line:SetWordWrap(false)
     return line
+end
+
+-- The active boss row while a pull runs, else the last result.
+local function CurrentText(view)
+    if not view.pull then return "LAST PULL  " .. (view.lastResult or "--") end
+    local names = {}
+    for i = 1, 10 do
+        local boss = view.live[i]
+        if boss then
+            names[#names + 1] = (boss.name or ("Boss " .. i))
+                .. (boss.percent and string.format(" %.1f%%", boss.percent) or "")
+        end
+    end
+    return "ACTIVE BOSSES  " .. (#names > 0 and table.concat(names, " · ") or "HP unavailable")
+end
+
+local function PaintLive(owner)
+    local view = owner.raid
+    view.livePending = false
+    if view.pull and owner.active and owner.raidActive then SetText(view.current, CurrentText(view)) end
 end
 
 local function Create(owner)
@@ -50,6 +77,7 @@ local function Create(owner)
     view.current:SetWordWrap(true)
     view.best:SetWordWrap(true)
     view.tick = function() H.Tick(owner) end
+    view.liveTick = function() PaintLive(owner) end
     panel:Hide()
     owner.raid = view
     return view
@@ -83,21 +111,7 @@ local function Paint(owner)
     local bestPhase = phases and (view.stageSource and phases[view.stageSource]
         or phases.DBM or phases.BigWigs)
     SetText(view.phase, phase)
-    local current = view.pull and "ACTIVE BOSSES  " or "LAST PULL  "
-    if view.pull then
-        local names = {}
-        for i = 1, 10 do
-            local boss = view.live[i]
-            if boss then
-                names[#names + 1] = (boss.name or ("Boss " .. i))
-                    .. (boss.percent and string.format(" %.1f%%", boss.percent) or "")
-            end
-        end
-        current = current .. (#names > 0 and table.concat(names, " · ") or "HP unavailable")
-    else
-        current = current .. (view.lastResult or "--")
-    end
-    SetText(view.current, current)
+    SetText(view.current, CurrentText(view))
     if bestPhase then
         local best = "BEST PULL  PHASE " .. bestPhase.stage
         if bestPhase.defeated and bestPhase.defeated > 0 then
@@ -117,7 +131,7 @@ end
 function H.Theme(owner)
     local view = owner.raid
     if not view then return end
-    local c, font = owner.config, owner.font or FONT
+    local c, font = owner.config, owner.font or S.GlobalFontPath()
     local primary = owner.textRGB or { .95, .96, .98 }
     local muted = owner.mutedRGB or { .78, .81, .85 }
     for _, line in ipairs({ view.name, view.elapsed, view.phase, view.current, view.best, view.fastest }) do
@@ -191,28 +205,50 @@ function H.Stop(owner)
     owner.raidActive = false
 end
 
-function H.Health(owner, unit)
-    local view = owner.raid
-    if not view or not view.pull or not Public(unit) or type(unit) ~= "string" then return end
-    local index = tonumber(unit:match("^boss([1-9]%d?)$"))
-    if not index or index > 10 then return end
+-- Reads one boss unit into view.live. True when its row changed.
+local function ReadBoss(view, index, unit)
+    local before = view.live[index]
     local exists = UnitExists(unit)
     if Public(exists) and exists == false then
-        if not view.live[index] then return end
+        if not before then return false end
         view.live[index] = nil
-    else
-        local name = Text(UnitName(unit))
-        local percent = UnitHealthPercent(unit)
-        percent = Finite(percent) and percent >= 0 and percent <= 100 and percent or nil
-        local before = view.live[index]
-        if before and before.name == name and before.percent == percent then return end
-        view.live[index] = (name or percent) and { name = name, percent = percent } or nil
+        return true
     end
-    Paint(owner)
+    local name = Text(UnitName(unit))
+    local percent = UnitHealthPercent(unit)
+    percent = Finite(percent) and percent >= 0 and percent <= 100 and percent or nil
+    if before and before.name == name and before.percent == percent then return false end
+    if not name and not percent then
+        if not before then return false end
+        view.live[index] = nil
+    elseif before then
+        before.name, before.percent = name, percent
+    else
+        view.live[index] = { name = name, percent = percent }
+    end
+    return true
 end
 
+-- A health tick only moves the boss row; it is redrawn with the next live
+-- paint instead of repainting the whole view per tick.
+function H.Health(owner, unit)
+    local view = owner.raid
+    if not view or not view.pull or not Public(unit) then return end
+    local index = BOSS_INDEX[unit]
+    if not index or not ReadBoss(view, index, unit) or view.livePending then return end
+    view.livePending = true
+    C_Timer.After(LIVE_PAINT_DELAY, view.liveTick)
+end
+
+-- Engage changes (a boss appears or leaves) are drawn at once.
 function H.UpdateBosses(owner)
-    for i = 1, 10 do H.Health(owner, "boss" .. i) end
+    local view = owner.raid
+    if not view or not view.pull then return end
+    local changed = false
+    for index, unit in ipairs(BOSS_UNITS) do
+        changed = ReadBoss(view, index, unit) or changed
+    end
+    if changed then Paint(owner) end
 end
 
 -- DBM and BigWigs know fight-specific transitions from their boss modules.
@@ -309,7 +345,7 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     view.live = {}
     view.pull = { started = GetTime() }
     ReadInitialStage(owner)
-    owner.context:Event("UNIT_HEALTH", function(module, _, unit) H.Health(module, unit) end, true)
+    owner.context:Event("UNIT_HEALTH", function(module, _, unit) H.Health(module, unit) end, true, BOSS_UNITS)
     owner.context:Event("INSTANCE_ENCOUNTER_ENGAGE_UNIT", function(module) H.UpdateBosses(module) end, true)
     H.UpdateBosses(owner)
     view.ticker = C_Timer.NewTicker(1, view.tick)

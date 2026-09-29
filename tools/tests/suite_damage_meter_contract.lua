@@ -531,12 +531,17 @@ local fetches=api.fetch
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,7)
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",2,0)
 assert(not PaintRequest() and not win.dirty,"current-session copy or other meter type repainted a Current window")
-for _=1,4 do Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0) end
+Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
+-- Every shown window is dirty behind a pending paint: the rest of the burst
+-- cannot change what that paint draws, so the event is muted until it runs.
+assert(not Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED"),
+    "session updates kept firing behind a pending paint that already covers them")
 Event("DAMAGE_METER_CURRENT_SESSION_UPDATED")
 assert(PaintRequest() and PaintRequest().delay==.1 and LiveTimers()==1,
     "event burst was not coalesced into one deferred paint")
 RunPaint()
 assert(api.fetch==fetches+1,"coalesced repaint should fetch once")
+assert(Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED"),"session updates stayed muted after the paint")
 assert(RunPaint()==0)
 
 -- Fight menu: pin a historic session; it reacts to its own sessionID only.
@@ -675,11 +680,12 @@ for i=1,5 do
     local state=element.captureState()
     assert(state.values["w"..i.."X"]~=nil and state.values["w"..i.."Y"]~=nil,"mover keys wrong for window "..i)
     assert(state.values["w"..i.."Width"]~=nil and state.values["w"..i.."Height"]~=nil
-        and #element.extraControls==2,"meter popup omitted window size from Edit Mode history")
+        and #element.extraControls==4,"meter popup omitted position or window size from Edit Mode history")
 end
 local windowState=elements.window1.captureState()
-assert(elements.window1.extraControls[1].set(340) and c.w1Width==340
-    and elements.window1.extraControls[2].set(240) and c.w1Height==240
+assert(elements.window1.extraControls[1].id=="w1X" and elements.window1.extraControls[2].id=="w1Y"
+    and elements.window1.extraControls[3].set(340) and c.w1Width==340
+    and elements.window1.extraControls[4].set(240) and c.w1Height==240
     and elements.window1.restoreState(windowState)
     and c.w1Width==windowState.values.w1Width and c.w1Height==windowState.values.w1Height,
     "meter popup dimensions did not apply and restore")
@@ -688,7 +694,7 @@ assert(elements.timer and not elements.timer.isEnabled(),"timer mover must follo
 assert(S.Set("damageMeter","timer",true))
 assert(M.timerFrame and elements.timer.isEnabled() and elements.timer.captureState().values.timerX==0)
 local timerState=elements.timer.captureState()
-assert(timerState.values.timerSize==c.timerSize and elements.timer.extraControls[1].set(30)
+assert(timerState.values.timerSize==c.timerSize and elements.timer.extraControls[3].set(30)
     and c.timerSize==30 and elements.timer.restoreState(timerState)
     and c.timerSize==timerState.values.timerSize,
     "timer popup text size did not apply and restore")
@@ -854,7 +860,8 @@ now=301;RunClock()
 assert(api.fetch==fetches and M.timerFrame.text.text=="0:01",
     "clock must not fetch meter data")
 assert(api.durationReads==durationReads+1,"header and separate clock queried duration twice")
-Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
+assert(not Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED"),
+    "session updates kept firing although the pending paint already covers them")
 now=302;RunPaint();RunClock()
 assert(api.fetch==fetches+1 and M.timerFrame.text.text=="0:02",
     "refreshRate must pace event paints independently of the clock")
