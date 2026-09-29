@@ -24,6 +24,8 @@ EXTRA = {
     "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_load_conditions_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_actionbars_contract.lua": [[], ["native"]],
+    # The locale contract reads the live extraction through the same Python.
+    "suite_locale_contract.lua": [[sys.executable]],
 }
 
 

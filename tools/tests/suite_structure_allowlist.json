@@ -1,10 +1,140 @@
 {
  "about": "Findings of suite_structure_gate.py that stay, each with its reason. kind: client (a version or client guard; the reason names the client), addon (another addon's export), lod (an export of a load-on-demand Suite addon), state (saved variables or runtime state), review (in another pass's files, not yet confirmed by its owner).",
  "size_exempt": {
+  "MSUF_Suite/Locales/deDE.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/esES.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/esMX.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/frFR.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/itIT.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/koKR.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/ptBR.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/ruRU.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/zhCN.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
+  "MSUF_Suite/Locales/zhTW.lua": "data: one T(english, translation) line per Suite string (generated and checked by tools/suite_locale_tool.py)",
   "MSUF_Suite_Skin/Adapters/Catalog.lua": "data: the adapter entries table (one record per Blizzard window); its logic lives in CatalogGlass.lua",
   "MSUF_Suite_Skin/Core/Defaults.lua": "data: the skin's default settings and factory profile tables"
  },
  "allowed": [
+  {
+   "file": "MSUF_Suite/Locales/deDE.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/deDE.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esES.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esES.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esMX.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esMX.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/frFR.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/frFR.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/itIT.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/itIT.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/koKR.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/koKR.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ptBR.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ptBR.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ruRU.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ruRU.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhCN.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhCN.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhTW.lua",
+   "symbol": "MSUF.RegisterLocale",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhTW.lua",
+   "symbol": "MSUF_NS",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match"
+  },
   {
    "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
    "symbol": "MSUF_EncodeCompactTable",
@@ -142,6 +272,12 @@
    "symbol": "MSUF_GetFontPath",
    "kind": "addon",
    "reason": "MSUF font export may be unavailable during startup; Suite uses its bundled fallback until MSUF publishes it"
+  },
+  {
+   "file": "MSUF_Suite/Core/FontBridge.lua",
+   "symbol": "typography.ApplyConfigured",
+   "kind": "lod",
+   "reason": "The embedded skin is load-on-demand; the font bridge checks that its typography engine is available before forwarding a full MSUF font change"
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
@@ -1771,6 +1907,12 @@
   },
   {
    "file": "MSUF_Suite_Skin/Core/Typography.lua",
+   "symbol": "getter (= MSUF_GetFontPath)",
+   "kind": "addon",
+   "reason": "MSUF font export is read only when available; the embedded skin keeps its saved face until MSUF publishes a public font path"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Core/Typography.lua",
    "symbol": "object.SetFont",
    "kind": "addon",
    "reason": "foreign object (a Blizzard or other addon's frame, pool or color); per the Suite's safety rule a method is checked with type(obj.Method) before it is called on a foreign object"
@@ -2080,6 +2222,30 @@
    "symbol": "tooltip.RefreshDataNextUpdate (= GameTooltip)",
    "kind": "client",
    "reason": "Retail tooltip refresh method may not exist on Forever; this module is Retail only"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ItemCounts.lua",
+   "symbol": "Enum.TooltipDataType",
+   "kind": "client",
+   "reason": "Retail tooltip data types are checked before registration; the module is Retail only"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ItemCounts.lua",
+   "symbol": "TooltipDataProcessor",
+   "kind": "client",
+   "reason": "Retail tooltip processor can load after this optional module"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ItemCounts.lua",
+   "symbol": "TooltipDataProcessor.AddTooltipPostCall",
+   "kind": "client",
+   "reason": "Retail tooltip callback is checked because Forever can lack this method"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ItemCounts.lua",
+   "symbol": "tooltip (= GameTooltip)",
+   "kind": "addon",
+   "reason": "Blizzard_GameTooltip can load after the Suite; refresh tolerates its absent frame"
   }
  ]
 }

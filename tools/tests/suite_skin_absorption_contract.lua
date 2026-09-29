@@ -299,6 +299,8 @@ do
     client:ReleaseAll()
 end
 assert(namespace.DB.typography.sharedMediaFont == "MapkoSkin - Expressway ExtraBold")
+assert(namespace.DB.typography.followMSUF == true,
+    "Suite skin profiles must follow the MSUF font until a separate skin face is chosen")
 local looks, palettes = 0, 0
 local function ColorsValid()
     for _, value in pairs(namespace.DB.theme.colors) do

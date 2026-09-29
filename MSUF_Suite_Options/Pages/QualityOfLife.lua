@@ -3,6 +3,8 @@ local S, Tr = P.S, P.Tr
 local PAGE = "suite_qualityOfLife"
 
 local HELP = {
+    action_tracker = "Shows your most recent successful spells. Standard rows have an icon, name and marker; Icons only is a compact vertical icon column. Display width applies to standard rows; icon width follows row height in the icon preset. Position and anchor are set in MSUF Edit Mode, which shows sample actions. The list stops listening while disabled. Spells whose details the client keeps private cannot appear.",
+    action_tracker_colors = "Choose a style above or change these colors to make a Custom look. Rows update immediately.",
     repair = "Repairs only when the cost is within your limit. Guild funds are used first when allowed.",
     junk = "Uses Blizzard's Sell All Junk action when a merchant opens, including its per-bag exclusions. Hold Shift while opening the merchant to skip selling. The optional chat line confirms the request, not completed sales.",
     automation = "Hold Shift to pause. Quests with a money cost and quests with a reward choice always stay manual.",
@@ -10,6 +12,10 @@ local HELP = {
     merchant_level = "Shows item levels on merchant equipment when Blizzard has loaded its item data. Buyback items and items without an item level stay unchanged.",
     vault_spec = "Shows the current loot specialization when you open the Great Vault. Updates if you change loot specialization while the window is open.",
     tooltip_ids = "Hold Alt while hovering an item, spell or creature to see its ID. No ID appears when the client keeps it private.",
+    item_counts = "Shows the number you own, including your bank and Warband bank, when the item tooltip has a public item ID. Empty counts are omitted.",
+    loadout_reminder = "Shows your current talent build and loot specialization on ready checks or when you enter an instance. It never changes your talents or loot spec.",
+    loadout_expectation = "Save your current build and loot specialization for this character in the active profile. A different selection highlights the reminder. Clear the saved selection to show current information without a comparison.",
+    quiet_popups = "Choose each Blizzard popup separately. The feature hides its window when it appears and leaves the underlying game events intact. Combat lockdown can prevent hiding a protected window.",
     collection = "Adds automatic collection on top of Blizzard's own Auto Loot setting, which stays unchanged. Locked slots and confirmations stay manual.",
     history = "Hides or briefly shows the loot history window. Need, Greed and Pass popups stay available.",
     log_dungeons = "Choose the dungeon difficulties where MSUF starts the combat log. Mythic+ begins when the keystone starts.",
@@ -27,6 +33,8 @@ local HELP = {
 
 local GROUPS = {
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
+    { id = "actionTracker", title = "Action tracker", switch = "enabled",
+        sections = { "action_tracker", "action_tracker_colors" } },
     { id = "battleRes", title = "Battle resurrection (Retail)", switch = "enabled",
         sections = { "battle_res" } },
     { id = "loot", title = "Collecting loot", switch = "quickLoot", other = "manageHistory", sections = { "collection" } },
@@ -35,11 +43,15 @@ local GROUPS = {
     { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" } },
     { id = "vaultSpec", title = "Great Vault loot spec (Retail)", switch = "enabled", sections = { "vault_spec" } },
     { id = "innervateCue", title = "Innervate whisper cue (Retail Druid)", switch = "enabled", sections = { "innervate_cue" } },
+    { id = "itemCounts", title = "Item counts in tooltips (Retail)", switch = "enabled", sections = { "item_counts" } },
+    { id = "loadoutReminder", title = "Loadout reminder (Retail)", switch = "enabled",
+        sections = { "loadout_reminder", "loadout_expectation" } },
     { id = "loot", title = "Loot history", switch = "manageHistory", other = "quickLoot", sections = { "history" } },
     { id = "durabilityAlert", title = "Low durability warning", switch = "enabled",
         sections = { "durability_warning" } },
     { id = "merchantLevel", title = "Merchant item levels (Retail)", switch = "enabled", sections = { "merchant_level" } },
     { id = "quests", title = "Quest helpers", switch = "enabled", sections = { "automation", "filters" } },
+    { id = "quietPopups", title = "Quiet Blizzard popups", switch = "enabled", sections = { "quiet_popups" } },
     { id = "qol", title = "Repair", switch = "repair", other = "autoJunk", sections = { "repair" } },
     { id = "qol", title = "Sell junk", switch = "autoJunk", other = "repair", sections = { "junk" } },
     { id = "skyriding", title = "Skyriding HUD (Retail)", switch = "enabled",
@@ -60,7 +72,7 @@ end
 local function GroupRules(group, source)
     local rules = {}
     for _, rule in ipairs(source) do
-        if rule.key ~= group.switch then rules[#rules + 1] = rule end
+        if rule.key ~= group.switch and not rule.hidden then rules[#rules + 1] = rule end
     end
     return rules
 end
@@ -82,6 +94,30 @@ local function AttachRuleReset(ctx, body, title, id, rules, switch)
     P.AttachSectionReset(ctx, body, title, function()
         return P.ResetRules(id, rules, nil, { switch })
     end)
+end
+
+local function TrackAvailability(ctx, body, toggle, title, id)
+    P.M.TrackRefresh(ctx, function()
+        local available = S.Availability(id)
+        P.W.SetControlEnabled(toggle, not P.Combat())
+        local entry = body._msuf2CollapsibleEntry
+        if entry and entry.label then
+            entry.label:SetText(title .. (available and "" or Tr(" - Unavailable")))
+        end
+    end)
+end
+
+local function AddLoadoutAction(ctx, body, id, sectionId, y, width)
+    P.Button(ctx, body, "Save current build and loot spec", 16, y, width,
+        function() if S.LoadoutReminder then S.LoadoutReminder:SaveCurrent() end end,
+        function() return S.Status(id) == "Active" and not P.Combat() end,
+        P.Meta(PAGE, id, "action.saveCurrent", "action", sectionId))
+    y = y - 38
+    P.Button(ctx, body, "Clear saved selection", 16, y, width,
+        function() if S.LoadoutReminder then S.LoadoutReminder:ClearSaved() end end,
+        function() return S.Status(id) == "Active" and not P.Combat() end,
+        P.Meta(PAGE, id, "action.clearSaved", "action", sectionId))
+    return y - 38
 end
 
 local function FeatureAccordion(ctx, b, group)
@@ -109,7 +145,13 @@ local function FeatureAccordion(ctx, b, group)
         if #rules > 0 then y = P.RuleGrid(ctx, body, PAGE, id, rules, y, width, nil, sectionId) end
         y = y - 16
     end
-    if id == "xpBar" then
+    if id == "actionTracker" then
+        P.Button(ctx, body, "Move / resize in Edit Mode", 16, y, width,
+            function() P.OpenEditMode(id, "actions") end,
+            function() return P.EditModeReady() and S.Status(id) == "Active" end,
+            P.Meta(PAGE, id, "action.edit", "action", sectionId))
+        y = y - 38
+    elseif id == "xpBar" then
         P.Button(ctx, body, "Move / resize in Edit Mode", 16, y, width,
             function() P.OpenEditMode(id, "experience") end,
             function() return P.EditModeReady() and S.Status(id) == "Active" end,
@@ -131,6 +173,8 @@ local function FeatureAccordion(ctx, b, group)
             SelectInnervateTarget, HasPlayerTarget,
             P.Meta(PAGE, id, "action.target", "action", sectionId))
         y = y - 38
+    elseif id == "loadoutReminder" then
+        y = AddLoadoutAction(ctx, body, id, sectionId, y, width)
     elseif id == "durabilityAlert" then
         P.Button(ctx, body, "Move / resize in Edit Mode", 16, y, width,
             function() P.OpenEditMode(id, "warning") end,
@@ -150,14 +194,7 @@ local function FeatureAccordion(ctx, b, group)
             P.Meta(PAGE, id, "action.edit", "action", sectionId))
         y = y - 38
     end
-    P.M.TrackRefresh(ctx, function()
-        local available = S.Availability(id)
-        P.W.SetControlEnabled(toggle, not P.Combat())
-        local entry = body._msuf2CollapsibleEntry
-        if entry and entry.label then
-            entry.label:SetText(title .. (available and "" or Tr(" - Unavailable")))
-        end
-    end)
+    TrackAvailability(ctx, body, toggle, title, id)
     AttachRuleReset(ctx, body, title, id, allRules, group.switch)
     P.FinishBody(b, body, y)
 end
@@ -170,4 +207,4 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, icon = { 7, 1 },
-    aliases = { "qol", "qualityoflife", "quality_of_life", "merchant", "itemlevel", "vault", "lootspec", "tooltipids", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp", "innervate", "whisper", "durability", "repairwarning", "battleres", "brez", "combatres", "skyriding", "vigor", "secondwind" } })
+    aliases = { "qol", "qualityoflife", "quality_of_life", "actiontracker", "actions", "casts", "merchant", "itemlevel", "vault", "lootspec", "tooltipids", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp", "innervate", "whisper", "durability", "repairwarning", "battleres", "brez", "combatres", "skyriding", "vigor", "secondwind" } })

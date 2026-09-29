@@ -24,7 +24,6 @@ local PAGE_WORDS = {
     suite_skin = "skin|skins|skinning|window skin|blizzard windows",
     suite_qualityOfLife = "quality of life|qol|comfort|helpers",
     suite_hud = "hud|objective tracker|quest tracker|announcements|afk screen",
-    suite_modules = "module list|optional modules|enable modules",
 }
 -- Questions MSUF's own help also answers ("minimap" is its icon too). Each
 -- answer names the Suite page, so the two answers read apart.
@@ -38,9 +37,6 @@ local FAQ = {
     { page = "suite_cooldownManager", label = "Where is the cooldown manager?",
         help = "The Suite Cooldown manager page (CDM) shows Blizzard's tracked cooldowns and buffs as bars you arrange and style freely.",
         words = "cdm|cooldown manager|cooldowns|essential cooldowns|utility cooldowns|tracked buffs|enable cooldown manager" },
-    { page = "suite_modules", label = "What is the MSUF Suite?",
-        help = "The MSUF Suite adds optional interface modules to this menu, such as the minimap, action bars, nameplates, the cooldown manager, chat and bags. Turn each one on or off on the Suite Modules page.",
-        words = "suite|msuf suite|modules|suite modules|optional modules|enable modules" },
 }
 local KIND_OF = { font = "dropdown", texture = "dropdown", choices = "dropdown" }
 

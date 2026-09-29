@@ -99,16 +99,20 @@ local function Quest(self, event)
         info = self.selectedQuestInfo
     end
     if not Allowed(self, questID, info) or self.handled[event] == questID then return end
-    self.handled[event] = questID
     local c = self.config
     if event == "QUEST_DETAIL" and c.accept then
+        self.handled[event] = questID
         AcceptQuest()
     elseif event == "QUEST_PROGRESS" and c.complete then
         local ready = IsQuestCompletable()
-        if Public(ready) and ready then CompleteQuest() end
+        if Public(ready) and ready then
+            self.handled[event] = questID
+            CompleteQuest()
+        end
     elseif event == "QUEST_COMPLETE" and c.reward then
         local choices = GetNumQuestChoices()
         if Public(choices) and type(choices) == "number" and choices >= 0 and choices <= 1 then
+            self.handled[event] = questID
             GetQuestReward(choices)
         end
     end

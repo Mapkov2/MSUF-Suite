@@ -4,6 +4,12 @@ local NS, S = P.NS, P.Suite
 local ID = "merchantLevel"
 local M = { labels = {}, requested = {} }
 
+local function CancelPaint(self)
+    local timer = self.paintTimer
+    self.paintTimer = nil
+    if timer then timer:Cancel() end
+end
+
 local function Hide(self)
     for _, label in pairs(self.labels) do label:Hide() end
 end
@@ -24,10 +30,20 @@ end
 local function ItemLoaded(self, _, itemID)
     if not S.Finite(itemID) or self.requested[itemID] ~= true then return end
     self.requested[itemID] = "done"
-    self:Paint()
+    -- Several visible items can finish loading in one frame. Repaint their
+    -- page once, after the item events have been delivered.
+    if self.paintTimer then return end
+    local timer
+    timer = C_Timer.NewTimer(0, function()
+        if self.paintTimer ~= timer then return end
+        self.paintTimer = nil
+        self:Paint()
+    end)
+    self.paintTimer = timer
 end
 
 function M:Paint()
+    CancelPaint(self)
     local frame = _G.MerchantFrame
     if not self.active or not self.open or not frame or NS.Safety.IsForbidden(frame)
         or not frame:IsShown() or frame.selectedTab ~= 1 then
@@ -93,6 +109,7 @@ end
 local function OnMerchant(self, event)
     if event == "MERCHANT_CLOSED" then
         self.open = false
+        CancelPaint(self)
         self.requested = {}
         self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
         Hide(self)
@@ -127,6 +144,7 @@ end
 
 function M:Disable()
     self.open = false
+    CancelPaint(self)
     self.requested = {}
     Hide(self)
 end

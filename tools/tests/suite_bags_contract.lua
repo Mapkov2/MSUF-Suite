@@ -192,6 +192,10 @@ C_Item = {
     GetDetailedItemLevelInfo = function(link) levelCalls = levelCalls + 1; return levels[link] end,
     RequestLoadItemDataByID = function(id) requests[id] = (requests[id] or 0) + 1 end,
     GetItemQualityColor = function(quality) return quality == 4 and 0.7 or 1, 0.5, 1, "ffb380ff" end,
+    GetItemInfo = function(link)
+        local bind = { ["gear-a"] = 2, ["gear-b"] = 9, food = 1 }
+        return unpack({ [14] = bind[link] }, 1, 14)
+    end,
 }
 C_CVar = { GetCVar = function(name)
     assert(name == "combinedBags")
@@ -274,6 +278,7 @@ S.MoneyText = function(amount)
     return shared.Suite.MoneyText(amount)
 end
 local state = { IsCombatLocked = function() return combat end,
+    Client = { isForever = false },
     RootDB = { suiteGold = { ["Player-test"] = 100000 } }, loginKind = "login",
     goldSessionCaptured = true, MSUFMedia = { font = "Interface\\AddOns\\Test\\Media\\MSUF.ttf" } }
 -- The session gold baseline is owned by the core (MSUF_Suite/Core/SessionGold.lua).
@@ -627,6 +632,10 @@ assert(enumerations == enumerationsBefore + 1
     and module.overlays[buttons[3]].slotOuter.showCalls == outerShows
     and infoCalls == infoBefore + 2,
     "unchanged native bag refresh repeated the slot walk or queried empty slots")
+infoBefore = infoCalls
+module:UpdateVisible()
+assert(infoCalls == infoBefore + 3,
+    "opening bags fetched an empty slot more than once")
 local originalHasItem = buttons[1].HasItem
 buttons[1].HasItem = function() return "secret" end
 infoBefore = infoCalls
@@ -690,12 +699,54 @@ module.config.showItemLevel = false
 module:Refresh()
 assert(not module.overlays[buttons[1]].label.shown, "turning labels off left text visible")
 local hideCalls = module.overlays[buttons[1]].label.hideCalls
+local disabledOverlayInfoCalls = infoCalls
 hooks.UpdateItems()
 assert(module.overlays[buttons[1]].label.hideCalls == hideCalls,
     "disabled item levels kept repainting hidden labels on bag updates")
+assert(infoCalls == disabledOverlayInfoCalls,
+    "bag updates fetched item data with both overlays disabled")
 module.config.showItemLevel = true
 module:Refresh()
 assert(module.overlays[buttons[1]].label.shown, "turning labels on did not repaint")
+items[1] = { hyperlink = "gear-a", itemID = 101, quality = 4, isBound = false }
+module.config.showBindBadge = true
+module:Refresh()
+assert(module.overlays[buttons[1]].bindBadge and module.overlays[buttons[1]].bindBadge.text == "BoE"
+    and module.overlays[buttons[1]].bindBadge.shown
+    and not module.overlays[buttons[2]].bindBadge,
+    "bind badges did not distinguish equipment from other items")
+items[1].isBound = true
+hooks.UpdateItems()
+assert(not module.overlays[buttons[1]].bindBadge.shown,
+    "already-bound BoE item kept a misleading BoE badge")
+items[1].isBound = false
+hooks.UpdateItems()
+assert(module.overlays[buttons[1]].bindBadge.shown,
+    "unbound BoE badge did not return")
+module.config.showItemLevel = false
+module:Refresh()
+assert(module.overlays[buttons[1]].bindBadge.shown
+    and not module.overlays[buttons[1]].label.shown,
+    "the bind badge depended on the item-level switch")
+module.config.showBindBadge = false
+module:Refresh()
+assert(not module.overlays[buttons[1]].bindBadge.shown,
+    "turning bind badges off left the badge visible")
+disabledOverlayInfoCalls = infoCalls
+hooks.UpdateItems()
+assert(infoCalls == disabledOverlayInfoCalls,
+    "disabling both overlays did not restore the item-free bag update path")
+module.config.showBindBadge = true
+module:Refresh()
+assert(module.overlays[buttons[1]].bindBadge.shown,
+    "re-enabling bind badges did not repaint")
+items[1] = { hyperlink = "gear-b", itemID = 101, quality = 4, isBound = false }
+hooks.UpdateItems()
+assert(module.overlays[buttons[1]].bindBadge.text == "WuE",
+    "reused bag button kept a stale binding badge")
+items[1] = { hyperlink = "gear-a", itemID = 101, quality = 4, isBound = false }
+module.config.showItemLevel = true
+module:Refresh()
 buttons[4] = {
     emptyBackgroundAtlas = "bags-item-slot64",
     ItemSlotBackground = VisualFrame(),

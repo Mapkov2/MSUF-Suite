@@ -2,6 +2,59 @@ local _, NS = ...
 local B = NS.CatalogBuild
 local Number, Bool, Choice, String = B.Number, B.Bool, B.Choice, B.String
 
+-- This independent recent-cast display starts with a restrained game-like
+-- palette, regardless of the profile's global Suite look.
+B.Module("actionTracker", {
+    title = "Action tracker",
+    description = "A compact, movable history of your recent successful spells.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+NS.ActionTrackerLooks = {
+    [1] = { panelColor = "171316", panelOpacity = 88, borderColor = "563938",
+        accentColor = "d4a64c", textColor = "f2eeea" },
+    [2] = { panelColor = "0a1220", panelOpacity = 90, borderColor = "41627a",
+        accentColor = "57c7df", textColor = "f4f7fb" },
+    [3] = { panelColor = "151719", panelOpacity = 90, borderColor = "575b58",
+        accentColor = "b9ab86", textColor = "e9e9e4" },
+    [4] = { panelColor = "14181b", panelOpacity = 90, borderColor = "9f8960",
+        accentColor = "d8b66a", textColor = "f4f3eb" },
+}
+NS.SuiteCatalog.actionTracker.look = {
+    key = "look", presets = NS.ActionTrackerLooks,
+    visualKeys = { panelColor = true, panelOpacity = true, borderColor = true,
+        accentColor = true, textColor = true }, custom = 5,
+}
+local actionLook = NS.ActionTrackerLooks[1]
+B.Section("actionTracker", "action_tracker", "Recent actions", {
+    Choice("look", "Style", 1, { "Classic UI", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+    Choice("displayPreset", "Display preset", 1, { "Standard rows", "Icons only" }),
+    Number("rows", "Visible actions", 5, 1, 8),
+    Number("width", "Display width", 210, 150, 420, 5),
+    Number("rowHeight", "Row height", 31, 24, 48),
+    Number("rowGap", "Space between rows", 2, 0, 10),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Number("hideAfter", "Hide after inactivity (seconds; 0 = stay)", 15, 0, 60),
+    Bool("showNames", "Show spell names", true),
+    Bool("showChevron", "Show gold action markers", true),
+    B.Font("font", "Font (empty: MSUF global font)"),
+    Number("fontSize", "Spell name size", 12, 9, 20),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", -40, -3000, 3000),
+})
+-- Position is owned by MSUF Edit Mode; these catalog rules remain available
+-- for mover persistence, profile import and undo without duplicate sliders.
+for _, key in ipairs({ "point", "x", "y" }) do
+    NS.SuiteCatalog.actionTracker.rules[key].hidden = true
+end
+B.Section("actionTracker", "action_tracker_colors", "Colors", {
+    B.Color("panelColor", "Row background", actionLook.panelColor),
+    Number("panelOpacity", "Row opacity (percent)", actionLook.panelOpacity, 0, 100),
+    B.Color("borderColor", "Row border", actionLook.borderColor),
+    B.Color("accentColor", "Action marker", actionLook.accentColor),
+    B.Color("textColor", "Spell name", actionLook.textColor),
+}, { category = "advanced" })
+
 -- Comfort modules are opt-in: setup presets and shared profiles never turn on
 -- spending, automation, or combat logging.
 B.Module("qol", {
@@ -80,6 +133,51 @@ B.Module("tooltipIDs", {
         if NS.Client.isForever then return false, "Tooltip IDs are available only in Retail" end
         return true
     end,
+})
+
+B.Module("itemCounts", {
+    title = "Item counts in tooltips",
+    description = "Show your owned item count, including bank and Warband bank, on item tooltips.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Item count tooltips are available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("loadoutReminder", {
+    title = "Talent and loot spec reminder",
+    description = "Show the active talent build and loot specialization on ready checks or instance entry, with an optional saved expectation.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Talent loadouts are available only in Retail" end
+        return true
+    end,
+})
+B.Section("loadoutReminder", "loadout_reminder", "When to remind", {
+    Bool("onReadyCheck", "On ready check", true),
+    Bool("onInstanceEntry", "On instance entry", true),
+    Bool("onlyMismatch", "Show only when saved selection differs"),
+    Number("duration", "Display duration (seconds)", 8, 3, 20),
+})
+B.Section("loadoutReminder", "loadout_expectation", "Saved selection", {
+    Number("expectedConfigID", "Expected talent build ID (0: any)", 0, 0, 100000000),
+    Number("expectedLootSpecID", "Expected loot spec ID (0: any)", 0, 0, 100000),
+    String("expectedCharacterGUID", "Expected character", "", 100),
+}, { category = "advanced" })
+NS.SuiteCatalog.loadoutReminder.rules.expectedCharacterGUID.hidden = true
+NS.SuiteCatalog.loadoutReminder.rules.expectedConfigID.hidden = true
+NS.SuiteCatalog.loadoutReminder.rules.expectedLootSpecID.hidden = true
+
+B.Module("quietPopups", {
+    title = "Quiet Blizzard popups",
+    description = "Independently hide Talking Head, Boss Banner and Quick Join toasts while retaining Blizzard's underlying events.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("quietPopups", "quiet_popups", "Popups", {
+    Bool("talkingHead", "Hide Talking Head"),
+    Bool("bossBanner", "Hide Boss Banner"),
+    Bool("quickJoin", "Hide Quick Join toast"),
 })
 
 B.Module("loot", {

@@ -355,6 +355,7 @@ local LEGACY_MEDIA_PREFIX = "Midnight Skin - "
 local function NormalizeTypography(typography)
     local defaults = NS.Defaults.typography
     typography.enabled = typography.enabled == true
+    typography.followMSUF = typography.followMSUF ~= false
     if not IsListed(NS.FontFaces, typography.face) then typography.face = defaults.face end
     if type(typography.sharedMediaFont) ~= "string" then
         typography.sharedMediaFont = defaults.sharedMediaFont

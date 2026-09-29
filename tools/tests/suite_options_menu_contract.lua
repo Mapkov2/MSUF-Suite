@@ -369,7 +369,7 @@ local INTERFACE_ROWS = "#interface suite_actionbars@interface suite_minimap@inte
     .. " suite_bags@interface suite_chat@interface suite_dataTexts@interface"
 local hostShape = "home@nil #frames uf_player@frames " .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
     .. " #style opt_colors@style suite_skin@style"
-    .. " #general gameplay@general suite_modules@general suite_qualityOfLife@general opt_misc@general profiles@general"
+    .. " #general gameplay@general suite_qualityOfLife@general opt_misc@general profiles@general"
 assert(NavShape(M.navItems) == hostShape, "suite navigation: " .. NavShape(M.navItems))
 for _, key in ipairs(expected) do
     assert(M.pages[key], "page not registered: " .. key)
@@ -425,7 +425,7 @@ Reattach()
 local legacyShape = "home@nil #frames uf_player@frames"
     .. " #appearance opt_bars@appearance opt_misc@appearance suite_skin@appearance "
     .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
-    .. " #features classpower@features gameplay@features suite_modules@features suite_qualityOfLife@features profiles@features"
+    .. " #features classpower@features gameplay@features suite_qualityOfLife@features profiles@features"
 assert(NavShape(M.navItems) == legacyShape, "suite navigation on a legacy host: " .. NavShape(M.navItems))
 M.navItems = hostItems
 
@@ -1338,9 +1338,10 @@ for bar = 1, 3 do
     assert(Suite.SuiteCatalog.dataTexts.rules["bar" .. bar .. "FontRendering"].default == 3,
         "DataText bar " .. bar .. " did not default to Slug")
 end
-local qolGroups = { "battleRes_battle_res", "loot_collection", "combatLog_log_dungeons", "xpBar_xp_bar",
-    "vaultSpec_vault_spec", "innervateCue_innervate_cue", "loot_history", "durabilityAlert_durability_warning",
-    "merchantLevel_merchant_level", "quests_automation", "qol_repair", "qol_junk", "skyriding_flight_hud",
+local qolGroups = { "actionTracker_action_tracker", "battleRes_battle_res", "loot_collection", "combatLog_log_dungeons", "xpBar_xp_bar",
+    "vaultSpec_vault_spec", "innervateCue_innervate_cue", "itemCounts_item_counts", "loadoutReminder_loadout_reminder",
+    "loot_history", "durabilityAlert_durability_warning", "merchantLevel_merchant_level", "quests_automation",
+    "quietPopups_quiet_popups", "qol_repair", "qol_junk", "skyriding_flight_hud",
     "tooltipIDs_tooltip_ids" }
 assert(#qolPage.sections == #qolGroups, "Quality of Life retained Module Basics or nested accordions")
 for i, name in ipairs(qolGroups) do
@@ -1351,6 +1352,7 @@ for i, name in ipairs(qolGroups) do
         "Quality of Life feature names are not alphabetically sorted")
 end
 local route = {
+    ["msufsuite.actionTracker.rows"] = "actionTracker_action_tracker",
     ["msufsuite.xpBar.width"] = "xpBar_xp_bar",
     ["msufsuite.skyriding.width"] = "skyriding_flight_hud",
     ["msufsuite.skyriding.font"] = "skyriding_flight_hud",
@@ -1375,7 +1377,41 @@ for _, widget in ipairs(qolPage.widgets) do
         routed = routed + 1
     end
 end
-assert(routed == 14, "Quality of Life settings lost their search routes")
+assert(routed == 15, "Quality of Life settings lost their search routes: " .. routed)
+do
+    local actionToggle = qolPage.Section("actionTracker_action_tracker").headerSwitch
+    assert(S.Config("actionTracker").look == 1 and S.Config("actionTracker").rows == 5,
+        "Action tracker must start with its compact classic style")
+    actionToggle.set(true)
+    assert(actionToggle.get() and S.Config("actionTracker").enabled,
+        "Action tracker header switch did not enable its module")
+    local actionControls = {}
+    for _, widget in ipairs(qolPage.widgets) do
+        local key = widget.meta and widget.meta.settingKey
+        if key and key:match("^msufsuite%.actionTracker%.") then
+            actionControls[key:match("%.([^.]+)$")] = widget
+        end
+    end
+    assert(actionControls.look and actionControls.displayPreset and actionControls.rows and actionControls.fontSize
+        and not actionControls.x and not actionControls.y and not actionControls.point,
+        "Action tracker styling controls are missing")
+    actionControls.displayPreset.set(2)
+    assert(S.Config("actionTracker").displayPreset == 2,
+        "Icon-only preset was not saved")
+    actionControls.look.set(2)
+    assert(S.Config("actionTracker").look == 2 and S.Config("actionTracker").panelColor == "0a1220",
+        "Action tracker preset did not apply its palette")
+    local colorTarget
+    for _, target in ipairs(qolPage.Section("actionTracker_action_tracker").colorShortcut.options.getTargets()) do
+        if target.settingKey == "msufsuite.actionTracker.panelColor" then colorTarget = target; break end
+    end
+    assert(colorTarget, "Action tracker row color is missing from its picker")
+    colorTarget.set(1, 0, 0)
+    assert(S.Config("actionTracker").look == 5 and S.Config("actionTracker").panelColor == "ff0000",
+        "Action tracker custom color did not retain its Custom style")
+    actionToggle.set(false)
+    assert(not actionToggle.get(), "Action tracker header switch did not disable its module")
+end
 local xpBar = qolPage.Section("xpBar_xp_bar").headerSwitch
 xpBar.set(true)
 assert(xpBar.get() and S.Config("xpBar").enabled, "XP bar header switch did not enable its module")

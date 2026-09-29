@@ -1,0 +1,189 @@
+local _, P = ...
+local NS, S = P.NS, P.Suite
+
+local M = { generation = 0 }
+local INSTANCE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
+    "PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED" }
+
+local function CancelHide(self)
+    local timer = self.hideTimer
+    self.hideTimer = nil
+    if timer then timer:Cancel() end
+end
+
+local function Current()
+    local specIndex = C_SpecializationInfo.GetSpecialization()
+    if not S.Finite(specIndex) or specIndex < 1 then return nil end
+    local specID, specName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
+    if not S.Finite(specID) or not S.PublicText(specName) then return nil end
+
+    local configID = C_ClassTalents.GetActiveConfigID()
+    if not S.Finite(configID) then configID = 0 end
+    local buildName
+    if configID > 0 then
+        local info = C_Traits.GetConfigInfo(configID)
+        if S.Public(info) and type(info) == "table" then buildName = S.PublicText(info.name) end
+    end
+    buildName = buildName or S.Text("Starter build")
+
+    local lootID = GetLootSpecialization()
+    if not S.Finite(lootID) or lootID < 0 then return nil end
+    local lootName, effectiveLootID
+    if lootID == 0 then
+        lootName = specName .. " (" .. S.Text("current") .. ")"
+        effectiveLootID = specID
+    else
+        local _, name = GetSpecializationInfoByID(lootID)
+        lootName = S.PublicText(name)
+        effectiveLootID = lootID
+    end
+    return configID, buildName, effectiveLootID, lootName
+end
+
+local function Create(self)
+    if self.host then return end
+    local host = S.CreateFrame("Frame", nil, UIParent)
+    host:SetSize(360, 70)
+    host:SetFrameStrata("HIGH")
+    host:EnableMouse(false)
+    local background = S.CreateTexture(host, nil, "BACKGROUND")
+    background:SetAllPoints()
+    background:SetColorTexture(.05, .07, .09, .94)
+    local border = S.CreateTexture(host, nil, "BORDER")
+    border:SetPoint("TOPLEFT")
+    border:SetPoint("BOTTOMLEFT")
+    border:SetWidth(3)
+    local title = S.CreateFontString(host, nil, "OVERLAY")
+    title:SetPoint("TOPLEFT", 12, -8)
+    title:SetPoint("TOPRIGHT", -12, -8)
+    title:SetJustifyH("LEFT")
+    S.SetFont(title, nil, 13, "OUTLINE")
+    local detail = S.CreateFontString(host, nil, "OVERLAY")
+    detail:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -7)
+    detail:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -7)
+    detail:SetJustifyH("LEFT")
+    S.SetFont(detail, nil, 11, "")
+    host:SetPoint("TOP", UIParent, "TOP", 0, -155)
+    host:Hide()
+    self.host, self.border, self.title, self.detail = host, border, title, detail
+end
+
+local function Show(self)
+    if not self.active then return end
+    local configID, buildName, lootID, lootName = Current()
+    if not configID or not lootName then return end
+    local characterGUID = S.PublicText(UnitGUID("player"))
+    local sameCharacter = not self.config.expectedCharacterGUID
+        or self.config.expectedCharacterGUID == ""
+        or (characterGUID and self.config.expectedCharacterGUID == characterGUID)
+    local expectedConfig = sameCharacter and (self.config.expectedConfigID or 0) or 0
+    local expectedLoot = sameCharacter and (self.config.expectedLootSpecID or 0) or 0
+    local mismatch = (expectedConfig > 0 and expectedConfig ~= configID)
+        or (expectedLoot > 0 and expectedLoot ~= lootID)
+    if self.config.onlyMismatch and not mismatch then
+        CancelHide(self)
+        if self.host then self.host:Hide() end
+        return true, configID, lootID
+    end
+    Create(self)
+    self.title:SetText(S.Text(mismatch and "Check your loadout" or "Current loadout"))
+    self.title:SetTextColor(mismatch and 1 or .9, mismatch and .54 or .81, mismatch and .42 or .62)
+    self.border:SetColorTexture(mismatch and 1 or .83, mismatch and .42 or .68, mismatch and .28 or .4, 1)
+    self.detail:SetText(buildName .. "  |  " .. S.Text("Loot") .. ": " .. lootName)
+    self.detail:SetTextColor(.9, .92, .94)
+    self.host:Show()
+    CancelHide(self)
+    self.generation = self.generation + 1
+    local generation = self.generation
+    local timer
+    timer = C_Timer.NewTimer(self.config.duration, function()
+        if self.hideTimer ~= timer then return end
+        self.hideTimer = nil
+        if self.active and self.generation == generation then self.host:Hide() end
+    end)
+    self.hideTimer = timer
+    return true, configID, lootID
+end
+
+local function OnReady(self)
+    if self.config.onReadyCheck then Show(self) end
+end
+
+local function OnZone(self, event)
+    if not self.config.onInstanceEntry then return end
+    local inInstance, kind = IsInInstance()
+    if not S.Public(inInstance) or inInstance ~= true or not S.PublicText(kind)
+        or kind == "none" then
+        self.lastInstance, self.lastConfigID, self.lastLootID = nil, nil, nil
+        return
+    end
+    local _, _, _, _, _, _, _, instanceID = GetInstanceInfo()
+    if not S.Finite(instanceID) then return end
+    if self.lastInstance == instanceID then
+        if event ~= "PLAYER_TALENT_UPDATE" and event ~= "PLAYER_SPECIALIZATION_CHANGED" then return end
+        local configID, _, lootID = Current()
+        if not configID or (self.lastConfigID == configID and self.lastLootID == lootID) then return end
+    end
+    local shown, configID, lootID = Show(self)
+    if shown then
+        self.lastInstance, self.lastConfigID, self.lastLootID = instanceID, configID, lootID
+    end
+end
+
+function M:SaveCurrent()
+    local configID, _, lootID = Current()
+    local guid = S.PublicText(UnitGUID("player"))
+    if not configID or not guid then return false end
+    return S.SetMany("loadoutReminder", {
+        expectedConfigID = configID, expectedLootSpecID = lootID, expectedCharacterGUID = guid,
+    })
+end
+
+function M:ClearSaved()
+    return S.SetMany("loadoutReminder", {
+        expectedConfigID = 0, expectedLootSpecID = 0, expectedCharacterGUID = "",
+    })
+end
+
+local function SyncEvents(self)
+    local context = self.context
+    local watchInstance = self.config.onInstanceEntry
+    local newlyWatching = watchInstance and self.watchingInstance == false
+    self.watchingInstance = watchInstance
+    if not watchInstance then
+        self.lastInstance, self.lastConfigID, self.lastLootID = nil, nil, nil
+    end
+    if self.config.onReadyCheck then context:Event("READY_CHECK", OnReady, true)
+    else context:RemoveEvent("READY_CHECK") end
+    for _, event in ipairs(INSTANCE_EVENTS) do
+        if watchInstance then context:Event(event, OnZone, true)
+        else context:RemoveEvent(event) end
+    end
+    return newlyWatching
+end
+
+function M:Enable()
+    SyncEvents(self)
+    OnZone(self)
+end
+
+function M:Refresh()
+    local newlyWatching = SyncEvents(self)
+    if self.host then S.SetFont(self.title, nil, 13, "OUTLINE"); S.SetFont(self.detail, nil, 11, "") end
+    if not self.config.onReadyCheck and not self.config.onInstanceEntry then
+        CancelHide(self)
+        if self.host then self.host:Hide() end
+    end
+    if newlyWatching then OnZone(self) end
+end
+
+function M:Disable()
+    self.generation = self.generation + 1
+    CancelHide(self)
+    self.lastInstance = nil
+    self.lastConfigID, self.lastLootID = nil, nil
+    if self.host then self.host:Hide() end
+end
+
+S.LoadoutReminder = M
+S.Install("loadoutReminder", M)

@@ -64,9 +64,11 @@ for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 15 and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
+assert(count == 19 and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
-    and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs,
+    and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
+    and Suite.Suite.instances.itemCounts and Suite.Suite.instances.loadoutReminder
+    and Suite.Suite.instances.quietPopups,
     "shared HUD modules and Quality of Life helpers did not register together")
 local context = Suite.Suite.NewContext("qol")
 assert(context:Skin() == nil, "disabled skin should require no provider")

@@ -14,9 +14,13 @@ QuestHelpers.lua
 MerchantItemLevel.lua
 VaultSpec.lua
 TooltipIDs.lua
+ItemCounts.lua
+LoadoutReminder.lua
+QuietPopups.lua
 Loot.lua
 CombatLog.lua
 ExperienceBar.lua
+ActionTracker.lua
 InnervateCue.lua
 DurabilityAlert.lua
 BattleRes.lua

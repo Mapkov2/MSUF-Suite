@@ -9,6 +9,16 @@
 ## SavedVariables: MSUFSuiteDB
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
+Locales\deDE.lua
+Locales\esES.lua
+Locales\esMX.lua
+Locales\frFR.lua
+Locales\itIT.lua
+Locales\koKR.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
 Core\Platform.lua
 Core\ForeverFactory.lua
 Core\ForeverFrames.lua

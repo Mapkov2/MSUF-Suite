@@ -891,7 +891,7 @@ end
 
 function S.Open(id)
     local spec = type(id) == "string" and S.catalog[id]
-    local page = spec and (spec.page or ("suite_" .. id)) or "suite_modules"
+    local page = spec and (spec.page or ("suite_" .. id)) or "home"
     if NS.Menu.Open(page) then return end
     NS.Print("Open the MSUF menu to find the Suite pages. MSUF must be installed and enabled.")
 end

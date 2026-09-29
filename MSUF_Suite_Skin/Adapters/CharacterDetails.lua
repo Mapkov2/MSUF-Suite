@@ -61,7 +61,8 @@ end
 local function NeedsData(v)
     local config = Config()
     if v.kind == "character" and config.view then return config.view ~= "classic" end
-    return config.expanded or (v.kind == "character" and config.inlineGear == true)
+    return config.expanded or (v.kind == "inspect" and config.inlineGear ~= false)
+        or (v.kind == "character" and config.inlineGear == true)
 end
 
 local function Enabled(v)
@@ -69,8 +70,7 @@ local function Enabled(v)
     local config = Config()
     return v.active and NS.DB and NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character")
-        and ((v.kind == "character" and config.view and config.view ~= "classic")
-            or (not (v.kind == "character" and config.view) and config.enabled))
+        and ((config.view and config.view ~= "classic") or config.enabled)
 end
 
 local function Color(region, token)
@@ -723,7 +723,7 @@ function Details.Apply(root, kind, owner)
     if not v then
         local config = Config()
         if kind == "character" and config.view == "classic" then return end
-        if not config.enabled and not (kind == "character" and config.view) then return end
+        if not config.enabled and not (config.view and config.view ~= "classic") then return end
         v = Create(root, parent, kind, owner)
         Details.views[root] = v
     end

@@ -1,16 +1,5 @@
--- Suite Modules page, navigation availability, the dashboard overview API and
--- the first-run order. Loads MSUF_Suite and MSUF_Suite_Options against a
--- stand-in of Menu2's public surface (the one suite_options_menu_contract
--- uses) and checks:
---   * the page sits in General before Quality of Life, has no Reset page,
---     lists every catalog module once in its sidebar group, switches through
---     the module setter (one history entry), opens module pages, retries a
---     failed module and runs the presets and the installer;
---   * nav availability returns ok, reason, hide; hide only while nothing is
---     installed;
---   * MSUFSuite.GetOverview();
---   * the installer waits at login while MSUF's own welcome is due, and
---     /msuite opens Suite Modules.
+-- Suite navigation availability, dashboard overview, first-run order and
+-- /msuite routing after the redundant Suite Modules page was removed.
 local root = assert(arg[1], "repository root required")
 securecallfunction = function(callback, ...) return callback(...) end
 
@@ -234,26 +223,14 @@ local function NavShape()
     end
     return table.concat(out, " ")
 end
-assert(NavShape():find("#general gameplay@general suite_modules@general suite_qualityOfLife@general opt_misc@general", 1, true),
-    "Suite Modules must open General, ahead of Quality of Life: " .. NavShape())
+assert(NavShape():find("#general gameplay@general suite_qualityOfLife@general opt_misc@general", 1, true),
+    "Quality of Life is missing from General: " .. NavShape())
 local rows = {}
 for _, item in ipairs(M.navItems) do if item.key then rows[item.key] = item end end
-assert(rows.suite_modules.availability == nil, "Suite Modules is always available")
-assert(M.pages.suite_modules and M.pages.suite_modules.title == "Suite Modules", "page not registered")
-assert(T.navIconGrid.suite_modules[1] == 4 and T.navIconGrid.suite_modules[2] == 2
-    and T.navIconColors.suite_modules == T.navIconColors.home, "Suite Modules has no accent icon")
-for _, alias in ipairs({ "modules", "suite", "suite modules", "module overview", "suite_modules" }) do
-    assert(M.ALIASES[alias] == "suite_modules", "missing alias " .. alias)
-end
-assert(P.navGroupTitles.general == "General" and P.navGroupTitles.style == "Style",
-    "the page does not know the sidebar's group titles")
-
--- Reset page: every Suite page but the overview.
-assert(M.PageHasReset("suite_modules") == false, "Suite Modules offers a page reset")
-assert(M.PageHasReset("suite_bags") == true and M.PageHasReset("suite_skin") == true, "module pages lost Reset page")
-local writes = historyWrites
-assert(M.ResetPageToDefaults("suite_modules") == false and M.ShowPageResetConfirm("suite_modules") == false
-    and historyWrites == writes, "Suite Modules ran a page reset")
+assert(rows.suite_modules == nil and M.pages.suite_modules == nil and M.ALIASES.suite_modules == nil,
+    "the removed Suite Modules page is still reachable")
+assert(M.PageHasReset("suite_bags") == true and M.PageHasReset("suite_skin") == true,
+    "module pages lost Reset page")
 
 ------------------------------------------------------------------ availability: ok, reason, hide
 do
@@ -290,156 +267,6 @@ do
     disabled.MSUF_Suite_Skin = nil
 end
 
------------------------------------------------------------------- the page
-missing.MSUF_Suite_Chat = true -- a module whose AddOn is not installed
-for _, id in ipairs(S.order) do S.states[id].error = nil end
-local ctx = { key = "suite_modules", width = 720, refreshers = {}, widgets = {}, sections = {} }
-current = ctx
-M.pages.suite_modules.build(ctx)
-M.RequestRefresh()
-assert(not ctx.headers, "the page has a redundant header")
-local order = {}
-for _, section in ipairs(ctx.sections) do
-    assert(section.finished and section.open, "section not finished or closed: " .. section.sectionId)
-    order[#order + 1] = section.sectionId .. "=" .. section.title
-end
-assert(table.concat(order, " ") == "suite_modules_overview=Overview suite_modules_combat=Combat"
-    .. " suite_modules_interface=Interface suite_modules_style=Style suite_modules_general=General",
-    "sections do not follow the sidebar: " .. table.concat(order, " "))
-
-local GROUP_OF_PAGE = {
-    suite_nameplates = "combat", suite_cooldownManager = "combat", suite_buffReminders = "combat", suite_hud = "combat",
-    suite_actionbars = "interface", suite_minimap = "interface", suite_damageMeter = "interface",
-    suite_bags = "interface", suite_chat = "interface", suite_dataTexts = "interface",
-    suite_qualityOfLife = "general",
-}
-local switches, switchOrder = {}, {}
-for _, widget in ipairs(ctx.widgets) do
-    local id = widget.meta and widget.meta.controlId and widget.meta.controlId:match("^menu2%.suite_modules%.([%w]+)%.enabled$")
-    if id then
-        assert(not switches[id], "module listed twice: " .. id)
-        switches[id] = widget
-        switchOrder[widget.meta.sectionId] = (switchOrder[widget.meta.sectionId] or "") .. id .. " "
-    end
-end
-local function Texts(sectionId)
-    local out = {}
-    for _, fs in ipairs(fonts) do
-        if fs.parent and fs.parent.sectionId == sectionId then out[fs.text] = (out[fs.text] or 0) + 1 end
-    end
-    return out
-end
-for _, id in ipairs(S.order) do
-    local spec = S.catalog[id]
-    local sectionId = "suite_modules_" .. assert(GROUP_OF_PAGE[spec.page], "no group for " .. id)
-    if id == "chat" then
-        assert(not switches.chat and not controls["menu2.suite_modules.chat.open"],
-            "a module that is not installed must show its status only")
-        local texts = Texts(sectionId)
-        assert(texts.Chat and texts["Install MSUF_Suite_Chat to use this module"],
-            "a module that is not installed lost its name or status")
-    else
-        local switch = assert(switches[id], "module has no switch on Suite Modules: " .. id)
-        assert(switch.meta.sectionId == sectionId and switch.meta.settingKey == "msufsuite." .. id .. ".enabled"
-            and switch.meta.kind == "toggle" and switch.label == spec.title,
-            "module switch in the wrong group or with the wrong identity: " .. id)
-        assert(Texts(sectionId)[spec.description], "module description missing: " .. id)
-        assert(controls["menu2.suite_modules." .. id .. ".open"], "module has no page button: " .. id)
-    end
-end
-assert(switchOrder.suite_modules_combat
-    == "nameplates cooldownManager buffReminders objectives announcements afkScreen ",
-    "Combat does not follow the sidebar: " .. tostring(switchOrder.suite_modules_combat))
-assert(switches.skin and switches.skin.meta.sectionId == "suite_modules_style"
-    and Texts("suite_modules_style").Off, "Skinning row missing from Style")
-
--- The switch is the module's own setter: one history entry per change.
-writes = historyWrites
-switches.minimap.set(false)
-assert(S.Config("minimap").enabled == false and historyWrites == writes + 1 and not switches.minimap.get())
-switches.minimap.set(true)
-assert(S.Config("minimap").enabled == true and historyWrites == writes + 2 and switches.minimap.get())
-assert(switches.minimap.enabled, "switch locked outside combat")
-combat = true
-M.RequestRefresh()
-assert(not switches.minimap.enabled, "switch editable in combat")
-combat = false
-M.RequestRefresh()
-
--- Page buttons open the module's page.
-controls["menu2.suite_modules.bags.open"].scripts.OnClick()
-assert(M.selectedPage == "suite_bags")
-controls["menu2.suite_modules.quests.open"].scripts.OnClick()
-assert(M.selectedPage == "suite_qualityOfLife")
-controls["menu2.suite_modules.skin.open"].scripts.OnClick()
-assert(M.selectedPage == "suite_skin")
-
--- Retry: shown only after an error; clears it and applies the module again.
--- (This fixture cannot load module AddOns, so enabling one above failed it.)
-for _, id in ipairs(S.order) do S.states[id].error = nil end
-M.RequestRefresh()
-local retry = assert(controls["menu2.suite_modules.minimap.retry"])
-assert(not retry.shown and not controls["menu2.suite_modules.bags.retry"].shown)
-S.states.minimap.error = "Stopped after an error"
-M.RequestRefresh()
-assert(retry.shown and retry.enabled and Texts("suite_modules_interface")["Stopped after an error"],
-    "a failed module shows no status or Retry")
-local apply, applied = S.Apply, {}
-S.Apply = function(id) applied[#applied + 1] = { id, S.states[id].error } end
-combat = true
-retry.scripts.OnClick()
-assert(#applied == 0 and S.states.minimap.error, "Retry ran in combat")
-combat = false
-retry.scripts.OnClick()
-S.Apply = apply
-assert(#applied == 1 and applied[1][1] == "minimap" and applied[1][2] == nil and S.states.minimap.error == nil,
-    "Retry must clear the error before applying the module again")
-assert(not retry.shown, "Retry stayed after the error cleared")
-
--- Presets: confirmation first, one history entry, refused in combat.
-local dialogs, shown = {}, nil
-M.InstallStaticPopup = function(key, spec) dialogs[key] = dialogs[key] or spec; return dialogs[key] end
-StaticPopup_Show = function(key, text, _, data) shown = { key = key, text = text, data = data } end
-local turnOff = assert(controls["menu2.suite_modules.suite.preset.off"])
-local coreOn = assert(controls["menu2.suite_modules.suite.preset.core"])
-combat = true
-turnOff.scripts.OnClick()
-assert(shown == nil, "a preset asked for confirmation in combat")
-combat = false
-S.Config("qol").enabled = true
-writes = historyWrites
-turnOff.scripts.OnClick()
-assert(shown and shown.data.kind == "off" and S.Config("minimap").enabled and historyWrites == writes,
-    "Turn all off changed modules before the confirmation")
-assert(shown.text == "Turn off every Suite module? Their settings stay saved. Skinning keeps its own switch.")
-dialogs[shown.key].OnAccept(nil, shown.data)
-local anyOn = false
-for _, id in ipairs(S.order) do anyOn = anyOn or S.Config(id).enabled end
-assert(not anyOn and historyWrites == writes + 1, "Turn all off must be one history entry that disables every module")
-assert(Texts("suite_modules_overview")["0 of " .. #S.order .. " Suite modules are on"], "overview count not refreshed")
-shown = nil
-coreOn.scripts.OnClick()
-assert(shown and shown.data.kind == "core")
-dialogs[shown.key].OnAccept(nil, shown.data)
-assert(S.Config("minimap").enabled and S.Config("objectives").enabled and not S.Config("qol").enabled
-    and historyWrites == writes + 2, "core preset must enable core modules and leave opt-in modules alone")
--- A confirmation accepted after combat started changes nothing.
-shown = nil
-turnOff.scripts.OnClick()
-combat, writes = true, historyWrites
-dialogs[shown.key].OnAccept(nil, shown.data)
-combat = false
-assert(historyWrites == writes and S.Config("minimap").enabled, "a preset ran in combat")
-
--- Run setup again opens the installer and steps the menu aside.
-local installerOpen, setupRuns = Suite.Installer.Open, 0
-Suite.Installer.Open = function() setupRuns = setupRuns + 1; return true end
-M.frame = Widget("Menu")
-controls["menu2.suite_modules.suite.setup"].scripts.OnClick()
-assert(setupRuns == 1 and not M.frame.shown, "Run setup again did not open the installer")
-Suite.Installer.Open, M.frame = installerOpen, nil
-missing.MSUF_Suite_Chat = nil
-
 ------------------------------------------------------------------ overview API
 do
     local count = 0
@@ -447,7 +274,7 @@ do
     Suite.RootDB.installation = nil
     local first = assert(Suite.GetOverview())
     assert(first.version == "1.0-test" and first.total == #S.order and first.enabled == count
-        and first.pageKey == "suite_modules" and first.needsSetup == true, "overview fields")
+        and first.pageKey == nil and first.needsSetup == true, "overview fields")
     combat = true
     local second = assert(Suite.GetOverview(), "overview refused in combat")
     combat = false
@@ -472,8 +299,8 @@ opened = {}
 SlashCmdList.MSUFSUITE("")
 S.Open("bags")
 assert(Suite.Menu.Open())
-assert(opened[1] == "suite_modules" and opened[2] == "suite_bags" and opened[3] == "suite_modules",
-    "/msuite must open Suite Modules: " .. table.concat(opened, ","))
+assert(opened[1] == "home" and opened[2] == "suite_bags" and opened[3] == "home",
+    "/msuite must open the MSUF dashboard: " .. table.concat(opened, ","))
 
 ------------------------------------------------------------------ first-run order
 do
@@ -499,11 +326,9 @@ do
     local window = MSUFSuiteInstallFrame
     assert(window:GetFrameLevel() > 400, "the installer opens under MSUF's menu and its popups")
     assert(Suite.Installer.MaybeShow() == false, "MaybeShow opened a second time while shown")
-    assert(not window.openModules.shown and not window.modulesHint.shown, "Complete-page controls shown too early")
-    assert(window.openModules.caption.text == "Open Suite Modules")
-    opened = {}
-    window.openModules.scripts.OnClick(window.openModules)
-    assert(opened[1] == "suite_modules" and not window.shown, "Open Suite Modules did not open the page")
+    assert(rawget(window, "openModules") == nil and rawget(window, "modulesHint") == nil,
+        "the installer still has a link to Suite Modules")
+    window:Hide()
     due = false
     assert(Suite.Installer.MaybeShow("login") == true, "a completed MSUF welcome must not hold the installer")
     window:Hide()
@@ -519,4 +344,4 @@ do
     assert(Suite.Installer.MaybeShow() == false, "a recorded setup must not reopen the installer")
 end
 
-print("Suite Modules: page, availability contract, overview API and first-run order passed")
+print("Suite navigation, overview, first-run and dashboard routing passed")

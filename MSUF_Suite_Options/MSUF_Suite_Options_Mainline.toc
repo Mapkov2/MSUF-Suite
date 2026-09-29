@@ -18,7 +18,6 @@ Pages\Minimap.lua
 Pages\DamageMeter.lua
 Pages\Bags.lua
 Pages\DataTexts.lua
-Pages\Modules.lua
 Pages\QualityOfLife.lua
 Pages\HUD.lua
 Pages\BuffReminders.lua

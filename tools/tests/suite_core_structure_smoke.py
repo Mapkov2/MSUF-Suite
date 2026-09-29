@@ -36,11 +36,13 @@ def lua_files():
                 yield rel, path
 
 
-# Sizes: lines, main-chunk locals and function length.
+# Sizes: lines, main-chunk locals and function length. Language packs are
+# data (one line per string; tools/suite_locale_tool.py checks them).
 FUNCTION = re.compile(r"^(main|function) <.*:(\d+),(\d+)> ")
+LANGUAGE_PACK = re.compile(r"^MSUF_Suite/Locales/[a-z]{2}[A-Z]{2}\.lua$")
 for rel, path in lua_files():
     text = path.read_text(encoding="utf-8")
-    check(text.count("\n") <= 900, rel + " is above 900 lines")
+    check(text.count("\n") <= 900 or LANGUAGE_PACK.match(rel), rel + " is above 900 lines")
     check(not re.search(r"\b(pcall|xpcall|loadstring)\b", text), rel + " uses pcall, xpcall or loadstring")
     run = subprocess.run([LUAC, "-l", "-p", str(path)], capture_output=True, text=True)
     check(run.returncode == 0, rel + " does not compile: " + run.stderr.strip())

@@ -382,7 +382,8 @@ end
 local function Hide(record)
     if not record then return end
     if record.label then record.label:Hide() end
-    record.link, record.level, record.quality, record.gear = nil, nil, nil, nil
+    if record.bindBadge then record.bindBadge:Hide() end
+    record.link, record.level, record.quality, record.gear, record.bindLink, record.bindType = nil, nil, nil, nil, nil, nil
 end
 
 local function ClearPending(self)
@@ -485,7 +486,7 @@ local function WaitForItem(self, pending, itemID, button)
         if waiting then pool[#pool] = nil else waiting = {} end
         pending[itemID] = waiting
     end
-    waiting[#waiting + 1] = button
+    if waiting[#waiting] ~= button then waiting[#waiting + 1] = button end
     if not self.requested[itemID] then
         self.requested[itemID] = true
         C_Item.RequestLoadItemDataByID(itemID)
@@ -504,10 +505,9 @@ local function PaintQuality(self, record, quality)
     record.quality = quality
 end
 
-local function Paint(self, button, pending)
+local function Paint(self, button, pending, info)
     local bag, slot = button:GetBagID(), button:GetID()
     if not S.Public(bag) or not S.Public(slot) then return end
-    local info = C_Container.GetContainerItemInfo(bag, slot)
     local record = self.overlays[button]
     if not self.config.showItemLevel or not info or not S.Public(info) then
         Hide(record)
@@ -559,13 +559,69 @@ local function Paint(self, button, pending)
     record.label:Show()
 end
 
+local BIND_BADGES = { [2] = "BoE", [7] = "WB", [9] = "WuE" }
+
+local function PaintBindBadge(self, button, pending, info)
+    local record = self.overlays[button]
+    if not self.config.showBindBadge or NS.Client.isForever or not info or not S.Public(info)
+        or not S.Public(info.hyperlink) or not S.Public(info.itemID)
+        or (S.Public(info.isFiltered) and info.isFiltered) then
+        if record and record.bindBadge then record.bindBadge:Hide() end
+        return
+    end
+    record = record or {}
+    self.overlays[button] = record
+    local link = info.hyperlink
+    if record.bindLink ~= link then
+        record.bindLink, record.bindType = link, nil
+    end
+    if record.bindType == nil then
+        local bindType = select(14, C_Item.GetItemInfo(link))
+        if not S.Finite(bindType) then
+            if S.Finite(info.itemID) then WaitForItem(self, pending, info.itemID, button) end
+            if record.bindBadge then record.bindBadge:Hide() end
+            return
+        end
+        record.bindType = bindType
+    end
+    local text = BIND_BADGES[record.bindType]
+    if (record.bindType == 2 or record.bindType == 9)
+        and (not S.Public(info.isBound) or info.isBound ~= false) then text = nil end
+    if not text then
+        if record.bindBadge then record.bindBadge:Hide() end
+        return
+    end
+    if not record.bindBadge then
+        if NS.IsCombatLocked() then self.needsItemRefresh = true; S.Queue("bags"); return end
+        local badge = S.CreateFontString(button, nil, "OVERLAY")
+        badge:SetDrawLayer("OVERLAY", 7)
+        badge:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 2, 2)
+        badge:SetJustifyH("LEFT")
+        badge:SetShadowOffset(1, -1)
+        badge:SetShadowColor(0, 0, 0, 1)
+        record.bindBadge = badge
+    end
+    if not record.bindStyled or record.bindFontEpoch ~= self.fontEpoch then
+        S.SetFont(record.bindBadge, nil, 10, "OUTLINE")
+        record.bindStyled, record.bindFontEpoch = true, self.fontEpoch
+    end
+    record.bindBadge:SetText(text)
+    record.bindBadge:SetTextColor(text == "BoE" and .55 or .92, text == "BoE" and .85 or .76, .98)
+    record.bindBadge:Show()
+end
+
 local function ItemInfoReceived(module, _, itemID)
     if not S.Public(itemID) then return end
     local waiting = module.pending[itemID]
     if not waiting then return end
     module.pending[itemID], module.requested[itemID] = nil, nil
     if module.frame and module.frame:IsShown() then
-        for i = 1, #waiting do Paint(module, waiting[i], module.pending) end
+        for i = 1, #waiting do
+            local button = waiting[i]
+            local info = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
+            if module.config.showItemLevel then Paint(module, button, module.pending, info) end
+            PaintBindBadge(module, button, module.pending, info)
+        end
     end
     for i = #waiting, 1, -1 do waiting[i] = nil end
     module.pendingPool[#module.pendingPool + 1] = waiting
@@ -583,16 +639,27 @@ local function HideItemLevels(self)
     self.itemLevelsHidden = true
 end
 
+local function HideBindBadges(self)
+    if self.bindBadgesHidden then return end
+    for _, record in pairs(self.overlays) do
+        if record.bindBadge then record.bindBadge:Hide() end
+    end
+    self.bindBadgesHidden = true
+end
+
 function M:UpdateVisible(nativeItemsReady)
     local frame = self.frame
     if not self.active or not frame or not frame:IsShown() then return end
     if NS.IsCombatLocked() then self.needsItemRefresh = true end
-    if not self.config.showItemLevel then
+    if not self.config.showItemLevel then HideItemLevels(self)
+    else self.itemLevelsHidden = false end
+    if not self.config.showBindBadge then HideBindBadges(self)
+    else self.bindBadgesHidden = false end
+
+    if not self.config.showItemLevel and not self.config.showBindBadge then
         StyleVisibleSlots(self, frame)
-        HideItemLevels(self)
         return
     end
-    self.itemLevelsHidden = false
     local pending = self.pending
     ClearPending(self)
     for _, button in frame:EnumerateValidItems() do
@@ -603,7 +670,10 @@ function M:UpdateVisible(nativeItemsReady)
         if nativeItemsReady and S.Public(hasItem) and not hasItem then
             Hide(self.overlays[button])
         else
-            Paint(self, button, pending)
+            local bag, slot = button:GetBagID(), button:GetID()
+            local info = S.Public(bag) and S.Public(slot) and C_Container.GetContainerItemInfo(bag, slot)
+            if self.config.showItemLevel then Paint(self, button, pending, info) end
+            PaintBindBadge(self, button, pending, info)
         end
     end
     for itemID in pairs(self.requested) do
@@ -689,7 +759,7 @@ local function VisualChanges(c, last)
         or last.fontOutline ~= c.fontOutline or last.fontRendering ~= c.fontRendering
         or last.fontShadow ~= c.fontShadow or last.fontShadowOpacity ~= c.fontShadowOpacity
         or last.fontShadowDistance ~= c.fontShadowDistance
-    local level = not last or last.showItemLevel ~= c.showItemLevel
+    local level = not last or last.showItemLevel ~= c.showItemLevel or last.showBindBadge ~= c.showBindBadge
     local gold = not last or last.showSessionGold ~= c.showSessionGold
     return slot, window, label, level, gold
 end
@@ -701,7 +771,8 @@ local function RememberVisuals(self, c)
     last.font, last.itemLevelSize, last.qualityColor = c.font, c.itemLevelSize, c.qualityColor
     last.fontOutline, last.fontRendering, last.fontShadow = c.fontOutline, c.fontRendering, c.fontShadow
     last.fontShadowOpacity, last.fontShadowDistance = c.fontShadowOpacity, c.fontShadowDistance
-    last.showItemLevel, last.showSessionGold, last.editMode = c.showItemLevel, c.showSessionGold, S.editMode
+    last.showItemLevel, last.showBindBadge, last.showSessionGold, last.editMode =
+        c.showItemLevel, c.showBindBadge, c.showSessionGold, S.editMode
     self.appliedVisual = last
 end
 
@@ -718,6 +789,7 @@ function M:Refresh()
     if self.fontPath ~= fontPath or self.fontEpoch ~= fontEpoch then
         self.fontPath, self.fontEpoch = fontPath, fontEpoch
         labelChanged = true
+        for _, record in pairs(self.overlays) do record.bindStyled = nil end
     end
     if windowChanged then StyleWindows(self) end
     if goldChanged then ApplyGoldEvents(self) end

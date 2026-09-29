@@ -28,6 +28,7 @@ end
 NS.FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" }
 
 local faceLabels = {
+    msuf = "Follow MSUF Fonts",
     friz = "Friz Quadrata",
     arial = "Arial Narrow",
     morpheus = "Morpheus",
@@ -70,10 +71,21 @@ local function LocaleFallback(kind)
     return "Fonts\\FRIZQT__.TTF"
 end
 
+local function MSUFFontPath()
+    local getter = _G.MSUF_GetFontPath
+    if type(getter) ~= "function" then return nil end
+    local path = getter()
+    return NS.Safety.Public(path) and type(path) == "string" and path ~= "" and path or nil
+end
+
 local function ConfiguredPath()
     local config = NS.DB and NS.DB.typography
     if not config then
         return nil
+    end
+    if config.followMSUF ~= false then
+        local path = MSUFFontPath()
+        if path then return path end
     end
     if config.face == "custom" then
         local path = tostring(config.customPath or ""):match("^%s*(.-)%s*$")
@@ -90,6 +102,7 @@ local selectionPrefix = "lsm:"
 function Typography.GetSelection()
     local config = NS.DB and NS.DB.typography
     if not config then return "friz" end
+    if config.followMSUF ~= false then return "msuf" end
     if config.face == "sharedMedia" then
         return selectionPrefix .. tostring(config.sharedMediaFont or "")
     end
@@ -97,7 +110,7 @@ function Typography.GetSelection()
 end
 
 function Typography.GetSelectionValues()
-    local values = { "friz", "arial", "morpheus", "skurri" }
+    local values = { "msuf", "friz", "arial", "morpheus", "skurri" }
     local fonts = Typography.GetSharedMediaFontNames()
     for index = 1, #fonts do
         values[#values + 1] = selectionPrefix .. fonts[index]
@@ -115,6 +128,7 @@ end
 
 function Typography.GetSelectionPath(selection)
     if type(selection) ~= "string" then return nil end
+    if selection == "msuf" then return MSUFFontPath() end
     if selection:sub(1, #selectionPrefix) == selectionPrefix then
         return NS.SharedMedia.FetchFont(selection:sub(#selectionPrefix + 1))
     end
@@ -128,14 +142,18 @@ end
 
 function Typography.SetSelection(selection)
     if NS.IsCombatLocked() or type(selection) ~= "string" or not NS.DB then return false end
-    if selection:sub(1, #selectionPrefix) == selectionPrefix then
+    if selection == "msuf" then
+        NS.DB.typography.followMSUF = true
+    elseif selection:sub(1, #selectionPrefix) == selectionPrefix then
         local name = selection:sub(#selectionPrefix + 1)
         if not NS.SharedMedia.FetchFont(name) then return false end
         NS.DB.typography.sharedMediaFont = name
         NS.DB.typography.face = "sharedMedia"
+        NS.DB.typography.followMSUF = false
     elseif selection == "custom" or selection == "friz" or selection == "arial"
         or selection == "morpheus" or selection == "skurri" then
         NS.DB.typography.face = selection
+        NS.DB.typography.followMSUF = false
     else
         return false
     end
@@ -365,9 +383,14 @@ function Typography.SetEnabled(enabled)
 end
 
 function Typography.SetFace(face)
+    if face == "msuf" then return SetValue("followMSUF", true) end
     for index = 1, #NS.FontFaces do
         if NS.FontFaces[index] == face then
-            return SetValue("face", face)
+            if NS.IsCombatLocked() or not NS.DB or not NS.DB.typography then return false end
+            NS.DB.typography.face = face
+            NS.DB.typography.followMSUF = false
+            Typography.ApplyConfigured()
+            return true
         end
     end
     return false
@@ -404,7 +427,7 @@ end
 function Typography.GetStatus()
     return {
         enabled = NS.DB and NS.DB.typography and NS.DB.typography.enabled == true,
-        face = NS.DB and NS.DB.typography and NS.DB.typography.face or "friz",
+        face = Typography.GetSelection(),
         path = ConfiguredPath(),
         fontObjects = Typography.appliedCount,
         directFrames = Typography.directCount,

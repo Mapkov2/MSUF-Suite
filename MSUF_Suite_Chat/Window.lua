@@ -140,14 +140,40 @@ function C.KeepTabVisible(self, frame, release)
 end
 local KeepTabVisible = C.KeepTabVisible
 
+local function ChosenFont(key)
+    if key == "__BLIZZARD_CHAT_FONT__" then return nil end
+    return S.ResolveFont(key) or S.GlobalFontPath()
+end
+
+-- Keep Blizzard's tab FontString and title updates. Only its font tuple is
+-- owned, so disabling Chat hands its original face and size back.
+local function ApplyTabFont(self, label, chosenFont)
+    local c, context = self.config, self.context
+    local custom = chosenFont or c.tabFontSize > 0
+    if not custom then
+        context:RestoreTuple(label, "SetFont")
+        return
+    end
+    local path, size, flags = label:GetFont()
+    local owned, originalPath, originalSize, originalFlags =
+        context:UpdateTupleBefore(label, "SetFont", 2, size)
+    if owned then path, size, flags = originalPath, originalSize, originalFlags end
+    if S.Public(path) and S.Public(size) and S.Public(flags)
+        and type(path) == "string" and type(size) == "number" then
+        context:Tuple(label, "GetFont", "SetFont", chosenFont or path,
+            c.tabFontSize > 0 and c.tabFontSize or size, flags)
+    end
+end
+
 -- Underline the native tab without copying its FontString. Its text and
 -- clipping stay with Blizzard even when another addon repaints the title.
-local function ApplyTabVisual(self, visual, tab, selected)
+local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
     if not visual.tabLine then
         visual.tabLabel = tab.Text
         visual.tabLine = Fill(tab, "ARTWORK")
     end
     M.tabs[tab] = visual
+    ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
     line:ClearAllPoints()
     line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 5, 1)
@@ -184,9 +210,10 @@ local function ApplyPanel(self, visual, frame, top)
     visual.headerRule:ClearAllPoints()
     visual.headerRule:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, 0)
     visual.headerRule:SetPoint("TOPRIGHT", frame, "TOPRIGHT", c.padding, 0)
-    visual.headerRule:SetHeight(1)
-    Tint(visual.headerRule, c.borderColor, math.min(55, c.borderAlpha))
-    visual.headerRule:SetShown(c.tabPanel and c.panelAlpha > 0)
+    visual.headerRule:SetHeight(2)
+    Tint(visual.headerRule, c.accentColor, c.accentAlpha)
+    visual.headerRule:SetShown(c.tabPanel and c.panelAlpha > 0
+        and c.tabAccent and c.accentAlpha > 0)
     for side = 1, 4 do
         ApplyEdge(visual.edges[side], frame, side, c.borderSize, c.padding, top, c.borderColor, c.borderAlpha)
     end
@@ -221,10 +248,8 @@ end
 
 -- An empty Suite choice follows MSUF; Blizzard's chat font remains an
 -- explicit option and keeps its native ownership and size controls.
-local function ApplyFont(self, frame)
+local function ApplyFont(self, frame, chosenFont)
     local c, context = self.config, self.context
-    local chosenFont = c.font ~= "__BLIZZARD_CHAT_FONT__"
-        and (S.ResolveFont(c.font) or S.GlobalFontPath()) or nil
     local custom = chosenFont or c.fontSize > 0 or c.fontOutline ~= 1 or c.fontRendering ~= 1
     if custom then
         local path, size, flags = frame:GetFont()
@@ -267,13 +292,14 @@ function C.ApplyWindow(self, frame)
     local top = HeaderTop(c, frame)
     ApplyPanel(self, visual, frame, top)
     local tab, input = _G[frame:GetName() .. "Tab"], frame.editBox
+    local tabFont, messageFont = ChosenFont(c.tabFont), ChosenFont(c.font)
     SetNativeChrome(self, frame, tab, input, c.panelAlpha > 0)
-    ApplyTabVisual(self, visual, tab, TabSelected(frame, _G.SELECTED_CHAT_FRAME, DockSelection()))
+    ApplyTabVisual(self, visual, tab, TabSelected(frame, _G.SELECTED_CHAT_FRAME, DockSelection()), tabFont)
     KeepTabVisible(self, frame)
     if frame == _G.ChatFrame1 then ApplySidebar(self, visual, frame) end
     ApplyCopyButton(self, visual, frame, top)
     ApplyInput(self, visual, frame, input)
-    ApplyFont(self, frame)
+    ApplyFont(self, frame, messageFont)
 end
 
 local function HideVisual(visual)
@@ -295,7 +321,10 @@ function C.ReleaseWindow(self, visual)
     local frame = visual.frame
     local tab = _G[frame:GetName() .. "Tab"]
     SetNativeChrome(self, frame, tab, frame.editBox, false)
-    if visual.tabLabel then self.context:RestoreTuple(visual.tabLabel, "SetTextColor") end
+    if visual.tabLabel then
+        self.context:RestoreTuple(visual.tabLabel, "SetTextColor")
+        self.context:RestoreTuple(visual.tabLabel, "SetFont")
+    end
     M.tabs[tab] = nil
     KeepTabVisible(self, frame, true)
 end

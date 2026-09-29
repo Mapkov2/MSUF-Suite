@@ -64,6 +64,8 @@ B.Section(id, "window", "Chat window", {
 B.Section(id, "tabs", "Tabs and accent", {
     B.Bool("tabPanel", "Dark tab strip", initial.tabPanel),
     B.Bool("tabAccent", "Underline chat tabs", initial.tabAccent),
+    B.Font("tabFont", "Font (empty: MSUF global font)"),
+    B.Number("tabFontSize", "Font size", 0, 0, 24),
     B.Color("tabActiveColor", "Active tab text", initial.tabActiveColor),
     B.Color("tabInactiveColor", "Other tab text", initial.tabInactiveColor),
     B.Color("accentColor", "Accent color", initial.accentColor),
@@ -95,6 +97,7 @@ B.Section(id, "tools", "Chat tools", {
 })
 local textRules = NS.SuiteCatalog[id].rules
 textRules.font.defaultLabel = "MSUF global font (default)"
+textRules.tabFont.defaultLabel = "MSUF global font (default)"
 for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
     textRules[key].requiresChoice = { key = "fontShadow", values = { [2] = true } }
 end

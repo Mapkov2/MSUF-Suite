@@ -207,6 +207,13 @@ assert(accepted == 1 and completed == 1 and #rewards == 1 and rewards[1] == 1,
 local handled = quests.handled
 Fire(quests, "QUEST_FINISHED")
 assert(quests.handled == handled and not next(handled), "closing a quest dialog allocated a new record")
+completable = false
+Fire(quests, "QUEST_PROGRESS")
+assert(not quests.handled.QUEST_PROGRESS, "an incomplete quest was marked handled")
+completable = true
+Fire(quests, "QUEST_PROGRESS")
+assert(completed == 2, "a quest that became completable was not retried")
+Fire(quests, "QUEST_FINISHED")
 Fire(quests, "QUEST_DETAIL")
 assert(accepted == 2, "a finished dialog did not allow the next quest")
 
@@ -214,6 +221,7 @@ assert(accepted == 2, "a finished dialog did not allow the next quest")
 questChoices = 2
 Fire(quests, "QUEST_FINISHED")
 Fire(quests, "QUEST_COMPLETE")
+assert(not quests.handled.QUEST_COMPLETE, "manual reward choice was marked handled")
 questChoices, questCost = 1, 5000
 Fire(quests, "QUEST_FINISHED")
 Fire(quests, "QUEST_COMPLETE")

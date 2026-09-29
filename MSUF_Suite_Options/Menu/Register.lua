@@ -10,11 +10,8 @@ local NAV_GROUPS = {
         pages = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_chat", "suite_dataTexts" } },
     { id = "style", title = "Style", fallback = "appearance", pages = { "suite_skin" } },
     { id = "general", title = "General", fallback = "features", after = "gameplay",
-        pages = { "suite_modules", "suite_qualityOfLife" } },
+        pages = { "suite_qualityOfLife" } },
 }
--- Suite Modules (Pages/Modules.lua) lists the modules in these groups, under
--- the group titles the sidebar shows (recorded when the rows are placed).
-P.navGroups, P.navGroupTitles = NAV_GROUPS, {}
 local PAGE_ADDONS = {
     suite_actionbars = { "actionbars" },
     suite_minimap = { "minimap" },
@@ -115,7 +112,6 @@ local function AddNavigation()
     local placed = {}
     local function Place(spec, keys)
         local group = ResolveGroup(items, spec)
-        P.navGroupTitles[spec.id] = P.navGroupTitles[spec.id] or items[FindTitle(items, group)].title
         local after = spec.after
         for _, key in ipairs(keys) do
             local page = pagesByKey[key]
@@ -166,7 +162,7 @@ local function InstallPageResets()
     M._msufSuitePageResetsInstalled = true
     local oldHas, oldWarning = M.PageHasReset, M.BuildPageResetWarning
     local oldReset, oldConfirm = M.ResetPageToDefaults, M.ShowPageResetConfirm
-    -- Second result: whether the page resets (Suite Modules sets reset = false).
+    -- Second result: whether the page resets.
     local function IsSuitePage(key)
         for _, page in ipairs(P.pages) do if page.key == key then return true, page.reset ~= false end end
         return false

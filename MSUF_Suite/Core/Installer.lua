@@ -15,75 +15,10 @@ local moduleOverrides = { suite = {}, forever = {} }
 local INSTALLER_FRAME_LEVEL = 500
 
 -- Installer texts follow the Suite localization: English source strings
--- looked up in MSUF's locale table. That table has no installer strings yet,
--- so their reviewed German wording stays here and German clients keep it.
-local GERMAN = {
-    ["Finish combat first."] = "Bitte zuerst den Kampf beenden.",
-    ["INSTALLATION"] = "INSTALLATION",
-    ["1. Choose a profile"] = "1. Profil wählen",
-    ["Modern keeps your MSUF frames. Forever installs the full factory profile."] = "Modern behält deine MSUF-Frames. Forever installiert das komplette Factory-Profil.",
-    ["2. Select modules"] = "2. Module auswählen",
-    ["Keep the profile defaults or switch individual Suite modules on or off."] = "Übernimm die Profilwerte oder schalte einzelne Suite-Module an oder aus.",
-    ["3. Set UI scale"] = "3. UI-Skalierung wählen",
-    ["Scaling starts off and changes only if you enable it."] = "Skalierung ist zunächst aus und ändert sich nur auf deinen Wunsch.",
-    ["Pixel perfect"] = "Pixelgenau",
-    ["Small"] = "Klein",
-    ["Medium"] = "Mittel",
-    ["Large"] = "Groß",
-    ["Profile activated"] = "Profil aktiviert",
-    ["Your selected settings have been saved."] = "Deine gewählten Einstellungen wurden gespeichert.",
-    ["Reload the interface"] = "Oberfläche neu laden",
-    ["This finishes loading the selected Suite modules."] = "Damit werden die gewählten Suite-Module vollständig geladen.",
-    ["Back"] = "Zurück",
-    ["Not now"] = "Später",
-    ["Continue"] = "Weiter",
-    ["DONE"] = "FERTIG",
-    ["Reload UI"] = "UI neu laden",
-    ["Install"] = "Installieren",
-    ["Welcome to MSUF Suite"] = "Willkommen bei MSUF Suite",
-    ["Set up your interface in a few steps. Nothing changes until you click Install."] = "Richte deine Oberfläche in wenigen Schritten ein. Erst „Installieren“ übernimmt die Auswahl.",
-    ["Choose your profile"] = "Profil auswählen",
-    ["Forever creates a complete profile. Modern keeps your MSUF frames and applies Suite and Skin settings."] = "Forever erstellt ein vollständiges Profil. Modern behält deine MSUF-Frames und übernimmt Suite- und Skin-Einstellungen.",
-    ["Modern  ·  Suite only"] = "Modern  ·  nur Suite",
-    ["Retail default. Applies the included Suite and optional Skin profile; keeps your MSUF frames."] = "Retail-Standard. Übernimmt Suite- und optionales Skin-Profil; behält deine MSUF-Frames.",
-    ["Forever  ·  Complete profile"] = "Forever  ·  vollständiges Profil",
-    ["Applies the current Forever factory to MSUF frames and Suite modules; Skin is included when enabled."] = "Übernimmt die aktuelle Forever-Factory für MSUF-Frames und Suite-Module; Skin bei aktiviertem Addon.",
-    ["SELECTED"] = "GEWÄHLT",
-    ["CHOOSE"] = "WÄHLEN",
-    ["Forever creates a new profile. Existing profiles remain saved."] = "Forever erstellt ein neues Profil. Bestehende Profile bleiben gespeichert.",
-    ["Modern replaces active Suite and optional Skin settings. MSUF frames stay unchanged."] = "Modern ersetzt aktive Suite- und optionale Skin-Einstellungen. MSUF-Frames bleiben unverändert.",
-    ["MSUF spec cooldown profiles"] = "MSUF-Spec-Cooldown-Profile",
-    ["Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM."] = "Raid-Essentials, Utility und Buffs für deinen Spec; aus folgt dem Blizzard-CDM.",
-    ["ON"] = "AN",
-    ["OFF"] = "AUS",
-    ["Choose Suite modules"] = "Suite-Module auswählen",
-    ["The chosen profile supplies all settings. Toggle which Suite modules are enabled in it."] = "Das gewählte Profil liefert alle Einstellungen. Wähle hier die aktivierten Suite-Module.",
-    ["Set UI scale"] = "UI-Skalierung einstellen",
-    ["Global UI scaling is off by default. Turn it on only if you want a different interface size."] = "Globale UI-Skalierung ist standardmäßig aus. Schalte sie nur für eine andere Oberflächengröße ein.",
-    ["UI scaling is on"] = "UI-Skalierung ist an",
-    ["UI scaling is off"] = "UI-Skalierung ist aus",
-    ["Choose a preset below or fine-tune with the slider."] = "Wähle unten eine Stufe oder stelle den Regler frei ein.",
-    ["MSUF restores your current Blizzard UI scale. Click here to enable optional scaling."] = "MSUF stellt deine aktuelle Blizzard-UI-Skalierung wieder her. Zum Aktivieren hier klicken.",
-    ["Presets"] = "Skalierungsstufen",
-    ["No Suite scaling will be applied."] = "Es wird keine Suite-Skalierung angewendet.",
-    ["Review and install"] = "Prüfen und installieren",
-    ["Check your choices. Install applies them together; you can return to any step first."] = "Prüfe deine Auswahl. „Installieren“ übernimmt sie gemeinsam; du kannst vorher zurückgehen.",
-    ["Profile"] = "Profil",
-    ["Forever · complete MSUF and Suite factory"] = "Forever · vollständige MSUF- und Suite-Factory",
-    ["Modern · Suite profile, MSUF frames retained"] = "Modern · Suite-Profil, MSUF-Frames bleiben",
-    ["Modules"] = "Module",
-    ["enabled"] = "aktiv",
-    ["MSUF spec cooldowns"] = "MSUF-Spec-Cooldowns",
-    ["Blizzard cooldowns"] = "Blizzard-Cooldowns",
-    ["UI scaling"] = "UI-Skalierung",
-    ["Pixel perfect · adapts to resolution"] = "Pixelgenau · passt sich der Auflösung an",
-    ["Off · Blizzard setting retained"] = "Aus · Blizzard-Einstellung bleibt",
-    ["Installation complete"] = "Installation abgeschlossen",
-    ["Your new setup is active. Reload the interface to finish loading all selected modules."] = "Deine neue Einrichtung ist aktiv. Lade die Oberfläche neu, damit alle gewählten Module geladen werden.",
-}
-local german = GetLocale() == "deDE"
+-- looked up in MSUF's locale table, which MSUF_Suite/Locales fills for
+-- every supported language (MSUF's own wording wins where it has one).
 local function Text(english)
-    return german and GERMAN[english] or Suite.Text(english)
+    return Suite.Text(english)
 end
 
 -- Refusal reasons arrive as English text and are translated where shown.
@@ -567,11 +502,6 @@ local function BuildResultCards(window)
         InfoCard(window, 36, 103, Text("Reload the interface"),
             Text("This finishes loading the selected Suite modules.")),
     }
-    -- Where to change modules later; Back and Not now are hidden on this page.
-    window.modulesHint = Label(window, "GameFontHighlightSmall", 36, -380, 508, 18)
-    window.openModules = NavButton(window, 36, 15, 200, Text("Open Suite Modules"), function()
-        if Suite.Menu.Open("suite_modules") then window:Hide() end
-    end)
 end
 
 -- Continue walks the pages, installs on the review page and reloads at the end.
@@ -648,8 +578,6 @@ local function ShowPage(f)
     SetShownAll(f.presets, scaling and useScale)
     SetShownAll(f.review, page == 5)
     SetShownAll(f.done, complete)
-    f.modulesHint:SetShown(complete)
-    f.openModules:SetShown(complete)
     f.back:SetShown(page > 1 and not complete)
     f.close:SetShown(not complete)
     f.close:ClearAllPoints()
@@ -759,9 +687,6 @@ end
 local function PaintComplete(f)
     SetPageText(f, "Installation complete",
         "Your new setup is active. Reload the interface to finish loading all selected modules.")
-    -- Suite Modules joins the host's General group; Main MSUF names it Features.
-    local group = Suite.Host.build == "Classic" and "General" or "Features"
-    f.modulesHint:SetText(Text("Change modules any time under %s > %s"):format(Text(group), Text("Suite Modules")))
 end
 
 local PAGE_PAINTERS = { PaintWelcome, PaintProfiles, PaintModules, PaintScaling, PaintReview, PaintComplete }
@@ -792,7 +717,7 @@ end
 -- keep today's order. Opens the installer on a fresh Suite install. Startup
 -- passes "login": then the installer waits while the host's first run is
 -- pending, and the host calls MaybeShow() once it resolves. /msufsuite and
--- the Suite Modules page open the installer at any time.
+-- /msufsuite opens the installer at any time.
 local function HostFirstRunPending()
     if Suite.Host.build ~= "Classic" then return false end
     local firstLoad = _G.MSUF_NS.FirstLoad6

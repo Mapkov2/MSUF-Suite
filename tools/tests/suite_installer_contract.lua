@@ -259,9 +259,8 @@ assert(Suite.RootDB.installation.moduleOverrides.bags == true)
 assert(Suite.RootDB.installation.uiScaleEnabled and Suite.RootDB.installation.uiScale == 0.75)
 assert(scaleChanges[#scaleChanges][1] == "global" and scaleChanges[#scaleChanges][2] == 0.75)
 assert(window.done[1].shown and window.next.caption.text == "Reload UI")
-assert(window.openModules.shown and window.modulesHint.shown
-    and window.modulesHint.text == "Change modules any time under General > Suite Modules",
-    "the completed installer does not point to Suite Modules")
+assert(rawget(window, "openModules") == nil and rawget(window, "modulesHint") == nil,
+    "the completed installer still points to the removed Suite Modules page")
 CheckLayout()
 Suite.Client.isForever = true
 Suite.Installer.Open()
@@ -320,29 +319,44 @@ Suite.SuiteProfiles.InstallFactory, MSUF_ResetGlobalUiScale = installFactory, re
 Suite.Client.isForever = false
 MSUF_GlobalDB.profiles["MSUF Suite Forever"] = nil
 
--- Texts use the Suite localization (MSUF's table by English key); German
--- clients keep the installer's own reviewed wording.
+-- Texts use the Suite localization in every language: MSUF's table by English
+-- key, where MSUF's own wording comes first and MSUF_Suite/Locales adds the
+-- Suite's strings. The client language plays no part.
+local function PackTable(locale, own)
+    local L = setmetatable(own, { __index = function(_, key) return key end })
+    local host = MSUF_NS
+    MSUF_NS = { LOCALE = locale, RegisterLocale = function(requested) return requested == locale and L or {} end }
+    assert(loadfile(root .. "/MSUF_Suite/Locales/" .. locale .. ".lua"))("MSUF_Suite", {})
+    MSUF_NS = host
+    return L
+end
 local function OpenLocalized(locale, L)
-    GetLocale = function() return locale end
+    GetLocale = function() return "enUS" end
     Suite.L = L
     MSUFSuiteInstallFrame = nil
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
     Suite.Installer.Open()
     return assert(MSUFSuiteInstallFrame)
 end
-window = OpenLocalized("deDE", { Continue = "Fortfahren" })
-assert(window.title.text == "Willkommen bei MSUF Suite" and window.next.caption.text == "Weiter"
-    and window.close.caption.text == "Später", "German installer wording regressed")
+local de = PackTable("deDE", { Continue = "Fortfahren" })
+local welcome, combat = rawget(de, "Welcome to MSUF Suite"), rawget(de, "Finish combat first.")
+assert(welcome and welcome ~= "Welcome to MSUF Suite" and combat, "the German Suite pack lacks the installer texts")
+window = OpenLocalized("deDE", de)
+assert(window.title.text == welcome and window.next.caption.text == "Fortfahren"
+    and window.close.caption.text == (rawget(de, "Not now") or "Not now"),
+    "the German installer does not read the Suite pack, or it replaced MSUF's own wording")
 -- A refusal stays English until the status line shows it, translated once.
 Suite.IsCombatLocked = function() return true end
 local refused, refusal = Suite.Installer.Apply()
 assert(not refused and refusal == "Finish combat first.", "the installer translated a refusal before showing it")
 for _ = 1, 5 do window.next.scripts.OnClick() end
-assert(window.status.text == "|cffff6666Bitte zuerst den Kampf beenden.|r",
+assert(window.status.text == "|cffff6666" .. combat .. "|r",
     "the installer status line did not translate the refusal")
 Suite.IsCombatLocked = function() return false end
-window = OpenLocalized("frFR", { Continue = "Continuer" })
-assert(window.next.caption.text == "Continuer" and window.title.text == "Welcome to MSUF Suite",
-    "installer ignored the Suite localization table")
+local fr = PackTable("frFR", { Continue = "Continuer" })
+window = OpenLocalized("frFR", fr)
+assert(window.next.caption.text == "Continuer" and rawget(fr, "Welcome to MSUF Suite")
+    and window.title.text == rawget(fr, "Welcome to MSUF Suite"),
+    "the installer ignored the Suite localization in another language")
 GetLocale, Suite.L = function() return "enUS" end, nil
 print("Suite installer: profiles, module selection, optional scaling, layout, localization and completion passed")

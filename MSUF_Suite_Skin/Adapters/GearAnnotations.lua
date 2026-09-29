@@ -683,9 +683,14 @@ end
 
 function Gear.Update(v, row, slotName)
     if NS.IsCombatLocked() then return end
-    local slot = v.kind == "character" and _G["Character" .. slotName]
+    -- Inspect owns a separate set of native slots. Use the same read-only
+    -- annotations beside those slots after INSPECT_READY has populated rows.
+    local prefix = v.kind == "inspect" and "Inspect" or "Character"
+    local slot = _G[prefix .. slotName]
     local config = NS.DB.characterDetails
-    local inline = config.view and config.view == "modern" or (not config.view and config.inlineGear)
+    local inline
+    if v.kind == "inspect" then inline = config.inlineGear ~= false
+    else inline = config.view and config.view == "modern" or (not config.view and config.inlineGear) end
     if not inline or not slot or not NS.Safety.CanCreateRegions(slot, true) then
         HideAnnotation(row.annotation)
         return

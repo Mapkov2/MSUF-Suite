@@ -13,27 +13,31 @@ and lists (choice labels) that reach one.
 
 Usage (from the Suite root; Python 3.12, no third-party packages):
   python tools/suite_locale_tool.py extract [--out PATH] [--tsv -]
-      Sorted TSV of the strings: id, class (chrome|help), english, msuf
-      (locales where MSUF's own packs already translate it), used (sink and
-      file:line). Default output: _local_workflows/locale/suite_strings.tsv.
+      Sorted TSV of the strings: id, class (chrome|help, +pending while a
+      delta pass is due), english (\\n \\t \\\\ escaped), msuf (locales whose
+      MSUF packs already translate it on both hosts), proper (1: names and
+      abbreviations only), used (sink and file:line).
+      Default output: _local_workflows/locale/suite_strings.tsv.
   python tools/suite_locale_tool.py missing --locale deDE|all [--format tsv|json] [--class chrome|help]
       Strings a Suite locale file still lacks (MSUF's packs cover the rest).
   python tools/suite_locale_tool.py apply --locale deDE --input FILE [--replace]
       Merges translations into MSUF_Suite/Locales/<locale>.lua. FILE is TSV
       (id<TAB>translation, `\\n` for a line break) or the JSON of `missing`
-      with a "translation" field per entry. Every entry is checked first.
+      with a "translation" field per entry (a string, or {locale: text}).
+      Every entry is checked first; strings MSUF's packs cover are skipped.
   python tools/suite_locale_tool.py verify [--quiet]
       Every locale file: keys exist in the extraction, format specifiers
       match, scripts fit the language, coverage >= 99% chrome / 95% help.
-  python tools/suite_locale_tool.py dynamic      strings built at runtime, which cannot translate
+  python tools/suite_locale_tool.py dynamic [--all]   text built at runtime, which cannot translate
   python tools/suite_locale_tool.py orphans      English-looking literals no sink reaches (review aid)
+  python tools/suite_locale_tool.py sinks        every discovered sink and what made it one (debug aid)
   python tools/suite_locale_tool.py glossary TERM...   how MSUF's packs translate a term
 
 Delta pass (new strings from other work):
   1. python tools/suite_locale_tool.py missing --locale all --format json > C:/tmp/delta.json
-  2. translate: add "translation" to each entry (per locale), or write one
-     TSV per locale with id<TAB>translation
-  3. python tools/suite_locale_tool.py apply --locale deDE --input deDE.tsv   (per locale)
+  2. translate: add "translation": {"deDE": "...", ...} to each entry, or
+     write one TSV per locale with id<TAB>translation
+  3. python tools/suite_locale_tool.py apply --locale deDE --input C:/tmp/delta.json   (per locale)
   4. remove the file from DELTA_PENDING below once its strings are translated
   5. python tools/suite_locale_tool.py verify && python tools/run_suite_tests.py locale
 """
@@ -57,8 +61,15 @@ CORE = "MSUF_Suite"
 # `missing`, but do not count against the coverage gate yet. Remove a file
 # once its strings are translated.
 DELTA_PENDING = (
-    "MSUF_Suite_Options/Pages/Modules.lua",
     "MSUF_Suite_Options/Menu/Search.lua",
+    # The new action, item, loadout and popup text has a German delta pass;
+    # the other Suite locale packs still need their native translations.
+    "MSUF_Suite/Core/Catalog/Bags.lua",
+    "MSUF_Suite/Core/Catalog/QualityOfLife.lua",
+    "MSUF_Suite_Options/Pages/QualityOfLife.lua",
+    "MSUF_Suite_QualityOfLife/ActionTracker.lua",
+    "MSUF_Suite_QualityOfLife/ItemCounts.lua",
+    "MSUF_Suite_QualityOfLife/LoadoutReminder.lua",
 )
 CHROME_MIN, HELP_MIN = 0.99, 0.95
 
@@ -633,8 +644,6 @@ BASE_SINKS = [
     # Menu2 font strings (T.Font) translate what SetText gives them; only
     # literals count, so runtime values are never followed.
     ("MSUF_Suite_Options", re.compile(r":SetText$"), {0: "t"}),
-    # The cooldown manager page's note line paints through a T.Font string.
-    ("MSUF_Suite_Options", re.compile(r"(?:^|\.)Page\.(?:Note|WithUndo)$"), {0: "s"}),
 ]
 SHAPES = {"s": ("s",), "t": ("t",)}
 # Menu2 and other external namespaces: calls through them never match a
@@ -722,7 +731,10 @@ class Extractor:
         text = f.tokens[k].value
         if not is_translatable(text):
             return
-        if not direct and identifier_like(text):
+        # A plain lowercase word from a list that goes straight into a
+        # translation call (SIDES "below", "above") is a word, not a key.
+        wording = re.fullmatch(r"[a-z]+", text) and re.search(r"(?:^|[.:])(?:Tr|Text)#0$", sink)
+        if not direct and identifier_like(text) and not wording:
             return
         # Keys never read as prose, even when passed straight to a sink.
         if re.fullmatch(r"[a-z]+[A-Z]\w*|\w*_\w*|[a-z0-9]+(?:-[a-z0-9]+)+", text):
@@ -778,14 +790,6 @@ class Extractor:
             last = re.split(r"[.:]", resolved)[-1]
             candidates = [d for d in self.defs_by_last.get(last, []) if d.file.addon == f.addon]
         return candidates
-
-    @staticmethod
-    def encloses(outer, inner):
-        while inner is not None:
-            if inner is outer:
-                return True
-            inner = inner.parent
-        return False
 
     @staticmethod
     def visible(f, d):
@@ -1351,17 +1355,23 @@ def verify(records, quiet=False):
             problems.append("%s: help coverage %d/%d (%.1f%%) is below %d%%"
                             % (locale, help_, help_total, 100.0 * help_ / help_total, HELP_MIN * 100))
         if not quiet:
-            print("%s: %d entries; chrome %d/%d, help %d/%d" % (locale, len(entries), chrome, chrome_total,
-                                                                help_, help_total))
+            shadowed = sum(1 for r in records if locale in r.msuf and r.english in entries)
+            pending = sum(1 for r in records if r.pending and locale not in r.msuf and r.english not in entries)
+            print("%s: %d entries; chrome %d/%d, help %d/%d; %d waiting for a delta pass; %d shadowed by MSUF's pack"
+                  % (locale, len(entries), chrome, chrome_total, help_, help_total, pending, shadowed))
     return problems
 
 
 # ---------------------------------------------------------------- commands
 def write_tsv(records, stream):
-    stream.write("id\tclass\tenglish\tmsuf\tused\n")
+    """Columns: id, class (+pending while a delta pass is due), english
+    (\\n, \\t and \\\\ escaped), msuf (locales MSUF's packs already cover),
+    proper (1: proper names and abbreviations only, may stay Latin), used."""
+    stream.write("id\tclass\tenglish\tmsuf\tproper\tused\n")
     for r in records:
         cls = r.cls + ("+pending" if r.pending else "")
-        stream.write("%s\t%s\t%s\t%s\t%s\n" % (r.id, cls, escape_field(r.english), ",".join(r.msuf), r.used()))
+        stream.write("%s\t%s\t%s\t%s\t%d\t%s\n" % (r.id, cls, escape_field(r.english), ",".join(r.msuf),
+                                                 1 if proper_noun_like(r.english) else 0, r.used()))
 
 
 def option(args, name, default=None):
@@ -1461,11 +1471,15 @@ def cmd_apply(args):
     batch = read_batch(source, locale)
     entries = read_locale(locale)
     replace = "--replace" in args
-    problems, added, replaced, skipped = [], 0, 0, 0
+    problems, added, replaced, skipped, msuf = [], 0, 0, 0, 0
     for sid, text in batch.items():
         r = by_id.get(sid)
         if r is None:
             problems.append("%s: unknown id (re-run `missing`)" % sid)
+            continue
+        if locale in r.msuf:
+            # MSUF's own packs translate it; the pack never redefines their keys.
+            msuf += 1
             continue
         found = check_entry(locale, r.english, text)
         if found:
@@ -1482,8 +1496,8 @@ def cmd_apply(args):
     for problem in problems:
         print("REJECTED " + problem)
     write_locale(locale, entries)
-    print("%s: %d added, %d replaced, %d kept (use --replace), %d rejected; %d entries"
-          % (locale, added, replaced, skipped, len(problems), len(entries)))
+    print("%s: %d added, %d replaced, %d kept (use --replace), %d left to MSUF's pack, %d rejected; %d entries"
+          % (locale, added, replaced, skipped, msuf, len(problems), len(entries)))
     return 1 if problems else 0
 
 

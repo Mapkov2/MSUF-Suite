@@ -1,6 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local M = { addons = { Blizzard_FrameXML = true, Blizzard_UIPanels_Game = true } }
+local M = {}
 local Public = S.Public
 local LOOT_EVENTS = { "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED" }
 -- Script hooks cannot be removed. Each history frame is hooked once; the

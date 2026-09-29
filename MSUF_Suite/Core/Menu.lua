@@ -47,13 +47,13 @@ end
 
 -- Opens a suite page through MSUF's public menu entry point. MSUF's facade
 -- loads its options addon on demand, which in turn attaches the suite pages.
--- Without a page it opens Suite Modules, the overview of every module.
+-- Without a page it opens the MSUF dashboard.
 function Menu.Open(page)
     if Suite.IsCombatLocked() then return false end
     local open = _G.MSUF2_Open
     if type(open) ~= "function" then return false end
     if Suite.Client.IsAddOnLoaded(HOST_OPTIONS) and not Menu.Attach() then return false end
-    open(page or "suite_modules")
+    open(page or "home")
     return true
 end
 
@@ -78,7 +78,6 @@ function Suite.GetOverview()
         version = displayVersion,
         total = #order,
         enabled = enabled,
-        pageKey = Menu.attached == true and "suite_modules" or nil,
         needsSetup = type(installation) ~= "table" or installation.status ~= "complete",
     }
 end

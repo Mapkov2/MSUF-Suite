@@ -199,6 +199,7 @@ NS.Defaults = {
     },
     typography = {
         enabled = true,
+        followMSUF = true,
         face = "sharedMedia",
         sharedMediaFont = "MapkoSkin - Expressway ExtraBold",
         customPath = "",

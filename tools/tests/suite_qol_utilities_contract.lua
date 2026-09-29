@@ -52,6 +52,13 @@ end
 local links = { "item:1", "item:2", "item:3" }
 local levels = { [1] = 510 }
 local requests, merchantHook = {}, nil
+local paintTimers = {}
+C_Timer = { NewTimer = function(_, callback)
+    local timer = { callback = callback }
+    function timer:Cancel() self.canceled = true end
+    paintTimers[#paintTimers + 1] = timer
+    return timer
+end }
 MERCHANT_ITEMS_PER_PAGE = 2
 MerchantFrame = { shown = true, selectedTab = 1, page = 1,
     IsShown = function(self) return self.shown end }
@@ -86,9 +93,34 @@ merchantHook()
 assert(#requests == 1, "merchant redraw requested the same item twice")
 levels[2] = 490
 Fire(merchant, "GET_ITEM_INFO_RECEIVED", 2)
+assert(#paintTimers == 1 and merchant.paintTimer == paintTimers[1],
+    "item-load event did not coalesce its merchant repaint")
+paintTimers[1].callback()
 assert(merchant.labels[2].shown and merchant.labels[2].text == 490
     and not merchant.context.events.GET_ITEM_INFO_RECEIVED,
     "loaded item level did not appear or its event remained active")
+levels[1], levels[2], merchant.requested = nil, nil, {}
+merchantHook()
+levels[1], levels[2] = 510, 490
+Fire(merchant, "GET_ITEM_INFO_RECEIVED", 1)
+Fire(merchant, "GET_ITEM_INFO_RECEIVED", 2)
+assert(#paintTimers == 2 and merchant.paintTimer == paintTimers[2],
+    "two item-load events scheduled more than one repaint")
+paintTimers[2].callback()
+assert(merchant.labels[1].shown and merchant.labels[2].shown
+    and not merchant.context.events.GET_ITEM_INFO_RECEIVED,
+    "batched item loads did not repaint both merchant labels")
+levels[1], merchant.requested[1] = nil, nil
+merchantHook()
+Fire(merchant, "GET_ITEM_INFO_RECEIVED", 1)
+local stalePaint = paintTimers[#paintTimers]
+Fire(merchant, "MERCHANT_CLOSED")
+assert(stalePaint.canceled and not merchant.labels[1].shown,
+    "closing the merchant retained an item repaint")
+levels[1] = 510
+stalePaint.callback()
+assert(not merchant.labels[1].shown, "a canceled item repaint revived a closed merchant label")
+Fire(merchant, "MERCHANT_SHOW")
 MerchantFrame.page = 2
 merchantHook()
 assert(not merchant.labels[1].shown and not merchant.labels[2].shown,

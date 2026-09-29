@@ -262,8 +262,9 @@ module.config = {
     borderSize = 1, accentColor = "57c7df", accentAlpha = 88, tabAccent = true,
     tabActiveColor = "f4f7fb", tabInactiveColor = "aab5c2",
     tabPanel = true, sidebarPanel = true, sidebarWidth = 28,
-    inputPanel = true, inputColor = "0a1522", inputAlpha = 86, padding = 4, fontSize = 15,
-    font = "", fontOutline = 1, fontRendering = 3, fontShadow = 1,
+    inputPanel = true, inputColor = "0a1522", inputAlpha = 86, padding = 4,
+    fontSize = 15, tabFontSize = 0,
+    font = "", tabFont = "", fontOutline = 1, fontRendering = 3, fontShadow = 1,
     copyMessages = false,
 }
 module:Enable()
@@ -290,6 +291,8 @@ end
 assert(ChatFrame1.font[3] == "SLUG" and ChatFrame1.shadowColor[4] == 0,
     "default chat messages did not use Slug")
 assert(ChatFrame1.font[1] == globalFont, "default chat font did not inherit MSUF Fonts")
+assert(ChatFrame1Tab.Text.font[1] == globalFont and ChatFrame1Tab.Text.font[2] == 12,
+    "native chat tab title did not inherit MSUF font and Blizzard's size")
 assert(ctx.callbacks.UPDATE_CHAT_WINDOWS and ctx.callbacks.UPDATE_FLOATING_CHAT_WINDOWS
     and temporaryHook and newWindowHook and selectHook and tabAlphaHook and tabColorsHook)
 assert(not ctx.callbacks.CHAT_MSG_SAY and not ctx.callbacks.CHAT_MSG_CHANNEL)
@@ -337,6 +340,39 @@ assert(sidebar.tabLabel == ChatFrame1Tab.Text and sidebar.tabLabel:GetText() == 
     and math.abs(sidebar.tabLabel.color[3] - activeB) < 0.001,
     "a renamed tab gained duplicate text or lost its configured color")
 ChatFrame1Tab.Text:SetText("General")
+module.config.tabFontSize = 18
+module:Refresh()
+assert(ChatFrame1Tab.Text.font[1] == globalFont and ChatFrame1Tab.Text.font[2] == 18
+    and sidebar.tabLabel == ChatFrame1Tab.Text and sidebar.tabLabel:GetText() == "General",
+    "tab size changed ownership or replaced Blizzard's native title")
+module.config.tabFontSize = 0
+module:Refresh()
+assert(ChatFrame1Tab.Text.font[2] == 12, "tab size 0 did not follow Blizzard's tab size")
+module.config.tabFont = "TestFont"
+module:Refresh()
+assert(ChatFrame1Tab.Text.font[1] == "Test.ttf" and ChatFrame1.font[1] == globalFont,
+    "tab font choice changed message text or failed to style the native title")
+module.config.tabFont = "__BLIZZARD_CHAT_FONT__"
+module:Refresh()
+assert(ChatFrame1Tab.Text.font[1] == "Fonts/FRIZQT__.TTF",
+    "the Blizzard tab font choice did not restore its original face")
+module.config.tabFont = ""
+module:Refresh()
+local textureCount = #textures
+module.config.accentAlpha = 0
+module:Refresh()
+assert(not sidebar.tabLine.shown and not sidebar.headerRule.shown,
+    "zero accent opacity left the chat accent visible")
+module.config.accentAlpha = 35
+module:Refresh()
+assert(sidebar.tabLine.shown and sidebar.headerRule.shown
+    and math.abs(sidebar.tabLine.color[4] - 0.35) < 0.001
+    and math.abs(sidebar.headerRule.color[4] - 0.35) < 0.001
+    and sidebar.headerRule.height == 2
+    and #textures == textureCount,
+    "accent opacity did not update the underline and full-width rule in place")
+module.config.accentAlpha = 88
+module:Refresh()
 assert(sidebar.buttons[1].glyph.path == "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png",
     "MSUF glyph texture was replaced by a solid color")
 UnitClass = function() return "Mage", "MAGE" end
@@ -493,6 +529,8 @@ globalFont = "MSUF-Changed.ttf"
 module:Refresh()
 assert(ChatFrame1.font[1] == globalFont and ChatFrame1.font[2] == 16,
     "MSUF's changed global font did not update chat while keeping Blizzard's chat size")
+assert(ChatFrame1Tab.Text.font[1] == globalFont and ChatFrame1Tab.Text.font[2] == 12,
+    "MSUF's changed global font did not update the native tab title")
 ChatFrame2 = Frame("ChatFrame2")
 ChatFrame2.isDocked = true
 -- Synthetic second static tab covers the native title selection contract;
@@ -670,6 +708,8 @@ assert(not module.visuals[ChatFrame1].panel.shown and not module.visuals[ChatFra
 assert(not module.visuals[ChatFrame1].input.shown)
 assert(not module.visuals[ChatFrame1].sidebar.shown)
 assert(not sidebar.sidebarFrame.shown and QuickJoinToastButton.alpha == 1 and QuickJoinToastButton.mouse)
+assert(ChatFrame1Tab.Text.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1Tab.Text.font[2] == 12,
+    "disabling Chat did not restore Blizzard's native tab font")
 assert(ChatFrame1.Background.shown and ChatFrame1TopLeftTexture.shown
     and ChatFrame1ButtonFrameBackground.shown,
     "disabling chat did not restore Blizzard chrome")

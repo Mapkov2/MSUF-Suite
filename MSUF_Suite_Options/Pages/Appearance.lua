@@ -452,7 +452,7 @@ end
 
 ------------------------------------------------------------------ sections
 -- The whole Skinning module: Blizzard windows and Suite windows together.
--- Its switch here and on the Suite Modules page use these two functions.
+-- The Skinning page uses these functions for its switch.
 function P.SkinningEnabled()
     local skin = _G.MapkoSkin
     if Suite.Skin.enabled == true then return true end

@@ -46,6 +46,7 @@ B.Section("bags", "appearance", "Window appearance", {
 
 B.Section("bags", "itemLevels", "Item levels", {
     B.Bool("showItemLevel", "Show item levels on equipment", true),
+    B.Bool("showBindBadge", "Show BoE and Warbound badges on items"),
     B.Number("itemLevelSize", "Item level text size", 12, 8, 20),
     B.Bool("qualityColor", "Color item levels by quality", true),
     B.Font("font", "Item level font"),
@@ -71,6 +72,7 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+rules.showBindBadge.hidden = NS.Client.isForever
 rules.itemLevelSize.enableKey = "showItemLevel"
 rules.qualityColor.enableKey = "showItemLevel"
 rules.font.enableKey = "showItemLevel"
