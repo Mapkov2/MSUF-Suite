@@ -34,7 +34,14 @@ local function Sync(self, event)
     if not S.Public(grouped) or grouped ~= true or not S.Public(raid) then return end
     local units = raid and RAID or PARTY
     local watched = {}
-    for i = 1, #units do watched[i] = units[i] end
+    for i = 1, #units do
+        local unit = units[i]
+        -- Like upstream/live CompactUnitFrame, compare identity rather than
+        -- token text. Raid lists include the player; watch that identity only
+        -- through "player" below, and skip restricted comparisons.
+        local isPlayer = raid and UnitIsUnit(unit, "player")
+        if S.Public(isPlayer) and not isPlayer then watched[#watched + 1] = unit end
+    end
     if self.config.includePlayer then watched[#watched + 1] = "player" end
     local baseline = {}
     for i = 1, #watched do

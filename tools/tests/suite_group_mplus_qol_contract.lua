@@ -272,4 +272,66 @@ assert(#chat == beforeChat and #notices == beforeNotices + 1
     and notices[#notices] == "Keystone was reset")
 reset:Disable()
 assert(not reset.context.events.CHALLENGE_MODE_RESET)
-print("Suite group finder, keystone, bloodlust, Delve and reset lifecycle passed")
+
+-- Raid tokens contain the player, unlike party tokens. Keep one canonical
+-- player token so the own-death toggle also works in raids without duplicates.
+local raid, selfToken = true, "raid1"
+local unitDead, restricted = {}, {}
+inCombat = true
+IsInGroup = function() return true end
+IsInRaid = function() return raid end
+local function canonical(unit) return unit == selfToken and "player" or unit end
+UnitExists = function(unit)
+    return unit == "player" or unit == selfToken or unit == "raid2" or unit == "party1"
+end
+UnitIsUnit = function(unit, other)
+    if restricted[unit] then return "secret" end
+    return canonical(unit) == canonical(other)
+end
+UnitIsDeadOrGhost = function(unit) return unitDead[canonical(unit)] == true end
+UnitName = function(unit) return canonical(unit) == "player" and "Self" or "Teammate" end
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
+    "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
+local death = assert(installed.groupDeathAlert)
+death.active, death.context, death.config = true, context(), { includePlayer = false }
+death:Enable()
+local deathNotices = #notices
+unitDead.player = true
+death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", selfToken)
+death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "player")
+assert(#notices == deathNotices, "own raid death ignored includePlayer=false")
+unitDead.raid2 = true
+death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "raid2")
+assert(#notices == deathNotices + 1 and notices[#notices] == "Teammate died")
+
+unitDead = {}
+death.config.includePlayer = true
+death:Refresh()
+deathNotices = #notices
+unitDead.player = true
+death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", selfToken)
+death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "player")
+death.context.events.UNIT_FLAGS(death, "UNIT_FLAGS", "player")
+assert(#notices == deathNotices + 1 and notices[#notices] == "Self died",
+    "own raid death was omitted or reported through both aliases")
+
+-- Roster changes replace the old alias; unreadable identity never enters
+-- the baseline. Party behavior still includes the player exactly once.
+unitDead, selfToken = {}, "raid3"
+restricted.raid2 = true
+death.context.events.GROUP_ROSTER_UPDATE(death, "GROUP_ROSTER_UPDATE")
+assert(death.dead[selfToken] == nil and death.dead.raid2 == nil and death.dead.player == false,
+    "roster rebuild kept a player alias or used restricted identity")
+raid, restricted = false, {}
+death:Refresh()
+deathNotices = #notices
+unitDead.player, unitDead.party1 = true, true
+death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "player")
+death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "party1")
+assert(#notices == deathNotices + 2, "party death behavior changed")
+inCombat = false
+death.context.events.PLAYER_REGEN_ENABLED(death, "PLAYER_REGEN_ENABLED")
+assert(not death.dead and not death.context.events.UNIT_HEALTH and not death.context.events.UNIT_FLAGS,
+    "death alert kept watching health outside combat")
+death:Disable()
+print("Suite group finder, keystone, bloodlust, Delve, reset and death lifecycle passed")
