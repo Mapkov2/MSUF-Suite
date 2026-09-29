@@ -9,6 +9,16 @@ NS.DataTextSourceKeys = {
     false, "gold", "bags", "durability", "clock", "fps", "latency", "coordinates", "location", "xp", "sessionGold", "date", "fpsLatency",
 }
 NS.DataTextPoints = NS.AnchorPoints
+
+function NS.CenterDefaultDataTexts(modules)
+    local data = modules.dataTexts
+    -- The Retail Suite installer once placed this bar at the right edge.
+    -- Change only its untouched coordinates; Forever uses that edge on purpose.
+    if type(data) == "table" and data.bar1Point == 9
+        and data.bar1X == 0 and data.bar1Y == 170 then
+        data.bar1Point = 8
+    end
+end
 -- The same player-state choices as the unit-frame Load Conditions. Every bar
 -- owns its settings so one information strip can stay visible independently.
 NS.DataTextLoadConditions = {

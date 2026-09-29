@@ -14,6 +14,7 @@ local W = H.New(root, flavor, { beforeModules = function(world)
     G.GetGameTime = function() return 14, 3 end
     G.GetServerTime = function() return 1700000000 + world.now end
     G.GetNetStats = function() return 0, 0, 30, 50 end
+    G.GetPhysicalScreenSize = function() return 1024, 768 end
     G.C_Container = {
         GetContainerNumSlots = function() return 20 end,
         GetContainerNumFreeSlots = function() return 8, 0 end,
@@ -111,7 +112,7 @@ assert(legacyLooks.suite.modules.chat.look == 3
     "look migration changed the same profile twice")
 if flavor == "Forever" then
     local footer = S.Config("dataTexts")
-    assert(footer.enabled and footer.bar1Point == 9 and footer.bar1Width == 340
+    assert(footer.enabled and footer.bar1Point == 9 and footer.bar1X == -20 and footer.bar1Width == 340
         and footer.bar1Layout == 2
         and footer.bar1Slot1 == 3 and footer.bar1Slot2 == 4 and footer.bar1Slot3 == 5,
         "Forever footer defaults are not bags, durability and clock at bottom right")
@@ -135,6 +136,7 @@ if flavor == "Forever" then
     assert(old.suite.revision == S.MigrationRevision
         and old.suite.modules.dataTexts.bar1Width == 340
         and old.suite.modules.dataTexts.bar1Layout == 2
+        and old.suite.modules.dataTexts.bar1Point == 9 and old.suite.modules.dataTexts.bar1X == -20
         and old.suite.modules.damageMeter.w1Y == 60
         and old.suite.modules.damageMeter.w2Y == 250
         and old.suite.modules.actionbars.bar1Visibility == 4
@@ -158,6 +160,7 @@ if flavor == "Forever" then
     } } }
     S.Normalize(custom)
     assert(custom.suite.modules.dataTexts.bar1Width == 300
+        and custom.suite.modules.dataTexts.bar1Point == 9
         and custom.suite.modules.damageMeter.w1Width == 290
         and custom.suite.modules.actionbars.bar1Visibility == 1
         and custom.suite.modules.chat.inputColor == "222222"
@@ -170,8 +173,15 @@ if flavor == "Forever" then
     footer.backgroundOpacity = 82
 elseif flavor == "Mainline" then
     local footer = S.Config("dataTexts")
-    assert(footer.hideBlizzardBagBar == true and footer.bar1Slot1 == 3,
+    assert(footer.hideBlizzardBagBar == true and footer.bar1Point == 8 and footer.bar1Slot1 == 3,
         "Retail starter bar must provide a bag DataText before hiding Blizzard bags")
+    local installed = { suite = { modules = { dataTexts = {
+        bar1Point = 9, bar1X = 0, bar1Y = 170,
+    } } } }
+    S.Normalize(installed)
+    assert(installed.suite.modules.dataTexts.bar1Point == 8
+        and installed.suite.modules.dataTexts.bar1Y == 170,
+        "old Suite DataTexts preset was not centered")
     local older = { suite = { modules = {
         dataTexts = { bar1Slot1 = 2, bar1Slot2 = 5, bar1Slot3 = 6 },
         damageMeter = { bgColor = "000000" },
@@ -248,11 +258,53 @@ assert(S.Set("dataTexts", "fontRendering", 3))
 assert(bar.slots[1].label.font[3] == "OUTLINE,SLUG"
     and bar.slots[1].label.shadowColor[4] == 0,
     "DataText Slug retained a shadow")
+local pixelBefore = { bar1X = S.Config("dataTexts").bar1X,
+    bar1Y = S.Config("dataTexts").bar1Y,
+    bar1Width = S.Config("dataTexts").bar1Width,
+    bar1Height = S.Config("dataTexts").bar1Height,
+    bar1Layout = S.Config("dataTexts").bar1Layout,
+    borderEnabled = S.Config("dataTexts").borderEnabled,
+    accentEnabled = S.Config("dataTexts").accentEnabled }
+G.GetPhysicalScreenSize = function() return 800, 512 end
+assert(S.SetMany("dataTexts", { bar1X = 11, bar1Y = 83, bar1Width = 395,
+    bar1Height = 26, bar1Layout = 1, borderEnabled = true, accentEnabled = true }))
+local pixelBar = M.bars[1]
+local _, _, _, px, py = pixelBar.frame:GetPoint()
+assert(px == 10.5 and py == 82.5
+    and pixelBar.frame.width == 394.5 and pixelBar.frame.height == 25.5
+    and pixelBar.border[1].height == 1.5 and pixelBar.accent.height == 1.5,
+    ("DataTexts physical grid: x=%s y=%s w=%s h=%s border=%s accent=%s")
+        :format(tostring(px), tostring(py), tostring(pixelBar.frame.width),
+            tostring(pixelBar.frame.height), tostring(pixelBar.border[1].height),
+            tostring(pixelBar.accent.height)))
+G.GetPhysicalScreenSize = function() return 1024, 768 end
+W.Event("DISPLAY_SIZE_CHANGED")
+assert(pixelBar.border[1].height == 1 and pixelBar.accent.height == 1,
+    "DataTexts did not refresh pixel strokes after screen resolution changed")
+G.UIParent:SetScale(0.5)
+W.Event("UI_SCALE_CHANGED")
+assert(pixelBar.border[1].height == 2 and pixelBar.accent.height == 2,
+    "DataTexts did not refresh pixel strokes after UI scale changed")
+G.UIParent:SetScale(1)
+W.Event("UI_SCALE_CHANGED")
+assert(S.SetMany("dataTexts", pixelBefore))
 local styledTextureWrites, styledFontWrites = textureWrites, fontWrites
 W.Advance(2)
 assert(textureWrites == styledTextureWrites and fontWrites == styledFontWrites,
     "sampled data update repeated cold-path texture or font styling")
-assert(W.movers["MSUFSuite.dataTexts/bar1"], "DataTexts bar is missing in Edit Mode")
+local dataMover = assert(W.movers["MSUFSuite.dataTexts/bar1"], "DataTexts bar is missing in Edit Mode")
+assert(dataMover.centerPopup == true, "DataTexts Edit Mode popup did not request the screen center")
+assert(#dataMover.extraControls == 4
+    and dataMover.extraControls[1].id == "bar1X"
+    and dataMover.extraControls[2].id == "bar1Y"
+    and dataMover.extraControls[3].id == "width"
+    and dataMover.extraControls[4].id == "height",
+    "DataTexts popup must expose exact position, width and height")
+local dataBefore = dataMover.captureState()
+assert(dataMover.extraControls[4].set(34) and S.Config("dataTexts").bar1Height == 34
+    and dataMover.restoreState(dataBefore)
+    and S.Config("dataTexts").bar1Height == dataBefore.values.bar1Height,
+    "DataTexts popup height must apply and support undo")
 money = 112345
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[1].text == "Gold: 11g", "gold event did not update the bar")

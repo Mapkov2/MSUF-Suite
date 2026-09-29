@@ -83,7 +83,7 @@ Suite.SuiteProfiles = {
     EnsureRetailResourceStack = function() return false end,
     InstallSuiteFactory = function(name, profile, skin)
         assert(name == "Default" and skin == Suite.RetailFactorySkinCompact)
-        assert(profile.suite.modules.dataTexts.bar1Point == 9
+        assert(profile.suite.modules.dataTexts.bar1Point == 8
             and profile.suite.modules.dataTexts.bar1X == 0
             and profile.suite.modules.actionbars.bar1Point == 8
             and profile.suite.modules.actionbars.bar3Point == 7

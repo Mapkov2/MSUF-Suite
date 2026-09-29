@@ -384,9 +384,9 @@ local MIGRATIONS = {
     { run = JundiesNameplatePalette },
     { run = NameplateNativeCastOpacity },
     { run = FriendlyPlayerDisplay },
+    { run = NS.CenterDefaultDataTexts },
 }
 S.MigrationRevision = #MIGRATIONS
-
 local REPAIRS = {
     AnnouncementsAnchor, AnnouncementsFactory, DataTextsBagButtons, SkyridingColors, ObjectivesCollapseState,
 }

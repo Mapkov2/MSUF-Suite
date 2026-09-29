@@ -10,6 +10,7 @@ end
 
 function Appearance.Paint(bar)
     local style, background = bar.style, bar.background
+    local pixel = bar.pixelUnit or 1
     local fade = style.backgroundEnabled and style.backgroundGradient
     background:SetShown(style.backgroundEnabled == true and not fade)
     bar.gradient:SetShown(fade == true)
@@ -33,12 +34,13 @@ function Appearance.Paint(bar)
         edge:SetShown(style.borderEnabled == true)
         if style.borderEnabled then
             Color(edge, style.borderColor, .85)
-            if i <= 2 then edge:SetHeight(style.borderSize) else edge:SetWidth(style.borderSize) end
+            if i <= 2 then edge:SetHeight(style.borderSize * pixel) else edge:SetWidth(style.borderSize * pixel) end
         end
     end
     bar.accent:SetShown(style.accentEnabled == true)
     if style.accentEnabled then
-        local inset = style.bagBadge and style.bagBadgeSize + 8 or 0
+        bar.accent:SetHeight(pixel)
+        local inset = style.bagBadge and math.floor((style.bagBadgeSize + 8) / pixel + 0.5) * pixel or 0
         bar.accent:ClearAllPoints()
         if style.accentPosition == 2 then
             bar.accent:SetPoint("TOPLEFT", bar.frame, "TOPLEFT", inset, 0)
@@ -51,9 +53,10 @@ function Appearance.Paint(bar)
     end
     bar.badge:SetShown(style.bagBadge == true)
     if style.bagBadge then
-        bar.badge:SetSize(style.bagBadgeSize, style.bagBadgeSize)
+        local badgeSize = math.floor(style.bagBadgeSize / pixel + 0.5) * pixel
+        bar.badge:SetSize(badgeSize, badgeSize)
         bar.badge:ClearAllPoints()
-        bar.badge:SetPoint("LEFT", bar.frame, "LEFT", 4, 0)
+        bar.badge:SetPoint("LEFT", bar.frame, "LEFT", math.floor(4 / pixel + 0.5) * pixel, 0)
     end
     for _, divider in pairs(bar.dividers) do Color(divider, style.separatorColor, .8) end
 end

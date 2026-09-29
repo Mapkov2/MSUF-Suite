@@ -4,10 +4,12 @@ local Appearance = assert(P.Appearance)
 local M = { bars = {}, due = {}, values = {}, events = {} }
 local ID = "dataTexts"
 local BAR_COUNT, SLOT_COUNT = 3, 6
-local FONT = NS.MSUFMedia.font
 local BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.tga"
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
+local function Snap(value, pixel)
+    return math.floor(value / pixel + 0.5) * pixel
+end
 local SOURCES = {
     gold = true, sessionGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
@@ -387,9 +389,10 @@ end
 -- text widths scaled to fill the bar.
 local function SlotWidths(bar, count)
     local c, style, widths = M.config, bar.style, layoutWidths
-    local configuredWidth = c[bar.widthKey]
-    local inset = style.bagBadge and style.bagBadgeSize + 8 or 0
-    local gaps = (count - 1) * style.gap
+    local pixel = bar.pixelUnit or 1
+    local configuredWidth = Snap(c[bar.widthKey], pixel)
+    local inset = style.bagBadge and Snap(style.bagBadgeSize + 8, pixel) or 0
+    local gaps = (count - 1) * Snap(style.gap, pixel)
     if c[bar.layoutKey] ~= 2 then
         if bar.frame:GetWidth() ~= configuredWidth then bar.frame:SetWidth(configuredWidth) end
         for i = 1, count do widths[i] = (configuredWidth - inset - gaps) / count end
@@ -401,7 +404,7 @@ local function SlotWidths(bar, count)
         widths[i] = math.max(44, math.ceil(layoutSlots[i].label:GetUnboundedStringWidth()) + 2 * style.padding)
         total = total + widths[i]
     end
-    local needed = math.min(900, math.max(configuredWidth, total + gaps + inset))
+    local needed = Snap(math.min(900, math.max(configuredWidth, total + gaps + inset)), pixel)
     if bar.frame:GetWidth() ~= needed then bar.frame:SetWidth(needed) end
     local ratio = (needed - inset - gaps) / total
     for i = 1, count do widths[i] = widths[i] * ratio end
@@ -416,14 +419,16 @@ local function PlaceDivider(bar, index, x, height)
         ApplyColor(divider, style.separatorColor, .8)
     end
     divider:ClearAllPoints()
-    divider:SetPoint("CENTER", bar.frame, "LEFT", x + style.gap / 2, 0)
-    divider:SetSize(style.separatorSize, math.max(6, height - 2 * style.padding))
+    local pixel = bar.pixelUnit or 1
+    divider:SetPoint("CENTER", bar.frame, "LEFT", Snap(x + Snap(style.gap, pixel) / 2, pixel), 0)
+    divider:SetSize(style.separatorSize * pixel, Snap(math.max(6, height - 2 * Snap(style.padding, pixel)), pixel))
     divider:Show()
 end
 
 -- Auto-layout bars relayout on value changes, so this allocates nothing.
 local function Layout(bar)
     local style, slots, widths = bar.style, layoutSlots, layoutWidths
+    local pixel = bar.pixelUnit or 1
     local count = 0
     for i = 1, SLOT_COUNT do
         local button = bar.slots[i]
@@ -435,21 +440,23 @@ local function Layout(bar)
     for _, divider in pairs(bar.dividers) do divider:Hide() end
     if count == 0 then return end
     SlotWidths(bar, count)
-    local height = M.config[bar.heightKey]
-    local x = style.bagBadge and style.bagBadgeSize + 8 or 0
+    local height = Snap(M.config[bar.heightKey], pixel)
+    local x = style.bagBadge and Snap(style.bagBadgeSize + 8, pixel) or 0
+    local gap = Snap(style.gap, pixel)
     for i = 1, count do
         local button, width = slots[i], widths[i]
+        local left, right = Snap(x, pixel), Snap(x + width, pixel)
         button:ClearAllPoints()
-        button:SetPoint("LEFT", bar.frame, "LEFT", x, 0)
-        button:SetSize(width, height)
-        local inset = math.max(0, math.min(style.padding, floor((width - 4) / 2)))
+        button:SetPoint("LEFT", bar.frame, "LEFT", left, 0)
+        button:SetSize(right - left, height)
+        local inset = Snap(math.max(0, math.min(style.padding, floor((width - 4) / 2))), pixel)
         button.label:ClearAllPoints()
         button.label:SetPoint("LEFT", button, "LEFT", inset, 0)
         button.label:SetPoint("RIGHT", button, "RIGHT", -inset, 0)
         x = x + width
         if i < count then
             if style.separatorEnabled then PlaceDivider(bar, i, x, height) end
-            x = x + style.gap
+            x = x + gap
         end
     end
 end
@@ -760,10 +767,12 @@ local function RefreshBar(index)
     local c = M.config
     local bar = CreateBar(index)
     local prefix, frame = bar.prefix, bar.frame
+    local pixel = S.PixelUnit() or 1
+    bar.pixelUnit = pixel
     frame:ClearAllPoints()
     local point = NS.DataTextPoints[c[prefix .. "Point"]] or "BOTTOM"
-    frame:SetPoint(point, UIParent, point, c[prefix .. "X"], c[prefix .. "Y"])
-    frame:SetSize(c[bar.widthKey], c[bar.heightKey])
+    frame:SetPoint(point, UIParent, point, Snap(c[prefix .. "X"], pixel), Snap(c[prefix .. "Y"], pixel))
+    frame:SetSize(Snap(c[bar.widthKey], pixel), Snap(c[bar.heightKey], pixel))
     bar.style = NS.DataTextEffectiveStyle(c, index)
     if bar.style.valueClassColor then
         local _, class = UnitClass("player")
@@ -777,7 +786,7 @@ local function RefreshBar(index)
     end
     Appearance.Paint(bar)
     local style = bar.style
-    local font = S.ResolveFont(style.font) or FONT
+    local font = S.ResolveFont(style.font) or S.GlobalFontPath()
     for slot = 1, SLOT_COUNT do
         local button = bar.slots[slot]
         local choice = c[prefix .. "Slot" .. slot]
@@ -807,10 +816,16 @@ local function AddonLoaded(_, _, addon)
     if addon == "Blizzard_MainMenuBarBagButtons" then SyncNativeBagBar() end
 end
 
+local function ScaleChanged(module)
+    if NS.IsCombatLocked() then S.Queue(ID) else module:Refresh() end
+end
+
 function M:Enable()
     self:Refresh()
     SyncNativeBagBar()
     self.context:Event("ADDON_LOADED", AddonLoaded, true)
+    self.context:Event("UI_SCALE_CHANGED", ScaleChanged)
+    self.context:Event("DISPLAY_SIZE_CHANGED", ScaleChanged)
 end
 
 function M:Disable()
@@ -846,6 +861,7 @@ function M:RegisterMovers()
             local prefix = keys.prefix
             movers[i] = {
                 label = "DataTexts bar " .. i, order = 690 + i,
+                centerPopup = true,
                 getFrame = function() return M.bars[index] and M.bars[index].frame end,
                 isEnabled = function() return M.config[keys.enabled] == true end,
                 xKey = prefix .. "X", yKey = prefix .. "Y", pointKey = prefix .. "Point",
@@ -855,6 +871,9 @@ function M:RegisterMovers()
                     { id = "width", label = "Width", kind = "number", min = 180, max = 900, step = 1,
                         get = function() return S.Config(ID)[prefix .. "Width"] end,
                         set = function(value) return S.Set(ID, prefix .. "Width", value) end },
+                    { id = "height", label = "Height", kind = "number", min = 18, max = 100, step = 1,
+                        get = function() return S.Config(ID)[prefix .. "Height"] end,
+                        set = function(value) return S.Set(ID, prefix .. "Height", value) end },
                 },
             }
         end

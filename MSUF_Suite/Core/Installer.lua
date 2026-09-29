@@ -167,10 +167,10 @@ local function PreparedProfile()
     end
     if selected == "suite" then
         -- The supplied export was positioned around a 1440p screen centre.
-        -- Keep its visual settings but anchor the visible groups to screen
-        -- edges, so changing resolution or UI scale cannot push them away.
+        -- Keep its visual settings but use stable screen anchors, so changing
+        -- resolution or UI scale cannot push the visible groups away.
         local texts = modules.dataTexts
-        if texts then texts.bar1Point, texts.bar1X, texts.bar1Y = 9, 0, 170 end
+        if texts then texts.bar1Point, texts.bar1X, texts.bar1Y = 8, 0, 170 end
     end
     local cooldowns = modules.cooldownManager
     if cooldowns and RetailCooldowns() then
