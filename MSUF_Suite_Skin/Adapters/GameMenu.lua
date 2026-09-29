@@ -29,6 +29,16 @@ local BUTTON_SPEC = {
     pillHeight = 32,
     inset = 2,
 }
+-- MSUF anchors its button to the same 200x36 bounds as Blizzard's buttons.
+-- Its visible border must use those bounds too, rather than losing two pixels
+-- on each side to the generic Game Menu button inset.
+local MSUF_BUTTON_SPEC = {
+    role = "button",
+    activeRole = "buttonPrimary",
+    useControlShape = true,
+    pillHeight = 32,
+    inset = 0,
+}
 local SHELL_SPEC = { role = "shell", inset = 0 }
 local HEADER_SPEC = {
     role = "navigationActive",
@@ -49,17 +59,33 @@ local function SkinActiveButtons(pool, owner)
     end
 end
 
--- Correctly integrated addon buttons can be direct GameMenuFrame children
--- instead of members of Blizzard's pool. Cover only bounded, structurally
--- verified three-slice buttons; no addon name or foreign field is assumed.
-local function SkinDirectThreeSliceButtons(owner, ...)
+-- Addon buttons can be direct GameMenuFrame children instead of pool members.
+-- MSUF's own button may use the panel-button fallback template on some clients.
+local function SkinDirectButtons(frame, owner, ...)
+    local msufButton = Field(frame, "MSUF")
+    local pool = frame.buttonPool
     for index = 1, math.min(select("#", ...), GameMenuSkin.directChildLimit) do
         local button = select(index, ...)
-        if Kit.ObjectType(button) == "Button" and Field(button, "Left")
-            and Field(button, "Center") and Field(button, "Right") then
-            SkinButton(button, owner)
+        -- MainMenuFrameTemplates parents pooled buttons to this same frame;
+        -- the pool pass already handles them once per native rebuild.
+        if Kit.ObjectType(button) == "Button" and not pool:IsActive(button) then
+            if Field(button, "Left") and Field(button, "Center") and Field(button, "Right") then
+                if button == msufButton then
+                    if Safety.CanControl(button, false) then
+                        NS.ControlSkin.ApplyThreeSliceButton(button, owner, MSUF_BUTTON_SPEC)
+                    end
+                else
+                    SkinButton(button, owner)
+                end
+            elseif button == msufButton and Safety.CanControl(button, false) then
+                NS.ControlSkin.ApplyButton(button, owner, MSUF_BUTTON_SPEC)
+            end
         end
     end
+end
+
+local function SkinDirectChildren(frame, owner)
+    Safety.Dispatch(SkinDirectButtons, frame, owner, Safety.Call(frame, "GetChildren"))
 end
 
 local function FadeShell(frame, owner)
@@ -99,6 +125,13 @@ local function OnButtonsInitialized(frame)
     local frameState = frameStates[frame]
     if not frameState or not activeFrames[frame] or NS.IsCombatLocked() then return end
     Safety.Dispatch(SkinActiveButtons, frame.buttonPool, frameState.owner)
+    SkinDirectChildren(frame, frameState.owner)
+    -- Other addons can create their button in an OnShow hook after InitButtons.
+    -- Store/trial events may rebuild the pool again before that next frame.
+    if not frameState.directRefreshQueued then
+        frameState.directRefreshQueued = true
+        C_Timer.After(0, frameState.refreshDirectChildren)
+    end
 end
 
 local function HookInitButtons(frame)
@@ -127,6 +160,13 @@ function GameMenuSkin.Apply(frame, owner)
     local frameState = frameStates[frame]
     if not frameState then
         frameState = { textColors = Kit.NewTextColors() }
+        frameState.refreshDirectChildren = function()
+            frameState.directRefreshQueued = nil
+            if activeFrames[frame] and not NS.IsCombatLocked()
+                and Safety.Read(frame, "IsShown") == true then
+                SkinDirectChildren(frame, frameState.owner)
+            end
+        end
         frameStates[frame] = frameState
     end
 
@@ -140,7 +180,7 @@ function GameMenuSkin.Apply(frame, owner)
     FadeShell(frame, owner)
     Kit.SetTextColor(frameState.textColors, HeaderText(frame), "title")
     SkinActiveButtons(pool, owner)
-    SkinDirectThreeSliceButtons(owner, Safety.Call(frame, "GetChildren"))
+    SkinDirectChildren(frame, owner)
 
     frameState.owner = owner
     activeFrames[frame] = true

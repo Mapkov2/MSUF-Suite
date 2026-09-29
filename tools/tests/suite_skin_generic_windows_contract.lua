@@ -1080,6 +1080,12 @@ Section("edit mode and game menu pools", function()
             Acquire = function() acquires = acquires + 1; return Frame(nil) end,
             Release = function() end,
             GetNumActive = function() return #active end,
+            IsActive = function(_, object)
+                for _, button in ipairs(active) do
+                    if button == object then return true end
+                end
+                return false
+            end,
             EnumerateActive = function()
                 local index = 0
                 return function()
@@ -1139,22 +1145,105 @@ Section("edit mode and game menu pools", function()
 
     acquires = 0
     local skinned = {}
-    NS.ControlSkin.ApplyThreeSliceButton = function(button)
-        skinned[button] = true
+    local skinnedInset = {}
+    local pending = {}
+    local priorTimer = C_Timer
+    C_Timer = { After = function(_, callback) pending[#pending + 1] = callback end }
+    NS.ControlSkin.ApplyThreeSliceButton = function(button, _, spec)
+        skinned[button] = (skinned[button] or 0) + 1
+        skinnedInset[button] = spec.inset
+        return {}
+    end
+    local panelSkinned = {}
+    local panelInset = {}
+    local priorApplyButton = NS.ControlSkin.ApplyButton
+    NS.ControlSkin.ApplyButton = function(button, _, spec)
+        panelSkinned[button] = true
+        panelInset[button] = spec.inset
         return {}
     end
     local buttons = { Frame(nil) }
+    buttons[1].GetObjectType = function() return "Button" end
+    buttons[1].Left, buttons[1].Center, buttons[1].Right = {}, {}, {}
     local menu = Frame("GameMenuFrame")
+    menu.shown = true
+    function menu:IsShown() return self.shown end
+    menu.children[1] = buttons[1]
     menu.buttonPool = Pool(buttons)
     function menu:InitButtons() end
     local header = Text(1, 0.82, 0)
     menu.Header = { Text = header }
     NS.GameMenuSkin.Apply(menu, "menu")
+    Expect(skinned[buttons[1]] == 1, "the Game Menu initial pass skinned a pooled button twice")
     Expect(acquires == 0, "the Game Menu acquired Blizzard pool frames from addon code")
     buttons[2] = Frame(nil)
+    local direct = Frame(nil)
+    function direct:GetObjectType() return "Button" end
+    direct.Left, direct.Center, direct.Right = {}, {}, {}
+    menu.children[2] = direct
     menu:InitButtons()
+    Expect(skinned[buttons[1]] == 2, "the Game Menu rebuild skinned a pooled button twice")
     Expect(skinned[buttons[1]] and skinned[buttons[2]],
         "Game Menu buttons Blizzard acquired were not skinned")
+    Expect(skinned[direct], "a direct Game Menu button added after the first pass was not skinned")
+    menu:InitButtons()
+    menu:InitButtons()
+    Expect(#pending == 1, "Game Menu rebuilds did not coalesce their late direct-button pass")
+    local late = Frame(nil)
+    function late:GetObjectType() return "Button" end
+    late.Left, late.Center, late.Right = {}, {}, {}
+    menu.children[3] = late
+    local msuf = Frame(nil)
+    function msuf:GetObjectType() return "Button" end
+    menu.MSUF, menu.children[4] = msuf, msuf
+    local msufThree = Frame(nil)
+    function msufThree:GetObjectType() return "Button" end
+    msufThree.Left, msufThree.Center, msufThree.Right = {}, {}, {}
+    Expect(#pending == 1, "Game Menu did not schedule a late direct-button pass")
+    local poolApplies = skinned[buttons[1]]
+    pending[1]()
+    Expect(skinned[buttons[1]] == poolApplies, "the Game Menu late pass re-skinned active pooled buttons")
+    Expect(skinned[late] and panelSkinned[msuf],
+        "Game Menu buttons added after InitButtons did not receive the Suite skin")
+    Expect(skinnedInset[buttons[1]] == 2 and skinnedInset[late] == 2,
+        "the Game Menu pool or other direct buttons lost their normal inset")
+    -- The reported regression had identical 200x36 button frame bounds for
+    -- Macros and MSUF, but MSUF's painted edge lost two pixels per side.
+    -- Verify the rendered edge reaches those shared bounds after the late pass.
+    local macroBounds = { left = 1180, right = 1380, top = 400, bottom = 364 }
+    local function BorderMatchesMacros(inset)
+        if type(inset) ~= "number" then return false end
+        local msufBounds = { left = 1180, right = 1380, top = 400, bottom = 364 }
+        return msufBounds.left + inset == macroBounds.left
+            and msufBounds.right - inset == macroBounds.right
+            and msufBounds.top - inset == macroBounds.top
+            and msufBounds.bottom + inset == macroBounds.bottom
+    end
+    Expect(BorderMatchesMacros(panelInset[msuf]),
+        "the MSUF fallback button border does not align with Macros")
+    menu.MSUF, menu.children[4] = msufThree, msufThree
+    menu:InitButtons()
+    Expect(BorderMatchesMacros(skinnedInset[msufThree]),
+        "the MSUF three-slice button border does not align with Macros")
+    for _, stop in ipairs({ "hidden", "combat", "disabled" }) do
+        menu:InitButtons()
+        local reads = menu.childReads
+        if stop == "hidden" then menu.shown = false end
+        if stop == "combat" then locked = true end
+        if stop == "disabled" then NS.GameMenuSkin.Disable(menu, "menu") end
+        Expect(pending[#pending] == pending[1], "Game Menu rebuild allocated another late-pass callback")
+        pending[#pending]()
+        Expect(menu.childReads == reads, "Game Menu late pass still ran while " .. stop)
+        menu.shown, locked = true, false
+    end
+    NS.GameMenuSkin.Apply(menu, "menu")
+    menu:InitButtons()
+    local resumedReads = menu.childReads
+    pending[#pending]()
+    Expect(menu.childReads == resumedReads + 1,
+        "Game Menu late pass did not resume after an inactive or combat callback")
+    C_Timer = priorTimer
+    NS.ControlSkin.ApplyButton = priorApplyButton
     -- The native title color comes back only while the theme's is shown.
     header:SetTextColor(0.5, 0.5, 0.5)
     NS.GameMenuSkin.Disable(menu, "menu")
