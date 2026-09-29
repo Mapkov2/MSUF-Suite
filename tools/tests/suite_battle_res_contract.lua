@@ -86,6 +86,7 @@ local NS = {
     IsCombatLocked = function() return false end,
 }
 NS.Suite = S
+assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/BattleRes.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 

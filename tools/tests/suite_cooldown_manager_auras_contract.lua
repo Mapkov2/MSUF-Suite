@@ -455,6 +455,8 @@ assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Sui
 local CDM=NS.CDM
 local S=NS.Suite or {}
 NS.Suite=S
+S.ApplyOwnedLayer=function() return false end
+S.ApplyOwnedChildLayer=function() return false end
 -- Run this contract with MSUF_TEST_FOREVER=1 as well: mapped Blizzard kit
 -- sounds must use the same file playback and native aura registration there.
 if os.getenv("MSUF_TEST_FOREVER")=="1" then NS.Client.isForever=true end

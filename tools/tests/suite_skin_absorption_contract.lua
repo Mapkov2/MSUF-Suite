@@ -297,6 +297,7 @@ do
         "a public API client claimed a button IconSkin owns: " .. tostring(claimReason))
     namespace.IconSkin.DisableOwner("adapter-icon-contract")
     client:ReleaseAll()
+    client:Unregister()
 end
 assert(namespace.DB.typography.sharedMediaFont == "MapkoSkin - Expressway ExtraBold")
 assert(namespace.DB.typography.followMSUF == true,
@@ -349,7 +350,7 @@ assert(forever.appearance.shellOpacity == 0.92
     and forever.geometry.radius == 12
     and math.abs(namespace.PresetOverrides.foreverGlass.background[1] - 20 / 255) < 0.001,
     "Forever system windows did not restore the backed-up graphite look")
-local defaultLook = simulateForever and "foreverGlass" or "midnightDark"
+local defaultLook = "cleanModern"
 assert(namespace.Theme.ApplyLook(defaultLook), "client default look cannot be applied")
 assert(namespace.Defaults.enabled and namespace.Defaults.skins.blizzardWindows,
     "Blizzard window skinning must be enabled on fresh profiles")
@@ -386,6 +387,7 @@ for _, frameName in ipairs({ "CharacterFrame", "PVEFrame", "ProfessionsFrame",
         "Midnight Dark does not cover Blizzard menu root " .. frameName)
 end
 if not simulateForever then
+    assert(namespace.Theme.ApplyLook("midnightDark"))
     local hover = namespace.Theme.GetColorTable("hover")
     assert(hover[1] == 168 / 255 and hover[2] == 173 / 255
         and namespace.DB.theme.hoverStyle == "outline",
@@ -433,6 +435,7 @@ if not simulateForever then
     namespace.Surface.SetActive(selectedRow, false)
     assert(not selection.edge.shown, "old Settings category kept its selected outline")
     local previousDark = namespace.CopyValue(namespace.Defaults)
+    assert(namespace.Theme.StyleProfile(previousDark, "midnightDark"))
     previousDark.revision = 47
     previousDark.theme.hoverStyle = "softFill"
     previousDark.theme.hoverIntensity = 0.68
@@ -452,6 +455,7 @@ if not simulateForever then
     assert(customHover.theme.hoverStyle == "softFill"
         and customHover.theme.colors.hover[1] == 0.31,
         "Dark hover migration overwrote a custom color")
+    assert(namespace.Theme.ApplyLook(defaultLook))
 end
 do
     -- 12.x getters may return secret colors. Native gold is recolored only
@@ -935,11 +939,12 @@ end
 assert(namespace.Defaults.theme.look == defaultLook
     and namespace.Defaults.theme.preset == namespace.LookPresets[defaultLook].palette,
     "fresh skin profile did not start with the client's look")
-assert(#namespace.LookOrder == 3
-    and namespace.LookOrder[1] == "midnight"
-    and namespace.LookOrder[2] == "midnightDark"
-    and namespace.LookOrder[3] == "foreverGlass",
-    "Skinning menu must expose Blue, Dark and Forever")
+assert(#namespace.LookOrder == 4
+    and namespace.LookOrder[1] == "cleanModern"
+    and namespace.LookOrder[2] == "midnight"
+    and namespace.LookOrder[3] == "foreverGlass"
+    and namespace.LookOrder[4] == "midnightDark",
+    "Skinning menu must expose Clean Modern, Blue, Forever and Dark")
 do
     local saved = namespace.CopyValue(namespace.Defaults)
     saved.revision = 33
@@ -951,12 +956,59 @@ do
         and saved.theme.colors.accent[1] == 0.21,
         "new client defaults replaced an existing skin profile")
 end
-assert(namespace.Defaults.icons.microMenu.preset == (simulateForever and "forever" or "midnightDark")
+assert(namespace.Defaults.icons.microMenu.preset == "modern"
     and namespace.Defaults.icons.microMenu.iconStyle == "bold"
+    and (simulateForever or (namespace.Defaults.icons.microMenu.spacing == 5
+        and namespace.Defaults.icons.microMenu.padding == 5))
     and namespace.Defaults.icons.microMenu.tint == "theme"
     and namespace.Defaults.hud.objectiveTrackerStyle == nil
     and namespace.Defaults.skins.objectiveTracker == nil,
     "fresh Suite skin profile must leave Blizzard tracker styling out")
+if not simulateForever then
+    local factory = namespace.CopyValue(namespace.Defaults)
+    factory.revision = 50
+    factory.icons.microMenu.spacing = 1
+    factory.icons.microMenu.padding = 6
+    factory.icons.microMenu.layoutX = -518
+    namespace.Database.Normalize(factory)
+    assert(factory.icons.microMenu.spacing == 5 and factory.icons.microMenu.padding == 5,
+        "old Retail panel-side Micro Bar did not reach the DataTexts top")
+    local previous = namespace.CopyValue(namespace.Defaults)
+    previous.revision = 51
+    previous.icons.microMenu.padding = 6
+    namespace.Database.Normalize(previous)
+    assert(previous.icons.microMenu.spacing == 5 and previous.icons.microMenu.padding == 5,
+        "revision 51 Micro Bar retained its 1-2px top-edge mismatch")
+    local custom = namespace.CopyValue(namespace.Defaults)
+    custom.revision = 50
+    custom.icons.microMenu.spacing = 2
+    namespace.Database.Normalize(custom)
+    assert(custom.icons.microMenu.spacing == 2,
+        "Micro Bar alignment migration replaced custom grid spacing")
+    local moved = namespace.CopyValue(namespace.Defaults)
+    moved.revision = 50
+    moved.icons.microMenu.spacing = 1
+    moved.icons.microMenu.layoutX = -400
+    namespace.Database.Normalize(moved)
+    assert(moved.icons.microMenu.spacing == 1,
+        "Micro Bar alignment migration changed a freely positioned bar")
+    local originalMicro = namespace.DB.icons.microMenu
+    namespace.DB.icons.microMenu = namespace.CopyValue(namespace.Defaults.icons.microMenu)
+    assert(namespace.MicroMenuSkin.ApplyPreset("modern")
+        and namespace.DB.icons.microMenu.padding == 5
+        and namespace.DB.icons.microMenu.scale == 0.7,
+        "reapplying Modern lost the panel-edge alignment")
+    assert(namespace.MicroMenuSkin.ApplyPreset("blizzard")
+        and namespace.MicroMenuSkin.ApplyPreset("modern")
+        and namespace.DB.icons.microMenu.padding == 5
+        and namespace.DB.icons.microMenu.scale == 0.7,
+        "returning from Blizzard Micro Buttons lost the panel-edge alignment")
+    assert(namespace.Theme.ApplyLook("midnight")
+        and namespace.DB.icons.microMenu.padding == 5,
+        "changing Suite looks lost the panel-edge alignment")
+    assert(namespace.Theme.ApplyLook(defaultLook))
+    namespace.DB.icons.microMenu = originalMicro
+end
 do
     local profile = namespace.CopyValue(namespace.Defaults)
     profile.windowControls.scales.CharacterFrame = 1.23
@@ -1458,6 +1510,18 @@ do
                     "Midnight Micro Bar did not apply its blue icon frame")
             end
         end
+        if preset == "modern" then
+            local plate = namespace.MicroMenuVisual.GetState(buttons[1]).plate
+            local previousLook = namespace.DB.theme.look
+            namespace.DB.theme.look = "cleanModern"
+            namespace.MicroMenuSkin.RefreshActive()
+            assert(plate:IsDesaturated(), "Clean Modern retained the blue Micro Bar plate")
+            namespace.DB.theme.look = "midnight"
+            namespace.MicroMenuSkin.RefreshActive()
+            assert(not plate:IsDesaturated(), "Midnight lost its blue Micro Bar plate")
+            namespace.DB.theme.look = previousLook
+            namespace.MicroMenuSkin.RefreshActive()
+        end
         if simulateForever and preset == "forever" then
             for _, name in ipairs({ "SpellbookMicroButton", "TalentMicroButton",
                     "LegacyMicroButton" }) do
@@ -1623,10 +1687,16 @@ if simulateForever then
         "Forever profession background did not restore after disabling")
     _G.ProfessionsFrame = nil
 end
-assert(looks == 3 and palettes >= 5,
+assert(looks == 4 and palettes >= 5,
     "Client look catalog or palette collection changed")
 
 local private = {}
+_G.MSUFSuite = { Client = {
+    AttachControllerWindow = function() end,
+    PauseControllerWindow = function() end,
+    ResumeControllerWindow = function() end,
+    RaiseControllerCursor = function() end,
+} }
 local optionsToc = read("MSUF_Suite_Skin_Options/MSUF_Suite_Skin_Options_Mainline.toc")
 assert(optionsToc:find("## LoadOnDemand: 1", 1, true))
 for line in optionsToc:gmatch("[^\r\n]+") do
@@ -1702,8 +1772,8 @@ assert(forever.Client.flavor == "Forever" and forever.Client.isMainline
 do
     local retail = { Client = { flavor = "Mainline", isMainline = true, isForever = false } }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", retail)
-    assert(retail.Defaults.theme.look == "midnightDark" and #retail.LookOrder == 3,
-        "the Retail skin client did not start with Midnight Dark")
+    assert(retail.Defaults.theme.look == "cleanModern" and #retail.LookOrder == 4,
+        "the Retail skin client did not start with Clean Modern")
 end
 do
     -- Classic project IDs are no Suite client any more.
@@ -1749,6 +1819,81 @@ for _, addon in ipairs({ "MSUF_Suite_Skin", "MSUF_Suite_Skin_Options" }) do
         if stale then stale:close() end
         assert(not stale, addon .. " still ships a " .. flavor .. " TOC")
     end
+end
+if not simulateForever then
+    local msufRoot = assert(arg[3], "Retail MSUF root required for the Suite Skin Menu2 contract")
+    Frame.SetToplevel = Frame.SetToplevel or function() end
+    namespace.PublicAPI.playerReady = true
+    namespace.DB.enabled = true
+    local suiteApi, apiReason = namespace.GetAPI(2, 1)
+    assert(suiteApi and suiteApi:IsEnabled(), "Suite API unavailable for MSUF: "
+        .. tostring(apiReason) .. " ready=" .. tostring(namespace.PublicAPI.playerReady)
+        .. " migrating=" .. tostring(namespace.migrationOnly))
+    assert(not namespace.migrationOnly, "Suite Skin remained in migration-only mode")
+    function Frame:HookScript(script, callback)
+        local previous = self:GetScript(script)
+        self:SetScript(script, function(...)
+            if previous then previous(...) end
+            callback(...)
+        end)
+    end
+    _G.MSUF_DB = { general = {} }
+    _G.MSUF_SetFontChecked = function(fs, font, size, flags)
+        fs:SetFont(font, size, flags)
+        return true
+    end
+    local menu = {}
+    function menu.Lines(value) return value:gmatch("[^\r\n]+") end
+    function menu.WordList(value)
+        local words = {}
+        for word in value:gmatch("%S+") do words[#words + 1] = word end
+        return words
+    end
+    function menu.AssignNamedValues(target, names, ...)
+        local index = 0
+        for name in names:gmatch("%S+") do index = index + 1; target[name] = select(index, ...) end
+    end
+    function menu.Tr(value) return value end
+    menu.Translate = menu.Tr
+    function menu.FindPageEntry() return nil end
+    local msuf = { MSUF2 = menu, Translate = menu.Tr,
+        ExportPublic = function(key, value) _G[key] = value end }
+    local function LoadMSUF(path)
+        return assert(loadfile(msufRoot .. "/" .. path))("MidnightSimpleUnitFrames", msuf)
+    end
+    LoadMSUF("MidnightSimpleUnitFrames/Shell/UI/MSUF_MapkoSkin.lua")
+    LoadMSUF("MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_Theme_Tokens.lua")
+    LoadMSUF("MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_Theme.lua")
+    local theme = menu.Theme
+    local shell = new_frame("Frame", "SuiteSkinMenuShell", UIParent)
+    local host = new_frame("Frame", "SuiteSkinMenuHost", shell)
+    shell.host = host
+    menu.frame = shell
+    local veil = menu.ShowFocusVeil(host, "dropdown", { referenceFrame = shell })
+    assert(veil and veil._msuf2FocusDim and veil._msuf2FocusDim:IsShown()
+        and not namespace.Registry.GetSurface(veil),
+        "Suite Skin turned the dropdown veil into an opaque panel")
+    menu.ResetFocusVeil("dropdown")
+    local nav = theme.Button(host, "Auras", 120, 24)
+    nav._msuf2NavItem = true
+    nav:RefreshVisual()
+    nav:SetActive(true)
+    assert(nav._msuf2SkinnedSelectionCue and nav._msuf2SkinnedSelectionCue.line:IsShown(),
+        "Suite Skin did not show the active Auras navigation cue: active="
+            .. tostring(msuf.MenuSkin.IsActive()) .. " surface="
+            .. tostring(namespace.Registry.GetSurface(nav)))
+    assert(nav._msuf2SkinnedSelectionCue.wash.colorTexture[4] >= 0.18
+        and nav._msuf2SkinnedSelectionCue.line.colorTexture[4] >= 0.90
+        and nav._msuf2SkinnedSelectionCue.line.width >= 3,
+        "Suite Skin Auras selection cue is too faint")
+    local choice = theme.Button(host, "Debuffs", 96, 24)
+    choice._msuf2SegmentChoice = true
+    choice:SetActive(true)
+    assert(choice._msuf2SkinnedSelectionCue and choice._msuf2SkinnedSelectionCue.line:IsShown(),
+        "Suite Skin did not show the selected Debuffs cue")
+    choice:SetActive(false)
+    assert(not choice._msuf2SkinnedSelectionCue.line:IsShown(),
+        "Suite Skin kept the Debuffs cue after deselection")
 end
 print("Suite skin: " .. looks .. " looks, " .. palettes .. " palettes, all submenus, migration and Forever route passed")
 ]=]

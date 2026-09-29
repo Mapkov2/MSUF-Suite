@@ -685,7 +685,8 @@ MSUFSuite=Suite
 MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() return true end}}
 SlashCmdList={}
 MSUF_PixelLayoutRegion=function(frame) return frame end
-for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings","Suite"}) do
+for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings",
+    "Catalog/DataTexts","Suite"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
@@ -1477,10 +1478,10 @@ assert(Button(2,1).button.icon.unmasked,"square icons drop the template mask")
 assert(#Suite.ActionBarLookPresets == 3 or (Suite.ActionBarLookPresets[1]
     and Suite.ActionBarLookPresets[2] and Suite.ActionBarLookPresets[3]),
     "Action Bar Blue, Dark and Forever looks are missing")
-assert(S.Config("actionbars").look == 2 and S.Config("actionbars").borderColor == "575b58",
-    "new Retail Action Bars did not use Midnight Dark")
+assert(S.Config("actionbars").look == 5 and S.Config("actionbars").borderColor == "333333",
+    "new Retail Action Bars did not use Clean Modern")
 assert(Button(2,1).borderEdges[1].shown
-    and math.abs(Button(2,1).borderEdges[1].color[1] - 87 / 255) < .01)
+    and math.abs(Button(2,1).borderEdges[1].color[1] - 51 / 255) < .01)
 assert(S.SetMany("actionbars",{borderClassColor=true,highlightStyle=2,pushedStyle=4,iconZoom=10}))
 local style=Button(2,1)
 assert(math.abs(style.borderEdges[1].color[1]-.78)<.01 and style.button.HighlightTexture.color and style.button.PushedTexture.alpha==0)

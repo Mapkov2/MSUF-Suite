@@ -288,6 +288,9 @@ assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state
 assert(loadfile(root .. "/MSUF_Suite_Bags/Bags.lua"))("MSUF_Suite_Bags", {
     NS = state, Suite = S,
 })
+assert(loadfile(root .. "/MSUF_Suite_Bags/BankItemLevel.lua"))("MSUF_Suite_Bags", {
+    NS = state, Suite = S, BagsModule = module,
+})
 assert(module and #fonts == 0 and #textures == 0 and not next(hooks), "dormant module did work before enable")
 local catalogNS = { Client = { isForever = false } }
 for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
@@ -295,6 +298,8 @@ for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
 end
 assert(catalogNS.SuiteCatalog.bags.cvars and catalogNS.SuiteCatalog.bags.cvars.combinedBags,
     "combinedBags is not declared, so disabling Bags would never restore it")
+assert(catalogNS.SuiteCatalog.bags.rules.showBankItemLevel.default == true,
+    "Retail bank item levels are not enabled by default")
 
 local context = { events = {} }
 function context:CVar(key, value)
@@ -932,5 +937,88 @@ do
     local probe = code:match("(GameTooltip) then") or code:match("(S%.RefreshOwnedMovers) then")
         or code:match("[^_.](GetCVar)%(")
     assert(not probe, "Bags probes or bypasses " .. tostring(probe))
+end
+-- The native Retail bank pools item buttons. Exercise its post-refresh and
+-- search hooks without creating a second bank window or touching item clicks.
+do
+    state.Safety = { IsForbidden = function() return false end }
+    local bankHooks = {}
+    BankPanelItemButtonMixin = { Refresh = function() end }
+    BankPanelMixin = { UpdateSearchResults = function() end, OnShow = function() end }
+    local nativeHook = hooksecurefunc
+    hooksecurefunc = function(target, name, callback)
+        if target == BankPanelItemButtonMixin or target == BankPanelMixin then
+            bankHooks[name] = callback
+        else
+            nativeHook(target, name, callback)
+        end
+    end
+    items[4] = { hyperlink = "gear-a", itemID = 104, quality = 4 }
+    items[5] = { hyperlink = "pending-bank", itemID = 1105, quality = 3 }
+    items[6] = { hyperlink = "food", itemID = 106, quality = 1 }
+    local bankButtons = {}
+    for slot = 4, 6 do
+        bankButtons[#bankButtons + 1] = {
+            itemInfo = items[slot],
+            IsShown = function() return true end,
+            GetBankTabID = function() return 7 end,
+            GetContainerSlotID = function() return slot end,
+        }
+    end
+    local bankPanel = {
+        IsShown = function() return true end,
+        EnumerateValidItems = function()
+            local index = 0
+            return function() index = index + 1; return bankButtons[index] end
+        end,
+    }
+    BankFrame = { BankPanel = bankPanel, IsShown = function() return true end }
+    module.config.showBankItemLevel = true
+    module.active = true
+    module:Enable()
+    assert(bankHooks.Refresh and bankHooks.UpdateSearchResults and bankHooks.OnShow
+        and module.bankOverlays[bankButtons[1]].label.text == "640"
+        and module.bankOverlays[bankButtons[1]].label.shown
+        and not module.bankOverlays[bankButtons[3]].label,
+        "native bank equipment levels did not appear without touching non-gear")
+    local calls = levelCalls
+    bankHooks.Refresh(bankButtons[1])
+    assert(levelCalls == calls, "unchanged bank item repeated its level lookup")
+    assert(requests[1105] == 1 and context.events.GET_ITEM_INFO_RECEIVED,
+        "uncached bank item was not requested once through the existing item event")
+    levels["pending-bank"] = 666
+    context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 1105, true)
+    assert(module.bankOverlays[bankButtons[2]].label.text == "666"
+        and module.bankOverlays[bankButtons[2]].label.shown,
+        "loaded bank item did not repaint its own button")
+    items[5] = { hyperlink = "pending-fail", itemID = 1106, quality = 3 }
+    bankButtons[2].itemInfo = items[5]
+    bankHooks.Refresh(bankButtons[2])
+    assert(requests[1106] == 1 and context.events.GET_ITEM_INFO_RECEIVED,
+        "missing bank data was not requested once")
+    context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 1106, false)
+    bankHooks.Refresh(bankButtons[2])
+    assert(requests[1106] == 1 and not module.bankOverlays[bankButtons[2]].label.shown,
+        "failed item lookup looped or displayed stale level")
+    items[4].isFiltered = true
+    bankHooks.UpdateSearchResults(bankPanel)
+    assert(not module.bankOverlays[bankButtons[1]].label.shown,
+        "bank search did not hide the filtered item-level label")
+    items[4].isFiltered = nil
+    bankHooks.UpdateSearchResults(bankPanel)
+    assert(module.bankOverlays[bankButtons[1]].label.shown,
+        "clearing bank search did not restore the label")
+    module.config.showBankItemLevel = false
+    module:Refresh()
+    assert(not module.bankOverlays[bankButtons[1]].label.shown
+        and not context.events.BANKFRAME_OPENED,
+        "disabled bank levels retained a label or bank event")
+    bankHooks.Refresh(bankButtons[1])
+    assert(not module.bankOverlays[bankButtons[1]].label.shown,
+        "permanent native hook painted while bank levels were disabled")
+    module.active = false
+    module:Disable()
+    BankFrame = nil
+    hooksecurefunc = nativeHook
 end
 print("Suite bags: window styling, native bag layout, item levels, cache, and disable passed")

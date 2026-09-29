@@ -238,12 +238,6 @@
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions"
   },
   {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "symbol": "msuf (= MSUF_NS)",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions"
-  },
-  {
    "file": "MSUF_Suite/Core/Menu.lua",
    "symbol": "open (= MSUF2_Open)",
    "kind": "addon",
@@ -254,6 +248,24 @@
    "symbol": "MSUF.Client (= MSUF_NS)",
    "kind": "addon",
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "MSUF.UF (= MSUF_NS)",
+   "kind": "addon",
+   "reason": "The Classic MSUF layer API is optional while older or Retail MSUF builds host Suite"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "layers.ApplyOwnedSurface",
+   "kind": "addon",
+   "reason": "The shared layer helper is provided by Classic MSUF and checked before use"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "layers.ElementLevel",
+   "kind": "addon",
+   "reason": "The shared layer calculator is provided by MSUF and checked before use"
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
@@ -974,6 +986,12 @@
    "symbol": "M.RegisterHistoryProvider",
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Register.lua",
+   "symbol": "M.RegisterLayerOverviewProvider",
+   "kind": "addon",
+   "reason": "Only Classic MSUF exposes the layer overview provider hook"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Register.lua",
@@ -2224,6 +2242,48 @@
    "reason": "Retail tooltip refresh method may not exist on Forever; this module is Retail only"
   },
   {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "tooltip.GetOwner (= GameTooltip)",
+   "kind": "state",
+   "reason": "The temporary enchant lookup uses a tooltip owner only when Blizzard's main tooltip exposes one"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "owner.GetID",
+   "kind": "state",
+   "reason": "Only Blizzard's temporary enchant aura button with an equipment slot ID qualifies"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "C_PaperDollInfo",
+   "kind": "client",
+   "reason": "Retail temporary enchant lookup is checked before use and the Tooltip IDs module is unavailable on Forever"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "C_PaperDollInfo.GetTemporaryEnchantmentInfo",
+   "kind": "client",
+   "reason": "The Retail temporary enchant method is optional and is called only for Blizzard's enchant buff tooltip"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "C_CurrencyInfo",
+   "kind": "client",
+   "reason": "The optional account currency tooltip uses Retail's native currency API only when present; Forever lacks it"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "C_CurrencyInfo.IsAccountCharacterCurrencyDataReady",
+   "kind": "client",
+   "reason": "Forever lacks this Retail readiness method; native account character currency data must be ready before the tooltip reads it"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "C_CurrencyInfo.FetchCurrencyDataFromAccountCharacters",
+   "kind": "client",
+   "reason": "Forever lacks this Retail account character currency query; it runs only on a currency tooltip"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/ItemCounts.lua",
    "symbol": "Enum.TooltipDataType",
    "kind": "client",
@@ -2246,6 +2306,468 @@
    "symbol": "tooltip (= GameTooltip)",
    "kind": "addon",
    "reason": "Blizzard_GameTooltip can load after the Suite; refresh tolerates its absent frame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "SlashCmdList",
+   "kind": "state",
+   "reason": "Slash command registry is checked before the optional command claims an alias"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "ToggleWorldMap",
+   "kind": "client",
+   "reason": "Retail map toggle can differ on Forever; the waypoint module is Retail only and checks it before optional use"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "UiMapPoint",
+   "kind": "client",
+   "reason": "Retail native waypoint type is absent on Forever; this module is Retail only"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "UiMapPoint.CreateFromCoordinates",
+   "kind": "client",
+   "reason": "Retail native waypoint constructor is absent on Forever; it is checked before use"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "map (= WorldMapFrame)",
+   "kind": "state",
+   "reason": "The world map frame can be unloaded; the command falls back to the player map when it is absent"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "C_Map",
+   "kind": "client",
+   "reason": "Retail map API is checked because the waypoint module can be loaded on Forever before availability is applied"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "C_Map.CanSetUserWaypointOnMap",
+   "kind": "client",
+   "reason": "Retail waypoint permission query is checked before creating a marker"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "C_SuperTrack",
+   "kind": "client",
+   "reason": "Retail super tracking is optional and unavailable on some Forever clients"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/Waypoints.lua",
+   "symbol": "C_SuperTrack.SetSuperTrackedUserWaypoint",
+   "kind": "client",
+   "reason": "Retail super tracking method is optional and checked before use"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "C_Spell",
+   "kind": "client",
+   "reason": "Retail spell API is checked because spell icon IDs are optional and Forever may differ"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "C_Spell.GetSpellTexture",
+   "kind": "client",
+   "reason": "Retail spell texture lookup is checked before adding an icon ID"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "kinds.Currency (= Enum.TooltipDataType)",
+   "kind": "client",
+   "reason": "Retail tooltip currency type can be absent on Forever; registration is conditional"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "kinds.Quest (= Enum.TooltipDataType)",
+   "kind": "client",
+   "reason": "Retail tooltip quest type can be absent on Forever; registration is conditional"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "DELETE_ITEM_CONFIRM_STRING",
+   "kind": "client",
+   "reason": "Blizzard localized delete confirmation may differ on Forever; the helper checks it before prefilling"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "StaticPopupDialogs",
+   "kind": "state",
+   "reason": "Blizzard dialog definitions may not be loaded yet; the helper retries on addon load"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "definition.OnShow",
+   "kind": "state",
+   "reason": "The delete dialog definition may not be loaded or may have a different callback on this client"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "dialog.GetEditBox",
+   "kind": "state",
+   "reason": "The helper checks the Blizzard dialog method before using its edit box"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "hooksecurefunc",
+   "kind": "client",
+   "reason": "Blizzard secure post-hook API is checked on Forever before installation"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "ToggleCharacter",
+   "kind": "client",
+   "reason": "The Retail character panel function is checked before opening the equipment tab"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/CharacterUpgradeWindow.lua",
+   "symbol": "ToggleCharacter",
+   "kind": "client",
+   "reason": "The Retail character panel function is checked before opening the equipment tab at an upgrade vendor"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "Enum",
+   "kind": "client",
+   "reason": "The current expansion auction filter enum exists on Retail; Forever skips this opt-in choice"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "AuctionHouseFrame",
+   "kind": "state",
+   "reason": "Blizzard's auction frame is load on demand; the helper waits for it and hooks only its open transition"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "saved (= g_auctionHouseFilters)",
+   "kind": "state",
+   "reason": "Blizzard creates auction search saved variables on load; the helper checks the table before using the native filter"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "bar.OnFilterToggled",
+   "kind": "state",
+   "reason": "The native auction search bar may not be initialized; its visual refresh method is optional"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "names (= CHAT_FRAMES)",
+   "kind": "state",
+   "reason": "Blizzard chat frames may not be initialized when an opt-in module starts"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "FCF_OpenNewWindow",
+   "kind": "state",
+   "reason": "The native chat window helper may be installed after this opt-in module starts"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "symbol": "FCF_OpenTemporaryWindow",
+   "kind": "state",
+   "reason": "The native temporary chat helper may be installed after this opt-in module starts"
+  },
+  {
+   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
+   "symbol": "menu (= MSUF2)",
+   "kind": "addon",
+   "reason": "an older MSUF options build may not publish the Forever controller navigation bridge"
+  },
+  {
+   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
+   "symbol": "menu.ResumeForeverPadNavigation (= MSUF2)",
+   "kind": "addon",
+   "reason": "the Forever navigation bridge is supplied by the current Classic MSUF options build"
+  },
+  {
+   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
+   "symbol": "menu.SuspendForeverPadNavigation (= MSUF2)",
+   "kind": "addon",
+   "reason": "the Forever navigation bridge is supplied by the current Classic MSUF options build"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "CanAutoSetGamePadCursorControl",
+   "kind": "client",
+   "reason": "Forever pointer API is used only after the Forever client gate"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "GamepadMode",
+   "kind": "client",
+   "reason": "Forever D-pad navigation manager is absent on Retail"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "InputUtil.IsGamepadUIEnabled",
+   "kind": "client",
+   "reason": "Forever-only interface style API is absent on Retail"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "SetGamePadCursorControl",
+   "kind": "client",
+   "reason": "Forever pointer API is used only after the Forever client gate"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "input.IsGamepadUIEnabled (= InputUtil)",
+   "kind": "client",
+   "reason": "Forever-only interface style method is checked before use"
+  },
+  {
+   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
+   "symbol": "BankFrame",
+   "kind": "addon",
+   "reason": "Blizzard bank UI is load on demand; the item level hook waits for its frame"
+  },
+  {
+   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
+   "symbol": "buttonMixin (= BankPanelItemButtonMixin)",
+   "kind": "addon",
+   "reason": "Blizzard bank button mixin appears only after its bank UI loads"
+  },
+  {
+   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
+   "symbol": "buttonMixin.Refresh (= BankPanelItemButtonMixin)",
+   "kind": "addon",
+   "reason": "The bank item button refresh callback is installed by the load on demand bank UI"
+  },
+  {
+   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
+   "symbol": "panelMixin (= BankPanelMixin)",
+   "kind": "addon",
+   "reason": "Blizzard bank panel mixin appears only after its bank UI loads"
+  },
+  {
+   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
+   "symbol": "panelMixin.OnShow (= BankPanelMixin)",
+   "kind": "addon",
+   "reason": "The bank panel open hook waits for the load on demand mixin"
+  },
+  {
+   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
+   "symbol": "panelMixin.UpdateSearchResults (= BankPanelMixin)",
+   "kind": "addon",
+   "reason": "The bank search refresh callback is installed by the load on demand bank UI"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderDoubleClick.lua",
+   "symbol": "LFGListFrame",
+   "kind": "addon",
+   "reason": "Blizzard Group Finder is load on demand and its frame is checked after load"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderDoubleClick.lua",
+   "symbol": "LFGListSearchEntry_OnClick",
+   "kind": "addon",
+   "reason": "Blizzard installs the Group Finder search entry callback on load"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderDoubleClick.lua",
+   "symbol": "LFGListSearchPanel_SignUp",
+   "kind": "addon",
+   "reason": "The native signup dialog opener is available only with Blizzard Group Finder"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderDoubleClick.lua",
+   "symbol": "dialog (= LFGListApplicationDialog)",
+   "kind": "addon",
+   "reason": "Blizzard creates its application dialog with the load on demand Group Finder"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "LFGListApplicationViewer_UpdateResultList",
+   "kind": "addon",
+   "reason": "The native applicant list updater appears when Blizzard Group Finder loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "LFGListApplicationViewer_UpdateResults",
+   "kind": "addon",
+   "reason": "The native applicant ScrollBox updater appears when Blizzard Group Finder loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "LFGListFrame",
+   "kind": "addon",
+   "reason": "The applicant viewer exists only after Blizzard Group Finder has loaded"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "api.GetActiveEntryInfo",
+   "kind": "client",
+   "reason": "Retail LFG listing API is absent in Forever and checked before use"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "api.GetActivityInfoTable",
+   "kind": "client",
+   "reason": "Retail LFG activity API is absent in Forever and checked before use"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "api.GetApplicantInfo",
+   "kind": "client",
+   "reason": "Retail applicant API is absent in Forever and checked before use"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "api.GetApplicantMemberInfo",
+   "kind": "client",
+   "reason": "Retail applicant member API is absent in Forever and checked before use"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "frame (= LFGListFrame)",
+   "kind": "addon",
+   "reason": "The active applicant viewer is part of Blizzard's load on demand Group Finder frame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "viewer.IsForbidden",
+   "kind": "addon",
+   "reason": "The load on demand Blizzard applicant viewer is checked before accessing it"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua",
+   "symbol": "viewer.IsShown",
+   "kind": "addon",
+   "reason": "The load on demand Blizzard applicant viewer is checked before reading its visibility"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/LootToastFilter.lua",
+   "symbol": "C_MountJournal",
+   "kind": "addon",
+   "reason": "The Retail mount journal API can be absent until its Blizzard addon loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/LootToastFilter.lua",
+   "symbol": "C_MountJournal.GetMountFromItem",
+   "kind": "addon",
+   "reason": "The optional mount item classifier is checked before filtering personal loot toasts"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/LootToastFilter.lua",
+   "symbol": "C_PetJournal",
+   "kind": "addon",
+   "reason": "The Retail pet journal API can be absent until its Blizzard addon loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/LootToastFilter.lua",
+   "symbol": "C_PetJournal.GetPetInfoByItemID",
+   "kind": "addon",
+   "reason": "The optional pet item classifier is checked before filtering personal loot toasts"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/LootVendorRules.lua",
+   "symbol": "MerchantFrame",
+   "kind": "state",
+   "reason": "Settings can change before the merchant frame is created; the button waits for merchant UI"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+   "symbol": "native (= ExpansionLandingPageMinimapButton)",
+   "kind": "addon",
+   "reason": "The Retail expansion landing button may not exist until its Blizzard addon loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+   "symbol": "ExpansionLandingPageMinimapButton",
+   "kind": "addon",
+   "reason": "The Retail expansion landing button is created by a LoadOnDemand Blizzard addon"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+   "symbol": "CanShowEncounterJournal",
+   "kind": "addon",
+   "reason": "The Adventure Guide visibility helper may not exist until its UI addon loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+   "symbol": "ToggleEncounterJournal",
+   "kind": "addon",
+   "reason": "The Adventure Guide opener may not exist until its UI addon loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+   "symbol": "WeeklyRewards_ShowUI",
+   "kind": "addon",
+   "reason": "The Great Vault opener is installed by a load on demand Blizzard addon"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipSpellCopy.lua",
+   "symbol": "GameTooltip",
+   "kind": "state",
+   "reason": "The post-call compares tooltip identity to Blizzard main GameTooltip and skips other tooltips"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ChatProfileLinks.lua",
+   "symbol": "Menu",
+   "kind": "addon",
+   "reason": "Blizzard Menu may load after this opt-in module; its context hooks wait for the UI addon"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/ChatProfileLinks.lua",
+   "symbol": "Menu.ModifyMenu",
+   "kind": "addon",
+   "reason": "Blizzard Menu installs ModifyMenu after its load on demand initialization"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/SocketGemSuggestions.lua",
+   "symbol": "owner (= ItemSocketingFrame)",
+   "kind": "addon",
+   "reason": "Blizzard creates the socketing frame only after its UI addon loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipMPlusScore.lua",
+   "symbol": "GameTooltip",
+   "kind": "state",
+   "reason": "The Unit post-call requires Blizzard's main GameTooltip identity before adding a score"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipClassColors.lua",
+   "symbol": "GameTooltip",
+   "kind": "state",
+   "reason": "The unit-name line callback colors only Blizzard's main GameTooltip"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderExitReminder.lua",
+   "symbol": "frame (= LFGListFrame)",
+   "kind": "addon",
+   "reason": "Blizzard Group Finder creates its listings frame when the UI addon loads"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupRaidShortcuts.lua",
+   "symbol": "frame (= CompactRaidFrameManager)",
+   "kind": "addon",
+   "reason": "The native Raid Manager can be absent until Blizzard raid UI is loaded or enabled"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua",
+   "symbol": "CHAT_FRAMES",
+   "kind": "state",
+   "reason": "The privacy cover waits for Blizzard chat frames to initialize"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua",
+   "symbol": "ChatFrame1",
+   "kind": "state",
+   "reason": "The privacy control waits for Blizzard's primary chat frame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua",
+   "symbol": "FCF_OpenNewWindow",
+   "kind": "state",
+   "reason": "The privacy helper hooks the chat window opener after Blizzard initializes it"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua",
+   "symbol": "FCF_OpenTemporaryWindow",
+   "kind": "state",
+   "reason": "The privacy helper hooks the temporary chat opener after Blizzard initializes it"
   }
  ]
 }

@@ -62,14 +62,57 @@ CORE = "MSUF_Suite"
 # once its strings are translated.
 DELTA_PENDING = (
     "MSUF_Suite_Options/Menu/Search.lua",
+    # Run summaries ship with German strings; the other locale packs need a
+    # native-language delta pass for the new HUD controls and result card.
+    "MSUF_Suite/Core/Catalog/HUD.lua",
+    "MSUF_Suite_Options/Pages/HUD.lua",
+    "MSUF_Suite_Modules/RunSummary.lua",
     # The new action, item, loadout and popup text has a German delta pass;
     # the other Suite locale packs still need their native translations.
     "MSUF_Suite/Core/Catalog/Bags.lua",
+    "MSUF_Suite/Core/Catalog/DataTexts.lua",
     "MSUF_Suite/Core/Catalog/QualityOfLife.lua",
+    "MSUF_Suite/Core/Catalog/QualityOfLifeGroup.lua",
     "MSUF_Suite_Options/Pages/QualityOfLife.lua",
+    "MSUF_Suite_Options/Pages/DataTexts.lua",
     "MSUF_Suite_QualityOfLife/ActionTracker.lua",
     "MSUF_Suite_QualityOfLife/ItemCounts.lua",
+    "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+    "MSUF_Suite_QualityOfLife/Waypoints.lua",
+    "MSUF_Suite_DataTexts/DataTexts.lua",
+    "MSUF_Suite_QualityOfLife/SocketGemSuggestions.lua",
     "MSUF_Suite_QualityOfLife/LoadoutReminder.lua",
+    "MSUF_Suite_QualityOfLife/TooltipVisibility.lua",
+    "MSUF_Suite_QualityOfLife/GroupDeathAlert.lua",
+    # New opt-in QoL helpers are included in extraction; native translations
+    # for all ten locale packs follow as a separate delta pass.
+    "MSUF_Suite_QualityOfLife/UIErrorFilter.lua",
+    "MSUF_Suite_QualityOfLife/CollectionNewMarkers.lua",
+    "MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua",
+    "MSUF_Suite_QualityOfLife/GroupFinderExitReminder.lua",
+    "MSUF_Suite_QualityOfLife/GroupRaidShortcuts.lua",
+    "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
+    "MSUF_Suite_QualityOfLife/CharacterUpgradeWindow.lua",
+    "MSUF_Suite_QualityOfLife/ProfessionAppearance.lua",
+    "MSUF_Suite_QualityOfLife/LootToastFilter.lua",
+    "MSUF_Suite_QualityOfLife/CombatMovementCue.lua",
+    "MSUF_Suite_QualityOfLife/BurningRushCue.lua",
+    "MSUF_Suite_QualityOfLife/GroupFinderDoubleClick.lua",
+    "MSUF_Suite_QualityOfLife/MPlusKeystoneShare.lua",
+    "MSUF_Suite_QualityOfLife/GroupDelvePower.lua",
+    "MSUF_Suite_QualityOfLife/MPlusResetReminder.lua",
+    "MSUF_Suite_QualityOfLife/GroupBloodlust.lua",
+    "MSUF_Suite_QualityOfLife/LootContainers.lua",
+    "MSUF_Suite_QualityOfLife/LootVendorRules.lua",
+    "MSUF_Suite_QualityOfLife/CursorEffects.lua",
+    "MSUF_Suite_QualityOfLife/MapQuickSwitch.lua",
+    "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+    "MSUF_Suite_QualityOfLife/CombatStatsHUD.lua",
+    "MSUF_Suite_QualityOfLife/CombatPetStatus.lua",
+    "MSUF_Suite_QualityOfLife/MacroBuilder.lua",
+    "MSUF_Suite_QualityOfLife/TooltipSpellCopy.lua",
+    "MSUF_Suite_QualityOfLife/ChatProfileLinks.lua",
+    "MSUF_Suite_QualityOfLife/TooltipMPlusScore.lua",
 )
 CHROME_MIN, HELP_MIN = 0.99, 0.95
 

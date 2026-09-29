@@ -53,22 +53,40 @@ Support.Load(root, "MSUF_Suite_Modules", private)
 assert(private.NS == Suite and #frames == 0 and pixelVisits == 0)
 local shared = 0
 for id in pairs(Suite.Suite.instances) do
-    assert(id == "afkScreen" or id == "objectives" or id == "announcements",
+    assert(id == "afkScreen" or id == "objectives" or id == "runSummary" or id == "announcements",
         "shared runtime registered a module it does not own: " .. id)
     shared = shared + 1
 end
-assert(shared == 3 and Suite.Suite.MythicPlus == nil, "Forever loaded the Mythic+ view or lost a HUD module")
+assert(shared == 4 and Suite.Suite.MythicPlus == nil, "Forever loaded the Mythic+ view or lost a HUD module")
 Support.Load(root, "MSUF_Suite_QualityOfLife", {})
 local count = 0
 for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 19 and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
+assert(count == 55 and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
     and Suite.Suite.instances.itemCounts and Suite.Suite.instances.loadoutReminder
-    and Suite.Suite.instances.quietPopups,
+    and Suite.Suite.instances.quietPopups and Suite.Suite.instances.waypoints
+    and Suite.Suite.instances.dailyComfort and Suite.Suite.instances.groupDeathAlert
+    and Suite.Suite.instances.tooltipVisibility and Suite.Suite.instances.uiErrorFilter
+    and Suite.Suite.instances.groupFinderDoubleClick and Suite.Suite.instances.groupFinderApplicantSort
+    and Suite.Suite.instances.mythicKeyShare
+    and Suite.Suite.instances.groupBloodlust and Suite.Suite.instances.lootContainers
+    and Suite.Suite.instances.lootVendorRules and Suite.Suite.instances.cursorEffects
+    and Suite.Suite.instances.mapQuickSwitch and Suite.Suite.instances.combatStatsHUD
+    and Suite.Suite.instances.combatPetStatus and Suite.Suite.instances.delveSolePower
+    and Suite.Suite.instances.mythicResetReminder and Suite.Suite.instances.mapLandingShortcuts
+    and Suite.Suite.instances.socketGemSuggestions and Suite.Suite.instances.tooltipSpellCopy
+    and Suite.Suite.instances.macroBuilder and Suite.Suite.instances.chatProfileLinks
+    and Suite.Suite.instances.tooltipMPlusScore and Suite.Suite.instances.tooltipClassColors
+    and Suite.Suite.instances.collectionNewMarkers
+    and Suite.Suite.instances.guildChatPrivacy and Suite.Suite.instances.groupFinderExitReminder
+    and Suite.Suite.instances.groupRaidShortcuts and Suite.Suite.instances.trainerLearnAll
+    and Suite.Suite.instances.characterUpgradeWindow and Suite.Suite.instances.lootToastFilter
+    and Suite.Suite.instances.combatMovementCue and Suite.Suite.instances.professionAppearance
+    and Suite.Suite.instances.trustedPartyInvites and Suite.Suite.instances.burningRushCue,
     "shared HUD modules and Quality of Life helpers did not register together")
 local context = Suite.Suite.NewContext("qol")
 assert(context:Skin() == nil, "disabled skin should require no provider")

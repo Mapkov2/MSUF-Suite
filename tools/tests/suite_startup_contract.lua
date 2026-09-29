@@ -40,7 +40,8 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     local owner = {
         Client = { isForever = false },
         IsCombatLocked = function() return combat == true end,
-        Suite = { Start = function() starts = starts + 1 end },
+        Suite = { Start = function() starts = starts + 1 end,
+            Normalize = Noop, StyleProfile = Noop },
         Print = function() messages = messages + 1 end,
         Dispatch = Dispatch,
         PublicText = PublicText,

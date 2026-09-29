@@ -144,10 +144,11 @@ C_Scenario = { GetInfo = function() return nil end }
 Enum = { ContentTrackingType = { Achievement = 1 }, ContentTrackingStopType = { Manual = 2 } }
 Enum.UIWidgetVisualizationType = { ScenarioHeaderTimer = 20 }
 Enum.WidgetShownState = { Hidden = 0, Shown = 1 }
-local widgetTime
+local widgetTime, widgetSetLookups, lastWidgetSetID = nil, 0, nil
 C_UIWidgetManager = {
     GetAllWidgetsBySetID = function(setID)
-        return setID == 514 and widgetTime and { { widgetID = 901, widgetType = 20 } } or {}
+        widgetSetLookups, lastWidgetSetID = widgetSetLookups + 1, setID
+        return setID == 777 and widgetTime and { { widgetID = 901, widgetType = 20 } } or {}
     end,
     GetScenarioHeaderTimerWidgetVisualizationInfo = function()
         return widgetTime and { shownState = 1, timerMin = 0, timerMax = 180, timerValue = widgetTime }
@@ -653,7 +654,9 @@ C_QuestLog.GetTitleForQuestID = function(id)
     return id == 43 and "Another Quest" or id == 77 and "World Task" or nil
 end
 C_TaskQuest.GetQuestTimeLeftSeconds = function(id) return id == 77 and 300 or nil end
-C_Scenario.GetStepInfo = function() return "Stage one", "Do the thing", 1 end
+C_Scenario.GetStepInfo = function()
+    return "Stage one", "Do the thing", 1, nil, nil, nil, nil, nil, nil, nil, nil, 777
+end
 C_ScenarioInfo = { GetCriteriaInfo = function()
     return { description = "Finish before time runs out", completed = false,
         duration = 60, elapsed = 10 }
@@ -677,13 +680,29 @@ if flavor == "Mainline" then
     groupButton = tracker.rows["entry:world:77"].findGroupButton
     groupButton.OnClick(groupButton)
     assert(foundQuest == 77, "a groupable quest must open its quest-specific search")
-    widgetTime = 90
-    C_ScenarioInfo.GetCriteriaInfo = function() return { description = "Defend", completed = false } end
-    tracker.context.events.UPDATE_UI_WIDGET(tracker, "UPDATE_UI_WIDGET", { widgetSetID = 514 })
-    Drain()
-    assert(tracker.rows["entry:scenario:0"].timer.text == "1:30",
-        "scenario header widgets must supply the phase timer when criteria do not")
 end
+widgetTime = 90
+C_ScenarioInfo.GetCriteriaInfo = function() return { description = "Defend", completed = false } end
+local previousLookups = widgetSetLookups
+tracker.context.events.UPDATE_UI_WIDGET(tracker, "UPDATE_UI_WIDGET", { widgetSetID = 999 })
+Drain()
+assert(widgetSetLookups == previousLookups,
+    "unrelated widget updates must not re-read the scenario")
+tracker.context.events.UPDATE_UI_WIDGET(tracker, "UPDATE_UI_WIDGET", { widgetSetID = 777 })
+Drain()
+assert(tracker.rows["entry:scenario:0"].timer.text == "1:30"
+    and widgetSetLookups == previousLookups + 1 and lastWidgetSetID == 777,
+    "scenario header widgets must supply the phase timer when criteria do not")
+C_Scenario.GetStepInfo = function() return "Stage one", "Do the thing", 1 end
+C_ScenarioInfo.GetCriteriaInfo = function()
+    return { description = "Defend", completed = false, duration = 60, elapsed = 10 }
+end
+previousLookups = widgetSetLookups
+tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+Drain()
+assert(tracker.rows["entry:scenario:0"].timer.text == "0:50"
+    and tracker.scenarioWidgetSetID == nil and widgetSetLookups == previousLookups,
+    "a phase without a widget set must retain the criterion timer fallback")
 tracker.config.showTimers = false
 tracker:Refresh()
 assert(not tracker.rows["entry:quests:43"].timerEnd,

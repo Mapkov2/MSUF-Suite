@@ -12,16 +12,39 @@ local function Engine(isForever)
 end
 
 local forever = Engine(true)
-assert(forever.Defaults.theme.look == "foreverGlass"
-    and forever.Defaults.geometry.radius == 12
+assert(forever.Defaults.theme.look == "cleanModern"
+    and forever.Defaults.geometry.radius == 4
     and forever.Defaults.typography.face == "sharedMedia"
     and forever.Defaults.icons.microMenu.positionPreset == "bottomCenter"
     and forever.Defaults.icons.microMenu.layoutPoint == "BOTTOM"
     and forever.Defaults.icons.microMenu.layoutY == 120
     and forever.Defaults.icons.microMenu.buttonBackground == false
     and forever.Defaults.icons.microMenu.buttonsPerLine == 14
-    and forever.Defaults.icons.microMenu.spacing == -3,
-    "new Forever profile did not get the compact menu look")
+    and forever.Defaults.icons.microMenu.spacing == 1,
+    "new Forever profile did not use the Clean Modern Suite default")
+
+-- The following fixtures exercise upgrades of previously saved Forever Glass
+-- profiles. Build their old authored baseline without changing the new default.
+local foreverLook = forever.LookPresets.foreverGlass
+local colors = forever.CopyValue(forever.BaseColors)
+for key, value in pairs(forever.PresetOverrides.foreverGlass) do
+    colors[key] = forever.CopyValue(value)
+end
+for target, source in pairs(forever.MicroColorSources) do
+    if not forever.PresetOverrides.foreverGlass[target] then
+        colors[target] = forever.CopyValue(colors[source])
+    end
+end
+forever.Defaults.theme.colors = colors
+for key, value in pairs(foreverLook.appearance) do forever.Defaults.theme[key] = value end
+for key, value in pairs(foreverLook.geometry) do forever.Defaults.geometry[key] = value end
+local factoryMicro = forever.Defaults.icons.microMenu
+for _, key in ipairs(forever.MicroMenuLookKeys) do
+    factoryMicro[key] = forever.MicroMenuPresetValues.forever[key]
+end
+factoryMicro.preset = "forever"
+forever.Defaults.theme.preset = "foreverGlass"
+forever.Defaults.theme.look = "foreverGlass"
 
 local previousStrip = forever.CopyValue(forever.Defaults)
 previousStrip.revision = 45
@@ -61,7 +84,7 @@ micro.buttonBackground, micro.buttonBorder = true, 1
 micro.iconSize, micro.spacing = 20, 3
 micro.iconStyle = "line"
 forever.Database.Normalize(legacy)
-assert(legacy.revision == 50 and legacy.geometry.radius == 12
+assert(legacy.revision == forever.Defaults.revision and legacy.geometry.radius == 12
     and legacy.theme.shellOpacity == 0.92 and legacy.theme.hoverStyle == "softFill"
     and legacy.theme.colors.background[4] == forever.PresetOverrides.foreverGlass.background[4]
     and micro.positionPreset == "bottomCenter" and micro.layoutX == 0 and micro.layoutY == 120
@@ -99,7 +122,7 @@ tuned.icons.microMenu.positionPreset = "custom"
 tuned.icons.microMenu.layoutX = -75
 forever.Database.Normalize(retired)
 local original = forever.PresetOverrides.foreverGlass
-assert(retired.revision == 50 and retired.geometry.radius == 12
+assert(retired.revision == forever.Defaults.revision and retired.geometry.radius == 12
     and retired.theme.gradientStrength == 0.50 and retired.theme.shellOpacity == 0.92
     and retired.theme.hoverStyle == "softFill" and retired.typography.face == "sharedMedia"
     and retired.theme.colors.background[1] == original.background[1]
@@ -175,7 +198,7 @@ end
 priorPalette.theme.colors.microIconHover = { 0.11, 0.22, 0.33, 0.47 }
 local microAlpha = priorPalette.theme.colors.microBarFill[4]
 forever.Database.Normalize(priorPalette)
-assert(priorPalette.revision == 50
+assert(priorPalette.revision == forever.Defaults.revision
     and MatchesHex(priorPalette.theme.colors.card, "292F31")
     and priorPalette.theme.colors.card[4] == 0.51
     and MatchesHex(priorPalette.theme.colors.microBarFill, "0E1C28")
@@ -225,7 +248,7 @@ savedForeverBar.icons.microMenu.layoutRelativePoint = "BOTTOMLEFT"
 savedForeverBar.icons.microMenu.layoutX = 18
 savedForeverBar.icons.microMenu.layoutY = 18
 forever.Database.Normalize(savedForeverBar)
-assert(savedForeverBar.revision == 50
+assert(savedForeverBar.revision == forever.Defaults.revision
     and savedForeverBar.icons.microMenu.positionPreset == "bottomCenter"
     and savedForeverBar.icons.microMenu.layoutPoint == "BOTTOM"
     and savedForeverBar.icons.microMenu.layoutRelativePoint == "BOTTOM"
@@ -262,7 +285,7 @@ assert(customGlyphs.icons.microMenu.iconStyle == "line",
     "custom Micro Bar glyphs were overwritten")
 
 local retail = Engine(false)
-assert(retail.Defaults.theme.look == "midnightDark"
+assert(retail.Defaults.theme.look == "cleanModern"
     and retail.Defaults.icons.microMenu.positionPreset == "bottomRight",
     "Forever defaults leaked into Retail")
 print("Suite Forever look: fresh defaults, selective migration and Retail isolation passed")

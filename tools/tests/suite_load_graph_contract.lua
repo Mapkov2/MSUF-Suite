@@ -92,10 +92,13 @@ assert(#frames == 3 and frames[3].events.ADDON_LOADED and optionLoads == 0)
 local owner = assert(MSUFSuite)
 assert((owner.Suite.catalog.objectives.rules.showMythicPlus ~= nil) == (flavor == "Mainline"),
     "Mythic+ HUD setting must be available only on Retail")
+assert((owner.Suite.catalog.runSummary.rules.showMythicPlus ~= nil) == (flavor == "Mainline"),
+    "Mythic+ result card must be available only on Retail")
 assert(owner.Suite.Availability("innervateCue") == (flavor == "Mainline"),
     "Innervate cue must be restricted to Retail Druids")
 do
     assert(owner.Suite.Config("objectives").enabled
+        and owner.Suite.Config("runSummary").enabled
         and owner.Suite.Config("announcements").enabled
         and owner.Suite.catalog.objectives.available == nil
         and owner.Suite.catalog.announcements.available == nil,
@@ -132,6 +135,7 @@ do
     -- HUD contract exercises both live module implementations.
     owner.Suite.Normalize(owner.DB)
     owner.Suite.Config("objectives").enabled = false
+    owner.Suite.Config("runSummary").enabled = false
     owner.Suite.Config("announcements").enabled = false
     -- Secure ActionBars and the XP bar have their own contract fixtures.
     if flavor == "Forever" then owner.Suite.Config("actionbars").enabled = false end
@@ -150,8 +154,11 @@ assert(type(owner.ForeverFactoryFramesCompact) == "string"
     and owner.ForeverFactoryFramesCompact:match("^MSUF3:")
     and type(owner.ForeverFactoryModuleCompact) == "string",
     "Forever installer choice is unavailable on a Mainline client")
+assert(type(owner.ClassicFactoryFramesCompact) == "string"
+    and owner.ClassicFactoryFramesCompact:match("^MSUF3:"),
+    "Classic MSUF frame factory is unavailable to the installer")
 assert(owner.Suite.Config("chat").enabled == true
-    and owner.Suite.Config("chat").look == (flavor == "Forever" and 3 or 2),
+    and owner.Suite.Config("chat").look == 5,
     "chat must start enabled with the client look")
 assert(#frames == 4 and loads == 1 and featureLoads == 1
     and not next(frames[1].events) and not next(frames[2].events))

@@ -73,6 +73,7 @@ S.Install = function(id, module)
     registered.module = module
 end
 
+assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/DurabilityAlert.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local M = assert(registered.module)

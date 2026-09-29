@@ -495,6 +495,21 @@ assert(factoryMenu.layoutPoint == "BOTTOMLEFT" and factoryMenu.layoutRelativePoi
     and factoryMenu.layoutX == 1791 and factoryMenu.layoutY == 20
     and not next(skinProfiles.ForeverFactorySkin.windowControls.positions),
     "Forever installer overwrote the supplied Skin menu position")
+skin.Theme = { StyleProfile = function(profile, look)
+    if look ~= "midnight" then return false end
+    profile.look = look
+    return true
+end }
+local beforeClassicFrames = frameImports
+assert(P.InstallFactory("ClassicFactorySkin", "MSUF3:frames", DB.GetProfile("Raid"),
+    modernSkin, "midnight"))
+local classicMenu = skinProfiles.ClassicFactorySkin.icons.microMenu
+assert(frameImports == beforeClassicFrames + 1 and P.Active() == "ClassicFactorySkin"
+    and skinProfiles.ClassicFactorySkin.look == "midnight"
+    and classicMenu.layoutPoint == "BOTTOMRIGHT" and classicMenu.layoutX == menuX
+    and classicMenu.layoutY == 0
+    and not next(skinProfiles.ClassicFactorySkin.windowControls.positions),
+    "Classic installer did not import MSUF frames and stage its blue Skin look")
 -- The first Suite install repairs a character that MSUF already bound to
 -- Default, then leaves deliberate account defaults and later changes alone.
 local newCharacterDefault

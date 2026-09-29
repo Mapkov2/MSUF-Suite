@@ -62,6 +62,34 @@ C_AddOns = {
     end,
 }
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
+for _, id in ipairs({ "cursorEffects", "mapQuickSwitch", "mapLandingShortcuts",
+    "combatStatsHUD", "combatPetStatus", "combatMovementCue", "burningRushCue",
+    "loadoutReminder", "lootToastFilter", "groupBloodlust", "innervateCue",
+    "durabilityAlert", "battleRes" }) do
+    local rule = assert(Suite.SuiteCatalog[id].rules.look, id .. " has no style choice")
+    assert(rule.choices[1] == "Midnight Blue" and rule.choices[4] == "Clean Modern",
+        id .. " has no complete Suite style selection")
+    local config = Suite.CopyValue(Suite.Defaults.suite.modules[id])
+    assert(Suite.SuiteLooks.ApplyToConfig(id, config, "cleanModern") and config.look == 4,
+        id .. " did not follow the Clean Modern factory look")
+end
+local stats = Suite.CopyValue(Suite.Defaults.suite.modules.combatStatsHUD)
+Suite.SuiteLooks.ApplyToConfig("combatStatsHUD", stats, "cleanModern")
+assert(stats.backgroundColor == "101010" and stats.accentColor == "e6ecf2",
+    "Clean Modern stats strip retained its previous gold palette")
+local cursor = Suite.CopyValue(Suite.Defaults.suite.modules.cursorEffects)
+Suite.SuiteLooks.ApplyToConfig("cursorEffects", cursor, "foreverGlass")
+assert(cursor.look == 3 and cursor.color == "d8b66a",
+    "cursor ring did not receive the selected Forever palette")
+Suite.Suite.RGB = Suite.RGB
+_G.MSUFSuite = Suite
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/Bootstrap.lua"))(
+    "MSUF_Suite_QualityOfLife", {})
+local paint = {}
+function paint:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
+Suite.Suite.QoLColor(paint, Suite.Suite.QoLStyle({ look = 4 }).background, .94)
+assert(math.abs(paint.color[1] - 16 / 255) < .001 and paint.color[4] == .94,
+    "Clean Modern QoL surface did not resolve to neutral graphite")
 -- The skin boundary loads right after the controller (no skin is installed).
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
 assert(Suite.Database.Initialize(nil))
@@ -123,7 +151,24 @@ for _, id in ipairs(Suite.SuiteOrder) do
     assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "actionTracker" and id ~= "nameplates"
         and id ~= "durabilityAlert" and id ~= "battleRes" and id ~= "innervateCue"
         and id ~= "merchantLevel" and id ~= "vaultSpec" and id ~= "tooltipIDs"
-        and id ~= "itemCounts" and id ~= "loadoutReminder" and id ~= "quietPopups"),
+        and id ~= "itemCounts" and id ~= "loadoutReminder" and id ~= "quietPopups"
+        and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "groupDeathAlert"
+        and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
+        and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
+        and id ~= "groupBloodlust" and id ~= "lootContainers"
+        and id ~= "cursorEffects" and id ~= "mapQuickSwitch"
+        and id ~= "combatStatsHUD" and id ~= "delveSolePower"
+        and id ~= "mythicResetReminder" and id ~= "combatPetStatus"
+        and id ~= "lootVendorRules" and id ~= "mapLandingShortcuts"
+        and id ~= "socketGemSuggestions" and id ~= "tooltipSpellCopy"
+        and id ~= "macroBuilder" and id ~= "chatProfileLinks"
+        and id ~= "tooltipMPlusScore" and id ~= "tooltipClassColors"
+        and id ~= "collectionNewMarkers"
+        and id ~= "guildChatPrivacy" and id ~= "groupFinderExitReminder"
+        and id ~= "groupRaidShortcuts" and id ~= "trainerLearnAll"
+        and id ~= "characterUpgradeWindow" and id ~= "lootToastFilter"
+        and id ~= "combatMovementCue" and id ~= "professionAppearance"
+        and id ~= "trustedPartyInvites" and id ~= "burningRushCue"),
         id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end

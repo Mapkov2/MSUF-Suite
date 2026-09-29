@@ -23,6 +23,8 @@ local W = H.New(root, flavor, { beforeModules = function(world)
     G.UnitXP = function() return 200 end
     G.UnitXPMax = function() return 1000 end
     G.UnitGUID = function() return "Player-1" end
+    G.UnitName = function() return "Alice" end
+    G.GetRealmName = function() return "Realm" end
     G.MSUF_ResolveStatusbarTextureKey = function(key)
         return key == "TestTexture" and "Interface\\AddOns\\Test\\Media\\bar.tga" or nil
     end
@@ -70,6 +72,7 @@ S.MoneyText = function(amount)
 end
 Load("Bootstrap")
 Load("Appearance")
+Load("GoldLedger")
 Load("DataTexts")
 local M = assert(S.instances.dataTexts)
 assert(not M.bars[1] and W.Pending() == 0, "dormant DataTexts allocated a visible bar or timer")
@@ -83,7 +86,7 @@ assert(probeTicks == 1 and S.ScheduleDataTick("probe", 1, Probe) == firstTask, "
 firstTask:Cancel()
 W.Advance(1)
 assert(probeTicks == 1 and W.Pending() == 0, "a cancelled data tick still fired or kept its timer")
-local defaultLook = flavor == "Forever" and 3 or 2
+local defaultLook = 5
 assert(S.Config("chat").look == defaultLook
     and S.Config("damageMeter").look == defaultLook
     and S.Config("dataTexts").look == defaultLook
@@ -308,6 +311,10 @@ assert(dataMover.extraControls[4].set(34) and S.Config("dataTexts").bar1Height =
 money = 112345
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[1].text == "Gold: 11g", "gold event did not update the bar")
+assert(S.Set("dataTexts", "trackAltGold", true))
+assert(W.Suite.RootDB.goldLedger and W.Suite.RootDB.goldLedger["Player-1"]
+    and W.Suite.RootDB.goldLedger["Player-1"].money == 112345,
+    "gold ledger did not capture the current character when enabled")
 -- A slot opens Blizzard's matching window out of combat (bags for gold, the
 -- character sheet for durability; FPS has none) and explains its value.
 do
@@ -331,6 +338,8 @@ end
 money = W.secret
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[1].text == "Gold: —", "secret gold was formatted")
+assert(W.Suite.RootDB.goldLedger["Player-1"].money == 112345,
+    "secret gold was stored in the account ledger")
 money = 100000
 W.Suite.RootDB.suiteGold = { ["Player-1"] = 100000 }
 W.Suite.loginKind, W.Suite.goldSessionCaptured = "login", false

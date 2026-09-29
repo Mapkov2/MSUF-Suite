@@ -90,6 +90,7 @@ C_SpecializationInfo = {
 C_ClassTalents = { GetActiveConfigID = function() return 100 end }
 C_Traits = { GetConfigInfo = function() return { name = "Raid" } end }
 UnitGUID = function() return "Player-123" end
+assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LoadoutReminder.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local reminder = modules.loadoutReminder
 reminder.context = Context()
@@ -135,10 +136,20 @@ assert(reminder.host.shown and reminder.title.text == "Check your loadout",
 reminder.host:Hide()
 reminder.context.events.PLAYER_TALENT_UPDATE(reminder, "PLAYER_TALENT_UPDATE")
 assert(not reminder.host.shown, "unchanged talents repeated the reminder")
+reminder.config.onLfgProposal = true
+reminder:Refresh()
+assert(reminder.context.events.LFG_PROPOSAL_SHOW,
+    "dungeon queue reminder did not subscribe")
+reminder.host:Hide()
+reminder.context.events.LFG_PROPOSAL_SHOW(reminder)
+assert(reminder.host.shown and reminder.title.text == "Check your loadout",
+    "dungeon queue did not show a mismatched loadout")
+reminder.config.onLfgProposal = false
 reminder.config.onReadyCheck, reminder.config.onInstanceEntry = false, false
 reminder:Refresh()
 assert(not reminder.context.events.READY_CHECK and not reminder.context.events.ZONE_CHANGED_NEW_AREA
-    and not reminder.context.events.PLAYER_TALENT_UPDATE and not reminder.hideTimer,
+    and not reminder.context.events.PLAYER_TALENT_UPDATE
+    and not reminder.context.events.LFG_PROPOSAL_SHOW and not reminder.hideTimer,
     "disabled reminder triggers kept listening or retained an alert timer")
 reminder.config.onInstanceEntry = true
 reminder:Refresh()

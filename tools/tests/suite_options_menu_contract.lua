@@ -136,6 +136,12 @@ assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnit
 -- Menu2 public surface
 local M, W, T = {}, {}, {}
 MSUF2 = M
+local layerProvider
+M.RegisterLayerOverviewProvider = function(id, provider)
+    assert(id == "suite-owned-surfaces" and type(provider) == "function")
+    layerProvider = provider
+    return true
+end
 local historyProvider, historyWrites = nil, 0
 M.RegisterHistoryProvider = function(_, capture, restore)
     if type(capture) ~= "function" or type(restore) ~= "function" then return false end
@@ -182,6 +188,7 @@ T.navIconColors = { home = { 1 }, gameplay = { 2 }, profiles = { 3 } }
 T.Font = function(parent, template, text) local fs = Widget("FontString"); fs.text = text; return fs end
 T.Button = function(parent, text) local b = Widget("Button"); b.text = text; return b end
 T.Panel = function() return Widget("Panel") end
+T.ApplySurface = function() end
 T.CenterButtonLabel = function() end
 M.navItems = {
     { key = "home", label = "Dashboard" },
@@ -217,6 +224,16 @@ M.RegisterControlMetadata = function(widget, meta)
     if meta and meta.controlId then registeredControls[meta.controlId] = widget end
     if meta and meta.controlId and meta.controlId:find("%.preview%.") then previewControls[meta.controlId] = widget end
 end
+M.RegisterSearchWidget = function(widget, meta)
+    assert(widget and type(meta) == "table" and type(meta.pageKey) == "string")
+    widget.searchMeta = meta
+    return widget
+end
+M.AddTooltip = function(widget, title, body, opts)
+    assert(widget)
+    widget.tooltip = { title = title, body = body, options = opts }
+    return widget
+end
 M.SelectPage = function(key) M.selectedPage = key end
 local current
 M.TrackRefresh = function(ctx, fn) ctx.refreshers[#ctx.refreshers + 1] = fn end
@@ -234,6 +251,7 @@ M.BindDropdownAt = function(ctx, parent, label, x, y, values, w, get, set, meta)
 M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta) return Bind(ctx, Widget("EditBox"), get, set, meta, label) end
 M.BindDropdownWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
 W.Dropdown = function(parent, label) local d = Widget("Dropdown"); d.label = label; return d end
+W.SwitchAt = function() return Widget("Switch") end
 W.MoveWidget = function() end
 W.SegmentTabs = function(ctx, parent, opts)
     local segment = Widget("SegmentTabs")
@@ -281,7 +299,7 @@ W.PageBuilder = function(ctx)
         local body = Widget("Section")
         body.sectionId, body.title = id, title
         body._msuf2Width = ctx.width
-        body._msuf2CollapsibleEntry = {}
+        body._msuf2CollapsibleEntry = { label = Widget("FontString") }
         ctx.sections[#ctx.sections + 1] = body
         ctx.pageItems[#ctx.pageItems + 1] = id
         return body
@@ -377,6 +395,19 @@ for _, key in ipairs(expected) do
     assert(T.navIconGrid[key] and T.navIconColors[key], "nav icon missing: " .. key)
 end
 assert(M.pages.suite_skin, "Suite-owned skinning page is missing")
+do
+    assert(type(layerProvider) == "function", "Suite layer overview provider was not registered")
+    local layers = {}
+    layerProvider({ Layer = function(_, row) layers[row.id] = row end })
+    local action = layers["suite.actionbars.bar1Layer"]
+    local meter = layers["suite.damageMeter.w1Layer"]
+    local data = layers["suite.dataTexts.bar1Layer"]
+    assert(action and meter and data and action.automatic and action.value == 0,
+        "Suite-owned layer rows did not expose legacy Auto without loading a module")
+    assert(action.edit.kind == "external" and action.edit.module == "actionbars"
+        and action.edit.key == "bar1Layer" and type(action.edit.set) == "function",
+        "Suite layer row cannot write through its module controller")
+end
 local rows = {}
 for _, item in ipairs(M.navItems) do if item.key then rows[item.key] = item end end
 assert(Suite.SuiteCatalog.qol.addon == "MSUF_Suite_QualityOfLife"
@@ -437,6 +468,7 @@ assert(rawget(L, "Enable module") == "MSUF-eigene Übersetzung", "suite changed 
 local contexts = {}
 for _, key in ipairs(expected) do
     local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+    if key == "suite_qualityOfLife" then ctx.entry = { sections = {} } end
     current = ctx
     M.pages[key].build(ctx)
     if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
@@ -444,6 +476,56 @@ for _, key in ipairs(expected) do
     for _, section in ipairs(ctx.sections) do assert(section.finished, key .. " section not finished: " .. section.sectionId) end
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
+end
+do
+    local qol = contexts.suite_qualityOfLife
+    local rows = assert(qol.qualityOfLifeFeatureRows)
+    local resolver = assert(qol.entry and qol.entry._msuf2ResolveMissingSection,
+        "Quality of Life lost exact navigation to virtual feature sections")
+    local actionId = "suite_qualityOfLife_actionTracker_action_tracker"
+    local action = assert(rows[actionId])
+    assert(action.hasDetails and not action.details and not action.colorShortcut,
+        "Quality of Life built hidden action tracker settings eagerly")
+    local resolved = resolver(actionId)
+    assert(resolved == action.details and action.colorShortcut,
+        "Quality of Life search did not lazily reveal action tracker settings")
+    local cachedDetails = action.details
+    assert(resolver(actionId) == cachedDetails and action.details == cachedDetails,
+        "Quality of Life rebuilt already materialized settings")
+    local combatLogId = "suite_qualityOfLife_combatLog_log_dungeons"
+    local combatLog = assert(rows[combatLogId])
+    assert(action.row._msufSuiteSelected and action.row._msufSuiteStripe.shown,
+        "opened Quality of Life submenu has no selected-row highlight")
+    resolver(combatLogId)
+    assert(combatLog.row._msufSuiteSelected and combatLog.row._msufSuiteStripe.shown
+        and not action.row._msufSuiteSelected and not action.row._msufSuiteStripe.shown,
+        "Quality of Life submenu highlight did not follow the selected feature")
+    resolver(actionId)
+    local simpleId = "suite_qualityOfLife_groupFinderDoubleClick_group_finder_double_click"
+    local simple = assert(rows[simpleId])
+    assert(not simple.hasDetails and not simple.details and not simple.settings
+        and resolver(simpleId) == simple.row,
+        "one-switch Quality of Life feature should remain a direct compact row")
+    assert(qol.entry.sections[simpleId] == nil and qol.entry.sections[actionId] == nil,
+        "old Quality of Life feature IDs must remain virtual search routes")
+    local repairId = "suite_qualityOfLife_qol_repair"
+    local repair = assert(rows[repairId])
+    assert(resolver(repairId) == repair.details and repair.details,
+        "old merchant feature route did not open its settings")
+    local merchantTabs
+    for _, control in ipairs(qol.tabControls or {}) do
+        if control.frames.loot and control.frames.merchants then merchantTabs = control end
+    end
+    assert(merchantTabs and merchantTabs.segment.value == "merchants"
+        and merchantTabs.frames.merchants.shown and not merchantTabs.frames.loot.shown,
+        "old merchant feature route did not switch to its submenu")
+    for sectionId, record in pairs(rows) do
+        if record.hasDetails then
+            assert(resolver(sectionId) == record.details and record.details,
+                "Quality of Life detail panel could not be opened by its stable section ID")
+        end
+    end
+    for _, refresh in ipairs(qol.refreshers) do refresh() end
 end
 do
     local plates = S.Config("nameplates")
@@ -824,17 +906,34 @@ for pageKey, ctx in pairs(contexts) do
             end
         end
     end
+    if pageKey == "suite_qualityOfLife" then
+        for sectionId, record in pairs(ctx.qualityOfLifeFeatureRows or {}) do
+            if record.colorShortcut then
+                local targets = record.colorShortcut.options.getTargets()
+                assert(record.colorShortcut.options.maxTargets >= #targets,
+                    "Quality of Life color shortcut truncates its targets: " .. sectionId)
+                for _, target in ipairs(targets) do
+                    assert(type(target.get) == "function" and type(target.set) == "function",
+                        "Quality of Life has an unbound color shortcut target")
+                    shortcutColors[target.sourceSettingKey or target.settingKey] = true
+                    shortcutColorCount = shortcutColorCount + 1
+                end
+            end
+        end
+    end
 end
 assert(shortcutColorCount > 0, "suite color shortcut audit did not cover the catalog")
 local hudSections = {}
 for _, section in ipairs(contexts.suite_hud.sections) do
     hudSections[section.sectionId] = true
     local appearance = section.sectionId == "suite_hud_objectives_type"
+        or section.sectionId == "suite_hud_summary_type"
         or section.sectionId == "suite_hud_announcements_type"
     assert((type(section.colorShortcut) == "table") == appearance,
         "HUD appearance accordion is missing its three-dot colors")
 end
-assert(hudSections.suite_hud_objectives_type and hudSections.suite_hud_announcements_type
+assert(hudSections.suite_hud_objectives_type and hudSections.suite_hud_summary_type
+    and hudSections.suite_hud_announcements_type
     and not hudSections.suite_hud_objectives_quest_groups
     and not hudSections.suite_hud_announcements_event_colors,
     "HUD appearance was not condensed")
@@ -1124,11 +1223,16 @@ loaded.Bartender4 = nil
 M.RequestRefresh()
 local qolPage = contexts.suite_qualityOfLife
 function qolPage.Section(name)
-    local id = "suite_qualityOfLife_" .. name
-    for _, section in ipairs(qolPage.sections) do
-        if section.sectionId == id then return section end
-    end
-    error("missing Quality of Life section: " .. name)
+    local rows = qolPage.qualityOfLifeFeatureRows
+        or (qolPage.entry and qolPage.entry.qualityOfLifeFeatureRows)
+    local row = rows and rows["suite_qualityOfLife_" .. name]
+    assert(row and row.toggle, "missing Quality of Life feature: " .. name)
+    -- The old tests exercise the same independent feature switches and color
+    -- actions after the feature rows move into category accordions.
+    return {
+        headerSwitch = row.toggle,
+        colorShortcut = row.colorShortcut or (row.body and row.body.colorShortcut),
+    }
 end
 local qolHeader = qolPage.Section("qol_repair").headerSwitch
 C_AddOns.GetAddOnEnableState = function(name)
@@ -1153,6 +1257,8 @@ do
         { "suite_dataTexts", "dataTexts.bar1.move", "dataTexts", "bar1" },
         { "suite_dataTexts", "dataTexts.action.move", "dataTexts", "bar1" },
         { "suite_qualityOfLife", "xpBar.action.edit", "xpBar", "experience" },
+        { "suite_qualityOfLife", "combatMovementCue.action.edit", "combatMovementCue", "combat" },
+        { "suite_qualityOfLife", "burningRushCue.action.edit", "burningRushCue", "combat" },
         { "suite_qualityOfLife", "skyriding.action.edit", "skyriding", "flight" },
     }
     local status, availability = S.Status, S.Availability
@@ -1338,18 +1444,146 @@ for bar = 1, 3 do
     assert(Suite.SuiteCatalog.dataTexts.rules["bar" .. bar .. "FontRendering"].default == 3,
         "DataText bar " .. bar .. " did not default to Slug")
 end
-local qolGroups = { "actionTracker_action_tracker", "battleRes_battle_res", "loot_collection", "combatLog_log_dungeons", "xpBar_xp_bar",
-    "vaultSpec_vault_spec", "innervateCue_innervate_cue", "itemCounts_item_counts", "loadoutReminder_loadout_reminder",
-    "loot_history", "durabilityAlert_durability_warning", "merchantLevel_merchant_level", "quests_automation",
-    "quietPopups_quiet_popups", "qol_repair", "qol_junk", "skyriding_flight_hud",
-    "tooltipIDs_tooltip_ids" }
-assert(#qolPage.sections == #qolGroups, "Quality of Life retained Module Basics or nested accordions")
-for i, name in ipairs(qolGroups) do
-    local section = qolPage.sections[i]
-    assert(section.sectionId == "suite_qualityOfLife_" .. name and section.headerSwitch,
-        "Quality of Life feature has no independent header switch: " .. name)
+do
+local qolFeaturesByCategory = {
+    everydayAutomation = {
+        "collectionNewMarkers_collection_markers", "dailyComfort_daily_comfort",
+        "delveSolePower_delve_sole_power", "trainerLearnAll_trainer_all", "quests_automation",
+    },
+    lootMerchants = {
+        "loot_collection", "lootToastFilter_filtered_loot", "vaultSpec_vault_spec",
+        "loot_history", "merchantLevel_merchant_level", "lootContainers_open_containers",
+        "qol_repair", "qol_junk", "lootVendorRules_marked_sales",
+    },
+    characterGear = {
+        "chatProfileLinks_profile_links", "characterUpgradeWindow_upgrade_equipment",
+        "xpBar_xp_bar", "socketGemSuggestions_socket_gems", "loadoutReminder_loadout_reminder",
+        "durabilityAlert_durability_warning", "professionAppearance_profession_outfits",
+        "combatStatsHUD_secondary_stats",
+    },
+    groupRaid = {
+        "battleRes_battle_res", "groupBloodlust_bloodlust_lockout",
+        "groupDeathAlert_group_death_alert", "innervateCue_innervate_cue",
+        "groupRaidShortcuts_raid_shortcuts", "trustedPartyInvites_trusted_invites",
+    },
+    groupFinderMythic = {
+        "groupFinderExitReminder_group_finder_exit", "groupFinderDoubleClick_group_finder_double_click",
+        "mythicKeyShare_keystone_command", "groupFinderApplicantSort_group_finder_applicant_sort",
+        "mythicResetReminder_mythic_reset", "tooltipMPlusScore_mplus_score",
+    },
+    combatAlerts = {
+        "actionTracker_action_tracker", "burningRushCue_burning_rush_cue",
+        "combatLog_log_dungeons", "macroBuilder_macro_builder",
+        "combatMovementCue_movement_cue", "combatPetStatus_pet_status",
+    },
+    mapTravel = {
+        "mapLandingShortcuts_expansion_shortcuts", "mapQuickSwitch_map_quick_switch",
+        "skyriding_flight_hud", "waypoints_waypoint_command",
+    },
+    interfaceChat = {
+        "cursorEffects_cursor_effects", "guildChatPrivacy_guild_privacy",
+        "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter",
+    },
+    tooltips = {
+        "tooltipClassColors_class_colors", "tooltipSpellCopy_copy_spell_id",
+        "itemCounts_item_counts", "tooltipIDs_tooltip_ids", "tooltipVisibility_tooltip_visibility",
+    },
+}
+local qolRows = assert(qolPage.qualityOfLifeFeatureRows
+    or (qolPage.entry and qolPage.entry.qualityOfLifeFeatureRows),
+    "Quality of Life feature rows were not exposed to direct navigation")
+assert(#qolPage.sections == 9, "Quality of Life should have nine category accordions")
+local categoriesSeen = {}
+for i, section in ipairs(qolPage.sections) do
+    local category = section.sectionId:match("^suite_qualityOfLife_category_(.+)$")
+    assert(category and qolFeaturesByCategory[category] and not categoriesSeen[category],
+        "unexpected or duplicate Quality of Life category accordion: " .. tostring(section.sectionId))
+    categoriesSeen[category] = true
+    assert(rawget(section, "headerSwitch") == nil,
+        "category must not turn all features on or off: " .. category)
     assert(i == 1 or qolPage.sections[i - 1].title < section.title,
-        "Quality of Life feature names are not alphabetically sorted")
+        "Quality of Life categories are not alphabetically sorted")
+end
+local expectedQolFeatureCount = 0
+local expectedQolFeatures = {}
+for category, features in pairs(qolFeaturesByCategory) do
+    assert(categoriesSeen[category], "missing Quality of Life category: " .. category)
+    for _, name in ipairs(features) do
+        assert(not expectedQolFeatures[name], "duplicate expected Quality of Life feature: " .. name)
+        expectedQolFeatures[name] = category
+        expectedQolFeatureCount = expectedQolFeatureCount + 1
+        local oldSectionId = "suite_qualityOfLife_" .. name
+        local row = assert(qolRows[oldSectionId], "missing Quality of Life feature row: " .. name)
+        assert(row.category == category and row.toggle and row.toggle.meta
+            and row.toggle.meta.sectionId == oldSectionId,
+            "Quality of Life feature has wrong category or no independent switch: " .. name)
+        local search = row.toggle.searchMeta
+        assert(search and search.pageKey == "suite_qualityOfLife" and search.kind == "toggle"
+            and search.sectionId == oldSectionId
+            and search.settingKey == row.toggle.meta.settingKey
+            and row.row.tooltip and row.toggle.tooltip
+            and (not row.settings or row.settings.tooltip)
+            and type(row.row.tooltip.title) == "string",
+            "Quality of Life feature lost its direct search entry or help: " .. name)
+    end
+end
+local actualQolFeatureCount = 0
+for name in pairs(qolRows) do
+    actualQolFeatureCount = actualQolFeatureCount + 1
+    assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
+        "Quality of Life feature was not assigned to the proposed categories: " .. name)
+end
+assert(expectedQolFeatureCount == 53 and actualQolFeatureCount == expectedQolFeatureCount,
+    "Quality of Life features are missing or duplicated")
+local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
+    "Quality of Life category source was not published for search")
+assert(#sourceCategories == 9, "Quality of Life source should define nine categories")
+local sourceSeen, sourceCount, tabbedCount, expectedRenderedOrder = {}, 0, 0, {}
+local function CheckFeatureList(features, category, tab, appendRenderedOrder)
+    local previousTitle
+    for _, feature in ipairs(features) do
+        local title = optionsNS.Tr(feature.title)
+        assert(not previousTitle or previousTitle < title,
+            "Quality of Life features are not alphabetic inside " .. category .. "/" .. tostring(tab))
+        previousTitle = title
+        local name = feature.id .. "_" .. feature.sections[1]
+        assert(expectedQolFeatures[name] == category
+            and feature.category == category and (tab == false or feature.tab == tab),
+            "Quality of Life feature source has the wrong category or tab: " .. name)
+        if appendRenderedOrder then
+            assert(not sourceSeen[name], "Quality of Life feature rendered twice: " .. name)
+            sourceSeen[name] = true
+            sourceCount = sourceCount + 1
+            expectedRenderedOrder[#expectedRenderedOrder + 1] = "suite_qualityOfLife_" .. name
+        end
+    end
+end
+for i, category in ipairs(sourceCategories) do
+    assert(categoriesSeen[category.id], "unknown Quality of Life source category: " .. tostring(category.id))
+    assert(qolPage.sections[i].sectionId == "suite_qualityOfLife_category_" .. category.id,
+        "Quality of Life source order differs from the rendered accordions")
+    CheckFeatureList(category.features, category.id, false, false)
+    if category.tabs then
+        tabbedCount = tabbedCount + 1
+        assert(#category.tabs == 2, "Quality of Life category has an unexpected tab count")
+        for j, tab in ipairs(category.tabs) do
+            assert(j == 1 or optionsNS.Tr(category.tabs[j - 1].title) < optionsNS.Tr(tab.title),
+                "Quality of Life submenus are not alphabetically sorted")
+            CheckFeatureList(tab.features, category.id, tab.id, true)
+        end
+    else
+        CheckFeatureList(category.features, category.id, nil, true)
+    end
+end
+assert(tabbedCount == 3 and sourceCount == 53,
+    "Quality of Life source tabs or rendered feature inventory changed")
+local renderedOrder = assert(qolPage.qualityOfLifeFeatureOrder,
+    "Quality of Life page did not record the rendered feature order")
+assert(#renderedOrder == #expectedRenderedOrder,
+    "Quality of Life rendered feature count differs from its source")
+for i, sectionId in ipairs(expectedRenderedOrder) do
+    assert(renderedOrder[i] == sectionId,
+        "Quality of Life rendered feature order differs from its sorted source: " .. sectionId)
 end
 local route = {
     ["msufsuite.actionTracker.rows"] = "actionTracker_action_tracker",
@@ -1373,15 +1607,20 @@ for _, widget in ipairs(qolPage.widgets) do
     local meta = widget.meta
     if meta and route[meta.settingKey] then
         assert(meta.sectionId == "suite_qualityOfLife_" .. route[meta.settingKey],
-            "Quality of Life search route points at a removed accordion")
+            "Quality of Life search route lost its stable feature section ID")
+        local live = widget.searchMeta
+        assert(live and live.pageKey == "suite_qualityOfLife"
+            and live.settingKey == meta.settingKey and live.sectionId == meta.sectionId,
+            "opened Quality of Life setting will duplicate its search-provider result")
         routed = routed + 1
     end
 end
 assert(routed == 15, "Quality of Life settings lost their search routes: " .. routed)
+end
 do
     local actionToggle = qolPage.Section("actionTracker_action_tracker").headerSwitch
-    assert(S.Config("actionTracker").look == 1 and S.Config("actionTracker").rows == 5,
-        "Action tracker must start with its compact classic style")
+    assert(S.Config("actionTracker").look == 6 and S.Config("actionTracker").rows == 5,
+        "Action tracker must start with the Suite factory look")
     actionToggle.set(true)
     assert(actionToggle.get() and S.Config("actionTracker").enabled,
         "Action tracker header switch did not enable its module")
@@ -1558,7 +1797,7 @@ MapkoSkin = nil
 local skin = { addonName = "MSUF_Suite_Skin", Client = { isMainline = true, isForever = false },
     L = setmetatable({}, { __index = function(_, key) return key end }) }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", skin)
-assert(skin.Defaults.theme.look == "midnightDark" and skin.Defaults.theme.preset == "midnightDark")
+assert(skin.Defaults.theme.look == "cleanModern" and skin.Defaults.theme.preset == "cleanModern")
 skin.DB = skin.CopyValue(skin.Defaults)
 local previewSurfaces = {}
 skin.Surface = { Attach = function(frame, spec) previewSurfaces[#previewSurfaces + 1] = spec.role; return frame end }
@@ -1901,8 +2140,8 @@ assert(windowType.get() == S.Config("damageMeter").w3Type)
 local dmConfig = S.Config("damageMeter")
 local meterLook = Find(dm, function(w) return w.meta and w.meta.settingKey == "msufsuite.damageMeter.look" end)
 local meterBorder = ColorTarget(dm, "suite_damageMeter_window", "msufsuite.damageMeter.borderColor")
-assert(meterLook and meterBorder and dmConfig.look == 2 and dmConfig.borderColor == "575b58",
-    "Midnight Dark damage meter look is missing from the menu")
+assert(meterLook and meterBorder and dmConfig.look == 5 and dmConfig.borderColor == "333333",
+    "Clean Modern damage meter factory look is missing from the menu")
 meterLook.set(2)
 assert(dmConfig.look == 2 and dmConfig.bgColor == "151719" and dmConfig.borderColor == "575b58",
     "Midnight Dark damage meter preset did not apply its complete palette")
@@ -2397,6 +2636,19 @@ assert(not xp.enabled and xp.look == 3 and S.Config("actionbars").bar1Visibility
 assert(S.Set("xpBar", "enabled", true) and xp.look == 2,
     "newly enabled XP bar did not adopt the selected global look")
 
+assert(S.ApplyGlobalLook("cleanModern"), "Clean Modern global look was rejected")
+assert(S.Config("actionbars").look == 5 and S.Config("actionbars").interactionColor == "e6ecf2"
+    and S.Config("minimap").stylePreset == 11
+    and S.Config("damageMeter").look == 5 and S.Config("damageMeter").bgColor == "101010"
+    and S.Config("bags").look == 5 and S.Config("bags").accentColor == "e6ecf2"
+    and S.Config("chat").look == 5 and S.Config("chat").accentColor == "e6ecf2"
+    and S.Config("dataTexts").look == 5 and S.Config("xpBar").look == 5
+    and S.Config("skyriding").look == 5
+    and cooldowns.ess_glowColor == "e6ecf2"
+    and S.Config("actionbars").bar1Visibility == savedVisibility
+    and S.Config("minimap").x == savedPosition,
+    "Clean Modern did not style Suite modules or changed layout/visibility")
+
 assert(S.ApplyGlobalLook("midnight"), "Blue global look was rejected")
 assert(S.Config("minimap").stylePreset == 8 and S.Config("actionbars").look == 1
     and S.Config("xpBar").look == 1 and S.Config("skyriding").look == 1
@@ -2666,6 +2918,30 @@ end)()
         if entry.value == "__BLIZZARD_CHAT_FONT__" then count = count + 1 end
     end
     assert(count == 1, "chat font picker must offer Blizzard's font once")
+end)()
+
+;(function()
+    local original = M.Tr
+    M.Tr = function(text)
+        if text == "Tooltips" or text == "Pet status warning" then return "!" .. text end
+        if text == "Everyday & Automation" or text == "Action tracker" then return "~" .. text end
+        return original(text)
+    end
+    local ctx = { key = "suite_qualityOfLife", width = 720, refreshers = {}, widgets = {},
+        sections = {}, pageItems = {}, entry = { sections = {} } }
+    M.pages.suite_qualityOfLife.build(ctx)
+    assert(ctx.sections[1].sectionId == "suite_qualityOfLife_category_tooltips",
+        "Quality of Life categories did not re-sort after a locale change")
+    local firstCombat
+    for _, sectionId in ipairs(ctx.qualityOfLifeFeatureOrder) do
+        if ctx.qualityOfLifeFeatureRows[sectionId].category == "combatAlerts" then
+            firstCombat = sectionId
+            break
+        end
+    end
+    assert(firstCombat == "suite_qualityOfLife_combatPetStatus_pet_status",
+        "Quality of Life features did not re-sort after a locale change")
+    M.Tr = original
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

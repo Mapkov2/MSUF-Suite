@@ -2,6 +2,20 @@
 -- order, so the tests follow load-order changes without their own file lists.
 local Support = {}
 
+-- Isolated QoL module tests load one file without the addon's Bootstrap.lua.
+-- Install the real palette bridge with a minimal core namespace.
+function Support.QoLStyleFixture(root, suite)
+    suite.RGB = suite.RGB or function() return 1, 1, 1 end
+    local previous = _G.MSUFSuite
+    _G.MSUFSuite = { Suite = suite, QoLVisualStyles = {
+        [1] = { background = "0a1220", border = "41627a", accent = "57c7df",
+            text = "f4f7fb", muted = "aab5c2" },
+    } }
+    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/Bootstrap.lua"))(
+        "MSUF_Suite_QualityOfLife", {})
+    _G.MSUFSuite = previous
+end
+
 function Support.TocFiles(root, addon, flavor)
     local path = root .. "/" .. addon .. "/" .. addon .. "_" .. (flavor or "Mainline") .. ".toc"
     local toc = assert(io.open(path, "rb"), "missing " .. path)

@@ -162,7 +162,9 @@ do
     local edges, disc = MM.edges, MM.disc
     check(edges[1].shown and not disc.shown and not MM.shadows and edges[1].height == 1 and edges[3].width == 1,
         "default 1px square border creates no shadow textures")
-    check(edges[1].color[1] == 0 and edges[1].color[4] == 1, "default black border")
+    check(H.Near(edges[1].color[1], 0x33 / 255)
+        and H.Near(edges[1].color[4], 0.95), "default Clean Modern border")
+    assert(S.Set("minimap", "styleBackdrop", false)); W.Step()
     assert(S.SetMany("minimap", { borderSize = 3, borderColor = "ff0000" }))
     check(edges[1].height == 3 and edges[1].color[1] == 1 and edges[1].color[2] == 0, "border thickness/color")
     check(edges[1].points[1][4] == -3 and MM.host.clampInsets[1] == -3 and MM.host.clampInsets[3] == 3, "border sits outside, clamp includes it")
@@ -789,7 +791,7 @@ do
     local defaults = W.config
     check(defaults.enabled and defaults.captured and defaults.point == 3
         and defaults.x == -20 and defaults.y == -20 and defaults.size == 205
-        and defaults.stylePreset == 7 and not defaults.infoClock,
+        and defaults.stylePreset == 11 and not defaults.infoClock,
         "forever map and footer defaults did not resolve")
     H.Enable(W)
     W.Step()

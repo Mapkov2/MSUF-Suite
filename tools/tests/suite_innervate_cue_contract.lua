@@ -98,6 +98,7 @@ local NS = {
     AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER" },
     IsCombatLocked = function() return locked end,
 }
+assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/InnervateCue.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 

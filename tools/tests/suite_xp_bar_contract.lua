@@ -70,6 +70,8 @@ local function Load(kind)
         AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
     suite.Suite = { instances = {}, editMode = false }
     local runtime = suite.Suite
+    runtime.ApplyOwnedLayer = function() return false end
+    runtime.ApplyOwnedChildLayer = function() return false end
     runtime.GlobalFontPath = function() return MEDIA.font end
     runtime.Public = function(value) return value ~= "secret" end
     -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.

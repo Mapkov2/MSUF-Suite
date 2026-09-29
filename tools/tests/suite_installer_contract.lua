@@ -11,6 +11,7 @@ local Suite = {
     } } } },
     ForeverFactorySkinCompact = "MSKIN1:forever",
     ForeverFactoryFramesCompact = "MSUF3:frames",
+    ClassicFactoryFramesCompact = "MSUF3:bundled-classic-frames",
     CDM = { DEFAULTS_VERSION = 3, FRAME_ANCHORS = { [14] = "player" } },
     SuiteOrder = { "chat", "bags", "minimap", "damageMeter", "dataTexts",
         "buffReminders", "qol", "quests", "loot", "combatLog", "xpBar",
@@ -22,12 +23,21 @@ for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id }
 local factoryCalls, activations, scaleChanges, decodes = 0, 0, {}, 0
 
 Suite.IsCombatLocked = function() return false end
+Suite.Suite = { StyleProfile = function(profile, look)
+    profile.suite.globalLook = look
+    return true
+end }
 -- The core's translation lookup and status display (MSUF_Suite/Core/Platform.lua).
 Suite.Text = function(english)
     local value = Suite.L and Suite.L[english]
     return type(value) == "string" and value ~= "" and value or english
 end
 Suite.StatusText = function(text, translate) return translate(text) end
+Suite.RGB = function(hex)
+    return tonumber(hex:sub(1, 2), 16) / 255,
+        tonumber(hex:sub(3, 4), 16) / 255,
+        tonumber(hex:sub(5, 6), 16) / 255
+end
 -- MSUF_Suite/Core/Database.lua's deep copy.
 local function Copy(value)
     if type(value) ~= "table" then return value end
@@ -42,6 +52,9 @@ Suite.CopyValue = function(value)
 end
 Suite.Print = function() end
 Suite.Client.AddOnEnabled = function() return true end
+Suite.Client.AttachControllerWindow = function() end
+Suite.Client.ResumeControllerWindow = function() end
+Suite.Client.RaiseControllerCursor = function() end
 Suite.Database = {
     IsProfileName = function(name) return type(name) == "string" and name ~= "" end,
     GetActiveProfileName = function() return "Default" end,
@@ -82,8 +95,10 @@ Suite.SuiteProfiles = {
     -- The follow-up repairs belong to suite_profiles_contract.
     EnsureNewCharacterProfile = function() return false end,
     EnsureRetailResourceStack = function() return false end,
-    InstallSuiteFactory = function(name, profile, skin)
-        assert(name == "Default" and skin == Suite.RetailFactorySkinCompact)
+    InstallSuiteFactory = function(name, profile, skin, look)
+        assert(name == "Default" and skin == (Suite.Client.isForever
+            and Suite.ForeverFactorySkinCompact or Suite.RetailFactorySkinCompact))
+        assert(look == (profile.suite.globalLook == "midnight" and "midnight" or "cleanModern"))
         assert(profile.suite.modules.dataTexts.bar1Point == 8
             and profile.suite.modules.dataTexts.bar1X == 0
             and profile.suite.modules.actionbars.bar1Point == 8
@@ -94,8 +109,22 @@ Suite.SuiteProfiles = {
         Suite.Database.Activate(name)
         return true, name
     end,
-    InstallFactory = function(name, frames, profile, skin)
+    InstallFactory = function(name, frames, profile, skin, look)
         factoryCalls = factoryCalls + 1
+        if look == "midnight" then
+            assert(name == (Suite.Client.isForever and "MSUF Suite Classic 2" or "MSUF Suite Classic")
+                and frames == (Suite.Client.isForever and Suite.ClassicFactoryFramesCompact
+                    or MSUF_NS.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT)
+                and skin == (Suite.Client.isForever and Suite.ForeverFactorySkinCompact
+                    or Suite.RetailFactorySkinCompact)
+                and profile.suite.globalLook == "midnight",
+                "Classic MSUF must install a complete frame, Suite and Skin factory")
+            MSUF_GlobalDB.profiles[name] = {}
+            Suite.RootDB.profiles[name] = profile
+            MSUF_ActiveProfile = name
+            Suite.Database.Activate(name)
+            return true, name
+        end
         assert(name == "MSUF Suite Forever")
         assert(frames == "MSUF3:frames")
         assert(skin == "MSKIN1:forever")
@@ -128,7 +157,8 @@ Suite.SuiteProfiles = {
     end,
 }
 
-MSUF_NS = { MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT = "MSUF3:frames" }
+MSUF_NS = { MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT = "MSUF3:frames",
+    MSUF_FACTORY_DEFAULT_PROFILE_COMPACT = "MSUF3:retail-classic-frames" }
 MSUF_ActiveProfile = "Default"
 MSUF_DB = { general = { UIScale = { Enabled = true, Scale = 0.53 }, msufUiScale = 0.9 } }
 MSUF_GlobalDB = { profiles = { Default = {} } }
@@ -174,6 +204,7 @@ GameTooltip = FakeFrame()
 IsLoggedIn = function() return true end
 ReloadUI = function() end
 GetLocale = function() return "enUS" end
+UISpecialFrames = {}
 
 assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
 assert(Suite.Installer.Apply())
@@ -200,7 +231,7 @@ Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 copies = 0
 local function CheckLayout()
-    local panels = { window.suite, window.forever, window.cooldowns, window.scaleToggle,
+    local panels = { window.suite, window.classic, window.forever, window.cooldowns, window.scaleToggle,
         window.back, window.close, window.next, window.scaleSlider }
     for _, group in ipairs({ window.intro, window.moduleRows, window.presets, window.review, window.done }) do
         for _, panel in ipairs(group) do panels[#panels + 1] = panel end
@@ -220,11 +251,12 @@ local function CheckLayout()
         end
     end
 end
-assert(window.intro[1].shown and window.suite.shown == false and window.forever.shown == false)
+assert(window.intro[1].shown and window.suite.shown == false and window.classic.shown == false
+    and window.forever.shown == false)
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.next.scripts.OnClick() -- welcome -> profile
-assert(window.suite.shown and window.forever.shown and window.cooldowns.shown
+assert(window.suite.shown and window.classic.shown and window.forever.shown and window.cooldowns.shown
     and window.cooldowns.mark.text == "ON")
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
@@ -265,7 +297,7 @@ CheckLayout()
 Suite.Client.isForever = true
 Suite.Installer.Open()
 window.next.scripts.OnClick()
-assert(window.forever.mark.text == "SELECTED", "Forever did not default to its own factory")
+assert(window.suite.mark.text == "SELECTED", "Clean Modern is not the Suite setup default on Forever")
 CheckLayout()
 Suite.Client.isForever = false
 MSUF_GetPixelPerfectScale = function() return 768 / 2160 end
@@ -299,6 +331,28 @@ assert(Suite.RootDB.installation.raidEssentials == false
     and Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData == "MSUF3:spells",
     "Modern onboarding must retain personal CDM lists while applying the chosen default")
 
+Suite.Installer.Open()
+window.next.scripts.OnClick() -- welcome -> profile
+window.classic.scripts.OnClick()
+assert(window.classic.mark.text == "SELECTED"
+    and window.suite.mark.text == "CHOOSE"
+    and window.review[1].shown == false,
+    "Classic MSUF is not a separate setup choice")
+assert(Suite.Installer.Apply()
+    and Suite.RootDB.installation.profile == "classic"
+    and MSUF_ActiveProfile == "MSUF Suite Classic"
+    and Suite.RootDB.profiles[MSUF_ActiveProfile].suite.globalLook == "midnight"
+    and Suite.RootDB.profiles[MSUF_ActiveProfile].suite.modules.cooldownManager.listsData == "MSUF3:rogue",
+    "Classic MSUF did not install complete frames with its palette")
+Suite.Client.isForever = true
+Suite.Installer.Open()
+window.next.scripts.OnClick() -- welcome -> profiles
+window.classic.scripts.OnClick()
+assert(Suite.Installer.Apply() and MSUF_ActiveProfile == "MSUF Suite Classic 2"
+    and Suite.RootDB.installation.profile == "classic",
+    "Forever Classic selection did not import the bundled non-Forever MSUF frames")
+Suite.Client.isForever = false
+
 -- The profile install is the commit point: nothing after it refuses, so a
 -- scale step that MSUF refuses can neither fail the install nor let a retry
 -- create a second Forever profile.
@@ -311,6 +365,8 @@ end
 MSUF_ResetGlobalUiScale = function() return false end
 Suite.Client.isForever = true
 Suite.Installer.Open()
+window.next.scripts.OnClick()
+window.forever.scripts.OnClick()
 if not Suite.Installer.Apply() then Suite.Installer.Apply() end
 assert(#created == 1 and created[1] == "MSUF Suite Forever"
     and Suite.RootDB.installation.profile == "forever",

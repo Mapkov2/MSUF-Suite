@@ -26,6 +26,34 @@ C_AddOns = {
 local SECRET = {}
 issecretvalue = function(value) return value == SECRET end
 assert(loadfile(root .. "/MSUF_Suite/Core/Platform.lua"))("MSUF_Suite", Suite)
+do
+    local rootFrame = { level = 17 }
+    function rootFrame:GetFrameLevel() return self.level end
+    function rootFrame:SetFrameLevel(level) self.level = level end
+    local child = { level = 18, writes = 0 }
+    function child:GetFrameLevel() return self.level end
+    function child:SetFrameLevel(level) self.level = level; self.writes = self.writes + 1 end
+    assert(Suite.ApplyOwnedLayer(rootFrame, -1) == false, "older MSUF must retain its frame level")
+    assert(Suite.ApplyOwnedChildLayer(child, rootFrame, 5, 2, false) == false,
+        "older MSUF must retain child levels")
+    local routed
+    MSUF_NS.UF = { Layers = {
+        ApplyOwnedSurface = function(frame, layer, detail)
+            routed = { frame, layer, detail }
+            return true
+        end,
+        ElementLevel = function(layer, _, detail) return 100 + layer * 32 + detail end,
+    } }
+    assert(Suite.ApplyOwnedLayer(rootFrame, 5) == true and routed[1] == rootFrame and routed[2] == 5,
+        "Suite did not delegate its root to the MSUF layer contract")
+    assert(Suite.ApplyOwnedChildLayer(child, rootFrame, 5, 2, false) and child.level == 262,
+        "Suite child did not stay inside its parent layer slot")
+    assert(not Suite.ApplyOwnedChildLayer(child, rootFrame, -1, 2, false) and child.level == 262,
+        "unchanged Auto should not write children")
+    assert(Suite.ApplyOwnedChildLayer(child, rootFrame, -1, 2, true) and child.level == 19,
+        "Auto did not restore the child's parent-relative level")
+    MSUF_NS.UF = nil
+end
 -- The secret-safe readers and the translation lookup live in the always
 -- loaded core, so the options pages have them without the module runtime.
 assert(not Suite.Public(SECRET) and Suite.Public(1) and Suite.Number(1) and not Suite.Number(0 / 0)
@@ -53,6 +81,36 @@ assert(Suite.Client.IsAddOnLoaded("Loaded") and not Suite.Client.IsAddOnLoaded("
 assert(Suite.L == MSUF_NS.L and frames == 0 and reads == 2)
 assert(Suite.Client.isClassic == nil and Suite.Client.family == nil,
     "the Suite no longer models Classic clients")
+-- Forever's two native controller styles need no device-specific button map.
+-- The D-pad manager sees a completed window once per open/page transition.
+do
+    local style, shown, hidden, cursor = true, 0, 0, 0
+    InputUtil = { IsGamepadUIEnabled = function() return style end }
+    GamepadMode = { FrameControlsManager = {
+        FrameShown = function(_, frame) shown = shown + 1; assert(frame.name == "SuiteWindow"); return true end,
+        FrameHidden = function(_, frame) hidden = hidden + 1; assert(frame.name == "SuiteWindow") end,
+    } }
+    CanAutoSetGamePadCursorControl = function(on) return on == true end
+    SetGamePadCursorControl = function(on) assert(on == true); cursor = cursor + 1 end
+    local window = { name = "SuiteWindow", shown = true }
+    function window:IsShown() return self.shown end
+    function window:HookScript(name, callback) self[name] = callback end
+    Suite.Client.AttachControllerWindow(window)
+    Suite.Client.ResumeControllerWindow(window)
+    Suite.Client.ResumeControllerWindow(window)
+    assert(shown == 1 and hidden == 0 and cursor == 0)
+    Suite.Client.PauseControllerWindow(window)
+    Suite.Client.ResumeControllerWindow(window)
+    assert(shown == 2 and hidden == 1)
+    window.shown = false
+    window.OnHide(window)
+    assert(hidden == 2)
+    style = false
+    Suite.Client.RaiseControllerCursor()
+    assert(cursor == 1)
+    InputUtil, GamepadMode = nil, nil
+    CanAutoSetGamePadCursorControl, SetGamePadCursorControl = nil, nil
+end
 local notifications, owner = 0, {}
 Suite.Registry.AddListener(owner, function(who, domain, name)
     assert(who == owner and domain == "profile" and name == "Raid")

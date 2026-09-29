@@ -346,8 +346,8 @@ local c=S.Config("damageMeter")
 assert(c.windowCount==2 and c.w1Type==1 and c.w2Type==3 and c.w1Session==1 and c.w2Session==1
     and c.w1X==-20 and c.w2X==-20 and c.w1Y==20 and c.w2Y==210
     and c.refreshRate==1 and c.showPlayer and c.trackAlpha==42
-    and c.bgAlpha==82 and c.borderSize==1 and c.look==2
-    and c.bgColor=="151719" and c.borderColor=="575b58", "damage meter defaults")
+    and c.bgAlpha==82 and c.borderSize==1 and c.look==5
+    and c.bgColor=="101010" and c.borderColor=="333333", "damage meter defaults")
 c.enabled = false
 S.Apply("damageMeter")
 assert(not M.context and #frames==baseFrames and #timers==0 and #afters==0,"disabled module allocated work")
@@ -446,8 +446,8 @@ for meterType=0,10 do
 end
 assert(tileCount==11 and typePanel.buttons[0].points[1][4]~=typePanel.buttons[1].points[1][4],"type picker needs eleven choices in two columns")
 assert(typePanel.buttons[0].bg.color[2]>typePanel.buttons[1].bg.color[2],"selected type lacks visible highlight")
-assert(math.abs(typePanel.palette.accent[1]-0xb9/255)<.001 and math.abs(typePanel.palette.accent[2]-0xab/255)<.001,
-    "Midnight Dark picker should use the meter color instead of a fixed teal accent")
+assert(math.abs(typePanel.palette.accent[1]-0xe6/255)<.001 and math.abs(typePanel.palette.accent[2]-0xec/255)<.001,
+    "Clean Modern picker should use the meter color instead of a fixed teal accent")
 assert(typePanel.buttons[0].parent==typePanel and typePanel.buttons[0].label.parent==typePanel.buttons[0],"type choices must be addon-owned frames")
 local countAfterFirstOpen=Created("Button")
 D.HideTypeMenu()
@@ -464,9 +464,9 @@ local client=MSUFSuite.Client
 local wasForever=client.isForever
 client.isForever=true
 D.OpenTypeMenu(win,win.header)
-assert(math.abs(typePanel.palette.accent[1]-0xb9/255)<.001
-    and math.abs(typePanel.palette.accent[2]-0xab/255)<.001,
-    "picker should follow the selected Midnight Dark meter style even on Forever")
+assert(math.abs(typePanel.palette.accent[1]-0xe6/255)<.001
+    and math.abs(typePanel.palette.accent[2]-0xec/255)<.001,
+    "picker should follow the selected Clean Modern meter style even on Forever")
 D.HideTypeMenu()
 client.isForever=wasForever
 D.HeaderButtonClick(win.buttons.type)

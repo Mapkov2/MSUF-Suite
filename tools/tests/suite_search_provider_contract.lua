@@ -1,7 +1,8 @@
 -- Suite pages and settings in MSUF's menu search (MSUF_Suite_Options/Menu/Search.lua).
 --
 -- Boots the sibling Classic MSUF checkout's real core, Options and search layer
--- (its tools/tests/client_world.lua), loads MSUF_Suite and MSUF_Suite_Options into
+-- (its tools/tests/client_world.lua), optionally substituting Retail's search
+-- provider hook, then loads MSUF_Suite and MSUF_Suite_Options into
 -- the same client and runs real searches. Checks that the provider registers
 -- through M.RegisterSearchProvider without collecting at load, that every Suite
 -- page answers its own name and its aliases (Register.lua puts them only into
@@ -11,6 +12,7 @@
 -- An MSUF build without the hook gets no rows and no error.
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
 local classic = root .. "/../MidnightSimpleUnitFrames-Classic"
+local searchHost = (arg[3] or classic):gsub("\\", "/"):gsub("/$", "")
 
 local function Check(condition, message)
     if not condition then error("suite_search_provider_contract: " .. message, 2) end
@@ -46,7 +48,23 @@ local World = assert(loadfile(classic .. "/tools/tests/client_world.lua"),
 -- arg 2 (optional): "Forever" boots the WoW Forever client instead of Retail.
 local flavor = arg[2] or "Mainline"
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
-local world = World.New(classic, flavor):Boot()
+local world = World.New(classic, flavor)
+if searchHost ~= classic then
+    -- The Retail checkout does not carry Classic's client-world manifest. Boot
+    -- the established Classic harness, but load Retail's search provider hook
+    -- at its ordered TOC position to verify the production integration.
+    local searchFile = searchHost .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/Search/MSUF_Menu2_Search_IndexQuery.lua"
+    Read(searchFile)
+    local loadFile = world.LoadFile
+    function world:LoadFile(path, addon, namespace)
+        if addon == "MidnightSimpleUnitFrames_Options"
+            and path:find("/MSUF_Menu2_Search_IndexQuery.lua", 1, true) then
+            path = searchFile
+        end
+        return loadFile(self, path, addon, namespace)
+    end
+end
+world:Boot()
 local failure = world:FirstFailure()
 Check(failure == nil, "MSUF did not boot: " .. tostring(failure and failure.file) .. " "
     .. tostring(failure and failure.message))
@@ -176,6 +194,49 @@ Check(buttonSize == 1, "the action bars' per-bar Button size gave " .. buttonSiz
 
 ------------------------------------------------------------------ installed modules only
 local rows = P.SearchRows()
+local expectedQolRows = {}
+for _, feature in ipairs(Check(P.QualityOfLifeSearchFeatures,
+    "the Quality of Life page did not publish its feature search inventory")) do
+    local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
+    Check(not expectedQolRows[sectionId], "duplicate Quality of Life feature inventory: " .. sectionId)
+    expectedQolRows[sectionId] = "msufsuite." .. feature.id .. "." .. feature.switch
+end
+local directQolRows, directQolCount, categoryRows = {}, 0, {}
+for _, row in ipairs(rows) do
+    if row.pageKey == "suite_qualityOfLife" and row.qolFeatureId then
+        directQolCount = directQolCount + 1
+        Check(row.kind == "toggle" and row.sectionId and not directQolRows[row.sectionId]
+            and row.settingKey == expectedQolRows[row.sectionId],
+            "Quality of Life feature search has no unique exact toggle target: " .. tostring(row.sectionId))
+        directQolRows[row.sectionId] = row
+    elseif row.pageKey == "suite_qualityOfLife" and row.kind == "section"
+        and type(row.sectionId) == "string"
+        and row.sectionId:find("^suite_qualityOfLife_category_") then
+        Check(not categoryRows[row.sectionId], "duplicate Quality of Life category search row")
+        categoryRows[row.sectionId] = row
+    end
+end
+Check(directQolCount == 53, "search omitted Quality of Life feature switches: " .. directQolCount)
+for sectionId in pairs(expectedQolRows) do
+    Check(directQolRows[sectionId], "search omitted Quality of Life feature: " .. sectionId)
+end
+local categoryCount = 0
+for _ in pairs(categoryRows) do categoryCount = categoryCount + 1 end
+Check(categoryCount == 9, "search omitted a Quality of Life category: " .. categoryCount)
+for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
+    local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
+    local expectedKey = expectedQolRows[sectionId]
+    local exact
+    for _, rec in ipairs(api.GetSearchRecords()) do
+        if rec.provided and rec.key == "suite_qualityOfLife" and rec.exactTarget
+            and rec.exactTarget.settingKey == expectedKey
+            and rec.exactTarget.sectionId == sectionId then
+            exact = rec
+            break
+        end
+    end
+    Check(exact, "indexed Quality of Life search target lost its stable feature route: " .. sectionId)
+end
 local chatRows = 0
 for _, row in ipairs(rows) do
     if row.pageKey == "suite_chat" and row.kind ~= "page" and row.kind ~= "faq" then chatRows = chatRows + 1 end
@@ -186,6 +247,107 @@ for _, row in ipairs(P.SearchRows()) do
     Check(not (row.pageKey == "suite_chat" and row.kind ~= "page"), "rows of a module that is not installed")
 end
 missing.MSUF_Suite_Chat = nil
+
+-- Search navigation must open a cold QoL page, select its category/tab, and
+-- build the exact setting widget before resolving it. The client-world harness
+-- omits a few native Widget methods and window chrome; supply only those API
+-- surfaces for this route test.
+do
+    local createFrame = env.CreateFrame
+    env.CreateFrame = function(kind, ...)
+        local frame = createFrame(kind, ...)
+        if kind == "Button" then
+            frame.Click = frame.Click or function(self, button)
+                local handler = self:GetScript("OnClick")
+                if handler then return handler(self, button or "LeftButton") end
+            end
+        elseif kind == "CheckButton" then
+            frame.SetChecked = function(self, value) self._checked = value end
+            frame.GetChecked = function(self) return self._checked end
+        elseif kind == "Slider" then
+            frame.SetValueStep = frame.SetValueStep or function() end
+            frame.SetMinMaxValues = function(self, lo, hi) self._min, self._max = lo, hi end
+            frame.GetMinMaxValues = function(self) return self._min or 0, self._max or 1 end
+            frame.SetValue = function(self, value) self._value = value end
+            frame.GetValue = function(self) return self._value or 0 end
+        elseif kind == "EditBox" then
+            frame.SetAutoFocus = frame.SetAutoFocus or function() end
+            frame.SetNumeric = frame.SetNumeric or function() end
+        end
+        return frame
+    end
+    M.SetActivePageHeader = M.SetActivePageHeader or function() end
+    M.RunStickyHeaderActivation = M.RunStickyHeaderActivation or function() end
+    M.SetTitle, M.UpdateNav = function() end, function() end
+    M.scrollChild = env.CreateFrame("Frame", nil, env.UIParent)
+    M.frame = env.CreateFrame("Frame", nil, env.UIParent)
+    M.frame:Show()
+
+    local function RouteExact(settingKey, expectedTab)
+        local target
+        for _, record in ipairs(api.GetSearchRecords()) do
+            if record.provided and record.key == "suite_qualityOfLife"
+                and record.exactTarget and record.exactTarget.settingKey == settingKey then
+                target = record
+                break
+            end
+        end
+        Check(target, "no exact Quality of Life search record: " .. settingKey)
+        local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
+            target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+        world.widgets:RunTimers(80)
+        local entry = M.cache and M.cache.suite_qualityOfLife
+        local feature = entry and entry.qualityOfLifeFeatureRows[target.exactTarget.sectionId]
+        local category = feature and entry.sections["suite_qualityOfLife_category_" .. feature.category]
+        local _, widget = M.RuntimeControlCatalog.FindBySettingKey(
+            settingKey, "suite_qualityOfLife", target.exactTarget)
+        Check(selected and anchored and exact and widget,
+            "Quality of Life search did not focus exact setting: " .. settingKey)
+        Check(feature and feature.details and feature.tab == expectedTab
+            and feature.row:GetParent():IsShown() and feature.details:IsShown(),
+            "Quality of Life search did not reveal the correct feature tab: " .. settingKey)
+        Check(category and category._msuf2CollapsibleEntry.open == true,
+            "Quality of Life search left its category closed: " .. settingKey)
+    end
+
+    Check(M.cache.suite_qualityOfLife == nil, "Quality of Life page unexpectedly warm before exact search")
+    RouteExact("msufsuite.actionTracker.rows", "main")
+    RouteExact("msufsuite.qol.junkReport", "merchants")
+    for _, settingKey in ipairs({ "msufsuite.actionTracker.rows", "msufsuite.qol.junkReport" }) do
+        local matches = 0
+        for _, record in ipairs(api.GetSearchRecords()) do
+            if record.key == "suite_qualityOfLife" and record.exactTarget
+                and record.exactTarget.settingKey == settingKey then
+                matches = matches + 1
+            end
+        end
+        Check(matches == 1, "opened Quality of Life setting has duplicate search rows: " .. settingKey)
+    end
+    for _, case in ipairs({
+        { "action tracker", "msufsuite.actionTracker.enabled" },
+        { "keystone command", "msufsuite.mythicKeyShare.enabled" },
+        { "loot history", "msufsuite.loot.manageHistory" },
+    }) do
+        local first = Search(case[1])[1]
+        Check(first and first.key == "suite_qualityOfLife" and first.exactTarget
+            and first.exactTarget.settingKey == case[2],
+            "Quality of Life search did not put the feature first: " .. case[1])
+    end
+end
+
+-- The Retail hook isolates a broken optional provider from the menu search.
+if searchHost ~= classic then
+    local calls = 0
+    M.RegisterSearchProvider("broken-test", function()
+        calls = calls + 1
+        error("expected provider failure")
+    end)
+    Check(#api.GetSearchRecords() > 0 and calls == 1,
+        "a failing search provider broke the index")
+    Check(#api.GetSearchRecords() > 0 and calls == 1,
+        "a failing search provider was repeatedly called")
+    M.RegisterSearchProvider("broken-test", nil)
+end
 
 print("suite_search_provider_contract: ok (" .. #rows .. " rows; every page by name and alias)")
 print(table.concat(shown, "\n"))
