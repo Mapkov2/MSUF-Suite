@@ -52,6 +52,7 @@ local function NextEntry(list, id, title, group)
     list.count = index
     entry.id, entry.title, entry.group = id, title, group
     entry.tracked, entry.itemIcon, entry.timeLeft, entry.scenarioID = nil, nil, nil, nil
+    entry.findGroup, entry.questGroupSearch = nil, nil
     entry.lines.count = 0
     return entry
 end
@@ -132,6 +133,11 @@ end
 local function AddQuest(list, c, id, title, group, tracked, task)
     local entry = NextEntry(list, id, title, group)
     entry.tracked = tracked
+    if not P.NS.Client.isForever then
+        local activityID = Read(C_LFGList.GetActivityIDForQuestID, id)
+        entry.questGroupSearch = Finite(activityID) and activityID > 0 or nil
+    end
+    entry.findGroup = not P.NS.Client.isForever and (group == "world" or entry.questGroupSearch)
     AddObjectiveLines(entry, id)
     if c.showQuestItems ~= false then entry.itemIcon = QuestItem(id) end
     if c.showTimers ~= false then entry.timeLeft = QuestTimeLeft(id, task) end
@@ -202,6 +208,11 @@ local function CollectBonus(list, c)
             local inArea, _, count, taskName = GetTaskInfo(id)
             if Public(inArea) and inArea == true and Finite(count) and Text(taskName) then
                 local entry = NextEntry(list, id, taskName, "bonus")
+                if not P.NS.Client.isForever then
+                    local activityID = Read(C_LFGList.GetActivityIDForQuestID, id)
+                    entry.questGroupSearch = Finite(activityID) and activityID > 0 or nil
+                    entry.findGroup = entry.questGroupSearch
+                end
                 for j = 1, count do
                     local line, kind, done = GetQuestObjectiveInfo(id, j, false)
                     if Text(line) then
@@ -238,6 +249,35 @@ local function CollectAchievements(list)
     end
 end
 
+-- Blizzard's scenario tracker owns two widget sets that can carry a stage
+-- timer even when no scenario criterion has duration/elapsed values.
+local SCENARIO_WIDGET_SETS = { 252, 514 }
+local function ScenarioWidgetTimeLeft()
+    if P.NS.Client.isForever then return nil end
+    local manager = C_UIWidgetManager
+    local widgetType = Enum.UIWidgetVisualizationType.ScenarioHeaderTimer
+    for set = 1, #SCENARIO_WIDGET_SETS do
+        local widgets = Read(manager.GetAllWidgetsBySetID, SCENARIO_WIDGET_SETS[set])
+        if type(widgets) == "table" then
+            for i = 1, #widgets do
+                local widget = widgets[i]
+                if Public(widget) and type(widget) == "table"
+                    and Finite(widget.widgetID) and Public(widget.widgetType)
+                    and widget.widgetType == widgetType then
+                    local info = Read(manager.GetScenarioHeaderTimerWidgetVisualizationInfo, widget.widgetID)
+                    if type(info) == "table" and Public(info.shownState)
+                        and info.shownState ~= Enum.WidgetShownState.Hidden
+                        and Finite(info.timerMin) and Finite(info.timerMax) and Finite(info.timerValue)
+                        and info.timerMax > info.timerMin then
+                        local left = math.min(info.timerValue, info.timerMax) - info.timerMin
+                        if left > 0 then return left end
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function CollectScenario(list, c)
     local scenario = C_Scenario
     local name, stage, total, _, _, _, _, _, _, _, _, _, scenarioID = scenario.GetInfo()
@@ -248,6 +288,7 @@ local function CollectScenario(list, c)
     if Text(stepName) then AddLine(entry, stepName) end
     if Text(description) and description ~= stepName then AddLine(entry, description) end
     local criteriaInfo = C_ScenarioInfo.GetCriteriaInfo
+    if c.showTimers ~= false then entry.timeLeft = ScenarioWidgetTimeLeft() end
     if not Finite(criteriaCount) then return end
     for i = 1, criteriaCount do
         local info = Read(criteriaInfo, i)
@@ -257,7 +298,7 @@ local function CollectScenario(list, c)
             if c.showTimers ~= false and Finite(info.duration) and Finite(info.elapsed)
                 and info.duration > info.elapsed then
                 local left = info.duration - info.elapsed
-                if not entry.timeLeft or left < entry.timeLeft then entry.timeLeft = left end
+                if not entry.timeLeft then entry.timeLeft = left end
             end
         end
     end

@@ -107,6 +107,7 @@ end
 local EVENT_SOURCES = {
     SCENARIO_UPDATE = { "scenario" },
     SCENARIO_CRITERIA_UPDATE = { "scenario" },
+    UPDATE_ALL_UI_WIDGETS = { "scenario" },
     ACTIVE_DELVE_DATA_UPDATE = { "scenario" },
     TRACKED_ACHIEVEMENT_UPDATE = { "achievements" },
     CRITERIA_UPDATE = { "achievements" },
@@ -193,6 +194,14 @@ local function Event(self, event, ...)
         MythicPlusEvent(self, event)
         return
     end
+    if event == "UPDATE_UI_WIDGET" then
+        local widget = ...
+        if Public(widget) and type(widget) == "table" and Public(widget.widgetSetID)
+            and (widget.widgetSetID == 252 or widget.widgetSetID == 514) then
+            Request(self, "scenario")
+        end
+        return
+    end
     if newArea then
         for i = 1, #SOURCES do Request(self, SOURCES[i]) end
         return
@@ -235,6 +244,7 @@ local TRACKER_EVENTS = {
     "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED", "ZONE_CHANGED",
     "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA", "QUEST_POI_UPDATE", "SCENARIO_BONUS_VISIBILITY_UPDATE",
     "SCENARIO_UPDATE", "SCENARIO_CRITERIA_UPDATE", "ACTIVE_DELVE_DATA_UPDATE", "TRACKED_ACHIEVEMENT_UPDATE",
+    "UPDATE_ALL_UI_WIDGETS", "UPDATE_UI_WIDGET",
     "CRITERIA_UPDATE", "ACHIEVEMENT_EARNED", "CONTENT_TRACKING_UPDATE", "SCENARIO_POI_UPDATE",
 }
 local MYTHIC_PLUS_EVENTS = {

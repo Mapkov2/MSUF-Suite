@@ -142,10 +142,11 @@ B.Section("dataTexts", "bags", "Blizzard bag buttons", {
 -- Settings are copied from the shared style when an override is switched on.
 local function AddBarStyle(bar)
     local prefix, section = "bar" .. bar, "bar" .. bar .. "Style"
+    local title = NS.Text("Bar %d styling"):format(bar)
     local switch = Bool(prefix .. "StyleOverride", "Own style", false)
     switch.hidden = true
     switch.enableKey = prefix .. "Enabled"
-    B.Add("dataTexts", switch, section, "Bar " .. bar .. " styling")
+    B.Add("dataTexts", switch, section, title)
     for _, group in ipairs({ barStyle, textStyle }) do
         for _, rule in ipairs(group) do
             local own = {}
@@ -156,15 +157,16 @@ local function AddBarStyle(bar)
                 own.requiresChoice = { key = NS.DataTextBarStyleKey(bar, rule.requiresChoice.key),
                     values = rule.requiresChoice.values }
             end
-            B.Add("dataTexts", own, section, "Bar " .. bar .. " styling")
+            B.Add("dataTexts", own, section, title)
         end
     end
 end
 
 local defaults = { { 3, 4, 5 }, { 5, 8, 9 }, { 3, 7, 10 } }
 for bar = 1, 3 do
-    local prefix, section = "bar" .. bar, "bar" .. bar
-    B.Section("dataTexts", section, "Bar " .. bar, {
+    -- Section titles are built here, so their format strings translate here.
+    local prefix, section, title = "bar" .. bar, "bar" .. bar, NS.Text("Bar %d"):format(bar)
+    B.Section("dataTexts", section, title, {
         Bool(prefix .. "Enabled", "Show bar", bar == 1),
         Number(prefix .. "Width", "Width", NS.Client.isForever and bar == 1 and 340 or 390, 180, 900, 5),
         Number(prefix .. "Height", "Height", NS.Client.isForever and bar == 1 and 28 or 26, 18, 100),
@@ -176,13 +178,13 @@ for bar = 1, 3 do
     })
     NS.SuiteCatalog.dataTexts.rules[prefix .. "Enabled"].hidden = true
     for slot = 1, 6 do
-        B.Add("dataTexts", Choice(prefix .. "Slot" .. slot, "Place " .. slot,
-            defaults[bar][slot] or 1, NS.DataTextSources), section, "Bar " .. bar)
+        B.Add("dataTexts", Choice(prefix .. "Slot" .. slot, NS.Text("Place %d"):format(slot),
+            defaults[bar][slot] or 1, NS.DataTextSources), section, title)
     end
     for _, condition in ipairs(NS.DataTextLoadConditions) do
         local rule = Bool(prefix .. "LoadCond" .. condition[1], condition[2], false)
         rule.enableKey = prefix .. "Enabled"
-        B.Add("dataTexts", rule, prefix .. "Load", "Bar " .. bar .. " Load Conditions")
+        B.Add("dataTexts", rule, prefix .. "Load", NS.Text("Bar %d Load Conditions"):format(bar))
     end
     AddBarStyle(bar)
 end

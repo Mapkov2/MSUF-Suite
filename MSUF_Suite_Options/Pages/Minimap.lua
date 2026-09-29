@@ -79,7 +79,7 @@ local function PresetButton(body, spec, index, width)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(button,
             P.Meta(PAGE, ID, "style.preset." .. spec[1], "action", "suite_minimap_style_presets"),
-            spec[2] .. " minimap style", "button")
+            Tr("%s minimap style"):format(Tr(spec[2])), "button")
     end
     return button
 end

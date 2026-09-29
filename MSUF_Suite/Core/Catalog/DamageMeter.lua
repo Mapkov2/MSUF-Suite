@@ -138,7 +138,7 @@ B.Section(id, "timer", "Combat timer", {
 local defaultTypes = { 1, 3, 8, 6, 10 }
 for i = 1, MAX_WINDOWS do
     local p = "w" .. i
-    local title = "Window " .. i
+    local title = NS.Text("Window %d"):format(i)
     B.Section(id, p, title, {
         Choice(p .. "Type", "Meter", defaultTypes[i], NS.DamageMeterTypeLabels),
         Choice(p .. "Session", "Fight", 1, { "Current fight", "Overall" }),

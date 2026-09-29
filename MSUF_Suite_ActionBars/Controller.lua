@@ -114,7 +114,7 @@ end
 
 -- Settings without runtime work; any other setting nobody listed above
 -- rebuilds everything, so a new setting is never silently ignored.
-local NO_WORK = { enabled = true, imported = true, look = true }
+local NO_WORK = { enabled = true, imported = true, look = true, pickupModifier = true }
 local FULL = {
     style = true, curves = true, events = true, native = true, repaint = true, paging = true, alpha = true,
     drag = true, visible = true,
@@ -146,6 +146,16 @@ local barWork = {}       -- bar index -> work of the running refresh
 for index = 1, AB.BAR_COUNT do barWork[index] = {} end
 local rebuild = true     -- the next refresh builds everything (activation)
 local appliedUnit, appliedEditMode
+local pickupModifiers = { [2] = "SHIFT", [3] = "CTRL", [4] = "ALT", [5] = "NONE" }
+
+-- PICKUPACTION belongs to Blizzard and also affects its action bars. An
+-- explicit Suite choice updates that setting once; the default leaves it alone.
+local function ApplyPickupModifier(config)
+    local wanted = pickupModifiers[config.pickupModifier]
+    if wanted and GetModifiedClick("PICKUPACTION") ~= wanted then
+        SetModifiedClick("PICKUPACTION", wanted)
+    end
+end
 
 local function Merge(into, from)
     for flag in pairs(from) do into[flag] = true end
@@ -291,6 +301,7 @@ function M:Refresh()
         return
     end
     local config = self.config
+    ApplyPickupModifier(config)
     if not config.imported and not AB.importQueued then QueueImport(AB.BuildImport(AB.ReadBlizzard())) end
     AB.ReparentLeaveButton()
     Collect(config)

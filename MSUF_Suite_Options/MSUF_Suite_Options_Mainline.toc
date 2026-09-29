@@ -18,6 +18,7 @@ Pages\Minimap.lua
 Pages\DamageMeter.lua
 Pages\Bags.lua
 Pages\DataTexts.lua
+Pages\Modules.lua
 Pages\QualityOfLife.lua
 Pages\HUD.lua
 Pages\BuffReminders.lua
@@ -37,3 +38,4 @@ Pages\CooldownManagerPreview.lua
 Pages\CooldownManager.lua
 Pages\Appearance.lua
 Menu\Register.lua
+Menu\Search.lua

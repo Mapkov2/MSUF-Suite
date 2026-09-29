@@ -860,7 +860,7 @@ function M:RegisterMovers()
             local index, keys = i, BAR_KEYS[i]
             local prefix = keys.prefix
             movers[i] = {
-                label = "DataTexts bar " .. i, order = 690 + i,
+                label = S.Text("DataTexts bar %d"):format(i), order = 690 + i,
                 centerPopup = true,
                 getFrame = function() return M.bars[index] and M.bars[index].frame end,
                 isEnabled = function() return M.config[keys.enabled] == true end,

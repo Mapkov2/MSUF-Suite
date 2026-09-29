@@ -11,6 +11,8 @@ local scalePreset = "custom"
 local page = 1
 local frame
 local moduleOverrides = { suite = {}, forever = {} }
+-- Above MSUF menu popups (DIALOG level 400); see CreateWindow.
+local INSTALLER_FRAME_LEVEL = 500
 
 -- Installer texts follow the Suite localization: English source strings
 -- looked up in MSUF's locale table. That table has no installer strings yet,
@@ -425,6 +427,10 @@ local function CreateWindow()
     window:SetSize(580, 470)
     window:SetPoint("CENTER")
     window:SetFrameStrata("DIALOG")
+    -- MSUF's menu shares DIALOG strata (window level 10, its popups 400), and
+    -- the host may open the installer while the menu is up. Set once, before
+    -- the children exist: a fixed level never ratchets.
+    window:SetFrameLevel(INSTALLER_FRAME_LEVEL)
     window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
         insets = { left = 4, right = 4, top = 4, bottom = 4 } })
@@ -561,6 +567,11 @@ local function BuildResultCards(window)
         InfoCard(window, 36, 103, Text("Reload the interface"),
             Text("This finishes loading the selected Suite modules.")),
     }
+    -- Where to change modules later; Back and Not now are hidden on this page.
+    window.modulesHint = Label(window, "GameFontHighlightSmall", 36, -380, 508, 18)
+    window.openModules = NavButton(window, 36, 15, 200, Text("Open Suite Modules"), function()
+        if Suite.Menu.Open("suite_modules") then window:Hide() end
+    end)
 end
 
 -- Continue walks the pages, installs on the review page and reloads at the end.
@@ -637,6 +648,8 @@ local function ShowPage(f)
     SetShownAll(f.presets, scaling and useScale)
     SetShownAll(f.review, page == 5)
     SetShownAll(f.done, complete)
+    f.modulesHint:SetShown(complete)
+    f.openModules:SetShown(complete)
     f.back:SetShown(page > 1 and not complete)
     f.close:SetShown(not complete)
     f.close:ClearAllPoints()
@@ -746,6 +759,9 @@ end
 local function PaintComplete(f)
     SetPageText(f, "Installation complete",
         "Your new setup is active. Reload the interface to finish loading all selected modules.")
+    -- Suite Modules joins the host's General group; Main MSUF names it Features.
+    local group = Suite.Host.build == "Classic" and "General" or "Features"
+    f.modulesHint:SetText(Text("Change modules any time under %s > %s"):format(Text(group), Text("Suite Modules")))
 end
 
 local PAGE_PAINTERS = { PaintWelcome, PaintProfiles, PaintModules, PaintScaling, PaintReview, PaintComplete }
@@ -770,10 +786,25 @@ function Installer.Open()
     frame:Show()
     return true
 end
-function Installer.MaybeShow()
+-- MSUF's own first run comes first. Classic MSUF reports it pending
+-- (FirstLoad6:IsFirstRunPending, a pure read) while its welcome, Quick Setup
+-- or import route is open; Main MSUF and older builds have no such state and
+-- keep today's order. Opens the installer on a fresh Suite install. Startup
+-- passes "login": then the installer waits while the host's first run is
+-- pending, and the host calls MaybeShow() once it resolves. /msufsuite and
+-- the Suite Modules page open the installer at any time.
+local function HostFirstRunPending()
+    if Suite.Host.build ~= "Classic" then return false end
+    local firstLoad = _G.MSUF_NS.FirstLoad6
+    return type(firstLoad) == "table" and type(firstLoad.IsFirstRunPending) == "function"
+        and firstLoad:IsFirstRunPending() == true
+end
+
+function Installer.MaybeShow(reason)
     if not IsLoggedIn() then return false end
     if frame and frame:IsShown() then return false end
-    if Suite.freshInstall and Suite.RootDB and not Suite.RootDB.installation then
+    if Suite.freshInstall and Suite.RootDB and not Suite.RootDB.installation
+        and not (reason == "login" and HostFirstRunPending()) then
         return Installer.Open()
     end
     return false

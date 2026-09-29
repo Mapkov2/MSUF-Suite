@@ -61,7 +61,7 @@ CDM.SLOTS = {
     { key = "bar", title = "Buff bars", kind = 3, builtin = true, categories = { 3 } },
 }
 for i = 1, 6 do
-    CDM.SLOTS[#CDM.SLOTS + 1] = { key = "c" .. i, title = "Custom bar " .. i, custom = true, categories = {} }
+    CDM.SLOTS[#CDM.SLOTS + 1] = { key = "c" .. i, title = NS.Text("Custom bar %d"):format(i), custom = true, categories = {} }
 end
 CDM.SLOT_INDEX = {}
 for i, slot in ipairs(CDM.SLOTS) do CDM.SLOT_INDEX[slot.key] = i end

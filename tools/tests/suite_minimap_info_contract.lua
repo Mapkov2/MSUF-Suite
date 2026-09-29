@@ -77,6 +77,11 @@ do
     check(clock.label.text == "14:03" and W.Pending() == 1 and W.Pending(40) == 1, "clock scheduling")
     assert(S.Set("minimap", "infoClockDate", true))
     check(clock.label.text == "14:03  26-09-2026", "optional date on minimap clock")
+    assert(S.Set("minimap", "infoClockDatePosition", 2))
+    check(clock.label.text == "26-09-2026\n14:03" and clock.button.height == 32,
+        "date above time must reserve two text lines")
+    assert(S.Set("minimap", "infoClockDatePosition", 3))
+    check(clock.label.text == "14:03\n26-09-2026", "date below time")
     assert(S.Set("minimap", "infoClockDate", false))
     check(clock.button.points[1][1] == "TOP" and clock.label.justify == "CENTER", "clock anchor")
     check(clock.label.font[1] == W.Suite.MSUFMedia.font and clock.label.font[2] == 12

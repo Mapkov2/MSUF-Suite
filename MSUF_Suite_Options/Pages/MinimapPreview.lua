@@ -534,7 +534,7 @@ local function BuildLayerChips(ui)
         end)
         if M.RegisterControlMetadata then
             M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "preview.layer." .. layer, "action", PREVIEW_SECTION),
-                entry[2] .. " preview layer", "button")
+                Tr("%s preview layer"):format(Tr(entry[2])), "button")
         end
         ui.layerButtons[i] = button
     end

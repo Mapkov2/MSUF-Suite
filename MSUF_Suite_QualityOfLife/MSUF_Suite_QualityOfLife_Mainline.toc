@@ -1,6 +1,6 @@
 ## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Quality of Life
-## Notes: Optional Innervate, Skyriding, experience, durability and battle resurrection displays, merchant, quest, loot and combat logging helpers for MSUF Suite.
+## Notes: Optional combat, quest, merchant, vault, tooltip and experience helpers for MSUF Suite.
 ## Author: Mapko
 ## Version: 1.0-alpha1
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
@@ -11,6 +11,9 @@
 Bootstrap.lua
 Merchant.lua
 QuestHelpers.lua
+MerchantItemLevel.lua
+VaultSpec.lua
+TooltipIDs.lua
 Loot.lua
 CombatLog.lua
 ExperienceBar.lua

@@ -185,7 +185,7 @@ local function BuildPlaces(ctx, body, bar, sectionId, y, width)
         end)
         if M.RegisterControlMetadata then
             M.RegisterControlMetadata(button, P.Meta(PAGE, ID, prefix .. "Slot" .. slot .. ".preview", "action", sectionId),
-                "Choose data for place " .. slot, "button")
+                Tr("Choose data for place %d"):format(slot), "button")
         end
         buttons[slot] = button
     end
@@ -250,13 +250,13 @@ local function BuildBarStyle(ctx, body, bar, sectionId, y, width)
     local styleRules = P.SectionRules(ID, prefix .. "Style")
     y = P.RuleGrid(ctx, body, PAGE, ID, styleRules, y, width, nil, sectionId)
     y = Preview(ctx, body, y - 8, width, bar)
-    P.AttachRuleColors(body, "Bar " .. bar, ID, styleRules)
+    P.AttachRuleColors(body, Tr("Bar %d"):format(bar), ID, styleRules)
     return y
 end
 
 local function BarSection(ctx, b, bar)
     local prefix, sectionId = "bar" .. bar, PAGE .. "_bar" .. bar
-    local body = b:CollapsibleSection(sectionId, Tr("Bar " .. bar), 120, bar == 1)
+    local body = b:CollapsibleSection(sectionId, Tr("Bar %d"):format(bar), 120, bar == 1)
     local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
     local toggle = P.W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
     M.BindBoolWidget(ctx, toggle,
@@ -281,7 +281,7 @@ local function BarSection(ctx, b, bar)
     y = y - math.max(14, math.ceil(loadHelp:GetStringHeight() or 14)) - 8
     y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix .. "Load"), y, width, nil, sectionId)
     y = BuildBarStyle(ctx, body, bar, sectionId, y - 16, width)
-    P.AttachSectionReset(ctx, body, "Bar " .. bar, function()
+    P.AttachSectionReset(ctx, body, Tr("Bar %d"):format(bar), function()
         return P.ResetPrefix(ID, prefix)
     end)
     P.FinishBody(b, body, y - 12)

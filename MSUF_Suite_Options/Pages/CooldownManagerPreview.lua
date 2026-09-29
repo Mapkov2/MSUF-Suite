@@ -18,9 +18,10 @@ local max, min, floor, abs, format = math.max, math.min, math.floor, math.abs, s
 local BuildDrag, DragCancel = Page.BuildPreviewIcons, Page.CancelPreviewDrag
 local PaintHits, PaintMarks, FollowPopover = Page.PaintPreviewIcons, Page.PaintPreviewMarks, Page.FollowPreviewPopover
 local DOT = " \194\183 "
-local HINT = "Click a spell for its settings" .. DOT .. "drag to reorder or onto a bar above" .. DOT
-    .. "middle-click removes" .. DOT .. "+ adds"
-local TIP = "Click: settings" .. DOT .. "Drag: reorder" .. DOT .. "Middle-click: remove"
+-- Joined text cannot be looked up, so each part translates on its own.
+local HINT = Tr("Click a spell for its settings") .. DOT .. Tr("drag to reorder or onto a bar above") .. DOT
+    .. Tr("middle-click removes") .. DOT .. Tr("+ adds")
+local TIP = Tr("Click: settings") .. DOT .. Tr("Drag: reorder") .. DOT .. Tr("Middle-click: remove")
 
 ------------------------------------------------------------------ activation
 -- The runtime keeps every bar visible while the page is open (rules

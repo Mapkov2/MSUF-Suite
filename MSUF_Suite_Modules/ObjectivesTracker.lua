@@ -148,10 +148,23 @@ local function BuildScenarioMenu(root, scenarioID)
         end)
     end
 end
-
+local function OpenQuestGroup(questID, nativeSearch)
+    if NS.IsCombatLocked() or NS.Client.isForever then return end
+    if nativeSearch then
+        LFGListUtil_FindQuestGroup(questID, true)
+    else
+        PVEFrame_ShowFrame("GroupFinderFrame", LFGListPVEStub)
+    end
+end
 local function BuildQuestMenu(root, button)
     local questID, group = button.questID, button.group
     local task = group == "world" or group == "bonus"
+    if button.findGroup then
+        local nativeSearch = button.questGroupSearch
+        root:CreateButton(button.questGroupSearch and FIND_A_GROUP or "Open group finder", function()
+            OpenQuestGroup(questID, nativeSearch)
+        end)
+    end
     root:CreateButton(task and OBJECTIVES_SHOW_QUEST_MAP or OBJECTIVES_VIEW_IN_QUESTLOG, function()
         if task then OpenTaskMap(questID) else OpenQuestDetails(questID) end
     end)
@@ -238,7 +251,16 @@ end
 local function OnOwnedLeave(button)
     if GameTooltip:GetOwner() == button then GameTooltip:Hide() end
 end
-
+local function OnFindGroupClick(button)
+    local row = button.ownerRow
+    if Finite(row.questID) then OpenQuestGroup(row.questID, row.questGroupSearch) end
+end
+local function OnFindGroupEnter(button)
+    local row = button.ownerRow
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+    GameTooltip:SetText(row.questGroupSearch and TOOLTIP_TRACKER_FIND_GROUP_BUTTON or "Open group finder")
+    GameTooltip:Show()
+end
 local function OnCollapseClick(button, mouseButton)
     local owner = button.ownerRow
     if mouseButton == "RightButton" then
@@ -347,7 +369,22 @@ local function EnsureItemButton(row)
     row.itemButton = button
     return button
 end
-
+local function EnsureFindGroupButton(row)
+    if row.findGroupButton then return row.findGroupButton end
+    local button = S.CreateFrame("Button", nil, row)
+    button:SetSize(22, 22)
+    button:RegisterForClicks("LeftButtonUp")
+    button:SetScript("OnClick", OnFindGroupClick)
+    button:SetScript("OnEnter", OnFindGroupEnter)
+    button:SetScript("OnLeave", OnOwnedLeave)
+    local icon = S.CreateTexture(button, nil, "ARTWORK")
+    icon:SetAtlas("socialqueuing-icon-eye")
+    icon:SetSize(15, 15)
+    icon:SetPoint("CENTER")
+    button.icon, button.ownerRow = icon, row
+    row.findGroupButton = button
+    return button
+end
 local function EnsureTimer(row)
     if row.timer then return row.timer end
     local timer = S.CreateFontString(row, nil, "OVERLAY")
@@ -494,6 +531,7 @@ local function FlatSlot(flat, index)
     -- Both flat buffers survive refreshes. Clear fields that belong to another row kind.
     item.key, item.kind, item.group, item.text, item.height = nil, nil, nil, nil, nil
     item.collapsed, item.menuTitle, item.tracked, item.itemIcon = nil, nil, nil, nil
+    item.findGroup, item.questGroupSearch = nil, nil
     item.timeLeft, item.hasLines, item.collapseKey = nil, nil, nil
     item.questID, item.achievementID, item.scenarioID = nil, nil, nil
     item.done, item.percent = nil, nil
@@ -546,6 +584,7 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
         item.text, item.height = entry.title, entryHeight
         item.menuTitle, item.tracked = entry.title, entry.tracked
         item.itemIcon, item.timeLeft = entry.itemIcon, entry.timeLeft
+        item.findGroup, item.questGroupSearch = entry.findGroup, entry.questGroupSearch
         item.hasLines, item.collapsed, item.collapseKey = lines.count > 0, collapsedEntries[base] == true, base
         item.questID, item.achievementID, item.scenarioID = questID, achievementID, scenarioID
         if not collapsedEntries[base] then
@@ -571,6 +610,7 @@ local function SameItem(a, b)
         and a.questID == b.questID and a.achievementID == b.achievementID
         and a.scenarioID == b.scenarioID and a.collapsed == b.collapsed
         and a.itemIcon == b.itemIcon and a.timeLeft == b.timeLeft
+        and a.findGroup == b.findGroup and a.questGroupSearch == b.questGroupSearch
         and a.hasLines == b.hasLines and a.menuTitle == b.menuTitle
         and a.collapseKey == b.collapseKey
 end
@@ -644,10 +684,19 @@ local function GroupEntries(self)
     return grouped
 end
 
--- The widgets right of a row's text, right to left: quest item, timer and
--- collapse button. Returns the inset the text keeps free.
+-- The widgets right of a row's text, right to left: group finder, quest item,
+-- timer and collapse button. Returns the inset the text keeps free.
 local function PaintRowWidgets(self, row, item, color, size)
     local rightInset = 4
+    if item.findGroup and item.kind == "entry" then
+        local button = EnsureFindGroupButton(row)
+        button:ClearAllPoints()
+        button:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
+        button:Show()
+        rightInset = rightInset + 25
+    elseif row.findGroupButton then
+        row.findGroupButton:Hide()
+    end
     if item.itemIcon and item.kind == "entry" then
         local button = EnsureItemButton(row)
         button.icon:SetTexture(item.itemIcon)
@@ -701,6 +750,7 @@ local function PaintRowState(self, row, item, color)
     row.questID = item.questID
     row.achievementID, row.scenarioID = item.achievementID, item.scenarioID
     row.menuTitle, row.tracked = item.menuTitle, item.tracked
+    row.findGroup, row.questGroupSearch = item.findGroup, item.questGroupSearch
     row:EnableMouse(item.kind == "section" or item.questID ~= nil or item.achievementID ~= nil
         or (item.group == "scenario" and item.kind ~= "section"))
     if item.percent then
@@ -748,6 +798,7 @@ local function ReleaseUnusedRows(self, used)
             row:Hide()
             row.timerEnd = nil
             if row.itemButton then row.itemButton:Hide() end
+            if row.findGroupButton then row.findGroupButton:Hide() end
             if row.timer then row.timer:Hide() end
             row.collapse:Hide()
             self.rows[key] = nil

@@ -40,6 +40,7 @@ local function Widget(parent, fontString)
     function w:SetScript(key, fn) self[key] = fn end
     function w:SetColorTexture(...) self.color = { ... } end
     function w:SetTexture(value) self.texture = value end
+    function w:SetAtlas(value) self.atlas = value end
     function w:SetTexCoord() end
     function w:SetText(text)
         assert(not self.fontString or self.font, "FontString text assigned before font")
@@ -114,7 +115,11 @@ QuestMapQuestOptions_AbandonQuest = function(id) abandoned = id end
 ShowAchievementFrameForAchievement = function(id) openedAchievement = id end
 ToggleEncounterJournal = function() openedJournal = true end
 LFGListUtil_FindScenarioGroup = function(id) foundScenario = id end
-C_LFGList = { CanCreateScenarioGroup = function() return true end }
+local questActivity, openedFinder, foundQuest
+C_LFGList = { CanCreateScenarioGroup = function() return true end,
+    GetActivityIDForQuestID = function(id) return id == 77 and questActivity or nil end }
+PVEFrame_ShowFrame = function() openedFinder = openedFinder and openedFinder + 1 or 1 end
+LFGListUtil_FindQuestGroup = function(id) foundQuest = id end
 C_Timer = { After = function(_, callback) scheduled[#scheduled + 1] = callback end }
 local function Drain()
     local pending = scheduled
@@ -137,6 +142,17 @@ C_SuperTrack = { GetSuperTrackedQuestID = function() return 0 end,
     SetSuperTrackedQuestID = function(id) superTracked = id end }
 C_Scenario = { GetInfo = function() return nil end }
 Enum = { ContentTrackingType = { Achievement = 1 }, ContentTrackingStopType = { Manual = 2 } }
+Enum.UIWidgetVisualizationType = { ScenarioHeaderTimer = 20 }
+Enum.WidgetShownState = { Hidden = 0, Shown = 1 }
+local widgetTime
+C_UIWidgetManager = {
+    GetAllWidgetsBySetID = function(setID)
+        return setID == 514 and widgetTime and { { widgetID = 901, widgetType = 20 } } or {}
+    end,
+    GetScenarioHeaderTimerWidgetVisualizationInfo = function()
+        return widgetTime and { shownState = 1, timerMin = 0, timerMax = 180, timerValue = widgetTime }
+    end,
+}
 C_ContentTracking = { GetTrackedIDs = function() return {} end }
 C_ContentTracking.StopTracking = function(_, id) stoppedAchievement = id end
 -- Neutral answers of the other quest APIs Retail and Forever both have: no
@@ -648,6 +664,26 @@ Drain()
 assert(tracker.rows["entry:world:77"].timer.text == "5:00"
     and tracker.rows["entry:scenario:0"].timer.text == "0:50",
     "world and scenario countdowns must use their matching Blizzard data")
+if flavor == "Mainline" then
+    local groupButton = tracker.rows["entry:world:77"].findGroupButton
+    assert(groupButton and groupButton.icon.atlas == "socialqueuing-icon-eye",
+        "world quests need a group finder button even without a quest activity")
+    groupButton.OnClick(groupButton)
+    assert(openedFinder == 1 and not foundQuest,
+        "a world quest without a quest activity must open the generic finder")
+    questActivity = 123
+    tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+    Drain()
+    groupButton = tracker.rows["entry:world:77"].findGroupButton
+    groupButton.OnClick(groupButton)
+    assert(foundQuest == 77, "a groupable quest must open its quest-specific search")
+    widgetTime = 90
+    C_ScenarioInfo.GetCriteriaInfo = function() return { description = "Defend", completed = false } end
+    tracker.context.events.UPDATE_UI_WIDGET(tracker, "UPDATE_UI_WIDGET", { widgetSetID = 514 })
+    Drain()
+    assert(tracker.rows["entry:scenario:0"].timer.text == "1:30",
+        "scenario header widgets must supply the phase timer when criteria do not")
+end
 tracker.config.showTimers = false
 tracker:Refresh()
 assert(not tracker.rows["entry:quests:43"].timerEnd,

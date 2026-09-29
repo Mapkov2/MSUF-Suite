@@ -14,6 +14,7 @@ securecallfunction = function(callback, ...)
 end
 local listener
 local theme = { text = { 0.93, 0.95, 0.97 }, title = { 0.98, 0.91, 0.77 } }
+QuestTextContrast = { UseLightText = function() return false end }
 
 hooksecurefunc = function(target, method, callback)
     if type(target) == "string" then
@@ -51,6 +52,7 @@ local function Text(parent, r, g, b, a)
     function region:SetTextColor(red, green, blue, alpha)
         self.color = { red, green, blue, alpha or 1 }
     end
+    function region:SetFixedColor(value) self.fixedColor = value end
     return region
 end
 
@@ -64,7 +66,10 @@ function gossip:RegisterFontString(region)
     if callbacks[self] then callbacks[self].RegisterFontString(self, region) end
 end
 function gossip:UpdateTheme()
-    for region in pairs(self.fontStrings) do region:SetTextColor(0.21, 0.17, 0.11) end
+    for region in pairs(self.fontStrings) do
+        region:SetFixedColor(false)
+        region:SetTextColor(0.21, 0.17, 0.11)
+    end
     if callbacks[self] then callbacks[self].UpdateTheme(self) end
 end
 GossipFrame = gossip
@@ -123,6 +128,7 @@ assert(QuestInfoDescriptionText.color[1] == 0.84, "theme change did not refresh 
 
 NS.QuestText.Activate(quest, "quest")
 assert(greetingButtonText.color[1] == 0.84, "existing NPC quest list stayed dark")
+assert(greetingButtonText.fixedColor == true, "dark-skin quest title color must stay fixed")
 greeting:SetTextColor(0.28, 0.25, 0.19)
 callbacks.QuestFrame_SetTextColor(greeting)
 assert(greeting.color[1] == 0.84, "NPC greeting stayed dark")
@@ -163,6 +169,7 @@ assert(greeting.color[1] == theme.title[1], "other active quest root was restore
 NS.QuestText.Deactivate(quest, "quest")
 assert(greeting.color[1] == 0.28, "NPC greeting was not restored")
 assert(greetingButtonText.color[1] == 0.31, "NPC quest list was not restored")
+assert(greetingButtonText.fixedColor == false, "native quest-title color mode was not restored")
 
 local gossipGreeting = Text(Frame(gossip), 0.26, 0.20, 0.12)
 local gossipOption = Text(Frame(gossip), 0.29, 0.22, 0.14)
@@ -171,6 +178,7 @@ gossip:RegisterFontString(gossipOption)
 assert(NS.QuestText.Activate(gossip, "gossip"))
 assert(gossipGreeting.color[1] == 0.84, "existing gossip greeting stayed dark")
 assert(gossipOption.color[1] == 0.84, "existing gossip option stayed dark")
+assert(gossipOption.fixedColor == true, "gossip quest text must keep its dark-skin color")
 gossip:UpdateTheme()
 assert(gossipGreeting.color[1] == 0.84, "gossip theme refresh darkened greeting")
 assert(gossipOption.color[1] == 0.84, "gossip theme refresh darkened option")
@@ -186,6 +194,7 @@ gossip.fontStrings[raisingOption] = nil
 NS.QuestText.Deactivate(gossip, "gossip")
 assert(gossipGreeting.color[1] == 0.21, "native greeting color was not restored")
 assert(gossipOption.color[1] == 0.21, "native option color was not restored")
+assert(gossipOption.fixedColor == false, "native gossip color mode was not restored")
 assert(newOption.color[1] == 0.30, "new option color was not restored")
 
 -- Exercise the actual quest-window adapter path so a future root-list change

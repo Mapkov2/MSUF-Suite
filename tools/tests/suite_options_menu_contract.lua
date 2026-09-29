@@ -369,7 +369,7 @@ local INTERFACE_ROWS = "#interface suite_actionbars@interface suite_minimap@inte
     .. " suite_bags@interface suite_chat@interface suite_dataTexts@interface"
 local hostShape = "home@nil #frames uf_player@frames " .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
     .. " #style opt_colors@style suite_skin@style"
-    .. " #general gameplay@general suite_qualityOfLife@general opt_misc@general profiles@general"
+    .. " #general gameplay@general suite_modules@general suite_qualityOfLife@general opt_misc@general profiles@general"
 assert(NavShape(M.navItems) == hostShape, "suite navigation: " .. NavShape(M.navItems))
 for _, key in ipairs(expected) do
     assert(M.pages[key], "page not registered: " .. key)
@@ -425,7 +425,7 @@ Reattach()
 local legacyShape = "home@nil #frames uf_player@frames"
     .. " #appearance opt_bars@appearance opt_misc@appearance suite_skin@appearance "
     .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
-    .. " #features classpower@features gameplay@features suite_qualityOfLife@features profiles@features"
+    .. " #features classpower@features gameplay@features suite_modules@features suite_qualityOfLife@features profiles@features"
 assert(NavShape(M.navItems) == legacyShape, "suite navigation on a legacy host: " .. NavShape(M.navItems))
 M.navItems = hostItems
 
@@ -1339,8 +1339,9 @@ for bar = 1, 3 do
         "DataText bar " .. bar .. " did not default to Slug")
 end
 local qolGroups = { "battleRes_battle_res", "loot_collection", "combatLog_log_dungeons", "xpBar_xp_bar",
-    "innervateCue_innervate_cue", "loot_history", "durabilityAlert_durability_warning", "quests_automation", "qol_repair",
-    "qol_junk", "skyriding_flight_hud" }
+    "vaultSpec_vault_spec", "innervateCue_innervate_cue", "loot_history", "durabilityAlert_durability_warning",
+    "merchantLevel_merchant_level", "quests_automation", "qol_repair", "qol_junk", "skyriding_flight_hud",
+    "tooltipIDs_tooltip_ids" }
 assert(#qolPage.sections == #qolGroups, "Quality of Life retained Module Basics or nested accordions")
 for i, name in ipairs(qolGroups) do
     local section = qolPage.sections[i]

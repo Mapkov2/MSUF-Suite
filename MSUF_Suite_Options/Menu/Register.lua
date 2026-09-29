@@ -9,8 +9,12 @@ local NAV_GROUPS = {
     { id = "interface", title = "Interface",
         pages = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_chat", "suite_dataTexts" } },
     { id = "style", title = "Style", fallback = "appearance", pages = { "suite_skin" } },
-    { id = "general", title = "General", fallback = "features", after = "gameplay", pages = { "suite_qualityOfLife" } },
+    { id = "general", title = "General", fallback = "features", after = "gameplay",
+        pages = { "suite_modules", "suite_qualityOfLife" } },
 }
+-- Suite Modules (Pages/Modules.lua) lists the modules in these groups, under
+-- the group titles the sidebar shows (recorded when the rows are placed).
+P.navGroups, P.navGroupTitles = NAV_GROUPS, {}
 local PAGE_ADDONS = {
     suite_actionbars = { "actionbars" },
     suite_minimap = { "minimap" },
@@ -40,18 +44,23 @@ local function AddIcons()
     end
 end
 
+-- availability() -> ok, reason, hide. The host rail dims a row that is not ok
+-- and shows the reason; hide is true only while none of the page's AddOns is
+-- installed. One switched off in Blizzard's AddOns list stays listed.
 local function NavRow(page, group)
     local row = { key = page.key, label = page.label, group = group }
     local modules = PAGE_ADDONS[page.key]
     if modules then
         row.availability = function()
-            local firstReason
+            local reason, installed
             for _, id in ipairs(modules) do
-                local ok, reason = Suite.Client.AddOnEnabled(P.catalog[id].addon)
+                local ok, why, missing = Suite.Client.AddOnEnabled(P.catalog[id].addon)
                 if ok then return true end
-                firstReason = firstReason or reason
+                -- An installed AddOn's reason says more than "Install ...".
+                if not missing and not installed then reason, installed = why, true end
+                reason = reason or why
             end
-            return false, firstReason
+            return false, reason, not installed
         end
     elseif page.key == "suite_skin" then
         row.availability = function() return Suite.Client.AddOnEnabled("MSUF_Suite_Skin") end
@@ -106,6 +115,7 @@ local function AddNavigation()
     local placed = {}
     local function Place(spec, keys)
         local group = ResolveGroup(items, spec)
+        P.navGroupTitles[spec.id] = P.navGroupTitles[spec.id] or items[FindTitle(items, group)].title
         local after = spec.after
         for _, key in ipairs(keys) do
             local page = pagesByKey[key]
@@ -156,12 +166,15 @@ local function InstallPageResets()
     M._msufSuitePageResetsInstalled = true
     local oldHas, oldWarning = M.PageHasReset, M.BuildPageResetWarning
     local oldReset, oldConfirm = M.ResetPageToDefaults, M.ShowPageResetConfirm
+    -- Second result: whether the page resets (Suite Modules sets reset = false).
     local function IsSuitePage(key)
-        for _, page in ipairs(P.pages) do if page.key == key then return true end end
+        for _, page in ipairs(P.pages) do if page.key == key then return true, page.reset ~= false end end
         return false
     end
     function M.PageHasReset(key)
-        return IsSuitePage(key) or (oldHas and oldHas(key)) or false
+        local suite, resettable = IsSuitePage(key)
+        if suite then return resettable end
+        return (oldHas and oldHas(key)) or false
     end
     function M.BuildPageResetWarning(key)
         if not IsSuitePage(key) then return oldWarning and oldWarning(key) end
@@ -170,8 +183,9 @@ local function InstallPageResets()
         return string.format(P.Tr("Reset %s to defaults?\n\nThis resets all settings on this Suite page for the active profile."), title)
     end
     function M.ResetPageToDefaults(key)
-        if not IsSuitePage(key) then return oldReset and oldReset(key) or false end
-        if P.Combat() then return false end
+        local suite, resettable = IsSuitePage(key)
+        if not suite then return oldReset and oldReset(key) or false end
+        if not resettable or P.Combat() then return false end
         if key == "suite_skin" and not Suite.Skin.EnsureEngine() then return false end
         local ok = P.WithHistory("Reset " .. tostring(key), "page:reset:" .. tostring(key), function()
             if key == "suite_skin" then return P.ResetSkinPage() or false end
@@ -187,8 +201,9 @@ local function InstallPageResets()
         return ok
     end
     function M.ShowPageResetConfirm(key)
-        if not IsSuitePage(key) then return oldConfirm and oldConfirm(key) or false end
-        if P.Combat() then return false end
+        local suite, resettable = IsSuitePage(key)
+        if not suite then return oldConfirm and oldConfirm(key) or false end
+        if not resettable or P.Combat() then return false end
         local message = M.BuildPageResetWarning(key)
         if not M.InstallStaticPopup then
             return M.ResetPageToDefaults(key)

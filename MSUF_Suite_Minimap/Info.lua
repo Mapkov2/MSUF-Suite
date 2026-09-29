@@ -112,7 +112,13 @@ local function Clock(entry)
     if c.infoClockDate then
         local calendarDate = date("%d-%m-%Y")
         if type(calendarDate) == "string" and calendarDate ~= "" then
-            text = text and text .. "  " .. calendarDate or calendarDate
+            if c.infoClockDatePosition == 2 then
+                text = text and calendarDate .. "\n" .. text or calendarDate
+            elseif c.infoClockDatePosition == 3 then
+                text = text and text .. "\n" .. calendarDate or calendarDate
+            else
+                text = text and text .. "  " .. calendarDate or calendarDate
+            end
         end
     end
     return text or "--", c.infoClockSeconds and 1 or second and 60 - second or 1
@@ -540,7 +546,8 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     S.SetStyledFont(entry.label, S.ResolveFont(c[prefix .. "Font"]), size,
         outlines[c[prefix .. "Outline"]], c[prefix .. "Rendering"],
         c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
-    local lines = key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2 or 1
+    local lines = key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2
+        or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2 or 1
     entry.size = size
     entry.button:SetSize(c[prefix .. "Width"], size * lines + 8)
     entry.justify = Anchor(entry.button, c[prefix .. "Anchor"], c[prefix .. "X"], c[prefix .. "Y"])
@@ -626,7 +633,10 @@ local function LayoutEntries(c, hideCoordinates)
                 M.infoEntries[key] = entry
             end
             Style(entry, key, c, classColor, boxR, boxG, boxB)
-            local anchor, height = c[prefix .. "Anchor"], c[prefix .. "Size"] + 8
+            local anchor = c[prefix .. "Anchor"]
+            local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2
+                or key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2 or 1
+            local height = c[prefix .. "Size"] * lines + 8
             if anchor == 10 then above = math.max(above, c[prefix .. "Y"] + height) end
             if anchor == 11 then below = math.max(below, height - c[prefix .. "Y"]) end
             entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == 2 or MM.Revealed())

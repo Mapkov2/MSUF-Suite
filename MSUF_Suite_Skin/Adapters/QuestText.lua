@@ -54,14 +54,20 @@ end
 -- Puts Blizzard's color back while ours is still showing, then forgets it.
 local function Release(region, record)
     local r, g, b, a = Safety.ReadColor(region, "GetTextColor")
-    if Safety.ColorMatches(record.applied, r, g, b, a, Safety.COLOR_OWN) then
+    local owned = Safety.ColorMatches(record.applied, r, g, b, a, Safety.COLOR_OWN)
+    if record.fixed then
+        -- Blizzard uses a fixed font color only with light quest text.
+        local native = QuestTextContrast.UseLightText() == true
+        Safety.Invoke(region, "SetFixedColor", native)
+    end
+    if owned then
         local original = record.original
         Safety.Invoke(region, "SetTextColor", original[1], original[2], original[3], original[4])
     end
     QuestText.colors[region] = nil
 end
 
-local function Paint(region, role)
+local function Paint(region, role, fixed)
     if type(region) ~= "table" or type(region.SetTextColor) ~= "function" then return end
     if not ActiveRoot(region) then
         -- QuestInfo FontStrings are shared between the map, NPC dialog and
@@ -83,6 +89,9 @@ local function Paint(region, role)
         original[1], original[2], original[3], original[4] = currentR, currentG, currentB, currentA
     end
     local r, g, b = NS.Theme.GetColor(role)
+    -- Blizzard applies the fixed-color mode before setting the text color.
+    -- Keep that order for quest buttons and registered gossip FontStrings.
+    if fixed and Safety.Invoke(region, "SetFixedColor", true) then record.fixed = true end
     if Safety.Invoke(region, "SetTextColor", r, g, b, currentA) then
         local applied = record.applied
         applied[1], applied[2], applied[3], applied[4] = r, g, b, currentA
@@ -96,7 +105,7 @@ end
 
 local function PaintGreetingButtons(pool)
     for button in pool:EnumerateActive() do
-        Paint(Safety.Call(button, "GetFontString"), "text")
+        Paint(Safety.Call(button, "GetFontString"), "text", true)
     end
 end
 
@@ -105,11 +114,11 @@ end
 -- UpdateTheme, including after a questTextContrast change.
 local function PaintGossip()
     if not QuestText.roots[GossipFrame] then return end
-    for region in pairs(GossipFrame.fontStrings) do Paint(region, "text") end
+    for region in pairs(GossipFrame.fontStrings) do Paint(region, "text", true) end
 end
 
 local function OnGossipFontString(region)
-    if not NS.IsCombatLocked() then Paint(region, "text") end
+    if not NS.IsCombatLocked() then Paint(region, "text", true) end
 end
 
 local function OnGossipTheme()

@@ -45,9 +45,42 @@ local skipIDs = String("skipIDs", "Never automate these quest IDs", "", 1600)
 skipIDs.ids = true
 B.Section("quests", "filters", "Quest filters", {
     Bool("firstTime", "Only quests not yet completed on this account"),
+    Bool("skipTrivial", "Leave trivial quests manual"),
+    Bool("skipDaily", "Leave daily quests manual"),
+    Bool("skipWeekly", "Leave weekly quests manual"),
     onlyIDs, skipIDs,
 }, { category = "advanced" })
 NS.SuiteCatalog.quests.rules.reward.enableKey = "complete"
+
+B.Module("merchantLevel", {
+    title = "Merchant item levels",
+    description = "Show the item level on equipment sold by a merchant.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Merchant item levels are available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("vaultSpec", {
+    title = "Great Vault loot specialization",
+    description = "Show your selected loot specialization in the Great Vault window.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "The Great Vault is available only in Retail" end
+        return true
+    end,
+})
+
+B.Module("tooltipIDs", {
+    title = "Tooltip IDs",
+    description = "Hold Alt to show item, spell and creature IDs on the main tooltip.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Tooltip IDs are available only in Retail" end
+        return true
+    end,
+})
 
 B.Module("loot", {
     title = "Fast loot",

@@ -91,6 +91,18 @@
   },
   {
    "file": "MSUF_Suite/Core/Installer.lua",
+   "symbol": "firstLoad (= MSUF_NS.FirstLoad6)",
+   "kind": "addon",
+   "reason": "MSUF export: only the Classic MSUF build has the first-load lifecycle; Main MSUF has none"
+  },
+  {
+   "file": "MSUF_Suite/Core/Installer.lua",
+   "symbol": "firstLoad.IsFirstRunPending (= MSUF_NS.FirstLoad6)",
+   "kind": "addon",
+   "reason": "MSUF export: only the Classic MSUF build has the first-load lifecycle; Main MSUF has none"
+  },
+  {
+   "file": "MSUF_Suite/Core/Installer.lua",
    "symbol": "getDefault (= MSUF_GetDefaultProfileForNewCharacters)",
    "kind": "addon",
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions"
@@ -832,6 +844,12 @@
    "symbol": "M.ShowStatusFeedback",
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Search.lua",
+   "symbol": "M.RegisterSearchProvider",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export: only the Classic MSUF menu has the runtime search-provider hook; Main MSUF has none"
   },
   {
    "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
@@ -2008,6 +2026,60 @@
    "symbol": "gf.RegisterFrameRegistryObserver",
    "kind": "addon",
    "reason": "MSUF group-frame registry is an optional integration; its observer is used only when exported"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MerchantItemLevel.lua",
+   "symbol": "MerchantFrame_Update",
+   "kind": "addon",
+   "reason": "Blizzard_UIPanels_Game may load after the Suite; the hook waits for the native merchant update function"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/QuestHelpers.lua",
+   "symbol": "C_QuestLog.GetInfo",
+   "kind": "client",
+   "reason": "Retail quest-log frequency metadata is used only when this helper exists on the active client, including Forever"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/QuestHelpers.lua",
+   "symbol": "C_QuestLog.GetLogIndexForQuestID",
+   "kind": "client",
+   "reason": "Retail quest-log frequency lookup is optional on Forever; unknown frequency leaves the quest manual"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/QuestHelpers.lua",
+   "symbol": "C_QuestLog.IsQuestTrivial",
+   "kind": "client",
+   "reason": "Retail trivial-quest lookup is checked for Forever; unreadable triviality leaves the quest manual"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "Enum.TooltipDataType",
+   "kind": "client",
+   "reason": "Retail tooltip data types may not exist on Forever; this module is Retail only"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "TooltipDataProcessor",
+   "kind": "client",
+   "reason": "Retail tooltip processor may not exist on Forever; this module is Retail only"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "add (= TooltipDataProcessor.AddTooltipPostCall)",
+   "kind": "client",
+   "reason": "Retail tooltip callback registration is checked before use; this module is Retail only"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "tooltip (= GameTooltip)",
+   "kind": "addon",
+   "reason": "Blizzard_GameTooltip can load after the Suite; modifier changes must tolerate its absent frame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
+   "symbol": "tooltip.RefreshDataNextUpdate (= GameTooltip)",
+   "kind": "client",
+   "reason": "Retail tooltip refresh method may not exist on Forever; this module is Retail only"
   }
  ]
 }

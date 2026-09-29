@@ -47,11 +47,38 @@ end
 
 -- Opens a suite page through MSUF's public menu entry point. MSUF's facade
 -- loads its options addon on demand, which in turn attaches the suite pages.
+-- Without a page it opens Suite Modules, the overview of every module.
 function Menu.Open(page)
     if Suite.IsCombatLocked() then return false end
     local open = _G.MSUF2_Open
     if type(open) ~= "function" then return false end
     if Suite.Client.IsAddOnLoaded(HOST_OPTIONS) and not Menu.Attach() then return false end
-    open(page or "suite_actionbars")
+    open(page or "suite_modules")
     return true
+end
+
+-- A summary for MSUF's dashboard card. Pure reads (safe in combat); the
+-- returned table is a new one and the only allocation. nil while the Suite
+-- has not started (a startup error, or a login in combat not yet finished).
+-- needsSetup: the installer has not completed (never run, or "Not now").
+local displayVersion
+function Suite.GetOverview()
+    local S = Suite.Suite
+    if Suite.startupError or not S.started or type(Suite.RootDB) ~= "table" then return nil end
+    if displayVersion == nil then
+        local version = C_AddOns.GetAddOnMetadata("MSUF_Suite", "Version")
+        displayVersion = type(version) == "string" and version or ""
+    end
+    local order, enabled = S.order, 0
+    for i = 1, #order do
+        if S.Config(order[i]).enabled == true then enabled = enabled + 1 end
+    end
+    local installation = Suite.RootDB.installation
+    return {
+        version = displayVersion,
+        total = #order,
+        enabled = enabled,
+        pageKey = Menu.attached == true and "suite_modules" or nil,
+        needsSetup = type(installation) ~= "table" or installation.status ~= "complete",
+    }
 end

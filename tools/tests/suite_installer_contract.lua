@@ -1,6 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local Suite = {
     Client = { isForever = false, isMainline = true },
+    Host = { build = "Classic" },
     RootDB = { profiles = { Default = {} } },
     RetailFactoryModuleCompact = "MSUFM1:MSUF3:retail",
     RetailFactorySkinCompact = "MSKIN1:modern",
@@ -258,6 +259,9 @@ assert(Suite.RootDB.installation.moduleOverrides.bags == true)
 assert(Suite.RootDB.installation.uiScaleEnabled and Suite.RootDB.installation.uiScale == 0.75)
 assert(scaleChanges[#scaleChanges][1] == "global" and scaleChanges[#scaleChanges][2] == 0.75)
 assert(window.done[1].shown and window.next.caption.text == "Reload UI")
+assert(window.openModules.shown and window.modulesHint.shown
+    and window.modulesHint.text == "Change modules any time under General > Suite Modules",
+    "the completed installer does not point to Suite Modules")
 CheckLayout()
 Suite.Client.isForever = true
 Suite.Installer.Open()

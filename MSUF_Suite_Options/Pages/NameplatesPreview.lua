@@ -145,7 +145,7 @@ local function Sample(editor, prefix, x)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(bar,
             P.Meta(PAGE, ID, "preview." .. prefix, "action", "suite_nameplates_preview"),
-            (prefix == "enemy" and "Enemy" or "Friendly") .. " nameplate preview", "button")
+            Tr(prefix == "enemy" and "Enemy nameplate preview" or "Friendly nameplate preview"), "button")
     end
     local back = Fill(bar, "BACKGROUND")
     back:SetAllPoints(bar)
@@ -205,7 +205,8 @@ local function Sample(editor, prefix, x)
         Tint(back, color, 0.18)
         local icon = Fill(handle, "OVERLAY")
         icon:SetPoint("CENTER", handle, "CENTER", 0, 0)
-        editor:Bind(handle, prefix .. "." .. kind, (prefix == "enemy" and "Enemy " or "Friendly ") .. kind .. " marker", keyX, keyY, prefix)
+        editor:Bind(handle, prefix .. "." .. kind,
+            Tr(prefix == "enemy" and "Enemy %s marker" or "Friendly %s marker"):format(Tr(kind)), keyX, keyY, prefix)
         return handle, back, icon
     end
     local eliteMarker, eliteBack, eliteIcon = Marker("elite", "9370db",
@@ -289,9 +290,10 @@ local function Sample(editor, prefix, x)
         CastText = castName, CastTime = castTime,
         Auras = auras, Buffs = buffs, ControlAura = control, SoftTarget = softTarget,
         RaidIcon = raid, Classification = classification, CastIcon = castIcon, CastShield = shield, CastTarget = castTarget }
-    local side = prefix == "enemy" and "Enemy " or "Friendly "
+    -- Joined labels cannot be looked up, so the side is a translated format.
+    local side = Tr(prefix == "enemy" and "Enemy %s" or "Friendly %s")
     for _, element in ipairs(Style.Elements) do
-        editor:Bind(regions[element.key], prefix .. "." .. element.key, side .. element.label,
+        editor:Bind(regions[element.key], prefix .. "." .. element.key, side:format(Tr(element.label)),
             prefix .. element.key .. "OffsetX", prefix .. element.key .. "OffsetY",
             prefix == "enemy" and element.section or (element.section == "auras" or element.section == "signals")
                 and element.section or "friendly")
@@ -303,7 +305,8 @@ local function Sample(editor, prefix, x)
     do
         -- The left arrow is a small hit target; it must not cover name/health.
         arrowGroup:SetSize(20, 24)
-        editor:Bind(arrowGroup, prefix .. ".target", side .. "target arrows", "enemyTargetOffsetX", "enemyTargetOffsetY", "enemy")
+        editor:Bind(arrowGroup, prefix .. ".target", side:format(Tr("target arrows")), "enemyTargetOffsetX",
+            "enemyTargetOffsetY", "enemy")
     end
     local function Place(frame, point, owner, relative, x, y, key)
         frame:ClearAllPoints()

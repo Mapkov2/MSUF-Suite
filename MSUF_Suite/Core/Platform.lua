@@ -213,9 +213,11 @@ end
 -- used by upstream/live's Blizzard_SharedXMLBase/AddOnUtil.lua; nil means the
 -- all-characters list, so avoid it when a player GUID is available.
 -- Enum.AddOnEnableState.None is 0 on both clients.
+-- Returns true, or false and the reason; a third result, true, tells an AddOn
+-- that is not installed at all from one switched off in the AddOns list.
 function Suite.Client.AddOnEnabled(name)
     if not Suite.Client.HasAddOn(name) then
-        return false, Suite.FormatStatus("Install %s to use this module", name)
+        return false, Suite.FormatStatus("Install %s to use this module", name), true
     end
     local guid = UnitGUID("player")
     if not Public(guid) then return false, "AddOn state unavailable in combat" end

@@ -609,7 +609,7 @@ local function BuildLayers(ui)
             ui.hint:SetText(Tr(label) .. " · " .. Tr(help))
         end)
         button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
-        Register(button, "layer." .. key, label .. " preview layer")
+        Register(button, "layer." .. key, Tr("%s preview layer"):format(Tr(label)))
         ui.layerButtons[#ui.layerButtons + 1] = button
     end
     function ui:LayoutLayerRail()
@@ -739,11 +739,11 @@ local function BuildRaidPalette(ui)
             ui:Paint()
         end)
         button:SetScript("OnEnter", function()
-            ui.hint:SetText(Tr("Raid mark: " .. RAID_MARK_NAMES[index]) .. " · "
+            ui.hint:SetText(Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])) .. " · "
                 .. Tr("Click to preview; right-click for settings"))
         end)
         button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
-        Register(button, "raidMark." .. index, "Raid mark: " .. RAID_MARK_NAMES[index])
+        Register(button, "raidMark." .. index, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])))
         ui.raidChoices[index] = button
     end
 end

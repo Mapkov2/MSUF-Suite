@@ -6,7 +6,10 @@ local HELP = {
     repair = "Repairs only when the cost is within your limit. Guild funds are used first when allowed.",
     junk = "Uses Blizzard's Sell All Junk action when a merchant opens, including its per-bag exclusions. Hold Shift while opening the merchant to skip selling. The optional chat line confirms the request, not completed sales.",
     automation = "Hold Shift to pause. Quests with a money cost and quests with a reward choice always stay manual.",
-    filters = "An empty allow-list includes every quest. Separate quest IDs with spaces or commas.",
+    filters = "An empty allow-list includes every quest. Separate quest IDs with spaces or commas. Daily and weekly exclusions leave a quest manual if its frequency cannot be read. Existing profiles keep their previous behavior until you enable an exclusion.",
+    merchant_level = "Shows item levels on merchant equipment when Blizzard has loaded its item data. Buyback items and items without an item level stay unchanged.",
+    vault_spec = "Shows the current loot specialization when you open the Great Vault. Updates if you change loot specialization while the window is open.",
+    tooltip_ids = "Hold Alt while hovering an item, spell or creature to see its ID. No ID appears when the client keeps it private.",
     collection = "Adds automatic collection on top of Blizzard's own Auto Loot setting, which stays unchanged. Locked slots and confirmations stay manual.",
     history = "Hides or briefly shows the loot history window. Need, Greed and Pass popups stay available.",
     log_dungeons = "Choose the dungeon difficulties where MSUF starts the combat log. Mythic+ begins when the keystone starts.",
@@ -30,15 +33,18 @@ local GROUPS = {
     { id = "combatLog", title = "Combat logging", switch = "enabled",
         sections = { "log_dungeons", "log_raids", "log_other", "log_exit" } },
     { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" } },
+    { id = "vaultSpec", title = "Great Vault loot spec (Retail)", switch = "enabled", sections = { "vault_spec" } },
     { id = "innervateCue", title = "Innervate whisper cue (Retail Druid)", switch = "enabled", sections = { "innervate_cue" } },
     { id = "loot", title = "Loot history", switch = "manageHistory", other = "quickLoot", sections = { "history" } },
     { id = "durabilityAlert", title = "Low durability warning", switch = "enabled",
         sections = { "durability_warning" } },
+    { id = "merchantLevel", title = "Merchant item levels (Retail)", switch = "enabled", sections = { "merchant_level" } },
     { id = "quests", title = "Quest helpers", switch = "enabled", sections = { "automation", "filters" } },
     { id = "qol", title = "Repair", switch = "repair", other = "autoJunk", sections = { "repair" } },
     { id = "qol", title = "Sell junk", switch = "autoJunk", other = "repair", sections = { "junk" } },
     { id = "skyriding", title = "Skyriding HUD (Retail)", switch = "enabled",
         sections = { "flight_hud", "flight_typography", "flight_colors" } },
+    { id = "tooltipIDs", title = "Tooltip IDs (Retail)", switch = "enabled", sections = { "tooltip_ids" } },
 }
 
 local function GroupEnabled(group)
@@ -70,6 +76,14 @@ local function HasPlayerTarget()
     return P.Suite.Public(player) and player == true
 end
 
+local function AttachRuleReset(ctx, body, title, id, rules, switch)
+    if #rules == 0 then return end
+    P.AttachRuleColors(body, title, id, rules)
+    P.AttachSectionReset(ctx, body, title, function()
+        return P.ResetRules(id, rules, nil, { switch })
+    end)
+end
+
 local function FeatureAccordion(ctx, b, group)
     local id, sectionId = group.id, PAGE .. "_" .. group.id .. "_" .. group.sections[1]
     local title = Tr(group.title)
@@ -86,13 +100,13 @@ local function FeatureAccordion(ctx, b, group)
         local source = P.SectionRules(id, section)
         local rules = GroupRules(group, source)
         for _, rule in ipairs(rules) do allRules[#allRules + 1] = rule end
-        if #group.sections > 1 then
+        if #group.sections > 1 and source[1] then
             local heading = P.Text(body, Tr(source[1].sectionTitle), 16, y, width, P.T.colors.text)
             y = y - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
         end
         local help = P.Text(body, HELP[section], 16, y, width)
         y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 10
-        y = P.RuleGrid(ctx, body, PAGE, id, rules, y, width, nil, sectionId)
+        if #rules > 0 then y = P.RuleGrid(ctx, body, PAGE, id, rules, y, width, nil, sectionId) end
         y = y - 16
     end
     if id == "xpBar" then
@@ -144,10 +158,7 @@ local function FeatureAccordion(ctx, b, group)
             entry.label:SetText(title .. (available and "" or Tr(" - Unavailable")))
         end
     end)
-    P.AttachRuleColors(body, title, id, allRules)
-    P.AttachSectionReset(ctx, body, title, function()
-        return P.ResetRules(id, allRules, nil, { group.switch })
-    end)
+    AttachRuleReset(ctx, body, title, id, allRules, group.switch)
     P.FinishBody(b, body, y)
 end
 
@@ -159,4 +170,4 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, icon = { 7, 1 },
-    aliases = { "qol", "qualityoflife", "quality_of_life", "merchant", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp", "innervate", "whisper", "durability", "repairwarning", "battleres", "brez", "combatres", "skyriding", "vigor", "secondwind" } })
+    aliases = { "qol", "qualityoflife", "quality_of_life", "merchant", "itemlevel", "vault", "lootspec", "tooltipids", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp", "innervate", "whisper", "durability", "repairwarning", "battleres", "brez", "combatres", "skyriding", "vigor", "secondwind" } })

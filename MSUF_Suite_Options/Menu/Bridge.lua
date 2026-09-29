@@ -200,7 +200,7 @@ function P.SetMany(id, values)
         end
     end
     local ok, reason
-    P.WithHistory(P.catalog[id].title .. " settings", "suite:" .. id .. ".multiple", function()
+    P.WithHistory(Tr("%s settings"):format(Tr(P.catalog[id].title)), "suite:" .. id .. ".multiple", function()
         ok, reason = S.SetMany(id, values)
         return ok
     end)

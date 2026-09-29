@@ -155,9 +155,11 @@ B.Section(id, "behavior", "Map behavior", {
     Choice("zoomButtons", "Zoom buttons", 1, { "Show on mouseover", "Always show", "Hide" }),
     Choice("middleClick", "Middle-click action", 2, { "Nothing", "Tracking menu", "Calendar", "World map" }),
 })
+-- Offset labels are built here, so their format strings translate here.
+local HORIZONTAL, VERTICAL = NS.Text("%s horizontal offset"), NS.Text("%s vertical offset")
 for _, name in ipairs({ "zoomIn", "zoomOut" }) do
-    B.Add(id, Number(name .. "X", name .. " horizontal offset", 0, -600, 600), "behavior")
-    B.Add(id, Number(name .. "Y", name .. " vertical offset", 0, -600, 600), "behavior")
+    B.Add(id, Number(name .. "X", HORIZONTAL:format(name), 0, -600, 600), "behavior")
+    B.Add(id, Number(name .. "Y", VERTICAL:format(name), 0, -600, 600), "behavior")
 end
 B.Section(id, "elements", "Blizzard buttons", {
     Bool("showTracking", "Tracking button", true),
@@ -176,9 +178,9 @@ B.Section(id, "elements", "Blizzard buttons", {
 -- Row placement remains the default. Each native button can then be moved
 -- independently in the preview without replacing Blizzard's click handler.
 for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Compartment" }) do
-    local prefix = "button" .. name
-    B.Add(id, Number(prefix .. "X", name .. " horizontal offset", 0, -600, 600), "elements").category = "advanced"
-    B.Add(id, Number(prefix .. "Y", name .. " vertical offset", 0, -600, 600), "elements").category = "advanced"
+    local prefix, label = "button" .. name, NS.Text(name)
+    B.Add(id, Number(prefix .. "X", HORIZONTAL:format(label), 0, -600, 600), "elements").category = "advanced"
+    B.Add(id, Number(prefix .. "Y", VERTICAL:format(label), 0, -600, 600), "elements").category = "advanced"
 end
 B.Section(id, "landing", "Expansion feature button", {
     Choice("showLanding", "Show Omnium Folio / expansion button", 2, { "Always", "Mouseover", "Never" }),
@@ -236,6 +238,8 @@ InfoOption("Clock", Choice("infoClockSource", "Clock source", 1, { "Realm time",
 InfoOption("Clock", Bool("infoClock24Hour", "Use 24-hour format", true))
 InfoOption("Clock", Bool("infoClockSeconds", "Show seconds"))
 InfoOption("Clock", Bool("infoClockDate", "Show date (day-month-year)"))
+InfoOption("Clock", Choice("infoClockDatePosition", "Date position", 1,
+    { "Beside the time", "Above the time", "Below the time" }))
 InfoOption("Clock", Choice("infoClockClick", "Clock left-click action", 2, { "Calendar", "Clock" }))
 for _, field in ipairs({ "Clock", "FPS", "Latency" }) do
     InfoOption(field, Choice("info" .. field .. "Tooltip", "Hover tooltip", 1, { "Value and actions", "Instance lockouts", "Great Vault", "No tooltip" })).infoTooltip = true

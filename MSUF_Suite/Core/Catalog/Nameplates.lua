@@ -82,9 +82,11 @@ local roles = NS.NameplateStyle.Roles
 -- Keep enough room for elements outside the compact sample at high UI scales.
 local POSITION_LIMIT = 2048
 local function AddOffsets(rules, prefix, element)
+    -- Labels built here translate their format and the element name here.
+    local label = NS.Text(element.label)
     for _, axis in ipairs({ "X", "Y" }) do
         rules[#rules + 1] = B.Number(prefix .. element.key .. "Offset" .. axis,
-            element.label .. " " .. axis, 0, -POSITION_LIMIT, POSITION_LIMIT)
+            NS.Text(axis == "X" and "%s X" or "%s Y"):format(label), 0, -POSITION_LIMIT, POSITION_LIMIT)
     end
 end
 for _, role in ipairs(roles) do
@@ -134,11 +136,12 @@ local function AddFriendlyRules(appearance)
         { "Keep Blizzard setting", "Show", "Hide" }))
     for _, kind in ipairs({ "Elite", "Quest" }) do
         local label = kind == "Elite" and "Elite / rare / boss marker" or "Quest marker"
+        local shown = NS.Text(label)
         appearance[#appearance + 1] = B.Bool("friendly" .. kind .. "Marker", label, false)
-        appearance[#appearance + 1] = B.Choice("friendly" .. kind .. "MarkerAnchor", label .. " anchor", 1, NS.NameplateStyle.AnchorLabels)
-        appearance[#appearance + 1] = B.Number("friendly" .. kind .. "MarkerSize", label .. " size", 14, 8, 48)
-        appearance[#appearance + 1] = B.Number("friendly" .. kind .. "OffsetX", label .. " X", -14, -POSITION_LIMIT, POSITION_LIMIT)
-        appearance[#appearance + 1] = B.Number("friendly" .. kind .. "OffsetY", label .. " Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
+        appearance[#appearance + 1] = B.Choice("friendly" .. kind .. "MarkerAnchor", NS.Text("%s anchor"):format(shown), 1, NS.NameplateStyle.AnchorLabels)
+        appearance[#appearance + 1] = B.Number("friendly" .. kind .. "MarkerSize", NS.Text("%s size"):format(shown), 14, 8, 48)
+        appearance[#appearance + 1] = B.Number("friendly" .. kind .. "OffsetX", NS.Text("%s X"):format(shown), -14, -POSITION_LIMIT, POSITION_LIMIT)
+        appearance[#appearance + 1] = B.Number("friendly" .. kind .. "OffsetY", NS.Text("%s Y"):format(shown), 0, -POSITION_LIMIT, POSITION_LIMIT)
     end
     local friendlyCastFont = B.Font("friendlyCastFont", "Friendly cast font")
     for _, rule in ipairs({
@@ -219,12 +222,12 @@ Side("friendly", "Friendly appearance", 12)
 
 local auraRules = {}
 for _, group in ipairs(NS.NameplateStyle.AuraGroups) do
-    local prefix, label, control = group.key, group.label, group.control
-    auraRules[#auraRules + 1] = B.Choice(prefix .. "AuraMode", label .. " auras", 1,
+    local prefix, label, control = group.key, NS.Text(group.label), NS.Text(group.control)
+    auraRules[#auraRules + 1] = B.Choice(prefix .. "AuraMode", NS.Text("%s auras"):format(label), 1,
         { "Keep Blizzard setting", "Customize" })
-    auraRules[#auraRules + 1] = B.Bool(prefix .. "Buffs", label .. " buffs", true)
-    auraRules[#auraRules + 1] = B.Bool(prefix .. "Debuffs", label .. " debuffs", true)
-    auraRules[#auraRules + 1] = B.Bool(prefix .. "Control", label .. " " .. control, true)
+    auraRules[#auraRules + 1] = B.Bool(prefix .. "Buffs", NS.Text("%s buffs"):format(label), true)
+    auraRules[#auraRules + 1] = B.Bool(prefix .. "Debuffs", NS.Text("%s debuffs"):format(label), true)
+    auraRules[#auraRules + 1] = B.Bool(prefix .. "Control", NS.Text("%s %s"):format(label, control), true)
 end
 auraRules[#auraRules + 1] = B.Choice("friendlyNpcDebuffs", "Friendly NPC debuffs", 1,
     { "Keep Blizzard setting", "Show", "Hide" })
@@ -263,7 +266,7 @@ B.Section(id, "personal", "Personal power bar", {
 local toggles = {}
 for _, role in ipairs(roles) do
     if role.key ~= "TankMode" then
-        toggles[#toggles + 1] = B.Bool("enemy" .. role.key .. "Enabled", role.label .. " color", true)
+        toggles[#toggles + 1] = B.Bool("enemy" .. role.key .. "Enabled", NS.Text("%s color"):format(NS.Text(role.label)), true)
     end
 end
 B.Section(id, "roleColors", "Enemy color rules", toggles)

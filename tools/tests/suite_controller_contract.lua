@@ -121,7 +121,8 @@ assert(Suite.Suite.Config("skyriding").look == 3
     "older Skyriding profiles lost their selected colors")
 for _, id in ipairs(Suite.SuiteOrder) do
     assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "nameplates"
-        and id ~= "durabilityAlert" and id ~= "battleRes" and id ~= "innervateCue"),
+        and id ~= "durabilityAlert" and id ~= "battleRes" and id ~= "innervateCue"
+        and id ~= "merchantLevel" and id ~= "vaultSpec" and id ~= "tooltipIDs"),
         id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end

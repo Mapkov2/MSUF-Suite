@@ -96,6 +96,8 @@ B.TextSection(id, {
     Color("cooldownColor", "Cooldown number color", initial.cooldownColor),
 })
 B.Section(id, "behavior", "Behavior", {
+    Choice("pickupModifier", "Move actions while holding (all action bars)", 1,
+        { "Use Blizzard setting", "Shift", "Ctrl", "Alt", "No modifier" }),
     Bool("mouseoverShowAll", "Hovering one mouseover bar reveals all of them", false),
     Bool("showOnDrag", "Show hidden bars while dragging a spell", true),
     Bool("disableFormPaging", "Keep bar 1 on its page in stance or shapeshift forms", false),

@@ -1,10 +1,10 @@
 local root = assert(arg[1])
-local NS = { Client = { isForever = false, isMainline = true } }
+local NS = { Client = { isForever = false, isMainline = true }, Text = function(value) return value end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", NS)
 local spec = assert(NS.SuiteCatalog.nameplates)
-local forever = { Client = { isForever = true, isMainline = true } }
+local forever = { Client = { isForever = true, isMainline = true }, Text = NS.Text }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", forever)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", forever)
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", forever)

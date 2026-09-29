@@ -451,6 +451,24 @@ local function BuildMicroBar(ctx, b, skin)
 end
 
 ------------------------------------------------------------------ sections
+-- The whole Skinning module: Blizzard windows and Suite windows together.
+-- Its switch here and on the Suite Modules page use these two functions.
+function P.SkinningEnabled()
+    local skin = _G.MapkoSkin
+    if Suite.Skin.enabled == true then return true end
+    return type(skin) == "table" and skin.addonName == "MSUF_Suite_Skin" and type(skin.DB) == "table"
+        and skin.DB.enabled == true
+end
+
+function P.SetSkinningEnabled(value)
+    local skin = Engine()
+    return Change(skin, "Skinning", "enabled", function()
+        local windows = skin.Adapters.SetMasterEnabled(value)
+        if not windows then return false end
+        return Suite.Skin.SetEnabled(value)
+    end)
+end
+
 local function BuildFrameBasics(ctx, b, skin)
     local basics = Section(ctx, b, "frame_basic", "Frame Basics",
         "Switch the whole Skinning module here, or adjust Blizzard and Suite windows separately below.", {
@@ -467,16 +485,7 @@ local function BuildFrameBasics(ctx, b, skin)
                 end),
         }, true)
     local enable = W.SectionSwitch(basics, Tr("Enable Skinning"), Tr("Enable"))
-    M.BindBoolWidget(ctx, enable,
-        function() return skin.DB.enabled == true or Suite.Skin.enabled == true end,
-        function(value)
-            Change(skin, "Skinning", "enabled", function()
-                local windows = skin.Adapters.SetMasterEnabled(value)
-                if not windows then return false end
-                return Suite.Skin.SetEnabled(value)
-            end)
-        end,
-        Meta("enabled", "frame_basic"))
+    M.BindBoolWidget(ctx, enable, P.SkinningEnabled, P.SetSkinningEnabled, Meta("enabled", "frame_basic"))
     M.TrackRefresh(ctx, function() W.SetControlEnabled(enable, not P.Combat()) end)
 end
 

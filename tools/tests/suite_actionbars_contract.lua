@@ -258,6 +258,15 @@ local function Usable(handle)
     return handle.frame
 end
 local actions,special,pressHold,modified={},{},{},{}
+local pickupModifier, pickupWrites = "SHIFT", 0
+GetModifiedClick = function(action)
+    assert(action == "PICKUPACTION")
+    return pickupModifier
+end
+SetModifiedClick = function(action, value)
+    assert(action == "PICKUPACTION")
+    pickupModifier, pickupWrites = value, pickupWrites + 1
+end
 local barPage=1
 local RENV={tonumber=tonumber,tostring=tostring,floor=math.floor,
     HasAction=function(slot) return actions[slot]~=nil end,
@@ -780,6 +789,17 @@ RunTimers()
 local frames=created-builtBefore
 assert(c.imported==true,"first enable must import Blizzard's layout")
 assert((triggered[BINDINGS_EVENT] or 0)>0,"starting the bars did not tell the cooldown manager its key texts changed")
+assert(c.pickupModifier == 1 and pickupWrites == 0,
+    "the default must preserve Blizzard's pickup modifier")
+assert(S.Set("actionbars", "pickupModifier", 3) and pickupModifier == "CTRL" and pickupWrites == 1,
+    "an explicit Ctrl choice must update Blizzard's pickup action")
+M:Refresh()
+assert(pickupWrites == 1, "unrelated refreshes must not rewrite the pickup modifier")
+assert(S.Set("actionbars", "pickupModifier", 1))
+pickupModifier = "ALT"
+M:Refresh()
+assert(pickupModifier == "ALT" and pickupWrites == 1,
+    "returning to Blizzard's setting must stop overriding external changes")
 
 if nativeReuse then
     assert(not Bar(1).native and not Bar(9).native and not Bar(10).native,

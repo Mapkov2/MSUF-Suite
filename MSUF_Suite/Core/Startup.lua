@@ -13,7 +13,8 @@ loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
     self:UnregisterAllEvents()
     Suite.loginKind = isReloadingUi == true and "reload" or "login"
     Suite.CaptureSessionGold(isReloadingUi)
-    if Suite.Suite.started then Suite.Installer.MaybeShow() end
+    -- "login": the installer waits while MSUF's own first run is pending (Installer.lua).
+    if Suite.Suite.started then Suite.Installer.MaybeShow("login") end
 end)
 
 local function Initialize()
@@ -61,7 +62,7 @@ local function Start()
     Step(profiles, "EnsureRetailForeverCooldownLayout")
     Step(Suite.Suite, "Start")
     Step(profiles, "EnsureRetailResourceStack", false)
-    Step(Suite.Installer, "MaybeShow")
+    Step(Suite.Installer, "MaybeShow", "login")
 end
 
 events:SetScript("OnEvent", function(self, event, loadedAddon)

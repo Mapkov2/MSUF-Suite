@@ -536,7 +536,8 @@ function P.BuildColorsCategory(ctx, b)
             if rule.color and not rule.hidden then
                 local entry = {}
                 for key, value in pairs(rule) do entry[key] = value end
-                entry.label = (rule.sectionTitle and (rule.sectionTitle .. " · ") or "") .. rule.label
+                -- Joined text cannot be looked up, so each part translates first.
+                entry.label = (rule.sectionTitle and (Tr(rule.sectionTitle) .. " · ") or "") .. Tr(rule.label)
                 colors[#colors + 1] = entry
             end
         end
@@ -592,7 +593,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         status:SetText(P.StatusText(id))
         local entry = body._msuf2CollapsibleEntry
         if entry and entry.label then
-            local suffix = not ok and (" - " .. Suite.StatusText(why or "Unavailable on this client", Tr))
+            local suffix = not ok and (" - " .. P.Suite.StatusText(why or "Unavailable on this client", Tr))
                 or not P.Get(id, "enabled") and Tr(" - Off") or ""
             entry.label:SetText(Tr(title) .. suffix)
         end

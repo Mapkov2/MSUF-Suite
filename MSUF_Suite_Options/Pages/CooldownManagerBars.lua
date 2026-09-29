@@ -108,7 +108,7 @@ function Page.ClearWithUndo(slot)
     return ok
 end
 function Page.ImportBlizzardWithUndo()
-    local ok, reason = Page.WithUndo("Imported Blizzard's cooldown layout for this specialization.", LIST_KEYS,
+    local ok, reason = Page.WithUndo(Tr("Imported Blizzard's cooldown layout for this specialization."), LIST_KEYS,
         Page.ImportBlizzard)
     if not ok then Page.Fail(reason) end
     return ok
