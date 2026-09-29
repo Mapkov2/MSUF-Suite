@@ -67,6 +67,51 @@ B.Section("objectives", "extraColors", "Extra group colors", {
     B.Color("achievementsColor", "Achievements", "d49e61"),
 })
 
+-- A separate result card remains available when the objective tracker is off.
+-- It reads completion events only and has its own MSUF Edit Mode mover.
+B.Module("runSummary", {
+    title = "Run Summaries", page = "suite_hud", defaultEnabled = true,
+    description = "A movable summary after a Mythic+ run or raid boss kill.",
+})
+local summaryContent = {
+    B.Bool("showRaid", "Show after raid boss kills", true),
+    B.Bool("showDuration", "Show completion time", true),
+    B.Bool("showBest", "Show fastest raid kill", true),
+    B.Bool("showGroupSize", "Show raid group size", true),
+    B.Bool("showKills", "Show recorded raid kills", true),
+    B.Number("autoHide", "Close automatically after (seconds; 0 = manual)", 0, 0, 120, 5),
+}
+if not NS.Client.isForever then
+    table.insert(summaryContent, 1, B.Bool("showMythicPlus", "Show after Mythic+ runs", true))
+    summaryContent[#summaryContent + 1] = B.Bool("showTimer", "Show Mythic+ timer result", true)
+    summaryContent[#summaryContent + 1] = B.Bool("showDeaths", "Show Mythic+ deaths", true)
+    summaryContent[#summaryContent + 1] = B.Bool("showPenalty", "Show Mythic+ time penalty", true)
+    summaryContent[#summaryContent + 1] = B.Bool("showUpgrades", "Show keystone upgrade", true)
+    summaryContent[#summaryContent + 1] = B.Bool("showScore", "Show rating change when available", true)
+    summaryContent[#summaryContent + 1] = B.Bool("showRecord", "Show new dungeon record", true)
+end
+B.Section("runSummary", "content", "Results and details", summaryContent)
+B.Section("runSummary", "layout", "Size and position", {
+    B.Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    B.Number("width", "Summary width", 390, 260, 650, 5),
+    B.Number("scale", "Scale (percent)", 100, 60, 160, 5),
+    B.Number("x", "Horizontal position", 0, -4000, 4000),
+    B.Number("y", "Vertical position", 80, -3000, 3000),
+})
+B.Section("runSummary", "type", "Summary text", {
+    B.Font("font", "Font (empty: MSUF global font)"),
+    B.Number("titleSize", "Title size", 20, 12, 30),
+    B.Number("detailSize", "Detail size", 14, 10, 22),
+})
+B.Section("runSummary", "colors", "Summary colors", {
+    B.Choice("colorStyle", "Color source", 1, { "Suite skin + default accents", "Custom colors" }),
+    B.Number("backgroundOpacity", "Background opacity (percent)", 92, 0, 100, 1),
+    B.Color("backgroundColor", "Background", "10151d"),
+    B.Color("titleColor", "Title", "f5f7fa"),
+    B.Color("textColor", "Details", "e5edf5"),
+    B.Color("accentColor", "Accent", "63db8a"),
+})
+
 B.Module("announcements", {
     title = "Announcements", page = "suite_hud", core = true,
     description = "Cinematic zone and event announcements in the Suite look.",
@@ -109,7 +154,7 @@ B.Section("announcements", "moreEventColors", "More headline colors", {
 })
 
 -- Editing any HUD color switches the color source to Custom colors.
-for _, hud in ipairs({ "objectives", "announcements" }) do
+for _, hud in ipairs({ "objectives", "runSummary", "announcements" }) do
     local colors = {}
     for key, rule in pairs(NS.SuiteCatalog[hud].rules) do
         if rule.color then colors[key] = true end

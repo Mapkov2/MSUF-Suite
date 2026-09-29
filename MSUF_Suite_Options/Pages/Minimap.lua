@@ -49,7 +49,8 @@ P.ChoiceGates[ID] = { infoClockTooltip = TooltipChoice, infoFPSTooltip = Tooltip
 -- { stylePreset value, label, swatch color } of the one-click minimap looks.
 local STYLE_PRESETS = {
     { 8, "Midnight Blue", "57c7df" }, { 9, "Midnight Dark", "b9ab86" },
-    { 7, "MSUF Forever", "d8b66a" }, { 10, "Antique Map", "c9a46d" },
+    { 7, "MSUF Forever", "d8b66a" }, { 11, "Clean Modern", "e6ecf2" },
+    { 10, "Antique Map", "c9a46d" },
     { 2, "Clean", "aab5c2" },
     { 3, "Arcane", "b7a4ff" }, { 4, "Ember", "ffc078" },
     { 5, "Astral", "a7e8ff" }, { 6, "Steel", "c1d6df" },

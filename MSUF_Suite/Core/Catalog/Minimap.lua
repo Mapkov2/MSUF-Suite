@@ -59,7 +59,7 @@ B.Section(id, "shape", "Shape, border and shadow", {
 NS.MinimapStyleTextureNames = { "None", "Arcane ring", "Ember ring", "Astral ring", "Steel frame",
     "Custom texture", "Parchment scroll" }
 NS.MinimapStylePresetNames = { "Custom", "Clean", "Arcane", "Ember", "Astral", "Steel",
-    "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map" }
+    "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map", "Clean Modern" }
 local clean = {
     shape = 1, borderSize = 1, borderColor = "000000", borderClassColor = false, borderAlpha = 100,
     shadowSize = 0, shadowColor = "000000", shadowAlpha = 45,
@@ -110,6 +110,9 @@ NS.MinimapStylePresets = {
     [10] = Preset(10, { shape = 1, borderSize = 0, shadowSize = 0,
         styleTexture = 7, styleScale = 130, styleX = 0, styleY = 0,
         stylePlacement = 1, styleBackdrop = false, styleGlow = false }),
+    [11] = Preset(11, { shape = 1, borderSize = 1, borderColor = "333333", borderAlpha = 95,
+        shadowSize = 0, styleTexture = 1, styleGlow = false,
+        styleBackdrop = true, styleBackdropColor = "101010", styleBackdropAlpha = 82 }),
 }
 NS.MinimapStyleVisualKeys = {}
 for key in pairs(clean) do NS.MinimapStyleVisualKeys[key] = true end
@@ -117,7 +120,7 @@ for key in pairs(clean) do NS.MinimapStyleVisualKeys[key] = true end
 -- style presets 8, 9 and 7; Custom is the first choice here.
 NS.SuiteCatalog[id].look = {
     key = "stylePreset", presets = NS.MinimapStylePresets, visualKeys = NS.MinimapStyleVisualKeys,
-    custom = 1, global = { 8, 9, 7 },
+    custom = 1, global = { 8, 9, 7, [5] = 11 },
 }
 
 B.Section(id, "style_presets", "Choose a look", {

@@ -60,6 +60,7 @@ Work({ "showMissing", "keepSlots", "auraGlow", "pandemic" }, { behavior = true, 
 Work({ "vis", "hideMounted", "hideVehicle", "alpha", "oocAlpha" }, { visible = true })
 Work({ "tooltips" }, { restyle = true })
 Work({ "strata" }, { restyle = true, visible = true })
+Work({ "layer" }, { layout = true, aura = true, restyle = true })
 Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill" }, { bar = true })
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.

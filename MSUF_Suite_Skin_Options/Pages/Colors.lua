@@ -200,7 +200,7 @@ end
 
 O.RegisterPage("colors", NS.L.COLORS, function(page)
     O.CreateSectionTitle(page, L["Colors"],
-        L["Midnight Blue, Midnight Dark and MSUF Forever are complete looks in Style. Color palettes here change colors only; use Expert mode for every UI state."])
+        L["Clean Modern, Midnight Blue, Midnight Dark and MSUF Forever are complete looks in Style. Color palettes here change colors only; use Expert mode for every UI state."])
     if not GROUP_BY_KEY[O.ui.colorGroup] then O.ui.colorGroup = "surfaces" end
 
     local view = { query = "" }

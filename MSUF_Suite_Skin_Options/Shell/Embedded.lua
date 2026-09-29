@@ -12,6 +12,8 @@ local SEARCH_ROWS = 6
 local function ShowEmbeddedPage(host, key)
     local definition = O.GetPageDefinition(key)
     if not definition then return false end
+    local menu = _G.MSUF2
+    if menu and menu.SuspendForeverPadNavigation then menu.SuspendForeverPadNavigation() end
     if O.GetPageMeta(key).simple == false and O.GetMode() ~= "expert" then O.SetMode("expert") end
     if host.key and host.pages[host.key] then host.pages[host.key]:Hide() end
     local page = host.pages[key]
@@ -26,6 +28,7 @@ local function ShowEmbeddedPage(host, key)
     page:Show()
     for name, button in pairs(host.buttons) do O.SetButtonActive(button, name == key) end
     O.RefreshAll()
+    if menu and menu.ResumeForeverPadNavigation then menu.ResumeForeverPadNavigation() end
     return true
 end
 

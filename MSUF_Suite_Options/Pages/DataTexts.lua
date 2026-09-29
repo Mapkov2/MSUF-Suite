@@ -315,6 +315,17 @@ local function Build(ctx)
         })
     end
     for bar = 1, 3 do BarSection(ctx, b, bar) end
+    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_gold", Tr("Gold across characters"),
+        P.SectionRules(ID, "gold"), {
+            help = "While DataTexts and this choice are enabled, MSUF remembers this character's gold at login and after money changes. Hover a Gold or Session gold DataText to see the last known account total and up to eight other characters. No background scans are used.",
+            extra = function(body, y, width)
+                P.Button(ctx, body, "Clear saved character gold", 16, y, width,
+                    function() if type(P.Suite.RootDB) == "table" then P.Suite.RootDB.goldLedger = nil end end,
+                    function() return type(P.Suite.RootDB) == "table" end,
+                    P.Meta(PAGE, ID, "action.clearGold", "action", PAGE .. "_gold"))
+                return y - 40
+            end,
+        })
 end
 
 P.RegisterPage({ key = PAGE, label = "DataTexts", title = "DataTexts", build = Build, icon = { 5, 2 },

@@ -122,7 +122,7 @@ local function Build(ctx)
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
-            help = "Midnight Dark is the Retail default; MSUF Forever is the Forever default. Midnight Blue keeps the original blue glass. Open a section's three-dot menu to change its colors, or use MSUF Colors for the full palette. Your own color changes become Custom.",
+            help = "Clean Modern is the Retail default; MSUF Forever is the Forever default. Midnight Blue keeps the original blue glass. Open a section's three-dot menu to change its colors, or use MSUF Colors for the full palette. Your own color changes become Custom.",
             extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look", function(body, y, width)
                 return Sample(body, y, width, ctx)
             end),

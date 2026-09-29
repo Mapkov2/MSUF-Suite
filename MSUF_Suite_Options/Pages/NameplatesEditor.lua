@@ -13,6 +13,18 @@ local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diam
 local ENEMY_ELEMENT_SETTINGS = { Name = true, Level = true, HealthText = true, Classification = true,
     RaidIcon = true, Cast = true, CastText = true, CastTime = true,
     CastIcon = true, CastShield = true, CastTarget = true }
+-- Match unit-preview colors and group related nameplate layers.
+local LAYER_COLORS = {
+    guides = { 0.42, 0.72, 1.00 }, health = { 0.25, 0.90, 0.42 },
+    backdrop = { 0.80, 0.55, 0.25 }, border = { 0.85, 0.70, 0.25 }, roleFill = { 0.30, 0.78, 0.55 },
+    name = { 0.30, 0.66, 1.00 }, level = { 0.30, 0.66, 1.00 }, healthText = { 0.25, 0.90, 0.42 },
+    cast = { 0.20, 0.90, 0.85 }, castText = { 0.20, 0.90, 0.85 }, castTime = { 0.20, 0.90, 0.85 },
+    auras = { 0.90, 0.20, 0.22 }, buffs = { 0.20, 0.90, 0.35 }, controlAura = { 0.90, 0.42, 1.00 },
+    classification = { 0.95, 0.72, 0.18 }, raidIcon = { 0.95, 0.72, 0.18 }, power = { 0.95, 0.72, 0.18 },
+    castIcon = { 0.20, 0.90, 0.85 }, castShield = { 0.20, 0.90, 0.85 }, castTarget = { 0.20, 0.90, 0.85 },
+    target = { 0.95, 0.72, 0.18 }, eliteMarker = { 0.95, 0.72, 0.18 }, questMarker = { 0.95, 0.72, 0.18 },
+    threatFlash = { 0.90, 0.20, 0.22 }, threatHighlight = { 0.90, 0.20, 0.22 }, softTarget = { 0.25, 0.72, 1.00 },
+}
 local LAYERS = {
     { "guides", "Guides", "enemy" }, { "health", "Blizzard health", "enemy" },
     { "backdrop", "Skin backdrop", "enemy" }, { "border", "Skin border", "enemy" },
@@ -581,7 +593,7 @@ local function BuildLayers(ui)
         local button
         if H.CreateLayerButton then
             button = H.CreateLayerButton(rail, ui,
-                { key = key, label = label, color = { 0.43, 0.76, 1 } }, i, 95,
+                { key = key, label = label, color = LAYER_COLORS[key] }, i, 95,
                 { Tr = Tr, layout = "chip", height = 20, showOffText = false, quiet = true,
                     IsAvailable = function(owner, layer) return owner:LayerAvailable(layer) end,
                     IsOn = function(owner, layer) return owner:LayerActive(layer) end })

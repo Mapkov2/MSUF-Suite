@@ -134,7 +134,7 @@ end
 
 O.RegisterPage("looks", NS.L.LOOKS, function(page)
     O.CreateSectionTitle(page, L["Style"],
-        L["Choose Midnight Blue, Midnight Dark or MSUF Forever for Skinning and enabled Suite modules. Modules enabled later inherit it."])
+        L["Choose Clean Modern, Midnight Blue, Midnight Dark or MSUF Forever for Skinning and enabled Suite modules. Modules enabled later inherit it."])
     BuildControls(page)
     BuildLookNote(page, BuildPreview(page))
 end)

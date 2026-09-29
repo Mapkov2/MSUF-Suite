@@ -1,5 +1,6 @@
 local _, P = ...
 local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
+local Controller = P.Suite.Client
 
 -- Slider increments are a UI choice. Keep catalog steps intact so existing
 -- fractional profile values are not rounded during database normalization.
@@ -242,24 +243,28 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     return body, entries
 end
 
--- The three Suite looks as one-click buttons for a module's "Choose a look"
+-- The Suite looks as one-click buttons for a module's "Choose a look"
 -- section. Returns an `extra` builder for P.RuleSection; `after(body, y,
 -- width)` may add more below the buttons.
-local LOOK_NAMES = { "Midnight Blue", "Midnight Dark", "MSUF Forever" }
+local LOOK_BUTTONS = {
+    { 1, "Midnight Blue" }, { 2, "Midnight Dark" },
+    { 3, "MSUF Forever" }, { 5, "Clean Modern" },
+}
 
 function P.LookPresetButtons(ctx, pageKey, id, sectionId, after)
     return function(body, y, width)
         local gap = 8
-        local buttonWidth = math.floor((width - 2 * gap) / 3)
+        local buttonWidth = math.floor((width - 3 * gap) / 4)
         local buttons = {}
-        for index, name in ipairs(LOOK_NAMES) do
+        for index, entry in ipairs(LOOK_BUTTONS) do
+            local value, name = entry[1], entry[2]
             local button = T.Button(body, Tr(name), buttonWidth, 26)
             button:SetPoint("TOPLEFT", body, "TOPLEFT", 16 + (index - 1) * (buttonWidth + gap), y)
             button:SetScript("OnClick", function()
-                if not P.Combat() then P.Set(id, "look", index) end
+                if not P.Combat() then P.Set(id, "look", value) end
             end)
             if M.RegisterControlMetadata then
-                M.RegisterControlMetadata(button, P.Meta(pageKey, id, "look." .. index, "action", sectionId),
+                M.RegisterControlMetadata(button, P.Meta(pageKey, id, "look." .. value, "action", sectionId),
                     Tr(name), "button")
             end
             buttons[index] = button
@@ -268,7 +273,7 @@ function P.LookPresetButtons(ctx, pageKey, id, sectionId, after)
             local look = P.Get(id, "look")
             local enabled = P.RuleEnabled(id, P.catalog[id].rules.look)
             for index = 1, #buttons do
-                buttons[index]:SetAlpha(look == index and 1 or 0.65)
+                buttons[index]:SetAlpha(look == LOOK_BUTTONS[index][1] and 1 or 0.65)
                 buttons[index]:SetEnabled(enabled)
             end
         end)
@@ -432,6 +437,10 @@ local function BuildSectionPopup(state, spec)
     end)
     popup._msuf2ResetSection = function() return state.body._msufSuiteSectionReset() end
     state.entry.outer:HookScript("OnHide", function() ClosePopup(state) end)
+    Controller.AttachControllerWindow(popup)
+    if Controller.isForever then
+        popup.SmartNavigationCloseHandler = function() ClosePopup(state); return true end
+    end
 end
 
 local function ToggleSectionPopup(state)
@@ -454,6 +463,8 @@ local function ToggleSectionPopup(state)
     popup:SetPoint("TOPRIGHT", state.more, "BOTTOMRIGHT", 0, -4)
     if M.ApplyPopupFramePriority then M.ApplyPopupFramePriority(popup) end
     popup:Show()
+    Controller.ResumeControllerWindow(popup)
+    Controller.RaiseControllerCursor()
 end
 
 function P.AttachSectionReset(ctx, body, title, reset, copy)

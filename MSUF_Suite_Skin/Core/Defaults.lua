@@ -167,7 +167,7 @@ NS.BaseColors = midnightColors
 NS.MicroMenuMaxButtonsPerLine = NS.Client.isForever and 14 or 13
 
 NS.Defaults = {
-    revision = 50,
+    revision = 52,
     enabled = true,
     characterDetails = { view = "modern", enabled = true, expanded = true, styleEQoL = true, inlineGear = true, wideLayout = true },
     characterStats = { enabled = true, diminishingReturns = true },
@@ -468,6 +468,21 @@ NS.MicroMenuLookKeys = {
     "hoverOpacity", "pressedOpacity", "disabledOpacity",
 }
 
+function NS.IsRetailPanelMicroBar(micro)
+    return NS.Client.isMainline and not NS.Client.isForever
+        and type(micro) == "table" and micro.orientation == "vertical"
+        and micro.buttonsPerLine == 6
+        and micro.scale == 0.7 and micro.layoutPoint == "BOTTOMRIGHT"
+        and micro.layoutRelativePoint == "BOTTOMRIGHT" and micro.layoutY == 0
+        and type(micro.layoutX) == "number" and math.abs(micro.layoutX + 522) <= 6
+end
+
+function NS.AlignRetailPanelMicroBar(micro)
+    if not NS.IsRetailPanelMicroBar(micro) or micro.layoutMode ~= "owned" then return false end
+    micro.spacing, micro.padding = 5, 5
+    return true
+end
+
 -- Micro Bar color tokens follow these base palette roles whenever a palette
 -- does not author them. Shared by the defaults, profile migrations and Theme.
 NS.MicroColorSources = {
@@ -722,9 +737,9 @@ NS.PresetOverrides = {
         surface = Color(0.060, 0.060, 0.060, 0.940),
         raised = Color(0.100, 0.100, 0.100, 0.960),
         rim = Color(0.200, 0.200, 0.200, 1.000),
-        blue = Color(0.035, 0.450, 0.340, 1.000),
-        accent = Color(0.047, 0.824, 0.616, 1.000),
-        accentBright = Color(0.270, 0.950, 0.760, 1.000),
+        blue = Color(0.280, 0.300, 0.325, 1.000),
+        accent = Color(0.900, 0.925, 0.950, 1.000),
+        accentBright = Color(1.000, 1.000, 1.000, 1.000),
         text = Color(0.920, 0.920, 0.920, 1.000),
         title = Color(1.000, 1.000, 1.000, 1.000),
         muted = Color(0.650, 0.650, 0.650, 0.960),
@@ -738,17 +753,17 @@ NS.PresetOverrides = {
         buttonFill = Color(0.100, 0.100, 0.100, 0.960),
         buttonFillAlt = Color(0.060, 0.060, 0.060, 0.940),
         buttonBorder = Color(0.200, 0.200, 0.200, 1.000),
-        hover = Color(0.100, 0.250, 0.200, 0.900),
-        pressed = Color(0.030, 0.550, 0.410, 1.000),
-        active = Color(0.047, 0.824, 0.616, 0.780),
+        hover = Color(0.220, 0.235, 0.255, 0.950),
+        pressed = Color(0.325, 0.345, 0.370, 1.000),
+        active = Color(0.270, 0.290, 0.315, 0.980),
         success = Color(0.047, 0.824, 0.616, 1.000),
         warning = Color(0.900, 0.700, 0.200, 1.000),
         blizzardYellow = Color(0.920, 0.920, 0.920, 1.000),
-        blizzardArrow = Color(0.047, 0.824, 0.616, 1.000),
+        blizzardArrow = Color(0.900, 0.925, 0.950, 1.000),
         blizzardExpand = Color(0.800, 0.800, 0.800, 1.000),
-        blizzardExpandPressed = Color(0.047, 0.824, 0.616, 1.000),
-        blizzardExpandHover = Color(0.270, 0.950, 0.760, 1.000),
-        checkmark = Color(0.047, 0.824, 0.616, 1.000),
+        blizzardExpandPressed = Color(0.900, 0.925, 0.950, 1.000),
+        blizzardExpandHover = Color(1.000, 1.000, 1.000, 1.000),
+        checkmark = Color(0.900, 0.925, 0.950, 1.000),
         danger = Color(0.900, 0.250, 0.250, 1.000),
         accentAlt = Color(0.700, 0.700, 0.700, 1.000),
     },
@@ -987,8 +1002,13 @@ for key, hex in pairs(midnightDarkTints) do
 end
 NS.PresetOverrides.midnightDark = midnightDark
 
+-- The setup and factory name this white-accented Studio palette Clean Modern.
+-- Stored profiles retain their own explicit colors until a look is selected.
+local cleanModern = NS.CopyValue(NS.PresetOverrides.cleanStudio)
+NS.PresetOverrides.cleanModern = cleanModern
+
 NS.PaletteOrder = {
-    "dark", "midnight", "midnightDark", "classColor", "grid", "cleanStudio", "glass", "foreverGlass", "studio",
+    "dark", "midnight", "midnightDark", "classColor", "grid", "cleanStudio", "cleanModern", "glass", "foreverGlass", "studio",
     "monochrome", "frost", "violet", "emerald", "ember", "rose", "bronze",
     "carbon", "blueprint", "patina", "moss", "dune", "workshop", "signal",
     "merlot", "lilac", "gallery", "deepSea", "titanium", "citron", "inkSand",
@@ -996,7 +1016,7 @@ NS.PaletteOrder = {
 
 NS.PaletteLabels = {
     dark = "Dark", midnight = "Midnight Blue", midnightDark = "Midnight Dark", classColor = "Class Color",
-    grid = "Classic Grid", cleanStudio = "Clean Studio", glass = "Glass",
+    grid = "Classic Grid", cleanStudio = "Clean Studio", cleanModern = "Clean Modern", glass = "Glass",
     foreverGlass = "MSUF Forever Glass",
     studio = "Studio", monochrome = "Monochrome", frost = "Frost",
     violet = "Violet", emerald = "Emerald", ember = "Ember", rose = "Rose",
@@ -1008,8 +1028,8 @@ NS.PaletteLabels = {
 }
 
 -- Keep older authored looks loadable for saved profiles and imports. The
--- visible catalog has the same three choices on every supported client.
-NS.LookOrder = { "midnight", "midnightDark", "foreverGlass" }
+-- visible catalog has the same four choices on every supported client.
+NS.LookOrder = { "cleanModern", "midnight", "foreverGlass", "midnightDark" }
 NS.LookPresets = {
     custom = {
         label = "Custom",
@@ -1053,8 +1073,15 @@ NS.LookPresets = {
     },
     cleanStudio = {
         label = "Clean Studio",
-        description = "Neutral matte panels with a single emerald accent and minimal depth.",
+        description = "Neutral matte panels with a crisp white accent and minimal depth.",
         palette = "cleanStudio",
+        appearance = { gradient = false, gradientStrength = 0, materialDepth = 0.04, gradientDirection = "VERTICAL", shellOpacity = 1, panelOpacity = 1, controlOpacity = 1, borderOpacity = 1, hoverStyle = "outline", hoverIntensity = 1 },
+        geometry = { family = "round", radius = 4, border = 1, controlShape = "round" },
+    },
+    cleanModern = {
+        label = "Clean Modern",
+        description = "Matte charcoal studio panels, crisp white focus and minimal depth.",
+        palette = "cleanModern",
         appearance = { gradient = false, gradientStrength = 0, materialDepth = 0.04, gradientDirection = "VERTICAL", shellOpacity = 1, panelOpacity = 1, controlOpacity = 1, borderOpacity = 1, hoverStyle = "outline", hoverIntensity = 1 },
         geometry = { family = "round", radius = 4, border = 1, controlShape = "round" },
     },
@@ -1240,7 +1267,7 @@ end
 -- Normalization fills missing fields on existing profiles but never replaces
 -- their saved palette, look, opacity, or geometry.
 do
-    local defaultLookName = NS.Client.isForever and "foreverGlass" or "midnightDark"
+    local defaultLookName = "cleanModern"
     local look = NS.LookPresets[defaultLookName]
     local colors = NS.CopyValue(NS.BaseColors)
     for key, value in pairs(NS.PresetOverrides[look.palette]) do
@@ -1272,6 +1299,8 @@ do
         micro.layoutPoint, micro.layoutRelativePoint = "BOTTOMRIGHT", "BOTTOMRIGHT"
         micro.layoutX, micro.layoutY = -522, 0
         micro.positionPreset = "custom"
+        -- Match both the meter base and the top edge of its DataTexts cap.
+        NS.AlignRetailPanelMicroBar(micro)
     end
     NS.Defaults.theme.preset = look.palette
     NS.Defaults.theme.look = defaultLookName

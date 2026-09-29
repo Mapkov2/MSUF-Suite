@@ -1,6 +1,35 @@
 local _, Suite = ...
 local MSUF = assert(_G.MSUF_NS, "MSUF_Suite requires MSUF")
 
+-- Only Suite-owned surfaces use the shared 0..30 MSUF layer slots. Auto (-1)
+-- preserves their existing levels, including older profiles and clients.
+function Suite.ApplyOwnedLayer(frame, layer, detail)
+    local layers = MSUF.UF and MSUF.UF.Layers
+    if layers and type(layers.ApplyOwnedSurface) == "function" then
+        return layers.ApplyOwnedSurface(frame, layer, detail)
+    end
+    return false
+end
+
+-- Child artwork stays inside its parent's 32-level slot. On Auto, restore
+-- its relative level only after the parent actually returned to legacy mode.
+function Suite.ApplyOwnedChildLayer(frame, parent, layer, detail, parentRestored)
+    if not (frame and frame.GetFrameLevel and frame.SetFrameLevel and parent and parent.GetFrameLevel) then return false end
+    local layers = MSUF.UF and MSUF.UF.Layers
+    if not (layers and type(layers.ApplyOwnedSurface) == "function") then return false end
+    local wanted
+    if type(layer) == "number" and layer >= 0 then
+        if not (layers and type(layers.ElementLevel) == "function") then return false end
+        wanted = layers.ElementLevel(layer, 0, detail)
+    elseif parentRestored then
+        wanted = parent:GetFrameLevel() + detail
+    else
+        return false
+    end
+    if frame:GetFrameLevel() ~= wanted then frame:SetFrameLevel(wanted); return true end
+    return false
+end
+
 -- The Suite runs on Retail and on WoW Forever, which runs Blizzard's Mainline
 -- code from the _Mainline.toc. Classic MSUF (the multi-client build that hosts
 -- the Suite on Forever) publishes MSUF.Client; Main (Retail-only) MSUF does
@@ -44,6 +73,53 @@ Suite.Client = {
     hasSecrets = type(_G.issecretvalue) == "function",
     SupportsEvent = host and type(host.SupportsEvent) == "function" and host.SupportsEvent or SupportsEvent,
 }
+
+-- Forever's Gamepad interface uses Blizzard's D-pad SmartNavigation. Native
+-- pointer mode uses the same open-edge cursor API as Blizzard's own panels.
+-- Both paths are queried live, so no input polling or device-name mapping is
+-- needed. A registered window is briefly removed while it builds new pages:
+-- SmartNavigation otherwise walks the entire window on each CreateFrame.
+local function ForeverGamepadUI()
+    local input = _G.InputUtil
+    return isForever and input and type(input.IsGamepadUIEnabled) == "function"
+        and input.IsGamepadUIEnabled() == true
+end
+
+local function ForeverFrameManager()
+    if not ForeverGamepadUI() then return nil end
+    local mode = _G.GamepadMode
+    return mode and mode.FrameControlsManager or nil
+end
+
+function Suite.Client.PauseControllerWindow(frame)
+    if not (isForever and frame and frame._msufsuitePadRegistered) then return end
+    frame._msufsuitePadRegistered = nil
+    local mode = _G.GamepadMode
+    local manager = mode and mode.FrameControlsManager
+    if manager then manager:FrameHidden(frame) end
+end
+
+function Suite.Client.ResumeControllerWindow(frame)
+    if not (isForever and frame and frame:IsShown()) or frame._msufsuitePadRegistered then return end
+    local manager = ForeverFrameManager()
+    if manager then frame._msufsuitePadRegistered = manager:FrameShown(frame) == true end
+end
+
+function Suite.Client.AttachControllerWindow(frame)
+    if not (isForever and frame) or frame._msufsuitePadAttached then return end
+    frame._msufsuitePadAttached = true
+    frame:HookScript("OnHide", Suite.Client.PauseControllerWindow)
+end
+
+function Suite.Client.RaiseControllerCursor()
+    if not isForever or ForeverGamepadUI() then return end
+    if type(_G.CanAutoSetGamePadCursorControl) == "function"
+        and type(_G.SetGamePadCursorControl) == "function"
+        and CanAutoSetGamePadCursorControl(true)
+    then
+        SetGamePadCursorControl(true)
+    end
+end
 
 -- Which MSUF build hosts the suite, for diagnostics; every integration below
 -- probes the capability it needs instead.

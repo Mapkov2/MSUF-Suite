@@ -29,6 +29,9 @@ function IO.PrepareTable(profile, shared)
         return nil, "Unsupported suite profile"
     end
     local result = { suite = { schema = 1, modules = {} } }
+    if type(data.globalLook) == "string" then
+        result.suite.globalLook = data.globalLook
+    end
     CopyMigrationState(data, result.suite)
     for _, id in ipairs(Suite.SuiteOrder) do
         local source = data.modules[id]

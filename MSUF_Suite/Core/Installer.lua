@@ -10,7 +10,7 @@ local scale = 1
 local scalePreset = "custom"
 local page = 1
 local frame
-local moduleOverrides = { suite = {}, forever = {} }
+local moduleOverrides = { suite = {}, classic = {}, forever = {} }
 -- Above MSUF menu popups (DIALOG level 400); see CreateWindow.
 local INSTALLER_FRAME_LEVEL = 500
 
@@ -27,7 +27,7 @@ local function ReasonText(reason)
 end
 
 local function RetailCooldowns()
-    return selected == "suite" or not Suite.Client.isForever
+    return not Suite.Client.isForever
 end
 
 local function PlayerCooldownAnchor()
@@ -45,14 +45,18 @@ end
 -- cached profile stays pristine: previews read it and installs copy it.
 local decodedFactories = {}
 local function FactoryProfile()
-    local compact = selected == "forever" and Suite.ForeverFactoryModuleCompact
-        or Suite.RetailFactoryModuleCompact
-    local profile = decodedFactories[compact]
+    local compact = (Suite.Client.isForever or selected == "forever")
+        and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
+    local cacheKey = selected .. compact
+    local profile = decodedFactories[cacheKey]
     if profile then return profile end
     local reason
     profile, reason = Suite.ProfileIO.PrepareProfile(compact, false)
     if not profile then return nil, reason end
-    if selected == "forever" then
+    if selected ~= "forever" then
+        Suite.Suite.StyleProfile(profile, selected == "classic" and "midnight" or "cleanModern")
+    end
+    if compact == Suite.ForeverFactoryModuleCompact then
         -- The bundled Forever export predates Nameplates. Include the current
         -- Jundies preset in new installs without changing saved profiles.
         local modules = profile.suite.modules
@@ -61,7 +65,7 @@ local function FactoryProfile()
             modules.nameplates.enabled = true
         end
     end
-    decodedFactories[compact] = profile
+    decodedFactories[cacheKey] = profile
     return profile
 end
 
@@ -96,13 +100,13 @@ local function PreparedProfile()
     local xp = modules.xpBar
     if xp then xp.point, xp.x, xp.y = 2, 0, -24 end
     local bars = modules.actionbars
-    if bars and selected == "suite" then
+    if bars and selected ~= "forever" then
         bars.bar1Point, bars.bar1X, bars.bar1Y = 8, 10, 48
         bars.bar2Point, bars.bar2X, bars.bar2Y = 8, 10, 92
         bars.bar3Point, bars.bar3X, bars.bar3Y = 7, 24, 210
         bars.bar5Point, bars.bar5X, bars.bar5Y = 7, 72, 210
     end
-    if selected == "suite" then
+    if selected ~= "forever" then
         -- The supplied export was positioned around a 1440p screen centre.
         -- Keep its visual settings but use stable screen anchors, so changing
         -- resolution or UI scale cannot push the visible groups away.
@@ -118,11 +122,11 @@ local function PreparedProfile()
         local old = active and active.suite and active.suite.modules
             and active.suite.modules.cooldownManager
         if old and type(old.listsData) == "string"
-            and (selected == "suite" or old.listsData ~= "") then
+            and (selected ~= "forever" or old.listsData ~= "") then
             cooldowns.listsData = old.listsData
         end
         if old and type(old.spellsData) == "string"
-            and (selected == "suite" or old.spellsData ~= "") then
+            and (selected ~= "forever" or old.spellsData ~= "") then
             cooldowns.spellsData = old.spellsData
         end
         if selected == "forever" then
@@ -150,12 +154,13 @@ end
 local function ApplySuiteOnly(profile)
     local name = FrameProfileName()
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
+    local skin = Suite.Client.isForever and Suite.ForeverFactorySkinCompact
+        or Suite.RetailFactorySkinCompact
     return Suite.SuiteProfiles.InstallSuiteFactory(name, profile,
-        Suite.RetailFactorySkinCompact)
+        skin, "cleanModern")
 end
 
-local function NextForeverName()
-    local base = "MSUF Suite Forever"
+local function NextFactoryName(base)
     local name = base
     local index = 2
     while DB.GetProfile(name) or (_G.MSUF_GlobalDB and _G.MSUF_GlobalDB.profiles
@@ -164,6 +169,21 @@ local function NextForeverName()
         index = index + 1
     end
     return name
+end
+
+local function ApplyClassic(profile)
+    local msuf = _G.MSUF_NS
+    local frames = not Suite.Client.isForever and msuf
+        and msuf.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
+        or Suite.ClassicFactoryFramesCompact
+    if type(frames) ~= "string" or type(profile) ~= "table" then
+        return false, "Classic MSUF factory profile unavailable"
+    end
+    local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    local skin = Suite.Client.isForever and Suite.ForeverFactorySkinCompact
+        or Suite.RetailFactorySkinCompact
+    return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Classic"),
+        frames, profile, skinEnabled and skin or nil, "midnight")
 end
 
 local function ApplyForever(profile)
@@ -176,7 +196,7 @@ local function ApplyForever(profile)
         return false, "Forever factory profile unavailable"
     end
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
-    return Suite.SuiteProfiles.InstallFactory(NextForeverName(), frames, profile,
+    return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Forever"), frames, profile,
         skinEnabled and skin or nil)
 end
 
@@ -229,6 +249,8 @@ function Installer.Apply()
     local ok
     if selected == "forever" then
         ok, reason = ApplyForever(profile)
+    elseif selected == "classic" then
+        ok, reason = ApplyClassic(profile)
     else
         ok, reason = ApplySuiteOnly(profile)
     end
@@ -239,7 +261,7 @@ function Installer.Apply()
     local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
         and type(getDefault) == "function" and getDefault() == previous.frameProfileName
     Suite.RootDB.installation = {
-        revision = 2, status = "complete", profile = selected,
+        revision = 3, status = "complete", profile = selected,
         frameProfileName = FrameProfileName(),
         moduleOverrides = moduleOverrides[selected],
         raidEssentials = RetailCooldowns() and useRaidEssentials,
@@ -257,7 +279,14 @@ function Installer.Apply()
     return true
 end
 
-local function Style(panel, selectedState, primary)
+local function Style(panel, selectedState, primary, accent)
+    if accent then
+        panel:SetBackdropColor(selectedState and 0.12 or 0.075,
+            selectedState and 0.12 or 0.095, selectedState and 0.12 or 0.14, 1)
+        panel:SetBackdropBorderColor(selectedState and accent[1] or 0.28,
+            selectedState and accent[2] or 0.34, selectedState and accent[3] or 0.42, 1)
+        return
+    end
     panel:SetBackdropColor(selectedState and 0.07 or 0.075,
         selectedState and 0.18 or 0.095, selectedState and 0.24 or 0.14, 1)
     if primary or selectedState then
@@ -310,12 +339,20 @@ local function InfoCard(parent, x, y, title, detail)
     return card
 end
 
-local function ProfileCard(parent, x, y, callback)
-    local card = Panel(parent, x, y, 508, 82, true)
-    card.title = Label(card, "GameFontNormal", 16, -12, 370, 20)
-    card.detail = Label(card, "GameFontHighlightSmall", 16, -36, 470, 38)
-    card.mark = Label(card, "GameFontNormalSmall", 388, -13, 105, 20)
+local function ProfileCard(parent, x, y, callback, colors)
+    local card = Panel(parent, x, y, 508, 64, true)
+    card.title = Label(card, "GameFontNormal", 16, -8, 370, 20)
+    card.detail = Label(card, "GameFontHighlightSmall", 16, -29, 360, 29)
+    card.mark = Label(card, "GameFontNormalSmall", 388, -8, 105, 20)
     card.mark:SetJustifyH("RIGHT")
+    for index, hex in ipairs(colors or {}) do
+        local swatch = card:CreateTexture(nil, "ARTWORK")
+        swatch:SetTexture("Interface\\Buttons\\WHITE8X8")
+        swatch:SetSize(16, 16)
+        swatch:SetPoint("TOPLEFT", card, "TOPLEFT", 388 + (index - 1) * 25, -36)
+        local r, g, b = Suite.RGB(hex)
+        swatch:SetVertexColor(r, g, b, 1)
+    end
     card:SetScript("OnClick", callback)
     return card
 end
@@ -378,6 +415,8 @@ local function CreateWindow()
     window:SetScript("OnDragStart", function(self) self:StartMoving() end)
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     window:Hide()
+    Suite.Client.AttachControllerWindow(window)
+    if Suite.Client.isForever then UISpecialFrames[#UISpecialFrames + 1] = "MSUFSuiteInstallFrame" end
     return window
 end
 
@@ -404,22 +443,25 @@ end
 local function BuildProfileSteps(window)
     window.intro = {
         InfoCard(window, 36, 231, Text("1. Choose a profile"),
-            Text("Modern keeps your MSUF frames. Forever installs the full factory profile.")),
+            Text("Choose Clean Modern, classic MSUF or the complete Forever factory.")),
         InfoCard(window, 36, 157, Text("2. Select modules"),
             Text("Keep the profile defaults or switch individual Suite modules on or off.")),
         InfoCard(window, 36, 83, Text("3. Set UI scale"),
             Text("Scaling starts off and changes only if you enable it.")),
     }
-    window.suite = ProfileCard(window, 36, 210, function()
+    window.suite = ProfileCard(window, 36, 241, function()
         selected = "suite"
         Installer.Refresh()
-    end)
-    window.forever = ProfileCard(window, 36, 112, function()
+    end, { "101010", "333333", "e6ecf2", "f5f5f5" })
+    window.classic = ProfileCard(window, 36, 169, function()
+        selected = "classic"
+        Installer.Refresh()
+    end, { "0a1220", "41627a", "57c7df", "f4f7fb" })
+    window.forever = ProfileCard(window, 36, 97, function()
         selected = "forever"
         Installer.Refresh()
-    end)
-    window.profileNote = Label(window, "GameFontHighlightSmall", 38, -373, 504, 27)
-    local cooldowns = Panel(window, 36, 63, 508, 42, true)
+    end, { "14181b", "9f8960", "d8b66a", "f4f3eb" })
+    local cooldowns = Panel(window, 36, 50, 508, 42, true)
     cooldowns.title = Label(cooldowns, "GameFontNormal", 14, -7, 360, 17)
     cooldowns.detail = Label(cooldowns, "GameFontHighlightSmall", 14, -24, 460, 15)
     cooldowns.mark = Label(cooldowns, "GameFontNormalSmall", 388, -7, 105, 18)
@@ -567,8 +609,8 @@ local function ShowPage(f)
     end
     SetShownAll(f.intro, page == 1)
     f.suite:SetShown(page == 2)
+    f.classic:SetShown(page == 2)
     f.forever:SetShown(page == 2)
-    f.profileNote:SetShown(page == 2 and selected == "forever")
     f.cooldowns:SetShown(page == 2 and RetailCooldowns())
     SetShownAll(f.moduleRows, page == 3)
     f.scaleToggle:SetShown(scaling)
@@ -611,18 +653,19 @@ end
 
 local function PaintProfiles(f)
     SetPageText(f, "Choose your profile",
-        "Forever creates a complete profile. Modern keeps your MSUF frames and applies Suite and Skin settings.")
-    f.suite.title:SetText(Text("Modern  ·  Suite only"))
-    f.suite.detail:SetText(Text("Retail default. Applies the included Suite and optional Skin profile; keeps your MSUF frames."))
-    f.forever.title:SetText(Text("Forever  ·  Complete profile"))
-    f.forever.detail:SetText(Text("Applies the current Forever factory to MSUF frames and Suite modules; Skin is included when enabled."))
-    Style(f.suite, selected == "suite")
-    Style(f.forever, selected == "forever")
+        "Preview the palette swatches, then choose Clean Modern, Classic MSUF or Forever.")
+    f.suite.title:SetText(Text("Clean Modern  ·  Suite default"))
+    f.suite.detail:SetText(Text("Matte studio surfaces, white accents and quiet outlines. Keeps your MSUF frames."))
+    f.classic.title:SetText(Text("Classic MSUF  ·  Midnight Blue"))
+    f.classic.detail:SetText(Text("Installs the classic MSUF frame factory with the blue Suite and Skin palette."))
+    f.forever.title:SetText(Text("MSUF Forever  ·  Complete profile"))
+    f.forever.detail:SetText(Text("Installs the Forever factory for MSUF frames, Suite and optional Skin."))
+    Style(f.suite, selected == "suite", false, { 0.90, 0.93, 0.95 })
+    Style(f.classic, selected == "classic", false, { 0.34, 0.78, 0.87 })
+    Style(f.forever, selected == "forever", false, { 0.85, 0.71, 0.42 })
     f.suite.mark:SetText(selected == "suite" and Text("SELECTED") or Text("CHOOSE"))
+    f.classic.mark:SetText(selected == "classic" and Text("SELECTED") or Text("CHOOSE"))
     f.forever.mark:SetText(selected == "forever" and Text("SELECTED") or Text("CHOOSE"))
-    f.profileNote:SetText(selected == "forever"
-        and Text("Forever creates a new profile. Existing profiles remain saved.")
-        or Text("Modern replaces active Suite and optional Skin settings. MSUF frames stay unchanged."))
     f.cooldowns.title:SetText(Text("MSUF spec cooldown profiles"))
     f.cooldowns.detail:SetText(Text("Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM."))
     f.cooldowns.mark:SetText(useRaidEssentials and Text("ON") or Text("OFF"))
@@ -674,7 +717,8 @@ local function PaintReview(f)
     f.review[1].title:SetText(Text("Profile"))
     f.review[1].detail:SetText(selected == "forever"
         and Text("Forever · complete MSUF and Suite factory")
-        or Text("Modern · Suite profile, MSUF frames retained"))
+        or selected == "classic" and Text("Classic MSUF · complete MSUF, Suite and Skin factory")
+        or Text("Clean Modern · Suite and Skin, MSUF frames retained"))
     f.review[2].title:SetText(Text("Modules"))
     f.review[2].detail:SetText(ModuleSummary(profile))
     f.review[3].title:SetText(Text("UI scaling"))
@@ -700,15 +744,17 @@ end
 
 function Installer.Open()
     if Suite.IsCombatLocked() then return false, "combat" end
-    selected = Suite.Client.isForever and "forever" or "suite"
+    selected = "suite"
     local active = DB.GetProfile(DB.GetActiveProfileName())
     local current = active and active.suite and active.suite.modules
         and active.suite.modules.cooldownManager
     useScale, scale, scalePreset, page = false, 1, "custom", 1
     useRaidEssentials = not (current and current.raidEssentials == false)
-    moduleOverrides = { suite = {}, forever = {} }
+    moduleOverrides = { suite = {}, classic = {}, forever = {} }
     Installer.Refresh()
     frame:Show()
+    Suite.Client.ResumeControllerWindow(frame)
+    Suite.Client.RaiseControllerCursor()
     return true
 end
 -- MSUF's own first run comes first. Classic MSUF reports it pending

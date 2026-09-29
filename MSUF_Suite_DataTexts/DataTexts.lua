@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local Appearance = assert(P.Appearance)
+local GoldLedger = P.GoldLedger
 local M = { bars = {}, due = {}, values = {}, events = {} }
 local ID = "dataTexts"
 local BAR_COUNT, SLOT_COUNT = 3, 6
@@ -46,6 +47,8 @@ local TEXT = {
     sinceLogin = S.Text("Since login"),
     homeWorld = S.Text("Home / World"),
     level = S.Text("Level"),
+    knownTotal = S.Text("Known account gold"),
+    moreCharacters = S.Text("%d more characters"),
 }
 local NO_VALUE = "—"
 local floor = math.floor
@@ -232,6 +235,7 @@ local function Tooltip(button)
             local baseline = SessionBaseline()
             if baseline then GameTooltip:AddDoubleLine(TEXT.sinceLogin, SignedMoneyText(amount - baseline)) end
         end
+        if M.config.trackAltGold and GoldLedger then GoldLedger.AppendTooltip(GameTooltip, MoneyText, TEXT) end
     elseif key == "latency" or key == "fpsLatency" then
         local home, world = S.ReadInfoSource("latency")
         if Finite(home) and Finite(world) then
@@ -561,15 +565,20 @@ local function OnEvent(self, event, unit)
         return
     end
     if event == "PLAYER_ENTERING_WORLD" then
+        if self.config.trackAltGold and GoldLedger then GoldLedger.Capture() end
         self:UpdateVisibility()
         EnteredWorld(self)
         return
     end
+    if event == "PLAYER_MONEY" and self.config.trackAltGold and GoldLedger then GoldLedger.Capture() end
     if event == "ZONE_CHANGED_NEW_AREA" or event == "HOUSE_PLOT_ENTERED"
         or event == "HOUSE_PLOT_EXITED" then
         self:UpdateVisibility()
     end
     if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        if event == "PLAYER_REGEN_ENABLED" and self.config.trackAltGold and GoldLedger then
+            GoldLedger.Capture()
+        end
         self:UpdateVisibility()
         return
     end
@@ -602,7 +611,11 @@ local function SyncEvents(self, active)
             end
         end
     end
-    if next(active) then wantedEvents.PLAYER_ENTERING_WORLD = true end
+    if next(active) or self.config.trackAltGold then wantedEvents.PLAYER_ENTERING_WORLD = true end
+    if self.config.trackAltGold then
+        wantedEvents.PLAYER_MONEY = true
+        wantedEvents.PLAYER_REGEN_ENABLED = true
+    end
     local c = self.config
     for i = 1, BAR_COUNT do
         local keys = BAR_KEYS[i]
@@ -762,11 +775,13 @@ local function StyleSlot(button, style, font)
     button.label:SetJustifyH(ALIGN[style.textAlign] or "CENTER")
     button.label:SetTextColor(1, 1, 1)
 end
-
 local function RefreshBar(index)
     local c = M.config
     local bar = CreateBar(index)
-    local prefix, frame = bar.prefix, bar.frame
+    local prefix, frame, layer = bar.prefix, bar.frame, c[bar.prefix .. "Layer"]
+    local restored = S.ApplyOwnedLayer(frame, layer)
+    S.ApplyOwnedChildLayer(bar.visual, frame, layer, 1, restored)
+    S.ApplyOwnedChildLayer(bar.badge, frame, layer, 2, restored)
     local pixel = S.PixelUnit() or 1
     bar.pixelUnit = pixel
     frame:ClearAllPoints()
@@ -789,6 +804,7 @@ local function RefreshBar(index)
     local font = S.ResolveFont(style.font) or S.GlobalFontPath()
     for slot = 1, SLOT_COUNT do
         local button = bar.slots[slot]
+        S.ApplyOwnedChildLayer(button, frame, layer, 2, restored)
         local choice = c[prefix .. "Slot" .. slot]
         local key = NS.DataTextSourceKeys[choice]
         button.source, button.sourceIndex = SOURCES[key] and key or nil, choice
@@ -799,8 +815,8 @@ local function RefreshBar(index)
     Layout(bar)
     CacheVisibility(c, bar)
 end
-
 function M:Refresh()
+    if self.config.trackAltGold and GoldLedger then GoldLedger.Capture() end
     self.styling = true
     Clear(self.values)
     for i = 1, BAR_COUNT do

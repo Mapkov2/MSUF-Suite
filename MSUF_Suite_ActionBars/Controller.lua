@@ -97,6 +97,7 @@ Global({ "disableFormPaging", "disableSkyridingPaging", "pagingModifiers", "page
     { paging = true })
 
 local BAR_WORK = {
+    Layer = { layout = true },
     Buttons = { layout = true, paint = true },
     Size = { layout = true, style = true },
     ClickThrough = { layout = true, visible = true },
@@ -131,8 +132,10 @@ local barKeys = {}
 for index = 1, AB.BAR_COUNT do
     for suffix, work in pairs(BAR_WORK) do
         local key = AB.KEYS[index][suffix]
-        Watch(key, work, index)
-        barKeys[key] = true
+        if key then
+            Watch(key, work, index)
+            barKeys[key] = true
+        end
     end
     barKeys["bar" .. index .. "ResumeVisibility"] = true
 end

@@ -1,0 +1,191 @@
+local _, P = ...
+local NS, S = P.NS, P.Suite
+local M = assert(P.BagsModule, "Bags.lua must load before BankItemLevel.lua")
+
+M.bankOverlays = setmetatable({}, { __mode = "k" })
+M.bankPending, M.bankRequested = {}, {}
+
+-- The Retail bank owns its pooled buttons, search and tab handling. Only
+-- attach a label to a visible native button after Blizzard has refreshed it
+-- (upstream/live BankPanelItemButtonMixin:Refresh).
+function M:HideBankLevels()
+    for _, record in pairs(self.bankOverlays) do
+        if record.label then record.label:Hide() end
+    end
+    for itemID in pairs(self.bankPending) do self.bankPending[itemID] = nil end
+    for itemID in pairs(self.bankRequested) do self.bankRequested[itemID] = nil end
+end
+
+local function BankVisible(self)
+    local frame = _G.BankFrame
+    return self.active and not NS.Client.isForever and self.config.showBankItemLevel
+        and frame and not NS.Safety.IsForbidden(frame) and frame:IsShown()
+        and frame.BankPanel and not NS.Safety.IsForbidden(frame.BankPanel)
+        and frame.BankPanel:IsShown()
+end
+
+local function PaintBankButton(self, button, info)
+    local record = self.bankOverlays[button]
+    if not BankVisible(self) or not button or NS.Safety.IsForbidden(button)
+        or not button:IsShown() or not S.Public(info) or not info
+        or (S.Public(info.isFiltered) and info.isFiltered) then
+        if record and record.label then record.label:Hide() end
+        return
+    end
+    local link, itemID, quality = info.hyperlink, info.itemID, info.quality
+    if not S.Public(link) or type(link) ~= "string" or not S.Finite(itemID)
+        or not S.Public(quality) then
+        if record and record.label then record.label:Hide() end
+        return
+    end
+    if not record then
+        record = {}
+        self.bankOverlays[button] = record
+    end
+    if record.link ~= link then
+        record.link, record.level, record.gear, record.quality = link, nil, nil, nil
+    end
+    if record.gear == nil then
+        local equippable = C_Item.IsEquippableItem(link)
+        if not S.Public(equippable) then
+            if record.label then record.label:Hide() end
+            return
+        end
+        record.gear = equippable == true
+    end
+    if not record.gear then
+        if record.label then record.label:Hide() end
+        return
+    end
+    if not record.label then
+        if NS.IsCombatLocked() then
+            self.needsBankRefresh = true
+            S.Queue("bags")
+            return
+        end
+        local label = S.CreateFontString(button, nil, "OVERLAY")
+        label:SetDrawLayer("OVERLAY", 7)
+        label:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+        label:SetJustifyH("RIGHT")
+        label:SetShadowOffset(1, -1)
+        label:SetShadowColor(0, 0, 0, 1)
+        record.label = label
+    end
+    self:StyleItemLevel(record)
+    if record.level == nil then
+        local level = C_Item.GetDetailedItemLevelInfo(link)
+        if S.Finite(level) and level > 0 then
+            record.level = math.floor(level)
+            record.label:SetText(tostring(record.level))
+        else
+            if self.bankRequested[itemID] == "failed" then
+                record.label:Hide()
+                return
+            end
+            local pending = self.bankPending[itemID]
+            if not pending then pending = {}; self.bankPending[itemID] = pending end
+            pending[button] = true
+            if not self.bankRequested[itemID] then
+                self.bankRequested[itemID] = true
+                C_Item.RequestLoadItemDataByID(itemID)
+            end
+        end
+    end
+    if not record.level then
+        record.label:Hide()
+        return
+    end
+    self:PaintItemLevelQuality(record, quality)
+    record.label:Show()
+end
+
+
+function M:OnBankItemInfoReceived(itemID, success, waiting)
+    self.bankPending[itemID] = nil
+    local loaded = S.Public(success) and success == true
+    if loaded then self.bankRequested[itemID] = nil
+    else self.bankRequested[itemID] = "failed" end
+    if loaded and BankVisible(self) then
+        for button in pairs(waiting) do
+            local info = C_Container.GetContainerItemInfo(button:GetBankTabID(), button:GetContainerSlotID())
+            if S.Public(info) and info and S.Public(info.itemID) and info.itemID == itemID then
+                PaintBankButton(self, button, info)
+            end
+        end
+    end
+end
+
+function M:UpdateBank(searchChanged)
+    if not BankVisible(self) then self:HideBankLevels(); return end
+    local panel = _G.BankFrame.BankPanel
+    for button in panel:EnumerateValidItems() do
+        -- Native Refresh has already fetched itemInfo. A search change only
+        -- updates MatchesSearch, so ask for current filter state in that case.
+        local info = button.itemInfo
+        if searchChanged then
+            info = C_Container.GetContainerItemInfo(button:GetBankTabID(), button:GetContainerSlotID())
+        end
+        PaintBankButton(self, button, info)
+    end
+    if next(self.bankPending) then self.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, true) end
+end
+
+local function BankButtonRefreshed(button)
+    if not M.active or not M.config.showBankItemLevel then return end
+    PaintBankButton(M, button, button.itemInfo)
+    if next(M.bankPending) then M.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, true) end
+end
+
+local function BankSearchUpdated(panel)
+    if M.active and M.config.showBankItemLevel and _G.BankFrame
+        and panel == _G.BankFrame.BankPanel then
+        M:UpdateBank(true)
+    end
+end
+
+local function BankPanelShown(panel)
+    if M.active and M.config.showBankItemLevel and _G.BankFrame
+        and panel == _G.BankFrame.BankPanel then
+        M:UpdateBank()
+    end
+end
+
+local function InstallBankHooks(self)
+    if self.bankHooked or NS.Client.isForever then return end
+    local buttonMixin, panelMixin = _G.BankPanelItemButtonMixin, _G.BankPanelMixin
+    if not buttonMixin or type(buttonMixin.Refresh) ~= "function"
+        or not panelMixin or type(panelMixin.UpdateSearchResults) ~= "function" then return end
+    hooksecurefunc(buttonMixin, "Refresh", BankButtonRefreshed)
+    hooksecurefunc(panelMixin, "UpdateSearchResults", BankSearchUpdated)
+    if type(panelMixin.OnShow) == "function" then
+        hooksecurefunc(panelMixin, "OnShow", BankPanelShown)
+    end
+    self.bankHooked = true
+end
+
+local function BankOpened(self)
+    InstallBankHooks(self)
+    self:UpdateBank()
+end
+
+local function BankAddonLoaded(self, _, addon)
+    if addon == "Blizzard_UIPanels_Game" then
+        InstallBankHooks(self)
+        if self.bankHooked then self.context:RemoveEvent("ADDON_LOADED") end
+    end
+end
+
+function M:ApplyBankLevels()
+    if NS.Client.isForever or not self.config.showBankItemLevel then
+        self.context:RemoveEvent("BANKFRAME_OPENED")
+        self.context:RemoveEvent("ADDON_LOADED")
+        self:HideBankLevels()
+        if not next(self.pending) then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
+        return
+    end
+    InstallBankHooks(self)
+    self.context:Event("BANKFRAME_OPENED", BankOpened)
+    if not self.bankHooked then self.context:Event("ADDON_LOADED", BankAddonLoaded)
+    else self.context:RemoveEvent("ADDON_LOADED") end
+    self:UpdateBank()
+end

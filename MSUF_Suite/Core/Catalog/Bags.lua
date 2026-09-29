@@ -27,6 +27,7 @@ NS.BagsLookPresets = {
     [1] = { backgroundColor = "0a1522", backgroundOpacity = 96, accentColor = "5794d2" },
     [2] = { backgroundColor = "151719", backgroundOpacity = 96, accentColor = "b9ab86" },
     [3] = { backgroundColor = "14181b", backgroundOpacity = 98, accentColor = "9f8960" },
+    [5] = { backgroundColor = "101010", backgroundOpacity = 96, accentColor = "e6ecf2" },
 }
 NS.BagsLookVisualKeys = { backgroundColor = true, backgroundOpacity = true, accentColor = true }
 NS.SuiteCatalog.bags.look = {
@@ -36,7 +37,7 @@ NS.SuiteCatalog.bags.look = {
 local initial = NS.BagsLookPresets[NS.Client.isForever and 3 or 2]
 B.Section("bags", "look", "Choose a look", {
     B.Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
 })
 B.Section("bags", "appearance", "Window appearance", {
     B.Color("backgroundColor", "Background color", initial.backgroundColor),
@@ -46,6 +47,7 @@ B.Section("bags", "appearance", "Window appearance", {
 
 B.Section("bags", "itemLevels", "Item levels", {
     B.Bool("showItemLevel", "Show item levels on equipment", true),
+    B.Bool("showBankItemLevel", "Show item levels in the bank", true),
     B.Bool("showBindBadge", "Show BoE and Warbound badges on items"),
     B.Number("itemLevelSize", "Item level text size", 12, 8, 20),
     B.Bool("qualityColor", "Color item levels by quality", true),
@@ -73,6 +75,7 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 
 local rules = NS.SuiteCatalog.bags.rules
 rules.showBindBadge.hidden = NS.Client.isForever
+rules.showBankItemLevel.hidden = NS.Client.isForever
 rules.itemLevelSize.enableKey = "showItemLevel"
 rules.qualityColor.enableKey = "showItemLevel"
 rules.font.enableKey = "showItemLevel"

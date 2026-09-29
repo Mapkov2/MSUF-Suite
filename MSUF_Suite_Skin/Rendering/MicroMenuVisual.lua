@@ -392,15 +392,21 @@ end
 local function PaintPlate(state, settings)
     local material = settings.barMaterial
     local decorated = settings.iconStyle == "bold" and PLATE_TEXTURES[material] ~= nil
-    if decorated and state.plateMaterial ~= material then
+    local neutral = material == "midnightDark"
+    if material == "modern" then
+        local r, g, b = NS.Theme.GetColor("microBarBorder")
+        neutral = math.max(r, g, b) - math.min(r, g, b) <= 0.06
+    end
+    if decorated and (state.plateMaterial ~= material or state.plateNeutral ~= neutral) then
         state.plate:SetTexture(PLATE_TEXTURES[material])
-        state.plate:SetDesaturated(material == "midnightDark")
+        state.plate:SetDesaturated(neutral)
         if material == "midnightDark" then
             state.plate:SetVertexColor(0.84, 0.85, 0.82, 1)
         else
             state.plate:SetVertexColor(1, 1, 1, 1)
         end
         state.plateMaterial = material
+        state.plateNeutral = neutral
     end
     state.plate:SetShown(state.visible and decorated)
 end

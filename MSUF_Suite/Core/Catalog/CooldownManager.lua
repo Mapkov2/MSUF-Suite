@@ -165,6 +165,7 @@ local function CommonRules(Add, p, d, slot)
     Add(Bool(p .. "hideVehicle", "Hide in vehicles", true), "hideVehicle")
     Add(Bool(p .. "tooltips", "Show tooltips", false), "tooltips")
     Add(Choice(p .. "strata", "Frame layer", 3, { "Background", "Low", "Medium", "High" }), "strata")
+    Add(Number(p .. "layer", "MSUF layer (-1 = Auto)", -1, -1, 30), "layer")
 end
 local function IconRules(Add, p, d)
     Add(Number(p .. "size", "Icon size", d.size, 12, 96), "size")

@@ -40,7 +40,16 @@ local forever = {
     padding = 4, fontSize = 0,
 }
 
-NS.ChatLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever }
+local cleanModern = {
+    panelColor = "101010", panelAlpha = 82,
+    borderColor = "333333", borderAlpha = 90, borderSize = 1,
+    accentColor = "e6ecf2", accentAlpha = 88,
+    tabActiveColor = "f5f5f5", tabInactiveColor = "bfc4c9",
+    tabPanel = true, tabAccent = true, sidebarPanel = true, sidebarWidth = 28,
+    inputPanel = true, inputColor = "0a0a0a", inputAlpha = 90,
+    padding = 4, fontSize = 0,
+}
+NS.ChatLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever, [5] = cleanModern }
 NS.ChatLookVisualKeys = {}
 for key in pairs(midnight) do NS.ChatLookVisualKeys[key] = true end
 NS.SuiteCatalog[id].look = {
@@ -51,7 +60,7 @@ local initial = NS.Client.isForever and forever or midnightDark
 
 B.Section(id, "look", "Choose a look", {
     B.Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
 })
 B.Section(id, "window", "Chat window", {
     B.Color("panelColor", "Background color", initial.panelColor),

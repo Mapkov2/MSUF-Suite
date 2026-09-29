@@ -10,3 +10,4 @@
 
 Bootstrap.lua
 Bags.lua
+BankItemLevel.lua

@@ -39,7 +39,13 @@ local forever = {
     bgColor = "14181b", bgAlpha = 82, borderSize = 1, borderColor = "9f8960",
     headerColor = "20272a", headerAlpha = 82, titleColor = "f1e3c4",
 }
-NS.DamageMeterLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever }
+local cleanModern = {
+    barColor = "e6ecf2", trackColor = "101010", trackAlpha = 42,
+    leftColor = "f5f5f5", rightColor = "f5f5f5",
+    bgColor = "101010", bgAlpha = 82, borderSize = 1, borderColor = "333333",
+    headerColor = "191919", headerAlpha = 92, titleColor = "f5f5f5",
+}
+NS.DamageMeterLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever, [5] = cleanModern }
 NS.DamageMeterLookVisualKeys = {}
 for key in pairs(midnight) do NS.DamageMeterLookVisualKeys[key] = true end
 NS.SuiteCatalog[id].look = {
@@ -49,7 +55,7 @@ NS.SuiteCatalog[id].look = {
 local initial = NS.Client.isForever and forever or midnightDark
 B.Section(id, "look", "Choose a look", {
     Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
 })
 B.Section(id, "general", "Windows and data", {
     Number("windowCount", "Number of windows", 2, 1, MAX_WINDOWS),
@@ -144,6 +150,7 @@ for i = 1, MAX_WINDOWS do
         Choice(p .. "Session", "Fight", 1, { "Current fight", "Overall" }),
         Number(p .. "Width", "Width", NS.Client.isForever and 340 or 260, 150, 900),
         Number(p .. "Height", "Height", 170, 50, 900),
+        Number(p .. "Layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
         Number(p .. "X", "Horizontal position", -20, -4000, 4000),
         Number(p .. "Y", "Vertical position", (NS.Client.isForever and 60 or 20) + (i - 1) * 190, -3000, 3000),
         Bool(p .. "Locked", "Lock window", false),

@@ -233,10 +233,13 @@ function MicroMenuSkin.ApplyPreset(presetName)
     local preset = NS.MicroMenuPresetValues[presetName]
     local settings = MutableSettings()
     if not preset or not settings then return false, "invalid preset" end
+    local panelScale = NS.IsRetailPanelMicroBar(settings) and settings.scale
     for key in pairs(optionValidators) do
         if preset[key] ~= nil then settings[key] = preset[key] end
     end
+    if panelScale then settings.scale = panelScale end
     settings.preset = presetName
+    NS.AlignRetailPanelMicroBar(settings)
     return RefreshAfterSetting()
 end
 

@@ -541,6 +541,18 @@ local function MapLegacyMicroPresets(_, microMenu, revision)
     end
 end
 
+-- Lift only the old Retail factory panel-side grid. Its bottom already lines
+-- up with the meter; four extra grid units between rows reach DataTexts' top.
+-- A hand-tuned spacing, scale, row count or other placement is left alone.
+local function AlignRetailPanelMicroBar(_, microMenu, revision)
+    if revision <= 0 or revision >= 52 or microMenu.preset ~= "modern"
+        or not NS.IsRetailPanelMicroBar(microMenu) or microMenu.layoutMode ~= "owned"
+        or microMenu.padding ~= 6
+        or (revision < 51 and microMenu.spacing ~= 1)
+        or (revision >= 51 and microMenu.spacing ~= 5) then return end
+    NS.AlignRetailPanelMicroBar(microMenu)
+end
+
 local MICRO_MENU_MIGRATIONS = {
     MoveForeverBarOffChat,
     RestoreForever38Strip,
@@ -552,6 +564,7 @@ local MICRO_MENU_MIGRATIONS = {
     DarkenModernStrip,
     TightenForeverBoldStrip,
     MapLegacyMicroPresets,
+    AlignRetailPanelMicroBar,
 }
 
 local function NormalizeMicroMenu(microMenu)

@@ -777,6 +777,8 @@ function L.Apply(slot)
     else
         local bar = L.EnsureBar(slot)
         L.Strata(slot)
+        local restored = S.ApplyOwnedLayer(bar.frame, view.layer)
+        if bar.auraHost then S.ApplyOwnedChildLayer(bar.auraHost, bar.frame, view.layer, 1, restored) end
         local width, height
         if view.kind == 2 or view.kind == 3 then
             Host(bar)

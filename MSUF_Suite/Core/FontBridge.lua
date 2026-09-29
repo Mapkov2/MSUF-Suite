@@ -5,7 +5,7 @@ local S = NS.Suite
 -- modules restyle their text while explicit module font choices stay intact.
 local FONT_MODULES = {
     "actionbars", "bags", "cooldownManager", "damageMeter", "dataTexts",
-    "minimap", "nameplates", "objectives", "announcements", "afkScreen",
+    "minimap", "nameplates", "objectives", "runSummary", "announcements", "afkScreen",
     "xpBar", "skyriding", "durabilityAlert", "battleRes", "chat",
 }
 local lastPath, lastEpoch

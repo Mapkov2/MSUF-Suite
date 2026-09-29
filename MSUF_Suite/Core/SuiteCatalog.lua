@@ -24,15 +24,51 @@ local moduleAddons = {
     merchantLevel = "MSUF_Suite_QualityOfLife",
     vaultSpec = "MSUF_Suite_QualityOfLife",
     tooltipIDs = "MSUF_Suite_QualityOfLife",
+    tooltipVisibility = "MSUF_Suite_QualityOfLife",
     itemCounts = "MSUF_Suite_QualityOfLife",
+    socketGemSuggestions = "MSUF_Suite_QualityOfLife",
+    tooltipSpellCopy = "MSUF_Suite_QualityOfLife",
+    tooltipMPlusScore = "MSUF_Suite_QualityOfLife",
+    tooltipClassColors = "MSUF_Suite_QualityOfLife",
+    macroBuilder = "MSUF_Suite_QualityOfLife",
+    chatProfileLinks = "MSUF_Suite_QualityOfLife",
     loadoutReminder = "MSUF_Suite_QualityOfLife",
     quietPopups = "MSUF_Suite_QualityOfLife",
+    waypoints = "MSUF_Suite_QualityOfLife",
+    dailyComfort = "MSUF_Suite_QualityOfLife",
+    collectionNewMarkers = "MSUF_Suite_QualityOfLife",
+    guildChatPrivacy = "MSUF_Suite_QualityOfLife",
+    uiErrorFilter = "MSUF_Suite_QualityOfLife",
+    groupDeathAlert = "MSUF_Suite_QualityOfLife",
+    groupFinderDoubleClick = "MSUF_Suite_QualityOfLife",
+    groupFinderApplicantSort = "MSUF_Suite_QualityOfLife",
+    groupFinderExitReminder = "MSUF_Suite_QualityOfLife",
+    trustedPartyInvites = "MSUF_Suite_QualityOfLife",
+    groupRaidShortcuts = "MSUF_Suite_QualityOfLife",
+    mythicKeyShare = "MSUF_Suite_QualityOfLife",
+    groupBloodlust = "MSUF_Suite_QualityOfLife",
+    lootContainers = "MSUF_Suite_QualityOfLife",
+    lootVendorRules = "MSUF_Suite_QualityOfLife",
+    trainerLearnAll = "MSUF_Suite_QualityOfLife",
+    characterUpgradeWindow = "MSUF_Suite_QualityOfLife",
+    professionAppearance = "MSUF_Suite_QualityOfLife",
+    lootToastFilter = "MSUF_Suite_QualityOfLife",
+    cursorEffects = "MSUF_Suite_QualityOfLife",
+    mapQuickSwitch = "MSUF_Suite_QualityOfLife",
+    mapLandingShortcuts = "MSUF_Suite_QualityOfLife",
+    combatStatsHUD = "MSUF_Suite_QualityOfLife",
+    combatPetStatus = "MSUF_Suite_QualityOfLife",
+    combatMovementCue = "MSUF_Suite_QualityOfLife",
+    burningRushCue = "MSUF_Suite_QualityOfLife",
+    delveSolePower = "MSUF_Suite_QualityOfLife",
+    mythicResetReminder = "MSUF_Suite_QualityOfLife",
     dataTexts = "MSUF_Suite_DataTexts",
     buffReminders = "MSUF_Suite_BuffReminders",
     chat = "MSUF_Suite_Chat",
     nameplates = "MSUF_Suite_Nameplates",
     cooldownManager = "MSUF_Suite_CooldownManager",
     objectives = "MSUF_Suite_Modules",
+    runSummary = "MSUF_Suite_Modules",
     announcements = "MSUF_Suite_Modules",
     afkScreen = "MSUF_Suite_Modules",
 }
@@ -156,4 +192,40 @@ function NS.FinalizeCatalog()
         for key, rule in pairs(catalog[id].rules) do defaults[key] = rule.default end
         NS.Defaults.suite.modules[id] = defaults
     end
+end
+
+-- Resolve the shared look to a module's ordinary catalog settings. This is
+-- pure, so factory profiles can be styled before activation.
+local lookIndexes = { midnight = 1, midnightDark = 2, foreverGlass = 3, cleanModern = 5 }
+local function LookValues(id, lookIndex, config)
+    local look = catalog[id].look
+    if not look or not (look.global or look.extra) then return nil end
+    local values = {}
+    if look.global then
+        local choice = look.global == true and lookIndex or look.global[lookIndex]
+        values[look.key] = choice
+        local preset = look.presets and look.presets[choice]
+        if preset then
+            for key, value in pairs(preset) do values[key] = value end
+        end
+    end
+    if look.extra then look.extra(values, lookIndex, config) end
+    return values
+end
+
+NS.SuiteLooks = { indexes = lookIndexes }
+function NS.SuiteLooks.ApplyToConfig(id, config, lookName)
+    local index = lookIndexes[lookName]
+    local values = index and LookValues(id, index, config)
+    if not values then return false end
+    local rules = catalog[id].rules
+    local changed = false
+    for key, value in pairs(values) do
+        local rule = rules[key]
+        if rule and type(value) == type(rule.default) and config[key] ~= value then
+            config[key] = value
+            changed = true
+        end
+    end
+    return changed
 end

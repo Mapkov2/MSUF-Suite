@@ -450,7 +450,17 @@ function M:Refresh()
     M.styleGen = M.styleGen + 1
     D.BuildStyle()
     M.available, M.reason = S.DamageMeterAvailability()
-    for i = 1, c.windowCount do D.SyncWindow(D.EnsureWindow(i)) end
+    for i = 1, c.windowCount do
+        local win = D.EnsureWindow(i)
+        local layer = c["w" .. i .. "Layer"]
+        local restored = S.ApplyOwnedLayer(win.frame, layer)
+        S.ApplyOwnedChildLayer(win.body, win.frame, layer, 1, restored)
+        S.ApplyOwnedChildLayer(win.header, win.frame, layer, 3, restored)
+        S.ApplyOwnedChildLayer(win.border, win.frame, layer, 10, restored)
+        S.ApplyOwnedChildLayer(win.grip, win.frame, layer, 12, restored)
+        if win.panel then S.ApplyOwnedChildLayer(win.panel, win.frame, layer, 5, restored) end
+        D.SyncWindow(win)
+    end
     D.HideTip()
     D.EvaluateVisibility()
     D.StyleTimer()

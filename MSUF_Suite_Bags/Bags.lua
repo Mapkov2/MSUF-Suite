@@ -1,7 +1,6 @@
 local _, Private = ...
 local NS, S = Private.NS, Private.Suite
--- The bags catalog entry declares combinedBags, so the controller hands the
--- player's value back when the module is disabled.
+-- The controller restores the player's combinedBags CVar when disabled.
 local M = { overlays = setmetatable({}, { __mode = "k" }), pending = {}, pendingPool = {}, requested = {} }
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
 local floor = math.floor
@@ -13,7 +12,6 @@ local TEXT = {
 local NO_VALUE = "—"
 
 local Finite = S.Finite
-
 local function PublicMoney()
     local value = GetMoney()
     if not Finite(value) or value < 0 then return nil end
@@ -25,10 +23,7 @@ local function GoldDeltaText(delta)
     return TEXT.session .. " " .. (delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta))
 end
 
--- Own the window surface while Blizzard keeps the item buttons and controls.
--- The native flat background is level 0, its item buttons are level 10, and
--- its decorative NineSlice is level 500 (upstream/live ContainerFrame.xml).
--- A Suite surface at the background level fills the window below controls.
+-- Surface sits below native item buttons; see upstream/live ContainerFrame.xml.
 local function WindowTexture(frame, layer, sublevel)
     return S.CreateTexture(frame, nil, layer, nil, sublevel)
 end
@@ -42,12 +37,9 @@ end
 
 local function NewGoldLabel(frame)
     local goldLabel = S.CreateFontString(frame.MoneyFrame, nil, "OVERLAY")
-    -- Blizzard moves the money row above tracked currencies, so follow
-    -- that row rather than keeping the label at the bag's bottom edge.
+    -- Follow Blizzard's money row as currencies move it upward.
     goldLabel:SetPoint("LEFT", frame.MoneyFrame, "LEFT", 4, 0)
-    -- The combined bag is 430px wide on upstream/live (10 x 37px items,
-    -- 5px gaps, 15px padding). Blizzard caps the right-side coin display
-    -- at 168px, leaving this area clear of its clickable coin buttons.
+    -- upstream/live leaves 210px left of the right-side coin buttons.
     goldLabel:SetWidth(210)
     goldLabel:SetJustifyH("LEFT")
     goldLabel:SetWordWrap(false)
@@ -610,12 +602,13 @@ local function PaintBindBadge(self, button, pending, info)
     record.bindBadge:Show()
 end
 
-local function ItemInfoReceived(module, _, itemID)
+local function ItemInfoReceived(module, _, itemID, success)
     if not S.Public(itemID) then return end
     local waiting = module.pending[itemID]
-    if not waiting then return end
+    local bankWaiting = module.bankPending[itemID]
+    if not waiting and not bankWaiting then return end
     module.pending[itemID], module.requested[itemID] = nil, nil
-    if module.frame and module.frame:IsShown() then
+    if waiting and module.frame and module.frame:IsShown() then
         for i = 1, #waiting do
             local button = waiting[i]
             local info = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
@@ -623,10 +616,18 @@ local function ItemInfoReceived(module, _, itemID)
             PaintBindBadge(module, button, module.pending, info)
         end
     end
-    for i = #waiting, 1, -1 do waiting[i] = nil end
-    module.pendingPool[#module.pendingPool + 1] = waiting
-    if not next(module.pending) then module.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
+    if waiting then
+        for i = #waiting, 1, -1 do waiting[i] = nil end
+        module.pendingPool[#module.pendingPool + 1] = waiting
+    end
+    if bankWaiting then module:OnBankItemInfoReceived(itemID, success, bankWaiting) end
+    if not next(module.pending) and not next(module.bankPending) then
+        module.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
+    end
 end
+M.ItemInfoReceived = ItemInfoReceived
+M.StyleItemLevel = Style
+M.PaintItemLevelQuality = PaintQuality
 
 local function HideItemLevels(self)
     if self.itemLevelsHidden then return end
@@ -635,7 +636,7 @@ local function HideItemLevels(self)
     end
     ClearPending(self)
     for itemID in pairs(self.requested) do self.requested[itemID] = nil end
-    self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
+    if not next(self.bankPending) then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
     self.itemLevelsHidden = true
 end
 
@@ -679,7 +680,7 @@ function M:UpdateVisible(nativeItemsReady)
     for itemID in pairs(self.requested) do
         if not pending[itemID] then self.requested[itemID] = nil end
     end
-    if next(pending) then
+    if next(pending) or next(self.bankPending) then
         self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, true)
     else
         self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
@@ -748,6 +749,7 @@ function M:Enable()
     InstallHooks(self)
     self.context:Event("USE_COMBINED_BAGS_CHANGED", CombinedModeChanged, true)
     self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, true)
+    self:ApplyBankLevels()
     self:Refresh()
 end
 
@@ -760,6 +762,7 @@ local function VisualChanges(c, last)
         or last.fontShadow ~= c.fontShadow or last.fontShadowOpacity ~= c.fontShadowOpacity
         or last.fontShadowDistance ~= c.fontShadowDistance
     local level = not last or last.showItemLevel ~= c.showItemLevel or last.showBindBadge ~= c.showBindBadge
+        or last.showBankItemLevel ~= c.showBankItemLevel
     local gold = not last or last.showSessionGold ~= c.showSessionGold
     return slot, window, label, level, gold
 end
@@ -771,8 +774,8 @@ local function RememberVisuals(self, c)
     last.font, last.itemLevelSize, last.qualityColor = c.font, c.itemLevelSize, c.qualityColor
     last.fontOutline, last.fontRendering, last.fontShadow = c.fontOutline, c.fontRendering, c.fontShadow
     last.fontShadowOpacity, last.fontShadowDistance = c.fontShadowOpacity, c.fontShadowDistance
-    last.showItemLevel, last.showBindBadge, last.showSessionGold, last.editMode =
-        c.showItemLevel, c.showBindBadge, c.showSessionGold, S.editMode
+    last.showItemLevel, last.showBindBadge, last.showBankItemLevel, last.showSessionGold, last.editMode =
+        c.showItemLevel, c.showBindBadge, c.showBankItemLevel, c.showSessionGold, S.editMode
     self.appliedVisual = last
 end
 
@@ -812,6 +815,10 @@ function M:Refresh()
     end
     local deferredItems = self.needsItemRefresh
     if slotChanged or labelChanged or levelChanged or deferredItems then self:UpdateVisible() end
+    if labelChanged or levelChanged or self.needsBankRefresh then
+        self:ApplyBankLevels()
+        self.needsBankRefresh = nil
+    end
     if slotChanged or deferredItems then StyleVisibleSlots(self, _G.ContainerFrame6) end
     self.needsItemRefresh = nil
     self:RefreshWindowLayout()
@@ -848,6 +855,9 @@ function M:Disable()
             record.nativeBg = nil
         end
     end
+    self:HideBankLevels()
+    self.context:RemoveEvent("BANKFRAME_OPENED")
+    self.context:RemoveEvent("ADDON_LOADED")
     RestoreWindows(self)
     ClearPending(self)
     self.pending, self.pendingPool, self.requested = {}, {}, {}
@@ -884,4 +894,5 @@ function M:RegisterMovers()
     })
 end
 
+Private.BagsModule = M
 S.Install("bags", M)

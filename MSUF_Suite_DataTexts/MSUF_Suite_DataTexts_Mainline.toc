@@ -10,4 +10,5 @@
 
 Bootstrap.lua
 Appearance.lua
+GoldLedger.lua
 DataTexts.lua

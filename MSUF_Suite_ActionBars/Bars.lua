@@ -309,6 +309,11 @@ end
 -- geometry: callers run it out of combat only.
 function AB.LayoutBar(bar)
     local config, keys, header = M.config, bar.key, bar.header
+    local layer = config[keys.Layer]
+    local restored = S.ApplyOwnedLayer(header, layer)
+    for i = 1, #bar.buttons do
+        S.ApplyOwnedChildLayer(bar.buttons[i].button, header, layer, 1, restored)
+    end
     local count = AB.Count(bar, config)
     local vertical, start = config[keys.Vertical], config[keys.Start]
     local columns, rows, r = AB.Grid(max(count, 1), config[keys.Rows], vertical)

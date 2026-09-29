@@ -34,7 +34,7 @@ local SECTIONS = {
         "alpha" } },
     { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "vertical", "grow", "x", "y" } },
     { id = "look", title = "Look", suffixes = { "zoom", "border", "borderColor", "borderClass", "swipeAlpha", "edge",
-        "strata" } },
+        "strata", "layer" } },
     { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
         "stackPos", "keybind", "keybindSize", "keybindPos" } },
     { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",

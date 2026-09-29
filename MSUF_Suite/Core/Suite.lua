@@ -3,6 +3,8 @@ local _, NS = ...
 NS.FinalizeCatalog()
 local S = { states = {}, instances = {}, catalog = NS.SuiteCatalog, order = NS.SuiteOrder, started = false }
 NS.Suite = S
+S.ApplyOwnedLayer = NS.ApplyOwnedLayer
+S.ApplyOwnedChildLayer = NS.ApplyOwnedChildLayer
 local pending, pendingFrame, pendingListening = {}, nil, false
 local RUNTIME_ADDON = "MSUF_Suite_Modules"
 for i = 1, #S.order do S.states[S.order[i]] = { active = false } end
@@ -466,38 +468,21 @@ end
 -- The Skinning look is a deliberate suite-wide gesture. Keep the choice in
 -- this profile so an optional module adopts it when it is enabled later.
 -- Catalog entries describe their part in spec.look (see SuiteCatalog.lua).
-local GLOBAL_LOOKS = { midnight = 1, midnightDark = 2, foreverGlass = 3 }
+local Looks = NS.SuiteLooks
+local ApplyLookToConfig = Looks.ApplyToConfig
 
-local function LookValues(id, lookIndex, config)
-    local look = S.catalog[id].look
-    if not look or not (look.global or look.extra) then return nil end
-    local values = {}
-    if look.global then
-        local choice = look.global == true and lookIndex or look.global[lookIndex]
-        values[look.key] = choice
-        local preset = look.presets and look.presets[choice]
-        if preset then
-            for key, value in pairs(preset) do values[key] = value end
-        end
+-- Factory and setup profiles are staged before activation. Set their colors
+-- without changing live frames; preserve each module's enabled and layout keys.
+function S.StyleProfile(profile, lookName)
+    local db = type(profile) == "table" and profile.suite
+    if not db or type(db.modules) ~= "table" or not Looks.indexes[lookName] then return false end
+    db.globalLook = lookName
+    for i = 1, #S.order do
+        local id = S.order[i]
+        local config = db.modules[id]
+        if type(config) == "table" then ApplyLookToConfig(id, config, lookName) end
     end
-    if look.extra then look.extra(values, lookIndex, config) end
-    return values
-end
-
-local function ApplyLookToConfig(id, config, lookName)
-    local index = GLOBAL_LOOKS[lookName]
-    local values = index and LookValues(id, index, config)
-    if not values then return false end
-    local rules = S.catalog[id].rules
-    local changed = false
-    for key, value in pairs(values) do
-        local rule = rules[key]
-        if rule and type(value) == type(rule.default) and config[key] ~= value then
-            config[key] = value
-            changed = true
-        end
-    end
-    return changed
+    return true
 end
 
 ------------------------------------------------------------------ profile access
@@ -724,7 +709,7 @@ end
 
 function S.ApplyGlobalLook(lookName)
     local db = ActiveSuite()
-    if NS.IsCombatLocked() or not GLOBAL_LOOKS[lookName] or not db then return false end
+    if NS.IsCombatLocked() or not Looks.indexes[lookName] or not db then return false end
     db.globalLook = lookName
     for i = 1, #S.order do
         local id = S.order[i]
@@ -779,7 +764,21 @@ function S.SetMany(id, values)
     if not spec then return false, "Unknown module" end
     local config, clean = StoreValues(spec, id, values)
     if not config then return false, clean end
-    if clean.enabled == true then ApplyLookToConfig(id, config, db.globalLook) end
+    if clean.enabled == true then
+        -- A module import carries its own palette. The global look is only a
+        -- default for a newly enabled module without explicit appearance data.
+        local look = spec.look
+        local explicitAppearance = false
+        for key in pairs(clean) do
+            local rule = spec.rules[key]
+            if key ~= "enabled" and (rule.color or look and
+                (key == look.key or look.visualKeys and look.visualKeys[key])) then
+                explicitAppearance = true
+                break
+            end
+        end
+        if not explicitAppearance then ApplyLookToConfig(id, config, db.globalLook) end
+    end
     S.states[id].error = nil
     S.Apply(id)
     Changed()

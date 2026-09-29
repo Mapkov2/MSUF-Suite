@@ -13,7 +13,7 @@ local HELP = {
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
     { id = "visibility", title = "When the selected bar appears", suffixes = { "Visibility", "Alpha", "FadeAlpha", "ClickThrough" } },
-    { id = "layout", title = "Layout for the selected bar", suffixes = { "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty", "Point", "X", "Y" } },
+    { id = "layout", title = "Layout for the selected bar", suffixes = { "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty", "Layer", "Point", "X", "Y" } },
     { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize" } },
     { id = "background", title = "Background for the selected bar", suffixes = { "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding" } },
 }

@@ -29,6 +29,10 @@ end
 -- codec can read it, otherwise from catalog defaults at the current
 -- migration revision.
 local function NewProfile()
+    local function StyleFactory(profile)
+        Suite.Suite.StyleProfile(profile, "cleanModern")
+        return profile
+    end
     local compact = Suite.Client.isForever and Suite.ForeverFactoryModuleCompact
         or Suite.RetailFactoryModuleCompact
     -- Older MSUF builds do not export the codec.
@@ -37,10 +41,12 @@ local function NewProfile()
         local envelope = _G.MSUF_TryDecodeCompactString(compact:sub(8))
         if type(envelope) == "table" and envelope.addon == "MSUF_Suite" and envelope.format == 1 then
             local profile = Suite.ProfileIO.PrepareTable(envelope.profile, false)
-            if profile then return profile end
+            if profile then return StyleFactory(profile) end
         end
     end
-    return { suite = { schema = 1, revision = Suite.Suite.MigrationRevision, modules = {} } }
+    local profile = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision, modules = {} } }
+    Suite.Suite.Normalize(profile)
+    return StyleFactory(profile)
 end
 Database.CreateFactoryProfile = NewProfile
 

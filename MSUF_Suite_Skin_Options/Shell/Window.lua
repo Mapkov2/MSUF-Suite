@@ -1,6 +1,7 @@
 local _, Private = ...
 local NS, O = Private.NS, Private.Options
 local L = NS.L
+local SuiteClient = assert(_G.MSUFSuite, "MSUF_Suite is required").Client
 
 local pageDefinitions = {}
 local pageOrder = {}
@@ -98,6 +99,7 @@ local function BuildFrame(layout)
     window:SetScript("OnShow", function() O.RefreshAll() end)
     window:SetScript("OnHide", function() O.CloseDropdown() end)
     window:Hide()
+    SuiteClient.AttachControllerWindow(window)
     return window
 end
 
@@ -345,7 +347,11 @@ local function CreateWindow()
         pageFrames = {},
         activePage = nil,
     }
-    state.showPage = function(key, focusLabel) ShowWindowPage(state, key, focusLabel) end
+    state.showPage = function(key, focusLabel)
+        SuiteClient.PauseControllerWindow(state.window)
+        ShowWindowPage(state, key, focusLabel)
+        SuiteClient.ResumeControllerWindow(state.window)
+    end
     O.windowState = state
 
     BuildHeader(state)
@@ -382,5 +388,6 @@ function O.Open()
     local state = O.BuildWindow()
     state.window:Show()
     state.showPage(state.activePage or O.ui.lastPage or pageOrder[1])
+    SuiteClient.RaiseControllerCursor()
     return true
 end

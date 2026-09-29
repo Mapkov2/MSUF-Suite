@@ -14,7 +14,7 @@ local function Build(ctx)
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
-            help = "Choose Midnight Blue, Midnight Dark or MSUF Forever. This changes only the bag window colors and opacity; item slots and Blizzard bag actions remain intact.",
+            help = "Choose Clean Modern, Midnight Blue, Midnight Dark or MSUF Forever. This changes only the bag window colors and opacity; item slots and Blizzard bag actions remain intact.",
             open = true,
         })
     local appearance = P.SectionRules(ID, "appearance")

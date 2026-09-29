@@ -5,7 +5,7 @@ local M, SOURCES = O.M, O.SOURCES
 local Create, Render, CollectDirty = O.Create, O.Render, O.CollectDirty
 local MythicPlus = S.MythicPlus
 local Raid = S.Raid
-local Public = S.Public
+local Public, Finite = S.Public, S.Finite
 local ID = "objectives"
 
 -- The objective tracker module: events, the refresh flow and the lifecycle
@@ -196,8 +196,8 @@ local function Event(self, event, ...)
     end
     if event == "UPDATE_UI_WIDGET" then
         local widget = ...
-        if Public(widget) and type(widget) == "table" and Public(widget.widgetSetID)
-            and (widget.widgetSetID == 252 or widget.widgetSetID == 514) then
+        if Public(widget) and type(widget) == "table" and Finite(widget.widgetSetID)
+            and widget.widgetSetID == self.scenarioWidgetSetID then
             Request(self, "scenario")
         end
         return

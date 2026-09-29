@@ -222,11 +222,42 @@ local function InstallLookValues(look)
     for key, value in pairs(look.geometry or {}) do NS.DB.geometry[key] = value end
 end
 
+-- Prepare an installer profile without repainting or mutating the active one.
+function Theme.StyleProfile(profile, lookName)
+    local look = NS.LookPresets[lookName]
+    if type(profile) ~= "table" or not look or not look.palette then return false end
+    local theme, geometry = profile.theme, profile.geometry
+    if type(theme) ~= "table" or type(geometry) ~= "table" then return false end
+    local overrides = NS.PresetOverrides[look.palette]
+    if not overrides then return false end
+    local colors = NS.CopyValue(NS.BaseColors)
+    for key, value in pairs(overrides) do colors[key] = NS.CopyValue(value) end
+    for target, source in pairs(NS.MicroColorSources) do
+        if not overrides[target] then colors[target] = NS.CopyValue(colors[source]) end
+    end
+    theme.colors, theme.preset, theme.look = colors, look.palette, lookName
+    for key, value in pairs(look.appearance or {}) do theme[key] = value end
+    for key, value in pairs(look.geometry or {}) do geometry[key] = value end
+    local micro = profile.icons and profile.icons.microMenu
+    local preset = NS.MicroMenuPresetValues[look.microStyle]
+    if micro and preset then
+        for _, key in ipairs(NS.MicroMenuLookKeys) do
+            if preset[key] ~= nil then micro[key] = preset[key] end
+        end
+        micro.preset = look.microStyle
+        NS.AlignRetailPanelMicroBar(micro)
+    end
+    return true
+end
+
 function Theme.GetColorTable(key)
     local source = NS.MicroColorSources[key]
     if source then
         local micro = NS.DB and NS.DB.icons and NS.DB.icons.microMenu
         local paletteName = micro and microNamedPalettes[micro.preset]
+        if micro and micro.preset == "modern" and NS.DB.theme.look == "cleanModern" then
+            paletteName = "cleanModern"
+        end
         if paletteName then
             local palette = NS.PresetOverrides[paletteName]
             return palette[key] or palette[source] or NS.BaseColors[key] or NS.BaseColors[source]
@@ -486,6 +517,7 @@ function Theme.ApplyLook(lookName)
             if microPreset[key] ~= nil then micro[key] = microPreset[key] end
         end
         micro.preset = look.microStyle
+        NS.AlignRetailPanelMicroBar(micro)
     end
     NS.DB.theme.preset = look.palette
     NS.DB.theme.look = lookName

@@ -249,29 +249,25 @@ local function CollectAchievements(list)
     end
 end
 
--- Blizzard's scenario tracker owns two widget sets that can carry a stage
--- timer even when no scenario criterion has duration/elapsed values.
-local SCENARIO_WIDGET_SETS = { 252, 514 }
-local function ScenarioWidgetTimeLeft()
-    if P.NS.Client.isForever then return nil end
+-- Blizzard attaches stage widgets to the set returned by GetStepInfo.
+local function ScenarioWidgetTimeLeft(widgetSetID)
+    if not widgetSetID then return nil end
     local manager = C_UIWidgetManager
     local widgetType = Enum.UIWidgetVisualizationType.ScenarioHeaderTimer
-    for set = 1, #SCENARIO_WIDGET_SETS do
-        local widgets = Read(manager.GetAllWidgetsBySetID, SCENARIO_WIDGET_SETS[set])
-        if type(widgets) == "table" then
-            for i = 1, #widgets do
-                local widget = widgets[i]
-                if Public(widget) and type(widget) == "table"
-                    and Finite(widget.widgetID) and Public(widget.widgetType)
-                    and widget.widgetType == widgetType then
-                    local info = Read(manager.GetScenarioHeaderTimerWidgetVisualizationInfo, widget.widgetID)
-                    if type(info) == "table" and Public(info.shownState)
-                        and info.shownState ~= Enum.WidgetShownState.Hidden
-                        and Finite(info.timerMin) and Finite(info.timerMax) and Finite(info.timerValue)
-                        and info.timerMax > info.timerMin then
-                        local left = math.min(info.timerValue, info.timerMax) - info.timerMin
-                        if left > 0 then return left end
-                    end
+    local widgets = Read(manager.GetAllWidgetsBySetID, widgetSetID)
+    if type(widgets) == "table" then
+        for i = 1, #widgets do
+            local widget = widgets[i]
+            if Public(widget) and type(widget) == "table"
+                and Finite(widget.widgetID) and Public(widget.widgetType)
+                and widget.widgetType == widgetType then
+                local info = Read(manager.GetScenarioHeaderTimerWidgetVisualizationInfo, widget.widgetID)
+                if type(info) == "table" and Public(info.shownState)
+                    and info.shownState ~= Enum.WidgetShownState.Hidden
+                    and Finite(info.timerMin) and Finite(info.timerMax) and Finite(info.timerValue)
+                    and info.timerMax > info.timerMin then
+                    local left = math.min(info.timerValue, info.timerMax) - info.timerMin
+                    if left > 0 then return left end
                 end
             end
         end
@@ -284,11 +280,12 @@ local function CollectScenario(list, c)
     if not Text(name) or not Finite(stage) or not Finite(total) or total < 1 or stage > total then return end
     local entry = NextEntry(list, 0, name, "scenario")
     entry.scenarioID = Finite(scenarioID) and scenarioID or nil
-    local stepName, description, criteriaCount = scenario.GetStepInfo()
+    local stepName, description, criteriaCount, _, _, _, _, _, _, _, _, widgetSetID = scenario.GetStepInfo()
+    O.M.scenarioWidgetSetID = Finite(widgetSetID) and widgetSetID > 0 and widgetSetID or nil
     if Text(stepName) then AddLine(entry, stepName) end
     if Text(description) and description ~= stepName then AddLine(entry, description) end
     local criteriaInfo = C_ScenarioInfo.GetCriteriaInfo
-    if c.showTimers ~= false then entry.timeLeft = ScenarioWidgetTimeLeft() end
+    if c.showTimers ~= false then entry.timeLeft = ScenarioWidgetTimeLeft(O.M.scenarioWidgetSetID) end
     if not Finite(criteriaCount) then return end
     for i = 1, criteriaCount do
         local info = Read(criteriaInfo, i)
@@ -310,7 +307,10 @@ local COLLECTORS = {
     world = function(list, c) if c.showWorldQuests then CollectWorld(list, c) end end,
     bonus = function(list, c) if c.showBonus then CollectBonus(list, c) end end,
     achievements = function(list, c) if c.showAchievements then CollectAchievements(list) end end,
-    scenario = function(list, c) if c.showScenario then CollectScenario(list, c) end end,
+    scenario = function(list, c)
+        O.M.scenarioWidgetSetID = nil
+        if c.showScenario then CollectScenario(list, c) end
+    end,
 }
 
 -- Re-reads every dirty source into its reused entry list.

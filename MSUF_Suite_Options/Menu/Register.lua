@@ -18,7 +18,7 @@ local PAGE_ADDONS = {
     suite_damageMeter = { "damageMeter" },
     suite_bags = { "bags" },
     suite_qualityOfLife = { "qol", "quests", "loot", "combatLog", "xpBar", "innervateCue", "durabilityAlert", "battleRes", "skyriding" },
-    suite_hud = { "objectives", "announcements", "afkScreen" },
+    suite_hud = { "objectives", "runSummary", "announcements", "afkScreen" },
     suite_dataTexts = { "dataTexts" },
     suite_buffReminders = { "buffReminders" },
     suite_chat = { "chat" },
@@ -218,6 +218,57 @@ end
 
 AddIcons()
 RegisterPages()
+
+-- Menu2 asks for rows only while its layer overview is open. Keep Suite
+-- settings in the Suite profile and use its validated/history-aware setter.
+local function SetSuiteLayer(edit, value)
+    return P.Set(edit.module, edit.key, value)
+end
+
+local function RegisterSuiteLayers()
+    if type(M.RegisterLayerOverviewProvider) ~= "function" then return end
+    M.RegisterLayerOverviewProvider("suite-owned-surfaces", function(sink)
+        local function Add(area, scope, label, module, key, enabled)
+            local config = S.Config(module)
+            local value = config and config[key]
+            local automatic = type(value) ~= "number" or value < 0
+            sink:Layer({
+                id = "suite." .. module .. "." .. key,
+                area = area, scope = scope, label = label,
+                value = automatic and 0 or value, default = 0,
+                automatic = automatic, enabled = enabled ~= false,
+                settingKey = "suite." .. module .. "." .. key,
+                edit = { kind = "external", set = SetSuiteLayer, module = module, key = key },
+            })
+        end
+
+        local cooldown = S.Config("cooldownManager")
+        for _, slot in ipairs(Suite.CDM.SLOTS) do
+            local keys = Suite.CDM.KEYS[slot.key]
+            Add("Suite Cooldown Manager", slot.title, "Whole bar", "cooldownManager", keys.layer,
+                cooldown.enabled and cooldown[keys.on])
+        end
+        local data = S.Config("dataTexts")
+        for i = 1, 3 do
+            local prefix = "bar" .. i
+            Add("Suite DataTexts", "Bar " .. i, "Whole bar", "dataTexts", prefix .. "Layer",
+                data.enabled and data[prefix .. "Enabled"])
+        end
+        local meter = S.Config("damageMeter")
+        for i = 1, Suite.DamageMeterMaxWindows do
+            Add("Suite Damage Meter", "Window " .. i, "Whole window", "damageMeter", "w" .. i .. "Layer",
+                meter.enabled and i <= meter.windowCount)
+        end
+        local actions = S.Config("actionbars")
+        for i = 1, Suite.ActionBarCount do
+            Add("Suite Action Bars", Suite.ActionBarTitles[i], "Whole bar", "actionbars", "bar" .. i .. "Layer",
+                actions.enabled and actions["bar" .. i .. "Visibility"] ~= 6)
+        end
+        local xp = S.Config("xpBar")
+        Add("Suite Quality of Life", "Experience", "Experience bar", "xpBar", "layer", xp.enabled)
+    end)
+end
+RegisterSuiteLayers()
 InstallPageResets()
 local added = AddNavigation()
 -- Menu2 builds its navigation once per session. If the window already exists

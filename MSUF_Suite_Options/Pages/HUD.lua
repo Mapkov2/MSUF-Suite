@@ -7,6 +7,7 @@ local function AppearanceRules(id)
     local colorSections = id == "objectives"
         and { "colors", "detailColors", "questColors", "activityColors", "extraColors" }
         or { "colors", "eventColors", "moreEventColors" }
+    if id == "runSummary" then colorSections = { "colors" } end
     for _, section in ipairs(colorSections) do
         for _, rule in ipairs(P.SectionRules(id, section)) do
             -- RuleSection renders non-color controls and collects all color
@@ -55,6 +56,36 @@ local function Build(ctx)
         Tr("Appearance"), AppearanceRules("objectives"), {
             help = "Set font, text sizes and opacity here. Open the three-dot color menu in this section for tracker colors; choosing one switches to Custom colors automatically.",
         })
+    local function SummaryAction(method, ...)
+        local module = S.instances and S.instances.runSummary
+        if module and module.active and type(module[method]) == "function" then
+            return module[method](module, ...)
+        end
+    end
+    local summaryActions = {
+        { "Move in Edit Mode", function() P.MoveOnScreen("runSummary", "summary") end, key = "edit" },
+        { "Preview raid result", function() SummaryAction("Preview", "raid") end, key = "preview_raid" },
+        { "Show last result", function() SummaryAction("ShowLast") end, key = "last" },
+        { "Summary colors", function() OpenColors("runSummary") end, key = "colors" },
+    }
+    if S.catalog.runSummary.rules.showMythicPlus then
+        table.insert(summaryActions, 2,
+            { "Preview Mythic+ result", function() SummaryAction("Preview", "mythic") end, key = "preview_mythic" })
+    end
+    P.ModuleCard(ctx, b, PAGE, "runSummary", summaryActions, { title = "Run Summaries" })
+    P.RuleSection(ctx, b, PAGE, "runSummary", "suite_hud_summary_content",
+        Tr("Results and details"), P.SectionRules("runSummary", "content"), {
+            help = "After a completed Mythic+ run or successful raid encounter, show the public result values in a separate card. Choose which figures appear and how long the card stays open. The last result can be reopened here. Combat delays the card until it is safe to show.",
+            open = true,
+        })
+    P.RuleSection(ctx, b, PAGE, "runSummary", "suite_hud_summary_layout",
+        Tr("Size and position"), P.SectionRules("runSummary", "layout"), {
+            help = "Drag the result card in MSUF Edit Mode, or set its screen anchor, width, scale and position here.",
+        })
+    P.RuleSection(ctx, b, PAGE, "runSummary", "suite_hud_summary_type",
+        Tr("Appearance"), AppearanceRules("runSummary"), {
+            help = "Set font, text sizes and opacity here. Use the three-dot color menu for the card palette.",
+        })
     P.ModuleCard(ctx, b, PAGE, "announcements", {
         { "Move in Edit Mode", function() P.MoveOnScreen("announcements", "banner") end,
             key = "edit" },
@@ -77,4 +108,4 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "HUD", title = "HUD", build = Build, icon = { 7, 1 },
-    aliases = { "objectives", "objective tracker", "announcements", "events", "afk", "hud" } })
+    aliases = { "objectives", "objective tracker", "run summary", "mythic plus", "raid kill", "announcements", "events", "afk", "hud" } })

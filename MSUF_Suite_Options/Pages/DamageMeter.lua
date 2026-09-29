@@ -89,7 +89,7 @@ local function Build(ctx)
     P.RuleSection(ctx, b, PAGE, ID, "suite_damageMeter_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
-            help = "Midnight Blue keeps the original blue palette. Midnight Dark uses neutral charcoal glass; MSUF Forever retains its muted gold. Color changes become Custom.",
+            help = "Clean Modern uses matte panels with white accents. Midnight Blue keeps the original blue palette. Midnight Dark uses neutral charcoal glass; MSUF Forever retains its muted gold. Color changes become Custom.",
             extra = P.LookPresetButtons(ctx, PAGE, ID, "suite_damageMeter_look"),
         })
     for _, section in ipairs({ "general", "bars", "text", "window", "details", "timer" }) do

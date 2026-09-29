@@ -47,7 +47,15 @@ local forever = {
     keybindColor = "f4f3eb", macroColor = "d4dce2",
     countColor = "f4f3eb", cooldownColor = "f4f3eb",
 }
-NS.ActionBarLookPresets = { [1] = blue, [2] = dark, [3] = forever }
+local cleanModern = {
+    iconZoom = 6, borderSize = 1, borderColor = "333333", borderClassColor = false,
+    slotColor = "101010", slotAlpha = 62,
+    highlightStyle = 2, pushedStyle = 2, interactionColor = "e6ecf2",
+    interactionClassColor = false,
+    keybindColor = "f5f5f5", macroColor = "bfc4c9",
+    countColor = "f5f5f5", cooldownColor = "f5f5f5",
+}
+NS.ActionBarLookPresets = { [1] = blue, [2] = dark, [3] = forever, [5] = cleanModern }
 NS.ActionBarLookVisualKeys = {}
 for key in pairs(dark) do NS.ActionBarLookVisualKeys[key] = true end
 NS.SuiteCatalog[id].look = {
@@ -62,7 +70,7 @@ NS.SuiteCatalog[id].look = {
 local initial = NS.Client.isForever and forever or dark
 B.Section(id, "look", "Choose a look", {
     Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
 })
 B.Section(id, "appearance", "Button appearance", {
     Number("iconZoom", "Icon zoom (percent)", initial.iconZoom, 0, 15, 0.5),
@@ -134,6 +142,7 @@ for i = 1, BAR_COUNT do
             { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat" }),
         Number(p .. "Alpha", "Bar opacity (percent)", 100, 0, 100, 5),
         Number(p .. "FadeAlpha", "Opacity without mouseover (percent)", 0, 0, 100, 5),
+        Number(p .. "Layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
         Number(p .. "Buttons", "Buttons", maxButtons, 1, maxButtons),
         Number(p .. "Rows", "Rows", d[3] > 1 and d[3] or 1, 1, maxButtons),
         Number(p .. "Size", "Button size", special and 30 or 40, 16, 80),

@@ -165,8 +165,9 @@ function P.EnsureRetailResourceStack(force)
     local module = Suite.DB and Suite.DB.suite and Suite.DB.suite.modules
     module = module and module.cooldownManager
     if type(installation) ~= "table" or installation.status ~= "complete"
-        or (installation.profile ~= "suite" and installation.profile ~= "forever")
-        or (installation.profile == "forever" and Suite.Client.isForever == true)
+        or (installation.profile ~= "suite" and installation.profile ~= "classic"
+            and installation.profile ~= "forever")
+        or Suite.Client.isForever == true
         or type(module) ~= "table"
         or module.enabled == false then return false end
     if not force and installation.resourceStackRevision == 1 then return false end
@@ -511,11 +512,11 @@ end
 -- Installer-owned factory data is already bundled and validated by the same
 -- catalog as normal profiles. Keep its module values, including explicit
 -- enabled choices, while MSUF's frame import remains transactional.
-function P.InstallFactory(name, frames, modules, skinText)
+function P.InstallFactory(name, frames, modules, skinText, lookName)
     local clean, reason = NewName(name)
     if not clean then return false, reason end
     if type(frames) ~= "string" or not frames:match("^MSUF[234]:") then
-        return false, "Forever frame profile unavailable"
+        return false, "Factory frame profile unavailable"
     end
     local profile, why = IO.PrepareTable(modules, false)
     if not profile then return false, why end
@@ -528,16 +529,22 @@ function P.InstallFactory(name, frames, modules, skinText)
             skinProfile, why = SkinSnapshot(skin)
         end
         if not skinProfile then return false, why or "Skin profile unavailable" end
-        if type(skinText) == "string" then AdaptFactorySkin(skinProfile) end
+        if lookName and (not skin.Theme or not skin.Theme.StyleProfile
+            or not skin.Theme.StyleProfile(skinProfile, lookName)) then
+            return false, "Skin look unavailable"
+        end
+        if type(skinText) == "string" then
+            AdaptFactorySkin(skinProfile, lookName and profile.suite.modules or nil)
+        end
     end
-    return Create(clean, frames, profile, skinProfile,
-        Suite.ForeverFactoryScreenHeight)
+    local screenHeight = not lookName and Suite.ForeverFactoryScreenHeight or nil
+    return Create(clean, frames, profile, skinProfile, screenHeight)
 end
 
 -- Modern replaces only the active Suite and optional Skin settings. Prepare
 -- both payloads before changing either store; the MSUF frame profile is never
 -- imported or switched here.
-function P.InstallSuiteFactory(name, modules, skinText)
+function P.InstallSuiteFactory(name, modules, skinText, lookName)
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
     local profile, reason = IO.PrepareTable(modules, false)
     if not profile then return false, reason end
@@ -548,6 +555,10 @@ function P.InstallSuiteFactory(name, modules, skinText)
         if not skin then return false, "Skin engine unavailable" end
         skinProfile, reason = skin.ProfileIO.PrepareProfile(skinText)
         if not skinProfile then return false, reason or "Modern Skin profile unavailable" end
+        if lookName and (not skin.Theme or not skin.Theme.StyleProfile
+            or not skin.Theme.StyleProfile(skinProfile, lookName)) then
+            return false, "Skin look unavailable"
+        end
         AdaptFactorySkin(skinProfile, profile.suite.modules)
     end
     local previousModules = DB.GetProfile(name)

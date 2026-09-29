@@ -20,8 +20,10 @@ Locales\ruRU.lua
 Locales\zhCN.lua
 Locales\zhTW.lua
 Core\Platform.lua
+Core\Changelog.lua
 Core\ForeverFactory.lua
 Core\ForeverFrames.lua
+Core\ClassicFramesFactory.lua
 Core\RetailFactory.lua
 Core\RetailSkinFactory.lua
 Core\Database.lua
@@ -34,6 +36,7 @@ Core\MinimapStyle.lua
 Core\Catalog\DamageMeter.lua
 Core\Catalog\Bags.lua
 Core\Catalog\QualityOfLife.lua
+Core\Catalog\QualityOfLifeGroup.lua
 Core\Catalog\HUD.lua
 Core\Catalog\DataTexts.lua
 Core\Catalog\BuffReminders.lua

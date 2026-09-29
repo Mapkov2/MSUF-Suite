@@ -43,6 +43,8 @@ NS.DataTextLooks = {
       value = "e9e9e4", separator = "555a56", warning = "ed8d80" },
     { background = "14181b", border = "9f8960", accent = "d8b66a", label = "d8b66a",
       value = "f4f3eb", separator = "727774", warning = "ed8d80" },
+    [5] = { background = "101010", border = "333333", accent = "e6ecf2", label = "bfc4c9",
+      value = "f5f5f5", separator = "333333", warning = "ed8d80" },
 }
 local initialLook = NS.Client.isForever and 3 or 2
 local initial = NS.DataTextLooks[initialLook]
@@ -74,7 +76,7 @@ NS.SuiteCatalog.dataTexts.look = {
 }
 
 local barStyle = {
-    Choice("look", "MSUF style", initialLook, { "Midnight Blue", "Midnight Dark", "MSUF Forever" }),
+    Choice("look", "MSUF style", initialLook, { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
     Bool("backgroundEnabled", "Show background", true),
     Texture("backgroundTexture", "Background texture"),
     Number("backgroundOpacity", "Background opacity (percent)", NS.Client.isForever and 94 or 82, 0, 100, 5),
@@ -138,6 +140,9 @@ B.LinkFontShadow(NS.SuiteCatalog.dataTexts.rules)
 B.Section("dataTexts", "bags", "Blizzard bag buttons", {
     Bool("hideBlizzardBagBar", "Hide Blizzard bag buttons; use the Bag space DataText", true),
 })
+B.Section("dataTexts", "gold", "Gold across characters", {
+    Bool("trackAltGold", "Remember this character's gold for the account total", false),
+})
 
 -- Settings are copied from the shared style when an override is switched on.
 local function AddBarStyle(bar)
@@ -172,6 +177,7 @@ for bar = 1, 3 do
         Number(prefix .. "Height", "Height", NS.Client.isForever and bar == 1 and 28 or 26, 18, 100),
         Choice(prefix .. "Layout", "Slot sizing", NS.Client.isForever and bar == 1 and 2 or 1, { "Equal", "Fit text" }),
         Choice(prefix .. "Visibility", "Visibility", 1, { "Always", "Out of combat", "In combat", "Mouseover" }),
+        Number(prefix .. "Layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
         Choice(prefix .. "Point", "Screen anchor", NS.Client.isForever and bar == 1 and 9 or 8, NS.AnchorLabels),
         Number(prefix .. "X", "Horizontal position", NS.Client.isForever and bar == 1 and -20 or 0, -4000, 4000),
         Number(prefix .. "Y", "Vertical position", NS.Client.isForever and bar == 1 and 20 or 85 + (bar - 1) * 36, -3000, 3000),

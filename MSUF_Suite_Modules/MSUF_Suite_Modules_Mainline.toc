@@ -17,5 +17,6 @@ Raid.lua
 ObjectivesData.lua
 ObjectivesTracker.lua
 Objectives.lua
+RunSummary.lua
 Announcements.lua
 AFKScreen.lua
