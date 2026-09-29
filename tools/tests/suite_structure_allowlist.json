@@ -2521,37 +2521,7 @@
    "file": "MSUF_Suite_Bags/BankItemLevel.lua",
    "symbol": "BankFrame",
    "kind": "addon",
-   "reason": "Blizzard bank UI is load on demand; the item level hook waits for its frame"
-  },
-  {
-   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
-   "symbol": "buttonMixin (= BankPanelItemButtonMixin)",
-   "kind": "addon",
-   "reason": "Blizzard bank button mixin appears only after its bank UI loads"
-  },
-  {
-   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
-   "symbol": "buttonMixin.Refresh (= BankPanelItemButtonMixin)",
-   "kind": "addon",
-   "reason": "The bank item button refresh callback is installed by the load on demand bank UI"
-  },
-  {
-   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
-   "symbol": "panelMixin (= BankPanelMixin)",
-   "kind": "addon",
-   "reason": "Blizzard bank panel mixin appears only after its bank UI loads"
-  },
-  {
-   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
-   "symbol": "panelMixin.OnShow (= BankPanelMixin)",
-   "kind": "addon",
-   "reason": "The bank panel open hook waits for the load on demand mixin"
-  },
-  {
-   "file": "MSUF_Suite_Bags/BankItemLevel.lua",
-   "symbol": "panelMixin.UpdateSearchResults (= BankPanelMixin)",
-   "kind": "addon",
-   "reason": "The bank search refresh callback is installed by the load on demand bank UI"
+   "reason": "Hook installation waits until Blizzard_UIPanels_Game has created its native BankFrame instance"
   },
   {
    "file": "MSUF_Suite_QualityOfLife/GroupFinderDoubleClick.lua",

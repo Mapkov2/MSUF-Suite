@@ -943,12 +943,42 @@ end
 do
     state.Safety = { IsForbidden = function() return false end }
     local bankHooks = {}
-    BankPanelItemButtonMixin = { Refresh = function() end }
-    BankPanelMixin = { UpdateSearchResults = function() end, OnShow = function() end }
+    local bankButtons, bankPanel = {}, nil
+    BankPanelItemButtonMixin = {
+        Refresh = function(self) self.itemInfo = items[self.slot] end,
+        IsShown = function() return true end,
+        GetBankTabID = function() return 7 end,
+        GetContainerSlotID = function(self) return self.slot end,
+    }
+    BankPanelMixin = {
+        UpdateSearchResults = function() end,
+        GenerateItemSlotsForSelectedTab = function()
+            for i = 1, #bankButtons do bankButtons[i]:Refresh() end
+        end,
+        OnShow = function(self) self:GenerateItemSlotsForSelectedTab() end,
+    }
+    -- XML mixins copy methods to each instance. Replacing a method on the
+    -- global mixin later does not replace the panel/button's copied method.
+    local function CopyMethods(target, mixin)
+        for key, value in pairs(mixin) do target[key] = value end
+        return target
+    end
+    local function BankButton(slot)
+        local button = CopyMethods({ bankButton = true, slot = slot }, BankPanelItemButtonMixin)
+        button:Refresh()
+        return button
+    end
     local nativeHook = hooksecurefunc
     hooksecurefunc = function(target, name, callback)
-        if target == BankPanelItemButtonMixin or target == BankPanelMixin then
-            bankHooks[name] = callback
+        if target == BankPanelItemButtonMixin or target == BankPanelMixin
+            or target == bankPanel or type(target) == "table" and target.bankButton then
+            bankHooks[target] = bankHooks[target] or {}
+            bankHooks[target][name] = (bankHooks[target][name] or 0) + 1
+            local original = assert(target[name])
+            target[name] = function(...)
+                original(...)
+                callback(...)
+            end
         else
             nativeHook(target, name, callback)
         end
@@ -956,33 +986,33 @@ do
     items[4] = { hyperlink = "gear-a", itemID = 104, quality = 4 }
     items[5] = { hyperlink = "pending-bank", itemID = 1105, quality = 3 }
     items[6] = { hyperlink = "food", itemID = 106, quality = 1 }
-    local bankButtons = {}
     for slot = 4, 6 do
-        bankButtons[#bankButtons + 1] = {
-            itemInfo = items[slot],
-            IsShown = function() return true end,
-            GetBankTabID = function() return 7 end,
-            GetContainerSlotID = function() return slot end,
-        }
+        bankButtons[#bankButtons + 1] = BankButton(slot)
     end
-    local bankPanel = {
+    bankPanel = CopyMethods({
         IsShown = function() return true end,
+        HookScript = function(self, name, callback)
+            assert(name == "OnShow" and not self.onShowHook, "bank show hook was duplicated")
+            self.onShowHook = callback
+        end,
         EnumerateValidItems = function()
             local index = 0
             return function() index = index + 1; return bankButtons[index] end
         end,
-    }
+    }, BankPanelMixin)
     BankFrame = { BankPanel = bankPanel, IsShown = function() return true end }
     module.config.showBankItemLevel = true
     module.active = true
     module:Enable()
-    assert(bankHooks.Refresh and bankHooks.UpdateSearchResults and bankHooks.OnShow
+    assert(bankHooks[bankPanel] and bankHooks[bankPanel].UpdateSearchResults == 1
+        and bankHooks[bankPanel].GenerateItemSlotsForSelectedTab == 1 and bankPanel.onShowHook
+        and not bankHooks[BankPanelMixin] and not bankHooks[BankPanelItemButtonMixin]
         and module.bankOverlays[bankButtons[1]].label.text == "640"
         and module.bankOverlays[bankButtons[1]].label.shown
         and not module.bankOverlays[bankButtons[3]].label,
         "native bank equipment levels did not appear without touching non-gear")
     local calls = levelCalls
-    bankHooks.Refresh(bankButtons[1])
+    bankButtons[1]:Refresh()
     assert(levelCalls == calls, "unchanged bank item repeated its level lookup")
     assert(requests[1105] == 1 and context.events.GET_ITEM_INFO_RECEIVED,
         "uncached bank item was not requested once through the existing item event")
@@ -992,30 +1022,53 @@ do
         and module.bankOverlays[bankButtons[2]].label.shown,
         "loaded bank item did not repaint its own button")
     items[5] = { hyperlink = "pending-fail", itemID = 1106, quality = 3 }
-    bankButtons[2].itemInfo = items[5]
-    bankHooks.Refresh(bankButtons[2])
+    bankButtons[2]:Refresh()
     assert(requests[1106] == 1 and context.events.GET_ITEM_INFO_RECEIVED,
         "missing bank data was not requested once")
     context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 1106, false)
-    bankHooks.Refresh(bankButtons[2])
+    bankButtons[2]:Refresh()
     assert(requests[1106] == 1 and not module.bankOverlays[bankButtons[2]].label.shown,
         "failed item lookup looped or displayed stale level")
     items[4].isFiltered = true
-    bankHooks.UpdateSearchResults(bankPanel)
+    bankPanel:UpdateSearchResults()
     assert(not module.bankOverlays[bankButtons[1]].label.shown,
         "bank search did not hide the filtered item-level label")
     items[4].isFiltered = nil
-    bankHooks.UpdateSearchResults(bankPanel)
+    bankPanel:UpdateSearchResults()
     assert(module.bankOverlays[bankButtons[1]].label.shown,
         "clearing bank search did not restore the label")
+    items[4] = { hyperlink = "gear-b", itemID = 1104, quality = 4 }
+    bankPanel:GenerateItemSlotsForSelectedTab()
+    assert(module.bankOverlays[bankButtons[1]].label.text == "651",
+        "tab change left the reused bank button's previous item level")
+    items[7] = { hyperlink = "gear-a", itemID = 1107, quality = 4 }
+    bankButtons[4] = BankButton(7)
+    bankPanel:GenerateItemSlotsForSelectedTab()
+    assert(module.bankOverlays[bankButtons[4]].label.text == "640"
+        and module.bankOverlays[bankButtons[4]].label.shown,
+        "new pooled bank button did not receive an overlay after generation")
+    items[7] = { hyperlink = "gear-b", itemID = 1108, quality = 4 }
+    bankButtons[4]:Refresh()
+    assert(module.bankOverlays[bankButtons[4]].label.text == "651",
+        "new pooled button did not hook later native refreshes")
+    bankPanel:OnShow()
+    bankPanel.onShowHook(bankPanel)
+    module:ApplyBankLevels()
+    for i = 1, #bankButtons do
+        assert(bankHooks[bankButtons[i]].Refresh == 1, "bank button refresh hook was duplicated")
+    end
     module.config.showBankItemLevel = false
     module:Refresh()
     assert(not module.bankOverlays[bankButtons[1]].label.shown
         and not context.events.BANKFRAME_OPENED,
         "disabled bank levels retained a label or bank event")
-    bankHooks.Refresh(bankButtons[1])
+    calls = levelCalls
+    bankButtons[1]:Refresh()
+    bankPanel:GenerateItemSlotsForSelectedTab()
+    bankPanel:UpdateSearchResults()
     assert(not module.bankOverlays[bankButtons[1]].label.shown,
         "permanent native hook painted while bank levels were disabled")
+    assert(levelCalls == calls, "disabled bank levels performed item-level lookups")
     module.active = false
     module:Disable()
     BankFrame = nil

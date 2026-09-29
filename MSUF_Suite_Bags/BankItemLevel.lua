@@ -115,10 +115,22 @@ function M:OnBankItemInfoReceived(itemID, success, waiting)
     end
 end
 
+local BankButtonRefreshed
+
+local function HookBankButton(self, button)
+    if not button or NS.Safety.IsForbidden(button) then return end
+    local record = self.bankOverlays[button]
+    if not record then record = {}; self.bankOverlays[button] = record end
+    if record.refreshHooked then return end
+    hooksecurefunc(button, "Refresh", BankButtonRefreshed)
+    record.refreshHooked = true
+end
+
 function M:UpdateBank(searchChanged)
     if not BankVisible(self) then self:HideBankLevels(); return end
     local panel = _G.BankFrame.BankPanel
     for button in panel:EnumerateValidItems() do
+        HookBankButton(self, button)
         -- Native Refresh has already fetched itemInfo. A search change only
         -- updates MatchesSearch, so ask for current filter state in that case.
         local info = button.itemInfo
@@ -130,7 +142,7 @@ function M:UpdateBank(searchChanged)
     if next(self.bankPending) then self.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, true) end
 end
 
-local function BankButtonRefreshed(button)
+BankButtonRefreshed = function(button)
     if not M.active or not M.config.showBankItemLevel then return end
     PaintBankButton(M, button, button.itemInfo)
     if next(M.bankPending) then M.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, true) end
@@ -152,14 +164,16 @@ end
 
 local function InstallBankHooks(self)
     if self.bankHooked or NS.Client.isForever then return end
-    local buttonMixin, panelMixin = _G.BankPanelItemButtonMixin, _G.BankPanelMixin
-    if not buttonMixin or type(buttonMixin.Refresh) ~= "function"
-        or not panelMixin or type(panelMixin.UpdateSearchResults) ~= "function" then return end
-    hooksecurefunc(buttonMixin, "Refresh", BankButtonRefreshed)
-    hooksecurefunc(panelMixin, "UpdateSearchResults", BankSearchUpdated)
-    if type(panelMixin.OnShow) == "function" then
-        hooksecurefunc(panelMixin, "OnShow", BankPanelShown)
-    end
+    local frame = _G.BankFrame
+    if not frame or NS.Safety.IsForbidden(frame) then return end
+    local panel = frame.BankPanel
+    if not panel or NS.Safety.IsForbidden(panel) then return end
+    -- XML already copied BankPanelMixin into this native panel before the
+    -- Suite loaded. Hook the instance, then attach existing/new pooled buttons
+    -- after upstream/live GenerateItemSlotsForSelectedTab has shown them.
+    hooksecurefunc(panel, "UpdateSearchResults", BankSearchUpdated)
+    hooksecurefunc(panel, "GenerateItemSlotsForSelectedTab", BankPanelShown)
+    panel:HookScript("OnShow", BankPanelShown)
     self.bankHooked = true
 end
 
