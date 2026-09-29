@@ -164,6 +164,9 @@ local function ApplyNow(state)
     SkinAction(state, Field(_G.InspectPaperDollFrame, "ViewButton"))
     SkinAction(state, Field(_G.InspectPaperDollItemsFrame, "InspectTalents"))
     NS.CharacterDetails.Apply(root, "inspect", state.owner)
+    -- Inspect skips the generic adapter, which normally attaches the shared
+    -- window controls. Keep its scale grip available after load-on-demand.
+    NS.WindowControls.Attach(root, state.owner)
     panel.InstallHooks()
     return true, "applied"
 end

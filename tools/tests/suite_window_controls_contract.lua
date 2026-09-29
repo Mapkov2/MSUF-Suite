@@ -127,7 +127,7 @@ local NS = {
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
     Registry = { AddListener = function() end },
     BlizzardCatalog = { FindByFrame = function(name)
-        if name == "CharacterFrame" then return { category = "character" } end
+        if name == "CharacterFrame" or name == "InspectFrame" then return { category = "character" } end
         if name == "MerchantFrame" then return { category = "npc" } end
         if name == "ContainerFrameCombinedBags" then return { category = "inventory" } end
     end },
@@ -387,6 +387,53 @@ character:Hide()
 character:Show()
 Check(not state.titleDrag.shown, "reopening a protected panel showed its title strip")
 character.protected = false
+
+-- Inspect skips the generic window adapter. Its dedicated, load-on-demand
+-- adapter must still reach the real window controls after Blizzard loads it.
+local inspectLoaded
+NS.Client.IsAddOnLoaded = function() return false end
+EventUtil = { ContinueOnAddOnLoaded = function(addon, callback)
+    Check(addon == "Blizzard_InspectUI", "Inspect waited for the wrong addon")
+    inspectLoaded = callback
+end }
+NS.AdapterKit = { WeakSet = function() return setmetatable({}, { __mode = "k" }) end }
+NS.GenericWindows = { IsCategoryEnabled = function() return true end }
+NS.Surface = { Attach = function() return true end, SetVisible = function() end }
+NS.Cosmetics = { FadeNineSlice = function() end, RestoreOwner = function() end }
+NS.CharacterDetails = { Apply = function() end, Disable = function() end }
+NS.CombatGate = { Cancel = function() end }
+PanelTemplates_GetSelectedTab = function() return 1 end
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/PaperDollChrome.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/InspectPanel.lua"))("MSUF_Suite_Skin", NS)
+local inspectApplied, inspectReason = NS.InspectPanel.Apply("blizzardWindows")
+Check(inspectApplied and inspectReason == "waiting" and inspectLoaded,
+    "Inspect did not wait for the native panel")
+InspectFrame = Frame("InspectFrame", UIParent)
+InspectFrame.width, InspectFrame.height = 338, 424
+UIPanelWindows.InspectFrame = { area = "left", pushable = 0 }
+inspectLoaded()
+local inspectState = NS.WindowControls.states[InspectFrame]
+Check(inspectState and inspectState.grip and inspectState.titleDrag
+    and not inspectState.minimize and not inspectState.restore,
+    "the dedicated Inspect adapter omitted scaling or added destructive minimize")
+cursorX, cursorY = 500, 500
+inspectState.grip.scripts.OnMouseDown(inspectState.grip, "LeftButton")
+cursorX, cursorY = 650, 400
+inspectState.grip.scripts.OnUpdate(inspectState.grip)
+inspectState.grip.scripts.OnMouseUp(inspectState.grip)
+local inspectScale = InspectFrame.scale
+Check(inspectScale > 1 and NS.DB.windowControls.scales.InspectFrame == inspectScale
+    and inspectState.grip.scripts.OnUpdate == nil,
+    "Inspect could not enlarge and save its scale without a permanent update")
+InspectFrame:Hide()
+InspectFrame:Show()
+NS.InspectPanel.Apply("blizzardWindows")
+Check(InspectFrame.scale == inspectScale and NS.WindowControls.states[InspectFrame] == inspectState,
+    "reopening Inspect lost its scale or duplicated its controls")
+NS.InspectPanel.Disable("blizzardWindows")
+NS.WindowControls.DisableOwner("blizzardWindows")
+Check(not inspectState.grip.shown and not inspectState.titleDrag.shown,
+    "disabling the Blizzard window owner left Inspect controls active")
 
 -- Surface keeps a reference to each spec: the contract that callers own it
 -- and share or rewrite it only as documented is written next to Attach.

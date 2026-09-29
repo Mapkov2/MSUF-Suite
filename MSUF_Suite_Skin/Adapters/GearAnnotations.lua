@@ -418,7 +418,10 @@ local function LayoutCompact(a, row, legacy)
     a.levelHost:SetFrameLevel(a.slot:GetFrameLevel() + 12)
     local right = rightSide[row.slot]
     local weapon = row.slot == 16 or row.slot == 17
-    local width = legacy and 96 or 82
+    -- Inspect keeps Blizzard's native 338px panel and inward-facing slots
+    -- (upstream/live 09b9db79, Mainline/InspectPaperDollFrame.xml). Give its
+    -- larger labels more room without moving slots or covering model controls.
+    local width = legacy and 96 or a.inspect and 100 or 82
     a.host:SetSize(width, 30)
     a.host:ClearAllPoints()
     -- PaperDollFrame.xml: head/hands align to Inset; the model controls sit
@@ -439,9 +442,9 @@ local function LayoutCompact(a, row, legacy)
         a.track:SetSize(42, 14)
     else
         a.enchant:SetPoint(right and "TOPRIGHT" or "TOPLEFT", right and -2 or 2, 0)
-        a.enchant:SetSize(50, 14)
+        a.enchant:SetSize(a.inspect and 62 or 50, 14)
         a.track:SetPoint(right and "TOPLEFT" or "TOPRIGHT", right and 2 or -2, 0)
-        a.track:SetSize(26, 14)
+        a.track:SetSize(a.inspect and 30 or 26, 14)
     end
     a.enchant:SetJustifyH(right and "RIGHT" or "LEFT")
     a.track:SetJustifyH(right and "LEFT" or "RIGHT")
@@ -482,7 +485,7 @@ local function PropagateClicks(frame)
 end
 
 local function Create(v, row, slot)
-    local a = { fonts = {}, gems = {}, slot = slot }
+    local a = { fonts = {}, gems = {}, slot = slot, inspect = v.kind == "inspect" }
     row.annotation = a
     local host = CreateFrame("Frame", nil, v.host)
     a.host = host
@@ -498,8 +501,8 @@ local function Create(v, row, slot)
     a.name = Font(status, 12)
     a.name:SetJustifyH("LEFT")
     a.name:Hide()
-    a.enchant = Font(status, 10)
-    a.track = Font(status, 9)
+    a.enchant = Font(status, a.inspect and 12 or 10)
+    a.track = Font(status, a.inspect and 11 or 9)
     -- Shape + color convey the state even with provider-owned annotation text.
     -- The small native atlas is verified in upstream/live ContentTrackingElement.xml.
     a.enchantMark = Font(status, 11)
@@ -526,9 +529,9 @@ local function Create(v, row, slot)
     levelHost:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
     levelHost:EnableMouse(false)
     a.levelBack = levelHost:CreateTexture(nil, "BACKGROUND")
-    a.levelBack:SetSize(28, 14)
+    a.levelBack:SetSize(a.inspect and 32 or 28, a.inspect and 16 or 14)
     a.levelBack:SetPoint("TOPRIGHT", slot, "TOPRIGHT", -1, 0)
-    a.level = Font(levelHost, 12)
+    a.level = Font(levelHost, a.inspect and 14 or 12)
     a.level:SetPoint("TOPRIGHT", slot, "TOPRIGHT", -2, -1)
     a.level:SetJustifyH("RIGHT")
     a.fonts = { a.name, a.enchant, a.track, a.level, a.enchantMark, a.upgradeMark }
