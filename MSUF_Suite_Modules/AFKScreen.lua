@@ -6,7 +6,7 @@ local ID = "afkScreen"
 -- the equipped items, the regular UI faded out and a slow camera orbit.
 -- It never opens or does work in combat.
 local M = {}
-local FONT = NS.MSUFMedia.font
+local fontLabels = {}
 local GOLD = { .88, .69, .42 }
 local WHITE = { .96, .95, .91 }
 local MUTED = { .67, .72, .76 }
@@ -40,7 +40,8 @@ end
 
 local function Label(parent, size, color, text)
     local label = S.CreateFontString(parent, nil, "OVERLAY")
-    S.SetFont(label, FONT, size, "OUTLINE")
+    S.SetFont(label, nil, size, "OUTLINE")
+    fontLabels[#fontLabels + 1] = { label, size }
     label:SetTextColor(color[1], color[2], color[3])
     label:SetText(text)
     label:SetJustifyH("LEFT")
@@ -444,6 +445,10 @@ function M:Enable()
 end
 
 function M:Refresh()
+    for i = 1, #fontLabels do
+        local entry = fontLabels[i]
+        S.SetFont(entry[1], nil, entry[2], "OUTLINE")
+    end
     Update(self)
 end
 

@@ -32,6 +32,7 @@ Core\NameplateStyle.lua
 Core\Catalog\Nameplates.lua
 Core\Catalog\CooldownManager.lua
 Core\Suite.lua
+Core\FontBridge.lua
 Integrations\MapkoSkin.lua
 Core\ProfileIO.lua
 Core\Profiles.lua

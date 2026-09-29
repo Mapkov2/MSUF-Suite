@@ -144,7 +144,7 @@ local function Build(ctx)
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_text", Tr("Message text"),
         P.SectionRules(ID, "text"), {
-            help = "Leave font and size at their defaults to follow Blizzard or MSUF Fonts. Choose an outline, shadow and Smooth, Sharp or Slug rendering for chat messages. Slug has no shadow.",
+            help = "The default font follows MSUF Fonts while the default size follows Blizzard's chat size. Choose Blizzard chat font to keep its own face. Slug has no shadow.",
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_tools", Tr("Chat tools"),
         P.SectionRules(ID, "tools"), {

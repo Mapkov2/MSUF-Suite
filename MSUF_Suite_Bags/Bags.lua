@@ -3,7 +3,6 @@ local NS, S = Private.NS, Private.Suite
 -- The bags catalog entry declares combinedBags, so the controller hands the
 -- player's value back when the module is disabled.
 local M = { overlays = setmetatable({}, { __mode = "k" }), pending = {}, pendingPool = {}, requested = {} }
-local GOLD_FONT = NS.MSUFMedia.font
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
 local floor = math.floor
 local TEXT = {
@@ -175,7 +174,7 @@ local function PaintWindow(textures, c)
     for i = 7, 9 do
         textures[i]:SetColorTexture(r + (1 - r) * 0.2, g + (1 - g) * 0.2, b + (1 - b) * 0.2, 0.95)
     end
-    if textures.goldLabel then S.SetFont(textures.goldLabel, GOLD_FONT, 11, "OUTLINE") end
+    if textures.goldLabel then S.SetFont(textures.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
 end
 
 -- Blizzard's title router forwards to PortraitButton, so the bag menu
@@ -715,10 +714,19 @@ function M:Refresh()
     end
     local c, last = self.config, self.appliedVisual
     local slotChanged, windowChanged, labelChanged, levelChanged, goldChanged = VisualChanges(c, last)
+    local fontPath, fontEpoch = S.ResolveFont(c.font) or S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
+    if self.fontPath ~= fontPath or self.fontEpoch ~= fontEpoch then
+        self.fontPath, self.fontEpoch = fontPath, fontEpoch
+        labelChanged = true
+    end
     if windowChanged then StyleWindows(self) end
     if goldChanged then ApplyGoldEvents(self) end
     if labelChanged then
-        if not last or last.font ~= c.font then self.fontPath = S.ResolveFont(c.font) end
+        if self.windows then
+            for _, textures in pairs(self.windows) do
+                if textures.goldLabel then S.SetFont(textures.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
+            end
+        end
         self.labelStyle = (self.labelStyle or 0) + 1
     end
     if slotChanged then

@@ -104,6 +104,7 @@ local events = {}
 -- A distinct media path proves the screen reads MSUF's shared font constant.
 local SUITE_FONT = "Interface\\AddOns\\Test\\SuiteFont.ttf"
 local suite = {
+    GlobalFontPath = function() return SUITE_FONT end,
     Public = function(value) return value ~= secret end,
     CreateFrame = function(kind, name, parent)
         local frame = Frame(kind)
@@ -112,7 +113,7 @@ local suite = {
     end,
     CreateTexture = function(_, ...) return Frame("Texture") end,
     CreateFontString = function(_, ...) return Frame("FontString") end,
-    SetFont = function(label, path) label.fontPath = path; return true end,
+    SetFont = function(label, path) label.fontPath = path or SUITE_FONT; return true end,
     Install = function(id, module) assert(id == "afkScreen"); installed = module end,
 }
 -- Shared readers as defined by MSUF_Suite/Core/Platform.lua (aliased by Runtime.lua).

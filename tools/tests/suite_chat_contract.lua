@@ -26,6 +26,8 @@ S.CreateFrame = function(...) return CreateFrame(...) end
 S.CreateTexture = function(parent, ...) return parent:CreateTexture(...) end
 S.CreateFontString = function(parent, ...) return parent:CreateFontString(...) end
 S.ResolveFont = function(key) return key == "TestFont" and "Test.ttf" or nil end
+local globalFont = "MSUF.ttf"
+S.GlobalFontPath = function() return globalFont end
 S.FontFlags = function(outline, rendering)
     if rendering == 3 then return outline == "" and "SLUG" or "OUTLINE,SLUG" end
     if rendering == 2 then return outline == "" and "MONOCHROME" or outline .. ",MONOCHROME" end
@@ -287,6 +289,7 @@ local function AssertJoinedDockShell()
 end
 assert(ChatFrame1.font[3] == "SLUG" and ChatFrame1.shadowColor[4] == 0,
     "default chat messages did not use Slug")
+assert(ChatFrame1.font[1] == globalFont, "default chat font did not inherit MSUF Fonts")
 assert(ctx.callbacks.UPDATE_CHAT_WINDOWS and ctx.callbacks.UPDATE_FLOATING_CHAT_WINDOWS
     and temporaryHook and newWindowHook and selectHook and tabAlphaHook and tabColorsHook)
 assert(not ctx.callbacks.CHAT_MSG_SAY and not ctx.callbacks.CHAT_MSG_CHANNEL)
@@ -480,11 +483,16 @@ module.config.fontRendering = 3
 module:Refresh()
 assert(ChatFrame1.font[3] == "OUTLINE,SLUG" and ChatFrame1.shadowColor[4] == 0
     and ChatFrame1.shadowOffset[1] == 0, "Slug must suppress native chat shadow")
-module.config.font, module.config.fontOutline = "", 1
+module.config.font, module.config.fontOutline = "__BLIZZARD_CHAT_FONT__", 1
 module.config.fontRendering, module.config.fontShadow = 1, 1
 module:Refresh()
 assert(ChatFrame1.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1.font[2] == 16 and ChatFrame1.font[3] == ""
     and ChatFrame1.shadowColor[4] == 0, "chat text ownership did not restore Blizzard's font and size")
+module.config.font = ""
+globalFont = "MSUF-Changed.ttf"
+module:Refresh()
+assert(ChatFrame1.font[1] == globalFont and ChatFrame1.font[2] == 16,
+    "MSUF's changed global font did not update chat while keeping Blizzard's chat size")
 ChatFrame2 = Frame("ChatFrame2")
 ChatFrame2.isDocked = true
 -- Synthetic second static tab covers the native title selection contract;

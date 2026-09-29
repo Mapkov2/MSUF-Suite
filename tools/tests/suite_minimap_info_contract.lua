@@ -79,8 +79,8 @@ do
     check(clock.label.text == "14:03  26-09-2026", "optional date on minimap clock")
     assert(S.Set("minimap", "infoClockDate", false))
     check(clock.button.points[1][1] == "TOP" and clock.label.justify == "CENTER", "clock anchor")
-    check(clock.label.font[1] == "Fonts\\FRIZQT__.TTF" and clock.label.font[2] == 12
-        and clock.label.font[3] == "OUTLINE,SLUG", "native Slug font")
+    check(clock.label.font[1] == W.Suite.MSUFMedia.font and clock.label.font[2] == 12
+        and clock.label.font[3] == "OUTLINE,SLUG", "MSUF Slug font")
     assert(S.SetMany("minimap", { infoClockOutline = 3, infoClockRendering = 2,
         infoClockShadow = true, infoClockShadowOpacity = 80, infoClockShadowDistance = 2 }))
     check(clock.label.font[3] == "THICKOUTLINE,MONOCHROME"

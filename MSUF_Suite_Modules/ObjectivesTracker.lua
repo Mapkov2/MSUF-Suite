@@ -8,7 +8,6 @@ local Finite = S.Finite
 
 -- The objective tracker's frame: rows, clicks and context menus, countdowns,
 -- theme and layout (see ObjectivesData.lua for how the files fit together).
-local FONT = NS.MSUFMedia.font
 local ORDER = { "scenario", "focused", "campaign", "important", "complete", "quests", "world", "bonus", "achievements" }
 local GROUP = {
     scenario = { "SCENARIO", .39, .64, .90 },
@@ -414,7 +413,7 @@ end
 local function Theme(self)
     local c = self.config
     local skin = self.context and self.context:Skin()
-    self.font = S.ResolveFont(c.font) or (skin and skin:GetFont()) or FONT
+    self.font = S.ResolveFont(c.font) or S.GlobalFontPath()
     local custom = c.colorStyle == 2
     self.textRGB = custom and RGB(c.textColor) or skin and { skin:GetColor("text") } or TEXT_RGB
     self.mutedRGB = custom and RGB(c.mutedColor) or skin and { skin:GetColor("muted") } or MUTED_RGB

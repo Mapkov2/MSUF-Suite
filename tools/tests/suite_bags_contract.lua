@@ -225,7 +225,10 @@ local S = {
             tonumber(hex:sub(5, 6), 16) / 255
     end,
     ResolveFont = function() return nil end,
-    SetFont = function(font, path, size) font.path, font.size = path, size end,
+    GlobalFontPath = function() return "Interface\\AddOns\\Test\\Media\\MSUF.ttf" end,
+    SetFont = function(font, path, size)
+        font.path, font.size = path or "Interface\\AddOns\\Test\\Media\\MSUF.ttf", size
+    end,
     Queue = function(id) assert(id == "bags"); queued = queued + 1 end,
     Install = function(id, instance) assert(id == "bags"); module = instance end,
     RegisterOwnedMover = function(id, element, spec)
@@ -764,7 +767,8 @@ do
     local bridge = {
         states = { bags = { active = true } },
         catalog = { bags = { rules = {
-            windowX = { default = 0 }, windowY = { default = 0 },
+            windowX = { default = 0, min = -4000, max = 4000 },
+            windowY = { default = 0, min = -3000, max = 3000 },
             windowMoved = { default = false }, windowScale = { default = 1 },
         } } },
         Public = function() return true end,
@@ -774,6 +778,7 @@ do
             for key, value in pairs(changes) do values[key] = value end
             return true
         end,
+        Set = function(_, key, value) values[key] = value; return true end,
     }
     -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
     bridge.Number = function(value) return bridge.Public(value) and type(value) == "number" and value == value end
@@ -794,6 +799,9 @@ do
         moveValues = { windowMoved = true }, resetKeys = { "windowMoved" },
         historyKeys = { "windowMoved", "windowScale" },
     }))
+    assert(#registered.extraControls == 2 and registered.extraControls[1].id == "windowX"
+        and registered.extraControls[2].id == "windowY",
+        "all registered Suite movers need exact X/Y popup controls")
     local before = registered.captureState()
     assert(before.values.windowMoved == false and before.values.windowScale == 1)
     assert(registered.movePosition({ state = before, deltaX = 10, deltaY = -5, phase = "commit" })
@@ -814,15 +822,47 @@ do
         label = "Live bag", getFrame = function() return editFrame end,
         xKey = "windowX", yKey = "windowY", point = "BOTTOMRIGHT",
         capture = function(origin) origin.windowX, origin.windowY = -500, 90 end,
+        moveValues = { windowMoved = true },
     }))
     liveRegistered = registered
     values.windowX, values.windowY = 0, 0
+    values.windowMoved = false
+    assert(liveRegistered.extraControls[1].get() == -500 and liveRegistered.extraControls[2].get() == 90,
+        "an unmoved native bag must show its live position in the popup")
+    assert(liveRegistered.extraControls[1].set(-490) and values.windowX == -490
+        and values.windowY == 90 and values.windowMoved,
+        "first exact X edit jumped to stale saved Y or left native placement active")
+    values.windowX, values.windowY, values.windowMoved = 0, 0, false
     local start = liveRegistered.captureState()
     assert(liveRegistered.movePosition({ state = start, deltaX = 10, deltaY = -5, phase = "commit" })
         and values.windowX == -490 and values.windowY == 85,
         "a capture hook did not move the drag start")
     assert(liveRegistered.restoreState(start) and values.windowX == 0 and values.windowY == 0,
         "undo wrote the live drag start into the profile instead of the saved offsets")
+
+    -- Every owned frame gets X/Y beside its module-specific size control.
+    local sizeControl = { id = "windowScale", label = "Scale %", kind = "number",
+        min = 0.5, max = 2, step = 0.1,
+        get = function() return values.windowScale end,
+        set = function(value) return bridge.Set("bags", "windowScale", value) end }
+    assert(bridge.RegisterOwnedMover("bags", "quick", {
+        label = "Quick frame", getFrame = function() return editFrame end,
+        xKey = "windowX", yKey = "windowY", point = "CENTER",
+        historyKeys = { "windowScale" },
+        extraControls = { sizeControl },
+    }))
+    assert(#registered.extraControls == 3 and registered.extraControls[1].label == "X"
+        and registered.extraControls[2].label == "Y"
+        and registered.extraControls[3] == sizeControl,
+        "editable coordinates were not inserted before size controls")
+    local quickBefore = registered.captureState()
+    assert(registered.extraControls[1].set(45) and registered.extraControls[2].set(-28)
+        and registered.extraControls[3].set(1.5)
+        and values.windowX == 45 and values.windowY == -28 and values.windowScale == 1.5,
+        "popup controls did not write the frame's profile values")
+    assert(registered.restoreState(quickBefore) and values.windowX == 0
+        and values.windowY == 0 and values.windowScale == 1,
+        "popup coordinate and size edits were not undoable")
 end
 -- Retail and WoW Forever always have these APIs: Bags calls them directly
 -- instead of guarding against a client that lacks them.

@@ -127,6 +127,12 @@
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
+   "symbol": "MSUF_GetFontPath",
+   "kind": "addon",
+   "reason": "MSUF font export may be unavailable during startup; Suite uses its bundled fallback until MSUF publishes it"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
    "symbol": "WOW_PROJECT_ID",
    "kind": "client",
    "reason": "flavor probe: Retail (12.1.0, 12.1.5) and WoW Forever define it; any other client stays Unknown"
@@ -1990,6 +1996,18 @@
    "symbol": "bigWigs.IterateBossModules (= BigWigs)",
    "kind": "addon",
    "reason": "BigWigs is optional; its active module iterator is read once at encounter start when available"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
+   "symbol": "gf.FrameForUnit",
+   "kind": "addon",
+   "reason": "MSUF group-frame registry is an optional integration; its direct unit lookup is used only when exported"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
+   "symbol": "gf.RegisterFrameRegistryObserver",
+   "kind": "addon",
+   "reason": "MSUF group-frame registry is an optional integration; its observer is used only when exported"
   }
  ]
 }

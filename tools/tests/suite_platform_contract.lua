@@ -71,6 +71,15 @@ Suite.Registry.RemoveListener(owner)
 Suite.OnProfileChanged("Raid")
 assert(notifications == 2 and frames == 0 and #reported == 1)
 assert(Suite.Host.build == "Classic")
+local selectedFont = "Interface\\AddOns\\Test\\Selected.ttf"
+MSUF_GetFontPath = function() return selectedFont end
+assert(Suite.GlobalFontPath() == selectedFont, "Suite default did not follow MSUF's global font")
+selectedFont = "Interface\\AddOns\\Test\\Changed.ttf"
+assert(Suite.GlobalFontPath() == selectedFont, "Suite cached MSUF's global font")
+selectedFont = SECRET
+assert(Suite.GlobalFontPath() == Suite.MSUFMedia.font, "a secret font path escaped the fallback")
+MSUF_GetFontPath = nil
+assert(Suite.GlobalFontPath() == Suite.MSUFMedia.font, "the missing MSUF export lost the fallback")
 -- Finish tells a completed call from one that raised.
 local finished, a, b = Suite.Dispatch(Suite.Finish, function() return 1, 2 end)
 assert(finished == true and a == 1 and b == 2)

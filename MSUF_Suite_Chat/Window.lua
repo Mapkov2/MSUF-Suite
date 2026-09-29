@@ -219,10 +219,12 @@ local function ApplyInput(self, visual, frame, input)
     end
 end
 
--- The catalog defines every font setting; "" (no font) resolves to nil.
+-- An empty Suite choice follows MSUF; Blizzard's chat font remains an
+-- explicit option and keeps its native ownership and size controls.
 local function ApplyFont(self, frame)
     local c, context = self.config, self.context
-    local chosenFont = S.ResolveFont(c.font)
+    local chosenFont = c.font ~= "__BLIZZARD_CHAT_FONT__"
+        and (S.ResolveFont(c.font) or S.GlobalFontPath()) or nil
     local custom = chosenFont or c.fontSize > 0 or c.fontOutline ~= 1 or c.fontRendering ~= 1
     if custom then
         local path, size, flags = frame:GetFont()

@@ -26,10 +26,10 @@ local function Hex(r, g, b)
     return string.format("%02x%02x%02x", Byte(r), Byte(g), Byte(b))
 end
 
--- MSUF's own font list (keys or paths) plus the native choice; a saved font
+-- MSUF's own font list (keys or paths) plus the inherited choice; a saved font
 -- that is no longer installed stays selectable so it is not silently lost.
 function P.FontValues(selected, defaultLabel)
-    local values = { { value = "", text = Tr(defaultLabel or "Native font") } }
+    local values = { { value = "", text = Tr(defaultLabel or "MSUF global font (default)") } }
     local seen = { [""] = true }
     local source = M.GlobalPage and M.GlobalPage.FontValues and M.GlobalPage.FontValues(false) or {}
     for _, entry in ipairs(source) do
@@ -103,7 +103,14 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
     elseif rule.font or rule.texture then
         row.kind = "dropdown"
         local list = rule.font and P.FontValues or P.TextureValues
-        row.values = function() return list(P.Get(id, Key()), rule.defaultLabel) end
+        row.values = function()
+            local selected = P.Get(id, Key())
+            local values = list(selected == "__BLIZZARD_CHAT_FONT__" and "" or selected, rule.defaultLabel)
+            if rule.font and id == "chat" then
+                values[#values + 1] = { value = "__BLIZZARD_CHAT_FONT__", text = Tr("Blizzard chat font") }
+            end
+            return values
+        end
         row.get = function() return P.Get(id, Key()) end
         row.set = function(value) P.Set(id, Key(), value or "") end
     elseif rule.choices then

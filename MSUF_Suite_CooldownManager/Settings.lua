@@ -102,7 +102,11 @@ function St.ReadGlobals(config, all)
     local text = all
     local raid = config.raidEssentials ~= false
     if all or state.raidEssentials ~= raid then state.raidEssentials, dirty.resolve = raid, true end
-    local font, flags = S.ResolveFont(config.font), OUTLINE[config.fontOutline] or "OUTLINE"
+    local font, flags = S.ResolveFont(config.font) or S.GlobalFontPath(), OUTLINE[config.fontOutline] or "OUTLINE"
+    if state.fontEpoch ~= _G.MSUF_FontApplyEpoch then
+        state.fontEpoch = _G.MSUF_FontApplyEpoch
+        text = true
+    end
     if state.font ~= font or state.fontFlags ~= flags or state.fontRendering ~= config.fontRendering
         or state.fontShadow ~= config.fontShadow or state.fontShadowOpacity ~= config.fontShadowOpacity
         or state.fontShadowDistance ~= config.fontShadowDistance then

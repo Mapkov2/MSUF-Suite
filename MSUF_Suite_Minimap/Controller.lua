@@ -67,10 +67,15 @@ local function Dirty(self)
         end
         dirty[category.name], force[category.name] = changed, nil
     end
+    local fontPath, fontEpoch = S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
+    if applied.__fontPath ~= fontPath or applied.__fontEpoch ~= fontEpoch then
+        dirty.texts = true
+    end
     return dirty
 end
 local function Commit(self)
     for key, value in pairs(self.config) do self.applied[key] = value end
+    self.applied.__fontPath, self.applied.__fontEpoch = S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
 end
 
 local function AddonLoaded(_, _, name)

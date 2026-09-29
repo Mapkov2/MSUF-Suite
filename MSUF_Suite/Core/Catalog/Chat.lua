@@ -80,8 +80,8 @@ B.Section(id, "input", "Input line", {
     B.Number("inputAlpha", "Input opacity (percent)", initial.inputAlpha, 0, 100, 5),
 })
 B.Section(id, "text", "Message text", {
-    B.Number("fontSize", "Font size (0: follow Blizzard / MSUF Fonts)", 0, 0, 24),
-    B.Font("font", "Message font (default: follow Blizzard / MSUF Fonts)"),
+    B.Number("fontSize", "Font size (0: follow Blizzard's chat size)", 0, 0, 24),
+    B.Font("font", "Message font (default: MSUF global font)"),
     B.Choice("fontOutline", "Text outline", 1, { "Follow Blizzard", "Outline", "Thick outline", "None" }),
     B.Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
     B.Choice("fontShadow", "Text shadow", 1, { "Follow Blizzard", "On", "Off" }),
@@ -94,7 +94,7 @@ B.Section(id, "tools", "Chat tools", {
     B.Number("copyButtonY", "Copy button Y", 0, -200, 200),
 })
 local textRules = NS.SuiteCatalog[id].rules
-textRules.font.defaultLabel = "Blizzard / MSUF Fonts (default)"
+textRules.font.defaultLabel = "MSUF global font (default)"
 for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
     textRules[key].requiresChoice = { key = "fontShadow", values = { [2] = true } }
 end

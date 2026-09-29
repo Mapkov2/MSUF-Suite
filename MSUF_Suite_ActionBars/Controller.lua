@@ -166,6 +166,11 @@ local function Collect(config)
         Merge(work, FULL)
         for index = 1, AB.BAR_COUNT do Merge(barWork[index], FULL_BAR) end
     end
+    local fontPath, fontEpoch = S.ResolveFont(config.font) or S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
+    if applied.__fontPath ~= fontPath or applied.__fontEpoch ~= fontEpoch then
+        applied.__fontPath, applied.__fontEpoch = fontPath, fontEpoch
+        work.style = true
+    end
     -- A new pixel grid moves and restyles every bar.
     local unit = S.PixelUnit()
     if unit ~= appliedUnit then

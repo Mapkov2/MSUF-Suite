@@ -7,7 +7,6 @@ if NS.Client.isForever then return end
 -- objectives module owns the frame and calls these helpers from its events;
 -- the clock ticks once per second only while a run is active.
 local H = {}
-local FONT = NS.MSUFMedia.font
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local TEXT_RGB, MUTED_RGB = { .95, .96, .98 }, { .78, .81, .85 }
 local COMPLETE_RGB, SCENARIO_RGB, FOCUSED_RGB, LATE_RGB = { .39, .86, .54 }, { .39, .64, .90 }, { .98, .84, .42 },
@@ -53,7 +52,7 @@ end
 
 local function NewText(parent, size, right)
     local fontString = S.CreateFontString(parent, nil, "OVERLAY")
-    StyleText(fontString, FONT, size)
+    StyleText(fontString, S.GlobalFontPath(), size)
     fontString:SetJustifyH(right and "RIGHT" or "LEFT")
     fontString:SetWordWrap(false)
     return fontString
@@ -133,7 +132,7 @@ local CHEST_GROUPS = { "complete", "scenario", "focused" }
 function H.Theme(owner)
     local view = owner.mplus
     if not view then return end
-    local font, c = owner.font or FONT, owner.config
+    local font, c = owner.font or S.GlobalFontPath(), owner.config
     local text = owner.textRGB or TEXT_RGB
     local muted = owner.mutedRGB or MUTED_RGB
     local accent = owner.groupRGB and owner.groupRGB.scenario or SCENARIO_RGB

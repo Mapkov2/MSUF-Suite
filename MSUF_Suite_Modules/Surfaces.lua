@@ -132,6 +132,7 @@ end
 
 -- Font and texture keys of MSUF and SharedMedia (MSUF_Suite/Core/Platform.lua).
 S.ResolveFont, S.ResolveTexture = Suite.ResolveFont, Suite.ResolveTexture
+S.GlobalFontPath = Suite.GlobalFontPath
 
 -- Blizzard builds its shared font objects at startup on every supported client.
 local nativeFont
@@ -144,7 +145,7 @@ S.NativeFontPath = NativeFont
 -- Applies a font with a guaranteed fallback: a missing external font must
 -- never leave a string without any font.
 function S.SetFont(fontString, path, size, flags)
-    path = path or NativeFont()
+    path = path or S.GlobalFontPath()
     flags = flags or ""
     if fontString:SetFont(path, size, flags) == false then
         if fontString:SetFont(NativeFont(), size, flags) == false then

@@ -86,27 +86,29 @@ end
 -- passed to tonumber; it may only flow into C sinks such as SetText. These
 -- readers live here (always loaded) so the options pages share them with the
 -- module runtime (MSUF_Suite_Modules/Runtime.lua aliases them as S.*).
-local Public
-if type(issecretvalue) == "function" then
-    local IsSecret = issecretvalue
-    Public = function(value) return not IsSecret(value) end
-else
-    Public = function() return true end
+-- The readers below sit on event hot paths (health, damage meter, cooldowns),
+-- so each tests the secret flag inline instead of calling Public.
+local IsSecret = type(issecretvalue) == "function" and issecretvalue or function() return false end
+local HUGE = math.huge
+
+local function Public(value)
+    return not IsSecret(value)
 end
 
 -- A readable number: not secret, not NaN.
 local function Number(value)
-    return Public(value) and type(value) == "number" and value == value
+    return not IsSecret(value) and type(value) == "number" and value == value
 end
 
 -- A readable number that is also not infinite.
 local function Finite(value)
-    return Number(value) and value > -math.huge and value < math.huge
+    return not IsSecret(value) and type(value) == "number" and value == value
+        and value > -HUGE and value < HUGE
 end
 
 -- Readable text: a non-empty, non-secret string, else nil.
 local function PublicText(value)
-    return Public(value) and type(value) == "string" and value ~= "" and value or nil
+    return not IsSecret(value) and type(value) == "string" and value ~= "" and value or nil
 end
 
 -- The first result of a client text API as readable text.
@@ -133,7 +135,7 @@ function Suite.SharedMedia()
     return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibSharedMedia-3.0", true) or nil
 end
 
--- Font keys are MSUF/SharedMedia font keys; "" means the native font (nil).
+-- Font keys are MSUF/SharedMedia font keys; "" delegates to the caller's default.
 -- Shared by the module runtime (S.ResolveFont) and the menu previews.
 function Suite.ResolveFont(key)
     if type(key) ~= "string" or key == "" then return nil end
@@ -183,6 +185,15 @@ Suite.MSUFMedia = {
     font = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Fonts\\Expressway SemiBold.ttf",
     barTexture = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\Bars\\MSUF_Lucent_v2.tga",
 }
+
+-- The global MSUF Fonts selection is the baseline for Suite-owned text.
+-- Resolve it when styling, not at addon load: profile and menu changes may
+-- replace the selected face while the Suite is already visible.
+function Suite.GlobalFontPath()
+    local path = type(_G.MSUF_GetFontPath) == "function" and _G.MSUF_GetFontPath() or nil
+    return Public(path) and type(path) == "string" and path ~= ""
+        and path or Suite.MSUFMedia.font
+end
 
 function Suite.Safety.IsForbidden(frame)
     return frame and type(frame.IsForbidden) == "function" and frame:IsForbidden() == true

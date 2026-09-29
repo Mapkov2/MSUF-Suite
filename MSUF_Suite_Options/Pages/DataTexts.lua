@@ -3,7 +3,6 @@ local S, M, T, Tr = P.S, P.M, P.T, P.Tr
 local PAGE, ID = "suite_dataTexts", "dataTexts"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local BAG_BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.tga"
-local DEFAULT_FONT = P.Suite.MSUFMedia.font
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local PLACES = 6
@@ -54,7 +53,7 @@ local function PaintPreview(view, style)
         view.accent:SetPoint("BOTTOMRIGHT", view.sample, "BOTTOMRIGHT")
     end
     view.badge:SetShown(style.bagBadge == true)
-    local font = ResolveMedia("font", style.font) or DEFAULT_FONT
+    local font = ResolveMedia("font", style.font) or P.Suite.GlobalFontPath()
     local flags = OUTLINES[style.textOutline] or "OUTLINE"
     local align = ALIGN[style.textAlign] or "CENTER"
     local count = style.bagBadge and 3 or 2
