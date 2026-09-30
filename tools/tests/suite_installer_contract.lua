@@ -73,6 +73,7 @@ Suite.ProfileIO = {
         assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact)
         local modules = {}
         for _, id in ipairs(Suite.SuiteOrder) do modules[id] = { enabled = true } end
+        modules.nameplates = { enabled = true, look = 4, nativeStyle = 2, barGeometry = 2 }
         modules.bags.enabled = text == Suite.RetailFactoryModuleCompact
         modules.actionbars.enabled = true
         if text == Suite.ForeverFactoryModuleCompact then
@@ -130,9 +131,10 @@ Suite.SuiteProfiles = {
         assert(skin == "MSKIN1:forever")
         assert(profile.suite.modules.chat.enabled)
         assert(profile.suite.modules.nameplates.enabled
-            and profile.suite.modules.nameplates.look == 1
+            and profile.suite.modules.nameplates.look == 4
+            and profile.suite.modules.nameplates.barGeometry == 2
             and profile.suite.modules.nameplates.nativeStyle == 2,
-            "Forever factory omitted the Jundies nameplate preset")
+            "Forever factory omitted the portable Mapko nameplate preset")
         assert(profile.suite.modules.bags.enabled)
         assert(profile.suite.modules.actionbars.enabled
             and profile.suite.modules.actionbars.bar3Point == 7
@@ -282,8 +284,8 @@ window.next.scripts.OnClick() -- install
 assert(factoryCalls == 1 and Suite.RootDB.installation.profile == "forever")
 -- Each factory string is decoded once, not on every module click and repaint.
 assert(decodes == 2, "the installer decoded a factory profile " .. decodes .. " times")
--- One copy adds the missing Jundies defaults; the install copies the cached factory.
-assert(copies == 2, "the installer copied the factory profile " .. copies .. " times")
+-- The install copies the cached factory; nameplates are already bundled.
+assert(copies == 1, "the installer copied the factory profile " .. copies .. " times")
 assert(Suite.RootDB.installation.raidEssentials == true
     and Suite.RootDB.installation.foreverAnchorRevision == 1,
     "Retail Forever did not record its CDM spec and anchor defaults")

@@ -77,6 +77,39 @@ function Style.ClassicNativePlate(choice)
     if NS.Public(classic) and type(classic) == "boolean" then return classic end
     return Style.NativeStyleValue(choice) == 6
 end
+
+-- Stable Retail geometry for portable profiles. The native clients use
+-- different constants (upstream/live vs upstream/forever Camelot); offsets
+-- alone cannot carry a plate's dimensions between them. Preview and runtime
+-- share these bases and still use Blizzard's selected size scales.
+function Style.BarDimensions(mode, choice, horizontal, vertical)
+    if mode ~= 2 then return end
+    local style = Style.NativeStyleValue(choice)
+    local classic = Style.ClassicNativePlate(choice)
+    local health = not classic and (style == 0 or style == 2 or style == 3) and 20 or 10
+    local cast = not classic and (style == 2 or style == 4) and 16 or 10
+    return (classic and 152 or 230) * horizontal, health * vertical,
+        cast * vertical, (classic and 14 or 12) * vertical
+end
+function Style.RepairGeometry(modules)
+    local plates = modules.nameplates
+    -- Recognize the supplied pre-geometry Mapko export too, so importing that
+    -- original string on Forever gets the same dimensions. Other old profiles
+    -- keep their native bases; current exports explicitly carry the choice.
+    if type(plates) == "table" and next(plates) and plates.barGeometry == nil then
+        local mapko = plates.look == 4
+        if plates.look == 3 then
+            mapko = true
+            for key, value in pairs(NS.SuiteCatalog.nameplates.look.presets[4]) do
+                if key ~= "barGeometry" and key ~= "levelAppearance" and plates[key] ~= value then
+                    mapko = false
+                    break
+                end
+            end
+        end
+        plates.barGeometry = mapko and 2 or 1
+    end
+end
 -- Stable order: the first seven entries were already stored as preview choices.
 Style.Roles = {
     { key = "Melee", label = "Melee", sample = "Mire Laborer", color = "be301d" },
@@ -119,7 +152,7 @@ Style.TargetAtlases = {
     { "wowlabs-spectatecycling-arrowright", true },
     { "pvptalents-selectedarrow", true },
 }
-Style.TargetLabels = { "MSUF double arrow (Jundies)", "Forward arrow", "Renown arrow", "Renown double arrow",
+Style.TargetLabels = { "MSUF double arrow", "Forward arrow", "Renown arrow", "Renown double arrow",
     "Renown double arrow glow", "Bullet arrow", "Shop arrow", "Spectate arrow", "MSUF border",
     "MSUF arrow", "MSUF triple arrow", "MSUF diamond", "MSUF cross", "MSUF border + arrow", "PvP talent arrow" }
 local TARGET_SHAPES = { [1] = "DOUBLE_ARROW", [9] = "BORDER", [10] = "ARROW", [11] = "TRIPLE_ARROW",

@@ -390,9 +390,8 @@ local MIGRATIONS = {
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {
-    AnnouncementsAnchor, AnnouncementsFactory, DataTextsBagButtons, SkyridingColors, ObjectivesCollapseState,
+    AnnouncementsAnchor, AnnouncementsFactory, DataTextsBagButtons, SkyridingColors, ObjectivesCollapseState, NS.NameplateStyle.RepairGeometry,
 }
-
 -- The migration revision a copy of this suite table must keep. A table from
 -- before suite.revision returns nil and its legacy flags instead.
 function S.MigrationState(db)

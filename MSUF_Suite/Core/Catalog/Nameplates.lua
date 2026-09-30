@@ -12,8 +12,8 @@ end
 
 B.Module("nameplates", {
     title = "Nameplates",
-    description = "A clean Jundies-inspired skin for Blizzard nameplates. Blizzard keeps health, threat, casts, auras, selection and click handling.",
-    page = "suite_nameplates", optIn = true, defaultEnabled = false, available = Available,
+    description = "The Mapko skin for Blizzard nameplates. Blizzard keeps health, threat, casts, auras, selection and click handling.",
+    page = "suite_nameplates", optIn = true, defaultEnabled = true, available = Available,
     conflicts = { "Plater", "Platynator", "ElvUI", "EllesmereUINameplates" },
     cvars = {
         nameplateStyle = true,
@@ -48,10 +48,9 @@ B.Module("nameplates", {
 
 local id = "nameplates"
 -- The user's Retail Platynator profile is stored under the technical key
--- DEFAULT. Its selected design is Enemy Nameplates, known to the user as
--- Jundies. Keep this preset as the fresh Suite default.
+-- DEFAULT. Preserve its Jundies preset independently of the Mapko factory.
 local native = {
-    nativeStyle = 1, nativeSize = 1, enemyTextMode = 1,
+    nativeStyle = 1, nativeSize = 1, barGeometry = 1, enemyTextMode = 1,
     enemyRoleColors = false,
     enemyTargetMarker = false, enemyQuestColors = false,
     enemyTargetStyle = 1,
@@ -93,7 +92,8 @@ for _, role in ipairs(roles) do
     if role.key ~= "TankMode" then native["enemy" .. role.key .. "Enabled"] = false end
 end
 local generalRules = {
-    B.Choice("look", "Look", 1, { "Jundies", "Blizzard", "Custom" }),
+    B.Choice("look", "Look", 4, { "Jundies", "Blizzard", "Custom", "Mapko" }),
+    B.Choice("barGeometry", "Bar dimensions", 1, { "Client default", "Same on Retail and Forever" }),
     B.Bool("enemy", "Skin enemy nameplates", true),
     B.Bool("friendly", "Skin friendly nameplates", true),
     B.Choice("nativeStyle", "Blizzard plate style", 2,
@@ -112,9 +112,9 @@ local generalRules = {
 if NS.Client.isForever then
     native.levelAppearance = 2
     table.insert(generalRules, 6, B.Choice("levelAppearance", "Level appearance", 1,
-        { "Jundies number", "Blizzard badge" }))
+        { "Level number", "Blizzard badge" }))
 end
-B.Section(id, "general", "Frame Basics", generalRules)
+B.Section(id, "general", "Basics", generalRules)
 
 local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Choice("enemyTextMode", "Enemy names and health text", 4,
@@ -167,7 +167,7 @@ local function Side(prefix, title, size)
         B.Bool(prefix .. "TextEnabled", "Customize nameplate text", true),
         B.Bool(prefix .. "LevelEnabled", "Show unit level",
             prefix == "enemy" and NS.Client.isForever),
-        B.Number(prefix .. "LevelSize", "Jundies level number size (0 = Blizzard)", 0, 0, 32),
+        B.Number(prefix .. "LevelSize", "Level number size (0 = Blizzard)", 0, 0, 32),
         B.Bool(prefix .. "CustomFont", "Override Blizzard font (empty font = MSUF)", true),
         B.Bool(prefix .. "TextShadow", "Text shadow", prefix == "friendly"),
         B.Number(prefix .. "NameSize", "Name font size (0 = Blizzard)", size, 0, 32),
@@ -301,16 +301,31 @@ for _, role in ipairs(roles) do colors[#colors + 1] = B.Color("enemy" .. role.ke
 colors[#colors + 1] = B.Color("enemyTargetColor", "Target arrows", "ffffff")
 B.Section(id, "enemyColors", "Enemy colors", colors)
 
--- Jundies is the factory appearance. Derive its reset values from the same
--- rules used for fresh profiles so defaults and the preset cannot diverge.
+-- Capture the existing Jundies preset before applying the supplied Mapko export.
 local spec = NS.SuiteCatalog[id]
 local appearanceSections = { enemy = true, friendly = true, roleColors = true, castbar = true,
     enemyColors = true, auras = true, signals = true, personal = true }
-local preset, visual = {}, { nativeStyle = true, nativeSize = true, auraClickthrough = true }
+local preset, visual = {}, { nativeStyle = true, nativeSize = true, barGeometry = true, auraClickthrough = true }
 if NS.Client.isForever then visual.levelAppearance = true end
 for key, rule in pairs(spec.rules) do
     if visual[key] or appearanceSections[rule.section] and key ~= "enemyPreviewRole" then
         preset[key], visual[key] = rule.default, true
     end
 end
-spec.look = { key = "look", presets = { [1] = preset, [2] = native }, visualKeys = visual, custom = 3 }
+local mapko = {}
+for key, value in pairs(preset) do mapko[key] = value end
+local fontRoot = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\Fonts\\"
+local overrides = {
+    barGeometry = 2, auraClickthrough = true, enemyLevelEnabled = false,
+    enemyNameFont = fontRoot .. "Expressway ExtraBold.ttf", enemyCastFont = fontRoot .. "Expressway ExtraBold.ttf",
+    friendlyNameFont = fontRoot .. "Expressway Regular.ttf", friendlyCastFont = fontRoot .. "Expressway Regular.ttf",
+    friendlyRealm = 3, enemyAurasOffsetX = 3, enemyAurasOffsetY = 1,
+    enemyCastTextOffsetX = 7, enemyCastTextOffsetY = 13,
+    enemyCastTimeOffsetX = -33, enemyCastTimeOffsetY = 1,
+    enemyControlAuraOffsetX = -29, enemyControlAuraOffsetY = 22,
+    enemyRaidIconOffsetX = -20, enemyTargetOffsetX = 1, enemyTargetOffsetY = 1,
+}
+for key, value in pairs(overrides) do mapko[key] = value end
+for key, value in pairs(mapko) do spec.rules[key].default = value end
+spec.rules.enemyPreviewRole.default = 4
+spec.look = { key = "look", presets = { [1] = preset, [2] = native, [4] = mapko }, visualKeys = visual, custom = 3 }

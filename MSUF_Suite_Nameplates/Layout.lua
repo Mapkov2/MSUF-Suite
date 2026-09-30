@@ -74,12 +74,12 @@ end
 -- Blizzard anchors the health container to the cast container. Widen from
 -- the left so the native level badge (anchored at the right) stays attached;
 -- the health bar, text, skin and hit-test anchors follow that container.
-local function HealthSize(state, uf, setup, width, height, force)
+local function HealthSize(state, uf, setup, width, height, force, baseHeight)
     local previous = state.healthSize
     if not previous and width == 0 and height == 0 then return end
     local container, cast = uf.HealthBarsContainer, uf.CastBarsContainer
     local spacing, nativeHeight = setup and setup.castBarToHealthBarSpacing,
-        setup and setup.healthBarHeight
+        baseHeight or setup and setup.healthBarHeight
     if not Accessible(container) or not cast or not NS.Finite(spacing)
         or not NS.Finite(nativeHeight) or type(container.SetHeight) ~= "function" then
         module.needsRefresh = true
@@ -114,6 +114,7 @@ function Layout.Restore(uf)
     if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then module.needsRefresh = true; return end
     RestoreLinks(state)
     RestoreHealthSize(state, uf)
+    if not private.Geometry.Restore(state, uf, _G.NamePlateSetupOptions or {}) then module.needsRefresh = true end
     for region in pairs(state.offsets) do
         if Accessible(region) then
             region:SetPointsOffset(0, 0)
@@ -122,16 +123,16 @@ function Layout.Restore(uf)
             module.needsRefresh = true
         end
     end
-    if not next(state.offsets) and #state.links == 0 and not state.healthSize then states[uf] = nil end
+    if not next(state.offsets) and #state.links == 0 and not state.healthSize and not state.geometry then states[uf] = nil end
 end
 
 local function OnAnchors(uf)
     local state = states[uf]
     local locked = NS.IsCombatLocked() or NS.Safety.IsForbidden(uf)
     if state then
-        -- UpdateAnchors rebuilds dynamic links, but leaves the aura XML
-        -- anchors untouched. Restore only those fixed links before applying
-        -- saved offsets again; old name/cast anchors belong to Blizzard.
+        -- UpdateAnchors rebuilds dynamic links, including Forever's CC
+        -- badge reservation. Restore only fixed XML links before applying
+        -- saved offsets again; rebuilt anchors belong to Blizzard.
         local pending = {}
         for _, link in ipairs(state.links) do
             if link.nativeFixed then
@@ -192,9 +193,12 @@ function Layout.Apply(uf, prefix, config, force)
     RestoreLinks(state)
     local container = uf.HealthBarsContainer
     local health = container and container.healthBar
+    local geometryChanged = (config.barGeometry == 2) ~= (state.geometry ~= nil)
+    local baseHeight = private.Geometry.Apply(state, uf, setup, config, force)
+    if not baseHeight then module.needsRefresh = true; return end
     HealthSize(state, uf, setup,
         config[prefix .. "HealthWidthDelta"] or 0,
-        config[prefix .. "HealthHeightDelta"] or 0, force)
+        config[prefix .. "HealthHeightDelta"] or 0, force or geometryChanged, baseHeight)
     Offset(state, container, plan.Health[1], plan.Health[2], force)
     local name, value, auras, raid, classification = plan.Name, plan.HealthText, plan.Auras, plan.RaidIcon, plan.Classification
     local namesOnly, anchor = uf.showOnlyName == true, setup.unitNameAnchorStyle
@@ -244,10 +248,28 @@ function Layout.Apply(uf, prefix, config, force)
     AuraAnchor(state, auraFrame and auraFrame.BuffListFrame, "RIGHT", uf.ClassificationFrame,
         "LEFT", -5, 0, buff[1], buff[2], true)
     local control = plan.ControlAura
-    AuraAnchor(state, auraFrame and auraFrame.CrowdControlListFrame, "LEFT", container,
-        "RIGHT", 5, 0, control[1], control[2], true)
-    AuraAnchor(state, auraFrame and auraFrame.LossOfControlFrame, "LEFT", container,
-        "RIGHT", 5, 0, control[1], control[2], true)
+    local controlBaseX = 5
+    if NS.Client.isForever then
+        -- upstream/forever 70009: UpdateAnchors reserves the badge width
+        -- plus its 5px XML gap. Use the public setup width, never measure
+        -- restricted regions; ShouldDisplay also covers temporarily hidden badges.
+        if not NS.Public(levelDiffShown) then
+            controlBaseX = nil
+        elseif levelDiffShown then
+            local width = setup.playerLevelDiffWidth
+            controlBaseX = NS.Finite(width) and controlBaseX + width + 5 or nil
+        end
+    end
+    if controlBaseX then
+        local correction = config.barGeometry == 2 and controlBaseX - 5 or 0
+        local nativeFixed = not NS.Client.isForever
+        AuraAnchor(state, auraFrame and auraFrame.CrowdControlListFrame, "LEFT", container,
+            "RIGHT", controlBaseX, 0, control[1] - correction, control[2], nativeFixed)
+        AuraAnchor(state, auraFrame and auraFrame.LossOfControlFrame, "LEFT", container,
+            "RIGHT", controlBaseX, 0, control[1] - correction, control[2], nativeFixed)
+    elseif control[1] ~= 0 or control[2] ~= 0 then
+        module.needsRefresh = true
+    end
     Offset(state, uf.SoftTargetFrame, plan.SoftTarget[1], plan.SoftTarget[2], force)
     local debuffX = auras[1] - (anchor ~= 1 and name[1] or 0)
     local debuffY = auras[2] - (anchor ~= 1 and name[2] or 0)
@@ -283,7 +305,7 @@ end
 function Layout.Configure(config)
     generation = generation + 1
     for _, prefix in ipairs({ "enemy", "friendly" }) do
-        local plan = { active = false }
+        local plan = { active = config.barGeometry == 2 }
         for i = 1, #elements do
             local element = elements[i]
             local key = prefix .. element.key .. "Offset"

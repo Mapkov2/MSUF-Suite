@@ -7,6 +7,7 @@ local Markers = P.NameplatesEditorMarkers
 local NativeBit = Style.NativeBit
 local Editor = {}
 P.NameplatesEditor = Editor
+Editor.Layout = P.NameplatesPreviewLayout.Apply
 local DELTA = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
 local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diamond",
     [4] = "Triangle", [5] = "Moon", [6] = "Blue square", [7] = "Cross", [8] = "Skull" }
@@ -433,6 +434,7 @@ end
 
 local function Button(ui, parent, key, label, width, x, action)
     local button = T.Button(parent, Tr(label), width, 20)
+    if T.CenterButtonLabel then T.CenterButtonLabel(button) end
     button:SetPoint("LEFT", parent, "LEFT", x, 0)
     button:SetScript("OnClick", action)
     Register(button, key, label)
@@ -576,9 +578,11 @@ end
 
 local function BuildLayers(ui)
     local rail = CreateFrame("Frame", nil, ui.body, "BackdropTemplate")
-    local anchor = ui.selection or ui.tools
-    rail:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -6)
-    rail:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -6)
+    -- Like UF/GF, dock the rail inside the bottom of the preview. Its wrapped
+    -- height belongs to the layout; growing down from a fixed canvas lets the
+    -- last rows escape into the settings ScrollFrame.
+    rail:SetPoint("BOTTOMLEFT", ui.body, "BOTTOMLEFT", 0, 4)
+    rail:SetPoint("BOTTOMRIGHT", ui.body, "BOTTOMRIGHT", 0, 4)
     rail:SetHeight(80)
     local background = rail:CreateTexture(nil, "BACKGROUND")
     background:SetAllPoints(rail)
@@ -625,7 +629,7 @@ local function BuildLayers(ui)
         ui.layerButtons[#ui.layerButtons + 1] = button
     end
     function ui:LayoutLayerRail()
-        local width = rail:GetWidth()
+        local width = self.body:GetWidth()
         if not width or width < 300 then width = self.layoutWidth end
         if H.FlowLayerChips then
             H.FlowLayerChips(rail, self.layerButtons, { width = width, padX = 64,
@@ -663,6 +667,7 @@ local function BuildTools(ui)
     ui.contextButton = Button(ui, tools, "context", "Outdoor", 128, 188,
         function() ui.inDungeon = not ui.inDungeon; ui:Paint() end)
     local samples = CreateFrame("Frame", nil, body)
+    ui.samples = samples
     samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
     samples:SetSize(540, 20)
     ui.sampleButton = Button(ui, samples, "plateKind", "Enemy / Friendly / Personal", 124, 0, function()
@@ -722,6 +727,7 @@ end
 
 local function BuildRaidPalette(ui)
     local strip = CreateFrame("Frame", nil, ui.canvas)
+    ui.raidPalette = strip
     strip:SetPoint("TOPRIGHT", ui.canvas, "TOPRIGHT", -8, -39)
     strip:SetSize(165, 22)
     local title = T.Font(strip, "GameFontDisableSmall", Tr("RAID MARKS"), T.colors.muted)
@@ -830,33 +836,14 @@ local function BuildInput(ui)
     body:SetScript("OnEvent", function() ui:CancelDrag(); ui:Select(nil) end)
 end
 
-local function BuildExpander(ui, section, toolbar, record)
-    local body, canvas, tools, ctx = ui.body, ui.canvas, ui.tools, ui.ctx
-    if W.AttachFixedPreviewExpander then
-        function body:ApplyCompactPreviewPresentation(compact)
-            canvas:SetHeight(compact and 108 or 226)
-            tools:SetShown(not compact)
-            if SB then SB.SetShown(body, not compact) end
-            if ui.layerRail then ui.layerRail:SetShown(not compact) end
-            ui:Paint()
-        end
-        local expander = W.AttachFixedPreviewExpander(section, toolbar, body, { pageKey = ctx.key, wrapper = ctx.wrapper,
-            compactHeight = 116, compactTop = -38, expandedHeight = 370, expandedTop = -38, expandedSectionHeight = 416 })
-        if record then record.onActivate = function()
-            if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview() then expander:Open("NAMEPLATES_PREVIEW") end
-            ui:Paint()
-        end end
-    end
-end
-
 function Editor.Create(ctx, builder, sections)
-    local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 416, gap = 8 })
+    local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 162, gap = 8 })
     if not section then return end
     local inInstance, instanceType = _G.IsInInstance()
     local inDungeon = P.Suite.Public(instanceType) and P.Suite.Public(inInstance)
         and inInstance == true and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
     local ui = setmetatable({ ctx = ctx, sections = sections, handles = {}, renderers = {}, layers = {},
-        sampleKind = "enemy", zoom = 1, panX = 0, panY = 0,
+        sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true,
         softTargetSample = true, aggroSample = true,
         layoutWidth = math.max(640, (section._msuf2Width or builder.width or 720) - 28),
         inDungeon = inDungeon, help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom" }, { __index = Editor })
@@ -870,12 +857,12 @@ function Editor.Create(ctx, builder, sections)
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 14, -38)
     body:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, -38)
-    body:SetHeight(370)
+    body:SetHeight(116)
     ui.body, body.previewUI, body._handleList = body, ui, ui.handles
     local canvas = CreateFrame("Frame", nil, body, "BackdropTemplate")
     canvas:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
     canvas:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, 0)
-    canvas:SetHeight(226)
+    canvas:SetHeight(108)
     canvas:SetClipsChildren(true)
     canvas:EnableMouse(true)
     canvas:EnableMouseWheel(true)
@@ -886,15 +873,18 @@ function Editor.Create(ctx, builder, sections)
     stage:SetMovable(true)
     ui.stage = stage
     ui.hint = T.Font(toolbar, "GameFontDisableSmall", Tr(ui.help), T.colors.muted)
-    ui.hint:SetPoint("LEFT", toolbar, "LEFT", 132, 0)
-    ui.hint:SetPoint("RIGHT", toolbar, "RIGHT", -26, 0)
+    ui.hint:SetPoint("LEFT", section.title or toolbar, section.title and "RIGHT" or "LEFT", section.title and 12 or 160, 0)
+    ui.hint:SetPoint("RIGHT", toolbar, "RIGHT", -154, 0)
     ui.hint:SetJustifyH("LEFT")
+    ui.hint:SetWordWrap(false)
+    ui.hint:SetMaxLines(1)
     BuildTools(ui)
     BuildRaidPalette(ui)
     BuildSelection(ui)
     BuildLayers(ui)
     BuildInput(ui)
-    BuildExpander(ui, section, toolbar, record)
+    P.NameplatesPreviewLayout.Attach(ui, section, toolbar, record)
+    ui:Layout()
     M.TrackRefresh(ctx, function() ui:Paint() end)
     return ui
 end

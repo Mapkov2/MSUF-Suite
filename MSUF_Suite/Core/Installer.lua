@@ -56,15 +56,6 @@ local function FactoryProfile()
     if selected ~= "forever" then
         Suite.Suite.StyleProfile(profile, selected == "classic" and "midnight" or "cleanModern")
     end
-    if compact == Suite.ForeverFactoryModuleCompact then
-        -- The bundled Forever export predates Nameplates. Include the current
-        -- Jundies preset in new installs without changing saved profiles.
-        local modules = profile.suite.modules
-        if not modules.nameplates then
-            modules.nameplates = Suite.CopyValue(Suite.Defaults.suite.modules.nameplates)
-            modules.nameplates.enabled = true
-        end
-    end
     decodedFactories[cacheKey] = profile
     return profile
 end

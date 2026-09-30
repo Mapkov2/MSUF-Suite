@@ -343,6 +343,9 @@ local function Sample(editor, prefix, x)
         local nativeLevelWidth = nativeLevel and SetupNumber("playerLevelDiffWidth", 28 * classificationScale) or 0
         local reserve = nativeLevel and nativeLevelWidth + 5 or 0
         local contentWidth = (classic and 152 or forever and 190 or 230) * horizontal - 2 * inset
+        local geometry = P.Get(ID, "look") ~= 2 and P.Get(ID, prefix) and P.Get(ID, "barGeometry") or 1
+        local totalWidth, uniformHealth, uniformCast = Style.BarDimensions(geometry, selectedStyle, horizontal, vertical)
+        if totalWidth then contentWidth, reserve = totalWidth - 2 * inset, 0 end
         local classicInset = classic and 24.25 * horizontal or 0
         local widthDelta = P.Get(ID, prefix .. "HealthWidthDelta") or 0
         local heightDelta = P.Get(ID, prefix .. "HealthHeightDelta") or 0
@@ -352,11 +355,11 @@ local function Sample(editor, prefix, x)
         local castX = classic and 8.625 * horizontal or 0
         local healthHeight = classic and 10 or (style == 0 or style == 2 or style == 3)
             and 20 or forever and 13 or 10
-        local nativeBarHeight = SetupNumber("healthBarHeight", healthHeight * vertical)
+        local nativeBarHeight = uniformHealth or SetupNumber("healthBarHeight", healthHeight * vertical)
         local barHeight = nativeBarHeight + heightDelta
         local nativeCastHeight = (style == 2 or style == 4) and 16 or classic and 10
             or forever and 6 or 10
-        local castHeight = SetupNumber("castBarHeight", nativeCastHeight * vertical)
+        local castHeight = uniformCast or SetupNumber("castBarHeight", nativeCastHeight * vertical)
         local fallbackAnchor = classic and 3 or (style == 0 or style == 2) and 1 or 2
         local nameAnchor = SetupNumber("unitNameAnchorStyle", fallbackAnchor)
         local nameSpacing = SetupNumber("healthBarToNameAboveSpacing", (classic and 4 or 2) * vertical)

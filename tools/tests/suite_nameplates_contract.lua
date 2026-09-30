@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
-assert(table.concat(toc, ",") == "Bootstrap.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,Skin.lua",
+assert(table.concat(toc, ",") == "Bootstrap.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -298,6 +298,7 @@ NS.RGB, NS.Public, NS.Finite, NS.ResolveFont = S.RGB, S.Public, S.Finite, S.Reso
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/Geometry.lua"))("MSUF_Suite_Nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Layout.lua"))("MSUF_Suite_Nameplates", private)
 for _, file in ipairs({ "Roles", "Text", "Power", "Threat" }) do
     assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("MSUF_Suite_Nameplates", private)
@@ -1395,6 +1396,78 @@ do
         "friendly nameplates did not display their enabled level")
     module.config.friendlyLevelEnabled = false
     uf.isFriend = false
+    module:Refresh()
+end
+
+-- Forever's CC lists must keep the native badge reservation when moved,
+-- including after Blizzard rebuilds anchors for a different unit or scale.
+do
+    private.Layout.Restore(uf)
+    local savedConfig, savedForever = module.config, NS.Client.isForever
+    local savedWidth = NamePlateSetupOptions.playerLevelDiffWidth
+    local badge = uf.PlayerLevelDiffFrame
+    local savedDisplay, savedShown = badge.ShouldDisplay, badge:IsShown()
+    local display = true
+    local config = {}
+    for key, value in pairs(savedConfig) do config[key] = value end
+    for _, prefix in ipairs({ "enemy", "friendly" }) do
+        for _, element in ipairs(NS.NameplateStyle.Elements) do
+            config[prefix .. element.key .. "OffsetX"] = 0
+            config[prefix .. element.key .. "OffsetY"] = 0
+        end
+    end
+    config.enemyControlAuraOffsetX, config.enemyControlAuraOffsetY = 13, -7
+    module.config, NS.Client.isForever = config, true
+    badge.ShouldDisplay = function() return display end
+    badge:Hide() -- ShouldDisplay, not transient visibility, owns the reservation.
+    NamePlateSetupOptions.playerLevelDiffWidth = 28
+    private.Layout.Configure(config)
+    local function NativeAnchors()
+        local x = 5 + (display and NamePlateSetupOptions.playerLevelDiffWidth + 5 or 0)
+        aura.CrowdControlListFrame:SetPoint("LEFT", uf.HealthBarsContainer, "RIGHT", x, 0)
+        aura.LossOfControlFrame:SetPoint("LEFT", uf.HealthBarsContainer, "RIGHT", x, 0)
+    end
+    local function Check(x, y, message)
+        for _, region in ipairs({ aura.CrowdControlListFrame, aura.LossOfControlFrame }) do
+            assert(region.points[1][4] == x and region.points[1][5] == y, message)
+        end
+    end
+    NativeAnchors()
+    private.Layout.Apply(uf, "enemy", config, true)
+    Check(51, -7, "Forever moved CC auras into the native level badge")
+    private.Layout.Restore(uf)
+    Check(38, 0, "Forever CC reset discarded the native level reservation")
+    private.Layout.Apply(uf, "enemy", config, true)
+    NamePlateSetupOptions.playerLevelDiffWidth = 40
+    NativeAnchors()
+    layoutHook(uf)
+    Check(63, -7, "Forever CC layout ignored the updated badge width")
+    display = false
+    NativeAnchors()
+    layoutHook(uf)
+    Check(18, -7, "Forever CC layout reserved a badge for a names-only unit")
+    display = true
+    NamePlateSetupOptions.playerLevelDiffWidth = 32
+    NativeAnchors()
+    combat, module.needsRefresh = true, false
+    layoutHook(uf)
+    Check(42, 0, "Forever CC hook changed protected anchors in combat")
+    assert(module.needsRefresh, "Forever CC combat refresh was not deferred")
+    combat = false
+    private.Layout.Apply(uf, "enemy", config, true)
+    Check(55, -7, "Forever CC layout did not recover after combat")
+    -- Removing the offset during a native rebuild must keep its new base.
+    config.enemyControlAuraOffsetX, config.enemyControlAuraOffsetY = 0, 0
+    private.Layout.Configure(config)
+    display = false
+    NativeAnchors()
+    layoutHook(uf)
+    Check(5, 0, "Forever CC reset restored a stale badge reservation")
+    private.Layout.Restore(uf)
+    module.config, NS.Client.isForever = savedConfig, savedForever
+    NamePlateSetupOptions.playerLevelDiffWidth = savedWidth
+    badge.ShouldDisplay = savedDisplay
+    badge:SetShown(savedShown)
     module:Refresh()
 end
 
