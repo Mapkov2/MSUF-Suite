@@ -396,6 +396,24 @@ local function SkinStatHeader(state, frame, modern)
     end
 end
 
+local function FormatItemLevel(state, frame)
+    local value = Field(frame, "Value")
+    if not HasMethod(value, "SetText") or not Safety.CanDecorate(value, true) then return end
+    -- upstream/live 09b9db79 Mainline/PaperDollFrame.lua and upstream/forever
+    -- Camelot/PaperDollFrame.lua use the first two native results for available
+    -- and equipped level. Keep their precision; native stat updates also cover
+    -- bag/equipment changes, so no inventory scan or extra event loop is needed.
+    local available, equipped = NS.AdapterKit.ReadValues(GetAverageItemLevel)
+    if type(equipped) ~= "number" or equipped ~= equipped or equipped < 0 then return end
+    local text = string.format("%.2f", equipped)
+    if type(available) == "number" and available > equipped then
+        local maximum = string.format("%.2f", available)
+        if maximum ~= text then text = text .. " / " .. maximum end
+    end
+    value:SetText(text)
+    state.itemLevelFrame, state.itemLevelText = frame, text
+end
+
 local function SkinStats(state)
     local pane = CharacterStatsPane
     if not state.active or NS.IsCombatLocked() then
@@ -413,7 +431,10 @@ local function SkinStats(state)
         if category then SkinStatHeader(state, category, modern) end
     end
     local itemLevel = Field(pane, "ItemLevelFrame")
-    if itemLevel then SkinStatHeader(state, itemLevel, modern) end
+    if itemLevel then
+        SkinStatHeader(state, itemLevel, modern)
+        FormatItemLevel(state, itemLevel)
+    end
 
     if enumerable then
         -- ObjectPoolMixin:EnumerateActive() returns object -> true. Only the
@@ -638,6 +659,10 @@ function CharacterPanel.Disable(owner)
     NS.EQoLCharacter.Disable(owner)
     NS.CharacterStats.Disable(_G.CharacterStatsPane, owner)
     NS.CharacterDetails.Disable(_G.CharacterFrame, owner)
+    local itemLevel = state.itemLevelFrame
+    if itemLevel and Safety.Read(Field(itemLevel, "Value"), "GetText") == state.itemLevelText then
+        PaperDollFrame_SetItemLevel(itemLevel, "player")
+    end
     panel:Release(state)
     -- The parent blizzardWindows adapter restores the shared IconSkin,
     -- ControlSkin and Cosmetics owner exactly once through GenericWindows.

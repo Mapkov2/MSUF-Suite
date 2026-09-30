@@ -220,7 +220,18 @@ local function Paint(v)
         local category = v.pane[field]
         if category then Font(v, category.Title, wide and 12 or 11, "title") end
     end
-    if v.pane.ItemLevelFrame then Font(v, v.pane.ItemLevelFrame.Value, wide and 28 or 20) end
+    local itemLevel = v.pane.ItemLevelFrame
+    if itemLevel then
+        local value = itemLevel.Value
+        local saved = Font(v, value, wide and 28 or 20)
+        local width = Number(Read(value and value.GetStringWidth, value))
+        local room = Number(Read(itemLevel.GetWidth, itemLevel))
+        if saved and width and room and room > 16 and width > room - 16 then
+            local size = saved.appliedSize * (room - 16) / width
+            value:SetFont(v.path, size, saved.flags)
+            saved.appliedSize = size
+        end
+    end
     for _, record in pairs(v.rows) do
         Font(v, record.frame.Label, wide and 12 or 11, "muted")
         Font(v, record.frame.Value, record.definition and (wide and 18 or 16) or (wide and 13 or 12))
