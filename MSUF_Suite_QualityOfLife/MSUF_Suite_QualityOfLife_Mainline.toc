@@ -42,7 +42,6 @@ GroupDelvePower.lua
 MPlusResetReminder.lua
 GroupBloodlust.lua
 CursorEffects.lua
-MapQuickSwitch.lua
 MapLandingShortcuts.lua
 CombatStatsHUD.lua
 CombatPetStatus.lua

@@ -37,6 +37,8 @@ local CATEGORIES = {
             "elementRow", "elementSize", "elementSpacing", "elementDistance", "borderSize", "borderColor",
             "borderClassColor" }
     },
+    { name = "specialization", keys = { "specButton", "specShowSpec", "specShowLoot", "specCorner",
+        "specSize", "specX", "specY", "borderColor", "borderClassColor" } },
     { name = "texts", keys = { "borderSize", "borderColor", "borderClassColor", "showCalendar" } },
 }
 for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Compartment" }) do
@@ -122,6 +124,7 @@ MM.flushers.hoverSize = function()
     MM.ApplyBorder()
     MM.LayoutElements()
     MM.LayoutDrawer()
+    MM.ApplySpecialization()
 end
 MM.OnHover(function()
     if M.active and M.config.hoverResize then MM.Queue("hoverSize") end
@@ -160,6 +163,7 @@ function M:Refresh()
     if dirty.input then MM.ApplyInput() end
     if dirty.elements or dirty.geometry then MM.LayoutElements() end
     if dirty.drawer then MM.ApplyDrawer() elseif dirty.geometry then MM.LayoutDrawer() end
+    if dirty.specialization or dirty.geometry then MM.ApplySpecialization() end
     if dirty.texts then MM.RefreshTexts() else MM.HideInfoTooltip() end
     MM.ApplyVisibility()
     MM.NotifyHover()
@@ -170,6 +174,7 @@ function M:Disable()
     if MM.style then MM.style:Hide() end
     MM.ReleaseTexts()
     MM.HideInfoTooltip()
+    MM.ReleaseSpecialization()
     MM.ReleaseDrawer()
     MM.ReleaseElements()
     MM.ReleaseInput()

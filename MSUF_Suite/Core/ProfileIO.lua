@@ -1,6 +1,8 @@
 local _, Suite = ...
 local IO = { prefix = "MSUFM1:", maxBytes = 2 * 1024 * 1024 }
 Suite.ProfileIO = IO
+local LEGACY_MINIMAP_KEYS = { enabled = "specButton", showSpec = "specShowSpec", showLoot = "specShowLoot",
+    corner = "specCorner", size = "specSize", x = "specX", y = "specY" }
 
 -- MSUF's codec (older MSUF builds do not export it). It runs on
 -- C_EncodingUtil, which Retail and Forever both have.
@@ -33,6 +35,24 @@ function IO.PrepareTable(profile, shared)
         result.suite.globalLook = data.globalLook
     end
     CopyMigrationState(data, result.suite)
+    -- Keep only the retired helper's documented settings until Normalize
+    -- moves them to Minimap. Old full-profile exports must not lose them.
+    local legacy = data.modules.mapQuickSwitch
+    if legacy ~= nil then
+        if type(legacy) ~= "table" then return nil, "Invalid module settings" end
+        local target = {}
+        for key, newKey in pairs(LEGACY_MINIMAP_KEYS) do
+            local value = legacy[key]
+            if value ~= nil then
+                if type(value) ~= type(Suite.SuiteCatalog.minimap.rules[newKey].default) then
+                    return nil, "Invalid module setting"
+                end
+                if type(value) == "number" and not Suite.Finite(value) then return nil, "Invalid module number" end
+                target[key] = value
+            end
+        end
+        result.suite.modules.mapQuickSwitch = target
+    end
     for _, id in ipairs(Suite.SuiteOrder) do
         local source = data.modules[id]
         if source ~= nil and type(source) ~= "table" then return nil, "Invalid module settings" end
@@ -95,7 +115,8 @@ function IO.PrepareModuleProfile(text)
     if encoded:sub(1, 6) ~= "MSUF3:" then return nil, nil, "Invalid suite module payload" end
     local envelope = _G.MSUF_TryDecodeCompactString(encoded)
     if type(envelope) ~= "table" or envelope.addon ~= "MSUF_Suite" or envelope.format ~= 2
-        or type(envelope.module) ~= "string" or not Suite.SuiteCatalog[envelope.module]
+        or type(envelope.module) ~= "string"
+        or not (Suite.SuiteCatalog[envelope.module] or envelope.module == "mapQuickSwitch")
         or type(envelope.settings) ~= "table" then
         return nil, nil, "Unsupported suite module profile"
     end
@@ -105,6 +126,13 @@ function IO.PrepareModuleProfile(text)
         schema = 1, revision = revision, modules = { [id] = envelope.settings },
     } }, true)
     if not clean then return nil, nil, reason end
+    if id == "mapQuickSwitch" then
+        -- A former helper-only export changes only the integrated button.
+        -- It must not overwrite the user's map layout or module enable state.
+        local settings = {}
+        for _, key in pairs(LEGACY_MINIMAP_KEYS) do settings[key] = clean.suite.modules.minimap[key] end
+        return "minimap", settings
+    end
     return id, clean.suite.modules[id]
 end
 

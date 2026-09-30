@@ -15,4 +15,5 @@ Elements.lua
 Drawer.lua
 Info.lua
 Tooltips.lua
+Specialization.lua
 Controller.lua

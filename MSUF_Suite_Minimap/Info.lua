@@ -28,8 +28,6 @@ local TITLES = {
     Location = { "ZONE", "Location" },
     Weather = { false, "Weather" },
 }
--- WeatherType values from Blizzard's Forever WeatherConstantsDocumentation.
-local WEATHER_TYPES = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm", [4] = "Other weather" }
 -- GetInstanceInfo difficulty IDs: tag and colour tier (1 normal, 2 heroic, 3
 -- mythic, 4 raid finder/follower, 5 timewalking, 6 keystone). Bare tags carry
 -- no group size. Unknown IDs fall back to GetDifficultyInfo's heroic/mythic flags.
@@ -196,13 +194,13 @@ local function Location(entry)
     return entry.locationText, nil, nil, color
 end
 -- Runs only while S.CanShowMinimapInfo("Weather") allows the text (C_Weather).
-local function Weather()
+local function Weather(entry)
     local info = GetCurrentWeather()
-    if not S.Public(info) or type(info) ~= "table" then return "--" end
-    local kind = info.type
-    if not S.Public(kind) or type(kind) ~= "number" then return "--" end
-    local label = WEATHER_TYPES[kind]
-    return label and S.Text(label) or "--"
+    local kind
+    if S.Public(info) and type(info) == "table" and Finite(info.type) then kind = info.type end
+    local text, label, texture = NS.MinimapStyle.WeatherContent(M.config, kind)
+    entry.tooltipText, entry.weatherTexture = label, texture
+    return text
 end
 local readers = {
     Clock = Clock, FPS = FPS, Latency = Latency, Coordinates = Coordinates,
@@ -278,7 +276,7 @@ MM.InfoVisible = Visible
 
 -- The box and the invite mark follow the text's width, re-measured on change only.
 local function Decorate(entry)
-    local width = entry.label:GetStringWidth()
+    local width = entry.contentWidth or entry.label:GetStringWidth()
     if not Finite(width) then width = 0 end
     if entry.box and entry.box:IsShown() then entry.box:SetWidth(math.max(entry.size, width + 8)) end
     local mark = entry.invite
@@ -295,10 +293,17 @@ local function Decorate(entry)
 end
 
 local function Sample(entry, key)
+    local previousTexture = entry.weatherTexture
     local text, delay, severity, overrideColor = readers[key](entry)
-    if text ~= entry.text then
-        entry.label:SetText(text)
-        entry.text = text
+    if text ~= entry.text or previousTexture ~= entry.weatherTexture then
+        if text ~= entry.text then
+            entry.label:SetText(text)
+            entry.text = text
+        end
+        if key == "Weather" then
+            if previousTexture ~= entry.weatherTexture then entry.icon:SetTexture(entry.weatherTexture) end
+            NS.MinimapStyle.LayoutWeather(entry, M.config, text)
+        end
         Decorate(entry)
     end
     local color = overrideColor or entry.statusColors and severity and entry.statusColors[severity] or entry.color
@@ -447,7 +452,7 @@ local function Tooltip(button)
     local entry, title = M.infoEntries[key], TITLES[key]
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip:SetText(S.BlizzardText(title[1], title[2]))
-    GameTooltip:AddLine(entry.text or "--", 1, 1, 1)
+    GameTooltip:AddLine(entry.tooltipText or entry.text or "--", 1, 1, 1)
     if key == "Clock" then
         if entry.invite and entry.invite:IsShown() then
             GameTooltip:AddLine(S.Text("Calendar invitations are waiting."), 1, .82, 0)
@@ -477,7 +482,8 @@ local function CreateEntry(key)
     local label = S.CreateFontString(button, nil, "OVERLAY", "GameFontNormalSmall")
     label:SetAllPoints(button)
     label:SetWordWrap(false)
-    return { button = button, label = label }
+    local icon = key == "Weather" and S.CreateTexture(button, nil, "ARTWORK") or nil
+    return { button = button, label = label, icon = icon }
 end
 
 local function EnsureFrame()
@@ -548,11 +554,17 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
     local lines = key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2
         or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2 or 1
-    entry.size = size
-    entry.button:SetSize(c[prefix .. "Width"], size * lines + 8)
+    local height = key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or size * lines
+    local width = c[prefix .. "Width"]
+    if key == "Weather" and c.infoWeatherDisplay ~= 1 then
+        width = c.infoWeatherDisplay == 2 and c.infoWeatherIconSize or math.max(width, c.infoWeatherIconSize + 8)
+    end
+    entry.size = key == "Weather" and height or size
+    entry.button:SetSize(width, height + 8)
     entry.justify = Anchor(entry.button, c[prefix .. "Anchor"], c[prefix .. "X"], c[prefix .. "Y"])
     entry.label:SetJustifyH(entry.justify)
-    if c[prefix .. "Box"] == 2 then
+    local boxMode = c[prefix .. "Box"]
+    if boxMode == 2 or boxMode == 3 then
         if not entry.box then entry.box = S.CreateTexture(entry.button, nil, "BACKGROUND") end
         local box = entry.box
         box:ClearAllPoints()
@@ -563,7 +575,8 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         else
             box:SetPoint("CENTER", entry.button, "CENTER")
         end
-        box:SetHeight(size * lines + 4)
+        box:SetHeight(height + 4)
+        if boxMode == 3 then boxR, boxG, boxB = Color(c[prefix .. "BoxColor"]) end
         box:SetColorTexture(boxR, boxG, boxB, 1)
         box:Show()
     elseif entry.box then
@@ -636,7 +649,7 @@ local function LayoutEntries(c, hideCoordinates)
             local anchor = c[prefix .. "Anchor"]
             local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2
                 or key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2 or 1
-            local height = c[prefix .. "Size"] * lines + 8
+            local height = (key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or c[prefix .. "Size"] * lines) + 8
             if anchor == 10 then above = math.max(above, c[prefix .. "Y"] + height) end
             if anchor == 11 then below = math.max(below, height - c[prefix .. "Y"]) end
             entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == 2 or MM.Revealed())

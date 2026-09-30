@@ -13,6 +13,30 @@ B.Module("minimap", {
 })
 
 local id = "minimap"
+function NS.MigrateMinimapSpecialization(modules)
+    local old = modules.mapQuickSwitch
+    if type(old) ~= "table" then return end
+    local minimap = type(modules.minimap) == "table" and modules.minimap or {}
+    modules.minimap = minimap
+    local keys = { enabled = "specButton", showSpec = "specShowSpec", showLoot = "specShowLoot",
+        size = "specSize", x = "specX", y = "specY" }
+    for source, target in pairs(keys) do
+        if minimap[target] == nil then minimap[target] = old[source] end
+    end
+    -- The former labels had left/right reversed. Keep the physical position
+    -- while the Minimap selector now names the correct corner.
+    if minimap.specCorner == nil then minimap.specCorner = ({ 2, 1, 4, 3 })[old.corner or 1] end
+    modules.mapQuickSwitch = nil
+end
+
+-- Shared by the live button and the movable preview.
+NS.MinimapSpecCorners = {
+    { "TOPLEFT", "TOPRIGHT", 4, 0 }, { "TOPRIGHT", "TOPLEFT", -4, 0 },
+    { "BOTTOMLEFT", "BOTTOMRIGHT", 4, 0 }, { "BOTTOMRIGHT", "BOTTOMLEFT", -4, 0 },
+}
+function NS.CanShowMinimapSpecialization()
+    return not NS.Client.isForever
+end
 NS.MinimapAnchorLabels = NS.AnchorLabels
 NS.MinimapAnchorPoints = NS.AnchorPoints
 -- The preview and runtime consume the same row geometry. Coordinates are:
@@ -191,6 +215,15 @@ B.Section(id, "landing", "Expansion feature button", {
     Number("landingX", "Folio horizontal offset", 0, -300, 300),
     Number("landingY", "Folio vertical offset", 0, -300, 300),
 })
+B.Section(id, "specialization", "Minimap specialization menu", {
+    Bool("specButton", "Minimap specialization menu", false),
+    Bool("specShowSpec", "Show specialization choices", true),
+    Bool("specShowLoot", "Show loot specialization choices", true),
+    Choice("specCorner", "Minimap corner", 1, { "Top right", "Top left", "Bottom right", "Bottom left" }),
+    Number("specSize", "Button size", 24, 18, 40),
+    Number("specX", "Horizontal offset", 0, -600, 600),
+    Number("specY", "Vertical offset", 0, -600, 600),
+})
 B.Section(id, "addons", "Addon buttons", {
     Bool("collectButtons", "Collect addon buttons into a drawer", true),
     Choice("drawerRow", "Drawer button placement", 5, NS.MinimapRowLabels),
@@ -218,6 +251,12 @@ for _, field in ipairs(infoFields) do
         rule.enableKey = prefix
         return B.Add(id, rule, section, key)
     end
+    if key == "Weather" then
+        Info(Choice("infoWeatherDisplay", "Weather display", 3, { "Text only", "Icon only", "Icon and text" }))
+        Info(Choice("infoWeatherIconStyle", "Weather icons", NS.Client.isForever and 2 or 1,
+            { "Blizzard icons", "Forever artwork" }))
+        Info(Number("infoWeatherIconSize", "Icon size", 24, 12, 64))
+    end
     Info(Font(prefix .. "Font", "Text font"))
     Info(Number(prefix .. "Size", "Text size", 12, 8, 32))
     Info(Choice(prefix .. "Outline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }))
@@ -231,7 +270,10 @@ for _, field in ipairs(infoFields) do
     Info(Choice(prefix .. "Anchor", "Text anchor", field[2], NS.MinimapTextAnchorLabels))
     Info(Number(prefix .. "X", "Horizontal offset", field[3], -300, 300)).category = "advanced"
     Info(Number(prefix .. "Y", "Vertical offset", field[4], -300, 300)).category = "advanced"
-    Info(Choice(prefix .. "Box", "Text background", 1, { "None", "Box in the border color" }))
+    Info(Choice(prefix .. "Box", "Text background", 1, { "None", "Box in the border color", "Box in custom color" }))
+    Info(Color(prefix .. "BoxColor", "Text background color", "000000")).requiresChoice = {
+        key = prefix .. "Box", values = { [2] = true, [3] = true },
+    }
 end
 local function InfoOption(key, rule)
     rule.enableKey = "info" .. key
@@ -304,6 +346,11 @@ for _, rule in ipairs({
 end
 
 local rules = NS.SuiteCatalog.minimap.rules
+for _, key in ipairs({ "specButton", "specShowSpec", "specShowLoot", "specCorner", "specSize", "specX", "specY" }) do
+    rules[key].hidden = NS.Client.isForever or nil
+    if key ~= "specButton" then rules[key].enableKey = "specButton" end
+end
+rules.specX.previewOnly, rules.specY.previewOnly = true, true
 if NS.Client.isForever then
     -- Keep the Forever map in Blizzard's familiar upper-right position.
     -- Native capture would overwrite this first-run placement, so new profiles

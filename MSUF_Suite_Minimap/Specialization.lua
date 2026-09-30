@@ -1,12 +1,15 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local M = {}
-local CORNERS = {
-    { "TOPRIGHT", "TOPLEFT", -4, 0 },
-    { "TOPLEFT", "TOPRIGHT", 4, 0 },
-    { "BOTTOMRIGHT", "BOTTOMLEFT", -4, 0 },
-    { "BOTTOMLEFT", "BOTTOMRIGHT", 4, 0 },
-}
+local MM = P.Minimap
+local M = MM.M
+local Q = {}
+MM.specialization = Q
+
+local function Wanted()
+    local c = M.config
+    return M.active and NS.CanShowMinimapSpecialization() and c.specButton
+        and (c.specShowSpec or c.specShowLoot)
+end
 
 local function CurrentSpec()
     local index = C_SpecializationInfo.GetSpecialization()
@@ -48,12 +51,12 @@ local function OnEnter(button)
 end
 
 local function ChangeSpec(index)
-    if NS.IsCombatLocked() or not S.Finite(index) then return end
+    if not Wanted() or not M.config.specShowSpec or NS.IsCombatLocked() or not S.Finite(index) then return end
     C_SpecializationInfo.SetSpecialization(index)
 end
 
 local function ChangeLoot(id)
-    if NS.IsCombatLocked() or not S.Finite(id) then return end
+    if not Wanted() or not M.config.specShowLoot or NS.IsCombatLocked() or not S.Finite(id) then return end
     SetLootSpecialization(id)
 end
 
@@ -67,11 +70,12 @@ local function IsCurrentLoot(id)
 end
 
 local function OpenMenu(button)
+    if not Wanted() then return end
     MenuUtil.CreateContextMenu(button, function(_, root)
         root:CreateTitle(S.Text("Quick specialization"))
         local locked = NS.IsCombatLocked()
         local count = SpecCount()
-        if M.config.showSpec then
+        if M.config.specShowSpec then
             local specs = root:CreateButton(S.Text("Specialization"))
             for index = 1, count do
                 local id, name = C_SpecializationInfo.GetSpecializationInfo(index)
@@ -82,7 +86,7 @@ local function OpenMenu(button)
                 end
             end
         end
-        if M.config.showLoot then
+        if M.config.specShowLoot then
             local loot = root:CreateButton(S.Text("Loot specialization"))
             local auto = loot:CreateRadio(S.Text("Current specialization"), IsCurrentLoot, ChangeLoot, 0)
             auto:SetEnabled(not locked)
@@ -100,8 +104,10 @@ end
 
 local function Create(self)
     if self.button then return end
-    local button = S.CreateFrame("Button", nil, UIParent)
-    button:SetFrameStrata("HIGH")
+    -- The host owns visibility, scale and Edit Mode. This is not an addon
+    -- button on Blizzard's map, so neither drawer nor MBB collects it.
+    local button = S.CreateFrame("Button", nil, MM.host)
+    button:SetFrameLevel(MM.mapLevel + 5)
     button:RegisterForClicks("AnyUp")
     local bg = S.CreateTexture(button, nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -113,46 +119,52 @@ local function Create(self)
     button:SetScript("OnClick", OpenMenu)
     button:SetScript("OnEnter", OnEnter)
     button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    button:SetScript("OnHide", function(self)
+        if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+    end)
+    MM.HookHover(button)
     button:Hide()
     self.button, self.icon, self.bg = button, icon, bg
 end
 
-local function Update(self)
-    local button = self.button
-    if not button then return end
-    if not self.config.showSpec and not self.config.showLoot then
-        button:Hide()
-        return
-    end
-    local c = self.config
-    S.QoLColor(self.bg, S.QoLStyle(c).background, .88)
-    local corner = CORNERS[c.corner] or CORNERS[1]
-    button:SetSize(c.size, c.size)
-    button:ClearAllPoints()
-    button:SetPoint(corner[1], Minimap, corner[2], corner[3] + c.x, corner[4] + c.y)
+local function UpdateIcon()
+    if not Q.icon or not Wanted() then return end
     local _, _, _, icon = CurrentSpec()
-    self.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    Q.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+end
+
+local function OnChanged(_, event, unit)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" and unit ~= "player" then return end
+    UpdateIcon()
+end
+
+function MM.ReleaseSpecialization()
+    MM.Unlisten("PLAYER_ENTERING_WORLD", "specialization")
+    MM.Unlisten("PLAYER_SPECIALIZATION_CHANGED", "specialization")
+    MM.Unlisten("PLAYER_LOOT_SPEC_UPDATED", "specialization")
+    if Q.button then Q.button:Hide() end
+    MM.SetExtent("specialization", 0, 0, 0, 0)
+end
+
+function MM.ApplySpecialization()
+    if not Wanted() then MM.ReleaseSpecialization(); return end
+    Create(Q)
+    local c, button = M.config, Q.button
+    local corner = NS.MinimapSpecCorners[c.specCorner] or NS.MinimapSpecCorners[1]
+    local x, y, size = corner[3] + c.specX, corner[4] + c.specY, c.specSize
+    button:SetSize(size, size)
+    button:ClearAllPoints()
+    button:SetPoint(corner[1], MM.host, corner[2], x, y)
+    local r, g, b = MM.BorderRGB()
+    Q.bg:SetColorTexture(r, g, b, .88)
+    local width, height = MM.Dimensions()
+    local left = corner[2]:find("LEFT", 1, true) and x - size or width + x
+    local bottom = corner[2]:find("TOP", 1, true) and height + y - size or y
+    MM.SetExtent("specialization", math.max(0, -left), math.max(0, left + size - width),
+        math.max(0, bottom + size - height), math.max(0, -bottom))
+    MM.Listen("PLAYER_ENTERING_WORLD", "specialization", OnChanged)
+    MM.Listen("PLAYER_SPECIALIZATION_CHANGED", "specialization", OnChanged)
+    MM.Listen("PLAYER_LOOT_SPEC_UPDATED", "specialization", OnChanged)
+    UpdateIcon()
     button:Show()
 end
-
-local function OnChanged(self)
-    Update(self)
-end
-
-function M:Enable()
-    Create(self)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnChanged)
-    self.context:Event("PLAYER_SPECIALIZATION_CHANGED", OnChanged)
-    self.context:Event("PLAYER_LOOT_SPEC_UPDATED", OnChanged)
-    Update(self)
-end
-
-function M:Refresh()
-    Update(self)
-end
-
-function M:Disable()
-    if self.button then self.button:Hide() end
-end
-
-S.Install("mapQuickSwitch", M)

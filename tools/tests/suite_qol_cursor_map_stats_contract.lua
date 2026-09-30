@@ -109,7 +109,7 @@ local function Context()
 end
 
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, suite)
-for _, filename in ipairs({ "CursorEffects.lua", "MapQuickSwitch.lua",
+for _, filename in ipairs({ "CursorEffects.lua",
     "CombatStatsHUD.lua", "CombatPetStatus.lua", "MapLandingShortcuts.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. filename))(
         "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
@@ -168,29 +168,6 @@ MenuUtil = { CreateContextMenu = function(_, builder)
     menuRoot = Node()
     builder(nil, menuRoot)
 end }
-local quick = assert(installed.mapQuickSwitch)
-quick.active, quick.context = true, Context()
-quick.config = { showSpec = true, showLoot = true, corner = 1, size = 24, x = 0, y = 0 }
-combat = false
-quick:Enable()
-assert(quick.button.shown and quick.icon.texture == 101,
-    "quick switch did not show current specialization")
-quick.button.scripts.OnClick(quick.button)
-local specChoice = menuRoot.children[1].children[2]
-specChoice.change(specChoice.value)
-assert(currentSpec == 2, "spec menu did not use Blizzard's specialization setter")
-local lootChoice = menuRoot.children[2].children[3]
-lootChoice.change(lootChoice.value)
-assert(lootSpec == 72, "loot menu did not use Blizzard's loot setter")
-combat = true
-quick.button.scripts.OnClick(quick.button)
-assert(menuRoot.children[1].children[1].enabled == false,
-    "spec changes remained enabled during combat")
-specChoice.change(3)
-assert(currentSpec == 2, "combat guard did not protect spec setter")
-quick:Disable()
-assert(not quick.button.shown, "quick switch remained visible when disabled")
-
 local landing = assert(installed.mapLandingShortcuts)
 landing.active, landing.context = true, Context()
 combat = false

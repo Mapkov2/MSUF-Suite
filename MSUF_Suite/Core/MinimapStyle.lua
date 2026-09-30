@@ -10,6 +10,75 @@ Style.paths = { false, MEDIA .. "ArcaneRing.tga", MEDIA .. "EmberRing.tga",
 local HALO, CIRCLE = MEDIA .. "Halo.tga", MEDIA .. "Circle.tga"
 local RGB = NS.RGB
 
+-- Shared by the live weather entry and the options preview. WeatherType and
+-- Blizzard's weather aura IDs come from upstream/forever WeatherConstantsDocumentation
+-- and Blizzard_PetBattleUI/Shared/Blizzard_PetBattleUI.lua respectively. Use the
+-- ability's actual icon, as PetBattleWeatherFrame_Update does, not BackgroundArt.
+local WEATHER_TYPES = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm", [4] = "Other weather" }
+local WEATHER_BLIZZARD = { [0] = 403, [1] = 229, [2] = 205, [3] = 454 }
+local weatherIcons = {}
+local WEATHER_ART = "Interface\\AddOns\\MSUF_Suite\\Media\\Weather\\"
+
+function Style.WeatherHeight(c)
+    local textSize = c.infoWeatherSize or 12
+    if c.infoWeatherDisplay == 1 then return textSize end
+    local iconSize = c.infoWeatherIconSize or 24
+    return c.infoWeatherDisplay == 2 and iconSize or math.max(textSize, iconSize)
+end
+
+-- Keep the plain localized name for tooltips, including in icon-only mode.
+-- Unknown values never borrow the clear-weather artwork.
+function Style.WeatherContent(c, kind)
+    local name = WEATHER_TYPES[kind]
+    if not name then return "--", "--" end
+    local label = NS.Text(name)
+    if c.infoWeatherDisplay == 1 then return label, label end
+    local file = "Interface\\Icons\\INV_Misc_QuestionMark"
+    if WEATHER_BLIZZARD[kind] then
+        file = WEATHER_ART .. name .. ".tga"
+        if c.infoWeatherIconStyle ~= 2 then
+            local icon = weatherIcons[kind]
+            if icon == nil then
+                local _, _, texture = C_PetBattles.GetAbilityInfoByID(WEATHER_BLIZZARD[kind])
+                icon = NS.Finite(texture) and texture > 0 and texture or false
+                weatherIcons[kind] = icon
+            end
+            -- Missing client artwork keeps the correct Suite weather symbol.
+            if icon then file = icon end
+        end
+    end
+    return c.infoWeatherDisplay == 2 and "" or label, label, file
+end
+
+-- Weather artwork is a native Texture, never FontString escape markup: the
+-- live icon-only field previously displayed the literal |T texture string.
+-- Runtime and preview share the same left/center/right content placement.
+function Style.LayoutWeather(entry, c, text, scale)
+    scale = scale or 1
+    local label, icon, button = entry.label, entry.icon, entry.button
+    local iconSize = entry.weatherTexture and math.max(1, math.floor((c.infoWeatherIconSize or 24) * scale + .5)) or 0
+    local hasText = text ~= ""
+    local gap = iconSize > 0 and hasText and 4 * scale or 0
+    local available = button:GetWidth()
+    -- Measure the full new name before clipping it to the configured field;
+    -- a longer weather name must not inherit the previous label's width.
+    local measured = label:GetUnboundedStringWidth()
+    if not NS.Finite(measured) or measured <= 0 then measured = #text * (c.infoWeatherSize or 12) * scale * .62 end
+    local textWidth = hasText and math.min(math.max(1, available - iconSize - gap), measured) or 0
+    local width = iconSize + gap + textWidth
+    local x = entry.justify == "LEFT" and 0 or entry.justify == "RIGHT" and available - width or (available - width) / 2
+    icon:ClearAllPoints()
+    icon:SetPoint("LEFT", button, "LEFT", x, 0)
+    icon:SetSize(math.max(1, iconSize), math.max(1, iconSize))
+    icon:SetShown(iconSize > 0)
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", button, "LEFT", x + iconSize + gap, 0)
+    label:SetSize(math.max(1, textWidth), button:GetHeight())
+    label:SetJustifyH("LEFT")
+    label:SetShown(hasText)
+    entry.contentWidth = width
+end
+
 local function Texture(parent, layer, sub)
     return parent:CreateTexture(nil, layer, nil, sub)
 end

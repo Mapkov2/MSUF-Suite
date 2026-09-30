@@ -365,24 +365,6 @@ B.Add("cursorEffects", Choice("look", "MSUF style", 5,
     { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Custom" }),
     "cursor_effects", "Cursor highlight")
 
-B.Module("mapQuickSwitch", {
-    title = "Minimap specialization menu",
-    description = "A small minimap button for changing specialization and loot specialization.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "The specialization menu is available only in Retail" end
-        return true
-    end,
-})
-B.Section("mapQuickSwitch", "map_quick_switch", "Minimap specialization menu", {
-    Bool("showSpec", "Show specialization choices", true),
-    Bool("showLoot", "Show loot specialization choices", true),
-    Choice("corner", "Minimap corner", 1, { "Top right", "Top left", "Bottom right", "Bottom left" }),
-    Number("size", "Button size", 24, 18, 40),
-    Number("x", "Horizontal offset", 0, -100, 100),
-    Number("y", "Vertical offset", 0, -100, 100),
-})
-
 B.Module("mapLandingShortcuts", {
     title = "Expansion shortcuts",
     description = "Open expansion, Great Vault, Adventure Guide and map pages from a small menu by the minimap.",
@@ -841,7 +823,6 @@ NS.SuiteCatalog.skyriding.rules.speedMax.enableKey = "showSpeed"
 NS.SuiteCatalog.skyriding.rules.thrillSpeed.enableKey = "showSpeed"
 
 for _, entry in ipairs({
-    { "mapQuickSwitch", "map_quick_switch", "Minimap specialization menu" },
     { "mapLandingShortcuts", "expansion_shortcuts", "Expansion shortcuts" },
     { "combatStatsHUD", "secondary_stats", "Secondary stats" },
     { "combatPetStatus", "pet_status", "Pet status warning" },

@@ -17,8 +17,17 @@ do
     H.Enable(W, { captured = true, infoLocation = false, infoClock = false })
     W.Step()
     local entry = W.M.infoEntries.Weather
-    check(entry and entry.label.text == "Rain" and W.M.context.frame.events.WEATHER_CHANGED,
+    check(entry and entry.label.text == "Rain" and entry.icon.shown and entry.icon.width == 24
+        and entry.icon.texture == "Interface\\AddOns\\MSUF_Suite\\Media\\Weather\\Rain.tga"
+        and W.config.infoWeatherDisplay == 3 and W.config.infoWeatherIconStyle == 2
+        and W.M.context.frame.events.WEATHER_CHANGED,
         "Forever weather did not appear or subscribe")
+    local setText = entry.label.SetText
+    function entry.label:SetText(text)
+        check(not text:find("|T", 1, true), "weather textures must never depend on font escape parsing")
+        return setText(self, text)
+    end
+    assert(S.Set("minimap", "infoWeatherDisplay", 1))
     local initial = reads
     W.Advance(30)
     check(reads == initial and W.Pending() == 0, "weather polled without an event")
@@ -34,10 +43,79 @@ do
     check(entry.label.text == "Clear" and reads == hiddenReads + 1, "visible weather stayed stale")
     kind = 99; W.Event("WEATHER_CHANGED")
     check(entry.label.text == "--", "unknown weather was presented as known")
+
+    -- Both artwork sets follow every known state, without extra timers. Icon-only
+    -- entries keep a readable tooltip and reserve room for large icon sizes.
+    assert(S.SetMany("minimap", { infoWeatherDisplay = 2, infoWeatherIconSize = 48, infoWeatherBox = 2 }))
+    local native = { [0] = 900403, [1] = 900229, [2] = 900205, [3] = 900454 }
+    local names = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm" }
+    for style = 1, 2 do
+        assert(S.Set("minimap", "infoWeatherIconStyle", style))
+        for value = 0, 3 do
+            kind = value; W.Event("WEATHER_CHANGED")
+            local path = style == 1 and native[value]
+                or "Interface\\AddOns\\MSUF_Suite\\Media\\Weather\\" .. names[value] .. ".tga"
+            check(entry.label.text == "" and not entry.label.shown and entry.icon.shown
+                and entry.icon.texture == path and entry.icon.width == 48 and entry.icon.height == 48,
+                "icon-only weather must use a native texture with no text")
+            W.Fire(entry.button, "OnEnter")
+            check(W.G.GameTooltip.lines[2] == names[value], "icon-only weather lost its tooltip name")
+        end
+    end
+    check(entry.button.width == 48 and entry.button.height == 56 and entry.box.height == 52,
+        "large weather icon was clipped by text-sized geometry")
+    W.Step()
+    check(W.MM.catcher.points[2][5] == -(56 - W.config.infoWeatherY + W.MM.BorderWidth()),
+        "mouseover area did not cover the full weather icon below the map")
+    check(W.calls.weatherIcon == 4, "native weather icons must resolve only once per weather type")
+    kind = 4; W.Event("WEATHER_CHANGED")
+    check(entry.icon.texture:find("INV_Misc_QuestionMark", 1, true) and entry.tooltipText == "Other weather",
+        "miscellaneous weather must retain a distinct fallback")
+    for _, value in ipairs({ 99, "Rain", false, W.secret, math.huge }) do
+        kind = value; W.Event("WEATHER_CHANGED")
+        check(entry.label.text == "--" and entry.label.shown and not entry.icon.shown and entry.tooltipText == "--",
+            "invalid weather reused a stale icon or tooltip")
+    end
+    kind = nil; W.Event("WEATHER_CHANGED")
+    check(entry.label.text == "--", "missing weather must stay unknown")
+    kind = 1; W.Event("WEATHER_CHANGED")
+    local writes, iconReads = entry.label.textWrites, reads
+    W.Event("WEATHER_CHANGED")
+    check(entry.label.textWrites == writes and reads == iconReads + 1, "unchanged icon rewrote the font string")
+    W.Advance(30)
+    check(reads == iconReads + 1 and W.Pending() == 0, "weather icons introduced polling")
+    assert(S.Set("minimap", "visibility", 5))
+    local hiddenIconReads = reads
+    kind = 2; W.Event("WEATHER_CHANGED")
+    check(reads == hiddenIconReads, "hidden icon still queried the weather API")
+    assert(S.Set("minimap", "visibility", 1))
+    check(entry.icon.texture:find("Snow.tga", 1, true) and entry.icon.shown and entry.tooltipText == "Snow",
+        "shown icon did not pick up the weather change")
+    assert(S.Set("minimap", "infoWeatherDisplay", 3))
+    check(entry.label.text == "Snow" and entry.label.shown and entry.icon.shown,
+        "icon and text did not return after an icon-only switch")
+    for _, anchor in ipairs({ 1, 2, 3 }) do
+        assert(S.Set("minimap", "infoWeatherAnchor", anchor))
+        local x = entry.icon.points[1][4]
+        local expected = anchor == 1 and 0 or anchor == 3 and entry.button.width - entry.contentWidth
+            or (entry.button.width - entry.contentWidth) / 2
+        check(x == expected and entry.label.points[1][4] == x + 48 + 4,
+            "native weather icon and text do not share the selected alignment")
+    end
+    for rendering = 1, 3 do
+        assert(S.SetMany("minimap", { infoWeatherDisplay = 2, infoWeatherIconSize = 64, infoWeatherRendering = rendering }))
+        check(entry.icon.width == 64 and entry.icon.shown and not entry.label.shown and entry.contentWidth == 64,
+            "icon-only layout must be independent of Smooth, Sharp and Slug text rendering")
+    end
+    assert(S.Set("minimap", "infoWeatherDisplay", 1))
+    check(entry.label.text == "Snow" and entry.label.shown and not entry.icon.shown
+        and entry.button.height == 20 and entry.box.height == 16,
+        "text-only mode did not restore the original text geometry")
     assert(S.Set("minimap", "infoWeather", false))
     check(not W.M.context.frame.events.WEATHER_CHANGED, "weather event remained after disabling")
     local retail = H.New(root, "Mainline")
-    check(retail.config.infoWeather == false and not retail.S.CanShowMinimapInfo("Weather"),
+    check(retail.config.infoWeather == false and retail.config.infoWeatherIconStyle == 1
+        and not retail.S.CanShowMinimapInfo("Weather"),
         "non-Forever weather should stay off without the API")
     print("Minimap Forever weather: default, event updates, visibility and API gate passed")
 end
@@ -161,6 +239,14 @@ do
     local box = clock.box
     check(box and box.shown and box.layer == "BACKGROUND" and math.abs(box.color[1] - 0x33 / 255) < 1e-6, "text box colour")
     check(box.width == #clock.label.text * 6 + 8 and box.points[1][1] == "CENTER", "text box follows the text")
+    assert(S.SetMany("minimap", { infoClockBox = 3, infoClockBoxColor = "123456" }))
+    check(box.shown and math.abs(box.color[1] - 0x12 / 255) < 1e-6
+        and math.abs(box.color[2] - 0x34 / 255) < 1e-6 and math.abs(box.color[3] - 0x56 / 255) < 1e-6,
+        "custom text background did not reach the live box")
+    assert(S.Set("minimap", "borderColor", "ff0000"))
+    check(math.abs(box.color[1] - 0x12 / 255) < 1e-6, "border color overwrote the custom text background")
+    assert(S.Set("minimap", "infoClockBox", 2))
+    check(box.color[1] == 1 and box.color[2] == 0, "legacy border-color box did not remain selectable")
     assert(S.Set("minimap", "infoClockBox", 1))
     check(not box.shown, "box not removed")
     -- Clicks never run in combat; the location click is optional.

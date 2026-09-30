@@ -10,7 +10,7 @@ local H = {}
 
 -- Runtime files in load order across the shared and minimap AddOns.
 H.MODULES = { "Bootstrap", "Host", "Input", "Elements", "Drawer",
-    "Info", "Tooltips", "Controller" }
+    "Info", "Tooltips", "Specialization", "Controller" }
 
 function H.New(root, client, options)
     options = options or {}
@@ -341,6 +341,10 @@ function H.New(root, client, options)
     G.SlashCmdList = {}
     G.issecretvalue = function(value) return value == W.secret end
     W.secret = setmetatable({}, { __lt = function() error("secret comparison") end, __le = function() error("secret comparison") end })
+    G.C_PetBattles = { GetAbilityInfoByID = function(id)
+        Count("weatherIcon")
+        return id, "Weather", 900000 + id
+    end }
     G.hooksecurefunc = function(target, name, hook)
         if type(target) == "string" then target, name, hook = G, target, name end
         local original = target[name]

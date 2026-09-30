@@ -387,6 +387,7 @@ local MIGRATIONS = {
     { run = NameplateNativeCastOpacity },
     { run = FriendlyPlayerDisplay },
     { run = NS.CenterDefaultDataTexts },
+    { run = NS.MigrateMinimapSpecialization },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {

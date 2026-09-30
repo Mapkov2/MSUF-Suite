@@ -27,6 +27,10 @@ local ICONS = {
     { "drawer", "Addon drawer", "addons", "collectButtons", "addons", nil, "Interface\\Buttons\\UI-OptionsButton" },
 }
 local ICON_KEYS = {}
+if not Suite.Client.isForever then
+    ICONS[#ICONS + 1] = { "specialization", "Minimap specialization menu", "specialization", "specButton",
+        "specialization", nil, "Interface\\Icons\\INV_Misc_QuestionMark" }
+end
 for _, spec in ipairs(ICONS) do ICON_KEYS[spec[1]] = true end
 local LAYERS = {
     { "map", "Map" }, { "border", "Border" }, { "ornament", "Artwork" }, { "glow", "Glow" },
@@ -35,6 +39,7 @@ local LAYERS = {
     { "addons", "Addons" }, { "guides", "Guides" }, { "hidden", "Hidden" },
 }
 local ORNAMENT_EDGES = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
+if not Suite.Client.isForever then table.insert(LAYERS, #LAYERS - 1, { "specialization", "Specialization" }) end
 
 local function Clamp(value, low, high) return math.max(low, math.min(high, value)) end
 -- Secret-safe readers from MSUF_Suite (always loaded, also without the runtime).
@@ -44,6 +49,9 @@ local PlayerClassColor = P.MinimapPlayerClassRGB
 
 ------------------------------------------------------------------ samples and native art
 local function Sample(name, config)
+    if name == "Weather" then
+        return Suite.MinimapStyle.WeatherContent(config, 0)
+    end
     if name == "Clock" then
         local hour, minute = GetGameTime()
         if PublicNumber(hour) and PublicNumber(minute) then
@@ -185,6 +193,7 @@ local function OffsetPrefix(key)
     if not key then return nil end
     if key:find("^info") then return key end
     if key == "folio" then return "landing" end
+    if key == "specialization" then return "spec" end
     if key == "difficulty" then return "difficultyButton" end
     if key == "drawer" or key == "zoomIn" or key == "zoomOut" then return key end
     if key == "ornament" or key:find("^ornament_") then return "style" end
@@ -211,26 +220,44 @@ local function PaintText(ui, config, item)
     P.StylePreviewFont(item.label, path, math.max(8, size * scale), OUTLINES[config[prefix .. "Outline"]] or "OUTLINE",
         config[prefix .. "Rendering"], config[prefix .. "Shadow"],
         config[prefix .. "ShadowOpacity"], config[prefix .. "ShadowDistance"])
-    local sample = Sample(name, config)
+    local sample, _, texture = Sample(name, config)
     item.label:SetText(sample)
     -- The hit area hugs the rendered text, up to the configured field width.
-    local configuredWidth = math.max(24, (config[prefix .. "Width"] or 100) * scale)
+    local contentHeight = name == "Weather" and Suite.MinimapStyle.WeatherHeight(config) or size
+    local fieldWidth = config[prefix .. "Width"] or 100
+    if name == "Weather" and config.infoWeatherDisplay ~= 1 then
+        local iconSize = config.infoWeatherIconSize or 24
+        fieldWidth = config.infoWeatherDisplay == 2 and iconSize or math.max(fieldWidth, iconSize + 8)
+    end
+    local configuredWidth = math.max(24, fieldWidth * scale)
     -- A font that has not loaded yet measures 0: estimate from the text.
     local measured = item.label:GetStringWidth()
     if measured <= 0 then
         measured = #sample * size * scale * 0.62
     end
+    if name == "Weather" and texture then
+        measured = measured + (config.infoWeatherIconSize or 24) * scale + (sample ~= "" and 4 * scale or 0)
+    end
     local hitWidth = math.min(configuredWidth, math.max(24, measured + 8))
-    button:SetSize(hitWidth, math.max(18, (size + 8) * scale))
+    button:SetSize(hitWidth, math.max(18, (contentHeight + 8) * scale))
     item.box:SetWidth(hitWidth)
+    if name == "Weather" then item.box:SetHeight((contentHeight + 4) * scale) end
     local justify = TextPosition(button, ui.map, config[prefix .. "Anchor"], config[prefix .. "X"] or 0,
         config[prefix .. "Y"] or 0, scale, (config.borderSize or 0) * scale)
     item.label:SetJustifyH(justify)
+    if name == "Weather" then
+        if item.weatherTexture ~= texture then item.icon:SetTexture(texture) end
+        item.weatherTexture, item.justify = texture, justify
+        Suite.MinimapStyle.LayoutWeather(item, config, sample, scale)
+        item.box:SetWidth(math.max(contentHeight * scale, item.contentWidth + 8 * scale))
+    end
     local r, g, b = P.RGB(config[prefix .. "Color"] or "ffffff")
     if config[prefix .. "ClassColor"] then r, g, b = PlayerClassColor(r, g, b) end
     item.label:SetTextColor(r or 1, g or 1, b or 1)
-    local boxed = name ~= "Difficulty" and config[prefix .. "Box"] == 2
+    local boxMode = config[prefix .. "Box"]
+    local boxed = name ~= "Difficulty" and (boxMode == 2 or boxMode == 3)
     local br, bg, bb = P.RGB(config.borderColor)
+    if boxMode == 3 then br, bg, bb = P.RGB(config[prefix .. "BoxColor"]) end
     Tint(item.box, br, bg, bb, 0.85)
     item.box:SetShown(boxed or ui.state.selected and ui.state.selected.key == prefix)
     button:SetAlpha(on and 1 or 0.38)
@@ -241,6 +268,7 @@ end
 -- S.Minimap* come with the minimap addon; before it loads, the settings decide.
 local function IconWanted(config, spec)
     local key = spec[1]
+    if key == "specialization" then return config.specButton and (config.specShowSpec or config.specShowLoot) end
     if key == "difficulty" then
         local wanted = config.showDifficulty and not config.infoDifficulty
         if S.MinimapElementAvailable then wanted = wanted and S.MinimapElementAvailable("Difficulty") end
@@ -323,7 +351,21 @@ local function PaintIcons(ui, config)
         button:SetShown(ui.LayerOn(spec[5]) and (wanted or ui.LayerOn("hidden")))
         button:SetAlpha(wanted and 1 or 0.38)
         button:SetSize(size, size)
-        if key == "folio" then
+        if key == "specialization" then
+            local corner = Suite.MinimapSpecCorners[config.specCorner] or Suite.MinimapSpecCorners[1]
+            local buttonSize = (config.specSize or 24) * scale
+            button:SetSize(buttonSize, buttonSize)
+            button:ClearAllPoints()
+            button:SetPoint(corner[1], ui.map, corner[2], (corner[3] + (config.specX or 0)) * scale,
+                (corner[4] + (config.specY or 0)) * scale)
+            local index = C_SpecializationInfo.GetSpecialization()
+            local icon
+            if PublicNumber(index) and index > 0 then
+                local _, _, _, texture = C_SpecializationInfo.GetSpecializationInfo(index)
+                if PublicNumber(texture) then icon = texture end
+            end
+            button.previewIcon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        elseif key == "folio" then
             PaintFolio(ui, config, button, size)
         elseif key == "difficulty" then
             PaintDifficulty(ui, config, item, size)

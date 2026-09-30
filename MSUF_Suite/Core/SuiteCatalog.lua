@@ -54,7 +54,6 @@ local moduleAddons = {
     professionAppearance = "MSUF_Suite_QualityOfLife",
     lootToastFilter = "MSUF_Suite_QualityOfLife",
     cursorEffects = "MSUF_Suite_QualityOfLife",
-    mapQuickSwitch = "MSUF_Suite_QualityOfLife",
     mapLandingShortcuts = "MSUF_Suite_QualityOfLife",
     combatStatsHUD = "MSUF_Suite_QualityOfLife",
     combatPetStatus = "MSUF_Suite_QualityOfLife",

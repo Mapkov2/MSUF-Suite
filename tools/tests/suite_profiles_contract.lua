@@ -52,6 +52,34 @@ Support.Load(root, "MSUF_Suite", Suite, "Core/Profiles.lua")
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
 local P, DB, IO = Suite.SuiteProfiles, Suite.Database, Suite.ProfileIO
+do
+    local old = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision - 1, modules = {
+        minimap = { enabled = false, size = 244 },
+        mapQuickSwitch = { enabled = true, showSpec = false, showLoot = true, corner = 1, size = 32, x = 21, y = -12 },
+    } } }
+    local clean = assert(IO.PrepareTable(old, false))
+    local config = clean.suite.modules.minimap
+    assert(config.specButton and not config.specShowSpec and config.specShowLoot and config.specCorner == 2
+        and config.specSize == 32 and config.specX == 21 and config.specY == -12,
+        "legacy full-profile import must migrate every specialization setting")
+    assert(not config.enabled and config.size == 244 and not clean.suite.modules.mapQuickSwitch,
+        "migration must preserve the minimap's layout and enabled choice and retire QoL ownership")
+    assert(old.suite.modules.mapQuickSwitch and not old.suite.modules.minimap.specButton,
+        "import preparation must not mutate its source")
+    Suite.Suite.Normalize(old)
+    old.suite.modules.minimap.specX = 8
+    Suite.Suite.Normalize(old)
+    assert(old.suite.modules.minimap.specX == 8 and not old.suite.modules.mapQuickSwitch,
+        "migration must run only once")
+    local encoded = MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 2, module = "mapQuickSwitch",
+        revision = Suite.Suite.MigrationRevision - 1,
+        settings = { enabled = true, showSpec = true, showLoot = false, corner = 4, size = 28, x = 5, y = 6 },
+    }, "MSUF3")
+    local id, settings = IO.PrepareModuleProfile("MSUFM2:" .. encoded)
+    assert(id == "minimap" and settings.specButton and settings.specCorner == 3 and settings.specSize == 28
+        and settings.specX == 5 and not settings.specShowLoot and settings.enabled == nil and settings.size == nil,
+        "old helper-only imports must change only specialization, never reset the minimap")
+end
 Suite.DB.suite.modules.qol.repair = true
 Suite.DB.suite.modules.combatLog.enabled = true
 Suite.DB.suite.modules.minimap.enabled = true

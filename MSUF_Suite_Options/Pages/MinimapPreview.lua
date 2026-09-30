@@ -16,7 +16,7 @@ local OffsetPrefix, OffsetKeys, PaintElements = Data.OffsetPrefix, Data.OffsetKe
 -- Right-clicking a layer chip opens the accordion that styles it.
 local LAYER_SECTIONS = { map = "layout", border = "shape", shadow = "shape", ornament = "style_art",
     glow = "style_glow", backdrop = "style_backdrop", text = "info_colors", blizzard = "elements",
-    folio = "landing", addons = "addons" }
+    folio = "landing", addons = "addons", specialization = "specialization" }
 ------------------------------------------------------------------ offsets
 local function WriteOffsets(key, x, y)
     if P.Combat() then return false end
@@ -350,7 +350,8 @@ local function BuildTextTargets(ui)
         -- cannot steal FPS/latency clicks, or be stolen by their wide fields.
         if name == "Location" then button:SetFrameLevel(canvasLevel + 7) end
         MakeDraggable(button, "offset", key)
-        ui.textItems[#ui.textItems + 1] = { spec = spec, button = button, box = box, label = label }
+        local icon = name == "Weather" and button:CreateTexture(nil, "ARTWORK") or nil
+        ui.textItems[#ui.textItems + 1] = { spec = spec, button = button, box = box, label = label, icon = icon }
     end
 end
 
