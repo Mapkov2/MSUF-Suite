@@ -18,6 +18,7 @@ TooltipDataProcessor = { AddTooltipPostCall = function(kind, callback)
 end }
 function tooltip:IsShown() return self.shown end
 function tooltip:IsProtected() return self.protected end
+function tooltip:GetOwner() return self.owner end
 function tooltip:IsTooltipType(kind)
     if self.tooltipType == "secret" then return "secret" end
     return self.tooltipType == kind
@@ -83,6 +84,32 @@ assert(not tooltip.shown and tooltip.hides == 4, "spell tooltip was not hidden")
 tooltip.shown, tooltip.tooltipType = true, Enum.TooltipDataType.Unit
 typeCallbacks[3](tooltip)
 assert(not tooltip.shown and tooltip.hides == 5, "unit tooltip was not hidden")
+-- The shared GameTooltip also renders MSUF unit/group frame tooltips.
+-- Their own Always/OOC/Modifier/Never setting must win over every QoL rule.
+tooltip._msufUnitTooltipOwner = {}
+module.config.inCombat, module.config.inInstances = true, true
+combat, instance, tooltip.shown = true, true, true
+module:Refresh()
+tooltip.onShow()
+typeCallbacks[3](tooltip)
+context.events.PLAYER_REGEN_DISABLED()
+context.events.PLAYER_ENTERING_WORLD()
+assert(tooltip.shown and tooltip.hides == 5, "QoL overrode MSUF unitframe tooltip visibility")
+tooltip._msufUnitTooltipOwner = nil
+tooltip.onShow()
+assert(not tooltip.shown and tooltip.hides == 6, "QoL did not resume after MSUF released the tooltip")
+-- Clickable aura reminders use GameTooltip for their configured item/spell,
+-- while ordinary native auras use the separate AuraButtonTooltip.
+tooltip.owner = { _msufA3CastTooltip = true }
+tooltip.shown = true
+tooltip.onShow()
+assert(tooltip.shown, "QoL hid an MSUF aura reminder with its own tooltip switch")
+tooltip.owner = {}
+tooltip.onShow()
+assert(not tooltip.shown, "aura reminder exemption leaked to another owner")
+tooltip.shown, tooltip.owner._msufA3CastTooltip = true, "secret"
+tooltip.onShow()
+assert(not tooltip.shown, "a restricted owner field exempted a foreign tooltip")
 module.active = false
 tooltip.shown = true
 tooltip.onShow()

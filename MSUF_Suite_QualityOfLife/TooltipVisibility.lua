@@ -13,6 +13,16 @@ local function MatchesType(tooltip, tooltipType)
 end
 
 local function ShouldHide(tooltip)
+    -- GameTooltip is shared. MSUF's own unit/group visibility mode owns it
+    -- until MSUF clears this marker on hide or the next SetOwner call.
+    if tooltip._msufUnitTooltipOwner ~= nil then return false end
+    -- Clickable aura reminders are the exception to native AuraButtonTooltip:
+    -- their item/spell tooltip shares GameTooltip but has its own lane switch.
+    local owner = tooltip:GetOwner()
+    if S.Public(owner) and owner and not NS.Safety.IsForbidden(owner) then
+        local reminderTooltip = owner._msufA3CastTooltip
+        if S.Public(reminderTooltip) and reminderTooltip == true then return false end
+    end
     if M.config.inCombat and NS.IsCombatLocked() then return true end
     if M.config.inInstances then
         local inInstance = IsInInstance()
