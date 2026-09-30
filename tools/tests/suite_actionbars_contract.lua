@@ -78,6 +78,15 @@ local function Visible(frame)
     end
     return true
 end
+local function EffectiveAlpha(region)
+    local alpha=region.alpha
+    local parent=region.parent
+    while parent do
+        alpha=alpha*parent.alpha
+        parent=parent.parent
+    end
+    return alpha
+end
 local function Fire(frame,script,...)
     local handler=frame.scripts[script]
     if handler then handler(frame,...) end
@@ -333,7 +342,15 @@ local function ActionRegions(frame)
     for _,key in ipairs({"icon","IconMask","NormalTexture","PushedTexture","HighlightTexture","CheckedTexture","SlotArt","SlotBackground",
         "Flash","Border","NewActionTexture","SpellHighlightTexture"}) do frame[key]=NewRegion("Texture",frame) end
     frame.HighlightTexture.atlas="UI-HUD-ActionBar-IconFrame-Mouseover"
-    for _,key in ipairs({"Count","HotKey","Name"}) do frame[key]=NewRegion("FontString",frame) end
+    -- Mainline/ActionButtonTemplate.xml puts counts and keys on a child
+    -- overlay; its OnLoad also exposes those regions on the action button.
+    local overlay=NewFrame("Frame",nil,frame)
+    frame.TextOverlayContainer=overlay
+    for _,key in ipairs({"Count","HotKey"}) do
+        overlay[key]=NewRegion("FontString",overlay)
+        frame[key]=overlay[key]
+    end
+    frame.Name=NewRegion("FontString",frame)
     for _,key in ipairs({"cooldown","chargeCooldown","lossOfControlCooldown"}) do frame[key]=NewFrame("Cooldown",nil,frame) end
 end
 TEMPLATES.ActionButtonTemplate=function(frame)
@@ -686,7 +703,7 @@ MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() re
 SlashCmdList={}
 MSUF_PixelLayoutRegion=function(frame) return frame end
 for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings",
-    "Catalog/DataTexts","Suite"}) do
+    "Catalog/DataTexts","NameplateStyle","Suite"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
@@ -801,6 +818,34 @@ pickupModifier = "ALT"
 M:Refresh()
 assert(pickupModifier == "ALT" and pickupWrites == 1,
     "returning to Blizzard's setting must stop overriding external changes")
+
+-- Zero fade must fully hide stack text, including native child overlays,
+-- while the header keeps its nonzero Forever hover hit target. Hover still
+-- reveals the bar in combat and count repaints must not undo the fade.
+Suite.Client.isForever=true
+for _,index in ipairs({1,2,9}) do
+    local bar,button=Bar(index),Button(index,1).button
+    assert(bar.header.alpha==.01 and EffectiveAlpha(button.Count)==0,
+        "zero-opacity bar left stack text visible: "..index)
+    combat=true
+    Fire(button,"OnEnter",true)
+    assert(EffectiveAlpha(button.Count)==1,"hover did not restore stack text")
+    Fire(button,"OnLeave",true)
+    button.Count:SetAlpha(1)
+    assert(EffectiveAlpha(button.Count)==0,"count repaint escaped the bar fade")
+    combat=false
+end
+Suite.Client.isForever=false
+-- 0% and 1% share the header alpha, but only 0% hides the text overlay.
+assert(S.Set("actionbars","bar2FadeAlpha",1))
+assert(Bar(2).header.alpha==.01 and EffectiveAlpha(Button(2,1).button.Count)==.01,
+    "nonzero fade did not restore stack text at the configured opacity")
+assert(S.Set("actionbars","bar2FadeAlpha",0))
+assert(EffectiveAlpha(Button(2,1).button.Count)==0,"zero fade retained the text overlay")
+assert(S.Set("actionbars","bar2ClickThrough",true))
+assert(EffectiveAlpha(Button(2,1).button.Count)==0 and not Bar(2).header.mouse and Bar(2).header.motion,
+    "click-through changed zero fade or disabled hover motion")
+assert(S.Set("actionbars","bar2ClickThrough",false))
 
 if nativeReuse then
     assert(not Bar(1).native and not Bar(9).native and not Bar(10).native,

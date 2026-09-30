@@ -61,11 +61,22 @@ end
 function AB.UpdateAlpha(bar)
     local config, keys = M.config, bar.key
     local alpha = config[keys.Alpha] / 100
+    local textAlpha = 1
     if bar.header:GetAttribute("state-vis") == "fade" and not (S.editMode or AB.dragging or bar.hover
         or (config.mouseoverShowAll and AnyHover())) then
+        local fadeAlpha = config[keys.FadeAlpha] / 100
+        textAlpha = fadeAlpha == 0 and 0 or 1
         -- Zero-alpha secure frames do not reliably take hover in Forever.
-        -- One percent stays visually hidden but leaves a hit target.
-        alpha = math.max(0.01, config[keys.FadeAlpha] / 100)
+        -- Keep the hit target, but fully fade the template's separate text
+        -- overlay so count updates cannot leave ghost stack/key text.
+        alpha = math.max(0.01, fadeAlpha)
+    end
+    if bar.textAlpha ~= textAlpha then
+        bar.textAlpha = textAlpha
+        for i = 1, #bar.buttons do
+            local overlay = bar.buttons[i].button.TextOverlayContainer
+            if overlay then overlay:SetAlpha(textAlpha) end
+        end
     end
     if bar.alpha ~= alpha then
         bar.alpha = alpha
