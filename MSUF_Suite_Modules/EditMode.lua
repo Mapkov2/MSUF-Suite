@@ -201,8 +201,7 @@ local function Element(id, elementID, spec)
         end,
         extraControls = PopupControls(id, spec),
         openSettings = function()
-            S.Open(id)
-            return true
+            return S.Open(id)
         end,
     }
 end

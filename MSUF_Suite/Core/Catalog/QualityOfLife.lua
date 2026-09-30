@@ -53,7 +53,7 @@ B.Section("actionTracker", "action_tracker", "Recent actions", {
     Number("hideAfter", "Hide after inactivity (seconds; 0 = stay)", 15, 0, 60),
     Bool("showNames", "Show spell names", true),
     Bool("showChevron", "Show gold action markers", true),
-    B.Font("font", "Font (empty: MSUF global font)"),
+    B.Font("font", "Font"),
     Number("fontSize", "Spell name size", 12, 9, 20),
     Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
@@ -793,7 +793,7 @@ B.Section("skyriding", "flight_hud", "Skyriding HUD", {
     Number("y", "Vertical position", -145, -3000, 3000),
 })
 B.Section("skyriding", "flight_typography", "Text and bars", {
-    B.Font("font", "Font (empty: MSUF global font)"),
+    B.Font("font", "Font"),
     Number("fontSize", "Font size", 11, 9, 18),
     Choice("fontOutline", "Text outline", 1, { "None", "Outline", "Thick outline" }),
     Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),

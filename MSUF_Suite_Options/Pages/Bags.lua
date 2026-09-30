@@ -29,7 +29,7 @@ local function Build(ctx)
     })
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_window", Tr("Combined bag window"),
         P.SectionRules(ID, "window"), {
-            help = "Drag the title of an open bag to move it. Click the title for bag options. Each bag keeps its own position. Blizzard shows your current gold on the right; the optional Session value on the left shows the change since login and survives /reload. Adjust the combined bag size here or in its MSUF Edit Mode popup. Reset position in Edit Mode returns the window to Blizzard's normal anchor.",
+            help = P.Help("Drag the bag title to move it; click for options.", "Drag the title of an open bag to move it. Click the title for bag options. Each bag keeps its own position. Blizzard shows your current gold on the right; the optional Session value on the left shows the change since login and survives /reload. Adjust the combined bag size here or in its MSUF Edit Mode popup. Reset position in Edit Mode returns the window to Blizzard's normal anchor."),
         })
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_reagentWindow", Tr("Reagent bag window"),
         P.SectionRules(ID, "reagentWindow"), {

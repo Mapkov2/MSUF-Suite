@@ -596,7 +596,7 @@ current = ctx
 spec.build(ctx)
 assert(ctx.pageItems[1] == "fixed-preview", "the docked preview must be the first page item")
 assert(ctx.sections[1].sectionId == PAGE .. "_cooldownManager_module" and ctx.sections[1].headerSwitch, "module card must follow the preview")
--- Navigation clicks never take Menu2's full settings snapshot. Frame Basics
+-- Navigation clicks never take Menu2's full settings snapshot. Basics
 -- is one block: the two module actions, the rules for every bar, then the
 -- bar choice (selector, + Add bar, Bar actions, name and type) and the
 -- selected bar's summary.
@@ -609,8 +609,8 @@ for _, child in ipairs(ctx.sections[1].children or {}) do
 end
 assert(cardButtons == 4 and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].parent == ctx.sections[1]
     and registered["menu2." .. PAGE .. ".cooldownManager.editor.actions"].parent == ctx.sections[1],
-    "Frame Basics must hold the two module actions, + Add bar and Bar actions")
-assert(ctx.sections[1].title == "Frame Basics" and ctx.sections[1].defaultOpen, "Frame Basics comes first and open")
+    "Basics must hold the two module actions, + Add bar and Bar actions")
+assert(ctx.sections[1].title == "Basics" and ctx.sections[1].defaultOpen, "Basics comes first and open")
 for _, section in ipairs(ctx.sections) do
     for _, child in ipairs(section.children or {}) do
         if child.kind == "Button" and section ~= ctx.sections[1] then
@@ -635,7 +635,7 @@ assert(registered["menu2." .. PAGE .. ".cooldownManager.preview.bar.ess"] == ui.
     and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"], "preview and bar actions lack search metadata")
 
 -- Sections and coverage through template keys; the bar's name and type sit
--- in Frame Basics.
+-- in Basics.
 local suffixes = {}
 for _, suffix in ipairs(Page.CARD_SUFFIXES) do suffixes[suffix] = "card" end
 for _, section in ipairs(Page.SECTIONS) do
@@ -683,22 +683,22 @@ for key, rule in pairs(catalog.rules) do
 end
 assert(checked > 500, "coverage check is vacuous")
 local function Control(suffix) return assert(covered["msufsuite.cooldownManager." .. (CDM.KEYS.c1[suffix] or suffix)], suffix) end
--- The former General section lives in Frame Basics, each rule once: the two
+-- The former General section lives in Basics, each rule once: the two
 -- lists side by side, then the switches; the bar's name and type follow.
 assert(not registered["menu2." .. PAGE .. ".section.suite_cooldownManager_general.expanded"], "General is no section any more")
 for _, section in ipairs(ctx.sections) do
-    assert(section.sectionId ~= "suite_cooldownManager_general", "General must live in Frame Basics")
+    assert(section.sectionId ~= "suite_cooldownManager_general", "General must live in Basics")
 end
 local generalOrder = {}
 for i, key in ipairs({ "blizzard", "soundChannel", "showGCD", "muteSounds", "readyGlowCombat" }) do
     local control = Control(key)
     assert(control.parent == ctx.sections[1] and control.meta.sectionId == PAGE .. "_cooldownManager_module",
-        "Frame Basics lacks " .. key)
+        "Basics lacks " .. key)
     for index, widget in ipairs(ctx.widgets) do if widget == control then generalOrder[i] = index end end
 end
-for i = 2, #generalOrder do assert(generalOrder[i] > generalOrder[i - 1], "Frame Basics rules out of order") end
+for i = 2, #generalOrder do assert(generalOrder[i] > generalOrder[i - 1], "Basics rules out of order") end
 for _, suffix in ipairs(Page.CARD_SUFFIXES) do
-    assert(Control(suffix).parent == ctx.sections[1], "Frame Basics lacks the bar's " .. suffix)
+    assert(Control(suffix).parent == ctx.sections[1], "Basics lacks the bar's " .. suffix)
 end
 local kindList = Control("kind").row.values
 assert(kindList[1].text == "Cooldown bar" and kindList[2].text == "Buff icon bar" and kindList[3].text == "Timer bar",
@@ -742,7 +742,7 @@ for i, section in ipairs(ctx.sections) do
 end
 assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,layout,look,text,effects,buffs,barstyle,visibility",
     "unexpected section order: " .. table.concat(order, ","))
-assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only Frame Basics and Basics start open: "
+assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only Basics and Basics start open: "
     .. table.concat(openSections, ","))
 assert(ctx.sections[3].title == "Spell list", "the tile section is the Spell list")
 assert(ctx.sections[9].title == "Timer bar style", "the timer bar section says what it styles")
@@ -1977,7 +1977,7 @@ for i = 2, 6 do Config()["c" .. i .. "_name"] = "" end
 Config().c2_y = 0
 Page.ClearNote()
 
--- Bar actions, from a chip's right click or Frame Basics: show or hide,
+-- Bar actions, from a chip's right click or Basics: show or hide,
 -- rename, move, reset, delete, and the settings of another bar.
 M.RequestRefresh()
 local function BarMenu(owner, button)
@@ -2031,7 +2031,7 @@ assert(Config().uti_on, "showing a bar failed")
 focused = nil
 BarMenu(ui.chips.c1, "RightButton").onSelect("rename")
 assert(Page.selected == "c1" and focused == PAGE .. "_cooldownManager_module", "rename did not open the bar's name")
--- Delete, from Frame Basics: the slot is free again, the page moves on, Undo.
+-- Delete, from Basics: the slot is free again, the page moves on, Undo.
 local actionsButton = registered["menu2." .. PAGE .. ".cooldownManager.editor.actions"]
 local reusedLists = Lists()
 reusedLists.specs[62].c1 = { "s133" }
@@ -2091,7 +2091,7 @@ do
     assert(text._msuf2CollapsibleEntry.label.text == "Text: Buff bars", "the text switches apply to timer bars too")
     Config().enabled = false
     M.RequestRefresh()
-    assert(Note(ctx.sections[2]) == "Turn the cooldown manager on in Frame Basics to edit these.", "module off: " .. Note(ctx.sections[2]))
+    assert(Note(ctx.sections[2]) == "Turn the cooldown manager on in Basics to edit these.", "module off: " .. Note(ctx.sections[2]))
     Config().enabled = true
     Page.Select("ess")
     M.RequestRefresh()
@@ -2365,4 +2365,4 @@ for _, file in ipairs({ "CooldownManagerData", "CooldownManagerBars", "CooldownM
     handle:close()
     assert(names <= 140, file .. ".lua declares " .. names .. " top-level locals")
 end
-print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets and loops, Frame Basics with the module rules and the bar choice, Basics, Text rules, exactly-once coverage, tile memo, list edits with Undo, picker, popover (text rows, row help, header actions), preview editor (hover, click, middle-click, drag, +, samples, buff bars, marks, write memo), stack options, Track on, buff glow styles, Blizzard sounds, bar reuse with Undo, bar actions (copy, reset, hide, rename, delete), page reset with history, greyed reasons, preview drag, simulation, layouts, combat refusal, teardown and the runtime canvas contract passed")
+print("Suite cooldown manager options: registration, template coverage, selected-bar keys, name commits, attach targets and loops, Basics with the module rules and the bar choice, Basics, Text rules, exactly-once coverage, tile memo, list edits with Undo, picker, popover (text rows, row help, header actions), preview editor (hover, click, middle-click, drag, +, samples, buff bars, marks, write memo), stack options, Track on, buff glow styles, Blizzard sounds, bar reuse with Undo, bar actions (copy, reset, hide, rename, delete), page reset with history, greyed reasons, preview drag, simulation, layouts, combat refusal, teardown and the runtime canvas contract passed")

@@ -73,7 +73,7 @@ B.Section(id, "window", "Chat window", {
 B.Section(id, "tabs", "Tabs and accent", {
     B.Bool("tabPanel", "Dark tab strip", initial.tabPanel),
     B.Bool("tabAccent", "Underline chat tabs", initial.tabAccent),
-    B.Font("tabFont", "Font (empty: MSUF global font)"),
+    B.Font("tabFont", "Font"),
     B.Number("tabFontSize", "Font size", 0, 0, 24),
     B.Color("tabActiveColor", "Active tab text", initial.tabActiveColor),
     B.Color("tabInactiveColor", "Other tab text", initial.tabInactiveColor),
@@ -91,8 +91,8 @@ B.Section(id, "input", "Input line", {
     B.Number("inputAlpha", "Input opacity (percent)", initial.inputAlpha, 0, 100, 5),
 })
 B.Section(id, "text", "Message text", {
-    B.Number("fontSize", "Font size (0: follow Blizzard's chat size)", 0, 0, 24),
-    B.Font("font", "Message font (default: MSUF global font)"),
+    B.Number("fontSize", "Font size", 0, 0, 24),
+    B.Font("font", "Font"),
     B.Choice("fontOutline", "Text outline", 1, { "Follow Blizzard", "Outline", "Thick outline", "None" }),
     B.Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
     B.Choice("fontShadow", "Text shadow", 1, { "Follow Blizzard", "On", "Off" }),

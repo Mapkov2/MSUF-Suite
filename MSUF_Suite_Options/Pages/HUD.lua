@@ -45,7 +45,7 @@ local function Build(ctx)
     if raidRules and #raidRules > 0 then
         P.RuleSection(ctx, b, PAGE, "objectives", "suite_hud_objectives_raid",
             Tr("Raid encounters"), raidRules, {
-                help = "During a raid encounter, show the boss name, pull time, active boss units, best wipe progress and fastest kill. DBM or BigWigs can supply phases of the same boss; without them, the phase stays unknown. Multi-boss progress counts defeated bosses before comparing the remaining health of surviving bosses. Records begin with pulls observed by this Suite profile. Boss health appears live only when the client exposes a readable value. This view uses the Objective Tracker position and replaces ordinary objectives while inside a raid.",
+                help = P.Help("Track raid attempts, best progress and fastest kills.", "During a raid encounter, show the boss name, pull time, active boss units, best wipe progress and fastest kill. DBM or BigWigs can supply phases of the same boss; without them, the phase stays unknown. Multi-boss progress counts defeated bosses before comparing the remaining health of surviving bosses. Records begin with pulls observed by this Suite profile. Boss health appears live only when the client exposes a readable value. This view uses the Objective Tracker position and replaces ordinary objectives while inside a raid."),
             })
     end
     P.RuleSection(ctx, b, PAGE, "objectives", "suite_hud_objectives_layout",

@@ -19,7 +19,7 @@ function NS.CenterDefaultDataTexts(modules)
         data.bar1Point = 8
     end
 end
--- The same player-state choices as the unit-frame Load Conditions. Every bar
+-- The same player-state choices as the unit-frame Visibility. Every bar
 -- owns its settings so one information strip can stay visible independently.
 NS.DataTextLoadConditions = {
     { "HideInHousing", "Housing" },
@@ -190,7 +190,7 @@ for bar = 1, 3 do
     for _, condition in ipairs(NS.DataTextLoadConditions) do
         local rule = Bool(prefix .. "LoadCond" .. condition[1], condition[2], false)
         rule.enableKey = prefix .. "Enabled"
-        B.Add("dataTexts", rule, prefix .. "Load", NS.Text("Bar %d Load Conditions"):format(bar))
+        B.Add("dataTexts", rule, prefix .. "Load", NS.Text("Bar %d Visibility"):format(bar))
     end
     AddBarStyle(bar)
 end

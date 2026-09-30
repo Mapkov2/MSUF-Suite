@@ -12,7 +12,7 @@ local HELP = {
     merchant_level = "Shows item levels on merchant equipment when Blizzard has loaded its item data. Buyback items and items without an item level stay unchanged.",
     vault_spec = "Shows the current loot specialization when you open the Great Vault. Updates if you change loot specialization while the window is open.",
     tooltip_ids = "Hold Alt while hovering an item, spell, creature, quest, currency or temporary weapon enchant to see its ID. Spell icon IDs and Blizzard's account character currency data are optional. No ID or quantity appears when the client keeps it private.",
-    tooltip_visibility = "Hide Blizzard's main tooltip in combat, in instances, or for selected item, spell and unit tooltips. Other tooltips keep their native behavior. Each choice works independently. A protected tooltip may remain visible during combat.",
+    tooltip_visibility = "Hide Blizzard's main tooltip in combat, in instances, or for selected item, spell and unit tooltips. MSUF unit and group frame tooltips keep their own visibility settings; aura tooltips keep their Show Tooltip switches. Each choice works independently. A protected tooltip may remain visible during combat.",
     item_counts = "Shows the number you own, including your bank and Warband bank, when the item tooltip has a public item ID. Optionally separate storage locations. Empty counts are omitted.",
     socket_gems = "Lists carried gem types beside Blizzard's socket window. Inspect each gem with its normal bag tooltip and confirm compatibility in the native socket window before applying it.",
     copy_spell_id = "Hover a spell and type /msufcopyspell to select its public ID in a small edit box. Press Ctrl+C to copy it. You can also pass an ID to the command. No clipboard action runs automatically.",
@@ -27,13 +27,13 @@ local HELP = {
     guild_privacy = "Type /msufguildprivacy or use the small ON/OFF button above the main chat window. Any chat window containing Guild or Officer is covered in full, including other channels in a mixed window. Click a cover to reveal the windows again. Messages keep arriving underneath.",
     ui_error_filter = "Hide only the selected error types. Blizzard keeps handling all other messages and their sounds. Each choice remembers and restores its previous display state when you turn it off.",
     cursor_effects = "The ring follows your pointer and may show a short trail, your global cooldown or current cast. The position callback runs only while the ring is visible; native cooldown widgets animate without a Lua timer.",
-    map_quick_switch = "Click the minimap button for Blizzard's specialization and loot specialization choices. Choices are disabled in combat and the button hides when both menus are turned off.",
     expansion_shortcuts = "An adjacent button opens a small menu for expansion, Great Vault, Adventure Guide and world map pages. Blizzard's landing button keeps its own click behavior. Menu actions are disabled in combat.",
     secondary_stats = "Show critical strike, haste, mastery and versatility in a compact strip. MSUF Edit Mode moves it. Hidden or restricted values show a dash; changing stats update from player events.",
     pet_status = "Warn when your pet is missing or dead. By default, the missing warning applies to Hunters and Warlocks; the dead warning applies to any class with a pet. MSUF Edit Mode moves the alert.",
     movement_cue = "Enter up to eight spell IDs for movement abilities. When movement begins, the first known, ready and usable spell appears briefly; a shared 20-second cooldown limits notices. Empty IDs do no work. MSUF Edit Mode moves the cue.",
     burning_rush_cue = "For Warlocks: show Burning Rush only while its aura is active in combat. Blizzard's native aura container follows the aura; Suite does not scan auras. MSUF Edit Mode shows a sample and moves the cue.",
     group_death_alert = "Reports the first observed death of each group member in your local chat during combat. Optionally include your own death. The listener is active only while you are grouped and in combat.",
+    release_protection = "Hold the selected key while clicking Release Spirit. The release button stays hidden until you hold it; resurrection and death recap remain available. Choose where to use the protection. Blizzard's automatic release timer is unchanged.",
     bloodlust_lockout = "Shows your own Bloodlust exhaustion while in a group, or a ready state if you prefer. Relevant player aura changes update it; MSUF Edit Mode moves it and previews the locked state.",
     group_finder_double_click = "Double-click a search result to open Blizzard's normal application dialog. Roles, note and final submission stay in Blizzard's dialog.",
     group_finder_applicant_sort = "Sort applicants for your own Mythic+ listing by their average member score, highest first. Ties keep Blizzard's order. If any score is missing or restricted, the native order remains. The closed list is untouched.",
@@ -91,6 +91,8 @@ local GROUPS = {
         sections = { "expansion_shortcuts" } },
     { id = "vaultSpec", title = "Great Vault loot spec (Retail)", switch = "enabled", sections = { "vault_spec" } },
     { id = "groupDeathAlert", title = "Group death alert", switch = "enabled", sections = { "group_death_alert" } },
+    { id = "releaseProtection", title = "Release spirit protection", switch = "enabled", sections = { "release_protection" },
+        keywords = { "freilassen", "releasen", "geist freilassen", "release schutz", "release-schutz", "anti release" } },
     { id = "groupFinderDoubleClick", title = "Group finder double-click (Retail)", switch = "enabled",
         sections = { "group_finder_double_click" } },
     { id = "groupFinderApplicantSort", title = "Mythic+ applicant score sorting (Retail)", switch = "enabled",
@@ -120,8 +122,6 @@ local GROUPS = {
     { id = "durabilityAlert", title = "Low durability warning", switch = "enabled",
         sections = { "durability_warning" } },
     { id = "merchantLevel", title = "Merchant item levels (Retail)", switch = "enabled", sections = { "merchant_level" } },
-    { id = "mapQuickSwitch", title = "Minimap specialization menu (Retail)", switch = "enabled",
-        sections = { "map_quick_switch" } },
     { id = "lootContainers", title = "Open new containers (Retail)", switch = "enabled",
         sections = { "open_containers" } },
     { id = "quests", title = "Quest helpers", switch = "enabled", sections = { "automation", "filters" } },
@@ -177,7 +177,7 @@ local CATEGORIES = {
     } },
     { id = "groupRaid", title = "Group & Raid", keys = {
         "battleRes.enabled", "groupBloodlust.enabled", "groupDeathAlert.enabled", "innervateCue.enabled",
-        "groupRaidShortcuts.enabled", "trustedPartyInvites.enabled",
+        "groupRaidShortcuts.enabled", "trustedPartyInvites.enabled", "releaseProtection.enabled",
     } },
     { id = "groupFinderMythic", title = "Group Finder & Mythic+", tabs = {
         { id = "groupFinder", title = "Group Finder", keys = {
@@ -193,7 +193,7 @@ local CATEGORIES = {
         "combatMovementCue.enabled", "combatPetStatus.enabled",
     } },
     { id = "mapTravel", title = "Map & Travel", keys = {
-        "mapLandingShortcuts.enabled", "mapQuickSwitch.enabled", "skyriding.enabled", "waypoints.enabled",
+        "mapLandingShortcuts.enabled", "skyriding.enabled", "waypoints.enabled",
     } },
     { id = "interfaceChat", title = "Interface & Chat", keys = {
         "cursorEffects.enabled", "guildChatPrivacy.enabled", "quietPopups.enabled", "uiErrorFilter.enabled",
@@ -315,6 +315,22 @@ local function FeatureSectionId(group)
     return PAGE .. "_" .. group.id .. "_" .. group.sections[1]
 end
 
+-- Edit Mode uses the same exact feature route as search. Resolve it after the
+-- page opens so lazy details and the selected subtab are ready before focus.
+function P.Suite.Menu.FocusQualityOfLifeModule(id)
+    local group = byKey[id .. ".enabled"]
+    -- Multi-feature modules such as loot/merchant helpers open the overview.
+    if not group then return true end
+    local entry = P.M.cache and P.M.cache[PAGE]
+    local resolve = entry and entry._msuf2ResolveMissingSection
+    local section = resolve and resolve(FeatureSectionId(group))
+    if not section then return false end
+    -- Anchor the existing menu navigation to the detail panel itself. Focusing
+    -- its collapsible entry would scroll to the category above the feature list.
+    local called, opened, focused = P.M.SearchBridge.OpenSearchTarget(PAGE, "", nil, section, {})
+    return called == true and opened == true and focused == true
+end
+
 local function FeatureRules(group)
     local sections, all = {}, {}
     for _, key in ipairs(group.sections) do
@@ -328,6 +344,7 @@ end
 
 local function FeatureKeywords(group)
     local words = { group.title, Tr(group.title), group.categoryTitle, Tr(group.categoryTitle) }
+    for _, word in ipairs(group.keywords or {}) do words[#words + 1] = word end
     if group.tabTitle then
         words[#words + 1], words[#words + 2] = group.tabTitle, Tr(group.tabTitle)
     end
@@ -510,9 +527,10 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
     end
     P.M.AddTooltip(row, Tr(group.title), help, { hook = true })
     P.M.TrackRefresh(ctx, function()
-        local available = S.Availability(group.id)
+        local available, reason = S.Availability(group.id)
         P.W.SetControlEnabled(toggle, not P.Combat())
-        label:SetText(Tr(group.title) .. (available and "" or Tr(" - Unavailable")))
+        local suffix = available and "" or (reason and (" - " .. P.Suite.StatusText(reason, Tr)) or Tr(" - Unavailable"))
+        label:SetText(Tr(group.title) .. suffix)
         PaintFeatureRow(row)
     end)
     return row, toggle, settings, meta.keywords

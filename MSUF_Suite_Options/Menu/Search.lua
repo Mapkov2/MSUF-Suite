@@ -154,7 +154,10 @@ local function RuleRow(page, spec, rule, template, feature, category)
     AddWords(keywords, spec.title)
     AddWords(keywords, rule.label)
     AddWords(keywords, rule.help)
-    if feature then AddWords(keywords, feature.title) end
+    if feature then
+        AddWords(keywords, feature.title)
+        for _, word in ipairs(feature.keywords or {}) do keywords[#keywords + 1] = word end
+    end
     if category then AddWords(keywords, category.title) end
     for _, choice in ipairs(rule.choices or {}) do AddWords(keywords, choice) end
     -- A rule without a section (the module switch) names its module when the
@@ -252,6 +255,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
             AddWords(keywords, category.title)
             AddWords(keywords, spec.title)
             AddWords(keywords, spec.description)
+            for _, word in ipairs(feature.keywords or {}) do keywords[#keywords + 1] = word end
             -- Color settings live in the feature's shortcut rather than as
             -- standalone widgets. Index their names on the exact feature row.
             local ruleRows, seen = {}, {}

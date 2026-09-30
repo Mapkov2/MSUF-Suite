@@ -91,7 +91,9 @@ end
 local function ChoiceValues(rule)
     if not rule._suiteMenuValues then
         local values = {}
-        for i = 1, #rule.choices do values[i] = { value = i, text = Tr(rule.choices[i]) } end
+        for i = 1, #rule.choices do
+            values[i] = { value = i, text = Tr(rule.choices[i]), icon = rule.choiceIcons and rule.choiceIcons[i] }
+        end
         rule._suiteMenuValues = values
     end
     return rule._suiteMenuValues
@@ -114,6 +116,34 @@ local function DecimalFormat(value)
     return tostring(value)
 end
 
+-- Only deliberate, useful values appear in a collapsed section. Priority is
+-- independent of grid order; offsets, shadows and technical rendering options
+-- stay inside the section. Numbered keys share one policy across selected scopes.
+local SUMMARY_KEYS = {
+    chat = "look fontSize tabFontSize tabAccent panelAlpha sidebarPanel sidebarWidth inputPanel inputAlpha copyMessages",
+    actionbars = "look barVisibility barButtons barRows barCooldownSize barKeybind barBackground barBackgroundAlpha pickupModifier cooldownNumbers rangeColoring iconZoom borderSize fontSize",
+    bags = "look windowScale windowMoved reagentWindowMoved showItemLevel itemLevelSize backgroundOpacity",
+    damageMeter = "look wType wSession windowCount visibility barHeight iconStyle leftSize rightSize bgAlpha headerHeight hoverTooltip tooltipRows timer combatTime",
+    dataTexts = "look barLook barWidth barHeight barVisibility barFontSize fontSize textAlign backgroundEnabled backgroundOpacity trackAltGold hideBlizzardBagBar",
+    minimap = "stylePreset size point hoverResize hoverWidth shape borderSize styleTexture styleScale styleGlow styleGlowAlpha styleBackdrop styleBackdropAlpha visibility rotate elementRow elementSize showLanding landingIcon collectButtons drawerColumns",
+    objectives = "width height entrySize objectiveSize colorStyle backgroundOpacity",
+    runSummary = "width scale titleSize detailSize autoHide colorStyle backgroundOpacity",
+    announcements = "duration anchor titleSize subtitleSize colorStyle backgroundOpacity",
+    buffReminders = "size columns remindBeforeMinutes instancesOnly point classBuff",
+    nameplates = "look nativeStyle nativeSize enemyTextMode enemyNameSize friendlyNamesOnly friendlyNameSize enemyAuraMode friendlyAuraMode personalPower",
+    skin = "theme.look theme.shellOpacity theme.panelOpacity geometry.family geometry.controlShape icons.windowActions.style theme.iconBorderStyle font.enabled font.face icons.microMenu.preset icons.microMenu.scale",
+}
+for id, keys in pairs(SUMMARY_KEYS) do
+    local ranks, rank = {}, 0
+    for key in keys:gmatch("%S+") do rank = rank + 1; ranks[key] = rank end
+    SUMMARY_KEYS[id] = ranks
+end
+
+function P.SummaryPriority(id, key)
+    local ranks = SUMMARY_KEYS[id]
+    return ranks and ranks[(key or ""):gsub("^bar%d+", "bar"):gsub("^w%d+", "w")]
+end
+
 -- One W.SettingsRows row for a catalog rule. `keyFn` maps the template key to
 -- the live key when shared controls edit the selected bar or window.
 function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
@@ -121,7 +151,8 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
     local function Key() return keyFn and keyFn(rule.key) or rule.key end
     local row = P.Meta(pageKey, id, rule.key, "setting", sectionId)
     row.id, row.label = rule.key, Tr(rule.label)
-    row.summary = not rule.font and not rule.texture and not rule.color
+    row.summary = not rule.font and not rule.texture and not rule.color and P.SummaryPriority(id, rule.key)
+    row.summaryEnabled = function() return P.RuleEnabled(id, rule, keyFn) end
     if rule.color then
         row.kind = "color"
         row.get = function() return P.RGB(P.Get(id, Key())) end
@@ -156,6 +187,7 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
         row.step = P.SliderStep(rule.min, rule.max, rule.default, rule.step)
         row.roundStep = row.step >= 1
         if id == "chat" and (rule.key == "tabFontSize" or rule.key == "fontSize") then
+            row.summaryLabel = Tr("Font size")
             row.valueBoxWidth = 72
             row.format = function(value)
                 if (tonumber(value) or 0) <= 0 then return Tr("Default") end
@@ -180,6 +212,17 @@ function P.GateControls(ctx, id, entries, keyFn)
             if entry.widget then
                 local rule = entry.rule
                 entry.widget._msuf2PrepareExactSearchTarget = function() prepare(rule) end
+            end
+        end
+    end
+    if W.SetControlDisabledReason then
+        for _, entry in ipairs(entries) do
+            if entry.widget then
+                local rule = entry.rule
+                W.SetControlDisabledReason(entry.widget, function()
+                    local _, reason = P.RuleEnabled(id, rule, keyFn, true)
+                    return reason
+                end)
             end
         end
     end
@@ -235,35 +278,31 @@ end
 function P.AttachRowsSummary(ctx, body, rows)
     if not W.SetCollapsibleSummary or not body._msuf2CollapsibleEntry
         or body._msufSuiteSummary or body._msufSuiteSkipSummary then return end
-    local selected, toggles = {}, {}
+    local selected = {}
     for _, row in ipairs(rows) do
-        if row.summary ~= false and row.get then
-            if (row.kind == "dropdown" or row.kind == "slider") and #selected < 2 then
-                selected[#selected + 1] = row
-            elseif row.kind == "toggle" then toggles[#toggles + 1] = row end
-        end
+        if type(row.summary) == "number" and row.get then selected[#selected + 1] = row end
     end
-    if #selected == 0 and #toggles == 0 then return end
+    if #selected == 0 then return end
+    table.sort(selected, function(a, b) return a.summary < b.summary end)
     body._msufSuiteSummary = true
     W.SetCollapsibleSummary(body, "")
     local previous
     M.TrackRefresh(ctx, function()
         local parts = {}
         for _, row in ipairs(selected) do
-            local value = row.get()
-            local shown = row.format and row.format(value) or tostring(value or "")
-            if row.kind == "dropdown" then
-                local values = type(row.values) == "function" and row.values() or row.values
-                for _, item in ipairs(values or {}) do
-                    if item.value == value then shown = item.text; break end
-                end
-            elseif not row.format and type(value) == "number" then shown = DecimalFormat(value) end
-            parts[#parts + 1] = (row.label or "") .. ": " .. tostring(shown or "")
-        end
-        if #parts == 0 then
-            local enabled = 0
-            for _, row in ipairs(toggles) do if row.get() then enabled = enabled + 1 end end
-            parts[1] = Tr("%d/%d enabled"):format(enabled, #toggles)
+            if #parts == 2 then break end
+            if not row.summaryEnabled or row.summaryEnabled() then
+                local value = row.get()
+                local shown = row.format and row.format(value) or tostring(value or "")
+                if row.kind == "dropdown" then
+                    local values = type(row.values) == "function" and row.values() or row.values
+                    for _, item in ipairs(values or {}) do
+                        if item.value == value then shown = item.text; break end
+                    end
+                elseif row.kind == "toggle" then shown = Tr(value and "On" or "Off")
+                elseif not row.format and type(value) == "number" then shown = DecimalFormat(value) end
+                parts[#parts + 1] = (row.summaryLabel or row.label or "") .. ": " .. tostring(shown or "")
+            end
         end
         local text = table.concat(parts, " \194\183 ")
         if previous ~= text then W.SetCollapsibleSummary(body, text); previous = text end
@@ -652,8 +691,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
     opts = opts or {}
     local spec = P.catalog[id]
     local sectionId = pageKey .. "_" .. id .. "_module"
-    local isFrame = id ~= "qol" and id ~= "quests" and id ~= "loot"
-    local title = opts.title or (isFrame and "Frame Basics" or "Module Basics")
+    local title = opts.title or "Basics"
     local body = b:CollapsibleSection(sectionId, Tr(title), 120, true)
     local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
     local toggle = W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))

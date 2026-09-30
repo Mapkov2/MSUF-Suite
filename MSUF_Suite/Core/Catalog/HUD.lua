@@ -33,7 +33,7 @@ B.Section("objectives", "layout", "Size and position", {
     B.Number("y", "Vertical position", -290, -3000, 3000),
 })
 B.Section("objectives", "type", "Tracker text", {
-    B.Font("font", "Font (empty: MSUF global font)"),
+    B.Font("font", "Font"),
     B.Number("titleSize", "Tracker title size", 18, 11, 28),
     B.Number("sectionSize", "Group heading size", 14, 9, 20),
     B.Number("entrySize", "Quest title size", 15, 10, 24),
@@ -99,7 +99,7 @@ B.Section("runSummary", "layout", "Size and position", {
     B.Number("y", "Vertical position", 80, -3000, 3000),
 })
 B.Section("runSummary", "type", "Summary text", {
-    B.Font("font", "Font (empty: MSUF global font)"),
+    B.Font("font", "Font"),
     B.Number("titleSize", "Title size", 20, 12, 30),
     B.Number("detailSize", "Detail size", 14, 10, 22),
 })
@@ -132,7 +132,7 @@ B.Section("announcements", "layout", "Timing and position", {
     B.Number("y", "Vertical position", -90, -3000, 3000),
 })
 B.Section("announcements", "type", "Announcement text", {
-    B.Font("font", "Font (empty: MSUF global font)"),
+    B.Font("font", "Font"),
     B.Number("titleSize", "Headline size", 31, 20, 42),
     B.Number("subtitleSize", "Subtitle size", 16, 10, 24),
 })

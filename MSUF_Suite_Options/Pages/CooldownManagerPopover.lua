@@ -232,7 +232,7 @@ local ALL_FIELDS = {
     { key = "procGlow", label = "Spell alert glow", kind = "bool", cd = true, spellOnly = true, bar = "procGlow",
       help = "Glow while the game highlights this spell (spell alert)." },
     { key = "readyGlow", label = "Glow when ready", kind = "bool", cd = true, bar = "readyGlow",
-      help = "Glow while the spell is ready. \"Ready glows only in combat\" in Frame Basics limits it to combat." },
+      help = "Glow while the spell is ready. \"Ready glows only in combat\" in Basics limits it to combat." },
     { key = "auraGlow", label = "Glow while active", kind = "bool", aura = true, bar = "auraGlow",
       help = "Glow while the buff is active." },
     { key = "glowStyle", label = "Glow style", kind = "choice", cd = true, aura = true,

@@ -29,7 +29,12 @@ function P.StylePreviewFont(label, path, size, outline, rendering, shadow, opaci
         flags = flags == "" and "MONOCHROME" or flags .. ",MONOCHROME"
     end
     local fallback = _G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-    if label:SetFont(path or fallback, size, flags) == false then label:SetFont(fallback, size, "") end
+    local checked = _G.MSUF_SetFontChecked
+    if type(checked) == "function" then
+        checked(label, path or fallback, size, flags)
+    elseif label:SetFont(path or fallback, size, flags) == false then
+        label:SetFont(fallback, size, "")
+    end
     local shown = shadow == true and rendering ~= 3
     label:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
     local offset = shown and (distance or 1) or 0
@@ -174,6 +179,12 @@ local function LookEdit(id, key, value)
 end
 
 function P.Set(id, key, value)
+    -- Both Colors and the section's three-dot picker use this path. Editing
+    -- an active minimap text box chooses its own color in one undoable write.
+    if id == "minimap" then
+        local box = key:match("^(info%a+Box)Color$")
+        if box and P.Get(id, box) == 2 then return P.SetMany(id, { [key] = value, [box] = 3 }) end
+    end
     local values = LookEdit(id, key, value)
     if values then return P.SetMany(id, values) end
     local ok, reason
@@ -256,25 +267,54 @@ P.ChoiceGates = {}
 -- module and satisfied presentation dependencies. `resolve` maps a
 -- template rule key to the live key when a page edits one of several bars or
 -- windows through shared controls.
-function P.RuleEnabled(id, rule, resolve)
-    if P.Combat() then return false end
+local function RuleKey(resolve, key) return resolve and resolve(key) or key end
+local function RuleLabel(id, key)
+    local rule = P.catalog[id].rules[key]
+    return Tr(rule and rule.label or key)
+end
+local function Blocked(explain, template, label)
+    if not explain then return false end
+    return false, label and Tr(template):format(label) or Tr(template)
+end
+function P.RuleEnabled(id, rule, resolve, explain)
+    if P.Combat() then return Blocked(explain, "Finish combat before editing the suite") end
     if rule.key == "enabled" then return true end
-    local available = P.Available(id)
-    if not available or not P.Get(id, "enabled") then return false end
-    local function Key(key) return resolve and resolve(key) or key end
-    local seen = 0
-    local current = rule
+    local available, why = P.Available(id)
+    if not available then return Blocked(explain, why or "Unavailable on this client.") end
+    if not P.Get(id, "enabled") then
+        return Blocked(explain, "Turn on \"%s\" to change this.", explain and Tr(P.catalog[id].title))
+    end
+    local seen, current = 0, rule
     while current and current.enableKey and seen < 4 do
-        if not P.Get(id, Key(current.enableKey)) then return false end
+        if not P.Get(id, RuleKey(resolve, current.enableKey)) then
+            return Blocked(explain, "Turn on \"%s\" to change this.", explain and RuleLabel(id, current.enableKey))
+        end
         current = P.catalog[id].rules[current.enableKey]
         seen = seen + 1
     end
-    if rule.disabledBy and P.Get(id, Key(rule.disabledBy)) then return false end
+    if rule.disabledBy and P.Get(id, RuleKey(resolve, rule.disabledBy)) then
+        return Blocked(explain, "Turn off \"%s\" to change this.", explain and RuleLabel(id, rule.disabledBy))
+    end
     local choice = rule.requiresChoice
-    if choice and not choice.values[P.Get(id, Key(choice.key))] then return false end
-    if rule.requires and P.Requires[rule.requires] and not P.Requires[rule.requires]() then return false end
+    if choice and not choice.values[P.Get(id, RuleKey(resolve, choice.key))] then
+        if not explain then return false end
+        local choices, labels = P.catalog[id].rules[choice.key], {}
+        for value, label in ipairs(choices and choices.choices or {}) do
+            if choice.values[value] then labels[#labels + 1] = Tr(label) end
+        end
+        if #labels > 0 then
+            return false, Tr("Choose %s for \"%s\"."):format(table.concat(labels, " / "), RuleLabel(id, choice.key))
+        end
+        return Blocked(explain, "Unavailable with the current settings.")
+    end
+    if rule.requires and P.Requires[rule.requires] and not P.Requires[rule.requires]() then
+        return Blocked(explain, "Unavailable on this client.")
+    end
     local gate = P.Gates[id]
-    if gate and gate(rule, Key(rule.key)) == false then return false end
+    if gate then
+        local ok, reason = gate(rule, RuleKey(resolve, rule.key))
+        if ok == false then return Blocked(explain, reason or "Unavailable with the current settings.") end
+    end
     return true
 end
 
@@ -299,8 +339,16 @@ function P.Text(parent, text, x, y, width, color)
     return label
 end
 
+-- Concise copy is authored alongside the full explanation, never cut mid-sentence.
+function P.Help(summary, details) return { summary = summary, details = details } end
 function P.Description(parent, text, x, y, width, title)
-    if P.W.Description then return P.W.Description(parent, text, x, y, width, title) end
+    local details
+    if type(text) == "table" then
+        details, text = text.details, text.summary
+        -- Older hosts keep all instructions visible until they support detail help.
+        if not P.W.DescriptionDetails then text, details = details, nil end
+    end
+    if P.W.Description then return P.W.Description(parent, text, x, y, width, title, details) end
     return P.Text(parent, text, x, y, width)
 end
 

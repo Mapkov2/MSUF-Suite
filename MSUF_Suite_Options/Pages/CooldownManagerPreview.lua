@@ -297,7 +297,7 @@ end
 -- Toolbar: a short hint and Simulate, whose tooltip says why it is greyed.
 local function SimulateEnter(self)
     Page.ShowTip(self, Tr("Simulate"), Tr("Plays sample cooldowns, glows and buffs on your bars while this page is open."),
-        not Page.Running() and Tr("Turn the cooldown manager on in Frame Basics to play it.") or nil)
+        not Page.Running() and Tr("Turn the cooldown manager on in Basics to play it.") or nil)
 end
 local function BuildToolbar(ui, toolbar)
     local hint = T.Font(toolbar, "GameFontDisableSmall", Tr("Pick a bar below. Drag the bar's edge to move it."), T.colors.muted)

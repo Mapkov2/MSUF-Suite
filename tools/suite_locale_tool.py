@@ -665,6 +665,8 @@ LIT = ("t",)
 # they are given (MSUF's Menu2: T.Font's SetText, W.Dropdown, the accordion
 # title, M.AddTooltip, M.ShowStatusFeedback, the search metadata label).
 BASE_SINKS = [
+    # Both authored help fields reach Menu2: the summary in the form, details on demand.
+    ("MSUF_Suite_Options", re.compile(r"^P\.Help$"), {0: "s", 1: "s"}),
     (None, re.compile(r"(?:^|\.)Tr$"), {0: "s"}),
     (None, re.compile(r"^(?:Suite|NS|S|P\.Suite|P\.S|NS\.Suite|Private\.NS|Private\.Suite|MSUFSuite)\.Text$"), {0: "s"}),
     (None, re.compile(r"^(?:Suite|NS|P\.Suite)\.StatusText$"), {0: "s"}),
@@ -1300,7 +1302,7 @@ PROPER_WORDS = {
     "msuf", "suite", "forever", "midnight", "blue", "dark", "modern", "elvui", "bartender4", "dominos",
     "ellesmereuiactionbars", "arkinventory", "bagnon", "baganator", "adibags", "inventorian", "details",
     "skada", "recount", "prat", "chattynator", "sexymap", "basicminimap", "minimapbuttonbag",
-    "midnightcooldownmanager", "cooldownmanagercentered", "mapkoskin", "midnightskin", "jundies", "slug",
+    "midnightcooldownmanager", "cooldownmanagercentered", "mapkoskin", "mapko", "midnightskin", "jundies", "slug",
     "px", "ctrl", "shift", "alt", "wow", "blizzard", "edit", "mode", "datatexts", "antique", "footer",
 }
 

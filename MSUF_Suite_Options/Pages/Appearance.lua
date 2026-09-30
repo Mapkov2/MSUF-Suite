@@ -82,6 +82,7 @@ end
 
 local function Row(kind, label, key, section, get, set, values, min, max, step)
     local row = Meta(key, section)
+    row.summary = P.SummaryPriority("skin", key)
     row.searchLabel = label
     row.id, row.kind, row.label, row.get, row.set = key, kind, Tr(label), get, set
     if kind == "dropdown" then
@@ -453,7 +454,7 @@ local function BuildMicroBar(ctx, b, skin)
     Section(ctx, b, "micro", "Micro Bar",
         "Choose a look and when the Suite bar appears. Visibility rules use the Suite layout; Blizzard layout keeps Blizzard's visibility. MSUF Edit Mode reveals the bar for moving.",
         MicroRows(skin), true, MicroPresetExtra(ctx, skin))
-    Section(ctx, b, "micro_load_conditions", "Micro Bar Load Conditions",
+    Section(ctx, b, "micro_load_conditions", "Micro Bar Visibility",
         "Hide the Suite Micro Bar when any selected condition is true. The health condition uses your character's health; at full health the transparent bar can still receive clicks. MSUF Edit Mode shows the bar for placement. Blizzard layout keeps Blizzard's visibility.",
         MicroLoadRows(skin), false)
     Section(ctx, b, "micro_details", "Micro Bar details",
@@ -486,7 +487,7 @@ function P.SetSkinningEnabled(value)
 end
 
 local function BuildFrameBasics(ctx, b, skin)
-    local basics = Section(ctx, b, "frame_basic", "Frame Basics",
+    local basics = Section(ctx, b, "frame_basic", "Basics",
         "Switch the whole Skinning module here, or adjust Blizzard and Suite windows separately below.", {
             Row("toggle", "Skin Blizzard windows", "enabled.windows", "frame_basic",
                 function() return skin.DB.enabled end,
@@ -502,7 +503,7 @@ local function BuildFrameBasics(ctx, b, skin)
         }, true)
     if ctx.searchRows then
         SearchRow(ctx, Row("toggle", "Enable Skinning", "enabled", "frame_basic"),
-            "suite_skin_frame_basic", Tr("Frame Basics"))
+            "suite_skin_frame_basic", Tr("Basics"))
         return
     end
     local enable = W.SectionSwitch(basics, Tr("Enable Skinning"), Tr("Enable"))
@@ -870,7 +871,7 @@ function P.SkinSearchRows()
     if not (skin and skin.addonName == "MSUF_Suite_Skin" and skin.DB and skin.Theme) then
         -- The switch remains discoverable before the optional engine loads.
         SearchRow(ctx, Row("toggle", "Enable Skinning", "enabled", "frame_basic"),
-            "suite_skin_frame_basic", Tr("Frame Basics"))
+            "suite_skin_frame_basic", Tr("Basics"))
         return ctx.searchRows
     end
     BuildSections(ctx, b, skin)
@@ -881,7 +882,7 @@ local function Build(ctx)
     local b = W.PageBuilder(ctx)
     local skin = Engine()
     if not skin then
-        Section(ctx, b, "frame_basic", "Frame Basics",
+        Section(ctx, b, "frame_basic", "Basics",
             P.Combat() and "Open Skinning outside combat to load its settings." or "The Suite skin engine is unavailable.",
             {}, true)
         return

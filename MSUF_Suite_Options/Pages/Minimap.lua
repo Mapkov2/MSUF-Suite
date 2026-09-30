@@ -13,15 +13,24 @@ local HELP = {
     behavior = "The mouse wheel zooms the map. Middle-click runs the chosen action; left and right clicks keep working as usual.",
     elements = "Blizzard's own buttons stay functional. The row is their starting position; drag each icon freely in the preview.",
     landing = "Omnium Folio is Midnight's expansion button. Choose Never to remove it, or Simple book for a smaller, quieter icon that still opens the feature.",
-    addons = "Buttons that addons place on the minimap are collected into a drawer. Drag its button in the preview; click it to open the icons in a grid. When MinimapButtonButton is loaded, it manages addon buttons instead.",
+    specialization = "Click the minimap button for Blizzard's specialization and loot specialization choices. Choices are disabled in combat and the button hides when both menus are turned off.",
+    addons = P.Help("Collect addon buttons in one drawer.", "Buttons that addons place on the minimap are collected into a drawer. Drag its button in the preview; click it to open the icons in a grid. When MinimapButtonButton is loaded, it manages addon buttons instead."),
+    info_weather = "Show weather as text, an icon, or both. Choose Blizzard icons or original Forever artwork. The tooltip keeps the weather name when only the icon is shown.",
     info_colors = "Shared colors for the FPS and latency texts.",
     info_tooltips = "Used when a clock, FPS or latency text shows instance lockouts or the Great Vault on mouseover.",
 }
 local ELEMENTS = { showTracking = "Tracking", showCalendar = "Calendar", showMail = "Mail", showCrafting = "Crafting",
     showDifficulty = "Difficulty", showLanding = "Landing", landingIcon = "Landing", showCompartment = "Compartment" }
+local WEATHER_TEXT_CONTROLS = { Font = true, Size = true, Outline = true, Rendering = true,
+    Shadow = true, ShadowOpacity = true, ShadowDistance = true, Color = true, ClassColor = true, Width = true }
 -- Client capabilities come from the runtime once it is loaded; before that
 -- every control stays editable and the runtime ignores what it cannot do.
 P.Gates[ID] = function(rule, key)
+    if key == "infoWeatherIconStyle" or key == "infoWeatherIconSize" then
+        return P.Get(ID, "infoWeatherDisplay") ~= 1
+    end
+    if WEATHER_TEXT_CONTROLS[key:match("^infoWeather(.+)$")] and P.Get(ID, "infoWeatherDisplay") == 2 then return false end
+    if rule.section == "specialization" and not Suite.CanShowMinimapSpecialization() then return false end
     local prefix = key:match("^(info%a+)Shadow")
     if prefix then
         prefix = prefix:gsub("Shadow.*$", "")
@@ -115,7 +124,7 @@ local function Build(ctx)
     local b = W.PageBuilder(ctx)
     local sections = {}
     -- FixedPreviewSection releases the first builder slot from scroll flow.
-    -- Build it before any accordion so it stays docked above Frame Basics.
+    -- Build it before any accordion so it stays docked above Basics.
     P.BuildMinimapPreview(ctx, b, sections)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Collect addon buttons again", function() if S.MinimapRescanButtons then S.MinimapRescanButtons() end end,
@@ -135,10 +144,15 @@ local function Build(ctx)
         sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = false })
     end
+    if not Suite.Client.isForever then
+        sections.specialization = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_specialization",
+            Tr("Minimap specialization menu"), P.SectionRules(ID, "specialization"),
+            { help = HELP.specialization, open = false })
+    end
     for _, field in ipairs(Suite.MinimapInfoFields) do
         local section = "info_" .. field:lower()
         sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(field == "FPS" and "FPS" or field), P.SectionRules(ID, section),
-            { open = false })
+            { help = HELP[section], open = false })
     end
     for _, section in ipairs({ "info_difficulty", "info_colors", "info_tooltips" }) do
         local rules = P.SectionRules(ID, section)

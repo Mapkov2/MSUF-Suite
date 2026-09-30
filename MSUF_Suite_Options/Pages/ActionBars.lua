@@ -8,7 +8,7 @@ local HELP = {
     cooldowns = "Cooldown numbers, swipes and state colors come from the client's action data; nothing is polled.",
     text = "Fonts, outlines, shadows and Smooth/Sharp/Slug rendering for keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below. Slug has no shadow.",
     behavior = "Paging switches bar 1 between pages, like Blizzard's own main bar. Key bindings keep using Blizzard's commands.",
-    editor = "Choose a bar to adjust its layout below. The preview uses sample buttons; empty slots and stances can differ in game.",
+    editor = P.Help("Select a bar to adjust its layout and visibility.", "Choose a bar to adjust its layout below. The preview uses sample buttons; empty slots and stances can differ in game."),
 }
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
@@ -347,7 +347,7 @@ local function BuildEditor(ctx, b)
     local body = b:CollapsibleSection("suite_actionbars_editor", Tr("Customize a bar"), 120, false)
     local width = math.max(260, (body._msuf2Width or b.width or 720) - 32)
     local half = math.floor((width - 12) / 2)
-    local help = P.Text(body, HELP.editor, 16, -18, width)
+    local help = P.Description(body, HELP.editor, 16, -18, width)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     local bars = {}
     for i = 1, COUNT do bars[i] = { value = i, text = Tr(Suite.ActionBarTitles[i]) } end

@@ -232,39 +232,85 @@ assert(rows.suite_modules == nil and M.pages.suite_modules == nil and M.ALIASES.
 assert(M.PageHasReset("suite_bags") == true and M.PageHasReset("suite_skin") == true,
     "module pages lost Reset page")
 
------------------------------------------------------------------- availability: ok, reason, hide
+------------------------------------------------------------------ availability and unavailable pages
 do
-    local ok, reason, hide = Suite.Client.AddOnEnabled("MSUF_Suite_Bags")
-    assert(ok == true and reason == nil and hide == nil)
-    disabled.MSUF_Suite_Bags = true
-    ok, reason, hide = rows.suite_bags.availability()
-    assert(ok == false and reason == "Disabled in Blizzard's AddOns list: MSUF_Suite_Bags" and not hide,
-        "a disabled AddOn must stay listed with its reason")
-    assert(select(3, Suite.Client.AddOnEnabled("MSUF_Suite_Bags")) == nil, "a disabled AddOn reported missing")
-    missing.MSUF_Suite_Bags = true
-    ok, reason, hide = rows.suite_bags.availability()
-    assert(ok == false and reason == "Install MSUF_Suite_Bags to use this module" and hide == true,
-        "an AddOn that is not installed must hide its page")
-    missing.MSUF_Suite_Bags, disabled.MSUF_Suite_Bags = nil, nil
-    assert(rows.suite_bags.availability() == true)
-    -- Pages of several modules: hidden only when none is installed.
-    missing.MSUF_Suite_QualityOfLife = true
-    ok, reason, hide = rows.suite_qualityOfLife.availability()
-    assert(ok == false and hide == true and reason == "Install MSUF_Suite_QualityOfLife to use this module")
-    missing.MSUF_Suite_QualityOfLife, disabled.MSUF_Suite_QualityOfLife = nil, true
-    ok, reason, hide = rows.suite_qualityOfLife.availability()
-    assert(ok == false and not hide and reason:find("Disabled in Blizzard's AddOns list", 1, true))
-    disabled.MSUF_Suite_QualityOfLife = nil
-    missing.MSUF_Suite_Modules = true
-    assert(select(3, rows.suite_hud.availability()) == true, "HUD without its AddOn must hide")
-    missing.MSUF_Suite_Modules = nil
-    missing.MSUF_Suite_Skin = true
-    ok, reason, hide = rows.suite_skin.availability()
-    assert(ok == false and hide == true, "Skinning without its AddOn must hide")
-    missing.MSUF_Suite_Skin, disabled.MSUF_Suite_Skin = nil, true
-    ok, reason, hide = rows.suite_skin.availability()
-    assert(ok == false and not hide and reason == "Disabled in Blizzard's AddOns list: MSUF_Suite_Skin")
-    disabled.MSUF_Suite_Skin = nil
+    local notice = "You need to turn on the module in Blizzards Addon list"
+    local addonForPage = {
+        suite_bags = "MSUF_Suite_Bags", suite_qualityOfLife = "MSUF_Suite_QualityOfLife",
+        suite_hud = "MSUF_Suite_Modules", suite_skin = "MSUF_Suite_Skin",
+        suite_nameplates = "MSUF_Suite_Nameplates", suite_minimap = "MSUF_Suite_Minimap",
+        suite_actionbars = "MSUF_Suite_ActionBars", suite_chat = "MSUF_Suite_Chat",
+        suite_dataTexts = "MSUF_Suite_DataTexts", suite_damageMeter = "MSUF_Suite_DamageMeter",
+        suite_cooldownManager = "MSUF_Suite_CooldownManager", suite_buffReminders = "MSUF_Suite_BuffReminders",
+    }
+    for key, addon in pairs(addonForPage) do
+        for _, state in ipairs({ disabled, missing }) do
+            state[addon] = true
+            local ok, reason, hide = rows[key].availability()
+            assert(ok == false and reason == notice and not hide, key .. ": unavailable row must stay grey and clickable")
+            local before = #fonts
+            local ctx = { key = key, width = 720, wrapper = Widget("Page"), refreshers = {}, widgets = {}, sections = {} }
+            function ctx:SetContentHeight(value) self.height = value end
+            M.pages[key].build(ctx)
+            assert(ctx.height == 62, key .. ": notice has no content height")
+            assert(#fonts == before + 1 and fonts[#fonts].text == notice and fonts[#fonts].parent == ctx.wrapper,
+                key .. ": unavailable page must show only the AddOn notice")
+            assert(#ctx.widgets == 0 and #ctx.sections == 0, key .. ": unavailable page built settings")
+            assert(not M.PageHasReset(key) and not M.ResetPageToDefaults(key), key .. ": unavailable page can reset settings")
+            state[addon] = nil
+        end
+    end
+    -- A menu-disabled load-on-demand module still exposes the switch that
+    -- turns it back on. Only the rail is dimmed, and missing runtime code is
+    -- never mistaken for an active module.
+    local wasEnabled, wasLoaded = S.Config("bags").enabled, loaded.MSUF_Suite_Bags
+    S.Config("bags").enabled, loaded.MSUF_Suite_Bags = false, nil
+    assert(rows.suite_bags.availability() == false, "Frame Basics off does not dim the rail")
+    local ctx = { key = "suite_bags", width = 720, wrapper = Widget("Page"), refreshers = {}, widgets = {}, sections = {} }
+    M.pages.suite_bags.build(ctx)
+    assert(#ctx.sections > 0 and #ctx.widgets > 0 and M.PageHasReset("suite_bags"), "dormant module cannot be configured")
+    S.Config("bags").enabled = true
+    assert(rows.suite_bags.availability() == false, "unloaded module appears active")
+    loaded.MSUF_Suite_Bags = true
+    assert(rows.suite_bags.availability() == true, "loaded enabled module stays grey")
+    S.Config("bags").enabled = false
+    assert(rows.suite_bags.availability() == false, "loaded module ignores its Frame Basics switch")
+    S.Config("bags").enabled, loaded.MSUF_Suite_Bags = wasEnabled, wasLoaded
+
+    -- A multi-module destination stays active while any of its modules is on.
+    local states = {}
+    for _, id in ipairs({ "objectives", "runSummary", "announcements", "afkScreen" }) do
+        states[id] = S.Config(id).enabled
+        S.Config(id).enabled = false
+    end
+    local wasRuntimeLoaded = loaded.MSUF_Suite_Modules
+    loaded.MSUF_Suite_Modules = true
+    assert(rows.suite_hud.availability() == false, "fully disabled HUD appears active")
+    S.Config("afkScreen").enabled = true
+    assert(rows.suite_hud.availability() == true, "one enabled HUD module must keep its destination active")
+    for id, enabled in pairs(states) do S.Config(id).enabled = enabled end
+    loaded.MSUF_Suite_Modules = wasRuntimeLoaded
+    -- Catalog ownership includes every QoL feature, including those added
+    -- after the older page-reset list was written.
+    local qolStates, wasQolLoaded = {}, loaded.MSUF_Suite_QualityOfLife
+    for _, id in ipairs(Suite.SuiteOrder) do
+        if P.catalog[id].page == "suite_qualityOfLife" then
+            qolStates[id] = S.Config(id).enabled
+            S.Config(id).enabled = false
+        end
+    end
+    loaded.MSUF_Suite_QualityOfLife = true
+    assert(rows.suite_qualityOfLife.availability() == false, "fully disabled QoL appears active")
+    S.Config("actionTracker").enabled = true
+    assert(rows.suite_qualityOfLife.availability() == true, "sole active QoL feature is missing from availability")
+    for id, enabled in pairs(qolStates) do S.Config(id).enabled = enabled end
+    loaded.MSUF_Suite_QualityOfLife = wasQolLoaded
+    local wasSkinEnabled, wasSkinLoaded = Suite.Skin.enabled, loaded.MSUF_Suite_Skin
+    Suite.Skin.enabled, loaded.MSUF_Suite_Skin = false, true
+    assert(rows.suite_skin.availability() == false, "Skinning ignores its master switch")
+    Suite.Skin.enabled = true
+    assert(rows.suite_skin.availability() == true, "enabled Skinning stays grey")
+    Suite.Skin.enabled, loaded.MSUF_Suite_Skin = wasSkinEnabled, wasSkinLoaded
 end
 
 ------------------------------------------------------------------ overview API

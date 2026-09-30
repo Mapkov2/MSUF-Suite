@@ -267,13 +267,13 @@ local function BarSection(ctx, b, bar)
         P.W.SetControlEnabled(toggle, not P.Combat())
     end)
     local y = -18
-    local help = P.Text(body, "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear. The Antique Footer preset creates a bag, durability and clock strip on this bar only.",
+    local help = P.Description(body, P.Help("Choose the information shown in each bar.", "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear. The Antique Footer preset creates a bag, durability and clock strip on this bar only."),
         16, y, width)
     y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 10
     y = BuildPlaces(ctx, body, bar, sectionId, y, width)
     y = BuildBarActions(ctx, body, bar, sectionId, y, width)
     y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix), y, width, nil, sectionId)
-    local heading = P.Text(body, Tr("Load Conditions"), 16, y - 12, width, T.colors.text)
+    local heading = P.Text(body, Tr("Visibility"), 16, y - 12, width, T.colors.text)
     y = y - 12 - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
     local loadHelp = P.Text(body,
         "Hide this bar when any selected condition is true. The health condition uses your character's health. At full health the bar is transparent but can still receive clicks. Edit Mode shows it for placement.",

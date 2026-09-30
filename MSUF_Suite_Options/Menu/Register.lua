@@ -29,40 +29,68 @@ if type(M.RegisterHistoryProvider) == "function" then
     P.historyRegistered = M.RegisterHistoryProvider("MSUF_Suite", P.CaptureHistoryState, P.RestoreHistoryState) == true
 end
 
--- Optional navigation icons reuse cells of MSUF's own icon atlas, so suite
--- rows line up with MSUF rows whenever navigation icons are switched on.
+-- The HD host atlas gives each Suite destination its own recognizable symbol.
+-- Older hosts retain their existing atlas cells.
+local HD_NAV_ICONS = {
+    suite_nameplates = { 0, 3 }, suite_cooldownManager = { 1, 3 },
+    suite_buffReminders = { 2, 3 }, suite_hud = { 3, 3 },
+    suite_actionbars = { 4, 3 }, suite_minimap = { 5, 3 },
+    suite_damageMeter = { 6, 3 }, suite_bags = { 7, 3 },
+    suite_chat = { 0, 4 }, suite_dataTexts = { 1, 4 },
+    suite_skin = { 2, 4 }, suite_qualityOfLife = { 3, 4 },
+}
 local function AddIcons()
     if type(T.navIconGrid) ~= "table" or type(T.navIconColors) ~= "table" then return end
     local neutral = T.navIconColors.gameplay or T.navIconColors.profiles
     local accent = T.navIconColors.home or neutral
     for _, page in ipairs(P.pages) do
-        if page.icon and T.navIconGrid[page.key] == nil then T.navIconGrid[page.key] = page.icon end
+        local icon = (tonumber(T.navIconAtlasVersion) or 0) >= 2 and HD_NAV_ICONS[page.key] or page.icon
+        if icon and T.navIconGrid[page.key] == nil then T.navIconGrid[page.key] = icon end
         if T.navIconColors[page.key] == nil then T.navIconColors[page.key] = page.accent and accent or neutral end
     end
 end
 
--- availability() -> ok, reason, hide. The host rail dims a row that is not ok
--- and shows the reason; hide is true only while none of the page's AddOns is
--- installed. One switched off in Blizzard's AddOns list stays listed.
-local function NavRow(page, group)
-    local row = { key = page.key, label = page.label, group = group }
-    local modules = PAGE_ADDONS[page.key]
-    if modules then
-        row.availability = function()
-            local reason, installed
-            for _, id in ipairs(modules) do
-                local ok, why, missing = Suite.Client.AddOnEnabled(P.catalog[id].addon)
-                if ok then return true end
-                -- An installed AddOn's reason says more than "Install ...".
-                if not missing and not installed then reason, installed = why, true end
-                reason = reason or why
-            end
-            return false, reason, not installed
-        end
-    elseif page.key == "suite_skin" then
-        row.availability = function() return Suite.Client.AddOnEnabled("MSUF_Suite_Skin") end
+-- Keep unavailable destinations visible and clickable so they can explain how
+-- to turn the AddOn on. A saved module switch and Blizzard's AddOn switch are
+-- separate: dormant load-on-demand modules still need their settings page.
+local ADDON_NOTICE = "You need to turn on the module in Blizzards Addon list"
+local PAGE_MODULES = {}
+for _, id in ipairs(Suite.SuiteOrder) do
+    local key = P.catalog[id].page
+    if key then
+        local modules = PAGE_MODULES[key] or {}
+        PAGE_MODULES[key] = modules
+        modules[#modules + 1] = id
     end
-    return row
+end
+local function PageAddOnEnabled(key)
+    if key == "suite_skin" then return Suite.Client.AddOnEnabled("MSUF_Suite_Skin") end
+    local modules = PAGE_MODULES[key]
+    if not modules then return true end
+    for _, id in ipairs(modules) do
+        if Suite.Client.AddOnEnabled(P.catalog[id].addon) then return true end
+    end
+    return false
+end
+local function PageEnabled(key)
+    if not PageAddOnEnabled(key) then return false, ADDON_NOTICE end
+    if key == "suite_skin" then
+        return P.SkinningEnabled() == true and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin"), "Off"
+    end
+    local modules = PAGE_MODULES[key]
+    if not modules then return true end
+    for _, id in ipairs(modules) do
+        local addon = P.catalog[id].addon
+        if S.Config(id).enabled == true and Suite.Client.AddOnEnabled(addon)
+            and Suite.Client.IsAddOnLoaded(addon) then return true end
+    end
+    return false, "Off"
+end
+local function NavRow(page, group)
+    return {
+        key = page.key, label = page.label, group = group,
+        availability = function() return PageEnabled(page.key) end,
+    }
 end
 
 local function FindTitle(items, id)
@@ -145,6 +173,11 @@ end
 local function PageBuilder(page)
     return function(ctx, ...)
         M.TrackRefresh(ctx, P.ForgetAvailability)
+        if not PageAddOnEnabled(page.key) then
+            local notice = P.Text(ctx.wrapper, ADDON_NOTICE, 16, -20, math.max(240, (ctx.width or 720) - 32))
+            ctx:SetContentHeight(notice:GetStringHeight() + 48)
+            return
+        end
         return page.build(ctx, ...)
     end
 end
@@ -164,7 +197,7 @@ local function InstallPageResets()
     local oldReset, oldConfirm = M.ResetPageToDefaults, M.ShowPageResetConfirm
     -- Second result: whether the page resets.
     local function IsSuitePage(key)
-        for _, page in ipairs(P.pages) do if page.key == key then return true, page.reset ~= false end end
+        for _, page in ipairs(P.pages) do if page.key == key then return true, page.reset ~= false and PageAddOnEnabled(key) end end
         return false
     end
     function M.PageHasReset(key)

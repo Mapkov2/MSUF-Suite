@@ -16,6 +16,24 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_Modules/Surfaces.lua",
+   "symbol": "checked (= MSUF_SetFontChecked)",
+   "kind": "addon",
+   "reason": "The external MSUF font setter preserves fonts while Classic glyph metrics become ready. Older hosts without this export retain the native fallback; suite_text_effects_contract exercises both paths."
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "symbol": "checked (= MSUF_SetFontChecked)",
+   "kind": "addon",
+   "reason": "Preview text uses the external MSUF font setter when available. Older hosts retain their native fallback; suite_options_menu_contract checks that a cold false return does not discard the chosen font."
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "symbol": "P.W.DescriptionDetails",
+   "kind": "addon",
+   "reason": "P.W is the external MSUF Menu2 widget API. Newer hosts support separate summaries and full help; older hosts receive the complete original paragraph. suite_options_menu_contract covers both versions."
+  },
+  {
    "file": "MSUF_Suite_Options/Menu/Search.lua",
    "symbol": "M.RegisterSearchAvailability",
    "kind": "addon",

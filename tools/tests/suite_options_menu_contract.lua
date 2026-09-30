@@ -7,6 +7,7 @@ local root = assert(arg[1], "repository root required")
 -- this stand-in lets errors raise, so a failing callback fails the test.
 securecallfunction = function(callback, ...) return callback(...) end
 local flavor = arg[2] or "Mainline"
+C_PetBattles = { GetAbilityInfoByID = function(id) return id, "Weather", 900000 + id end }
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }
@@ -50,6 +51,7 @@ local function Widget(kind)
     function w:SetActive(v) self.active = v and true or false end
     function w:SetAtlas(v) self.atlas = v end
     function w:SetTexture(v) self.texture = v end
+    function w:SetColorTexture(...) self.color = { ... } end
     function w:CreateTexture() return Widget("Texture") end
     function w:CreateFontString() return Widget("FontString") end
     function w:SetValue(v) self.value = v end
@@ -329,6 +331,7 @@ W.AttachContextColorShortcut = function(section, opts)
     section.colorShortcut = shortcut
     return shortcut
 end
+W.SetControlDisabledReason = function(widget, reason) widget.disabledReason = reason end
 W.SetControlEnabled = function(widget, enabled) widget.enabled = enabled and true or false end
 W.SetCollapsibleSummary = function(body, text)
     body.summary = text
@@ -403,9 +406,95 @@ assert(Suite.Menu.Attach(), "suite menu did not attach")
 assert(Suite.Menu.attached == true)
 assert(historyProvider and Suite.Options.BuildColorsCategory, "Suite did not register MSUF history and colors")
 for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .. tostring(k)) end
+-- Exercise the actual Edit Mode callback through the core menu bridge, including
+-- a cold page and repeated jumps across the refactored categories and tabs.
+do (function()
+    local previousOpen, previousFocus, previousCache = MSUF2_Open, W.FocusCollapsibleSection, M.cache
+    local previousAPI, previousCurrent = MSUF_EditModeAPI, current
+    local previousBridge = M.SearchBridge
+    local previousPrint = Suite.Print
+    local records, ctx, focused = {}, nil, nil
+    MSUF_EditModeAPI = { RegisterElement = function(owner, record) records[owner] = record; return true end }
+    local movers = setmetatable({ Text = Suite.Text }, { __index = S })
+    assert(loadfile(root .. "/MSUF_Suite_Modules/EditMode.lua"))("MSUF_Suite_Modules", { NS = Suite, Suite = movers })
+    M.cache = {}
+    MSUF2_Open = function(page)
+        assert(page == "suite_qualityOfLife", "QoL mover opened another page")
+        if not ctx then
+            ctx = { key = page, width = 720, refreshers = {}, widgets = {}, sections = {},
+                pageItems = {}, entry = { sections = {} } }
+            current = ctx
+            M.pages[page].build(ctx)
+            M.cache[page] = ctx.entry
+        end
+        return true
+    end
+    W.FocusCollapsibleSection = function(section)
+        local entry = assert(section._msuf2CollapsibleEntry, "mover target has no category accordion")
+        entry.open = true
+        focused = section
+        return true
+    end
+    M.SearchBridge = { OpenSearchTarget = function(page, query, fallback, anchor, route)
+        assert(page == "suite_qualityOfLife" and query == "" and fallback == nil
+            and type(route) == "table" and next(route) == nil,
+            "Edit Mode details must use their frame directly, without a text search or setting change")
+        return true, true, W.FocusCollapsibleSection(anchor)
+    end }
+    local targets = {
+        { "combatStatsHUD", "combat", "secondary_stats" },
+        { "durabilityAlert", "warning", "durability_warning" },
+        { "xpBar", "experience", "xp_bar" },
+        { "actionTracker", "actions", "action_tracker" },
+        { "battleRes", "charges", "battle_res" },
+        { "groupBloodlust", "lockout", "bloodlust_lockout" },
+        { "innervateCue", "alert", "innervate_cue" },
+        { "combatPetStatus", "warning", "pet_status" },
+        { "combatMovementCue", "combat", "movement_cue" },
+        { "burningRushCue", "combat", "burning_rush_cue" },
+        { "skyriding", "flight", "flight_hud" },
+    }
+    for _, target in ipairs(targets) do
+        assert(movers.RegisterOwnedMover(target[1], target[2], { quickPosition = false,
+            label = target[1], getFrame = function() end }))
+    end
+    for pass = 1, 2 do
+        for _, target in ipairs(targets) do
+            focused = nil
+            local record = records["MSUFSuite." .. target[1]]
+            assert(record.openSettings() == true, "Edit Mode settings failed: " .. target[1])
+            local row = assert(ctx.qualityOfLifeFeatureRows["suite_qualityOfLife_" .. target[1] .. "_" .. target[3]])
+            assert(row.details and focused == row.details and row.details.shown and row.row._msufSuiteSelected
+                and row.details._msuf2CollapsibleEntry.open, "Edit Mode did not reveal the exact feature: " .. target[1])
+            for _, tabs in ipairs(ctx.tabControls) do
+                if tabs.frames[row.tab] then
+                    assert(tabs.frames[row.tab].shown and tabs.segment.value == row.tab,
+                        "Edit Mode did not select the feature's tab: " .. target[1])
+                end
+            end
+            row.details._msuf2CollapsibleEntry.open = false
+        end
+    end
+    Suite.Print = function() end
+    local resolve = ctx.entry._msuf2ResolveMissingSection
+    ctx.entry._msuf2ResolveMissingSection = function() return nil end
+    assert(records["MSUFSuite.combatStatsHUD"].openSettings() == false,
+        "Edit Mode reported success for a missing feature target")
+    ctx.entry._msuf2ResolveMissingSection = resolve
+    MSUF2_Open = function() return false end
+    assert(records["MSUFSuite.combatStatsHUD"].openSettings() == false,
+        "Edit Mode reported success when the host could not open")
+    MSUF2_Open = previousOpen
+    W.FocusCollapsibleSection, M.cache = previousFocus, previousCache
+    M.SearchBridge = previousBridge
+    MSUF_EditModeAPI, current = previousAPI, previousCurrent
+    Suite.Print = previousPrint
+end)() end
+
 if flavor == "Forever" then
     local plates = S.Config("nameplates")
-    assert(plates.enemyLevelEnabled == true, "Forever Jundies default omitted enemy levels")
+    assert(plates.look == 4 and plates.barGeometry == 2 and plates.enemyLevelEnabled == false,
+        "Forever Mapko factory must share Retail's geometry and hidden level")
     plates.enabled, plates.look = false, 2
     assert(optionsNS.Set("nameplates", "look", 1)
         and plates.enabled and plates.look == 1 and plates.enemyLevelEnabled,
@@ -474,9 +563,11 @@ C_AddOns.GetAddOnEnableState = function(name, guid)
     return name == "MSUF_Suite_ActionBars" and 0 or 1
 end
 assert(rows.suite_actionbars.availability() == false
-    and rows.suite_minimap.availability() == true
-    and rows.suite_qualityOfLife.availability() == true,
-    "Suite navigation does not reflect Blizzard's disabled AddOn state")
+    and select(2, rows.suite_actionbars.availability()) == "You need to turn on the module in Blizzards Addon list"
+    and not select(3, rows.suite_actionbars.availability()),
+    "Suite navigation must keep Blizzard-disabled AddOns grey and visible")
+assert(Suite.Client.AddOnEnabled("MSUF_Suite_Minimap")
+    and Suite.Client.AddOnEnabled("MSUF_Suite_QualityOfLife"), "unrelated AddOns were disabled")
 C_AddOns.GetAddOnEnableState = AllEnabled
 assert(M.ALIASES.meter == "opt_bars", "suite overrode an MSUF alias")
 assert(M.ALIASES.damage_meter == "suite_damageMeter" and M.ALIASES.minimap == "suite_minimap")
@@ -488,10 +579,33 @@ local function Reattach()
         Suite = Suite, M = M, T = T, pages = optionsNS.pages, Tr = M.Tr, host = MSUF_NS, Refresh = function() end,
         BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
         ForgetAvailability = optionsNS.ForgetAvailability,
+        S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
     })
 end
 Reattach()
 assert(NavShape(M.navItems) == hostShape, "suite navigation inserted twice: " .. NavShape(M.navItems))
+-- HD hosts get twelve distinct destinations; legacy hosts keep page cells.
+;(function()
+    local legacy = T.navIconGrid
+    for _, page in ipairs(optionsNS.pages) do
+        if page.icon then assert(legacy[page.key] == page.icon, "older host received an unavailable icon") end
+    end
+    T.navIconGrid, T.navIconAtlasVersion = {}, 2
+    Reattach()
+    local cells, count = {}, 0
+    for _, page in ipairs(optionsNS.pages) do
+        local cell = assert(T.navIconGrid[page.key], "HD icon missing: " .. page.key)
+        assert(cell[1] >= 0 and cell[1] < 8 and (cell[2] == 3 or cell[2] == 4), "invalid HD atlas cell")
+        local key = cell[1] .. ":" .. cell[2]
+        assert(not cells[key], "unrelated Suite pages share a navigation symbol")
+        cells[key], count = true, count + 1
+    end
+    assert(count == 12, "Suite navigation coverage changed")
+    local chosen = T.navIconGrid.suite_bags
+    Reattach()
+    assert(T.navIconGrid.suite_bags == chosen, "reattaching replaces registered icons")
+    T.navIconGrid, T.navIconAtlasVersion = legacy, nil
+end)()
 -- A host without those groups (Retail MSUF) keeps its own: Skinning joins
 -- Appearance, Quality of Life joins Features after Gameplay, and Combat and
 -- Interface are created in front of Features.
@@ -607,6 +721,17 @@ do
     S.Availability = availability
 end
 (function()
+    -- New installs use Mapko; switching to the retained preset still restores
+    -- all legacy offsets and native sizing tested below.
+    assert(optionsNS.Set("nameplates", "look", 4))
+    local mapkoHealth = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Health"])
+    local mapkoCast = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Cast"])
+    mapkoHealth.previewUI:Paint()
+    assert(mapkoHealth.width == 206 and mapkoHealth.height == 20
+        and mapkoCast.width == 206 and mapkoCast.height == 10,
+        "Mapko preview bar dimensions differ between Retail and Forever")
+    assert(optionsNS.Set("nameplates", "look", 1))
+    assert(optionsNS.Set("nameplates", "enemyPreviewRole", 1))
     assert(S.Config("nameplates").look == 1
         and S.Config("nameplates").enemyEliteMarker == false
         and S.Config("nameplates").enemyQuestMarker == true
@@ -845,7 +970,8 @@ end
     assert(savedRoot.profiles[savedRoot.activeProfile].suite.modules.nameplates.enemyTargetOffsetX == 20,
         "target arrow position was lost while preparing a reload")
     ui.body.selectionDeps.ResetOffsets(ui.body, target)
-    assert(plates.enemyTargetOffsetX == 0, "target arrow reset did not restore its position")
+    assert(plates.enemyTargetOffsetX == S.catalog.nameplates.rules.enemyTargetOffsetX.default,
+        "target arrow reset did not restore its Mapko factory position")
     ui.sampleKind, ui.personal = previousSampleKind, previousPersonal
     ui:Paint()
     cast.scripts.OnMouseDown(cast, "LeftButton")
@@ -1216,14 +1342,14 @@ do
     end
 end
 assert(not plateSections.suite_nameplates_general and plateSections.suite_nameplates_nameplates_module,
-    "Start here must be merged into the existing Frame Basics card")
+    "Start here must be merged into the existing Basics card")
 for _, key in ipairs({ "look", "nativeSize", "friendlyNPCs", "playerGuildNames", "playerTitles", "protectImport" }) do
     local control
     for _, widget in ipairs(contexts.suite_nameplates.widgets) do
         if widget.meta and widget.meta.controlId == "menu2.suite_nameplates.nameplates." .. key then control = widget; break end
     end
     assert(control, key)
-    assert(control.meta.sectionId == "suite_nameplates_nameplates_module", key .. " escaped Frame Basics")
+    assert(control.meta.sectionId == "suite_nameplates_nameplates_module", key .. " escaped Basics")
 end
 assert(not registeredControls["menu2.suite_nameplates.nameplates.action.colors"], "standalone color button survived")
 for section, key in pairs({ enemy = "enemyTargetColor", roleColors = "enemyCasterColor", friendly = "friendlyBorderColor" }) do
@@ -1344,10 +1470,10 @@ end
 assert(contexts.suite_minimap.pageItems[1] == "fixed-preview"
     and contexts.suite_minimap.pageItems[2] == "suite_minimap_minimap_module"
     and contexts.suite_minimap.fixedPreview.section.expander.expanded,
-    "minimap preview must stay fixed above Frame Basics")
-assert(contexts.suite_minimap.sections[1].title == "Frame Basics"
+    "minimap preview must stay fixed above Basics")
+assert(contexts.suite_minimap.sections[1].title == "Basics"
     and contexts.suite_minimap.sections[1].headerSwitch,
-    "minimap enable switch is not in the Frame Basics header")
+    "minimap enable switch is not in the Basics header")
 local dataPage = contexts.suite_dataTexts
 do
     local original = Suite.Client.modernEquipment
@@ -1364,7 +1490,7 @@ do
     end
     Suite.Client.modernEquipment = original
 end
-assert(dataPage.sections[1].title == "Frame Basics"
+assert(dataPage.sections[1].title == "Basics"
     and dataPage.sections[2].title == "Shared bar style"
     and dataPage.sections[3].title == "Shared text style",
     "DataTexts styling lost its shared sections")
@@ -1543,7 +1669,7 @@ local qolFeaturesByCategory = {
     groupRaid = {
         "battleRes_battle_res", "groupBloodlust_bloodlust_lockout",
         "groupDeathAlert_group_death_alert", "innervateCue_innervate_cue",
-        "groupRaidShortcuts_raid_shortcuts", "trustedPartyInvites_trusted_invites",
+        "groupRaidShortcuts_raid_shortcuts", "trustedPartyInvites_trusted_invites", "releaseProtection_release_protection",
     },
     groupFinderMythic = {
         "groupFinderExitReminder_group_finder_exit", "groupFinderDoubleClick_group_finder_double_click",
@@ -1556,7 +1682,7 @@ local qolFeaturesByCategory = {
         "combatMovementCue_movement_cue", "combatPetStatus_pet_status",
     },
     mapTravel = {
-        "mapLandingShortcuts_expansion_shortcuts", "mapQuickSwitch_map_quick_switch",
+        "mapLandingShortcuts_expansion_shortcuts",
         "skyriding_flight_hud", "waypoints_waypoint_command",
     },
     interfaceChat = {
@@ -1954,12 +2080,12 @@ for _, widget in ipairs(skinContext.widgets) do
 end
 assert(skinContext.pageItems[1] == "fixed-preview"
     and skinContext.pageItems[2] == "suite_skin_frame_basic",
-    "Skin preview must own the fixed header before Frame Basics")
+    "Skin preview must own the fixed header before Basics")
 assert(table.concat(previewSurfaces, ",") == "shell,panel,card,buttonPrimary",
     "Skin preview must render with the same engine surfaces as the runtime")
 assert(skinContext.sections[1].sectionId == "suite_skin_frame_basic"
     and skinContext.sections[1].headerSwitch
-    and skinContext.sections[2].sectionId == "suite_skin_basic", "Skin Frame Basics is not first")
+    and skinContext.sections[2].sectionId == "suite_skin_basic", "Skin Basics is not first")
 -- The default Suite meter owns Blizzard's damage meter, so Skinning has no
 -- section for it; Glass follows the Micro Bar directly.
 assert(S.Config("damageMeter").enabled == true and S.OwnsBlizzardSurface("damageMeter"),
@@ -2455,10 +2581,96 @@ W.FocusCollapsibleSection = function(section, opts)
     return true
 end
 local folioPreview = previewControls["menu2.suite_minimap.minimap.preview.folio"]
+do
+local specPreview = previewControls["menu2.suite_minimap.minimap.preview.specialization"]
+assert(not S.catalog.mapQuickSwitch, "QoL must no longer own specialization settings")
+if flavor == "Forever" then
+    assert(not specPreview, "Forever must not offer a Retail specialization preview")
+else
+    assert(specPreview and not specPreview.shown, "specialization preview must start hidden with its setting")
+    local config = S.Config("minimap")
+    config.specButton, config.specSize, config.specCorner = true, 32, 3
+    current = mm
+    M.RequestRefresh()
+    assert(specPreview.shown, "enabled specialization button missing from minimap preview")
+    specPreview.scripts.OnClick(specPreview)
+    assert(focusedSection == "suite_minimap_specialization", "specialization preview must open its own accordion")
+    local deps, body = mm.fixedPreview.section.expander.box.selectionDeps, mm.fixedPreview.section.expander.box
+    assert(deps.WriteOffsets(body, specPreview, 31, -17) and config.specX == 31 and config.specY == -17,
+        "specialization selection editor must write independent minimap offsets")
+    local cursorX, cursorY = 100, 100
+    local originalCursor = GetCursorPosition
+    GetCursorPosition = function() return cursorX, cursorY end
+    specPreview.scripts.OnDragStart(specPreview)
+    cursorX, cursorY = 110, 90
+    specPreview.scripts.OnDragStop(specPreview)
+    GetCursorPosition = originalCursor
+    assert(config.specX > 31 and config.specY < -17, "specialization preview drag must save both offsets")
+    config.specShowSpec, config.specShowLoot = false, false
+    M.RequestRefresh()
+    assert(not specPreview.shown, "preview must hide an empty specialization menu")
+    config.specButton, config.specShowSpec, config.specShowLoot = false, true, true
+end
+end
 local stylePreview = previewControls["menu2.suite_minimap.minimap.preview.style"]
 local clockPreview = previewControls["menu2.suite_minimap.minimap.preview.infoClock"]
 local locationPreview = previewControls["menu2.suite_minimap.minimap.preview.infoLocation"]
 assert(folioPreview and stylePreview and clockPreview and locationPreview, "minimap preview targets missing")
+do
+    local config = S.Config("minimap")
+    local original = { config.infoWeather, config.infoWeatherDisplay, config.infoWeatherIconStyle,
+        config.infoWeatherIconSize, config.infoWeatherBox, config.infoWeatherBoxColor }
+    local weather = previewControls["menu2.suite_minimap.minimap.preview.infoWeather"]
+    local item
+    for _, candidate in ipairs(weather.previewUI.textItems) do
+        if candidate.spec[1] == "Weather" then item = candidate end
+    end
+    local function Control(key)
+        return assert(Find(mm, function(w) return w.meta and w.meta.settingKey == "msufsuite.minimap." .. key end))
+    end
+    local display, icons, size = Control("infoWeatherDisplay"), Control("infoWeatherIconStyle"), Control("infoWeatherIconSize")
+    config.infoWeather, config.infoWeatherBox = true, 2
+    current = mm
+    display.set(2); icons.set(2); size.set(48)
+    M.RequestRefresh()
+    local scale = weather.previewUI.art.scale
+    local pixels = math.max(1, math.floor(48 * scale + .5))
+    assert(item.label.text == "" and not item.label.shown and item.icon.shown
+        and item.icon.texture == "Interface\\AddOns\\MSUF_Suite\\Media\\Weather\\Clear.tga"
+        and item.icon.width == pixels and item.icon.height == pixels
+        and math.abs(weather.height - math.max(18, 56 * scale)) < .001
+        and math.abs(item.box.height - 52 * scale) < .001,
+        "weather preview must scale the original icon, hit area and background without the module runtime")
+    assert(not Control("infoWeatherFont").enabled and icons.enabled and size.enabled,
+        "icon-only mode should disable unused text controls")
+    display.set(3); icons.set(1)
+    M.RequestRefresh()
+    assert(item.icon.texture == 900403 and item.icon.shown and item.label.shown and item.label.text == "Clear",
+        "weather preview ignored the native symbol or combined display")
+    display.set(1)
+    M.RequestRefresh()
+    assert(item.label.text == "Clear" and item.label.shown and not item.icon.shown and not icons.enabled and not size.enabled
+        and Control("infoWeatherFont").enabled, "text-only mode must disable unused icon controls")
+    local boxColor = ColorTarget(mm, "suite_minimap_info_weather", "msufsuite.minimap.infoWeatherBoxColor")
+    assert(boxColor and globalColors["msufsuite.minimap.infoWeatherBoxColor"],
+        "weather background color must exist in both the section shortcut and MSUF Colors")
+    boxColor.set(0x12 / 255, 0x34 / 255, 0x56 / 255)
+    assert(config.infoWeatherBox == 3 and config.infoWeatherBoxColor == "123456",
+        "section color picker must choose the custom box color immediately")
+    M.RequestRefresh()
+    assert(item.box.shown and math.abs(item.box.color[1] - 0x12 / 255) < .001,
+        "preview ignored the section's custom background color")
+    config.infoWeatherBox = 2
+    globalColors["msufsuite.minimap.infoWeatherBoxColor"].set(0x65 / 255, 0x43 / 255, 0x21 / 255)
+    assert(config.infoWeatherBox == 3 and config.infoWeatherBoxColor == "654321",
+        "global Colors did not use the same custom background path")
+    config.infoWeatherBox = 1
+    boxColor.set(0x12 / 255, 0x34 / 255, 0x56 / 255)
+    assert(config.infoWeatherBox == 1, "preparing a background color must not enable a hidden box")
+    config.infoWeather, config.infoWeatherDisplay, config.infoWeatherIconStyle,
+        config.infoWeatherIconSize, config.infoWeatherBox, config.infoWeatherBoxColor = unpack(original)
+    M.RequestRefresh()
+end
 for key, section in pairs({ map = "layout", style = "shape", ornament = "style_art", ornament_bottom = "style_art",
     ornament_left = "style_art", ornament_right = "style_art", zoomIn = "behavior", zoomOut = "behavior",
     compass = "behavior", tracking = "elements",
@@ -3115,6 +3327,84 @@ end)()
     end
     assert(CheckSearchTargets(searchRows, pageContexts) > 1200,
         "cold Suite search omitted catalog settings or editor actions")
+end)()
+
+-- Summary content follows useful settings, never declaration order or offsets.
+;(function()
+    local ctx = { refreshers = {} }
+    local body = { _msuf2CollapsibleEntry = {} }
+    local value, enabled = 240, true
+    local rows = {
+        { id = "w1X", label = "Offset", kind = "slider", get = function() return 999 end },
+        { id = "w1Session", label = "Fight", kind = "dropdown", values = {{ value = 1, text = "Current fight" }}, get = function() return 1 end },
+        { id = "w1Type", label = "Meter", kind = "dropdown", values = {{ value = 1, text = "Damage" }}, get = function() return 1 end },
+    }
+    for _, row in ipairs(rows) do row.summary = optionsNS.SummaryPriority("damageMeter", row.id) end
+    optionsNS.AttachRowsSummary(ctx, body, rows)
+    for _, refresh in ipairs(ctx.refreshers) do refresh() end
+    assert(body.summary == "Meter: Damage · Fight: Current fight", "summary depends on grid order or displays a raw enum/offset")
+    ctx, body = { refreshers = {} }, { _msuf2CollapsibleEntry = {} }
+    local row = { id = "bar2Width", label = "Width", kind = "slider", get = function() return value end,
+        summary = optionsNS.SummaryPriority("dataTexts", "bar2Width"), summaryEnabled = function() return enabled end }
+    optionsNS.AttachRowsSummary(ctx, body, { row })
+    ctx.refreshers[1]()
+    assert(body.summary == "Width: 240", "numbered bar loses its summary")
+    value = 380
+    ctx.refreshers[1]()
+    assert(body.summary == "Width: 380", "summary reads a stale selected scope")
+    enabled = false
+    ctx.refreshers[1]()
+    assert(body.summary == "", "inactive setting remains in summary")
+end)()
+
+-- Concise help and disabled reasons are available on demand on the real bridge.
+;(function()
+    local oldDetails, oldDescription = W.DescriptionDetails, W.Description
+    local visible, details
+    W.DescriptionDetails = true
+    W.Description = function(_, text, _, _, _, _, full) visible, details = text, full; return Widget("FontString") end
+    optionsNS.Description({}, optionsNS.Help("Short summary", "Complete instructions"), 0, 0, 300)
+    assert(visible == "Short summary" and details == "Complete instructions", "concise help lost its details")
+    W.DescriptionDetails = nil
+    optionsNS.Description({}, optionsNS.Help("Short summary", "Complete instructions"), 0, 0, 300)
+    assert(visible == "Complete instructions", "older host loses help instructions")
+    W.DescriptionDetails, W.Description = oldDetails, oldDescription
+
+    local config = S.Config("chat")
+    local wasEnabled, wasPanel, wasRendering = config.enabled, config.inputPanel, config.fontRendering
+    config.enabled, config.inputPanel, config.fontRendering = true, false, 3
+    optionsNS.ForgetAvailability()
+    local rule = { key = "fontSize", enableKey = "inputPanel" }
+    local enabled, why = optionsNS.RuleEnabled("chat", rule, nil, true)
+    assert(not enabled and why:find("Show input background", 1, true), "disabled field does not name its prerequisite")
+    local _, quiet = optionsNS.RuleEnabled("chat", rule)
+    assert(quiet == nil, "normal refresh formats help nobody requested")
+    config.inputPanel = true
+    assert(optionsNS.RuleEnabled("chat", rule), "dependent field stays disabled after enabling its prerequisite")
+    rule = { key = "fontSize", requiresChoice = { key = "fontRendering", values = { [1] = true } } }
+    enabled, why = optionsNS.RuleEnabled("chat", rule, nil, true)
+    assert(not enabled and why:find("Smooth", 1, true) and why:find("Font rendering", 1, true),
+        "choice-dependent field does not explain its available choice")
+    local context, widget = { refreshers = {} }, Widget("Slider")
+    optionsNS.GateControls(context, "chat", { { rule = rule, widget = widget } })
+    assert(type(widget.disabledReason) == "function" and widget.disabledReason():find("Smooth", 1, true),
+        "disabled reason did not reach the control")
+    config.fontRendering = 1
+    assert(widget.disabledReason() == nil, "tooltip kept a stale disabled reason")
+    config.enabled = false
+    assert(widget.disabledReason():find(optionsNS.Tr(optionsNS.catalog.chat.title), 1, true),
+        "disabled module reason does not name the module")
+    config.enabled, config.inputPanel, config.fontRendering = wasEnabled, wasPanel, wasRendering
+
+    -- A cold native false result is not a reason to discard the selected face.
+    local previousOwner, previousStyled = MSUF_SetFontChecked, S.SetStyledFont
+    S.SetStyledFont = nil
+    MSUF_SetFontChecked = function(font, path, size, flags) font:SetFont(path, size, flags); return true end
+    local font = { calls = 0, SetShadowColor = function() end, SetShadowOffset = function() end }
+    function font:SetFont(path) self.path, self.calls = path, self.calls + 1; return false end
+    optionsNS.StylePreviewFont(font, "Selected.ttf", 14, "", 1, false)
+    assert(font.path == "Selected.ttf" and font.calls == 1, "preview replaced a pending custom font")
+    MSUF_SetFontChecked, S.SetStyledFont = previousOwner, previousStyled
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

@@ -119,6 +119,13 @@ do
         "a disabled module still exposed its detail settings")
     chat.enabled = true
 
+    local protection = Suite.Suite.Config("releaseProtection")
+    protection.enabled = false
+    Check(P.SearchRowAvailable("suite_qualityOfLife", "msufsuite.releaseProtection.enabled", { kind = "toggle" })
+        and not P.SearchRowAvailable("suite_qualityOfLife", "msufsuite.releaseProtection.modifier", { kind = "dropdown" }),
+        "disabled release protection must remain searchable through its enable switch")
+    protection.enabled = true
+
     local checkedFeature = false
     for _, feature in ipairs(P.QualityOfLifeSearchFeatures or {}) do
         if feature.switch ~= "enabled" then
@@ -141,6 +148,21 @@ Check(P.searchRegistered == true, "the Suite provider did not register")
 Check(api.GetSearchProviderCache() == nil, "Suite rows were collected at load instead of on the first search")
 
 local function Search(query) return api.SearchPages(query) end
+local function CheckReleaseSearch(stage)
+    for _, query in ipairs({ "release", "release protection", "freilassen", "releasen schutz", "geist freilassen", "release-schutz" }) do
+        local found
+        for index, record in ipairs(Search(query)) do
+            if index <= 6 and record.key == "suite_qualityOfLife" and record.exactTarget
+                and record.exactTarget.settingKey == "msufsuite.releaseProtection.enabled" then
+                found = record
+                break
+            end
+        end
+        Check(found and (not found.provided
+            or found.exactTarget.sectionId == "suite_qualityOfLife_releaseProtection_release_protection"),
+            stage .. " search did not find the exact release protection switch: " .. query)
+    end
+end
 local function Line(rec)
     return string.format("%s [%s] %s", tostring(rec.label), tostring(rec.kind), tostring(rec.hint))
 end
@@ -191,6 +213,7 @@ for _, query in ipairs({ "mythic plus", "mythic+", "m+", "m+ mythic plus" }) do
     end
 end
 Check(api.GetSearchProviderCache().skipped == 0, "the host skipped Suite rows as malformed")
+CheckReleaseSearch("unopened page")
 
 -- Every alias of every page is a search word of that page (Register.lua only
 -- fills M.ALIASES). Whether it ranks first depends on what else MSUF offers for
@@ -253,6 +276,20 @@ Check(buttonSize == 1, "the action bars' per-bar Button size gave " .. buttonSiz
 
 ------------------------------------------------------------------ installed modules only
 local rows = P.SearchRows()
+do
+    local specialization
+    for _, row in ipairs(rows) do
+        Check(row.suiteModuleId ~= "mapQuickSwitch", "search still exposes the retired QoL module")
+        if row.settingKey == "msufsuite.minimap.specButton" then specialization = row end
+    end
+    if flavor == "Forever" then
+        Check(not specialization, "Forever search exposed Retail specialization settings")
+    else
+        Check(specialization and specialization.pageKey == "suite_minimap"
+            and specialization.sectionId == "suite_minimap_specialization",
+            "specialization search must target the exact Minimap accordion")
+    end
+end
 local expectedQolRows = {}
 for _, feature in ipairs(Check(P.QualityOfLifeSearchFeatures,
     "the Quality of Life page did not publish its feature search inventory")) do
@@ -450,10 +487,10 @@ do
         end
     end
 
-    local function RouteExact(settingKey, expectedTab)
+    local function RouteExact(settingKey, expectedTab, expectedSection)
         local target
         for _, record in ipairs(api.GetSearchRecords()) do
-            if record.provided and record.key == "suite_qualityOfLife"
+            if record.key == "suite_qualityOfLife"
                 and record.exactTarget and record.exactTarget.settingKey == settingKey then
                 target = record
                 break
@@ -464,7 +501,7 @@ do
             target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
         world.widgets:RunTimers(80)
         local entry = M.cache and M.cache.suite_qualityOfLife
-        local feature = entry and entry.qualityOfLifeFeatureRows[target.exactTarget.sectionId]
+        local feature = entry and entry.qualityOfLifeFeatureRows[expectedSection or target.exactTarget.sectionId]
         local category = feature and entry.sections["suite_qualityOfLife_category_" .. feature.category]
         local _, widget = M.RuntimeControlCatalog.FindBySettingKey(
             settingKey, "suite_qualityOfLife", target.exactTarget)
@@ -478,8 +515,45 @@ do
     end
 
     Check(M.cache.suite_qualityOfLife == nil, "Quality of Life page unexpectedly warm before exact search")
+    RouteExact("msufsuite.releaseProtection.enabled", "main")
+    RouteExact("msufsuite.releaseProtection.modifier", "main", "suite_qualityOfLife_releaseProtection_release_protection")
     RouteExact("msufsuite.actionTracker.rows", "main")
     RouteExact("msufsuite.qol.junkReport", "merchants")
+    -- Edit Mode must scroll to the feature's settings card below the list,
+    -- rather than the parent category header. Exercise the real host routing.
+    do
+        local entry = M.cache.suite_qualityOfLife
+        local previousScroll, previousTop, previousHeight = M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight
+        local offset
+        M.scrollFrame = env.CreateFrame("ScrollFrame", nil, env.UIParent)
+        M.scrollFrame:SetHeight(400)
+        M.scrollFrame.SetVerticalScroll = function(_, value) offset = value end
+        M.scrollChild.GetHeight = function() return 2400 end
+        entry.wrapper.GetTop = function() return 1200 end
+        for _, case in ipairs({
+            { "combatStatsHUD", "secondary_stats", "character" },
+            { "durabilityAlert", "durability_warning", "gear" },
+            { "actionTracker", "action_tracker", "main" },
+        }) do
+            local sectionId = "suite_qualityOfLife_" .. case[1] .. "_" .. case[2]
+            local details = entry._msuf2ResolveMissingSection(sectionId)
+            local previousDetailTop = details.GetTop
+            details.GetTop = function() return 700 end
+            local category = details._msuf2CollapsibleEntry
+            category.open = false
+            category.body:Hide()
+            offset = nil
+            Check(Suite.Menu.FocusQualityOfLifeModule(case[1]), "Edit Mode detail route failed: " .. case[1])
+            world.widgets:RunTimers(80)
+            local feature = entry.qualityOfLifeFeatureRows[sectionId]
+            Check(offset == 456 and category.open and details:IsShown()
+                and feature.tab == case[3] and feature.row:GetParent():IsShown(),
+                "Edit Mode did not scroll directly to its visible settings card: " .. case[1])
+            details.GetTop = previousDetailTop
+        end
+        M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight = previousScroll, previousTop, previousHeight
+    end
+    CheckReleaseSearch("visited page")
     for _, settingKey in ipairs({ "msufsuite.actionTracker.rows", "msufsuite.qol.junkReport" }) do
         local matches = 0
         for _, record in ipairs(api.GetSearchRecords()) do

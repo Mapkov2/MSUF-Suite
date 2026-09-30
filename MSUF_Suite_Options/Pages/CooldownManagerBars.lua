@@ -241,7 +241,7 @@ function Page.AddBar(kind)
     return ok
 end
 -- The name input of the selected custom bar takes the keyboard (a new or
--- renamed bar); Frame Basics comes into view first.
+-- renamed bar); Basics comes into view first.
 function Page.FocusName()
     local input = Page.ui and Page.ui.nameInput
     if P.Combat() or not (input and input.SetFocus) or not Page.SlotInfo(Page.selected).custom then return false end
@@ -398,7 +398,7 @@ function Page.OpenAddBar(owner)
     return W.OpenDropdown(owner, addValues, nil, AddPicked)
 end
 
--- Bar actions: right-click on a bar chip, or "Bar actions" in Frame Basics.
+-- Bar actions: right-click on a bar chip, or "Bar actions" in Basics.
 -- One flat list (Menu2 lists do not nest): the actions, then the bars whose
 -- settings can be copied onto this one.
 local barMenu, COPY_VALUE, COPY_FROM = {}, {}, {}

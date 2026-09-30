@@ -48,12 +48,18 @@ end
 -- Opens a suite page through MSUF's public menu entry point. MSUF's facade
 -- loads its options addon on demand, which in turn attaches the suite pages.
 -- Without a page it opens the MSUF dashboard.
-function Menu.Open(page)
+function Menu.Open(page, moduleID)
     if Suite.IsCombatLocked() then return false end
     local open = _G.MSUF2_Open
     if type(open) ~= "function" then return false end
     if Suite.Client.IsAddOnLoaded(HOST_OPTIONS) and not Menu.Attach() then return false end
-    open(page or "home")
+    if open(page or "home") == false then return false end
+    -- The facade has now loaded and built the destination. QoL feature details
+    -- live behind category accordions and tabs, including on cached pages.
+    if page == "suite_qualityOfLife" and moduleID then
+        if not Menu.Attach() or not Menu.FocusQualityOfLifeModule then return false end
+        return Menu.FocusQualityOfLifeModule(moduleID)
+    end
     return true
 end
 

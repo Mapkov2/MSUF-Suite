@@ -142,11 +142,18 @@ local function NativeFont()
 end
 S.NativeFontPath = NativeFont
 
--- Applies a font with a guaranteed fallback: a missing external font must
--- never leave a string without any font.
+-- Prefer the host's font setter. Older hosts use the native font fallback
+-- below when an external font cannot be applied.
 function S.SetFont(fontString, path, size, flags)
     path = path or S.GlobalFontPath()
     flags = flags or ""
+    -- Classic may report false before its glyph metrics become ready. The
+    -- host setter keeps the chosen face instead of treating this as failure.
+    local checked = _G.MSUF_SetFontChecked
+    if type(checked) == "function" then
+        checked(fontString, path, size, flags)
+        return flags
+    end
     if fontString:SetFont(path, size, flags) == false then
         if fontString:SetFont(NativeFont(), size, flags) == false then
             -- Some clients or font files do not support optional rendering

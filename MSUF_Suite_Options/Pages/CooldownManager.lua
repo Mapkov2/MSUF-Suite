@@ -1,6 +1,6 @@
 local _, P = ...
 -- Cooldown manager page: one home for every bar. The docked preview shows the
--- selected bar and edits its spells. Frame Basics holds the module switch,
+-- selected bar and edits its spells. Basics holds the module switch,
 -- what applies to every bar, and the bar being edited with its name, type
 -- and actions. The sections below edit that bar through custom bar 1's
 -- rules, which Page.KeyFn maps from c1_<setting> to <selected bar>_<setting>.
@@ -17,7 +17,7 @@ local HELP = {
     general = "These apply to every bar.",
     bars = "The preview and every section below edit this bar.",
     basics = "The settings you change most. Attach the bar to another bar or to your player frame to keep them together; the gap is the space between them. Center keeps the first cooldown icon in the middle and adds the next icons right, left, right, left. Visible buffs stay compact; on a horizontal mixed bar, player and target buffs grow outward from the center on one row.",
-    spells = "Every spell of this bar, unlearned ones included. On a buff bar, Add spells offers received buffs such as Power Infusion and Innervate; Buff on me also accepts a buff aura ID or resolvable name and tracks that ID from any caster. With Show missing buffs off, only active buffs appear. The preview edits entries too: click for options, drag to reorder or onto a bar above, middle-click to remove (with undo). Removed spells stay under Add spells. Lists are kept per specialization.",
+    spells = P.Help("Add spells, then click an icon to customize it.", "Every spell of this bar, unlearned ones included. On a buff bar, Add spells offers received buffs such as Power Infusion and Innervate; Buff on me also accepts a buff aura ID or resolvable name and tracks that ID from any caster. With Show missing buffs off, only active buffs appear. The preview edits entries too: click for options, drag to reorder or onto a bar above, middle-click to remove (with undo). Removed spells stay under Add spells. Lists are kept per specialization."),
     layout = "How the icons line up and grow. A free bar's position counts from the screen center; an attached bar's is an offset from its attach point.",
     look = "Icon crop, border, swipe and frame layer of this bar.",
     text = "Which numbers show, which one is drawn on top, and their size and place. Single spells can differ: click them in the preview. The font settings below apply to every bar; Slug has no shadow.",
@@ -28,7 +28,7 @@ local HELP = {
 }
 -- Per-bar settings by topic; every custom bar 1 rule appears exactly once.
 -- Basics holds the most used ones (attachment complete) and stays open; the
--- rest start closed. The bar's name and type sit in Frame Basics.
+-- rest start closed. The bar's name and type sit in Basics.
 local SECTIONS = {
     { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "side", "gap", "align",
         "alpha" } },
@@ -66,7 +66,7 @@ do
         end
     end
 end
--- Frame Basics: Blizzard's bars and sounds share a row, then the switches.
+-- Basics: Blizzard's bars and sounds share a row, then the switches.
 local GENERAL_ORDER = { "blizzard", "raidEssentials", "soundChannel", "showGCD", "muteSounds", "readyGlowCombat" }
 
 ------------------------------------------------------------------ selected-bar rows
@@ -228,7 +228,7 @@ local function SectionState(spec)
 end
 local function StateText(state, why, kind)
     if state == 1 then return Suite.StatusText(why or "Unavailable on this client", Tr) end
-    if state == 2 then return Tr("Turn the cooldown manager on in Frame Basics to edit these.") end
+    if state == 2 then return Tr("Turn the cooldown manager on in Basics to edit these.") end
     if state == 4 then return format(Tr("Not used by the %s type. Pick another bar to edit these."), kind) end
     if state == 5 then
         return format(Tr("This bar's own options are not used by the %s type; the settings below apply to every bar."), kind)
@@ -322,7 +322,7 @@ function Page.Summary(slot)
     return text
 end
 
--- Frame Basics, after the module actions: what applies to every bar.
+-- Basics, after the module actions: what applies to every bar.
 local function BuildGeneral(ctx, card)
     local width = max(240, (card._msuf2Width or 720) - 32)
     local y = min(tonumber(card._msuf2CursorY) or -80, -40)
@@ -364,7 +364,7 @@ local function BuildIdentity(ctx, ui, body, y, half)
     return y - 58
 end
 
--- The bar choice closes the Frame Basics card: the bar being edited, + Add
+-- The bar choice closes the Basics card: the bar being edited, + Add
 -- bar and the bar's actions, its name and type, and its summary.
 local function BuildBars(ctx, b, ui, body)
     local width = max(240, (body._msuf2Width or b.width or 720) - 32)
@@ -552,7 +552,7 @@ local function Build(ctx)
     if card then
         BuildGeneral(ctx, card)
         BuildBars(ctx, b, ui, card)
-        P.AttachSectionReset(ctx, card, "Frame Basics", function()
+        P.AttachSectionReset(ctx, card, "Basics", function()
             local rules = P.SectionRules(ID, "general")
             rules[#rules + 1] = RULES[KEYS.c1.name]
             rules[#rules + 1] = RULES[KEYS.c1.kind]

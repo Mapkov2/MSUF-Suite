@@ -62,7 +62,7 @@ C_AddOns = {
     end,
 }
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
-for _, id in ipairs({ "cursorEffects", "mapQuickSwitch", "mapLandingShortcuts",
+for _, id in ipairs({ "cursorEffects", "mapLandingShortcuts",
     "combatStatsHUD", "combatPetStatus", "combatMovementCue", "burningRushCue",
     "loadoutReminder", "lootToastFilter", "groupBloodlust", "innervateCue",
     "durabilityAlert", "battleRes" }) do
@@ -148,15 +148,15 @@ assert(Suite.Suite.Config("skyriding").look == 3
     and Suite.Suite.Config("skyriding").accentColor == "d8b66a",
     "older Skyriding profiles lost their selected colors")
 for _, id in ipairs(Suite.SuiteOrder) do
-    assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "actionTracker" and id ~= "nameplates"
+    assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "actionTracker"
         and id ~= "durabilityAlert" and id ~= "battleRes" and id ~= "innervateCue"
         and id ~= "merchantLevel" and id ~= "vaultSpec" and id ~= "tooltipIDs"
         and id ~= "itemCounts" and id ~= "loadoutReminder" and id ~= "quietPopups"
-        and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "groupDeathAlert"
+        and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "groupDeathAlert" and id ~= "releaseProtection"
         and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
-        and id ~= "cursorEffects" and id ~= "mapQuickSwitch"
+        and id ~= "cursorEffects"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower"
         and id ~= "mythicResetReminder" and id ~= "combatPetStatus"
         and id ~= "lootVendorRules" and id ~= "mapLandingShortcuts"

@@ -28,4 +28,15 @@ assert(font.flags == "SLUG", "Slug without outline has unexpected flags")
 S.SetStyledFont(font, "Chosen.ttf", 14, "OUTLINE", 1, false, 100, 1)
 assert(font.flags == "OUTLINE" and font.shadow[4] == 0 and font.offset[1] == 0,
     "Default rendering did not restore shadow-free text")
+-- The current host owns cold-font recovery; keep its requested face and flags.
+local cold = { calls = 0 }
+function cold:SetFont(path, size, flags)
+    self.path, self.size, self.flags, self.calls = path, size, flags, self.calls + 1
+    return false
+end
+MSUF_SetFontChecked = function(fs, path, size, flags) fs:SetFont(path, size, flags); return true end
+assert(S.SetFont(cold, "Selected.ttf", 14, "OUTLINE") == "OUTLINE")
+assert(cold.path == "Selected.ttf" and cold.calls == 1, "cold font application silently changed the user's face")
+MSUF_SetFontChecked = nil
+
 print("Suite text effects: Smooth, Sharp, Slug, shadows and reset passed")
