@@ -11,6 +11,19 @@ B.Section("groupDeathAlert", "group_death_alert", "Group death alert", {
     Bool("includePlayer", "Include your own death"),
 })
 
+B.Module("releaseProtection", {
+    title = "Release spirit protection",
+    description = "Require a held modifier key before clicking Release Spirit in the death dialog.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("releaseProtection", "release_protection", "Release spirit protection", {
+    Choice("modifier", "Hold to release", 1, { "Shift", "Ctrl", "Alt" }),
+    Bool("openWorld", "Protect release in the open world", true),
+    Bool("party", "Protect release in dungeons and delves", true),
+    Bool("raid", "Protect release in raids", true),
+    Bool("pvp", "Protect release in battlegrounds and arenas", true),
+})
+
 B.Module("groupFinderDoubleClick", {
     title = "Group finder double-click",
     description = "Double-click a search result to open Blizzard's normal application dialog.",
@@ -65,9 +78,18 @@ B.Module("groupRaidShortcuts", {
         return true
     end,
 })
+local function RaidMarker(key, label, default)
+    -- Blizzard raid-target IDs; keep this order for existing saved profiles.
+    local rule = Choice(key, label, default, { "Star", "Circle", "Diamond", "Triangle", "Moon", "Square", "Cross", "Skull" })
+    rule.choiceIcons = {}
+    for index = 1, #rule.choices do
+        rule.choiceIcons[index] = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. index
+    end
+    return rule
+end
 B.Section("groupRaidShortcuts", "raid_shortcuts", "Raid shortcuts", {
-    Number("tankMarker", "Tank raid marker", 4, 1, 8),
-    Number("healerMarker", "Healer raid marker", 6, 1, 8),
+    RaidMarker("tankMarker", "Tank raid marker", 4),
+    RaidMarker("healerMarker", "Healer raid marker", 6),
     Bool("autoMarkTank", "Automatically mark the party tank"),
     Bool("autoMarkHealer", "Automatically mark the party healer"),
 })

@@ -69,13 +69,13 @@ assert(count == 55 and Suite.Suite.instances.actionTracker and Suite.Suite.insta
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
     and Suite.Suite.instances.itemCounts and Suite.Suite.instances.loadoutReminder
     and Suite.Suite.instances.quietPopups and Suite.Suite.instances.waypoints
-    and Suite.Suite.instances.dailyComfort and Suite.Suite.instances.groupDeathAlert
+    and Suite.Suite.instances.dailyComfort and Suite.Suite.instances.groupDeathAlert and Suite.Suite.instances.releaseProtection
     and Suite.Suite.instances.tooltipVisibility and Suite.Suite.instances.uiErrorFilter
     and Suite.Suite.instances.groupFinderDoubleClick and Suite.Suite.instances.groupFinderApplicantSort
     and Suite.Suite.instances.mythicKeyShare
     and Suite.Suite.instances.groupBloodlust and Suite.Suite.instances.lootContainers
     and Suite.Suite.instances.lootVendorRules and Suite.Suite.instances.cursorEffects
-    and Suite.Suite.instances.mapQuickSwitch and Suite.Suite.instances.combatStatsHUD
+    and not Suite.Suite.instances.mapQuickSwitch and Suite.Suite.instances.combatStatsHUD
     and Suite.Suite.instances.combatPetStatus and Suite.Suite.instances.delveSolePower
     and Suite.Suite.instances.mythicResetReminder and Suite.Suite.instances.mapLandingShortcuts
     and Suite.Suite.instances.socketGemSuggestions and Suite.Suite.instances.tooltipSpellCopy

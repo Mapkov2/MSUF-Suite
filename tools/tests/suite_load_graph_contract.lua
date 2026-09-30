@@ -96,6 +96,9 @@ assert((owner.Suite.catalog.runSummary.rules.showMythicPlus ~= nil) == (flavor =
     "Mythic+ result card must be available only on Retail")
 assert(owner.Suite.Availability("innervateCue") == (flavor == "Mainline"),
     "Innervate cue must be restricted to Retail Druids")
+assert(owner.Suite.Availability("releaseProtection") and not owner.Suite.Config("releaseProtection").enabled
+    and owner.Suite.Config("releaseProtection").modifier == 1,
+    "release protection must be opt-in with Shift on Retail and Forever")
 do
     assert(owner.Suite.Config("objectives").enabled
         and owner.Suite.Config("runSummary").enabled

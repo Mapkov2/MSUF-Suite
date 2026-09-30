@@ -32,6 +32,7 @@ CollectionNewMarkers.lua
 GuildChatPrivacy.lua
 UIErrorFilter.lua
 GroupDeathAlert.lua
+ReleaseProtection.lua
 GroupFinderDoubleClick.lua
 GroupFinderApplicantSort.lua
 GroupFinderExitReminder.lua

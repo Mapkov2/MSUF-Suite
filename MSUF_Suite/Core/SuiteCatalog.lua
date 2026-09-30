@@ -40,6 +40,7 @@ local moduleAddons = {
     guildChatPrivacy = "MSUF_Suite_QualityOfLife",
     uiErrorFilter = "MSUF_Suite_QualityOfLife",
     groupDeathAlert = "MSUF_Suite_QualityOfLife",
+    releaseProtection = "MSUF_Suite_QualityOfLife",
     groupFinderDoubleClick = "MSUF_Suite_QualityOfLife",
     groupFinderApplicantSort = "MSUF_Suite_QualityOfLife",
     groupFinderExitReminder = "MSUF_Suite_QualityOfLife",
