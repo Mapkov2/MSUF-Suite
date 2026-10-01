@@ -12,6 +12,7 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
+local UpdateAssist = AB.UpdateAssist
 local api = {}
 local slotMap = {}
 local chargeEpoch = 0
@@ -41,6 +42,8 @@ function AB.ResolveAPI()
     api.InRange = bar.IsActionInRange
     api.EnableRange = bar.EnableActionRangeCheck
     api.Overlayed = C_SpellActivationOverlay.IsSpellOverlayed
+    api.IsItem = bar.IsItemAction
+    api.Quality = bar.GetProfessionQualityInfo
     if AB.desatCurve then return end
     local step = Enum.LuaCurveType.Step
     AB.desatCurve, AB.alphaCurve = C_CurveUtil.CreateCurve(), C_CurveUtil.CreateCurve()
@@ -149,21 +152,24 @@ local function State(rec)
         checked = (Public(current) and current) or (Public(repeating) and repeating) or false
     end
     rec.button:SetChecked(checked)
+    rec.decorChecked = checked
+    AB.UpdateDecorState(rec)
 end
 
-local function Count(rec)
+local function Count(rec, charges, queried)
     local slot, count = rec.slot, rec.button.Count
     if not count then return end
     count:SetText(api.DisplayCount(slot))
     local alpha = 1
     if M.config.hideEmptyCharges and rec.noChargeEpoch ~= chargeEpoch then
-        local charges = api.Charges(slot)
+        if not queried then charges, queried = api.Charges(slot), true end
         local readable = Public(charges) and type(charges) == "table"
         local maximum, current = readable and charges.maxCharges, readable and charges.currentCharges
         -- Secret while cooldowns are restricted: the count then stays shown.
         if Public(maximum) and type(maximum) == "number" and maximum > 1 and Public(current) and current == 0 then alpha = 0 end
     end
     count:SetAlpha(alpha)
+    return charges, queried
 end
 
 local function Text(rec)
@@ -206,6 +212,11 @@ local function CooldownFeedback(rec, active)
         return
     end
     local object = api.CooldownDuration(rec.slot, true)
+    if not object then
+        button.icon:SetDesaturation(0)
+        button:SetAlpha(1)
+        return
+    end
     button.icon:SetDesaturation(desaturate and object:EvaluateRemainingDuration(AB.desatCurve) or 0)
     if alpha then
         button:SetAlpha(object:EvaluateRemainingDuration(AB.alphaCurve))
@@ -214,10 +225,23 @@ local function CooldownFeedback(rec, active)
     end
 end
 
+-- The duration getters are documented as never nil, but the 12.1 client
+-- returns nothing for some action slots (BugSack: GetActionChargeDuration on a
+-- proven charge action). Without an object the swipe clears instead of
+-- erroring. Returns the new shown flag.
+local function Swipe(frame, duration)
+    if duration then
+        frame:SetCooldownFromDurationObject(duration)
+        return true
+    end
+    frame:Clear()
+    return nil
+end
+
 -- Duration objects paint every swipe and drive the optional feedback; an
 -- inactive cooldown needs no info table, and secret remaining times stay
 -- inside Blizzard's C sinks.
-local function Cooldown(rec)
+local function Cooldown(rec, charges, chargesQueried)
     local slot, button = rec.slot, rec.button
     local cooldown, charge, loc = button.cooldown, button.chargeCooldown, button.lossOfControlCooldown
     local replace = false
@@ -226,8 +250,7 @@ local function Cooldown(rec)
         local shown = lossInfo and lossInfo.isActive
         if Public(shown) and shown then
             replace = lossInfo.shouldReplaceNormalCooldown == true
-            loc:SetCooldownFromDurationObject(api.LoCDuration(slot))
-            rec.locCooldownShown = true
+            rec.locCooldownShown = Swipe(loc, api.LoCDuration(slot))
         elseif rec.locCooldownShown then
             loc:Clear()
             rec.locCooldownShown = nil
@@ -237,32 +260,50 @@ local function Cooldown(rec)
         rec.locCooldownShown = nil
     end
     if charge and rec.noChargeEpoch ~= chargeEpoch then
-        local charges = api.Charges(slot)
-        local readable = Public(charges) and type(charges) == "table"
-        local recharging = readable and charges.isActive
-        if Public(recharging) and recharging and not replace then
-            charge:SetCooldownFromDurationObject(api.ChargeDuration(slot))
-            rec.chargeCooldownShown = true
-        elseif readable and Public(recharging) and rec.chargeCooldownShown then
-            charge:Clear()
-            rec.chargeCooldownShown = nil
-        end
-        -- Blizzard returns a public maxCharges=0 for actions without charges.
-        -- Recheck on a charge event or when the action itself is repainted.
-        local maximum = readable and charges.maxCharges
-        if Public(maximum) and maximum == 0 and Public(recharging) and recharging == false then
-            rec.noChargeEpoch = chargeEpoch
+        -- Once this action's public maximum proves it has charges, the native
+        -- duration can paint and clear the recharge without another info table.
+        -- Charge, spell and action changes invalidate that proof; counts still
+        -- read their current answer when their own work is marked.
+        if not chargesQueried and rec.chargeTypeEpoch == chargeEpoch then
+            if not replace then
+                rec.chargeCooldownShown = Swipe(charge, api.ChargeDuration(slot))
+            elseif rec.chargeCooldownShown then
+                charge:Clear()
+                rec.chargeCooldownShown = nil
+            end
+        else
+            -- A full paint already read the same native table for the count.
+            -- Share it only within this synchronous paint, including a nil result.
+            if not chargesQueried then charges, chargesQueried = api.Charges(slot), true end
+            local readable = Public(charges) and type(charges) == "table"
+            local recharging = readable and charges.isActive
+            if Public(recharging) and recharging and not replace then
+                rec.chargeCooldownShown = Swipe(charge, api.ChargeDuration(slot))
+            elseif readable and Public(recharging) and rec.chargeCooldownShown then
+                charge:Clear()
+                rec.chargeCooldownShown = nil
+            end
+            -- Blizzard returns a public maxCharges=0 for actions without charges.
+            -- Recheck on a charge event or when the action itself is repainted.
+            local maximum = readable and charges.maxCharges
+            if Public(maximum) and type(maximum) == "number" and maximum > 0 then
+                rec.chargeTypeEpoch = chargeEpoch
+            end
+            if Public(maximum) and maximum == 0 and Public(recharging) and recharging == false then
+                rec.noChargeEpoch = chargeEpoch
+                rec.chargeTypeEpoch = nil
+            end
         end
     end
     if not replace then
         -- clearIfZero defaults to true: a ready action clears its swipe.
-        cooldown:SetCooldownFromDurationObject(api.CooldownDuration(slot))
-        rec.cooldownShown = true
+        rec.cooldownShown = Swipe(cooldown, api.CooldownDuration(slot))
     elseif rec.cooldownShown then
         cooldown:Clear()
         rec.cooldownShown = nil
     end
     if not AB.directDuration or rec.feedback then CooldownFeedback(rec, not replace) end
+    return charges, chargesQueried
 end
 
 ------------------------------------------------------------------ glows
@@ -333,8 +374,15 @@ local function HideAlert(button)
     alert.ProcStartAnim:Stop()
 end
 
--- The pixel border glow in the current interaction color.
+-- The pixel border glow in the current interaction color; a round button
+-- glows with a ring.
 local function PixelGlow(rec)
+    if M.config.buttonShape == 2 then
+        AB.ShowEdges(rec.glowEdges, false)
+        AB.GlowRing(rec, true)
+        return
+    end
+    AB.GlowRing(rec, false)
     local style = AB.style
     AB.PlaceEdges(AB.Edges(rec, "glowEdges", "OVERLAY", 7), rec.button, 2, style.ir, style.ig, style.ib, 1)
 end
@@ -353,6 +401,7 @@ local function SetGlow(rec, show)
     if rec.glow then
         if rec.glowMode == 1 then HideAlert(button) end
         AB.ShowEdges(rec.glowEdges, false)
+        AB.GlowRing(rec, false)
     end
     rec.glow, rec.glowMode = show, mode
     if not show then return end
@@ -385,6 +434,7 @@ end
 
 ------------------------------------------------------------------ buttons
 local function Clear(rec)
+    if rec.quality then rec.quality:Hide() end
     local button = rec.button
     rec.filled = false
     if button.icon then
@@ -395,6 +445,7 @@ local function Clear(rec)
     if button.chargeCooldown then button.chargeCooldown:Clear() end
     if button.lossOfControlCooldown then button.lossOfControlCooldown:Clear() end
     rec.cooldownShown, rec.chargeCooldownShown, rec.locCooldownShown, rec.noChargeEpoch = nil, nil, nil, nil
+    rec.chargeTypeEpoch = nil
     if button.Count then button.Count:SetText("") end
     if button.Name then button.Name:SetText("") end
     if button.Border then button.Border:Hide() end
@@ -411,14 +462,36 @@ local function Clear(rec)
     ReleaseRange(rec)
 end
 
+-- A crafted item's quality badge, as ActionBarActionButtonMixin:
+-- UpdateProfessionQuality shows it on Retail and Forever: item actions only.
+-- Native reused buttons own this overlay themselves.
+local function ProfessionQuality(rec)
+    if rec.native then return end
+    local item = api.IsItem(rec.slot)
+    local info = Public(item) and item and api.Quality(rec.slot)
+    local atlas = Public(info) and type(info) == "table" and info.iconInventory
+    if not Public(atlas) or type(atlas) ~= "string" or atlas == "" then
+        if rec.quality then rec.quality:Hide() end
+        return
+    end
+    if not rec.quality then rec.quality = S.CreateTexture(rec.button, nil, "OVERLAY", nil, 7) end
+    rec.quality:SetAtlas(atlas)
+    rec.quality:SetSize(math.max(8, rec.bar.size * .4), math.max(8, rec.bar.size * .4))
+    rec.quality:ClearAllPoints()
+    rec.quality:SetPoint("TOPLEFT", rec.button.icon, "TOPLEFT", 0, 0)
+    rec.quality:Show()
+end
+
 local function Paint(rec)
     local slot = rec.slot
     local has = slot and api.HasAction(slot)
     if not (Public(has) and has) then
         Clear(rec)
+        UpdateAssist(rec)
         return
     end
     rec.noChargeEpoch = nil
+    rec.chargeTypeEpoch = nil
     rec.filled = true
     local icon = rec.button.icon
     local texture = api.Texture(slot)
@@ -429,11 +502,14 @@ local function Paint(rec)
     AcquireRange(rec)
     Usable(rec)
     State(rec)
-    Count(rec)
+    local charges, chargesQueried = Count(rec)
     Text(rec)
     Equipped(rec)
-    Cooldown(rec)
+    ProfessionQuality(rec)
+    Cooldown(rec, charges, chargesQueried)
     GlowCheck(rec)
+    -- The recommendation ring follows the action the paint just cached.
+    UpdateAssist(rec)
 end
 
 -- Icon storms (forms, spell overrides): only buttons whose texture changed
@@ -489,6 +565,7 @@ local function Remap()
     for i = 1, #AB.owned do
         local rec = AB.owned[i]
         rec.noChargeEpoch = nil
+        rec.chargeTypeEpoch = nil
         MapButton(rec)
     end
 end

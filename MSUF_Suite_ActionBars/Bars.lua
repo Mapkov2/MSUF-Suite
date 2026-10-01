@@ -14,6 +14,16 @@ local NS, S = P.NS, P.Suite
 -- frames exist only after the module is first enabled.
 local AB = { M = {}, SNIPPET = {}, bars = {}, records = {}, owned = {}, adopted = {} }
 P.ActionBars = AB
+-- Narrow visitor for finite QoL animation of real Suite-owned headers. Out
+-- of combat only; combat start stops every header animation (Events.lua).
+function S.VisitPartyActionBars(visitor, owner)
+    if not AB.M.active or NS.IsCombatLocked() then return end
+    for index=1,10 do
+        local bar=AB.bars[index]
+        if bar and bar.owned and bar.header and not NS.Safety.IsForbidden(bar.header)
+            and bar.header:IsShown() then visitor(owner,bar.header) end
+    end
+end
 local M = AB.M
 S.Install("actionbars", M)
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
@@ -35,9 +45,13 @@ AB.NATIVE_BUTTONS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBotto
     "MultiBarLeftButton", "MultiBar5Button", "MultiBar6Button", "MultiBar7Button" }
 
 -- Setting names per bar, built once so hot paths never concatenate keys.
-local SUFFIXES = { "Visibility", "Alpha", "FadeAlpha", "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty",
-    "ClickThrough", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize",
-    "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding" }
+-- Every per-bar catalog rule has its suffix here (the action bar contract
+-- checks it against Core/Catalog/ActionBars.lua).
+local SUFFIXES = { "Visibility", "HideGamepad", "ResumeVisibility", "Layer",
+    "Alpha", "FadeAlpha", "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty",
+    "ClickThrough", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY",
+    "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY",
+    "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" }
 AB.KEYS = {}
 for i = 1, BAR_COUNT do
     local keys = {}
@@ -348,13 +362,22 @@ function AB.LayoutBar(bar)
     local background = bar.background
     if config[keys.Background] then
         local pad = AB.Snap(config[keys.BackgroundPadding])
+        local px, py = config[keys.BackgroundPaddingX] or -1, config[keys.BackgroundPaddingY] or -1
+        px, py = px < 0 and pad or AB.Snap(px), py < 0 and pad or AB.Snap(py)
+        local x, y = AB.Snap(config[keys.BackgroundX] or 0), AB.Snap(config[keys.BackgroundY] or 0)
         local red, green, blue = S.RGB(config[keys.BackgroundColor])
         background:ClearAllPoints()
-        background:SetPoint("TOPLEFT", header, "TOPLEFT", -pad, pad)
-        background:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", pad, -pad)
+        background:SetPoint("TOPLEFT", header, "TOPLEFT", x - px, y + py)
+        background:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", x + px, y - py)
         background:SetColorTexture(red, green, blue, config[keys.BackgroundAlpha] / 100)
         background:Show()
+        -- AB.LayoutDecorations colors and places the edges after the style pass.
+        if config[keys.BackgroundBorder] > 0 and not bar.backgroundEdges then
+            bar.backgroundEdges = {}
+            for i = 1, 4 do bar.backgroundEdges[i] = S.CreateTexture(header, nil, "BORDER") end
+        end
     else
         background:Hide()
+        if bar.backgroundEdges then for i = 1, 4 do bar.backgroundEdges[i]:Hide() end end
     end
 end

@@ -59,8 +59,21 @@ local function Throttle(wait)
     C_Timer.After(wait, CapDone)
 end
 
+local function CooldownAndCount(rec)
+    local charges, queried = Cooldown(rec)
+    Count(rec, charges, queried)
+end
 local function CooldownWalk()
-    Walk(Cooldown)
+    if dirty.count then
+        -- Charge and cooldown events often arrive together. Consume their
+        -- count mark only after the combined walk succeeded; a failure leaves
+        -- the ordinary count unit intact and cooldown's isolated retry armed.
+        Walk(CooldownAndCount)
+        if M.config.hideEmptyCharges then WalkNative(NativeCount) end
+        dirty.count = false
+    else
+        Walk(Cooldown)
+    end
     if not AB.directDuration then WalkNative(NativeFeedback) end
 end
 local function UsableWalk() Walk(Usable) end
@@ -235,12 +248,13 @@ function AB.MarkBar(bar)
 end
 
 -- Re-runs the suite's shown-button plan on one bar after Blizzard applied
--- its own (Blizzard.lua); in combat it waits for combat to end.
+-- its own (Blizzard.lua). Blizzard plans on every UpdateAction, so a slot
+-- burst (spec, talent or loadout swap) marks the bar and the next flush runs
+-- the plan once; in combat it waits for combat to end (FlushProtected). The
+-- reused buttons' OnHide wrap keeps them shown until then.
 function AB.Regrid(bar)
-    if not AB.Execute(bar.header, AB.SNIPPET.GRID) then
-        gridBars[bar] = true
-        Schedule()
-    end
+    gridBars[bar] = true
+    Schedule()
 end
 
 -- StopDispatcher: every mark and every parked unit is dropped.

@@ -10,6 +10,7 @@
 
 Bootstrap.lua
 Bars.lua
+Decorations.lua
 Blizzard.lua
 Paging.lua
 Visibility.lua

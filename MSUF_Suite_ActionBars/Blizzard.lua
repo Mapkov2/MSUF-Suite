@@ -135,13 +135,15 @@ function AB.ReadBlizzard()
 end
 
 -- Blizzard's hidden bars still apply their own shown-button plan to the
--- buttons the suite reuses: spellbook and Quick Keybind grids and Edit Mode
--- icon counts call UpdateShownButtons, which caps them at Blizzard's icon
--- count. The suite's plan runs again right after (out of combat; in combat
--- it waits for combat to end). This hook writes nothing on Blizzard's bar
--- (numButtonsShowable and the like): its secure pass reads those fields, and
--- a tainted value would block its SetShown calls in combat. The one field
--- the suite does clear is each reused button's `bar` (AB.Dispose).
+-- buttons the suite reuses: action changes (UpdateAction calls
+-- self.bar:UpdateShownButtons, also in combat), spellbook and Quick Keybind
+-- grids and Edit Mode icon counts call UpdateShownButtons, which caps them at
+-- Blizzard's icon count. The suite's plan runs again with the next flush out
+-- of combat (AB.Regrid, once per bar for a burst), and the reused buttons'
+-- OnHide wrap (KEEP) answers at once, also in combat. The
+-- suite writes nothing on Blizzard's bar or buttons (numButtonsShowable,
+-- `bar` and the like): Blizzard's secure code reads those fields, and a
+-- tainted value would spread into it.
 local suiteBarOf = {}
 local function AfterBlizzardPlan(blizzardBar)
     local bar = suiteBarOf[blizzardBar]
@@ -151,6 +153,22 @@ end
 -- main bar's OnShow): isolated, so an error never stops Blizzard's caller.
 local function AfterBlizzardPlanHook(blizzardBar) Dispatch(AfterBlizzardPlan, blizzardBar) end
 local function ReassertHook() Dispatch(Reassert) end
+
+-- Blizzard's plan shows only buttons without statehidden, which every suite
+-- hide sets (a restricted Hide), so only its hides can disagree with the
+-- suite: one beyond Blizzard's icon count. When a reused button itself (not
+-- its header) was hidden without statehidden, the suite's plan decides in
+-- the restricted environment, also in combat (SecureHandlers.lua
+-- Wrapped_ShowHide: the post-body runs after Blizzard's own OnHide).
+local KEEP_PRE = [[if not self:IsShown() then return nil, true end]]
+local KEEP_POST = [[
+if self:GetAttribute("statehidden") then return end
+local bar=self:GetParent()
+local action=self:GetAttribute("action")
+local show=action and (self:GetAttribute("index") or 1)<=(bar:GetAttribute("count") or 12)
+if show and not bar:GetAttribute("showempty") and (bar:GetAttribute("gridmask") or 0)<2 and not HasAction(action) then show=false end
+if show then self:Show() end
+]]
 
 -- Bars 2-8 and the stance and pet bars go under the hidden parent. Bars
 -- 2-8 lose their events; a reused bar keeps a post-hook on its own
@@ -190,31 +208,12 @@ local function DisposeButtons(control)
                 local target = AB.bars[index]
                 if target and target.native then
                     reused = reused + 1
-                    -- The hidden original bar must not reapply its own shown
-                    -- button plan when the action changes on our header:
-                    -- ActionBarActionButtonMixin:UpdateAction calls
-                    -- self.bar:UpdateShownButtons, also in combat, where the
-                    -- suite's plan cannot answer until combat ends (the
-                    -- post-hook above re-applies it out of combat only).
-                    -- Clearing the field is an insecure write, so Blizzard
-                    -- code that reads `bar` on these buttons runs tainted
-                    -- from that read on (line numbers live/Forever): proc
-                    -- alerts (ActionButtonSpellAlerts.lua:47,
-                    -- CheckAndSetArtStyle; the alert art is never downgraded
-                    -- here), action changes (ActionButton.lua:549/561,
-                    -- UpdateAction, which the assisted-combat rotation frame
-                    -- also forces at its update rate while it shows),
-                    -- tooltips with enhanced tooltips off (1075/1119,
-                    -- SetTooltip) and the rotation frame's tutorial check
-                    -- (1916/1993, EvaluateTutorials). The flyout read
-                    -- (1630/1689) never happens: every reused button carries
-                    -- a flyoutDirection attribute (Bars.lua).
-                    -- Keeping `bar` instead would let Blizzard's hidden bar
-                    -- show and hide these buttons by its own icon count in
-                    -- combat, and would change their proc alert art and
-                    -- tooltip anchor; a secure OnShow/OnHide wrap could only
-                    -- undo the show/hide, not those. So the field is cleared.
-                    button.bar = nil
+                    -- Blizzard's `bar` field stays (its readers: UpdateAction,
+                    -- proc alert art, tooltip anchor); the OnHide wrap keeps
+                    -- the suite's plan. Every reused button carries a
+                    -- flyoutDirection attribute (Bars.lua), so Blizzard's
+                    -- flyout never asks the hidden bar for a direction.
+                    SecureHandlerWrapScript(button, "OnHide", target.header, KEEP_PRE, KEEP_POST)
                     button:SetAttribute("_childupdate-grid", AB.SNIPPET.BUTTON)
                     SecureHandlerSetFrameRef(control, "reuse" .. reused, button)
                     SecureHandlerSetFrameRef(control, "reuseHeader" .. reused, target.header)

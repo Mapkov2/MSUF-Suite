@@ -18,7 +18,7 @@ local PLACEABLE = { spell = true, item = true, macro = true, mount = true, compa
 -- Reveal bits: 2 = drag seen by Lua (out of combat), 4 = secure drag from a
 -- suite button, 8 = placement preview. Bit 1 is never a reveal.
 local REVEAL = {}
-for _, bit in ipairs({ 2, 4, 8 }) do
+for _, bit in ipairs({ 2, 4, 8, 16 }) do
     REVEAL[bit] = {
         [true] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',true)',
         [false] = 'self:RunAttribute("msuf-reveal",' .. bit .. ',false)',
@@ -32,9 +32,14 @@ end
 AB.HasForms = HasForms
 
 -- Driver string for one bar and visibility mode (catalog choice index).
-function AB.VisibilityDriver(index, mode, forms)
+-- reveal: the spellbook/macro reveal shows the bar out of combat. It follows
+-- the implicit pet battle and vehicle hides; a bar that is hidden outright
+-- (Never, the gamepad rule, a stance bar without forms) stays hidden.
+function AB.VisibilityDriver(index, mode, forms, gamepad, reveal)
+    if gamepad and M.config[AB.KEYS[index].HideGamepad] then return "hide" end
     if mode == 6 then return "hide" end
     local body = MODES[mode] or "show"
+    if reveal then body = "[nocombat] show; " .. body end
     if index == 11 then
         if not forms then return "hide" end
         return "[petbattle][vehicleui][possessbar] hide; " .. body
@@ -42,6 +47,20 @@ function AB.VisibilityDriver(index, mode, forms)
         return "[petbattle][nopet] hide; " .. body
     end
     return "[petbattle][vehicleui] hide; " .. body
+end
+
+function AB.AnyGamepadHidden()
+    for index = 1, AB.BAR_COUNT do if M.config[AB.KEYS[index].HideGamepad] then return true end end
+    return false
+end
+function AB.GamepadHideActive()
+    if not NS.Client.isForever or not AB.AnyGamepadHidden() then return false end
+    -- Forever's gamepad interface state (upstream/forever Blizzard_SharedXML/
+    -- Mainline/InputUtil.lua); 12.1.0 and 12.1.5 have no IsGamepadUIEnabled.
+    local enabled = InputUtil.IsGamepadUIEnabled and InputUtil.IsGamepadUIEnabled()
+    if not S.Public(enabled) or enabled ~= true then return false end
+    local devices = C_GamePad.GetAllDeviceIDs()
+    return S.Public(devices) and type(devices) == "table" and next(devices) ~= nil
 end
 
 function AB.Reveal(bit, on)
@@ -62,6 +81,8 @@ function AB.UpdateAlpha(bar)
     local config, keys = M.config, bar.key
     local alpha = config[keys.Alpha] / 100
     local textAlpha = 1
+    -- The panel reveal lives in the driver: out of combat it shows instead of
+    -- fading, so a fade state never means an open spellbook.
     if bar.header:GetAttribute("state-vis") == "fade" and not (S.editMode or AB.dragging or bar.hover
         or (config.mouseoverShowAll and AnyHover())) then
         local fadeAlpha = config[keys.FadeAlpha] / 100
@@ -146,6 +167,7 @@ end
 -- show while something placeable is on the cursor. Out of combat only;
 -- combat drags from suite buttons use the secure bit 4 instead.
 function AB.ApplyDrag()
+    if AB.panelPending and not NS.IsCombatLocked() then AB.SyncPanelReveal() end
     local kind = GetCursorInfo()
     local dragging = S.Public(kind) and PLACEABLE[kind] or false
     AB.dragging = dragging
@@ -177,10 +199,10 @@ end
 
 -- Driver, preview forcing and header mouse motion of one bar. A driver is
 -- re-registered only when its string changes (re-registering blinks the bar).
-local function ApplyBarVisibility(bar, config, forms)
+local function ApplyBarVisibility(bar, config, forms, gamepad)
     local keys = bar.key
     local mode = config[keys.Visibility]
-    local driver = AB.VisibilityDriver(bar.index, mode, forms)
+    local driver = AB.VisibilityDriver(bar.index, mode, forms, gamepad, AB.panelsOpen)
     local forced = SetForced(bar, "forceshow", S.editMode and mode ~= 6)
     if bar.visDriver ~= driver then
         bar.visDriver = driver
@@ -203,10 +225,10 @@ end
 -- the placement preview reveal).
 function AB.ApplyVisibility(only)
     if NS.IsCombatLocked() then return end
-    local config, forms = M.config, HasForms()
+    local config, forms, gamepad = M.config, HasForms(), AB.GamepadHideActive()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
-        if bar and (not only or only[bar]) then ApplyBarVisibility(bar, config, forms) end
+        if bar and (not only or only[bar]) then ApplyBarVisibility(bar, config, forms, gamepad) end
     end
     if not only then AB.Reveal(8, S.editMode == true) end
 end
@@ -227,4 +249,73 @@ function AB.StopVisibility()
         end
     end
     AB.dragging, AB.dragPending = nil, nil
+end
+
+-- The toggle bindings. Settings are locked in combat, so a toggle pressed
+-- there switches the bar when combat ends (pressing it again cancels) and
+-- says so in chat. A plain event frame carries the wait: it works whether
+-- or not the bars run.
+local queuedToggles, toggleFrame = {}, nil
+local function SwitchBar(index)
+    local values = NS.ActionBarSwitchValues(S.Config("actionbars"), index)
+    return values ~= nil and S.SetMany("actionbars", values) == true
+end
+local function FlushToggles()
+    toggleFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    for index in pairs(queuedToggles) do
+        queuedToggles[index] = nil
+        SwitchBar(index)
+    end
+end
+local function QueueToggle(index)
+    local title = S.Text(NS.ActionBarTitles[index])
+    if queuedToggles[index] then
+        queuedToggles[index] = nil
+        S.Print(S.Text("%s stays as it is."):format(title))
+        return
+    end
+    queuedToggles[index] = true
+    if not toggleFrame then
+        toggleFrame = S.CreateFrame("Frame")
+        toggleFrame:SetScript("OnEvent", FlushToggles)
+    end
+    toggleFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    S.Print(S.Text("%s switches when combat ends."):format(title))
+end
+function S.ToggleActionBar(index)
+    if not AB.Available(index) then return false end
+    if NS.IsCombatLocked() then
+        QueueToggle(index)
+        return false
+    end
+    return SwitchBar(index)
+end
+
+local panelHooks = {}
+local function PanelChanged()
+    if M.active then AB.SyncPanelReveal() end
+end
+local function WatchPanel(panel)
+    if not panel or NS.Safety.IsForbidden(panel) then return false end
+    if not panelHooks[panel] then
+        panelHooks[panel] = true
+        panel:HookScript("OnShow", PanelChanged)
+        panel:HookScript("OnHide", PanelChanged)
+    end
+    return panel:IsVisible()
+end
+-- In combat the reveal waits: PLAYER_REGEN_ENABLED flushes it (Events.lua).
+function AB.SyncPanelReveal()
+    if NS.IsCombatLocked() then AB.panelPending = true; return end
+    AB.panelPending = nil
+    -- Retail and Forever keep the spellbook in Blizzard_PlayerSpells, which
+    -- loads on demand.
+    local spellbook = PlayerSpellsFrame and PlayerSpellsFrame.SpellBookFrame
+    local spellbookOpen, macroOpen = WatchPanel(spellbook), WatchPanel(MacroFrame)
+    local open = spellbookOpen or macroOpen
+    open = M.config.showOnPanels and open or false
+    if open == AB.panelsOpen then return end
+    AB.panelsOpen = open
+    AB.Reveal(16, open)
+    AB.ApplyVisibility()
 end

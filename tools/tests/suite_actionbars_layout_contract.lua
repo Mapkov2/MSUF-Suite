@@ -11,6 +11,8 @@ MSUFSuite=Suite
 MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() return true end}}
 SlashCmdList={}
 InCombatLockdown=function() return false end
+UnitClass=function() return "Warrior","WARRIOR" end
+C_ClassColor={GetClassColor=function() return {r=.78,g=.61,b=.43} end}
 MSUF_PixelLayoutRegion=function(frame) return frame end
 SecureHandlerSetFrameRef=function() end
 RegisterStateDriver=function() end
@@ -30,7 +32,7 @@ GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
-local files={"Bootstrap","Bars","Blizzard","Paging","Visibility",
+local files={"Bootstrap","Bars","Decorations","Blizzard","Paging","Visibility",
     "Bindings","Style","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(files) do assert(loadfile(root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private) end
 local S,AB=Suite.Suite,private.ActionBars
@@ -64,6 +66,25 @@ end
 assert(commands==24 and emptyCommands==24,"Bindings.xml must declare 24 action bar commands without bodies")
 assert(BINDING_NAME_MSUFSUITE_TOGGLE_FRIENDLY_NPCS and xml:find('name="MSUFSUITE_TOGGLE_FRIENDLY_NPCS"',1,true),
     "friendly NPC toggle binding is missing")
+-- Every Suite binding sits in the MSUF Suite category, each header names a
+-- label global (12.x draws it as a spacer row), every body reaches the Suite
+-- table only through nil guards, and the file indents with tabs.
+local bindings=0
+for tag,body in xml:gmatch('(<Binding%s[^>]*>)(.-)</Binding>') do
+    bindings=bindings+1
+    for call in body:gmatch("MSUFSuite%.Suite%.(%w+)%(") do
+        assert(body:find("MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite."..call.." then",1,true),
+            "binding body calls MSUFSuite.Suite."..call.." without the nil guards: "..tag)
+    end
+end
+for tag in xml:gmatch('<Binding%s[^>]*>') do
+    assert(tag:find('category="BINDING_HEADER_MSUFSUITE"',1,true),"binding outside the MSUF Suite category: "..tag)
+    local header=tag:match('header="([%w_]+)"')
+    assert(not header or type(_G["BINDING_HEADER_"..header])=="string","binding header without a label: "..tag)
+end
+assert(bindings>=15 and xml:find('name="MSUFSUITE_TOGGLE_BAR1" header="',1,true),
+    "the bar toggles start without a header spacer")
+for line in xml:gmatch("[^\n]+") do assert(not line:find("^ "),"Bindings.xml indents with spaces: "..line) end
 -- The page handler assigns index + (page - 1) * 12; the Lua mirror agrees.
 local bar={buttons={}}
 for i=1,12 do bar.buttons[i]={index=i} end
@@ -229,6 +250,12 @@ for mode=1,5 do
     assert(AB.VisibilityDriver(11,mode,false)=="hide","stance bar without forms")
 end
 for index=1,12 do assert(AB.VisibilityDriver(index,6,true)=="hide","Never") end
+-- The spellbook/macro reveal follows the implicit hides and never shows a
+-- bar that is hidden outright.
+assert(AB.VisibilityDriver(1,4,true,false,true)=="[petbattle][vehicleui] hide; [nocombat] show; fade")
+assert(AB.VisibilityDriver(12,1,true,false,true)=="[petbattle][nopet] hide; [nocombat] show; show")
+for index=1,12 do assert(AB.VisibilityDriver(index,6,true,false,true)=="hide","the reveal showed a Never bar") end
+assert(AB.VisibilityDriver(11,1,false,false,true)=="hide","the reveal showed a stance bar without forms")
 
 ------------------------------------------------------------------ key text
 GetBindingText=function(key) return "<"..key..">" end

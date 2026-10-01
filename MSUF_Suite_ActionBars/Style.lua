@@ -63,7 +63,8 @@ function AB.Edges(rec, key, layer, sublevel)
     local set = rec[key]
     if not set then
         set = {}
-        for i = 1, 4 do set[i] = S.CreateTexture(rec.button, nil, layer, nil, sublevel) end
+        local owner = layer == "OVERLAY" and AB.DecorationHost(rec) or rec.button
+        for i = 1, 4 do set[i] = S.CreateTexture(owner, nil, layer, nil, sublevel) end
         rec[key] = set
     end
     return set
@@ -180,8 +181,11 @@ end
 local function StyleInteractions(rec, size, border)
     local button, style = rec.button, AB.style
     PlaceEdges(Edges(rec, "borderEdges", "OVERLAY", 6), button, border, style.br, style.bg, style.bb, 1)
-    local hoverWidth = style.highlight == STYLE_BORDER and max(1, floor(size / 20 + .5)) or 0
+    -- A round button's mouseover border is a ring (Decorations.lua).
+    local circle = M.config.buttonShape == 2
+    local hoverWidth = style.highlight == STYLE_BORDER and not circle and max(1, floor(size / 20 + .5)) or 0
     PlaceEdges(Edges(rec, "hoverEdges", "HIGHLIGHT", 7), button, hoverWidth, style.ir, style.ig, style.ib, 1)
+    AB.HoverRing(rec, size, circle and style.highlight == STYLE_BORDER)
     StyleInteraction(rec, "highlight", button:GetHighlightTexture(), style.highlight, .25)
     local pushed = style.pushed
     if pushed == STYLE_BORDER and not rec.owned then pushed = STYLE_FILL end
@@ -197,6 +201,24 @@ end
 -- Keybind top right, count bottom right, macro name at the bottom. Native
 -- and adopted buttons show the key on a suite font string, because
 -- Blizzard rewrites its own HotKey text.
+local TEXT_POINTS = NS.AnchorPoints
+local function AnchorText(text, rec, group, default, x, y)
+    local c, keys = M.config, rec.bar.key
+    local choice = c[keys[group .. "Point"]] or 1
+    local point = TEXT_POINTS[choice - 1]
+    if point then x, y = 0, 0 else point = default end
+    text:ClearAllPoints()
+    text:SetPoint(point, rec.button, point, x + (c[keys[group .. "X"]] or 0), y + (c[keys[group .. "Y"]] or 0))
+    text:SetJustifyH(point:find("LEFT", 1, true) and "LEFT" or point:find("RIGHT", 1, true) and "RIGHT" or "CENTER")
+end
+local function CooldownText(text, rec, size, fontScale)
+    local c, style = M.config, AB.style
+    local fontSize = max(6, c[rec.bar.key.CooldownSize] - fontScale)
+    if c[rec.bar.key.CooldownAutoSize] ~= false then fontSize = math.min(fontSize, max(6, floor(size * .42))) end
+    AnchorText(text, rec, "Cooldown", "CENTER", 0, 0)
+    Text(text, fontSize, style.dr, style.dg, style.db, true)
+end
+
 local function StyleTexts(rec, size, border, fontScale)
     local button, style, config = rec.button, AB.style, M.config
     local keys = rec.bar.key
@@ -210,9 +232,8 @@ local function StyleTexts(rec, size, border, fontScale)
     end
     if hotkey then
         hotkey:ClearAllPoints()
-        hotkey:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1 - border, -2 - border)
+        AnchorText(hotkey, rec, "Keybind", "TOPRIGHT", -1 - border, -2 - border)
         local keySize = max(6, config[keys.KeybindSize] - fontScale)
-        hotkey:SetJustifyH("RIGHT")
         hotkey:SetWordWrap(false)
         hotkey:SetSize(max(1, size - 2), keySize + 2)
         Text(hotkey, keySize, style.kr, style.kg, style.kb, config[keys.Keybind])
@@ -220,21 +241,21 @@ local function StyleTexts(rec, size, border, fontScale)
     local count = button.Count
     if count then
         count:ClearAllPoints()
-        count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1 - border, 2 + border)
+        AnchorText(count, rec, "Count", "BOTTOMRIGHT", -1 - border, 2 + border)
         Text(count, config[keys.CountSize], style.cr, style.cg, style.cb, true)
     end
     local name = button.Name
     if name then
         name:ClearAllPoints()
-        name:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 1, 2 + border)
-        name:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 2 + border)
+        AnchorText(name, rec, "Macro", "BOTTOM", 0, 2 + border)
+        name:SetWidth(max(1, size - 2))
         name:SetHeight(config[keys.MacroSize] + 2)
         name:SetWordWrap(false)
         Text(name, config[keys.MacroSize], style.mr, style.mg, style.mb, rec.owned and config[keys.Macro])
     end
 end
 
-local function StyleCooldowns(rec, fontScale)
+local function StyleCooldowns(rec, size, fontScale)
     local button, style, config = rec.button, AB.style, M.config
     local target = button.icon or button
     local cooldown = button.cooldown
@@ -247,7 +268,7 @@ local function StyleCooldowns(rec, fontScale)
         cooldown:SetHideCountdownNumbers(not config.cooldownNumbers)
         local text = cooldown:GetCountdownFontString()
         if text then
-            Text(text, max(6, config[rec.bar.key.CooldownSize] - fontScale), style.dr, style.dg, style.db, true)
+            CooldownText(text, rec, size, fontScale)
         end
     end
     local rechargeNumbers = config.cooldownNumbers and config.rechargeNumbers
@@ -258,6 +279,8 @@ local function StyleCooldowns(rec, fontScale)
             extra:ClearAllPoints()
             extra:SetAllPoints(target)
             extra:SetHideCountdownNumbers(key == "lossOfControlCooldown" or not rechargeNumbers)
+            local text = extra:GetCountdownFontString()
+            if text then CooldownText(text, rec, size, fontScale) end
         end
     end
 end
@@ -272,7 +295,8 @@ function AB.StyleButton(rec)
     StyleIcon(rec, border)
     StyleInteractions(rec, size, border)
     StyleTexts(rec, size, border, fontScale)
-    StyleCooldowns(rec, fontScale)
+    StyleCooldowns(rec, size, fontScale)
+    AB.StyleDecoration(rec, size)
     if rec.owned and button.Border then
         button.Border:ClearAllPoints()
         button.Border:SetAllPoints(button)
@@ -287,7 +311,19 @@ end
 
 -- Press state for native and routed keys; also drives the "Border" pressed
 -- style. WoW manages the button state for physical mouse presses.
+-- The cooldown manager publishes its press export only while it shows
+-- presses; the spell is a spell action's or a macro's that shows one.
+local function NotifyPress(rec)
+    local pressed = S.CooldownManagerActionPressed
+    if not pressed or not rec.slot then return end
+    local spellID = AB.Painter.ActionSpell(rec.slot)
+    if spellID then pressed(spellID) end
+end
+
 function AB.SetPushed(rec, down)
+    if down then NotifyPress(rec) end
+    rec.decorPushed = down == true
+    AB.UpdateDecorState(rec)
     if rec.owned then rec.button:SetButtonState(down and "PUSHED" or "NORMAL") end
     if rec.pressBorder then ShowEdges(rec.pressEdges, down) end
 end
@@ -298,11 +334,20 @@ end
 -- use SetPushed above because they do not generate mouse events.
 local function MouseDown(button)
     local rec = AB.records[button]
-    if rec and M.active and rec.pressBorder then ShowEdges(rec.pressEdges, true) end
+    if rec and M.active then
+        NotifyPress(rec)
+        rec.decorPushed = true
+        AB.UpdateDecorState(rec)
+        if rec.pressBorder then ShowEdges(rec.pressEdges, true) end
+    end
 end
 local function MouseUp(button)
     local rec = AB.records[button]
-    if rec and M.active and rec.pressBorder then ShowEdges(rec.pressEdges, false) end
+    if rec and M.active then
+        rec.decorPushed = false
+        AB.UpdateDecorState(rec)
+        if rec.pressBorder then ShowEdges(rec.pressEdges, false) end
+    end
 end
 -- Routed keys arrive as "Keybind" clicks, which do not change the button
 -- state themselves.

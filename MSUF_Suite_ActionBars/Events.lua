@@ -159,7 +159,20 @@ local function FormsChanged()
     end
 end
 
+-- Combat starts: PLAYER_REGEN_DISABLED comes before the lockdown, the last
+-- moment a protected header may stop an animation. Other features animate
+-- the headers (QoL party effects through S.VisitPartyActionBars); a header
+-- turning in combat would draw its buttons away from their click areas.
+local function RegenDisabled()
+    for index = 1, 10 do
+        local bar = AB.bars[index]
+        if bar and bar.owned then bar.header:StopAnimating() end
+    end
+end
+
 local function RegenEnabled()
+    -- A spellbook or macro window closed (or opened) in combat.
+    if AB.panelPending then AB.SyncPanelReveal() end
     if AB.routingPending then AB.UpdateRouting() end
     if AB.attributesPending then
         AB.attributesPending = nil
@@ -183,6 +196,11 @@ local function ScaleChanged()
     C_Timer.After(0, ApplyScale)
 end
 
+local function GamepadChanged()
+    if not M.active or not NS.Client.isForever then return end
+    if NS.IsCombatLocked() then AB.gamepadVisibilityPending = true; S.Queue("actionbars") else AB.ApplyVisibility() end
+end
+
 -- Blizzard's buttons on Retail and Forever follow ACTIONBAR_UPDATE_COOLDOWN
 -- for swipes, SPELL_UPDATE_CHARGES for counts, and for usability the slot
 -- payloads of ACTION_USABLE_CHANGED plus one full re-read on
@@ -192,6 +210,7 @@ end
 -- Blizzard button (C_ActionBar.RegisterActionUIButton) is not documented:
 -- ACTIONBAR_UPDATE_USABLE re-reads the suite buttons on slots it never named.
 local EVENTS = {
+    ADDON_LOADED = function() AB.SyncPanelReveal() end,
     ACTIONBAR_SLOT_CHANGED = SlotChanged,
     ACTIONBAR_UPDATE_COOLDOWN = function() Mark("cooldown") end,
     SPELL_UPDATE_CHARGES = function()
@@ -247,15 +266,24 @@ local EVENTS = {
         NewChargeEpoch()
         FormsChanged()
     end,
+    PLAYER_REGEN_DISABLED = RegenDisabled,
     PLAYER_REGEN_ENABLED = RegenEnabled,
     UI_SCALE_CHANGED = ScaleChanged,
     DISPLAY_SIZE_CHANGED = ScaleChanged,
+    GAME_PAD_ACTIVE_CHANGED = GamepadChanged,
+    GAME_PAD_CONNECTED = GamepadChanged,
+    GAME_PAD_DISCONNECTED = GamepadChanged,
+    INPUT_DEVICE_INTERFACE_TRANSITION = GamepadChanged,
 }
 
 -- Range checks and spell overlays can fire frequently in combat. Keep their
 -- listeners absent when the matching paint feature is off; Refresh re-syncs
 -- them after settings change without touching the stable event dispatcher.
 local optionalEvents = {
+    GAME_PAD_ACTIVE_CHANGED = true,
+    GAME_PAD_CONNECTED = true,
+    GAME_PAD_DISCONNECTED = true,
+    INPUT_DEVICE_INTERFACE_TRANSITION = true,
     ACTION_RANGE_CHECK_UPDATE = true,
     SPELL_ACTIVATION_OVERLAY_GLOW_SHOW = true,
     SPELL_ACTIVATION_OVERLAY_GLOW_HIDE = true,
@@ -263,8 +291,11 @@ local optionalEvents = {
 function AB.SyncOptionalEvents()
     local context = M.context
     for event in pairs(optionalEvents) do
+        local gamepadEvent = event == "GAME_PAD_ACTIVE_CHANGED" or event == "GAME_PAD_CONNECTED"
+            or event == "GAME_PAD_DISCONNECTED" or event == "INPUT_DEVICE_INTERFACE_TRANSITION"
         local wanted = event == "ACTION_RANGE_CHECK_UPDATE" and M.config.rangeColoring
             or event ~= "ACTION_RANGE_CHECK_UPDATE" and M.config.procGlow ~= 3
+        if gamepadEvent then wanted = NS.Client.isForever and AB.AnyGamepadHidden() end
         if wanted then
             context:Event(event, EVENTS[event], true)
         else
@@ -289,7 +320,10 @@ local function Hidden(header)
 end
 
 -- Page changes arrive from the restricted page handler, also in combat.
--- Only bar 1's twelve buttons move in the slot map.
+-- Only bar 1's twelve buttons move in the slot map. The bars' own paging
+-- (target, modifier, opt-outs) fires no ACTIONBAR_PAGE_CHANGED, so the
+-- cooldown manager's glows on bar 1 learn of it from ActionsChanged.
+local ACTIONS_CHANGED = "MSUFSuite.ActionBars.ActionsChanged"
 function AB.OnHeaderAttribute(bar, name, value)
     if not M.active then return end
     if name == "actionpage" and bar.index == 1 then
@@ -299,6 +333,7 @@ function AB.OnHeaderAttribute(bar, name, value)
         for i = 1, #buttons do MapButton(buttons[i]) end
         protected.routing = true
         AB.MarkBar(bar)
+        EventRegistry:TriggerEvent(ACTIONS_CHANGED)
     elseif name == "state-vis" then
         AB.UpdateAlpha(bar)
     end

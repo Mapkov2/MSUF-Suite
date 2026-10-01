@@ -64,7 +64,12 @@ end
 
 local function NativeStatePost(button)
     local rec = AB.records[button]
-    if rec and rec.native and M.active and not M.config.castHighlight then NativeState(rec) end
+    if rec and rec.native and M.active then
+        if not M.config.castHighlight then NativeState(rec) end
+        local checked = button:GetChecked()
+        rec.decorChecked = Public(checked) and checked == true
+        AB.UpdateDecorState(rec)
+    end
 end
 
 local function NativeCountdownPost(button)
@@ -81,6 +86,7 @@ end
 -- never written.
 local function NativeAlertPost(_, button)
     local rec = AB.records[button]
+    if rec and M.active then AB.RaiseDecoration(rec) end
     if not rec or not rec.native or not M.active or M.config.procGlow == 1 then return end
     AB.SetNativeAlertAlpha(button, 0)
 end

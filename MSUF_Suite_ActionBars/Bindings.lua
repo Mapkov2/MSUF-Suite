@@ -21,12 +21,52 @@ end
 -- Key text of the suite button that presses a spell, for the cooldown
 -- manager's icons (MSUF_Suite_CooldownManager/Keybinds.lua): the text that
 -- button shows. Candidates in key preference: each bar's own page in bar
--- order (bar 1 page 1, bars 2-10 their fixed slots), then the form pages
--- 7-9 bar 1 switches to, pressed by bar 1's keys (page 10, slots 109-120,
--- is bar 10). "" when no candidate has a key; nil while the suite bars are
--- off (Blizzard's bars apply then).
+-- order (bar 1 page 1, bars 2-10 their fixed slots), then bar 1's custom
+-- pages (Paging.lua), then the form pages 7-9 bar 1 switches to, pressed by
+-- bar 1's keys (page 10, slots 109-120, is bar 10). "" when no candidate has
+-- a key; nil while the suite bars are off (Blizzard's bars apply then).
 local FORM_FIRST, FORM_LAST = 73, 108
 local spellSlots = {}
+
+-- Bar 1's custom pages are pressed by bar 1's keys as well: the friendly and
+-- hostile target pages with the plain key, a modifier page with the modifier
+-- held. A modified key reaches bar 1 only while that combination has no
+-- binding of its own, and a key that carries a modifier already is skipped.
+local MODIFIER_PAGES = { { "pageShift", "SHIFT-" }, { "pageCtrl", "CTRL-" }, { "pageAlt", "ALT-" } }
+local function Modified(key)
+    return key:find("^ALT%-.") or key:find("^CTRL%-.") or key:find("^SHIFT%-.") or key:find("^META%-.")
+end
+local function PageKey(main, page, modifier)
+    if page == 1 then return "" end
+    local first = (page - 1) * 12
+    for i = 1, #main.buttons do
+        if spellSlots[first + i] then
+            local key = GetBindingKey(main.buttons[i].command)
+            if Public(key) and type(key) == "string" and key ~= "" then
+                if not modifier then return S.KeyText(key) end
+                if not Modified(key) then
+                    local action = GetBindingAction(modifier .. key, true)
+                    if Public(action) and action == "" then return S.KeyText(modifier .. key) end
+                end
+            end
+        end
+    end
+    return ""
+end
+local function CustomPagesKey(main, config)
+    local text = ""
+    if config.pagingTarget then
+        text = PageKey(main, config.pageFriendly)
+        if text == "" then text = PageKey(main, config.pageHostile) end
+    end
+    if text == "" and config.pagingModifiers then
+        for i = 1, #MODIFIER_PAGES do
+            text = PageKey(main, config[MODIFIER_PAGES[i][1]], MODIFIER_PAGES[i][2])
+            if text ~= "" then break end
+        end
+    end
+    return text
+end
 function S.ActionBarsBindingForSpell(spell)
     if not M.active then return nil end
     local slots = spell and C_ActionBar.FindSpellActionButtons(spell)
@@ -49,6 +89,10 @@ function S.ActionBarsBindingForSpell(spell)
         end
     end
     local main = AB.bars[1]
+    if main then
+        local text = CustomPagesKey(main, M.config)
+        if text ~= "" then return text end
+    end
     if main and not M.config.disableFormPaging then
         for slot = FORM_FIRST, FORM_LAST do
             if spellSlots[slot] then
@@ -58,6 +102,22 @@ function S.ActionBarsBindingForSpell(spell)
         end
     end
     return ""
+end
+
+-- Cold integration seam for separately owned native aura decorations. Callers
+-- own their overlays; button identity stays owned by ActionBars. No state from
+-- an aura or restricted spell is exposed through this visitor.
+function S.ForEachActionBarButtonForSpell(spellID, callback, context)
+    if not M.active or NS.IsCombatLocked() or not S.Finite(spellID) or spellID <= 0
+        or type(callback) ~= "function" then return 0 end
+    local count = 0
+    for _, rec in pairs(AB.records) do
+        if rec.slot and AB.Painter.ActionSpell(rec.slot) == spellID then
+            callback(rec.button, context)
+            count = count + 1
+        end
+    end
+    return count
 end
 
 local function IsFlyout(slot)

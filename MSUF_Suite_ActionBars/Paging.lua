@@ -49,7 +49,7 @@ end
 -- True when bar 1 must not follow Blizzard's native page: its keys then
 -- click the suite buttons instead of the hidden Blizzard ones.
 function AB.CustomPaging(config)
-    return config.pagingModifiers or config.disableFormPaging or SkyridingOptOut(config) or false
+    return config.pagingTarget or config.pagingModifiers or config.disableFormPaging or SkyridingOptOut(config) or false
 end
 
 -- Blizzard's order: vehicle/override/possess, manual pages 2-6 (which beat
@@ -61,6 +61,9 @@ function AB.PageDriver(config)
     if config.pagingModifiers then
         driver = driver .. "[mod:shift] " .. config.pageShift .. "; [mod:ctrl] " .. config.pageCtrl
             .. "; [mod:alt] " .. config.pageAlt .. "; "
+    end
+    if config.pagingTarget then
+        driver = driver .. "[help] " .. config.pageFriendly .. "; [harm] " .. config.pageHostile .. "; "
     end
     driver = driver .. MANUAL
     if not config.disableFormPaging then driver = driver .. FORMS end

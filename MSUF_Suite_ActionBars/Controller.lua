@@ -75,8 +75,10 @@ end
 --  repaint  every suite button (range checks, glows)   paging  bar 1 driver and key routing
 --  state, count, cooldown, tint   one paint walk       alpha   mouseover opacity
 --  drag     drag reveal                                visible every bar's visibility
+--  panels   spellbook/macro reveal                     assist  recommendation rings
 -- Bar work: layout (geometry, grid, background), style (that bar's buttons),
--- visible (driver, opacity, header mouse), paint (its filled buttons).
+-- visible (driver, opacity, header mouse), paint (its filled buttons); a bar
+-- setting's events flag asks for the global listener sync.
 local GLOBAL_WORK = {}
 local function Global(keys, work)
     for i = 1, #keys do GLOBAL_WORK[keys[i]] = work end
@@ -85,6 +87,11 @@ Global({ "iconZoom", "borderSize", "borderColor", "borderClassColor", "slotColor
     "pushedStyle", "interactionColor", "interactionClassColor", "swipeColor", "swipeAlpha", "cooldownNumbers",
     "rechargeNumbers", "font", "fontOutline", "fontRendering", "fontShadow", "fontShadowOpacity",
     "fontShadowDistance", "keybindColor", "macroColor", "countColor", "cooldownColor" }, { style = true })
+Global({ "buttonShape", "borderArt", "borderScale", "borderExpansion" }, { style = true })
+-- Endcaps and bar background borders wear the resolved border color too.
+Global({ "borderColor", "borderClassColor" }, { style = true, allLayout = true })
+Global({ "assistStyle", "assistColor", "assistAlpha", "assistExpansion", "assistX", "assistY" }, { assist = true })
+Global({ "showOnPanels" }, { panels = true })
 Global({ "rangeColor" }, { style = true, tint = true })
 Global({ "castHighlight" }, { state = true, native = true })
 Global({ "hideEmptyCharges" }, { count = true, native = true })
@@ -92,35 +99,43 @@ Global({ "desaturateCooldown", "cooldownAlpha" }, { curves = true, cooldown = tr
 Global({ "rangeColoring" }, { events = true, repaint = true, native = true })
 Global({ "procGlow" }, { style = true, events = true, repaint = true, native = true })
 Global({ "mouseoverShowAll" }, { alpha = true })
+Global({ "pageArrows", "pageArrowSide" }, { allLayout = true })
 Global({ "showOnDrag" }, { drag = true })
-Global({ "disableFormPaging", "disableSkyridingPaging", "pagingModifiers", "pageShift", "pageCtrl", "pageAlt" },
+Global({ "disableFormPaging", "disableSkyridingPaging", "pagingModifiers", "pageShift", "pageCtrl", "pageAlt", "pagingTarget", "pageFriendly", "pageHostile" },
     { paging = true })
 
+-- ResumeVisibility is only read when a bar is switched back on (the switch
+-- writes Visibility too), so it needs no work of its own.
 local BAR_WORK = {
     Layer = { layout = true },
     Buttons = { layout = true, paint = true },
     Size = { layout = true, style = true },
     ClickThrough = { layout = true, visible = true },
     Visibility = { visible = true },
+    HideGamepad = { visible = true, events = true },
+    ResumeVisibility = {},
     Alpha = { visible = true },
     FadeAlpha = { visible = true },
 }
 for _, suffix in ipairs({ "Rows", "Spacing", "Vertical", "Start", "ShowEmpty", "Point", "X", "Y", "Background",
-    "BackgroundColor", "BackgroundAlpha", "BackgroundPadding" }) do
+    "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY",
+    "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" }) do
     BAR_WORK[suffix] = { layout = true }
 end
-for _, suffix in ipairs({ "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize" }) do
+for _, suffix in ipairs({ "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY" }) do
     BAR_WORK[suffix] = { style = true }
 end
 
 -- Settings without runtime work; any other setting nobody listed above
--- rebuilds everything, so a new setting is never silently ignored.
+-- rebuilds everything (a per-bar one: everything of its bar), so a new
+-- setting is never silently ignored.
 local NO_WORK = { enabled = true, imported = true, look = true, pickupModifier = true }
 local FULL = {
     style = true, curves = true, events = true, native = true, repaint = true, paging = true, alpha = true,
-    drag = true, visible = true,
+    drag = true, visible = true, panels = true, assist = true,
 }
 local FULL_BAR = { layout = true, style = true, visible = true, paint = true }
+AB.BAR_WORK = BAR_WORK
 
 -- Every watched setting as parallel arrays: key, work, bar index (0: global).
 local WATCH_KEYS, WATCH_WORK, WATCH_BAR = {}, {}, {}
@@ -132,15 +147,14 @@ local barKeys = {}
 for index = 1, AB.BAR_COUNT do
     for suffix, work in pairs(BAR_WORK) do
         local key = AB.KEYS[index][suffix]
-        if key then
-            Watch(key, work, index)
-            barKeys[key] = true
-        end
+        Watch(key, work, index)
+        barKeys[key] = true
     end
-    barKeys["bar" .. index .. "ResumeVisibility"] = true
 end
-for key in pairs(S.catalog.actionbars.rules) do
-    if not barKeys[key] and not NO_WORK[key] then Watch(key, GLOBAL_WORK[key] or FULL, 0) end
+for key, rule in pairs(S.catalog.actionbars.rules) do
+    if not barKeys[key] and not NO_WORK[key] then
+        if rule.bar then Watch(key, FULL_BAR, rule.bar) else Watch(key, GLOBAL_WORK[key] or FULL, 0) end
+    end
 end
 
 local applied = {}       -- setting -> value the bars were last built with
@@ -171,8 +185,10 @@ local function Collect(config)
         local value = config[key]
         if all or applied[key] ~= value then
             applied[key] = value
-            local index = WATCH_BAR[i]
-            Merge(index == 0 and work or barWork[index], WATCH_WORK[i])
+            local index, flags = WATCH_BAR[i], WATCH_WORK[i]
+            Merge(index == 0 and work or barWork[index], flags)
+            -- The optional listeners are global work, also for a bar's rule.
+            if flags.events then work.events = true end
         end
     end
     if all then
@@ -232,7 +248,8 @@ end
 local PAINT_WALKS = { "state", "count", "cooldown", "tint" }
 local visibleBars = {}
 local function ApplyVisibilityWork()
-    if work.visible then
+    if work.visible or AB.gamepadVisibilityPending then
+        AB.gamepadVisibilityPending = nil
         AB.ApplyVisibility()
         return
     end
@@ -268,6 +285,13 @@ local function ApplyPaint()
         local bar = AB.bars[index]
         if bar and barWork[index].paint then AB.MarkBar(bar) end
     end
+end
+
+local function AnyBarWork(flag)
+    for index = 1, AB.BAR_COUNT do
+        if barWork[index][flag] then return true end
+    end
+    return false
 end
 
 local function ClearWork()
@@ -311,9 +335,16 @@ function M:Refresh()
     if work.curves then AB.UpdateCurves() end
     ApplyLayout()
     ApplyStyle()
+    for index = 1, AB.BAR_COUNT do
+        local bar = AB.bars[index]
+        if bar and (work.allLayout or barWork[index].layout) then AB.LayoutDecorations(bar) end
+    end
     if work.native then AB.RefreshNative() end
     if work.paging then AB.ApplyPaging() end
     ApplyVisibilityWork()
+    if work.panels then AB.SyncPanelReveal() end
+    -- Rings follow the assist settings, the button look and bar sizes.
+    if work.assist or work.style or AnyBarWork("style") then AB.SyncAssistedDecoration() end
     AB.UpdateClickAttributes()
     ApplyPaint()
     if work.paging then
@@ -331,6 +362,7 @@ end
 -- runs isolated (Dispatch), as Context:Release does: one that raises is
 -- reported and every later step still runs.
 function M:Disable()
+    Dispatch(AB.StopAssist)
     Dispatch(AB.StopDispatcher)
     AB.dispatching = nil
     Dispatch(AB.StopPaging)

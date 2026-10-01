@@ -115,6 +115,7 @@ function Region:Show() self.shown=true end
 function Region:Hide() self.shown=false end
 function Region:SetShown(value) self.shown=value and true or false end
 function Region:IsShown() return self.shown end
+function Region:SetSwipeTexture(texture) self.swipeTexture=texture end
 function Region:SetPoint(...) self.points[#self.points+1]={...} end
 function Region:ClearAllPoints() self.points={} end
 function Region:SetAllPoints(target) self.points={{"ALL",target}} end
@@ -124,6 +125,8 @@ function Region:SetHeight(h) self.height=h end
 function Region:SetDrawLayer() end
 function Region:SetBlendMode(mode) self.blend=mode end
 function Region:GetBlendMode() return self.blend or "BLEND" end
+function Region:SetRotation(value) self.rotation=value end
+function Region:AddMaskTexture(mask) self.mask=mask end
 function Region:RemoveMaskTexture(mask) self.unmasked=mask end
 function Region:SetFont(path,size,flags) self.font={path,size,flags};return true end
 function Region:SetText(value) self.text=value end
@@ -135,10 +138,12 @@ function Region:SetJustifyH() end
 function Region:SetWordWrap() end
 
 local TEMPLATES={}
+local allFrames={}
 local function NewFrame(kind,name,parent,templates)
     nextId=nextId+1;created=created+1
     local frame=setmetatable({kind=kind,name=name,id=nextId,attrs={},scripts={},hooks={},children={},points={},events={},
         shown=true,alpha=1,width=0,height=0,mouse=true,level=1},Frame)
+    allFrames[#allFrames+1]=frame
     if parent then frame.parent=parent;parent.children[frame]=true end
     if name then _G[name]=frame end
     if type(templates)=="string" then
@@ -165,18 +170,26 @@ function Frame:GetChildren()
     table.sort(list,function(a,b) return a.id<b.id end)
     return unpack(list)
 end
+-- A frame that becomes visible or invisible passes OnShow/OnHide on to its
+-- shown children, which change visibility with it (the client does the same).
+local function Cascade(frame,script)
+    Fire(frame,script)
+    for _,child in ipairs({frame:GetChildren()}) do
+        if child.shown then Cascade(child,script) end
+    end
+end
 function Frame:Show()
     Guard(self,"Show")
     local was=Visible(self)
     self.shown=true
-    if not was and Visible(self) then Fire(self,"OnShow") end
+    if not was and Visible(self) then Cascade(self,"OnShow") end
 end
 function Frame:Hide()
     Guard(self,"Hide")
     self.hideCalls=(self.hideCalls or 0)+1
     local was=Visible(self)
     self.shown=false
-    if was then Fire(self,"OnHide") end
+    if was then Cascade(self,"OnHide") end
 end
 function Frame:SetShown(value) if value then self:Show() else self:Hide() end end
 function Frame:IsShown() return self.shown end
@@ -218,6 +231,7 @@ function Frame:IsMouseEnabled() return self.mouse end
 function Frame:EnableMouseMotion(value) Guard(self,"EnableMouseMotion");self.motion=value end
 function Frame:IsMouseOver() return self.mouseOver==true end
 function Frame:SetFrameStrata(value) self.strata=value end
+function Frame:StopAnimating() self.animationStops=(self.animationStops or 0)+1 end
 function Frame:SetFrameLevel(value) self.level=value end
 function Frame:GetFrameLevel() return self.level end
 function Frame:RegisterForClicks(...) self.clickTypes={...} end
@@ -230,6 +244,14 @@ function Frame:GetNormalTexture() return self.NormalTexture end
 function Frame:GetPushedTexture() return self.PushedTexture end
 function Frame:GetHighlightTexture() return self.HighlightTexture end
 function Frame:GetCheckedTexture() return self.CheckedTexture end
+function Frame:CreateMaskTexture() return NewRegion("MaskTexture",self) end
+function Frame:SetHighlightTexture(file) self.HighlightTexture=NewRegion("Texture",self);self.HighlightTexture:SetTexture(file) end
+function Frame:SetNormalAtlas(atlas) self.normalAtlas=atlas end
+function Frame:SetPushedAtlas(atlas) self.pushedAtlas=atlas end
+function Frame:SetDisabledAtlas(atlas) self.disabledAtlas=atlas end
+function Frame:SetHighlightAtlas(atlas) self.highlightAtlas=atlas end
+-- Button:Click runs the button's OnClick like a click on it.
+function Frame:Click(button) Fire(self,"OnClick",button or "LeftButton",false) end
 function Frame:CreateTexture(_,layer) local region=NewRegion("Texture",self);region.layer=layer;return region end
 function Frame:CreateFontString(_,layer) local region=NewRegion("FontString",self);region.layer=layer;return region end
 -- Cooldown sinks. SetCooldown refuses secrets (AllowedWhenUntainted).
@@ -248,6 +270,8 @@ end
 function Frame:Clear() self.object,self.cooldown=nil,nil;self.clears=(self.clears or 0)+1 end
 function Frame:SetSwipeColor(...) self.swipe={...} end
 function Frame:SetDrawEdge() end
+function Frame:SetSwipeTexture(texture) self.swipeTexture=texture end
+function Frame:GetChecked() return self.checked end
 function Frame:SetDrawBling() end
 function Frame:SetHideCountdownNumbers(value) self.hideNumbers=value end
 function Frame:GetCountdownFontString() self.countdown=self.countdown or NewRegion("FontString",self);return self.countdown end
@@ -378,7 +402,7 @@ end
 local pickups={}
 local cursor
 GetCursorInfo=function() return cursor end
-SecureHandlerWrapScript=function(frame,script,header,pre)
+SecureHandlerWrapScript=function(frame,script,header,pre,post)
     assert(not combat and header.explicit,"invalid wrap")
     local original=frame.scripts[script]
     local wrapped
@@ -396,6 +420,17 @@ SecureHandlerWrapScript=function(frame,script,header,pre)
             if pickup==false then return end
             if pickup then assert(pickup=="action");pickups[#pickups+1]=target;return end
             if original then original(self,button) end
+        end
+    elseif script=="OnShow" or script=="OnHide" then
+        -- Wrapped_ShowHide (SecureHandlers.lua): the pre-body runs for a
+        -- protected frame (or out of combat), false aborts, then the original
+        -- handler, then the post-body when the pre-body returned a message.
+        wrapped=function(self,...)
+            local allow,message
+            if not combat or IsProtected(self) then allow,message=RunSnippet(self,pre,{},header) end
+            if allow==false then return end
+            if original then original(self,...) end
+            if post and message~=nil then RunSnippet(self,post,{message=message},header) end
         end
     else
         error("unexpected wrap "..script)
@@ -455,6 +490,15 @@ local function Click(frame,button,down)
     Fire(frame,"PreClick",button,down);Fire(frame,"OnClick",button,down);Fire(frame,"PostClick",button,down)
 end
 
+-- The client sends an event to every frame registered for it.
+local function Broadcast(event,...)
+    for _,frame in ipairs(allFrames) do
+        if frame.events[event] and frame.scripts.OnEvent then frame.scripts.OnEvent(frame,event,...) end
+    end
+end
+local printed={}
+DEFAULT_CHAT_FRAME={AddMessage=function(_,text) printed[#printed+1]=text end}
+
 ------------------------------------------------------------------ client API
 UIParent=NewFrame("Frame","UIParent")
 UIParent.width,UIParent.height=1024,768
@@ -462,8 +506,11 @@ GetPhysicalScreenSize=function() return 1024,768 end
 GameFontHighlightSmall={GetFont=function() return "Fonts\\FRIZQT__.TTF",12,"" end}
 RAID_CLASS_COLORS={WARRIOR={r=.78,g=.61,b=.43}}
 UnitClass=function() return "Warrior","WARRIOR" end
+C_ClassColor={GetClassColor=function() return {r=.78,g=.61,b=.43} end}
 Enum={LuaCurveType={Step=1}}
 local secretEval=false
+-- Slots for which the client returns no duration object (seen on 12.1).
+local noDuration={}
 local function Curve()
     local curve={points={}}
     function curve:SetType(value) self.type=value end
@@ -473,6 +520,7 @@ local function Curve()
 end
 C_CurveUtil={CreateCurve=Curve}
 local function Duration(slot,ignoreGCD)
+    if noDuration[slot] then return nil end
     local action=actions[slot]
     local object={duration=true,slot=slot,ignoreGCD=ignoreGCD,
         zero=not (action and action.cooldown and action.cooldown.isActive)}
@@ -488,6 +536,7 @@ local function Duration(slot,ignoreGCD)
     return object
 end
 local calls,rangeEnabled,ranges={cooldown=0,duration=0,charges=0,loc=0,usable=0,texture=0,usableBySlot={}},{},{}
+calls.chargesBySlot={}
 local locCount=0
 C_LossOfControl={GetActiveLossOfControlDataCountByUnit=function(unit)
     assert(unit=="player")
@@ -495,6 +544,13 @@ C_LossOfControl={GetActiveLossOfControlDataCountByUnit=function(unit)
 end}
 local rangeOn,rangeOff=0,0
 C_ActionBar={
+    -- Crafting quality exists for item actions only (CraftingQualityInfo).
+    GetProfessionQualityInfo=function(slot)
+        calls.quality=(calls.quality or 0)+1
+        local a=actions[slot]
+        return a and a.quality and {iconInventory=a.quality} or nil
+    end,
+    IsItemAction=function(slot) local a=actions[slot];return a~=nil and a.kind=="item" end,
     HasAction=function(slot) return actions[slot]~=nil end,
     GetActionTexture=function(slot) calls.texture=calls.texture+1;local a=actions[slot];return a and a.texture end,
     GetActionDisplayCount=function(slot) local a=actions[slot];return a and a.count or "" end,
@@ -509,10 +565,18 @@ C_ActionBar={
     end,
     GetActionCharges=function(slot)
         calls.charges=calls.charges+1
+        calls.chargesBySlot[slot]=(calls.chargesBySlot[slot] or 0)+1
         local a=actions[slot]
         return a and a.charges or {isActive=false,maxCharges=0,currentCharges=0}
     end,
-    GetActionChargeDuration=function(slot) return Duration(slot) end,
+    GetActionChargeDuration=function(slot)
+        local object=Duration(slot)
+        if not object then return nil end
+        local a=actions[slot];local charges=a and a.charges
+        -- Charge duration follows the recharge, independently of the main GCD.
+        object.zero=not IsSecret(charges) and not (charges and charges.isActive)
+        return object
+    end,
     GetActionLossOfControlCooldownInfo=function()
         calls.loc=calls.loc+1
         return {isActive=false,shouldReplaceNormalCooldown=false}
@@ -558,11 +622,43 @@ ActionButtonSpellAlertManager={
             button.AssistedCombatRotationFrame=button.AssistedCombatRotationFrame or NewFrame("Frame",nil,button)
             host=button.AssistedCombatRotationFrame
         end
-        host.SpellActivationAlert=host.SpellActivationAlert or NewRegion("Texture",host)
+        host.SpellActivationAlert=host.SpellActivationAlert or NewFrame("Frame",nil,host)
         host.SpellActivationAlert:Show()
     end,
     HideAlert=function(_,button) alerts[button]=nil end,
 }
+-- Blizzard_ActionBar/Mainline/AssistedCombatManager.lua (Retail; Forever
+-- does not load it). Candidates are Blizzard's own buttons only (its
+-- ActionBarButtonEventsFrame list); a button's highlight frame appears on its
+-- first recommendation, at alpha 1. Recommend models the manager's OnUpdate
+-- seeing a new C_AssistedCombat.GetNextCastSpell answer.
+AssistedCombatManager={candidates={}}
+function AssistedCombatManager:SetAssistedHighlightFrameShown(button,shown)
+    local frame=button.AssistedCombatHighlightFrame
+    if shown then
+        if not frame then
+            frame=NewFrame("Frame",nil,button)
+            button.AssistedCombatHighlightFrame=frame
+        end
+        frame:Show()
+    elseif frame then
+        frame:Hide()
+    end
+end
+function AssistedCombatManager:UpdateAllAssistedHighlightFramesForSpell(spell)
+    for button,candidate in pairs(self.candidates) do
+        self:SetAssistedHighlightFrameShown(button,spell~=nil and candidate==spell)
+    end
+end
+local function Recommend(spell)
+    AssistedCombatManager.lastNextCastSpellID=spell
+    AssistedCombatManager:UpdateAllAssistedHighlightFramesForSpell(spell)
+end
+-- A spell lands on one of Blizzard's buttons (ActionButton.OnActionChanged).
+function AssistedCombatManager:OnActionButtonActionChanged(button,spell)
+    self.candidates[button]=spell
+    self:SetAssistedHighlightFrameShown(button,self.lastNextCastSpellID~=nil and spell==self.lastNextCastSpellID)
+end
 -- The cooldown manager learns from this event that the key texts of the
 -- suite bars changed.
 local BINDINGS_EVENT,triggered="MSUFSuite.ActionBars.BindingsChanged",{}
@@ -639,7 +735,7 @@ local function Buttons(prefix,parent,count,small)
         button.index=i
         parent.actionButtons[i]=button
         ActionRegions(button)
-        button.SpellActivationAlert=NewRegion("Texture",button)
+        button.SpellActivationAlert=NewFrame("Frame",nil,button)
         button.UpdateUsable=function(self,action,usable,noMana)
             if usable==nil then usable,noMana=C_ActionBar.IsUsableAction(self.attrs.action) end
             self.icon:SetVertexColor(usable and 1 or noMana and .5 or .4,usable and 1 or noMana and .5 or .4,usable and 1 or noMana and 1 or .4)
@@ -654,7 +750,17 @@ local MainBar=NewFrame("Frame","MainActionBar",UIParent)
 MainBar.implicit=true
 MainBar.attrs.actionpage=1
 MainBar.cx,MainBar.cy,MainBar.numRows,MainBar.numButtonsShowable,MainBar.isHorizontal,MainBar.buttonPadding=512,40,1,12,true,2
-MainBar.ActionBarPageNumber={UpButton=NewFrame("Button",nil,MainBar),DownButton=NewFrame("Button",nil,MainBar)}
+-- Blizzard_ActionBar/Mainline/MainActionBar.xml (Retail and Forever): the page
+-- buttons live on the ActionBarPageNumber child; their OnClick pages the bar.
+local pageClicks={}
+do
+    local pager=NewFrame("Frame",nil,MainBar)
+    pager.UpButton=NewFrame("Button",nil,pager)
+    pager.DownButton=NewFrame("Button",nil,pager)
+    pager.UpButton.scripts.OnClick=function() pageClicks[#pageClicks+1]="up" end
+    pager.DownButton.scripts.OnClick=function() pageClicks[#pageClicks+1]="down" end
+    MainBar.ActionBarPageNumber=pager
+end
 MainBar.Selection=NewFrame("Frame",nil,MainBar)
 MainBar:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
 Buttons("ActionButton",MainBar,12)
@@ -713,7 +819,7 @@ local before=created
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
-local RUNTIME={"Bootstrap","Bars","Blizzard","Paging","Visibility",
+local RUNTIME={"Bootstrap","Bars","Decorations","Blizzard","Paging","Visibility",
     "Bindings","Style","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(RUNTIME) do
     assert(loadfile(root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
@@ -758,6 +864,12 @@ for _,file in ipairs({"Bars","Blizzard","Visibility","Bindings","Style","Paint",
     -- this addon are used, never probed.
     for _,probe in ipairs({"AB%.(%u%w*) and AB%.%1","if AB%.%u%w* then","and AB%.%u%w* then AB%."}) do
         assert(not text:find(probe),file..".lua probes one of its own modules: "..probe)
+    end
+    if file=="Controller" then
+        local decorations=assert(io.open(root.."/MSUF_Suite_ActionBars/Decorations.lua","rb"))
+        local body=decorations:read("*a"):match("function AB%.StyleDecoration%(.-\nend\n")
+        decorations:close()
+        assert(body and not body:find("pairs({",1,true),"StyleDecoration builds a table per button")
     end
     -- The flush runs its units through the suite's shared runner (Runtime.lua).
     if file=="Flush" then assert(text:find("S.NewUnitRunner()",1,true),"the flush lost the shared unit runner") end
@@ -861,15 +973,18 @@ if nativeReuse then
             assert(rec.button==button and rec.native and button.parent==bar.header and button.securelyReparented,
                 "native button not adopted securely: "..index..":"..i)
             assert(_G[AB.NATIVE_BARS[index]].actionButtons[i]==button and button:GetID()==i
-                and button.bar==nil and bar.header.attrs.actionpage==math.floor((AB.FIRST_SLOT[index]-1)/12)+1,
+                and bar.header.attrs.actionpage==math.floor((AB.FIRST_SLOT[index]-1)/12)+1,
                 "native command lookup or fixed page diverged")
+            -- An insecure write to a field Blizzard's secure code reads would
+            -- taint UpdateAction, proc alerts and tooltips.
+            assert(button.bar==_G[AB.NATIVE_BARS[index]],"a reused button lost Blizzard's bar field")
             assert(button.attrs.action==AB.FIRST_SLOT[index]+i-1 and button.attrs.index==i,
                 "native button lost its action slot")
             assert(not button.strippedEvents,"native painter lost its events")
             assert(math.floor((button.attrs.showgrid or 0)/8)%2==1,
                 "native showgrid guard missing")
-            -- With `bar` cleared, Blizzard's flyout code must take the
-            -- direction from the attribute and never read the field.
+            -- Blizzard's flyout code takes the direction from the attribute
+            -- and never asks the hidden bar.
             assert(button.attrs.flyoutDirection~=nil,"a reused button has no flyoutDirection attribute")
         end
     end
@@ -886,12 +1001,45 @@ if nativeReuse then
     MultiBarRight:UpdateShownButtons()
     assert(Button(4,11).button.shown and Button(4,12).button.shown,
         "Blizzard's icon count capped suite buttons out of combat")
+    -- In combat Blizzard's plan still runs (UpdateAction calls
+    -- self.bar:UpdateShownButtons); the restricted OnHide wrap answers at
+    -- once, and a button the suite hid stays hidden.
     combat=true
     MultiBarRight:UpdateShownButtons()
-    assert(not Button(4,11).button.shown,"harness: Blizzard's secure plan caps in combat")
+    assert(Button(4,11).button.shown and Button(4,12).button.shown,"Blizzard's icon count capped suite buttons in combat")
+    MultiBarBottomLeft:UpdateShownButtons()
+    assert(not Button(2,2).button.shown and Button(2,2).button.attrs.statehidden,"Blizzard's plan showed a slot the suite hid")
     combat=false
     Event("PLAYER_REGEN_ENABLED");RunTimers()
-    assert(Button(4,11).button.shown,"the suite's plan did not return after combat")
+    assert(Button(4,11).button.shown,"the suite's plan did not hold after combat")
+    -- Blizzard plans on every UpdateAction: a slot burst out of combat runs
+    -- the suite's plan once per bar on the next flush, never per call; in
+    -- combat the bar waits for combat end.
+    local execute,grids=SecureHandlerExecute,{}
+    local function GridRuns()
+        local total=0
+        for _,count in pairs(grids) do total=total+count end
+        return total
+    end
+    SecureHandlerExecute=function(frame,body)
+        if body==AB.SNIPPET.GRID then grids[frame]=(grids[frame] or 0)+1 end
+        return execute(frame,body)
+    end
+    for _=1,12 do MultiBarRight:UpdateShownButtons();MultiBarBottomLeft:UpdateShownButtons() end
+    assert(GridRuns()==0 and Button(4,11).button.shown and Button(4,12).button.shown,
+        "Blizzard's plan ran the suite's plan synchronously or capped suite buttons before the flush")
+    RunTimers()
+    assert(grids[Bar(4).header]==1 and grids[Bar(2).header]==1 and GridRuns()==2,
+        "a plan burst did not run the suite's plan exactly once per bar")
+    grids={}
+    combat=true
+    for _=1,12 do MultiBarRight:UpdateShownButtons() end
+    RunTimers()
+    assert(GridRuns()==0 and Button(4,11).button.shown,"the suite's plan ran in combat")
+    combat=false
+    Event("PLAYER_REGEN_ENABLED");RunTimers()
+    assert(grids[Bar(4).header]==1,"the plan parked in combat did not run once after combat")
+    SecureHandlerExecute=execute
     c.bar4Buttons=10;M:Refresh()
     c.bar2ShowEmpty=true;M:Refresh()
     assert(Button(2,2).button.shown and not Button(2,2).button.attrs.statehidden,
@@ -990,6 +1138,26 @@ if nativeReuse then
     assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("alert hook failed",1,true),
         "a raising alert hook reached Blizzard's alert manager")
     c.procGlow=1;M:Refresh()
+    -- Blizzard highlights its own (reused) buttons. Under a Suite style its
+    -- highlight frame stays invisible, also one Blizzard creates after the
+    -- style pass, and the ring follows Blizzard's decision.
+    do
+        local nativeRec=Button(2,1)
+        assert(c.assistStyle==2,"the recommendation default does not cover every bar")
+        Recommend(61)
+        AssistedCombatManager:OnActionButtonActionChanged(nativeRec.button,61)
+        local frame=nativeRec.button.AssistedCombatHighlightFrame
+        assert(frame and frame.shown and frame.alpha==0 and nativeRec.assist and nativeRec.assist.shown,
+            "a Blizzard highlight frame created between recommendations showed instead of the ring")
+        Recommend(nil)
+        assert(not nativeRec.assist.shown,"the ring outlived Blizzard's recommendation")
+        assert(S.Set("actionbars","assistStyle",1) and frame.alpha==1,"the Blizzard style did not restore Blizzard's highlight")
+        Recommend(61)
+        assert(frame.shown and frame.alpha==1 and not nativeRec.assist.shown,"the Blizzard style drew the Suite ring")
+        Recommend(nil)
+        AssistedCombatManager.candidates[nativeRec.button]=nil
+        assert(S.Set("actionbars","assistStyle",2))
+    end
     c.hideEmptyCharges=true;actions[61].charges={maxCharges=2,currentCharges=0};M:Refresh()
     assert(Button(2,1).button.Count.alpha==0,"native empty-charge count did not hide")
     local chargeCalls=calls.charges
@@ -1101,10 +1269,31 @@ assert(overrides.F=="MSUFSuiteBar3Button1","flyout slots route to the visible bu
 assert(not overrides["1"] and not overrides["SHIFT-1"],"native commands stay native")
 local writes=overrideWrites
 AB.UpdateRouting();assert(overrideWrites==writes,"unchanged routing must be skipped")
+-- Crafting quality badges: item actions only, on Retail and Forever alike
+-- (ActionBarActionButtonMixin:UpdateProfessionQuality on both clients).
+do
+    local saved=actions[16]
+    actions[16]={kind="item",id=5016,texture=516,quality="Professions-Icon-Quality-Tier3-Inv"}
+    Suite.Client.isForever=true
+    Event("ACTIONBAR_SLOT_CHANGED",16);RunTimers()
+    local rec=Button(9,4)
+    assert(rec.slot==16 and rec.quality and rec.quality.shown and rec.quality.atlas=="Professions-Icon-Quality-Tier3-Inv",
+        "Forever lost the crafting quality badge")
+    Suite.Client.isForever=false
+    local reads=calls.quality
+    Event("ACTIONBAR_SLOT_CHANGED",13);RunTimers()
+    assert(calls.quality==reads,"a spell action asked for a crafting quality")
+    actions[16]=saved
+    Event("ACTIONBAR_SLOT_CHANGED",16);RunTimers()
+    assert(not rec.quality.shown,"the crafting quality badge outlived its item")
+end
 
 ------------------------------------------------------------------ paging
+local actionsChanged=triggered["MSUFSuite.ActionBars.ActionsChanged"] or 0
 conditions["bar:2"]=true;barPage=2;Drivers();RunTimers()
 assert(Bar(1).header.attrs.actionpage==2 and Button(1,1).button.attrs.action==13 and Button(1,1).slot==13)
+assert((triggered["MSUFSuite.ActionBars.ActionsChanged"] or 0)>actionsChanged,
+    "a bar 1 page change did not tell the cooldown manager its glows moved")
 assert(MainBar.attrs.actionpage==2,"page mirrored onto MainActionBar")
 assert(Button(1,7).button.shown and Button(1,1).button.icon.texture==213)
 conditions["bar:2"]=nil;barPage=1
@@ -1137,6 +1326,19 @@ conditions["mod:shift"]=nil;conditions["bonusbar:1"]=nil;special.bonus=nil
 assert(S.SetMany("actionbars",{pagingModifiers=false}))
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==1 and MainBar.attrs.actionpage==1 and not overrides["1"],"native routing restored")
+
+------------------------------------------------------------------ combat start
+-- QoL party effects may rotate the secure headers (S.VisitPartyActionBars).
+-- PLAYER_REGEN_DISABLED arrives before the lockdown, the last moment to stop
+-- them: no header turns while its buttons take clicks in combat.
+do
+    local before={}
+    for index=1,12 do before[index]=Bar(index).header.animationStops or 0 end
+    Event("PLAYER_REGEN_DISABLED")
+    for index=1,10 do
+        assert(Bar(index).header.animationStops==before[index]+1,"combat start left bar "..index.." animating")
+    end
+end
 
 ------------------------------------------------------------------ bindings in combat
 combat=true
@@ -1254,6 +1456,21 @@ calls.chargeBaseline=calls.charges
 now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
 assert(calls.charges==calls.chargeBaseline,
     "uncharged actions allocated a charge info table on every cooldown walk")
+do
+    local rec=Button(2,1)
+    local saved,setting=AB.Painter.api.Charges,c.hideEmptyCharges
+    c.hideEmptyCharges=true
+    local queries,result=0,nil
+    AB.Painter.api.Charges=function() queries=queries+1;return result end
+    AB.Painter.Paint(rec)
+    assert(queries==1 and rec.button.Count.alpha==1,
+        "a full paint repeated a nil charge query or hid the count")
+    result=Secret();AB.Painter.Paint(rec)
+    assert(queries==2 and rec.button.Count.alpha==1,
+        "a full paint repeated or inspected a secret charge result")
+    AB.Painter.api.Charges=saved;c.hideEmptyCharges=setting
+    AB.Painter.Paint(rec)
+end
 cooldownCalls=calls.duration
 local start=now
 Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
@@ -1303,12 +1520,56 @@ actions[61].count=Secret()
 actions[61].remaining=5
 assert(S.SetMany("actionbars",{desaturateCooldown=true,cooldownAlpha=40,hideEmptyCharges=true}))
 infoCalls=calls.cooldown
+calls.combinedChargeBaseline=calls.chargesBySlot[61] or 0
 now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");Event("SPELL_UPDATE_CHARGES");RunTimers()
+assert(calls.chargesBySlot[61]==calls.combinedChargeBaseline+1,
+    "same-flush charge and cooldown events repeated the action's native query")
 assert(calls.cooldown==infoCalls,
     "cooldown feedback allocated action cooldown info tables")
 assert(b61.cooldown.object and b61.cooldown.object.slot==61 and not b61.cooldown.cooldown,"secret cooldown via duration object")
 assert(b61.chargeCooldown.object,"secret recharge via duration object")
 assert(IsSecret(b61.Count.text) and b61.Count.alpha==1,"secret count reaches SetText only")
+do
+    local before=calls.chargesBySlot[61]
+    for _=1,20 do now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers() end
+    assert(calls.chargesBySlot[61]==before and b61.chargeCooldown.object,
+        "a known charge action allocated info tables on pure cooldown events")
+    actions[61].charges.isActive=false
+    now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    assert(calls.chargesBySlot[61]==before and not b61.chargeCooldown.object,
+        "native zero recharge duration did not clear the swipe without info")
+    actions[61].charges.isActive=true
+    now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    assert(b61.chargeCooldown.object,"native recharge duration did not resume the swipe")
+    -- No duration object from the client (BugSack, 12.1): the known-charge
+    -- fast path, the swipe and the feedback clear instead of erroring.
+    local errors=#dispatch.errors
+    noDuration[61]=true
+    now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    assert(#dispatch.errors==errors,"a missing duration object raised an error")
+    assert(not b61.chargeCooldown.object and not b61.cooldown.object,"a missing duration object kept a swipe")
+    assert(b61.icon.desaturation==0 and b61.alpha==1,"a missing duration object kept the cooldown feedback")
+    noDuration[61]=nil
+    now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    assert(b61.chargeCooldown.object and b61.cooldown.object,"the swipe did not resume after a missing duration object")
+end
+do
+    local reader,errors=AB.Painter.api.Charges,#dispatch.errors
+    local raised=false
+    AB.Painter.api.Charges=function(slot)
+        if slot==61 and not raised then raised=true;error("combined charge read failed") end
+        return reader(slot)
+    end
+    actions[61].charges={isActive=false,maxCharges=3,currentCharges=0}
+    dispatch.expect=true
+    now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");Event("SPELL_UPDATE_CHARGES");RunTimers()
+    dispatch.expect=false;AB.Painter.api.Charges=reader
+    assert(#dispatch.errors==errors+1 and b61.Count.alpha==0,
+        "a failed combined cooldown walk lost the uncapped count update")
+    actions[61].charges={isActive=true,maxCharges=3,currentCharges=Secret()}
+    now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");Event("SPELL_UPDATE_CHARGES");RunTimers()
+    assert(b61.Count.alpha==1,"the combined cooldown retry kept a stale count")
+end
 assert(b61.icon.desaturation==1 and b61.alpha==.4,"curve-driven cooldown feedback")
 assert(AB.desatCurve.points[2][2]==1 and AB.alphaCurve.points[2][2]==.4)
 secretEval=true
@@ -1545,6 +1806,166 @@ assert(Button(2,1).button.cooldown.hideNumbers==false and Button(2,1).button.cha
 assert(S.Set("actionbars","cooldownNumbers",false))
 assert(Button(2,1).button.cooldown.hideNumbers==true and Button(2,1).button.chargeCooldown.hideNumbers==true)
 
+-- Explicit anchors and independent offsets affect text only; the cooldown
+-- clamp responds to actual button size, including charge countdowns.
+do
+    assert(S.SetMany("actionbars", { bar2Size=16, bar2CooldownSize=30, bar2CooldownPoint=3,
+        bar2CooldownX=4, bar2CooldownY=-5, bar2KeybindPoint=8, bar2KeybindX=7 }))
+    local button=Button(2,1).button
+    local text=button.cooldown:GetCountdownFontString()
+    assert(text.font[2]==6 and text.points[1][1]=="TOP" and text.points[1][4]==4 and text.points[1][5]==-5,
+        "cooldown anchor/offset or small-button clamp failed")
+    assert(button.chargeCooldown:GetCountdownFontString().font[2]==6,"charge countdown escaped clamp")
+    local keyText=Button(2,1).owned and not Button(2,1).native and button.HotKey or Button(2,1).keyText
+    assert(keyText.points[1][1]=="BOTTOMLEFT" and keyText.points[1][4]==7,
+        "independent keybind anchor failed")
+    assert(S.SetMany("actionbars", { bar2CooldownAutoSize=false }))
+    assert(text.font[2]==30,"explicit font size was not restored when auto fit was off")
+    assert(S.SetMany("actionbars", { bar2Size=40, bar2CooldownAutoSize=true, bar2CooldownPoint=1,
+        bar2CooldownX=0, bar2CooldownY=0, bar2KeybindPoint=1, bar2KeybindX=0 }))
+    local old=c.bar2Visibility
+    assert(S.ToggleActionBar(2) and c.bar2Visibility==6 and c.bar2ResumeVisibility==old)
+    assert(S.ToggleActionBar(2) and c.bar2Visibility==old,"bar toggle lost resume mode")
+    combat=true
+    assert(not S.ToggleActionBar(2) and c.bar2Visibility==old,"bar toggle changed protected state in combat")
+    assert(printed[#printed] and printed[#printed]:find("Action bar 2 switches when combat ends.",1,true),
+        "a bar toggle pressed in combat was silent")
+    combat=false;Broadcast("PLAYER_REGEN_ENABLED")
+    assert(c.bar2Visibility==6 and c.bar2ResumeVisibility==old,"a bar toggle pressed in combat never switched the bar")
+    -- Pressed twice in combat, the second press cancels the first.
+    combat=true
+    S.ToggleActionBar(2);S.ToggleActionBar(2)
+    assert(printed[#printed]:find("Action bar 2 stays as it is.",1,true),"a cancelled bar toggle was silent")
+    combat=false;Broadcast("PLAYER_REGEN_ENABLED")
+    assert(c.bar2Visibility==6,"a cancelled bar toggle still switched the bar")
+    assert(S.ToggleActionBar(2) and c.bar2Visibility==old,"bar toggle lost resume mode after combat")
+    local driver=AB.PageDriver({pagingTarget=true,pageFriendly=3,pageHostile=4})
+    assert(driver:find("[help] 3; [harm] 4;",1,true) and driver:find("[vehicleui]",1,true)==1)
+    assert(AB.CustomPaging({pagingTarget=true}),"target paging did not route native key commands")
+end
+
+-- Static ornaments and custom feedback reuse native state/geometry.
+do
+    assert(S.SetMany("actionbars",{bar1LeftEndcap=2,bar1RightEndcap=3,bar1LeftEndcapSize=42,
+        bar1LeftEndcapX=-7,bar1Background=true,bar1BackgroundPaddingX=9,bar1BackgroundPaddingY=3,
+        bar1BackgroundX=5,bar1BackgroundBorder=2,buttonShape=2,borderArt=2}))
+    local rec=Button(1,1)
+    assert(Bar(1).LeftEndcap.width==42 and Bar(1).RightEndcap.pieces[4].shown,"independent endcaps not laid out")
+    assert(Bar(1).background.points[1][4]==-4 and Bar(1).background.points[1][5]==3,"axis background geometry incorrect")
+    assert(rec.shapeMask and rec.button.icon.mask==rec.shapeMask and rec.button.cooldown.swipeTexture:find("TempPortraitAlphaMask",1,true))
+    assert(rec.borderArt.shown and rec.edgeHost:GetFrameLevel()>rec.button.cooldown:GetFrameLevel())
+    AB.SetPushed(rec,true);assert(rec.stateArt.shown,"pressed textured frame missing")
+    AB.SetPushed(rec,false);assert(not rec.stateArt.shown)
+    -- Endcaps and the bar background border wear the resolved border color
+    -- (the class color with "Class-colored border"), placed once per layout.
+    assert(S.Set("actionbars","borderClassColor",true))
+    local piece,edge=Bar(1).RightEndcap.pieces[1],Bar(1).backgroundEdges[1]
+    assert(math.abs(piece.color[1]-.78)<.01 and math.abs(edge.color[1]-.78)<.01,
+        "endcaps or the bar background border ignored the class-colored border")
+    assert(S.Set("actionbars","borderClassColor",false) and math.abs(piece.color[1]-AB.style.br)<.01,
+        "endcaps kept the class color")
+    do
+        local placeEdges,placed=S.PlaceEdges,0
+        S.PlaceEdges=function(set,...) if set==Bar(1).backgroundEdges then placed=placed+1 end;return placeEdges(set,...) end
+        assert(S.Set("actionbars","bar1BackgroundBorder",3))
+        S.PlaceEdges=placeEdges
+        assert(placed==1,"a background border tick placed its edges "..placed.." times")
+    end
+    -- Round buttons: a ring for the mouseover border and for the pixel glow.
+    local highlightBefore=c.highlightStyle
+    assert(S.SetMany("actionbars",{highlightStyle=1,procGlow=2}))
+    assert(rec.hoverRing and rec.hoverRing.shown and rec.hoverRing.layer=="HIGHLIGHT" and not rec.hoverEdges[1].shown,
+        "a round button kept a square mouseover border")
+    overlayed[1001]=true;Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",1001)
+    assert(rec.glowRing and rec.glowRing.shown and not (rec.glowEdges and rec.glowEdges[1].shown),
+        "a round button kept a square pixel glow")
+    overlayed[1001]=nil;Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",1001)
+    assert(not rec.glowRing.shown,"the round pixel glow stayed")
+    assert(S.Set("actionbars","highlightStyle",highlightBefore))
+    assert(S.SetMany("actionbars",{buttonShape=1,borderArt=1,bar1LeftEndcap=1,bar1RightEndcap=1}))
+    assert(not rec.hoverRing.shown,"a square button kept the round mouseover border")
+    AB.SetPushed(rec,true);assert(not rec.stateArt.shown,"old textured state survived style switch")
+    AB.SetPushed(rec,false)
+    -- The spellbook of Retail and Forever: Blizzard_PlayerSpells'
+    -- PlayerSpellsFrame.SpellBookFrame (the addon loads on demand).
+    PlayerSpellsFrame=NewFrame("Frame",nil,UIParent)
+    PlayerSpellsFrame.SpellBookFrame=NewFrame("Frame",nil,PlayerSpellsFrame)
+    PlayerSpellsFrame.SpellBookFrame:Show();PlayerSpellsFrame:Hide()
+    local neverBefore=c.bar6Visibility
+    assert(S.Set("actionbars","showOnPanels",true) and not AB.panelsOpen,"hidden spellbook parent revealed bars")
+    assert(S.Set("actionbars","bar6Visibility",6))
+    PlayerSpellsFrame:Show()
+    -- The reveal follows the implicit hides and leaves Never bars hidden.
+    assert(AB.panelsOpen and Bar(1).visDriver:find("[petbattle][vehicleui] hide; [nocombat] show; ",1,true)==1,
+        "spellbook reveal missing or ahead of the vehicle and pet battle hides: "..Bar(1).visDriver)
+    assert(Bar(6).visDriver=="hide" and not Bar(6).header.shown,"the spellbook reveal showed a Never bar")
+    conditions.vehicleui=true;Drivers()
+    assert(not Bar(1).header.shown,"the spellbook reveal showed bar 1 over the vehicle UI")
+    conditions.vehicleui=nil;conditions.petbattle=true;Drivers()
+    assert(not Bar(1).header.shown and not Bar(2).header.shown,"the spellbook reveal showed bars over a pet battle")
+    conditions.petbattle=nil;Drivers()
+    -- Closed in combat: the reveal waits for combat to end, then drops.
+    combat=true
+    PlayerSpellsFrame:Hide()
+    assert(AB.panelsOpen and AB.panelPending,"harness: a spellbook closed in combat parks the reveal")
+    combat=false;Event("PLAYER_REGEN_ENABLED");RunTimers()
+    assert(not AB.panelsOpen and not AB.panelPending and not Bar(1).visDriver:find("[nocombat] show;",1,true)
+        and Bar(5).header.attrs.gridmask==0,"the spellbook reveal outlived combat")
+    assert(S.Set("actionbars","showOnPanels",false) and S.Set("actionbars","bar6Visibility",neverBefore))
+    PlayerSpellsFrame=nil
+    assert(S.Set("actionbars","pageArrows",true))
+    local arrows=assert(Bar(1).pageArrows,"page arrows did not appear beside bar 1")
+    local pager=MainBar.ActionBarPageNumber
+    assert(arrows.shown and arrows.buttons[1]:GetAttribute("type")=="click"
+        and arrows.buttons[1]:GetAttribute("clickbutton")==pager.UpButton
+        and arrows.buttons[2]:GetAttribute("clickbutton")==pager.DownButton,"arrows must route to native page actions")
+    assert(arrows.buttons[1].normalAtlas=="ui-hud-actionbar-pageuparrow-up"
+        and arrows.buttons[2].highlightAtlas=="ui-hud-actionbar-pagedownarrow-mouseover",
+        "page arrows must wear Blizzard's page arrow atlases, not font glyphs")
+    -- SecureActionButton_OnClick (Blizzard_FrameXML/SecureTemplates.lua): an
+    -- addon's secure button acts on the press while its useOnKeyDown (default:
+    -- the ActionButtonUseKeyDown CVar, on here) is set, else on the release;
+    -- the "click" action then clicks its clickbutton. Only the registered
+    -- click kinds ever arrive.
+    local function HardwareClick(frame)
+        local keydown=frame.attrs.useOnKeyDown
+        if keydown==nil then keydown=cvars.ActionButtonUseKeyDown==true end
+        for _,kind in ipairs(frame.clickTypes or {}) do
+            local down=kind:find("Down",1,true)~=nil
+            if (down and keydown) or (not down and not keydown) then
+                if frame.attrs.type=="click" then frame.attrs.clickbutton:Click("LeftButton") end
+                return
+            end
+        end
+    end
+    HardwareClick(arrows.buttons[1]);HardwareClick(arrows.buttons[2])
+    assert(pageClicks[1]=="up" and pageClicks[2]=="down","a page arrow click never reached Blizzard's page button")
+    assert(S.Set("actionbars","pageArrows",false) and not arrows.shown)
+    -- Recommendation ring: Blizzard's candidates are its own (hidden) buttons,
+    -- so a suite button matches the spell its paint cached.
+    assert(c.assistStyle==2,"the recommendation default does not cover bar 1")
+    Recommend(1001)
+    assert(rec.assist and rec.assist.shown and rec.assist.ring.shown and not rec.assist.fill.shown,
+        "the ring missed bar 1's recommended spell")
+    assert(S.Set("actionbars","assistStyle",4) and rec.assist.ring.shown and rec.assist.fill.shown)
+    Recommend(nil);assert(S.Set("actionbars","assistStyle",1));Recommend(1001)
+    assert(S.Set("actionbars","assistStyle",4) and rec.assist.shown,"the cached recommendation was omitted on a style change")
+    -- A slider tick of an unrelated setting re-reads no action for the rings.
+    local reads=infoReads
+    assert(S.Set("actionbars","bar3Alpha",60) and infoReads==reads,"an unrelated setting re-read every action for the rings")
+    Recommend(1002)
+    assert(not rec.assist.shown and Button(1,2).assist.shown,"native recommendation change did not move feedback")
+    -- Bar 1 changes page in combat: the ring follows the spell, not the button.
+    combat=true
+    conditions["bar:2"]=true;barPage=2;Drivers();RunDue()
+    assert(Button(1,2).slot==14 and not Button(1,2).assist.shown,"the ring stayed on a button whose page changed")
+    conditions["bar:2"]=nil;barPage=1;Drivers();RunDue()
+    assert(Button(1,2).assist.shown,"the ring did not come back with the page")
+    combat=false
+    assert(S.Set("actionbars","assistStyle",1) and not Button(1,2).assist.shown,"custom feedback lingered after native style restored")
+    Recommend(nil)
+end
+
 ------------------------------------------------------------------ keybind export
 -- The cooldown manager's icons show the key of the suite button that
 -- presses a spell: bar order first (bar 9 owns slots 13-24, bar 10 slots
@@ -1560,6 +1981,13 @@ spellSlots[2076]={62,75}
 spellSlots[3000]={}
 bindings.MSUFSUITE_BAR10_BUTTON2={"CTRL-SPACE"}
 assert(S.ActionBarsBindingForSpell(1001)=="1" and S.ActionBarsBindingForSpell(61)=="S1","native command keys")
+do
+    local visited, context = {}, {}
+    local function Visit(button, passed) assert(passed==context);visited[button]=true end
+    assert(S.ForEachActionBarButtonForSpell(1001,Visit,context)==1 and visited[Button(1,1).button],"public spell visitor missed current action button")
+    combat=true;assert(S.ForEachActionBarButtonForSpell(1001,Visit,context)==0);combat=false
+    assert(S.ForEachActionBarButtonForSpell("secret",Visit,context)==0,"spell visitor accepted non-public ID")
+end
 assert(S.ActionBarsBindingForSpell(2013)=="CM4","bar 9 presses slots 13-24")
 assert(S.ActionBarsBindingForSpell(2110)=="CSpc","bar 10 presses slots 109-120, not bar 1's keys")
 bindings.ACTIONBUTTON3={"3"}
@@ -1569,6 +1997,26 @@ assert(S.ActionBarsBindingForSpell(3000)=="","a spell on no button has no key")
 c.disableFormPaging=true
 assert(S.ActionBarsBindingForSpell(2075)=="","bar 1 never pages to forms with the opt-out")
 c.disableFormPaging=false
+-- Bar 1's custom pages press their slots with bar 1's keys: a target page
+-- with the plain key, a modifier page with the modifier held while that
+-- combination has no binding of its own.
+GetBindingAction=function(key)
+    for command,keys in pairs(bindings) do
+        for _,bound in ipairs(keys) do if bound==key then return command end end
+    end
+    return ""
+end
+spellSlots[4050]={50}
+assert(S.ActionBarsBindingForSpell(4050)=="","harness: slot 50 starts without a key")
+c.pagingTarget,c.pageFriendly,c.pageHostile=true,1,5
+assert(S.ActionBarsBindingForSpell(4050)=="2","a spell on the hostile target page lost bar 1's key")
+c.pagingTarget=false
+c.pagingModifiers,c.pageShift,c.pageCtrl,c.pageAlt=true,5,2,3
+assert(S.ActionBarsBindingForSpell(4050)==S.KeyText("SHIFT-2"),"a spell on the Shift page lost its modified key")
+bindings.TOGGLEAUTORUN={"SHIFT-2"}
+assert(S.ActionBarsBindingForSpell(4050)=="","a modified key bound elsewhere was shown for bar 1")
+bindings.TOGGLEAUTORUN=nil
+c.pagingModifiers,c.pageShift,c.pageCtrl,c.pageAlt=false,2,3,4
 bindings.ACTIONBUTTON3=nil
 bindings.MSUFSUITE_BAR10_BUTTON2=nil
 
@@ -1594,6 +2042,38 @@ assert(total==#AB.owned+#AB.adopted and not next(laid),"a global look change mus
 styled={}
 M:Refresh()
 assert(not next(styled) and not next(laid),"a refresh without changes did work")
+-- Every per-bar catalog setting has its key and its own work: none falls
+-- back to rebuilding its bar, let alone everything.
+for key,rule in pairs(S.catalog.actionbars.rules) do
+    if rule.bar then
+        local suffix=key:match("^bar%d+(.+)$")
+        assert(AB.KEYS[rule.bar][suffix]==key,"per-bar setting without a key: "..key)
+        assert(AB.BAR_WORK[suffix],"per-bar setting without its own work: "..key)
+    end
+end
+-- The MSUF layer reaches the bar's header and only lays that bar out.
+do
+    local surfaces={}
+    MSUF_NS.UF={Layers={
+        ApplyOwnedSurface=function(frame,layer) surfaces[#surfaces+1]={frame=frame,layer=layer};return false end,
+        ElementLevel=function(layer,_,detail) return layer*32+detail end}}
+    local bindingEvents=triggered[BINDINGS_EVENT] or 0
+    assert(S.Set("actionbars","bar3Layer",12))
+    local reached=false
+    for _,call in ipairs(surfaces) do reached=reached or call.frame==Bar(3).header and call.layer==12 end
+    assert(reached,"the bar 3 MSUF layer never reached its header")
+    assert(laid[3]==1 and not laid[2] and not next(styled) and (triggered[BINDINGS_EVENT] or 0)==bindingEvents,
+        "an MSUF layer tick did more than lay out its bar")
+    styled,laid={},{}
+    assert(S.Set("actionbars","bar3Layer",-1))
+    MSUF_NS.UF=nil
+    styled,laid={},{}
+    -- The gamepad rule only changes visibility (Forever; hidden on Retail).
+    assert(S.catalog.actionbars.rules.bar3HideGamepad.hidden,"Retail offers the Forever gamepad rule")
+    assert(S.Set("actionbars","bar3HideGamepad",true) and not next(styled) and not next(laid),
+        "the gamepad rule restyled or moved bars")
+    assert(S.Set("actionbars","bar3HideGamepad",false))
+end
 AB.StyleButton,AB.LayoutBar=styleButton,layoutBar
 assert(S.SetMany("actionbars",restore))
 -- Mover specs are built once per bar, not on every refresh.
@@ -1672,6 +2152,36 @@ assert(S.OpenQuickKeybind() and quick.shown and quick.shownSecurely,"quick keybi
 combat=true;assert(not S.OpenQuickKeybind());combat=false
 
 ------------------------------------------------------------------ disable and re-enable
+do
+    local oldForever,oldInput,oldPad=Suite.Client.isForever,InputUtil,C_GamePad
+    local input,devices=true,{1}
+    Suite.Client.isForever=true
+    InputUtil={IsGamepadUIEnabled=function() return input end}
+    C_GamePad={GetAllDeviceIDs=function() return devices end}
+    assert(S.SetMany("actionbars",{bar1Visibility=1,bar1HideGamepad=true,bar2Visibility=1,bar2HideGamepad=false}))
+    RunTimers()
+    assert(not Bar(1).header.shown and Bar(2).header.shown,"connected active gamepad only hides selected bars")
+    devices={};Event("GAME_PAD_DISCONNECTED")
+    assert(Bar(1).header.shown,"disconnect restores the normal visibility driver")
+    devices={1};input=false;Event("INPUT_DEVICE_INTERFACE_TRANSITION")
+    assert(Bar(1).header.shown,"connected inactive gamepad leaves bars visible")
+    input=true;combat=true
+    local oldQueue,queued=S.Queue,nil
+    S.Queue=function(id) queued=id;return oldQueue(id) end
+    Event("GAME_PAD_ACTIVE_CHANGED")
+    S.Queue=oldQueue
+    assert(queued=="actionbars" and Bar(1).header.shown,"combat gamepad changes defer protected visibility")
+    combat=false;S.Apply("actionbars")
+    assert(not Bar(1).header.shown,"the deferred gamepad visibility applies outside combat")
+    combat=true;devices={};Event("GAME_PAD_DISCONNECTED")
+    devices={1};Event("GAME_PAD_CONNECTED");devices={};Event("GAME_PAD_DISCONNECTED")
+    combat=false;S.Apply("actionbars")
+    assert(Bar(1).header.shown,"combat exit uses the latest connected device state")
+    Suite.Client.isForever=oldForever
+    InputUtil,C_GamePad=oldInput,oldPad
+    assert(S.Set("actionbars","bar1HideGamepad",false));RunTimers()
+    assert(Bar(1).header.shown and not M.context.frame.events.GAME_PAD_ACTIVE_CHANGED,"other client flavors release gamepad triggers")
+end
 local clears=overrideClears
 local enabledEvents=triggered[BINDINGS_EVENT] or 0
 -- Every release step runs isolated: the first one raising is reported, and
