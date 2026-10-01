@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 local O = P.Objectives
 local M, SOURCES, Read = O.M, O.SOURCES, O.Read
 local MythicPlus = S.MythicPlus
@@ -72,136 +72,11 @@ local function Create(self)
     self.scroll, self.content = scroll, content
 end
 
------------------------------------------------------------------- Blizzard actions
--- Quest log/group finder load with Retail/Forever game UI. Achievement and
--- Adventure Guide bootstraps depend on game type, so those two are checked.
-local function OpenQuestDetails(questID)
-    if not Finite(questID) or questID <= 0 then return end
-    QuestMapFrame_OpenToQuestDetails(questID)
-end
-
-local function OpenTaskMap(questID)
-    local mapID = Read(C_TaskQuest.GetQuestZoneID, questID)
-    if Finite(mapID) and mapID > 0 then
-        OpenQuestLog(mapID)
-        EventRegistry:TriggerEvent("MapCanvas.PingQuestID", questID)
-    else
-        OpenQuestDetails(questID)
-    end
-end
-
-local function OpenAchievement(achievementID)
-    if type(_G.ShowAchievementFrameForAchievement) == "function" then
-        _G.ShowAchievementFrameForAchievement(achievementID)
-    end
-end
-
-local function OpenJournal()
-    if type(_G.ToggleEncounterJournal) == "function" then _G.ToggleEncounterJournal() end
-end
-
-local function WatchTogglePressed()
-    -- Blizzard's QUESTWATCHTOGGLE binding defaults to Shift. Keep Shift working
-    -- even when that binding has been customized by the player.
-    return Read(IsModifiedClick, "QUESTWATCHTOGGLE") == true or Read(IsShiftKeyDown) == true
-end
-
-local function CanUntrack(button)
-    if Finite(button.achievementID) then return true end
-    if not Finite(button.questID) or not button.tracked then return false end
-    if button.group == "world" then return true end
-    return button.group ~= "bonus" and Read(QuestUtil.CanRemoveQuestWatch) == true
-end
-
-local function Untrack(button)
-    if not CanUntrack(button) then return end
-    if Finite(button.achievementID) then
-        C_ContentTracking.StopTracking(Enum.ContentTrackingType.Achievement,
-            button.achievementID, Enum.ContentTrackingStopType.Manual)
-    elseif button.group == "world" then
-        QuestUtil.UntrackWorldQuest(button.questID)
-    else
-        C_QuestLog.RemoveQuestWatch(button.questID)
-    end
-end
-
--- Menu labels are Blizzard's global strings; its own objective tracker uses
--- them on every supported client.
-local function BuildAchievementMenu(root, button)
-    local achievementID = button.achievementID
-    if type(_G.ShowAchievementFrameForAchievement) == "function" then
-        root:CreateButton(OBJECTIVES_VIEW_ACHIEVEMENT, function()
-            OpenAchievement(achievementID)
-        end)
-    end
-    if CanUntrack(button) then
-        root:CreateButton(OBJECTIVES_STOP_TRACKING, function() Untrack(button) end)
-    end
-end
-
-local function BuildScenarioMenu(root, scenarioID)
-    if type(_G.ToggleEncounterJournal) == "function" then
-        root:CreateButton(ENCOUNTER_JOURNAL, OpenJournal)
-    end
-    if Finite(scenarioID) and Read(C_LFGList.CanCreateScenarioGroup, scenarioID) == true then
-        root:CreateButton(FIND_A_GROUP, function()
-            LFGListUtil_FindScenarioGroup(scenarioID, true)
-        end)
-    end
-end
-local function OpenQuestGroup(questID, nativeSearch)
-    if NS.IsCombatLocked() or NS.Client.isForever then return end
-    if nativeSearch then
-        LFGListUtil_FindQuestGroup(questID, true)
-    else
-        PVEFrame_ShowFrame("GroupFinderFrame", LFGListPVEStub)
-    end
-end
-local function BuildQuestMenu(root, button)
-    local questID, group = button.questID, button.group
-    local task = group == "world" or group == "bonus"
-    if button.findGroup then
-        local nativeSearch = button.questGroupSearch
-        root:CreateButton(button.questGroupSearch and FIND_A_GROUP or Tr("Open group finder"), function()
-            OpenQuestGroup(questID, nativeSearch)
-        end)
-    end
-    root:CreateButton(task and OBJECTIVES_SHOW_QUEST_MAP or OBJECTIVES_VIEW_IN_QUESTLOG, function()
-        if task then OpenTaskMap(questID) else OpenQuestDetails(questID) end
-    end)
-    local current = Read(C_SuperTrack.GetSuperTrackedQuestID)
-    local selected = Finite(current) and current == questID
-    root:CreateButton(selected and STOP_SUPER_TRACK_QUEST or SUPER_TRACK_QUEST, function()
-        C_SuperTrack.SetSuperTrackedQuestID(selected and 0 or questID)
-    end)
-    if CanUntrack(button) then
-        root:CreateButton(OBJECTIVES_STOP_TRACKING, function() Untrack(button) end)
-    end
-    if not task and Read(C_QuestLog.IsPushableQuest, questID) == true
-        and Read(IsInGroup) == true then
-        root:CreateButton(SHARE_QUEST, function() QuestUtil.ShareQuest(questID) end)
-    end
-    if not task and Read(C_QuestLog.CanAbandonQuest, questID) == true then
-        root:CreateButton(ABANDON_QUEST_ABBREV, function()
-            QuestMapQuestOptions_AbandonQuest(questID)
-        end)
-    end
-end
-
-local function ShowContextMenu(button)
-    local group, title = button.group, button.menuTitle or Tr("Objective")
-    if not (Finite(button.questID) or Finite(button.achievementID) or group == "scenario") then return end
-    MenuUtil.CreateContextMenu(button, function(_, root)
-        root:CreateTitle(title)
-        if Finite(button.achievementID) then
-            BuildAchievementMenu(root, button)
-        elseif group == "scenario" then
-            BuildScenarioMenu(root, button.scenarioID)
-        else
-            BuildQuestMenu(root, button)
-        end
-    end)
-end
+------------------------------------------------------------------ actions
+-- ObjectivesActions.lua: Blizzard's quest, achievement and group finder
+-- actions and the context menus.
+local OpenQuestDetails, OpenAchievement, OpenJournal = O.OpenQuestDetails, O.OpenAchievement, O.OpenJournal
+local WatchTogglePressed, Untrack, ShowContextMenu = O.WatchTogglePressed, O.Untrack, O.ShowContextMenu
 
 ------------------------------------------------------------------ rows
 local Render
@@ -226,7 +101,9 @@ local function OnRowClick(button, mouseButton)
         return
     end
     if Finite(button.questID) and O.CanCompleteQuest(button.questID) then
-        QuestObjectiveTracker:RemoveAutoQuestPopUp(button.questID)
+        -- The client functions only: QuestObjectiveTracker:RemoveAutoQuestPopUp
+        -- would also mark Blizzard's tracker dirty inside this addon's call.
+        RemoveAutoQuestPopUp(button.questID)
         ShowQuestComplete(button.questID)
     elseif Finite(button.questID) then
         OpenQuestDetails(button.questID)
@@ -254,10 +131,6 @@ end
 
 local function OnOwnedLeave(button)
     if GameTooltip:GetOwner() == button then GameTooltip:Hide() end
-end
-local function OnFindGroupClick(button)
-    local row = button.ownerRow
-    if Finite(row.questID) then OpenQuestGroup(row.questID, row.questGroupSearch) end
 end
 local function OnFindGroupEnter(button)
     local row = button.ownerRow
@@ -369,12 +242,14 @@ local function EnsureItemButton(row)
     row.itemButton = button
     return button
 end
+-- Blizzard's click handler runs the group search (ObjectivesActions.lua).
 local function EnsureFindGroupButton(row)
     if row.findGroupButton then return row.findGroupButton end
-    local button = S.CreateFrame("Button", nil, row)
+    local button = S.CreateFrame("Button", nil, row, "InsecureActionButtonTemplate")
     button:SetSize(22, 22)
     button:RegisterForClicks("LeftButtonUp")
-    button:SetScript("OnClick", OnFindGroupClick)
+    button:SetAttribute("useOnKeyDown", false)
+    button:SetScript("PreClick", O.FindGroupPreClick)
     button:SetScript("OnEnter", OnFindGroupEnter)
     button:SetScript("OnLeave", OnOwnedLeave)
     local icon = S.CreateTexture(button, nil, "ARTWORK")

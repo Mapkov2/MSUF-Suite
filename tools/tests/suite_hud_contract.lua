@@ -86,6 +86,7 @@ local function Widget(parent, fontString)
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetShown(value) self.shown = value end
+    function w:IsShown() return self.shown end
     function w:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     return w
 end
@@ -94,8 +95,17 @@ CreateFrame = function(_, name, parent, template)
     local frame = Widget(parent)
     frame.template = template
     if template == "InsecureActionButtonTemplate" then
-        -- The client template handles the item action before addon post-hooks.
+        -- The client template handles the action before addon post-hooks:
+        -- a click on another button, a macro or the item.
         frame.OnClick = function(button, mouseButton)
+            local action = button:GetAttribute("type")
+            if action == "click" then
+                button:GetAttribute("clickbutton"):Click(mouseButton or "LeftButton")
+                return
+            elseif action == "macro" then
+                button.secureMacro = button:GetAttribute("macrotext")
+                return
+            end
             if (mouseButton == nil or mouseButton == "LeftButton")
                 and not IsModifiedClick("QUESTWATCHTOGGLE") and not IsShiftKeyDown() then
                 button.secureUsedItem = button:GetAttribute("item1")
@@ -156,8 +166,14 @@ LFGListUtil_FindScenarioGroup = function(id) foundScenario = id end
 local questActivity, openedFinder, foundQuest
 C_LFGList = { CanCreateScenarioGroup = function() return true end,
     GetActivityIDForQuestID = function(id) return id == 77 and questActivity or nil end }
+-- Insecure calls of these would taint the LFG list (ObjectivesActions.lua).
 PVEFrame_ShowFrame = function() openedFinder = openedFinder and openedFinder + 1 or 1 end
 LFGListUtil_FindQuestGroup = function(id) foundQuest = id end
+PVEFrame = Widget(UIParent)
+PVEFrame:Hide()
+local shownPanel
+ShowUIPanel = function(frame) shownPanel = frame end
+QuestObjectiveFindGroupButtonMixin = { SetUp = function(self, id) self:SetAttribute("questID", id) end }
 C_Timer = { After = function(_, callback) scheduled[#scheduled + 1] = callback end }
 local function Drain()
     local pending = scheduled
@@ -342,7 +358,7 @@ do
     for key, value in pairs(stubs) do S[key] = value end
 end
 local private = { NS = suite, Suite = S }
-for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesTracker", "Objectives", "Announcements" }) do
+for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesActions", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
@@ -923,18 +939,43 @@ assert(tracker.rows["entry:world:77"].timer.text == "5:00"
     and tracker.rows["entry:scenario:0"].timer.text == "0:50",
     "world and scenario countdowns must use their matching Blizzard data")
 if flavor == "Mainline" then
+    -- A hardware click runs PreClick, then the template's own OnClick.
+    local function Click(button)
+        if button.PreClick then button.PreClick(button, "LeftButton") end
+        button.OnClick(button, "LeftButton")
+    end
     local groupButton = tracker.rows["entry:world:77"].findGroupButton
-    assert(groupButton and groupButton.icon.atlas == "socialqueuing-icon-eye",
+    assert(groupButton and groupButton.icon.atlas == "socialqueuing-icon-eye"
+        and groupButton.template == "InsecureActionButtonTemplate",
         "world quests need a group finder button even without a quest activity")
-    groupButton.OnClick(groupButton)
-    assert(openedFinder == 1 and not foundQuest,
-        "a world quest without a quest activity must open the generic finder")
+    Click(groupButton)
+    assert(groupButton.secureMacro == "/click LFDMicroButton\n/click PVEFrameTab1\n/click GroupFinderFrameGroupButton3"
+        and not openedFinder and not foundQuest,
+        "a world quest without a quest activity must open Premade Groups through Blizzard's buttons")
+    PVEFrame:Show()
+    Click(groupButton)
+    assert(groupButton.secureMacro == "/click PVEFrameTab1\n/click GroupFinderFrameGroupButton3",
+        "an open group finder must only switch to Premade Groups")
+    PVEFrame:Hide()
     questActivity = 123
+    -- The hidden native tracker keeps Blizzard's green-eye button per quest.
+    local nativeEye = Widget(UIParent)
+    nativeEye.SetUp, nativeEye.used = QuestObjectiveFindGroupButtonMixin.SetUp, true
+    nativeEye:SetUp(77)
+    function nativeEye:Click() self.clickedQuest = self:GetAttribute("questID") end
+    WorldQuestObjectiveTracker = { usedRightEdgeFrames = { eye = nativeEye } }
     tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
     Drain()
     groupButton = tracker.rows["entry:world:77"].findGroupButton
-    groupButton.OnClick(groupButton)
-    assert(foundQuest == 77, "a groupable quest must open its quest-specific search")
+    Click(groupButton)
+    assert(nativeEye.clickedQuest == 77 and not foundQuest and not openedFinder,
+        "a groupable quest must run Blizzard's own quest search")
+    local worldRow = tracker.rows["entry:world:77"]
+    worldRow.OnClick(worldRow, "RightButton")
+    lastMenu.buttons["Open group finder"]()
+    assert(shownPanel == PVEFrame and not foundQuest and not openedFinder,
+        "the menu must open the group finder through the secure panel delegate")
+    WorldQuestObjectiveTracker = nil
 end
 widgetTime = 90
 C_ScenarioInfo.GetCriteriaInfo = function() return { description = "Defend", completed = false } end
@@ -1434,9 +1475,14 @@ C_QuestLog.GetLogIndexForQuestID = function(id) return id == 95413 and 1 or nil 
 C_QuestLog.GetInfo = function(index) return index == 1 and { isAutoComplete = autoComplete } or nil end
 C_QuestLog.IsComplete = function(id) return id == 95413 and questComplete or false end
 local completionActions, offeredRewards = {}, nil
-QuestObjectiveTracker = { RemoveAutoQuestPopUp = function(_, id)
-    completionActions[#completionActions + 1] = "remove:" .. id
+-- The tracker method also marks Blizzard's tracker dirty in the caller's
+-- code; the client function only removes the popup.
+QuestObjectiveTracker = { RemoveAutoQuestPopUp = function()
+    error("the Suite called Blizzard's tracker method from addon code")
 end }
+RemoveAutoQuestPopUp = function(id)
+    completionActions[#completionActions + 1] = "remove:" .. id
+end
 ShowQuestComplete = function(id)
     completionActions[#completionActions + 1] = "show:" .. id
     offeredRewards = id

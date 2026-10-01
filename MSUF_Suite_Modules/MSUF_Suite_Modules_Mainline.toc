@@ -17,6 +17,7 @@ MythicPlus.lua
 Raid.lua
 ObjectivesData.lua
 ObjectivesDetails.lua
+ObjectivesActions.lua
 ObjectivesTracker.lua
 Objectives.lua
 RunSummaryParty.lua
