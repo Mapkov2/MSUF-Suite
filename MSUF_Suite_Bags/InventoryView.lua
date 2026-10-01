@@ -133,6 +133,12 @@ local function ShuffleItems()
     Request()
 end
 
+-- The click's own arguments (the button) must not reach Editor.Show,
+-- whose first argument selects the pinned list.
+local function EditCategories()
+    P.InventoryEditor.Show()
+end
+
 local function ShuffleEnter(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip:SetText(S.Text("Shuffle displayed items"))
@@ -150,7 +156,7 @@ local function MakeFooter(frame)
     V.next:SetPoint("LEFT", V.previous, "RIGHT", 6, 0)
     V.position = Font(V.chrome, 11)
     V.position:SetPoint("LEFT", V.next, "RIGHT", 8, 0)
-    V.manage = Button(V.chrome, "Edit categories", 108, P.InventoryEditor.Show)
+    V.manage = Button(V.chrome, "Edit categories", 108, EditCategories)
     V.manage:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, 13)
     V.shuffleButton = Button(V.chrome, "", 24, ShuffleItems)
     V.shuffleButton:SetPoint("RIGHT", V.manage, "LEFT", -5, 0)

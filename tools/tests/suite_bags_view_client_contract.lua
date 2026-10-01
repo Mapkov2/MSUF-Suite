@@ -472,5 +472,25 @@ do
     assert(not V.active and Native() and not V.chrome.shown, "Blizzard grid must give the layout back")
 end
 
+---------------------------------------------------------------- category editor
+-- "Edit categories" opens the category editor with no argument: the click's
+-- button must never reach Editor.Show as its pinned flag.
+do
+    local W = H.New(root, { config = { inventoryView = 3 } })
+    W.sizes[0] = 4
+    local show, arguments = W.P.InventoryEditor.Show, nil
+    W.P.InventoryEditor.Show = function(...)
+        arguments = select("#", ...)
+        return show(...)
+    end
+    W.Apply()
+    W.OpenBags()
+    W.Settle()
+    local manage = assert(W.P.InventoryView.manage, "the inventory view has no category editor button")
+    manage:Click("LeftButton")
+    assert(arguments == 0 and W.P.InventoryEditor.frame.shown and not W.P.InventoryEditor.editPins,
+        "Edit categories passed its click arguments to the editor")
+end
+
 print("bag view client model: order, reads, combat, geometry, tooltips, split owner, search, guild bank,"
-    .. " category limit, combat disable and Blizzard grid passed")
+    .. " category limit, combat disable, Blizzard grid and the category editor passed")
