@@ -9,14 +9,10 @@ function Text.Bind(module) Text.module = module end
 local function Capture(region, original, path, size, flags)
     original[1], original[2], original[3] = path, size, flags or ""
     original.appliedShadow = nil
-    if type(region.GetShadowColor) == "function" then
-        local r, g, b, a = region:GetShadowColor()
-        if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then original.shadow = { r, g, b, a } end
-    end
-    if type(region.GetShadowOffset) == "function" then
-        local x, y = region:GetShadowOffset()
-        if S.Finite(x) and S.Finite(y) then original.offset = { x, y } end
-    end
+    local r, g, b, a = region:GetShadowColor()
+    if S.Finite(r) and S.Finite(g) and S.Finite(b) and S.Finite(a) then original.shadow = { r, g, b, a } end
+    local x, y = region:GetShadowOffset()
+    if S.Finite(x) and S.Finite(y) then original.offset = { x, y } end
 end
 
 function Text.Invalidate(region)
@@ -36,7 +32,6 @@ end
 function Text.Apply(region, style, size)
     if not region or NS.Safety.IsForbidden(region) then return end
     if not style.enabled then Text.Restore(region); return end
-    if type(region.GetFont) ~= "function" then return end
     local path, nativeSize, flags = region:GetFont()
     if not S.Public(path) or type(path) ~= "string" or path == ""
         or not S.Finite(nativeSize) or not S.Public(flags) then return end
@@ -56,8 +51,8 @@ function Text.Apply(region, style, size)
         original.appliedPath, original.appliedSize, original.appliedFlags = appliedPath, appliedSize, appliedFlags
     end
     if fontChanged or original.appliedShadow ~= style.shadow then
-        if type(region.SetShadowColor) == "function" then region:SetShadowColor(0, 0, 0, style.shadow and 1 or 0) end
-        if type(region.SetShadowOffset) == "function" then region:SetShadowOffset(style.shadow and 1 or 0, style.shadow and -1 or 0) end
+        region:SetShadowColor(0, 0, 0, style.shadow and 1 or 0)
+        region:SetShadowOffset(style.shadow and 1 or 0, style.shadow and -1 or 0)
         original.appliedShadow = style.shadow
     end
 end

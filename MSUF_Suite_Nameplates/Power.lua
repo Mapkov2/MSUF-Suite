@@ -16,8 +16,7 @@ local function Requested()
 end
 
 local function Accessible(bar)
-    return bar and not NS.Safety.IsForbidden(bar) and type(bar.SetPointsOffset) == "function"
-        and type(bar.GetStatusBarTexture) == "function"
+    return bar and not NS.Safety.IsForbidden(bar)
 end
 
 local function Paint(bar, force, targetX, targetY)
@@ -56,23 +55,21 @@ function Power.Refresh(force)
         for bar in pairs(visuals) do Paint(bar) end
         return
     end
-    local driver = _G.NamePlateDriverFrame
-    if not driver or NS.Safety.IsForbidden(driver) then return end
-    if not hooked and type(driver.SetupClassNameplateBars) == "function" then
+    local driver = NamePlateDriverFrame
+    if NS.Safety.IsForbidden(driver) then return end
+    if not hooked then
         hooksecurefunc(driver, "SetupClassNameplateBars", function()
             if Requested() then Power.Refresh(true) end
         end)
         hooked = true
     end
-    local mana = type(driver.GetClassNameplateManaBar) == "function"
-        and driver:GetClassNameplateManaBar() or nil
-    local alternate = type(driver.GetClassNameplateAlternatePowerBar) == "function"
-        and driver:GetClassNameplateAlternatePowerBar() or nil
+    local mana = driver:GetClassNameplateManaBar()
+    local alternate = driver:GetClassNameplateAlternatePowerBar()
     local x, y = owner.config.personalPowerOffsetX or 0, owner.config.personalPowerOffsetY or 0
     Paint(mana, force, x, y)
     -- Blizzard anchors alternate power to mana when mana is shown. Moving
     -- both would apply the displacement twice to the alternate bar.
-    local manaShown = mana and type(mana.IsShown) == "function" and mana:IsShown()
+    local manaShown = Accessible(mana) and mana:IsShown()
     local altRoot = not mana or (NS.Public(manaShown) and manaShown == false)
     Paint(alternate, force, altRoot and x or 0, altRoot and y or 0)
 end

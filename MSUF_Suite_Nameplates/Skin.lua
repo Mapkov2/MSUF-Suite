@@ -3,11 +3,12 @@ local NS, S = private.NS, private.Suite
 local Style = NS.NameplateStyle
 local Border = Style.PaintBorder
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
+local Level, CastTime, CVars, Auras = private.Level, private.CastTime, private.CVars, private.Auras
+local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local M = {
     visuals = setmetatable({}, { __mode = "k" }),
     roles = setmetatable({}, { __mode = "k" }),
-    elites = setmetatable({}, { __mode = "k" }),
-    quests = setmetatable({}, { __mode = "k" }),
+    facts = setmetatable({}, { __mode = "k" }),
     units = setmetatable({}, { __mode = "k" }),
     activeUnits = {},
     auraHooks = setmetatable({}, { __mode = "k" }),
@@ -31,220 +32,6 @@ end
 
 local RestoreFont = Text.Restore
 
-local function HideLevel(uf)
-    local label = M.levelLabels[uf]
-    if Safe(label) then label:Hide() end
-end
-
-local function NativeLevelAlpha(frame, hide)
-    if not Safe(frame) then return end
-    local previous = M.nativeLevelAlphas[frame]
-    if hide then
-        if previous ~= nil and frame:GetAlpha() == 0 then return end
-        if previous == nil then
-            previous = frame:GetAlpha()
-            if not S.Finite(previous) then return end
-            M.nativeLevelAlphas[frame] = previous
-        end
-        if NS.IsCombatLocked() then M.needsRefresh = true; return end
-        frame:SetAlpha(0)
-    elseif previous ~= nil then
-        if NS.IsCombatLocked() then M.needsRefresh = true; return end
-        frame:SetAlpha(previous)
-        M.nativeLevelAlphas[frame] = nil
-    end
-end
-
-local function PaintNativeLevel(uf, prefix)
-    if not NS.Client.isForever then return end
-    local hide = prefix and M.config.look ~= 2 and M.config[prefix]
-        and (M.config[prefix .. "LevelEnabled"] == false or M.config.levelAppearance ~= 2)
-    NativeLevelAlpha(uf.PlayerLevelDiffFrame, hide)
-    -- Camelot already draws its own badge in Classic style. Keep its legacy
-    -- LevelFrame out of the Suite look so the level is never duplicated.
-    NativeLevelAlpha(uf.LevelFrame, hide or NS.Client.isForever and prefix
-        and M.config.look ~= 2 and M.config[prefix])
-end
-
-local function RestoreNativeLevels()
-    if not next(M.nativeLevelAlphas) then return end
-    if NS.IsCombatLocked() then
-        if not M.nativeLevelRestoreFrame then
-            local frame = CreateFrame("Frame")
-            frame:SetScript("OnEvent", function(self)
-                if NS.IsCombatLocked() then return end
-                self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                if not M.active then RestoreNativeLevels() end
-            end)
-            M.nativeLevelRestoreFrame = frame
-        end
-        M.nativeLevelRestoreFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-        return
-    end
-    for frame, alpha in pairs(M.nativeLevelAlphas) do
-        if Safe(frame) then frame:SetAlpha(alpha) end
-        M.nativeLevelAlphas[frame] = nil
-    end
-end
-
-local function PaintLevel(uf, prefix, unit)
-    local setup = _G.NamePlateSetupOptions
-    local native = setup and S.Public(setup.useClassicHealthBar)
-        and setup.useClassicHealthBar == true
-    local namesOnly = S.Public(uf.showOnlyName) and uf.showOnlyName == true
-    if not prefix or M.config.look == 2 or not M.config[prefix]
-        or not M.config[prefix .. "LevelEnabled"] or not unit
-        or NS.Client.isForever and (M.config.levelAppearance == 2 or namesOnly)
-        or not NS.Client.isForever and native then
-        HideLevel(uf)
-        return
-    end
-    if not NS.Client.isForever then
-        local levelDiff = uf.PlayerLevelDiffFrame
-        if Safe(levelDiff) then
-            local shown = levelDiff:IsShown()
-            if not S.Public(shown) or shown then HideLevel(uf); return end
-        end
-    end
-    local label = M.levelLabels[uf]
-    if not label then
-        if NS.IsCombatLocked() or not Safe(uf) then M.needsRefresh = true; return end
-        local container = uf.HealthBarsContainer
-        if not Safe(container) then return end
-        label = uf:CreateFontString(nil, "OVERLAY", "SystemFont_NamePlateLevel")
-        label:SetPoint("RIGHT", container, "LEFT", -4, 0)
-        label:SetWidth(24)
-        label:SetJustifyH("RIGHT")
-        label:SetTextColor(1, 1, 1)
-        M.levelLabels[uf] = label
-    end
-    if not Safe(label) then M.needsRefresh = true; return end
-    local customHeight = M.config[prefix .. "LevelSize"]
-    local height = S.Finite(customHeight) and customHeight > 0 and customHeight
-        or setup and setup.levelFontHeight or 10
-    if S.Finite(height) and label._suiteLevelHeight ~= height then
-        label:SetTextHeight(height)
-        local width = math.max(24, height * 2)
-        label:SetWidth(width)
-        label._suiteLevelWidth = width
-        label._suiteLevelHeight = height
-    end
-    local levelAPI = NS.Client.isForever and _G.UnitEffectiveLevel or _G.UnitLevel
-    if type(levelAPI) ~= "function" then levelAPI = _G.UnitLevel end
-    local ok, value = pcall(levelAPI, unit)
-    if not ok then label:Hide(); return end
-    if S.Public(value) and type(value) == "number" and value <= 0 then value = "??" end
-    -- SetText accepts secret text in the engine; never compare or format a
-    -- secret level in addon Lua.
-    label:SetText(value)
-    label:Show()
-end
-
--- Nameplate casts can carry secret values. Never assign CastTimeText to the
--- native bar: its Lua formatter then reads secret StatusBar values in tainted
--- execution. DurationTextBinding formats the opaque duration in the engine.
-local castTimeFormatter
-local function CastTimeFormatter()
-    if castTimeFormatter then return castTimeFormatter end
-    local api = _G.C_StringUtil
-    if not api or type(api.CreateSecondsFormatter) ~= "function" then return nil end
-    local formatter = api.CreateSecondsFormatter()
-    if not formatter then return nil end
-    local seconds = _G.Enum and Enum.SecondsFormatterInterval
-    local abbreviation = _G.Enum and Enum.SecondsFormatterAbbreviation
-    if seconds and type(formatter.SetMaxInterval) == "function" then
-        formatter:SetMaxInterval(seconds.Seconds)
-    end
-    if abbreviation and type(formatter.SetDefaultAbbreviation) == "function" then
-        formatter:SetDefaultAbbreviation(abbreviation.OneLetter)
-    end
-    if type(formatter.SetMillisecondsThreshold) == "function" then
-        formatter:SetMillisecondsThreshold(60)
-    end
-    castTimeFormatter = formatter
-    return formatter
-end
-
-local function RestoreCastTime(cast)
-    local state = cast and M.castTimes[cast]
-    if not state or not state.unit then return end
-    state.unit = nil
-    state.active = false
-    state.binding:Disable()
-    if Safe(state.label) then state.label:Hide() end
-end
-
-local function ApplyCastDuration(state, unit, getter)
-    if type(getter) ~= "function" then return false end
-    local queried, duration = pcall(getter, unit)
-    if not queried or not pcall(state.binding.SetDuration, state.binding, duration) then return false end
-    if not pcall(state.binding.Enable, state.binding) then return false end
-    state.active = true
-    state.label:Show()
-    return true
-end
-
-local function RefreshCastTime(state, unit, event)
-    if state.active and (event == "UNIT_SPELLCAST_INTERRUPTIBLE"
-        or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE") then return end
-    state.active = false
-    state.binding:Disable()
-    state.label:Hide()
-    if not unit then return end
-    if event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE"
-        or event == "UNIT_SPELLCAST_EMPOWER_START" or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" then
-        ApplyCastDuration(state, unit, _G.UnitChannelDuration)
-    elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_DELAYED" then
-        ApplyCastDuration(state, unit, _G.UnitCastingDuration)
-    elseif event == nil or event == "UNIT_SPELLCAST_INTERRUPTIBLE"
-        or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
-        -- Blizzard can report interruptibility after cast start. Retry both
-        -- duration kinds without reading the native bar's secret progress.
-        if not ApplyCastDuration(state, unit, _G.UnitCastingDuration) then
-            ApplyCastDuration(state, unit, _G.UnitChannelDuration)
-        end
-    end
-end
-
-local function PaintCastTime(cast, prefix, unit)
-    if not Safe(cast) then return end
-    if not prefix or M.config.look == 2 or M.config.enemyCastEnabled == 3 or not M.config[prefix]
-        or M.config[prefix .. "CastTimeEnabled"] == false or not unit then
-        RestoreCastTime(cast)
-        return
-    end
-    local state = M.castTimes[cast]
-    if not state then
-        if NS.IsCombatLocked() then M.needsRefresh = true; return end
-        local api, formatter = _G.C_DurationUtil, CastTimeFormatter()
-        if not api or type(api.CreateDurationTextBinding) ~= "function" or not formatter then return end
-        local binding = api.CreateDurationTextBinding()
-        local label = cast:CreateFontString(nil, "OVERLAY", "SystemFont_NamePlateCastBar")
-        label:SetPoint("LEFT", cast, "RIGHT", 4, 0)
-        label:SetJustifyH("LEFT")
-        label:SetTextColor(1, 1, 1)
-        label:Hide()
-        local configured = pcall(function()
-            binding:SetFontString(label)
-            binding:SetFormatter(formatter)
-            binding:SetUpdateInterval(0.1)
-            binding:SetZeroDurationText("")
-            binding:SetExpiredText("")
-            binding:Disable()
-        end)
-        if not configured then
-            label:Hide()
-            return
-        end
-        state = { label = label, binding = binding }
-        M.castTimes[cast] = state
-    end
-    if state.unit ~= unit then
-        state.unit = unit
-        RefreshCastTime(state, unit)
-    end
-end
-
 local function RestorePlateFonts(uf, health, cast)
     RestoreFont(uf.name)
     RestoreFont(health.Text)
@@ -253,7 +40,7 @@ local function RestorePlateFonts(uf, health, cast)
     if cast then
         RestoreFont(cast.Text)
         RestoreFont(cast.CastTargetNameText)
-        RestoreCastTime(cast)
+        CastTime.Restore(cast)
     end
 end
 
@@ -293,30 +80,52 @@ local function Prefix(uf)
     return value and "friendly" or "enemy"
 end
 
+-- The unit facts of one plate (its health bar), reused while the plate lives:
+-- marker, quest, kind (the type role) and the threat-independent part of the
+-- color role (Roles.Base). Plate setup, faction, level, classification and
+-- power display changes read them; flags re-read only the base role; threat
+-- events reuse everything and only evaluate the threat rules (Roles.Get).
+local function Facts(health)
+    local facts = M.facts[health]
+    if not facts then
+        facts = {}
+        M.facts[health] = facts
+    end
+    facts.marker, facts.quest, facts.kind, facts.colored, facts.wantsQuest = nil, nil, nil, false, false
+    facts.eligible = false
+    return facts
+end
+
+local function ReadFacts(uf, unit, facts)
+    local prefix = Prefix(uf)
+    if M.config.look == 2 or not prefix or not M.config[prefix] then return end
+    if not S.Public(unit) or type(unit) ~= "string" then return end
+    local focus = UnitIsUnit(unit, "focus")
+    if S.Public(focus) and focus == true then M.focusUF = uf end
+    if not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return end
+    local color = prefix == "enemy" and M.config.enemyRoleColors and Roles.allowed
+    local elite, quest = M.config[prefix .. "EliteMarker"], M.config[prefix .. "QuestMarker"]
+    if not color and not elite and not quest then return end
+    local classification = UnitClassification(unit)
+    if not S.Public(classification) then classification = false end
+    if elite then facts.marker = Roles.Marker(unit, classification) end
+    facts.wantsQuest = quest or color and M.config.enemyQuestColors
+    if facts.wantsQuest then facts.quest = Roles.Quest(unit) end
+    if color and M.active then
+        facts.colored = true
+        facts.kind = Roles.Classify(unit, classification)
+        Roles.Base(facts, unit, uf)
+    end
+end
+
 -- Unit metadata is refreshed on identity/threat/quest events, never health ticks.
 local function SetRole(uf, unit)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
     M.units[health] = unit
-    M.elites[health], M.quests[health], M.roles[health] = nil, nil, nil
-    local prefix = Prefix(uf)
-    if M.config.look == 2 or not prefix or not M.config[prefix] then return end
-    if not S.Public(unit) or type(unit) ~= "string" then return end
-    if type(_G.UnitIsUnit) == "function" then
-        local focus = _G.UnitIsUnit(unit, "focus")
-        if S.Public(focus) and focus == true then M.focusUF = uf end
-    end
-    if not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return end
-    local color = prefix == "enemy" and M.config.enemyRoleColors and Roles.allowed
-    local elite, quest = M.config[prefix .. "EliteMarker"], M.config[prefix .. "QuestMarker"]
-    if not color and not elite and not quest then return end
-    local classification = type(_G.UnitClassification) == "function" and _G.UnitClassification(unit)
-    if not S.Public(classification) then classification = false end
-    if elite then M.elites[health] = Roles.Marker(unit, classification) end
-    if quest or color and M.config.enemyQuestColors then M.quests[health] = Roles.Quest(unit) end
-    if color and M.active then
-        M.roles[health] = Roles.Get(unit, uf, classification, M.quests[health])
-    end
+    local facts = Facts(health)
+    ReadFacts(uf, unit, facts)
+    M.roles[health] = facts.colored and Roles.Get(facts, unit, uf) or nil
 end
 
 local function PaintMarker(texture, health, kind, enabled, size, x, y, color, anchor, variant)
@@ -329,70 +138,73 @@ local function PaintMarker(texture, health, kind, enabled, size, x, y, color, an
     texture:Show()
 end
 
+local function PaintFill(health, visual, prefix)
+    local role = prefix == "enemy" and M.config.enemyRoleColors and M.roles[health]
+    if role and M.config["enemy" .. role .. "Enabled"] == false then role = nil end
+    local fillTexture = health:GetStatusBarTexture()
+    if not role or not Safe(fillTexture) then
+        visual.fill:Hide()
+        return
+    end
+    if visual.fillTarget ~= fillTexture then
+        visual.fill:ClearAllPoints()
+        visual.fill:SetAllPoints(fillTexture)
+        visual.fillTarget = fillTexture
+    end
+    local hex = M.config["enemy" .. role .. "Color"]
+    if visual.fillColor ~= hex then
+        Color(visual.fill, hex)
+        visual.fillColor = hex
+    end
+    visual.fill:Show()
+end
+
 local function PaintHealth(health, visual, prefix)
-    local backColor = M.config[prefix .. "BackdropColor"]
-    local backAlpha = (M.config[prefix .. "BackdropAlpha"] or 100) / 100
+    local c = M.config
+    local backColor = c[prefix .. "BackdropColor"]
+    local backAlpha = (c[prefix .. "BackdropAlpha"] or 100) / 100
     if visual.backColor ~= backColor or visual.backAlpha ~= backAlpha then
         Color(visual.back, backColor, backAlpha)
         visual.backColor, visual.backAlpha = backColor, backAlpha
     end
-    Border(visual, health, M.config[prefix .. "BorderEnabled"] == false
-        and 0 or M.config[prefix .. "BorderSize"], M.config[prefix .. "BorderColor"])
-    if M.config[prefix .. "BackdropEnabled"] ~= false and backAlpha > 0 then
-        visual.back:Show()
-    else visual.back:Hide() end
-    local role = prefix == "enemy" and M.config.enemyRoleColors and M.roles[health]
-    if role and M.config["enemy" .. role .. "Enabled"] == false then role = nil end
-    local fillTexture = health.GetStatusBarTexture and health:GetStatusBarTexture()
-    if role and Safe(fillTexture) then
-        if visual.fillTarget ~= fillTexture then
-            visual.fill:ClearAllPoints()
-            visual.fill:SetAllPoints(fillTexture)
-            visual.fillTarget = fillTexture
-        end
-        local hex = M.config["enemy" .. role .. "Color"]
-        if visual.fillColor ~= hex then
-            Color(visual.fill, hex)
-            visual.fillColor = hex
-        end
-        visual.fill:Show()
-    else
-        visual.fill:Hide()
-    end
-    PaintMarker(visual.elite, health, "elite", M.config[prefix .. "EliteMarker"] and M.elites[health],
-        M.config[prefix .. "EliteMarkerSize"] or 14, M.config[prefix .. "EliteOffsetX"] or -13,
-        M.config[prefix .. "EliteOffsetY"] or 0, M.config.enemyMinibossColor, M.config[prefix .. "EliteMarkerAnchor"], M.elites[health])
-    PaintMarker(visual.quest, health, "quest", M.config[prefix .. "QuestMarker"] and M.quests[health],
-        M.config[prefix .. "QuestMarkerSize"] or 15, M.config[prefix .. "QuestOffsetX"] or 0,
-        M.config[prefix .. "QuestOffsetY"] or 17, M.config.enemyQuestColor, M.config[prefix .. "QuestMarkerAnchor"])
+    Border(visual, health, c[prefix .. "BorderEnabled"] == false and 0 or c[prefix .. "BorderSize"],
+        c[prefix .. "BorderColor"])
+    visual.back:SetShown(c[prefix .. "BackdropEnabled"] ~= false and backAlpha > 0)
+    PaintFill(health, visual, prefix)
+    local facts = M.facts[health]
+    local marker, quest = facts and facts.marker, facts and facts.quest
+    PaintMarker(visual.elite, health, "elite", c[prefix .. "EliteMarker"] and marker,
+        c[prefix .. "EliteMarkerSize"] or 14, c[prefix .. "EliteOffsetX"] or -13,
+        c[prefix .. "EliteOffsetY"] or 0, c.enemyMinibossColor, c[prefix .. "EliteMarkerAnchor"], marker)
+    PaintMarker(visual.quest, health, "quest", c[prefix .. "QuestMarker"] and quest,
+        c[prefix .. "QuestMarkerSize"] or 15, c[prefix .. "QuestOffsetX"] or 0,
+        c[prefix .. "QuestOffsetY"] or 17, c.enemyQuestColor, c[prefix .. "QuestMarkerAnchor"])
+end
+
+-- The arrows keep clear of the level badge or number beside the bar.
+local function TargetGaps(uf, unit)
+    local setup = NamePlateSetupOptions
+    local badge = not NS.Client.isForever or M.config.levelAppearance == 2
+    local classic = badge and S.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
+    local width = classic and setup.levelIconWidth
+    local rightGap = S.Finite(width) and width + 4 or classic and 19 or 0
+    local leftWidth = setup.playerLevelDiffWidth
+    local diffGap = badge and LevelBadgeShown(uf, unit) == true
+        and (S.Finite(leftWidth) and leftWidth > 0 and leftWidth + (NS.Client.isForever and 5 or 4)
+            or (NS.Client.isForever and 33 or 20)) or 0
+    if not NS.Client.isForever then return rightGap, diffGap end
+    local label = M.levelLabels[uf]
+    local number = Safe(label) and label:IsShown()
+    return math.max(rightGap, diffGap), number and (label._suiteLevelWidth or 24) + 4 or 0
 end
 
 local function PaintTarget(uf, health, visual, prefix)
     local unit = M.units[health]
-    local target = unit and type(_G.UnitIsUnit) == "function" and _G.UnitIsUnit(unit, "target")
+    local target = unit and UnitIsUnit(unit, "target")
     local visible = M.config.enemyTargetMarker and (prefix == "enemy" or M.config.enemyTargetHideFriendly == false)
         and S.Public(target) and target == true
     if visible then M.targetUF = uf elseif M.targetUF == uf then M.targetUF = nil end
-    local setup = _G.NamePlateSetupOptions
-    local badge = not NS.Client.isForever or M.config.levelAppearance == 2
-    local classic = badge and setup and S.Public(setup.useClassicHealthBar)
-        and setup.useClassicHealthBar == true
-    local width = classic and setup.levelIconWidth
-    local rightGap = S.Finite(width) and width + 4 or classic and 19 or 0
-    local levelDiff = uf.PlayerLevelDiffFrame
-    local shown = Safe(levelDiff) and levelDiff:IsShown()
-    if NS.Client.isForever and Safe(levelDiff) and type(levelDiff.ShouldDisplay) == "function" then
-        local ok, display = pcall(levelDiff.ShouldDisplay, levelDiff, unit)
-        if ok and S.Public(display) then shown = display end
-    end
-    local leftWidth = setup and setup.playerLevelDiffWidth
-    local diffGap = badge and S.Public(shown) and shown
-        and (S.Finite(leftWidth) and leftWidth > 0 and leftWidth + (NS.Client.isForever and 5 or 4)
-            or (NS.Client.isForever and 33 or 20)) or 0
-    local label = M.levelLabels[uf]
-    local number = Safe(label) and label:IsShown()
-    local leftGap = NS.Client.isForever and (number and (label._suiteLevelWidth or 24) + 4 or 0) or diffGap
-    if NS.Client.isForever then rightGap = math.max(rightGap, diffGap) end
+    local rightGap, leftGap = TargetGaps(uf, unit)
     Style.PaintTarget(visual, health, visible, M.targetConfig, uf, rightGap, leftGap)
 end
 
@@ -413,8 +225,7 @@ local function FilterFriendlyName(uf, prefix)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local unit = health and M.units[health]
     if not unit then RestoreFriendlyName(name); return end
-    local party = type(_G.UnitInParty) == "function" and _G.UnitInParty(unit)
-    local raid = type(_G.UnitInRaid) == "function" and _G.UnitInRaid(unit)
+    local party, raid = UnitInParty(unit), UnitInRaid(unit)
     if not S.Public(party) or not S.Public(raid) then RestoreFriendlyName(name); return end
     if party or raid then RestoreFriendlyName(name); return end
     if M.friendlyNames[name] == nil then
@@ -434,36 +245,37 @@ local function PaintRaidIcon(uf, prefix)
     local hide = M.active and M.config.look ~= 2 and M.config.enemy and prefix == "enemy"
         and M.config.enemyRaidIcon == false
     if not hide then
-        if original ~= nil and pcall(icon.SetAlpha, icon, original) then M.raidIcons[icon] = nil end
+        if original ~= nil then
+            icon:SetAlpha(original)
+            M.raidIcons[icon] = nil
+        end
     elseif original == nil then
         local alpha = icon:GetAlpha()
-        if S.Finite(alpha) and pcall(icon.SetAlpha, icon, 0) then M.raidIcons[icon] = alpha end
+        if S.Finite(alpha) then
+            icon:SetAlpha(0)
+            M.raidIcons[icon] = alpha
+        end
     end
 end
 
 local function PaintFonts(uf, health, cast, prefix)
-    Text.Apply(uf.name, Text.styles[prefix], M.config[prefix .. "NameSize"] or 0)
+    local c = M.config
+    Text.Apply(uf.name, Text.styles[prefix], c[prefix .. "NameSize"] or 0)
     if prefix == "enemy" then
-        if cast then
-            Text.Apply(cast.Text, Text.styles.enemyCast, M.config.enemyCastSize or 0)
-            Text.Apply(cast.CastTargetNameText, Text.styles.enemyCast, M.config.enemyCastSize or 0)
-            local time = M.castTimes[cast]
-            if time and time.unit then Text.Apply(time.label, Text.styles.enemyCast, M.config.enemyCastSize or 0) end
-        end
-        Text.Apply(health.Text, Text.styles.enemy, M.config.enemyHealthTextSize or 0)
-        Text.Apply(health.LeftText, Text.styles.enemy, M.config.enemyHealthTextSize or 0)
-        Text.Apply(health.RightText, Text.styles.enemy, M.config.enemyHealthTextSize or 0)
+        Text.Apply(health.Text, Text.styles.enemy, c.enemyHealthTextSize or 0)
+        Text.Apply(health.LeftText, Text.styles.enemy, c.enemyHealthTextSize or 0)
+        Text.Apply(health.RightText, Text.styles.enemy, c.enemyHealthTextSize or 0)
     else
         RestoreFont(health.Text)
         RestoreFont(health.LeftText)
         RestoreFont(health.RightText)
-        if cast then
-            Text.Apply(cast.Text, Text.styles.friendlyCast, M.config.friendlyCastSize or 0)
-            Text.Apply(cast.CastTargetNameText, Text.styles.friendlyCast, M.config.friendlyCastSize or 0)
-            local time = M.castTimes[cast]
-            if time and time.unit then Text.Apply(time.label, Text.styles.friendlyCast, M.config.friendlyCastSize or 0) end
-        end
     end
+    if not cast then return end
+    local style, size = Text.styles[prefix .. "Cast"], c[prefix .. "CastSize"] or 0
+    Text.Apply(cast.Text, style, size)
+    Text.Apply(cast.CastTargetNameText, style, size)
+    local time = M.castTimes[cast]
+    if time and time.unit then Text.Apply(time.label, style, size) end
 end
 
 local function Paint(uf)
@@ -472,12 +284,12 @@ local function Paint(uf)
     if not Safe(health) then return end
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local prefix = Prefix(uf)
-    PaintCastTime(cast, prefix, M.units[health])
+    CastTime.Paint(cast, prefix, M.units[health])
     Threat.Apply(uf)
     FilterFriendlyName(uf, prefix)
     PaintRaidIcon(uf, prefix)
-    PaintNativeLevel(uf, prefix)
-    PaintLevel(uf, prefix, M.units[health])
+    Level.PaintNative(uf, prefix)
+    Level.Paint(uf, prefix, M.units[health])
     Layout.Apply(uf, prefix, M.config)
     if M.config.look == 2 or not prefix or not M.config[prefix] then
         if M.targetUF == uf then M.targetUF = nil end
@@ -491,243 +303,21 @@ local function Paint(uf)
     PaintFonts(uf, health, cast, prefix)
 end
 
-local function ApplyCVars(self)
-    local style = self.config.nativeStyle
-    if style == 1 then S.RestoreCVar("nameplates", "nameplateStyle")
-    elseif style then self.context:CVar("nameplateStyle", tostring(style - 2)) end
-    local size = self.config.nativeSize
-    if size == 1 then S.RestoreCVar("nameplates", "nameplateSize")
-    elseif size then self.context:CVar("nameplateSize", tostring(size - 1)) end
-
-    -- Blizzard stores these two settings as a version byte plus six-bit data
-    -- bytes, not as decimal masks. Preserve its version and unrelated flags.
-    local function LowBits(key, mask, width)
-        local api = _G.C_CVar
-        local current = api and type(api.GetCVar) == "function" and api.GetCVar(key)
-        local flags = Style.CVarFlags(current)
-        if flags == nil then return end
-        local span = 2 ^ (width or 2)
-        local nextFlags = flags - flags % span + mask
-        local tail = current:sub(3)
-        local value = current:sub(1, 1)
-        if nextFlags > 0 or #tail > 0 then value = value .. string.char(64 + nextFlags) .. tail end
-        self.context:CVar(key, value)
-    end
-    local textMode = self.config.enemy and self.config.enemyTextMode or 1
-    local rarityMode = self.config.enemy and self.config.enemyRarityIcon or 1
-    if self.config.look == 2 then textMode = 1 end
-    if self.config.look == 2 then rarityMode = 1 end
-    if textMode == 1 then
-        S.RestoreCVar("nameplates", "nameplateForceShowUnitName")
-        S.RestoreCVar("nameplates", "nameplateSimplifiedTypes")
-    else
-        self.context:CVar("nameplateForceShowUnitName", "1")
-        LowBits("nameplateSimplifiedTypes", 0, 2)
-    end
-    if textMode == 1 and (rarityMode == 1 or self.infoTextApplied) then
-        S.RestoreCVar("nameplates", "nameplateInfoDisplay")
-    end
-    if textMode ~= 1 or rarityMode ~= 1 then
-        -- Blizzard's rarity icon is bit 3 of the same CVar as the two health
-        -- text flags. Compose one write so either control preserves the other.
-        local api = _G.C_CVar
-        local current = api and type(api.GetCVar) == "function" and api.GetCVar("nameplateInfoDisplay")
-        local flags = Style.CVarFlags(current)
-        if flags ~= nil then
-            local textBits = textMode == 1 and flags % 4 or textMode - 1
-            local currentRarity = flags % 8 - flags % 4
-            if rarityMode ~= 1 and self.rarityBefore == nil then self.rarityBefore = currentRarity end
-            local rarityBit = rarityMode == 1 and (self.rarityBefore or currentRarity)
-                or (rarityMode == 2 and 4 or 0)
-            LowBits("nameplateInfoDisplay", textBits + rarityBit, 3)
-            if rarityMode == 1 then self.rarityBefore = nil end
-        end
-    else
-        self.rarityBefore = nil
-    end
-    self.infoTextApplied = textMode ~= 1
-
-    local castEnabled = self.config.look == 2 and 1 or self.config.enemyCastEnabled
-    if castEnabled == 1 then
-        S.RestoreCVar("nameplates", "nameplateShowCastBars")
-    else
-        self.context:CVar("nameplateShowCastBars", castEnabled == 3 and "0" or "1")
-    end
-
-    if self.config.enemyCastDisplay == 1 or self.config.look == 2 then
-        S.RestoreCVar("nameplates", "nameplateCastBarDisplay")
-    else
-        local c = self.config
-        local mask = (c.enemyCastSpellName and 1 or 0)
-            + (c.enemyCastSpellIcon and 2 or 0)
-            + (c.enemyCastSpellTarget and 4 or 0)
-            + (c.enemyCastImportant and 8 or 0)
-            + (c.enemyCastTargetHighlight and 16 or 0)
-        LowBits("nameplateCastBarDisplay", mask, 5)
-    end
-
-    for _, group in ipairs(Style.AuraGroups) do
-        local prefix, key = group.key, group.cvar
-        if self.config.look == 2 or self.config[prefix .. "AuraMode"] ~= 2 then
-            S.RestoreCVar("nameplates", key)
-        else
-            local mask = (self.config[prefix .. "Buffs"] and 1 or 0)
-                + (self.config[prefix .. "Debuffs"] and 2 or 0)
-                + (self.config[prefix .. "Control"] and 4 or 0)
-            LowBits(key, mask, 3)
-        end
-    end
-    local friendlyNpcDebuffs = self.config.look == 2 and 1 or self.config.friendlyNpcDebuffs
-    if friendlyNpcDebuffs == 1 then S.RestoreCVar("nameplates", "nameplateShowDebuffsOnFriendly")
-    else self.context:CVar("nameplateShowDebuffsOnFriendly", friendlyNpcDebuffs == 2 and "1" or "0") end
-    if self.config.look == 2 or self.config.auraScaleMode ~= 2 then
-        S.RestoreCVar("nameplates", "nameplateAuraScale")
-    else
-        self.context:CVar("nameplateAuraScale", string.format("%.1f", self.config.auraScalePercent / 100))
-    end
-
-    if self.config.look == 2 or self.config.threatSignalMode ~= 2 then
-        S.RestoreCVar("nameplates", "nameplateThreatDisplay")
-    else
-        local api = _G.C_CVar
-        local current = api and type(api.GetCVar) == "function" and api.GetCVar("nameplateThreatDisplay")
-        local flags = Style.CVarFlags(current)
-        if flags then
-            -- Keep Blizzard's health-color bit and any future flags. The Suite
-            -- role-color overlay is independent of both native warning modes.
-            local mask = (self.config.threatHighlight and 1 or 0) + (self.config.threatFlash and 2 or 0)
-            LowBits("nameplateThreatDisplay", mask, 2)
-        end
-    end
-    for _, choice in ipairs({
-        { "softTargetEnemy", "SoftTargetIconEnemy" },
-        { "softTargetFriend", "SoftTargetIconFriend" },
-        { "softTargetInteract", "SoftTargetIconInteract" },
-    }) do
-        local mode = self.config.look == 2 and 1 or self.config[choice[1]]
-        if mode == 1 then S.RestoreCVar("nameplates", choice[2])
-        else self.context:CVar(choice[2], mode == 2 and "1" or "0") end
-    end
-    local iconGate = self.config.look == 2 and 1 or self.config.softTargetIconGate
-    if iconGate == 1 then S.RestoreCVar("nameplates", "SoftTargetNameplateSize")
-    else self.context:CVar("SoftTargetNameplateSize", iconGate == 2 and "1" or "0") end
-
-    local choices = {
-        { "friendlyNamesOnly", "nameplateShowOnlyNameForFriendlyPlayerUnits" },
-        { "classColors", "ShowClassColorInNameplate" },
-        { "classColors", "nameplateShowClassColor" },
-        { "classColors", "nameplateShowFriendlyClassColor" },
-        { "friendlyNameClassColor", "nameplateUseClassColorForFriendlyPlayerUnitNames" },
-        { "friendlyRealm", "nameplateShowFriendlyRealmName" },
-        { "personalAuras", "nameplateShowAllPersonalAuras" },
-        { "friendlyNPCs", "nameplateShowFriendlyNpcs" },
-        { "playerGuildNames", "UnitNamePlayerGuild" },
-        { "playerTitles", "UnitNamePlayerPVPTitle" },
-    }
-    for i = 1, #choices do
-        local choice = choices[i]
-        local mode = self.config[choice[1]] or 1
-        if mode == 1 then S.RestoreCVar("nameplates", choice[2])
-        elseif choice[1] == "friendlyNamesOnly" then
-            self.context:CVar(choice[2], (mode == 2 or mode == 3) and "1" or "0")
-        else self.context:CVar(choice[2], mode == 2 and "1" or "0") end
-    end
-end
-
 local function RestorePlate(uf)
     Threat.Restore(uf)
     RestoreFriendlyName(uf.name)
-    PaintNativeLevel(uf, nil)
-    HideLevel(uf)
+    Level.PaintNative(uf, nil)
+    Level.Hide(uf)
     PaintRaidIcon(uf)
     Layout.Restore(uf)
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
-    RestoreCastTime(cast)
+    CastTime.Restore(cast)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
-    M.roles[health] = nil
-    M.elites[health], M.quests[health] = nil, nil
-    M.units[health] = nil
+    M.roles[health], M.units[health] = nil, nil
+    if M.facts[health] then Facts(health) end
     HideVisual(M.visuals[health])
     RestorePlateFonts(uf, health, cast)
-end
-
-local function RestoreAuraButtons()
-    local failed = false
-    for button, enabled in pairs(M.auraButtons) do
-        if Safe(button) and type(button.SetMouseClickEnabled) == "function" then
-            if pcall(button.SetMouseClickEnabled, button, enabled) then
-                M.auraButtons[button] = nil
-            else failed = true end
-        else M.auraButtons[button] = nil end
-    end
-    if failed then
-        if not M.auraRestoreFrame then
-            M.auraRestoreFrame = CreateFrame("Frame")
-            M.auraRestoreFrame:SetScript("OnEvent", function(frame)
-                if NS.IsCombatLocked() then return end
-                frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                RestoreAuraButtons()
-            end)
-        end
-        M.auraRestoreFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    end
-end
-
-local function SetAuraClickthrough(button)
-    if not Safe(button) or type(button.SetMouseClickEnabled) ~= "function"
-        or type(button.IsMouseClickEnabled) ~= "function" then return end
-    local current = button:IsMouseClickEnabled()
-    if not S.Public(current) or type(current) ~= "boolean" or current == false then return end
-    if M.auraButtons[button] == nil then M.auraButtons[button] = current end
-    if not pcall(button.SetMouseClickEnabled, button, false) then M.needsRefresh = true end
-end
-
-local function ApplyAuraPool(pool)
-    if not M.active or not M.config.auraClickthrough or not pool
-        or type(pool.EnumerateActive) ~= "function" then return end
-    for button in pool:EnumerateActive() do SetAuraClickthrough(button) end
-end
-
-local function ApplyAuraClickthrough(uf)
-    if not M.config.auraClickthrough then
-        if next(M.auraButtons) then RestoreAuraButtons() end
-        return
-    end
-    local auras = uf.AurasFrame
-    if Safe(auras) then
-        if not M.auraHooks[auras] then
-            if NS.IsCombatLocked() then M.needsRefresh = true; return end
-            if type(auras.RefreshAuras) == "function" then
-                hooksecurefunc(auras, "RefreshAuras", function(frame)
-                    ApplyAuraPool(frame.auraItemFramePool)
-                end)
-            end
-            if type(auras.RefreshLossOfControl) == "function" then
-                hooksecurefunc(auras, "RefreshLossOfControl", function(frame)
-                    if M.active and M.config.auraClickthrough then
-                        local item = frame.LossOfControlFrame and frame.LossOfControlFrame.AuraItemFrame
-                        if item then SetAuraClickthrough(item) end
-                    end
-                end)
-            end
-            M.auraHooks[auras] = true
-        end
-        ApplyAuraPool(auras.auraItemFramePool)
-        local item = auras.LossOfControlFrame and auras.LossOfControlFrame.AuraItemFrame
-        if item then SetAuraClickthrough(item) end
-    end
-    local buff = uf.BuffFrame
-    if Safe(buff) then
-        if not M.auraHooks[buff] then
-            if NS.IsCombatLocked() then M.needsRefresh = true; return end
-            if type(buff.UpdateBuffs) == "function" then
-                hooksecurefunc(buff, "UpdateBuffs", function(frame) ApplyAuraPool(frame.buffPool) end)
-            end
-            M.auraHooks[buff] = true
-        end
-        ApplyAuraPool(buff.buffPool)
-    end
 end
 
 local function ApplyPlate(plate)
@@ -739,28 +329,27 @@ local function ApplyPlate(plate)
         SetRole(uf, unit)
     else
         local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
-        if Safe(health) then M.roles[health] = nil; M.units[health] = nil end
+        if Safe(health) then M.roles[health], M.units[health] = nil, nil end
     end
     Paint(uf)
-    ApplyAuraClickthrough(uf)
+    Auras.Apply(uf)
 end
 
 local function EachPlate(callback)
-    local plates = _G.C_NamePlate and _G.C_NamePlate.GetNamePlates and _G.C_NamePlate.GetNamePlates()
-    if type(plates) ~= "table" then return end
+    local plates = C_NamePlate.GetNamePlates()
     for i = 1, #plates do callback(plates[i]) end
 end
 
 local function OnAdded(self, _, unit)
     if not S.Public(unit) or type(unit) ~= "string" then return end
     Roles.ClearQuest(unit)
-    local plate = _G.C_NamePlate.GetNamePlateForUnit(unit)
+    local plate = C_NamePlate.GetNamePlateForUnit(unit)
     local uf = Safe(plate) and plate.UnitFrame
     if not Safe(uf) then return end
     self.activeUnits[unit] = uf
     SetRole(uf, unit)
     Paint(uf)
-    ApplyAuraClickthrough(uf)
+    Auras.Apply(uf)
 end
 
 local function OnRemoved(self, _, unit)
@@ -807,7 +396,26 @@ end
 local function CancelQuestRefresh(module)
     local timer = module.questTimer
     module.questTimer = nil
-    if timer and type(timer.Cancel) == "function" then timer:Cancel() end
+    if timer then timer:Cancel() end
+end
+
+-- A quest log change can only change quest facts: each visible plate that
+-- asks for them re-reads its quest state, and only a changed plate repaints
+-- its health skin. Classification and markers stay cached.
+local function RefreshQuests(module)
+    for unit, uf in pairs(module.activeUnits) do
+        local health = Safe(uf) and uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+        local facts = health and module.facts[health]
+        if facts and facts.wantsQuest then
+            local before, role = facts.quest, module.roles[health]
+            facts.quest = Roles.Quest(unit)
+            if facts.colored then
+                Roles.Base(facts, unit, uf)
+                module.roles[health] = Roles.Get(facts, unit, uf)
+            end
+            if before ~= facts.quest or role ~= module.roles[health] then RefreshRole(uf) end
+        end
+    end
 end
 
 local function OnQuestLogChanged(module)
@@ -816,26 +424,27 @@ local function OnQuestLogChanged(module)
         or module.config.friendlyQuestMarker) then return end
     if not next(module.activeUnits) then return end
     if module.questTimer then return end
-    local timerAPI = _G.C_Timer
-    if not timerAPI or type(timerAPI.NewTimer) ~= "function" then
-        RefreshActive(module, true)
-        return
-    end
     -- Quest logs can emit several updates together. One cancellable pass is
     -- enough; no persistent ticker or plate work runs while idle.
-    module.questTimer = timerAPI.NewTimer(1, function()
+    module.questTimer = C_Timer.NewTimer(1, function()
         module.questTimer = nil
-        if module.active and not Roles.inInstance then RefreshActive(module, true) end
+        if module.active and not Roles.inInstance then RefreshQuests(module) end
     end)
 end
 
 local function OnTargetChanged(self)
     local previous = self.targetUF
-    local plate = _G.C_NamePlate.GetNamePlateForUnit("target")
+    local plate = C_NamePlate.GetNamePlateForUnit("target")
     local current = Safe(plate) and plate.UnitFrame
     if Safe(previous) then RefreshTarget(previous) end
     if Safe(current) and current ~= previous then RefreshTarget(current) end
 end
+
+-- What a unit event changes on its plate. UNIT_FACTION can turn the plate
+-- friendly or hostile (Blizzard re-reads isFriend then) and repaints it;
+-- level, classification and power display re-read the unit facts; flags
+-- re-read the base role; threat re-evaluates only the threat rules.
+local FACT_EVENTS = { UNIT_LEVEL = true, UNIT_CLASSIFICATION_CHANGED = true, UNIT_DISPLAYPOWER = true }
 
 local function OnUnitChanged(module, event, unit)
     if not S.Public(unit) or type(unit) ~= "string" then return end
@@ -843,11 +452,26 @@ local function OnUnitChanged(module, event, unit)
     if not Safe(uf) then return end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
-    local previousRole, previousElite, previousQuest = module.roles[health], module.elites[health], module.quests[health]
-    SetRole(uf, unit)
-    if event == "UNIT_FACTION" or event == "UNIT_FLAGS" or event == "UNIT_LEVEL" then Paint(uf)
-    elseif not module.visuals[health] or previousRole ~= module.roles[health]
-        or previousElite ~= module.elites[health] or previousQuest ~= module.quests[health] then
+    local facts = module.facts[health]
+    if event == "UNIT_FACTION" or not facts then
+        SetRole(uf, unit)
+        Paint(uf)
+        return
+    end
+    local role, marker, quest = module.roles[health], facts.marker, facts.quest
+    if FACT_EVENTS[event] then
+        SetRole(uf, unit)
+        if event == "UNIT_LEVEL" then
+            Level.Paint(uf, Prefix(uf), unit)
+            -- The target arrows keep clear of a level badge that came or went.
+            if M.targetUF == uf then RefreshTarget(uf) end
+        end
+    elseif facts.colored then
+        if event == "UNIT_FLAGS" then Roles.Base(facts, unit, uf) end
+        module.roles[health] = Roles.Get(facts, unit, uf)
+    end
+    if not module.visuals[health] or role ~= module.roles[health]
+        or marker ~= facts.marker or quest ~= facts.quest then
         RefreshRole(uf)
     end
 end
@@ -858,19 +482,22 @@ local function OnCastChanged(module, event, unit)
     if not Safe(uf) then return end
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local state = cast and module.castTimes[cast]
-    if state and state.unit == unit then RefreshCastTime(state, unit, event) end
+    if state and state.unit == unit then CastTime.Refresh(state, unit, event) end
 end
 
-local function OnContextChanged(module)
+-- Subzone steps (ZONE_CHANGED) fire often while moving; they repaint only
+-- when the context the colors depend on changed.
+local function OnContextChanged(module, event)
+    local changed = Roles.RefreshContext()
+    if event == "ZONE_CHANGED" and not changed then return end
     CancelQuestRefresh(module)
-    Roles.RefreshContext()
     Roles.ClearQuest()
     RefreshActive(module, true)
 end
 
 local function OnFocusChanged(module)
     local previous = module.focusUF
-    local plate = _G.C_NamePlate.GetNamePlateForUnit("focus")
+    local plate = C_NamePlate.GetNamePlateForUnit("focus")
     local current = Safe(plate) and plate.UnitFrame
     local function Refresh(uf)
         if not Safe(uf) then return end
@@ -883,59 +510,59 @@ local function OnFocusChanged(module)
     module.focusUF = current
 end
 
+-- Observe Blizzard's font reset. Never call frame setup ourselves.
+local function OnFrameOptions(uf)
+    if not M.active then return end
+    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+    if not health or not M.units[health] then return end
+    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
+    Text.Invalidate(uf.name)
+    Text.Invalidate(health.Text)
+    Text.Invalidate(health.LeftText)
+    Text.Invalidate(health.RightText)
+    if cast then
+        Text.Invalidate(cast.Text)
+        Text.Invalidate(cast.CastTargetNameText)
+    end
+    Paint(uf)
+end
+
+local function OnCombatEnded(module)
+    local retryQuests = Roles.RetryQuests()
+    if not module.needsRefresh then
+        if retryQuests then CancelQuestRefresh(module); RefreshActive(module, true) end
+        return
+    end
+    module.needsRefresh = false
+    EachPlate(ApplyPlate)
+    Power.Refresh(true)
+end
+
+local UNIT_EVENTS = { "UNIT_THREAT_SITUATION_UPDATE", "UNIT_THREAT_LIST_UPDATE",
+    "UNIT_FACTION", "UNIT_FLAGS", "UNIT_CLASSIFICATION_CHANGED", "UNIT_LEVEL", "UNIT_DISPLAYPOWER" }
+local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_DELAYED",
+    "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_UPDATE",
+    "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_UPDATE",
+    "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
+    "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
+    "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_EMPOWER_STOP" }
+local CONTEXT_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP",
+    "GROUP_ROSTER_UPDATE", "PLAYER_ROLES_ASSIGNED", "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED" }
+
 function M:Enable()
-    local mixin = _G.NamePlateUnitFrameMixin
-    if not self.fontHook and type(mixin) == "table" and type(mixin.ApplyFrameOptions) == "function" then
+    if not self.fontHook then
         self.fontHook = true
-        -- Observe Blizzard's font reset. Never call frame setup ourselves.
-        hooksecurefunc(mixin, "ApplyFrameOptions", function(uf)
-            if not self.active then return end
-            local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
-            if health and self.units[health] then
-                local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
-                Text.Invalidate(uf.name)
-                Text.Invalidate(health.Text)
-                Text.Invalidate(health.LeftText)
-                Text.Invalidate(health.RightText)
-                if cast then
-                    Text.Invalidate(cast.Text)
-                    Text.Invalidate(cast.CastTargetNameText)
-                end
-                Paint(uf)
-            end
-        end)
+        hooksecurefunc(NamePlateUnitFrameMixin, "ApplyFrameOptions", OnFrameOptions)
     end
     self.context:Event("NAME_PLATE_UNIT_ADDED", OnAdded, true)
     self.context:Event("NAME_PLATE_UNIT_REMOVED", OnRemoved, true)
     self.context:Event("PLAYER_TARGET_CHANGED", OnTargetChanged, true)
     self.context:Event("PLAYER_FOCUS_CHANGED", OnFocusChanged, true)
-    for _, event in ipairs({ "UNIT_THREAT_SITUATION_UPDATE", "UNIT_THREAT_LIST_UPDATE",
-        "UNIT_FACTION", "UNIT_FLAGS", "UNIT_CLASSIFICATION_CHANGED", "UNIT_LEVEL", "UNIT_DISPLAYPOWER" }) do
-        self.context:Event(event, OnUnitChanged, true)
-    end
-    for _, event in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_DELAYED",
-        "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_CHANNEL_UPDATE",
-        "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_UPDATE",
-        "UNIT_SPELLCAST_INTERRUPTIBLE", "UNIT_SPELLCAST_NOT_INTERRUPTIBLE",
-        "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED",
-        "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_EMPOWER_STOP" }) do
-        self.context:Event(event, OnCastChanged, true)
-    end
+    for _, event in ipairs(UNIT_EVENTS) do self.context:Event(event, OnUnitChanged, true) end
+    for _, event in ipairs(CAST_EVENTS) do self.context:Event(event, OnCastChanged, true) end
     self.context:Event("QUEST_LOG_UPDATE", OnQuestLogChanged, true)
-    for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP",
-        "GROUP_ROSTER_UPDATE", "PLAYER_ROLES_ASSIGNED", "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED" }) do
-        self.context:Event(event, OnContextChanged, true)
-    end
-    self.context:Event("PLAYER_REGEN_ENABLED", function(module)
-        local retryQuests = Roles.RetryQuests()
-        if not module.needsRefresh then
-            if retryQuests then CancelQuestRefresh(module); RefreshActive(module, true) end
-            return
-        end
-        module.needsRefresh = false
-        EachPlate(ApplyPlate)
-        Power.Refresh(true)
-    end, true)
+    for _, event in ipairs(CONTEXT_EVENTS) do self.context:Event(event, OnContextChanged, true) end
+    self.context:Event("PLAYER_REGEN_ENABLED", OnCombatEnded, true)
     Power.Enable(self)
     Threat.Enable(self)
     self:Refresh()
@@ -947,7 +574,7 @@ function M:Refresh()
     Roles.Configure(self.config)
     Text.Configure(self.config)
     self.targetConfig = Style.TargetConfig(self.config)
-    ApplyCVars(self)
+    CVars.Apply(self)
     Threat.Refresh()
     EachPlate(ApplyPlate)
     Power.Refresh()
@@ -970,10 +597,13 @@ function M:Disable()
     for _, visual in pairs(self.visuals) do
         HideVisual(visual)
     end
-    RestoreNativeLevels()
-    RestoreAuraButtons()
+    Level.RestoreNative()
+    Auras.Restore()
 end
 
 Layout.Bind(M)
 Text.Bind(M)
+Level.Bind(M)
+CastTime.Bind(M)
+Auras.Bind(M)
 S.Install("nameplates", M)

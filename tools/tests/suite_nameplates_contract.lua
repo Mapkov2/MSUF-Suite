@@ -1,7 +1,8 @@
 local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
-assert(table.concat(toc, ",") == "Bootstrap.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,Skin.lua",
+assert(table.concat(toc, ",") == "Bootstrap.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
+    .. "Level.lua,CastTime.lua,CVars.lua,Auras.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -43,6 +44,57 @@ UnitThreatLeadSituation = function(...)
     threatCalls[#threatCalls + 1] = { "lead", ... }
     return threatStatus
 end
+-- The remaining unit and context APIs of both clients. Defaults model a
+-- hostile, attackable NPC in the open world; blocks below override them.
+local function PlayerControlled() return false end
+UnitPlayerControlled = PlayerControlled
+UnitIsDead = function() return false end
+UnitIsConnected = function() return true end
+UnitReaction = function() return 2 end
+UnitCanAttack = function() return true end
+UnitIsTrivial = function() return false end
+UnitIsLieutenant = function() return false end
+UnitEffectiveLevel = function(unit) return UnitLevel(unit) end
+UnitName = function() return "Player" end
+UnitInRaid = function() return nil end
+-- Forever's level badge rule (Camelot NameplateLevelFrameMixin:ShouldDisplay).
+local badgeUnit = { object = false, friend = false, player = false, namesOnly = false }
+-- A friendly player under the names-only CVar has no badge; Blizzard also
+-- shows only that plate's name (UpdateShowOnlyName).
+local function NamesOnlyUnit(on)
+    badgeUnit.friend, badgeUnit.player, badgeUnit.namesOnly = on, on, on
+end
+UnitIsGameObject = function() return badgeUnit.object end
+UnitIsFriend = function() return badgeUnit.friend end
+UnitIsPlayer = function() return badgeUnit.player end
+IsInRaid = function() return false end
+C_PvP = { GetZonePVPInfo = function() return nil end }
+GetInstanceInfo = function() return nil, instanceType, 0, nil, nil, nil, nil, nil, nil, false end
+GetMaximumExpansionLevel = function() return 11 end
+GetMaxLevelForExpansionLevel = function() return 90 end
+C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end }
+-- C_TooltipInfo.GetUnit may return nothing; quest blocks supply lines.
+C_TooltipInfo = { GetUnit = function() return nil end }
+Enum = {
+    PowerType = { Mana = 0 },
+    TooltipDataLineType = { QuestTitle = 1, QuestPlayer = 2, QuestObjective = 3 },
+    SecondsFormatterInterval = { Seconds = 1 },
+    SecondsFormatterAbbreviation = { OneLetter = 2 },
+}
+PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
+NamePlateConstants = { DEBUFF_PADDING_CVAR = "nameplateDebuffPadding", NAMEPLATE_WIDTH = 230,
+    CLASSIC_NAMEPLATE_WIDTH = 152 }
+local debuffPadding = 0
+GetCVarNumberOrDefault = function(key)
+    assert(key == "nameplateDebuffPadding"); return debuffPadding
+end
+local queuedTimers = {}
+C_Timer = { NewTimer = function(_, callback)
+    local timer = { callback = callback }
+    function timer:Cancel() self.cancelled = true end
+    queuedTimers[#queuedTimers + 1] = timer
+    return timer
+end }
 
 local nativeAnchor = {}
 local function Region()
@@ -87,6 +139,10 @@ local function Region()
     function r:SetWidth(value) self.width = value end
     function r:SetSize(width, height) self.width, self.height = width, height end
     function r:Show() self.shown = true end
+    function r:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
+    function r:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
+    function r:UnregisterEvent(event) if self.events then self.events[event] = nil end end
+    function r:IsProtected() return self.protected == true, false end
     function r:Hide() self.shown = false end
     function r:SetShown(value) self.shown = value end
     function r:IsShown() return self.shown end
@@ -150,15 +206,12 @@ function auraButton:SetMouseClickEnabled(value)
     self.mouseClickEnabled = value
     self.mouseWrites = (self.mouseWrites or 0) + 1
 end
-aura.auraItemFramePool = { EnumerateActive = function()
-    local delivered = false
-    return function()
-        if delivered then return nil end
-        delivered = true
-        return auraButton
-    end
-end }
+aura.auraItemFramePool = {
+    GetNextActive = function(_, current) if current == nil then return auraButton end end,
+    EnumerateActive = function() error("EnumerateActive allocates an iterator per refresh") end,
+}
 function aura:RefreshAuras() end
+function aura:RefreshLossOfControl() end
 name:SetFont("native-font", 10)
 function bar:SetStatusBarColor(r, g, b)
     self.barColor = { r, g, b }
@@ -178,11 +231,13 @@ cast.Text:SetFont("native-cast-font", 10, "")
 function cast:SetCastTimeTextShown() error("do not activate Blizzard's secret-unsafe cast time path") end
 function cast:UpdateCastTimeText() error("do not run Blizzard's secret-unsafe cast time formatter") end
 function cast:GetMinMaxValues() error("do not read secret cast progress") end
-local castDuration, channelDuration, rejectDuration
+local castDuration, channelDuration
 UnitCastingDuration = function(unit) assert(unit == "nameplate1"); return castDuration end
 UnitChannelDuration = function(unit) assert(unit == "nameplate1"); return channelDuration end
 C_StringUtil = { CreateSecondsFormatter = function()
-    return { SetMillisecondsThreshold = function(self, threshold) self.threshold = threshold end }
+    return { SetMillisecondsThreshold = function(self, threshold) self.threshold = threshold end,
+        SetMaxInterval = function(self, interval) self.interval = interval end,
+        SetDefaultAbbreviation = function(self, abbreviation) self.abbreviation = abbreviation end }
 end }
 C_DurationUtil = { CreateDurationTextBinding = function()
     local binding = {}
@@ -193,7 +248,7 @@ C_DurationUtil = { CreateDurationTextBinding = function()
     function binding:SetExpiredText(text) self.expired = text end
     function binding:SetDuration(duration)
         assert(duration ~= nil, "no active cast duration")
-        assert(not rejectDuration, "secret duration rejected by binding")
+        assert(duration ~= "secret", "addon code passed a secret duration to the binding")
         self.duration = duration
     end
     function binding:Disable() self.enabled = false end
@@ -217,7 +272,7 @@ function cast:UpdateBarFillTexture() error("do not invoke native cast logic") en
 local healthContainer = Region()
 healthContainer.healthBar = bar
 local uf = {
-    isFriend = false, isPlayer = false, name = name, AurasFrame = aura,
+    unit = "nameplate1", isFriend = false, isPlayer = false, name = name, AurasFrame = aura,
     RaidTargetFrame = raidFrame, LevelFrame = Region(),
     HealthBarsContainer = healthContainer, CastBarsContainer = { castBar = cast },
 }
@@ -244,7 +299,11 @@ local liveCVars = {
     nameplateInfoDisplay = string.char(1, 68), -- rarity icon only
     nameplateCastBarDisplay = string.char(1, 96), -- future sixth flag must survive
 }
-C_CVar = { GetCVar = function(key) return liveCVars[key] end }
+C_CVar = { GetCVar = function(key) return liveCVars[key] end,
+    GetCVarBool = function(key)
+        assert(key == "nameplateShowOnlyNameForFriendlyPlayerUnits")
+        return badgeUnit.namesOnly
+    end }
 NamePlateUnitFrameMixin = { ApplyFrameOptions = function() error("do not invoke native setup") end,
     UpdateAggroHighlight = function() end }
 local layoutHook, fontHook, powerHook, threatColorHook
@@ -261,7 +320,7 @@ hooksecurefunc = function(frame, method, callback)
         layoutHook = function(frame) for _, fn in ipairs(layoutCallbacks) do fn(frame) end end
         return
     end
-    assert(frame == aura and method == "RefreshAuras",
+    assert(frame == aura and (method == "RefreshAuras" or method == "RefreshLossOfControl"),
         "nameplate skin must not hook native layout")
 end
 
@@ -292,18 +351,25 @@ local context = {
     Event = function(_, event, callback) events[event] = callback end,
     CVar = function(_, key, value) cvars[key] = value; liveCVars[key] = value end,
 }
-local chunk = assert(loadfile(root .. "/MSUF_Suite_Nameplates/Skin.lua"))
 NS.Suite = S
 NS.RGB, NS.Public, NS.Finite, NS.ResolveFont = S.RGB, S.Public, S.Finite, S.ResolveFont
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
-assert(loadfile(root .. "/MSUF_Suite_Nameplates/Geometry.lua"))("MSUF_Suite_Nameplates", private)
-assert(loadfile(root .. "/MSUF_Suite_Nameplates/Layout.lua"))("MSUF_Suite_Nameplates", private)
-for _, file in ipairs({ "Roles", "Text", "Power", "Threat" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file .. ".lua"))("MSUF_Suite_Nameplates", private)
+-- No runtime file needs a protected call: every API both clients have is
+-- called directly, and restricted answers are checked as values.
+for _, file in ipairs(toc) do
+    local handle = assert(io.open(root .. "/MSUF_Suite_Nameplates/" .. file, "rb"))
+    local code = handle:read("*a"):gsub("%-%-[^\n]*", "")
+    handle:close()
+    assert(not code:find("pcall", 1, true), file .. " uses pcall or xpcall")
 end
-chunk("MSUF_Suite_Nameplates", private)
+-- Production load order; Bootstrap.lua only links the core namespace.
+for _, file in ipairs(toc) do
+    if file ~= "Bootstrap.lua" then
+        assert(loadfile(root .. "/MSUF_Suite_Nameplates/" .. file))("MSUF_Suite_Nameplates", private)
+    end
+end
 local module = assert(installed)
 module.context = context
 module.config = {
@@ -398,7 +464,6 @@ do
     Check("secret", 0, "secret", "Caster")
     Check("secret", 3, "secret", "Melee")
     Check("secret", "secret", "secret", "Melee")
-    UnitHasPowerType = nil
     Check(nil, nil, "MANA", "Caster")
     Check(nil, nil, nil, "Melee")
     UnitPowerType, UnitHasPowerType, hasMana = nativePowerType, nativeHasPower, false
@@ -407,15 +472,22 @@ do
     assert(scans == 1, "role refresh scanned all plates")
 end
 do
-    local visual = module.visuals[bar]
+    -- Settings reach live plates through Refresh; UNIT_FLAGS only re-reads
+    -- the flag-dependent color role and leaves the skin layers alone. These
+    -- settings passes stay out of the event scan count checked below.
+    local visual, settingsScans = module.visuals[bar], scans
     module.config.enemyBackdropEnabled, module.config.enemyBorderEnabled = false, false
     events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(visual.back:IsShown() and visual.borderSize == 1,
+        "a unit flag event repainted the whole skin")
+    module:Refresh()
     assert(not visual.back:IsShown() and visual.borderSize == 0
         and not visual.edges[1]:IsShown(), "skin backdrop/border switches did not hide the live layers")
     module.config.enemyBackdropEnabled, module.config.enemyBorderEnabled = true, true
-    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    module:Refresh()
     assert(visual.back:IsShown() and visual.borderSize == 1 and visual.edges[1]:IsShown(),
         "skin backdrop/border switches did not restore the live layers")
+    scans = settingsScans
 end
 do
     local previousPvp = C_PvP
@@ -434,8 +506,12 @@ do
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
 end
 do
-    local nativeTimer, nativeClassification = C_Timer, UnitClassification
-    local timerCount, classificationReads, queued = 0, 0, {}
+    local nativeTimer, nativeClassification, nativeQuestLog = C_Timer, UnitClassification, C_QuestLog
+    local timerCount, classificationReads, questReads, queued = 0, 0, 0, {}
+    C_QuestLog = { UnitIsRelatedToActiveQuest = function(unit)
+        questReads = questReads + 1
+        return nativeQuestLog.UnitIsRelatedToActiveQuest(unit)
+    end }
     C_Timer = { NewTimer = function(delay, callback)
         assert(delay == 1)
         timerCount = timerCount + 1
@@ -457,8 +533,23 @@ do
     events.QUEST_LOG_UPDATE(module, "QUEST_LOG_UPDATE")
     assert(timerCount == 1 and classificationReads == 0,
         "quest updates performed repeated immediate plate classifications")
+    -- The deferred pass re-reads only quest facts: classification, markers
+    -- and the type role stay cached, and an unchanged plate keeps its skin.
+    local textureReads = bar.textureReads
     queued[1].callback()
-    assert(classificationReads == 1, "coalesced quest update missed the active plate")
+    assert(questReads == 1, "coalesced quest update missed the active plate")
+    assert(classificationReads == 0, "quest log refresh re-read unit classification")
+    assert(bar.textureReads == textureReads, "unchanged quest state repainted the health skin")
+    questUnit = true
+    events.QUEST_LOG_UPDATE(module, "QUEST_LOG_UPDATE")
+    queued[#queued].callback()
+    assert(module.roles[bar] == "Quest" and bar.textureReads > textureReads and classificationReads == 0,
+        "new quest objective did not reach the color role without reclassification")
+    questUnit = false
+    events.QUEST_LOG_UPDATE(module, "QUEST_LOG_UPDATE")
+    queued[#queued].callback()
+    assert(module.roles[bar] ~= "Quest", "completed quest kept its quest color")
+    timerCount, queued = 1, { queued[1] }
     instanceType = "party"
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
     classificationReads = 0
@@ -475,7 +566,7 @@ do
         "context change left stale quest work scheduled")
     instanceType = "none"
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
-    C_Timer, UnitClassification = nativeTimer, nativeClassification
+    C_Timer, UnitClassification, C_QuestLog = nativeTimer, nativeClassification, nativeQuestLog
 end
 assert(name.fontSize == 12 and name.points[1][1] == "CENTER"
     and cast.points[1][1] == "CENTER" and aura.points[1][1] == "CENTER",
@@ -618,11 +709,52 @@ module.config.auraClickthrough = true
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(auraButton.mouseClickEnabled == false, "aura clickthrough did not reach pooled button")
 local auraWrites = auraButton.mouseWrites
+local pool=aura.auraItemFramePool
+local enumerator, nextActive=pool.EnumerateActive, pool.GetNextActive
+pool.GetNextActive=function(_,previous) if not previous then return auraButton end end
+pool.EnumerateActive=function() error("GetNextActive allocated an iterator") end
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(auraButton.mouseWrites == auraWrites, "unchanged aura clickthrough repeated a protected setter")
+pool.EnumerateActive, pool.GetNextActive = enumerator, nextActive
 module.config.auraClickthrough = false
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(auraButton.mouseClickEnabled == true, "aura clickthrough did not restore native clicks")
+do
+    -- The combat-end refresh below is not part of the scan count checked later.
+    local auraScans = scans
+    auraButton.protected = true
+    module.config.auraClickthrough = true
+    combat = true
+    local writes = auraButton.mouseWrites
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(auraButton.mouseWrites == writes and auraButton.mouseClickEnabled == true and module.needsRefresh,
+        "protected aura button changed its clicks in combat")
+    combat = false
+    events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    assert(auraButton.mouseClickEnabled == false, "protected aura button stayed clickable after combat")
+    combat = true
+    module.config.auraClickthrough = false
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(auraButton.mouseClickEnabled == false, "protected aura button restored its clicks in combat")
+    local restore = assert(module.auraRestoreFrame, "no deferred aura restore after combat")
+    assert(restore.events.PLAYER_REGEN_ENABLED, "deferred aura restore waits for no event")
+    combat = false
+    restore.scripts.OnEvent(restore, "PLAYER_REGEN_ENABLED")
+    assert(auraButton.mouseClickEnabled == true and not restore.events.PLAYER_REGEN_ENABLED,
+        "deferred aura restore did not hand the clicks back")
+    -- An unprotected button follows the setting in combat.
+    auraButton.protected = false
+    module.config.auraClickthrough = true
+    combat = true
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(auraButton.mouseClickEnabled == false, "unprotected aura button waited for combat end")
+    module.config.auraClickthrough = false
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    combat = false
+    assert(auraButton.mouseClickEnabled == true, "unprotected aura button kept click-through")
+    module.needsRefresh = false
+    scans = auraScans
+end
 module.config.enemyRaidIcon = false
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(raidIcon:GetAlpha() == 0, "native raid icon was not hidden on an existing enemy plate")
@@ -761,7 +893,7 @@ assert(module.roles[bar] == nil, "player-controlled pet received an NPC type col
 UnitPlayerControlled = function() return "secret" end
 events.UNIT_FACTION(module, "UNIT_FACTION", "nameplate1")
 assert(module.roles[bar] == "Melee", "secret player-control hint suppressed an NPC role")
-UnitPlayerControlled = nil
+UnitPlayerControlled = PlayerControlled
 
 -- Role tint is an owned overlay; no user texture may replace Blizzard's fill.
 module.config.enemyRoleColors = false
@@ -822,8 +954,6 @@ assert(module.visuals[bar].elite.points[1][3] == "TOPRIGHT" and module.visuals[b
 
 -- Quest cache distinguishes completed, party and unknown objectives without polling.
 local tooltipReads = 0
-Enum = { TooltipDataLineType = { QuestTitle = 1, QuestPlayer = 2, QuestObjective = 3 } }
-UnitName = function() return "Player" end
 local lines = { { type = 1 }, { type = 3, leftText = "5/5" } }
 C_TooltipInfo = { GetUnit = function() tooltipReads = tooltipReads + 1; return { lines = lines } end }
 questUnit = true
@@ -1055,10 +1185,7 @@ uf.showOnlyName = false
 -- Moving health text must not pull the name's right edge; moving an above-bar
 -- name must not pull the debuff list's bottom anchor along with it.
 NamePlateSetupOptions.unitNameAnchorStyle = 2
-NamePlateConstants = { DEBUFF_PADDING_CVAR = "nameplateDebuffPadding" }
-CVarCallbackRegistry = { GetCVarNumberOrDefault = function(_, key)
-    assert(key == "nameplateDebuffPadding"); return 6
-end }
+debuffPadding = 6
 bar.LeftText = Region()
 aura.DebuffListFrame = Region()
 name:ClearAllPoints()
@@ -1151,7 +1278,8 @@ do
     c.friendlyCastTextEnabled, c.friendlyCastCustomFont, c.friendlyCastTextShadow = true, true, true
     c.friendlyCastFont, c.friendlyCastSize, c.friendlyCastOutline = "friendly-font", 18, 5
     classification, instanceType, focusUnit = "rareelite", "none", nil
-    C_TooltipInfo, C_Secrets = nil, nil
+    C_TooltipInfo = { GetUnit = function() return nil end }
+    C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end }
     cast.Text:SetFont("friendly-native", 10, "")
     cast.CastTargetNameText:SetFont("friendly-target-native", 9, "")
     private.Roles.ClearQuest()
@@ -1363,6 +1491,14 @@ do
     targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
     assert(label:IsShown() and uf.PlayerLevelDiffFrame.offsetX == 0 and target.offsetX == targetX,
         "Retail NPC level did not return after the player indicator disappeared")
+    -- A level change that brings or removes Blizzard's indicator moves the
+    -- target arrows at once, without waiting for the next repaint.
+    uf.PlayerLevelDiffFrame:Show()
+    events.UNIT_LEVEL(module, "UNIT_LEVEL", "nameplate1")
+    assert(target.offsetX == targetX - 22, "UNIT_LEVEL left the target arrow over the player level indicator")
+    uf.PlayerLevelDiffFrame:Hide()
+    events.UNIT_LEVEL(module, "UNIT_LEVEL", "nameplate1")
+    assert(target.offsetX == targetX, "UNIT_LEVEL kept the target arrow gap of a hidden level indicator")
     NamePlateSetupOptions.levelIconWidth = 15
     NamePlateSetupOptions.useClassicHealthBar = true
     module:Refresh()
@@ -1406,7 +1542,7 @@ do
     local savedConfig, savedForever = module.config, NS.Client.isForever
     local savedWidth = NamePlateSetupOptions.playerLevelDiffWidth
     local badge = uf.PlayerLevelDiffFrame
-    local savedDisplay, savedShown = badge.ShouldDisplay, badge:IsShown()
+    local savedShown = badge:IsShown()
     local display = true
     local config = {}
     for key, value in pairs(savedConfig) do config[key] = value end
@@ -1418,8 +1554,9 @@ do
     end
     config.enemyControlAuraOffsetX, config.enemyControlAuraOffsetY = 13, -7
     module.config, NS.Client.isForever = config, true
-    badge.ShouldDisplay = function() return display end
-    badge:Hide() -- ShouldDisplay, not transient visibility, owns the reservation.
+    NamesOnlyUnit(false)
+    badge.ShouldDisplay = function() error("Blizzard's ShouldDisplay ran in addon code") end
+    badge:Hide() -- Camelot's display rule, not transient visibility, owns the reservation.
     NamePlateSetupOptions.playerLevelDiffWidth = 28
     private.Layout.Configure(config)
     local function NativeAnchors()
@@ -1443,10 +1580,12 @@ do
     layoutHook(uf)
     Check(63, -7, "Forever CC layout ignored the updated badge width")
     display = false
+    NamesOnlyUnit(true)
     NativeAnchors()
     layoutHook(uf)
     Check(18, -7, "Forever CC layout reserved a badge for a names-only unit")
     display = true
+    NamesOnlyUnit(false)
     NamePlateSetupOptions.playerLevelDiffWidth = 32
     NativeAnchors()
     combat, module.needsRefresh = true, false
@@ -1460,13 +1599,15 @@ do
     config.enemyControlAuraOffsetX, config.enemyControlAuraOffsetY = 0, 0
     private.Layout.Configure(config)
     display = false
+    NamesOnlyUnit(true)
     NativeAnchors()
     layoutHook(uf)
     Check(5, 0, "Forever CC reset restored a stale badge reservation")
     private.Layout.Restore(uf)
     module.config, NS.Client.isForever = savedConfig, savedForever
     NamePlateSetupOptions.playerLevelDiffWidth = savedWidth
-    badge.ShouldDisplay = savedDisplay
+    NamesOnlyUnit(false)
+    badge.ShouldDisplay = nil
     badge:SetShown(savedShown)
     module:Refresh()
 end
@@ -1524,16 +1665,17 @@ do
     module.config.look = 1
     module:Refresh()
     uf.PlayerLevelDiffFrame:Hide()
-    uf.PlayerLevelDiffFrame.ShouldDisplay = function() return not uf.showOnlyName end
     module:Refresh()
     assert(not label:IsShown() and uf.PlayerLevelDiffFrame.offsetX == 6
         and target.mirror.offsetX == -targetX + 33,
         "Forever drew a second level while Camelot's native badge was temporarily hidden")
     uf.showOnlyName = true
+    NamesOnlyUnit(true)
     module:Refresh()
     assert(not label:IsShown() and target.mirror.offsetX == -targetX,
         "Forever names-only plate gained a custom level or reserved an empty badge")
     uf.showOnlyName = false
+    NamesOnlyUnit(false)
     NamePlateSetupOptions.unitNameAnchorStyle = 2
     NamePlateSetupOptions.nameJustificationWhenAboveHealthBar = "CENTER"
     module.config.enemyHealthTextOffsetX = 10
@@ -1550,8 +1692,50 @@ do
     module.config.enemyLevelEnabled = false
     module.config.enemyLevelOffsetX = 0
     module.config.levelAppearance = 1
-    uf.PlayerLevelDiffFrame.ShouldDisplay = nil
     NS.Client.isForever = false
+    module:Refresh()
+end
+
+do
+    module.active = true
+    uf.isFriend, uf.isPlayer = false, false
+    module.config.look, module.config.enemy, module.config.enemyRoleColors = 1, true, true
+    classification, isBoss, tappedUnit, questUnit, focusUnit = "elite", false, false, false, nil
+    module:Refresh()
+    local reads = 0
+    local nativeClassification, nativeBoss, nativeLevel = UnitClassification, UnitIsBossMob, UnitLevel
+    UnitClassification = function(unit) reads = reads + 1; return nativeClassification(unit) end
+    UnitIsBossMob = function(unit) reads = reads + 1; return nativeBoss(unit) end
+    UnitLevel = function(unit)
+        if unit ~= "player" then reads = reads + 1 end
+        return nativeLevel(unit)
+    end
+    local fontReads = name.fontReads
+    for _ = 1, 3 do
+        events.UNIT_THREAT_LIST_UPDATE(module, "UNIT_THREAT_LIST_UPDATE", "nameplate1")
+        events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
+    end
+    assert(reads == 0, "threat events re-read classification, boss or level facts")
+    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(reads == 0 and name.fontReads == fontReads, "a unit flag event re-classified or repainted the plate")
+    tappedUnit = true
+    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(module.roles[bar] == "Tapped" and reads == 0, "a flag change did not reach the cached role")
+    tappedUnit = false
+    events.UNIT_FLAGS(module, "UNIT_FLAGS", "nameplate1")
+    assert(module.roles[bar] ~= "Tapped", "an untapped unit kept its tapped color")
+    events.UNIT_CLASSIFICATION_CHANGED(module, "UNIT_CLASSIFICATION_CHANGED", "nameplate1")
+    assert(reads > 0, "a classification change kept stale unit facts")
+    reads = 0
+    events.ZONE_CHANGED(module, "ZONE_CHANGED")
+    assert(reads == 0 and name.fontReads == fontReads, "an unchanged subzone context re-classified the plates")
+    instanceType = "party"
+    events.ZONE_CHANGED(module, "ZONE_CHANGED")
+    assert(reads > 0, "a subzone step into an instance kept the outdoor plate facts")
+    instanceType = "none"
+    events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
+    UnitClassification, UnitIsBossMob, UnitLevel = nativeClassification, nativeBoss, nativeLevel
+    classification = "normal"
     module:Refresh()
 end
 
@@ -1602,23 +1786,26 @@ do
     local label = state.label
     assert(cast.CastTimeText == nil and label.parent == cast and not label:IsShown(),
         "Suite tainted Blizzard's native CastTimeText field")
-    castDuration = setmetatable({}, { __sub = function() error("secret cast arithmetic") end })
+    -- The duration object is opaque: only the engine binding reads it. A
+    -- secret result ("secret") never reaches the binding from addon code.
+    local opaqueCast = setmetatable({}, { __sub = function() error("secret cast arithmetic") end })
+    castDuration = opaqueCast
     events.UNIT_SPELLCAST_START(module, "UNIT_SPELLCAST_START", "nameplate1")
     assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown()
         and label.text == "2.3s" and cast.CastTimeText == nil,
         "cast duration did not reach the engine text binding")
-    rejectDuration = true
+    castDuration = "secret"
     events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
-    assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown(),
+    assert(state.binding.duration == opaqueCast and state.binding.enabled and label:IsShown(),
         "interruptibility change hid a valid cast time while duration was unavailable")
-    rejectDuration = false
+    castDuration = opaqueCast
     events.UNIT_SPELLCAST_STOP(module, "UNIT_SPELLCAST_STOP", "nameplate1")
     assert(not state.binding.enabled and not label:IsShown(), "cast stop left a stale time")
-    rejectDuration = true
+    castDuration = "secret"
     events.UNIT_SPELLCAST_START(module, "UNIT_SPELLCAST_START", "nameplate1")
     assert(not state.binding.enabled and not label:IsShown() and cast.CastTimeText == nil,
-        "rejected secret duration reactivated the unsafe timer")
-    rejectDuration = false
+        "secret duration reactivated the unsafe timer")
+    castDuration = opaqueCast
     events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
     assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown(),
         "a non-interruptible cast did not recover its duration after cast start")
@@ -1655,7 +1842,8 @@ print("Suite nameplates: native lifecycle, cast customization, masks, friendly f
 -- Keybinding is a manual Suite setting change, with no work in combat/off.
 do
     NS.Text = function(value) return value end
-    NS.ActionBarTitles = { [9] = "Suite bar 9", [10] = "Suite bar 10" }
+    NS.ActionBarTitles = {}
+    for bar = 1, 12 do NS.ActionBarTitles[bar] = "Action bar " .. bar end
     local writes = 0
     S.Config = function(id) assert(id == "nameplates"); return module.config end
     S.Set = function(id, key, value)

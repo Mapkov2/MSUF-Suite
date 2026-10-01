@@ -3,15 +3,15 @@ local NS, S = private.NS, private.Suite
 local Roles = { quests = {}, pendingQuests = {} }
 private.Roles = Roles
 
+-- The first result of a unit query, or nil while it is restricted.
 local function Read(api, ...)
-    if type(api) ~= "function" then return nil end
     local value = api(...)
     if S.Public(value) then return value end
 end
 
 local function Level(unit)
-    local level = Read(_G.UnitEffectiveLevel, unit)
-    if not S.Finite(level) then level = Read(_G.UnitLevel, unit) end
+    local level = Read(UnitEffectiveLevel, unit)
+    if not S.Finite(level) then level = Read(UnitLevel, unit) end
     if S.Finite(level) then return level end
 end
 
@@ -21,14 +21,17 @@ function Roles.Configure(config)
 end
 
 -- World/group changes are infrequent. Never rediscover this context per plate
--- health update. LFG scaling uses the same reference level as EQoL.
+-- health update. LFG scaling uses the same reference level as EQoL. Returns
+-- true when a fact the plate colors depend on changed.
 function Roles.RefreshContext()
-    local _, instanceType = nil, "none"
-    if type(_G.IsInInstance) == "function" then _, instanceType = _G.IsInInstance() end
+    local known = Roles.contextKnown
+    local wasAllowed, wasInstanced, wasTank, wasGrouped, wasReference =
+        Roles.allowed, Roles.instanced, Roles.tank, Roles.grouped, Roles.reference
+    local _, instanceType = IsInInstance()
     local public = S.Public(instanceType)
     Roles.inInstance = not public or instanceType ~= "none"
     Roles.instanced = public and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
-    local pvp = Read(_G.C_PvP and _G.C_PvP.GetZonePVPInfo)
+    local pvp = Read(C_PvP.GetZonePVPInfo)
     -- Zone PvP flags describe the outdoor zone and can remain "combat" while
     -- inside a party/raid/scenario instance. Instance type is authoritative.
     Roles.allowed = public and instanceType ~= "pvp" and instanceType ~= "arena"
@@ -36,18 +39,21 @@ function Roles.RefreshContext()
     local c = Roles.config
     Roles.allowed = Roles.allowed and ((Roles.instanced and c.enemyColorsInDungeons ~= false)
         or (not Roles.instanced and c.enemyColorsOutside ~= false))
-    Roles.tank = Read(_G.PlayerUtil and _G.PlayerUtil.IsPlayerEffectivelyTank) == true
-    Roles.grouped = Read(_G.UnitInParty, "player") == true or Read(_G.IsInRaid) == true
+    Roles.tank = Read(PlayerUtil.IsPlayerEffectivelyTank) == true
+    Roles.grouped = Read(UnitInParty, "player") == true or Read(IsInRaid) == true
     Roles.reference = Level("player")
-    if Roles.instanced and type(_G.GetInstanceInfo) == "function" then
-        local _, _, _, _, _, _, _, _, _, lfg = _G.GetInstanceInfo()
+    if Roles.instanced then
+        local _, _, _, _, _, _, _, _, _, lfg = GetInstanceInfo()
         if S.Public(lfg) and lfg then
-            local expansion = Read(_G.GetMaximumExpansionLevel)
-            local maximum = expansion and Read(_G.GetMaxLevelForExpansionLevel, expansion)
+            local expansion = Read(GetMaximumExpansionLevel)
+            local maximum = expansion and Read(GetMaxLevelForExpansionLevel, expansion)
             if S.Finite(maximum) then Roles.reference = maximum end
         end
     end
     Roles.lieutenantLevel = nil
+    Roles.contextKnown = true
+    return not known or wasAllowed ~= Roles.allowed or wasInstanced ~= Roles.instanced
+        or wasTank ~= Roles.tank or wasGrouped ~= Roles.grouped or wasReference ~= Roles.reference
 end
 
 function Roles.ClearQuest(unit)
@@ -77,44 +83,49 @@ local function Incomplete(text)
     return not percent or tonumber(percent) < 100
 end
 
-function Roles.Quest(unit)
-    -- EQoL scans world quest objectives only. No tooltip work in dungeons.
-    if Roles.inInstance or Roles.pendingQuests[unit] then return nil end
-    if Roles.quests[unit] ~= nil then return Roles.quests[unit] end
-    local secrets = _G.C_Secrets
-    if secrets and type(secrets.ShouldUnitIdentityBeSecret) == "function"
-        and Read(secrets.ShouldUnitIdentityBeSecret, unit) ~= false then return PendingQuest(unit) end
-    -- Direct API is a cheap negative gate. Tooltip lines distinguish our
-    -- unfinished objectives from completed objectives and party quests.
-    local related = Read(_G.C_QuestLog and _G.C_QuestLog.UnitIsRelatedToActiveQuest, unit)
-    if related == false then Roles.quests[unit] = false; return false end
-    local info = Read(_G.C_TooltipInfo and _G.C_TooltipInfo.GetUnit, unit)
-    local types = _G.Enum and _G.Enum.TooltipDataLineType
-    if type(info) ~= "table" or not types or not S.Public(info.lines) or type(info.lines) ~= "table" then
-        if type(related) == "boolean" then Roles.quests[unit] = related; return related end
-        return PendingQuest(unit) -- not a cached absent objective
-    end
-    local player, ours, found = Read(_G.UnitName, "player"), true, false
+-- Tooltip lines distinguish our unfinished objectives from completed
+-- objectives and party quests. nil while a line is restricted.
+local function TooltipQuest(unit, info)
+    local types = Enum.TooltipDataLineType
+    local player, ours = Read(UnitName, "player"), true
     for _, line in ipairs(info.lines) do
-        if not S.Public(line) then return PendingQuest(unit) end
+        if not S.Public(line) then return nil end
         if type(line) == "table" then
-            if not S.Public(line.type) then return PendingQuest(unit) end
+            if not S.Public(line.type) then return nil end
             if line.type == types.QuestTitle then ours = true
             elseif line.type == types.QuestPlayer then
                 ours = S.Public(line.leftText) and player ~= nil and line.leftText == player
             elseif ours and line.type == types.QuestObjective then
                 local incomplete = Incomplete(line.leftText)
-                if incomplete == nil then return PendingQuest(unit) end
-                if incomplete then found = true; break end
+                if incomplete == nil then return nil end
+                if incomplete then return true end
             end
         end
     end
+    return false
+end
+
+function Roles.Quest(unit)
+    -- EQoL scans world quest objectives only. No tooltip work in dungeons.
+    if Roles.inInstance or Roles.pendingQuests[unit] then return nil end
+    if Roles.quests[unit] ~= nil then return Roles.quests[unit] end
+    if Read(C_Secrets.ShouldUnitIdentityBeSecret, unit) ~= false then return PendingQuest(unit) end
+    -- Direct API is a cheap negative gate.
+    local related = Read(C_QuestLog.UnitIsRelatedToActiveQuest, unit)
+    if related == false then Roles.quests[unit] = false; return false end
+    local info = Read(C_TooltipInfo.GetUnit, unit)
+    if type(info) ~= "table" or not S.Public(info.lines) or type(info.lines) ~= "table" then
+        if type(related) == "boolean" then Roles.quests[unit] = related; return related end
+        return PendingQuest(unit) -- not a cached absent objective
+    end
+    local found = TooltipQuest(unit, info)
+    if found == nil then return PendingQuest(unit) end
     Roles.quests[unit] = found
     return found
 end
 
 local function OnThreatList(unit)
-    return Read(_G.CompactUnitFrame_IsOnThreatListWithPlayer, unit) == true
+    return Read(CompactUnitFrame_IsOnThreatListWithPlayer, unit) == true
 end
 
 -- Blizzard live CompactUnitFrame_GetThreatSituation: tanks use lead status
@@ -129,20 +140,23 @@ local function Threat(uf, unit)
     local usePlayer = S.Public(options) and type(options) == "table"
         and S.Public(options.usePlayerForAggroHighlightThreat)
         and options.usePlayerForAggroHighlightThreat == true
-    local api = usePlayer and Roles.tank and _G.UnitThreatLeadSituation or _G.UnitThreatSituation
-    if type(api) ~= "function" then return nil end
     local status
-    if usePlayer then status = api("player", unit)
-    else status = api(unit) end
+    if usePlayer then
+        status = (Roles.tank and UnitThreatLeadSituation or UnitThreatSituation)("player", unit)
+    else
+        status = UnitThreatSituation(unit)
+    end
     if not S.Public(status) then return nil end
     if S.Finite(status) and status > 0 then return status end
 end
 
+-- The unit's type role (Boss, Miniboss, Trivial, Caster, Melee) or nil.
+-- Level, classification and power display change it; threat never does.
 function Roles.Classify(unit, classification)
-    if Read(_G.UnitIsBossMob, unit) == true or classification == "worldboss" then return "Boss" end
+    if Read(UnitIsBossMob, unit) == true or classification == "worldboss" then return "Boss" end
     if classification == "elite" or classification == "rare" or classification == "rareelite" then
         local level, reference = Level(unit), Roles.reference
-        if Read(_G.UnitIsLieutenant, unit) == true or (level and reference and level == reference + 1) then
+        if Read(UnitIsLieutenant, unit) == true or (level and reference and level == reference + 1) then
             Roles.lieutenantLevel = level
             return "Miniboss"
         end
@@ -150,18 +164,17 @@ function Roles.Classify(unit, classification)
             or (level and Roles.lieutenantLevel and level == Roles.lieutenantLevel + 1) then return "Boss" end
         if not Roles.instanced then return "Miniboss" end
     end
-    if classification == "trivial" or classification == "minus" or Read(_G.UnitIsTrivial, unit) == true then
+    if classification == "trivial" or classification == "minus" or Read(UnitIsTrivial, unit) == true then
         return "Trivial"
     end
     if classification ~= nil and classification ~= "normal" and classification ~= "elite"
         and classification ~= "rare" and classification ~= "rareelite" then return nil end
-    local mana = _G.Enum and _G.Enum.PowerType and _G.Enum.PowerType.Mana or 0
+    local mana = Enum.PowerType.Mana
     -- Match Platynator's Jundies classifier: mana capability takes precedence
     -- over the displayed power type, which can differ on NPCs.
-    local usesMana = Read(_G.UnitHasPowerType, unit, mana)
+    local usesMana = Read(UnitHasPowerType, unit, mana)
     if type(usesMana) == "boolean" then return usesMana and "Caster" or "Melee" end
-    local power, token
-    if type(_G.UnitPowerType) == "function" then power, token = _G.UnitPowerType(unit) end
+    local power, token = UnitPowerType(unit)
     -- These results can be restricted independently. Keep any public hint.
     if not S.Public(power) then power = nil end
     if not S.Public(token) then token = nil end
@@ -171,16 +184,40 @@ function Roles.Classify(unit, classification)
     return "Melee"
 end
 
-function Roles.Get(unit, uf, classification, quest)
+-- The parts of an enemy NPC's color role that threat cannot change, stored
+-- in facts: eligible (the plate takes a role color at all), focus, neutral
+-- (the reaction rule, whose threat-list part stays live) and rest (the role
+-- below the threat rules: Tapped, Quest or the type role; false for none).
+-- Read on plate setup and on flag, level, classification and quest changes.
+function Roles.Base(facts, unit, uf)
+    facts.eligible, facts.focus, facts.neutral, facts.rest = false, false, false, false
     local c = Roles.config
     if not Roles.allowed or not c.enemyRoleColors or not S.Public(uf.isFriend) or uf.isFriend ~= false
-        or not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return nil end
-    if type(_G.UnitPlayerControlled) == "function" then
-        local controlled = _G.UnitPlayerControlled(unit)
-        if S.Public(controlled) and controlled == true then return nil end
+        or not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return end
+    local controlled = UnitPlayerControlled(unit)
+    if S.Public(controlled) and controlled == true then return end
+    if Read(UnitIsDead, unit) == true or Read(UnitIsConnected, unit) == false then return end
+    facts.eligible = true
+    if c.enemyFocusEnabled ~= false and Read(UnitIsUnit, unit, "focus") == true then
+        facts.focus = true
+    elseif Read(UnitIsTapDenied, unit) == true then
+        facts.rest = c.enemyTappedEnabled ~= false and "Tapped"
+    elseif c.enemyQuestColors and c.enemyQuestEnabled ~= false and facts.quest == true then
+        facts.rest = "Quest"
+    elseif Read(UnitReaction, unit, "player") == 4 then
+        facts.neutral = true
+    elseif Read(UnitCanAttack, "player", unit) ~= false then
+        local role = facts.kind
+        facts.rest = role and c["enemy" .. role .. "Enabled"] ~= false and role
     end
-    if Read(_G.UnitIsDead, unit) == true or Read(_G.UnitIsConnected, unit) == false then return nil end
-    if c.enemyFocusEnabled ~= false and Read(_G.UnitIsUnit, unit, "focus") == true then return "Focus" end
+end
+
+-- The color role of a plate from its facts and the current threat. Threat
+-- events call only this.
+function Roles.Get(facts, unit, uf)
+    if not facts.eligible then return nil end
+    if facts.focus then return "Focus" end
+    local c = Roles.config
     -- A secret threat value only removes the threat override. It must not
     -- suppress the ordinary NPC role color.
     local threat = Threat(uf, unit)
@@ -190,16 +227,10 @@ function Roles.Get(unit, uf, classification, quest)
         if c["enemy" .. role .. "Enabled"] ~= false then return role end
         return nil
     end
-    if Read(_G.UnitIsTapDenied, unit) == true then
-        return c.enemyTappedEnabled ~= false and "Tapped" or nil
-    end
-    if c.enemyQuestColors and c.enemyQuestEnabled ~= false and quest == true then return "Quest" end
-    if Read(_G.UnitReaction, unit, "player") == 4 then
+    if facts.neutral then
         return not OnThreatList(unit) and c.enemyNeutralEnabled ~= false and "Neutral" or nil
     end
-    if Read(_G.UnitCanAttack, "player", unit) == false then return nil end
-    local role = Roles.Classify(unit, classification)
-    return role and c["enemy" .. role .. "Enabled"] ~= false and role or nil
+    return facts.rest or nil
 end
 
 function Roles.Marker(unit, classification)

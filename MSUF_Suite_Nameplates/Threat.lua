@@ -18,17 +18,17 @@ local function Eligible(uf)
 end
 
 local function Color(region, hex)
-    if not Safe(region) or type(region.SetVertexColor) ~= "function" then return false end
-    local r, g, b = NS.RGB(hex)
-    return pcall(region.SetVertexColor, region, r, g, b)
+    if not Safe(region) then return false end
+    region:SetVertexColor(NS.RGB(hex))
+    return true
 end
 
+-- Blizzard may tint these textures with values addon code cannot read; such
+-- a color is not remembered, and the texture keeps Blizzard's tint.
 local function Original(region)
-    if not Safe(region) or type(region.GetVertexColor) ~= "function" then return nil end
-    local ok, r, g, b, a = pcall(region.GetVertexColor, region)
-    if not ok or not NS.Public(r) or not NS.Public(g) or not NS.Public(b)
-        or not NS.Public(a) or not NS.Finite(r) or not NS.Finite(g)
-        or not NS.Finite(b) or not NS.Finite(a) then return nil end
+    if not Safe(region) then return nil end
+    local r, g, b, a = region:GetVertexColor()
+    if not NS.Finite(r) or not NS.Finite(g) or not NS.Finite(b) or not NS.Finite(a) then return nil end
     return { r, g, b, a }
 end
 
@@ -36,7 +36,8 @@ local function RestoreFlash(uf)
     local original = flashes[uf]
     if not original then return end
     local region = uf.aggroFlash
-    if Safe(region) and pcall(region.SetVertexColor, region, unpack(original)) then
+    if Safe(region) then
+        region:SetVertexColor(original[1], original[2], original[3], original[4])
         flashes[uf] = nil
     end
 end
@@ -45,9 +46,9 @@ local function RestoreHighlight(uf)
     if not highlights[uf] then return end
     local color = Original(uf.aggroHighlight)
     local base, additive = uf.aggroHighlightBase, uf.aggroHighlightAdditive
-    if color and Safe(base) and Safe(additive)
-        and pcall(base.SetVertexColor, base, color[1], color[2], color[3])
-        and pcall(additive.SetVertexColor, additive, color[1], color[2], color[3]) then
+    if color and Safe(base) and Safe(additive) then
+        base:SetVertexColor(color[1], color[2], color[3])
+        additive:SetVertexColor(color[1], color[2], color[3])
         highlights[uf] = nil
     end
 end
@@ -79,9 +80,7 @@ end
 function Threat.Refresh()
     if hooked or not owner or not owner.active or owner.config.look == 2
         or not owner.config.enemy or not owner.config.threatHighlightColorEnabled then return end
-    local mixin = _G.NamePlateUnitFrameMixin
-    if type(mixin) ~= "table" or type(mixin.UpdateAggroHighlight) ~= "function" then return end
-    hooksecurefunc(mixin, "UpdateAggroHighlight", function(uf)
+    hooksecurefunc(NamePlateUnitFrameMixin, "UpdateAggroHighlight", function(uf)
         if Eligible(uf) and owner.config.threatHighlightColorEnabled then TintHighlight(uf) end
     end)
     hooked = true

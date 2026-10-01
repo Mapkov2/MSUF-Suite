@@ -7,7 +7,13 @@ local NS = {
     IsCombatLocked = function() return combat end,
     Safety = { IsForbidden = function(r) return r.forbidden == true end },
 }
-C_CVar = { GetCVar = function() return tostring(style) end }
+C_CVar = { GetCVar = function() return tostring(style) end, GetCVarBool = function() return false end }
+-- Blizzard_SharedXMLBase PixelUtil; the pixel snap itself is the engine's.
+PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
+-- The plate is a hostile NPC: Forever's level badge rule shows the badge.
+UnitIsGameObject = function(unit) assert(unit == "nameplate1"); return false end
+UnitIsFriend = function(_, unit) assert(unit == "nameplate1"); return false end
+UnitIsPlayer = function(unit) assert(unit == "nameplate1"); return false end
 local private = { NS = NS }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
@@ -23,7 +29,6 @@ local function Frame()
     function f:SetSize(w, h) calls = calls + 1; self.width, self.height = w, h end
     function f:SetPointsOffset(x, y) calls = calls + 1; self.x, self.y = x, y end
     function f:IsShown() return self.shown end
-    function f:ShouldDisplay() return self.shown end
     function f:GetPoint() error("restricted anchor read") end
     function f:GetWidth() error("restricted dimension read") end
     return f
@@ -48,7 +53,11 @@ local function Native(uf)
 end
 for _, forever in ipairs({ false, true }) do
     NS.Client.isForever = forever
-    NamePlateConstants = { NAME_PLATE_WIDTH = forever and 190 or 230 }
+    -- The width constants are named NAMEPLATE_WIDTH on Retail and
+    -- NAME_PLATE_WIDTH in Forever's Camelot constants.
+    NamePlateConstants = forever and { NAME_PLATE_WIDTH = 190, CLASSIC_NAME_PLATE_WIDTH = 152 }
+        or { NAMEPLATE_WIDTH = 230, CLASSIC_NAMEPLATE_WIDTH = 152 }
+    local nativeWidth = forever and 190 or 230
     for _, scale in ipairs({ .8, 1, 1.25, 1.6 }) do
         for _, selected in ipairs({ 0, 1, 2, 3, 4, 5 }) do
             style = selected
@@ -64,7 +73,7 @@ for _, forever in ipairs({ false, true }) do
                 spellNameInsideCastBar = largeCast, unitNameAnchorStyle = 1 }
             NamePlateSetupOptions = setup
             local uf = Frame()
-            uf.showOnlyName, uf.isFriend, uf.UpdateAnchors = false, false, function() end
+            uf.unit, uf.showOnlyName, uf.isFriend, uf.UpdateAnchors = "nameplate1", false, false, function() end
             uf.HealthBarsContainer, uf.CastBarsContainer = Frame(), Frame()
             uf.HealthBarsContainer.healthBar = Frame()
             uf.CastBarsContainer.castBar = Frame()
@@ -80,7 +89,7 @@ for _, forever in ipairs({ false, true }) do
             local cast, health = uf.CastBarsContainer, uf.HealthBarsContainer
             local function Near(a, b) assert(math.abs(a - b) < .00001, tostring(a) .. " ~= " .. tostring(b)) end
             local function Check()
-                local width = NamePlateConstants.NAME_PLATE_WIDTH * scale
+                local width = nativeWidth * scale
                     - cast.points.BOTTOMLEFT[3] + cast.points.BOTTOMRIGHT[3]
                 Near(width, 206 * scale)
                 Near(width - health.points.BOTTOMLEFT[3] + health.points.BOTTOMRIGHT[3], 206 * scale + 41)

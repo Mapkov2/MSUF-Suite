@@ -1,4 +1,4 @@
-## Interface: 120007, 120100, 120105, 16001
+## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite - Nameplates
 ## Notes: Optional styling for Blizzard's native nameplates.
 ## Author: Mapko
@@ -15,4 +15,8 @@ Roles.lua
 Text.lua
 Power.lua
 Threat.lua
+Level.lua
+CastTime.lua
+CVars.lua
+Auras.lua
 Skin.lua
