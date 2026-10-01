@@ -67,6 +67,9 @@ local function VisualFrame(parent)
     function frame:RegisterForClicks(value) self.clicks = value end
     function frame:RegisterForDrag(value) self.drags = value end
     function frame:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
+    function frame:RegisterEvent(name) self.events = self.events or {}; self.events[name] = true end
+    function frame:RegisterUnitEvent(name, unit) self.events = self.events or {}; self.events[name] = unit end
+    function frame:UnregisterAllEvents() self.events = {} end
     function frame:GetAlpha() return self.alpha end
     function frame:SetAlpha(value) self.alpha = value end
     function frame:IsMouseEnabled() return self.mouseEnabled end
@@ -181,10 +184,21 @@ hooksecurefunc = function(frame, name, callback)
         hooks[frame == ContainerFrame6 and "ReagentItems" or name] = callback
     end
 end
-C_Container = { GetContainerItemInfo = function(_, slot)
-    infoCalls = infoCalls + 1
-    return items[slot]
-end }
+local function Copy(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for key, field in pairs(value) do copy[key] = field end
+    return copy
+end
+C_Container = {
+    GetContainerItemInfo = function(_, slot)
+        infoCalls = infoCalls + 1
+        return Copy(items[slot])
+    end,
+    GetContainerNumSlots = function(bag) return bag == 0 and #buttons or 0 end,
+    GetContainerItemQuestInfo = function() return { isQuestItem = false } end,
+}
+Constants = { InventoryConstants = { NumBagSlots = 4 } }
 -- WoW Forever has no global GetItemQualityColor (Retail keeps it only as a
 -- deprecated alias): quality colours come from C_Item on both clients.
 C_Item = {
@@ -285,13 +299,23 @@ local state = { IsCombatLocked = function() return combat end,
 state.Finite = S.Finite
 state.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state)
-assert(loadfile(root .. "/MSUF_Suite_Bags/Bags.lua"))("MSUF_Suite_Bags", {
-    NS = state, Suite = S,
-})
-assert(loadfile(root .. "/MSUF_Suite_Bags/BankItemLevel.lua"))("MSUF_Suite_Bags", {
-    NS = state, Suite = S, BagsModule = module,
-})
-assert(module and #fonts == 0 and #textures == 0 and not next(hooks), "dormant module did work before enable")
+local bagsPrivate = { NS = state, Suite = S }
+for _, file in ipairs({ "SlotCache", "Bags" }) do
+    assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
+end
+-- BAG_UPDATE(bag) reaches the shared slot cache before Blizzard's UpdateItems.
+local function BagChanged()
+    local cache = bagsPrivate.SlotCache
+    assert(cache.events and cache.events.events.BAG_UPDATE, "the slot cache does not listen for BAG_UPDATE")
+    cache.events.scripts.OnEvent(cache.events, "BAG_UPDATE", 0)
+end
+for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
+    assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
+        NS = state, Suite = S, BagsModule = module,
+    })
+end
+assert(module and #fonts == 0 and #textures == 0 and not next(hooks) and infoCalls == 0,
+    "dormant module did work before enable")
 local catalogNS = { Client = { isForever = false } }
 for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", catalogNS)
@@ -635,30 +659,33 @@ assert(levelCalls == firstCalls and module.pending == pendingBefore,
     "unchanged bag slots re-read item levels or allocated a new pending set")
 assert(enumerations == enumerationsBefore + 1
     and module.overlays[buttons[3]].slotOuter.showCalls == outerShows
-    and infoCalls == infoBefore + 2,
-    "unchanged native bag refresh repeated the slot walk or queried empty slots")
+    and infoCalls == infoBefore,
+    "a native bag refresh without a bag change read its slots again")
 infoBefore = infoCalls
 module:UpdateVisible()
-assert(infoCalls == infoBefore + 3,
-    "opening bags fetched an empty slot more than once")
+assert(infoCalls == infoBefore, "repainting an unchanged open bag read its slots again")
 local originalHasItem = buttons[1].HasItem
 buttons[1].HasItem = function() return "secret" end
 infoBefore = infoCalls
+BagChanged()
 hooks.UpdateItems()
-assert(infoCalls == infoBefore + 2,
-    "unknown HasItem state skipped a potentially occupied slot")
+assert(infoCalls == infoBefore + 3,
+    "a changed bag must read each of its slots exactly once, occupied, empty or unknown")
 buttons[1].HasItem = originalHasItem
 
 items[1] = { hyperlink = "gear-b", itemID = 103, quality = 4 }
+BagChanged()
 hooks.UpdateItems()
 assert(module.overlays[buttons[1]].label.text == "651", "changed slot kept its old item level")
 items[3] = { hyperlink = "gear-loading", itemID = 104, quality = 2 }
+BagChanged()
 hooks.UpdateItems()
 assert(requests[104] == 1 and context.events.GET_ITEM_INFO_RECEIVED
     and not module.overlays[buttons[3]].label.shown, "missing item data was not deferred")
 hooks.UpdateItems()
 assert(requests[104] == 1, "pending item data was requested repeatedly")
 items[2] = { hyperlink = "gear-loading", itemID = 104, quality = 2 }
+BagChanged()
 hooks.UpdateItems()
 assert(requests[104] == 1 and #module.pending[104] == 2,
     "duplicate pending items were not grouped under one item request")
@@ -670,21 +697,26 @@ assert(module.overlays[buttons[3]].label.text == "599"
     and module.overlays[buttons[2]].label.text == "599"
     and module.overlays[buttons[2]].label.shown
     and not context.events.GET_ITEM_INFO_RECEIVED
-    and infoCalls == infoBefore + 2 and enumerations == enumerationsBefore,
-    "item data completion rescanned the bag or missed a duplicate item")
+    and infoCalls == infoBefore and enumerations == enumerationsBefore,
+    "item data completion read slots again, rescanned the bag or missed a duplicate item")
 items[2] = { hyperlink = "food", itemID = 102, quality = 1 }
+BagChanged()
 hooks.UpdateItems()
 items[3] = { hyperlink = "gear-vanished", itemID = 105, quality = 2 }
+BagChanged()
 hooks.UpdateItems()
 assert(requests[105] == 1 and module.requested[105], "new missing item data was not requested")
 items[3] = nil
+BagChanged()
 hooks.UpdateItems()
 assert(not module.requested[105] and not context.events.GET_ITEM_INFO_RECEIVED,
     "a removed item left a stale request or item event")
 items[3] = { hyperlink = "gear-vanished", itemID = 105, quality = 2 }
+BagChanged()
 hooks.UpdateItems()
 assert(requests[105] == 2, "a returning item could not request its missing data again")
 items[3] = nil
+BagChanged()
 hooks.UpdateItems()
 
 module.config.itemLevelSize = 15
@@ -714,6 +746,7 @@ module.config.showItemLevel = true
 module:Refresh()
 assert(module.overlays[buttons[1]].label.shown, "turning labels on did not repaint")
 items[1] = { hyperlink = "gear-a", itemID = 101, quality = 4, isBound = false }
+BagChanged()
 module.config.showBindBadge = true
 module:Refresh()
 assert(module.overlays[buttons[1]].bindBadge and module.overlays[buttons[1]].bindBadge.text == "BoE"
@@ -721,10 +754,12 @@ assert(module.overlays[buttons[1]].bindBadge and module.overlays[buttons[1]].bin
     and not module.overlays[buttons[2]].bindBadge,
     "bind badges did not distinguish equipment from other items")
 items[1].isBound = true
+BagChanged()
 hooks.UpdateItems()
 assert(not module.overlays[buttons[1]].bindBadge.shown,
     "already-bound BoE item kept a misleading BoE badge")
 items[1].isBound = false
+BagChanged()
 hooks.UpdateItems()
 assert(module.overlays[buttons[1]].bindBadge.shown,
     "unbound BoE badge did not return")
@@ -746,10 +781,12 @@ module:Refresh()
 assert(module.overlays[buttons[1]].bindBadge.shown,
     "re-enabling bind badges did not repaint")
 items[1] = { hyperlink = "gear-b", itemID = 101, quality = 4, isBound = false }
+BagChanged()
 hooks.UpdateItems()
 assert(module.overlays[buttons[1]].bindBadge.text == "WuE",
     "reused bag button kept a stale binding badge")
 items[1] = { hyperlink = "gear-a", itemID = 101, quality = 4, isBound = false }
+BagChanged()
 module.config.showItemLevel = true
 module:Refresh()
 buttons[4] = {
@@ -761,6 +798,7 @@ buttons[4] = {
     SetItemButtonTexture = buttons[1].SetItemButtonTexture,
 }
 items[4] = { hyperlink = "gear-a", itemID = 101, quality = 4 }
+BagChanged()
 combat = true
 hooks.UpdateItems()
 assert(queued > 0 and not module.overlays[buttons[4]].label, "combat created a new label on a native button")
@@ -768,6 +806,7 @@ combat = false
 module:Refresh()
 assert(module.overlays[buttons[4]].label.shown, "queued label was not created after combat")
 items[3] = nil
+BagChanged()
 module.active = false
 module:Disable()
 bagMode = context.before

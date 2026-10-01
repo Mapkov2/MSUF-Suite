@@ -1,375 +1,14 @@
 local _, Private = ...
 local NS, S = Private.NS, Private.Suite
+local Slots = Private.SlotCache
 -- The controller restores the player's combinedBags CVar when disabled.
 local M = { overlays = setmetatable({}, { __mode = "k" }), pending = {}, pendingPool = {}, requested = {} }
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
-local floor = math.floor
-local TEXT = {
-    session = S.Text("Session"),
-    drag = S.Text("Drag to move"),
-    options = S.Text("Click for bag options"),
-}
-local NO_VALUE = "—"
-
-local Finite = S.Finite
-local function PublicMoney()
-    local value = GetMoney()
-    if not Finite(value) or value < 0 then return nil end
-    return floor(value)
-end
-
--- Losses use the ASCII hyphen-minus.
-local function GoldDeltaText(delta)
-    return TEXT.session .. " " .. (delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta))
-end
-
 -- Surface sits below native item buttons; see upstream/live ContainerFrame.xml.
 local function WindowTexture(frame, layer, sublevel)
     return S.CreateTexture(frame, nil, layer, nil, sublevel)
 end
-
-local function Edge(shell, from, to)
-    local texture = WindowTexture(shell, "ARTWORK", -6)
-    texture:SetPoint(from, shell, from, 0, 0)
-    texture:SetPoint(to, shell, to, 0, 0)
-    return texture
-end
-
-local function NewGoldLabel(frame)
-    local goldLabel = S.CreateFontString(frame.MoneyFrame, nil, "OVERLAY")
-    -- Follow Blizzard's money row as currencies move it upward.
-    goldLabel:SetPoint("LEFT", frame.MoneyFrame, "LEFT", 4, 0)
-    -- upstream/live leaves 210px left of the right-side coin buttons.
-    goldLabel:SetWidth(210)
-    goldLabel:SetJustifyH("LEFT")
-    goldLabel:SetWordWrap(false)
-    goldLabel:Hide()
-    return goldLabel
-end
-
--- Returns the window style: textures [1] shadow, [2] body, [3] header,
--- [4] header line, [5] footer (combined bag only), [6..9] border edges.
-local function NewWindowStyle(frame, combined)
-    local panel = frame.Bg
-    if not panel or not frame.NineSlice then return nil end
-
-    local shadow = WindowTexture(frame, "BACKGROUND", -8)
-    shadow:SetPoint("TOPLEFT", frame, "TOPLEFT", -3, 3)
-    shadow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 3, -3)
-
-    local shell = S.CreateFrame("Frame", nil, frame)
-    shell:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
-    shell:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
-    shell:SetFrameLevel(panel:GetFrameLevel())
-    shell:EnableMouse(false)
-
-    local body = WindowTexture(shell, "BACKGROUND", -7)
-    body:SetPoint("TOPLEFT", shell, "TOPLEFT", 0, 0)
-    body:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", 0, 0)
-
-    local header = WindowTexture(shell, "BORDER", -7)
-    header:SetPoint("TOPLEFT", shell, "TOPLEFT", 0, 0)
-    header:SetPoint("TOPRIGHT", shell, "TOPRIGHT", 0, 0)
-    header:SetHeight(combined and 62 or 40)
-
-    local line = WindowTexture(shell, "ARTWORK", -7)
-    line:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
-    line:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
-    line:SetHeight(1)
-
-    local footer, goldLabel
-    if combined then
-        footer = WindowTexture(shell, "BORDER", -6)
-        footer:SetPoint("BOTTOMLEFT", shell, "BOTTOMLEFT", 0, 0)
-        footer:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", 0, 0)
-        footer:SetHeight(32)
-        goldLabel = NewGoldLabel(frame)
-    end
-
-    local top = Edge(shell, "TOPLEFT", "TOPRIGHT")
-    top:SetHeight(1)
-    local bottom = Edge(shell, "BOTTOMLEFT", "BOTTOMRIGHT")
-    bottom:SetHeight(1)
-    local left = Edge(shell, "TOPLEFT", "BOTTOMLEFT")
-    left:SetWidth(1)
-    local right = Edge(shell, "TOPRIGHT", "BOTTOMRIGHT")
-    right:SetWidth(1)
-    return { shell = shell, shadow, body, header, line, footer, top, bottom, left, right, goldLabel = goldLabel }
-end
-
--- Title drag handles share these scripts; handle.window is the bag frame.
-local function HandleMouseDown(handle) handle.ignoreClick = false end
-
-local function HandleClick(handle, button)
-    if handle.ignoreClick then
-        handle.ignoreClick = false
-        return
-    end
-    if button ~= "LeftButton" or IsShiftKeyDown() then return end
-    -- The portrait button is Blizzard's bag menu DropdownButton.
-    local menu = handle.window.PortraitButton
-    menu:SetMenuOpen(not menu:IsMenuOpen())
-end
-
-local function HandleDragStart(handle) M:BeginWindowDrag(handle.window) end
-
-local function HandleDragStop(handle)
-    handle.ignoreClick = true
-    M:EndWindowDrag(handle.window)
-end
-
-local function HandleHide(handle)
-    if M.dragWindow and M.dragWindow.frame == handle.window then M:CancelWindowDrag() end
-end
-
-local function HandleEnter(handle)
-    GameTooltip:SetOwner(handle, "ANCHOR_TOP")
-    GameTooltip:SetText(TEXT.drag)
-    GameTooltip:AddLine(TEXT.options, 0.75, 0.8, 0.85)
-    GameTooltip:Show()
-end
-
-local function HandleLeave()
-    GameTooltip:Hide()
-end
-
-local function NewDragHandle(frame)
-    local title = frame.TitleContainer
-    if not title or not frame.PortraitButton then return nil end
-    local handle = S.CreateFrame("Button", nil, frame)
-    handle.window = frame
-    handle:SetAllPoints(title)
-    handle:SetFrameLevel(math.max(title:GetFrameLevel(), frame.PortraitButton:GetFrameLevel()) + 1)
-    handle:EnableMouse(true)
-    handle:RegisterForClicks("LeftButtonUp")
-    handle:RegisterForDrag("LeftButton")
-    handle:SetScript("OnMouseDown", HandleMouseDown)
-    handle:SetScript("OnClick", HandleClick)
-    handle:SetScript("OnDragStart", HandleDragStart)
-    handle:SetScript("OnDragStop", HandleDragStop)
-    handle:SetScript("OnHide", HandleHide)
-    handle:SetScript("OnEnter", HandleEnter)
-    handle:SetScript("OnLeave", HandleLeave)
-    return handle
-end
-
-local function PaintWindow(textures, c)
-    local r, g, b = S.RGB(c.backgroundColor)
-    local accentR, accentG, accentB = S.RGB(c.accentColor)
-    local opacity = c.backgroundOpacity / 100
-    textures[1]:SetColorTexture(0, 0, 0, 0.6 * opacity)
-    textures[2]:SetColorTexture(r, g, b, opacity)
-    textures[3]:SetColorTexture(r + (1 - r) * 0.12, g + (1 - g) * 0.12, b + (1 - b) * 0.12, opacity)
-    textures[4]:SetColorTexture(accentR, accentG, accentB, 0.9)
-    if textures[5] then textures[5]:SetColorTexture(r * 0.7, g * 0.7, b * 0.7, opacity) end
-    textures[6]:SetColorTexture(accentR, accentG, accentB, 0.8)
-    for i = 7, 9 do
-        textures[i]:SetColorTexture(r + (1 - r) * 0.2, g + (1 - g) * 0.2, b + (1 - b) * 0.2, 0.95)
-    end
-    if textures.goldLabel then S.SetFont(textures.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
-end
-
--- Blizzard's title router forwards to PortraitButton, so the bag menu
--- remains available from the heading. Hide the full button: the Suite
--- skin can otherwise leave a styled but empty plate in this corner.
-local function OwnChrome(self, frame, textures)
-    local context = self.context
-    context:Alpha(frame.Bg, 0)
-    context:Alpha(frame.NineSlice, 0)
-    if frame.PortraitContainer then context:Alpha(frame.PortraitContainer, 0) end
-    if frame.PortraitButton then context:HideControl(frame.PortraitButton, true) end
-    local title = frame.TitleContainer
-    if not title or NS.IsCombatLocked() then return end
-    if not textures.titlePoints then
-        local points = {}
-        for point = 1, title:GetNumPoints() do points[point] = { title:GetPoint(point) } end
-        textures.titlePoints = points
-    end
-    frame:SetTitleOffsets(8)
-    if not textures.dragHandle then textures.dragHandle = NewDragHandle(frame) end
-end
-
-local function StyleWindows(self)
-    self.windows = self.windows or {}
-    local targets = { _G.ContainerFrameCombinedBags, _G.ContainerFrame6 }
-    for i = 1, #targets do
-        local frame = targets[i]
-        if frame and not self.windows[frame] then self.windows[frame] = NewWindowStyle(frame, i == 1) end
-    end
-    for frame, textures in pairs(self.windows) do
-        textures.shell:Show()
-        textures[1]:Show()
-        OwnChrome(self, frame, textures)
-        if textures.dragHandle then textures.dragHandle:SetShown(not S.editMode) end
-        PaintWindow(textures, self.config)
-    end
-end
-
--- The login baseline is captured by MSUF Suite at PLAYER_ENTERING_WORLD
--- (MSUF_Suite/Core/SessionGold.lua). When it is unreadable, the first public
--- amount seen here becomes it.
-local function GoldBaseline(self, money)
-    local baseline = NS.StoredSessionGold()
-    if NS.loginKind == "login" and NS.goldSessionCaptured ~= true then baseline = nil end
-    if baseline then return baseline end
-    if not money then return nil end
-    self.goldFallback = self.goldFallback or money
-    if NS.loginKind then NS.SetSessionGold(self.goldFallback) end
-    return self.goldFallback
-end
-
-function M:UpdateGold()
-    local style = self.windows and self.frame and self.windows[self.frame]
-    local label = style and style.goldLabel
-    if not label then return end
-    if not self.config.showSessionGold then
-        label:Hide()
-        return
-    end
-    local money = PublicMoney()
-    local baseline = GoldBaseline(self, money)
-    if not money or not baseline then
-        label:SetText(TEXT.session .. " " .. NO_VALUE)
-        label:SetTextColor(0.72, 0.77, 0.82)
-    else
-        local delta = money - baseline
-        label:SetText(GoldDeltaText(delta))
-        if delta > 0 then
-            label:SetTextColor(0.33, 0.86, 0.62)
-        elseif delta < 0 then
-            label:SetTextColor(0.94, 0.43, 0.45)
-        else
-            label:SetTextColor(0.72, 0.77, 0.82)
-        end
-    end
-    label:Show()
-end
-
-local function ApplyGoldEvents(self)
-    if self.config.showSessionGold then
-        self.context:Event("PLAYER_MONEY", M.UpdateGold, true)
-        self.context:Event("PLAYER_ENTERING_WORLD", M.UpdateGold, true)
-    else
-        self.context:RemoveEvent("PLAYER_MONEY")
-        self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
-    end
-    self:UpdateGold()
-end
-
--- GetScaledRect and GetCursorPosition are both in screen pixels. Convert the
--- window's current bottom-right edge into its own anchor units so dragging
--- works at any UI scale, including Blizzard's automatic bag scale. The screen
--- rect covers every native anchor: Blizzard anchors only the first open bag
--- to the screen and chains the others into bag columns.
-local function WindowOffset(frame)
-    local left, bottom, width = frame:GetScaledRect()
-    local parentLeft, parentBottom, parentWidth = UIParent:GetScaledRect()
-    local scale = frame:GetEffectiveScale()
-    if not Finite(left) or not Finite(bottom) or not Finite(width)
-        or not Finite(parentLeft) or not Finite(parentBottom) or not Finite(parentWidth)
-        or not Finite(scale) or scale <= 0 then
-        return nil
-    end
-    return (left + width - parentLeft - parentWidth) / scale, (bottom - parentBottom) / scale, scale
-end
-
-function M:BeginWindowDrag(frame)
-    if not self.active or NS.IsCombatLocked() or S.editMode or not frame:IsShown() or self.dragWindow then
-        return
-    end
-    -- StartMoving raises on a frame that is not movable.
-    if not frame:IsMovable() then return end
-    local x, y, scale = WindowOffset(frame)
-    local cursorX, cursorY = GetCursorPosition()
-    if not x or not Finite(cursorX) or not Finite(cursorY) then return end
-    self.dragWindow = { frame = frame, x = x, y = y, scale = scale, cursorX = cursorX, cursorY = cursorY }
-    frame:StartMoving()
-end
-
-function M:CancelWindowDrag()
-    local drag = self.dragWindow
-    if not drag then return end
-    self.dragWindow = nil
-    drag.frame:StopMovingOrSizing()
-    if self.active and not NS.IsCombatLocked() then self:RefreshWindowLayout() end
-end
-
-function M:EndWindowDrag(frame)
-    local drag = self.dragWindow
-    if not drag or drag.frame ~= frame then return end
-    self.dragWindow = nil
-    frame:StopMovingOrSizing()
-    if not self.active or NS.IsCombatLocked() then return end
-    local cursorX, cursorY = GetCursorPosition()
-    if not Finite(cursorX) or not Finite(cursorY) then
-        self:RefreshWindowLayout()
-        return
-    end
-    local x = floor((drag.x + (cursorX - drag.cursorX) / drag.scale) * 10 + 0.5) / 10
-    local y = floor((drag.y + (cursorY - drag.cursorY) / drag.scale) * 10 + 0.5) / 10
-    local values
-    if frame == self.frame then
-        values = { windowX = x, windowY = y, windowMoved = true }
-    else
-        values = { reagentWindowX = x, reagentWindowY = y, reagentWindowMoved = true }
-    end
-    if not S.SetMany("bags", values) then self:RefreshWindowLayout() end
-end
-
--- MSUF Edit Mode starts a drag from the captured offsets. While a window
--- follows Blizzard's anchor, its saved offsets are unused: start from the
--- live window instead, or the first drag would jump to the saved position.
-local function CaptureLiveOffset(values, frame, movedKey, xKey, yKey)
-    if not frame or M.config[movedKey] then return end
-    local x, y = WindowOffset(frame)
-    if x then values[xKey], values[yKey] = x, y end
-end
-
-local function CaptureCombinedOffset(values)
-    CaptureLiveOffset(values, M.frame, "windowMoved", "windowX", "windowY")
-end
-
-local function CaptureReagentOffset(values)
-    CaptureLiveOffset(values, _G.ContainerFrame6, "reagentWindowMoved", "reagentWindowX", "reagentWindowY")
-end
-
--- Blizzard recalculates the bag anchors and scale whenever its container
--- layout changes. Reapply the Suite adjustment after that native layout,
--- while leaving the window's item grid and click handlers untouched.
-local function AfterNativeWindowLayout()
-    if not M.active or NS.IsCombatLocked() then return end
-    local frame = M.frame
-    if frame and frame:IsShown() then
-        local scale = frame:GetScale()
-        if Finite(scale) and scale > 0 then M.nativeScale = scale end
-    end
-    M:ApplyWindowLayout()
-end
-
-function M:ApplyWindowLayout()
-    local frame = self.frame
-    if not self.active or NS.IsCombatLocked() then return end
-    local c = self.config
-    if frame and frame:IsShown() then
-        local nativeScale = self.nativeScale or frame:GetScale()
-        if Finite(nativeScale) and nativeScale > 0 then self.context:Scale(frame, nativeScale * c.windowScale) end
-        if c.windowMoved then self.context:Position(frame, "BOTTOMRIGHT", c.windowX, c.windowY) end
-    end
-    local reagent = _G.ContainerFrame6
-    if reagent and reagent:IsShown() and c.reagentWindowMoved then
-        self.context:Position(reagent, "BOTTOMRIGHT", c.reagentWindowX, c.reagentWindowY)
-    end
-end
-
-function M:RefreshWindowLayout()
-    local reagent = _G.ContainerFrame6
-    if NS.IsCombatLocked() or not ((self.frame and self.frame:IsShown())
-        or (reagent and reagent:IsShown())) then
-        return
-    end
-    -- The post-hook reapplies the Suite layout after Blizzard's layout pass.
-    UpdateContainerFrameAnchors()
-end
+M.WindowTexture = WindowTexture
 
 local function Hide(record)
     if not record then return end
@@ -436,7 +75,7 @@ local function StyleSlot(self, button)
 end
 
 local function StyleVisibleSlots(self, frame)
-    if not frame or not frame:IsShown() then return end
+    if not frame:IsShown() then return end
     for _, button in frame:EnumerateValidItems() do StyleSlot(self, button) end
 end
 
@@ -611,7 +250,7 @@ local function ItemInfoReceived(module, _, itemID, success)
     if waiting and module.frame and module.frame:IsShown() then
         for i = 1, #waiting do
             local button = waiting[i]
-            local info = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
+            local info = Slots.Get(button:GetBagID(), button:GetID())
             if module.config.showItemLevel then Paint(module, button, module.pending, info) end
             PaintBindBadge(module, button, module.pending, info)
         end
@@ -648,7 +287,9 @@ local function HideBindBadges(self)
     self.bindBadgesHidden = true
 end
 
-function M:UpdateVisible(nativeItemsReady)
+-- Bags.lua, the inventory view and the bank view read slots through the
+-- shared cache (SlotCache.lua): an unchanged bag costs no client call.
+function M:UpdateVisible()
     local frame = self.frame
     if not self.active or not frame or not frame:IsShown() then return end
     if NS.IsCombatLocked() then self.needsItemRefresh = true end
@@ -663,16 +304,14 @@ function M:UpdateVisible(nativeItemsReady)
     end
     local pending = self.pending
     ClearPending(self)
+    for bag = 0, Constants.InventoryConstants.NumBagSlots do Slots.Sync(bag) end
     for _, button in frame:EnumerateValidItems() do
         StyleSlot(self, button)
-        -- Blizzard's UpdateItems has already refreshed HasItem before its
-        -- post-hook. Empty slots need no second GetContainerItemInfo call.
-        local hasItem = nativeItemsReady and button:HasItem()
-        if nativeItemsReady and S.Public(hasItem) and not hasItem then
+        local bag, slot = button:GetBagID(), button:GetID()
+        local info = S.Finite(bag) and S.Finite(slot) and Slots.Get(bag, slot)
+        if not info then
             Hide(self.overlays[button])
         else
-            local bag, slot = button:GetBagID(), button:GetID()
-            local info = S.Public(bag) and S.Public(slot) and C_Container.GetContainerItemInfo(bag, slot)
             if self.config.showItemLevel then Paint(self, button, pending, info) end
             PaintBindBadge(self, button, pending, info)
         end
@@ -692,7 +331,7 @@ local function RefreshMovers()
 end
 
 local function CombinedItemsUpdated()
-    if M.active then M:UpdateVisible(true) end
+    if M.active then M:UpdateVisible() end
 end
 
 local function CombinedShown()
@@ -703,12 +342,12 @@ local function CombinedShown()
 end
 
 local function ReagentItemsUpdated()
-    if M.active then StyleVisibleSlots(M, _G.ContainerFrame6) end
+    if M.active then StyleVisibleSlots(M, ContainerFrame6) end
 end
 
 local function ReagentShown()
     if not M.active then return end
-    StyleVisibleSlots(M, _G.ContainerFrame6)
+    StyleVisibleSlots(M, ContainerFrame6)
     M:RefreshWindowLayout()
     RefreshMovers()
 end
@@ -719,13 +358,10 @@ local function InstallHooks(self)
     hooksecurefunc(frame, "UpdateItems", CombinedItemsUpdated)
     frame:HookScript("OnShow", CombinedShown)
     frame:HookScript("OnHide", RefreshMovers)
-    local reagent = _G.ContainerFrame6
-    if reagent then
-        hooksecurefunc(reagent, "UpdateItems", ReagentItemsUpdated)
-        reagent:HookScript("OnShow", ReagentShown)
-        reagent:HookScript("OnHide", RefreshMovers)
-    end
-    hooksecurefunc("UpdateContainerFrameAnchors", AfterNativeWindowLayout)
+    hooksecurefunc(ContainerFrame6, "UpdateItems", ReagentItemsUpdated)
+    ContainerFrame6:HookScript("OnShow", ReagentShown)
+    ContainerFrame6:HookScript("OnHide", RefreshMovers)
+    hooksecurefunc("UpdateContainerFrameAnchors", M.AfterNativeWindowLayout)
     self.hooked = true
 end
 
@@ -745,7 +381,8 @@ local function CombatEnded(module)
 end
 
 function M:Enable()
-    self.frame = _G.ContainerFrameCombinedBags
+    self.frame = ContainerFrameCombinedBags
+    Slots.Start()
     InstallHooks(self)
     self.context:Event("USE_COMBINED_BAGS_CHANGED", CombinedModeChanged, true)
     self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, true)
@@ -794,8 +431,8 @@ function M:Refresh()
         labelChanged = true
         for _, record in pairs(self.overlays) do record.bindStyled = nil end
     end
-    if windowChanged then StyleWindows(self) end
-    if goldChanged then ApplyGoldEvents(self) end
+    if windowChanged then self:StyleWindows() end
+    if goldChanged then self:ApplyGoldEvents() end
     if labelChanged then
         if self.windows then
             for _, textures in pairs(self.windows) do
@@ -819,26 +456,12 @@ function M:Refresh()
         self:ApplyBankLevels()
         self.needsBankRefresh = nil
     end
-    if slotChanged or deferredItems then StyleVisibleSlots(self, _G.ContainerFrame6) end
+    if slotChanged or deferredItems then StyleVisibleSlots(self, ContainerFrame6) end
     self.needsItemRefresh = nil
     self:RefreshWindowLayout()
     RememberVisuals(self, c)
 end
 
-local function RestoreWindows(self)
-    if not self.windows then return end
-    for frame, textures in pairs(self.windows) do
-        if textures.goldLabel then textures.goldLabel:Hide() end
-        if textures.dragHandle then textures.dragHandle:Hide() end
-        textures.shell:Hide()
-        textures[1]:Hide()
-        if textures.titlePoints and frame.TitleContainer and not NS.IsCombatLocked() then
-            local title = frame.TitleContainer
-            title:ClearAllPoints()
-            for i = 1, #textures.titlePoints do title:SetPoint(unpack(textures.titlePoints[i])) end
-        end
-    end
-end
 
 function M:Disable()
     self:CancelWindowDrag()
@@ -857,41 +480,13 @@ function M:Disable()
     end
     self:HideBankLevels()
     self.context:RemoveEvent("BANKFRAME_OPENED")
-    self.context:RemoveEvent("ADDON_LOADED")
-    RestoreWindows(self)
+    self:RestoreWindows()
+    Slots.Stop()
     ClearPending(self)
     self.pending, self.pendingPool, self.requested = {}, {}, {}
     if not NS.IsCombatLocked() then UpdateContainerFrameAnchors() end
     self.nativeScale = nil
     self.frame = nil
-end
-
-function M:RegisterMovers()
-    S.RegisterOwnedMover("bags", "combined", {
-        label = "Combined bags", order = 875,
-        getFrame = function() return self.frame end,
-        isEnabled = function() return self.frame and self.frame:IsShown() end,
-        xKey = "windowX", yKey = "windowY", point = "BOTTOMRIGHT",
-        capture = CaptureCombinedOffset,
-        moveValues = { windowMoved = true }, resetKeys = { "windowMoved" },
-        historyKeys = { "windowMoved", "windowScale" },
-        extraControls = {
-            {
-                id = "size", label = "Size %", kind = "number", min = 65, max = 150, step = 1,
-                get = function() return floor(S.Config("bags").windowScale * 100 + 0.5) end,
-                set = function(value) return S.Set("bags", "windowScale", value / 100) end,
-            },
-        },
-    })
-    S.RegisterOwnedMover("bags", "reagent", {
-        label = "Reagent bag", order = 876,
-        getFrame = function() return _G.ContainerFrame6 end,
-        isEnabled = function() return _G.ContainerFrame6 and _G.ContainerFrame6:IsShown() end,
-        xKey = "reagentWindowX", yKey = "reagentWindowY", point = "BOTTOMRIGHT",
-        capture = CaptureReagentOffset,
-        moveValues = { reagentWindowMoved = true }, resetKeys = { "reagentWindowMoved" },
-        historyKeys = { "reagentWindowMoved" },
-    })
 end
 
 Private.BagsModule = M

@@ -16,12 +16,11 @@ function M:HideBankLevels()
     for itemID in pairs(self.bankRequested) do self.bankRequested[itemID] = nil end
 end
 
+-- Blizzard_UIPanels_Game creates BankFrame at startup; only the Retail one
+-- has a BankPanel (Forever loads the Camelot bank).
 local function BankVisible(self)
-    local frame = _G.BankFrame
-    return self.active and not NS.Client.isForever and self.config.showBankItemLevel
-        and frame and not NS.Safety.IsForbidden(frame) and frame:IsShown()
-        and frame.BankPanel and not NS.Safety.IsForbidden(frame.BankPanel)
-        and frame.BankPanel:IsShown()
+    return self.active and not self.organizedBankActive and not NS.Client.isForever and self.config.showBankItemLevel
+        and BankFrame:IsShown() and BankFrame.BankPanel:IsShown()
 end
 
 local function PaintBankButton(self, button, info)
@@ -128,7 +127,7 @@ end
 
 function M:UpdateBank(searchChanged)
     if not BankVisible(self) then self:HideBankLevels(); return end
-    local panel = _G.BankFrame.BankPanel
+    local panel = BankFrame.BankPanel
     for button in panel:EnumerateValidItems() do
         HookBankButton(self, button)
         -- Native Refresh has already fetched itemInfo. A search change only
@@ -149,25 +148,20 @@ BankButtonRefreshed = function(button)
 end
 
 local function BankSearchUpdated(panel)
-    if M.active and M.config.showBankItemLevel and _G.BankFrame
-        and panel == _G.BankFrame.BankPanel then
+    if M.active and M.config.showBankItemLevel and panel == BankFrame.BankPanel then
         M:UpdateBank(true)
     end
 end
 
 local function BankPanelShown(panel)
-    if M.active and M.config.showBankItemLevel and _G.BankFrame
-        and panel == _G.BankFrame.BankPanel then
+    if M.active and M.config.showBankItemLevel and panel == BankFrame.BankPanel then
         M:UpdateBank()
     end
 end
 
 local function InstallBankHooks(self)
     if self.bankHooked or NS.Client.isForever then return end
-    local frame = _G.BankFrame
-    if not frame or NS.Safety.IsForbidden(frame) then return end
-    local panel = frame.BankPanel
-    if not panel or NS.Safety.IsForbidden(panel) then return end
+    local panel = BankFrame.BankPanel
     -- XML already copied BankPanelMixin into this native panel before the
     -- Suite loaded. Hook the instance, then attach existing/new pooled buttons
     -- after upstream/live GenerateItemSlotsForSelectedTab has shown them.
@@ -182,24 +176,14 @@ local function BankOpened(self)
     self:UpdateBank()
 end
 
-local function BankAddonLoaded(self, _, addon)
-    if addon == "Blizzard_UIPanels_Game" then
-        InstallBankHooks(self)
-        if self.bankHooked then self.context:RemoveEvent("ADDON_LOADED") end
-    end
-end
-
 function M:ApplyBankLevels()
     if NS.Client.isForever or not self.config.showBankItemLevel then
         self.context:RemoveEvent("BANKFRAME_OPENED")
-        self.context:RemoveEvent("ADDON_LOADED")
         self:HideBankLevels()
         if not next(self.pending) then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
         return
     end
     InstallBankHooks(self)
     self.context:Event("BANKFRAME_OPENED", BankOpened)
-    if not self.bankHooked then self.context:Event("ADDON_LOADED", BankAddonLoaded)
-    else self.context:RemoveEvent("ADDON_LOADED") end
     self:UpdateBank()
 end

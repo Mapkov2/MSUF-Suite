@@ -9,5 +9,22 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
+SlotCache.lua
 Bags.lua
+BagWindow.lua
 BankItemLevel.lua
+InventoryModel.lua
+InventoryIndex.lua
+GridView.lua
+InventoryDetails.lua
+CategoryEditor.lua
+InventoryView.lua
+BankIndex.lua
+BankActions.lua
+BankInventory.lua
+Finance.lua
+CurrencyPicker.lua
+SplitInventory.lua
+AutoSplit.lua
+StackSplitter.lua
+SortDirection.lua
