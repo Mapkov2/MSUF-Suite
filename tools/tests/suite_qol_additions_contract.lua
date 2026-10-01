@@ -192,6 +192,22 @@ assert(reminder:ClearSaved() and reminder.config.expectedConfigID == 0
     "clear action retained a character-specific expectation")
 
 TalkingHeadFrame, BossBanner, QuickJoinToastButton = Frame(), Frame(), nil
+-- Blizzard's PlayCurrent shows the frame and then starts the voice-over.
+local stopped, nextHandle = {}, 40
+function TalkingHeadFrame:PlayCurrent()
+    self:Show()
+    nextHandle = nextHandle + 1
+    self.voHandle = nextHandle
+end
+hooksecurefunc = function(frame, method, callback)
+    assert(frame == TalkingHeadFrame and method == "PlayCurrent", "unexpected secure hook " .. tostring(method))
+    local original = frame[method]
+    frame[method] = function(...)
+        original(...)
+        callback(...)
+    end
+end
+StopSound = function(handle) stopped[#stopped + 1] = handle end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/QuietPopups.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local quiet = modules.quietPopups
 quiet.context = Context()
@@ -223,6 +239,18 @@ combat = false
 quiet.config.bossBanner = false
 quiet:Refresh()
 assert(BossBanner.alpha == 1, "combat suppression did not restore boss banner")
+-- A hidden Talking Head does not keep talking.
+TalkingHeadFrame:PlayCurrent()
+assert(#stopped == 0, "a shown Talking Head lost its voice-over")
+quiet.config.talkingHead = true
+quiet:Refresh()
+TalkingHeadFrame:PlayCurrent()
+assert(TalkingHeadFrame.alpha == 0 and stopped[1] == TalkingHeadFrame.voHandle,
+    "a hidden Talking Head kept playing its voice-over")
+quiet.config.talkingHead = false
+quiet:Refresh()
+TalkingHeadFrame:PlayCurrent()
+assert(TalkingHeadFrame.alpha == 1 and #stopped == 1, "turning the option off kept the voice-over muted")
 quiet.config.quickJoin = true
 quiet:Refresh()
 assert(quiet.context.events.ADDON_LOADED, "late Quick Join addon was not observed when selected")
