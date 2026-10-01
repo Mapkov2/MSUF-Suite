@@ -44,8 +44,11 @@ local function Widget(kind)
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetStatusBarColor(...) Count("SetStatusBarColor"); self.color = { ... } end
+    -- Client contract: the duration sinks take secret arguments only from
+    -- untainted code (SecretArguments = "AllowedWhenUntainted").
     function w:SetTimerDuration(value, interpolation, direction)
         Count("SetTimerDuration")
+        assert(not IsSecret(value), "addon code passed a secret duration to SetTimerDuration")
         assert(interpolation ~= nil and direction ~= nil)
         self.duration, self.direction = value, direction
     end
@@ -67,7 +70,10 @@ Enum = { StatusBarInterpolation = { Immediate = 0 }, StatusBarTimerDirection = {
 C_DurationUtil = { CreateDurationTextBinding = function()
     return { SetFontString = function(self, v) self.text = v end,
         SetFormatter = function() end, SetUpdateInterval = function() end,
-        SetDuration = function(self, v) self.duration = v end,
+        SetDuration = function(self, v)
+            assert(not IsSecret(v), "addon code passed a secret duration to the text binding")
+            self.duration = v
+        end,
         SetEnabled = function(self, v) self.enabled = v end }
 end }
 C_StringUtil = { CreateSecondsFormatter = function()
@@ -132,7 +138,10 @@ UnitChannelInfo = function(unit)
     if c then return c.name, c.name, c.icon, Secret(), Secret(), false, c.locked, c.id, false, 0, nil end
 end
 UnitSpellTargetName = function(unit) Count("UnitSpellTargetName"); return targets[unit] end
-local function SecretCast() return { name = Secret(), icon = Secret(), id = Secret(), locked = Secret(), duration = Secret() } end
+-- A duration object is opaque and public (its contents may be secret);
+-- UnitCastingDuration may also return a secret one (SecretReturns).
+local function Opaque() return {} end
+local function SecretCast() return { name = Secret(), icon = Secret(), id = Secret(), locked = Secret(), duration = Opaque() } end
 
 local S = { Install = function(_, m) module = m end, Public = function(v) return not IsSecret(v) end,
     Finite = function(v) return type(v) == "number" end,
@@ -216,11 +225,23 @@ Fire("UNIT_SPELLCAST_FAILED", "nameplate7")
 assert(Live("nameplate7") and module.ordered[2].unit == "nameplate7", "a failed stop removed a running cast")
 -- Delays re-bind only the timer.
 texts, paints = Calls("SetText"), Calls("SetTimerDuration")
-casts.nameplate7.duration = Secret()
+casts.nameplate7.duration = Opaque()
 Fire("UNIT_SPELLCAST_DELAYED", "nameplate7")
 assert(Calls("SetTimerDuration") == paints + 1 and Same(first.duration, casts.nameplate7.duration)
     and Same(first.binding.duration, casts.nameplate7.duration) and Calls("SetText") == texts,
     "a delay repainted more than the timer")
+-- A secret duration reaches no duration sink: the cast stays listed as a
+-- full bar without a time, and a later public duration restores the timer.
+casts.nameplate7.duration = Secret()
+Fire("UNIT_SPELLCAST_DELAYED", "nameplate7")
+assert(Live("nameplate7") and Calls("SetTimerDuration") == paints + 1 and not first.binding.enabled
+    and first.value == 1 and first.maximum == 1 and first.time.text == "",
+    "a secret delayed duration reached a sink or kept a stale time")
+casts.nameplate7.duration = Opaque()
+Fire("UNIT_SPELLCAST_DELAYED", "nameplate7")
+assert(Calls("SetTimerDuration") == paints + 2 and first.binding.enabled
+    and Same(first.binding.duration, casts.nameplate7.duration), "a public duration did not restore the timer")
+paints = paints + 1
 -- The interrupt events name the new state; only the color changes.
 Fire("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate7")
 local locked = { S.RGB("7d8290") }
@@ -406,6 +427,15 @@ assert(module.visible == 0 and not module.host.shown and reads == beforeReads,
 casts.nameplate5 = SecretCast()
 Fire("UNIT_SPELLCAST_START", "nameplate5")
 assert(reads == beforeReads + 1 and module.ordered[1].row.stripe.shown, "the first listed cast skipped readiness")
+-- A cast whose duration is secret is still listed, without a timer.
+casts.nameplate6 = SecretCast()
+casts.nameplate6.duration = Secret()
+local timers = Calls("SetTimerDuration")
+Fire("UNIT_SPELLCAST_START", "nameplate6")
+local secretRow = Live("nameplate6") and module.entries.nameplate6.row
+assert(secretRow and secretRow.shown and Same(secretRow.name.text, casts.nameplate6.name)
+    and Calls("SetTimerDuration") == timers and not secretRow.binding.enabled and secretRow.value == 1,
+    "a cast with a secret duration was dropped or reached a duration sink")
 module:Disable()
 assert(module.visible == 0 and #module.ordered == 0 and not module.host.shown and not module.listening,
     "disable kept displayed casts")

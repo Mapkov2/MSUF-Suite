@@ -34,9 +34,12 @@ function CastTime.Restore(cast)
 end
 
 -- UnitCastingDuration and UnitChannelDuration return an opaque duration
--- object, or nothing without that kind of cast. The binding takes the object
--- as it is; a secret value is never handed over, because SetDuration accepts
--- secret arguments only from untainted code.
+-- object, or nothing without that kind of cast. The cast duration rule
+-- (shared with QualityOfLife/EnemyCastStack.lua): the object may itself be
+-- secret (UnitCastingDuration: SecretReturns, UnitDocumentation), and
+-- DurationTextBinding:SetDuration takes secret arguments only from untainted
+-- code (SecretArguments = "AllowedWhenUntainted"). A public object is bound
+-- as it is; a secret one shows no time; a public nil means no such cast.
 local function ApplyDuration(state, unit, getter)
     local duration = getter(unit)
     if not S.Public(duration) or duration == nil then return false end
