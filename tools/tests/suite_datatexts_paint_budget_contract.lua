@@ -9,9 +9,10 @@
 -- changed values relayout it.
 --
 -- Budgets are the measured baseline (2026-10-01, before the A-S3 DataTexts
--- restructuring) plus 2% (kilobytes: plus 2% and 0.05 KB of rounding slack). A change may only lower a number. Lower a budget
--- after an optimization; raise one only with a dated reason, never to hide a
--- regression. A harness change that moves the counts needs a new baseline.
+-- restructuring) plus 2%; kilobytes get another 0.05 KB of rounding slack.
+-- A change may only lower a number. Lower a budget after an optimization;
+-- raise one only with a dated reason, never to hide a regression. A harness
+-- change that moves the counts needs a new baseline.
 local root = assert(arg[1], "repository root required")
 local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
 local MEASURE_ONLY = os.getenv("MSUF_BUDGET_MEASURE") == "1"

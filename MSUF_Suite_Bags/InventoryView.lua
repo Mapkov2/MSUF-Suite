@@ -277,7 +277,8 @@ end
 
 -- Blizzard's SetItemButtonCount hides counts of one and shows "*" above its
 -- maximum; a merged total must be shown even where the shown stack holds one.
-local function SetCount(button, count)
+-- path: the bag font, read once per render (Grid.FontPath).
+local function SetCount(button, count, path)
     local text = button.Count
     if not text then return end
     local saved = V.nativeCountFonts[text]
@@ -285,7 +286,6 @@ local function SetCount(button, count)
         saved = { text:GetFont() }
         V.nativeCountFonts[text] = saved
     end
-    local path = Grid.FontPath()
     if saved.path ~= path or saved.size ~= M.config.itemCountSize then
         S.SetFont(text, path, M.config.itemCountSize, "OUTLINE")
         saved.path, saved.size = path, M.config.itemCountSize
@@ -298,20 +298,20 @@ local function SetCount(button, count)
     end
 end
 
-local function PaintSlot(item, x, y, row, count)
+local function PaintSlot(item, x, y, row, count, font)
     local button = item.button
     PlaceSlot(button, x, y, row)
-    SetCount(button, count)
+    SetCount(button, count, font)
     local junk = M.config.desaturateJunk and item.quality == 0
     SetItemButtonDesaturated(button, item.locked or junk or false)
-    P.InventoryDetails.Paint(button, item)
+    P.InventoryDetails.Paint(button, item, font)
 end
 
-local function PaintCell(cell, top, sidebar, columns)
+local function PaintCell(cell, top, sidebar, columns, font)
     local row, group = cell.row, cell.group
     local y = -TOP - (cell.line - top) * CELL
     if row then
-        PaintSlot(row.item, sidebar + cell.column * CELL, y, row, row.count)
+        PaintSlot(row.item, sidebar + cell.column * CELL, y, row, row.count, font)
     else
         V.labelCount = V.labelCount + 1
         Grid.PaintHeader(V.labels, V.labelCount, V.chrome, V.frame, sidebar + cell.column * CELL, y - 10,
@@ -375,10 +375,11 @@ local function RenderSuite()
     V.visibleRows, V.maxScroll = visibleRows, max(0, V.model.lineCount - visibleRows)
     V.scroll = min(V.scroll, V.maxScroll)
     ClearVisible()
+    local font = Grid.FontPath()
     for i = 1, #layout do
         local cell = layout[i]
         if cell.line >= V.scroll and cell.line < V.scroll + visibleRows then
-            PaintCell(cell, V.scroll, sidebar, columns)
+            PaintCell(cell, V.scroll, sidebar, columns, font)
         end
     end
     HideUnplaced()
@@ -405,10 +406,11 @@ local function RenderCombat()
     local fit = max(1, floor((Available() - COMBAT_TOP - MoneyTop() - 6 - line) / CELL))
     local columns = max(M.config.inventoryColumns, ceil(total / fit))
     ClearVisible()
+    local font = Grid.FontPath()
     for i = 1, total do
         local item = items[i]
         PaintSlot(item, 12 + (i - 1) % columns * CELL, -COMBAT_TOP - floor((i - 1) / columns) * CELL, nil,
-            item.count or 0)
+            item.count or 0, font)
     end
     HideUnplaced()
     V.layout = "combat"

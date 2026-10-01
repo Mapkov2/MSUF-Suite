@@ -219,6 +219,24 @@ local function SortButtons(index, frame)
     index.ordered = true
 end
 
+-- Whether the client flags a slot's item as new. An item is flagged when it
+-- arrives, which changes the slot's cached read (SlotCache version); a hover
+-- only clears the flag (ContainerFrame.lua RemoveNewItem). So the client is
+-- asked again only for a changed slot or one that was new at the last read.
+local function Fresh(item, bag, slot)
+    local fresh = item.fresh
+    if fresh or item.freshVersion ~= item.version then
+        fresh = C_NewItems.IsNewItem(bag, slot)
+        if S.Public(fresh) then
+            fresh = fresh == true
+            item.fresh, item.freshVersion = fresh, item.version
+        else
+            fresh, item.fresh, item.freshVersion = false, nil, nil
+        end
+    end
+    return fresh
+end
+
 -- Blizzard fills its combined bag from bag 4 down to 0 and slot N down to 1
 -- (upstream/live ContainerFrame.lua UpdateItemSlots); the index always lists
 -- slots physically: bag 0 slot 1 first. Call Index.Invalidate after Blizzard
@@ -239,12 +257,9 @@ function Index.ReadContainer(index, frame, recent)
         local info, quest, version = Slots.Get(bag, slot)
         local item = Index.ReadButton(index, index.buttons[key], info, quest, version, bag, slot)
         item.bagName = BagName(index, bag)
-        if item.itemID then
-            local fresh = C_NewItems.IsNewItem(bag, slot)
-            if S.Public(fresh) and fresh then
-                index.freshItems[item.itemID] = true
-                if not recent.dismissed[item.itemID] then Remember(recent, item.itemID, now) end
-            end
+        if item.itemID and Fresh(item, bag, slot) then
+            index.freshItems[item.itemID] = true
+            if not recent.dismissed[item.itemID] then Remember(recent, item.itemID, now) end
         end
     end
     -- A second, older physical stack must not revive a dismissed item type.

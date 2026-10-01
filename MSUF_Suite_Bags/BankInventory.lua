@@ -47,14 +47,14 @@ local function AcquireButton(number)
     return button
 end
 
-local function StyleItem(button, item)
+-- font: the bag font, read once per render (GridView.FontPath).
+local function StyleItem(button, item, font)
     local c = M.config
     if c.showBankItemLevel and item.equipLoc and item.equipLoc ~= "" and item.link and item.level == nil then
         local level = C_Item.GetDetailedItemLevelInfo(item.link)
         if S.Finite(level) then item.level = level end
     end
     local level = c.showBankItemLevel and item.level
-    local font = Grid.FontPath()
     if button.font ~= font or button.levelSize ~= c.itemLevelSize or button.countSize ~= c.itemCountSize then
         S.SetFont(button.level, font, c.itemLevelSize, "OUTLINE")
         S.SetFont(button.Count, font, c.itemCountSize, "OUTLINE")
@@ -155,7 +155,7 @@ local function Create()
     end)
 end
 
-local function PaintCell(cell, number, sidebar)
+local function PaintCell(cell, number, sidebar, font)
     local x, y = sidebar + cell.column * 40, -40 - (cell.line - B.scroll) * 40
     if not cell.row then
         B.labelCount = B.labelCount + 1
@@ -180,8 +180,8 @@ local function PaintCell(cell, number, sidebar)
         button:SetPoint("TOPLEFT", x, y)
         button.x, button.y = x, y
     end
-    StyleItem(button, item)
-    P.InventoryDetails.Paint(button, item)
+    StyleItem(button, item, font)
+    P.InventoryDetails.Paint(button, item, font)
     button:Show()
     return number
 end
@@ -197,9 +197,12 @@ Render = function()
     for i = 1, #B.labels do B.labels[i]:Hide() end
     local shown = 0
     B.labelCount = 0
+    local font = Grid.FontPath()
     for i = 1, #layout do
         local cell = layout[i]
-        if cell.line >= B.scroll and cell.line < B.scroll + B.visibleRows then shown = PaintCell(cell, shown, sidebar) end
+        if cell.line >= B.scroll and cell.line < B.scroll + B.visibleRows then
+            shown = PaintCell(cell, shown, sidebar, font)
+        end
     end
     for i = shown + 1, #B.buttons do B.buttons[i]:Hide() end
     B.side:SetShown(M.config.bankView == 4)
@@ -267,11 +270,12 @@ end
 local function Event(_, event, value, success)
     if event == "BAG_UPDATE_COOLDOWN" or event == "INVENTORY_SEARCH_UPDATE" then
         if B.active and B.frame:IsShown() then
+            local font = Grid.FontPath()
             for i = 1, #B.buttons do
                 local button = B.buttons[i]
                 if button:IsShown() then
                     if event == "BAG_UPDATE_COOLDOWN" then button:UpdateCooldown()
-                    else button:Refresh(); StyleItem(button, button.record) end
+                    else button:Refresh(); StyleItem(button, button.record, font) end
                 end
             end
         end

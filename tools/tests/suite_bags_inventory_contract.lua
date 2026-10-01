@@ -187,8 +187,11 @@ local frame = { EnumerateValidItems = function()
     return function() i = i + 1; if buttons[i] then return i, buttons[i] end end
 end }
 slotItems[1], slotItems[2] = 301, 301
-local fresh = true
-C_NewItems.IsNewItem = function(_, slot) return slot == 2 and fresh end
+local fresh, newChecks = true, 0
+C_NewItems.IsNewItem = function(_, slot)
+    newChecks = newChecks + 1
+    return slot == 2 and fresh
+end
 local moduleState = { recent = { [9] = true }, recentOrder = { 9 }, dismissedRecent = {}, pinned = { [7] = true } }
 local view = Index.State(moduleState)
 local recent = Index.Recent()
@@ -202,11 +205,14 @@ assert(not recent.items[301] and recent.dismissed[301], "an older identical stac
 assert(index.items[1].slot == 1 and index.items[2].slot == 2, "slots are listed in physical order")
 fresh = false; Index.ReadContainer(index, frame, recent)
 assert(not recent.dismissed[301], "dismissals are pruned when the native new-item flag disappears")
-fresh = true; Index.ReadContainer(index, frame, recent)
+-- The client flags an item as new when it arrives, which is a bag change
+-- (BAG_UPDATE marks the slot cache); a hover only clears the flag.
+fresh = true; P.SlotCache.MarkBag(0); Index.ReadContainer(index, frame, recent)
 assert(recent.items[301], "a later genuinely new item is listed again")
-reads = 0
+reads, newChecks = 0, 0
 Index.ReadContainer(index, frame, recent)
 assert(reads == 0, "an unchanged bag is not read again")
+assert(newChecks == 1, "an unchanged bag asked for the new-item flag of a slot that was not new")
 
 -- Recent items stay across logins, per character, and leave the list once
 -- older than recentHours (default 24), so they cannot take over the
