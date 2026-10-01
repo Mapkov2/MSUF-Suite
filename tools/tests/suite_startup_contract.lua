@@ -25,6 +25,7 @@ local function Finite(value)
     return Public(value) and type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 local function Noop() end
+local lastMessage
 local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing)
     local frame, loginFrame, starts, messages = nil, nil, 0, 0
     CreateFrame = function()
@@ -44,7 +45,11 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         IsCombatLocked = function() return combat == true end,
         Suite = { Start = function() starts = starts + 1 end,
             Normalize = Noop, StyleProfile = Noop },
-        Print = function() messages = messages + 1 end,
+        Print = function(message)
+            messages = messages + 1
+            lastMessage = message
+        end,
+        Text = function(text) return text end,
         Dispatch = Dispatch,
         PublicText = PublicText,
         Finite = Finite,
@@ -112,6 +117,18 @@ assert(starts == 1 and owner.DB and MSUFSuiteDB == owner.RootDB)
 local future = { schema = 99, profiles = {} }
 owner, starts, messages = Scenario(future, legacy, false, false)
 assert(starts == 0 and messages == 1 and MSUFSuiteDB == future and owner.DB == nil)
+-- One malformed saved profile is set aside and reported once; the modules
+-- of the readable profiles still start.
+local damaged = { schema = 1, activeProfile = "Broken", profiles = {
+    Broken = { suite = 7 }, Raid = { suite = { schema = 1, modules = { minimap = { enabled = true } } } },
+} }
+owner, starts, messages = Scenario(damaged, nil, false, false)
+assert(starts == 1 and owner.DB.suite.modules.minimap.enabled and MSUFSuiteDB == owner.RootDB,
+    "one malformed profile kept every module from starting")
+assert(messages == 1 and lastMessage:find("1", 1, true) and owner.RootDB.quarantinedProfiles[1].profile.suite == 7,
+    "the set-aside profile was not reported once with its data kept")
+owner, starts, messages = Scenario(owner.RootDB, nil, false, false)
+assert(starts == 1 and messages == 0, "a set-aside profile was reported again on the next login")
 owner, starts, messages = Scenario(nil, legacy, true, true)
 assert(starts == 0 and messages == 1 and owner.startupError == "legacy-runtime-active")
 -- Startup steps run isolated: failing skin and menu steps are reported and

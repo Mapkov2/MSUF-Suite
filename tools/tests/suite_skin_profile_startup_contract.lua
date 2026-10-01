@@ -37,7 +37,8 @@ Suite.Database = {
     Initialize = function()
         Suite.RootDB = { skinEnabled = true }
         Suite.DB = {}
-        return true
+        -- Database.Initialize: ok, reason, number of profiles set aside.
+        return true, "ready", 0
     end,
     IsProfileName = function(name) return type(name) == "string" and name ~= "" end,
     GetActiveProfileName = function() return "mapko final" end,

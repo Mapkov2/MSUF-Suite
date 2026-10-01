@@ -32,7 +32,35 @@ prepared.suiteChat.player.lines[1] = "changed"
 Check(legacy.profiles.Raid.suite.modules.chat.enabled and legacy.suiteChat.player.lines[1] == "saved message", "original legacy data stays intact")
 local future = { schema = 99, profiles = {} }
 Check(DB.Prepare(future, legacy) == nil and future.schema == 99, "future root schema is preserved and rejected")
-Check(DB.Prepare({ schema = 1, profiles = { Broken = false } }, legacy) == nil, "invalid existing profiles do not get replaced by legacy data")
+-- One unreadable profile is set aside with its data; the others still load.
+local brokenSuite = { suite = "not a table" }
+local damaged = { schema = 1, activeProfile = "Broken", profiles = {
+    Broken = false, Odd = brokenSuite, Raid = { suite = { schema = 1, modules = { chat = { enabled = true } } } },
+    [string.rep("x", 81)] = { suite = { schema = 1, modules = {} } },
+} }
+local repaired, repairedReason, quarantined = DB.Prepare(damaged, legacy)
+Check(repaired and repairedReason == "ready" and quarantined == 3,
+    "one malformed profile rejected the whole Suite database")
+Check(repaired.profiles.Raid.suite.modules.chat.enabled and repaired.activeProfile == "Raid"
+    and repaired.profiles.Broken == nil and repaired.profiles.Odd == nil,
+    "the readable profiles did not load after a malformed one was set aside")
+local kept = {}
+for _, entry in ipairs(repaired.quarantinedProfiles) do kept[entry.name] = entry.profile end
+Check(kept.Broken == false and kept.Odd.suite == "not a table" and kept[string.rep("x", 81)],
+    "a quarantined profile lost its saved data")
+Check(damaged.profiles.Broken == false and damaged.quarantinedProfiles == nil and damaged.activeProfile == "Broken",
+    "quarantine mutated the stored root before it was published")
+Check(repaired.profiles.Raid == nil or legacy.profiles.Raid.suite ~= repaired.profiles.Raid.suite,
+    "invalid existing profiles do not get replaced by legacy data")
+local again, _, quarantinedAgain = DB.Prepare(repaired, nil)
+Check(quarantinedAgain == 0 and #again.quarantinedProfiles == 3,
+    "set-aside profiles were reported again or lost on the next load")
+local legacyBad = { activeProfile = "Raid", profiles = { Raid = legacy.profiles.Raid,
+    [string.rep("y", 90)] = { suite = { schema = 1, modules = {} } } } }
+local fromLegacy, legacyReason, legacyQuarantined = DB.Prepare(nil, legacyBad)
+Check(fromLegacy and legacyReason == "migrated" and legacyQuarantined == 1 and fromLegacy.profiles.Raid
+    and fromLegacy.quarantinedProfiles[1].name == string.rep("y", 90),
+    "one legacy profile with an unusable name stopped the whole migration")
 legacy.profiles.Solo.suite.schema = 99
 prepared = assert(DB.Prepare(nil, legacy))
 Check(prepared.profiles.Solo.suite.schema == 99, "future module schema survives migration without reinterpretation")

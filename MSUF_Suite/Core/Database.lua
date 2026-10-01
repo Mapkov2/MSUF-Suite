@@ -61,8 +61,21 @@ local function NewProfile()
 end
 Database.CreateFactoryProfile = NewProfile
 
--- Return a prepared copy. The caller publishes it only after all checks pass;
--- neither an existing saved root nor the legacy skin database is mutated.
+-- A saved profile this build cannot read must not keep the others from
+-- starting. It is set aside with its data untouched, in
+-- root.quarantinedProfiles as { name = saved key, profile = saved value }.
+local function Quarantine(root, stored, name, profile)
+    local list = root.quarantinedProfiles
+    if list == nil or stored and list == stored.quarantinedProfiles then
+        list = type(list) == "table" and Copy(list) or {}
+        root.quarantinedProfiles = list
+    end
+    list[#list + 1] = { name = name, profile = profile }
+end
+
+-- Return a prepared copy, the reason and the number of profiles set aside.
+-- The caller publishes it only after all checks pass; neither an existing
+-- saved root nor the legacy skin database is mutated.
 function Database.Prepare(stored, legacy)
     if stored ~= nil and type(stored) ~= "table" then
         return nil, "invalid-suite-database"
@@ -83,10 +96,13 @@ function Database.Prepare(stored, legacy)
         for key, value in pairs(stored) do root[key] = value end
         root.profiles = Copy(stored.profiles)
     end
+    local quarantined = 0
     for name, profile in pairs(root.profiles) do
         if not Database.IsProfileName(name) or type(profile) ~= "table"
             or type(profile.suite) ~= "table" then
-            return nil, "invalid-suite-profile"
+            Quarantine(root, stored, name, profile)
+            root.profiles[name] = nil
+            quarantined = quarantined + 1
         end
     end
 
@@ -94,11 +110,13 @@ function Database.Prepare(stored, legacy)
     if not stored and type(legacy) == "table" and type(legacy.profiles) == "table" then
         for name, profile in pairs(legacy.profiles) do
             if type(profile) == "table" and type(profile.suite) == "table" then
-                if not Database.IsProfileName(name) then
-                    return nil, "invalid-legacy-profile-name"
+                if Database.IsProfileName(name) then
+                    root.profiles[name] = { suite = Copy(profile.suite) }
+                    imported = imported + 1
+                else
+                    Quarantine(root, nil, name, { suite = Copy(profile.suite) })
+                    quarantined = quarantined + 1
                 end
-                root.profiles[name] = { suite = Copy(profile.suite) }
-                imported = imported + 1
             end
         end
         if imported > 0 then
@@ -117,15 +135,15 @@ function Database.Prepare(stored, legacy)
         table.sort(names)
         root.activeProfile = root.profiles.Default and "Default" or names[1]
     end
-    return root, imported > 0 and "migrated" or "ready"
+    return root, imported > 0 and "migrated" or "ready", quarantined
 end
 
 function Database.Initialize(stored, legacy)
-    local root, reason = Database.Prepare(stored, legacy)
+    local root, reason, quarantined = Database.Prepare(stored, legacy)
     if not root then return false, reason end
     Suite.RootDB = root
     Suite.DB = root.profiles[root.activeProfile]
-    return true, reason
+    return true, reason, quarantined
 end
 
 -- Stage a clean Suite installation for the next UI load. Publish a real root

@@ -24,11 +24,15 @@ local function Initialize()
     -- as data only before choosing the Suite profile, then hand skinning to the
     -- Suite-owned engine below.
     if _G.MSUFSuiteDB == nil then Suite.Skin.LoadLegacyDatabase() end
-    local ok, reason = Suite.Database.Initialize(_G.MSUFSuiteDB, _G.MapkoSkinDB)
+    local ok, reason, quarantined = Suite.Database.Initialize(_G.MSUFSuiteDB, _G.MapkoSkinDB)
     if not ok then
         Suite.startupError = reason
         Suite.Print("Cannot load suite profiles: " .. tostring(reason))
         return false
+    end
+    -- Reported once: the saved root keeps them set aside from now on.
+    if quarantined > 0 then
+        Suite.Print(Suite.Text("Unreadable Suite profiles were set aside, their data is kept: %d"):format(quarantined))
     end
     _G.MSUFSuiteDB = Suite.RootDB
     initialized = true
