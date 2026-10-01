@@ -28,14 +28,7 @@ local W = H.New(root, flavor, { beforeModules = function(world)
     end
 end })
 local G, S = W.G, W.S
-local function Load(file)
-    local chunk = assert(loadfile(root .. "/MSUF_Suite_DataTexts/" .. file .. ".lua"))
-    setfenv(chunk, G)
-    chunk("MSUF_Suite_DataTexts", W.private)
-end
-Load("Bootstrap")
-Load("Appearance")
-Load("DataTexts")
+W.LoadAddon("MSUF_Suite_DataTexts")
 H.Enable(W, { infoFPS = false, infoClock = false, infoLocation = false })
 assert(S.Set("dataTexts", "enabled", true))
 local M, config = assert(S.instances.dataTexts), S.Config("dataTexts")

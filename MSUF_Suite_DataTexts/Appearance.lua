@@ -3,10 +3,17 @@ local S = P.Suite
 local Appearance = {}
 P.Appearance = Appearance
 
+-- A value on the physical pixel grid (pixel = one screen pixel in UI units).
+local function Snap(value, pixel)
+    return math.floor(value / pixel + 0.5) * pixel
+end
+Appearance.Snap = Snap
+
 local function Color(texture, hex, alpha)
     local r, g, b = S.RGB(hex)
     texture:SetColorTexture(r, g, b, alpha)
 end
+Appearance.Color = Color
 
 function Appearance.Paint(bar)
     local style, background = bar.style, bar.background
@@ -40,7 +47,7 @@ function Appearance.Paint(bar)
     bar.accent:SetShown(style.accentEnabled == true)
     if style.accentEnabled then
         bar.accent:SetHeight(pixel)
-        local inset = style.bagBadge and math.floor((style.bagBadgeSize + 8) / pixel + 0.5) * pixel or 0
+        local inset = style.bagBadge and Snap(style.bagBadgeSize + 8, pixel) or 0
         bar.accent:ClearAllPoints()
         if style.accentPosition == 2 then
             bar.accent:SetPoint("TOPLEFT", bar.frame, "TOPLEFT", inset, 0)
@@ -53,10 +60,10 @@ function Appearance.Paint(bar)
     end
     bar.badge:SetShown(style.bagBadge == true)
     if style.bagBadge then
-        local badgeSize = math.floor(style.bagBadgeSize / pixel + 0.5) * pixel
+        local badgeSize = Snap(style.bagBadgeSize, pixel)
         bar.badge:SetSize(badgeSize, badgeSize)
         bar.badge:ClearAllPoints()
-        bar.badge:SetPoint("LEFT", bar.frame, "LEFT", math.floor(4 / pixel + 0.5) * pixel, 0)
+        bar.badge:SetPoint("LEFT", bar.frame, "LEFT", Snap(4, pixel), 0)
     end
     for _, divider in pairs(bar.dividers) do Color(divider, style.separatorColor, .8) end
 end

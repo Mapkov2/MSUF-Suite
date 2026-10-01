@@ -56,11 +56,6 @@ if flavor == "Forever" or flavor == "Mainline" then
         frame.driver = nil
     end
 end
-local function Load(file)
-    local chunk = assert(loadfile(root .. "/MSUF_Suite_DataTexts/" .. file .. ".lua"))
-    setfenv(chunk, G)
-    chunk("MSUF_Suite_DataTexts", W.private)
-end
 -- MSUF's font comes from the shared media table and money text from the
 -- shared helper; DataTexts keeps its own sign characters.
 local MEDIA_FONT = "Interface\\AddOns\\Test\\Media\\MSUF.ttf"
@@ -70,10 +65,8 @@ S.MoneyText = function(amount)
     moneyTexts = moneyTexts + 1
     return sharedMoneyText(amount)
 end
-Load("Bootstrap")
-Load("Appearance")
-Load("GoldLedger")
-Load("DataTexts")
+-- The client loads every file of the addon's TOC, Sources.lua included.
+W.LoadAddon("MSUF_Suite_DataTexts")
 local M = assert(S.instances.dataTexts)
 assert(not M.bars[1] and W.Pending() == 0, "dormant DataTexts allocated a visible bar or timer")
 -- The shared data timer reuses one task table per owner for every tick.
