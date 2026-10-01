@@ -667,6 +667,41 @@ assert(module.visuals[bar].fill.color[1] == 0x93 / 255, "lieutenant health fill 
 unitLevel = 92
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(module.visuals[bar].fill.color[1] == 1, "level-based boss health fill missing")
+-- Lieutenants of one instance can differ in level: every lieutenant level
+-- seen in the context counts, and plates classified before a lieutenant
+-- was seen are classified again.
+do
+    local Roles = private.Roles
+    local levels, lieutenant = { nameplate1 = 81 }, {}
+    local unitLevelBefore, lieutenantBefore = UnitLevel, UnitIsLieutenant
+    UnitLevel = function(unit) return unit == "player" and 90 or levels[unit] end
+    UnitIsLieutenant = function(unit) return lieutenant[unit] == true end
+    local reads = 0
+    local classifyBefore = UnitClassification
+    UnitClassification = function(unit) reads = reads + 1; return classifyBefore(unit) end
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(module.visuals[bar].fill.color[1] ~= 1, "an elite without a lieutenant below it took the boss color")
+    levels.lieutenantA, lieutenant.lieutenantA = 80, true
+    levels.lieutenantB, lieutenant.lieutenantB = 85, true
+    assert(Roles.Classify("lieutenantA", "elite") == "Miniboss" and Roles.learnedLieutenant,
+        "a lieutenant level was not learned")
+    assert(Roles.Classify("lieutenantB", "elite") == "Miniboss", "a second lieutenant was not a miniboss")
+    reads = 0
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(reads == 2 and not Roles.learnedLieutenant,
+        "plates classified before a lieutenant level arrived were not classified again")
+    assert(module.visuals[bar].fill.color[1] == 1, "an elite above an earlier lieutenant lost the boss color")
+    levels.nameplate1 = 86
+    assert(Roles.Classify("nameplate1", "elite") == "Boss", "an elite above the second lieutenant was no boss")
+    -- The context these steps were built in (the last refresh saw no instance).
+    local kind = instanceType
+    instanceType = "none"
+    Roles.RefreshContext()
+    instanceType = kind
+    assert(Roles.Classify("nameplate1", "elite") ~= "Boss" and not next(Roles.lieutenants),
+        "a context change kept the lieutenant levels")
+    UnitLevel, UnitIsLieutenant, UnitClassification = unitLevelBefore, lieutenantBefore, classifyBefore
+end
 unitLevel, instanceType = 90, "none"
 questUnit = true
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")

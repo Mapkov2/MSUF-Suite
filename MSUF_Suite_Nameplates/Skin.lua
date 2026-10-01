@@ -363,6 +363,27 @@ local function EachPlate(callback)
     for i = 1, #plates do callback(plates[i]) end
 end
 
+local function RefreshActive(self, recategorize)
+    for unit, uf in pairs(self.activeUnits) do
+        if Safe(uf) then
+            if recategorize then SetRole(uf, unit) end
+            Paint(uf)
+        end
+    end
+    if recategorize and Roles.learnedLieutenant then
+        Roles.learnedLieutenant = false
+        RefreshActive(self, true)
+    end
+end
+
+-- A lieutenant level seen for the first time in this context can make the
+-- plates classified before it bosses: those are classified once more.
+local function AfterClassify(self)
+    if not Roles.learnedLieutenant then return end
+    Roles.learnedLieutenant = false
+    RefreshActive(self, true)
+end
+
 local function OnAdded(self, _, unit)
     if not S.Public(unit) or type(unit) ~= "string" then return end
     Roles.ClearQuest(unit)
@@ -374,6 +395,7 @@ local function OnAdded(self, _, unit)
     SetRole(uf, unit)
     Paint(uf)
     Auras.Apply(uf)
+    if Roles.learnedLieutenant then AfterClassify(self) end
 end
 
 local function OnRemoved(self, _, unit)
@@ -383,15 +405,6 @@ local function OnRemoved(self, _, unit)
     Roles.ClearQuest(unit)
     if self.targetUF == uf then self.targetUF = nil end
     if uf then RestorePlate(uf) end
-end
-
-local function RefreshActive(self, recategorize)
-    for unit, uf in pairs(self.activeUnits) do
-        if Safe(uf) then
-            if recategorize then SetRole(uf, unit) end
-            Paint(uf)
-        end
-    end
 end
 
 local function RefreshRole(uf)
@@ -485,6 +498,7 @@ local function OnUnitChanged(module, event, unit)
     local role, marker, quest = module.roles[health], facts.marker, facts.quest
     if FACT_EVENTS[event] then
         SetRole(uf, unit)
+        AfterClassify(module)
         if event == "UNIT_LEVEL" then
             Level.Paint(uf, Prefix(uf), unit)
             -- The target arrows keep clear of a level badge that came or went.
@@ -601,6 +615,7 @@ function M:Refresh()
     CVars.Apply(self)
     Threat.Refresh()
     EachPlate(ApplyPlate)
+    AfterClassify(self)
     Power.Refresh()
 end
 
