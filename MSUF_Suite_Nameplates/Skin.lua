@@ -320,9 +320,32 @@ local function RestorePlate(uf)
     RestorePlateFonts(uf, health, cast)
 end
 
+------------------------------------------------------------------ plate hooks
+-- Blizzard copies NamePlateUnitFrameMixin's methods into each unit frame it
+-- creates (BaseNamePlateUnitFrameTemplate, mixin="NamePlateUnitFrameMixin")
+-- and NamePlateDriverFrame pools those frames for the session. A hook on the
+-- mixin reaches the frames created after it; a frame that still holds the
+-- unhooked method gets a hook of its own when the Suite meets it.
+local plateHooks = {}
+
+local function CoverPlate(uf)
+    for i = 1, #plateHooks do
+        local hook = plateHooks[i]
+        if uf[hook.method] == hook.original then hooksecurefunc(uf, hook.method, hook.callback) end
+    end
+end
+
+-- Once per method and session (a secure hook cannot be removed). The shown
+-- plates are covered by the plate pass (ApplyPlate) that follows every hook.
+function private.HookPlates(method, callback)
+    plateHooks[#plateHooks + 1] = { method = method, original = NamePlateUnitFrameMixin[method], callback = callback }
+    hooksecurefunc(NamePlateUnitFrameMixin, method, callback)
+end
+
 local function ApplyPlate(plate)
     if not Safe(plate) or not Safe(plate.UnitFrame) then return end
     local uf, unit = plate.UnitFrame, plate.unitToken
+    CoverPlate(uf)
     if not M.active then RestorePlate(uf); return end
     if S.Public(unit) and type(unit) == "string" then
         M.activeUnits[unit] = uf
@@ -346,6 +369,7 @@ local function OnAdded(self, _, unit)
     local plate = C_NamePlate.GetNamePlateForUnit(unit)
     local uf = Safe(plate) and plate.UnitFrame
     if not Safe(uf) then return end
+    CoverPlate(uf)
     self.activeUnits[unit] = uf
     SetRole(uf, unit)
     Paint(uf)
@@ -552,7 +576,7 @@ local CONTEXT_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAY
 function M:Enable()
     if not self.fontHook then
         self.fontHook = true
-        hooksecurefunc(NamePlateUnitFrameMixin, "ApplyFrameOptions", OnFrameOptions)
+        private.HookPlates("ApplyFrameOptions", OnFrameOptions)
     end
     self.context:Event("NAME_PLATE_UNIT_ADDED", OnAdded, true)
     self.context:Event("NAME_PLATE_UNIT_REMOVED", OnRemoved, true)
