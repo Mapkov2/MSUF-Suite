@@ -814,6 +814,8 @@ function H.New(root, options)
     NUM_TOTAL_EQUIPPED_BAG_SLOTS = 5
     Constants = { InventoryConstants = { NumBagSlots = 4, NumReagentBagSlots = 1 } }
     Enum = { BankType = { Character = 1, Account = 2 }, TooltipDataType = { Item = 0 },
+        ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
+            ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 },
         BagIndex = { Backpack = 0, ReagentBag = 5, CharacterBankTab_1 = 6, AccountBankTab_1 = 12 } }
     MenuResponse = { Open = 1, Close = 2 }
     INVSLOT_FIRST_EQUIPPED, INVSLOT_LAST_EQUIPPED = 1, 19

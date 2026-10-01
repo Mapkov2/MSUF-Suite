@@ -200,6 +200,9 @@ C_Container = {
     GetContainerItemQuestInfo = function() return { isQuestItem = false } end,
 }
 Constants = { InventoryConstants = { NumBagSlots = 4 } }
+-- ItemConstantsDocumentation.lua (Retail and Forever).
+Enum = { ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
+    ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 } }
 -- WoW Forever has no global GetItemQualityColor (Retail keeps it only as a
 -- deprecated alias): quality colours come from C_Item on both clients.
 C_Item = {
@@ -208,7 +211,7 @@ C_Item = {
     RequestLoadItemDataByID = function(id) requests[id] = (requests[id] or 0) + 1 end,
     GetItemQualityColor = function(quality) return quality == 4 and 0.7 or 1, 0.5, 1, "ffb380ff" end,
     GetItemInfo = function(link)
-        local bind = { ["gear-a"] = 2, ["gear-b"] = 9, food = 1 }
+        local bind = { ["gear-a"] = 2, ["gear-b"] = 9, food = 1, ["gear-warbound"] = 8, ["gear-account"] = 7 }
         return unpack({ [14] = bind[link] }, 1, 14)
     end,
 }
@@ -821,6 +824,14 @@ BagChanged()
 hooks.UpdateItems()
 assert(module.overlays[buttons[1]].bindBadge.text == "WuE",
     "reused bag button kept a stale binding badge")
+-- Both account bindings (ToWoWAccount, ToBnetAccount) are Warbound, bound or not.
+for _, link in ipairs({ "gear-warbound", "gear-account" }) do
+    items[1] = { hyperlink = link, itemID = 101, quality = 4, isBound = true }
+    BagChanged()
+    hooks.UpdateItems()
+    assert(module.overlays[buttons[1]].bindBadge.text == "WB" and module.overlays[buttons[1]].bindBadge.shown,
+        link .. " showed no Warbound badge")
+end
 items[1] = { hyperlink = "gear-a", itemID = 101, quality = 4, isBound = false }
 BagChanged()
 module.config.showItemLevel = true

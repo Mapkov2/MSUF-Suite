@@ -208,7 +208,15 @@ local function Paint(self, button, pending, info)
     record.label:Show()
 end
 
-local BIND_BADGES = { [2] = "BoE", [7] = "WB", [9] = "WuE" }
+-- Enum.ItemBind (ItemConstantsDocumentation, Retail and Forever). Both
+-- account bindings are Warbound; Bind on Equip and Warbound until equipped
+-- show only while the item is not bound yet.
+local BIND = Enum.ItemBind
+local BIND_BADGES = {
+    [BIND.OnEquip] = "BoE", [BIND.ToWoWAccount] = "WB", [BIND.ToBnetAccount] = "WB",
+    [BIND.ToBnetAccountUntilEquipped] = "WuE",
+}
+local UNTIL_BOUND = { [BIND.OnEquip] = true, [BIND.ToBnetAccountUntilEquipped] = true }
 
 local function PaintBindBadge(self, button, pending, info)
     local record = self.overlays[button]
@@ -234,8 +242,7 @@ local function PaintBindBadge(self, button, pending, info)
         record.bindType = bindType
     end
     local text = BIND_BADGES[record.bindType]
-    if (record.bindType == 2 or record.bindType == 9)
-        and (not S.Public(info.isBound) or info.isBound ~= false) then text = nil end
+    if UNTIL_BOUND[record.bindType] and (not S.Public(info.isBound) or info.isBound ~= false) then text = nil end
     if not text then
         if record.bindBadge then record.bindBadge:Hide() end
         return
@@ -254,8 +261,12 @@ local function PaintBindBadge(self, button, pending, info)
         S.SetFont(record.bindBadge, nil, 10, "OUTLINE")
         record.bindStyled, record.bindFontEpoch = true, self.fontEpoch
     end
-    record.bindBadge:SetText(text)
-    record.bindBadge:SetTextColor(text == "BoE" and .55 or .92, text == "BoE" and .85 or .76, .98)
+    -- A refresh repaints only a badge whose text changed.
+    if record.bindText ~= text then
+        record.bindBadge:SetText(text)
+        record.bindBadge:SetTextColor(text == "BoE" and .55 or .92, text == "BoE" and .85 or .76, .98)
+        record.bindText = text
+    end
     record.bindBadge:Show()
 end
 
