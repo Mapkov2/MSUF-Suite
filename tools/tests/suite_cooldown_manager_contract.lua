@@ -1981,6 +1981,24 @@ values=assert(S.CooldownManagerConvertVertical("ess",true))
 assert(values.ess_vertical==true and values.ess_x==math.floor(512-512-columnWidth/2+.5) and values.ess_y==525-384,
     "a vertical bar keeps the center and anchors by its left edge")
 assert(C.views.ess.vertical==false and C.views.ess.grow==1,"conversion leaves the live view alone")
+-- A conversion whose sizing raises leaves the live view as it was.
+do
+    local offsets=C.Layout.Offsets
+    C.Layout.Offsets=function() error("offsets failed") end
+    assert(not pcall(S.CooldownManagerConvertGrow,"ess",2) and not pcall(S.CooldownManagerConvertVertical,"ess",true),
+        "the failing conversion did not raise")
+    C.Layout.Offsets=offsets
+    assert(C.views.ess.grow==1 and C.views.ess.vertical==false,"a raising conversion changed the live view")
+    local rides=C.Layout.RidesViewer
+    C.Layout.RidesViewer=function() error("ride check failed") end
+    dispatch.expect=true
+    local errors=#dispatch.errors
+    local anchor=C.views.ess.anchor
+    assert(S.CooldownManagerConvertAnchor("ess",2) and #dispatch.errors==errors+1,"the failing ride check was not reported")
+    dispatch.expect=false
+    C.Layout.RidesViewer=rides
+    assert(C.views.ess.anchor==anchor,"a raising ride check changed the live anchor")
+end
 bars.ess.frame.rect=nil
 assert(S.CooldownManagerConvertGrow("ess",3)==nil,"invalid grow")
 -- Attach changes keep the bar on screen: to Free, the x/y of the place it
