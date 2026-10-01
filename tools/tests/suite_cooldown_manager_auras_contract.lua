@@ -2294,6 +2294,44 @@ do
     COMBAT=false
     A.FlushPending()
     assert(not R[gated[1]].combatDriver,"native gate did not unregister after combat")
+    -- A container released in combat parks its gate. A module disable after
+    -- combat that runs before this module hears PLAYER_REGEN_ENABLED (a
+    -- profile switch queued in combat) still unregisters it.
+    C.state.allGlowsCombat=true
+    A.Sync("c4")
+    assert(R[gated[1]].combatDriver,"the combat gate is registered again")
+    COMBAT=true
+    A.Release("c4")
+    assert(R[gated[1]].combatDriver,"in combat the release parks the gate")
+    COMBAT=false
+    A.ReleaseAll()
+    assert(not R[gated[1]].combatDriver,"a release after combat left a parked combat gate registered")
+    C.state.allGlowsCombat=false
+    A.Sync("c4")
+    assert(Live("c4","player")==sc2 and not R[gated[1]].combatDriver,"the pooled container comes back without its gate")
+    -- A gate change under lockdown (a button built in combat) is parked,
+    -- never a protected call, and applies once combat ends.
+    local host=CreateFrame("Frame",nil,UIParent)
+    local draw=C.AuraButtons.Bridge
+    local g=draw.NewGlow(host,host,1)
+    C.state.allGlowsCombat=true
+    COMBAT=true
+    assert(draw.ApplyCombatGate(g,true,true)==true,"a dry run reports the pending gate")
+    draw.ApplyCombatGate(g,true,false)
+    assert(not R[g.combatGate].combatDriver and C.AuraButtons.HasParkedGates(),"a gate change in combat is parked")
+    C.AuraButtons.FlushGates()
+    assert(not R[g.combatGate].combatDriver,"the parked gate applied in combat")
+    COMBAT=false
+    C.AuraButtons.FlushGates()
+    assert(R[g.combatGate].combatDriver and not C.AuraButtons.HasParkedGates(),"the parked gate applies after combat")
+    COMBAT=true
+    draw.ApplyCombatGate(g,false,false)
+    draw.ApplyCombatGate(g,true,false)
+    assert(not C.AuraButtons.HasParkedGates(),"a wish back to the registered state parks nothing")
+    COMBAT=false
+    draw.ApplyCombatGate(g,false,false)
+    assert(not R[g.combatGate].combatDriver,"the gate unregistered")
+    C.state.allGlowsCombat=false
 end
 -- N changes on a live button: placed again and rebound (the setter
 -- replaces the element); unchanged choices make no call

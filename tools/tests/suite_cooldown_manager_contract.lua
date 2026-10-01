@@ -3174,6 +3174,34 @@ assert(AnchorEvents()==anchorCount+3 and PendingTimers()==0,"the final release n
 -- custom bars start in the middle. Bar contents always stay.
 local function Activate() module.active=true;module:Enable();Run() end
 local function Deactivate() module.active=false;module:Disable();module.context:Release();Run(5) end
+-- A release under lockdown parks the visibility drivers, and the module's
+-- own PLAYER_REGEN_ENABLED goes with its events: a standalone listener
+-- unregisters them when combat ends, then lets go of the event.
+do
+    Activate()
+    config.uti_vis=2
+    module:Refresh()
+    Run()
+    assert(DriverCount()==1,"a combat bar registers its driver")
+    combat=true
+    module.active=false
+    module:Disable()
+    module.context:Release()
+    assert(DriverCount()==1,"under lockdown the release parks the driver")
+    combat=false
+    local listeners=0
+    for i=1,#all do
+        local frame=all[i]
+        if frame.events.PLAYER_REGEN_ENABLED and frame.scripts.OnEvent and frame~=module.context.frame then
+            listeners=listeners+1
+            frame.scripts.OnEvent(frame,"PLAYER_REGEN_ENABLED")
+            assert(not frame.events.PLAYER_REGEN_ENABLED,"the parked-work listener stayed registered")
+        end
+    end
+    assert(listeners>=1 and DriverCount()==0,"a release in combat left its visibility driver registered")
+    config.uti_vis=1
+    Run(5)
+end
 config.blizzard=1
 assert(not S.CooldownManagerSetPreview(true))
 config.defaultsVersion=1

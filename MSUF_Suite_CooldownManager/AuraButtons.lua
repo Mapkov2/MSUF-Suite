@@ -27,7 +27,7 @@ C.AuraButtons = B
 local CreateFrame = CreateFrame
 local IsCombatLocked = NS.IsCombatLocked
 local floor, max, min = math.floor, math.max, math.min
-local type, tonumber = type, tonumber
+local type, tonumber, next = type, tonumber, next
 local tconcat = table.concat
 local Public = S.Public
 local EMPTY = C.EMPTY
@@ -266,15 +266,22 @@ end
 
 -- "All glows only in combat": a secure state driver shows the glow's gate
 -- in combat only (a sealed button's descendants refuse Lua in combat). The
--- state driver manager re-reads every driver on each pass, and Blizzard
--- pools ten buttons per group, so only a glow that can show (on: its entry
--- uses it) holds one.
+-- state driver manager re-reads every driver on each pass, so only a glow
+-- that can show (on: its entry uses it) holds one. g.combatOnly is what is
+-- registered now. Registering or unregistering a state driver is protected:
+-- under lockdown the wish waits in parkedGates for FlushGates.
 local parkedGates = {}
-local function ApplyCombatGate(g, on, dry)
-    if not dry then parkedGates[g] = nil end
-    local wanted = on == true and C.state.allGlowsCombat == true and not C.state.preview
-    if g.combatOnly == wanted then return false end
-    if dry then return true end
+local function Gate(g, wanted)
+    if IsCombatLocked() then
+        if g.combatOnly == wanted then
+            parkedGates[g] = nil
+        else
+            parkedGates[g] = wanted
+        end
+        return
+    end
+    parkedGates[g] = nil
+    if g.combatOnly == wanted then return end
     g.combatOnly = wanted
     if wanted then
         RegisterStateDriver(g.combatGate, "visibility", "[combat] show; hide")
@@ -282,9 +289,15 @@ local function ApplyCombatGate(g, on, dry)
         UnregisterStateDriver(g.combatGate, "visibility")
         g.combatGate:Show()
     end
+end
+local function ApplyCombatGate(g, on, dry)
+    local wanted = on == true and C.state.allGlowsCombat == true and not C.state.preview
+    if dry then return g.combatOnly ~= wanted end
+    Gate(g, wanted)
     return false
 end
 
+-- A retired container's glows hold no state driver (parked under lockdown).
 function B.ReleaseGlows(rec)
     for _, part in ipairs(rec.parts) do
         for i = 1, 3 do
@@ -292,28 +305,17 @@ function B.ReleaseGlows(rec)
             if i == 1 then g = part.glow
             elseif i == 2 then g = part.stack and part.stack.glow
             else g = part.stackSensor and part.stackSensor.part.stack.glow end
-            if g and g.combatOnly then
-                if IsCombatLocked() then
-                    parkedGates[g] = true
-                else
-                    UnregisterStateDriver(g.combatGate, "visibility")
-                    g.combatOnly = false
-                    g.combatGate:Show()
-                end
-            end
+            if g then Gate(g, false) end
         end
     end
 end
 
+-- Combat ended (or the module let go): every parked wish is applied.
 function B.FlushGates()
     if IsCombatLocked() then return end
-    for g in pairs(parkedGates) do
-        UnregisterStateDriver(g.combatGate, "visibility")
-        g.combatOnly = false
-        g.combatGate:Show()
-        parkedGates[g] = nil
-    end
+    for g, wanted in pairs(parkedGates) do Gate(g, wanted) end
 end
+function B.HasParkedGates() return next(parkedGates) ~= nil end
 
 -- Style, color (nil: the art's own gold) and the size of what the glow
 -- surrounds. Same input: no call.

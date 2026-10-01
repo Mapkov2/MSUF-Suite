@@ -534,8 +534,19 @@ function Ev.CoreEvents()
     Want("DISPLAY_SIZE_CHANGED", true, OnScale)
 end
 
+-- A release under lockdown parks state driver work (visibility drivers,
+-- glow combat gates), and the module's own PLAYER_REGEN_ENABLED goes with
+-- its events: this standalone listener applies it once combat ends.
+local parkedListener
+local function ReleaseParked(frame)
+    if NS.IsCombatLocked() then return end
+    frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    C.Visibility.FlushPending()
+    C.AuraButtons.FlushGates()
+end
+
 -- Disable: the poll stops, every event goes and routing work parked for the
--- end of combat is dropped.
+-- end of combat is dropped; parked driver work keeps its combat end.
 function Ev.Release(context)
     usableNext = 0
     StopPoll()
@@ -545,6 +556,13 @@ function Ev.Release(context)
         context:RemoveEvent(event)
     end
     staleRoutes, seedLater = false, false
+    if C.Visibility.HasPending() or C.AuraButtons.HasParkedGates() then
+        if not parkedListener then
+            parkedListener = S.CreateFrame("Frame")
+            parkedListener:SetScript("OnEvent", ReleaseParked)
+        end
+        parkedListener:RegisterEvent("PLAYER_REGEN_ENABLED")
+    end
 end
 
 ------------------------------------------------------------------ data units of the flush

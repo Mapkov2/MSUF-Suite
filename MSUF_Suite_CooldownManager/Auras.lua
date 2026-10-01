@@ -740,10 +740,14 @@ function A.Release(slot)
     RefreshTargets()
 end
 
+-- Module off. Gates parked by an earlier release in combat go too: the
+-- module may be switched off after combat but before its own
+-- PLAYER_REGEN_ENABLED ran (a profile change queued in combat).
 function A.ReleaseAll()
     for slot in pairs(live) do A.Release(slot) end
     for slot in pairs(meta) do Unholds(slot) end
     for slot in pairs(A.pending) do A.pending[slot] = nil end
+    C.AuraButtons.FlushGates()
 end
 
 -- Target containers pause while the target is friendly (FriendlyTarget).
