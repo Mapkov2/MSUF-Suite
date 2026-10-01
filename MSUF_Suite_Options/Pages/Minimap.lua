@@ -130,6 +130,12 @@ local function Build(ctx)
         { "Collect addon buttons again", function() if S.MinimapRescanButtons then S.MinimapRescanButtons() end end,
           function() return S.MinimapRescanButtons ~= nil and P.Get(ID, "enabled") and P.Get(ID, "collectButtons")
               and not Suite.Client.IsAddOnLoaded("MinimapButtonButton") end, key = "rescan" },
+        -- MinimapButtonButton owns the addon buttons while it is loaded; the
+        -- runtime then opens no arrangement menu (Drawer.lua).
+        { "Arrange individual addon buttons", function() if S.MinimapButtonLayoutMenu then S.MinimapButtonLayoutMenu() end end,
+          function() return S.MinimapButtonLayoutMenu ~= nil and P.Get(ID, "enabled") and P.Get(ID, "collectButtons")
+              and not Suite.Client.IsAddOnLoaded("MinimapButtonButton") end,
+          key = "button_positions" },
         { "Reload UI", function() ReloadUI() end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
     })

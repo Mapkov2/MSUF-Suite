@@ -21,13 +21,18 @@ local pageMeta = {
 local defaultMeta = { group = "manage", simple = true, keywords = "" }
 
 -- Keep discovery in lockstep with the runtime catalogs. New styles and color
--- palettes become searchable without duplicating their names in this LoD file.
+-- palettes become searchable without duplicating their names in this LoD
+-- file, under their key, their English name and the name the player reads.
 local function CatalogKeywords(order, labelOf)
     local terms = {}
     for index = 1, #order do
         local key = order[index]
+        local label = labelOf(key)
         terms[#terms + 1] = tostring(key)
-        terms[#terms + 1] = tostring(labelOf(key) or "")
+        if label then
+            terms[#terms + 1] = label
+            terms[#terms + 1] = L[label]
+        end
     end
     return table.concat(terms, " ")
 end

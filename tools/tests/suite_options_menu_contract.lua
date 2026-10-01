@@ -7,7 +7,7 @@ local root = assert(arg[1], "repository root required")
 -- this stand-in lets errors raise, so a failing callback fails the test.
 securecallfunction = function(callback, ...) return callback(...) end
 local flavor = arg[2] or "Mainline"
-C_PetBattles = { GetAbilityInfoByID = function(id) return id, "Weather", 900000 + id end }
+C_PetBattles = { GetAbilityInfoByID = function() return nil end }
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }
@@ -45,6 +45,13 @@ local function Widget(kind)
     function w:GetEffectiveScale() return 1 end
     function w:SetScript(name, fn) self.scripts[name] = fn end
     function w:GetScript(name) return self.scripts[name] end
+    function w:HookScript(name, fn)
+        local previous = self.scripts[name]
+        self.scripts[name] = function(...)
+            if previous then previous(...) end
+            fn(...)
+        end
+    end
     function w:SetEnabled(v) self.enabled = v and true or false end
     function w:SetAlpha(v) self.alpha = v end
     function w:GetAlpha() return self.alpha end
@@ -81,6 +88,7 @@ GetGameTime = function() return 12, 34 end
 GetCVarBool = function() return false end
 IsInInstance = function() return false, "none" end
 C_Texture = { GetAtlasInfo = function() return nil end }
+CreateColor = function(...) return { ... } end
 C_Map = { GetBestMapForUnit = function() return nil end }
 IsShiftKeyDown, IsControlKeyDown = function() return false end, function() return false end
 GetCurrentKeyBoardFocus = function() return nil end
@@ -112,6 +120,10 @@ local function LoadTOC(addon, ns)
 end
 -- No combinedBags setting: the Bags module stays unavailable in this fixture.
 C_CVar = { GetCVar = function() return nil end }
+-- Blizzard_NamePlates is always loaded, and CvarUtil is SharedXMLBase.
+NamePlateSetupOptions = {}
+NamePlateConstants = { DEBUFF_PADDING_CVAR = "nameplateDebuffPadding" }
+GetCVarNumberOrDefault = function(name) return tonumber((C_CVar.GetCVar(name))) end
 -- Every installed AddOn is enabled for every character unless a step says otherwise.
 local function AllEnabled() return 2 end
 UnitGUID = function() return "Player-Test" end
@@ -351,11 +363,17 @@ W.RoleButton = function(_, text, role) local button = Widget("RoleButton"); butt
 W.PageBuilder = function(ctx)
     local b = { width = ctx.width, y = -12 }
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
-    function b:CollapsibleSection(id, title)
+    function b:CollapsibleSection(id, title, _, defaultOpen)
         local body = Widget("Section")
         body.sectionId, body.title = id, title
         body._msuf2Width = ctx.width
         body._msuf2CollapsibleEntry = { label = Widget("FontString") }
+        if ctx.key == "suite_dataTexts" and id:match("^suite_dataTexts_bar%d+$") then
+            body.shown = defaultOpen == true
+            body._msuf2CollapsibleEntry.open = body.shown
+            function body:IsVisible() return ctx.pageVisible == true and self.shown end
+            if ctx.entry then ctx.entry.sections[id] = body end
+        end
         ctx.sections[#ctx.sections + 1] = body
         ctx.pageItems[#ctx.pageItems + 1] = id
         return body
@@ -391,7 +409,9 @@ end
 SecureHandlerExecute, SecureHandlerSetFrameRef, RegisterStateDriver =
     function() end, function() end, function() end
 C_DamageMeter = { GetCombatSessionFromType = function() end }
-Enum = { DamageMeterType = { DamageDone = 0 } }
+Enum = { DamageMeterType = { DamageDone = 0 }, SpellBookSpellBank = { Player = 0 } }
+C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
+issecretvalue = function() return false end
 Minimap = { SetMaskTexture = function() end }
 
 -- Boot the suite core as the client would, then attach the menu.
@@ -491,6 +511,55 @@ do (function()
     Suite.Print = previousPrint
 end)() end
 
+do
+    local previous = current
+    local ctx = { key = "suite_bags", width = 720, refreshers = {}, widgets = {}, sections = {},
+        pageItems = {}, entry = { sections = {} } }
+    current = ctx
+    M.pages.suite_bags.build(ctx)
+    local bankSection = false
+    for _, section in ipairs(ctx.sections) do
+        if section.sectionId == "suite_bags_bank" then bankSection = true end
+    end
+    assert(bankSection == (flavor == "Mainline"),
+        "Bank organisation must render only when this client has visible bank controls")
+    -- Reset section restores the visible organisation settings only; the
+    -- player's custom categories are data, not a setting of that section.
+    local organisation
+    for _, section in ipairs(ctx.sections) do
+        if section.sectionId == "suite_bags_organisation" then organisation = section end
+    end
+    local bags = S.Config("bags")
+    local savedCategories, savedColumns = bags.customCategories, bags.inventoryColumns
+    bags.customCategories, bags.inventoryColumns = "1|Raid mats|12", 9
+    assert(organisation and organisation._msufSuiteSectionReset and organisation._msufSuiteSectionReset(),
+        "Inventory organisation has no section reset")
+    assert(S.Config("bags").inventoryColumns == S.catalog.bags.rules.inventoryColumns.default
+        and S.Config("bags").customCategories == "1|Raid mats|12",
+        "Reset section must keep the player's custom categories")
+    bags.customCategories, bags.inventoryColumns = savedCategories, savedColumns
+    -- One clear for remembered character gold: DataTexts balances and the Bags history.
+    local clear = registeredControls["menu2.suite_bags.bags.action.clearGold"]
+    local savedLedger, savedHistory = Suite.RootDB.goldLedger, Suite.RootDB.suiteBagGold
+    Suite.RootDB.goldLedger = { alt = { name = "Alt", money = 5 } }
+    Suite.RootDB.suiteBagGold = { characters = { alt = { days = {} } } }
+    assert(clear and clear.scripts.OnClick, "the Bags page has no Clear saved character gold action")
+    clear.scripts.OnClick(clear)
+    assert(Suite.RootDB.goldLedger == nil and Suite.RootDB.suiteBagGold == nil,
+        "Clear saved character gold must remove the balances and the gold history")
+    Suite.RootDB.goldLedger, Suite.RootDB.suiteBagGold = savedLedger, savedHistory
+    -- disabledCategories was read but never written; per-category switches cover it.
+    assert(S.catalog.bags.rules.disabledCategories == nil, "the dead disabledCategories setting returned")
+    -- The look help names every preset of the look choice.
+    local page = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Bags.lua", "rb")):read("*a")
+    local lookHelp = page:match('"suite_bags_look".-help = "(.-)"')
+    for _, name in ipairs(S.catalog.bags.rules.look.choices) do
+        assert(name == "Custom" or (lookHelp and lookHelp:find(name, 1, true)),
+            "the look help does not name the preset " .. name)
+    end
+    current = previous
+end
+
 if flavor == "Forever" then
     local plates = S.Config("nameplates")
     assert(plates.look == 4 and plates.barGeometry == 2 and plates.enemyLevelEnabled == false,
@@ -549,6 +618,23 @@ do
     assert(action.edit.kind == "external" and action.edit.module == "actionbars"
         and action.edit.key == "bar1Layer" and type(action.edit.set) == "function",
         "Suite layer row cannot write through its module controller")
+    -- Every configured DataText bar is listed under its name, dynamic bars too.
+    local dataConfig = S.Config("dataTexts")
+    local savedData = Suite.CopyValue(dataConfig)
+    assert(S.SetMany("dataTexts", Suite.DataTextBarCreationValues(dataConfig, 13))
+        and S.Set("dataTexts", "bar13Name", "Raid info"), "could not configure a dynamic DataText bar")
+    layers = {}
+    layerProvider({ Layer = function(_, row) layers[row.id] = row end })
+    local dynamic = layers["suite.dataTexts.bar13Layer"]
+    assert(dynamic and dynamic.scope == "Raid info" and dynamic.edit.key == "bar13Layer",
+        "a configured DataText bar beyond the first three has no layer row")
+    local listed = 0
+    for id in pairs(layers) do
+        if id:match("^suite%.dataTexts%.bar%d+Layer$") then listed = listed + 1 end
+    end
+    assert(listed == #Suite.DataTextBarIDs(S.Config("dataTexts")),
+        "the layer overview lists other DataText bars than the configured ones")
+    Suite.DB.suite.modules.dataTexts = savedData
 end
 local rows = {}
 for _, item in ipairs(M.navItems) do if item.key then rows[item.key] = item end end
@@ -635,7 +721,7 @@ assert(rawget(L, "Enable module") == "MSUF-eigene Übersetzung", "suite changed 
 local contexts = {}
 for _, key in ipairs(expected) do
     local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
-    if key == "suite_qualityOfLife" then ctx.entry = { sections = {} } end
+    if key == "suite_qualityOfLife" or key == "suite_dataTexts" then ctx.entry = { sections = {} } end
     current = ctx
     M.pages[key].build(ctx)
     if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
@@ -643,6 +729,68 @@ for _, key in ipairs(expected) do
     for _, section in ipairs(ctx.sections) do assert(section.finished, key .. " section not finished: " .. section.sectionId) end
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
+end
+-- A cold DataTexts page does not allocate the hidden bars' slider/button
+-- skins. Restored open bars build one body per dispatch; exact search can
+-- materialize a closed body before resolving its declared control ID.
+do
+    local ctx = contexts.suite_dataTexts
+    local bars, timers = ctx.dataTextBarRows, {}
+    local previousTimer, previousCurrent = C_Timer, current
+    C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+    current = ctx
+    local coldCount = #ctx.widgets
+    local previousRefreshes = 0
+    ctx.refreshers[#ctx.refreshers + 1] = function() previousRefreshes = previousRefreshes + 1 end
+    for _, record in pairs(bars) do assert(not record.built, "cold page eagerly built bar controls") end
+    assert(next(ctx.entry.sections) == nil, "unbuilt bars exposed a section without exact controls")
+    local one, two, three = bars.suite_dataTexts_bar1, bars.suite_dataTexts_bar2, bars.suite_dataTexts_bar3
+    assert(one and two and three and not registeredControls["menu2.suite_dataTexts.dataTexts.bar1Slot2.preview"],
+        "cold page registered slider/body controls for a hidden bar")
+    ctx.pageVisible = true
+    one.body.scripts.OnShow(one.body)
+    one.body.scripts.OnShow(one.body)
+    two.body:Show()
+    two.body.scripts.OnShow(two.body)
+    assert(#timers == 1 and not one.built and not two.built, "open bars did not coalesce their build queue")
+    table.remove(timers, 1)()
+    assert(one.built and ctx.entry.sections.suite_dataTexts_bar1 == one.body
+        and not two.built and #timers == 1, "one dispatch built more than one bar")
+    local oneCount = #ctx.widgets - coldCount
+    -- Closing a queued body skips it. Reopening builds it without polling.
+    two.body:Hide()
+    table.remove(timers, 1)()
+    assert(not two.built and #timers == 0, "hidden queued bar was built")
+    two.body:Show()
+    two.body.scripts.OnShow(two.body)
+    table.remove(timers, 1)()
+    assert(two.built and #timers == 0, "reopened bar did not build")
+    -- A restored open body's controls can still be pending when exact
+    -- search arrives. Its virtual section must force preparation first.
+    three.body:Show()
+    three.body.scripts.OnShow(three.body)
+    assert(#timers == 1 and not ctx.entry.sections.suite_dataTexts_bar3,
+        "queued open bar bypassed the exact section resolver")
+    assert(ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar3") == three.body and three.built,
+        "exact search did not build the requested pending bar")
+    table.remove(timers, 1)()
+    three.body:Hide()
+    assert(three.body._msuf2CollapsibleEntry._msuf2EnsureVisible() == three.body,
+        "exact focus could not reuse a closed bar")
+    assert(ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar999") == nil,
+        "exact search resolved an unconfigured bar")
+    local warmCount = #ctx.widgets
+    for _, record in pairs(bars) do
+        record.body.scripts.OnShow(record.body)
+        record.body._msuf2CollapsibleEntry._msuf2EnsureVisible()
+    end
+    assert(#timers == 0 and #ctx.widgets == warmCount, "cached bar reopening rebuilt controls or left an idle timer")
+    assert(oneCount > 0 and warmCount - coldCount == 3 * oneCount,
+        "bar control construction depends on unrelated configured bars")
+    assert(previousRefreshes == 0, "building a bar repainted the previously built page controls")
+    print("DataTexts lazy construction: cold=" .. coldCount .. " controls; one bar=" .. oneCount
+        .. "; all three=" .. warmCount .. "; no idle timer")
+    C_Timer, current = previousTimer, previousCurrent
 end
 do
     local qol = contexts.suite_qualityOfLife
@@ -668,7 +816,11 @@ do
         and not action.row._msufSuiteSelected and not action.row._msufSuiteStripe.shown,
         "Quality of Life submenu highlight did not follow the selected feature")
     resolver(actionId)
-    local simpleId = "suite_qualityOfLife_groupFinderDoubleClick_group_finder_double_click"
+    local finderId = "suite_qualityOfLife_groupFinderDoubleClick_group_finder_double_click"
+    local finder = assert(rows[finderId])
+    assert(finder.hasDetails and resolver(finderId) == finder.details,
+        "group finder quick apply and saved note settings must remain reachable")
+    local simpleId = "suite_qualityOfLife_tooltipClassColors_class_colors"
     local simple = assert(rows[simpleId])
     assert(not simple.hasDetails and not simple.details and not simple.settings
         and resolver(simpleId) == simple.row,
@@ -1032,22 +1184,84 @@ end
     S.Set("nameplates", "look", 1)
 
 end)()
--- The extra-action control delegates to Blizzard's Edit Mode only when that
--- manager allows entry; the Suite never reparents the protected button.
-local extraButton = registeredControls["menu2.suite_actionbars.actionbars.editor.extraAbility"]
-assert(extraButton and not extraButton.enabled, "extra-action move control was not gated")
-local editModeOpens = 0
-EditModeManagerFrame = { CanEnterEditMode = function() return true end }
-ShowUIPanel = function(frame)
-    assert(frame == EditModeManagerFrame)
-    editModeOpens = editModeOpens + 1
+-- Blizzard enters its Edit Mode only from secure code (the game menu,
+-- /editmode: Blizzard_GameMenu, SlashCommandsOverrides.lua). The action bar
+-- page's "Move extra action button" runs /editmode from one secure overlay
+-- in UIParent that covers the hovered button out of combat (P.SecureMacroButton);
+-- the page never opens Edit Mode itself, which would run EnterEditMode
+-- tainted, and the Suite never reparents the protected button.
+do
+    local extra = assert(registeredControls["menu2.suite_actionbars.actionbars.editor.extraAbility"],
+        "the action bar page lost its extra action button")
+    local function RefreshBars() for _, fn in ipairs(contexts.suite_actionbars.refreshers) do fn() end end
+    RefreshBars()
+    assert(not extra.enabled, "the extra action button ignores Blizzard's Edit Mode gate")
+    -- A hover while Blizzard refuses Edit Mode attaches nothing.
+    local created = {}
+    local createFrame = CreateFrame
+    CreateFrame = function(kind, name, parent, template)
+        local frame = createFrame(kind, name, parent, template)
+        frame.template, frame.attributes, frame.events = template, {}, {}
+        function frame:SetAttribute(key, value) self.attributes[key] = value end
+        function frame:RegisterEvent(event) self.events[event] = true end
+        function frame:UnregisterEvent(event) self.events[event] = nil end
+        function frame:SetAllPoints(target) self.points = { { "ALL", target } } end
+        created[#created + 1] = frame
+        return frame
+    end
+    extra.scripts.OnEnter(extra)
+    assert(#created == 0, "the secure overlay attached while Edit Mode was unavailable")
+    EditModeManagerFrame = { CanEnterEditMode = function() return true end }
+    RefreshBars()
+    assert(extra.enabled, "the extra action button stayed disabled")
+    local uiParent = UIParent
+    UIParent = Widget("Frame")
+    extra.scripts.OnEnter(extra)
+    local overlay = assert(created[1], "hovering the extra action button attached no secure overlay")
+    CreateFrame = createFrame
+    assert(#created == 1 and overlay.template == "SecureActionButtonTemplate" and rawget(overlay, "parent") == UIParent,
+        "the overlay is not one secure button in UIParent")
+    UIParent = uiParent
+    assert(overlay.attributes.type1 == "macro" and overlay.attributes.macrotext1 == "/editmode"
+        and overlay.attributes.useOnKeyDown == false, "the overlay does not run /editmode on the click release")
+    assert(overlay.shown and overlay.points[1][2] == extra and overlay.owner == extra,
+        "the overlay does not cover the hovered button")
+    -- The covered button keeps its hover look: the overlay forwards to it.
+    local entered, left = 0, 0
+    extra:HookScript("OnEnter", function() entered = entered + 1 end)
+    extra:HookScript("OnLeave", function() left = left + 1 end)
+    overlay.scripts.OnEnter(overlay)
+    assert(entered == 1 and overlay.shown, "the overlay hides the button's hover look")
+    -- Leaving releases it.
+    overlay.scripts.OnLeave(overlay)
+    assert(not overlay.shown and #overlay.points == 0 and rawget(overlay, "owner") == nil and left == 1,
+        "leaving the button kept the secure overlay on the menu")
+    -- PLAYER_REGEN_DISABLED comes before the lockdown: the overlay lets go of
+    -- the menu then and no hover takes it back until combat ends.
+    extra.scripts.OnEnter(extra)
+    assert(overlay.shown and overlay.events.PLAYER_REGEN_DISABLED, "the overlay does not watch the combat start")
+    overlay.scripts.OnEvent(overlay, "PLAYER_REGEN_DISABLED")
+    assert(not overlay.shown and #overlay.points == 0, "the combat start left the secure overlay on the menu")
+    extra.scripts.OnEnter(extra)
+    assert(not overlay.shown, "a hover in the combat start attached the secure overlay")
+    overlay.scripts.OnEvent(overlay, "PLAYER_REGEN_ENABLED")
+    InCombatLockdown = function() return true end
+    extra.scripts.OnEnter(extra)
+    assert(not overlay.shown, "a hover in combat attached the secure overlay")
+    InCombatLockdown = function() return false end
+    extra.scripts.OnEnter(extra)
+    assert(overlay.shown, "the overlay stayed off after combat")
+    -- Closing the menu under the pointer releases it as well.
+    extra.scripts.OnHide(extra)
+    assert(not overlay.shown and #overlay.points == 0, "a hidden menu kept the secure overlay")
+    EditModeManagerFrame = lockedEditMode
+    RefreshBars()
+    local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/ActionBars.lua", "rb"))
+    local source = handle:read("*a")
+    handle:close()
+    assert(not source:find("ShowUIPanel", 1, true) and not source:find("SetParent", 1, true),
+        "the action bar page opens Blizzard's Edit Mode from insecure code")
 end
-extraButton.scripts.OnClick()
-assert(editModeOpens == 1, "extra-action move did not open Blizzard Edit Mode")
-EditModeManagerFrame.CanEnterEditMode = function() return false end
-extraButton.scripts.OnClick()
-assert(editModeOpens == 1, "blocked Edit Mode was opened")
-EditModeManagerFrame, ShowUIPanel = lockedEditMode, nil
 local sliderCount = 0
 for pageKey, ctx in pairs(contexts) do
     for _, widget in ipairs(ctx.widgets) do
@@ -1360,7 +1574,9 @@ for section, key in pairs({ enemy = "enemyTargetColor", roleColors = "enemyCaste
     assert(found, key .. " is absent from its three-dot color menu")
 end
 for _, id in ipairs(Suite.SuiteOrder) do
-    for _, rule in ipairs(Suite.SuiteCatalog[id].controls) do
+    local spec = Suite.SuiteCatalog[id]
+    local controls = spec.getControls and spec.getControls(S.Config(id)) or spec.controls
+    for _, rule in ipairs(controls) do
         if rule.color and not rule.hidden and not rule.previewOnly then
             local template = rule.key:gsub("^bar%d+", "bar1"):gsub("^w%d+", "w1")
             if id == "cooldownManager" and rule.suffix then template = "c1_" .. rule.suffix end
@@ -1572,6 +1788,28 @@ assert(Suite.SuiteCatalog.chat.rules.copyMessages.default == false and savedChat
     "chat message copying must be off by default")
 assert(contexts.suite_chat.fixedPreview and contexts.suite_chat.pageItems[1] == "fixed-preview",
     "chat preview must stay visible while other chat sections are edited")
+-- Clearing saved chat history works for a character whose Chat module is
+-- off: the load-on-demand addon (and its per-character saved variables) is
+-- loaded for it, nothing is enabled.
+do
+    local clearHistory
+    for id, widget in pairs(registeredControls) do
+        if id:find("suite_chat", 1, true) and id:find("clearHistory", 1, true) then clearHistory = widget end
+    end
+    assert(clearHistory and clearHistory.scripts.OnClick, "the Chat page has no Clear saved chat history action")
+    local loadAddOn, cleared, loadedChat = C_AddOns.LoadAddOn, 0, false
+    local chatInstance = S.instances.chat
+    S.instances.chat = nil
+    C_AddOns.LoadAddOn = function(name)
+        if name ~= "MSUF_Suite_Chat" then return loadAddOn(name) end
+        loadedChat = true
+        S.instances.chat = { ClearHistory = function() cleared = cleared + 1 end }
+        return true
+    end
+    clearHistory.scripts.OnClick(clearHistory)
+    assert(loadedChat and cleared == 1, "clearing chat history needed the Chat module to be running")
+    C_AddOns.LoadAddOn, S.instances.chat = loadAddOn, chatInstance
+end
 local timestampWidget
 local chatFontSizes = {}
 for _, widget in ipairs(contexts.suite_chat.widgets) do
@@ -1658,13 +1896,14 @@ local qolFeaturesByCategory = {
     lootMerchants = {
         "loot_collection", "lootToastFilter_filtered_loot", "vaultSpec_vault_spec",
         "loot_history", "merchantLevel_merchant_level", "lootContainers_open_containers",
-        "qol_repair", "qol_junk", "lootVendorRules_marked_sales",
+        "qol_repair", "qol_junk", "lootVendorRules_marked_sales", "merchantList_merchant_list",
     },
     characterGear = {
         "chatProfileLinks_profile_links", "characterUpgradeWindow_upgrade_equipment",
         "xpBar_xp_bar", "socketGemSuggestions_socket_gems", "loadoutReminder_loadout_reminder",
         "durabilityAlert_durability_warning", "professionAppearance_profession_outfits",
         "combatStatsHUD_secondary_stats",
+        "targetDistance_target_distance", "characterExtras_character_extras",
     },
     groupRaid = {
         "battleRes_battle_res", "groupBloodlust_bloodlust_lockout",
@@ -1675,23 +1914,24 @@ local qolFeaturesByCategory = {
         "groupFinderExitReminder_group_finder_exit", "groupFinderDoubleClick_group_finder_double_click",
         "mythicKeyShare_keystone_command", "groupFinderApplicantSort_group_finder_applicant_sort",
         "mythicResetReminder_mythic_reset", "tooltipMPlusScore_mplus_score",
+        "enemyCastStack_dungeon_casts", "dungeonPortals_dungeon_portals",
     },
     combatAlerts = {
         "actionTracker_action_tracker", "burningRushCue_burning_rush_cue",
         "combatLog_log_dungeons", "macroBuilder_macro_builder",
-        "combatMovementCue_movement_cue", "combatPetStatus_pet_status",
+        "combatMovementCue_movement_cue", "combatPetStatus_pet_status", "threatMeter_threat_meter",
     },
     mapTravel = {
         "mapLandingShortcuts_expansion_shortcuts",
-        "skyriding_flight_hud", "waypoints_waypoint_command",
+        "skyriding_flight_hud", "waypoints_waypoint_command", "flightTimer_flight_route",
     },
     interfaceChat = {
         "cursorEffects_cursor_effects", "guildChatPrivacy_guild_privacy",
-        "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter",
+        "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter", "popupAttention_popup_attention", "partyEffects_party_effects",
     },
     tooltips = {
         "tooltipClassColors_class_colors", "tooltipSpellCopy_copy_spell_id",
-        "itemCounts_item_counts", "tooltipIDs_tooltip_ids", "tooltipVisibility_tooltip_visibility",
+        "itemCounts_item_counts", "tooltipIDs_tooltip_ids", "tooltipVisibility_tooltip_visibility", "tooltipDetails_tooltip_details",
     },
 }
 local qolRows = assert(qolPage.qualityOfLifeFeatureRows
@@ -1738,7 +1978,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 53 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 63 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated")
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")
@@ -1780,7 +2020,7 @@ for i, category in ipairs(sourceCategories) do
         CheckFeatureList(category.features, category.id, nil, true)
     end
 end
-assert(tabbedCount == 3 and sourceCount == 53,
+assert(tabbedCount == 3 and sourceCount == 63,
     "Quality of Life source tabs or rendered feature inventory changed")
 local renderedOrder = assert(qolPage.qualityOfLifeFeatureOrder,
     "Quality of Life page did not record the rendered feature order")
@@ -1861,6 +2101,10 @@ xpBar.set(true)
 assert(xpBar.get() and S.Config("xpBar").enabled, "XP bar header switch did not enable its module")
 xpBar.set(false)
 assert(not xpBar.get(), "XP bar header switch did not disable its module")
+do
+    -- The XP bar's Custom style paints its own colors, so every style is offered.
+    assert(optionsNS.ChoiceGates.xpBar == nil, "the XP bar hid one of its styles")
+end
 local skyride = qolPage.Section("skyriding_flight_hud").headerSwitch
 skyride.set(true)
 assert(skyride.get() and S.Config("skyriding").enabled, "Skyriding switch did not save its preference")
@@ -1957,7 +2201,9 @@ for _, widget in ipairs(colorContext.widgets) do
 end
 local expectedColorCount = 0
 for _, id in ipairs(Suite.SuiteOrder) do
-    for _, rule in ipairs(Suite.SuiteCatalog[id].controls) do
+    local spec = Suite.SuiteCatalog[id]
+    local controls = spec.getControls and spec.getControls(S.Config(id)) or spec.controls
+    for _, rule in ipairs(controls) do
         if rule.color and not rule.hidden then
             local key = "msufsuite." .. id .. "." .. rule.key
             assert(globalColors[key], "MSUF Colors missed Suite color: " .. key)
@@ -1968,6 +2214,8 @@ end
 local actualColorCount = 0
 for _ in pairs(globalColors) do actualColorCount = actualColorCount + 1 end
 assert(actualColorCount == expectedColorCount, "MSUF Colors has incomplete or duplicate Suite color rows")
+assert(not globalColors["msufsuite.dataTexts.bar4Slot1Background"],
+    "MSUF Colors exposed a color setting for an unconfigured DataTexts bar")
 assert(globalColors["msufsuite.dataTexts.bar1BackgroundColor"]
     and globalColors["msufsuite.cooldownManager.c1_borderColor"],
     "MSUF Colors omits individual bar colors")
@@ -2275,6 +2523,47 @@ for _, id in ipairs(Suite.SuiteOrder) do
     end
 end
 assert(checked > 500 and not covered["msufsuite.actionbars.bar2Size"], "coverage check is vacuous")
+-- Options that cannot apply on this client are hidden there: the gamepad
+-- bar rule outside Forever, the assisted-combat recommendation on Forever
+-- (no assisted combat there); the recommendation look needs a Suite style.
+do
+    local abRules = Suite.SuiteCatalog.actionbars.rules
+    local forever = flavor == "Forever"
+    assert((abRules.bar1HideGamepad.hidden == true) == not forever, "the gamepad bar rule shows on the wrong client")
+    for _, key in ipairs({ "assistStyle", "assistColor", "assistAlpha", "assistExpansion", "assistX", "assistY" }) do
+        assert((abRules[key].hidden == true) == forever, "the recommendation option shows on the wrong client: " .. key)
+    end
+    assert(abRules.assistColor.requiresChoice and abRules.assistColor.requiresChoice.key == "assistStyle"
+        and not abRules.assistColor.requiresChoice.values[1], "the recommendation color ignores the Blizzard style")
+end
+-- Settings that only act below a parent switch or choice are gated by it,
+-- and the stance and pet bars hide the macro name settings they cannot use.
+do
+    local ab, dm = Suite.SuiteCatalog.actionbars.rules, Suite.SuiteCatalog.damageMeter.rules
+    for _, suffix in ipairs({ "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" }) do
+        assert(ab["bar1" .. suffix].enableKey == "bar1Background", "bar background setting without its switch: " .. suffix)
+    end
+    for _, key in ipairs({ "bar1LeftEndcapSize", "bar1LeftEndcapX", "bar3RightEndcapY" }) do
+        local choice = ab[key].requiresChoice
+        assert(choice and choice.key == key:gsub("Size$", ""):gsub("[XY]$", "") and not choice.values[1],
+            "endcap setting without its shape: " .. key)
+    end
+    assert(ab.pageArrowSide.enableKey == "pageArrows", "the page arrow side ignores the page arrows switch")
+    assert(ab.bar11MacroPoint.hidden and ab.bar12MacroX.hidden and ab.bar12MacroY.hidden and not ab.bar1MacroPoint.hidden,
+        "stance or pet bars offer macro name anchors")
+    for _, key in ipairs({ "timerDecimals", "timerDesaturate", "timerTextColor", "timerBackground", "timerBackgroundAlpha",
+        "timerBorderSize", "timerBorderColor" }) do
+        assert(dm[key].enableKey == "timer", "floating timer setting without its switch: " .. key)
+    end
+    local choice = dm.rowBorderIcon.requiresChoice
+    assert(choice and choice.key == "rowBorderMode" and not choice.values[1], "the icon joins a row border that is off")
+    -- The separate icon border draws with the row border thickness and
+    -- color, so both stay editable while Row border is None.
+    for _, key in ipairs({ "rowBorderSize", "rowBorderColor" }) do
+        assert(not dm[key].requiresChoice and not dm[key].enableKey,
+            "the icon border look is locked behind the row border: " .. key)
+    end
+end
 assert(not covered["msufsuite.minimap.buttonTrackingX"]
     and not covered["msufsuite.minimap.infoClockY"]
     and not covered["msufsuite.minimap.styleX"],
@@ -2645,7 +2934,7 @@ do
         "icon-only mode should disable unused text controls")
     display.set(3); icons.set(1)
     M.RequestRefresh()
-    assert(item.icon.texture == 900403 and item.icon.shown and item.label.shown and item.label.text == "Clear",
+    assert(item.icon.texture == 535593 and item.icon.shown and item.label.shown and item.label.text == "Clear",
         "weather preview ignored the native symbol or combined display")
     display.set(1)
     M.RequestRefresh()
@@ -2722,6 +3011,27 @@ assert(not drawerPreview.shown, "MBB should hide the Suite drawer preview")
 Suite.Client.IsAddOnLoaded = originalIsAddOnLoaded
 M.RequestRefresh()
 assert(drawerPreview.shown, "Suite drawer preview did not return without MBB")
+-- MBB owns the addon buttons while loaded and the arrangement menu refuses
+-- to open: its button is disabled then.
+do
+    local arrange = registeredControls["menu2.suite_minimap.minimap.action.button_positions"]
+    local config = S.Config("minimap")
+    local layoutMenu, enabledBefore, collectBefore = S.MinimapButtonLayoutMenu, config.enabled, config.collectButtons
+    S.MinimapButtonLayoutMenu = function() return true end
+    config.enabled, config.collectButtons = true, true
+    M.RequestRefresh()
+    assert(arrange and arrange.enabled, "harness: the arrangement button stays disabled without MBB")
+    Suite.Client.IsAddOnLoaded = function(name)
+        if name == "MinimapButtonButton" then return true end
+        return originalIsAddOnLoaded(name)
+    end
+    M.RequestRefresh()
+    assert(not arrange.enabled, "the arrangement button stays enabled while MBB owns the addon buttons")
+    Suite.Client.IsAddOnLoaded = originalIsAddOnLoaded
+    S.MinimapButtonLayoutMenu = layoutMenu
+    config.enabled, config.collectButtons = enabledBefore, collectBefore
+    M.RequestRefresh()
+end
 S.Config("minimap").showLanding = 3
 M.RequestRefresh()
 assert(not folioPreview.shown, "disabled Folio still appears in the normal preview")
@@ -2955,6 +3265,53 @@ assert(S.Config("minimap").stylePreset == beforeStyle.root.profiles[beforeStyle.
 assert(Suite.RootDB.profiles.Other.marker and Suite.RootDB.suiteChat.lines[1] == "kept",
     "Suite history restore touched another profile or the chat log")
 Suite.RootDB.profiles.Other, Suite.RootDB.suiteChat = nil, nil
+-- Runtime data never rides undo. Data that existed at the snapshot, changed
+-- afterwards or was created afterwards (saved chat lines, gold ledgers, bag
+-- gold, run and XP history, module state) survives a restore unchanged.
+;(function()
+    local root = Suite.RootDB
+    root.chatHistory = { Player = { lines = { "first" } } }
+    root.goldLedger = { Player = 100 }
+    root.suiteBagRecent = { guid = "Player", items = { [5] = true }, order = { 5 }, dismissed = {} }
+    root.suiteBagSort = { Player = { before = false, applied = true } }
+    root.suiteCharacters = { ["Player-1"] = { runSummary = { history = { { historyID = 1 } } } } }
+    -- Detached minimap addon buttons are Edit Mode layout and ride undo.
+    local placed = { LibDBIcon10_Test = { x = 10, y = 20 } }
+    Suite.DB.suite.moduleState = { runSummary = { history = { "run 1" } },
+        minimap = { detachedButtons = placed } }
+    local size = S.Config("minimap").size
+    local snapshot = historyProvider.capture()
+    local captured = snapshot.root.profiles[root.activeProfile].suite
+    assert(snapshot.root.chatHistory == nil and snapshot.root.goldLedger == nil
+        and snapshot.root.suiteBagRecent == nil and snapshot.root.suiteBagSort == nil
+        and snapshot.root.suiteCharacters == nil and captured.moduleState == nil
+        and captured.modules.minimap.size == size,
+        "Suite history copied runtime data or missed the settings")
+    root.chatHistory.Player.lines[2] = "second"
+    root.goldLedger.Player = 250
+    root.suiteBagRecent.items[6], root.suiteBagSort.Player.applied = true, false
+    table.insert(root.suiteCharacters["Player-1"].runSummary.history, 1, { historyID = 2 })
+    root.suiteBagGold, root.suiteRuns, root.suiteXP = { Player = 7 }, { { map = 1 } }, { session = 5 }
+    Suite.DB.suite.moduleState.runSummary.history[2] = "run 2"
+    placed.LibDBIcon10_Test.x, placed.LibDBIcon10_Other = 99, { x = 1, y = 1 }
+    S.Config("minimap").size = size + 10
+    assert(historyProvider.restore(snapshot) and S.Config("minimap").size == size,
+        "Suite history did not restore a setting")
+    assert(root.chatHistory.Player.lines[2] == "second" and root.goldLedger.Player == 250
+        and root.suiteBagGold.Player == 7 and root.suiteRuns[1].map == 1 and root.suiteXP.session == 5
+        and root.suiteBagRecent.items[6] and root.suiteBagSort.Player.applied == false
+        and Suite.DB.suite.moduleState.runSummary.history[2] == "run 2"
+        and #root.suiteCharacters["Player-1"].runSummary.history == 2,
+        "Suite history restore rolled back or deleted runtime data")
+    local restored = Suite.DB.suite.moduleState.minimap.detachedButtons
+    assert(restored ~= placed and restored.LibDBIcon10_Test.x == 10 and restored.LibDBIcon10_Test.y == 20
+        and restored.LibDBIcon10_Other == nil and snapshot.root.profiles[root.activeProfile].layoutState
+        .minimap.detachedButtons.LibDBIcon10_Test.x == 10, "undo did not restore the detached minimap buttons")
+    root.chatHistory, root.goldLedger, root.suiteBagGold, root.suiteRuns, root.suiteXP = nil, nil, nil, nil, nil
+    root.suiteBagRecent, root.suiteBagSort = nil, nil
+    root.suiteCharacters = nil
+    Suite.DB.suite.moduleState = nil
+end)()
 local skinRoot = { activeProfile = "Default", profiles = { Default = { theme = { look = "dark" } } },
     optionsUI = { lastPage = "colors" } }
 MapkoSkin = {
@@ -3041,6 +3398,20 @@ assert(M.ResetPageToDefaults("suite_dataTexts")
     "Reset page did not restore the module defaults")
 assert(S.Config("actionbars").look == 1,
     "Suite page reset changed another page")
+;(function()
+    local changed = {}
+    for _, id in ipairs(Suite.SuiteOrder) do
+        if S.catalog[id].page == "suite_qualityOfLife" then
+            S.Config(id).enabled = not S.catalog[id].rules.enabled.default
+            changed[#changed + 1] = id
+        end
+    end
+    assert(#changed > 9 and M.ResetPageToDefaults("suite_qualityOfLife"), "Quality of Life page reset failed")
+    for _, id in ipairs(changed) do
+        assert(S.Config(id).enabled == S.catalog[id].rules.enabled.default,
+            "Quality of Life page reset skipped a module of its page: " .. id)
+    end
+end)()
 local actionRules = S.catalog.actionbars.rules
 assert(actionRules.bar1X and actionRules.bar10X)
 assert(S.SetMany("actionbars", { bar1X = 17, bar10X = 18 }))
@@ -3097,23 +3468,33 @@ local o = copyTo.opts
 assert(o.runLabel == "Copy Selected" and o.sourceKey() == source, "Copy To does not copy from the selected bar")
 local categoryKeys = {}
 for _, category in ipairs(o.categories) do categoryKeys[#categoryKeys + 1] = category.key end
-assert(table.concat(categoryKeys, " ") == "visibility layout text background", "Copy To categories: " .. table.concat(categoryKeys, " "))
+assert(table.concat(categoryKeys, " ") == "visibility layout text ornaments background", "Copy To categories: " .. table.concat(categoryKeys, " "))
 assert(o.isTargetVisible(source, source) == false and o.isTargetVisible(target, source) == true
     and o.isTargetVisible("all", source) == true, "Copy To destinations are wrong")
-o.onTargetClick(target)
-assert(o.selectedTarget(source) == target, "Copy To lost the chosen destination")
+local choices = o.selectedTarget(source)
+for index = 1, Suite.ActionBarCount do if choices[index] then o.onTargetClick(index) end end
+local another = target == 3 and 4 or 3
+if another == source then another = 5 end
+o.onTargetClick(target);o.onTargetClick(another)
+assert(o.selectedTarget(source)[target] and o.selectedTarget(source)[another], "Copy To lost multiple chosen destinations")
 for key in pairs(o.scopes) do o.scopes[key] = key == "background" end
-assert(S.SetMany("actionbars", { [p .. "Background"] = true, [q .. "Background"] = false, [q .. "Size"] = 40 }))
+assert(S.SetMany("actionbars", { [p .. "Background"] = true, [q .. "Background"] = false, [q .. "Size"] = 40,
+    ["bar" .. another .. "Background"] = false }))
 local popupHidden
 local popupStub = { Hide = function() popupHidden = true end }
 o.onRun(nil, popupStub)
 copiedConfig = S.Config("actionbars")
-assert(popupHidden and copiedConfig[q .. "Background"] == true, "Copy Selected missed the chosen section")
+assert(popupHidden and copiedConfig[q .. "Background"] == true and copiedConfig["bar" .. another .. "Background"] == true,
+    "Copy Selected missed one of the chosen destination bars")
 assert(copiedConfig[q .. "Size"] == 40 and copiedConfig[q .. "X"] == 33, "Copy Selected copied an unchosen section or the position")
 for key in pairs(o.scopes) do o.scopes[key] = false end
 popupHidden = false
 o.onRun(nil, popupStub)
 assert(not popupHidden, "Copy Selected ran without a category")
+o.onTargetClick(target);o.onTargetClick(another)
+for key in pairs(o.scopes) do o.scopes[key] = true end
+o.onRun(nil, popupStub)
+assert(not popupHidden, "Copy Selected ran without a destination")
 for key in pairs(o.scopes) do o.scopes[key] = true end
 local previousShow, previousInstall = _G.StaticPopup_Show, M.InstallStaticPopup
 local confirmed
@@ -3313,9 +3694,22 @@ end)()
 
 -- The action and catalog providers must be independent of visiting a page.
 -- Build lazy QoL details only for the separate, authoritative widget inventory.
+-- With every module and Quality of Life feature on, the cold inventory is the
+-- whole catalog: more than the 1200 targets the committed contract required
+-- (34f2ede). The catalog only grows, so a smaller count means lost recall.
 ;(function()
     M.RegisterSearchProvider = function() return true end
     assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Search.lua"))("MSUF_Suite_Options", optionsNS)
+    local saved = {}
+    for _, id in ipairs(Suite.SuiteOrder) do
+        saved[id] = { enabled = S.Config(id).enabled }
+        S.Config(id).enabled = true
+    end
+    for _, feature in ipairs(optionsNS.QualityOfLifeSearchFeatures) do
+        local config = S.Config(feature.id)
+        saved[feature.id][feature.switch] = config[feature.switch]
+        config[feature.switch] = true
+    end
     local searchRows = optionsNS.SearchRows()
     local qol = contexts.suite_qualityOfLife
     for _, sectionId in ipairs(qol.qualityOfLifeFeatureOrder) do
@@ -3325,8 +3719,28 @@ end)()
     for key, ctx in pairs(contexts) do
         if key ~= "suite_skin" then pageContexts[key] = ctx end
     end
-    assert(CheckSearchTargets(searchRows, pageContexts) > 1200,
-        "cold Suite search omitted catalog settings or editor actions")
+    local expectedTargets = 0
+    for _, row in ipairs(searchRows) do
+        if pageContexts[row.pageKey] and (row.controlId or row.settingKey) then
+            expectedTargets = expectedTargets + 1
+        end
+        assert(optionsNS.SearchRowAvailable(row.pageKey, row.settingKey, row),
+            "cold search retained an inactive catalog setting or editor action")
+    end
+    assert(expectedTargets > 1200 and CheckSearchTargets(searchRows, pageContexts) == expectedTargets,
+        "cold Suite search omitted catalog settings or editor actions: " .. expectedTargets)
+    local controls = {}
+    for _, row in ipairs(searchRows) do if row.controlId then controls[row.controlId] = true end end
+    for _, feature in ipairs(optionsNS.QualityOfLifeSearchFeatures) do
+        if optionsNS.QualityOfLifeEditElements[feature.id] and optionsNS.Available(feature.id) then
+            local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
+            local wanted = optionsNS.Meta("suite_qualityOfLife", feature.id, "action.edit", "action", sectionId).controlId
+            assert(controls[wanted], "the Edit Mode button of " .. feature.id .. " is not searchable")
+        end
+    end
+    for id, values in pairs(saved) do
+        for key, value in pairs(values) do S.Config(id)[key] = value end
+    end
 end)()
 
 -- Summary content follows useful settings, never declaration order or offsets.
@@ -3405,6 +3819,65 @@ end)()
     optionsNS.StylePreviewFont(font, "Selected.ttf", 14, "", 1, false)
     assert(font.path == "Selected.ttf" and font.calls == 1, "preview replaced a pending custom font")
     MSUF_SetFontChecked, S.SetStyledFont = previousOwner, previousStyled
+end)()
+
+-- Imported profiles may contain the supported maximum of 256 bars. Their
+-- initial menu cost is headers, not 256 copies of every slider skin.
+;(function()
+    local config = S.Config("dataTexts")
+    local savedIds, previousCurrent, previousTimer, previousCombat = config.barIds, current, C_Timer, optionsNS.Combat
+    local ids, timers = {}, {}
+    for id = 1, Suite.DataTextBarLimit do ids[id] = tostring(id) end
+    config.barIds = table.concat(ids, ",")
+    local ctx = { key = "suite_dataTexts", width = 720, refreshers = {}, widgets = {},
+        sections = {}, pageItems = {}, entry = { sections = {} } }
+    ctx.wrapper = { IsVisible = function() return ctx.pageVisible == true end }
+    current = ctx
+    C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+    M.pages.suite_dataTexts.build(ctx)
+    assert(#ctx.widgets <= Suite.DataTextBarLimit + 50 and #timers == 0,
+        "maximum-bar profile eagerly constructed hidden body controls")
+    for _, record in pairs(ctx.dataTextBarRows) do assert(not record.built) end
+    local coldCount = #ctx.widgets
+    ctx.pageVisible = true
+    for id = 1, 3 do
+        local record = ctx.dataTextBarRows["suite_dataTexts_bar" .. id]
+        record.body:Show()
+        record.body.scripts.OnShow(record.body)
+    end
+    assert(#timers == 1, "restored accordions scheduled parallel bulk builds")
+    optionsNS.Combat = function() return true end
+    table.remove(timers, 1)()
+    assert(#ctx.widgets == coldCount and #timers == 0,
+        "combat did not cancel the whole pending build queue")
+    optionsNS.Combat = previousCombat
+    M.RequestRefresh()
+    local controlsPerBar
+    for id = 1, 3 do
+        local before = #ctx.widgets
+        assert(#timers == 1)
+        table.remove(timers, 1)()
+        local added = #ctx.widgets - before
+        assert(ctx.dataTextBarRows["suite_dataTexts_bar" .. id].built and added > 0
+            and (not controlsPerBar or added == controlsPerBar),
+            "one dispatch did not bound body construction to one bar")
+        controlsPerBar = added
+    end
+    assert(#timers == 0)
+    local last = ctx.dataTextBarRows["suite_dataTexts_bar" .. Suite.DataTextBarLimit]
+    assert(ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar" .. Suite.DataTextBarLimit) == last.body,
+        "exact search could not build a dynamic bar beyond the legacy twelve templates")
+    local four = ctx.dataTextBarRows.suite_dataTexts_bar4
+    local five = ctx.dataTextBarRows.suite_dataTexts_bar5
+    four.body:Show()
+    four.body.scripts.OnShow(four.body)
+    five.body:Show()
+    five.body.scripts.OnShow(five.body)
+    ctx.pageVisible = false -- Page switched or its wrapper was invalidated.
+    table.remove(timers, 1)()
+    assert(not four.built and not five.built and #timers == 0,
+        "obsolete hidden page retained its pending build queue")
+    config.barIds, current, C_Timer, optionsNS.Combat = savedIds, previousCurrent, previousTimer, previousCombat
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

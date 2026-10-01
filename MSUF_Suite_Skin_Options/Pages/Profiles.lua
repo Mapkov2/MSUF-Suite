@@ -2,10 +2,11 @@ local _, Private = ...
 local NS, O = Private.NS, Private.Options
 local L = NS.L
 
--- Profile switches, creation and import replace the whole skin database, so
--- a successful one drops the undo step instead of recording one (and
+-- Profile switches, creation and import activate another profile, so a
+-- successful one drops the undo step instead of recording one (and
 -- ClearHistory repaints the options once); a refused one (combat, invalid
--- name, bad import) keeps it.
+-- name, bad import) keeps it. Only a confirmed replacement by an import
+-- records a step: the replaced profile (ReplaceProfile below).
 local function Replaced(ok, ...)
     if ok then O.ClearHistory() end
     return ok, ...
@@ -76,6 +77,50 @@ local function CreateTransferBox(transfer)
     return edit
 end
 
+-- An import never replaces a profile silently (ProfileIO.ImportProfile). A
+-- taken name arms the import button; only a second click within ARM_SECONDS,
+-- on the same text and name, replaces that profile. The replacement is one
+-- undo step whose snapshot is the replaced profile.
+local ARM_SECONDS = 5
+
+local function ReplaceProfile(view, text, name)
+    local label = L["Import profile"]
+    local began = O.BeginUserChange(label, name)
+    local ok, reason = NS.ProfileIO.ImportProfile(text, name, true)
+    if began and ok then
+        O.CommitUserChange(label)
+    elseif began then
+        O.CancelUserChange()
+    elseif ok then
+        O.ClearHistory()
+    end
+    view.Result(ok, reason, ok and L["Profile %s replaced"]:format(tostring(reason)) or nil)
+end
+
+local function ImportProfile(view, confirmation, text)
+    local draftName = view.draftName ~= "" and view.draftName or nil
+    local pending = view.pendingReplace
+    view.pendingReplace = nil
+    if pending and confirmation.IsArmed(pending) and pending.text == text
+        and pending.draftName == draftName then
+        confirmation.Disarm()
+        ReplaceProfile(view, text, pending.name)
+        return
+    end
+    confirmation.Disarm()
+    local ok, reason, existing = NS.ProfileIO.ImportProfile(text, draftName)
+    if not ok and reason == "profile-exists" then
+        view.pendingReplace = { text = text, draftName = draftName, name = existing }
+        confirmation.Arm(view.pendingReplace)
+        view.Result(false, reason, nil,
+            L["Profile %s already exists. Click Confirm replace within 5 seconds to overwrite it."]
+                :format(tostring(existing)))
+        return
+    end
+    ok, reason = Replaced(ok, reason)
+    view.Result(ok, reason, ok and L["Profile imported as %s"]:format(tostring(reason)) or nil)
+end
+
 local function BuildTransfer(page, anchor, view)
     local transfer = O.CreatePanel(page, "card")
     transfer:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -42)
@@ -108,10 +153,11 @@ local function BuildTransfer(page, anchor, view)
     end)
     exportAll:SetPoint("LEFT", exportProfile, "RIGHT", 8, 0)
 
+    local confirmation
     local importProfile = O.CreateSettingButton(transfer, L["Import profile"], 134, 28, function()
-        view.Result(Replaced(NS.ProfileIO.ImportProfile(edit:GetText(),
-            view.draftName ~= "" and view.draftName or nil)))
+        ImportProfile(view, confirmation, edit:GetText())
     end, "buttonPrimary", view.Refused)
+    confirmation = O.CreateConfirmation(importProfile, L["Import profile"], L["Confirm replace"], ARM_SECONDS)
     importProfile:SetPoint("LEFT", exportAll, "RIGHT", 18, 0)
     local importAll = O.CreateSettingButton(transfer, L["Import all"], 118, 28, function()
         view.Result(Replaced(NS.ProfileIO.ImportAll(edit:GetText())))
@@ -133,12 +179,12 @@ O.RegisterPage("profiles", NS.L.PROFILES, function(page)
     RefreshNames()
     -- Shows the outcome. A replaced profile was repainted by ClearHistory;
     -- an export or a refused operation changed no setting to repaint.
-    view.Result = function(ok, value, successText)
+    view.Result = function(ok, value, successText, failureText)
         local text
         if ok then
             text = successText or tostring(value or L["Done"])
         else
-            text = REFUSAL_TEXT[value] or L["Error: %s"]:format(tostring(value))
+            text = failureText or REFUSAL_TEXT[value] or L["Error: %s"]:format(tostring(value))
         end
         view.status:SetText(text)
         O.SetTextColor(view.status, ok and "success" or "danger")

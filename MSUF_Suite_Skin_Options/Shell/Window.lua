@@ -334,7 +334,7 @@ local function RefreshChrome(state)
     O.SetButtonEnabled(state.redo, redoLabel ~= nil)
     local lookKey = NS.DB and NS.DB.theme and NS.DB.theme.look or "custom"
     local look = NS.LookPresets[lookKey]
-    local lookLabel = look and look.label or L["Custom"]
+    local lookLabel = look and L[look.label] or L["Custom"]
     state.profileStatus:SetText(L["Profile: %s\nStyle: %s"]:format(NS.Database.GetActiveProfileName(), lookLabel))
 end
 

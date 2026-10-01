@@ -1,7 +1,22 @@
 local _, P = ...
 local M, Tr = P.M, P.Tr
 local PAGE, ID = "suite_chat", "chat"
+-- A bubble source's own look shows only while that source uses it.
+local OWN_PARTS = { "bubbleFont", "bubbleSize", "bubbleText", "bubbleFill", "bubbleOpacity", "bubbleEdge",
+    "bubblePad", "bubbleWidth" }
+local OWNED = {}
+for _, source in ipairs(P.Suite.ChatBubbleSources) do
+    for _, part in ipairs(OWN_PARTS) do OWNED[part .. source.key] = "bubbleOwn" .. source.key end
+end
 P.Gates[ID] = function(rule)
+    local own = OWNED[rule.key]
+    if own then return P.Get(ID, own) == true end
+    if rule.key == "tabActiveBackground" or rule.key == "tabInactiveBackground"
+        or rule.key == "tabActiveAlpha" or rule.key == "tabInactiveAlpha"
+        or rule.key == "tabBorderSize" or rule.key == "tabActiveBorder"
+        or rule.key == "tabInactiveBorder" then
+        return P.Get(ID, "tabIndividualPanels") == true
+    end
     if rule.key == "fontShadow" or rule.key == "fontShadowOpacity"
         or rule.key == "fontShadowDistance" then
         return P.Get(ID, "fontRendering") ~= 3
@@ -40,6 +55,15 @@ end
 
 local function SetTimestamp(value)
     if type(value) == "string" then C_CVar.SetCVar("showTimestamps", value) end
+end
+
+-- Saved lines live in the Chat addon's per-character saved variables. A
+-- character whose Chat module is off loads the addon (load on demand) to
+-- clear them; loading it enables nothing.
+local function ClearHistory()
+    if not P.S.instances.chat then C_AddOns.LoadAddOn("MSUF_Suite_Chat") end
+    local chat = P.S.instances.chat
+    if chat then chat:ClearHistory() end
 end
 
 local function Color(texture, hex, alpha)
@@ -180,7 +204,7 @@ local function Build(ctx)
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_tools", Tr("Chat tools"),
         P.SectionRules(ID, "tools"), {
-            help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, move its button with X/Y, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on.",
+            help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, move its button with X/Y, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on. The message tools leave the Combat Log alone (its own settings can add a timestamp to every line); its lines still wake the idle fade. Saved history belongs to this character.",
             extra = function(body, y, width)
                 local row = P.Meta(PAGE, ID, "timestamp", "setting", PAGE .. "_tools")
                 row.id = "timestamp"
@@ -194,9 +218,15 @@ local function Build(ctx)
                     x = 16, y = y, width = width, columns = 2,
                     rows = { row },
                 })
-                return grid.bottomY
+                P.Button(ctx, body, "Clear saved chat history", 16, grid.bottomY, width, ClearHistory,
+                    function() return not P.Combat() end,
+                    P.Meta(PAGE, ID, "clearHistory", "action", PAGE .. "_tools"))
+                return grid.bottomY - 40
             end,
         })
+    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_bubbles", Tr("Speech bubbles"), P.SectionRules(ID, "bubbles"), {
+        help = "Bubbles outside instances can take the MSUF look; Blizzard locks the ones inside instances. Each source keeps Blizzard's look or uses the MSUF one: the shared look or its own font, size, colors, spacing and width. A bubble is matched to the line it shows right after that line arrives. Turning bubbles off inside instances uses Blizzard's bubble settings and gives them back when you leave or turn it off.",
+    })
 end
 
 P.RegisterPage({ key = PAGE, label = "Chat", title = "Chat", build = Build, icon = { 4, 0 },

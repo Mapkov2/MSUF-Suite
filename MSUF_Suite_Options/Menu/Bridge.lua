@@ -43,36 +43,88 @@ end
 
 -- One MSUF history entry owns a complete Suite gesture, including edits made
 -- from the preview and Edit Mode. MSUF calls every provider on every tracked
--- gesture, so a snapshot holds only what a gesture can change: the active
--- Suite and skin profiles plus the small root flags. Other profiles (MSUF
--- clears its history on profile operations) and runtime logs stay out.
-local SUITE_ROOT_SKIP = {
-    profiles = true, suiteChat = true, suiteRuns = true, suiteRecovery = true, suiteXP = true, suiteGold = true,
-}
-local SKIN_ROOT_SKIP = { profiles = true, optionsUI = true }
+-- gesture, so a snapshot holds only the settings a gesture can change
+-- (Database.ROOT_SETTINGS and PROFILE_SETTINGS of the active Suite profile,
+-- plus the Edit Mode layout state of PROFILE_LAYOUT_STATE) and the active
+-- skin profile. Other profiles (MSUF clears its history on profile
+-- operations), other module state and runtime data such as chat history,
+-- gold ledgers and run history are never copied or rolled back.
+local DB = Suite.Database
+local SKIN_ROOT_SETTINGS = { "activeProfile" }
+
+local function CopyKeys(source, keys, target)
+    for _, key in ipairs(keys) do
+        if source[key] ~= nil then target[key] = Suite.CopyValue(source[key]) end
+    end
+    return target
+end
 
 -- Returns a root-shaped copy: { profiles = { [active] = copy }, flags... }.
-local function CaptureRoot(root, skip)
-    if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end
-    local snapshot = { profiles = {} }
-    for key, value in pairs(root) do
-        if not skip[key] then snapshot[key] = Suite.CopyValue(value) end
+-- The Suite part holds the active profile's base settings: the stored ones,
+-- never a variant overlay the core laid over them (ProfileVariants.lua).
+-- The layout state of one stored Suite profile: { [owner] = { [key] = copy } }.
+local function CaptureLayoutState(suite)
+    local states = type(suite) == "table" and type(suite.moduleState) == "table" and suite.moduleState or {}
+    local layout = {}
+    for owner, keys in pairs(DB.PROFILE_LAYOUT_STATE) do
+        local state = type(states[owner]) == "table" and states[owner] or {}
+        layout[owner] = CopyKeys(state, keys, {})
     end
+    return layout
+end
+
+local function CaptureSuite(root)
+    if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end
+    local snapshot = CopyKeys(root, DB.ROOT_SETTINGS, { profiles = {} })
     local name = root.activeProfile
-    if name ~= nil then snapshot.profiles[name] = Suite.CopyValue(root.profiles[name]) end
+    if name ~= nil and type(root.profiles[name]) == "table" then
+        local settings = Suite.ProfileVariants.BaseSettings(name)
+        if not settings then return nil end
+        snapshot.profiles[name] = { suite = settings, layoutState = CaptureLayoutState(root.profiles[name].suite) }
+    end
     return snapshot
 end
 
-local function RestoreRoot(root, snapshot, skip)
-    for key in pairs(root) do
-        if not skip[key] and snapshot[key] == nil then root[key] = nil end
+-- Writes the captured layout state back, also where it was empty then.
+local function RestoreLayoutState(root, snapshot)
+    local name = snapshot.activeProfile
+    local profile = name ~= nil and type(snapshot.profiles) == "table" and snapshot.profiles[name]
+    local target = type(root.profiles[name]) == "table" and root.profiles[name].suite
+    if type(profile) ~= "table" or type(profile.layoutState) ~= "table" or type(target) ~= "table" then return end
+    for owner, keys in pairs(DB.PROFILE_LAYOUT_STATE) do
+        local saved = type(profile.layoutState[owner]) == "table" and profile.layoutState[owner] or {}
+        if type(target.moduleState) ~= "table" then target.moduleState = {} end
+        local state = type(target.moduleState[owner]) == "table" and target.moduleState[owner] or {}
+        target.moduleState[owner] = state
+        for _, key in ipairs(keys) do state[key] = Suite.CopyValue(saved[key]) end
     end
-    for key, value in pairs(snapshot) do
-        if not skip[key] then root[key] = Suite.CopyValue(value) end
+end
+
+-- A skin profile holds settings only and is copied whole.
+local function CaptureSkin(root)
+    if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end
+    local snapshot = CopyKeys(root, SKIN_ROOT_SETTINGS, { profiles = {} })
+    local name, profile = root.activeProfile, root.profiles[root.activeProfile]
+    if name ~= nil and type(profile) == "table" then snapshot.profiles[name] = Suite.CopyValue(profile) end
+    return snapshot
+end
+
+local function RestoreRoot(root, snapshot, rootKeys, profileKeys)
+    for _, key in ipairs(rootKeys) do
+        if snapshot[key] ~= nil then root[key] = Suite.CopyValue(snapshot[key]) end
     end
     local name = snapshot.activeProfile
     local profile = name ~= nil and type(snapshot.profiles) == "table" and snapshot.profiles[name]
-    if type(profile) == "table" then root.profiles[name] = Suite.CopyValue(profile) end
+    if type(profile) ~= "table" then return end
+    if not profileKeys then
+        root.profiles[name] = Suite.CopyValue(profile)
+        return
+    end
+    local target = type(root.profiles[name]) == "table" and root.profiles[name] or {}
+    root.profiles[name] = target
+    if type(target.suite) ~= "table" then target.suite = {} end
+    local saved = type(profile.suite) == "table" and profile.suite or {}
+    for _, key in ipairs(profileKeys) do target.suite[key] = Suite.CopyValue(saved[key]) end
 end
 
 local function SkinRoot()
@@ -84,10 +136,10 @@ local function SkinRoot()
 end
 
 function P.CaptureHistoryState()
-    local root = CaptureRoot(Suite.RootDB, SUITE_ROOT_SKIP)
+    local root = CaptureSuite(Suite.RootDB)
     if not root then return nil end
     local _, skinRoot = SkinRoot()
-    return { root = root, skinRoot = CaptureRoot(skinRoot, SKIN_ROOT_SKIP) }
+    return { root = root, skinRoot = CaptureSkin(skinRoot) }
 end
 
 function P.RestoreHistoryState(state)
@@ -96,14 +148,21 @@ function P.RestoreHistoryState(state)
         return false
     end
     local previousProfile = Suite.RootDB.activeProfile
-    RestoreRoot(Suite.RootDB, state.root, SUITE_ROOT_SKIP)
+    -- Base settings go under the overlay: lift it, write and normalize them,
+    -- then lay it again.
+    local lifted = Suite.ProfileVariants.LiftOverlay(previousProfile)
+    RestoreRoot(Suite.RootDB, state.root, DB.ROOT_SETTINGS, DB.PROFILE_SETTINGS)
+    RestoreLayoutState(Suite.RootDB, state.root)
     local active = Suite.RootDB.profiles[Suite.RootDB.activeProfile]
+    if type(active) == "table" then
+        Suite.DB = active
+        S.Normalize(active)
+    end
+    if lifted then Suite.ProfileVariants.LayOverlay() end
     if type(active) ~= "table" then return false end
-    Suite.DB = active
-    S.Normalize(active)
     local skin, skinRoot = SkinRoot()
     if type(state.skinRoot) == "table" and type(skinRoot) == "table" and type(skinRoot.profiles) == "table" then
-        RestoreRoot(skinRoot, state.skinRoot, SKIN_ROOT_SKIP)
+        RestoreRoot(skinRoot, state.skinRoot, SKIN_ROOT_SETTINGS)
         skin.Database.SetActiveProfile(skinRoot.activeProfile)
     end
     -- The restored state reaches the modules in one pass: the skin switch
@@ -241,11 +300,15 @@ function P.Available(id)
     return ok, availableWhy[id]
 end
 
+-- Drops the cached Suite search rows; Search.lua replaces it with the host's
+-- way once it registered the provider.
+function P.InvalidateSearch() end
+
 -- Repaints the visible suite page; controller changes queued in combat reach
 -- the menu through Suite.Options.RefreshAll (set in Register.lua).
 function P.Refresh()
     P.ForgetAvailability()
-    if M.InvalidateSearchProvider then M.InvalidateSearchProvider("MSUF_Suite") end
+    P.InvalidateSearch()
     P.RefreshSkinPageShape()
     if M.RequestRefresh then M.RequestRefresh(nil, "suite") end
 end
@@ -365,6 +428,87 @@ function P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta)
     if enabled then
         M.TrackRefresh(ctx, function() button:SetEnabled(enabled() and not P.Combat() and true or false) end)
     end
+    return button
+end
+
+-- A page button whose click runs one line of Blizzard's macro commands, such
+-- as /editmode, from secure code. The pages stay insecure: while the pointer
+-- rests on an enabled button out of combat, one SecureActionButtonTemplate
+-- overlay in UIParent covers it, and the hardware click runs the macro there
+-- (SecureActionButton_OnClick, Blizzard_FrameXML/SecureTemplates.lua). The
+-- overlay never lives inside the menu. PLAYER_REGEN_DISABLED arrives before
+-- the lockdown and releases it; a "[combat] hide" state driver backs that up.
+local secure
+local function SecureDetach()
+    if not secure or P.Combat() then return end
+    secure.owner = nil
+    secure:Hide()
+    secure:ClearAllPoints()
+end
+local function SecureForward(owner, script)
+    local handler = owner and owner:GetScript(script)
+    if handler then handler(owner) end
+end
+-- From the combat start until its end no hover attaches the overlay again;
+-- the lockdown itself begins only after the PLAYER_REGEN_DISABLED handlers.
+local function SecureCombat(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        self.combat = false
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    local owner = self.owner
+    self.combat = true
+    self:RegisterEvent("PLAYER_REGEN_ENABLED")
+    SecureDetach()
+    SecureForward(owner, "OnLeave")
+end
+local function SecureOverlay()
+    if secure then return secure end
+    secure = CreateFrame("Button", nil, _G.UIParent, "SecureActionButtonTemplate")
+    secure.combat = false
+    secure:RegisterForClicks("LeftButtonUp")
+    -- SecureActionButton_OnClick acts on the press while ActionButtonUseKeyDown
+    -- is on; the overlay registers the release, which must be the click.
+    secure:SetAttribute("useOnKeyDown", false)
+    secure:SetAttribute("type1", "macro")
+    -- The covered button keeps its hover look and tooltip.
+    secure:SetScript("OnEnter", function(self) SecureForward(self.owner, "OnEnter") end)
+    secure:SetScript("OnLeave", function(self)
+        local owner = self.owner
+        SecureDetach()
+        SecureForward(owner, "OnLeave")
+    end)
+    secure:SetScript("OnEvent", SecureCombat)
+    secure:RegisterEvent("PLAYER_REGEN_DISABLED")
+    secure:Hide()
+    RegisterStateDriver(secure, "visibility", "[combat] hide")
+    P.secureOverlay = secure
+    return secure
+end
+local function SecureAttach(button)
+    if P.Combat() or secure and secure.combat or not button.secureMacro or not button.secureReady() then return end
+    local overlay = SecureOverlay()
+    if overlay.owner == button and overlay:IsShown() then return end
+    overlay.owner = button
+    overlay:SetAttribute("macrotext1", button.secureMacro)
+    overlay:SetFrameStrata(button:GetFrameStrata())
+    overlay:SetFrameLevel(button:GetFrameLevel() + 5)
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(button)
+    overlay:Show()
+end
+function P.SecureMacroButton(ctx, parent, label, x, y, width, macro, enabled, meta)
+    local button = T.Button(parent, Tr(label), width or 180, 26)
+    button:SetPoint("TOPLEFT", x, y)
+    button.secureMacro = macro
+    button.secureReady = function() return not enabled or enabled() and true or false end
+    button:HookScript("OnEnter", SecureAttach)
+    button:HookScript("OnHide", function(self)
+        if secure and secure.owner == self then SecureDetach() end
+    end)
+    if meta and M.RegisterControlMetadata then M.RegisterControlMetadata(button, meta, label, "button") end
+    M.TrackRefresh(ctx, function() button:SetEnabled(button.secureReady() and not P.Combat()) end)
     return button
 end
 

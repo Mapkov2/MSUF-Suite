@@ -129,7 +129,7 @@ local function OpenSetting(key, label)
 end
 local function Focus(ui, handle)
     local section = handle and ui.sections and ui.sections[handle.section]
-    if handle and handle._npSettingsTab and P.SelectNameplatesEnemyTab then
+    if handle and handle._npSettingsTab then
         section = P.SelectNameplatesEnemyTab(handle._npSettingsTab) or section
     end
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
@@ -184,7 +184,7 @@ local function Nudge(ui, dx, dy)
     local handle = ui.body._selectedHandle
     if P.Combat() or not ui.body:IsShown() or not handle or not handle:IsShown() then return false end
     if H.IsTextInputFocused and H.IsTextInputFocused() then return false end
-    local focus = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+    local focus = GetCurrentKeyBoardFocus()
     if focus and focus:IsObjectType("EditBox") then return false end
     local step = H.NudgeStep and H.NudgeStep() or (IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1)
     if H.ShouldSkipDuplicateNudge and H.ShouldSkipDuplicateNudge(ui.body, dx * step, dy * step) then return true end
@@ -322,7 +322,7 @@ function Editor:Paint()
         self.contextButton:SetText(Tr(self.inDungeon and "Dungeon / raid" or "Outdoor"))
     end
     if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
-    if self.LayoutLayerRail then self:LayoutLayerRail() end
+    self:LayoutLayerRail()
     for _, button in ipairs(self.layerButtons or {}) do
         if button.Refresh then button:Refresh()
         else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.42) end
@@ -445,8 +445,8 @@ local function FocusLayer(ui, section, key)
     if section == "enemy" and ui.sampleKind == "friendly" then section = "friendly" end
     if section == "elements" and ui.sampleKind == "friendly"
         and (key == "name" or key == "level" or key == "healthText") then section = "friendly" end
-    local target = section == "elements" and P.SelectNameplatesEnemyTab
-        and P.SelectNameplatesEnemyTab("elements") or ui.sections and ui.sections[section]
+    local target = section == "elements" and P.SelectNameplatesEnemyTab("elements")
+        or ui.sections and ui.sections[section]
     if target and W.FocusCollapsibleSection then
         W.FocusCollapsibleSection(target, { persist = true, flash = true })
     end

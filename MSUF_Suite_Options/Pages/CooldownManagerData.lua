@@ -175,11 +175,17 @@ Page.KIND3_EXTRA = KIND3_EXTRA
 -- them. The built-in Buffs and Buff bars rows have none (default look).
 local AURA_EXTRA = { glowStyle = true, glowTint = true, glowColor = true }
 Page.AURA_EXTRA = AURA_EXTRA
+local TIMER_FIELDS = { barWidth=true, barHeight=true, barTexture=true, barColor=true, barClass=true,
+    barBgAlpha=true, barIcon=true, barIconSide=true, barName=true, barTime=true, barFill=true }
 function Page.Relevant(slot, suffix)
     local key = KEYS[slot] and KEYS[slot][suffix]
     if not key or RULES[key].hidden then return false end
-    if not Page.SlotInfo(slot).custom or suffix == "name" or suffix == "kind" then return true end
     local kind = Page.Kind(slot)
+    if suffix == "barStacks" or suffix == "barStackMax" or suffix == "barStackEach" or suffix == "barStackMarks"
+        or suffix == "barStackColorAt" or suffix == "barStackColor" then return kind == 3 end
+    if suffix == "barChargeSegments" or suffix == "barChargeDim" then return kind == 1 and P.Get(ID, KEYS[slot].cooldownDuration) == true end
+    if kind == 1 and TIMER_FIELDS[suffix] then return P.Get(ID, KEYS[slot].cooldownDuration) == true end
+    if not Page.SlotInfo(slot).custom or suffix == "name" or suffix == "kind" or suffix == "shareContents" then return true end
     if kind == 3 and KIND3_EXTRA[suffix] then return true end
     if (kind == 2 or kind == 3) and AURA_EXTRA[suffix] then return true end
     local ref = REF_KEYS[kind] or REF_KEYS[1]
@@ -318,18 +324,55 @@ function Page.SpellOverrides()
     return cache.spells
 end
 function Page.SpellField(key, field)
-    local fields = Page.SpellOverrides().e[key]
+    local fields = Page.SpellFields(key)
     if fields then return fields[field] end
+end
+-- Every spell's choices in effect for the current specialization (shared
+-- choices with this specialization's on top), as the runtime reads them.
+local effectiveData, effectiveSpec, effectiveChoices
+function Page.EffectiveSpells()
+    local data = Page.SpellOverrides()
+    local spec = Page.Spec()
+    if not spec then return data.e end
+    if effectiveData ~= data or effectiveSpec ~= spec then
+        effectiveData, effectiveSpec = data, spec
+        effectiveChoices = CDM.EffectiveSpells(data, spec)
+    end
+    return effectiveChoices
+end
+function Page.SpellFields(key, currentSpec)
+    if not (currentSpec or Page.spellSpecScope) then return Page.SpellOverrides().e[key] end
+    return Page.EffectiveSpells()[key]
+end
+local function SpellEditMap(data, create)
+    if not Page.spellSpecScope then return data.e end
+    local spec = Page.Spec()
+    if not spec then return nil end
+    data.s = data.s or {}
+    if not data.s[spec] and create then data.s[spec] = {} end
+    return data.s[spec]
+end
+function Page.OwnSpellFields(key)
+    local map = SpellEditMap(Page.SpellOverrides())
+    return map and map[key]
+end
+local function ListSlots(lists, spec, slot, create)
+    if Page.SlotInfo(slot).custom and P.Get(ID, KEYS[slot].shareContents) then
+        if create and not lists.shared then lists.shared = {} end
+        return lists.shared
+    end
+    if create and not lists.specs[spec] then lists.specs[spec] = {} end
+    return lists.specs[spec]
 end
 function Page.HasList(slot)
     local spec = Page.Spec()
-    local slots = spec and Page.ListsView().specs[spec]
+    local slots = spec and ListSlots(Page.ListsView(), spec, slot)
     return slots ~= nil and slots[slot] ~= nil
 end
 -- The bar's list holds spells or items the player added (not Blizzard's).
 function Page.HasOwnEntries(slot)
     local spec = Page.Spec()
-    local slots = spec and Page.ListsView().specs[spec]
+    local slots = spec and ListSlots(Page.ListsView(), spec, slot)
     local list = slots and slots[slot]
     for i = 1, list and #list or 0 do
         if CDM.EntryKind(list[i]) ~= "b" then return true end
@@ -346,10 +389,12 @@ end
 -- Bar of an explicitly listed entry for the current specialization.
 function Page.WhereIs(key)
     local spec = Page.Spec()
-    local slots = spec and Page.ListsView().specs[spec]
-    if not slots then return nil end
-    for slot, list in pairs(slots) do
-        for i = 1, #list do if list[i] == key then return slot end end
+    if not spec then return end
+    local lists = Page.ListsView()
+    for _, info in ipairs(SLOTS) do
+        local slots = ListSlots(lists, spec, info.key)
+        local list = slots and slots[info.key]
+        for i = 1, list and #list or 0 do if list[i] == key then return info.key end end
     end
 end
 
@@ -375,11 +420,7 @@ Page.PruneLists = Prune
 -- An explicit order that matches what the bar shows now, followed by listed
 -- entries it cannot show right now (unlearned talents keep their place).
 local function Materialize(lists, spec, slot)
-    local slots = lists.specs[spec]
-    if not slots then
-        slots = {}
-        lists.specs[spec] = slots
-    end
+    local slots = ListSlots(lists, spec, slot, true)
     local old, list = slots[slot], {}
     local shown = Page.Entries(slot) or EMPTY
     for i = 1, #shown do
@@ -406,6 +447,12 @@ local function Unclaim(lists, spec, key, keep)
                 local at = IndexOf(list, key)
                 if at then table.remove(list, at) end
             end
+        end
+    end
+    for slot, list in pairs(lists.shared or EMPTY) do
+        if slot ~= keep and P.Get(ID, KEYS[slot].shareContents) then
+            local at = IndexOf(list, key)
+            if at then table.remove(list, at) end
         end
     end
     local hidden = lists.hidden[spec]
@@ -467,6 +514,9 @@ end
 function Page.AddEntry(slot, key, family)
     return EditLists(function(lists, spec)
         if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
+        if KEYS[slot].shareContents and P.Get(ID, KEYS[slot].shareContents) and CDM.EntryKind(key) == "b" then
+            return false, "Shared groups use explicit spell, aura or item IDs. Add this spell by name or ID."
+        end
         local wrong = WrongFamily(family, slot)
         if wrong then return false, wrong end
         local hidden = lists.hidden[spec]
@@ -486,7 +536,7 @@ end
 -- Blizzard entry then returns to its own bar).
 function Page.RemoveEntry(slot, key)
     return EditLists(function(lists, spec)
-        local slots = lists.specs[spec]
+        local slots = ListSlots(lists, spec, slot)
         local list = slots and slots[slot]
         local at = IndexOf(list, key)
         if at then table.remove(list, at) end
@@ -510,6 +560,9 @@ end
 function Page.MoveEntry(key, slot, beforeKey, family)
     return EditLists(function(lists, spec)
         if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
+        if KEYS[slot].shareContents and P.Get(ID, KEYS[slot].shareContents) and CDM.EntryKind(key) == "b" then
+            return false, "Shared groups use explicit spell, aura or item IDs. Add this spell by name or ID."
+        end
         local wrong = WrongFamily(family, slot)
         if wrong then return false, wrong end
         if beforeKey == key then return true end
@@ -542,7 +595,7 @@ function Page.ClearLabel(slot)
 end
 function Page.ClearList(slot)
     return EditLists(function(lists, spec)
-        local slots = lists.specs[spec]
+        local slots = ListSlots(lists, spec, slot)
         local replace = lists.replace and lists.replace[spec]
         if not (slots and slots[slot]) and not (replace and replace[slot]) then return true end
         if slots then slots[slot] = nil end
@@ -607,6 +660,9 @@ function Page.CopyToSpecs(slot, key)
     local spec, err = Ready()
     if not spec then return false, err end
     if CDM.EntryKind(key) == "b" then return false, "Blizzard entries follow each specialization's own list." end
+    -- A shared group's one list already applies to every specialization;
+    -- its per-specialization lists are unused and other bars keep theirs.
+    if KEYS[slot].shareContents and P.Get(ID, KEYS[slot].shareContents) then return true, 0 end
     local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
     local changed = 0
     for _, other in ipairs(Page.ClassSpecs({})) do
@@ -633,6 +689,7 @@ end
 function Page.CopyListToSpecs(slot)
     local spec, err = Ready()
     if not spec then return false, err end
+    if KEYS[slot].shareContents and P.Get(ID, KEYS[slot].shareContents) then return true, 0, 0 end
     local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
     local own, keys = lists.specs[spec] and lists.specs[spec][slot], {}
     for i = 1, own and #own or 0 do
@@ -670,19 +727,21 @@ function Page.SetSpellField(key, field, value)
     local valid = CDM.SPELL_FIELDS[field]
     if not CDM.ValidEntryKey(key) or not valid or (value ~= nil and not valid(value)) then return false, "Invalid value." end
     local spells = CDM.Codec.DecodeSpells(P.Get(ID, "spellsData"))
-    local fields = spells.e[key]
+    local map = SpellEditMap(spells, value ~= nil)
+    if not map then return value == nil, "Your specialization is not known yet." end
+    local fields = map[key]
     if value == nil then
         if not fields or fields[field] == nil then return true end
         fields[field] = nil
-        if next(fields) == nil then spells.e[key] = nil end
+        if next(fields) == nil then map[key] = nil end
     else
         if fields and fields[field] == value then return true end
         if not fields then
             local count = 0
-            for _ in pairs(spells.e) do count = count + 1 end
+            for _ in pairs(map) do count = count + 1 end
             if count >= CDM.LIMITS.spells then return false, "Too many spell choices." end
             fields = {}
-            spells.e[key] = fields
+            map[key] = fields
         end
         fields[field] = value
     end
@@ -691,22 +750,24 @@ end
 function Page.ResetSpell(key)
     if P.Combat() then return false, COMBAT end
     local spells = CDM.Codec.DecodeSpells(P.Get(ID, "spellsData"))
-    if not spells.e[key] then return true end
-    spells.e[key] = nil
+    local map = SpellEditMap(spells)
+    if not map or not map[key] then return true end
+    map[key] = nil
     return Page.Commit("Reset spell options", nil, spells)
 end
 -- A popover row that edits two fields resets both in one history entry.
 function Page.ClearSpellFields(key, names)
     if P.Combat() then return false, COMBAT end
     local spells = CDM.Codec.DecodeSpells(P.Get(ID, "spellsData"))
-    local fields = spells.e[key]
+    local map = SpellEditMap(spells)
+    local fields = map and map[key]
     if not fields then return true end
     local changed = false
     for i = 1, #names do
         if fields[names[i]] ~= nil then fields[names[i]], changed = nil, true end
     end
     if not changed then return true end
-    if next(fields) == nil then spells.e[key] = nil end
+    if next(fields) == nil then map[key] = nil end
     return Page.Commit("Spell option", nil, spells)
 end
 

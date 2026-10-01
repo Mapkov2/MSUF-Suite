@@ -3,6 +3,22 @@ local S, Tr = P.S, P.Tr
 local PAGE = "suite_qualityOfLife"
 
 local HELP = {
+    character_extras = "A small summary sits beside the Character tab of your character sheet and leaves with it. It lists your gear with gem sockets and how many are filled, open ones in amber (click a line to open socketing), the total durability of your gear and, if you like, your PvP item level. Its buttons open the Great Vault and the current expansion page. It updates while the sheet is open, at most once per frame.",
+    character_model = "Shows the total durability of your gear on the character model, moved by the two offsets, and crops the edges of the gear slot icons on your character sheet and in the Inspect window.",
+    character_flyouts = "Equipment choices (the list that opens from a gear slot) show the item level on each item, so you can compare without hovering. The arrows beside the gear slots can be hidden; hold Alt over a slot to open its choices.",
+    popup_attention = "The Suite look gives Blizzard's dialogs a dark panel, and the Suite font sets their text font and size; each works alone, and without them dialogs keep Blizzard's look and fonts. A minimum height makes short dialogs taller once Blizzard has sized them; 0 keeps Blizzard's height. A custom position moves the first dialog and the ones Blizzard stacks below it; place it and set the height in MSUF Edit Mode.",
+    popup_revive = "When someone offers you a resurrection, its dialog gets a green frame, optionally with Blizzard's ready check sound, and its accept button can get a green frame of its own. Accepting stays your click.",
+    popup_toasts = "Loot toasts write the item quality as a word in its color, such as Epic or Rare, next to Blizzard's colored item name; currency toasts stay as they are. Money toasts can get a thin gold frame.",
+    tooltip_details = "Adds guild rank, the hovered unit's target, item levels, the unit's current mount and item or spell details to Blizzard's main tooltip, and can show player names without titles. Your own item level and the one of the unit open in the Inspect window need no request. Item levels of other hovered players are a separate choice that sends inspect requests: at most one per hover, never while the Inspect window or another inspect is busy. Mounts are read once when a unit tooltip opens, out of combat; a change appears on the next hover. Place the fixed corner in MSUF Edit Mode; the cursor offsets apply to the cursor anchor.",
+    dungeon_casts = "Lists the casts of attackable enemy nameplates while you are in a five-player dungeon, oldest first; the game runs each bar and timer. The game keeps spell, target, marker and interrupt details hidden from addons, so casts are never sorted or filtered by them: fading or hiding uses the game's important-spell flag (a hidden cast keeps its place in the list), raid markers sit on the spell icon, and the ready mark, an edge stripe or the whole bar, shows on interruptible casts while your interrupt is off cooldown. Dimming checks four times a second whether your interrupt reaches each listed enemy; a cast it cannot check stays bright. The interrupt is found from your talents and pet unless you enter a spell ID. MSUF Edit Mode shows sample casts for placing the list.",
+    party_effects = "Color flashes with a banner that names the moment: the level you reached, the achievement you earned, or the Bloodlust-type haste spell that you or your pet cast or that reaches you from anyone in your group (read from your own buffs, which the game may keep hidden during restricted fights). Surprise celebrations can come at random times, around the interval you choose. Spinning turns the Suite action bars once around their centre, only outside combat; entering combat stops the turn at once. Achievements your account had already earned stay quiet. MSUF Edit Mode shows the banner for placing it.",
+    target_distance = "Shows an approximate range to your current target from the game's range checks of spells you know; values include the target's hitbox, and dashes mean that no known spell can tell. Write the text with {range} and {unit}. The estimate can sit below the target frame, following it when the frame moves, or anywhere on screen; MSUF Edit Mode moves both placements.",
+    action_tracker_visibility = "Choose where recent actions appear. Delves have their own switch; battlegrounds and arenas share one, and other scenarios follow Outside instances. Where the tracker is switched off, it does not listen to your casts.",
+    cursor_gcd = "The global cooldown can leave the ring for a fixed circle of its own size and opacity, shown next to casts. Place it in MSUF Edit Mode; its button there works while this choice is on.",
+    stats_numbers = "Numbers can be percentages, combat rating or both on two lines, and stat names short or full. Leech, avoidance and speed each have their own value color; the other stats follow the strip's style.",
+    stats_fps = "A frame-rate readout can sit below the strip or on its own, placed in MSUF Edit Mode. The MSUF Suite FPS key binding shows or hides it for this session, in combat too; a new choice here replaces that session switch.",
+    mythic_reset = "The keystone notice remains local. The optional group announcement forwards only Blizzard's confirmed reset message immediately after your own reset request, while you are group leader. Failed attempts and resets by other players are not announced.",
+    dungeon_portals = "Learned dungeon portals use secure buttons. Group suggestions require a verified dungeon map or an exact destination match. Unknown destinations show no suggestion; buttons hide in combat.",
     action_tracker = "Shows your most recent successful spells. Standard rows have an icon, name and marker; Icons only is a compact vertical icon column. Display width applies to standard rows; icon width follows row height in the icon preset. Position and anchor are set in MSUF Edit Mode, which shows sample actions. The list stops listening while disabled. Spells whose details the client keeps private cannot appear.",
     action_tracker_colors = "Choose a style above or change these colors to make a Custom look. Rows update immediately.",
     repair = "Repairs only when the cost is within your limit. Guild funds are used first when allowed.",
@@ -10,9 +26,10 @@ local HELP = {
     automation = "Hold Shift to pause. Quests with a money cost and quests with a reward choice always stay manual.",
     filters = "An empty allow-list includes every quest. Separate quest IDs with spaces or commas. Daily and weekly exclusions leave a quest manual if its frequency cannot be read. Existing profiles keep their previous behavior until you enable an exclusion.",
     merchant_level = "Shows item levels on merchant equipment when Blizzard has loaded its item data. Buyback items and items without an item level stay unchanged.",
+    merchant_list = "Replaces the merchant's pages with one list; scroll it with the mouse wheel or the bar. Right-click buys, left-click picks an item up and Shift-click asks for a quantity; linking and previewing work as usual. Purchases paid with currencies or items, or costing at least 150 gold, ask for confirmation first. The buyback tab keeps Blizzard's layout. Drop or click an item from your bags onto the list to sell it; one you can still refund asks whether to refund it.",
     vault_spec = "Shows the current loot specialization when you open the Great Vault. Updates if you change loot specialization while the window is open.",
-    tooltip_ids = "Hold Alt while hovering an item, spell, creature, quest, currency or temporary weapon enchant to see its ID. Spell icon IDs and Blizzard's account character currency data are optional. No ID or quantity appears when the client keeps it private.",
-    tooltip_visibility = "Hide Blizzard's main tooltip in combat, in instances, or for selected item, spell and unit tooltips. MSUF unit and group frame tooltips keep their own visibility settings; aura tooltips keep their Show Tooltip switches. Each choice works independently. A protected tooltip may remain visible during combat.",
+    tooltip_ids = "Hold Alt to see the ID of an item, spell, creature, quest, currency or temporary weapon enchant on its tooltip, or press Alt while the tooltip is open; the IDs stay until the tooltip is built again. Spell icon IDs and Blizzard's account character currency data are optional, and that data joins an open tooltip when it arrives. No ID or quantity appears when the client keeps it private.",
+    tooltip_visibility = "Hide Blizzard's main tooltip in combat, in instances, or for selected item, spell and unit tooltips. MSUF unit and group frame tooltips keep their own visibility settings; aura tooltips keep their Show Tooltip switches. Each choice works independently. A hidden tooltip turns fully transparent, so Blizzard keeps handling it as usual.",
     item_counts = "Shows the number you own, including your bank and Warband bank, when the item tooltip has a public item ID. Optionally separate storage locations. Empty counts are omitted.",
     socket_gems = "Lists carried gem types beside Blizzard's socket window. Inspect each gem with its normal bag tooltip and confirm compatibility in the native socket window before applying it.",
     copy_spell_id = "Hover a spell and type /msufcopyspell to select its public ID in a small edit box. Press Ctrl+C to copy it. You can also pass an ID to the command. No clipboard action runs automatically.",
@@ -21,39 +38,40 @@ local HELP = {
     macro_builder = "Type /msufmacro to preview a mouseover ally, mouseover enemy or focus enemy macro. Enter a spell name or ID, then explicitly create a character macro outside combat. Drag it from /macro to your action bar.",
     profile_links = "Native character context menus offer Raider.IO and Warcraft Logs links. Select one to open a copyable URL; press Ctrl+C in its edit box. No chat message text is read, and no browser opens automatically.",
     waypoint_command = "Type /way x y for the current map or /way mapID x y. /msufway always works. The short /way alias is used only when no other addon owns it.",
-    daily_comfort = "Hide tutorials while this helper is enabled, prefill the DELETE word while keeping the final confirmation manual, hide only the successful screenshot notice, open your equipment window at merchants, or select Blizzard's current expansion auction filter. The auction option never starts a search.",
+    daily_comfort = "Cinematic confirmation can be skipped after you choose to exit. Automatic skipping is a separate option and also skips movies. Both stay inactive during combat, and a vehicle sequence always keeps its exit confirmation. Hide tutorials while this helper is enabled, prefill the DELETE word while keeping the final confirmation manual, hide only the successful screenshot notice, or open your character window at merchants on the tab you used last. At the auction house, Blizzard's filter button is marked while Current Expansion Only is off; tick it there once and Blizzard keeps it for this character.",
     daily_cvars = "Optional Blizzard settings for chat, map, sound and low-health or alternate screen flashes. MSUF restores the previous value when you turn a choice or this helper off. Changes you make yourself in Blizzard settings while this helper runs are respected.",
     collection_markers = "Clear only new mount, pet and toy fanfares acquired while this helper is active. Your collection entries remain available. Each collection type can be switched off independently.",
     guild_privacy = "Type /msufguildprivacy or use the small ON/OFF button above the main chat window. Any chat window containing Guild or Officer is covered in full, including other channels in a mixed window. Click a cover to reveal the windows again. Messages keep arriving underneath.",
     ui_error_filter = "Hide only the selected error types. Blizzard keeps handling all other messages and their sounds. Each choice remembers and restores its previous display state when you turn it off.",
-    cursor_effects = "The ring follows your pointer and may show a short trail, your global cooldown or current cast. The position callback runs only while the ring is visible; native cooldown widgets animate without a Lua timer.",
+    cursor_effects = "A ring around the mouse pointer that makes it easy to find. Pick its shape, size, color, an optional short trail and a centre dot; No ring keeps only the dot or the progress fill. The camera mode shows ring, dot and trail only while you hold a mouse button down on the game world to turn the camera. The highlight follows the pointer only while something is shown, and it moves nothing while the pointer rests.",
+    cursor_progress = "Blizzard's own cooldown swipe fills the ring: the global cooldown after each ability, and casts or channels while they run. A cast takes the place of the global cooldown until it ends; the bright edge marks how far the cast has come.",
+    cursor_when = "Limit the whole highlight to combat, to instances or to the open world, then give the pointer ring, the global cooldown and the cast fill their own combat rule. Nothing follows the pointer while it is hidden.",
     expansion_shortcuts = "An adjacent button opens a small menu for expansion, Great Vault, Adventure Guide and world map pages. Blizzard's landing button keeps its own click behavior. Menu actions are disabled in combat.",
-    secondary_stats = "Show critical strike, haste, mastery and versatility in a compact strip. MSUF Edit Mode moves it. Hidden or restricted values show a dash; changing stats update from player events.",
+    secondary_stats = "Critical strike, haste, mastery and versatility as your character sheet shows them; leech, avoidance and speed can each join the strip (speed is the stat, not your running speed). Show only in combat hides the strip outside fights. Values the game hides show a dash, and the strip updates from your stat events. MSUF Edit Mode moves the strip.",
     pet_status = "Warn when your pet is missing or dead. By default, the missing warning applies to Hunters and Warlocks; the dead warning applies to any class with a pet. MSUF Edit Mode moves the alert.",
     movement_cue = "Enter up to eight spell IDs for movement abilities. When movement begins, the first known, ready and usable spell appears briefly; a shared 20-second cooldown limits notices. Empty IDs do no work. MSUF Edit Mode moves the cue.",
     burning_rush_cue = "For Warlocks: show Burning Rush only while its aura is active in combat. Blizzard's native aura container follows the aura; Suite does not scan auras. MSUF Edit Mode shows a sample and moves the cue.",
-    group_death_alert = "Reports the first observed death of each group member in your local chat during combat. Optionally include your own death. The listener is active only while you are grouped and in combat.",
+    group_death_alert = "Reports the first observed death of each group member during combat. Local chat, a screen notice and a sound can be selected separately. Simultaneous deaths share one sound. Optionally include your own death. The listener is active only while you are grouped and in combat.",
     release_protection = "Hold the selected key while clicking Release Spirit. The release button stays hidden until you hold it; resurrection and death recap remain available. Choose where to use the protection. Blizzard's automatic release timer is unchanged.",
     bloodlust_lockout = "Shows your own Bloodlust exhaustion while in a group, or a ready state if you prefer. Relevant player aura changes update it; MSUF Edit Mode moves it and previews the locked state.",
-    group_finder_double_click = "Double-click a search result to open Blizzard's normal application dialog. Roles, note and final submission stay in Blizzard's dialog.",
+    group_finder_double_click = "Double-click a search result to open Blizzard's application dialog. With submit on double-click, the second click also signs up with the roles already chosen in that dialog; hold Shift to review it instead. A saved note can appear beside the dialog for copying; it is stored when you finish editing.",
     group_finder_applicant_sort = "Sort applicants for your own Mythic+ listing by their average member score, highest first. Ties keep Blizzard's order. If any score is missing or restricted, the native order remains. The closed list is untouched.",
     group_finder_exit = "When the native group listing panel closes with applications still active, show their count in your own chat. Your applications remain active and no group chat is sent.",
     trusted_invites = "Accept only ordinary party invitations from the relationship types you select. Invites remain manual in combat, while grouped, during queue-loss or quest-session confirmations, or when Blizzard asks you to choose a role. The native popup handles the final action.",
-    raid_shortcuts = "Type /msufraid to expand Blizzard's Raid Manager, /msufpull [1-60] for its native countdown, or /msufmark tank|healer to mark one unambiguous party member. Optional automatic markers work only for one clear tank or healer in a five-player party, outside combat, as leader or assistant. Existing and occupied markers are respected; the helper stops if the client rejects marking.",
-    keystone_command = "Type /keys or /msufkeys to see your own current keystone. Add party, raid or instance to share it in that channel. /keys group requests keys from group members running this Suite helper. The /keys alias is used only when another addon has not claimed it.",
+    raid_shortcuts = "Type /msufraid to expand Blizzard's Raid Manager, /msufpull [1-60] for its native countdown, or /msufmark tank or /msufmark healer to mark one unambiguous party member. Optional automatic markers work only for one clear tank or healer in a five-player party, as leader or assistant. Existing and occupied markers are respected. Countdowns, markers and ready checks wait while Blizzard restricts them during combat, encounters and keystones; automatic markers try again afterwards.",
+    keystone_command = "Type /keys or /msufkeys to see your own current keystone. Add party, raid or instance to share it in that channel. /keys group requests keys from group members running this Suite helper. The /keys alias is used only when another addon has not claimed it. Inside dungeons and raids Blizzard locks chat for addons; your key is then shown only to you.",
     delve_sole_power = "Only in an active Delve and outside combat: if the player choice has exactly one enabled spell option, one button and no confirmation, MSUF selects it once. Other choices remain manual.",
-    mythic_reset = "When Blizzard reports a Mythic+ reset, show a brief notice in your own chat. Blizzard restricts automatic party chat from an event callback.",
     loadout_reminder = "Shows your current talent build and loot specialization on ready checks, when a dungeon queue pops, or when you enter an instance. It never changes your talents or loot spec.",
     loadout_expectation = "Save your current build and loot specialization for this character in the active profile. A different selection highlights the reminder. Clear the saved selection to show current information without a comparison.",
     quiet_popups = "Choose each Blizzard popup separately. The feature hides its window when it appears and leaves the underlying game events intact. Combat lockdown can prevent hiding a protected window.",
     collection = "Adds automatic collection on top of Blizzard's own Auto Loot setting, which stays unchanged. Locked slots and confirmations stay manual.",
     history = "Hides or briefly shows the loot history window. Need, Greed and Pass popups stay available.",
-    open_containers = "Only containers newly acquired after enabling this helper are opened. It waits for combat to end, opens one at a time, and leaves items manual while Shift or a merchant, bank, mail, trade, auction, loot, socket or upgrade window is open.",
+    open_containers = "Only containers newly acquired after enabling this helper are opened. It waits for combat to end, opens one at a time, and leaves them to you while you hold Shift or a loot window or a window that gives item use another meaning is open: merchant, bank, guild bank, mail, trade, auction house, scrapper, socket, upgrade and similar. Warbound containers stay unopened unless you allow them; profiles that used this helper before keep opening them. Midnight Artisan payouts can wait while your Shard of Dundun is capped.",
     marked_sales = "Enter up to 200 item IDs. A button appears only at a merchant and previews eligible stacks; clicking it opens a confirmation. The helper checks item identity, quality, value, quest status and bag position again before requesting sales. Equippable items require a separate opt-in.",
     filtered_loot = "Shows up to three extra compact notices for Blizzard personal item-loot toasts. Filter by minimum quality, mount or pet items, and optionally up to 100 item IDs. Native Blizzard notices remain visible; ordinary bag additions without a toast are not included.",
     trainer_all = "At a trainer, review the count and combined gold cost before buying. The button learns only abilities already available at confirmation, checks each step again, and stops when the trainer closes, combat starts or the list changes. Profession choices and rank steps stay manual.",
-    upgrade_equipment = "Opens your equipment window when an item upgrade merchant opens. It closes only the character window opened by this helper, and defers protected changes until combat ends.",
-    profession_outfits = "Removes only the selected, known profession outfit auras when their public aura data is available outside combat. Fishing is always excluded because its aura can enable fishing-rod abilities. If the client blocks a cancellation, this helper stops until you change its settings.",
+    upgrade_equipment = "Opens your character window, on the tab you used last, when an item upgrade merchant opens. It closes only a window this helper opened and waits for the end of combat to open or close it.",
+    profession_outfits = "Selected profession outfits and cosmetic auras are removed outside combat. Fishing is excluded. Noggenfogger skeleton removal also removes its underwater-breathing effect. Client refusal stops this helper until settings change.",
     log_dungeons = "Choose the dungeon difficulties where MSUF starts the combat log. Mythic+ begins when the keystone starts.",
     log_raids = "Choose the raid difficulties where MSUF starts the combat log.",
     log_other = "Battlegrounds, arenas, scenarios and delves are independent choices.",
@@ -62,7 +80,9 @@ local HELP = {
     innervate_cue = "Retail Druids only. Every incoming whisper in combat is a possible Innervate cue; message text cannot be inspected reliably during chat lockdown. The alert waits for a publicly known Innervate cooldown, or shows a generic cue when readiness is unavailable. A preferred target can be outlined on an MSUF group frame resolved outside combat. MSUF Edit Mode previews the alert and edits its position and size.",
     durability_warning = "Shows the lowest equipped durability below your chosen threshold, outside combat. MSUF Edit Mode shows a sample even when your gear is repaired. Its popup edits X, Y, width, height and scale.",
     battle_res = "Shows Blizzard's shared battle resurrection charges in an active Mythic+ run or raid encounter. The icon counts down to the next charge using Blizzard's cooldown display. Hidden when the shared pool is unavailable. MSUF Edit Mode previews the display and edits X, Y, width, height and scale.",
-    flight_hud = "Retail only. Shows while Skyriding is available, or only in flight if selected. The bars show speed, Vigor and Second Wind; the icon shows Whirling Surge. MSUF Edit Mode previews the HUD and edits X, Y, width, bar height and scale. Panel height follows the visible content. Unknown charge values display as dashes.",
+    flight_hud = "Retail only. Shows while Skyriding is available, or only in flight if selected. Choose bars or Blizzard Vigor gems; gem scale and a refill sound are optional. Separate bar heights, Surge icon size and speed-value offsets are under Text and bars. MSUF Edit Mode previews the HUD. Unknown charge values display as dashes.",
+    threat_meter = "WoW Forever only. Lists your group's threat on the watched enemy from Blizzard's threat data, highest first; for a friendly target, its enemy is used. Values the game keeps hidden are left out. Turn the mouse wheel over the window when more members are listed than rows fit. The red mark shows where you would take aggro, which is not the point where you match the tank. The meter repaints at most five times a second and reads no combat log.",
+    flight_route = "Forever only. Route times are learned from completed flight-master journeys and kept in this profile. A first journey has no invented estimate. Early landing does not overwrite a full-route time. Intermediate stops come from the native taxi map; its tooltip can preview the route. Land at next stop requests the next available landing point.",
     flight_typography = "Choose an MSUF or SharedMedia font and bar texture. Font size, outline, shadow, Smooth/Sharp/Slug rendering, bar height and spacing update the HUD immediately. Slug has no shadow.",
     flight_colors = "Pick a preset above or use the three color dots in this header for your own colors. Changing a color marks the look as Custom. Panel opacity and empty bar opacity are separate.",
 }
@@ -70,7 +90,10 @@ local HELP = {
 local GROUPS = {
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
     { id = "actionTracker", title = "Action tracker", switch = "enabled",
-        sections = { "action_tracker", "action_tracker_colors" } },
+        sections = { "action_tracker", "action_tracker_visibility", "action_tracker_colors" } },
+    { id = "dungeonPortals", title = "Dungeon portals (Retail)", switch = "enabled", sections = { "dungeon_portals" } },
+    { id = "enemyCastStack", title = "Dungeon cast stack (Retail)", switch = "enabled",
+        sections = { "dungeon_casts" } },
     { id = "groupFinderExitReminder", title = "Active application reminder (Retail)", switch = "enabled",
         sections = { "group_finder_exit" } },
     { id = "trustedPartyInvites", title = "Trusted party invites (Retail)", switch = "enabled",
@@ -78,11 +101,12 @@ local GROUPS = {
     { id = "battleRes", title = "Battle resurrection (Retail)", switch = "enabled",
         sections = { "battle_res" } },
     { id = "groupBloodlust", title = "Bloodlust lockout (Retail)", switch = "enabled", sections = { "bloodlust_lockout" } },
+    { id = "partyEffects", title = "Celebrations", switch = "enabled", sections = { "party_effects" } },
     { id = "loot", title = "Collecting loot", switch = "quickLoot", other = "manageHistory", sections = { "collection" } },
     { id = "collectionNewMarkers", title = "Collection new markers (Retail)", switch = "enabled", sections = { "collection_markers" } },
     { id = "combatLog", title = "Combat logging", switch = "enabled",
         sections = { "log_dungeons", "log_raids", "log_other", "log_exit" } },
-    { id = "cursorEffects", title = "Cursor highlight (Retail)", switch = "enabled", sections = { "cursor_effects" } },
+    { id = "cursorEffects", title = "Cursor highlight (Retail)", switch = "enabled", sections = { "cursor_effects", "cursor_progress", "cursor_gcd", "cursor_when" } },
     { id = "dailyComfort", title = "Daily UI comforts", switch = "enabled", sections = { "daily_comfort", "daily_cvars" } },
     { id = "delveSolePower", title = "Delve single power (Retail)", switch = "enabled",
         sections = { "delve_sole_power" } },
@@ -137,13 +161,24 @@ local GROUPS = {
     { id = "burningRushCue", title = "Burning Rush cue (Retail Warlock)", switch = "enabled",
         sections = { "burning_rush_cue" } },
     { id = "qol", title = "Repair", switch = "repair", other = "autoJunk", sections = { "repair" } },
-    { id = "combatStatsHUD", title = "Secondary stats (Retail)", switch = "enabled", sections = { "secondary_stats" } },
+    { id = "combatStatsHUD", title = "Secondary stats (Retail)", switch = "enabled",
+        sections = { "secondary_stats", "stats_numbers", "stats_fps" } },
+    { id = "targetDistance", title = "Target spell-range estimate (Retail)", switch = "enabled", sections = { "target_distance" } },
     { id = "qol", title = "Sell junk", switch = "autoJunk", other = "repair", sections = { "junk" } },
     { id = "lootVendorRules", title = "Sell marked items (Retail)", switch = "enabled", sections = { "marked_sales" } },
     { id = "lootToastFilter", title = "Filtered loot notice (Retail)", switch = "enabled",
         sections = { "filtered_loot" } },
     { id = "skyriding", title = "Skyriding HUD (Retail)", switch = "enabled",
         sections = { "flight_hud", "flight_typography", "flight_colors" } },
+    { id = "threatMeter", title = "Threat meter (Forever)", switch = "enabled", sections = { "threat_meter" } },
+    { id = "flightTimer", title = "Flight route timer (Forever)", switch = "enabled", sections = { "flight_route" } },
+    { id = "characterExtras", title = "Character sheet additions (Retail)", switch = "enabled",
+        sections = { "character_extras", "character_model", "character_flyouts" },
+        keywords = { "charakterfenster", "character window" } },
+    { id = "merchantList", title = "Scrollable merchant offers (Retail)", switch = "enabled", sections = { "merchant_list" } },
+    { id = "tooltipDetails", title = "Tooltip details and anchor (Retail)", switch = "enabled", sections = { "tooltip_details" } },
+    { id = "popupAttention", title = "Dialogs and loot toasts (Retail)", switch = "enabled",
+        sections = { "popup_attention", "popup_revive", "popup_toasts" } },
     { id = "tooltipIDs", title = "Tooltip IDs (Retail)", switch = "enabled", sections = { "tooltip_ids" } },
     { id = "tooltipVisibility", title = "Tooltip visibility", switch = "enabled", sections = { "tooltip_visibility" } },
     { id = "waypoints", title = "Waypoint command", switch = "enabled", sections = { "waypoint_command" } },
@@ -163,12 +198,12 @@ local CATEGORIES = {
             "lootContainers.enabled",
         } },
         { id = "merchants", title = "Merchants", keys = {
-            "merchantLevel.enabled", "qol.repair", "qol.autoJunk", "lootVendorRules.enabled",
+            "merchantLevel.enabled", "qol.repair", "qol.autoJunk", "lootVendorRules.enabled", "merchantList.enabled",
         } },
     } },
     { id = "characterGear", title = "Character & Gear", tabs = {
         { id = "character", title = "Character", keys = {
-            "chatProfileLinks.enabled", "xpBar.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled",
+            "chatProfileLinks.enabled", "xpBar.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled", "targetDistance.enabled", "characterExtras.enabled",
         } },
         { id = "gear", title = "Gear", keys = {
             "characterUpgradeWindow.enabled", "socketGemSuggestions.enabled", "durabilityAlert.enabled",
@@ -185,22 +220,24 @@ local CATEGORIES = {
         } },
         { id = "mythic", title = "Mythic+", keys = {
             "mythicKeyShare.enabled", "groupFinderApplicantSort.enabled", "mythicResetReminder.enabled",
-            "tooltipMPlusScore.enabled",
+            "tooltipMPlusScore.enabled", "enemyCastStack.enabled", "dungeonPortals.enabled",
         } },
     } },
     { id = "combatAlerts", title = "Combat & Alerts", keys = {
         "actionTracker.enabled", "burningRushCue.enabled", "combatLog.enabled", "macroBuilder.enabled",
         "combatMovementCue.enabled", "combatPetStatus.enabled",
+        "threatMeter.enabled",
     } },
     { id = "mapTravel", title = "Map & Travel", keys = {
         "mapLandingShortcuts.enabled", "skyriding.enabled", "waypoints.enabled",
+        "flightTimer.enabled",
     } },
     { id = "interfaceChat", title = "Interface & Chat", keys = {
-        "cursorEffects.enabled", "guildChatPrivacy.enabled", "quietPopups.enabled", "uiErrorFilter.enabled",
+        "cursorEffects.enabled", "guildChatPrivacy.enabled", "quietPopups.enabled", "uiErrorFilter.enabled", "popupAttention.enabled", "partyEffects.enabled",
     } },
     { id = "tooltips", title = "Tooltips", keys = {
         "tooltipClassColors.enabled", "tooltipSpellCopy.enabled", "itemCounts.enabled", "tooltipIDs.enabled",
-        "tooltipVisibility.enabled",
+        "tooltipVisibility.enabled", "tooltipDetails.enabled",
     } },
 }
 
@@ -297,14 +334,23 @@ end
 local EDIT_ELEMENTS = {
     actionTracker = "actions", xpBar = "experience", innervateCue = "alert",
     durabilityAlert = "warning", battleRes = "charges", groupBloodlust = "lockout",
-    combatStatsHUD = "combat", combatPetStatus = "warning", combatMovementCue = "combat",
-    burningRushCue = "combat", skyriding = "flight",
+    targetDistance = "distance", enemyCastStack = "casts", groupRaidShortcuts = "tools", combatStatsHUD = "combat", combatPetStatus = "warning", combatMovementCue = "combat",
+    burningRushCue = "combat", skyriding = "flight", threatMeter = "main", flightTimer = "flight",
+    tooltipDetails = "tooltip", popupAttention = "popup", cursorEffects = "gcd",
 }
+-- Edit Mode elements that exist only in one setup: the cursor's global
+-- cooldown circle is placed only while it stands on its own.
+local EDIT_READY = { cursorEffects = function() return P.Get("cursorEffects", "gcdDetached") == true end }
+-- Search offers the same Move / resize buttons (Menu/SearchActions.lua).
+P.QualityOfLifeEditElements = EDIT_ELEMENTS
+
 
 local function AddEditModeAction(ctx, body, id, sectionId, y, width, element)
     P.Button(ctx, body, "Move / resize in Edit Mode", 16, y, width,
         function() P.OpenEditMode(id, element) end,
-        function() return P.EditModeReady() and S.Status(id) == "Active" end,
+        function()
+            return P.EditModeReady() and S.Status(id) == "Active" and (not EDIT_READY[id] or EDIT_READY[id]())
+        end,
         P.Meta(PAGE, id, "action.edit", "action", sectionId))
     return y - ((id == "xpBar" or id == "innervateCue") and 34 or 38)
 end
@@ -327,7 +373,8 @@ function P.Suite.Menu.FocusQualityOfLifeModule(id)
     if not section then return false end
     -- Anchor the existing menu navigation to the detail panel itself. Focusing
     -- its collapsible entry would scroll to the category above the feature list.
-    local called, opened, focused = P.M.SearchBridge.OpenSearchTarget(PAGE, "", nil, section, {})
+    local called, opened, focused = P.M.SearchBridge.OpenSearchTarget(PAGE, "", nil, section, {},
+        { pageKey = PAGE, sectionId = FeatureSectionId(group) })
     return called == true and opened == true and focused == true
 end
 

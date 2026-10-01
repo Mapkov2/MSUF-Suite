@@ -9,6 +9,9 @@
 -- M.ALIASES), that a setting of a never-opened page is found with its exact
 -- target, that hidden rules, per-instance duplicates and modules whose addon is
 -- not installed stay out, and that "minimap" reads apart from MSUF's own icon.
+-- A module that is off keeps its page, FAQ answers and enable switch; only its
+-- details leave the index, on the Classic host and on the Main host (which
+-- refreshes only when the provider registers again).
 -- An MSUF build without the hook gets no rows and no error.
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
 local classic = root .. "/../MidnightSimpleUnitFrames-Classic"
@@ -72,9 +75,12 @@ local failure = world:FirstFailure()
 Check(failure == nil, "MSUF did not boot: " .. tostring(failure and failure.file) .. " "
     .. tostring(failure and failure.message))
 local env = world.env
+world.core.MSUF2.frame = { IsShown = function() return true end }
 env.InCombatLockdown = function() return false end
 env.UnitAffectingCombat = function() return false end
 env.C_NamePlate = { GetNamePlates = function() return {} end, GetNamePlateForUnit = function() end }
+local getCVar = env.C_CVar.GetCVar
+env.C_CVar.GetCVar = function(name) if name == "combinedBags" then return "1" end return getCVar(name) end
 local missing, disabled = {}, {}
 local loaded = { MidnightSimpleUnitFrames = true, MidnightSimpleUnitFrames_Options = true }
 env.C_AddOns = {
@@ -98,8 +104,26 @@ end
 LoadAddOn("MSUF_Suite", {})
 local Suite = env.MSUFSuite
 Check(Suite.Database.Initialize(nil), "Suite test profile did not initialize")
+Check(Suite.Suite.Config("partyEffects").enabled == false
+    and Suite.Suite.Config("partyEffects").onLust == false,
+    "party effects and the Bloodlust trigger must both default off")
+Check(Suite.SuiteCatalog.partyEffects.optIn == true, "party effects must remain opt-in")
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = true end
+Suite.Skin.enabled = true
 local P = {}
+local collectors,collectionCalls={},{}
+local nativeRegister=world.core.MSUF2.RegisterSearchProvider
+world.core.MSUF2.RegisterSearchProvider=function(name,collect,contextChanged)
+    if name:match("^MSUF_Suite") then
+        local source=collect
+        collect=function()
+            collectionCalls[name]=(collectionCalls[name] or 0)+1
+            return source()
+        end
+        collectors[name]=collect
+    end
+    return nativeRegister(name,collect,contextChanged)
+end
 LoadAddOn("MSUF_Suite_Options", P)
 for _, feature in ipairs(P.QualityOfLifeSearchFeatures or {}) do
     Suite.Suite.Config(feature.id)[feature.switch] = true
@@ -117,6 +141,20 @@ do
         "a disabled module's enable switch disappeared from visited-page search")
     Check(not P.SearchRowAvailable("suite_chat", "msufsuite.chat.fontSize", { kind = "slider" }),
         "a disabled module still exposed its detail settings")
+    P.ForgetAvailability()
+    local page, switch
+    for _, row in ipairs(P.SearchRows()) do
+        if row.pageKey == "suite_chat" then
+            if row.kind == "page" then
+                page = row
+            elseif row.settingKey == "msufsuite.chat.enabled" then
+                switch = row
+            else
+                Check(false, "disabled chat retained a cold detail, section or action: " .. tostring(row.label))
+            end
+        end
+    end
+    Check(page and switch, "disabled chat lost its cold page or enable switch")
     chat.enabled = true
 
     local protection = Suite.Suite.Config("releaseProtection")
@@ -140,10 +178,64 @@ do
         end
     end
     Check(checkedFeature, "the QoL fixture had no independent feature switch")
+
+    -- Skinning switched off keeps its page and the switch that turns it on.
+    Suite.Skin.enabled = false
+    Check(P.SearchRowAvailable("suite_skin", "msufsuite.skin.enabled", { kind = "toggle" })
+        and P.SearchRowAvailable("suite_skin", nil, { kind = "page" })
+        and not P.SearchRowAvailable("suite_skin", "msufsuite.skin.font.path", { kind = "textinput" }),
+        "Skinning that is off lost its page or switch, or kept its details")
+    local skinSwitch
+    for _, row in ipairs(P.SearchRows()) do
+        if row.settingKey == "msufsuite.skin.enabled" then skinSwitch = row end
+    end
+    Check(skinSwitch, "Skinning that is off lost its cold enable switch")
+    Suite.Skin.enabled = true
+
+    -- A module this client cannot run (its AddOn is off in Blizzard's list)
+    -- offers neither its page nor its switch.
+    disabled.MSUF_Suite_Chat = true
+    P.ForgetAvailability()
+    Check(not P.SearchRowAvailable("suite_chat", "msufsuite.chat.enabled", { kind = "toggle" })
+        and not P.SearchRowAvailable("suite_chat", nil, { kind = "page" }),
+        "an unavailable module stayed searchable")
+    disabled.MSUF_Suite_Chat = nil
+    P.ForgetAvailability()
 end
 
 local M = world.core.MSUF2
 local api = M.Search._CoreAPI
+do
+    local config = Suite.Suite.Config("dataTexts")
+    local original = Suite.CopyValue(config)
+    local spec = Suite.SuiteCatalog.dataTexts
+    local controlCount = #spec.controls
+    Check(not P.SearchRowAvailable("suite_dataTexts", "msufsuite.dataTexts.bar4Name", {kind="textinput"}),
+        "an unconfigured bar retained a visited-page search setting")
+    for key, value in pairs(Suite.DataTextBarCreationValues(config, 13)) do config[key] = value end
+    Suite.Suite.Normalize(Suite.DB)
+    config.bar13Name = "Raid Analysis"
+    local found, stale, action
+    local actionId = P.Meta("suite_dataTexts", "dataTexts", "bar13.remove", "action", "suite_dataTexts_bar13").controlId
+    for _, row in ipairs(P.SearchRows()) do
+        if row.controlId == actionId then action = row end
+        Check(not (row.controlId and row.sectionId == "suite_dataTexts_bar4"), "cold actions indexed an unconfigured bar")
+        if row.settingKey == "msufsuite.dataTexts.bar13Name" then found = row end
+        if row.settingKey == "msufsuite.dataTexts.bar4Name" then stale = row end
+    end
+    Check(found and not stale, "cold search did not match the dynamically configured bar inventory")
+    Check(action and action.sectionId == "suite_dataTexts_bar13", "cold search omitted the exact dynamic remove action")
+    local named = false
+    for _, keyword in ipairs(found.keywords) do if keyword == "Raid Analysis" then named = true end end
+    Check(named, "configured bar name is missing from its setting search words")
+    for key, value in pairs(Suite.DataTextBarRemovalValues(config, 13)) do config[key] = value end
+    Check(not P.SearchRowAvailable("suite_dataTexts", found.settingKey, {providerRow=found}),
+        "a removed bar remained available through an already cached search row")
+    Check(not P.SearchRowAvailable("suite_dataTexts", nil, {providerRow=action}), "removed bar retained its cached action")
+    Check(not P.SearchRowAvailable("suite_dataTexts", nil, {kind="button",sectionId="suite_dataTexts_bar13"}), "removed bar retained a visited action")
+    Check(#spec.controls == controlCount, "dynamic bar search permanently grew the global control list")
+    Suite.DB.suite.modules.dataTexts = original
+end
 Check(P.searchRegistered == true, "the Suite provider did not register")
 Check(api.GetSearchProviderCache() == nil, "Suite rows were collected at load instead of on the first search")
 
@@ -216,8 +308,8 @@ Check(api.GetSearchProviderCache().skipped == 0, "the host skipped Suite rows as
 CheckReleaseSearch("unopened page")
 
 -- Every alias of every page is a search word of that page (Register.lua only
--- fills M.ALIASES). Whether it ranks first depends on what else MSUF offers for
--- the word ("dps" is also a group role); the words above must rank first.
+-- fills M.ALIASES). Quality of Life aliases name features of both clients;
+-- its features' own switch rows carry their words instead.
 local pageRecords = {}
 for _, rec in ipairs(api.GetSearchRecords()) do
     if rec.kind == "page" then pageRecords[rec.key] = rec end
@@ -225,9 +317,35 @@ end
 local normalize = M.Search.Text.NormalizeSearchText
 for _, page in ipairs(P.pages) do
     local rec = Check(pageRecords[page.key], "no page record for " .. page.key)
-    for _, alias in ipairs(page.aliases or {}) do
+    for _, alias in ipairs(page.key ~= "suite_qualityOfLife" and page.aliases or {}) do
         Check((" " .. rec.haystack .. " "):find(" " .. normalize(alias) .. " ", 1, true),
             "alias '" .. alias .. "' is not a search word of " .. page.key)
+    end
+end
+
+-- A disabled module of a shared page stays findable through its own switch
+-- (through the host cache, after a controller setter); its settings leave.
+do
+    for _, id in ipairs({"runSummary", "announcements", "afkScreen"}) do
+        Check(Suite.Suite.Set(id, "enabled", false), "could not disable HUD sibling: " .. id)
+    end
+    for _, case in ipairs({ {"run summaries", "runSummary"}, {"announcements", "announcements"}, {"afk screen", "afkScreen"} }) do
+        local switch
+        for _, row in ipairs(Search(case[1])) do
+            if row.key == "suite_hud" and row.exactTarget
+                and row.exactTarget.settingKey == "msufsuite." .. case[2] .. ".enabled" then switch = row end
+        end
+        Check(switch, "a disabled HUD module lost its enable switch in search: " .. case[1])
+    end
+    local activeSibling
+    for _, row in ipairs(api.GetSearchRecords()) do
+        local key = row.exactTarget and row.exactTarget.settingKey
+        if key == "msufsuite.objectives.width" then activeSibling = row end
+        Check(key ~= "msufsuite.announcements.zone", "a disabled HUD module kept its settings in the index")
+    end
+    Check(activeSibling, "active HUD sibling disappeared")
+    for _, id in ipairs({"runSummary", "announcements", "afkScreen"}) do
+        Check(Suite.Suite.Set(id, "enabled", true), "could not reenable HUD sibling: " .. id)
     end
 end
 
@@ -247,6 +365,14 @@ for _, rec in ipairs(Search("enable minimap")) do
     if rec.kind == "faq" and rec.key == "suite_minimap" then suiteFaq = true end
 end
 Check(suiteFaq, "'enable minimap' answers only with MSUF's minimap icon help")
+-- The FAQ answers how to turn the module on, so it stays while the module is off.
+Check(Suite.Suite.Set("minimap", "enabled", false), "could not switch the Suite minimap off")
+suiteFaq = false
+for _, rec in ipairs(Search("enable minimap")) do
+    if rec.kind == "faq" and rec.key == "suite_minimap" then suiteFaq = true end
+end
+Check(suiteFaq, "'enable minimap' lost the Suite answer while the Suite minimap is off")
+Check(Suite.Suite.Set("minimap", "enabled", true), "could not switch the Suite minimap on")
 Show("suite", 3)
 Show("modules", 5)
 
@@ -258,8 +384,11 @@ Check(size and size.key == "suite_minimap" and size.kind == "slider" and size.pr
 Check(size.hint:find("> Minimap > " .. M.Tr(catalog.minimap.rules.size.sectionTitle), 1, true),
     "the setting breadcrumb lost its page or section: " .. size.hint)
 local border = Show("minimap border color")[1]
-Check(border and border.key == "suite_minimap" and border.kind == "color" and border.exactTarget == nil
-    and border.anchorFallback == M.Tr(catalog.minimap.rules.borderColor.sectionTitle),
+-- Classic MSUF routes a color row to its section; Main MSUF anchors on the
+-- section title.
+Check(border and border.key == "suite_minimap" and border.kind == "color" and (border.exactTarget
+    and border.exactTarget.sectionId == "suite_minimap_" .. catalog.minimap.rules.borderColor.section
+    or border.exactTarget == nil and border.anchorFallback == M.Tr(catalog.minimap.rules.borderColor.sectionTitle)),
     "a Suite color must lead to its section's color shortcut")
 
 -- Hidden rules stay out.
@@ -290,12 +419,17 @@ do
             "specialization search must target the exact Minimap accordion")
     end
 end
-local expectedQolRows = {}
+local expectedQolRows, expectedQolCount, expectedCategories = {}, 0, {}
 for _, feature in ipairs(Check(P.QualityOfLifeSearchFeatures,
     "the Quality of Life page did not publish its feature search inventory")) do
     local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
-    Check(not expectedQolRows[sectionId], "duplicate Quality of Life feature inventory: " .. sectionId)
-    expectedQolRows[sectionId] = "msufsuite." .. feature.id .. "." .. feature.switch
+    Check(not expectedQolRows[sectionId] and not (P.Available(feature.id) and expectedQolRows[sectionId] == false),
+        "duplicate Quality of Life feature inventory: " .. sectionId)
+    if P.Available(feature.id) then
+        expectedQolRows[sectionId] = "msufsuite." .. feature.id .. "." .. feature.switch
+        expectedQolCount = expectedQolCount + 1
+        expectedCategories["suite_qualityOfLife_category_" .. feature.category] = true
+    end
 end
 local directQolRows, directQolCount, categoryRows = {}, 0, {}
 for _, row in ipairs(rows) do
@@ -312,13 +446,18 @@ for _, row in ipairs(rows) do
         categoryRows[row.sectionId] = row
     end
 end
-Check(directQolCount == 53, "search omitted Quality of Life feature switches: " .. directQolCount)
+Check(directQolCount == expectedQolCount, "search omitted Quality of Life feature switches: " .. directQolCount)
 for sectionId in pairs(expectedQolRows) do
     Check(directQolRows[sectionId], "search omitted Quality of Life feature: " .. sectionId)
 end
 local categoryCount = 0
 for _ in pairs(categoryRows) do categoryCount = categoryCount + 1 end
-Check(categoryCount == 9, "search omitted a Quality of Life category: " .. categoryCount)
+local expectedCategoryCount = 0
+for sectionId in pairs(expectedCategories) do
+    expectedCategoryCount = expectedCategoryCount + 1
+    Check(categoryRows[sectionId], "search omitted an available Quality of Life category: " .. sectionId)
+end
+Check(categoryCount == expectedCategoryCount, "search kept a Quality of Life category without features: " .. categoryCount)
 for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
     local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
     local expectedKey = expectedQolRows[sectionId]
@@ -331,7 +470,11 @@ for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
             break
         end
     end
-    Check(exact, "indexed Quality of Life search target lost its stable feature route: " .. sectionId)
+    if expectedKey then
+        Check(exact, "indexed Quality of Life search target lost its stable feature route: " .. sectionId)
+    else
+        Check(not exact, "unavailable Quality of Life feature entered the index: " .. sectionId)
+    end
 end
 local chatRows = 0
 for _, row in ipairs(rows) do
@@ -346,6 +489,7 @@ missing.MSUF_Suite_Chat = nil
 
 -- Exercise the actual host cache through controller setters, addon availability
 -- and profile activation. Calling the predicate alone cannot catch stale rows.
+-- No page has been visited yet, so both hosts index provider rows only.
 local function FindSetting(key)
     for _, record in ipairs(api.GetSearchRecords()) do
         if record.settingKey == key or record.exactTarget and record.exactTarget.settingKey == key then
@@ -353,7 +497,7 @@ local function FindSetting(key)
         end
     end
 end
-if M.RegisterSearchAvailability then
+do
     local switches, byModule = {}, {}
     for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
         switches["msufsuite." .. feature.id .. "." .. feature.switch] = true
@@ -393,7 +537,8 @@ if M.RegisterSearchAvailability then
                 for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
                     if feature.id == id then
                         local record = FindSetting("msufsuite." .. id .. "." .. feature.switch)
-                        Check(record and record.providerRow and record.providerRow.suiteModuleSwitch,
+                        Check(record and record.kind == "toggle"
+                            and (record.providerRow == nil or record.providerRow.suiteModuleSwitch),
                             "disabled aggregate module lost its feature switch: " .. id)
                         featureSwitches = featureSwitches + 1
                     end
@@ -426,6 +571,67 @@ if M.RegisterSearchAvailability then
     Check(FindSetting("msufsuite.chat.enabled"), "profile activation hid the module switch")
     Check(Suite.Database.Activate(original), "could not restore test profile")
     Check(FindSetting("msufsuite.chat.fontSize"), "profile restoration did not rebuild search")
+    local config = Suite.Suite.Config("dataTexts")
+    local saved = Suite.CopyValue(config)
+    local count = #catalog.dataTexts.controls
+    local hadPage = M.cache and M.cache.suite_dataTexts
+    for _,id in ipairs(Suite.DataTextBarIDs(config)) do
+        Check(Suite.Suite.SetMany("dataTexts",Suite.DataTextBarRemovalValues(config,id)), "could not clear configured bar inventory")
+    end
+    local ids = {400000}
+    for id=13,31 do ids[#ids+1]=id end
+    for _, id in ipairs(ids) do
+        Check(Suite.Suite.SetMany("dataTexts", Suite.DataTextBarCreationValues(config,id)), "could not configure dynamic search bar")
+    end
+    Check(Suite.Suite.Set("dataTexts", "bar400000Name", "Raid Analysis"), "could not name high-ID bar")
+    Check(#Suite.DataTextBarIDs(config)==20,"dynamic fixture must have exactly twenty configured bars")
+    local dynamicRows=P.SearchRows()
+    local providerNames={}
+    for name in pairs(collectors) do providerNames[#providerNames+1]=name end
+    table.sort(providerNames)
+    Check(#providerNames==17,"provider partition cardinality must remain fixed for 256 bars")
+    local total,maxGroup,baseRows=0,0,0
+    local perBar={}
+    for _,row in ipairs(dynamicRows) do
+        local bar=row.pageKey=="suite_dataTexts" and ((row.suiteRuleKey or ""):match("^bar(%d+)") or (row.sectionId or ""):match("^suite_dataTexts_bar(%d+)$"))
+        if bar then perBar[bar]=(perBar[bar] or 0)+1 end
+    end
+    local maxPerBar=0
+    for _,count in pairs(perBar) do maxPerBar=math.max(maxPerBar,count) end
+    Check(Suite.DataTextBarLimit==256 and maxPerBar*16<=4000,"bounded sixteen-bar partition cannot fit maximum structural inventory")
+    for _,name in ipairs(providerNames) do
+        local part=collectors[name]()
+        Check(#part<=4000,"provider partition exceeded the unchanged host limit: "..name)
+        total=total+#part;maxGroup=math.max(maxGroup,#part)
+        if name=="MSUF_Suite" then baseRows=#part end
+    end
+    Check(total==#dynamicRows,"provider partitions lost or duplicated Suite rows")
+    print("suite search dynamic coverage: "..#dynamicRows.." rows / 20 configured bars; 17 fixed providers, base "..baseRows..", max part "..maxGroup..", max per bar "..maxPerBar)
+    Search("data texts") -- Warm actual host context predicates after the profile/configuration changes.
+    for name in pairs(collectors) do collectionCalls[name]=0 end
+    P.InvalidateSearch()
+    Check(FindSetting("msufsuite.dataTexts.bar400000Name"), "high-ID bar missing from host cache")
+    for name in pairs(collectors) do Check(collectionCalls[name]==1,"host failed to collect the fresh complete provider partition: "..name) end
+    Check(api.GetSearchProviderCache().skipped==0 and FindSetting("msufsuite.actionTracker.rows"), "dynamic inventory truncated later Suite modules")
+    local named
+    for _, record in ipairs(Search("Raid Analysis")) do
+        if record.key=="suite_dataTexts" and record.route and record.route.accordion["suite_dataTexts:suite_dataTexts_bar400000"] then named=record end
+    end
+    Check(named, "named high-ID bar missing from actual query")
+    Search("Raid");Search("Raid Analysis");Search("data text")
+    for name in pairs(collectors) do Check(collectionCalls[name]==1,"query recollected rows without configuration invalidation: "..name) end
+    Check((M.cache and M.cache.suite_dataTexts)==hadPage and #catalog.dataTexts.controls==count, "search built UI or grew global controls")
+    Check(Suite.Suite.SetMany("dataTexts",Suite.DataTextBarRemovalValues(config,400000)), "could not remove high-ID bar")
+    Check(not FindSetting("msufsuite.dataTexts.bar400000Name"), "removed high-ID bar retained host rows")
+    Check(Suite.Database.Create("Search empty bars",true), "could not create dynamic test profile")
+    local other=Suite.Database.GetProfile("Search empty bars").suite.modules.dataTexts
+    other.barIds="0"
+    for _,id in ipairs(Suite.DataTextBarIDs(other)) do other["bar"..id.."Enabled"]=false end
+    Check(Suite.Database.Activate("Search empty bars"), "could not switch dynamic test profile")
+    Check(not FindSetting("msufsuite.dataTexts.bar13Name"), "profile switch retained old configured bars")
+    Check(Suite.Database.Activate(original) and FindSetting("msufsuite.dataTexts.bar13Name"), "profile switch failed to restore dynamic rows")
+    Suite.DB.suite.modules.dataTexts=saved
+    P.Refresh()
 end
 
 -- Search navigation must open a cold QoL page, select its category/tab, and
@@ -453,6 +659,8 @@ do
         elseif kind == "EditBox" then
             frame.SetAutoFocus = frame.SetAutoFocus or function() end
             frame.SetNumeric = frame.SetNumeric or function() end
+            frame.SetMaxLetters = frame.SetMaxLetters or function(self, value) self._maxLetters=value end
+            frame.HasFocus = frame.HasFocus or function() return false end
         end
         return frame
     end
@@ -463,116 +671,161 @@ do
     M.frame = env.CreateFrame("Frame", nil, env.UIParent)
     M.frame:Show()
 
-    if flavor == "Mainline" then
-        for _, case in ipairs({
-            { label = "Mythic+ settings", sectionId = "suite_hud_objectives_content" },
-            { label = "Mythic+ run summaries", sectionId = "suite_hud_summary_content" },
-        }) do
+    if M.InvalidateSearchProvider then
+        local config=Suite.Suite.Config("dataTexts")
+        local saved=Suite.CopyValue(config)
+        Check(Suite.Suite.SetMany("dataTexts",Suite.DataTextBarCreationValues(config,400000)), "could not configure action route bar")
+        local wanted=P.Meta("suite_dataTexts","dataTexts","bar400000.remove","action","suite_dataTexts_bar400000").controlId
+        local target
+        for _, record in ipairs(api.GetSearchRecords()) do
+            if record.exactTarget and record.exactTarget.controlId==wanted then target=record;break end
+        end
+        Check(target, "cold high-ID remove action has no exact host target")
+        local selected,anchored,exact=api.OpenSearchTarget(target.key,target.label,target.anchorFallback or target.label,target.anchor,target.route,target.exactTarget)
+        world.widgets:RunTimers(80)
+        Check(selected and anchored and exact and M.activeKey=="suite_dataTexts", "dynamic action failed to focus its real control")
+        Check(config.bar400000Enabled==true, "search executed the remove action")
+        Suite.DB.suite.modules.dataTexts=saved;P.Refresh()
+    end
+    -- Navigation runs through the host's routing and rendering. The harness
+    -- loads only Main's IndexQuery into the Classic menu, so opening targets is
+    -- checked against the Classic host; the index checks below run on both.
+    if searchHost == classic then
+        if flavor == "Mainline" then
+            for _, case in ipairs({
+                { label = "Mythic+ settings", sectionId = "suite_hud_objectives_content" },
+                { label = "Mythic+ run summaries", sectionId = "suite_hud_summary_content" },
+            }) do
+                local target
+                for i, record in ipairs(Search("mythic plus")) do
+                    if i <= 6 and record.key == "suite_hud" and record.label == case.label then
+                        target = record
+                        break
+                    end
+                end
+                Check(target, "Mythic+ HUD shortcut disappeared after its page was built")
+                local selected, anchored = api.OpenSearchTarget(target.key, target.label,
+                    target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+                world.widgets:RunTimers(80)
+                local entry = M.cache and M.cache.suite_hud
+                local section = entry and entry.sections and entry.sections[case.sectionId]
+                Check(selected and anchored and M.activeKey == "suite_hud"
+                    and section and section._msuf2CollapsibleEntry.open == true,
+                    "Mythic+ search did not open the HUD section: " .. case.sectionId)
+            end
+        end
+
+        local function RouteExact(settingKey, expectedTab, expectedSection)
             local target
-            for i, record in ipairs(Search("mythic plus")) do
-                if i <= 6 and record.key == "suite_hud" and record.label == case.label then
+            for _, record in ipairs(api.GetSearchRecords()) do
+                if record.key == "suite_qualityOfLife"
+                    and record.exactTarget and record.exactTarget.settingKey == settingKey then
                     target = record
                     break
                 end
             end
-            Check(target, "Mythic+ HUD shortcut disappeared after its page was built")
-            local selected, anchored = api.OpenSearchTarget(target.key, target.label,
+            Check(target, "no exact Quality of Life search record: " .. settingKey)
+            local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
                 target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
             world.widgets:RunTimers(80)
-            local entry = M.cache and M.cache.suite_hud
-            local section = entry and entry.sections and entry.sections[case.sectionId]
-            Check(selected and anchored and M.activeKey == "suite_hud"
-                and section and section._msuf2CollapsibleEntry.open == true,
-                "Mythic+ search did not open the HUD section: " .. case.sectionId)
+            local entry = M.cache and M.cache.suite_qualityOfLife
+            local feature = entry and entry.qualityOfLifeFeatureRows[expectedSection or target.exactTarget.sectionId]
+            local category = feature and entry.sections["suite_qualityOfLife_category_" .. feature.category]
+            local _, widget = M.RuntimeControlCatalog.FindBySettingKey(
+                settingKey, "suite_qualityOfLife", target.exactTarget)
+            Check(selected and anchored and exact and widget,
+                "Quality of Life search did not focus exact setting: " .. settingKey)
+            Check(feature and feature.details and feature.tab == expectedTab
+                and feature.row:GetParent():IsShown() and feature.details:IsShown(),
+                "Quality of Life search did not reveal the correct feature tab: " .. settingKey)
+            Check(category and category._msuf2CollapsibleEntry.open == true,
+                "Quality of Life search left its category closed: " .. settingKey)
         end
-    end
 
-    local function RouteExact(settingKey, expectedTab, expectedSection)
-        local target
-        for _, record in ipairs(api.GetSearchRecords()) do
-            if record.key == "suite_qualityOfLife"
-                and record.exactTarget and record.exactTarget.settingKey == settingKey then
-                target = record
-                break
+        Check(M.cache.suite_qualityOfLife == nil, "Quality of Life page unexpectedly warm before exact search")
+        RouteExact("msufsuite.releaseProtection.enabled", "main")
+        RouteExact("msufsuite.releaseProtection.modifier", "main", "suite_qualityOfLife_releaseProtection_release_protection")
+        RouteExact("msufsuite.actionTracker.rows", "main")
+        do
+            local key="msufsuite.partyEffects.onLust"
+            local found
+            for _,record in ipairs(Search("When you or your pet cast Bloodlust")) do
+                if record.exactTarget and record.exactTarget.settingKey==key then found=record;break end
             end
+            Check(found and found.kind=="toggle" and found.exactTarget.sectionId=="suite_qualityOfLife_partyEffects_party_effects",
+                "the Bloodlust trigger must have a searchable exact toggle in the existing party-effects section")
+            local set, writes=Suite.Suite.Set,0
+            Suite.Suite.Set=function(...) writes=writes+1;return set(...) end
+            RouteExact(key,"main","suite_qualityOfLife_partyEffects_party_effects")
+            Suite.Suite.Set=set
+            Check(writes==0 and Suite.Suite.Config("partyEffects").onLust==false,
+                "search navigation must focus the Bloodlust trigger without enabling it or invoking a setting action")
         end
-        Check(target, "no exact Quality of Life search record: " .. settingKey)
-        local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
-            target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
-        world.widgets:RunTimers(80)
-        local entry = M.cache and M.cache.suite_qualityOfLife
-        local feature = entry and entry.qualityOfLifeFeatureRows[expectedSection or target.exactTarget.sectionId]
-        local category = feature and entry.sections["suite_qualityOfLife_category_" .. feature.category]
-        local _, widget = M.RuntimeControlCatalog.FindBySettingKey(
-            settingKey, "suite_qualityOfLife", target.exactTarget)
-        Check(selected and anchored and exact and widget,
-            "Quality of Life search did not focus exact setting: " .. settingKey)
-        Check(feature and feature.details and feature.tab == expectedTab
-            and feature.row:GetParent():IsShown() and feature.details:IsShown(),
-            "Quality of Life search did not reveal the correct feature tab: " .. settingKey)
-        Check(category and category._msuf2CollapsibleEntry.open == true,
-            "Quality of Life search left its category closed: " .. settingKey)
-    end
-
-    Check(M.cache.suite_qualityOfLife == nil, "Quality of Life page unexpectedly warm before exact search")
-    RouteExact("msufsuite.releaseProtection.enabled", "main")
-    RouteExact("msufsuite.releaseProtection.modifier", "main", "suite_qualityOfLife_releaseProtection_release_protection")
-    RouteExact("msufsuite.actionTracker.rows", "main")
-    RouteExact("msufsuite.qol.junkReport", "merchants")
-    -- Edit Mode must scroll to the feature's settings card below the list,
-    -- rather than the parent category header. Exercise the real host routing.
-    do
-        local entry = M.cache.suite_qualityOfLife
-        local previousScroll, previousTop, previousHeight = M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight
-        local offset
-        M.scrollFrame = env.CreateFrame("ScrollFrame", nil, env.UIParent)
-        M.scrollFrame:SetHeight(400)
-        M.scrollFrame.SetVerticalScroll = function(_, value) offset = value end
-        M.scrollChild.GetHeight = function() return 2400 end
-        entry.wrapper.GetTop = function() return 1200 end
-        for _, case in ipairs({
-            { "combatStatsHUD", "secondary_stats", "character" },
-            { "durabilityAlert", "durability_warning", "gear" },
-            { "actionTracker", "action_tracker", "main" },
-        }) do
-            local sectionId = "suite_qualityOfLife_" .. case[1] .. "_" .. case[2]
-            local details = entry._msuf2ResolveMissingSection(sectionId)
-            local previousDetailTop = details.GetTop
-            details.GetTop = function() return 700 end
-            local category = details._msuf2CollapsibleEntry
-            category.open = false
-            category.body:Hide()
-            offset = nil
-            Check(Suite.Menu.FocusQualityOfLifeModule(case[1]), "Edit Mode detail route failed: " .. case[1])
-            world.widgets:RunTimers(80)
-            local feature = entry.qualityOfLifeFeatureRows[sectionId]
-            Check(offset == 456 and category.open and details:IsShown()
-                and feature.tab == case[3] and feature.row:GetParent():IsShown(),
-                "Edit Mode did not scroll directly to its visible settings card: " .. case[1])
-            details.GetTop = previousDetailTop
+        RouteExact("msufsuite.qol.junkReport", "merchants")
+        if flavor == "Mainline" then
+            RouteExact("msufsuite.tooltipDetails.unitMount", "main", "suite_qualityOfLife_tooltipDetails_tooltip_details")
+            RouteExact("msufsuite.tooltipDetails.unitMountOwned", "main", "suite_qualityOfLife_tooltipDetails_tooltip_details")
         end
-        M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight = previousScroll, previousTop, previousHeight
-    end
-    CheckReleaseSearch("visited page")
-    for _, settingKey in ipairs({ "msufsuite.actionTracker.rows", "msufsuite.qol.junkReport" }) do
-        local matches = 0
-        for _, record in ipairs(api.GetSearchRecords()) do
-            if record.key == "suite_qualityOfLife" and record.exactTarget
-                and record.exactTarget.settingKey == settingKey then
-                matches = matches + 1
+        -- Edit Mode must scroll to the feature's settings card below the list,
+        -- rather than the parent category header. Exercise the real host routing.
+        do
+            local entry = M.cache.suite_qualityOfLife
+            local previousScroll, previousTop, previousHeight = M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight
+            local offset
+            M.scrollFrame = env.CreateFrame("ScrollFrame", nil, env.UIParent)
+            M.scrollFrame:SetHeight(400)
+            M.scrollFrame.SetVerticalScroll = function(_, value) offset = value end
+            M.scrollChild.GetHeight = function() return 2400 end
+            entry.wrapper.GetTop = function() return 1200 end
+            for _, case in ipairs({
+                { "combatStatsHUD", "secondary_stats", "character" },
+                { "durabilityAlert", "durability_warning", "gear" },
+                { "actionTracker", "action_tracker", "main" },
+            }) do
+                local sectionId = "suite_qualityOfLife_" .. case[1] .. "_" .. case[2]
+                local details = entry._msuf2ResolveMissingSection(sectionId)
+                local previousDetailTop = details.GetTop
+                details.GetTop = function() return 700 end
+                local category = details._msuf2CollapsibleEntry
+                category.open = false
+                category.body:Hide()
+                offset = nil
+                Check(Suite.Menu.FocusQualityOfLifeModule(case[1]), "Edit Mode detail route failed: " .. case[1])
+                world.widgets:RunTimers(80)
+                local feature = entry.qualityOfLifeFeatureRows[sectionId]
+                Check(offset == 456 and category.open and details:IsShown()
+                    and feature.tab == case[3] and feature.row:GetParent():IsShown(),
+                    "Edit Mode did not scroll directly to its visible settings card: " .. case[1])
+                details.GetTop = previousDetailTop
             end
+            M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight = previousScroll, previousTop, previousHeight
         end
-        Check(matches == 1, "opened Quality of Life setting has duplicate search rows: " .. settingKey)
+        CheckReleaseSearch("visited page")
+        for _, settingKey in ipairs({ "msufsuite.actionTracker.rows", "msufsuite.qol.junkReport" }) do
+            local matches = 0
+            for _, record in ipairs(api.GetSearchRecords()) do
+                if record.key == "suite_qualityOfLife" and record.exactTarget
+                    and record.exactTarget.settingKey == settingKey then
+                    matches = matches + 1
+                end
+            end
+            Check(matches == 1, "opened Quality of Life setting has duplicate search rows: " .. settingKey)
+        end
     end
     for _, case in ipairs({
         { "action tracker", "msufsuite.actionTracker.enabled" },
         { "keystone command", "msufsuite.mythicKeyShare.enabled" },
         { "loot history", "msufsuite.loot.manageHistory" },
     }) do
-        local first = Search(case[1])[1]
-        Check(first and first.key == "suite_qualityOfLife" and first.exactTarget
-            and first.exactTarget.settingKey == case[2],
-            "Quality of Life search did not put the feature first: " .. case[1])
+        local moduleId = case[2]:match("^msufsuite%.([^.]+)%.")
+        if P.Available(moduleId) then
+            local first = Search(case[1])[1]
+            Check(first and first.key == "suite_qualityOfLife" and first.exactTarget
+                and first.exactTarget.settingKey == case[2],
+                "Quality of Life search did not put the feature first: " .. case[1])
+        else
+            Check(not FindSetting(case[2]), "unavailable client feature remained searchable: " .. case[1])
+        end
     end
     if M.RegisterSearchAvailability then
         Check(Suite.Suite.Set("qol", "autoJunk", false), "could not disable visited QoL subfeature")
@@ -626,6 +879,233 @@ if searchHost ~= classic then
     Check(#api.GetSearchRecords() > 0 and calls == 1,
         "a failing search provider was repeatedly called")
     M.RegisterSearchProvider("broken-test", nil)
+end
+
+-- Use the shipped German translations while retaining every English term.
+-- Only the translation delegate changes; provider, host cache and query engine are real.
+do
+    local german={}
+    local localeEnv={MSUF_NS={LOCALE="deDE",RegisterLocale=function() return german end}}
+    setmetatable(localeEnv,{__index=env});localeEnv._G=localeEnv
+    local chunk=assert(loadfile(root.."/MSUF_Suite/Locales/deDE.lua"))
+    setfenv(chunk,localeEnv);chunk()
+    local nativeTr=M.Tr
+    M.Tr=function(text) return german[text] or nativeTr(text) end
+    P.InvalidateSearch()
+    for _, case in ipairs({
+        {"Datenleisten","suite_dataTexts"},{"data texts","suite_dataTexts"},
+        {"Schadensmesser","suite_damageMeter"},{"damage meter","suite_damageMeter"},
+        {"Questtracker","suite_hud"},{"quest tracker","suite_hud"},
+        {"empfangene Buffs","suite_cooldownManager"},{"cooldown manager","suite_cooldownManager"},
+    }) do
+        local found
+        for _, record in ipairs(Search(case[1])) do if record.key==case[2] then found=record;break end end
+        Check(found,"bilingual page query missed its exact owner: "..case[1])
+    end
+    for _,case in ipairs({{"Dungeonportale","dungeonPortals"},{"Charakterfenster","characterExtras"}}) do
+        local found
+        for _,record in ipairs(Search(case[1])) do
+            if record.exactTarget and record.exactTarget.settingKey=="msufsuite."..case[2]..".enabled" then found=record;break end
+        end
+        Check((found ~= nil) == (P.Available(case[2]) == true and Suite.Suite.Config(case[2]).enabled == true),
+            "German feature alias did not follow client availability: "..case[1])
+    end
+    local seen={}
+    for _,row in ipairs(P.SearchRows()) do
+        if row.controlId then seen[row.controlId]=row end
+        if row.settingKey=="msufsuite.tooltipDetails.unitMount" then
+            Check(row.label==german["Currently ridden mount in unit tooltips (out of combat)"], "mount label did not use shipped translation")
+            local english=false
+            for _,word in ipairs(row.keywords) do if word=="Currently ridden mount in unit tooltips (out of combat)" then english=true end end
+            Check(english,"translated mount row lost the English query words")
+        end
+    end
+    for _,case in ipairs({
+        {"chat","clearHistory","suite_chat_tools","Clear saved chat history"},
+        {"dataTexts","chooseSeasonStages","suite_dataTexts_sources","Choose observed seasonal stages"},
+    }) do
+        local id=P.Meta(P.catalog[case[1]].page,case[1],case[2],"action",case[3]).controlId
+        Check(seen[id] and seen[id].label==german[case[4]],"new action has no translated exact target: "..case[2])
+    end
+    -- The run history action exists only where the catalog offers Mythic+ results.
+    local summary=P.catalog.runSummary
+    local history=P.Meta(summary.page,"runSummary","action.history","action","suite_hud_runSummary_module").controlId
+    if summary.rules.showMythicPlus then
+        Check(german["Open run history"] and seen[history] and seen[history].label==german["Open run history"],
+            "run history action has no translated exact target")
+    else
+        Check(not seen[history],"run history action indexed without Mythic+ results")
+    end
+    M.Tr=nativeTr
+    P.InvalidateSearch()
+end
+
+-- Every shipped locale exercises the combined Core/Suite query path, including
+-- the actual optional-page examples, conversational input, and translated FAQ.
+do
+    local locales = { "enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }
+    local questions = {
+        enUS="where are my bags", enGB="where are my bags", deDE="wo sind meine taschen",
+        esES="dónde están mis bolsas", esMX="dónde están mis bolsas", frFR="où sont mes sacs",
+        itIT="dove sono le mie borse", ptBR="onde estão minhas bolsas", ruRU="где мои сумки",
+        koKR="가방 설정은 어디에 있나요", zhCN="背包设置在哪里", zhTW="背包設定在哪裡",
+    }
+    local faq = {
+        {"suite_minimap", "The Suite Minimap page styles the minimap itself: size, shape, border, zoom, buttons and info texts. MSUF's own minimap icon is under Miscellaneous."},
+        {"suite_nameplates", "The Suite Nameplates page styles Blizzard's enemy and friendly nameplates. MSUF's aura filters only decide whether nameplate-only auras show on MSUF frames."},
+        {"suite_cooldownManager", "The Suite Cooldown manager page (CDM) shows Blizzard's tracked cooldowns and buffs as bars you arrange and style freely."},
+    }
+    local pageModules = { suite_bags="bags", suite_cooldownManager="cooldownManager", suite_minimap="minimap", suite_nameplates="nameplates" }
+    local originalTr, originalLocale = M.Tr, world.core.LOCALE
+    local enabled = {}
+    for _, id in ipairs({"bags", "cooldownManager", "minimap", "nameplates"}) do
+        enabled[id] = Suite.Suite.Config(id).enabled
+        Suite.Suite.Config(id).enabled = true
+    end
+    local function ContainsOwner(query, page)
+        for _, row in ipairs(Search(query)) do if row.key == page then return true end end
+        return false
+    end
+    for _, locale in ipairs(locales) do
+        local translations = {}
+        local localeEnv = { MSUF_NS = { LOCALE=locale, RegisterLocale=function() return translations end } }
+        setmetatable(localeEnv, {__index=env}); localeEnv._G=localeEnv
+        local chunk = assert(loadfile(classic .. "/MidnightSimpleUnitFrames/Locales/" .. locale .. ".lua"))
+        setfenv(chunk,localeEnv); chunk()
+        if locale ~= "enUS" and locale ~= "enGB" then
+            chunk = assert(loadfile(root .. "/MSUF_Suite/Locales/" .. locale .. ".lua"))
+            setfenv(chunk,localeEnv); chunk()
+        end
+        M.Tr=function(text) return translations[text] or text end
+        world.core.LOCALE=locale
+        P.InvalidateSearch()
+        local examples = assert(M.SearchData.SEARCH_EXAMPLES[locale])
+        for _, example in ipairs(examples) do
+            local page = example[3]
+            if page == "suite_bags" or page == "suite_cooldownManager" then
+                Check(ContainsOwner(example[2], page) == P.Available(pageModules[page]),
+                    locale .. ": Suite example disagrees with client availability for " .. page .. ": " .. example[2])
+            end
+        end
+        -- Conversational parsing is the host's: the harness pairs Main's index
+        -- with Classic's language data, so only the Classic host answers it.
+        if searchHost == classic then
+            Check(ContainsOwner(questions[locale], "suite_bags") == P.Available("bags"),
+                locale .. ": natural Suite question disagrees with bags availability: " .. questions[locale])
+        end
+        local answers = {}
+        for _, row in ipairs(api.GetSearchRecords()) do
+            if row.kind == "faq" and row.answer then answers[row.key .. "\031" .. row.answer] = true end
+        end
+        for _, entry in ipairs(faq) do
+            local translated = translations[entry[2]] or entry[2]
+            Check((answers[entry[1] .. "\031" .. translated] == true) == P.Available(pageModules[entry[1]]),
+                locale .. ": translated Suite FAQ disagrees with client availability: " .. entry[1])
+            if locale ~= "enUS" and locale ~= "enGB" then
+                Check(translated ~= entry[2], locale .. ": Suite FAQ fell back to English: " .. entry[1])
+            end
+        end
+        Suite.Suite.Config("bags").enabled=false
+        Suite.Suite.Config("cooldownManager").enabled=false
+        P.InvalidateSearch()
+        -- Off modules answer with their page and switch only, never details.
+        for _, example in ipairs(examples) do
+            local page = example[3]
+            if page == "suite_bags" or page == "suite_cooldownManager" then
+                for _, row in ipairs(Search(example[2])) do
+                    local key = row.exactTarget and row.exactTarget.settingKey or ""
+                    Check(row.key ~= page or row.kind == "page" or row.kind == "faq" or key:match("%.enabled$"),
+                        locale .. ": a Suite module that is off kept a detail in an example query: " .. example[2])
+                end
+                -- MSUF folds Latin letters only, so the Cyrillic page title
+                -- "Сумки" cannot answer "сумки" once no detail row matches.
+                if page == "suite_bags" and locale ~= "ruRU" then
+                    Check(ContainsOwner(example[2], page) == P.Available("bags"),
+                        locale .. ": bags that are off lost their page for their own name: " .. example[2])
+                end
+            end
+        end
+        for _, row in ipairs(Search(questions[locale])) do
+            local key = row.exactTarget and row.exactTarget.settingKey or ""
+            Check(row.key ~= "suite_bags" or row.kind == "page" or row.kind == "faq" or key:match("%.enabled$"),
+                locale .. ": bags that are off kept a detail in the natural question")
+        end
+        Suite.Suite.Config("bags").enabled=true
+        Suite.Suite.Config("cooldownManager").enabled=true
+        P.InvalidateSearch()
+        print(locale .. ": combined Suite examples, natural query, 3 FAQ translations and disabled modules OK")
+    end
+    M.Tr, world.core.LOCALE = originalTr, originalLocale
+    for id, value in pairs(enabled) do Suite.Suite.Config(id).enabled=value end
+    P.InvalidateSearch()
+end
+
+-- With every Suite module off, search keeps only what turns them back on:
+-- pages, FAQ answers, enable switches and Quality of Life categories. With
+-- their AddOns off it keeps nothing of the Suite. The Main host cannot filter
+-- widgets of pages already visited (it has no availability hook), so the
+-- visited-cache checks need that hook.
+do
+    local savedEnabled, savedDisabled, skinEnabled = {}, {}, Suite.Skin.enabled
+    for _, id in ipairs(Suite.SuiteOrder) do
+        savedEnabled[id] = Suite.Suite.Config(id).enabled
+        Suite.Suite.Config(id).enabled = false
+    end
+    for name, value in pairs(disabled) do savedDisabled[name] = value end
+    disabled.MSUF_Suite_Skin = true
+    Suite.Skin.enabled = false
+    P.Refresh()
+    local offRows = P.SearchRows()
+    Check(#offRows > 0, "modules that are off lost their pages and switches")
+    for _, row in ipairs(offRows) do
+        local key = row.settingKey or ""
+        local switch = key:match("%.enabled$") or row.suiteModuleSwitch
+            or (row.sectionId or ""):match("^suite_qualityOfLife_category_")
+        Check(row.kind == "page" or row.kind == "faq" or switch,
+            "modules that are off kept a cold detail: " .. tostring(row.pageKey) .. " " .. tostring(row.label))
+    end
+    if M.RegisterSearchAvailability then
+        for _, row in ipairs(api.GetSearchRecords()) do
+            local key = row.exactTarget and row.exactTarget.settingKey or ""
+            Check(not row.key:match("^suite_") or row.kind == "page" or row.kind == "faq" or row.kind == "section"
+                or key:match("%.enabled$") or (row.providerRow and row.providerRow.suiteModuleSwitch)
+                or key:match("^msufsuite%.qol%.") or key:match("^msufsuite%.loot%."),
+                "Suite-off cache retained " .. row.kind .. " on " .. row.key)
+        end
+    end
+    Check(#Search("target width") > 0, "Suite-off search lost Core settings")
+    for id, value in pairs(savedEnabled) do Suite.Suite.Config(id).enabled = value end
+    Suite.Skin.enabled = skinEnabled
+    for name in pairs(disabled) do disabled[name] = nil end
+    for name, value in pairs(savedDisabled) do disabled[name] = value end
+    P.Refresh()
+    Check(FindSetting("msufsuite.chat.fontSize"), "reenabled Suite failed to restore cached settings")
+
+    -- Blizzard's current-character AddOn switch also gates loaded provider rows.
+    for _, id in ipairs(Suite.SuiteOrder) do disabled[catalog[id].addon] = true end
+    disabled.MSUF_Suite_Skin = true
+    Check(#P.SearchRows() == 0, "Suite AddOns that are off still provided rows")
+    if M.RegisterSearchAvailability then
+        Search("suite")
+        for _, row in ipairs(api.GetSearchRecords()) do
+            Check(not row.key:match("^suite_"), "AddOn-off cache retained " .. row.kind .. " on " .. row.key)
+        end
+    end
+    for name in pairs(disabled) do disabled[name] = nil end
+    for name, value in pairs(savedDisabled) do disabled[name] = value end
+    P.Refresh()
+    Check(FindSetting("msufsuite.chat.fontSize"), "restored AddOn state did not restore Suite search")
+
+    local before = 0
+    for _, count in pairs(collectionCalls) do before = before + count end
+    env.InCombatLockdown = function() return true end
+    -- The hosts do no search work in combat; the Suite needs no gate of its own.
+    Check(#Search("minimap") == 0 and (not M.RegisterSearchAvailability or #api.GetSearchRecords() == 0),
+        "combat performed search work")
+    local after = 0
+    for _, count in pairs(collectionCalls) do after = after + count end
+    Check(after == before, "combat invoked a Suite provider")
+    env.InCombatLockdown = function() return false end
 end
 
 print("suite_search_provider_contract: ok (" .. #rows .. " rows; every page by name and alias)")

@@ -82,7 +82,8 @@ local function PaletteLabel(value)
     if value == "classColor" then
         return string.upper(NS.Theme.GetClassLookLabel())
     end
-    return string.upper(NS.PaletteLabels[value] or tostring(value))
+    local label = NS.PaletteLabels[value]
+    return string.upper(label and L[label] or tostring(value))
 end
 
 -- Lower-case text a search query is matched against, one per color row.

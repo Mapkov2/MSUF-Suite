@@ -73,6 +73,33 @@ function O.CreateSettingButton(parent, text, width, height, callback, role, refu
     return button
 end
 
+-- A two-click confirmation on one button. Arm(subject) relabels the button
+-- and remembers what it was armed for; the arm expires on its own after
+-- `seconds` (a one-shot timer that ends only the arm it was started for), so
+-- a much later click arms again instead of confirming.
+function O.CreateConfirmation(button, restLabel, armedLabel, seconds)
+    local confirmation = { arms = 0 }
+    local function SetLabel(text) O.widgetStates[button].label:SetText(text) end
+    function confirmation.Disarm()
+        confirmation.armed, confirmation.subject = nil, nil
+        SetLabel(restLabel)
+    end
+    -- True while armed for subject (nil for a button with one subject).
+    function confirmation.IsArmed(subject)
+        return confirmation.armed ~= nil and confirmation.subject == subject
+    end
+    function confirmation.Arm(subject)
+        confirmation.arms = confirmation.arms + 1
+        local arm = confirmation.arms
+        confirmation.armed, confirmation.subject = arm, subject
+        SetLabel(armedLabel)
+        C_Timer.After(seconds, function()
+            if confirmation.armed == arm then confirmation.Disarm() end
+        end)
+    end
+    return confirmation
+end
+
 -- Left-aligned single-line caption for list rows (navigation, search results,
 -- dropdown entries).
 function O.AlignButtonLabel(button)

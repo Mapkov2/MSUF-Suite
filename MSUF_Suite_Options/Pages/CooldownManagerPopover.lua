@@ -233,6 +233,16 @@ local ALL_FIELDS = {
       help = "Glow while the game highlights this spell (spell alert)." },
     { key = "readyGlow", label = "Glow when ready", kind = "bool", cd = true, bar = "readyGlow",
       help = "Glow while the spell is ready. \"Ready glows only in combat\" in Basics limits it to combat." },
+    { key = "showGCD", label = "Show global cooldown", kind = "bool", cd = true, spellOnly = true,
+      help = "Show the global cooldown swipe for this spell. Reset follows the global cooldown setting in Basics." },
+    { key = "readyResources", label = "Ready glow requires enough resources", kind = "bool", cd = true, bar = "readyResources",
+      help = "Suppress ready glows when resources are insufficient or their state is unavailable." },
+    { key = "fullChargeGlow", label = "Glow when all charges are ready", kind = "bool", cd = true, spellOnly = true, bar = "fullChargeGlow",
+      help = "Glow when the game reports that this charge spell has finished recharging." },
+    { key = "chargeSwipe", label = "Show recharge swipe", kind = "bool", cd = true, spellOnly = true, bar = "chargeSwipe",
+      help = "Draw the recharge swipe independently of the main cooldown swipe." },
+    { key = "chargeEdge", label = "Show recharge edge", kind = "bool", cd = true, spellOnly = true, bar = "chargeEdge",
+      help = "Draw the recharge edge independently of the main cooldown edge." },
     { key = "auraGlow", label = "Glow while active", kind = "bool", aura = true, bar = "auraGlow",
       help = "Glow while the buff is active." },
     { key = "glowStyle", label = "Glow style", kind = "choice", cd = true, aura = true,
@@ -257,7 +267,17 @@ local ALL_FIELDS = {
       values = { { 0, "Automatic" }, { 2, "Me" }, { 3, "Target" }, { 4, "Both" } },
       help = "Where the buff or debuff is looked for. Automatic: harmful spells on your target, all others on you." },
     { key = "stackGlow", label = "Glow at stacks", kind = "number", stack = true, off = true, step = 1, max = 99,
-      help = "Glow while the buff has at least this many stacks." },
+      help = "Stack threshold for the selected comparison. Zero disables the stack glow." },
+    { key = "hideAvailableCharges", label = "Hide while a charge is available", kind = "bool", cd = true, spellOnly = true,
+      help = "Fade the charge spell while at least one charge is usable. Its space stays reserved; the native cooldown controls the opacity without exposing charge counts." },
+    { key = "stackGlowOp", label = "Stack comparison", kind = "choice", stack = true,
+      values = { { 0, "At least" }, { 2, "Exactly" }, { 3, "More than" } },
+      help = "Compare the native stack count with the configured threshold." },
+    { key = "actionGlowSpell", label = "Glow on action-bar spell", kind = "spell", stack = true,
+      help = "Enter a spell name or ID on MSUF action bars. Its buttons glow from this buff on you. A page change in combat pauses the glow until combat ends." },
+    { key = "actionGlowMode", label = "Action-bar glow condition", kind = "choice", stack = true,
+      values = { { 0, "Buff present" }, { 2, "Stack comparison" } },
+      help = "The stack condition uses Glow at stacks and Stack comparison. Buff absence cannot drive a combat glow through the native aura-slot API." },
     { key = "stackColorAt", label = "Color stacks from", kind = "number", stack = true, off = true, step = 1, max = 99,
       color = "stackColor", help = "From this many stacks the number shows in the color on the right." },
     { key = "swipe", label = "Swipe", kind = "choice", cd = true, aura = true,
@@ -284,7 +304,22 @@ local ALL_FIELDS = {
     { key = "icon", label = "Icon file ID (Enter)", auraLabel = "Icon when missing (Enter)", kind = "icon", cd = true,
       aura = true, help = "Type a texture file ID and press Enter to show another icon. Empty follows the game." },
 }
--- Rows exist for the fields the catalog stores.
+-- Rows exist for the fields the catalog stores. Labels and help are plain
+-- literals in the rows, so the locale extraction sees every one of them.
+local REQUIRE_HELP = "Enter a talent or spell name or ID, then press Enter. Every required spell must be learned. Empty removes this condition."
+local EXCLUDE_HELP = "Enter a talent or spell name or ID, then press Enter. The entry is hidden while any excluded spell is learned. Conditions update outside combat."
+local CONDITIONS = {
+    { key = "requireSpell1", label = "Required talent or spell 1", help = REQUIRE_HELP },
+    { key = "excludeSpell1", label = "Excluded talent or spell 1", help = EXCLUDE_HELP },
+    { key = "requireSpell2", label = "Required talent or spell 2", help = REQUIRE_HELP },
+    { key = "excludeSpell2", label = "Excluded talent or spell 2", help = EXCLUDE_HELP },
+    { key = "requireSpell3", label = "Required talent or spell 3", help = REQUIRE_HELP },
+    { key = "excludeSpell3", label = "Excluded talent or spell 3", help = EXCLUDE_HELP },
+}
+for _, row in ipairs(CONDITIONS) do
+    row.kind, row.cd, row.aura = "spell", true, true
+    ALL_FIELDS[#ALL_FIELDS + 1] = row
+end
 local FIELDS = {}
 for _, field in ipairs(ALL_FIELDS) do
     if CDM.SPELL_FIELDS[field.key] then FIELDS[#FIELDS + 1] = field end
@@ -318,21 +353,25 @@ end
 Page.FieldApplies = Applies
 local function BarValue(field)
     if field.key == "threshold" then return P.Get(ID, "thresholdSeconds") end
+    if field.key == "showGCD" then return P.Get(ID, "showGCD") end
     local key = field.bar and KEYS[pop.slot] and KEYS[pop.slot][field.bar]
     if key then return P.Get(ID, key) end
 end
 
 -- "Own options: ..." for tooltips, built once per entry and stored string.
 local customLines, customText = {}, nil
+local customSpec
 function Page.CustomLine(key)
     local text = P.Get(ID, "spellsData")
-    if customText ~= text then
+    local spec = Page.Spec()
+    if customText ~= text or customSpec ~= spec then
         for entry in pairs(customLines) do customLines[entry] = nil end
         customText = text
+        customSpec = spec
     end
     local line = customLines[key]
     if line == nil then
-        local fields = Page.SpellOverrides().e[key]
+        local fields = Page.SpellFields(key, true)
         line = false
         if fields then
             local names = {}
@@ -450,6 +489,18 @@ local function IconCommit(self)
         Page.PaintPopover()
     end
 end
+local function SpellCommit(self)
+    local text = (self:GetText() or ""):match("^%s*(.-)%s*$")
+    self:ClearFocus()
+    if text == "" then SetField(self.row.field, nil); return end
+    local id = C_Spell.GetSpellIDForSpellIdentifier(text)
+    if Public(id) and type(id) == "number" and id > 0 and id < 2147483648 then
+        SetField(self.row.field, id)
+    else
+        Page.Fail("Enter a valid talent or spell name or ID.")
+        Page.PaintPopover()
+    end
+end
 
 local function NewSwatch(row, size, onClick)
     local swatch = CreateFrame("Button", nil, row)
@@ -544,16 +595,16 @@ local function Row(field)
             swatch.hex = hex
             row.swatches[i] = swatch
         end
-    elseif kind == "icon" then
+    elseif kind == "icon" or kind == "spell" then
         local edit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
         edit:SetSize(80, 20)
         edit:SetAutoFocus(false)
-        edit:SetNumeric(true)
-        edit:SetMaxLetters(10)
+        edit:SetNumeric(kind == "icon")
+        edit:SetMaxLetters(kind == "icon" and 10 or 100)
         if T.SkinEditBox then T.SkinEditBox(edit) end
         edit.row = row
         edit:SetPoint("LEFT", row, "LEFT", x + 4, 0)
-        edit:SetScript("OnEnterPressed", IconCommit)
+        edit:SetScript("OnEnterPressed", kind == "icon" and IconCommit or SpellCommit)
         edit:SetScript("OnEscapePressed", ClearFocus)
         row.edit = edit
         row.preview = row:CreateTexture(nil, "ARTWORK")
@@ -584,7 +635,8 @@ local function PaintRow(row, fields)
     local field = row.field
     local value = fields and fields[field.key]
     local companion = field.color and fields and fields[field.color] or nil
-    local custom = value ~= nil or companion ~= nil
+    local own = Page.OwnSpellFields(pop.key)
+    local custom = own and (own[field.key] ~= nil or (field.color and own[field.color] ~= nil)) or false
     row.label:SetText(Tr(pop.family == 2 and field.auraLabel or field.label))
     local r, g, b
     if custom then r, g, b = Accent() else r, g, b = TextColor() end
@@ -632,12 +684,14 @@ local function PaintRow(row, fields)
             end
         end
     elseif kind == "sound" then
-        ButtonText(row.choice, custom and Page.SoundLabel(value) or Tr("None"))
-        row.play:SetEnabled(custom)
-    elseif kind == "icon" then
-        if not (row.edit.HasFocus and row.edit:HasFocus()) then row.edit:SetText(custom and tostring(value) or "") end
-        if value then row.preview:SetTexture(value) else SetIcon(row.preview, pop.texture) end
+        ButtonText(row.choice, value and Page.SoundLabel(value) or Tr("None"))
+        row.play:SetEnabled(value ~= nil)
+    elseif kind == "icon" or kind == "spell" then
+        local name = value and kind == "spell" and C_Spell.GetSpellName(value)
+        if not (row.edit.HasFocus and row.edit:HasFocus()) then row.edit:SetText(value and (name or tostring(value)) or "") end
+        if value then row.preview:SetTexture(kind == "spell" and C_Spell.GetSpellTexture(value) or value) else SetIcon(row.preview, pop.texture) end
     end
+    if Page.spellSpecScope and not custom and value ~= nil and row.hint then row.hint:SetText(Tr("Shared")) end
 end
 
 local function RemoveClick()
@@ -687,6 +741,11 @@ local function CopyClick()
         or format(Tr("Copied to %d specializations."), result))
 end
 
+local function ScopeClick()
+    Page.spellSpecScope = not Page.spellSpecScope
+    Page.PaintPopover()
+end
+
 local function EnsurePopover()
     if pop then return pop end
     pop = Page.NewPopup(POP_W, 300)
@@ -710,6 +769,7 @@ local function EnsurePopover()
         Button(pop, "Remove from bar", 100, 22, RemoveClick), Button(pop, "Move to bar", 100, 22, MoveClick),
         Button(pop, "Reset this spell", 102, 22, ResetSpellClick), Button(pop, "Copy to all specs", 140, 22, CopyClick),
     }
+    pop.scopeButton = Button(pop, "Edit this specialization", 160, 22, ScopeClick)
     pop.remove, pop.move, pop.reset, pop.copy = pop.actions[1], pop.actions[2], pop.actions[3], pop.actions[4]
     for i = 1, #pop.actions do
         local width = T.MeasureButtonWidth and T.MeasureButtonWidth(pop.actions[i], 60, POP_W - 24)
@@ -743,7 +803,9 @@ local function PlaceActions(copy)
     local y = 54 + (line + 1) * 26
     pop.scope:ClearAllPoints()
     pop.scope:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -y)
-    pop.top = y + 20
+    pop.scopeButton:ClearAllPoints()
+    pop.scopeButton:SetPoint("TOPLEFT", pop.scope, "BOTTOMLEFT", 0, -5)
+    pop.top = y + 48
     pop.scroll:ClearAllPoints()
     pop.scroll:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -pop.top)
     pop.scroll:SetPoint("BOTTOMRIGHT", pop, "BOTTOMRIGHT", -26, 10)
@@ -752,12 +814,16 @@ end
 
 function Page.PaintPopover()
     if not pop then return end
-    local fields = Page.SpellOverrides().e[pop.key]
+    local fields = Page.SpellFields(pop.key)
     local kind = CDM.EntryKind(pop.key)
     SetIcon(pop.icon, pop.texture)
     SetRaw(pop.title, Public(pop.entryName) and pop.entryName or pop.key)
     SetRaw(pop.sub, Page.BarName(pop.slot) .. "  -  " .. Page.Identity(pop.key))
-    pop.reset:SetEnabled(fields ~= nil)
+    pop.reset:SetEnabled(Page.OwnSpellFields(pop.key) ~= nil)
+    pop.scope:SetText(Tr(Page.spellSpecScope and "Editing this specialization. Reset a choice to inherit the shared value."
+        or "These choices apply to this spell on every bar and specialization."))
+    pop.scopeButton:SetText(Tr(Page.spellSpecScope and "Edit shared choices" or "Edit this specialization"))
+    pop.scopeButton:SetEnabled(Page.Spec() ~= nil)
     local top = PlaceActions(kind ~= "b")
     local y = 0
     for i = 1, #FIELDS do

@@ -137,7 +137,10 @@ local function DeepEqual(left, right, seen)
     return true
 end
 
-function O.BeginUserChange(label)
+-- profileName names the profile the change will leave active, when that is
+-- not the active one (an import that replaces another profile): the
+-- standalone step then snapshots that profile, so its undo restores it.
+function O.BeginUserChange(label, profileName)
     if history.restoring or history.active or NS.IsCombatLocked() then return false end
     local menu = NativeHistory()
     if menu and menu.IsHistoryCapturing and menu.IsHistoryCapturing() then
@@ -149,10 +152,12 @@ function O.BeginUserChange(label)
         history.active = { native = true }
         return true
     end
+    local profile = profileName or NS.Database.GetActiveProfileName()
+    local data = profileName and NS.Database.GetProfile(profileName) or NS.DB
     history.active = {
         label = tostring(label or "Setting"),
-        profile = NS.Database.GetActiveProfileName(),
-        data = NS.CopyValue(NS.DB),
+        profile = profile,
+        data = NS.CopyValue(data),
     }
     return true
 end

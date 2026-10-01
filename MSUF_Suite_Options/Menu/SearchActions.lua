@@ -5,7 +5,7 @@ local Tr = P.Tr
 -- that open an editor, preview, picker or operation on the real feature page.
 -- Searching them only navigates to the control; it never runs the action.
 local MODULE_ACTIONS = {
-    bags = { { "open", "Open bags" }, { "move", "Move bag windows" } },
+    bags = { { "open", "Open bags" }, { "move", "Move bag windows" }, { "currencies", "Choose currencies" } },
     buffReminders = { { "edit", "Edit Mode" } },
     damageMeter = { { "reset_data", "Reset combat data" }, { "move", "Move on screen" } },
     minimap = { { "rescan", "Collect addon buttons again" }, { "reload", "Reload UI" } },
@@ -14,7 +14,7 @@ local MODULE_ACTIONS = {
     cooldownManager = { { "move", "Move bars on screen" }, { "blizzard", "Open Blizzard's Cooldown Settings" } },
     objectives = { { "edit", "Move in Edit Mode" }, { "colors", "Tracker colors" } },
     runSummary = { { "edit", "Move in Edit Mode" }, { "preview_raid", "Preview raid result" },
-        { "last", "Show last result" }, { "colors", "Summary colors" } },
+        { "last", "Show last result" }, { "clear_history", "Clear run history" }, { "colors", "Summary colors" } },
     announcements = { { "edit", "Move in Edit Mode" }, { "colors", "Announcement colors" } },
 }
 
@@ -32,6 +32,9 @@ local EDITOR_ACTIONS = {
     { "damageMeter", "windows", "window.selected", "Window", "ephemeral", "dropdown" },
     { "damageMeter", "windows", "window.move", "Move this window" },
     { "dataTexts", "gold", "action.clearGold", "Clear saved character gold" },
+    { "dataTexts", "sources", "chooseSeasonStages", "Choose observed seasonal stages" },
+    { "dataTexts", "sources", "chooseCrestCurrencies", "Choose crest currencies" },
+    { "chat", "tools", "clearHistory", "Clear saved chat history" },
     { "cooldownManager", "cooldownManager_module", "editor.selected", "Bar to edit", "ephemeral", "dropdown" },
     { "cooldownManager", "cooldownManager_module", "editor.add", "+ Add bar" },
     { "cooldownManager", "cooldownManager_module", "editor.actions", "Bar actions" },
@@ -45,12 +48,7 @@ local EDITOR_ACTIONS = {
 }
 local BAR_ACTIONS = {
     { "addPlace", "Add place" }, { "move", "Move in Edit Mode" },
-    { "hide", "Hide bar" }, { "antiqueFooter", "Antique Footer preset" },
-}
-local QOL_EDIT = {
-    actionTracker = true, xpBar = true, innervateCue = true, durabilityAlert = true,
-    battleRes = true, groupBloodlust = true, combatStatsHUD = true, combatPetStatus = true,
-    combatMovementCue = true, burningRushCue = true, skyriding = true,
+    { "hide", "Hide bar" }, { "remove", "Remove bar" }, { "antiqueFooter", "Antique Footer preset" },
 }
 local QOL_ACTIONS = {
     xpBar = { { "resetSession", "Reset session" } },
@@ -65,6 +63,9 @@ function P.AppendSearchActionRows(rows, pagesByKey)
         if not pageKey or not pagesByKey[pageKey] or not P.Suite.Client.HasAddOn(spec.addon) then return end
         local meta = P.Meta(pageKey, id, key, classification or "action", sectionId)
         local keywords = { label, Tr(label), spec.title, Tr(spec.title) }
+        local bar = id == "dataTexts" and key:match("^bar(%d+)%.")
+        local barName = bar and P.S.Config(id)["bar" .. bar .. "Name"]
+        if type(barName) == "string" and barName ~= "" then keywords[#keywords + 1] = barName end
         if feature then
             keywords[#keywords + 1] = feature.title
             keywords[#keywords + 1] = Tr(feature.title)
@@ -97,19 +98,21 @@ function P.AppendSearchActionRows(rows, pagesByKey)
     local summary = P.catalog.runSummary
     if summary and summary.rules.showMythicPlus then
         Add("runSummary", "action.preview_mythic", "Preview Mythic+ result", "suite_hud_runSummary_module")
+        Add("runSummary", "action.history", "Open run history", "suite_hud_runSummary_module")
     end
     for _, action in ipairs(EDITOR_ACTIONS) do
         local spec = P.catalog[action[1]]
         if spec then Add(action[1], action[3], action[4], spec.page .. "_" .. action[2], action[5], action[6]) end
     end
-    for bar = 1, 3 do
+    for _, bar in ipairs(P.Suite.DataTextBarIDs(P.S.Config("dataTexts"))) do
         for _, action in ipairs(BAR_ACTIONS) do
             Add("dataTexts", "bar" .. bar .. "." .. action[1], action[2], "suite_dataTexts_bar" .. bar)
         end
     end
     for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
         local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
-        if QOL_EDIT[feature.id] then
+        -- The Quality of Life page owns which features have an Edit Mode button.
+        if P.QualityOfLifeEditElements[feature.id] then
             Add(feature.id, "action.edit", "Move / resize in Edit Mode", sectionId, nil, nil, feature)
         end
         for _, action in ipairs(QOL_ACTIONS[feature.id] or {}) do

@@ -85,7 +85,7 @@ local function EnemySection(ctx, builder, rules)
         for _, entry in ipairs(entries or {}) do
             if entry.widget then
                 entry.widget._msuf2PrepareExactSearchTarget = function()
-                    if P.SelectNameplatesEnemyTab then P.SelectNameplatesEnemyTab(tab) end
+                    P.SelectNameplatesEnemyTab(tab)
                 end
             end
         end

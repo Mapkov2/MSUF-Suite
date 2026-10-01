@@ -299,8 +299,9 @@ local function Preview(ctx, b, skin)
         PaintLabel(cardLabel, "text")
         PaintLabel(buttonLabel, "accent")
         local look = skin.LookPresets[skin.DB.theme.look]
+        local description = look and look.description or "Your own colors, materials and shape."
         note:SetText(Tr(look and look.label or "Custom") .. "\n"
-            .. Tr(look and look.description or "Your own colors, materials and shape."))
+            .. Tr((skin.L and skin.L[description]) or description))
     end)
 end
 

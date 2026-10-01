@@ -14,16 +14,16 @@ local max, min, ceil, floor, format = math.max, math.min, math.ceil, math.floor,
 local MODULE_SECTION = PAGE .. "_" .. ID .. "_module"
 
 local HELP = {
-    general = "These apply to every bar.",
-    bars = "The preview and every section below edit this bar.",
+    general = "These apply to every bar. The standalone assisted icon follows Blizzard's assisted combat highlight; enable that highlight in the game's Combat options. Its position is available in MSUF Edit Mode. Action bar presses show on cooldown icons only with the MSUF Suite action bars.",
+    bars = "The preview and every section below edit this bar. Shared custom groups start with a separate list for explicit spell, aura and item IDs; disabling sharing restores the existing per-specialization list.",
     basics = "The settings you change most. Attach the bar to another bar or to your player frame to keep them together; the gap is the space between them. Center keeps the first cooldown icon in the middle and adds the next icons right, left, right, left. Visible buffs stay compact; on a horizontal mixed bar, player and target buffs grow outward from the center on one row.",
     spells = P.Help("Add spells, then click an icon to customize it.", "Every spell of this bar, unlearned ones included. On a buff bar, Add spells offers received buffs such as Power Infusion and Innervate; Buff on me also accepts a buff aura ID or resolvable name and tracks that ID from any caster. With Show missing buffs off, only active buffs appear. The preview edits entries too: click for options, drag to reorder or onto a bar above, middle-click to remove (with undo). Removed spells stay under Add spells. Lists are kept per specialization."),
-    layout = "How the icons line up and grow. A free bar's position counts from the screen center; an attached bar's is an offset from its attach point.",
+    layout = "How the icons line up and grow. A free bar's position counts from the screen center; an attached bar's is an offset from its attach point. Excess cooldowns can move past Maximum icons to another enabled cooldown bar. The destination must have overflow off; chained routes are ignored.",
     look = "Icon crop, border, swipe and frame layer of this bar.",
     text = "Which numbers show, which one is drawn on top, and their size and place. Single spells can differ: click them in the preview. The font settings below apply to every bar; Slug has no shadow.",
     effects = "How cooldown icons react. Single spells can differ: click them in the preview.",
     buffs = "Buff icons and timer bars: missing buffs, fixed places and highlights.",
-    barstyle = "Size and look of timer bars. Used when the bar type is Timer bar.",
+    barstyle = "Size and look of aura timer bars and cooldowns displayed as timer bars. Stack-filled buff bars use the native stack binding; stack glows remain available on icon and duration views.",
     visibility = "When this bar shows, and how far it fades out of combat. Tooltips show a spell when you hover its icon. This page and MSUF Edit Mode always show every bar.",
 }
 -- Per-bar settings by topic; every custom bar 1 rule appears exactly once.
@@ -31,18 +31,19 @@ local HELP = {
 -- rest start closed. The bar's name and type sit in Basics.
 local SECTIONS = {
     { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "side", "gap", "align",
-        "alpha" } },
-    { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "vertical", "grow", "x", "y" } },
+        "alpha", "cooldownDuration", "shareContents" } },
+    { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "overflow", "laterPerRow", "laterSize", "vertical", "grow", "x", "y" } },
     { id = "look", title = "Look", suffixes = { "zoom", "border", "borderColor", "borderClass", "swipeAlpha", "edge",
         "strata", "layer" } },
     { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
-        "stackPos", "keybind", "keybindSize", "keybindPos" } },
+        "stackPos", "keybind", "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding" } },
     { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",
-        "readyGlow", "glowStyle", "glowTint", "glowColor", "usable", "range", "rangeColor", "showAura", "charges",
+        "readyGlow", "readyResources", "fullChargeGlow", "glowStyle", "glowTint", "glowColor", "usable", "range", "rangeColor", "showAura", "charges", "chargeSwipe", "chargeEdge",
         "assist", "bling" } },
     { id = "buffs", title = "Buffs", suffixes = { "showMissing", "keepSlots", "auraGlow", "pandemic" } },
     { id = "barstyle", title = "Timer bar style", suffixes = { "barWidth", "barHeight", "barTexture", "barColor",
-        "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill" } },
+        "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
+        "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" } },
     { id = "visibility", title = "Visibility", suffixes = { "vis", "oocAlpha", "hideMounted", "hideVehicle", "tooltips" } },
 }
 local CARD_SUFFIXES = { "name", "kind" }
@@ -87,6 +88,17 @@ for i, label in ipairs(CDM.ANCHOR_LABELS) do
 end
 local kindValues = {}
 for i, name in ipairs(Page.KIND_NAMES) do kindValues[i] = { value = i, text = name } end
+-- Send excess cooldowns to: only another cooldown bar can take them (the
+-- runtime routes nothing else, Resolve.OverflowTarget).
+local overflowValues = {}
+local function OverflowTip(item)
+    if item.own then return Tr("A bar cannot send cooldowns to itself.") end
+    if item.notCooldown then return Tr("Only a cooldown bar can take excess cooldowns.") end
+end
+for i, label in ipairs(RULES[KEYS.c1.overflow].choices) do
+    overflowValues[i] = { value = i, text = label }
+    if i >= 2 then overflowValues[i].tooltip = OverflowTip end
+end
 -- Blizzard's cooldown bars: each choice explains itself, and the current one
 -- also says what the runtime does right now.
 local BLIZZARD_TIPS = {
@@ -118,6 +130,10 @@ local function PaintChoices()
         local loop = not own and Page.Follows(slot, Page.selected)
         item.text, item.translate = Page.BarName(slot), false
         item.disabled, item.own, item.loopOf = own or loop, own or nil, loop and slot or nil
+        local target = overflowValues[i]
+        local notCooldown = Page.Kind(slot) ~= 1
+        target.text, target.translate = Page.BarName(slot), false
+        target.disabled, target.own, target.notCooldown = own or notCooldown, own or nil, not own and notCooldown or nil
     end
 end
 
@@ -158,6 +174,8 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
             elseif rule.key == KEYS.c1.anchor then
                 row.values = anchorValues
                 row.set = function(value) AnchorSet(tonumber(value) or rule.default) end
+            elseif rule.key == KEYS.c1.overflow then
+                row.values = overflowValues
             elseif rule.key == "blizzard" and #blizzardValues > 0 then
                 row.values = blizzardValues
             end
@@ -567,4 +585,4 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Cooldown manager", title = "Cooldown manager", build = Build, icon = { 1, 1 },
-    aliases = { "cdm", "cooldowns", "cooldown manager", "buffs", "buff bars", "timer bars", "ccm" } })
+    aliases = { "cdm", "cooldowns", "cooldown manager", "tracked buffs", "received buffs", "empfangene buffs", "buffs", "buff bars", "timer bars", "ccm" } })

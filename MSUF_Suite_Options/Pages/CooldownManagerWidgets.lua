@@ -233,6 +233,11 @@ function Page.HiddenText(hiddenBy)
     if hiddenBy == "empty" then return Tr("None in your bags right now.") end
     return Tr("Hidden right now by a bar rule.")
 end
+-- An entry past Maximum icons that Send excess cooldowns to moves to
+-- another bar (runtime rows: movedTo); already translated.
+function Page.MovedText(slot)
+    return format(Tr("Past Maximum icons: shown on %s."), Page.BarName(slot))
+end
 local function TileEnter(self)
     if self.grid.dragTile then return end
     PaintEdge(self, true)
@@ -240,7 +245,8 @@ local function TileEnter(self)
         ShowTip(self, Tr("Add spells"), format(Tr("Pick cooldowns, buffs, trinkets or custom IDs for %s."), Page.BarName(Page.selected)))
         return
     end
-    local state = not self.known and Tr("Not learned right now.") or self.hidden and Page.HiddenText(self.hiddenBy) or nil
+    local state = not self.known and Tr("Not learned right now.") or self.hidden and Page.HiddenText(self.hiddenBy)
+        or self.movedTo and Page.MovedText(self.movedTo) or nil
     ShowTip(self, Public(self.name) and self.name or self.key, Page.Identity(self.key) .. (state and ("\n" .. state) or ""),
         Tr("Click: spell options. Middle-click: remove. Drag: reorder, or drop on a bar in the preview."),
         Page.CustomLine(self.key))
@@ -369,9 +375,10 @@ function Grid:NextKey(key)
 end
 
 -- What the tiles depend on: bar, spec, lists, per-spell choices, Blizzard's
--- catalog, which bars are on and their types, and the bar's cap and ready
--- rule. A settings write that changes none of these (a slider tick of the
--- look or layout) asks the runtime for nothing and moves no tile.
+-- catalog, which bars are on and their types, the bar's cap and ready rule,
+-- and where its excess cooldowns go (its overflow and that bar's own). A
+-- settings write that changes none of these (a slider tick of the look or
+-- layout) asks the runtime for nothing and moves no tile.
 local function BarsSignature()
     local sig = 0
     for i = 1, #SLOTS do
@@ -390,13 +397,18 @@ function Grid:Same(slot, blocked)
     local lists, spells = P.Get(ID, "listsData"), P.Get(ID, "spellsData")
     local cap = k.maxIcons and P.Get(ID, k.maxIcons) or 0
     local hide = k.hideReady and P.Get(ID, k.hideReady) or false
+    local route = k.overflow and P.Get(ID, k.overflow) or 1
+    local target = SLOTS[route - 1]
+    local chain = target and KEYS[target.key].overflow and P.Get(ID, KEYS[target.key].overflow) or 1
     local sig, running, source = BarsSignature(), Page.Running(), S.CooldownManagerBarEntries
     local same = self.valid == true and self.mSlot == slot and self.mBlocked == blocked and self.mGen == gen
         and self.mSpec == spec and self.mLists == lists and self.mSpells == spells and self.mCap == cap
         and self.mHide == hide and self.mSig == sig and self.mRunning == running and self.mSource == source
+        and self.mRoute == route and self.mChain == chain
     self.valid = true
     self.mSlot, self.mBlocked, self.mGen, self.mSpec, self.mLists, self.mSpells = slot, blocked, gen, spec, lists, spells
     self.mCap, self.mHide, self.mSig, self.mRunning, self.mSource = cap, hide, sig, running, source
+    self.mRoute, self.mChain = route, chain
     return same
 end
 
@@ -407,7 +419,7 @@ local function PaintTile(tile, entry, key, slot, spells, lit)
     tile.known, tile.hidden, tile.family = Plain(entry.known) ~= false, Plain(entry.hidden) == true, EntryFamily(entry, slot)
     -- Optional runtime fields: the rule that hides it, and the unit
     -- "Automatic" tracks its buff on.
-    tile.hiddenBy, tile.unit = Plain(entry.hiddenBy), Plain(entry.unit)
+    tile.hiddenBy, tile.unit, tile.movedTo = Plain(entry.hiddenBy), Plain(entry.unit), Plain(entry.movedTo)
     -- A cooldown that tracks a buff shows it on the icon (stack options).
     tile.aura = tile.family == 2 or Plain(entry.hasAura) == true
     SetIcon(tile.icon, tile.texture)
@@ -424,7 +436,8 @@ end
 -- Returns the tile count, the tile of the open popover's entry and whether
 -- an icon is still loading.
 function Grid:PaintTiles(entries, slot, openKey, fromGrid)
-    local spells = Page.SpellOverrides().e
+    -- Own options in effect for this specialization, as the runtime reads them.
+    local spells = Page.EffectiveSpells()
     local count, openTile, loading = 0, nil, false
     local byKey = self.byKey
     for key in pairs(byKey) do byKey[key] = nil end

@@ -3,8 +3,13 @@ local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local PAGE, ID = "suite_actionbars", "actionbars"
 local COUNT = Suite.ActionBarCount
 
+-- Retail's rotation recommendation runs only while Blizzard's Assisted
+-- Highlight option (the assistedCombatHighlight CVar) is on; Forever has no
+-- assisted combat and hides those options.
+local APPEARANCE = "Shared look of every suite action button. Blizzard's own highlight art is used when you pick Blizzard."
 local HELP = {
-    appearance = "Shared look of every suite action button. Blizzard's own highlight art is used when you pick Blizzard.",
+    appearance = Suite.Client.isForever and APPEARANCE or P.Help(APPEARANCE,
+        "Rotation recommendations appear while Blizzard's Assisted Highlight option is on. Blizzard's own recommendation highlight reaches only the bars that reuse Blizzard's buttons (2 to 8); Ring and Fill cover every bar."),
     cooldowns = "Cooldown numbers, swipes and state colors come from the client's action data; nothing is polled.",
     text = "Fonts, outlines, shadows and Smooth/Sharp/Slug rendering for keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below. Slug has no shadow.",
     behavior = "Paging switches bar 1 between pages, like Blizzard's own main bar. Key bindings keep using Blizzard's commands.",
@@ -12,10 +17,11 @@ local HELP = {
 }
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
-    { id = "visibility", title = "When the selected bar appears", suffixes = { "Visibility", "Alpha", "FadeAlpha", "ClickThrough" } },
+    { id = "visibility", title = "When the selected bar appears", suffixes = { "Visibility", "HideGamepad", "Alpha", "FadeAlpha", "ClickThrough" } },
     { id = "layout", title = "Layout for the selected bar", suffixes = { "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty", "Layer", "Point", "X", "Y" } },
-    { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize" } },
-    { id = "background", title = "Background for the selected bar", suffixes = { "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding" } },
+    { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY" } },
+    { id = "ornaments", title = "Endcaps for the selected bar", suffixes = { "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY" } },
+    { id = "background", title = "Background for the selected bar", suffixes = { "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" } },
 }
 local POSITION = { Point = true, X = true, Y = true }
 P.ActionBarSearchGroups = GROUPS
@@ -27,12 +33,13 @@ local COPY_CATEGORIES = {
       description = "Copies buttons, rows, size, spacing, growth direction and empty slots. Position is never copied." },
     { key = "text", label = "Text", default = true,
       description = "Copies keybind and macro name visibility and every text size." },
+    { key = "ornaments", label = "Endcaps", default = true, description = "Copies both endcaps, their sizes and offsets." },
     { key = "background", label = "Background", default = true,
       description = "Copies the bar background with its color, opacity and padding." },
 }
 
 -- The Copy To choices last for the session, like the Unit and Group pages.
-local selected, copyDestination = 1, nil
+local selected, copyDestinations = 1, nil
 local copyScopes = {}
 for _, category in ipairs(COPY_CATEGORIES) do copyScopes[category.key] = category.default end
 local function BarKey(key)
@@ -55,15 +62,10 @@ end
 local function BarTitle(index) return Tr(Suite.ActionBarTitles[index]) end
 local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == 6 end
 
--- Blizzard owns the extra-action/zone-ability container and exposes it in
--- native Edit Mode. Moving that container directly would taint its secure bars.
--- Blizzard_EditMode loads at startup on every supported client.
+-- Blizzard_EditMode loads at startup on every supported client; the button
+-- only reads whether Blizzard would enter its Edit Mode now.
 local function CanMoveExtraAbility()
-    return EditModeManagerFrame:CanEnterEditMode() and not P.Combat()
-end
-
-local function MoveExtraAbility()
-    if CanMoveExtraAbility() then ShowUIPanel(EditModeManagerFrame) end
+    return EditModeManagerFrame:CanEnterEditMode() == true
 end
 
 -- Adds what bar `to` needs to match bar `from` in the chosen groups.
@@ -124,16 +126,11 @@ local function Preset(index, kind)
 end
 
 -- A quick switch hides a bar without discarding its combat or mouseover rule.
--- The resume mode is a hidden profile setting, so it survives reloads.
+-- The resume mode is a hidden profile setting, so it survives reloads; the
+-- toggle key bindings switch through the same rule (Core/Bindings.lua).
 local function SetBarOn(index, on)
-    local key = "bar" .. index .. "Visibility"
-    local resume = "bar" .. index .. "ResumeVisibility"
-    local mode = P.Get(ID, key)
-    if on then
-        if mode == 6 then P.Set(ID, key, P.Get(ID, resume)) end
-    elseif mode ~= 6 then
-        P.SetMany(ID, { [key] = 6, [resume] = mode })
-    end
+    local values = Suite.ActionBarSwitchValues(S.Config(ID), index, on)
+    if values then P.SetMany(ID, values) end
 end
 
 local function BuildQuick(ctx, b)
@@ -241,11 +238,14 @@ local function BuildPreview(ctx, parent, y, width)
         back:SetShown(showBack)
         if showBack then
             local pad = P.Get(ID, p .. "BackgroundPadding") * fit
+            local px, py = P.Get(ID, p .. "BackgroundPaddingX"), P.Get(ID, p .. "BackgroundPaddingY")
+            px, py = px < 0 and pad or px * fit, py < 0 and pad or py * fit
+            local x, y = P.Get(ID, p .. "BackgroundX") * fit, P.Get(ID, p .. "BackgroundY") * fit
             local r, g, b = P.RGB(P.Get(ID, p .. "BackgroundColor"))
             back:SetColorTexture(r, g, b, P.Get(ID, p .. "BackgroundAlpha") / 100)
             back:ClearAllPoints()
-            back:SetPoint("TOPLEFT", host, "TOPLEFT", left - pad, top + pad)
-            back:SetSize(realW * fit + pad * 2, realH * fit + pad * 2)
+            back:SetPoint("TOPLEFT", host, "TOPLEFT", left + x - px, top + y + py)
+            back:SetSize(realW * fit + px * 2, realH * fit + py * 2)
         end
         host:SetAlpha(math.max(0.25, P.Get(ID, p .. "Alpha") / 100))
         local text = Tr(Suite.ActionBarTitles[selected])
@@ -257,8 +257,8 @@ local function BuildPreview(ctx, parent, y, width)
     return height
 end
 
--- "Copy To" works like the Unit and Group pages: choose a destination (or
--- All), switch the sections to copy, then Copy Selected.
+-- Reuse the shared Copy To popup with independently selectable destinations.
+-- The chosen groups still form one undo step across all destination bars.
 local TARGET_WIDTHS = { [10] = 32, [11] = 56, [12] = 40, all = 38 }
 local function ShortBarLabel(index)
     local title = Suite.ActionBarTitles[index]
@@ -272,10 +272,30 @@ local function CopyTargets(source)
     return targets
 end
 local function CopyDestination(source)
-    if copyDestination == "all" then return "all" end
-    if copyDestination and copyDestination ~= source and Available(copyDestination) then return copyDestination end
-    copyDestination = CopyTargets(source)[1]
-    return copyDestination
+    if not copyDestinations then
+        copyDestinations = {}
+        local first = CopyTargets(source)[1]
+        if first then copyDestinations[first] = true end
+    end
+    local all, any = true, false
+    for index = 1, COUNT do
+        if index == source or not Available(index) then copyDestinations[index] = nil
+        else
+            any = true
+            if not copyDestinations[index] then all = false end
+        end
+    end
+    copyDestinations.all = any and all or false
+    return copyDestinations
+end
+local function SelectCopyDestination(key)
+    local targets = CopyDestination(selected)
+    if key == "all" then
+        local on = not targets.all
+        for _, index in ipairs(CopyTargets(selected)) do targets[index] = on or nil end
+    else
+        targets[key] = not targets[key] or nil
+    end
 end
 local function ConfirmCopyAll(run)
     -- MSUF's popup helper is a host export; StaticPopup_Show exists everywhere.
@@ -296,18 +316,25 @@ local function RunCopyTo(popup)
         any = any or on == true
     end
     if not any then return Feedback(Tr("No copy categories selected."), "warning") end
-    local source, dest = selected, CopyDestination(selected)
-    if not dest then return Feedback(Tr("Nothing was copied."), "warning") end
+    local source, choices = selected, CopyDestination(selected)
+    local targets, labels = {}, {}
+    for _, index in ipairs(CopyTargets(source)) do
+        if choices[index] then
+            targets[#targets + 1], labels[#labels + 1] = index, BarTitle(index)
+        end
+    end
+    if #targets == 0 then return Feedback(Tr("Select at least one destination bar."), "warning") end
+    local all = choices.all
     local function Run()
-        if CopyBars("Copy Bar Settings", source, dest == "all" and CopyTargets(source) or { dest }, groups) then
-            Feedback(string.format(Tr("Copied to %s"), dest == "all" and Tr("All") or BarTitle(dest)), "ok")
+        if CopyBars("Copy Bar Settings", source, targets, groups) then
+            Feedback(string.format(Tr("Copied to %s"), all and Tr("All") or table.concat(labels, ", ")), "ok")
             popup:Hide()
             P.Refresh()
         else
             Feedback(Tr("Nothing was copied."), "warning")
         end
     end
-    if dest == "all" then return ConfirmCopyAll(Run) end
+    if all then return ConfirmCopyAll(Run) end
     return Run()
 end
 -- Uses MSUF's own Copy To popup, so the chrome is the same on every page.
@@ -324,14 +351,15 @@ local function AttachCopyTo(ctx, body, y)
     targets[#targets + 1] = { value = "all", text = "All" }
     local api = Shared.MakeScopeCopyPopup(copy, {
         controlDomain = "suite", controlPageKey = PAGE, controlPath = "actionbars.copy",
-        width = 480, height = 214, categoryRowsPerColumn = 2,
+        width = 480, height = 240, categoryRowsPerColumn = 3,
         categories = COPY_CATEGORIES, scopes = copyScopes,
         targets = targets, targetWidths = TARGET_WIDTHS, targetWidth = 26,
         sourceKey = function() return selected end,
         sourceLabel = BarTitle,
         selectedTarget = CopyDestination,
         isTargetVisible = function(key, source) return key == "all" or (key ~= source and Available(key)) end,
-        onTargetClick = function(key) copyDestination = key end,
+        onTargetClick = SelectCopyDestination,
+        targetLabel = Tr("Destination bars (select one or more)"),
         runLabel = "Copy Selected", runWidth = 128,
         onRun = function(_, popup) return RunCopyTo(popup) end,
     })
@@ -376,9 +404,13 @@ local function BuildEditor(ctx, b)
         function() return S.OpenQuickKeybind ~= nil end,
         P.Meta(PAGE, ID, "editor.bindings", "action", "suite_actionbars_editor"))
     y = y - 40
-    P.Button(ctx, body, "Move extra action button", 16, y, width - 32, MoveExtraAbility,
-        CanMoveExtraAbility,
-        P.Meta(PAGE, ID, "editor.extraAbility", "action", "suite_actionbars_editor"))
+    -- Blizzard owns the extra action and zone ability buttons and moves them
+    -- in its Edit Mode only. Opened from this page's own code Edit Mode would
+    -- run tainted, so the button runs Blizzard's /editmode command from a
+    -- secure overlay (P.SecureMacroButton); the Suite never moves or
+    -- reparents the protected buttons.
+    P.SecureMacroButton(ctx, body, "Move extra action button", 16, y, width - 32, "/editmode",
+        CanMoveExtraAbility, P.Meta(PAGE, ID, "editor.extraAbility", "action", "suite_actionbars_editor"))
     P.AttachSectionReset(ctx, body, "Customize a bar", function()
         return P.ResetPrefix(ID, "bar" .. selected)
     end)

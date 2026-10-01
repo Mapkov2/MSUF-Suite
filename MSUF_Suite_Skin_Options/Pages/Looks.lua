@@ -9,7 +9,7 @@ local function LookLabel(value)
         return string.upper(NS.Theme.GetClassLookLabel())
     end
     local look = NS.LookPresets[value]
-    return look and string.upper(look.label) or string.upper(tostring(value))
+    return look and string.upper(L[look.label]) or string.upper(tostring(value))
 end
 
 local DirectionLabel = O.Labeler({ HORIZONTAL = L["Horizontal"], VERTICAL = L["Vertical"] })
@@ -125,16 +125,16 @@ local function BuildLookNote(page, preview, shellPreview)
 
     local function RefreshLookNote()
         local selected = NS.LookPresets[NS.DB.theme.look] or NS.LookPresets.custom
-        noteTitle:SetText(L["CURRENT LOOK / %s"]:format(string.upper(selected.label or L["Custom"])))
-        noteText:SetText(selected.description
-            or L["Your current hand-tuned combination of palette, material and geometry."])
+        noteTitle:SetText(L["CURRENT LOOK / %s"]:format(string.upper(L[selected.label or "Custom"])))
+        noteText:SetText(L[selected.description
+            or "Your current hand-tuned combination of palette, material and geometry."])
     end
     O.TrackAndRefresh(RefreshLookNote)
 end
 
 O.RegisterPage("looks", NS.L.LOOKS, function(page)
     O.CreateSectionTitle(page, L["Style"],
-        L["Choose Clean Modern, Midnight Blue, Midnight Dark or MSUF Forever for Skinning and enabled Suite modules. Modules enabled later inherit it."])
+        L["Choose Clean Modern, Midnight Blue, MSUF Forever Glass, Midnight Dark or Class Style for Skinning and enabled Suite modules. Modules enabled later inherit it."])
     BuildControls(page)
     BuildLookNote(page, BuildPreview(page))
 end)

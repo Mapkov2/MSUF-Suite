@@ -190,6 +190,7 @@ local function ResetSlot(slot, values)
     end
     local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
     local changed = false
+    if lists.shared and lists.shared[slot] then lists.shared[slot] = nil; changed = true end
     for spec, slots in pairs(lists.specs) do
         if slots[slot] then
             slots[slot] = nil

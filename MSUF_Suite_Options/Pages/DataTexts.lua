@@ -6,6 +6,81 @@ local BAG_BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local PLACES = 6
+local function CrestCurrencyMenu(anchor)
+    local suite=P.Suite
+    local selected,order,seen={},{},{}
+    for value in (P.Get(ID,'crestCurrencyIDs') or ''):sub(1,4096):gmatch('%d+') do
+        local id=tonumber(value)
+        if suite.Finite(id) and id>0 and id<2147483647 and not selected[id] and #order<32 then
+            selected[id]=true;order[#order+1]=id
+        end
+    end
+    local function Add(menu,id,info)
+        if not suite.Finite(id) or id<=0 or seen[id] or not suite.Public(info) or type(info)~='table'
+            or not suite.Public(info.name) or type(info.name)~='string' then return end
+        seen[id]=true
+        local label=info.name..' ('..id..')'
+        if suite.Finite(info.iconFileID) then label='|T'..info.iconFileID..':16|t '..label end
+        menu:CreateCheckbox(label,function() return selected[id]==true end,function()
+            local values={}
+            for _,value in ipairs(order) do if value~=id then values[#values+1]=value end end
+            if not selected[id] and #values<32 then values[#values+1]=id end
+            P.SetMany(ID,{crestMode=2,crestCurrencyIDs=table.concat(values,',')})
+            CrestCurrencyMenu(anchor)
+        end)
+    end
+    MenuUtil.CreateContextMenu(anchor,function(_,menu)
+        menu:SetScrollMode(420)
+        menu:CreateTitle(Tr('Select your current-season crests from the native currency list.'))
+        menu:CreateTitle(Tr('Selection order is display order. Remove and select again to move a currency last.'))
+        menu:CreateButton(Tr('Clear selection'),function() P.SetMany(ID,{crestMode=2,crestCurrencyIDs=''}) end)
+        for _,id in ipairs(order) do Add(menu,id,C_CurrencyInfo.GetCurrencyInfo(id)) end
+        menu:CreateDivider()
+        for index=1,C_CurrencyInfo.GetCurrencyListSize() do
+            local info=C_CurrencyInfo.GetCurrencyListInfo(index)
+            if suite.Public(info) and type(info)=='table' and suite.Public(info.name) and type(info.name)=='string' then
+                if suite.Public(info.isHeader) and info.isHeader then
+                    local row=index
+                    local expanded=suite.Public(info.isHeaderExpanded) and info.isHeaderExpanded==true
+                    local header=menu:CreateButton(info.name..(expanded and ' -' or ' +'),function()
+                        C_CurrencyInfo.ExpandCurrencyList(row,not expanded);CrestCurrencyMenu(anchor)
+                    end)
+                    header:SetResponse(MenuResponse.Open)
+                else
+                    local link=C_CurrencyInfo.GetCurrencyListLink(index)
+                    if suite.Public(link) and type(link)=='string' then Add(menu,C_CurrencyInfo.GetCurrencyIDFromLink(link),info) end
+                end
+            end
+        end
+    end)
+end
+-- The upgrade stages DataTexts observed this login. Sources.lua belongs to
+-- the load-on-demand DataTexts addon: before it loads, the menu offers only
+-- the reset to all observed stages.
+local function SeasonStagesMenu(anchor)
+    local sources = P.Suite.DataTextExtraSources
+    local choices = sources and sources.CrestChoices() or {}
+    MenuUtil.CreateContextMenu(anchor, function(_, menu)
+        menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = 1, crestCurrencies = "" }) end)
+        for _, cost in ipairs(choices) do
+            local order = cost.order
+            local selected = false
+            for value in (P.Get(ID, "crestCurrencies") or ""):gmatch("%d+") do
+                if tonumber(value) == order then selected = true end
+            end
+            local info = cost.currencyID and C_CurrencyInfo.GetCurrencyInfo(cost.currencyID)
+            local name = info and info.name or cost.itemID and C_Item.GetItemInfo(cost.itemID) or tostring(order)
+            menu:CreateCheckbox(tostring(order) .. ": " .. name, function() return selected end, function()
+                local values = {}
+                for value in (P.Get(ID, "crestCurrencies") or ""):gmatch("%d+") do
+                    if tonumber(value) ~= order then values[#values + 1] = value end
+                end
+                if not selected then values[#values + 1] = tostring(order) end
+                P.SetMany(ID, { crestMode = 1, crestCurrencies = table.concat(values, ",") })
+            end)
+        end
+    end)
+end
 -- Top, bottom, left and right preview edges, each spanning its whole side.
 local EDGE_POINTS = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" },
     { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
@@ -133,9 +208,10 @@ end
 
 ------------------------------------------------------------------ bars
 local function NextBar()
-    for i = 1, 3 do
-        if not P.Get(ID, "bar" .. i .. "Enabled") then return i end
-    end
+    return P.Suite.DataTextNextBarID(S.Config(ID))
+end
+local function RebuildBars()
+    if M.activeKey==PAGE and M.RebuildPageKeepingScroll then M.RebuildPageKeepingScroll(PAGE) end
 end
 
 local function HasEmptyPlace(prefix)
@@ -216,7 +292,10 @@ local function BuildBarActions(ctx, body, bar, sectionId, y, width)
         function() P.Set(ID, prefix .. "Enabled", false) end,
         function() return P.Get(ID, prefix .. "Enabled") end,
         P.Meta(PAGE, ID, prefix .. ".hide", "action", sectionId))
-    P.Button(ctx, body, "Antique Footer preset", 16, y - 43, width,
+    P.Button(ctx,body,"Remove bar",16,y-43,(width-6)/2,function()
+        if P.SetMany(ID,P.Suite.DataTextBarRemovalValues(S.Config(ID),bar)) then RebuildBars() end
+    end,function() return not P.Combat() end,P.Meta(PAGE,ID,prefix..".remove","action",sectionId))
+    P.Button(ctx, body, "Antique Footer preset", 22+(width-6)/2, y - 43, (width-6)/2,
         function() P.SetMany(ID, P.Suite.DataTextAntiqueFooterValues(bar, S.Config(ID))) end,
         function() return S.Availability(ID) and not P.Combat() end,
         P.Meta(PAGE, ID, prefix .. ".antiqueFooter", "action", sectionId))
@@ -224,7 +303,7 @@ local function BuildBarActions(ctx, body, bar, sectionId, y, width)
 end
 
 -- Switching a bar to its own style starts from the current shared settings.
-local function BuildBarStyle(ctx, body, bar, sectionId, y, width)
+local function BuildBarStyle(ctx, body, bar, sectionId, y, width, rules)
     local prefix = "bar" .. bar
     local heading = P.Text(body, Tr("Bar styling"), 16, y, width, T.colors.text)
     y = y - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
@@ -247,52 +326,143 @@ local function BuildBarStyle(ctx, body, bar, sectionId, y, width)
     local ownGrid = P.W.SettingsRows(ctx, body, { x = 16, y = y, width = width, columns = 2, rows = { ownRow } })
     P.GateControls(ctx, ID, { { rule = ownRule, widget = ownGrid.controls[ownRule.key] } })
     y = ownGrid.bottomY - 8
-    local styleRules = P.SectionRules(ID, prefix .. "Style")
+    local styleRules = rules.style
     y = P.RuleGrid(ctx, body, PAGE, ID, styleRules, y, width, nil, sectionId)
     y = Preview(ctx, body, y - 8, width, bar)
-    P.AttachRuleColors(body, Tr("Bar %d"):format(bar), ID, styleRules)
     return y
 end
 
-local function BarSection(ctx, b, bar)
-    local prefix, sectionId = "bar" .. bar, PAGE .. "_bar" .. bar
-    local body = b:CollapsibleSection(sectionId, Tr("Bar %d"):format(bar), 120, bar == 1)
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
-    local toggle = P.W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
-    M.BindBoolWidget(ctx, toggle,
-        function() return P.Get(ID, prefix .. "Enabled") == true end,
-        function(value) P.Set(ID, prefix .. "Enabled", value == true) end,
-        P.Meta(PAGE, ID, prefix .. "Enabled", "setting", sectionId))
-    M.TrackRefresh(ctx, function()
-        P.W.SetControlEnabled(toggle, not P.Combat())
-    end)
+local function BuildBarContents(ctx, b, body, bar, sectionId, width, rules)
     local y = -18
     local help = P.Description(body, P.Help("Choose the information shown in each bar.", "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear. The Antique Footer preset creates a bag, durability and clock strip on this bar only."),
         16, y, width)
     y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 10
     y = BuildPlaces(ctx, body, bar, sectionId, y, width)
     y = BuildBarActions(ctx, body, bar, sectionId, y, width)
-    y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix), y, width, nil, sectionId)
+    y = P.RuleGrid(ctx, body, PAGE, ID, rules.layout, y, width, nil, sectionId)
+    y = P.RuleGrid(ctx, body, PAGE, ID, rules.blocks, y - 8, width, nil, sectionId)
     local heading = P.Text(body, Tr("Visibility"), 16, y - 12, width, T.colors.text)
     y = y - 12 - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
     local loadHelp = P.Text(body,
         "Hide this bar when any selected condition is true. The health condition uses your character's health. At full health the bar is transparent but can still receive clicks. Edit Mode shows it for placement.",
         16, y, width)
     y = y - math.max(14, math.ceil(loadHelp:GetStringHeight() or 14)) - 8
-    y = P.RuleGrid(ctx, body, PAGE, ID, P.SectionRules(ID, prefix .. "Load"), y, width, nil, sectionId)
-    y = BuildBarStyle(ctx, body, bar, sectionId, y - 16, width)
+    y = P.RuleGrid(ctx, body, PAGE, ID, rules.load, y, width, nil, sectionId)
+    y = BuildBarStyle(ctx, body, bar, sectionId, y - 16, width, rules)
+    P.FinishBody(b, body, y - 12)
+end
+
+-- Hundreds of bar controls include two skinned step buttons per slider.
+-- Build only requested bodies, one per timer dispatch for restored open
+-- accordions. The queue has no work/timer while idle; hidden pages are skipped.
+local function BarBuildQueue(ctx)
+    local jobs, first, last, scheduled = {}, 1, 0, false
+    local function RunNext()
+        if P.Combat() or ctx.wrapper and not ctx.wrapper:IsVisible() then
+            for index = first, last do
+                jobs[index].queued = nil
+                jobs[index] = nil
+            end
+            first, last, scheduled = 1, 0, false
+            return
+        end
+        local record = jobs[first]
+        jobs[first], first = nil, first + 1
+        record.queued = nil
+        if record.body:IsVisible() then record.ensure() end
+        if first <= last then
+            C_Timer.After(0, RunNext)
+        else
+            first, last, scheduled = 1, 0, false
+        end
+    end
+    return function(record)
+        if record.built or record.building or record.queued or not record.body:IsVisible() or P.Combat() then return end
+        record.queued = true
+        last = last + 1
+        jobs[last] = record
+        if not scheduled then
+            scheduled = true
+            C_Timer.After(0, RunNext)
+        end
+    end
+end
+
+local function BarSection(ctx, b, bar, sections, queue)
+    local prefix, sectionId = "bar" .. bar, PAGE .. "_bar" .. bar
+    local body = b:CollapsibleSection(sectionId, P.Get(ID, prefix .. "Name") or Tr("Bar %d"):format(bar), 120, bar == 1)
+    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+    local toggle = P.W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
+    M.BindBoolWidget(ctx, toggle,
+        function() return P.Get(ID, prefix .. "Enabled") == true end,
+        function(value) P.Set(ID, prefix .. "Enabled", value == true) end,
+        P.Meta(PAGE, ID, prefix .. "Enabled", "setting", sectionId))
+    M.TrackRefresh(ctx, function() P.W.SetControlEnabled(toggle, not P.Combat()) end)
+    local rules = {
+        layout = sections[prefix] or {}, blocks = sections[prefix .. "Blocks"] or {},
+        load = sections[prefix .. "Load"] or {}, style = sections[prefix .. "Style"] or {},
+    }
+    local colors = {}
+    for _, rule in ipairs(rules.style) do colors[#colors + 1] = rule end
+    for _, rule in ipairs(rules.blocks) do colors[#colors + 1] = rule end
+    P.AttachRuleColors(body, Tr("Bar %d"):format(bar), ID, colors)
     P.AttachSectionReset(ctx, body, Tr("Bar %d"):format(bar), function()
         return P.ResetPrefix(ID, prefix)
     end)
-    P.FinishBody(b, body, y - 12)
+    P.FinishBody(b, body, -39)
+    local record = { body = body }
+    record.ensure = function()
+        if record.built then return body end
+        if record.building or P.Combat() then return nil end
+        record.building = true
+        local firstRefresher = #ctx.refreshers + 1
+        BuildBarContents(ctx, b, body, bar, sectionId, width, rules)
+        record.built, record.building = true, nil
+        if ctx.entry then ctx.entry.sections[sectionId] = body end
+        -- Initialize only the newly added bindings. Refreshing the entire
+        -- page after every body would revisit all previously built bars.
+        for index = firstRefresher, #ctx.refreshers do ctx.refreshers[index]() end
+        return body
+    end
+    body._msuf2CollapsibleEntry._msuf2EnsureVisible = record.ensure
+    -- Keep the body a virtual section until its controls exist. Menu2 invokes
+    -- the exact resolver for missing sections before looking up the control,
+    -- including a restored open body whose queued build has not run yet.
+    if ctx.entry then ctx.entry.sections[sectionId] = nil end
+    body:HookScript("OnShow", function() queue(record) end)
+    M.TrackRefresh(ctx, function() queue(record) end)
+    ctx.dataTextBarRows[sectionId] = record
+end
+
+local function BuildBars(ctx, b, sections)
+    local queue = BarBuildQueue(ctx)
+    local bars = {}
+    ctx.dataTextBarRows = bars
+    if ctx.entry then
+        ctx.entry._msuf2ResolveMissingSection = function(sectionId)
+            local record = bars[sectionId]
+            return record and record.ensure() or nil
+        end
+    end
+    for _, bar in ipairs(P.Suite.DataTextBarIDs(S.Config(ID))) do
+        BarSection(ctx, b, bar, sections, queue)
+    end
 end
 
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
+    local sections = {}
+    for _,rule in ipairs(P.catalog[ID].getControls(S.Config(ID))) do
+        if rule.section and rule.key~="enabled" and not rule.previewOnly then
+            local group=sections[rule.section]
+            if not group then group={};sections[rule.section]=group end
+            group[#group+1]=rule
+        end
+    end
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Add bar", function()
             local index = NextBar()
-            if index then P.Set(ID, "bar" .. index .. "Enabled", true) end
+            if index and P.SetMany(ID,P.Suite.DataTextBarCreationValues(S.Config(ID),index)) then RebuildBars() end
         end, function() return S.Availability(ID) and P.Get(ID, "enabled") and NextBar() ~= nil end, key = "addBar" },
         { "Move first bar", function() P.OpenEditMode(ID, "bar1") end,
           function() return P.EditModeReady() and S.Status(ID) == "Active" and P.Get(ID, "bar1Enabled") end,
@@ -314,13 +484,26 @@ local function Build(ctx)
             help = "While DataTexts is active, hide Blizzard's backpack and bag slots. A Bag space DataText opens the native bags when clicked. Turn this off to restore the Blizzard buttons.",
         })
     end
-    for bar = 1, 3 do BarSection(ctx, b, bar) end
+    BuildBars(ctx, b, sections)
+    P.RuleSection(ctx,b,PAGE,ID,PAGE..'_sources',Tr('Additional data sources'),P.SectionRules(ID,'sources'),{
+        help='Choose broker names and discovered currency IDs per place. Select your current-season crest currencies from the native currency list; saved currency selections work after login without visiting an upgrade NPC. Selection order and separator control the crest block. Observed upgrade stages remain available as an alternative after selecting an upgrade item this login. Hearthstone actions require a deliberate click.',
+        extra=function(body,y,width)
+            local button
+            local picker
+            picker=P.Button(ctx,body,'Choose crest currencies',16,y,width,function() CrestCurrencyMenu(picker) end,
+                function() return not P.Combat() end,P.Meta(PAGE,ID,'chooseCrestCurrencies','action',PAGE..'_sources'))
+            button=P.Button(ctx,body,'Choose observed seasonal stages',16,y-40,width,function()
+                SeasonStagesMenu(button)
+            end,function() return not P.Combat() end,P.Meta(PAGE,ID,'chooseSeasonStages','action',PAGE..'_sources'))
+            return y-80
+        end,
+    })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_gold", Tr("Gold across characters"),
         P.SectionRules(ID, "gold"), {
             help = "While DataTexts and this choice are enabled, MSUF remembers this character's gold at login and after money changes. Hover a Gold or Session gold DataText to see the last known account total and up to eight other characters. No background scans are used.",
             extra = function(body, y, width)
                 P.Button(ctx, body, "Clear saved character gold", 16, y, width,
-                    function() if type(P.Suite.RootDB) == "table" then P.Suite.RootDB.goldLedger = nil end end,
+                    function() P.Suite.ClearCharacterGold() end,
                     function() return type(P.Suite.RootDB) == "table" end,
                     P.Meta(PAGE, ID, "action.clearGold", "action", PAGE .. "_gold"))
                 return y - 40

@@ -433,9 +433,14 @@ function P.ResetRules(id, rules, keyFn, extraKeys)
     return ok
 end
 
+local function ModuleControls(id)
+    local spec = P.catalog[id]
+    return spec.getControls and spec.getControls(S.Config(id)) or spec.controls
+end
+
 function P.ResetPrefix(id, prefix)
     local rules = {}
-    for _, rule in ipairs(P.catalog[id].controls) do
+    for _, rule in ipairs(ModuleControls(id)) do
         if rule.key:sub(1, #prefix) == prefix
             and not rule.key:sub(#prefix + 1, #prefix + 1):match("%d") then
             rules[#rules + 1] = rule
@@ -609,7 +614,7 @@ end
 -- Catalog rules of one section, in declaration order.
 function P.SectionRules(id, section, filter)
     local out = {}
-    for _, rule in ipairs(P.catalog[id].controls) do
+    for _, rule in ipairs(ModuleControls(id)) do
         if rule.section == section and rule.key ~= "enabled" and not rule.previewOnly
             and (not filter or filter(rule)) then
             out[#out + 1] = rule
@@ -668,7 +673,7 @@ function P.BuildColorsCategory(ctx, b)
     M.TrackRefresh(ctx, P.ForgetAvailability)
     for _, id in ipairs(P.order) do
         local colors = {}
-        for _, rule in ipairs(P.catalog[id].controls) do
+        for _, rule in ipairs(ModuleControls(id)) do
             if rule.color and not rule.hidden then
                 local entry = {}
                 for key, value in pairs(rule) do entry[key] = value end

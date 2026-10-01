@@ -48,8 +48,7 @@ function Size.Value(handle, key)
     if key:match("HealthWidthDelta$") then return (handle._npNativeWidth or 0) + value end
     if key:match("HealthHeightDelta$") then return (handle._npNativeHeight or 0) + value end
     if key == "auraScalePercent" and P.Get(ID, "auraScaleMode") ~= 2 then
-        local api = _G.C_CVar
-        local native = api and type(api.GetCVar) == "function" and api.GetCVar("nameplateAuraScale")
+        local native = C_CVar.GetCVar("nameplateAuraScale")
         if P.Suite.Public(native) then
             local scale = tonumber(native)
             if scale and scale > 0 then return Round(scale * 100) end
@@ -153,7 +152,7 @@ function Size.Build(ui, bar, body)
     unsupported:SetPoint("LEFT", row, "LEFT", 0, 0)
     unsupported:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     unsupported:SetJustifyH("LEFT")
-    if unsupported.SetMaxLines then unsupported:SetMaxLines(1) end
+    unsupported:SetMaxLines(1)
     local function Layout()
         local width = bar:GetWidth()
         if not width or width <= 0 then width = ui.layoutWidth end

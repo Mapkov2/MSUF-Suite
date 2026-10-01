@@ -341,10 +341,11 @@ local function NewPlus(ui)
     return plus
 end
 
--- The marks follow the spell options and the spell list's tiles (which know
--- what a bar rule hides); called after either changes. Writes on change only.
+-- The marks follow the spell options in effect for this specialization and
+-- the spell list's tiles (which know what a bar rule hides); called after
+-- either changes. Writes on change only.
 local function PaintMarks(ui)
-    local spells, grid = Page.SpellOverrides().e, ui.grid
+    local spells, grid = Page.EffectiveSpells(), ui.grid
     for i = 1, ui.hitCount do
         local hit = ui.hits[i]
         local key = hit.key

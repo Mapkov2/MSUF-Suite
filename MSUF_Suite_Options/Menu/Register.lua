@@ -12,19 +12,6 @@ local NAV_GROUPS = {
     { id = "general", title = "General", fallback = "features", after = "gameplay",
         pages = { "suite_qualityOfLife" } },
 }
-local PAGE_ADDONS = {
-    suite_actionbars = { "actionbars" },
-    suite_minimap = { "minimap" },
-    suite_damageMeter = { "damageMeter" },
-    suite_bags = { "bags" },
-    suite_qualityOfLife = { "qol", "quests", "loot", "combatLog", "xpBar", "innervateCue", "durabilityAlert", "battleRes", "skyriding" },
-    suite_hud = { "objectives", "runSummary", "announcements", "afkScreen" },
-    suite_dataTexts = { "dataTexts" },
-    suite_buffReminders = { "buffReminders" },
-    suite_chat = { "chat" },
-    suite_nameplates = { "nameplates" },
-    suite_cooldownManager = { "cooldownManager" },
-}
 if type(M.RegisterHistoryProvider) == "function" then
     P.historyRegistered = M.RegisterHistoryProvider("MSUF_Suite", P.CaptureHistoryState, P.RestoreHistoryState) == true
 end
@@ -54,6 +41,7 @@ end
 -- to turn the AddOn on. A saved module switch and Blizzard's AddOn switch are
 -- separate: dormant load-on-demand modules still need their settings page.
 local ADDON_NOTICE = "You need to turn on the module in Blizzards Addon list"
+-- Every catalog module per page; the page reset and the AddOn checks use it.
 local PAGE_MODULES = {}
 for _, id in ipairs(Suite.SuiteOrder) do
     local key = P.catalog[id].page
@@ -218,7 +206,7 @@ local function InstallPageResets()
         if key == "suite_skin" and not Suite.Skin.EnsureEngine() then return false end
         local ok = P.WithHistory("Reset " .. tostring(key), "page:reset:" .. tostring(key), function()
             if key == "suite_skin" then return P.ResetSkinPage() or false end
-            local modules = PAGE_ADDONS[key]
+            local modules = PAGE_MODULES[key]
             if not modules then return false end
             for _, id in ipairs(modules) do if not S.Reset(id) then return false end end
             return true
@@ -282,9 +270,11 @@ local function RegisterSuiteLayers()
                 cooldown.enabled and cooldown[keys.on])
         end
         local data = S.Config("dataTexts")
-        for i = 1, 3 do
-            local prefix = "bar" .. i
-            Add("Suite DataTexts", "Bar " .. i, "Whole bar", "dataTexts", prefix .. "Layer",
+        for _, id in ipairs(Suite.DataTextBarIDs(data)) do
+            local prefix = "bar" .. id
+            local name = data[prefix .. "Name"]
+            if type(name) ~= "string" or name == "" then name = P.Tr("Bar %d"):format(id) end
+            Add("Suite DataTexts", name, "Whole bar", "dataTexts", prefix .. "Layer",
                 data.enabled and data[prefix .. "Enabled"])
         end
         local meter = S.Config("damageMeter")

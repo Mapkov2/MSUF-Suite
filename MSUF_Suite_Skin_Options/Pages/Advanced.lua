@@ -14,7 +14,7 @@ local function BuildRuntimeContract(page)
     -- OnUpdate (removed on release), timers are one-shot, and unit events
     -- serve only the Micro Bar portrait and open character panels.
     local body = O.CreateText(contract,
-        L["• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• No global frame enumeration\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state"],
+        L["• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state"],
         13, "text")
     body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
     body:SetPoint("RIGHT", -18, 0)
@@ -38,35 +38,17 @@ local function BuildPublicAPI(page, contract)
 end
 
 -- The first click arms the reset and relabels the button; a second click
--- within ARM_SECONDS resets. An arm expires on its own, so a much later click
--- arms again instead of resetting the profile.
+-- within ARM_SECONDS resets (O.CreateConfirmation).
 local ARM_SECONDS = 5
 
 local function BuildFactoryReset(page)
-    -- The number of the pending arm, nil when disarmed: a one-shot expiry
-    -- timer ends only the arm it was started for.
-    local armed
-    local arms = 0
-    local reset
-    local function SetResetLabel(text)
-        O.widgetStates[reset].label:SetText(text)
-    end
-    local function Disarm()
-        armed = nil
-        SetResetLabel(NS.L.RESET_ALL)
-    end
-    reset = O.CreateSettingButton(page, NS.L.RESET_ALL, 190, 28, function()
-        if not armed then
-            arms = arms + 1
-            local arm = arms
-            armed = arm
-            SetResetLabel(L["Confirm factory reset"])
-            C_Timer.After(ARM_SECONDS, function()
-                if armed == arm then Disarm() end
-            end)
+    local confirmation
+    local reset = O.CreateSettingButton(page, NS.L.RESET_ALL, 190, 28, function()
+        if not confirmation.IsArmed() then
+            confirmation.Arm()
             return
         end
-        Disarm()
+        confirmation.Disarm()
         local began = O.BeginUserChange(NS.L.RESET_ALL)
         -- The factory profile is applied like a profile switch, stage by stage
         -- (Database.ApplyActiveSettings). Every stage, the reset itself too, is
@@ -76,6 +58,7 @@ local function BuildFactoryReset(page)
         NS.Database.ApplyActiveSettings("reset", "theme")
         if began then O.CommitUserChange(NS.L.RESET_ALL) end
     end, "buttonPrimary")
+    confirmation = O.CreateConfirmation(reset, NS.L.RESET_ALL, L["Confirm factory reset"], ARM_SECONDS)
     reset:SetPoint("BOTTOMRIGHT", -4, 4)
 end
 
