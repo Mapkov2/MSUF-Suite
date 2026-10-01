@@ -161,4 +161,19 @@ assert(fighting.RootDB.activeProfile == "Default" and fighting.RootDB.profiles.R
 assert(oldSkin.profiles.Raid.private == "old" and MapkoSkinDB.profiles.Legacy,
     "pending Suite reset mutated unrelated old or legacy data")
 
+-- MidnightSkinDB belongs to the pre-rename MidnightSkin bridge addon. It is
+-- handed over only when this engine takes its profiles from it.
+-- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
+dofile(root .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(root)
+local bridge = { activeProfile = "Bridge", profiles = { Bridge = {} } }
+MSUFSuiteDB = {}
+MSUFSuiteSkinDB, MapkoSkinDB, MidnightSkinDB = { activeProfile = "Default", profiles = { Default = {} } }, nil, bridge
+fighting.Database.Initialize()
+assert(MidnightSkinDB == bridge and bridge.profiles.Bridge and fighting.RootDB.profiles.Bridge == nil,
+    "the bridge addon's profiles were cleared although this engine did not take them")
+MSUFSuiteSkinDB, MapkoSkinDB, MidnightSkinDB = nil, nil, bridge
+fighting.Database.Initialize()
+assert(MidnightSkinDB == nil and MSUFSuiteSkinDB.profiles.Bridge,
+    "the bridge addon's profiles were not handed over to the Suite skin")
+
 print("Suite skin profile startup: provider database ready before sync, modules start, late event idempotent")

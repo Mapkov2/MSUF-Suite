@@ -120,11 +120,18 @@ function Database.Initialize()
     local suiteRoot = _G.MSUFSuiteDB
     local resetPending = type(suiteRoot) == "table" and suiteRoot.pendingSkinFactoryReset == true
     local stored = _G.MSUFSuiteSkinDB
+    -- MidnightSkinDB belongs to the pre-rename MidnightSkin bridge addon. It
+    -- is handed over only when this engine takes its profiles from it;
+    -- otherwise it stays for the standalone MapkoSkin to migrate.
+    local fromBridge = false
     if resetPending then
         stored = nil
     else
         if type(stored) ~= "table" then stored = _G.MapkoSkinDB end
-        if type(stored) ~= "table" then stored = _G.MidnightSkinDB end
+        if type(stored) ~= "table" then
+            stored = _G.MidnightSkinDB
+            fromBridge = type(stored) == "table"
+        end
     end
     local root
     if type(stored) == "table" and type(stored.profiles) == "table" then
@@ -137,7 +144,7 @@ function Database.Initialize()
         root = NewRoot()
     end
     _G.MSUFSuiteSkinDB = root
-    _G.MidnightSkinDB = nil
+    if fromBridge then _G.MidnightSkinDB = nil end
     if resetPending then suiteRoot.pendingSkinFactoryReset = nil end
     NS.RootDB = root
     NS.DB = root.profiles[root.activeProfile]
