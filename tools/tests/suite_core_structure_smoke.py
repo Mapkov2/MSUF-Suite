@@ -16,10 +16,7 @@ LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua5
 LUAC = str(Path(LUA).with_name("luac.exe"))
 ADDONS = ("MSUF_Suite", "MSUF_Suite_Modules", "MSUF_Suite_Options")
 # Files outside this contract, with the reason.
-EXEMPT = {
-    # A new page of the Nameplates feature, still being built.
-    "MSUF_Suite_Options/Pages/NameplatesPreview.lua",
-}
+EXEMPT = {}
 failures = []
 
 
@@ -84,8 +81,6 @@ MODULE_PROBES = re.compile(
     r"|type\(" + OWN + r"\.[A-Z]\w*\) [~=]= \"function\""
     r"|\b" + OWN + r"\.[A-Z]\w* or (?:\{\}|\d)")
 for rel, path in lua_files():
-    if "Nameplate" in rel:  # the Nameplates module is still being built
-        continue
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if not line.strip().startswith("--")]
     found = sum(1 for line in lines if MODULE_PROBES.search(line))
     check(found == 0, "%s probes %d modules that are always loaded" % (rel, found))

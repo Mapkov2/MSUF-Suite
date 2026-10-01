@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
-local modules, widgets, notices = {}, {}, {}
-local spellPostCall
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local modules, widgets, notices, reported = {}, {}, {}, {}
 local combat = false
 local accountCount, characterCount = 0, 0
 local storedMacros = {}
@@ -50,21 +50,25 @@ local S = {
     Public = function(value) return value ~= "secret" end,
     PublicText = function(value) return type(value) == "string" and value ~= "secret" and value or nil end,
     Finite = function(value) return type(value) == "number" and value == value end,
+    -- The client's securecallfunction: an error is reported, nothing returned.
+    Dispatch = function(callback, ...)
+        local results = { pcall(callback, ...) }
+        if not results[1] then reported[#reported + 1] = tostring(results[2]) return end
+        return unpack(results, 2)
+    end,
 }
 local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
+    Finish = function(callback, ...) return true, callback(...) end,
 }
 UIParent = Widget("Frame")
 GameTooltip = Widget("Frame")
-SlashCmdList = {}
+local slash = Support.SlashRegistry()
+Support.QoLStyleFixture(root, S)
 Enum = { TooltipDataType = { Spell = 4 } }
-TooltipDataProcessor = {
-    AddTooltipPostCall = function(kind, callback)
-        assert(kind == 4 and not spellPostCall)
-        spellPostCall = callback
-    end,
-}
+local tooltips = Support.TooltipFixture(root, S, NS)
+local function spellPostCall(tooltip, data) tooltips.Run(4, tooltip, data) end
 Constants = { MacroConsts = { MAX_ACCOUNT_MACROS = 120, MAX_CHARACTER_MACROS = 30 } }
 C_Spell = { GetSpellInfo = function(value)
     if value == 123 or value == "Heal" then return { name = "Heal" } end
@@ -81,6 +85,7 @@ CreateMacro = function(name, icon, body, isCharacter)
 end
 
 local P = { NS = NS, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SlashCommands.lua"))("QoL", P)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipSpellCopy.lua"))("QoL", P)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/MacroBuilder.lua"))("QoL", P)
 
@@ -92,26 +97,27 @@ copy.context = {
     RemoveEvent = function(_, event) events[event] = nil end,
 }
 copy:Enable()
-assert(SLASH_MSUFSUITECOPYSPELL1 == "/msufcopyspell" and spellPostCall)
-SlashCmdList.MSUFSUITECOPYSPELL("")
+assert(SLASH_MSUFSUITECOPYSPELL1 == "/msufcopyspell" and #tooltips.post[4] == 1)
+assert(slash.Type("/msufcopyspell"))
 assert(#notices == 1 and not copy.dialog, "empty spell ID opened an unusable dialog")
 spellPostCall(GameTooltip, { id = 123 })
 spellPostCall(Widget("Frame"), { id = 999 })
 spellPostCall(GameTooltip, { id = "secret" })
-SlashCmdList.MSUFSUITECOPYSPELL("")
+assert(slash.Type("/msufcopyspell"))
 assert(copy.dialog and copy.dialog.edit.text == "123" and copy.dialog.edit.selected,
     "public tooltip spell ID was not selected for Ctrl+C")
 copy.active = false
 copy:Disable()
 assert(not SlashCmdList.MSUFSUITECOPYSPELL and not copy.dialog.shown
     and copy.dialog.edit.text == "", "spell copy retained state when disabled")
+assert(not slash.Type("/msufcopyspell 123"), "the disabled spell copy kept its typed command")
 
 local macro = assert(modules.macroBuilder)
 macro.active = true
 macro:Enable()
 assert(SLASH_MSUFSUITEMACROBUILDER1 == "/msufmacro" and created == 0,
     "macro builder created a macro before a click")
-SlashCmdList.MSUFSUITEMACROBUILDER()
+assert(slash.Type("/msufmacro"))
 local panel = assert(macro.panel)
 assert(panel.shown and panel.preview.multiline and panel.name.maxLetters == 16)
 panel.spell:SetText("123")
@@ -148,8 +154,18 @@ characterCount = 1
 panel.spell:SetText("Injected")
 Click("Create character macro")
 assert(created == 1 and panel.preview.text == "", "spell name injected macro syntax")
+-- A client refusal is reported to the error handler, never swallowed.
+local nativeCreate = CreateMacro
+CreateMacro = function() error("macro storage refused") end
+panel.spell:SetText("123")
+panel.name:SetText("Refused macro")
+Click("Create character macro")
+assert(panel.status.text == "WoW could not create the macro" and #reported == 1
+    and reported[1]:find("macro storage refused", 1, true), "a CreateMacro error was swallowed")
+CreateMacro = nativeCreate
 macro.active = false
 macro:Disable()
 assert(not SlashCmdList.MSUFSUITEMACROBUILDER and not panel.shown,
     "macro builder retained the command or window on disable")
+assert(not slash.Type("/msufmacro"), "the disabled macro builder kept its typed command")
 print("Suite spell copy and manual macro builder lifecycle passed")

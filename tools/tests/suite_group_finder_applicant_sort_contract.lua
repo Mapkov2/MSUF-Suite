@@ -58,13 +58,8 @@ C_LFGList = {
     end,
 }
 
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua"))(
-    "MSUF_Suite_QualityOfLife", { Suite = suite })
-local sorter = assert(installed.groupFinderApplicantSort)
-sorter.context, sorter.active = context(), true
-sorter:Enable()
-assert(sorter.context.events.ADDON_LOADED and not hook)
-
+-- Blizzard_GroupFinder loads with the Retail UI at startup, before any
+-- Suite module enables.
 LFGListApplicationViewer_UpdateResultList = function(frame)
     nativeUpdates = nativeUpdates + 1
     frame.applicants = {}
@@ -74,8 +69,13 @@ end
 LFGListApplicationViewer_UpdateResults = function()
     renderUpdates = renderUpdates + 1
 end
-sorter.context.events.ADDON_LOADED(sorter, "ADDON_LOADED", "Blizzard_GroupFinder")
-assert(hookCount == 1 and not sorter.context.events.ADDON_LOADED)
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupFinderApplicantSort.lua"))(
+    "MSUF_Suite_QualityOfLife", { Suite = suite })
+local sorter = assert(installed.groupFinderApplicantSort)
+sorter.context, sorter.active = context(), true
+sorter:Enable()
+assert(hookCount == 1 and not sorter.context.events.ADDON_LOADED,
+    "the applicant sort waited for an addon that loads with the UI")
 assert(entryCalls == 0 and memberCalls == 0 and nativeUpdates == 0,
     "closed viewer performed score or result-list work")
 

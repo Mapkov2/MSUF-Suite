@@ -10,6 +10,8 @@ LoggingCombat = function(value)
 end
 C_ChatInfo = { IsLoggingCombat = function() return logOn end }
 GetInstanceInfo = function() return "test", instanceType, difficulty end
+local inDelve = false
+C_DelvesUI = { HasActiveDelve = function() return inDelve end }
 C_Timer = { NewTimer = function(seconds, callback)
     assert(seconds == 30)
     local timer = { callback = callback, canceled = false }
@@ -111,6 +113,38 @@ assert(logOn and not module.startedBySuite)
 module.active = false
 module:Disable()
 assert(logOn and #calls == 6)
+module.active = true
+events = {}
+module:Enable()
+
+-- Delves report the scenario instance type; the Delves switch decides them.
+module.config.stopPolicy, module.config.delve, module.config.scenario = 1, true, false
+logOn, module.startedBySuite, module.manualStop = false, false, nil
+inDelve = true
+Place("scenario", 208)
+assert(logOn and module.startedBySuite, "a delve followed the Scenarios switch")
+Place("none")
+assert(not logOn)
+inDelve = false
+Place("scenario", 208)
+assert(logOn, "difficulty 208 alone did not identify the delve")
+Place("none")
+Place("scenario", 12)
+assert(not logOn, "an ordinary scenario followed the Delves switch")
+module.config.delve, module.config.scenario = false, true
+inDelve = true
+Place("scenario", 208)
+assert(not logOn, "a delve followed the Scenarios switch")
+inDelve = false
+Place("scenario", 12)
+assert(logOn, "the Scenarios switch did not start the log")
+Place("none")
+inDelve, difficulty = secret, secret
+Place("scenario", secret)
+assert(logOn, "an unreadable delve state must fall back to the Scenarios switch")
+Place("none")
+inDelve = false
+local delveCalls = #calls
 
 -- No secret or unknown instance result may be indexed or compared.
 logOn = false
@@ -119,10 +153,10 @@ events = {}
 module:Enable()
 instanceType = secret
 Fire("ZONE_CHANGED_NEW_AREA")
-assert(not logOn and #calls == 6)
+assert(not logOn and #calls == delveCalls)
 module.active = false
 module:Disable()
-assert(#messages == 6 and #calls == 6)
+assert(#messages == delveCalls and #calls == delveCalls)
 -- Retail and WoW Forever always have the APIs combat logging calls.
 for _, name in ipairs({ "CombatLog" }) do
     local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/" .. name .. ".lua", "rb"))

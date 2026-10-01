@@ -31,9 +31,19 @@ QuestFrame_SetTextColor = function() end
 QuestFrame_SetTitleTextColor = function() end
 QuestFrameGreetingPanel_OnShow = function() end
 
+local locked = false
+local deferred = {}
 local NS = {
     Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
-    IsCombatLocked = function() return false end,
+    IsCombatLocked = function() return locked end,
+    CombatGate = { RunOrDefer = function(key, callback)
+        if not locked then
+            callback()
+            return true
+        end
+        deferred[key] = callback
+        return false, "combat"
+    end },
     Theme = { GetColor = function(role)
         local color = assert(theme[role], role)
         return color[1], color[2], color[3], 1
@@ -196,6 +206,29 @@ assert(gossipGreeting.color[1] == 0.21, "native greeting color was not restored"
 assert(gossipOption.color[1] == 0.21, "native option color was not restored")
 assert(gossipOption.fixedColor == false, "native gossip color mode was not restored")
 assert(newOption.color[1] == 0.30, "new option color was not restored")
+
+-- Blizzard displays quest text in combat too (world map details, the quest
+-- popup) and repaints it parchment-dark each time: the colours are paint and
+-- follow at once. A region of a protected frame waits for one repaint after
+-- combat.
+assert(NS.QuestText.Activate(map, "map"))
+locked = true
+QuestInfoDescriptionText:SetTextColor(0.19, 0.16, 0.12, 0.8)
+QuestInfoObjectivesFrame.Objectives[1]:SetTextColor(0.20, 0.17, 0.13)
+local guarded = Text(details, 0.22, 0.18, 0.12)
+function guarded:IsProtected() return true, false end
+QuestInfoTimerText = guarded
+callbacks.QuestInfo_Display()
+assert(QuestInfoDescriptionText.color[1] == theme.text[1], "quest text shown in combat stayed dark")
+assert(QuestInfoObjectivesFrame.Objectives[1].color[1] == theme.text[1], "an objective shown in combat stayed dark")
+assert(guarded.color[1] == 0.22 and deferred["quest-text:repaint"],
+    "a protected quest region was painted in combat or got no repaint after it")
+gossip:UpdateTheme()
+locked = false
+deferred["quest-text:repaint"]()
+assert(guarded.color[1] == theme.text[1], "the repaint after combat skipped the protected region")
+QuestInfoTimerText = nil
+NS.QuestText.Deactivate(map, "map")
 
 -- Exercise the actual quest-window adapter path so a future root-list change
 -- cannot silently leave GossipFrame unregistered again.

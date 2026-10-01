@@ -1,5 +1,4 @@
-"""Structure gate over every MSUF_Suite* addon (Nameplates files and Libs/ are
-skipped).
+"""Structure gate over every MSUF_Suite* addon (vendored Libs/ are skipped).
 
 Usage: python tools/tests/suite_structure_gate.py <tree root> [--list]
 
@@ -15,6 +14,9 @@ Checks, from Lua 5.1's own compiler listing (luac -l) and the source:
      method probes on locals (`type(obj.Method)`, `obj.Method and`);
   4. own-module probes: the same checks on the addon's own tables (the
      varargs namespace, `local x = P.Foo` aliases and paths below them).
+  5. no pcall or xpcall in any Lua file of any MSUF_Suite* addon, Nameplates
+     included: Suite code reports errors through Dispatch(Finish, ...)
+     (securecallfunction). This check has no allowlist.
 Every finding of 2-4 needs an entry in suite_structure_allowlist.json with a
 kind and a reason; entries nothing matches fail too. With --list the gate
 prints every finding in allowlist form.
@@ -62,21 +64,48 @@ def scope_files(root):
     files = []
     for addon in sorted(os.listdir(root)):
         folder = root / addon
-        if not addon.startswith("MSUF_Suite") or addon == "MSUF_Suite_Nameplates" or not folder.is_dir():
+        if not addon.startswith("MSUF_Suite") or not folder.is_dir():
             continue
         for dirpath, dirs, names in os.walk(folder):
             dirs[:] = sorted(d for d in dirs if d != "Libs")
             for name in sorted(names):
-                if name.endswith(".lua") and "Nameplate" not in name:
+                if name.endswith(".lua"):
                     files.append(Path(dirpath) / name)
     return files
+
+
+PCALL = re.compile(r"\bx?pcall\b")
+
+
+def pcall_files(root):
+    """Every Lua file of every MSUF_Suite* addon, Nameplates included; only
+    vendored libraries (Libs/) are left out."""
+    files = []
+    for addon in sorted(os.listdir(root)):
+        folder = root / addon
+        if not addon.startswith("MSUF_Suite") or not folder.is_dir():
+            continue
+        for dirpath, dirs, names in os.walk(folder):
+            dirs[:] = sorted(d for d in dirs if d != "Libs")
+            files.extend(Path(dirpath) / name for name in sorted(names) if name.endswith(".lua"))
+    return files
+
+
+def pcall_problems(root):
+    """Uses of pcall/xpcall outside comments and strings (check 5)."""
+    problems = []
+    for path in pcall_files(root):
+        code = strip_code(path.read_text(encoding="utf-8", errors="replace"))
+        for match in PCALL.finditer(code):
+            problems.append("%s:%d uses %s; Suite code reports errors through Dispatch(Finish, ...) instead"
+                            % (path.relative_to(root).as_posix(), code.count("\n", 0, match.start()) + 1,
+                               match.group(0)))
+    return problems
 
 
 def declared_clients(root, interfaces, problems):
     clients = set()
     for toc in sorted(root.glob("MSUF_Suite*/*.toc")):
-        if toc.parent.name == "MSUF_Suite_Nameplates":
-            continue
         text = toc.read_text(encoding="utf-8", errors="replace")
         match = re.search(r"^## Interface:\s*(.+)$", text, re.M)
         if not match:
@@ -482,6 +511,7 @@ def main():
         problems.append("%s:%d %s: %s without an allowlist entry" % (rel, line, what, symbol))
     for key in sorted(set(entries) - used):
         problems.append("allowlist entry %s %s matches nothing; remove it" % key)
+    problems.extend(pcall_problems(root))
 
     for problem in problems:
         print("FAIL " + problem)

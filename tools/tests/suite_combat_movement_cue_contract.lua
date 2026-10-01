@@ -39,7 +39,8 @@ end }
 C_Spell = {
     GetSpellCooldown = function(id)
         calls.cooldown = calls.cooldown + 1
-        if cooldownBlocked then error("cooldown access restricted") end
+        -- Restricted cooldowns come back secret (SecretWhenCooldownsRestricted); nothing raises.
+        if cooldownBlocked then return "secret" end
         return cooldown[id]
     end,
     IsSpellUsable = function(id)

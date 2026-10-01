@@ -1,4 +1,8 @@
 local root = assert(arg[1], "repository root required")
+-- Offline contract for release protection. Blizzard's DEATH dialog owns its
+-- buttons' visibility, enabled state and layout (GameDialogDefs.lua); the
+-- lock may only make Release transparent and click-through, so the fixtures
+-- raise on any Lua field write to Blizzard's tables and on layout calls.
 local hooks, installed, secret = 0, nil, {}
 local modifiers, inInstance, zone = {}, true, "raid"
 SHIFT_KEY_TEXT, CTRL_KEY_TEXT, ALT_KEY_TEXT = "Shift", "Ctrl", "Alt"
@@ -16,42 +20,67 @@ local function Hook(owner, method, callback)
     end
 end
 hooksecurefunc = function(owner, method, callback)
-    if type(owner) == "string" then Hook(_G, owner, method) else Hook(owner, method, callback) end
+    assert(type(owner) == "string", "only the StaticPopup_Show function may be hooked")
+    Hook(_G, owner, method)
 end
 
+-- Blizzard tables: methods are read from a class, state lives in a private
+-- store, and a write of any Lua field raises.
+local function Sealed(methods, state)
+    return setmetatable({}, {
+        __index = function(_, key) if methods[key] then return methods[key] end; return state[key] end,
+        __newindex = function(_, key) error("wrote Blizzard field " .. tostring(key), 2) end,
+    }), state
+end
+local ButtonMethods = {}
+function ButtonMethods:Show() self._s.shown = true end
+function ButtonMethods:Hide() self._s.shown = false end
+function ButtonMethods:SetShown(shown) self._s.shown = shown end
+function ButtonMethods:IsShown() return self._s.shown end
+function ButtonMethods:SetEnabled(enabled) self._s.enabled = enabled; self._s.enabledWrites = self._s.enabledWrites + 1 end
+function ButtonMethods:GetAlpha() return self._s.alpha end
+function ButtonMethods:SetAlpha(alpha) self._s.alpha = alpha end
+function ButtonMethods:IsMouseEnabled() return self._s.mouse end
+function ButtonMethods:EnableMouse(enabled) self._s.mouse = enabled end
+function ButtonMethods:Click()
+    local s = self._s
+    if s.shown and s.enabled and s.mouse then s.clicks = s.clicks + 1 end
+end
 local function Button()
-    local button = { shown = true, enabled = true, clicks = 0, enabledWrites = 0 }
-    function button:Show() self.shown = true end
-    function button:Hide() self.shown = false end
-    function button:SetShown(shown) self.shown = shown end
-    function button:IsShown() return self.shown end
-    function button:SetEnabled(enabled) self.enabled = enabled; self.enabledWrites = self.enabledWrites + 1 end
-    function button:Click()
-        if self.shown and self.enabled then self.clicks = self.clicks + 1 end
-    end
-    return button
+    local state = { shown = true, enabled = true, clicks = 0, enabledWrites = 0, alpha = 1, mouse = true }
+    local button = Sealed(ButtonMethods, state)
+    state._s = state
+    return button, state
 end
+local PopupMethods = {}
+function PopupMethods:GetButton1() return self._s.buttons[1] end
+function PopupMethods:GetWidth() return 360 end
+function PopupMethods:HookScript(script, callback)
+    assert(script == "OnHide"); self._s.onHide = callback; hooks = hooks + 1
+end
+function PopupMethods:Hide() self._s.shown = false; if self._s.onHide then self._s.onHide() end end
 local function Popup()
-    local popup = { buttons = { Button(), Button(), Button(), Button() } }
-    function popup:GetButton1() return self.buttons[1] end
-    function popup:GetWidth() return 360 end
-    function popup:HookScript(script, callback) assert(script == "OnHide"); self.onHide = callback end
-    function popup:Hide() self.shown = false; if self.onHide then self.onHide() end end
-    return popup
+    local container = Sealed({ MarkDirty = function() error("dirtied Blizzard's dialog layout") end }, {})
+    local state = { buttons = {}, states = {}, ButtonContainer = container }
+    for i = 1, 4 do state.buttons[i], state.states[i] = Button() end
+    local popup = Sealed(PopupMethods, state)
+    state._s = state
+    return popup, state
 end
-local popup, visible = Popup(), nil
+local popup, popupState = Popup()
+local visible
 StaticPopup_FindVisible = function(which)
-    if visible and visible.shown and visible.which == which then return visible end
+    if visible and visible._s.shown and visible._s.which == which then return visible end
 end
 StaticPopup_Show = function(which)
-    popup.which, popup.shown, visible = which, true, popup
-    for _, button in ipairs(popup.buttons) do button:SetShown(true) end
+    popupState.which, popupState.shown, visible = which, true, popup
+    for _, button in ipairs(popupState.buttons) do button:SetShown(true) end
 end
 local hints = {}
 local S = {
     Install = function(id, module) assert(id == "releaseProtection"); installed = module end,
     Public = function(value) return value ~= secret end,
-    Text = function(text) return text end,
+    Text = function(text) return text == "Hold %s to release spirit" and "Halte %s zum Freilassen" or text end,
     SetFont = function() end,
     CreateFontString = function(parent)
         local hint = { parent = parent }
@@ -67,7 +96,8 @@ local S = {
         return hint
     end,
 }
-local NS = { Safety = { IsForbidden = function(frame) return frame.forbidden == true end } }
+assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
+local NS = { Safety = { IsForbidden = function(frame) return frame._s.forbidden == true end } }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ReleaseProtection.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local M = assert(installed)
@@ -81,117 +111,131 @@ local function Modifier(index, down)
     local event = M.context.events.MODIFIER_STATE_CHANGED
     if event then event(M, "MODIFIER_STATE_CHANGED") end
 end
+local function Locked(state) return state.alpha == 0 and state.mouse == false end
 
 M:Enable()
 assert(not M.context.events.MODIFIER_STATE_CHANGED and #hints == 0, "idle protection allocated a dialog or listened for keys")
 StaticPopup_Show("DEATH")
-local release, hint = popup.buttons[1], hints[1]
-assert(not release.shown and hint.shown and hint.text == "Hold Shift to release spirit")
+local release, releaseState, hint = popupState.buttons[1], popupState.states[1], hints[1]
+assert(Locked(releaseState) and releaseState.shown and hint.shown and hint.text == "Halte Shift zum Freilassen",
+    "Release must stay laid out but transparent and click-through, with a translated hint")
 release:Click()
-assert(release.clicks == 0, "locked release remained clickable")
+assert(releaseState.clicks == 0, "locked release remained clickable")
 for i = 2, 4 do
-    popup.buttons[i]:Click()
-    assert(popup.buttons[i].clicks == 1 and popup.buttons[i].shown, "resurrection/recap was blocked")
+    popupState.buttons[i]:Click()
+    assert(popupState.states[i].clicks == 1 and popupState.states[i].alpha == 1, "resurrection or recap was blocked")
 end
 Modifier(2, true)
-assert(not release.shown, "wrong modifier unlocked release")
+assert(Locked(releaseState), "wrong modifier unlocked release")
+Modifier(2, false)
 Modifier(1, true)
-assert(release.shown)
+assert(releaseState.alpha == 1 and releaseState.mouse == true, "the modifier did not unlock release")
 release:Click()
-assert(release.clicks == 1)
+assert(releaseState.clicks == 1)
 Modifier(1, false)
-assert(not release.shown, "releasing the key left the button unlocked")
+assert(Locked(releaseState), "releasing the key left the button unlocked")
 
--- Blizzard's per-frame release restrictions retain exclusive enabled-state ownership.
+-- Blizzard keeps exclusive ownership of the enabled state and visibility.
 release:SetEnabled(false)
 Modifier(1, true)
 release:Click()
-assert(release.clicks == 1 and not release.enabled and release.enabledWrites == 1)
+assert(releaseState.clicks == 1 and not releaseState.enabled and releaseState.enabledWrites == 1)
 release:SetEnabled(true)
 Modifier(1, false)
 release:Show()
-assert(not release.shown, "a native Show bypassed protection")
-release:SetShown(true)
-assert(not release.shown, "a native SetShown bypassed protection")
-assert(release.enabledWrites == 2, "protection fought Blizzard's enabled state")
+assert(Locked(releaseState), "a native Show bypassed protection")
 release:Hide()
-Modifier(1, true)
-assert(not release.shown, "unlocking overrode a later native Hide")
-release:Show()
-assert(release.shown)
-
--- Reconfigure a visible death popup, including both left/right key release semantics.
-M.config.modifier = 2
 Modifier(1, false)
+assert(not hint.shown and not releaseState.shown, "the hint stayed over a release button Blizzard hid")
+Modifier(1, true)
+assert(not releaseState.shown, "unlocking overrode a native Hide")
+release:Show()
+Modifier(1, false)
+assert(hint.shown and Locked(releaseState))
+
+-- Reconfigure a visible death popup, including every modifier.
+M.config.modifier = 2
 M:Refresh()
-assert(release.shown and hint.text == "Hold Ctrl to release spirit")
+assert(Locked(releaseState) and hint.text == "Halte Ctrl zum Freilassen")
+Modifier(2, true)
+assert(not Locked(releaseState))
 Modifier(2, false)
-assert(not release.shown)
 M.config.modifier = 3
 M:Refresh()
-assert(not release.shown and hint.text == "Hold Alt to release spirit")
+assert(Locked(releaseState) and hint.text == "Halte Alt zum Freilassen")
 Modifier(3, true)
-assert(release.shown)
+assert(not Locked(releaseState))
 Modifier(3, false)
 
+-- Zone switches through S.InstanceKind.
 M.config.raid = false
 M:Refresh()
-assert(release.shown and not hint.shown and not M.context.events.MODIFIER_STATE_CHANGED)
+assert(not Locked(releaseState) and not hint.shown and not M.context.events.MODIFIER_STATE_CHANGED)
 for _, entry in ipairs({ { "party", "party" }, { "scenario", "party" }, { "pvp", "pvp" }, { "arena", "pvp" } }) do
     zone = entry[1]
     M:Refresh()
-    assert(not release.shown, zone .. " was not protected")
+    assert(Locked(releaseState), zone .. " was not protected")
     M.config[entry[2]] = false
     M:Refresh()
-    assert(release.shown, zone .. " ignored its opt-out")
+    assert(not Locked(releaseState), zone .. " ignored its opt-out")
     M.config[entry[2]] = true
 end
 inInstance = false
 M:Refresh()
-assert(not release.shown)
+assert(Locked(releaseState))
 M.config.openWorld = false
 M:Refresh()
-assert(release.shown)
+assert(not Locked(releaseState))
 M.config.openWorld = true
 inInstance = secret
 M:Refresh()
-assert(release.shown and not hint.shown, "secret instance state was inspected")
+assert(not Locked(releaseState) and not hint.shown, "secret instance state was inspected")
 inInstance = false
 M:Refresh()
+
+-- Closing the dialog restores the button before Blizzard reuses it.
 local hookCount = hooks
 popup:Hide()
-assert(release.shown and not hint.shown and not M.context.events.MODIFIER_STATE_CHANGED)
+assert(not Locked(releaseState) and not hint.shown and not M.context.events.MODIFIER_STATE_CHANGED)
 StaticPopup_Show("RECOVER_CORPSE")
-assert(release.shown and not hint.shown, "reused corpse-recovery dialog was gated")
+assert(not Locked(releaseState) and not hint.shown, "reused corpse-recovery dialog was gated")
 StaticPopup_Show("DEATH")
-assert(not release.shown and hooks == hookCount and #hints == 1)
+assert(Locked(releaseState) and hooks == hookCount and #hints == 1, "a reused dialog was hooked again")
 M.active = false
 M:Disable()
-assert(release.shown and not hint.shown and not M.context.events.MODIFIER_STATE_CHANGED)
+assert(not Locked(releaseState) and not hint.shown and not M.context.events.MODIFIER_STATE_CHANGED)
 StaticPopup_Show("DEATH")
-assert(release.shown, "disabled hook continued hiding release")
+assert(not Locked(releaseState), "disabled hook continued locking release")
 modifiers[3] = true
 M.active = true
 M:Enable()
-assert(release.shown and hint.shown and hooks == hookCount, "enable duplicated hooks or ignored an already held key")
+assert(not Locked(releaseState) and hint.shown and hooks == hookCount, "enable duplicated hooks or ignored a held key")
 Modifier(3, false)
-assert(not release.shown)
-release:Hide()
+assert(Locked(releaseState))
+
+-- The native alpha and mouse state come back exactly as they were.
 M.active = false
 M:Disable()
-assert(not release.shown, "disable overwrote a later native visibility request")
+releaseState.alpha, releaseState.mouse = .6, false
+M.active = true
+Modifier(3, false)
+M:Refresh()
+assert(Locked(releaseState))
+M.active = false
+M:Disable()
+assert(releaseState.alpha == .6 and releaseState.mouse == false, "disable lost the native alpha or mouse state")
 
--- A different pooled popup gets its own hint and cleanup, but forbidden UI is untouched.
+-- A different pooled popup gets its own hint and cleanup; forbidden UI is untouched.
 popup:Hide()
-popup = Popup()
-popup.forbidden = true
+popup, popupState = Popup()
+popupState.forbidden = true
 M.active = true
 M:Enable()
 StaticPopup_Show("DEATH")
-assert(popup.buttons[1].shown and #hints == 1)
-popup.forbidden = false
+assert(not Locked(popupState.states[1]) and #hints == 1)
+popupState.forbidden = false
 M:Refresh()
-assert(not popup.buttons[1].shown and #hints == 2)
+assert(Locked(popupState.states[1]) and #hints == 2)
 popup:Hide()
-assert(popup.buttons[1].shown and not hints[2].shown)
+assert(not Locked(popupState.states[1]) and not hints[2].shown)
 print("suite_release_protection_contract: ok")

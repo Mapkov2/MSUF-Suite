@@ -115,7 +115,17 @@ local suite = {
     CreateFontString = function(_, ...) return Frame("FontString") end,
     SetFont = function(label, path) label.fontPath = path or SUITE_FONT; return true end,
     Install = function(id, module) assert(id == "afkScreen"); installed = module end,
+    -- The translation lookup (Platform.lua) and Blizzard's global strings
+    -- with that fallback (Surfaces.lua).
+    Text = function(text) return text end,
+    BlizzardText = function(global, english)
+        local value = global and _G[global]
+        if type(value) == "string" and value ~= "" then return value end
+        return english
+    end,
 }
+-- A client-localized slot name from GlobalStrings.
+SHOULDERSLOT = "Schulter"
 -- Shared readers as defined by MSUF_Suite/Core/Platform.lua (aliased by Runtime.lua).
 function suite.PublicText(value)
     return suite.Public(value) and type(value) == "string" and value ~= "" and value or nil
@@ -167,9 +177,9 @@ assert(math.abs(module.panel.scale - (1200 / 2120) * .8) < .0001,
         .. tostring(module.panel.scale))
 assert(#module.icons == 18 and module.icons[1].texture == 1001
     and module.icons[17].texture == 1016 and module.icons[18].texture == 1017
-    and module.itemNames[1].text == "Test Helm"
-    and module.itemNames[2].text == "Neck",
-    "equipped items and names should flank the character")
+    and module.itemNames[1].text == "Test Helm" and module.captions[1].text == "Head"
+    and module.itemNames[2].text == "Neck" and module.itemNames[3].text == "Schulter",
+    "equipped items and names should flank the character, with Blizzard's slot names")
 assert(sceneSetups == 1 and cameraStarts == 1 and cameraStops == 0,
     "AFK should set up the model scene and start one camera orbit")
 actor.fileID = 12345

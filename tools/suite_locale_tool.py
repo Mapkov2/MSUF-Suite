@@ -26,8 +26,10 @@ Usage (from the Suite root; Python 3.12, no third-party packages):
       with a "translation" field per entry (a string, or {locale: text}).
       Every entry is checked first; strings MSUF's packs cover are skipped.
   python tools/suite_locale_tool.py verify [--quiet]
-      Every locale file: keys exist in the extraction, format specifiers
-      match, scripts fit the language, coverage >= 99% chrome / 95% help.
+      Every locale file: valid UTF-8, each key once, keys exist in the
+      extraction, format specifiers, lone % signs, escape sequences and a
+      trailing space match the English, scripts fit the language, coverage
+      >= 99% chrome / 95% help. English sources hold no |h without a link.
   python tools/suite_locale_tool.py dynamic [--all]   text built at runtime, which cannot translate
   python tools/suite_locale_tool.py orphans      English-looking literals no sink reaches (review aid)
   python tools/suite_locale_tool.py sinks        every discovered sink and what made it one (debug aid)
@@ -60,60 +62,8 @@ CORE = "MSUF_Suite"
 # Files whose strings wait for a delta pass: they are extracted and listed by
 # `missing`, but do not count against the coverage gate yet. Remove a file
 # once its strings are translated.
-DELTA_PENDING = (
-    "MSUF_Suite_Options/Menu/Search.lua",
-    # Run summaries ship with German strings; the other locale packs need a
-    # native-language delta pass for the new HUD controls and result card.
-    "MSUF_Suite/Core/Catalog/HUD.lua",
-    "MSUF_Suite_Options/Pages/HUD.lua",
-    "MSUF_Suite_Modules/RunSummary.lua",
-    # The new action, item, loadout and popup text has a German delta pass;
-    # the other Suite locale packs still need their native translations.
-    "MSUF_Suite/Core/Catalog/Bags.lua",
-    "MSUF_Suite/Core/Catalog/DataTexts.lua",
-    "MSUF_Suite/Core/Catalog/QualityOfLife.lua",
-    "MSUF_Suite/Core/Catalog/QualityOfLifeGroup.lua",
-    "MSUF_Suite_Options/Pages/QualityOfLife.lua",
-    "MSUF_Suite_Options/Pages/DataTexts.lua",
-    "MSUF_Suite_QualityOfLife/ActionTracker.lua",
-    "MSUF_Suite_QualityOfLife/ItemCounts.lua",
-    "MSUF_Suite_QualityOfLife/TooltipIDs.lua",
-    "MSUF_Suite_QualityOfLife/Waypoints.lua",
-    "MSUF_Suite_DataTexts/DataTexts.lua",
-    "MSUF_Suite_QualityOfLife/SocketGemSuggestions.lua",
-    "MSUF_Suite_QualityOfLife/LoadoutReminder.lua",
-    "MSUF_Suite_QualityOfLife/TooltipVisibility.lua",
-    "MSUF_Suite_QualityOfLife/GroupDeathAlert.lua",
-    # New opt-in QoL helpers are included in extraction; native translations
-    # for all ten locale packs follow as a separate delta pass.
-    "MSUF_Suite_QualityOfLife/UIErrorFilter.lua",
-    "MSUF_Suite_QualityOfLife/CollectionNewMarkers.lua",
-    "MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua",
-    "MSUF_Suite_QualityOfLife/GroupFinderExitReminder.lua",
-    "MSUF_Suite_QualityOfLife/GroupRaidShortcuts.lua",
-    "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
-    "MSUF_Suite_QualityOfLife/CharacterUpgradeWindow.lua",
-    "MSUF_Suite_QualityOfLife/ProfessionAppearance.lua",
-    "MSUF_Suite_QualityOfLife/LootToastFilter.lua",
-    "MSUF_Suite_QualityOfLife/CombatMovementCue.lua",
-    "MSUF_Suite_QualityOfLife/BurningRushCue.lua",
-    "MSUF_Suite_QualityOfLife/GroupFinderDoubleClick.lua",
-    "MSUF_Suite_QualityOfLife/MPlusKeystoneShare.lua",
-    "MSUF_Suite_QualityOfLife/GroupDelvePower.lua",
-    "MSUF_Suite_QualityOfLife/MPlusResetReminder.lua",
-    "MSUF_Suite_QualityOfLife/GroupBloodlust.lua",
-    "MSUF_Suite_QualityOfLife/LootContainers.lua",
-    "MSUF_Suite_QualityOfLife/LootVendorRules.lua",
-    "MSUF_Suite_QualityOfLife/CursorEffects.lua",
-    "MSUF_Suite_QualityOfLife/MapQuickSwitch.lua",
-    "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
-    "MSUF_Suite_QualityOfLife/CombatStatsHUD.lua",
-    "MSUF_Suite_QualityOfLife/CombatPetStatus.lua",
-    "MSUF_Suite_QualityOfLife/MacroBuilder.lua",
-    "MSUF_Suite_QualityOfLife/TooltipSpellCopy.lua",
-    "MSUF_Suite_QualityOfLife/ChatProfileLinks.lua",
-    "MSUF_Suite_QualityOfLife/TooltipMPlusScore.lua",
-)
+DELTA_PENDING = ()
+
 CHROME_MIN, HELP_MIN = 0.99, 0.95
 
 # ---------------------------------------------------------------- Lua lexer
@@ -1244,17 +1194,26 @@ def locale_path(locale):
     return LOCALE_DIR / ("%s.lua" % locale)
 
 
-def read_locale(locale):
-    """{english: translation} of a Suite locale file (empty when absent)."""
-    path = locale_path(locale)
-    if not path.is_file():
-        return {}
-    tokens, entries = lex(read_source(path)), {}
+def locale_pairs(source):
+    """(english, translation, line) of every T(...) entry, in file order."""
+    tokens, pairs = lex(source), []
     for k in range(len(tokens) - 5):
         if tokens[k].kind == "name" and tokens[k].value == "T" and tokens[k + 1].op("(") \
                 and tokens[k + 2].kind == "str" and tokens[k + 3].op(",") and tokens[k + 4].kind == "str" \
                 and tokens[k + 5].op(")"):
-            entries[tokens[k + 2].value] = tokens[k + 4].value
+            pairs.append((tokens[k + 2].value, tokens[k + 4].value, tokens[k].line))
+    return pairs
+
+
+def read_locale(locale):
+    """{english: translation} of a Suite locale file (empty when absent).
+    Like the runtime's T(), the first entry of a key wins."""
+    path = locale_path(locale)
+    if not path.is_file():
+        return {}
+    entries = {}
+    for english, text, _ in locale_pairs(read_source(path)):
+        entries.setdefault(english, text)
     return entries
 
 
@@ -1311,6 +1270,61 @@ def specifiers(text):
     return [s for s in SPECIFIER.findall(text) if s != "%%"] + ["%%"] * text.count("%%")
 
 
+# One token per percent use: "%%", a specifier, or a lone "%". Text with a
+# specifier goes through string.format, where a lone "%" raises; plain labels
+# may show a percent sign as it is.
+PERCENT = re.compile(r"%%|%[-+ #0]*\d*(?:\.\d+)?[a-zA-Z]|%")
+# WoW escape sequences; || shows a pipe. A pipe before one of the escape
+# letters that is no complete sequence is stray: the client reads |h as a
+# link end and |r as a color reset, so "tank|healer" shows "tankealer".
+ESCAPE = re.compile(r"\|\||\|c[0-9a-fA-F]{8}|\|r|\|T[^|]*\|t|\|A[^|]*\|a|\|H[^|]*\|h[^|]*\|h|\|n|\|K[^|]*\|k|\|")
+COMPLETE_ESCAPE = re.compile(r"\|\||\|c[0-9a-fA-F]{8}|\|T[^|]*\|t|\|A[^|]*\|a|\|H[^|]*\|h[^|]*\|h|\|n|\|K[^|]*\|k")
+ESCAPE_LETTERS = "cCrRhHtTaAkKn"
+FULL_WIDTH_END = ("\uff1a", "\u3002", "\uff0c", "\uff01", "\uff1f")
+
+
+def lone_percents(text):
+    return sum(1 for token in PERCENT.findall(text) if token == "%")
+
+
+def escape_kinds(text):
+    """The escape sequences of a text by kind; a stray pipe is kind '|'."""
+    kinds = []
+    for token in ESCAPE.findall(text):
+        kinds.append(token[:2] if len(token) > 1 else "|")
+    return sorted(kinds)
+
+
+def stray_pipes(text):
+    """Pipes the client would read as an escape the text does not mean: one
+    before an escape letter that starts no complete sequence, and a color
+    reset without a color."""
+    stray, index, colors = 0, text.find("|"), 0
+    while index >= 0:
+        match = COMPLETE_ESCAPE.match(text, index)
+        if match:
+            colors += match.group(0).startswith("|c")
+            index = text.find("|", match.end())
+            continue
+        following = text[index + 1:index + 2]
+        if following in ("r", "R") and colors > 0:
+            colors -= 1
+        elif following and following in ESCAPE_LETTERS:
+            stray += 1
+        index = text.find("|", index + 1)
+    return stray
+
+
+def english_problems(english):
+    """Problems of an English source string itself."""
+    problems = []
+    if stray_pipes(english):
+        problems.append("a pipe the client reads as an escape (|h ends a link, |r resets color; || shows a pipe)")
+    if specifiers(english) and lone_percents(english):
+        problems.append("a lone % in a format string breaks string.format (write %%)")
+    return problems
+
+
 def proper_noun_like(english):
     stripped = re.sub(r"\|c[0-9a-fA-F]{8}|\|r|%[-+ #0]*\d*(?:\.\d+)?[a-zA-Z%]", " ", english)
     for word in re.findall(r"[A-Za-z][A-Za-z0-9']*", stripped):
@@ -1334,6 +1348,12 @@ def check_entry(locale, english, text):
         problems.append("color codes differ from the English")
     if re.findall(r"\|T[^|]*\|t", text) != re.findall(r"\|T[^|]*\|t", english):
         problems.append("icon escapes differ from the English")
+    if specifiers(english) and lone_percents(text):
+        problems.append("a lone % in a format string breaks string.format (write %%)")
+    if escape_kinds(text) != escape_kinds(english) or stray_pipes(text) != stray_pipes(english):
+        problems.append("escape sequences or pipes differ from the English (|| shows a pipe)")
+    if english.endswith(" ") and not text.endswith(" ") and not text.endswith(FULL_WIDTH_END):
+        problems.append("the English ends with a space that joins the next text; the translation does not")
     if locale in LATIN_LOCALES:
         if CJK.search(text) or HANGUL.search(text) or CYRILLIC.search(text):
             problems.append("CJK, Hangul or Cyrillic characters in a Latin-script locale")
@@ -1374,6 +1394,9 @@ def coverage(records, locale, entries):
 def verify(records, quiet=False):
     problems = []
     english_set = {r.english for r in records}
+    for r in records:
+        for problem in english_problems(r.english):
+            problems.append("English %r (%s): %s" % (r.english, r.used(1), problem))
     for locale in LOCALES:
         path = locale_path(locale)
         if not path.is_file():
@@ -1382,6 +1405,17 @@ def verify(records, quiet=False):
         raw = path.read_bytes()
         if raw.startswith(b"\xef\xbb\xbf"):
             problems.append("%s: the file starts with a byte order mark" % locale)
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError as error:
+            problems.append("%s: invalid UTF-8 at byte %d" % (locale, error.start))
+        seen = {}
+        for english, _, line in locale_pairs(read_source(path)):
+            if english in seen:
+                problems.append("%s:%d: %r is listed again (line %d); the runtime keeps the first"
+                                % (locale, line, english, seen[english]))
+            else:
+                seen[english] = line
         head = HEADER.format(name=LOCALE_NAMES[locale], locale=locale).encode("utf-8")
         if not raw.startswith(head):
             problems.append("%s: the header (namespace, locale guard, T helper) differs from the tool's" % locale)

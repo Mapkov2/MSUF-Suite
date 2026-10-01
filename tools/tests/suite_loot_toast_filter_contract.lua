@@ -95,14 +95,14 @@ Toast("item", "item:101", 1, true)
 Toast("item", "item:100", 1, false)
 Toast("currency", "item:100", 1, true)
 Toast("item", "secret", 1, true)
-combat = true
-Toast("item", "item:100", 1, true)
-combat = false
 assert(#frames == 0, "filter displayed other-player, non-item, low-quality or secret data")
 
+-- Blizzard's own loot toasts show in combat; so does this notice.
+combat = true
 Toast("item", "item:100", 2, true)
+combat = false
 assert(#frames == 1 and frames[1]:IsShown() and frames[1].name.text == "Epic item"
-    and frames[1].count.text == "x2", "personal epic toast was not rendered")
+    and frames[1].count.text == "x2", "personal epic toast was not rendered in combat")
 frames[1].OnEnter(frames[1])
 frames[1].OnLeave(frames[1])
 local oldTimer = timers[#timers]

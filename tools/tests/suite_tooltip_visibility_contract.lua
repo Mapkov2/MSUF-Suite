@@ -4,29 +4,47 @@ local suite = {
     Install = function(_, value) module = value end,
     Public = function(value) return value ~= "secret" end,
 }
+-- The client turns InCombatLockdown() on only after PLAYER_REGEN_DISABLED;
+-- Suite.InCombat(event) answers for that event (MSUF_Suite/Core/Platform.lua).
 local ns = {
     IsCombatLocked = function() return combat end,
+    InCombat = function(event)
+        if event == "PLAYER_REGEN_DISABLED" then return true end
+        if event == "PLAYER_REGEN_ENABLED" then return false end
+        return combat
+    end,
     Safety = { IsForbidden = function() return false end },
 }
 IsInInstance = function() return instance, instance and "party" or "none" end
-local tooltip = { shown = true, protected = false, hides = 0 }
 Enum = { TooltipDataType = { Item = 1, Spell = 2, Unit = 3 } }
-local typeCallbacks = {}
-TooltipDataProcessor = { AddTooltipPostCall = function(kind, callback)
-    assert(not typeCallbacks[kind], "duplicate tooltip type callback")
-    typeCallbacks[kind] = callback
-end }
+-- GameTooltip as addon code meets it: Hide() would run GameTooltip_OnHide in
+-- the caller's context, so the helper must never call it.
+local tooltip = { shown = false, alpha = 1, scripts = {}, hooks = {} }
 function tooltip:IsShown() return self.shown end
-function tooltip:IsProtected() return self.protected end
 function tooltip:GetOwner() return self.owner end
+function tooltip:GetAlpha() return self.alpha end
+function tooltip:SetAlpha(value) self.alpha = value end
 function tooltip:IsTooltipType(kind)
     if self.tooltipType == "secret" then return "secret" end
     return self.tooltipType == kind
 end
-function tooltip:Hide() self.shown = false; self.hides = self.hides + 1 end
+function tooltip:Show()
+    local was = self.shown
+    self.shown = true
+    if not was and self.scripts.OnShow then self.scripts.OnShow(self) end
+end
+function tooltip:Hide() error("addon code ran GameTooltip_OnHide") end
+function tooltip:NativeHide()
+    self.shown = false
+    if self.scripts.OnHide then self.scripts.OnHide(self) end
+end
 function tooltip:HookScript(name, callback)
-    assert(name == "OnShow" and not self.onShow)
-    self.onShow = callback
+    local old = self.scripts[name]
+    self.scripts[name] = function(...) if old then old(...) end; callback(...) end
+end
+hooksecurefunc = function(owner, key, callback)
+    local original = owner[key]
+    owner[key] = function(...) original(...); callback(...) end
 end
 GameTooltip = tooltip
 local context = { events = {} }
@@ -38,82 +56,84 @@ assert(module)
 module.active, module.context = true, context
 module.config = { inCombat = true, inInstances = false }
 module:Enable()
-assert(tooltip.onShow and context.events.PLAYER_REGEN_DISABLED
+assert(context.events.PLAYER_REGEN_DISABLED and context.events.PLAYER_REGEN_ENABLED
     and not context.events.PLAYER_ENTERING_WORLD, "combat-only tooltip listener was not selective")
-tooltip.onShow()
-assert(tooltip.shown, "tooltip was hidden outside combat")
+tooltip:Show()
+assert(tooltip.alpha == 1, "tooltip was concealed outside combat")
+-- Combat starts while the tooltip is shown; the lockdown flag is still off.
+context.events.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+assert(tooltip.shown and tooltip.alpha == 0, "visible tooltip survived combat entry")
 combat = true
-context.events.PLAYER_REGEN_DISABLED()
-assert(not tooltip.shown and tooltip.hides == 1, "visible tooltip survived combat entry")
-tooltip.shown, tooltip.protected = true, true
-tooltip.onShow()
-assert(tooltip.shown, "protected tooltip was hidden during combat")
+tooltip:Show()
+assert(tooltip.alpha == 0, "a rebuild in combat showed the tooltip")
 combat = false
-tooltip.protected = false
+context.events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+assert(tooltip.alpha == 1, "the tooltip stayed concealed after combat")
+tooltip:NativeHide()
 module.config.inCombat, module.config.inInstances = false, true
 module:Refresh()
 assert(not context.events.PLAYER_REGEN_DISABLED and context.events.PLAYER_ENTERING_WORLD,
     "disabled combat listener remained registered")
 instance = true
-context.events.PLAYER_ENTERING_WORLD()
-assert(not tooltip.shown and tooltip.hides == 2, "instance tooltip rule did not apply")
+tooltip:Show()
+assert(tooltip.alpha == 0, "instance tooltip rule did not apply")
+tooltip:NativeHide()
+assert(tooltip.alpha == 1, "a concealed tooltip hid without its alpha back")
 instance = false
 module.config.inInstances = false
 module.config.hideItems = true
 module:Refresh()
-assert(typeCallbacks[1] and not typeCallbacks[2] and not typeCallbacks[3],
-    "unselected tooltip types installed post-calls")
-tooltip.shown, tooltip.tooltipType = true, Enum.TooltipDataType.Item
-typeCallbacks[1]({})
-assert(tooltip.shown, "another tooltip's data changed the main tooltip")
-tooltip.shown, tooltip.tooltipType = true, Enum.TooltipDataType.Spell
-typeCallbacks[1](tooltip)
-assert(tooltip.shown, "unselected tooltip type was hidden")
+tooltip.tooltipType = Enum.TooltipDataType.Spell
+tooltip:Show()
+assert(tooltip.alpha == 1, "unselected tooltip type was concealed")
 tooltip.tooltipType = Enum.TooltipDataType.Item
-typeCallbacks[1](tooltip)
-assert(not tooltip.shown and tooltip.hides == 3, "item tooltip was not hidden")
-tooltip.shown, tooltip.tooltipType = true, "secret"
-typeCallbacks[1](tooltip)
-assert(tooltip.shown, "secret tooltip type was interpreted")
+tooltip:Show()
+assert(tooltip.alpha == 0, "item tooltip was not concealed")
+tooltip.tooltipType = Enum.TooltipDataType.Spell
+tooltip:Show()
+assert(tooltip.alpha == 1, "the next tooltip of an unselected type stayed concealed")
+tooltip.tooltipType = "secret"
+tooltip:Show()
+assert(tooltip.alpha == 1, "secret tooltip type was interpreted")
 module.config.hideItems, module.config.hideSpells, module.config.hideUnits = false, true, true
 module:Refresh()
-assert(typeCallbacks[2] and typeCallbacks[3], "newly selected tooltip types were not installed")
-tooltip.shown, tooltip.tooltipType = true, Enum.TooltipDataType.Spell
-typeCallbacks[2](tooltip)
-assert(not tooltip.shown and tooltip.hides == 4, "spell tooltip was not hidden")
-tooltip.shown, tooltip.tooltipType = true, Enum.TooltipDataType.Unit
-typeCallbacks[3](tooltip)
-assert(not tooltip.shown and tooltip.hides == 5, "unit tooltip was not hidden")
+tooltip.tooltipType = Enum.TooltipDataType.Spell
+tooltip:Show()
+assert(tooltip.alpha == 0, "spell tooltip was not concealed")
+tooltip.tooltipType = Enum.TooltipDataType.Unit
+tooltip:Show()
+assert(tooltip.alpha == 0, "unit tooltip was not concealed")
+tooltip:NativeHide()
 -- The shared GameTooltip also renders MSUF unit/group frame tooltips.
 -- Their own Always/OOC/Modifier/Never setting must win over every QoL rule.
 tooltip._msufUnitTooltipOwner = {}
 module.config.inCombat, module.config.inInstances = true, true
-combat, instance, tooltip.shown = true, true, true
+combat, instance = true, true
 module:Refresh()
-tooltip.onShow()
-typeCallbacks[3](tooltip)
-context.events.PLAYER_REGEN_DISABLED()
-context.events.PLAYER_ENTERING_WORLD()
-assert(tooltip.shown and tooltip.hides == 5, "QoL overrode MSUF unitframe tooltip visibility")
+tooltip:Show()
+context.events.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+context.events.PLAYER_ENTERING_WORLD(module, "PLAYER_ENTERING_WORLD")
+assert(tooltip.alpha == 1, "QoL overrode MSUF unitframe tooltip visibility")
 tooltip._msufUnitTooltipOwner = nil
-tooltip.onShow()
-assert(not tooltip.shown and tooltip.hides == 6, "QoL did not resume after MSUF released the tooltip")
+tooltip:Show()
+assert(tooltip.alpha == 0, "QoL did not resume after MSUF released the tooltip")
+tooltip:NativeHide()
 -- Clickable aura reminders use GameTooltip for their configured item/spell,
 -- while ordinary native auras use the separate AuraButtonTooltip.
 tooltip.owner = { _msufA3CastTooltip = true }
-tooltip.shown = true
-tooltip.onShow()
-assert(tooltip.shown, "QoL hid an MSUF aura reminder with its own tooltip switch")
+tooltip:Show()
+assert(tooltip.alpha == 1, "QoL concealed an MSUF aura reminder with its own tooltip switch")
 tooltip.owner = {}
-tooltip.onShow()
-assert(not tooltip.shown, "aura reminder exemption leaked to another owner")
-tooltip.shown, tooltip.owner._msufA3CastTooltip = true, "secret"
-tooltip.onShow()
-assert(not tooltip.shown, "a restricted owner field exempted a foreign tooltip")
+tooltip:Show()
+assert(tooltip.alpha == 0, "aura reminder exemption leaked to another owner")
+tooltip:NativeHide()
+tooltip.owner._msufA3CastTooltip = "secret"
+tooltip:Show()
+assert(tooltip.alpha == 0, "a restricted owner field exempted a foreign tooltip")
 module.active = false
-tooltip.shown = true
-tooltip.onShow()
-assert(tooltip.shown, "disabled module's permanent hook hid the tooltip")
-typeCallbacks[3](tooltip)
-assert(tooltip.shown, "disabled module's post-call hid the tooltip")
+module:Disable()
+assert(tooltip.alpha == 1, "disable left the tooltip concealed")
+tooltip:NativeHide()
+tooltip:Show()
+assert(tooltip.alpha == 1, "disabled module's permanent hook concealed the tooltip")
 print("Suite tooltip visibility lifecycle passed")

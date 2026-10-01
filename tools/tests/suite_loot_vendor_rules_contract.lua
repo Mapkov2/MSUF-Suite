@@ -1,5 +1,7 @@
 local root = assert(arg[1], "repository root required")
-local module, sold, popups, printed = nil, {}, {}, {}
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local module, sold, popups, printed, reported = nil, {}, {}, {}, {}
+local frames = Support.EventFrames()
 local combat, cursor = false, false
 local bagSlots = { [0] = {}, [1] = {}, [2] = {}, [3] = {}, [4] = {}, [5] = {} }
 
@@ -52,13 +54,16 @@ function MerchantFrame:IsShown() return self.shown end
 
 local buttonCount = 0
 local S = {
+    Dispatch = Support.Dispatcher(reported),
     Public = function(value) return value ~= "secret" end,
     Finite = function(value) return type(value) == "number" and value == value
         and value > -math.huge and value < math.huge end,
-    Text = function(value) return value end,
+    -- A translation of the counted label, so the label must be one sentence.
+    Text = function(value) return value == "Sell marked items (%d)" and "Verkaufen (%d)" or value end,
     BlizzardText = function(_, fallback) return fallback end,
     Install = function(id, instance) assert(id == "lootVendorRules"); module = instance end,
-    CreateFrame = function()
+    CreateFrame = function(kind, _, _, template)
+        if kind == "Frame" and not template then return frames.Create() end
         buttonCount = buttonCount + 1
         local button = { shown = false }
         function button:SetSize(w, h) self.width, self.height = w, h end
@@ -77,6 +82,7 @@ local NS = {
     IsCombatLocked = function() return combat end,
     Print = function(value) printed[#printed + 1] = value end,
 }
+Support.QoLStyleFixture(root, S)
 local context = { events = {} }
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
@@ -92,7 +98,7 @@ assert(buttonCount == 0 and context.events.MERCHANT_SHOW and not context.events.
 MerchantFrame.shown = true
 context.events.MERCHANT_SHOW(module, "MERCHANT_SHOW")
 assert(buttonCount == 1 and module.button.shown and module.button.enabled
-    and module.button.text == "Sell marked items (2)"
+    and module.button.text == "Verkaufen (2)"
     and context.events.BAG_UPDATE_DELAYED,
     "the merchant button did not preview only eligible non-gear stacks")
 module.button.OnClick(module.button)
@@ -117,7 +123,7 @@ assert(module.button.shown and module.button.enabled,
 
 module.config.includeGear, module.config.maxQuality = true, 3
 module:Refresh()
-assert(buttonCount == 1 and module.button.text == "Sell marked items (4)",
+assert(buttonCount == 1 and module.button.text == "Verkaufen (4)",
     "explicit gear opt-in and quality cap did not update the preview")
 module.button.OnClick(module.button)
 MerchantFrame.shown = false
@@ -133,10 +139,20 @@ assert(not context.events.MERCHANT_SHOW and not context.events.MERCHANT_CLOSED
     "disable left merchant handlers or its button")
 module.active, MerchantFrame.shown = true, true
 module:Enable()
+-- A second item window beside the merchant keeps the sale manual.
+MailFrame = { IsShown = function() return true end }
 module.button.OnClick(module.button)
-C_Container.UseContainerItem = function() error("client refused sale") end
 StaticPopupDialogs[popups[#popups].key].OnAccept({}, popups[#popups].data)
-assert(#sold == 1 and printed[#printed]
+assert(#sold == 1, "a sale ran while another item window was open")
+MailFrame = nil
+module.button.OnClick(module.button)
+-- The client refuses a restricted item use with ADDON_ACTION_BLOCKED, not
+-- with a Lua error.
+C_Container.UseContainerItem = function(bag, slot)
+    frames.Fire("ADDON_ACTION_BLOCKED", "MSUF_Suite_QualityOfLife", "UseContainerItem()")
+end
+StaticPopupDialogs[popups[#popups].key].OnAccept({}, popups[#popups].data)
+assert(#sold == 1 and #reported == 0 and printed[#printed]
     == "Marked item sale stopped; earlier items may already have been sold.",
-    "restricted merchant item use raised an error or hid a partial-sale warning")
+    "a blocked merchant item use hid the partial-sale warning")
 print("Suite marked vendor rules: preview, revalidation, combat, merchant close passed")

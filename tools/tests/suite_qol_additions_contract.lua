@@ -53,12 +53,16 @@ C_Timer = { NewTimer = function(_, callback)
     return timer
 end }
 
-local callback
-TooltipDataProcessor = { AddTooltipPostCall = function(_, fn) callback = fn end }
 Enum = { TooltipDataType = { Item = 1 } }
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local reported = {}
+S.Dispatch = Support.Dispatcher(reported)
+local tooltips = Support.TooltipFixture(root, S, NS)
+local function callback(tip, data) tooltips.Run(1, tip, data) end
 local tooltip = Frame()
+tooltip.shown = true
 function tooltip:AddDoubleLine(left, right) self.line = { left, right } end
-function tooltip:RefreshDataNextUpdate() self.refreshed = (self.refreshed or 0) + 1 end
+function tooltip:RefreshDataNextUpdate() error("addon code wrote GameTooltip's update fields") end
 GameTooltip = tooltip
 C_Item = { GetItemCount = function(id, bank, uses, reagent, account)
     assert(id == 123 and bank and not uses and reagent and account)
@@ -68,15 +72,17 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ItemCounts.lua"))("MSUF_Suite
 local counts = modules.itemCounts
 counts.context, counts.config, counts.active = Context(), {}, true
 counts:Enable()
-assert(callback and counts.context.events.ADDON_LOADED == nil, "item tooltip hook did not install")
+counts:Refresh()
+assert(#tooltips.post[1] == 1 and counts.context.events.ADDON_LOADED == nil, "item tooltip hook did not install")
 callback(tooltip, { id = 123 })
 assert(tooltip.line[1] == "Owned" and tooltip.line[2] == "7", "owned count was not rendered")
 tooltip.line = nil
 callback(tooltip, { id = "secret" })
 assert(not tooltip.line, "secret item ID reached count lookup")
 counts.active = false
+counts:Disable()
 callback(tooltip, { id = 123 })
-assert(not tooltip.line, "disabled tooltip module still painted")
+assert(not tooltip.line and #reported == 0, "disabled tooltip module still painted")
 
 local inInstance, instanceID, lootSpec = false, 42, 0
 IsInInstance = function() return inInstance, inInstance and "party" or "none" end

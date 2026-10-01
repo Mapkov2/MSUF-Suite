@@ -2,6 +2,8 @@
 -- claim that a live client permits follow-up purchase calls from TRAINER_UPDATE.
 local root = (...)
 assert(root, "pass the Suite root")
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local reported = {}
 
 local services = {
     { "Alchemy", "available", 1, 1, 100, true },
@@ -40,7 +42,9 @@ StaticPopup_Show = function(name, count, cost, data)
     popup = { name = name, count = count, cost = cost, data = data }
 end
 StaticPopup_Hide = function() popup = nil end
-GetCoinTextureString = function(value) return tostring(value) .. "c" end
+-- The deprecated GetCoinTextureString global exists only with the
+-- loadDeprecationFallbacks CVar; this client runs without it.
+C_CurrencyInfo = { GetCoinTextureString = function(value) return tostring(value) .. "c" end }
 GetMoney = function() return gold end
 GetNumTrainerServices = function() return #services end
 GetTrainerServiceStepIndex = function() return 2 end
@@ -75,11 +79,13 @@ local suite = {
     Text = function(value) return value end,
     BlizzardText = function(_, fallback) return fallback end,
     CreateFrame = function() return Frame(false) end,
+    Dispatch = Support.Dispatcher(reported),
 }
 local ns = {
     IsCombatLocked = function() return combat end,
     Safety = { IsForbidden = function() return false end },
     Print = function(value) messages[#messages + 1] = value end,
+    Finish = function(callback, ...) return true, callback(...) end,
 }
 local chunk = assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TrainerLearnAll.lua"))
 chunk("MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
@@ -168,6 +174,9 @@ StaticPopupDialogs[popup.name].OnAccept(nil, popup.data)
 assert(module.queue == nil and module.purchasing == nil and module.deferred == nil
     and #buys == beforeFailure,
     "rejected purchase clears even a synchronous deferred update without retrying")
+assert(#reported == 1 and reported[1]:find("client rejected purchase", 1, true)
+    and messages[#messages] == "Training stopped because the purchase call failed.",
+    "a raising purchase call was swallowed instead of reported")
 Emit("TRAINER_UPDATE")
 assert(#buys == beforeFailure, "later updates cannot restart a failed purchase")
 print("Suite trainer learn-all confirmation and update lifecycle passed")

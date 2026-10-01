@@ -1,4 +1,5 @@
 local root = assert(arg[1], "repository root required")
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local module, combat = nil, false
 local hooks, queued = {}, 0
 local function Widget(kind, parent)
@@ -37,7 +38,10 @@ local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
 }
-SlashCmdList = {}
+local slash = Support.SlashRegistry()
+Support.QoLStyleFixture(root, S)
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SlashCommands.lua"))("MSUF_Suite_QualityOfLife", { Suite = S })
+-- Blizzard_ChatFrameBase loads before any addon: its chat frames exist.
 CHAT_FRAMES = { "ChatFrame1", "ChatFrame2" }
 ChatFrame1 = Widget("ChatFrame")
 ChatFrame2 = Widget("ChatFrame")
@@ -54,16 +58,11 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GuildChatPrivacy.lua"))(
 local events = {}
 module.context = { Event = function(_, event, callback) events[event] = callback end }
 module.active = true
-local savedFrames = CHAT_FRAMES
-CHAT_FRAMES = nil
-module:Refresh()
-assert(not module.control, "guild cover accessed chat frames before they existed")
-CHAT_FRAMES = savedFrames
 module:Enable()
 assert(SLASH_MSUFSUITEGUILDPRIVACY1 == "/msufguildprivacy"
     and module.control and module.control.label.text == "Guild privacy: OFF"
     and not module.overlays[ChatFrame1], "privacy cover was not opt-in within the module")
-SlashCmdList.MSUFSUITEGUILDPRIVACY()
+assert(slash.Type("/msufguildprivacy"))
 assert(module.covered and module.overlays[ChatFrame1].shown
     and not module.overlays[ChatFrame2]
     and module.control.label.text == "Guild privacy: ON",
@@ -76,7 +75,7 @@ events.UPDATE_CHAT_WINDOWS(module)
 assert(not module.overlays[ChatFrame1].shown and module.overlays[ChatFrame2].shown,
     "removing a guild channel did not release the cover")
 combat = true
-SlashCmdList.MSUFSUITEGUILDPRIVACY()
+assert(slash.Type("/msufguildprivacy"))
 assert(not module.overlays[ChatFrame2].shown and queued == 1,
     "existing privacy cover did not toggle safely in combat")
 combat = false
@@ -87,6 +86,8 @@ module:Disable()
 assert(not SlashCmdList.MSUFSUITEGUILDPRIVACY and not module.control.shown
     and not module.overlays[ChatFrame2].shown,
     "disable left the privacy command or visual cover active")
+assert(not slash.Type("/msufguildprivacy") and not module.covered,
+    "the disabled privacy cover kept its typed command")
 module.active = true
 module:Enable()
 assert(hooks.FCF_OpenNewWindow and hooks.FCF_OpenTemporaryWindow,

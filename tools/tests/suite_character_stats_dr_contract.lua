@@ -121,6 +121,7 @@ C_CurveUtil = { EvaluateGameCurve = Curve }
 -- Widgets for the stat pane and the dossier: plain objects with the few
 -- methods the adapters call.
 local NOOP = function() end
+local combatLocked = false
 local NOOP_METHODS = {
     "SetSize", "SetPoint", "ClearAllPoints", "SetAllPoints", "EnableMouse", "SetFrameLevel",
     "SetFont", "SetJustifyH", "SetWordWrap", "SetWidth", "SetColorTexture", "SetTexture",
@@ -152,7 +153,10 @@ local function Object(fields)
     function object:IsShown() return self.shown end
     function object:IsVisible() return self.shown end
     function object:GetHeight() return self.height end
-    function object:SetHeight(height) self.height = height end
+    function object:SetHeight(height)
+        assert(not combatLocked, "native stat height changed during lockdown")
+        self.height = height
+    end
     function object:GetWidth() return self.width or 100 end
     function object:GetFrameLevel() return 1 end
     function object:GetName() return nil end
@@ -178,7 +182,8 @@ NS.CombatGate = {
     end,
     Cancel = NOOP,
 }
-NS.Surface = { Attach = function() return {} end, SkinOwnedButton = NOOP, SetVisible = NOOP }
+NS.Surface = { Attach = function() return {} end, Ensure = function() return {} end,
+    SkinOwnedButton = NOOP, SetVisible = NOOP }
 NS.Theme = { GetColor = function() return 0.9, 0.9, 0.9, 1 end }
 NS.GenericWindows = { IsCategoryEnabled = function() return true end }
 -- The dossier (CharacterDetails.lua) always loads first; here it is modern.
@@ -195,9 +200,11 @@ NS.DB = {
     characterStats = { enabled = true, diminishingReturns = true },
     characterDetails = { enabled = true, expanded = true },
 }
+NS.IsCombatLocked = function() return combatLocked end
 
--- PLAYER_REGEN_DISABLED fires before the lockdown starts: the stat pane only
--- hides its extra rows there and rebuilds them on PLAYER_REGEN_ENABLED.
+-- PLAYER_REGEN_DISABLED fires before the lockdown starts. A stat pane shown
+-- at the pull keeps its layout (no jump back to Blizzard's rows); a refresh
+-- asked for during combat waits for PLAYER_REGEN_ENABLED.
 local enumerations = 0
 local statRow = Object({ Label = Object(), Value = Object() })
 local pane = Object({
@@ -218,13 +225,144 @@ local pane = Object({
 stats.Apply(pane, "stats")
 local view = assert(stats.views[pane], "the stat pane was not styled")
 local host = view.host
-local rebuilt = enumerations
+local rebuilt, laidOut = enumerations, statRow.height
+assert(laidOut ~= 20 and view.heights[statRow], "the reproduction did not start with a laid-out row")
 host.scripts.OnEvent(host, "PLAYER_REGEN_DISABLED")
 assert(enumerations == rebuilt and host.events.PLAYER_REGEN_ENABLED,
-    "combat start rebuilt the stat rows it hides")
+    "combat start rebuilt the stat rows")
+assert(statRow.height == laidOut and view.heights[statRow],
+    "a stat pane shown at the pull jumped back to Blizzard's row heights")
+combatLocked = true
+stats.Refresh(view)
+assert(statRow.height == laidOut and enumerations == rebuilt,
+    "combat refresh resized or enumerated the native pool")
+combatLocked = false
 host.scripts.OnEvent(host, "PLAYER_REGEN_ENABLED")
 assert(enumerations == rebuilt + 1 and not host.events.PLAYER_REGEN_ENABLED,
-    "the stat rows did not come back after combat")
+    "the stat rows were not refreshed after combat")
+
+-- PaperDoll releases and reacquires its pool without resetting frame heights.
+-- A close before combat must prepare even the retained, currently hidden rows.
+local normalCreate, gateFrame = CreateFrame
+CreateFrame = function(...)
+    gateFrame = normalCreate(...)
+    return gateFrame
+end
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", NS)
+CreateFrame = normalCreate
+STAT_CRITICAL_STRIKE, STAT_HASTE, STAT_MASTERY, STAT_VERSATILITY = "Crit", "Haste", "Mastery", "Versatility"
+CR_CRIT_MELEE, CR_HASTE_MELEE, CR_MASTERY, CR_VERSATILITY_DAMAGE_DONE = 1, 2, 3, 4
+local nativeRows = {}
+for index, label in ipairs({"Crit", "Haste", "Mastery", "Versatility", "Agility", "Stamina", "Armor", "Leech", "Speed"}) do
+    nativeRows[index] = Object({ Label = Object({text = label .. ":"}), Value = Object() })
+end
+local nativePane = Object({
+    ItemLevelCategory = Object({Title = Object()}),
+    ItemLevelFrame = Object({Value = Object()}),
+    AttributesCategory = Object({Title = Object()}),
+    EnhancementsCategory = Object({Title = Object()}),
+    height = 400,
+    statsFramePool = {EnumerateActive = function()
+        local index = 0
+        return function() index = index + 1; return nativeRows[index] end
+    end},
+})
+NS.GearAnnotations.IsWide = function() return true end
+stats.Apply(nativePane, "reopen")
+local reopen = assert(stats.views[nativePane])
+assert(nativeRows[1].height > 20 and reopen.rows[nativeRows[1]].meta:IsShown(),
+    "the reproduction did not start with expanded DR rows")
+nativeRows[9]:SetHeight(27) -- A later foreign geometry change must be preserved.
+reopen.host:Hide()
+for index = 1, 8 do assert(nativeRows[index].height == 20, "close retained expanded pooled geometry") end
+assert(nativeRows[9].height == 27, "close overwrote newer foreign geometry")
+assert(next(reopen.fonts) == nil and next(reopen.heights) == nil, "native snapshots not cleared")
+combatLocked = true
+-- Native pool reuse changes the meaning and order of existing frames.
+nativeRows[1].Label:SetText("Agility:")
+nativeRows[5].Label:SetText("Crit:")
+reopen.host:Show()
+stats.Apply(nativePane, "reopen")
+-- The reopen's native stats update; CharacterPanel calls SyncDetails after
+-- every update during combat (suite_forever_character_contract). Rows
+-- restored on close show no details.
+stats.SyncDetails(nativePane)
+local occupied = nativePane.ItemLevelFrame.height
+    + nativePane.ItemLevelCategory.height + nativePane.AttributesCategory.height
+    + nativePane.EnhancementsCategory.height + 8
+for _, row in ipairs(nativeRows) do
+    occupied = occupied + row.height
+    assert(not reopen.rows[row].meta:IsShown(), "combat reopen showed stale DR details")
+end
+assert(occupied <= nativePane.height, "combat reopen overflowed native stat pane")
+combatLocked = false
+gateFrame.scripts.OnEvent(gateFrame, "PLAYER_REGEN_ENABLED")
+assert(reopen.rows[nativeRows[5]].meta:IsShown(), "post-combat refresh did not resolve reused row identity")
+
+-- A pane shown at the pull keeps its rows and details. During combat every
+-- native stats update reassigns the pooled rows; the layout waits (a resize
+-- would trip the lockdown assertion in SetHeight), but a row that now shows
+-- another stat loses its details at once, and the refresh after combat lays
+-- the rows out for their new stats.
+local function Details(index) return reopen.rows[nativeRows[index]].meta:IsShown() end
+local heights = {}
+for index, row in ipairs(nativeRows) do heights[index] = row.height end
+reopen.host.scripts.OnEvent(reopen.host, "PLAYER_REGEN_DISABLED")
+combatLocked = true
+for index, row in ipairs(nativeRows) do
+    assert(row.height == heights[index], "a stat pane shown at the pull jumped back to Blizzard's layout")
+end
+assert(Details(5) and Details(2) and nativeRows[5].height > nativeRows[6].height,
+    "a stat pane shown at the pull lost its details")
+nativeRows[5].Label:SetText("Stamina:")
+nativeRows[6].Label:SetText("Crit:")
+stats.SyncDetails(nativePane)
+assert(not Details(5) and not Details(6) and Details(2),
+    "a combat stats update left details on a row that shows another stat")
+nativeRows[5].Label:SetText("Crit:")
+nativeRows[6].Label:SetText("Stamina:")
+stats.SyncDetails(nativePane)
+assert(Details(5) and not Details(6), "a row that shows its stat again did not get its details back")
+nativeRows[5].Label:SetText("Stamina:")
+nativeRows[6].Label:SetText("Crit:")
+stats.SyncDetails(nativePane)
+combatLocked = false
+reopen.host.scripts.OnEvent(reopen.host, "PLAYER_REGEN_ENABLED")
+assert(Details(6) and not Details(5) and nativeRows[6].height > nativeRows[5].height,
+    "the refresh after combat did not lay the reassigned rows out")
+
+-- Closed and reopened in the same fight: the rows keep their details and
+-- the refresh runs once after combat.
+combatLocked = true
+reopen.host:Hide()
+reopen.host:Show()
+assert(Details(6) and not Details(5), "a close and reopen in one fight changed the row details")
+combatLocked = false
+assert(not reopen.host.events.PLAYER_REGEN_ENABLED and NS.CombatGate.GetPendingCount() == 1,
+    "combat reopen did not queue the refresh after its host event was unregistered")
+gateFrame.scripts.OnEvent(gateFrame, "PLAYER_REGEN_ENABLED")
+assert(Details(6), "combat close/reopen failed to resume detail rows")
+assert(NS.CombatGate.GetPendingCount() == 0 and not gateFrame.events.PLAYER_REGEN_ENABLED,
+    "combat reopen left a pending refresh or event listener")
+
+-- Closed during combat: the rows get Blizzard's geometry back once combat
+-- ends, so a later reopen starts from native dimensions.
+combatLocked = true
+nativePane:Hide()
+reopen.host:Hide()
+combatLocked = false
+assert(NS.CombatGate.GetPendingCount() == 1, "a close during combat did not queue the restore")
+gateFrame.scripts.OnEvent(gateFrame, "PLAYER_REGEN_ENABLED")
+for index = 1, 8 do
+    assert(nativeRows[index].height == 20, "a stat pane closed during combat kept expanded rows after it")
+end
+assert(next(reopen.heights) == nil and next(reopen.fonts) == nil and not Details(6),
+    "a stat pane closed during combat kept its snapshots or details after combat")
+nativePane:Show()
+reopen.host:Show()
+assert(Details(6) and nativeRows[6].height > 20, "the reopen after combat did not lay the rows out")
+
+NS.GearAnnotations.IsWide = function() return false end
 
 -- The dossier collects a burst of item events into one next-frame refresh.
 local timers = {}

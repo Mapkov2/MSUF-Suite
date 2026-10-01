@@ -90,6 +90,15 @@ CharacterFrame = character
 CharacterModelScene = Frame()
 -- Blizzard_UIPanels_Game creates the stat pane with CharacterFrame.
 CharacterStatsPane = Frame()
+-- PaperDollFrame_SetItemLevel wrote Blizzard's own item-level text; the
+-- skin shows its two-decimal text and gives Blizzard's back on disable.
+local itemLevelValue = { text = "612",
+    GetText = function(self) return self.text end,
+    SetText = function(self, value) self.text = value end }
+CharacterStatsPane.ItemLevelFrame = Frame()
+CharacterStatsPane.ItemLevelFrame.Value = itemLevelValue
+GetAverageItemLevel = function() return 615.5, 612.25 end
+PaperDollFrame_SetItemLevel = function() error("contract: the skin ran PaperDoll item-level code") end
 local modelBackgrounds = {}
 for _, name in ipairs({ "CharacterModelFrameBackgroundTopLeft",
     "CharacterModelFrameBackgroundTopRight", "CharacterModelFrameBackgroundBotLeft",
@@ -111,16 +120,19 @@ hooksecurefunc = function(target, method, callback)
 end
 -- PaperDoll slot updates arrive through this global.
 PaperDollItemSlotButton_Update = function() end
+-- So do native stats updates.
+PaperDollFrame_UpdateStats = function() end
 local headSlot = Frame()
 headSlot.Icon, headSlot.IconBorder = Texture(), Texture()
 CharacterHeadSlot = headSlot
 local iconSpecs = {}
+local combatLocked = false
 local ns = {
     Client = { isForever = true },
     DB = { theme = { look = "foreverGlass" } },
     Theme = { GetColor = function() return 0.7, 0.5, 0.3, 1 end },
     Registry = { AddListener = function(_, callback) themeListener = callback end },
-    IsCombatLocked = function() return false end,
+    IsCombatLocked = function() return combatLocked end,
     Safety = assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     Cosmetics = {
         Fade = function(region) region.alpha = 0; return true end,
@@ -129,6 +141,8 @@ local ns = {
     },
     Surface = {
         Attach = function(target, spec) target.surface = spec; return spec end,
+        -- The update-hook attach (Surface.Ensure) paints like Attach here.
+        Ensure = function(target, spec) target.surface = spec; return spec end,
         SetActive = function(target, active) target.active = active; return true end,
         SetVisible = function(target, shown) target.surfaceVisible = shown; return true end,
     },
@@ -148,6 +162,8 @@ for _, file in ipairs({ "AdapterKit", "SharedChrome", "PaperDollChrome", "Charac
     assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
 end
 assert(ns.CharacterPanel.Apply("blizzardWindows"))
+local function Parts(index) return ns.CharacterPanel.tabParts[tabs[index]] end
+assert(itemLevelValue.text == "612.25 / 615.50", "the skin did not format the item level")
 assert(left.surface.role == "panel" and right.surface.role == "panel"
     and leftArt.alpha == 0 and rightArt.alpha == 0 and right.StoneBg.alpha == 0,
     "Camelot panes did not receive the Forever material")
@@ -164,11 +180,11 @@ assert(character.ModeTabs.points[1][2] == character
     and character.ModeTabs.frameStrata == "HIGH"
     and character.ModeTabs.frameLevel >= 520
     and tabs[2].points[1][4] > 0
-    and tabs[2]._msufForeverLabel.shown == true
-    and tabs[2]._msufForeverLabel.text == "Reputation"
+    and Parts(2).label.shown == true
+    and Parts(2).label.text == "Reputation"
     and tabs[2].Icon.alpha == 0 and character.TitleText.alpha == 1
-    and tabs[2]._msufForeverRule.shown
-    and not tabs[1]._msufForeverRule.shown,
+    and Parts(2).rule.shown
+    and not Parts(1).rule.shown,
     "Forever tabs did not form a visible, labelled row above the content")
 assert(modelBackgrounds[1].vertex[1] == 0.36
     and modelBackgrounds[1].vertex[3] == 0.54,
@@ -183,12 +199,12 @@ character.selectedTab = 5
 hooks.SetSelectedModeTabByFrame()
 assert(currency.ScrollBox.surface.role == "panel"
     and currency.DetailFrame.surface.role == "card"
-    and tabs[5].active and tabs[5]._msufForeverRule.shown,
+    and tabs[5].active and Parts(5).rule.shown,
     "lazy native Forever currency content did not receive its skin")
 character.selectedTab = 3
 hooks.SetSelectedModeTabByFrame()
 assert(not tabs[2].active and tabs[3].active
-    and tabs[3]._msufForeverRule.shown and not tabs[2]._msufForeverRule.shown,
+    and Parts(3).rule.shown and not Parts(2).rule.shown,
     "native mode-tab change did not refresh the Forever selection")
 assert(hooks.UpdateTabLayout, "native tab layout was not observed")
 character:UpdateTabLayout()
@@ -199,7 +215,7 @@ assert(themeListener, "Forever tabs did not observe look changes")
 ns.DB.theme.look = "midnight"
 themeListener(nil, "theme", "look")
 assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
-    and tabs[2]._msufForeverLabel.shown == false
+    and Parts(2).label.shown == false
     and tabs[2].Icon.alpha == 1
     and character.ModeTabs.frameStrata == "MEDIUM"
     and character.ModeTabs.frameLevel == 0
@@ -207,7 +223,7 @@ assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
     "switching looks did not restore the native tabs")
 ns.DB.theme.look = "foreverGlass"
 themeListener(nil, "theme", "look")
-assert(tabs[2]._msufForeverLabel.shown == true and tabs[3]._msufForeverRule.shown
+assert(Parts(2).label.shown == true and Parts(3).rule.shown
     and modelBackgrounds[1].vertex[1] == 0.36,
     "reselecting Forever did not restore the tab row and backdrop")
 character.width = 398
@@ -215,12 +231,12 @@ character:UpdateTabLayout()
 hooks.UpdateTabLayout()
 assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
     and character.ModeTabs.frameStrata == "MEDIUM"
-    and tabs[2]._msufForeverLabel.shown == false,
+    and Parts(2).label.shown == false,
     "collapsed Forever panel did not fall back to accessible native side tabs")
 character.width = 646
 themeListener(nil, "profile", nil)
 assert(character.ModeTabs.frameStrata == "HIGH"
-    and tabs[2]._msufForeverLabel.shown == true,
+    and Parts(2).label.shown == true,
     "expanded Forever panel did not restore visible top tabs")
 
 -- Blizzard's PaperDoll post-hooks: a raising pass is reported and never
@@ -239,10 +255,33 @@ hooks.PaperDollItemSlotButton_Update(headSlot)
 hooks.PaperDollItemSlotButton_Update(headSlot)
 assert(#iconSpecs == specCount + 2 and iconSpecs[#iconSpecs] == iconSpecs[#iconSpecs - 1],
     "every PaperDoll slot update built a new icon spec")
+-- A stats update during combat: the stats pass waits for combat to end, the
+-- skin's stat details follow Blizzard's reassigned rows at once.
+local synced, statsPasses = {}, 0
+ns.CharacterStats.SyncDetails = function(pane) synced[#synced + 1] = pane end
+ns.CharacterStats.Apply = function() statsPasses = statsPasses + 1 end
+assert(hooks.PaperDollFrame_UpdateStats, "native stats updates were not observed")
+combatLocked = true
+hooks.PaperDollFrame_UpdateStats()
+combatLocked = false
+assert(#synced == 1 and synced[1] == CharacterStatsPane and statsPasses == 0,
+    "a stats update during combat did not sync the stat details, or ran the stats pass")
+hooks.PaperDollFrame_UpdateStats()
+assert(#synced == 1 and statsPasses == 1, "an out-of-combat stats update did not run the stats pass")
+
 assert(ns.CharacterPanel.Disable("blizzardWindows")
     and left.surfaceVisible == false and right.surfaceVisible == false
     and character.ModeTabs.points[1][3] == "TOPRIGHT"
-    and tabs[2]._msufForeverLabel.shown == false
+    and Parts(2).label.shown == false
     and modelBackgrounds[1].vertex[1] == 1,
     "disabling the character skin left its materials visible")
+assert(itemLevelValue.text == "612", "disabling the character skin did not give back Blizzard's item level")
+-- Runtime state lives in side tables, not in fields on Blizzard's frames.
+local blizzardFrames = { character, character.ModeTabs, CharacterModelScene, CharacterStatsPane }
+for _, tab in ipairs(tabs) do blizzardFrames[#blizzardFrames + 1] = tab end
+for _, frame in ipairs(blizzardFrames) do
+    for key in pairs(frame) do
+        assert(type(key) ~= "string" or not key:find("^_msuf"), "the skin wrote " .. key .. " onto a Blizzard frame")
+    end
+end
 print("Suite Forever character: Camelot panes, visible mode tabs and restore passed")

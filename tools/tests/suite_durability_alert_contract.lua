@@ -92,13 +92,15 @@ Drain()
 assert(registered.spec and registered.spec.getFrame() == M.host
     and registered.spec.pointKey == "point" and registered.spec.xKey == "x"
     and registered.spec.yKey == "y" and registered.spec.quickPosition
-    and #registered.spec.extraControls == 3,
+    and registered.spec.sizeKeys and table.concat(registered.spec.sizeKeys, ",") == "width,height,scale"
+    and not registered.spec.extraControls,
     "MSUF Edit Mode mover or size controls were not registered")
 assert(M.host.width == 250 and M.host.height == 62 and M.host.scale == 1,
     "warning default geometry was not applied")
-registered.spec.extraControls[1].set(300)
-registered.spec.extraControls[2].set(75)
-registered.spec.extraControls[3].set(125)
+-- MSUF Edit Mode's size controls write these keys through S.Set.
+S.Set("durabilityAlert", "width", 300)
+S.Set("durabilityAlert", "height", 75)
+S.Set("durabilityAlert", "scale", 125)
 assert(M.host.width == 300 and M.host.height == 75 and M.host.scale == 1.25,
     "warning popup size did not reach runtime")
 assert(M.host.point[1] == "CENTER" and M.host.point[4] == 10 and M.host.point[5] == 180,

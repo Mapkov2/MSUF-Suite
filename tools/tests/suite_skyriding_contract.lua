@@ -19,6 +19,7 @@ local function Widget(parent)
     function w:SetColorTexture(...) self.color = { ... } end
     function w:SetAlpha(value) self.alpha = value end
     function w:SetTexture(value) self.texture = value end
+    function w:SetAtlas(value) self.atlas = value end
     function w:SetAllPoints() end
     function w:SetPoint(...) self.point = { ... } end
     function w:ClearAllPoints() end
@@ -121,20 +122,19 @@ assert(module.title.font == MEDIA.font and module.speed.texture == MEDIA.barText
 assert(movers.flight and events.PLAYER_CAN_GLIDE_CHANGED and events.PLAYER_IS_GLIDING_CHANGED
     and not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
     "Grounded Skyriding registered global spell events or lost its mover")
-assert(movers.flight.quickPosition and #movers.flight.extraControls == 3
-    and movers.flight.extraControls[1].id == "width"
-    and movers.flight.extraControls[2].id == "barHeight"
-    and movers.flight.extraControls[3].id == "scale",
+assert(movers.flight.quickPosition and not movers.flight.extraControls
+    and table.concat(movers.flight.sizeKeys, ",") == "width,barHeight,scale",
     "Skyriding popup omitted coordinates, width, bar height or scale")
-movers.flight.extraControls[1].set(400)
-movers.flight.extraControls[2].set(12)
-movers.flight.extraControls[3].set(125)
+-- MSUF Edit Mode's size controls write these keys through S.Set.
+S.Set("skyriding", "width", 400)
+S.Set("skyriding", "barHeight", 12)
+S.Set("skyriding", "scale", 125)
 module:Refresh()
 assert(module.host.width == 400 and module.speed.height == 12 and module.host.scale == 1.25,
     "Skyriding popup size did not reach runtime")
-movers.flight.extraControls[1].set(350)
-movers.flight.extraControls[2].set(10)
-movers.flight.extraControls[3].set(100)
+S.Set("skyriding", "width", 350)
+S.Set("skyriding", "barHeight", 10)
+S.Set("skyriding", "scale", 100)
 module:Refresh()
 assert(not module.host:IsShown() and not module.host.OnUpdate, "Grounded HUD remained active")
 
@@ -287,7 +287,51 @@ assert(module.host:IsShown() and module.vigor.count.text == "5/6"
     and not module.host.OnUpdate, "Edit Mode preview did not render safely")
 assert(not events.SPELL_UPDATE_CHARGES and not events.SPELL_UPDATE_COOLDOWN,
     "Edit Mode preview retained global spell listeners")
+module.config.vigorDisplay, module.config.gemScale = 2, 120
+module.config.vigorHeight, module.config.windHeight, module.config.speedHeight = 14, 8, 17
+module.config.surgeAutoSize, module.config.surgeSize = false, 42
+module.config.speedTextX, module.config.speedTextY = 19, -7
+module:Refresh()
+assert(module.vigor.pips[1].gem:IsShown() and not module.vigor.pips[1]:IsShown()
+    and module.vigor.pips[1].gem.width == 50.4
+    and module.vigor.pips[1].gem.border.atlas == "dragonriding_vigor_frame",
+    "Blizzard gem variant lost its native atlas or independent scale")
+do
+    -- Unchanged gems write no atlas or alpha on the next paint.
+    local gem, atlasWrites, alphaWrites = module.vigor.pips[1].gem, 0, 0
+    local setAtlas, setAlpha, setFillAlpha = gem.fill.SetAtlas, gem.SetAlpha, gem.fill.SetAlpha
+    gem.fill.SetAtlas = function(...) atlasWrites = atlasWrites + 1; return setAtlas(...) end
+    gem.SetAlpha = function(...) alphaWrites = alphaWrites + 1; return setAlpha(...) end
+    gem.fill.SetAlpha = function(...) alphaWrites = alphaWrites + 1; return setFillAlpha(...) end
+    assert(gem.fill.atlas == "dragonriding_vigor_fillfull" or gem.fill.atlas == "dragonriding_vigor_fill",
+        "the gem fill has no atlas")
+    module:Refresh()
+    assert(atlasWrites == 0 and alphaWrites == 0, "unchanged gems rewrote their atlas or alpha")
+    gem.fill.SetAtlas, gem.SetAlpha, gem.fill.SetAlpha = setAtlas, setAlpha, setFillAlpha
+end
+assert(module.wind.pips[1].height == 8 and module.speed.height == 17
+    and module.surgeIcon.width == 42 and module.speedValue.point[4] == 19
+    and module.speedValue.point[5] == -4, "independent flight layout settings were ignored")
+module.config.vigorDisplay, module.config.surgeAutoSize = 1, true
+module:Refresh()
+assert(not module.vigor.pips[1].gem:IsShown() and module.vigor.pips[1]:IsShown()
+    and module.vigor.pips[1].height == 14 and math.abs(module.surgeIcon.width - 39.2) < .001,
+    "returning to bars retained gems or lost automatic Surge size")
+local sounds = 0
+SOUNDKIT = { UI_DRAGONRIDING_FULL_NODE = 99 }
+PlaySound = function(id) assert(id == 99); sounds = sounds + 1 end
 S.editMode = false
+flying, capable = false, true
+module.config.chargeSound = true
+charges[372610] = { currentCharges = 4, maxCharges = 6 }
+module:Refresh()
+charges[372610] = { currentCharges = 5, maxCharges = 6 }
+events.SPELL_UPDATE_CHARGES()
+events.SPELL_UPDATE_CHARGES()
+assert(sounds == 1, "Vigor refill sound duplicated or missed the native charge edge")
+charges[372610] = { currentCharges = 3, maxCharges = 6 }
+events.SPELL_UPDATE_CHARGES()
+assert(sounds == 1, "spending Vigor triggered a refill sound")
 module:Disable()
 assert(not module.host:IsShown() and not module.host.OnUpdate,
     "Disabling the module left its frame or tick active")

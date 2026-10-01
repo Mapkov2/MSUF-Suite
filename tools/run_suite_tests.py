@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
-HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua"}
+HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua"}
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
@@ -25,6 +25,7 @@ EXTRA = {
                                              str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_datatexts_security_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_load_conditions_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_actionbars_contract.lua": [[], ["native"]],
     # The locale contract reads the live extraction through the same Python.

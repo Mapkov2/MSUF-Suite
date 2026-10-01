@@ -52,8 +52,10 @@ GameTooltip = {
     Show = function() end,
     Hide = function() end,
 }
+-- One translated sentence, so a test sees text built from fragments.
+local translations = { ["More gems in your bags (%d)"] = "Weitere Edelsteine (%d)" }
 local S = {
-    Text = function(value) return value end,
+    Text = function(value) return translations[value] or value end,
     Public = function(value) return value ~= "secret" end,
     Finite = function(value) return type(value) == "number" and value == value end,
     Install = function(id, instance)
@@ -101,6 +103,7 @@ bagSlots = 11
 context.events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
 assert(module.panel.more:IsShown() and module.panel.more.text:find("(2)", 1, true),
     "additional carried gems were silently truncated")
+assert(module.panel.more.text == "Weitere Edelsteine (2)", "the extra gem hint is not one translatable sentence")
 
 combat = true
 context.events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")

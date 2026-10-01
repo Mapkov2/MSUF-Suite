@@ -77,7 +77,10 @@ local S = { editMode = false }
 S.Public = function(x) return x ~= secret end
 S.PublicText = function(x) return S.Public(x) and type(x) == "string" and x ~= "" and x or nil end
 S.Finite = function(x) return S.Public(x) and type(x) == "number" and x == x end
-S.Text = function(x) return x end
+-- German texts prove that every shown string goes through the translation.
+local GERMAN = { ["Innervate whisper cue"] = "Anregen-Flüsterhinweis", ["%s whispered"] = "%s hat geflüstert",
+    ["Incoming whisper"] = "Eingehendes Flüstern" }
+S.Text = function(x) return GERMAN[x] or x end
 S.CreateFrame = function() return Widget() end
 S.CreateTexture = function(parent) return parent:CreateTexture() end
 S.CreateFontString = function(parent) return parent:CreateFontString() end
@@ -119,11 +122,13 @@ end
 
 M:Enable()
 assert(installed.mover and installed.mover.getFrame() == M.host
-    and installed.mover.xKey == "x" and #installed.mover.extraControls == 3)
+    and installed.mover.xKey == "x" and not installed.mover.extraControls
+    and table.concat(installed.mover.sizeKeys, ",") == "width,height,scale")
 assert(not M.host.shown and M.glowAnchor == groupFrame and observer)
 assert(M.host.mouse == false and M.glow.mouse == false)
 Event("CHAT_MSG_WHISPER", secret, secret)
-assert(M.host.shown and M.glow.shown and M.subtitle.text == "Incoming whisper" and sounds == 1,
+assert(M.host.shown and M.glow.shown and M.subtitle.text == "Eingehendes Flüstern" and sounds == 1
+    and M.title.text == "Anregen-Flüsterhinweis",
     "secret whisper did not produce a generic cue on the cached target")
 assert(M.host.width == 280 and M.host.point[4] == 0)
 Fire(timers[#timers])
@@ -140,7 +145,7 @@ cooldown.startTime = now - 177
 Event("CHAT_MSG_WHISPER", "message", "Healer-Realm")
 assert(M.pending and M.readyTimer and not M.host.shown, "near-ready whisper was not deferred")
 Fire(M.readyTimer)
-assert(M.host.shown and M.subtitle.text == "Healer-Realm whispered", "fresh pending cue did not appear")
+assert(M.host.shown and M.subtitle.text == "Healer-Realm hat geflüstert", "fresh pending cue did not appear")
 
 Event("UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 29166)
 assert(not M.host.shown and not M.glow.shown and M.fallbackReady == now + 180,
@@ -149,6 +154,27 @@ cooldown = secret
 now = now + 6
 Event("CHAT_MSG_WHISPER", secret, secret)
 assert(not M.host.shown and not M.pending, "secret cooldown bypassed observed-cast fallback")
+
+-- Zone switches (S.InstanceKind): dungeons, scenarios, battlegrounds and
+-- arenas share the group switch; an unreadable instance state shows nothing.
+cooldown, M.fallbackReady = { startTime = 0, duration = 0, isEnabled = true }, nil
+for _, case in ipairs({ { "arena", "party" }, { "scenario", "party" }, { "raid", "raid" } }) do
+    inInstance, instanceType = true, case[1]
+    M.config[case[2]] = false
+    now = now + 6
+    Event("CHAT_MSG_WHISPER", "message", "Healer-Realm")
+    assert(not M.host.shown, case[1] .. " ignored its switch")
+    M.config[case[2]] = true
+    now = now + 6
+    Event("CHAT_MSG_WHISPER", "message", "Healer-Realm")
+    assert(M.host.shown, case[1] .. " did not show the cue")
+    Fire(timers[#timers])
+end
+inInstance = secret
+now = now + 6
+Event("CHAT_MSG_WHISPER", "message", "Healer-Realm")
+assert(not M.host.shown, "an unreadable instance state showed the cue")
+inInstance, instanceType = false, "none"
 
 locked = true
 Event("GROUP_ROSTER_UPDATE")

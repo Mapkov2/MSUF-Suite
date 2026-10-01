@@ -62,6 +62,7 @@ C_AddOns = {
     end,
 }
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
+assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", Suite)
 for _, id in ipairs({ "cursorEffects", "mapLandingShortcuts",
     "combatStatsHUD", "combatPetStatus", "combatMovementCue", "burningRushCue",
     "loadoutReminder", "lootToastFilter", "groupBloodlust", "innervateCue",
@@ -136,6 +137,24 @@ for _, oldY in ipairs({ 148, 1040 }) do
         and oldXP.suite.modules.xpBar.y == -24,
         "old Suite or Forever XP placement remained at the bottom")
 end
+-- Bags: profiles saved before the Suite inventory views keep Blizzard's grid;
+-- a chosen view and new profiles are left alone.
+do
+    local oldBags = { suite = { schema = 1, bagsLookRevision = 1, modules = { bags = { enabled = true, look = 2 } } } }
+    Suite.Suite.Normalize(oldBags)
+    assert(oldBags.suite.modules.bags.inventoryView == 4,
+        "an existing Bags profile was switched from Blizzard's grid to a Suite view")
+    local chosen = { suite = { schema = 1, revision = 18, modules = { bags = { enabled = true, inventoryView = 3 } } } }
+    Suite.Suite.Normalize(chosen)
+    assert(chosen.suite.modules.bags.inventoryView == 3, "a chosen Suite inventory view was overwritten")
+    local fresh = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision, modules = {} } }
+    Suite.Suite.Normalize(fresh)
+    assert(fresh.suite.modules.bags.inventoryView == 1 and Suite.Defaults.suite.modules.bags.inventoryView == 1,
+        "new profiles must start with the All items view")
+    oldBags.suite.modules.bags.inventoryView = 2
+    Suite.Suite.Normalize(oldBags)
+    assert(oldBags.suite.modules.bags.inventoryView == 2, "the Blizzard grid migration must run only once")
+end
 assert(Suite.Defaults.suite.modules.announcements.anchor == 1
     and Suite.Defaults.suite.modules.announcements.y == -90
     and Suite.Defaults.suite.modules.objectives.x == -35
@@ -158,6 +177,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "groupBloodlust" and id ~= "lootContainers"
         and id ~= "cursorEffects"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower"
+        and id ~= "enemyCastStack" and id ~= "dungeonPortals" and id ~= "targetDistance"
         and id ~= "mythicResetReminder" and id ~= "combatPetStatus"
         and id ~= "lootVendorRules" and id ~= "mapLandingShortcuts"
         and id ~= "socketGemSuggestions" and id ~= "tooltipSpellCopy"
@@ -167,6 +187,8 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "guildChatPrivacy" and id ~= "groupFinderExitReminder"
         and id ~= "groupRaidShortcuts" and id ~= "trainerLearnAll"
         and id ~= "characterUpgradeWindow" and id ~= "lootToastFilter"
+        and id ~= "threatMeter" and id ~= "flightTimer" and id ~= "characterExtras"
+        and id ~= "merchantList" and id ~= "tooltipDetails" and id ~= "popupAttention" and id ~= "partyEffects"
         and id ~= "combatMovementCue" and id ~= "professionAppearance"
         and id ~= "trustedPartyInvites" and id ~= "burningRushCue"),
         id .. " factory enable state is wrong")

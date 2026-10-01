@@ -13,7 +13,13 @@ local combat, grouped, queueLoss = false, false, false
 local ns = {
     IsCombatLocked = function() return combat end,
     Safety = { IsForbidden = function() return false end },
+    Finish = function(callback, ...) return true, callback(...) end,
 }
+-- securecallfunction: an error is reported and the call returns nothing.
+suite.Dispatch = function(fn, ...)
+    local results = { pcall(fn, ...) }
+    if results[1] then return unpack(results, 2) end
+end
 local relations = { bnet = "bnfriend", wow = "wowfriend", guild = "guild", club = "club" }
 SocialQueueUtil_GetRelationshipInfo = function(guid)
     return "Name", "", relations[guid]

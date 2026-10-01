@@ -33,7 +33,10 @@ end
 UIParent = Widget()
 GetTime = function() return 25 end
 GetInstanceInfo = function() return "Test", instanceType end
-IsEncounterInProgress = function() return encounter end
+-- The deprecated global exists only while loadDeprecationFallbacks is on;
+-- the module must use the namespaced API.
+IsEncounterInProgress = nil
+C_InstanceEncounter = { IsEncounterInProgress = function() return encounter end }
 C_ChallengeMode = { IsChallengeModeActive = function() return challenge end }
 C_Spell = {
     GetSpellTexture = function(id) assert(id == 20484); return 123 end,
@@ -114,11 +117,13 @@ assert(M.host.mouse == false and M.cooldown.hideNumbers == false and M.cooldown.
 assert(installed.mover and installed.mover.getFrame() == M.host
     and installed.mover.xKey == "x" and installed.mover.yKey == "y"
     and installed.mover.pointKey == "point" and installed.mover.quickPosition
-    and #installed.mover.extraControls == 3, "Edit Mode mover or size controls are missing")
+    and installed.mover.sizeKeys and table.concat(installed.mover.sizeKeys, ",") == "width,height,scale"
+    and not installed.mover.extraControls, "Edit Mode mover or size controls are missing")
 assert(M.host.width == 146 and M.host.height == 44 and M.host.scale == 1)
-installed.mover.extraControls[1].set(200)
-installed.mover.extraControls[2].set(60)
-installed.mover.extraControls[3].set(125)
+-- MSUF Edit Mode's size controls write these keys through S.Set.
+S.Set("battleRes", "width", 200)
+S.Set("battleRes", "height", 60)
+S.Set("battleRes", "scale", 125)
 assert(M.host.width == 200 and M.host.height == 60 and M.host.scale == 1.25
     and M.cooldown.duration == nil,
     "battle resurrection popup size did not reach its frame safely")

@@ -1,6 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local secret, events, timers = {}, {}, {}
 local now, reads = 100, 0
+local combat, instanceType, delve = false, "none", false
 
 local function Widget(parent, fontString)
     local w = { shown = true, parent = parent, fontString = fontString }
@@ -29,11 +30,29 @@ local function Widget(parent, fontString)
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetShown(value) self.shown = value end
+    function w:CreateAnimationGroup()
+        local group = { plays = 0 }
+        function group:CreateAnimation(kind)
+            local a = { kind = kind }
+            function a:SetFromAlpha() end
+            function a:SetToAlpha() end
+            function a:SetDuration() end
+            function a:SetScaleFrom() end
+            function a:SetScaleTo() end
+            function a:SetOrigin() end
+            return a
+        end
+        function group:Stop() self.stopped = true end
+        function group:Play() self.stopped = false; self.plays = self.plays + 1 end
+        return group
+    end
     return w
 end
 
 UIParent = Widget()
 GetTime = function() return now end
+GetInstanceInfo = function() return "Instance", instanceType end
+C_DelvesUI = { HasActiveDelve = function() return delve end }
 C_Spell = { GetSpellInfo = function(id)
     reads = reads + 1
     if id == 66 then return { name = secret, iconID = 66 } end
@@ -80,7 +99,10 @@ S.Set = function(_, key, value)
     return true
 end
 
-local NS = { AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER" } }
+local NS = { AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER" },
+    IsCombatLocked = function() return combat end }
+NS.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
+    function() return combat end)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ActionTracker.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local M = assert(module)
@@ -91,13 +113,21 @@ M.config = { rows = 5, width = 210, rowHeight = 31, rowGap = 2, scale = 100,
     point = 5, x = 0, y = -40, panelColor = "171316", panelOpacity = 88,
     borderColor = "563938", accentColor = "d4a64c", textColor = "f2eeea" }
 M.context = { Event = function(_, event, callback, allowCombat, unit)
-    assert(event == "UNIT_SPELLCAST_SUCCEEDED" and allowCombat and unit == "player")
-    events.cast = callback
+    assert(allowCombat)
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        assert(unit == "player")
+        events.cast = callback
+    else events[event] = callback end
+end, RemoveEvent = function(_, event)
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then events.cast = nil else events[event] = nil end
 end }
 M:Enable()
 assert(reads == 0 and not M.host.shown and M.host.mouse == false,
     "disabled history did startup spell work or intercepted input")
-assert(mover and mover.getFrame() == M.host and #mover.extraControls == 3,
+-- MSUF Edit Mode builds the size controls from these catalog rules.
+local size = mover and mover.sizeKeys
+assert(mover and mover.getFrame() == M.host and size and size[1] == "width" and size[2] == "rowHeight"
+    and size[3] == "scale" and #size == 3 and not mover.extraControls,
     "Edit Mode position and size controls are missing")
 assert(M.host.width == 210 and M.host.height == 163 and M.host.scale == 1,
     "default stack geometry is wrong")
@@ -155,6 +185,65 @@ now = now + 120
 M:Refresh()
 assert(M.host.shown and M.rows[1].name.text == "Spell 10" and #timers == timerCount,
     "persistent history scheduled a timer or disappeared")
+
+M.config.hideAfter, M.config.pauseInCombat = 15, true
+M:Refresh()
+Cast(11)
+now = now + 5
+-- The client sends PLAYER_REGEN_DISABLED before InCombatLockdown() turns true.
+events.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+combat = true
+assert(timers[#timers].cancelled and M.pausedAt == now,
+    "combat entry did not freeze the remaining timeout")
+now = now + 60
+combat = false
+events.PLAYER_REGEN_ENABLED(M, "PLAYER_REGEN_ENABLED")
+assert(timers[#timers].delay == 10 and not M.pausedAt,
+    "combat exit reset the timeout instead of resuming its remainder")
+events.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+combat = true
+now = now + 3
+Cast(12)
+now = now + 20
+combat = false
+events.PLAYER_REGEN_ENABLED(M, "PLAYER_REGEN_ENABLED")
+assert(timers[#timers].delay == 15, "a new combat cast lost part of its timeout")
+
+M.config.showWorld = false
+M:Refresh()
+assert(not M.host.shown and not events.cast, "excluded world context kept the cast listener")
+instanceType = "party"
+events.ZONE_CHANGED_NEW_AREA(M)
+assert(M.host.shown and events.cast, "eligible dungeon did not restore history")
+M.config.showDelves = false
+delve = true
+events.ZONE_CHANGED_NEW_AREA(M)
+assert(not M.host.shown and not events.cast, "a delve inherited the dungeon toggle")
+delve = false
+events.ZONE_CHANGED_NEW_AREA(M)
+
+M.config.displayPreset, M.config.growth = 2, 3
+M:Refresh()
+assert(M.host.width == 208 and M.host.height == 40 and M.rows[2].frame.point[4] == 42,
+    "horizontal icon history used vertical geometry")
+M.config.growth = 4
+M:Refresh()
+assert(M.rows[2].frame.point[1] == "TOPRIGHT" and M.rows[2].frame.point[4] == -42,
+    "left-growing history positioned its rows incorrectly")
+M.config.displayPreset, M.config.growth, M.config.showHeader = 1, 1, true
+M:Refresh()
+assert(M.host.height == 230 and M.header.shown and M.header.text == "Recent spells",
+    "optional header did not expand the named history window")
+M.config.insertAnimation = 2
+Cast(13)
+local fade = M.rows[1].fade
+assert(fade and fade.plays == 1, "fade insertion did not use a native animation")
+Cast(14)
+assert(M.rows[1].fade == fade and fade.plays == 2, "insert animations were not reused")
+M.config.insertAnimation = 3
+Cast(15)
+assert(M.rows[1].pop and M.rows[1].pop.plays == 1 and fade.stopped,
+    "switching insertion animations left the previous animation running")
 M:Disable()
 M.active = false
 assert(not M.host.shown and #M.history == 0, "disable retained visible or recorded actions")

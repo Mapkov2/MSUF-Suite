@@ -20,6 +20,8 @@ local suite = {
     Print = function(value) lines[#lines + 1] = value end,
 }
 local ns = { IsCombatLocked = function() return combat end }
+ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
+    function() return combat end)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
@@ -27,8 +29,10 @@ module.active, module.context, module.config = true, context, { includePlayer = 
 module:Enable()
 assert(not context.events.UNIT_HEALTH and context.events.GROUP_ROSTER_UPDATE,
     "group health must not be observed while idle")
-grouped, combat, members.party1 = true, true, false
-context.events.PLAYER_REGEN_DISABLED.callback(module)
+grouped, members.party1 = true, false
+-- PLAYER_REGEN_DISABLED arrives before InCombatLockdown() turns true.
+context.events.PLAYER_REGEN_DISABLED.callback(module, "PLAYER_REGEN_DISABLED")
+combat = true
 assert(context.events.UNIT_HEALTH and context.events.UNIT_FLAGS,
     "group health events were not registered on combat entry")
 members.party1 = true
@@ -36,7 +40,7 @@ context.events.UNIT_HEALTH.callback(module, "UNIT_HEALTH", "party1")
 context.events.UNIT_FLAGS.callback(module, "UNIT_FLAGS", "party1")
 assert(#lines == 1 and lines[1] == "Alice died", "one death was not reported exactly once")
 combat = false
-context.events.PLAYER_REGEN_ENABLED.callback(module)
+context.events.PLAYER_REGEN_ENABLED.callback(module, "PLAYER_REGEN_ENABLED")
 assert(not context.events.UNIT_HEALTH and not context.events.UNIT_FLAGS,
     "group health events remained registered after combat")
 module:Disable()

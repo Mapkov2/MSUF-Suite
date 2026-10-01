@@ -122,6 +122,9 @@ end }
 
 local adapterPasses = 0
 local NS = {
+    -- The skin's locale table (Locales/Localization.lua) is ready before
+    -- any of this runs; here every key reads as itself.
+    L = setmetatable({}, { __index = function(_, key) return key end }),
     DB = { enabled = true, skins = { blizzardWindows = true },
         windowControls = { enabled = true, scales = {}, positions = {} } },
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
