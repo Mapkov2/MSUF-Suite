@@ -51,16 +51,17 @@ function B.Style(icon, view)
     -- charge segments shade what is stored here).
     local r, g, b
     if view.barClass then r, g, b = K.ClassRGB() end
-    if not r then r, g, b = view.barR or 1, view.barG or .72, view.barB or .34 end
+    local fill = K.BAR_RGB
+    if not r then r, g, b = view.barR or fill[1], view.barG or fill[2], view.barB or fill[3] end
     bar:SetStatusBarColor(r, g, b)
     bar.r, bar.g, bar.b, bar.texture = r, g, b, texture
     bar.innerWidth, bar.innerHeight = icon.w - (shown and h + 2 or 0) - inset * 2, h - inset * 2
     bar.chargeSegments, bar.chargeDim = view.barChargeSegments == true, view.barChargeDim ~= false
     bar.segmentStyle = nil
-    bar.bg:SetColorTexture(0, 0, 0, (view.barBgAlpha or 55) / 100)
+    bar.bg:SetColorTexture(0, 0, 0, (view.barBgAlpha or K.BAR_BG_ALPHA) / 100)
     bar.direction = view.barFill == 2 and Enum.StatusBarTimerDirection.ElapsedTime or Enum.StatusBarTimerDirection.RemainingTime
     local label = bar.name
-    S.SetStyledFont(label, C.state.font, math.max(8, math.floor(h * .55)), C.state.fontFlags,
+    S.SetStyledFont(label, C.state.font, K.TextSize(nil, K.FONT.barText, h), C.state.fontFlags,
         C.state.fontRendering, C.state.fontShadow, C.state.fontShadowOpacity, C.state.fontShadowDistance)
     label:ClearAllPoints()
     label:SetPoint("LEFT", bar, "LEFT", 4, 0)

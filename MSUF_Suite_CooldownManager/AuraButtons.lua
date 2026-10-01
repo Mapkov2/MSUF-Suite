@@ -43,8 +43,6 @@ local IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 -- barFill 1 drains, 2 fills.
 local BAR_OPTS = { { direction = TIMER.RemainingTime, interpolation = IMMEDIATE },
     { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
-local ROUND = Enum.NumericRuleFormatRounding
-local UP, DOWN = ROUND.Up, ROUND.Down
 local GOLD = K.GLOW_GOLD
 local BAR_LEVEL, ICON_LEVEL = K.AURA_LEVEL, K.AURA_ICON_LEVEL
 local PANDEMIC = { 1, .3, .15 }
@@ -56,7 +54,7 @@ local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font
 local NO_MARKS = {}
 
 local sig = {}
-local textOpts = {}
+local textOpts = {} -- duration text options per countdown formatter
 local countOpts = {} -- stack text options per (N, color)
 local barOpts = {}   -- SetApplicationBar options (Blizzard copies them)
 local sensed = {}    -- kit sensor frame -> its button record
@@ -70,29 +68,14 @@ local Edges, NewGlow, NewStack, BindStack = Glows.Edges, Glows.NewGlow, Glows.Ne
 local ApplyGlow, ApplyStack, ApplyCombatGate = Glows.ApplyGlow, Glows.ApplyStack, Glows.ApplyCombatGate
 
 -- Duration text options per (threshold, warning color): a binding template
--- that Blizzard copies into each button. The fallbacks must ride on the
--- binding, and without a formatter on it no text renders at all.
+-- that Blizzard copies into each button, around the shared countdown
+-- formatter (Const). The fallbacks must ride on the binding, and without a
+-- formatter on it no text renders at all.
 local function TextOpts(seconds)
     local state = C.state
-    if type(seconds) ~= "number" or seconds <= 0 then
-        seconds = 0
-    else
-        seconds = floor(seconds + .5)
-    end
-    local R, G, B = 0, 0, 0
-    if seconds > 0 then R, G, B = floor((state.thR or 1) * 255 + .5), floor((state.thG or 1) * 255 + .5), floor((state.thB or 1) * 255 + .5) end
-    local key = seconds * 16777216 + R * 65536 + G * 256 + B
-    local opts = textOpts[key]
+    local formatter = K.CountdownFormatter(seconds, state.thR, state.thG, state.thB)
+    local opts = textOpts[formatter]
     if opts then return opts end
-    local points = { { threshold = 0, format = "%.0f", rounding = UP } }
-    if seconds > 0 then
-        points[1].format = ("|cff%02x%02x%02x%%.0f|r"):format(R, G, B)
-        points[2] = { threshold = seconds, format = "%.0f", rounding = UP }
-    end
-    points[#points + 1] = { threshold = 60, format = "%d:%02d", rounding = DOWN, components = { { div = 60, rounding = DOWN }, { mod = 60, rounding = DOWN } } }
-    points[#points + 1] = { threshold = 3600, format = "%dh", rounding = DOWN, components = { { div = 3600, rounding = DOWN } } }
-    local formatter = C_StringUtil.CreateNumericRuleFormatter()
-    formatter:SetBreakpoints(points)
     local binding = C_DurationUtil.CreateDurationTextBinding()
     binding:SetFormatter(formatter)
     binding:SetZeroDurationText("")
@@ -100,7 +83,7 @@ local function TextOpts(seconds)
     binding:SetUpdateInterval(.1)
     binding:SetEnabled(true)
     opts = { binding = binding }
-    textOpts[key] = opts
+    textOpts[formatter] = opts
     return opts
 end
 
@@ -154,24 +137,24 @@ local function Look(rec, view)
     lk.font, lk.flags = state.font, state.fontFlags
     lk.rendering, lk.shadow, lk.shadowOpacity, lk.shadowDistance =
         state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance
-    local cs, ss = view.cdSize or 0, view.stackSize or 0
-    if cs <= 0 then cs = bar and max(9, floor(h * .55)) or max(10, floor(h * .38)) end
-    if ss <= 0 then ss = bar and max(8, floor(h * .45)) or max(9, floor(h * .3)) end
-    lk.cs, lk.ss = cs, ss
+    local font = K.FONT
+    lk.cs = K.TextSize(view.cdSize, bar and font.barText or font.countdown, h)
+    lk.ss = K.TextSize(view.stackSize, bar and font.barStacks or font.stacks, h)
     local pos = view.stackPos
     lk.sp = (pos and K.POINTS[pos]) and pos or 9
     lk.cr, lk.cg, lk.cb = state.cdR or 1, state.cdG or 1, state.cdB or 1
     lk.sr, lk.sg, lk.sb = state.stackR or 1, state.stackG or 1, state.stackB or 1
-    lk.swipe = (view.swipeAlpha or 60) / 100
+    lk.swipe = (view.swipeAlpha or K.SWIPE_ALPHA) / 100
     lk.edge = view.edge == true
     lk.tip = view.tooltips == true
     if bar then
         lk.tex = S.ResolveTexture(view.barTexture, BAR_TEXTURE)
         r, g, b = nil, nil, nil
         if view.barClass ~= false then r, g, b = ClassRGB() end
-        if not r then r, g, b = view.barR or .91, view.barG or .72, view.barB or .33 end
+        local fill = K.BAR_RGB
+        if not r then r, g, b = view.barR or fill[1], view.barG or fill[2], view.barB or fill[3] end
         lk.fr, lk.fg, lk.fb = r, g, b
-        lk.bgA = (view.barBgAlpha or 55) / 100
+        lk.bgA = (view.barBgAlpha or K.BAR_BG_ALPHA) / 100
         lk.icon = view.barIcon ~= false
         lk.side = view.barIconSide == 2 and 2 or 1
         -- Stack fill maximum and markers are looks, not region sets: a new

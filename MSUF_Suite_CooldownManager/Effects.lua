@@ -96,7 +96,7 @@ function E.Recommendation()
         frame.layTexture = texture
         frame.tex:SetTexture(texture)
     end
-    local fontSize = math.max(9, math.floor(size * .26))
+    local fontSize = K.TextSize(nil, K.FONT.keybind, size)
     if frame.layFontSize ~= fontSize or frame.layText ~= state.textGen then
         frame.layFontSize, frame.layText = fontSize, state.textGen
         S.SetStyledFont(frame.key, state.font, fontSize, state.fontFlags,
@@ -173,12 +173,7 @@ end
 
 -- Style and color for an entry: per-spell choices first, then the bar.
 local function GlowSpec(entry, view)
-    local ov = entry and entry.ov or EMPTY
-    local style = ov.glowStyle or view.glowStyle or 1
-    if not K.GLOW[style] then style = 1 end
-    if ov.glowColor then return style, K.HexRGB(ov.glowColor) end
-    if view.glowTint then return style, view.glowR or 1, view.glowG or 1, view.glowB or 1 end
-    return style
+    return K.GlowSpec(entry and entry.ov or EMPTY, view.glowStyle, view.glowTint, view.glowR, view.glowG, view.glowB)
 end
 
 -- The painted look (atlas or edges, size, tint) stays on the glow frame

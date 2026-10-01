@@ -2356,7 +2356,8 @@ assert(runtime.previewOn == false and runtime.simulate == false and runtime.rele
 -- drawn (capped), their regions, entry keys and dim flags (unlearned or
 -- sample), for icons and buff bar rows alike.
 do
-    local C = { EMPTY = {}, plans = {}, state = {}, entries = {}, spells = { e = {} }, views = {} }
+    local C = { EMPTY = {}, plans = {}, state = {}, entries = {}, spells = { e = {} }, views = {},
+        Const = { QUESTION_ICON = 134400 } }
     -- The runtime's one choice accessor (Resolve.lua): shared choices with
     -- the current specialization's on top.
     C.Choices = function() return CDM.EffectiveSpells(C.spells, C.state.specID) end

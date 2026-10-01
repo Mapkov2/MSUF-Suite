@@ -5,10 +5,12 @@ local C = P.CDM
 -- and their flipbook animations, step curves for desaturation and cooldown
 -- opacity (cached per value pair), pixel snapping, the 9-point anchor table,
 -- tint colors, the hardcoded spell-category icons, the icon crop, the class
--- color, the per-spell choice rules and the growth-edge offset.
+-- color, the per-spell choice rules, the growth-edge offset, automatic text
+-- sizes, the countdown formatter and the fallbacks several layers share.
 local K = {}
 C.Const = K
 local floor, max = math.floor, math.max
+local type = type
 
 -- The GCD's recovery category (133 on every client).
 K.GCD_CATEGORY = Constants.SpellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
@@ -16,6 +18,21 @@ K.QUESTION_ICON = 134400
 -- Catalog choice "Frame layer" and the default bar texture.
 K.STRATA = { "BACKGROUND", "LOW", "MEDIUM", "HIGH" }
 K.BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+K.WHITE = "Interface\\Buttons\\WHITE8X8"
+
+------------------------------------------------------------------ fallbacks
+-- A view read from the settings carries every value of its bar; these
+-- apply only where one is absent (stand-in views such as the options
+-- canvas). Each was copied in several layers before, and two drifted.
+-- Swipe opacity in percent: the catalog default of every cooldown bar and
+-- every custom bar, whatever its kind (the built-in Buffs and Buff bars
+-- carry their own 60 in the catalog, which reaches their views). The aura
+-- buttons fell back to 60, the cooldown icons to 70.
+K.SWIPE_ALPHA = 70
+-- Bar fill: the Retail catalog default ("e8b855"); the cooldown timer bars
+-- fell back to a drifted 1, .72, .34. Background opacity in percent.
+K.BAR_RGB = { .91, .72, .33 }
+K.BAR_BG_ALPHA = 55
 
 -- Blizzard's viewers use these file paths for bag-item categories (potions,
 -- healthstones); the space in the Warlock paths is part of the file name.
@@ -81,6 +98,59 @@ function K.BarStacksTop(view) return view.textTop ~= 2 end
 K.TINT = { { 1, 1, 1 }, { .5, .5, 1 }, { .4, .4, .4 } }
 K.GLOW_GOLD = { 1, .82, 0 }
 
+------------------------------------------------------------------ text sizes
+-- A size setting of 0 means automatic: this share of the icon or bar
+-- height, never below the floor. Cooldown and buff icons share the icon
+-- specs, buff bars and cooldown timer bars the bar one. The floors that
+-- drifted take what the bars show by default: buff bar text 9 (cooldown
+-- timer bars, off by default, used 8), keybinds 8 (the assisted icon used
+-- 9, which its default size of 48 never reaches).
+K.FONT = {
+    countdown = { share = .38, floor = 10 },
+    stacks = { share = .3, floor = 9 },
+    keybind = { share = .26, floor = 8 },
+    barText = { share = .55, floor = 9 },
+    barStacks = { share = .45, floor = 8 },
+}
+function K.TextSize(setting, spec, height)
+    if type(setting) == "number" and setting > 0 then return setting end
+    return max(spec.floor, floor(height * spec.share))
+end
+
+------------------------------------------------------------------ countdown
+-- One countdown formatter per (warning seconds, warning color): whole
+-- seconds (below the threshold in the warning color), m:ss from a minute,
+-- hours from an hour. No threshold: plain seconds. Shared by the cooldown
+-- swipes (SetCountdownFormatter) and the aura buttons' duration text
+-- bindings, built on first use and kept.
+local countdowns = {}
+function K.CountdownFormatter(seconds, r, g, b)
+    if type(seconds) ~= "number" or seconds <= 0 then
+        seconds = 0
+    else
+        seconds = floor(seconds + .5)
+    end
+    local R, G, B = 0, 0, 0
+    if seconds > 0 then R, G, B = floor((r or 1) * 255 + .5), floor((g or 1) * 255 + .5), floor((b or 1) * 255 + .5) end
+    local key = seconds * 16777216 + R * 65536 + G * 256 + B
+    local formatter = countdowns[key]
+    if formatter then return formatter end
+    local rounding = Enum.NumericRuleFormatRounding
+    local up, down = rounding.Up, rounding.Down
+    local points = { { threshold = 0, format = "%.0f", rounding = up } }
+    if seconds > 0 then
+        points[1].format = ("|cff%02x%02x%02x%%.0f|r"):format(R, G, B)
+        points[2] = { threshold = seconds, format = "%.0f", rounding = up }
+    end
+    points[#points + 1] = { threshold = 60, format = "%d:%02d", rounding = down,
+        components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } }
+    points[#points + 1] = { threshold = 3600, format = "%dh", rounding = down, components = { { div = 3600, rounding = down } } }
+    formatter = C_StringUtil.CreateNumericRuleFormatter()
+    formatter:SetBreakpoints(points)
+    countdowns[key] = formatter
+    return formatter
+end
+
 ------------------------------------------------------------------ glows
 -- 1 Blizzard alert and 2 marching ants are 6x5 flipbooks (30 frames, 1 s
 -- loop) scaled around the icon; 3 pulses a border, 4 is a static border.
@@ -91,6 +161,17 @@ K.GLOW = {
     { edge = 2 },
 }
 K.ASSIST_STYLE = 2
+
+-- Style and color of an entry's glows: its per-spell choices (ov) first,
+-- then the bar's style and tint. No color: the art's own gold.
+function K.GlowSpec(ov, style, tint, r, g, b)
+    style = ov.glowStyle or style
+    if not K.GLOW[style] then style = 1 end
+    local hex = ov.glowColor
+    if hex then return style, K.HexRGB(hex) end
+    if tint then return style, r or 1, g or 1, b or 1 end
+    return style
+end
 
 -- One looping FlipBook group per texture; the group only runs while played.
 function K.FlipBook(texture, style)
@@ -162,7 +243,9 @@ function K.Pixels(count) return count * K.Px() end
 
 -- Icon footprint in UI units, snapped to whole physical pixels.
 function K.IconSize(view)
-    if view.kind == 1 and view.cooldownDuration then return K.Snap(view.barWidth or 200), K.Snap(view.barHeight or 18) end
+    if view.kind == 1 and view.cooldownDuration then
+        return K.Snap(view.barWidth or 200), K.Snap(view.barHeight or 18)
+    end
     local px = K.Px()
     local size = view.size or 36
     local w = max(px, K.Snap(size))

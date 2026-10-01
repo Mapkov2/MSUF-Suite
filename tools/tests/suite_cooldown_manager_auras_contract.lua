@@ -1356,7 +1356,7 @@ assert(Live("buf","player")==compactP,"re-enable reuses the pool")
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         local L2=C2.Layout
@@ -1393,7 +1393,7 @@ end
 -- the rule and against the real Extent from Exports.lua.
 do
     local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua"))
-    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,
         Visibility={Paint=function() end}}
     chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     local L2=Cx.Layout
@@ -1704,7 +1704,7 @@ assert(#bt.points==1 and bt.points[1][1]=="TOP" and bt.points[1][2]==c2Host and 
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         C3.Layout.Apply("c2")

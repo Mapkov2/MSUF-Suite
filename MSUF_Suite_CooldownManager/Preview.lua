@@ -8,16 +8,16 @@ local C = P.CDM
 -- simulation: an 8 s cooldown on the first icon of each bar, a proc glow on
 -- the second and a buff glow on the third, from duration objects built out
 -- of plain numbers. The simulation runs only while the page is open and out
--- of combat; its one ticker exists only while it runs. This file keeps its
--- own small constants; at load it reads only C.EMPTY and C.Layout.Shown
--- (Layout.lua loads first), so the options contract loads it with a stub
--- CDM table that has both.
+-- of combat; its one ticker exists only while it runs. At load it reads
+-- only C.EMPTY, C.Const.QUESTION_ICON and C.Layout.Shown (Const.lua and
+-- Layout.lua load first), so the options contract loads it with a stub
+-- CDM table that has those.
 local Pv = { mode = nil, sim = false }
 C.Preview = Pv
 local EMPTY = C.EMPTY
 local pairs, type, max, min = pairs, type, math.max, math.min
 local wipe = table.wipe
-local QUESTION = 134400
+local QUESTION = C.Const.QUESTION_ICON
 local SIM_LENGTH, SIM_LOOP = 8, 10
 
 ------------------------------------------------------------------ sample icons

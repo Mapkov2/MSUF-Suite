@@ -31,7 +31,7 @@ for i = 1, #GLOW do
     local scale = GLOW[i].scale
     if scale and scale > REACH then REACH = scale end
 end
-local STACK_TEXTURE = "Interface\\Buttons\\WHITE8X8"
+local STACK_TEXTURE = K.WHITE
 local barOpts = {} -- SetApplicationBar options (Blizzard copies them)
 
 ------------------------------------------------------------------ edges
@@ -189,12 +189,7 @@ end
 -- Style and color of an entry's aura glows: per-spell choices first, then
 -- the bar's (Build copies them to the record).
 local function GlowSpec(rec, ov)
-    local style = ov.glowStyle or rec.gStyle
-    if not GLOW[style] then style = 1 end
-    local hex = ov.glowColor
-    if hex then return style, K.HexRGB(hex) end
-    if rec.gTint then return style, rec.gR, rec.gG, rec.gB end
-    return style
+    return K.GlowSpec(ov, rec.gStyle, rec.gTint, rec.gR, rec.gG, rec.gB)
 end
 
 -- Stack glow, built in initializeFrame. A gate that clips its children,

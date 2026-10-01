@@ -54,7 +54,7 @@ end
 
 local KIND_FAMILY = { 1, 2, 2 }
 local SOURCE_FAMILY = { s = 1, i = 1, e = 1, a = 2, d = 2 }
-local PLACEHOLDER_TEXTURE, PLACEHOLDER_COUNT = 134400, 3
+local PLACEHOLDER_TEXTURE, PLACEHOLDER_COUNT = C.Const.QUESTION_ICON, 3
 local placeholderKeys = {}
 for i = 1, #SLOTS do
     local slot, keys = SLOTS[i].key, {}

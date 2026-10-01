@@ -13,7 +13,7 @@ C.Layout = L
 local SLOTS = NS.CDM.SLOTS
 local Public = S.Public
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
-local STRATA = { "BACKGROUND", "LOW", "MEDIUM", "HIGH" }
+local STRATA = C.Const.STRATA
 -- Attach sides (Below, Above, Left, Right) x alignment along that edge
 -- (Center, Start, End): own point, target point; gap sign per side.
 local ATTACH = {

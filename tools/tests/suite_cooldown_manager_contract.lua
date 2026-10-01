@@ -126,6 +126,19 @@ do
         assert(not Read(root.."/"..ADDON.."/"..file):find("readyResources",1,true),
             file.." repeats the usable visibility rule (Effects.UsableShown)")
     end
+    -- Constants the render layers share live in Const.lua only: the swipe
+    -- fallback, the automatic text sizes, the countdown formatter, the glow
+    -- spec, the question-mark icon, the frame layers, the plain white
+    -- texture and the bar fill fallbacks.
+    for _,file in ipairs(ORDER) do
+        if file~="Const.lua" then
+            local text=Read(root.."/"..ADDON.."/"..file)
+            for _,copy in ipairs({"swipeAlpha or %d","%* %.38","%* %.3%)","%* %.26","%* %.55","%* %.45","134400",
+                "\"BACKGROUND\", \"LOW\"","%%d:%%02d","WHITE8X8","barBgAlpha or %d","barR or [%d.]","ov%.glowStyle or "}) do
+                assert(not text:find(copy),file.." keeps its own copy of a shared constant ("..copy..")")
+            end
+        end
+    end
     for _,file in ipairs(ORDER) do
         local text=Read(root.."/"..ADDON.."/"..file)
         local n=0

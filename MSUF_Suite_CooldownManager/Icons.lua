@@ -14,8 +14,9 @@ local floor, max = math.floor, math.max
 local EMPTY = C.EMPTY
 local pools = {}
 local owner = {}
-local formatters = {}
 local syncGen = 0
+local FONT, TextSize = K.FONT, K.TextSize
+local SWIPE_ALPHA = K.SWIPE_ALPHA
 
 ------------------------------------------------------------------ scripts
 -- Prebuilt handlers shared by every icon; the icon is looked up, never captured.
@@ -120,7 +121,7 @@ function I.StyleCharge(icon)
     local edge = ov.chargeEdge
     if edge == nil then edge = view.chargeEdge end
     cooldown:SetDrawEdge(edge ~= false)
-    cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or 70) / 100)
+    cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or SWIPE_ALPHA) / 100)
 end
 
 function I.ChargeCooldown(icon)
@@ -184,8 +185,7 @@ local function StyleKey(icon, view)
     local key = icon.keyText
     if not key then return end
     local state = C.state
-    local size = view.keybindSize or 0
-    if size <= 0 then size = max(8, floor((icon.h or 36) * .26)) end
+    local size = TextSize(view.keybindSize, FONT.keybind, icon.h or 36)
     Font(key, size, state.keyR, state.keyG, state.keyB)
     PlaceText(key, icon, view.keybindPos or 3, K.Pixels(1) + (icon.border or 0))
     key:SetShown(view.keybind == true)
@@ -244,17 +244,13 @@ function I.StyleIcon(icon, view, width, height)
     tex:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -border, border)
     tex:SetTexCoord(K.Crop(view.zoom, w - 2 * border, h - 2 * border))
     local cooldown = icon.cd
-    cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or 70) / 100)
+    cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or SWIPE_ALPHA) / 100)
     cooldown:SetDrawEdge(view.edge == true)
     local entry = icon.entry
     Texts(icon, view, entry and entry.ov or EMPTY)
-    local size = view.cdSize or 0
-    if size <= 0 then size = max(10, floor(h * .38)) end
     local text = cooldown:GetCountdownFontString()
-    if text then Font(text, size, state.cdR, state.cdG, state.cdB) end
-    local stack = view.stackSize or 0
-    if stack <= 0 then stack = max(9, floor(h * .3)) end
-    Font(icon.count, stack, state.stackR, state.stackG, state.stackB)
+    if text then Font(text, TextSize(view.cdSize, FONT.countdown, h), state.cdR, state.cdG, state.cdB) end
+    Font(icon.count, TextSize(view.stackSize, FONT.stacks, h), state.stackR, state.stackG, state.stackB)
     PlaceText(icon.count, icon, view.stackPos or 9, K.Pixels(1) + border)
     StyleKey(icon, view)
     C.TrackingBars.Style(icon, view)
@@ -275,26 +271,11 @@ local function Restyle(icon, view)
 end
 
 ------------------------------------------------------------------ threshold formatter
--- One formatter per (seconds, color); nil when off.
+-- The shared countdown formatter for a warning threshold; nil when off
+-- (the swipe keeps Blizzard's own countdown text).
 function I.Formatter(seconds, r, g, b)
     if type(seconds) ~= "number" or seconds <= 0 then return nil end
-    seconds = floor(seconds + .5)
-    local R, G, B = floor((r or 1) * 255 + .5), floor((g or 1) * 255 + .5), floor((b or 1) * 255 + .5)
-    local key = seconds * 16777216 + R * 65536 + G * 256 + B
-    local formatter = formatters[key]
-    if formatter ~= nil then return formatter or nil end
-    formatter = C_StringUtil.CreateNumericRuleFormatter()
-    local rounding = Enum.NumericRuleFormatRounding
-    local up, down = rounding.Up, rounding.Down
-    local points = {
-        { threshold = 0, format = ("|cff%02x%02x%02x%%.0f|r"):format(R, G, B), rounding = up },
-        { threshold = seconds, format = "%.0f", rounding = up },
-        { threshold = 60, format = "%d:%02d", rounding = down, components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } },
-        { threshold = 3600, format = "%dh", rounding = down, components = { { div = 3600, rounding = down } } },
-    }
-    formatter:SetBreakpoints(points)
-    formatters[key] = formatter
-    return formatter
+    return K.CountdownFormatter(seconds, r, g, b)
 end
 
 ------------------------------------------------------------------ per-entry parts
