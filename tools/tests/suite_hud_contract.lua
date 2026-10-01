@@ -30,14 +30,28 @@ local function Widget(parent, fontString)
     function w:SetAllPoints() end
     function w:SetSize(a, b) self.width, self.height = a, b end
     function w:SetWidth(a) self.width = a end
+    function w:GetWidth() return self.width or 0 end
+    function w:GetHeight() return self.height or 0 end
     function w:SetHeight(a) self.height = a end
     function w:SetScale(a) self.scale = a end
     function w:SetFrameStrata() end
     function w:EnableMouse(value) self.mouse = value end
     function w:IsMouseEnabled() return self.mouse ~= false end
     function w:EnableMouseWheel() end
-    function w:RegisterForClicks() end
+    function w:RegisterForClicks(...) self.registeredClicks = { ... } end
     function w:SetScript(key, fn) self[key] = fn end
+    function w:HookScript(key, fn)
+        local inherited = self[key]
+        self[key] = function(...)
+            if inherited then inherited(...) end
+            fn(...)
+        end
+    end
+    function w:SetAttribute(key, value)
+        self.attributes = self.attributes or {}
+        self.attributes[key] = value
+    end
+    function w:GetAttribute(key) return self.attributes and self.attributes[key] end
     function w:SetColorTexture(...) self.color = { ... } end
     function w:SetTexture(value) self.texture = value end
     function w:SetAtlas(value) self.atlas = value end
@@ -58,7 +72,7 @@ local function Widget(parent, fontString)
     function w:SetStatusBarTexture() end
     function w:SetStatusBarColor() end
     function w:SetMinMaxValues() end
-    function w:SetValue() end
+    function w:SetValue(value) self.value = value end
     function w:SetScrollChild() end
     function w:GetVerticalScrollRange() return 0 end
     function w:GetVerticalScroll() return 0 end
@@ -70,8 +84,26 @@ local function Widget(parent, fontString)
     return w
 end
 UIParent = Widget()
-CreateFrame = function(_, name, parent)
+CreateFrame = function(_, name, parent, template)
     local frame = Widget(parent)
+    frame.template = template
+    if template == "InsecureActionButtonTemplate" then
+        -- The client template handles the item action before addon post-hooks.
+        frame.OnClick = function(button, mouseButton)
+            if (mouseButton == nil or mouseButton == "LeftButton")
+                and not IsModifiedClick("QUESTWATCHTOGGLE") and not IsShiftKeyDown() then
+                button.secureUsedItem = button:GetAttribute("item1")
+            end
+        end
+    elseif template == "UIWidgetContainerTemplate" then
+        function frame:RegisterForWidgetSet(id)
+            if self.widgetSetID == id then return end
+            self.widgetSetID = id
+            self.registrations = (self.registrations or 0) + 1
+            self:SetSize(id and 250 or 0, id and 80 or 0)
+        end
+        function frame:HasAnyWidgetsShowing() return self.widgetSetID ~= nil end
+    end
     frames[#frames + 1] = frame
     return frame
 end
@@ -181,6 +213,7 @@ ENCOUNTER_JOURNAL, FIND_A_GROUP = "Adventure Guide", "Find group"
 OBJECTIVES_SHOW_QUEST_MAP, OBJECTIVES_VIEW_IN_QUESTLOG = "Show on map", "View in Quest Log"
 STOP_SUPER_TRACK_QUEST, SUPER_TRACK_QUEST = "Stop super tracking", "Super track quest"
 SHARE_QUEST, ABANDON_QUEST_ABBREV = "Share quest", "Abandon quest"
+QUEST_WATCH_CLICK_TO_COMPLETE = "(click to complete)"
 -- No keystone runs until the Mythic+ section below replaces this.
 C_ChallengeMode = { IsChallengeModeActive = function() return false end }
 -- Blizzard_GameTooltip builds GameTooltip, with its data accessors, at startup
@@ -226,6 +259,8 @@ S.Finite = function(value) return S.Number(value) and value > -math.huge and val
 S.PublicText = function(value)
     return S.Public(value) and type(value) == "string" and value ~= "" and value or nil
 end
+-- The translation lookup (MSUF_Suite_Modules/Runtime.lua); English here.
+S.Text = function(value) return value end
 S.ReadText = function(fn, ...)
     if type(fn) ~= "function" then return nil end
     return S.PublicText((fn(...)))
@@ -241,6 +276,9 @@ S.Dispatch = function(callback, ...)
     end
     return unpack(results, 2)
 end
+-- MSUF_Suite/Core/Platform.lua: Dispatch(Finish, fn, ...) tells a call that
+-- raised (nothing returned) from one that returned nothing.
+suite.Finish = function(callback, ...) return true, callback(...) end
 S.CreateFrame = CreateFrame
 S.CreateTexture = function(parent) return parent:CreateTexture() end
 S.CreateFontString = function(parent) return parent:CreateFontString() end
@@ -257,6 +295,9 @@ S.Config = function(id) return S.instances[id].config end
 S.Set = function(id, key, value) S.Config(id)[key] = value; return true end
 local moduleStates = {}
 S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return moduleStates[id] end
+-- Splits and raid records belong to the character (MSUF_Suite/Core/CharacterData.lua).
+local characterData = {}
+S.CharacterData = function(id) characterData[id] = characterData[id] or {}; return characterData[id] end
 local function Context()
     local ctx = { events = {}, eventUnits = {}, hidden = {}, parents = {} }
     function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
@@ -275,8 +316,20 @@ local function Context()
     return ctx
 end
 -- The HUD files load in TOC order and share the runtime's private table.
+-- The shared module helpers (S.ClockText, S.PublicField) come from the real
+-- Surfaces.lua; this contract keeps its own frame and font stand-ins.
+do
+    local stubs = {}
+    for _, key in ipairs({ "CreateFrame", "CreateTexture", "CreateFontString", "SetStyledFont", "RGB",
+        "ResolveFont", "GlobalFontPath" }) do stubs[key] = S[key] end
+    suite.Public, suite.Finite, suite.Number = S.Public, S.Finite, S.Number
+    suite.RGB, suite.ResolveFont, suite.GlobalFontPath = S.RGB, S.ResolveFont, S.GlobalFontPath
+    MSUFSuite = suite
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
+    for key, value in pairs(stubs) do S[key] = value end
+end
 local private = { NS = suite, Suite = S }
-for _, file in ipairs({ "MythicPlus", "Raid", "ObjectivesData", "ObjectivesTracker", "Objectives", "Announcements" }) do
+for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
@@ -296,6 +349,12 @@ assert(ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
     "raid roster changes must restore native tracker suppression")
 local combatLocked = false
 suite.IsCombatLocked = function() return combatLocked end
+-- MSUF_Suite/Core/Platform.lua: the combat edge events decide by themselves.
+suite.InCombat = function(event)
+    if event == "PLAYER_REGEN_DISABLED" then return true end
+    if event == "PLAYER_REGEN_ENABLED" then return false end
+    return combatLocked
+end
 combatLocked = true
 ObjectiveTrackerFrame:SetParent(UIParent)
 tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
@@ -446,6 +505,7 @@ assert(tracker.rows["line:quests:42:1"].text.text == "Collect 4 items"
     "changing one objective should leave unchanged row geometry alone")
 GetAchievementInfo = function(id) return id, "Heroic", 10, false end
 C_ContentTracking.GetTrackedIDs = function() return { 99 } end
+SCENARIO_STAGE_STATUS = "Stage %d of %d"
 C_Scenario.GetInfo = function()
     return "Delve", 1, 2, nil, nil, nil, nil, nil, nil, nil, nil, nil, 123
 end
@@ -457,8 +517,96 @@ local achievementRow = tracker.rows["entry:achievements:99"]
 local scenarioRow = tracker.rows["entry:scenario:0"]
 assert(achievementRow and achievementRow.mouse and achievementRow.achievementID == 99
     and scenarioRow and scenarioRow.mouse and scenarioRow.scenarioID == 123
-    and tracker.rows["line:scenario:0:1"].mouse,
+    and tracker.rows["line:scenario:0:1"].mouse
+    and tracker.rows["line:scenario:0:1"].text.text == "Stage 1 of 2: Stage one",
     "achievement and scenario objectives must be interactive rows")
+C_Scenario.GetStepInfo = function()
+    return "Void Cleansing", "Kill the Void-Enraged beasts.", 2, nil, nil, nil, nil, nil, nil, 37.5
+end
+C_ScenarioInfo.GetCriteriaInfo = function() error("step-wide progress must replace criteria") end
+tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+Drain()
+local stageProgress = tracker.rows["line:scenario:0:2"]
+assert(stageProgress and stageProgress.text.text == "Kill the Void-Enraged beasts.  38%"
+    and stageProgress.progress.shown and stageProgress.progress.value == 37.5
+    and not tracker.rows["line:scenario:0:3"],
+    "first scenario stage omitted its native weighted percentage")
+C_Scenario.GetStepInfo = function()
+    return "Void Cleansing", "Kill the Void-Enraged beasts.", 2, nil, nil, nil, nil, nil, nil, 0
+end
+tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+Drain()
+assert(stageProgress.text.text == "Kill the Void-Enraged beasts.  0%"
+    and stageProgress.progress.shown and stageProgress.progress.value == 0,
+    "the first stage must show a real zero-percent progress bar")
+C_Scenario.GetStepInfo = function() return "Make Way", "Unbind the sentries.", 2 end
+C_ScenarioInfo.GetCriteriaInfo = function(index)
+    if index == 1 then return { description = "Sentry activated", quantity = 1, totalQuantity = 3 } end
+    return { description = "Void Forces cleared", quantity = 40, isWeightedProgress = true }
+end
+tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+Drain()
+assert(tracker.rows["line:scenario:0:1"].text.text == "Stage 1 of 2: Make Way"
+    and tracker.rows["line:scenario:0:3"].text.text == "1/3 Sentry activated"
+    and tracker.rows["line:scenario:0:4"].text.text == "Void Forces cleared  40%"
+    and tracker.rows["line:scenario:0:4"].progress.value == 40,
+    "first-stage criteria lost native counts or weighted progress")
+local ordinaryWidgets = C_UIWidgetManager.GetAllWidgetsBySetID
+Enum.UIWidgetVisualizationType.ScenarioHeaderDelves = 29
+C_UIWidgetManager.GetAllWidgetsBySetID = function(setID)
+    if setID == 888 then return { { widgetID = 902, widgetType = 29 } } end
+    return ordinaryWidgets(setID)
+end
+C_UIWidgetManager.GetScenarioHeaderDelvesWidgetVisualizationInfo = function()
+    return { shownState = 1 }
+end
+C_Scenario.GetStepInfo = function()
+    return "Twilight Crypts", nil, 1, nil, nil, nil, nil, nil, nil, nil, nil, 888
+end
+local hostages, hostagesDone = 0, false
+C_ScenarioInfo.GetCriteriaInfo = function()
+    return { description = "Hostages freed", quantity = hostages, totalQuantity = 20,
+        isFormatted = false, isWeightedProgress = false, completed = hostagesDone }
+end
+tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+Drain()
+local delveRow = tracker.rows["entry:scenario:0"]
+local delveHeader = assert(delveRow.scenarioHeader)
+local hostageRow = tracker.rows["line:scenario:0:2"]
+assert(delveHeader.template == "UIWidgetContainerTemplate" and delveHeader.widgetSetID == 888
+    and delveHeader.shown and not delveRow.text.shown and delveRow.layoutHeight >= 80
+    and hostageRow.text.text == "0/20 Hostages freed",
+    "Delves must retain the native header and the initial scenario count")
+local headerRegistrations, beforeHostages = delveHeader.registrations, questUpdates
+hostages = 1
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+Drain()
+assert(hostageRow.text.text == "1/20 Hostages freed" and delveRow.scenarioHeader == delveHeader
+    and delveHeader.registrations == headerRegistrations and questUpdates == beforeHostages,
+    "criterion progress must update without rebuilding the native header or quest sources")
+local oldHostageY = hostageRow.layoutY
+delveHeader:SetHeight(110)
+delveHeader.OnSizeChanged(delveHeader)
+Drain()
+assert(delveRow.layoutHeight >= 110 and hostageRow.layoutY > oldHostageY,
+    "a changing native header height must reposition the criteria below it")
+hostages, hostagesDone = 20, true
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+Drain()
+assert(hostageRow.text.text == "20/20 Hostages freed"
+    and hostageRow.text.textColor[2] == 1,
+    "completed scenario criteria must retain their count and completion color")
+delveHeader.OnHide(delveHeader)
+assert(delveHeader.widgetSetID == nil, "a hidden tracker must unregister its native widget set")
+delveHeader.OnShow(delveHeader)
+assert(delveHeader.widgetSetID == 888, "showing the tracker must restore its active native widget set")
+C_UIWidgetManager.GetAllWidgetsBySetID = ordinaryWidgets
+C_Scenario.GetStepInfo = function() return "Stage one", "Do the thing", 0 end
+C_ScenarioInfo.GetCriteriaInfo = function() return nil end
+tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
+Drain()
+assert(delveHeader.widgetSetID == nil and not delveHeader.shown and delveRow.text.shown,
+    "leaving a Delve must remove the native header and restore the ordinary title")
 achievementRow.OnClick(achievementRow, "RightButton")
 assert(lastMenu.buttons["View achievement"], "achievement row did not expose its menu")
 scenarioRow.OnClick(scenarioRow, "RightButton")
@@ -584,16 +732,79 @@ assert(tracker.host.shown, "tracker must remain visible for placement in Edit Mo
 S.editMode = false
 banner:Refresh()
 assert(banner.title.text == "The Coreway", "leaving Edit Mode must restore the active announcement")
+banner.queue = {}
+local resumedDismiss = assert(table.remove(scheduled), "Edit Mode exit did not rearm the banner timer")
+resumedDismiss()
+assert(banner.leave.playing, "a banner resumed from Edit Mode never started fading out")
+banner.leave.OnFinished()
+assert(not banner.showing and not banner.host.shown and not banner.current,
+    "a resumed banner must finish and release its current announcement")
+local zoneBeforeEdit, subzoneBeforeEdit = GetZoneText, GetSubZoneText
+GetSubZoneText = function() return "Expired area" end
+banner.context.events.ZONE_CHANGED(banner, "ZONE_CHANGED")
+Drain()
+S.editMode = true
+banner:Refresh()
+local editStart = clock
+clock = clock + banner.config.duration + 1
+Drain()
+assert(banner.title.text == "ANNOUNCEMENTS" and banner.host.shown,
+    "an old dismissal callback must not hide the Edit Mode preview")
+S.editMode = false
+banner:Refresh()
+assert(not banner.showing and not banner.host.shown and not banner.current,
+    "a banner that expired in Edit Mode must not become permanent on exit")
+clock = editStart
+S.editMode = true
+banner:Refresh()
+GetZoneText = function() return "Silvermoon City" end
+GetSubZoneText = function() return "The Bazaar" end
+banner.context.events.ZONE_CHANGED_NEW_AREA(banner, "ZONE_CHANGED_NEW_AREA")
+Drain()
+GetZoneText = function() return "Zul'Aman" end
+GetSubZoneText = function() return "Broken Throne" end
+banner.context.events.ZONE_CHANGED_NEW_AREA(banner, "ZONE_CHANGED_NEW_AREA")
+Drain()
+assert(#banner.queue == 1 and banner.queue[1].title == "Broken Throne",
+    "moving during Edit Mode must replace announcements from areas already left")
+S.editMode = false
+banner:Refresh()
+assert(banner.current.title == "Broken Throne" and banner.subtitle.text == "Zul'Aman",
+    "Edit Mode exit must show the current area instead of the old Bazaar banner")
+GetZoneText, GetSubZoneText = zoneBeforeEdit, subzoneBeforeEdit
+banner.queue, banner.current, banner.showing = {}, nil, false
+banner.host:Hide()
+banner.config.scenario = true
+EventToastManagerFrame:DisplayToast({ eventType = Enum.EventToastEventType.Scenario,
+    eventToastID = 91, title = "Wave 2", subtitle = "New Stage" })
+EventToastManagerFrame:DisplayToast({ eventType = Enum.EventToastEventType.Scenario,
+    eventToastID = 92, title = "Wave 3", subtitle = "New Stage" })
+assert(banner.showing and banner.title.text == "Wave 2" and #banner.queue == 1,
+    "active scenario stages must still use the announcement queue")
+local activeScenarioInfo = C_Scenario.GetInfo
+C_Scenario.GetInfo = function() return nil end
+banner.context.events.ZONE_CHANGED_NEW_AREA(banner, "ZONE_CHANGED_NEW_AREA")
+assert(not banner.showing and not banner.host.shown and #banner.queue == 0,
+    "leaving a scenario area kept its active or queued wave announcement")
+EventToastManagerFrame:DisplayToast({ eventType = Enum.EventToastEventType.Scenario,
+    eventToastID = 93, title = "Wave 3", subtitle = "New Stage" })
+assert(not banner.showing and #banner.queue == 0,
+    "a late scenario toast appeared after the scenario ended")
+C_Scenario.GetInfo = activeScenarioInfo
+EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 94,
+    title = "Flight point discovered", subtitle = "Silvermoon" })
+assert(banner.showing and banner.title.text == "Flight point discovered",
+    "scenario cleanup suppressed an unrelated announcement")
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
 tracker.config.colorStyle = 1
 tracker.config.backgroundOpacity = nil
 tracker:Refresh()
 assert(tracker.background.color[4] == 0, "standard objective tracker must have no backdrop")
-local usedQuestItem
+local questItemLink = "item:777"
 GetQuestLogSpecialItemInfo = function(index)
-    if index == 42 or index == 43 then return "item:777", 1234, 1, true end
+    if index == 42 or index == 43 then return questItemLink, 1234, 1, true end
 end
-UseQuestLogSpecialItem = function(index) usedQuestItem = index end
+UseQuestLogSpecialItem = function() error("addon called protected UseQuestLogSpecialItem") end
 QuestUtil.QuestShowsItemByIndex = function() return true end
 C_QuestLog.GetLogIndexForQuestID = function(id) return id end
 C_QuestLog.GetTimeAllowed = function() return 120, 30 end
@@ -611,22 +822,38 @@ assert(tracker.rows["line:quests:42:6"].height > 50,
 local activeQuest = tracker.rows["entry:quests:42"]
 assert(activeQuest.itemButton and activeQuest.itemButton.shown and activeQuest.timer.text == "1:30",
     "quest item and time remaining must be visible on the active quest")
+assert(activeQuest.itemButton.template == "InsecureActionButtonTemplate"
+    and activeQuest.itemButton.registeredClicks[1] == "AnyDown"
+    and activeQuest.itemButton.registeredClicks[2] == "AnyUp"
+    and activeQuest.itemButton:GetAttribute("type1") == "item"
+    and activeQuest.itemButton:GetAttribute("item1") == "item:777"
+    and activeQuest.itemButton:GetAttribute("shift-type1") == ""
+    and activeQuest.itemButton:GetAttribute("modifiers") == "QUESTWATCHTOGGLE:shift",
+    "quest item lacks the client action template or its current item link")
 activeQuest.itemButton.OnClick(activeQuest.itemButton)
-assert(usedQuestItem == 42, "quest item button must use the current quest log index")
+assert(activeQuest.itemButton.secureUsedItem == "item:777",
+    "quest item button did not retain the inherited item action")
 activeQuest.itemButton.OnEnter(activeQuest.itemButton)
 assert(GameTooltip.shown and GameTooltip.owner == activeQuest.itemButton and GameTooltip.item == 42,
     "the quest item button did not show its item tooltip")
 activeQuest.itemButton.OnLeave(activeQuest.itemButton)
 assert(not GameTooltip.shown, "leaving the quest item button kept its tooltip")
 activeQuest.itemButton.OnClick(activeQuest.itemButton, "RightButton")
-assert(lastMenu.title == "A New Hope" and usedQuestItem == 42,
+assert(lastMenu.title == "A New Hope" and activeQuest.itemButton.secureUsedItem == "item:777",
     "quest item right-click must open the parent quest menu")
 stoppedQuest = nil
 shiftDown = true
+activeQuest.itemButton.secureUsedItem = nil
 activeQuest.itemButton.OnClick(activeQuest.itemButton, "LeftButton")
-assert(stoppedQuest == 42 and usedQuestItem == 42,
+assert(stoppedQuest == 42 and not activeQuest.itemButton.secureUsedItem,
     "Shift-left-click on the quest item must untrack instead of using it")
 shiftDown = false
+questItemLink = "item:778"
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+Drain()
+activeQuest = tracker.rows["entry:quests:42"]
+assert(activeQuest.itemButton:GetAttribute("item1") == "item:778",
+    "a quest item link change with the same icon kept the stale action")
 clock = 101
 Drain()
 assert(activeQuest.timer.text == "1:29", "visible quest timer must update without rebuilding rows")
@@ -734,8 +961,11 @@ GetSubZoneText = function() return "Keystone Hall" end
 local zoneQueue = #banner.queue
 banner.context.events.ZONE_CHANGED(banner, "ZONE_CHANGED")
 Drain()
-assert(banner.lastZone == "Dornogal/Keystone Hall" and #banner.queue == zoneQueue,
+assert(banner.lastZone == "Dornogal/Keystone Hall" and #banner.queue <= zoneQueue,
     "keystone subzone added a zone banner")
+for _, item in ipairs(banner.queue) do
+    assert(item.kind ~= "zone", "keystone subzone retained a banner from an area already left")
+end
 GetSubZoneText = priorSubzone
 GetWorldElapsedTimers = function() return 7 end
 GetWorldElapsedTime = function(id)
@@ -752,6 +982,10 @@ C_ScenarioInfo.GetCriteriaInfo = function(index)
         quantity = forces, totalQuantity = 500 }
 end
 tracker.config.showMythicPlus = true
+local splitRecords = S.CharacterData("objectives")
+splitRecords.mythicSplits = { ["500:15"] = { time = 1200, individual = { ["First boss"] = 380, ["Second boss"] = 990 },
+    run = { ["First boss"] = 390, ["Second boss"] = 990 }, serial = 1 },
+    ["500:all"] = { time = 1000, individual = { ["First boss"] = 300 }, run = { ["First boss"] = 310 }, serial = 2 } }
 local beforeKeyUpdates = questUpdates
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 tracker.context.events.CHALLENGE_MODE_START(tracker, "CHALLENGE_MODE_START")
@@ -766,6 +1000,40 @@ assert(tracker.mplusActive and ticker and tracker.mplus.frame.shown
     and not tracker.rows["entry:quests:43"].shown
     and questUpdates == beforeKeyUpdates,
     "active M+ must replace quest rows and cancel pending quest work")
+tracker.mplus.bar.OnSizeChanged(tracker.mplus.bar, 400)
+assert(tracker.mplus.thresholds[1].point[4] == 240 and tracker.mplus.thresholds[2].point[4] == 320,
+    "timer threshold markers must follow the actual native bar width")
+-- WoW's stock fonts have no check mark glyph: a defeated boss shows Blizzard's atlas.
+assert(tracker.mplus.bosses[1].name.text:find("|A:common-icon-checkmark:12:12|a", 1, true) == 1
+    and not tracker.mplus.bosses[2].name.text:find("|A:", 1, true), "defeated boss mark is not the check mark atlas")
+-- Boss pace: 2 best time per boss at this level, 4 fastest run at this
+-- level, 5 fastest run at any level; target times only when asked for.
+tracker.config.bossPace = 2
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.bosses[1].time.text == "6:40  +0:20" and tracker.mplus.bosses[2].time.text == "",
+    "a boss still alive showed a target time by default")
+tracker.config.bossTargets = true
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.bosses[1].time.text == "6:40  +0:20" and tracker.mplus.bosses[2].time.text == "16:30")
+tracker.config.bossPace = 4
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.bosses[1].time.text == "6:40  +0:10")
+tracker.config.bossPace = 5
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.bosses[1].time.text == "6:40  +1:30")
+tracker.config.bossPace = 3
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.bosses[1].time.text == "6:40  +1:40")
+tracker.config.bossTargets = false
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(tracker.mplus.bosses[2].time.text == "")
+-- Every bucket of this run is held: criteria updates read no records again.
+local readCharacter, characterReads = S.CharacterData, 0
+S.CharacterData = function(id) characterReads = characterReads + 1; return readCharacter(id) end
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+S.CharacterData = readCharacter
+assert(characterReads == 0, "boss pace read the character records again for a bucket it holds")
+tracker.config.bossPace = 1
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 assert(questUpdates == beforeKeyUpdates, "quest updates must not rebuild the hidden tracker")
 elapsed = 1100
@@ -795,12 +1063,18 @@ tracker.context.events.CHALLENGE_MODE_COMPLETED(tracker, "CHALLENGE_MODE_COMPLET
 assert(ticker.cancelled and tracker.mplus.remaining.text == "COMPLETE  +2"
     and not tracker.rows["entry:quests:43"].shown,
     "completed run must freeze its result without waking the ticker")
+assert(splitRecords.mythicSplits["500:15"].time == 1100
+    and splitRecords.mythicSplits["500:15"].run["Second boss"] == 1000
+    and splitRecords.mythicSplits["500:15"].individual["First boss"] == 380
+    and splitRecords.mythicSplits["500:all"].time == 1000)
+local splitSerial = splitRecords.mythicSplitSerial
 C_ChallengeMode.GetChallengeCompletionInfo = function()
     return { time = 1100000, keystoneUpgradeLevels = 3, onTime = true }
 end
 tracker.context.events.CHALLENGE_MODE_COMPLETED_REWARDS(tracker, "CHALLENGE_MODE_COMPLETED_REWARDS")
 assert(tracker.mplus.remaining.text == "COMPLETE  +3" and ticker.cancelled,
     "late completion rewards must refresh the result without restarting the clock")
+assert(splitRecords.mythicSplitSerial == splitSerial, "reward event duplicated split persistence")
 tracker.context.events.PLAYER_ENTERING_WORLD(tracker, "PLAYER_ENTERING_WORLD")
 assert(not tracker.mplusActive and not tracker.mplus.frame.shown
     and tracker.rows["entry:quests:43"].shown and questUpdates > beforeKeyUpdates,
@@ -832,13 +1106,41 @@ activeKey = false
 end
 local insideRaid, instanceKind = false, nil
 IsInInstance = function() return insideRaid, instanceKind end
+C_InstanceEncounter = { IsEncounterInProgress = function() return false end }
+tracker.config.hideInRaid = true
+insideRaid, instanceKind = true, "raid"
+tracker:Refresh()
+assert(tracker.pausedForRaidCombat and not tracker.host.shown and not tracker.context.events.QUEST_LOG_UPDATE,
+    "entire-raid hiding must apply outside combat and suspend ordinary work")
+insideRaid, instanceKind = false, "none"
+tracker.context.events.ZONE_CHANGED_NEW_AREA(tracker, "ZONE_CHANGED_NEW_AREA")
+assert(not tracker.pausedForRaidCombat and tracker.host.shown, "leaving the raid must restore the tracker")
+tracker.config.hideInRaid, tracker.config.hideDuringBoss = false, true
+insideRaid, instanceKind = true, "raid"
+tracker:Refresh()
+assert(not tracker.pausedForRaidCombat, "boss-only hiding must leave raid trash visible")
+tracker.context.events.ENCOUNTER_START(tracker, "ENCOUNTER_START", 800, "Test", 16)
+assert(tracker.pausedForRaidCombat and not tracker.host.shown, "boss start must hide independently of generic combat")
+tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Test", 16, 20, 1)
+assert(not tracker.pausedForRaidCombat and tracker.host.shown, "boss end must restore the tracker")
+tracker.config.hideDuringBoss, tracker.config.showHeader = false, false
+tracker:Refresh()
+assert(not tracker.title.shown and not tracker.count.shown and not tracker.headerClick.shown
+    and tracker.headerHeight == 8, "hidden heading must release its layout space")
+tracker.config.showHeader = true
+tracker:Refresh()
+assert(tracker.title.shown and tracker.headerClick.shown and tracker.headerHeight >= 40,
+    "restoring the heading must restore its layout and click target")
+insideRaid, instanceKind = false, nil
 tracker.config.pauseInRaidCombat = true
 tracker.config.showTimers = true
 tracker:Refresh()
 assert(tracker.timerPending, "visible objective timers should schedule before raid combat")
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
-insideRaid, instanceKind, combatLocked = true, "raid", true
+-- The client sends PLAYER_REGEN_DISABLED before InCombatLockdown() turns true.
+insideRaid, instanceKind = true, "raid"
 tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+combatLocked = true
 assert(tracker.pausedForRaidCombat and not tracker.host.shown
     and not tracker.timerPending
     and not tracker.context.events.QUEST_LOG_UPDATE
@@ -857,8 +1159,8 @@ assert(not tracker.pausedForRaidCombat and tracker.host.shown
     and tracker.context.events.QUEST_LOG_UPDATE
     and questUpdates == beforeRaidReads + 1,
     "leaving raid combat must register events and rebuild current objectives")
-combatLocked = true
 tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+combatLocked = true
 insideRaid, instanceKind = false, "none"
 tracker.context.events.PLAYER_ENTERING_WORLD(tracker, "PLAYER_ENTERING_WORLD")
 assert(not tracker.pausedForRaidCombat and tracker.context.events.QUEST_LOG_UPDATE,
@@ -866,8 +1168,9 @@ assert(not tracker.pausedForRaidCombat and tracker.context.events.QUEST_LOG_UPDA
 combatLocked = false
 tracker.config.pauseInRaidCombat = false
 tracker:Refresh()
-insideRaid, instanceKind, combatLocked = true, "raid", true
+insideRaid, instanceKind = true, "raid"
 tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+combatLocked = true
 assert(not tracker.pausedForRaidCombat and tracker.context.events.QUEST_LOG_UPDATE,
     "an off toggle must leave raid combat tracker updates enabled")
 combatLocked = false
@@ -908,26 +1211,29 @@ if flavor == "Mainline" then
             unboundBigWigs = true
         end,
     }
-    moduleStates.objectives.raidRecords = {
+    -- The one-time move from profiles converted old 0..1 fractions
+    -- (suite_character_data_contract); the store holds display percent.
+    characterData.objectives = { raidRecords = {
         ["900:16"] = {
-            best = { defeated = 0, remaining = .16, boss = "Zul'jan" },
-            bestPhases = { BigWigs = { stage = 1, step = 1, remaining = .16, boss = "Zul'jan" } },
+            best = { defeated = 0, remaining = 16, boss = "Zul'jan" },
+            bestPhases = { BigWigs = { stage = 1, step = 1, remaining = 16, boss = "Zul'jan" } },
         },
-    }
+    } }
     tracker.config.showRaid = true
     tracker.config.pauseInRaidCombat = true
     tracker:Refresh()
     assert(tracker.raidActive and tracker.title.text == "RAID"
         and tracker.raid.name.text == "Waiting for raid encounter",
         "raid option must provide its own objective HUD view")
-    assert(tracker.raid.records["900:16"].best.remaining == 16
+    assert(tracker.raid.records == characterData.objectives.raidRecords
+        and tracker.raid.records["900:16"].best.remaining == 16
         and tracker.raid.records["900:16"].bestPhases.BigWigs.remaining == 16,
-        "stored fractional wipe health must migrate to display percent")
+        "raid records must come from the character's store")
     tracker:Refresh()
     assert(tracker.raid.records["900:16"].best.remaining == 16,
-        "wipe health migration must run only once")
-    combatLocked = true
+        "stored raid records must never be rescaled at runtime")
     tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+    combatLocked = true
     assert(not tracker.pausedForRaidCombat and tracker.raidActive,
         "raid view must stay visible when objective pause is enabled")
     clock = 200
@@ -949,35 +1255,58 @@ if flavor == "Mainline" then
     local bossUnits = tracker.context.eventUnits.UNIT_HEALTH
     assert(type(bossUnits) == "table" and #bossUnits == 5 and bossUnits[1] == "boss1" and bossUnits[5] == "boss5",
         "live boss health must subscribe to the five boss tokens, not every raid member")
-    -- Health ticks only move the boss row: several ticks share one deferred
-    -- redraw, and a raid member's tick never reaches the view.
-    local livePercent, pendingCallbacks = 70, #scheduled
-    UnitHealthPercent = function() return livePercent end
+    -- Health storms share one native read and one deferred redraw. Other full
+    -- paints still drain pending health before showing a stage or clock update.
+    local livePercent, pendingCallbacks, healthReads = 70, #scheduled, 0
+    UnitHealthPercent = function() healthReads=healthReads+1;return livePercent end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "raid7")
     assert(#scheduled == pendingCallbacks, "a raid member's health tick reached the raid view")
     for _, value in ipairs({ 60, 55, 50 }) do
         livePercent = value
         tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
     end
-    assert(#scheduled == pendingCallbacks + 1 and tracker.raid.live[1].percent == 50
+    assert(#scheduled == pendingCallbacks + 1 and healthReads == 0
         and tracker.raid.current.text:find("First Guardian 70.0%%", 1, false),
-        "boss health ticks must update the data at once and share one deferred redraw")
+        "boss health events fetched snapshots before their shared redraw")
     table.remove(scheduled)()
-    assert(tracker.raid.current.text:find("First Guardian 50.0%%", 1, false),
+    assert(healthReads == 1 and tracker.raid.live[1].percent == 50
+        and tracker.raid.current.text:find("First Guardian 50.0%%", 1, false),
         "the deferred redraw did not show the latest boss health")
+    pendingCallbacks=#scheduled
+    tracker.context.events.UNIT_HEALTH(tracker,"UNIT_HEALTH","boss1")
+    collectgarbage("collect");collectgarbage("stop")
+    local healthMemory=collectgarbage("count")
+    for _=1,1000 do tracker.context.events.UNIT_HEALTH(tracker,"UNIT_HEALTH","boss1") end
+    local healthAllocated=collectgarbage("count")-healthMemory
+    collectgarbage("restart")
+    assert(healthAllocated<1,"raid health storms allocated per event")
+    assert(#scheduled==pendingCallbacks+1 and healthReads==1,"a health storm repeated native reads")
+    livePercent=40;raidTicker:Fire()
+    assert(healthReads==2 and tracker.raid.current.text:find("First Guardian 40.0%%"),
+        "the clock paint did not drain the latest pending health")
+    table.remove(scheduled)()
+    assert(healthReads==2,"an already drained boss was fetched again")
     UnitHealthPercent = function() return secret end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+    table.remove(scheduled)()
     assert(not tracker.raid.live[1].percent,
         "secret boss health must never be compared, formatted or stored")
+    tracker.context.events.UNIT_HEALTH(tracker,"UNIT_HEALTH","boss1")
+    local existsBeforeEnd=UnitExists
+    UnitExists=function() return false end
     clock = 220
     tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0,
-        { { creatureName = "First Guardian", remainingHealthPercent = .16 } })
+        { { creatureName = "First Guardian", remainingHealthPercent = .16 },
+          { creatureName = "Previous Phase", remainingHealthPercent = .9 } })
     assert(raidTicker.cancelled and not tracker.context.events.UNIT_HEALTH
         and tracker.raid.records["800:16"].best.remaining == 16
         and tracker.raid.records["800:16"].bestPhases.DBM.stage == 2
         and tracker.raid.current.text:find("16.0%", 1, true)
         and tracker.raid.best.text:find("16.0%", 1, true),
         "first wipe must display 0.16 encounter-end health as 16.0 percent")
+    UnitExists=function() error("a stopped raid callback fetched boss data") end
+    table.remove(scheduled)()
+    UnitExists=existsBeforeEnd
     initialDBMStage = false
     activeBoss = "Second Guardian"
     clock = 230
@@ -1015,6 +1344,28 @@ if flavor == "Mainline" then
     tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 1, {})
     assert(tracker.raid.records["800:16"].fastest == 25,
         "successful encounter must save fastest kill time")
+    -- A raising boss mod is reported through Dispatch and never stops the
+    -- encounter view; its stage stays unknown.
+    local reportedBefore = #reported
+    DBM.GetStage = function() error("DBM stage API changed") end
+    clock = 300
+    tracker.context.events.ENCOUNTER_START(tracker, "ENCOUNTER_START", 800, "Twin Guardians", 16, 20)
+    assert(tracker.raid.pull and tracker.raid.phase.text == "PHASE  --" and #reported == reportedBefore + 1
+        and raidTicker and not raidTicker.cancelled, "a raising DBM stage read stopped the encounter start")
+    bigWigsStage("BigWigs_SetStage", { IsEncounterID = function() error("BigWigs module API changed") end }, 2)
+    assert(tracker.raid.phase.text == "PHASE  --" and #reported == reportedBefore + 2,
+        "a raising BigWigs module changed the stage or its error escaped")
+    BigWigs = { IterateBossModules = function()
+        return function(_, key) if not key then return 1, { IsEncounterID = function() error("broken") end } end end
+    end }
+    clock = 320
+    tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0, {})
+    tracker.context.events.ENCOUNTER_START(tracker, "ENCOUNTER_START", 800, "Twin Guardians", 16, 20)
+    assert(tracker.raid.pull and #reported == reportedBefore + 4,
+        "a raising BigWigs module during the initial stage read stopped the encounter start")
+    BigWigs = nil
+    clock = 330
+    tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0, {})
     combatLocked = false
     tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
     tracker.config.showRaid = false
@@ -1023,6 +1374,77 @@ if flavor == "Mainline" then
         and tracker.rows["entry:quests:43"].shown and unboundDBM and unboundBigWigs,
         "disabling raid view must restore objectives without losing records")
 end
+-- Community Engagement (95413) completes from the tracker without an NPC.
+-- Keep reward selection in Blizzard's dialog; only completed auto quests use
+-- that action, and clicks must re-read state instead of trusting a painted row.
+local autoComplete, questComplete = true, true
+C_QuestLog.GetQuestIDForQuestWatchIndex = function() return 95413 end
+C_QuestLog.GetTitleForQuestID = function() return "Community Engagement" end
+C_QuestLog.GetQuestObjectives = function()
+    return { { text = "1/1 Buy an item from an endeavor trader", type = "monster", finished = questComplete } }
+end
+C_QuestLog.GetLogIndexForQuestID = function(id) return id == 95413 and 1 or nil end
+C_QuestLog.GetInfo = function(index) return index == 1 and { isAutoComplete = autoComplete } or nil end
+C_QuestLog.IsComplete = function(id) return id == 95413 and questComplete or false end
+local completionActions, offeredRewards = {}, nil
+QuestObjectiveTracker = { RemoveAutoQuestPopUp = function(_, id)
+    completionActions[#completionActions + 1] = "remove:" .. id
+end }
+ShowQuestComplete = function(id)
+    completionActions[#completionActions + 1] = "show:" .. id
+    offeredRewards = id
+end
+assert(tracker.context.events.QUEST_AUTOCOMPLETE, "auto-completion event is not registered")
+Drain()
+local pendingCompletion = #scheduled
+for _ = 1, 3 do tracker.context.events.QUEST_AUTOCOMPLETE(tracker, "QUEST_AUTOCOMPLETE", 95413) end
+assert(#scheduled == pendingCompletion + 1, "completion burst did not coalesce into one refresh")
+Drain()
+local completedRow = assert(tracker.rows["entry:complete:95413"])
+local completeLine = assert(tracker.rows["line:complete:95413:2"])
+assert(completeLine.text.text == QUEST_WATCH_CLICK_TO_COMPLETE and completeLine.shown,
+    "completed auto quest lacks Blizzard's click-to-complete hint")
+local logBeforeComplete = openedLog
+completedRow.OnClick(completedRow, "LeftButton")
+assert(offeredRewards == 95413 and openedLog == logBeforeComplete
+    and completionActions[1] == "remove:95413" and completionActions[2] == "show:95413",
+    "auto quest opened the map instead of Blizzard's reward dialog")
+offeredRewards = nil
+completeLine.OnClick(completeLine, "LeftButton")
+assert(offeredRewards == 95413 and openedLog == logBeforeComplete,
+    "objective line did not open its auto quest's reward dialog")
+offeredRewards, stoppedQuest = nil, nil
+shiftDown = true
+completedRow.OnClick(completedRow, "LeftButton")
+shiftDown = false
+assert(stoppedQuest == 95413 and not offeredRewards and openedLog == logBeforeComplete,
+    "Shift-click completed an auto quest instead of untracking it")
+completedRow.OnClick(completedRow, "RightButton")
+lastMenu.buttons["View in Quest Log"]()
+assert(not offeredRewards and openedQuest == 95413 and openedLog == logBeforeComplete + 1,
+    "explicit quest-details menu action opened reward selection")
+autoComplete = false
+completedRow.OnClick(completedRow, "LeftButton")
+assert(not offeredRewards and openedLog == logBeforeComplete + 2,
+    "completed NPC quest incorrectly used automatic turn-in")
+autoComplete, questComplete = true, false
+completedRow.OnClick(completedRow, "LeftButton")
+assert(not offeredRewards and openedLog == logBeforeComplete + 3,
+    "stale completed row offered rewards for an incomplete auto quest")
+questComplete = secret
+assert(not private.Objectives.CanCompleteQuest(95413), "secret completion enabled automatic turn-in")
+questComplete, autoComplete = true, secret
+assert(not private.Objectives.CanCompleteQuest(95413), "secret auto-completion flag enabled turn-in")
+C_QuestLog.GetInfo = function() return secret end
+assert(not private.Objectives.CanCompleteQuest(95413), "secret quest metadata enabled turn-in")
+C_QuestLog.GetInfo = function() return nil end
+assert(not private.Objectives.CanCompleteQuest(95413), "missing quest metadata enabled turn-in")
+C_QuestLog.GetLogIndexForQuestID = function() return nil end
+assert(not private.Objectives.CanCompleteQuest(95413), "removed quest enabled turn-in")
+tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+Drain()
+assert(tracker.sources.quests[1].lines.count == 1 and not completeLine.shown,
+    "reused completed rows retained a stale turn-in hint")
 tracker:Disable()
 Drain()
 tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")

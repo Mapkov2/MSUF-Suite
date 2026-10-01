@@ -7,6 +7,7 @@ local NS, S = P.NS, P.Suite
 local owners, sessionAPI = {}, nil
 local profile, epoch = nil, 0
 local EMPTY = {}
+local SIZE_LABELS = { width = "Width", height = "Height", scale = "Scale %" }
 
 -- Captured states belong to one profile. A profile switch invalidates them.
 local function Epoch()
@@ -123,10 +124,41 @@ local function PopupControls(id, spec)
         end
     end
     for _, control in ipairs(spec.extraControls or EMPTY) do controls[#controls + 1] = control end
+    -- Numeric sizing uses the existing external popup API; that API has no drag-resize contract.
+    for _, key in ipairs(spec.sizeKeys or EMPTY) do
+        local label = SIZE_LABELS[key]
+        local rule, exists = rules[key], false
+        for _, control in ipairs(controls) do if control.id == key then exists = true; break end end
+        if not exists and rule and rule.min and rule.max then
+            controls[#controls + 1] = { id = key, label = S.Text(label or rule.label or key), kind = "number",
+                min = rule.min, max = rule.max, step = rule.step or 1,
+                get = function() return S.Config(id)[key] end,
+                set = function(value) return S.Set(id, key, value) end }
+        end
+    end
     return controls
 end
 
+local function CaptureKeys(spec)
+    local keys, seen = {}, {}
+    for _, list in ipairs({spec.historyKeys or EMPTY, spec.sizeKeys or EMPTY}) do
+        for _, key in ipairs(list) do
+            if not seen[key] then keys[#keys+1]=key;seen[key]=true end
+        end
+    end
+    return keys
+end
+
+local function ResetPosition(id, spec)
+    local rules = S.catalog[id].rules
+    local values = { [spec.xKey] = rules[spec.xKey].default, [spec.yKey] = rules[spec.yKey].default }
+    if spec.pointKey then values[spec.pointKey] = rules[spec.pointKey].default end
+    for _, key in ipairs(spec.resetKeys or EMPTY) do values[key] = rules[key].default end
+    return S.SetMany(id, values)
+end
+
 local function Element(id, elementID, spec)
+    local captureKeys = CaptureKeys(spec)
     local function Frame()
         local frame = spec.getFrame()
         if frame and not NS.Safety.IsForbidden(frame) then return frame end
@@ -147,13 +179,14 @@ local function Element(id, elementID, spec)
         order = spec.order or 1000,
         getFrame = Frame,
         isEnabled = function()
-            return S.states[id].active and (not spec.isEnabled or spec.isEnabled()) and Frame() ~= nil
+            return S.states[id].active and (not spec.isEnabled or spec.isEnabled())
+                and (not spec.visible or spec.visible()) and Frame() ~= nil
         end,
         captureState = function()
             local config = S.Config(id)
             local values = { [spec.xKey] = config[spec.xKey], [spec.yKey] = config[spec.yKey] }
             if spec.pointKey then values[spec.pointKey] = config[spec.pointKey] end
-            for _, key in ipairs(spec.historyKeys or EMPTY) do values[key] = config[key] end
+            for _, key in ipairs(captureKeys) do values[key] = config[key] end
             local state = { epoch = Epoch(), values = values }
             -- A module may start a drag from its live position (Bags: Blizzard's
             -- anchor while the bag never moved). Undo still restores the saved
@@ -192,13 +225,7 @@ local function Element(id, elementID, spec)
             for key, value in pairs(spec.moveValues or EMPTY) do values[key] = value end
             return S.SetMany(id, values)
         end,
-        resetPosition = function()
-            local rules = S.catalog[id].rules
-            local values = { [spec.xKey] = rules[spec.xKey].default, [spec.yKey] = rules[spec.yKey].default }
-            if spec.pointKey then values[spec.pointKey] = rules[spec.pointKey].default end
-            for _, key in ipairs(spec.resetKeys or EMPTY) do values[key] = rules[key].default end
-            return S.SetMany(id, values)
-        end,
+        resetPosition = function() return ResetPosition(id, spec) end,
         extraControls = PopupControls(id, spec),
         openSettings = function()
             return S.Open(id)
@@ -207,7 +234,8 @@ local function Element(id, elementID, spec)
 end
 
 -- spec: label, getFrame(), xKey, yKey, point (string or function), pointKey,
--- isEnabled(), order, quickPosition=false opt-out, extraControls, historyKeys, moveValues, resetKeys,
+-- isEnabled(), visible(), order, quickPosition=false opt-out, extraControls, historyKeys,
+-- sizeKeys (explicit catalog dimensions for this element), moveValues, resetKeys,
 -- place(x, y) (drag preview for x/y that are not UIParent offsets),
 -- capture(origin) (live drag start x/y; undo keeps the saved values).
 -- Returns true when MSUF Edit Mode accepted the element.
@@ -264,7 +292,12 @@ function S.SetEditMode(active)
     if S.editMode == active then return end
     S.editMode = active
     for id in pairs(owners) do
-        if S.states[id].active then S.Apply(id) end
+        if S.states[id].active then
+            local instance=S.instances and S.instances[id]
+            -- Own sample frames can hide immediately even when Apply must wait for combat.
+            if not active and instance and instance.HideEditPreview then S.Dispatch(instance.HideEditPreview,instance) end
+            S.Apply(id)
+        end
     end
 end
 

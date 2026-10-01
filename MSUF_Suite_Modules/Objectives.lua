@@ -16,6 +16,7 @@ local function Flush(self)
     self.scheduled = false
     if not self.active or self.pausedForRaidCombat or self.mplusActive or self.raidActive then return end
     CollectDirty(self)
+    O.UpdateQuestItem(self)
     Render(self)
 end
 
@@ -34,6 +35,15 @@ local function Request(self, key)
     if self.scheduled then return end
     self.scheduled = true
     C_Timer.After(0, FlushScheduled)
+end
+
+-- Native scenario headers can change height when their currencies or effects
+-- change. Coalesce that layout change with the existing scenario refresh.
+function O.RequestScenarioLayout()
+    if M.active then
+        M.layoutDirty = true
+        Request(M, "scenario")
+    end
 end
 
 local function MarkAllDirty(self)
@@ -117,6 +127,7 @@ local EVENT_SOURCES = {
     ZONE_CHANGED_INDOORS = { "world", "bonus" },
     SUPER_TRACKING_CHANGED = { "quests" },
     QUEST_POI_UPDATE = { "quests" },
+    QUEST_AUTOCOMPLETE = { "quests" },
     QUEST_WATCH_UPDATE = { "quests", "world" },
     QUEST_WATCH_LIST_CHANGED = { "quests", "world" },
     SCENARIO_BONUS_VISIBILITY_UPDATE = { "bonus", "scenario" },
@@ -134,21 +145,34 @@ local function MythicPlusEvent(self, event)
 end
 
 local UpdateRaidCombatPause
-local function Event(self, event, ...)
+local function EncounterEvent(self, event, ...)
     if event == "ENCOUNTER_START" then
+        self.encounterActive = true
+        UpdateRaidCombatPause(self)
+        if self.pausedForRaidCombat then return end
         local encounterID, encounterName, difficultyID = ...
         if ShowRaid(self) and Raid.Start(self, encounterID, encounterName, difficultyID) then
             Render(self)
         end
         return
     elseif event == "ENCOUNTER_END" then
+        self.encounterActive = false
+        UpdateRaidCombatPause(self)
+        if self.pausedForRaidCombat then return end
         if self.raidActive then
             Raid.End(self, ...)
             Render(self)
         end
+    end
+end
+
+local function Event(self, event, ...)
+    if event == "ENCOUNTER_START" or event == "ENCOUNTER_END" then
+        EncounterEvent(self, event, ...)
         return
     end
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+        self.encounterActive = nil
         if UpdateRaidCombatPause(self) then return end
     elseif self.pausedForRaidCombat then
         return
@@ -236,12 +260,12 @@ end
 local function ContentSignature(c)
     return tostring(c.showWorldQuests) .. ":" .. tostring(c.showBonus) .. ":"
         .. tostring(c.showScenario) .. ":" .. tostring(c.showAchievements) .. ":"
-        .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers)
+        .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers) .. ":" .. tostring(c.questIconStyle)
 end
 
 local TRACKER_EVENTS = {
     "PLAYER_ENTERING_WORLD", "QUEST_LOG_UPDATE", "QUEST_WATCH_UPDATE", "QUEST_WATCH_LIST_CHANGED",
-    "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "SUPER_TRACKING_CHANGED", "ZONE_CHANGED",
+    "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "QUEST_AUTOCOMPLETE", "SUPER_TRACKING_CHANGED", "ZONE_CHANGED",
     "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA", "QUEST_POI_UPDATE", "SCENARIO_BONUS_VISIBILITY_UPDATE",
     "SCENARIO_UPDATE", "SCENARIO_CRITERIA_UPDATE", "ACTIVE_DELVE_DATA_UPDATE", "TRACKED_ACHIEVEMENT_UPDATE",
     "UPDATE_ALL_UI_WIDGETS", "UPDATE_UI_WIDGET",
@@ -252,11 +276,21 @@ local MYTHIC_PLUS_EVENTS = {
     "CHALLENGE_MODE_DEATH_COUNT_UPDATED", "WORLD_STATE_TIMER_START", "WORLD_STATE_TIMER_STOP",
 }
 
-local function RaidCombatPauseWanted(self)
-    if not self.config.pauseInRaidCombat or not NS.IsCombatLocked() then return false end
-    if Raid and Raid.Detect(self) then return false end
+-- event is the combat edge being handled: PLAYER_REGEN_DISABLED runs before
+-- lockdown starts, so it decides "in combat" itself (Suite.InCombat).
+local function RaidCombatPauseWanted(self, event)
+    local c = self.config
+    if not c.hideInRaid and not c.hideDuringBoss and not c.pauseInRaidCombat then return false end
     local inside, kind = IsInInstance()
-    return Public(inside) and Public(kind) and inside == true and kind == "raid"
+    if not Public(inside) or not Public(kind) or inside ~= true or kind ~= "raid" then return false end
+    if c.hideInRaid then return true end
+    if c.hideDuringBoss then
+        local active = self.encounterActive
+        if active == nil then active = C_InstanceEncounter.IsEncounterInProgress() end
+        if Public(active) and active == true then return true end
+    end
+    if not c.pauseInRaidCombat or not NS.InCombat(event) then return false end
+    return not Raid or not Raid.Detect(self)
 end
 
 local function SetWorkEvents(self, enabled)
@@ -276,8 +310,8 @@ local function SetWorkEvents(self, enabled)
     else self.context:RemoveEvent("GROUP_ROSTER_UPDATE") end
 end
 
-UpdateRaidCombatPause = function(self)
-    local wanted = RaidCombatPauseWanted(self)
+UpdateRaidCombatPause = function(self, event)
+    local wanted = RaidCombatPauseWanted(self, event)
     if wanted == self.pausedForRaidCombat then return wanted end
     self.pausedForRaidCombat = wanted
     SetWorkEvents(self, not wanted)
@@ -300,8 +334,11 @@ UpdateRaidCombatPause = function(self)
 end
 
 local function RaidCombatEvent(self, event)
-    UpdateRaidCombatPause(self)
-    if event == "PLAYER_REGEN_ENABLED" then self:SuppressNative() end
+    UpdateRaidCombatPause(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        self:SuppressNative()
+        O.UpdateQuestItem(self)
+    end
 end
 
 local function NativeAddonLoaded(module, _, name)
@@ -319,10 +356,8 @@ function M:Enable()
     self.context:Event("ZONE_CHANGED_NEW_AREA", Event, true)
     self.context:Event("PLAYER_REGEN_DISABLED", RaidCombatEvent, true)
     self.context:Event("PLAYER_REGEN_ENABLED", RaidCombatEvent, true)
-    if Raid then
-        self.context:Event("ENCOUNTER_START", Event, true)
-        self.context:Event("ENCOUNTER_END", Event, true)
-    end
+    self.context:Event("ENCOUNTER_START", Event, true)
+    self.context:Event("ENCOUNTER_END", Event, true)
     SetWorkEvents(self, true)
     self.context:Event("ADDON_LOADED", NativeAddonLoaded, true)
     self:SuppressNative()
@@ -378,6 +413,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    O.UpdateQuestItem(self, true)
     if MythicPlus then MythicPlus.Stop(self) end
     if Raid then Raid.Stop(self) end
     CancelPending(self)

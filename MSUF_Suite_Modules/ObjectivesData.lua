@@ -51,8 +51,10 @@ local function NextEntry(list, id, title, group)
     end
     list.count = index
     entry.id, entry.title, entry.group = id, title, group
-    entry.tracked, entry.itemIcon, entry.timeLeft, entry.scenarioID = nil, nil, nil, nil
+    entry.tracked, entry.itemIcon, entry.itemLink, entry.timeLeft, entry.scenarioID = nil, nil, nil, nil, nil
     entry.findGroup, entry.questGroupSearch = nil, nil
+    entry.questIcon, entry.questIconAtlas = nil, nil
+    entry.scenarioHeaderSetID = nil
     entry.lines.count = 0
     return entry
 end
@@ -69,17 +71,28 @@ local function AddLine(entry, text, done, percent)
     lines.count = index
 end
 
+-- Retail/Forever QuestObjectiveTracker checks this flag from QuestLogInfo
+-- and reads completion at click time before opening the native reward dialog.
+function O.CanCompleteQuest(questID)
+    if not Finite(questID) or questID <= 0 or Read(C_QuestLog.IsComplete, questID) ~= true then return false end
+    local index = Read(C_QuestLog.GetLogIndexForQuestID, questID)
+    if not Finite(index) or index < 1 then return false end
+    local info = Read(C_QuestLog.GetInfo, index)
+    return type(info) == "table" and Public(info.isAutoComplete) and info.isAutoComplete == true
+end
+
 local function QuestItem(questID)
     local index = Read(C_QuestLog.GetLogIndexForQuestID, questID)
     if not Finite(index) or index < 1 then return end
     local complete = Read(C_QuestLog.IsComplete, questID) == true
     if Read(QuestUtil.QuestShowsItemByIndex, index, complete) ~= true then return end
-    local _, icon, _, showWhenComplete = GetQuestLogSpecialItemInfo(index)
-    if not Public(icon) or (type(icon) ~= "number" and type(icon) ~= "string")
+    local link, icon, _, showWhenComplete = GetQuestLogSpecialItemInfo(index)
+    if not Public(link) or type(link) ~= "string" or link == ""
+        or not Public(icon) or (type(icon) ~= "number" and type(icon) ~= "string")
         or (complete and (not Public(showWhenComplete) or showWhenComplete ~= true)) then
         return
     end
-    return icon
+    return icon, link
 end
 
 local function QuestTimeLeft(questID, task)
@@ -139,7 +152,14 @@ local function AddQuest(list, c, id, title, group, tracked, task)
     end
     entry.findGroup = not P.NS.Client.isForever and (group == "world" or entry.questGroupSearch)
     AddObjectiveLines(entry, id)
-    if c.showQuestItems ~= false then entry.itemIcon = QuestItem(id) end
+    if not task and O.CanCompleteQuest(id) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true) end
+    if c.showQuestItems ~= false then entry.itemIcon, entry.itemLink = QuestItem(id) end
+    if c.questIconStyle == 3 then
+        local asset, atlas = QuestUtil.GetQuestIconActiveForQuestID(id)
+        if Public(asset) and type(asset) == "string" and Public(atlas) and type(atlas) == "boolean" then
+            entry.questIcon, entry.questIconAtlas = asset, atlas
+        end
+    end
     if c.showTimers ~= false then entry.timeLeft = QuestTimeLeft(id, task) end
 end
 
@@ -250,28 +270,43 @@ local function CollectAchievements(list)
 end
 
 -- Blizzard attaches stage widgets to the set returned by GetStepInfo.
-local function ScenarioWidgetTimeLeft(widgetSetID)
+local function ScenarioWidgetState(widgetSetID, showTimers)
     if not widgetSetID then return nil end
     local manager = C_UIWidgetManager
-    local widgetType = Enum.UIWidgetVisualizationType.ScenarioHeaderTimer
+    local types = Enum.UIWidgetVisualizationType
+    local timeLeft, headerSetID
     local widgets = Read(manager.GetAllWidgetsBySetID, widgetSetID)
     if type(widgets) == "table" then
         for i = 1, #widgets do
             local widget = widgets[i]
             if Public(widget) and type(widget) == "table"
-                and Finite(widget.widgetID) and Public(widget.widgetType)
-                and widget.widgetType == widgetType then
-                local info = Read(manager.GetScenarioHeaderTimerWidgetVisualizationInfo, widget.widgetID)
-                if type(info) == "table" and Public(info.shownState)
-                    and info.shownState ~= Enum.WidgetShownState.Hidden
-                    and Finite(info.timerMin) and Finite(info.timerMax) and Finite(info.timerValue)
-                    and info.timerMax > info.timerMin then
-                    local left = math.min(info.timerValue, info.timerMax) - info.timerMin
-                    if left > 0 then return left end
+                and Finite(widget.widgetID) and Public(widget.widgetType) then
+                if showTimers and widget.widgetType == types.ScenarioHeaderTimer then
+                    local info = Read(manager.GetScenarioHeaderTimerWidgetVisualizationInfo, widget.widgetID)
+                    if type(info) == "table" and Public(info.shownState)
+                        and info.shownState ~= Enum.WidgetShownState.Hidden
+                        and Finite(info.timerMin) and Finite(info.timerMax) and Finite(info.timerValue)
+                        and info.timerMax > info.timerMin then
+                        local left = math.min(info.timerValue, info.timerMax) - info.timerMin
+                        if left > 0 then timeLeft = left end
+                    end
+                elseif widget.widgetType == types.ScenarioHeaderDelves then
+                    local info = Read(manager.GetScenarioHeaderDelvesWidgetVisualizationInfo, widget.widgetID)
+                    if type(info) == "table" and Public(info.shownState)
+                        and info.shownState ~= Enum.WidgetShownState.Hidden then
+                        headerSetID = widgetSetID
+                    end
                 end
             end
         end
     end
+    return timeLeft, headerSetID
+end
+
+local function ScenarioPercent(value)
+    if not Finite(value) then return end
+    local percent = math.max(0, math.min(100, value))
+    return percent, string.format("%d%%", math.floor(percent + .5))
 end
 
 local function CollectScenario(list, c)
@@ -280,18 +315,39 @@ local function CollectScenario(list, c)
     if not Text(name) or not Finite(stage) or not Finite(total) or total < 1 or stage > total then return end
     local entry = NextEntry(list, 0, name, "scenario")
     entry.scenarioID = Finite(scenarioID) and scenarioID or nil
-    local stepName, description, criteriaCount, _, _, _, _, _, _, _, _, widgetSetID = scenario.GetStepInfo()
+    local stepName, description, criteriaCount, _, _, _, _, _, _, weightedProgress, _, widgetSetID = scenario.GetStepInfo()
     O.M.scenarioWidgetSetID = Finite(widgetSetID) and widgetSetID > 0 and widgetSetID or nil
-    if Text(stepName) then AddLine(entry, stepName) end
-    if Text(description) and description ~= stepName then AddLine(entry, description) end
+    local stageFormat = Text(_G.SCENARIO_STAGE_STATUS)
+    local stageText = stageFormat and stageFormat:format(stage, total) or string.format("%d/%d", stage, total)
+    local stepText, detail = Text(stepName), Text(description)
+    if stepText then stageText = stageText .. ": " .. stepText end
+    local percent, percentText = ScenarioPercent(weightedProgress)
+    local separateDetail = detail and detail ~= stepText
+    AddLine(entry, stageText .. (percent and not separateDetail and "  " .. percentText or ""), false,
+        percent and not separateDetail and percent or nil)
+    if separateDetail then AddLine(entry, detail .. (percent and "  " .. percentText or ""), false, percent) end
     local criteriaInfo = C_ScenarioInfo.GetCriteriaInfo
-    if c.showTimers ~= false then entry.timeLeft = ScenarioWidgetTimeLeft(O.M.scenarioWidgetSetID) end
-    if not Finite(criteriaCount) then return end
+    entry.timeLeft, entry.scenarioHeaderSetID = ScenarioWidgetState(O.M.scenarioWidgetSetID, c.showTimers ~= false)
+    -- A step-wide progress bar replaces its individual criteria in Blizzard's tracker.
+    if percent or not Finite(criteriaCount) then return end
     for i = 1, criteriaCount do
         local info = Read(criteriaInfo, i)
         if type(info) == "table" then
             local line = Text(info.description)
-            if line then AddLine(entry, line, Public(info.completed) and info.completed == true) end
+            if line then
+                local weightedState, formattedState = info.isWeightedProgress, info.isFormatted
+                local weighted = Public(weightedState) and weightedState == true
+                local done = Public(info.completed) and info.completed == true
+                local criteriaPercent, criteriaText
+                if weighted then
+                    criteriaPercent, criteriaText = ScenarioPercent(info.quantity)
+                    if criteriaPercent then line = line .. "  " .. criteriaText end
+                elseif Public(weightedState) and Public(formattedState) and formattedState ~= true
+                    and Finite(info.quantity) and Finite(info.totalQuantity) and info.totalQuantity > 0 then
+                    line = string.format("%d/%d %s", info.quantity, info.totalQuantity, line)
+                end
+                AddLine(entry, line, done, not done and criteriaPercent or nil)
+            end
             if c.showTimers ~= false and Finite(info.duration) and Finite(info.elapsed)
                 and info.duration > info.elapsed then
                 local left = info.duration - info.elapsed

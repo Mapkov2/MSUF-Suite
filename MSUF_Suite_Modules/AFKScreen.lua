@@ -12,17 +12,23 @@ local WHITE = { .96, .95, .91 }
 local MUTED = { .67, .72, .76 }
 local EMPTY_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local SLOTS = { 1, 2, 3, 15, 5, 4, 19, 9, 10, 6, 7, 8, 11, 12, 13, 14, 16, 17 }
+-- Blizzard's localized slot names (GlobalStrings), English through the
+-- Suite locale only where a client lacks one.
 local SLOT_NAMES = {
-    "Head", "Neck", "Shoulders", "Back", "Chest", "Shirt", "Tabard", "Wrists", "Hands",
-    "Waist", "Legs", "Feet", "Ring", "Ring", "Trinket", "Trinket", "Main Hand", "Off Hand",
+    { "HEADSLOT", "Head" }, { "NECKSLOT", "Neck" }, { "SHOULDERSLOT", "Shoulders" }, { "BACKSLOT", "Back" },
+    { "CHESTSLOT", "Chest" }, { "SHIRTSLOT", "Shirt" }, { "TABARDSLOT", "Tabard" }, { "WRISTSLOT", "Wrists" },
+    { "HANDSSLOT", "Hands" }, { "WAISTSLOT", "Waist" }, { "LEGSSLOT", "Legs" }, { "FEETSLOT", "Feet" },
+    { "FINGER0SLOT", "Ring" }, { "FINGER1SLOT", "Ring" }, { "TRINKET0SLOT", "Trinket" }, { "TRINKET1SLOT", "Trinket" },
+    { "MAINHANDSLOT", "Main Hand" }, { "SECONDARYHANDSLOT", "Off Hand" },
 }
+local Tr = S.Text
 
 local Public, Number, PublicText = S.Public, S.Number, S.PublicText
 
 local function PlayerDisplayName()
     local first, surname = UnitName("player")
     first = PublicText(first)
-    if not first then return "ADVENTURER" end
+    if not first then return Tr("ADVENTURER") end
     if not NS.Client.isForever then return first end
     surname = PublicText(surname)
     if not surname then return first end
@@ -122,7 +128,7 @@ local function Create(self)
     fallback:SetPoint("CENTER", stage, "CENTER", 0, -10)
     fallback:SetSize(160, 160)
     fallback:SetTexture(EMPTY_ICON)
-    local fallbackNote = Label(stage, 19, MUTED, "CHARACTER PREVIEW")
+    local fallbackNote = Label(stage, 19, MUTED, Tr("CHARACTER PREVIEW"))
     fallbackNote:SetPoint("CENTER", stage, "CENTER", 0, -115)
     local icons, itemNames, captions = {}, {}, {}
     for n = 1, #SLOTS do
@@ -141,11 +147,11 @@ local function Create(self)
     class:SetWordWrap(false)
     Rule(panel, 68, -203, 414, .72)
 
-    local afk = Label(panel, 92, WHITE, "AFK")
+    local afk = Label(panel, 92, WHITE, S.BlizzardText("AFK", "AFK"))
     afk:SetPoint("TOPLEFT", panel, "TOPLEFT", 1532, -48)
-    local subtitle = Label(panel, 20, GOLD, "AWAY FROM KEYBOARD")
+    local subtitle = Label(panel, 20, GOLD, Tr("AWAY FROM KEYBOARD"))
     subtitle:SetPoint("TOPLEFT", panel, "TOPLEFT", 1540, -168)
-    local zoneLabel = Label(panel, 13, MUTED, "CURRENT LOCATION")
+    local zoneLabel = Label(panel, 13, MUTED, Tr("CURRENT LOCATION"))
     zoneLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", 1540, -222)
     local zone = Label(panel, 23, WHITE, "")
     zone:SetPoint("TOPLEFT", panel, "TOPLEFT", 1538, -245)
@@ -153,7 +159,7 @@ local function Create(self)
     zone:SetWordWrap(false)
     Rule(panel, 1540, -314, 418, .72)
 
-    local hint = Label(panel, 18, MUTED, "MOVE OR USE /AFK TO RETURN")
+    local hint = Label(panel, 18, MUTED, Tr("MOVE OR USE /AFK TO RETURN"))
     hint:SetPoint("BOTTOM", panel, "BOTTOM", 0, 30)
 
     self.host, self.panel, self.model = host, panel, model
@@ -234,9 +240,10 @@ local function RefreshEquipment(self)
             local r, g, b = link:match("^|cff(%x%x)(%x%x)(%x%x)")
             if r then red, green, blue = tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255 end
         end
-        self.itemNames[index]:SetText(itemName or SLOT_NAMES[index])
+        local slotName = S.BlizzardText(SLOT_NAMES[index][1], SLOT_NAMES[index][2])
+        self.itemNames[index]:SetText(itemName or slotName)
         self.itemNames[index]:SetTextColor(red, green, blue)
-        self.captions[index]:SetText(itemName and SLOT_NAMES[index] or "")
+        self.captions[index]:SetText(itemName and slotName or "")
     end
 end
 
@@ -343,7 +350,7 @@ local function Show(self)
     local class = PublicText((UnitClass("player"))) or ""
     local level = UnitLevel("player")
     if Number(level) and level > 0 then
-        class = "LEVEL " .. level .. (class ~= "" and "  /  " .. class or "")
+        class = Tr("LEVEL %d"):format(level) .. (class ~= "" and "  /  " .. class or "")
     end
     self.class:SetText(class)
     self.zone:SetText(PublicText(GetZoneText()) or "")

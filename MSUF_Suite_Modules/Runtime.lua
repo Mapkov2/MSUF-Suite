@@ -14,7 +14,9 @@ Context.__index = Context
 -- defined once in MSUF_Suite/Core/Platform.lua, which is always loaded.
 S.Public, S.Number, S.Finite = NS.Public, NS.Number, NS.Finite
 S.PublicText, S.ReadText, S.Text = NS.PublicText, NS.ReadText, NS.Text
-S.Dispatch = NS.Dispatch
+S.Dispatch, S.Print = NS.Dispatch, NS.Print
+-- Records a character collects (MSUF_Suite/Core/CharacterData.lua).
+S.CharacterData = NS.CharacterData
 local Public, Dispatch = S.Public, S.Dispatch
 
 local function Accessible(frame)
@@ -435,7 +437,7 @@ end
 -- OnEvent of every context frame: hands the event to the module callback.
 local function RouteEvent(frame, event, ...)
     local ctx = frame.context
-    local module = S.instances[ctx.id]
+    local module = frame.module
     if not module.active then return end
     if event == "ADDON_LOADED" and module.addons and not module.addons[(...)] then return end
     -- Geometry modules re-apply after combat instead of moving frames in it.
@@ -450,6 +452,8 @@ end
 local function RoutingFrame(ctx)
     local frame = S.CreateFrame("Frame")
     frame.context = ctx
+    -- Install owns this instance for the context's lifetime.
+    frame.module = S.instances[ctx.id]
     frame:SetScript("OnEvent", RouteEvent)
     return frame
 end
@@ -563,8 +567,12 @@ function Context:Release()
     S.RestoreSaved(self.id)
 end
 
+local function NoopRefresh() end
+
 function S.Install(id, module)
     assert(S.catalog[id] and not S.instances[id], "Invalid suite module")
+    -- Event-only modules keep their registrations when an active profile is reapplied.
+    module.Refresh = module.Refresh or NoopRefresh
     module.id = id
     S.instances[id] = module
 end

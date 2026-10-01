@@ -42,6 +42,33 @@ function S.ClassRGB(classFile)
     return color.r, color.g, color.b
 end
 
+-- One field of a client info table (completion info, criteria) whose fields
+-- may be secret: the readable value, or nil.
+function S.PublicField(info, key)
+    if not Suite.Public(info) or type(info) ~= "table" then return nil end
+    local value = info[key]
+    return Suite.Public(value) and value or nil
+end
+
+-- Seconds as m:ss or h:mm:ss, "--:--" while unknown. Countdowns round up
+-- (a timer with 0.4 s left still shows 0:01).
+function S.ClockText(seconds, roundUp)
+    if not Suite.Finite(seconds) then return "--:--" end
+    seconds = math.max(0, roundUp and math.ceil(seconds) or math.floor(seconds))
+    if seconds >= 3600 then
+        return string.format("%d:%02d:%02d", math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
+    end
+    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+
+-- The class color as six hex digits (the settings' color format), or nil.
+function S.ClassHex(classFile)
+    local r, g, b = S.ClassRGB(classFile)
+    if not Suite.Finite(r) or not Suite.Finite(g) or not Suite.Finite(b) then return nil end
+    return string.format("%02x%02x%02x", math.floor(r * 255 + .5), math.floor(g * 255 + .5),
+        math.floor(b * 255 + .5))
+end
+
 -- Short key text shared by action bars and cooldown icons: SHIFT/CTRL/ALT/META
 -- become S/C/A/M, mouse buttons M4, the wheel MwU/MwD, numpad N1 and N+.
 -- Gamepad keys keep Blizzard's glyph markup.

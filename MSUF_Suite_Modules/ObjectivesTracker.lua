@@ -5,21 +5,24 @@ local M, SOURCES, Read = O.M, O.SOURCES, O.Read
 local MythicPlus = S.MythicPlus
 local Raid = S.Raid
 local Finite = S.Finite
+local Tr = S.Text
 
 -- The objective tracker's frame: rows, clicks and context menus, countdowns,
 -- theme and layout (see ObjectivesData.lua for how the files fit together).
 local ORDER = { "scenario", "focused", "campaign", "important", "complete", "quests", "world", "bonus", "achievements" }
 local GROUP = {
-    scenario = { "SCENARIO", .39, .64, .90 },
-    focused = { "FOCUSED", .98, .84, .42 },
-    campaign = { "CAMPAIGN", .98, .76, .32 },
-    important = { "IMPORTANT", .94, .52, .79 },
-    complete = { "READY TO TURN IN", .39, .86, .54 },
-    quests = { "QUESTS", .91, .92, .95 },
-    world = { "WORLD QUESTS", .73, .58, .94 },
-    bonus = { "BONUS OBJECTIVES", .47, .82, .80 },
-    achievements = { "ACHIEVEMENTS", .83, .62, .38 },
+    scenario = { Tr("SCENARIO"), .39, .64, .90 },
+    focused = { Tr("FOCUSED"), .98, .84, .42 },
+    campaign = { Tr("CAMPAIGN"), .98, .76, .32 },
+    important = { Tr("IMPORTANT"), .94, .52, .79 },
+    complete = { Tr("READY TO TURN IN"), .39, .86, .54 },
+    quests = { Tr("QUESTS"), .91, .92, .95 },
+    world = { Tr("WORLD QUESTS"), .73, .58, .94 },
+    bonus = { Tr("BONUS OBJECTIVES"), .47, .82, .80 },
+    achievements = { Tr("ACHIEVEMENTS"), .83, .62, .38 },
 }
+-- Header titles, translated once at load: renders only set them.
+local TITLE = { objectives = Tr("OBJECTIVES"), mythic = Tr("MYTHIC+"), raid = Tr("RAID") }
 local GROUP_COLOR_KEYS = {
     scenario = "scenarioColor", focused = "focusedColor", campaign = "campaignColor",
     important = "importantColor", complete = "completeGroupColor", quests = "questsColor",
@@ -70,10 +73,8 @@ local function Create(self)
 end
 
 ------------------------------------------------------------------ Blizzard actions
--- The quest log (Blizzard_UIPanels_Game) and the group finder load with the
--- game UI on Retail and Forever. The achievement and Adventure Guide
--- functions come from bootstraps of load-on-demand addons whose TOCs load
--- by game type, so those two are checked.
+-- Quest log/group finder load with Retail/Forever game UI. Achievement and
+-- Adventure Guide bootstraps depend on game type, so those two are checked.
 local function OpenQuestDetails(questID)
     if not Finite(questID) or questID <= 0 then return end
     QuestMapFrame_OpenToQuestDetails(questID)
@@ -161,7 +162,7 @@ local function BuildQuestMenu(root, button)
     local task = group == "world" or group == "bonus"
     if button.findGroup then
         local nativeSearch = button.questGroupSearch
-        root:CreateButton(button.questGroupSearch and FIND_A_GROUP or "Open group finder", function()
+        root:CreateButton(button.questGroupSearch and FIND_A_GROUP or Tr("Open group finder"), function()
             OpenQuestGroup(questID, nativeSearch)
         end)
     end
@@ -188,7 +189,7 @@ local function BuildQuestMenu(root, button)
 end
 
 local function ShowContextMenu(button)
-    local group, title = button.group, button.menuTitle or "Objective"
+    local group, title = button.group, button.menuTitle or Tr("Objective")
     if not (Finite(button.questID) or Finite(button.achievementID) or group == "scenario") then return end
     MenuUtil.CreateContextMenu(button, function(_, root)
         root:CreateTitle(title)
@@ -224,7 +225,10 @@ local function OnRowClick(button, mouseButton)
         Untrack(button)
         return
     end
-    if Finite(button.questID) then
+    if Finite(button.questID) and O.CanCompleteQuest(button.questID) then
+        QuestObjectiveTracker:RemoveAutoQuestPopUp(button.questID)
+        ShowQuestComplete(button.questID)
+    elseif Finite(button.questID) then
         OpenQuestDetails(button.questID)
     elseif Finite(button.achievementID) then
         OpenAchievement(button.achievementID)
@@ -258,7 +262,7 @@ end
 local function OnFindGroupEnter(button)
     local row = button.ownerRow
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    GameTooltip:SetText(row.questGroupSearch and TOOLTIP_TRACKER_FIND_GROUP_BUTTON or "Open group finder")
+    GameTooltip:SetText(row.questGroupSearch and TOOLTIP_TRACKER_FIND_GROUP_BUTTON or Tr("Open group finder"))
     GameTooltip:Show()
 end
 local function OnCollapseClick(button, mouseButton)
@@ -325,23 +329,14 @@ local function NewRow(self, key, kind)
     return row
 end
 
--- Blizzard's own tracker item button is a plain Button that calls
--- UseQuestLogSpecialItem from its OnClick; this one does the same.
-local function OnItemClick(target, mouseButton)
+-- Inherit item use outside combat; an addon call to UseQuestLogSpecialItem taints it.
+local function OnItemClick(target, mouseButton, down)
+    if down then return end
     if mouseButton == "RightButton" then
         ShowContextMenu(target.ownerRow)
         return
     end
-    if WatchTogglePressed() then
-        Untrack(target.ownerRow)
-        return
-    end
-    local id = target.ownerRow.questID
-    local index = Finite(id) and Read(C_QuestLog.GetLogIndexForQuestID, id)
-    if Finite(index) then
-        -- TODO(in-game): confirm this is not blocked for addon code.
-        UseQuestLogSpecialItem(index)
-    end
+    if WatchTogglePressed() then Untrack(target.ownerRow) end
 end
 
 local function OnItemEnter(target)
@@ -356,10 +351,15 @@ end
 
 local function EnsureItemButton(row)
     if row.itemButton then return row.itemButton end
-    local button = S.CreateFrame("Button", nil, row)
+    local button = S.CreateFrame("Button", nil, row, "InsecureActionButtonTemplate")
     button:SetSize(22, 22)
-    button:RegisterForClicks("AnyUp")
-    button:SetScript("OnClick", OnItemClick)
+    button:RegisterForClicks("AnyDown", "AnyUp")
+    button:SetAttribute("type1", "item")
+    -- The default or user-rebound QUESTWATCHTOGGLE modifier must not use the
+    -- item before the post-click handler untracks the quest.
+    button:SetAttribute("modifiers", "QUESTWATCHTOGGLE:shift")
+    button:SetAttribute("shift-type1", "")
+    button:HookScript("OnClick", OnItemClick)
     button:SetScript("OnEnter", OnItemEnter)
     button:SetScript("OnLeave", OnOwnedLeave)
     local icon = S.CreateTexture(button, nil, "ARTWORK")
@@ -395,14 +395,6 @@ local function EnsureTimer(row)
 end
 
 ------------------------------------------------------------------ countdowns
-local function TimerText(seconds)
-    seconds = math.max(0, math.ceil(seconds))
-    if seconds >= 3600 then
-        return string.format("%d:%02d:%02d", math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
-    end
-    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
-end
-
 -- One shared one-second callback runs while a visible countdown remains.
 -- C_Timer.After cannot be cancelled: a cancelled wait only counts as stale.
 local UpdateTimers
@@ -422,7 +414,7 @@ UpdateTimers = function(self)
         if row.timer and Finite(row.timerEnd) then
             local left = row.timerEnd - now
             if left > 0 then
-                local value = TimerText(left)
+                local value = S.ClockText(left, true)
                 if row.timerText ~= value then
                     row.timer:SetText(value)
                     row.timerText = value
@@ -472,17 +464,8 @@ local function Theme(self)
         self.background:SetColorTexture(dark and .035 or .025, dark and .039 or .055, dark and .047 or .085, opacity)
     end
     S.SetStyledFont(self.title, self.font, c.titleSize or 18, "OUTLINE", 1, true, 70, 1)
-    local headerHeight = math.max(40, (c.titleSize or 18) + 23)
-    if self.headerHeight ~= headerHeight then
-        self.headerHeight = headerHeight
-        self.divider:ClearAllPoints()
-        self.divider:SetPoint("TOPLEFT", 11, 7 - headerHeight)
-        self.divider:SetPoint("TOPRIGHT", -11, 7 - headerHeight)
-        self.scroll:ClearAllPoints()
-        self.scroll:SetPoint("TOPLEFT", 7, -headerHeight)
-        self.scroll:SetPoint("BOTTOMRIGHT", -7, 5)
-    end
-    self.title:SetText("OBJECTIVES")
+    O.ApplyHeading(self, c)
+    self.title:SetText(TITLE.objectives)
     if custom then
         self.title:SetTextColor(S.RGB(c.titleColor))
     elseif skin then
@@ -530,8 +513,10 @@ local function FlatSlot(flat, index)
     end
     -- Both flat buffers survive refreshes. Clear fields that belong to another row kind.
     item.key, item.kind, item.group, item.text, item.height = nil, nil, nil, nil, nil
-    item.collapsed, item.menuTitle, item.tracked, item.itemIcon = nil, nil, nil, nil
+    item.collapsed, item.menuTitle, item.tracked, item.itemIcon, item.itemLink = nil, nil, nil, nil, nil
     item.findGroup, item.questGroupSearch = nil, nil
+    item.questIcon, item.questIconAtlas = nil, nil
+    item.scenarioHeaderSetID = nil
     item.timeLeft, item.hasLines, item.collapseKey = nil, nil, nil
     item.questID, item.achievementID, item.scenarioID = nil, nil, nil
     item.done, item.percent = nil, nil
@@ -583,7 +568,9 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
         item.key, item.kind, item.group = entry.entryKey, "entry", group
         item.text, item.height = entry.title, entryHeight
         item.menuTitle, item.tracked = entry.title, entry.tracked
-        item.itemIcon, item.timeLeft = entry.itemIcon, entry.timeLeft
+        item.itemIcon, item.itemLink, item.timeLeft = entry.itemIcon, entry.itemLink, entry.timeLeft
+        item.questIcon, item.questIconAtlas = entry.questIcon, entry.questIconAtlas
+        item.scenarioHeaderSetID = entry.scenarioHeaderSetID
         item.findGroup, item.questGroupSearch = entry.findGroup, entry.questGroupSearch
         item.hasLines, item.collapsed, item.collapseKey = lines.count > 0, collapsedEntries[base] == true, base
         item.questID, item.achievementID, item.scenarioID = questID, achievementID, scenarioID
@@ -609,7 +596,9 @@ local function SameItem(a, b)
         and a.percent == b.percent and a.tracked == b.tracked
         and a.questID == b.questID and a.achievementID == b.achievementID
         and a.scenarioID == b.scenarioID and a.collapsed == b.collapsed
-        and a.itemIcon == b.itemIcon and a.timeLeft == b.timeLeft
+        and a.itemIcon == b.itemIcon and a.itemLink == b.itemLink and a.timeLeft == b.timeLeft
+        and a.questIcon == b.questIcon and a.questIconAtlas == b.questIconAtlas
+        and a.scenarioHeaderSetID == b.scenarioHeaderSetID
         and a.findGroup == b.findGroup and a.questGroupSearch == b.questGroupSearch
         and a.hasLines == b.hasLines and a.menuTitle == b.menuTitle
         and a.collapseKey == b.collapseKey
@@ -623,7 +612,7 @@ local function RenderMythicPlus(self, c)
         self.retheme = false
     end
     PlaceHost(self, c, themeChanged)
-    self.title:SetText("MYTHIC+")
+    self.title:SetText(TITLE.mythic)
     self.count:SetText(self.mplus.level and ("+" .. self.mplus.level) or "")
     self.content:SetHeight(self.mplus.height)
     self.host:SetHeight(math.min(c.height, self.headerHeight + self.mplus.height + 5))
@@ -638,7 +627,7 @@ local function RenderRaid(self, c)
         self.retheme = false
     end
     PlaceHost(self, c, themeChanged)
-    self.title:SetText("RAID")
+    self.title:SetText(TITLE.raid)
     self.count:SetText(self.raid.difficultyName or "")
     self.content:SetHeight(self.raid.height)
     self.host:SetHeight(math.min(c.height, self.headerHeight + self.raid.height + 5))
@@ -699,6 +688,10 @@ local function PaintRowWidgets(self, row, item, color, size)
     end
     if item.itemIcon and item.kind == "entry" then
         local button = EnsureItemButton(row)
+        if button.itemLink ~= item.itemLink then
+            button:SetAttribute("item1", item.itemLink)
+            button.itemLink = item.itemLink
+        end
         button.icon:SetTexture(item.itemIcon)
         button:ClearAllPoints()
         button:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
@@ -781,10 +774,11 @@ local function PaintRow(self, row, item, c, width, y)
     row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
     local rightInset = PaintRowWidgets(self, row, item, color, size)
     row.text:ClearAllPoints()
-    row.text:SetPoint("LEFT", row, "LEFT", 12, 0)
+    row.text:SetPoint("LEFT", row, "LEFT", O.PaintQuestIcon(self, row, item, c, color), 0)
     row.text:SetPoint("RIGHT", row, "RIGHT", -(rightInset + 2), 0)
     local textHeight = row.text:GetStringHeight()
-    local height = math.max(item.height, Finite(textHeight) and textHeight + 10 or 0)
+    local height = math.max(item.height, Finite(textHeight) and textHeight + 10 or 0,
+        O.PaintScenarioHeader(row, item, width))
     row:SetHeight(height)
     PaintRowState(self, row, item, color)
     row:Show()
@@ -841,7 +835,7 @@ Render = function(self)
         flatCount = 1
         local preview = FlatSlot(flat, 1)
         preview.key, preview.kind, preview.group = "preview", "line", "quests"
-        preview.text, preview.height = "Tracked objectives appear here", 24
+        preview.text, preview.height = Tr("Tracked objectives appear here"), 24
     end
     for i = #flat, flatCount + 1, -1 do flat[i] = nil end
     -- Compare with the previous layout first; an unchanged tracker stops here.
@@ -850,7 +844,7 @@ Render = function(self)
     local geometryChanged = self.lastWidth ~= c.width or self.lastHeight ~= c.height
         or self.lastScale ~= c.scale or self.lastX ~= c.x or self.lastY ~= c.y
         or self.lastEditMode ~= S.editMode
-    local changed = themeChanged or geometryChanged or not previous or #previous ~= flatCount
+    local changed = self.layoutDirty or themeChanged or geometryChanged or not previous or #previous ~= flatCount
     if not changed then
         for i = 1, flatCount do
             if not SameItem(flat[i], previous[i]) then
@@ -864,9 +858,10 @@ Render = function(self)
         return
     end
     self.previousFlat, self.flatWork = flat, previous or {}
+    self.layoutDirty = nil
     self.retheme = false
     if themeChanged then Theme(self) end
-    self.title:SetText("OBJECTIVES")
+    self.title:SetText(TITLE.objectives)
     PlaceHost(self, c, themeChanged)
     local used = Scratch(self, "usedRows")
     for i = 1, flatCount do used[flat[i].key] = true end
@@ -880,7 +875,7 @@ Render = function(self)
     for i = 1, flatCount do
         local item = flat[i]
         local row = self.rows[item.key]
-        if row and not themeChanged and row.layoutY == y and row.layoutWidth == width
+        if row and row.layoutHeight and not themeChanged and row.layoutY == y and row.layoutWidth == width
             and SameItem(item, previousByKey[item.key]) then
             if row.timerEnd then self.timedRows[row] = true end
             y = y + row.layoutHeight

@@ -64,7 +64,7 @@ for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 55 and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
+assert(count == 62 and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
     and Suite.Suite.instances.itemCounts and Suite.Suite.instances.loadoutReminder
@@ -86,8 +86,18 @@ assert(count == 55 and Suite.Suite.instances.actionTracker and Suite.Suite.insta
     and Suite.Suite.instances.groupRaidShortcuts and Suite.Suite.instances.trainerLearnAll
     and Suite.Suite.instances.characterUpgradeWindow and Suite.Suite.instances.lootToastFilter
     and Suite.Suite.instances.combatMovementCue and Suite.Suite.instances.professionAppearance
-    and Suite.Suite.instances.trustedPartyInvites and Suite.Suite.instances.burningRushCue,
+    and Suite.Suite.instances.trustedPartyInvites and Suite.Suite.instances.burningRushCue
+    and Suite.Suite.instances.threatMeter and Suite.Suite.instances.flightTimer and Suite.Suite.instances.characterExtras
+    and Suite.Suite.instances.merchantList and Suite.Suite.instances.tooltipDetails
+    and Suite.Suite.instances.popupAttention and Suite.Suite.instances.partyEffects,
     "shared HUD modules and Quality of Life helpers did not register together")
+local eventOnly = Suite.Suite.instances.groupFinderExitReminder
+assert(type(eventOnly.Refresh) == "function"
+    and eventOnly.Refresh == Suite.Suite.instances.delveSolePower.Refresh
+    and eventOnly:Refresh() == nil,
+    "event-only modules lack the shared refresh callback required by history reapply")
+assert(Suite.Suite.instances.afkScreen.Refresh ~= eventOnly.Refresh,
+    "installing the refresh fallback replaced a module's own refresh callback")
 local context = Suite.Suite.NewContext("qol")
 assert(context:Skin() == nil, "disabled skin should require no provider")
 local module, events = Suite.Suite.instances.qol, 0
@@ -333,5 +343,51 @@ assert(S.BlizzardText("SUITE_TEST_LABEL", "Minimap") == "Minikarte"
     and S.RGB == Suite.RGB and S.ResolveFont == Suite.ResolveFont,
     "the runtime lost a shared text, color or media helper")
 SUITE_TEST_LABEL = nil
+
+-- Use the loaded core and module runtime: isolated QoL fixtures previously
+-- supplied their own Print and hid the missing runtime export.
+assert(S.Print == Suite.Print, "the runtime lost the core chat helper")
+local death = assert(S.instances.groupDeathAlert)
+local deadUnits = { raid1 = false, raid5 = false, raid6 = false }
+local deathChat, deathScreen, deathSounds = {}, {}, 0
+local inCombat = true
+InCombatLockdown = function() return inCombat end
+IsInGroup, IsInRaid = function() return true end, function() return true end
+UnitExists = function(unit) return deadUnits[unit] ~= nil end
+UnitIsDeadOrGhost = function(unit) return deadUnits[unit] end
+UnitIsUnit = function(unit, other) return unit == "raid1" and other == "player" end
+UnitName = function(unit) return unit == "raid5" and "Røxì" or "Teammate" end
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) deathChat[#deathChat + 1] = text end }
+ChatTypeInfo, SOUNDKIT = { RAID_WARNING = {} }, { RAID_WARNING = 8959 }
+RaidWarningUtil = { AddMessage = function(text, color)
+    assert(color == ChatTypeInfo.RAID_WARNING)
+    deathScreen[#deathScreen + 1] = text
+end }
+PlaySound = function(kit, channel)
+    assert(kit == SOUNDKIT.RAID_WARNING and channel == "Master")
+    deathSounds = deathSounds + 1
+end
+death.active, death.config = true, { chat = true, screen = true, sound = true, includePlayer = false }
+death.context = S.NewContext("groupDeathAlert")
+death:Enable()
+deadUnits.raid5 = true
+death.context.frame:callback("UNIT_FLAGS", "raid5")
+death.context.frame:callback("UNIT_HEALTH", "raid5")
+assert(#deathChat == 1 and deathChat[1] == "MSUF Suite: Røxì died"
+    and #deathScreen == 1 and deathScreen[1] == "Røxì died" and deathSounds == 1,
+    "real runtime death event failed or duplicated chat/screen/sound")
+deadUnits.raid6 = true
+death.context.frame:callback("UNIT_HEALTH", "raid6")
+assert(#deathChat == 2 and #deathScreen == 2 and deathSounds == 1,
+    "simultaneous runtime deaths overlapped sounds or lost messages")
+deadUnits.raid5 = false
+death.context.frame:callback("UNIT_FLAGS", "raid5")
+assert(#deathChat == 2, "resurrection emitted a death message")
+inCombat = false
+death.context.frame:callback("PLAYER_REGEN_ENABLED")
+assert(not death.dead and not death.context.callbacks.UNIT_HEALTH
+    and not death.context.callbacks.UNIT_FLAGS, "runtime watched deaths outside combat")
+death:Disable()
+death.active = false
 print("Standalone runtime: shared HUD modules and " .. (count - 3)
     .. " Quality of Life helpers register without skin or frames; event and property cleanup passed")

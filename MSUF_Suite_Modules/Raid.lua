@@ -6,6 +6,18 @@ if NS.Client.isForever then return end
 -- engaged boss list at ENCOUNTER_END, including bosses from earlier phases.
 local H = {}
 local Finite, Public, Text = S.Finite, S.Public, S.PublicText
+local Dispatch, Finish = S.Dispatch, NS.Finish
+local Clock = S.ClockText
+local Tr = S.Text
+local DOT = "  \194\183  "
+-- Translated once; the view repaints every second during a pull.
+local L = {
+    lastPull = Tr("LAST PULL  %s"), boss = Tr("Boss %d"), active = Tr("ACTIVE BOSSES  %s"),
+    hpUnavailable = Tr("HP unavailable"), defeated = Tr("%d defeated"), bestPull = Tr("BEST PULL  %s"),
+    waiting = Tr("Waiting for raid encounter"), phase = Tr("PHASE  %s"), bestPhase = Tr("BEST PULL  PHASE %s"),
+    fastest = Tr("FASTEST KILL  %s"), encounter = Tr("Raid encounter"), difficulty = Tr("Difficulty %d"),
+    unavailable = Tr("RESULT UNAVAILABLE"), kill = Tr("KILL"), wipe = Tr("WIPE \194\183 %s"),
+}
 -- 12.1 has five boss unit tokens (UnitTokenType Boss1-Boss5). Live health
 -- listens to exactly these instead of every raid member's UNIT_HEALTH.
 local BOSS_UNITS = { "boss1", "boss2", "boss3", "boss4", "boss5" }
@@ -14,21 +26,13 @@ for index, unit in ipairs(BOSS_UNITS) do BOSS_INDEX[unit] = index end
 -- Boss health changes with every damage tick. The boss row is redrawn at
 -- most five times per second; the one-second ticker redraws the rest.
 local LIVE_PAINT_DELAY = .2
+local ReadPending
 
 local function SetText(widget, value)
     if widget.cachedText ~= value then
         widget:SetText(value)
         widget.cachedText = value
     end
-end
-
-local function Clock(seconds)
-    if not Finite(seconds) then return "--:--" end
-    seconds = math.max(0, math.floor(seconds))
-    if seconds >= 3600 then
-        return string.format("%d:%02d:%02d", math.floor(seconds / 3600), math.floor(seconds / 60) % 60, seconds % 60)
-    end
-    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
 local function Line(parent, size, y)
@@ -43,22 +47,27 @@ end
 
 -- The active boss row while a pull runs, else the last result.
 local function CurrentText(view)
-    if not view.pull then return "LAST PULL  " .. (view.lastResult or "--") end
+    if not view.pull then return L.lastPull:format(view.lastResult or "--") end
+    if view.liveText then return view.liveText end
     local names = {}
     for i = 1, 10 do
         local boss = view.live[i]
         if boss then
-            names[#names + 1] = (boss.name or ("Boss " .. i))
+            names[#names + 1] = (boss.name or L.boss:format(i))
                 .. (boss.percent and string.format(" %.1f%%", boss.percent) or "")
         end
     end
-    return "ACTIVE BOSSES  " .. (#names > 0 and table.concat(names, " · ") or "HP unavailable")
+    view.liveText = L.active:format(#names > 0 and table.concat(names, " \194\183 ") or L.hpUnavailable)
+    return view.liveText
 end
 
 local function PaintLive(owner)
     local view = owner.raid
     view.livePending = false
-    if view.pull and owner.active and owner.raidActive then SetText(view.current, CurrentText(view)) end
+    if view.pull and owner.active and owner.raidActive then
+        ReadPending(view)
+        SetText(view.current, CurrentText(view))
+    end
 end
 
 local function Create(owner)
@@ -67,7 +76,7 @@ local function Create(owner)
     panel:SetPoint("TOPLEFT", owner.content, "TOPLEFT", 0, 0)
     panel:SetPoint("TOPRIGHT", owner.content, "TOPRIGHT", 0, 0)
     panel:SetHeight(230)
-    local view = { frame = panel, height = 230, live = {} }
+    local view = { frame = panel, height = 230, live = {}, liveDirty = {} }
     view.name = Line(panel, 16, -5)
     view.elapsed = Line(panel, 23, -34)
     view.phase = Line(panel, 13, -72)
@@ -90,42 +99,43 @@ end
 
 local function ProgressText(best)
     local boss = best.boss and (best.boss .. "  ") or ""
-    local progress = best.defeated > 0 and (best.defeated .. " boss defeated · ") or ""
+    local progress = best.defeated > 0 and (L.defeated:format(best.defeated) .. DOT) or ""
     return progress .. boss .. string.format("%.1f%%", best.remaining)
 end
 
 local function BestText(best)
-    return "BEST PULL  " .. (best and ProgressText(best) or "--")
+    return L.bestPull:format(best and ProgressText(best) or "--")
 end
 
 local function Paint(owner)
     local view = owner.raid
     if not view then return end
+    if view.pull then ReadPending(view) end
     local record = Record(view)
-    SetText(view.name, view.encounterName or "Waiting for raid encounter")
+    SetText(view.name, view.encounterName or L.waiting)
     SetText(view.elapsed, view.pull and Clock(GetTime() - view.pull.started)
         or view.lastTime and Clock(view.lastTime) or "--:--")
-    local phase = view.stage and ("PHASE  " .. view.stage
-        .. (view.stageSource and ("  ·  " .. view.stageSource) or "")) or "PHASE  --"
+    local phase = L.phase:format(view.stage and (view.stage .. (view.stageSource and (DOT .. view.stageSource) or ""))
+        or "--")
     local phases = record and record.bestPhases
     local bestPhase = phases and (view.stageSource and phases[view.stageSource]
         or phases.DBM or phases.BigWigs)
     SetText(view.phase, phase)
     SetText(view.current, CurrentText(view))
     if bestPhase then
-        local best = "BEST PULL  PHASE " .. bestPhase.stage
+        local best = L.bestPhase:format(bestPhase.stage)
         if bestPhase.defeated and bestPhase.defeated > 0 then
-            best = best .. " · " .. bestPhase.defeated .. " boss defeated"
+            best = best .. " \194\183 " .. L.defeated:format(bestPhase.defeated)
         end
         if bestPhase.remaining then
-            best = best .. " · " .. (bestPhase.boss and (bestPhase.boss .. " ") or "")
+            best = best .. " \194\183 " .. (bestPhase.boss and (bestPhase.boss .. " ") or "")
                 .. string.format("%.1f%%", bestPhase.remaining)
         end
         SetText(view.best, best)
     else
         SetText(view.best, BestText(record and record.best))
     end
-    SetText(view.fastest, "FASTEST KILL  " .. Clock(record and record.fastest))
+    SetText(view.fastest, L.fastest:format(Clock(record and record.fastest)))
 end
 
 function H.Theme(owner)
@@ -151,32 +161,14 @@ function H.Detect(owner)
     return Public(inside) and Public(kind) and inside == true and kind == "raid"
 end
 
--- Older raid records stored the encounter-end fraction as a display percent.
-local function MigrateWipePercent(record)
-    if type(record) ~= "table" then return end
-    local function Migrate(progress)
-        if type(progress) ~= "table" then return end
-        local remaining = progress.remaining
-        if Finite(remaining) and remaining >= 0 and remaining <= 1 then
-            progress.remaining = remaining * 100
-        end
-    end
-    Migrate(record.best)
-    if type(record.bestPhases) == "table" then
-        for _, phase in pairs(record.bestPhases) do Migrate(phase) end
-    end
-end
-
+-- Records belong to the character (MSUF_Suite/Core/CharacterData.lua); the
+-- one-time move from profiles also converted old 0..1 wipe fractions.
 function H.Show(owner)
     if not H.Detect(owner) then return false end
     local view = Create(owner)
-    local state = S.ModuleState("objectives") or {}
-    if type(state.raidRecords) ~= "table" then state.raidRecords = {} end
-    if state.raidRecordsHealthScale ~= 100 then
-        for _, record in pairs(state.raidRecords) do MigrateWipePercent(record) end
-        state.raidRecordsHealthScale = 100
-    end
-    view.records = state.raidRecords
+    local data = S.CharacterData("objectives") or {}
+    if type(data.raidRecords) ~= "table" then data.raidRecords = {} end
+    view.records = data.raidRecords
     owner.raidActive = true
     view.frame:Show()
     H.Bind(owner)
@@ -201,17 +193,23 @@ function H.Stop(owner)
     view.stage, view.stageStep, view.stageSource = nil, nil, nil
     view.lastTime, view.lastResult = nil, nil
     view.live = {}
+    view.liveText = nil
+    for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.frame:Hide()
     owner.raidActive = false
 end
 
 -- Reads one boss unit into view.live. True when its row changed.
-local function ReadBoss(view, index, unit)
+local function ReadBoss(view, index, unit, keepMissing)
     local before = view.live[index]
     local exists = UnitExists(unit)
     if Public(exists) and exists == false then
+        -- Encounter-end tokens can already be gone. Keep their last identity
+        -- for the phase result instead of replacing it with an absent token.
+        if keepMissing then return false end
         if not before then return false end
         view.live[index] = nil
+        view.liveText = nil
         return true
     end
     local name = Text(UnitName(unit))
@@ -226,16 +224,28 @@ local function ReadBoss(view, index, unit)
     else
         view.live[index] = { name = name, percent = percent }
     end
+    view.liveText = nil
     return true
 end
 
--- A health tick only moves the boss row; it is redrawn with the next live
--- paint instead of repainting the whole view per tick.
+ReadPending = function(view, keepMissing)
+    for index = 1, #BOSS_UNITS do
+        if view.liveDirty[index] then
+            view.liveDirty[index] = nil
+            ReadBoss(view, index, BOSS_UNITS[index], keepMissing)
+        end
+    end
+end
+
+-- Health storms mark their boss without reading a native snapshot per tick.
+-- The existing live paint reads each dirty boss once at the latest value.
 function H.Health(owner, unit)
     local view = owner.raid
     if not view or not view.pull or not Public(unit) then return end
     local index = BOSS_INDEX[unit]
-    if not index or not ReadBoss(view, index, unit) or view.livePending then return end
+    if not index then return end
+    view.liveDirty[index] = true
+    if view.livePending then return end
     view.livePending = true
     C_Timer.After(LIVE_PAINT_DELAY, view.liveTick)
 end
@@ -246,6 +256,7 @@ function H.UpdateBosses(owner)
     if not view or not view.pull then return end
     local changed = false
     for index, unit in ipairs(BOSS_UNITS) do
+        view.liveDirty[index] = nil
         changed = ReadBoss(view, index, unit) or changed
     end
     if changed then Paint(owner) end
@@ -253,6 +264,22 @@ end
 
 -- DBM and BigWigs know fight-specific transitions from their boss modules.
 -- Their public callbacks are optional; the Suite never guesses stages from HP.
+-- Every call into a boss mod runs through Dispatch: its error is reported
+-- and reads as nothing (an unknown stage), never stopping the raid view.
+local function CallMethod(object, method, ...)
+    return object[method](object, ...)
+end
+
+local function Ask(object, method, ...)
+    return Dispatch(Finish, CallMethod, object, method, ...)
+end
+
+local function MatchesEncounter(boss, encounterID)
+    if not Public(boss) or type(boss) ~= "table" then return false end
+    local asked, matches = Ask(boss, "IsEncounterID", encounterID)
+    return asked == true and Public(matches) and matches == true
+end
+
 function H.Stage(owner, source, stage, step)
     local view = owner.raid
     if not view or not view.pull or not Finite(stage) or stage <= 0 then return end
@@ -276,18 +303,16 @@ function H.Bind(owner)
                 H.Stage(owner, "DBM", stage, totality)
             end
         end
-        dbm:RegisterCallback("DBM_SetStage", view.dbmCallback)
+        Ask(dbm, "RegisterCallback", "DBM_SetStage", view.dbmCallback)
         view.dbm = dbm
     end
     local loader = _G.BigWigsLoader
     if not view.bigWigs and type(loader) == "table" and type(loader.RegisterMessage) == "function" then
         view.bigWigsListener = view.bigWigsListener or {}
         view.bigWigsCallback = view.bigWigsCallback or function(_, boss, stage)
-            if not view.pull or not Public(boss) or type(boss) ~= "table" then return end
-            local matches = boss:IsEncounterID(view.encounterID)
-            if Public(matches) and matches then H.Stage(owner, "BigWigs", stage) end
+            if view.pull and MatchesEncounter(boss, view.encounterID) then H.Stage(owner, "BigWigs", stage) end
         end
-        loader.RegisterMessage(view.bigWigsListener, "BigWigs_SetStage", view.bigWigsCallback)
+        Dispatch(Finish, loader.RegisterMessage, view.bigWigsListener, "BigWigs_SetStage", view.bigWigsCallback)
         view.bigWigs = loader
     end
 end
@@ -296,10 +321,10 @@ function H.Unbind(owner)
     local view = owner.raid
     if not view then return end
     if view.dbm and type(view.dbm.UnregisterCallback) == "function" then
-        view.dbm:UnregisterCallback("DBM_SetStage", view.dbmCallback)
+        Ask(view.dbm, "UnregisterCallback", "DBM_SetStage", view.dbmCallback)
     end
     if view.bigWigs and type(view.bigWigs.UnregisterMessage) == "function" then
-        view.bigWigs.UnregisterMessage(view.bigWigsListener, "BigWigs_SetStage")
+        Dispatch(Finish, view.bigWigs.UnregisterMessage, view.bigWigsListener, "BigWigs_SetStage")
     end
     view.dbm, view.bigWigs = nil, nil
 end
@@ -309,27 +334,38 @@ function H.Tick(owner)
     if owner.active and owner.raidActive and view and view.pull then Paint(owner) end
 end
 
-local function ReadInitialStage(owner)
-    local view = owner.raid
-    local dbm = view.dbm
-    if dbm and type(dbm.GetStage) == "function" then
-        local stage, totality, encounterID = dbm:GetStage()
-        if Finite(encounterID) and encounterID == view.encounterID then
-            H.Stage(owner, "DBM", stage, totality)
-        end
-    end
-    if view.stage then return end
+-- BigWigs' engaged module of this encounter, walking its iterator through
+-- Dispatch as well (bounded: a broken iterator cannot loop forever).
+local function ReadBigWigsStage(owner, view)
     local bigWigs = _G.BigWigs
     if not bigWigs or type(bigWigs.IterateBossModules) ~= "function" then return end
-    for _, boss in bigWigs:IterateBossModules() do
-        if Public(boss) and type(boss) == "table" and boss:IsEncounterID(view.encounterID) then
-            local engaged = boss:IsEngaged()
-            if Public(engaged) and engaged == true then
-                H.Stage(owner, "BigWigs", boss:GetStage())
+    local ok, iterator, state, control = Ask(bigWigs, "IterateBossModules")
+    if not ok or type(iterator) ~= "function" then return end
+    for _ = 1, 500 do
+        local stepped, key, boss = Dispatch(Finish, iterator, state, control)
+        if not stepped or key == nil then return end
+        control = key
+        if MatchesEncounter(boss, view.encounterID) then
+            local asked, engaged = Ask(boss, "IsEngaged")
+            if asked and Public(engaged) and engaged == true then
+                local read, stage = Ask(boss, "GetStage")
+                if read then H.Stage(owner, "BigWigs", stage) end
                 return
             end
         end
     end
+end
+
+local function ReadInitialStage(owner)
+    local view = owner.raid
+    local dbm = view.dbm
+    if dbm and type(dbm.GetStage) == "function" then
+        local ok, stage, totality, encounterID = Ask(dbm, "GetStage")
+        if ok and Finite(encounterID) and encounterID == view.encounterID then
+            H.Stage(owner, "DBM", stage, totality)
+        end
+    end
+    if not view.stage then ReadBigWigsStage(owner, view) end
 end
 
 function H.Start(owner, encounterID, encounterName, difficultyID)
@@ -338,11 +374,13 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     local view = owner.raid
     StopTicker(view)
     view.encounterID, view.difficultyID = encounterID, difficultyID
-    view.encounterName = Text(encounterName) or "Raid encounter"
-    view.difficultyName = Text(GetDifficultyInfo(difficultyID)) or ("Difficulty " .. difficultyID)
+    view.encounterName = Text(encounterName) or L.encounter
+    view.difficultyName = Text(GetDifficultyInfo(difficultyID)) or L.difficulty:format(difficultyID)
     view.lastTime, view.lastResult = nil, nil
     view.stage, view.stageStep, view.stageSource = nil, nil, nil
     view.live = {}
+    view.liveText = nil
+    for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.pull = { started = GetTime() }
     ReadInitialStage(owner)
     owner.context:Event("UNIT_HEALTH", function(module, _, unit) H.Health(module, unit) end, true, BOSS_UNITS)
@@ -392,6 +430,7 @@ function H.End(owner, encounterID, _, difficultyID, _, success, status)
     local view = owner.raid
     if not view or not view.pull or view.encounterID ~= encounterID
         or view.difficultyID ~= difficultyID then return end
+    ReadPending(view, true)
     StopTicker(view)
     owner.context:RemoveEvent("UNIT_HEALTH")
     owner.context:RemoveEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
@@ -402,15 +441,15 @@ function H.End(owner, encounterID, _, difficultyID, _, success, status)
     local record = view.records[key] or {}
     view.records[key] = record
     if not Public(success) or not Finite(success) then
-        view.lastResult = "RESULT UNAVAILABLE"
+        view.lastResult = L.unavailable
     elseif success == 1 then
-        view.lastResult = "KILL"
+        view.lastResult = L.kill
         if view.lastTime and (not Finite(record.fastest) or view.lastTime < record.fastest) then
             record.fastest = view.lastTime
         end
     elseif success == 0 then
         local progress = WipeProgress(status, view.live)
-        view.lastResult = progress and ("WIPE · " .. ProgressText(progress)) or "WIPE · HP unavailable"
+        view.lastResult = L.wipe:format(progress and ProgressText(progress) or L.hpUnavailable)
         if view.stage and view.stageStep and view.stageSource then
             record.bestPhases = record.bestPhases or {}
             local previous = record.bestPhases[view.stageSource]
@@ -431,7 +470,7 @@ function H.End(owner, encounterID, _, difficultyID, _, success, status)
             record.best = progress
         end
     else
-        view.lastResult = "RESULT UNAVAILABLE"
+        view.lastResult = L.unavailable
     end
     Paint(owner)
 end

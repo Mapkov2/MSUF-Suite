@@ -17,6 +17,7 @@ local COLOR_KEYS = {
 
 local Text, ReadText, Number = S.PublicText, S.ReadText, S.Number
 local Dispatch = S.Dispatch
+local Tr = S.Text
 
 local function Create(self)
     if self.host then return end
@@ -56,7 +57,7 @@ local function Create(self)
     leave:SetScript("OnFinished", function()
         if not self.active or S.editMode then return end
         host:Hide()
-        self.showing = false
+        self.current, self.showing, self.expiresAt = nil, false, nil
         self:Next()
     end)
     self.host, self.background, self.accent = host, background, accent
@@ -107,6 +108,16 @@ local function Paint(self, item)
     self.divider:SetColorTexture(color[1], color[2], color[3], .62)
 end
 
+local function ScheduleDismiss(self, delay)
+    self.serial = (self.serial or 0) + 1
+    local serial, generation = self.serial, self.generation
+    C_Timer.After(delay, function()
+        if self.active and not S.editMode and self.generation == generation and self.serial == serial then
+            self.leave:Play()
+        end
+    end)
+end
+
 local function Display(self, item)
     self.current = item
     self.leave:Stop()
@@ -116,18 +127,33 @@ local function Display(self, item)
     self.host:Show()
     self.enter:Play()
     self.showing = true
-    self.serial = (self.serial or 0) + 1
-    local serial, generation = self.serial, self.generation
-    C_Timer.After(self.config.duration, function()
-        if self.active and not S.editMode and self.generation == generation and self.serial == serial then
-            self.leave:Play()
-        end
-    end)
+    self.expiresAt = GetTime() + self.config.duration
+    ScheduleDismiss(self, self.config.duration)
 end
 
 function M:Next()
     if not self.active or self.showing or S.editMode or #self.queue == 0 then return end
     Display(self, table.remove(self.queue, 1))
+end
+
+local function ClearKind(self, kind)
+    for i = #self.queue, 1, -1 do
+        if self.queue[i].kind == kind then table.remove(self.queue, i) end
+    end
+    if not self.current or self.current.kind ~= kind then return end
+    self.serial = (self.serial or 0) + 1
+    self.enter:Stop()
+    self.leave:Stop()
+    self.current, self.showing, self.expiresAt = nil, false, nil
+    if not S.editMode then
+        self.host:Hide()
+        self:Next()
+    end
+end
+
+local function ActiveScenario()
+    local _, stage, total = C_Scenario.GetInfo()
+    return S.Finite(stage) and S.Finite(total) and stage >= 1 and stage <= total
 end
 
 local function Enqueue(self, kind, title, subtitle, key)
@@ -161,12 +187,14 @@ local function Zone(self)
     local key = zone .. "/" .. (subzone or "")
     if self.lastZone == key then return end
     self.lastZone = key
+    -- A queued or paused zone banner belongs to the area it announced.
+    ClearKind(self, "zone")
     -- A keystone changes subzones repeatedly. The zone banner is useful in
     -- the world, but competes with objectives and combat in an active run.
     -- Retail and WoW Forever both have C_ChallengeMode (Forever runs no keystones).
     local active = C_ChallengeMode.IsChallengeModeActive()
     if S.Public(active) and active == true then return end
-    Enqueue(self, "zone", subzone or zone, subzone and zone or "NEW AREA", "zone:" .. key)
+    Enqueue(self, "zone", subzone or zone, subzone and zone or Tr("NEW AREA"), "zone:" .. key)
 end
 
 -- Zone texts settle after the change events; read them on the next frame.
@@ -185,6 +213,8 @@ end
 
 local function Event(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
+        ClearKind(self, "scenario")
+        ClearKind(self, "zone")
         -- M.ApplyNative (below) is set when this file loads.
         self:ApplyNative()
         local initialLogin, reload = ...
@@ -196,6 +226,7 @@ local function Event(self, event, ...)
         end
         return
     end
+    if event == "ZONE_CHANGED_NEW_AREA" then ClearKind(self, "scenario") end
     if event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS" or event == "ZONE_CHANGED_NEW_AREA" then
         ScheduleZone(self)
     elseif event == "QUEST_ACCEPTED" or event == "QUEST_TURNED_IN" then
@@ -205,19 +236,19 @@ local function Event(self, event, ...)
         if not id then return end
         local title = ReadText(C_QuestLog.GetTitleForQuestID, id)
         if title then
-            Direct(self, "quest", title, event == "QUEST_ACCEPTED" and "QUEST ACCEPTED" or "QUEST COMPLETE",
+            Direct(self, "quest", title, event == "QUEST_ACCEPTED" and Tr("QUEST ACCEPTED") or Tr("QUEST COMPLETE"),
                 event .. ":" .. id)
         end
     elseif event == "ACHIEVEMENT_EARNED" and self.config.achievements then
         local id = ...
         if not Number(id) then return end
         local _, name = GetAchievementInfo(id)
-        if Text(name) then Direct(self, "achievement", name, "ACHIEVEMENT EARNED", "achievement:" .. id) end
+        if Text(name) then Direct(self, "achievement", name, Tr("ACHIEVEMENT EARNED"), "achievement:" .. id) end
     elseif event == "PLAYER_LEVEL_UP" and self.config.level then
         local level = ...
-        if Number(level) then Direct(self, "level", "LEVEL " .. tostring(level), "LEVEL UP", "level:" .. level) end
+        if Number(level) then Direct(self, "level", Tr("LEVEL %d"):format(level), Tr("LEVEL UP"), "level:" .. level) end
     elseif event == "SCENARIO_COMPLETED" and self.config.scenario then
-        Direct(self, "scenario", "SCENARIO COMPLETE", ReadText(C_Scenario.GetInfo), "scenario")
+        Direct(self, "scenario", Tr("SCENARIO COMPLETE"), ReadText(C_Scenario.GetInfo), "scenario")
     end
 end
 
@@ -283,7 +314,8 @@ local function OnDisplayToast(manager)
     local kind, title, subtitle, id = ToastData(manager)
     local allowed = ToastAllowed(self, kind)
     if not NS.IsCombatLocked() then self.context:HideControl(manager, allowed == true) end
-    if not allowed or not title or RecentlyDirect(self, kind) then return end
+    if not allowed or not title or RecentlyDirect(self, kind)
+        or (kind == "scenario" and not ActiveScenario()) then return end
     Enqueue(self, kind, title, subtitle, "toast:" .. tostring(id or title))
 end
 
@@ -346,7 +378,7 @@ local function OnShowAlert(system, data)
     if not self.active or not self.config[kind] or not S.Public(data) or type(data) ~= "table" then return end
     local title = kind == "quests" and Text(data.taskName) or kind == "scenario" and Text(data.name)
     if title and not RecentlyDirect(self, kind) then
-        Enqueue(self, kind, title, kind == "quests" and "QUEST COMPLETE" or "SCENARIO COMPLETE",
+        Enqueue(self, kind, title, kind == "quests" and Tr("QUEST COMPLETE") or Tr("SCENARIO COMPLETE"),
             "alert:" .. kind .. ":" .. title)
     end
 end
@@ -403,7 +435,8 @@ function M:Enable()
     self.active = true
     Create(self)
     Theme(self)
-    self.queue, self.showing = {}, false
+    self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil
+    self.zoneScheduled = false
     for _, event in ipairs(EVENTS) do self.context:Event(event, Event, true) end
     self.context:Event("PLAYER_REGEN_ENABLED", NativeAnnouncements, true)
     self.lastZone = CurrentZoneKey()
@@ -423,15 +456,30 @@ function M:Refresh()
     if S.editMode then
         self.enter:Stop()
         self.leave:Stop()
-        self.serial = (self.serial or 0) + 1
-        Paint(self, { kind = "zone", title = "ANNOUNCEMENTS", subtitle = "Zone and event preview" })
+        if not self.previewing then self.serial = (self.serial or 0) + 1 end
+        self.previewing = true
+        Paint(self, { kind = "zone", title = Tr("ANNOUNCEMENTS"), subtitle = Tr("Zone and event preview") })
         self.host:SetAlpha(1)
         self.host:Show()
-    elseif self.showing and self.current then
-        Paint(self, self.current)
     else
-        self.host:Hide()
-        self:Next()
+        local wasPreviewing = self.previewing
+        self.previewing = nil
+        if wasPreviewing and self.showing and self.current then
+            -- Edit Mode invalidates the old timer. Preserve its deadline:
+            -- expired banners disappear; a live banner gets its remaining wait.
+            local remaining = (self.expiresAt or 0) - GetTime()
+            if remaining > 0 then
+                ScheduleDismiss(self, remaining)
+            else
+                self.current, self.showing, self.expiresAt = nil, false, nil
+            end
+        end
+        if self.showing and self.current then
+            Paint(self, self.current)
+        else
+            self.host:Hide()
+            self:Next()
+        end
     end
 end
 
@@ -440,7 +488,8 @@ function M:Disable()
     self.serial = (self.serial or 0) + 1
     self.enter:Stop()
     self.leave:Stop()
-    self.queue, self.showing, self.current = {}, false, nil
+    self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil
+    self.zoneScheduled = false
     if self.host then self.host:Hide() end
 end
 

@@ -12,11 +12,14 @@ Surfaces.lua
 Runtime.lua
 DataSources.lua
 EditMode.lua
+MythicPlusPull.lua
 MythicPlus.lua
 Raid.lua
 ObjectivesData.lua
+ObjectivesDetails.lua
 ObjectivesTracker.lua
 Objectives.lua
+RunSummaryParty.lua
 RunSummary.lua
 Announcements.lua
 AFKScreen.lua
