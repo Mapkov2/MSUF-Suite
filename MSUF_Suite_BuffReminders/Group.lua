@@ -94,9 +94,16 @@ end
 
 -- Whether a member has one of the auras: true, false, or nil while that is
 -- unknown. The lookups return nothing instead of raising while aura data is
--- restricted, which R.AurasRestricted reports.
+-- restricted, which R.AurasRestricted reports. A member that is offline,
+-- out of sight or dead cannot be read: the group buff skips it (nil), and
+-- for the player's own Soulstone or Beacon it holds none (false), so one
+-- such raid member does not silence that notice for everyone.
 local function Present(unit, aliases, own, ranked)
-    if not Eligible(unit) or R.AurasRestricted() then return nil end
+    if R.AurasRestricted() then return nil end
+    if not Eligible(unit) then
+        if own then return false end
+        return nil
+    end
     for i = 1, #aliases do
         local known, data = true, nil
         if ranked or own then known, data = R.RankAura(unit, aliases[i], own)

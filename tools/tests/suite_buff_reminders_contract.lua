@@ -948,8 +948,17 @@ do
     assert(owner.soulstoneMissing,"another Warlock's Soulstone incorrectly satisfied own reminder")
     stoneSource="player"; BR.RefreshGroup(owner,"party1")
     assert(owner.soulstoneMissing==false,"own Soulstone on party member was not detected")
+    -- A member out of sight (or offline, or dead) cannot hold a readable
+    -- Soulstone: in a raid one such member must not silence the notice.
     stoneSource=nil; invisible.party2=true; BR.RefreshGroup(owner)
-    assert(owner.soulstoneMissing==nil,"unknown group member must not imply missing Soulstone")
+    assert(owner.soulstoneMissing==true,"an out-of-sight member silenced the missing-Soulstone notice")
+    stoneSource="player"; BR.RefreshGroup(owner,"party1")
+    assert(owner.soulstoneMissing==false,"own Soulstone beside an out-of-sight member was not detected")
+    local restrictedGroup=C_Secrets.ShouldAurasBeSecret
+    C_Secrets.ShouldAurasBeSecret=function() return true end
+    stoneSource=nil; BR.RefreshGroup(owner)
+    assert(owner.soulstoneMissing==nil,"restricted aura data must not imply a missing Soulstone")
+    C_Secrets.ShouldAurasBeSecret=restrictedGroup
 end
 do
     local owner={config={petPassiveWarning=true,healthstoneFromWarlock=true},groupClasses={WARLOCK=true},host=Widget()}
