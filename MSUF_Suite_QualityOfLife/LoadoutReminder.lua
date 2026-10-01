@@ -3,12 +3,31 @@ local NS, S = P.NS, P.Suite
 
 local M = { generation = 0 }
 local INSTANCE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
-    "PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED" }
+    "PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED", "SELECTED_LOADOUT_CHANGED" }
+-- Events that change the build inside one instance, so they re-check it.
+local BUILD_EVENTS = { PLAYER_TALENT_UPDATE = true, PLAYER_SPECIALIZATION_CHANGED = true,
+    SELECTED_LOADOUT_CHANGED = true }
 
 local function CancelHide(self)
     local timer = self.hideTimer
     self.hideTimer = nil
     if timer then timer:Cancel() end
+end
+
+-- The chosen loadout. GetActiveConfigID() is the spec's base config, which
+-- stays the same when the player switches loadouts; the talent frame reads
+-- the selection from GetLastSelectedSavedConfigID(specID) and the starter
+-- build from GetStarterBuildActive() (Blizzard_ClassTalentsFrame.lua:236,
+-- :1549). Without a saved selection the base config stands for the build;
+-- 0 is the starter build, which a saved expectation reads as "any".
+local function SelectedBuild(specID)
+    if C_ClassTalents.GetStarterBuildActive() == true then return 0, S.Text("Starter build") end
+    local configID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+    if not S.Finite(configID) or configID <= 0 then configID = C_ClassTalents.GetActiveConfigID() end
+    if not S.Finite(configID) or configID <= 0 then return 0, S.Text("Starter build") end
+    local info = C_Traits.GetConfigInfo(configID)
+    local buildName = S.Public(info) and type(info) == "table" and S.PublicText(info.name) or nil
+    return configID, buildName or S.Text("Starter build")
 end
 
 local function Current()
@@ -17,14 +36,7 @@ local function Current()
     local specID, specName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
     if not S.Finite(specID) or not S.PublicText(specName) then return nil end
 
-    local configID = C_ClassTalents.GetActiveConfigID()
-    if not S.Finite(configID) then configID = 0 end
-    local buildName
-    if configID > 0 then
-        local info = C_Traits.GetConfigInfo(configID)
-        if S.Public(info) and type(info) == "table" then buildName = S.PublicText(info.name) end
-    end
-    buildName = buildName or S.Text("Starter build")
+    local configID, buildName = SelectedBuild(specID)
 
     local lootID = GetLootSpecialization()
     if not S.Finite(lootID) or lootID < 0 then return nil end
@@ -137,7 +149,7 @@ local function OnZone(self, event)
     local _, _, _, _, _, _, _, instanceID = GetInstanceInfo()
     if not S.Finite(instanceID) then return end
     if self.lastInstance == instanceID then
-        if event ~= "PLAYER_TALENT_UPDATE" and event ~= "PLAYER_SPECIALIZATION_CHANGED" then return end
+        if not BUILD_EVENTS[event] then return end
         local configID, _, lootID = Current()
         if not configID or (self.lastConfigID == configID and self.lastLootID == lootID) then return end
     end
