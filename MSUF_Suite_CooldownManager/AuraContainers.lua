@@ -257,7 +257,11 @@ local function Build(rec, view, n)
             else
                 rec.li[k], rec.lg[k] = entry.index, rec.geo
                 groupOpts.candidateFilters, groupOpts.initializeFrame, groupOpts.layout = cand, init, GroupLayout(rec, entry.index)
+                -- Of the ten buttons Blizzard pre-builds, only the one it
+                -- shows gets regions (AuraButtons.BeginBatch).
+                local collected = AuraButtons.BeginBatch(rec)
                 container:AddAuraGroup(keys[k], filter, groupOpts)
+                if collected then AuraButtons.EndBatch(rec, k) end
             end
             cand.includeSpellIDs = nil
             slotOpts.initializeFrame, groupOpts.initializeFrame = nil, nil
@@ -373,7 +377,10 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
             -- SetEditModePreviewEnabled and shows none).
             if container.SetEditModePreviewEnabled then container:SetEditModePreviewEnabled(false) end
             if fixed then container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0) end
+            -- eager: buttons refused a restyle while auras are plain, so this
+            -- container builds every button of a batch (AuraButtons.BeginBatch).
             rec = { frame = container, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
+                eager = fresh == true,
                 text = text, name = name, pandemic = pan, glow = glow, stack = stack, kit = kit, fill = fill, geo = 0,
                 stackFill = stackFill, stackExtra = stackExtra, color = color,
                 keys = {}, on = {}, act = {}, shut = {}, filter = {}, ids = {}, entry = {}, anchors = {}, byAnchor = {}, topts = {}, li = {}, lg = {},
