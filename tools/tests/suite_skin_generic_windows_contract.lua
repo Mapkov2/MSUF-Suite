@@ -28,23 +28,83 @@ local function ReadSource(path)
     return source
 end
 
--- Catalog: validated once at load, fail-closed and diagnosable. Catalog.lua
--- holds the data and the review; CatalogGlass.lua checks it.
+-- Catalog: classified once at load, each entry fail-closed and diagnosable.
+-- Catalog.lua holds the data and the review; CatalogGlass.lua classifies it.
+-- Whether the catalog still matches its review (fingerprint, entry and root
+-- counts) is this test's contract: an unreviewed edit fails here, while the
+-- game keeps every entry it can classify.
+local function Hash(text, seed, multiplier, modulus)
+    local value = seed
+    for index = 1, #text do
+        value = (value * multiplier + text:byte(index)) % modulus
+    end
+    return value
+end
+
+-- Entry order, ids, categories, addon owners, skip flags and ordered roots.
+local function CatalogFingerprint(entries)
+    local parts = { tostring(#entries) }
+    for index = 1, #entries do
+        local entry = entries[index]
+        parts[#parts + 1] = table.concat({
+            type(entry.id) == "string" and entry.id or "",
+            type(entry.category) == "string" and entry.category or "",
+            type(entry.addon) == "string" and entry.addon or "",
+            entry.skipGeneric == true and "1" or "0",
+            type(entry.frames) == "table" and table.concat(entry.frames, "\31") or "",
+        }, "\30")
+    end
+    local text = table.concat(parts, "\29")
+    return ("%08x-%08x"):format(
+        Hash(text, 216613626, 131, 2147483647),
+        Hash(text, 16777619, 137, 2147483629))
+end
+
+-- The review problems of one loaded catalog data table.
+local function ReviewProblems(data, catalog)
+    local problems = {}
+    local fingerprint = CatalogFingerprint(data.entries)
+    if fingerprint ~= data.reviewedFingerprint then
+        problems[#problems + 1] = "catalog-snapshot-unreviewed:" .. fingerprint
+    end
+    if #data.entries ~= data.reviewedEntries then
+        problems[#problems + 1] = "catalog-entry-count:" .. #data.entries
+    end
+    if #catalog.frames ~= data.reviewedRoots then
+        problems[#problems + 1] = "catalog-root-count:" .. #catalog.frames
+    end
+    return problems
+end
+
+local function HasProblem(problems, prefix)
+    for _, problem in ipairs(problems) do
+        if problem:sub(1, #prefix) == prefix then return true end
+    end
+    return false
+end
+
 do
     local NS = {}
     assert(loadfile(skin .. "Adapters/Catalog.lua"))("MSUF_Suite_Skin", NS)
+    local data = NS.BlizzardCatalogData
+    local byte, concat, hashed = string.byte, table.concat, 0
+    string.byte = function(...) hashed = hashed + 1; return byte(...) end
     assert(loadfile(skin .. "Adapters/CatalogGlass.lua"))("MSUF_Suite_Skin", NS)
+    string.byte = byte
+    Check(hashed == 0, "loading the catalog hashed it in game")
     local catalog = NS.BlizzardCatalog
     Check(catalog.IsGlassContractValid() and catalog.glass.valid
         and #catalog.GetGlassErrors() == 0, "reviewed catalog is valid")
+    local problems = ReviewProblems(data, catalog)
+    Check(#problems == 0, "the catalog changed without its review: " .. table.concat(problems, ", "))
 
-    local byte, concat, hashed = string.byte, table.concat, 0
+    local validated = 0
+    hashed = 0
     string.byte = function(...) hashed = hashed + 1; return byte(...) end
     table.concat = function(...) hashed = hashed + 1; return concat(...) end
-    local validated = 0
     for _ = 1, 50 do
         for _, entry in ipairs(catalog.entries) do
-            if catalog.IsGlassContractValid() and catalog.ValidateGlassEntry(entry) then
+            if catalog.ValidateGlassEntry(entry) then
                 validated = validated + 1
             end
         end
@@ -64,28 +124,29 @@ do
         assert(count == 1, "catalog fixture pattern missing: " .. pattern)
         local copy = {}
         assert(loadstring(modified, "modified catalog"))("MSUF_Suite_Skin", copy)
+        local modifiedData = copy.BlizzardCatalogData
         assert(loadfile(skin .. "Adapters/CatalogGlass.lua"))("MSUF_Suite_Skin", copy)
-        return copy.BlizzardCatalog
+        return copy.BlizzardCatalog, modifiedData
     end
-    local function HasError(target, prefix)
-        for _, item in ipairs(target.GetGlassErrors()) do
-            if type(item.reason) == "string" and item.reason:sub(1, #prefix) == prefix then
-                return true
-            end
-        end
-        return false
-    end
-    local unreviewed = LoadModified('REVIEWED_CATALOG_FINGERPRINT = "[^"]+"',
+    -- An unreviewed catalog fails this contract; the game keeps its entries.
+    local unreviewed, unreviewedData = LoadModified('REVIEWED_CATALOG_FINGERPRINT = "[^"]+"',
         'REVIEWED_CATALOG_FINGERPRINT = "00000000-00000000"')
-    Check(not unreviewed.IsGlassContractValid() and not unreviewed.glass.valid
-        and not unreviewed.ValidateGlassEntry(unreviewed.entries[1])
-        and HasError(unreviewed, "catalog-snapshot-unreviewed:"),
-        "an unreviewed catalog snapshot did not fail closed with a listed reason")
-    local recounted = LoadModified("REVIEWED_CATALOG_ROOTS = %d+", "REVIEWED_CATALOG_ROOTS = 1")
-    Check(not recounted.IsGlassContractValid()
-        and not recounted.ValidateGlassEntry(recounted.entries[1])
-        and HasError(recounted, "catalog-root-count:"),
-        "a changed root inventory did not fail closed with a listed reason")
+    Check(HasProblem(ReviewProblems(unreviewedData, unreviewed), "catalog-snapshot-unreviewed:"),
+        "the review contract missed an unreviewed catalog snapshot")
+    Check(unreviewed.ValidateGlassEntry(unreviewed.entries[1]) and unreviewed.IsGlassContractValid(),
+        "an unreviewed catalog snapshot switched the catalog off in game")
+    local recounted, recountedData = LoadModified("REVIEWED_CATALOG_ROOTS = %d+", "REVIEWED_CATALOG_ROOTS = 1")
+    Check(HasProblem(ReviewProblems(recountedData, recounted), "catalog-root-count:"),
+        "the review contract missed a changed root inventory")
+    Check(recounted.ValidateGlassEntry(recounted.entries[1]),
+        "a changed root inventory switched the catalog off in game")
+    -- A root the review cannot classify closes only its own entry.
+    local first = catalog.entries[1]
+    local broken = LoadModified('id = "' .. first.id .. '",', 'id = "' .. first.id .. '", skipGeneric = true,')
+    local brokenErrors = broken.GetGlassErrors()
+    Check(not broken.ValidateGlassEntry(broken.entries[1]) and broken.ValidateGlassEntry(broken.entries[2])
+        and #brokenErrors > 0 and brokenErrors[1].id == first.id,
+        "an unclassifiable entry did not close alone with a listed reason")
 end
 
 -- Blizzard's callback isolation (securecallfunction): an error is reported to
@@ -148,6 +209,9 @@ EventRegistry = { RegisterCallback = function() end, UnregisterCallback = functi
 
 local NS
 NS = {
+    -- The skin's locale table (Locales/Localization.lua) is ready before
+    -- any of this runs; here every key reads as itself.
+    L = setmetatable({}, { __index = function(_, key) return key end }),
     IsCombatLocked = function() return locked end,
     Client = {
         IsAddOnLoaded = function() return true end,
@@ -167,6 +231,8 @@ NS = {
             target.surfaceSpec = spec
             return { spec = spec, edge = { SetDrawLayer = function() end } }
         end,
+        -- The update-hook attach (Surface.Ensure) counts as an attach here.
+        Ensure = function(target, spec) return NS.Surface.Attach(target, spec) end,
         SetVisible = function(target, visible) target.surfaceVisible = visible end,
         SetActive = function(target, active) target.surfaceActive = active end,
     },
@@ -194,6 +260,8 @@ NS = {
         end,
         RemoveListener = function(owner) listeners[owner] = nil end,
         GetSurface = function() return nil end,
+        -- Coalesced repaints run at once here.
+        QueueJob = function(job) job() end,
     },
     Theme = { GetColor = function() return 1, 1, 1, 1 end },
     BlizzardYellow = {
@@ -768,6 +836,12 @@ Section("common menus", function()
         local iconState = iconStates[button]
         return iconState and iconState.owner or nil
     end
+    -- The paint-only repaint (Rendering/IconSkin.lua) reads the same border.
+    local repaint = NS.IconSkin.Repaint
+    NS.IconSkin.Repaint = function(button)
+        button.repaintedQuality = button.IconBorder.quality
+        return true
+    end
     local function Item()
         local button = Frame(nil)
         button.icon, button.IconBorder, button.contents = {}, { quality = "empty" }, "common"
@@ -829,10 +903,17 @@ Section("common menus", function()
     Kit.SkinItemIcon(bankButton, "bank", bankButton.icon, bankButton.IconBorder, true)
     _G.SetItemButtonQuality(bankButton, "epic")
     Expect(bankButton.skinnedQuality == "epic", "a bank item border kept the quality of its old contents")
+    -- Looting in combat with the bags open: the owned border lines take the
+    -- new quality as paint only, without a skin pass.
+    local combatSkins = itemSkins[items[1]]
     locked = true
     _G.SetItemButtonQuality(items[1], "legendary")
+    _G.SetItemButtonQuality(foreign, "legendary")
     locked = false
-    Expect(items[1].skinnedQuality == "rare", "a bag item border was repainted in combat")
+    Expect(items[1].skinnedQuality == "rare" and itemSkins[items[1]] == combatSkins,
+        "a bag item was skinned again in combat")
+    Expect(items[1].repaintedQuality == "legendary", "a bag item border kept its old quality in combat")
+    Expect(foreign.repaintedQuality == nil, "the combat repaint reached an item button no skin owns")
 
     raiseFor = Item()
     local before = #reported
@@ -848,7 +929,7 @@ Section("common menus", function()
         "a raising bag border repaint escaped into Blizzard's item update")
     NS.CommonMenus.Disable("menus")
     restore()
-    NS.IconSkin.GetState, NS.IconSkin.GetOwner = getState, getOwner
+    NS.IconSkin.GetState, NS.IconSkin.GetOwner, NS.IconSkin.Repaint = getState, getOwner, repaint
     _G.ContainerFrame_GenerateFrame, _G.SetItemButtonQuality = nil, nil
 end)
 
@@ -1256,9 +1337,12 @@ end)
 
 Section("cooldown viewer acquire hooks", function()
     local specs, applies = {}, 0
+    local qualityReads = 0
     NS.IconSkin.Apply = function(_, _, spec)
         applies = applies + 1
         specs[spec] = true
+        -- The viewer overlay is white frame art: no quality colour to read.
+        if spec.nativeQuality ~= false then qualityReads = qualityReads + 1 end
         return {}
     end
     local names = {
@@ -1311,6 +1395,7 @@ Section("cooldown viewer acquire hooks", function()
     applies = 0
     essential:RefreshLayout()
     Expect(applies == 8, ("a cooldown layout of 8 items took %d icon passes"):format(applies))
+    Expect(qualityReads == 0, "cooldown icons took their border colour from the white viewer overlay")
     local count = 0
     for _ in pairs(specs) do count = count + 1 end
     Expect(count == 1, "each cooldown icon pass built its own icon spec")
@@ -1357,9 +1442,13 @@ Section("chat color flag", function()
     local before = #reported
     local ok = pcall(NS.ChatFramesSkin.Apply, chatFrame, "chat")
     Expect(ok and #reported == before + 1, "a raising chat color change escaped the skin")
-    -- The player picks a new system color; the skin applies its own again.
+    -- The player picks a new system color: it is theirs from now on. A
+    -- theme change does not paint over it and a disable does not reset it,
+    -- which only holds while the hook still observes changes.
     ChangeChatColor("SYSTEM", 0.2, 0.3, 0.4)
-    Expect(ChatTypeInfo.SYSTEM.r == 1, "a failed color change left later chat color changes ignored")
+    NS.ChatFramesSkin:OnThemeChanged("color", "blizzardYellow")
+    Expect(ChatTypeInfo.SYSTEM.r == 0.2 and ChatTypeInfo.SYSTEM.b == 0.4,
+        "a failed color change left later chat color changes ignored")
     -- FCFDock_UpdateTabs repaints every tab in a loop.
     local raisingTab = Frame("ChatFrame2Tab")
     function raisingTab:GetName() error("contract: chat tab raised") end
@@ -1371,6 +1460,7 @@ Section("chat color flag", function()
     tab.Text:SetTextColor(0.99, 0.99, 0.99)
     NS.ChatFramesSkin.Disable(nil, "chat")
     Expect(Near(tab.Text.color[2], 0.99), "disable overwrote a chat tab color Blizzard had set")
+    Expect(ChatTypeInfo.SYSTEM.r == 0.2, "disable reset the system color the player picked")
     ChatTypeInfo, ChangeChatColor, FCFTab_UpdateColors = nil, nil, nil
     GeneralDockManager, CHAT_FRAMES = nil, nil
     _G.ChatFrame1, _G.ChatFrame1Tab = nil, nil
@@ -1731,6 +1821,10 @@ Section("static popup hooks", function()
 end)
 
 Section("owned micro bar", function()
+    -- Retail and Forever scale MicroMenu by this game rule (0: no factor).
+    C_GameRules = { GetGameRuleAsFloat = function() return 0 end }
+    Enum = Enum or {}
+    Enum.GameRule = Enum.GameRule or { MicrobarScale = 1 }
     -- Widgets with the frame and texture methods the owned bar calls.
     local placements = {}
     local function Noop() end

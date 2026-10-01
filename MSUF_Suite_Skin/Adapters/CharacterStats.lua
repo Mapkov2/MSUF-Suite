@@ -282,14 +282,53 @@ local function Help(v)
     GameTooltip:Show()
 end
 
-local function HideMetadata(v)
+-- The skin's own detail texts of one stat row; the accent marks a stat in
+-- diminishing returns.
+local function SetDetailsShown(record, shown)
+    record.meta:SetShown(shown)
+    record.dr:SetShown(shown)
+    record.accent:SetShown(shown and record.result.penalty ~= nil and record.result.penalty > 0)
+end
+
+local function HideDetails(v)
     for _, record in pairs(v.rows) do
-        record.meta:Hide()
-        record.dr:Hide()
-        record.accent:Hide()
+        record.detailed = false
+        SetDetailsShown(record, false)
     end
-    v.help:Hide()
+end
+
+local function HideHelpTooltip(v)
     if GameTooltip:IsOwned(v.help) then GameTooltip:Hide() end
+end
+
+local function HideMetadata(v)
+    HideDetails(v)
+    v.help:Hide()
+    HideHelpTooltip(v)
+end
+
+local function RestoreNativeStyle(v)
+    if NS.IsCombatLocked() then return end
+    for font, saved in pairs(v.fonts) do
+        local r, g, b, a = Read(font.GetTextColor, font)
+        if saved.object and font.SetFontObject then
+            font:SetFontObject(saved.object)
+        else
+            font:SetFont(saved.path, saved.size, saved.flags)
+        end
+        if saved.tinted and saved.color then
+            font:SetTextColor(unpack(saved.color))
+        elseif r and g and b and a then
+            font:SetTextColor(r, g, b, a)
+        end
+        RestorePoints(saved)
+        if saved.justify then font:SetJustifyH(saved.justify) end
+        v.fonts[font] = nil
+    end
+    for frame, saved in pairs(v.heights) do
+        if frame:GetHeight() == saved.applied then frame:SetHeight(saved.original) end
+        v.heights[frame] = nil
+    end
 end
 
 local function RefreshIfShown(v)
@@ -303,8 +342,16 @@ local function Create(pane, owner)
         deferKey = "character-stats:" .. owner,
     }
     for index = 1, #definitions do v.results[index] = {} end
-    -- The combat-deferred refresh is the same job every time.
-    v.refresh = function() RefreshIfShown(v) end
+    -- The combat-deferred job is the same every time: a shown pane is laid
+    -- out again, a pane closed during combat gets Blizzard's geometry back.
+    v.refresh = function()
+        if Enabled(v) and Visible(v.pane) then
+            Stats.Refresh(v)
+        else
+            HideMetadata(v)
+            RestoreNativeStyle(v)
+        end
+    end
 
     local host = CreateFrame("Frame", nil, pane)
     v.host = host
@@ -323,11 +370,9 @@ local function Create(pane, owner)
     v.helpPath = FontPath()
     v.helpText:SetFont(v.helpPath, 9, "")
     v.helpText:SetAllPoints()
-    v.helpText:SetText("DR")
+    v.helpText:SetText(NS.L.STATS_DR_SHORT)
     help:SetScript("OnEnter", function() Help(v) end)
-    help:SetScript("OnLeave", function()
-        if GameTooltip:IsOwned(help) then GameTooltip:Hide() end
-    end)
+    help:SetScript("OnLeave", function() HideHelpTooltip(v) end)
 
     host:SetScript("OnShow", function()
         if Enabled(v) then
@@ -335,18 +380,28 @@ local function Create(pane, owner)
             Stats.Refresh(v)
         end
     end)
+    -- Native PaperDoll updates reuse pooled rows without resetting their
+    -- heights. A close gives the rows Blizzard's geometry back, so a reopen
+    -- in combat starts with native dimensions; a close during combat does so
+    -- once combat ends (its rows keep their details, hidden with the pane,
+    -- for a reopen in the same fight).
     host:SetScript("OnHide", function()
         host:UnregisterEvent("PLAYER_REGEN_DISABLED")
         host:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        HideHelpTooltip(v)
+        if NS.IsCombatLocked() then
+            NS.CombatGate.RunOrDefer(v.deferKey, v.refresh)
+            return
+        end
         NS.CombatGate.Cancel(v.deferKey)
         HideMetadata(v)
+        RestoreNativeStyle(v)
     end)
-    -- PLAYER_REGEN_DISABLED fires just before the lockdown starts, so a
-    -- refresh there would rebuild the rows it is meant to hide. Only hide;
-    -- the rows come back on PLAYER_REGEN_ENABLED.
+    -- A pane shown when combat starts keeps its layout; Stats.SyncDetails
+    -- keeps its details true to the rows during combat, and the layout is
+    -- refreshed once combat ends.
     host:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_REGEN_DISABLED" then
-            HideMetadata(v)
             host:RegisterEvent("PLAYER_REGEN_ENABLED")
         else
             host:UnregisterEvent("PLAYER_REGEN_ENABLED")
@@ -354,6 +409,12 @@ local function Create(pane, owner)
         end
     end)
     return v
+end
+
+-- The label a row shows for one of the four rated stats.
+local function DefinitionLabel(definition)
+    local text = _G[definition.label]
+    return type(text) == "string" and string.format(STAT_FORMAT or "%s:", text) or nil
 end
 
 local function Record(v, row)
@@ -375,16 +436,30 @@ local function Record(v, row)
         record.accent:SetSize(1, 12)
         record.accent:SetPoint("LEFT", 3, 0)
     end
-    record.definition, record.result = nil, nil
+    record.definition, record.result, record.label = nil, nil, nil
     local label = Read(row.Label.GetText, row.Label)
     for index, definition in ipairs(definitions) do
-        local text = _G[definition.label]
-        if type(text) == "string" and label == string.format(STAT_FORMAT or "%s:", text) then
-            record.definition, record.result = definition, v.results[index]
+        local expected = DefinitionLabel(definition)
+        if expected and label == expected then
+            record.definition, record.result, record.label = definition, v.results[index], expected
             break
         end
     end
     return record
+end
+
+-- Every native stats update reassigns Blizzard's pooled rows, also in combat,
+-- where the layout waits for combat to end. Showing or hiding the skin's own
+-- detail texts is paint and follows at once: a row shows its details only
+-- while it still shows the stat it was laid out for. Runs after every
+-- update in combat: it compares the label kept by Record, no allocation.
+function Stats.SyncDetails(pane)
+    local v = pane and Stats.views[pane]
+    if not v then return end
+    for row, record in pairs(v.rows) do
+        local expected = record.detailed and record.label
+        SetDetailsShown(record, expected and Read(row.Label.GetText, row.Label) == expected or false)
+    end
 end
 
 -- Collects the visible native stat rows in pool order; returns the row count
@@ -394,11 +469,7 @@ local function CollectRows(v)
     if not pool or type(pool.EnumerateActive) ~= "function" then return nil end
     local iterator, invariant, control = pool:EnumerateActive()
     local count, coreCount = 0, 0
-    for _, record in pairs(v.rows) do
-        record.meta:Hide()
-        record.dr:Hide()
-        record.accent:Hide()
-    end
+    HideDetails(v)
     for _ = 1, MAX_STAT_ROWS do
         local row = iterator(invariant, control)
         control = row
@@ -429,19 +500,26 @@ local function StyleHeaders(v, itemLevel)
             category.Title:ClearAllPoints()
             category.Title:SetPoint("LEFT", category, "LEFT", 11, 0)
             category.Title:SetJustifyH("LEFT")
-            NS.Surface.Attach(category, v.headerSpec)
+            NS.Surface.Ensure(category, v.headerSpec)
         end
     end
-    if itemLevel then NS.Surface.Attach(itemLevel, v.ilvlSpec) end
+    if itemLevel then NS.Surface.Ensure(itemLevel, v.ilvlSpec) end
 end
 
 local function StyleRow(v, record, detailed, wide, base, detailHeight)
     local row = record.frame
     Height(v, row, base + (detailed and detailHeight or 0))
-    record.spec.inset = wide and 3 or 1
-    record.spec.role = record.definition and "card" or "panel"
-    record.spec.listItem = not record.definition
-    NS.Surface.Attach(row, record.spec)
+    -- The row's own spec table: rewritten (and the surface attached) only
+    -- when the row shows another kind of stat; a stats update otherwise
+    -- leaves a current surface alone.
+    local spec = record.spec
+    local inset, role, listItem = wide and 3 or 1, record.definition and "card" or "panel", not record.definition
+    if spec.inset ~= inset or spec.role ~= role or spec.listItem ~= listItem then
+        spec.inset, spec.role, spec.listItem = inset, role, listItem
+        NS.Surface.Attach(row, spec)
+    else
+        NS.Surface.Ensure(row, spec)
+    end
     for _, field in ipairs(fontFields) do
         local saved = v.fonts[row[field]]
         if saved then
@@ -472,10 +550,10 @@ local function StyleRow(v, record, detailed, wide, base, detailHeight)
             record.dr:SetText(badge)
             record.drText = badge
         end
-        record.dr:Show()
-        record.meta:Show()
     end
-    record.accent:SetShown(detailed and record.result.penalty ~= nil and record.result.penalty > 0)
+    -- CollectRows hid every row's details before this pass.
+    record.detailed = detailed
+    if detailed then SetDetailsShown(record, true) end
 end
 
 function Stats.Refresh(v)
@@ -556,26 +634,7 @@ function Stats.Disable(pane, owner)
     HideMetadata(v)
     v.host:UnregisterEvent("PLAYER_REGEN_DISABLED")
     v.host:UnregisterEvent("PLAYER_REGEN_ENABLED")
-    for font, saved in pairs(v.fonts) do
-        local r, g, b, a = Read(font.GetTextColor, font)
-        if saved.object and font.SetFontObject then
-            font:SetFontObject(saved.object)
-        else
-            font:SetFont(saved.path, saved.size, saved.flags)
-        end
-        if saved.tinted and saved.color then
-            font:SetTextColor(unpack(saved.color))
-        elseif r and g and b and a then
-            font:SetTextColor(r, g, b, a)
-        end
-        RestorePoints(saved)
-        if saved.justify then font:SetJustifyH(saved.justify) end
-        v.fonts[font] = nil
-    end
-    for frame, saved in pairs(v.heights) do
-        if frame:GetHeight() == saved.applied then frame:SetHeight(saved.original) end
-        v.heights[frame] = nil
-    end
+    RestoreNativeStyle(v)
 end
 
 function Stats.RefreshFonts()
@@ -598,6 +657,7 @@ function Stats.SetOption(key, value)
     return true
 end
 
-NS.Registry.AddListener(Stats, function() Stats.RefreshFonts() end)
+-- Once per frame however many settings a slider drag writes.
+NS.Registry.AddListener(Stats, function() NS.Registry.QueueJob(Stats.RefreshFonts) end)
 
 return Stats

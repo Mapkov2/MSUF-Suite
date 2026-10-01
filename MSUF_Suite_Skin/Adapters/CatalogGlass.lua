@@ -1,11 +1,12 @@
 local _, NS = ...
 
 -- Glass review of the Blizzard window catalog. Catalog.lua (loaded before)
--- holds the entries and the review data; this file checks that review once at
--- load and builds NS.BlizzardCatalog. The catalog is fail-closed: a changed
--- fingerprint, entry or root count, or a root without a matching reviewed
--- classification keeps every entry closed, and Catalog.GetGlassErrors() lists
--- each reason.
+-- holds the entries and the review data; this file classifies every root once
+-- at load and builds NS.BlizzardCatalog. An entry is fail-closed on its own: a
+-- root without a matching reviewed classification keeps that entry closed,
+-- and Catalog.GetGlassErrors() lists each reason. Whether the catalog as a
+-- whole still matches its review (fingerprint, entry and root counts) is a
+-- development contract checked by tools/tests, not at every load in game.
 -- Taken off NS again: only the checked NS.BlizzardCatalog stays reachable
 -- through _G.MapkoSkin.
 local Data = NS.BlizzardCatalogData
@@ -26,41 +27,6 @@ for groupIndex = 1, #Data.homogeneousKinds do
         homogeneousGlassKinds[group.ids[index]] = group.kind
     end
 end
-
-local function EntryRootSignature(entry)
-    return type(entry) == "table" and type(entry.frames) == "table"
-        and table.concat(entry.frames, "\31") or ""
-end
-
-local function Hash(text, seed, multiplier, modulus)
-    local value = seed
-    for index = 1, #text do
-        value = (value * multiplier + text:byte(index)) % modulus
-    end
-    return value
-end
-
-local function CatalogFingerprint(catalogEntries)
-    local parts = { tostring(#catalogEntries) }
-    for index = 1, #catalogEntries do
-        local entry = catalogEntries[index]
-        parts[#parts + 1] = table.concat({
-            type(entry.id) == "string" and entry.id or "",
-            type(entry.category) == "string" and entry.category or "",
-            type(entry.addon) == "string" and entry.addon or "",
-            entry.skipGeneric == true and "1" or "0",
-            EntryRootSignature(entry),
-        }, "\30")
-    end
-    local text = table.concat(parts, "\29")
-    return ("%08x-%08x"):format(
-        Hash(text, 216613626, 131, 2147483647),
-        Hash(text, 16777619, 137, 2147483629))
-end
-
-local catalogFingerprint = CatalogFingerprint(entries)
-local catalogSnapshotValid = catalogFingerprint == Data.reviewedFingerprint
-    and #entries == Data.reviewedEntries
 
 local glassByFrame = {}
 local glassCounts = {
@@ -187,14 +153,9 @@ local function ClassifyFrame(entry, frameName)
     return true
 end
 
-if not catalogSnapshotValid then
-    AddGlassError(nil, nil, "catalog-snapshot-unreviewed:" .. catalogFingerprint)
-end
-
 for entryIndex = 1, #entries do
     local entry = entries[entryIndex]
-    local ready = catalogSnapshotValid and type(entry.id) == "string"
-        and type(entry.frames) == "table"
+    local ready = type(entry.id) == "string" and type(entry.frames) == "table"
     if not ready then
         AddGlassError(entry, nil, "entry-invalid")
     else
@@ -257,23 +218,14 @@ for index = 1, #sourceExclusions do
     exclusionSeen[item.frame] = true
 end
 
-if #flattened ~= Data.reviewedRoots then
-    AddGlassError(nil, nil, "catalog-root-count:" .. #flattened)
-end
 if glassCounts.total ~= #flattened then
     AddGlassError(nil, nil, "catalog-glass-coverage:" .. glassCounts.total .. "/" .. #flattened)
 end
 
--- The catalog is static after load, so the contract is validated exactly
--- once here. Any failure keeps every entry closed and is listed, with its
--- reason, by Catalog.GetGlassErrors().
+-- The catalog is static after load, so it is classified exactly once here.
+-- Each failure closes its own entry and is listed, with its reason, by
+-- Catalog.GetGlassErrors(); the contract is valid while none is listed.
 local glassContractValid = #glassErrors == 0
-local validatedEntries = {}
-if glassContractValid then
-    for entry, ready in pairs(glassReadyByEntry) do
-        validatedEntries[entry] = ready
-    end
-end
 
 local Catalog = {
     entries = entries,
@@ -284,7 +236,6 @@ local Catalog = {
         byFrame = glassByFrame,
         counts = glassCounts,
         errors = glassErrors,
-        reviewedFingerprint = Data.reviewedFingerprint,
         sourceRevision = Data.sourceRevision,
         standalone = standaloneGlass,
         standaloneRootCount = standaloneRootCount,
@@ -338,13 +289,8 @@ function Catalog.IsGlassContractValid()
     return glassContractValid
 end
 
--- True for a catalog entry whose roots all passed review while the whole
--- contract is valid.
-function Catalog.ValidateGlassEntry(entry)
-    return validatedEntries[entry] == true
-end
-
 -- True for a catalog entry whose roots all passed review.
 function Catalog.IsEntryGlassReady(entry)
     return glassReadyByEntry[entry] == true
 end
+Catalog.ValidateGlassEntry = Catalog.IsEntryGlassReady

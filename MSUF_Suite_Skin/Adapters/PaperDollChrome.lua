@@ -47,9 +47,12 @@ function Chrome.FadeNineSlice(state, target)
     return true
 end
 
-function Chrome.Attach(state, target, spec)
+-- ensure: the caller is a native update hook (slot or stats update), so a
+-- surface that already shows spec and is current is left alone.
+function Chrome.Attach(state, target, spec, ensure)
+    local attach = ensure and NS.Surface.Ensure or NS.Surface.Attach
     if not target or NS.IsCombatLocked() or not Safety.CanCreateRegions(target, true)
-        or not NS.Surface.Attach(target, spec) then
+        or not attach(target, spec) then
         return false
     end
     state.surfaces[target] = true
@@ -137,7 +140,7 @@ function Chrome:SkinSlot(state, slot)
     if not state.active or not slot or not self.exactSlots[slot] or NS.IsCombatLocked() then
         return false
     end
-    Chrome.Attach(state, slot, SLOT_SPEC)
+    Chrome.Attach(state, slot, SLOT_SPEC, true)
     local icon = Field(slot, "Icon") or Field(slot, "icon")
         or (self.slotIcon and self.slotIcon(slot))
     local border = Field(slot, "IconBorder") or Field(slot, "iconBorder")

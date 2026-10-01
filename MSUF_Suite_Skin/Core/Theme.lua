@@ -105,7 +105,7 @@ end
 
 function Theme.GetClassLookLabel()
     local _, _, _, _, _, className = ResolvePlayerClassColor(false)
-    return "Class: " .. className
+    return NS.L["Class: %s"]:format(className)
 end
 
 -- Midnight remains the readability base; the class hue progressively enters
@@ -154,6 +154,7 @@ function Theme.BuildClassPalette(refresh)
     palette.blizzardExpand = { r, g, b, 1 }
     palette.blizzardExpandPressed = { r, g, b, 1 }
     palette.blizzardExpandHover = { r, g, b, 1 }
+    palette.checkmark = { r, g, b, 1 }
     palette.blizzardClose = Blend(r, g, b, WHITE, 0.22, 1)
     palette.blizzardClosePressed = { r, g, b, 1 }
     palette.blizzardCloseHover = Blend(r, g, b, WHITE, 0.38, 1)
@@ -200,11 +201,11 @@ local microNamedPalettes = {
     modern = "midnight", midnightDark = "midnightDark", forever = "foreverGlass",
 }
 
--- Replaces the profile palette with the base colors plus these overrides.
+-- Replaces a profile's palette with the base colors plus these overrides.
 -- Micro Bar colors are first-class editable tokens, but a complete palette
 -- or look change should still produce a coherent result: tokens the palette
 -- does not author are re-seeded from their base roles.
-local function InstallPalette(overrides)
+local function InstallPalette(profile, overrides)
     local colors = NS.CopyValue(NS.BaseColors)
     for key, value in pairs(overrides) do
         colors[key] = NS.CopyValue(value)
@@ -214,39 +215,41 @@ local function InstallPalette(overrides)
             colors[target] = NS.CopyValue(colors[source])
         end
     end
-    NS.DB.theme.colors = colors
+    profile.theme.colors = colors
 end
 
-local function InstallLookValues(look)
-    for key, value in pairs(look.appearance or {}) do NS.DB.theme[key] = value end
-    for key, value in pairs(look.geometry or {}) do NS.DB.geometry[key] = value end
+local function InstallLookValues(profile, look)
+    for key, value in pairs(look.appearance or {}) do profile.theme[key] = value end
+    for key, value in pairs(look.geometry or {}) do profile.geometry[key] = value end
+end
+
+-- A complete look also brings its Micro Bar artwork.
+local function InstallMicroStyle(profile, look)
+    local micro = profile.icons and profile.icons.microMenu
+    local preset = NS.MicroMenuPresetValues[look.microStyle]
+    if not micro or not preset then return end
+    for _, key in ipairs(NS.MicroMenuLookKeys) do
+        if preset[key] ~= nil then micro[key] = preset[key] end
+    end
+    micro.preset = look.microStyle
+    NS.AlignRetailPanelMicroBar(micro)
+end
+
+local function InstallLook(profile, look, lookName)
+    InstallPalette(profile, ResolvePaletteOverrides(look.palette, look.dynamicPalette ~= nil, look.dynamicPalette))
+    InstallLookValues(profile, look)
+    InstallMicroStyle(profile, look)
+    profile.theme.preset = look.palette
+    profile.theme.look = lookName
 end
 
 -- Prepare an installer profile without repainting or mutating the active one.
 function Theme.StyleProfile(profile, lookName)
     local look = NS.LookPresets[lookName]
     if type(profile) ~= "table" or not look or not look.palette then return false end
-    local theme, geometry = profile.theme, profile.geometry
-    if type(theme) ~= "table" or type(geometry) ~= "table" then return false end
-    local overrides = NS.PresetOverrides[look.palette]
-    if not overrides then return false end
-    local colors = NS.CopyValue(NS.BaseColors)
-    for key, value in pairs(overrides) do colors[key] = NS.CopyValue(value) end
-    for target, source in pairs(NS.MicroColorSources) do
-        if not overrides[target] then colors[target] = NS.CopyValue(colors[source]) end
-    end
-    theme.colors, theme.preset, theme.look = colors, look.palette, lookName
-    for key, value in pairs(look.appearance or {}) do theme[key] = value end
-    for key, value in pairs(look.geometry or {}) do geometry[key] = value end
-    local micro = profile.icons and profile.icons.microMenu
-    local preset = NS.MicroMenuPresetValues[look.microStyle]
-    if micro and preset then
-        for _, key in ipairs(NS.MicroMenuLookKeys) do
-            if preset[key] ~= nil then micro[key] = preset[key] end
-        end
-        micro.preset = look.microStyle
-        NS.AlignRetailPanelMicroBar(micro)
-    end
+    if type(profile.theme) ~= "table" or type(profile.geometry) ~= "table" then return false end
+    if not NS.PresetOverrides[look.palette] then return false end
+    InstallLook(profile, look, lookName)
     return true
 end
 
@@ -255,8 +258,15 @@ function Theme.GetColorTable(key)
     if source then
         local micro = NS.DB and NS.DB.icons and NS.DB.icons.microMenu
         local paletteName = micro and microNamedPalettes[micro.preset]
-        if micro and micro.preset == "modern" and NS.DB.theme.look == "cleanModern" then
-            paletteName = "cleanModern"
+        if micro and micro.preset == "modern" then
+            if NS.DB.theme.look == "cleanModern" then
+                paletteName = "cleanModern"
+            elseif NS.DB.theme.look == "classColor" then
+                -- The look installed these tokens at login or style/profile
+                -- changes. Color reads reuse them without class API calls or
+                -- palette allocations; independently selected styles still win.
+                paletteName = nil
+            end
         end
         if paletteName then
             local palette = NS.PresetOverrides[paletteName]
@@ -298,6 +308,22 @@ function Theme.GetBorderOpacity()
     return theme.borderOpacity
 end
 
+-- Looks whose own palette colours the Micro Bar's modern style (instead of
+-- the named Midnight palette, see GetColorTable).
+local lookMicroColors = { cleanModern = true, classColor = true }
+
+-- A hand edit (a colour, palette, opacity or geometry) turns the look into a
+-- custom one. A modern Micro Bar that showed the look's own colours keeps
+-- showing them: it follows the installed tokens from now on.
+local function DetachLook()
+    local theme = NS.DB.theme
+    local micro = NS.DB.icons and NS.DB.icons.microMenu
+    if micro and micro.preset == "modern" and lookMicroColors[theme.look] then
+        micro.preset = "custom"
+    end
+    theme.look = "custom"
+end
+
 local function WriteColor(key, r, g, b, a)
     local color = NS.DB.theme.colors[key]
     color[1] = math.max(0, math.min(1, tonumber(r) or color[1]))
@@ -317,7 +343,7 @@ function Theme.SetColor(key, r, g, b, a)
         NS.DB.icons.microMenu.preset = "custom"
     end
     NS.DB.theme.preset = "custom"
-    NS.DB.theme.look = "custom"
+    DetachLook()
     NS.Registry.QueueRefresh(key)
     NS.Registry.NotifyListeners("color", key)
     return true
@@ -342,7 +368,7 @@ function Theme.SetGradient(enabled)
         return false
     end
     NS.DB.theme.gradient = enabled == true
-    NS.DB.theme.look = "custom"
+    DetachLook()
     NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("theme", "gradient")
     return true
@@ -469,7 +495,7 @@ function Theme.SetAppearance(key, value)
         if range[4] then value = math.floor(value + 0.5) end
     end
     NS.DB.theme[key] = value
-    NS.DB.theme.look = "custom"
+    DetachLook()
     if key == "hoverStyle" or key == "hoverIntensity" then
         NS.Registry.QueueRefresh("hover")
     else
@@ -487,7 +513,7 @@ function Theme.SetGeometry(key, value)
     if not IsListed(NS[listName], value) then return false end
 
     NS.DB.geometry[key] = value
-    NS.DB.theme.look = "custom"
+    DetachLook()
     NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("geometry", key)
     return true
@@ -497,9 +523,9 @@ function Theme.ApplyPreset(presetName)
     if NS.IsCombatLocked() or not NS.PresetOverrides[presetName] then
         return false
     end
-    InstallPalette(ResolvePaletteOverrides(presetName, presetName == "classColor"))
+    DetachLook()
+    InstallPalette(NS.DB, ResolvePaletteOverrides(presetName, presetName == "classColor"))
     NS.DB.theme.preset = presetName
-    NS.DB.theme.look = "custom"
     NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("theme", "preset")
     return true
@@ -508,19 +534,7 @@ end
 function Theme.ApplyLook(lookName)
     local look = NS.LookPresets[lookName]
     if NS.IsCombatLocked() or not Theme.ValidateLook(lookName) then return false end
-    InstallPalette(ResolvePaletteOverrides(look.palette, look.dynamicPalette ~= nil, look.dynamicPalette))
-    InstallLookValues(look)
-    local micro = NS.DB.icons and NS.DB.icons.microMenu
-    local microPreset = NS.MicroMenuPresetValues[look.microStyle]
-    if micro and microPreset then
-        for _, key in ipairs(NS.MicroMenuLookKeys) do
-            if microPreset[key] ~= nil then micro[key] = microPreset[key] end
-        end
-        micro.preset = look.microStyle
-        NS.AlignRetailPanelMicroBar(micro)
-    end
-    NS.DB.theme.preset = look.palette
-    NS.DB.theme.look = lookName
+    InstallLook(NS.DB, look, lookName)
     -- The Suite's modules follow the look. Their code is foreign here: an
     -- error is reported and the skin still repaints with the new look.
     local suite = _G.MSUFSuite
@@ -539,8 +553,8 @@ function Theme.RefreshDynamicLook()
     if not look or not look.dynamicPalette or not Theme.ValidateLook(NS.DB.theme.look) then
         return false
     end
-    InstallPalette(ResolvePaletteOverrides(look.palette, true, look.dynamicPalette))
-    InstallLookValues(look)
+    InstallPalette(NS.DB, ResolvePaletteOverrides(look.palette, true, look.dynamicPalette))
+    InstallLookValues(NS.DB, look)
     NS.DB.theme.preset = look.palette
     return true
 end
@@ -549,8 +563,8 @@ function Theme.ResetColors()
     if NS.IsCombatLocked() then
         return false
     end
+    DetachLook()
     NS.Database.ResetColors()
-    NS.DB.theme.look = "custom"
     NS.Registry.QueueRefresh()
     NS.Registry.NotifyListeners("theme", "colors")
     return true

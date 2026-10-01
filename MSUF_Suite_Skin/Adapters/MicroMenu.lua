@@ -599,11 +599,18 @@ end
 
 local ApplyNow
 
+local function ApplyActive()
+    if MicroMenuSkin.active then ApplyNow(activeRoot, activeOwner) end
+end
+
+-- Settings writes arrive once per slider tick or colour-picker move: the
+-- full pass they need runs once on the next frame (after combat when it
+-- started in between).
 local function OnThemeChanged(_, domain)
     if MicroMenuSkin.active and (domain == "color" or domain == "theme"
         or domain == "appearance" or domain == "geometry"
         or domain == "profile" or domain == "adapter") then
-        ApplyNow(activeRoot, activeOwner)
+        NS.Registry.QueueJob(ApplyActive)
     end
 end
 

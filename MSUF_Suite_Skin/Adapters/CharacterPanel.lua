@@ -51,6 +51,14 @@ local modelArtNames = {
 -- The first four entries of modelArtNames: Forever tints them instead of fading.
 local MODEL_BACKGROUND_COUNT = 4
 
+-- Runtime state lives in weak-keyed side tables, never in fields on
+-- Blizzard's frames: the Forever tab rail per CharacterFrame, the label and
+-- rule the skin adds to each native mode tab, and the model backdrop
+-- colours it replaced.
+local foreverNavs = setmetatable({}, { __mode = "k" })
+local tabParts = setmetatable({}, { __mode = "k" })
+local modelColors = setmetatable({}, { __mode = "k" })
+
 local slotNames = {
     "CharacterHeadSlot",
     "CharacterNeckSlot",
@@ -186,13 +194,16 @@ local function RestoreTitle(state, root)
 end
 
 local function RestoreForeverTabs(state, root)
-    local nav = root and root._msufForeverTabs
+    local nav = root and foreverNavs[root]
     if not nav or not nav.active then return end
     nav.active, nav.restoring = false, true
     for index, tab in ipairs(nav.tabs) do
         RestoreGeometry(tab, nav.tabGeometry[index])
-        if tab._msufForeverLabel then tab._msufForeverLabel:Hide() end
-        if tab._msufForeverRule then tab._msufForeverRule:Hide() end
+        local parts = tabParts[tab]
+        if parts then
+            parts.label:Hide()
+            parts.rule:Hide()
+        end
         local icon = Field(tab, "Icon")
         if icon then NS.Cosmetics.Restore(icon, state.owner) end
     end
@@ -206,7 +217,7 @@ end
 
 -- Captures the native tab geometry once; nil when a tab cannot be moved.
 local function EnsureForeverNav(root, container, tabs)
-    local nav = root._msufForeverTabs
+    local nav = foreverNavs[root]
     if nav then return nav end
     local original = CaptureGeometry(container)
     if not original or not CanMoveForever(container) then return nil end
@@ -217,7 +228,7 @@ local function EnsureForeverNav(root, container, tabs)
         if not geometry or not CanMoveForever(tab) then return nil end
         nav.tabs[index], nav.tabGeometry[index] = tab, geometry
     end
-    root._msufForeverTabs = nav
+    foreverNavs[root] = nav
     return nav
 end
 
@@ -227,25 +238,25 @@ local function PlaceForeverTab(state, root, container, tab, index, visualIndex, 
     tab:SetSize(tabWidth, 30)
     local icon = Field(tab, "Icon")
     if icon then Fade(state, icon) end
-    if not tab._msufForeverLabel then
-        local label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        label:SetPoint("CENTER", tab, "CENTER", 0, 1)
-        tab._msufForeverLabel = label
-        local rule = tab:CreateTexture(nil, "OVERLAY")
-        rule:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 10, 1)
-        rule:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -10, 1)
-        rule:SetHeight(2)
-        tab._msufForeverRule = rule
+    local parts = tabParts[tab]
+    if not parts then
+        parts = { label = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"),
+            rule = tab:CreateTexture(nil, "OVERLAY") }
+        parts.label:SetPoint("CENTER", tab, "CENTER", 0, 1)
+        parts.rule:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 10, 1)
+        parts.rule:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -10, 1)
+        parts.rule:SetHeight(2)
+        tabParts[tab] = parts
     end
     local labelText = tab.tooltipText
-    tab._msufForeverLabel:SetText(type(labelText) == "string" and labelText ~= "" and labelText
+    parts.label:SetText(type(labelText) == "string" and labelText ~= "" and labelText
         or FOREVER_TAB_FALLBACKS[index] or tostring(index))
-    tab._msufForeverLabel:SetWidth(tabWidth - 4)
-    tab._msufForeverLabel:Show()
+    parts.label:SetWidth(tabWidth - 4)
+    parts.label:Show()
     local selected = root.selectedTab == index
-    tab._msufForeverLabel:SetTextColor(NS.Theme.GetColor(selected and "accent" or "text"))
-    tab._msufForeverRule:SetColorTexture(NS.Theme.GetColor("accent"))
-    tab._msufForeverRule:SetShown(selected)
+    parts.label:SetTextColor(NS.Theme.GetColor(selected and "accent" or "text"))
+    parts.rule:SetColorTexture(NS.Theme.GetColor("accent"))
+    parts.rule:SetShown(selected)
 end
 
 local function PositionForeverTabs(state, root)
@@ -382,7 +393,7 @@ local function SkinStatRow(state, row)
         Track(state, row)
         return true
     end
-    return Attach(state, row, STAT_ROW_SPEC)
+    return Attach(state, row, STAT_ROW_SPEC, true)
 end
 
 local function SkinStatHeader(state, frame, modern)
@@ -392,7 +403,7 @@ local function SkinStatHeader(state, frame, modern)
     if modern then
         Track(state, frame)
     else
-        Attach(state, frame, STAT_HEADER_SPEC)
+        Attach(state, frame, STAT_HEADER_SPEC, true)
     end
 end
 
@@ -410,6 +421,12 @@ local function FormatItemLevel(state, frame)
         local maximum = string.format("%.2f", available)
         if maximum ~= text then text = text .. " / " .. maximum end
     end
+    -- Blizzard's text from this update, unless the skin's own text is still
+    -- shown (a skin pass without a native update in between).
+    local shown = Safety.Read(value, "GetText")
+    if shown ~= state.itemLevelText or frame ~= state.itemLevelFrame then
+        state.itemLevelNative = shown
+    end
     value:SetText(text)
     state.itemLevelFrame, state.itemLevelText = frame, text
 end
@@ -421,7 +438,9 @@ local function SkinStats(state)
     end
 
     Fade(state, Field(pane, "ClassBackground"))
-    Attach(state, pane, NS.GearAnnotations.IsWide() and STATS_CARD_SPEC or STATS_PANEL_SPEC)
+    -- Runs after every native stats update (the player's auras queue one):
+    -- surfaces that are current are left alone.
+    Attach(state, pane, NS.GearAnnotations.IsWide() and STATS_CARD_SPEC or STATS_PANEL_SPEC, true)
     local pool = Field(pane, "statsFramePool")
     local enumerable = HasMethod(pool, "EnumerateActive")
     local modern = enumerable and NS.CharacterStats.StylesRows(pane)
@@ -453,12 +472,12 @@ local function SkinStats(state)
 end
 
 local function RestoreModelColors(model)
-    local colors = model._msufForeverBackgroundColors
+    local colors = modelColors[model]
     if not colors then return end
     for region, color in pairs(colors) do
         region:SetVertexColor(unpack(color))
     end
-    model._msufForeverBackgroundColors = nil
+    modelColors[model] = nil
 end
 
 local function SkinModel(state)
@@ -466,10 +485,10 @@ local function SkinModel(state)
     local model = CharacterModelScene
     local foreverLook = ForeverLook()
     if foreverLook then
-        local saved = model._msufForeverBackgroundColors
+        local saved = modelColors[model]
         if not saved then
             saved = {}
-            model._msufForeverBackgroundColors = saved
+            modelColors[model] = saved
         end
         for index = 1, MODEL_BACKGROUND_COUNT do
             local region = _G[modelArtNames[index]]
@@ -592,13 +611,20 @@ panel.skinAllSlots = function(state) return panel:SkinAllSlots(state) end
 
 CharacterPanel = {
     owners = panel.owners,
+    tabParts = tabParts,
     exactSlots = panel.exactSlots,
     hooks = {},
 }
 NS.CharacterPanel = CharacterPanel
 
 local function OnUpdateSize() panel:ForActiveOwners("layout", RelayoutPaperDoll) end
-local function OnStatsUpdated() panel:ForActiveOwners("stats", SkinStats) end
+-- During combat the stats pass waits for combat to end; the skin's own stat
+-- details follow the rows Blizzard just reassigned at once (paint only, its
+-- own error boundary like every pass).
+local function OnStatsUpdated()
+    if NS.IsCombatLocked() then Safety.Dispatch(NS.CharacterStats.SyncDetails, _G.CharacterStatsPane) end
+    panel:ForActiveOwners("stats", SkinStats)
+end
 local function OnSlotUpdated(slot) panel:RefreshSlot(slot) end
 local function OnSidebarUpdated() panel:ForActiveOwners("sidebar", SkinSidebar) end
 local function OnModeTabSelected() panel:ForActiveOwners("mode-tabs", SkinForeverTabsAndViews) end
@@ -659,10 +685,15 @@ function CharacterPanel.Disable(owner)
     NS.EQoLCharacter.Disable(owner)
     NS.CharacterStats.Disable(_G.CharacterStatsPane, owner)
     NS.CharacterDetails.Disable(_G.CharacterFrame, owner)
-    local itemLevel = state.itemLevelFrame
-    if itemLevel and Safety.Read(Field(itemLevel, "Value"), "GetText") == state.itemLevelText then
-        PaperDollFrame_SetItemLevel(itemLevel, "player")
+    -- Gives back Blizzard's own item-level text from its last update rather
+    -- than running PaperDoll code (which writes the stat frame's tooltip
+    -- fields) from the skin.
+    local itemLevel, native = state.itemLevelFrame, state.itemLevelNative
+    local value = itemLevel and Field(itemLevel, "Value")
+    if type(native) == "string" and Safety.Read(value, "GetText") == state.itemLevelText then
+        value:SetText(native)
     end
+    state.itemLevelFrame, state.itemLevelText, state.itemLevelNative = nil, nil, nil
     panel:Release(state)
     -- The parent blizzardWindows adapter restores the shared IconSkin,
     -- ControlSkin and Cosmetics owner exactly once through GenericWindows.

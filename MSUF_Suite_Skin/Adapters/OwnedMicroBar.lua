@@ -16,11 +16,16 @@ local _, NS = ...
 -- and re-applies that after every native MicroMenu:Layout (post-hook) while
 -- the bar owns the menu.
 --
--- Two Blizzard methods it calls do write MicroMenu fields, in addon
--- execution: SetOverrideScale (overrideScale, then UpdateScale) when the bar
--- takes the menu, and ResetMicroMenuPosition (parent, stride, overrideScale
--- and Edit Mode's UpdateSystem pass over the container) when it hands the
--- menu back or establishes the native state before its first snapshot.
+-- Nor does it run Blizzard code that writes MicroMenu or Edit Mode fields:
+-- SetOverrideScale (overrideScale) and ResetMicroMenuPosition (stride,
+-- overrideScale and Edit Mode's UpdateSystem pass, which writes systemInfo,
+-- isHorizontal, normalScale ...) would run tainted from here, and Blizzard
+-- reads those fields again in combat (vehicle exit runs ResetMicroMenuPosition
+-- from MainActionBar's OnShow, right before protected StanceBar calls). The
+-- bar scales the menu with the widget method, re-asserting it after a native
+-- UpdateScale, and hands the menu back by reparenting it to its container and
+-- placing it the way Blizzard's own layout does (HandBack); Blizzard's next
+-- secure reset or layout pass then runs on untouched fields.
 --
 -- The grid and companion placement lives in OwnedMicroBarLayout.lua, the
 -- visibility driver, health gate and mouseover reveal in
@@ -72,8 +77,8 @@ local mover
 local portrait, portraitRing, topRule, bottomRule
 local portraitEnabled = false
 local activeRoot
-local nativeState
-local suppressResetHook = false
+-- The MicroMenu the bar took, until it hands it back.
+local takenRoot
 local hookedRoots = setmetatable({}, { __mode = "k" })
 local hookedGlobals = {}
 local desired = false
@@ -188,66 +193,39 @@ local function LayoutOwned(root, settings)
     AnchorCompanions(root, settings, horizontal, bar)
 end
 
-local function ApplyGrid(root, settings)
+-- The scale MicroMenuMixin:UpdateScale would give the owned size: its game
+-- rule factor stays part of the result.
+local function OwnedScale(settings)
     local scale = Clamp(settings.scale, 0.50, 1.50)
-    -- SetOverrideScale is Blizzard's API for a temporarily reparented menu;
-    -- ResetMicroMenuPosition clears it again.
-    if HasMethod(root, "SetOverrideScale") then
-        root:SetOverrideScale(scale)
-    else
-        root:SetScale(scale)
-    end
+    local factor = C_GameRules.GetGameRuleAsFloat(Enum.GameRule.MicrobarScale)
+    if type(factor) == "number" and factor ~= 0 then return scale * factor end
+    return scale
+end
+
+local function ApplyGrid(root, settings)
+    root:SetScale(OwnedScale(settings))
     LayoutOwned(root, settings)
 end
 
 -- Native state --------------------------------------------------------------------------
 
-local function CapturePoints(frame)
-    local points = {}
-    for index = 1, math.floor(ReadNumber(frame, "GetNumPoints", 0)) do
-        local point, relativeTo, relativePoint, x, y = frame:GetPoint(index)
-        if type(point) == "string" then
-            points[#points + 1] = {
-                point, relativeTo, relativePoint,
-                type(x) == "number" and Public(x) and x or 0,
-                type(y) == "number" and Public(y) and y or 0,
-            }
-        end
-    end
-    return points
-end
-
-local function CaptureNative(root)
-    if nativeState and nativeState.root == root then return end
-    nativeState = {
-        root = root,
-        parent = Read(root, "GetParent"),
-        points = CapturePoints(root),
-        overrideScale = Field(root, "overrideScale"),
-    }
-end
-
--- Only for a MicroMenu without ResetMicroMenuPosition.
-local function RestoreFallback(root, state)
-    if state.parent then FrameUtil.SetParentMaintainRenderLayering(root, state.parent) end
-    root:ClearAllPoints()
-    for index = 1, #state.points do
-        root:SetPoint(unpack(state.points[index]))
-    end
-    if state.overrideScale ~= nil then
-        if HasMethod(root, "SetOverrideScale") then
-            root:SetOverrideScale(state.overrideScale)
-        else
-            root:SetScale(state.overrideScale)
-        end
-    elseif HasMethod(root, "ClearOverrideScale") then
-        root:ClearOverrideScale()
-    end
+-- Puts the menu where Blizzard's own reset leaves it, without running that
+-- reset from addon code: in MicroMenuContainer (Blizzard_MicroMenu makes it
+-- with MicroMenu on both clients), on its native grid, anchored by
+-- MicroMenuMixin:AnchorToMenuContainer and scaled by UpdateScale (both only
+-- place and scale the menu and write no field), with the queue eye, FPS text
+-- and help button around the native orientation.
+local function HandBack(root)
+    local container = MicroMenuContainer
+    FrameUtil.SetParentMaintainRenderLayering(root, container)
+    PlaceNativeGrid(root)
+    root:AnchorToMenuContainer(Layout.ContainerPosition(container))
+    root:UpdateScale()
+    AnchorCompanions(root, Settings(), Field(root, "isHorizontal") == true, container)
 end
 
 local function RestoreNative(root)
-    local state = nativeState
-    if not root or not state or state.root ~= root or not CanOwn(root) then
+    if not root or root ~= takenRoot or not CanOwn(root) then
         return false
     end
     if not ParentIs(root, bar) then
@@ -255,17 +233,8 @@ local function RestoreNative(root)
         -- screen flow). Its next ResetMicroMenuPosition restores native state.
         return true, "yielded"
     end
-
-    suppressResetHook = true
-    PlaceNativeGrid(root)
-    local reset = HasMethod(root, "ResetMicroMenuPosition")
-    if reset then
-        root:ResetMicroMenuPosition()
-    else
-        RestoreFallback(root, state)
-    end
-    suppressResetHook = false
-    return true, reset and "reset" or "restored"
+    HandBack(root)
+    return true, "handed-back"
 end
 
 -- Edit Mode -----------------------------------------------------------------------------
@@ -332,9 +301,11 @@ local function ValidEditState(state)
         and type(state.padding) == "number" and state.padding >= 0 and state.padding <= 16
 end
 
-local function EditOption(key, label, minimum, maximum, step)
+-- Labels are locale keys: NS.L exists once the skin finished loading, so
+-- they are resolved when the element registers (EnsureEditRegistration).
+local function EditOption(key, labelKey, minimum, maximum, step)
     return {
-        id = key, label = label, kind = "number", min = minimum, max = maximum, step = step,
+        id = key, labelKey = labelKey, kind = "number", min = minimum, max = maximum, step = step,
         get = function()
             local settings = Settings()
             return settings and settings[key]
@@ -343,9 +314,9 @@ local function EditOption(key, label, minimum, maximum, step)
     }
 end
 
-local function OrientationToggle(orientation, label)
+local function OrientationToggle(orientation, labelKey)
     return {
-        id = orientation, label = label, kind = "toggle",
+        id = orientation, labelKey = labelKey, kind = "toggle",
         get = function()
             local settings = Settings()
             return settings and settings.orientation == orientation
@@ -360,7 +331,7 @@ local editControls = {
     EditOption("buttonsPerLine", "Per line", 1, MAX_BUTTONS_PER_LINE, 1),
     EditOption("spacing", "Spacing", -8, 16, 1),
     {
-        id = "size", label = "Size %", kind = "number", min = 50, max = 150, step = 1,
+        id = "size", labelKey = "Size %", kind = "number", min = 50, max = 150, step = 1,
         get = function()
             local settings = Settings()
             return settings and math.floor((settings.scale or 1) * 100 + 0.5)
@@ -373,7 +344,7 @@ local editControls = {
 }
 
 local editElement = {
-    id = EDIT_ID, label = "Micro Bar", group = "MSUF Suite", order = 450,
+    id = EDIT_ID, labelKey = "Micro Bar", groupKey = "MSUF Suite", order = 450,
     getFrame = function() return bar end,
     isEnabled = function()
         return OwnedMicroBar.active and not OwnedMicroBar.suspended
@@ -433,10 +404,20 @@ local editElement = {
     end,
 }
 
+local function LocalizeEditElement()
+    local L = NS.L
+    editElement.label, editElement.group = L[editElement.labelKey], L[editElement.groupKey]
+    for index = 1, #editControls do
+        local control = editControls[index]
+        control.label = L[control.labelKey]
+    end
+end
+
 local function EnsureEditRegistration()
     if editRegistered or not bar then return editRegistered end
     local api = EditAPI()
     if not api then return false end
+    LocalizeEditElement()
     editRegistered = api.RegisterElement(EDIT_OWNER, editElement) == true
     if editRegistered then SetMoverVisible(false) end
     return editRegistered
@@ -506,7 +487,7 @@ local function CreateMover()
     fill:SetColorTexture(0.10, 0.45, 0.95, 0.34)
     local label = mover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("CENTER")
-    label:SetText("Drag MapkoSkin Micro Bar")
+    label:SetText(NS.L["Drag to move the Micro Bar"])
 end
 
 local function EnsureFrames()
@@ -576,14 +557,31 @@ local function Reapply()
 end
 
 ScheduleReapply = function()
-    if not desired or suppressResetHook then return end
+    if not desired then return end
     NS.CombatGate.RunOrDefer(REAPPLY_KEY, Reapply)
 end
 
 local function OnNativeReset(root)
-    if not suppressResetHook and desired and OwnedMicroBar.active and root == activeRoot then
+    if desired and OwnedMicroBar.active and root == activeRoot then
         ScheduleReapply()
     end
+end
+
+-- Blizzard's UpdateScale (Edit Mode's Micro Menu size, a layout load) sets
+-- its own scale on the menu the bar holds; the owned scale comes back at
+-- once. While Blizzard overrides the menu (overrideScale) it keeps its own.
+local function OnNativeScale(root)
+    if not desired or not OwnedMicroBar.active or OwnedMicroBar.suspended
+        or root ~= activeRoot or not ParentIs(root, bar) or Field(root, "overrideScale") ~= nil then
+        return
+    end
+    local settings = Settings()
+    if not IsOwnedMode(settings) then return end
+    if NS.IsCombatLocked() and not NS.Safety.CanControl(root) then
+        ScheduleReapply()
+        return
+    end
+    root:SetScale(OwnedScale(settings))
 end
 
 -- Blizzard runs MicroMenu:Layout on show and after MarkDirty. When its cached
@@ -618,6 +616,10 @@ local function OnNativeLayoutHook(root)
     Dispatch(OnNativeLayout, root)
 end
 
+local function OnNativeScaleHook(root)
+    Dispatch(OnNativeScale, root)
+end
+
 local function OnNativeOverrideHook()
     Dispatch(ScheduleReapply)
 end
@@ -643,6 +645,7 @@ local function EnsureHooks(root)
     HookRootMethod(root, "ResetMicroMenuPosition", OnNativeResetHook)
     HookRootMethod(root, "OverrideMicroMenuPosition", OnNativeOverrideHook)
     HookRootMethod(root, "Layout", OnNativeLayoutHook)
+    HookRootMethod(root, "UpdateScale", OnNativeScaleHook)
     HookGlobal("MicroMenuBar_SetFullScreenFrame", OnNativeOverrideHook)
     HookGlobal("MicroMenuBar_ClearFullScreenFrame", OnNativeOverrideHook)
 end
@@ -761,16 +764,9 @@ function OwnedMicroBar.Apply(root, settings)
     RegisterEvents(settings)
     EnsureHooks(root)
 
+    -- Blizzard's fullscreen clear path leaves MicroMenu on UIParent; the bar
+    -- takes it from there too and hands it back to the container (HandBack).
     local parent = Read(root, "GetParent")
-    if parent == UIParent and not nativeState and HasMethod(root, "ResetMicroMenuPosition") then
-        -- Blizzard's fullscreen clear path deliberately leaves MicroMenu on
-        -- UIParent. Establish the canonical Edit Mode state before taking the
-        -- first reversible snapshot.
-        suppressResetHook = true
-        root:ResetMicroMenuPosition()
-        suppressResetHook = false
-        parent = Read(root, "GetParent")
-    end
     if parent ~= bar and parent ~= _G.MicroMenuContainer and parent ~= UIParent then
         OwnedMicroBar.suspended = true
         Visibility.ClearDriver()
@@ -779,7 +775,7 @@ function OwnedMicroBar.Apply(root, settings)
         return root, "blizzard-override"
     end
 
-    CaptureNative(root)
+    takenRoot = root
     OwnedMicroBar.suspended = false
     if parent ~= bar then FrameUtil.SetParentMaintainRenderLayering(root, bar) end
     ApplyPosition(settings)
@@ -809,7 +805,7 @@ function OwnedMicroBar.Disable(root)
     root = root or activeRoot
     if NS.IsCombatLocked() then return false, "combat" end
     local success = true
-    if root and nativeState and nativeState.root == root then
+    if root and root == takenRoot then
         success = RestoreNative(root) ~= false
     end
     Visibility.Reset()
@@ -825,7 +821,7 @@ function OwnedMicroBar.Disable(root)
     OwnedMicroBar.suspended = false
     portraitEnabled = false
     activeRoot = nil
-    nativeState = nil
+    takenRoot = nil
     RefreshEditOwner()
     return success, success and "disabled" or "partial"
 end

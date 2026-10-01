@@ -548,11 +548,34 @@ local function QueueClientSync(record)
     end)
 end
 
+-- Settings notifications arrive once per slider tick or colour-picker move,
+-- and consumers repaint whole menus and modules on the signal: it goes out
+-- once per frame for each distinct domain and key, after that frame's
+-- writes, each signal its own error boundary.
+local queuedSignals, queuedSignalKeys = {}, {}
+
+local function EmitAppearanceSignals()
+    local signals = queuedSignals
+    queuedSignals, queuedSignalKeys = {}, {}
+    for index = 1, #signals do
+        local signal = signals[index]
+        NS.Safety.Dispatch(API.OnAppearanceChanged, API, signal[1], signal[2])
+    end
+end
+
+local function QueueAppearanceSignal(domain, key)
+    local id = tostring(domain) .. "\31" .. tostring(key)
+    if queuedSignalKeys[id] then return end
+    queuedSignalKeys[id] = true
+    queuedSignals[#queuedSignals + 1] = { domain, key }
+    NS.Registry.QueueJob(EmitAppearanceSignals)
+end
+
 local function OnRegistryChanged(_, domain, key)
     if domain == "profile" or (domain == "adapter" and key == "master") then
         for _, record in pairs(clients) do QueueClientSync(record) end
     end
-    API:OnAppearanceChanged(domain, key)
+    QueueAppearanceSignal(domain, key)
 end
 
 function PublicAPI.Activate()

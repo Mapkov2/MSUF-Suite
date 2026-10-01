@@ -9,6 +9,10 @@ local at = assert(source:find(marker, 1, true), "MapkoSkin smoke fixture changed
 local fixture = source:sub(1, at - 1)
 local contract = [=[
 WOW_PROJECT_MAINLINE, WOW_PROJECT_ID = 1, 1
+-- Retail and Forever scale MicroMenu by this game rule (0: no factor).
+C_GameRules = C_GameRules or {}
+C_GameRules.GetGameRuleAsFloat = C_GameRules.GetGameRuleAsFloat or function() return 0 end
+Enum.GameRule = Enum.GameRule or { MicrobarScale = 1 }
 UIParent.GetFrameLevel = function() return 0 end
 local simulateForever = arg[3] == "Forever"
 GameEvent = simulateForever and { RegisterCamelotEvents = function() end } or {}
@@ -805,6 +809,14 @@ do
     local function ResetCounts() counts.icon, counts.scroll, counts.action = 0, 0, 0 end
 
     ResetCounts()
+    -- Item borders write only a changed colour, so the stored border colour
+    -- changes first (and the border draws it, not the native quality colour):
+    -- a repaint, wanted or not, then shows in the count.
+    local storedStyle = namespace.DB.theme.iconBorderStyle
+    namespace.DB.theme.iconBorderStyle = "theme"
+    local storedBorder = namespace.DB.theme.colors.iconBorder
+    local storedRed = storedBorder[1]
+    storedBorder[1] = storedRed > 0.5 and storedRed - 0.25 or storedRed + 0.25
     Registry.NotifyListeners("color", "accent")
     Registry.NotifyListeners("appearance", "shellOpacity")
     Registry.NotifyListeners("geometry", "radius")
@@ -816,6 +828,7 @@ do
     Registry.NotifyListeners("color", "blizzardClose")
     assert(counts.icon > 0 and counts.scroll > 0 and counts.action > 0,
         "a color an engine surface uses did not repaint it")
+    storedBorder[1] = storedRed
 
     local theme = namespace.DB.theme
     local look, preset, opacity = theme.look, theme.preset, theme.shellOpacity
@@ -828,6 +841,12 @@ do
         fullRefreshes = fullRefreshes + 1
         return refreshAll(...)
     end
+    -- The public appearance signal (MSUF menus and Suite HUD modules repaint
+    -- on it) goes out once per frame for each distinct domain and key.
+    local signals = {}
+    hooksecurefunc(namespace.PublicAPI.API, "OnAppearanceChanged", function(_, domain, key)
+        signals[#signals + 1] = tostring(domain) .. ":" .. tostring(key)
+    end)
     ResetCounts()
     for step = 1, 5 do
         assert(namespace.Theme.SetAppearance("shellOpacity", 0.5 + step * 0.05))
@@ -835,6 +854,7 @@ do
     end
     assert(fullRefreshes == 0 and counts.icon == 0,
         "every settings write refreshed the surfaces and item borders at once")
+    assert(#signals == 0, "the appearance signal went out for every settings write")
     local index = 1
     while queued[index] do
         queued[index]()
@@ -843,11 +863,14 @@ do
     assert(fullRefreshes == 1 and counts.icon == 1,
         ("a frame of settings writes refreshed the surfaces %d and the item borders %d times")
             :format(fullRefreshes, counts.icon))
+    table.sort(signals)
+    assert(#signals == 2 and signals[1] == "appearance:shellOpacity" and signals[2] == "color:iconBorder",
+        "a frame of settings writes sent the appearance signals " .. table.concat(signals, ", "))
     Registry.RefreshAll = refreshAll
     _G.C_Timer = previousTimer
     namespace.Theme.SetAppearance("shellOpacity", opacity)
     namespace.Theme.SetColor("iconBorder", borderR, borderG, borderB, borderA)
-    theme.look, theme.preset = look, preset
+    theme.look, theme.preset, theme.iconBorderStyle = look, preset, storedStyle
     namespace.IconSkin.DisableOwner(owner)
     namespace.ScrollBarSkin.DisableOwner(owner)
     namespace.WindowActionSkin.DisableOwner(owner)
@@ -939,12 +962,13 @@ end
 assert(namespace.Defaults.theme.look == defaultLook
     and namespace.Defaults.theme.preset == namespace.LookPresets[defaultLook].palette,
     "fresh skin profile did not start with the client's look")
-assert(#namespace.LookOrder == 4
+assert(#namespace.LookOrder == 5
     and namespace.LookOrder[1] == "cleanModern"
     and namespace.LookOrder[2] == "midnight"
     and namespace.LookOrder[3] == "foreverGlass"
-    and namespace.LookOrder[4] == "midnightDark",
-    "Skinning menu must expose Clean Modern, Blue, Forever and Dark")
+    and namespace.LookOrder[4] == "midnightDark"
+    and namespace.LookOrder[5] == "classColor",
+    "Skinning menu must expose Clean Modern, Blue, Forever, Dark and Class Style")
 do
     local saved = namespace.CopyValue(namespace.Defaults)
     saved.revision = 33
@@ -1195,6 +1219,14 @@ do
         self:ClearAllPoints()
         self:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
     end
+    -- MicroMenuMixin on Retail and Forever: anchor in the container and
+    -- Blizzard's own scale; neither writes a field.
+    function root:AnchorToMenuContainer()
+        if self:GetParent() ~= container then return end
+        self:ClearAllPoints()
+        self:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    end
+    function root:UpdateScale() self:SetScale(1) end
     function root:UpdateHelpTicketButtonAnchor() end
     local layoutChildren = {
         new_frame("Button", "OwnedGridChild1", root), new_frame("Button", "OwnedGridChild2", root),
@@ -1216,6 +1248,10 @@ do
     assert(portraitUnit == "player", "Micro Bar portrait listened to every unit's portrait updates")
     assert(bar and mode == "owned" and registeredOwner == "MSUFSuite.Skin"
         and registeredElement.id == "microBar", "Micro Bar did not join MSUF Edit Mode")
+    assert(registeredElement.label == namespace.L["Micro Bar"] and registeredElement.group == namespace.L["MSUF Suite"]
+        and registeredElement.extraControls[1].label == namespace.L["Per line"]
+        and registeredElement.extraControls[5].label == namespace.L["Vertical"],
+        "Micro Bar joined MSUF Edit Mode without localized labels")
     local _, legacyMover = namespace.OwnedMicroBar.GetFrames()
     assert(not legacyMover:IsShown(), "legacy drag handle overlapped the MSUF mover")
     local before = registeredElement.captureState()
@@ -1319,7 +1355,7 @@ do
         "health condition did not supersede the no-target rule")
     local healthGate = bar:GetParent()
     local healthValue = 0
-    _G.Enum = { LuaCurveType = { Step = 1 } }
+    _G.Enum = { LuaCurveType = { Step = 1 }, GameRule = Enum.GameRule }
     _G.C_CurveUtil = { CreateCurve = function()
         return { SetType = function(self, value) self.kind = value end,
             AddPoint = function(self, x, y) self[x] = y end }
@@ -1399,6 +1435,8 @@ do
     function root:MarkDirty() end
     function root:Layout() end
     function root:ResetMicroMenuPosition() self:SetParent(container) end
+    function root:AnchorToMenuContainer() end
+    function root:UpdateScale() self:SetScale(1) end
     function root:UpdateHelpTicketButtonAnchor() end
 
     local buttonNames = {
@@ -1534,9 +1572,10 @@ do
             end
         end
     end
-    -- Four state methods per button, the guild tabard, one container and two
-    -- MicroMenu hooks; re-applying presets must not add more.
-    assert(MSKIN_TEST_SECURE_HOOK_COUNT - hooksBefore <= #buttons * 4 + 4,
+    -- Four state methods per button, the guild tabard, one container and the
+    -- owned bar's MicroMenu hooks (its UpdateScale keeps the owned scale);
+    -- re-applying presets must not add more.
+    assert(MSKIN_TEST_SECURE_HOOK_COUNT - hooksBefore <= #buttons * 4 + 5,
         "Micro Bar installed more than four native hooks per button: "
             .. tostring(MSKIN_TEST_SECURE_HOOK_COUNT - hooksBefore))
     assert(namespace.MicroMenuSkin.ApplyPreset("blizzard"))
@@ -1687,7 +1726,7 @@ if simulateForever then
         "Forever profession background did not restore after disabling")
     _G.ProfessionsFrame = nil
 end
-assert(looks == 4 and palettes >= 5,
+assert(looks == 5 and palettes >= 5,
     "Client look catalog or palette collection changed")
 
 local private = {}
@@ -1772,7 +1811,7 @@ assert(forever.Client.flavor == "Forever" and forever.Client.isMainline
 do
     local retail = { Client = { flavor = "Mainline", isMainline = true, isForever = false } }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", retail)
-    assert(retail.Defaults.theme.look == "cleanModern" and #retail.LookOrder == 4,
+    assert(retail.Defaults.theme.look == "cleanModern" and #retail.LookOrder == 5,
         "the Retail skin client did not start with Clean Modern")
 end
 do

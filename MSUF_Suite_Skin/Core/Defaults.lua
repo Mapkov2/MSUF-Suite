@@ -1028,8 +1028,8 @@ NS.PaletteLabels = {
 }
 
 -- Keep older authored looks loadable for saved profiles and imports. The
--- visible catalog has the same four choices on every supported client.
-NS.LookOrder = { "cleanModern", "midnight", "foreverGlass", "midnightDark" }
+-- visible catalog has the same five choices on every supported client.
+NS.LookOrder = { "cleanModern", "midnight", "foreverGlass", "midnightDark", "classColor" }
 NS.LookPresets = {
     custom = {
         label = "Custom",
@@ -1057,8 +1057,8 @@ NS.LookPresets = {
         geometry = { family = "continuous", radius = 12, border = 1, controlShape = "continuous" },
     },
     classColor = {
-        label = "Class Color",
-        description = "Midnight structure with one live Blizzard class color owning every focus state.",
+        label = "Class Style",
+        description = "Dark, readable panels with accents that follow your current character's class.",
         palette = "classColor",
         dynamicPalette = "playerClass",
         appearance = { gradient = true, gradientStrength = 0.78, materialDepth = 0.18, gradientDirection = "VERTICAL", shellOpacity = 1, panelOpacity = 0.96, controlOpacity = 1, borderOpacity = 1, hoverStyle = "outline", hoverIntensity = 1 },

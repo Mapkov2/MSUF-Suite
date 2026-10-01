@@ -270,14 +270,24 @@ local function Track(context, target)
     if surfaces then surfaces[target] = true end
 end
 
--- Surface keeps a reference to spec: pass tables that are not changed later.
-function AdapterKit.Attach(context, target, spec)
+local function AttachWith(attach, context, target, spec)
     if not CanCreateRegions(target) then return false end
     spec.allowImplicitProtected = true
-    local surface = NS.Surface.Attach(target, spec)
+    local surface = attach(target, spec)
     if not surface then return false end
     Track(context, target)
     return true, surface
+end
+
+-- Surface keeps a reference to spec: pass tables that are not changed later.
+function AdapterKit.Attach(context, target, spec)
+    return AttachWith(NS.Surface.Attach, context, target, spec)
+end
+
+-- The same for hooks that run per row initialization or native update: a
+-- surface that already shows spec and is current is left alone (Surface.Ensure).
+function AdapterKit.Ensure(context, target, spec)
+    return AttachWith(NS.Surface.Ensure, context, target, spec)
 end
 
 -- ControlSkin copies spec. method defaults to ApplyButton; other values are
@@ -291,13 +301,16 @@ function AdapterKit.SkinControl(context, control, spec, method)
 end
 
 -- IconSkin reads its spec only during the call, so one scratch spec serves
--- every item button without a table per button.
+-- every item button without a table per button. nativeQuality false: the
+-- native border is decorative art, so the "quality" style draws the theme's
+-- icon border colour instead of reading it.
 local itemIconSpec = {}
 
-function AdapterKit.SkinItemIcon(button, owner, icon, nativeBorder, allowImplicitProtected)
+function AdapterKit.SkinItemIcon(button, owner, icon, nativeBorder, allowImplicitProtected, nativeQuality)
     itemIconSpec.icon = icon
     itemIconSpec.nativeBorder = nativeBorder
     itemIconSpec.allowImplicitProtected = allowImplicitProtected == true
+    itemIconSpec.nativeQuality = nativeQuality ~= false
     local state = NS.IconSkin.Apply(button, owner, itemIconSpec)
     itemIconSpec.icon = nil
     itemIconSpec.nativeBorder = nil

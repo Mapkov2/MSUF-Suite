@@ -228,10 +228,15 @@ local function RepaintItemBorder(button)
 end
 
 -- Buttons IconSkin does not own return at once. The repaint runs inside
--- Blizzard's item update loop, so it is its own error boundary. Combat
--- updates wait for the next out-of-combat one.
+-- Blizzard's item update loop, so it is its own error boundary. In combat
+-- (looting, swapping or using items with bags open) the owned border lines
+-- take the new quality colour as paint only; nothing is created or anchored.
 local function OnItemQualitySet(button)
-    if NS.IsCombatLocked() or NS.IconSkin.GetOwner(button) == nil then return end
+    if NS.IconSkin.GetOwner(button) == nil then return end
+    if NS.IsCombatLocked() then
+        Dispatch(NS.IconSkin.Repaint, button)
+        return
+    end
     Dispatch(RepaintItemBorder, button)
 end
 

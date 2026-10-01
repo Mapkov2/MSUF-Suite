@@ -213,6 +213,16 @@ local function InstallPanelPositionHook()
     hooksecurefunc("UpdateUIPanelPositions", OnPanelPositionsUpdated)
 end
 
+-- The window's own (localized) title, else a name derived from its frame.
+local function WindowTitle(state)
+    local frame = state.frame
+    local title = Safety.Call(frame, "GetTitleText")
+        or Safety.Field(Safety.Field(frame, "TitleContainer"), "TitleText")
+    local text = Safety.Read(title, "GetText")
+    if type(text) == "string" and text ~= "" then return text end
+    return (state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2"))
+end
+
 local function SavePosition(state)
     local frame = state.frame
     local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
@@ -225,7 +235,7 @@ local function SavePosition(state)
     local positions = NS.DB.windowControls.positions
     local x = math.floor(left * ratio + 0.5)
     local y = math.floor((top * ratio - uiHeight) + 0.5)
-    CommitWithHistory("Move " .. state.name, "positions." .. state.name, function()
+    CommitWithHistory(NS.L["Move %s"]:format(WindowTitle(state)), "positions." .. state.name, function()
         positions[state.name] = { x = x, y = y }
         return true
     end)
@@ -274,6 +284,7 @@ local function Minimize(state)
     else
         state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
     end
+    state.restoreLabel:SetText(WindowTitle(state) .. "  +")
     state.minimized = true
     if state.panel then
         HideUIPanel(frame)
@@ -330,7 +341,7 @@ local function CreateRestore(state)
     label:SetPoint("LEFT", 10, 0)
     label:SetPoint("RIGHT", -10, 0)
     label:SetJustifyH("LEFT")
-    label:SetText((state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2")) .. "  +")
+    state.restoreLabel = label
     bar:SetScript("OnClick", OnRestoreClick)
     bar:Hide()
     return bar
@@ -349,7 +360,7 @@ local function EndDrag(state)
     local scale = state.frame:GetScale()
     if NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales then
         local value = math.floor(scale * 100 + 0.5) / 100
-        CommitWithHistory("Scale " .. state.name, "scales." .. state.name, function()
+        CommitWithHistory(NS.L["Scale %s"]:format(WindowTitle(state)), "scales." .. state.name, function()
             NS.DB.windowControls.scales[state.name] = value
             return true
         end)
@@ -412,7 +423,7 @@ end
 
 local function OnGripEnter(grip)
     GameTooltip:SetOwner(grip, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Drag to scale this window")
+    GameTooltip:SetText(NS.L["Drag to scale this window"])
     GameTooltip:Show()
 end
 

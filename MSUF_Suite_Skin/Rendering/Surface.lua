@@ -32,6 +32,17 @@ local structuralRoles = {
 
 local ConfigureShape = NS.Geometry.ConfigureShape
 
+-- Counts the changes that can alter how an existing surface paints: every
+-- settings notification (theme, colours, geometry, profile, adapters), a new
+-- surface and a visibility change (both can change which ancestor fills a
+-- nested glass surface). A surface records the generation it was painted
+-- for; Surface.Ensure skips a surface that is still current.
+local paintGeneration = 0
+
+local function NextPaintGeneration()
+    paintGeneration = paintGeneration + 1
+end
+
 -- Owned regions are created on the target, so the target must accept them.
 local function CanPaint(target, spec)
     return NS.Safety.CanCreateRegions(target, spec and spec.allowImplicitProtected)
@@ -369,6 +380,7 @@ local function RefreshState(state)
     else
         state.fill:Show()
     end
+    state.paintGeneration = paintGeneration
     return true
 end
 
@@ -377,6 +389,7 @@ local function AttachNow(target, spec, deferRefresh)
     local state = NS.Registry.GetSurface(target)
     if state then
         state.spec = spec or state.spec
+        if state.visible == false then NextPaintGeneration() end
         state.visible = true
         EnsureInteractiveHover(target, state)
         if state.hoverOverlay then AnchorTexture(state.hoverOverlay, target, state.spec.inset) end
@@ -385,6 +398,7 @@ local function AttachNow(target, spec, deferRefresh)
         return state
     end
 
+    NextPaintGeneration()
     local fill = target:CreateTexture(nil, "BACKGROUND", nil, -7)
     local edge = target:CreateTexture(nil, "BORDER", nil, 7)
     AnchorTexture(fill, target, spec and spec.inset)
@@ -424,6 +438,19 @@ function Surface.Attach(target, spec)
         return nil, reason
     end
     return AttachNow(target, spec)
+end
+
+-- Attach for hooks that run per row initialization or per native update
+-- (scrolling lists, stat and slot updates): a surface that shows this exact
+-- spec, visible and painted for the current generation, is left alone.
+-- Callers that rewrite a spec table in place call Attach instead.
+function Surface.Ensure(target, spec)
+    local state = target and NS.Registry.GetSurface(target)
+    if state and state.spec == spec and state.visible ~= false and not state.syncNativeSelected
+        and state.paintGeneration == paintGeneration and not NS.IsCombatLocked() then
+        return state
+    end
+    return Surface.Attach(target, spec)
 end
 
 local function AddButtonStateTextures(button, state)
@@ -491,6 +518,7 @@ function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
     if state and state.kind == "button" then
         BlizzardYellow.TrackFrame(button)
         state.spec = spec
+        if state.visible == false then NextPaintGeneration() end
         state.visible = true
     else
         state = AttachNow(button, spec, true)
@@ -535,6 +563,7 @@ function Surface.SetVisible(target, visible)
     if not CanRefreshState(state) then
         return false, "protected"
     end
+    if state.visible ~= (visible == true) then NextPaintGeneration() end
     state.visible = visible == true
     state.refresh(state)
     return true
@@ -557,3 +586,6 @@ function Surface.Refresh(target)
     end
     return false
 end
+
+-- Every settings notification can change how a surface paints.
+NS.Registry.AddListener(Surface, NextPaintGeneration)

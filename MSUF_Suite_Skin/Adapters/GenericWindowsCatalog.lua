@@ -44,15 +44,13 @@ local function CatalogEntries()
     if catalogEntries then return catalogEntries end
     local catalog = NS.BlizzardCatalog
     local entries = {}
-    if catalog.IsGlassContractValid() then
-        for _, entry in ipairs(catalog.entries) do
-            if type(entry.id) == "string" and entry.skipGeneric ~= true
-                and catalog.IsEntryGlassReady(entry) then
-                entries[#entries + 1] = entry
-            end
+    for _, entry in ipairs(catalog.entries) do
+        if type(entry.id) == "string" and entry.skipGeneric ~= true
+            and catalog.IsEntryGlassReady(entry) then
+            entries[#entries + 1] = entry
         end
-        table.sort(entries, ById)
     end
+    table.sort(entries, ById)
     catalogEntries = entries
     return entries
 end

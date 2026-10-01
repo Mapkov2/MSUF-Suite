@@ -52,6 +52,16 @@ S.Config("dataTexts").hideBlizzardBagBar = true
 Check(S.OwnsBlizzardSurface("bagBar"), "DataTexts does not own the bag bar it hides")
 Check(not S.OwnsBlizzardSurface("chatFrames") and not S.OwnsBlizzardSurface("minimap"),
     "a surface no module replaces is owned")
+S.Config("popupAttention").enabled=true
+S.Config("popupAttention").skin=false
+Check(not S.OwnsBlizzardSurface("staticPopups"),"popup attention without its skin claimed native popups")
+S.Config("popupAttention").dialogFont=true
+Check(S.OwnsBlizzardSurface("staticPopups"),"the popup font without the look did not claim the native popups")
+S.Config("popupAttention").dialogFont=false
+S.Config("popupAttention").skin=true
+Check(S.OwnsBlizzardSurface("staticPopups"),"independent popup skin did not claim its native surface")
+S.Config("popupAttention").enabled=false
+Check(not S.OwnsBlizzardSurface("staticPopups"),"disabled popup skin retained ownership")
 
 -- Start and stop order around a surface module; other modules never notify.
 Suite.Skin = { SurfacesChanged = function(phase) events[#events + 1] = "skin:" .. phase end }
@@ -166,6 +176,7 @@ Check(Ownership.IsBagShell(ContainerFrameCombinedBags) and Ownership.IsBagShell(
     "the bag shell frames are misidentified")
 Check(Ownership.EntrySurface("hud-cooldown-viewers") == "cooldownViewers"
     and Ownership.EntrySurface("hud-bag-bar") == "bagBar"
+    and Ownership.EntrySurface("static-popups") == "staticPopups"
     and Ownership.EntrySurface("hud-minimap") == nil
     and Ownership.EntrySurface("hud-action-bars") == nil,
     "catalog entries map to the wrong owned surfaces")

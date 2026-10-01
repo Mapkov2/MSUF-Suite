@@ -654,9 +654,24 @@ local function CopyLayoutEntries(source, target, isValid, copy)
     end
 end
 
+-- Switches of adapters other addons register (API v1 RegisterAdapter) have
+-- no factory key; a copy keeps at most 64 of them, each a plain boolean.
+local function CopyAdapterSwitches(source, target)
+    if type(source) ~= "table" then return end
+    local copied = 0
+    for id, enabled in pairs(source) do
+        if copied >= 64 then return end
+        if type(id) == "string" and #id <= 64 and type(enabled) == "boolean" and target[id] == nil then
+            target[id] = enabled
+            copied = copied + 1
+        end
+    end
+end
+
 function Database.SanitizeProfile(profile)
     if type(profile) ~= "table" then return nil end
     local safe = SanitizeValue(profile, NS.Defaults)
+    CopyAdapterSwitches(profile.skins, safe.skins)
     local windowControls = profile.windowControls
     if type(windowControls) == "table" then
         CopyLayoutEntries(windowControls.scales, safe.windowControls.scales,
@@ -667,11 +682,14 @@ function Database.SanitizeProfile(profile)
     return Database.Normalize(safe)
 end
 
+Database.maxProfileNameBytes = 40
+
 function Database.NormalizeProfileName(name)
     if type(name) ~= "string" then return nil end
     name = name:gsub("[%z\1-\31]", ""):match("^%s*(.-)%s*$") or ""
     if name == "" then return nil end
-    if #name > 40 then name = name:sub(1, 40) end
+    local limit = Database.maxProfileNameBytes
+    if #name > limit then name = name:sub(1, limit) end
     return name
 end
 

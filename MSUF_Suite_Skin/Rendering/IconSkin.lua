@@ -1,10 +1,13 @@
 local _, NS = ...
 
--- A deliberately small, OOC-only icon primitive. Blizzard remains the owner
--- of item identity and quality: we read its existing IconBorder color and
--- never query item data or replace scripts. Adapters repaint a border after
+-- A deliberately small icon primitive. Blizzard remains the owner of item
+-- identity and quality: we read its existing IconBorder color and never
+-- query item data or replace scripts. Adapters repaint a border after
 -- Blizzard's own quality update (a SetItemButtonQuality post-hook, see
 -- DeepWindows.InstallItemQualityHook); this module installs no hooks itself.
+-- Creating and anchoring the lines happens out of combat only. Their colour
+-- and visibility are paint on the skin's own regions, so a quality update in
+-- combat repaints them on an unprotected button (IconSkin.Repaint).
 local IconSkin = {
     states = setmetatable({}, { __mode = "k" }),
     owners = {},
@@ -13,6 +16,7 @@ NS.IconSkin = IconSkin
 
 local WatchSettings = NS.Registry.WatchSettings
 local emptySpec = {}
+local REPAINT_KEY = "icon-skin:repaint"
 
 -- true, false, or nil when unknown (missing method, forbidden or secret).
 local function IsShown(region)
@@ -47,31 +51,64 @@ end
 -- Shared with the options preview so it draws the same border.
 IconSkin.AnchorLines = AnchorLines
 
-local function RefreshState(state)
-    if not state or NS.IsCombatLocked() then return false end
-    local theme = NS.DB and NS.DB.theme or NS.Defaults.theme
+-- Item updates repaint a border many times per second (every BAG_UPDATE
+-- reaches every bag button), so the lines are anchored again only when the
+-- icon, thickness or padding changed, and recoloured or shown only when the
+-- colour or visibility changed.
+local function Layout(state, theme)
+    local thickness, padding = theme.iconBorderThickness, theme.iconBorderPadding
+    if state.anchoredIcon == state.icon and state.anchoredThickness == thickness
+        and state.anchoredPadding == padding then
+        return
+    end
+    AnchorLines(state.lines, state.icon, thickness, padding)
+    state.anchoredIcon, state.anchoredThickness, state.anchoredPadding = state.icon, thickness, padding
+end
+
+local function Paint(state, theme)
     local style = theme.iconBorderStyle or NS.Defaults.theme.iconBorderStyle
     local visible = state.enabled ~= false and style ~= "off" and IsShown(state.icon) ~= false
     local r, g, b, a
-    -- The faded native border still carries Blizzard's live quality color.
-    if visible and style == "quality" and IsShown(state.nativeBorder) == true then
+    -- The faded native border still carries Blizzard's live quality color,
+    -- unless the adapter said its native border carries no quality.
+    if visible and style == "quality" and state.nativeQuality and IsShown(state.nativeBorder) == true then
         r, g, b, a = NS.Safety.ReadColor(state.nativeBorder, "GetVertexColor")
     end
     if not r then
         r, g, b, a = NS.Theme.GetColor("iconBorder")
     end
-    AnchorLines(state.lines, state.icon, theme.iconBorderThickness, theme.iconBorderPadding)
     a = a * (tonumber(theme.iconBorderOpacity) or 1)
-    for index = 1, #state.lines do
-        local line = state.lines[index]
-        line:SetColorTexture(r, g, b, a)
-        if visible then line:Show() else line:Hide() end
+    local painted, lines = state.painted, state.lines
+    if painted[1] ~= r or painted[2] ~= g or painted[3] ~= b or painted[4] ~= a then
+        for index = 1, #lines do lines[index]:SetColorTexture(r, g, b, a) end
+        painted[1], painted[2], painted[3], painted[4] = r, g, b, a
     end
+    if state.linesShown ~= visible then
+        for index = 1, #lines do
+            if visible then lines[index]:Show() else lines[index]:Hide() end
+        end
+        state.linesShown = visible
+    end
+end
+
+-- In combat only paint, and only on an unprotected button; a protected one
+-- waits for one repaint of every border after combat.
+local RefreshAll
+
+local function RefreshState(state)
+    if not state then return false end
+    local theme = NS.DB and NS.DB.theme or NS.Defaults.theme
+    if not NS.IsCombatLocked() then
+        Layout(state, theme)
+    elseif not NS.Safety.CanDecorate(state.button, false) then
+        NS.CombatGate.RunOrDefer(REPAINT_KEY, RefreshAll)
+        return false
+    end
+    Paint(state, theme)
     return true
 end
 
-local function RefreshAll()
-    if NS.IsCombatLocked() then return end
+RefreshAll = function()
     for _, state in pairs(IconSkin.states) do
         RefreshState(state)
     end
@@ -122,11 +159,14 @@ function IconSkin.Apply(button, owner, spec)
         state = {
             button = button,
             lines = CreateLines(button, icon),
+            painted = {},
         }
         IconSkin.states[button] = state
     end
     state.icon = icon
     state.nativeBorder = nativeBorder
+    -- false: the native border is decorative art, not a quality colour.
+    state.nativeQuality = spec.nativeQuality ~= false
     state.owner = owner
     state.enabled = true
     local owned = IconSkin.owners[owner]
@@ -148,10 +188,19 @@ function IconSkin.DisableOwner(owner)
         if state and state.owner == owner then
             state.enabled = false
             for index = 1, #state.lines do state.lines[index]:Hide() end
+            state.linesShown = false
         end
     end
     IconSkin.owners[owner] = nil
     return true
+end
+
+-- Repaints the border of a button IconSkin owns from its native border, for
+-- a quality update; in combat too (paint only, see RefreshState).
+function IconSkin.Repaint(button)
+    local state = IconSkin.states[button]
+    if not state or state.enabled == false then return false end
+    return RefreshState(state)
 end
 
 function IconSkin.GetState(button)

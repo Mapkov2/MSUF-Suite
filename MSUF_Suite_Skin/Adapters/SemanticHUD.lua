@@ -202,8 +202,9 @@ local function SkinExactIcon(state, button, icon, overlay)
         or not IconOwnerAvailable(button, state.skinOwner, overlay) then
         return false
     end
-    -- The kit's scratch spec: no table per icon.
-    return Kit.SkinItemIcon(button, state.skinOwner, icon, overlay, true)
+    -- The kit's scratch spec: no table per icon. The overlay is white frame
+    -- art (CooldownViewer.xml), not a quality colour.
+    return Kit.SkinItemIcon(button, state.skinOwner, icon, overlay, true, false)
 end
 
 local function SkinIconItem(state, item)

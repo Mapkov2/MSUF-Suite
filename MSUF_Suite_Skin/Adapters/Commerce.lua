@@ -159,6 +159,8 @@ local function SkinMail(owner)
     return true
 end
 
+-- Runs for every row Blizzard initializes while the lists scroll: a row that
+-- already carries its current surface is not painted again (Kit.Ensure).
 local function SkinAuctionRow(row, kind, owner)
     local group = Commerce.groups[owner]
     if not group or not group.active or NS.IsCombatLocked() or not row then
@@ -168,14 +170,14 @@ local function SkinAuctionRow(row, kind, owner)
         Fade(group, Field(row, "NormalTexture"))
         Fade(group, Field(row, "Lines"))
         -- SelectedTexture and HighlightTexture convey Blizzard selection.
-        return Kit.Attach(group, row, CATEGORY_ROW_SPEC)
+        return Kit.Ensure(group, row, CATEGORY_ROW_SPEC)
     end
     if kind == "item" then
         Fade(group, Field(row, "NormalTexture"))
     end
     -- Summary rows have no neutral background art; the surface supplies one
     -- while item icons and selection/highlight overlays remain intact.
-    return Kit.Attach(group, row, ROW_SPEC)
+    return Kit.Ensure(group, row, ROW_SPEC)
 end
 
 -- Registered once per ScrollBox as callback(registration, row).
@@ -249,7 +251,13 @@ local function DisableGroup(owner)
     return true
 end
 
-local function ScheduleAuction(parentOwner, auctionOwner)
+local function AuctionKey(parentOwner)
+    return "commerce:auction:" .. parentOwner
+end
+
+-- The Auction House UI can load during combat (another addon or a binding
+-- loads it); its skin then follows once combat ends instead of being lost.
+local function ScheduleAuction(parentOwner)
     local state = Commerce.owners[parentOwner]
     if not state or state.auctionWaiting then return end
     state.auctionWaiting = true
@@ -257,10 +265,12 @@ local function ScheduleAuction(parentOwner, auctionOwner)
         local current = Commerce.owners[parentOwner]
         if not current then return end
         current.auctionWaiting = nil
-        if current.active and not NS.IsCombatLocked()
-            and NS.DB.skinCategories.economy ~= false then
-            SkinAuction(auctionOwner)
-        end
+        NS.CombatGate.RunOrDefer(AuctionKey(parentOwner), function()
+            local owner = Commerce.owners[parentOwner]
+            if owner and owner.active and NS.DB.skinCategories.economy ~= false then
+                SkinAuction(owner.auctionOwner)
+            end
+        end)
     end)
 end
 
@@ -285,7 +295,7 @@ function Commerce.Apply(parentOwner)
         if _G.AuctionHouseFrame then
             applied = SkinAuction(state.auctionOwner) == true or applied
         else
-            ScheduleAuction(parentOwner, state.auctionOwner)
+            ScheduleAuction(parentOwner)
         end
     else
         DisableGroup(state.auctionOwner)
@@ -298,6 +308,7 @@ function Commerce.Disable(parentOwner)
     local state = Commerce.owners[parentOwner]
     if not state then return true end
     state.active = false
+    NS.CombatGate.Cancel(AuctionKey(parentOwner))
     DisableGroup(state.mailOwner)
     DisableGroup(state.auctionOwner)
     Commerce.owners[parentOwner] = nil

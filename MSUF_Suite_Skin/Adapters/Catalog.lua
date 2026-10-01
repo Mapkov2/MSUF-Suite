@@ -1904,12 +1904,13 @@ local entries = {
     },
 }
 
--- Glass coverage is a reviewed, fail-closed contract for the exact Retail
--- source snapshot named at the top of this file. The fingerprint covers entry
--- order, ids, categories, addon owners, skip flags, and ordered root names.
--- Any new, renamed, reordered, or re-owned root invalidates the whole catalog
--- until this review and its classification are updated deliberately.
--- CatalogGlass.lua, which loads next, checks this review once at load.
+-- Glass coverage is a reviewed contract for the exact Retail source snapshot
+-- named at the top of this file. The fingerprint covers entry order, ids,
+-- categories, addon owners, skip flags, and ordered root names. Any new,
+-- renamed, reordered, or re-owned root fails the review contract in
+-- tools/tests/suite_skin_generic_windows_contract.lua until this review and
+-- its classification are updated deliberately; in game, CatalogGlass.lua
+-- (loads next) closes only an entry whose roots it cannot classify.
 local REVIEWED_CATALOG_FINGERPRINT = "71c8992a-6a8e1ad9"
 local REVIEWED_CATALOG_ENTRIES = 241
 local REVIEWED_CATALOG_ROOTS = 464

@@ -17,12 +17,14 @@ local ADAPTERS = {
     bagWindows = "blizzardWindows",
     cooldownViewers = "blizzardWindows",
     bagBar = "blizzardWindows",
+    staticPopups = "blizzardWindows",
 }
 
 -- Catalog entries whose frames are exactly one owned surface.
 local ENTRIES = {
     ["hud-cooldown-viewers"] = "cooldownViewers",
     ["hud-bag-bar"] = "bagBar",
+    ["static-popups"] = "staticPopups",
 }
 
 local function Ask(surface)

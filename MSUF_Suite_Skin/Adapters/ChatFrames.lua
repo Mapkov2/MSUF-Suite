@@ -14,7 +14,9 @@ local Call = Safety.Call
 local HasMethod = Safety.HasMethod
 local Dispatch = Safety.Dispatch
 local ColorMatches = Safety.ColorMatches
+local SameColor = Safety.SameColor
 local COLOR_OWN = Safety.COLOR_OWN
+local COLOR_NATIVE = Safety.COLOR_NATIVE
 local Kit = NS.AdapterKit
 
 local REFRESH_KEY = "chat-frames:refresh"
@@ -34,9 +36,15 @@ local messageColorRoles = {
 }
 
 -- ChangeChatColor is a persistent Blizzard setting (chat-cache.txt), unlike
--- the frame-local chrome below. These are Retail's clean-profile defaults;
--- restoring them prevents a MapkoSkin preset from surviving a later addon
--- disable. Keep this list deliberately limited to the categories we change.
+-- the frame-local chrome below, and the colours are the player's. The skin
+-- themes a category only while it shows Blizzard's clean-profile default
+-- (Retail's, below) or the skin's own colour left behind by a session that
+-- ended without PLAYER_LOGOUT. A colour the player picked stays theirs: a
+-- category that holds one at the first apply, or that the player or another
+-- addon changes later, is released and never recoloured or restored again.
+-- Logout and disable put back the colour a category had before the skin,
+-- while it still shows the skin's own. Keep this list limited to the
+-- categories we change.
 local blizzardMessageDefaults = {
     SYSTEM = { 1, 1, 0 },
     MONSTER_SAY = { 1, 1, 159 / 255 },
@@ -97,57 +105,72 @@ end
 -- changingChatColor keeps our own ChangeChatColor post-hook quiet during the
 -- call. The call is its own error boundary, so the flag is cleared even when
 -- it raises and later user color changes are still observed.
-local function ChangeMessageColor(chatType, color)
-    if not color then return false end
+local function ChangeMessageColor(chatType, r, g, b)
     changingChatColor = true
-    local finished = Kit.Isolate(ChangeChatColor, chatType, color[1], color[2], color[3])
+    local finished = Kit.Isolate(ChangeChatColor, chatType, r, g, b)
     changingChatColor = false
     return finished == true
 end
 
-local function ApplyMessageColor(state, chatType, recapture)
+local function Shows(color, current, tolerance)
+    return ColorMatches(color, current[1], current[2], current[3], nil, tolerance)
+end
+
+-- The state of a category the skin meets for the first time: owned with the
+-- colour to restore, or released when it shows a colour the player picked.
+local function CaptureMessageColor(chatType, current, r, g, b)
+    local default = blizzardMessageDefaults[chatType]
+    if Shows(default, current, COLOR_NATIVE) then
+        return { original = current, applied = {} }
+    end
+    if SameColor(current[1], current[2], current[3], nil, r, g, b, nil, COLOR_OWN) then
+        -- The colour it had before that session is unknown; Blizzard's
+        -- default comes back.
+        return { original = { default[1], default[2], default[3] }, applied = { r, g, b } }
+    end
+    return { released = true }
+end
+
+local function ApplyMessageColor(state, chatType)
     local role = messageColorRoles[chatType]
     local current = role and ReadMessageColor(chatType)
     if not current then return false end
-
+    local r, g, b = NS.Theme.GetColor(role)
     local colorState = state.messageColors[chatType]
     if not colorState then
-        colorState = { original = current, role = role }
+        colorState = CaptureMessageColor(chatType, current, r, g, b)
         state.messageColors[chatType] = colorState
-    elseif recapture and not ColorMatches(colorState.applied, current[1], current[2], current[3], nil, COLOR_OWN) then
-        -- A user or Blizzard changed this chat category after MapkoSkin.
-        -- Preserve that latest native choice for cooperative disable/restore.
-        colorState.original = current
+    elseif not colorState.released and not Shows(colorState.applied, current, COLOR_OWN)
+        and not Shows(blizzardMessageDefaults[chatType], current, COLOR_NATIVE) then
+        -- Changed by a path the ChangeChatColor hook does not see: theirs.
+        colorState.released = true
     end
-
-    local r, g, b = NS.Theme.GetColor(role)
-    local applied = { r, g, b }
-    colorState.role = role
-    if ColorMatches(applied, current[1], current[2], current[3], nil, COLOR_OWN)
-        or ChangeMessageColor(chatType, applied) then
-        colorState.applied = applied
+    if colorState.released then return false end
+    if SameColor(current[1], current[2], current[3], nil, r, g, b, nil, COLOR_OWN)
+        or ChangeMessageColor(chatType, r, g, b) then
+        local applied = colorState.applied
+        applied[1], applied[2], applied[3] = r, g, b
         return true
     end
     return false
 end
 
-local function ApplyMessageColors(state, recapture)
+local function ApplyMessageColors(state)
     for chatType in pairs(messageColorRoles) do
-        ApplyMessageColor(state, chatType, recapture)
+        ApplyMessageColor(state, chatType)
     end
 end
 
+-- Puts back the colour each owned category had before the skin, while it
+-- still shows the skin's own; a released category keeps the player's.
 local function RestoreMessageColors(state)
     local restored = 0
     for chatType, colorState in pairs(state.messageColors) do
-        local nativeDefault = blizzardMessageDefaults[chatType]
-        -- Fail closed if another addon changed the category after MapkoSkin.
-        -- When our value still owns it, always restore Blizzard's clean default
-        -- rather than a possibly contaminated value captured on this login.
         local current = ReadMessageColor(chatType)
-        if nativeDefault and current
-            and ColorMatches(colorState.applied, current[1], current[2], current[3], nil, COLOR_OWN)
-            and ChangeMessageColor(chatType, nativeDefault) then
+        local original = colorState.original
+        if not colorState.released and current and original
+            and Shows(colorState.applied, current, COLOR_OWN)
+            and ChangeMessageColor(chatType, original[1], original[2], original[3]) then
             restored = restored + 1
         end
     end
@@ -421,7 +444,7 @@ local function ApplyAllNow(state, recapture)
     SkinChatUtilityButtons(state, recapture)
     TrackButtonTextures(state, _G.ChatFrameMenuButton,
         "blizzardExpand", "blizzardExpandPressed", "blizzardExpandHover", recapture)
-    ApplyMessageColors(state, recapture)
+    ApplyMessageColors(state)
     return true
 end
 
@@ -448,10 +471,17 @@ local function OnTemporaryWindow()
     RefreshAll()
 end
 
+-- Someone else set this category's colour: from now on it is theirs, unless
+-- the change put the skin's own back (the colour picker's Cancel restores the
+-- colour it opened with). Only bookkeeping, so it also runs in combat.
 local function OnMessageColorChanged(chatType)
-    if changingChatColor or not messageColorRoles[chatType] or DeferIfCombat() then return end
+    if changingChatColor or not messageColorRoles[chatType] then return end
+    local current = ReadMessageColor(chatType)
     for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then ApplyMessageColor(state, chatType, true) end
+        local colorState = state.active and state.messageColors[chatType]
+        if colorState and colorState.applied then
+            colorState.released = not current or not Shows(colorState.applied, current, COLOR_OWN)
+        end
     end
 end
 
@@ -483,19 +513,28 @@ RefreshAll = function()
     return true
 end
 
+-- Theme writes arrive once per slider tick or colour-picker move: they
+-- repaint once on the next frame (after combat when it started meanwhile),
+-- so a colour drag writes each chat category's persistent colour once.
+local messageColorsQueued = false
+
+local function RefreshThemeColors()
+    local messages = messageColorsQueued
+    messageColorsQueued = false
+    for _, state in pairs(ChatFramesSkin.owners) do
+        if state.active then
+            RefreshTextColors(state)
+            if messages then ApplyMessageColors(state) end
+        end
+    end
+end
+
 function ChatFramesSkin:OnThemeChanged(domain, key)
     if domain == "color" and key ~= "title" and key ~= "text"
         and key ~= "blizzardYellow" then return end
     if domain ~= "color" and domain ~= "theme" and domain ~= "profile" then return end
-    if DeferIfCombat() then return end
-    for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then
-            RefreshTextColors(state)
-            if domain ~= "color" or key == "blizzardYellow" then
-                ApplyMessageColors(state, false)
-            end
-        end
-    end
+    if domain ~= "color" or key == "blizzardYellow" then messageColorsQueued = true end
+    NS.Registry.QueueJob(RefreshThemeColors)
 end
 
 function ChatFramesSkin.Apply(frame, owner)

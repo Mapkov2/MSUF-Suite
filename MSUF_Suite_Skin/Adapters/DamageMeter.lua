@@ -21,9 +21,10 @@ local ROW_SPEC = {
 local SOURCE_WINDOW_SPEC = { role = "popup", radius = 8, inset = 0, allowImplicitProtected = true }
 local SESSION_WINDOW_SPEC = { role = "shell", radius = 8, inset = 0, allowImplicitProtected = true }
 
-local function Attach(state, target, spec)
+-- attach defaults to Surface.Attach; rows pass Surface.Ensure.
+local function Attach(state, target, spec, attach)
     if not target or not NS.Safety.CanDecorate(target, true) then return false end
-    if not NS.Surface.Attach(target, spec) then return false end
+    if not (attach or NS.Surface.Attach)(target, spec) then return false end
     state.surfaces[target] = true
     return true
 end
@@ -46,7 +47,9 @@ local function SkinRow(row, owner)
         end
     end
     -- This plate sits behind Blizzard's class-/source-colored StatusBar fill.
-    Attach(state, statusBar, ROW_SPEC)
+    -- Rows are initialized again on every meter update: a current plate is
+    -- left alone.
+    Attach(state, statusBar, ROW_SPEC, NS.Surface.Ensure)
     return true
 end
 

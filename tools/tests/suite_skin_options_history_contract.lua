@@ -254,6 +254,11 @@ local profileOptions = {
         profileRepaints = profileRepaints + 1
     end,
     RegisterPage = function(_, _, builder) pageBuilder = builder end,
+    -- The two-click confirmation (Shell/Widgets.lua) only arms on a taken
+    -- import name, which these stand-in profile actions never report.
+    CreateConfirmation = function()
+        return { IsArmed = function() return false end, Arm = function() end, Disarm = function() end }
+    end,
     CreateCycle = function(_, label, _, _, setter) captured[label] = setter; return Widget() end,
     CreateInput = function() return Widget() end,
 }

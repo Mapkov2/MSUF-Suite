@@ -123,7 +123,8 @@ function Typography.GetSelectionLabel(selection)
     if type(selection) == "string" and selection:sub(1, #selectionPrefix) == selectionPrefix then
         return selection:sub(#selectionPrefix + 1)
     end
-    return faceLabels[selection] or tostring(selection)
+    local label = faceLabels[selection]
+    return label and NS.L[label] or tostring(selection)
 end
 
 function Typography.GetSelectionPath(selection)
@@ -421,7 +422,8 @@ function Typography.SetIncludeSpecial(enabled)
 end
 
 function Typography.GetFaceLabel(face)
-    return faceLabels[face] or tostring(face)
+    local label = faceLabels[face]
+    return label and NS.L[label] or tostring(face)
 end
 
 function Typography.GetStatus()

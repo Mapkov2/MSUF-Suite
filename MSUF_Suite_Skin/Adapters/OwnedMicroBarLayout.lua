@@ -211,6 +211,7 @@ local function ContainerPosition(container)
         return FrameUtil.GetScreenQuadrant(container)
     end
 end
+Layout.ContainerPosition = ContainerPosition
 
 -- MicroMenuMixin:Layout re-anchors the queue eye and the framerate text around
 -- Blizzard's Edit Mode container using MicroMenu's orientation. Their own

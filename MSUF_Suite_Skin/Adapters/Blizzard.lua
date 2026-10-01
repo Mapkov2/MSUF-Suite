@@ -314,10 +314,18 @@ local function RunPart(moduleName, method, owner)
     return first, second
 end
 
--- Like RunPart, for a release whose results do not matter: true when the
--- part finished.
+-- Like RunPart, for a release: true when the part finished it. A part that
+-- refuses in combat still holds its skin, so it is not counted as released
+-- (false, "combat") and its release runs again once combat ends.
 local function ReleasePart(moduleName, owner)
-    return NS.Safety.Dispatch(Finish, CallPart, moduleName, "Disable", owner) == true
+    local finished, released, reason = NS.Safety.Dispatch(Finish, CallPart, moduleName, "Disable", owner)
+    if finished and released == false and reason == "combat" and NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer("window-part-release:" .. moduleName .. ":" .. tostring(owner), function()
+            ReleasePart(moduleName, owner)
+        end)
+        return false, "combat"
+    end
+    return finished == true
 end
 
 -- True when a part failed for a reason its entry does not tolerate.
@@ -335,15 +343,19 @@ local function ApplyWindowParts(owner)
     return partial
 end
 
--- True when a part raised while it released its skin.
+-- failed: a part raised while it released its skin; combat: a part refused
+-- in combat and releases once combat ends.
 local function DisableWindowParts(owner)
-    local failed = false
+    local failed, combat = false, false
     for index = 1, #windowPartsDisableOrder do
-        if not ReleasePart(windowPartsDisableOrder[index], owner) then
+        local released, reason = ReleasePart(windowPartsDisableOrder[index], owner)
+        if not released and reason == "combat" then
+            combat = true
+        elseif not released then
             failed = true
         end
     end
-    return failed
+    return failed, combat
 end
 
 Adapters.Register({
@@ -364,11 +376,12 @@ Adapters.Register({
         return true, genericReason
     end,
     disable = function(_, owner)
-        local failed = DisableWindowParts(owner)
+        local failed, combat = DisableWindowParts(owner)
         local finished, disabled, reason = NS.Safety.Dispatch(Finish, CallPart, "GenericWindows", "Disable", owner)
         if failed or not finished then
             return false, "error"
         end
+        if combat then return false, "combat" end
         return disabled, reason
     end,
 })

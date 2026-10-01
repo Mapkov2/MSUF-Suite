@@ -13,6 +13,8 @@ CreateFrame = function()
     return frame
 end
 IsLoggedIn = function() return false end
+-- MSUF is a dependency: Platform.lua asserts its namespace before any Core file.
+MSUF_NS = {}
 MSUF_ActiveProfile = "mapko final"
 MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
 
@@ -42,6 +44,7 @@ Suite.Database = {
 }
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/Profiles.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", Suite)
 
 local skinFrame, provider
 C_AddOns = { LoadAddOn = function(name)

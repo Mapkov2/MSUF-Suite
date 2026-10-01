@@ -14,7 +14,9 @@ local _, NS = ...
 -- SquareIconButtonMixin and ThreeSliceButtonMixin at SharedXML load). Hooking
 -- the global or mixin therefore only reaches buttons created after this
 -- load-on-demand addon; the buttons that already existed are adopted once by
--- hooking their own instance handlers.
+-- hooking their own instance handlers. Finding them takes one EnumerateFrames
+-- pass per session, when the feature is first enabled out of combat; that
+-- pass reaches every addon's buttons built from these templates.
 local UIPanelButtons = {
     active = false,
     adopted = false,
@@ -34,6 +36,7 @@ local Dispatch = NS.Safety.Dispatch
 
 local OWNER = "uipanel-buttons"
 local DEFER_KEY = "uipanel-buttons:late"
+local ADOPT_KEY = "uipanel-buttons:adopt"
 local STATIC_POPUP_COUNT = 4
 local regions = { "Left", "Middle", "Right", "Center" }
 local sharedRegions = { "Left", "Center", "Right" }
@@ -61,6 +64,11 @@ local function Enabled()
         and NS.DB and NS.DB.enabled ~= false
         and (not NS.DB.skins or NS.DB.skins.blizzardWindows ~= false)
 end
+
+-- The Suite's popup module, while its dialog look is on, owns the static
+-- popup panels and their text (Core/SuiteOwnership.lua "staticPopups";
+-- GenericWindowsCatalog leaves those panels to it). It paints no button, so
+-- the popup buttons and close buttons keep this skin either way.
 
 local function SkinQuickJoin(button)
     local changed = NS.Checkmarks.TrackTexture(Field(button, "FriendsButton"), OWNER, "blizzardExpand")
@@ -444,13 +452,16 @@ function UIPanelButtons.Apply()
         return false, "unavailable"
     end
     RegisterStaticPopupLoad()
-    if not NS.IsCombatLocked() then AdoptExistingButtons() end
+    -- First enabled during combat: the existing buttons are adopted once
+    -- combat ends, before the refresh Refresh defers right after.
+    NS.CombatGate.RunOrDefer(ADOPT_KEY, AdoptExistingButtons)
     return UIPanelButtons.Refresh()
 end
 
 function UIPanelButtons.Disable()
     UIPanelButtons.active = false
     NS.CombatGate.Cancel(DEFER_KEY)
+    NS.CombatGate.Cancel(ADOPT_KEY)
     UIPanelButtons.pendingIconArtKits = setmetatable({}, { __mode = "k" })
     NS.Checkmarks.UntrackOwner(OWNER)
     local disabled = NS.ControlSkin.DisableOwner(OWNER)

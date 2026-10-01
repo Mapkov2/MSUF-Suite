@@ -17,6 +17,18 @@ local Safety = NS.Safety
 
 local MAX_PARENT_DEPTH = 20
 local MAX_OBJECTIVES = 40
+local REPAINT_KEY = "quest-text:repaint"
+
+-- Text colours are paint: Blizzard displays quest text in combat too (the
+-- world map, the quest popup), so the paint runs in combat as well. Only a
+-- region of a protected frame waits for one repaint after combat.
+local PaintCurrent
+
+local function CanPaint(region)
+    if not NS.IsCombatLocked() or Safety.CanDecorate(region, false) then return true end
+    NS.CombatGate.RunOrDefer(REPAINT_KEY, PaintCurrent)
+    return false
+end
 
 local fields = {
     QuestInfoTitleHeader = "title",
@@ -53,6 +65,7 @@ end
 
 -- Puts Blizzard's color back while ours is still showing, then forgets it.
 local function Release(region, record)
+    if not CanPaint(region) then return end
     local r, g, b, a = Safety.ReadColor(region, "GetTextColor")
     local owned = Safety.ColorMatches(record.applied, r, g, b, a, Safety.COLOR_OWN)
     if record.fixed then
@@ -77,6 +90,7 @@ local function Paint(region, role, fixed)
         if record then Release(region, record) end
         return
     end
+    if not CanPaint(region) then return end
     local currentR, currentG, currentB, currentA = Safety.ReadColor(region, "GetTextColor")
     if not currentR then return end
     local record = QuestText.colors[region]
@@ -118,11 +132,7 @@ local function PaintGossip()
 end
 
 local function OnGossipFontString(region)
-    if not NS.IsCombatLocked() then Paint(region, "text", true) end
-end
-
-local function OnGossipTheme()
-    if not NS.IsCombatLocked() then PaintGossip() end
+    Paint(region, "text", true)
 end
 
 -- Every hook runs inside Blizzard's own call (QuestInfo_Display, the NPC
@@ -138,12 +148,11 @@ local function EnsureGossipHooks(root)
     hooksecurefunc(root, "RegisterFontString", function(_, region)
         Safety.Dispatch(OnGossipFontString, region)
     end)
-    hooksecurefunc(root, "UpdateTheme", Isolated(OnGossipTheme))
+    hooksecurefunc(root, "UpdateTheme", Isolated(PaintGossip))
     QuestText.hooks[root] = true
 end
 
-local function PaintCurrent()
-    if NS.IsCombatLocked() then return end
+PaintCurrent = function()
     for name, role in pairs(fields) do Paint(_G[name], role) end
     PaintRewards(QuestInfoRewardsFrame)
     local list = QuestInfoObjectivesFrame.Objectives
@@ -162,11 +171,11 @@ end
 
 -- NPC greeting text uses these native setters outside QuestInfo_Display.
 local function OnGreetingText(region)
-    if not NS.IsCombatLocked() then Paint(region, "text") end
+    Paint(region, "text")
 end
 
 local function OnGreetingTitle(region)
-    if not NS.IsCombatLocked() then Paint(region, "title") end
+    Paint(region, "title")
 end
 
 -- These Blizzard functions are called through their globals. QUEST_LOG_UPDATE
