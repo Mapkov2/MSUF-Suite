@@ -320,8 +320,9 @@ S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return m
 -- Splits and raid records belong to the character (MSUF_Suite/Core/CharacterData.lua).
 local characterData = {}
 S.CharacterData = function(id) characterData[id] = characterData[id] or {}; return characterData[id] end
+MutedHost = Widget(UIParent)
 local function Context()
-    local ctx = { events = {}, eventUnits = {}, hidden = {}, saved = {} }
+    local ctx = { events = {}, eventUnits = {}, hidden = {}, saved = {}, muted = {} }
     function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
     function ctx:RemoveEvent(event) self.events[event] = nil end
     function ctx:Skin() return nil end
@@ -335,6 +336,18 @@ local function Context()
         frame[setter](frame, value)
     end
     function ctx:Scale(frame, value) self:Property(frame, "GetScale", "SetScale", value) end
+    -- Runtime.lua mutes a native frame under a shown, invisible host; it works
+    -- in combat because only unprotected frames are muted.
+    function ctx:Mute(frame)
+        self.muted[frame] = self.muted[frame] or frame:GetParent()
+        frame:SetParent(MutedHost)
+        return true
+    end
+    function ctx:Unmute(frame)
+        if self.muted[frame] and frame:GetParent() == MutedHost then frame:SetParent(self.muted[frame]) end
+        self.muted[frame] = nil
+    end
+    ctx.HideUnprotected = ctx.HideControl
     function ctx:RestoreProperty(frame, setter)
         local saved = self.saved[frame]
         if saved and saved[setter] ~= nil then
@@ -690,15 +703,24 @@ ScenarioAlertSystem = { alertFramePool = {
 } }
 function ScenarioAlertSystem:ShowAlert() scenarioAlert:SetParent(UIParent) end
 banner:Enable()
-assert(movers.announcements.element == "banner" and banner.context.hidden[ZoneTextFrame])
+assert(movers.announcements.element == "banner" and ZoneTextFrame:GetParent() == MutedHost)
 assert(movers.announcements.spec.extraControls[1].id == "scale"
     and movers.announcements.spec.extraControls[1].set(125)
     and banner.config.scale == 125,
     "announcements popup omitted its scale control")
 assert(movers.announcements.spec.extraControls[1].set(100))
-assert(ZoneTextFrame:GetParent() == banner.hiddenParent and banner.context.hidden[EventToastManagerFrame])
+assert(SubZoneTextFrame:GetParent() == MutedHost and banner.context.hidden[EventToastManagerFrame])
 AchievementAlertSystem:ShowAlert()
-assert(achievement:GetParent() == banner.hiddenParent, "native achievement alert must be hidden")
+assert(achievement:GetParent() == MutedHost, "native achievement alert must be hidden")
+-- Blizzard shows alerts and toasts in combat too: suppressing them there as
+-- well keeps the banner from showing the same event twice.
+combatLocked = true
+banner.context.hidden[EventToastManagerFrame] = nil
+AchievementAlertSystem:ShowAlert()
+EventToastManagerFrame:DisplayToast(nil)
+combatLocked = false
+assert(achievement:GetParent() == MutedHost and banner.context.hidden[EventToastManagerFrame] ~= nil,
+    "combat let Blizzard's alert or toast show next to the banner")
 banner.context.events.QUEST_ACCEPTED(banner, "QUEST_ACCEPTED", 42)
 assert(not banner.host.shown and #banner.queue == 0, "optional quest alerts must stay off")
 GetSubZoneText = function() return "The Coreway" end
@@ -743,8 +765,8 @@ EventToastManagerFrame.currentDisplayingToast = nil
 local alertCompleted = pcall(WorldQuestCompleteAlertSystem.ShowAlert, WorldQuestCompleteAlertSystem, broken)
 assert(toastCompleted and alertCompleted and #reported == 2,
     "a raising announcement hook broke Blizzard's toast or alert call")
-assert(worldQuest:GetParent() == banner.hiddenParent
-    and scenarioAlert:GetParent() == banner.hiddenParent and #banner.queue == 3,
+assert(worldQuest:GetParent() == MutedHost
+    and scenarioAlert:GetParent() == MutedHost and #banner.queue == 3,
     "quest and scenario alerts must be hidden and represented in MSUF")
 banner.config.eventToasts, banner.config.achievements = false, false
 banner.config.quests, banner.config.scenario = false, false
