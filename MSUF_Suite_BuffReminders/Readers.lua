@@ -7,10 +7,38 @@ local R = P.BuffReminders
 -- never as missing.
 local Public = S.Public
 local QUESTION_MARK = 134400
+local EMPTY = {}
 local FOOD_ICONS = R.FOOD_ICONS
 local FOOD_AURAS = R.FOOD_AURAS
 local GetItemCount = C_Item.GetItemCount
 local PLAYER_BANK = Enum.SpellBookSpellBank.Player
+local rankNames = {}
+
+function R.RankName(spellID)
+    local name = rankNames[spellID]
+    if name == nil then
+        name = C_Spell.GetSpellName(spellID)
+        name = Public(name) and type(name) == "string" and name ~= "" and name or false
+        rankNames[spellID] = name
+    end
+    return name or nil
+end
+
+-- Forever's ranked buffs share their spell name across ranks. Returns false
+-- when the name is unreadable (nothing to look up), else true and the aura.
+function R.RankAura(unit, spellID, own)
+    local name = R.RankName(spellID)
+    if not name then return false end
+    return true, C_UnitAuras.GetAuraDataBySpellName(unit, name, own and "HELPFUL|PLAYER" or "HELPFUL")
+end
+
+-- Aura lookups (RequiresNonSecretAura) return nothing instead of raising
+-- while aura data is restricted. C_Secrets reports that state; a reader then
+-- answers unknown, never missing.
+function R.AurasRestricted()
+    local restricted = C_Secrets.ShouldAurasBeSecret()
+    return not Public(restricted) or restricted ~= false
+end
 
 function R.Clear(t)
     for key in pairs(t) do t[key] = nil end
@@ -88,12 +116,16 @@ end
 -- One targeted lookup per aura ID. nil when a lookup was restricted (secret),
 -- else whether the player has one of the entry's auras, with its timing.
 function R.AuraPresent(entry)
+    if R.AurasRestricted() then return nil end
     local ids = entry.aliases
     local count = ids and #ids or 1
     local unknown = false
     for index = 1, count do
-        local data = C_UnitAuras.GetPlayerAuraBySpellID(ids and ids[index] or entry.aura)
-        if not Public(data) then
+        local id = ids and ids[index] or entry.aura
+        local ok, data = true, nil
+        if entry.ranked then ok, data = R.RankAura("player", id)
+        else data = C_UnitAuras.GetPlayerAuraBySpellID(id) end
+        if not ok or not Public(data) then
             unknown = true
         elseif data then
             local instanceID = data.auraInstanceID
@@ -106,7 +138,12 @@ function R.AuraPresent(entry)
     return false
 end
 
-local function MatchesAuraID(entry, spellID)
+local function MatchesAuraID(entry, spellID, name)
+    if entry.ranked then
+        if not Public(name) or type(name) ~= "string" then return true end
+        for _, id in ipairs(entry.aliases) do if name == R.RankName(id) then return true end end
+        return false
+    end
     local aliases = entry.aliases
     if not aliases then return entry.aura == spellID end
     for index = 1, #aliases do
@@ -144,7 +181,7 @@ function R.AuraChangeAffects(entry, info)
         for _, aura in ipairs(added) do
             if not Public(aura) then return true end
             local spellID = aura.spellId
-            if not Public(spellID) or type(spellID) ~= "number" or MatchesAuraID(entry, spellID) then return true end
+            if not Public(spellID) or type(spellID) ~= "number" or MatchesAuraID(entry, spellID, aura.name) then return true end
         end
     end
     if entry.present == false then return false end
@@ -168,22 +205,28 @@ end
 -- and their spell name (Well Fed) find the usual variants, but no targeted
 -- lookup finds a food aura with another name and an unlisted ID, so such an
 -- aura reads as missing until its next UNIT_AURA delta.
-local foodNames
+local foodNames, foodNameSet
 
 local function FoodNames()
     if foodNames then return foodNames end
-    foodNames = {}
+    foodNames, foodNameSet = {}, {}
     for index = 1, #FOOD_AURAS do
         local name = C_Spell.GetSpellName(FOOD_AURAS[index])
-        if Public(name) and type(name) == "string" then
-            local seen = false
-            for known = 1, #foodNames do
-                if foodNames[known] == name then seen = true end
-            end
-            if not seen then foodNames[#foodNames + 1] = name end
+        if Public(name) and type(name) == "string" and not foodNameSet[name] then
+            foodNames[#foodNames + 1] = name
+            foodNameSet[name] = true
         end
     end
     return foodNames
+end
+
+-- An added aura is food by the Well Fed icon or by a food buff's name.
+local function FoodAura(aura)
+    if type(aura.icon) == "number" and FOOD_ICONS[aura.icon] then return true end
+    local name = aura.name
+    if not Public(name) or type(name) ~= "string" then return false end
+    FoodNames()
+    return foodNameSet[name] == true
 end
 
 -- Stores one looked-up food aura under its instance ID (or under the lookup
@@ -267,7 +310,7 @@ local function ApplyFoodLists(ids, info)
         for _, aura in ipairs(added) do
             if not Public(aura) or not Public(aura.icon) or not Public(aura.auraInstanceID) then return false end
             local id = aura.auraInstanceID
-            if type(aura.icon) == "number" and type(id) == "number" and FOOD_ICONS[aura.icon] then
+            if type(id) == "number" and FoodAura(aura) then
                 local spellID = aura.spellId
                 if not Public(spellID) or type(spellID) ~= "number" then return false end
                 ids[id] = ids[id] and FillSnapshot(ids[id], aura, spellID) or Snapshot(aura, spellID)
@@ -327,6 +370,7 @@ function R.FoodDelta(self, info)
 end
 
 function R.FoodPresent(self)
+    if R.AurasRestricted() then return nil end
     if self.foodKnown == nil then ScanFood(self) end
     if not self.foodKnown then return nil end
     local present, expiresAt, totalDuration = false, nil, nil
@@ -360,9 +404,9 @@ end
 function R.ReadPoisonState(state)
     local active, instanceIDs = state.active, state.instanceIDs
     Clear(instanceIDs)
-    local count, unknown = 0, false
+    local count, unknown = 0, R.AurasRestricted()
     state.auraInstanceID = nil
-    for _, spellID in ipairs(state.aliases) do
+    for _, spellID in ipairs(unknown and EMPTY or state.aliases) do
         local data = C_UnitAuras.GetPlayerAuraBySpellID(spellID)
         if not Public(data) then
             unknown = true

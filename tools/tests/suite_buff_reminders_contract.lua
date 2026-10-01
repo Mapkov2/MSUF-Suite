@@ -26,9 +26,22 @@ local function Widget()
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetText(value) self.text = value end
+    function w:SetTextColor(r, g, b) self.color = { r, g, b } end
     function w:SetTexture(value)
         textureWrites = textureWrites + 1
         self.texture = value
+    end
+    function w:SetDesaturated(value) self.desaturated = value end
+    function w:SetAlpha(value) self.alpha = value end
+    function w:CreateAnimationGroup()
+        local group = { playing = false }
+        function group:SetLooping(value) self.looping = value end
+        function group:Play() self.playing = true end
+        function group:Stop() self.playing = false end
+        function group:CreateAnimation()
+            return { SetFromAlpha=function() end, SetToAlpha=function() end, SetDuration=function() end }
+        end
+        return group
     end
     function w:SetTexCoord() end
     function w:SetColorTexture() end
@@ -58,7 +71,16 @@ end
 -- only while Blizzard's deprecation fallbacks load: the module calls the C
 -- APIs both clients always have.
 local knownSpell = function(id) return id == 1459 end
-Enum = { SpellBookSpellBank = { Player = 0, Pet = 1 } }
+Enum = { SpellBookSpellBank = { Player = 0, Pet = 1 }, PowerType = { Mana = 0 },
+    ItemClass = { Consumable = 0 }, ItemConsumableSubclass = { Fooddrink = 5 } }
+-- Empty bags unless a test fills them: food is found by its eating spell.
+Constants = { InventoryConstants = { NumBagSlots = 4 } }
+local bagItems = {}
+C_Container = {
+    GetContainerNumSlots = function(bag) return bag <= 4 and 16 or 0 end,
+    GetContainerItemID = function(bag, slot) return bagItems[bag * 100 + slot] end,
+}
+DifficultyUtil = { ID={ DungeonTimewalker=24, RaidTimewalker=33 } }
 C_SpellBook = {
     IsSpellKnown = function(id, bank)
         assert(bank == Enum.SpellBookSpellBank.Player)
@@ -79,12 +101,15 @@ GetInventoryItemID = function(_, slot)
     if slot == 16 then return 900001 end
     if slot == 17 then return offhandItemID end
 end
--- The listed Well Fed IDs share one spell name; the food rescan looks that
--- name up once per scan.
-local FOOD_NAME_IDS = { [104280] = true, [1219179] = true, [1285644] = true }
+-- The listed Well Fed IDs share one spell name here; Hearty Well Fed has
+-- its own. The food rescan looks each name up once per scan.
+local FOOD_NAME_IDS = { [104280] = true, [1219179] = true, [1232076] = true }
 C_Spell = {
     GetSpellTexture = function(id) return id end,
-    GetSpellName = function(id) return FOOD_NAME_IDS[id] and "Well Fed" or ("Spell " .. id) end,
+    GetSpellName = function(id)
+        if id == 1232076 then return "Hearty Well Fed" end
+        return FOOD_NAME_IDS[id] and "Well Fed" or ("Spell " .. id)
+    end,
 }
 C_Item = {
     GetItemCount = function(id)
@@ -119,10 +144,23 @@ C_UnitAuras = {
     end,
 }
 -- Blizzard_GameTooltip builds GameTooltip at startup on both clients.
+-- RequiresNonSecretAura lookups return nothing while aura data is restricted;
+-- C_Secrets.ShouldAurasBeSecret reports that state.
+local auraRestricted = false
+C_Secrets = { ShouldAurasBeSecret = function() return auraRestricted end }
+-- Coalesced group passes run through C_Timer.After.
+local afterQueue = {}
+local function RunAfter()
+    local queued = afterQueue
+    afterQueue = {}
+    for _, job in ipairs(queued) do job.callback() end
+    return #queued
+end
 GameTooltip = Widget()
 function GameTooltip:SetOwner(owner) self.owner, self.spell, self.item = owner, nil, nil end
 function GameTooltip:SetSpellByID(id) self.spell = id end
 function GameTooltip:SetItemByID(id) self.item = id end
+function GameTooltip:AddLine(value) self.extraLine = value end
 
 -- Regions made through the shared Suite helpers (pixel layout).
 local mover, suiteRegions = nil, {}
@@ -135,6 +173,8 @@ local S = { Public=function(value) return not (type(value) == "table" and value.
     Config=function() return testModule.config end,
     Set=function(_,key,value) testModule.config[key]=value;testModule:Refresh();return true end,
     Text=function(value) return value end,
+    ResolveFont=function(value) return value end,
+    SetFont=function(font, path, size, flags) font.fontPath, font.fontSize, font.fontFlags = path, size, flags end,
     CreateFrame=function(...) return CreateFrame(...) end,
     CreateTexture=function(parent, ...)
         local region = parent:CreateTexture(...)
@@ -151,11 +191,12 @@ local S = { Public=function(value) return not (type(value) == "table" and value.
     end,
     editMode=false }
 local NS = { IsCombatLocked=function() return combat end,
+    AnchorPoints={ "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" },
     Client={ SupportsEvent=function() return true end } }
 -- Data, readers, entry selection and the controller load in TOC order into
 -- one private table (Bootstrap only fills it from _G.MSUFSuite).
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local BR_FILES = { "Bootstrap.lua", "Data.lua", "Readers.lua", "Entries.lua", "Controller.lua" }
+local BR_FILES = { "Bootstrap.lua", "Data.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Special.lua", "Cursor.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_BuffReminders")
 assert(#tocFiles == #BR_FILES, "the BuffReminders TOC must list " .. #BR_FILES .. " files")
 for i = 1, #BR_FILES do
@@ -238,6 +279,19 @@ auras[1459] = { spellId=1459 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 assert(module.mask == 14 and not module.buttons[1].shown and module.buttons[2].shown)
 assert(auraReads == before + 3, "player event did more than one targeted lookup per aura")
+-- Edit Mode shows enabled reminders despite real presence, without reading
+-- live auras or replacing their count/presence cache with sample values.
+local cachedPresent,cachedCount=module.entries[1].present,module.entries[3].count
+S.editMode=true
+before=auraReads
+module:Update("visual")
+assert(module.mask==15 and module.buttons[1].shown and module.buttons[3].count.text=="5")
+assert(auraReads==before and module.entries[1].present==cachedPresent and module.entries[3].count==cachedCount)
+assert(not module.thresholdTimer and not module.cursorFollowing)
+S.editMode=false
+module:Update("visual")
+assert(module.mask==14 and not module.buttons[1].shown and module.buttons[3].count.text=="2",
+    "closing preview must restore actual presence and counts even when cache values did not change")
 before, itemReads = auraReads, 0
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 assert(auraReads == before + 3 and itemReads == 0, "unchanged auras repainted item counts")
@@ -299,11 +353,22 @@ assert(module.entries[2].id == 241324 and module.entries[3].kind == "food"
 assert(module.buttons[5].attributes.type1 == "item" and module.buttons[5].attributes.item1 == "item:243733"
     and module.buttons[5].attributes["target-slot"] == 16,
     "automatic oil did not securely target the main hand")
--- One scan: the three listed Well Fed IDs plus their one shared spell name.
-assert(module.mask == 30 and foodReads == 4, "missing default consumables were not shown")
+-- One scan: the three listed food buff IDs plus their two spell names.
+assert(module.mask == 30 and foodReads == 5, "missing default consumables were not shown")
 -- The augment rune is a separate consumable. Its primary-stat aura must not
 -- satisfy the flask reminder when no flask aura is active.
 auras[1264426] = { spellId = 1264426, auraInstanceID = 81 }
+-- Rune auras run from the highest spell ID down, like the item lists: the
+-- current rune is found with one lookup.
+do
+    local runeAuras = private.BuffReminders.RUNE_AURAS
+    for i = 2, #runeAuras do assert(runeAuras[i] < runeAuras[i - 1], "rune auras are not ordered newest first") end
+    local lookups, lookup = 0, C_UnitAuras.GetPlayerAuraBySpellID
+    C_UnitAuras.GetPlayerAuraBySpellID = function(id) lookups = lookups + 1; return lookup(id) end
+    assert(module.entries[4].aliases == runeAuras and private.BuffReminders.AuraPresent(module.entries[4]) == true
+        and lookups == 1, "finding the current rune took " .. lookups .. " aura lookups")
+    C_UnitAuras.GetPlayerAuraBySpellID = lookup
+end
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player",
     { addedAuras = { auras[1264426] } })
 assert(module.mask == 22 and module.buttons[2].shown and not module.buttons[4].shown,
@@ -382,7 +447,7 @@ assert(module.mask == 30 and foodReads == beforeFood, "removed Well Fed aura did
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=104280, icon=136000, auraInstanceID=43} } })
 local foodSnapshot = assert(module.foodIDs[43], "added Well Fed aura was not tracked")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 43 } })
-eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=104280, icon=133950, auraInstanceID=44} } })
+eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=104280, icon=136000, auraInstanceID=44} } })
 assert(module.foodIDs[44] == foodSnapshot and module.foodIDs[43] == nil and module.mask == 26,
     "a new food aura did not reuse the released snapshot")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 44 } })
@@ -649,6 +714,8 @@ eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
 assert(module.mask == 0 and module.foodIDs[700], "a restricted food re-check created a false reminder")
 -- Food that ran out in combat (no aura listener then) is dropped by the re-check.
 auras[990001] = nil
+
+
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
 assert(module.mask == 1 and not module.foodIDs[700], "an expired learned food aura was kept")
@@ -681,6 +748,534 @@ GetInstanceInfo = function() return "World", "none" end
 module.config.instancesOnly = false
 auras[990001] = nil
 
+-- A preferred supported item wins when stocked, falls back when depleted,
+-- and an empty category stays as an inert restock reminder.
+module.config = { classBuff=false, spellIDs="", items="", mainHandItem="", offHandItem="",
+    autoFlask=true, restockNotice=true, flaskChoice="241325", instancesOnly=false,
+    hideMounted=true, size=38, spacing=5, columns=6, borderColor="e8b855", point=1, x=0, y=0,
+    remindBeforeMinutes=5, keystoneCover=3, keystoneMinutes=30, countFont="test-face", countSize=17, countPosition=1, countX=3, countY=-4 }
+NS.Client.modernEquipment = true
+inventory = { [241324]=3, [241325]=2 }
+auras = {}
+module.active = true
+module:Enable()
+assert(module.entries[1].id == 241325 and module.buttons[1].count.fontSize == 17,
+    "preferred stocked flask or count styling was ignored")
+inventory[241325] = 0
+eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
+assert(module.entries[1].id == 241324 and not module.entries[1].restock,
+    "depleted preferred flask did not fall back")
+inventory[241324] = 0
+eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
+assert(module.entries[1].id == 241325 and module.entries[1].restock and module.mask == 1
+    and module.buttons[1].attributes.type1 == nil and module.buttons[1].attributes.item1 == nil
+    and module.buttons[1].icon.desaturated and module.buttons[1].count.text == "0",
+    "out-of-stock category must be a gray, non-actionable reminder")
+module.buttons[1]:OnEnter()
+assert(GameTooltip.extraLine and GameTooltip.extraLine:find("restock", 1, true), "restock tooltip did not explain the disabled action")
+inventory[241325] = 4
+eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
+assert(not module.entries[1].restock and module.buttons[1].attributes.item1 == "item:241325"
+    and not module.buttons[1].icon.desaturated, "restocking did not restore the secure click action")
+AssertQuietCompile("preferred consumable selection")
+
+-- Pre-key warning uses the longer threshold only before the run; one native
+-- challenge edge changes the policy without rescanning the aura.
+local challengeActive = false
+DifficultyUtil = { ID={ DungeonTimewalker=24, RaidTimewalker=33 } }
+GetInstanceInfo = function() return "Dungeon", "party", 23 end
+GetDifficultyInfo = function() return "Mythic", "party", false, false, false, true end
+C_ChallengeMode = { IsChallengeModeActive=function() return challengeActive end }
+auras[1235110] = { spellId=1235110, auraInstanceID=801, expirationTime=now+1200, duration=3600 }
+eventFrame.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+assert(module.mask == 1 and private.BuffReminders.Threshold(module) == 1800,
+    "pre-key threshold did not show a buff that expires during the configured run time")
+before = auraReads
+challengeActive = true
+eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_START")
+assert(module.mask == 0 and auraReads == before and private.BuffReminders.Threshold(module) == 300,
+    "key start did not restore the normal threshold without an aura scan")
+challengeActive = false
+eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_COMPLETED")
+assert(private.BuffReminders.Threshold(module) == 300, "completed key was treated as a new pre-key lobby")
+eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_RESET")
+assert(private.BuffReminders.Threshold(module) == 1800, "reset did not restore pre-key preparation")
+module.config.showDungeonMythic = false
+module:Refresh()
+assert(module.mask == 0, "content visibility did not hide reminders")
+module.config.showDungeonMythic = true
+
+-- Readycheck mana is evaluated once at the check. No aura or inventory work
+-- is necessary, and entering combat cancels the one temporary warning timer.
+module.config.readyCheckMana, module.config.readyCheckManaPercent = true, 80
+module.config.readyCheckDuration = 10
+UnitGroupRolesAssigned = function() return "HEALER" end
+UnitPower = function() return 50 end
+UnitPowerMax = function() return 100 end
+module:Refresh()
+before = auraReads
+eventFrame.OnEvent(eventFrame, "READY_CHECK")
+assert(module.readyCheckWarning.shown and module.readyCheckWarning.text:find("50%%")
+    and auraReads == before and module.readyCheckTimer, "readycheck low-mana warning failed")
+local warningTimer = module.readyCheckTimer
+UnitPower = function() return { secret=true } end
+eventFrame.OnEvent(eventFrame, "READY_CHECK")
+assert(not module.readyCheckWarning.shown and warningTimer.cancelled, "secret mana was treated as low mana")
+UnitPower = function() return 10 end
+UnitGroupRolesAssigned = function() return "DAMAGER" end
+eventFrame.OnEvent(eventFrame, "READY_CHECK")
+assert(not module.readyCheckWarning.shown, "non-healer got a healer mana warning")
+UnitGroupRolesAssigned = function() return "HEALER" end
+eventFrame.OnEvent(eventFrame, "READY_CHECK")
+warningTimer = module.readyCheckTimer
+combat = true
+eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
+assert(warningTimer.cancelled and not eventFrame.events.READY_CHECK and not eventFrame.events.CHALLENGE_MODE_START,
+    "combat kept preparation listeners or the warning timer running")
+combat = false
+eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+module:Disable()
+assert(not eventFrame.events.READY_CHECK and not eventFrame.events.CHALLENGE_MODE_START, "disable leaked preparation events")
+
+-- Alert identity is independent of positions and event count. Pulse runs in
+-- the animation engine, and disappearing/disable stops its animation.
+local sounds = 0
+SOUNDKIT = { RAID_WARNING=1, READY_CHECK=2, IG_QUEST_LOG_OPEN=3 }
+PlaySound = function(id, channel) assert(id == 1 and channel == "Dialog"); sounds = sounds + 1 end
+local alertOwner = { config={ reminderSound=2, reminderSoundChannel=3, reminderGlow=3,
+    reminderGlowColor="ff0000" }, buttons={} }
+local alertButton = { border=Widget() }
+alertOwner.buttons[1] = alertButton
+local alertEntry = { kind="spell", id=1459 }
+local BR = private.BuffReminders
+BR.AlertTransition(alertOwner, alertButton, alertEntry, true)
+BR.PlayReminderAlert(alertOwner)
+assert(sounds == 1 and alertButton.alertPulse.playing, "new reminder did not sound/pulse")
+BR.AlertTransition(alertOwner, alertButton, alertEntry, true)
+BR.PlayReminderAlert(alertOwner)
+assert(sounds == 1, "unchanged reminder repeated its sound")
+BR.AlertTransition(alertOwner, alertButton, alertEntry, false)
+assert(not alertButton.alertPulse.playing, "hidden reminder kept its pulse running")
+BR.AlertTransition(alertOwner, alertButton, alertEntry, true)
+BR.PlayReminderAlert(alertOwner)
+assert(sounds == 2, "reappearing reminder did not alert")
+-- A visible reminder keeps its running pulse: further mask changes neither
+-- restart it nor build identity strings.
+do
+    local group = alertButton.alertPulse
+    local plays, stops = 0, 0
+    local play, stop = group.Play, group.Stop
+    group.Play = function(self) plays = plays + 1; return play(self) end
+    group.Stop = function(self) stops = stops + 1; return stop(self) end
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local before = collectgarbage("count")
+    for _ = 1, 500 do BR.AlertTransition(alertOwner, alertButton, alertEntry, true) end
+    local grown = collectgarbage("count") - before
+    collectgarbage("restart")
+    assert(plays == 0 and stops == 0 and group.playing, "an unchanged reminder restarted its pulse")
+    assert(grown < 1, "unchanged alert transitions allocated " .. grown .. " KB")
+    group.Play, group.Stop = play, stop
+    -- The identity is compared field by field; no string is built for it.
+    local concats = 0
+    local counted = { kind = "spell", id = setmetatable({}, { __concat = function()
+        concats = concats + 1
+        return "id"
+    end }) }
+    for _ = 1, 3 do BR.AlertTransition(alertOwner, alertButton, counted, true) end
+    assert(concats == 0, "an alert transition built an identity string")
+    BR.AlertTransition(alertOwner, alertButton, alertEntry, true)
+    alertOwner.newReminderAlert = nil
+end
+BR.StopReminderAlerts(alertOwner)
+assert(not alertButton.alertPulse.playing and alertButton.alertKind == nil and alertButton.alertID == nil,
+    "alert teardown leaked")
+
+-- Group coverage uses eligible roster members and targeted aura reads. An
+-- invisible/disconnected unit and a restricted lookup cannot imply absence.
+do
+    local roster={ player="MAGE", party1="PRIEST", party2="WARRIOR" }
+    local groupAuras={player=true,party1=false,party2=false}
+    local invisible={party2=true}
+    local reads=0
+    UnitClass=function(unit) return roster[unit],roster[unit] end
+    knownSpell=function(id) return id==1459 end
+    IsInRaid=function() return false end
+    GetNumSubgroupMembers=function() return 2 end
+    GetNumGroupMembers=function() return 0 end
+    UnitIsUnit=function(unit,other) return unit==other end
+    UnitExists=function(unit) return roster[unit]~=nil end
+    UnitIsConnected=function() return true end
+    UnitIsVisible=function(unit) return not invisible[unit] end
+    UnitIsDeadOrGhost=function() return false end
+    C_Secrets={ShouldAurasBeSecret=function() return false end}
+    C_UnitAuras.GetUnitAuraBySpellID=function(unit)
+        reads=reads+1
+        return groupAuras[unit] and {} or nil
+    end
+    local owner={config={groupBuff=true,classBuff=true,otherClassBuffs=true}}
+    BR.GroupRoster(owner)
+    assert(owner.groupClasses.PRIEST and owner.groupClasses.WARRIOR,"roster class coverage missing")
+    BR.RefreshGroup(owner)
+    local entry={}
+    assert(not BR.GroupPresent(owner,entry) and entry.missingCount==1,"invisible member was reported missing")
+    local beforeReads=reads
+    groupAuras.party1=true
+    BR.RefreshGroup(owner,"party1")
+    assert(BR.GroupPresent(owner,entry) and reads==beforeReads+1,"unit delta rescanned the roster")
+    local reader=C_UnitAuras.GetUnitAuraBySpellID
+    C_Secrets.ShouldAurasBeSecret=function() return true end
+    C_UnitAuras.GetUnitAuraBySpellID=function() end
+    BR.RefreshGroup(owner,"party1")
+    assert(BR.GroupPresent(owner,entry),"a restricted aura lookup that returned nothing became false absence")
+    C_Secrets.ShouldAurasBeSecret=function() return false end
+    C_UnitAuras.GetUnitAuraBySpellID=reader
+    C_Secrets.ShouldAurasBeSecret=function() return true end
+    BR.RefreshGroup(owner)
+    assert(BR.GroupPresent(owner,entry),"restricted group state became false absence")
+    C_Secrets.ShouldAurasBeSecret=function() return false end
+    knownSpell=function(id) return id==20707 end
+    owner.config={soulstoneOnAlly=true}
+    invisible.party2=nil
+    local stoneSource
+    C_UnitAuras.GetAuraDataBySpellName=function(unit,name,filter)
+        assert(name=="Spell 20707" and filter=="HELPFUL|PLAYER")
+        if unit=="party1" and stoneSource=="player" then return {sourceUnit=stoneSource} end
+    end
+    BR.RefreshGroup(owner)
+    assert(owner.soulstoneMissing,"missing own Soulstone not detected")
+    stoneSource="party2"; BR.RefreshGroup(owner,"party1")
+    assert(owner.soulstoneMissing,"another Warlock's Soulstone incorrectly satisfied own reminder")
+    stoneSource="player"; BR.RefreshGroup(owner,"party1")
+    assert(owner.soulstoneMissing==false,"own Soulstone on party member was not detected")
+    stoneSource=nil; invisible.party2=true; BR.RefreshGroup(owner)
+    assert(owner.soulstoneMissing==nil,"unknown group member must not imply missing Soulstone")
+end
+do
+    local owner={config={petPassiveWarning=true,healthstoneFromWarlock=true},groupClasses={WARLOCK=true},host=Widget()}
+    NUM_PET_ACTION_SLOTS=10
+    UnitExists=function(unit) return unit=="pet" end
+    UnitIsDeadOrGhost=function() return false end
+    local passive=true
+    GetPetActionInfo=function(index)
+        if index==10 then return "PET_MODE_PASSIVE",nil,true,passive end
+    end
+    BR.ReadPet(owner)
+    assert(owner.petPassive,"active passive pet mode was not detected")
+    passive={secret=true}
+    BR.ReadPet(owner)
+    assert(owner.petPassive==nil,"secret pet reaction became a warning")
+    inventory={[5512]=0,[224464]=0}
+    BR.ReadHealthstone(owner)
+    BR.SpecialText(owner,true)
+    assert(owner.healthstoneMissing and owner.specialWarning.shown,"missing healthstone warning not shown")
+    inventory[224464]=1
+    BR.ReadHealthstone(owner)
+    BR.SpecialText(owner,true)
+    assert(not owner.healthstoneMissing and not owner.specialWarning.shown,"demonic healthstone did not satisfy reminder")
+    owner.groupClasses.WARLOCK=nil
+    inventory[224464]=0
+    BR.ReadHealthstone(owner)
+    assert(not owner.healthstoneMissing,"healthstone warning remained after Warlock left")
+    NS.BuffReminderDemons={
+        {key="demonImp",spells={688},family=23},
+        {key="demonFelguard",spells={30146},family=29},
+    }
+    owner.config={demonChoiceWarning=true,demonImp=false,demonFelguard=true}
+    UnitClass=function() return "Warlock","WARLOCK" end
+    knownSpell=function(id) return id==688 or id==30146 end
+    local family=23
+    UnitCreatureFamily=function() return "Pet",family end
+    BR.ReadPet(owner); assert(owner.wrongDemon,"disallowed Imp did not warn")
+    family=29; BR.ReadPet(owner); assert(owner.wrongDemon==false,"a chosen Felguard warned")
+    -- A family the check does not know (a cosmetic version) is never judged.
+    family=104; BR.ReadPet(owner); assert(owner.wrongDemon==nil,"an unrecognized demon family caused a warning")
+    family={secret=true}; BR.ReadPet(owner); assert(owner.wrongDemon==nil,"secret family caused a demon warning")
+    knownSpell=function(id) return id==688 end
+    family=23; BR.ReadPet(owner); assert(owner.wrongDemon==nil,"unavailable allowed summon caused an impossible warning")
+    -- One known summon of a chosen demon is enough: the spell checks stop
+    -- there, and the list stops once the pet's demon is known as well.
+    NS.BuffReminderDemons={
+        {key="demonImp",spells={688},family=23},
+        {key="demonVoidwalker",spells={697},family=16},
+        {key="demonFelhunter",spells={691},family=15},
+        {key="demonSayaad",spells={366222,712,713},family=17},
+        {key="demonFelguard",spells={30146},family=29},
+    }
+    owner.config={demonChoiceWarning=true,demonImp=false}
+    local spellChecks=0
+    knownSpell=function(id) spellChecks=spellChecks+1; return id~=688 end
+    for _,pet in ipairs({16,29}) do
+        spellChecks=0; family=pet; BR.ReadPet(owner)
+        assert(owner.wrongDemon==false and spellChecks==1,
+            "the demon check read "..spellChecks.." summon spells for family "..pet)
+    end
+    spellChecks=0; family=23; BR.ReadPet(owner)
+    assert(owner.wrongDemon==true and spellChecks==1,"a disallowed Imp did not warn after one summon check")
+    local visited={}
+    for index,demon in ipairs(NS.BuffReminderDemons) do
+        NS.BuffReminderDemons[index]=setmetatable({},{__index=function(_,key)
+            if key=="family" then visited[index]=true end
+            return demon[key]
+        end})
+    end
+    family=16; BR.ReadPet(owner)
+    assert(owner.wrongDemon==false and visited[2] and not visited[3],"the demon list went on after both answers were known")
+end
+
+-- Game IDs live in Data.lua only; the selection code reads them from there.
+-- Food is found from the game's eating spells, never from an item list.
+do
+    for _, name in ipairs({ "Entries.lua", "Controller.lua", "Special.lua" }) do
+        local file = assert(io.open(root .. "/MSUF_Suite_BuffReminders/" .. name, "rb"))
+        local source = file:read("*a")
+        file:close()
+        for _, id in ipairs({ "1229741", "124640" }) do
+            assert(not source:find(id, 1, true), name .. " holds the game ID " .. id .. " outside Data.lua")
+        end
+    end
+    assert(BR.CAMP_BENEFITS == 1229741, "Data.lua lost the Camp Benefits spell")
+    assert(BR.FOODS == nil, "food reminders read an item list again")
+end
+
+-- Retail and WoW Forever always have the APIs the module calls (GameTooltip
+do
+    local moves=0
+    local owner={active=true,mask=1,host=Widget(),config={followCursor=true,cursorOffsetX=24,cursorOffsetY=24,point=1,x=0,y=0}}
+    owner.host.SetPoint=function() assert(not combat,"cursor moved a protected host in combat");moves=moves+1 end
+    UIParent.GetEffectiveScale=function() return 2 end
+    local cx,cy=100,200
+    GetCursorPosition=function() return cx,cy end
+    BR.SyncCursor(owner)
+    assert(owner.cursorDriver.OnUpdate and moves==1)
+    owner.cursorDriver.OnUpdate(owner.cursorDriver)
+    assert(moves==1,"unchanged cursor rewrote the anchor")
+    cx=120;owner.cursorDriver.OnUpdate(owner.cursorDriver)
+    assert(moves==2)
+    combat=true;owner.cursorDriver.OnUpdate(owner.cursorDriver)
+    assert(not owner.cursorDriver.OnUpdate and moves==2,"combat did not immediately stop cursor input")
+    combat=false;BR.SyncCursor(owner)
+    owner.mask=0;BR.SyncCursor(owner)
+    assert(not owner.cursorDriver.OnUpdate and not owner.cursorFollowing,"no visible reminder kept a cursor reader")
+    assert(not owner.cursorDisplaced,"restoring the anchor retained displacement")
+    owner.mask=1;BR.SyncCursor(owner)
+    local before=moves
+    combat=true;BR.StopCursor(owner,false)
+    owner.config.followCursor=false;BR.SyncCursor(owner)
+    assert(moves==before and owner.cursorDisplaced,"combat suspension forgot pending anchor restoration")
+    combat=false;BR.SyncCursor(owner)
+    assert(moves==before+1 and not owner.cursorDisplaced,"combat exit did not restore the static anchor")
+    owner.config.followCursor=true;BR.SyncCursor(owner)
+    before=moves
+    owner.active=false;BR.StopCursor(owner,false)
+    owner.config.followCursor=false;owner.active=true;BR.SyncCursor(owner)
+    assert(moves==before+1 and not owner.cursorDisplaced,"disable/re-enable lost the static anchor")
+end
+
+do
+    NS.Client.isForever=true
+    knownSpell=function(id) return id==1243 end
+    UnitClass=function() return "Priest","PRIEST" end
+    IsInRaid=function() return false end
+    GetNumSubgroupMembers=function() return 1 end
+    UnitIsUnit=function(a,b) return a==b end
+    UnitExists=function() return true end
+    UnitIsConnected=function() return true end
+    UnitIsVisible=function() return true end
+    UnitIsDeadOrGhost=function() return false end
+    local rankAura={spellId=10938,name="Spell 1243",auraInstanceID=101,duration=0,expirationTime=0}
+    local groupRank=true
+    C_UnitAuras.GetAuraDataBySpellName=function(unit,name,filter)
+        assert(filter=="HELPFUL")
+        if name=="Spell 1243" and (unit=="player" or groupRank) then return rankAura end
+    end
+    local owner={config={classBuff=true,groupBuff=true,spellIDs="",items="",mainHandItem="",offHandItem=""}}
+    local entries=BR.BuildEntries(owner)
+    local entry=entries[1]
+    assert(#entries==1 and entry.id==1243 and entry.ranked and entry.spellName=="Spell 1243",
+        "Forever priest must use Fortitude and its native named cast")
+    assert(BR.AuraPresent(entry)==true,"higher-rank Fortitude was falsely missing")
+    entry.present=false
+    assert(BR.AuraChangeAffects(entry,{addedAuras={rankAura}}),"added higher rank did not invalidate absence")
+    assert(not BR.AuraChangeAffects(entry,{addedAuras={{spellId=999,name="unrelated"}}}),"unrelated aura invalidated rank cache")
+    BR.RefreshGroup(owner)
+    assert(BR.GroupPresent(owner,entry),"native group rank was falsely missing")
+    groupRank=false;BR.RefreshGroup(owner,"party1")
+    assert(not BR.GroupPresent(owner,entry) and entry.missingCount==1)
+    local secrets=C_Secrets.ShouldAurasBeSecret
+    C_Secrets.ShouldAurasBeSecret=function() return true end
+    C_UnitAuras.GetAuraDataBySpellName=function() end
+    assert(BR.AuraPresent(entry)==nil,"a restricted rank lookup that returned nothing became absence")
+    BR.RefreshGroup(owner,"party1")
+    assert(BR.GroupPresent(owner,entry),"a restricted group rank lookup became absence")
+    C_Secrets.ShouldAurasBeSecret=secrets
+    NS.Client.isForever=false
+    assert(BR.ClassBuff("PRIEST").cast==21562,"Forever table replaced Retail catalog")
+end
+
+do
+    local owner={config={beaconOnAlly=true},groupUnits={player=true,party1=true,party2=true},groupClasses={WARLOCK=true}}
+    local knownReads, queries = 0, 0
+    knownSpell=function(id) knownReads=knownReads+1;return id==53563 or id==156910 end
+    local light,faith,restricted
+    C_UnitAuras.GetUnitAuraBySpellID=function() error("own aura must use the native caster filter") end
+    C_UnitAuras.GetAuraDataBySpellName=function(unit,name,filter)
+        queries=queries+1
+        assert(filter=="HELPFUL|PLAYER","own buffs must select their caster natively")
+        if restricted==unit then return {secret=true} end
+        if name=="Spell 53563" and unit==light or name=="Spell 156910" and unit==faith then
+            return {sourceUnit={secret=true}} -- Ownership already selected natively.
+        end
+    end
+    BR.RefreshGroup(owner)
+    assert(owner.beaconMissing,"known Beacons missing everywhere must warn")
+    light="party1";BR.RefreshGroup(owner,"party1")
+    assert(owner.beaconMissing,"Faith remains required when only Light is active")
+    local beforeKnown=knownReads
+    faith="party2";BR.RefreshGroup(owner,"party2")
+    assert(not owner.beaconMissing and knownReads==beforeKnown,"targeted Beacon update must reuse spell knowledge")
+    local beforeQueries=queries
+    BR.RefreshGroup(owner,"nameplate1")
+    assert(queries==beforeQueries,"untracked unit event queried group buffs")
+    faith=nil;restricted="party2";BR.RefreshGroup(owner,"party2")
+    assert(not owner.beaconMissing,"unknown group presence must not become a missing Beacon")
+    restricted=nil;BR.RefreshGroup(owner,"party2")
+    assert(owner.beaconMissing,"native own-filter absence must warn even if another caster has a Beacon")
+    knownSpell=function() return false end;BR.RefreshGroup(owner)
+    assert(not owner.beaconMissing,"unavailable Beacon must not warn")
+
+    NS.Client.isForever=true
+    owner.config={soulstoneOnAlly=true,healthstoneFromWarlock=true}
+    knownSpell=function(id) return id==20757 end
+    local ranked=false
+    C_UnitAuras.GetAuraDataBySpellName=function(unit,name,filter)
+        assert(name=="Spell 20707" and filter=="HELPFUL|PLAYER")
+        if unit=="party1" and ranked then return {spellId=20765} end
+    end
+    BR.RefreshGroup(owner)
+    assert(owner.soulstoneMissing,"Forever creation-spell knowledge must enable the reminder")
+    ranked=true;BR.RefreshGroup(owner,"party1")
+    assert(owner.soulstoneMissing==false,"higher-rank own Soulstone must satisfy native family lookup")
+    for _,id in ipairs(BR.FOREVER_HEALTHSTONES) do
+        inventory={[id]=1};BR.ReadHealthstone(owner)
+        assert(owner.healthstoneMissing==false,"missing Forever Healthstone variant "..id)
+    end
+    inventory={};BR.ReadHealthstone(owner);assert(owner.healthstoneMissing==true)
+    inventory={[19013]={secret=true}};BR.ReadHealthstone(owner)
+    assert(owner.healthstoneMissing==nil,"unreadable stone count must remain unknown")
+    NS.Client.isForever=false
+    inventory={[224464]=1};BR.ReadHealthstone(owner);assert(owner.healthstoneMissing==false)
+end
+
+do
+    local roster = { player = "MAGE", party1 = "PRIEST", party2 = "WARRIOR" }
+    local memberAuras = { player = true, party1 = false, party2 = true }
+    UnitClass = function(unit) return roster[unit], roster[unit] end
+    knownSpell = function(id) return id == 1459 end
+    IsInRaid = function() return false end
+    local members = 2
+    GetNumSubgroupMembers = function() return members end
+    UnitIsUnit = function(unit, other) return unit == other end
+    UnitExists = function(unit) return roster[unit] ~= nil end
+    UnitIsConnected = function() return true end
+    UnitIsVisible = function() return true end
+    UnitIsDeadOrGhost = function() return false end
+    C_Secrets.ShouldAurasBeSecret = function() return false end
+    C_UnitAuras.GetUnitAuraBySpellID = function(unit) return memberAuras[unit] and {} or nil end
+    C_Timer.After = function(delay, callback)
+        assert(delay == 0.1, "group pass delay changed")
+        afterQueue[#afterQueue + 1] = { callback = callback }
+    end
+    NS.Client.isForever, NS.Client.modernEquipment = false, false
+    inventory = { [123] = 4 }
+    module.config = { classBuff=true, groupBuff=true, spellIDs="", items="123:888", mainHandItem="",
+        offHandItem="", instancesOnly=false, hideMounted=true, size=38, spacing=5, columns=6,
+        borderColor="e8b855", point=1, x=0, y=0, remindBeforeMinutes=0 }
+    afterQueue = {}
+    module.active = true
+    module:Enable()
+    RunAfter()
+    assert(not eventFrame.events.ZONE_CHANGED and not eventFrame.events.ZONE_CHANGED_INDOORS,
+        "subzone steps still recompile the reminders")
+    local list = eventFrame.events.UNIT_AURA
+    assert(type(list) == "table" and #list == 3 and list[1] == "player" and list[2] == "party1" and list[3] == "party2",
+        "group options did not limit UNIT_AURA to the player and the roster units")
+    for _, event in ipairs({ "UNIT_CONNECTION", "UNIT_FLAGS", "UNIT_PHASE" }) do
+        assert(eventFrame.events[event] == list, event .. " is not limited to the roster units")
+    end
+    local updates, compiles = 0, 0
+    local update, compile = module.Update, module.Compile
+    module.Update = function(...) updates = updates + 1; return update(...) end
+    module.Compile = function(...) compiles = compiles + 1; return compile(...) end
+    itemReads = 0
+    for _ = 1, 10 do
+        eventFrame.OnEvent(eventFrame, "UNIT_AURA", "party1")
+        eventFrame.OnEvent(eventFrame, "UNIT_FLAGS", "party2")
+        eventFrame.OnEvent(eventFrame, "UNIT_AURA", "party2")
+    end
+    assert(updates == 0 and #afterQueue == 1, "member events did immediate work or queued more than one pass")
+    memberAuras.party1 = true
+    assert(RunAfter() == 1 and updates == 1 and itemReads == 0,
+        "the coalesced member pass did not update once without item counts")
+    assert(module.entries[1].group and module.entries[1].missingCount == 0,
+        "the member pass did not refresh the marked unit")
+    -- The player's own aura delta refreshes the player's group state inside
+    -- its personal update: no member pass follows it.
+    updates = 0
+    memberAuras.player = false
+    eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate = true })
+    assert(updates == 1 and #afterQueue == 0 and module.entries[1].missingCount == 1,
+        "the player's aura update queued a second group pass or missed the player's group state")
+    memberAuras.player = true
+    eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate = true })
+    assert(updates == 2 and #afterQueue == 0 and module.entries[1].missingCount == 0,
+        "the player's own aura did not refresh the group reminder at once")
+    -- A roster storm compiles once and relists the member units.
+    roster.party3, members = "WARLOCK", 3
+    for _ = 1, 20 do eventFrame.OnEvent(eventFrame, "GROUP_ROSTER_UPDATE") end
+    assert(compiles == 0 and #afterQueue == 1, "roster events compiled immediately")
+    RunAfter()
+    list = eventFrame.events.UNIT_AURA
+    assert(compiles == 1 and #list == 4 and list[4] == "party3", "the roster pass did not relist the member units")
+    -- Entering combat drops a pending pass with its marks.
+    eventFrame.OnEvent(eventFrame, "UNIT_AURA", "party1")
+    eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
+    combat = true
+    updates = 0
+    RunAfter()
+    assert(updates == 0 and not next(module.groupDirty), "a member pass ran in combat")
+    combat = false
+    eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+    -- Group options that need the roster alone (other classes' buffs, a
+    -- Warlock's Healthstone) leave the member events alone: UNIT_AURA follows
+    -- the player only, and roster changes still recompile.
+    module.config.groupBuff, module.config.otherClassBuffs, module.config.healthstoneFromWarlock = false, true, true
+    module:Refresh()
+    RunAfter()
+    assert(eventFrame.events.UNIT_AURA == "player" and eventFrame.events.GROUP_ROSTER_UPDATE,
+        "roster-only group options followed the members' auras or stopped following the roster")
+    for _, event in ipairs({ "UNIT_CONNECTION", "UNIT_FLAGS", "UNIT_PHASE" }) do
+        assert(not eventFrame.events[event], event .. " followed the members without an option reading their auras")
+    end
+    for _, key in ipairs({ "groupBuff", "soulstoneOnAlly", "beaconOnAlly" }) do
+        module.config.otherClassBuffs, module.config.healthstoneFromWarlock = false, false
+        module.config.groupBuff, module.config.soulstoneOnAlly, module.config.beaconOnAlly = false, false, false
+        module.config[key] = true
+        module:Refresh()
+        RunAfter()
+        list = eventFrame.events.UNIT_AURA
+        assert(type(list) == "table" and #list == 4 and eventFrame.events.UNIT_PHASE == list,
+            key .. " does not follow the members' aura events")
+    end
+    module.config.soulstoneOnAlly, module.config.beaconOnAlly, module.config.groupBuff = false, false, true
+    module:Refresh()
+    RunAfter()
+    module.Update, module.Compile = update, compile
+    module:Disable()
+    assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.GROUP_ROSTER_UPDATE,
+        "disable kept member events")
+end
+
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip
 -- included). The seasonal ID tables live only in Data.lua; every runtime file
 -- reads P.BuffReminders in its header.
@@ -690,8 +1285,11 @@ for i = 2, #BR_FILES do
     local source = file:read("*a"):gsub("\r", "")
     file:close()
     local code = source:gsub("%-%-[^\n]*", "")
+    -- Restricted aura lookups return nothing instead of raising: no file
+    -- needs a protected call.
+    assert(not code:find("pcall", 1, true), name .. " uses pcall or xpcall")
     local guarded = code:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or code:match("(_G%.GameTooltip)")
-    assert(not guarded, name .. " guards " .. tostring(guarded) .. " as if a client lacked it")
+    assert(not guarded or name == "Preparation.lua", name .. " guards " .. tostring(guarded) .. " as if a client lacked it")
     local tables = code:find("local FLASKS = {", 1, true) or code:find("local FOOD_ICONS = {", 1, true)
     assert((name == "Data.lua") == (tables ~= nil), name .. " holds the seasonal ID tables")
     if name == "Data.lua" then

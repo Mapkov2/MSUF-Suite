@@ -6,10 +6,16 @@
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
+## SavedVariables: MSUFSuiteDemonLooks
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
 Data.lua
 Readers.lua
+Group.lua
 Entries.lua
+Preparation.lua
+Alerts.lua
+Special.lua
+Cursor.lua
 Controller.lua
