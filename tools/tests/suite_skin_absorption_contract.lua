@@ -8,6 +8,8 @@ local at = assert(source:find(marker, 1, true), "MapkoSkin smoke fixture changed
 -- Reuse MapkoSkin's mature WoW API fixture, then boot the Suite-owned TOC.
 local fixture = source:sub(1, at - 1)
 local contract = [=[
+-- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
+dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(arg[1])
 WOW_PROJECT_MAINLINE, WOW_PROJECT_ID = 1, 1
 -- Retail and Forever scale MicroMenu by this game rule (0: no factor).
 C_GameRules = C_GameRules or {}
@@ -1730,7 +1732,7 @@ assert(looks == 5 and palettes >= 5,
     "Client look catalog or palette collection changed")
 
 local private = {}
-_G.MSUFSuite = { Client = {
+_G.MSUFSuite = { Database = _G.MSUFSuite.Database, Client = {
     AttachControllerWindow = function() end,
     PauseControllerWindow = function() end,
     ResumeControllerWindow = function() end,

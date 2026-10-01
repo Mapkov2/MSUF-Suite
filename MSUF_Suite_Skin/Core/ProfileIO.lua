@@ -111,7 +111,7 @@ local function FreeName(name)
     for number = 2, limit + 1 do
         local suffix = " (" .. number .. ")"
         local candidate = NS.Database.NormalizeProfileName(
-            LeadingBytes(name, NS.Database.maxProfileNameBytes - #suffix) .. suffix)
+            LeadingBytes(name, NS.Database.MaxProfileNameBytes() - #suffix) .. suffix)
         if candidate and not NS.Database.GetProfile(candidate) then return candidate end
     end
     return nil

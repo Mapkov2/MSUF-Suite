@@ -275,6 +275,7 @@ local profileNS = {
     Database = {
         GetActiveProfileName = function() return "Default" end,
         GetProfileNames = function() return { "Default", "Raid" } end,
+        NormalizeProfileName = function(name) return name end,
         CreateProfile = function(name) if refuse then return false, "combat" end; return true, name end,
         SetActiveProfile = function(name) if refuse then return false, "combat" end; return true, name end,
         DeleteProfile = function(name) if refuse then return false, "combat" end; return true, name end,

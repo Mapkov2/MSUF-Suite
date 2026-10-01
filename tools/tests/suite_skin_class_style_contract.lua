@@ -34,6 +34,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     end }
     RAID_CLASS_COLORS = {}
     _G.MSUFSuite = nil
+    -- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
+    dofile(root .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(root)
     local ns = {
         Client = { isMainline = true, isForever = flavor == "Forever" },
         IsCombatLocked = function() return false end,

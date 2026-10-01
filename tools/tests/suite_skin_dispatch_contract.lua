@@ -289,6 +289,8 @@ local engine = {
     FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" },
     IsCombatLocked = function() return false end,
 }
+-- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
+dofile(root .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(root)
 for _, file in ipairs({ "Core/Defaults.lua", "Core/Database.lua", "Core/DatabaseProfiles.lua", "Core/Safety.lua",
     "Core/Registry.lua", "Core/Theme.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", engine)
@@ -316,7 +318,8 @@ engineHeard, profileStages = {}, {}
 engine.Database.ApplyActiveSettings("reset", "theme")
 assert(profileStages[1] == "adapters" and engineHeard[1] == "theme:reset",
     "the shared profile apply did not run its stages or announce a theme reset")
-_G.MSUFSuite = { Suite = { ApplyGlobalLook = function() error("suite look failed") end } }
+_G.MSUFSuite = { Database = _G.MSUFSuite.Database,
+    Suite = { ApplyGlobalLook = function() error("suite look failed") end } }
 reported, engineHeard = {}, {}
 assert(engine.Theme.ApplyLook("midnight") and engine.DB.theme.look == "midnight"
     and engineHeard[1] == "theme:look" and Reported("suite look failed"),

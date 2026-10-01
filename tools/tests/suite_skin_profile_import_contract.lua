@@ -66,6 +66,8 @@ local NS = {
     Adapters = { ApplyAll = Noop },
     Registry = { RefreshAll = Noop, NotifyListeners = Noop, AddListener = Noop },
 }
+-- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
+dofile(root .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(root)
 for _, file in ipairs({ "Defaults", "Database", "DatabaseProfiles", "ProfileIO", "Safety" }) do
     Load("MSUF_Suite_Skin/Core/" .. file .. ".lua", NS)
 end
@@ -107,19 +109,20 @@ ok, name = IO.ImportProfile(friendText, "Fresh")
 Check(ok and name == "Fresh", "an import onto a free typed name was refused")
 
 -- Free names keep to the name limit and never cut a UTF-8 character.
-local full = string.rep("a", Database.maxProfileNameBytes)
+local full = string.rep("a", Database.MaxProfileNameBytes())
 Database.SetProfile(full, Profile(0.5))
 local free = IO.FreeName(full)
-Check(free == string.rep("a", Database.maxProfileNameBytes - 4) .. " (2)",
+Check(free == string.rep("a", Database.MaxProfileNameBytes() - 4) .. " (2)",
     "a free name for a full-length name broke the length limit: " .. tostring(free))
 -- "ä" is two bytes; the room left for the name ends inside or after it.
-local split = string.rep("a", 35) .. "\195\164" .. "bbb"
+local room = Database.MaxProfileNameBytes() - #" (2)"
+local split = string.rep("a", room - 1) .. "\195\164" .. "bbb"
 Database.SetProfile(split, Profile(0.5))
-Check(IO.FreeName(split) == string.rep("a", 35) .. " (2)",
+Check(IO.FreeName(split) == string.rep("a", room - 1) .. " (2)",
     "a free name cut a UTF-8 character in half: " .. tostring(IO.FreeName(split)))
-local whole = string.rep("a", 34) .. "\195\164" .. "bbbb"
+local whole = string.rep("a", room - 2) .. "\195\164" .. "bbbb"
 Database.SetProfile(whole, Profile(0.5))
-Check(IO.FreeName(whole) == string.rep("a", 34) .. "\195\164" .. " (2)",
+Check(IO.FreeName(whole) == string.rep("a", room - 2) .. "\195\164" .. " (2)",
     "a free name dropped a UTF-8 character it had room for")
 
 ------------------------------------------------------------------ adapter switches

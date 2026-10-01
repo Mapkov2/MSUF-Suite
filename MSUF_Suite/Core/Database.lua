@@ -31,8 +31,12 @@ local function Copy(value, seen)
 end
 Suite.CopyValue = Copy
 
+-- The one profile name rule of MSUF, the Suite and its skin: the skin stores
+-- its profiles under exactly these names (MSUF_Suite_Skin/Core/
+-- DatabaseProfiles.lua asks this function).
+Database.MAX_PROFILE_NAME_BYTES = 80
 function Database.IsProfileName(name)
-    return type(name) == "string" and #name > 0 and #name <= 80
+    return type(name) == "string" and #name > 0 and #name <= Database.MAX_PROFILE_NAME_BYTES
         and not name:find("[%z\1-\31]") and name:find("%S") ~= nil
 end
 

@@ -203,6 +203,22 @@ function Support.Load(root, addon, namespace, through, skip, flavor)
     return namespace
 end
 
+-- The Suite's profile name rule (MSUF_Suite/Core/Database.lua). The skin's
+-- profile store asks MSUFSuite.Database for it, as in the client, where the
+-- skin loads after MSUF_Suite. Gives suite (default _G.MSUFSuite, created
+-- when missing) the real Database unless it has one, publishes it as
+-- _G.MSUFSuite and returns it.
+function Support.SuiteProfileNames(root, suite)
+    suite = suite or _G.MSUFSuite or {}
+    if not suite.Database then
+        local core = {}
+        assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", core)
+        suite.Database = core.Database
+    end
+    _G.MSUFSuite = suite
+    return suite
+end
+
 -- The step of a MIGRATIONS entry (MSUF_Suite/Core/Suite.lua) found by the
 -- function it runs, and the number of steps, so that a test does not depend on
 -- the order in which branches appended their steps.

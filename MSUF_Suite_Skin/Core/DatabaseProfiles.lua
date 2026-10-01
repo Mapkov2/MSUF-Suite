@@ -8,15 +8,64 @@ local function IsForever()
     return NS.Client.isForever
 end
 
-Database.maxProfileNameBytes = 40
+------------------------------------------------------------------ names
+-- One profile name rule for MSUF, the Suite and the skin: the Suite's own
+-- (MSUF_Suite/Core/Database.lua). A skin profile is stored under exactly the
+-- name of its MSUF and Suite profile, so a lookup by that name finds it. The
+-- skin depends on MSUF_Suite, which has loaded before it.
+local function CoreNames()
+    return _G.MSUFSuite.Database
+end
 
+function Database.IsProfileName(name)
+    return CoreNames().IsProfileName(name)
+end
+
+function Database.MaxProfileNameBytes()
+    return CoreNames().MAX_PROFILE_NAME_BYTES
+end
+
+local function Trimmed(name)
+    return name:gsub("[%z\1-\31]", ""):match("^%s*(.-)%s*$") or ""
+end
+
+-- A name a player typed or an import string carries: control characters
+-- removed, outer spaces trimmed, cut to the longest name. nil without one.
 function Database.NormalizeProfileName(name)
     if type(name) ~= "string" then return nil end
-    name = name:gsub("[%z\1-\31]", ""):match("^%s*(.-)%s*$") or ""
-    if name == "" then return nil end
-    local limit = Database.maxProfileNameBytes
-    if #name > limit then name = name:sub(1, limit) end
-    return name
+    name = Trimmed(name):sub(1, Database.MaxProfileNameBytes())
+    return Database.IsProfileName(name) and name or nil
+end
+
+-- What builds before the shared rule stored a name as: trimmed like above,
+-- then cut to 40 bytes.
+local LEGACY_NAME_BYTES = 40
+local function LegacyName(name)
+    if type(name) ~= "string" then return nil end
+    name = Trimmed(name)
+    return name ~= "" and name:sub(1, LEGACY_NAME_BYTES) or nil
+end
+
+-- The name a saved profile keeps: its own when it follows the rule, else
+-- the one earlier builds gave it.
+local function StoredName(name)
+    if Database.IsProfileName(name) then return name end
+    return LegacyName(name)
+end
+
+-- Earlier builds stored the skin profile of a long or space-padded Suite
+-- profile under the cut name, so the next switch to the full name failed.
+-- Each such Suite profile gets a copy under its full name; the cut entry
+-- stays, so nothing saved is lost.
+local function RestoreCutNames(profiles, suiteRoot)
+    local suiteProfiles = type(suiteRoot) == "table" and suiteRoot.profiles
+    if type(suiteProfiles) ~= "table" then return end
+    for name in pairs(suiteProfiles) do
+        local cut = Database.IsProfileName(name) and LegacyName(name)
+        if cut and cut ~= name and profiles[cut] and not profiles[name] then
+            profiles[name] = NS.CopyValue(profiles[cut])
+        end
+    end
 end
 
 -- Forever starts from the Suite's shipped factory skin profile when MSUF can
@@ -46,19 +95,20 @@ local function NewRoot(profile)
     }
 end
 
-local function NormalizeRoot(root)
+local function NormalizeRoot(root, suiteRoot)
     root.schema = Database.rootSchema
     if type(root.profiles) ~= "table" then root.profiles = {} end
     local normalized = {}
     for rawName, profile in pairs(root.profiles) do
-        local name = Database.NormalizeProfileName(rawName)
+        local name = StoredName(rawName)
         if name and type(profile) == "table" then
             normalized[name] = Database.Normalize(profile)
         end
     end
+    RestoreCutNames(normalized, suiteRoot)
     if not next(normalized) then normalized.Default = CreateFactoryProfile() end
     root.profiles = normalized
-    local active = Database.NormalizeProfileName(root.activeProfile)
+    local active = StoredName(root.activeProfile)
     if not active or not normalized[active] then
         active = normalized.Default and "Default" or next(normalized)
     end
@@ -78,7 +128,7 @@ function Database.Initialize()
     end
     local root
     if type(stored) == "table" and type(stored.profiles) == "table" then
-        root = NormalizeRoot(stored)
+        root = NormalizeRoot(stored, suiteRoot)
     elseif type(stored) == "table" then
         -- One-time migration from the 0.7 flat SavedVariables layout. Keep the
         -- entire normalized profile; no setting is dropped.
@@ -127,11 +177,16 @@ function Database.ApplyActiveSettings(reason, domain)
 end
 local ApplyActiveSettings = Database.ApplyActiveSettings
 
+-- The store takes names as they are: the Suite and MSUF hand it theirs.
+local function ExactName(name)
+    return Database.IsProfileName(name) and name or nil
+end
+
 -- Replacing the active profile swaps the settings every skin reads, so it
 -- waits out combat like every other skin write.
 function Database.SetProfile(name, profile)
     if NS.IsCombatLocked() then return false, "combat" end
-    name = Database.NormalizeProfileName(name)
+    name = ExactName(name)
     profile = Database.SanitizeProfile(profile)
     if not name or not profile or not NS.RootDB then return false, "invalid-profile" end
     NS.RootDB.profiles[name] = profile
@@ -140,7 +195,7 @@ function Database.SetProfile(name, profile)
 end
 
 function Database.CreateProfile(name, copyCurrent)
-    name = Database.NormalizeProfileName(name)
+    name = ExactName(name)
     if not name then return false, "invalid-name" end
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.RootDB then return false, "database-not-ready" end
@@ -151,7 +206,7 @@ function Database.CreateProfile(name, copyCurrent)
 end
 
 function Database.SetActiveProfile(name)
-    name = Database.NormalizeProfileName(name)
+    name = ExactName(name)
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.RootDB then return false, "database-not-ready" end
     if not name or not NS.RootDB.profiles[name] then return false, "missing-profile" end
@@ -163,7 +218,7 @@ function Database.SetActiveProfile(name)
 end
 
 function Database.DeleteProfile(name)
-    name = Database.NormalizeProfileName(name)
+    name = ExactName(name)
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.RootDB then return false, "database-not-ready" end
     if not name or not NS.RootDB.profiles[name] then return false, "missing-profile" end

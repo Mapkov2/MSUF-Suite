@@ -39,7 +39,7 @@ local function BuildProfileControls(page, view)
     view.status:SetPoint("RIGHT", -4, 0)
 
     local function CreateProfile(copyCurrent, successText)
-        local ok, reason = NS.Database.CreateProfile(view.draftName, copyCurrent)
+        local ok, reason = NS.Database.CreateProfile(NS.Database.NormalizeProfileName(view.draftName), copyCurrent)
         if ok then ok, reason = Replaced(NS.Database.SetActiveProfile(reason)) end
         view.Result(ok, reason, successText)
     end
