@@ -165,7 +165,11 @@ function St.ReadGlobals(config, all)
         for i = 1, #SLOTS do sync[SLOTS[i].key] = true end
     end
     local mute, channel = config.muteSounds == true, CHANNEL[config.soundChannel] or "Master"
-    if all or state.muteSounds ~= mute or state.soundChannel ~= channel then state.muteSounds, state.soundChannel, dirty.alerts = mute, channel, true end
+    if all or state.muteSounds ~= mute or state.soundChannel ~= channel then
+        state.muteSounds, state.soundChannel, dirty.alerts = mute, channel, true
+    end
+    -- Text styled outside the bars (the assisted icon) follows this count.
+    if text then state.textGen = (state.textGen or 0) + 1 end
     return text
 end
 

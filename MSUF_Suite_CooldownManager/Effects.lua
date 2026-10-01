@@ -35,6 +35,32 @@ function E.RecommendationGCD()
     local duration = C_Spell.GetSpellCooldownDuration(61304)
     if duration then frame.cd:SetCooldownFromDurationObject(duration, true) else frame.cd:Clear() end
 end
+local function NewRecommendation()
+    local frame = S.CreateFrame("Frame", nil, UIParent)
+    frame:EnableMouse(false)
+    frame.tex = S.CreateTexture(frame, nil, "ARTWORK")
+    frame.tex:SetAllPoints(frame)
+    frame.tex:SetTexCoord(.08, .92, .08, .92)
+    frame.cd = S.CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+    frame.cd:SetAllPoints(frame)
+    frame.cd:SetHideCountdownNumbers(true)
+    frame.cd:SetDrawEdge(false)
+    frame.cd:SetDrawBling(false)
+    frame.over = S.CreateFrame("Frame", nil, frame)
+    frame.over:SetAllPoints(frame)
+    frame.over:SetFrameLevel(frame.cd:GetFrameLevel() + 1)
+    frame.key = S.CreateFontString(frame.over, nil, "OVERLAY")
+    frame.key:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
+    frame.badge = S.CreateTexture(frame.over, nil, "BACKGROUND")
+    frame.badge:SetPoint("TOPLEFT", frame.key, "TOPLEFT", -2, 2)
+    frame.badge:SetPoint("BOTTOMRIGHT", frame.key, "BOTTOMRIGHT", 2, -2)
+    frame.badge:SetColorTexture(0, 0, 0, .85)
+    return frame
+end
+-- A new suggestion arrives up to five times a second in combat: the frame
+-- writes only what changed (shown state, size, place, texture, font and
+-- key text, memoized on the frame). MSUF Edit Mode moves the frame itself,
+-- so its place is written again on every call while Edit Mode runs.
 function E.Recommendation()
     local state = C.state
     local spell = assistSpell
@@ -42,43 +68,52 @@ function E.Recommendation()
     local frame = recommendation
     if not frame and not show then return end
     if not frame then
-        frame = S.CreateFrame("Frame", nil, UIParent)
-        frame:EnableMouse(false)
-        frame.tex = S.CreateTexture(frame, nil, "ARTWORK")
-        frame.tex:SetAllPoints(frame)
-        frame.tex:SetTexCoord(.08, .92, .08, .92)
-        frame.cd = S.CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
-        frame.cd:SetAllPoints(frame)
-        frame.cd:SetHideCountdownNumbers(true)
-        frame.cd:SetDrawEdge(false)
-        frame.cd:SetDrawBling(false)
-        frame.over = S.CreateFrame("Frame", nil, frame)
-        frame.over:SetAllPoints(frame)
-        frame.over:SetFrameLevel(frame.cd:GetFrameLevel() + 1)
-        frame.key = S.CreateFontString(frame.over, nil, "OVERLAY")
-        frame.key:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
-        frame.badge = S.CreateTexture(frame.over, nil, "BACKGROUND")
-        frame.badge:SetPoint("TOPLEFT", frame.key, "TOPLEFT", -2, 2)
-        frame.badge:SetPoint("BOTTOMRIGHT", frame.key, "BOTTOMRIGHT", 2, -2)
-        frame.badge:SetColorTexture(0, 0, 0, .85)
+        frame = NewRecommendation()
         recommendation = frame
     end
-    frame:SetShown(show)
+    local edge = frame.layShown ~= show
+    if edge then
+        frame.layShown = show
+        frame:SetShown(show)
+    end
     if not show then
-        frame.cd:Clear()
+        if edge then frame.cd:Clear() end
         return
     end
     local size = state.assistIconSize or 48
-    frame:SetSize(size, size)
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", state.assistIconX or 0, state.assistIconY or -180)
-    frame.tex:SetTexture(spell and C_Spell.GetSpellTexture(spell) or K.QUESTION_ICON)
-    S.SetStyledFont(frame.key, state.font, math.max(9, math.floor(size * .26)), state.fontFlags,
-        state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
+    local x, y = state.assistIconX or 0, state.assistIconY or -180
+    if frame.laySize ~= size then
+        frame.laySize = size
+        frame:SetSize(size, size)
+    end
+    if frame.layX ~= x or frame.layY ~= y or S.editMode then
+        frame.layX, frame.layY = x, y
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    end
+    local texture = spell and C_Spell.GetSpellTexture(spell) or K.QUESTION_ICON
+    if frame.layTexture ~= texture then
+        frame.layTexture = texture
+        frame.tex:SetTexture(texture)
+    end
+    local fontSize = math.max(9, math.floor(size * .26))
+    if frame.layFontSize ~= fontSize or frame.layText ~= state.textGen then
+        frame.layFontSize, frame.layText = fontSize, state.textGen
+        S.SetStyledFont(frame.key, state.font, fontSize, state.fontFlags,
+            state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
+    end
     local key = state.assistIconKeybind and spell and C.Keybinds.Text(spell) or ""
-    frame.key:SetText(key)
-    frame.badge:SetShown(key ~= "")
-    E.RecommendationGCD()
+    if frame.layKey ~= key then
+        frame.layKey = key
+        frame.key:SetText(key)
+        frame.badge:SetShown(key ~= "")
+    end
+    -- The GCD swipe follows its own events while shown; it is read here
+    -- when the frame appears or the GCD option changed.
+    if edge or frame.layGCD ~= state.assistIconGCD then
+        frame.layGCD = state.assistIconGCD
+        E.RecommendationGCD()
+    end
 end
 function E.Press(entry)
     local icon = entry.icon
@@ -582,6 +617,7 @@ function E.ReleaseAll()
     Walk(nil, ClearAssist)
     assistSpell = nil
     if recommendation then
+        recommendation.layShown = false
         recommendation:Hide()
         recommendation.cd:Clear()
     end

@@ -2684,6 +2684,37 @@ assert(e12.icon.antsOn and not e11.icon.antsOn)
 combat=false
 Fire("PLAYER_REGEN_ENABLED")
 assert(LiveTickers()==0 and not e12.icon.antsOn,"poll stops after combat")
+-- The assisted icon writes only what changed: a new suggestion (several a
+-- second in combat) swaps its texture, never its size, place or font.
+do
+    cvars.assistedCombatHighlight="1"
+    config.assistIcon=true
+    module:Refresh()
+    Run()
+    local callback=assert(registry["AssistedCombatManager.OnAssistedHighlightSpellChange"])
+    AssistedCombatManager.lastNextCastSpellID=101
+    callback.fn()
+    local frame=assert(C.Effects.RecommendationFrame(),"the assisted icon")
+    assert(frame.shown and frame.tex.tex==1101,"the assisted icon shows the suggestion")
+    local function Layout() return (frame.calls.SetSize or 0)+(frame.calls.SetPoint or 0)+(frame.calls.ClearAllPoints or 0)
+        +(frame.key.calls.SetFont or 0)+(frame.cd.calls.Clear or 0) end
+    local laid,textures=Layout(),frame.tex.calls.SetTexture or 0
+    for i=1,10 do
+        AssistedCombatManager.lastNextCastSpellID=i%2==1 and 102 or 101
+        callback.fn()
+    end
+    assert(Layout()==laid,"a new suggestion laid the assisted icon out again")
+    assert((frame.tex.calls.SetTexture or 0)==textures+10 and frame.tex.tex==1101,"a new suggestion did not swap the texture")
+    config.assistIconSize=60
+    module:Refresh()
+    assert(Layout()>laid and frame.w==60,"a size change did not lay the icon out")
+    config.assistIconSize=48
+    config.assistIcon=false
+    cvars.assistedCombatHighlight="0"
+    module:Refresh()
+    Run()
+    assert(not frame.shown,"the assisted icon stayed shown")
+end
 
 ------------------------------------------------------------------ invisible mode and MSUF promotion
 config.blizzard=2
