@@ -25,9 +25,20 @@ local TEXT = {
 }
 
 local function ContentTop(c) return -max(29, c.fontSize + 17) end
-local function RowHeight(c) return c.fontSize + c.barHeight + 7 + c.rowGap end
+local function BarHeight(c, kind)
+    local height = c[kind .. "Height"]
+    return height and height > 0 and height or c.barHeight
+end
+local function RowHeight(c, kind)
+    local height = BarHeight(c, kind or "vigor")
+    if kind == "vigor" and c.vigorDisplay == 2 then height = 45 * (c.gemScale or 100) / 100 end
+    return c.fontSize + height + 7 + c.rowGap
+end
+local function SurgeSize(c)
+    return c.surgeAutoSize ~= false and BarHeight(c, "vigor") * 2.8 or (c.surgeSize or 28)
+end
 local function SurgeLane(c)
-    return c.showWhirlingSurge and max(48, c.fontSize * 3 + 14) or 0
+    return c.showWhirlingSurge and max(48, SurgeSize(c) + 12, c.fontSize * 3 + 14) or 0
 end
 local function ContentWidth(c)
     return c.width - PADDING * 2 - SurgeLane(c)
@@ -228,19 +239,37 @@ local function Style(self)
     end
 end
 
-local function LayoutRow(row, width, y, count, c)
+local function LayoutRow(row, width, y, count, c, kind)
+    kind = kind or (row.spellID == ASCENT and "vigor" or "wind")
     row:ClearAllPoints()
     row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", PADDING, y)
-    row:SetSize(width, RowHeight(c))
+    row:SetSize(width, RowHeight(c, kind))
     row.label:SetSize(width - 50, c.fontSize + 2)
     row.count:SetSize(48, c.fontSize + 2)
     local gap = 3
     local cellWidth = (width - gap * (count - 1)) / count
     for i, pip in ipairs(row.pips) do
         pip:ClearAllPoints()
+        local gems = kind == "vigor" and c.vigorDisplay == 2
+        pip:SetShown(i <= count and not gems)
+        if gems then
+            if not pip.gem then
+                pip.gem = S.CreateFrame("Frame", nil, row)
+                pip.gem.background = S.CreateTexture(pip.gem, nil, "BACKGROUND")
+                pip.gem.background:SetAllPoints(); pip.gem.background:SetAtlas("dragonriding_vigor_background")
+                pip.gem.fill = S.CreateTexture(pip.gem, nil, "ARTWORK")
+                pip.gem.fill:SetAllPoints()
+                pip.gem.border = S.CreateTexture(pip.gem, nil, "OVERLAY")
+                pip.gem.border:SetAllPoints(); pip.gem.border:SetAtlas("dragonriding_vigor_frame")
+            end
+            local scale = (c.gemScale or 100) / 100
+            pip.gem:ClearAllPoints()
+            pip.gem:SetSize(42 * scale, 45 * scale)
+            pip.gem:SetPoint("TOP", row, "TOPLEFT", (i - .5) * (width / count), -(c.fontSize + 5))
+        end
+        if pip.gem then pip.gem:SetShown(gems and i <= count) end
         pip:SetPoint("TOPLEFT", row, "TOPLEFT", (i - 1) * (cellWidth + gap), -(c.fontSize + 5))
-        pip:SetSize(cellWidth, c.barHeight)
-        pip:SetShown(i <= count)
+        pip:SetSize(cellWidth, BarHeight(c, kind))
     end
 end
 
@@ -252,7 +281,9 @@ local function LayoutSpeed(self, contentWidth, y)
     if not shown then return end
     self.speed:ClearAllPoints()
     self.speed:SetPoint("TOPLEFT", self.host, "TOPLEFT", PADDING, y - c.fontSize - 6)
-    self.speed:SetSize(contentWidth, c.barHeight)
+    self.speed:SetSize(contentWidth, BarHeight(c, "speed"))
+    self.speedValue:ClearAllPoints()
+    self.speedValue:SetPoint("BOTTOMRIGHT", self.speed, "TOPRIGHT", c.speedTextX or 0, 3 + (c.speedTextY or 0))
     self.speedText:SetSize(contentWidth - 70, c.fontSize + 2)
     self.speedValue:SetSize(68, c.fontSize + 2)
 end
@@ -261,12 +292,12 @@ local function Layout(self)
     Create(self)
     local c, host = self.config, self.host
     local point = POINTS[c.point] or "CENTER"
-    local contentTop, rowHeight = ContentTop(c), RowHeight(c)
-    local surgeHeight = max(49, c.fontSize + 38)
+    local contentTop = ContentTop(c)
+    local surgeHeight = max(49, c.fontSize + SurgeSize(c) + 10)
     local y = contentTop
-    if c.showSecondWind then y = y - rowHeight end
-    if c.showVigor then y = y - rowHeight end
-    if c.showSpeed then y = y - rowHeight end
+    if c.showSecondWind then y = y - RowHeight(c, "wind") end
+    if c.showVigor then y = y - RowHeight(c, "vigor") end
+    if c.showSpeed then y = y - RowHeight(c, "speed") end
     local height = max(-y + 10, c.showWhirlingSurge and (-contentTop + surgeHeight + 10) or 0)
     local contentWidth = ContentWidth(c)
     host:SetScale(c.scale / 100)
@@ -290,12 +321,12 @@ local function Layout(self)
     self.wind:SetShown(c.showSecondWind)
     if c.showSecondWind then
         LayoutRow(self.wind, contentWidth, y, self.windCount or 3, c)
-        y = y - rowHeight
+        y = y - RowHeight(c, "wind")
     end
     self.vigor:SetShown(c.showVigor)
     if c.showVigor then
         LayoutRow(self.vigor, contentWidth, y, self.vigorCount or 6, c)
-        y = y - rowHeight
+        y = y - RowHeight(c, "vigor")
     end
     LayoutSpeed(self, contentWidth, y)
     self.surge:SetShown(c.showWhirlingSurge)
@@ -303,10 +334,29 @@ local function Layout(self)
     self.surge:SetPoint("TOPRIGHT", host, "TOPRIGHT", -PADDING, contentTop)
     self.surge:SetSize(SurgeLane(c) - 8, surgeHeight)
     self.surgeLabel:SetSize(SurgeLane(c) - 8, c.fontSize + 2)
+    self.surgeIcon:SetSize(SurgeSize(c), SurgeSize(c))
+    self.surgeTrack:SetSize(SurgeSize(c) + 4, SurgeSize(c) + 4)
     Style(self)
 end
 
+-- The flight tick runs at 10 Hz; like the bar pips, gems write only what changed.
 local function SetPip(pip, value, alpha)
+    local gem = pip.gem
+    if gem and gem:IsShown() then
+        if gem.shownAlpha ~= alpha then
+            gem.shownAlpha = alpha
+            gem:SetAlpha(alpha)
+        end
+        local full = value >= 1
+        if gem.full ~= full then
+            gem.full = full
+            gem.fill:SetAtlas(full and "dragonriding_vigor_fillfull" or "dragonriding_vigor_fill")
+        end
+        if gem.shownValue ~= value then
+            gem.shownValue = value
+            gem.fill:SetAlpha(value)
+        end
+    end
     if pip.shownValue ~= value then
         pip.shownValue = value
         pip:SetValue(value)
@@ -344,7 +394,7 @@ local function DrawRow(self, row, preview, maxPips, now)
         local c = self.config
         local top = ContentTop(c)
         LayoutRow(row, ContentWidth(c), row == self.wind and top
-            or (c.showSecondWind and top - RowHeight(c) or top), count, c)
+            or (c.showSecondWind and top - RowHeight(c, "wind") or top), count, c)
     end
     local alpha = current and 1 or 0.35
     for i = 1, count do
@@ -473,7 +523,14 @@ end
 -- Spell events only invalidate caches while the tick runs: the next tick
 -- (at most 0.1 s later) draws them.
 function M.ChargesChanged()
+    local previous = M.vigor.current
     M.vigor.dirty, M.wind.dirty = true, true
+    if M.config.chargeSound and M.watchCharges and not S.editMode then
+        ReadCharges(M.vigor)
+        if Finite(previous) and Finite(M.vigor.current) and M.vigor.current > previous then
+            PlaySound(SOUNDKIT.UI_DRAGONRIDING_FULL_NODE, "Master")
+        end
+    end
     if not M.ticking then Update(M) end
 end
 
@@ -521,17 +578,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "scale", "barHeight" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 220, max = 600, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "barHeight", label = "Bar H", kind = "number", min = 6, max = 18, step = 1,
-                get = function() return S.Config(ID).barHeight end,
-                set = function(value) return S.Set(ID, "barHeight", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "width", "barHeight", "scale" },
     })
 end
 

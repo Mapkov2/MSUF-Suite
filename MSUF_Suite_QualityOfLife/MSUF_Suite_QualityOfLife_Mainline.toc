@@ -9,6 +9,10 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
+SlashCommands.lua
+CharacterPanel.lua
+TooltipLines.lua
+MerchantWatch.lua
 Merchant.lua
 TrainerLearnAll.lua
 CharacterUpgradeWindow.lua
@@ -45,6 +49,9 @@ GroupBloodlust.lua
 CursorEffects.lua
 MapLandingShortcuts.lua
 CombatStatsHUD.lua
+EnemyCastStack.lua
+TargetDistance.lua
+DungeonPortals.lua
 CombatPetStatus.lua
 CombatMovementCue.lua
 BurningRushCue.lua
@@ -60,3 +67,10 @@ InnervateCue.lua
 DurabilityAlert.lua
 BattleRes.lua
 Skyriding.lua
+ThreatMeter.lua
+FlightTimer.lua
+CharacterExtras.lua
+MerchantList.lua
+TooltipDetails.lua
+PopupAttention.lua
+PartyEffects.lua

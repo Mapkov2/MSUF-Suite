@@ -22,9 +22,8 @@ local function ParseIDs(value)
 end
 
 local function MerchantOpen(self)
-    local frame = _G.MerchantFrame
-    return self.active and frame and not NS.Safety.IsForbidden(frame)
-        and frame:IsShown() and frame.selectedTab == 1 and not NS.IsCombatLocked()
+    return self.active and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1
+        and not NS.IsCombatLocked()
 end
 
 local function ItemGUID(bag, slot)
@@ -74,7 +73,9 @@ local function Candidates(self)
 end
 
 local function Sell(self, preview)
-    if not MerchantOpen(self) or type(preview) ~= "table" then return end
+    -- Another item window open beside the merchant would change what using
+    -- an item does; the sale then stays manual.
+    if not MerchantOpen(self) or type(preview) ~= "table" or S.QoLItemUseWindow("MerchantFrame") then return end
     local cursorItem = CursorHasItem()
     if not S.Public(cursorItem) or cursorItem then return end
     local sold, rejected = 0, false
@@ -82,7 +83,7 @@ local function Sell(self, preview)
         local expected = preview[i]
         local current = Eligible(self, expected.bag, expected.slot)
         if current and current.guid == expected.guid and current.id == expected.id then
-            if not pcall(C_Container.UseContainerItem, current.bag, current.slot) then
+            if not S.QoLRestrictedCall(C_Container.UseContainerItem, current.bag, current.slot) then
                 rejected = true
                 break
             end
@@ -129,8 +130,7 @@ end
 
 local function EnsureButton(self)
     if self.button or NS.IsCombatLocked() then return end
-    local merchant = _G.MerchantFrame
-    if not merchant or NS.Safety.IsForbidden(merchant) then return end
+    local merchant = MerchantFrame
     local button = S.CreateFrame("Button", nil, merchant, "UIPanelButtonTemplate")
     button:SetSize(140, 22)
     -- upstream/live MerchantFrame.xml leaves this gap below the final item
@@ -149,9 +149,7 @@ function M:UpdateButton()
         if self.button then self.button:Hide() end
         return
     end
-    local merchant = _G.MerchantFrame
-    if not merchant or NS.Safety.IsForbidden(merchant)
-        or not merchant:IsShown() or merchant.selectedTab ~= 1 then
+    if not MerchantFrame:IsShown() or MerchantFrame.selectedTab ~= 1 then
         if self.button then self.button:Hide() end
         return
     end
@@ -168,7 +166,11 @@ function M:UpdateButton()
     EnsureButton(self)
     if not self.button then return end
     local count = #Candidates(self)
-    self.button:SetText(S.Text("Sell marked items") .. (count > 0 and " (" .. count .. ")" or ""))
+    if count > 0 then
+        self.button:SetText(string.format(S.Text("Sell marked items (%d)"), count))
+    else
+        self.button:SetText(S.Text("Sell marked items"))
+    end
     self.button:SetEnabled(count > 0)
     self.button:Show()
 end
@@ -198,8 +200,7 @@ function M:Refresh()
     EnsurePopup()
     self.context:Event("MERCHANT_SHOW", MerchantEvent)
     self.context:Event("MERCHANT_CLOSED", MerchantEvent)
-    if _G.MerchantFrame and not NS.Safety.IsForbidden(_G.MerchantFrame)
-        and _G.MerchantFrame:IsShown() then
+    if MerchantFrame:IsShown() then
         self.context:Event("BAG_UPDATE_DELAYED", M.UpdateButton)
     end
     self:UpdateButton()

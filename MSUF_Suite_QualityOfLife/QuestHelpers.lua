@@ -9,7 +9,7 @@ local function QuestFrequency(self, id, info)
         local selected = self.selectedQuestInfo
         if selected and selected.questID == id then info = selected end
     end
-    if not info and C_QuestLog.GetLogIndexForQuestID and C_QuestLog.GetInfo then
+    if not info then
         local index = C_QuestLog.GetLogIndexForQuestID(id)
         if not Public(index) then return nil end
         if type(index) == "number" and index > 0 then info = C_QuestLog.GetInfo(index) end
@@ -29,7 +29,7 @@ local function Allowed(self, id, info)
     if c.skipTrivial then
         local trivial = info and info.isTrivial
         if not Public(trivial) then return false end
-        if trivial == nil and C_QuestLog.IsQuestTrivial then trivial = C_QuestLog.IsQuestTrivial(id) end
+        if trivial == nil then trivial = C_QuestLog.IsQuestTrivial(id) end
         if not Public(trivial) or type(trivial) ~= "boolean" or trivial then return false end
     end
     if c.skipDaily or c.skipWeekly then

@@ -99,9 +99,8 @@ local function StartedMoving(self)
     if self.lastChecked and now - self.lastChecked < CHECK_INTERVAL then return end
     self.lastChecked = now
     for i = 1, #self.ids do
-        local id = self.ids[i]
-        local ok, name, icon = pcall(Ready, id)
-        if ok and name then Show(self, name, icon, now) return end
+        local name, icon = Ready(self.ids[i])
+        if name then Show(self, name, icon, now) return end
     end
 end
 
@@ -151,11 +150,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return NS.AnchorPoints[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "scale" },
-        extraControls = {
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "scale" },
     })
 end
 

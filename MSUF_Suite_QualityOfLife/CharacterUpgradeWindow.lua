@@ -1,43 +1,19 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 
+-- Opens the character window beside an item upgrade merchant. Blizzard places
+-- the pushable CharacterFrame next to the non-pushable ItemUpgradeFrame
+-- (UIPanelWindows); CharacterPanel.lua owns the opening and closing.
 local M = {}
 
-local function SafeShown(frame)
-    return frame and not NS.Safety.IsForbidden(frame) and frame:IsShown()
-end
-
-local function CloseCharacter(self)
-    if not self.openedCharacter then return end
-    local character = _G.CharacterFrame
-    if not SafeShown(character) then
-        self.openedCharacter = nil
-        self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-        return
-    end
-    if NS.IsCombatLocked() and character:IsProtected() then
-        self.context:Event("PLAYER_REGEN_ENABLED", CloseCharacter)
-        return
-    end
-    self.openedCharacter = nil
-    self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    pcall(HideUIPanel, character)
-end
-
 local function OpenCharacter(self)
-    if not self.active or self.openedCharacter or type(ToggleCharacter) ~= "function" then return end
-    local upgrade, character = _G.ItemUpgradeFrame, _G.CharacterFrame
-    if not SafeShown(upgrade) or not character or NS.Safety.IsForbidden(character)
-        or character:IsShown() then return end
+    if not self.active or not ItemUpgradeFrame:IsShown() then return end
     if NS.IsCombatLocked() then
         self.context:Event("PLAYER_REGEN_ENABLED", OpenCharacter)
         return
     end
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    -- CharacterFrame is a pushable native panel. WoW decides its placement
-    -- beside the non-pushable ItemUpgradeFrame (upstream/live UIPanelWindows).
-    if not pcall(ToggleCharacter, "PaperDollFrame", true) then return end
-    if SafeShown(upgrade) and SafeShown(character) then self.openedCharacter = true end
+    S.OpenCharacterFor(self)
 end
 
 local function UpgradeShown()
@@ -45,29 +21,20 @@ local function UpgradeShown()
 end
 
 local function UpgradeHidden()
-    if not M.openedCharacter then M.context:RemoveEvent("PLAYER_REGEN_ENABLED") end
-    CloseCharacter(M)
-end
-
-local function CharacterHidden()
-    M.openedCharacter = nil
+    if not M.active then return end
     M.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    S.CloseCharacterFor(M)
 end
 
+-- Blizzard_ItemUpgradeUI loads on demand; script hooks cannot be removed.
 local function InstallHooks(self)
-    if self.hooked then
-        if SafeShown(_G.ItemUpgradeFrame) then OpenCharacter(self) end
-        return
+    if not self.hooked then
+        ItemUpgradeFrame:HookScript("OnShow", UpgradeShown)
+        ItemUpgradeFrame:HookScript("OnHide", UpgradeHidden)
+        self.hooked = true
     end
-    local upgrade, character = _G.ItemUpgradeFrame, _G.CharacterFrame
-    if not upgrade or NS.Safety.IsForbidden(upgrade)
-        or not character or NS.Safety.IsForbidden(character) then return end
-    upgrade:HookScript("OnShow", UpgradeShown)
-    upgrade:HookScript("OnHide", UpgradeHidden)
-    character:HookScript("OnHide", CharacterHidden)
-    self.hooked = true
     self.context:RemoveEvent("ADDON_LOADED")
-    if upgrade:IsShown() then OpenCharacter(self) end
+    OpenCharacter(self)
 end
 
 local function AddonLoaded(self, _, addon)
@@ -75,18 +42,19 @@ local function AddonLoaded(self, _, addon)
 end
 
 function M:Enable()
-    InstallHooks(self)
-    if not self.hooked then self.context:Event("ADDON_LOADED", AddonLoaded) end
+    if _G.ItemUpgradeFrame then
+        InstallHooks(self)
+    else
+        self.context:Event("ADDON_LOADED", AddonLoaded)
+    end
 end
 
-function M:Refresh()
-    if self.active then self:Enable() end
-end
+function M:Refresh() end
 
 function M:Disable()
     self.context:RemoveEvent("ADDON_LOADED")
-    if not self.openedCharacter then self.context:RemoveEvent("PLAYER_REGEN_ENABLED") end
-    CloseCharacter(self)
+    self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    S.CloseCharacterFor(self)
 end
 
 S.Install("characterUpgradeWindow", M)

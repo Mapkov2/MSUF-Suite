@@ -5,7 +5,7 @@ local POINTS = NS.AnchorPoints
 local M = { generation = 0 }
 
 local function EncounterActive()
-    local active = IsEncounterInProgress()
+    local active = C_InstanceEncounter.IsEncounterInProgress()
     return S.Public(active) and active == true
 end
 
@@ -222,17 +222,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "height", "scale" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 146, max = 350, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "height", label = "Height", kind = "number", min = 44, max = 80, step = 1,
-                get = function() return S.Config(ID).height end,
-                set = function(value) return S.Set(ID, "height", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "width", "height", "scale" },
     })
 end
 

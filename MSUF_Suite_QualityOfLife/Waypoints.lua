@@ -2,20 +2,7 @@ local _, P = ...
 local S = P.Suite
 
 local M = {}
-local COMMAND = "MSUFSUITEWAY"
-
-local function AliasInUse(alias)
-    if type(SlashCmdList) ~= "table" then return true end
-    for key, callback in pairs(SlashCmdList) do
-        if key ~= COMMAND and type(callback) == "function" then
-            for index = 1, 12 do
-                local value = _G["SLASH_" .. key .. index]
-                if type(value) == "string" and value:lower() == alias then return true end
-            end
-        end
-    end
-    return false
-end
+local COMMAND, ALIAS = "MSUFSUITEWAY", "/way"
 
 local function Coordinates(message)
     if not S.PublicText(message) then return nil end
@@ -31,6 +18,10 @@ local function Coordinates(message)
     return nil
 end
 
+local function Refuse()
+    S.Print(S.Text("A waypoint cannot be set on this map"))
+end
+
 local function Place(message)
     if not M.active then return end
     local mapID, x, y = Coordinates(message)
@@ -38,55 +29,42 @@ local function Place(message)
         S.Print(S.Text("Usage: /way x y or /way mapID x y"))
         return
     end
-    local map = _G.WorldMapFrame
-    local mapShown = map and map:IsShown()
-    if not S.Public(mapShown) then mapShown = false end
+    local mapShown = WorldMapFrame:IsShown()
     if not mapID then
-        mapID = mapShown and map:GetMapID()
-            or C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
+        mapID = mapShown and WorldMapFrame:GetMapID() or C_Map.GetBestMapForUnit("player")
     end
-    if not S.Finite(mapID) or not C_Map or not C_Map.CanSetUserWaypointOnMap
-        or not UiMapPoint or not UiMapPoint.CreateFromCoordinates then
-        S.Print(S.Text("A waypoint cannot be set on this map"))
-        return
-    end
+    if not S.Finite(mapID) then return Refuse() end
     local allowed = C_Map.CanSetUserWaypointOnMap(mapID)
-    if not S.Public(allowed) or allowed ~= true then
-        S.Print(S.Text("A waypoint cannot be set on this map"))
-        return
+    if not S.Public(allowed) or allowed ~= true then return Refuse() end
+    local placed = C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(mapID, x / 100, y / 100))
+    if not S.Public(placed) or placed ~= true then return Refuse() end
+    if M.config.superTrack then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
+    if M.config.openMap and not mapShown then ToggleWorldMap() end
+end
+
+-- /way stays with a waypoint addon (TomTom and others) whenever one owns it.
+local function Register()
+    M.aliased = S.SlashAliasFree(ALIAS, COMMAND, Place)
+    if M.aliased then
+        S.RegisterSlash(COMMAND, Place, "/msufway", ALIAS)
+    else
+        S.RegisterSlash(COMMAND, Place, "/msufway")
     end
-    local point = UiMapPoint.CreateFromCoordinates(mapID, x / 100, y / 100)
-    local placed = S.Public(point) and point and C_Map.SetUserWaypoint(point)
-    if not S.Public(placed) or placed ~= true then
-        S.Print(S.Text("A waypoint cannot be set on this map"))
-        return
-    end
-    if M.config.superTrack and C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then
-        C_SuperTrack.SetSuperTrackedUserWaypoint(true)
-    end
-    if M.config.openMap and ToggleWorldMap then
-        if not mapShown then ToggleWorldMap() end
-    end
+end
+
+-- An addon loaded later may register /way; it keeps the alias. Blizzard
+-- loads many addons on demand: only what a new addon can have added is read.
+local function AddonLoaded()
+    if M.aliased and S.SlashAliasNewlyClaimed(ALIAS, COMMAND, Place) then Register() end
 end
 
 function M:Enable()
-    _G["SLASH_" .. COMMAND .. "1"] = "/msufway"
-    _G["SLASH_" .. COMMAND .. "2"] = not AliasInUse("/way") and "/way" or nil
-    SlashCmdList[COMMAND] = Place
+    Register()
+    self.context:Event("ADDON_LOADED", AddonLoaded)
 end
 
-function M:Refresh()
-    if AliasInUse("/way") then
-        _G["SLASH_" .. COMMAND .. "2"] = nil
-    elseif not _G["SLASH_" .. COMMAND .. "2"] then
-        _G["SLASH_" .. COMMAND .. "2"] = "/way"
-    end
-end
+function M:Refresh() Register() end
 
-function M:Disable()
-    SlashCmdList[COMMAND] = nil
-    _G["SLASH_" .. COMMAND .. "1"] = nil
-    _G["SLASH_" .. COMMAND .. "2"] = nil
-end
+function M:Disable() S.UnregisterSlash(COMMAND, Place) end
 
 S.Install("waypoints", M)

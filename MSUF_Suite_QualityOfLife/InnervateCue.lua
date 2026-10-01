@@ -72,13 +72,11 @@ local function Place(self)
     self.host:SetPoint(point, UIParent, point, c.x, c.y)
 end
 
+-- Dungeons, scenarios, battlegrounds and arenas share the group switch.
+local ZONE_KEYS = { world = "openWorld", party = "party", pvp = "party", raid = "raid" }
 local function ZoneAllowed(c)
-    local inInstance, kind = IsInInstance()
-    if not S.Public(inInstance) or not S.Public(kind) then return false end
-    if not inInstance then return c.openWorld end
-    if kind == "raid" then return c.raid end
-    if kind == "party" or kind == "scenario" or kind == "pvp" or kind == "arena" then return c.party end
-    return false
+    local key = ZONE_KEYS[S.InstanceKind() or ""]
+    return key ~= nil and c[key] == true
 end
 
 -- A secret cooldown is unknown. The observed-cast window suppresses only
@@ -153,9 +151,9 @@ end
 
 local function Show(self, sender)
     Cancel(self, "hideTimer")
-    self.title:SetText("Innervate whisper cue")
+    self.title:SetText(S.Text("Innervate whisper cue"))
     local readable = S.PublicText(sender)
-    self.subtitle:SetText(readable and (readable .. " whispered") or "Incoming whisper")
+    self.subtitle:SetText(readable and S.Text("%s whispered"):format(readable) or S.Text("Incoming whisper"))
     self.host:Show()
     local frame = self.glowAnchor
     if frame and self.config.highlightTarget and frame.IsVisible then
@@ -221,8 +219,8 @@ end
 local function Preview(self)
     if S.editMode and not NS.IsCombatLocked() then
         Cancel(self, "hideTimer")
-        self.title:SetText("Innervate whisper cue")
-        self.subtitle:SetText("Incoming whisper")
+        self.title:SetText(S.Text("Innervate whisper cue"))
+        self.subtitle:SetText(S.Text("Incoming whisper"))
         self.host:Show()
     else
         Hide(self)
@@ -272,17 +270,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "height", "scale" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 180, max = 500, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "height", label = "Height", kind = "number", min = 44, max = 90, step = 1,
-                get = function() return S.Config(ID).height end,
-                set = function(value) return S.Set(ID, "height", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "width", "height", "scale" },
     })
 end
 

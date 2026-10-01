@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 
 local ID = "merchantLevel"
 local M = { labels = {}, requested = {} }
@@ -42,50 +42,40 @@ local function ItemLoaded(self, _, itemID)
     self.paintTimer = timer
 end
 
+-- Asks the client once per merchant visit for an item's data; true while
+-- the answer is still outstanding.
+local function Request(self, itemID)
+    if not S.Finite(itemID) or itemID <= 0 then return false end
+    if not self.requested[itemID] then
+        self.requested[itemID] = true
+        C_Item.RequestLoadItemDataByID(itemID)
+    end
+    return self.requested[itemID] == true
+end
+
 function M:Paint()
     CancelPaint(self)
-    local frame = _G.MerchantFrame
-    if not self.active or not self.open or not frame or NS.Safety.IsForbidden(frame)
-        or not frame:IsShown() or frame.selectedTab ~= 1 then
+    local frame = MerchantFrame
+    if not self.active or not self.open or not frame:IsShown() or frame.selectedTab ~= 1 then
         Hide(self)
         return
     end
     local count, page = GetMerchantNumItems(), frame.page
     if not S.Finite(count) or not S.Finite(page) then Hide(self) return end
     local perPage = MERCHANT_ITEMS_PER_PAGE
-    if not S.Finite(perPage) or perPage < 1 then perPage = 10 end
-    perPage = math.min(perPage, 20)
     local waiting = false
     for slot = 1, perPage do
-        local button = _G["MerchantItem" .. slot .. "ItemButton"]
-        local label = self.labels[slot]
         local index = (page - 1) * perPage + slot
-        if index <= count and button and not NS.Safety.IsForbidden(button) then
-            local link = S.PublicText(GetMerchantItemLink(index))
-            if link then
-                local equippable = C_Item.IsEquippableItem(link)
-                if S.Public(equippable) and equippable == true then
-                    local level = C_Item.GetDetailedItemLevelInfo(link)
-                    if S.Finite(level) and level > 0 then
-                        Label(self, slot, button):SetText(math.floor(level))
-                        self.labels[slot]:Show()
-                    else
-                        if label then label:Hide() end
-                        local itemID = GetMerchantItemID(index)
-                        if S.Finite(itemID) and itemID > 0 and not self.requested[itemID] then
-                            self.requested[itemID] = true
-                            C_Item.RequestLoadItemDataByID(itemID)
-                        end
-                        if S.Finite(itemID) and self.requested[itemID] == true then waiting = true end
-                    end
-                elseif label then
-                    label:Hide()
-                end
-            elseif label then
-                label:Hide()
-            end
-        elseif label then
-            label:Hide()
+        local link = index <= count and S.PublicText(GetMerchantItemLink(index))
+        local level = link and S.MerchantOfferLevel(link)
+        local label = self.labels[slot]
+        if level then
+            label = Label(self, slot, _G["MerchantItem" .. slot .. "ItemButton"])
+            label:SetText(level)
+            label:Show()
+        else
+            if label then label:Hide() end
+            if level == false and Request(self, GetMerchantItemID(index)) then waiting = true end
         end
     end
     if waiting then
@@ -95,15 +85,8 @@ function M:Paint()
     end
 end
 
-local function Updated()
-    if M.active and M.open then M:Paint() end
-end
-
-local function EnsureHook(self)
-    if self.hooked or type(_G.MerchantFrame_Update) ~= "function" then return end
-    hooksecurefunc("MerchantFrame_Update", Updated)
-    self.hooked = true
-    self.context:RemoveEvent("ADDON_LOADED")
+local function Updated(self)
+    if self.open then self:Paint() end
 end
 
 local function OnMerchant(self, event)
@@ -116,26 +99,18 @@ local function OnMerchant(self, event)
         return
     end
     self.open = true
-    EnsureHook(self)
     self:Paint()
 end
 
-local function OnAddon(self, _, addon)
-    if addon == "Blizzard_UIPanels_Game" then EnsureHook(self) end
-end
-
+-- The merchant list shows these levels on its own rows.
 function M:Enable()
-    self.open = false
+    self.open = MerchantFrame:IsShown()
     self.requested = {}
     self.context:Event("MERCHANT_SHOW", OnMerchant)
     self.context:Event("MERCHANT_CLOSED", OnMerchant)
-    EnsureHook(self)
-    if not self.hooked then self.context:Event("ADDON_LOADED", OnAddon) end
-    local frame = _G.MerchantFrame
-    if frame and not NS.Safety.IsForbidden(frame) and frame:IsShown() then
-        self.open = true
-        self:Paint()
-    end
+    S.WatchMerchant(self, Updated)
+    if self.open then self:Paint() end
+    S.RepaintMerchant()
 end
 
 function M:Refresh()
@@ -147,6 +122,8 @@ function M:Disable()
     CancelPaint(self)
     self.requested = {}
     Hide(self)
+    S.UnwatchMerchant(self)
+    S.RepaintMerchant()
 end
 
 S.Install(ID, M)

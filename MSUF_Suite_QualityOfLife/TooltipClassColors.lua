@@ -1,32 +1,23 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 
+-- Recolors a player's name after Blizzard built the unit tooltip: the text
+-- of the name line takes the class color; Blizzard's line data stays as
+-- Blizzard wrote it (TooltipLines.lua).
 local M = {}
 
-local function ColorUnitName(tooltip, line)
-    if not M.active or tooltip ~= _G.GameTooltip or NS.Safety.IsForbidden(tooltip)
-        or not S.Public(line) or type(line) ~= "table" then return end
-
-    -- Blizzard supplies the original unit token on this one name line. Its
-    -- own line pre-call has already chosen the relationship color; replace it
-    -- only for publicly identifiable players, before the line is rendered.
-    local unit = S.PublicText(line.unitToken)
-    if not unit then return end
+local function ColorName(_, data)
+    local unit, name = S.TooltipLines.UnitName(data)
+    if not name then return end
     local player = UnitIsPlayer(unit)
     if not S.Public(player) or player ~= true then return end
     local _, class = UnitClass(unit)
     class = S.PublicText(class)
-    if not class then return end
-    local color = RAID_CLASS_COLORS[class]
-    if color then line.leftColor = color end
+    local color = class and RAID_CLASS_COLORS[class]
+    if color then name:SetTextColor(color.r, color.g, color.b) end
 end
 
-function M:Enable()
-    if self.hooked then return end
-    TooltipDataProcessor.AddLinePreCall(Enum.TooltipDataLineType.UnitName, ColorUnitName)
-    self.hooked = true
-end
-
+function M:Enable() S.TooltipLines.Add(self, "Unit", ColorName) end
 function M:Refresh() end
 function M:Disable() end
 

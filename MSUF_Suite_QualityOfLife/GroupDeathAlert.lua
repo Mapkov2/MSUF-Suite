@@ -23,13 +23,28 @@ local function OnHealth(self, _, unit)
     self.dead[unit] = dead
     if dead and before == false then
         local name = S.PublicText(UnitName(unit))
-        if name then S.Print(string.format(S.Text("%s died"), name)) end
+        if name then
+            local message = string.format(S.Text("%s died"), name)
+            if self.config.chat ~= false then S.Print(message) end
+            if self.config.screen then
+                RaidWarningUtil.AddMessage(message, ChatTypeInfo.RAID_WARNING)
+            end
+            if self.config.sound then
+                local now = GetTime()
+                -- Several simultaneous deaths are one audible notice, not a
+                -- stack of overlapping sounds. No timer runs between deaths.
+                if S.Finite(now) and (not self.lastSoundAt or now - self.lastSoundAt >= 1) then
+                    self.lastSoundAt = now
+                    PlaySound(SOUNDKIT.RAID_WARNING, "Master")
+                end
+            end
+        end
     end
 end
 
 local function Sync(self, event)
     StopWatching(self)
-    if event ~= "PLAYER_REGEN_DISABLED" and not NS.IsCombatLocked() then return end
+    if not NS.InCombat(event) then return end
     local grouped, raid = IsInGroup(), IsInRaid()
     if not S.Public(grouped) or grouped ~= true or not S.Public(raid) then return end
     local units = raid and RAID or PARTY

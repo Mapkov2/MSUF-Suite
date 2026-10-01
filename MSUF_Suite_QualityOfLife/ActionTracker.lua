@@ -55,6 +55,9 @@ local function Create(self)
     host:SetFrameStrata("MEDIUM")
     host:EnableMouse(false)
     self.host, self.rows = host, {}
+    self.header = S.CreateFontString(host, nil, "OVERLAY")
+    self.header:SetJustifyH("LEFT")
+    self.header:SetWordWrap(false)
     for index = 1, MAX_ROWS do self.rows[index] = NewRow(host) end
     host:Hide()
 end
@@ -63,15 +66,27 @@ local function Layout(self)
     local c = self.config
     local iconsOnly = c.displayPreset == 2
     local width = iconsOnly and c.rowHeight or c.width
-    local height = c.rows * c.rowHeight + (c.rows - 1) * c.rowGap
+    local growth = c.growth or 1
+    local horizontal = growth == 3 or growth == 4
+    local headerHeight = c.showHeader and not iconsOnly and (c.fontSize + 10) or 0
+    local totalWidth = horizontal and c.rows * width + (c.rows - 1) * c.rowGap or width
+    local height = horizontal and c.rowHeight or c.rows * c.rowHeight + (c.rows - 1) * c.rowGap
     local point = POINTS[c.point] or "CENTER"
-    self.host:SetSize(width, height)
+    self.host:SetSize(totalWidth, height + headerHeight)
+    self.header:ClearAllPoints()
+    self.header:SetPoint("TOPLEFT", self.host, "TOPLEFT", 4, -2)
+    self.header:SetSize(totalWidth - 8, headerHeight)
+    self.header:SetShown(headerHeight > 0)
     self.host:SetScale(c.scale / 100)
     self.host:ClearAllPoints()
     self.host:SetPoint(point, UIParent, point, c.x, c.y)
     for index, row in ipairs(self.rows) do
         row.frame:ClearAllPoints()
-        row.frame:SetPoint("TOPLEFT", self.host, "TOPLEFT", 0, -(index - 1) * (c.rowHeight + c.rowGap))
+        local offset = (index - 1) * ((horizontal and width or c.rowHeight) + c.rowGap)
+        if growth == 2 then row.frame:SetPoint("BOTTOMLEFT", self.host, "BOTTOMLEFT", 0, offset)
+        elseif growth == 3 then row.frame:SetPoint("TOPLEFT", self.host, "TOPLEFT", offset, -headerHeight)
+        elseif growth == 4 then row.frame:SetPoint("TOPRIGHT", self.host, "TOPRIGHT", -offset, -headerHeight)
+        else row.frame:SetPoint("TOPLEFT", self.host, "TOPLEFT", 0, -headerHeight - offset) end
         row.frame:SetSize(width, c.rowHeight)
         local iconSize = c.rowHeight - (iconsOnly and 2 or 4)
         row.icon:ClearAllPoints()
@@ -94,6 +109,9 @@ local function Style(self)
     local ar, ag, ab = S.RGB(c.accentColor)
     local tr, tg, tb = S.RGB(c.textColor)
     local font = S.ResolveFont(c.font) or S.GlobalFontPath()
+    S.SetFont(self.header, font, c.fontSize, "OUTLINE")
+    self.header:SetTextColor(tr, tg, tb)
+    self.header:SetText(S.Text("Recent spells"))
     for _, row in ipairs(self.rows) do
         row.panel:SetColorTexture(pr, pg, pb, c.panelOpacity / 100)
         row.stripe:SetColorTexture(ar, ag, ab, .78)
@@ -124,31 +142,69 @@ local function Paint(self)
             row.frame:Hide()
         end
     end
-    self.host:SetShown(count > 0)
+    self.host:SetShown(count > 0 and (S.editMode or (not self.sessionHidden and self.contextVisible ~= false)))
 end
 
 local function CancelHide(self)
     if self.hideTimer then self.hideTimer:Cancel(); self.hideTimer = nil end
 end
 
+local function ClearHistory(self)
+    for index = #self.history, 1, -1 do self.history[index] = nil end
+    Paint(self)
+end
+
+local function ExpireHistory()
+    if not M.active or M.pausedAt or not M.lastCastAt then return end
+    if GetTime() - M.lastCastAt < M.config.hideAfter then return end
+    M.hideTimer = nil
+    ClearHistory(M)
+end
+
 local function ScheduleHide(self)
     CancelHide(self)
     local delay = self.config.hideAfter
-    if S.editMode or delay == 0 or not self.lastCastAt then return end
+    if S.editMode or delay == 0 or not self.lastCastAt or self.pausedAt then return end
     local remaining = delay - (GetTime() - self.lastCastAt)
-    if remaining <= 0 then
-        self.history = {}
-        Paint(self)
-        return
+    if remaining <= 0 then ClearHistory(self); return end
+    self.hideTimer = C_Timer.NewTimer(remaining, ExpireHistory)
+end
+
+local function PauseChanged(self, event)
+    local now = GetTime()
+    if self.config.pauseInCombat and NS.InCombat(event) then
+        if not self.pausedAt then self.pausedAt = now end
+    elseif self.pausedAt then
+        if self.lastCastAt then self.lastCastAt = self.lastCastAt + now - self.pausedAt end
+        self.pausedAt = nil
     end
-    local timer
-    timer = C_Timer.NewTimer(remaining, function()
-        if not self.active or self.hideTimer ~= timer then return end
-        self.hideTimer = nil
-        self.history = {}
-        Paint(self)
-    end)
-    self.hideTimer = timer
+    ScheduleHide(self)
+end
+
+local function AnimateNewest(self)
+    local mode = self.config.insertAnimation or 1
+    if mode == 1 or S.editMode or self.contextVisible == false then return end
+    local row = self.rows[1]
+    local group
+    if mode == 3 then group = row.pop else group = row.fade end
+    if not group then
+        group = row.frame:CreateAnimationGroup()
+        local alpha = group:CreateAnimation("Alpha")
+        alpha:SetFromAlpha(0)
+        alpha:SetToAlpha(1)
+        alpha:SetDuration(.18)
+        if mode == 3 then
+            local scale = group:CreateAnimation("Scale")
+            scale:SetScaleFrom(.75, .75)
+            scale:SetScaleTo(1, 1)
+            scale:SetOrigin("CENTER", 0, 0)
+            scale:SetDuration(.18)
+            row.pop = group
+        else row.fade = group end
+    end
+    if row.fade then row.fade:Stop() end
+    if row.pop then row.pop:Stop() end
+    group:Play()
 end
 
 local function Cast(self, _, _, _, spellID)
@@ -159,12 +215,58 @@ local function Cast(self, _, _, _, spellID)
     if not S.Public(info) or type(info) ~= "table" then return end
     local name, icon = S.PublicText(info.name), info.iconID
     if not name or not S.Finite(icon) or icon <= 0 then return end
+    if self.contextVisible == false then return end
     local history = self.history
+    local entry = history[MAX_ROWS] or {}
     for index = MAX_ROWS, 2, -1 do history[index] = history[index - 1] end
-    history[1] = { name = name, icon = icon }
+    entry.name, entry.icon = name, icon
+    history[1] = entry
     self.lastCastAt = GetTime()
-    if not S.editMode then Paint(self) end
+    if self.pausedAt then self.pausedAt = self.lastCastAt end
+    if not S.editMode then Paint(self); AnimateNewest(self) end
     ScheduleHide(self)
+end
+
+local function ContextChanged(self)
+    local c = self.config
+    local _, kind = GetInstanceInfo()
+    if not S.Public(kind) then kind = nil end
+    local key
+    -- Delves report the scenario instance type; Blizzard's InstanceDifficulty
+    -- asks C_DelvesUI (present on Retail and Forever).
+    local delve = C_DelvesUI.HasActiveDelve()
+    if S.Public(delve) and delve == true then key = "showDelves"
+    elseif kind == "raid" then key = "showRaids"
+    elseif kind == "party" then key = "showDungeons"
+    elseif kind == "pvp" or kind == "arena" then key = "showPvP"
+    else key = "showWorld" end
+    self.contextVisible = c[key] ~= false
+    if self.contextVisible then self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
+    else self.context:RemoveEvent("UNIT_SPELLCAST_SUCCEEDED") end
+    Paint(self)
+end
+
+local function SyncEvents(self)
+    local c = self.config
+    if c.pauseInCombat then
+        self.context:Event("PLAYER_REGEN_DISABLED", PauseChanged, true)
+        self.context:Event("PLAYER_REGEN_ENABLED", PauseChanged, true)
+    else
+        self.context:RemoveEvent("PLAYER_REGEN_DISABLED")
+        self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    end
+    if c.showDungeons == false or c.showRaids == false or c.showDelves == false
+        or c.showPvP == false or c.showWorld == false then
+        self.context:Event("PLAYER_ENTERING_WORLD", ContextChanged, true)
+        self.context:Event("ZONE_CHANGED_NEW_AREA", ContextChanged, true)
+        ContextChanged(self)
+    else
+        self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
+        self.context:RemoveEvent("ZONE_CHANGED_NEW_AREA")
+        self.contextVisible = true
+        self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
+        Paint(self)
+    end
 end
 
 function M:Enable()
@@ -174,7 +276,8 @@ function M:Enable()
     Layout(self)
     Style(self)
     Paint(self)
-    self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
+    SyncEvents(self)
+    PauseChanged(self)
     self:RegisterMovers()
 end
 
@@ -182,13 +285,18 @@ function M:Refresh()
     Layout(self)
     Style(self)
     Paint(self)
-    ScheduleHide(self)
+    SyncEvents(self)
+    PauseChanged(self)
 end
 
 function M:Disable()
     CancelHide(self)
     self.history = {}
-    self.lastCastAt = nil
+    self.lastCastAt, self.pausedAt = nil, nil
+    for _, row in ipairs(self.rows or {}) do
+        if row.fade then row.fade:Stop() end
+        if row.pop then row.pop:Stop() end
+    end
     if self.host then self.host:Hide() end
 end
 
@@ -199,18 +307,13 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "rowHeight", "scale" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 150, max = 420, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "rowHeight", label = "Row height", kind = "number", min = 24, max = 48, step = 1,
-                get = function() return S.Config(ID).rowHeight end,
-                set = function(value) return S.Set(ID, "rowHeight", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "width", "rowHeight", "scale" },
     })
+end
+
+function S.SetActionTrackerSessionHidden(hidden)
+    M.sessionHidden = hidden == true
+    if M.active then Paint(M) end
 end
 
 S.Install(ID, M)

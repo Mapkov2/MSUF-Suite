@@ -20,6 +20,8 @@ local LOOKS = {
         text = "f4f3eb", muted = "d4dce2", rested = "668db8" },
     [5] = { panel = "101010", track = "191919", border = "333333", accent = "e6ecf2",
         text = "f5f5f5", muted = "bfc4c9", rested = "9eabb8" },
+    [6] = { panel = "101010", track = "191919", border = "333333", accent = "e6ecf2",
+        text = "f5f5f5", muted = "bfc4c9", rested = "8a9daf" },
 }
 local TEXT = {
     experience = S.Text("Experience"),
@@ -90,13 +92,18 @@ local function Compact(value)
     return tostring(floor(value))
 end
 
+-- Blizzard's seconds formatter writes durations in the client's language,
+-- two units at most ("1 h 5 m"); built on first use.
+local durations
 local function Duration(seconds)
     if not Finite(seconds) or seconds < 0 then return "--" end
-    seconds = floor(seconds)
-    if seconds >= 86400 then return ("%dd %dh"):format(floor(seconds / 86400), floor(seconds % 86400 / 3600)) end
-    if seconds >= 3600 then return ("%dh %dm"):format(floor(seconds / 3600), floor(seconds % 3600 / 60)) end
-    if seconds >= 60 then return ("%dm %ds"):format(floor(seconds / 60), seconds % 60) end
-    return ("%ds"):format(seconds)
+    if not durations then
+        durations = C_StringUtil.CreateSecondsFormatter()
+        durations:SetDesiredUnitCount(2)
+        durations:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
+        durations:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+    end
+    return durations:Format(floor(seconds))
 end
 
 local function ValidSession(saved, level, now)
@@ -273,11 +280,30 @@ local function Create(self)
     self.edges, self.detailRule = edges, detailRule
 end
 
+-- The Custom style (4) is built from the bar's own color settings; it keeps
+-- one table, refilled only when those colors change.
+local CUSTOM = 4
+local custom = {}
+local function CustomLook(c)
+    local key = c.customFill .. c.customRested .. c.customPanel .. c.customBorder
+    if custom.key ~= key then
+        custom.key = key
+        custom.panel, custom.track, custom.border = c.customPanel, c.customPanel, c.customBorder
+        custom.accent, custom.rested = c.customFill, c.customRested
+        custom.text, custom.muted = c.customBorder, c.customBorder
+    end
+    return custom
+end
+
 local function ApplyLook(self)
-    local index = LOOKS[self.config.look] and self.config.look or (NS.Client.isForever and 3 or 2)
-    if self.appliedLook == index then return end
-    local look = LOOKS[index]
-    local shared = NS.ChatLookPresets and NS.ChatLookPresets[index]
+    local c = self.config
+    local index = (LOOKS[c.look] or c.look == CUSTOM) and c.look or (NS.Client.isForever and 3 or 2)
+    local classRevision = index == 6 and NS.SuiteLooks and NS.SuiteLooks.classRevision or 0
+    local look = index == CUSTOM and CustomLook(c) or LOOKS[index]
+    local customKey = index == CUSTOM and look.key or nil
+    if self.appliedLook == index and self.appliedClassRevision == classRevision
+        and self.appliedCustom == customKey then return end
+    local shared = index ~= CUSTOM and NS.ChatLookPresets and NS.ChatLookPresets[index]
     local panel = shared and shared.panelColor or look.panel
     local border = shared and shared.borderColor or look.border
     local accent = shared and shared.accentColor or look.accent
@@ -298,6 +324,8 @@ local function ApplyLook(self)
     self.percentText:SetTextColor(textR, textG, textB, 1)
     self.details:SetTextColor(mutedR, mutedG, mutedB, 1)
     self.appliedLook = index
+    self.appliedClassRevision = classRevision
+    self.appliedCustom = customKey
 end
 
 local function ApplyFont(self)
@@ -513,17 +541,7 @@ function M:RegisterMovers()
         quickPosition = true,
         point = function() return POINTS[self.config.point] or "BOTTOM" end,
         historyKeys = { "width", "height", "scale" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 220, max = 800, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "height", label = "Height", kind = "number", min = 8, max = 40, step = 1,
-                get = function() return S.Config(ID).height end,
-                set = function(value) return S.Set(ID, "height", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "width", "height", "scale" },
     })
 end
 

@@ -3,15 +3,30 @@ local NS, S = P.NS, P.Suite
 local M = { dialogs = {} }
 local MODIFIERS = { IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown }
 local MODIFIER_NAMES = { SHIFT_KEY_TEXT, CTRL_KEY_TEXT, ALT_KEY_TEXT }
+-- S.InstanceKind() -> the setting that switches protection on there.
+local ZONE_KEYS = { world = "openWorld", party = "party", raid = "raid", pvp = "pvp" }
 
 -- upstream/live and upstream/forever: Blizzard_StaticPopup_Game/Mainline/
--- GameDialogDefs.lua owns DEATH button 1 and updates its enabled state every
--- frame. Gate visibility only; Blizzard retains falling/encounter/aura locks,
--- self-resurrection, recap and the release callback. No polling is needed.
-local function SetShown(record, shown)
-    record.writing = true
-    record.button:SetShown(shown)
-    record.writing = nil
+-- GameDialogDefs.lua owns DEATH button 1, sets its enabled state every frame
+-- and lays its buttons out. The lock only makes the button transparent and
+-- click-through: no visibility, layout or Lua field of Blizzard's dialog is
+-- written, so its layout and per-frame OnUpdate stay untainted, and falling,
+-- encounter and aura locks, self-resurrection and the recap keep working.
+-- The DEATH dialog has no Enter shortcut (StaticPopup_OnKeyDown).
+local function Lock(record, locked)
+    if record.locked == locked then return end
+    local button = record.button
+    if locked then
+        local alpha, mouse = button:GetAlpha(), button:IsMouseEnabled()
+        record.alpha = S.Public(alpha) and alpha or 1
+        record.mouse = not S.Public(mouse) or mouse ~= false
+        button:SetAlpha(0)
+        button:EnableMouse(false)
+    else
+        button:SetAlpha(record.alpha)
+        button:EnableMouse(record.mouse)
+    end
+    record.locked = locked
 end
 
 local function Release(self)
@@ -20,36 +35,23 @@ local function Release(self)
     self.context:RemoveEvent("MODIFIER_STATE_CHANGED")
     if record then
         record.hint:Hide()
-        SetShown(record, record.nativeShown)
+        Lock(record, false)
     end
 end
 
 local function ZoneAllowed(config)
-    local inInstance, kind = IsInInstance()
-    if not S.Public(inInstance) or not S.Public(kind) then return false end
-    if not inInstance then return config.openWorld end
-    if kind == "raid" then return config.raid end
-    if kind == "party" or kind == "scenario" then return config.party end
-    if kind == "pvp" or kind == "arena" then return config.pvp end
-    return false
+    local key = ZONE_KEYS[S.InstanceKind() or ""]
+    return key ~= nil and config[key] == true
 end
 
 local function UpdateGate(self)
     local record = self.current
     if not record then return end
     local held = MODIFIERS[self.config.modifier]()
-    record.locked = not (S.Public(held) and held == true)
-    SetShown(record, record.nativeShown and not record.locked)
-    record.hint:SetShown(record.nativeShown)
-end
-
--- Remember later native visibility requests while the Suite temporarily hides
--- the button. SetupButtons may run again on the same visible death dialog.
-local function NativeVisibility(record, shown)
-    if record.writing or M.current ~= record or not S.Public(shown) then return end
-    record.nativeShown = shown == true
-    record.hint:SetShown(record.nativeShown)
-    if record.locked and record.nativeShown then SetShown(record, false) end
+    Lock(record, not (S.Public(held) and held == true))
+    -- The hint follows Blizzard's own visibility of the release button.
+    local shown = record.button:IsShown()
+    record.hint:SetShown(S.Public(shown) and shown == true)
 end
 
 local function Dialog(self, popup)
@@ -64,11 +66,8 @@ local function Dialog(self, popup)
     hint:SetTextColor(1, .82, 0)
     hint:SetWordWrap(true)
     hint:Hide()
-    record = { button = button, hint = hint, popup = popup }
+    record = { button = button, hint = hint, popup = popup, locked = false }
     self.dialogs[popup] = record
-    hooksecurefunc(button, "Show", function() NativeVisibility(record, true) end)
-    hooksecurefunc(button, "Hide", function() NativeVisibility(record, false) end)
-    hooksecurefunc(button, "SetShown", function(_, shown) NativeVisibility(record, shown) end)
     popup:HookScript("OnHide", function()
         if self.current == record then Release(self) end
     end)
@@ -82,9 +81,6 @@ local function Sync(self)
     if not record then Release(self); return end
     if self.current ~= record then
         Release(self)
-        local shown = record.button:IsShown()
-        if not S.Public(shown) then return end
-        record.nativeShown = shown == true
         self.current = record
         self.context:Event("MODIFIER_STATE_CHANGED", UpdateGate, true)
     end

@@ -8,13 +8,6 @@ local M = { covered = false, overlays = setmetatable({}, { __mode = "k" }) }
 local COMMAND = "MSUFSUITEGUILDPRIVACY"
 local MAX_CHAT_FRAMES = 64
 
-local function Label(parent, text, size)
-    local label = S.CreateFontString(parent, nil, "ARTWORK")
-    S.SetFont(label, nil, size, "")
-    label:SetText(S.Text(text))
-    return label
-end
-
 local function Affected(frame)
     return frame and not NS.Safety.IsForbidden(frame)
         and (frame:ContainsMessageGroup("GUILD") or frame:ContainsMessageGroup("OFFICER"))
@@ -34,9 +27,9 @@ local function CreateOverlay(frame)
     accent:SetPoint("BOTTOMLEFT")
     accent:SetWidth(2)
     accent:SetColorTexture(.8, .68, .42, 1)
-    local title = Label(overlay, "Guild chat covered", 13)
+    local title = S.QoLLabel(overlay, "Guild chat covered", 13)
     title:SetPoint("CENTER", 0, 10)
-    local hint = Label(overlay, "Whole window hidden. Click to reveal.", 11)
+    local hint = S.QoLLabel(overlay, "Whole window hidden. Click to reveal.", 11)
     hint:SetPoint("TOP", title, "BOTTOM", 0, -5)
     overlay:SetScript("OnClick", function()
         if M.active then
@@ -57,7 +50,7 @@ local function CreateControl(frame)
     local background = S.CreateTexture(button, nil, "BACKGROUND")
     background:SetAllPoints()
     background:SetColorTexture(.1, .12, .14, .95)
-    local label = Label(button, "Guild privacy: OFF", 11)
+    local label = S.QoLLabel(button, "Guild privacy: OFF", 11)
     label:SetPoint("CENTER")
     button.label = label
     button:SetScript("OnClick", function()
@@ -78,7 +71,6 @@ function M:Sync()
         S.Queue("guildChatPrivacy")
         return
     end
-    if not _G.ChatFrame1 or type(_G.CHAT_FRAMES) ~= "table" then return end
     self.control = self.control or CreateControl(ChatFrame1)
     self.control.label:SetText(S.Text(self.covered and "Guild privacy: ON" or "Guild privacy: OFF"))
     self.control:Show()
@@ -117,17 +109,15 @@ local function NewWindow()
 end
 
 function M:Enable()
-    _G["SLASH_" .. COMMAND .. "1"] = "/msufguildprivacy"
-    SlashCmdList[COMMAND] = Toggle
+    S.RegisterSlash(COMMAND, Toggle, "/msufguildprivacy")
     self.context:Event("UPDATE_CHAT_WINDOWS", ChatChanged)
     self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", ChatChanged)
+    -- Blizzard calls both window openers by name (FloatingChatFrame.lua,
+    -- ChatFrameUtil.lua, UnitPopupSharedButtonMixins.lua).
     if not self.hooked then
-        if type(_G.FCF_OpenNewWindow) == "function"
-            and type(_G.FCF_OpenTemporaryWindow) == "function" then
-            hooksecurefunc("FCF_OpenNewWindow", NewWindow)
-            hooksecurefunc("FCF_OpenTemporaryWindow", NewWindow)
-            self.hooked = true
-        end
+        hooksecurefunc("FCF_OpenNewWindow", NewWindow)
+        hooksecurefunc("FCF_OpenTemporaryWindow", NewWindow)
+        self.hooked = true
     end
     self:Sync()
 end
@@ -135,8 +125,7 @@ end
 function M:Refresh() self:Sync() end
 
 function M:Disable()
-    _G["SLASH_" .. COMMAND .. "1"] = nil
-    SlashCmdList[COMMAND] = nil
+    S.UnregisterSlash(COMMAND, Toggle)
     self.covered = false
     for _, overlay in pairs(self.overlays) do overlay:Hide() end
     if self.control then self.control:Hide() end

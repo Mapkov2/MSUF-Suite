@@ -2,15 +2,27 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = { generation = 0 }
 local ID = "combatStatsHUD"
+-- look 6 is Class Style, whose shared palette is QoLVisualStyles[5]; look 5 is Custom.
+local CUSTOM_LOOK, CLASS_LOOK, CLASS_PALETTE = 5, 6, 5
+-- fps: 1 hidden, 2 below the stats, 3 on its own.
+local FPS_BELOW, FPS_ALONE = 2, 3
 local FIELDS = {
-    { key = "crit", label = "CRIT" },
-    { key = "haste", label = "HASTE" },
-    { key = "mastery", label = "MASTERY" },
-    { key = "versatility", label = "VERS" },
+    { key = "showCrit", label = "CRIT", full = "Critical strike" },
+    { key = "showHaste", label = "HASTE", full = "Haste" },
+    { key = "showMastery", label = "MASTERY", full = "Mastery" },
+    { key = "showVersatility", label = "VERS", full = "Versatility" },
+    -- Each extra stat has its own switch and color.
+    { key = "showLeech", color = "leechColor", label = "LEECH", full = "Leech", rating = "CR_LIFESTEAL",
+        read = function() return GetLifesteal() end },
+    { key = "showAvoidance", color = "avoidanceColor", label = "AVOID", full = "Avoidance", rating = "CR_AVOIDANCE",
+        read = function() return GetAvoidance() end },
+    { key = "showSpeed", color = "speedColor", label = "SPD", full = "Speed", rating = "CR_SPEED",
+        read = function() return GetSpeed() end },
 }
+local FIRST_EXTRA = 5
 
 local function Enabled(c, field)
-    return c["show" .. field.key:sub(1, 1):upper() .. field.key:sub(2)] == true
+    return c[field.key] == true
 end
 
 local function AnyEnabled(c)
@@ -27,8 +39,8 @@ end
 -- ranged and the lowest spell-school value. One restricted school leaves the
 -- result unknown rather than silently showing a misleading partial maximum.
 local function ReadCrit()
-    local melee = ReadPercent(_G.GetCritChance)
-    local ranged = ReadPercent(_G.GetRangedCritChance)
+    local melee = ReadPercent(GetCritChance)
+    local ranged = ReadPercent(GetRangedCritChance)
     if not melee or not ranged then return nil end
     local spell
     for school = 2, 7 do
@@ -36,13 +48,16 @@ local function ReadCrit()
         if not S.Finite(value) then return nil end
         spell = spell and math.min(spell, value) or value
     end
-    return math.max(melee, ranged, spell)
+    if spell >= ranged and spell >= melee then return spell, _G.CR_CRIT_SPELL end
+    if ranged >= melee then return ranged, _G.CR_CRIT_RANGED end
+    return melee, _G.CR_CRIT_MELEE
 end
 
 local function ReadStats(config)
-    local crit = config.showCrit and ReadCrit() or nil
-    local haste = config.showHaste and ReadPercent(_G.GetHaste) or nil
-    local mastery = config.showMastery and ReadPercent(_G.GetMasteryEffect) or nil
+    local crit, critRating
+    if config.showCrit then crit, critRating = ReadCrit() end
+    local haste = config.showHaste and ReadPercent(GetHaste) or nil
+    local mastery = config.showMastery and ReadPercent(GetMasteryEffect) or nil
     local versatility
     if config.showVersatility then
         local rating = CR_VERSATILITY_DAMAGE_DONE
@@ -52,11 +67,26 @@ local function ReadStats(config)
             versatility = fromRating + fromEffects
         end
     end
-    return crit, haste, mastery, versatility
+    return crit, haste, mastery, versatility, critRating
 end
 
-local function SetValue(field, value)
-    local text = S.Finite(value) and string.format("%.1f%%", value) or "--"
+local function ReadRating(rating)
+    if S.Finite(rating) then
+        local value = GetCombatRating(rating)
+        if S.Finite(value) then return value end
+    end
+end
+
+local function SetValue(field, value, rating, mode)
+    local text
+    if mode == 2 then
+        text = S.Finite(rating) and string.format("%.0f", rating) or "--"
+    elseif mode == 3 then
+        text = (S.Finite(value) and string.format("%.1f%%", value) or "--")
+            .. "\n" .. (S.Finite(rating) and string.format("%.0f", rating) or "--")
+    else
+        text = S.Finite(value) and string.format("%.1f%%", value) or "--"
+    end
     if field.lastText ~= text then
         field.lastText = text
         field.value:SetText(text)
@@ -92,29 +122,82 @@ local function Create(self)
     self.host, self.bg, self.border, self.fields = host, bg, border, fields
 end
 
+-- The FPS key binding overrides the profile choice for this session only,
+-- so it also works in combat and never writes a setting.
+local function FPSPlacement(self)
+    local wanted = self.fpsSession
+    if wanted == nil then wanted = self.config.fps ~= 1 end
+    if not self.active or not (wanted or S.editMode) then return nil end
+    if self.config.fps == FPS_BELOW then return FPS_BELOW end
+    return FPS_ALONE
+end
+
+local function PaintFPS()
+    local value = GetFramerate()
+    M.fpsText:SetText(S.Finite(value) and string.format(M.fpsFormat, value) or M.fpsUnknown)
+end
+
+local function UpdateFPS(self)
+    local placement = FPSPlacement(self)
+    if not placement then
+        if self.fpsTicker then self.fpsTicker:Cancel(); self.fpsTicker = nil end
+        if self.fpsHost then self.fpsHost:Hide() end
+        return
+    end
+    if not self.fpsHost then
+        self.fpsHost = S.CreateFrame("Frame", nil, UIParent)
+        self.fpsHost:SetSize(110, 24)
+        self.fpsText = S.CreateFontString(self.fpsHost, nil, "OVERLAY")
+        self.fpsText:SetAllPoints(self.fpsHost)
+        S.SetStyledFont(self.fpsText, S.GlobalFontPath(), 14, "OUTLINE", 1, true, 70, 1)
+        self.fpsFormat, self.fpsUnknown = S.Text("%.0f FPS"), S.Text("-- FPS")
+    end
+    self.fpsHost:ClearAllPoints()
+    if placement == FPS_BELOW then self.fpsHost:SetPoint("TOP", self.host, "BOTTOM", 0, -4)
+    else self.fpsHost:SetPoint("CENTER", UIParent, "CENTER", self.config.fpsX, self.config.fpsY) end
+    self.fpsHost:SetScale(self.config.scale / 100)
+    self.fpsHost:Show()
+    PaintFPS()
+    if not self.fpsTicker then self.fpsTicker = C_Timer.NewTicker(1, PaintFPS) end
+end
+
+function S.ToggleCombatStatsFPS()
+    if not M.active then
+        S.Print(S.Text("Turn on Secondary stats in the MSUF Suite options to use the FPS readout."))
+        return
+    end
+    M.fpsSession = FPSPlacement(M) == nil
+    UpdateFPS(M)
+end
+
+local function Colors(self)
+    local c = self.config
+    local muted, accent
+    if c.look ~= CUSTOM_LOOK then
+        local style = S.QoLPalette(c.look == CLASS_LOOK and CLASS_PALETTE or c.look)
+        muted, accent = style.muted, style.accent
+    end
+    for i, field in ipairs(self.fields) do
+        if muted then field.label:SetTextColor(S.RGB(muted)) else field.label:SetTextColor(.68, .74, .79) end
+        local own = FIELDS[i].color
+        if own then field.value:SetTextColor(S.RGB(c[own]))
+        elseif accent then field.value:SetTextColor(S.RGB(accent))
+        else field.value:SetTextColor(1, .87, .56) end
+    end
+end
+
 local function Layout(self)
     local c = self.config
     local point = NS.AnchorPoints[c.point] or "CENTER"
     local host = self.host
     host:ClearAllPoints()
     host:SetPoint(point, UIParent, point, c.x, c.y)
-    host:SetWidth(c.width)
+    host:SetSize(c.width, c.valueFormat == 3 and 58 or 42)
     host:SetScale(c.scale / 100)
     self.bg:SetColorTexture(S.RGB(c.backgroundColor))
     self.bg:SetAlpha(c.opacity / 100)
     self.border:SetColorTexture(S.RGB(c.accentColor))
-    if c.look and c.look ~= 5 then
-        local style = S.QoLStyle(c)
-        for _, field in ipairs(self.fields) do
-            field.label:SetTextColor(S.RGB(style.muted))
-            field.value:SetTextColor(S.RGB(style.accent))
-        end
-    else
-        for _, field in ipairs(self.fields) do
-            field.label:SetTextColor(.68, .74, .79)
-            field.value:SetTextColor(1, .87, .56)
-        end
-    end
+    Colors(self)
     local count = 0
     for i = 1, #FIELDS do
         if Enabled(c, FIELDS[i]) then count = count + 1 end
@@ -122,8 +205,9 @@ local function Layout(self)
     count = math.max(1, count)
     local visible = 0
     for i = 1, #FIELDS do
-        local field = self.fields[i]
-        local shown = Enabled(c, FIELDS[i])
+        local field, definition = self.fields[i], FIELDS[i]
+        local shown = Enabled(c, definition)
+        field.label:SetText(S.Text(c.labelStyle == 2 and definition.full or definition.label))
         field.label:SetShown(shown)
         field.value:SetShown(shown)
         if shown then
@@ -137,21 +221,35 @@ local function Layout(self)
     end
 end
 
-local function Update(self)
+-- PLAYER_REGEN_DISABLED arrives before the combat lockdown starts.
+local function Wanted(self, event)
+    return AnyEnabled(self.config) and (S.editMode or not self.config.combatOnly or NS.InCombat(event))
+end
+
+local function Update(self, event)
     if not self.active or not self.host then return end
-    local visible = AnyEnabled(self.config)
-        and (S.editMode or not self.config.combatOnly or NS.IsCombatLocked())
+    local visible = Wanted(self, event)
     self.host:SetShown(visible)
+    UpdateFPS(self)
     if not visible then return end
+    local c = self.config
     if S.editMode then
-        for i = 1, #self.fields do SetValue(self.fields[i], 12.3 + i) end
+        for i = 1, #self.fields do SetValue(self.fields[i], 12.3 + i, 500 + i * 100, c.valueFormat) end
         return
     end
-    local crit, haste, mastery, versatility = ReadStats(self.config)
-    SetValue(self.fields[1], crit)
-    SetValue(self.fields[2], haste)
-    SetValue(self.fields[3], mastery)
-    SetValue(self.fields[4], versatility)
+    local crit, haste, mastery, versatility, critRating = ReadStats(c)
+    local raw = c.valueFormat == 2 or c.valueFormat == 3
+    SetValue(self.fields[1], crit, c.showCrit and raw and ReadRating(critRating), c.valueFormat)
+    SetValue(self.fields[2], haste, c.showHaste and raw and ReadRating(_G.CR_HASTE_MELEE), c.valueFormat)
+    SetValue(self.fields[3], mastery, c.showMastery and raw and ReadRating(_G.CR_MASTERY), c.valueFormat)
+    SetValue(self.fields[4], versatility, c.showVersatility and raw and ReadRating(_G.CR_VERSATILITY_DAMAGE_DONE), c.valueFormat)
+    -- Switched-off extra stats are not read.
+    for i = FIRST_EXTRA, #FIELDS do
+        local field = FIELDS[i]
+        if c[field.key] then
+            SetValue(self.fields[i], ReadPercent(field.read), raw and ReadRating(_G[field.rating]), c.valueFormat)
+        end
+    end
 end
 
 local function Schedule(self)
@@ -172,26 +270,26 @@ local STAT_EVENTS = {
     "UNIT_STATS", "UNIT_SPELL_HASTE", "UNIT_AURA",
 }
 
-local function SyncListeners(self)
-    local want = AnyEnabled(self.config)
-        and (S.editMode or not self.config.combatOnly or NS.IsCombatLocked())
+local function SyncListeners(self, event)
+    local want = Wanted(self, event)
     if want == self.listening then return end
     self.listening = want
     for i = 1, #STAT_EVENTS do
-        local event = STAT_EVENTS[i]
-        local unit = event:sub(1, 5) == "UNIT_" and "player" or nil
-        if want then self.context:Event(event, Schedule, true, unit)
-        else self.context:RemoveEvent(event) end
+        local name = STAT_EVENTS[i]
+        local unit = name:sub(1, 5) == "UNIT_" and "player" or nil
+        if want then self.context:Event(name, Schedule, true, unit)
+        else self.context:RemoveEvent(name) end
     end
 end
 
-local function OnGate(self)
-    SyncListeners(self)
-    Update(self)
+local function OnGate(self, event)
+    SyncListeners(self, event)
+    Update(self, event)
 end
 
 function M:Enable()
     self.generation = self.generation + 1
+    self.fpsChoice = self.config.fps
     Create(self)
     Layout(self)
     self.context:Event("PLAYER_ENTERING_WORLD", OnGate, true)
@@ -203,12 +301,16 @@ function M:Enable()
 end
 
 function M:Refresh()
+    -- A new FPS choice in the options replaces the session override.
+    if self.fpsChoice ~= self.config.fps then self.fpsChoice, self.fpsSession = self.config.fps, nil end
     Layout(self)
     SyncListeners(self)
     Update(self)
 end
 
 function M:Disable()
+    if self.fpsTicker then self.fpsTicker:Cancel(); self.fpsTicker = nil end
+    if self.fpsHost then self.fpsHost:Hide() end
     self.generation = self.generation + 1
     self.pending = false
     self.listening = nil
@@ -216,20 +318,17 @@ function M:Disable()
 end
 
 function M:RegisterMovers()
+    S.RegisterOwnedMover(ID, "fps", {
+        label = "FPS", order = 646, getFrame = function() return self.fpsHost end,
+        xKey = "fpsX", yKey = "fpsY", point = function() return "CENTER" end,
+        visible = function() return FPSPlacement(self) == FPS_ALONE end,
+    })
     S.RegisterOwnedMover(ID, "combat", {
         label = "Secondary stats", order = 645,
         getFrame = function() return self.host end,
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return NS.AnchorPoints[self.config.point] or "CENTER" end,
-        quickPosition = true, historyKeys = { "width", "scale" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 180, max = 480, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        quickPosition = true, historyKeys = { "width", "scale" }, sizeKeys = { "width", "scale" },
     })
 end
 

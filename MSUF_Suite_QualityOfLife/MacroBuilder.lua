@@ -12,13 +12,6 @@ local TEMPLATES = {
     { label = "Focus enemy", body = "/cast [@focus,harm,nodead][harm,nodead] %s" },
 }
 
-local function Label(parent, text, size)
-    local label = S.CreateFontString(parent, nil, "ARTWORK")
-    S.SetFont(label, nil, size or 12, "")
-    label:SetText(S.Text(text))
-    return label
-end
-
 local function Button(parent, text, x, y, width, click)
     local button = S.CreateFrame("Button", nil, parent)
     button:SetSize(width, 25)
@@ -27,7 +20,7 @@ local function Button(parent, text, x, y, width, click)
     background:SetAllPoints()
     background:SetColorTexture(.18, .21, .23, .95)
     button.background = background
-    local caption = Label(button, text, 12)
+    local caption = S.QoLLabel(button, text, 12)
     caption:SetPoint("CENTER")
     button:SetScript("OnClick", click)
     return button
@@ -69,8 +62,7 @@ end
 
 local function NameExists(name)
     local account, character = GetNumMacros()
-    local constants = _G.Constants and Constants.MacroConsts
-    local base = constants and constants.MAX_ACCOUNT_MACROS
+    local base = Constants.MacroConsts.MAX_ACCOUNT_MACROS
     if not S.Finite(account) or not S.Finite(character) or not S.Finite(base) then return true end
     local requested = name:lower()
     for i = 1, account do
@@ -97,14 +89,14 @@ local function CreateCharacterMacro(panel)
         return
     end
     local _, count = GetNumMacros()
-    local constants = _G.Constants and Constants.MacroConsts
-    local limit = constants and constants.MAX_CHARACTER_MACROS
+    local limit = Constants.MacroConsts.MAX_CHARACTER_MACROS
     if not S.Finite(count) or not S.Finite(limit) or count >= limit then
         Status("Character macro slots are full")
         return
     end
     if NameExists(name) then Status("That macro name already exists") return end
-    local ok, index = pcall(CreateMacro, name, ICON, body, true)
+    -- An error from the client is reported (BugSack) like any other.
+    local ok, index = S.Dispatch(NS.Finish, CreateMacro, name, ICON, body, true)
     if not ok or not S.Finite(index) or index < 1 then
         Status("WoW could not create the macro")
         return
@@ -112,39 +104,8 @@ local function CreateCharacterMacro(panel)
     Status("Created. Open /macro to drag it to an action bar.")
 end
 
-local function CreateWindow()
-    local panel = S.CreateFrame("Frame", nil, UIParent)
-    panel:SetSize(442, 282)
-    panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    panel:SetFrameStrata("DIALOG")
-    panel:EnableMouse(true)
-    panel:SetMovable(true)
-    panel:SetClampedToScreen(true)
-
-    local background = S.CreateTexture(panel, nil, "BACKGROUND")
-    background:SetAllPoints()
-    background:SetColorTexture(.065, .075, .085, .97)
-    local accent = S.CreateTexture(panel, nil, "BORDER")
-    accent:SetPoint("TOPLEFT")
-    accent:SetPoint("TOPRIGHT")
-    accent:SetHeight(2)
-    accent:SetColorTexture(.8, .68, .42, 1)
-    local title = Label(panel, "Macro builder", 16)
-    title:SetPoint("TOPLEFT", 14, -12)
-
-    local drag = S.CreateFrame("Button", nil, panel)
-    drag:SetPoint("TOPLEFT", 0, 0)
-    drag:SetPoint("TOPRIGHT", -35, 0)
-    drag:SetHeight(37)
-    drag:RegisterForDrag("LeftButton")
-    drag:SetScript("OnDragStart", function() panel:StartMoving() end)
-    drag:SetScript("OnDragStop", function() panel:StopMovingOrSizing() end)
-    Button(panel, "X", 410, -8, 22, function() panel:Hide() end)
-    return panel
-end
-
 local function AddTemplates(panel)
-    local prompt = Label(panel, "Choose a template", 12)
+    local prompt = S.QoLLabel(panel, "Choose a template", 12)
     prompt:SetPoint("TOPLEFT", 14, -45)
     panel.templates = {}
     for i = 1, #TEMPLATES do
@@ -162,17 +123,20 @@ local function AddTemplates(panel)
 end
 
 local function AddFields(panel)
-    local spellLabel = Label(panel, "Spell name or ID", 12)
+    local spellLabel = S.QoLLabel(panel, "Spell name or ID", 12)
     spellLabel:SetPoint("TOPLEFT", 16, -102)
     local spell = S.CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
     spell:SetSize(239, 22)
     spell:SetPoint("TOPLEFT", 176, -97)
     spell:SetAutoFocus(false)
-    spell:SetScript("OnEnterPressed", function() spell:ClearFocus(); Build(panel) end)
+    spell:SetScript("OnEnterPressed", function()
+        spell:ClearFocus()
+        Build(panel)
+    end)
     spell:SetScript("OnEscapePressed", function() spell:ClearFocus() end)
     panel.spell = spell
 
-    local nameLabel = Label(panel, "Character macro name", 12)
+    local nameLabel = S.QoLLabel(panel, "Character macro name", 12)
     nameLabel:SetPoint("TOPLEFT", 16, -134)
     local name = S.CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
     name:SetSize(239, 22)
@@ -180,11 +144,14 @@ local function AddFields(panel)
     name:SetAutoFocus(false)
     name:SetMaxLetters(16)
     name:SetText("MSUF Mouseover")
-    name:SetScript("OnEnterPressed", function() name:ClearFocus(); Build(panel) end)
+    name:SetScript("OnEnterPressed", function()
+        name:ClearFocus()
+        Build(panel)
+    end)
     name:SetScript("OnEscapePressed", function() name:ClearFocus() end)
     panel.name = name
 
-    local previewLabel = Label(panel, "Macro preview (select text to copy)", 11)
+    local previewLabel = S.QoLLabel(panel, "Macro preview (select text to copy)", 11)
     previewLabel:SetPoint("TOPLEFT", 16, -165)
     local preview = S.CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
     preview:SetSize(394, 43)
@@ -196,13 +163,13 @@ local function AddFields(panel)
 end
 
 local function CreatePanel()
-    local panel = CreateWindow()
+    local panel = S.QoLWindow(442, 282, "Macro builder", 16)
     AddTemplates(panel)
     AddFields(panel)
     Button(panel, "Preview", 16, -235, 96, function() Build(panel) end)
     Button(panel, "Create character macro", 119, -235, 178,
         function() CreateCharacterMacro(panel) end)
-    local status = Label(panel, "Type a spell, then preview the macro", 11)
+    local status = S.QoLLabel(panel, "Type a spell, then preview the macro", 11)
     status:SetPoint("BOTTOMLEFT", 15, 10)
     panel.status = status
     panel:Hide()
@@ -217,15 +184,13 @@ local function Open()
 end
 
 function M:Enable()
-    _G["SLASH_" .. COMMAND .. "1"] = "/msufmacro"
-    SlashCmdList[COMMAND] = Open
+    S.RegisterSlash(COMMAND, Open, "/msufmacro")
 end
 
 function M:Refresh() end
 
 function M:Disable()
-    _G["SLASH_" .. COMMAND .. "1"] = nil
-    SlashCmdList[COMMAND] = nil
+    S.UnregisterSlash(COMMAND, Open)
     if self.panel then
         self.panel:Hide()
         self.panel.spell:ClearFocus()

@@ -3,6 +3,11 @@ local NS, S = P.NS, P.Suite
 local M = {}
 local POPUP = "MSUF_SUITE_TRAINER_LEARN_ALL"
 local MAX_SERVICES = 2000
+-- GetCoinTextureString exists only with the loadDeprecationFallbacks CVar on
+-- (Blizzard_DeprecatedCurrencyScript); C_CurrencyInfo has it on every client.
+local function Coins(copper)
+    return C_CurrencyInfo.GetCoinTextureString(copper)
+end
 
 local function TrainerOpen(self)
     local frame = _G.ClassTrainerFrame
@@ -124,7 +129,7 @@ local function Advance(self)
         local learned, spent = #self.queue, self.spent
         Stop(self)
         NS.Print(string.format(S.Text("Trainer purchase requests finished: %d abilities, up to %s."),
-            learned, GetCoinTextureString(spent)))
+            learned, Coins(spent)))
         return
     end
     local index = Find(self, entry)
@@ -138,9 +143,9 @@ local function Advance(self)
     self.nextIndex = self.nextIndex + 1
     self.spent = self.spent + entry.cost
     self.purchasing = true
-    -- A rejected client purchase must release the queue. Never retry it:
-    -- the client may have accepted the request despite a Lua-side failure.
-    local ok = pcall(BuyTrainerService, index)
+    -- A purchase call that raises is reported and releases the queue. Never
+    -- retry it: the client may have accepted the request anyway.
+    local ok = S.Dispatch(NS.Finish, BuyTrainerService, index)
     self.purchasing = false
     if not ok then
         Stop(self, "Training stopped because the purchase call failed.")
@@ -194,7 +199,7 @@ local function OnClick()
     end
     local plan = Plan(M)
     if not plan or #plan.entries == 0 or plan.total > plan.money or plan.ambiguous then return end
-    StaticPopup_Show(POPUP, #plan.entries, GetCoinTextureString(plan.total), plan)
+    StaticPopup_Show(POPUP, #plan.entries, Coins(plan.total), plan)
 end
 
 local function OnEnter(button)
@@ -207,7 +212,7 @@ local function OnEnter(button)
         local plan = Plan(M)
         if plan and #plan.entries > 0 then
             GameTooltip:AddLine(string.format(S.Text("%d abilities, total %s"),
-                #plan.entries, GetCoinTextureString(plan.total)), 1, .88, .6)
+                #plan.entries, Coins(plan.total)), 1, .88, .6)
             if plan.total > plan.money then
                 GameTooltip:AddLine(S.Text("Not enough gold for all available abilities."), 1, .45, .4, true)
             elseif plan.ambiguous then

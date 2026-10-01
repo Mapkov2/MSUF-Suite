@@ -11,12 +11,12 @@ local function LootSpecText()
         if not S.Finite(index) or index < 1 then return S.Text("Loot specialization: Current") end
         local _, name = C_SpecializationInfo.GetSpecializationInfo(index)
         name = S.PublicText(name)
-        return name and S.Text("Loot specialization: Current") .. " (" .. name .. ")"
-            or S.Text("Loot specialization: Current")
+        if not name then return S.Text("Loot specialization: Current") end
+        return string.format(S.Text("Loot specialization: Current (%s)"), name)
     end
     local _, name = GetSpecializationInfoByID(selected)
     name = S.PublicText(name)
-    return name and S.Text("Loot specialization: ") .. name or nil
+    return name and string.format(S.Text("Loot specialization: %s"), name) or nil
 end
 
 function M:Draw()

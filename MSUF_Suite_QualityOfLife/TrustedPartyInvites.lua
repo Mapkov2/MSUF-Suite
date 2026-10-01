@@ -7,8 +7,10 @@ local function Invalidate(self)
     self.serial = self.serial + 1
 end
 
+-- Blizzard's relationship and queue helpers are Lua: an error inside one is
+-- reported (S.Dispatch) and the invite stays manual.
 local function Trusted(self, guid, name)
-    local ok, _, _, relation = pcall(SocialQueueUtil_GetRelationshipInfo, guid, name)
+    local ok, _, _, relation = S.Dispatch(NS.Finish, SocialQueueUtil_GetRelationshipInfo, guid, name)
     if not ok then return false end
     relation = S.PublicText(relation)
     return relation == "bnfriend" and self.config.battleNet
@@ -22,8 +24,8 @@ local function SafeToJoin()
     if not S.Public(grouped) or grouped ~= false then return false end
     -- Blizzard adds a queue-loss warning to this popup. Keep that decision
     -- manual, along with quest-session and role-selection invitations.
-    local ok, removesQueue = pcall(WillAcceptInviteRemoveQueues)
-    return ok and S.Public(removesQueue) and removesQueue == false
+    local ok, removesQueue = S.Dispatch(NS.Finish, WillAcceptInviteRemoveQueues)
+    return ok == true and S.Public(removesQueue) and removesQueue == false
 end
 
 local function AcceptVisible(self, serial, inviterName)
@@ -35,15 +37,12 @@ local function AcceptVisible(self, serial, inviterName)
         or S.PublicText(dialog.which) ~= "PARTY_INVITE" then return end
     -- A previous invite can still own this popup when Blizzard has not yet
     -- displayed the new one. Match its visible inviter before clicking it.
-    local ok, displayedText = pcall(function()
-        return dialog:GetTextFontString():GetText()
-    end)
-    if not ok or not S.PublicText(displayedText)
-        or not displayedText:find(inviterName, 1, true) then return end
+    local displayedText = dialog:GetTextFontString():GetText()
+    if not S.PublicText(displayedText) or not displayedText:find(inviterName, 1, true) then return end
     -- Blizzard's own click handler accepts the group, sets inviteAccepted and
     -- hides the dialog. Calling AcceptGroup + Hide separately would run its
     -- OnHide decline path unless we modified Blizzard's popup state.
-    if not pcall(StaticPopup_OnClick, dialog, 1) then
+    if not S.Dispatch(NS.Finish, StaticPopup_OnClick, dialog, 1) then
         S.Print(S.Text("Automatic party invite acceptance was blocked; use Blizzard's dialog."))
     end
 end

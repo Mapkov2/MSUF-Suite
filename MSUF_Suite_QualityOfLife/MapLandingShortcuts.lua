@@ -9,16 +9,16 @@ local function Wanted(c)
     return c.showLandingPage or c.showVault or c.showJournal or c.showMap
 end
 
+-- The Great Vault and Adventure Guide openers live in [Bootstrap] files of
+-- their load-on-demand addons, which the Retail client loads at login.
+-- Blizzard's Lua runs through Dispatch, so an error there stays its own.
 local function CanJournal()
-    if type(_G.ToggleEncounterJournal) ~= "function" then return false end
-    if type(_G.CanShowEncounterJournal) ~= "function" then return true end
-    local allowed = CanShowEncounterJournal()
-    return S.Public(allowed) and allowed == true
+    local ok, allowed = S.Dispatch(NS.Finish, CanShowEncounterJournal)
+    return ok == true and S.Public(allowed) and allowed == true
 end
 
-local function CanVault()
-    -- The Great Vault bootstrap is LoadOnDemand; its opener may not exist yet.
-    return type(_G.WeeklyRewards_ShowUI) == "function"
+local function Run(callback, ...)
+    if not NS.IsCombatLocked() then S.Dispatch(NS.Finish, callback, ...) end
 end
 
 local function OpenMenu(button)
@@ -28,25 +28,25 @@ local function OpenMenu(button)
         local c = M.config
         if c.showLandingPage then
             local entry = root:CreateButton(S.Text("Expansion landing page"), function()
-                if not NS.IsCombatLocked() and M.native then M.native:ToggleLandingPage() end
+                if M.native then Run(M.native.ToggleLandingPage, M.native) end
             end)
             entry:SetEnabled(not locked and M.native ~= nil)
         end
         if c.showVault then
             local entry = root:CreateButton(S.Text("Great Vault"), function()
-                if not NS.IsCombatLocked() and CanVault() then WeeklyRewards_ShowUI() end
+                Run(WeeklyRewards_ShowUI)
             end)
-            entry:SetEnabled(not locked and CanVault())
+            entry:SetEnabled(not locked)
         end
         if c.showJournal then
             local entry = root:CreateButton(S.Text("Adventure Guide"), function()
-                if not NS.IsCombatLocked() and CanJournal() then ToggleEncounterJournal() end
+                if CanJournal() then Run(ToggleEncounterJournal) end
             end)
             entry:SetEnabled(not locked and CanJournal())
         end
         if c.showMap then
             local entry = root:CreateButton(S.Text("World map"), function()
-                if not NS.IsCombatLocked() then ToggleWorldMap() end
+                Run(ToggleWorldMap)
             end)
             entry:SetEnabled(not locked)
         end

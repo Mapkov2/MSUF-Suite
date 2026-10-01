@@ -12,21 +12,42 @@ local function Permitted()
         and (leader == true or assistant == true)
 end
 
+-- The chat frame caches slash handlers, so a command typed after the module
+-- was switched off still reaches its old handler: answer instead of nothing.
+local function Available()
+    if M.active then return true end
+    S.Print(S.Text("Raid shortcuts are switched off in the MSUF Suite options."))
+    return false
+end
+
+-- Countdowns, raid markers and ready checks are restricted actions; a
+-- blocked call cannot be caught, so the shortcut refuses it beforehand.
+local function Allowed()
+    if not NS.GroupActionsRestricted() then return true end
+    S.Print(NS.RestrictedNotice())
+    return false
+end
+
 local function OpenRaidManager()
-    if not M.active then return end
+    if not Available() then return end
     local frame = _G.CompactRaidFrameManager
     local visible = frame and frame:IsShown()
     if not S.Public(visible) or visible ~= true then
         S.Print(S.Text("Enable Blizzard's Raid Manager in MSUF group settings"))
         return
     end
-    if not pcall(CompactRaidFrameManager_Expand) then
+    -- Blizzard's own expand moves the manager; keep that out of combat.
+    if NS.IsCombatLocked() then
+        S.Print(NS.RestrictedNotice())
+        return
+    end
+    if not S.Dispatch(NS.Finish, CompactRaidFrameManager_Expand) then
         S.Print(S.Text("Raid Manager could not be opened by the client."))
     end
 end
 
 local function StartPull(message)
-    if not M.active or not S.Public(message) or type(message) ~= "string" then return end
+    if not Available() or not S.Public(message) or type(message) ~= "string" then return end
     if not Permitted() then
         S.Print(S.Text("Group leader or assistant required"))
         return
@@ -37,8 +58,9 @@ local function StartPull(message)
         S.Print(S.Text("Usage: /msufpull [1-60]"))
         return
     end
-    local ok, started = pcall(C_PartyInfo.DoCountdown, seconds)
-    if not ok or S.Public(started) and started == false then
+    if not Allowed() then return end
+    local started = C_PartyInfo.DoCountdown(seconds)
+    if not S.Public(started) or started ~= true then
         S.Print(S.Text("Countdown could not be started"))
     end
 end
@@ -62,10 +84,10 @@ local function UniqueRole(role)
 end
 
 local function MarkRole(message)
-    if not M.active or not S.Public(message) or type(message) ~= "string" then return end
+    if not Available() or not S.Public(message) or type(message) ~= "string" then return end
     local role = message:lower():match("^%s*(%a+)%s*$")
     if role ~= "tank" and role ~= "healer" then
-        S.Print(S.Text("Usage: /msufmark tank|healer"))
+        S.Print(S.Text("Usage: /msufmark tank or /msufmark healer"))
         return
     end
     local raid = IsInRaid()
@@ -81,8 +103,10 @@ local function MarkRole(message)
     local marker = role == "tank" and M.config.tankMarker or M.config.healerMarker
     if not S.Finite(marker) or marker < 1 or marker > 8 then return end
     local existing = GetRaidTargetIndex(unit)
-    if not S.Public(existing) then return end
-    if existing ~= marker and not pcall(SetRaidTarget, unit, marker) then
+    if not S.Public(existing) or existing == marker or not Allowed() then return end
+    -- A refusal the restriction check could not foresee comes back as
+    -- ADDON_ACTION_BLOCKED during the call (S.QoLRestrictedCall).
+    if not S.QoLRestrictedCall(SetRaidTarget, unit, marker) then
         S.Print(S.Text("Raid marker could not be set by the client."))
     end
 end
@@ -101,10 +125,13 @@ local function MarkerFree(marker, wantedUnit)
     return true
 end
 
+-- Automation stays silent while restrictions apply (for example a running
+-- keystone) and tries again on the next roster, role or combat-end event.
 local function AutoMark(self)
-    if not self.active or self.autoBlocked or NS.IsCombatLocked() then return end
+    if not self.active or self.autoBlocked then return end
+    -- Raid roster storms stop at the cheap raid and permission checks.
     local raid = IsInRaid()
-    if not S.Public(raid) or raid == true or not Permitted() then return end
+    if not S.Public(raid) or raid == true or not Permitted() or NS.GroupActionsRestricted() then return end
     self.autoAttempts = self.autoAttempts or {}
     for _, spec in ipairs(AUTO_ROLES) do
         if self.config[spec[1]] then
@@ -121,8 +148,8 @@ local function AutoMark(self)
                         end
                         self.autoAttempts[key] = true
                         self.autoAttemptCount = (self.autoAttemptCount or 0) + 1
-                        local ok = pcall(SetRaidTarget, unit, marker)
-                        if not ok then
+                        -- A refused marker stops automation until the settings change.
+                        if not S.QoLRestrictedCall(SetRaidTarget, unit, marker) then
                             self.autoBlocked = true
                             S.Print(S.Text("Automatic raid markers were blocked by the client."))
                             return
@@ -134,7 +161,130 @@ local function AutoMark(self)
     end
 end
 
+local function PanelButton(self, label, secure, action)
+    local button = S.CreateFrame("Button", nil, self.panelBody,
+        secure and "SecureActionButtonTemplate" or "UIPanelButtonTemplate")
+    button:SetSize(106, 25)
+    if secure then
+        -- The secure template has no artwork of its own.
+        local back = S.CreateTexture(button, nil, "BACKGROUND")
+        back:SetAllPoints(button)
+        back:SetColorTexture(.12, .15, .2, .95)
+        local hover = S.CreateTexture(button, nil, "HIGHLIGHT")
+        hover:SetAllPoints(button)
+        hover:SetColorTexture(1, 1, 1, .12)
+    end
+    local text = S.CreateFontString(button, nil, "OVERLAY")
+    text:SetPoint("CENTER", 0, 0)
+    S.SetStyledFont(text, S.GlobalFontPath(), 11, "OUTLINE", 1, true, 70, 1)
+    text:SetText(S.Text(label))
+    if secure then button:SetAttribute("useOnKeyDown", false) end
+    if action then button:SetScript("OnClick", action) end
+    self.panelButtons[#self.panelButtons + 1] = button
+    return button
+end
+
+local MARK_HELP = "Canceled placement still advances the sequence. Right-click Next worldmark to rewind without clearing a marker. Clear previous mark removes the last requested marker, not a confirmed placement."
+local function MarkerHelp(button)
+    button:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+        GameTooltip:SetText(S.Text(MARK_HELP), 1, 1, 1, nil, true)
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+local function CreatePanel(self)
+    if self.panel then return end
+    local host = S.CreateFrame("Frame", "MSUFSuiteRaidTools", UIParent, "SecureHandlerBaseTemplate")
+    local body = S.CreateFrame("Frame", nil, host, "SecureHandlerBaseTemplate")
+    body:SetPoint("TOPLEFT", 0, -28)
+    local back = S.CreateTexture(body, nil, "BACKGROUND")
+    back:SetAllPoints(body); back:SetColorTexture(.04, .05, .07, .95)
+    self.panel, self.panelBody, self.panelButtons = host, body, {}
+    local toggle = S.CreateFrame("Button", nil, host, "SecureHandlerClickTemplate")
+    toggle:SetSize(106, 25); toggle:SetPoint("TOPLEFT", 0, 0)
+    toggle:SetFrameRef("body", body)
+    toggle:SetAttribute("_onclick", [[local body = self:GetFrameRef("body"); if body:IsShown() then body:Hide() else body:Show() end]])
+    local title = S.CreateFontString(toggle, nil, "OVERLAY")
+    title:SetPoint("CENTER", 0, 0)
+    S.SetStyledFont(title, S.GlobalFontPath(), 12, "OUTLINE", 1, true, 70, 1)
+    title:SetText(S.Text("Raid tools +/-"))
+    PanelButton(self, "Raid Manager", false, OpenRaidManager)
+    PanelButton(self, "Pull 10", false, function() StartPull("10") end)
+    PanelButton(self, "Ready check", false, function()
+        if Available() and Permitted() and Allowed() then C_PartyInfo.DoReadyCheck() end
+    end)
+    local nextMark = PanelButton(self, "Next worldmark", true)
+    MarkerHelp(nextMark)
+    nextMark:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    nextMark:SetAttribute("type", "worldmarker")
+    nextMark:SetAttribute("action", "set")
+    SecureHandlerWrapScript(nextMark, "PreClick", host, [[
+        if down then return end
+        if button == "RightButton" then
+            self:SetAttribute("type", nil)
+            local count = control:GetAttribute("count") or 0
+            if count > 0 then
+                control:SetAttribute("next", ((control:GetAttribute("next") or 1) + 6) % 8 + 1)
+                control:SetAttribute("count", count - 1)
+            end
+            return
+        end
+        self:SetAttribute("type", "worldmarker")
+        local marker = control:GetAttribute("next") or 1
+        self:SetAttribute("marker", marker)
+        control:SetAttribute("next", marker % 8 + 1)
+        control:SetAttribute("count", math.min(8, (control:GetAttribute("count") or 0) + 1))
+    ]])
+    local undo = PanelButton(self, "Clear previous mark", true)
+    MarkerHelp(undo)
+    undo:RegisterForClicks("AnyUp")
+    undo:SetAttribute("action", "clear")
+    SecureHandlerWrapScript(undo, "PreClick", host, [[
+        if down then return end
+        local count = control:GetAttribute("count") or 0
+        self:SetAttribute("type", count > 0 and "worldmarker" or nil)
+        if count > 0 then
+            local marker = ((control:GetAttribute("next") or 1) + 6) % 8 + 1
+            self:SetAttribute("marker", marker)
+            control:SetAttribute("next", marker)
+            control:SetAttribute("count", count - 1)
+        end
+    ]])
+    local clear = PanelButton(self, "Clear worldmarks", true)
+    clear:RegisterForClicks("AnyUp")
+    clear:SetAttribute("type", "worldmarker"); clear:SetAttribute("action", "clear")
+    SecureHandlerWrapScript(clear, "PreClick", host, [[control:SetAttribute("next", 1); control:SetAttribute("count", 0)]])
+    host:Hide()
+end
+
+local function RefreshPanel(self)
+    if NS.IsCombatLocked() then return end
+    if not self.config.showPanel then
+        if self.panel then UnregisterStateDriver(self.panel, "visibility"); self.panel:Hide() end
+        return
+    end
+    CreatePanel(self)
+    local columns = self.config.panelColumns or 3
+    local width, height = columns * 110, math.ceil(#self.panelButtons / columns) * 29
+    self.panel:SetSize(width, height + 28); self.panelBody:SetSize(width, height)
+    self.panel:ClearAllPoints()
+    self.panel:SetPoint("CENTER", UIParent, "CENTER", self.config.panelX or 0, self.config.panelY or 160)
+    self.panel:SetScale((self.config.panelScale or 100) / 100)
+    for i, button in ipairs(self.panelButtons) do
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", (i - 1) % columns * 110 + 2, -math.floor((i - 1) / columns) * 29 - 2)
+    end
+    RegisterStateDriver(self.panel, "visibility", S.editMode and "show" or "[group] show; hide")
+    S.RegisterOwnedMover("groupRaidShortcuts", "tools", {
+        label = "Raid tools", order = 650, getFrame = function() return self.panel end,
+        xKey = "panelX", yKey = "panelY", point = function() return "CENTER" end, quickPosition = true,
+    })
+end
+
 function M:Refresh()
+    RefreshPanel(self)
     local c = self.config
     local options = table.concat({ tostring(c.autoMarkTank), tostring(c.autoMarkHealer),
         tostring(c.tankMarker), tostring(c.healerMarker) }, ":")
@@ -157,26 +307,22 @@ function M:Refresh()
 end
 
 function M:Enable()
-    SlashCmdList[COMMANDS.raid] = OpenRaidManager
-    SlashCmdList[COMMANDS.pull] = StartPull
-    SlashCmdList[COMMANDS.mark] = MarkRole
-    _G["SLASH_" .. COMMANDS.raid .. "1"] = "/msufraid"
-    _G["SLASH_" .. COMMANDS.pull .. "1"] = "/msufpull"
-    _G["SLASH_" .. COMMANDS.mark .. "1"] = "/msufmark"
+    S.RegisterSlash(COMMANDS.raid, OpenRaidManager, "/msufraid")
+    S.RegisterSlash(COMMANDS.pull, StartPull, "/msufpull")
+    S.RegisterSlash(COMMANDS.mark, MarkRole, "/msufmark")
     self:Refresh()
 end
 
 function M:Disable()
+    if self.panel and not NS.IsCombatLocked() then UnregisterStateDriver(self.panel, "visibility"); self.panel:Hide() end
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     self.context:RemoveEvent("PLAYER_ROLES_ASSIGNED")
     self.context:RemoveEvent("ROLE_CHANGED_INFORM")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    self.autoOptions, self.autoAttempts = nil, nil
-    self.autoAttemptCount, self.autoBlocked = nil, nil
-    for _, command in pairs(COMMANDS) do
-        SlashCmdList[command] = nil
-        _G["SLASH_" .. command .. "1"] = nil
-    end
+    self.autoOptions, self.autoAttempts, self.autoAttemptCount, self.autoBlocked = nil, nil, nil, nil
+    S.UnregisterSlash(COMMANDS.raid, OpenRaidManager)
+    S.UnregisterSlash(COMMANDS.pull, StartPull)
+    S.UnregisterSlash(COMMANDS.mark, MarkRole)
 end
 
 S.Install("groupRaidShortcuts", M)

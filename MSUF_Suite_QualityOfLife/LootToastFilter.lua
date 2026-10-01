@@ -1,8 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 
--- Supplemental alerts for Blizzard's personal item-loot-toast event. Ordinary
--- bag gains have no equivalent public payload, so they are not inferred here.
+-- Supplemental alerts for Blizzard's personal item-loot-toast event, in and
+-- out of combat like Blizzard's own toasts. Ordinary bag gains have no
+-- equivalent public payload, so they are not inferred here.
 local M = { toasts = {}, ids = {} }
 local MAX_TOASTS = 3
 local POPUP_SECONDS = 5
@@ -73,13 +74,13 @@ local function ShowToast(self, itemLink, quantity)
     local filter = self.config.kindFilter or 1
     if filter ~= 1 then
         local mount, pet = false, false
-        if filter ~= 3 and C_MountJournal and type(C_MountJournal.GetMountFromItem) == "function" then
+        if filter ~= 3 then
             local mountID = C_MountJournal.GetMountFromItem(itemID)
             mount = S.Finite(mountID) and mountID > 0
         end
         if filter ~= 2 then
             pet = S.Finite(classID) and classID == BATTLE_PET_CLASS
-            if not pet and C_PetJournal and type(C_PetJournal.GetPetInfoByItemID) == "function" then
+            if not pet then
                 local species = C_PetJournal.GetPetInfoByItemID(itemID)
                 pet = S.Public(species) and species ~= nil and species ~= false
             end
@@ -122,8 +123,7 @@ local function HideAll(self)
 end
 
 local function LootToast(self, _, kind, itemLink, quantity, _, _, personal)
-    if not self.active or NS.IsCombatLocked()
-        or not S.Public(kind) or kind ~= "item"
+    if not self.active or not S.Public(kind) or kind ~= "item"
         or not S.Public(personal) or personal ~= true
         or not S.PublicText(itemLink) or not S.Finite(quantity)
         or quantity < 1 then return end

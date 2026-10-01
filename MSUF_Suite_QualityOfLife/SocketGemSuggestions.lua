@@ -145,7 +145,7 @@ local function Refresh(self)
         end
     end
     if #gems > MAX_ROWS then
-        self.panel.more:SetText(S.Text("More gems in your bags") .. " (" .. (#gems - MAX_ROWS) .. ")")
+        self.panel.more:SetText(string.format(S.Text("More gems in your bags (%d)"), #gems - MAX_ROWS))
         self.panel.more:Show()
     else
         self.panel.more:Hide()

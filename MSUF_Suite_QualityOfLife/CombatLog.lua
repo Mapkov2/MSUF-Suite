@@ -47,8 +47,15 @@ local function Decision(config)
     if not Public(instanceType) then return nil end
     if instanceType == "none" then return false end
     if instanceType == "pvp" or instanceType == "arena" then return config.pvp == true end
-    if instanceType == "scenario" then return config.scenario == true end
-    if instanceType == "delve" then return config.delve == true end
+    -- Delves report the "scenario" instance type (difficulty 208), so the
+    -- Delves switch decides them before the Scenarios switch.
+    if instanceType == "scenario" then
+        local delve = C_DelvesUI.HasActiveDelve()
+        if Public(delve) and delve == true or Public(difficulty) and difficulty == 208 then
+            return config.delve == true
+        end
+        return config.scenario == true
+    end
     if not Public(difficulty) or type(difficulty) ~= "number" then return nil end
     local key = instanceType == "party" and dungeon[difficulty]
         or instanceType == "raid" and raid[difficulty]

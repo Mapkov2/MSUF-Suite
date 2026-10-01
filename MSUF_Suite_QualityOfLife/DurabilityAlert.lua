@@ -136,17 +136,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "height", "scale" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 180, max = 500, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "height", label = "Height", kind = "number", min = 56, max = 90, step = 1,
-                get = function() return S.Config(ID).height end,
-                set = function(value) return S.Set(ID, "height", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "width", "height", "scale" },
     })
 end
 

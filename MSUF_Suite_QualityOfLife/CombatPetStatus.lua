@@ -33,7 +33,7 @@ local function Place(self)
     self.host:SetScale(c.scale / 100)
 end
 
-local function Update(self)
+local function Update(self, event)
     if not self.active or not self.host then return end
     if S.editMode then
         self.label:SetText(S.Text("Pet missing"))
@@ -42,7 +42,7 @@ local function Update(self)
         self.host:Show()
         return
     end
-    if self.config.combatOnly and not NS.IsCombatLocked() then
+    if self.config.combatOnly and not NS.InCombat(event) then
         self.host:Hide()
         return
     end
@@ -69,8 +69,8 @@ local function Update(self)
     self.host:Show()
 end
 
-local function OnEvent(self)
-    Update(self)
+local function OnEvent(self, event)
+    Update(self, event)
 end
 
 local function SyncEvents(self)
@@ -119,11 +119,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return NS.AnchorPoints[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "scale" },
-        extraControls = {
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "scale" },
     })
 end
 

@@ -36,7 +36,10 @@ local function Sync(self)
     if frame ~= self.frame then Release(self) end
     local needed = false
     for key in pairs(MESSAGE_TYPES) do
-        if self.config[key] then needed = true; break end
+        if self.config[key] then
+            needed = true
+            break
+        end
     end
     if not needed then
         Release(self)

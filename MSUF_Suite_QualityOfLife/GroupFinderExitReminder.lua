@@ -10,27 +10,14 @@ local function OnFinderHidden()
     end
 end
 
-local function TryHook(self)
-    local frame = _G.LFGListFrame
-    if self.hooked or not frame then return end
-    frame:HookScript("OnHide", OnFinderHidden)
-    self.hooked = true
-    self.context:RemoveEvent("ADDON_LOADED")
-end
-
-local function OnAddon(self, _, name)
-    if S.PublicText(name) and name == "Blizzard_GroupFinder" then TryHook(self) end
-end
-
+-- Group Finder loads with the Retail UI at startup; this module is Retail-only.
 function M:Enable()
-    if not self.hooked then
-        self.context:Event("ADDON_LOADED", OnAddon, true)
-        TryHook(self)
-    end
+    if self.hooked then return end
+    self.hooked = true
+    LFGListFrame:HookScript("OnHide", OnFinderHidden)
 end
 
-function M:Disable()
-    self.context:RemoveEvent("ADDON_LOADED")
-end
+-- The script hook cannot be removed; it does nothing while inactive.
+function M:Disable() end
 
 S.Install("groupFinderExitReminder", M)

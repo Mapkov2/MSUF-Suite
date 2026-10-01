@@ -3,10 +3,16 @@ local NS, S = P.NS, P.Suite
 local ID = "groupBloodlust"
 local M = {}
 local POINTS = NS.AnchorPoints
--- All six player lockout auras are part of MSUF's existing SATED preset.
-local SPELLS = { 57723, 57724, 80354, 95809, 160455, 264689 }
+-- The player lockout auras of MSUF's SATED preset, including the Exhaustion
+-- that the Evoker's Fury of the Aspects applies (390435).
+local SPELLS = { 57723, 57724, 80354, 95809, 160455, 264689, 390435 }
 local SPELL_SET = {}
 for i = 1, #SPELLS do SPELL_SET[SPELLS[i]] = true end
+local INSTANCE_UPDATES = { "updatedAuraInstanceIDs", "removedAuraInstanceIDs" }
+-- The native cooldown animates the 10-minute lockout itself. Aura storms
+-- need only one fresh status snapshot per short trailing window.
+local AURA_DELAY = .1
+local OnAura, Paint
 
 local function Create(self)
     if self.host then return end
@@ -29,6 +35,8 @@ local function Create(self)
     cooldown:SetDrawEdge(false)
     cooldown:SetHideCountdownNumbers(false)
     cooldown:SetMinimumCountdownDuration(0)
+    -- A lockout remembered through a restriction ends here, not by an aura event.
+    cooldown:SetScript("OnCooldownDone", function() if M.active then Paint(M) end end)
     local title = S.CreateFontString(host, nil, "OVERLAY")
     title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 8, -3)
     S.SetFont(title, nil, 11, "OUTLINE")
@@ -55,23 +63,69 @@ local function Place(self)
     self.host:SetPoint(point, UIParent, point, c.x, c.y)
 end
 
-local function LockoutAura(self)
-    if self.auraBlocked then return nil, false end
+-- Combat, encounter, keystone and PvP restrictions turn these auras secret
+-- unless Blizzard flags a spell otherwise, and GetPlayerAuraBySpellID then
+-- returns nothing (RequiresNonSecretAura): "no aura" would read as Ready.
+-- C_Secrets tells the two apart before any aura is read.
+local function Readable()
     for i = 1, #SPELLS do
-        local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, SPELLS[i])
-        if not ok or not S.Public(aura) then
-            -- A restricted/secret player aura cannot be queried repeatedly
-            -- during combat. Resume once the client clears that restriction.
-            self.auraBlocked = true
-            self.context:RemoveEvent("UNIT_AURA")
-            return nil, false
-        end
-        if aura then return aura, true end
+        local secret = C_Secrets.ShouldSpellAuraBeSecret(SPELLS[i])
+        if not S.Public(secret) or secret ~= false then return false end
     end
-    return nil, true
+    return true
 end
 
-local function Paint(self)
+local function LockoutAura()
+    for i = 1, #SPELLS do
+        local aura = C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[i])
+        if aura then return aura end
+    end
+end
+
+-- While the auras are unreadable, aura events carry nothing usable. Listen
+-- for the end of the restriction instead and read again then.
+local function WatchAuras(self, readable)
+    if readable then
+        self.context:Event("UNIT_AURA", OnAura, true, "player")
+        self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
+    else
+        self.context:RemoveEvent("UNIT_AURA")
+        self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", Paint, true)
+    end
+end
+
+-- A lockout seen before the restriction keeps counting down; once it has
+-- run out, the state stays unknown until the auras are readable again.
+local function PaintUnreadable(self)
+    local now = GetTime()
+    if self.lockedUntil and now < self.lockedUntil then
+        self.host:Show()
+        return
+    end
+    self.lockedUntil = nil
+    self.cooldown:Clear()
+    if self.config.onlyWhenLocked then self.host:Hide(); return end
+    self.status:SetText(S.Text("Unknown"))
+    self.status:SetTextColor(S.RGB(S.QoLStyle(self.config).muted))
+    self.host:Show()
+end
+
+local function PaintLocked(self, aura)
+    self.status:SetText(S.Text("Locked"))
+    self.status:SetTextColor(1, .65, .3)
+    local duration, expiration = aura.duration, aura.expirationTime
+    if S.Finite(duration) and duration > 0 and S.Finite(expiration)
+        and expiration > duration then
+        self.cooldown:SetCooldown(expiration - duration, duration)
+        self.lockedUntil = expiration
+    else
+        self.cooldown:Clear()
+        self.lockedUntil = nil
+    end
+    self.host:Show()
+end
+
+Paint = function(self)
     if not self.active then return end
     if S.editMode and not NS.IsCombatLocked() then
         self.status:SetText(S.Text("Locked"))
@@ -85,26 +139,19 @@ local function Paint(self)
         self.host:Hide()
         return
     end
-    local aura, readable = LockoutAura(self)
+    local readable = Readable()
+    WatchAuras(self, readable)
     if not readable then
-        self.cooldown:Clear()
-        self.host:Hide()
+        PaintUnreadable(self)
         return
     end
+    local aura = LockoutAura()
     self.auraInstanceID = aura and S.Finite(aura.auraInstanceID) and aura.auraInstanceID or nil
     self.unknownInstanceID = aura ~= nil and self.auraInstanceID == nil
     if aura then
-        self.status:SetText(S.Text("Locked"))
-        self.status:SetTextColor(1, .65, .3)
-        local duration, expiration = aura.duration, aura.expirationTime
-        if S.Finite(duration) and duration > 0 and S.Finite(expiration)
-            and expiration > duration then
-            self.cooldown:SetCooldown(expiration - duration, duration)
-        else
-            self.cooldown:Clear()
-        end
-        self.host:Show()
+        PaintLocked(self, aura)
     else
+        self.lockedUntil = nil
         self.cooldown:Clear()
         if self.config.onlyWhenLocked then
             self.host:Hide()
@@ -116,23 +163,24 @@ local function Paint(self)
     end
 end
 
-local function Relevant(updateInfo, tracked)
+local function Relevant(updateInfo, tracked, unknown)
     if not S.Public(updateInfo) or type(updateInfo) ~= "table" then return true end
     if not S.Public(updateInfo.isFullUpdate) or updateInfo.isFullUpdate then return true end
     local added = updateInfo.addedAuras
     if not S.Public(added) or (added ~= nil and type(added) ~= "table") then return true end
-    added = added or {}
-    for i = 1, #added do
+    for i = 1, added and #added or 0 do
         local aura = added[i]
         if not S.Public(aura) or type(aura) ~= "table" then return true end
         local spellID = aura.spellId
-        if S.Finite(spellID) and SPELL_SET[spellID] then return true end
+        if not S.Finite(spellID) or SPELL_SET[spellID] then return true end
     end
-    for _, key in ipairs({ "updatedAuraInstanceIDs", "removedAuraInstanceIDs" }) do
-        local ids = updateInfo[key]
+    for i = 1, #INSTANCE_UPDATES do
+        local ids = updateInfo[INSTANCE_UPDATES[i]]
         if not S.Public(ids) or (ids ~= nil and type(ids) ~= "table") then return true end
-        ids = ids or {}
-        if tracked then
+        -- An unreadable lockout instance cannot be matched to updates/removals,
+        -- but an added-only delta can still be excluded by its public spells.
+        if unknown and ids and #ids > 0 then return true end
+        if tracked and ids then
             for i = 1, #ids do
                 local instanceID = ids[i]
                 if not S.Finite(instanceID) or instanceID == tracked then return true end
@@ -142,23 +190,30 @@ local function Relevant(updateInfo, tracked)
     return false
 end
 
-local function OnAura(self, _, unit, updateInfo)
-    if not S.PublicText(unit) or unit ~= "player"
-        or (not self.unknownInstanceID and not Relevant(updateInfo, self.auraInstanceID)) then return end
-    Paint(self)
+OnAura = function(self, _, unit, updateInfo)
+    if not S.PublicText(unit) or unit ~= "player" or self.auraPending
+        or not Relevant(updateInfo, self.auraInstanceID, self.unknownInstanceID) then return end
+    self.auraPending = true
+    if not self.auraArmed then
+        self.auraArmed = true
+        C_Timer.After(AURA_DELAY, self.auraTick)
+    end
 end
 
 local function OnGroup(self)
-    if not NS.IsCombatLocked() then self.auraBlocked = nil end
+    -- Roster, settings and combat-end edges paint fresh immediately, consuming
+    -- any request whose callback is still in flight.
+    self.auraPending = false
     local grouped = IsInGroup()
     self.grouped = S.Public(grouped) and grouped == true
     if self.grouped then
+        -- Combat end lifts the most common restriction; read again then.
         self.context:Event("PLAYER_REGEN_ENABLED", OnGroup, true)
-        if not self.auraBlocked then self.context:Event("UNIT_AURA", OnAura, true, "player") end
     else
         self.context:RemoveEvent("UNIT_AURA")
+        self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
         self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-        self.auraInstanceID, self.unknownInstanceID = nil, nil
+        self.auraInstanceID, self.unknownInstanceID, self.lockedUntil = nil, nil, nil
     end
     Paint(self)
 end
@@ -166,6 +221,14 @@ end
 function M:Enable()
     Create(self)
     Place(self)
+    if not self.auraTick then
+        self.auraTick = function()
+            self.auraArmed = false
+            if not self.auraPending then return end
+            self.auraPending = false
+            if self.active and self.grouped then Paint(self) end
+        end
+    end
     self.context:Event("GROUP_ROSTER_UPDATE", OnGroup, true)
     self.context:Event("PLAYER_ENTERING_WORLD", OnGroup, true)
     OnGroup(self)
@@ -182,10 +245,12 @@ end
 
 function M:Disable()
     self.context:RemoveEvent("UNIT_AURA")
+    self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    self.grouped, self.auraInstanceID, self.unknownInstanceID, self.auraBlocked = nil, nil, nil, nil
+    self.grouped, self.auraInstanceID, self.unknownInstanceID, self.lockedUntil = nil, nil, nil, nil
+    self.auraPending = false
     if self.host then self.cooldown:Clear(); self.host:Hide() end
 end
 
@@ -196,17 +261,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return POINTS[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "width", "height", "scale" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 160, max = 350, step = 1,
-                get = function() return S.Config(ID).width end,
-                set = function(value) return S.Set(ID, "width", value) end },
-            { id = "height", label = "Height", kind = "number", min = 42, max = 80, step = 1,
-                get = function() return S.Config(ID).height end,
-                set = function(value) return S.Set(ID, "height", value) end },
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "width", "height", "scale" },
     })
 end
 

@@ -25,9 +25,9 @@ local function TryChoose(self)
         or not S.Public(button.disabled) or button.disabled ~= false
         or not S.Public(button.confirmation) or button.confirmation ~= nil then return end
     self.lastChoiceID = choiceID
-    -- The native choice stays open for manual selection if its state changed
-    -- between inspection and this one bounded response attempt.
-    pcall(C_PlayerChoice.SendPlayerChoiceResponse, button.id)
+    -- One attempt per choice: if the server refuses it (the choice changed
+    -- since it was read), the native window stays open for a manual pick.
+    C_PlayerChoice.SendPlayerChoiceResponse(button.id)
 end
 
 local function OnClosed(self)

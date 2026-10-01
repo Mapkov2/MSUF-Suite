@@ -152,11 +152,7 @@ function M:RegisterMovers()
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return NS.AnchorPoints[self.config.point] or "CENTER" end,
         quickPosition = true, historyKeys = { "scale" },
-        extraControls = {
-            { id = "scale", label = "Scale %", kind = "number", min = 50, max = 200, step = 1,
-                get = function() return S.Config(ID).scale end,
-                set = function(value) return S.Set(ID, "scale", value) end },
-        },
+        sizeKeys = { "scale" },
     })
 end
 
