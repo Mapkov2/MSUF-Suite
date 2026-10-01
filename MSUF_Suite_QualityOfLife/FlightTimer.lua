@@ -40,59 +40,82 @@ local function MapOpened(self)
         end
     end
 end
+local LABELS = { "title", "route", "time" }
+
+local function Create(self)
+    if self.host then return end
+    local host = S.CreateFrame("Frame", nil, UIParent)
+    host.background = S.CreateTexture(host, nil, "BACKGROUND")
+    host.background:SetAllPoints()
+    host.background:SetColorTexture(.035, .045, .06, .92)
+    host.title = S.CreateFontString(host, nil, "OVERLAY")
+    host.title:SetPoint("TOPLEFT", 8, -7)
+    host.title:SetPoint("TOPRIGHT", -8, -7)
+    host.route = S.CreateFontString(host, nil, "OVERLAY")
+    host.route:SetPoint("TOPLEFT", 8, -29)
+    host.route:SetPoint("TOPRIGHT", -8, -29)
+    host.route:SetJustifyH("LEFT")
+    host.time = S.CreateFontString(host, nil, "OVERLAY")
+    host.time:SetPoint("BOTTOMLEFT", 8, 8)
+    host.land = S.CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
+    host.land:SetSize(132, 23)
+    host.land:SetPoint("BOTTOMRIGHT", -8, 5)
+    host.land:SetText(S.Text("Land at next stop"))
+    host.land:SetScript("OnClick", function()
+        local taxi = UnitOnTaxi("player")
+        if self.active and S.Public(taxi) and taxi then TaxiRequestEarlyLanding() end
+    end)
+    self.duration = C_DurationUtil.CreateDuration()
+    self.binding = C_DurationUtil.CreateDurationTextBinding()
+    self.binding:SetFontString(host.time)
+    -- The client's seconds formatter writes the units in the player's language.
+    local formatter = C_StringUtil.CreateSecondsFormatter()
+    formatter:SetDesiredUnitCount(2)
+    formatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
+    formatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+    self.binding:SetFormatter(formatter)
+    self.binding:SetExpiredText(S.Text("Arriving"))
+    self.binding:SetUpdateInterval(1)
+    self.host = host
+end
+
+-- Size, position, fonts and colors follow the settings: Enable and Refresh
+-- only, never the taxi and control events.
 local function Layout(self)
-    local c = self.config
-    if not self.host then
-        local host = S.CreateFrame("Frame", nil, UIParent)
-        host.background = S.CreateTexture(host, nil, "BACKGROUND")
-        host.background:SetAllPoints(); host.background:SetColorTexture(.035, .045, .06, .92)
-        host.title = S.CreateFontString(host, nil, "OVERLAY")
-        host.title:SetPoint("TOPLEFT", 8, -7); host.title:SetPoint("TOPRIGHT", -8, -7)
-        host.route = S.CreateFontString(host, nil, "OVERLAY")
-        host.route:SetPoint("TOPLEFT", 8, -29); host.route:SetPoint("TOPRIGHT", -8, -29)
-        host.route:SetJustifyH("LEFT")
-        host.time = S.CreateFontString(host, nil, "OVERLAY")
-        host.time:SetPoint("BOTTOMLEFT", 8, 8)
-        host.land = S.CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
-        host.land:SetSize(132, 23); host.land:SetPoint("BOTTOMRIGHT", -8, 5)
-        host.land:SetText(S.Text("Land at next stop"))
-        host.land:SetScript("OnClick", function()
-            local taxi = UnitOnTaxi("player")
-            if self.active and S.Public(taxi) and taxi then TaxiRequestEarlyLanding() end
-        end)
-        self.duration = C_DurationUtil.CreateDuration()
-        self.binding = C_DurationUtil.CreateDurationTextBinding()
-        self.binding:SetFontString(host.time)
-        -- The client's seconds formatter writes the units in the player's language.
-        local formatter = C_StringUtil.CreateSecondsFormatter()
-        formatter:SetDesiredUnitCount(2)
-        formatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
-        formatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
-        self.binding:SetFormatter(formatter)
-        self.binding:SetExpiredText(S.Text("Arriving"))
-        self.binding:SetUpdateInterval(1)
-        self.host = host
-    end
-    local host = self.host
-    host:SetSize(c.width, c.showStops and 132 or 76); host:SetScale(c.scale / 100)
-    host:ClearAllPoints(); host:SetPoint("CENTER", UIParent, "CENTER", c.x, c.y)
+    local c, host = self.config, self.host
+    host:SetSize(c.width, c.showStops and 132 or 76)
+    host:SetScale(c.scale / 100)
+    host:ClearAllPoints()
+    host:SetPoint("CENTER", UIParent, "CENTER", c.x, c.y)
     local _, class = UnitClass("player")
     local color = c.classColor and S.Public(class) and RAID_CLASS_COLORS[class]
-    for _, label in ipairs({ host.title, host.route, host.time }) do
+    for i = 1, #LABELS do
+        local label = host[LABELS[i]]
         S.SetStyledFont(label, S.GlobalFontPath(), c.fontSize, "OUTLINE", 1, true, 80, 1)
         label:SetTextColor(color and color.r or 1, color and color.g or 1, color and color.b or 1)
     end
     host.route:SetShown(c.showStops)
 end
-local function Update(self)
+
+-- UNIT_FLAGS and the control events fire for much more than flights; the
+-- display is drawn again only when what it shows changed (force: settings).
+local function Update(self, force)
     if not self.active then return end
-    Layout(self)
     local taxi = UnitOnTaxi("player")
     taxi = S.Public(taxi) and taxi == true
     local visible = not self.config.hideDisplay and (taxi or S.editMode)
+    if not force and visible == self.paintedVisible and taxi == self.paintedTaxi
+        and self.current == self.paintedRoute and self.departed == self.paintedDeparted then
+        return
+    end
+    self.paintedVisible, self.paintedTaxi = visible, taxi
+    self.paintedRoute, self.paintedDeparted = self.current, self.departed
     self.host:SetShown(visible)
     self.host.land:SetEnabled(taxi and not S.editMode)
-    if not visible then self.binding:SetEnabled(false); return end
+    if not visible then
+        self.binding:SetEnabled(false)
+        return
+    end
     local route = self.current
     self.host.title:SetText(route and (route.names[1] .. " → " .. route.destination) or S.Text(S.editMode and "Flight route preview" or "Flight route unavailable"))
     self.host.route:SetText(route and table.concat(route.names, " → ") or S.Text("Select a destination at the flight master."))
@@ -180,7 +203,9 @@ function M:Enable()
     self.context:Event("PLAYER_CONTROL_GAINED", State, true)
     self.context:Event("UNIT_FLAGS", State, false, "player")
     self.context:Event("PLAYER_ENTERING_WORLD", State, true)
-    Update(self)
+    Create(self)
+    Layout(self)
+    Update(self, true)
     S.RegisterOwnedMover(ID, "flight", { label = "Flight route timer", order = 651, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", sizeKeys = { "width" }, point = function() return "CENTER" end })
 end
@@ -189,10 +214,16 @@ function M:Refresh()
     -- A profile switch mid-flight must not teach the new profile this trip.
     if self.timings ~= timings then Forget(self) end
     self.timings = timings
-    Update(self)
+    Create(self)
+    Layout(self)
+    Update(self, true)
 end
 function M:Disable()
     Forget(self)
-    if self.host then self.binding:SetEnabled(false); self.host:Hide() end
+    self.paintedVisible = nil
+    if self.host then
+        self.binding:SetEnabled(false)
+        self.host:Hide()
+    end
 end
 S.Install(ID, M)

@@ -107,6 +107,30 @@ TakeOff(500)
 local old=state;state={};m:Refresh()
 Landed(530)
 assert(next(state.timings)==nil and old.timings["A > B > C"]==60,"profile switch wrote a foreign in-progress route")
+-- UNIT_FLAGS and the control events fire for far more than flights. A storm
+-- of them, on the ground or in the air, lays nothing out, draws nothing
+-- again and allocates nothing.
+local fonts, texts = 0, 0
+S.SetStyledFont = function() fonts = fonts + 1 end
+local titleText = m.host.title.SetText
+m.host.title.SetText = function(self, value) texts = texts + 1; titleText(self, value) end
+for _, flying in ipairs({ false, true }) do
+    taxi = flying
+    events.UNIT_FLAGS(m, "UNIT_FLAGS", "player")
+    fonts, texts = 0, 0
+    collectgarbage("collect"); collectgarbage("stop")
+    local memory = collectgarbage("count")
+    for _ = 1, 1000 do
+        events.UNIT_FLAGS(m, "UNIT_FLAGS", "player")
+        events.PLAYER_CONTROL_GAINED(m, "PLAYER_CONTROL_GAINED")
+    end
+    local allocated = collectgarbage("count") - memory
+    collectgarbage("restart")
+    assert(fonts == 0 and texts == 0 and allocated < 1,
+        "flag and control events laid out, redrew or allocated the flight display: " .. allocated .. " KB")
+end
+Landed(now)
+assert(next(state.timings) == nil and not m.host.shown, "the event storm taught or kept a flight")
 TakeOff(600)
 m.active=false;m:Disable();Landed(650)
 assert(next(state.timings)==nil and not m.host.shown,"disabled flight timer recorded or reopened")
