@@ -87,6 +87,7 @@ hooksecurefunc = function(name, callback)
 end
 MerchantFrame_Update = function() end
 Load("MerchantWatch")
+Load("SharedItems")
 Load("MerchantItemLevel")
 local merchant = assert(suite.instances.merchantLevel)
 merchant.active, merchant.context = true, Context()
@@ -117,7 +118,8 @@ paintTimers[1].callback()
 assert(merchant.labels[2].shown and merchant.labels[2].text == 490
     and not merchant.context.events.GET_ITEM_INFO_RECEIVED,
     "loaded item level did not appear or its event remained active")
-levels[1], levels[2], merchant.requested = nil, nil, {}
+levels[1], levels[2] = nil, nil
+merchant.requests:Reset()
 merchantHook()
 RunFrame()
 levels[1], levels[2] = 510, 490
@@ -129,7 +131,7 @@ paintTimers[2].callback()
 assert(merchant.labels[1].shown and merchant.labels[2].shown
     and not merchant.context.events.GET_ITEM_INFO_RECEIVED,
     "batched item loads did not repaint both merchant labels")
-levels[1], merchant.requested[1] = nil, nil
+levels[1], merchant.requests.asked[1] = nil, nil
 merchantHook()
 RunFrame()
 Fire(merchant, "GET_ITEM_INFO_RECEIVED", 1)

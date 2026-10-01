@@ -83,6 +83,10 @@ function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
 
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
+-- SharedItems.lua loads first in the TOC: the shared ID list, bag-item
+-- GUID and item-data helpers.
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SharedItems.lua"))(
+    "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootToastFilter.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.context, module.active = context, true

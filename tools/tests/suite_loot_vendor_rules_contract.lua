@@ -87,6 +87,10 @@ local context = { events = {} }
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
 
+-- SharedItems.lua loads first in the TOC: the shared ID list, bag-item
+-- GUID and item-data helpers.
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SharedItems.lua"))(
+    "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootVendorRules.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.config = { itemIDs = "100, 200; 100 bad", maxQuality = 2, includeGear = false }

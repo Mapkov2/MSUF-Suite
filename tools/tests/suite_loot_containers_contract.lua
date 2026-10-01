@@ -50,6 +50,10 @@ function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
 
 slots[0][1] = { guid = "old", info = { itemID = 10, hasLoot = true, isLocked = false } }
+-- SharedItems.lua loads first in the TOC: the shared ID list, bag-item
+-- GUID and item-data helpers.
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SharedItems.lua"))(
+    "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootContainers.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.context, module.active = context, true

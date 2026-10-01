@@ -5,32 +5,13 @@ local M = { ids = {} }
 local POPUP = "MSUF_SUITE_SELL_MARKED_ITEMS"
 -- Retail BagIndex constants (upstream/live BagIndexConstantsDocumentation.lua).
 local FIRST_BAG, LAST_BAG = 0, 5
-
-local function ParseIDs(value)
-    local ids, count = {}, 0
-    if type(value) ~= "string" then return ids end
-    for token in value:gmatch("[^,%s;]+") do
-        local id = tonumber(token)
-        if S.Finite(id) and id > 0 and id < 10000000 and id == math.floor(id)
-            and not ids[id] then
-            ids[id] = true
-            count = count + 1
-            if count >= 200 then break end
-        end
-    end
-    return ids
-end
+-- At most this many marked item IDs count (itemIDs).
+local MAX_IDS = 200
+local ItemGUID = S.QoLItemGUID
 
 local function MerchantOpen(self)
     return self.active and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1
         and not NS.IsCombatLocked()
-end
-
-local function ItemGUID(bag, slot)
-    local location = ItemLocation:CreateFromBagAndSlot(bag, slot)
-    if not S.Public(location) or not location then return nil end
-    local guid = C_Item.GetItemGUID(location)
-    return S.Public(guid) and type(guid) == "string" and guid ~= "" and guid or nil
 end
 
 local function Eligible(self, bag, slot)
@@ -192,7 +173,7 @@ local function MerchantEvent(self, event)
 end
 
 function M:Refresh()
-    self.ids = ParseIDs(self.config.itemIDs)
+    self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
     if not next(self.ids) then
         self.context:RemoveEvent("MERCHANT_SHOW")
         self.context:RemoveEvent("MERCHANT_CLOSED")

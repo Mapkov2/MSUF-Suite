@@ -2,7 +2,7 @@ local _, P = ...
 local S = P.Suite
 
 local ID = "merchantLevel"
-local M = { labels = {}, requested = {} }
+local M = { labels = {}, requests = S.QoLItemRequests() }
 
 local function CancelPaint(self)
     local timer = self.paintTimer
@@ -28,8 +28,7 @@ local function Label(self, slot, button)
 end
 
 local function ItemLoaded(self, _, itemID)
-    if not S.Finite(itemID) or self.requested[itemID] ~= true then return end
-    self.requested[itemID] = "done"
+    if not self.requests:Arrived(itemID) then return end
     -- Several visible items can finish loading in one frame. Repaint their
     -- page once, after the item events have been delivered.
     if self.paintTimer then return end
@@ -40,17 +39,6 @@ local function ItemLoaded(self, _, itemID)
         self:Paint()
     end)
     self.paintTimer = timer
-end
-
--- Asks the client once per merchant visit for an item's data; true while
--- the answer is still outstanding.
-local function Request(self, itemID)
-    if not S.Finite(itemID) or itemID <= 0 then return false end
-    if not self.requested[itemID] then
-        self.requested[itemID] = true
-        C_Item.RequestLoadItemDataByID(itemID)
-    end
-    return self.requested[itemID] == true
 end
 
 function M:Paint()
@@ -75,7 +63,8 @@ function M:Paint()
             label:Show()
         else
             if label then label:Hide() end
-            if level == false and Request(self, GetMerchantItemID(index)) then waiting = true end
+            -- Asked once per merchant visit; true while the answer is outstanding.
+            if level == false and self.requests:Request(GetMerchantItemID(index)) then waiting = true end
         end
     end
     if waiting then
@@ -93,7 +82,7 @@ local function OnMerchant(self, event)
     if event == "MERCHANT_CLOSED" then
         self.open = false
         CancelPaint(self)
-        self.requested = {}
+        self.requests:Reset()
         self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
         Hide(self)
         return
@@ -105,7 +94,7 @@ end
 -- The merchant list shows these levels on its own rows.
 function M:Enable()
     self.open = MerchantFrame:IsShown()
-    self.requested = {}
+    self.requests:Reset()
     self.context:Event("MERCHANT_SHOW", OnMerchant)
     self.context:Event("MERCHANT_CLOSED", OnMerchant)
     S.WatchMerchant(self, Updated)
@@ -120,7 +109,7 @@ end
 function M:Disable()
     self.open = false
     CancelPaint(self)
-    self.requested = {}
+    self.requests:Reset()
     Hide(self)
     S.UnwatchMerchant(self)
     S.RepaintMerchant()

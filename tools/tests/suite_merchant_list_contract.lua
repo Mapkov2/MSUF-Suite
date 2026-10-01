@@ -221,7 +221,7 @@ local function Context()
     end
     return context
 end
-for _, file in ipairs({ "MerchantWatch", "MerchantList" }) do
+for _, file in ipairs({ "MerchantWatch", "SharedItems", "MerchantList" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("test", { NS = NS, Suite = S })
 end
 local list = modules.merchantList

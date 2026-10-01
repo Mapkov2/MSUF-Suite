@@ -17,6 +17,7 @@ Merchant.lua
 TrainerLearnAll.lua
 CharacterUpgradeWindow.lua
 ProfessionAppearance.lua
+SharedItems.lua
 LootToastFilter.lua
 QuestHelpers.lua
 MerchantItemLevel.lua
