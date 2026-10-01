@@ -4,6 +4,7 @@ local _, P = ...
 local Model = {}
 P.InventoryModel = Model
 local VIEW = P.NS.BagsView
+local BY_BAG, CATEGORIES = VIEW.BY_BAG, VIEW.CATEGORIES
 -- Item classes and qualities: Enum.ItemClass and Enum.ItemQuality
 -- (ItemConstantsDocumentation, ItemQualitiesDocumentation; Retail and Forever).
 local CLASS, POOR = Enum.ItemClass, Enum.ItemQuality.Poor
@@ -225,10 +226,10 @@ local function ItemGroup(item, config, state, custom)
     if item.itemID and config.showRecent and state.recent and state.recent[item.itemID] then
         return "recent", "Recent items", 1, nil, true
     end
-    if config.inventoryView == VIEW.BY_BAG then
+    if config.inventoryView == BY_BAG then
         return "bag:" .. item.bag, item.bagName or tostring(item.bag), 50 + item.bag, nil, false
     end
-    if config.inventoryView ~= VIEW.CATEGORIES then return "all", "All items", 2, nil, true end
+    if config.inventoryView ~= CATEGORIES then return "all", "All items", 2, nil, true end
     if not item.itemID then return "empty", "Empty slots", 200, nil, true end
     local key, label, order, translate = Model.Category(item, custom)
     if config["category_" .. key] == false then
@@ -279,7 +280,7 @@ function Model.Build(model, items, config, state, context)
     end
     local merge = config.mergeStacks and not (context and context.transactions)
     local selected = context and context.selected
-    local categories = config.inventoryView == VIEW.CATEGORIES
+    local categories = config.inventoryView == CATEGORIES
     local showSets = categories and config.groupEquipmentSets and config.category_equipment ~= false
     local query = context and context.query
     if query == "" then query = nil end
