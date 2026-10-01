@@ -451,6 +451,7 @@ local function Tooltip(button)
     local key = button.infoKey
     local entry, title = M.infoEntries[key], TITLES[key]
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    MM.ScaleTooltip(button)
     GameTooltip:SetText(S.BlizzardText(title[1], title[2]))
     GameTooltip:AddLine(entry.tooltipText or entry.text or "--", 1, 1, 1)
     if key == "Clock" then

@@ -355,6 +355,85 @@ do
     print("Minimap wheel zoom, zoom reset, zoom buttons, middle click, rotation and hover reveal passed")
 end
 
+-- Micro menu: a Suite-owned flyout of secure "click" buttons. A row's hardware
+-- click makes SecureActionButton_OnClick click Blizzard's micro button from
+-- secure code; addon code never calls Click() on it. Listed are the buttons
+-- in Blizzard's micro menu (MicroMenuMixin:AddButton sets layoutIndex) that
+-- are shown; Forever's menu leaves PlayerSpellsMicroButton out. The game menu
+-- button acts only while the cursor is over it, so it is never offered.
+for _, client in ipairs({ "Mainline", "Forever" }) do
+    local W = H.New(root, client, { clientCombatOrder = true })
+    W.editModeReady = true
+    local G = W.G
+    local opened, secureOpens = {}, 0
+    local function Micro(name, index, shown, enabled)
+        local button = W.New("Button", name, W.UIParent)
+        button.layoutIndex, button.shown, button.enabled = index, shown ~= false, enabled ~= false
+        button:SetScript("OnClick", function()
+            opened[#opened + 1] = name
+            if W.secure then secureOpens = secureOpens + 1 end
+        end)
+        return button
+    end
+    Micro("CharacterMicroButton", 1)
+    if client == "Forever" then
+        Micro("PlayerSpellsMicroButton", nil)
+        Micro("SpellbookMicroButton", 2)
+        Micro("TalentMicroButton", 3)
+    else
+        Micro("PlayerSpellsMicroButton", 2)
+    end
+    Micro("GuildMicroButton", 4, true, false)
+    Micro("HelpMicroButton", 5, false)
+    local game = Micro("MainMenuMicroButton", 6)
+    -- MainMenuMicroButtonMixin:OnClick (Blizzard_MicroMenu, both clients).
+    game:SetScript("OnClick", function(self) if self:IsMouseOver() then opened[#opened + 1] = "game" end end)
+    H.Enable(W, { captured = true, middleClick = 5 })
+    W.Step()
+    local MM, map = W.MM, W.map
+    local mouseUp = map:GetScript("OnMouseUp")
+    mouseUp(map, "MiddleButton")
+    local flyout = MM.microMenu
+    check(flyout and flyout.shown, client .. ": middle click did not open the micro menu")
+    local function Rows()
+        local list = {}
+        for _, child in ipairs({ flyout:GetChildren() }) do
+            if child.shown and child:GetAttribute("type") == "click" then list[#list + 1] = child end
+        end
+        return list
+    end
+    local rows = Rows()
+    local expected = client == "Forever"
+        and { "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton", "GuildMicroButton" }
+        or { "CharacterMicroButton", "PlayerSpellsMicroButton", "GuildMicroButton" }
+    check(#rows == #expected, client .. ": micro menu lists " .. #rows .. " entries, expected " .. #expected)
+    for i, name in ipairs(expected) do
+        check(rows[i] and rows[i]:GetAttribute("clickbutton") == G[name] and rows[i].protected,
+            client .. ": micro menu entry " .. i .. " is not a secure click on " .. name)
+    end
+    check(rows[#rows].enabled == false, client .. ": a disabled micro button got a clickable entry")
+    W.HardwareClick(rows[1])
+    check(opened[1] == "CharacterMicroButton" and secureOpens == 1 and not flyout.shown,
+        client .. ": a micro menu choice did not open Blizzard's panel from secure code")
+    mouseUp(map, "MiddleButton")
+    W.HardwareClick(Rows()[#expected])
+    check(#opened == 1 and flyout.shown, client .. ": a disabled micro button opened its panel")
+    W.Event("GLOBAL_MOUSE_DOWN", "LeftButton")
+    check(not flyout.shown, client .. ": a click elsewhere left the micro menu open")
+    -- Combat starts with PLAYER_REGEN_DISABLED before the lockdown: the
+    -- protected flyout closes then; in combat it does not open.
+    mouseUp(map, "MiddleButton")
+    W.SetCombat(true)
+    check(not flyout.shown, client .. ": combat start left the micro menu open")
+    mouseUp(map, "MiddleButton")
+    check(not flyout.shown, client .. ": the micro menu opened in combat")
+    W.SetCombat(false)
+    mouseUp(map, "MiddleButton")
+    assert(W.S.Set("minimap", "enabled", false))
+    check(not flyout.shown, client .. ": disable left the micro menu open")
+end
+print("Minimap micro menu: secure click flyout, listed buttons, disabled entries, click-away, combat edge and disable passed")
+
 local function Anchor(frame)
     local point, relative, relativePoint, x, y = frame:GetPoint(1)
     return point, relative, relativePoint, x, y
@@ -560,7 +639,8 @@ do
     local tip = W.G.GameTooltip
     W.Fire(toggle, "OnEnter")
     check(tip.shown and tip.owner == toggle and tip.lines[1] == "Addon buttons"
-        and tip.lines[2] == "Click to show or hide the collected buttons.", "drawer toggle tooltip")
+        and tip.lines[2] == "Click to show or hide the collected buttons."
+        and tip.lines[3] == "Right-click to detach single buttons or collect them again.", "drawer toggle tooltip")
     W.Fire(toggle, "OnLeave")
     check(not tip.shown, "leaving the drawer toggle kept its tooltip")
     local outline = MM.panel.edges
@@ -611,6 +691,36 @@ do
     check(not S.MinimapRescanButtons(), "rescan in combat")
     W.SetCombat(false)
     check(S.MinimapRescanButtons(), "rescan")
+    local actions = {}
+    W.G.MenuUtil = { CreateContextMenu = function(_, generator)
+        generator(nil, { CreateTitle = function() end, CreateButton = function(_, label, callback) actions[label] = callback end })
+    end }
+    assert(S.MinimapButtonLayoutMenu())
+    assert(actions["Detach: Alpha"]); actions["Detach: Alpha"](); W.Step()
+    local holder = alpha:GetParent()
+    check(holder ~= panel and holder:GetParent() == W.G.UIParent, "individual button not detached")
+    check(S.ModuleState("minimap").detachedButtons.LibDBIcon10_Alpha ~= nil, "individual placement not persisted")
+    -- UI modes hide the detached button with the map; its grip shows only
+    -- in MSUF Edit Mode.
+    check(holder.roleset == "minimap", "a detached button ignores the minimap's roleset")
+    check(holder.grip and not holder.grip.shown, "a detached button shows its drag grip outside Edit Mode")
+    S.SetEditMode(true)
+    check(holder.grip.shown, "Edit Mode did not show the detached button's drag grip")
+    S.SetEditMode(false)
+    check(not holder.grip.shown, "the drag grip outlived Edit Mode")
+    alpha:Hide(); W.Step(); check(not holder.shown, "detached holder ignored owner hide")
+    alpha:Show(); W.Step(); check(holder.shown, "detached holder ignored owner show")
+    actions = {}; S.MinimapButtonLayoutMenu(); assert(actions["Collect: Alpha"])
+    actions["Collect: Alpha"](); W.Step()
+    check(alpha:GetParent() == panel and not holder.shown, "detached button did not return to drawer")
+    -- Undo and Edit Mode Cancel restore the saved positions and lay the
+    -- drawer out again: a button collected that way leaves its holder too.
+    actions = {}; S.MinimapButtonLayoutMenu(); actions["Detach: Alpha"](); W.Step()
+    check(holder.shown, "the button did not detach again")
+    S.ModuleState("minimap").detachedButtons = {}
+    check(S.MinimapRescanButtons(), "rescan after restored positions"); W.Step()
+    check(alpha:GetParent() == panel and not holder.shown, "a restored collected button kept its empty holder")
+    actions = {}; S.MinimapButtonLayoutMenu(); actions["Detach: Alpha"](); W.Step()
     assert(S.Set("minimap", "collectButtons", false))
     for _, button in ipairs({ alpha, beta, own, gamma, delta }) do
         local point, rel, relPoint, bx, by = Anchor(button)

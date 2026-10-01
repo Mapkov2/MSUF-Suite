@@ -74,6 +74,7 @@ local function TrackingButton()
     local button = MM.Usable(tracking) and tracking.Button
     if MM.Usable(button) then return button end
 end
+
 local function MouseUp(_, button)
     if button ~= "MiddleButton" or not M.active or NS.IsCombatLocked() then return end
     local action = M.config.middleClick
@@ -89,6 +90,9 @@ local function MouseUp(_, button)
         ToggleCalendar()
     elseif action == 4 then
         ToggleWorldMap()
+    elseif action == 5 then
+        -- A secure flyout clicks Blizzard's own micro buttons (MicroMenu.lua).
+        MM.OpenMicroMenu()
     end
 end
 
@@ -361,6 +365,7 @@ function MM.ReleaseInput()
         leaveTimer = nil
     end
     MM.hovered = false
+    MM.CloseMicroMenu()
     for button in pairs(zoomShown) do
         if MM.owned[button] then
             MM.Release(button)

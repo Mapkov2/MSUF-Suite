@@ -47,7 +47,7 @@ do
     -- Both artwork sets follow every known state, without extra timers. Icon-only
     -- entries keep a readable tooltip and reserve room for large icon sizes.
     assert(S.SetMany("minimap", { infoWeatherDisplay = 2, infoWeatherIconSize = 48, infoWeatherBox = 2 }))
-    local native = { [0] = 900403, [1] = 900229, [2] = 900205, [3] = 900454 }
+    local native = { [0] = 535593, [1] = 132852, [2] = 135857, [3] = 463521 }
     local names = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm" }
     for style = 1, 2 do
         assert(S.Set("minimap", "infoWeatherIconStyle", style))
@@ -67,7 +67,14 @@ do
     W.Step()
     check(W.MM.catcher.points[2][5] == -(56 - W.config.infoWeatherY + W.MM.BorderWidth()),
         "mouseover area did not cover the full weather icon below the map")
-    check(W.calls.weatherIcon == 4, "native weather icons must resolve only once per weather type")
+    check(not W.calls.weatherIcon, "weather artwork must not depend on unavailable pet battle records")
+    -- With the weather unchanged, changing only the style must update the
+    -- native texture even though the icon-only label stays empty.
+    assert(S.Set("minimap", "infoWeatherIconStyle", 1))
+    check(entry.icon.texture == native[3], "Blizzard style reused Forever artwork without pet battle data")
+    assert(S.Set("minimap", "infoWeatherIconStyle", 2))
+    check(entry.icon.texture == "Interface\\AddOns\\MSUF_Suite\\Media\\Weather\\Sandstorm.tga",
+        "Forever style did not replace the native icon immediately")
     kind = 4; W.Event("WEATHER_CHANGED")
     check(entry.icon.texture:find("INV_Misc_QuestionMark", 1, true) and entry.tooltipText == "Other weather",
         "miscellaneous weather must retain a distinct fallback")
@@ -415,7 +422,7 @@ do
             HasAvailableRewards = function() return true end, GetExampleRewardItemHyperlinks = function() return "item:1" end }
         G.C_Item = { GetDetailedItemLevelInfo = function() return itemLevel end }
         G.GetDifficultyInfo = function() return "Normal" end
-    end })
+    end, float32Scale = true })
     W.editModeReady = true
     local G, S = W.G, W.S
     H.Enable(W, { captured = true, infoLocation = false, infoClockTooltip = 2 })
@@ -472,8 +479,26 @@ do
     check(not tip.shown, "no tooltip")
     assert(S.Set("minimap", "infoClockTooltip", 1)); Enter()
     check(tip.shown and tip.lines[1] == "Clock", "plain tooltip"); Leave()
-    assert(S.Set("minimap", "infoClockTooltip", 2)); Enter()
+    -- The client reads a scale back as a 32-bit float (float32Scale above).
+    assert(S.SetMany("minimap", { infoClockTooltip = 2, tooltipScale = 115 }))
+    tip:SetScale(1); Enter()
+    check(H.Near(tip:GetScale(), 1.15), "minimap tooltip did not scale")
+    Leave()
+    check(H.Near(tip:GetScale(), 1), "a 115% minimap tooltip scale stayed on GameTooltip after leave")
+    assert(S.SetMany("minimap", { infoClockTooltip = 2, tooltipScale = 150 }))
+    tip:SetScale(.8); Enter()
+    check(math.abs(tip:GetScale() - 1.2) < .0001, "minimap tooltip did not scale from its previous scale")
+    W.MM.ScaleTooltip(button)
+    check(math.abs(tip:GetScale() - 1.2) < .0001, "repeated tooltip scaling compounded")
+    Leave()
+    check(H.Near(tip:GetScale(), .8), "tooltip scale did not restore on leave")
+    Enter(); tip:SetOwner(G.UIParent)
+    check(H.Near(tip:GetScale(), .8), "another tooltip owner inherited minimap scale")
+    Leave(); Enter(); tip:SetScale(.9); Leave()
+    check(H.Near(tip:GetScale(), .9), "minimap overwrote another owner's changed tooltip scale")
+    Enter()
     assert(S.Set("minimap", "enabled", false))
+    check(H.Near(tip:GetScale(), .9), "disable did not restore tooltip scale")
     check(not tip.shown and not next(events), "disable kept tooltip work")
     print("Minimap tooltips: lockouts, throttled raid info, weekly rewards, owned-hover events and disable passed")
 end

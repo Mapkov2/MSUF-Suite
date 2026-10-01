@@ -6,10 +6,34 @@
 -- options.dispatchErrors (a list) installs securecallfunction: a callback
 -- that raises is reported into the list and its caller goes on. Without it,
 -- securecallfunction calls directly and errors propagate.
+-- options.clientSecurity models more of the client (opt-in, so the other
+-- contracts keep their world): frames created from any Secure* template are
+-- protected, SecureActionButtonTemplate performs the item, toy, spell and
+-- click actions it is given (recorded in W.secureActions), W.SetCombat
+-- follows the client's combat order (as options.clientCombatOrder), state
+-- drivers evaluate [combat]/[nocombat] macros the way SecureCmdOptionParse
+-- does, and protected attributes reject combat writes.
+-- options.float32Scale makes GetScale return the scale rounded to a 32-bit
+-- float, as the client stores it (off by default: older scenarios compare the
+-- exact numbers they wrote). options.clientCombatOrder makes W.SetCombat(true)
+-- send PLAYER_REGEN_DISABLED before the lockdown starts, as the client does
+-- (off by default for older scenarios).
 local H = {}
 
+-- Rounds to the nearest 32-bit float (ties to even), like the client's frame
+-- geometry.
+local function Float32(value)
+    if value == 0 or value ~= value or value == math.huge or value == -math.huge then return value end
+    local mantissa, exponent = math.frexp(value)
+    local scaled = mantissa * 2 ^ 24
+    local rounded = math.floor(scaled + .5)
+    if rounded - scaled == .5 and rounded % 2 == 1 then rounded = rounded - 1 end
+    return math.ldexp(rounded / 2 ^ 24, exponent)
+end
+H.Float32 = Float32
+
 -- Runtime files in load order across the shared and minimap AddOns.
-H.MODULES = { "Bootstrap", "Host", "Input", "Elements", "Drawer",
+H.MODULES = { "Bootstrap", "Host", "Input", "MicroMenu", "Elements", "Drawer",
     "Info", "Tooltips", "Specialization", "Controller" }
 
 function H.New(root, client, options)
@@ -211,7 +235,7 @@ function H.New(root, client, options)
     function F:GetAlpha() return self.alpha end
     function F:GetEffectiveAlpha() return self.alpha * (self.parent and self.parent:GetEffectiveAlpha() or 1) end
     function F:SetScale(value) Guard(self, "SetScale"); self.scale = value end
-    function F:GetScale() return self.scale end
+    function F:GetScale() return options.float32Scale and Float32(self.scale) or self.scale end
     function F:GetEffectiveScale() return self.scale * (self.parent and self.parent:GetEffectiveScale() or 1) end
     function F:SetFrameStrata(value) Guard(self, "SetFrameStrata"); if not self.fixedStrata then self.strata = value end end
     function F:GetFrameStrata() return self.strata end
@@ -256,8 +280,11 @@ function H.New(root, client, options)
     function F:RegisterEvent(event) self.events[event] = true end
     function F:UnregisterEvent(event) self.events[event] = nil end
     function F:UnregisterAllEvents() self.events = {} end
-    function F:RegisterForClicks(...) self.clicks = { ... } end
+    function F:RegisterForClicks(...) self.clicks = { ... }; self.clickKinds = { ... } end
     function F:RegisterForDrag(...) self.drag = { ... } end
+    function F:SetMovable(value) self.movable = value end
+    function F:StartMoving() self.moving = true end
+    function F:StopMovingOrSizing() self.moving = false end
     function F:Click(button) Fire(self, "OnClick", button or "LeftButton") end
     function F:SetEnabled(value) self.enabled = value and true or false end
     function F:IsEnabled() return self.enabled end
@@ -265,8 +292,15 @@ function H.New(root, client, options)
     function F:Disable() self.enabled = false end
     function F:SetNormalTexture(value) self.normal = value end
     function F:SetHighlightTexture(value) self.highlight = value end
-    function F:SetAttribute(key, value) self.attributes = self.attributes or {}; self.attributes[key] = value end
+    function F:SetAttribute(key, value)
+        if options.clientSecurity then Guard(self, "SetAttribute") end
+        self.attributes = self.attributes or {}
+        self.attributes[key] = value
+    end
     function F:GetAttribute(key) return self.attributes and self.attributes[key] end
+    -- Cooldown
+    function F:SetCooldownFromDurationObject(duration) self.cooldownDuration = duration end
+    function F:Clear() self.cooldownDuration = nil end
     -- Minimap
     function F:SetMaskTexture(value) Count("mask"); self.mask = value end
     function F:GetZoom() return self.zoom or 0 end
@@ -315,18 +349,52 @@ function H.New(root, client, options)
         for _, frame in ipairs(W.frames) do if frame.events[event] then list[#list + 1] = frame end end
         for _, frame in ipairs(list) do Fire(frame, "OnEvent", event, ...) end
     end
+    -- SecureCmdOptionParse for the conditions the contracts use: clauses
+    -- "[a,b][c] action" separated by ";", the first matching one wins. A
+    -- condition other than combat/nocombat (and @unit targets) is false here.
+    local function Condition(text)
+        local ok = true
+        for word in text:gmatch("[^,]+") do
+            word = word:match("^%s*(.-)%s*$")
+            if word == "combat" then ok = ok and W.combat
+            elseif word == "nocombat" then ok = ok and not W.combat
+            elseif word:sub(1, 1) ~= "@" then ok = false end
+        end
+        return ok
+    end
+    local function ResolveMacro(value)
+        for clause in value:gmatch("[^;]+") do
+            local groups, action = clause:match("^%s*(%[.*%])%s*(.-)%s*$")
+            if not groups then return (clause:match("^%s*(.-)%s*$")) end
+            for group in groups:gmatch("%[(.-)%]") do
+                if Condition(group) then return action end
+            end
+        end
+    end
     local function Drive(frame)
         local value, show = frame.stateDriver
-        if value == "[combat] show; hide" then show = W.combat elseif value == "[combat] hide; show" then show = not W.combat end
+        if options.clientSecurity then
+            local action = ResolveMacro(value)
+            if action == "show" then show = true elseif action == "hide" then show = false end
+        elseif value == "[combat] show; hide" then show = W.combat
+        elseif value == "[combat] hide; show" then show = not W.combat end
         if show == nil then return end
         W.secure = true
         frame:SetShown(show)
         W.secure = false
     end
+    W.ResolveMacro = ResolveMacro
+    -- The client runs PLAYER_REGEN_DISABLED handlers before lockdown starts
+    -- and PLAYER_REGEN_ENABLED handlers after it ended; state drivers resolve
+    -- on the next frame, already inside the new state.
     function W.SetCombat(value)
+        local clientOrder = options.clientCombatOrder or options.clientSecurity
+        if value and clientOrder then W.Event("PLAYER_REGEN_DISABLED") end
         W.combat = value
         for frame in pairs(W.drivers) do Drive(frame) end
-        W.Event(value and "PLAYER_REGEN_DISABLED" or "PLAYER_REGEN_ENABLED")
+        if not value or not clientOrder then
+            W.Event(value and "PLAYER_REGEN_DISABLED" or "PLAYER_REGEN_ENABLED")
+        end
     end
     -- Runs Blizzard code: secure, so it may move protected frames in combat.
     function W.Blizzard(callback, ...)
@@ -336,14 +404,82 @@ function H.New(root, client, options)
         W.secure = previous
     end
 
-    G.CreateFrame = function(kind, name, parent) return New(kind, name, parent) end
+    -- SecureActionButtonTemplate (Blizzard_FrameXML/SecureTemplates.lua): the
+    -- button is protected, and SecureActionButton_OnClick acts on the press
+    -- while its useOnKeyDown (default: the ActionButtonUseKeyDown CVar, on by
+    -- default) is set, else on the release. It performs the action types the
+    -- Suite sets (item, toy, spell, click), each recorded in W.secureActions;
+    -- the "click" action clicks its clickbutton from secure code.
+    W.secureActions = {}
+    local function ModifiedAttribute(frame, name, button)
+        local suffix = button == "LeftButton" and "1" or button == "RightButton" and "2" or ""
+        local value = frame:GetAttribute(name .. suffix)
+        if value == nil then value = frame:GetAttribute("*" .. name .. suffix) end
+        if value == nil then value = frame:GetAttribute(name) end
+        return value
+    end
+    local function SecureActionClick(frame, button, down)
+        local keydown = frame:GetAttribute("useOnKeyDown")
+        if keydown == nil then keydown = W.cvars.ActionButtonUseKeyDown ~= "0" end
+        if (down and true or false) ~= (keydown and true or false) then return end
+        local kind = ModifiedAttribute(frame, "type", button)
+        if not kind or kind == "" then return end
+        local record = { frame = frame, type = kind, button = button }
+        record.item, record.toy = ModifiedAttribute(frame, "item", button), ModifiedAttribute(frame, "toy", button)
+        record.spell = ModifiedAttribute(frame, "spell", button)
+        record.clickbutton = ModifiedAttribute(frame, "clickbutton", button)
+        W.secureActions[#W.secureActions + 1] = record
+        local target = kind == "click" and record.clickbutton
+        if target then W.Blizzard(function() target:Click(button) end) end
+    end
+    G.CreateFrame = function(kind, name, parent, template)
+        local frame = New(kind, name, parent)
+        frame.template = template
+        if type(template) == "string" then
+            for word in template:gmatch("[^,%s]+") do
+                if word == "SecureActionButtonTemplate" then
+                    frame.protected = true
+                    frame.scripts.OnClick = SecureActionClick
+                elseif options.clientSecurity and word:sub(1, 6) == "Secure" then
+                    -- Every Secure* template inherits SecureFrameTemplate (protected).
+                    frame.protected = true
+                end
+            end
+        end
+        return frame
+    end
+    -- A click on the release only: PreClick, the button's OnClick, then PostClick.
+    function W.Click(frame, button)
+        button = button or "LeftButton"
+        Fire(frame, "PreClick", button, false)
+        Fire(frame, "OnClick", button, false)
+        Fire(frame, "PostClick", button, false)
+    end
+    -- A hardware click: an enabled button receives the press and the release
+    -- kinds it registered for, each through PreClick, OnClick and PostClick.
+    function W.HardwareClick(frame, button)
+        button = button or "LeftButton"
+        if not frame.enabled then return end
+        for _, down in ipairs({ true, false }) do
+            local suffix = down and "Down" or "Up"
+            for _, kind in ipairs(frame.clickKinds or {}) do
+                if kind == "Any" .. suffix or kind == button .. suffix then
+                    Fire(frame, "PreClick", button, down)
+                    Fire(frame, "OnClick", button, down)
+                    Fire(frame, "PostClick", button, down)
+                    break
+                end
+            end
+        end
+    end
     G.InCombatLockdown = function() return W.combat end
     G.SlashCmdList = {}
     G.issecretvalue = function(value) return value == W.secret end
     W.secret = setmetatable({}, { __lt = function() error("secret comparison") end, __le = function() error("secret comparison") end })
     G.C_PetBattles = { GetAbilityInfoByID = function(id)
         Count("weatherIcon")
-        return id, "Weather", 900000 + id
+        -- Forever exposes the API but has no weather ability records.
+        return nil
     end }
     G.hooksecurefunc = function(target, name, hook)
         if type(target) == "string" then target, name, hook = G, target, name end
@@ -358,7 +494,7 @@ function H.New(root, client, options)
     end
     G.RegisterStateDriver = function(frame, state, value)
         assert(not W.combat, "state driver registered in combat")
-        assert(state == "visibility")
+        assert(state == "visibility", "only visibility drivers are modeled")
         frame.stateDriver, W.drivers[frame] = value, true
         Drive(frame)
     end
@@ -375,6 +511,7 @@ function H.New(root, client, options)
     G.GetServerTime = function() return 1700000000 end
     G.GetGameTime = function() return 12, 0 end
     G.GetFramerate = function() return 60 end
+    G.GetCursorPosition = function() return W.cursorX or 600, W.cursorY or 400 end
     G.GetNetStats = function() return 0, 0, 20, 20 end
     G.GetPhysicalScreenSize = function() return 1024, 768 end
     G.GetInventoryItemDurability = function() end
@@ -417,6 +554,8 @@ function H.New(root, client, options)
     }
     W.hostRecord = { isEnabled = function() return true end }
     G.MSUF_EM2 = { ExternalElements = { GetRecord = function(key) return key == "external:msuf.blizzard:minimap" and W.hostRecord or nil end } }
+    -- Blizzard_SharedXMLBase/MathUtil.lua (Retail and Forever).
+    G.ApproximatelyEqual = function(v1, v2, epsilon) return math.abs(v1 - v2) < (epsilon or .000001) end
     G.GameTooltip = New("GameTooltip", "GameTooltip")
     G.GameTooltip:Hide()
     function G.GameTooltip:SetOwner(owner) self.owner = owner; self.lines = {} end
@@ -507,6 +646,13 @@ function H.New(root, client, options)
     W.S = W.Suite.Suite
     W.S.Normalize(W.Suite.DB)
     W.private = {}
+    -- Loads an addon's Lua files in its TOC order into the shared private
+    -- table, the way the client loads a load-on-demand Suite addon.
+    function W.LoadAddon(addon)
+        for _, file in ipairs(support.TocFiles(root, addon, "Mainline")) do
+            if file:match("%.lua$") then Load(addon .. "/" .. file, addon, W.private) end
+        end
+    end
     if options.beforeModules then options.beforeModules(W) end
     -- Blizzard builds its shared font objects at startup on every client.
     G.GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }

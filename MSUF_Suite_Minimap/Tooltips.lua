@@ -6,6 +6,7 @@ local M = MM.M
 -- Vault progress. Data is read and its events are registered only while such a
 -- tooltip is owned; leaving the text releases both.
 local owner, mode
+local scaleOwner, previousScale, appliedScale, scaleHooked
 local waitingForItems = false
 local Changed
 local events = { "UPDATE_INSTANCE_INFO", "WEEKLY_REWARDS_UPDATE", "GET_ITEM_INFO_RECEIVED" }
@@ -29,6 +30,44 @@ local function Owned(button)
     return not NS.Safety.IsForbidden(GameTooltip) and GameTooltip:GetOwner() == button
 end
 
+-- The client keeps a frame's scale as a 32-bit float, so the scale read back
+-- matches the one written only approximately (Blizzard compares geometry
+-- with ApproximatelyEqual, Blizzard_SharedXMLBase/MathUtil.lua).
+local function RestoreTooltipScale()
+    if not scaleOwner then return end
+    local tooltip = _G.GameTooltip
+    local restore, applied = previousScale, appliedScale
+    scaleOwner, previousScale, appliedScale = nil, nil, nil
+    if not NS.Safety.IsForbidden(tooltip) and ApproximatelyEqual(tooltip:GetScale(), applied) then
+        tooltip:SetScale(restore)
+    end
+end
+
+local function TooltipOwnerChanged(_, nextOwner)
+    if scaleOwner and nextOwner ~= scaleOwner then RestoreTooltipScale() end
+end
+
+-- Scale only the Suite's current tooltip session. Returning a tooltip to a
+-- different addon or Blizzard restores the previous value, unless another
+-- owner has already changed it. The hook never reclaims the tooltip.
+function MM.ScaleTooltip(button)
+    local tooltip = _G.GameTooltip
+    if not M.active or NS.Safety.IsForbidden(tooltip) or tooltip:GetOwner() ~= button then return end
+    if scaleOwner ~= button then RestoreTooltipScale() end
+    local scale = M.config.tooltipScale or 100
+    if not S.Finite(scale) or scale == 100 then return end
+    local before = tooltip:GetScale()
+    if not S.Finite(before) or before <= 0 then return end
+    if not scaleHooked then
+        tooltip:HookScript("OnHide", RestoreTooltipScale)
+        hooksecurefunc(tooltip, "SetOwner", TooltipOwnerChanged)
+        scaleHooked = true
+    end
+    if not scaleOwner then previousScale = before end
+    scaleOwner, appliedScale = button, previousScale * scale / 100
+    tooltip:SetScale(appliedScale)
+end
+
 -- Hides the button's tooltip; without a button (or for the owner) it also
 -- ends the detail tooltip and releases its data events.
 function MM.HideInfoTooltip(button)
@@ -41,6 +80,7 @@ function MM.HideInfoTooltip(button)
     waitingForItems = false
     if M.context then for _, event in ipairs(events) do MM.Unlisten(event, "tooltip") end end
     if previous and Owned(previous) then GameTooltip:Hide() end
+    if not button or scaleOwner == button then RestoreTooltipScale() end
 end
 
 local function ResetText(seconds, extended)
@@ -226,6 +266,7 @@ function MM.ShowInfoTooltip(button)
     if NS.Safety.IsForbidden(GameTooltip) then return true end
     owner, mode = button, selected
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    MM.ScaleTooltip(button)
     Draw()
     if not S.CanShowMinimapTooltip(selected) then return true end
     if selected == 2 then

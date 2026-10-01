@@ -11,6 +11,7 @@ local collected, hooked, labels = setmetatable({}, weak), setmetatable({}, weak)
 local list, visible, rowItem = {}, {}, {}
 local toggle, panel, single, rescanTimer, library
 local libraryToken = {}
+local detached = setmetatable({}, weak)
 local GAP, MARGIN, RESCAN_DELAY = 4, 8, 0.1
 -- MBB takes permanent ownership of the buttons it collects. Keep the map
 -- active, but never compete with its button container.
@@ -72,6 +73,80 @@ local function Scan()
     if added then table.sort(list, ByLabel) end
 end
 
+local function Positions()
+    local state = S.ModuleState("minimap")
+    if not state then return nil end
+    if type(state.detachedButtons) ~= "table" then state.detachedButtons = {} end
+    return state.detachedButtons
+end
+
+-- A detached button keeps the minimap's roleset (UI modes hide it with the
+-- map) and shows its drag grip only in MSUF Edit Mode.
+local function ShowGrips()
+    for _, holder in pairs(detached) do holder.grip:SetShown(S.editMode == true) end
+end
+local function PlaceDetached(button, position)
+    local holder = detached[button]
+    if not holder then
+        holder = S.CreateFrame("Frame", nil, UIParent)
+        holder:SetSize(32, 32)
+        holder:SetMovable(true)
+        holder:SetClampedToScreen(true)
+        holder:AddRoleset("minimap")
+        local grip = S.CreateFrame("Button", nil, holder)
+        holder.grip = grip
+        grip:SetPoint("BOTTOMLEFT", holder, "TOPLEFT", 0, 0)
+        grip:SetPoint("BOTTOMRIGHT", holder, "TOPRIGHT", 0, 0)
+        grip:SetHeight(8)
+        local texture = S.CreateTexture(grip, nil, "BACKGROUND")
+        texture:SetAllPoints(grip)
+        texture:SetColorTexture(.3, .65, .8, .7)
+        grip:RegisterForDrag("LeftButton")
+        grip:SetScript("OnDragStart", function()
+            if M.active and not NS.IsCombatLocked() then holder:StartMoving() end
+        end)
+        grip:SetScript("OnDragStop", function()
+            holder:StopMovingOrSizing()
+            local x, y = holder:GetCenter()
+            local cx, cy = UIParent:GetCenter()
+            local positions = Positions()
+            if positions and S.Finite(x) and S.Finite(y) and S.Finite(cx) and S.Finite(cy) then
+                positions[button:GetName()] = { x = x - cx, y = y - cy }
+            end
+        end)
+        detached[button] = holder
+    end
+    holder:ClearAllPoints()
+    holder:SetPoint("CENTER", UIParent, "CENTER", position.x or 0, position.y or 0)
+    holder:SetShown(button:IsShown())
+    holder.grip:SetShown(S.editMode == true)
+    MM.Place(button, holder, "CENTER", holder, "CENTER", 0, 0, MM.Fit(button, 32), "MEDIUM", holder:GetFrameLevel() + 2)
+end
+
+function S.MinimapButtonLayoutMenu(anchor)
+    if not M.active or not MM.CollectsButtons() or NS.IsCombatLocked() then return false end
+    local positions = Positions()
+    if not positions then return false end
+    MenuUtil.CreateContextMenu(anchor or UIParent, function(_, root)
+        root:CreateTitle(S.Text("Addon button positions"))
+        for _, button in ipairs(list) do
+            if MM.Usable(button) then
+                local name = button:GetName()
+                local title = (positions[name] and S.Text("Collect: %s") or S.Text("Detach: %s")):format(name:gsub("^LibDBIcon10_", ""))
+                root:CreateButton(title, function()
+                    if NS.IsCombatLocked() then return end
+                    if positions[name] then
+                        positions[name] = nil
+                        if detached[button] then detached[button]:Hide() end
+                    else positions[name] = { x = 0, y = 0 } end
+                    MM.Queue("drawer")
+                end)
+            end
+        end
+    end)
+    return true
+end
+
 local function ClosePanel()
     if panel then panel:Hide() end
 end
@@ -87,7 +162,8 @@ local function ClickAway()
     end
     ClosePanel()
 end
-local function TogglePanel()
+local function TogglePanel(self, button)
+    if button == "RightButton" then S.MinimapButtonLayoutMenu(self); return end
     if not M.active then return end
     if panel:IsShown() then
         ClosePanel()
@@ -99,8 +175,10 @@ local function TogglePanel()
 end
 local function ShowTip(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    MM.ScaleTooltip(self)
     GameTooltip:SetText(S.BlizzardText("ADDONS", "Addon buttons"))
     GameTooltip:AddLine(S.Text("Click to show or hide the collected buttons."), 0.8, 0.8, 0.8, true)
+    GameTooltip:AddLine(S.Text("Right-click to detach single buttons or collect them again."), 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end
 local function HideTip(self)
@@ -113,7 +191,7 @@ local function EnsureDrawer()
     toggle.minimapOffsetKey = "drawer"
     toggle:SetFrameStrata("MEDIUM")
     toggle:SetFrameLevel(MM.mapLevel + 14)
-    toggle:RegisterForClicks("LeftButtonUp")
+    toggle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     toggle.back = S.CreateTexture(toggle, nil, "BACKGROUND")
     toggle.back:SetAllPoints(toggle)
     -- A 2x2 grid glyph drawn from plain textures (no client-specific art).
@@ -177,11 +255,18 @@ function MM.LayoutDrawer()
     local c = M.config
     if not MM.CollectsButtons() or not toggle then return end
     local count, level = 0, panel:GetFrameLevel() + 2
+    local positions = Positions()
     for i = 1, #list do
         local button = list[i]
         if collected[button] and MM.Usable(button) then
             local shown = button:IsShown()
-            if not S.Public(shown) or shown then
+            local position = positions and positions[button:GetName()]
+            -- A button collected again (also by undo or Edit Mode Cancel)
+            -- leaves its empty holder.
+            if not position and detached[button] then detached[button]:Hide() end
+            if position then
+                PlaceDetached(button, position)
+            elseif not S.Public(shown) or shown then
                 count = count + 1
                 visible[count] = button
             else
@@ -232,10 +317,13 @@ end
 
 MM.flushers.drawer = MM.LayoutDrawer
 
+-- Hover listeners also run after every refresh, MSUF Edit Mode switches
+-- included.
 MM.OnHover(function()
     if toggle and M.active and MM.CollectsButtons() and M.config.drawerMouseover and #visible > 1 then
         toggle:SetShown(ToggleShown(M.config))
     end
+    ShowGrips()
 end)
 
 local function Rescan()
@@ -302,6 +390,7 @@ function MM.ReleaseDrawer()
     ClosePanel()
     for i = #list, 1, -1 do
         local button = list[i]
+        if detached[button] then detached[button]:Hide() end
         MM.Release(button)
         collected[button], list[i] = nil, nil
     end

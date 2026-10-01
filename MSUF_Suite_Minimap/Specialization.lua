@@ -32,6 +32,7 @@ end
 
 local function OnEnter(button)
     GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+    MM.ScaleTooltip(button)
     GameTooltip:SetText(S.Text("Quick specialization"))
     local _, _, name = CurrentSpec()
     if name then GameTooltip:AddLine(S.Text("Current spec: ") .. name, 1, 1, 1) end
