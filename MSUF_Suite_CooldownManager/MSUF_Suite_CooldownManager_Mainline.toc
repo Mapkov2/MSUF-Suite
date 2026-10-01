@@ -13,6 +13,7 @@ Const.lua
 Presets.lua
 GuideProfiles.lua
 Catalog.lua
+EntryFill.lua
 Resolve.lua
 Index.lua
 Icons.lua
