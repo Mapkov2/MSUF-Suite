@@ -6,9 +6,10 @@ local C = P.CDM
 -- bars, plus consumer arrays so each event walks only the entries that care
 -- and registers only while an array is non-empty. The For* lookups run
 -- inside combat events: no allocation, callbacks are prebuilt by the caller,
--- and the two-list spell case dedupes through one reused set. A lookup that
--- matches nothing costs one or two table reads. Payload guards call the
--- client's issecretvalue directly (no Lua wrapper on hot paths).
+-- and the two-list spell case dedupes through one reused map of call stamps
+-- (a raising callback leaves no stale mark behind). A lookup that matches
+-- nothing costs one or two table reads. Payload guards call the client's
+-- issecretvalue directly (no Lua wrapper on hot paths).
 local pairs = pairs
 local SLOTS = NS.CDM.SLOTS
 local K = C.Const
@@ -22,7 +23,8 @@ C.Index = Index
 local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist" }
 local MAPS = { "bySpell", "byBase", "byCategory", "byItem", "byEquip" }
 local pool = {}
-local seen = {}
+-- entry -> stamp of the last two-list ForSpell call that reached it.
+local seen, seenStamp = {}, 0
 
 local function Release(map)
     for key, list in pairs(map) do
@@ -186,20 +188,24 @@ function Index.ForSpell(spellID, baseSpellID, fn)
     if not a then a, b = b, nil end
     if not a then return 0 end
     if not b then return Each(a, fn) end
+    -- Marks are this call's stamp, so nothing needs clearing afterwards and
+    -- a callback that raises (the event handler is not isolated) cannot
+    -- hide an entry from the next lookup.
+    seenStamp = seenStamp + 1
+    local mark = seenStamp
     local n = #a
     for i = 1, n do
         local entry = a[i]
-        seen[entry] = true
+        seen[entry] = mark
         fn(entry)
     end
     for i = 1, #b do
         local entry = b[i]
-        if not seen[entry] then
+        if seen[entry] ~= mark then
             n = n + 1
             fn(entry)
         end
     end
-    for i = 1, #a do seen[a[i]] = nil end
     return n
 end
 function Index.ForBase(base, fn)

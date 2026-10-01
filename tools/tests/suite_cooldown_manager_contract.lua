@@ -1096,6 +1096,23 @@ do
     Fire("SPELL_UPDATE_COOLDOWN",101)
     Run()
 end
+-- Two-list spell lookups call each entry once. A callback that raises (the
+-- event handler is not isolated) must not leave an entry marked as seen:
+-- the next lookup still reaches it.
+do
+    local Index=C.Index
+    local x,y,w={},{},{}
+    Index.bySpell[880001],Index.bySpell[880002],Index.bySpell[880003]={x,y},{y},{w}
+    local calls={}
+    local function Count(entry) calls[entry]=(calls[entry] or 0)+1 end
+    assert(Index.ForSpell(880001,880002,Count)==2 and calls[x]==1 and calls[y]==1,"an entry on both lists ran twice")
+    local ok=pcall(Index.ForSpell,880001,880002,function(entry) if entry==x then error("callback failed") end end)
+    assert(not ok,"the raising callback did not raise")
+    calls={}
+    assert(Index.ForSpell(880003,880001,Count)==3 and calls[w]==1 and calls[x]==1 and calls[y]==1,
+        "a raising callback left an entry marked as seen")
+    Index.bySpell[880001],Index.bySpell[880002],Index.bySpell[880003]=nil,nil,nil
+end
 -- A GCD for one spell refreshes that spell's icons only: the others do not
 -- show the GCD and are not touched.
 cdCalls=0
