@@ -94,35 +94,6 @@ local function Row(kind, label, key, section, get, set, values, min, max, step)
     return row
 end
 
--- The section's three-dot menu edits its color rows (all skin colors for the
--- palette section).
-local function AttachColors(body, title, rows)
-    local colorRows = {}
-    for _, row in ipairs(rows) do
-        if row.kind == "color" then colorRows[#colorRows + 1] = row end
-    end
-    if #colorRows == 0 or not W.AttachContextColorShortcut then return end
-    local shortcut = W.AttachContextColorShortcut(body, {
-        title = Tr(title),
-        maxTargets = #colorRows,
-        getTargets = function()
-            local targets = {}
-            for _, row in ipairs(colorRows) do
-                targets[#targets + 1] = {
-                    label = row.label,
-                    get = row.get,
-                    set = row.set,
-                    settingKey = row.settingKey,
-                    hasOpacity = true,
-                    getOpacity = function() return select(4, row.get()) end,
-                }
-            end
-            return targets
-        end,
-    })
-    if shortcut then shortcut._msuf2BoundColorShortcut = nil end
-end
-
 local function SkinDefault(defaults, id)
     if id == "suiteEnabled" then return true end
     if id == "enabled.windows" then return defaults.enabled end
@@ -155,9 +126,6 @@ local function ResetSkinSection(skin, id, rows, contextRows)
     end
     if id == "fonts" then
         changes[#changes + 1] = { row = { id = "typography.customPath" }, value = defaults.typography.customPath }
-    elseif id == "micro_details" then
-        -- The details section resets the preset name with its values.
-        changes[#changes + 1] = { row = { id = "icons.microMenu.preset" }, value = defaults.icons.microMenu.preset }
     end
     if #changes == 0 then return false end
     return Change(skin, "Reset section", "section." .. id, function()
@@ -225,7 +193,7 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
     end
     if extra then y = extra(body, y, width) or y end
     P.AttachRowsSummary(ctx, body, visibleRows)
-    AttachColors(body, title, contextRows or rows)
+    P.AttachSkinColors(body, title, contextRows or rows)
     if id ~= "advanced" then
         P.AttachSectionReset(ctx, body, title, function()
             return ResetSkinSection(Engine(), id, rows, contextRows)
@@ -307,6 +275,7 @@ end
 
 ------------------------------------------------------------------ Micro Bar
 local MICRO_PRESETS = { "modern", "midnightDark", "forever", "blizzard" }
+local microTabs = { tab = "general" }
 
 local function MicroOption(skin, label, key)
     return function(value)
@@ -323,9 +292,6 @@ local function MicroRows(skin)
                 Change(skin, "Micro Bar", "skins.microMenu",
                     function() return skin.Adapters.SetEnabled("microMenu", value) end)
             end),
-        Row("dropdown", "Show Micro Bar", "icons.microMenu.visibility", "micro",
-            function() return settings().visibility end,
-            MicroOption(skin, "Micro Bar visibility", "visibility"), Values(skin.MicroMenuVisibilityModes)),
         Row("dropdown", "Bar direction", "icons.microMenu.orientation", "micro",
             function() return settings().orientation end,
             MicroOption(skin, "Micro Bar direction", "orientation"), Values(skin.MicroMenuOrientations)),
@@ -340,10 +306,14 @@ local function MicroRows(skin)
 end
 
 local function MicroLoadRows(skin)
-    local rows = {}
+    local rows = {
+        Row("dropdown", "Show Micro Bar", "icons.microMenu.visibility", "micro",
+            function() return skin.DB.icons.microMenu.visibility end,
+            MicroOption(skin, "Micro Bar visibility", "visibility"), Values(skin.MicroMenuVisibilityModes)),
+    }
     for _, condition in ipairs(skin.MicroMenuLoadConditions) do
         local key, label = condition[1], condition[2]
-        rows[#rows + 1] = Row("toggle", label, "icons.microMenu." .. key, "micro_load_conditions",
+        rows[#rows + 1] = Row("toggle", label, "icons.microMenu." .. key, "micro",
             function() return skin.DB.icons.microMenu[key] end,
             MicroOption(skin, "Micro Bar " .. label, key))
     end
@@ -373,14 +343,15 @@ end
 
 -- Preset buttons, the selected preset's note and the Edit Mode shortcut.
 local function MicroPresetExtra(ctx, skin)
-    return function(body, y, width)
+    return function(body, y, width, prepare)
         local half = math.floor((width - 12) / 2)
         for index, style in ipairs(MICRO_PRESETS) do
-            Button(ctx, body, MICRO_PRESET_LABELS[style],
+            local button = Button(ctx, body, MICRO_PRESET_LABELS[style],
                 16 + ((index - 1) % 2) * (half + 12), y - math.floor((index - 1) / 2) * 38, half, function()
                     Change(skin, "Micro Bar " .. style, "micro.preset",
                         function() return skin.MicroMenuSkin.ApplyPreset(style) end)
                 end, nil, P.Meta(PAGE, "skin", "micro.preset." .. style, "action", "suite_skin_micro"))
+            if button then button._msuf2PrepareExactSearchTarget = prepare end
         end
         if ctx.searchRows then
             Button(ctx, body, "Move in MSUF Edit Mode", 0, 0, width, nil, nil,
@@ -394,8 +365,9 @@ local function MicroPresetExtra(ctx, skin)
         RefreshMicroHint()
         M.TrackRefresh(ctx, RefreshMicroHint)
         local descHeight = math.max(22, math.ceil(description:GetStringHeight() or 22))
-        Button(ctx, body, "Move in MSUF Edit Mode", 16, y - 82 - descHeight, width,
+        local move = Button(ctx, body, "Move in MSUF Edit Mode", 16, y - 82 - descHeight, width,
             function() MoveMicroBar(skin) end, nil, P.Meta(PAGE, "skin", "micro.move", "action", "suite_skin_micro"))
+        if move then move._msuf2PrepareExactSearchTarget = prepare end
         return y - 120 - descHeight
     end
 end
@@ -442,7 +414,7 @@ local function MicroDetailRows(skin)
         local label, key, kind = spec[1], spec[2], spec[3]
         local values = kind == "dropdown"
             and Values(spec[4], key == "barMaterial" and BAR_MATERIAL_LABELS or nil) or nil
-        details[#details + 1] = Row(kind, label, "icons.microMenu." .. key, "micro_details",
+        details[#details + 1] = Row(kind, label, "icons.microMenu." .. key, "micro",
             function() return skin.DB.icons.microMenu[key] end,
             function(value)
                 Change(skin, label, "micro." .. key, function() return SetMicroDetail(skin, key, value) end)
@@ -452,20 +424,27 @@ local function MicroDetailRows(skin)
 end
 
 local function BuildMicroBar(ctx, b, skin)
-    Section(ctx, b, "micro", "Micro Bar",
-        "Choose a look and when the Suite bar appears. Visibility rules use the Suite layout; Blizzard layout keeps Blizzard's visibility. MSUF Edit Mode reveals the bar for moving.",
-        MicroRows(skin), true, MicroPresetExtra(ctx, skin))
-    Section(ctx, b, "micro_load_conditions", "Micro Bar Visibility",
-        "Hide the Suite Micro Bar when any selected condition is true. The health condition uses your character's health; at full health the transparent bar can still receive clicks. MSUF Edit Mode shows the bar for placement. Blizzard layout keeps Blizzard's visibility.",
-        MicroLoadRows(skin), false)
-    Section(ctx, b, "micro_details", "Micro Bar details",
-        "Optional artwork and spacing controls. Use MSUF Edit Mode for position, nudging, reset, undo and redo.",
-        MicroDetailRows(skin), false, function(body, y, width)
-            Button(ctx, body, "Reset Micro Bar to client default", 16, y, width, function()
-                Change(skin, "Reset Micro Bar", "micro.reset", skin.MicroMenuSkin.ResetRecommended)
-            end, nil, P.Meta(PAGE, "skin", "micro.reset", "action", "suite_skin_micro_details"))
-            return y - 40
-        end)
+    local sectionId, title = "suite_skin_micro", Tr("Micro Bar")
+    local specs = {
+        { id = "general", label = "General", title = "Micro Bar", rows = MicroRows(skin),
+            help = "Choose a look and when the Suite bar appears. Visibility rules use the Suite layout; Blizzard layout keeps Blizzard's visibility. MSUF Edit Mode reveals the bar for moving.",
+            extra = MicroPresetExtra(ctx, skin) },
+        { id = "visibility", label = "Visibility", title = "Micro Bar Visibility", rows = MicroLoadRows(skin),
+            help = "Hide the Suite Micro Bar when any selected condition is true. The health condition uses your character's health; at full health the transparent bar can still receive clicks. MSUF Edit Mode shows the bar for placement. Blizzard layout keeps Blizzard's visibility." },
+        { id = "details", label = "Details", title = "Micro Bar details", rows = MicroDetailRows(skin),
+            help = "Optional artwork and spacing controls. Use MSUF Edit Mode for position, nudging, reset, undo and redo.",
+            extra = function(body, y, width, prepare)
+                local reset = Button(ctx, body, "Reset Micro Bar to client default", 16, y, width, function()
+                    Change(skin, "Reset Micro Bar", "micro.reset", skin.MicroMenuSkin.ResetRecommended)
+                end, nil, P.Meta(PAGE, "skin", "micro.reset", "action", sectionId))
+                if reset then reset._msuf2PrepareExactSearchTarget = prepare end
+                return y - 40
+            end },
+    }
+    local body, allRows = P.SkinTabbedSection(ctx, b, sectionId, title, specs, microTabs)
+    if not body then return end
+    P.AttachRowsSummary(ctx, body, allRows)
+    P.AttachSectionReset(ctx, body, title, function() return ResetSkinSection(Engine(), "micro", allRows) end)
 end
 
 ------------------------------------------------------------------ sections

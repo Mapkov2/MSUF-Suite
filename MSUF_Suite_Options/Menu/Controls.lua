@@ -26,6 +26,87 @@ function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, m
     P.SkinSearchRow(ctx, row)
 end
 
+-- The skin section's three-dot menu edits its color rows.
+function P.AttachSkinColors(body, title, rows)
+    local colorRows = {}
+    for _, row in ipairs(rows) do
+        if row.kind == "color" then colorRows[#colorRows + 1] = row end
+    end
+    if #colorRows == 0 or not W.AttachContextColorShortcut then return end
+    local shortcut = W.AttachContextColorShortcut(body, {
+        title = Tr(title),
+        maxTargets = #colorRows,
+        getTargets = function()
+            local targets = {}
+            for _, row in ipairs(colorRows) do
+                targets[#targets + 1] = {
+                    label = row.label,
+                    get = row.get,
+                    set = row.set,
+                    settingKey = row.settingKey,
+                    hasOpacity = true,
+                    getOpacity = function() return select(4, row.get()) end,
+                }
+            end
+            return targets
+        end,
+    })
+    if shortcut then shortcut._msuf2BoundColorShortcut = nil end
+end
+
+-- Skin tabs share one accordion and exact search targets reveal their panel.
+-- The same declarations collect cold search metadata without building widgets.
+function P.SkinTabbedSection(ctx, builder, sectionId, title, specs, state)
+    if ctx.searchRows then
+        P.SkinSearchRow(ctx, { kind = "section", label = title }, sectionId, title)
+        for _, spec in ipairs(specs) do
+            for _, row in ipairs(spec.rows) do
+                P.SkinSearchRow(ctx, row, sectionId, Tr(spec.title), Tr(spec.help))
+            end
+            if spec.extra then spec.extra(nil, 0, 720) end
+        end
+        return
+    end
+    local body = builder:CollapsibleSection(sectionId, title, 120, true)
+    local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
+    local panels, heights, values, allRows = {}, {}, {}, {}
+    local selectTab
+    for _, spec in ipairs(specs) do
+        local panel = CreateFrame("Frame", nil, body)
+        panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -59)
+        panel:SetSize(width + 32, 100)
+        local hint = P.Description(panel, spec.help, 16, -18, width, spec.title)
+        local y = -18 - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
+        local grid = W.SettingsRows(ctx, panel, {
+            x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = spec.rows,
+        })
+        local tab = spec.id
+        local function Prepare() if selectTab then selectTab(tab) end end
+        for _, row in ipairs(spec.rows) do
+            allRows[#allRows + 1] = row
+            local widget = grid.controls[row.id]
+            if widget then widget._msuf2PrepareExactSearchTarget = Prepare end
+        end
+        y = grid.bottomY
+        if spec.extra then y = spec.extra(panel, y, width, Prepare) or y end
+        heights[tab] = -y + 14
+        panel:SetHeight(heights[tab])
+        panels[tab] = panel
+        values[#values + 1] = { value = tab, text = Tr(spec.label) }
+    end
+    local tabs, refresh, _, choose = W.SegmentTabs(ctx, body, {
+        label = "", values = values, width = width, frames = panels, defaultTab = specs[1].id,
+        get = function() return state.tab end,
+        set = function(tab) state.tab = tab end,
+        afterRefresh = function(tab) P.FinishBody(builder, body, -59 - heights[tab]) end,
+        x = 16, y = -12,
+    })
+    if tabs._msuf2Title then tabs._msuf2Title:Hide() end
+    selectTab = choose
+    refresh()
+    return body, allRows
+end
+
 -- Slider increments are a UI choice. Keep catalog steps intact so existing
 -- fractional profile values are not rounded during database normalization.
 local function Whole(value)

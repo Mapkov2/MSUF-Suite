@@ -2339,10 +2339,12 @@ assert(skinContext.sections[1].sectionId == "suite_skin_frame_basic"
 assert(S.Config("damageMeter").enabled == true and S.OwnsBlizzardSurface("damageMeter"),
     "the default Suite meter must own Blizzard's damage meter")
 assert(skinContext.sections[3].sectionId == "suite_skin_micro"
-    and skinContext.sections[4].sectionId == "suite_skin_micro_load_conditions"
-    and skinContext.sections[5].sectionId == "suite_skin_micro_details"
-    and skinContext.sections[6].sectionId == "suite_skin_material",
+    and skinContext.sections[4].sectionId == "suite_skin_material",
     "Micro Bar setup must be immediately visible after the main look")
+for _, section in ipairs(skinContext.sections) do
+    assert(section.sectionId ~= "suite_skin_micro_load_conditions" and section.sectionId ~= "suite_skin_micro_details",
+        "Micro Bar tabs still have separate accordions")
+end
 local skinControls = {}
 for _, widget in ipairs(skinContext.widgets) do
     if widget.meta and widget.meta.settingKey then skinControls[widget.meta.settingKey] = widget end
@@ -2353,6 +2355,36 @@ assert(skinControls["msufsuite.skin.theme.look"] and skinControls["msufsuite.ski
     and skinControls["msufsuite.skin.icons.microMenu.loadHideMounted"]
     and skinControls["msufsuite.skin.icons.microMenu.loadShowWhenInjured"]
     and skinControls["msufsuite.skin.enabled"], "native Skinning controls missing")
+do
+    local microTabs
+    for _, record in ipairs(skinContext.tabControls or {}) do
+        if record.frames.general and record.frames.visibility and record.frames.details then microTabs = record end
+    end
+    assert(microTabs and microTabs.frames.general:IsShown() and not microTabs.frames.visibility:IsShown()
+        and not microTabs.frames.details:IsShown(), "Micro Bar must start with only General visible")
+    local generalBottom = skinContext.sections[3]._msuf2CursorY
+    local function Reveal(widget, tab)
+        assert(widget and type(widget._msuf2PrepareExactSearchTarget) == "function",
+            "Micro Bar search target lacks tab preparation")
+        widget:_msuf2PrepareExactSearchTarget()
+        assert(microTabs.segment.value == tab, "Micro Bar search opened the wrong tab")
+        for key, panel in pairs(microTabs.frames) do
+            assert(panel:IsShown() == (key == tab), "Micro Bar tabs show overlapping settings")
+        end
+    end
+    local scale = skinControls["msufsuite.skin.icons.microMenu.scale"].get()
+    Reveal(skinControls["msufsuite.skin.icons.microMenu.visibility"], "visibility")
+    Reveal(skinControls["msufsuite.skin.icons.microMenu.loadHideMounted"], "visibility")
+    Reveal(skinControls["msufsuite.skin.icons.microMenu.layoutMode"], "details")
+    assert(skinContext.sections[3]._msuf2CursorY < generalBottom,
+        "Micro Bar accordion did not grow for its Details tab")
+    Reveal(registeredControls["menu2.suite_skin.skin.micro.reset"], "details")
+    Reveal(registeredControls["menu2.suite_skin.skin.micro.move"], "general")
+    Reveal(registeredControls["menu2.suite_skin.skin.micro.preset.modern"], "general")
+    assert(skinControls["msufsuite.skin.icons.microMenu.scale"].get() == scale
+        and skinContext.sections[3]._msuf2CursorY == generalBottom,
+        "changing Micro Bar tabs changed settings or kept the Details height")
+end
 do
     local createFrame = CreateFrame
     CreateFrame = function() error("cold Skinning search must not create widgets") end
@@ -2381,18 +2413,23 @@ registeredControls["menu2.suite_skin.skin.micro.preset.modern"].scripts.OnClick(
 assert(skin.DB.icons.microMenu.layoutMode == "owned",
     "Suite menu preset did not restore its movable layout")
 skin.DB.icons.microMenu.preset = "custom"
+skin.DB.icons.microMenu.scale = 1.2
+skin.DB.icons.microMenu.loadHideMounted = not skin.Defaults.icons.microMenu.loadHideMounted
+skin.DB.icons.microMenu.spacing = 11
 skin.Database.CreateFactoryProfile = function() return skin.CopyValue(skin.Defaults) end
 skin.Typography.ApplyConfigured = function() end
 skin.Adapters.ApplyAll = function() end
 skin.Registry.RefreshAll = function() end
-local microDetails
+local microSection
 for _, section in ipairs(skinContext.sections) do
-    if section.sectionId == "suite_skin_micro_details" then microDetails = section end
+    if section.sectionId == "suite_skin_micro" then microSection = section end
 end
-assert(microDetails and microDetails._msufSuiteSectionReset and microDetails._msufSuiteSectionReset(),
-    "Micro Bar details has no section reset")
-assert(skin.DB.icons.microMenu.preset == skin.Defaults.icons.microMenu.preset,
-    "Micro Bar details reset kept a stale preset name")
+assert(microSection and microSection._msufSuiteSectionReset and microSection._msufSuiteSectionReset(),
+    "Micro Bar has no combined section reset")
+for _, key in ipairs({ "preset", "scale", "loadHideMounted", "spacing" }) do
+    assert(skin.DB.icons.microMenu[key] == skin.Defaults.icons.microMenu[key],
+        "Micro Bar reset omitted a tab setting: " .. key)
+end
 end
 skinControls["msufsuite.skin.enabled"].set(false)
 assert(skin.DB.enabled == false and Suite.Skin.enabled == false,
@@ -2471,8 +2508,8 @@ assert(invalidated == "suite_skin", "Skinning kept the Suite meter shape after t
 local meterSkinContext = { key = "suite_skin", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
 current = meterSkinContext
 M.pages.suite_skin.build(meterSkinContext)
-assert(meterSkinContext.sections[6].sectionId == "suite_skin_hud"
-    and meterSkinContext.sections[7].sectionId == "suite_skin_material",
+assert(meterSkinContext.sections[4].sectionId == "suite_skin_hud"
+    and meterSkinContext.sections[5].sectionId == "suite_skin_material",
     "Blizzard damage meter styling is missing while Blizzard's meter is in use")
 local meterToggle
 for _, widget in ipairs(meterSkinContext.widgets) do
