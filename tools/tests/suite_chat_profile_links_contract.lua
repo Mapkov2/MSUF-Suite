@@ -1,4 +1,5 @@
 local root = assert(arg[1], "repository root required")
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local module
 local callbacks = {}
 local function Widget(kind)
@@ -39,6 +40,7 @@ local S = {
     PublicText = function(value) return type(value) == "string" and value ~= "secret" and value or nil end,
 }
 UIParent = Widget("Frame")
+Support.QoLStyleFixture(root, S)
 GetRealmName = function() return "Tarren Mill" end
 GetCurrentRegionName = function() return "EU" end
 Menu = { ModifyMenu = function(tag, callback)

@@ -110,6 +110,21 @@ function C.ColorTab(self, visual, selected)
     end
     visual.tabLine:SetShown(c.tabPanel and c.panelAlpha > 0
         and c.tabAccent and c.accentAlpha > 0 and selected)
+    if visual.tabFill then
+        local panels = c.tabIndividualPanels and c.tabPanel and c.panelAlpha > 0
+        local fill = selected and (c.tabActiveBackground or c.panelColor) or (c.tabInactiveBackground or c.panelColor)
+        Tint(visual.tabFill, fill, selected and (c.tabActiveAlpha or c.panelAlpha) or (c.tabInactiveAlpha or c.panelAlpha))
+        visual.tabFill:SetShown(panels == true)
+        local border = selected and (c.tabActiveBorder or c.borderColor) or (c.tabInactiveBorder or c.borderColor)
+        for i, edge in ipairs(visual.tabEdges) do
+            ApplyEdge(edge, visual.tabFill, i, panels and (c.tabBorderSize or 0) or 0, 0, 0, border, c.borderAlpha)
+            if c.borderTexture and c.borderTexture ~= "" then
+                edge:SetTexture(S.ResolveTexture(c.borderTexture) or c.borderTexture)
+                local r, g, b = RGB(selected and c.tabActiveBorder or c.tabInactiveBorder)
+                edge:SetVertexColor(r, g, b, c.borderAlpha / 100)
+            end
+        end
+    end
 end
 local ColorTab = C.ColorTab
 
@@ -133,6 +148,9 @@ function C.KeepTabVisible(self, frame, release)
     end
     context:Field(tab, "noMouseAlpha", TAB_MIN_ALPHA)
     context:Field(tab, "mouseOverAlpha", 1)
+    -- An idle-faded window keeps its faded tab (Fade.lua hands it back).
+    local visual = self.visuals[frame]
+    if visual and visual.faded then return end
     local alpha = tab:GetAlpha()
     if Finite(alpha) and alpha < TAB_MIN_ALPHA then
         context:Alpha(tab, TAB_MIN_ALPHA)
@@ -172,6 +190,38 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
         visual.tabLabel = tab.Text
         visual.tabLine = Fill(tab, "ARTWORK")
     end
+    local c, context = self.config, self.context
+    if c.tabIndividualPanels and c.tabPanel and c.panelAlpha > 0 and not visual.tabFill then
+        visual.tabFill = Fill(tab, "BACKGROUND")
+        visual.tabEdges = {}
+        for i = 1, 4 do visual.tabEdges[i] = Fill(tab, "BORDER") end
+    end
+    if visual.tabFill then
+        -- ChatTabArtTemplate is 32px tall and the native dock starts 3px
+        -- above the message frame (upstream/live FloatingChatFrame.lua/xml).
+        -- Paint only the Suite header row, leaving Blizzard's hit area alone.
+        visual.tabFill:ClearAllPoints()
+        visual.tabFill:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, -3)
+        visual.tabFill:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, -3)
+        visual.tabFill:SetHeight(c.tabHeight or 24)
+    end
+    if (c.tabHeight or 24) ~= 24 then
+        context:Property(tab, "GetHeight", "SetHeight", c.tabHeight)
+        visual.tabHeightOwned = true
+    elseif visual.tabHeightOwned then
+        context:RestoreProperty(tab, "SetHeight")
+        visual.tabHeightOwned = nil
+    end
+    if c.tabPadding and c.tabPadding > 0 then
+        local width = visual.tabLabel:GetUnboundedStringWidth()
+        if Finite(width) then
+            context:Property(tab, "GetWidth", "SetWidth", width + 2 * c.tabPadding)
+            visual.tabWidthOwned = true
+        end
+    elseif visual.tabWidthOwned then
+        context:RestoreProperty(tab, "SetWidth")
+        visual.tabWidthOwned = nil
+    end
     M.tabs[tab] = visual
     ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
@@ -179,7 +229,7 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
     line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 5, 1)
     line:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -5, 1)
     line:SetHeight(2)
-    Tint(line, self.config.accentColor, self.config.accentAlpha)
+    Tint(line, c.accentColor, c.accentAlpha)
     ColorTab(self, visual, selected)
 end
 
@@ -191,6 +241,11 @@ local function ApplyPanel(self, visual, frame, top)
     visual.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, 0)
     visual.panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", c.padding, -c.padding)
     Tint(visual.panel, c.panelColor, c.panelAlpha)
+    if c.panelTexture and c.panelTexture ~= "" then
+        visual.panel:SetTexture(S.ResolveTexture(c.panelTexture) or c.panelTexture)
+        local r, g, b = RGB(c.panelColor)
+        visual.panel:SetVertexColor(r, g, b, c.panelAlpha / 100)
+    end
     visual.panel:SetShown(c.panelAlpha > 0)
     if frame == _G.ChatFrame1 then
         local strip = M.dockStrip
@@ -215,7 +270,13 @@ local function ApplyPanel(self, visual, frame, top)
     visual.headerRule:SetShown(c.tabPanel and c.panelAlpha > 0
         and c.tabAccent and c.accentAlpha > 0)
     for side = 1, 4 do
-        ApplyEdge(visual.edges[side], frame, side, c.borderSize, c.padding, top, c.borderColor, c.borderAlpha)
+        local edge = visual.edges[side]
+        ApplyEdge(edge, frame, side, c.borderSize, c.padding, top, c.borderColor, c.borderAlpha)
+        if c.borderTexture and c.borderTexture ~= "" then
+            edge:SetTexture(S.ResolveTexture(c.borderTexture) or c.borderTexture)
+            local r, g, b = RGB(c.borderColor)
+            edge:SetVertexColor(r, g, b, c.borderAlpha / 100)
+        end
     end
 end
 
@@ -230,9 +291,31 @@ local function ApplyInput(self, visual, frame, input)
     -- Blizzard can enlarge the edit box while focused; only our background
     -- stays compact. The native edit box keeps its hit area and autocomplete.
     inputHeight = math.min(inputHeight, 26)
+    local context = self.context
+    if (c.inputHeight or 0) > 0 then inputHeight = c.inputHeight end
+    if c.inputTop then
+        context:Anchor(input, "BOTTOMLEFT", frame, "TOPLEFT", -c.padding, HeaderTop(c, frame) + 2)
+        context:Property(input, "GetWidth", "SetWidth", frame:GetWidth() + 2 * c.padding)
+        visual.inputMoved = true
+    elseif visual.inputMoved then
+        context:RestorePoints(input)
+        context:RestoreProperty(input, "SetWidth")
+        visual.inputMoved = nil
+    end
+    if (c.inputHeight or 0) > 0 then
+        context:Property(input, "GetHeight", "SetHeight", inputHeight)
+        visual.inputHeightOwned = true
+    elseif visual.inputHeightOwned then
+        context:RestoreProperty(input, "SetHeight")
+        visual.inputHeightOwned = nil
+    end
     visual.input:ClearAllPoints()
     visual.input:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -c.padding, 0)
     visual.input:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", c.padding, -(inputHeight + 4))
+    if c.inputTop then
+        visual.input:ClearAllPoints()
+        visual.input:SetAllPoints(input)
+    end
     Tint(visual.input, c.inputColor, c.inputAlpha)
     visual.input:SetShown(c.inputPanel and c.inputAlpha > 0)
     if not visual.inputEdges then
@@ -283,6 +366,22 @@ local function ApplyFont(self, frame, chosenFont)
     end
 end
 
+-- lockWindowSize keeps the primary window at the chosen size.
+local function ApplySizeLock(self, visual, frame)
+    local c, context = self.config, self.context
+    if frame == _G.ChatFrame1 and c.lockWindowSize then
+        context:Property(frame, "GetWidth", "SetWidth", c.windowWidth or 420)
+        context:Property(frame, "GetHeight", "SetHeight", c.windowHeight or 180)
+        context:Property(frame, "IsResizable", "SetResizable", false)
+        visual.sizeLocked = true
+    elseif visual.sizeLocked then
+        context:RestoreProperty(frame, "SetWidth")
+        context:RestoreProperty(frame, "SetHeight")
+        context:RestoreProperty(frame, "SetResizable")
+        visual.sizeLocked = nil
+    end
+end
+
 -- Every chat window is a ChatFrameN from Blizzard's floating chat frame
 -- template: a ChatFrameNTab tab (created with it) and an editBox parent key.
 function C.ApplyWindow(self, frame)
@@ -300,6 +399,9 @@ function C.ApplyWindow(self, frame)
     ApplyCopyButton(self, visual, frame, top)
     ApplyInput(self, visual, frame, input)
     ApplyFont(self, frame, messageFont)
+    ApplySizeLock(self, visual, frame)
+    C.ApplyMessages(self, frame)
+    C.ApplyInactivity(self, visual)
 end
 
 local function HideVisual(visual)
@@ -308,6 +410,10 @@ local function HideVisual(visual)
     visual.headerRule:Hide()
     for i = 1, 4 do visual.edges[i]:Hide() end
     if visual.tabLine then visual.tabLine:Hide() end
+    if visual.tabFill then
+        visual.tabFill:Hide()
+        for _, edge in ipairs(visual.tabEdges) do edge:Hide() end
+    end
     if visual.sidebar then visual.sidebar:Hide() end
     if visual.sidebarFrame then visual.sidebarFrame:Hide() end
     if visual.copyButton then visual.copyButton:Hide() end
@@ -327,4 +433,37 @@ function C.ReleaseWindow(self, visual)
     end
     M.tabs[tab] = nil
     KeepTabVisible(self, frame, true)
+end
+
+-- tabGap > 0: docked tabs keep that much room between them. Blizzard's
+-- FCFDock_UpdateTabs lays the dock out again; after it, each tab moves right
+-- of the previous tab of its row (static tabs, then dynamic ones).
+local spacedTabs = setmetatable({}, { __mode = "k" })
+function C.DockGeometry()
+    if not M.active or NS.IsCombatLocked() then return end
+    local context, gap = M.context, M.config.tabGap
+    if gap <= 0 then
+        for tab in pairs(spacedTabs) do
+            context:RestorePoints(tab)
+            spacedTabs[tab] = nil
+        end
+        return
+    end
+    -- GENERAL_CHAT_DOCK exists from the start on both clients (FloatingChatFrame.xml).
+    local docked = _G.GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES
+    local lastStatic, lastDynamic
+    for i = 1, math.min(#docked, 64) do
+        local frame = docked[i]
+        if not NS.Safety.IsForbidden(frame) then
+            local tab = _G[frame:GetName() .. "Tab"]
+            if not NS.Safety.IsForbidden(tab) then
+                local last = frame.isStaticDocked and lastStatic or lastDynamic
+                if last then
+                    context:Anchor(tab, "LEFT", last, "RIGHT", 1 + gap, 0)
+                    spacedTabs[tab] = true
+                end
+                if frame.isStaticDocked then lastStatic = tab else lastDynamic = tab end
+            end
+        end
+    end
 end

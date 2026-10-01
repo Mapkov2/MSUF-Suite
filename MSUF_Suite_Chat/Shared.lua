@@ -1,9 +1,9 @@
 local _, P = ...
 local S = P.Suite
 -- Native chat styling. The Chat files share the private table below and load
--- in this order: Shared, Sidebar, Copy, Window, Controller (Controller
--- installs M). Work runs only when chat windows, tabs, friends or settings
--- change, never on the message path. Every change to a Blizzard frame goes
+-- in TOC order, with Controller installing M. Native chrome updates when
+-- windows, tabs or settings change. Optional message tools and speech bubbles
+-- process their own events only while enabled. Changes to Blizzard frames go
 -- through the module context, so Disable hands back exactly what it changed.
 local C = {}
 P.Chat = C
@@ -50,6 +50,16 @@ function C.Tint(texture, hex, alpha)
     texture:SetColorTexture(r, g, b, alpha / 100)
 end
 
+-- A class token's color as "rrggbb", or nil while the token or its color is
+-- unreadable. Shared by the sidebar icons and the group-name coloring.
+function C.ClassHex(token)
+    if not S.Public(token) then return end
+    local r, g, b = S.ClassRGB(token)
+    if not (Finite(r) and Finite(g) and Finite(b)) then return end
+    return string.format("%02x%02x%02x", math.floor(r * 255 + 0.5),
+        math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+end
+
 function C.ShowTooltip(owner, text)
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText(text)
@@ -70,7 +80,7 @@ C.CombatLogBar = CombatLogBar
 -- Height of the tab strip above a window: the combat log filter row joins it.
 function C.HeaderTop(config, frame)
     if not config.tabPanel then return config.padding end
-    local top = 24
+    local top = (config.tabHeight or 24) + (config.tabPanelGap or 0)
     local quickBar = CombatLogBar(frame)
     if quickBar then
         local height = quickBar:GetHeight()

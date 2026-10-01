@@ -45,6 +45,7 @@ local function ApplyAll(self)
         return
     end
     ForEachChatFrame(ApplyWindow, self)
+    C.DockGeometry()
     self.selectedChat = _G.SELECTED_CHAT_FRAME
     self.selectedDock = DockSelection()
 end
@@ -130,14 +131,23 @@ function M:Enable()
     Hook(self, "hookedNewWindow", "FCF_OpenNewWindow", NewWindowOpened)
     Hook(self, "hookedTabAlpha", "FCFTab_UpdateAlpha", TabAlphaUpdated)
     Hook(self, "hookedTabColors", "FCFTab_UpdateColors", TabColorsUpdated)
+    Hook(self, "hookedDockGeometry", "FCFDock_UpdateTabs", C.DockGeometry)
+    C.MessagesRefresh(self)
+    C.BubblesRefresh(self)
     ApplyAll(self)
 end
 
 function M:Refresh()
+    C.MessagesRefresh(self)
+    C.BubblesRefresh(self)
     ApplyAll(self)
 end
 
 function M:Disable()
+    C.MessagesDisable()
+    -- Faded alpha goes back before the context restores the tabs it owns.
+    C.FadeDisable()
+    C.BubblesDisable(self)
     for _, visual in pairs(self.visuals) do ReleaseWindow(self, visual) end
     SyncNativeControls(self, false)
     HideCopyDialog(self.copyDialog)

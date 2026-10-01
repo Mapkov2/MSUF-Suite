@@ -6,11 +6,16 @@
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
+## SavedVariablesPerCharacter: MSUFSuiteChatHistory
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
 Shared.lua
 Sidebar.lua
 Copy.lua
+History.lua
+Fade.lua
+Messages.lua
 Window.lua
+Bubbles.lua
 Controller.lua

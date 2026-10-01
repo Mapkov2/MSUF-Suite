@@ -157,6 +157,7 @@ C_FriendList = { GetNumOnlineFriends = function() return 2 end }
 SELECTED_CHAT_FRAME = ChatFrame1
 GENERAL_CHAT_DOCK = Frame("GeneralDockManager")
 GENERAL_CHAT_DOCK.selected = ChatFrame1
+GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES = { ChatFrame1 }
 CHAT_FRAMES = { "ChatFrame1" }
 -- One built-in window, so later windows arrive through CHAT_FRAMES like
 -- Blizzard's temporary windows. NUM_CHAT_WINDOWS is only a deprecation alias.
@@ -171,16 +172,35 @@ FCF_OpenNewWindow = function() end
 FCFDock_SelectWindow = function() end
 FCFTab_UpdateAlpha = function() end
 FCFTab_UpdateColors = function() end
+FCFDock_UpdateTabs = function() end
+IsInInstance = function() return false end
+-- Blizzard_SharedXML's link registry (both clients); Chat registers msufurl once.
+local linkHandlers = {}
+LinkUtil = { RegisterLinkHandler = function(kind, handler)
+    assert(not linkHandlers[kind], "a link handler was registered twice")
+    linkHandlers[kind] = handler
+end }
+CHAT_FRAME_FADE_OUT_TIME = 2.0
+S.RestoreCVar = function() end
+-- Styling alone never hooks the message path; the opt-in idle fade adds a
+-- post-hook on AddMessage and follows Blizzard's chrome fade.
+local messageHooks = 0
 hooksecurefunc = function(name, callback)
+    if type(name) == "table" then
+        assert(callback == "AddMessage", "chat hooked a native chat frame method other than AddMessage")
+        messageHooks = messageHooks + 1
+        return
+    end
     assert(name == "FCF_OpenTemporaryWindow" or name == "FCF_OpenNewWindow"
         or name == "FCFDock_SelectWindow" or name == "FCFTab_UpdateAlpha"
-        or name == "FCFTab_UpdateColors",
+        or name == "FCFTab_UpdateColors" or name == "FCFDock_UpdateTabs"
+        or name == "FCF_FadeInChatFrame" or name == "FCF_FadeOutChatFrame",
         "chat touched the message path")
     if name == "FCF_OpenTemporaryWindow" then temporaryHook = callback
     elseif name == "FCF_OpenNewWindow" then newWindowHook = callback
     elseif name == "FCFTab_UpdateAlpha" then tabAlphaHook = callback
     elseif name == "FCFTab_UpdateColors" then tabColorsHook = callback
-    else selectHook = callback end
+    elseif name == "FCFDock_SelectWindow" then selectHook = callback end
 end
 
 function S.Install(id, module)
@@ -192,7 +212,10 @@ local private = { NS = NS, Suite = S }
 -- The runtime files load in TOC order into one private table (Bootstrap only
 -- fills it from _G.MSUFSuite, which this fixture passes in directly).
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Sidebar.lua", "Copy.lua", "Window.lua", "Controller.lua" }
+local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
+NS.ChatBubbleSources = catalogNS.ChatBubbleSources
+local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Sidebar.lua", "Copy.lua", "History.lua", "Fade.lua",
+    "Messages.lua", "Window.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
 for i = 1, #CHAT_FILES do
@@ -203,6 +226,7 @@ local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
 local ctx = { callbacks = {}, restored = 0, original = {}, properties = {}, fields = {} }
 function ctx:Event(event, fn) self.callbacks[event] = fn end
+function ctx:RemoveEvent(event) self.callbacks[event]=nil end
 function ctx:Property(frame, getter, setter, value)
     local record = self.properties[frame] or {}
     self.properties[frame] = record
@@ -216,6 +240,16 @@ function ctx:RestoreProperty(frame, setter)
     end
 end
 function ctx:Alpha(frame, value) self:Property(frame, "GetAlpha", "SetAlpha", value) end
+ctx.anchors = {}
+function ctx:Anchor(frame, point, relative, relativePoint, x, y)
+    self.anchors[frame] = self.anchors[frame] or { points = frame.points }
+    frame:ClearAllPoints()
+    frame:SetPoint(point, relative, relativePoint, x, y)
+end
+function ctx:RestorePoints(frame)
+    local record = self.anchors[frame]
+    if record then frame.points, self.anchors[frame] = record.points, nil end
+end
 function ctx:Field(frame, key, value)
     local record = self.fields[frame] or {}
     self.fields[frame] = record
@@ -257,16 +291,22 @@ function ctx:UpdateTupleBefore(frame, setter, index, current)
 end
 module.context = ctx
 module.active = true
+-- The catalog defaults, as the controller hands them over, plus this test's look.
 module.config = {
     panelColor = "0a1220", panelAlpha = 74, borderColor = "41627a", borderAlpha = 78,
     borderSize = 1, accentColor = "57c7df", accentAlpha = 88, tabAccent = true,
     tabActiveColor = "f4f7fb", tabInactiveColor = "aab5c2",
     tabPanel = true, sidebarPanel = true, sidebarWidth = 28,
+    tabHeight = 24, tabBorderSize = 0, tabIndividualPanels = false,
+    tabActiveAlpha = 80, tabInactiveAlpha = 50,
     inputPanel = true, inputColor = "0a1522", inputAlpha = 86, padding = 4,
     fontSize = 15, tabFontSize = 0,
     font = "", tabFont = "", fontOutline = 1, fontRendering = 3, fontShadow = 1,
     copyMessages = false,
 }
+for key, value in pairs(chatDefaults) do
+    if module.config[key] == nil then module.config[key] = value end
+end
 module:Enable()
 -- Regression: the dock texture must join the body and border exactly. The
 -- dock itself is offset above ChatFrame1, so matching its own bounds leaves
@@ -358,6 +398,33 @@ assert(ChatFrame1Tab.Text.font[1] == "Fonts/FRIZQT__.TTF",
     "the Blizzard tab font choice did not restore its original face")
 module.config.tabFont = ""
 module:Refresh()
+-- Numeric zero is truthy in Lua: the newly added border setting must not
+-- activate separate 32px tab boxes over the original continuous dock strip.
+assert(not sidebar.tabFill and not sidebar.tabEdges,
+    "default chat styling gained individual tab boxes")
+module.config.tabIndividualPanels = true
+module.config.tabBorderSize = 1
+module:Refresh()
+assert(sidebar.tabFill.shown and sidebar.tabFill.height == 24
+    and sidebar.tabFill.points[1][1] == "BOTTOMLEFT"
+    and sidebar.tabFill.points[1][2] == ChatFrame1Tab
+    and sidebar.tabFill.points[1][5] == -3
+    and sidebar.tabEdges[1].points[1][2] == sidebar.tabFill,
+    "opt-in tab panels escaped the Suite header row")
+tabColorsHook(ChatFrame1Tab, false)
+assert(sidebar.tabFill.color[4] == 0.5, "inactive tab opacity was lost")
+tabColorsHook(ChatFrame1Tab, true)
+assert(sidebar.tabFill.color[4] == 0.8, "active tab opacity was lost")
+module.config.tabPanel = false
+module:Refresh()
+assert(not sidebar.tabFill.shown, "disabled tab strip kept its individual panel")
+for _, edge in ipairs(sidebar.tabEdges) do assert(not edge.shown, "disabled tab strip kept its tab border") end
+module.config.tabPanel = true
+module.config.tabIndividualPanels = false
+module.config.tabBorderSize = 0
+module:Refresh()
+assert(not sidebar.tabFill.shown, "turning individual tab panels off left a box")
+for _, edge in ipairs(sidebar.tabEdges) do assert(not edge.shown, "turning individual panels off left a border") end
 local textureCount = #textures
 module.config.accentAlpha = 0
 module:Refresh()
@@ -549,27 +616,39 @@ assert(module.visuals[ChatFrame2].tabLabel == ChatFrame2Tab.Text
     and not module.visuals[ChatFrame2].tabOverlay,
     "Combat Log gained duplicate tab text")
 -- Retail whisper targets can be secret. The temporary whisper tab must keep
--- Blizzard's native title without copying its text.
-ChatFrame2.chatType = "WHISPER"
-ChatFrame2.isTemporary = true
-ChatFrame2Tab.Text:SetText("secret")
+-- Blizzard's native title without copying its text. Temporary windows are
+-- frames past the built-in ones (ChatFrame2 is always the combat log).
+ChatFrame11 = Frame("ChatFrame11")
+ChatFrame11.isDocked = true
+ChatFrame11.editBox = Frame("ChatFrame11EditBox")
+ChatFrame11Tab = Frame("ChatFrame11Tab")
+ChatFrame11Tab.Left = Texture()
+ChatFrame11Tab.Text = ChatFrame11Tab:CreateFontString()
+ChatFrame11.chatType = "WHISPER"
+ChatFrame11.isTemporary = true
+ChatFrame11Tab.Text:SetText("secret")
+CHAT_FRAMES[11] = "ChatFrame11"
 temporaryHook()
-assert(ChatFrame2Tab.Text.value == "secret" and ChatFrame2Tab.Text.alpha == 1
-    and ChatFrame2Tab.Left.alpha == 0
-    and not module.visuals[ChatFrame2].tabOverlay,
+assert(ChatFrame11Tab.Text.value == "secret" and ChatFrame11Tab.Text.alpha == 1
+    and ChatFrame11Tab.Left.alpha == 0
+    and not module.visuals[ChatFrame11].tabOverlay,
     "a secret whisper target lost Blizzard's native title")
-ChatFrame2.chatType = "BN_WHISPER"
+ChatFrame11.chatType = "BN_WHISPER"
 temporaryHook()
-assert(ChatFrame2Tab.Text.alpha == 1 and not module.visuals[ChatFrame2].tabOverlay,
+assert(ChatFrame11Tab.Text.alpha == 1 and not module.visuals[ChatFrame11].tabOverlay,
     "a Battle.net whisper lost Blizzard's visible native tab")
-ChatFrame2.chatType = nil
-ChatFrame2.isTemporary = nil
-ChatFrame2Tab.Text:SetText("Combat Log")
+-- Blizzard reuses a closed temporary window for the next conversation.
+ChatFrame11.chatType = "WHISPER"
+ChatFrame11Tab.Text:SetText("Mapko")
 temporaryHook()
-assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log"
-    and ChatFrame2Tab.Text.alpha == 1 and ChatFrame2Tab.Left.alpha == 0
-    and not module.visuals[ChatFrame2].tabOverlay,
+assert(module.visuals[ChatFrame11].tabLabel.value == "Mapko"
+    and ChatFrame11Tab.Text.alpha == 1 and ChatFrame11Tab.Left.alpha == 0
+    and not module.visuals[ChatFrame11].tabOverlay,
     "a reused whisper tab kept its previous title")
+CHAT_FRAMES[11] = nil
+assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log"
+    and ChatFrame2Tab.Text.alpha == 1 and ChatFrame2Tab.Left.alpha == 0,
+    "the combat log tab lost Blizzard's native title")
 CombatLogQuickButtonFrame_Custom = Frame("CombatLogQuickButtonFrame_Custom")
 CombatLogQuickButtonFrame_Custom:SetHeight(24)
 CombatLogQuickButtonFrame_CustomTexture = Texture()
@@ -631,6 +710,17 @@ assert(module.visuals[ChatFrame3] and module.visuals[ChatFrame3].panel.shown
     and ChatFrame3Tab.Left.alpha == 0 and not module.visuals[ChatFrame3].tabOverlay
     and sidebar.sidebarFrame.points[1][2] == ChatFrame3,
     "a newly opened dynamic chat tab lost Blizzard's native title")
+-- tabGap spaces the docked tabs of each row after Blizzard laid them out.
+GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES = { ChatFrame1, ChatFrame2, ChatFrame3 }
+module.config.tabGap = 6
+module:Refresh()
+local gapPoint = ChatFrame2Tab.points and ChatFrame2Tab.points[1]
+assert(gapPoint and gapPoint[1] == "LEFT" and gapPoint[2] == ChatFrame1Tab and gapPoint[3] == "RIGHT"
+    and gapPoint[4] == 7 and not ctx.anchors[ChatFrame3Tab] and not ctx.anchors[ChatFrame1Tab],
+    "docked tabs did not keep the chosen gap within their row")
+module.config.tabGap = 0
+module:Refresh()
+assert(not ctx.anchors[ChatFrame2Tab], "turning the tab gap off kept the moved tab")
 -- A chat window that fails to style is reported; the later windows are styled.
 assert(#reports == 0, "chat styling raised: " .. tostring(reports[1]))
 ChatFrame4 = Frame("ChatFrame4")
@@ -699,6 +789,28 @@ ChatFrame4Tab:SetAlpha(0.2)
 tabAlphaHook(ChatFrame4)
 assert(ChatFrame4Tab.noMouseAlpha == 0.8 and ChatFrame4Tab:GetAlpha() == 0.8,
     "Blizzard's tab update dimmed the whisper again")
+assert(messageHooks == 0, "chat styling without message tools hooked the message path")
+-- An idle-faded window keeps its faded tab when Blizzard updates the tab's
+-- alpha; turning the fade off hands back the window and the Suite minimum.
+local fadeTimers = {}
+GetTime = function() return 0 end
+C_Timer = { NewTimer = function(_, callback)
+    local timer = { callback = callback }
+    function timer:Cancel() self.cancelled = true end
+    fadeTimers[#fadeTimers + 1] = timer
+    return timer
+end }
+module.config.idleSeconds, module.config.idleAlpha = 5, 20
+module:Refresh()
+GetTime = function() return 10 end
+for _, timer in ipairs(fadeTimers) do if not timer.cancelled then timer.callback() end end
+assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001 and math.abs(ChatFrame4:GetAlpha() - 0.2) < 0.001,
+    "the idle fade did not fade the window and its tab")
+tabAlphaHook(ChatFrame4)
+assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001, "Blizzard's tab update undid the idle fade")
+module.config.idleSeconds = 0
+module:Refresh()
+assert(ChatFrame4Tab:GetAlpha() == 0.8 and ChatFrame4:GetAlpha() == 1, "turning the fade off kept the window faded")
 module:Disable()
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
     and ChatFrame4Tab:GetAlpha() == 0.2,

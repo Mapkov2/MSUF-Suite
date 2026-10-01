@@ -13,6 +13,7 @@ local TEXT = {
     copyTitle = S.Text("Copy chat message (drag to move)"),
     copyHint = S.Text("Choose a line, then press Ctrl+C"),
     copyEmpty = S.Text("No recent messages to copy"),
+    copyURL = S.Text("Copy this URL with Ctrl+C"),
 }
 local Fill, Tint, ShowTooltip, HideTooltip = C.Fill, C.Tint, C.ShowTooltip, C.HideTooltip
 
@@ -147,6 +148,22 @@ local function ShowCopyDialog(self, frame)
 end
 
 local function CopyButtonClick(button) ShowCopyDialog(M, button.chatFrame) end
+
+-- A clicked chat URL (Messages.lua links them) opens the dialog with only
+-- that address, selected for Ctrl+C.
+function C.ShowURL(url)
+    local panel = M.copyDialog or CreateCopyDialog()
+    M.copyDialog = panel
+    for _, row in ipairs(panel.rows) do
+        row.message = nil
+        row:Hide()
+    end
+    panel.hint:SetText(TEXT.copyURL)
+    panel.edit:SetText(url)
+    panel:Show()
+    panel.edit:SetFocus()
+    panel.edit:HighlightText()
+end
 local function CopyButtonEnter(button) ShowTooltip(button, TEXT.copyTooltip) end
 
 local function CreateCopyButton(frame)

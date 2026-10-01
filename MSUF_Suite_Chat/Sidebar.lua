@@ -24,11 +24,7 @@ local RGB = S.RGB
 local function SidebarClassColor(c)
     if not c.sidebarClassColor then return end
     local _, token = UnitClass("player")
-    if not S.Public(token) then return end
-    local r, g, b = S.ClassRGB(token)
-    if not S.Finite(r) or not S.Finite(g) or not S.Finite(b) then return end
-    return string.format("%02x%02x%02x", math.floor(r * 255 + .5),
-        math.floor(g * 255 + .5), math.floor(b * 255 + .5))
+    return C.ClassHex(token)
 end
 
 local function RefreshSidebarButton(self, entry)
@@ -91,6 +87,27 @@ local function SidebarClick(button, mouseButton)
     if native then native:Click(mouseButton or "LeftButton") end
 end
 
+-- Shift-drag moves one icon; its offset from the sidebar center is saved.
+local function SidebarDragStart(button)
+    if not M.active or not IsShiftKeyDown() or P.NS.IsCombatLocked() then return end
+    button.dragging = true
+    button:StartMoving()
+end
+
+local function SidebarDragStop(button)
+    if not button.dragging then return end
+    button:StopMovingOrSizing()
+    button.dragging = nil
+    local x, y = button:GetCenter()
+    local sidebarX, sidebarY = button:GetParent():GetCenter()
+    if S.Finite(x) and S.Finite(y) and S.Finite(sidebarX) and S.Finite(sidebarY) then
+        local prefix = "sidebarButton" .. button.sidebarIndex
+        S.SetMany("chat", {
+            [prefix .. "X"] = x - sidebarX, [prefix .. "Y"] = y - sidebarY, [prefix .. "Moved"] = true,
+        })
+    end
+end
+
 local function CreateSidebarButton(sidebar, definition)
     local button = S.CreateFrame("Button", nil, sidebar)
     button:SetSize(24, 24)
@@ -107,6 +124,10 @@ local function CreateSidebarButton(sidebar, definition)
     button:SetScript("OnEnter", SidebarEnter)
     button:SetScript("OnLeave", SidebarLeave)
     button:SetScript("OnClick", SidebarClick)
+    button:SetMovable(true)
+    button:RegisterForDrag("LeftButton")
+    button:SetScript("OnDragStart", SidebarDragStart)
+    button:SetScript("OnDragStop", SidebarDragStop)
     return entry
 end
 
@@ -118,6 +139,7 @@ local function CreateSidebar(self, visual)
     for i, definition in ipairs(SIDEBAR_BUTTONS) do
         local entry = CreateSidebarButton(sidebar, definition)
         visual.buttons[i] = entry
+        entry.button.sidebarIndex = i
         if i == 1 then
             local count = S.CreateFontString(entry.button, nil, "OVERLAY", "GameFontHighlightSmall")
             count:SetPoint("BOTTOM", entry.button, "BOTTOM", 0, -2)
@@ -135,20 +157,30 @@ function C.PlaceSidebar(self, sidebar, frame)
     local c = self.config
     local top = math.max(24, HeaderTop(c, frame))
     sidebar:ClearAllPoints()
-    sidebar:SetPoint("TOPRIGHT", frame, "TOPLEFT", -c.padding, top)
-    sidebar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", -c.padding, -c.padding)
+    if c.sidebarSide == 2 then
+        sidebar:SetPoint("TOPLEFT", frame, "TOPRIGHT", c.padding, top)
+        sidebar:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", c.padding, -c.padding)
+    else
+        sidebar:SetPoint("TOPRIGHT", frame, "TOPLEFT", -c.padding, top)
+        sidebar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", -c.padding, -c.padding)
+    end
     sidebar:SetWidth(c.sidebarWidth)
 end
 local PlaceSidebar = C.PlaceSidebar
 
 local function LayoutButtons(self, sidebar, visual)
+    local c = self.config
     for i, entry in ipairs(visual.buttons) do
-        local button = entry.button
+        local button, prefix = entry.button, "sidebarButton" .. i
         button:ClearAllPoints()
-        if entry.definition.scroll then
+        if c[prefix .. "Moved"] then
+            button:SetPoint("CENTER", sidebar, "CENTER", c[prefix .. "X"] or 0, c[prefix .. "Y"] or 0)
+        elseif entry.definition.scroll and c.scrollButtonPlace == 2 then
+            button:SetPoint("BOTTOMRIGHT", DockSelection() or _G.ChatFrame1, "BOTTOMRIGHT", -4, 4)
+        elseif entry.definition.scroll then
             button:SetPoint("BOTTOM", sidebar, "BOTTOM", 0, 4)
         else
-            button:SetPoint("TOP", sidebar, "TOP", 0, -5 - (i - 1) * 26)
+            button:SetPoint("TOP", sidebar, "TOP", 0, -5 - (i - 1) * (24 + (c.sidebarGap or 2)))
         end
         local native = entry.definition.native and _G[entry.definition.native]
         button:SetShown(entry.definition.scroll or native ~= nil)
@@ -176,7 +208,7 @@ function C.ApplySidebar(self, visual, frame)
         visual.sidebar = Fill(sidebar, "BACKGROUND")
         visual.sidebar:SetAllPoints(sidebar)
     end
-    Tint(visual.sidebar, c.panelColor, math.min(100, c.panelAlpha + 8))
+    Tint(visual.sidebar, c.sidebarColor or c.panelColor, c.sidebarAlpha or math.min(100, c.panelAlpha + 8))
     visual.sidebar:Show()
     PlaceSidebar(self, sidebar, DockSelection() or frame)
     sidebar:SetFrameStrata("MEDIUM")
