@@ -323,6 +323,7 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
             if before ~= entry.missingCount then
                 self.buttons[index].count:SetText(entry.missingCount > 0 and tostring(entry.missingCount) or "")
             end
+            if auraDirty then R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo) end
         elseif entry.poison then
             RefreshPoisonEntry(self, index, entry)
         elseif entry.slot then

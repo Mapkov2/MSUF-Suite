@@ -1285,6 +1285,52 @@ do
         "disable kept member events")
 end
 
+-- With the group option on, the class buff entry counts the members; the
+-- advance warning (remindBeforeMinutes) still follows the player's own copy.
+do
+    local roster = { player = "MAGE", party1 = "PRIEST" }
+    UnitClass = function(unit) return roster[unit], roster[unit] end
+    knownSpell = function(id) return id == 1459 end
+    IsInRaid = function() return false end
+    GetNumSubgroupMembers = function() return 1 end
+    UnitIsUnit = function(unit, other) return unit == other end
+    UnitExists = function(unit) return roster[unit] ~= nil end
+    UnitIsConnected = function() return true end
+    UnitIsVisible = function() return true end
+    UnitIsDeadOrGhost = function() return false end
+    C_Secrets.ShouldAurasBeSecret = function() return false end
+    C_UnitAuras.GetUnitAuraBySpellID = function() return {} end
+    NS.Client.isForever, NS.Client.modernEquipment = false, false
+    afterQueue, scheduled = {}, {}
+    now = 5000
+    auras[1459] = { spellId = 1459, auraInstanceID = 950, expirationTime = now + 120, duration = 3600 }
+    module.config = { classBuff=true, groupBuff=true, spellIDs="", items="", mainHandItem="", offHandItem="",
+        instancesOnly=false, hideMounted=true, size=38, spacing=5, columns=6, borderColor="e8b855",
+        point=1, x=0, y=0, remindBeforeMinutes=5 }
+    module.active = true
+    module:Enable()
+    RunAfter()
+    local entry = module.entries[1]
+    assert(entry and entry.group and entry.present == true and entry.missingCount == 0,
+        "the group buff entry did not see every member buffed")
+    assert(module.mask % (entry.bit * 2) >= entry.bit and entry.expiresAt == now + 120,
+        "the group buff ignored the advance warning of the player's own buff")
+    auras[1459] = { spellId = 1459, auraInstanceID = 950, expirationTime = now + 1800, duration = 3600 }
+    eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { updatedAuraInstanceIDs = { 950 } })
+    assert(module.mask == 0 and module.thresholdAt == now + 1500,
+        "a refreshed own buff did not move the group buff's advance warning")
+    now = now + 1500
+    FireNext()
+    assert(module.mask % (entry.bit * 2) >= entry.bit, "the group buff's advance warning did not fire")
+    module.config.classBuff = false
+    module:Refresh()
+    RunAfter()
+    assert(module.mask == 0 and module.entries[1].expiresAt == nil,
+        "without the class buff option the player's own buff still warned")
+    module:Disable()
+    auras[1459] = nil
+end
+
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip
 -- included). The seasonal ID tables live only in Data.lua; every runtime file
 -- reads P.BuffReminders in its header.

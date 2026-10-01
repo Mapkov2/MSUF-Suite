@@ -181,6 +181,34 @@ function R.RefreshGroup(self, changedUnit)
     for unit in pairs(self.groupUnits) do states[unit] = Present(unit, buff.auras, false, ranked) end
 end
 
+-- The advance warning (remindBeforeMinutes) of the group buff entry follows
+-- the player's own copy, as it does for the class buff without the group
+-- option; the member count alone has no expiration. entry.own is the
+-- player's aura record, kept apart so the group presence does not decide
+-- which aura deltas need a fresh lookup.
+function R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo)
+    if not self.config.classBuff then
+        entry.expiresAt, entry.totalDuration = nil, nil
+        return
+    end
+    local own = entry.own
+    if not own then
+        own = {}
+        entry.own = own
+    end
+    if own.aura ~= entry.aura or own.aliases ~= entry.aliases or own.ranked ~= entry.ranked then
+        own.aura, own.aliases, own.ranked, own.present = entry.aura, entry.aliases, entry.ranked, nil
+    end
+    if fullRefresh or R.AuraChangeAffects(own, updateInfo) then
+        own.present, own.auraInstanceID, own.expiresAt, own.instanceIDs, own.totalDuration = R.AuraPresent(own)
+    end
+    if own.present == true then
+        entry.expiresAt, entry.totalDuration = own.expiresAt, own.totalDuration
+    else
+        entry.expiresAt, entry.totalDuration = nil, nil
+    end
+end
+
 function R.GroupPresent(self, entry)
     local missing = 0
     for unit in pairs(self.groupUnits or {}) do
