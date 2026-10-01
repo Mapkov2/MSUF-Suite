@@ -27,6 +27,7 @@ AuraPlaceholders.lua
 Auras.lua
 ActionGlows.lua
 Alerts.lua
+Grid.lua
 Layout.lua
 Visibility.lua
 Native.lua

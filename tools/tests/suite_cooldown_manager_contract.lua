@@ -49,7 +49,7 @@ local function Read(path)
     return text
 end
 local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","EntryFill.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
-    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
+    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Grid.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
     "Flush.lua","Settings.lua","Events.lua","Controller.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")

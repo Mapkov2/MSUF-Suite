@@ -211,7 +211,7 @@ local C={M=M,EMPTY={},state={inCombat=false,preview=false},views={},plans={},bar
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local P={NS=NS,Suite=S,CDM=C}
 
-local FILES={"Const","Layout","Visibility","Native","Preview"}
+local FILES={"Const","Grid","Layout","Visibility","Native","Preview"}
 local createdBefore=created
 for _,name in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..name..".lua"
