@@ -6,55 +6,46 @@ local M = MM.M
 -- settings changed, so a slider touches only what it affects; geometry is the
 -- only category that re-renders the map (the zoom nudge).
 local HOST_ELEMENT = "external:msuf.blizzard:minimap"
+-- A category re-runs when a setting of one of its catalog sections changed
+-- (MSUF_Suite/Core/Catalog/Minimap.lua; prefix: every section whose name
+-- starts with it) or one of its extra keys: settings another section owns
+-- that this category also reads. A new setting of a section joins its
+-- categories without another list to maintain.
 local CATEGORIES = {
-    { name = "geometry", keys = { "size", "shape", "hoverResize", "hoverWidth", "hoverHeight" } },
-    { name = "position", keys = { "point", "x", "y" } },
-    {
-        name = "border",
-        keys = { "size", "shape", "borderSize", "borderColor", "borderClassColor",
-            "borderAlpha", "shadowSize", "shadowColor", "shadowAlpha", "stylePreset", "styleTexture", "styleTexturePath",
-            "styleColor", "styleAlpha", "styleScale", "styleX", "styleY", "stylePlacement", "styleBlend", "styleRotation",
-            "styleGlow", "styleGlowColor", "styleGlowAlpha", "styleGlowScale", "styleBackdrop", "styleBackdropColor",
-            "styleBackdropAlpha", "styleBackdropPadding" }
-    },
-    {
-        name = "input",
-        keys = { "visibility", "hoverResize", "rotate", "scrollZoom", "zoomResetSeconds", "zoomButtons", "middleClick",
-            "zoomInX", "zoomInY", "zoomOutX", "zoomOutY",
-            "showLanding", "collectButtons", "drawerMouseover", "infoCoordinates", "infoCoordinatesMode" }
-    },
-    {
-        name = "elements",
-        keys = { "showTracking", "showCalendar", "showMail", "showCrafting", "showDifficulty", "showLanding",
-            "landingIcon",
-            "landingX", "landingY", "difficultyButtonX", "difficultyButtonY", "showCompartment", "elementRow",
-            "elementSize", "elementSpacing", "elementDistance", "infoDifficulty", "borderSize" }
-    },
-    {
-        name = "drawer",
-        keys = { "collectButtons", "drawerRow", "drawerX", "drawerY", "drawerButtonSize", "drawerColumns",
-            "drawerMouseover",
-            "elementRow", "elementSize", "elementSpacing", "elementDistance", "borderSize", "borderColor",
-            "borderClassColor" }
-    },
-    { name = "specialization", keys = { "specButton", "specShowSpec", "specShowLoot", "specCorner",
-        "specSize", "specX", "specY", "borderColor", "borderClassColor" } },
-    { name = "texts", keys = { "borderSize", "borderColor", "borderClassColor", "showCalendar" } },
+    { name = "geometry", sections = { "hover_size" }, extra = { "size", "shape" } },
+    { name = "position", extra = { "point", "x", "y" } },
+    { name = "border", sections = { "shape", "style_presets", "style_art", "style_glow", "style_backdrop" },
+        extra = { "size" } },
+    { name = "input", sections = { "behavior" }, extra = { "hoverResize", "showLanding", "collectButtons",
+        "drawerMouseover", "infoCoordinates", "infoCoordinatesMode" } },
+    { name = "elements", sections = { "elements", "landing" }, extra = { "infoDifficulty", "borderSize" } },
+    { name = "drawer", sections = { "addons" }, extra = { "elementRow", "elementSize", "elementSpacing",
+        "elementDistance", "borderSize", "borderColor", "borderClassColor" } },
+    { name = "specialization", sections = { "specialization" }, extra = { "borderColor", "borderClassColor" } },
+    -- Every information text and its tooltip settings.
+    { name = "texts", prefix = "info_", extra = { "borderSize", "borderColor", "borderClassColor", "showCalendar" } },
 }
-for _, name in ipairs({ "Tracking", "Calendar", "Mail", "Crafting", "Compartment" }) do
-    local keys = CATEGORIES[5].keys
-    keys[#keys + 1] = "button" .. name .. "X"
-    keys[#keys + 1] = "button" .. name .. "Y"
-end
--- Every information and tooltip setting belongs to the texts category.
-do
-    local texts = CATEGORIES[#CATEGORIES].keys
-    local names = {}
-    for key in pairs(NS.SuiteCatalog.minimap.rules) do
-        if key:find("^info") or key:find("^tooltip") then names[#names + 1] = key end
+MM.applyCategories = CATEGORIES
+
+local function Covers(category, section)
+    if not section then return false end
+    if category.prefix and section:sub(1, #category.prefix) == category.prefix then return true end
+    for _, name in ipairs(category.sections or {}) do
+        if name == section then return true end
     end
-    table.sort(names)
-    for i = 1, #names do texts[#texts + 1] = names[i] end
+    return false
+end
+
+-- category.keys: its extra keys, then its sections' settings in catalog order.
+for _, category in ipairs(CATEGORIES) do
+    local keys, listed = {}, {}
+    for _, key in ipairs(category.extra or {}) do keys[#keys + 1], listed[key] = key, true end
+    for _, rule in ipairs(NS.SuiteCatalog.minimap.controls) do
+        if not listed[rule.key] and Covers(category, rule.section) then
+            keys[#keys + 1], listed[rule.key] = rule.key, true
+        end
+    end
+    category.keys = keys
 end
 
 local function Dirty(self)

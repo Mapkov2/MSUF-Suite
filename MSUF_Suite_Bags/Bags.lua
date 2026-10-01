@@ -448,29 +448,44 @@ function M:Enable()
     self:Refresh()
 end
 
+-- The settings each refresh step repaints from. The item level text reads
+-- every setting of the catalog section "itemLevels" (MSUF_Suite/Core/Catalog/
+-- Bags.lua) except its switches, so a new text option joins it on its own.
+local SLOT_KEYS = { "backgroundColor", "accentColor" }
+local WINDOW_KEYS = { "backgroundOpacity" }
+local LEVEL_KEYS = { "showItemLevel", "showBindBadge", "showBankItemLevel" }
+local GOLD_KEYS = { "showSessionGold" }
+local LABEL_KEYS, VISUAL_KEYS = {}, {}
+do
+    local switches = {}
+    for i = 1, #LEVEL_KEYS do switches[LEVEL_KEYS[i]] = true end
+    for _, rule in ipairs(NS.SuiteCatalog.bags.controls) do
+        if rule.section == "itemLevels" and not switches[rule.key] then LABEL_KEYS[#LABEL_KEYS + 1] = rule.key end
+    end
+    for _, keys in ipairs({ SLOT_KEYS, WINDOW_KEYS, LABEL_KEYS, LEVEL_KEYS, GOLD_KEYS }) do
+        for i = 1, #keys do VISUAL_KEYS[#VISUAL_KEYS + 1] = keys[i] end
+    end
+end
+
+local function Changed(c, last, keys)
+    for i = 1, #keys do
+        if last[keys[i]] ~= c[keys[i]] then return true end
+    end
+    return false
+end
+
+-- slot, window, label, level and gold: whether each step must run again.
 local function VisualChanges(c, last)
-    local slot = not last or last.backgroundColor ~= c.backgroundColor or last.accentColor ~= c.accentColor
-    local window = slot or last.backgroundOpacity ~= c.backgroundOpacity or last.editMode ~= S.editMode
-    local label = not last or last.font ~= c.font
-        or last.itemLevelSize ~= c.itemLevelSize or last.qualityColor ~= c.qualityColor
-        or last.fontOutline ~= c.fontOutline or last.fontRendering ~= c.fontRendering
-        or last.fontShadow ~= c.fontShadow or last.fontShadowOpacity ~= c.fontShadowOpacity
-        or last.fontShadowDistance ~= c.fontShadowDistance
-    local level = not last or last.showItemLevel ~= c.showItemLevel or last.showBindBadge ~= c.showBindBadge
-        or last.showBankItemLevel ~= c.showBankItemLevel
-    local gold = not last or last.showSessionGold ~= c.showSessionGold
-    return slot, window, label, level, gold
+    if not last then return true, true, true, true, true end
+    local slot = Changed(c, last, SLOT_KEYS)
+    local window = slot or Changed(c, last, WINDOW_KEYS) or last.editMode ~= S.editMode
+    return slot, window, Changed(c, last, LABEL_KEYS), Changed(c, last, LEVEL_KEYS), Changed(c, last, GOLD_KEYS)
 end
 
 local function RememberVisuals(self, c)
     local last = self.appliedVisual or {}
-    last.backgroundColor, last.backgroundOpacity, last.accentColor =
-        c.backgroundColor, c.backgroundOpacity, c.accentColor
-    last.font, last.itemLevelSize, last.qualityColor = c.font, c.itemLevelSize, c.qualityColor
-    last.fontOutline, last.fontRendering, last.fontShadow = c.fontOutline, c.fontRendering, c.fontShadow
-    last.fontShadowOpacity, last.fontShadowDistance = c.fontShadowOpacity, c.fontShadowDistance
-    last.showItemLevel, last.showBindBadge, last.showBankItemLevel, last.showSessionGold, last.editMode =
-        c.showItemLevel, c.showBindBadge, c.showBankItemLevel, c.showSessionGold, S.editMode
+    for i = 1, #VISUAL_KEYS do last[VISUAL_KEYS[i]] = c[VISUAL_KEYS[i]] end
+    last.editMode = S.editMode
     self.appliedVisual = last
 end
 

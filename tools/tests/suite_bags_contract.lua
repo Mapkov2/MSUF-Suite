@@ -308,6 +308,9 @@ state.Finite = S.Finite
 state.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state)
 local bagsPrivate = { NS = state, Suite = S }
+-- Bags.lua reads its catalog sections (MSUF_Suite/Core/Catalog/Bags.lua).
+state.SuiteCatalog = select(2, dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags"))
+    .SuiteCatalog
 for _, file in ipairs({ "SlotCache", "Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end
@@ -790,6 +793,27 @@ hooks.UpdateItems()
 module.config.itemLevelSize = 15
 module:Refresh()
 assert(module.overlays[buttons[1]].label.size == 15, "font setting did not refresh")
+-- Every text setting of the catalog's item level section repaints the
+-- labels, without a hand-kept key list.
+do
+    local switches = { showItemLevel = true, showBindBadge = true, showBankItemLevel = true }
+    local checked = 0
+    for _, rule in ipairs(state.SuiteCatalog.bags.controls) do
+        if rule.section == "itemLevels" and not switches[rule.key] then
+            local previous, style = module.config[rule.key], module.labelStyle
+            local kind, changed = type(rule.default), "changed"
+            if kind == "number" then changed = (previous or rule.default) + 1
+            elseif kind == "boolean" then changed = not previous end
+            module.config[rule.key] = changed
+            module:Refresh()
+            assert(module.labelStyle == style + 1, rule.key .. " did not repaint the item level text")
+            module.config[rule.key] = previous
+            module:Refresh()
+            checked = checked + 1
+        end
+    end
+    assert(checked >= 8, "the item level section lost its text settings")
+end
 module.config.fontOutline, module.config.fontRendering = 2, 2
 module.config.fontShadow, module.config.fontShadowOpacity, module.config.fontShadowDistance = true, 70, 2
 module:Refresh()
