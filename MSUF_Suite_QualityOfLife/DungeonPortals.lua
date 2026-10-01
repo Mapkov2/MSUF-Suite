@@ -328,9 +328,12 @@ function M:Refresh()
     WatchCooldowns(self)
 end
 
+-- The controller stops a module only outside combat lockdown (S.Apply).
 function M:Disable()
-    if NS.IsCombatLocked() then return end
-    if self.host then UnregisterStateDriver(self.host, "visibility"); self.host:Hide() end
+    if self.host then
+        UnregisterStateDriver(self.host, "visibility")
+        self.host:Hide()
+    end
 end
 
 S.Install(ID, M)

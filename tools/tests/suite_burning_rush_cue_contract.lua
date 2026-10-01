@@ -198,11 +198,9 @@ local before = queued
 cue:Refresh()
 assert(queued == before + 1 and cue.container.enabled == true
     and not cue.preview:IsShown(), "combat Edit Mode change must be deferred")
-cue:Disable()
-assert(queued == before + 2 and driver == cue.container
-    and cue.container.enabled == true, "combat disable must be deferred")
+-- The controller never stops a module in lockdown (S.Apply queues it).
 events.PLAYER_REGEN_DISABLED(cue)
-assert(not cue.preview:IsShown() and queued == before + 3,
+assert(not cue.preview:IsShown() and queued == before + 2 and driver == cue.container,
     "combat event must never reconfigure native aura state")
 combat = false
 SecureDriverUpdate()

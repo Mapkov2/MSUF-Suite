@@ -204,7 +204,10 @@ Suite.Suite.Apply("minimap")
 Suite.Suite.Apply("minimap")
 assert(#frames == 1 and frames[1].registrations == 1 and module.refreshes == nil,
     "combat refresh was not coalesced")
-assert(not Suite.Suite.Set("minimap", "enabled", false))
+-- Module Disable callbacks rely on this: nothing stops a module in lockdown.
+local stopsBeforeCombat = module.stops
+assert(not Suite.Suite.Set("minimap", "enabled", false) and module.stops == stopsBeforeCombat,
+    "a module was stopped during combat lockdown")
 combat = false
 frames[1]:callback()
 assert(module.refreshes == 1 and not next(frames[1].events))
