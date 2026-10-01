@@ -5,8 +5,10 @@ local C = P.CDM
 -- swipe through duration objects, desaturation and opacity through step
 -- curves evaluated C-side, counts through SetText. Lua branches only on
 -- NeverSecret fields (isActive, isOnGCD, maxCharges, charge isActive),
--- HasSecretValues, or values that passed S.Public. Nothing here allocates:
--- the only new objects per event are the duration objects the C API returns.
+-- HasSecretValues, or values that passed S.Public. No Lua table, closure or
+-- string is built here per event; the new objects per event are the ones the
+-- C API returns: the cooldown and charge info tables (GetSpellCooldown,
+-- GetSpellCharges) and the duration objects.
 local K = C.Const
 local T = {}
 C.Time = T

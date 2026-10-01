@@ -530,6 +530,9 @@ local cdState,chargeState,usable,inRange,overlayed={},{[101]={isActive=false}},{
 usable.calls={}
 local bagCounts={}
 local cdCalls,cdSpells,invCalls,rangeLog=0,{},0,{}
+-- While set, the cooldown readers hand back these objects instead of new
+-- ones (the allocation budget of a matched cooldown event).
+local steady
 local function CooldownInfo(spell)
     local state=cdState[spell]
     local active=state and state.start+state.length>now or false
@@ -544,12 +547,14 @@ C_Spell={
     GetSpellCooldown=function(spell)
         Plain(spell,"GetSpellCooldown")
         cdCalls=cdCalls+1;cdSpells[spell]=(cdSpells[spell] or 0)+1
+        if steady then return steady.info end
         return CooldownInfo(spell)
     end,
     GetSpellCooldownDuration=function(spell,ignoreGCD)
         Plain(spell,"GetSpellCooldownDuration")
         local key=ignoreGCD and "baseDuration" or "displayDuration"
         cdSpells[key]=(cdSpells[key] or 0)+1
+        if steady then return steady.duration end
         local state=cdState[spell]
         return NewDuration(combat,state and state.start,state and state.length)
     end,
@@ -557,10 +562,12 @@ C_Spell={
         cdSpells.charges=(cdSpells.charges or 0)+1
         local state=chargeState[spell]
         if not state then return nil end
+        if steady then return steady.charges end
         return {maxCharges=2,isActive=state.isActive,currentCharges=combat and SECRET_NUM or 1}
     end,
     GetSpellChargeDuration=function()
         cdSpells.chargeDuration=(cdSpells.chargeDuration or 0)+1
+        if steady then return steady.duration end
         return NewDuration(combat,now,8)
     end,
     GetSpellDisplayCount=function()
@@ -1065,6 +1072,29 @@ do
     assert(flushes==1,"a restriction ending flushes pending aura restyles once")
     C.Auras.FlushPending=realFlush
     C.Auras.pending.buf=nil
+end
+-- A matched cooldown event in steady state builds nothing in Lua (Time.lua
+-- header). The client's C API returns new objects on every call: the
+-- cooldown and charge info tables and the duration objects. Here their
+-- stand-ins hand back the same objects, so every kilobyte counted would be
+-- the runtime's own.
+do
+    steady={info={isActive=true,isOnGCD=false,isEnabled=true,startTime=now,duration=12},
+        duration=NewDuration(false,now,12),charges={maxCharges=2,isActive=true,currentCharges=1}}
+    Fire("SPELL_UPDATE_COOLDOWN",101)
+    Run()
+    local quiet=writes
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local kb=collectgarbage("count")
+    for _=1,1000 do Fire("SPELL_UPDATE_COOLDOWN",101) end
+    local used=collectgarbage("count")-kb
+    collectgarbage("restart")
+    steady=nil
+    assert(writes>quiet,"the matched cooldown event did not reach the icon")
+    assert(used==0,"a matched cooldown event allocated "..used.." KB in Lua")
+    Fire("SPELL_UPDATE_COOLDOWN",101)
+    Run()
 end
 -- A GCD for one spell refreshes that spell's icons only: the others do not
 -- show the GCD and are not touched.
