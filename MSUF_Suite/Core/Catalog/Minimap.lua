@@ -83,7 +83,7 @@ B.Section(id, "shape", "Shape, border and shadow", {
 NS.MinimapStyleTextureNames = { "None", "Arcane ring", "Ember ring", "Astral ring", "Steel frame",
     "Custom texture", "Parchment scroll" }
 NS.MinimapStylePresetNames = { "Custom", "Clean", "Arcane", "Ember", "Astral", "Steel",
-    "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map", "Clean Modern" }
+    "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map", "Clean Modern", "Class Style" }
 local clean = {
     shape = 1, borderSize = 1, borderColor = "000000", borderClassColor = false, borderAlpha = 100,
     shadowSize = 0, shadowColor = "000000", shadowAlpha = 45,
@@ -138,13 +138,17 @@ NS.MinimapStylePresets = {
         shadowSize = 0, styleTexture = 1, styleGlow = false,
         styleBackdrop = true, styleBackdropColor = "101010", styleBackdropAlpha = 82 }),
 }
+NS.MinimapStylePresets[12] = B.ClassPreset(NS.MinimapStylePresets[11], {
+    borderColor = "border", styleGlowColor = "accent",
+})
+NS.MinimapStylePresets[12].stylePreset = 12
 NS.MinimapStyleVisualKeys = {}
 for key in pairs(clean) do NS.MinimapStyleVisualKeys[key] = true end
 -- The global looks Midnight Blue, Midnight Dark and MSUF Forever are the
 -- style presets 8, 9 and 7; Custom is the first choice here.
 NS.SuiteCatalog[id].look = {
     key = "stylePreset", presets = NS.MinimapStylePresets, visualKeys = NS.MinimapStyleVisualKeys,
-    custom = 1, global = { 8, 9, 7, [5] = 11 },
+    custom = 1, global = { 8, 9, 7, [5] = 11, [6] = 12 },
 }
 
 B.Section(id, "style_presets", "Choose a look", {
@@ -180,7 +184,7 @@ B.Section(id, "behavior", "Map behavior", {
     Bool("scrollZoom", "Scroll to zoom", true),
     Number("zoomResetSeconds", "Reset zoom after manual zoom (seconds, 0: never)", 0, 0, 15),
     Choice("zoomButtons", "Zoom buttons", 1, { "Show on mouseover", "Always show", "Hide" }),
-    Choice("middleClick", "Middle-click action", 2, { "Nothing", "Tracking menu", "Calendar", "World map" }),
+    Choice("middleClick", "Middle-click action", 2, { "Nothing", "Tracking menu", "Calendar", "World map", "Micro menu" }),
 })
 -- Offset labels are built here, so their format strings translate here.
 local HORIZONTAL, VERTICAL = NS.Text("%s horizontal offset"), NS.Text("%s vertical offset")
@@ -320,6 +324,7 @@ B.Section(id, "info_colors", "Performance colors", {
     Color("infoBadColor", "Bad status color", "ff6677"),
 })
 B.Section(id, "info_tooltips", "Hover details", {
+    Number("tooltipScale", "Minimap tooltip scale (percent)", 100, 50, 200, 5),
     Choice("tooltipInstanceKind", "Instance lockout filter", 1, { "Raids and dungeons", "Raids", "Dungeons" }),
     Bool("tooltipExpired", "Include expired lockouts"),
     Bool("tooltipWorldBosses", "Include world bosses", true),

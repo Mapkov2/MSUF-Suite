@@ -17,11 +17,22 @@ end
 
 B.Module("bags", {
     title = "Bags",
-    description = "One combined bag with a clear Suite background and item levels shown directly on equipment. Blizzard keeps item use, sorting, search, and bank interactions.",
+    description = "One combined bag with a clear Suite background and item levels on equipment. Keep Blizzard's own item grid, or choose a Suite view with pages, bag groups or categories. Using and sorting items stays Blizzard's.",
     core = true, page = "suite_bags", available = Available,
     conflicts = { "EllesmereUIBags", "ElvUI", "Bagnon", "BetterBags", "AdiBags", "ArkInventory", "Inventorian" },
     cvars = { combinedBags = true },
 })
+
+-- Bags first kept Blizzard's own item grid under a Suite surface; the Suite
+-- inventory views came later. A profile saved before them keeps Blizzard's
+-- grid until its player picks a Suite view; new profiles start with All items.
+NS.BagsBlizzardGrid = 4
+function NS.MigrateBagsInventoryView(modules)
+    local bags = modules.bags
+    if type(bags) == "table" and next(bags) ~= nil and bags.inventoryView == nil then
+        bags.inventoryView = NS.BagsBlizzardGrid
+    end
+end
 
 NS.BagsLookPresets = {
     [1] = { backgroundColor = "0a1522", backgroundOpacity = 96, accentColor = "5794d2" },
@@ -29,6 +40,7 @@ NS.BagsLookPresets = {
     [3] = { backgroundColor = "14181b", backgroundOpacity = 98, accentColor = "9f8960" },
     [5] = { backgroundColor = "101010", backgroundOpacity = 96, accentColor = "e6ecf2" },
 }
+NS.BagsLookPresets[6] = B.ClassPreset(NS.BagsLookPresets[5], { accentColor = "accent" })
 NS.BagsLookVisualKeys = { backgroundColor = true, backgroundOpacity = true, accentColor = true }
 NS.SuiteCatalog.bags.look = {
     key = "look", presets = NS.BagsLookPresets, visualKeys = NS.BagsLookVisualKeys,
@@ -37,7 +49,7 @@ NS.SuiteCatalog.bags.look = {
 local initial = NS.BagsLookPresets[NS.Client.isForever and 3 or 2]
 B.Section("bags", "look", "Choose a look", {
     B.Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
 })
 B.Section("bags", "appearance", "Window appearance", {
     B.Color("backgroundColor", "Background color", initial.backgroundColor),
@@ -67,6 +79,59 @@ B.Section("bags", "window", "Combined bag window", {
     B.Number("windowX", "Horizontal offset", 0, -4096, 4096),
     B.Number("windowY", "Vertical offset", 0, -4096, 4096),
 })
+B.Section("bags", "organisation", "Inventory organisation", {
+    B.Choice("inventoryView", "Default inventory view", 1, { "All items", "By bag", "Categories", "Blizzard grid" }),
+    B.Number("inventoryColumns", "Items per row", 12, 8, 20),
+    B.Number("inventoryRows", "Visible rows", 10, 4, 16),
+    B.Bool("autoSizeWindow", "Fit window to contents", true),
+    B.Bool("compactGroups", "Place small groups side by side", true),
+    B.Bool("hideEmptySlots", "Hide empty slots"),
+    B.Bool("hideEmptyCategories", "Hide empty categories", true),
+    B.Bool("mergeStacks", "Combine identical stacks visually"),
+    B.Choice("sortDirection", "Native bag sorting direction", 1, { "Blizzard setting", "Fill from the top", "Fill from the bottom" }),
+    B.Bool("stackSplitter", "Stack split presets and automatic splitting", true),
+    B.Bool("desaturateJunk", "Desaturate junk items"),
+    B.Bool("groupEquipmentSets", "Group equipment by set", true),
+    B.Bool("groupEquipmentSlots", "Group equipment by slot", true),
+    B.Bool("groupExpansions", "Group by expansion"),
+    B.Bool("groupReagentTypes", "Group reagents by material type"),
+    B.Bool("showEquipmentSetNames", "Show equipment set names"),
+    B.Number("equipmentSetNameSize", "Equipment set name text size", 9, 7, 16),
+    B.Bool("showUpgradeTrack", "Show upgrade track and rank"),
+    B.Number("upgradeTextSize", "Upgrade rank text size", 9, 7, 16),
+    B.Bool("showKeystoneDetails", "Show keystone level and dungeon", true),
+    B.Number("keystoneLevelSize", "Keystone level text size", 16, 8, 24),
+    B.Number("keystoneDungeonSize", "Dungeon abbreviation text size", 9, 7, 16),
+    B.Number("itemCountSize", "Item count text size", 12, 8, 20),
+    B.String("customCategories", "Custom category data", "", 16000),
+})
+B.Section("bags", "categories", "Built-in categories", {
+    B.Bool("category_equipment", "Equipment category", true),
+    B.Bool("category_consumables", "Consumables category", true),
+    B.Bool("category_reagents", "Reagents category", true),
+    B.Bool("category_recipes", "Recipes category", true),
+    B.Bool("category_quest", "Quest items category", true),
+    B.Bool("category_junk", "Junk category", true),
+})
+B.Section("bags", "finance", "Gold and currencies", {
+    B.Bool("showGoldHistory", "Record gold history and character balances", true),
+    B.String("currencyIDs", "Currency IDs (up to 8, separated by commas)", "", 120),
+})
+B.Section("bags", "collections", "Pinned and recent items", {
+    B.Bool("showPinned", "Show pinned items", true),
+    B.Bool("showRecent", "Show recent items", true),
+    B.Bool("showPinnedHint", "Show pinned item hints", true),
+    B.Bool("showRecentHint", "Show recent item hints", true),
+    B.Number("recentHours", "Keep recent items for (hours)", 24, 1, 168),
+})
+B.Section("bags", "bank", "Bank organisation", {
+    B.Choice("bankView", "Default bank view", 1, { "Bank tabs", "Combined bank", "Combined warbank", "Bank categories" }),
+    B.Bool("bankGroupExpansions", "Group bank items by expansion"),
+    B.Bool("bankGroupEquipmentSlots", "Group bank equipment by slot", true),
+    B.Bool("bankGroupReagentTypes", "Group bank reagents by material type", true),
+    B.Bool("bankHideEmptySlots", "Hide empty bank slots"),
+    B.Bool("showBankTabs", "Show individual bank tabs in the sidebar", true),
+})
 B.Section("bags", "reagentWindow", "Reagent bag window", {
     B.Bool("reagentWindowMoved", "Use custom reagent bag position", false),
     B.Number("reagentWindowX", "Horizontal offset", 0, -4096, 4096),
@@ -74,6 +139,19 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+for _, key in ipairs({ "bankView", "bankGroupExpansions", "bankGroupEquipmentSlots",
+    "bankGroupReagentTypes", "bankHideEmptySlots", "showBankTabs" }) do
+    rules[key].hidden = NS.Client.isForever
+end
+rules.showKeystoneDetails.hidden = NS.Client.isForever
+rules.keystoneLevelSize.hidden = NS.Client.isForever
+rules.keystoneDungeonSize.hidden = NS.Client.isForever
+rules.equipmentSetNameSize.enableKey = "showEquipmentSetNames"
+rules.upgradeTextSize.enableKey = "showUpgradeTrack"
+rules.keystoneLevelSize.enableKey = "showKeystoneDetails"
+rules.keystoneDungeonSize.enableKey = "showKeystoneDetails"
+rules.customCategories.hidden = true
+rules.recentHours.enableKey = "showRecent"
 rules.showBindBadge.hidden = NS.Client.isForever
 rules.showBankItemLevel.hidden = NS.Client.isForever
 rules.itemLevelSize.enableKey = "showItemLevel"

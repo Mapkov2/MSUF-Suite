@@ -69,7 +69,9 @@ CDM.POINTS = NS.AnchorPoints
 local POINT_LABELS = NS.AnchorLabels
 -- Attach targets: 1 free, 2..#SLOTS+1 another bar, then MSUF's unit frames.
 local ANCHOR_LABELS = { "Free" }
+local OVERFLOW_LABELS = { "Off" }
 for i, slot in ipairs(CDM.SLOTS) do ANCHOR_LABELS[i + 1] = slot.title end
+for i, slot in ipairs(CDM.SLOTS) do OVERFLOW_LABELS[i + 1] = slot.title end
 local PLAYER_ANCHOR, TARGET_ANCHOR = #ANCHOR_LABELS + 1, #ANCHOR_LABELS + 2
 ANCHOR_LABELS[PLAYER_ANCHOR], ANCHOR_LABELS[TARGET_ANCHOR] = "Player frame", "Target frame"
 CDM.ANCHOR_LABELS = ANCHOR_LABELS
@@ -82,6 +84,16 @@ B.Section(id, "general", "General", {
     Bool("raidEssentials", "Use MSUF cooldown profiles by specialization", true),
     Bool("showGCD", "Show the global cooldown on icons", false),
     Bool("readyGlowCombat", "Ready glows only in combat", true),
+    Bool("allGlowsCombat", "All glows only in combat", false),
+    Bool("pressFeedback", "Show action bar presses on cooldown icons", false),
+    Bool("potionStockIcon", "Show a stocked potion on potion category icons", false),
+    Bool("assistIcon", "Standalone assisted combat icon", false),
+    Bool("assistIconKeybind", "Assisted icon keybind badge", true),
+    Bool("assistIconGCD", "Assisted icon global cooldown swipe", true),
+    Bool("keybindStable", "Keep key labels stable across action pages and forms", true),
+    Number("assistIconSize", "Assisted icon size", 48, 20, 96),
+    Number("assistIconX", "Assisted icon horizontal offset", 0, -4000, 4000),
+    Number("assistIconY", "Assisted icon vertical offset", -180, -3000, 3000),
     Bool("muteSounds", "Mute cooldown manager sounds", false),
     Choice("soundChannel", "Sound channel", 1, { "Master", "Sound effects", "Dialog" }),
 })
@@ -190,12 +202,19 @@ local function IconRules(Add, p, d)
     Add(Bool(p .. "edge", "Show the swipe edge", false), "edge")
 end
 local function CooldownRules(Add, p, d)
+    Add(Bool(p .. "cooldownDuration", "Display cooldowns as timer bars", false), "cooldownDuration")
     Add(Bool(p .. "desat", "Desaturate on cooldown", true), "desat")
     Add(Number(p .. "cdAlpha", "Opacity on cooldown (percent)", 100, 0, 100, 5), "cdAlpha")
     Add(Number(p .. "readyAlpha", "Opacity when ready (percent)", 100, 0, 100, 5), "readyAlpha")
     Add(Bool(p .. "hideReady", "Hide icons that are ready", false), "hideReady")
+    Add(Bool(p .. "cooldownFixed", "Keep hidden cooldown icons in fixed places", false), "cooldownFixed")
+    Add(Choice(p .. "overflow", "Send excess cooldowns to", 1, OVERFLOW_LABELS), "overflow")
+    Add(Number(p .. "laterPerRow", "Icons in later rows (0 = first row)", 0, 0, 40), "laterPerRow")
+    Add(Number(p .. "laterSize", "Later row icon size (0 = first row)", 0, 0, 96), "laterSize")
     Add(Bool(p .. "procGlow", "Spell alert glow", true), "procGlow")
     Add(Bool(p .. "readyGlow", "Glow when ready", false), "readyGlow")
+    Add(Bool(p .. "readyResources", "Ready glow requires enough resources", false), "readyResources")
+    Add(Bool(p .. "fullChargeGlow", "Glow when all charges are ready", false), "fullChargeGlow")
     Add(Choice(p .. "glowStyle", "Glow style", 1, { "Blizzard alert", "Marching ants", "Pulse", "Border" }), "glowStyle")
     Add(Bool(p .. "glowTint", "Tint glows", false), "glowTint")
     Add(Color(p .. "glowColor", "Glow color", "ffd200"), "glowColor")
@@ -204,9 +223,15 @@ local function CooldownRules(Add, p, d)
     Add(Color(p .. "rangeColor", "Out-of-range color", "cc2e2e"), "rangeColor")
     Add(Bool(p .. "showAura", "Show active buff duration", true), "showAura")
     Add(Bool(p .. "charges", "Show charges", true), "charges")
+    Add(Bool(p .. "chargeSwipe", "Show recharge swipe", false), "chargeSwipe")
+    Add(Bool(p .. "chargeEdge", "Show recharge edge", true), "chargeEdge")
     Add(Bool(p .. "keybind", "Show keybinds", d.keybind == true), "keybind")
     Add(Number(p .. "keybindSize", "Keybind size (0 = automatic)", 0, 0, 30), "keybindSize")
     Add(Choice(p .. "keybindPos", "Keybind position", 3, POINT_LABELS), "keybindPos")
+    Add(Bool(p .. "keybindBadge", "Keybind badge", false), "keybindBadge")
+    Add(Color(p .. "keybindBackground", "Keybind badge background", "101010"), "keybindBackground")
+    Add(Color(p .. "keybindBorder", "Keybind badge border", "808080"), "keybindBorder")
+    Add(Number(p .. "keybindPadding", "Keybind badge padding", 2, 0, 8), "keybindPadding")
     Add(Bool(p .. "assist", "Highlight the assisted combat suggestion", false), "assist")
     Add(Bool(p .. "bling", "Flash when ready", false), "bling")
 end
@@ -235,6 +260,14 @@ local function BarRules(Add, p, d, slot)
     Add(Bool(p .. "barName", "Show name", true), "barName")
     Add(Bool(p .. "barTime", "Show time", true), "barTime")
     Add(Choice(p .. "barFill", "Bar direction", 1, { "Drain", "Fill" }), "barFill")
+    Add(Bool(p .. "barStacks", "Fill buff bars by stacks", false), "barStacks")
+    Add(Bool(p .. "barChargeSegments", "Separate cooldown charges into segments", false), "barChargeSegments")
+    Add(Bool(p .. "barChargeDim", "Darken the recharging segment", true), "barChargeDim")
+    Add(Number(p .. "barStackMax", "Maximum stacks", 10, 1, 99), "barStackMax")
+    Add(Bool(p .. "barStackEach", "Mark every stack", true), "barStackEach")
+    Add(String(p .. "barStackMarks", "Stack markers (numbers separated by commas)", "", 240), "barStackMarks")
+    Add(Number(p .. "barStackColorAt", "Change bar color from stacks (0 = off)", 0, 0, 99), "barStackColorAt")
+    Add(Color(p .. "barStackColor", "Stack threshold bar color", "ff6633"), "barStackColor")
 end
 
 local function Rules(slot)
@@ -246,10 +279,11 @@ local function Rules(slot)
         list[#list + 1] = rule
     end
     CommonRules(Add, p, d, slot)
+    if slot.custom then Add(Bool(p .. "shareContents", "Share this group's contents across specializations", false), "shareContents") end
     if Has(slot, "icon") then IconRules(Add, p, d) end
     if Has(slot, "cooldown") then CooldownRules(Add, p, d) end
     if Has(slot, "aura") then AuraRules(Add, p) end
-    if Has(slot, "bar") then BarRules(Add, p, d, slot) end
+    if Has(slot, "bar") or Has(slot, "cooldown") then BarRules(Add, p, d, slot) end
     return list
 end
 
@@ -325,17 +359,21 @@ end
 -- stackGlow: glow while the aura has at least N applications (0 = off).
 -- stackColorAt: stack text in stackColor from N applications (0 = off).
 CDM.SPELL_FIELDS = {
-    procGlow = Bool01, readyGlow = Bool01, auraGlow = Bool01, glowStyle = Range(1, 4), glowColor = Hex,
-    desat = Range(1, 3), hideReady = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
+    procGlow = Bool01, readyGlow = Bool01, readyResources = Bool01, fullChargeGlow = Bool01,
+    chargeSwipe = Bool01, chargeEdge = Bool01, auraGlow = Bool01, glowStyle = Range(1, 4), glowColor = Hex,
+    desat = Range(1, 3), hideReady = Bool01, hideAvailableCharges = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
     showAura = Bool01, swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
     threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01,
-    stackGlow = Range(0, 99), stackColorAt = Range(0, 99), stackColor = Hex,
+    stackGlow = Range(0, 99), stackGlowOp = Range(1, 3), stackColorAt = Range(0, 99), stackColor = Hex,
     -- Where a buff-bar aura is looked for: 1 automatic (harmful spells on the
     -- target, the rest on the player), 2 the player, 3 the target, 4 both.
     auraUnit = Range(1, 4),
     -- Countdown and charge/stack text: 1 the bar's setting, 2 show, 3 hide.
     -- textTop: 1 the bar's setting, 2 stacks on top, 3 countdown on top.
     timeText = Range(1, 3), stackText = Range(1, 3), textTop = Range(1, 3),
+    showGCD = Bool01, actionGlowSpell = Range(1, 2147483647), actionGlowMode = Range(1, 2),
+    requireSpell1 = Range(1, 2147483647), requireSpell2 = Range(1, 2147483647), requireSpell3 = Range(1, 2147483647),
+    excludeSpell1 = Range(1, 2147483647), excludeSpell2 = Range(1, 2147483647), excludeSpell3 = Range(1, 2147483647),
 }
 -- What an absent per-spell field means where no bar setting stands behind it.
 CDM.SPELL_DEFAULTS = { stackColor = "ff5a3c" }
@@ -345,8 +383,25 @@ local function ValidSpec(value) return type(value) == "number" and value > 0 and
 
 -- Returns a clean copy; anything malformed is dropped rather than rejected.
 function CDM.CleanLists(data)
-    local out = { v = 1, specs = {}, hidden = {}, replace = {} }
+    local out = { v = 1, specs = {}, hidden = {}, replace = {}, shared = {} }
     if type(data) ~= "table" then return out end
+    if type(data.shared) == "table" then
+        for slot, list in pairs(data.shared) do
+            local index = CDM.SLOT_INDEX[slot]
+            if index and CDM.SLOTS[index].custom and type(list) == "table" then
+                local clean, seen = {}, {}
+                for i = 1, math.min(#list, CDM.LIMITS.entries) do
+                    local key = list[i]
+                    -- Blizzard record IDs are specialization-specific; shared
+                    -- groups accept explicit spells, received auras and items.
+                    if CDM.ValidEntryKey(key) and CDM.EntryKind(key) ~= "b" and not seen[key] then
+                        clean[#clean + 1], seen[key] = key, true
+                    end
+                end
+                out.shared[slot] = clean
+            end
+        end
+    end
     local specCount = 0
     if type(data.specs) == "table" then
         for spec, slots in pairs(data.specs) do
@@ -405,11 +460,11 @@ function CDM.CleanLists(data)
     return out
 end
 
-function CDM.CleanSpells(data)
-    local out = { v = 1, e = {} }
-    if type(data) ~= "table" or type(data.e) ~= "table" then return out end
+local function CleanSpellMap(source)
+    local out = {}
+    if type(source) ~= "table" then return out end
     local count = 0
-    for key, fields in pairs(data.e) do
+    for key, fields in pairs(source) do
         if count >= CDM.LIMITS.spells then break end
         if CDM.ValidEntryKey(key) and type(fields) == "table" then
             local clean, any = {}, false
@@ -421,10 +476,46 @@ function CDM.CleanSpells(data)
                 end
             end
             if any then
-                out.e[key] = clean
+                out[key] = clean
                 count = count + 1
             end
         end
+    end
+    return out
+end
+
+-- v1's e map is the shared base. v2 adds sparse per-spec differences: clearing
+-- a spec choice resumes inheritance, without overwriting the shared value.
+function CDM.CleanSpells(data)
+    local out = { v = 2, e = {}, s = {} }
+    if type(data) ~= "table" then return out end
+    out.e = CleanSpellMap(data.e)
+    if type(data.s) == "table" then
+        local count = 0
+        for spec, fields in pairs(data.s) do
+            if count >= CDM.LIMITS.specs then break end
+            if ValidSpec(spec) then
+                local clean = CleanSpellMap(fields)
+                if next(clean) then out.s[spec], count = clean, count + 1 end
+            end
+        end
+    end
+    return out
+end
+
+-- Called on a settings/spec change, never from cooldown events. Unmodified
+-- entries reuse the base table; only entries with spec choices need a merge.
+function CDM.EffectiveSpells(data, spec)
+    local base = type(data) == "table" and type(data.e) == "table" and data.e or {}
+    local selected = type(data) == "table" and type(data.s) == "table" and data.s[spec]
+    if type(selected) ~= "table" or not next(selected) then return base end
+    local out = {}
+    for key, fields in pairs(base) do out[key] = fields end
+    for key, fields in pairs(selected) do
+        local merged = {}
+        for field, value in pairs(base[key] or {}) do merged[field] = value end
+        for field, value in pairs(fields) do merged[field] = value end
+        out[key] = merged
     end
     return out
 end
@@ -460,9 +551,9 @@ local function Encode(clean, check)
 end
 function Codec.EncodeLists(data)
     local clean = CDM.CleanLists(data)
-    return Encode(clean, Empty(clean.specs) and Empty(clean.hidden) and Empty(clean.replace))
+    return Encode(clean, Empty(clean.specs) and Empty(clean.hidden) and Empty(clean.replace) and Empty(clean.shared))
 end
 function Codec.EncodeSpells(data)
     local clean = CDM.CleanSpells(data)
-    return Encode(clean, next(clean.e) == nil)
+    return Encode(clean, next(clean.e) == nil and next(clean.s) == nil)
 end

@@ -12,15 +12,12 @@ function Style.CVarFlags(value)
     return byte - 64
 end
 function Style.NativeBit(cvar, index, fallback)
-    local api = _G.C_CVar
-    local value = api and type(api.GetCVar) == "function" and api.GetCVar(cvar)
-    local flags = Style.CVarFlags(value)
+    local flags = Style.CVarFlags(C_CVar.GetCVar(cvar))
     if flags == nil then return fallback end
     return math.floor(flags / 2 ^ (index - 1)) % 2 == 1
 end
 function Style.NativeToggle(cvar, fallback)
-    local api = _G.C_CVar
-    local value = api and type(api.GetCVar) == "function" and api.GetCVar(cvar)
+    local value = C_CVar.GetCVar(cvar)
     if not NS.Public(value) or type(value) ~= "string" then return fallback end
     local number = tonumber(value)
     if number then return number > 0 end
@@ -61,8 +58,7 @@ Style.AuraBits = { Buffs = 1, Debuffs = 2, Control = 3 }
 -- The active Blizzard setup is authoritative for the preview. A profile
 -- choice can be ahead of the CVar update that has reached visible plates.
 function Style.NativeStyleValue(choice)
-    local api = _G.C_CVar
-    local value = api and type(api.GetCVar) == "function" and api.GetCVar("nameplateStyle")
+    local value = C_CVar.GetCVar("nameplateStyle")
     if NS.Public(value) then
         local number = tonumber(value)
         if number and number >= 0 and number <= 6 then return number end
@@ -72,8 +68,7 @@ function Style.NativeStyleValue(choice)
 end
 
 function Style.ClassicNativePlate(choice)
-    local setup = _G.NamePlateSetupOptions
-    local classic = setup and setup.useClassicHealthBar
+    local classic = NamePlateSetupOptions.useClassicHealthBar
     if NS.Public(classic) and type(classic) == "boolean" then return classic end
     return Style.NativeStyleValue(choice) == 6
 end
@@ -232,8 +227,9 @@ function Style.PaintTarget(visual, owner, visible, cfg, parent, rightLevelGap, l
         if visual.targetHost then visual.targetHost:Hide() end
         return
     end
-    local indicator = _G.MSUF_NS and _G.MSUF_NS.BossTargetIndicator
-    if not indicator or not indicator.Apply then return end
+    -- MSUF's boss target renderer; Platform.lua asserts the MSUF namespace.
+    local indicator = MSUF_NS.BossTargetIndicator
+    if not indicator then return end
     local host = visual.targetHost
     if not host then
         host = CreateFrame("Frame", nil, parent or owner)

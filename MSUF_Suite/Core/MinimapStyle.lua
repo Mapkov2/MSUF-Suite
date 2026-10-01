@@ -11,12 +11,13 @@ local HALO, CIRCLE = MEDIA .. "Halo.tga", MEDIA .. "Circle.tga"
 local RGB = NS.RGB
 
 -- Shared by the live weather entry and the options preview. WeatherType and
--- Blizzard's weather aura IDs come from upstream/forever WeatherConstantsDocumentation
--- and Blizzard_PetBattleUI/Shared/Blizzard_PetBattleUI.lua respectively. Use the
--- ability's actual icon, as PetBattleWeatherFrame_Update does, not BackgroundArt.
+-- Blizzard's weather auras come from upstream/forever WeatherConstantsDocumentation
+-- and Blizzard_PetBattleUI/Shared/Blizzard_PetBattleUI.lua respectively.
 local WEATHER_TYPES = { [0] = "Clear", [1] = "Rain", [2] = "Snow", [3] = "Sandstorm", [4] = "Other weather" }
-local WEATHER_BLIZZARD = { [0] = 403, [1] = 229, [2] = 205, [3] = 454 }
-local weatherIcons = {}
+-- BattlePetAbility.IconFileDataID for auras 403, 229, 205 and 454. Use the
+-- actual icon assets directly: Forever's GetAbilityInfoByID returns nil for
+-- these records. Falling back to Suite art made both styles look identical.
+local WEATHER_BLIZZARD = { [0] = 535593, [1] = 132852, [2] = 135857, [3] = 463521 }
 local WEATHER_ART = "Interface\\AddOns\\MSUF_Suite\\Media\\Weather\\"
 
 function Style.WeatherHeight(c)
@@ -35,17 +36,7 @@ function Style.WeatherContent(c, kind)
     if c.infoWeatherDisplay == 1 then return label, label end
     local file = "Interface\\Icons\\INV_Misc_QuestionMark"
     if WEATHER_BLIZZARD[kind] then
-        file = WEATHER_ART .. name .. ".tga"
-        if c.infoWeatherIconStyle ~= 2 then
-            local icon = weatherIcons[kind]
-            if icon == nil then
-                local _, _, texture = C_PetBattles.GetAbilityInfoByID(WEATHER_BLIZZARD[kind])
-                icon = NS.Finite(texture) and texture > 0 and texture or false
-                weatherIcons[kind] = icon
-            end
-            -- Missing client artwork keeps the correct Suite weather symbol.
-            if icon then file = icon end
-        end
+        file = c.infoWeatherIconStyle == 2 and WEATHER_ART .. name .. ".tga" or WEATHER_BLIZZARD[kind]
     end
     return c.infoWeatherDisplay == 2 and "" or label, label, file
 end

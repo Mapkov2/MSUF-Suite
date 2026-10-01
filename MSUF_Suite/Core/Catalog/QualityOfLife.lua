@@ -2,7 +2,7 @@ local _, NS = ...
 local B = NS.CatalogBuild
 local Number, Bool, Choice, String = B.Number, B.Bool, B.Choice, B.String
 
--- Small Suite-owned notices and buttons share the same four authored looks.
+-- Small Suite-owned notices and buttons share the same shared looks.
 -- Status colors (low durability, missing pet, Bloodlust lockout) stay semantic.
 NS.QoLVisualStyles = {
     [1] = { background = "0a1220", border = "41627a", accent = "57c7df", text = "f4f7fb", muted = "aab5c2" },
@@ -10,10 +10,11 @@ NS.QoLVisualStyles = {
     [3] = { background = "14181b", border = "9f8960", accent = "d8b66a", text = "f4f3eb", muted = "d4dce2" },
     [4] = { background = "101010", border = "333333", accent = "e6ecf2", text = "f5f5f5", muted = "bfc4c9" },
 }
+NS.QoLVisualStyles[5] = B.ClassPreset(NS.QoLVisualStyles[4], { border = "border", accent = "accent" })
 function NS.AddQoLVisualStyle(id, section, title)
-    NS.SuiteCatalog[id].look = { key = "look", global = { 1, 2, 3, [5] = 4 } }
+    NS.SuiteCatalog[id].look = { key = "look", global = { 1, 2, 3, [5] = 4, [6] = 5 } }
     B.Add(id, Choice("look", "MSUF style", 1,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern" }), section, title)
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Class Style" }), section, title)
 end
 
 -- This independent recent-cast display starts with a restrained game-like
@@ -35,22 +36,27 @@ NS.ActionTrackerLooks = {
     [6] = { panelColor = "101010", panelOpacity = 90, borderColor = "333333",
         accentColor = "e6ecf2", textColor = "f5f5f5" },
 }
+NS.ActionTrackerLooks[7] = B.ClassPreset(NS.ActionTrackerLooks[6], { borderColor = "border", accentColor = "accent" })
 NS.SuiteCatalog.actionTracker.look = {
     key = "look", presets = NS.ActionTrackerLooks,
     visualKeys = { panelColor = true, panelOpacity = true, borderColor = true,
         accentColor = true, textColor = true }, custom = 5,
-    global = { 2, 3, 4, [5] = 6 },
+    global = { 2, 3, 4, [5] = 6, [6] = 7 },
 }
 local actionLook = NS.ActionTrackerLooks[1]
 B.Section("actionTracker", "action_tracker", "Recent actions", {
-    Choice("look", "Style", 1, { "Classic UI", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
+    Choice("look", "Style", 1, { "Classic UI", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
     Choice("displayPreset", "Display preset", 1, { "Standard rows", "Icons only" }),
     Number("rows", "Visible actions", 5, 1, 8),
     Number("width", "Display width", 210, 150, 420, 5),
     Number("rowHeight", "Row height", 31, 24, 48),
     Number("rowGap", "Space between rows", 2, 0, 10),
+    Choice("growth", "History growth direction", 1, { "Down", "Up", "Right", "Left" }),
+    Choice("insertAnimation", "New action animation", 1, { "None", "Fade in", "Pop in" }),
+    Bool("showHeader", "Show recent-spell header"),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Number("hideAfter", "Hide after inactivity (seconds; 0 = stay)", 15, 0, 60),
+    Bool("pauseInCombat", "Pause inactivity timeout in combat", true),
     Bool("showNames", "Show spell names", true),
     Bool("showChevron", "Show gold action markers", true),
     B.Font("font", "Font"),
@@ -58,6 +64,13 @@ B.Section("actionTracker", "action_tracker", "Recent actions", {
     Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", -40, -3000, 3000),
+})
+B.Section("actionTracker", "action_tracker_visibility", "Where to show recent actions", {
+    Bool("showDungeons", "Dungeons", true),
+    Bool("showRaids", "Raids", true),
+    Bool("showDelves", "Delves", true),
+    Bool("showPvP", "Battlegrounds and arenas", true),
+    Bool("showWorld", "Outside instances", true),
 })
 -- Position is owned by MSUF Edit Mode; these catalog rules remain available
 -- for mover persistence, profile import and undo without duplicate sliders.
@@ -73,7 +86,9 @@ B.Section("actionTracker", "action_tracker_colors", "Colors", {
 }, { category = "advanced" })
 
 -- Comfort modules are opt-in: setup presets and shared profiles never turn on
--- spending, automation, or combat logging.
+-- spending, automation, or combat logging. automation marks a module that acts
+-- for the player (spends, sells, uses or cancels things, changes Blizzard
+-- settings, sends requests): an imported profile never switches it on.
 B.Module("qol", {
     title = "Merchant helpers",
     description = "Repair equipment and sell poor-quality items when a merchant opens. Hold Shift to skip selling.",
@@ -276,11 +291,13 @@ B.Module("dailyComfort", {
     },
 })
 B.Section("dailyComfort", "daily_comfort", "Daily UI comforts", {
+    Bool("skipCinematicConfirm", "Skip cinematic confirmation"),
+    Bool("autoSkipCinematic", "Automatically skip cinematics and movies"),
     Bool("hideTutorials", "Hide tutorial prompts"),
     Bool("fillDelete", "Fill DELETE in item confirmations"),
     Bool("hideScreenshotSuccess", "Hide screenshot success notice"),
     Bool("vendorCharacter", "Open equipment window at merchants"),
-    Bool("auctionExpansion", "Current expansion filter at the auction house (Retail)"),
+    Bool("auctionExpansionHint", "Mark the auction house filter while Current Expansion Only is off"),
 })
 B.Section("dailyComfort", "daily_cvars", "Chat, map and sound", {
     Bool("chatWheel", "Scroll chat with the mouse wheel"),
@@ -292,7 +309,7 @@ B.Section("dailyComfort", "daily_cvars", "Chat, map and sound", {
     Bool("playerMapCoords", "Show player coordinates on the world map"),
     Bool("cursorMapCoords", "Show cursor coordinates on the world map"),
     Bool("hideLowHealthFlash", "Hide low-health screen flash"),
-    Bool("alternateScreenFlash", "Use alternate screen flashes (Retail)"),
+    Bool("alternateScreenFlash", "Use alternate screen flashes"),
     Bool("muteMusic", "Mute music"),
     Bool("muteAmbience", "Mute ambience"),
     Bool("muteDialog", "Mute spoken dialogue"),
@@ -338,32 +355,61 @@ B.Section("uiErrorFilter", "ui_error_filter", "UI error messages", {
 
 B.Module("cursorEffects", {
     title = "Cursor highlight",
-    description = "Show a small pointer ring with optional trail, global cooldown and cast progress.",
+    description = "A ring around the mouse pointer that is easy to spot, optionally filled by your global cooldown or cast.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
         if NS.Client.isForever then return false, "Cursor highlight is available only in Retail" end
         return true
     end,
 })
-B.Section("cursorEffects", "cursor_effects", "Cursor highlight", {
-    B.Color("color", "Ring color", "ffffff"),
-    Number("size", "Ring size", 36, 20, 72),
+B.Section("cursorEffects", "cursor_effects", "Pointer highlight", {
+    B.Color("color", "Highlight color", "ffffff"),
+    Choice("ringShape", "Ring shape", 1, { "Segments", "Thin ring", "Dots", "No ring" }),
+    Number("size", "Highlight size", 36, 20, 72),
     Number("opacity", "Opacity (percent)", 85, 10, 100, 5),
-    Bool("showTrail", "Show cursor trail"),
-    Bool("showGCD", "Show global cooldown"),
-    Bool("showCast", "Show cast progress"),
-    Bool("combatOnly", "Show only in combat"),
+    Bool("showTrail", "Leave a short trail behind the pointer"),
+    Bool("showDot", "Mark the pointer's centre with a dot"),
+    Number("dotSize", "Dot size", 4, 1, 12),
+    Bool("cameraHoldOnly", "Show ring, dot and trail only while you turn the camera with the mouse"),
 })
+B.Section("cursorEffects", "cursor_progress", "Progress inside the ring", {
+    Bool("showGCD", "Fill the ring with your global cooldown"),
+    Bool("showCast", "Fill the ring with your casts and channels"),
+    Bool("castSpark", "Draw a bright edge on the cast fill"),
+})
+B.Section("cursorEffects", "cursor_gcd", "Global cooldown on its own", {
+    Bool("gcdDetached", "Show the global cooldown in its own circle instead of the ring"),
+    Number("gcdSize", "Circle size", 40, 20, 120),
+    Number("gcdOpacity", "Circle opacity (percent)", 80, 10, 100, 5),
+    Choice("gcdPoint", "Screen anchor", 5, NS.AnchorLabels),
+    Number("gcdX", "Horizontal position", 0, -4000, 4000),
+    Number("gcdY", "Vertical position", -140, -3000, 3000),
+})
+B.Section("cursorEffects", "cursor_when", "When to show", {
+    Bool("combatOnly", "Only while in combat"),
+    Choice("zone", "Where", 1, { "Everywhere", "Only inside instances", "Only outside instances" }),
+    Choice("ringWhen", "Ring, dot and trail", 1, { "Always", "In combat", "Out of combat" }),
+    Choice("gcdWhen", "Global cooldown", 1, { "Always", "In combat", "Out of combat" }),
+    Choice("castWhen", "Cast fill", 1, { "Always", "In combat", "Out of combat" }),
+})
+do
+    -- MSUF Edit Mode places the detached circle.
+    local rules = NS.SuiteCatalog.cursorEffects.rules
+    rules.gcdPoint.hidden, rules.gcdX.hidden, rules.gcdY.hidden = true, true, true
+    rules.dotSize.enableKey, rules.castSpark.enableKey = "showDot", "showCast"
+    rules.gcdSize.enableKey, rules.gcdOpacity.enableKey = "gcdDetached", "gcdDetached"
+end
 NS.SuiteCatalog.cursorEffects.look = {
-    key = "look", global = { 1, 2, 3, [5] = 4 }, custom = 5,
+    key = "look", global = { 1, 2, 3, [5] = 4, [6] = 6 }, custom = 5,
     visualKeys = { color = true }, presets = {},
 }
 for index, palette in pairs(NS.QoLVisualStyles) do
-    NS.SuiteCatalog.cursorEffects.look.presets[index] = { color = palette.accent }
+    if index ~= 5 then NS.SuiteCatalog.cursorEffects.look.presets[index] = { color = palette.accent } end
 end
+NS.SuiteCatalog.cursorEffects.look.presets[6] = B.ClassPreset({ color = "e6ecf2" }, { color = "accent" })
 B.Add("cursorEffects", Choice("look", "MSUF style", 5,
-    { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Custom" }),
-    "cursor_effects", "Cursor highlight")
+    { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Custom", "Class Style" }),
+    "cursor_effects", "Pointer highlight")
 
 B.Module("mapLandingShortcuts", {
     title = "Expansion shortcuts",
@@ -383,34 +429,6 @@ B.Section("mapLandingShortcuts", "expansion_shortcuts", "Expansion shortcuts", {
     Number("offsetX", "Horizontal offset", 4, -60, 60),
     Number("offsetY", "Vertical offset", 0, -60, 60),
 })
-
-B.Module("combatStatsHUD", {
-    title = "Secondary stats",
-    description = "A movable strip for critical strike, haste, mastery and versatility.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "Secondary stats are available only in Retail" end
-        return true
-    end,
-})
-B.Section("combatStatsHUD", "secondary_stats", "Secondary stats", {
-    Bool("showCrit", "Show critical strike", true),
-    Bool("showHaste", "Show haste", true),
-    Bool("showMastery", "Show mastery", true),
-    Bool("showVersatility", "Show versatility", true),
-    Bool("combatOnly", "Show only in combat"),
-    Number("width", "Display width", 300, 180, 480),
-    Number("scale", "Scale (percent)", 100, 50, 200, 5),
-    B.Color("backgroundColor", "Background color", "10151b"),
-    B.Color("accentColor", "Accent color", "d9ad60"),
-    Number("opacity", "Background opacity (percent)", 90, 0, 100, 5),
-    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
-    Number("x", "Horizontal position", 0, -4000, 4000),
-    Number("y", "Vertical position", 0, -3000, 3000),
-})
-for _, key in ipairs({ "point", "x", "y" }) do
-    NS.SuiteCatalog.combatStatsHUD.rules[key].hidden = true
-end
 
 B.Module("combatPetStatus", {
     title = "Pet status warning",
@@ -490,15 +508,23 @@ B.Section("loadoutReminder", "loadout_reminder", "When to remind", {
     Bool("onInstanceEntry", "On instance entry", true),
     Bool("onlyMismatch", "Show only when saved selection differs"),
     Number("duration", "Display duration (seconds)", 8, 3, 20),
+    Bool("exportSavedSelection", "Put the saved selection into profile exports (the string then identifies this character)"),
 })
 B.Section("loadoutReminder", "loadout_expectation", "Saved selection", {
     Number("expectedConfigID", "Expected talent build ID (0: any)", 0, 0, 100000000),
     Number("expectedLootSpecID", "Expected loot spec ID (0: any)", 0, 0, 100000),
     String("expectedCharacterGUID", "Expected character", "", 100),
 }, { category = "advanced" })
-NS.SuiteCatalog.loadoutReminder.rules.expectedCharacterGUID.hidden = true
-NS.SuiteCatalog.loadoutReminder.rules.expectedConfigID.hidden = true
-NS.SuiteCatalog.loadoutReminder.rules.expectedLootSpecID.hidden = true
+-- The saved selection belongs to one character: hidden, and exported only
+-- when the player chose to (ProfileIO resets personal rules otherwise), since
+-- a foreign build ID without its character would remind every importer.
+for _, key in ipairs({ "expectedCharacterGUID", "expectedConfigID", "expectedLootSpecID" }) do
+    local rule = NS.SuiteCatalog.loadoutReminder.rules[key]
+    rule.hidden, rule.personal = true, true
+end
+-- The choice itself stays with this profile: no export or import carries it.
+NS.SuiteCatalog.loadoutReminder.personalExport = "exportSavedSelection"
+NS.SuiteCatalog.loadoutReminder.rules.exportSavedSelection.personal = true
 
 B.Module("quietPopups", {
     title = "Quiet Blizzard popups",
@@ -539,6 +565,21 @@ B.Module("lootContainers", {
         return true
     end,
 })
+
+B.Section("lootContainers", "open_containers", "Open new containers", {
+    Bool("skipWarbound", "Keep Warbound containers unopened", true),
+    Bool("holdDundun", "Hold Midnight Artisan payouts while Shard of Dundun is capped"),
+})
+
+-- skipWarbound arrived after Open new containers shipped. Players who already
+-- used the helper keep opening Warbound containers; new users start with the
+-- Warbound rule on. Normalization writes the default only afterwards.
+function NS.MigrateLootContainersWarbound(modules)
+    local config = modules.lootContainers
+    if type(config) == "table" and config.enabled == true and config.skipWarbound == nil then
+        config.skipWarbound = false
+    end
+end
 
 B.Module("lootVendorRules", {
     title = "Sell marked items",
@@ -610,7 +651,13 @@ B.Section("professionAppearance", "profession_outfits", "Profession appearance r
     Bool("skinning", "Remove skinning outfit", true),
     Bool("tailoring", "Remove tailoring outfit", true),
     Bool("leatherworking", "Remove leatherworking outfit", true),
+    Bool("orbDeception", "Remove Orb of Deception disguise"),
+    Bool("holidayCostumes", "Remove Hallow's End pirate, ninja and leper gnome costumes"),
+    Bool("noggenfoggerSkeleton", "Remove Noggenfogger skeleton (also removes underwater breathing)"),
 })
+local cosmeticIDs = String("cosmeticSpellIDs", "Extra cosmetic aura spell IDs to remove", "", 240)
+cosmeticIDs.ids = true
+B.Add("professionAppearance", cosmeticIDs, "profession_outfits", "Profession appearance remover")
 local vendorIDs = String("itemIDs", "Item IDs to offer for sale", "", 1600)
 vendorIDs.ids = true
 B.Section("lootVendorRules", "marked_sales", "Sell marked items", {
@@ -660,7 +707,7 @@ B.Module("xpBar", {
 NS.SuiteCatalog.xpBar.look = { key = "look", global = true }
 B.Section("xpBar", "xp_bar", "Experience bar", {
     Choice("look", "MSUF style", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
     Number("width", "Bar width", 400, 220, 800, 5),
     Number("height", "Bar height", 18, 8, 40),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
@@ -674,6 +721,11 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Choice("point", "Screen anchor", 2, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", -24, -3000, 3000),
+    -- The Custom style (choice 4) paints these.
+    B.Color("customFill", "Custom style: bar color", "6fc3a0"),
+    B.Color("customRested", "Custom style: rested color", "6c8fd6"),
+    B.Color("customPanel", "Custom style: background color", "111820"),
+    B.Color("customBorder", "Custom style: border and text color", "aab8c4"),
 })
 
 -- Incoming whispers are only a cue: chat text can be secret in combat, so
@@ -767,6 +819,7 @@ NS.SkyridingLookPresets = {
         accentColor = "e6ecf2", windColor = "b7c2cd", textColor = "f5f5f5",
         mutedColor = "bfc4c9", thrillColor = "e6ecf2" },
 }
+NS.SkyridingLookPresets[6] = B.ClassPreset(NS.SkyridingLookPresets[5], { borderColor = "border", accentColor = "accent" })
 NS.SkyridingLookVisualKeys = {
     panelColor = true, borderColor = true, trackColor = true, accentColor = true,
     windColor = true, textColor = true, mutedColor = true, thrillColor = true,
@@ -778,12 +831,15 @@ NS.SuiteCatalog.skyriding.look = {
 }
 local initialSky = NS.SkyridingLookPresets[1]
 B.Section("skyriding", "flight_hud", "Skyriding HUD", {
-    Choice("look", "MSUF style", 1, { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
+    Choice("look", "MSUF style", 1, { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
     Number("width", "HUD width", 350, 220, 600, 5),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Bool("airborneOnly", "Show only while airborne"),
     Bool("showSpeed", "Show speed and Thrill threshold", true),
     Bool("showVigor", "Show Vigor charges", true),
+    Choice("vigorDisplay", "Vigor appearance", 1, { "Bars", "Blizzard gems" }),
+    Number("gemScale", "Vigor gem scale (percent)", 100, 50, 160, 5),
+    Bool("chargeSound", "Sound when a Vigor charge refills"),
     Bool("showSecondWind", "Show Second Wind charges", true),
     Bool("showWhirlingSurge", "Show Whirling Surge cooldown", true),
     Number("speedMax", "Speed bar maximum (percent)", 1200, 500, 2000, 50),
@@ -802,6 +858,13 @@ B.Section("skyriding", "flight_typography", "Text and bars", {
     Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     B.Texture("barTexture", "Bar texture"),
     Number("barHeight", "Bar height", 10, 6, 18),
+    Number("vigorHeight", "Vigor bar height (0 inherits)", 0, 0, 32),
+    Number("windHeight", "Second Wind bar height (0 inherits)", 0, 0, 32),
+    Number("speedHeight", "Speed bar height (0 inherits)", 0, 0, 32),
+    Bool("surgeAutoSize", "Whirling Surge icon follows Vigor height", true),
+    Number("surgeSize", "Whirling Surge icon size", 28, 12, 64),
+    Number("speedTextX", "Speed value X offset", 0, -300, 300),
+    Number("speedTextY", "Speed value Y offset", 0, -100, 100),
     Number("rowGap", "Space between rows", 0, 0, 12),
 })
 NS.SuiteCatalog.skyriding.rules.font.defaultLabel = "MSUF global font (default)"
@@ -824,7 +887,6 @@ NS.SuiteCatalog.skyriding.rules.thrillSpeed.enableKey = "showSpeed"
 
 for _, entry in ipairs({
     { "mapLandingShortcuts", "expansion_shortcuts", "Expansion shortcuts" },
-    { "combatStatsHUD", "secondary_stats", "Secondary stats" },
     { "combatPetStatus", "pet_status", "Pet status warning" },
     { "combatMovementCue", "movement_cue", "Movement ability cue" },
     { "burningRushCue", "burning_rush_cue", "Burning Rush cue" },
@@ -836,16 +898,3 @@ for _, entry in ipairs({
 }) do
     NS.AddQoLVisualStyle(entry[1], entry[2], entry[3])
 end
-
--- The stats strip already exposes direct colors. Keep those existing values
--- as Custom, and let the menu's look bridge copy authored colors on selection.
-local statsLook = NS.SuiteCatalog.combatStatsHUD.look
-statsLook.presets = {}
-for index, palette in pairs(NS.QoLVisualStyles) do
-    statsLook.presets[index] = { backgroundColor = palette.background, accentColor = palette.accent }
-end
-statsLook.visualKeys, statsLook.custom = { backgroundColor = true, accentColor = true }, 5
-local statsRule = NS.SuiteCatalog.combatStatsHUD.rules.look
-statsRule.default = 5
-statsRule.max = 5
-statsRule.choices[5] = "Custom"

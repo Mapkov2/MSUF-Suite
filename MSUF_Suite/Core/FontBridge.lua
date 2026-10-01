@@ -1,13 +1,10 @@
 local _, NS = ...
 local S = NS.Suite
 
--- MSUF's full font apply also covers cold-start font recovery. Active Suite
--- modules restyle their text while explicit module font choices stay intact.
-local FONT_MODULES = {
-    "actionbars", "bags", "cooldownManager", "damageMeter", "dataTexts",
-    "minimap", "nameplates", "objectives", "runSummary", "announcements", "afkScreen",
-    "xpBar", "skyriding", "durabilityAlert", "battleRes", "chat",
-}
+-- MSUF's full font apply also covers cold-start font recovery. Every active
+-- Suite module restyles its text while explicit module font choices stay
+-- intact: most modules draw with the MSUF font without a font setting of
+-- their own, so a hand-kept list of text modules cannot stay complete.
 local lastPath, lastEpoch
 local function ApplyBlizzardFont()
     local skin = NS.Skin
@@ -29,9 +26,10 @@ function S.ApplyGlobalFont()
     if path == lastPath and epoch == lastEpoch then return end
     lastPath, lastEpoch = path, epoch
     ApplyBlizzardFont()
-    for i = 1, #FONT_MODULES do
-        local id = FONT_MODULES[i]
-        if S.states[id] and S.states[id].active then S.Apply(id) end
+    local order = S.order
+    for i = 1, #order do
+        local id = order[i]
+        if S.states[id].active then S.Apply(id) end
     end
 end
 _G.MSUFSuite_ApplyFontsFromMSUF = S.ApplyGlobalFont

@@ -29,4 +29,50 @@
 	<Binding name="MSUFSUITE_BAR10_BUTTON10" category="BINDING_HEADER_MSUFSUITE"/>
 	<Binding name="MSUFSUITE_BAR10_BUTTON11" category="BINDING_HEADER_MSUFSUITE"/>
 	<Binding name="MSUFSUITE_BAR10_BUTTON12" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="MSUFSUITE_TOGGLE_BAR1" header="MSUFSUITE_TOGGLES" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(1) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR2" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(2) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR3" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(3) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR4" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(4) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR5" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(5) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR6" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(6) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR7" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(7) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR8" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(8) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR9" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(9) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR10" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(10) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR11" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(11) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_BAR12" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleActionBar then MSUFSuite.Suite.ToggleActionBar(12) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_DAMAGE_METER" header="MSUFSUITE_DAMAGEMETER" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleDamageMeterViews then MSUFSuite.Suite.ToggleDamageMeterViews() end
+	</Binding>
+	<Binding name="MSUFSUITE_RESET_DAMAGE_METER" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.DamageMeterReset then MSUFSuite.Suite.DamageMeterReset(false) end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_FPS" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleCombatStatsFPS then MSUFSuite.Suite.ToggleCombatStatsFPS() end
+	</Binding>
+	<Binding name="CLICK MSUFSuiteQuestItem:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
 </Bindings>

@@ -3,10 +3,6 @@ local B = NS.CatalogBuild
 
 local function Available()
     if not NS.Client.isMainline then return false, "Nameplate skinning needs Retail or WoW Forever" end
-    if not (_G.C_NamePlate and type(_G.C_NamePlate.GetNamePlates) == "function"
-        and type(_G.C_NamePlate.GetNamePlateForUnit) == "function") then
-        return false, "Blizzard's nameplate frames are not available"
-    end
     return true
 end
 

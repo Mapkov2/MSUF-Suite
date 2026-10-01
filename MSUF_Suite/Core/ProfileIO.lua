@@ -23,15 +23,70 @@ local function CopyMigrationState(source, target)
     end
 end
 
+-- Character-bound settings (catalog rules marked personal: a character GUID,
+-- that character's saved build, a typed note) return to defaults in an
+-- export and in a shared import. A module's export choice
+-- (spec.personalExport, off by default) keeps them in its exports; the
+-- string then marks that module (envelope.characterBound), and a shared
+-- import keeps them only for a marked module. The choice itself never
+-- travels. keep: { [module id] = true } of modules whose values stay.
+local function ResetPersonal(profile, keep)
+    for id, settings in pairs(profile.suite.modules) do
+        local spec = Suite.SuiteCatalog[id]
+        if spec then
+            local kept = keep and keep[id]
+            for key, rule in pairs(spec.rules) do
+                if rule.personal and settings[key] ~= nil and (not kept or key == spec.personalExport) then
+                    settings[key] = rule.default
+                end
+            end
+        end
+    end
+    return profile
+end
+
+-- The modules whose character-bound settings an export keeps: those whose
+-- export choice is on, or every module with one when the caller asks
+-- (options.characterBound). Returns nil when none.
+local function KeptModules(profile, options)
+    local keep
+    for id, settings in pairs(profile.suite.modules) do
+        local spec = Suite.SuiteCatalog[id]
+        local choice = spec and spec.personalExport
+        if choice and (settings[choice] == true or type(options) == "table" and options.characterBound == true) then
+            keep = keep or {}
+            keep[id] = true
+        end
+    end
+    return keep
+end
+
+-- The marked modules of a string: only known modules with an export choice.
+local function MarkedModules(marks)
+    if type(marks) ~= "table" then return nil end
+    local keep
+    for id, marked in pairs(marks) do
+        local spec = type(id) == "string" and Suite.SuiteCatalog[id]
+        if marked == true and spec and spec.personalExport then
+            keep = keep or {}
+            keep[id] = true
+        end
+    end
+    return keep
+end
+
 -- Copy only documented module settings. Runtime history, skin configuration,
 -- unknown keys and sharing metadata cannot enter the module profile.
-function IO.PrepareTable(profile, shared)
+-- keep: modules whose character-bound settings a marked shared string keeps.
+function IO.PrepareTable(profile, shared, keep)
     local data = type(profile) == "table" and profile.suite
     if type(data) ~= "table" or data.schema ~= 1 or type(data.modules) ~= "table" then
         return nil, "Unsupported suite profile"
     end
     local result = { suite = { schema = 1, modules = {} } }
-    if type(data.globalLook) == "string" then
+    -- Only a look the Suite knows; an unknown name (or a shared string of any
+    -- length) never enters the profile.
+    if type(data.globalLook) == "string" and Suite.SuiteLooks.indexes[data.globalLook] then
         result.suite.globalLook = data.globalLook
     end
     CopyMigrationState(data, result.suite)
@@ -59,9 +114,10 @@ function IO.PrepareTable(profile, shared)
         local target = {}
         result.suite.modules[id] = target
         if source then
-            for key, rule in pairs(Suite.SuiteCatalog[id].rules) do
-                local value = source[key]
-                if value ~= nil then
+            local spec=Suite.SuiteCatalog[id]
+            for key,value in pairs(source) do
+                local rule=spec.rules[key]
+                if rule then
                     if type(value) ~= type(rule.default) then return nil, "Invalid module setting" end
                     if type(value) == "number" and not Suite.Finite(value) then
                         return nil, "Invalid module number"
@@ -72,19 +128,31 @@ function IO.PrepareTable(profile, shared)
                     target[key] = value
                 end
             end
+            if spec.prepareConfig then spec.prepareConfig(target) end
         end
     end
     Suite.Suite.Normalize(result)
-    if shared then Suite.Suite.SanitizeImport(result) end
+    if shared then
+        Suite.Suite.SanitizeImport(result)
+        ResetPersonal(result, keep)
+    end
     return result
 end
 
-function IO.ExportProfile(name)
-    local profile = Suite.Database.GetProfile(name or Suite.Database.GetActiveProfileName())
+-- options.characterBound keeps every module's character-bound settings
+-- (a caller's explicit export choice); otherwise each module's own choice.
+function IO.ExportProfile(name, options)
+    name=name or Suite.Database.GetActiveProfileName()
+    local profile,why
+    profile,why=Suite.ProfileVariants.BaseProfile(name)
+    if not profile then return nil,why end
     local clean, reason = IO.PrepareTable(profile, false)
     if not clean then return nil, reason end
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
-    local encoded = _G.MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 1, profile = clean }, "MSUF3")
+    local keep = KeptModules(clean, options)
+    ResetPersonal(clean, keep)
+    local encoded = _G.MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 1, profile = clean,
+        characterBound = keep }, "MSUF3")
     if type(encoded) ~= "string" or #encoded > IO.maxBytes then return nil, "Suite profile is too large" end
     return IO.prefix .. encoded
 end
@@ -92,15 +160,20 @@ end
 -- A module-only string carries one catalog entry and leaves every other Suite
 -- module and all MSUF frame settings alone when imported. Its revision is the
 -- migration state of the exported settings; strings without one migrate fully.
-function IO.ExportModule(id)
+function IO.ExportModule(id, options)
     if not Suite.SuiteCatalog[id] then return nil, "Unknown suite module" end
-    local profile = Suite.Database.GetProfile(Suite.Database.GetActiveProfileName())
+    local name=Suite.Database.GetActiveProfileName()
+    local profile,why
+    profile,why=Suite.ProfileVariants.BaseProfile(name)
+    if not profile then return nil,why end
     local clean, reason = IO.PrepareTable(profile, false)
     if not clean then return nil, reason end
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
+    local keep = KeptModules(clean, options)
+    ResetPersonal(clean, keep)
     local encoded = _G.MSUF_EncodeCompactTable({
         addon = "MSUF_Suite", format = 2, module = id, revision = clean.suite.revision,
-        settings = clean.suite.modules[id],
+        settings = clean.suite.modules[id], characterBound = keep and keep[id] or nil,
     }, "MSUF3")
     if type(encoded) ~= "string" or #encoded > IO.maxBytes then return nil, "Suite module profile is too large" end
     return "MSUFM2:" .. encoded
@@ -124,7 +197,7 @@ function IO.PrepareModuleProfile(text)
     local revision = type(envelope.revision) == "number" and envelope.revision or nil
     local clean, reason = IO.PrepareTable({ suite = {
         schema = 1, revision = revision, modules = { [id] = envelope.settings },
-    } }, true)
+    } }, true, MarkedModules({ [id] = envelope.characterBound }))
     if not clean then return nil, nil, reason end
     if id == "mapQuickSwitch" then
         -- A former helper-only export changes only the integrated button.
@@ -146,7 +219,7 @@ function IO.PrepareProfile(text, shared)
     if type(envelope) ~= "table" or envelope.addon ~= "MSUF_Suite" or envelope.format ~= 1 then
         return nil, "Unsupported suite profile"
     end
-    return IO.PrepareTable(envelope.profile, shared ~= false)
+    return IO.PrepareTable(envelope.profile, shared ~= false, MarkedModules(envelope.characterBound))
 end
 
 -- Older development bundles embedded module settings in a MapkoSkin export.

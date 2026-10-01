@@ -85,8 +85,9 @@ function P.SyncActive(name)
     end
     if DB.GetActiveProfileName() ~= name then
         if not DB.GetProfile(name) then
-            local ok = DB.Create(name, true)
-            if not ok then return false end
+            local base, why = Suite.ProfileVariants.BaseProfile(DB.GetActiveProfileName())
+            if not base then return false, why end
+            if not DB.CreateFromProfile(name, base) then return false end
         end
         if not DB.Activate(name) then return false end
     end
@@ -266,8 +267,18 @@ function P.OnLifecycle(kind, source, target)
     end
     if kind == "copy" and DB.IsProfileName(source) and DB.IsProfileName(target) then
         if not DB.GetProfile(target) then
-            local original = DB.GetProfile(source)
-            if original then DB.CreateFromProfile(target, original) else DB.Create(target, false) end
+            -- An MSUF profile from before the Suite was installed has no Suite
+            -- twin yet; its copy starts from the factory like a new profile.
+            local ok, why
+            if DB.GetProfile(source) then
+                local original
+                original, why = Suite.ProfileVariants.BaseProfile(source)
+                if not original then return false, why end
+                ok, why = DB.CreateFromProfile(target, original)
+            else
+                ok, why = DB.Create(target, false)
+            end
+            if not ok then return false, why end
         end
         if skin and not skin.Database.GetProfile(target) then
             local original = skin.Database.GetProfile(source)
@@ -391,12 +402,15 @@ function P.Activate(name)
     return false, why or "Profile switch failed"
 end
 
-function P.Export()
+-- options.characterBound: the caller's explicit choice to keep
+-- character-bound settings (ProfileIO.lua); without it each module's own
+-- export choice decides.
+function P.Export(options)
     local ready, reason = Ready()
     if not ready then return nil, reason end
     local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return nil, "Frame profile export failed" end
-    local modules, why = IO.ExportProfile()
+    local modules, why = IO.ExportProfile(nil, options)
     if not modules then return nil, why end
     local skin = SkinEngine()
     local skinText, skinReason
@@ -468,7 +482,11 @@ end
 function P.SaveAs(name)
     local clean, reason = NewName(name)
     if not clean then return false, reason end
-    local profile, why = IO.PrepareTable(Suite.DB, false)
+    local source,why
+    source,why=Suite.ProfileVariants.BaseProfile(DB.GetActiveProfileName())
+    if not source then return false,why end
+    local profile
+    profile,why = IO.PrepareTable(source, false)
     if not profile then return false, why end
     local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return false, "Frame profile export failed" end
@@ -566,6 +584,8 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName)
     local previousSkin = skin and skin.Database.GetProfile(name)
     previousSkin = previousSkin and Suite.CopyValue(previousSkin)
     local previousSkinActive = skin and skin.Database.GetActiveProfileName()
+    local allowed,mutationReason=Suite.ProfileVariants.BeforeMutation(name)
+    if not allowed then return false,mutationReason end
     Suite.RootDB.profiles[name] = profile
     -- An error in any step is reported and rolled back like a refusal.
     local finished, ok, why = Dispatch(Finish, ActivateProfiles, name, skin, skinProfile)
@@ -582,14 +602,14 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName)
     return false, why or "Modern profile could not be activated"
 end
 
-function P.ExportModule(id)
+function P.ExportModule(id, options)
     if Suite.IsCombatLocked() then return nil, "Finish combat before exporting" end
     if id == "skin" then
         local skin = SkinEngine()
         if not skin then return nil, "Skin engine unavailable" end
         return skin.ProfileIO.ExportProfile()
     end
-    return IO.ExportModule(id)
+    return IO.ExportModule(id, options)
 end
 
 function P.ImportModule(text)
@@ -607,7 +627,12 @@ function P.ImportModule(text)
     end
     local id, settings, reason = IO.PrepareModuleProfile(text)
     if not id then return false, reason end
-    return Suite.Suite.SetMany(id, settings)
+    local name=DB.GetActiveProfileName()
+    local allowed,mutationReason=Suite.ProfileVariants.BeforeMutation(name)
+    if not allowed then return false,mutationReason end
+    local ok,why=Suite.Suite.SetMany(id, settings)
+    Suite.ProfileVariants.AfterMutation(name)
+    return ok,why
 end
 
 function P.ImportModuleIntoNew(name, text)

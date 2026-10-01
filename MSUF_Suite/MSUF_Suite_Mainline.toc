@@ -28,6 +28,7 @@ Core\RetailFactory.lua
 Core\RetailSkinFactory.lua
 Core\Database.lua
 Core\SessionGold.lua
+Core\CharacterData.lua
 Core\SuiteCatalog.lua
 Core\Catalog\ActionBars.lua
 Core\Bindings.lua
@@ -36,6 +37,9 @@ Core\MinimapStyle.lua
 Core\Catalog\DamageMeter.lua
 Core\Catalog\Bags.lua
 Core\Catalog\QualityOfLife.lua
+Core\Catalog\QualityOfLifeDetails.lua
+Core\Catalog\QualityOfLifeHUD.lua
+Core\Catalog\QualityOfLifeDistance.lua
 Core\Catalog\QualityOfLifeGroup.lua
 Core\Catalog\HUD.lua
 Core\Catalog\DataTexts.lua
@@ -45,10 +49,12 @@ Core\NameplateStyle.lua
 Core\Catalog\Nameplates.lua
 Core\Catalog\CooldownManager.lua
 Core\Suite.lua
+Core\SpellRange.lua
 Core\FontBridge.lua
 Integrations\MapkoSkin.lua
 Core\ProfileIO.lua
 Core\Profiles.lua
+Core\ProfileVariants.lua
 Core\Installer.lua
 Core\Menu.lua
 Core\Startup.lua

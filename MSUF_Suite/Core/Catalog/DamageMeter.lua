@@ -46,6 +46,7 @@ local cleanModern = {
     headerColor = "191919", headerAlpha = 92, titleColor = "f5f5f5",
 }
 NS.DamageMeterLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever, [5] = cleanModern }
+NS.DamageMeterLookPresets[6] = B.ClassPreset(cleanModern, { barColor = "accent", borderColor = "border", titleColor = "label" })
 NS.DamageMeterLookVisualKeys = {}
 for key in pairs(midnight) do NS.DamageMeterLookVisualKeys[key] = true end
 NS.SuiteCatalog[id].look = {
@@ -55,7 +56,7 @@ NS.SuiteCatalog[id].look = {
 local initial = NS.Client.isForever and forever or midnightDark
 B.Section(id, "look", "Choose a look", {
     Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
 })
 B.Section(id, "general", "Windows and data", {
     Number("windowCount", "Number of windows", 2, 1, MAX_WINDOWS),
@@ -63,6 +64,8 @@ B.Section(id, "general", "Windows and data", {
     Choice("visibility", "Show windows", 1, { "Always", "In combat", "In a group", "Mouseover", "Never" }),
     Bool("autoCurrent", "Return to the current fight when combat starts", true),
     Bool("mythicReset", "Reset data when a Mythic+ keystone starts", true),
+    Bool("toggleTimer", "Meter hotkey also toggles combat timer", true),
+    Bool("toggleHistory", "Meter hotkey also toggles spell history", false),
     Bool("confirmReset", "Ask before resetting data", true),
 })
 B.Section(id, "bars", "Bars", {
@@ -76,6 +79,11 @@ B.Section(id, "bars", "Bars", {
     Number("trackAlpha", "Bar background opacity (percent)", initial.trackAlpha, 0, 100, 5),
     Choice("iconStyle", "Bar icons", 2, { "None", "Specialization", "Class" }),
     Number("iconZoom", "Icon zoom (percent)", 6, 0, 20),
+    Choice("rowBorderMode", "Row border", 1, { "None", "Full row", "Filled portion" }),
+    Number("rowBorderSize", "Row border thickness", 1, 1, 4),
+    Color("rowBorderColor", "Row border color", "575b58"),
+    Bool("rowBorderIcon", "Include icon in row border", false),
+    Bool("iconBorder", "Separate icon border", false),
     Bool("showPlayer", "Keep your own bar visible", true),
     Bool("gradientEnabled", "Bar gradient", false),
     Number("gradientStrength", "Gradient strength (percent)", 45, 0, 100, 5),
@@ -87,6 +95,7 @@ B.Section(id, "bars", "Bars", {
 })
 B.Section(id, "text", "Text and numbers", {
     Font("font", "Font"),
+    Bool("englishNumbers", "Use English K/M/B abbreviations", false),
     Choice("outline", "Text style", 2, { "Shadow", "Outline", "Thick outline", "None", "Outline + shadow", "Thick outline + shadow" }),
     Choice("rendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
     Number("shadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
@@ -136,6 +145,13 @@ B.Section(id, "timer", "Combat timer", {
     Bool("headerTimer", "Show duration in window headers", true),
     Bool("timer", "Show a separate floating timer", false),
     Number("timerSize", "Timer text size", 26, 10, 40),
+    Bool("timerDecimals", "Show tenths of a second", false),
+    Bool("timerDesaturate", "Dim timer color outside combat", false),
+    Color("timerTextColor", "Timer text color", "ffffff"),
+    Color("timerBackground", "Timer background color", "101010"),
+    Number("timerBackgroundAlpha", "Timer background opacity (percent)", 0, 0, 100, 5),
+    Number("timerBorderSize", "Timer border thickness", 0, 0, 4),
+    Color("timerBorderColor", "Timer border color", "575b58"),
     Bool("timerKeep", "Keep the last duration after combat", false),
     Number("timerX", "Timer: horizontal", 0, -3000, 3000),
     Number("timerY", "Timer: vertical", 250, -2000, 2000),
@@ -181,7 +197,14 @@ rules.valueSeparator.requiresChoice = { key = "numberFormat", values = { [5] = t
 rules.headerTimer.enableKey = "combatTime"
 rules.timer.enableKey = "combatTime"
 for _, key in ipairs({ "tooltipRows", "tooltipScale", "spellTooltips" }) do rules[key].enableKey = "hoverTooltip" end
-for _, key in ipairs({ "timerSize", "timerKeep", "timerX", "timerY" }) do rules[key].enableKey = "timer" end
+for _, key in ipairs({ "timerSize", "timerKeep", "timerX", "timerY", "timerDecimals", "timerDesaturate", "timerTextColor",
+    "timerBackground", "timerBackgroundAlpha", "timerBorderSize", "timerBorderColor" }) do
+    rules[key].enableKey = "timer"
+end
+-- Including the icon applies to the full-row and filled-portion borders. The
+-- border thickness and color also draw the separate icon border, so they
+-- stay editable with Row border None (Rows.lua StyleRowBorder).
+rules.rowBorderIcon.requiresChoice = { key = "rowBorderMode", values = { [2] = true, [3] = true } }
 rules.timerX.category, rules.timerY.category = "advanced", "advanced"
 for i = 1, MAX_WINDOWS do
     rules["w" .. i .. "X"].category = "advanced"

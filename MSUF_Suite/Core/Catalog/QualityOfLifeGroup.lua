@@ -9,6 +9,9 @@ B.Module("groupDeathAlert", {
 })
 B.Section("groupDeathAlert", "group_death_alert", "Group death alert", {
     Bool("includePlayer", "Include your own death"),
+    Bool("chat", "Show deaths in local chat", true),
+    Bool("screen", "Show deaths on screen"),
+    Bool("sound", "Play a sound for group deaths"),
 })
 
 B.Module("releaseProtection", {
@@ -33,6 +36,18 @@ B.Module("groupFinderDoubleClick", {
         return true
     end,
 })
+
+B.Section("groupFinderDoubleClick", "group_finder_double_click", "Group finder double-click", {
+    Bool("quickApply", "Submit on double-click (Shift opens the dialog)"),
+    Bool("showNote", "Show a saved note beside the application dialog"),
+    B.String("note", "Saved application note", "", 63),
+    B.Bool("exportNote", "Put the saved note into profile exports (the string then contains your note)", false),
+})
+-- A typed note is the player's own text; ProfileIO exports it only when the
+-- player chose to. The choice itself stays with this profile.
+local groupFinder = NS.SuiteCatalog.groupFinderDoubleClick
+groupFinder.rules.note.personal, groupFinder.rules.exportNote.personal = true, true
+groupFinder.personalExport = "exportNote"
 
 B.Module("groupFinderApplicantSort", {
     title = "Mythic+ applicant score sorting",
@@ -88,6 +103,11 @@ local function RaidMarker(key, label, default)
     return rule
 end
 B.Section("groupRaidShortcuts", "raid_shortcuts", "Raid shortcuts", {
+    Bool("showPanel", "Show the collapsible raid tools panel"),
+    Number("panelColumns", "Panel columns", 3, 1, 3, 1),
+    Number("panelScale", "Raid tools scale (percent)", 100, 60, 160, 5),
+    Number("panelX", "Raid tools horizontal position", 0, -4000, 4000),
+    Number("panelY", "Raid tools vertical position", 160, -3000, 3000),
     RaidMarker("tankMarker", "Tank raid marker", 4),
     RaidMarker("healerMarker", "Healer raid marker", 6),
     Bool("autoMarkTank", "Automatically mark the party tank"),
@@ -102,6 +122,12 @@ B.Module("mythicKeyShare", {
         if NS.Client.isForever then return false, "Keystone sharing is available only in Retail" end
         return true
     end,
+})
+
+B.Section("mythicKeyShare", "keystone_command", "Keystone overview", {
+    Bool("insertKey", "Insert your keystone when the pedestal opens (Shift skips)"),
+    Number("fontSize", "Keystone text size", 14, 10, 20, 1),
+    Number("windowScale", "Keystone window scale (percent)", 100, 60, 160, 5),
 })
 
 B.Module("delveSolePower", {
@@ -122,6 +148,10 @@ B.Module("mythicResetReminder", {
         if NS.Client.isForever then return false, "Mythic+ reset reminders are available only in Retail" end
         return true
     end,
+})
+
+B.Section("mythicResetReminder", "mythic_reset", "Instance reset notices", {
+    Bool("announceReset", "Announce confirmed instance resets to the group"),
 })
 
 B.Module("groupBloodlust", {
@@ -146,3 +176,18 @@ NS.AddQoLVisualStyle("groupBloodlust", "bloodlust_lockout", "Bloodlust lockout")
 for _, key in ipairs({ "point", "x", "y" }) do
     NS.SuiteCatalog.groupBloodlust.rules[key].hidden = true
 end
+
+B.Module("dungeonPortals", {
+    title = "Dungeon portals", page = "suite_qualityOfLife", optIn = true, defaultEnabled = false,
+    description = "Learned dungeon teleports beside the minimap, with an optional group-join suggestion.",
+    available = function()
+        if NS.Client.isForever then return false, "Dungeon portals are available only in Retail" end
+        return true
+    end,
+})
+B.Section("dungeonPortals", "dungeon_portals", "Dungeon portals", {
+    Bool("showMinimap", "Show dungeon portals beside the minimap", true),
+    Number("flyoutScale", "Dungeon portal flyout scale (percent)", 100, 60, 160, 5),
+    Bool("joinPopup", "Suggest a learned portal when joining a dungeon group"),
+    Number("popupScale", "Dungeon portal suggestion scale (percent)", 100, 60, 160, 5),
+})

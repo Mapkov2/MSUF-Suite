@@ -18,7 +18,31 @@ function NS.ToggleFriendlyNPCNameplates()
     return suite.Set("nameplates", "friendlyNPCs", value == "1" and 3 or 2)
 end
 
+-- The action bar settings that switch bar `index` off or on (`on` nil flips
+-- it); nil when the bar already is that way. Off keeps the bar's mode in its
+-- hidden ResumeVisibility setting, on brings that mode back. Shared by the
+-- toggle bindings (ActionBars/Visibility.lua) and the options page switches.
+function NS.ActionBarSwitchValues(config, index, on)
+    local key, resume = "bar" .. index .. "Visibility", "bar" .. index .. "ResumeVisibility"
+    local mode = config[key]
+    if on == nil then on = mode == 6 end
+    if on then return mode == 6 and { [key] = config[resume] } or nil end
+    return mode ~= 6 and { [key] = 6, [resume] = mode } or nil
+end
+
 _G.BINDING_HEADER_MSUFSUITE = "MSUF Suite"
+-- Headers inside the MSUF Suite category; the 12.x Keybindings UI draws
+-- each as a spacer row (Blizzard_SettingsDefinitions_Frame/Keybindings.lua).
+_G.BINDING_HEADER_MSUFSUITE_TOGGLES = Text("Action bars")
+_G.BINDING_HEADER_MSUFSUITE_DAMAGEMETER = Text("Damage meter")
+local toggleFormat = Text("Toggle %s")
+for bar = 1, 12 do
+    _G["BINDING_NAME_MSUFSUITE_TOGGLE_BAR" .. bar] = toggleFormat:format(Text(NS.ActionBarTitles[bar]))
+end
+_G.BINDING_NAME_MSUFSUITE_TOGGLE_DAMAGE_METER = Text("Toggle damage meter")
+_G.BINDING_NAME_MSUFSUITE_RESET_DAMAGE_METER = Text("Reset damage meter")
+_G.BINDING_NAME_MSUFSUITE_TOGGLE_FPS = Text("Toggle FPS display")
+_G["BINDING_NAME_CLICK MSUFSuiteQuestItem:LeftButton"] = Text("Use tracked quest item")
 local buttonFormat = Text("%s button %d")
 for bar = 9, 10 do
     local title = Text(NS.ActionBarTitles[bar])

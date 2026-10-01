@@ -56,6 +56,7 @@ local cleanModern = {
     countColor = "f5f5f5", cooldownColor = "f5f5f5",
 }
 NS.ActionBarLookPresets = { [1] = blue, [2] = dark, [3] = forever, [5] = cleanModern }
+NS.ActionBarLookPresets[6] = B.ClassPreset(cleanModern, { borderColor = "border", interactionColor = "accent" })
 NS.ActionBarLookVisualKeys = {}
 for key in pairs(dark) do NS.ActionBarLookVisualKeys[key] = true end
 NS.SuiteCatalog[id].look = {
@@ -70,9 +71,21 @@ NS.SuiteCatalog[id].look = {
 local initial = NS.Client.isForever and forever or dark
 B.Section(id, "look", "Choose a look", {
     Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
 })
 B.Section(id, "appearance", "Button appearance", {
+    Choice("buttonShape", "Button shape", 1, { "Square", "Circle" }),
+    Choice("borderArt", "Button frame style", 1, { "Pixel border", "Blizzard frame" }),
+    Number("borderScale", "Button frame scale (percent)", 100, 70, 160, 5),
+    Number("borderExpansion", "Button frame expansion", 0, -8, 20),
+    -- Blizzard's own highlight reaches only Blizzard's buttons, which bar 1
+    -- does not reuse; the Suite's ring covers every bar.
+    Choice("assistStyle", "Rotation recommendation", 2, { "Blizzard", "Ring", "Fill", "Ring and fill" }),
+    Color("assistColor", "Recommendation color", "f5d35c"),
+    Number("assistAlpha", "Recommendation opacity (percent)", 100, 0, 100, 5),
+    Number("assistExpansion", "Recommendation expansion", 2, -8, 20),
+    Number("assistX", "Recommendation horizontal offset", 0, -30, 30),
+    Number("assistY", "Recommendation vertical offset", 0, -30, 30),
     Number("iconZoom", "Icon zoom (percent)", initial.iconZoom, 0, 15, 0.5),
     Number("borderSize", "Button border", initial.borderSize, 0, 4),
     Color("borderColor", "Border color", initial.borderColor),
@@ -107,9 +120,15 @@ B.Section(id, "behavior", "Behavior", {
     Choice("pickupModifier", "Move actions while holding (all action bars)", 1,
         { "Use Blizzard setting", "Shift", "Ctrl", "Alt", "No modifier" }),
     Bool("mouseoverShowAll", "Hovering one mouseover bar reveals all of them", false),
+    Bool("showOnPanels", "Show bars while spellbook or macros are open", false),
     Bool("showOnDrag", "Show hidden bars while dragging a spell", true),
     Bool("disableFormPaging", "Keep bar 1 on its page in stance or shapeshift forms", false),
     Bool("disableSkyridingPaging", "Keep bar 1 on its page while skyriding", false),
+    Bool("pageArrows", "Show page arrows beside bar 1", false),
+    Choice("pageArrowSide", "Page arrow side", 2, { "Left", "Right" }),
+    Bool("pagingTarget", "Page bar 1 by friendly or hostile target", false),
+    Number("pageFriendly", "Page for friendly target", 1, 1, 6),
+    Number("pageHostile", "Page for hostile target", 2, 1, 6),
     Bool("pagingModifiers", "Page bar 1 with Shift, Ctrl and Alt", false),
     Number("pageShift", "Page while holding Shift", 2, 1, 6),
     Number("pageCtrl", "Page while holding Ctrl", 3, 1, 6),
@@ -129,6 +148,8 @@ local defaults = {
 local anchorIndex = {}
 for i, point in ipairs(NS.AnchorPoints) do anchorIndex[point] = i end
 NS.ActionBarAnchorPoints = NS.AnchorPoints
+local TEXT_ANCHORS = { "Default" }
+for _, label in ipairs(NS.AnchorLabels) do TEXT_ANCHORS[#TEXT_ANCHORS + 1] = label end
 
 for i = 1, BAR_COUNT do
     local p = "bar" .. i
@@ -138,6 +159,7 @@ for i = 1, BAR_COUNT do
     local special = i > 10
     B.Section(id, p, title, {
         Choice(p .. "Visibility", "Show this bar", d[1], { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat", "Never" }),
+        Bool(p .. "HideGamepad", "Hide with an active connected gamepad (Forever)"),
         Choice(p .. "ResumeVisibility", "Visibility when turned on", d[1] == 6 and 1 or d[1],
             { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat" }),
         Number(p .. "Alpha", "Bar opacity (percent)", 100, 0, 100, 5),
@@ -160,10 +182,36 @@ for i = 1, BAR_COUNT do
         Number(p .. "MacroSize", "Macro name size", 10, 6, 30),
         Number(p .. "CountSize", "Count size", 14, 6, 30),
         Number(p .. "CooldownSize", "Cooldown number size", special and 12 or 16, 6, 30),
+        Bool(p .. "CooldownAutoSize", "Fit cooldown text to button", true),
+        Choice(p .. "KeybindPoint", "Keybind anchor", 1, TEXT_ANCHORS),
+        Number(p .. "KeybindX", "Keybind horizontal offset", 0, -80, 80),
+        Number(p .. "KeybindY", "Keybind vertical offset", 0, -80, 80),
+        Choice(p .. "MacroPoint", "Macro name anchor", 1, TEXT_ANCHORS),
+        Number(p .. "MacroX", "Macro name horizontal offset", 0, -80, 80),
+        Number(p .. "MacroY", "Macro name vertical offset", 0, -80, 80),
+        Choice(p .. "CountPoint", "Count anchor", 1, TEXT_ANCHORS),
+        Number(p .. "CountX", "Count horizontal offset", 0, -80, 80),
+        Number(p .. "CountY", "Count vertical offset", 0, -80, 80),
+        Choice(p .. "CooldownPoint", "Cooldown number anchor", 1, TEXT_ANCHORS),
+        Number(p .. "CooldownX", "Cooldown number horizontal offset", 0, -80, 80),
+        Number(p .. "CooldownY", "Cooldown number vertical offset", 0, -80, 80),
+        Choice(p .. "LeftEndcap", "Left endcap", 1, { "None", "Diamond", "Chevrons" }),
+        Number(p .. "LeftEndcapSize", "Left endcap size", 32, 8, 120),
+        Number(p .. "LeftEndcapX", "Left endcap horizontal offset", 0, -200, 200),
+        Number(p .. "LeftEndcapY", "Left endcap vertical offset", 0, -200, 200),
+        Choice(p .. "RightEndcap", "Right endcap", 1, { "None", "Diamond", "Chevrons" }),
+        Number(p .. "RightEndcapSize", "Right endcap size", 32, 8, 120),
+        Number(p .. "RightEndcapX", "Right endcap horizontal offset", 0, -200, 200),
+        Number(p .. "RightEndcapY", "Right endcap vertical offset", 0, -200, 200),
         Bool(p .. "Background", "Bar background", false),
         Color(p .. "BackgroundColor", "Background color", "000000"),
         Number(p .. "BackgroundAlpha", "Background opacity (percent)", 50, 0, 100, 5),
         Number(p .. "BackgroundPadding", "Background padding", 4, 0, 24),
+        Number(p .. "BackgroundPaddingX", "Horizontal padding (-1 = shared)", -1, -1, 80),
+        Number(p .. "BackgroundPaddingY", "Vertical padding (-1 = shared)", -1, -1, 80),
+        Number(p .. "BackgroundX", "Background horizontal offset", 0, -80, 80),
+        Number(p .. "BackgroundY", "Background vertical offset", 0, -80, 80),
+        Number(p .. "BackgroundBorder", "Background border thickness", 0, 0, 4),
     }, { bar = i })
 end
 
@@ -172,17 +220,40 @@ rules.imported.hidden = true
 rules.borderColor.disabledBy = "borderClassColor"
 rules.interactionColor.disabledBy = "interactionClassColor"
 rules.rangeColor.enableKey = "rangeColoring"
+-- Assisted combat exists on Retail only (Forever's Camelot UI has none:
+-- InterfaceOverrides.HasAssistedCombat() is false there), so Forever hides
+-- the recommendation options. The look options need a Suite style.
+local ASSIST_LOOK = { assistColor = true, assistAlpha = true, assistExpansion = true, assistX = true, assistY = true }
+rules.assistStyle.hidden = NS.Client.isForever or nil
+for key in pairs(ASSIST_LOOK) do
+    rules[key].hidden = NS.Client.isForever or nil
+    rules[key].requiresChoice = { key = "assistStyle", values = { [2] = true, [3] = true, [4] = true } }
+end
 for _, key in ipairs({ "pageShift", "pageCtrl", "pageAlt" }) do rules[key].enableKey = "pagingModifiers" end
+for _, key in ipairs({ "pageFriendly", "pageHostile" }) do rules[key].enableKey = "pagingTarget" end
+rules.pageArrowSide.enableKey = "pageArrows"
 for i = 1, BAR_COUNT do
     local p = "bar" .. i
     rules[p .. "ResumeVisibility"].hidden = true
+    -- Only Forever has a gamepad interface to hide bars for
+    -- (InputUtil.IsGamepadUIEnabled); Retail never applies the option.
+    rules[p .. "HideGamepad"].hidden = not NS.Client.isForever or nil
     rules[p .. "FadeAlpha"].requiresChoice = { key = p .. "Visibility", values = { [4] = true, [5] = true } }
     rules[p .. "KeybindSize"].enableKey = p .. "Keybind"
     rules[p .. "MacroSize"].enableKey = p .. "Macro"
-    for _, suffix in ipairs({ "BackgroundColor", "BackgroundAlpha", "BackgroundPadding" }) do rules[p .. suffix].enableKey = p .. "Background" end
+    for _, suffix in ipairs({ "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX",
+        "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" }) do
+        rules[p .. suffix].enableKey = p .. "Background"
+    end
+    -- An endcap's size and offsets apply once it has a shape.
+    for _, side in ipairs({ "Left", "Right" }) do
+        for _, suffix in ipairs({ "EndcapSize", "EndcapX", "EndcapY" }) do
+            rules[p .. side .. suffix].requiresChoice = { key = p .. side .. "Endcap", values = { [2] = true, [3] = true } }
+        end
+    end
     for _, suffix in ipairs({ "Point", "X", "Y" }) do rules[p .. suffix].category = "advanced" end
     if i > 10 then
         -- Blizzard's stance and pet buttons have no macro names.
-        rules[p .. "Macro"].hidden, rules[p .. "MacroSize"].hidden = true, true
+        for _, suffix in ipairs({ "Macro", "MacroSize", "MacroPoint", "MacroX", "MacroY" }) do rules[p .. suffix].hidden = true end
     end
 end

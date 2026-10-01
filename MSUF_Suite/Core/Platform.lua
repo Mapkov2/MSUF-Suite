@@ -243,6 +243,41 @@ function Suite.IsCombatLocked()
     return InCombatLockdown() == true
 end
 
+-- The client sends PLAYER_REGEN_DISABLED before InCombatLockdown() turns
+-- true and PLAYER_REGEN_ENABLED after it turns false. A handler that decides
+-- "in combat" while running for one of those events passes the event here.
+function Suite.InCombat(event)
+    if event == "PLAYER_REGEN_DISABLED" then return true end
+    if event == "PLAYER_REGEN_ENABLED" then return false end
+    return InCombatLockdown() == true
+end
+
+-- Restricted actions raise ADDON_ACTION_BLOCKED when an addon calls them at
+-- the wrong time, and no Lua code can catch that: callers ask first and
+-- show Suite.RestrictedNotice() instead. Chat messages are blocked during chat
+-- messaging lockdown, which also covers communication-restricted maps such
+-- as dungeons and raids.
+function Suite.ChatLocked()
+    return C_ChatInfo.InChatMessagingLockdown() == true
+end
+
+-- Raid markers, countdowns and ready checks (HasRestrictions) are blocked
+-- while combat, an encounter, a keystone, a PvP match or a restricted map
+-- applies addon restrictions.
+local GROUP_ACTION_LIMITS = { "Combat", "Encounter", "ChallengeMode", "PvPMatch", "Map" }
+function Suite.GroupActionsRestricted()
+    if InCombatLockdown() then return true end
+    local kinds = Enum.AddOnRestrictionType
+    for i = 1, #GROUP_ACTION_LIMITS do
+        if C_RestrictedActions.IsAddOnRestrictionActive(kinds[GROUP_ACTION_LIMITS[i]]) then return true end
+    end
+    return false
+end
+
+function Suite.RestrictedNotice()
+    return Suite.Text("Blizzard blocks this right now. Try again after combat, the encounter or the keystone.")
+end
+
 -- Runs code whose failure must not stop its caller (module callbacks, data
 -- ticks, deferred jobs) the way Blizzard's CallbackRegistry runs callbacks:
 -- the error is reported to the error handler (BugSack) and the caller goes

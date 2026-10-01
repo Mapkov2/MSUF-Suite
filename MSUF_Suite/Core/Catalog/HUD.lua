@@ -8,6 +8,10 @@ B.Module("objectives", {
 })
 local objectiveContent = {
     B.Bool("pauseInRaidCombat", "Pause tracker during raid combat", false),
+    B.Bool("hideInRaid", "Hide tracker throughout raid instances", false),
+    B.Bool("hideDuringBoss", "Hide tracker during raid boss encounters", false),
+    B.Bool("showHeader", "Show tracker heading", true),
+    B.Choice("questIconStyle", "Quest type symbols", 1, { "Off", "Suite symbols", "Blizzard symbols" }),
     B.Bool("showAchievements", "Tracked achievements", true),
     B.Bool("showScenario", "Scenario and delve steps", true),
     B.Bool("showWorldQuests", "World quests", true),
@@ -21,6 +25,25 @@ if not NS.Client.isForever then
 end
 B.Section("objectives", "content", "What to track", objectiveContent)
 if not NS.Client.isForever then
+    -- One choice names both the reference (a boss's own best or the fastest
+    -- whole run) and its scope (this keystone level or any level).
+    B.Section("objectives", "mythic", "Mythic+ boss pace", {
+        B.Choice("bossPace", "Boss pace reference", 1, { "Off", "Best time per boss, this key level",
+            "Best time per boss, any key level", "Fastest run, this key level", "Fastest run, any key level" }),
+        B.Bool("bossTargets", "Show the target time of bosses still alive", false),
+    })
+    B.Section("objectives", "mythicBars", "Mythic+ bars", {
+        B.Number("timerBarHeight", "Timer bar height", 7, 3, 22, 1),
+        B.Bool("timerBarText", "Show time inside the timer bar"),
+        B.Bool("timerThresholds", "Show upgrade threshold markers"),
+        B.Number("chestSpacing", "Upgrade row spacing", 22, 17, 25, 1),
+        B.Bool("showForcesBar", "Show the enemy forces bar", true),
+        B.Bool("showForcesText", "Show the enemy forces text", true),
+        B.Bool("showObservedPull", "Show observed enemy forces projection"),
+        B.Number("forcesBarHeight", "Enemy forces bar height", 5, 2, 16, 1),
+        B.Number("forcesBarWidth", "Enemy forces bar width (percent)", 100, 30, 100, 5),
+        B.Number("forcesTextSize", "Enemy forces text size", 13, 9, 20, 1),
+    })
     B.Section("objectives", "raid", "Raid encounters", {
         B.Bool("showRaid", "Show raid encounters in the objective tracker", false),
     })
@@ -91,6 +114,18 @@ if not NS.Client.isForever then
     summaryContent[#summaryContent + 1] = B.Bool("showRecord", "Show new dungeon record", true)
 end
 B.Section("runSummary", "content", "Results and details", summaryContent)
+if not NS.Client.isForever then
+    -- The party table grows by detail level instead of one switch per column.
+    B.Section("runSummary", "history", "Mythic+ party and history", {
+        B.Choice("partyDetails", "Party table", 3, { "Off", "Characters and scores", "Add combat figures",
+            "Add combat figures and loot" }),
+        B.Number("playerRowHeight", "Player row height", 25, 20, 40, 1),
+        -- 1 to 100 runs, the range the profile history offered before it moved
+        -- to the character.
+        B.Number("keepRuns", "Runs kept per character", 30, 1, 100, 1),
+        B.Choice("cardTiming", "Show the Mythic+ card", 1, { "When the key ends", "After closing the chest loot" }),
+    })
+end
 B.Section("runSummary", "layout", "Size and position", {
     B.Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     B.Number("width", "Summary width", 390, 260, 650, 5),

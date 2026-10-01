@@ -48,12 +48,16 @@ MSUF_SwitchProfile = function(name)
     return true
 end
 MSUF_DeleteProfile = function(name) assert(name ~= MSUF_ActiveProfile);MSUF_GlobalDB.profiles[name] = nil;return true end
-Support.Load(root, "MSUF_Suite", Suite, "Core/Profiles.lua")
+Support.Load(root, "MSUF_Suite", Suite, "Core/ProfileVariants.lua")
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
 local P, DB, IO = Suite.SuiteProfiles, Suite.Database, Suite.ProfileIO
 do
-    local old = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision - 1, modules = {
+    -- Saved before the minimap specialization step, whatever its place.
+    local specializationStep, steps = Support.MigrationStep(root, "NS.MigrateMinimapSpecialization")
+    assert(steps == Suite.Suite.MigrationRevision, "the MIGRATIONS table was not read completely")
+    local beforeSpecialization = specializationStep - 1
+    local old = { suite = { schema = 1, revision = beforeSpecialization, modules = {
         minimap = { enabled = false, size = 244 },
         mapQuickSwitch = { enabled = true, showSpec = false, showLoot = true, corner = 1, size = 32, x = 21, y = -12 },
     } } }
@@ -72,13 +76,44 @@ do
     assert(old.suite.modules.minimap.specX == 8 and not old.suite.modules.mapQuickSwitch,
         "migration must run only once")
     local encoded = MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 2, module = "mapQuickSwitch",
-        revision = Suite.Suite.MigrationRevision - 1,
+        revision = beforeSpecialization,
         settings = { enabled = true, showSpec = true, showLoot = false, corner = 4, size = 28, x = 5, y = 6 },
     }, "MSUF3")
     local id, settings = IO.PrepareModuleProfile("MSUFM2:" .. encoded)
     assert(id == "minimap" and settings.specButton and settings.specCorner == 3 and settings.specSize == 28
         and settings.specX == 5 and not settings.specShowLoot and settings.enabled == nil and settings.size == nil,
         "old helper-only imports must change only specialization, never reset the minimap")
+end
+do
+    -- Open new containers shipped before its Warbound rule: a profile that
+    -- already used it keeps opening Warbound containers; everyone else gets
+    -- the rule on. The step runs once.
+    local warboundStep = Support.MigrationStep(root, "NS.MigrateLootContainersWarbound")
+    local revision = warboundStep - 1
+    local used = { suite = { schema = 1, revision = revision, modules = { lootContainers = { enabled = true } } } }
+    local unused = { suite = { schema = 1, revision = revision, modules = { lootContainers = { enabled = false } } } }
+    local fresh = { suite = { schema = 1, revision = revision, modules = {} } }
+    Suite.Suite.Normalize(used)
+    Suite.Suite.Normalize(unused)
+    Suite.Suite.Normalize(fresh)
+    assert(used.suite.modules.lootContainers.skipWarbound == false
+        and unused.suite.modules.lootContainers.skipWarbound == true
+        and fresh.suite.modules.lootContainers.skipWarbound == true,
+        "existing container users lost their Warbound behavior or new users missed the Warbound rule")
+    local later = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision,
+        modules = { lootContainers = { enabled = true } } } }
+    Suite.Suite.Normalize(later)
+    assert(later.suite.modules.lootContainers.skipWarbound == true,
+        "the Warbound migration ran again on a current profile")
+    -- Modules that act for the player carry the automation marker that
+    -- import sanitizing reads; modules that also do other things flag only
+    -- the rules that act (SuiteCatalog.lua keeps the one policy list).
+    for _, id in ipairs({ "qol", "quests", "lootContainers", "professionAppearance", "collectionNewMarkers" }) do
+        assert(Suite.Suite.catalog[id].automation == true, id .. " lacks its automation marker")
+    end
+    for id, key in pairs({ loot = "quickLoot", dailyComfort = "autoSkipCinematic", tooltipDetails = "inspectHovered" }) do
+        assert(Suite.Suite.catalog[id].rules[key].automation == true, id .. "." .. key .. " lacks its automation marker")
+    end
 end
 Suite.DB.suite.modules.qol.repair = true
 Suite.DB.suite.modules.combatLog.enabled = true
@@ -151,6 +186,10 @@ local clean = assert(IO.PrepareTable({ suite = { schema = 1, modules = {
     minimap = { enabled = true, undocumented = "ignored" },
 } }, theme = { arbitrary = true } }, false))
 assert(clean.theme == nil and clean.suite.modules.minimap.undocumented == nil)
+local looked = assert(IO.PrepareTable({ suite = { schema = 1, globalLook = "cleanModern", modules = {} } }, true))
+local unknownLook = assert(IO.PrepareTable({ suite = { schema = 1, globalLook = string.rep("x", 4096), modules = {} } }, true))
+assert(looked.suite.globalLook == "cleanModern" and unknownLook.suite.globalLook == nil,
+    "an imported profile kept an unknown Skinning look name")
 assert(not IO.PrepareTable({ suite = { schema = 2, modules = {} } }, true))
 assert(not IO.PrepareTable({ suite = { schema = 1, modules = { minimap = { size = 0/0 } } } }, true))
 encodings[#encodings + 1] = { addon = "MapkoSkin", format = 1, kind = "profile", payload = DB.GetProfile("Raid") }
@@ -338,6 +377,17 @@ assert(P.OnLifecycle("copy", "SkinBundle", "Clone")
     and DB.GetProfile("Clone") ~= DB.GetProfile("SkinBundle")
     and skinProfiles.Clone.look == skinProfiles.SkinBundle.look,
     "MSUF profile copy did not copy the matching Suite and skin profiles")
+-- An MSUF profile saved before the Suite was installed has no Suite twin.
+-- Its copy must still succeed: the Suite part starts from the factory and the
+-- skin profile is copied as for any other profile.
+MSUF_GlobalDB.profiles.PreSuite = {}
+skinProfiles.PreSuite = { look = "violet" }
+assert(not DB.GetProfile("PreSuite"), "fixture: the old MSUF profile has no Suite profile")
+local preSuiteOk, preSuiteWhy = P.OnLifecycle("copy", "PreSuite", "PreSuiteCopy")
+assert(preSuiteOk and DB.GetProfile("PreSuiteCopy") and DB.GetProfile("PreSuiteCopy").suite.schema == 1
+    and skinProfiles.PreSuiteCopy and skinProfiles.PreSuiteCopy.look == "violet",
+    "copying an MSUF profile without a Suite profile aborted the copy: " .. tostring(preSuiteWhy))
+MSUF_GlobalDB.profiles.PreSuite = nil
 assert(DB.Activate("Clone") and skin.Database.SetActiveProfile("Clone"))
 assert(P.OnLifecycle("rename", "Clone", "Renamed")
     and DB.GetProfile("Renamed") and not DB.GetProfile("Clone")
@@ -448,7 +498,67 @@ live.skyriding.barHeight, live.skyriding.scale = 14, 115
 live.objectives.titleSize, live.objectives.sectionSize = 16, 16
 live.objectives.colorStyle, live.objectives.backgroundOpacity = 1, 82
 live.announcements.subtitleSize = 15
+-- Character-bound settings never leave the client.
+live.loadoutReminder.expectedCharacterGUID, live.loadoutReminder.expectedConfigID = "Player-1-0001", 123
+live.loadoutReminder.expectedLootSpecID, live.groupFinderDoubleClick.note = 62, "Alt of Mapko"
 local firstExport = assert(IO.ExportProfile())
+do
+    local exported = Encoded(firstExport).profile.suite.modules
+    assert(exported.loadoutReminder.expectedCharacterGUID == "" and exported.loadoutReminder.expectedConfigID == 0
+        and exported.loadoutReminder.expectedLootSpecID == 0 and exported.groupFinderDoubleClick.note == "",
+        "a profile export carried character-bound settings")
+    local module = Encoded(assert(IO.ExportModule("groupFinderDoubleClick"))).settings
+    assert(module.note == "" and live.groupFinderDoubleClick.note == "Alt of Mapko",
+        "a module export carried the note or the export cleared the live profile")
+    assert(live.loadoutReminder.expectedCharacterGUID == "Player-1-0001", "the export cleared the live profile")
+    local shared = { suite = { schema = 1, modules = { loadoutReminder = { expectedCharacterGUID = "Player-2-0002",
+        expectedConfigID = 7 }, groupFinderDoubleClick = { note = "someone else" } } } }
+    local imported = assert(IO.PrepareTable(shared, true)).suite.modules
+    assert(imported.loadoutReminder.expectedCharacterGUID == "" and imported.loadoutReminder.expectedConfigID == 0
+        and imported.groupFinderDoubleClick.note == "", "a shared import took character-bound settings")
+    -- The player may choose to put them into an export: each module's own
+    -- choice (off by default) or the caller's explicit choice. The string then
+    -- marks those modules, and a shared import keeps them only from a marked
+    -- module. The choice itself never travels.
+    assert(live.loadoutReminder.exportSavedSelection == false and live.groupFinderDoubleClick.exportNote == false,
+        "character-bound settings are exported by default")
+    live.loadoutReminder.exportSavedSelection = true
+    local chosen = assert(IO.ExportProfile())
+    local envelope = Encoded(chosen)
+    exported = envelope.profile.suite.modules
+    assert(exported.loadoutReminder.expectedCharacterGUID == "Player-1-0001"
+        and exported.loadoutReminder.expectedConfigID == 123 and exported.loadoutReminder.expectedLootSpecID == 62
+        and exported.loadoutReminder.exportSavedSelection == false and exported.groupFinderDoubleClick.note == ""
+        and envelope.characterBound and envelope.characterBound.loadoutReminder == true
+        and not envelope.characterBound.groupFinderDoubleClick,
+        "the loadout reminder's export choice did not keep exactly its saved selection")
+    imported = assert(IO.PrepareProfile(chosen)).suite.modules
+    assert(imported.loadoutReminder.expectedCharacterGUID == "Player-1-0001"
+        and imported.loadoutReminder.expectedConfigID == 123 and imported.loadoutReminder.exportSavedSelection == false
+        and imported.groupFinderDoubleClick.note == "", "a deliberately exported selection did not arrive")
+    live.loadoutReminder.exportSavedSelection = false
+    local all = Encoded(assert(IO.ExportProfile(nil, { characterBound = true })))
+    assert(all.profile.suite.modules.loadoutReminder.expectedConfigID == 123
+        and all.profile.suite.modules.groupFinderDoubleClick.note == "Alt of Mapko"
+        and all.characterBound.loadoutReminder and all.characterBound.groupFinderDoubleClick,
+        "the caller's explicit export choice did not keep every character-bound setting")
+    live.groupFinderDoubleClick.exportNote = true
+    local noteText = assert(IO.ExportModule("groupFinderDoubleClick"))
+    local note = Encoded(noteText)
+    assert(note.settings.note == "Alt of Mapko" and note.settings.exportNote == false and note.characterBound == true,
+        "the group finder's export choice did not keep its note in a module export")
+    local id, settings = IO.PrepareModuleProfile(noteText)
+    assert(id == "groupFinderDoubleClick" and settings.note == "Alt of Mapko" and settings.exportNote == false,
+        "a deliberately exported note did not arrive")
+    note.characterBound = nil
+    id, settings = IO.PrepareModuleProfile(noteText)
+    assert(settings.note == "", "an unmarked module string kept its note")
+    -- A marker for a module without an export choice changes nothing.
+    envelope.characterBound = { loadoutReminder = false, chat = true }
+    imported = assert(IO.PrepareProfile(chosen)).suite.modules
+    assert(imported.loadoutReminder.expectedCharacterGUID == "", "an unmarked selection arrived")
+    live.groupFinderDoubleClick.exportNote = false
+end
 assert(DB.CreateFromProfile("RoundTrip", assert(IO.PrepareProfile(firstExport, false))))
 local secondExport = assert(IO.ExportProfile("RoundTrip"))
 assert(Same(Encoded(firstExport), Encoded(secondExport)), "export -> import -> export changed the profile")

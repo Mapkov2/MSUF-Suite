@@ -6,6 +6,17 @@ local Database = {}
 Suite.Database = Database
 local SCHEMA = 1
 local historyKeys = { "suiteChat", "suiteRuns", "suiteRecovery" }
+-- The settings in this database: these root keys and these keys of a
+-- profile's suite table. Everything else is runtime data the modules keep
+-- for themselves (chat history, gold ledgers, run and XP history, saved
+-- CVars, the per-profile moduleState), which undo history never copies or
+-- restores (MSUF_Suite_Options/Menu/Bridge.lua).
+Database.ROOT_SETTINGS = { "activeProfile", "skinEnabled" }
+Database.PROFILE_SETTINGS = { "schema", "revision", "globalLook", "modules" }
+-- Module state that is layout the player arranges in MSUF Edit Mode (the
+-- detached minimap addon buttons): undo and Edit Mode Cancel restore it
+-- with the settings. Other module state is runtime data and never rides.
+Database.PROFILE_LAYOUT_STATE = { minimap = { "detachedButtons" } }
 
 local function Copy(value, seen)
     if type(value) ~= "table" then return value end
@@ -63,7 +74,15 @@ function Database.Prepare(stored, legacy)
         return nil, "invalid-suite-profiles"
     end
 
-    local root = stored and Copy(stored) or { schema = SCHEMA, profiles = {} }
+    -- Initialize publishes the prepared root in place of the stored one. The
+    -- profiles are copied, so neither validation nor a later normalization
+    -- writes into the stored tables; runtime data (chat history, ledgers,
+    -- run history) is carried over as it is instead of being copied at login.
+    local root = { schema = SCHEMA, profiles = {} }
+    if stored then
+        for key, value in pairs(stored) do root[key] = value end
+        root.profiles = Copy(stored.profiles)
+    end
     for name, profile in pairs(root.profiles) do
         if not Database.IsProfileName(name) or type(profile) ~= "table"
             or type(profile.suite) ~= "table" then
@@ -138,11 +157,14 @@ end
 
 function Database.Activate(name)
     if Suite.IsCombatLocked() then return false, "combat" end
+    local allowed,why=Suite.ProfileVariants.CanMutate()
+    if not allowed then return false,why end
     if not Database.IsProfileName(name) or not Database.GetProfile(name) then
         return false, "missing-profile"
     end
     Suite.RootDB.activeProfile = name
     Suite.DB = Suite.RootDB.profiles[name]
+    Suite.ProfileVariants.OnActivated(name)
     Suite.OnProfileChanged(name)
     return true
 end
@@ -152,7 +174,13 @@ function Database.Create(name, copyCurrent)
     if not Suite.RootDB then return false, "database-unavailable" end
     if not Database.IsProfileName(name) then return false, "invalid-profile-name" end
     if Database.GetProfile(name) then return false, "profile-exists" end
-    Suite.RootDB.profiles[name] = copyCurrent and Copy(Suite.DB) or NewProfile()
+    local profile
+    if copyCurrent then
+        local why
+        profile,why=Suite.ProfileVariants.BaseProfile(Database.GetActiveProfileName())
+        if not profile then return false,why end
+    end
+    Suite.RootDB.profiles[name] = profile or NewProfile()
     return true
 end
 

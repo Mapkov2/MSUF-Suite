@@ -1,5 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local money = 100000
+-- MSUF is a dependency: Platform.lua asserts its namespace before any Core file.
+MSUF_NS = {}
 -- The client's securecallfunction reports an error to the error handler and
 -- returns nothing; this harness models exactly that.
 local reported = {}
@@ -74,6 +76,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     end
     assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", owner)
     assert(MSUFSuite == owner)
     frame:callback("ADDON_LOADED", "Unrelated")

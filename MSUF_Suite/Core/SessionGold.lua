@@ -26,6 +26,16 @@ function Suite.SetSessionGold(money)
     return true
 end
 
+-- One clear for remembered character gold: the balances DataTexts keeps for
+-- the account total (goldLedger) and the Bags gold history (suiteBagGold).
+-- The options pages of both modules offer it.
+function Suite.ClearCharacterGold()
+    local root = Suite.RootDB
+    if type(root) ~= "table" then return false end
+    root.goldLedger, root.suiteBagGold = nil, nil
+    return true
+end
+
 -- Runs at the first PLAYER_ENTERING_WORLD (Startup.lua): a /reload keeps the
 -- stored baseline, a login stores the current money.
 function Suite.CaptureSessionGold(isReloadingUi)

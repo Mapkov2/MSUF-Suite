@@ -34,7 +34,7 @@ local function CheckedValue(rule, value)
     if type(value) == "string" and not ValidText(rule, value) then return nil, "Invalid setting text" end
     return value
 end
-
+S.CheckProfileValue = CheckedValue
 local function RepairedValue(rule, value)
     if type(value) ~= type(rule.default) then value = rule.default end
     if type(value) == "number" then
@@ -388,6 +388,9 @@ local MIGRATIONS = {
     { run = FriendlyPlayerDisplay },
     { run = NS.CenterDefaultDataTexts },
     { run = NS.MigrateMinimapSpecialization },
+    { run = NS.MigrateLootContainersWarbound },
+    { run = NS.MigrateBagsInventoryView },
+    { run = NS.MoveRunRecordsToCharacter },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {
@@ -432,15 +435,17 @@ end
 ------------------------------------------------------------------ normalization
 -- Idempotent: every module table exists and every rule holds a valid value.
 local function ApplyCatalogRules(modules)
+    NS.SuiteLooks.RefreshClassColor()
     for i = 1, #S.order do
         local id = S.order[i]
-        local config = EnsureModule(modules, id)
-        for key, rule in pairs(S.catalog[id].rules) do
+        local config, spec = EnsureModule(modules, id), S.catalog[id]
+        if spec.prepareConfig then spec.prepareConfig(config) end
+        for key, rule in pairs(spec.rules) do
             config[key] = RepairedValue(rule, config[key])
         end
+        NS.SuiteLooks.RefreshConfig(id, config)
     end
 end
-
 -- Returns the suite table of a profile, or nil when a newer build owns it.
 local function SuiteTable(profile)
     local db = profile.suite
@@ -471,32 +476,12 @@ end
 local Looks = NS.SuiteLooks
 local ApplyLookToConfig = Looks.ApplyToConfig
 
--- Factory and setup profiles are staged before activation. Set their colors
--- without changing live frames; preserve each module's enabled and layout keys.
-function S.StyleProfile(profile, lookName)
-    local db = type(profile) == "table" and profile.suite
-    if not db or type(db.modules) ~= "table" or not Looks.indexes[lookName] then return false end
-    db.globalLook = lookName
-    for i = 1, #S.order do
-        local id = S.order[i]
-        local config = db.modules[id]
-        if type(config) == "table" then ApplyLookToConfig(id, config, lookName) end
-    end
-    return true
-end
+S.StyleProfile = Looks.StyleProfile
 
 ------------------------------------------------------------------ profile access
-function S.SanitizeImport(profile)
-    -- Sharing a visual setup never authorizes spending or automation.
-    local modules = type(profile) == "table" and type(profile.suite) == "table" and profile.suite.modules
-    if type(modules) ~= "table" then return end
-    if type(modules.qol) == "table" then
-        modules.qol.enabled, modules.qol.repair, modules.qol.autoJunk = false, false, false
-    end
-    if type(modules.quests) == "table" then modules.quests.enabled = false end
-    if type(modules.loot) == "table" then modules.loot.quickLoot = false end
-    if type(modules.combatLog) == "table" then modules.combatLog.enabled = false end
-end
+-- Sharing a visual setup never authorizes spending or automation: the
+-- catalog's automation switches arrive off (SuiteCatalog.lua).
+S.SanitizeImport = NS.SanitizeAutomation
 
 local function ActiveSuite()
     local db = NS.DB and NS.DB.suite
@@ -641,11 +626,10 @@ end
 -- to the module and styles Blizzard's original again once the module is off.
 local SURFACE_MODULES = {
     damageMeter = "damageMeter", bagWindows = "bags",
-    cooldownViewers = "cooldownManager", bagBar = "dataTexts",
+    cooldownViewers = "cooldownManager", bagBar = "dataTexts", staticPopups = "popupAttention",
 }
 local SURFACE_OWNERS = {}
 for _, id in pairs(SURFACE_MODULES) do SURFACE_OWNERS[id] = true end
-
 -- True while the owning module is set to run: enabled in the active profile,
 -- available on this client and not failed. It answers before S.Start too, so
 -- the skin's first pass already leaves the surface alone.
@@ -656,6 +640,7 @@ function S.OwnsBlizzardSurface(surface)
     if config.enabled ~= true then return false end
     -- DataTexts hides the bag bar only on request.
     if surface == "bagBar" and config.hideBlizzardBagBar ~= true then return false end
+    if surface == "staticPopups" and config.skin ~= true and config.dialogFont ~= true then return false end
     return S.Availability(id) == true
 end
 
@@ -734,6 +719,7 @@ function S.Set(id, key, value)
     local config, state = S.Config(id), S.states[id]
     if config[key] == value and not state.error and not state.unavailable then return true end
     config[key] = value
+    if S.catalog[id].rules.classStyle and S.catalog[id].rules[key].color then config.classStyle = false end
     if key == "enabled" and value == true then ApplyLookToConfig(id, config, db.globalLook) end
     state.error = nil
     S.Apply(id)
@@ -753,6 +739,11 @@ local function StoreValues(spec, id, values)
     end
     local config = S.Config(id)
     for key, value in pairs(clean) do config[key] = value end
+    if spec.rules.classStyle and clean.classStyle == nil then
+        for key in pairs(clean) do
+            if spec.rules[key].color then config.classStyle = false; break end
+        end
+    end
     return config, clean
 end
 
@@ -779,6 +770,8 @@ function S.SetMany(id, values)
         end
         if not explicitAppearance then ApplyLookToConfig(id, config, db.globalLook) end
     end
+    Looks.RefreshClassColor()
+    Looks.RefreshConfig(id, config)
     S.states[id].error = nil
     S.Apply(id)
     Changed()

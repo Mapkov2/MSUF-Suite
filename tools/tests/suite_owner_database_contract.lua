@@ -1,8 +1,11 @@
 local root = assert(arg[1], "repository root required")
+-- MSUF is a dependency: Platform.lua asserts its namespace before any Core file.
+MSUF_NS = {}
 -- The parts of the core the database uses (Platform.lua and the controller).
 local Suite = { Client = { isForever = false }, OnProfileChanged = function() end,
     Suite = { MigrationRevision = 0, Normalize = function() end, StyleProfile = function() end } }
 assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", Suite)
 local DB, checks = Suite.Database, 0
 local function Check(value, message)
     assert(value, message)
@@ -50,6 +53,12 @@ Check(empty.activeProfile == "Default" and empty.profiles.Default.suite.modules.
 local established = { schema = 1, activeProfile = "Default", profiles = { Default = { suite = { schema = 1, modules = {} } } } }
 local resumed = assert(DB.Prepare(established, legacy))
 Check(resumed.profiles.Raid == nil and resumed.migration == nil, "existing suite databases are never reimported from the skin")
+local history = { Player = { lines = { "kept" } } }
+local saved = { schema = 1, activeProfile = "Default", chatHistory = history,
+    profiles = { Default = { suite = { schema = 1, modules = {} } } } }
+local reloaded = assert(DB.Prepare(saved, nil))
+Check(reloaded.chatHistory == history and reloaded.profiles.Default ~= saved.profiles.Default,
+    "login copies the profiles but carries runtime history over without copying it")
 
 local oldRoot = Suite.RootDB
 local oldSkin = { profiles = { Raid = { theme = { private = "skin" } } } }

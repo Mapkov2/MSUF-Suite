@@ -19,6 +19,13 @@ local moduleAddons = {
     actionTracker = "MSUF_Suite_QualityOfLife",
     innervateCue = "MSUF_Suite_QualityOfLife",
     skyriding = "MSUF_Suite_QualityOfLife",
+    threatMeter = "MSUF_Suite_QualityOfLife",
+    flightTimer = "MSUF_Suite_QualityOfLife",
+    characterExtras = "MSUF_Suite_QualityOfLife",
+    merchantList = "MSUF_Suite_QualityOfLife",
+    tooltipDetails = "MSUF_Suite_QualityOfLife",
+    popupAttention = "MSUF_Suite_QualityOfLife",
+    partyEffects = "MSUF_Suite_QualityOfLife",
     durabilityAlert = "MSUF_Suite_QualityOfLife",
     battleRes = "MSUF_Suite_QualityOfLife",
     merchantLevel = "MSUF_Suite_QualityOfLife",
@@ -57,6 +64,9 @@ local moduleAddons = {
     cursorEffects = "MSUF_Suite_QualityOfLife",
     mapLandingShortcuts = "MSUF_Suite_QualityOfLife",
     combatStatsHUD = "MSUF_Suite_QualityOfLife",
+    enemyCastStack = "MSUF_Suite_QualityOfLife",
+    targetDistance = "MSUF_Suite_QualityOfLife",
+    dungeonPortals = "MSUF_Suite_QualityOfLife",
     combatPetStatus = "MSUF_Suite_QualityOfLife",
     combatMovementCue = "MSUF_Suite_QualityOfLife",
     burningRushCue = "MSUF_Suite_QualityOfLife",
@@ -74,6 +84,45 @@ local moduleAddons = {
 }
 local Build = {}
 NS.CatalogBuild = Build
+
+-- Class colors are character identity, so resolve them only on cold settings
+-- paths. Renderers read these stable preset tables just like authored looks.
+local classPresets, classReady = {}, false
+local classPalette = { accent = "e6ecf2", border = "737679", label = "e6ecf2" }
+local Looks = { classRevision = 0 }
+NS.SuiteLooks = Looks
+local function Hex(r, g, b)
+    return string.format("%02x%02x%02x", math.floor(r * 255 + .5),
+        math.floor(g * 255 + .5), math.floor(b * 255 + .5))
+end
+function Looks.RefreshClassColor()
+    if classReady then return end
+    -- Blizzard UnitUtil.lua uses UnitClass("player") with C_ClassColor.
+    local _, class = UnitClass("player")
+    if type(class) ~= "string" then return end
+    local color = C_ClassColor.GetClassColor(class)
+    if type(color) ~= "table" then return end
+    local r, g, b = color.r, color.g, color.b
+    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number"
+        or r ~= r or g ~= g or b ~= b then return end
+    r, g, b = math.max(0, math.min(1, r)), math.max(0, math.min(1, g)), math.max(0, math.min(1, b))
+    classReady = true
+    classPalette.accent = Hex(r, g, b)
+    classPalette.border = Hex(r * .5, g * .5, b * .5)
+    classPalette.label = Hex(.6 + r * .4, .6 + g * .4, .6 + b * .4)
+    for i = 1, #classPresets do
+        local entry = classPresets[i]
+        for key, role in pairs(entry.fields) do entry.preset[key] = classPalette[role] end
+    end
+    Looks.classRevision = Looks.classRevision + 1
+end
+function Build.ClassPreset(base, fields)
+    local preset = {}
+    for key, value in pairs(base) do preset[key] = value end
+    for key, role in pairs(fields) do preset[key] = classPalette[role] end
+    classPresets[#classPresets + 1] = { preset = preset, fields = fields }
+    return preset
+end
 
 -- The nine anchor points of every "Screen anchor" and position choice, with
 -- their choice labels. Saved profiles store the choice index, so this order
@@ -184,19 +233,81 @@ function Build.TextSection(id, extra)
     Build.LinkFontShadow(catalog[id].rules)
 end
 
+-- Automation: settings that make the Suite act on the player's behalf without
+-- a confirmation each time. It spends or sells, opens or uses items, accepts,
+-- chooses or submits for the player, messages other players, sends inspect
+-- requests, starts the combat log, or cancels auras and cinematics.
+-- Shared imports switch these off (NS.SanitizeAutomation) and profile
+-- variants never hold them (ProfileVariants.lua). A listed module is
+-- automation as a whole: spec.automation and its enable switch are flagged,
+-- and variants leave all of its rules alone. Listed switches flag one rule
+-- (rule.automation) of a module that also does other things.
+local automationModules = {
+    qol = true, quests = true, combatLog = true, lootContainers = true, trustedPartyInvites = true,
+    delveSolePower = true, professionAppearance = true, collectionNewMarkers = true,
+}
+local automationSwitches = {
+    qol = { "repair", "autoJunk" },
+    loot = { "quickLoot" },
+    dailyComfort = { "autoSkipCinematic" },
+    groupRaidShortcuts = { "autoMarkTank", "autoMarkHealer" },
+    groupFinderDoubleClick = { "quickApply" },
+    mythicKeyShare = { "insertKey" },
+    mythicResetReminder = { "announceReset" },
+    tooltipDetails = { "inspectHovered" },
+}
+-- [module id] = { automation rule keys }, filled by FinalizeCatalog.
+local automationRules = {}
+
+local function FlagAutomation(id, key)
+    local rule = catalog[id] and catalog[id].rules[key]
+    assert(rule and type(rule.default) == "boolean", "unknown automation switch " .. id .. "." .. key)
+    rule.automation = true
+    local keys = automationRules[id] or {}
+    automationRules[id] = keys
+    keys[#keys + 1] = key
+end
+
 function NS.FinalizeCatalog()
     NS.Defaults.suite = { schema=1, modules={} }
     for i = 1, #order do
         local id = order[i]
+        local look = catalog[id].look
+        if look and look.extra and not look.global then
+            -- Modules without a preset selector still retain whether their
+            -- colors follow Class Style through profile export/import.
+            Build.Add(id, Build.Bool("classStyle", "Class Style", false), nil, nil, { hidden = true })
+        end
         local defaults = {}
         for key, rule in pairs(catalog[id].rules) do defaults[key] = rule.default end
         NS.Defaults.suite.modules[id] = defaults
+    end
+    for i = 1, #order do
+        local id = order[i]
+        if automationModules[id] then
+            catalog[id].automation = true
+            FlagAutomation(id, "enabled")
+        end
+        for _, key in ipairs(automationSwitches[id] or {}) do FlagAutomation(id, key) end
+    end
+end
+
+-- Sharing a setup never authorizes spending or automation: every automation
+-- switch of a shared profile arrives switched off.
+function NS.SanitizeAutomation(profile)
+    local modules = type(profile) == "table" and type(profile.suite) == "table" and profile.suite.modules
+    if type(modules) ~= "table" then return end
+    for id, keys in pairs(automationRules) do
+        local config = modules[id]
+        if type(config) == "table" then
+            for _, key in ipairs(keys) do config[key] = false end
+        end
     end
 end
 
 -- Resolve the shared look to a module's ordinary catalog settings. This is
 -- pure, so factory profiles can be styled before activation.
-local lookIndexes = { midnight = 1, midnightDark = 2, foreverGlass = 3, cleanModern = 5 }
+local lookIndexes = { midnight = 1, midnightDark = 2, foreverGlass = 3, cleanModern = 5, classColor = 6 }
 local function LookValues(id, lookIndex, config)
     local look = catalog[id].look
     if not look or not (look.global or look.extra) then return nil end
@@ -210,11 +321,13 @@ local function LookValues(id, lookIndex, config)
         end
     end
     if look.extra then look.extra(values, lookIndex, config) end
+    if not look.global then values.classStyle = lookIndex == 6 end
     return values
 end
 
-NS.SuiteLooks = { indexes = lookIndexes }
+Looks.indexes = lookIndexes
 function NS.SuiteLooks.ApplyToConfig(id, config, lookName)
+    if lookName == "classColor" then Looks.RefreshClassColor() end
     local index = lookIndexes[lookName]
     local values = index and LookValues(id, index, config)
     if not values then return false end
@@ -228,4 +341,37 @@ function NS.SuiteLooks.ApplyToConfig(id, config, lookName)
         end
     end
     return changed
+end
+
+-- Refresh only modules that still select Class Style. Custom module palettes
+-- and DataText per-bar overrides survive login and profile activation.
+function Looks.RefreshConfig(id, config)
+    local look = catalog[id].look
+    if not look then return end
+    if look.global then
+        local choice = look.global == true and 6 or look.global[6]
+        if not choice or config[look.key] ~= choice then return end
+        local preset = look.presets and look.presets[choice]
+        if preset then
+            for key, value in pairs(preset) do
+                if catalog[id].rules[key] then config[key] = value end
+            end
+        end
+    elseif look.extra and config.classStyle then
+        Looks.ApplyToConfig(id, config, "classColor")
+    end
+end
+
+-- Factory/setup profiles are staged without touching live frames. Layout,
+-- module enable switches and native resource/status colors stay intact.
+function Looks.StyleProfile(profile, lookName)
+    local db = type(profile) == "table" and profile.suite
+    if not db or type(db.modules) ~= "table" or not lookIndexes[lookName] then return false end
+    db.globalLook = lookName
+    for i = 1, #order do
+        local id = order[i]
+        local config = db.modules[id]
+        if type(config) == "table" then Looks.ApplyToConfig(id, config, lookName) end
+    end
+    return true
 end
