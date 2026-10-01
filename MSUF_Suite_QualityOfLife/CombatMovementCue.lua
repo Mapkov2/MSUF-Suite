@@ -58,17 +58,30 @@ local function Place(self)
     self.host:SetScale(c.scale / 100)
 end
 
--- isActive/isEnabled are NeverSecret in upstream/live SpellCooldownInfo.
+-- A spell that waits only for the global cooldown counts as ready. isActive
+-- and isEnabled are NeverSecret in SpellCooldownInfo; isOnGCD can be trusted
+-- only inside SPELL_UPDATE_COOLDOWN (SpellSharedDocumentation), so on a
+-- movement start the cooldown without the GCD answers: none, or a readable
+-- inactive one.
+local function OffCooldown(id)
+    local info = C_Spell.GetSpellCooldown(id)
+    if not S.Public(info) or type(info) ~= "table" then return false end
+    local active, enabled = info.isActive, info.isEnabled
+    if not S.Public(active) or not S.Public(enabled) or enabled ~= true then return false end
+    if active == false then return true end
+    local real = C_Spell.GetSpellCooldownDuration(id, true)
+    if not real then return true end
+    if real:HasSecretValues() then return false end
+    local running = real:IsActive()
+    return S.Public(running) and running == false
+end
+
 -- IsSpellUsable and spell text may still be restricted, so silence is the
 -- only safe answer when any part cannot be read publicly.
 local function Ready(id)
     local known = C_SpellBook.IsSpellKnown(id)
     if not S.Public(known) or known ~= true then return nil end
-    local info = C_Spell.GetSpellCooldown(id)
-    if not S.Public(info) or type(info) ~= "table" then return nil end
-    local active, enabled = info.isActive, info.isEnabled
-    if not S.Public(active) or active ~= false
-        or not S.Public(enabled) or enabled ~= true then return nil end
+    if not OffCooldown(id) then return nil end
     local usable = C_Spell.IsSpellUsable(id)
     if not S.Public(usable) or usable ~= true then return nil end
     local name = S.PublicText(C_Spell.GetSpellName(id))

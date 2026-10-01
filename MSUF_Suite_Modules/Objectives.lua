@@ -235,19 +235,25 @@ local function Event(self, event, ...)
 end
 
 ------------------------------------------------------------------ lifecycle
--- Blizzard's tracker stays hidden by an alpha-zero, mouse-disabled frame
--- under a hidden parent; the context restores both on disable.
+-- Blizzard's tracker is a right-managed Edit Mode frame. A SetParent or Hide
+-- from here would run its OnHide (ManagedFrameMixin.OnHide, then
+-- RemoveManagedFrame and the right container's Layout, which also places the
+-- protected boss and arena frames) inside this addon's call and taint that
+-- layout (Blizzard_ManagedFrameSystem/Shared/ManagedFrameSystem.lua). Only
+-- properties change instead, and none of them runs Blizzard code: alpha
+-- zero, no mouse, and a scale so small that the tracker's blocks and
+-- buttons, which take the mouse themselves, keep no hit area. The container
+-- sets the alpha back to 1 when the UI is shown again; the scale stays. The
+-- context restores all three on disable.
+local NATIVE_HIDDEN_SCALE = .001
+
 function M:SuppressNative()
     if not self.active or NS.IsCombatLocked() then return end
     -- Blizzard_ObjectiveTracker loads at startup on every supported client.
     local native = ObjectiveTrackerFrame
     if NS.Safety.IsForbidden(native) then return end
-    if not self.nativeHiddenParent then
-        self.nativeHiddenParent = S.CreateFrame("Frame", nil, UIParent)
-        self.nativeHiddenParent:Hide()
-    end
     self.context:HideControl(native, true)
-    self.context:Property(native, "GetParent", "SetParent", self.nativeHiddenParent)
+    self.context:Scale(native, NATIVE_HIDDEN_SCALE)
 end
 
 local function LoadCollapseState(self)

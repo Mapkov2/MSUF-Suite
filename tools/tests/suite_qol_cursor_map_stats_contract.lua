@@ -86,7 +86,9 @@ GetHaste = function() return hasteValue end
 GetMasteryEffect = function() return 33.3 end
 GetCombatRatingBonus = function() return 40 end
 GetVersatilityBonus = function() return 4.4 end
-UnitClassBase = function() return "HUNTER" end
+local playerClass, knownSpells = "HUNTER", { [883] = true }
+UnitClassBase = function() return playerClass end
+C_SpellBook = { IsSpellKnown = function(spellID) return knownSpells[spellID] == true end }
 UnitExists = function(unit) assert(unit == "pet"); return petExists end
 UnitIsDeadOrGhost = function(unit) assert(unit == "pet"); return petDead end
 
@@ -151,6 +153,19 @@ castDuration = nil
 cursor.context.events.UNIT_SPELLCAST_STOP(cursor)
 assert(not cursor.cast.shown and cursor.gcd.duration == gcdDuration,
     "GCD did not resume after cast")
+-- A cast-time spell starts the global cooldown long before its SUCCEEDED;
+-- without the cast display its start must still draw the GCD.
+cursor.config.showCast = false
+cursor:Refresh()
+local startGCD = cursor.context.events.UNIT_SPELLCAST_START
+cursor.gcd.duration, gcdDuration = nil, { token = "cast-time gcd" }
+assert(startGCD and cursor.context.events.UNIT_SPELLCAST_CHANNEL_START, "cast starts no longer read the GCD")
+startGCD(cursor)
+assert(cursor.gcd.shown and cursor.gcd.duration == gcdDuration, "a cast-time spell's GCD was missed")
+cursor.config.showCast = true
+cursor:Refresh()
+assert(cursor.context.events.UNIT_SPELLCAST_START ~= startGCD and cursor.context.events.UNIT_SPELLCAST_STOP,
+    "the cast display lost its own cast events")
 cursor.config.combatOnly = true
 cursor:Refresh()
 assert(not cursor.host.shown and not cursor.host.scripts.OnUpdate,
@@ -373,6 +388,22 @@ assert(pet.host.shown, "combat-only warning dropped while in combat")
 combat = false
 pet.context.events.PLAYER_REGEN_ENABLED(pet, "PLAYER_REGEN_ENABLED")
 assert(not pet.host.shown, "combat-only pet warning stayed after combat")
+-- The spellbook decides whether a pet belongs to this character: a
+-- Marksmanship hunter without Call Pet, or a warlock with Grimoire of
+-- Sacrifice, plays without one.
+pet.config.combatOnly = false
+pet:Refresh()
+assert(pet.host.shown and pet.context.events.SPELLS_CHANGED, "a hunter with Call Pet lost the missing-pet warning")
+knownSpells[883] = nil
+pet.context.events.SPELLS_CHANGED(pet, "SPELLS_CHANGED")
+assert(not pet.host.shown, "a petless hunter specialization was told its pet is missing")
+pet:Disable()
+playerClass, knownSpells = "WARLOCK", { [688] = true, [108503] = true }
+pet:Enable()
+assert(not pet.host.shown, "a warlock with Grimoire of Sacrifice was told its demon is missing")
+knownSpells[108503] = nil
+pet.context.events.SPELLS_CHANGED(pet, "SPELLS_CHANGED")
+assert(pet.host.shown and pet.label.text == "Pet missing", "a warlock without its demon lost the warning")
 pet:Disable()
 assert(not pet.host.shown, "pet status remained visible when disabled")
 

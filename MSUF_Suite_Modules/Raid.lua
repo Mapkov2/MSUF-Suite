@@ -61,12 +61,54 @@ local function CurrentText(view)
     return view.liveText
 end
 
+-- While combat keeps a boss's health secret, the row becomes a format: the
+-- readable parts are written into it and each secret percentage stays an
+-- argument for SetFormattedText, a C sink. Nothing is cached then, because
+-- a secret reading cannot be compared with the previous one.
+local secretArgs = {}
+local function SecretFormat(view)
+    local parts, count = {}, 0
+    for i = 1, 10 do
+        local boss = view.live[i]
+        if boss then
+            local name = (boss.name or L.boss:format(i)):gsub("%%", "%%%%")
+            if boss.secret then
+                count = count + 1
+                secretArgs[count] = boss.secretPercent
+                parts[#parts + 1] = name .. " %.1f%%"
+            else
+                parts[#parts + 1] = name .. (boss.percent and string.format(" %.1f%%%%", boss.percent) or "")
+            end
+        end
+    end
+    return L.active:format(table.concat(parts, " \194\183 ")), count
+end
+
+local function AnySecret(view)
+    for i = 1, 10 do
+        local boss = view.live[i]
+        if boss and boss.secret then return true end
+    end
+    return false
+end
+
+local function PaintCurrent(view)
+    if not view.pull or not AnySecret(view) then
+        SetText(view.current, CurrentText(view))
+        return
+    end
+    local format, count = SecretFormat(view)
+    view.current.cachedText = nil
+    view.current:SetFormattedText(format, unpack(secretArgs, 1, count))
+    for i = 1, count do secretArgs[i] = nil end
+end
+
 local function PaintLive(owner)
     local view = owner.raid
     view.livePending = false
     if view.pull and owner.active and owner.raidActive then
         ReadPending(view)
-        SetText(view.current, CurrentText(view))
+        PaintCurrent(view)
     end
 end
 
@@ -121,7 +163,7 @@ local function Paint(owner)
     local bestPhase = phases and (view.stageSource and phases[view.stageSource]
         or phases.DBM or phases.BigWigs)
     SetText(view.phase, phase)
-    SetText(view.current, CurrentText(view))
+    PaintCurrent(view)
     if bestPhase then
         local best = L.bestPhase:format(bestPhase.stage)
         if bestPhase.defeated and bestPhase.defeated > 0 then
@@ -199,6 +241,15 @@ function H.Stop(owner)
     owner.raidActive = false
 end
 
+-- UnitHealthPercent is 0..1; Blizzard's ScaleTo100 curve makes it display
+-- percent. Returns the readable percent (or nil), whether the reading is
+-- secret, and the secret reading itself, which only reaches SetFormattedText.
+local function ReadPercent(unit)
+    local percent = UnitHealthPercent(unit, true, CurveConstants.ScaleTo100)
+    if not Public(percent) then return nil, true, percent end
+    return Finite(percent) and percent >= 0 and percent <= 100 and percent or nil, false, nil
+end
+
 -- Reads one boss unit into view.live. True when its row changed.
 local function ReadBoss(view, index, unit, keepMissing)
     local before = view.live[index]
@@ -213,16 +264,17 @@ local function ReadBoss(view, index, unit, keepMissing)
         return true
     end
     local name = Text(UnitName(unit))
-    local percent = UnitHealthPercent(unit)
-    percent = Finite(percent) and percent >= 0 and percent <= 100 and percent or nil
-    if before and before.name == name and before.percent == percent then return false end
-    if not name and not percent then
+    local percent, secret, secretPercent = ReadPercent(unit)
+    if before and not secret and not before.secret and before.name == name and before.percent == percent then
+        return false
+    end
+    if not name and not percent and not secret then
         if not before then return false end
         view.live[index] = nil
     elseif before then
-        before.name, before.percent = name, percent
+        before.name, before.percent, before.secret, before.secretPercent = name, percent, secret, secretPercent
     else
-        view.live[index] = { name = name, percent = percent }
+        view.live[index] = { name = name, percent = percent, secret = secret, secretPercent = secretPercent }
     end
     view.liveText = nil
     return true

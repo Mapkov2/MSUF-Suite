@@ -293,11 +293,17 @@ local function AddonLoaded(self, _, addon)
 end
 
 ------------------------------------------------------------------ flyouts
+-- EquipmentFlyout_UpdateItems sets button.location on every update: an
+-- ItemLocation where the flyout uses item locations (item upgrade, item
+-- interaction, runeforge), else a packed location (the character sheet).
+-- GetItemLocation() is not used: the pooled button keeps the location an
+-- earlier item-location flyout gave it.
 local function FlyoutLevel(button)
-    local location = button:GetItemLocation()
-    local level = location and C_Item.GetCurrentItemLevel(location)
-    if S.Finite(level) then return level end
     local packed = button.location
+    if type(packed) == "table" then
+        local level = C_Item.DoesItemExist(packed) and C_Item.GetCurrentItemLevel(packed)
+        return S.Finite(level) and level or nil
+    end
     if not S.Finite(packed) or packed < 0 or packed >= EQUIPMENTFLYOUT_FIRST_SPECIAL_LOCATION then return end
     local data = EquipmentManager_GetLocationData(packed)
     local link = data.isBags and C_Container.GetContainerItemLink(data.bag, data.slot)

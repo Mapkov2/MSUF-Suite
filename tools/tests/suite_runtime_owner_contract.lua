@@ -132,6 +132,60 @@ context:Scale(native, 1.2)
 native.scale = 1.5
 context:Release()
 assert(native.scale == 1.5, "release overwrote a later external change")
+-- Muting moves a native frame under a shown, invisible host only while its
+-- visibility stays the same, so its OnShow/OnHide never run in the Suite's
+-- call; protected frames are refused, in combat too.
+local function Region(parent, shown)
+    local region = { parent = parent, shown = shown ~= false, protected = false }
+    function region:GetParent() return self.parent end
+    function region:SetParent(value)
+        local before = self:IsVisible()
+        self.parent = value
+        assert(self:IsVisible() == before, "muting changed a native frame's visibility")
+    end
+    function region:IsShown() return self.shown end
+    function region:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
+    function region:IsProtected() return self.protected end
+    for _, method in ipairs({ "SetSize", "SetPoint", "SetAlpha", "SetScale", "EnableMouse" }) do
+        region[method] = function() end
+    end
+    return region
+end
+UIParent = Region()
+local createFrame = CreateFrame
+CreateFrame = function(_, _, parent)
+    local frame = createFrame()
+    local region = Region(parent)
+    for key, value in pairs(region) do frame[key] = value end
+    return frame
+end
+local alert, protectedAlert = Region(UIParent), Region(UIParent)
+protectedAlert.protected = true
+local alpha, mouse = 1, true
+function alert:GetAlpha() return alpha end
+function alert:SetAlpha(value) alpha = value end
+function alert:IsMouseEnabled() return mouse end
+function alert:EnableMouse(value) mouse = value end
+local hiddenParent = Region(UIParent, false)
+local hiddenAlert = Region(hiddenParent)
+assert(context:Mute(alert) and alert:GetParent() ~= UIParent and alert:GetParent():IsShown()
+    and not context:Mute(protectedAlert) and protectedAlert:GetParent() == UIParent
+    and not context:Mute(hiddenAlert) and hiddenAlert:GetParent() == hiddenParent,
+    "muting must move only unprotected frames whose visibility it keeps")
+local host = alert:GetParent()
+InCombatLockdown = function() return true end
+context:HideUnprotected(alert, true)
+assert(alpha == 0 and not mouse and context:Mute(Region(UIParent)),
+    "unprotected native frames must be muted and hidden in combat as well")
+InCombatLockdown = function() return false end
+context:Unmute(alert)
+assert(alert:GetParent() == UIParent, "unmuting did not restore the native parent")
+context:Mute(alert)
+alert.parent = Region(UIParent)
+context:Release()
+assert(alert:GetParent() ~= host and alpha == 1 and mouse and not next(context.muted),
+    "release moved a frame Blizzard had re-parented or kept a mute record")
+CreateFrame = createFrame
 -- One RegisterUnitEvent filters at most four units: a longer list (the five
 -- boss tokens) is split over routing frames that reach the same callback.
 local bossHits = {}

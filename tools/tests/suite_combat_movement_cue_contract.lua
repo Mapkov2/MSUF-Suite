@@ -3,7 +3,7 @@
 local root = assert(arg[1], "repository root required")
 local events, timers, installed = {}, {}, nil
 local clock, combat = 100, false
-local known, cooldown, usable = {}, {}, {}
+local known, cooldown, usable, realCooldown = {}, {}, {}, {}
 local cooldownBlocked = false
 local calls = { known = 0, cooldown = 0, usable = 0 }
 
@@ -42,6 +42,14 @@ C_Spell = {
         -- Restricted cooldowns come back secret (SecretWhenCooldownsRestricted); nothing raises.
         if cooldownBlocked then return "secret" end
         return cooldown[id]
+    end,
+    -- The cooldown without the global cooldown (ignoreGCD), as a duration.
+    GetSpellCooldownDuration = function(id, ignoreGCD)
+        assert(ignoreGCD == true, "the movement cue read the cooldown with the GCD")
+        local running = realCooldown[id]
+        if running == nil then return nil end
+        return { HasSecretValues = function() return running == "secret" end,
+            IsActive = function() return running end }
     end,
     IsSpellUsable = function(id)
         calls.usable = calls.usable + 1
@@ -103,7 +111,7 @@ clock = 101
 events.PLAYER_STARTED_MOVING(cue)
 assert(#timers == 1, "repeated movement is throttled")
 clock = 121
-cooldown[101].isActive = true
+cooldown[101].isActive, realCooldown[101] = true, true
 events.PLAYER_STARTED_MOVING(cue)
 assert(cue.icon.texture == 1102 and #timers == 2,
     "active cooldown is skipped and next ready ability is chosen")
@@ -126,6 +134,13 @@ events.PLAYER_STARTED_MOVING(cue)
 assert(not cue.host:IsShown() and calls.cooldown == blockedReads,
     "restricted cooldown reads were not safely throttled")
 cooldownBlocked = false
+-- Only the global cooldown runs: the ability counts as ready.
+clock = 170
+cooldown[101], realCooldown[101] = { isActive = true, isEnabled = true }, nil
+events.PLAYER_STARTED_MOVING(cue)
+assert(cue.host:IsShown() and cue.icon.texture == 1101 and #timers == 3,
+    "an ability waiting only for the global cooldown was not offered")
+timers[3]()
 
 config.spellIDs = ""
 cue:Refresh()
@@ -138,9 +153,9 @@ suite.editMode = true
 cue:Refresh()
 assert(cue.host:IsShown() and cue.label.text == "Movement ability ready",
     "Edit Mode shows a placement sample")
-clock = 163
+clock = 200
 events.PLAYER_STARTED_MOVING(cue)
-assert(#timers == 2, "Edit Mode cannot show a live cue")
+assert(#timers == 3, "Edit Mode cannot show a live cue")
 suite.editMode = false
 cue:Disable()
 assert(not cue.host:IsShown(), "disable hides placement sample")

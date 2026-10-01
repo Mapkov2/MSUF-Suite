@@ -268,11 +268,7 @@ function Context:RefreshOwnedSkins()
 end
 
 -- Single-value getter/setter pairs such as GetScale/SetScale.
-function Context:Property(frame, getter, setter, value)
-    if NS.IsCombatLocked() then
-        S.Queue(self.id)
-        return
-    end
+local function SetOwnedProperty(self, frame, getter, setter, value)
     if not Accessible(frame) or type(frame[getter]) ~= "function" or type(frame[setter]) ~= "function" then
         return
     end
@@ -291,6 +287,16 @@ function Context:Property(frame, getter, setter, value)
     if current ~= value then frame[setter](frame, value) end
     local applied = frame[getter](frame)
     record.applied = Public(applied) and applied or value
+end
+
+-- Protected frames refuse these writes in combat; the module applies again
+-- after it.
+function Context:Property(frame, getter, setter, value)
+    if NS.IsCombatLocked() then
+        S.Queue(self.id)
+        return
+    end
+    SetOwnedProperty(self, frame, getter, setter, value)
 end
 
 function Context:Scale(frame, value)
@@ -389,6 +395,70 @@ function Context:HideControl(frame, hidden)
     if hidden then
         self:Alpha(frame, 0)
         self:Property(frame, "IsMouseEnabled", "EnableMouse", false)
+    else
+        self:RestoreProperty(frame, "SetAlpha")
+        self:RestoreProperty(frame, "EnableMouse")
+    end
+end
+
+------------------------------------------------------------------ muted native frames
+-- A native frame Blizzard shows on its own (a pooled alert, a fading zone
+-- text, a banner) is muted by moving it under one shown host with alpha zero
+-- and a scale so small that the frame keeps no hit area and no room in
+-- Blizzard's anchor chains. Hide() or a hidden parent would run its OnHide
+-- (an alert's pool release, a banner queue) inside this addon's call and
+-- taint Blizzard's state; the move and its undo happen only while they leave
+-- the frame's visibility unchanged, so none of its scripts run. Unprotected
+-- frames only, so muting also works in combat.
+local MUTE_SCALE = .001
+local muteHost
+
+local function MuteHost()
+    if not muteHost then
+        muteHost = S.CreateFrame("Frame", nil, UIParent)
+        muteHost:SetSize(1, 1)
+        muteHost:SetPoint("CENTER")
+        muteHost:SetAlpha(0)
+        muteHost:SetScale(MUTE_SCALE)
+        muteHost:EnableMouse(false)
+    end
+    return muteHost
+end
+
+local function KeepsVisibility(frame, parent)
+    return frame:IsVisible() == (frame:IsShown() and parent:IsVisible())
+end
+
+function Context:Mute(frame)
+    if not Accessible(frame) or frame:IsProtected() then return false end
+    local host, parent = MuteHost(), frame:GetParent()
+    if parent == host then return true end
+    if not parent or not KeepsVisibility(frame, host) then return false end
+    self.muted = self.muted or {}
+    self.muted[frame] = parent
+    frame:SetParent(host)
+    return true
+end
+
+-- Gives a muted frame its parent back. When Blizzard moved it already, or
+-- the move would change its visibility, it stays: Blizzard sets the parent
+-- of its pooled frames again when it shows them.
+function Context:Unmute(frame)
+    local parent = self.muted and self.muted[frame]
+    if not parent then return end
+    self.muted[frame] = nil
+    if Accessible(frame) and frame:GetParent() == muteHost and KeepsVisibility(frame, parent) then
+        frame:SetParent(parent)
+    end
+end
+
+-- HideControl for a native frame that is not protected: its alpha and mouse
+-- are not restricted, so this applies in combat too.
+function Context:HideUnprotected(frame, hidden)
+    if not Accessible(frame) or frame:IsProtected() then return end
+    if hidden then
+        SetOwnedProperty(self, frame, "GetAlpha", "SetAlpha", 0)
+        SetOwnedProperty(self, frame, "IsMouseEnabled", "EnableMouse", false)
     else
         self:RestoreProperty(frame, "SetAlpha")
         self:RestoreProperty(frame, "EnableMouse")
@@ -563,6 +633,9 @@ function Context:Release()
         for setter in pairs(properties) do Dispatch(Context.RestoreProperty, self, frame, setter) end
     end
     for frame in pairs(self.points) do Dispatch(Context.RestorePoints, self, frame) end
+    if self.muted then
+        for frame in pairs(self.muted) do Dispatch(Context.Unmute, self, frame) end
+    end
     Dispatch(NS.Skin.Release, self.id)
     S.RestoreSaved(self.id)
 end

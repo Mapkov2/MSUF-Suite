@@ -8,8 +8,24 @@ for i = 1, 40 do RAID[i] = "raid" .. i end
 local function StopWatching(self)
     self.context:RemoveEvent("UNIT_HEALTH")
     self.context:RemoveEvent("UNIT_FLAGS")
+    self.context:RemoveEvent("PLAYER_ALIVE")
+    self.context:RemoveEvent("PLAYER_UNGHOST")
     self.groupKind = nil
     self.dead = nil
+    self.afterDeath = nil
+end
+
+-- The player leaves combat by dying (PLAYER_REGEN_ENABLED), but a wipe goes
+-- on without them: the other deaths are still told until the player is
+-- alive again.
+local function PlayerDead()
+    local dead = UnitIsDeadOrGhost("player")
+    return S.Public(dead) and dead == true
+end
+
+-- A release keeps the player a ghost; a resurrection ends the watch.
+local function PlayerAlive(self)
+    if not (self.afterDeath and PlayerDead()) then StopWatching(self) end
 end
 
 local function OnHealth(self, _, unit)
@@ -42,13 +58,18 @@ local function OnHealth(self, _, unit)
     end
 end
 
+-- The unit list and the baseline are reused for every combat.
 local function Sync(self, event)
+    local afterDeath = self.afterDeath == true and not NS.InCombat(event) and PlayerDead()
     StopWatching(self)
-    if not NS.InCombat(event) then return end
+    if not afterDeath and not NS.InCombat(event) then return end
     local grouped, raid = IsInGroup(), IsInRaid()
     if not S.Public(grouped) or grouped ~= true or not S.Public(raid) then return end
     local units = raid and RAID or PARTY
-    local watched = {}
+    local watched, baseline = self.watched or {}, self.baseline or {}
+    self.watched, self.baseline = watched, baseline
+    for i = #watched, 1, -1 do watched[i] = nil end
+    for unit in pairs(baseline) do baseline[unit] = nil end
     for i = 1, #units do
         local unit = units[i]
         -- Like upstream/live CompactUnitFrame, compare identity rather than
@@ -58,7 +79,6 @@ local function Sync(self, event)
         if S.Public(isPlayer) and not isPlayer then watched[#watched + 1] = unit end
     end
     if self.config.includePlayer then watched[#watched + 1] = "player" end
-    local baseline = {}
     for i = 1, #watched do
         local unit = watched[i]
         local exists = UnitExists(unit)
@@ -68,13 +88,27 @@ local function Sync(self, event)
         end
     end
     self.dead = baseline
+    self.afterDeath = afterDeath or nil
     self.context:Event("UNIT_HEALTH", OnHealth, true, watched)
     self.context:Event("UNIT_FLAGS", OnHealth, true, watched)
+    if afterDeath then
+        self.context:Event("PLAYER_ALIVE", PlayerAlive, true)
+        self.context:Event("PLAYER_UNGHOST", PlayerAlive, true)
+    end
+end
+
+local function CombatEnded(self, event)
+    if self.dead and PlayerDead() then
+        self.afterDeath = true
+        Sync(self, event)
+    else
+        StopWatching(self)
+    end
 end
 
 function M:Enable()
     self.context:Event("PLAYER_REGEN_DISABLED", Sync, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", StopWatching, true)
+    self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, true)
     self.context:Event("GROUP_ROSTER_UPDATE", Sync, true)
     Sync(self)
 end

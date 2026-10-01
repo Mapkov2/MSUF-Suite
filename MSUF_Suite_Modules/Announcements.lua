@@ -63,8 +63,6 @@ local function Create(self)
     self.host, self.background, self.accent = host, background, accent
     self.title, self.divider, self.subtitle = title, divider, subtitle
     self.enter, self.leave = enter, leave
-    self.hiddenParent = S.CreateFrame("Frame", nil, UIParent)
-    self.hiddenParent:Hide()
     host:Hide()
 end
 
@@ -231,9 +229,10 @@ local function Event(self, event, ...)
         ScheduleZone(self)
     elseif event == "QUEST_ACCEPTED" or event == "QUEST_TURNED_IN" then
         if not self.config.quests then return end
-        local arg1, arg2 = ...
-        local id = Number(arg2) and arg2 or Number(arg1) and arg1
-        if not id then return end
+        -- Both start with the quest ID; QUEST_TURNED_IN goes on with the XP
+        -- and money rewards (QuestLogDocumentation.lua).
+        local id = ...
+        if not Number(id) then return end
         local title = ReadText(C_QuestLog.GetTitleForQuestID, id)
         if title then
             Direct(self, "quest", title, event == "QUEST_ACCEPTED" and Tr("QUEST ACCEPTED") or Tr("QUEST COMPLETE"),
@@ -287,18 +286,19 @@ local ZONE_FRAMES = {
     { "WorldQuestCompleteBannerFrame", "quests" },
 }
 
+-- Blizzard keeps showing these frames, alerts and banners itself; the
+-- context mutes them (Runtime.lua: no Hide and no hidden parent, so none of
+-- their OnHide code runs in this addon's call, combat included).
 local function NativeZone(self)
-    if NS.IsCombatLocked() or not self.context then return end
+    if not self.context then return end
     for i = 1, #ZONE_FRAMES do
         local spec = ZONE_FRAMES[i]
         local frame = _G[spec[1]]
         if frame and not NS.Safety.IsForbidden(frame) then
             if self.config[spec[2]] then
-                self.context:Property(frame, "GetParent", "SetParent", self.hiddenParent)
-                self.context:HideControl(frame, true)
+                self.context:Mute(frame)
             else
-                self.context:RestoreProperty(frame, "SetParent")
-                self.context:HideControl(frame, false)
+                self.context:Unmute(frame)
             end
         end
     end
@@ -313,7 +313,7 @@ local function OnDisplayToast(manager)
     if not self.active or not self.context or not self.config.eventToasts then return end
     local kind, title, subtitle, id = ToastData(manager)
     local allowed = ToastAllowed(self, kind)
-    if not NS.IsCombatLocked() then self.context:HideControl(manager, allowed == true) end
+    self.context:HideUnprotected(manager, allowed == true)
     if not allowed or not title or RecentlyDirect(self, kind)
         or (kind == "scenario" and not ActiveScenario()) then return end
     Enqueue(self, kind, title, subtitle, "toast:" .. tostring(id or title))
@@ -326,11 +326,9 @@ end
 local function NativeToasts(self)
     local frame = _G.EventToastManagerFrame
     if not frame or NS.Safety.IsForbidden(frame) then return end
-    if not NS.IsCombatLocked() then
-        local enabled = false
-        if self.config.eventToasts then enabled = ToastAllowed(self, (ToastData(frame))) end
-        self.context:HideControl(frame, enabled == true)
-    end
+    local enabled = false
+    if self.config.eventToasts then enabled = ToastAllowed(self, (ToastData(frame))) end
+    self.context:HideUnprotected(frame, enabled == true)
     if not self.config.eventToasts then return end
     self.toastHooks = self.toastHooks or setmetatable({}, { __mode = "k" })
     -- hooksecurefunc raises when the hooked field is not a function.
@@ -340,7 +338,7 @@ local function NativeToasts(self)
 end
 
 local function SuppressAlerts(self, system, kind)
-    if not self.active or not self.config[kind] or NS.IsCombatLocked() then return end
+    if not self.active or not self.config[kind] then return end
     local pool = system and system.alertFramePool
     if not pool or type(pool.EnumerateActive) ~= "function" then return end
     local frames = self.alertScratch
@@ -355,8 +353,7 @@ local function SuppressAlerts(self, system, kind)
     end
     for i = 1, count do
         local frame = frames[i]
-        if frame and not NS.Safety.IsForbidden(frame) then
-            self.context:Property(frame, "GetParent", "SetParent", self.hiddenParent)
+        if frame and not NS.Safety.IsForbidden(frame) and self.context:Mute(frame) then
             self.alertFrames[frame] = kind
         end
         frames[i] = nil
@@ -397,7 +394,7 @@ local function NativeAlerts(self)
     self.alertFrames = self.alertFrames or setmetatable({}, { __mode = "k" })
     for frame, kind in pairs(self.alertFrames) do
         if not self.config[kind] then
-            self.context:RestoreProperty(frame, "SetParent")
+            self.context:Unmute(frame)
             self.alertFrames[frame] = nil
         end
     end

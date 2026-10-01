@@ -291,7 +291,13 @@ local CAST_EVENTS = {
     "UNIT_SPELLCAST_EMPOWER_STOP", "UNIT_SPELLCAST_DELAYED",
     "UNIT_SPELLCAST_CHANNEL_UPDATE", "UNIT_SPELLCAST_EMPOWER_UPDATE",
 }
+-- The global cooldown starts with the cast: at UNIT_SPELLCAST_SUCCEEDED for
+-- an instant spell, at the start for a cast-time, channeled or empowered one.
+-- With the cast display on, its cast events read the global cooldown too.
 local GCD_EVENTS = { "UNIT_SPELLCAST_SUCCEEDED" }
+local GCD_START_EVENTS = {
+    "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_EMPOWER_START",
+}
 local COMBAT_EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }
 local MOUSE_EVENTS = { "GLOBAL_MOUSE_DOWN", "GLOBAL_MOUSE_UP" }
 local ZONE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA" }
@@ -306,6 +312,7 @@ end
 local function SyncEvents(self)
     local c = self.config
     Listen(self, CAST_EVENTS, c.showCast, OnCast, "player")
+    if not c.showCast then Listen(self, GCD_START_EVENTS, c.showGCD, OnGCD, "player") end
     Listen(self, GCD_EVENTS, c.showGCD, OnGCD, "player")
     Listen(self, COMBAT_EVENTS, NeedsCombat(c), ContextChanged)
     Listen(self, ZONE_EVENTS, c.zone ~= 1, ContextChanged)

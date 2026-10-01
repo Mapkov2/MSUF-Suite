@@ -651,13 +651,13 @@
    "symbol": "sessionAPI.UnregisterSessionListener"
   },
   {
-   "file": "MSUF_Suite_Modules/ObjectivesTracker.lua",
+   "file": "MSUF_Suite_Modules/ObjectivesActions.lua",
    "kind": "client",
    "reason": "WoW Forever loads Blizzard_AchievementUI's bootstrap only for the game types its TOC allows",
    "symbol": "ShowAchievementFrameForAchievement"
   },
   {
-   "file": "MSUF_Suite_Modules/ObjectivesTracker.lua",
+   "file": "MSUF_Suite_Modules/ObjectivesActions.lua",
    "kind": "client",
    "reason": "WoW Forever loads Blizzard_EncounterJournal's bootstrap only for the game types its TOC allows",
    "symbol": "ToggleEncounterJournal"

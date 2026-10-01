@@ -34,6 +34,7 @@ local function Widget(parent, fontString)
     function w:GetHeight() return self.height or 0 end
     function w:SetHeight(a) self.height = a end
     function w:SetScale(a) self.scale = a end
+    function w:GetScale() return self.scale or 1 end
     function w:SetFrameStrata() end
     function w:EnableMouse(value) self.mouse = value end
     function w:IsMouseEnabled() return self.mouse ~= false end
@@ -61,6 +62,11 @@ local function Widget(parent, fontString)
         self.text = text
     end
     function w:SetTextColor(...) self.textColor = { ... } end
+    -- A C sink: it may receive secret values, which the stand-in only keeps.
+    function w:SetFormattedText(format, ...)
+        assert(not self.fontString or self.font, "FontString text assigned before font")
+        self.text, self.format, self.formatArgs = nil, format, { n = select("#", ...), ... }
+    end
     function w:SetJustifyH() end
     function w:SetWordWrap() end
     function w:SetFont(_, size) self.font = true; self.fontSize = size; return true end
@@ -80,6 +86,7 @@ local function Widget(parent, fontString)
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:SetShown(value) self.shown = value end
+    function w:IsShown() return self.shown end
     function w:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     return w
 end
@@ -88,8 +95,17 @@ CreateFrame = function(_, name, parent, template)
     local frame = Widget(parent)
     frame.template = template
     if template == "InsecureActionButtonTemplate" then
-        -- The client template handles the item action before addon post-hooks.
+        -- The client template handles the action before addon post-hooks:
+        -- a click on another button, a macro or the item.
         frame.OnClick = function(button, mouseButton)
+            local action = button:GetAttribute("type")
+            if action == "click" then
+                button:GetAttribute("clickbutton"):Click(mouseButton or "LeftButton")
+                return
+            elseif action == "macro" then
+                button.secureMacro = button:GetAttribute("macrotext")
+                return
+            end
             if (mouseButton == nil or mouseButton == "LeftButton")
                 and not IsModifiedClick("QUESTWATCHTOGGLE") and not IsShiftKeyDown() then
                 button.secureUsedItem = button:GetAttribute("item1")
@@ -150,8 +166,14 @@ LFGListUtil_FindScenarioGroup = function(id) foundScenario = id end
 local questActivity, openedFinder, foundQuest
 C_LFGList = { CanCreateScenarioGroup = function() return true end,
     GetActivityIDForQuestID = function(id) return id == 77 and questActivity or nil end }
+-- Insecure calls of these would taint the LFG list (ObjectivesActions.lua).
 PVEFrame_ShowFrame = function() openedFinder = openedFinder and openedFinder + 1 or 1 end
 LFGListUtil_FindQuestGroup = function(id) foundQuest = id end
+PVEFrame = Widget(UIParent)
+PVEFrame:Hide()
+local shownPanel
+ShowUIPanel = function(frame) shownPanel = frame end
+QuestObjectiveFindGroupButtonMixin = { SetUp = function(self, id) self:SetAttribute("questID", id) end }
 C_Timer = { After = function(_, callback) scheduled[#scheduled + 1] = callback end }
 local function Drain()
     local pending = scheduled
@@ -298,19 +320,39 @@ S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return m
 -- Splits and raid records belong to the character (MSUF_Suite/Core/CharacterData.lua).
 local characterData = {}
 S.CharacterData = function(id) characterData[id] = characterData[id] or {}; return characterData[id] end
+MutedHost = Widget(UIParent)
 local function Context()
-    local ctx = { events = {}, eventUnits = {}, hidden = {}, parents = {} }
+    local ctx = { events = {}, eventUnits = {}, hidden = {}, saved = {}, muted = {} }
     function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
     function ctx:RemoveEvent(event) self.events[event] = nil end
     function ctx:Skin() return nil end
     function ctx:HideControl(frame, value) self.hidden[frame] = value end
+    -- Like MSUF_Suite_Modules/Runtime.lua: the first value seen is the one
+    -- to restore.
     function ctx:Property(frame, getter, setter, value)
-        if not self.parents[frame] then self.parents[frame] = frame[getter](frame) end
+        local saved = self.saved[frame] or {}
+        self.saved[frame] = saved
+        if saved[setter] == nil then saved[setter] = frame[getter](frame) end
         frame[setter](frame, value)
     end
+    function ctx:Scale(frame, value) self:Property(frame, "GetScale", "SetScale", value) end
+    -- Runtime.lua mutes a native frame under a shown, invisible host; it works
+    -- in combat because only unprotected frames are muted.
+    function ctx:Mute(frame)
+        self.muted[frame] = self.muted[frame] or frame:GetParent()
+        frame:SetParent(MutedHost)
+        return true
+    end
+    function ctx:Unmute(frame)
+        if self.muted[frame] and frame:GetParent() == MutedHost then frame:SetParent(self.muted[frame]) end
+        self.muted[frame] = nil
+    end
+    ctx.HideUnprotected = ctx.HideControl
     function ctx:RestoreProperty(frame, setter)
-        if setter == "SetParent" and self.parents[frame] then
-            frame:SetParent(self.parents[frame]); self.parents[frame] = nil
+        local saved = self.saved[frame]
+        if saved and saved[setter] ~= nil then
+            frame[setter](frame, saved[setter])
+            saved[setter] = nil
         end
     end
     return ctx
@@ -329,24 +371,33 @@ do
     for key, value in pairs(stubs) do S[key] = value end
 end
 local private = { NS = suite, Suite = S }
-for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesTracker", "Objectives", "Announcements" }) do
+for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesActions", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
 tracker.context = Context()
 tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
     showWorldQuests = true, showBonus = true, showAchievements = true, showScenario = true }
+-- Blizzard's tracker is a right-managed Edit Mode frame: a SetParent or Hide
+-- from addon code runs its OnHide (RemoveManagedFrame and the container
+-- layout that also places the protected boss frames) inside that call.
 ObjectiveTrackerFrame = Widget(UIParent)
+do
+    local native = ObjectiveTrackerFrame
+    function native:SetParent() error("the Suite reparented Blizzard's managed objective tracker") end
+    function native:Hide() error("the Suite hid Blizzard's managed objective tracker") end
+end
+local function NativeTrackerSuppressed()
+    return tracker.context.hidden[ObjectiveTrackerFrame] == true and ObjectiveTrackerFrame:GetScale() < .01
+        and ObjectiveTrackerFrame:GetParent() == UIParent
+end
 tracker:Enable()
-assert(tracker.nativeHiddenParent and ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
-    and not ObjectiveTrackerFrame:IsVisible(),
-    "native objective tracker must remain hidden by its parent")
-ObjectiveTrackerFrame:SetParent(UIParent)
-ObjectiveTrackerFrame:Show()
+assert(NativeTrackerSuppressed(),
+    "native objective tracker must lose alpha, mouse and hit area without a parent change")
+-- The right container sets the alpha back when the UI is shown again.
+ObjectiveTrackerFrame:SetScale(1)
 tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
-assert(ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
-    and not ObjectiveTrackerFrame:IsVisible(),
-    "raid roster changes must restore native tracker suppression")
+assert(NativeTrackerSuppressed(), "raid roster changes must restore native tracker suppression")
 local combatLocked = false
 suite.IsCombatLocked = function() return combatLocked end
 -- MSUF_Suite/Core/Platform.lua: the combat edge events decide by themselves.
@@ -356,15 +407,13 @@ suite.InCombat = function(event)
     return combatLocked
 end
 combatLocked = true
-ObjectiveTrackerFrame:SetParent(UIParent)
+ObjectiveTrackerFrame:SetScale(1)
 tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
-assert(ObjectiveTrackerFrame:GetParent() == UIParent,
-    "protected combat transitions must defer native parent changes")
+assert(ObjectiveTrackerFrame:GetScale() == 1,
+    "protected combat transitions must defer native tracker changes")
 combatLocked = false
 tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
-assert(ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
-    and not ObjectiveTrackerFrame:IsVisible(),
-    "native tracker must be hidden after combat ends")
+assert(NativeTrackerSuppressed(), "native tracker must be hidden after combat ends")
 assert(movers.objectives.element == "tracker" and tracker.rows["entry:quests:42"])
 assert(tracker.host.shown and tracker.count.text == "1" and questUpdates == 1)
 tracker.rows["entry:quests:42"].OnClick(tracker.rows["entry:quests:42"])
@@ -654,15 +703,24 @@ ScenarioAlertSystem = { alertFramePool = {
 } }
 function ScenarioAlertSystem:ShowAlert() scenarioAlert:SetParent(UIParent) end
 banner:Enable()
-assert(movers.announcements.element == "banner" and banner.context.hidden[ZoneTextFrame])
+assert(movers.announcements.element == "banner" and ZoneTextFrame:GetParent() == MutedHost)
 assert(movers.announcements.spec.extraControls[1].id == "scale"
     and movers.announcements.spec.extraControls[1].set(125)
     and banner.config.scale == 125,
     "announcements popup omitted its scale control")
 assert(movers.announcements.spec.extraControls[1].set(100))
-assert(ZoneTextFrame:GetParent() == banner.hiddenParent and banner.context.hidden[EventToastManagerFrame])
+assert(SubZoneTextFrame:GetParent() == MutedHost and banner.context.hidden[EventToastManagerFrame])
 AchievementAlertSystem:ShowAlert()
-assert(achievement:GetParent() == banner.hiddenParent, "native achievement alert must be hidden")
+assert(achievement:GetParent() == MutedHost, "native achievement alert must be hidden")
+-- Blizzard shows alerts and toasts in combat too: suppressing them there as
+-- well keeps the banner from showing the same event twice.
+combatLocked = true
+banner.context.hidden[EventToastManagerFrame] = nil
+AchievementAlertSystem:ShowAlert()
+EventToastManagerFrame:DisplayToast(nil)
+combatLocked = false
+assert(achievement:GetParent() == MutedHost and banner.context.hidden[EventToastManagerFrame] ~= nil,
+    "combat let Blizzard's alert or toast show next to the banner")
 banner.context.events.QUEST_ACCEPTED(banner, "QUEST_ACCEPTED", 42)
 assert(not banner.host.shown and #banner.queue == 0, "optional quest alerts must stay off")
 GetSubZoneText = function() return "The Coreway" end
@@ -707,8 +765,8 @@ EventToastManagerFrame.currentDisplayingToast = nil
 local alertCompleted = pcall(WorldQuestCompleteAlertSystem.ShowAlert, WorldQuestCompleteAlertSystem, broken)
 assert(toastCompleted and alertCompleted and #reported == 2,
     "a raising announcement hook broke Blizzard's toast or alert call")
-assert(worldQuest:GetParent() == banner.hiddenParent
-    and scenarioAlert:GetParent() == banner.hiddenParent and #banner.queue == 3,
+assert(worldQuest:GetParent() == MutedHost
+    and scenarioAlert:GetParent() == MutedHost and #banner.queue == 3,
     "quest and scenario alerts must be hidden and represented in MSUF")
 banner.config.eventToasts, banner.config.achievements = false, false
 banner.config.quests, banner.config.scenario = false, false
@@ -795,6 +853,14 @@ EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 94,
     title = "Flight point discovered", subtitle = "Silvermoon" })
 assert(banner.showing and banner.title.text == "Flight point discovered",
     "scenario cleanup suppressed an unrelated announcement")
+-- QUEST_TURNED_IN carries questID, xpReward, moneyReward; QUEST_ACCEPTED
+-- only the questID (QuestLogDocumentation.lua).
+banner.config.quests, banner.queue = true, {}
+banner.context.events.QUEST_TURNED_IN(banner, "QUEST_TURNED_IN", 42, 1500, 300)
+assert(#banner.queue == 1 and banner.queue[1].title == "A New Hope"
+    and banner.queue[1].subtitle == "QUEST COMPLETE",
+    "a turned-in quest must announce its own title, not the quest named by its XP reward")
+banner.config.quests, banner.queue = false, {}
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
 tracker.config.colorStyle = 1
 tracker.config.backgroundOpacity = nil
@@ -895,18 +961,43 @@ assert(tracker.rows["entry:world:77"].timer.text == "5:00"
     and tracker.rows["entry:scenario:0"].timer.text == "0:50",
     "world and scenario countdowns must use their matching Blizzard data")
 if flavor == "Mainline" then
+    -- A hardware click runs PreClick, then the template's own OnClick.
+    local function Click(button)
+        if button.PreClick then button.PreClick(button, "LeftButton") end
+        button.OnClick(button, "LeftButton")
+    end
     local groupButton = tracker.rows["entry:world:77"].findGroupButton
-    assert(groupButton and groupButton.icon.atlas == "socialqueuing-icon-eye",
+    assert(groupButton and groupButton.icon.atlas == "socialqueuing-icon-eye"
+        and groupButton.template == "InsecureActionButtonTemplate",
         "world quests need a group finder button even without a quest activity")
-    groupButton.OnClick(groupButton)
-    assert(openedFinder == 1 and not foundQuest,
-        "a world quest without a quest activity must open the generic finder")
+    Click(groupButton)
+    assert(groupButton.secureMacro == "/click LFDMicroButton\n/click PVEFrameTab1\n/click GroupFinderFrameGroupButton3"
+        and not openedFinder and not foundQuest,
+        "a world quest without a quest activity must open Premade Groups through Blizzard's buttons")
+    PVEFrame:Show()
+    Click(groupButton)
+    assert(groupButton.secureMacro == "/click PVEFrameTab1\n/click GroupFinderFrameGroupButton3",
+        "an open group finder must only switch to Premade Groups")
+    PVEFrame:Hide()
     questActivity = 123
+    -- The hidden native tracker keeps Blizzard's green-eye button per quest.
+    local nativeEye = Widget(UIParent)
+    nativeEye.SetUp, nativeEye.used = QuestObjectiveFindGroupButtonMixin.SetUp, true
+    nativeEye:SetUp(77)
+    function nativeEye:Click() self.clickedQuest = self:GetAttribute("questID") end
+    WorldQuestObjectiveTracker = { usedRightEdgeFrames = { eye = nativeEye } }
     tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
     Drain()
     groupButton = tracker.rows["entry:world:77"].findGroupButton
-    groupButton.OnClick(groupButton)
-    assert(foundQuest == 77, "a groupable quest must open its quest-specific search")
+    Click(groupButton)
+    assert(nativeEye.clickedQuest == 77 and not foundQuest and not openedFinder,
+        "a groupable quest must run Blizzard's own quest search")
+    local worldRow = tracker.rows["entry:world:77"]
+    worldRow.OnClick(worldRow, "RightButton")
+    lastMenu.buttons["Open group finder"]()
+    assert(shownPanel == PVEFrame and not foundQuest and not openedFinder,
+        "the menu must open the group finder through the secure panel delegate")
+    WorldQuestObjectiveTracker = nil
 end
 widgetTime = 90
 C_ScenarioInfo.GetCriteriaInfo = function() return { description = "Defend", completed = false } end
@@ -1187,7 +1278,13 @@ if flavor == "Mainline" then
     UnitExists = function(unit) return unit == "boss1" and activeBoss == "First Guardian"
         or unit == "boss2" and activeBoss == "Second Guardian" end
     UnitName = function() return activeBoss end
-    UnitHealthPercent = function() return 70 end
+    -- UnitHealthPercent returns 0..1; Blizzard's ScaleTo100 curve maps it
+    -- to display percent (Blizzard_SharedXMLBase/CurveConstants.lua).
+    CurveConstants = { ScaleTo100 = {} }
+    local function HealthPercent(percent, curve)
+        return curve == CurveConstants.ScaleTo100 and percent or percent / 100
+    end
+    UnitHealthPercent = function(_, _, curve) return HealthPercent(70, curve) end
     local dbmStage, bigWigsStage, unboundDBM, unboundBigWigs
     local initialDBMStage = true
     DBM = {
@@ -1258,7 +1355,10 @@ if flavor == "Mainline" then
     -- Health storms share one native read and one deferred redraw. Other full
     -- paints still drain pending health before showing a stage or clock update.
     local livePercent, pendingCallbacks, healthReads = 70, #scheduled, 0
-    UnitHealthPercent = function() healthReads=healthReads+1;return livePercent end
+    UnitHealthPercent = function(_, _, curve)
+        healthReads = healthReads + 1
+        return HealthPercent(livePercent, curve)
+    end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "raid7")
     assert(#scheduled == pendingCallbacks, "a raid member's health tick reached the raid view")
     for _, value in ipairs({ 60, 55, 50 }) do
@@ -1289,8 +1389,18 @@ if flavor == "Mainline" then
     UnitHealthPercent = function() return secret end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
     table.remove(scheduled)()
-    assert(not tracker.raid.live[1].percent,
-        "secret boss health must never be compared, formatted or stored")
+    local current = tracker.raid.current
+    assert(not tracker.raid.live[1].percent and current.format == "ACTIVE BOSSES  First Guardian %.1f%%"
+        and current.formatArgs.n == 1 and current.formatArgs[1] == secret,
+        "secret boss health must reach only SetFormattedText, never Lua formatting or comparisons")
+    raidTicker:Fire()
+    assert(current.format and current.formatArgs[1] == secret,
+        "the one-second paint must keep secret boss health in its C sink")
+    UnitHealthPercent = function(_, _, curve) return HealthPercent(35, curve) end
+    tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+    table.remove(scheduled)()
+    assert(current.text and current.text:find("First Guardian 35.0%", 1, true),
+        "readable boss health must return to plain text after a secret reading")
     tracker.context.events.UNIT_HEALTH(tracker,"UNIT_HEALTH","boss1")
     local existsBeforeEnd=UnitExists
     UnitExists=function() return false end
@@ -1387,9 +1497,14 @@ C_QuestLog.GetLogIndexForQuestID = function(id) return id == 95413 and 1 or nil 
 C_QuestLog.GetInfo = function(index) return index == 1 and { isAutoComplete = autoComplete } or nil end
 C_QuestLog.IsComplete = function(id) return id == 95413 and questComplete or false end
 local completionActions, offeredRewards = {}, nil
-QuestObjectiveTracker = { RemoveAutoQuestPopUp = function(_, id)
-    completionActions[#completionActions + 1] = "remove:" .. id
+-- The tracker method also marks Blizzard's tracker dirty in the caller's
+-- code; the client function only removes the popup.
+QuestObjectiveTracker = { RemoveAutoQuestPopUp = function()
+    error("the Suite called Blizzard's tracker method from addon code")
 end }
+RemoveAutoQuestPopUp = function(id)
+    completionActions[#completionActions + 1] = "remove:" .. id
+end
 ShowQuestComplete = function(id)
     completionActions[#completionActions + 1] = "show:" .. id
     offeredRewards = id
@@ -1447,8 +1562,8 @@ assert(tracker.sources.quests[1].lines.count == 1 and not completeLine.shown,
     "reused completed rows retained a stale turn-in hint")
 tracker:Disable()
 Drain()
-tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")
-assert(ObjectiveTrackerFrame:GetParent() == UIParent,
-    "disabling the MSUF tracker must restore Blizzard's original parent")
+tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetScale")
+assert(ObjectiveTrackerFrame:GetScale() == 1 and ObjectiveTrackerFrame:GetParent() == UIParent,
+    "disabling the MSUF tracker must restore Blizzard's original scale")
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
 print("Suite HUD: owned frames, full objectives, clicks, timers, collapse, row reuse and movers passed: " .. flavor)

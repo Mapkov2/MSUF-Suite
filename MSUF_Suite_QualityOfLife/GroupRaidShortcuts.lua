@@ -313,8 +313,12 @@ function M:Enable()
     self:Refresh()
 end
 
+-- The controller stops a module only outside combat lockdown (S.Apply).
 function M:Disable()
-    if self.panel and not NS.IsCombatLocked() then UnregisterStateDriver(self.panel, "visibility"); self.panel:Hide() end
+    if self.panel then
+        UnregisterStateDriver(self.panel, "visibility")
+        self.panel:Hide()
+    end
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     self.context:RemoveEvent("PLAYER_ROLES_ASSIGNED")
     self.context:RemoveEvent("ROLE_CHANGED_INFORM")

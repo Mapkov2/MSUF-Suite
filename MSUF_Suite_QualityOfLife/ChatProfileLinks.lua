@@ -17,12 +17,24 @@ local function Encode(segment)
     end))
 end
 
+-- The typographic apostrophe is three UTF-8 bytes; it is removed as a whole
+-- sequence, never byte by byte (a class would cut other characters too).
+local TYPOGRAPHIC_APOSTROPHE = "\226\128\153"
+
 local function RealmSlug(realm)
-    -- Blizzard may provide "Tarren Mill" or its normalized "TarrenMill".
-    realm = realm:gsub("(%l)(%u)", "%1-%2")
-        :gsub("(%a)(%d)", "%1-%2")
-        :gsub("[%s_]+", "-")
-        :gsub("['’]", "")
+    -- Blizzard may provide "Tarren Mill" or its normalized "TarrenMill". The
+    -- player's own realm has its display name, spaces included; for another
+    -- normalized realm, word breaks are guessed from capitals and digits.
+    if not realm:find(" ", 1, true) then
+        local own = S.PublicText(GetNormalizedRealmName())
+        if own == realm then realm = S.PublicText(GetRealmName()) or realm end
+    end
+    if not realm:find(" ", 1, true) then
+        realm = realm:gsub("(%l)(%u)", "%1-%2"):gsub("(%a)(%d)", "%1-%2")
+    end
+    realm = realm:gsub("[%s_]+", "-")
+        :gsub("'", "")
+        :gsub(TYPOGRAPHIC_APOSTROPHE, "")
         :lower()
     return Encode(realm)
 end

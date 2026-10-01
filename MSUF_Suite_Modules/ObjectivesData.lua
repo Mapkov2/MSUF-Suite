@@ -1,9 +1,11 @@
 local _, P = ...
 local S = P.Suite
 
--- An MSUF-owned objective tracker, split over three files that share
+-- An MSUF-owned objective tracker, split over files that share
 -- P.Objectives (TOC order): ObjectivesData.lua reads Blizzard's objectives
--- into reused entry tables, ObjectivesTracker.lua owns the frame and draws
+-- into reused entry tables, ObjectivesDetails.lua adds quest icons and
+-- scenario headers, ObjectivesActions.lua holds what rows do (Blizzard
+-- actions and context menus), ObjectivesTracker.lua owns the frame and draws
 -- its rows, and Objectives.lua runs the module (events, refresh flow and
 -- lifecycle). Events mark sources dirty; one deferred flush per frame
 -- re-reads them, and rows are laid out again only when their content or

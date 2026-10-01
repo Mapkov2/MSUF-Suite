@@ -2,7 +2,24 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = {}
 local ID = "combatPetStatus"
-local PET_CLASSES = { HUNTER = true, WARLOCK = true }
+-- Classes with a summoned pet, by the spellbook spell that summons it (Call
+-- Pet 1, Summon Imp). The class alone is not enough: Marksmanship hunters
+-- learn Call Pet only through a talent, and a warlock who knows Grimoire of
+-- Sacrifice plays without a demon on purpose.
+local PET_SUMMONS = { HUNTER = 883, WARLOCK = 688 }
+local PETLESS = { WARLOCK = 108503 }
+
+local function Known(spellID)
+    local known = C_SpellBook.IsSpellKnown(spellID)
+    return S.Public(known) and known == true
+end
+
+local function ExpectsPet(class)
+    local summon = PET_SUMMONS[class]
+    if not summon or not Known(summon) then return false end
+    local petless = PETLESS[class]
+    return not (petless and Known(petless))
+end
 
 local function Create(self)
     if self.host then return end
@@ -73,6 +90,12 @@ local function OnEvent(self, event)
     Update(self, event)
 end
 
+-- Talent and specialization changes reach the spellbook.
+local function OnSpellsChanged(self, event)
+    self.petClass = ExpectsPet(self.classFile)
+    Update(self, event)
+end
+
 local function SyncEvents(self)
     local c, context = self.config, self.context
     if c.showMissing or c.showDead then
@@ -88,11 +111,16 @@ local function SyncEvents(self)
         if c.combatOnly then context:Event(event, OnEvent, true)
         else context:RemoveEvent(event) end
     end
+    if c.showMissing and PET_SUMMONS[self.classFile] then
+        context:Event("SPELLS_CHANGED", OnSpellsChanged, true)
+    else
+        context:RemoveEvent("SPELLS_CHANGED")
+    end
 end
 
 function M:Enable()
-    local class = UnitClassBase("player")
-    self.petClass = S.PublicText(class) and PET_CLASSES[class] == true or false
+    self.classFile = S.PublicText(UnitClassBase("player"))
+    self.petClass = ExpectsPet(self.classFile)
     Create(self)
     Place(self)
     self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, true)

@@ -43,5 +43,27 @@ combat = false
 context.events.PLAYER_REGEN_ENABLED.callback(module, "PLAYER_REGEN_ENABLED")
 assert(not context.events.UNIT_HEALTH and not context.events.UNIT_FLAGS,
     "group health events remained registered after combat")
+-- A wipe: the player's own death ends their combat (PLAYER_REGEN_ENABLED),
+-- the other deaths are still told until the player is alive again.
+members.party1, members.party2, members.player = false, false, false
+context.events.PLAYER_REGEN_DISABLED.callback(module, "PLAYER_REGEN_DISABLED")
+combat = true
+local watched, baseline = context.events.UNIT_HEALTH.units, module.dead
+context.events.GROUP_ROSTER_UPDATE.callback(module, "GROUP_ROSTER_UPDATE")
+assert(context.events.UNIT_HEALTH.units == watched and module.dead == baseline,
+    "a roster change in combat built new unit and baseline tables")
+members.player, combat = true, false
+context.events.PLAYER_REGEN_ENABLED.callback(module, "PLAYER_REGEN_ENABLED")
+assert(context.events.UNIT_HEALTH and context.events.PLAYER_UNGHOST,
+    "the player's death stopped the alerts for the rest of the wipe")
+members.party2 = true
+context.events.UNIT_HEALTH.callback(module, "UNIT_HEALTH", "party2")
+assert(#lines == 2 and lines[2] == "Player died", "a death after the player's own was not reported")
+context.events.PLAYER_ALIVE.callback(module, "PLAYER_ALIVE")
+assert(context.events.UNIT_HEALTH, "releasing the spirit ended the watch while the group still fights")
+members.player = false
+context.events.PLAYER_UNGHOST.callback(module, "PLAYER_UNGHOST")
+assert(not context.events.UNIT_HEALTH and not context.events.PLAYER_ALIVE,
+    "the watch outlived the player's resurrection")
 module:Disable()
 print("Suite group death alert lifecycle passed")

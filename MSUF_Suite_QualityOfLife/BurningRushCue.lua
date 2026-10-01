@@ -127,8 +127,8 @@ function M:Refresh()
     Update(self)
 end
 
+-- The controller stops a module only outside combat lockdown (S.Apply).
 function M:Disable()
-    if NS.IsCombatLocked() then S.Queue(ID); return end
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     self.context:RemoveEvent("PLAYER_REGEN_DISABLED")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
