@@ -137,10 +137,15 @@ end
 BonusRollMoneyWonFrame = ScriptFrame()
 ITEM_QUALITY4_DESC, ITEM_QUALITY3_DESC = "Epic", "Rare"
 ITEM_QUALITY_COLORS = { [3] = { r = 0, g = .44, b = .87 }, [4] = { r = .64, g = .21, b = .93 } }
+-- "late" is an item the client has no data for until lateCached: GetItemInfo
+-- returns nothing, GetItemInfoInstant always knows the item ID.
+local lateCached = false
+local ITEM_IDS = { epic = 10, rare = 11, late = 12 }
 C_Item = { GetItemInfo = function(link)
     if link == "epic" then return "Epic thing", link, 4 end
     if link == "rare" then return "Rare thing", link, 3 end
-end }
+    if link == "late" and lateCached then return "Late thing", link, 4 end
+end, GetItemInfoInstant = function(link) return ITEM_IDS[link] end }
 
 local S, movers, modules = {}, {}, {}
 S.Public = function(value) return value ~= "secret" end
@@ -172,7 +177,8 @@ local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLoc
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PopupAttention.lua"))("test", { NS = NS, Suite = S })
 local popup = modules.popupAttention
 popup.active = true
-popup.context = { Event = function() end, RemoveEvent = function() end }
+popup.context = { events = {}, Event = function(self, event, fn) self.events[event] = fn end,
+    RemoveEvent = function(self, event) self.events[event] = nil end }
 popup.config = { skin = false, dialogFont = false, fontSize = 16, minHeight = 0, move = false, x = 50, y = 80,
     reviveCue = 2, reviveButton = true, lootQualityName = true, moneyToastFrame = true }
 popup:Enable()
@@ -188,6 +194,23 @@ local currency = LootAlertSystem:ShowAlert("epic", 1, nil, nil, nil, true)
 Check(not popup.qualityLabels[currency] or not popup.qualityLabels[currency].shown, "a currency toast got a quality name")
 LootWonAlertFrame_SetUp(BonusRollLootWonFrame, "rare", 1)
 Check(popup.qualityLabels[BonusRollLootWonFrame].text == "Rare", "the bonus roll toast did not name its quality")
+-- An item without client data yet names its quality once the data arrives.
+local late = LootAlertSystem:ShowAlert("late", 1)
+local arrived = popup.context.events.GET_ITEM_INFO_RECEIVED
+Check(arrived and not (popup.qualityLabels[late] and popup.qualityLabels[late].shown),
+    "a toast for an uncached item did not wait for its data")
+arrived(popup, "GET_ITEM_INFO_RECEIVED", 99, true)
+Check(popup.context.events.GET_ITEM_INFO_RECEIVED, "another item's data ended the wait")
+lateCached = true
+arrived(popup, "GET_ITEM_INFO_RECEIVED", 12, true)
+Check(popup.qualityLabels[late] and popup.qualityLabels[late].shown and popup.qualityLabels[late].text == "Epic"
+    and not popup.context.events.GET_ITEM_INFO_RECEIVED, "the quality of an uncached item was dropped")
+lateCached = false
+local gone = LootAlertSystem:ShowAlert("late", 1)
+gone:Hide()
+popup.context.events.GET_ITEM_INFO_RECEIVED(popup, "GET_ITEM_INFO_RECEIVED", 12, true)
+Check(not popup.context.events.GET_ITEM_INFO_RECEIVED and not popup.qualityLabels[gone],
+    "a hidden toast kept waiting or was labelled")
 popup.config.lootQualityName = false
 popup:Refresh()
 Check(not label.shown, "turning the quality name off kept a visible label")
