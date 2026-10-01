@@ -82,24 +82,7 @@ local stamp = 0
 local debounced = false
 
 ------------------------------------------------------------------ helpers
-local function SameSet(a, b)
-    for id in pairs(a) do
-        if not b[id] then
-            return false
-        end
-    end
-    for id in pairs(b) do
-        if not a[id] then
-            return false
-        end
-    end
-    return true
-end
-local function CopySet(into, from)
-    wipe(into)
-    for id in pairs(from) do into[id] = true end
-    return into
-end
+local SameSet, CopySet = K.SameSet, K.CopySet
 
 -- includeSpellIDs of an entry: Resolve gives every aura entry (and every
 -- cooldown with an aura) its auraIDs; callers copy what they keep.
@@ -258,6 +241,7 @@ local function Build(rec, view, n)
     rec.gStyle, rec.gTint = view.glowStyle, view.glowTint == true
     rec.gR, rec.gG, rec.gB = view.glowR or 1, view.glowG or 1, view.glowB or 1
     rec.timeBar, rec.stackBar, rec.topBar = K.BarTime(view), K.BarStacks(view, false), K.BarStacksTop(view)
+    rec.colorAt, rec.colorHex = view.barStackColorAt or 0, view.barStackColor or "ff6633"
     local threshold = C.state.threshold
     local keys = rec.keys
     stamp = stamp + 1
@@ -347,6 +331,7 @@ local function Retire(slot, fam, unit)
     Hush(rec)
     rec.frame:SetEnabled(false)
     rec.frame:Hide()
+    C.AuraButtons.ReleaseGlows(rec)
     -- Every retired container stays reusable: it cannot be freed, so one
     -- dropped from the pool would only be replaced by a new one.
     local pool = pools[slot]
@@ -393,8 +378,14 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
     local pan = fam == "aura" and view.pandemic == true
     local glow = fam == "aura" and (view.auraGlow == true or need.glow == true)
     local stack, kit = need.stack == true, fam == "aura" and need.kit == true
+    local stackFill = role == "bar" and view.barStacks == true
+    local stackExtra = stackFill and stack
+    if stackFill then stack = false end -- The native button has one application-bar binding.
+    local color = stackFill and (view.barStackColorAt or 0) > 0
+    -- Region sets only: the stack maximum and markers are looks (Look),
+    -- applied in place, so a slider drag never builds another container.
     local bind = (fixed and "s" or "g") .. role .. (text and 1 or 0) .. (name and 1 or 0) .. (pan and 1 or 0) .. (glow and 1 or 0)
-        .. (stack and 1 or 0) .. (kit and 1 or 0) .. fill
+        .. (stack and 1 or 0) .. (kit and 1 or 0) .. fill .. (stackFill and 1 or 0) .. (color and 1 or 0) .. (stackExtra and 1 or 0)
     local rec = byUnit[unit]
     if rec and rec.bind ~= bind then
         Retire(slot, fam, unit)
@@ -412,6 +403,7 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
             if fixed then container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0) end
             rec = { frame = container, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
                 text = text, name = name, pandemic = pan, glow = glow, stack = stack, kit = kit, fill = fill, geo = 0,
+                stackFill = stackFill, stackExtra = stackExtra, color = color,
                 keys = {}, on = {}, act = {}, shut = {}, filter = {}, ids = {}, entry = {}, anchors = {}, byAnchor = {}, topts = {}, li = {}, lg = {},
                 mark = {}, parts = {}, lk = {} }
             if kit then
@@ -714,7 +706,7 @@ end
 -- aura, anchored to that icon. Needs the bar's icons (C.Icons.Sync) first.
 function A.SyncOverlays(slot, force)
     local view, plan = C.views[slot], C.plans[slot]
-    if not (view and plan and view.on and plan.kind == 1) then
+    if not (view and plan and view.on and plan.kind == 1 and not view.cooldownDuration) then
         if live[slot] then
             ReleaseFam(slot, "over")
             RefreshTargets()
@@ -785,6 +777,10 @@ function A.TargetChanged()
             rec.frame:SetEnabled(enabled)
         elseif enabled then
             rec.frame:UpdateAllAuras()
+            -- Fixed slot buttons stay shown across a retarget (aura groups
+            -- release and show theirs again), so the stack colour and stack
+            -- glow containers inside them are told as well.
+            if rec.fixed and (rec.color or rec.stackExtra) then C.StackColors.Retarget(rec) end
         end
     end
 end
@@ -838,6 +834,7 @@ end
 -- pending, and the sealed-button debounce: runs every sync that combat or
 -- sealed buttons held back, then pending aura sounds.
 function A.FlushPending()
+    C.AuraButtons.FlushGates()
     if IsCombatLocked() then return end
     local n = 0
     for slot in pairs(A.pending) do
@@ -872,4 +869,3 @@ function A.SetPreview(on)
         end
     end
 end
-

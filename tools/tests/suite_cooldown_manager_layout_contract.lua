@@ -311,6 +311,17 @@ end
 ------------------------------------------------------------------ offsets (pure)
 local out={}
 local grid={kind=1,size=10,height=100,spacing=2,perRow=4,maxIcons=0,vertical=false,align=1,grow=1}
+do
+    local mixed={kind=1,size=20,height=100,spacing=2,perRow=2,laterPerRow=3,laterSize=10,align=2,grow=1}
+    local points={}
+    local mw,mh,mn=L.Offsets(mixed,6,points)
+    assert(mw==42 and mh==44 and mn==6,"mixed rows must account for each row's footprint")
+    assert(points[1]==0 and points[3]==22 and points[6]==-22 and points[12]==-34)
+    assert(L.Footprint(mixed,2)==20 and L.Footprint(mixed,3)==10)
+    mixed.grow=2
+    L.Offsets(mixed,6,points)
+    assert(points[2]==-24 and points[12]==0,"upward growth keeps the first larger row on its growth edge")
+end
 ResetCalls()
 local w,h,n=L.Offsets(grid,6,out)
 assert(Writes()==0,"Offsets must not touch widgets")
@@ -1125,6 +1136,13 @@ assert((calls.ClearAllPoints or 0)==0,"moving a placed icon keeps its single poi
 assert(Point(C.bars.uti.frame)[2]==essBar.frame,"uti still attached")
 L.Apply("ess")
 assert(#overlayLog==1,"a steady hidden icon repeats no overlay edge")
+C.views.ess.cooldownFixed=true
+L.Apply("ess")
+CheckPoint(essEntries[3].icon,"TOPLEFT",essBar.frame,"TOPLEFT",42,0,"fixed cooldown row reserves hidden entry's place")
+assert(not essEntries[2].icon.shown and #overlayLog==1,"fixed places must not reveal hidden cooldowns")
+C.views.ess.cooldownFixed=false
+L.Apply("ess")
+CheckPoint(essEntries[3].icon,"TOPLEFT",essBar.frame,"TOPLEFT",126,0,"collapsing cooldown placement restores")
 C.state.preview=true
 L.Apply("ess")
 assert(essEntries[2].icon.shown and essBar.frame.w==208,"preview shows hidden entries")
@@ -2109,6 +2127,8 @@ do
     S.CreateFontString=function(parent) return CreateFrame("FontString",nil,parent) end
     UnitClass=function() return "Mage","MAGE" end
     C.spells={e={}}
+    -- Resolve.lua's choice accessor; no specialization choices here.
+    C.Choices=function() return C.spells.e end
     C.Catalog={order={},records={},RecordTexture=function() end}
     local keys={bar={"a1","a2"},ess={"s1","s2","s3"}}
     C.Resolve={
@@ -2120,6 +2140,21 @@ do
         end,
         Describe=function(key,d) d.texture,d.name=key=="a2" and 502 or 501,key;return d end,
     }
+    -- Row painting is exercised with the real renderer in the CDM contract;
+    -- this fixture isolates the common canvas layout and lifetime.
+    C.AuraButtons={Sample=function(parent,row,view,ov,texture,name)
+        if not row then
+            row=CreateFrame("Frame",nil,parent)
+            row.icon=CreateFrame("Texture",nil,row)
+            row.name=CreateFrame("FontString",nil,row)
+            row:SetSize(view.barWidth,view.barHeight)
+            row.icon:SetTexture(texture);row.name:SetText(name)
+        end
+        return row
+    end}
+    C.Icons.Apply=function() end
+    C.Icons.SetKeybind=function() end
+    C.TrackingBars={Charges=function() end}
     C.Icons.CreateStandalone=function(parent) return CreateFrame("Frame",nil,parent) end
     C.Icons.StyleIcon=function(icon,view) icon.styleGen,icon.styleView=view.styleGen,view;icon:SetSize(1,1) end
     C.Icons.SetTexture=function(icon,texture) if icon.lastTex~=texture then icon.lastTex=texture;icon:SetTexture(texture) end end
@@ -2133,15 +2168,6 @@ do
     ResetCalls()
     Pv.Render(stage,"bar",400,200)
     assert(Writes()==0,"an unchanged repaint of rows wrote "..Writes().." times")
-    -- a look change restyles every row once
-    C.views.bar.barTexture="Interface\\Other"
-    ResetCalls()
-    Pv.Render(stage,"bar",400,200)
-    assert(row.bg.texture=="Interface\\Other" and row.fill.texture=="Interface\\Other" and calls.SetVertexColor==4,"one restyle per row")
-    ResetCalls()
-    Pv.Render(stage,"bar",400,200)
-    assert(Writes()==0,"restyled rows repaint without writes")
-    C.views.bar.barTexture=nil
     -- icons on the same holder: rows hide, icons show; a repaint writes nothing
     local same=Pv.Render(stage,"ess",60,100)
     assert(same==canvas and #canvas.icons==3 and canvas.icons[1].shown and not canvas.rows[1].shown,"one reused canvas per parent")

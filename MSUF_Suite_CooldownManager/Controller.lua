@@ -29,6 +29,12 @@ local first, optionsPreview = true, false
 ------------------------------------------------------------------ preview mode
 local function PreviewChanged()
     dirty.resolve, dirty.cooldowns, dirty.effects, dirty.layout, dirty.visibility = true, true, true, true, true
+    -- All glows only in combat leaves aura glows on in the preview: the aura
+    -- buttons take that through a structural sync of every bar.
+    if C.state.allGlowsCombat then
+        local slots = NS.CDM.SLOTS
+        for i = 1, #slots do F.sync[slots[i].key] = true end
+    end
     Schedule()
 end
 -- MSUF Edit Mode wins over the options page; both suspend the bar rules.
@@ -48,7 +54,11 @@ function M:Enable()
     self.context:Callback("CooldownViewerSettings.OnHide", Ev.OnLayoutChanged)
     -- The suite action bars started, stopped or changed their form pages:
     -- the key texts they answered are stale.
-    self.context:Callback("MSUFSuite.ActionBars.BindingsChanged", Ev.OnBindings)
+    self.context:Callback("MSUFSuite.ActionBars.BindingsChanged", Ev.OnActionBars)
+    -- The suite action bars paged bar 1 themselves (target or modifier
+    -- paging): glows on its buttons may describe the previous page.
+    self.context:Callback("MSUFSuite.ActionBars.ActionsChanged", Ev.OnActionPage)
+    self.context:Callback("AssistedCombatManager.OnSetUseAssistedHighlight", Ev.OnAssistPolicyChanged)
     self:Refresh()
 end
 
@@ -60,7 +70,9 @@ function M:Refresh()
     ReadViews(config, all, text)
     DecodeData(config)
     if all then dirty.catalog, dirty.resolve, dirty.layout, dirty.visibility, dirty.events, dirty.keybinds = true, true, true, true, true, true end
+    C.PressBridge()
     ApplyPreview()
+    C.Effects.Recommendation()
     if not St.CaptureWaiting() then
         C.Native.Apply()
         St.SyncViewerOffset()
@@ -88,11 +100,13 @@ end
 -- Each release step runs isolated (Dispatch), as Context:Release does: one
 -- that raises is reported and every later step still runs.
 function M:Disable()
+    Dispatch(C.PressBridge)
     Dispatch(C.Preview.SetMode, nil)
     Dispatch(C.Preview.ReleaseAll)
     Dispatch(St.ForgetCapture)
     Dispatch(C.Alerts.ReleaseAll)
     Dispatch(C.Auras.ReleaseAll)
+    Dispatch(C.ActionGlows.Release)
     Dispatch(C.Effects.ReleaseAll)
     Dispatch(C.Icons.ReleaseAll)
     Dispatch(C.Layout.HideAll)

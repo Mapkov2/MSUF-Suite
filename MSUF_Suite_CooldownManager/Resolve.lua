@@ -14,12 +14,30 @@ local type, pairs, tonumber = type, pairs, tonumber
 local EMPTY = C.EMPTY
 local wipe = C.wipe
 local CDM = NS.CDM
+-- The per-spell choices in effect for the current specialization (shared
+-- choices with this specialization's on top). The one accessor the build,
+-- the options rows and the previews read; cached per data and spec.
+local choiceData, choiceSpec, choiceMap
+function C.Choices()
+    local spec = C.state.specID
+    if choiceData ~= C.spells or choiceSpec ~= spec then
+        choiceData, choiceSpec = C.spells, spec
+        choiceMap = CDM.EffectiveSpells(choiceData, spec)
+    end
+    return choiceMap or EMPTY
+end
+-- A build after a spec change refreshes the choices of entries that kept
+-- their place (Compare).
+local buildSpec, overrideScopeChanged
 local SLOTS = CDM.SLOTS
 local Catalog = C.Catalog
 local Num = Catalog.Num
 
 local Resolve = {}
 C.Resolve = Resolve
+local conditionKnown, conditionsPending, conditionSpec = {}, false, nil
+local REQUIRE = { "requireSpell1", "requireSpell2", "requireSpell3" }
+local EXCLUDE = { "excludeSpell1", "excludeSpell2", "excludeSpell3" }
 
 -- Healthstones (Presets.CONSUMABLES): their item entries and Blizzard's
 -- records of their categories hide while the bags hold none (hideEmpty,
@@ -86,6 +104,35 @@ local function Known(spell)
 end
 local function BaseSpell(id)
     return Num(C_Spell.GetBaseSpell(id)) or id
+end
+
+-- Talent and spell conditions (requireSpell1..3, excludeSpell1..3): known in
+-- the player's or the pet's spell book (Known). The spell book is readable
+-- in combat too. A value holds once read: SpellsChanged in combat defers the
+-- wipe to the end of the fight, so entries never come and go mid-fight, and
+-- a value first read in combat (a reload mid-fight) is read again after it.
+local function ConditionKnown(id)
+    local value = conditionKnown[id]
+    if value ~= nil then return value end
+    value = Known(id)
+    conditionKnown[id] = value
+    if NS.IsCombatLocked() then conditionsPending = true end
+    return value
+end
+function Resolve.ConditionsAllow(ov)
+    if not ov then return true end
+    for i = 1, 3 do
+        local required, excluded = ov[REQUIRE[i]], ov[EXCLUDE[i]]
+        if required and ConditionKnown(required) ~= true then return false end
+        if excluded and ConditionKnown(excluded) ~= false then return false end
+    end
+    return true
+end
+function Resolve.ResumeConditions()
+    if not conditionsPending then return false end
+    wipe(conditionKnown)
+    conditionsPending = false
+    return true
 end
 local function OverrideOf(base)
     local id = Num(C_SpellBook.FindSpellOverrideByID(base))
@@ -344,7 +391,14 @@ local function PresetKnown(key)
     end
     return known
 end
-function Resolve.SpellsChanged() wipe(presetKnown) end
+function Resolve.SpellsChanged()
+    wipe(presetKnown)
+    if NS.IsCombatLocked() then
+        conditionsPending = true
+    else
+        wipe(conditionKnown)
+    end
+end
 
 -- A healthstone has two keys, its item and Blizzard's record of its
 -- category, and a user list can hold either (the page saves the keys a bar
@@ -395,6 +449,10 @@ end
 -- defaults for Essential, Utility, Defensives and both buff rows.
 local function ListOf(i, specLists, presets)
     local def = SLOTS[i]
+    local view = C.views[def.key]
+    if def.custom and view and view.shareContents then
+        return C.lists and C.lists.shared and C.lists.shared[def.key] or EMPTY, true
+    end
     local list = specLists and specLists[def.key]
     if type(list) == "table" then return list, true end
     if def.key == "ess" or def.preset == "defensives" then return presets[def.key], false end
@@ -420,6 +478,12 @@ end
 local function Claim(specLists, presets)
     wipe(claimed)
     wipe(slotHome)
+    for i, def in ipairs(SLOTS) do
+        local view = C.views[def.key]
+        if def.custom and view and view.shareContents then
+            ClaimList(C.lists and C.lists.shared and C.lists.shared[def.key] or EMPTY, def.key, KIND_FAMILY[KindOf(i)])
+        end
+    end
     for pass = 1, 2 do
         if pass == 2 then
             local i = CDM.SLOT_INDEX.def
@@ -597,37 +661,27 @@ for i = 1, #WATCH do
     end
 end
 local touched, auraTouched, was, wasIDs = {}, {}, {}, {}
+local SameSet, CopySet = C.Const.SameSet, C.Const.CopySet
+local wasChoices
 Resolve.touched, Resolve.auraTouched = touched, auraTouched
 local function Snapshot(entry)
+    wasChoices = entry.ov
     for i = 1, #WATCH do was[i] = entry[WATCH[i]] end
-    wipe(wasIDs)
-    local ids = entry.auraIDs
-    if ids then
-        for id in pairs(ids) do
-            wasIDs[id] = true
-        end
-    end
-end
-local function SameIDs(ids)
-    local n = 0
-    if ids then
-        for id in pairs(ids) do
-            if not wasIDs[id] then return false end
-            n = n + 1
-        end
-    end
-    for _ in pairs(wasIDs) do n = n - 1 end
-    return n == 0
+    CopySet(wasIDs, entry.auraIDs or EMPTY)
 end
 local function Compare(entry)
-    local diff = false
+    -- Settings changes already refresh all affected behavior/auras. A spec
+    -- change can keep the same entry list, so explicitly refresh its choices.
+    local choicesChanged = overrideScopeChanged and wasChoices ~= entry.ov
+    local diff = choicesChanged
     for i = 1, #WATCH do
         if was[i] ~= entry[WATCH[i]] then
             diff = true
             break
         end
     end
-    local aura = was[UNIT_AT] ~= entry.unit or was[HASAURA_AT] ~= entry.hasAura or not SameIDs(entry.auraIDs)
+    local aura = was[UNIT_AT] ~= entry.unit or was[HASAURA_AT] ~= entry.hasAura or not SameSet(entry.auraIDs or EMPTY, wasIDs)
+        or (choicesChanged and entry.hasAura)
     if diff or aura then touched[#touched + 1] = entry end
     if aura then auraTouched[entry] = true end
 end
@@ -638,6 +692,7 @@ end
 -- table is made or any spell data is read.
 local function Materialize(key, slot, index, preview, spells)
     if placed[key] then return nil end
+    if not preview and not Resolve.ConditionsAllow(spells[key]) then return nil end
     local src, id = Parse(key)
     if src == "b" then
         local rec = Catalog.records[id]
@@ -654,6 +709,7 @@ local function Materialize(key, slot, index, preview, spells)
     ov = type(ov) == "table" and ov or EMPTY
     local chosen = entry.unit and AURA_UNIT[ov.auraUnit]
     if chosen then entry.unit = chosen end
+    entry.ov = ov
     if old then Compare(old) end
     entry.slot, entry.index, entry.ov = slot, index, ov
     entries[key], placed[key] = entry, true
@@ -686,17 +742,52 @@ local function Fold(plan, kind, n)
     return diff
 end
 
+-- "Send excess cooldowns to": the bar that takes a shown cooldown bar's
+-- entries past Maximum icons. One hop only: the destination must be another
+-- shown cooldown bar without its own overflow (no cycles, no
+-- order-dependent chains); anything else routes nothing. The build and
+-- the options rows (Exports) share this rule.
+function Resolve.OverflowTarget(slot)
+    local i = CDM.SLOT_INDEX[slot]
+    local view = i and C.views[slot]
+    local cap = view and view.maxIcons
+    if not (view and view.on and KindOf(i) == 1 and type(cap) == "number" and cap > 0) then return nil end
+    local target = SLOTS[(view.overflow or 1) - 1]
+    local key = target and target.key
+    local targetView = key and key ~= slot and C.views[key]
+    if targetView and targetView.on and KindOf(CDM.SLOT_INDEX[key]) == 1 and (targetView.overflow or 1) == 1 then return key end
+end
+local function RouteOverflow(plans)
+    for i = 1, #SLOTS do
+        local slot = SLOTS[i].key
+        local plan = plans[slot]
+        local target = plan and Resolve.OverflowTarget(slot)
+        local targetPlan = target and plans[target]
+        if targetPlan then
+            local cap = C.views[slot].maxIcons
+            local source, destination = plan.staging, targetPlan.staging
+            for j = cap + 1, #source do destination[#destination + 1] = source[j] end
+            for j = #source, cap + 1, -1 do source[j] = nil end
+        end
+    end
+end
+
 -- Returns C.plans and whether any bar's entry list changed. Each plan's gen
 -- increments when its list changes; Resolve.touched lists entries that kept
 -- their place but changed on refill. view.maxIcons is applied by the layout.
 function Resolve.Build()
     local views, plans, entries = C.views, C.plans, C.entries
     local state = C.state
+    if not NS.IsCombatLocked() and (conditionsPending or conditionSpec ~= state.specID) then
+        wipe(conditionKnown)
+        conditionsPending, conditionSpec = false, state.specID
+    end
     local preview = state.preview == true
     -- The options canvas redraws only when entries may have changed.
     state.entryGen = (state.entryGen or 0) + 1
     local specLists, hidden, replaced = SpecData()
-    local spells = type(C.spells) == "table" and type(C.spells.e) == "table" and C.spells.e or EMPTY
+    overrideScopeChanged, buildSpec = buildSpec ~= state.specID, state.specID
+    local spells = C.Choices()
     local presets = PresetLists()
     Claim(specLists, presets)
     wipe(placed)
@@ -710,7 +801,7 @@ function Resolve.Build()
             local kind = KindOf(i)
             local plan = planCache[slot]
             if not plan then
-                plan = { slot = slot, entries = {}, gen = 0 }
+                plan = { slot = slot, entries = {}, staging = {}, gen = 0 }
                 planCache[slot] = plan
             end
             local count = Collect(i, kind, specLists, hidden, replaced, preview, keys, presets)
@@ -730,11 +821,29 @@ function Resolve.Build()
                 end
             end
             for j = #tmp, n + 1, -1 do tmp[j] = nil end
-            if Fold(plan, kind, n) or plans[slot] ~= plan then any = true end
+            local staging = plan.staging
+            for j = 1, n do staging[j] = tmp[j] end
+            for j = #staging, n + 1, -1 do staging[j] = nil end
+            plan.stagingKind = kind
+            if plans[slot] ~= plan then any = true end
             plans[slot] = plan
         elseif plans[slot] then
             plans[slot] = nil
             any = true
+        end
+    end
+    RouteOverflow(plans)
+    for i = 1, #SLOTS do
+        local slot = SLOTS[i].key
+        local plan = plans[slot]
+        if plan then
+            local staging = plan.staging
+            for j = 1, #staging do
+                local entry = staging[j]
+                entry.slot, entry.index, tmp[j] = slot, j, entry
+            end
+            for j = #tmp, #staging + 1, -1 do tmp[j] = nil end
+            if Fold(plan, plan.stagingKind, #staging) then any = true end
         end
     end
     -- Entries that left every bar lose their place; Icons releases their frames.

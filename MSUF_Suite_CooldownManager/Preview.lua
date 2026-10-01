@@ -19,7 +19,6 @@ local pairs, type, max, min = pairs, type, math.max, math.min
 local wipe = table.wipe
 local QUESTION = 134400
 local SIM_LENGTH, SIM_LOOP = 8, 10
-local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
 
 ------------------------------------------------------------------ sample icons
 -- The first class spells of each family in Blizzard's order, unlearned ones
@@ -237,7 +236,8 @@ end
 -- unlearned spells included, sample icons for an empty bar.
 local function Content(slot, kind, holder)
     local keys = C.Resolve.Keys(slot, keyScratch)
-    local spells = type(C.spells) == "table" and type(C.spells.e) == "table" and C.spells.e or EMPTY
+    -- The choices in effect for this specialization, as the live bars read them.
+    local spells = C.Choices()
     local itemKeys, dim, textures, names = holder.keys, holder.dim, holder.textures, holder.names
     local n = 0
     for i = 1, #keys do
@@ -281,6 +281,7 @@ local function HideFrom(list, first)
     for i = first, #list do Shown(list[i], false) end
 end
 
+local SAMPLE_CHARGES = { maxCharges = 3, currentCharges = 2, isActive = false }
 local function Icons(holder, view, count, slot)
     local icons, fakes, out, textures = holder.icons, holder.fakes, holder.out, holder.textures
     for i = 1, count do
@@ -292,8 +293,27 @@ local function Icons(holder, view, count, slot)
             fakes[i] = { key = "preview", src = "p", id = i, family = 1, ov = EMPTY, icon = icon }
             icon.entry = fakes[i]
         end
-        fakes[i].slot = slot
-        if icon.styleGen ~= view.styleGen or icon.styleView ~= view then C.Icons.StyleIcon(icon, view) end
+        local fake = fakes[i]
+        local key = holder.keys[i]
+        local entry = key and C.entries[key]
+        local ov = key and C.Choices()[key] or EMPTY
+        if type(ov) ~= "table" then ov = EMPTY end
+        local name = holder.names[i]
+        if fake.ov ~= ov or fake.name ~= name or fake.slot ~= slot then icon.esEntry = nil end
+        fake.slot, fake.ov, fake.name = slot, ov, name
+        if C.Layout.MixedRows(view) then
+            local iw, ih = C.Layout.Footprint(view, i)
+            if icon.styleGen ~= view.styleGen or icon.styleView ~= view or icon.w ~= iw or icon.h ~= ih then C.Icons.StyleIcon(icon, view, iw, ih) end
+        elseif icon.styleGen ~= view.styleGen or icon.styleView ~= view then
+            C.Icons.StyleIcon(icon, view)
+        end
+        C.Icons.Apply(fake)
+        local keyText = entry and entry.keyText
+        C.Icons.SetKeybind(fake, keyText and keyText ~= "" and keyText or tostring(i))
+        if icon.pvChargeView ~= view or icon.pvChargeStyle ~= view.styleGen then
+            icon.pvChargeView, icon.pvChargeStyle = view, view.styleGen
+            C.TrackingBars.Charges(icon, SAMPLE_CHARGES)
+        end
         C.Icons.SetTexture(icon, textures[i])
         Place(icon, holder, out[2 * i - 1], out[2 * i])
         Shown(icon, true)
@@ -302,95 +322,15 @@ local function Icons(holder, view, count, slot)
     HideFrom(holder.rows, 1)
 end
 
-local function Row(holder, i)
-    local row = holder.rows[i]
-    if row then return row end
-    row = S.CreateFrame("Frame", nil, holder)
-    row.bg = S.CreateTexture(row, nil, "BACKGROUND")
-    row.bg:SetAllPoints(row)
-    row.fill = S.CreateTexture(row, nil, "ARTWORK")
-    row.icon = S.CreateTexture(row, nil, "ARTWORK", nil, 1)
-    row.name = S.CreateFontString(row, nil, "OVERLAY")
-    row.name:SetWordWrap(false)
-    row.name:SetJustifyH("LEFT")
-    holder.rows[i] = row
-    return row
-end
-
--- The bar look of a holder's rows; a change bumps gen and every row
--- restyles once.
-local function Look(holder, w, h, tex, r, g, b, bgA, left, lead, size, state)
-    local look = holder.look
-    if look.w ~= w or look.h ~= h or look.tex ~= tex or look.r ~= r or look.g ~= g or look.b ~= b or look.bgA ~= bgA
-        or look.left ~= left or look.lead ~= lead or look.size ~= size or look.font ~= state.font
-        or look.flags ~= state.fontFlags or look.rendering ~= state.fontRendering or look.shadow ~= state.fontShadow
-        or look.shadowOpacity ~= state.fontShadowOpacity or look.shadowDistance ~= state.fontShadowDistance then
-        look.w, look.h, look.tex, look.r, look.g, look.b, look.bgA = w, h, tex, r, g, b, bgA
-        look.left, look.lead, look.size, look.font, look.flags = left, lead, size, state.font, state.fontFlags
-        look.rendering, look.shadow, look.shadowOpacity, look.shadowDistance =
-            state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance
-        look.gen = look.gen + 1
-    end
-    return look.gen
-end
-
-local function StyleRow(row, w, h, tex, r, g, b, bgA, left, lead, size, state)
-    local side = left and "LEFT" or "RIGHT"
-    row:SetSize(w, h)
-    row.bg:SetTexture(tex)
-    row.bg:SetVertexColor(r * .25, g * .25, b * .25, bgA)
-    local icon = row.icon
-    icon:ClearAllPoints()
-    icon:SetPoint(side, row, side, 0, 0)
-    icon:SetSize(h, h)
-    icon:SetShown(lead > 0)
-    local fill = row.fill
-    fill:ClearAllPoints()
-    fill:SetPoint(side, row, side, left and lead or -lead, 0)
-    fill:SetSize(max(1, (w - lead) * .6), h)
-    fill:SetTexture(tex)
-    fill:SetVertexColor(r, g, b, 1)
-    local name = row.name
-    S.SetStyledFont(name, state.font, size, state.fontFlags, state.fontRendering,
-        state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
-    name:ClearAllPoints()
-    name:SetPoint("LEFT", row, "LEFT", (left and lead or 0) + 4, 0)
-    name:SetPoint("RIGHT", row, "RIGHT", -(left and 0 or lead) - 4, 0)
-end
-
--- Kind 3: icon, a partly filled bar and the name, in the bar's own look.
+-- Buff bars use the same plain sample and live style as Edit Mode.
 local function Rows(holder, view, count)
-    local w, h = C.Layout.Metrics(view)
-    local state = C.state
-    local tex = S.ResolveTexture(view.barTexture, BAR_TEXTURE)
-    local r, g, b
-    if view.barClass ~= false then
-        local _, file = UnitClass("player")
-        if S.Public(file) then r, g, b = S.ClassRGB(file) end
-    end
-    if not r then r, g, b = view.barR or .91, view.barG or .72, view.barB or .33 end
-    local bgA = (view.barBgAlpha or 55) / 100
-    local left = view.barIconSide ~= 2
-    local lead = view.barIcon ~= false and h or 0
-    local size = max(8, math.floor(h * .55))
-    local gen = Look(holder, w, h, tex, r, g, b, bgA, left, lead, size, state)
-    local out, named, textures, names = holder.out, view.barName ~= false, holder.textures, holder.names
+    local choices = C.Choices()
     for i = 1, count do
-        local row = Row(holder, i)
-        if row.pvLook ~= gen then
-            row.pvLook = gen
-            StyleRow(row, w, h, tex, r, g, b, bgA, left, lead, size, state)
-        end
-        Place(row, holder, out[2 * i - 1], out[2 * i])
-        local texture, text = textures[i], named and names[i] or ""
-        if row.pvTex ~= texture then
-            row.pvTex = texture
-            row.icon:SetTexture(texture)
-        end
-        if row.pvText ~= text then
-            row.pvText = text
-            row.name:SetText(text)
-        end
+        local ov = choices[holder.keys[i]]
+        if type(ov) ~= "table" then ov = EMPTY end
+        local row = C.AuraButtons.Sample(holder, holder.rows[i], view, ov, holder.textures[i], holder.names[i])
+        holder.rows[i] = row
+        Place(row, holder, holder.out[2 * i - 1], holder.out[2 * i])
         Shown(row, true)
     end
     HideFrom(holder.rows, count + 1)
@@ -460,5 +400,3 @@ end
 function Pv.ReleaseAll()
     for parent in pairs(canvases) do Pv.Release(parent) end
 end
-
-

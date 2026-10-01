@@ -16,10 +16,10 @@ local issecret = _G.issecretvalue
 
 -- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
 local Index = { bySpell = {}, byBase = {}, byCategory = {}, byItem = {}, byEquip = {}, countedSet = {},
-    cooldown = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {}, items = {}, bags = {}, aura = {}, overlay = {}, assist = {} }
+    cooldown = {}, gcd = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {}, items = {}, bags = {}, aura = {}, overlay = {}, assist = {} }
 C.Index = Index
 
-local ARRAYS = { "cooldown", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist" }
+local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist" }
 local MAPS = { "bySpell", "byBase", "byCategory", "byItem", "byEquip" }
 local pool = {}
 local seen = {}
@@ -68,6 +68,9 @@ local function AddCooldown(entry, view)
     Add(Index.byEquip, entry.equipSlot, entry)
     local item = entry.src == "i" or entry.src == "e" or entry.equipSlot ~= nil
     local ov = entry.ov
+    local showGCD = ov.showGCD
+    if showGCD == nil then showGCD = C.state.showGCD end
+    if showGCD then Push(Index.gcd, entry) end
     if entry.charges then Push(Index.charged, entry) end
     -- Use counts (SPELL_UPDATE_USES) only matter where spell counts show
     -- (the entry's or the bar's choice); items and potion categories show
@@ -79,24 +82,27 @@ local function AddCooldown(entry, view)
     if entry.hasRange and view and view.range then Push(Index.ranged, entry) end
     -- Equipment-slot entries have no usable query or tint state to refresh.
     -- Explicit item entries still use IsUsableItem, even with an equip slot.
-    if spell and view and view.usable
+    if spell and view and (view.usable or K.Pick(ov, view, "readyResources"))
         and (entry.src == "i" or not (entry.equipSlot or entry.src == "e")) then
         Push(Index.usable, entry)
+        if K.Pick(ov, view, "readyResources") then Index.usableInterval = .1 end
     end
     if spell and view and K.Pick(ov, view, "procGlow") then Push(Index.proc, entry) end
     -- Ready glows flip on combat edges only where one is wanted.
-    if view and K.Pick(ov, view, "readyGlow") then Push(Index.ready, entry) end
+    if view and (K.Pick(ov, view, "readyGlow") or K.Pick(ov, view, "fullChargeGlow")) then Push(Index.ready, entry) end
     -- Item, equipment-slot (custom entries, or Blizzard's trinkets on whichever
     -- bar holds them, Essential by default) and potion-category entries follow
     -- bag contents; only real items follow item cooldowns
     -- (categories arrive through SPELL_UPDATE_COOLDOWN's category payload).
     if item or category then Push(Index.items, entry) end
     if item then Push(Index.bags, entry) end
-    if entry.hasAura and entry.auraIDs and view and K.Pick(ov, view, "showAura") then Push(Index.overlay, entry) end
+    if entry.hasAura and entry.auraIDs and view and not view.cooldownDuration and K.Pick(ov, view, "showAura") then Push(Index.overlay, entry) end
     if spell and view and view.assist then Push(Index.assist, entry) end
 end
 
 function Index.Rebuild()
+    Index.hasSharedTimeSpells = false
+    Index.usableInterval = .2
     for i = 1, #MAPS do Release(Index[MAPS[i]]) end
     for i = 1, #ARRAYS do
         local list = Index[ARRAYS[i]]
@@ -127,6 +133,22 @@ function Index.Rebuild()
             end
         end
     end
+    -- Aliases and categories can converge on the same current spell. Enable
+    -- within-flush snapshots only when the cold routing plan has sharing.
+    for _, list in pairs(Index.bySpell) do
+        if #list > 1 then
+            Index.hasSharedTimeSpells = true
+            break
+        end
+    end
+    if not Index.hasSharedTimeSpells then
+        for _, list in pairs(Index.byCategory) do
+            if #list > 1 then
+                Index.hasSharedTimeSpells = true
+                break
+            end
+        end
+    end
 end
 
 -- An override that arrived in combat routes its new ID without a rebuild.
@@ -135,6 +157,7 @@ function Index.AddSpell(entry, id)
     if id == nil or entry.family ~= 1 then return end
     local list = Index.bySpell[id]
     if list then
+        if #list > 1 or list[1] ~= entry then Index.hasSharedTimeSpells = true end
         for i = 1, #list do
             if list[i] == entry then
                 return
@@ -191,4 +214,3 @@ function Index.ForItem(itemID, fn)
     if issecret(itemID) or not itemID then return 0 end
     return Each(Index.byItem[itemID], fn)
 end
-

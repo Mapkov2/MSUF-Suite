@@ -1,4 +1,6 @@
 local root=assert(arg[1],"repository root required")
+local combatConditions=false
+InCombatLockdown=function() return combatConditions end
 -- The client's securecallfunction reports an error and returns nothing;
 -- this stand-in lets errors raise, so a failing callback fails the test.
 securecallfunction = function(callback, ...) return callback(...) end
@@ -139,9 +141,14 @@ C_Spell={
     GetSpellCooldownDuration=function() end,
     IsSpellHarmful=AskHarmful,
 }
+local petKnown={}
 C_SpellBook={
     FindSpellOverrideByID=function(id) return overrides[id] end,
-    IsSpellKnownOrInSpellBook=function(id,bank) return bank==nil and known[id]==true end,
+    -- The player's spell book (no bank given), else the pet's.
+    IsSpellKnownOrInSpellBook=function(id,bank)
+        if bank==Enum.SpellBookSpellBank.Pet then return petKnown[id]==true end
+        return bank==nil and known[id]==true
+    end,
 }
 local equipped,equippedTex={[13]=5555},{[13]=5556}
 GetInventoryItemID=function(unit,slot) assert(unit=="player");return equipped[slot] end
@@ -261,6 +268,28 @@ assert(decoded.e.a9102==nil)
 stored.e.a9101.stackGlow=150
 assert(CDM.Codec.DecodeSpells(spellText).e.a9101.stackGlow==nil,"a damaged stored value is dropped on decode")
 Same("only malformed",CDM.Codec.EncodeSpells({e={a1={stackGlow=500,stackColor="nope"}}}),"")
+
+-- Old shared choices survive v2, while spec choices override only the
+-- selected fields. False is a real override; clearing it inherits again.
+do
+    local old=CDM.CleanSpells({v=1,e={b101={readyGlow=true,showGCD=true}}})
+    assert(old.v==2 and next(old.s)==nil and old.e.b101.readyGlow==true,"v1 spell choices must remain the shared base")
+    local text=assert(CDM.Codec.EncodeSpells({e=old.e,s={
+        [62]={b101={readyGlow=false,showGCD=false},a9101={stackGlow=2}},
+        [63]={b101={readyAlpha=25}},[-1]={b101={readyGlow=true}},
+    }}))
+    local data=CDM.Codec.DecodeSpells(text)
+    local arcane=CDM.EffectiveSpells(data,62)
+    local fire=CDM.EffectiveSpells(data,63)
+    assert(arcane.b101.readyGlow==false and arcane.b101.showGCD==false and arcane.a9101.stackGlow==2,
+        "a current-spec false override must beat shared true")
+    assert(fire.b101.readyGlow==true and fire.b101.showGCD==true and fire.b101.readyAlpha==25,
+        "other specs must inherit unspecified shared fields")
+    assert(data.e.b101.readyGlow==true and data.s[-1]==nil,"merging must not mutate shared choices; invalid specs are dropped")
+    data.s[62].b101.readyGlow=nil
+    assert(CDM.EffectiveSpells(data,62).b101.readyGlow==true,"clearing a spec field must restore inheritance")
+    assert(CDM.Codec.EncodeSpells({s={[62]={b101={showGCD=false}}}})~="","spec-only choices must survive encoding")
+end
 
 ------------------------------------------------------------------ readiness gate
 -- Loading the runtime creates no frame (the options page loads it with the
@@ -467,6 +496,38 @@ C.spells=CDM.CleanSpells({e={b101={procGlow=false},b102={procGlow=true}}})
 C.state.specID=63
 local plans,changed=Resolve.Build()
 assert(plans==C.plans and changed==true)
+do
+    known[990001],known[990002],known[990003]=true,true,false
+    local condition={requireSpell1=990001,requireSpell2=990002,excludeSpell1=990003}
+    assert(Resolve.ConditionsAllow(condition),"multiple learned requirements were rejected")
+    known[990003]=true
+    Resolve.SpellsChanged()
+    assert(not Resolve.ConditionsAllow(condition),"learned excluded spell did not hide entry")
+    combatConditions=true
+    known[990003]=false
+    Resolve.SpellsChanged()
+    assert(not Resolve.ConditionsAllow(condition),"talent condition changed during combat")
+    combatConditions=false
+    assert(Resolve.ResumeConditions() and Resolve.ConditionsAllow(condition),"deferred talent change did not settle")
+    -- A reload mid-fight: nothing is cached yet. The spell book is read at
+    -- once (plain in combat) instead of hiding the entry for the fight, and
+    -- read again once the fight is over.
+    Resolve.SpellsChanged()
+    combatConditions=true
+    assert(Resolve.ConditionsAllow(condition),"a condition first read in combat hid its entry")
+    combatConditions=false
+    assert(Resolve.ResumeConditions() and Resolve.ConditionsAllow(condition),"a condition read in combat is read again after it")
+    -- A pet's spell counts like the player's.
+    petKnown[990004]=true
+    assert(Resolve.ConditionsAllow({requireSpell1=990004}),"a pet spell condition was never met")
+    assert(not Resolve.ConditionsAllow({excludeSpell1=990004}),"a learned pet spell did not exclude")
+    petKnown[990004]=nil
+    Resolve.SpellsChanged()
+    local data=CDM.CleanSpells({e={s9001={requireSpell1=990001,excludeSpell1=990003}}})
+    assert(data.e.s9001.requireSpell1==990001 and data.e.s9001.excludeSpell1==990003,"condition fields did not roundtrip cleaning")
+    known[990001],known[990002],known[990003]=nil,nil,nil
+    Resolve.SpellsChanged()
+end
 Same("r ess",Keys(plans.ess.entries),"b101,s9001")               -- b102 claimed by c1, b107 by the hidden c3, the trinket (b701) by c1's e13
 Same("r uti",Keys(plans.uti.entries),"b112")                     -- b111 hidden; b112 on c2 is the wrong family
 Same("r buf",Keys(plans.buf.entries),"b202,b801,b601")           -- b201 claimed by c2; b801 is a trinket buff, not the slot
@@ -1364,4 +1425,45 @@ for _=1,#assaIDs do sets[2][#sets[2]]=nil end
 for _,id in ipairs(assaIDs) do infos[id],names[id],textures[id]=nil,nil,nil end
 Catalog.Rebuild()
 
+do
+    C.state.preview=false
+    C.views.ess.on,C.views.uti.on=true,true
+    C.views.ess.kind,C.views.uti.kind=1,1
+    C.views.ess.maxIcons,C.views.ess.overflow,C.views.uti.overflow=1,CDM.SLOT_INDEX.uti+1,1
+    C.lists=CDM.CleanLists({specs={[259]={ess={"b200004","s688","s697"},uti={}}},replace={[259]={ess=true,uti=true}}})
+    known[688],known[697]=true,true
+    names[688],names[697]="Imp","Voidwalker"
+    textures[688],textures[697]={688,688},{697,697}
+    plans=Resolve.Build()
+    assert(#plans.ess.entries==1 and E.s688.slot=="uti" and E.s697.slot=="uti","overflow must transfer ownership after source cap")
+    local _,diff=Resolve.Build()
+    assert(not diff,"unchanged overflow routing must not churn plan generations")
+    C.views.uti.overflow=CDM.SLOT_INDEX.ess+1
+    plans=Resolve.Build()
+    assert(E.s688.slot=="ess" and E.s697.slot=="ess","overflow cycles must fail closed")
+    -- The one route rule the build and the options rows share.
+    assert(Resolve.OverflowTarget("ess")==nil and Resolve.OverflowTarget("uti")==nil,"a cycle routes nothing")
+    C.views.uti.overflow=1
+    assert(Resolve.OverflowTarget("ess")=="uti" and Resolve.OverflowTarget("uti")==nil,"a shown cooldown bar takes the excess")
+    C.views.buf=C.views.buf or {key="buf",on=true,kind=2}
+    local bufOn=C.views.buf.on
+    C.views.buf.on=true
+    C.views.ess.overflow=CDM.SLOT_INDEX.buf+1
+    plans=Resolve.Build()
+    assert(Resolve.OverflowTarget("ess")==nil and E.s688.slot=="ess","an aura bar takes no excess cooldowns")
+    C.views.ess.overflow=CDM.SLOT_INDEX.ess+1
+    assert(Resolve.OverflowTarget("ess")==nil,"a bar takes no excess from itself")
+    C.views.buf.on=bufOn
+    C.views.ess.overflow,C.views.uti.overflow=CDM.SLOT_INDEX.uti+1,CDM.SLOT_INDEX.ess+1
+    plans=Resolve.Build()
+    C.views.c1.on,C.views.c1.kind,C.views.c1.shareContents=true,1,true
+    C.lists=CDM.CleanLists({shared={c1={"s688","s688","b200004"}},specs={[259]={c1={"s697"}},[260]={ess={"s688"}}}})
+    assert(#C.lists.shared.c1==1,"shared sanitizer must drop duplicate and specialization-specific Blizzard IDs")
+    plans=Resolve.Build()
+    assert(plans.c1.entries[1].key=="s688")
+    C.state.specID=260;plans=Resolve.Build()
+    assert(plans.c1.entries[1].key=="s688" and E.s688.slot=="c1","shared contents changed across specs or lost priority")
+    C.state.specID=259;C.views.c1.shareContents=false;plans=Resolve.Build()
+    assert(plans.c1.entries[1].key=="s697","disabling shared contents did not restore the preserved spec list")
+end
 print("cooldown manager data contract ok: "..#Catalog.order.." records, "..#Index.cooldown.." cooldown entries")

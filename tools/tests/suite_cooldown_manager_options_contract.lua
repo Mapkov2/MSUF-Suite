@@ -175,8 +175,16 @@ local function NoKey() return false end
 IsShiftKeyDown, IsControlKeyDown = NoKey, NoKey
 local tooltip = { shown = false }
 function tooltip:SetOwner(owner) self.owner = owner end
-function tooltip:SetText(text) self.text = text end
-function tooltip:AddLine(text) self.line = text end
+-- Every line of the open tooltip; one table, refilled (hovers allocate nothing).
+tooltip.lines = {}
+function tooltip:SetText(text)
+    self.text = text
+    for i = #self.lines, 1, -1 do self.lines[i] = nil end
+end
+function tooltip:AddLine(text)
+    self.line = text
+    self.lines[#self.lines + 1] = text
+end
 function tooltip:Show() self.shown = true end
 function tooltip:IsOwned(owner) return self.owner == owner end
 function tooltip:Hide() self.shown = false end
@@ -433,7 +441,7 @@ CDM.Codec.EncodeLists = function(...) encodes = encodes + 1; return encodeLists(
 
 ------------------------------------------------------------------ runtime stand-in
 -- units: what "Automatic" resolved an entry's buff to (optional runtime field).
-local runtime = { played = {}, released = 0, specID = 62, units = {} }
+local runtime = { played = {}, released = 0, specID = 62, units = {}, moved = {} }
 local CATALOG_ORDER = { "b1", "b2", "b3", "b4", "b5", "b6", "b10", "b11", "b20", "b30", "b40" }
 -- Rows carry their spell IDs where the runtime knows them (b1 has none, so
 -- both shapes are covered).
@@ -472,7 +480,8 @@ local function Resolve()
             seen[key] = true
             out[#out + 1] = { key = key, name = record and record.name or key, texture = record and record.texture,
                 known = not record or record.known, family = entryFamily, hidden = key == "b2",
-                hiddenBy = key == "b2" and "ready" or nil, hasAura = record and record.hasAura, unit = runtime.units[key] }
+                hiddenBy = key == "b2" and "ready" or nil, hasAura = record and record.hasAura, unit = runtime.units[key],
+                movedTo = runtime.moved[key] }
         end
         for _, key in ipairs(explicit[slot] or {}) do if claimed[key] == slot then Add(key) end end
         if not info.custom then
@@ -845,6 +854,18 @@ assert(Page.InLoop("ess") and Page.InLoop("uti") and not Page.InLoop("buf")
 Config().ess_anchor = 1
 M.RequestRefresh()
 assert(not Page.InLoop("ess") and not anchor.row.values[CDM.SLOT_INDEX.def + 1].disabled, "the loop check stuck")
+-- Send excess cooldowns to: only another cooldown bar takes them (the
+-- runtime routes nothing else); each refused target says why.
+do
+    local overflow = Control("overflow").row.values
+    local own, buffs, utility = overflow[CDM.SLOT_INDEX.ess + 1], overflow[CDM.SLOT_INDEX.buf + 1], overflow[CDM.SLOT_INDEX.uti + 1]
+    assert(overflow[1].value == 1 and not overflow[1].disabled and overflow[1].tooltip == nil, "Off stays selectable")
+    assert(own.disabled and own.tooltip(own) == "A bar cannot send cooldowns to itself.", "a bar takes its own excess")
+    assert(buffs.disabled and buffs.text == Page.BarName("buf") and buffs.tooltip(buffs) == "Only a cooldown bar can take excess cooldowns.",
+        "an aura bar is offered as a destination for excess cooldowns")
+    assert(not utility.disabled and utility.tooltip(utility) == nil and utility.text == Page.BarName("uti"),
+        "another cooldown bar stays selectable")
+end
 -- Attach targets: Free, the twelve bars, then MSUF's player and target frames.
 local anchors = anchor.row.values
 assert(#anchors == #CDM.SLOTS + 3 and #anchors == #CDM.ANCHOR_LABELS, "attach list must end with the two unit frames")
@@ -1330,6 +1351,20 @@ do
     assert(not pop.copy.shown and pop.remove.width == 90 and pop.move.points[1][4] == 106
         and pop.reset.points[1][5] == -54, "the header actions must sit on one line")
     assert(pop.scope.text:find("every bar and specialization", 1, true), "the popover must say where its choices apply")
+    local spec = Page.Spec()
+    assert(Page.SetSpellField("b2", "showGCD", true))
+    Fire(pop.scopeButton, "OnClick")
+    assert(Page.spellSpecScope and Page.SpellField("b2", "showGCD") == true and not pop.rows.showGCD.reset.shown,
+        "this-spec editing must show inherited shared values without pretending they are overrides")
+    Fire(pop.rows.showGCD.off, "OnClick")
+    assert(Page.SpellOverrides().e.b2.showGCD == true and Page.SpellOverrides().s[spec].b2.showGCD == false,
+        "editing this spec must not overwrite the shared value")
+    Fire(pop.rows.showGCD.reset, "OnClick")
+    assert(Page.SpellField("b2", "showGCD") == true and Page.OwnSpellFields("b2") == nil,
+        "resetting a spec choice must inherit shared again")
+    Fire(pop.scopeButton, "OnClick")
+    assert(not Page.spellSpecScope)
+    assert(Page.SetSpellField("b2", "showGCD", nil))
 end
 -- Move to bar from the popover.
 Fire(pop.move, "OnClick")
@@ -1529,7 +1564,7 @@ Click(grid.tiles[3], "LeftButton")
 assert(pop.key == "i5512" and pop.copy.shown and not pop.rows.procGlow.shown and pop.rows.readyGlow.shown,
     "item entries show item options and the copy action")
 -- Four header actions wrap onto a second line, and the rows move down.
-assert(pop.copy.points[1][4] == 12 and pop.copy.points[1][5] == -80 and pop.scroll.points[1][5] == -(54 + 52 + 20),
+assert(pop.copy.points[1][4] == 12 and pop.copy.points[1][5] == -80 and pop.scroll.points[1][5] == -(54 + 52 + 48),
     "the header actions must wrap")
 assert(not pop.hasAura and not pop.rows.stackGlow.shown and not pop.rows.stackColorAt.shown and not pop.rows.auraUnit.shown,
     "items have no stack options and no Track on")
@@ -1710,6 +1745,17 @@ do
     Fire(hits[2], "OnLeave")
     Fire(pop.reset, "OnClick")
     assert(not hits[2].mark.shown, "the mark must go with the options")
+    -- A choice only this specialization has marks the spell as well: the
+    -- runtime reads shared choices with the specialization's on top.
+    Page.spellSpecScope = true
+    assert(Page.SetSpellField("b1", "readyGlow", true))
+    Page.spellSpecScope = false
+    assert(Page.SpellOverrides().e.b1 == nil and Page.SpellFields("b1", true).readyGlow == true, "a choice of this spec only")
+    assert(hits[2].mark.shown and grid:Tile("b1").mark.shown, "a choice of this specialization only must mark the spell")
+    Page.spellSpecScope = true
+    assert(Page.ResetSpell("b1"))
+    Page.spellSpecScope = false
+    assert(not hits[2].mark.shown and not grid:Tile("b1").mark.shown, "the spec choice's mark goes with it")
     Click(hits[1], "LeftButton")
     assert(pop.shown and pop.key == "b3" and pop.anchor == hits[1] and hits[1].lines[1].shown and not hits[2].lines[1].shown,
         "an unlearned entry opens its popover, and only its icon is outlined")
@@ -1887,6 +1933,20 @@ do
     Fire(hits[2], "OnEnter")
     assert(tooltip.line == "Hidden while ready (Hide icons that are ready).", "the hidden reason: " .. tostring(tooltip.line))
     Fire(hits[2], "OnLeave")
+    -- An entry that Send excess cooldowns to moves shows on the other bar:
+    -- no rule strip, and its tile says where.
+    runtime.moved.b30 = "uti"
+    Config().ext_overflow = CDM.SLOT_INDEX.uti + 1
+    M.RequestRefresh()
+    local movedTile = grid:Tile("b30")
+    Fire(movedTile, "OnEnter")
+    assert(movedTile.movedTo == "uti" and not movedTile.ruleMark.shown
+        and table.concat(tooltip.lines, " "):find(Page.MovedText("uti"), 1, true), "a moved entry must say where it shows")
+    Fire(movedTile, "OnLeave")
+    runtime.moved.b30 = nil
+    Config().ext_overflow = 1
+    M.RequestRefresh()
+    assert(not grid:Tile("b30").movedTo, "the route gone, the tile follows")
 
     -- Buff bars (rows) and buff icons get the same buttons.
     picker.set("bar")
@@ -2297,6 +2357,9 @@ assert(runtime.previewOn == false and runtime.simulate == false and runtime.rele
 -- sample), for icons and buff bar rows alike.
 do
     local C = { EMPTY = {}, plans = {}, state = {}, entries = {}, spells = { e = {} }, views = {} }
+    -- The runtime's one choice accessor (Resolve.lua): shared choices with
+    -- the current specialization's on top.
+    C.Choices = function() return CDM.EffectiveSpells(C.spells, C.state.specID) end
     C.Catalog = { order = {}, records = {}, RecordTexture = function() end }
     local lists = { ess = { "s1", "s2", "s3" }, bar = { "a1" }, c1 = {} }
     C.Resolve = {
@@ -2311,7 +2374,15 @@ do
         CreateStandalone = function(parent) return Widget("Icon", parent) end,
         StyleIcon = function(icon, view) icon.styleGen, icon.styleView = view.styleGen, view end,
         SetTexture = function(icon, texture) icon.texture = texture end,
+        Apply = function(entry) entry.applied = true end,
+        SetKeybind = function(entry, text) entry.keyText = text end,
     }
+    C.TrackingBars = { Charges = function(icon, charges) icon.sampleCharges = charges end }
+    C.AuraButtons = { Sample = function(parent, row, view, ov, texture, name)
+        row = row or Widget("Frame", parent)
+        row.ov, row.texture, row.label = ov, texture, name
+        return row
+    end }
     C.Layout = {
         Offsets = function(view, n, out)
             local count = view.maxIcons and math.min(n, view.maxIcons) or n
@@ -2319,6 +2390,8 @@ do
             return count * 40, 36, count
         end,
         Metrics = function() return 200, 20 end,
+        -- Later rows with their own size (none in these bars).
+        MixedRows = function() return false end,
         -- Layout.lua's memoized show/hide, which the canvas shares.
         Shown = function(region, shown)
             if region.layShown ~= shown then
@@ -2327,6 +2400,7 @@ do
             end
         end,
     }
+    C.spells.e.s1 = { timeText = 3 }
     C.views.ess = { kind = 1, styleGen = 1, maxIcons = 2 }
     C.views.bar = { kind = 3, styleGen = 1 }
     C.views.c1 = { kind = 1, styleGen = 1 }
@@ -2342,16 +2416,65 @@ do
     assert(holder.count == 2 and holder.kind == 1 and holder.items == holder.icons and holder.items[2].shown
         and holder.keys[1] == "s1" and holder.keys[2] == "s2" and holder.keys[3] == "s3"
         and holder.dim[1] == false and holder.dim[2] == true, "the canvas must publish its items, keys and dim flags")
+    assert(holder.fakes[1].applied and holder.fakes[1].ov == C.spells.e.s1
+        and holder.fakes[1].keyText == "1" and holder.icons[1].sampleCharges.maxCharges == 3,
+        "preview must pass spell choices, keybind and charge samples through the shared painters")
     assert(C.Preview.Render(stage, "bar", 400, 100) == holder and holder.kind == 3 and holder.items == holder.rows
         and holder.count == 1 and holder.keys[1] == "a1" and holder.keys[2] == nil and holder.dim[2] == nil,
         "buff bars publish their rows, and stale keys are cleared")
     C.Preview.Render(stage, "c1", 400, 100)
     assert(holder.count == 3 and holder.items == holder.icons and holder.keys[1] == false and holder.keys[3] == false
         and holder.dim[1] and holder.dim[3], "an empty bar publishes its sample icons as dimmed placeholders")
+    -- A choice only this specialization has reaches the canvas as the live
+    -- bars read it.
+    C.spells = { e = C.spells.e, s = { [62] = { s2 = { timeText = 2 }, s1 = { stackText = 3 } } } }
+    C.state.specID = 62
+    C.Preview.Render(stage, "ess", 400, 100)
+    assert(holder.fakes[2].ov.timeText == 2 and holder.fakes[1].ov.stackText == 3 and holder.fakes[1].ov.timeText == 3,
+        "the canvas must use the choices in effect for this specialization")
     C.Preview.Release(stage)
 end
 for key in pairs(_G) do
     if not globalsBefore[key] then error("options page created global " .. tostring(key)) end
+end
+-- Copy to all specs on an entry of a shared group: its one list already
+-- applies to every specialization, so nothing is written (no unused
+-- per-specialization list, no entry taken off another bar elsewhere).
+do
+    local before, share = Config().listsData, Config().c1_shareContents
+    Config().c1_shareContents = true
+    Config().listsData = assert(CDM.Codec.EncodeLists({ shared = { c1 = { "s133" } },
+        specs = { [63] = { ess = { "s133" } } } }))
+    local data = Config().listsData
+    local ok, count = Page.CopyToSpecs("c1", "s133")
+    assert(ok and count == 0 and Config().listsData == data, "copying a shared group's entry rewrote the lists")
+    local lists = CDM.Codec.DecodeLists(Config().listsData)
+    assert(lists.specs[63].ess[1] == "s133" and not lists.specs[63].c1 and not (lists.specs[64] and lists.specs[64].c1),
+        "a shared group's copy took the entry off another specialization's bar")
+    Config().listsData, Config().c1_shareContents = before, share
+end
+-- Row labels are plain literals: the locale extraction cannot see a label
+-- picked out of a table at runtime, so such a label stays English in every
+-- language. The talent and spell condition rows are translated everywhere.
+do
+    local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/CooldownManagerPopover.lua", "rb"))
+    local text = handle:read("*a")
+    handle:close()
+    assert(not text:find("label%s*=%s*%(") and not text:find("Label%s*=%s*%("),
+        "a popover label is picked out of a table at runtime; the locale extraction cannot see it")
+    local conditions = {}
+    for _, field in ipairs(Page.FIELDS) do
+        if field.key:find("^requireSpell") or field.key:find("^excludeSpell") then conditions[#conditions + 1] = field.label end
+    end
+    assert(#conditions == 6, "six talent and spell condition rows")
+    for _, locale in ipairs({ "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }) do
+        local pack = assert(io.open(root .. "/MSUF_Suite/Locales/" .. locale .. ".lua", "rb"))
+        local body = pack:read("*a")
+        pack:close()
+        for _, label in ipairs(conditions) do
+            assert(body:find('T("' .. label .. '", "', 1, true), locale .. " lacks the row label " .. label)
+        end
+    end
 end
 -- Each page file keeps real headroom below Lua 5.1's 200 locals per chunk.
 for _, file in ipairs({ "CooldownManagerData", "CooldownManagerBars", "CooldownManagerWidgets", "CooldownManagerPicker", "CooldownManagerPopover",

@@ -33,10 +33,18 @@ K.POINT_X = { 1, 0, -1, 1, 0, -1, 1, 0, -1 }
 K.POINT_Y = { -1, -1, -1, 0, 0, 0, 1, 1, 1 }
 K.JUSTIFY = { "LEFT", "CENTER", "RIGHT", "LEFT", "CENTER", "RIGHT", "LEFT", "CENTER", "RIGHT" }
 
--- Frame levels above the icon frame: swipe, recharge edge, glow, text. The
--- swipe (with its countdown) moves to top, above the text, for entries that
--- show the countdown on top.
-K.LEVEL = { cd = 1, charge = 2, glow = 3, assist = 4, text = 5, top = 6 }
+-- Frame levels above the icon frame: a timer bar's charge segments, swipe
+-- (with its countdown), recharge edge, glow, text. The swipe moves to top,
+-- above the text, for entries that show the countdown on top.
+K.LEVEL = { fill = 1, cd = 2, charge = 3, glow = 4, assist = 5, text = 6, top = 7 }
+-- Frame levels above an aura button, bottom to top. Buff bars: the fill,
+-- the stack threshold colour, the stack markers, glows and pandemic edges,
+-- then the countdown and name, then the stacks (Text on top swaps the last
+-- two). Buff icons and overlays have no colour or markers and keep four
+-- levels: swipe, glows, countdown, stacks. An overlay's stacks then reach
+-- no higher than its cooldown icon's countdown on top (K.LEVEL.top).
+K.AURA_LEVEL = { fill = 1, color = 2, marks = 3, glow = 4, text = 5, stacks = 6 }
+K.AURA_ICON_LEVEL = { fill = 1, glow = 2, text = 3, stacks = 4 }
 
 ------------------------------------------------------------------ choices
 -- A per-spell yes/no choice (ov: the entry's choices), else the bar's.
@@ -57,7 +65,7 @@ function K.Choice(value, bar)
 end
 -- The bar's countdown switch; timer bars also follow "Show time".
 function K.BarTime(view)
-    return view.cdText ~= false and (view.kind ~= 3 or view.barTime ~= false)
+    return view.cdText ~= false and (view.kind ~= 3 and not view.cooldownDuration or view.barTime ~= false)
 end
 -- The bar's charge and stack switch; counts on cooldown icons also follow
 -- the cooldown bar's "Show charges".
@@ -154,6 +162,7 @@ function K.Pixels(count) return count * K.Px() end
 
 -- Icon footprint in UI units, snapped to whole physical pixels.
 function K.IconSize(view)
+    if view.kind == 1 and view.cooldownDuration then return K.Snap(view.barWidth or 200), K.Snap(view.barHeight or 18) end
     local px = K.Px()
     local size = view.size or 36
     local w = max(px, K.Snap(size))
@@ -224,6 +233,22 @@ end
 
 -- Four edges inside owner's rect (shared with the action bars).
 K.PlaceEdges = S.PlaceEdges
+
+-- Spell ID sets (id -> true): equal members, and a copy into a kept table.
+function K.SameSet(a, b)
+    for id in pairs(a) do
+        if not b[id] then return false end
+    end
+    for id in pairs(b) do
+        if not a[id] then return false end
+    end
+    return true
+end
+function K.CopySet(into, from)
+    C.wipe(into)
+    for id in pairs(from) do into[id] = true end
+    return into
+end
 
 -- Hex -> rgb for per-spell glow colors; each distinct hex decoded once.
 local hexCache = {}

@@ -35,8 +35,8 @@ local function OnEnter(icon)
     local slot = entry.equipSlot or (entry.src == "e" and entry.id)
     if slot then
         tip:SetInventoryItem("player", slot)
-    elseif entry.src == "i" then
-        tip:SetItemByID(entry.itemID or entry.id)
+    elseif entry.src == "i" or entry.categoryItem then
+        tip:SetItemByID(entry.categoryItem or entry.itemID or entry.id)
     else
         local spell = entry.tooltip or entry.spell or entry.base
         if not spell then
@@ -111,6 +111,18 @@ local function CreateIcon(parent, pingable)
 end
 
 -- Recharge edge (charge spells): swipe off, edge on, no numbers.
+function I.StyleCharge(icon)
+    local cooldown, entry = icon.chargeCd, icon.entry
+    if not cooldown then return end
+    local view = entry and C.views[entry.slot] or EMPTY
+    local ov = entry and entry.ov or EMPTY
+    cooldown:SetDrawSwipe(K.Pick(ov, view, "chargeSwipe") == true)
+    local edge = ov.chargeEdge
+    if edge == nil then edge = view.chargeEdge end
+    cooldown:SetDrawEdge(edge ~= false)
+    cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or 70) / 100)
+end
+
 function I.ChargeCooldown(icon)
     local cooldown = icon.chargeCd
     if cooldown then return cooldown end
@@ -121,6 +133,7 @@ function I.ChargeCooldown(icon)
     cooldown:SetHideCountdownNumbers(true)
     cooldown:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.charge)
     icon.chargeCd = cooldown
+    I.StyleCharge(icon)
     return cooldown
 end
 
@@ -140,6 +153,33 @@ local function PlaceText(fontString, icon, pos, inset)
     fontString:SetJustifyH(K.JUSTIFY[pos])
 end
 
+local function KeyBadge(icon, view)
+    local key = icon.keyText
+    local shown = key and view.keybind == true and view.keybindBadge == true and icon.lastKey ~= "" and icon.lastKey ~= nil
+    local bg, border = icon.keyBackground, icon.keyBorder
+    if shown and not bg then
+        border = S.CreateTexture(icon.over, nil, "BACKGROUND", nil, -1)
+        bg = S.CreateTexture(icon.over, nil, "BACKGROUND", nil, 0)
+        icon.keyBackground, icon.keyBorder = bg, border
+    end
+    if not bg then return end
+    bg:SetShown(shown == true)
+    border:SetShown(shown == true)
+    if not shown then return end
+    local pad = K.Pixels(view.keybindPadding or 2)
+    local edge = K.Pixels(1)
+    bg:ClearAllPoints()
+    bg:SetPoint("TOPLEFT", key, "TOPLEFT", -pad, pad)
+    bg:SetPoint("BOTTOMRIGHT", key, "BOTTOMRIGHT", pad, -pad)
+    border:ClearAllPoints()
+    border:SetPoint("TOPLEFT", bg, "TOPLEFT", -edge, edge)
+    border:SetPoint("BOTTOMRIGHT", bg, "BOTTOMRIGHT", edge, -edge)
+    local r, g, b = K.HexRGB(view.keybindBackground or "101010")
+    bg:SetColorTexture(r, g, b, .9)
+    r, g, b = K.HexRGB(view.keybindBorder or "808080")
+    border:SetColorTexture(r, g, b, 1)
+end
+
 local function StyleKey(icon, view)
     local key = icon.keyText
     if not key then return end
@@ -149,6 +189,7 @@ local function StyleKey(icon, view)
     Font(key, size, state.keyR, state.keyG, state.keyB)
     PlaceText(key, icon, view.keybindPos or 3, K.Pixels(1) + (icon.border or 0))
     key:SetShown(view.keybind == true)
+    KeyBadge(icon, view)
 end
 
 -- Countdown, charge/stack text and which of the two is on top, per entry
@@ -177,9 +218,10 @@ local function Texts(icon, view, ov)
 end
 
 -- Full style pass; callers gate it on view.styleGen (the preview calls it directly).
-function I.StyleIcon(icon, view)
+function I.StyleIcon(icon, view, width, height)
     local state = C.state
     local w, h = K.IconSize(view)
+    if width and height then w, h = width, height end
     icon.w, icon.h = w, h
     icon:SetSize(w, h)
     local level = icon:GetFrameLevel()
@@ -196,6 +238,7 @@ function I.StyleIcon(icon, view)
     end
     K.PlaceEdges(icon.edges, icon, border, r, g, b, 1)
     local tex = icon.tex
+    tex:Show()
     tex:ClearAllPoints()
     tex:SetPoint("TOPLEFT", icon, "TOPLEFT", border, -border)
     tex:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -border, border)
@@ -214,8 +257,21 @@ function I.StyleIcon(icon, view)
     Font(icon.count, stack, state.stackR, state.stackG, state.stackB)
     PlaceText(icon.count, icon, view.stackPos or 9, K.Pixels(1) + border)
     StyleKey(icon, view)
+    C.TrackingBars.Style(icon, view)
     icon.styleGen, icon.styleView = view.styleGen, view
     if icon.glow or icon.ants then C.Effects.Refit(icon) end
+end
+
+-- A style pass styles an icon at the size its row takes: later rows of a
+-- cooldown bar may have their own (Layout.Footprint by the icon's place),
+-- so the layout neither restyles it nor leaves it at the first row's size.
+local function Restyle(icon, view)
+    local index, layout = icon.layIndex, C.Layout
+    if index and layout.MixedRows(view) then
+        I.StyleIcon(icon, view, layout.Footprint(view, index))
+    else
+        I.StyleIcon(icon, view)
+    end
 end
 
 ------------------------------------------------------------------ threshold formatter
@@ -252,7 +308,7 @@ function I.Texture(entry)
     local icon = entry.icon
     if not icon then return end
     local ov = entry.ov or EMPTY
-    I.SetTexture(icon, ov.icon or entry.texture or K.QUESTION_ICON)
+    I.SetTexture(icon, ov.icon or entry.categoryTexture or entry.texture or K.QUESTION_ICON)
 end
 
 -- Swipe mode, bling, threshold formatter and the texts depend on the
@@ -264,9 +320,11 @@ function I.Apply(entry)
     local ov = entry.ov or EMPTY
     if icon.esEntry == entry and icon.esOv == ov and icon.esStyle == view.styleGen and icon.esBehavior == view.behaviorGen then return end
     icon.esEntry, icon.esOv, icon.esStyle, icon.esBehavior = entry, ov, view.styleGen, view.behaviorGen
+    if icon.durationBar then icon.timerBar.name:SetText(entry.name or "") end
     Texts(icon, view, ov)
+    I.StyleCharge(icon)
     local cooldown, state = icon.cd, C.state
-    local swipe = ov.swipe or 1
+    local swipe = view.cooldownDuration and 3 or ov.swipe or 1
     if icon.lastSwipe ~= swipe then
         icon.lastSwipe = swipe
         cooldown:SetReverse(swipe == 2)
@@ -301,6 +359,8 @@ local function ApplyKey(icon, text)
         StyleKey(icon, entry and C.views[entry.slot] or icon.styleView or EMPTY)
     end
     key:SetText(text)
+    local entry = icon.entry
+    KeyBadge(icon, entry and C.views[entry.slot] or icon.styleView or EMPTY)
 end
 
 function I.SetKeybind(entry, text)
@@ -422,7 +482,7 @@ function I.Sync(slotKey)
         local fresh = icon.entry ~= entry or entry.icon ~= icon
         if fresh then Bind(icon, entry) end
         if entry.charges and not icon.chargeCd then I.ChargeCooldown(icon) end
-        if icon.styleGen ~= view.styleGen or icon.styleView ~= view then I.StyleIcon(icon, view) end
+        if icon.styleGen ~= view.styleGen or icon.styleView ~= view then Restyle(icon, view) end
         I.Texture(entry)
         I.Apply(entry)
         SetMouse(icon, mouse)
@@ -454,7 +514,7 @@ function I.Style(slotKey)
     local bar = C.bars[slotKey]
     local ping = not (bar and bar.hidden)
     for _, icon in pairs(pool.byKey) do
-        if icon.styleGen ~= view.styleGen or icon.styleView ~= view then I.StyleIcon(icon, view) end
+        if icon.styleGen ~= view.styleGen or icon.styleView ~= view then Restyle(icon, view) end
         if icon.entry then I.Apply(icon.entry) end
         SetMouse(icon, mouse)
         SetPing(icon, ping)

@@ -2,6 +2,10 @@ local root=assert(arg[1],"repository root required")
 -- The client's securecallfunction reports an error and returns nothing;
 -- this stand-in lets errors raise, so a failing callback fails the test.
 securecallfunction = function(callback, ...) return callback(...) end
+hooksecurefunc = function(object, method, callback)
+    local original = object[method]
+    object[method] = function(...) original(...); callback(...) end
+end
 -- Offline contract for the cooldown manager render plane (Const, Presets, Icons,
 -- Time, Effects). Secret values are sentinels that raise on comparison,
 -- arithmetic, concatenation, indexing and tostring, and report their WoW
@@ -49,7 +53,7 @@ local function Plain(value,what) if IsSecret(value) then error("secret value rea
 for _,name in ipairs({"SetAllPoints","ClearAllPoints","SetPoint","SetColorTexture","SetHeight","SetWidth",
     "SetJustifyH","SetWordWrap","SetSwipeColor","SetFlipBookRows","SetFlipBookColumns","SetFlipBookFrames",
     "SetFlipBookFrameWidth","SetFlipBookFrameHeight","SetDuration","SetFromAlpha","SetToAlpha","SetLooping","SetOwner",
-    "SetItemByID","SetInventoryItem","SetSpellByID","SetDesaturation","SetAlpha"}) do Record(name) end
+    "SetItemByID","SetInventoryItem","SetSpellByID","SetDesaturation","SetAlpha","SetStatusBarTexture","SetStatusBarColor","SetMinMaxValues","SetValue"}) do Record(name) end
 -- In game a FontString without a font raises on SetText.
 Record("SetText",function(self) if self.kind=="FontString" and not self.font then error("SetText before SetFont",3) end end)
 -- Sinks documented AllowedWhenUntainted must never see a secret.
@@ -70,6 +74,7 @@ Record("SetShadowColor",function(self,r,g,b,a) self.shadowColor={r,g,b,a} end)
 Record("SetShadowOffset",function(self,x,y) self.shadowOffset={x,y} end)
 Record("SetTextColor",function(self,r,g,b) self.textColor=r end)
 Record("SetCooldownFromDurationObject",function(self,duration) assert(getmetatable(duration)==_G.DurationMT,"not a duration object");self.running=true end)
+Record("SetTimerDuration",function(self,duration) assert(getmetatable(duration)==_G.DurationMT,"not a duration object");self.running=true end)
 Record("Clear",function(self) self.running=false end)
 Record("SetCountdownFormatter",function(self,formatter) Plain(formatter,"SetCountdownFormatter");self.formatter=formatter end)
 Record("Play",function(self) self.playing=true end)
@@ -77,6 +82,10 @@ Record("Stop",function(self) self.playing=false end)
 function Widget:GetFrameLevel() return self.level end
 function Widget:GetWidth() return self.w end
 function Widget:GetHeight() return self.h end
+function Widget:GetStatusBarTexture()
+    if not self.fill then self.fill=New("Texture",self) end
+    return self.fill
+end
 function Widget:IsShown() return self.shown end
 function Widget:CreateTexture() return New("Texture",self) end
 function Widget:CreateFontString() return New("FontString",self) end
@@ -140,7 +149,8 @@ function FormatterMT:SetBreakpoints(points) self.points=points end
 local createdFormatters=0
 C_StringUtil={CreateNumericRuleFormatter=function() createdFormatters=createdFormatters+1;return setmetatable({},FormatterMT) end}
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
-Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2}}
+Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},
+    StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpolation={Immediate=0}}
 
 ------------------------------------------------------------------ spell and item APIs
 local info,charges,usable,noPower,inRange={}, {}, {}, {}, {}
@@ -165,6 +175,7 @@ GetInventoryItemCooldown=function(unit,slot) assert(unit=="player" and slot==13)
 -- Bag contents by item ID; the last GetItemCount flags are kept for the count contract.
 local bag,countArgs,itemCd={},{},{}
 C_Item={
+    GetItemIconByID=function(item) return item+100000 end,
     GetItemCooldown=function(item)
         Plain(item,"item cooldown")
         local cd=itemCd[item]
@@ -207,6 +218,7 @@ end
 assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite",NS)
 local S={}
 NS.Suite=S
+assert(loadfile(root.."/MSUF_Suite/Core/SpellRange.lua"))("MSUF_Suite",NS)
 MSUFSuite=NS
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
@@ -220,7 +232,7 @@ local C={M={},EMPTY={},views={},plans={},bars={},entries={},wipe=function(t) for
     px=1,font="Fonts\\TEST.TTF",fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,keyR=1,keyG=1,keyB=1,
     threshold=0,thR=1,thG=90/255,thB=60/255,showGCD=false,readyGlowCombat=true,inCombat=false,preview=false}}
 local P={NS=NS,Suite=S,CDM=C}
-local FILES={"Const.lua","Presets.lua","Icons.lua","Time.lua","Effects.lua"}
+local FILES={"Const.lua","Presets.lua","Icons.lua","TrackingBars.lua","Time.lua","Effects.lua"}
 -- Presets.lua is plain data plus one class lookup: it needs only the CDM table.
 local HEADERS={["Presets.lua"]="^local _, P = %.%.%.\nlocal C = P%.CDM\n"}
 for _,file in ipairs(FILES) do
@@ -439,7 +451,14 @@ do
     ess.keybind=true;ess.styleGen=5
     I.Sync("ess")
     assert(key.shown==true and Calls(key,"SetText")==1,"turning keybinds on shows the text")
-    ess.keybind=false;ess.styleGen=6
+    ess.keybindBadge=true;ess.styleGen=ess.styleGen+1
+    I.Sync("ess")
+    assert(b1.icon.keyBackground.shown and b1.icon.keyBorder.shown,"key badge missing")
+    I.SetKeybind(b1,"")
+    assert(not b1.icon.keyBackground.shown,"empty key kept its badge")
+    I.SetKeybind(b1,"S1")
+    ess.keybindBadge=false
+    ess.keybind=false;ess.styleGen=ess.styleGen+1
     I.Sync("ess")
     assert(key.shown==false)
 end
@@ -781,6 +800,23 @@ do
     local queries=countQueries
     I.Sync("uti")
     assert(countQueries==queries+#Presets.CATEGORY_ITEMS[4],"one recount per pass, not per icon: "..(countQueries-queries))
+    local first,second=Presets.CATEGORY_ITEMS[4][1],Presets.CATEGORY_ITEMS[4][2]
+    local oldFirst,oldSecond=bag[first],bag[second]
+    C.state.potionStockIcon=true
+    bag[first],bag[second]=0,2
+    T.BagsChanged();T.Refresh(p1,"item")
+    assert(p1.categoryItem==second and p1.icon.tex.last.SetTexture==second+100000,"stocked potion not displayed")
+    bag[first],bag[second]=3,0
+    T.BagsChanged();T.Refresh(p1,"item")
+    assert(p1.categoryItem==first and p1.icon.tex.last.SetTexture==first+100000,"depleted potion did not switch")
+    local reads=countQueries
+    T.Refresh(p1,"item")
+    assert(countQueries==reads,"unchanged potion refreshed its inventory")
+    C.state.potionStockIcon=false
+    T.Refresh(p1,"item")
+    assert(p1.categoryItem==nil and p1.icon.tex.last.SetTexture==K.CATEGORY_ICONS[4],"generic category did not restore")
+    bag[first],bag[second]=oldFirst,oldSecond
+    T.BagsChanged()
     table.remove(C.plans.uti.entries)
     table.remove(C.plans.uti.entries)
     I.Sync("uti")
@@ -1133,6 +1169,57 @@ do
 end
 -- Assisted combat: ants only on the suggestion, painted on change only.
 do
+    C.state.inCombat=true
+    b1.ov={readyGlow=true,readyResources=true}
+    b1.cooling=false
+    noPower[100]=true
+    E.Update(b1)
+    assert(not b1.icon.gReady,"insufficient resources allowed a ready glow")
+    -- Resource glow is independent of tint and of the range optimization.
+    ess.usable=false
+    b1.outOfRange=true
+    noPower[100]=false
+    E.Usable(b1)
+    assert(b1.icon.gReady,"resource recovery did not refresh the out-of-range ready glow")
+    noPower[100]=true
+    E.Usable(b1)
+    assert(not b1.icon.gReady,"resource loss left a ready glow running")
+    b1.outOfRange=nil
+    ess.usable=true
+    b1.ov=C.EMPTY
+    E.Update(b1)
+    b2.ov={fullChargeGlow=true,chargeSwipe=true,chargeEdge=false}
+    I.Apply(b2)
+    assert(b2.icon.chargeCd.last.SetDrawSwipe==true and b2.icon.chargeCd.last.SetDrawEdge==false,
+        "recharge decoration did not honor independent choices")
+    charges[200]={maxCharges=2,isActive=false,currentCharges=SECRET_NUM}
+    info[200]={isActive=false}
+    -- The choice change arrives as a behavior refresh (state, then effects).
+    T.Refresh(b2,"full")
+    E.Update(b2)
+    assert(b2.fullyCharged and b2.icon.gReady,"public full-charge state did not drive its distinct glow")
+    -- From here the events alone drive the glow (no E.Update): a charge
+    -- spell with one charge left is not cooling, so neither spending one
+    -- from full nor the last one coming back is a cooling edge.
+    charges[200].isActive=true
+    T.Refresh(b2,"cooldown")
+    assert(b2.cooling==false and not b2.fullyCharged and not b2.icon.gReady,
+        "spending a charge from full left the all-charges glow on")
+    charges[200].isActive=false
+    b2.icon.chargeCd.scripts.OnCooldownDone(b2.icon.chargeCd)
+    assert(b2.cooling==false and b2.fullyCharged and b2.icon.gReady,
+        "the last charge coming back while not cooling did not light the all-charges glow")
+    charges[200].isActive=SECRET_BOOL
+    T.Refresh(b2,"charges")
+    assert(not b2.fullyCharged and not b2.icon.gReady,"unknown charge state was treated as full")
+    charges[200].isActive=false
+    T.Refresh(b2,"recharge")
+    assert(b2.fullyCharged and b2.icon.gReady,"SPELL_UPDATE_CHARGES did not bring the all-charges glow back")
+    b2.ov=C.EMPTY
+    E.Update(b2)
+    C.state.inCombat=false
+end
+do
     IndexIconEntries()
     ess.assist=true
     E.Assist(100)
@@ -1157,7 +1244,48 @@ do
     ess.assist=false
 end
 
+do
+    C.state.allGlowsCombat=true
+    C.state.inCombat=false
+    E.CombatChanged(true)
+    assert(not b1.icon.effectGate.shown,"out-of-combat effects were not gated")
+    C.state.inCombat=true
+    E.CombatChanged(true)
+    assert(b1.icon.effectGate.shown,"combat did not restore effect visibility")
+    C.state.allGlowsCombat=false
+    C.state.inCombat=false
+    E.CombatChanged(true)
+    assert(b1.icon.effectGate.shown,"disabling combat-only did not restore effects")
+    E.Press(b1)
+    assert(b1.icon.pressPulse and b1.icon.pressPulse.playing,"action press did not start native feedback")
+    E.ResetIcon(b1.icon)
+    assert(not b1.icon.pressPulse.playing,"recycled icon kept its press animation")
+end
+
 ------------------------------------------------------------------ Icons: text per entry
+do
+    C.Keybinds={Text=function(spell) return spell==100 and "Q" or "" end}
+    C_Spell.GetSpellTexture=function(spell) return spell+1000 end
+    C.state.assistIcon=true
+    C.state.assistIconKeybind=true
+    C.state.assistIconGCD=true
+    E.Assist(100)
+    local frame=E.RecommendationFrame()
+    assert(frame and frame.shown and frame.tex.last.SetTexture==1100 and frame.key.last.SetText=="Q"
+        and frame.badge.shown and frame.cd.running,"standalone recommendation did not use native spell/key/GCD")
+    C.state.assistIconGCD=false
+    E.RecommendationGCD()
+    assert(not frame.cd.running,"standalone GCD toggle did not clear swipe")
+    E.Assist(nil)
+    assert(not frame.shown,"unavailable recommendation remained shown")
+    C.state.preview=true
+    E.Recommendation()
+    assert(frame.shown and frame.tex.last.SetTexture==K.QUESTION_ICON,"Edit Mode did not expose its mover frame")
+    C.state.assistIcon=false
+    C.state.preview=false
+    E.Recommendation()
+    assert(not frame.shown,"disabled recommendation icon remained shown")
+end
 -- Countdown, charges/stacks and Text on top per entry: the spell's choice
 -- (timeText, stackText, textTop: 2 yes, 3 no), else the bar's switches
 -- (stacks also follow "Show charges"). Memoized: a repeated pass writes
@@ -1227,6 +1355,70 @@ do
 end
 
 ------------------------------------------------------------------ preview and release
+do
+    local previous=charges[100]
+    b1.charges=true
+    charges[100]={maxCharges=2,currentCharges=SECRET_NUM,isActive=true}
+    b1.ov={hideAvailableCharges=true}
+    Info(100,false,false);T.Refresh(b1,"full")
+    assert(b1.icon.last.SetAlpha==0,"available charge did not fade the icon")
+    Info(100,true,false);T.Refresh(b1,"cooldown")
+    assert(b1.icon.last.SetAlpha==SECRET_NUM,"restricted no-charge cooldown must drive opacity through a native curve sink")
+    b1.ov=C.EMPTY;b1.charges=false;charges[100]=previous
+    Info(100,false,false);T.Refresh(b1,"full")
+    assert(b1.icon.last.SetAlpha==1,"turning off charge visibility did not restore opacity")
+end
+do
+    local icon = b1.icon
+    S.ResolveTexture = function(_, fallback) return fallback end
+    ess.cooldownDuration, ess.barWidth, ess.barHeight, ess.barName = true, 220, 22, true
+    ess.styleGen = ess.styleGen + 1
+    I.StyleIcon(icon, ess); I.Apply(b1)
+    assert(icon.w == 220 and icon.h == 22 and icon.timerBar.shown and icon.durationBar)
+    assert(icon.timerBar.name.last.SetText == (b1.name or "") and icon.cd.last.SetDrawSwipe == false)
+    local duration = NextDuration()
+    C.TrackingBars.Duration(icon, duration)
+    assert(icon.timerBar.last.SetTimerDuration == duration, "timer bars take native secret duration objects directly")
+    C.TrackingBars.Duration(icon, nil)
+    assert(not icon.timerBar.last.SetTimerDuration:IsActive(), "ready state replaces the running native timer")
+    ess.barChargeSegments=true;ess.styleGen=ess.styleGen+1;I.StyleIcon(icon,ess)
+    C.TrackingBars.Charges(icon,{maxCharges=3,currentCharges=SECRET_NUM,isActive=true},duration)
+    local bar=icon.timerBar
+    assert(bar.segmentMode and bar.countFill.last.SetValue==SECRET_NUM and bar.recharge.last.SetTimerDuration==duration,
+        "charge counts and recharge durations must reach separate native sinks without a Lua comparison")
+    assert(#bar.separators==2 and bar.recharge.last.SetStatusBarColor==bar.r*.5)
+    -- The bar, its charge segments, the countdown, then the name and stacks.
+    local level=icon.level
+    assert(bar.level==level and bar.countFill.level==level+K.LEVEL.fill and bar.recharge.level==bar.countFill.level
+        and icon.cd.level>bar.countFill.level and icon.over.level>icon.cd.level and bar.name.parent==icon.over,
+        "a timer bar's charge segments must sit under its countdown")
+    local geometry=Calls(bar.recharge,"SetPoint")
+    C.TrackingBars.Charges(icon,{maxCharges=3,currentCharges=SECRET_NUM,isActive=true},duration)
+    assert(Calls(bar.recharge,"SetPoint")==geometry,"unchanged charge geometry was rebuilt on a cooldown event")
+    C.TrackingBars.Charges(icon,{maxCharges=3,currentCharges=SECRET_NUM,isActive=false},nil)
+    assert(not bar.recharge.shown and bar.separators[1].shown,"full charges lost separators")
+    C.TrackingBars.Charges(icon,nil,nil)
+    assert(not bar.segmentMode and not bar.countFill.shown and bar:GetStatusBarTexture().last.SetAlpha==1)
+    -- The class color unreadable: the bar's own color, segments shaded from
+    -- it; the texture is resolved once per style pass.
+    local classRGB,resolve,resolved=S.ClassRGB,S.ResolveTexture,0
+    S.ClassRGB=function() end
+    S.ResolveTexture=function(value,fallback) resolved=resolved+1;return resolve(value,fallback) end
+    ess.barClass,ess.barR,ess.barG,ess.barB=true,.25,.5,.75
+    ess.styleGen=ess.styleGen+1
+    I.StyleIcon(icon,ess)
+    assert(resolved==1 and bar.r==.25 and bar.g==.5 and bar.b==.75,"no class color: the bar's own color is stored")
+    C.TrackingBars.Charges(icon,{maxCharges=3,currentCharges=SECRET_NUM,isActive=true},duration)
+    assert(bar.recharge.last.SetStatusBarColor==.125,"segments shade the stored color")
+    C.TrackingBars.Charges(icon,nil,nil)
+    S.ClassRGB,S.ResolveTexture=classRGB,resolve
+    ess.barClass=false;ess.styleGen=ess.styleGen+1
+    I.StyleIcon(icon,ess)
+    ess.cooldownDuration = false; ess.styleGen = ess.styleGen + 1
+    I.StyleIcon(icon, ess); I.Apply(b1)
+    assert(not icon.timerBar.shown and not icon.timerBar.name.shown and icon.tex.shown)
+    assert(icon.cd:GetCountdownFontString().last.SetPoint == "CENTER", "switching back restores native centered countdown")
+end
 do
     local parent=CreateFrame("Frame",nil,nil)
     local icon=I.CreateStandalone(parent)

@@ -30,6 +30,7 @@ local Refresh, BagsChanged, Request = C.Time.Refresh, C.Time.BagsChanged, C.Layo
 local ForSpell, ForBase, ForCategory, ForItem, AddSpell =
     Index.ForSpell, Index.ForBase, Index.ForCategory, Index.ForItem, Index.AddSpell
 local Proc, Range, ReadRange, Assist = Effects.Proc, Effects.Range, Effects.ReadRange, Effects.Assist
+local UsableShown = Effects.UsableShown
 local cooldownEntries, chargedEntries, usableEntries = Index.cooldown, Index.charged, Index.usable
 local bagEntries, itemEntries, rangedEntries = Index.bags, Index.items, Index.ranged
 
@@ -38,9 +39,10 @@ local bagEntries, itemEntries, rangedEntries = Index.bags, Index.items, Index.ra
 local staleRoutes, seedLater = false, false
 local events = {}
 -- SPELL_UPDATE_USABLE has no spell payload. Bound its visible-icon sweep to
--- ten times per second in combat storms, with one trailing refresh so the
--- final state is never lost. Other events and show edges still paint now.
-local USABLE_INTERVAL = .1
+-- five times per second for ordinary tinting, ten for resource-ready glows.
+-- The cold index selects the interval. A trailing refresh keeps the final
+-- state; range, target and show edges still paint immediately.
+local USABLE_INTERVAL = .2
 local usableNext, usableArmed = 0, false
 
 -- Loading screens and activation: combat state is read fresh and sounds
@@ -108,13 +110,18 @@ local function SetCategorySpell(entry) entry.catSpell = curSpell end
 -- that is secret counts as absent.
 local function OnCooldown(_, _, spellID, baseSpellID, category, recovery, itemID)
     stamp = stamp + 1
+    if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == 61304
+        or not issecret(recovery) and recovery == GCD) then Effects.RecommendationGCD() end
     if issecret(spellID) or spellID == nil then return EachCooldown(RefreshCooldown) end
     local item = not issecret(itemID) and itemID or nil
     if item and not issecret(category) and category and category ~= 0 then
         curSpell = not issecret(baseSpellID) and baseSpellID or spellID
         if ForCategory(category, SetCategorySpell) > 0 then ForCategory(category, RefreshCooldown) end
     end
-    if C.state.showGCD and not issecret(recovery) and recovery == GCD then return EachCooldown(RefreshCooldown) end
+    if not issecret(recovery) and recovery == GCD then
+        local list = Index.gcd
+        for i = 1, #list do RefreshCooldown(list[i]) end
+    end
     ForSpell(spellID, baseSpellID, RefreshCooldown)
     if item then ForItem(item, RefreshCooldown) end
 end
@@ -160,19 +167,17 @@ end
 local function UsableWindowDone()
     usableArmed = false
     if not M.active then return end
-    usableNext = GetTime() + USABLE_INTERVAL
+    usableNext = GetTime() + (Index.usableInterval or USABLE_INTERVAL)
     dirty.usable = true
     Schedule()
 end
 local function OnUsable()
     if dirty.usable or usableArmed then return end
     for i = 1, #usableEntries do
-        local entry = usableEntries[i]
-        local bar = C.bars[entry.slot]
-        if entry.icon and bar and bar.hidden ~= true and not entry.outOfRange then
+        if UsableShown(usableEntries[i]) then
             local now = GetTime()
             if now >= usableNext then
-                usableNext = now + USABLE_INTERVAL
+                usableNext = now + (Index.usableInterval or USABLE_INTERVAL)
                 dirty.usable = true
                 Schedule()
             else
@@ -236,8 +241,9 @@ end
 -- Registered only while aura containers or overlays exist.
 local RESTRICTION_OFF = Enum.AddOnRestrictionState.Inactive
 local function OnRestriction(_, _, _, state)
-    if Public(state) and state == RESTRICTION_OFF and (next(C.Auras.pending) or C.Alerts.pending) then
-        C_Timer.After(0, C.Auras.FlushPending)
+    if Public(state) and state == RESTRICTION_OFF then
+        if next(C.Auras.pending) or C.Alerts.pending then C_Timer.After(0, C.Auras.FlushPending) end
+        if C.ActionGlows.pending then C_Timer.After(0, C.ActionGlows.Refresh) end
     end
 end
 
@@ -287,8 +293,22 @@ local function OnEquipment(_, _, slot)
     dirty.catalog, dirty.resolve = true, true
     Schedule()
 end
-local function OnBindings() C.Keybinds.Request(true) end
+local function OnBindings()
+    C.Keybinds.Request(true)
+    C.ActionGlows.RouteChanged()
+end
 Ev.OnBindings = OnBindings
+-- The suite action bars started, stopped or changed their form pages: the
+-- key texts they answered are stale, and their glows may start or stop.
+function Ev.OnActionBars()
+    C.Keybinds.Request(true)
+    C.ActionGlows.RouteChanged(true)
+end
+local function OnActionPage()
+    if C.state.keybindStable == false then C.Keybinds.Request(true) end
+    C.ActionGlows.RouteChanged()
+end
+Ev.OnActionPage = OnActionPage
 
 local function AlertsWanted()
     local list = Index.aura
@@ -357,7 +377,7 @@ local function HighlightOn()
 end
 local function UpdateAssist()
     local mode
-    if #Index.assist > 0 then
+    if #Index.assist > 0 or C.state.assistIcon and HighlightOn() then
         local available = C_AssistedCombat.IsAvailable()
         if Public(available) and available then mode = HighlightOn() and "callback" or "poll" end
     end
@@ -372,6 +392,7 @@ local function UpdateAssist()
     end
     StartPoll()
 end
+Ev.OnAssistPolicyChanged = UpdateAssist
 
 ------------------------------------------------------------------ category seeds
 -- Category entries start from the last spell that started their category.
@@ -405,10 +426,15 @@ end
 -- and category seeds combat held back.
 local function OnCombatEnd()
     C.state.inCombat = false
+    if C.Resolve.ResumeConditions() then
+        dirty.resolve = true
+        Schedule()
+    end
     C.Effects.CombatChanged(true)
     C.Visibility.CombatChanged()
     C.Visibility.FlushPending()
     C.Auras.FlushPending()
+    C.ActionGlows.Refresh()
     C.Layout.CombatEnded()
     if assistMode == "poll" then
         StopPoll()
@@ -453,6 +479,7 @@ local function TargetWatch()
     return false
 end
 local function KeybindWatch()
+    if C.state.assistIcon and C.state.assistIconKeybind then return true end
     for slot, plan in pairs(C.plans) do
         local view = C.views[slot]
         if plan.kind == 1 and view and view.keybind and #plan.entries > 0 then return true end
@@ -472,7 +499,7 @@ local function EquipWatch()
 end
 local function UpdateEvents()
     local cooldown = #cooldownEntries > 0
-    Want("SPELL_UPDATE_COOLDOWN", cooldown, OnCooldown)
+    Want("SPELL_UPDATE_COOLDOWN", cooldown or C.state.assistIcon and C.state.assistIconGCD, OnCooldown)
     Want("SPELL_UPDATE_USES", #Index.counted > 0, OnUses)
     Want("SPELL_UPDATE_ICON", cooldown, OnIcon)
     Want("SPELL_UPDATE_CHARGES", #Index.charged > 0, OnCharges)
@@ -487,11 +514,13 @@ local function UpdateEvents()
     local target = TargetWatch()
     Want("PLAYER_TARGET_CHANGED", #Index.ranged > 0 or target, OnTarget)
     Want("UNIT_FACTION", target, OnFaction)
-    Want("ADDON_RESTRICTION_STATE_CHANGED", #Index.aura > 0 or #Index.overlay > 0, OnRestriction)
+    Want("ADDON_RESTRICTION_STATE_CHANGED", #Index.aura > 0 or #Index.overlay > 0 or C.ActionGlows.wanted, OnRestriction)
     Want("PLAYER_EQUIPMENT_CHANGED", EquipWatch(), OnEquipment)
     local keys = KeybindWatch()
     Want("UPDATE_BINDINGS", keys, OnBindings)
-    Want("ACTIONBAR_SLOT_CHANGED", keys, OnBindings)
+    Want("ACTIONBAR_SLOT_CHANGED", keys or C.ActionGlows.wanted, OnBindings)
+    Want("ACTIONBAR_PAGE_CHANGED", keys and C.state.keybindStable == false or C.ActionGlows.wanted, OnActionPage)
+    Want("UPDATE_SHAPESHIFT_FORM", keys and C.state.keybindStable == false or C.ActionGlows.wanted, OnActionPage)
 end
 -- Catalog, combat, scale and loading-screen events while the module runs.
 local CATALOG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",

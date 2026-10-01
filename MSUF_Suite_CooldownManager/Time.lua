@@ -24,6 +24,60 @@ local GetItemCount = C_Item.GetItemCount
 local GetInventoryItemCooldown = GetInventoryItemCooldown
 local CreateDuration = C_DurationUtil.CreateDuration
 local GetTime = GetTime
+-- Direct readers stay on the common unique-spell path. A flush with shared
+-- spells temporarily binds memoized readers, then clears every native answer
+-- before returning, including after an isolated entry error.
+local DirectCooldown, DirectDuration, DirectCharges = GetCooldown, GetDuration, GetCharges
+local DirectChargeDuration, DirectDisplayCount = GetChargeDuration, GetDisplayCount
+local function SharedReader(reader, argument, hasArgument)
+    local seen, values = {}, {}
+    local function Read(spell)
+        if not Public(spell) then
+            if hasArgument then return reader(spell, argument) end
+            return reader(spell)
+        end
+        if not seen[spell] then
+            local value
+            if hasArgument then value = reader(spell, argument) else value = reader(spell) end
+            seen[spell], values[spell] = true, value
+        end
+        return values[spell]
+    end
+    local function Clear()
+        wipe(seen)
+        wipe(values)
+    end
+    return Read, Clear
+end
+local SharedCooldown, ClearCooldown = SharedReader(DirectCooldown)
+local SharedBaseDuration, ClearBaseDuration = SharedReader(DirectDuration, true, true)
+local SharedDisplayDuration, ClearDisplayDuration = SharedReader(DirectDuration, false, true)
+local SharedCharges, ClearCharges = SharedReader(DirectCharges)
+local SharedChargeDuration, ClearChargeDuration = SharedReader(DirectChargeDuration)
+local SharedDisplayCount, ClearDisplayCount = SharedReader(DirectDisplayCount)
+local function SharedDuration(spell, ignoreGCD)
+    if ignoreGCD then return SharedBaseDuration(spell) end
+    return SharedDisplayDuration(spell)
+end
+local queriesActive = false
+function T.BeginQueries()
+    if queriesActive then return false end
+    queriesActive = true
+    GetCooldown, GetDuration, GetCharges = SharedCooldown, SharedDuration, SharedCharges
+    GetChargeDuration, GetDisplayCount = SharedChargeDuration, SharedDisplayCount
+    return true
+end
+function T.EndQueries()
+    GetCooldown, GetDuration, GetCharges = DirectCooldown, DirectDuration, DirectCharges
+    GetChargeDuration, GetDisplayCount = DirectChargeDuration, DirectDisplayCount
+    ClearCooldown()
+    ClearBaseDuration()
+    ClearDisplayDuration()
+    ClearCharges()
+    ClearChargeDuration()
+    ClearDisplayCount()
+    queriesActive = false
+end
 -- Ready alerts need a real cooldown of at least this long; items treat
 -- anything up to a global cooldown as no cooldown.
 local READY_MIN, GCD_MAX = 2, 1.5
@@ -58,6 +112,8 @@ end
 -- result may be secret and goes straight into the sink); without one the
 -- icon shows its ready look through memoized plain writes.
 local function Feedback(icon, duration)
+    icon.mainDuration = duration
+    C.TrackingBars.Duration(icon, duration)
     local desat, alpha = icon.desatCurve, icon.alphaCurve
     local tex = icon.tex
     if desat and duration then
@@ -140,6 +196,16 @@ local function Real(info, duration, reason, previous)
     return not (Public(gcd) and gcd), false
 end
 
+local function ChargeVisibility(entry, icon, maximum)
+    if entry.ov and entry.ov.hideAvailableCharges and Public(maximum) and type(maximum) == "number" and maximum > 1
+        and not C.state.preview then
+        local duration = icon.mainDuration
+        if duration then icon:SetAlpha(duration:EvaluateRemainingDuration(K.StepCurve(0, 100)))
+        else icon:SetAlpha(0) end
+        icon.fbAlpha = nil
+    end
+end
+
 -- Returns the entry's cooling state. reason "expired": the main swipe held
 -- the GCD-free duration and just ran out, so the real cooldown is over and
 -- any isActive now is the GCD; nothing is queried for the main cooldown (a
@@ -160,7 +226,9 @@ local function SpellState(entry, icon, spell, reason)
         local info = GetCooldown(spell)
         local active = info and info.isActive
         if Public(active) and active then
-            local ignoreGCD = C.state.showGCD ~= true
+            local showGCD = entry.ov and entry.ov.showGCD
+            if showGCD == nil then showGCD = C.state.showGCD end
+            local ignoreGCD = showGCD ~= true
             local duration = GetDuration(spell, ignoreGCD)
             if duration then
                 icon.cd:SetCooldownFromDurationObject(duration, true)
@@ -170,7 +238,7 @@ local function SpellState(entry, icon, spell, reason)
             end
             -- Desaturation, opacity and the ready check ignore the GCD.
             local base = duration
-            if not ignoreGCD and (icon.desatCurve or icon.alphaCurve or reason ~= "cooldown") then
+            if not ignoreGCD and (icon.desatCurve or icon.alphaCurve or entry.ov and entry.ov.hideAvailableCharges or reason ~= "cooldown") then
                 base = GetDuration(spell, true)
             end
             Feedback(icon, base)
@@ -181,15 +249,20 @@ local function SpellState(entry, icon, spell, reason)
         end
     end
     local charges = entry.charges ~= false and GetCharges(spell)
+    local rechargeDuration
+    entry.fullyCharged = nil
     local maximum = charges and charges.maxCharges
     if Public(maximum) and type(maximum) == "number" and maximum > 1 then
         local state = charges.isActive
         local recharging = Public(state) and state == true
+        entry.fullyCharged = Public(state) and state == false or nil
         if recharging then
             local duration = GetChargeDuration(spell)
+            rechargeDuration = duration
             if duration then
                 local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
                 cooldown:SetCooldownFromDurationObject(duration, true)
+                C.TrackingBars.Duration(icon, duration)
                 icon.chargeSet = true
             else
                 ClearCharge(icon)
@@ -208,6 +281,8 @@ local function SpellState(entry, icon, spell, reason)
     else
         ClearCharge(icon)
     end
+    C.TrackingBars.Charges(icon, charges, rechargeDuration)
+    ChargeVisibility(entry, icon, maximum)
     -- Potion and healthstone entries show their bag count (CategoryCount).
     local category = entry.spellCategory
     if category and category ~= 0 then return cooling end
@@ -226,6 +301,7 @@ end
 -- from these caches. Potion and healthstone entries (Blizzard spellCategory)
 -- sum every quality rank behind the category (Presets.CATEGORY_ITEMS).
 local totals, counts, countsStale = {}, {}, true
+local selectedItems = {}
 function T.BagsChanged() countsStale = true end
 local function Fresh()
     if countsStale then
@@ -239,14 +315,19 @@ local function Total(category)
     local total = totals[category]
     if total then return total end
     total = 0
+    local selected, previous = nil, selectedItems[category]
     local items = C.Presets.CATEGORY_ITEMS[category]
     if items then
         for i = 1, #items do
             local count = GetItemCount(items[i], false, true)
-            if Public(count) and type(count) == "number" and count > 0 then total = total + count end
+            if Public(count) and type(count) == "number" and count > 0 then
+                total = total + count
+                if not selected or items[i] == previous then selected = items[i] end
+            end
         end
     end
     totals[category] = total
+    selectedItems[category] = selected
     return total
 end
 -- false when unreadable (never documented as secret, but guarded).
@@ -263,7 +344,15 @@ end
 -- Returns true when the bags hold none; a hideEmpty entry reads its total
 -- even while counts are off.
 local function CategoryCount(icon, category, entry)
-    local total = (icon.stackOn or entry.hideEmpty) and Total(category) or 0
+    local choose = C.state.potionStockIcon and (category == 4 or category == 30)
+    local total = (icon.stackOn or entry.hideEmpty or choose) and Total(category) or 0
+    local item = choose and selectedItems[category] or nil
+    if entry.categoryItem ~= item then
+        entry.categoryItem = item
+        local texture = item and C_Item.GetItemIconByID(item)
+        entry.categoryTexture = Public(texture) and texture or nil
+        C.Icons.Texture(entry)
+    end
     if total > 0 and icon.stackOn then
         ShowCount(icon, total)
     else
@@ -306,7 +395,8 @@ local function ItemState(entry, icon, reason)
         cooling = true
     elseif plain and start > 0 and length > 0 then
         icon.itemLock = nil
-        local gcd = C.state.showGCD == true
+        local gcd = entry.ov and entry.ov.showGCD
+        if gcd == nil then gcd = C.state.showGCD == true end
         if icon.itemStart == start and icon.itemLen == length and icon.itemGCD == gcd then
             if not icon.itemOver and (reason == "expired" or start + length <= GetTime()) then
                 icon.itemOver = true
@@ -399,6 +489,7 @@ function T.Refresh(entry, reason)
     end
     if icon.curveEntry ~= entry or icon.curveOv ~= entry.ov or icon.curveGen ~= view.behaviorGen then Curves(icon, entry, view) end
     if reason == "full" then C.Icons.Apply(entry) end
+    local full = entry.fullyCharged
     local cooling, empty
     if entry.equipSlot or entry.src == "i" or entry.src == "e" then
         cooling, empty = ItemState(entry, icon, reason)
@@ -433,8 +524,17 @@ function T.Refresh(entry, reason)
     local was = entry.cooling
     Edge(entry, cooling)
     -- A flip without a cooling edge (a Healthstone leaving or joining the
-    -- bags) re-evaluates the glows as well; Edge covers the others.
-    if changed and was == cooling then C.Effects.Update(entry) end
+    -- bags) re-evaluates the glows as well; Edge covers the others. A charge
+    -- spell stays "not cooling" while one charge is left: spending one from
+    -- full, or the last one coming back, moves only fullyCharged, which the
+    -- ready glow ("Glow when all charges are ready") follows.
+    if was == cooling then
+        if changed then
+            C.Effects.Update(entry)
+        elseif entry.fullyCharged ~= full then
+            C.Effects.RefreshReady(entry)
+        end
+    end
     return changed
 end
 

@@ -16,10 +16,14 @@ Catalog.lua
 Resolve.lua
 Index.lua
 Icons.lua
+TrackingBars.lua
 Time.lua
 Effects.lua
+StackColors.lua
 AuraButtons.lua
+AuraPlaceholders.lua
 Auras.lua
+ActionGlows.lua
 Alerts.lua
 Layout.lua
 Visibility.lua

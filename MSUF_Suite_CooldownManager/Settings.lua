@@ -41,11 +41,16 @@ local function Work(list, flags)
 end
 Work({ "x", "y", "anchor", "side", "gap" }, { layout = true })
 Work({ "align", "spacing", "perRow", "maxIcons", "vertical", "grow" }, { layout = true, flow = true })
+Work({ "cooldownFixed" }, { layout = true })
+Work({ "overflow", "maxIcons" }, { resolve = true })
+Work({ "shareContents" }, { resolve = true })
+Work({ "cooldownDuration" }, { layout = true, style = true, behavior = true, index = true, overlay = true })
+Work({ "laterPerRow", "laterSize" }, { layout = true, style = true })
 Work({ "size", "height", "barWidth", "barHeight" }, { layout = true, flow = true, style = true })
 Work({ "on" }, { layout = true, resolve = true, visible = true })
 Work({ "kind" }, { layout = true, flow = true, resolve = true, style = true, behavior = true, bar = true })
 Work({ "zoom", "border", "borderColor", "borderClass", "swipeAlpha", "edge", "cdText", "cdSize", "stackSize", "stackPos",
-    "keybindSize", "keybindPos", "textTop" }, { style = true })
+    "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding", "textTop" }, { style = true })
 -- Counts: the icon's text switch (style), the count read back when shown
 -- again (behavior) and use-count routing (index).
 Work({ "stackText" }, { style = true, behavior = true, index = true })
@@ -54,14 +59,16 @@ Work({ "desat", "cdAlpha", "readyAlpha", "hideReady", "rangeColor", "bling" }, {
 -- The glow look also styles aura glows: aura buttons of aura bars and the
 -- overlays of cooldown bars restyle through their diffed sync.
 Work({ "glowStyle", "glowColor", "glowTint" }, { behavior = true, restyle = true })
-Work({ "range", "usable", "procGlow", "readyGlow", "charges", "assist" }, { behavior = true, index = true })
+Work({ "range", "usable", "procGlow", "readyGlow", "readyResources", "fullChargeGlow", "charges", "assist" }, { behavior = true, index = true })
+Work({ "chargeSwipe", "chargeEdge" }, { style = true, behavior = true })
 Work({ "showAura" }, { behavior = true, index = true, overlay = true })
 Work({ "showMissing", "keepSlots", "auraGlow", "pandemic" }, { behavior = true, aura = true })
 Work({ "vis", "hideMounted", "hideVehicle", "alpha", "oocAlpha" }, { visible = true })
 Work({ "tooltips" }, { restyle = true })
 Work({ "strata" }, { restyle = true, visible = true })
 Work({ "layer" }, { layout = true, aura = true, restyle = true })
-Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill" }, { bar = true })
+Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
+    "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" }, { bar = true, style = true, behavior = true })
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.
 local FRESH = { layout = true, style = true, behavior = true, index = true, visible = true, resolve = true, named = true }
@@ -75,6 +82,10 @@ end
 local COLOR = { borderColor = { "borderR", "borderG", "borderB" }, glowColor = { "glowR", "glowG", "glowB" },
     rangeColor = { "rangeR", "rangeG", "rangeB" }, barColor = { "barR", "barG", "barB" } }
 local OUTLINE = { "OUTLINE", "THICKOUTLINE", "" }
+-- Globals whose change re-registers events (the assisted icon's sources and
+-- the keybind watch); its size and place only repaint it (Refresh does).
+local EVENT_GLOBALS = { "assistIcon", "assistIconKeybind", "assistIconGCD", "keybindStable" }
+local PLACE_GLOBALS = { "assistIconSize", "assistIconX", "assistIconY" }
 local CHANNEL = { "Master", "SFX", "Dialog" }
 
 -- Per slot: suffixes, their keys and work records as arrays (built-in bars
@@ -134,9 +145,25 @@ function St.ReadGlobals(config, all)
     end
     if state.threshold ~= config.thresholdSeconds then state.threshold, text = config.thresholdSeconds, true end
     local gcd = config.showGCD == true
-    if all or state.showGCD ~= gcd then state.showGCD, dirty.cooldowns = gcd, true end
+    if all or state.showGCD ~= gcd then state.showGCD, dirty.cooldowns, dirty.index = gcd, true, true end
     local glow = config.readyGlowCombat == true
     if all or state.readyGlowCombat ~= glow then state.readyGlowCombat, dirty.effects = glow, true end
+    local allGlows = config.allGlowsCombat == true
+    state.pressFeedback = config.pressFeedback == true
+    for i = 1, #EVENT_GLOBALS do
+        local key = EVENT_GLOBALS[i]
+        if state[key] ~= config[key] then state[key], dirty.events = config[key], true end
+    end
+    for i = 1, #PLACE_GLOBALS do
+        local key = PLACE_GLOBALS[i]
+        state[key] = config[key]
+    end
+    local stocked = config.potionStockIcon == true
+    if all or state.potionStockIcon ~= stocked then state.potionStockIcon, dirty.cooldowns = stocked, true end
+    if all or state.allGlowsCombat ~= allGlows then
+        state.allGlowsCombat, dirty.effects = allGlows, true
+        for i = 1, #SLOTS do sync[SLOTS[i].key] = true end
+    end
     local mute, channel = config.muteSounds == true, CHANNEL[config.soundChannel] or "Master"
     if all or state.muteSounds ~= mute or state.soundChannel ~= channel then state.muteSounds, state.soundChannel, dirty.alerts = mute, channel, true end
     return text

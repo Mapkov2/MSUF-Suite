@@ -143,6 +143,7 @@ local function ResolveUnit()
     local _, any = C.Resolve.Build()
     C.Preview.Decorate()
     Resolved(any)
+    C.ActionGlows.Refresh()
 end
 local function SyncUnit(slot)
     C.Icons.Sync(slot)
@@ -157,15 +158,22 @@ local function EntryUnit(entry, reason)
     if C.Time.Refresh(entry, reason) then C.Layout.Request(entry.slot) end
     if reason == "full" then C.Effects.Update(entry) end
 end
+-- Reuse native usability answers only during one synchronous broadcast.
+-- The maps retain capacity, but no answers (including secrets) across passes.
+local usableSpells = { seen = {}, usable = {}, noPower = {} }
+local usableItems = { seen = {}, usable = {}, noPower = {} }
 local function UsableUnit()
     local list = C.Index.usable
+    local fx = C.Effects
     for i = 1, #list do
         local entry = list[i]
-        local bar = C.bars[entry.slot]
-        if entry.icon and bar and bar.hidden ~= true and not entry.outOfRange then C.Effects.Usable(entry) end
+        if fx.UsableShown(entry) then fx.Usable(entry, entry.src == "i" and usableItems or usableSpells) end
     end
 end
-local function EffectsUnit() C.Effects.CombatChanged() end
+local function EffectsUnit()
+    C.Effects.CombatChanged()
+    C.ActionGlows.Refresh()
+end
 local function KeybindsUnit() C.Keybinds.Refresh() end
 local function LayoutAllUnit() C.Layout.ApplyAll() end
 local function LayoutUnit(slot) C.Layout.Apply(slot) end
@@ -195,16 +203,20 @@ end
 
 -- Structure (icons before aura overlays) or, without it, the look.
 local function FlushStructure()
+    local changed = false
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
         if sync[slot] then
+            changed = true
             sync[slot], style[slot], laid[slot] = nil, nil, true
             Run(sync, slot, true, SyncUnit, slot)
         elseif style[slot] then
+            changed = true
             style[slot] = nil
             Run(style, slot, true, StyleUnit, slot)
         end
     end
+    if changed and C.ActionGlows.wanted then C.ActionGlows.Refresh() end
 end
 
 -- Cooldown state of marked entries, usability of visible icons, effects.
@@ -217,13 +229,18 @@ local function FlushEntries()
         MarkPlans(behavior)
         wipe(behavior)
     end
+    local timeQueries = next(marked) and C.Index.hasSharedTimeSpells and C.Time.BeginQueries()
     for entry, reason in pairs(marked) do
         marked[entry] = nil
         if entry.icon and entry.slot then Run(marked, entry, reason, EntryUnit, entry, reason) end
     end
+    if timeQueries then C.Time.EndQueries() end
     if dirty.usable then
         dirty.usable = false
         Run(dirty, "usable", true, UsableUnit)
+        -- Run isolates a raising entry; cleanup also runs after that failure.
+        for _, map in pairs(usableSpells) do wipe(map) end
+        for _, map in pairs(usableItems) do wipe(map) end
     end
     if dirty.effects then
         dirty.effects = false

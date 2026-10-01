@@ -49,6 +49,15 @@ end
 
 ------------------------------------------------------------------ widgets
 local R=setmetatable({},{__mode="k"})
+RegisterStateDriver=function(frame, state, condition)
+    assert(not COMBAT and state=="visibility" and condition=="[combat] show; hide",
+        "aura combat gates must be registered outside combat")
+    R[frame].combatDriver=condition
+end
+UnregisterStateDriver=function(frame, state)
+    assert(not COMBAT and state=="visibility", "aura combat gate teardown in combat")
+    R[frame].combatDriver=nil
+end
 local Methods,ContainerMethods,ButtonMethods={},{},{}
 local V125_ONLY={SetAuraGroupEnabled=true,SetAuraSlotEnabled=true,SetEditModePreviewEnabled=true,
     IsEditModePreviewEnabled=true,GetAuraSlotFrame=true,AddAuraShownAnimation=true}
@@ -218,12 +227,15 @@ function ContainerMethods:SetUnit(unit)
     if s.unit~=unit then s.unit=unit;s.unitSets=s.unitSets+1 end
 end
 function ContainerMethods:GetUnit() return R[self].unit end
+-- Blizzard_AuraContainer.lua: IsEnabled is enabled == true and only
+-- SetEnabled sets it; a new container starts disabled (UNIT_AURA is
+-- registered and ParseAllAuras reads only while enabled).
 function ContainerMethods:SetEnabled(on)
     assert(type(on)=="boolean","enabled")
     R[self].enabled=on
     Log(self,"SetEnabled",nil,on)
 end
-function ContainerMethods:IsEnabled() return R[self].enabled end
+function ContainerMethods:IsEnabled() return R[self].enabled==true end
 function ContainerMethods:UpdateAllAuras() local s=R[self];s.updates=s.updates+1 end
 function ContainerMethods:SetEditModePreviewEnabled(on) R[self].editPreview=on end
 local function Display(self,key,filter,opts,count,slot)
@@ -344,7 +356,7 @@ function CreateFrame(kind,name,parent,template)
         assert(template=="CustomAuraContainerTemplate","container template")
         local c=New("AuraContainer",parent,BlizzardMT)
         local s=R[c]
-        s.container,s.v125,s.unit,s.enabled=true,V125,"none",true
+        s.container,s.v125,s.unit,s.enabled=true,V125,"none",nil
         s.updates,s.unitSets,s.adds=0,0,0
         s.groups,s.slots,s.order,s.log,s.flow={},{},{},{},{}
         containers[#containers+1]=c
@@ -538,7 +550,9 @@ end
 
 -- Strict globals from here on: the runtime files may not create any.
 setmetatable(_G,{__newindex=function(_,key) error("global write: "..tostring(key),2) end})
+LoadRuntime("StackColors.lua")
 LoadRuntime("AuraButtons.lua")
+LoadRuntime("AuraPlaceholders.lua")
 LoadRuntime("Auras.lua")
 LoadRuntime("Alerts.lua")
 local A,Alerts=C.Auras,C.Alerts
@@ -945,6 +959,247 @@ barView.barFill=2
 A.Sync("bar")
 local bc2=Live("bar","player")
 assert(bc2~=bc and R[Buttons(bc2,"g1")[1]].bind.barOpts.direction==0,"fill direction is a new binding set")
+barView.barStacks, barView.barStackMax, barView.barStackEach, barView.barStackMarks = true, 8, false, "2,4,4,99"
+k1.ov={stackGlow=3}
+A.Sync("bar")
+local stackContainer=Live("bar","player")
+local stackButton=R[Buttons(stackContainer,"g1")[1]]
+assert(stackButton.bind.appBar and stackButton.bind.appOpts.maxApplications==8 and not stackButton.bind.bar,
+    "stack-filled bars use one native application sink, never overwrite it with stack-glow or duration bindings")
+assert(stackButton.bind.appBinds==1 and stackButton.bind.text and stackButton.bind.count)
+local function ChildSensor(parent, slot)
+    for _,candidate in ipairs(containers) do
+        if R[candidate].parent==parent and R[candidate].slots[slot] then return candidate end
+    end
+end
+local glowSensor=ChildSensor(Buttons(stackContainer,"g1")[1],"stack")
+assert(glowSensor and #R[glowSensor].points==0,"stack glow owns an unanchored child aura container")
+-- Blizzard's containers start disabled: a child sensor that is never
+-- enabled registers no UNIT_AURA and parses nothing, so its glow never shows.
+assert(R[glowSensor].enabled==true and LogCount(glowSensor,"SetEnabled")==1,"the stack glow sensor is enabled after creation")
+for _,c in ipairs(containers) do
+    assert(R[c].enabled~=nil or R[c].adds==0,"every container with a slot or group was enabled or disabled on purpose")
+end
+assert(R[Buttons(glowSensor,"stack")[1]].bind.appOpts.maxApplications==3,
+    "stack glow retains an independent threshold alongside native stack fill")
+do
+    local before=#containers
+    barView.barStackColorAt,barView.barStackColor=4,"ff6633"
+    A.Sync("bar")
+    local primary=Live("bar","player")
+    local primaryButton=Buttons(primary,"g1")[1]
+    local secondary=ChildSensor(primaryButton,"color")
+    local glowChild=ChildSensor(primaryButton,"stack")
+    local glowButton=Buttons(glowChild,"stack")[1]
+    assert(secondary and #containers>before,"threshold coloring creates native child sensors only when enabled")
+    assert(#R[secondary].points==0,"child sensor container never anchors to another aura container")
+    assert(R[secondary].enabled==true and R[glowChild].enabled==true,"the color and stack glow sensors are enabled after creation")
+    local sensorButton=Buttons(secondary,"color")[1]
+    local binding=R[sensorButton].bind
+    local fill=R[primaryButton].bind.appBar
+    assert(R[primaryButton].bind.appOpts.maxApplications==8 and binding.appOpts.maxApplications==4,
+        "independent native bindings preserve the stack fill maximum")
+    local sensor=binding.appBar
+    local point=R[sensor].points[1]
+    local width=Args(sensor,"SetSize")[1]
+    local host,gate
+    for obj,s in pairs(R) do
+        if s.points[1] and s.points[1][2]==R[sensor].fill then host=obj;gate=s.parent;break end
+    end
+    local colorWidth=Args(host,"SetSize")[1]
+    assert(R[gate].allPoints==R[fill].fill,"color is clipped to the native primary fill, not the bar background")
+    assert(point[4]+width/4*3+colorWidth<0 and math.abs(point[4]+width)<.001,
+        "below threshold overlay is fully clipped; threshold aligns the complete fill color")
+    local total=#containers
+    A.Sync("bar")
+    assert(#containers==total and R[sensorButton].bind.appBinds==1,"unchanged styling neither allocates nor rebinds")
+    assert(R[glowButton].bind.appBinds==1,"unchanged auxiliary glow does not rebind")
+    k1.ov.stackGlowOp=2
+    A.Sync("bar")
+    assert(#containers==total and R[glowButton].bind.appOpts.maxApplications==4
+        and R[primaryButton].bind.appOpts.maxApplications==8 and binding.appOpts.maxApplications==4,
+        "exact stack-glow comparison must not overwrite stack fill or threshold color")
+    barView.barStackColorAt=6
+    A.Sync("bar")
+    assert(Live("bar","player")==primary and #containers==total and binding.appOpts.maxApplications==6,
+        "threshold edits reuse containers and replace only the native sensor binding")
+    local old=k1.auraIDs
+    k1.auraIDs=Set(987654)
+    A.Sync("bar")
+    assert(R[secondary].slots.color.cand.includeSpellIDs[987654],"entry changes update the child native candidate IDs")
+    assert(R[glowChild].slots.stack.cand.includeSpellIDs[987654],"entry changes also update auxiliary glow candidates")
+    k1.auraIDs=old
+    COMBAT,ACCESS,AURAS_SECRET=true,false,true
+    barView.barStackColor= "33ff66"
+    A.Sync("bar")
+    assert(A.pending.bar,"sealed native sensor color edits defer during combat")
+    COMBAT,ACCESS,AURAS_SECRET=false,true,false
+    A.FlushPending()
+    barView.barStackColorAt=0
+    A.Sync("bar")
+    assert(not R[primary].enabled and not R[primary].shown,
+        "disabling threshold colors retires the primary owner, natively hiding and unregistering its child containers")
+    local plain=Live("bar","player")
+    assert(not ChildSensor(Buttons(plain,"g1")[1],"color"),"disabled color has no color sensor")
+    assert(ChildSensor(Buttons(plain,"g1")[1],"stack"),"disabling color preserves independent stack glow")
+    k2.ov={stackGlow=2}
+    A.Sync("bar")
+    local firstChild=ChildSensor(Buttons(plain,"g1")[1],"stack")
+    local childCount=#containers
+    local oldOverride=k1.ov
+    k1.ov=C.EMPTY
+    A.Sync("bar")
+    assert(Live("bar","player")==plain and not R[firstChild].enabled and not R[firstChild].shown,
+        "one disabled entry must stop its child sensor while other entries keep stack glow")
+    k1.ov=oldOverride
+    A.Sync("bar")
+    assert(#containers==childCount and R[firstChild].enabled and R[firstChild].shown,
+        "reenabling an entry reuses its native child sensor")
+    k1.ov,k2.ov=C.EMPTY,C.EMPTY
+    A.Sync("bar")
+    local bare=Buttons(Live("bar","player"),"g1")[1]
+    assert(not ChildSensor(bare,"stack") and not ChildSensor(bare,"color"),"ordinary stack bars have no secondary sensors")
+end
+-- The stack maximum and the marker list are looks: a "Maximum stacks" drag
+-- or a marker edit restyles the live buttons in place (the fill's
+-- application bar is rebound, markers come from a per-button pool) and
+-- never builds another container tree, which could never be freed.
+do
+    local function Widgets() local n=0 for _ in pairs(R) do n=n+1 end return n end
+    local function Marks(button)
+        local xs={}
+        for _,s in pairs(R) do
+            local parent=s.parent and R[s.parent]
+            local color=s.args.SetColorTexture
+            if s.kind=="Texture" and s.shown and parent and parent.parent==button and color and color[4]==.7 then
+                xs[#xs+1]=s.points[#s.points][4]
+            end
+        end
+        table.sort(xs)
+        return table.concat(xs,",")
+    end
+    barView.barStacks,barView.barStackEach,barView.barStackMax=true,true,9
+    barView.barStackColorAt,barView.barStackColor=4,"ff6633"
+    k1.ov,k2.ov={stackGlow=3},C.EMPTY
+    A.Sync("bar")
+    local primary=Live("bar","player")
+    local first=Buttons(primary,"g1")[1]
+    local parts=#Buttons(primary,"g1")+#Buttons(primary,"g2")
+    local count,widgets,binds=#containers,Widgets(),R[first].bind.appBinds
+    for n=9,99 do barView.barStackMax=n;A.Sync("bar") end
+    assert(#containers==count and Live("bar","player")==primary,"a Maximum stacks sweep builds no container")
+    assert(R[first].bind.appOpts.maxApplications==99 and R[first].bind.appBinds==binds+90,
+        "the fill is rebound in place, once per new maximum")
+    local grown=Widgets()-widgets
+    assert(grown==parts*90,"one pooled marker per new stack and button, nothing else: "..grown)
+    widgets=Widgets()
+    for n=99,9,-1 do barView.barStackMax=n;A.Sync("bar") end
+    for n=9,99 do barView.barStackMax=n;A.Sync("bar") end
+    assert(#containers==count and Widgets()==widgets,"a second sweep creates nothing")
+    barView.barStackEach=false
+    for i=1,60 do barView.barStackMarks=i..","..(i+3);A.Sync("bar") end
+    assert(#containers==count and Widgets()==widgets and Live("bar","player")==primary,"marker edits create nothing")
+    barView.barStackMax,barView.barStackMarks=4,"2, 3, 3, 12"
+    A.Sync("bar")
+    assert(Marks(first)=="100,149","listed markers below the maximum, each once ("..Marks(first)..")")
+    barView.barStackEach=true
+    A.Sync("bar")
+    assert(Marks(first)=="50,100,149","every stack marked at maximum 4 ("..Marks(first)..")")
+    assert(R[first].bind.appOpts.maxApplications==4 and #containers==count,"back to 4: rebound, same containers")
+    barView.barStackColorAt,barView.barStackMax,barView.barStackMarks=0,10,""
+    k1.ov=C.EMPTY
+end
+-- Frame levels inside a stack-filled buff bar, bottom to top: the fill, the
+-- threshold colour, the markers, every glow (edges included), the
+-- countdown and name, the stacks (Text on top swaps the last two).
+do
+    local function Under(obj,root)
+        local p=R[obj].parent
+        while p do
+            if p==root then return true end
+            p=R[p].parent
+        end
+        return false
+    end
+    -- Glow frames: the frame that holds a flipbook texture, and its edge ring.
+    local function Glows(root)
+        local levels={}
+        for obj,s in pairs(R) do
+            if s.kind=="AnimationGroup" and s.parent and R[s.parent].kind=="Texture" and Under(s.parent,root) then
+                for _,kid in ipairs(s.kids or {}) do
+                    if R[kid].kind=="FlipBook" then
+                        local frame=R[s.parent].parent
+                        levels[#levels+1]=R[frame].level
+                        for _,child in ipairs(R[frame].kids or {}) do
+                            if R[child].kind=="Frame" then levels[#levels+1]=R[child].level end
+                        end
+                    end
+                end
+            end
+        end
+        table.sort(levels)
+        return levels
+    end
+    barView.barStacks,barView.barStackEach,barView.barStackMax=true,true,5
+    barView.barStackColorAt,barView.auraGlow=2,true
+    k1.ov={stackGlow=3,glowStyle=4}
+    A.Sync("bar")
+    local primary=Live("bar","player")
+    local b=Buttons(primary,"g1")[1]
+    local bind=R[b].bind
+    local fill=R[bind.appBar].level
+    local colorButton=Buttons(ChildSensor(b,"color"),"color")[1]
+    local colorLevel,markLevel
+    for _,s in pairs(R) do
+        local parent=s.parent and R[s.parent]
+        if s.kind=="Texture" and parent and parent.parent and R[parent.parent].calls.SetClipsChildren
+            and Under(s.parent,colorButton) then colorLevel=parent.level end
+        local color=s.args.SetColorTexture
+        if s.kind=="Texture" and color and color[4]==.7 and parent and parent.parent==b then markLevel=parent.level end
+    end
+    local glows=Glows(b)
+    local sensorGlows=Glows(Buttons(ChildSensor(b,"stack"),"stack")[1])
+    for _,level in ipairs(sensorGlows) do glows[#glows+1]=level end
+    table.sort(glows)
+    local text,name,stacks=R[R[bind.text].parent].level,R[R[bind.name].parent].level,R[R[bind.count].parent].level
+    assert(colorLevel and markLevel and #glows>=4,"the probe found every layer")
+    assert(fill<colorLevel and colorLevel<markLevel and markLevel<glows[1],
+        ("fill %d < colour %d < markers %d < glows %d"):format(fill,colorLevel,markLevel,glows[1]))
+    assert(glows[#glows]<text and text==name and text<stacks,
+        ("glows up to %d < countdown and name %d < stacks %d"):format(glows[#glows],text,stacks))
+    k1.ov={stackGlow=3,glowStyle=4,textTop=3}
+    A.Sync("bar")
+    local text2,stacks2=R[R[bind.text].parent].level,R[R[bind.count].parent].level
+    assert(text2>stacks2 and stacks2>glows[#glows],"countdown on top: both text frames stay above every glow")
+    barView.barStackColorAt,barView.auraGlow,barView.barStackMax=0,false,10
+    k1.ov=C.EMPTY
+end
+-- A same-token retarget fires no UNIT_AURA. Aura groups release and show
+-- their buttons again on the target container's rebuild, fixed slot buttons
+-- stay shown: the stack colour and stack glow sensors inside a fixed target
+-- slot are told directly, or they keep the previous target's stacks.
+do
+    barView.barStacks,barView.keepSlots,barView.barStackColorAt=true,true,3
+    local dot=Aura("bar","d2301","d","target",Set(2301),{ov={stackGlow=2}})
+    Plan("bar",3,{k1,k2,dot})
+    A.Sync("bar")
+    local target=Live("bar","target")
+    assert(target and R[target].slots.s1,"a fixed target container")
+    local slotButton=Buttons(target,"s1")[1]
+    local color,stack=ChildSensor(slotButton,"color"),ChildSensor(slotButton,"stack")
+    assert(color and stack and R[color].unit=="target" and R[stack].unit=="target" and R[color].enabled and R[stack].enabled,
+        "stack colour and stack glow sensors watch the target")
+    local primary,cu,su=R[target].updates,R[color].updates,R[stack].updates
+    A.TargetChanged()
+    assert(R[target].updates==primary+1 and R[color].updates==cu+1 and R[stack].updates==su+1,
+        "a retarget reparses the sensors inside fixed target slots")
+    barView.keepSlots,barView.barStackColorAt=false,0
+    Plan("bar",3,{k1,k2})
+    A.Sync("bar")
+end
+barView.barStacks=false; k1.ov=C.EMPTY
+A.Sync("bar")
+assert(R[Buttons(Live("bar","player"),"g1")[1]].bind.bar,"duration view restores its native duration binding")
 
 ------------------------------------------------------------------ cooldown overlays (kind 1)
 C.views.ess=View("ess",1)
@@ -970,7 +1225,17 @@ local ocd=ob.bind.cooldown
 local swipe=Args(ocd,"SetSwipeColor")
 assert(swipe[1]==1 and math.abs(swipe[2]-.82)<1e-9 and swipe[4]==.55 and Args(ocd,"SetReverse")[1]==true,"gold reverse swipe")
 assert(ob.bind.text and ob.bind.icon and not ob.bind.pandemic,"full-cover icon and duration text")
-assert(os.level==bar.frame:GetFrameLevel()+2,"above the icon")
+assert(os.level==R[o1.icon].level+C.Const.LEVEL.cd and os.level>R[o1.icon].level,"above the icon, at its swipe")
+-- An overlay has no stack colour or markers: its swipe, countdown and
+-- stacks keep their levels over its own button (+1, +3, +4), so they never
+-- rise over the cooldown icon's countdown on top.
+do
+    local swipeLevel,textLevel=R[ocd].level,R[R[ob.bind.text].parent].level
+    local stackLevel=R[R[ob.bind.count].parent].level
+    assert(swipeLevel==ob.level+1 and textLevel==ob.level+3 and stackLevel==ob.level+4,
+        ("overlay swipe %d, countdown %d, stacks %d over button %d"):format(swipeLevel,textLevel,stackLevel,ob.level))
+    assert(stackLevel<=R[o1.icon].level+C.Const.LEVEL.top,"overlay stacks stay under the icon's countdown on top")
+end
 -- icon frame changed: new slot on the new icon, old slot off
 o1.icon=Icon()
 A.SyncOverlays("ess")
@@ -1039,7 +1304,13 @@ V125=true
 A.Release("c1")
 assert(R[gc].enabled==false and R[gc].shown==false)
 A.ReleaseAll()
-for _,c in ipairs(containers) do assert(R[c].enabled==false,"every container disabled") end
+for _,c in ipairs(containers) do
+    local s=R[c]
+    local parent=R[s.parent]
+    local owner=parent and parent.button and R[parent.parent]
+    assert(s.enabled==false or owner and owner.enabled==false and owner.shown==false,
+        "every container disabled or natively hidden through its disabled primary owner")
+end
 before=timerCount
 A.TargetChanged()
 assert(timerCount==before,"no target containers, no refresh")
@@ -1436,9 +1707,13 @@ local function TargetStates(state)
     end
     return true
 end
+-- The bars' own target containers pause. A stack sensor inside an aura
+-- button pauses through its owner: a paused container clears its buttons,
+-- which hides them and every container inside (Blizzard's slot frames hide
+-- on clear), so those are not counted here.
 for _,c in ipairs(containers) do
     local s=R[c]
-    if s.unit=="target" and s.enabled and s.shown~=false then s.pausable=true end
+    if s.unit=="target" and s.enabled and s.shown~=false and not R[s.parent].button then s.pausable=true end
 end
 local upd=bt.updates
 FRIENDLY=true
@@ -1998,6 +2273,28 @@ local function HostX(apps,n) return left+bw*math.min(apps,n)/n end
 for apps=0,2 do assert(HostX(apps,3)+fw/2<-gw/2,"below N the glow is clipped ("..apps..")") end
 for _,apps in ipairs({3,4,99}) do assert(Near(HostX(apps,3),0),"from N on the glow is on the icon") end
 assert(bind.shownAnims==2,"12.1.5: the glow loops play with the button")
+do
+    C.state.allGlowsCombat=true
+    A.Sync("c4")
+    local gated=Find(gb,function(_,s) return s.combatDriver~=nil end)
+    assert(#gated==1,"stack glow needs one native combat gate without reading applications")
+    -- The state driver manager re-reads every driver on each pass and every
+    -- group pools ten buttons: a glow its entry does not use holds none.
+    local idle=0
+    for _,key in ipairs({"g1","g2","g3","g4","g5"}) do
+        for _,b in ipairs(Buttons(sc2,key)) do
+            idle=idle+#Find(b,function(_,s) return s.combatDriver~=nil end)
+        end
+    end
+    assert(idle==0,"stack glows nobody uses hold "..idle.." state drivers")
+    COMBAT=true
+    C.state.allGlowsCombat=false
+    A.Sync("c4")
+    assert(R[gated[1]].combatDriver and A.pending.c4,"combat gate edits must defer while protected")
+    COMBAT=false
+    A.FlushPending()
+    assert(not R[gated[1]].combatDriver,"native gate did not unregister after combat")
+end
 -- N changes on a live button: placed again and rebound (the setter
 -- replaces the element); unchanged choices make no call
 local sizes=Calls(gate,"SetSize")
@@ -2020,6 +2317,19 @@ A.Sync("c4")
 assert(R[gate].shown==true and bind.appOpts.maxApplications==3)
 local ring=Child(R[flip].parent,"Frame")
 assert(R[ring].shown==true and R[flip].shown==false,"per-spell style 4 on the stack glow: edges")
+sg.ov={stackGlow=3,stackGlowOp=2,glowStyle=4}
+A.Sync("c4")
+assert(bind.appOpts.maxApplications==4,"equality leaves one extra native range step")
+local eqWidth=Args(sbar,"SetSize")[1]
+local eqLeft=R[sbar].points[1][4]
+local function EqualX(apps) return eqLeft + eqWidth * math.min(apps,4) / 4 end
+assert(Near(EqualX(3),0) and EqualX(2)+fw/2<-gw/2 and EqualX(4)-fw/2>gw/2,
+    "exact stacks clips both below and above without reading applications")
+sg.ov={stackGlow=3,stackGlowOp=3,glowStyle=4}
+A.Sync("c4")
+assert(bind.appOpts.maxApplications==4 and Near(R[sbar].points[1][4]+Args(sbar,"SetSize")[1],0),
+    "strict greater uses the next integer threshold and clamps there")
+sg.ov={stackGlow=3,glowStyle=4}; A.Sync("c4")
 -- Blizzard writes secret counts into every bound region; restyles and
 -- threshold changes never read them
 for _,c in ipairs({sc2,Live("c4","target")}) do
@@ -2435,6 +2745,119 @@ do
     assert(seen>=30,"Look scan found "..seen.." fields")
 end
 OwnAnchors("every container")
+
+-- The action-bar bridge owns only native aura presentation. Routes are
+-- public out of combat; slot, page and form storms share one trailing pass;
+-- in combat only records whose button no longer shows their spell go off.
+do
+    LoadRuntime("ActionGlows.lua")
+    local bridge=C.ActionGlows
+    local action,paged=New("Button",UIParent),New("Button",UIParent)
+    function Methods:GetSize() return 36,36 end
+    function Methods:GetAttribute(key) local a=R[self].attrs;return a and a[key] end
+    R[action].attrs,R[paged].attrs={action=5},{action=6}
+    -- The slots' actions as GetActionInfo reports them (kind, id, subtype).
+    local slots={[5]={"spell",123,"spell"},[6]={"macro",123,"spell"},[77]={"spell",999,"spell"}}
+    rawset(_G,"GetActionInfo",function(slot) local a=slots[slot];if a then return a[1],a[2],a[3] end end)
+    local visits=0
+    S.ForEachActionBarButtonForSpell=function(spell,callback)
+        assert(not COMBAT and spell==123,"only a public OOC action route is queried")
+        visits=visits+1
+        callback(action)
+        callback(paged)
+        return 2
+    end
+    -- The suite action bars run (their module state), and a wanted flip
+    -- asks the flush to re-register the slot, page and form events.
+    S.states={actionbars={active=true}}
+    local schedules=0
+    C.Flush,C.Schedule={dirty={}},function() schedules=schedules+1 end
+    C.M.active=true
+    C.entries.bridge={key="a456",slot="bridge",auraIDs={[456]=true},ov={actionGlowSpell=123}}
+    C.views.bridge={glowStyle=4,glowTint=false,glowR=1,glowG=1,glowB=1}
+    local made=#containers
+    bridge.Refresh()
+    assert(bridge.wanted and C.Flush.dirty.events and schedules==1,"glows wanted: the events follow")
+    assert(#containers==made+2,"one container per decorated button")
+    local container,second=containers[made+1],containers[made+2]
+    local button=R[container].slots.glow.buttons[1]
+    assert(R[container].parent==action and R[button].allPoints==action and R[second].parent==paged,
+        "glow follows the actual action button")
+    assert(R[container].slots.glow.cand.includeSpellIDs[456] and R[container].enabled==true,"native received-buff binding")
+    assert(not R[button].bind.icon and not R[button].bind.text,"no duplicate action icon or timer")
+    local count=#containers
+    bridge.Refresh()
+    assert(#containers==count,"same route reuses the aura container")
+    -- A storm of slot, page and form events: one pass, 0.2 s after the first.
+    local before,armed=visits,timerCount
+    for _=1,100 do bridge.RouteChanged() end
+    assert(visits==before and timerCount==armed+1,"a route storm arms one trailing pass and visits nothing yet")
+    RunTimers()
+    assert(visits==before+1,"the trailing pass visits once")
+    C.entries.bridge.ov.actionGlowMode=2
+    C.entries.bridge.ov.stackGlow=3
+    C.entries.bridge.ov.stackGlowOp=2
+    bridge.Refresh()
+    assert(#containers==count+2,"the stack mode takes its own record per button")
+    local stacked,stackedPaged=containers[count+1],containers[count+2]
+    local stackButton=R[stacked].slots.glow.buttons[1]
+    assert(not R[container].enabled and not R[second].enabled and R[stackButton].bind.appOpts.maxApplications==4,
+        "mode change retires presence and binds native exact-stack geometry")
+    -- In combat a form change pages the second button to another spell;
+    -- the first keeps its slot. Nothing is touched before the trailing
+    -- pass (the page applies a frame later); then only the paged one goes.
+    COMBAT,ACCESS,AURAS_SECRET=true,false,true
+    before=visits
+    R[paged].attrs.action=77
+    bridge.RouteChanged()
+    assert(R[stacked].enabled and R[stackedPaged].enabled,"no switch before the page applied")
+    RunTimers()
+    assert(R[stacked].enabled==true and R[stackedPaged].enabled==false and bridge.pending and visits==before,
+        "in combat only the record whose button lost its spell goes off; no visit, no sealed region touched")
+    R[paged].attrs.action=6
+    bridge.RouteChanged()
+    RunTimers()
+    assert(R[stackedPaged].enabled==true,"paged back in combat: the glow comes back")
+    slots[5]={Secret(),Secret(),Secret()}
+    bridge.RouteChanged()
+    RunTimers()
+    assert(R[stacked].enabled==false,"an unreadable action counts as moved")
+    slots[5]={"spell",123,"spell"}
+    COMBAT,ACCESS,AURAS_SECRET=false,true,false
+    bridge.Refresh()
+    assert(R[stacked].enabled and R[stackedPaged].enabled and not bridge.pending,"safe route rebind resumes")
+    -- A new entry with the same mode takes the records nobody placed.
+    C.entries.bridge=nil
+    C.entries.other={key="a789",slot="bridge",auraIDs={[789]=true},ov={actionGlowSpell=123,actionGlowMode=2,stackGlow=2}}
+    bridge.Refresh()
+    bridge.Refresh()
+    assert(#containers==count+2 and R[stacked].enabled and R[stacked].slots.glow.cand.includeSpellIDs[789]
+        and not R[stacked].slots.glow.cand.includeSpellIDs[456],"a freed record is reused for another entry")
+    -- Without running action bars there is nothing to decorate.
+    C.Flush.dirty.events=nil
+    S.states.actionbars.active=false
+    bridge.Refresh()
+    assert(not bridge.wanted and C.Flush.dirty.events and not R[stacked].enabled and not R[stackedPaged].enabled,
+        "action bars off: no glow wanted, every record off, the events follow")
+    local quiet=timerCount
+    bridge.RouteChanged()
+    assert(timerCount==quiet,"nothing wanted: route events arm nothing")
+    -- The action bars start again (MSUFSuite.ActionBars.BindingsChanged):
+    -- that always arms the pass, which finds the glows wanted again.
+    S.states.actionbars.active=true
+    bridge.RouteChanged(true)
+    assert(timerCount==quiet+1,"the action bars starting arms the pass")
+    RunTimers()
+    assert(bridge.wanted and R[stacked].enabled and R[stackedPaged].enabled,"the glows come back with the action bars")
+    C.entries.other=nil
+    bridge.Refresh()
+    assert(not R[stacked].enabled and not bridge.wanted,"removed entry releases its glow")
+    bridge.Release()
+    C.M.active=false
+    C.views.bridge=nil
+    S.ForEachActionBarButtonForSpell=nil
+    rawset(_G,"GetActionInfo",nil)
+end
 
 local nativeFile=PlaySoundFile
 PlaySoundFile=function(file,channel)

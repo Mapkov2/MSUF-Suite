@@ -20,13 +20,32 @@ local wipe = C.wipe
 
 ------------------------------------------------------------------ bar and picker rows
 local keyScratch, describe, homes = {}, {}, {}
-local function Spells()
-    local spells = C.spells
-    return type(spells) == "table" and type(spells.e) == "table" and spells.e or EMPTY
+
+-- A press on the suite action bars (MSUF_Suite_ActionBars calls it) lights
+-- the icons of the pressed spell. Published only while that is wanted (the
+-- module runs and "Show action bar presses on cooldown icons" is on), so
+-- the action bars read no action on a press otherwise.
+local function ActionPressed(spellID)
+    if not M.active or not S.Public(spellID) or type(spellID) ~= "number" then return end
+    C.Index.ForSpell(spellID, nil, C.Effects.Press)
+end
+function C.PressBridge()
+    S.CooldownManagerActionPressed = M.active == true and C.state.pressFeedback == true and ActionPressed or nil
+end
+
+-- Why a listed entry does not show on its bar now: "cap" (past Maximum
+-- icons), "ready" (Hide icons that are ready) or "empty" (no Healthstone in
+-- the bags, Time: entry.empty); nil while it shows.
+local function HiddenBy(placed, cap, hide, live, desc)
+    if cap ~= nil and placed >= cap then return "cap" end
+    if hide and live ~= nil and desc.family == 1 and not live.cooling then return "ready" end
+    if live ~= nil and live.empty == true then return "empty" end
 end
 
 -- The bar's keys for the current spec in display order, unlearned ones
--- included; hidden marks what a bar rule hides in live play.
+-- included; hidden (and hiddenBy) marks what a bar rule hides in live play.
+-- Entries past Maximum icons that "Send excess cooldowns to" moves to
+-- another bar are not hidden: movedTo names the bar they show on.
 function S.CooldownManagerBarEntries(slot)
     local rows = {}
     if not CDM.SLOT_INDEX[slot] then return rows end
@@ -35,7 +54,10 @@ function S.CooldownManagerBarEntries(slot)
     local view = C.views[slot] or EMPTY
     local cap = view.maxIcons
     if type(cap) ~= "number" or cap <= 0 then cap = nil end
-    local spells = Spells()
+    local moved = cap and C.Resolve.OverflowTarget(slot)
+    local spells = C.Choices()
+    -- Only learned entries take a place (Resolve builds nothing else).
+    local placed = 0
     for i = 1, #keys do
         local key = keys[i]
         local live = C.entries[key]
@@ -46,11 +68,12 @@ function S.CooldownManagerBarEntries(slot)
             if type(ov) ~= "table" then ov = EMPTY end
             local hide = ov.hideReady
             if hide == nil then hide = view.hideReady == true end
-            -- An empty Healthstone (Time: entry.empty) leaves its bar too.
-            local hidden = (cap ~= nil and #rows >= cap) or (hide and live ~= nil and desc.family == 1 and not live.cooling)
-                or (live ~= nil and live.empty == true) or false
+            local hiddenBy = HiddenBy(placed, cap, hide, live, desc)
+            if desc.known ~= false then placed = placed + 1 end
+            local movedTo = hiddenBy == "cap" and moved or nil
+            if movedTo then hiddenBy = nil end
             rows[#rows + 1] = { key = key, name = desc.name, texture = ov.icon or desc.texture, known = desc.known ~= false, family = desc.family,
-                hasAura = desc.hasAura == true, hidden = hidden == true }
+                hasAura = desc.hasAura == true, hidden = hiddenBy ~= nil, hiddenBy = hiddenBy, movedTo = movedTo }
         end
     end
     return rows
@@ -142,7 +165,7 @@ local function Extent(view, plan)
         local n, preview = 0, C.state.preview
         for i = 1, #list do
             local entry = list[i]
-            if entry.icon and (preview or not entry.hidden) then n = n + 1 end
+            if entry.icon and (preview or not entry.hidden or view.cooldownFixed) then n = n + 1 end
         end
         return C.Layout.Offsets(view, n, offsetScratch)
     end
@@ -287,12 +310,20 @@ local function Mover(i)
             return M.active == true and view ~= nil and view.on == true and C.plans[slot] ~= nil and C.Layout.Movable(slot)
         end }
 end
+local function AssistMover()
+    return { label = "Assisted combat icon", order = 730, xKey = "assistIconX", yKey = "assistIconY",
+        point = function() return "CENTER" end, getFrame = C.Effects.RecommendationFrame,
+        isEnabled = function() return M.active == true and C.state.assistIcon == true end,
+        historyKeys = { "assistIconSize" }, extraControls = { Control("size", "assistIconSize") } }
+end
 -- The controller asks after every Enable and Refresh; specs are built once.
 function M:RegisterMovers()
     for i = 1, #SLOTS do
         movers[i] = movers[i] or Mover(i)
         S.RegisterOwnedMover(ID, SLOTS[i].key, movers[i])
     end
+    movers.assist = movers.assist or AssistMover()
+    S.RegisterOwnedMover(ID, "assistIcon", movers.assist)
 end
 
 ------------------------------------------------------------------ MSUF

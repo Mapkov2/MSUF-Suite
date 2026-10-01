@@ -15,7 +15,7 @@ local issecret = _G.issecretvalue
 local EMPTY = C.EMPTY
 local IsUsable = C_Spell.IsSpellUsable
 local InRange = C_Spell.IsSpellInRange
-local EnableRangeCheck = C_Spell.EnableSpellRangeCheck
+local function EnableRangeCheck(spell, enabled) S.SetNativeSpellRange("cooldownManager", spell, enabled) end
 local IsOverlayed = C_SpellActivationOverlay.IsSpellOverlayed
 local IsUsableItem = C_Item.IsUsableItem
 local rangeRefs = {}
@@ -23,12 +23,102 @@ local ranged = {}
 local fxIcons = {}
 local REASONS = { proc = "gProc", ready = "gReady", aura = "gAura" }
 local assistSpell
+local recommendation
+function E.RecommendationFrame() return recommendation end
+function E.RecommendationGCD()
+    local frame = recommendation
+    if not frame or not frame:IsShown() then return end
+    if not C.state.assistIconGCD then
+        frame.cd:Clear()
+        return
+    end
+    local duration = C_Spell.GetSpellCooldownDuration(61304)
+    if duration then frame.cd:SetCooldownFromDurationObject(duration, true) else frame.cd:Clear() end
+end
+function E.Recommendation()
+    local state = C.state
+    local spell = assistSpell
+    local show = state.assistIcon == true and (spell ~= nil or state.preview == true)
+    local frame = recommendation
+    if not frame and not show then return end
+    if not frame then
+        frame = S.CreateFrame("Frame", nil, UIParent)
+        frame:EnableMouse(false)
+        frame.tex = S.CreateTexture(frame, nil, "ARTWORK")
+        frame.tex:SetAllPoints(frame)
+        frame.tex:SetTexCoord(.08, .92, .08, .92)
+        frame.cd = S.CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+        frame.cd:SetAllPoints(frame)
+        frame.cd:SetHideCountdownNumbers(true)
+        frame.cd:SetDrawEdge(false)
+        frame.cd:SetDrawBling(false)
+        frame.over = S.CreateFrame("Frame", nil, frame)
+        frame.over:SetAllPoints(frame)
+        frame.over:SetFrameLevel(frame.cd:GetFrameLevel() + 1)
+        frame.key = S.CreateFontString(frame.over, nil, "OVERLAY")
+        frame.key:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
+        frame.badge = S.CreateTexture(frame.over, nil, "BACKGROUND")
+        frame.badge:SetPoint("TOPLEFT", frame.key, "TOPLEFT", -2, 2)
+        frame.badge:SetPoint("BOTTOMRIGHT", frame.key, "BOTTOMRIGHT", 2, -2)
+        frame.badge:SetColorTexture(0, 0, 0, .85)
+        recommendation = frame
+    end
+    frame:SetShown(show)
+    if not show then
+        frame.cd:Clear()
+        return
+    end
+    local size = state.assistIconSize or 48
+    frame:SetSize(size, size)
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", state.assistIconX or 0, state.assistIconY or -180)
+    frame.tex:SetTexture(spell and C_Spell.GetSpellTexture(spell) or K.QUESTION_ICON)
+    S.SetStyledFont(frame.key, state.font, math.max(9, math.floor(size * .26)), state.fontFlags,
+        state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
+    local key = state.assistIconKeybind and spell and C.Keybinds.Text(spell) or ""
+    frame.key:SetText(key)
+    frame.badge:SetShown(key ~= "")
+    E.RecommendationGCD()
+end
+function E.Press(entry)
+    local icon = entry.icon
+    local bar = C.bars[entry.slot]
+    if not icon or not icon:IsShown() or entry.hidden or not bar or bar.hidden then return end
+    local pulse = icon.pressPulse
+    if not pulse then
+        local tex = S.CreateTexture(icon.over, nil, "OVERLAY")
+        tex:SetAllPoints(icon.tex)
+        tex:SetColorTexture(1, 1, 1, 1)
+        tex:SetAlpha(0)
+        pulse = tex:CreateAnimationGroup()
+        local fade = pulse:CreateAnimation("Alpha")
+        fade:SetFromAlpha(.35)
+        fade:SetToAlpha(0)
+        fade:SetDuration(.18)
+        icon.pressPulse = pulse
+    end
+    pulse:Stop()
+    pulse:Play()
+end
+local function GlowsAllowed()
+    return not C.state.allGlowsCombat or C.state.inCombat or C.state.preview
+end
+local function GlowGate(icon)
+    local gate = icon.effectGate
+    if not gate then
+        gate = S.CreateFrame("Frame", nil, icon)
+        gate:SetAllPoints(icon)
+        gate:SetShown(GlowsAllowed() == true)
+        icon.effectGate = gate
+    end
+    return gate
+end
 
 ------------------------------------------------------------------ glow frames
 local function EnsureGlow(icon)
     local glow = icon.glow
     if glow then return glow end
-    glow = S.CreateFrame("Frame", nil, icon)
+    glow = S.CreateFrame("Frame", nil, GlowGate(icon))
     glow:SetAllPoints(icon)
     glow:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.glow)
     glow:Hide()
@@ -154,7 +244,7 @@ local function EnsureAnts(icon)
     local ants = icon.ants
     if ants then return ants end
     local spec = K.GLOW[K.ASSIST_STYLE]
-    ants = S.CreateFrame("Frame", nil, icon)
+    ants = S.CreateFrame("Frame", nil, GlowGate(icon))
     ants:SetAllPoints(icon)
     ants:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.assist)
     ants:Hide()
@@ -210,22 +300,54 @@ function E.Tint(entry)
 end
 local Tint = E.Tint
 
-function E.Usable(entry)
+-- A ready glow that waits for enough resources (readyResources).
+local function NeedsResources(entry, view)
+    return view ~= nil and K.Pick(entry.ov or EMPTY, view, "readyResources")
+end
+-- Whether a usability read of the entry can show: its icon is on a shown
+-- bar and in range, or the read gates its ready glow. The usable broadcast
+-- (Events) and the flush ask this before E.Usable.
+function E.UsableShown(entry)
+    if not entry.icon then return false end
+    local bar = C.bars[entry.slot]
+    if not bar or bar.hidden == true then return false end
+    return not entry.outOfRange or NeedsResources(entry, C.views[entry.slot])
+end
+
+function E.Usable(entry, queries)
     -- Range tint wins while the action is out of range. Defer the native
     -- usability query until a range/target edge makes its result visible.
-    if entry.outOfRange then return end
     local view = C.views[entry.slot]
+    local needResources = NeedsResources(entry, view)
+    if entry.outOfRange and not needResources then return end
     local code = 1
-    if view and view.usable and entry.src ~= "p" then
-        local usable, noPower
+    entry.resourcesAvailable = nil
+    if view and (view.usable or needResources) and entry.src ~= "p" then
+        local usable, noPower, id, reader
         if entry.src == "i" then
-            usable, noPower = IsUsableItem(entry.itemID or entry.id)
+            id, reader = entry.itemID or entry.id, IsUsableItem
         elseif not (entry.equipSlot or entry.src == "e") then
             local spell, category = entry.spell, entry.spellCategory
             if category and category ~= 0 then spell = entry.catSpell end
-            if spell then usable, noPower = IsUsable(spell) end
+            id, reader = spell, IsUsable
         end
-        if not issecret(usable) and usable == false then
+        if id and reader then
+            -- The flush owns separate spell/item maps and clears them before
+            -- returning. Resolve overrides by their current ID on every pass.
+            if queries and Public(id) then
+                if queries.seen[id] then
+                    usable, noPower = queries.usable[id], queries.noPower[id]
+                else
+                    usable, noPower = reader(id)
+                    queries.seen[id] = true
+                    queries.usable[id], queries.noPower[id] = usable, noPower
+                end
+            else
+                usable, noPower = reader(id)
+            end
+        end
+        entry.resourcesAvailable = not issecret(noPower) and noPower == false or nil
+        if view.usable and not issecret(usable) and usable == false then
             code = (not issecret(noPower) and noPower) and 2 or 3
         end
     end
@@ -236,6 +358,7 @@ function E.Usable(entry)
     -- after a range or behavior change. All compared values are local codes.
     if icon and (icon.tint ~= code
         or icon.tintGen ~= (view and view.behaviorGen or 0)) then Tint(entry) end
+    if needResources then E.RefreshReady(entry) end
 end
 
 ------------------------------------------------------------------ range
@@ -315,7 +438,11 @@ local function ProcWanted(entry, view)
 end
 
 local function ReadyWanted(entry, view)
-    if not K.Pick(entry.ov or EMPTY, view, "readyGlow") or entry.cooling or entry.hidden then return false end
+    local ov = entry.ov or EMPTY
+    local normal = K.Pick(ov, view, "readyGlow") and not entry.cooling
+    local full = K.Pick(ov, view, "fullChargeGlow") and entry.fullyCharged == true
+    if not (normal or full) or entry.hidden then return false end
+    if K.Pick(ov, view, "readyResources") and entry.resourcesAvailable ~= true then return false end
     local state = C.state
     if state.readyGlowCombat and not state.inCombat and not state.preview then return false end
     return true
@@ -392,6 +519,7 @@ function E.Assist(spell)
     if spell ~= nil and not (Public(spell) and type(spell) == "number") then spell = nil end
     if spell == assistSpell then return end
     assistSpell = spell
+    E.Recommendation()
     Walk(C.Index.assist, AssistEntry, spell)
 end
 
@@ -401,11 +529,20 @@ local function ReadyEntry(entry)
     local view = icon and C.views[entry.slot]
     if view then E.SetGlow(icon, "ready", ReadyWanted(entry, view)) end
 end
+E.RefreshReady = ReadyEntry
 
 -- Ready glows gated to combat flip here; everything else is untouched.
 -- Only entries that want a ready glow (Index.ready) are walked; on a combat
 -- edge (edge set) only while those glows wait for combat.
 function E.CombatChanged(edge)
+    local allowed = GlowsAllowed() == true
+    for icon in pairs(fxIcons) do
+        local gate = icon.effectGate
+        if gate and icon.effectsAllowed ~= allowed then
+            icon.effectsAllowed = allowed
+            gate:SetShown(allowed)
+        end
+    end
     if edge and not C.state.readyGlowCombat then return end
     Walk(C.Index.ready, ReadyEntry)
 end
@@ -420,6 +557,7 @@ end
 
 -- Stops every visual on a recycled icon; the next Update re-seeds.
 function E.ResetIcon(icon)
+    if icon.pressPulse then icon.pressPulse:Stop() end
     icon.gProc, icon.gReady, icon.gAura = nil, nil, nil
     HideGlow(icon)
     E.Ants(icon, false)
@@ -443,6 +581,10 @@ function E.ReleaseAll()
     for icon in pairs(fxIcons) do E.ResetIcon(icon) end
     Walk(nil, ClearAssist)
     assistSpell = nil
+    if recommendation then
+        recommendation:Hide()
+        recommendation.cd:Clear()
+    end
 end
 
 -- Test and diagnostics hook: range references currently held.

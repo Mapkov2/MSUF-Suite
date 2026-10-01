@@ -12,7 +12,7 @@ local L = { dirty = {} }
 C.Layout = L
 local SLOTS = NS.CDM.SLOTS
 local Public = S.Public
-local floor, ceil, max = math.floor, math.ceil, math.max
+local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local STRATA = { "BACKGROUND", "LOW", "MEDIUM", "HIGH" }
 -- Attach sides (Below, Above, Left, Right) x alignment along that edge
 -- (Center, Start, End): own point, target point; gap sign per side.
@@ -71,7 +71,7 @@ end
 
 -- Cell size and spacing in whole pixels, stride, flow and alignment.
 local function Grid(view, unit)
-    if view.kind == 3 then
+    if view.kind == 3 or view.kind == 1 and view.cooldownDuration then
         return max(1, Round((view.barWidth or 200) / unit)), max(1, Round((view.barHeight or 18) / unit)),
             Round((view.spacing or 2) / unit), 1, false, Grow(view), 1
     end
@@ -156,6 +156,58 @@ local function CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
     return extent * unit, depth * unit
 end
 
+-- Cooldown bars whose later rows take their own icon count or size.
+local function MixedRows(view)
+    return view.kind == 1 and not view.cooldownDuration and ((view.laterPerRow or 0) > 0 or (view.laterSize or 0) > 0)
+end
+L.MixedRows = MixedRows
+function L.Footprint(view, index)
+    local unit = px or L.PixelScale()
+    local w, h, _, per = Grid(view, unit)
+    if MixedRows(view) and index > per and (view.laterSize or 0) > 0 then
+        w = max(1, Round(view.laterSize / unit))
+        h = max(1, Round(view.laterSize * (view.height or 100) / 100 / unit))
+    end
+    return w * unit, h * unit
+end
+local function RowSpan(count, size, align, spacing)
+    if count == 0 then return 0 end
+    if align == 1 then count = 2 * floor(count / 2) + 1 end
+    return count * size + (count - 1) * spacing
+end
+local function FillMixed(view, n, out, unit)
+    local w, h, sp, per, vertical, grow, align = Grid(view, unit)
+    local w2, h2 = L.Footprint(view, per + 1)
+    w2, h2 = Round(w2 / unit), Round(h2 / unit)
+    local per2 = (view.laterPerRow or 0) > 0 and view.laterPerRow or per
+    local first = min(n, per)
+    local remaining = max(0, n - first)
+    local rows = ceil(remaining / per2)
+    local a, b, a2, b2 = w, h, w2, h2
+    if vertical then a, b, a2, b2 = h, w, h2, w2 end
+    local extent = max(RowSpan(first, a, align, sp), RowSpan(min(remaining, per2), a2, align, sp))
+    local depth = b + rows * (b2 + sp)
+    local index = 0
+    for row = 0, rows do
+        local count = row == 0 and first or min(per2, remaining - (row - 1) * per2)
+        local along, across = row == 0 and a or a2, row == 0 and b or b2
+        local cross = row == 0 and 0 or b + sp + (row - 1) * (b2 + sp)
+        if grow == 2 then cross = depth - cross - across end
+        local origin = align == 2 and 0 or align == 3 and extent - RowSpan(count, along, align, sp) or floor((extent - along) / 2)
+        for ordinal = 0, count - 1 do
+            local offset = ordinal
+            if align == 1 then offset = ordinal == 0 and 0 or ordinal % 2 == 1 and (ordinal + 1) / 2 or -ordinal / 2 end
+            local alongAt = origin + offset * (along + sp)
+            index = index + 1
+            out[2 * index - 1] = (vertical and cross or alongAt) * unit
+            out[2 * index] = -(vertical and alongAt or cross) * unit
+        end
+    end
+    if n == 0 then return w * unit, h * unit end
+    if vertical then return depth * unit, extent * unit end
+    return extent * unit, depth * unit
+end
+
 -- Pure: offsets of the first `count` cells (capped by maxIcons) relative to
 -- the bar's TOPLEFT. Returns width, height and the laid-out count.
 function L.Offsets(view, count, out)
@@ -166,7 +218,9 @@ function L.Offsets(view, count, out)
     if type(cap) == "number" and cap > 0 and n > cap then n = cap end
     if n < 0 then n = 0 end
     local width, height
-    if view.kind == 1 and align == 1 then
+    if MixedRows(view) then
+        width, height = FillMixed(view, n, out, unit)
+    elseif view.kind == 1 and align == 1 then
         width, height = CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
     else
         width, height = Fill(w, h, sp, per, vertical, grow, align, n, 0, out, unit)
@@ -258,7 +312,7 @@ end
 -- reports its overlay edge. The icon pool calls it when it hides an icon
 -- behind the layout's back.
 local function Forget(icon)
-    icon.layX, icon.layY, icon.layShown, icon.layEntry = nil, nil, nil, nil
+    icon.layX, icon.layY, icon.layShown, icon.layEntry, icon.layIndex = nil, nil, nil, nil, nil
 end
 L.Forget = Forget
 
@@ -575,7 +629,7 @@ local function PlaceIcons(bar, view, plan)
     local n = 0
     for i = 1, #entries do
         local entry = entries[i]
-        if entry.icon and (showAll or not entry.hidden) then n = n + 1 end
+        if entry.icon and (showAll or not entry.hidden or view.cooldownFixed) then n = n + 1 end
     end
     local width, height
     width, height, n = L.Offsets(view, n, bar.out)
@@ -596,8 +650,15 @@ local function PlaceIcons(bar, view, plan)
                 icon.layEntry = entry
             end
             local was = icon.layShown
-            if index < n and (showAll or not entry.hidden) then
-                index = index + 1
+            local reserved = index < n and (showAll or not entry.hidden or view.cooldownFixed)
+            if reserved then index = index + 1 end
+            if reserved and (showAll or not entry.hidden) then
+                -- The icon's place: Icons styles it at that row's size.
+                icon.layIndex = index
+                if MixedRows(view) then
+                    local iw, ih = L.Footprint(view, index)
+                    if icon.w ~= iw or icon.h ~= ih then C.Icons.StyleIcon(icon, view, iw, ih) end
+                end
                 Place(icon, frame, out[2 * index - 1], out[2 * index])
                 if was ~= true then Overlay(entry, true) end
             else

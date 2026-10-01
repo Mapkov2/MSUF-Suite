@@ -45,6 +45,7 @@ local BAR_OPTS = { { direction = TIMER.RemainingTime, interpolation = IMMEDIATE 
 local ROUND = Enum.NumericRuleFormatRounding
 local UP, DOWN = ROUND.Up, ROUND.Down
 local GOLD = K.GLOW_GOLD
+local BAR_LEVEL, ICON_LEVEL = K.AURA_LEVEL, K.AURA_ICON_LEVEL
 local PANDEMIC = { 1, .3, .15 }
 -- Glow styles (Const): 1 Blizzard alert and 2 marching ants share one
 -- flipbook layout, 3 pulses the edges, 4 holds them still.
@@ -62,14 +63,15 @@ local STACK_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local STACK_COLOR = NS.CDM.SPELL_DEFAULTS.stackColor
 -- Every field Look writes: the signature changes exactly when a button needs restyling.
 local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font", "flags", "rendering", "shadow", "shadowOpacity",
-    "shadowDistance", "cs", "ss", "sp", "cr", "cg", "cb", "sr", "sg", "sb", "swipe", "edge", "tip", "tex", "fr", "fg", "fb", "bgA", "icon", "side" }
+    "shadowDistance", "cs", "ss", "sp", "cr", "cg", "cb", "sr", "sg", "sb", "swipe", "edge", "tip", "tex", "fr", "fg", "fb", "bgA", "icon", "side",
+    "smax", "marks" }
+local NO_MARKS = {}
 
 local sig = {}
 local textOpts = {}
 local countOpts = {} -- stack text options per (N, color)
 local barOpts = {}   -- SetApplicationBar options (Blizzard copies them)
 local sensed = {}    -- kit sensor frame -> its button record
-local holders = {}   -- placeholder regions per cell frame
 
 local Px = K.Px
 local function Snap(value, px) return floor(value / px + .5) * px end
@@ -180,6 +182,11 @@ local function Look(rec, view)
         lk.bgA = (view.barBgAlpha or 55) / 100
         lk.icon = view.barIcon ~= false
         lk.side = view.barIconSide == 2 and 2 or 1
+        -- Stack fill maximum and markers are looks, not region sets: a new
+        -- value restyles the buttons in place (application bar rebound,
+        -- pooled markers placed), never builds another container.
+        lk.smax = max(1, min(99, floor(view.barStackMax or 10)))
+        lk.marks = view.barStackEach ~= false and "each" or (view.barStackMarks or "")
     end
     for i = 1, #LOOK do
         local v = lk[LOOK[i]]
@@ -208,7 +215,11 @@ end
 -- and Forever play the loops each time the button shows and stop them when
 -- it hides (AddAuraShownAnimation); 12.1.0 has only the start given here.
 local function NewGlow(button, parent, level)
-    local frame = CreateFrame("Frame", nil, parent)
+    -- This independent native visibility gate never reads aura state and
+    -- never requires a Lua mutation of protected descendants in combat.
+    local combatGate = CreateFrame("Frame", nil, parent)
+    combatGate:SetAllPoints(parent)
+    local frame = CreateFrame("Frame", nil, combatGate)
     frame:SetAllPoints(parent)
     frame:SetFrameLevel(level)
     frame:Hide()
@@ -229,8 +240,11 @@ local function NewGlow(button, parent, level)
     book:SetFlipBookFrameWidth(0)
     book:SetFlipBookFrameHeight(0)
     book:SetDuration(FLIP.duration)
+    -- The edges share the glow's level: a child would sit one above it, on
+    -- the countdown's level.
     local ring = CreateFrame("Frame", nil, frame)
     ring:SetAllPoints(frame)
+    ring:SetFrameLevel(level)
     ring:Hide()
     local pulse = ring:CreateAnimationGroup()
     pulse:SetLooping("BOUNCE")
@@ -238,7 +252,8 @@ local function NewGlow(button, parent, level)
     fade:SetFromAlpha(1)
     fade:SetToAlpha(1)
     fade:SetDuration(PULSE)
-    local g = { frame = frame, flip = flip, ring = ring, edges = Edges(ring), fade = fade }
+    local g = { frame = frame, flip = flip, ring = ring, edges = Edges(ring), fade = fade,
+        combatGate = combatGate, combatOnly = false }
     -- 12.1.0 lacks AddAuraShownAnimation: the loops play without it.
     if button.AddAuraShownAnimation then
         button:AddAuraShownAnimation(loop)
@@ -247,6 +262,57 @@ local function NewGlow(button, parent, level)
     loop:Play()
     pulse:Play()
     return g
+end
+
+-- "All glows only in combat": a secure state driver shows the glow's gate
+-- in combat only (a sealed button's descendants refuse Lua in combat). The
+-- state driver manager re-reads every driver on each pass, and Blizzard
+-- pools ten buttons per group, so only a glow that can show (on: its entry
+-- uses it) holds one.
+local parkedGates = {}
+local function ApplyCombatGate(g, on, dry)
+    if not dry then parkedGates[g] = nil end
+    local wanted = on == true and C.state.allGlowsCombat == true and not C.state.preview
+    if g.combatOnly == wanted then return false end
+    if dry then return true end
+    g.combatOnly = wanted
+    if wanted then
+        RegisterStateDriver(g.combatGate, "visibility", "[combat] show; hide")
+    else
+        UnregisterStateDriver(g.combatGate, "visibility")
+        g.combatGate:Show()
+    end
+    return false
+end
+
+function B.ReleaseGlows(rec)
+    for _, part in ipairs(rec.parts) do
+        for i = 1, 3 do
+            local g
+            if i == 1 then g = part.glow
+            elseif i == 2 then g = part.stack and part.stack.glow
+            else g = part.stackSensor and part.stackSensor.part.stack.glow end
+            if g and g.combatOnly then
+                if IsCombatLocked() then
+                    parkedGates[g] = true
+                else
+                    UnregisterStateDriver(g.combatGate, "visibility")
+                    g.combatOnly = false
+                    g.combatGate:Show()
+                end
+            end
+        end
+    end
+end
+
+function B.FlushGates()
+    if IsCombatLocked() then return end
+    for g in pairs(parkedGates) do
+        UnregisterStateDriver(g.combatGate, "visibility")
+        g.combatOnly = false
+        g.combatGate:Show()
+        parkedGates[g] = nil
+    end
 end
 
 -- Style, color (nil: the art's own gold) and the size of what the glow
@@ -321,18 +387,18 @@ end
 
 -- Gate, bar and host for threshold n and the button's size. The bar's
 -- range is Blizzard's: every apply sets it to 0..maxApplications.
-local function Placed(s, n, lk) return s.n == n and s.w == lk.w and s.h == lk.h and s.px == lk.px end
-local function PlaceStack(s, n, lk)
-    if Placed(s, n, lk) then return end
+local function Placed(s, n, lk, cap) return s.n == n and s.cap == cap and s.w == lk.w and s.h == lk.h and s.px == lk.px end
+local function PlaceStack(s, n, lk, cap)
+    if Placed(s, n, lk, cap) then return end
     local w, h, px = lk.w, lk.h, lk.px
-    s.n, s.w, s.h, s.px = n, w, h, px
+    s.n, s.cap, s.w, s.h, s.px = n, cap, w, h, px
     local grow = (REACH - 1) * min(w, h) + 2 * px
     local gw, gh = w + grow, h + grow
     local travel = max(gw, gh) + 2 * px
     s.gate:SetSize(gw, gh)
     s.host:SetSize(w, h)
     local bar = s.bar
-    bar:SetSize(travel * n, px)
+    bar:SetSize(travel * cap, px)
     bar:ClearAllPoints()
     bar:SetPoint("LEFT", s.gate, "CENTER", -travel * n, 0)
 end
@@ -375,7 +441,7 @@ local function Mutable(rec)
     if not Quiet() then return false end
     local parts = rec.parts
     for i = 1, #parts do
-        if not Open(parts[i].button) then
+        if not Open(parts[i].button) or not C.StackColors.Open(parts[i]) then
             return false
         end
     end
@@ -385,6 +451,62 @@ end
 local function Text(fs, size, r, g, b, lk)
     S.SetStyledFont(fs, lk.font, size, lk.flags, lk.rendering, lk.shadow, lk.shadowOpacity, lk.shadowDistance)
     fs:SetTextColor(r, g, b)
+end
+
+-- The stacks a stack-filled bar marks: every stack below the maximum, or
+-- the listed ones below it (each once, rising). One list per container,
+-- refilled only when the look's markers or maximum changed.
+local function MarkValues(rec, lk)
+    local values = rec.markValues
+    if not values then
+        values = {}
+        rec.markValues = values
+    end
+    if rec.mvMarks == lk.marks and rec.mvMax == lk.smax then return values end
+    rec.mvMarks, rec.mvMax = lk.marks, lk.smax
+    for i = #values, 1, -1 do values[i] = nil end
+    local top = lk.smax - 1
+    if lk.marks == "each" then
+        for n = 1, top do values[n] = n end
+        return values
+    end
+    local listed = {}
+    for token in lk.marks:gmatch("%d+") do
+        local n = tonumber(token)
+        if n > 0 and n <= top then listed[n] = true end
+    end
+    for n = 1, top do
+        if listed[n] then values[#values + 1] = n end
+    end
+    return values
+end
+
+-- Markers come from a per-button pool (made while the button accepts
+-- writes, never freed): a new maximum or marker list places them again.
+-- Sample rows are our own frames and take the pixel-layout policy.
+local function PlaceMarkers(rec, part, lk, bar)
+    local values = rec.stackFill and MarkValues(rec, lk) or NO_MARKS
+    part.markerValues = values
+    local markers = part.markers
+    if not markers then
+        markers = {}
+        part.markers = markers
+    end
+    local host, px, bw = part.markerHost or bar, lk.px, lk.bw
+    local width = lk.w - (lk.icon and lk.h or bw) - bw
+    for i = 1, #values do
+        local marker = markers[i]
+        if not marker then
+            marker = part.sample and S.CreateTexture(host, nil, "OVERLAY") or host:CreateTexture(nil, "OVERLAY")
+            marker:SetColorTexture(0, 0, 0, .7)
+            markers[i] = marker
+        end
+        marker:ClearAllPoints()
+        marker:SetPoint("TOPLEFT", bar, "TOPLEFT", Snap(width * values[i] / lk.smax, px), 0)
+        marker:SetSize(px, lk.h - 2 * bw)
+        marker:Show()
+    end
+    for i = #values + 1, #markers do markers[i]:Hide() end
 end
 
 -- Every region of one button from rec.lk; idempotent (init and restyle).
@@ -414,6 +536,14 @@ local function Style(rec, part)
         bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", left and -bw or -lead, bw)
         bar:SetStatusBarTexture(lk.tex)
         bar:SetStatusBarColor(lk.fr, lk.fg, lk.fb, 1)
+        if rec.stackFill or part.markers then PlaceMarkers(rec, part, lk, bar) end
+        -- The fill's range is its application bar's maximum: a bound button
+        -- is rebound in place when the maximum changes.
+        if rec.stackFill and part.bound and part.appMax ~= lk.smax then
+            part.appMax = lk.smax
+            barOpts.maxApplications = lk.smax
+            b:SetApplicationBar(bar, barOpts)
+        end
         local dur, name = part.dur, part.name
         if dur then
             Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
@@ -499,14 +629,19 @@ local function ApplyStack(rec, part, ov, dry)
         return false
     end
     local lk = rec.lk
+    -- Equal uses one extra native range step: counts above N move the
+    -- glow beyond the right clip edge instead of clamping at the center.
+    local op = ov.stackGlowOp or 1
+    if op == 3 then n = n + 1 end
+    local cap = op == 2 and n + 1 or n
     local style, r, gg, b = GlowSpec(rec, ov)
-    if s.on and Placed(s, n, lk) and Painted(s.glow, style, r, gg, b, lk) and (s.bound == n or not part.bound) then return false end
+    if s.on and Placed(s, n, lk, cap) and Painted(s.glow, style, r, gg, b, lk) and (s.bound == cap or not part.bound) then return false end
     if dry then return true end
-    PlaceStack(s, n, lk)
+    PlaceStack(s, n, lk, cap)
     PaintGlow(s.glow, style, r, gg, b, lk)
-    if part.bound and s.bound ~= n then
-        s.bound = n
-        barOpts.maxApplications = n
+    if part.bound and s.bound ~= cap then
+        s.bound = cap
+        barOpts.maxApplications = cap
         part.button:SetApplicationBar(s.bar, barOpts)
     end
     if not s.on then
@@ -536,6 +671,7 @@ end
 -- (initializeFrame) it prepares what the binding takes. Hidden text is
 -- never bound: a bound one is cleared, then hidden by hand.
 local function ApplyEntry(rec, part, entry, dry)
+    if C.StackColors.Apply(rec, part, entry, dry) then return true end
     local ov = entry.ov or EMPTY
     local cd = part.cd
     if cd and rec.role == "icon" then
@@ -549,7 +685,9 @@ local function ApplyEntry(rec, part, entry, dry)
         end
     end
     if part.glow and ApplyGlow(rec, part, ov, dry) then return true end
+    if part.glow and ApplyCombatGate(part.glow, part.gOn, dry) then return true end
     if part.stack and ApplyStack(rec, part, ov, dry) then return true end
+    if part.stack and ApplyCombatGate(part.stack.glow, part.stack.on, dry) then return true end
     local b = part.button
     local stacks = K.Choice(ov.stackText, rec.stackBar)
     local count = stacks and CountOpts(ov) or nil
@@ -603,6 +741,12 @@ local function NewPart(rec, button, k)
     local part = { button = button, pos = k, rec = rec }
     part.edges = Edges(button)
     part.icon = button:CreateTexture(nil, "ARTWORK")
+    -- Every layer at its own level above the button. Bars (K.AURA_LEVEL):
+    -- fill, stack colour (StackColors), markers, glows, countdown and name,
+    -- stacks. Icons and overlays (K.AURA_ICON_LEVEL): swipe, glows,
+    -- countdown, stacks.
+    local base = button:GetFrameLevel()
+    local LEVEL = rec.role == "bar" and BAR_LEVEL or ICON_LEVEL
     local lower
     if rec.role == "bar" then
         part.bg = button:CreateTexture(nil, "BACKGROUND")
@@ -610,6 +754,13 @@ local function NewPart(rec, button, k)
         lower:SetMinMaxValues(0, 1)
         lower:SetValue(0)
         part.bar = lower
+        -- Stack markers sit above the threshold colour (Style places them
+        -- from a pool; the look says which).
+        if rec.stackFill and rec.color then
+            local markerHost = CreateFrame("Frame", nil, button)
+            markerHost:SetFrameLevel(base + LEVEL.marks)
+            part.markerHost = markerHost
+        end
     else
         lower = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
         lower:SetAllPoints(part.icon)
@@ -618,8 +769,9 @@ local function NewPart(rec, button, k)
         lower:SetReverse(true)
         part.cd = lower
     end
-    -- Glows over the icon and swipe, text above the glows.
-    local level = lower:GetFrameLevel() + 1
+    lower:SetFrameLevel(base + LEVEL.fill)
+    -- Glows over the icon, fill, colour and markers; text above the glows.
+    local level = base + LEVEL.glow
     if rec.pandemic then
         local pan = CreateFrame("Frame", nil, button)
         pan:SetAllPoints(button)
@@ -633,10 +785,10 @@ local function NewPart(rec, button, k)
     -- stacks on top until the entry's Text on top says otherwise.
     local stacks = CreateFrame("Frame", nil, button)
     stacks:SetAllPoints(button)
-    stacks:SetFrameLevel(level + 2)
+    stacks:SetFrameLevel(base + LEVEL.stacks)
     local texts = CreateFrame("Frame", nil, button)
     texts:SetAllPoints(button)
-    texts:SetFrameLevel(level + 1)
+    texts:SetFrameLevel(base + LEVEL.text)
     part.stackFrame, part.timeFrame, part.top = stacks, texts, true
     part.count = stacks:CreateFontString(nil, "OVERLAY")
     if rec.text then part.dur = texts:CreateFontString(nil, "OVERLAY") end
@@ -653,12 +805,28 @@ local function NewPart(rec, button, k)
     return part
 end
 
+-- A stack glow's application bar on its button, at the glow's threshold
+-- range (PlaceStack; the native button has one application-bar binding).
+local function BindStack(button, stack)
+    stack.bound = stack.cap or 1
+    barOpts.maxApplications = stack.bound
+    button:SetApplicationBar(stack.bar, barOpts)
+end
+
 -- Hands the styled regions to the button; bound regions are sealed.
 local function Bind(rec, part, k)
     local button = part.button
     button:SetIcon(part.icon)
     if part.cd then button:SetDurationCooldown(part.cd) end
-    if part.bar then button:SetDurationBar(part.bar, BAR_OPTS[rec.fill]) end
+    if part.bar then
+        if rec.stackFill then
+            part.appMax = rec.lk.smax
+            barOpts.maxApplications = part.appMax
+            button:SetApplicationBar(part.bar, barOpts)
+        else
+            button:SetDurationBar(part.bar, BAR_OPTS[rec.fill])
+        end
+    end
     if part.dur and part.durOn then
         local opts = rec.topts[k] or TEXT_DEFAULT
         button:SetDurationText(part.dur, opts)
@@ -668,12 +836,7 @@ local function Bind(rec, part, k)
     -- Without a formatter Blizzard shows stacks above 1 only; the per-spell
     -- stack color passes a shared formatter (CountOpts).
     if part.countOn then button:SetApplicationCount(part.count, part.countOpts) end
-    local stack = part.stack
-    if stack then
-        stack.bound = stack.n or 1
-        barOpts.maxApplications = stack.bound
-        button:SetApplicationBar(stack.bar, barOpts)
-    end
+    if part.stack then BindStack(button, part.stack) end
     -- 12.1.5 and Forever return nothing here; the result is never used.
     if part.pan then button:AddPandemicRegion(part.pan) end
     part.bound = true
@@ -699,100 +862,25 @@ local function Init(rec, button, k)
     parts[#parts + 1] = part
 end
 
------------------------------------------------------------------- placeholders
--- Addon-owned regions on the cell, under the slot button: a dimmed icon
--- for missing buffs (showMissing) and the sample icon in the preview.
-local function Unhold(cell)
-    local h = cell and holders[cell]
-    if h and h.shown then
-        h.shown = false
-        h.icon:Hide()
-        h.bg:Hide()
-        h.name:Hide()
-    end
+-- Private drawing primitives reused by the native action-bar aura bridge.
+-- The button of a bridge container (a stack sensor of a stack-filled bar,
+-- an action-bar glow) covers its target and takes no mouse.
+local function Overlay(button, target)
+    button:SetAllPoints(target)
+    button:SetMouseClickEnabled(false)
+    button:SetMouseMotionEnabled(false)
 end
-local function Unholds(slot)
-    local bar = C.bars[slot]
-    if not bar or not bar.cells then return end
-    local cells = bar.cells
-    for i = 1, #cells do Unhold(cells[i]) end
+-- A bridge button's stack glow: regions placed for ov, bound, then gated.
+local function BridgeStack(rec, part, ov, level)
+    part.stack = NewStack(part.button, level)
+    ApplyStack(rec, part, ov, false)
+    BindStack(part.button, part.stack)
+    ApplyCombatGate(part.stack.glow, part.stack.on, false)
+    part.bound = true
 end
 
-local function Hold(cell, entry, barMeta, dim)
-    local h = holders[cell]
-    if not h then
-        h = { bg = S.CreateTexture(cell, nil, "BACKGROUND", nil, 0), icon = S.CreateTexture(cell, nil, "BACKGROUND", nil, 1),
-            name = S.CreateFontString(cell, nil, "ARTWORK") }
-        h.name:SetWordWrap(false)
-        h.name:SetJustifyH("LEFT")
-        holders[cell] = h
-    end
-    local tex = (entry.ov or EMPTY).icon or entry.texture or QUESTION
-    if h.shown and h.e == entry and h.tex == tex and h.look == barMeta.look and h.dim == dim then return end
-    h.shown, h.e, h.tex, h.look, h.dim = true, entry, tex, barMeta.look, dim
-    local lk, icon = barMeta.lk, h.icon
-    local bw = lk.bw
-    icon:SetTexture(tex)
-    icon:SetTexCoord(lk.l, lk.r, lk.t, lk.b)
-    icon:SetDesaturated(dim)
-    icon:SetAlpha(dim and .5 or 1)
-    icon:ClearAllPoints()
-    if barMeta.role == "bar" then
-        local left = lk.side == 1
-        local point = left and "TOPLEFT" or "TOPRIGHT"
-        icon:SetPoint(point, cell, point, left and bw or -bw, -bw)
-        icon:SetSize(lk.h - 2 * bw, lk.h - 2 * bw)
-        icon:SetShown(lk.icon)
-        local bg, name = h.bg, h.name
-        bg:ClearAllPoints()
-        bg:SetAllPoints(cell)
-        bg:SetTexture(lk.tex)
-        bg:SetVertexColor(lk.fr * .25, lk.fg * .25, lk.fb * .25, dim and lk.bgA * .6 or lk.bgA)
-        bg:Show()
-        S.SetStyledFont(name, lk.font, lk.cs, lk.flags, lk.rendering, lk.shadow, lk.shadowOpacity, lk.shadowDistance)
-        name:SetTextColor(lk.cr, lk.cg, lk.cb, dim and .6 or 1)
-        name:ClearAllPoints()
-        local lead = lk.icon and lk.h or 0
-        name:SetPoint("LEFT", cell, "LEFT", (left and lead or 0) + 4 * lk.px, 0)
-        name:SetPoint("RIGHT", cell, "RIGHT", -(left and 0 or lead) - 4 * lk.px, 0)
-        name:SetText(entry.name or "")
-        name:Show()
-    else
-        icon:SetPoint("TOPLEFT", cell, "TOPLEFT", bw, -bw)
-        icon:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -bw, bw)
-        icon:Show()
-        h.bg:Hide()
-        h.name:Hide()
-    end
-end
-
--- preview: the aura layer's preview state (every entry shows its sample).
-local function Placeholders(slot, view, plan, barMeta, preview)
-    -- The bar and its cells exist once the layout built them.
-    local bar = C.bars[slot]
-    if not (bar and bar.cells) then return end
-    local Cell = C.Layout.Cell
-    local entries = plan.entries
-    local cap = #entries
-    local limit = view.maxIcons
-    if type(limit) == "number" and limit > 0 and limit < cap then cap = limit end
-    for i = 1, cap do
-        local entry = entries[i]
-        local show = preview
-        if not show and barMeta.fixed and entry.src ~= "p" then
-            show = (entry.ov or EMPTY).showMissing
-            if show == nil then show = view.showMissing == true end
-        end
-        if show then
-            Hold(Cell(slot, i), entry, barMeta, not preview)
-        else
-            Unhold(bar.cells[i])
-        end
-    end
-    local cells = bar.cells
-    for i = cap + 1, #cells do Unhold(cells[i]) end
-end
+B.Bridge = { NewGlow = NewGlow, ApplyStack = ApplyStack, ApplyGlow = ApplyGlow, ApplyCombatGate = ApplyCombatGate,
+    Overlay = Overlay, BridgeStack = BridgeStack }
 
 B.TextOpts, B.Look, B.Hush, B.Quiet, B.Mutable = TextOpts, Look, Hush, Quiet, Mutable
 B.Style, B.ApplyEntry, B.Init = Style, ApplyEntry, Init
-B.Unholds, B.Placeholders = Unholds, Placeholders

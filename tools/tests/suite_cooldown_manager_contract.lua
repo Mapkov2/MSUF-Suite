@@ -48,11 +48,11 @@ local function Read(path)
     handle:close()
     return text
 end
-local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua","Icons.lua","Time.lua",
-    "Effects.lua","AuraButtons.lua","Auras.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
+local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
+    "Effects.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
     "Flush.lua","Settings.lua","Events.lua","Controller.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
-assert(#tocFiles==#ORDER,"runtime TOC must list the 24 cooldown manager files")
+assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
 for i=1,#ORDER do assert(tocFiles[i]==ORDER[i],"TOC order: expected "..ORDER[i].." at "..i) end
 -- The controller is split along its seams: the dirty mask and flush, the
 -- settings reader, the event map, then the lifecycle. Each file resolves
@@ -65,7 +65,7 @@ do
     for i=1,#tocFiles do at[tocFiles[i]]=i end
     local USES={["Settings.lua"]={"Flush.lua"},["Events.lua"]={"Flush.lua","Settings.lua"},
         ["Controller.lua"]={"Flush.lua","Settings.lua","Events.lua"},["Exports.lua"]={"Controller.lua"},
-        ["Auras.lua"]={"AuraButtons.lua"}}
+        ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua"}}
     for file,deps in pairs(USES) do
         for _,dep in ipairs(deps) do assert(at[dep] and at[dep]<at[file],dep.." must load before "..file) end
     end
@@ -100,6 +100,51 @@ do
             if names then n=n+select(2,names:gsub("[%w_]+","")) end
         end
         assert(n<=150,file.." declares "..n.." main-chunk locals")
+    end
+end
+-- One home per rule: the spell ID set helpers live in Const.lua, the stack
+-- glow binding of bridge buttons in AuraButtons.lua, the "can a usability
+-- read show" rule in Effects.lua. No runtime file crams statements onto a
+-- line, and every file opens with what it does.
+do
+    for _,file in ipairs({"Auras.lua","StackColors.lua","Resolve.lua","ActionGlows.lua"}) do
+        local text=Read(root.."/"..ADDON.."/"..file)
+        for _,copy in ipairs({"local function SameSet","local function SameIDs","local function CopySet"}) do
+            assert(not text:find(copy,1,true),file.." keeps its own copy of a Const set helper ("..copy..")")
+        end
+    end
+    local const=Read(root.."/"..ADDON.."/Const.lua")
+    assert(const:find("\nfunction K.SameSet(a, b)\n",1,true) and const:find("\nfunction K.CopySet(into, from)\n",1,true),
+        "Const.lua owns the set helpers")
+    for _,file in ipairs({"StackColors.lua","ActionGlows.lua"}) do
+        local text=Read(root.."/"..ADDON.."/"..file)
+        assert(not text:find("maxApplications",1,true) or file=="StackColors.lua" and select(2,text:gsub("maxApplications",""))==1,
+            file.." binds a stack glow's application bar itself (AuraButtons BridgeStack does)")
+    end
+    for _,file in ipairs({"Events.lua","Flush.lua"}) do
+        assert(not Read(root.."/"..ADDON.."/"..file):find("readyResources",1,true),
+            file.." repeats the usable visibility rule (Effects.UsableShown)")
+    end
+    for _,file in ipairs(ORDER) do
+        local text=Read(root.."/"..ADDON.."/"..file)
+        local n=0
+        for line in text:gmatch("[^\n]+") do
+            local code=line:gsub("%-%-.*$",""):gsub('"[^"]*"',""):gsub("'[^']*'","")
+            if code:find(";",1,true) then n=n+1 end
+        end
+        assert(n==0 or file=="GuideProfiles.lua" or file=="Presets.lua",file.." crams "..n.." lines with ';'")
+        -- Library aliases sit in the file head, comments never repeat.
+        local row,seen=0,{}
+        for line in text:gmatch("([^\n]*)\n") do
+            row=row+1
+            assert(row<=60 or not line:find("^local [%w_, ]+ = math%."),file..":"..row.." declares a math alias mid-file")
+            if line:find("^%-%- %S") and #line>40 then
+                assert(not seen[line],file..":"..row.." repeats a comment line: "..line)
+                seen[line]=true
+            end
+        end
+        assert(text:match("^local _, P = %.%.%.\n[^\n]*\n[^\n]*\n%-%- ") or text:match("^local _, P = %.%.%.\n[^\n]*\n%-%- ")
+            or file=="Bootstrap.lua" or file=="Presets.lua" or file=="GuideProfiles.lua",file.." has no header comment")
     end
 end
 local toc=Read(root.."/"..ADDON.."/"..ADDON.."_Mainline.toc")
@@ -276,6 +321,10 @@ do
 end
 function Widget:GetWidth() return self.w end
 function Widget:GetHeight() return self.h end
+function Widget:GetStatusBarTexture()
+    if not self.fill then self.fill=New("Texture",self) end
+    return self.fill
+end
 function Widget:GetFrameLevel() return self.level end
 function Widget:IsShown() return self.shown end
 function Widget:GetAlpha() return self.alpha end
@@ -497,18 +546,27 @@ C_Spell={
         cdCalls=cdCalls+1;cdSpells[spell]=(cdSpells[spell] or 0)+1
         return CooldownInfo(spell)
     end,
-    GetSpellCooldownDuration=function(spell)
+    GetSpellCooldownDuration=function(spell,ignoreGCD)
         Plain(spell,"GetSpellCooldownDuration")
+        local key=ignoreGCD and "baseDuration" or "displayDuration"
+        cdSpells[key]=(cdSpells[key] or 0)+1
         local state=cdState[spell]
         return NewDuration(combat,state and state.start,state and state.length)
     end,
     GetSpellCharges=function(spell)
+        cdSpells.charges=(cdSpells.charges or 0)+1
         local state=chargeState[spell]
         if not state then return nil end
         return {maxCharges=2,isActive=state.isActive,currentCharges=combat and SECRET_NUM or 1}
     end,
-    GetSpellChargeDuration=function() return NewDuration(combat,now,8) end,
-    GetSpellDisplayCount=function() return SECRET_TEXT end,
+    GetSpellChargeDuration=function()
+        cdSpells.chargeDuration=(cdSpells.chargeDuration or 0)+1
+        return NewDuration(combat,now,8)
+    end,
+    GetSpellDisplayCount=function()
+        cdSpells.displayCount=(cdSpells.displayCount or 0)+1
+        return SECRET_TEXT
+    end,
     IsSpellUsable=function(spell)
         usable.calls[spell]=(usable.calls[spell] or 0)+1
         if usable[spell]~=nil then return usable[spell],false end
@@ -646,6 +704,7 @@ end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 local S=Suite.Suite
+assert(loadfile(root.."/MSUF_Suite/Core/SpellRange.lua"))("MSUF_Suite",Suite)
 S.Normalize(Suite.DB)
 -- The legacy runtime assertions below exercise Blizzard's uncurated list.
 -- Raid-presets and their default-on gate have a focused data-plane contract.
@@ -735,8 +794,69 @@ local barStage=New("Frame",UIParent)
 local rowsCanvas=assert(S.CooldownManagerRenderPreview(barStage,"bar",400,200),"buff bar canvas")
 assert(rowsCanvas.rows[1] and rowsCanvas.rows[1].shown and rowsCanvas.rows[1].name.text=="Combustion Buff"
     and not rowsCanvas.icons[1],"buff bars draw as rows")
+-- Exercise the actual shared bar painter, not a renderer stub. Switching
+-- options must update every sample region, retain its pool and write nothing
+-- on an identical repaint.
+do
+    local v={kind=3,styleGen=1,barWidth=200,barHeight=20,barStacks=true,barStackMax=10,
+        barStackEach=false,barStackMarks="2, 5, 5, 12",barTime=true,stackText=true}
+    local ov={timeText=3,stackText=2}
+    local parent=New("Frame",UIParent)
+    local sample=C.AuraButtons.Sample(parent,nil,v,ov,500,"Sample")
+    assert(#sample.part.markerValues==2 and sample.part.markerValues[1]==2
+        and sample.part.markerValues[2]==5 and sample.part.count.text=="6"
+        and not sample.part.dur.shown and sample.part.count.shown,
+        "stack marks, sample count and per-spell time choice must render")
+    local before=writes
+    assert(C.AuraButtons.Sample(parent,sample,v,ov,500,"Sample")==sample and writes==before,
+        "unchanged sample must allocate no widgets or perform widget writes")
+    local marker=sample.part.markers[1]
+    v.styleGen,v.barStackEach,v.barStackMax=2,true,4
+    C.AuraButtons.Sample(parent,sample,v,{},500,"Sample")
+    assert(#sample.part.markerValues==3 and sample.part.markers[1]==marker
+        and sample.part.dur.shown and sample.part.count.text=="2","stack marks must reuse their pool")
+    v.styleGen,v.barStacks,v.barTime,v.stackText,v.barName=3,false,false,false,false
+    C.AuraButtons.Sample(parent,sample,v,nil,500,"Sample")
+    assert(#sample.part.markerValues==0 and not sample.part.markers[1].shown
+        and not sample.part.count.shown and not sample.part.dur.shown and not sample.name.shown,
+        "turning features off must clear all corresponding preview regions")
+    local view,plan=C.views.bar,C.plans.bar
+    -- Cold canvas and a live Edit Mode cell share the same sample renderer.
+    local cell=New("Frame",UIParent)
+    local realBars=C.bars.bar
+    C.bars.bar={cells={cell}}
+    local oldCell=C.Layout.Cell
+    C.Layout.Cell=function() return cell end
+    local calls,sampleFn=0,C.AuraButtons.Sample
+    C.AuraButtons.Sample=function(...) calls=calls+1;return sampleFn(...) end
+    C.AuraButtons.Placeholders("bar",v,{entries={{texture=500,name="Edit",ov={}}}},
+        {role="bar",fixed=true,lk={}},true)
+    assert(calls==1,"Edit Mode must use the same bar sample painter as the menu")
+    C.AuraButtons.Unholds("bar")
+    C.AuraButtons.Sample,C.Layout.Cell,C.bars.bar=sampleFn,oldCell,realBars
+end
 local iconCanvas=assert(S.CooldownManagerRenderPreview(barStage,"buf",400,200))
 assert(iconCanvas==rowsCanvas and iconCanvas.icons[1].shown and not iconCanvas.rows[1].shown,"one reused canvas per parent")
+do
+    local view=C.views.ess
+    local keys={"keybind","keybindBadge","cooldownDuration","barChargeSegments"}
+    local previous={}
+    for _,key in ipairs(keys) do previous[key]=view[key];view[key]=true end
+    view.styleGen=view.styleGen+1
+    local samples=assert(C.Preview.Render(barStage,"ess",600,200))
+    local icon=samples.icons[1]
+    assert(icon.keyBackground and icon.keyBackground.shown and icon.lastKey~="",
+        "keybind badge must be visible on the actual menu icon")
+    assert(icon.timerBar and icon.timerBar.segmentMode and #icon.timerBar.separators==2
+        and icon.timerBar.countFill.shown,"charge segments must appear without starting a simulation")
+    local before=writes
+    C.Preview.Render(barStage,"ess",600,200)
+    assert(writes==before,"unchanged icon samples must not rewrite keybinds or charge geometry")
+    for _,key in ipairs(keys) do view[key]=previous[key] end
+    view.styleGen=view.styleGen+1
+    C.Preview.Render(barStage,"ess",600,200)
+    assert(not icon.timerBar.shown,"returning to icons must hide duration-bar samples")
+end
 S.CooldownManagerReleasePreview(barStage)
 assert(PendingTimers()==0 and not module.context,"nothing runs before activation")
 
@@ -975,6 +1095,28 @@ assert(cdCalls==7,"GCD start refreshes every icon that shows the GCD")
 config.showGCD=false
 module:Refresh()
 Run()
+do
+    local original=config.spellsData
+    config.spellsData=assert(Codec.EncodeSpells({e={b11={showGCD=true}},s={[63]={b11={readyGlow=false}}}}))
+    module:Refresh()
+    Run()
+    assert(C.entries.b11.ov.showGCD==true and C.entries.b11.ov.readyGlow==false,
+        "runtime must combine shared choices and the current spec")
+    cdCalls=0
+    Fire("SPELL_UPDATE_COOLDOWN",55555,nil,nil,133)
+    assert(cdCalls==1,"per-spell GCD routing must update only the opted-in icon")
+    config.showGCD=true
+    config.spellsData=assert(Codec.EncodeSpells({e={b11={showGCD=false}}}))
+    module:Refresh()
+    Run()
+    cdCalls=0
+    Fire("SPELL_UPDATE_COOLDOWN",55555,nil,nil,133)
+    assert(cdCalls==6,"per-spell GCD suppression must exclude that icon from the GCD broadcast")
+    config.showGCD=false
+    config.spellsData=original
+    module:Refresh()
+    Run()
+end
 -- Potions and healthstones follow the spell that started their category.
 cdSpells[431933]=nil
 Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
@@ -995,6 +1137,7 @@ assert(e11.icon.chargeCd and not e11.icon.chargeCd.running and cdCalls==0,"a cha
 Fire("SPELL_UPDATE_COOLDOWN",101)
 assert(e11.icon.chargeCd.running and e11.icon.chargeSet==true,"charge recharge edge")
 usable[201]=false
+assert(C.Index.usableInterval==.2,"ordinary usability did not select the 200ms budget")
 assert(Fire("SPELL_UPDATE_USABLE"))
 Run()
 assert(e21.icon.tex.vc and e21.icon.tex.vc[1]==.4,"unusable tint")
@@ -1013,13 +1156,56 @@ end
 assert(e21.icon.tex.vc[1]==.4 and (usable.calls[201] or 0)==usable.stormReads,
     "usable event storm repainted before the trailing deadline")
 Run(.1)
+assert(e21.icon.tex.vc[1]==.4 and (usable.calls[201] or 0)==usable.stormReads,
+    "ordinary usability refreshed at the old 100ms deadline")
+Run(.101)
 assert(e21.icon.tex.vc[1]==1 and (usable.calls[201] or 0)==usable.stormReads+1,
     "usable event storm did not coalesce to one final refresh")
+do
+    local old=e21.ov
+    local override={}
+    for key,value in pairs(old or {}) do override[key]=value end
+    override.readyResources=true;e21.ov=override
+    C.Index.Rebuild()
+    assert(C.Index.usableInterval==.1,"resource-ready glow lost its 100ms budget")
+    Run(.3)
+    usable[201]=false;Fire("SPELL_UPDATE_USABLE");Run()
+    local reads=usable.calls[201]
+    usable[201]=nil;Fire("SPELL_UPDATE_USABLE");Run(.05)
+    assert(usable.calls[201]==reads,"resource usability refreshed before its deadline")
+    Run(.051)
+    assert(usable.calls[201]==reads+1 and e21.icon.tint==1,
+        "resource-ready usability did not retain its 100ms trailing refresh")
+    e21.ov=old;C.Index.Rebuild()
+    assert(C.Index.usableInterval==.2,"removing the resource consumer kept the faster sweep")
+end
 usable[201]=SECRET_BOOL
 C.Effects.Usable(e21)
 assert(e21.icon.tint==1,"a secret usability answer changed the visible tint")
 usable[201]=nil
 -- All range-tinted entries are inert for this broadcast. A range edge still
+do
+    local duplicate = {}
+    for key,value in pairs(e21) do duplicate[key]=value end
+    local list=C.Index.usable
+    list[#list+1]=duplicate
+    local function Sweep()
+        C.Flush.dirty.usable=true;C.Schedule();Run()
+    end
+    local before=usable.calls[201] or 0
+    usable[201]=false;Sweep()
+    assert(usable.calls[201]==before+1 and duplicate.usableCode==e21.usableCode,
+        "duplicate icons repeated a native usability query in one flush")
+    usable[201]=SECRET_BOOL;Sweep()
+    assert(usable.calls[201]==before+2 and duplicate.usableCode==1,
+        "a later flush reused a previous usability answer or inspected a secret")
+    duplicate.spell=202
+    local changed=usable.calls[202] or 0
+    Sweep()
+    assert(usable.calls[202]==changed+1,
+        "an override without an index rebuild reused the old spell answer")
+    list[#list]=nil;usable[201]=nil
+end
 -- refreshes the actual usable state when the action becomes visible again.
 do
     local rangeSnapshot={}
@@ -1212,6 +1398,27 @@ Fire("SPELL_UPDATE_COOLDOWN",1040)
 assert(cdSpells[1040]==1,"override IDs route cooldown events")
 
 ------------------------------------------------------------------ settings: incremental refresh
+-- The assisted icon's size and place repaint it and re-register no event;
+-- a settings read that changes nothing allocates nothing.
+do
+    local mask=C.Flush.dirty
+    Run()
+    config.assistIconSize,config.assistIconX=60,12
+    module:Refresh()
+    assert(not mask.events and C.state.assistIconSize==60 and C.state.assistIconX==12,
+        "the assisted icon's size or place re-registered events")
+    Run()
+    config.assistIconSize,config.assistIconX=48,0
+    module:Refresh()
+    Run()
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local kb=collectgarbage("count")
+    for _=1,200 do C.Settings.ReadGlobals(config,false) end
+    local used=collectgarbage("count")-kb
+    collectgarbage("restart")
+    assert(used==0,"an unchanged settings read allocated "..used.." KB")
+end
 local ess=C.views.ess
 local styleGen,layoutGen,behaviorGen=ess.styleGen,ess.layoutGen,ess.behaviorGen
 config.ess_zoom=12
@@ -1236,6 +1443,52 @@ module:Refresh()
 assert(writes==before and #timers==queued,"an unchanged refresh did work")
 C.Layout.ApplyAll()
 assert(writes==before,"a repeated unchanged layout pass made widget calls")
+-- Later rows with their own size: a style-only change styles every icon
+-- once, at the size its row takes (no second pass from the layout, and no
+-- later-row icon left at the first row's size).
+do
+    config.ess_perRow,config.ess_laterSize=2,30
+    module:Refresh()
+    Run()
+    local later={}
+    for _,entry in ipairs(C.plans.ess.entries) do
+        local icon=entry.icon
+        if icon and icon.layIndex and icon.layIndex>2 then later[#later+1]=icon end
+    end
+    assert(#later>0 and math.abs(later[1].w-30)<1e-6,"later-row icons take the later size")
+    local style,styled=C.Icons.StyleIcon,{}
+    C.Icons.StyleIcon=function(icon,...) styled[icon]=(styled[icon] or 0)+1;return style(icon,...) end
+    config.ess_zoom=10
+    module:Refresh()
+    Run()
+    C.Icons.StyleIcon=style
+    for icon,n in pairs(styled) do assert(n==1,"an icon was styled "..n.." times in one style pass") end
+    for i=1,#later do assert(math.abs(later[i].w-30)<1e-6,"a style pass left a later-row icon at the first row's size") end
+    config.ess_perRow,config.ess_laterSize,config.ess_zoom=9,0,12
+    module:Refresh()
+    Run()
+end
+-- All glows only in combat keeps aura glows on in the preview: turning the
+-- preview on or off re-applies every aura button's combat gate through a
+-- structural sync of every bar, also of bars the preview adds nothing to.
+do
+    config.allGlowsCombat=true
+    module:Refresh()
+    Run()
+    local sync,synced=C.Auras.Sync,{}
+    C.Auras.Sync=function(slot,...) synced[slot]=(synced[slot] or 0)+1;return sync(slot,...) end
+    assert(S.CooldownManagerSetPreview(true))
+    Run()
+    assert(synced.bar and synced.buf and synced.ess,"a preview toggle left aura glow gates as they were")
+    synced={}
+    assert(S.CooldownManagerSetPreview(false))
+    Run()
+    assert(synced.bar and synced.buf,"the preview going off left aura glow gates as they were")
+    C.Auras.Sync=sync
+    config.allGlowsCombat=false
+    module:Refresh()
+    Run()
+end
 
 ------------------------------------------------------------------ settings: work per setting
 -- Each setting marks only its own work (R17): opacity and visibility rules
@@ -1401,6 +1654,71 @@ do
     assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("done refresh failed",1,true),
         "a raising refresh in OnCooldownDone was not reported")
 end
+do
+    local real,queries=C.Effects.Usable
+    local errors=#dispatch.errors
+    C.Effects.Usable=function(entry,cache)
+        real(entry,cache);queries=cache;error("usable batch failed")
+    end
+    dispatch.expect=true
+    C.Flush.dirty.usable=true;C.Schedule();Run()
+    dispatch.expect=false;C.Effects.Usable=real
+    assert(#dispatch.errors==errors+1 and queries
+        and not next(queries.seen) and not next(queries.usable) and not next(queries.noPower),
+        "a failed usability batch retained native answers")
+    -- The ordinary isolated-unit retry must read fresh answers too.
+    C.Schedule();Run()
+end
+
+do
+    local duplicate={}
+    for key,value in pairs(e11) do duplicate[key]=value end
+    duplicate.icon=C.Icons.CreateStandalone(bars.ess.frame)
+    duplicate.icon.entry=duplicate
+    duplicate.ov={showGCD=true}
+    C.Icons.Apply(duplicate)
+    local oldState,oldCharges,oldCombat=cdState[101],chargeState[101],combat
+    local oldOverride=e11.ov
+    e11.ov={showGCD=false}
+    local plan=C.plans[e11.slot]
+    plan.entries[#plan.entries+1]=duplicate
+    C.Index.Rebuild()
+    assert(C.Index.hasSharedTimeSpells,"the cold plan did not enable sharing for duplicate spells")
+    cdState[101]={start=now,length=8};chargeState[101]={isActive=true};combat=true
+    local cooldowns=cdSpells[101] or 0
+    local base,display,charges,recharges=cdSpells.baseDuration or 0,cdSpells.displayDuration or 0,
+        cdSpells.charges or 0,cdSpells.chargeDuration or 0
+    C.Flush.Mark(e11,"cooldown");C.Flush.Mark(duplicate,"cooldown");Run()
+    assert(cdSpells[101]==cooldowns+1 and cdSpells.charges==charges+1
+        and cdSpells.chargeDuration==recharges+1,
+        "duplicate cooldown icons repeated their native info or charge queries")
+    assert(cdSpells.baseDuration==base+1 and cdSpells.displayDuration==display+1
+        and not rawequal(e11.icon.cd.running,duplicate.icon.cd.running),
+        "shared snapshots merged GCD-free and displayed durations")
+    assert(rawequal(e11.icon.chargeCd.running,duplicate.icon.chargeCd.running),
+        "identical recharge swipes did not share the native duration")
+    cooldowns=cdSpells[101]
+    chargeState[101]=nil
+    C.Flush.Mark(e11,"cooldown");C.Flush.Mark(duplicate,"cooldown");Run()
+    assert(cdSpells[101]==cooldowns+1 and cdSpells.charges==charges+2
+        and not e11.icon.chargeCd.running and not duplicate.icon.chargeCd.running,
+        "a new batch reused old charge state or repeated a nil charge result")
+    local refresh,errors=C.Time.Refresh,#dispatch.errors
+    C.Time.Refresh=function(entry,reason) refresh(entry,reason);error("time batch failed") end
+    dispatch.expect=true
+    C.Flush.Mark(e11,"cooldown");Run()
+    dispatch.expect=false;C.Time.Refresh=refresh
+    assert(#dispatch.errors==errors+1,"failed time batch was not isolated")
+    cooldowns=cdSpells[101]
+    refresh(e11,"cooldown");refresh(e11,"cooldown")
+    assert(cdSpells[101]==cooldowns+2,"a failed time batch left shared readers active")
+    C.Schedule();Run() -- ordinary isolated-unit retry
+    cdState[101],chargeState[101],combat,e11.ov=oldState,oldCharges,oldCombat,oldOverride
+    plan.entries[#plan.entries]=nil
+    C.Index.Rebuild()
+    C.Time.Refresh(e11,"full")
+    duplicate.icon:Hide()
+end
 
 ------------------------------------------------------------------ list and spell data
 local lists62={v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"}},[63]={c1={"s9001","i9002"}}}}
@@ -1414,7 +1732,8 @@ assert(C.entries.s9001.icon and C.entries.i9002.icon and bars.c1.shown)
 local decoded=C.lists
 module:Refresh()
 assert(C.lists==decoded,"an unchanged data string is not decoded again")
-config.spellsData=assert(Codec.EncodeSpells({v=1,e={b11={readyGlow=true,glowStyle=2}}}))
+config.spellsData=assert(Codec.EncodeSpells({v=1,e={b11={readyGlow=true,glowStyle=2}},
+    s={[62]={b11={readyGlow=false,showGCD=true}}}}))
 module:Refresh()
 Run()
 assert(C.entries.b11.ov.readyGlow==true,"per-spell choices reach entries")
@@ -1424,6 +1743,11 @@ specIndex=1
 assert(Fire("ACTIVE_PLAYER_SPECIALIZATION_CHANGED"))
 Run()
 assert(C.state.specID==62 and C.state.specTag==81,"spec change")
+assert(C.entries.b11.ov.readyGlow==false and C.entries.b11.ov.showGCD==true
+    and C.entries.b11.ov.glowStyle==2,"spec change must apply overrides while retaining shared fields")
+config.spellsData=assert(Codec.EncodeSpells({e={b11={readyGlow=true,glowStyle=2}}}))
+module:Refresh()
+Run()
 local order=C.plans.ess.entries
 assert(order[1].key=="b14" and order[2].key=="b11" and order[3].key=="b12","per-spec explicit order")
 assert(S.CooldownManagerSpec()==62)
@@ -1440,6 +1764,21 @@ assert(C.state.preview and C.Preview.mode=="edit","Edit Mode preview")
 assert(C.entries.b13 and C.entries.b13.slot=="ess" and C.entries.b13.icon,"unlearned spells show in the preview")
 local sample=C.plans.c2.entries
 assert(#sample==3 and sample[1].src=="p" and sample[1].texture==1101,"sample icons on empty bars")
+-- Mover specs are built once: every Enable and Refresh registers the same
+-- tables (the assisted icon's too), never new ones with new closures.
+do
+    local register,specs=S.RegisterOwnedMover,{}
+    S.RegisterOwnedMover=function(id,element,spec)
+        specs[element]=specs[element] or {}
+        specs[element][#specs[element]+1]=spec
+        return register(id,element,spec)
+    end
+    module:RegisterMovers()
+    module:RegisterMovers()
+    S.RegisterOwnedMover=register
+    assert(specs.assistIcon and #specs.assistIcon==2 and specs.assistIcon[1]==specs.assistIcon[2]
+        and specs.ess[1]==specs.ess[2],"mover specs must be built once")
+end
 -- A cancelled drag re-applies the saved position.
 module:RegisterMovers()
 local element=assert(elements.ess,"Essential mover")
@@ -1521,6 +1860,33 @@ assert(rows[1].key=="b14" and rows[2].key=="b11","bar entries in display order")
 local meteor
 for _,row in ipairs(rows) do if row.key=="b13" then meteor=row end end
 assert(meteor and meteor.known==false and meteor.family==1,"unlearned entries are listed")
+-- Maximum icons: learned entries past it are hidden on their bar ("cap"),
+-- unless Send excess cooldowns to moves them to another shown cooldown bar:
+-- then they show there and the row names it. Unlearned ones take no place.
+do
+    local KEYS,INDEX=Suite.CDM.KEYS.ess,Suite.CDM.SLOT_INDEX
+    local function Learned(list)
+        local out={}
+        for _,row in ipairs(list) do if row.known then out[#out+1]=row end end
+        return out
+    end
+    config[KEYS.maxIcons]=1
+    module:Refresh();Run()
+    local capped=Learned(S.CooldownManagerBarEntries("ess"))
+    assert(not capped[1].hidden and capped[2].hidden and capped[2].hiddenBy=="cap" and capped[2].movedTo==nil,
+        "past Maximum icons without a route: hidden by the cap")
+    config[KEYS.overflow]=INDEX.uti+1
+    module:Refresh();Run()
+    local moved=Learned(S.CooldownManagerBarEntries("ess"))
+    assert(not moved[2].hidden and moved[2].movedTo=="uti" and moved[2].hiddenBy==nil and C.entries[moved[2].key].slot=="uti",
+        "past Maximum icons with a route: shown on the destination, and the row says where")
+    config[KEYS.overflow]=INDEX.buf+1
+    module:Refresh();Run()
+    local aura=Learned(S.CooldownManagerBarEntries("ess"))
+    assert(aura[2].hidden and aura[2].hiddenBy=="cap" and aura[2].movedTo==nil,"an aura bar takes no excess cooldowns")
+    config[KEYS.maxIcons],config[KEYS.overflow]=0,1
+    module:Refresh();Run()
+end
 local catalog=S.CooldownManagerCatalogEntries(1)
 local where={}
 for _,row in ipairs(catalog) do where[row.key]=row.slot end
@@ -2055,6 +2421,7 @@ config.ess_keybind=true
 module:Refresh()
 Run()
 assert(Registered("UPDATE_BINDINGS") and Registered("ACTIONBAR_SLOT_CHANGED"),"keybinds on register the binding events")
+assert(not Registered("ACTIONBAR_PAGE_CHANGED") and not Registered("UPDATE_SHAPESHIFT_FORM"),"stable labels ignore page/form edges")
 assert(e12.icon.lastKey=="S2","keybind text on the Essential bar")
 assert(PendingTimers()==0,"turning keybinds on leaves no timer behind")
 bindings.ACTIONBUTTON2="CTRL-F"
@@ -2163,6 +2530,74 @@ assert(KB.Text(9101)=="MwU","stopping the action bars kept their key texts")
 bindings.MSUFSUITE_BAR9_BUTTON1=nil
 actionSlots[9101]=nil
 KB.Clear()
+-- The suite bars page bar 1 themselves (target or modifier paging) without
+-- ACTIONBAR_PAGE_CHANGED: the action glows hear it like a page change.
+local paged=assert(registry["MSUFSuite.ActionBars.ActionsChanged"],"the cooldown manager ignores the action bars' own paging")
+local routeChanged,routes=C.ActionGlows.RouteChanged,0
+C.ActionGlows.RouteChanged=function(...) routes=routes+1;return routeChanged(...) end
+paged.fn()
+C.ActionGlows.RouteChanged=routeChanged
+assert(routes==1,"the action bars' own paging did not reroute the action glows")
+end
+
+------------------------------------------------------------------ action bar presses
+-- The press export exists only while presses light icons (the module runs
+-- and "Show action bar presses on cooldown icons" is on); the action bars'
+-- bridge (MSUF_Suite_ActionBars/Style.lua) reads no action without it and
+-- passes the spell of a spell action or of a macro that shows one.
+do
+    assert(config.pressFeedback==false and S.CooldownManagerActionPressed==nil,"no press export while presses are off")
+    config.pressFeedback=true
+    module:Refresh()
+    Run()
+    local pressed=assert(S.CooldownManagerActionPressed,"the press export appears with the setting")
+    pressed(101)
+    local pulse=assert(e11.icon.pressPulse,"a press of the icon's spell starts its pulse")
+    assert(pulse.playing,"the press pulse plays")
+    local plays=pulse.calls.Play
+    pressed(SECRET_NUM)
+    pressed(999999)
+    assert(pulse.calls.Play==plays,"secret or untracked spells light nothing")
+    -- The bridge itself, from its source, against the export.
+    local source=Read(root.."/MSUF_Suite_ActionBars/Style.lua")
+    local body=assert(source:match("\n(local function NotifyPress%(rec%)\n.-\nend)\n"),"the action bars' press bridge")
+    local reads,sent,actions=0,{},{[1]={"spell",101,"spell"},[2]={"macro",102,"spell"},[3]={"macro",7,"item"}}
+    local AB={Painter={ActionSpell=function(slot)
+        reads=reads+1
+        local a=actions[slot]
+        if a and (a[1]=="spell" or a[1]=="macro" and a[3]=="spell") then return a[2] end
+    end}}
+    local stub={}
+    local Notify=assert(loadstring("local S,AB=...\n"..body.."\nreturn NotifyPress","=Style.NotifyPress"))(stub,AB)
+    stub.CooldownManagerActionPressed=nil
+    Notify({slot=1})
+    assert(reads==0,"without the export the bridge reads no action")
+    stub.CooldownManagerActionPressed=function(spell) sent[#sent+1]=spell end
+    Notify({slot=1});Notify({slot=2});Notify({slot=3});Notify({})
+    assert(table.concat(sent,",")=="101,102","a spell action and a macro that shows a spell are passed, nothing else")
+    config.pressFeedback=false
+    module:Refresh()
+    Run()
+    assert(S.CooldownManagerActionPressed==nil,"the export goes with the setting")
+end
+-- Stable key labels (keybindStable, the default) ignore page and form
+-- edges; unstable ones follow them, coalesced like binding events.
+do
+    assert(config.keybindStable==true and not Registered("ACTIONBAR_PAGE_CHANGED") and not Registered("UPDATE_SHAPESHIFT_FORM"))
+    config.keybindStable=false
+    module:Refresh()
+    Run()
+    assert(Registered("ACTIONBAR_PAGE_CHANGED") and Registered("UPDATE_SHAPESHIFT_FORM"),"unstable labels follow pages and forms")
+    ResetCalls()
+    Fire("ACTIONBAR_PAGE_CHANGED")
+    Fire("UPDATE_SHAPESHIFT_FORM")
+    assert(Calls("keysRequest")==2 and PendingTimers()==1,"page and form edges share one key pass")
+    Run(.2)
+    assert(Calls("keysRebuild")==1,"the key pass looks every text up again")
+    config.keybindStable=true
+    module:Refresh()
+    Run()
+    assert(not Registered("ACTIONBAR_PAGE_CHANGED") and not Registered("UPDATE_SHAPESHIFT_FORM"),"stable again: no page events")
 end
 
 ------------------------------------------------------------------ assisted combat
@@ -2574,10 +3009,16 @@ assert(C.state.soundQuietUntil==now+2,"two quiet seconds after a loading screen"
 Run()
 
 ------------------------------------------------------------------ disable and release
+config.pressFeedback=true
+module:Refresh()
+Run()
+assert(S.CooldownManagerActionPressed,"press export while presses are on")
 module.active=false
 S.states[ID].active=false
 module:Disable()
 module.context:Release()
+assert(S.CooldownManagerActionPressed==nil,"the press export goes with the module")
+config.pressFeedback=false
 assert(cvars.cooldownViewerEnabled=="1","the CVar is restored")
 for _,slot in ipairs({"ess","uti","def","ext","buf","bar","c1","c2"}) do
     assert(not bars[slot].frame.shown,slot.." still shown after disable")

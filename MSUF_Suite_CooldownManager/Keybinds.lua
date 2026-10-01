@@ -131,6 +131,7 @@ function KB.Refresh()
             end
         end
     end
+    C.Effects.Recommendation()
 end
 
 -- Bindings or action slots changed: every text is looked up again.
