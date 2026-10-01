@@ -131,6 +131,12 @@ TooltipDataProcessor = { AddTooltipPostCall = function() end }
 for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "InventoryView" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
+-- Bags.lua runs the view from its sub-module list after its own refresh and stop.
+function module:Refresh() P.InventoryView.Refresh() end
+function module:Disable()
+    self.active = false
+    P.InventoryView.Disable()
+end
 module:Refresh()
 frame:UpdateItems()
 frame:UpdateItemLayout()

@@ -597,6 +597,3 @@ end
 function V.Disable()
     V.Release()
 end
-
-hooksecurefunc(M, "Refresh", V.Refresh)
-hooksecurefunc(M, "Disable", V.Disable)

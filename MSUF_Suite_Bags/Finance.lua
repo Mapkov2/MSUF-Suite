@@ -327,6 +327,3 @@ function F.Disable()
     if F.button then F.button:Hide() end
     if F.window then F.window:Hide() end
 end
-
-hooksecurefunc(M, "Refresh", F.Enable)
-hooksecurefunc(M, "Disable", F.Disable)

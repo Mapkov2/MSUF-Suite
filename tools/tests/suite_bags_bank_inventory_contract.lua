@@ -104,6 +104,8 @@ for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridVi
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 local B = P.BankInventory
+-- Bags.lua runs the bank view from its sub-module list after its own refresh and stop.
+M.Refresh, M.Disable = function() B.Refresh() end, function() B.Disable() end
 P.SlotCache.Start()
 -- Every registered frame receives the event, the shared slot cache included.
 local function Fire(event, ...)

@@ -311,6 +311,17 @@ local bagsPrivate = { NS = state, Suite = S }
 for _, file in ipairs({ "SlotCache", "Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end
+-- The sub-modules (their own files, not loaded here) run in Bags.lua's list
+-- order after its own refresh and stop; record each call.
+local submoduleCalls = {}
+for _, entry in ipairs(module.SUBMODULES) do
+    local methods = {}
+    for slot = 2, 3 do
+        local method = entry[slot]
+        if method then methods[method] = function() submoduleCalls[#submoduleCalls + 1] = entry[1] .. "." .. method end end
+    end
+    bagsPrivate[entry[1]] = methods
+end
 -- BAG_UPDATE(bag) reaches the shared slot cache before Blizzard's UpdateItems.
 local function BagChanged()
     local cache = bagsPrivate.SlotCache
@@ -395,6 +406,24 @@ module.config = { showItemLevel = true, itemLevelSize = 12, font = "",
 module.context, module.active = context, true
 module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
+-- The explicit sub-module list replaces the files' post-hooks on the module.
+local REFRESH_ORDER = { "InventoryView.Refresh", "BankInventory.Refresh", "BagFinance.Enable",
+    "StackSplitter.Refresh", "SortDirection.Refresh" }
+local STOP_ORDER = { "InventoryView.Disable", "BankInventory.Disable", "BagFinance.Disable", "AutoSplit.Stop",
+    "StackSplitter.Close", "SortDirection.Restore" }
+local function Ran(order)
+    if #submoduleCalls ~= #order then return false end
+    for i = 1, #order do if submoduleCalls[i] ~= order[i] then return false end end
+    return true
+end
+assert(Ran(REFRESH_ORDER), "a refresh did not run the sub-modules in Bags.lua's order: "
+    .. table.concat(submoduleCalls, ", "))
+for _, file in ipairs({ "InventoryView", "BankInventory", "Finance", "AutoSplit", "StackSplitter", "SortDirection" }) do
+    local handle = assert(io.open(root .. "/MSUF_Suite_Bags/" .. file .. ".lua", "rb"))
+    local source = handle:read("*a")
+    handle:close()
+    assert(not source:find("hooksecurefunc%(%s*M%s*,"), file .. ".lua hooks the Bags module instead of joining its list")
+end
 assert(#textures == 23 and module.windows[ContainerFrameCombinedBags]
     and module.windows[ContainerFrame6] and textures[2].color[4] == 0.98,
     "combined and reagent bag backgrounds were not styled on enable")
@@ -871,7 +900,9 @@ assert(BelowIcon(foodSlot), "an item that arrived stayed under the Suite surface
 items[3] = nil
 BagChanged()
 module.active = false
+for i = #submoduleCalls, 1, -1 do submoduleCalls[i] = nil end
 module:Disable()
+assert(Ran(STOP_ORDER), "a stop did not run the sub-modules in Bags.lua's order: " .. table.concat(submoduleCalls, ", "))
 bagMode = context.before
 assert(not combinedStyle.shell.shown and not reagentStyle.shell.shown
     and not textures[1].shown and not textures[10].shown

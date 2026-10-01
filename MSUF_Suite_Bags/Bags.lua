@@ -415,6 +415,29 @@ local function CombatEnded(module)
     module:RefreshWindowLayout()
 end
 
+-- The Bags sub-modules, run in this order after this file's own refresh and
+-- stop. Each entry: the Private table its file exports, its refresh method,
+-- its stop method (nil: nothing to do there); retail: the file loads on
+-- Retail only. Their files load after this one.
+local SUBMODULES = {
+    { "InventoryView", "Refresh", "Disable" },                -- the Suite grid of the combined bag
+    { "BankInventory", "Refresh", "Disable", retail = true }, -- the organized bank view
+    { "BagFinance", "Enable", "Disable" },                    -- the currency and gold history line
+    { "AutoSplit", nil, "Stop" },                             -- a running automatic split
+    { "StackSplitter", "Refresh", "Close" },                  -- split presets beside Blizzard's window
+    { "SortDirection", "Refresh", "Restore" },                -- Blizzard's bag sorting direction
+}
+M.SUBMODULES = SUBMODULES
+local REFRESH, STOP = 2, 3
+
+local function RunSubmodules(slot)
+    for i = 1, #SUBMODULES do
+        local entry = SUBMODULES[i]
+        local method = entry[slot]
+        if method and not (entry.retail and NS.Client.isForever) then Private[entry[1]][method]() end
+    end
+end
+
 function M:Enable()
     self.frame = ContainerFrameCombinedBags
     Slots.Start()
@@ -495,6 +518,7 @@ function M:Refresh()
     self.needsItemRefresh = nil
     self:RefreshWindowLayout()
     RememberVisuals(self, c)
+    RunSubmodules(REFRESH)
 end
 
 
@@ -522,6 +546,7 @@ function M:Disable()
     if not NS.IsCombatLocked() then UpdateContainerFrameAnchors() end
     self.nativeScale = nil
     self.frame = nil
+    RunSubmodules(STOP)
 end
 
 Private.BagsModule = M

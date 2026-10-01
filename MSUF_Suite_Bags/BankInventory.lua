@@ -318,6 +318,3 @@ function B.Disable()
     if B.events then B.events:UnregisterAllEvents() end
     if B.frame then B.frame:Hide(); B.modeButton:Hide() end
 end
-
-hooksecurefunc(M, "Refresh", B.Refresh)
-hooksecurefunc(M, "Disable", B.Disable)
