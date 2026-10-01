@@ -68,7 +68,7 @@ local NS = {
 }
 -- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
 dofile(root .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(root)
-for _, file in ipairs({ "Defaults", "Database", "DatabaseProfiles", "ProfileIO", "Safety" }) do
+for _, file in ipairs({ "Defaults", "DefaultsLooks", "Database", "DatabaseProfiles", "ProfileIO", "Safety" }) do
     Load("MSUF_Suite_Skin/Core/" .. file .. ".lua", NS)
 end
 local Database, IO = NS.Database, NS.ProfileIO

@@ -40,6 +40,7 @@ end
 -- Names and descriptions shown from the engine's catalogs.
 local NS = { Client = { isForever = false, isMainline = true } }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
 for name, look in pairs(NS.LookPresets) do
     Translated(look.label, "the name of look " .. name)
     Translated(look.description, "the description of look " .. name)
@@ -85,7 +86,7 @@ Check(ReadFile("MSUF_Suite_Skin_Options/Pages/Looks.lua"):find("L[selected.descr
     "the look note shows its description without the locale table")
 
 -- No hard-coded English in the skin's setters, tooltips, edit labels or
--- history labels. Catalog data (Defaults.lua) is localized where it is
+-- history labels. Catalog data (Defaults*.lua) is localized where it is
 -- shown; upper-case constants name Blizzard globals, lower-case words ids.
 local function Prose(literal)
     return literal:find("%a") ~= nil and not literal:match("^[%u%d_]+$") and not literal:match("^[%l%d_%-]+$")
@@ -108,7 +109,7 @@ local scanned, literals = 0, {}
 for _, folder in ipairs({ "MSUF_Suite_Skin", "MSUF_Suite_Skin_Options" }) do
     for _, path in ipairs(Lua(folder)) do
         if not path:find("/Locales/", 1, true) and not path:find("/Libs/", 1, true)
-            and not path:find("Core/Defaults.lua", 1, true) then
+            and not path:find("Core/Defaults", 1, true) then
             scanned = scanned + 1
             local file = assert(io.open(path, "rb"))
             local number = 0

@@ -1813,6 +1813,7 @@ assert(forever.Client.flavor == "Forever" and forever.Client.isMainline
 do
     local retail = { Client = { flavor = "Mainline", isMainline = true, isForever = false } }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", retail)
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", retail)
     assert(retail.Defaults.theme.look == "cleanModern" and #retail.LookOrder == 5,
         "the Retail skin client did not start with Clean Modern")
 end

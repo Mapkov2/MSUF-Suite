@@ -291,7 +291,7 @@ local engine = {
 }
 -- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
 dofile(root .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(root)
-for _, file in ipairs({ "Core/Defaults.lua", "Core/Database.lua", "Core/DatabaseProfiles.lua", "Core/Safety.lua",
+for _, file in ipairs({ "Core/Defaults.lua", "Core/DefaultsLooks.lua", "Core/Database.lua", "Core/DatabaseProfiles.lua", "Core/Safety.lua",
     "Core/Registry.lua", "Core/Theme.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", engine)
 end

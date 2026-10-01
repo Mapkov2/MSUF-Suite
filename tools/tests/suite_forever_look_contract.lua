@@ -5,6 +5,7 @@ local function Engine(isForever)
     local ns = { Client = { isForever = isForever },
         FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" } }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", ns)
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", ns)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Database.lua"))("MSUF_Suite_Skin", ns)
     -- The color migrations compare through Safety.SameColor.
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", ns)

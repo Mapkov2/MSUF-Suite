@@ -200,6 +200,7 @@ local searchNS = {
     Client = { isForever = false },
 }
 assert(loadfile("MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", searchNS)
+assert(loadfile("MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", searchNS)
 local searchOptions = { GetPageDefinition = function() return nil end }
 assert(loadfile("MSUF_Suite_Skin_Options/Shell/Search.lua"))("MSUF_Suite_Skin_Options", {
     NS = searchNS,

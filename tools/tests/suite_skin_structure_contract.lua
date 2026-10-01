@@ -49,6 +49,8 @@ Check(skinAt["Core/CheckmarksMenus.lua"] == skinAt["Core/Checkmarks.lua"] + 1,
     "CheckmarksMenus.lua must load right after Checkmarks.lua (NS.CheckmarksShared)")
 Check(skinAt["Core/PublicAPIMethods.lua"] == skinAt["Core/PublicAPI.lua"] + 1,
     "PublicAPIMethods.lua must load right after PublicAPI.lua (NS.PublicAPIShared)")
+Check(skinAt["Core/DefaultsLooks.lua"] == skinAt["Core/Defaults.lua"] + 1,
+    "DefaultsLooks.lua must load right after Defaults.lua (NS.DefaultsShared)")
 Before("Rendering/MicroMenuPerformance.lua", "Rendering/MicroMenuVisual.lua")
 -- Load-time locals: NS.Clamp and NS.IsListed (Defaults), WatchSettings
 -- (Registry), NS.MicroMenuPerformance.
@@ -284,7 +286,6 @@ Check(Source("MSUF_Suite_Skin_Options/Shell/WidgetsDropdown.lua"):find("CreateIn
 
 ------------------------------------------------------------------ size
 local DATA_FILES = {
-    ["MSUF_Suite_Skin/Core/Defaults.lua"] = true,
     ["MSUF_Suite_Skin/Core/BlizzardFontCatalog.lua"] = true,
     ["MSUF_Suite_Skin/Locales/enUS.lua"] = true,
     ["MSUF_Suite_Skin/Locales/deDE.lua"] = true,
@@ -457,6 +458,7 @@ do
     local NS = { Client = { isForever = false },
         FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" } }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
     Check(NS.Clamp("x", 2, 5) == 2 and NS.Clamp(nil, 0, 1) == 0 and NS.Clamp(7, 2, 5) == 5
         and NS.Clamp(-1, 0, 1) == 0 and NS.Clamp("0.5", 0, 1) == 0.5, "NS.Clamp changed")
     Check(NS.IsListed({ "a", "b" }, "b") and not NS.IsListed({ "a" }, "c") and not NS.IsListed({}, nil),

@@ -117,6 +117,7 @@ local fighting = {
     FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" },
 }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", fighting)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", fighting)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Database.lua"))("MSUF_Suite_Skin", fighting)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DatabaseProfiles.lua"))("MSUF_Suite_Skin", fighting)
 fighting.RootDB = { activeProfile = "Default", profiles = { Default = {}, Spare = {} } }

@@ -18,6 +18,7 @@ Locales\Localization.lua
 Locales\enUS.lua
 Locales\deDE.lua
 Core\Defaults.lua
+Core\DefaultsLooks.lua
 Core\Database.lua
 Core\DatabaseProfiles.lua
 Core\SharedMedia.lua

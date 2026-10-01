@@ -51,6 +51,7 @@ local NS = {
     BlizzardYellow = { TrackFrame = Noop },
 }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
 NS.DB = NS.CopyValue(NS.Defaults)
 for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Core/Theme.lua",
     "Rendering/Geometry.lua", "Rendering/Surface.lua" }) do

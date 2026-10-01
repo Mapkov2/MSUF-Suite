@@ -2250,6 +2250,7 @@ MapkoSkin = nil
 local skin = { addonName = "MSUF_Suite_Skin", Client = { isMainline = true, isForever = false },
     L = setmetatable({}, { __index = function(_, key) return key end }) }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", skin)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", skin)
 assert(skin.Defaults.theme.look == "cleanModern" and skin.Defaults.theme.preset == "cleanModern")
 skin.DB = skin.CopyValue(skin.Defaults)
 local previewSurfaces = {}

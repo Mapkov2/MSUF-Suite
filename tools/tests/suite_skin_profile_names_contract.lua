@@ -46,7 +46,7 @@ local skin = {
     Adapters = { ApplyAll = Noop },
     Registry = { RefreshAll = Noop, NotifyListeners = Noop },
 }
-for _, file in ipairs({ "Defaults", "Database", "DatabaseProfiles", "ProfileIO", "Safety" }) do
+for _, file in ipairs({ "Defaults", "DefaultsLooks", "Database", "DatabaseProfiles", "ProfileIO", "Safety" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/" .. file .. ".lua"))("MSUF_Suite_Skin", skin)
 end
 skin.addonName = "MSUF_Suite_Skin"

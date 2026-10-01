@@ -306,6 +306,7 @@ NS = {
 do
     local defaults = { Client = NS.Client }
     assert(loadfile(skin .. "Core/Defaults.lua"))("MSUF_Suite_Skin", defaults)
+    assert(loadfile(skin .. "Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", defaults)
     NS.Clamp, NS.IsListed = defaults.Clamp, defaults.IsListed
     NS.MicroMenuMaxButtonsPerLine = defaults.MicroMenuMaxButtonsPerLine
 end

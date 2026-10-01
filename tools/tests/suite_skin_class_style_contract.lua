@@ -45,6 +45,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Adapters = { ApplyAll = Noop },
     }
     Load("Defaults", ns)
+    Load("DefaultsLooks", ns)
     Load("Database", ns)
     Load("DatabaseProfiles", ns)
     Load("Theme", ns)
