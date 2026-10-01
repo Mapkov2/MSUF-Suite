@@ -34,6 +34,7 @@ local function Widget(parent, fontString)
     function w:GetHeight() return self.height or 0 end
     function w:SetHeight(a) self.height = a end
     function w:SetScale(a) self.scale = a end
+    function w:GetScale() return self.scale or 1 end
     function w:SetFrameStrata() end
     function w:EnableMouse(value) self.mouse = value end
     function w:IsMouseEnabled() return self.mouse ~= false end
@@ -304,18 +305,25 @@ S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return m
 local characterData = {}
 S.CharacterData = function(id) characterData[id] = characterData[id] or {}; return characterData[id] end
 local function Context()
-    local ctx = { events = {}, eventUnits = {}, hidden = {}, parents = {} }
+    local ctx = { events = {}, eventUnits = {}, hidden = {}, saved = {} }
     function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
     function ctx:RemoveEvent(event) self.events[event] = nil end
     function ctx:Skin() return nil end
     function ctx:HideControl(frame, value) self.hidden[frame] = value end
+    -- Like MSUF_Suite_Modules/Runtime.lua: the first value seen is the one
+    -- to restore.
     function ctx:Property(frame, getter, setter, value)
-        if not self.parents[frame] then self.parents[frame] = frame[getter](frame) end
+        local saved = self.saved[frame] or {}
+        self.saved[frame] = saved
+        if saved[setter] == nil then saved[setter] = frame[getter](frame) end
         frame[setter](frame, value)
     end
+    function ctx:Scale(frame, value) self:Property(frame, "GetScale", "SetScale", value) end
     function ctx:RestoreProperty(frame, setter)
-        if setter == "SetParent" and self.parents[frame] then
-            frame:SetParent(self.parents[frame]); self.parents[frame] = nil
+        local saved = self.saved[frame]
+        if saved and saved[setter] ~= nil then
+            frame[setter](frame, saved[setter])
+            saved[setter] = nil
         end
     end
     return ctx
@@ -341,17 +349,26 @@ local tracker = S.instances.objectives
 tracker.context = Context()
 tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
     showWorldQuests = true, showBonus = true, showAchievements = true, showScenario = true }
+-- Blizzard's tracker is a right-managed Edit Mode frame: a SetParent or Hide
+-- from addon code runs its OnHide (RemoveManagedFrame and the container
+-- layout that also places the protected boss frames) inside that call.
 ObjectiveTrackerFrame = Widget(UIParent)
+do
+    local native = ObjectiveTrackerFrame
+    function native:SetParent() error("the Suite reparented Blizzard's managed objective tracker") end
+    function native:Hide() error("the Suite hid Blizzard's managed objective tracker") end
+end
+local function NativeTrackerSuppressed()
+    return tracker.context.hidden[ObjectiveTrackerFrame] == true and ObjectiveTrackerFrame:GetScale() < .01
+        and ObjectiveTrackerFrame:GetParent() == UIParent
+end
 tracker:Enable()
-assert(tracker.nativeHiddenParent and ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
-    and not ObjectiveTrackerFrame:IsVisible(),
-    "native objective tracker must remain hidden by its parent")
-ObjectiveTrackerFrame:SetParent(UIParent)
-ObjectiveTrackerFrame:Show()
+assert(NativeTrackerSuppressed(),
+    "native objective tracker must lose alpha, mouse and hit area without a parent change")
+-- The right container sets the alpha back when the UI is shown again.
+ObjectiveTrackerFrame:SetScale(1)
 tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
-assert(ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
-    and not ObjectiveTrackerFrame:IsVisible(),
-    "raid roster changes must restore native tracker suppression")
+assert(NativeTrackerSuppressed(), "raid roster changes must restore native tracker suppression")
 local combatLocked = false
 suite.IsCombatLocked = function() return combatLocked end
 -- MSUF_Suite/Core/Platform.lua: the combat edge events decide by themselves.
@@ -361,15 +378,13 @@ suite.InCombat = function(event)
     return combatLocked
 end
 combatLocked = true
-ObjectiveTrackerFrame:SetParent(UIParent)
+ObjectiveTrackerFrame:SetScale(1)
 tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
-assert(ObjectiveTrackerFrame:GetParent() == UIParent,
-    "protected combat transitions must defer native parent changes")
+assert(ObjectiveTrackerFrame:GetScale() == 1,
+    "protected combat transitions must defer native tracker changes")
 combatLocked = false
 tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
-assert(ObjectiveTrackerFrame:GetParent() == tracker.nativeHiddenParent
-    and not ObjectiveTrackerFrame:IsVisible(),
-    "native tracker must be hidden after combat ends")
+assert(NativeTrackerSuppressed(), "native tracker must be hidden after combat ends")
 assert(movers.objectives.element == "tracker" and tracker.rows["entry:quests:42"])
 assert(tracker.host.shown and tracker.count.text == "1" and questUpdates == 1)
 tracker.rows["entry:quests:42"].OnClick(tracker.rows["entry:quests:42"])
@@ -1479,8 +1494,8 @@ assert(tracker.sources.quests[1].lines.count == 1 and not completeLine.shown,
     "reused completed rows retained a stale turn-in hint")
 tracker:Disable()
 Drain()
-tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetParent")
-assert(ObjectiveTrackerFrame:GetParent() == UIParent,
-    "disabling the MSUF tracker must restore Blizzard's original parent")
+tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetScale")
+assert(ObjectiveTrackerFrame:GetScale() == 1 and ObjectiveTrackerFrame:GetParent() == UIParent,
+    "disabling the MSUF tracker must restore Blizzard's original scale")
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
 print("Suite HUD: owned frames, full objectives, clicks, timers, collapse, row reuse and movers passed: " .. flavor)
