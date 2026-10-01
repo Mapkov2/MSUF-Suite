@@ -308,9 +308,12 @@ state.Finite = S.Finite
 state.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state)
 local bagsPrivate = { NS = state, Suite = S }
--- Bags.lua reads its catalog sections (MSUF_Suite/Core/Catalog/Bags.lua).
-state.SuiteCatalog = select(2, dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags"))
-    .SuiteCatalog
+-- The Bags catalog (always loaded): its sections, the gold ledger and the
+-- session gold baseline (MSUF_Suite/Core/Catalog/Bags.lua).
+state.Text = function(text) return text end
+for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+    assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", state)
+end
 for _, file in ipairs({ "SlotCache", "Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end

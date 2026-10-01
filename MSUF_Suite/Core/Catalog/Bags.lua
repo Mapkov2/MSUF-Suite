@@ -39,6 +39,101 @@ function NS.MigrateBagsInventoryView(modules)
     end
 end
 
+------------------------------------------------------------------ character gold
+-- One ledger of every character's gold, shared by the Bags gold history
+-- ("Record gold history and character balances") and the DataTexts account
+-- total ("Remember this character's gold for the account total"). It lives
+-- here because both modules load on demand and this catalog always loads.
+-- RootDB.suiteBagGold.characters[guid]: name, money (the last recorded
+-- balance), updated (server time), days (the Bags' 30 days of income and
+-- spending, Finance.lua) and which of the two recorded the character: bags,
+-- account. NS.ClearCharacterGold (SessionGold.lua) empties it.
+local Gold = {}
+NS.GoldLedger = Gold
+local LEDGER_VERSION = 1
+
+-- Older builds kept the DataTexts balances apart, in RootDB.goldLedger
+-- (guid -> name, money). They join the ledger as account balances; a
+-- character the Bags already recorded keeps its record and history.
+local function MergeAccountBalances(root, characters)
+    local old = root.goldLedger
+    root.goldLedger = nil
+    if type(old) ~= "table" then return end
+    for guid, entry in pairs(old) do
+        if type(guid) == "string" and type(entry) == "table" and NS.PublicText(entry.name)
+            and NS.Finite(entry.money) and entry.money >= 0 then
+            local record = characters[guid]
+            if type(record) ~= "table" then
+                characters[guid] = { name = entry.name, money = entry.money, days = {}, account = true }
+            else
+                record.account = true
+                if not NS.Finite(record.money) then record.money = entry.money end
+                if type(record.name) ~= "string" then record.name = entry.name end
+            end
+        end
+    end
+end
+
+-- The ledger's characters, nil without saved variables. Records of a ledger
+-- older than the account balances came from the Bags gold history alone.
+function Gold.Characters()
+    local root = NS.RootDB
+    if type(root) ~= "table" then return nil end
+    local ledger = root.suiteBagGold
+    if type(ledger) ~= "table" or type(ledger.characters) ~= "table" then
+        ledger = { characters = {}, version = LEDGER_VERSION }
+        root.suiteBagGold = ledger
+    elseif ledger.version ~= LEDGER_VERSION then
+        for _, record in pairs(ledger.characters) do
+            if type(record) == "table" then record.bags = true end
+        end
+        ledger.version = LEDGER_VERSION
+    end
+    if root.goldLedger ~= nil then MergeAccountBalances(root, ledger.characters) end
+    return ledger.characters
+end
+
+-- Whether a record has a balance to list.
+function Gold.Listed(record)
+    return type(record) == "table" and NS.PublicText(record.name) ~= nil and NS.Finite(record.money)
+        and record.money >= 0
+end
+
+-- Records the player's current balance for a feature ("bags" or
+-- "account"). Returns the record, the amount, the GUID and whether the
+-- record is new, or nothing while the player or the money is unreadable
+-- (secret values are never stored).
+function Gold.Record(feature)
+    local guid, name = NS.PublicText(UnitGUID("player")), NS.PublicText(UnitName("player"))
+    local amount = GetMoney()
+    if not guid or not name or not NS.Finite(amount) or amount < 0 then return nil end
+    local characters = Gold.Characters()
+    if not characters then return nil end
+    local record, created = characters[guid], false
+    if type(record) ~= "table" then
+        record, created = { days = {} }, true
+        characters[guid] = record
+    end
+    local realm = NS.PublicText(GetRealmName())
+    record.name = realm and name .. " - " .. realm or name
+    record.money, record.updated, record[feature] = math.floor(amount), GetServerTime(), true
+    return record, record.money, guid, created
+end
+
+-- This session's login gold for the session gold of the Bags and DataTexts:
+-- the core's capture at the first PLAYER_ENTERING_WORLD (SessionGold.lua),
+-- or after a /reload the stored one. When the login capture was unreadable,
+-- the first public amount either module sees (money) becomes it, stored so
+-- both agree and a /reload keeps it. nil while unknown.
+function NS.SessionGoldBaseline(money)
+    if not NS.loginKind then return nil end
+    local stored = NS.StoredSessionGold()
+    if stored and (NS.goldSessionCaptured == true or NS.loginKind == "reload") then return stored end
+    if not NS.Finite(money) or money < 0 then return nil end
+    money = math.floor(money)
+    return NS.SetSessionGold(money) and money or nil
+end
+
 NS.BagsLookPresets = {
     [1] = { backgroundColor = "0a1522", backgroundOpacity = 96, accentColor = "5794d2" },
     [2] = { backgroundColor = "151719", backgroundOpacity = 96, accentColor = "b9ab86" },

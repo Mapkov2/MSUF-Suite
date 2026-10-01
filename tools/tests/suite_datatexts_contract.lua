@@ -305,9 +305,10 @@ money = 112345
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[1].text == "Gold: 11g", "gold event did not update the bar")
 assert(S.Set("dataTexts", "trackAltGold", true))
-assert(W.Suite.RootDB.goldLedger and W.Suite.RootDB.goldLedger["Player-1"]
-    and W.Suite.RootDB.goldLedger["Player-1"].money == 112345,
-    "gold ledger did not capture the current character when enabled")
+-- The account total records into the one gold ledger the Bags share.
+local ledger = W.Suite.RootDB.suiteBagGold and W.Suite.RootDB.suiteBagGold.characters
+assert(ledger and ledger["Player-1"] and ledger["Player-1"].money == 112345 and ledger["Player-1"].account
+    and W.Suite.RootDB.goldLedger == nil, "gold ledger did not capture the current character when enabled")
 -- A slot opens Blizzard's matching window out of combat (bags for gold, the
 -- character sheet for durability; FPS has none) and explains its value.
 do
@@ -331,14 +332,20 @@ end
 money = W.secret
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[1].text == "Gold: —", "secret gold was formatted")
-assert(W.Suite.RootDB.goldLedger["Player-1"].money == 112345,
+assert(W.Suite.RootDB.suiteBagGold.characters["Player-1"].money == 112345,
     "secret gold was stored in the account ledger")
+-- Before the first world entry there is no session yet.
 money = 100000
-W.Suite.RootDB.suiteGold = { ["Player-1"] = 100000 }
-W.Suite.loginKind, W.Suite.goldSessionCaptured = "login", false
+W.Suite.RootDB.suiteGold = { ["Player-1"] = 999999 }
+W.Suite.loginKind, W.Suite.goldSessionCaptured = nil, false
 assert(S.Set("dataTexts", "bar1Slot4", 11))
-assert(M.bars[1].slots[4].text == "Session: —", "saved gold was shown before the login baseline was captured")
-W.Suite.goldSessionCaptured = true
+assert(M.bars[1].slots[4].text == "Session: —", "session gold was shown before the first world entry")
+-- An unreadable login capture: the stale saved amount is never the baseline;
+-- the first public amount becomes it, stored for the Bags and a /reload.
+W.Suite.loginKind = "login"
+W.Event("PLAYER_MONEY")
+assert(M.bars[1].slots[4].text == "Session: 0c" and W.Suite.RootDB.suiteGold["Player-1"] == 100000
+    and W.Suite.goldSessionCaptured == true, "saved gold of an earlier session became the login baseline")
 money = 112345
 W.Event("PLAYER_MONEY")
 assert(M.bars[1].slots[4].text == "Session: +1g 23s 45c",

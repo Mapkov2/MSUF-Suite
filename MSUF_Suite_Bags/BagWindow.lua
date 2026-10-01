@@ -203,19 +203,6 @@ function M:StyleWindows()
     end
 end
 
--- The login baseline is captured by MSUF Suite at PLAYER_ENTERING_WORLD
--- (MSUF_Suite/Core/SessionGold.lua). When it is unreadable, the first public
--- amount seen here becomes it.
-local function GoldBaseline(self, money)
-    local baseline = NS.StoredSessionGold()
-    if NS.loginKind == "login" and NS.goldSessionCaptured ~= true then baseline = nil end
-    if baseline then return baseline end
-    if not money then return nil end
-    self.goldFallback = self.goldFallback or money
-    if NS.loginKind then NS.SetSessionGold(self.goldFallback) end
-    return self.goldFallback
-end
-
 function M:UpdateGold()
     local style = self.windows and self.frame and self.windows[self.frame]
     local label = style and style.goldLabel
@@ -224,8 +211,9 @@ function M:UpdateGold()
         label:Hide()
         return
     end
+    -- The one session baseline of the Bags and DataTexts (Core/Catalog/Bags.lua).
     local money = PublicMoney()
-    local baseline = GoldBaseline(self, money)
+    local baseline = NS.SessionGoldBaseline(money)
     if not money or not baseline then
         label:SetText(TEXT.session .. " " .. NO_VALUE)
         label:SetTextColor(0.72, 0.77, 0.82)

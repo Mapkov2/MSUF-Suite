@@ -3,24 +3,17 @@ local NS, S, M = P.NS, P.Suite, P.BagsModule
 local F = { rows = {}, currencies = {}, currencyPool = {}, text = {}, lines = {}, linePool = {}, labels = {} }
 P.BagFinance = F
 
--- The Bags gold history (RootDB.suiteBagGold): each character's last
--- recorded balance and its 30 days of income and spending. The Gold history
--- lists every character's balance from it. DataTexts keeps its own list
--- (RootDB.goldLedger, MSUF_Suite_DataTexts/GoldLedger.lua): the Bags only
--- read it, and only while that opt-in is on. One clear removes both
+-- The Bags gold history: each character's last recorded balance and its 30
+-- days of income and spending, in the one gold ledger the DataTexts account
+-- total shares (MSUF_Suite/Core/Catalog/Bags.lua). The Gold history lists the
+-- characters the Bags recorded, and the account total's characters only
+-- while that DataTexts opt-in is on. One clear removes all
 -- (NS.ClearCharacterGold).
-local function Ledger()
-    local root = NS.RootDB
-    if type(root) ~= "table" then return nil end
-    if type(root.suiteBagGold) ~= "table" or type(root.suiteBagGold.characters) ~= "table" then
-        root.suiteBagGold = { characters = {} }
-    end
-    return root.suiteBagGold
-end
+local Gold = NS.GoldLedger
 
 local function AltGold()
     local data = S.Config("dataTexts")
-    return data ~= nil and data.trackAltGold == true and type(NS.RootDB.goldLedger) == "table"
+    return data ~= nil and data.trackAltGold == true
 end
 
 -- Days since 1970-01-01 of the player's local calendar date (the inverse of
@@ -41,54 +34,46 @@ F.LocalDay = LocalDay
 -- Days that left the 30-day window leave the history. A character keeps
 -- its last recorded balance; one without a balance and without a day in the
 -- window is removed.
-local function Prune(ledger, today)
-    for guid, record in pairs(ledger.characters) do
+local function Prune(characters, today)
+    for guid, record in pairs(characters) do
         local days = type(record) == "table" and type(record.days) == "table" and record.days or {}
         while days[1] and (type(days[1]) ~= "table" or not S.Finite(days[1].day) or days[1].day < today - 29) do
             table.remove(days, 1)
         end
         if type(record) ~= "table" or (#days == 0 and not (S.Finite(record.money) and type(record.name) == "string")) then
-            ledger.characters[guid] = nil
+            characters[guid] = nil
         else
             record.days = days
         end
     end
 end
 
+-- The first amount of a recording session, or of a new record (after a
+-- clear), is its baseline: money changes while the history was off or
+-- between sessions were not observed, so none is invented as income or
+-- spending (F.observed: the last amount recorded).
 function F.Record()
-    if not M.active or not M.config.showGoldHistory then F.recording = false; return end
-    local guid, money = UnitGUID("player"), GetMoney()
-    if not S.Public(guid) or type(guid) ~= "string" or not S.Finite(money) or money < 0 then return end
-    local ledger = Ledger()
-    if not ledger then return end
-    local name, realm = UnitFullName("player")
-    if not S.Public(name) or type(name) ~= "string" then return end
-    local now = GetServerTime()
-    local day = LocalDay(now)
+    if not M.active or not M.config.showGoldHistory then F.observed = nil; return end
+    local record, money, guid, created = Gold.Record("bags")
+    if not record then return end
+    if created then F.observed = nil end
+    local day = LocalDay(record.updated)
     if not F.pruned then
-        Prune(ledger, day)
+        Prune(Gold.Characters(), day)
         F.pruned = true
     end
-    local record = ledger.characters[guid]
-    if not record then
-        record = { days = {}, money = money }
-        ledger.characters[guid] = record
-    end
-    record.name = name .. (S.Public(realm) and type(realm) == "string" and realm ~= "" and " - " .. realm or "")
-    local current = record.days[#record.days]
+    local days = type(record.days) == "table" and record.days or {}
+    record.days = days
+    local current = days[#days]
     if not current or current.day ~= day then
         current = { day = day, earned = 0, spent = 0 }
-        record.days[#record.days + 1] = current
+        days[#days + 1] = current
     end
-    -- Money changes while disabled or between sessions were not observed;
-    -- establish a baseline instead of inventing income or spending for them.
-    if not F.recording or F.guid ~= guid then record.money = money end
-    F.recording, F.guid = true, guid
-    local delta = money - record.money
+    local delta = F.observed and F.guid == guid and money - F.observed or 0
+    F.observed, F.guid = money, guid
     if delta > 0 then current.earned = current.earned + delta
     elseif delta < 0 then current.spent = current.spent - delta end
-    while #record.days > 30 or record.days[1] and record.days[1].day < day - 29 do table.remove(record.days, 1) end
-    record.money, record.updated = money, now
+    while #days > 30 or days[1] and days[1].day < day - 29 do table.remove(days, 1) end
 end
 
 local function CurrencyInfo(id)
@@ -121,23 +106,15 @@ local function Line(left, right)
     F.lines[index], F.linePool[index] = row, row
 end
 
--- One row per character: its Bags record, else DataTexts' entry while that
--- opt-in is on. Returns the rows sorted by name and their total.
-local listed = {}
-local function Balances(ledger)
+-- One row per character the Bags recorded, and per account total character
+-- while that opt-in is on. Returns the rows sorted by name and their total.
+local function Balances(characters)
     for i = #F.rows, 1, -1 do F.rows[i] = nil end
-    for guid in pairs(listed) do listed[guid] = nil end
-    local total = 0
-    local function Add(guid, record)
-        if listed[guid] or type(record) ~= "table" or not S.Finite(record.money) or type(record.name) ~= "string" then
-            return
+    local total, alts = 0, AltGold()
+    for _, record in pairs(characters) do
+        if Gold.Listed(record) and (record.bags == true or alts and record.account == true) then
+            F.rows[#F.rows + 1], total = record, total + record.money
         end
-        listed[guid] = true
-        F.rows[#F.rows + 1], total = record, total + record.money
-    end
-    for guid, record in pairs(ledger.characters) do Add(guid, record) end
-    if AltGold() then
-        for guid, record in pairs(NS.RootDB.goldLedger) do Add(guid, record) end
     end
     table.sort(F.rows, function(a, b) return a.name < b.name end)
     return F.rows, total
@@ -149,15 +126,15 @@ function F.BuildRows()
         local currency = F.currencies[i]
         Line(currency.name, tostring(currency.quantity))
     end
-    local ledger = M.config.showGoldHistory and Ledger()
-    if ledger then
+    local characters = M.config.showGoldHistory and Gold.Characters()
+    if characters then
         Line(" ")
-        local rows, total = Balances(ledger)
+        local rows, total = Balances(characters)
         Line(S.Text("Recorded character gold"), S.MoneyText(total))
         for i = 1, #rows do Line(rows[i].name, S.MoneyText(rows[i].money)) end
         Line(S.Text("Other characters show their last recorded balance."))
         local guid = S.PublicText(UnitGUID("player"))
-        local current = guid and ledger.characters[guid]
+        local current = guid and characters[guid]
         if type(current) == "table" and type(current.days) == "table" then
             local earned, spent = 0, 0
             for i = 1, #current.days do earned, spent = earned + current.days[i].earned, spent + current.days[i].spent end
@@ -303,7 +280,7 @@ function F.Event(_, event)
 end
 
 function F.Enable()
-    if not M.active or not M.config.showGoldHistory then F.recording = false end
+    if not M.active or not M.config.showGoldHistory then F.observed = nil end
     if not F.events then
         F.events = S.CreateFrame("Frame")
         F.events:SetScript("OnEvent", F.Event)
@@ -322,7 +299,7 @@ function F.Enable()
 end
 
 function F.Disable()
-    F.recording = false
+    F.observed = nil
     if F.events then F.events:UnregisterAllEvents() end
     if F.button then F.button:Hide() end
     if F.window then F.window:Hide() end

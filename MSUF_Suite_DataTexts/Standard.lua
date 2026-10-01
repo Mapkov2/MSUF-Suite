@@ -63,11 +63,9 @@ local function SignedMoneyText(delta)
     return (delta > 0 and "+" or delta < 0 and "\226\136\146" or "") .. MoneyText(math.abs(delta))
 end
 
--- This session's login gold (MSUF_Suite/Core/SessionGold.lua), or nil.
-local function SessionBaseline()
-    if NS.goldSessionCaptured ~= true then return nil end
-    return NS.StoredSessionGold()
-end
+-- This session's login gold, or nil: the one session baseline of the Bags
+-- and DataTexts (MSUF_Suite/Core/Catalog/Bags.lua).
+local SessionBaseline = NS.SessionGoldBaseline
 
 -- Each formatter returns the display value (nil when unknown) and an
 -- optional "bad" severity from the raw values of its shared data source.
@@ -76,7 +74,7 @@ local FORMATTERS = {
         if Finite(amount) then return floor(amount / 10000) .. "g" end
     end,
     sessionGold = function(amount)
-        local baseline = SessionBaseline()
+        local baseline = SessionBaseline(amount)
         if Finite(amount) and Finite(baseline) then
             local delta = amount - baseline
             return SignedMoneyText(delta), delta < 0 and "bad" or nil
@@ -137,7 +135,7 @@ function D.TooltipLines(tooltip, button, config)
         local amount = S.ReadInfoSource("gold")
         if Finite(amount) then
             tooltip:AddDoubleLine(TEXT.current, MoneyText(amount))
-            local baseline = SessionBaseline()
+            local baseline = SessionBaseline(amount)
             if baseline then tooltip:AddDoubleLine(TEXT.sinceLogin, SignedMoneyText(amount - baseline)) end
         end
         if config.trackAltGold then GoldLedger.AppendTooltip(tooltip, MoneyText, TEXT) end

@@ -7,7 +7,12 @@ local S = { Public = function(v) return v ~= "secret" end, Finite = function(v) 
     PublicText = function(v) return type(v) == "string" and v ~= "" and v or nil end,
     -- DataTexts' "Remember this character's gold" is the one opt-in for balances.
     Config = function(id) return id == "dataTexts" and { trackAltGold = optIn } or M.config end }
-local NS = { Client = { isForever = false }, RootDB = {}, IsCombatLocked = function() return combat end }
+local NS = { Client = { isForever = false }, RootDB = {}, IsCombatLocked = function() return combat end,
+    Text = function(text) return text end, PublicText = S.PublicText, Finite = S.Finite }
+-- The one gold ledger of the Bags and DataTexts (MSUF_Suite/Core/Catalog/Bags.lua).
+for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+    assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
+end
 local P = { NS = NS, Suite = S, BagsModule = M,
     InventoryView = { SuiteLayout = function() return true end, CombatLine = function() return false end } }
 C_EquipmentSet = {
@@ -58,7 +63,8 @@ do
     M.config.showKeystoneDetails = nil
 end
 UnitGUID = function() return guid end
-UnitFullName = function() return guid, "Realm" end
+UnitName = function() return guid end
+GetRealmName = function() return "Realm" end
 GetMoney = function() return money end
 GetServerTime = function() return now end
 hooksecurefunc = function() end
@@ -103,7 +109,10 @@ money = 800; F.Record()
 assert(two.money == 800 and two.days[1].earned == 10, "new session starts without extrapolating offline transactions")
 S.Text = function(v) return v end
 S.MoneyText = tostring
-assert(NS.RootDB.goldLedger == nil, "the Bags wrote the shared gold ledger around the DataTexts opt-in")
+for _, record in pairs(NS.RootDB.suiteBagGold.characters) do
+    assert(record.bags and not record.account, "the Bags recorded an account balance around the DataTexts opt-in")
+end
+-- An older build's DataTexts balances join the one ledger as account balances.
 NS.RootDB.goldLedger = { old = { name = "Old character", money = 700 }, one = { name = "One - DataTexts", money = 5 } }
 -- The Gold history lists every character's balance the Bags recorded
 -- ("Record gold history and character balances"); DataTexts' own list joins
@@ -132,11 +141,24 @@ NS.ClearCharacterGold()
 money = 820; F.Record()
 assert(NS.RootDB.suiteBagGold.characters.two.days[1].earned == 0 and NS.RootDB.goldLedger == nil,
     "a clear must not leave old history behind")
+-- The DataTexts account total records into the same ledger: a balance it
+-- writes first must not swallow the Bags' income or spending of that change.
+local shared = NS.RootDB.suiteBagGold.characters.two
+money = 870
+NS.GoldLedger.Record("account")
+F.Record()
+assert(shared.money == 870 and shared.days[1].earned == 50 and shared.account and shared.bags,
+    "an account balance recorded first hid the gold history's income")
+money = 820
+NS.GoldLedger.Record("account")
+F.Record()
+assert(shared.days[1].spent == 50, "an account balance recorded first hid the gold history's spending")
 optIn = false
 -- Days that left the 30-day window leave the history; a character keeps
 -- its last recorded balance, one with neither is removed.
-NS.RootDB.suiteBagGold.characters.stale = { days = { { day = 50, earned = 1, spent = 0 } } }
-NS.RootDB.suiteBagGold.characters.away = { name = "Away - Realm", money = 900,
+-- (Records the Bags gold history wrote carry bags = true.)
+NS.RootDB.suiteBagGold.characters.stale = { days = { { day = 50, earned = 1, spent = 0 } }, bags = true }
+NS.RootDB.suiteBagGold.characters.away = { name = "Away - Realm", money = 900, bags = true,
     days = { { day = 50, earned = 1, spent = 0 } } }
 assert(loadfile(root .. "/MSUF_Suite_Bags/Finance.lua"))("Bags", P)
 F = P.BagFinance
