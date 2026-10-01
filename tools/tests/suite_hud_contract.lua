@@ -61,6 +61,11 @@ local function Widget(parent, fontString)
         self.text = text
     end
     function w:SetTextColor(...) self.textColor = { ... } end
+    -- A C sink: it may receive secret values, which the stand-in only keeps.
+    function w:SetFormattedText(format, ...)
+        assert(not self.fontString or self.font, "FontString text assigned before font")
+        self.text, self.format, self.formatArgs = nil, format, { n = select("#", ...), ... }
+    end
     function w:SetJustifyH() end
     function w:SetWordWrap() end
     function w:SetFont(_, size) self.font = true; self.fontSize = size; return true end
@@ -1195,7 +1200,13 @@ if flavor == "Mainline" then
     UnitExists = function(unit) return unit == "boss1" and activeBoss == "First Guardian"
         or unit == "boss2" and activeBoss == "Second Guardian" end
     UnitName = function() return activeBoss end
-    UnitHealthPercent = function() return 70 end
+    -- UnitHealthPercent returns 0..1; Blizzard's ScaleTo100 curve maps it
+    -- to display percent (Blizzard_SharedXMLBase/CurveConstants.lua).
+    CurveConstants = { ScaleTo100 = {} }
+    local function HealthPercent(percent, curve)
+        return curve == CurveConstants.ScaleTo100 and percent or percent / 100
+    end
+    UnitHealthPercent = function(_, _, curve) return HealthPercent(70, curve) end
     local dbmStage, bigWigsStage, unboundDBM, unboundBigWigs
     local initialDBMStage = true
     DBM = {
@@ -1266,7 +1277,10 @@ if flavor == "Mainline" then
     -- Health storms share one native read and one deferred redraw. Other full
     -- paints still drain pending health before showing a stage or clock update.
     local livePercent, pendingCallbacks, healthReads = 70, #scheduled, 0
-    UnitHealthPercent = function() healthReads=healthReads+1;return livePercent end
+    UnitHealthPercent = function(_, _, curve)
+        healthReads = healthReads + 1
+        return HealthPercent(livePercent, curve)
+    end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "raid7")
     assert(#scheduled == pendingCallbacks, "a raid member's health tick reached the raid view")
     for _, value in ipairs({ 60, 55, 50 }) do
@@ -1297,8 +1311,18 @@ if flavor == "Mainline" then
     UnitHealthPercent = function() return secret end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
     table.remove(scheduled)()
-    assert(not tracker.raid.live[1].percent,
-        "secret boss health must never be compared, formatted or stored")
+    local current = tracker.raid.current
+    assert(not tracker.raid.live[1].percent and current.format == "ACTIVE BOSSES  First Guardian %.1f%%"
+        and current.formatArgs.n == 1 and current.formatArgs[1] == secret,
+        "secret boss health must reach only SetFormattedText, never Lua formatting or comparisons")
+    raidTicker:Fire()
+    assert(current.format and current.formatArgs[1] == secret,
+        "the one-second paint must keep secret boss health in its C sink")
+    UnitHealthPercent = function(_, _, curve) return HealthPercent(35, curve) end
+    tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+    table.remove(scheduled)()
+    assert(current.text and current.text:find("First Guardian 35.0%", 1, true),
+        "readable boss health must return to plain text after a secret reading")
     tracker.context.events.UNIT_HEALTH(tracker,"UNIT_HEALTH","boss1")
     local existsBeforeEnd=UnitExists
     UnitExists=function() return false end
