@@ -84,6 +84,9 @@ local function Index(obj,key)
     end
     if m==nil then m=Methods[key] end
     if m==nil then return nil end
+    if (key=="SetScript" or key=="HookScript") and Sealed(obj) then
+        return function() error("Frame:"..key.."(): Cannot assign script handler (blocked by secret aspects)",2) end
+    end
     if key~="CanBeAccessedInContext" and ACCESS~=true and Sealed(obj) then
         return function() error("sealed aura button touched while auras are secret: "..key,2) end
     end
@@ -584,9 +587,9 @@ assert(type(A.pending)=="table","C.Auras.pending")
 for _,name in ipairs({"Ready","SyncAuraSounds","ReleaseAll","Play"}) do assert(type(Alerts[name])=="function","C.Alerts."..name) end
 
 -- Static rules on the source text.
--- Scripts per file: the kit sensors in the buttons and the wake sensors of
--- bare batch buttons, set and dropped once built (AuraButtons.lua), and the
--- watchers beside kit containers (Auras.lua), OnShow/OnHide each.
+-- Scripts per file: the kit sensors of buttons built inside initializeFrame
+-- and the sensors every batch button gets there (wake, kit; AuraButtons.lua),
+-- and the watchers beside kit containers, OnShow/OnHide each.
 local SCRIPTS={["AuraGlows.lua"]=0,["AuraButtons.lua"]=4,["AuraContainers.lua"]=2,["Auras.lua"]=0,["Alerts.lua"]=0}
 for _,file in ipairs({"AuraGlows.lua","AuraButtons.lua","AuraContainers.lua","Auras.lua","Alerts.lua"}) do
     local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..file,"rb"))
@@ -2542,14 +2545,17 @@ local function SensorOf(button)
     assert(#list==1 and R[list[1]].sensor and R[list[1]].kind=="Frame","one sensor per button")
     return list[1]
 end
--- The shown button of each group hears gains and losses; the bare ones of
--- its batch only wake (OnShow) should Blizzard ever show them.
+-- Every batch button of a kit container got its one sensor inside
+-- initializeFrame (OnShow and OnHide): a bare one wakes, the shown one,
+-- built after the batch, hears gains and losses through the same sensor.
 for _,c in ipairs({kp,kt}) do
     for _,key in ipairs(R[c].order) do
         local list=Buttons(c,key)
         for i,b in ipairs(list) do
-            assert((R[SensorOf(b)].scripts.OnHide~=nil)==(i==#list),"a kit sensor in a button Blizzard never shows")
+            local scripts=R[SensorOf(b)].scripts
+            assert(scripts.OnShow~=nil and scripts.OnHide~=nil,"kit batch button "..i.." without its sensor")
         end
+        assert(R[list[#list]].bind.icon and next(R[list[1]].bind)==nil,"only the shown kit button is built")
     end
 end
 local watch={}
@@ -3007,12 +3013,12 @@ do
     local icons={}
     for i=1,8 do icons[i]=Aura("c6","a"..(6100+i),"a","player",Set(6100+i),{ov={auraGlow=true}}) end
     local b,bw,r,c,n=Budget(2,icons,function(view) view.pandemic=true end,{auraGlow=true,swipe=2,glowStyle=3,timeText=3})
-    assert(b<=377 and bw<=724 and r<=448 and c<=23 and n==1,
+    assert(b<=385 and bw<=724 and r<=448 and c<=23 and n==1,
         ("eight glowing icons: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
     local bars={}
     for i=1,4 do bars[i]=Aura("c6","a"..(6200+i),"a","player",Set(6200+i),{ov={stackGlow=3}}) end
     b,bw,r,c,n=Budget(3,bars,function(view) view.barStacks,view.barStackColorAt=true,4 end,{stackGlow=5,glowStyle=3,timeText=3})
-    assert(b<=293 and bw<=644 and r<=356 and c<=25 and n==9,
+    assert(b<=297 and bw<=644 and r<=356 and c<=25 and n==9,
         ("four stack bars: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
     -- Should Blizzard show a bare button after all, it is built a frame
     -- later; in combat or while auras are secret, once they open again.

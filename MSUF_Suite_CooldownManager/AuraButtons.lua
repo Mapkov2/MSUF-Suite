@@ -58,6 +58,10 @@ local textOpts = {} -- duration text options per countdown formatter
 local countOpts = {} -- stack text options per (N, color)
 local barOpts = {}   -- SetApplicationBar options (Blizzard copies them)
 local sensed = {}    -- kit sensor frame -> its button record
+-- Batch button -> its sensor, made inside initializeFrame: the client seals
+-- an aura button once initializeFrame returns, and SetScript on it or on a
+-- child is refused from then on ("blocked by secret aspects").
+local premade = setmetatable({}, { __mode = "k" })
 
 local Px = K.Px
 local function Snap(value, px) return floor(value / px + .5) * px end
@@ -506,11 +510,16 @@ local function NewPart(rec, button, k)
     if rec.kit then
         -- A new button hides once it is set up: not an aura leaving.
         Hush(rec)
-        local sensor = CreateFrame("Frame", nil, button)
-        sensor:SetAllPoints(button)
+        -- A batch button built after its batch is sealed: it reuses the
+        -- sensor initializeFrame gave it; no script is set any more.
+        local sensor = premade[button]
+        if not sensor then
+            sensor = CreateFrame("Frame", nil, button)
+            sensor:SetAllPoints(button)
+            sensor:SetScript("OnShow", Gained)
+            sensor:SetScript("OnHide", Lost)
+        end
         sensed[sensor] = part
-        sensor:SetScript("OnShow", Gained)
-        sensor:SetScript("OnHide", Lost)
     end
     return part
 end
@@ -593,7 +602,6 @@ local function AdoptWoken()
             return
         end
         woken[i] = nil
-        shell.sensor:SetScript("OnShow", nil)
         Adopt(shell.rec, shell.button, shell.pos)
     end
 end
@@ -609,10 +617,23 @@ local function Woke(sensor)
     C_Timer.After(0, AdoptWoken)
 end
 
+-- One sensor per batch button, made inside initializeFrame (the only time
+-- the client accepts its scripts): a bare button wakes on show; once built,
+-- a kit button's sensor hears gains and losses (sensed).
+local function SensorShown(sensor)
+    if dormant[sensor] then return Woke(sensor) end
+    if sensed[sensor] then Gained(sensor) end
+end
+local function SensorHidden(sensor)
+    if sensed[sensor] then Lost(sensor) end
+end
 local function Dormant(rec, button, k)
     local sensor = CreateFrame("Frame", nil, button)
+    sensor:SetAllPoints(button)
     dormant[sensor] = { rec = rec, button = button, pos = k, sensor = sensor }
-    sensor:SetScript("OnShow", Woke)
+    premade[button] = sensor
+    sensor:SetScript("OnShow", SensorShown)
+    if rec.kit then sensor:SetScript("OnHide", SensorHidden) end
 end
 
 -- Around AddAuraGroup: true when the batch is collected (auras plain).
@@ -626,6 +647,9 @@ function AuraButtons.EndBatch(rec, k)
     rec.batch = nil
     local n = #batch
     local shown = batch[n]
+    -- The shown button is built now; its sensor no longer wakes it.
+    local sensor = shown and premade[shown]
+    if sensor then dormant[sensor] = nil end
     if shown and Open(shown) then
         Adopt(rec, shown, k)
     elseif shown then
@@ -633,7 +657,6 @@ function AuraButtons.EndBatch(rec, k)
         rec.waiting = waiting
         waiting[#waiting + 1] = { rec = rec, button = shown, pos = k }
     end
-    for i = 1, n - 1 do Dormant(rec, batch[i], k) end
     for i = n, 1, -1 do batch[i] = nil end
 end
 -- Builds the shown buttons that refused right after their batch; false
@@ -659,6 +682,7 @@ local function Init(rec, button, k)
     local list = rec.batch
     if list then
         list[#list + 1] = button
+        Dormant(rec, button, k)
         return
     end
     Adopt(rec, button, k)
