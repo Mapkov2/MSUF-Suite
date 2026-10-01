@@ -7,10 +7,11 @@ local C = P.CDM
 -- button with one slot on the entry's IDs; Blizzard fills their application
 -- bars, so no Lua reads a stack count. Built and restyled by AuraButtons'
 -- ApplyEntry through the same sealed-button rules.
-local B = {}
-C.StackColors = B
+local StackColors = {}
+C.StackColors = StackColors
 local K = C.Const
 local SameSet, CopySet = K.SameSet, K.CopySet
+local Glows = C.AuraGlows
 local options = {}
 
 local function Shape(color, part, rec)
@@ -33,7 +34,7 @@ end
 
 local function Initialize(color, part, rec, button)
     color.button = button
-    C.AuraButtons.Bridge.Overlay(button, part.button)
+    Glows.Overlay(button, part.button)
     -- Over the fill, under the markers, glows and text (K.AURA_LEVEL); the
     -- clip and the colour share that one level.
     local level = part.button:GetFrameLevel() + K.AURA_LEVEL.color
@@ -45,7 +46,7 @@ local function Initialize(color, part, rec, button)
     gate:SetAllPoints(part.bar:GetStatusBarTexture())
     gate:SetClipsChildren(true)
     local sensor = CreateFrame("StatusBar", nil, button)
-    sensor:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    sensor:SetStatusBarTexture(K.WHITE)
     sensor:SetMinMaxValues(0, 1)
     sensor:SetValue(0)
     sensor:SetAlpha(0)
@@ -100,12 +101,12 @@ local function ApplyStack(rec, part, entry, dry)
         sensor.frame:Hide()
         sensor.enabled = false
         -- An idle sensor's glow holds no combat state driver.
-        C.AuraButtons.Bridge.ApplyCombatGate(sensor.part.stack.glow, false, false)
+        Glows.ApplyCombatGate(sensor.part.stack.glow, false, false)
         return false
     end
     local ids, filter = rec.ids[part.pos], rec.filter[part.pos]
     if not ids then return false end
-    local draw = C.AuraButtons.Bridge
+    local draw = Glows
     if not sensor then
         if dry then return true end
         sensor = { ids = CopySet({}, ids), unit = rec.unit, filter = filter, enabled = true }
@@ -140,7 +141,7 @@ local function ApplyStack(rec, part, entry, dry)
     return false
 end
 
-function B.Apply(rec, part, entry, dry)
+function StackColors.Apply(rec, part, entry, dry)
     if ApplyStack(rec,part,entry,dry) then return true end
     if not rec.color then return false end
     local color, lk = part.color, rec.lk
@@ -169,7 +170,7 @@ end
 
 -- A retarget of a fixed target bar: the child containers inside its slot
 -- buttons parse the new target. Container-level calls, legal in combat.
-function B.Retarget(rec)
+function StackColors.Retarget(rec)
     local parts = rec.parts
     for i = 1, #parts do
         local part = parts[i]
@@ -179,7 +180,7 @@ function B.Retarget(rec)
     end
 end
 
-function B.Open(part)
+function StackColors.Open(part)
     if part.color then
         local open = part.color.button:CanBeAccessedInContext()
         if not S.Public(open) or open ~= true then return false end

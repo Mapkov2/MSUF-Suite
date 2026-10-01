@@ -8,17 +8,19 @@ local C = P.CDM
 -- the button.
 --  * Look: every visual value of a container's buttons and the signature
 --    that changes exactly when a button needs restyling;
---  * Init (initializeFrame): builds every region of a new button, styles it
---    and binds last (bound regions are sealed);
+--  * Init (initializeFrame) and the batch: a group's ten pre-built buttons
+--    are collected and only the one Blizzard shows is built (Adopt: every
+--    region, styled, bound last; bound regions are sealed);
 --  * Style and ApplyEntry restyle a button and apply its per-spell choices
 --    (swipe, glows, stack text, countdown, text on top); Mutable says
 --    whether sealed buttons accept that now;
 --  * kit sensors hear a button show or hide (unknown kit sounds only);
+--  * the glows and their combat gates are AuraGlows.lua's;
 --  * placeholders: a dimmed icon for missing buffs (showMissing) and the
 --    sample icon in the preview, on the cell under the slot button.
 local K = C.Const
-local B = {}
-C.AuraButtons = B
+local AuraButtons = {}
+C.AuraButtons = AuraButtons
 
 -- Regions inside Blizzard's aura buttons are created with the client's
 -- CreateFrame: the container lays those buttons out and seals their bound
@@ -32,7 +34,6 @@ local tconcat = table.concat
 local Public = S.Public
 local EMPTY = C.EMPTY
 
-local QUESTION = K.QUESTION_ICON
 local BAR_TEXTURE = K.BAR_TEXTURE
 local TEXT_DEFAULT = {}
 -- Init of a button whose group has no entry yet: the bar's choices.
@@ -42,24 +43,9 @@ local IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 -- barFill 1 drains, 2 fills.
 local BAR_OPTS = { { direction = TIMER.RemainingTime, interpolation = IMMEDIATE },
     { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
-local ROUND = Enum.NumericRuleFormatRounding
-local UP, DOWN = ROUND.Up, ROUND.Down
 local GOLD = K.GLOW_GOLD
 local BAR_LEVEL, ICON_LEVEL = K.AURA_LEVEL, K.AURA_ICON_LEVEL
 local PANDEMIC = { 1, .3, .15 }
--- Glow styles (Const): 1 Blizzard alert and 2 marching ants share one
--- flipbook layout, 3 pulses the edges, 4 holds them still.
-local GLOW = K.GLOW
-local FLIP = GLOW[1]
-local PULSE = GLOW[3].pulse
-local PULSE_LOW = .25
--- The widest glow reaches this far around its button: the stack gate's size.
-local REACH = 1
-for i = 1, #GLOW do
-    local scale = GLOW[i].scale
-    if scale and scale > REACH then REACH = scale end
-end
-local STACK_TEXTURE = "Interface\\Buttons\\WHITE8X8"
 local STACK_COLOR = NS.CDM.SPELL_DEFAULTS.stackColor
 -- Every field Look writes: the signature changes exactly when a button needs restyling.
 local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font", "flags", "rendering", "shadow", "shadowOpacity",
@@ -68,7 +54,7 @@ local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font
 local NO_MARKS = {}
 
 local sig = {}
-local textOpts = {}
+local textOpts = {} -- duration text options per countdown formatter
 local countOpts = {} -- stack text options per (N, color)
 local barOpts = {}   -- SetApplicationBar options (Blizzard copies them)
 local sensed = {}    -- kit sensor frame -> its button record
@@ -76,31 +62,20 @@ local sensed = {}    -- kit sensor frame -> its button record
 local Px = K.Px
 local function Snap(value, px) return floor(value / px + .5) * px end
 local ClassRGB = K.ClassRGB
+-- Glows and edges (AuraGlows.lua loads first).
+local Glows = C.AuraGlows
+local Edges, NewGlow, NewStack, BindStack = Glows.Edges, Glows.NewGlow, Glows.NewStack, Glows.BindStack
+local ApplyGlow, ApplyStack, ApplyCombatGate = Glows.ApplyGlow, Glows.ApplyStack, Glows.ApplyCombatGate
 
 -- Duration text options per (threshold, warning color): a binding template
--- that Blizzard copies into each button. The fallbacks must ride on the
--- binding, and without a formatter on it no text renders at all.
+-- that Blizzard copies into each button, around the shared countdown
+-- formatter (Const). The fallbacks must ride on the binding, and without a
+-- formatter on it no text renders at all.
 local function TextOpts(seconds)
     local state = C.state
-    if type(seconds) ~= "number" or seconds <= 0 then
-        seconds = 0
-    else
-        seconds = floor(seconds + .5)
-    end
-    local R, G, B = 0, 0, 0
-    if seconds > 0 then R, G, B = floor((state.thR or 1) * 255 + .5), floor((state.thG or 1) * 255 + .5), floor((state.thB or 1) * 255 + .5) end
-    local key = seconds * 16777216 + R * 65536 + G * 256 + B
-    local opts = textOpts[key]
+    local formatter = K.CountdownFormatter(seconds, state.thR, state.thG, state.thB)
+    local opts = textOpts[formatter]
     if opts then return opts end
-    local points = { { threshold = 0, format = "%.0f", rounding = UP } }
-    if seconds > 0 then
-        points[1].format = ("|cff%02x%02x%02x%%.0f|r"):format(R, G, B)
-        points[2] = { threshold = seconds, format = "%.0f", rounding = UP }
-    end
-    points[#points + 1] = { threshold = 60, format = "%d:%02d", rounding = DOWN, components = { { div = 60, rounding = DOWN }, { mod = 60, rounding = DOWN } } }
-    points[#points + 1] = { threshold = 3600, format = "%dh", rounding = DOWN, components = { { div = 3600, rounding = DOWN } } }
-    local formatter = C_StringUtil.CreateNumericRuleFormatter()
-    formatter:SetBreakpoints(points)
     local binding = C_DurationUtil.CreateDurationTextBinding()
     binding:SetFormatter(formatter)
     binding:SetZeroDurationText("")
@@ -108,7 +83,7 @@ local function TextOpts(seconds)
     binding:SetUpdateInterval(.1)
     binding:SetEnabled(true)
     opts = { binding = binding }
-    textOpts[key] = opts
+    textOpts[formatter] = opts
     return opts
 end
 
@@ -162,24 +137,24 @@ local function Look(rec, view)
     lk.font, lk.flags = state.font, state.fontFlags
     lk.rendering, lk.shadow, lk.shadowOpacity, lk.shadowDistance =
         state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance
-    local cs, ss = view.cdSize or 0, view.stackSize or 0
-    if cs <= 0 then cs = bar and max(9, floor(h * .55)) or max(10, floor(h * .38)) end
-    if ss <= 0 then ss = bar and max(8, floor(h * .45)) or max(9, floor(h * .3)) end
-    lk.cs, lk.ss = cs, ss
+    local font = K.FONT
+    lk.cs = K.TextSize(view.cdSize, bar and font.barText or font.countdown, h)
+    lk.ss = K.TextSize(view.stackSize, bar and font.barStacks or font.stacks, h)
     local pos = view.stackPos
     lk.sp = (pos and K.POINTS[pos]) and pos or 9
     lk.cr, lk.cg, lk.cb = state.cdR or 1, state.cdG or 1, state.cdB or 1
     lk.sr, lk.sg, lk.sb = state.stackR or 1, state.stackG or 1, state.stackB or 1
-    lk.swipe = (view.swipeAlpha or 60) / 100
+    lk.swipe = (view.swipeAlpha or K.SWIPE_ALPHA) / 100
     lk.edge = view.edge == true
     lk.tip = view.tooltips == true
     if bar then
         lk.tex = S.ResolveTexture(view.barTexture, BAR_TEXTURE)
         r, g, b = nil, nil, nil
         if view.barClass ~= false then r, g, b = ClassRGB() end
-        if not r then r, g, b = view.barR or .91, view.barG or .72, view.barB or .33 end
+        local fill = K.BAR_RGB
+        if not r then r, g, b = view.barR or fill[1], view.barG or fill[2], view.barB or fill[3] end
         lk.fr, lk.fg, lk.fb = r, g, b
-        lk.bgA = (view.barBgAlpha or 55) / 100
+        lk.bgA = (view.barBgAlpha or K.BAR_BG_ALPHA) / 100
         lk.icon = view.barIcon ~= false
         lk.side = view.barIconSide == 2 and 2 or 1
         -- Stack fill maximum and markers are looks, not region sets: a new
@@ -198,209 +173,6 @@ local function Look(rec, view)
         sig[i] = v
     end
     return tconcat(sig, "\031", 1, #LOOK)
-end
-
------------------------------------------------------------------- buttons
-local function Edges(owner)
-    local set = {}
-    for i = 1, 4 do set[i] = owner:CreateTexture(nil, "OVERLAY") end
-    return set
-end
-
------------------------------------------------------------------- glows
--- One glow on an aura button, built in initializeFrame: a flipbook texture
--- for styles 1 and 2 and four edges on their own frame for 3 (pulsing) and
--- 4 (still). Both loops run in C. The flipbook rests at alpha 0 and only
--- its loop lifts it, so a stopped loop never shows the whole sheet. 12.1.5
--- and Forever play the loops each time the button shows and stop them when
--- it hides (AddAuraShownAnimation); 12.1.0 has only the start given here.
-local function NewGlow(button, parent, level)
-    -- This independent native visibility gate never reads aura state and
-    -- never requires a Lua mutation of protected descendants in combat.
-    local combatGate = CreateFrame("Frame", nil, parent)
-    combatGate:SetAllPoints(parent)
-    local frame = CreateFrame("Frame", nil, combatGate)
-    frame:SetAllPoints(parent)
-    frame:SetFrameLevel(level)
-    frame:Hide()
-    local flip = frame:CreateTexture(nil, "OVERLAY")
-    flip:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    flip:SetAlpha(0)
-    flip:Hide()
-    local loop = flip:CreateAnimationGroup()
-    loop:SetLooping("REPEAT")
-    local lift = loop:CreateAnimation("Alpha")
-    lift:SetFromAlpha(1)
-    lift:SetToAlpha(1)
-    lift:SetDuration(FLIP.duration)
-    local book = loop:CreateAnimation("FlipBook")
-    book:SetFlipBookRows(FLIP.rows)
-    book:SetFlipBookColumns(FLIP.cols)
-    book:SetFlipBookFrames(FLIP.frames)
-    book:SetFlipBookFrameWidth(0)
-    book:SetFlipBookFrameHeight(0)
-    book:SetDuration(FLIP.duration)
-    -- The edges share the glow's level: a child would sit one above it, on
-    -- the countdown's level.
-    local ring = CreateFrame("Frame", nil, frame)
-    ring:SetAllPoints(frame)
-    ring:SetFrameLevel(level)
-    ring:Hide()
-    local pulse = ring:CreateAnimationGroup()
-    pulse:SetLooping("BOUNCE")
-    local fade = pulse:CreateAnimation("Alpha")
-    fade:SetFromAlpha(1)
-    fade:SetToAlpha(1)
-    fade:SetDuration(PULSE)
-    local g = { frame = frame, flip = flip, ring = ring, edges = Edges(ring), fade = fade,
-        combatGate = combatGate, combatOnly = false }
-    -- 12.1.0 lacks AddAuraShownAnimation: the loops play without it.
-    if button.AddAuraShownAnimation then
-        button:AddAuraShownAnimation(loop)
-        button:AddAuraShownAnimation(pulse)
-    end
-    loop:Play()
-    pulse:Play()
-    return g
-end
-
--- "All glows only in combat": a secure state driver shows the glow's gate
--- in combat only (a sealed button's descendants refuse Lua in combat). The
--- state driver manager re-reads every driver on each pass, and Blizzard
--- pools ten buttons per group, so only a glow that can show (on: its entry
--- uses it) holds one.
-local parkedGates = {}
-local function ApplyCombatGate(g, on, dry)
-    if not dry then parkedGates[g] = nil end
-    local wanted = on == true and C.state.allGlowsCombat == true and not C.state.preview
-    if g.combatOnly == wanted then return false end
-    if dry then return true end
-    g.combatOnly = wanted
-    if wanted then
-        RegisterStateDriver(g.combatGate, "visibility", "[combat] show; hide")
-    else
-        UnregisterStateDriver(g.combatGate, "visibility")
-        g.combatGate:Show()
-    end
-    return false
-end
-
-function B.ReleaseGlows(rec)
-    for _, part in ipairs(rec.parts) do
-        for i = 1, 3 do
-            local g
-            if i == 1 then g = part.glow
-            elseif i == 2 then g = part.stack and part.stack.glow
-            else g = part.stackSensor and part.stackSensor.part.stack.glow end
-            if g and g.combatOnly then
-                if IsCombatLocked() then
-                    parkedGates[g] = true
-                else
-                    UnregisterStateDriver(g.combatGate, "visibility")
-                    g.combatOnly = false
-                    g.combatGate:Show()
-                end
-            end
-        end
-    end
-end
-
-function B.FlushGates()
-    if IsCombatLocked() then return end
-    for g in pairs(parkedGates) do
-        UnregisterStateDriver(g.combatGate, "visibility")
-        g.combatOnly = false
-        g.combatGate:Show()
-        parkedGates[g] = nil
-    end
-end
-
--- Style, color (nil: the art's own gold) and the size of what the glow
--- surrounds. Same input: no call.
-local function Painted(g, style, r, gg, b, lk)
-    return g.st == style and g.cr == r and g.cg == gg and g.cb == b and g.w == lk.w and g.h == lk.h and g.px == lk.px
-end
-local function PaintGlow(g, style, r, gg, b, lk)
-    if Painted(g, style, r, gg, b, lk) then return end
-    local w, h, px = lk.w, lk.h, lk.px
-    g.st, g.cr, g.cg, g.cb, g.w, g.h, g.px = style, r, gg, b, w, h, px
-    local spec = GLOW[style] or FLIP
-    if spec.atlas then
-        -- Same margin on every side: bars get a band, not a stretched art.
-        local grow = (spec.scale - 1) * min(w, h)
-        local flip = g.flip
-        flip:SetAtlas(spec.atlas)
-        flip:SetSize(w + grow, h + grow)
-        -- Tinting a golden atlas needs it gray first.
-        flip:SetDesaturated(r ~= nil)
-        if r then
-            flip:SetVertexColor(r, gg, b)
-        else
-            flip:SetVertexColor(1, 1, 1)
-        end
-        flip:Show()
-        g.ring:Hide()
-    else
-        K.PlaceEdges(g.edges, g.ring, (spec.edge or 2) * px, r or GOLD[1], gg or GOLD[2], b or GOLD[3], 1)
-        g.fade:SetToAlpha(spec.pulse and PULSE_LOW or 1)
-        g.ring:Show()
-        g.flip:Hide()
-    end
-end
-
--- Style and color of an entry's aura glows: per-spell choices first, then
--- the bar's (Build copies them to the record).
-local function GlowSpec(rec, ov)
-    local style = ov.glowStyle or rec.gStyle
-    if not GLOW[style] then style = 1 end
-    local hex = ov.glowColor
-    if hex then return style, K.HexRGB(hex) end
-    if rec.gTint then return style, rec.gR, rec.gG, rec.gB end
-    return style
-end
-
--- Stack glow, built in initializeFrame. A gate that clips its children,
--- as large as the widest glow around the button; an invisible StatusBar
--- that Blizzard fills with the aura's applications (SetApplicationBar,
--- maximum N); and the glow host centered on the fill's right edge. The bar
--- is N travels long and ends at the gate's center, so from N applications
--- on the fill edge sits on the center and the glow on the button, and each
--- missing application moves it one travel (more than the gate is wide) to
--- the left, out of the gate. The count stays in C: no Lua compares it.
-local function NewStack(button, level)
-    local gate = CreateFrame("Frame", nil, button)
-    gate:SetPoint("CENTER", button, "CENTER", 0, 0)
-    gate:SetFrameLevel(level)
-    gate:SetClipsChildren(true)
-    gate:Hide()
-    local bar = CreateFrame("StatusBar", nil, button)
-    bar:SetStatusBarTexture(STACK_TEXTURE)
-    bar:SetMinMaxValues(0, 1)
-    bar:SetValue(0)
-    bar:SetAlpha(0)
-    local host = CreateFrame("Frame", nil, gate)
-    host:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
-    local glow = NewGlow(button, host, level)
-    glow.frame:Show()
-    return { gate = gate, bar = bar, host = host, glow = glow }
-end
-
--- Gate, bar and host for threshold n and the button's size. The bar's
--- range is Blizzard's: every apply sets it to 0..maxApplications.
-local function Placed(s, n, lk, cap) return s.n == n and s.cap == cap and s.w == lk.w and s.h == lk.h and s.px == lk.px end
-local function PlaceStack(s, n, lk, cap)
-    if Placed(s, n, lk, cap) then return end
-    local w, h, px = lk.w, lk.h, lk.px
-    s.n, s.cap, s.w, s.h, s.px = n, cap, w, h, px
-    local grow = (REACH - 1) * min(w, h) + 2 * px
-    local gw, gh = w + grow, h + grow
-    local travel = max(gw, gh) + 2 * px
-    s.gate:SetSize(gw, gh)
-    s.host:SetSize(w, h)
-    local bar = s.bar
-    bar:SetSize(travel * cap, px)
-    bar:ClearAllPoints()
-    bar:SetPoint("LEFT", s.gate, "CENTER", -travel * n, 0)
 end
 
 -- Unknown kit sounds of aura entries (AddAuraSound takes files only): a
@@ -589,68 +361,6 @@ local function Style(rec, part)
     b:SetMouseMotionEnabled(lk.tip)
 end
 
--- Glow while active: shown and painted per entry.
-local function ApplyGlow(rec, part, ov, dry)
-    local g = part.glow
-    local on = ov.auraGlow
-    if on == nil then on = rec.glowAll end
-    if on == true then
-        local style, r, gg, b = GlowSpec(rec, ov)
-        if part.gOn and Painted(g, style, r, gg, b, rec.lk) then return false end
-        if dry then return true end
-        PaintGlow(g, style, r, gg, b, rec.lk)
-        if not part.gOn then
-            part.gOn = true
-            g.frame:Show()
-        end
-    elseif part.gOn then
-        if dry then return true end
-        part.gOn = false
-        g.frame:Hide()
-    end
-    return false
-end
-
--- Stack glow from N applications: gate shown, bar and glow placed for N.
--- A bound bar is rebound when N changes (a setter replaces its element).
-local function ApplyStack(rec, part, ov, dry)
-    local s = part.stack
-    local n = ov.stackGlow
-    if type(n) ~= "number" or n < 1 then
-        n = 0
-    else
-        n = floor(n)
-    end
-    if n == 0 then
-        if not s.on then return false end
-        if dry then return true end
-        s.on = false
-        s.gate:Hide()
-        return false
-    end
-    local lk = rec.lk
-    -- Equal uses one extra native range step: counts above N move the
-    -- glow beyond the right clip edge instead of clamping at the center.
-    local op = ov.stackGlowOp or 1
-    if op == 3 then n = n + 1 end
-    local cap = op == 2 and n + 1 or n
-    local style, r, gg, b = GlowSpec(rec, ov)
-    if s.on and Placed(s, n, lk, cap) and Painted(s.glow, style, r, gg, b, lk) and (s.bound == cap or not part.bound) then return false end
-    if dry then return true end
-    PlaceStack(s, n, lk, cap)
-    PaintGlow(s.glow, style, r, gg, b, lk)
-    if part.bound and s.bound ~= cap then
-        s.bound = cap
-        barOpts.maxApplications = cap
-        part.button:SetApplicationBar(s.bar, barOpts)
-    end
-    if not s.on then
-        s.on = true
-        s.gate:Show()
-    end
-    return false
-end
-
 -- Text on top: the two text frames trade levels (both stay above the glows).
 local function Layer(part, top)
     local stacks, texts = part.stackFrame, part.timeFrame
@@ -805,14 +515,6 @@ local function NewPart(rec, button, k)
     return part
 end
 
--- A stack glow's application bar on its button, at the glow's threshold
--- range (PlaceStack; the native button has one application-bar binding).
-local function BindStack(button, stack)
-    stack.bound = stack.cap or 1
-    barOpts.maxApplications = stack.bound
-    button:SetApplicationBar(stack.bar, barOpts)
-end
-
 -- Hands the styled regions to the button; bound regions are sealed.
 local function Bind(rec, part, k)
     local button = part.button
@@ -842,11 +544,10 @@ local function Bind(rec, part, k)
     part.bound = true
 end
 
--- initializeFrame: runs once per button from Blizzard's frame provider
--- (possibly in combat when a group's pool grows). Builds and styles every
--- region as a descendant of the button, binds last (bound regions are
--- sealed), and keeps our state in our own table, never on the button.
-local function Init(rec, button, k)
+-- Builds and styles every region of a button as its descendant, binds last
+-- (bound regions are sealed) and keeps our state in our own table, never on
+-- the button. Its part joins rec.parts, the buttons restyles reach.
+local function Adopt(rec, button, k)
     local part = NewPart(rec, button, k)
     button:SetMouseClickEnabled(false)
     button:SetTooltipAnchorPoint("ANCHOR_BOTTOMRIGHT")
@@ -862,25 +563,106 @@ local function Init(rec, button, k)
     parts[#parts + 1] = part
 end
 
--- Private drawing primitives reused by the native action-bar aura bridge.
--- The button of a bridge container (a stack sensor of a stack-filled bar,
--- an action-bar glow) covers its target and takes no mouse.
-local function Overlay(button, target)
-    button:SetAllPoints(target)
-    button:SetMouseClickEnabled(false)
-    button:SetMouseMotionEnabled(false)
+------------------------------------------------------------------ batches
+-- AddAuraGroup pre-builds a batch of buttons (FrameCreationBatchSize, ten,
+-- Blizzard_CustomAuraContainer.lua) and runs initializeFrame for each
+-- before it returns. The group's frame provider hands out the newest free
+-- button (AcquireFrame takes the last of its available list; a released
+-- one goes back on top), so a one-frame entry group only ever shows the
+-- last button of its batch. While auras are plain (Quiet) the batch is
+-- collected and only that button is built; the others stay bare, each
+-- with one sensor. Should Blizzard show one of them after all, it is built
+-- a frame later, or once auras are plain again (A.FlushPending). While
+-- auras are secret the buttons seal on creation, so each is built in
+-- initializeFrame, like a button made outside a batch, and so is every
+-- batch of a container made because sealed buttons refused a restyle
+-- (rec.eager). A shown button that refuses right after its batch waits in
+-- rec.waiting; Finish reports the container unfinished meanwhile.
+local batch = {}
+local dormant = {} -- sensor of a bare button -> { rec, button, pos, sensor }
+local woken = {}   -- bare buttons Blizzard showed, waiting to be built
+local wakeArmed = false
+
+local function AdoptWoken()
+    wakeArmed = false
+    for i = #woken, 1, -1 do
+        local shell = woken[i]
+        if not (Quiet() and Open(shell.button)) then
+            -- Pending, so the end of combat or of a restriction comes back.
+            C.Auras.pending[shell.rec.slot] = true
+            return
+        end
+        woken[i] = nil
+        shell.sensor:SetScript("OnShow", nil)
+        Adopt(shell.rec, shell.button, shell.pos)
+    end
 end
--- A bridge button's stack glow: regions placed for ov, bound, then gated.
-local function BridgeStack(rec, part, ov, level)
-    part.stack = NewStack(part.button, level)
-    ApplyStack(rec, part, ov, false)
-    BindStack(part.button, part.stack)
-    ApplyCombatGate(part.stack.glow, part.stack.on, false)
-    part.bound = true
+AuraButtons.AdoptWoken = AdoptWoken
+
+local function Woke(sensor)
+    local shell = dormant[sensor]
+    if not shell then return end
+    dormant[sensor] = nil
+    woken[#woken + 1] = shell
+    if wakeArmed then return end
+    wakeArmed = true
+    C_Timer.After(0, AdoptWoken)
 end
 
-B.Bridge = { NewGlow = NewGlow, ApplyStack = ApplyStack, ApplyGlow = ApplyGlow, ApplyCombatGate = ApplyCombatGate,
-    Overlay = Overlay, BridgeStack = BridgeStack }
+local function Dormant(rec, button, k)
+    local sensor = CreateFrame("Frame", nil, button)
+    dormant[sensor] = { rec = rec, button = button, pos = k, sensor = sensor }
+    sensor:SetScript("OnShow", Woke)
+end
 
-B.TextOpts, B.Look, B.Hush, B.Quiet, B.Mutable = TextOpts, Look, Hush, Quiet, Mutable
-B.Style, B.ApplyEntry, B.Init = Style, ApplyEntry, Init
+-- Around AddAuraGroup: true when the batch is collected (auras plain).
+function AuraButtons.BeginBatch(rec)
+    for i = #batch, 1, -1 do batch[i] = nil end
+    if rec.eager or not Quiet() then return false end
+    rec.batch = batch
+    return true
+end
+function AuraButtons.EndBatch(rec, k)
+    rec.batch = nil
+    local n = #batch
+    local shown = batch[n]
+    if shown and Open(shown) then
+        Adopt(rec, shown, k)
+    elseif shown then
+        local waiting = rec.waiting or {}
+        rec.waiting = waiting
+        waiting[#waiting + 1] = { rec = rec, button = shown, pos = k }
+    end
+    for i = 1, n - 1 do Dormant(rec, batch[i], k) end
+    for i = n, 1, -1 do batch[i] = nil end
+end
+-- Builds the shown buttons that refused right after their batch; false
+-- while one still refuses (the container then counts as refusing a
+-- restyle, Auras.Run).
+function AuraButtons.Finish(rec)
+    local waiting = rec.waiting
+    if not waiting then return true end
+    for i = #waiting, 1, -1 do
+        local shell = waiting[i]
+        if not (Quiet() and Open(shell.button)) then return false end
+        waiting[i] = nil
+        Adopt(rec, shell.button, shell.pos)
+    end
+    rec.waiting = nil
+    return true
+end
+
+-- initializeFrame, from Blizzard's frame provider: inside a collected
+-- batch the button waits for EndBatch; otherwise it is built at once (a
+-- slot's one button, a batch made while auras are secret).
+local function Init(rec, button, k)
+    local list = rec.batch
+    if list then
+        list[#list + 1] = button
+        return
+    end
+    Adopt(rec, button, k)
+end
+
+AuraButtons.TextOpts, AuraButtons.Look, AuraButtons.Hush, AuraButtons.Quiet, AuraButtons.Mutable = TextOpts, Look, Hush, Quiet, Mutable
+AuraButtons.Style, AuraButtons.ApplyEntry, AuraButtons.Init = Style, ApplyEntry, Init

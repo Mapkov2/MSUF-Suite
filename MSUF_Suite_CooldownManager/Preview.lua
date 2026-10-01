@@ -8,16 +8,16 @@ local C = P.CDM
 -- simulation: an 8 s cooldown on the first icon of each bar, a proc glow on
 -- the second and a buff glow on the third, from duration objects built out
 -- of plain numbers. The simulation runs only while the page is open and out
--- of combat; its one ticker exists only while it runs. This file keeps its
--- own small constants; at load it reads only C.EMPTY and C.Layout.Shown
--- (Layout.lua loads first), so the options contract loads it with a stub
--- CDM table that has both.
-local Pv = { mode = nil, sim = false }
-C.Preview = Pv
+-- of combat; its one ticker exists only while it runs. At load it reads
+-- only C.EMPTY, C.Const.QUESTION_ICON and C.Layout.Shown (Const.lua and
+-- Layout.lua load first), so the options contract loads it with a stub
+-- CDM table that has those.
+local Preview = { mode = nil, sim = false }
+C.Preview = Preview
 local EMPTY = C.EMPTY
 local pairs, type, max, min = pairs, type, math.max, math.min
 local wipe = table.wipe
-local QUESTION = 134400
+local QUESTION = C.Const.QUESTION_ICON
 local SIM_LENGTH, SIM_LOOP = 8, 10
 
 ------------------------------------------------------------------ sample icons
@@ -47,8 +47,8 @@ end
 
 -- Resolve rebuilds placeholders with the question mark; this runs after
 -- every resolve while a preview is on.
-function Pv.Decorate()
-    if not Pv.mode then return end
+function Preview.Decorate()
+    if not Preview.mode then return end
     local filled = false
     for _, plan in pairs(C.plans) do
         local entries = plan.entries
@@ -68,13 +68,13 @@ end
 ------------------------------------------------------------------ mode
 -- Returns true when the preview turned on or off (the controller then marks
 -- resolve, cooldowns, effects, layout and visibility).
-function Pv.SetMode(mode)
+function Preview.SetMode(mode)
     if mode ~= "edit" and mode ~= "options" then mode = nil end
-    if Pv.mode == mode then return false end
-    local was = Pv.mode ~= nil
-    Pv.mode = mode
+    if Preview.mode == mode then return false end
+    local was = Preview.mode ~= nil
+    Preview.mode = mode
     local on = mode ~= nil
-    if mode ~= "options" then Pv.Simulate(false) end
+    if mode ~= "options" then Preview.Simulate(false) end
     C.state.preview = on
     if was == on then return false end
     C.Auras.SetPreview(on)
@@ -144,7 +144,7 @@ end
 
 local function Restart()
     StopAll()
-    if not Pv.sim then return end
+    if not Preview.sim then return end
     for _, plan in pairs(C.plans) do
         if plan.kind == 1 then
             local entries, n = plan.entries, 0
@@ -161,13 +161,13 @@ local function Restart()
         if holder.shown then Canvas(holder) end
     end
 end
-Pv.Restart = Restart
+Preview.Restart = Restart
 
-function Pv.Simulate(on)
+function Preview.Simulate(on)
     on = on == true
-    if on and (Pv.mode ~= "options" or NS.IsCombatLocked() or not C.M.active) then on = false end
-    if on == Pv.sim then return on end
-    Pv.sim = on
+    if on and (Preview.mode ~= "options" or NS.IsCombatLocked() or not C.M.active) then on = false end
+    if on == Preview.sim then return on end
+    Preview.sim = on
     if ticker then
         ticker:Cancel()
         ticker = nil
@@ -350,7 +350,7 @@ local function Rest(holder, keep)
 end
 
 -- Draws one bar into parent, scaled down only when it exceeds the space.
-function Pv.Render(parent, slot, maxWidth, maxHeight)
+function Preview.Render(parent, slot, maxWidth, maxHeight)
     local view = parent and C.views[slot]
     if not view then return nil end
     local holder = Holder(parent)
@@ -385,11 +385,11 @@ function Pv.Render(parent, slot, maxWidth, maxHeight)
         holder.shown = true
         holder:Show()
     end
-    if Pv.sim then Canvas(holder) end
+    if Preview.sim then Canvas(holder) end
     return holder
 end
 
-function Pv.Release(parent)
+function Preview.Release(parent)
     local holder = canvases[parent]
     if not holder then return end
     Rest(holder, 0)
@@ -397,6 +397,6 @@ function Pv.Release(parent)
     holder:Hide()
 end
 
-function Pv.ReleaseAll()
-    for parent in pairs(canvases) do Pv.Release(parent) end
+function Preview.ReleaseAll()
+    for parent in pairs(canvases) do Preview.Release(parent) end
 end

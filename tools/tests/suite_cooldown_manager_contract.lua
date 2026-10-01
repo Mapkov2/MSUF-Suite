@@ -48,8 +48,8 @@ local function Read(path)
     handle:close()
     return text
 end
-local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
-    "Effects.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
+local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","EntryFill.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
+    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Grid.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
     "Flush.lua","Settings.lua","Events.lua","Controller.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
@@ -65,7 +65,9 @@ do
     for i=1,#tocFiles do at[tocFiles[i]]=i end
     local USES={["Settings.lua"]={"Flush.lua"},["Events.lua"]={"Flush.lua","Settings.lua"},
         ["Controller.lua"]={"Flush.lua","Settings.lua","Events.lua"},["Exports.lua"]={"Controller.lua"},
-        ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua"}}
+        ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua","AuraContainers.lua"},
+        ["AuraContainers.lua"]={"AuraButtons.lua"},
+        ["AuraButtons.lua"]={"AuraGlows.lua"},["StackColors.lua"]={"AuraGlows.lua"}}
     for file,deps in pairs(USES) do
         for _,dep in ipairs(deps) do assert(at[dep] and at[dep]<at[file],dep.." must load before "..file) end
     end
@@ -76,8 +78,8 @@ do
         return text
     end
     local events=Source("Events.lua")
-    assert(events:find("\nlocal Mark, Schedule = F.Mark, F.Schedule\n",1,true),"hot handlers resolve Mark and Schedule at load")
-    assert(events:find("\nF.BindDataUnits(CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit)\n",1,true),
+    assert(events:find("\nlocal Mark, Schedule = Flush.Mark, Flush.Schedule\n",1,true),"hot handlers resolve Mark and Schedule at load")
+    assert(events:find("\nFlush.BindDataUnits(CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit)\n",1,true),
         "Events.lua binds the flush's data units")
     -- The hot handlers reach Time, Layout, Index and Effects through
     -- upvalues resolved at load: only that one line names them.
@@ -93,7 +95,7 @@ do
         assert(not controller:find(name,1,true),"Controller.lua is back to holding "..name)
     end
     -- Main-chunk locals stay at most 150 (Lua 5.1 allows 200).
-    for _,file in ipairs({"Flush.lua","Settings.lua","Events.lua","Controller.lua","AuraButtons.lua","Auras.lua"}) do
+    for _,file in ipairs({"Flush.lua","Settings.lua","Events.lua","Controller.lua","AuraButtons.lua","AuraContainers.lua","Auras.lua"}) do
         local n=0
         for line in Source(file):gmatch("[^\n]+") do
             local names=line:match("^local function ([%w_]+)") or line:match("^local ([%w_, ]+)")
@@ -103,7 +105,7 @@ do
     end
 end
 -- One home per rule: the spell ID set helpers live in Const.lua, the stack
--- glow binding of bridge buttons in AuraButtons.lua, the "can a usability
+-- glow binding of bridge buttons in AuraGlows.lua, the "can a usability
 -- read show" rule in Effects.lua. No runtime file crams statements onto a
 -- line, and every file opens with what it does.
 do
@@ -119,11 +121,24 @@ do
     for _,file in ipairs({"StackColors.lua","ActionGlows.lua"}) do
         local text=Read(root.."/"..ADDON.."/"..file)
         assert(not text:find("maxApplications",1,true) or file=="StackColors.lua" and select(2,text:gsub("maxApplications",""))==1,
-            file.." binds a stack glow's application bar itself (AuraButtons BridgeStack does)")
+            file.." binds a stack glow's application bar itself (AuraGlows BridgeStack does)")
     end
     for _,file in ipairs({"Events.lua","Flush.lua"}) do
         assert(not Read(root.."/"..ADDON.."/"..file):find("readyResources",1,true),
             file.." repeats the usable visibility rule (Effects.UsableShown)")
+    end
+    -- Constants the render layers share live in Const.lua only: the swipe
+    -- fallback, the automatic text sizes, the countdown formatter, the glow
+    -- spec, the question-mark icon, the frame layers, the plain white
+    -- texture and the bar fill fallbacks.
+    for _,file in ipairs(ORDER) do
+        if file~="Const.lua" then
+            local text=Read(root.."/"..ADDON.."/"..file)
+            for _,copy in ipairs({"swipeAlpha or %d","%* %.38","%* %.3%)","%* %.26","%* %.55","%* %.45","134400",
+                "\"BACKGROUND\", \"LOW\"","%%d:%%02d","WHITE8X8","barBgAlpha or %d","barR or [%d.]","ov%.glowStyle or "}) do
+                assert(not text:find(copy),file.." keeps its own copy of a shared constant ("..copy..")")
+            end
+        end
     end
     for _,file in ipairs(ORDER) do
         local text=Read(root.."/"..ADDON.."/"..file)
@@ -530,6 +545,9 @@ local cdState,chargeState,usable,inRange,overlayed={},{[101]={isActive=false}},{
 usable.calls={}
 local bagCounts={}
 local cdCalls,cdSpells,invCalls,rangeLog=0,{},0,{}
+-- While set, the cooldown readers hand back these objects instead of new
+-- ones (the allocation budget of a matched cooldown event).
+local steady
 local function CooldownInfo(spell)
     local state=cdState[spell]
     local active=state and state.start+state.length>now or false
@@ -544,12 +562,14 @@ C_Spell={
     GetSpellCooldown=function(spell)
         Plain(spell,"GetSpellCooldown")
         cdCalls=cdCalls+1;cdSpells[spell]=(cdSpells[spell] or 0)+1
+        if steady then return steady.info end
         return CooldownInfo(spell)
     end,
     GetSpellCooldownDuration=function(spell,ignoreGCD)
         Plain(spell,"GetSpellCooldownDuration")
         local key=ignoreGCD and "baseDuration" or "displayDuration"
         cdSpells[key]=(cdSpells[key] or 0)+1
+        if steady then return steady.duration end
         local state=cdState[spell]
         return NewDuration(combat,state and state.start,state and state.length)
     end,
@@ -557,10 +577,12 @@ C_Spell={
         cdSpells.charges=(cdSpells.charges or 0)+1
         local state=chargeState[spell]
         if not state then return nil end
+        if steady then return steady.charges end
         return {maxCharges=2,isActive=state.isActive,currentCharges=combat and SECRET_NUM or 1}
     end,
     GetSpellChargeDuration=function()
         cdSpells.chargeDuration=(cdSpells.chargeDuration or 0)+1
+        if steady then return steady.duration end
         return NewDuration(combat,now,8)
     end,
     GetSpellDisplayCount=function()
@@ -1065,6 +1087,94 @@ do
     assert(flushes==1,"a restriction ending flushes pending aura restyles once")
     C.Auras.FlushPending=realFlush
     C.Auras.pending.buf=nil
+end
+-- A matched cooldown event in steady state builds nothing in Lua (Time.lua
+-- header). The client's C API returns new objects on every call: the
+-- cooldown and charge info tables and the duration objects. Here their
+-- stand-ins hand back the same objects, so every kilobyte counted would be
+-- the runtime's own.
+do
+    steady={info={isActive=true,isOnGCD=false,isEnabled=true,startTime=now,duration=12},
+        duration=NewDuration(false,now,12),charges={maxCharges=2,isActive=true,currentCharges=1}}
+    Fire("SPELL_UPDATE_COOLDOWN",101)
+    Run()
+    local quiet=writes
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local kb=collectgarbage("count")
+    for _=1,1000 do Fire("SPELL_UPDATE_COOLDOWN",101) end
+    local used=collectgarbage("count")-kb
+    collectgarbage("restart")
+    -- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+    -- interpreter build): the budgets of the hot paths. A budget holds the
+    -- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+    -- 2 %; a path may get cheaper, never dearer.
+    local function Cost(fn,...)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn(...)
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    -- Time: one matched cooldown event, then every cooldown icon at once.
+    Budget("time: a matched cooldown event",Cost(Fire,"SPELL_UPDATE_COOLDOWN",101),715)
+    Budget("time: a cooldown event for every icon",Cost(Fire,"SPELL_UPDATE_COOLDOWN",nil),4554)
+    steady=nil
+    assert(writes>quiet,"the matched cooldown event did not reach the icon")
+    assert(used==0,"a matched cooldown event allocated "..used.." KB in Lua")
+    Fire("SPELL_UPDATE_COOLDOWN",101)
+    Run()
+end
+-- Two-list spell lookups call each entry once. A callback that raises (the
+-- event handler is not isolated) must not leave an entry marked as seen:
+-- the next lookup still reaches it.
+do
+    local Index=C.Index
+    local x,y,w={},{},{}
+    Index.bySpell[880001],Index.bySpell[880002],Index.bySpell[880003]={x,y},{y},{w}
+    local calls={}
+    local function Count(entry) calls[entry]=(calls[entry] or 0)+1 end
+    assert(Index.ForSpell(880001,880002,Count)==2 and calls[x]==1 and calls[y]==1,"an entry on both lists ran twice")
+    local ok=pcall(Index.ForSpell,880001,880002,function(entry) if entry==x then error("callback failed") end end)
+    assert(not ok,"the raising callback did not raise")
+    calls={}
+    assert(Index.ForSpell(880003,880001,Count)==3 and calls[w]==1 and calls[x]==1 and calls[y]==1,
+        "a raising callback left an entry marked as seen")
+    Index.bySpell[880001],Index.bySpell[880002],Index.bySpell[880003]=nil,nil,nil
+end
+-- Flush: every cooldown entry refreshed in one next-frame pass, and the
+-- usability sweep a SPELL_UPDATE_USABLE schedules.
+do
+    -- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+    -- interpreter build): the budgets of the hot paths. A budget holds the
+    -- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+    -- 2 %; a path may get cheaper, never dearer.
+    local function Cost(fn,...)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn(...)
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    Run()
+    C.Flush.dirty.cooldowns=true
+    C.Schedule()
+    Budget("flush: every cooldown entry",Cost(Run),6348)
+    C.Flush.dirty.usable=true
+    C.Schedule()
+    Budget("flush: a usability sweep",Cost(Run),1382)
 end
 -- A GCD for one spell refreshes that spell's icons only: the others do not
 -- show the GCD and are not touched.
@@ -1934,6 +2044,24 @@ values=assert(S.CooldownManagerConvertVertical("ess",true))
 assert(values.ess_vertical==true and values.ess_x==math.floor(512-512-columnWidth/2+.5) and values.ess_y==525-384,
     "a vertical bar keeps the center and anchors by its left edge")
 assert(C.views.ess.vertical==false and C.views.ess.grow==1,"conversion leaves the live view alone")
+-- A conversion whose sizing raises leaves the live view as it was.
+do
+    local offsets=C.Layout.Offsets
+    C.Layout.Offsets=function() error("offsets failed") end
+    assert(not pcall(S.CooldownManagerConvertGrow,"ess",2) and not pcall(S.CooldownManagerConvertVertical,"ess",true),
+        "the failing conversion did not raise")
+    C.Layout.Offsets=offsets
+    assert(C.views.ess.grow==1 and C.views.ess.vertical==false,"a raising conversion changed the live view")
+    local rides=C.Layout.RidesViewer
+    C.Layout.RidesViewer=function() error("ride check failed") end
+    dispatch.expect=true
+    local errors=#dispatch.errors
+    local anchor=C.views.ess.anchor
+    assert(S.CooldownManagerConvertAnchor("ess",2) and #dispatch.errors==errors+1,"the failing ride check was not reported")
+    dispatch.expect=false
+    C.Layout.RidesViewer=rides
+    assert(C.views.ess.anchor==anchor,"a raising ride check changed the live anchor")
+end
 bars.ess.frame.rect=nil
 assert(S.CooldownManagerConvertGrow("ess",3)==nil,"invalid grow")
 -- Attach changes keep the bar on screen: to Free, the x/y of the place it
@@ -2619,6 +2747,37 @@ assert(e12.icon.antsOn and not e11.icon.antsOn)
 combat=false
 Fire("PLAYER_REGEN_ENABLED")
 assert(LiveTickers()==0 and not e12.icon.antsOn,"poll stops after combat")
+-- The assisted icon writes only what changed: a new suggestion (several a
+-- second in combat) swaps its texture, never its size, place or font.
+do
+    cvars.assistedCombatHighlight="1"
+    config.assistIcon=true
+    module:Refresh()
+    Run()
+    local callback=assert(registry["AssistedCombatManager.OnAssistedHighlightSpellChange"])
+    AssistedCombatManager.lastNextCastSpellID=101
+    callback.fn()
+    local frame=assert(C.Effects.RecommendationFrame(),"the assisted icon")
+    assert(frame.shown and frame.tex.tex==1101,"the assisted icon shows the suggestion")
+    local function Layout() return (frame.calls.SetSize or 0)+(frame.calls.SetPoint or 0)+(frame.calls.ClearAllPoints or 0)
+        +(frame.key.calls.SetFont or 0)+(frame.cd.calls.Clear or 0) end
+    local laid,textures=Layout(),frame.tex.calls.SetTexture or 0
+    for i=1,10 do
+        AssistedCombatManager.lastNextCastSpellID=i%2==1 and 102 or 101
+        callback.fn()
+    end
+    assert(Layout()==laid,"a new suggestion laid the assisted icon out again")
+    assert((frame.tex.calls.SetTexture or 0)==textures+10 and frame.tex.tex==1101,"a new suggestion did not swap the texture")
+    config.assistIconSize=60
+    module:Refresh()
+    assert(Layout()>laid and frame.w==60,"a size change did not lay the icon out")
+    config.assistIconSize=48
+    config.assistIcon=false
+    cvars.assistedCombatHighlight="0"
+    module:Refresh()
+    Run()
+    assert(not frame.shown,"the assisted icon stayed shown")
+end
 
 ------------------------------------------------------------------ invisible mode and MSUF promotion
 config.blizzard=2
@@ -3109,6 +3268,34 @@ assert(AnchorEvents()==anchorCount+3 and PendingTimers()==0,"the final release n
 -- custom bars start in the middle. Bar contents always stay.
 local function Activate() module.active=true;module:Enable();Run() end
 local function Deactivate() module.active=false;module:Disable();module.context:Release();Run(5) end
+-- A release under lockdown parks the visibility drivers, and the module's
+-- own PLAYER_REGEN_ENABLED goes with its events: a standalone listener
+-- unregisters them when combat ends, then lets go of the event.
+do
+    Activate()
+    config.uti_vis=2
+    module:Refresh()
+    Run()
+    assert(DriverCount()==1,"a combat bar registers its driver")
+    combat=true
+    module.active=false
+    module:Disable()
+    module.context:Release()
+    assert(DriverCount()==1,"under lockdown the release parks the driver")
+    combat=false
+    local listeners=0
+    for i=1,#all do
+        local frame=all[i]
+        if frame.events.PLAYER_REGEN_ENABLED and frame.scripts.OnEvent and frame~=module.context.frame then
+            listeners=listeners+1
+            frame.scripts.OnEvent(frame,"PLAYER_REGEN_ENABLED")
+            assert(not frame.events.PLAYER_REGEN_ENABLED,"the parked-work listener stayed registered")
+        end
+    end
+    assert(listeners>=1 and DriverCount()==0,"a release in combat left its visibility driver registered")
+    config.uti_vis=1
+    Run(5)
+end
 config.blizzard=1
 assert(not S.CooldownManagerSetPreview(true))
 config.defaultsVersion=1

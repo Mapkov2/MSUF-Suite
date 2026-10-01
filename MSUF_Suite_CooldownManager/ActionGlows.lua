@@ -4,7 +4,7 @@ local C = P.CDM
 -- Glows on the suite action bars' buttons for entries with an action-bar
 -- glow spell (ov.actionGlowSpell): one native aura slot per button shows
 -- the entry's buff (mode 1) or its stacks (mode 2), drawn with the aura
--- layer's primitives (AuraButtons.Bridge). The action bars, their own
+-- layer's primitives (AuraGlows.lua). The action bars, their own
 -- load-on-demand module, visit the buttons that hold a spell
 -- (S.ForEachActionBarButtonForSpell, out of combat only); nothing here
 -- tells them about aura presence or stack counts.
@@ -19,9 +19,9 @@ local C = P.CDM
 --  * Containers cannot be freed. A button keeps its records; one that no
 --    entry placed in a pass is switched off and taken by the next entry
 --    with the same glow mode on that button.
-local B = { wanted = false, pending = false }
-C.ActionGlows = B
-local AB, K = C.AuraButtons, C.Const
+local ActionGlows = { wanted = false, pending = false }
+C.ActionGlows = ActionGlows
+local AuraButtons, K = C.AuraButtons, C.Const
 local Public = S.Public
 local pairs, next, type = pairs, next, type
 local DELAY = 0.2
@@ -30,7 +30,7 @@ local stamp = 0
 local currentEntry, currentView
 local armed = false
 
-local Draw = AB.Bridge
+local Draw = C.AuraGlows
 local NewGlow, ApplyStack, ApplyGlow = Draw.NewGlow, Draw.ApplyStack, Draw.ApplyGlow
 local ApplyCombatGate, Overlay, BridgeStack = Draw.ApplyCombatGate, Draw.Overlay, Draw.BridgeStack
 
@@ -83,7 +83,7 @@ local function InitBridge(rec, button)
 end
 
 local function StyleBridge(rec)
-    if not AB.Mutable(rec) then return false end
+    if not AuraButtons.Mutable(rec) then return false end
     local part = rec.parts[1]
     if not part then return true end
     if part.glow then
@@ -150,7 +150,7 @@ local function Visit(button)
         rec.bound = true
     else
         if different then rec.frame:SetAuraSlotCandidateFilters("glow", { includeSpellIDs = rec.ids }) end
-        if not StyleBridge(rec) then B.pending = true end
+        if not StyleBridge(rec) then ActionGlows.pending = true end
     end
     Switch(rec, true)
     rec.frame:Show()
@@ -160,7 +160,7 @@ local function Free(rec)
     rec.free = true
     Switch(rec, false)
     rec.frame:Hide()
-    AB.ReleaseGlows(rec)
+    Draw.ReleaseGlows(rec)
 end
 -- Before a pass: records whose entry no longer asks for their glow mode
 -- are free, so the pass can hand them to another entry at once.
@@ -200,7 +200,7 @@ local function Follow()
 end
 
 ------------------------------------------------------------------ passes
-function B.Refresh()
+function ActionGlows.Refresh()
     local visit = C.M.active and Visitor() or nil
     local wanted = false
     if visit then
@@ -212,16 +212,16 @@ function B.Refresh()
         end
     end
     -- The slot, page and form events follow what is wanted (Events).
-    if B.wanted ~= wanted then
-        B.wanted = wanted
+    if ActionGlows.wanted ~= wanted then
+        ActionGlows.wanted = wanted
         C.Flush.dirty.events = true
         C.Schedule()
     end
-    if NS.IsCombatLocked() or not AB.Quiet() then
-        B.pending = true
+    if NS.IsCombatLocked() or not AuraButtons.Quiet() then
+        ActionGlows.pending = true
         return
     end
-    B.pending = false
+    ActionGlows.pending = false
     stamp = stamp + 1
     Unwanted()
     if wanted then
@@ -239,25 +239,25 @@ end
 local function Fire()
     armed = false
     if not C.M.active then return end
-    if NS.IsCombatLocked() or not AB.Quiet() then
+    if NS.IsCombatLocked() or not AuraButtons.Quiet() then
         Follow()
-        B.pending = true
+        ActionGlows.pending = true
         return
     end
-    B.Refresh()
+    ActionGlows.Refresh()
 end
 
 -- A slot, page, form or binding event: one trailing pass for the storm.
 -- always: the action bars started or stopped (what is wanted may change).
-function B.RouteChanged(always)
-    if armed or not (B.wanted or always) then return end
+function ActionGlows.RouteChanged(always)
+    if armed or not (ActionGlows.wanted or always) then return end
     armed = true
     C_Timer.After(DELAY, Fire)
 end
 
-function B.Release()
+function ActionGlows.Release()
     for _, list in pairs(records) do
         for i = 1, #list do Free(list[i]) end
     end
-    B.wanted, B.pending = false, false
+    ActionGlows.wanted, ActionGlows.pending = false, false
 end

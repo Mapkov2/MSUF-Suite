@@ -9,10 +9,10 @@ local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
 local Dispatch = S.Dispatch
-local Pa = AB.Painter
-local api = Pa.api
-local Tint, AcquireRange, Usable, CooldownFeedback = Pa.Tint, Pa.AcquireRange, Pa.Usable, Pa.CooldownFeedback
-local GlowCheck, SetGlow = Pa.GlowCheck, Pa.SetGlow
+local Painter = AB.Painter
+local api = Painter.api
+local Tint, AcquireRange, Usable, CooldownFeedback = Painter.Tint, Painter.AcquireRange, Painter.Usable, Painter.CooldownFeedback
+local GlowCheck, SetGlow = Painter.GlowCheck, Painter.SetGlow
 
 local function NativeFeedback(rec)
     if AB.directDuration then

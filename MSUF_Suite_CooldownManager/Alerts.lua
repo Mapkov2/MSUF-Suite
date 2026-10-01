@@ -8,8 +8,8 @@ local C = P.CDM
 -- unknown kits need the aura-button sensor (AuraButtons.lua) through PlayAura.
 -- Nothing plays while muted or during the short silence after a loading
 -- screen (C.state.soundQuietUntil, set by the controller).
-local L = { pending = false }
-C.Alerts = L
+local Alerts = { pending = false }
+C.Alerts = Alerts
 
 local GetTime = GetTime
 local pairs, type, tonumber = pairs, type, tonumber
@@ -143,7 +143,7 @@ local function Speak(text)
 end
 
 -- Options preview: force plays even while muted or in the quiet window.
-function L.Play(value, force)
+function Alerts.Play(value, force)
     if type(value) ~= "string" or value == "" then return false end
     if not force then
         local state = C.state
@@ -154,7 +154,7 @@ end
 
 -- A cooldown became ready (called by the time layer on the edge). Aura
 -- entries sound through their native registrations instead.
-function L.Ready(entry)
+function Alerts.Ready(entry)
     local ov = entry and entry.ov
     if not ov or entry.family == 2 then return end
     local sound, tts = ov.sound, ov.tts == true
@@ -178,7 +178,7 @@ local function IsKit(value)
     local kind, id = Parse(value)
     return kind == "kit" and kitFiles[id] == nil
 end
-L.IsKit = IsKit
+Alerts.IsKit = IsKit
 
 -- A container was switched (retarget, pause, rebuild, bar or UI shown or
 -- hidden): its buttons shown or hidden now are no aura gains or losses.
@@ -193,7 +193,7 @@ local function Hush(gate)
     if not till or now > till then gate.hushFrom = now end
     gate.hushUntil = now + HUSH
 end
-L.Hush = Hush
+Alerts.Hush = Hush
 local function Hushed(gate, at)
     local from = gate and gate.hushFrom
     return from ~= nil and at >= from and at < gate.hushUntil
@@ -249,7 +249,7 @@ end
 -- entries with a kit value listen (files are native registrations); the
 -- edge is decided one frame later (FlushAura). No aura data is read: the
 -- sensor only knows it showed. Returns whether the edge was taken.
-function L.PlayAura(key, which, gate)
+function Alerts.PlayAura(key, which, gate)
     local entry = type(key) == "string" and C.entries[key]
     local ov = entry and entry.ov
     if not ov or ov == EMPTY or entry.family == 1 then return false end
@@ -314,7 +314,7 @@ end
 
 local function QuietOver()
     armed = false
-    if not L.released then L.SyncAuraSounds() end
+    if not Alerts.released then Alerts.SyncAuraSounds() end
 end
 local function Arm(wait)
     if armed then return end
@@ -324,19 +324,19 @@ end
 
 -- Cold: after resolve, spell choices, mute/channel changes and loading
 -- screens. Out of combat only; in combat it waits for FlushPending.
-function L.SyncAuraSounds()
-    L.released = false
+function Alerts.SyncAuraSounds()
+    Alerts.released = false
     local add, remove = C_UnitAuras.AddAuraSound, C_UnitAuras.RemoveAuraSound
     if NS.IsCombatLocked() then
-        L.pending = true
+        Alerts.pending = true
         return
     end
     local restricted = C_Secrets.ShouldAurasBeSecret()
     if restricted ~= nil and (not Public(restricted) or restricted) then
-        L.pending = true
+        Alerts.pending = true
         return
     end
-    L.pending = false
+    Alerts.pending = false
     wipe(want)
     local state = C.state
     -- Inside the quiet window every registration is dropped and comes back
@@ -371,13 +371,13 @@ function L.SyncAuraSounds()
         else
             local id = Register(add, regs[key])
             if id then have[key] = { id = id, refs = refs } end
-            if not id then L.pending = true end
+            if not id then Alerts.pending = true end
         end
     end
     if wait > 0 and not state.muteSounds then Arm(wait) end
 end
 
-function L.ReleaseAll()
+function Alerts.ReleaseAll()
     local remove = C_UnitAuras.RemoveAuraSound
     for key, reg in pairs(have) do
         have[key] = nil
@@ -389,12 +389,12 @@ function L.ReleaseAll()
     wipe(lossAt)
     wipe(gainGate)
     wipe(lossGate)
-    L.pending = false
-    L.released = true
+    Alerts.pending = false
+    Alerts.released = true
 end
 
 -- Diagnostics and tests: live native registrations and their counts.
-function L.Registrations()
+function Alerts.Registrations()
     local n = 0
     for _ in pairs(have) do n = n + 1 end
     return n, have

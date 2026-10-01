@@ -49,6 +49,8 @@ end
 
 ------------------------------------------------------------------ widgets
 local R=setmetatable({},{__mode="k"})
+-- Objects made and widget calls recorded (the build and restyle budgets).
+local tally={made=0,writes=0}
 RegisterStateDriver=function(frame, state, condition)
     assert(not COMBAT and state=="visibility" and condition=="[combat] show; hide",
         "aura combat gates must be registered outside combat")
@@ -94,6 +96,7 @@ local BlizzardMT={__index=Index,__newindex=function(_,key) error("addon wrote fi
 -- in the client: R is weak-keyed, so a child only the addon's locals held
 -- (an animation group, a flipbook) would otherwise vanish in a GC cycle.
 local function New(kind,parent,mt)
+    tally.made=tally.made+1
     local obj=setmetatable({},mt or RegionMT)
     local ps=parent and R[parent]
     R[obj]={kind=kind,parent=parent,shown=true,points={},level=ps and ps.level+1 or 0,calls={},args={}}
@@ -108,6 +111,7 @@ local function Calls(obj,name) return R[obj].calls[name] or 0 end
 local function Args(obj,name) return R[obj].args[name] end
 local function Record(name)
     return function(self,...)
+        tally.writes=tally.writes+1
         local s=R[self]
         s.args[name]={...}
         s.calls[name]=(s.calls[name] or 0)+1
@@ -147,10 +151,16 @@ end
 function Methods:Show() R[self].shown=true end
 function Methods:Hide() R[self].shown=false end
 function Methods:IsShown() return R[self].shown end
-function Methods:SetPoint(...) local s=R[self];s.points[#s.points+1]={...};s.calls.SetPoint=(s.calls.SetPoint or 0)+1 end
+function Methods:SetPoint(...) tally.writes=tally.writes+1;local s=R[self];s.points[#s.points+1]={...};s.calls.SetPoint=(s.calls.SetPoint or 0)+1 end
 function Methods:ClearAllPoints() R[self].points={} end
 function Methods:SetAllPoints(target) local s=R[self];s.allPoints=target or s.parent end
-function Methods:SetFrameLevel(level) assert(type(level)=="number");R[self].level=level;local c=R[self].calls;c.SetFrameLevel=(c.SetFrameLevel or 0)+1 end
+function Methods:SetFrameLevel(level)
+    assert(type(level)=="number")
+    tally.writes=tally.writes+1
+    R[self].level=level
+    local c=R[self].calls
+    c.SetFrameLevel=(c.SetFrameLevel or 0)+1
+end
 function Methods:GetFrameLevel() return R[self].level end
 function Methods:GetEffectiveScale() return 1 end
 function Methods:CreateTexture() return New("Texture",self) end
@@ -178,7 +188,8 @@ local scripted={}
 function Methods:SetScript(key,fn)
     local s=R[self]
     assert(s.kind=="Frame","scripts only on plain frames")
-    assert((key=="OnShow" or key=="OnHide") and type(fn)=="function","sensor scripts: OnShow and OnHide")
+    -- nil clears a script (a woken button's sensor once it is built).
+    assert((key=="OnShow" or key=="OnHide") and (fn==nil or type(fn)=="function"),"sensor scripts: OnShow and OnHide")
     s.scripts=s.scripts or {}
     s.scripts[key]=fn
     s.sensor=InButton(self)
@@ -258,6 +269,11 @@ local function Display(self,key,filter,opts,count,slot)
     end
     return g
 end
+-- Blizzard_CustomAuraContainer.lua: AddAuraGroup pre-builds a batch of
+-- FrameCreationBatchSize (10) buttons, calling initializeFrame for each.
+-- The group's frame provider (Blizzard_AuraContainerFrameProviders.lua)
+-- hands out the newest free button and takes a released one back on top,
+-- so a one-frame group only ever shows the last button of its batch.
 function ContainerMethods:AddAuraGroup(key,filter,opts)
     assert(type(opts.layout)=="table" and type(opts.layout.layoutIndex)=="number","group layout")
     assert(opts.maxFrameCount==1,"one frame per entry group")
@@ -490,6 +506,7 @@ local function LoadRuntime(file,private)
     chunk("MSUF_Suite_CooldownManager",private or P)
 end
 LoadRuntime("Const.lua")
+LoadRuntime("Grid.lua")
 
 -- Layout stand-in with the contract the aura layer uses (EnsureBar, Cell,
 -- Metrics, FixedAuras); the real Layout.lua is checked against it further
@@ -550,9 +567,11 @@ end
 
 -- Strict globals from here on: the runtime files may not create any.
 setmetatable(_G,{__newindex=function(_,key) error("global write: "..tostring(key),2) end})
+LoadRuntime("AuraGlows.lua")
 LoadRuntime("StackColors.lua")
 LoadRuntime("AuraButtons.lua")
 LoadRuntime("AuraPlaceholders.lua")
+LoadRuntime("AuraContainers.lua")
 LoadRuntime("Auras.lua")
 LoadRuntime("Alerts.lua")
 local A,Alerts=C.Auras,C.Alerts
@@ -565,10 +584,11 @@ assert(type(A.pending)=="table","C.Auras.pending")
 for _,name in ipairs({"Ready","SyncAuraSounds","ReleaseAll","Play"}) do assert(type(Alerts[name])=="function","C.Alerts."..name) end
 
 -- Static rules on the source text.
--- Scripts per file: the kit sensors in the buttons (AuraButtons.lua) and
--- the watchers beside kit containers (Auras.lua), OnShow/OnHide each.
-local SCRIPTS={["AuraButtons.lua"]=2,["Auras.lua"]=2,["Alerts.lua"]=0}
-for _,file in ipairs({"AuraButtons.lua","Auras.lua","Alerts.lua"}) do
+-- Scripts per file: the kit sensors in the buttons and the wake sensors of
+-- bare batch buttons, set and dropped once built (AuraButtons.lua), and the
+-- watchers beside kit containers (Auras.lua), OnShow/OnHide each.
+local SCRIPTS={["AuraGlows.lua"]=0,["AuraButtons.lua"]=4,["AuraContainers.lua"]=2,["Auras.lua"]=0,["Alerts.lua"]=0}
+for _,file in ipairs({"AuraGlows.lua","AuraButtons.lua","AuraContainers.lua","Auras.lua","Alerts.lua"}) do
     local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..file,"rb"))
     local text=handle:read("*a")
     handle:close()
@@ -648,6 +668,11 @@ local function Buttons(c,key)
     local s=R[c]
     local g=s.groups[key] or s.slots[key]
     return g and g.buttons or {}
+end
+-- The one button a group or slot shows (the newest of a group's batch).
+local function Acquired(c,key)
+    local list=Buttons(c,key)
+    return list[#list]
 end
 -- Every point of every container ever made names its own bar's frame (the
 -- aura host, or the bar frame for overlays): never another container (Blizzard
@@ -734,9 +759,17 @@ assert(ps.flow.anchor=="TOPLEFT" and ps.flow.v==-1 and ps.points[1][1]=="TOPRIGH
     and ts.points[1][4]==1 and #ps.points==1 and #ts.points==1,"back to growing down")
 assert(ps.unit=="player" and ts.unit=="target" and ps.enabled and ts.enabled)
 OwnAnchors("compact centered row")
--- buttons: ten per group, styled and bound
+-- buttons: Blizzard makes ten per group; the one it shows is styled and
+-- bound, the other nine stay bare with one sensor each
 local buttons=Buttons(pc,"g1")
 assert(#buttons==10,"a group creates ten buttons")
+for i=1,9 do
+    local s=R[buttons[i]]
+    local kids=s.kids or {}
+    assert(next(s.bind)==nil and #kids==1 and R[kids[1]].kind=="Frame" and R[kids[1]].scripts.OnShow~=nil,
+        "button "..i.." of the batch was built although Blizzard never shows it")
+end
+buttons[1]=buttons[10]
 local b1=R[buttons[1]]
 assert(b1.sealed and b1.bind.icon and b1.bind.cooldown and b1.bind.text and b1.bind.count and b1.bind.pandemic==1,"bindings")
 assert(b1.bind.textOpts.binding,"duration text through a binding template")
@@ -748,7 +781,7 @@ assert(Args(buttons[1],"SetSize")[1]==30 and Args(buttons[1],"SetSize")[2]==27 a
 local cd=b1.bind.cooldown
 assert(Args(cd,"SetReverse")[1]==true and math.abs(Args(cd,"SetSwipeColor")[4]-.6)<1e-9,"reverse swipe at swipeAlpha")
 assert(Args(cd,"SetHideCountdownNumbers")[1]==true,"text comes from the binding")
-local shared=R[Buttons(pc,"g2")[1]].bind.textOpts
+local shared=R[Acquired(pc,"g2")].bind.textOpts
 assert(shared==b1.bind.textOpts,"one template per threshold, shared")
 
 -- retarget: at once, target containers only, no timer. UpdateAllAuras only
@@ -842,9 +875,12 @@ ps,ts=R[pc],R[tc]
 assert(#ts.points==1 and ts.points[1][1]=="TOPLEFT" and ts.points[1][2]==host and ts.points[1][4]==1
     and #ps.points==1 and ps.points[1][1]=="TOPRIGHT" and ps.points[1][2]==host and ps.points[1][4]==-1,
     "a rebuilt pair splits at the center again")
-local nb=R[Buttons(pc,"g1")[1]]
+local nb=R[Acquired(pc,"g1")]
 local ncoords=Args(nb.bind.icon,"SetTexCoord")
 assert(math.abs(ncoords[1]-.12)<1e-9,"new container carries the new look")
+-- Its buttons refused while auras are plain, so the new container builds
+-- every button of a batch in initializeFrame.
+for _,b in ipairs(Buttons(pc,"g1")) do assert(R[b].bind.icon,"a refusing container's batch was left bare") end
 ACCESS=true
 -- auras secret (M+ key, PvP match; a secret predicate counts as secret):
 -- the structure stays current, the look waits for the auras to open, and
@@ -891,12 +927,12 @@ assert(R[compactP].enabled==false and R[compactP].shown==false,"compact containe
 local fp=Live("buf","player")
 local fs=R[fp]
 assert(fs.order[1]=="s1" and fs.slots.s1 and Count(fs.groups)==0,"one slot per entry")
-local slotButton=R[Buttons(fp,"s1")[1]]
+local slotButton=R[Acquired(fp,"s1")]
 assert(slotButton.allPoints==C.bars.buf.cells[1],"slot follows the entry's cell")
 assert(not slotButton.args.SetSize,"slot size comes from the cell")
-assert(R[Buttons(fp,"s3")[1]].allPoints==C.bars.buf.cells[3],"third entry (a2003) on cell 3")
+assert(R[Acquired(fp,"s3")].allPoints==C.bars.buf.cells[3],"third entry (a2003) on cell 3")
 local ft=Live("buf","target")
-assert(R[Buttons(ft,"s1")[1]].allPoints==C.bars.buf.cells[4],"target entries keep their plan cells")
+assert(R[Acquired(ft,"s1")].allPoints==C.bars.buf.cells[4],"target entries keep their plan cells")
 assert(R[ft].slots.s1.filter=="HARMFUL|PLAYER")
 -- no placeholders without showMissing
 local function Holder(cell)
@@ -941,11 +977,11 @@ A.Sync("bar")
 assert(#containers==count+1,"player container only")
 local bc=Live("bar","player")
 local bs=R[bc]
-local bb=R[Buttons(bc,"g1")[1]]
+local bb=R[Acquired(bc,"g1")]
 assert(bb.bind.bar and bb.bind.barOpts.direction==1,"drain bar via RemainingTime")
 assert(bb.bind.name and bb.bind.text and bb.bind.icon and bb.bind.count,"name, time, icon and stacks bound")
 assert(not bb.bind.cooldown,"no swipe on bars")
-assert(Args(Buttons(bc,"g1")[1],"SetSize")[1]==220 and Args(Buttons(bc,"g1")[1],"SetSize")[2]==20,"bar size")
+assert(Args(Acquired(bc,"g1"),"SetSize")[1]==220 and Args(Acquired(bc,"g1"),"SetSize")[2]==20,"bar size")
 assert(barView.grow==1,"Buff bars grow down by default")
 assert(bs.flow.anchor=="TOPLEFT" and bs.flow.v==-1 and math.abs(bs.flow.line-220)<.1,"one bar per line, growing down")
 assert(bs.points[1][1]=="TOP" and bs.points[1][2]==C.bars.bar.auraHost,"bars hang from the top edge")
@@ -958,12 +994,12 @@ assert(bs.flow.anchor=="TOPLEFT" and bs.points[1][1]=="TOP")
 barView.barFill=2
 A.Sync("bar")
 local bc2=Live("bar","player")
-assert(bc2~=bc and R[Buttons(bc2,"g1")[1]].bind.barOpts.direction==0,"fill direction is a new binding set")
+assert(bc2~=bc and R[Acquired(bc2,"g1")].bind.barOpts.direction==0,"fill direction is a new binding set")
 barView.barStacks, barView.barStackMax, barView.barStackEach, barView.barStackMarks = true, 8, false, "2,4,4,99"
 k1.ov={stackGlow=3}
 A.Sync("bar")
 local stackContainer=Live("bar","player")
-local stackButton=R[Buttons(stackContainer,"g1")[1]]
+local stackButton=R[Acquired(stackContainer,"g1")]
 assert(stackButton.bind.appBar and stackButton.bind.appOpts.maxApplications==8 and not stackButton.bind.bar,
     "stack-filled bars use one native application sink, never overwrite it with stack-glow or duration bindings")
 assert(stackButton.bind.appBinds==1 and stackButton.bind.text and stackButton.bind.count)
@@ -972,7 +1008,7 @@ local function ChildSensor(parent, slot)
         if R[candidate].parent==parent and R[candidate].slots[slot] then return candidate end
     end
 end
-local glowSensor=ChildSensor(Buttons(stackContainer,"g1")[1],"stack")
+local glowSensor=ChildSensor(Acquired(stackContainer,"g1"),"stack")
 assert(glowSensor and #R[glowSensor].points==0,"stack glow owns an unanchored child aura container")
 -- Blizzard's containers start disabled: a child sensor that is never
 -- enabled registers no UNIT_AURA and parses nothing, so its glow never shows.
@@ -980,21 +1016,21 @@ assert(R[glowSensor].enabled==true and LogCount(glowSensor,"SetEnabled")==1,"the
 for _,c in ipairs(containers) do
     assert(R[c].enabled~=nil or R[c].adds==0,"every container with a slot or group was enabled or disabled on purpose")
 end
-assert(R[Buttons(glowSensor,"stack")[1]].bind.appOpts.maxApplications==3,
+assert(R[Acquired(glowSensor,"stack")].bind.appOpts.maxApplications==3,
     "stack glow retains an independent threshold alongside native stack fill")
 do
     local before=#containers
     barView.barStackColorAt,barView.barStackColor=4,"ff6633"
     A.Sync("bar")
     local primary=Live("bar","player")
-    local primaryButton=Buttons(primary,"g1")[1]
+    local primaryButton=Acquired(primary,"g1")
     local secondary=ChildSensor(primaryButton,"color")
     local glowChild=ChildSensor(primaryButton,"stack")
-    local glowButton=Buttons(glowChild,"stack")[1]
+    local glowButton=Acquired(glowChild,"stack")
     assert(secondary and #containers>before,"threshold coloring creates native child sensors only when enabled")
     assert(#R[secondary].points==0,"child sensor container never anchors to another aura container")
     assert(R[secondary].enabled==true and R[glowChild].enabled==true,"the color and stack glow sensors are enabled after creation")
-    local sensorButton=Buttons(secondary,"color")[1]
+    local sensorButton=Acquired(secondary,"color")
     local binding=R[sensorButton].bind
     local fill=R[primaryButton].bind.appBar
     assert(R[primaryButton].bind.appOpts.maxApplications==8 and binding.appOpts.maxApplications==4,
@@ -1040,11 +1076,11 @@ do
     assert(not R[primary].enabled and not R[primary].shown,
         "disabling threshold colors retires the primary owner, natively hiding and unregistering its child containers")
     local plain=Live("bar","player")
-    assert(not ChildSensor(Buttons(plain,"g1")[1],"color"),"disabled color has no color sensor")
-    assert(ChildSensor(Buttons(plain,"g1")[1],"stack"),"disabling color preserves independent stack glow")
+    assert(not ChildSensor(Acquired(plain,"g1"),"color"),"disabled color has no color sensor")
+    assert(ChildSensor(Acquired(plain,"g1"),"stack"),"disabling color preserves independent stack glow")
     k2.ov={stackGlow=2}
     A.Sync("bar")
-    local firstChild=ChildSensor(Buttons(plain,"g1")[1],"stack")
+    local firstChild=ChildSensor(Acquired(plain,"g1"),"stack")
     local childCount=#containers
     local oldOverride=k1.ov
     k1.ov=C.EMPTY
@@ -1057,7 +1093,7 @@ do
         "reenabling an entry reuses its native child sensor")
     k1.ov,k2.ov=C.EMPTY,C.EMPTY
     A.Sync("bar")
-    local bare=Buttons(Live("bar","player"),"g1")[1]
+    local bare=Acquired(Live("bar","player"),"g1")
     assert(not ChildSensor(bare,"stack") and not ChildSensor(bare,"color"),"ordinary stack bars have no secondary sensors")
 end
 -- The stack maximum and the marker list are looks: a "Maximum stacks" drag
@@ -1083,8 +1119,9 @@ do
     k1.ov,k2.ov={stackGlow=3},C.EMPTY
     A.Sync("bar")
     local primary=Live("bar","player")
-    local first=Buttons(primary,"g1")[1]
-    local parts=#Buttons(primary,"g1")+#Buttons(primary,"g2")
+    local first=Acquired(primary,"g1")
+    -- Markers go to the buttons that are built: the one each group shows.
+    local parts=2
     local count,widgets,binds=#containers,Widgets(),R[first].bind.appBinds
     for n=9,99 do barView.barStackMax=n;A.Sync("bar") end
     assert(#containers==count and Live("bar","player")==primary,"a Maximum stacks sweep builds no container")
@@ -1145,10 +1182,10 @@ do
     k1.ov={stackGlow=3,glowStyle=4}
     A.Sync("bar")
     local primary=Live("bar","player")
-    local b=Buttons(primary,"g1")[1]
+    local b=Acquired(primary,"g1")
     local bind=R[b].bind
     local fill=R[bind.appBar].level
-    local colorButton=Buttons(ChildSensor(b,"color"),"color")[1]
+    local colorButton=Acquired(ChildSensor(b,"color"),"color")
     local colorLevel,markLevel
     for _,s in pairs(R) do
         local parent=s.parent and R[s.parent]
@@ -1158,7 +1195,7 @@ do
         if s.kind=="Texture" and color and color[4]==.7 and parent and parent.parent==b then markLevel=parent.level end
     end
     local glows=Glows(b)
-    local sensorGlows=Glows(Buttons(ChildSensor(b,"stack"),"stack")[1])
+    local sensorGlows=Glows(Acquired(ChildSensor(b,"stack"),"stack"))
     for _,level in ipairs(sensorGlows) do glows[#glows+1]=level end
     table.sort(glows)
     local text,name,stacks=R[R[bind.text].parent].level,R[R[bind.name].parent].level,R[R[bind.count].parent].level
@@ -1185,7 +1222,7 @@ do
     A.Sync("bar")
     local target=Live("bar","target")
     assert(target and R[target].slots.s1,"a fixed target container")
-    local slotButton=Buttons(target,"s1")[1]
+    local slotButton=Acquired(target,"s1")
     local color,stack=ChildSensor(slotButton,"color"),ChildSensor(slotButton,"stack")
     assert(color and stack and R[color].unit=="target" and R[stack].unit=="target" and R[color].enabled and R[stack].enabled,
         "stack colour and stack glow sensors watch the target")
@@ -1199,7 +1236,7 @@ do
 end
 barView.barStacks=false; k1.ov=C.EMPTY
 A.Sync("bar")
-assert(R[Buttons(Live("bar","player"),"g1")[1]].bind.bar,"duration view restores its native duration binding")
+assert(R[Acquired(Live("bar","player"),"g1")].bind.bar,"duration view restores its native duration binding")
 
 ------------------------------------------------------------------ cooldown overlays (kind 1)
 C.views.ess=View("ess",1)
@@ -1219,7 +1256,7 @@ local oc,ot=Live("ess","player",true),Live("ess","target",true)
 local os=R[oc]
 assert(#os.order==1 and os.slots.s1.filter=="HELPFUL|PLAYER" and os.slots.s1.cand.includeSpellIDs[3102],"one slot per aura entry")
 assert(#R[ot].order==1 and R[ot].slots.s1.filter=="HARMFUL|PLAYER","target overlay")
-local ob=R[Buttons(oc,"s1")[1]]
+local ob=R[Acquired(oc,"s1")]
 assert(ob.allPoints==o1.icon,"overlay covers its cooldown icon")
 local ocd=ob.bind.cooldown
 local swipe=Args(ocd,"SetSwipeColor")
@@ -1239,7 +1276,7 @@ end
 -- icon frame changed: new slot on the new icon, old slot off
 o1.icon=Icon()
 A.SyncOverlays("ess")
-assert(os.slots.s2 and R[Buttons(oc,"s2")[1]].allPoints==o1.icon and os.slots.s1.enabled==false,"rebuilt on the new icon")
+assert(os.slots.s2 and R[Acquired(oc,"s2")].allPoints==o1.icon and os.slots.s1.enabled==false,"rebuilt on the new icon")
 -- retarget reaches overlay target containers too
 local tu=R[ot].updates
 A.TargetChanged()
@@ -1263,7 +1300,7 @@ do
     A.Sync("def")
     assert(#containers==count+1,"one player overlay container on Defensives")
     local dc=Live("def","player",true)
-    assert(dc and #R[dc].order==1 and R[Buttons(dc,"s1")[1]].allPoints==d1.icon,"overlay on the aura spell only")
+    assert(dc and #R[dc].order==1 and R[Acquired(dc,"s1")].allPoints==d1.icon,"overlay on the aura spell only")
     assert(not Live("def","player"),"no aura containers on a cooldown bar")
     A.Release("def")
     assert(R[dc].enabled==false and R[dc].shown==false,"released with the bar")
@@ -1321,7 +1358,7 @@ assert(Live("buf","player")==compactP,"re-enable reuses the pool")
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         local L2=C2.Layout
@@ -1358,7 +1395,7 @@ end
 -- the rule and against the real Extent from Exports.lua.
 do
     local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua"))
-    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
         Visibility={Paint=function() end}}
     chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     local L2=Cx.Layout
@@ -1669,7 +1706,7 @@ assert(#bt.points==1 and bt.points[1][1]=="TOP" and bt.points[1][2]==c2Host and 
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},
+        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         C3.Layout.Apply("c2")
@@ -1686,9 +1723,9 @@ both.keepSlots=true
 A.Sync("c2")
 local fixedP,fixedT=Live("c2","player"),Live("c2","target")
 local cells=C.bars.c2.cells
-assert(R[Buttons(fixedP,"s1")[1]].allPoints==cells[1] and R[Buttons(fixedT,"s1")[1]].allPoints==cells[1],"one cell for both units")
-assert(R[Buttons(fixedP,"s2")[1]].allPoints==cells[2] and R[Buttons(fixedT,"s2")[1]].allPoints==cells[2])
-assert(R[Buttons(fixedP,"s3")[1]].allPoints==cells[3] and R[Buttons(fixedT,"s3")[1]].allPoints==cells[4],"single-unit entries on their own cells")
+assert(R[Acquired(fixedP,"s1")].allPoints==cells[1] and R[Acquired(fixedT,"s1")].allPoints==cells[1],"one cell for both units")
+assert(R[Acquired(fixedP,"s2")].allPoints==cells[2] and R[Acquired(fixedT,"s2")].allPoints==cells[2])
+assert(R[Acquired(fixedP,"s3")].allPoints==cells[3] and R[Acquired(fixedT,"s3")].allPoints==cells[4],"single-unit entries on their own cells")
 both.keepSlots=false
 A.Sync("c2")
 assert(Live("c2","player")==bothP and Live("c2","target")==bothT,"compact pair back from the pool")
@@ -1820,7 +1857,7 @@ assert(#containers==count+2,"overlay container per unit")
 local qc,qt=Live("uti","player",true),Live("uti","target",true)
 local qp,qs=R[qc],R[qt]
 assert(#qp.order==3 and #qs.order==3,"a both entry has a slot in each container")
-assert(R[Buttons(qc,"s1")[1]].allPoints==q1.icon and R[Buttons(qt,"s1")[1]].allPoints==q1.icon,"both slots on the icon")
+assert(R[Acquired(qc,"s1")].allPoints==q1.icon and R[Acquired(qt,"s1")].allPoints==q1.icon,"both slots on the icon")
 assert(qp.slots.s1.enabled==true and qp.slots.s2.enabled==false and qp.slots.s3.enabled==false,"slots start with their icon")
 assert(qs.slots.s1.enabled==true and qs.slots.s2.enabled==false and qs.slots.s3.enabled==false)
 -- hideReady edges in combat: container switches only
@@ -2163,17 +2200,15 @@ Plan("c4",2,{t1,t2,t3,t4,t5,t6})
 A.Sync("c4")
 local sc,st=Live("c4","player"),Live("c4","target")
 assert(#R[sc].order==5 and #R[st].order==1)
-local f1=R[Buttons(sc,"g1")[1]].bind.countFormatter
+local f1=R[Acquired(sc,"g1")].bind.countFormatter
 assert(f1,"stack color binds a count formatter")
 for _,key in ipairs({"g1","g2"}) do
-    for _,b in ipairs(Buttons(sc,key)) do assert(R[b].bind.countFormatter==f1,"one formatter per (N, color): every button") end
+    assert(R[Acquired(sc,key)].bind.countFormatter==f1,"one formatter per (N, color): every shown button")
 end
-assert(R[Buttons(st,"g1")[1]].bind.countFormatter==f1,"shared across containers")
-local f3,f4=R[Buttons(sc,"g3")[1]].bind.countFormatter,R[Buttons(sc,"g4")[1]].bind.countFormatter
+assert(R[Acquired(st,"g1")].bind.countFormatter==f1,"shared across containers")
+local f3,f4=R[Acquired(sc,"g3")].bind.countFormatter,R[Acquired(sc,"g4")].bind.countFormatter
 assert(f3 and f4 and f3~=f1 and f4~=f1 and f3~=f4,"a new signature, a new formatter")
-for _,b in ipairs(Buttons(sc,"g5")) do
-    assert(R[b].bind.count and R[b].bind.countFormatter==nil,"no stack color: Blizzard's plain count")
-end
+assert(R[Acquired(sc,"g5")].bind.count and R[Acquired(sc,"g5")].bind.countFormatter==nil,"no stack color: Blizzard's plain count")
 assert(CountFormatters()==made+3,"three signatures, three formatters")
 local p=f1.points
 assert(#p==3 and p[1].threshold==0 and p[1].format=="" and p[2].threshold==2 and p[2].format=="%d"
@@ -2185,7 +2220,7 @@ assert(#f3.points==2 and f3.points[2].threshold==1 and f3:FormatNumber(0)=="" an
 assert(#f4.points==2 and f4:FormatNumber(1)=="" and f4:FormatNumber(2)=="|cff3366ff2|r","N = 2: no plain step")
 -- live changes rebind in place while buttons are accessible; an equal
 -- signature is no change
-local b1=R[Buttons(sc,"g1")[1]]
+local b1=R[Acquired(sc,"g1")]
 local binds=b1.bind.countBinds
 t1.ov={stackColorAt=3,stackColor="00ff00"}
 A.Sync("c4")
@@ -2194,7 +2229,7 @@ t1.ov={stackColorAt=4,stackColor="00ff00"}
 A.Sync("c4")
 assert(Live("c4","player")==sc and b1.bind.countBinds==binds+1 and b1.bind.countFormatter.points[3].threshold==4,
     "new N: a new formatter, rebound in place")
-assert(R[Buttons(sc,"g2")[1]].bind.countFormatter==f1,"other entries keep theirs")
+assert(R[Acquired(sc,"g2")].bind.countFormatter==f1,"other entries keep theirs")
 t1.ov=C.EMPTY
 A.Sync("c4")
 assert(b1.bind.countFormatter==nil and b1.bind.countBinds==binds+2,"off: the plain binding again")
@@ -2227,16 +2262,16 @@ Plan("c4",2,{t1,t2,t3,t4,t5,t6,sg})
 A.Sync("c4")
 local sc2=Live("c4","player")
 assert(sc2~=sc and R[sc].enabled==false,"a stack glow is a new binding set")
-local gb=Buttons(sc2,"g6")[1]
+local gb=Acquired(sc2,"g6")
 local bind=R[gb].bind
 assert(bind.appBar and bind.appOpts.maxApplications==3 and bind.appBinds==1,"application bar bound with maximum N")
-local plain=R[Buttons(sc2,"g1")[1]].bind
+local plain=R[Acquired(sc2,"g1")].bind
 assert(plain.appBar and plain.appOpts.maxApplications==1,"entries without a stack glow: bound at 1, gate hidden")
 local gates=Find(gb,function(_,s) return s.calls.SetClipsChildren~=nil end)
 assert(#gates==1 and Args(gates[1],"SetClipsChildren")[1]==true,"one clipping gate")
 local gate=gates[1]
 assert(R[gate].parent==gb and R[gate].shown==true,"gate shown for N > 0")
-local plainGate=Find(Buttons(sc2,"g1")[1],function(_,s) return s.calls.SetClipsChildren~=nil end)[1]
+local plainGate=Find(Acquired(sc2,"g1"),function(_,s) return s.calls.SetClipsChildren~=nil end)[1]
 assert(R[plainGate].shown==false)
 local gp=R[gate].points[1]
 assert(#R[gate].points==1 and gp[1]=="CENTER" and gp[2]==gb and gp[3]=="CENTER" and gp[4]==0 and gp[5]==0,"gate on the icon")
@@ -2294,6 +2329,44 @@ do
     COMBAT=false
     A.FlushPending()
     assert(not R[gated[1]].combatDriver,"native gate did not unregister after combat")
+    -- A container released in combat parks its gate. A module disable after
+    -- combat that runs before this module hears PLAYER_REGEN_ENABLED (a
+    -- profile switch queued in combat) still unregisters it.
+    C.state.allGlowsCombat=true
+    A.Sync("c4")
+    assert(R[gated[1]].combatDriver,"the combat gate is registered again")
+    COMBAT=true
+    A.Release("c4")
+    assert(R[gated[1]].combatDriver,"in combat the release parks the gate")
+    COMBAT=false
+    A.ReleaseAll()
+    assert(not R[gated[1]].combatDriver,"a release after combat left a parked combat gate registered")
+    C.state.allGlowsCombat=false
+    A.Sync("c4")
+    assert(Live("c4","player")==sc2 and not R[gated[1]].combatDriver,"the pooled container comes back without its gate")
+    -- A gate change under lockdown (a button built in combat) is parked,
+    -- never a protected call, and applies once combat ends.
+    local host=CreateFrame("Frame",nil,UIParent)
+    local draw=C.AuraGlows
+    local g=draw.NewGlow(host,host,1)
+    C.state.allGlowsCombat=true
+    COMBAT=true
+    assert(draw.ApplyCombatGate(g,true,true)==true,"a dry run reports the pending gate")
+    draw.ApplyCombatGate(g,true,false)
+    assert(not R[g.combatGate].combatDriver and C.AuraGlows.HasParkedGates(),"a gate change in combat is parked")
+    C.AuraGlows.FlushGates()
+    assert(not R[g.combatGate].combatDriver,"the parked gate applied in combat")
+    COMBAT=false
+    C.AuraGlows.FlushGates()
+    assert(R[g.combatGate].combatDriver and not C.AuraGlows.HasParkedGates(),"the parked gate applies after combat")
+    COMBAT=true
+    draw.ApplyCombatGate(g,false,false)
+    draw.ApplyCombatGate(g,true,false)
+    assert(not C.AuraGlows.HasParkedGates(),"a wish back to the registered state parks nothing")
+    COMBAT=false
+    draw.ApplyCombatGate(g,false,false)
+    assert(not R[g.combatGate].combatDriver,"the gate unregistered")
+    C.state.allGlowsCombat=false
 end
 -- N changes on a live button: placed again and rebound (the setter
 -- replaces the element); unchanged choices make no call
@@ -2311,7 +2384,7 @@ t5.ov={stackGlow=9}
 sg.ov={stackGlow=0,glowStyle=2}
 A.Sync("c4")
 assert(Live("c4","player")==sc2 and R[gate].shown==false and bind.appBinds==2,"off: gate hidden, nothing rebound")
-assert(R[Buttons(sc2,"g5")[1]].bind.appOpts.maxApplications==9,"the other entry's gate")
+assert(R[Acquired(sc2,"g5")].bind.appOpts.maxApplications==9,"the other entry's gate")
 sg.ov={stackGlow=3,glowStyle=4}
 A.Sync("c4")
 assert(R[gate].shown==true and bind.appOpts.maxApplications==3)
@@ -2334,11 +2407,9 @@ sg.ov={stackGlow=3,glowStyle=4}; A.Sync("c4")
 -- threshold changes never read them
 for _,c in ipairs({sc2,Live("c4","target")}) do
     for _,key in ipairs(R[c].order) do
-        for _,b in ipairs(Buttons(c,key)) do
-            local bb=R[b].bind
-            R[bb.count].text=Secret()
-            if bb.appBar then R[bb.appBar].value=Secret() end
-        end
+        local bb=R[Acquired(c,key)].bind
+        R[bb.count].text=Secret()
+        if bb.appBar then R[bb.appBar].value=Secret() end
     end
 end
 sv.zoom=16;sv.styleGen=2
@@ -2346,7 +2417,9 @@ A.Restyle("c4")
 sg.ov={stackGlow=2,glowStyle=1}
 A.Sync("c4")
 assert(bind.appOpts.maxApplications==2 and Live("c4","player")==sc2,"secret counts: restyled and rebound without a read")
-assert(#Find(C.bars.c4.auraHost,function(_,s) return s.scripts~=nil end)==0,"no kit value: no sensor, no watcher")
+-- (Bare batch buttons carry a wake sensor, OnShow only: no kit sensor.)
+assert(#Find(C.bars.c4.auraHost,function(_,s) return s.scripts~=nil and s.scripts.OnHide~=nil end)==0,
+    "no kit value: no sensor, no watcher")
 -- the bar's last stack glow gone: the pooled pair without gates returns
 t5.ov,sg.ov=C.EMPTY,C.EMPTY
 A.Sync("c4")
@@ -2369,12 +2442,12 @@ local g6=Aura("c5","a5106","a","player",Set(5106))
 Plan("c5",2,{g1,g2,g3,g4,g5,g6})
 A.Sync("c5")
 local gc=Live("c5","player")
-local function GlowOf(key) return AuraGlow(Buttons(gc,key)[1]) end
+local function GlowOf(key) return AuraGlow(Acquired(gc,key)) end
 local gw1=GlowOf("g1")
 assert(R[gw1.frame].shown and R[gw1.flip].shown and not R[gw1.ring].shown,"style 1: flipbook")
 assert(Args(gw1.flip,"SetAtlas")[1]=="UI-HUD-ActionBar-Proc-Loop-Flipbook" and Args(gw1.flip,"SetDesaturated")[1]==false
     and Args(gw1.flip,"SetVertexColor")[1]==1,"Blizzard alert art in its own gold")
-local gbw,gbh=Args(Buttons(gc,"g1")[1],"SetSize")[1],Args(Buttons(gc,"g1")[1],"SetSize")[2]
+local gbw,gbh=Args(Acquired(gc,"g1"),"SetSize")[1],Args(Acquired(gc,"g1"),"SetSize")[2]
 local grow=.4*math.min(gbw,gbh)
 assert(Near(Args(gw1.flip,"SetSize")[1],gbw+grow) and Near(Args(gw1.flip,"SetSize")[2],gbh+grow),"same margin on every side")
 assert(Args(gw1.flip,"SetAlpha")[1]==0,"the sheet rests hidden; only the loop lifts it")
@@ -2386,7 +2459,7 @@ assert(Args(book,"SetFlipBookRows")[1]==6 and Args(book,"SetFlipBookColumns")[1]
     and Args(book,"SetDuration")[1]==1,"6x5 flipbook, 30 frames, 1 s")
 assert(Args(lift,"SetFromAlpha")[1]==1 and Args(lift,"SetToAlpha")[1]==1)
 assert(Args(gw1.pulse,"SetLooping")[1]=="BOUNCE" and R[gw1.pulse].playing)
-assert(R[Buttons(gc,"g1")[1]].bind.shownAnims==2,"both loops play with the button")
+assert(R[Acquired(gc,"g1")].bind.shownAnims==2,"both loops play with the button")
 local gw2=GlowOf("g2")
 assert(Args(gw2.flip,"SetAtlas")[1]=="rotationhelper_ants_flipbook" and Args(gw2.flip,"SetDesaturated")[1]==true
     and Args(gw2.flip,"SetVertexColor")[1]==1 and Args(gw2.flip,"SetVertexColor")[2]==0,"style 2 tinted by the spell's color")
@@ -2438,7 +2511,7 @@ oe.icon.layShown=true
 Plan("c6",1,{oe})
 A.Sync("c6")
 local oc6=Live("c6","player",true)
-local ob6=Buttons(oc6,"s1")[1]
+local ob6=Acquired(oc6,"s1")
 local ob=R[ob6].bind
 assert(ob.appBar and ob.appOpts.maxApplications==2,"overlay stack glow")
 assert(ob.countFormatter and ob.countFormatter.points[2].threshold==2,"overlay stack color")
@@ -2469,8 +2542,15 @@ local function SensorOf(button)
     assert(#list==1 and R[list[1]].sensor and R[list[1]].kind=="Frame","one sensor per button")
     return list[1]
 end
+-- The shown button of each group hears gains and losses; the bare ones of
+-- its batch only wake (OnShow) should Blizzard ever show them.
 for _,c in ipairs({kp,kt}) do
-    for _,key in ipairs(R[c].order) do for _,b in ipairs(Buttons(c,key)) do SensorOf(b) end end
+    for _,key in ipairs(R[c].order) do
+        local list=Buttons(c,key)
+        for i,b in ipairs(list) do
+            assert((R[SensorOf(b)].scripts.OnHide~=nil)==(i==#list),"a kit sensor in a button Blizzard never shows")
+        end
+    end
 end
 local watch={}
 for obj,s in pairs(R) do
@@ -2483,9 +2563,9 @@ for obj in pairs(scripted) do
     local s=R[obj]
     assert(s.sensor or hostOf[s.parent],"scripts: sensors in aura buttons and watchers on bar hosts only")
 end
-local s1,s1b=SensorOf(Buttons(kp,"g1")[1]),SensorOf(Buttons(kp,"g1")[2])
-local s2=SensorOf(Buttons(kp,"g2")[1])
-local s3=SensorOf(Buttons(kt,"g1")[1])
+local s1=SensorOf(Acquired(kp,"g1"))
+local s2=SensorOf(Acquired(kp,"g2"))
+local s3=SensorOf(Acquired(kt,"g1"))
 NOW=NOW+5
 local kits,timers=played.kits,timerCount
 Fire(s1,"OnShow")
@@ -2504,10 +2584,10 @@ NOW=NOW+1
 Fire(s1,"OnShow")
 RunTimers()
 assert(played.kits==kits+3 and played.kit==5001)
--- a full rebuild releases and re-acquires buttons in one pass: the loss on
--- one button and the gain on another are no change
+-- a full rebuild releases and re-acquires the group's button in one pass:
+-- the loss and the gain in one frame are no change
 NOW=NOW+2
-Fire(s1,"OnHide");Fire(s1b,"OnShow")
+Fire(s1,"OnHide");Fire(s1,"OnShow")
 assert(timerCount==1,"one flush per frame")
 RunTimers()
 assert(played.kits==kits+3,"a button reset plays nothing")
@@ -2585,7 +2665,7 @@ assert(grew<1,"kit sensor edges allocate nothing ("..grew.." KB)")
 -- no Lua per UNIT_AURA: a stacking aura changes bound regions only (the
 -- button stays shown), which runs none of our scripts
 local before=played.kits
-for _,b in ipairs(Buttons(kp,"g1")) do R[R[b].bind.count].text=Secret() end
+R[R[Acquired(kp,"g1")].bind.count].text=Secret()
 assert(timerCount==0 and played.kits==before,"stack changes run nothing")
 -- the kit containers go when the bar's last kit value goes
 k1.ov={sound="file:778"}
@@ -2594,7 +2674,8 @@ assert(Live("c1","player")==kp,"a kit value left on the bar: same containers")
 k3.ov={sound="file:779"}
 A.Sync("c1")
 local np=Live("c1","player")
-assert(np~=kp and #Find(np,function(_,s) return s.scripts~=nil end)==0,"no kit value left: containers without sensors")
+assert(np~=kp and #Find(np,function(_,s) return s.scripts~=nil and s.scripts.OnHide~=nil end)==0,
+    "no kit value left: containers without sensors")
 C.plans.c1=nil
 A.Release("c1")
 end
@@ -2619,7 +2700,7 @@ local function TextChoices()
     Plan("c5",2,{u1,u2})
     A.Sync("c5")
     local c=Live("c5","player")
-    local function First(container,key) return R[Buttons(container,key)[1]] end
+    local function First(container,key) return R[Acquired(container,key)] end
     local g1,g2=First(c,"g1"),First(c,"g2")
     assert(g1.bind.text and g1.bind.count and g1.bind.textBinds==1 and g1.bind.countBinds==1,"bar default: both bound")
     assert(not g2.bind.text and not g2.bind.count and (g2.bind.textBinds or 0)==0 and (g2.bind.countBinds or 0)==0,
@@ -2628,7 +2709,7 @@ local function TextChoices()
     -- the regions: stacks and countdown on two frames, stacks on top
     local count,dur=g1.bind.count,g1.bind.text
     local stacks,texts=R[count].parent,R[dur].parent
-    assert(stacks~=texts and R[stacks].parent==Buttons(c,"g1")[1] and R[texts].parent==Buttons(c,"g1")[1],
+    assert(stacks~=texts and R[stacks].parent==Acquired(c,"g1") and R[texts].parent==Acquired(c,"g1"),
         "two text frames in the button")
     assert(R[stacks].level>R[texts].level,"stacks on top by default")
     -- shown again: bound and shown; hidden again: cleared and hidden
@@ -2654,10 +2735,8 @@ local function TextChoices()
     -- Text on top per spell: the countdown frame above the stacks frame
     u1.ov={textTop=3}
     A.Sync("c5")
-    for _,b in ipairs(Buttons(c,"g1")) do
-        local bind=R[b].bind
-        assert(R[R[bind.text].parent].level>R[R[bind.count].parent].level,"countdown on top")
-    end
+    local shownBind=R[Acquired(c,"g1")].bind
+    assert(R[R[shownBind.text].parent].level>R[R[shownBind.count].parent].level,"countdown on top")
     u1.ov={textTop=2}
     A.Sync("c5")
     assert(R[stacks].level>R[texts].level,"stacks on top again")
@@ -2857,6 +2936,109 @@ do
     C.views.bridge=nil
     S.ForEachActionBarButtonForSpell=nil
     rawset(_G,"GetActionInfo",nil)
+end
+
+------------------------------------------------------------------ instruction budgets
+do
+    -- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+    -- interpreter build): the budgets of the hot paths. A budget holds the
+    -- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+    -- 2 %; a path may get cheaper, never dearer.
+    local function Cost(fn,...)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn(...)
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    -- Aura sync: an unchanged structural sync of a compact bar and of a
+    -- buff bar (every flush that marks them runs it).
+    Budget("aura sync: an unchanged compact bar",Cost(A.Sync,"buf"),15415)
+    C.views.c6=View("c6",3)
+    local rows={}
+    for i=1,4 do rows[i]=Aura("c6","a"..(6300+i),"a","player",Set(6300+i)) end
+    Plan("c6",3,rows)
+    A.Sync("c6")
+    Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),3857)
+    A.Release("c6")
+    C.views.c6,C.plans.c6=nil,nil
+end
+
+------------------------------------------------------------------ build and restyle budget
+-- Blizzard's AddAuraGroup pre-builds a batch of ten buttons
+-- (CustomAuraContainerConstants.FrameCreationBatchSize, Blizzard_Custom-
+-- AuraContainer.lua) and its frame provider hands out the newest free one
+-- (table.remove of the available list; a released frame goes back on top),
+-- so a one-frame entry group only ever shows that button. Only it carries
+-- regions and is restyled; the other nine hold one wake sensor each.
+-- Measured on the same two bars before buttons were built per batch: icons
+-- 2321 objects, 7204 writes to build, 4480 to restyle, 230 per choice;
+-- stack bars 2201, 6404, 3560, 250 and 81 aura containers (two sensor
+-- containers in each of the forty buttons).
+do
+    local function Budget(kind,entries,setup,choiceOv)
+        C.views.c6=View("c6",kind)
+        local view=C.views.c6
+        setup(view)
+        Plan("c6",kind,entries)
+        local m,w,n=tally.made,tally.writes,#containers
+        A.Sync("c6")
+        local built,builtWrites=tally.made-m,tally.writes-w
+        local c=Live("c6","player")
+        w=tally.writes
+        view.zoom=14;view.styleGen=view.styleGen+1
+        A.Restyle("c6")
+        local restyle=tally.writes-w
+        w=tally.writes
+        entries[1].ov=choiceOv
+        A.Sync("c6")
+        local choice=tally.writes-w
+        assert(Live("c6","player")==c,"the budget bar rebuilt its container")
+        A.Release("c6")
+        C.views.c6,C.plans.c6=nil,nil
+        return built,builtWrites,restyle,choice,#containers-n
+    end
+    local icons={}
+    for i=1,8 do icons[i]=Aura("c6","a"..(6100+i),"a","player",Set(6100+i),{ov={auraGlow=true}}) end
+    local b,bw,r,c,n=Budget(2,icons,function(view) view.pandemic=true end,{auraGlow=true,swipe=2,glowStyle=3,timeText=3})
+    assert(b<=377 and bw<=724 and r<=448 and c<=23 and n==1,
+        ("eight glowing icons: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
+    local bars={}
+    for i=1,4 do bars[i]=Aura("c6","a"..(6200+i),"a","player",Set(6200+i),{ov={stackGlow=3}}) end
+    b,bw,r,c,n=Budget(3,bars,function(view) view.barStacks,view.barStackColorAt=true,4 end,{stackGlow=5,glowStyle=3,timeText=3})
+    assert(b<=293 and bw<=644 and r<=356 and c<=25 and n==9,
+        ("four stack bars: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
+    -- Should Blizzard show a bare button after all, it is built a frame
+    -- later; in combat or while auras are secret, once they open again.
+    C.views.c6=View("c6",2)
+    Plan("c6",2,{icons[1]})
+    A.Sync("c6")
+    local list=Buttons(Live("c6","player"),"g1")
+    local function Wake(i)
+        local kid=R[list[i]].kids[1]
+        assert(R[kid].scripts.OnShow and not R[kid].scripts.OnHide,"a bare button's wake sensor")
+        R[kid].scripts.OnShow(kid)
+    end
+    local timers=timerCount
+    Wake(3)
+    assert(next(R[list[3]].bind)==nil and timerCount==timers+1,"a woken button is built a frame later")
+    RunTimers()
+    assert(R[list[3]].bind.icon and R[list[3]].bind.cooldown,"a bare button Blizzard showed was not built")
+    COMBAT=true
+    Wake(4)
+    RunTimers()
+    assert(next(R[list[4]].bind)==nil,"a bare button was built in combat")
+    COMBAT=false
+    A.FlushPending()
+    assert(R[list[4]].bind.icon,"the woken button was not built after combat")
+    A.Release("c6")
+    C.views.c6,C.plans.c6=nil,nil
 end
 
 local nativeFile=PlaySoundFile

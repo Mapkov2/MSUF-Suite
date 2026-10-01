@@ -22,7 +22,7 @@ issecretvalue=IsSecret
 
 ------------------------------------------------------------------ static checks
 -- TOC order; Presets.lua is plain data plus one class lookup (CDM table only).
-local FILES={"Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua"}
+local FILES={"Presets.lua","GuideProfiles.lua","Catalog.lua","EntryFill.lua","Resolve.lua","Index.lua"}
 local HEADER,DATA_HEADER="local _, P = ...\nlocal NS, S = P.NS, P.Suite\nlocal C = P.CDM\n","local _, P = ...\nlocal C = P.CDM\n"
 for _,file in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..file
@@ -187,6 +187,23 @@ for _,file in ipairs(FILES) do
     assert(loadfile(root.."/MSUF_Suite_CooldownManager/"..file))("MSUF_Suite_CooldownManager",P)
 end
 local Catalog,Resolve,Index=C.Catalog,C.Resolve,C.Index
+-- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+-- interpreter build): the budgets of the hot paths. A budget holds the
+-- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+-- 2 %; a path may get cheaper, never dearer.
+local function Cost(fn,...)
+    local n=0
+    collectgarbage("stop")
+    debug.sethook(function() n=n+1 end,"",1)
+    fn(...)
+    debug.sethook()
+    collectgarbage("restart")
+    return n
+end
+local function Budget(label,used,baseline)
+    assert(used<=math.floor(baseline*1.02),
+        ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+end
 assert(Catalog and Resolve and Index)
 
 local function Keys(list)
@@ -937,6 +954,12 @@ end
 local after=collectgarbage("count")
 collectgarbage("restart")
 assert(after==before,"ForSpell allocated "..((after-before)*1024).." bytes")
+
+-- Resolve: a rebuild of every bar that changes nothing, and the routing
+-- index after it.
+Resolve.Build()
+Budget("resolve: an unchanged build",Cost(Resolve.Build),30019)
+Budget("resolve: the routing index",Cost(Index.Rebuild),3897)
 
 -- Late load: the Essential set is already filled, so the fallback reports
 -- ready at once and no gate frame is ever made.

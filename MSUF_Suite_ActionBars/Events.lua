@@ -8,15 +8,15 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
-local Pa, D = AB.Painter, AB.Dirty
-local slotMap, Visible, NewChargeEpoch = Pa.slotMap, Pa.Visible, Pa.NewChargeEpoch
-local Tint, Usable, Cooldown, ReleaseRange = Pa.Tint, Pa.Usable, Pa.Cooldown, Pa.ReleaseRange
-local CacheAction, ActionSpell, SetGlow, GlowCheck = Pa.CacheAction, Pa.ActionSpell, Pa.SetGlow, Pa.GlowCheck
-local GLOW_SPELL, GLOW_DYNAMIC, GLOW_FLYOUT = Pa.GLOW_SPELL, Pa.GLOW_DYNAMIC, Pa.GLOW_FLYOUT
-local Walk, WalkNative, MapButton, UnmapButton, Remap, AllKeyTexts = Pa.Walk, Pa.WalkNative, Pa.MapButton, Pa.UnmapButton,
-    Pa.Remap, Pa.AllKeyTexts
-local dirtySlots, gridBars, protected, reported = D.slots, D.grid, D.protected, D.reported
-local Schedule, Mark = D.Schedule, D.Mark
+local Painter, Dirty = AB.Painter, AB.Dirty
+local slotMap, Visible, NewChargeEpoch = Painter.slotMap, Painter.Visible, Painter.NewChargeEpoch
+local Tint, Usable, Cooldown, ReleaseRange = Painter.Tint, Painter.Usable, Painter.Cooldown, Painter.ReleaseRange
+local CacheAction, ActionSpell, SetGlow, GlowCheck = Painter.CacheAction, Painter.ActionSpell, Painter.SetGlow, Painter.GlowCheck
+local GLOW_SPELL, GLOW_DYNAMIC, GLOW_FLYOUT = Painter.GLOW_SPELL, Painter.GLOW_DYNAMIC, Painter.GLOW_FLYOUT
+local Walk, WalkNative, MapButton, UnmapButton, Remap, AllKeyTexts = Painter.Walk, Painter.WalkNative, Painter.MapButton, Painter.UnmapButton,
+    Painter.Remap, Painter.AllKeyTexts
+local dirtySlots, gridBars, protected, reported = Dirty.slots, Dirty.grid, Dirty.protected, Dirty.reported
+local Schedule, Mark = Dirty.Schedule, Dirty.Mark
 
 ------------------------------------------------------------------ events
 local function SlotChanged(_, _, slot)
@@ -383,6 +383,6 @@ function AB.StopDispatcher()
             SetGlow(rec, false)
         end
     end
-    D.Reset()
+    Dirty.Reset()
     AB.locActive = nil
 end

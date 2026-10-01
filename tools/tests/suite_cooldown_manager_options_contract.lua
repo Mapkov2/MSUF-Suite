@@ -1403,8 +1403,8 @@ do
     local valid = CDM.SPELL_FIELDS.auraUnit
     assert(not valid(0) and valid(1) and valid(2) and valid(3) and valid(4) and not valid(5) and not valid(2.5),
         "the catalog stores 1 to 4; Automatic from the popover stores nothing")
-    -- The stored values mean what the runtime makes of them (Resolve.lua).
-    local file = assert(io.open(root .. "/MSUF_Suite_CooldownManager/Resolve.lua", "rb"))
+    -- The stored values mean what the runtime makes of them (EntryFill.lua).
+    local file = assert(io.open(root .. "/MSUF_Suite_CooldownManager/EntryFill.lua", "rb"))
     local literal = file:read("*a"):match("AURA_UNIT%s*=%s*(%b{})")
     file:close()
     local units = assert(literal and loadstring("return " .. literal), "the runtime's Track on map is missing")()
@@ -2356,7 +2356,8 @@ assert(runtime.previewOn == false and runtime.simulate == false and runtime.rele
 -- drawn (capped), their regions, entry keys and dim flags (unlearned or
 -- sample), for icons and buff bar rows alike.
 do
-    local C = { EMPTY = {}, plans = {}, state = {}, entries = {}, spells = { e = {} }, views = {} }
+    local C = { EMPTY = {}, plans = {}, state = {}, entries = {}, spells = { e = {} }, views = {},
+        Const = { QUESTION_ICON = 134400 } }
     -- The runtime's one choice accessor (Resolve.lua): shared choices with
     -- the current specialization's on top.
     C.Choices = function() return CDM.EffectiveSpells(C.spells, C.state.specID) end

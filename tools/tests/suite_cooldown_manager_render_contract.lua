@@ -1455,4 +1455,24 @@ do
         end
     end
 end
+-- Shared constants (Const.lua): one countdown formatter per (threshold,
+-- color) for the swipes and the aura buttons' duration text, automatic
+-- text sizes with their floors, and the glow spec behind every glow.
+do
+    local formatter=I.Formatter(4,1,.5,0)
+    assert(formatter and formatter==K.CountdownFormatter(4,1,.5,0) and formatter==I.Formatter(4.2,1,.5,0),
+        "the swipes and the aura buttons share one countdown formatter per threshold and color")
+    assert(I.Formatter(0,1,1,1)==nil and K.CountdownFormatter(0)~=formatter,"no threshold: Blizzard's own countdown")
+    local font=K.FONT
+    assert(K.TextSize(0,font.countdown,36)==13 and K.TextSize(nil,font.countdown,20)==10 and K.TextSize(14,font.countdown,36)==14,
+        "automatic countdown size")
+    assert(K.TextSize(0,font.barText,12)==9 and K.TextSize(0,font.keybind,20)==8,"one floor for bar text and for keybinds")
+    assert(K.SWIPE_ALPHA==70 and K.BAR_BG_ALPHA==55 and K.BAR_RGB[1]==.91,"shared fallbacks")
+    assert(select("#",K.GlowSpec({},2,false))==1 and K.GlowSpec({},2,false)==2 and K.GlowSpec({glowStyle=9},2)==1,
+        "glow style: per-spell, else the bar's, else the first")
+    local style,r,g,b=K.GlowSpec({},3,true,nil,.5,nil)
+    assert(style==3 and r==1 and g==.5 and b==1,"a tinted bar without a color part")
+    style,r=K.GlowSpec({glowStyle=4,glowColor="ff0000"},1,true,0,0,0)
+    assert(style==4 and r==1,"a per-spell color wins over the bar's tint")
+end
 print("Cooldown manager render: constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, empty healthstones, held item cooldowns, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")

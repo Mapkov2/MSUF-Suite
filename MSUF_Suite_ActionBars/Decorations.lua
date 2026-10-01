@@ -117,7 +117,10 @@ function AB.RaiseDecoration(rec)
         local child = button[key]
         if child then level = math.max(level, child:GetFrameLevel()) end
     end
-    host:SetFrameLevel(level + 5)
+    if rec.edgeLevel ~= level + 5 then
+        rec.edgeLevel = level + 5
+        host:SetFrameLevel(level + 5)
+    end
 end
 function AB.DecorationHost(rec)
     if not rec.edgeHost then
@@ -234,30 +237,50 @@ local function NativeAlpha(button)
     local frame = button.AssistedCombatHighlightFrame
     if frame then frame:SetAlpha(M.config.assistStyle == 1 and 1 or 0) end
 end
-local function ShowAssist(rec, show)
+-- The ring's look: laid out again only when one of its inputs changed, so a
+-- new recommendation (every few hundred milliseconds in combat) only moves
+-- which rings show.
+local function LayoutAssist(rec, holder)
     local c = M.config
+    local size = (rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
+    local circle = c.buttonShape == 2
+    if holder.size == size and holder.x == c.assistX and holder.y == c.assistY and holder.circle == circle
+        and holder.color == c.assistColor and holder.alpha == c.assistAlpha and holder.style == c.assistStyle then return end
+    holder.size, holder.x, holder.y, holder.circle = size, c.assistX, c.assistY, circle
+    holder.color, holder.alpha, holder.style = c.assistColor, c.assistAlpha, c.assistStyle
+    holder:ClearAllPoints()
+    holder:SetSize(size, size)
+    holder:SetPoint("CENTER", rec.button, "CENTER", c.assistX, c.assistY)
+    holder.ring:SetAllPoints(holder)
+    Art(holder.ring, circle)
+    holder.fill:SetAllPoints(rec.button.icon)
+    holder.fill:SetTexture(circle and CIRCLE or WHITE)
+    local r, g, b = S.RGB(c.assistColor)
+    holder.ring:SetVertexColor(r, g, b, c.assistAlpha / 100)
+    holder.fill:SetVertexColor(r, g, b, c.assistAlpha / 100 * .35)
+    holder.ring:SetShown(c.assistStyle == 2 or c.assistStyle == 4)
+    holder.fill:SetShown(c.assistStyle == 3 or c.assistStyle == 4)
+end
+local function ShowAssist(rec, show)
     local holder = rec.assist
-    if not show then if holder then holder:Hide() end; return end
+    if not show then
+        if holder and holder.on then
+            holder.on = false
+            holder:Hide()
+        end
+        return
+    end
     if not holder then
         holder = S.CreateFrame("Frame", nil, rec.button)
         holder.ring = S.CreateTexture(holder, nil, "OVERLAY")
         holder.fill = S.CreateTexture(holder, nil, "ARTWORK")
         rec.assist = holder
     end
-    local size = (rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
-    holder:ClearAllPoints()
-    holder:SetSize(size, size)
-    holder:SetPoint("CENTER", rec.button, "CENTER", c.assistX, c.assistY)
-    holder.ring:SetAllPoints(holder)
-    Art(holder.ring, c.buttonShape == 2)
-    holder.fill:SetAllPoints(rec.button.icon)
-    holder.fill:SetTexture(c.buttonShape == 2 and CIRCLE or WHITE)
-    local r, g, b = S.RGB(c.assistColor)
-    holder.ring:SetVertexColor(r, g, b, c.assistAlpha / 100)
-    holder.fill:SetVertexColor(r, g, b, c.assistAlpha / 100 * .35)
-    holder.ring:SetShown(c.assistStyle == 2 or c.assistStyle == 4)
-    holder.fill:SetShown(c.assistStyle == 3 or c.assistStyle == 4)
-    holder:Show()
+    LayoutAssist(rec, holder)
+    if not holder.on then
+        holder.on = true
+        holder:Show()
+    end
     AB.RaiseDecoration(rec)
 end
 -- Whether a button carries the current recommendation.

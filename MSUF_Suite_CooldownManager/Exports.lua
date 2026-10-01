@@ -14,6 +14,7 @@ local SLOTS, KEYS = CDM.SLOTS, CDM.KEYS
 local EMPTY = C.EMPTY
 local K = C.Const
 local Finite, Clamp = S.Finite, K.Clamp
+local Dispatch = S.Dispatch
 local Cold = C.Cold
 local ceil = math.ceil
 local wipe = C.wipe
@@ -195,6 +196,17 @@ local function Extent(view, plan)
     return extent, depth
 end
 
+-- The bar's view as it would be with another growth or orientation: reads
+-- fall through to the live view, which is never written, so a raising
+-- Extent cannot leave the live bar changed.
+local probeMeta = {}
+local probe = setmetatable({}, probeMeta)
+local function Probe(view, grow, vertical)
+    probeMeta.__index = view
+    probe.grow, probe.vertical = grow, vertical
+    return probe
+end
+
 -- Grow direction and orientation move the growth-edge anchor. The new x/y
 -- keep the bar's center where it is now (free bars that are shown only;
 -- anyAnchor: attached bars too). The controller converts the riding
@@ -210,12 +222,10 @@ local function Convert(slot, grow, vertical, anyAnchor)
     local left, bottom, w, h = bar.frame:GetRect()
     local uiW, uiH = UIParent:GetWidth(), UIParent:GetHeight()
     if not (Finite(left) and Finite(bottom) and Finite(w) and Finite(h) and Finite(uiW) and Finite(uiH)) then return values end
-    local oldGrow, oldVertical = view.grow, view.vertical
-    if grow ~= nil then view.grow = grow end
-    if vertical ~= nil then view.vertical = vertical end
-    local nw, nh = Extent(view, plan)
-    local point = C.Layout.Point(view)
-    view.grow, view.vertical = oldGrow, oldVertical
+    local converted = Probe(view, grow, vertical)
+    local nw, nh = Extent(converted, plan)
+    local point = C.Layout.Point(converted)
+    probeMeta.__index = nil
     local dx, dy = K.EdgeOffset(point, nw, nh)
     values[keys.x], values[keys.y] = Clamp(keys.x, left + w / 2 - uiW / 2 + dx), Clamp(keys.y, bottom + h / 2 - uiH / 2 + dy)
     return values
@@ -234,12 +244,14 @@ end
 -- its x/y from that bar: turning free it keeps its place as an offset from
 -- it (zero when a rectangle is unreadable). The flag travels with the
 -- values, so SyncViewerOffset finds nothing to convert on that Refresh.
+-- The layout reads the attach chain from C.views, so the new anchor is set
+-- on the live view for that one isolated question and always put back.
 local function RideAnchor(values, anchor)
     local view = C.views.ess
     if not (M.active and view) then return end
     local old = view.anchor
     view.anchor = anchor
-    local rides = C.Layout.RidesViewer("ess") == true
+    local rides = Dispatch(C.Layout.RidesViewer, "ess") == true
     view.anchor = old
     values.essOnViewer = rides
     if not rides then return end

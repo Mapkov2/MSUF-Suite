@@ -453,9 +453,9 @@
    "symbol": "PlaySoundFile"
   },
   {
-   "file": "MSUF_Suite_CooldownManager/Auras.lua",
+   "file": "MSUF_Suite_CooldownManager/AuraContainers.lua",
    "kind": "client",
-   "reason": "12.1.0 lacks SetEditModePreviewEnabled on the aura container (see Auras.lua)",
+   "reason": "12.1.0 lacks SetEditModePreviewEnabled on the aura container (see AuraContainers.lua)",
    "symbol": "container.SetEditModePreviewEnabled"
   },
   {

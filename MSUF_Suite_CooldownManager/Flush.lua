@@ -10,13 +10,13 @@ local C = P.CDM
 -- refresh alone.
 -- The data units that need the event wiring (spec and catalog, routing,
 -- event registration, keybind and sound watches) live in Events.lua and bind
--- here once at its load (F.BindDataUnits), so every call stays an upvalue.
+-- here once at its load (Flush.BindDataUnits), so every call stays an upvalue.
 local M = C.M
 local SLOTS = NS.CDM.SLOTS
 local pairs, next = pairs, next
 local wipe = C.wipe
-local F = {}
-C.Flush = F
+local Flush = {}
+C.Flush = Flush
 
 ------------------------------------------------------------------ dirty mask
 -- keysLater: keybind texts after a resolve, through the coalesced request.
@@ -25,7 +25,7 @@ local dirty = { catalog = false, resolve = false, index = false, events = false,
 -- Per slot: sync (structure), style, behavior (entry refresh), visible
 -- (driver and alpha), laid (layout of that bar only).
 local sync, style, behavior, visible, laid, marked = {}, {}, {}, {}, {}, {}
-F.dirty, F.sync, F.style, F.behavior, F.visible = dirty, sync, style, behavior, visible
+Flush.dirty, Flush.sync, Flush.style, Flush.behavior, Flush.visible = dirty, sync, style, behavior, visible
 -- Every unit of flush work runs isolated with one retry (S.NewUnitRunner,
 -- Runtime.lua).
 local Run, Settle, ResetUnits = S.NewUnitRunner()
@@ -33,13 +33,13 @@ local Run, Settle, ResetUnits = S.NewUnitRunner()
 local seenPlan, seenGen = {}, {}
 local scheduled = false
 
-local Flush
+local FlushNow
 local function Schedule()
     if scheduled or not M.active then return end
     scheduled = true
-    C_Timer.After(0, Flush)
+    C_Timer.After(0, FlushNow)
 end
-C.Schedule, F.Schedule = Schedule, Schedule
+C.Schedule, Flush.Schedule = Schedule, Schedule
 
 -- MSUF follows our Essential bar (MSUF_GetSuiteCooldownAnchor): one
 -- notification per frame when that bar appears or goes. MSUF defers its own
@@ -66,7 +66,7 @@ local function Mark(entry, reason)
     if pending == nil or RANK[reason] > RANK[pending] then marked[entry] = reason end
     Schedule()
 end
-F.Mark = Mark
+Flush.Mark = Mark
 
 local function ResetDirty()
     for key in pairs(dirty) do dirty[key] = false end
@@ -87,10 +87,10 @@ local function Pending()
     return next(sync) ~= nil or next(style) ~= nil or next(behavior) ~= nil or next(visible) ~= nil or next(laid) ~= nil
         or next(marked) ~= nil
 end
-F.Reset, F.Pending = ResetDirty, Pending
+Flush.Reset, Flush.Pending = ResetDirty, Pending
 
 -- Disable: the next activation syncs every bar again.
-function F.Forget()
+function Flush.Forget()
     wipe(seenPlan)
     wipe(seenGen)
 end
@@ -136,7 +136,7 @@ end
 -- Units of flush work: a dirty flag, one bar's structure, layout or
 -- visibility, one marked entry, one layout request (Run, above).
 local CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit
-function F.BindDataUnits(catalog, index, events, keysLater, alerts)
+function Flush.BindDataUnits(catalog, index, events, keysLater, alerts)
     CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit = catalog, index, events, keysLater, alerts
 end
 local function ResolveUnit()
@@ -298,7 +298,7 @@ end
 -- reload. Raising units get their marks back at the end (Settle); after an
 -- error only the next mark schedules a flush, so a unit that keeps raising
 -- never repeats every frame.
-Flush = function()
+FlushNow = function()
     if not M.active then
         scheduled = false
         ResetDirty()

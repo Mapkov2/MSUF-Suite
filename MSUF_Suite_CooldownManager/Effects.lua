@@ -8,8 +8,8 @@ local C = P.CDM
 -- checks are reference counted per spell so shared spells stay enabled
 -- until their last icon lets go.
 local K = C.Const
-local E = {}
-C.Effects = E
+local Effects = {}
+C.Effects = Effects
 local Public = S.Public
 local issecret = _G.issecretvalue
 local EMPTY = C.EMPTY
@@ -24,8 +24,8 @@ local fxIcons = {}
 local REASONS = { proc = "gProc", ready = "gReady", aura = "gAura" }
 local assistSpell
 local recommendation
-function E.RecommendationFrame() return recommendation end
-function E.RecommendationGCD()
+function Effects.RecommendationFrame() return recommendation end
+function Effects.RecommendationGCD()
     local frame = recommendation
     if not frame or not frame:IsShown() then return end
     if not C.state.assistIconGCD then
@@ -35,52 +35,87 @@ function E.RecommendationGCD()
     local duration = C_Spell.GetSpellCooldownDuration(61304)
     if duration then frame.cd:SetCooldownFromDurationObject(duration, true) else frame.cd:Clear() end
 end
-function E.Recommendation()
+local function NewRecommendation()
+    local frame = S.CreateFrame("Frame", nil, UIParent)
+    frame:EnableMouse(false)
+    frame.tex = S.CreateTexture(frame, nil, "ARTWORK")
+    frame.tex:SetAllPoints(frame)
+    frame.tex:SetTexCoord(.08, .92, .08, .92)
+    frame.cd = S.CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
+    frame.cd:SetAllPoints(frame)
+    frame.cd:SetHideCountdownNumbers(true)
+    frame.cd:SetDrawEdge(false)
+    frame.cd:SetDrawBling(false)
+    frame.over = S.CreateFrame("Frame", nil, frame)
+    frame.over:SetAllPoints(frame)
+    frame.over:SetFrameLevel(frame.cd:GetFrameLevel() + 1)
+    frame.key = S.CreateFontString(frame.over, nil, "OVERLAY")
+    frame.key:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
+    frame.badge = S.CreateTexture(frame.over, nil, "BACKGROUND")
+    frame.badge:SetPoint("TOPLEFT", frame.key, "TOPLEFT", -2, 2)
+    frame.badge:SetPoint("BOTTOMRIGHT", frame.key, "BOTTOMRIGHT", 2, -2)
+    frame.badge:SetColorTexture(0, 0, 0, .85)
+    return frame
+end
+-- A new suggestion arrives up to five times a second in combat: the frame
+-- writes only what changed (shown state, size, place, texture, font and
+-- key text, memoized on the frame). MSUF Edit Mode moves the frame itself,
+-- so its place is written again on every call while Edit Mode runs.
+function Effects.Recommendation()
     local state = C.state
     local spell = assistSpell
     local show = state.assistIcon == true and (spell ~= nil or state.preview == true)
     local frame = recommendation
     if not frame and not show then return end
     if not frame then
-        frame = S.CreateFrame("Frame", nil, UIParent)
-        frame:EnableMouse(false)
-        frame.tex = S.CreateTexture(frame, nil, "ARTWORK")
-        frame.tex:SetAllPoints(frame)
-        frame.tex:SetTexCoord(.08, .92, .08, .92)
-        frame.cd = S.CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
-        frame.cd:SetAllPoints(frame)
-        frame.cd:SetHideCountdownNumbers(true)
-        frame.cd:SetDrawEdge(false)
-        frame.cd:SetDrawBling(false)
-        frame.over = S.CreateFrame("Frame", nil, frame)
-        frame.over:SetAllPoints(frame)
-        frame.over:SetFrameLevel(frame.cd:GetFrameLevel() + 1)
-        frame.key = S.CreateFontString(frame.over, nil, "OVERLAY")
-        frame.key:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
-        frame.badge = S.CreateTexture(frame.over, nil, "BACKGROUND")
-        frame.badge:SetPoint("TOPLEFT", frame.key, "TOPLEFT", -2, 2)
-        frame.badge:SetPoint("BOTTOMRIGHT", frame.key, "BOTTOMRIGHT", 2, -2)
-        frame.badge:SetColorTexture(0, 0, 0, .85)
+        frame = NewRecommendation()
         recommendation = frame
     end
-    frame:SetShown(show)
+    local edge = frame.layShown ~= show
+    if edge then
+        frame.layShown = show
+        frame:SetShown(show)
+    end
     if not show then
-        frame.cd:Clear()
+        if edge then frame.cd:Clear() end
         return
     end
     local size = state.assistIconSize or 48
-    frame:SetSize(size, size)
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", state.assistIconX or 0, state.assistIconY or -180)
-    frame.tex:SetTexture(spell and C_Spell.GetSpellTexture(spell) or K.QUESTION_ICON)
-    S.SetStyledFont(frame.key, state.font, math.max(9, math.floor(size * .26)), state.fontFlags,
-        state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
+    local x, y = state.assistIconX or 0, state.assistIconY or -180
+    if frame.laySize ~= size then
+        frame.laySize = size
+        frame:SetSize(size, size)
+    end
+    if frame.layX ~= x or frame.layY ~= y or S.editMode then
+        frame.layX, frame.layY = x, y
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
+    end
+    local texture = spell and C_Spell.GetSpellTexture(spell) or K.QUESTION_ICON
+    if frame.layTexture ~= texture then
+        frame.layTexture = texture
+        frame.tex:SetTexture(texture)
+    end
+    local fontSize = K.TextSize(nil, K.FONT.keybind, size)
+    if frame.layFontSize ~= fontSize or frame.layText ~= state.textGen then
+        frame.layFontSize, frame.layText = fontSize, state.textGen
+        S.SetStyledFont(frame.key, state.font, fontSize, state.fontFlags,
+            state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
+    end
     local key = state.assistIconKeybind and spell and C.Keybinds.Text(spell) or ""
-    frame.key:SetText(key)
-    frame.badge:SetShown(key ~= "")
-    E.RecommendationGCD()
+    if frame.layKey ~= key then
+        frame.layKey = key
+        frame.key:SetText(key)
+        frame.badge:SetShown(key ~= "")
+    end
+    -- The GCD swipe follows its own events while shown; it is read here
+    -- when the frame appears or the GCD option changed.
+    if edge or frame.layGCD ~= state.assistIconGCD then
+        frame.layGCD = state.assistIconGCD
+        Effects.RecommendationGCD()
+    end
 end
-function E.Press(entry)
+function Effects.Press(entry)
     local icon = entry.icon
     local bar = C.bars[entry.slot]
     if not icon or not icon:IsShown() or entry.hidden or not bar or bar.hidden then return end
@@ -138,12 +173,7 @@ end
 
 -- Style and color for an entry: per-spell choices first, then the bar.
 local function GlowSpec(entry, view)
-    local ov = entry and entry.ov or EMPTY
-    local style = ov.glowStyle or view.glowStyle or 1
-    if not K.GLOW[style] then style = 1 end
-    if ov.glowColor then return style, K.HexRGB(ov.glowColor) end
-    if view.glowTint then return style, view.glowR or 1, view.glowG or 1, view.glowB or 1 end
-    return style
+    return K.GlowSpec(entry and entry.ov or EMPTY, view.glowStyle, view.glowTint, view.glowR, view.glowG, view.glowB)
 end
 
 -- The painted look (atlas or edges, size, tint) stays on the glow frame
@@ -212,10 +242,10 @@ end
 
 -- Reasons are a union: the animation starts on the first reason and stops
 -- after the last one; repeated calls without an edge do nothing.
-function E.SetGlow(icon, reason, on)
+function Effects.SetGlow(icon, reason, on)
     if not icon then return end
     on = on and true or false
-    if reason == "assist" then return E.Ants(icon, on) end
+    if reason == "assist" then return Effects.Ants(icon, on) end
     local field = REASONS[reason]
     if not field or (icon[field] or false) == on then return end
     icon[field] = on
@@ -266,7 +296,7 @@ local function SizeAnts(icon)
     icon.aW, icon.aH = w, h
 end
 
-function E.Ants(icon, on)
+function Effects.Ants(icon, on)
     on = on and true or false
     if (icon.antsOn or false) == on then return end
     icon.antsOn = on
@@ -283,7 +313,7 @@ end
 
 ------------------------------------------------------------------ tint
 -- One vertex color from a memoized code: out of range beats usable state.
-function E.Tint(entry)
+function Effects.Tint(entry)
     local icon = entry.icon
     if not icon then return end
     local view = C.views[entry.slot]
@@ -298,7 +328,7 @@ function E.Tint(entry)
         icon.tex:SetVertexColor(color[1], color[2], color[3])
     end
 end
-local Tint = E.Tint
+local Tint = Effects.Tint
 
 -- A ready glow that waits for enough resources (readyResources).
 local function NeedsResources(entry, view)
@@ -306,15 +336,15 @@ local function NeedsResources(entry, view)
 end
 -- Whether a usability read of the entry can show: its icon is on a shown
 -- bar and in range, or the read gates its ready glow. The usable broadcast
--- (Events) and the flush ask this before E.Usable.
-function E.UsableShown(entry)
+-- (Events) and the flush ask this before Effects.Usable.
+function Effects.UsableShown(entry)
     if not entry.icon then return false end
     local bar = C.bars[entry.slot]
     if not bar or bar.hidden == true then return false end
     return not entry.outOfRange or NeedsResources(entry, C.views[entry.slot])
 end
 
-function E.Usable(entry, queries)
+function Effects.Usable(entry, queries)
     -- Range tint wins while the action is out of range. Defer the native
     -- usability query until a range/target edge makes its result visible.
     local view = C.views[entry.slot]
@@ -358,7 +388,7 @@ function E.Usable(entry, queries)
     -- after a range or behavior change. All compared values are local codes.
     if icon and (icon.tint ~= code
         or icon.tintGen ~= (view and view.behaviorGen or 0)) then Tint(entry) end
-    if needResources then E.RefreshReady(entry) end
+    if needResources then Effects.RefreshReady(entry) end
 end
 
 ------------------------------------------------------------------ range
@@ -385,7 +415,7 @@ end
 
 -- Holds one reference on the entry's base spell (the ID Blizzard's viewer
 -- checks) while wanted; there is no initial range event, so it seeds once.
-function E.EnableRange(entry, on)
+function Effects.EnableRange(entry, on)
     local want
     if on and entry.hasRange and entry.src ~= "p" then want = entry.base or entry.spell end
     local held = entry.rangeSpell
@@ -403,28 +433,28 @@ function E.EnableRange(entry, on)
 end
 
 -- SPELL_RANGE_CHECK_UPDATE: pass nil when checksRange is false.
-function E.Range(entry, inRange)
+function Effects.Range(entry, inRange)
     if not entry.rangeSpell then return end
     local out = (Public(inRange) and inRange == false) or nil
     if entry.outOfRange == out then return end
     local wasOut = entry.outOfRange
     entry.outOfRange = out
     if wasOut and not out then
-        E.Usable(entry)
+        Effects.Usable(entry)
     else
         Tint(entry)
     end
 end
 
 -- Target changes: re-read the held check without touching references.
-function E.ReadRange(entry)
+function Effects.ReadRange(entry)
     local spell = entry.rangeSpell
     if not spell then return end
     local before = entry.outOfRange
     Seed(entry, spell)
     if before ~= entry.outOfRange then
         if before and not entry.outOfRange then
-            E.Usable(entry)
+            Effects.Usable(entry)
         else
             Tint(entry)
         end
@@ -448,12 +478,12 @@ local function ReadyWanted(entry, view)
     return true
 end
 
-function E.Proc(entry, on)
+function Effects.Proc(entry, on)
     entry.procOn = on and true or false
     local icon = entry.icon
     if not icon then return end
     local view = C.views[entry.slot]
-    E.SetGlow(icon, "proc", view and ProcWanted(entry, view) or false)
+    Effects.SetGlow(icon, "proc", view and ProcWanted(entry, view) or false)
 end
 
 -- Cold part of an update: runs when the icon, spell, choices or the bar's
@@ -469,12 +499,12 @@ local function Bind(entry, icon, view)
     -- Entries bound after the last suggestion change still match it.
     local assist = assistSpell
     entry.assistOn = assist ~= nil and (spell == assist or entry.base == assist or entry.override == assist)
-    E.EnableRange(entry, view.range == true)
-    E.Usable(entry)
+    Effects.EnableRange(entry, view.range == true)
+    Effects.Usable(entry)
 end
 
 -- Re-derives every effect of one entry from its flags and its bar.
-function E.Update(entry)
+function Effects.Update(entry)
     local icon = entry.icon
     if not icon then return end
     local view = C.views[entry.slot]
@@ -482,9 +512,9 @@ function E.Update(entry)
     if icon.fxEntry ~= entry or icon.fxOv ~= entry.ov or icon.fxGen ~= view.behaviorGen or icon.fxSpell ~= entry.spell then
         Bind(entry, icon, view)
     end
-    E.SetGlow(icon, "proc", ProcWanted(entry, view))
-    E.SetGlow(icon, "ready", ReadyWanted(entry, view))
-    E.Ants(icon, entry.assistOn == true and view.assist == true)
+    Effects.SetGlow(icon, "proc", ProcWanted(entry, view))
+    Effects.SetGlow(icon, "ready", ReadyWanted(entry, view))
+    Effects.Ants(icon, entry.assistOn == true and view.assist == true)
     Restyle(icon, entry, view)
     Tint(entry)
 end
@@ -498,7 +528,7 @@ local function AssistEntry(entry, spell)
     local icon = entry.icon
     if not icon then return end
     local view = C.views[entry.slot]
-    E.Ants(icon, on and view ~= nil and view.assist == true)
+    Effects.Ants(icon, on and view ~= nil and view.assist == true)
 end
 
 local function Walk(list, fn, arg)
@@ -515,11 +545,11 @@ local function Walk(list, fn, arg)
 end
 
 -- Paints only on a suggestion change.
-function E.Assist(spell)
+function Effects.Assist(spell)
     if spell ~= nil and not (Public(spell) and type(spell) == "number") then spell = nil end
     if spell == assistSpell then return end
     assistSpell = spell
-    E.Recommendation()
+    Effects.Recommendation()
     Walk(C.Index.assist, AssistEntry, spell)
 end
 
@@ -527,14 +557,14 @@ end
 local function ReadyEntry(entry)
     local icon = entry.icon
     local view = icon and C.views[entry.slot]
-    if view then E.SetGlow(icon, "ready", ReadyWanted(entry, view)) end
+    if view then Effects.SetGlow(icon, "ready", ReadyWanted(entry, view)) end
 end
-E.RefreshReady = ReadyEntry
+Effects.RefreshReady = ReadyEntry
 
 -- Ready glows gated to combat flip here; everything else is untouched.
 -- Only entries that want a ready glow (Index.ready) are walked; on a combat
 -- edge (edge set) only while those glows wait for combat.
-function E.CombatChanged(edge)
+function Effects.CombatChanged(edge)
     local allowed = GlowsAllowed() == true
     for icon in pairs(fxIcons) do
         local gate = icon.effectGate
@@ -548,7 +578,7 @@ function E.CombatChanged(edge)
 end
 
 -- Size changes from the icon style pass.
-function E.Refit(icon)
+function Effects.Refit(icon)
     local entry = icon.entry
     local view = entry and C.views[entry.slot] or EMPTY
     Restyle(icon, entry, view)
@@ -556,39 +586,40 @@ function E.Refit(icon)
 end
 
 -- Stops every visual on a recycled icon; the next Update re-seeds.
-function E.ResetIcon(icon)
+function Effects.ResetIcon(icon)
     if icon.pressPulse then icon.pressPulse:Stop() end
     icon.gProc, icon.gReady, icon.gAura = nil, nil, nil
     HideGlow(icon)
-    E.Ants(icon, false)
+    Effects.Ants(icon, false)
     icon.fxEntry = nil
 end
 
 -- The entry left every bar: drop its range reference and assist state.
-function E.Detach(entry)
-    E.EnableRange(entry, false)
+function Effects.Detach(entry)
+    Effects.EnableRange(entry, false)
     entry.assistOn = nil
 end
 
 local function ClearAssist(entry) entry.assistOn = nil end
 
-function E.ReleaseAll()
+function Effects.ReleaseAll()
     for entry in pairs(ranged) do
         local spell = entry.rangeSpell
         entry.rangeSpell, entry.outOfRange, ranged[entry] = nil, nil, nil
         if spell then Drop(spell) end
     end
-    for icon in pairs(fxIcons) do E.ResetIcon(icon) end
+    for icon in pairs(fxIcons) do Effects.ResetIcon(icon) end
     Walk(nil, ClearAssist)
     assistSpell = nil
     if recommendation then
+        recommendation.layShown = false
         recommendation:Hide()
         recommendation.cd:Clear()
     end
 end
 
 -- Test and diagnostics hook: range references currently held.
-function E.RangeReferences()
+function Effects.RangeReferences()
     local total = 0
     for _, count in pairs(rangeRefs) do total = total + count end
     return total

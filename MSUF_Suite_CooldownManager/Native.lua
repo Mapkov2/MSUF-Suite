@@ -7,8 +7,8 @@ local C = P.CDM
 -- here calls a viewer method or writes a viewer field: the only writes are
 -- SetAlpha through the context and item mouse (off while mode 2 runs,
 -- Blizzard's own state again when it ends).
-local N = {}
-C.Native = N
+local Native = {}
+C.Native = Native
 local M = C.M
 local CDM = NS.CDM
 local K = C.Const
@@ -42,7 +42,7 @@ end
 
 -- An MSUF that knows these bars (MSUF_GetSuiteCooldownAnchor) follows our
 -- Essential bar itself, so Blizzard's bars can stay off.
-function N.Mode()
+function Native.Mode()
     local config = M.config
     local mode = type(config) == "table" and config.blizzard == 2 and 2 or 1
     if mode == 1 and Anchored() and type(_G.MSUF_GetSuiteCooldownAnchor) ~= "function" then return 2, S.Text(PROMOTED) end
@@ -109,14 +109,14 @@ end
 
 ------------------------------------------------------------------ takeover
 -- Out of combat (Enable/Refresh). Only mode transitions do work.
-function N.Apply()
+function Native.Apply()
     if NS.IsCombatLocked() then
         S.Queue(ID())
         return
     end
     local ctx = M.context
     if not ctx then return end
-    local mode = N.Mode()
+    local mode = Native.Mode()
     if mode == applied then return end
     if mode == 2 then
         active = true
@@ -140,7 +140,7 @@ function N.Apply()
     applied = mode
 end
 
-function N.Release()
+function Native.Release()
     local ctx = M.context
     if applied == 2 and ctx then RestoreAlpha(ctx) end
     active = false
@@ -148,11 +148,11 @@ function N.Release()
     applied = nil
 end
 
-function N.Applied() return applied end
+function Native.Applied() return applied end
 
 -- MSUF (without the suite provider) is attached to Blizzard's Essential bar,
 -- which runs invisibly: our Essential bar then sits on top of it.
-function N.FollowViewer()
+function Native.FollowViewer()
     return applied == 2 and Anchored() and type(_G.MSUF_GetSuiteCooldownAnchor) ~= "function"
 end
 
@@ -189,7 +189,7 @@ end
 -- bar goes where Blizzard's Essential bar was, or with its top edge 222 units
 -- below the screen center (under MSUF's default unit frames and castbar).
 -- Sizes stay ours. Returns settings plus captured=true for S.SetMany.
-function N.Capture()
+function Native.Capture()
     if NS.IsCombatLocked() then return nil end
     local ui = UIParent:GetEffectiveScale()
     local uiW, uiH = UIParent:GetWidth(), UIParent:GetHeight()
@@ -211,7 +211,7 @@ end
 ------------------------------------------------------------------ MSUF anchor export
 -- Our bar for one of the three viewer names MSUF stores, while the module
 -- is active and the bar is shown; nil otherwise.
-function N.AnchorFrame(viewerName)
+function Native.AnchorFrame(viewerName)
     local slot = type(viewerName) == "string" and EXPORTED[viewerName]
     if not slot or not M.active then return nil end
     local view, bar = C.views[slot], C.bars[slot]

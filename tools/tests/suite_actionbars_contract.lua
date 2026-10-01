@@ -59,6 +59,24 @@ local function RunDue()
     end
 end
 
+-- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+-- interpreter build): the budgets of the hot paths. A budget holds the
+-- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+-- 2 %; a path may get cheaper, never dearer.
+local function Cost(fn,...)
+    local n=0
+    collectgarbage("stop")
+    debug.sethook(function() n=n+1 end,"",1)
+    fn(...)
+    debug.sethook()
+    collectgarbage("restart")
+    return n
+end
+local function Budget(label,used,baseline)
+    assert(used<=math.floor(baseline*1.02),
+        ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+end
+
 ------------------------------------------------------------------ frames
 local Frame,Region={},{}
 Frame.__index=Frame;Region.__index=Region
@@ -1471,6 +1489,9 @@ do
     AB.Painter.api.Charges=saved;c.hideEmptyCharges=setting
     AB.Painter.Paint(rec)
 end
+-- Flush: one capped cooldown walk over every filled button.
+now=now+1
+Budget("action bars flush: a cooldown walk",Cost(function() Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers() end),2444)
 cooldownCalls=calls.duration
 local start=now
 Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
@@ -1955,6 +1976,27 @@ do
     assert(S.Set("actionbars","bar3Alpha",60) and infoReads==reads,"an unrelated setting re-read every action for the rings")
     Recommend(1002)
     assert(not rec.assist.shown and Button(1,2).assist.shown,"native recommendation change did not move feedback")
+    -- A recommendation change only moves which rings show: no ring is laid
+    -- out or colored again while its look stays the same.
+    do
+        local rings,writes={rec.assist,Button(1,2).assist},0
+        for _,holder in ipairs(rings) do
+            for _,name in ipairs({"SetSize","SetPoint","ClearAllPoints"}) do
+                local real=getmetatable(holder).__index[name]
+                holder[name]=function(...) writes=writes+1;return real(...) end
+            end
+            local real=getmetatable(holder.ring).__index.SetVertexColor
+            holder.ring.SetVertexColor=function(...) writes=writes+1;return real(...) end
+        end
+        for i=1,6 do Recommend(i%2==1 and 1001 or 1002) end
+        assert(writes==0,"a recommendation change laid the rings out again ("..writes.." writes)")
+        assert(not rec.assist.shown and Button(1,2).assist.shown,"the last recommendation is not shown")
+        assert(S.Set("actionbars","assistX",3) and writes>0,"a ring setting did not lay the ring out")
+        assert(S.Set("actionbars","assistX",0))
+        for _,holder in ipairs(rings) do
+            holder.SetSize,holder.SetPoint,holder.ClearAllPoints,holder.ring.SetVertexColor=nil,nil,nil,nil
+        end
+    end
     -- Bar 1 changes page in combat: the ring follows the spell, not the button.
     combat=true
     conditions["bar:2"]=true;barPage=2;Drivers();RunDue()

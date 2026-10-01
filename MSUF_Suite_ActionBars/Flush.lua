@@ -7,12 +7,12 @@ local NS, S = P.NS, P.Suite
 -- keep targeted events targeted; dormant (hidden) bars are skipped.
 local AB = P.ActionBars
 local M = AB.M
-local Pa, NB = AB.Painter, AB.NativeButtons
-local slotMap, Visible = Pa.slotMap, Pa.Visible
-local Walk, WalkNative, Paint, Icon, Refill, PaintBar = Pa.Walk, Pa.WalkNative, Pa.Paint, Pa.Icon, Pa.Refill, Pa.PaintBar
-local Cooldown, Usable, State, Count, GlowCheck, AllKeyTexts = Pa.Cooldown, Pa.Usable, Pa.State, Pa.Count, Pa.GlowCheck,
-    Pa.AllKeyTexts
-local NativeFeedback, NativeState, NativeCount, NativeColor, Retint = NB.Feedback, NB.State, NB.Count, NB.Color, NB.Retint
+local Painter, NativeButtons = AB.Painter, AB.NativeButtons
+local slotMap, Visible = Painter.slotMap, Painter.Visible
+local Walk, WalkNative, Paint, Icon, Refill, PaintBar = Painter.Walk, Painter.WalkNative, Painter.Paint, Painter.Icon, Painter.Refill, Painter.PaintBar
+local Cooldown, Usable, State, Count, GlowCheck, AllKeyTexts = Painter.Cooldown, Painter.Usable, Painter.State, Painter.Count, Painter.GlowCheck,
+    Painter.AllKeyTexts
+local NativeFeedback, NativeState, NativeCount, NativeColor, Retint = NativeButtons.Feedback, NativeButtons.State, NativeButtons.Count, NativeButtons.Color, NativeButtons.Retint
 -- tint: re-applies the range color after a color change; keys: binding
 -- texts; usable: every suite button's usability; unreported: only those on
 -- slots ACTION_USABLE_CHANGED never named.

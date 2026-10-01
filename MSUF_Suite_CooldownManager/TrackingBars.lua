@@ -5,13 +5,13 @@ local C = P.CDM
 -- a status bar beside the icon fed the icon's own native duration objects,
 -- and optional charge segments (a count fill and the recharge segment).
 local K = C.Const
-local B = {}
-C.TrackingBars = B
+local TrackingBars = {}
+C.TrackingBars = TrackingBars
 local emptyDuration
 
 -- Presentation of the existing cooldown entry; the native duration, event
 -- routing, ownership, binding and tooltip stay with the icon owner.
-function B.Style(icon, view)
+function TrackingBars.Style(icon, view)
     local wanted = view.kind == 1 and view.cooldownDuration == true
     local bar = icon.timerBar
     if not bar and wanted then
@@ -51,16 +51,17 @@ function B.Style(icon, view)
     -- charge segments shade what is stored here).
     local r, g, b
     if view.barClass then r, g, b = K.ClassRGB() end
-    if not r then r, g, b = view.barR or 1, view.barG or .72, view.barB or .34 end
+    local fill = K.BAR_RGB
+    if not r then r, g, b = view.barR or fill[1], view.barG or fill[2], view.barB or fill[3] end
     bar:SetStatusBarColor(r, g, b)
     bar.r, bar.g, bar.b, bar.texture = r, g, b, texture
     bar.innerWidth, bar.innerHeight = icon.w - (shown and h + 2 or 0) - inset * 2, h - inset * 2
     bar.chargeSegments, bar.chargeDim = view.barChargeSegments == true, view.barChargeDim ~= false
     bar.segmentStyle = nil
-    bar.bg:SetColorTexture(0, 0, 0, (view.barBgAlpha or 55) / 100)
+    bar.bg:SetColorTexture(0, 0, 0, (view.barBgAlpha or K.BAR_BG_ALPHA) / 100)
     bar.direction = view.barFill == 2 and Enum.StatusBarTimerDirection.ElapsedTime or Enum.StatusBarTimerDirection.RemainingTime
     local label = bar.name
-    S.SetStyledFont(label, C.state.font, math.max(8, math.floor(h * .55)), C.state.fontFlags,
+    S.SetStyledFont(label, C.state.font, K.TextSize(nil, K.FONT.barText, h), C.state.fontFlags,
         C.state.fontRendering, C.state.fontShadow, C.state.fontShadowOpacity, C.state.fontShadowDistance)
     label:ClearAllPoints()
     label:SetPoint("LEFT", bar, "LEFT", 4, 0)
@@ -75,7 +76,7 @@ function B.Style(icon, view)
     end
 end
 
-function B.Duration(icon, duration)
+function TrackingBars.Duration(icon, duration)
     local bar = icon.durationBar and icon.timerBar
     if not bar then return end
     bar.duration = duration
@@ -90,7 +91,7 @@ function B.Duration(icon, duration)
     bar:SetTimerDuration(duration, Enum.StatusBarInterpolation.Immediate, bar.direction)
 end
 
-function B.Charges(icon, charges, duration)
+function TrackingBars.Charges(icon, charges, duration)
     local bar = icon.durationBar and icon.timerBar
     if not bar then return end
     local maximum = charges and charges.maxCharges
@@ -103,7 +104,7 @@ function B.Charges(icon, charges, duration)
             bar:GetStatusBarTexture():SetAlpha(1)
             bar.recharge:Hide()
             for _, mark in ipairs(bar.separators) do mark:Hide() end
-            B.Duration(icon, bar.duration)
+            TrackingBars.Duration(icon, bar.duration)
         end
         return
     end
