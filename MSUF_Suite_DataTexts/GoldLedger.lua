@@ -12,11 +12,13 @@ function Ledger.Capture()
     if not guid or not name or not realm or not S.Finite(amount) or amount < 0 then return end
     local entries = root.goldLedger
     if type(entries) ~= "table" then entries = {}; root.goldLedger = entries end
-    local label = name .. " - " .. realm
-    local old = entries[guid]
-    if type(old) ~= "table" or old.money ~= amount or old.name ~= label then
-        entries[guid] = { name = label, money = math.floor(amount) }
+    -- PLAYER_MONEY: the character's entry is updated in place.
+    local entry = entries[guid]
+    if type(entry) ~= "table" then
+        entry = {}
+        entries[guid] = entry
     end
+    entry.name, entry.money = name .. " - " .. realm, math.floor(amount)
 end
 
 function Ledger.Snapshot()

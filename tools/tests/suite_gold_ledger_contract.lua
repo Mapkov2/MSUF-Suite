@@ -20,6 +20,14 @@ ledger.Capture()
 local rows, total = ledger.Snapshot()
 assert(total == 45678 and #rows == 2 and rows[1].name == "Bob - Realm",
     "account snapshot did not total and sort characters")
+-- PLAYER_MONEY updates the character's entry in place: no table per event.
+local entry = ns.RootDB.goldLedger["Player-2"]
+amount = 33334
+ledger.Capture()
+assert(ns.RootDB.goldLedger["Player-2"] == entry and entry.money == 33334,
+    "a money change replaced the character's ledger entry")
+amount = 33333
+ledger.Capture()
 local tooltip = { lines = {} }
 function tooltip:AddLine(label) self.lines[#self.lines + 1] = { label } end
 function tooltip:AddDoubleLine(label, value) self.lines[#self.lines + 1] = { label, value } end
