@@ -20,7 +20,8 @@ local GROUPS = {
 local function Choices(win)
     local data = win.menuData
     if data then return data end
-    data = { current = { win = win, value = 1 }, overall = { win = win, value = 2 }, keys = {} }
+    data = { current = { win = win, value = D.SESSION.CURRENT }, overall = { win = win, value = D.SESSION.OVERALL },
+        keys = {} }
     data.keys.Locked = { win = win, suffix = "Locked" }
     for _, suffix in ipairs(HIDES) do data.keys[suffix] = { win = win, suffix = suffix } end
     win.menuData = data
@@ -60,7 +61,7 @@ function D.SetWindowType(win, meterType)
     D.Persist(D.KEYS[win.index].Type, meterType + 1)
 end
 
--- value 1 Current, 2 Overall; a historic sessionID pins the window and keeps
+-- value: a D.SESSION choice; a historic sessionID pins the window and keeps
 -- Current as the saved fallback.
 function D.SetWindowSession(win, value, sessionID, duration)
     D.ApplySession(win, value, sessionID, duration)
@@ -261,7 +262,7 @@ end
 local function SessionSelected(data) return not data.win.sessionID and data.win.cfgSession == data.value end
 local function SessionChosen(data) D.SetWindowSession(data.win, data.value, nil, nil) end
 local function PinSelected(data) return data.win.sessionID == data.id end
-local function PinChosen(data) D.SetWindowSession(data.win, 1, data.id, data.duration) end
+local function PinChosen(data) D.SetWindowSession(data.win, D.SESSION.CURRENT, data.id, data.duration) end
 -- The 20 most recent tracked fights (the list is oldest first), then Current and Overall.
 local function SessionMenu(_, root, win)
     local list = C_DamageMeter.GetAvailableCombatSessions()

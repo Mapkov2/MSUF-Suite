@@ -4,11 +4,13 @@ if NS.Client.isForever then return end
 local Model, Index, Bank, Grid = P.InventoryModel, P.InventoryIndex, P.BankInventoryIndex, P.GridView
 local Font = Grid.Font
 local ALL = { label = "All items", translate = true }
+local VIEW, BANK_VIEW, POOR = NS.BagsView, NS.BagsBankView, Enum.ItemQuality.Poor
 local B = { index = Bank.New(), model = Model.New(), buttons = {}, labels = {}, categories = {},
     scroll = 0, config = {}, context = { transactions = true }, filtered = {}, view = {} }
 P.BankInventory = B
 local Request, Flush, Render
-local MODES = { "Bank tabs", "Combined bank", "Combined warbank", "Bank categories" }
+local MODES = { [BANK_VIEW.TABS] = "Bank tabs", [BANK_VIEW.CHARACTER] = "Combined bank",
+    [BANK_VIEW.WARBANK] = "Combined warbank", [BANK_VIEW.CATEGORIES] = "Bank categories" }
 local EVENTS = { "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "BAG_UPDATE", "PLAYER_REGEN_ENABLED",
     "GET_ITEM_INFO_RECEIVED", "BANK_TABS_CHANGED", "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED", "INVENTORY_SEARCH_UPDATE",
     "ITEM_LOCK_CHANGED", "BAG_UPDATE_COOLDOWN", "BANK_TAB_SETTINGS_UPDATED" }
@@ -47,14 +49,14 @@ local function AcquireButton(number)
     return button
 end
 
-local function StyleItem(button, item)
+-- font: the bag font, read once per render (GridView.FontPath).
+local function StyleItem(button, item, font)
     local c = M.config
     if c.showBankItemLevel and item.equipLoc and item.equipLoc ~= "" and item.link and item.level == nil then
         local level = C_Item.GetDetailedItemLevelInfo(item.link)
         if S.Finite(level) then item.level = level end
     end
     local level = c.showBankItemLevel and item.level
-    local font = Grid.FontPath()
     if button.font ~= font or button.levelSize ~= c.itemLevelSize or button.countSize ~= c.itemCountSize then
         S.SetFont(button.level, font, c.itemLevelSize, "OUTLINE")
         S.SetFont(button.Count, font, c.itemCountSize, "OUTLINE")
@@ -66,7 +68,7 @@ local function StyleItem(button, item)
     else
         button.level:Hide()
     end
-    if c.desaturateJunk and item.quality == 0 then SetItemButtonDesaturated(button, true) end
+    if c.desaturateJunk and item.quality == POOR then SetItemButtonDesaturated(button, true) end
 end
 
 local function Select(button)
@@ -135,7 +137,7 @@ local function Create()
     B.next:SetPoint("LEFT", B.previous, "RIGHT", 6, 0)
     B.position = Font(frame, 11)
     B.position:SetPoint("LEFT", B.next, "RIGHT", 8, 0)
-    B.native = Button(frame, "Manage bank tabs", 145, function() S.Set("bags", "bankView", 1) end)
+    B.native = Button(frame, "Manage bank tabs", 145, function() S.Set("bags", "bankView", BANK_VIEW.TABS) end)
     B.native:SetPoint("BOTTOMRIGHT", -12, 8)
     B.side = S.CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
     B.side:SetPoint("TOPLEFT", 10, -40)
@@ -146,7 +148,7 @@ local function Create()
     B.side:SetScrollChild(B.sideChild)
     -- Below the bank window, opposite Blizzard's bank tabs (BankFrame.xml
     -- TabSystem): the search box and Clean Up button stay free in every view.
-    B.modeButton = Button(BankFrame, MODES[1], 142, NextMode)
+    B.modeButton = Button(BankFrame, MODES[BANK_VIEW.TABS], 142, NextMode)
     B.modeButton:SetPoint("TOPRIGHT", BankFrame, "BOTTOMRIGHT", -22, 2)
     BankFrame:HookScript("OnShow", function() Index.Retry(B.index); Request() end)
     BankFrame:HookScript("OnHide", function()
@@ -155,7 +157,7 @@ local function Create()
     end)
 end
 
-local function PaintCell(cell, number, sidebar)
+local function PaintCell(cell, number, sidebar, font)
     local x, y = sidebar + cell.column * 40, -40 - (cell.line - B.scroll) * 40
     if not cell.row then
         B.labelCount = B.labelCount + 1
@@ -180,15 +182,16 @@ local function PaintCell(cell, number, sidebar)
         button:SetPoint("TOPLEFT", x, y)
         button.x, button.y = x, y
     end
-    StyleItem(button, item)
-    P.InventoryDetails.Paint(button, item)
+    StyleItem(button, item, font)
+    P.InventoryDetails.Paint(button, item, font)
     button:Show()
     return number
 end
 
 Render = function()
     if not B.active or not BankFrame:IsShown() or NS.IsCombatLocked() then return end
-    local sidebar = M.config.bankView == 4 and 170 or 12
+    local categories = M.config.bankView == BANK_VIEW.CATEGORIES
+    local sidebar = categories and 170 or 12
     B.columns = math.max(4, math.floor((B.frame:GetWidth() - sidebar - 12) / 40))
     B.visibleRows = math.max(2, math.floor((B.frame:GetHeight() - 84) / 40))
     local layout = Model.Layout(B.model, B.columns, M.config.compactGroups)
@@ -197,12 +200,15 @@ Render = function()
     for i = 1, #B.labels do B.labels[i]:Hide() end
     local shown = 0
     B.labelCount = 0
+    local font = Grid.FontPath()
     for i = 1, #layout do
         local cell = layout[i]
-        if cell.line >= B.scroll and cell.line < B.scroll + B.visibleRows then shown = PaintCell(cell, shown, sidebar) end
+        if cell.line >= B.scroll and cell.line < B.scroll + B.visibleRows then
+            shown = PaintCell(cell, shown, sidebar, font)
+        end
     end
     for i = shown + 1, #B.buttons do B.buttons[i]:Hide() end
-    B.side:SetShown(M.config.bankView == 4)
+    B.side:SetShown(categories)
     B.previous:SetEnabled(B.scroll > 0)
     B.next:SetEnabled(B.scroll < B.maxScroll)
     Grid.PositionText(B.position, B.scroll, B.visibleRows, B.model.lineCount)
@@ -212,7 +218,7 @@ end
 
 local function PrepareModel(state)
     for key, value in pairs(M.config) do B.config[key] = value end
-    B.config.inventoryView = M.config.bankView == 4 and 3 or 1
+    B.config.inventoryView = M.config.bankView == BANK_VIEW.CATEGORIES and VIEW.CATEGORIES or VIEW.ALL
     B.config.groupExpansions = M.config.bankGroupExpansions
     B.config.expansionFirst = M.config.bankGroupExpansions
     B.config.groupEquipmentSlots = M.config.bankGroupEquipmentSlots
@@ -244,7 +250,7 @@ Flush = function()
     if not B.frame then Create() end
     B.modeButton:SetText(S.Text(MODES[M.config.bankView]))
     B.modeButton:Show()
-    B.active = M.config.bankView > 1
+    B.active = M.config.bankView ~= BANK_VIEW.TABS
     M.organizedBankActive = B.active
     if not B.active then B.frame:Hide(); M:UpdateBank(); return end
     M:HideBankLevels()
@@ -267,11 +273,12 @@ end
 local function Event(_, event, value, success)
     if event == "BAG_UPDATE_COOLDOWN" or event == "INVENTORY_SEARCH_UPDATE" then
         if B.active and B.frame:IsShown() then
+            local font = Grid.FontPath()
             for i = 1, #B.buttons do
                 local button = B.buttons[i]
                 if button:IsShown() then
                     if event == "BAG_UPDATE_COOLDOWN" then button:UpdateCooldown()
-                    else button:Refresh(); StyleItem(button, button.record) end
+                    else button:Refresh(); StyleItem(button, button.record, font) end
                 end
             end
         end
@@ -314,6 +321,3 @@ function B.Disable()
     if B.events then B.events:UnregisterAllEvents() end
     if B.frame then B.frame:Hide(); B.modeButton:Hide() end
 end
-
-hooksecurefunc(M, "Refresh", B.Refresh)
-hooksecurefunc(M, "Disable", B.Disable)

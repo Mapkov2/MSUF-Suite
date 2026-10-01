@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Model, Index, Grid = P.InventoryModel, P.InventoryIndex, P.GridView
 local Font, Button = Grid.Font, Grid.Button
+local VIEW, POOR = NS.BagsView, Enum.ItemQuality.Poor
 local ALL, PINNED = { label = "All items", translate = true }, { label = "Pinned items", translate = true }
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
@@ -133,6 +134,12 @@ local function ShuffleItems()
     Request()
 end
 
+-- The click's own arguments (the button) must not reach Editor.Show,
+-- whose first argument selects the pinned list.
+local function EditCategories()
+    P.InventoryEditor.Show()
+end
+
 local function ShuffleEnter(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip:SetText(S.Text("Shuffle displayed items"))
@@ -150,7 +157,7 @@ local function MakeFooter(frame)
     V.next:SetPoint("LEFT", V.previous, "RIGHT", 6, 0)
     V.position = Font(V.chrome, 11)
     V.position:SetPoint("LEFT", V.next, "RIGHT", 8, 0)
-    V.manage = Button(V.chrome, "Edit categories", 108, P.InventoryEditor.Show)
+    V.manage = Button(V.chrome, "Edit categories", 108, EditCategories)
     V.manage:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, 13)
     V.shuffleButton = Button(V.chrome, "", 24, ShuffleItems)
     V.shuffleButton:SetPoint("RIGHT", V.manage, "LEFT", -5, 0)
@@ -164,11 +171,12 @@ local function MakeControls()
     V.chrome = S.CreateFrame("Frame", nil, frame)
     V.chrome:SetAllPoints(frame)
     V.chrome:SetFrameLevel(frame:GetFrameLevel() + 15)
-    local titles = { "All items", "By bag", "Categories" }
-    for i = 1, 3 do
-        local button = Button(V.chrome, titles[i], 100, ViewSelected)
-        button.view = i
-        button:SetPoint("TOPLEFT", 12 + (i - 1) * 104, -62)
+    -- The Suite views: the first three inventoryView choices.
+    local titles = { [VIEW.ALL] = "All items", [VIEW.BY_BAG] = "By bag", [VIEW.CATEGORIES] = "Categories" }
+    for view = VIEW.ALL, VIEW.CATEGORIES do
+        local button = Button(V.chrome, titles[view], 100, ViewSelected)
+        button.view = view
+        button:SetPoint("TOPLEFT", 12 + (view - 1) * 104, -62)
     end
     MakeFooter(frame)
     V.sidebar = S.CreateFrame("ScrollFrame", nil, V.chrome, "UIPanelScrollFrameTemplate")
@@ -271,7 +279,8 @@ end
 
 -- Blizzard's SetItemButtonCount hides counts of one and shows "*" above its
 -- maximum; a merged total must be shown even where the shown stack holds one.
-local function SetCount(button, count)
+-- path: the bag font, read once per render (Grid.FontPath).
+local function SetCount(button, count, path)
     local text = button.Count
     if not text then return end
     local saved = V.nativeCountFonts[text]
@@ -279,7 +288,6 @@ local function SetCount(button, count)
         saved = { text:GetFont() }
         V.nativeCountFonts[text] = saved
     end
-    local path = Grid.FontPath()
     if saved.path ~= path or saved.size ~= M.config.itemCountSize then
         S.SetFont(text, path, M.config.itemCountSize, "OUTLINE")
         saved.path, saved.size = path, M.config.itemCountSize
@@ -292,20 +300,20 @@ local function SetCount(button, count)
     end
 end
 
-local function PaintSlot(item, x, y, row, count)
+local function PaintSlot(item, x, y, row, count, font)
     local button = item.button
     PlaceSlot(button, x, y, row)
-    SetCount(button, count)
-    local junk = M.config.desaturateJunk and item.quality == 0
+    SetCount(button, count, font)
+    local junk = M.config.desaturateJunk and item.quality == POOR
     SetItemButtonDesaturated(button, item.locked or junk or false)
-    P.InventoryDetails.Paint(button, item)
+    P.InventoryDetails.Paint(button, item, font)
 end
 
-local function PaintCell(cell, top, sidebar, columns)
+local function PaintCell(cell, top, sidebar, columns, font)
     local row, group = cell.row, cell.group
     local y = -TOP - (cell.line - top) * CELL
     if row then
-        PaintSlot(row.item, sidebar + cell.column * CELL, y, row, row.count)
+        PaintSlot(row.item, sidebar + cell.column * CELL, y, row, row.count, font)
     else
         V.labelCount = V.labelCount + 1
         Grid.PaintHeader(V.labels, V.labelCount, V.chrome, V.frame, sidebar + cell.column * CELL, y - 10,
@@ -361,7 +369,8 @@ end
 local function RenderSuite()
     local c = M.config
     local columns = c.inventoryColumns
-    local sidebar = c.inventoryView == 3 and 178 or 12
+    local categories = c.inventoryView == VIEW.CATEGORIES
+    local sidebar = categories and 178 or 12
     local layout = Model.Layout(V.model, columns, c.compactGroups)
     local bottom = MoneyTop() + FOOTER
     local visibleRows = max(2, min(c.inventoryRows, floor((Available() - TOP - bottom) / CELL)))
@@ -369,17 +378,18 @@ local function RenderSuite()
     V.visibleRows, V.maxScroll = visibleRows, max(0, V.model.lineCount - visibleRows)
     V.scroll = min(V.scroll, V.maxScroll)
     ClearVisible()
+    local font = Grid.FontPath()
     for i = 1, #layout do
         local cell = layout[i]
         if cell.line >= V.scroll and cell.line < V.scroll + visibleRows then
-            PaintCell(cell, V.scroll, sidebar, columns)
+            PaintCell(cell, V.scroll, sidebar, columns, font)
         end
     end
     HideUnplaced()
     V.layout = "suite"
     ShowChrome(true)
-    V.sidebar:SetShown(c.inventoryView == 3)
-    V.shuffleButton:SetShown(c.inventoryView == 1)
+    V.sidebar:SetShown(categories)
+    V.shuffleButton:SetShown(c.inventoryView == VIEW.ALL)
     V.previous:SetEnabled(V.scroll > 0)
     V.next:SetEnabled(V.scroll < V.maxScroll)
     Grid.PositionText(V.position, V.scroll, visibleRows, V.model.lineCount)
@@ -399,10 +409,11 @@ local function RenderCombat()
     local fit = max(1, floor((Available() - COMBAT_TOP - MoneyTop() - 6 - line) / CELL))
     local columns = max(M.config.inventoryColumns, ceil(total / fit))
     ClearVisible()
+    local font = Grid.FontPath()
     for i = 1, total do
         local item = items[i]
         PaintSlot(item, 12 + (i - 1) % columns * CELL, -COMBAT_TOP - floor((i - 1) / columns) * CELL, nil,
-            item.count or 0)
+            item.count or 0, font)
     end
     HideUnplaced()
     V.layout = "combat"
@@ -522,7 +533,7 @@ function V.Refresh()
     V.frame = M.frame
     -- Blizzard grid: Blizzard's own layout, with the Suite window style and
     -- item levels of Bags.lua.
-    if M.config.inventoryView == NS.BagsBlizzardGrid then
+    if M.config.inventoryView == VIEW.BLIZZARD_GRID then
         if V.active then V.Release() end
         return
     end
@@ -589,6 +600,3 @@ end
 function V.Disable()
     V.Release()
 end
-
-hooksecurefunc(M, "Refresh", V.Refresh)
-hooksecurefunc(M, "Disable", V.Disable)

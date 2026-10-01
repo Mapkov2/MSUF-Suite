@@ -3,7 +3,7 @@ local NS, S = P.NS, P.Suite
 -- Damage meter runtime. The DamageMeter/*.lua files share the private table
 -- below. Loading them touches nothing in the client: frames, events and timers
 -- exist only while the module is active and has something to show.
-local D = { windows = {}, MAX = 5, KEYS = {}, OVERALL = 0, CURRENT = 1, AVOIDABLE = 8, DEATHS = 9, ENEMY = 10 }
+local D = { windows = {}, MAX = 5, KEYS = {}, OVERALL = 0, CURRENT = 1 }
 P.DamageMeter = D
 -- damageMeterEnabled is declared on the catalog entry (restored on disable).
 local M = { styleGen = 0, events = {} }
@@ -13,9 +13,18 @@ local floor, format = math.floor, string.format
 
 -- Enum.DamageMeterType values are identical on every client (catalog choice
 -- index = value + 1). Dps/Hps lead with the rate, like Blizzard's meter;
--- interrupts and dispels are plain counts.
-D.perSecond = { [1] = true, [3] = true }
-D.countOnly = { [5] = true, [6] = true }
+-- interrupts and dispels are plain counts. Damage and healing break down
+-- into targets as well as spells.
+local TYPE = Enum.DamageMeterType
+D.TYPE = TYPE
+D.perSecond = { [TYPE.Dps] = true, [TYPE.Hps] = true }
+D.countOnly = { [TYPE.Interrupts] = true, [TYPE.Dispels] = true }
+D.damageTypes = { [TYPE.DamageDone] = true, [TYPE.Dps] = true }
+D.healingTypes = { [TYPE.HealingDone] = true, [TYPE.Hps] = true }
+D.targetTypes = { [TYPE.DamageDone] = true, [TYPE.Dps] = true, [TYPE.HealingDone] = true, [TYPE.Hps] = true }
+-- Catalog choice values (MSUF_Suite/Core/Catalog/DamageMeter.lua).
+D.VISIBILITY, D.SESSION, D.ICON = NS.DamageMeterVisibility, NS.DamageMeterSession, NS.DamageMeterIconStyle
+D.ROW_BORDER, D.TEXT_STYLE, D.VALUE_FORMAT = NS.DamageMeterRowBorder, NS.DamageMeterTextStyle, NS.DamageMeterValueFormat
 
 -- Per-window setting names, built once so paint and visibility paths never
 -- concatenate keys.
@@ -295,9 +304,9 @@ end
 local function EnemySession(win)
     local session
     if win.sessionID then
-        session = C_DamageMeter.GetCombatSessionFromID(win.sessionID, D.ENEMY)
+        session = C_DamageMeter.GetCombatSessionFromID(win.sessionID, TYPE.EnemyDamageTaken)
     else
-        session = C_DamageMeter.GetCombatSessionFromType(win.sessionType, D.ENEMY)
+        session = C_DamageMeter.GetCombatSessionFromType(win.sessionType, TYPE.EnemyDamageTaken)
     end
     return type(session) == "table" and Public(session) and session or nil
 end
@@ -305,9 +314,11 @@ end
 local function EnemySource(win, guid, creature)
     local function Fetch(sourceGUID, sourceCreatureID)
         if win.sessionID then
-            return C_DamageMeter.GetCombatSessionSourceFromID(win.sessionID, D.ENEMY, sourceGUID, sourceCreatureID)
+            return C_DamageMeter.GetCombatSessionSourceFromID(win.sessionID, TYPE.EnemyDamageTaken, sourceGUID,
+                sourceCreatureID)
         end
-        return C_DamageMeter.GetCombatSessionSourceFromType(win.sessionType, D.ENEMY, sourceGUID, sourceCreatureID)
+        return C_DamageMeter.GetCombatSessionSourceFromType(win.sessionType, TYPE.EnemyDamageTaken, sourceGUID,
+            sourceCreatureID)
     end
     -- The enemy view is keyed by creature ID on some clients. Prefer that
     -- lookup, then fall back to the exact identity used by Blizzard's UI.
@@ -427,8 +438,8 @@ end
 
 function D.TargetGroups(win, source, detail)
     if M.inCombat or NS.IsCombatLocked() or M.preview then return nil end
-    if win.meterType == 2 or win.meterType == 3 then return HealingTargets(detail) end
-    if win.meterType ~= 0 and win.meterType ~= 1 then return nil end
+    if D.healingTypes[win.meterType] then return HealingTargets(detail) end
+    if not D.damageTypes[win.meterType] then return nil end
     if not source then return nil end
     local name = source.name
     if not Public(name) or type(name) ~= "string" then return nil end
@@ -458,9 +469,8 @@ end
 -- Public snapshot for challenge lifecycle consumers. This never resets or
 -- relabels a native session. The consumer owns start/end boundaries and must
 -- invalidate a baseline on DAMAGE_METER_RESET.
-local METER = Enum.DamageMeterType
-local SNAPSHOT_TYPES = { damage = METER.DamageDone, damageTaken = METER.DamageTaken,
-    interrupts = METER.Interrupts, deaths = METER.Deaths }
+local SNAPSHOT_TYPES = { damage = TYPE.DamageDone, damageTaken = TYPE.DamageTaken,
+    interrupts = TYPE.Interrupts, deaths = TYPE.Deaths }
 function S.ReadDamageMeterTotals()
     if NS.IsCombatLocked() then return nil end
     local available = C_DamageMeter.IsDamageMeterAvailable()

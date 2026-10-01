@@ -1191,4 +1191,27 @@ for _,file in ipairs(files) do
 end
 -- Paints and clock seconds never create timer objects (C_Timer.NewTimer).
 assert(#timers==0,"the meter created "..#timers.." timer objects for paints or clock ticks")
+-- Each named mode is the position of its label in the setting's choice list.
+do
+    local rules=S.catalog.damageMeter.rules
+    local NAMES={
+        {"visibility",Suite.DamageMeterVisibility,{ALWAYS="Always",COMBAT="In combat",GROUP="In a group",
+            MOUSEOVER="Mouseover",NEVER="Never"}},
+        {"w1Session",Suite.DamageMeterSession,{CURRENT="Current fight",OVERALL="Overall"}},
+        {"iconStyle",Suite.DamageMeterIconStyle,{NONE="None",SPEC="Specialization",CLASS="Class"}},
+        {"rowBorderMode",Suite.DamageMeterRowBorder,{NONE="None",FULL="Full row",FILLED="Filled portion"}},
+        {"outline",Suite.DamageMeterTextStyle,{SHADOW="Shadow",OUTLINE="Outline",THICK="Thick outline",NONE="None",
+            OUTLINE_SHADOW="Outline + shadow",THICK_SHADOW="Thick outline + shadow"}},
+        {"numberFormat",Suite.DamageMeterValueFormat,{RATE="Per second only",PRIMARY="Primary value only",
+            PARENTHESES="Primary (secondary)",BAR="Primary | secondary",CUSTOM="Custom layout"}},
+    }
+    for _,entry in ipairs(NAMES) do
+        local choices,count=rules[entry[1]].choices,0
+        for name,label in pairs(entry[3]) do
+            assert(choices[entry[2][name]]==label,entry[1].."."..name.." does not name "..label)
+            count=count+1
+        end
+        assert(count==#choices,entry[1].." has a choice without a name")
+    end
+end
 print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, damage and healing targets, combat spell unit labels, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

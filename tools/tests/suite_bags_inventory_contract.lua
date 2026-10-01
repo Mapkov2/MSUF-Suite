@@ -1,5 +1,32 @@
 local root = assert(arg[1], "repository root required")
-local P = {}
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+-- The view modes are the Bags catalog's choice values.
+local _, catalog = Support.CatalogDefaults(root, "bags")
+local P = { NS = { BagsView = catalog.BagsView } }
+-- ItemConstantsDocumentation.lua and ItemQualitiesDocumentation.lua (Retail and Forever).
+Enum = { ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
+        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
+-- Each named mode is the position of its label in the setting's choice list.
+do
+    local rules = catalog.SuiteCatalog.bags.rules
+    local NAMES = {
+        { "inventoryView", catalog.BagsView, { ALL = "All items", BY_BAG = "By bag", CATEGORIES = "Categories",
+            BLIZZARD_GRID = "Blizzard grid" } },
+        { "bankView", catalog.BagsBankView, { TABS = "Bank tabs", CHARACTER = "Combined bank",
+            WARBANK = "Combined warbank", CATEGORIES = "Bank categories" } },
+        { "sortDirection", catalog.BagsSortDirection, { BLIZZARD = "Blizzard setting", FROM_TOP = "Fill from the top",
+            FROM_BOTTOM = "Fill from the bottom" } },
+    }
+    for _, entry in ipairs(NAMES) do
+        local choices, count = rules[entry[1]].choices, 0
+        for name, label in pairs(entry[3]) do
+            assert(choices[entry[2][name]] == label, entry[1] .. "." .. name .. " does not name " .. label)
+            count = count + 1
+        end
+        assert(count == #choices, entry[1] .. " has a choice without a name")
+    end
+end
 assert(loadfile(root .. "/MSUF_Suite_Bags/InventoryModel.lua"))("Bags", P)
 local Model = P.InventoryModel
 local function equal(actual, expected, why)
@@ -128,7 +155,7 @@ setConfig.category_equipment = false
 Model.Build(model, { shared, unique }, setConfig, setState, {})
 assert(not model.groupsByKey["set:Damage:exp:10"], "disabled equipment category does not reappear through aliases")
 local requests, late = 0, false
-P.NS = { RootDB = {}, loginKind = "login" }
+P.NS = { RootDB = {}, loginKind = "login", BagsView = catalog.BagsView }
 P.Suite = { Public = function() return true end, Finite = function(v) return type(v) == "number" end,
     PublicText = function(v) return type(v) == "string" and v ~= "" and v or nil end }
 UnitGUID = function() return "Player-1" end
@@ -187,8 +214,11 @@ local frame = { EnumerateValidItems = function()
     return function() i = i + 1; if buttons[i] then return i, buttons[i] end end
 end }
 slotItems[1], slotItems[2] = 301, 301
-local fresh = true
-C_NewItems.IsNewItem = function(_, slot) return slot == 2 and fresh end
+local fresh, newChecks = true, 0
+C_NewItems.IsNewItem = function(_, slot)
+    newChecks = newChecks + 1
+    return slot == 2 and fresh
+end
 local moduleState = { recent = { [9] = true }, recentOrder = { 9 }, dismissedRecent = {}, pinned = { [7] = true } }
 local view = Index.State(moduleState)
 local recent = Index.Recent()
@@ -202,11 +232,14 @@ assert(not recent.items[301] and recent.dismissed[301], "an older identical stac
 assert(index.items[1].slot == 1 and index.items[2].slot == 2, "slots are listed in physical order")
 fresh = false; Index.ReadContainer(index, frame, recent)
 assert(not recent.dismissed[301], "dismissals are pruned when the native new-item flag disappears")
-fresh = true; Index.ReadContainer(index, frame, recent)
+-- The client flags an item as new when it arrives, which is a bag change
+-- (BAG_UPDATE marks the slot cache); a hover only clears the flag.
+fresh = true; P.SlotCache.MarkBag(0); Index.ReadContainer(index, frame, recent)
 assert(recent.items[301], "a later genuinely new item is listed again")
-reads = 0
+reads, newChecks = 0, 0
 Index.ReadContainer(index, frame, recent)
 assert(reads == 0, "an unchanged bag is not read again")
+assert(newChecks == 1, "an unchanged bag asked for the new-item flag of a slot that was not new")
 
 -- Recent items stay across logins, per character, and leave the list once
 -- older than recentHours (default 24), so they cannot take over the

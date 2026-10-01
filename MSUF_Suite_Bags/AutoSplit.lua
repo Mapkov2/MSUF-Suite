@@ -96,5 +96,3 @@ function A.Start(owner, amount)
     Step()
     return true
 end
-
-hooksecurefunc(M, "Disable", A.Stop)

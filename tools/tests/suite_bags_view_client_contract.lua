@@ -472,5 +472,41 @@ do
     assert(not V.active and Native() and not V.chrome.shown, "Blizzard grid must give the layout back")
 end
 
+---------------------------------------------------------------- category editor
+-- "Edit categories" opens the category editor with no argument: the click's
+-- button must never reach Editor.Show as its pinned flag.
+do
+    local W = H.New(root, { config = { inventoryView = 3 } })
+    W.sizes[0] = 4
+    local show, arguments = W.P.InventoryEditor.Show, nil
+    W.P.InventoryEditor.Show = function(...)
+        arguments = select("#", ...)
+        return show(...)
+    end
+    W.Apply()
+    W.OpenBags()
+    W.Settle()
+    local manage = assert(W.P.InventoryView.manage, "the inventory view has no category editor button")
+    manage:Click("LeftButton")
+    assert(arguments == 0 and W.P.InventoryEditor.frame.shown and not W.P.InventoryEditor.editPins,
+        "Edit categories passed its click arguments to the editor")
+end
+
+---------------------------------------------------------------- font reads
+-- A render reads the bag font once, not once per slot.
+do
+    local W = FullBags({ config = { inventoryView = 1 } })
+    W.OpenBags()
+    W.Settle()
+    local Grid, reads = W.P.GridView, 0
+    local FontPath = Grid.FontPath
+    Grid.FontPath = function() reads = reads + 1; return FontPath() end
+    W.Native(function() W.CF:UpdateItems() end)
+    W.Settle()
+    Grid.FontPath = FontPath
+    assert(W.P.InventoryView.layout == "suite" and reads == 1,
+        "a render read the bag font " .. reads .. " times")
+end
+
 print("bag view client model: order, reads, combat, geometry, tooltips, split owner, search, guild bank,"
-    .. " category limit, combat disable and Blizzard grid passed")
+    .. " category limit, combat disable, Blizzard grid, the category editor and font reads passed")

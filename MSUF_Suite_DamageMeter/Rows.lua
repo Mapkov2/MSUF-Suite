@@ -7,6 +7,7 @@ local S = P.Suite
 local D = P.DamageMeter
 local M = D.M
 local Public, Finite, Num = S.Public, S.Finite, D.Num
+local TYPE, ICON, ROW_BORDER, VALUE_FORMAT = D.TYPE, D.ICON, D.ROW_BORDER, D.VALUE_FORMAT
 local floor, format = math.floor, string.format
 local CLASS_SHEET = "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -23,8 +24,13 @@ local ranks = setmetatable({}, {
         return text
     end
 })
-local separators = { [3] = "%s (%s)", [4] = "%s | %s" }
-local customOrders = { { 1, 2, 3 }, { 1, 3, 2 }, { 2, 1, 3 }, { 2, 3, 1 }, { 3, 1, 2 }, { 3, 2, 1 } }
+local separators = { [VALUE_FORMAT.PARENTHESES] = "%s (%s)", [VALUE_FORMAT.BAR] = "%s | %s" }
+-- The values of the custom layout, in the valueOrder choices' order.
+local TOTAL, RATE, PERCENT = 1, 2, 3
+local customOrders = {
+    { TOTAL, RATE, PERCENT }, { TOTAL, PERCENT, RATE }, { RATE, TOTAL, PERCENT },
+    { RATE, PERCENT, TOTAL }, { PERCENT, TOTAL, RATE }, { PERCENT, RATE, TOTAL },
+}
 local customPatterns = {
     { "%s", "%s %s", "%s %s %s" },
     { "%s", "%s (%s)", "%s (%s) (%s)" },
@@ -145,9 +151,9 @@ local function StyleRowBorder(row, hasIcon)
     local c, bar = M.config, row.bar
     local mode = c.rowBorderMode
     local r, g, b = S.RGB(c.rowBorderColor)
-    if mode > 1 then
+    if mode ~= ROW_BORDER.NONE then
         local holder = RowEdges(row, "fillBorder", bar)
-        local target = mode == 3 and bar:GetStatusBarTexture() or bar
+        local target = mode == ROW_BORDER.FILLED and bar:GetStatusBarTexture() or bar
         holder:ClearAllPoints()
         holder:SetPoint("TOPLEFT", hasIcon and c.rowBorderIcon and row.icon or target, "TOPLEFT", 0, 0)
         holder:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
@@ -168,7 +174,7 @@ function D.StyleRow(row)
     local tip, list = row.kind == "tip", row.kind == "list"
     local height = tip and 16 or style.barHeight
     local left, right = tip and 11 or style.leftSize, tip and 11 or style.rightSize
-    local hasIcon = not list or style.iconStyle ~= 1
+    local hasIcon = not list or style.iconStyle ~= ICON.NONE
     row:SetHeight(height)
     local icon, bar = row.icon, row.bar
     icon:ClearAllPoints()
@@ -233,13 +239,14 @@ function D.RowColors(row, class)
     end
 end
 
--- iconStyle 2 prefers the spec icon, 3 (and a missing spec) uses the class sprite.
+-- Specialization prefers the spec icon; Class (and a missing spec) uses the class sprite.
 function D.UnitIcon(row, spec, class, iconStyle)
-    local key = iconStyle == 2 and spec ~= 0 and spec or class
+    local bySpec = iconStyle == ICON.SPEC and spec ~= 0
+    local key = bySpec and spec or class
     if key == row.iconKey then return end
     row.iconKey = key
     local icon, zoom = row.icon, M.style.zoom
-    if iconStyle == 2 and spec ~= 0 then
+    if bySpec then
         icon:SetTexture(spec)
         icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
         icon:Show()
@@ -303,21 +310,21 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
     local order, separator = style.valueOrder or 1, style.valueSeparator or 2
     local allPlain = Public(total) and (countOnly or Public(rate))
     if allPlain and total == row.mA and rate == row.mB and percent == row.mP
-        and row.mF == 5 and order == row.mO and separator == row.mS then
+        and row.mF == VALUE_FORMAT.CUSTOM and order == row.mO and separator == row.mS then
         return
     end
     if allPlain then
-        row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = total, rate, percent, 5, order, separator
+        row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = total, rate, percent, VALUE_FORMAT.CUSTOM, order, separator
     else
         row.mA, row.mB, row.mP, row.mF, row.mO, row.mS = nil, nil, nil, nil, nil, nil
     end
     local percentText = percent and format("%d%%", percent)
     local first, second, third, count = nil, nil, nil, 0
     for _, kind in ipairs(customOrders[order] or customOrders[1]) do
-        if kind == 1 or (kind == 2 and not countOnly) or (kind == 3 and percent ~= nil) then
+        if kind == TOTAL or (kind == RATE and not countOnly) or (kind == PERCENT and percent ~= nil) then
             local value
-            if kind == 1 then value = total elseif kind == 2 then value = rate else value = percentText end
-            value = kind == 3 and value or (Public(value) and D.Compact(value) or D.Abbreviate(value))
+            if kind == TOTAL then value = total elseif kind == RATE then value = rate else value = percentText end
+            value = kind == PERCENT and value or (Public(value) and D.Compact(value) or D.Abbreviate(value))
             count = count + 1
             if count == 1 then first = value elseif count == 2 then second = value else third = value end
         end
@@ -340,20 +347,25 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
     end
 end
 
--- Legacy value formats: 1 per second, 2 primary only, 3 "a (b)", 4 "a | b".
--- The primary value is the rate for Dps/Hps; interrupts/dispels show counts.
+-- Value formats: per second only, primary only, "a (b)", "a | b", or the
+-- custom layout. The primary value is the rate for Dps/Hps; interrupts and
+-- dispels show counts.
 function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPercent)
     local style = M.style
     local fmt = style.numberFormat
     total, perSecond = Num(total), Num(perSecond)
-    if fmt == 5 then return SetCustomValueText(row, meterType, total, perSecond, denominator, alwaysPercent) end
+    if fmt == VALUE_FORMAT.CUSTOM then
+        return SetCustomValueText(row, meterType, total, perSecond, denominator, alwaysPercent)
+    end
     local a, b, two
     if D.countOnly[meterType] then
         a = total
     else
         local main, second = total, perSecond
         if D.perSecond[meterType] then main, second = perSecond, total end
-        if fmt == 1 then a = perSecond elseif fmt == 2 then a = main else a, b, two = main, second, true end
+        if fmt == VALUE_FORMAT.RATE then a = perSecond
+        elseif fmt == VALUE_FORMAT.PRIMARY then a = main
+        else a, b, two = main, second, true end
     end
     local text = row.valueText
     if Public(a) and (not two or Public(b)) then
@@ -402,7 +414,7 @@ function D.PaintSource(row, source, index, session, win)
         local spec = source.specIconID
         D.UnitIcon(row, Finite(spec) and spec or 0, class, style.iconStyle)
     end
-    if meterType == D.DEATHS then
+    if meterType == TYPE.Deaths then
         if not row.full then
             row.full, row.mMax, row.mVal = true, nil, nil
             row.bar:SetMinMaxValues(0, 1)
@@ -434,7 +446,7 @@ function D.PaintSpell(row, spell, source, meterType, class)
     -- EnemyDamageTaken. Names may be secret in combat; keep them in a C sink.
     local details = spell.combatSpellDetails
     local unitName = details and details.unitName
-    local unitLabel = (meterType == 0 or meterType == 1 or meterType == 2 or meterType == 3 or meterType == D.ENEMY) and
+    local unitLabel = (D.targetTypes[meterType] or meterType == TYPE.EnemyDamageTaken) and
         (not Public(unitName) or (type(unitName) == "string" and unitName ~= ""))
     -- Recycled rows must repaint their plain spell name when that suffix ends.
     if row.unitSpellLabel and not unitLabel then row.spellID = nil end

@@ -105,8 +105,9 @@ end
 function D.ApplySession(win, value, sessionID, duration)
     win.cfgSession, win.sessionID = value, sessionID
     win.pinDuration = sessionID and duration or nil
-    win.sessionType = value == 2 and D.OVERALL or D.CURRENT
-    win.overall = not sessionID and value == 2
+    local overall = value == D.SESSION.OVERALL
+    win.sessionType = overall and D.OVERALL or D.CURRENT
+    win.overall = not sessionID and overall
 end
 
 -- Settings are the authority; runtime picks survive a Refresh while the
@@ -333,7 +334,7 @@ function D.UpdateStatus(win, count)
     local text = ""
     if not M.available and not M.preview then
         text = M.reason or ""
-    elseif count == 0 and win.meterType == D.AVOIDABLE then
+    elseif count == 0 and win.meterType == D.TYPE.AvoidableDamageTaken then
         local notice = _G.DAMAGE_METER_AVOIDABLE_DAMAGE_NOT_ACTIVE
         text = type(notice) == "string" and notice or ""
     end
@@ -433,7 +434,7 @@ end
 
 function D.ApplyHover(win)
     local c = M.config
-    local fade = c.visibility == 4 and not M.forced and not win.hover
+    local fade = c.visibility == D.VISIBILITY.MOUSEOVER and not M.forced and not win.hover
     if fade ~= win.faded then
         win.faded = fade
         win.frame:SetAlpha(fade and 0 or 1)

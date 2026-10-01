@@ -60,15 +60,43 @@ local function HealthCurve()
     return healthCurve
 end
 
+-- Whether a bar and its places take the pointer. An invisible bar must not
+-- catch clicks, tooltips or the wheel; only audio places take the wheel.
+local function SetBarMouse(bar, enabled)
+    if bar.mouseEnabled == enabled then return end
+    bar.mouseEnabled = enabled
+    bar.frame:EnableMouse(enabled)
+    bar.badge:EnableMouse(enabled)
+    for i = 1, SLOT_COUNT do
+        local button = bar.slots[i]
+        button:EnableMouse(enabled)
+        button:EnableMouseWheel(enabled and button.extra ~= nil and button.extra.kind == "audio")
+    end
+end
+
+-- The bars shown only below full health, listed by UpdateVisibility (none
+-- in Edit Mode): player health events repaint these alone.
+local healthBars = {}
+
+local function GateHealth(bar)
+    -- Health can be secret. The curve result goes straight into SetAlpha
+    -- without Lua comparison, arithmetic or string conversion.
+    local alpha = UnitHealthPercent("player", false, HealthCurve())
+    bar.visual:SetAlpha(alpha)
+    -- At full health (alpha 0) the bar lets the pointer through. A secret
+    -- reading cannot be compared: the bar keeps taking the pointer then.
+    SetBarMouse(bar, not Finite(alpha) or alpha > 0)
+end
+
 local function RefreshHealthAlpha(bar)
     if not bar or not bar.visual then return end
     if S.editMode or not M.config[bar.injuredKey] then
         bar.visual:SetAlpha(1)
+        SetBarMouse(bar, true)
         return
     end
-    -- Health can be secret. The curve result goes straight into SetAlpha
-    -- without Lua comparison, arithmetic or string conversion.
-    bar.visual:SetAlpha(UnitHealthPercent("player", false, HealthCurve()))
+    healthBars[#healthBars + 1] = bar
+    GateHealth(bar)
 end
 
 -- Retail and Forever keep backpack and bag slots on a separate BagsBar.
@@ -406,7 +434,7 @@ local function CombatEdge(self, event)
     -- A Hearthstone looted or learned in combat is offered right away.
     if Extra.hearthDirty then
         Extra.hearthDirty = nil
-        Extra.PrepareHearths()
+        Extra.HearthsMayHaveChanged()
     end
     Actions.Resume()
 end
@@ -416,7 +444,7 @@ local function OnEvent(self, event, unit)
     Extra.Changed(self, event)
     if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         if unit == "player" then
-            for _, bar in pairs(self.bars) do RefreshHealthAlpha(bar) end
+            for i = 1, #healthBars do GateHealth(healthBars[i]) end
         end
         return
     end
@@ -600,6 +628,7 @@ end
 function M:UpdateVisibility()
     local c = self.config
     self.styling = true
+    Clear(healthBars)
     for i, bar in pairs(self.bars) do
         local mode = c[bar.visibilityKey]
         if mode ~= 4 then bar.hover = false end
@@ -672,7 +701,8 @@ local function RefreshSlot(button, c, index, slot, style, font)
         SOURCES[key] = true
     end
     button:SetScale((c[block .. "Scale"] or 100) / 100)
-    button:EnableMouseWheel(button.extra ~= nil and button.extra.kind == "audio")
+    button:EnableMouseWheel(button.bar.mouseEnabled ~= false and button.extra ~= nil
+        and button.extra.kind == "audio")
     local alpha = c[block .. "Alpha"] or 0
     if alpha > 0 and not button.blockFill then
         button.blockFill = S.CreateTexture(button, nil, "BACKGROUND")
@@ -763,6 +793,7 @@ function M:Enable()
 end
 
 function M:Disable()
+    Clear(healthBars)
     Actions.Disable()
     Extra.Disable()
     SyncNativeBagBar()

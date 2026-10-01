@@ -187,7 +187,7 @@ function Splitter.OwnerHidden(owner)
     if Splitter.owner == owner and not Splitter.attached then Close() end
 end
 
-local function Refresh()
+function Splitter.Refresh()
     if not Splitter.hooked then
         hooksecurefunc(StackSplitFrame, "OpenStackSplitFrame", OpenAttached)
         hooksecurefunc(StackSplitFrame, "UpdateStackText", NativeAmountChanged)
@@ -197,6 +197,3 @@ local function Refresh()
     end
     if StackSplitFrame:IsShown() then OpenAttached() end
 end
-
-hooksecurefunc(M, "Refresh", Refresh)
-hooksecurefunc(M, "Disable", Close)

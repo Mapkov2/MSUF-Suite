@@ -44,6 +44,7 @@ local function Texture(parent)
     function texture:Show() self.shown = true; self.showCalls = (self.showCalls or 0) + 1 end
     function texture:Hide() self.shown = false end
     function texture:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
+    function texture:SetDrawLayer(layer, sublevel) self.layer, self.sublevel = layer, sublevel end
     textures[#textures + 1] = texture
     return texture
 end
@@ -199,6 +200,9 @@ C_Container = {
     GetContainerItemQuestInfo = function() return { isQuestItem = false } end,
 }
 Constants = { InventoryConstants = { NumBagSlots = 4 } }
+-- ItemConstantsDocumentation.lua (Retail and Forever).
+Enum = { ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
+    ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 } }
 -- WoW Forever has no global GetItemQualityColor (Retail keeps it only as a
 -- deprecated alias): quality colours come from C_Item on both clients.
 C_Item = {
@@ -207,7 +211,7 @@ C_Item = {
     RequestLoadItemDataByID = function(id) requests[id] = (requests[id] or 0) + 1 end,
     GetItemQualityColor = function(quality) return quality == 4 and 0.7 or 1, 0.5, 1, "ffb380ff" end,
     GetItemInfo = function(link)
-        local bind = { ["gear-a"] = 2, ["gear-b"] = 9, food = 1 }
+        local bind = { ["gear-a"] = 2, ["gear-b"] = 9, food = 1, ["gear-warbound"] = 8, ["gear-account"] = 7 }
         return unpack({ [14] = bind[link] }, 1, 14)
     end,
 }
@@ -236,7 +240,11 @@ local S = {
     Text = function(value) return value end,
     CreateFontString = function(parent) local font = Font(); font.parent = parent; return font end,
     CreateFrame = function(_, _, parent) return VisualFrame(parent) end,
-    CreateTexture = function(parent) return Texture(parent) end,
+    CreateTexture = function(parent, _, layer, _, sublevel)
+        local texture = Texture(parent)
+        texture.layer, texture.sublevel = layer, sublevel
+        return texture
+    end,
     RGB = function(hex)
         return tonumber(hex:sub(1, 2), 16) / 255,
             tonumber(hex:sub(3, 4), 16) / 255,
@@ -300,8 +308,25 @@ state.Finite = S.Finite
 state.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state)
 local bagsPrivate = { NS = state, Suite = S }
+-- The Bags catalog (always loaded): its sections, the gold ledger and the
+-- session gold baseline (MSUF_Suite/Core/Catalog/Bags.lua).
+state.Text = function(text) return text end
+for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+    assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", state)
+end
 for _, file in ipairs({ "SlotCache", "Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
+end
+-- The sub-modules (their own files, not loaded here) run in Bags.lua's list
+-- order after its own refresh and stop; record each call.
+local submoduleCalls = {}
+for _, entry in ipairs(module.SUBMODULES) do
+    local methods = {}
+    for slot = 2, 3 do
+        local method = entry[slot]
+        if method then methods[method] = function() submoduleCalls[#submoduleCalls + 1] = entry[1] .. "." .. method end end
+    end
+    bagsPrivate[entry[1]] = methods
 end
 -- BAG_UPDATE(bag) reaches the shared slot cache before Blizzard's UpdateItems.
 local function BagChanged()
@@ -387,6 +412,24 @@ module.config = { showItemLevel = true, itemLevelSize = 12, font = "",
 module.context, module.active = context, true
 module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
+-- The explicit sub-module list replaces the files' post-hooks on the module.
+local REFRESH_ORDER = { "InventoryView.Refresh", "BankInventory.Refresh", "BagFinance.Enable",
+    "StackSplitter.Refresh", "SortDirection.Refresh" }
+local STOP_ORDER = { "InventoryView.Disable", "BankInventory.Disable", "BagFinance.Disable", "AutoSplit.Stop",
+    "StackSplitter.Close", "SortDirection.Restore" }
+local function Ran(order)
+    if #submoduleCalls ~= #order then return false end
+    for i = 1, #order do if submoduleCalls[i] ~= order[i] then return false end end
+    return true
+end
+assert(Ran(REFRESH_ORDER), "a refresh did not run the sub-modules in Bags.lua's order: "
+    .. table.concat(submoduleCalls, ", "))
+for _, file in ipairs({ "InventoryView", "BankInventory", "Finance", "AutoSplit", "StackSplitter", "SortDirection" }) do
+    local handle = assert(io.open(root .. "/MSUF_Suite_Bags/" .. file .. ".lua", "rb"))
+    local source = handle:read("*a")
+    handle:close()
+    assert(not source:find("hooksecurefunc%(%s*M%s*,"), file .. ".lua hooks the Bags module instead of joining its list")
+end
 assert(#textures == 23 and module.windows[ContainerFrameCombinedBags]
     and module.windows[ContainerFrame6] and textures[2].color[4] == 0.98,
     "combined and reagent bag backgrounds were not styled on enable")
@@ -448,17 +491,30 @@ for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
         and select(4, frame.TitleContainer:GetPoint(1)) == 8,
         "empty portrait plate remained visible or the title did not reclaim its space")
 end
-assert(buttons[3].emptyBackgroundAtlas == false and buttons[3].emptyIcon == nil
-    and buttons[3].ItemSlotBackground.alpha == 0
-    and module.overlays[buttons[3]].slotOuter.color
-    and module.overlays[buttons[3]].slotInner.color,
+-- Blizzard reads emptyBackgroundAtlas on every refresh (ItemButtonTemplate
+-- SetItemButtonTexture): the Suite never writes it. An empty slot's Suite
+-- surface covers the native icon (BORDER sublevel 0) instead.
+local function OverIcon(record)
+    return record.slotOuter.layer == "BORDER" and record.slotOuter.sublevel == 1
+        and record.slotInner.layer == "BORDER" and record.slotInner.sublevel == 2
+        and record.slotOuter.color[4] == 1 and record.slotInner.color[4] == 1
+end
+local function BelowIcon(record)
+    return record.slotOuter.layer == "BACKGROUND" and record.slotOuter.sublevel == -5
+        and record.slotInner.layer == "BACKGROUND" and record.slotInner.sublevel == -4
+end
+assert(buttons[3].emptyBackgroundAtlas == "bags-item-slot64" and buttons[3].textureCalls == nil,
+    "the Suite wrote Blizzard's empty-slot field or replaced the native icon")
+assert(buttons[3].ItemSlotBackground.alpha == 0 and OverIcon(module.overlays[buttons[3]]),
     "empty combined slots still draw Blizzard's embossed bag artwork")
-assert(buttons[1].emptyBackgroundAtlas == false and buttons[1].textureCalls == nil,
-    "styling replaced a loaded item icon")
+assert(buttons[1].emptyBackgroundAtlas == "bags-item-slot64" and buttons[1].textureCalls == nil
+    and BelowIcon(module.overlays[buttons[1]]),
+    "styling replaced or covered a loaded item icon")
 ContainerFrame6.shown = true
 hooks.ReagentOnShow()
-assert(#textures == 25 and reagentButton.emptyBackgroundAtlas == false
-    and reagentButton.emptyIcon == nil and module.overlays[reagentButton].slotOuter.shown,
+assert(#textures == 25 and reagentButton.emptyBackgroundAtlas == "bags-item-slot64"
+    and reagentButton.textureCalls == nil and module.overlays[reagentButton].slotOuter.shown
+    and OverIcon(module.overlays[reagentButton]),
     "reagent bag slots did not receive the Suite background")
 local initialTextureCount = #textures
 hooks.UpdateItems()
@@ -718,10 +774,49 @@ assert(requests[105] == 2, "a returning item could not request its missing data 
 items[3] = nil
 BagChanged()
 hooks.UpdateItems()
+-- A failed load (success false) is not asked again at once: the client
+-- would answer each request with another failure. The next opening retries.
+items[3] = { hyperlink = "gear-broken", itemID = 106, quality = 2 }
+BagChanged()
+hooks.UpdateItems()
+assert(requests[106] == 1 and module.pending[106], "missing item data was not requested")
+context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 106, false)
+assert(requests[106] == 1 and not module.pending[106], "a failed item load was requested again at once")
+hooks.UpdateItems()
+BagChanged()
+hooks.UpdateItems()
+assert(requests[106] == 1 and not context.events.GET_ITEM_INFO_RECEIVED,
+    "a bag refresh retried a failed item load")
+hooks.OnShow()
+assert(requests[106] == 2, "opening the bag did not retry a failed item load")
+items[3] = nil
+BagChanged()
+hooks.UpdateItems()
 
 module.config.itemLevelSize = 15
 module:Refresh()
 assert(module.overlays[buttons[1]].label.size == 15, "font setting did not refresh")
+-- Every text setting of the catalog's item level section repaints the
+-- labels, without a hand-kept key list.
+do
+    local switches = { showItemLevel = true, showBindBadge = true, showBankItemLevel = true }
+    local checked = 0
+    for _, rule in ipairs(state.SuiteCatalog.bags.controls) do
+        if rule.section == "itemLevels" and not switches[rule.key] then
+            local previous, style = module.config[rule.key], module.labelStyle
+            local kind, changed = type(rule.default), "changed"
+            if kind == "number" then changed = (previous or rule.default) + 1
+            elseif kind == "boolean" then changed = not previous end
+            module.config[rule.key] = changed
+            module:Refresh()
+            assert(module.labelStyle == style + 1, rule.key .. " did not repaint the item level text")
+            module.config[rule.key] = previous
+            module:Refresh()
+            checked = checked + 1
+        end
+    end
+    assert(checked >= 8, "the item level section lost its text settings")
+end
 module.config.fontOutline, module.config.fontRendering = 2, 2
 module.config.fontShadow, module.config.fontShadowOpacity, module.config.fontShadowDistance = true, 70, 2
 module:Refresh()
@@ -785,6 +880,14 @@ BagChanged()
 hooks.UpdateItems()
 assert(module.overlays[buttons[1]].bindBadge.text == "WuE",
     "reused bag button kept a stale binding badge")
+-- Both account bindings (ToWoWAccount, ToBnetAccount) are Warbound, bound or not.
+for _, link in ipairs({ "gear-warbound", "gear-account" }) do
+    items[1] = { hyperlink = link, itemID = 101, quality = 4, isBound = true }
+    BagChanged()
+    hooks.UpdateItems()
+    assert(module.overlays[buttons[1]].bindBadge.text == "WB" and module.overlays[buttons[1]].bindBadge.shown,
+        link .. " showed no Warbound badge")
+end
 items[1] = { hyperlink = "gear-a", itemID = 101, quality = 4, isBound = false }
 BagChanged()
 module.config.showItemLevel = true
@@ -805,10 +908,28 @@ assert(queued > 0 and not module.overlays[buttons[4]].label, "combat created a n
 combat = false
 module:Refresh()
 assert(module.overlays[buttons[4]].label.shown, "queued label was not created after combat")
+-- A slot emptied in combat (a used potion): the Suite surface lifts over
+-- Blizzard's empty-slot atlas at once, its own textures only; an item that
+-- arrives puts it back below the icon.
+local food = items[2]
+items[2] = nil
+BagChanged()
+combat = true
+hooks.UpdateItems()
+local foodSlot = module.overlays[buttons[2]]
+assert(OverIcon(foodSlot) and buttons[2].emptyBackgroundAtlas == "bags-item-slot64",
+    "a slot emptied in combat kept showing Blizzard's empty-slot artwork")
+combat = false
+items[2] = food
+BagChanged()
+hooks.UpdateItems()
+assert(BelowIcon(foodSlot), "an item that arrived stayed under the Suite surface")
 items[3] = nil
 BagChanged()
 module.active = false
+for i = #submoduleCalls, 1, -1 do submoduleCalls[i] = nil end
 module:Disable()
+assert(Ran(STOP_ORDER), "a stop did not run the sub-modules in Bags.lua's order: " .. table.concat(submoduleCalls, ", "))
 bagMode = context.before
 assert(not combinedStyle.shell.shown and not reagentStyle.shell.shown
     and not textures[1].shown and not textures[10].shown
@@ -825,7 +946,7 @@ for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
         "disabling bags did not restore Blizzard's bag portraits and title position")
 end
 assert(buttons[3].emptyBackgroundAtlas == "bags-item-slot64"
-    and buttons[3].emptyIcon == "bags-item-slot64"
+    and buttons[3].textureCalls == nil
     and buttons[3].ItemSlotBackground.alpha == 1
     and reagentButton.emptyBackgroundAtlas == "bags-item-slot64"
     and not module.overlays[buttons[3]].slotOuter.shown
@@ -841,10 +962,9 @@ local textureCountBeforeReenable = #textures
 module.active = true
 module:Enable()
 assert(#textures == textureCountBeforeReenable
-    and buttons[3].emptyBackgroundAtlas == false
-    and buttons[3].emptyIcon == nil
+    and buttons[3].emptyBackgroundAtlas == "bags-item-slot64"
     and buttons[3].ItemSlotBackground.alpha == 0
-    and module.overlays[buttons[3]].slotOuter.shown,
+    and module.overlays[buttons[3]].slotOuter.shown and OverIcon(module.overlays[buttons[3]]),
     "re-enabling bags did not reapply the slot styling without new textures")
 module.active = false
 module:Disable()

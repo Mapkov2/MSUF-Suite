@@ -53,4 +53,62 @@ assert(expanded and #toggles == 0, "the picker toggled a header the player had e
 local before = queries
 module.active = false
 assert(not S.BagCurrencyMenu({}) and queries == before, "disabled bags never open or query the picker")
+
+-- Two expansions each hold a "Dungeon and Raid" sub-header: same name, same
+-- depth. A model of Blizzard's tree list: rows in order, a header's children
+-- only while it is expanded (the player's Currency tab state).
+local function Node(name, isExpanded, children) return { name = name, expanded = isExpanded, children = children } end
+local function Tree(dfDungeons, wwDungeons, dfOpen, wwOpen)
+    return {
+        Node("Dragonflight", dfOpen, { Node("Dungeon and Raid", dfDungeons, { { name = "Currency 21", id = 21 } }),
+            { name = "Currency 22", id = 22 } }),
+        Node("The War Within", wwOpen, { Node("Dungeon and Raid", wwDungeons, { { name = "Currency 31", id = 31 } }),
+            { name = "Currency 32", id = 32 } }),
+    }
+end
+local tree
+local function Rows()
+    local rows = {}
+    local function Walk(list, depth)
+        for _, node in ipairs(list) do
+            rows[#rows + 1] = { node = node, depth = depth }
+            if node.children and node.expanded then Walk(node.children, depth + 1) end
+        end
+    end
+    Walk(tree, 0)
+    return rows
+end
+C_CurrencyInfo = {
+    GetCurrencyInfo = function(id) return { name = "Currency " .. id } end,
+    GetCurrencyListSize = function() return #Rows() end,
+    GetCurrencyListInfo = function(i)
+        local row = Rows()[i]
+        if not row then return nil end
+        local node = row.node
+        return { name = node.name, isHeader = node.children ~= nil, isHeaderExpanded = node.expanded == true,
+            currencyListDepth = row.depth }
+    end,
+    GetCurrencyListLink = function(i) local row = Rows()[i]; return row and row.node.id and tostring(row.node.id) end,
+    GetCurrencyIDFromLink = tonumber,
+    ExpandCurrencyList = function(i, value) Rows()[i].node.expanded = value end,
+}
+local function States()
+    return { tree[1].expanded, tree[1].children[1].expanded, tree[2].expanded, tree[2].children[1].expanded }
+end
+module.active, config.currencyIDs = true, ""
+tree = Tree(false, false, false, false)
+S.BagCurrencyMenu({})
+for _, id in ipairs({ 21, 22, 31, 32 }) do
+    assert(menu.entries["Currency " .. id], "a same-named sub-header kept currency " .. id .. " out of the picker")
+end
+local state = States()
+assert(not state[1] and not state[2] and not state[3] and not state[4],
+    "the picker left a collapsed header expanded")
+-- The player's own expanded sub-header stays expanded beside its namesake.
+tree = Tree(true, false, true, true)
+S.BagCurrencyMenu({})
+assert(menu.entries["Currency 21"] and menu.entries["Currency 31"], "a sub-header's currencies were not listed")
+state = States()
+assert(state[1] and state[2] and state[3] and not state[4],
+    "the picker collapsed a same-named header the player had expanded")
 print("currency picker bounds, checked state, Blizzard's header state and no background enumeration passed")

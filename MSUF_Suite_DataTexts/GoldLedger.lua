@@ -1,34 +1,24 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+-- The account total of the DataTexts ("Remember this character's gold for
+-- the account total"): the characters that opted in, from the one gold
+-- ledger the Bags gold history shares (MSUF_Suite/Core/Catalog/Bags.lua).
 local Ledger = {}
+local Gold = NS.GoldLedger
 
+-- PLAYER_MONEY and the world entry: this character's balance, updated in place.
 function Ledger.Capture()
-    local root = NS.RootDB
-    if type(root) ~= "table" then return end
-    local guid = S.PublicText(UnitGUID("player"))
-    local name = S.PublicText(UnitName("player"))
-    local realm = S.PublicText(GetRealmName())
-    local amount = GetMoney()
-    if not guid or not name or not realm or not S.Finite(amount) or amount < 0 then return end
-    local entries = root.goldLedger
-    if type(entries) ~= "table" then entries = {}; root.goldLedger = entries end
-    local label = name .. " - " .. realm
-    local old = entries[guid]
-    if type(old) ~= "table" or old.money ~= amount or old.name ~= label then
-        entries[guid] = { name = label, money = math.floor(amount) }
-    end
+    Gold.Record("account")
 end
 
 function Ledger.Snapshot()
-    local root = NS.RootDB
-    local entries = type(root) == "table" and root.goldLedger
-    if type(entries) ~= "table" then return nil end
+    local characters = Gold.Characters()
+    if not characters then return nil end
     local rows, total = {}, 0
-    for guid, entry in pairs(entries) do
-        if type(guid) == "string" and type(entry) == "table"
-            and S.PublicText(entry.name) and S.Finite(entry.money) and entry.money >= 0 then
-            rows[#rows + 1] = { guid = guid, name = entry.name, money = entry.money }
-            total = total + entry.money
+    for guid, record in pairs(characters) do
+        if type(guid) == "string" and Gold.Listed(record) and record.account == true then
+            rows[#rows + 1] = { guid = guid, name = record.name, money = record.money }
+            total = total + record.money
         end
     end
     if #rows == 0 or not S.Finite(total) then return nil end

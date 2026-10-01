@@ -26,12 +26,21 @@ local function ClearPending(self)
     end
 end
 
--- The native empty-slot icon atlas and combined-bag background are separate
--- from the actual item icon. Keep Blizzard's item button and all its handlers,
--- but let an empty slot show a quiet Suite surface instead of the bag artwork.
-local function RefreshEmptyIcon(button)
-    local hasItem = button:HasItem()
-    if S.Public(hasItem) and not hasItem then button:SetItemButtonTexture(nil) end
+-- An empty slot shows a quiet Suite surface instead of the bag artwork, and
+-- Blizzard's item button keeps all its handlers. Blizzard draws the empty-slot
+-- atlas (ContainerFrame.xml emptyBackgroundAtlas) in the item icon, BORDER
+-- sublevel 0 (ItemButtonTemplate.xml, SetItemButtonTexture). The Suite never
+-- writes that field, which Blizzard reads on every refresh: an empty slot
+-- lifts the Suite surface above the icon instead, and an item puts it back
+-- below. Both surface textures are opaque, so the atlas never shows.
+local SURFACE_BELOW_ICON = { "BACKGROUND", -5, -4 }
+local SURFACE_OVER_ICON = { "BORDER", 1, 2 }
+
+local function LayerSurface(record, empty)
+    record.slotEmpty = empty
+    local layer = empty and SURFACE_OVER_ICON or SURFACE_BELOW_ICON
+    record.slotOuter:SetDrawLayer(layer[1], layer[2])
+    record.slotInner:SetDrawLayer(layer[1], layer[3])
 end
 
 local function StyleSlot(self, button)
@@ -48,21 +57,24 @@ local function StyleSlot(self, button)
             return
         end
         if not record.slotOuter then
-            local outer = WindowTexture(button, "BACKGROUND", -5)
+            local below = SURFACE_BELOW_ICON
+            local outer = WindowTexture(button, below[1], below[2])
             outer:SetAllPoints(button)
-            local inner = WindowTexture(button, "BACKGROUND", -4)
+            local inner = WindowTexture(button, below[1], below[3])
             inner:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
             inner:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
-            record.slotOuter, record.slotInner = outer, inner
+            record.slotOuter, record.slotInner, record.slotEmpty = outer, inner, false
         end
-        self.context:Field(button, "emptyBackgroundAtlas", false, RefreshEmptyIcon)
-        RefreshEmptyIcon(button)
         record.slotNativeActive = true
     end
     if activating then
         record.slotOuter:Show()
         record.slotInner:Show()
     end
+    -- Our own textures: their layer may change in combat, as items are used.
+    -- HasItem is 1 or nil (ContainerFrameItemButtonMixin:SetHasItem), never secret.
+    local empty = not button:HasItem()
+    if record.slotEmpty ~= empty then LayerSurface(record, empty) end
     if button.ItemSlotBackground and (activating or record.nativeBg ~= button.ItemSlotBackground) then
         self.context:Alpha(button.ItemSlotBackground, 0)
         record.nativeBg = button.ItemSlotBackground
@@ -108,8 +120,15 @@ local function Style(self, record)
     record.quality = nil
 end
 
+-- requested[itemID]: true while a load is out, FAILED after the client
+-- answered it with success false. A failed load is not asked again until the
+-- bag opens next (CombinedShown), as BankItemLevel.lua does for the bank:
+-- the client would answer each new request with another failure at once.
+local FAILED = "failed"
+
 -- Queues a button until its item data arrives (GET_ITEM_INFO_RECEIVED).
 local function WaitForItem(self, pending, itemID, button)
+    if self.requested[itemID] == FAILED then return end
     local waiting = pending[itemID]
     if not waiting then
         local pool = self.pendingPool
@@ -136,9 +155,8 @@ local function PaintQuality(self, record, quality)
     record.quality = quality
 end
 
+-- info: the slot's cached read (SlotCache.lua); callers checked bag and slot.
 local function Paint(self, button, pending, info)
-    local bag, slot = button:GetBagID(), button:GetID()
-    if not S.Public(bag) or not S.Public(slot) then return end
     local record = self.overlays[button]
     if not self.config.showItemLevel or not info or not S.Public(info) then
         Hide(record)
@@ -190,7 +208,15 @@ local function Paint(self, button, pending, info)
     record.label:Show()
 end
 
-local BIND_BADGES = { [2] = "BoE", [7] = "WB", [9] = "WuE" }
+-- Enum.ItemBind (ItemConstantsDocumentation, Retail and Forever). Both
+-- account bindings are Warbound; Bind on Equip and Warbound until equipped
+-- show only while the item is not bound yet.
+local BIND = Enum.ItemBind
+local BIND_BADGES = {
+    [BIND.OnEquip] = "BoE", [BIND.ToWoWAccount] = "WB", [BIND.ToBnetAccount] = "WB",
+    [BIND.ToBnetAccountUntilEquipped] = "WuE",
+}
+local UNTIL_BOUND = { [BIND.OnEquip] = true, [BIND.ToBnetAccountUntilEquipped] = true }
 
 local function PaintBindBadge(self, button, pending, info)
     local record = self.overlays[button]
@@ -216,8 +242,7 @@ local function PaintBindBadge(self, button, pending, info)
         record.bindType = bindType
     end
     local text = BIND_BADGES[record.bindType]
-    if (record.bindType == 2 or record.bindType == 9)
-        and (not S.Public(info.isBound) or info.isBound ~= false) then text = nil end
+    if UNTIL_BOUND[record.bindType] and (not S.Public(info.isBound) or info.isBound ~= false) then text = nil end
     if not text then
         if record.bindBadge then record.bindBadge:Hide() end
         return
@@ -236,8 +261,12 @@ local function PaintBindBadge(self, button, pending, info)
         S.SetFont(record.bindBadge, nil, 10, "OUTLINE")
         record.bindStyled, record.bindFontEpoch = true, self.fontEpoch
     end
-    record.bindBadge:SetText(text)
-    record.bindBadge:SetTextColor(text == "BoE" and .55 or .92, text == "BoE" and .85 or .76, .98)
+    -- A refresh repaints only a badge whose text changed.
+    if record.bindText ~= text then
+        record.bindBadge:SetText(text)
+        record.bindBadge:SetTextColor(text == "BoE" and .55 or .92, text == "BoE" and .85 or .76, .98)
+        record.bindText = text
+    end
     record.bindBadge:Show()
 end
 
@@ -246,11 +275,14 @@ local function ItemInfoReceived(module, _, itemID, success)
     local waiting = module.pending[itemID]
     local bankWaiting = module.bankPending[itemID]
     if not waiting and not bankWaiting then return end
-    module.pending[itemID], module.requested[itemID] = nil, nil
+    local loaded = S.Public(success) and success == true
+    module.pending[itemID] = nil
+    module.requested[itemID] = waiting and not loaded and FAILED or nil
     if waiting and module.frame and module.frame:IsShown() then
         for i = 1, #waiting do
             local button = waiting[i]
-            local info = Slots.Get(button:GetBagID(), button:GetID())
+            local bag, slot = button:GetBagID(), button:GetID()
+            local info = S.Finite(bag) and S.Finite(slot) and Slots.Get(bag, slot)
             if module.config.showItemLevel then Paint(module, button, module.pending, info) end
             PaintBindBadge(module, button, module.pending, info)
         end
@@ -316,8 +348,8 @@ function M:UpdateVisible()
             PaintBindBadge(self, button, pending, info)
         end
     end
-    for itemID in pairs(self.requested) do
-        if not pending[itemID] then self.requested[itemID] = nil end
+    for itemID, request in pairs(self.requested) do
+        if request ~= FAILED and not pending[itemID] then self.requested[itemID] = nil end
     end
     if next(pending) or next(self.bankPending) then
         self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, true)
@@ -336,6 +368,9 @@ end
 
 local function CombinedShown()
     if not M.active then return end
+    for itemID, request in pairs(M.requested) do
+        if request == FAILED then M.requested[itemID] = nil end
+    end
     M:UpdateVisible()
     M:RefreshWindowLayout()
     RefreshMovers()
@@ -380,6 +415,29 @@ local function CombatEnded(module)
     module:RefreshWindowLayout()
 end
 
+-- The Bags sub-modules, run in this order after this file's own refresh and
+-- stop. Each entry: the Private table its file exports, its refresh method,
+-- its stop method (nil: nothing to do there); retail: the file loads on
+-- Retail only. Their files load after this one.
+local SUBMODULES = {
+    { "InventoryView", "Refresh", "Disable" },                -- the Suite grid of the combined bag
+    { "BankInventory", "Refresh", "Disable", retail = true }, -- the organized bank view
+    { "BagFinance", "Enable", "Disable" },                    -- the currency and gold history line
+    { "AutoSplit", nil, "Stop" },                             -- a running automatic split
+    { "StackSplitter", "Refresh", "Close" },                  -- split presets beside Blizzard's window
+    { "SortDirection", "Refresh", "Restore" },                -- Blizzard's bag sorting direction
+}
+M.SUBMODULES = SUBMODULES
+local REFRESH, STOP = 2, 3
+
+local function RunSubmodules(slot)
+    for i = 1, #SUBMODULES do
+        local entry = SUBMODULES[i]
+        local method = entry[slot]
+        if method and not (entry.retail and NS.Client.isForever) then Private[entry[1]][method]() end
+    end
+end
+
 function M:Enable()
     self.frame = ContainerFrameCombinedBags
     Slots.Start()
@@ -390,29 +448,44 @@ function M:Enable()
     self:Refresh()
 end
 
+-- The settings each refresh step repaints from. The item level text reads
+-- every setting of the catalog section "itemLevels" (MSUF_Suite/Core/Catalog/
+-- Bags.lua) except its switches, so a new text option joins it on its own.
+local SLOT_KEYS = { "backgroundColor", "accentColor" }
+local WINDOW_KEYS = { "backgroundOpacity" }
+local LEVEL_KEYS = { "showItemLevel", "showBindBadge", "showBankItemLevel" }
+local GOLD_KEYS = { "showSessionGold" }
+local LABEL_KEYS, VISUAL_KEYS = {}, {}
+do
+    local switches = {}
+    for i = 1, #LEVEL_KEYS do switches[LEVEL_KEYS[i]] = true end
+    for _, rule in ipairs(NS.SuiteCatalog.bags.controls) do
+        if rule.section == "itemLevels" and not switches[rule.key] then LABEL_KEYS[#LABEL_KEYS + 1] = rule.key end
+    end
+    for _, keys in ipairs({ SLOT_KEYS, WINDOW_KEYS, LABEL_KEYS, LEVEL_KEYS, GOLD_KEYS }) do
+        for i = 1, #keys do VISUAL_KEYS[#VISUAL_KEYS + 1] = keys[i] end
+    end
+end
+
+local function Changed(c, last, keys)
+    for i = 1, #keys do
+        if last[keys[i]] ~= c[keys[i]] then return true end
+    end
+    return false
+end
+
+-- slot, window, label, level and gold: whether each step must run again.
 local function VisualChanges(c, last)
-    local slot = not last or last.backgroundColor ~= c.backgroundColor or last.accentColor ~= c.accentColor
-    local window = slot or last.backgroundOpacity ~= c.backgroundOpacity or last.editMode ~= S.editMode
-    local label = not last or last.font ~= c.font
-        or last.itemLevelSize ~= c.itemLevelSize or last.qualityColor ~= c.qualityColor
-        or last.fontOutline ~= c.fontOutline or last.fontRendering ~= c.fontRendering
-        or last.fontShadow ~= c.fontShadow or last.fontShadowOpacity ~= c.fontShadowOpacity
-        or last.fontShadowDistance ~= c.fontShadowDistance
-    local level = not last or last.showItemLevel ~= c.showItemLevel or last.showBindBadge ~= c.showBindBadge
-        or last.showBankItemLevel ~= c.showBankItemLevel
-    local gold = not last or last.showSessionGold ~= c.showSessionGold
-    return slot, window, label, level, gold
+    if not last then return true, true, true, true, true end
+    local slot = Changed(c, last, SLOT_KEYS)
+    local window = slot or Changed(c, last, WINDOW_KEYS) or last.editMode ~= S.editMode
+    return slot, window, Changed(c, last, LABEL_KEYS), Changed(c, last, LEVEL_KEYS), Changed(c, last, GOLD_KEYS)
 end
 
 local function RememberVisuals(self, c)
     local last = self.appliedVisual or {}
-    last.backgroundColor, last.backgroundOpacity, last.accentColor =
-        c.backgroundColor, c.backgroundOpacity, c.accentColor
-    last.font, last.itemLevelSize, last.qualityColor = c.font, c.itemLevelSize, c.qualityColor
-    last.fontOutline, last.fontRendering, last.fontShadow = c.fontOutline, c.fontRendering, c.fontShadow
-    last.fontShadowOpacity, last.fontShadowDistance = c.fontShadowOpacity, c.fontShadowDistance
-    last.showItemLevel, last.showBindBadge, last.showBankItemLevel, last.showSessionGold, last.editMode =
-        c.showItemLevel, c.showBindBadge, c.showBankItemLevel, c.showSessionGold, S.editMode
+    for i = 1, #VISUAL_KEYS do last[VISUAL_KEYS[i]] = c[VISUAL_KEYS[i]] end
+    last.editMode = S.editMode
     self.appliedVisual = last
 end
 
@@ -460,6 +533,7 @@ function M:Refresh()
     self.needsItemRefresh = nil
     self:RefreshWindowLayout()
     RememberVisuals(self, c)
+    RunSubmodules(REFRESH)
 end
 
 
@@ -487,6 +561,7 @@ function M:Disable()
     if not NS.IsCombatLocked() then UpdateContainerFrameAnchors() end
     self.nativeScale = nil
     self.frame = nil
+    RunSubmodules(STOP)
 end
 
 Private.BagsModule = M

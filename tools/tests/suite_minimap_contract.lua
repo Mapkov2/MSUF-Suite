@@ -1053,3 +1053,34 @@ do
     end
     print("Minimap calls the client APIs both clients have without existence checks passed")
 end
+
+-- The apply categories come from the catalog sections: every setting the
+-- module reads re-runs at least one category, and a section's settings join
+-- its category without a hand-kept list.
+do
+    local W = H.New(root, "Mainline")
+    local categories, covered = W.MM.applyCategories, {}
+    for _, category in ipairs(categories) do
+        for _, key in ipairs(category.keys) do covered[key] = (covered[key] or 0) + 1 end
+    end
+    -- enabled starts and stops the module; captured is the one-time import mark.
+    for _, rule in ipairs(W.S.catalog.minimap.controls) do
+        if rule.key ~= "enabled" and rule.key ~= "captured" then
+            assert(covered[rule.key], rule.key .. " is in no apply category")
+        end
+    end
+    local function Has(name, key)
+        for _, category in ipairs(categories) do
+            if category.name == name then
+                for _, listed in ipairs(category.keys) do if listed == key then return true end end
+            end
+        end
+        return false
+    end
+    assert(Has("texts", "infoClockFont") and Has("texts", "tooltipScale") and Has("texts", "infoDifficultyColors")
+        and Has("elements", "buttonTrackingX") and Has("elements", "landingIcon") and Has("border", "styleGlowScale")
+        and Has("input", "zoomOutY") and Has("drawer", "drawerColumns") and Has("specialization", "specCorner")
+        and Has("geometry", "hoverWidth") and not Has("position", "size"),
+        "a catalog section's settings did not reach its apply category")
+    print("Minimap apply categories derived from the catalog sections passed")
+end

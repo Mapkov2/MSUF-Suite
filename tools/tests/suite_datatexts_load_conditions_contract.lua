@@ -55,12 +55,30 @@ assert(S.SetMany("dataTexts", { bar1LoadCondHideNoTarget = true,
     bar1LoadCondShowWhenInjured = true }))
 assert(first.visibilityDriver == "[mounted] hide; show",
     "injured condition did not replace the three no-target/out-of-combat rules")
+-- The bar, its medallion and its places take the pointer only while shown.
+local function TakesPointer(bar)
+    if not bar.frame.mouse or not bar.badge.mouse then return false end
+    for i = 1, #bar.slots do if not bar.slots[i].mouse then return false end end
+    return true
+end
+local function LetsPointerThrough(bar)
+    if bar.frame.mouse or bar.badge.mouse then return false end
+    for i = 1, #bar.slots do if bar.slots[i].mouse or bar.slots[i].wheel then return false end end
+    return true
+end
 health = 0
 W.Event("UNIT_HEALTH", "player")
 assert(first.visual.alpha == 0, "health event did not apply the native curve")
+assert(LetsPointerThrough(first), "an injured-only bar at full health still took the pointer")
+health = 1
+W.Event("UNIT_HEALTH", "player")
+assert(first.visual.alpha == 1 and TakesPointer(first), "an injured-only bar below full health ignored the pointer")
+health = 0
+W.Event("UNIT_HEALTH", "player")
 health = W.secret
 W.Event("UNIT_MAXHEALTH", "player")
 assert(first.visual.alpha == W.secret, "secret health was inspected before SetAlpha")
+assert(TakesPointer(first), "a secret health reading left the bar without the pointer")
 local healthAlpha = first.visual.alpha
 assert(S.Set("dataTexts", "bar1Visibility", 4))
 assert(first.frame.alpha == 0 and first.visual.alpha == healthAlpha,

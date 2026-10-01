@@ -1,5 +1,8 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
+local Sort = {}
+P.SortDirection = Sort
+local DIRECTION = NS.BagsSortDirection
 -- Blizzard's bag sorting direction (C_Container.SetSortBagsRightToLeft). No
 -- Blizzard UI sets it, so a player cannot undo it by hand: the value from
 -- before the Suite first changed it is kept per character in RootDB, and
@@ -19,7 +22,7 @@ local function Current()
     if S.Public(current) and type(current) == "boolean" then return current end
 end
 
-local function Restore()
+function Sort.Restore()
     local store, guid = Store(false)
     local record = store and store[guid]
     if not record then return end
@@ -33,10 +36,10 @@ local function Restore()
     if not next(store) then NS.RootDB.suiteBagSort = nil end
 end
 
-local function Refresh()
+function Sort.Refresh()
     if not M.active then return end
     local mode = M.config.sortDirection
-    if mode == 1 then Restore(); return end
+    if mode == DIRECTION.BLIZZARD then Sort.Restore(); return end
     local current = Current()
     local store, guid = Store(true)
     if current == nil or not store then return end
@@ -48,10 +51,8 @@ local function Refresh()
         -- Changed outside the Suite since: that value is the one to give back.
         record.before = current
     end
-    local value = mode == 3
+    -- Fill from the bottom: Blizzard sorts right to left.
+    local value = mode == DIRECTION.FROM_BOTTOM
     if current ~= value then C_Container.SetSortBagsRightToLeft(value) end
     record.applied = value
 end
-
-hooksecurefunc(M, "Refresh", Refresh)
-hooksecurefunc(M, "Disable", Restore)

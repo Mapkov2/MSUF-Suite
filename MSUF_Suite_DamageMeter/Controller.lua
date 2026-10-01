@@ -17,6 +17,12 @@ local HOST_KEY = "external:msuf.blizzard:damagemeter"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local ZONES = { party = "HideDungeon", scenario = "HideDungeon", raid = "HideRaid", pvp = "HidePvP", arena = "HidePvP" }
 local PREVIEW_SECONDS = 95
+local VISIBILITY, TEXT_STYLE, SESSION = D.VISIBILITY, D.TEXT_STYLE, D.SESSION
+local OUTLINED = { [TEXT_STYLE.OUTLINE] = "OUTLINE", [TEXT_STYLE.OUTLINE_SHADOW] = "OUTLINE",
+    [TEXT_STYLE.THICK] = "THICKOUTLINE", [TEXT_STYLE.THICK_SHADOW] = "THICKOUTLINE" }
+local SHADOWED = { [TEXT_STYLE.SHADOW] = true, [TEXT_STYLE.OUTLINE_SHADOW] = true, [TEXT_STYLE.THICK_SHADOW] = true }
+-- The fontRendering choice "Slug" draws no shadow (S.SetStyledFont).
+local SLUG = 3
 
 function D.BuildStyle()
     D.ConfigureAbbreviation()
@@ -24,11 +30,9 @@ function D.BuildStyle()
     local style = M.style or {}
     M.style = style
     style.font = S.ResolveFont(c.font)
-    -- outline 1 shadow only, 2/3 outline/thick, 4 none, 5/6 outline/thick with shadow.
-    style.outline = (c.outline == 2 or c.outline == 5) and "OUTLINE"
-        or (c.outline == 3 or c.outline == 6) and "THICKOUTLINE" or ""
+    style.outline = OUTLINED[c.outline] or ""
     style.rendering = c.rendering
-    style.shadow = (c.outline == 1 or c.outline == 5 or c.outline == 6) and c.rendering ~= 3
+    style.shadow = SHADOWED[c.outline] == true and c.rendering ~= SLUG
     style.shadowOpacity, style.shadowDistance = c.shadowOpacity, c.shadowDistance
     style.textAlpha, style.baseline = c.textOpacity / 100, c.baseline
     style.leftSize, style.rightSize, style.barHeight, style.spacing = c.leftSize, c.rightSize, c.barHeight, c.barSpacing
@@ -237,7 +241,7 @@ function D.ClearPins()
     for i = 1, M.config.windowCount do
         local win = D.windows[i]
         if win and win.sessionID then
-            D.ApplySession(win, 1, nil, nil)
+            D.ApplySession(win, SESSION.CURRENT, nil, nil)
             D.CloseBreakdown(win, true)
             win.offset, win.timerSecond, win.dirty = 0, false, true
             D.UpdateTitle(win)
@@ -283,7 +287,7 @@ local function Reset()
         local win = D.windows[i]
         if win then
             if win.sessionID then
-                D.ApplySession(win, 1, nil, nil)
+                D.ApplySession(win, SESSION.CURRENT, nil, nil)
                 D.UpdateTitle(win)
             end
             D.CloseBreakdown(win, true)
@@ -383,13 +387,13 @@ end
 -- force windows at combat start and stop forcing them inside it.
 function D.UpdateEvents()
     local c = M.config
-    local possible = M.forced or c.visibility ~= 5
+    local possible = M.forced or c.visibility ~= VISIBILITY.NEVER
     local clock = possible or (c.combatTime and c.timer)
     Want("PLAYER_REGEN_DISABLED", clock, CombatStart)
     Want("PLAYER_REGEN_ENABLED", clock or M.inCombat, CombatEnd)
     Want("PLAYER_ENTERING_WORLD", clock, World)
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
-    Want("GROUP_ROSTER_UPDATE", possible and c.visibility == 3, Roster)
+    Want("GROUP_ROSTER_UPDATE", possible and c.visibility == VISIBILITY.GROUP, Roster)
     Want("CHALLENGE_MODE_START", c.mythicReset, KeyStart)
     local data = M.anyShown
     Want("DAMAGE_METER_COMBAT_SESSION_UPDATED", data, SessionUpdated)
@@ -409,11 +413,11 @@ function D.EvaluateVisibility()
     local base
     if M.forced then
         base = true
-    elseif M.sessionHidden or c.visibility == 5 then
+    elseif M.sessionHidden or c.visibility == VISIBILITY.NEVER then
         base = false
-    elseif c.visibility == 2 then
+    elseif c.visibility == VISIBILITY.COMBAT then
         base = M.inCombat == true
-    elseif c.visibility == 3 then
+    elseif c.visibility == VISIBILITY.GROUP then
         local grouped = IsInGroup()
         base = Public(grouped) and grouped == true
     else

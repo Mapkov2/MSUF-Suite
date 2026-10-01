@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 if NS.Client.isForever then return end
 local Index, Slots = P.InventoryIndex, P.SlotCache
+local BANK_VIEW = NS.BagsBankView
 local Bank = {}
 P.BankInventoryIndex = Bank
 
@@ -48,8 +49,9 @@ function Bank.Read(index, mode)
     for i = #index.items, 1, -1 do index.items[i] = nil end
     for i = #index.tabs, 1, -1 do index.tabs[i] = nil end
     index.filtered = 0
-    if mode == 2 or mode == 4 then ReadType(index, Enum.BankType.Character) end
-    if mode == 3 or mode == 4 then ReadType(index, Enum.BankType.Account) end
+    local both = mode == BANK_VIEW.CATEGORIES
+    if both or mode == BANK_VIEW.CHARACTER then ReadType(index, Enum.BankType.Character) end
+    if both or mode == BANK_VIEW.WARBANK then ReadType(index, Enum.BankType.Account) end
     index.revision = index.revision + 1
     return index.items
 end

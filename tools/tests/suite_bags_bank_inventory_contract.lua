@@ -47,7 +47,10 @@ hooksecurefunc = function(owner, key, callback)
     owner[key] = function(...) if previous then previous(...) end; callback(...) end
 end
 SetItemButtonDesaturated = function(button, value) button.desaturated = value end
-Enum = { BankType = { Character = 1, Account = 2 }, TooltipDataType = { Item = 0 } }
+Enum = { BankType = { Character = 1, Account = 2 }, TooltipDataType = { Item = 0 },
+    ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
+        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
 -- Blizzard_SharedXMLGame defines the tooltip data processor at startup.
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
 BankFrame = Widget()
@@ -95,7 +98,9 @@ local S = {
     ModuleState = function() return state end,
     Set = function(_, key, value) c[key] = value; M:Refresh() end,
 }
+local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
 local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
+    BagsView = catalog.BagsView, BagsBankView = catalog.BagsBankView,
     Client = { SupportsEvent = function() return true end } }, BagsModule = M,
     StackSplitter = { OwnerHidden = function() end, OpenFor = function() end } }
 UnitGUID = function() return "Player-1" end
@@ -104,6 +109,8 @@ for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridVi
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 local B = P.BankInventory
+-- Bags.lua runs the bank view from its sub-module list after its own refresh and stop.
+M.Refresh, M.Disable = function() B.Refresh() end, function() B.Disable() end
 P.SlotCache.Start()
 -- Every registered frame receives the event, the shared slot cache included.
 local function Fire(event, ...)

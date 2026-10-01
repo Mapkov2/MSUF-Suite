@@ -140,7 +140,8 @@ local function PaintText(label, value, font, size)
     label:Show()
 end
 
-function D.Paint(button, item)
+-- font: the bag font, read once per render (GridView.FontPath).
+function D.Paint(button, item, font)
     local c = M.config
     local name = c.showEquipmentSetNames and (item.setLabel or item.setName)
     local upgrade = c.showUpgradeTrack and item.upgrade
@@ -153,7 +154,6 @@ function D.Paint(button, item)
         D.overlays[button] = record
     end
     record.item = item
-    local font = P.GridView.FontPath()
     PaintText(record.name, name, font, c.equipmentSetNameSize)
     PaintText(record.upgrade, upgrade, font, c.upgradeTextSize)
     PaintText(record.keyLevel, keyLevel and tostring(keyLevel), font, c.keystoneLevelSize)
