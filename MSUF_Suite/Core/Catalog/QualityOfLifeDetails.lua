@@ -1,11 +1,12 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local Number, Bool, Choice = B.Number, B.Bool, B.Choice
 
 B.Module("threatMeter", {
     title = "Threat meter (Forever)", description = "Your group's threat on the enemy you watch, read from Blizzard's own threat data, with an optional second window for your focus.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function() return NS.Client.isForever == true, "Threat meter is available in WoW Forever" end,
+    editElement = "main",
 })
 B.Section("threatMeter", "threat_meter", "Threat meter", {
     Choice("windows", "Watched enemies", 1, { "Target", "Focus", "Target and focus" }),
@@ -23,6 +24,7 @@ B.Module("flightTimer", {
     title = "Flight route timer (Forever)", description = "Learn flight-master route times, show the route and request landing at the next stop.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function() return NS.Client.isForever == true, "Flight route timer is available in WoW Forever" end,
+    editElement = "flight",
 })
 B.Section("flightTimer", "flight_route", "Flight route timer", {
     Bool("hideDisplay", "Hide the flight timer"), Bool("showStops", "Show intermediate flight stops", true),
@@ -81,6 +83,7 @@ B.Module("tooltipDetails", {
     title = "Tooltip details and anchor",
     description = "General tooltips, guild rank, target, item levels and item details. MSUF unit-frame tooltip anchors remain separate.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = RetailExtras,
+    editElement = "tooltip",
 })
 B.Section("tooltipDetails", "tooltip_details", "Tooltip details", {
     Choice("anchor", "General tooltip anchor", 1, { "Blizzard", "Cursor", "Fixed screen corner" }),
@@ -92,7 +95,7 @@ B.Section("tooltipDetails", "tooltip_details", "Tooltip details", {
     Number("fixedY", "Fixed Y offset", 24, -3000, 3000),
     Bool("titles", "Show unit titles", true),
     Bool("itemLevel", "Item level for you and the unit in the Inspect window", true),
-    Bool("inspectHovered", "Request item levels of hovered players (sends inspect requests)"),
+    B.Automation(Bool("inspectHovered", "Request item levels of hovered players (sends inspect requests)")),
     Bool("ownedMount", "Collection marker on native mount tooltips", true),
     Bool("guildRank", "Guild rank", true),
     Bool("unitMount", "Currently ridden mount in unit tooltips (out of combat)", true),
@@ -118,6 +121,7 @@ B.Module("popupAttention", {
     title = "Dialogs and loot toasts",
     description = "A Suite look, font, minimum height and position for Blizzard dialogs, marked resurrection offers, the item quality written on loot toasts and gold-framed money toasts.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = RetailExtras,
+    editElement = "popup",
 })
 B.Section("popupAttention", "popup_attention", "Dialogs", {
     Bool("skin", "Suite look for Blizzard dialogs"),

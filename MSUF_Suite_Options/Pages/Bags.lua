@@ -72,4 +72,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Bags", title = "Bags", build = Build, icon = { 3, 2 },
+    nav = "interface", navOrder = 4,
     aliases = { "bags", "bag", "inventory", "itemlevel", "item_level" } })

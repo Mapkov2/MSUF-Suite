@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_DataTexts")
 local Choice, Bool, Number, Color, Font, Texture = B.Choice, B.Bool, B.Number, B.Color, B.Font, B.Texture
 
 NS.DataTextSources = {
@@ -69,6 +69,8 @@ B.Module("dataTexts", {
     description = "Movable information bars with individually chosen data sources.",
     core = NS.Client.isForever, optIn = not NS.Client.isForever,
     page = "suite_dataTexts",
+    summary = "look barLook barWidth barHeight barVisibility barFontSize fontSize textAlign backgroundEnabled"
+        .. " backgroundOpacity trackAltGold hideBlizzardBagBar",
 })
 -- New Forever setups use the small information strip shown by the selected
 -- look. Existing profiles keep their explicit module switch and placement.

@@ -230,4 +230,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Chat", title = "Chat", build = Build, icon = { 4, 0 },
+    nav = "interface", navOrder = 5,
     aliases = { "chat", "chatframes", "chatframe" } })

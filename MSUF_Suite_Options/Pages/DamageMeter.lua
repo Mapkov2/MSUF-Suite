@@ -151,4 +151,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Damage meter", title = "Damage meter", build = Build, icon = { 7, 0 },
+    nav = "interface", navOrder = 3,
     aliases = { "damage_meter", "damagemeter", "meter", "dps" } })

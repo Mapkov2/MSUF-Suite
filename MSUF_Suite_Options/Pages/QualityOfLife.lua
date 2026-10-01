@@ -331,13 +331,11 @@ local function AddLoadoutAction(ctx, body, id, sectionId, y, width)
     return y - 38
 end
 
-local EDIT_ELEMENTS = {
-    actionTracker = "actions", xpBar = "experience", innervateCue = "alert",
-    durabilityAlert = "warning", battleRes = "charges", groupBloodlust = "lockout",
-    targetDistance = "distance", enemyCastStack = "casts", groupRaidShortcuts = "tools", combatStatsHUD = "combat", combatPetStatus = "warning", combatMovementCue = "combat",
-    burningRushCue = "combat", skyriding = "flight", threatMeter = "main", flightTimer = "flight",
-    tooltipDetails = "tooltip", popupAttention = "popup", cursorEffects = "gcd",
-}
+-- The Edit Mode element of each module that has one (spec.editElement).
+local EDIT_ELEMENTS = {}
+for id, spec in pairs(P.catalog) do
+    if spec.editElement then EDIT_ELEMENTS[id] = spec.editElement end
+end
 -- Edit Mode elements that exist only in one setup: the cursor's global
 -- cooldown circle is placed only while it stands on its own.
 local EDIT_READY = { cursorEffects = function() return P.Get("cursorEffects", "gcdDetached") == true end }
@@ -710,4 +708,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, icon = { 7, 1 },
+    nav = "general", navOrder = 1,
     aliases = { "qol", "qualityoflife", "quality_of_life", "actiontracker", "actions", "casts", "merchant", "itemlevel", "vault", "lootspec", "tooltipids", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp", "innervate", "whisper", "durability", "repairwarning", "battleres", "brez", "combatres", "skyriding", "vigor", "secondwind", "groupfinder", "keys", "keystone", "bloodlust" } })

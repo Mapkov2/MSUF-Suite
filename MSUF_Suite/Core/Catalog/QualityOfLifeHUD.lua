@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local Number, Bool, Choice = B.Number, B.Bool, B.Choice
 
 B.Module("combatStatsHUD", {
@@ -10,6 +10,7 @@ B.Module("combatStatsHUD", {
         if NS.Client.isForever then return false, "Secondary stats are available only in Retail" end
         return true
     end,
+    editElement = "combat",
 })
 B.Section("combatStatsHUD", "secondary_stats", "Secondary stats", {
     Bool("showCrit", "Show critical strike", true),
@@ -75,6 +76,7 @@ B.Module("enemyCastStack", {
         if NS.Client.isForever then return false, "Dungeon cast stack is available only in Retail" end
         return true
     end,
+    editElement = "casts",
 })
 B.Section("enemyCastStack", "dungeon_casts", "Dungeon cast stack", {
     Number("listSize", "Casts listed at once", 4, 1, 12),

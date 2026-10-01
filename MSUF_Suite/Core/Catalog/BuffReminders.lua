@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_BuffReminders")
 local Bool, Number, Choice, String, Color = B.Bool, B.Number, B.Choice, B.String, B.Color
 
 B.Module("buffReminders", {
@@ -7,6 +7,7 @@ B.Module("buffReminders", {
     description = "Clickable reminders for missing personal buffs, chosen aura spells, consumables and weapon enchants. Checks only while out of combat.",
     optIn = true, page = "suite_buffReminders",
     conflicts = { "EllesmereUIAuraBuffReminders" },
+    summary = "size columns remindBeforeMinutes instancesOnly point classBuff",
 })
 
 local id = "buffReminders"

@@ -475,4 +475,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Action bars", title = "Action bars", build = Build, icon = { 2, 2 },
+    nav = "interface", navOrder = 1,
     aliases = { "actionbars", "action_bars", "bars_suite" } })

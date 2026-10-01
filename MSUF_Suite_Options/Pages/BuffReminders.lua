@@ -61,4 +61,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Buff Reminders", title = "Buff Reminders", build = Build, icon = { 7, 1 },
+    nav = "combat", navOrder = 3,
     aliases = { "buffreminders", "buffs", "reminders", "consumables" } })

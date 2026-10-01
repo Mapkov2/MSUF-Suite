@@ -200,24 +200,19 @@ end
 -- Only deliberate, useful values appear in a collapsed section. Priority is
 -- independent of grid order; offsets, shadows and technical rendering options
 -- stay inside the section. Numbered keys share one policy across selected scopes.
-local SUMMARY_KEYS = {
-    chat = "look fontSize tabFontSize tabAccent panelAlpha sidebarPanel sidebarWidth inputPanel inputAlpha copyMessages",
-    actionbars = "look barVisibility barButtons barRows barCooldownSize barKeybind barBackground barBackgroundAlpha pickupModifier cooldownNumbers rangeColoring iconZoom borderSize fontSize",
-    bags = "look windowScale windowMoved reagentWindowMoved showItemLevel itemLevelSize backgroundOpacity",
-    damageMeter = "look wType wSession windowCount visibility barHeight iconStyle leftSize rightSize bgAlpha headerHeight hoverTooltip tooltipRows timer combatTime",
-    dataTexts = "look barLook barWidth barHeight barVisibility barFontSize fontSize textAlign backgroundEnabled backgroundOpacity trackAltGold hideBlizzardBagBar",
-    minimap = "stylePreset size point hoverResize hoverWidth shape borderSize styleTexture styleScale styleGlow styleGlowAlpha styleBackdrop styleBackdropAlpha visibility rotate elementRow elementSize showLanding landingIcon collectButtons drawerColumns",
-    objectives = "width height entrySize objectiveSize colorStyle backgroundOpacity",
-    runSummary = "width scale titleSize detailSize autoHide colorStyle backgroundOpacity",
-    announcements = "duration anchor titleSize subtitleSize colorStyle backgroundOpacity",
-    buffReminders = "size columns remindBeforeMinutes instancesOnly point classBuff",
-    nameplates = "look nativeStyle nativeSize enemyTextMode enemyNameSize friendlyNamesOnly friendlyNameSize enemyAuraMode friendlyAuraMode personalPower",
-    skin = "theme.look theme.shellOpacity theme.panelOpacity geometry.family geometry.controlShape icons.windowActions.style theme.iconBorderStyle font.enabled font.face icons.microMenu.preset icons.microMenu.scale",
-}
-for id, keys in pairs(SUMMARY_KEYS) do
+-- Each catalog module lists its keys, most important first (spec.summary);
+-- the Skinning page registers its own (P.RegisterSummary).
+local SUMMARY_KEYS = {}
+function P.RegisterSummary(id, keys)
     local ranks, rank = {}, 0
-    for key in keys:gmatch("%S+") do rank = rank + 1; ranks[key] = rank end
+    for key in keys:gmatch("%S+") do
+        rank = rank + 1
+        ranks[key] = rank
+    end
     SUMMARY_KEYS[id] = ranks
+end
+for id, spec in pairs(P.catalog) do
+    if spec.summary then P.RegisterSummary(id, spec.summary) end
 end
 
 function P.SummaryPriority(id, key)

@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_ActionBars")
 local Number, Bool, Choice, Color = B.Number, B.Bool, B.Choice, B.Color
 
 -- Twelve bars: ten action bars with suite-owned secure buttons, then the
@@ -20,6 +20,8 @@ B.Module("actionbars", {
     core = true, defaultEnabled = true,
     page = "suite_actionbars",
     conflicts = { "ElvUI", "Bartender4", "Dominos", "EllesmereUIActionBars", "ConsolePort_Bar" },
+    summary = "look barVisibility barButtons barRows barCooldownSize barKeybind barBackground"
+        .. " barBackgroundAlpha pickupModifier cooldownNumbers rangeColoring iconZoom borderSize",
 })
 
 local id = "actionbars"

@@ -4,86 +4,21 @@ local _, NS = ...
 -- derives the defaults once every catalog file has loaded.
 local catalog, order = {}, {}
 NS.SuiteCatalog, NS.SuiteOrder = catalog, order
--- Related Quality of Life helpers share one optional runtime addon. Their
--- settings and event subscriptions remain independent after it loads.
-local moduleAddons = {
-    actionbars = "MSUF_Suite_ActionBars",
-    minimap = "MSUF_Suite_Minimap",
-    damageMeter = "MSUF_Suite_DamageMeter",
-    bags = "MSUF_Suite_Bags",
-    qol = "MSUF_Suite_QualityOfLife",
-    quests = "MSUF_Suite_QualityOfLife",
-    loot = "MSUF_Suite_QualityOfLife",
-    combatLog = "MSUF_Suite_QualityOfLife",
-    xpBar = "MSUF_Suite_QualityOfLife",
-    actionTracker = "MSUF_Suite_QualityOfLife",
-    innervateCue = "MSUF_Suite_QualityOfLife",
-    skyriding = "MSUF_Suite_QualityOfLife",
-    threatMeter = "MSUF_Suite_QualityOfLife",
-    flightTimer = "MSUF_Suite_QualityOfLife",
-    characterExtras = "MSUF_Suite_QualityOfLife",
-    merchantList = "MSUF_Suite_QualityOfLife",
-    tooltipDetails = "MSUF_Suite_QualityOfLife",
-    popupAttention = "MSUF_Suite_QualityOfLife",
-    partyEffects = "MSUF_Suite_QualityOfLife",
-    durabilityAlert = "MSUF_Suite_QualityOfLife",
-    battleRes = "MSUF_Suite_QualityOfLife",
-    merchantLevel = "MSUF_Suite_QualityOfLife",
-    vaultSpec = "MSUF_Suite_QualityOfLife",
-    tooltipIDs = "MSUF_Suite_QualityOfLife",
-    tooltipVisibility = "MSUF_Suite_QualityOfLife",
-    itemCounts = "MSUF_Suite_QualityOfLife",
-    socketGemSuggestions = "MSUF_Suite_QualityOfLife",
-    tooltipSpellCopy = "MSUF_Suite_QualityOfLife",
-    tooltipMPlusScore = "MSUF_Suite_QualityOfLife",
-    tooltipClassColors = "MSUF_Suite_QualityOfLife",
-    macroBuilder = "MSUF_Suite_QualityOfLife",
-    chatProfileLinks = "MSUF_Suite_QualityOfLife",
-    loadoutReminder = "MSUF_Suite_QualityOfLife",
-    quietPopups = "MSUF_Suite_QualityOfLife",
-    waypoints = "MSUF_Suite_QualityOfLife",
-    dailyComfort = "MSUF_Suite_QualityOfLife",
-    collectionNewMarkers = "MSUF_Suite_QualityOfLife",
-    guildChatPrivacy = "MSUF_Suite_QualityOfLife",
-    uiErrorFilter = "MSUF_Suite_QualityOfLife",
-    groupDeathAlert = "MSUF_Suite_QualityOfLife",
-    releaseProtection = "MSUF_Suite_QualityOfLife",
-    groupFinderDoubleClick = "MSUF_Suite_QualityOfLife",
-    groupFinderApplicantSort = "MSUF_Suite_QualityOfLife",
-    groupFinderExitReminder = "MSUF_Suite_QualityOfLife",
-    trustedPartyInvites = "MSUF_Suite_QualityOfLife",
-    groupRaidShortcuts = "MSUF_Suite_QualityOfLife",
-    mythicKeyShare = "MSUF_Suite_QualityOfLife",
-    groupBloodlust = "MSUF_Suite_QualityOfLife",
-    lootContainers = "MSUF_Suite_QualityOfLife",
-    lootVendorRules = "MSUF_Suite_QualityOfLife",
-    trainerLearnAll = "MSUF_Suite_QualityOfLife",
-    characterUpgradeWindow = "MSUF_Suite_QualityOfLife",
-    professionAppearance = "MSUF_Suite_QualityOfLife",
-    lootToastFilter = "MSUF_Suite_QualityOfLife",
-    cursorEffects = "MSUF_Suite_QualityOfLife",
-    mapLandingShortcuts = "MSUF_Suite_QualityOfLife",
-    combatStatsHUD = "MSUF_Suite_QualityOfLife",
-    enemyCastStack = "MSUF_Suite_QualityOfLife",
-    targetDistance = "MSUF_Suite_QualityOfLife",
-    dungeonPortals = "MSUF_Suite_QualityOfLife",
-    combatPetStatus = "MSUF_Suite_QualityOfLife",
-    combatMovementCue = "MSUF_Suite_QualityOfLife",
-    burningRushCue = "MSUF_Suite_QualityOfLife",
-    delveSolePower = "MSUF_Suite_QualityOfLife",
-    mythicResetReminder = "MSUF_Suite_QualityOfLife",
-    dataTexts = "MSUF_Suite_DataTexts",
-    buffReminders = "MSUF_Suite_BuffReminders",
-    chat = "MSUF_Suite_Chat",
-    nameplates = "MSUF_Suite_Nameplates",
-    cooldownManager = "MSUF_Suite_CooldownManager",
-    objectives = "MSUF_Suite_Modules",
-    runSummary = "MSUF_Suite_Modules",
-    announcements = "MSUF_Suite_Modules",
-    afkScreen = "MSUF_Suite_Modules",
-}
 local Build = {}
 NS.CatalogBuild = Build
+
+-- The builder of one catalog file: every module it declares runs in that
+-- load-on-demand addon (spec.addon). Related Quality of Life helpers share
+-- one runtime addon; their settings and event subscriptions remain
+-- independent after it loads.
+function Build.ForAddon(addon)
+    return setmetatable({
+        Module = function(id, spec)
+            spec.addon = addon
+            return Build.Module(id, spec)
+        end,
+    }, { __index = Build })
+end
 
 -- Class colors are character identity, so resolve them only on cold settings
 -- paths. Renderers read these stable preset tables just like authored looks.
@@ -163,7 +98,8 @@ function Build.Texture(key, label)
 end
 
 -- spec fields: title, description, conflicts, core (enabled by the core preset),
--- defaultEnabled, optIn (never enabled by presets), page (menu page key), available() -> ok, reason.
+-- defaultEnabled, optIn (never enabled by presets), automation (the module acts for
+-- the player as a whole, see Build.Automation), page (menu page key), available() -> ok, reason.
 -- cvars: { [name] = true } CVars the runtime may set through its context; the
 -- controller hands them back even while the module addon is disabled.
 -- look (optional), shared by the controller and the menu:
@@ -177,9 +113,8 @@ end
 --   extra(values, lookIndex, config) adds settings derived from a global look
 function Build.Module(id, spec)
     assert(not catalog[id], "duplicate suite module " .. tostring(id))
-    assert(moduleAddons[id], "missing Suite addon for " .. tostring(id))
+    assert(type(spec.addon) == "string", "missing Suite addon for " .. tostring(id))
     spec.id = id
-    spec.addon = moduleAddons[id]
     spec.controls = {}
     spec.rules = {}
     spec.conflicts = spec.conflicts or {}
@@ -238,34 +173,28 @@ end
 -- chooses or submits for the player, messages other players, sends inspect
 -- requests, starts the combat log, or cancels auras and cinematics.
 -- Shared imports switch these off (NS.SanitizeAutomation) and profile
--- variants never hold them (ProfileVariants.lua). A listed module is
--- automation as a whole: spec.automation and its enable switch are flagged,
--- and variants leave all of its rules alone. Listed switches flag one rule
--- (rule.automation) of a module that also does other things.
-local automationModules = {
-    qol = true, quests = true, combatLog = true, lootContainers = true, trustedPartyInvites = true,
-    delveSolePower = true, professionAppearance = true, collectionNewMarkers = true,
-}
-local automationSwitches = {
-    qol = { "repair", "autoJunk" },
-    loot = { "quickLoot" },
-    dailyComfort = { "autoSkipCinematic" },
-    groupRaidShortcuts = { "autoMarkTank", "autoMarkHealer" },
-    groupFinderDoubleClick = { "quickApply" },
-    mythicKeyShare = { "insertKey" },
-    mythicResetReminder = { "announceReset" },
-    tooltipDetails = { "inspectHovered" },
-}
+-- variants never hold them (ProfileVariants.lua). A module whose spec says
+-- automation = true is automation as a whole: its enable switch is flagged,
+-- and variants leave all of its rules alone. Build.Automation flags one
+-- switch of a module that also does other things.
+function Build.Automation(rule)
+    assert(type(rule.default) == "boolean", "automation switch " .. tostring(rule.key) .. " is not a switch")
+    rule.automation = true
+    return rule
+end
 -- [module id] = { automation rule keys }, filled by FinalizeCatalog.
 local automationRules = {}
 
-local function FlagAutomation(id, key)
-    local rule = catalog[id] and catalog[id].rules[key]
-    assert(rule and type(rule.default) == "boolean", "unknown automation switch " .. id .. "." .. key)
-    rule.automation = true
-    local keys = automationRules[id] or {}
-    automationRules[id] = keys
-    keys[#keys + 1] = key
+local function CollectAutomation(id)
+    local spec = catalog[id]
+    if spec.automation then spec.rules.enabled.automation = true end
+    for _, rule in ipairs(spec.controls) do
+        if rule.automation then
+            local keys = automationRules[id] or {}
+            automationRules[id] = keys
+            keys[#keys + 1] = rule.key
+        end
+    end
 end
 
 function NS.FinalizeCatalog()
@@ -282,14 +211,7 @@ function NS.FinalizeCatalog()
         for key, rule in pairs(catalog[id].rules) do defaults[key] = rule.default end
         NS.Defaults.suite.modules[id] = defaults
     end
-    for i = 1, #order do
-        local id = order[i]
-        if automationModules[id] then
-            catalog[id].automation = true
-            FlagAutomation(id, "enabled")
-        end
-        for _, key in ipairs(automationSwitches[id] or {}) do FlagAutomation(id, key) end
-    end
+    for i = 1, #order do CollectAutomation(order[i]) end
 end
 
 -- Sharing a setup never authorizes spending or automation: every automation

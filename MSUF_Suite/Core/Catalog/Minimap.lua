@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Minimap")
 local Number, Bool, Choice, String, Color, Font = B.Number, B.Bool, B.Choice, B.String, B.Color, B.Font
 
 B.Module("minimap", {
@@ -10,6 +10,9 @@ B.Module("minimap", {
     -- runtime lets it keep those buttons and leaves the Suite drawer dormant.
     conflicts = { "SexyMap", "EllesmereUIMinimap", "ElvUI" },
     cvars = { rotateMinimap = true },
+    summary = "stylePreset size point hoverResize hoverWidth shape borderSize styleTexture styleScale styleGlow"
+        .. " styleGlowAlpha styleBackdrop styleBackdropAlpha visibility rotate elementRow elementSize"
+        .. " showLanding landingIcon collectButtons drawerColumns",
 })
 
 local id = "minimap"

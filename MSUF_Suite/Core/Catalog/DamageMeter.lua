@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_DamageMeter")
 local Number, Bool, Choice, Color, Font, Texture = B.Number, B.Bool, B.Choice, B.Color, B.Font, B.Texture
 
 -- Meter windows read the client's own combat data (C_DamageMeter). Its values
@@ -18,6 +18,8 @@ B.Module("damageMeter", {
     core = true, page = "suite_damageMeter",
     conflicts = { "EllesmereUIDamageMeters" },
     cvars = { damageMeterEnabled = true },
+    summary = "look wType wSession windowCount visibility barHeight iconStyle leftSize rightSize bgAlpha"
+        .. " headerHeight hoverTooltip tooltipRows timer combatTime",
 })
 
 local id = "damageMeter"

@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_CooldownManager")
 local Number, Bool, Choice, String, Color, Texture = B.Number, B.Bool, B.Choice, B.String, B.Color, B.Texture
 
 -- Settings for the cooldown manager. Bars are fixed slots: six built-in bars

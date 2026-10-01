@@ -1,10 +1,11 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Modules")
 
 -- The two HUDs own their frames.
 B.Module("objectives", {
     title = "Objective Tracker", page = "suite_hud", core = true,
     description = "An MSUF-owned objective tracker with grouped, readable entries.",
+    summary = "width height entrySize objectiveSize colorStyle backgroundOpacity",
 })
 local objectiveContent = {
     B.Bool("pauseInRaidCombat", "Pause tracker during raid combat", false),
@@ -95,6 +96,7 @@ B.Section("objectives", "extraColors", "Extra group colors", {
 B.Module("runSummary", {
     title = "Run Summaries", page = "suite_hud", defaultEnabled = true,
     description = "A movable summary after a Mythic+ run or raid boss kill.",
+    summary = "width scale titleSize detailSize autoHide colorStyle backgroundOpacity",
 })
 local summaryContent = {
     B.Bool("showRaid", "Show after raid boss kills", true),
@@ -150,6 +152,7 @@ B.Section("runSummary", "colors", "Summary colors", {
 B.Module("announcements", {
     title = "Announcements", page = "suite_hud", core = true,
     description = "Cinematic zone and event announcements in the Suite look.",
+    summary = "duration anchor titleSize subtitleSize colorStyle backgroundOpacity",
 })
 B.Section("announcements", "content", "Announcements", {
     B.Bool("zone", "Zone and subzone", true),

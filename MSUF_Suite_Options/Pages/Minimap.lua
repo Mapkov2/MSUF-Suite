@@ -170,4 +170,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Minimap", title = "Minimap", build = Build, icon = { 2, 0 },
+    nav = "interface", navOrder = 2,
     aliases = { "minimap", "map" } })

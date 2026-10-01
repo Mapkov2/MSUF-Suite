@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 local Number, Bool, Choice = B.Number, B.Bool, B.Choice
 
 B.Module("groupDeathAlert", {
@@ -38,7 +38,7 @@ B.Module("groupFinderDoubleClick", {
 })
 
 B.Section("groupFinderDoubleClick", "group_finder_double_click", "Group finder double-click", {
-    Bool("quickApply", "Submit on double-click (Shift opens the dialog)"),
+    B.Automation(Bool("quickApply", "Submit on double-click (Shift opens the dialog)")),
     Bool("showNote", "Show a saved note beside the application dialog"),
     B.String("note", "Saved application note", "", 63),
     B.Bool("exportNote", "Put the saved note into profile exports (the string then contains your note)", false),
@@ -72,7 +72,7 @@ B.Module("groupFinderExitReminder", {
 B.Module("trustedPartyInvites", {
     title = "Trusted party invites",
     description = "Accept ordinary party invites from selected friends or guild members when no queue or confirmation would be lost.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    optIn = true, automation = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
         if NS.Client.isForever then return false, "Trusted party invites are available only in Retail" end
         return true
@@ -92,6 +92,7 @@ B.Module("groupRaidShortcuts", {
         if NS.Client.isForever then return false, "Raid shortcuts are available only in Retail" end
         return true
     end,
+    editElement = "tools",
 })
 local function RaidMarker(key, label, default)
     -- Blizzard raid-target IDs; keep this order for existing saved profiles.
@@ -110,8 +111,8 @@ B.Section("groupRaidShortcuts", "raid_shortcuts", "Raid shortcuts", {
     Number("panelY", "Raid tools vertical position", 160, -3000, 3000),
     RaidMarker("tankMarker", "Tank raid marker", 4),
     RaidMarker("healerMarker", "Healer raid marker", 6),
-    Bool("autoMarkTank", "Automatically mark the party tank"),
-    Bool("autoMarkHealer", "Automatically mark the party healer"),
+    B.Automation(Bool("autoMarkTank", "Automatically mark the party tank")),
+    B.Automation(Bool("autoMarkHealer", "Automatically mark the party healer")),
 })
 
 B.Module("mythicKeyShare", {
@@ -125,7 +126,7 @@ B.Module("mythicKeyShare", {
 })
 
 B.Section("mythicKeyShare", "keystone_command", "Keystone overview", {
-    Bool("insertKey", "Insert your keystone when the pedestal opens (Shift skips)"),
+    B.Automation(Bool("insertKey", "Insert your keystone when the pedestal opens (Shift skips)")),
     Number("fontSize", "Keystone text size", 14, 10, 20, 1),
     Number("windowScale", "Keystone window scale (percent)", 100, 60, 160, 5),
 })
@@ -133,7 +134,7 @@ B.Section("mythicKeyShare", "keystone_command", "Keystone overview", {
 B.Module("delveSolePower", {
     title = "Single Delve power",
     description = "Automatically choose a Delve power when exactly one safe option is available.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    optIn = true, automation = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
         if NS.Client.isForever then return false, "Delve power choices are available only in Retail" end
         return true
@@ -151,7 +152,7 @@ B.Module("mythicResetReminder", {
 })
 
 B.Section("mythicResetReminder", "mythic_reset", "Instance reset notices", {
-    Bool("announceReset", "Announce confirmed instance resets to the group"),
+    B.Automation(Bool("announceReset", "Announce confirmed instance resets to the group")),
 })
 
 B.Module("groupBloodlust", {
@@ -162,6 +163,7 @@ B.Module("groupBloodlust", {
         if NS.Client.isForever then return false, "Bloodlust lockout is available only in Retail" end
         return true
     end,
+    editElement = "lockout",
 })
 B.Section("groupBloodlust", "bloodlust_lockout", "Bloodlust lockout", {
     Bool("onlyWhenLocked", "Show only while exhausted"),

@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_QualityOfLife")
 B.Module("targetDistance", {
     title = "Target spell-range estimate", page = "suite_qualityOfLife", optIn = true, defaultEnabled = false,
     description = "Movable approximate target range from native spell checks. Values include the target's hitbox; unavailable ranges show dashes.",
@@ -7,6 +7,7 @@ B.Module("targetDistance", {
         if NS.Client.isForever then return false, "Target spell-range estimates are available only in Retail" end
         return true
     end,
+    editElement = "distance",
 })
 B.Section("targetDistance", "target_distance", "Target spell-range estimate", {
     B.String("format", "Distance format: {range} and {unit}", "{range} {unit}", 80),

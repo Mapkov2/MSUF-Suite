@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Bags")
 
 -- The combined bag window and the item APIs exist on Retail and Forever. The
 -- combinedBags setting may be missing from a client build; Blizzard's own
@@ -21,6 +21,7 @@ B.Module("bags", {
     core = true, page = "suite_bags", available = Available,
     conflicts = { "EllesmereUIBags", "ElvUI", "Bagnon", "BetterBags", "AdiBags", "ArkInventory", "Inventorian" },
     cvars = { combinedBags = true },
+    summary = "look windowScale windowMoved reagentWindowMoved showItemLevel itemLevelSize backgroundOpacity",
 })
 
 -- Bags first kept Blizzard's own item grid under a Suite surface; the Suite

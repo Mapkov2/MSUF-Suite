@@ -37,6 +37,7 @@ Core\MinimapStyle.lua
 Core\Catalog\DamageMeter.lua
 Core\Catalog\Bags.lua
 Core\Catalog\QualityOfLife.lua
+Core\Catalog\QualityOfLifeIndicators.lua
 Core\Catalog\QualityOfLifeDetails.lua
 Core\Catalog\QualityOfLifeHUD.lua
 Core\Catalog\QualityOfLifeDistance.lua

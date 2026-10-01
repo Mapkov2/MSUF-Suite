@@ -162,4 +162,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "HUD", title = "HUD", build = Build, icon = { 7, 1 },
+    nav = "combat", navOrder = 4,
     aliases = { "objectives", "objective tracker", "run summary", "mythic plus", "raid kill", "announcements", "events", "afk", "hud" } })

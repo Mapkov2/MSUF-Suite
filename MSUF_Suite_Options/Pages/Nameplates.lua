@@ -161,4 +161,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Nameplates", title = "Nameplates", build = Build, icon = { 7, 0 },
+    nav = "combat", navOrder = 1,
     aliases = { "nameplate", "plates", "enemynameplates", "friendlynameplates" } })

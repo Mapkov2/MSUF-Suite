@@ -1,11 +1,13 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Chat")
 
 B.Module("chat", {
     title = "Chat",
     description = "Style Blizzard's native chat windows, tabs and input line. Links, channels, filters, docking and message delivery remain Blizzard-owned.",
     page = "suite_chat", optIn = true,
     conflicts = { "EllesmereUIChat", "ElvUI" },
+    summary = "look fontSize tabFontSize tabAccent panelAlpha sidebarPanel sidebarWidth inputPanel inputAlpha"
+        .. " copyMessages",
 })
 
 local id = "chat"

@@ -80,6 +80,11 @@ local function Values(list, labels)
     return result
 end
 
+-- The Skinning values a collapsed section shows, most important first.
+P.RegisterSummary("skin", "theme.look theme.shellOpacity theme.panelOpacity geometry.family geometry.controlShape"
+    .. " icons.windowActions.style theme.iconBorderStyle font.enabled font.face icons.microMenu.preset"
+    .. " icons.microMenu.scale")
+
 local function Row(kind, label, key, section, get, set, values, min, max, step)
     local row = Meta(key, section)
     row.summary = P.SummaryPriority("skin", key)
@@ -874,4 +879,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Skinning", title = "Skinning", build = Build, icon = { 4, 1 },
+    nav = "style", navOrder = 1,
     aliases = { "suite_skin", "mapkoskin", "skinning" } })

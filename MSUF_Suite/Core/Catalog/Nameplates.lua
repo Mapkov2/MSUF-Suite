@@ -1,5 +1,5 @@
 local _, NS = ...
-local B = NS.CatalogBuild
+local B = NS.CatalogBuild.ForAddon("MSUF_Suite_Nameplates")
 
 local function Available()
     if not NS.Client.isMainline then return false, "Nameplate skinning needs Retail or WoW Forever" end
@@ -40,6 +40,7 @@ B.Module("nameplates", {
         UnitNamePlayerGuild = true,
         UnitNamePlayerPVPTitle = true,
     },
+    summary = "look nativeStyle nativeSize enemyTextMode enemyNameSize friendlyNamesOnly friendlyNameSize",
 })
 
 local id = "nameplates"

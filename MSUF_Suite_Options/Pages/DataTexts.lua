@@ -512,4 +512,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "DataTexts", title = "DataTexts", build = Build, icon = { 5, 2 },
+    nav = "interface", navOrder = 6,
     aliases = { "datatext", "datatexts", "data bars", "info bar", "system info" } })

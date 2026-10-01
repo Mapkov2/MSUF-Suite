@@ -1,16 +1,14 @@
 local _, P = ...
 local Suite, M, T, S = P.Suite, P.M, P.T, P.S
--- Suite pages join MSUF's navigation groups by id, in this order. A host menu
--- without a group (Retail MSUF still has Appearance and Features) uses the
--- fallback group, or gets the group title in front of its last group.
+-- Suite pages join MSUF's navigation groups by id, in this order. Each page
+-- names its group and its place there (nav, navOrder of P.RegisterPage). A
+-- host menu without a group (Retail MSUF still has Appearance and Features)
+-- uses the fallback group, or gets the group title in front of its last group.
 local NAV_GROUPS = {
-    { id = "combat", title = "Combat",
-        pages = { "suite_nameplates", "suite_cooldownManager", "suite_buffReminders", "suite_hud" } },
-    { id = "interface", title = "Interface",
-        pages = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_chat", "suite_dataTexts" } },
-    { id = "style", title = "Style", fallback = "appearance", pages = { "suite_skin" } },
-    { id = "general", title = "General", fallback = "features", after = "gameplay",
-        pages = { "suite_qualityOfLife" } },
+    { id = "combat", title = "Combat" },
+    { id = "interface", title = "Interface" },
+    { id = "style", title = "Style", fallback = "appearance" },
+    { id = "general", title = "General", fallback = "features", after = "gameplay" },
 }
 if type(M.RegisterHistoryProvider) == "function" then
     P.historyRegistered = M.RegisterHistoryProvider("MSUF_Suite", P.CaptureHistoryState, P.RestoreHistoryState) == true
@@ -115,6 +113,17 @@ local function InsertIndex(items, group, after)
     return last
 end
 
+-- The page keys of one navigation group, in their declared order.
+local function GroupPages(group)
+    local pages = {}
+    for _, page in ipairs(P.pages) do
+        if page.nav == group then pages[#pages + 1] = page end
+    end
+    table.sort(pages, function(a, b) return a.navOrder < b.navOrder end)
+    for i, page in ipairs(pages) do pages[i] = page.key end
+    return pages
+end
+
 -- Navigation rows are inserted in place (other Menu2 files hold references
 -- to these tables).
 local function AddNavigation()
@@ -137,8 +146,8 @@ local function AddNavigation()
             end
         end
     end
-    for _, spec in ipairs(NAV_GROUPS) do Place(spec, spec.pages) end
-    -- A page missing from NAV_GROUPS still gets a row, at the end of Interface.
+    for _, spec in ipairs(NAV_GROUPS) do Place(spec, GroupPages(spec.id)) end
+    -- A page without a known group still gets a row, at the end of Interface.
     for _, page in ipairs(P.pages) do
         if not placed[page.key] then Place(NAV_GROUPS[2], { page.key }) end
     end
