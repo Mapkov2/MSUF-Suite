@@ -1,9 +1,10 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 if NS.Client.isForever then return end
-local ID, M = "targetDistance", { probes = {}, values = {} }
+local ID, M = "targetDistance", { probes = {}, values = {}, layout = {}, nextLayout = {} }
 local Public, Finite = S.Public, S.Finite
 local EMPTY = {}
+local MAX_LINES, MAX_ITEMS = 20, 500
 
 local function Field(data, key)
     if Public(data) and type(data) == "table" and Public(data[key]) then return data[key] end
@@ -22,21 +23,33 @@ local function AddProbe(sets, item)
     if Public(helpful) and helpful == true and not sets.helpful[maximum] then sets.helpful[maximum] = spell end
 end
 
+-- The spellbook layout: per skill line its first slot and its size (false
+-- while unreadable), into a reused array.
+local function ReadLayout(layout)
+    local count = C_SpellBook.GetNumSpellBookSkillLines()
+    count = Finite(count) and math.min(count, MAX_LINES) or 0
+    for line = 1, count do
+        local info = C_SpellBook.GetSpellBookSkillLineInfo(line)
+        local offset, items = Field(info, "itemIndexOffset"), Field(info, "numSpellBookItems")
+        layout[line * 2 - 1] = Finite(offset) and offset or false
+        layout[line * 2] = Finite(items) and items or false
+    end
+    for index = count * 2 + 1, #layout do layout[index] = nil end
+end
+
 local function Discover(self)
     local sets, visited = { harmful = {}, helpful = {} }, 0
-    local count = C_SpellBook.GetNumSpellBookSkillLines()
-    if Finite(count) then
-        for line = 1, math.min(count, 20) do
-            local info = C_SpellBook.GetSpellBookSkillLineInfo(line)
-            local offset, items = Field(info, "itemIndexOffset"), Field(info, "numSpellBookItems")
-            if Finite(offset) and Finite(items) then
-                for slot = offset + 1, offset + math.min(items, 500 - visited) do
-                    AddProbe(sets, C_SpellBook.GetSpellBookItemInfo(slot, Enum.SpellBookSpellBank.Player))
-                    visited = visited + 1
-                end
+    local layout = self.layout
+    ReadLayout(layout)
+    for line = 1, #layout / 2 do
+        local offset, items = layout[line * 2 - 1], layout[line * 2]
+        if offset and items then
+            for slot = offset + 1, offset + math.min(items, MAX_ITEMS - visited) do
+                AddProbe(sets, C_SpellBook.GetSpellBookItemInfo(slot, Enum.SpellBookSpellBank.Player))
+                visited = visited + 1
             end
-            if visited >= 500 then break end
         end
+        if visited >= MAX_ITEMS then break end
     end
     self.sets = {}
     for kind, spells in pairs(sets) do
@@ -188,12 +201,30 @@ local function QueueDiscovery(self)
     end)
 end
 
-local function SpellsChanged(self, _, unit)
+-- SPELLS_CHANGED also fires for spell overrides and procs, which leave the
+-- spellbook layout as it is: the probes are found again only when the layout
+-- changed. A new spec, a talent commit, a learned spell or a new world always
+-- finds them again.
+local function LayoutChanged(self)
+    local layout, now = self.layout, self.nextLayout
+    ReadLayout(now)
+    if #now ~= #layout then return true end
+    for index = 1, #now do
+        if now[index] ~= layout[index] then return true end
+    end
+    return false
+end
+
+local function SpellsChanged(self)
+    if LayoutChanged(self) then QueueDiscovery(self) end
+end
+
+local function SpecChanged(self, _, unit)
     if not Public(unit) or unit ~= nil and unit ~= "player" then return end
     QueueDiscovery(self)
 end
 
-local function EnterWorld(self)
+local function Rediscover(self)
     QueueDiscovery(self)
 end
 
@@ -205,8 +236,10 @@ function M:Enable()
         self.label:SetAllPoints(); self.label:SetWordWrap(false)
     end
     self.context:Event("SPELLS_CHANGED", SpellsChanged, true)
-    self.context:Event("PLAYER_SPECIALIZATION_CHANGED", SpellsChanged, true)
-    self.context:Event("PLAYER_ENTERING_WORLD", EnterWorld, true)
+    self.context:Event("PLAYER_SPECIALIZATION_CHANGED", SpecChanged, true)
+    self.context:Event("TRAIT_CONFIG_UPDATED", Rediscover, true)
+    self.context:Event("LEARNED_SPELL_IN_SKILL_LINE", Rediscover, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", Rediscover, true)
     self.context:Event("PLAYER_TARGET_CHANGED", Sync, true)
     self.context:Event("UNIT_FACTION", Sync, false, "target")
     Discover(self)
