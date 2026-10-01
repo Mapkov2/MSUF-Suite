@@ -130,4 +130,63 @@ do
         "a documented setting of the wrong type was imported")
 end
 
+------------------------------------------------------------------ profiles
+-- MSUF's codec and frame profiles as addon code meets them: the codec
+-- round-trips tables; a frame import creates and activates the profile.
+local encodings = {}
+MSUF_EncodeCompactTable = function(value)
+    encodings[#encodings + 1] = Suite.CopyValue(value)
+    return "MSUF3:" .. #encodings
+end
+MSUF_TryDecodeCompactString = function(text)
+    return Suite.CopyValue(encodings[tonumber(text:match("^MSUF3:(%d+)$"))])
+end
+local frames = { general = {} }
+MSUF_GlobalDB, MSUF_DB, MSUF_ActiveProfile = { profiles = { Default = frames } }, frames, "Default"
+MSUF_Profiles_ExportSelectionToString = function() return "MSUF3:frames" end
+MSUF_SwitchProfile = function(name)
+    if not MSUF_GlobalDB.profiles[name] then return false end
+    MSUF_ActiveProfile, MSUF_DB = name, MSUF_GlobalDB.profiles[name]
+    return true
+end
+MSUF_Profiles_ImportIntoNewProfile = function(name)
+    MSUF_GlobalDB.profiles[name] = { general = {} }
+    return MSUF_SwitchProfile(name)
+end
+MSUF_DeleteProfile = function(name) MSUF_GlobalDB.profiles[name] = nil return true end
+assert(Suite.Database.Initialize(nil))
+S.Normalize(Suite.DB)
+local P, DB = Suite.SuiteProfiles, Suite.Database
+
+------------------------------------------------------------------ S1.6
+-- A module imported into a new profile joins the stored settings of the
+-- active profile, never the variant values MSUF laid over them.
+do
+    local stored = Suite.DB.suite.modules.objectives
+    local base = stored.width
+    local overlay = true
+    MSUF_NS.ProfileFields = { RegisterExternal = Noop }
+    MSUF_NS.ProfileVariants = {
+        BaseSnapshot = function(profile)
+            assert(profile == frames, "the base snapshot was not taken from the active frame profile")
+            local copy = Suite.CopyValue(stored)
+            copy.width = base
+            return { suiteModules = { objectives = copy } }
+        end,
+        HasExternalOverlay = function(field) return overlay and field == "suiteModules" end,
+        IsRecording = function() return false end, IsMaterialized = function() return false end,
+        Restore = Noop, ResolveCurrent = Noop,
+    }
+    MSUF_NS.ProfileSync = { RegisterModule = Noop, RebaseExternal = Noop }
+    MSUF_NS.ProfileRuntime = { Apply = Noop }
+    Check(Suite.ProfileVariants.Register(), "the variant stand-in did not register")
+    stored.width = base + 100
+    local text = assert(P.ExportModule("minimap"))
+    local ok, why = P.ImportModuleIntoNew("Fresh", text)
+    Check(ok and DB.GetActiveProfileName() == "Fresh", "the module import into a new profile failed: " .. tostring(why))
+    Check(DB.GetProfile("Fresh").suite.modules.objectives.width == base,
+        "a module import into a new profile copied the variant overlay as stored settings")
+    overlay = false
+end
+
 print("Suite core integrity: " .. checks .. " checks passed")

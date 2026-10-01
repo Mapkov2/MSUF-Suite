@@ -479,14 +479,18 @@ local function Create(name, frames, profile, skinProfile, screenHeight)
     return false, reason or "Profile import failed"
 end
 
+-- The active Suite profile as a new profile starts from it: its stored
+-- settings without the variant overlay MSUF may have laid over them.
+local function PrepareActive()
+    local source, why = Suite.ProfileVariants.BaseProfile(DB.GetActiveProfileName())
+    if not source then return nil, why end
+    return IO.PrepareTable(source, false)
+end
+
 function P.SaveAs(name)
     local clean, reason = NewName(name)
     if not clean then return false, reason end
-    local source,why
-    source,why=Suite.ProfileVariants.BaseProfile(DB.GetActiveProfileName())
-    if not source then return false,why end
-    local profile
-    profile,why = IO.PrepareTable(source, false)
+    local profile, why = PrepareActive()
     if not profile then return false, why end
     local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return false, "Frame profile export failed" end
@@ -646,7 +650,7 @@ function P.ImportModuleIntoNew(name, text)
         if not skinProfile then return false, reason end
         local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
         if type(frames) ~= "string" then return false, "Frame profile export failed" end
-        local profile, why = IO.PrepareTable(Suite.DB, false)
+        local profile, why = PrepareActive()
         if not profile then return false, why end
         return Create(clean, frames, profile, skinProfile)
     end
@@ -655,7 +659,7 @@ function P.ImportModuleIntoNew(name, text)
     local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return false, "Frame profile export failed" end
     local profile
-    profile, why = IO.PrepareTable(Suite.DB, false)
+    profile, why = PrepareActive()
     if not profile then return false, why end
     profile.suite.modules[id] = settings
     local skin = SkinEngine()
