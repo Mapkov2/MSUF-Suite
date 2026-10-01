@@ -113,7 +113,8 @@ local S = {
     ModuleState = function() return state end,
     Set = function(_, key, value) c[key] = value; module:Refresh(); return true end,
 }
-local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
+local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
+local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, BagsView = catalog.BagsView,
     InCombat = function(event)
         if event == "PLAYER_REGEN_DISABLED" then return true end
         if event == "PLAYER_REGEN_ENABLED" then return false end
@@ -125,7 +126,10 @@ local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
 UnitGUID = function() return "Player-1" end
 -- Recent items remember their arrival in server time.
 GetServerTime = function() return 1000000 end
-Enum = { TooltipDataType = { Item = 0 } }
+Enum = { TooltipDataType = { Item = 0 },
+    ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
+        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
 -- Blizzard_SharedXMLGame defines the tooltip data processor at startup.
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
 for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "InventoryView" }) do

@@ -3,6 +3,11 @@ local _, P = ...
 -- The native slot remains the authority even when several stacks share a row.
 local Model = {}
 P.InventoryModel = Model
+local VIEW = P.NS.BagsView
+-- Item classes and qualities: Enum.ItemClass and Enum.ItemQuality
+-- (ItemConstantsDocumentation, ItemQualitiesDocumentation; Retail and Forever).
+local CLASS, POOR = Enum.ItemClass, Enum.ItemQuality.Poor
+local REAGENT_CLASSES = { [CLASS.Reagent] = true, [CLASS.Tradegoods] = true, [CLASS.Gem] = true }
 local floor, sort = math.floor, table.sort
 local BUILTINS = {
     { "equipment", "Equipment", 40 }, { "consumables", "Consumables", 50 },
@@ -111,16 +116,16 @@ function Model.Category(item, custom)
             return category.key or "custom:" .. category.name, category.name, i + 2, false
         end
     end
-    if item.quality == 0 then return "junk", "Junk", 100, true end
+    if item.quality == POOR then return "junk", "Junk", 100, true end
     if item.quest then return "quest", "Quest items", 90, true end
     if item.equipLoc and item.equipLoc ~= "" and item.equipLoc ~= "INVTYPE_NON_EQUIP_IGNORE" then
         return "equipment", "Equipment", 40, true
     end
     local class = item.classID
-    if class == 0 then return "consumables", "Consumables", 50, true end
-    if class == 5 or class == 7 or class == 3 then return "reagents", "Reagents", 60, true end
-    if class == 9 then return "recipes", "Recipes", 70, true end
-    if class == 12 then return "quest", "Quest items", 90, true end
+    if class == CLASS.Consumable then return "consumables", "Consumables", 50, true end
+    if REAGENT_CLASSES[class] then return "reagents", "Reagents", 60, true end
+    if class == CLASS.Recipe then return "recipes", "Recipes", 70, true end
+    if class == CLASS.Questitem then return "quest", "Quest items", 90, true end
     return "other", "Other items", 110, true
 end
 
@@ -220,10 +225,10 @@ local function ItemGroup(item, config, state, custom)
     if item.itemID and config.showRecent and state.recent and state.recent[item.itemID] then
         return "recent", "Recent items", 1, nil, true
     end
-    if config.inventoryView == 2 then
+    if config.inventoryView == VIEW.BY_BAG then
         return "bag:" .. item.bag, item.bagName or tostring(item.bag), 50 + item.bag, nil, false
     end
-    if config.inventoryView ~= 3 then return "all", "All items", 2, nil, true end
+    if config.inventoryView ~= VIEW.CATEGORIES then return "all", "All items", 2, nil, true end
     if not item.itemID then return "empty", "Empty slots", 200, nil, true end
     local key, label, order, translate = Model.Category(item, custom)
     if config["category_" .. key] == false then
@@ -274,7 +279,8 @@ function Model.Build(model, items, config, state, context)
     end
     local merge = config.mergeStacks and not (context and context.transactions)
     local selected = context and context.selected
-    local showSets = config.inventoryView == 3 and config.groupEquipmentSets and config.category_equipment ~= false
+    local categories = config.inventoryView == VIEW.CATEGORIES
+    local showSets = categories and config.groupEquipmentSets and config.category_equipment ~= false
     local query = context and context.query
     if query == "" then query = nil end
     if query then query = query:lower() end
@@ -292,14 +298,14 @@ function Model.Build(model, items, config, state, context)
             if showSets and item.setNames then AddSets(model, config, item, key) end
         end
     end
-    if config.inventoryView == 3 and not config.hideEmptyCategories and not query and not searching then
+    if categories and not config.hideEmptyCategories and not query and not searching then
         AddEmptyCategories(model, config)
     end
     sort(model.groups, SortGroups)
     for i = 1, #model.groups do
         local group = model.groups[i]
         group.visible = not selected or selected == "all" or selected == group.key
-        if config.inventoryView == 3 or context and context.shuffle then sort(group.rows, SortRows) end
+        if categories or context and context.shuffle then sort(group.rows, SortRows) end
         for j = 1, #group.rows do
             local row = group.rows[j]
             if selected and selected ~= "all" or not row.alias then

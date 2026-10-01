@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Model, Index, Grid = P.InventoryModel, P.InventoryIndex, P.GridView
 local Font, Button = Grid.Font, Grid.Button
+local VIEW, POOR = NS.BagsView, Enum.ItemQuality.Poor
 local ALL, PINNED = { label = "All items", translate = true }, { label = "Pinned items", translate = true }
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
@@ -170,11 +171,12 @@ local function MakeControls()
     V.chrome = S.CreateFrame("Frame", nil, frame)
     V.chrome:SetAllPoints(frame)
     V.chrome:SetFrameLevel(frame:GetFrameLevel() + 15)
-    local titles = { "All items", "By bag", "Categories" }
-    for i = 1, 3 do
-        local button = Button(V.chrome, titles[i], 100, ViewSelected)
-        button.view = i
-        button:SetPoint("TOPLEFT", 12 + (i - 1) * 104, -62)
+    -- The Suite views: the first three inventoryView choices.
+    local titles = { [VIEW.ALL] = "All items", [VIEW.BY_BAG] = "By bag", [VIEW.CATEGORIES] = "Categories" }
+    for view = VIEW.ALL, VIEW.CATEGORIES do
+        local button = Button(V.chrome, titles[view], 100, ViewSelected)
+        button.view = view
+        button:SetPoint("TOPLEFT", 12 + (view - 1) * 104, -62)
     end
     MakeFooter(frame)
     V.sidebar = S.CreateFrame("ScrollFrame", nil, V.chrome, "UIPanelScrollFrameTemplate")
@@ -302,7 +304,7 @@ local function PaintSlot(item, x, y, row, count, font)
     local button = item.button
     PlaceSlot(button, x, y, row)
     SetCount(button, count, font)
-    local junk = M.config.desaturateJunk and item.quality == 0
+    local junk = M.config.desaturateJunk and item.quality == POOR
     SetItemButtonDesaturated(button, item.locked or junk or false)
     P.InventoryDetails.Paint(button, item, font)
 end
@@ -367,7 +369,8 @@ end
 local function RenderSuite()
     local c = M.config
     local columns = c.inventoryColumns
-    local sidebar = c.inventoryView == 3 and 178 or 12
+    local categories = c.inventoryView == VIEW.CATEGORIES
+    local sidebar = categories and 178 or 12
     local layout = Model.Layout(V.model, columns, c.compactGroups)
     local bottom = MoneyTop() + FOOTER
     local visibleRows = max(2, min(c.inventoryRows, floor((Available() - TOP - bottom) / CELL)))
@@ -385,8 +388,8 @@ local function RenderSuite()
     HideUnplaced()
     V.layout = "suite"
     ShowChrome(true)
-    V.sidebar:SetShown(c.inventoryView == 3)
-    V.shuffleButton:SetShown(c.inventoryView == 1)
+    V.sidebar:SetShown(categories)
+    V.shuffleButton:SetShown(c.inventoryView == VIEW.ALL)
     V.previous:SetEnabled(V.scroll > 0)
     V.next:SetEnabled(V.scroll < V.maxScroll)
     Grid.PositionText(V.position, V.scroll, visibleRows, V.model.lineCount)
@@ -530,7 +533,7 @@ function V.Refresh()
     V.frame = M.frame
     -- Blizzard grid: Blizzard's own layout, with the Suite window style and
     -- item levels of Bags.lua.
-    if M.config.inventoryView == NS.BagsBlizzardGrid then
+    if M.config.inventoryView == VIEW.BLIZZARD_GRID then
         if V.active then V.Release() end
         return
     end

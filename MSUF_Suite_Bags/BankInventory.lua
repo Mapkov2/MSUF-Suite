@@ -4,11 +4,13 @@ if NS.Client.isForever then return end
 local Model, Index, Bank, Grid = P.InventoryModel, P.InventoryIndex, P.BankInventoryIndex, P.GridView
 local Font = Grid.Font
 local ALL = { label = "All items", translate = true }
+local VIEW, BANK_VIEW, POOR = NS.BagsView, NS.BagsBankView, Enum.ItemQuality.Poor
 local B = { index = Bank.New(), model = Model.New(), buttons = {}, labels = {}, categories = {},
     scroll = 0, config = {}, context = { transactions = true }, filtered = {}, view = {} }
 P.BankInventory = B
 local Request, Flush, Render
-local MODES = { "Bank tabs", "Combined bank", "Combined warbank", "Bank categories" }
+local MODES = { [BANK_VIEW.TABS] = "Bank tabs", [BANK_VIEW.CHARACTER] = "Combined bank",
+    [BANK_VIEW.WARBANK] = "Combined warbank", [BANK_VIEW.CATEGORIES] = "Bank categories" }
 local EVENTS = { "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "BAG_UPDATE", "PLAYER_REGEN_ENABLED",
     "GET_ITEM_INFO_RECEIVED", "BANK_TABS_CHANGED", "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED", "INVENTORY_SEARCH_UPDATE",
     "ITEM_LOCK_CHANGED", "BAG_UPDATE_COOLDOWN", "BANK_TAB_SETTINGS_UPDATED" }
@@ -66,7 +68,7 @@ local function StyleItem(button, item, font)
     else
         button.level:Hide()
     end
-    if c.desaturateJunk and item.quality == 0 then SetItemButtonDesaturated(button, true) end
+    if c.desaturateJunk and item.quality == POOR then SetItemButtonDesaturated(button, true) end
 end
 
 local function Select(button)
@@ -135,7 +137,7 @@ local function Create()
     B.next:SetPoint("LEFT", B.previous, "RIGHT", 6, 0)
     B.position = Font(frame, 11)
     B.position:SetPoint("LEFT", B.next, "RIGHT", 8, 0)
-    B.native = Button(frame, "Manage bank tabs", 145, function() S.Set("bags", "bankView", 1) end)
+    B.native = Button(frame, "Manage bank tabs", 145, function() S.Set("bags", "bankView", BANK_VIEW.TABS) end)
     B.native:SetPoint("BOTTOMRIGHT", -12, 8)
     B.side = S.CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
     B.side:SetPoint("TOPLEFT", 10, -40)
@@ -146,7 +148,7 @@ local function Create()
     B.side:SetScrollChild(B.sideChild)
     -- Below the bank window, opposite Blizzard's bank tabs (BankFrame.xml
     -- TabSystem): the search box and Clean Up button stay free in every view.
-    B.modeButton = Button(BankFrame, MODES[1], 142, NextMode)
+    B.modeButton = Button(BankFrame, MODES[BANK_VIEW.TABS], 142, NextMode)
     B.modeButton:SetPoint("TOPRIGHT", BankFrame, "BOTTOMRIGHT", -22, 2)
     BankFrame:HookScript("OnShow", function() Index.Retry(B.index); Request() end)
     BankFrame:HookScript("OnHide", function()
@@ -188,7 +190,8 @@ end
 
 Render = function()
     if not B.active or not BankFrame:IsShown() or NS.IsCombatLocked() then return end
-    local sidebar = M.config.bankView == 4 and 170 or 12
+    local categories = M.config.bankView == BANK_VIEW.CATEGORIES
+    local sidebar = categories and 170 or 12
     B.columns = math.max(4, math.floor((B.frame:GetWidth() - sidebar - 12) / 40))
     B.visibleRows = math.max(2, math.floor((B.frame:GetHeight() - 84) / 40))
     local layout = Model.Layout(B.model, B.columns, M.config.compactGroups)
@@ -205,7 +208,7 @@ Render = function()
         end
     end
     for i = shown + 1, #B.buttons do B.buttons[i]:Hide() end
-    B.side:SetShown(M.config.bankView == 4)
+    B.side:SetShown(categories)
     B.previous:SetEnabled(B.scroll > 0)
     B.next:SetEnabled(B.scroll < B.maxScroll)
     Grid.PositionText(B.position, B.scroll, B.visibleRows, B.model.lineCount)
@@ -215,7 +218,7 @@ end
 
 local function PrepareModel(state)
     for key, value in pairs(M.config) do B.config[key] = value end
-    B.config.inventoryView = M.config.bankView == 4 and 3 or 1
+    B.config.inventoryView = M.config.bankView == BANK_VIEW.CATEGORIES and VIEW.CATEGORIES or VIEW.ALL
     B.config.groupExpansions = M.config.bankGroupExpansions
     B.config.expansionFirst = M.config.bankGroupExpansions
     B.config.groupEquipmentSlots = M.config.bankGroupEquipmentSlots
@@ -247,7 +250,7 @@ Flush = function()
     if not B.frame then Create() end
     B.modeButton:SetText(S.Text(MODES[M.config.bankView]))
     B.modeButton:Show()
-    B.active = M.config.bankView > 1
+    B.active = M.config.bankView ~= BANK_VIEW.TABS
     M.organizedBankActive = B.active
     if not B.active then B.frame:Hide(); M:UpdateBank(); return end
     M:HideBankLevels()

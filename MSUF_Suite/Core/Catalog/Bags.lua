@@ -23,14 +23,19 @@ B.Module("bags", {
     cvars = { combinedBags = true },
 })
 
+-- The choice values of the view and sorting settings below (each is its
+-- label's position there); the Bags runtime names its modes through these.
+NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4 }
+NS.BagsBankView = { TABS = 1, CHARACTER = 2, WARBANK = 3, CATEGORIES = 4 }
+NS.BagsSortDirection = { BLIZZARD = 1, FROM_TOP = 2, FROM_BOTTOM = 3 }
+
 -- Bags first kept Blizzard's own item grid under a Suite surface; the Suite
 -- inventory views came later. A profile saved before them keeps Blizzard's
 -- grid until its player picks a Suite view; new profiles start with All items.
-NS.BagsBlizzardGrid = 4
 function NS.MigrateBagsInventoryView(modules)
     local bags = modules.bags
     if type(bags) == "table" and next(bags) ~= nil and bags.inventoryView == nil then
-        bags.inventoryView = NS.BagsBlizzardGrid
+        bags.inventoryView = NS.BagsView.BLIZZARD_GRID
     end
 end
 

@@ -816,6 +816,9 @@ function H.New(root, options)
     Enum = { BankType = { Character = 1, Account = 2 }, TooltipDataType = { Item = 0 },
         ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
             ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 },
+        ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
+            Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
+        ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 },
         BagIndex = { Backpack = 0, ReagentBag = 5, CharacterBankTab_1 = 6, AccountBankTab_1 = 12 } }
     MenuResponse = { Open = 1, Close = 2 }
     INVSLOT_FIRST_EQUIPPED, INVSLOT_LAST_EQUIPPED = 1, 19
