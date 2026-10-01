@@ -44,6 +44,7 @@ local function Texture(parent)
     function texture:Show() self.shown = true; self.showCalls = (self.showCalls or 0) + 1 end
     function texture:Hide() self.shown = false end
     function texture:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
+    function texture:SetDrawLayer(layer, sublevel) self.layer, self.sublevel = layer, sublevel end
     textures[#textures + 1] = texture
     return texture
 end
@@ -236,7 +237,11 @@ local S = {
     Text = function(value) return value end,
     CreateFontString = function(parent) local font = Font(); font.parent = parent; return font end,
     CreateFrame = function(_, _, parent) return VisualFrame(parent) end,
-    CreateTexture = function(parent) return Texture(parent) end,
+    CreateTexture = function(parent, _, layer, _, sublevel)
+        local texture = Texture(parent)
+        texture.layer, texture.sublevel = layer, sublevel
+        return texture
+    end,
     RGB = function(hex)
         return tonumber(hex:sub(1, 2), 16) / 255,
             tonumber(hex:sub(3, 4), 16) / 255,
@@ -448,17 +453,30 @@ for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
         and select(4, frame.TitleContainer:GetPoint(1)) == 8,
         "empty portrait plate remained visible or the title did not reclaim its space")
 end
-assert(buttons[3].emptyBackgroundAtlas == false and buttons[3].emptyIcon == nil
-    and buttons[3].ItemSlotBackground.alpha == 0
-    and module.overlays[buttons[3]].slotOuter.color
-    and module.overlays[buttons[3]].slotInner.color,
+-- Blizzard reads emptyBackgroundAtlas on every refresh (ItemButtonTemplate
+-- SetItemButtonTexture): the Suite never writes it. An empty slot's Suite
+-- surface covers the native icon (BORDER sublevel 0) instead.
+local function OverIcon(record)
+    return record.slotOuter.layer == "BORDER" and record.slotOuter.sublevel == 1
+        and record.slotInner.layer == "BORDER" and record.slotInner.sublevel == 2
+        and record.slotOuter.color[4] == 1 and record.slotInner.color[4] == 1
+end
+local function BelowIcon(record)
+    return record.slotOuter.layer == "BACKGROUND" and record.slotOuter.sublevel == -5
+        and record.slotInner.layer == "BACKGROUND" and record.slotInner.sublevel == -4
+end
+assert(buttons[3].emptyBackgroundAtlas == "bags-item-slot64" and buttons[3].textureCalls == nil,
+    "the Suite wrote Blizzard's empty-slot field or replaced the native icon")
+assert(buttons[3].ItemSlotBackground.alpha == 0 and OverIcon(module.overlays[buttons[3]]),
     "empty combined slots still draw Blizzard's embossed bag artwork")
-assert(buttons[1].emptyBackgroundAtlas == false and buttons[1].textureCalls == nil,
-    "styling replaced a loaded item icon")
+assert(buttons[1].emptyBackgroundAtlas == "bags-item-slot64" and buttons[1].textureCalls == nil
+    and BelowIcon(module.overlays[buttons[1]]),
+    "styling replaced or covered a loaded item icon")
 ContainerFrame6.shown = true
 hooks.ReagentOnShow()
-assert(#textures == 25 and reagentButton.emptyBackgroundAtlas == false
-    and reagentButton.emptyIcon == nil and module.overlays[reagentButton].slotOuter.shown,
+assert(#textures == 25 and reagentButton.emptyBackgroundAtlas == "bags-item-slot64"
+    and reagentButton.textureCalls == nil and module.overlays[reagentButton].slotOuter.shown
+    and OverIcon(module.overlays[reagentButton]),
     "reagent bag slots did not receive the Suite background")
 local initialTextureCount = #textures
 hooks.UpdateItems()
@@ -805,6 +823,22 @@ assert(queued > 0 and not module.overlays[buttons[4]].label, "combat created a n
 combat = false
 module:Refresh()
 assert(module.overlays[buttons[4]].label.shown, "queued label was not created after combat")
+-- A slot emptied in combat (a used potion): the Suite surface lifts over
+-- Blizzard's empty-slot atlas at once, its own textures only; an item that
+-- arrives puts it back below the icon.
+local food = items[2]
+items[2] = nil
+BagChanged()
+combat = true
+hooks.UpdateItems()
+local foodSlot = module.overlays[buttons[2]]
+assert(OverIcon(foodSlot) and buttons[2].emptyBackgroundAtlas == "bags-item-slot64",
+    "a slot emptied in combat kept showing Blizzard's empty-slot artwork")
+combat = false
+items[2] = food
+BagChanged()
+hooks.UpdateItems()
+assert(BelowIcon(foodSlot), "an item that arrived stayed under the Suite surface")
 items[3] = nil
 BagChanged()
 module.active = false
@@ -825,7 +859,7 @@ for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
         "disabling bags did not restore Blizzard's bag portraits and title position")
 end
 assert(buttons[3].emptyBackgroundAtlas == "bags-item-slot64"
-    and buttons[3].emptyIcon == "bags-item-slot64"
+    and buttons[3].textureCalls == nil
     and buttons[3].ItemSlotBackground.alpha == 1
     and reagentButton.emptyBackgroundAtlas == "bags-item-slot64"
     and not module.overlays[buttons[3]].slotOuter.shown
@@ -841,10 +875,9 @@ local textureCountBeforeReenable = #textures
 module.active = true
 module:Enable()
 assert(#textures == textureCountBeforeReenable
-    and buttons[3].emptyBackgroundAtlas == false
-    and buttons[3].emptyIcon == nil
+    and buttons[3].emptyBackgroundAtlas == "bags-item-slot64"
     and buttons[3].ItemSlotBackground.alpha == 0
-    and module.overlays[buttons[3]].slotOuter.shown,
+    and module.overlays[buttons[3]].slotOuter.shown and OverIcon(module.overlays[buttons[3]]),
     "re-enabling bags did not reapply the slot styling without new textures")
 module.active = false
 module:Disable()

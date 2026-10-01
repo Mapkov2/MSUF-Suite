@@ -26,12 +26,21 @@ local function ClearPending(self)
     end
 end
 
--- The native empty-slot icon atlas and combined-bag background are separate
--- from the actual item icon. Keep Blizzard's item button and all its handlers,
--- but let an empty slot show a quiet Suite surface instead of the bag artwork.
-local function RefreshEmptyIcon(button)
-    local hasItem = button:HasItem()
-    if S.Public(hasItem) and not hasItem then button:SetItemButtonTexture(nil) end
+-- An empty slot shows a quiet Suite surface instead of the bag artwork, and
+-- Blizzard's item button keeps all its handlers. Blizzard draws the empty-slot
+-- atlas (ContainerFrame.xml emptyBackgroundAtlas) in the item icon, BORDER
+-- sublevel 0 (ItemButtonTemplate.xml, SetItemButtonTexture). The Suite never
+-- writes that field, which Blizzard reads on every refresh: an empty slot
+-- lifts the Suite surface above the icon instead, and an item puts it back
+-- below. Both surface textures are opaque, so the atlas never shows.
+local SURFACE_BELOW_ICON = { "BACKGROUND", -5, -4 }
+local SURFACE_OVER_ICON = { "BORDER", 1, 2 }
+
+local function LayerSurface(record, empty)
+    record.slotEmpty = empty
+    local layer = empty and SURFACE_OVER_ICON or SURFACE_BELOW_ICON
+    record.slotOuter:SetDrawLayer(layer[1], layer[2])
+    record.slotInner:SetDrawLayer(layer[1], layer[3])
 end
 
 local function StyleSlot(self, button)
@@ -48,21 +57,24 @@ local function StyleSlot(self, button)
             return
         end
         if not record.slotOuter then
-            local outer = WindowTexture(button, "BACKGROUND", -5)
+            local below = SURFACE_BELOW_ICON
+            local outer = WindowTexture(button, below[1], below[2])
             outer:SetAllPoints(button)
-            local inner = WindowTexture(button, "BACKGROUND", -4)
+            local inner = WindowTexture(button, below[1], below[3])
             inner:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
             inner:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
-            record.slotOuter, record.slotInner = outer, inner
+            record.slotOuter, record.slotInner, record.slotEmpty = outer, inner, false
         end
-        self.context:Field(button, "emptyBackgroundAtlas", false, RefreshEmptyIcon)
-        RefreshEmptyIcon(button)
         record.slotNativeActive = true
     end
     if activating then
         record.slotOuter:Show()
         record.slotInner:Show()
     end
+    -- Our own textures: their layer may change in combat, as items are used.
+    -- HasItem is 1 or nil (ContainerFrameItemButtonMixin:SetHasItem), never secret.
+    local empty = not button:HasItem()
+    if record.slotEmpty ~= empty then LayerSurface(record, empty) end
     if button.ItemSlotBackground and (activating or record.nativeBg ~= button.ItemSlotBackground) then
         self.context:Alpha(button.ItemSlotBackground, 0)
         record.nativeBg = button.ItemSlotBackground
@@ -136,9 +148,8 @@ local function PaintQuality(self, record, quality)
     record.quality = quality
 end
 
+-- info: the slot's cached read (SlotCache.lua); callers checked bag and slot.
 local function Paint(self, button, pending, info)
-    local bag, slot = button:GetBagID(), button:GetID()
-    if not S.Public(bag) or not S.Public(slot) then return end
     local record = self.overlays[button]
     if not self.config.showItemLevel or not info or not S.Public(info) then
         Hide(record)
@@ -250,7 +261,8 @@ local function ItemInfoReceived(module, _, itemID, success)
     if waiting and module.frame and module.frame:IsShown() then
         for i = 1, #waiting do
             local button = waiting[i]
-            local info = Slots.Get(button:GetBagID(), button:GetID())
+            local bag, slot = button:GetBagID(), button:GetID()
+            local info = S.Finite(bag) and S.Finite(slot) and Slots.Get(bag, slot)
             if module.config.showItemLevel then Paint(module, button, module.pending, info) end
             PaintBindBadge(module, button, module.pending, info)
         end
