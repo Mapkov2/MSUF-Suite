@@ -86,7 +86,9 @@ GetHaste = function() return hasteValue end
 GetMasteryEffect = function() return 33.3 end
 GetCombatRatingBonus = function() return 40 end
 GetVersatilityBonus = function() return 4.4 end
-UnitClassBase = function() return "HUNTER" end
+local playerClass, knownSpells = "HUNTER", { [883] = true }
+UnitClassBase = function() return playerClass end
+C_SpellBook = { IsSpellKnown = function(spellID) return knownSpells[spellID] == true end }
 UnitExists = function(unit) assert(unit == "pet"); return petExists end
 UnitIsDeadOrGhost = function(unit) assert(unit == "pet"); return petDead end
 
@@ -373,6 +375,22 @@ assert(pet.host.shown, "combat-only warning dropped while in combat")
 combat = false
 pet.context.events.PLAYER_REGEN_ENABLED(pet, "PLAYER_REGEN_ENABLED")
 assert(not pet.host.shown, "combat-only pet warning stayed after combat")
+-- The spellbook decides whether a pet belongs to this character: a
+-- Marksmanship hunter without Call Pet, or a warlock with Grimoire of
+-- Sacrifice, plays without one.
+pet.config.combatOnly = false
+pet:Refresh()
+assert(pet.host.shown and pet.context.events.SPELLS_CHANGED, "a hunter with Call Pet lost the missing-pet warning")
+knownSpells[883] = nil
+pet.context.events.SPELLS_CHANGED(pet, "SPELLS_CHANGED")
+assert(not pet.host.shown, "a petless hunter specialization was told its pet is missing")
+pet:Disable()
+playerClass, knownSpells = "WARLOCK", { [688] = true, [108503] = true }
+pet:Enable()
+assert(not pet.host.shown, "a warlock with Grimoire of Sacrifice was told its demon is missing")
+knownSpells[108503] = nil
+pet.context.events.SPELLS_CHANGED(pet, "SPELLS_CHANGED")
+assert(pet.host.shown and pet.label.text == "Pet missing", "a warlock without its demon lost the warning")
 pet:Disable()
 assert(not pet.host.shown, "pet status remained visible when disabled")
 
