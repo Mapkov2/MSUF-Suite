@@ -2936,6 +2936,38 @@ do
     rawset(_G,"GetActionInfo",nil)
 end
 
+------------------------------------------------------------------ instruction budgets
+do
+    -- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+    -- interpreter build): the budgets of the hot paths. A budget holds the
+    -- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+    -- 2 %; a path may get cheaper, never dearer.
+    local function Cost(fn,...)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn(...)
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    -- Aura sync: an unchanged structural sync of a compact bar and of a
+    -- buff bar (every flush that marks them runs it).
+    Budget("aura sync: an unchanged compact bar",Cost(A.Sync,"buf"),15415)
+    C.views.c6=View("c6",3)
+    local rows={}
+    for i=1,4 do rows[i]=Aura("c6","a"..(6300+i),"a","player",Set(6300+i)) end
+    Plan("c6",3,rows)
+    A.Sync("c6")
+    Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),3857)
+    A.Release("c6")
+    C.views.c6,C.plans.c6=nil,nil
+end
+
 ------------------------------------------------------------------ build and restyle budget
 -- Blizzard's AddAuraGroup pre-builds a batch of ten buttons
 -- (CustomAuraContainerConstants.FrameCreationBatchSize, Blizzard_Custom-

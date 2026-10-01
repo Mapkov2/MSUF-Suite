@@ -220,6 +220,24 @@ for _,name in ipairs(FILES) do
     chunk("MSUF_Suite_CooldownManager",P)
 end
 assert(created==createdBefore,"loading the layout plane created frames")
+-- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+-- interpreter build): the budgets of the hot paths. A budget holds the
+-- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+-- 2 %; a path may get cheaper, never dearer.
+local function Cost(fn,...)
+    local n=0
+    collectgarbage("stop")
+    debug.sethook(function() n=n+1 end,"",1)
+    fn(...)
+    debug.sethook()
+    collectgarbage("restart")
+    return n
+end
+local function Budget(label,used,baseline)
+    assert(used<=math.floor(baseline*1.02),
+        ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+end
+
 local L,V,N,Pv=C.Layout,C.Visibility,C.Native,C.Preview
 assert(L and V and N and Pv,"exports missing")
 -- The unit runner's contract (S.NewUnitRunner): run(set, key, value, fn, a).
@@ -1109,6 +1127,13 @@ local grown=collectgarbage("count")-before
 collectgarbage("restart")
 assert(grown<1,"unchanged layout passes allocated "..grown.." KB")
 assert(Writes()==0 and #overlayLog==0,"unchanged layout passes wrote "..Writes().." times")
+-- Paint: unchanged passes of three bars, every bar, the requests of a
+-- frame, and the visibility repaint of a combat edge.
+Budget("paint: three bars, unchanged",Cost(function() L.Apply("ess");L.Apply("buf");L.Apply("bar") end),3971)
+Budget("paint: every bar, unchanged",Cost(L.ApplyAll),8853)
+L.Request("ess");L.Request("buf");L.Request("bar")
+Budget("paint: three layout requests",Cost(L.Flush,Direct),4076)
+Budget("paint: visibility on a combat edge",Cost(V.CombatChanged),379)
 
 -- empty aura bars keep one cell
 Plan("bar",{})

@@ -1104,6 +1104,26 @@ do
     for _=1,1000 do Fire("SPELL_UPDATE_COOLDOWN",101) end
     local used=collectgarbage("count")-kb
     collectgarbage("restart")
+    -- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+    -- interpreter build): the budgets of the hot paths. A budget holds the
+    -- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+    -- 2 %; a path may get cheaper, never dearer.
+    local function Cost(fn,...)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn(...)
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    -- Time: one matched cooldown event, then every cooldown icon at once.
+    Budget("time: a matched cooldown event",Cost(Fire,"SPELL_UPDATE_COOLDOWN",101),715)
+    Budget("time: a cooldown event for every icon",Cost(Fire,"SPELL_UPDATE_COOLDOWN",nil),4554)
     steady=nil
     assert(writes>quiet,"the matched cooldown event did not reach the icon")
     assert(used==0,"a matched cooldown event allocated "..used.." KB in Lua")
@@ -1126,6 +1146,34 @@ do
     assert(Index.ForSpell(880003,880001,Count)==3 and calls[w]==1 and calls[x]==1 and calls[y]==1,
         "a raising callback left an entry marked as seen")
     Index.bySpell[880001],Index.bySpell[880002],Index.bySpell[880003]=nil,nil,nil
+end
+-- Flush: every cooldown entry refreshed in one next-frame pass, and the
+-- usability sweep a SPELL_UPDATE_USABLE schedules.
+do
+    -- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+    -- interpreter build): the budgets of the hot paths. A budget holds the
+    -- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+    -- 2 %; a path may get cheaper, never dearer.
+    local function Cost(fn,...)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn(...)
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    Run()
+    C.Flush.dirty.cooldowns=true
+    C.Schedule()
+    Budget("flush: every cooldown entry",Cost(Run),6348)
+    C.Flush.dirty.usable=true
+    C.Schedule()
+    Budget("flush: a usability sweep",Cost(Run),1382)
 end
 -- A GCD for one spell refreshes that spell's icons only: the others do not
 -- show the GCD and are not touched.

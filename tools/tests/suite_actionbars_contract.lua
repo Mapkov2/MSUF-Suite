@@ -59,6 +59,24 @@ local function RunDue()
     end
 end
 
+-- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
+-- interpreter build): the budgets of the hot paths. A budget holds the
+-- instructions measured on 2026-10-01 before the wave-1 restructuring plus
+-- 2 %; a path may get cheaper, never dearer.
+local function Cost(fn,...)
+    local n=0
+    collectgarbage("stop")
+    debug.sethook(function() n=n+1 end,"",1)
+    fn(...)
+    debug.sethook()
+    collectgarbage("restart")
+    return n
+end
+local function Budget(label,used,baseline)
+    assert(used<=math.floor(baseline*1.02),
+        ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+end
+
 ------------------------------------------------------------------ frames
 local Frame,Region={},{}
 Frame.__index=Frame;Region.__index=Region
@@ -1471,6 +1489,9 @@ do
     AB.Painter.api.Charges=saved;c.hideEmptyCharges=setting
     AB.Painter.Paint(rec)
 end
+-- Flush: one capped cooldown walk over every filled button.
+now=now+1
+Budget("action bars flush: a cooldown walk",Cost(function() Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers() end),2444)
 cooldownCalls=calls.duration
 local start=now
 Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
