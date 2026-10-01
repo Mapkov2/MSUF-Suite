@@ -231,9 +231,10 @@ local function Event(self, event, ...)
         ScheduleZone(self)
     elseif event == "QUEST_ACCEPTED" or event == "QUEST_TURNED_IN" then
         if not self.config.quests then return end
-        local arg1, arg2 = ...
-        local id = Number(arg2) and arg2 or Number(arg1) and arg1
-        if not id then return end
+        -- Both start with the quest ID; QUEST_TURNED_IN goes on with the XP
+        -- and money rewards (QuestLogDocumentation.lua).
+        local id = ...
+        if not Number(id) then return end
         local title = ReadText(C_QuestLog.GetTitleForQuestID, id)
         if title then
             Direct(self, "quest", title, event == "QUEST_ACCEPTED" and Tr("QUEST ACCEPTED") or Tr("QUEST COMPLETE"),

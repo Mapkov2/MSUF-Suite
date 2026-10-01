@@ -795,6 +795,14 @@ EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 94,
     title = "Flight point discovered", subtitle = "Silvermoon" })
 assert(banner.showing and banner.title.text == "Flight point discovered",
     "scenario cleanup suppressed an unrelated announcement")
+-- QUEST_TURNED_IN carries questID, xpReward, moneyReward; QUEST_ACCEPTED
+-- only the questID (QuestLogDocumentation.lua).
+banner.config.quests, banner.queue = true, {}
+banner.context.events.QUEST_TURNED_IN(banner, "QUEST_TURNED_IN", 42, 1500, 300)
+assert(#banner.queue == 1 and banner.queue[1].title == "A New Hope"
+    and banner.queue[1].subtitle == "QUEST COMPLETE",
+    "a turned-in quest must announce its own title, not the quest named by its XP reward")
+banner.config.quests, banner.queue = false, {}
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
 tracker.config.colorStyle = 1
 tracker.config.backgroundOpacity = nil
