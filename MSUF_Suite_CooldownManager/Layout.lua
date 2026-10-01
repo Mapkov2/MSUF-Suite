@@ -8,8 +8,8 @@ local C = P.CDM
 -- Offsets are TOPLEFT offsets inside the bar frame; the bar frame itself is
 -- anchored by its growth edge to the screen center (free, x/y from there) or
 -- to its parent's edge (attached, x/y an offset from the attach point).
-local L = { dirty = {} }
-C.Layout = L
+local Layout = { dirty = {} }
+C.Layout = Layout
 local SLOTS = NS.CDM.SLOTS
 local Public = S.Public
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
@@ -43,20 +43,20 @@ local px
 -- UI units per physical pixel for UIParent children (S.PixelUnit, 1 while
 -- unreadable). Cached; recomputed only after InvalidateScale
 -- (UI_SCALE_CHANGED / DISPLAY_SIZE_CHANGED).
-function L.PixelScale()
+function Layout.PixelScale()
     if px then return px end
     local value = S.PixelUnit() or 1
     px = value
     C.state.px = value
     return value
 end
-function L.InvalidateScale()
+function Layout.InvalidateScale()
     px = nil
     frameGen = frameGen + 1
-    return L.PixelScale()
+    return Layout.PixelScale()
 end
-function L.Snap(value)
-    local unit = px or L.PixelScale()
+function Layout.Snap(value)
+    local unit = px or Layout.PixelScale()
     return Round(value / unit) * unit
 end
 
@@ -160,9 +160,9 @@ end
 local function MixedRows(view)
     return view.kind == 1 and not view.cooldownDuration and ((view.laterPerRow or 0) > 0 or (view.laterSize or 0) > 0)
 end
-L.MixedRows = MixedRows
-function L.Footprint(view, index)
-    local unit = px or L.PixelScale()
+Layout.MixedRows = MixedRows
+function Layout.Footprint(view, index)
+    local unit = px or Layout.PixelScale()
     local w, h, _, per = Grid(view, unit)
     if MixedRows(view) and index > per and (view.laterSize or 0) > 0 then
         w = max(1, Round(view.laterSize / unit))
@@ -177,7 +177,7 @@ local function RowSpan(count, size, align, spacing)
 end
 local function FillMixed(view, n, out, unit)
     local w, h, sp, per, vertical, grow, align = Grid(view, unit)
-    local w2, h2 = L.Footprint(view, per + 1)
+    local w2, h2 = Layout.Footprint(view, per + 1)
     w2, h2 = Round(w2 / unit), Round(h2 / unit)
     local per2 = (view.laterPerRow or 0) > 0 and view.laterPerRow or per
     local first = min(n, per)
@@ -210,8 +210,8 @@ end
 
 -- Pure: offsets of the first `count` cells (capped by maxIcons) relative to
 -- the bar's TOPLEFT. Returns width, height and the laid-out count.
-function L.Offsets(view, count, out)
-    local unit = px or L.PixelScale()
+function Layout.Offsets(view, count, out)
+    local unit = px or Layout.PixelScale()
     local w, h, sp, per, vertical, grow, align = Grid(view, unit)
     local n = type(count) == "number" and count or 0
     local cap = view.maxIcons
@@ -230,18 +230,18 @@ end
 
 -- Cell width, height and spacing in UI units (pixel exact), stride, vertical,
 -- grow and align: what the aura layer needs for its flow layout.
-function L.Metrics(view)
-    local unit = px or L.PixelScale()
+function Layout.Metrics(view)
+    local unit = px or Layout.PixelScale()
     local w, h, sp, per, vertical, grow, align = Grid(view, unit)
     return w * unit, h * unit, sp * unit, per, vertical, grow, align
 end
 
 -- Growth-edge point of a bar; free bars anchor it to UIParent's center.
-function L.Point(view)
+function Layout.Point(view)
     if view.kind ~= 3 and view.vertical then return Grow(view) == 2 and "RIGHT" or "LEFT" end
     return Grow(view) == 2 and "BOTTOM" or "TOP"
 end
-local Point = L.Point
+local Point = Layout.Point
 
 ------------------------------------------------------------------ frames
 local function Host(bar)
@@ -254,7 +254,7 @@ local function Host(bar)
     return host
 end
 
-function L.EnsureBar(slot)
+function Layout.EnsureBar(slot)
     local bar = C.bars[slot]
     if bar then return bar end
     local frame = S.CreateFrame("Frame", nil, UIParent)
@@ -295,7 +295,7 @@ local function Shown(region, shown)
         end
     end
 end
-L.Shown = Shown
+Layout.Shown = Shown
 
 -- One TOPLEFT point per region; the first write after a memo reset also
 -- clears foreign points.
@@ -314,9 +314,9 @@ end
 local function Forget(icon)
     icon.layX, icon.layY, icon.layShown, icon.layEntry, icon.layIndex = nil, nil, nil, nil, nil
 end
-L.Forget = Forget
+Layout.Forget = Forget
 
-function L.Strata(slot)
+function Layout.Strata(slot)
     local bar, view = C.bars[slot], C.views[slot]
     if not bar or not view then return end
     local strata = STRATA[view.strata] or "MEDIUM"
@@ -349,7 +349,7 @@ local function Direct(slot)
 end
 -- Resolved parent, or nil for a free bar. A bar inside an anchor cycle is
 -- free; a bar leading into a cycle attaches to its (then free) parent.
-function L.Parent(slot)
+function Layout.Parent(slot)
     local parent = Direct(slot)
     if not parent then return nil end
     local cursor = parent
@@ -395,7 +395,7 @@ local function FrameMoved()
         if view and view.on then
             local parent, off = Direct(slot)
             local src = (not parent and off) and C.views[off] or view
-            if FRAME_ANCHORS[src.anchor] or FollowsViewer(src.key) then L.Request(slot) end
+            if FRAME_ANCHORS[src.anchor] or FollowsViewer(src.key) then Layout.Request(slot) end
         end
     end
 end
@@ -454,7 +454,7 @@ local function MSUFFollows()
         and type(_G.MSUF_GetSuiteCooldownAnchor) == "function"
 end
 -- from: the switched-off bar whose placement `slot` takes over, if any.
-function L.FrameTarget(slot, from)
+function Layout.FrameTarget(slot, from)
     local view = C.views[from or slot]
     local target = view and FRAME_ANCHORS[view.anchor]
     if not target then return nil end
@@ -472,26 +472,26 @@ end
 -- Placed by its own absolute x/y: not attached to a bar or an MSUF frame,
 -- not standing in for a switched-off bar and not riding Blizzard's
 -- Essential bar. Position conversion needs this.
-function L.Free(slot)
-    if L.Parent(slot) ~= nil or L.FrameTarget(slot) ~= nil then return false end
+function Layout.Free(slot)
+    if Layout.Parent(slot) ~= nil or Layout.FrameTarget(slot) ~= nil then return false end
     local _, standIn = Direct(slot)
     if standIn ~= nil then return false end
     return not FollowsViewer(slot)
 end
 -- Draggable in Edit Mode and the preview: free bars move, attached bars and
 -- the Essential bar riding Blizzard's bar shift by an offset from it.
-function L.Movable(slot)
+function Layout.Movable(slot)
     if C.views[slot] == nil then return false end
     local parent, off = Direct(slot)
     return not (parent == nil and off ~= nil)
 end
-L.FollowsViewer = FollowsViewer
+Layout.FollowsViewer = FollowsViewer
 -- The bar's own x/y count from Blizzard's Essential bar: it follows that
 -- bar (FollowsViewer) and has no parent bar, MSUF frame or switched-off bar
 -- whose placement it takes, the condition Anchor rides it under. A bar
 -- standing in for it reads the same x/y the same way.
-function L.RidesViewer(slot)
-    if not FollowsViewer(slot) or L.Parent(slot) ~= nil or L.FrameTarget(slot) ~= nil then return false end
+function Layout.RidesViewer(slot)
+    if not FollowsViewer(slot) or Layout.Parent(slot) ~= nil or Layout.FrameTarget(slot) ~= nil then return false end
     local _, standIn = Direct(slot)
     return standIn == nil
 end
@@ -505,7 +505,7 @@ local function ViewerPoint(view)
     return point == "LEFT" and left or point == "RIGHT" and right or (left + right) / 2,
         point == "TOP" and top or point == "BOTTOM" and bottom or (bottom + top) / 2
 end
-L.ViewerPoint = ViewerPoint
+Layout.ViewerPoint = ViewerPoint
 
 -- x/y of an attached bar are an offset from its attach point. A drag
 -- preview passes its values in without writing settings.
@@ -513,8 +513,8 @@ local dragSlot, dragX, dragY
 local function Anchor(slot)
     local bar, view = C.bars[slot], C.views[slot]
     if not bar or not view or not view.on then return end
-    local unit = px or L.PixelScale()
-    local parent, standIn = L.Parent(slot), nil
+    local unit = px or Layout.PixelScale()
+    local parent, standIn = Layout.Parent(slot), nil
     if not parent then
         local _, off = Direct(slot)
         standIn = off
@@ -531,10 +531,10 @@ local function Anchor(slot)
     local ox, oy = Round(vx / unit) * unit, Round(vy / unit) * unit
     bar.parent = parent
     if parent then
-        SetAnchor(bar, attach[1], L.EnsureBar(parent).frame, attach[2], SIDE_X[side] * gap + ox, SIDE_Y[side] * gap + oy)
+        SetAnchor(bar, attach[1], Layout.EnsureBar(parent).frame, attach[2], SIDE_X[side] * gap + ox, SIDE_Y[side] * gap + oy)
         return
     end
-    local target = L.FrameTarget(slot, standIn)
+    local target = Layout.FrameTarget(slot, standIn)
     local left, bottom, right, top
     if target then left, bottom, right, top = Rect(target) end
     -- Blizzard's invisible Essential bar carries MSUF's frames: sit on it,
@@ -561,15 +561,15 @@ local function Anchor(slot)
 end
 
 -- Combat end: watch the MSUF frames that appeared during combat.
-function L.CombatEnded()
+function Layout.CombatEnded()
     if not probesPending then return end
     probesPending = false
     FrameMoved()
 end
 
 -- Edit Mode drag preview: place the bar as if x/y were these values.
-function L.DragPlace(slot, x, y)
-    if not C.bars[slot] or not L.Movable(slot) then return false end
+function Layout.DragPlace(slot, x, y)
+    if not C.bars[slot] or not Layout.Movable(slot) then return false end
     dragSlot, dragX, dragY = slot, x, y
     Anchor(slot)
     dragSlot, dragX, dragY = nil, nil, nil
@@ -583,7 +583,7 @@ local seenGen, seenPx, seenFrames, seenFollow = {}, nil, nil, nil
 
 -- MSUF Edit Mode drags move bar frames directly: forget the anchor memo so
 -- the next pass writes the saved position again (a cancelled drag included).
-function L.ForgetAnchors()
+function Layout.ForgetAnchors()
     for _, bar in pairs(C.bars) do bar.aPoint, bar.aRel, bar.aRelPoint, bar.aX, bar.aY = nil, nil, nil, nil, nil end
     seenPx = nil
 end
@@ -632,7 +632,7 @@ local function PlaceIcons(bar, view, plan)
         if entry.icon and (showAll or not entry.hidden or view.cooldownFixed) then n = n + 1 end
     end
     local width, height
-    width, height, n = L.Offsets(view, n, bar.out)
+    width, height, n = Layout.Offsets(view, n, bar.out)
     local out, frame = bar.out, bar.frame
     local pass = bar.pass + 1
     bar.pass = pass
@@ -656,7 +656,7 @@ local function PlaceIcons(bar, view, plan)
                 -- The icon's place: Icons styles it at that row's size.
                 icon.layIndex = index
                 if MixedRows(view) then
-                    local iw, ih = L.Footprint(view, index)
+                    local iw, ih = Layout.Footprint(view, index)
                     if icon.w ~= iw or icon.h ~= ih then C.Icons.StyleIcon(icon, view, iw, ih) end
                 end
                 Place(icon, frame, out[2 * index - 1], out[2 * index])
@@ -713,9 +713,9 @@ local function Parts(view, entries)
     end
     return n1, n2
 end
-function L.FixedAuras(view, entries)
+function Layout.FixedAuras(view, entries)
     local n1, n2 = Parts(view, entries)
-    local _, _, _, per, vertical, _, align = Grid(view, px or L.PixelScale())
+    local _, _, _, per, vertical, _, align = Grid(view, px or Layout.PixelScale())
     local n = n1 + n2
     local single = n <= per or per == 1
     local fixed = view.keepSlots == true or view.showMissing == true
@@ -745,12 +745,12 @@ end
 local function PlaceAuras(bar, view, plan)
     local entries = plan.entries
     local n1, n2 = Parts(view, entries)
-    local unit = px or L.PixelScale()
+    local unit = px or Layout.PixelScale()
     local w, h, sp, per, vertical, grow, align = Grid(view, unit)
     local out = bar.out
     -- Fixed places on one line: every entry in the bar's order. Otherwise
     -- the target part starts on a new line after the player part.
-    local _, ordered, split = L.FixedAuras(view, entries)
+    local _, ordered, split = Layout.FixedAuras(view, entries)
     ordered = ordered or split
     local width, height
     if ordered then
@@ -792,8 +792,8 @@ end
 -- An existing cell costs one lookup: the layout passes keep it placed.
 -- Missing cells are made for every entry the bar can lay out at once and
 -- placed in one pass, so a container build stays linear.
-function L.Cell(slot, i)
-    local bar = L.EnsureBar(slot)
+function Layout.Cell(slot, i)
+    local bar = Layout.EnsureBar(slot)
     local cells = bar.cells
     local cell = cells[i]
     if cell then return cell end
@@ -818,7 +818,7 @@ end
 local function Notify(slot)
     if slot == "ess" then C.AnchorChanged() end
 end
-function L.Hide(slot)
+function Layout.Hide(slot)
     local bar = C.bars[slot]
     if bar and bar.shown then
         bar.shown = false
@@ -826,18 +826,18 @@ function L.Hide(slot)
         Notify(slot)
     end
 end
-function L.HideAll()
-    for i = 1, #SLOTS do L.Hide(SLOTS[i].key) end
+function Layout.HideAll()
+    for i = 1, #SLOTS do Layout.Hide(SLOTS[i].key) end
 end
 
-function L.Apply(slot)
-    L.dirty[slot] = nil
+function Layout.Apply(slot)
+    Layout.dirty[slot] = nil
     local view, plan = C.views[slot], C.plans[slot]
     if not view or not view.on or not plan then
-        L.Hide(slot)
+        Layout.Hide(slot)
     else
-        local bar = L.EnsureBar(slot)
-        L.Strata(slot)
+        local bar = Layout.EnsureBar(slot)
+        Layout.Strata(slot)
         local restored = S.ApplyOwnedLayer(bar.frame, view.layer)
         if bar.auraHost then S.ApplyOwnedChildLayer(bar.auraHost, bar.frame, view.layer, 1, restored) end
         local width, height
@@ -861,20 +861,20 @@ end
 
 -- Roots before attached children, so parents exist and carry their size.
 local depths = {}
-function L.ApplyAll()
+function Layout.ApplyAll()
     local deepest = 0
     for i = 1, #SLOTS do
-        local depth, cursor = 0, L.Parent(SLOTS[i].key)
+        local depth, cursor = 0, Layout.Parent(SLOTS[i].key)
         while cursor and depth < #SLOTS do
             depth = depth + 1
-            cursor = L.Parent(cursor)
+            cursor = Layout.Parent(cursor)
         end
         depths[i] = depth
         if depth > deepest then deepest = depth end
     end
     for depth = 0, deepest do
         for i = 1, #SLOTS do
-            if depths[i] == depth then L.Apply(SLOTS[i].key) end
+            if depths[i] == depth then Layout.Apply(SLOTS[i].key) end
         end
     end
 end
@@ -882,15 +882,15 @@ end
 -- Relayout request from runtime paths (hideReady edges); the controller's
 -- flush calls Flush once per frame with its runner, which isolates each
 -- pass and gives a raising pass its request back.
-function L.Request(slot)
-    L.dirty[slot] = true
+function Layout.Request(slot)
+    Layout.dirty[slot] = true
     C.Schedule()
 end
-function L.Flush(run)
-    local requests = L.dirty
+function Layout.Flush(run)
+    local requests = Layout.dirty
     if next(requests) == nil then return end
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
-        if requests[slot] then run(requests, slot, true, L.Apply, slot) end
+        if requests[slot] then run(requests, slot, true, Layout.Apply, slot) end
     end
 end

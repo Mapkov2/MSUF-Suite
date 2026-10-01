@@ -15,10 +15,10 @@ local ID = "cooldownManager"
 local pairs, type, next = pairs, type, next
 local wipe = C.wipe
 local K = C.Const
-local F = C.Flush
-local dirty, sync, style, behavior, visible = F.dirty, F.sync, F.style, F.behavior, F.visible
-local St = {}
-C.Settings = St
+local Flush = C.Flush
+local dirty, sync, style, behavior, visible = Flush.dirty, Flush.sync, Flush.style, Flush.behavior, Flush.visible
+local Settings = {}
+C.Settings = Settings
 
 ------------------------------------------------------------------ settings work
 -- What a change of one bar setting dirties, by suffix:
@@ -109,7 +109,7 @@ local lastLists, lastSpells
 
 -- Fonts and text colors (the result: their change restyles every bar), the
 -- GCD display, the combat glow and the sound options.
-function St.ReadGlobals(config, all)
+function Settings.ReadGlobals(config, all)
     local state = C.state
     local text = all
     local raid = config.raidEssentials ~= false
@@ -177,7 +177,7 @@ end
 -- the slot's hit set; the set then bumps generations and marks work once.
 -- A position drag or an opacity slider never syncs structure, a behavior
 -- tick rebuilds the routing index only when membership can change.
-function St.ReadViews(config, all, text)
+function Settings.ReadViews(config, all, text)
     for i = 1, #SLOTS do
         local def = SLOTS[i]
         local slot = def.key
@@ -238,7 +238,7 @@ end
 -- The data strings are decoded only when they changed. Per-spell choices
 -- reach cooldown entries through the behavior refresh and aura buttons and
 -- overlays through a structural sync.
-function St.DecodeData(config)
+function Settings.DecodeData(config)
     local lists, spells = config.listsData, config.spellsData
     if lists ~= lastLists then
         lastLists = lists
@@ -345,7 +345,7 @@ end
 -- rewritten so the bar does not jump; when nothing is readable nothing is
 -- written and the next Refresh tries again. Written a frame later with the
 -- capture; a switch back before that drops the rewrite.
-function St.SyncViewerOffset()
+function Settings.SyncViewerOffset()
     local config = M.config
     if type(config) ~= "table" or NS.IsCombatLocked() then return end
     local on = C.Layout.RidesViewer("ess") == true
@@ -397,7 +397,7 @@ end
 
 -- Activation: Blizzard's layout is read before the takeover touches its
 -- bars; on a fresh login the capture waits for Blizzard's data.
-function St.BeginCapture(config)
+function Settings.BeginCapture(config)
     captureWait, pendingCapture = false, nil
     if config.captured ~= true or Outdated(config) then
         if C.Catalog.Ready() then
@@ -407,16 +407,16 @@ function St.BeginCapture(config)
         end
     end
 end
-function St.CaptureWaiting() return captureWait end
+function Settings.CaptureWaiting() return captureWait end
 -- A waiting capture runs once Blizzard's data is in, never under lockdown.
-function St.CaptureWhenReady(locked)
+function Settings.CaptureWhenReady(locked)
     if captureWait and C.Catalog.Ready() and not locked then Capture() end
 end
 -- Combat end: a waiting capture, and settings combat kept from being written.
-function St.CaptureAfterCombat()
+function Settings.CaptureAfterCombat()
     if captureWait and C.Catalog.Ready() then Capture() end
     if pendingCapture then PersistCapture() end
 end
-function St.ForgetCapture()
+function Settings.ForgetCapture()
     captureWait, pendingCapture = false, nil
 end

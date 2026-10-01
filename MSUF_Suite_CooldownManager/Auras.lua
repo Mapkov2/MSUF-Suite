@@ -29,12 +29,12 @@ local C = P.CDM
 -- Everything inside a button (look, glows, text bindings, sensors) and the
 -- placeholders on cells are in AuraButtons.lua.
 local K = C.Const
-local A = { pending = {} }
-C.Auras = A
-local AB = C.AuraButtons
-local TextOpts, Look, Hush, Quiet, Mutable = AB.TextOpts, AB.Look, AB.Hush, AB.Quiet, AB.Mutable
-local Style, ApplyEntry, Init = AB.Style, AB.ApplyEntry, AB.Init
-local Unholds, Placeholders = AB.Unholds, AB.Placeholders
+local Auras = { pending = {} }
+C.Auras = Auras
+local AuraButtons = C.AuraButtons
+local TextOpts, Look, Hush, Quiet, Mutable = AuraButtons.TextOpts, AuraButtons.Look, AuraButtons.Hush, AuraButtons.Quiet, AuraButtons.Mutable
+local Style, ApplyEntry, Init = AuraButtons.Style, AuraButtons.ApplyEntry, AuraButtons.Init
+local Unholds, Placeholders = AuraButtons.Unholds, AuraButtons.Placeholders
 
 -- The containers are created with the client's CreateFrame: they lay out
 -- and seal Blizzard's buttons, so MSUF's pixel-layout policy
@@ -119,7 +119,7 @@ end
 local function TargetRow(entry)
     return entry.unit == "target"
 end
-A.UnitOf, A.Ids, A.TargetRow = UnitOf, Ids, TargetRow
+Auras.UnitOf, Auras.Ids, Auras.TargetRow = UnitOf, Ids, TargetRow
 
 -- An ancestor of a kit container shown or hidden (the UI hidden for a
 -- cinematic, the bar hidden): a plain frame beside the container on the
@@ -203,7 +203,7 @@ end
 -- choices applied where they differ. Returns false when sealed buttons
 -- would need a write they refuse.
 local function Refit(rec, look)
-    if not AB.Finish(rec) then return false end
+    if not AuraButtons.Finish(rec) then return false end
     local parts = rec.parts
     local restyle = rec.look ~= look
     local dirty = restyle
@@ -259,7 +259,7 @@ local function Build(rec, view, n)
                 rec.byAnchor[anchor], rec.anchors[k] = k, anchor
             end
             -- An overlay starts from the layout's shown state of its icon
-            -- (layShown); the layout reports every change (A.OverlayShown).
+            -- (layShown); the layout reports every change (Auras.OverlayShown).
             if over then
                 overIcon[anchor] = slot
                 rec.shut[k] = anchor.layShown ~= true
@@ -288,9 +288,9 @@ local function Build(rec, view, n)
                 groupOpts.candidateFilters, groupOpts.initializeFrame, groupOpts.layout = cand, init, GroupLayout(rec, entry.index)
                 -- Of the ten buttons Blizzard pre-builds, only the one it
                 -- shows gets regions (AuraButtons.BeginBatch).
-                local collected = AB.BeginBatch(rec)
+                local collected = AuraButtons.BeginBatch(rec)
                 container:AddAuraGroup(keys[k], filter, groupOpts)
-                if collected then AB.EndBatch(rec, k) end
+                if collected then AuraButtons.EndBatch(rec, k) end
             end
             cand.includeSpellIDs = nil
             slotOpts.initializeFrame, groupOpts.initializeFrame = nil, nil
@@ -312,7 +312,7 @@ end
 -- preview, it is a compact aura container (the preview draws every entry
 -- on its cell instead). Container widget writes: legal in combat.
 local function Show(rec)
-    local shown = not (unseen[rec.slot] or (A.preview and rec.fam == "aura" and not rec.fixed))
+    local shown = not (unseen[rec.slot] or (Auras.preview and rec.fam == "aura" and not rec.fixed))
     if rec.shown ~= shown then
         rec.shown = shown
         Hush(rec)
@@ -529,7 +529,7 @@ end
 -- Aura bars honor maxIcons like the layout does (every entry holds a place).
 -- Overlays: the layout shows the first maxIcons visible icons, so an icon
 -- behind maxIcons icons that never hide can never show and gets no slot;
--- every other overlay switches with its icon (A.OverlayShown).
+-- every other overlay switches with its icon (Auras.OverlayShown).
 local function Collect(plan, unit, over, view)
     local entries, n = plan.entries, 0
     local cap = #entries
@@ -564,7 +564,7 @@ end
 ------------------------------------------------------------------ sync
 local function Debounced()
     debounced = false
-    A.FlushPending()
+    Auras.FlushPending()
 end
 -- Buttons that refuse a restyle while auras are plain get a new container,
 -- batched so slider drags do not leak one per tick.
@@ -609,7 +609,7 @@ local function Run(slot, fam, unit, role, fixed, view, n, force, offset, split)
     -- ever freed.
     local quiet = Quiet()
     if not (force and quiet) then
-        A.pending[slot] = true
+        Auras.pending[slot] = true
         if quiet then Debounce() end
         return
     end
@@ -677,32 +677,32 @@ local function SyncAura(slot, view, plan, force)
             Run(slot, "aura", unit, role, barMeta.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)
         end
     end
-    Placeholders(slot, view, plan, barMeta, A.preview == true)
+    Placeholders(slot, view, plan, barMeta, Auras.preview == true)
 end
 
 -- Structure changes only out of combat: in combat the bar is marked
 -- pending for FlushPending and the sync stops.
 local function Deferred(slot)
     if IsCombatLocked() then
-        A.pending[slot] = true
+        Auras.pending[slot] = true
         return true
     end
-    A.pending[slot] = nil
+    Auras.pending[slot] = nil
     return false
 end
 
 -- Structural sync of one bar (aura bars and cooldown overlays alike). Out
 -- of combat only; in combat the bar is marked pending for FlushPending.
-function A.Sync(slot, force)
+function Auras.Sync(slot, force)
     local view, plan = C.views[slot], C.plans[slot]
     if not (view and plan and view.on) then
-        A.Release(slot)
+        Auras.Release(slot)
         return
     end
     if plan.kind == 1 then
         if live[slot] then ReleaseFam(slot, "aura") end
         Unholds(slot)
-        return A.SyncOverlays(slot, force)
+        return Auras.SyncOverlays(slot, force)
     end
     if Deferred(slot) then return end
     if live[slot] then ReleaseFam(slot, "over") end
@@ -712,7 +712,7 @@ end
 
 -- Aura overlays on a cooldown bar: one slot per icon whose spell has an
 -- aura, anchored to that icon. Needs the bar's icons (C.Icons.Sync) first.
-function A.SyncOverlays(slot, force)
+function Auras.SyncOverlays(slot, force)
     local view, plan = C.views[slot], C.plans[slot]
     if not (view and plan and view.on and plan.kind == 1 and not view.cooldownDuration) then
         if live[slot] then
@@ -736,25 +736,25 @@ function A.SyncOverlays(slot, force)
 end
 
 -- Style changes use the same diffing: unchanged structure makes no calls.
-function A.Restyle(slot) return A.Sync(slot) end
+function Auras.Restyle(slot) return Auras.Sync(slot) end
 
-function A.Release(slot)
+function Auras.Release(slot)
     if live[slot] then
         ReleaseFam(slot, "aura")
         ReleaseFam(slot, "over")
     end
     Unholds(slot)
-    A.pending[slot] = nil
+    Auras.pending[slot] = nil
     RefreshTargets()
 end
 
 -- Module off. Gates parked by an earlier release in combat go too: the
 -- module may be switched off after combat but before its own
 -- PLAYER_REGEN_ENABLED ran (a profile change queued in combat).
-function A.ReleaseAll()
-    for slot in pairs(live) do A.Release(slot) end
+function Auras.ReleaseAll()
+    for slot in pairs(live) do Auras.Release(slot) end
     for slot in pairs(meta) do Unholds(slot) end
-    for slot in pairs(A.pending) do A.pending[slot] = nil end
+    for slot in pairs(Auras.pending) do Auras.pending[slot] = nil end
     C.AuraGlows.FlushGates()
 end
 
@@ -778,7 +778,7 @@ end
 -- several target events in one frame still cost one parse. The pause
 -- starts at once, so a friendly target is never parsed. The new target's
 -- auras are no gains or losses: kit sensors stay silent.
-function A.TargetChanged()
+function Auras.TargetChanged()
     if targets[1] == nil then return end
     local enabled = not FriendlyTarget()
     for i = 1, #targets do
@@ -798,7 +798,7 @@ function A.TargetChanged()
 end
 -- UNIT_FACTION for the target (a duel starts, a charm ends): work only when
 -- its disposition changed.
-function A.TargetReaction()
+function Auras.TargetReaction()
     if targets[1] ~= nil then React() end
 end
 
@@ -809,7 +809,7 @@ end
 -- its icon shows and still carries the entry the slot was built for.
 -- Container-level calls only, legal in combat; unchanged state makes none;
 -- an icon without an overlay costs two lookups.
-function A.OverlayShown(entry, on, icon)
+function Auras.OverlayShown(entry, on, icon)
     icon = icon or (entry and entry.icon)
     local slot = icon and overIcon[icon]
     local fams = slot and live[slot]
@@ -832,7 +832,7 @@ end
 -- its opacity is 0): the bar's containers hide with it, so invisible
 -- buttons take no mouse or tooltip and no aura work runs; shown again, a
 -- container reparses at once (OnShow). Legal in combat.
-function A.SetBarMouse(slot, on)
+function Auras.SetBarMouse(slot, on)
     local hidden = on ~= true or nil
     if unseen[slot] == hidden then return end
     unseen[slot] = hidden
@@ -845,20 +845,20 @@ end
 -- PLAYER_REGEN_ENABLED, ADDON_RESTRICTION_STATE_CHANGED while something is
 -- pending, and the sealed-button debounce: runs every sync that combat or
 -- sealed buttons held back, then pending aura sounds.
-function A.FlushPending()
+function Auras.FlushPending()
     C.AuraGlows.FlushGates()
     if IsCombatLocked() then return end
     C.AuraButtons.AdoptWoken()
     local n = 0
-    for slot in pairs(A.pending) do
+    for slot in pairs(Auras.pending) do
         n = n + 1
         flushing[n] = slot
     end
     for i = 1, n do
         local slot = flushing[i]
         flushing[i] = nil
-        A.pending[slot] = nil
-        A.Sync(slot, true)
+        Auras.pending[slot] = nil
+        Auras.Sync(slot, true)
     end
     local alerts = C.Alerts
     if alerts.pending then alerts.SyncAuraSounds() end
@@ -866,10 +866,10 @@ end
 
 -- Edit Mode / options preview: every aura-bar entry shows its sample icon
 -- on its cell; compact containers step aside so nothing is drawn twice.
-function A.SetPreview(on)
+function Auras.SetPreview(on)
     on = on == true
-    if A.preview == on then return end
-    A.preview = on
+    if Auras.preview == on then return end
+    Auras.preview = on
     for _, fams in pairs(live) do
         for _, rec in pairs(fams.aura) do Show(rec) end
     end

@@ -9,8 +9,8 @@ local C = P.CDM
 -- a burst of requests shares one pass 0.2 s after its first request.
 -- Nothing here runs per cooldown event. Key texts are the action bars' own
 -- (S.KeyText), so an icon and its button show the same label.
-local KB = { map = {} }
-C.Keybinds = KB
+local Keybinds = { map = {} }
+C.Keybinds = Keybinds
 local Public = S.Public
 local type, pairs = type, pairs
 local wipe = C.wipe
@@ -72,12 +72,12 @@ local function Lookup(spell)
     return FirstKey(spellSlots)
 end
 
-function KB.Text(spell)
+function Keybinds.Text(spell)
     if not spell then return "" end
-    local text = KB.map[spell]
+    local text = Keybinds.map[spell]
     if text == nil then
         text = Lookup(spell)
-        KB.map[spell] = text
+        Keybinds.map[spell] = text
     end
     return text
 end
@@ -101,7 +101,7 @@ end
 
 -- An item entry (Blizzard's trinket records, the equipment-slot rows and
 -- custom items) takes the key of its item action, else its use spell's.
-function KB.EntryText(entry)
+function Keybinds.EntryText(entry)
     local item = entry.itemID
     if item and (entry.equipSlot or entry.src == "e" or entry.src == "i") then
         local text = itemMap[item]
@@ -112,12 +112,12 @@ function KB.EntryText(entry)
         if text ~= "" then return text end
     end
     -- Action slots hold the base spell of an override.
-    return KB.Text(entry.base or entry.spell)
+    return Keybinds.Text(entry.base or entry.spell)
 end
 
 -- Cold: pushes key text to every entry of a cooldown bar that shows
 -- keybinds, from the cache where it has the spell.
-function KB.Refresh()
+function Keybinds.Refresh()
     for slot, plan in pairs(C.plans) do
         local view = C.views[slot]
         if plan.kind == 1 and view and view.keybind then
@@ -125,7 +125,7 @@ function KB.Refresh()
             for i = 1, #entries do
                 local entry = entries[i]
                 if entry.src ~= "p" then
-                    local text = KB.EntryText(entry)
+                    local text = Keybinds.EntryText(entry)
                     if entry.keyText ~= text then C.Icons.SetKeybind(entry, text) end
                 end
             end
@@ -135,10 +135,10 @@ function KB.Refresh()
 end
 
 -- Bindings or action slots changed: every text is looked up again.
-function KB.Rebuild()
-    wipe(KB.map)
+function Keybinds.Rebuild()
+    wipe(Keybinds.map)
     wipe(itemMap)
-    KB.Refresh()
+    Keybinds.Refresh()
 end
 
 -- One pass 0.2 s after the first request of a burst (requests in between
@@ -150,21 +150,21 @@ local function Fire()
     stale = false
     if not C.M.active then return end
     if fresh then
-        KB.Rebuild()
+        Keybinds.Rebuild()
     else
-        KB.Refresh()
+        Keybinds.Refresh()
     end
 end
 
-function KB.Request(bindings)
+function Keybinds.Request(bindings)
     if bindings then stale = true end
     if armed then return end
     armed = true
     C_Timer.After(DELAY, Fire)
 end
 
-function KB.Clear()
-    wipe(KB.map)
+function Keybinds.Clear()
+    wipe(Keybinds.map)
     wipe(itemMap)
     stale = false
 end

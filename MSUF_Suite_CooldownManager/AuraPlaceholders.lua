@@ -3,7 +3,7 @@ local NS, S = P.NS, P.Suite
 local C = P.CDM
 -- Addon-owned stand-ins on aura bar cells: the sample rows the options
 -- page and MSUF Edit Mode draw, and the dimmed icons of missing buffs.
-local K, B = C.Const, C.AuraButtons
+local K, AuraButtons = C.Const, C.AuraButtons
 local floor, max = math.floor, math.max
 local EMPTY, QUESTION = C.EMPTY, K.QUESTION_ICON
 local STACK_COLOR = NS.CDM.SPELL_DEFAULTS.stackColor
@@ -12,7 +12,7 @@ local holders = {} -- addon-owned samples and missing-aura placeholders per cell
 
 -- A plain, reusable sample shares the live bar's style. It never binds a
 -- unit, reads aura state, or writes an entry; menu and Edit Mode use it alike.
-function B.Sample(parent, row, view, ov, texture, name)
+function AuraButtons.Sample(parent, row, view, ov, texture, name)
     if not row then
         row = S.CreateFrame("Frame", nil, parent)
         row.rec = { role = "bar", lk = {} }
@@ -41,8 +41,8 @@ function B.Sample(parent, row, view, ov, texture, name)
     local rec, part = row.rec, row.part
     rec.stackFill = view.barStacks == true
     -- The live buttons' look and markers (AuraButtons Look and Style).
-    B.Look(rec, view)
-    B.Style(rec, part)
+    AuraButtons.Look(rec, view)
+    AuraButtons.Style(rec, part)
     local stackMax = rec.lk.smax
     local amount = max(1, floor(stackMax * .6))
     part.bar:SetMinMaxValues(0, rec.stackFill and stackMax or 1)
@@ -105,7 +105,7 @@ local function Hold(cell, entry, barMeta, dim, view)
         h.icon:Hide()
         h.bg:Hide()
         h.name:Hide()
-        h.sample = B.Sample(cell, h.sample, view, entry.ov, tex, entry.name)
+        h.sample = AuraButtons.Sample(cell, h.sample, view, entry.ov, tex, entry.name)
         h.sample:SetAllPoints(cell)
         h.sample:Show()
         return
@@ -176,4 +176,4 @@ local function Placeholders(slot, view, plan, barMeta, preview)
     for i = cap + 1, #cells do Unhold(cells[i]) end
 end
 
-B.Unholds, B.Placeholders = Unholds, Placeholders
+AuraButtons.Unholds, AuraButtons.Placeholders = Unholds, Placeholders

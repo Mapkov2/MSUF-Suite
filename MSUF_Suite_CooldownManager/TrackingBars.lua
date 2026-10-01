@@ -5,13 +5,13 @@ local C = P.CDM
 -- a status bar beside the icon fed the icon's own native duration objects,
 -- and optional charge segments (a count fill and the recharge segment).
 local K = C.Const
-local B = {}
-C.TrackingBars = B
+local TrackingBars = {}
+C.TrackingBars = TrackingBars
 local emptyDuration
 
 -- Presentation of the existing cooldown entry; the native duration, event
 -- routing, ownership, binding and tooltip stay with the icon owner.
-function B.Style(icon, view)
+function TrackingBars.Style(icon, view)
     local wanted = view.kind == 1 and view.cooldownDuration == true
     local bar = icon.timerBar
     if not bar and wanted then
@@ -76,7 +76,7 @@ function B.Style(icon, view)
     end
 end
 
-function B.Duration(icon, duration)
+function TrackingBars.Duration(icon, duration)
     local bar = icon.durationBar and icon.timerBar
     if not bar then return end
     bar.duration = duration
@@ -91,7 +91,7 @@ function B.Duration(icon, duration)
     bar:SetTimerDuration(duration, Enum.StatusBarInterpolation.Immediate, bar.direction)
 end
 
-function B.Charges(icon, charges, duration)
+function TrackingBars.Charges(icon, charges, duration)
     local bar = icon.durationBar and icon.timerBar
     if not bar then return end
     local maximum = charges and charges.maxCharges
@@ -104,7 +104,7 @@ function B.Charges(icon, charges, duration)
             bar:GetStatusBarTexture():SetAlpha(1)
             bar.recharge:Hide()
             for _, mark in ipairs(bar.separators) do mark:Hide() end
-            B.Duration(icon, bar.duration)
+            TrackingBars.Duration(icon, bar.duration)
         end
         return
     end

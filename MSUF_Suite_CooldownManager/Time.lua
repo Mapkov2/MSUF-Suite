@@ -10,8 +10,8 @@ local C = P.CDM
 -- C API returns: the cooldown and charge info tables (GetSpellCooldown,
 -- GetSpellCharges) and the duration objects.
 local K = C.Const
-local T = {}
-C.Time = T
+local Time = {}
+C.Time = Time
 local Public = S.Public
 local Dispatch = S.Dispatch
 local EMPTY = C.EMPTY
@@ -62,14 +62,14 @@ local function SharedDuration(spell, ignoreGCD)
     return SharedDisplayDuration(spell)
 end
 local queriesActive = false
-function T.BeginQueries()
+function Time.BeginQueries()
     if queriesActive then return false end
     queriesActive = true
     GetCooldown, GetDuration, GetCharges = SharedCooldown, SharedDuration, SharedCharges
     GetChargeDuration, GetDisplayCount = SharedChargeDuration, SharedDisplayCount
     return true
 end
-function T.EndQueries()
+function Time.EndQueries()
     GetCooldown, GetDuration, GetCharges = DirectCooldown, DirectDuration, DirectCharges
     GetChargeDuration, GetDisplayCount = DirectChargeDuration, DirectDisplayCount
     ClearCooldown()
@@ -304,7 +304,7 @@ end
 -- sum every quality rank behind the category (Presets.CATEGORY_ITEMS).
 local totals, counts, countsStale = {}, {}, true
 local selectedItems = {}
-function T.BagsChanged() countsStale = true end
+function Time.BagsChanged() countsStale = true end
 local function Fresh()
     if countsStale then
         countsStale = false
@@ -474,7 +474,7 @@ end
 -- (SPELL_UPDATE_CHARGES: the charge part only, see SpellState), "charges"
 -- (state and count), "item" (bag events), "done", "expired" (the main swipe
 -- ran out, from Done), "full". Returns true when entry.hidden changed.
-function T.Refresh(entry, reason)
+function Time.Refresh(entry, reason)
     local icon = entry.icon
     if not icon or icon.sim or entry.src == "p" then return false end
     local view = C.views[entry.slot]
@@ -543,7 +543,7 @@ end
 -- OnCooldownDone of an icon's swipe (cooldown = icon.cd) or recharge edge
 -- (icon.chargeCd): re-evaluate only that entry; a hideReady flip relayouts
 -- its bar. A main swipe that held the real cooldown means "expired".
-function T.Done(icon, cooldown)
+function Time.Done(icon, cooldown)
     local entry = icon.entry
     if not entry or entry.icon ~= icon or icon.inDone then return end
     if icon.sim or entry.src == "p" then
@@ -555,14 +555,14 @@ function T.Done(icon, cooldown)
     -- Guard: a swipe re-armed during the refresh must not re-enter. A
     -- raising refresh is reported (Dispatch) and the guard still clears.
     icon.inDone = true
-    local changed = Dispatch(T.Refresh, entry, reason)
+    local changed = Dispatch(Time.Refresh, entry, reason)
     icon.inDone = nil
     if changed then Request(entry.slot) end
 end
 
 -- Preview: a synthetic duration owns the icon until cleared; placeholders
 -- never read live state.
-function T.Simulate(entry, duration)
+function Time.Simulate(entry, duration)
     local icon = entry.icon
     if not icon then return end
     local view = C.views[entry.slot]
@@ -579,5 +579,5 @@ function T.Simulate(entry, duration)
     icon.sim = nil
     ClearMain(icon)
     Feedback(icon, nil)
-    if entry.src ~= "p" then T.Refresh(entry, "full") end
+    if entry.src ~= "p" then Time.Refresh(entry, "full") end
 end

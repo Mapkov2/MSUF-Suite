@@ -15,15 +15,15 @@ local C = P.CDM
 -- Addon frames cannot join Blizzard's "cooldownViewers" roleset, hence the
 -- explicit pet battle rule. Only driver (un)registration touches secure
 -- code: combat parks it until PLAYER_REGEN_ENABLED.
-local V = { pending = {}, drivers = {}, state = {}, expr = {} }
-C.Visibility = V
+local Visibility = { pending = {}, drivers = {}, state = {}, expr = {} }
+C.Visibility = Visibility
 local SLOTS = NS.CDM.SLOTS
 local Public = S.Public
 local tremove = table.remove
 local ATTR = "msufvis"
 -- Bindings without a driver.
 local EVENTS, HIDDEN = "events", "hide"
-V.EVENTS, V.HIDDEN = EVENTS, HIDDEN
+Visibility.EVENTS, Visibility.HIDDEN = EVENTS, HIDDEN
 
 -- Driver strings per (vis, hideMounted, hideVehicle), built once.
 local BODY = { "show", "[combat] show; hide", "[combat][@target,exists] show; hide" }
@@ -39,18 +39,18 @@ for vis = 1, 4 do
         end
     end
 end
-function V.Expression(view)
+function Visibility.Expression(view)
     local vis = view.vis
     if vis ~= 2 and vis ~= 3 and vis ~= 4 then vis = 1 end
     return EXPR[vis][view.hideMounted and 1 or 0][view.hideVehicle and 1 or 0]
 end
 
 -- What a bar's rule binds to: EVENTS, HIDDEN or a driver expression.
-function V.Binding(view)
+function Visibility.Binding(view)
     local vis = view.vis
     if vis == 4 then return HIDDEN end
     if vis ~= 2 and vis ~= 3 and not view.hideMounted then return EVENTS end
-    return V.Expression(view)
+    return Visibility.Expression(view)
 end
 local function Driven(bind) return bind ~= nil and bind ~= EVENTS and bind ~= HIDDEN end
 
@@ -75,7 +75,7 @@ local function Paint(slot)
     if state.preview then
         hidden, percent = false, view.alpha
     else
-        local value = V.state[slot]
+        local value = Visibility.state[slot]
         if value == nil then
             hidden = view.vis == 4
         else
@@ -115,7 +115,7 @@ local function Paint(slot)
         bar.frame:SetAlpha(alpha)
     end
 end
-V.Paint = Paint
+Visibility.Paint = Paint
 
 ------------------------------------------------------------------ "Always": events
 local petBattle, vehicle = false, false
@@ -140,7 +140,7 @@ end
 
 local function EventState(slot)
     local view = C.views[slot]
-    V.state[slot] = (petBattle or (vehicle and view and view.hideVehicle)) and "hide" or "show"
+    Visibility.state[slot] = (petBattle or (vehicle and view and view.hideVehicle)) and "hide" or "show"
 end
 
 local function OnEvent(_, event, unit)
@@ -157,7 +157,7 @@ local function OnEvent(_, event, unit)
     petBattle, vehicle = pet, veh
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
-        if V.expr[slot] == EVENTS then
+        if Visibility.expr[slot] == EVENTS then
             EventState(slot)
             Paint(slot)
         end
@@ -184,7 +184,7 @@ local function Watch(refresh)
     local any, veh = false, false
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
-        if V.expr[slot] == EVENTS then
+        if Visibility.expr[slot] == EVENTS then
             any = true
             local view = C.views[slot]
             if view and view.hideVehicle then veh = true end
@@ -219,15 +219,15 @@ local function Changed(self, name, value)
     local slots = self.slots
     for i = 1, #slots do
         local slot = slots[i]
-        V.state[slot] = value
+        Visibility.state[slot] = value
         Paint(slot)
     end
 end
 
 local function Leave(slot)
-    local bind = V.expr[slot]
-    V.expr[slot] = nil
-    local driver = Driven(bind) and V.drivers[bind]
+    local bind = Visibility.expr[slot]
+    Visibility.expr[slot] = nil
+    local driver = Driven(bind) and Visibility.drivers[bind]
     if not driver then return end
     local slots = driver.slots
     for i = #slots, 1, -1 do
@@ -242,15 +242,15 @@ local function Leave(slot)
 end
 
 local function Join(slot, bind)
-    V.expr[slot] = bind
+    Visibility.expr[slot] = bind
     if not Driven(bind) then return end
-    local driver = V.drivers[bind]
+    local driver = Visibility.drivers[bind]
     if not driver then
         driver = S.CreateFrame("Frame")
         driver:Hide()
         driver.slots, driver.expr = {}, bind
         driver:SetScript("OnAttributeChanged", Changed)
-        V.drivers[bind] = driver
+        Visibility.drivers[bind] = driver
     end
     local slots = driver.slots
     slots[#slots + 1] = slot
@@ -269,38 +269,38 @@ end
 -- unregister a driver wait for combat to end; the bar keeps its old rule.
 local function Bind(slot)
     local view = C.views[slot]
-    local want = C.M.active and view and view.on and V.Binding(view) or nil
-    local have = V.expr[slot]
+    local want = C.M.active and view and view.on and Visibility.Binding(view) or nil
+    local have = Visibility.expr[slot]
     if have == want then
-        V.pending[slot] = nil
+        Visibility.pending[slot] = nil
         return
     end
     if (Driven(have) or Driven(want)) and NS.IsCombatLocked() then
-        V.pending[slot] = true
+        Visibility.pending[slot] = true
         return
     end
-    V.pending[slot] = nil
+    Visibility.pending[slot] = nil
     Leave(slot)
     if want then Join(slot, want) end
 end
 
 local function Settle(slot)
-    local bind = V.expr[slot]
+    local bind = Visibility.expr[slot]
     if bind == EVENTS then
         EventState(slot)
     elseif bind == HIDDEN then
-        V.state[slot] = "hide"
+        Visibility.state[slot] = "hide"
     elseif bind == nil then
-        V.state[slot] = nil
+        Visibility.state[slot] = nil
     else
-        local driver = V.drivers[bind]
-        V.state[slot] = driver and driver.value
+        local driver = Visibility.drivers[bind]
+        Visibility.state[slot] = driver and driver.value
     end
     C.Layout.Strata(slot)
     Paint(slot)
 end
 
-function V.Apply(slot)
+function Visibility.Apply(slot)
     Bind(slot)
     Watch(false)
     Settle(slot)
@@ -308,7 +308,7 @@ end
 
 -- Activation, preview switches and loading screens: the event flags are read
 -- again, so a transition missed while nothing listened cannot stick.
-function V.ApplyAll()
+function Visibility.ApplyAll()
     for i = 1, #SLOTS do Bind(SLOTS[i].key) end
     Watch(true)
     for i = 1, #SLOTS do Settle(SLOTS[i].key) end
@@ -316,33 +316,33 @@ end
 
 -- Combat edges switch between the two opacities; drivers flip their own
 -- [combat] state a frame later and repaint through the handler.
-function V.CombatChanged()
+function Visibility.CombatChanged()
     for i = 1, #SLOTS do Paint(SLOTS[i].key) end
 end
 
 -- PLAYER_REGEN_ENABLED: apply parked (un)registrations.
-function V.FlushPending()
-    if NS.IsCombatLocked() or next(V.pending) == nil then return end
+function Visibility.FlushPending()
+    if NS.IsCombatLocked() or next(Visibility.pending) == nil then return end
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
-        if V.pending[slot] then V.Apply(slot) end
+        if Visibility.pending[slot] then Visibility.Apply(slot) end
     end
 end
 
-function V.HasPending() return next(V.pending) ~= nil end
+function Visibility.HasPending() return next(Visibility.pending) ~= nil end
 
 -- Module off: every bar leaves its source; drivers registered in combat
 -- wait for FlushPending (the module is inactive by then).
-function V.ReleaseAll()
+function Visibility.ReleaseAll()
     local locked = NS.IsCombatLocked()
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
-        if locked and Driven(V.expr[slot]) then
-            V.pending[slot] = true
+        if locked and Driven(Visibility.expr[slot]) then
+            Visibility.pending[slot] = true
         else
-            V.pending[slot] = nil
+            Visibility.pending[slot] = nil
             Leave(slot)
-            V.state[slot] = nil
+            Visibility.state[slot] = nil
         end
         local bar = C.bars[slot]
         if bar then bar.hidden = nil end
@@ -351,9 +351,9 @@ function V.ReleaseAll()
 end
 
 -- Test and diagnostics hook: registered driver entries.
-function V.DriverCount()
+function Visibility.DriverCount()
     local count = 0
-    for _, driver in pairs(V.drivers) do
+    for _, driver in pairs(Visibility.drivers) do
         if driver.slots[1] ~= nil then count = count + 1 end
     end
     return count

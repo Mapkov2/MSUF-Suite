@@ -16,12 +16,12 @@ local pairs, type, next = pairs, type, next
 local K = C.Const
 local GCD = K.GCD_CATEGORY
 local QUIET = 2   -- seconds without sounds after loading screens and activation
-local F, St = C.Flush, C.Settings
-local dirty, sync, style = F.dirty, F.sync, F.style
-local Mark, Schedule = F.Mark, F.Schedule
-local CaptureWhenReady, CaptureAfterCombat = St.CaptureWhenReady, St.CaptureAfterCombat
-local Ev = {}
-C.Events = Ev
+local Flush, Settings = C.Flush, C.Settings
+local dirty, sync, style = Flush.dirty, Flush.sync, Flush.style
+local Mark, Schedule = Flush.Mark, Flush.Schedule
+local CaptureWhenReady, CaptureAfterCombat = Settings.CaptureWhenReady, Settings.CaptureAfterCombat
+local Events = {}
+C.Events = Events
 -- Every layer the hot handlers call loads before this file, so its
 -- functions are resolved once here: an event costs no module lookup.
 -- Index.Rebuild wipes the routing arrays in place, never replaces them.
@@ -52,7 +52,7 @@ local function EnterWorld()
     state.inCombat = NS.IsCombatLocked()
     state.soundQuietUntil = GetTime() + QUIET
 end
-Ev.EnterWorld = EnterWorld
+Events.EnterWorld = EnterWorld
 
 ------------------------------------------------------------------ spec
 local specName, specIcon
@@ -73,7 +73,7 @@ local function UpdateSpec()
     state.specID, state.specTag = id, tag
     return true
 end
-Ev.UpdateSpec = UpdateSpec
+Events.UpdateSpec = UpdateSpec
 
 -- The options page asks several times per repaint: the client is read at
 -- most once per frame (catalog events keep the state current while the
@@ -281,7 +281,7 @@ local function OnCatalog(_, event)
 end
 -- Blizzard's layout callbacks carry no payload here and also fire for its
 -- own in-memory merges: rebuild only when the saved layout string moved.
-function Ev.OnLayoutChanged()
+function Events.OnLayoutChanged()
     if C.Catalog.LayoutStale() then
         dirty.catalog = true
         Schedule()
@@ -297,10 +297,10 @@ local function OnBindings()
     C.Keybinds.Request(true)
     C.ActionGlows.RouteChanged()
 end
-Ev.OnBindings = OnBindings
+Events.OnBindings = OnBindings
 -- The suite action bars started, stopped or changed their form pages: the
 -- key texts they answered are stale, and their glows may start or stop.
-function Ev.OnActionBars()
+function Events.OnActionBars()
     C.Keybinds.Request(true)
     C.ActionGlows.RouteChanged(true)
 end
@@ -308,7 +308,7 @@ local function OnActionPage()
     if C.state.keybindStable == false then C.Keybinds.Request(true) end
     C.ActionGlows.RouteChanged()
 end
-Ev.OnActionPage = OnActionPage
+Events.OnActionPage = OnActionPage
 
 local function AlertsWanted()
     local list = Index.aura
@@ -392,7 +392,7 @@ local function UpdateAssist()
     end
     StartPoll()
 end
-Ev.OnAssistPolicyChanged = UpdateAssist
+Events.OnAssistPolicyChanged = UpdateAssist
 
 ------------------------------------------------------------------ category seeds
 -- Category entries start from the last spell that started their category.
@@ -525,7 +525,7 @@ end
 -- Catalog, combat, scale and loading-screen events while the module runs.
 local CATALOG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
     "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED" }
-function Ev.CoreEvents()
+function Events.CoreEvents()
     for i = 1, #CATALOG_EVENTS do Want(CATALOG_EVENTS[i], true, OnCatalog) end
     Want("PLAYER_ENTERING_WORLD", true, OnWorld)
     Want("PLAYER_REGEN_DISABLED", true, OnCombatStart)
@@ -547,7 +547,7 @@ end
 
 -- Disable: the poll stops, every event goes and routing work parked for the
 -- end of combat is dropped; parked driver work keeps its combat end.
-function Ev.Release(context)
+function Events.Release(context)
     usableNext = 0
     StopPoll()
     assistMode = nil
@@ -594,4 +594,4 @@ end
 local function AlertsUnit()
     if AlertsWanted() then C.Alerts.SyncAuraSounds() end
 end
-F.BindDataUnits(CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit)
+Flush.BindDataUnits(CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit)

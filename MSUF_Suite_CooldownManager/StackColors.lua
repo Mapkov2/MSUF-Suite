@@ -7,8 +7,8 @@ local C = P.CDM
 -- button with one slot on the entry's IDs; Blizzard fills their application
 -- bars, so no Lua reads a stack count. Built and restyled by AuraButtons'
 -- ApplyEntry through the same sealed-button rules.
-local B = {}
-C.StackColors = B
+local StackColors = {}
+C.StackColors = StackColors
 local K = C.Const
 local SameSet, CopySet = K.SameSet, K.CopySet
 local Glows = C.AuraGlows
@@ -141,7 +141,7 @@ local function ApplyStack(rec, part, entry, dry)
     return false
 end
 
-function B.Apply(rec, part, entry, dry)
+function StackColors.Apply(rec, part, entry, dry)
     if ApplyStack(rec,part,entry,dry) then return true end
     if not rec.color then return false end
     local color, lk = part.color, rec.lk
@@ -170,7 +170,7 @@ end
 
 -- A retarget of a fixed target bar: the child containers inside its slot
 -- buttons parse the new target. Container-level calls, legal in combat.
-function B.Retarget(rec)
+function StackColors.Retarget(rec)
     local parts = rec.parts
     for i = 1, #parts do
         local part = parts[i]
@@ -180,7 +180,7 @@ function B.Retarget(rec)
     end
 end
 
-function B.Open(part)
+function StackColors.Open(part)
     if part.color then
         local open = part.color.button:CanBeAccessedInContext()
         if not S.Public(open) or open ~= true then return false end

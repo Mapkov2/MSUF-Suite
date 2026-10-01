@@ -77,8 +77,8 @@ do
         return text
     end
     local events=Source("Events.lua")
-    assert(events:find("\nlocal Mark, Schedule = F.Mark, F.Schedule\n",1,true),"hot handlers resolve Mark and Schedule at load")
-    assert(events:find("\nF.BindDataUnits(CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit)\n",1,true),
+    assert(events:find("\nlocal Mark, Schedule = Flush.Mark, Flush.Schedule\n",1,true),"hot handlers resolve Mark and Schedule at load")
+    assert(events:find("\nFlush.BindDataUnits(CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit)\n",1,true),
         "Events.lua binds the flush's data units")
     -- The hot handlers reach Time, Layout, Index and Effects through
     -- upvalues resolved at load: only that one line names them.

@@ -8,8 +8,8 @@ local C = P.CDM
 -- frames under our own bar frames, never secure, so every setter used by
 -- the time and effect layers stays legal in combat.
 local K = C.Const
-local I = {}
-C.Icons = I
+local Icons = {}
+C.Icons = Icons
 local floor, max = math.floor, math.max
 local EMPTY = C.EMPTY
 local pools = {}
@@ -112,7 +112,7 @@ local function CreateIcon(parent, pingable)
 end
 
 -- Recharge edge (charge spells): swipe off, edge on, no numbers.
-function I.StyleCharge(icon)
+function Icons.StyleCharge(icon)
     local cooldown, entry = icon.chargeCd, icon.entry
     if not cooldown then return end
     local view = entry and C.views[entry.slot] or EMPTY
@@ -124,7 +124,7 @@ function I.StyleCharge(icon)
     cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or SWIPE_ALPHA) / 100)
 end
 
-function I.ChargeCooldown(icon)
+function Icons.ChargeCooldown(icon)
     local cooldown = icon.chargeCd
     if cooldown then return cooldown end
     cooldown = NewCooldown(icon)
@@ -134,7 +134,7 @@ function I.ChargeCooldown(icon)
     cooldown:SetHideCountdownNumbers(true)
     cooldown:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.charge)
     icon.chargeCd = cooldown
-    I.StyleCharge(icon)
+    Icons.StyleCharge(icon)
     return cooldown
 end
 
@@ -218,7 +218,7 @@ local function Texts(icon, view, ov)
 end
 
 -- Full style pass; callers gate it on view.styleGen (the preview calls it directly).
-function I.StyleIcon(icon, view, width, height)
+function Icons.StyleIcon(icon, view, width, height)
     local state = C.state
     local w, h = K.IconSize(view)
     if width and height then w, h = width, height end
@@ -264,37 +264,37 @@ end
 local function Restyle(icon, view)
     local index, layout = icon.layIndex, C.Layout
     if index and layout.MixedRows(view) then
-        I.StyleIcon(icon, view, layout.Footprint(view, index))
+        Icons.StyleIcon(icon, view, layout.Footprint(view, index))
     else
-        I.StyleIcon(icon, view)
+        Icons.StyleIcon(icon, view)
     end
 end
 
 ------------------------------------------------------------------ threshold formatter
 -- The shared countdown formatter for a warning threshold; nil when off
 -- (the swipe keeps Blizzard's own countdown text).
-function I.Formatter(seconds, r, g, b)
+function Icons.Formatter(seconds, r, g, b)
     if type(seconds) ~= "number" or seconds <= 0 then return nil end
     return K.CountdownFormatter(seconds, r, g, b)
 end
 
 ------------------------------------------------------------------ per-entry parts
-function I.SetTexture(icon, texture)
+function Icons.SetTexture(icon, texture)
     if icon.lastTex == texture then return end
     icon.lastTex = texture
     icon.tex:SetTexture(texture)
 end
 
-function I.Texture(entry)
+function Icons.Texture(entry)
     local icon = entry.icon
     if not icon then return end
     local ov = entry.ov or EMPTY
-    I.SetTexture(icon, ov.icon or entry.categoryTexture or entry.texture or K.QUESTION_ICON)
+    Icons.SetTexture(icon, ov.icon or entry.categoryTexture or entry.texture or K.QUESTION_ICON)
 end
 
 -- Swipe mode, bling, threshold formatter and the texts depend on the
 -- entry's spell choices; memoized per (entry, choices, generations).
-function I.Apply(entry)
+function Icons.Apply(entry)
     local icon = entry.icon
     local view = icon and C.views[entry.slot]
     if not view then return end
@@ -303,7 +303,7 @@ function I.Apply(entry)
     icon.esEntry, icon.esOv, icon.esStyle, icon.esBehavior = entry, ov, view.styleGen, view.behaviorGen
     if icon.durationBar then icon.timerBar.name:SetText(entry.name or "") end
     Texts(icon, view, ov)
-    I.StyleCharge(icon)
+    Icons.StyleCharge(icon)
     local cooldown, state = icon.cd, C.state
     local swipe = view.cooldownDuration and 3 or ov.swipe or 1
     if icon.lastSwipe ~= swipe then
@@ -318,7 +318,7 @@ function I.Apply(entry)
     end
     local seconds = ov.threshold
     if seconds == nil then seconds = state.threshold or 0 end
-    local formatter = seconds > 0 and I.Formatter(seconds, state.thR, state.thG, state.thB) or nil
+    local formatter = seconds > 0 and Icons.Formatter(seconds, state.thR, state.thG, state.thB) or nil
     if icon.lastFmt ~= formatter then
         icon.lastFmt = formatter
         cooldown:SetCountdownFormatter(formatter)
@@ -344,7 +344,7 @@ local function ApplyKey(icon, text)
     KeyBadge(icon, entry and C.views[entry.slot] or icon.styleView or EMPTY)
 end
 
-function I.SetKeybind(entry, text)
+function Icons.SetKeybind(entry, text)
     entry.keyText = text
     local icon = entry.icon
     if icon then ApplyKey(icon, text) end
@@ -436,10 +436,10 @@ end
 -- Ensures one icon per entry of a cooldown plan, releases icons of entries
 -- that left, restyles on generation change. Newly bound icons get their
 -- live state at once so a sync never shows a stale icon.
-function I.Sync(slotKey)
+function Icons.Sync(slotKey)
     local plan, view = C.plans[slotKey], C.views[slotKey]
     if not plan or plan.kind ~= 1 or not view then
-        I.Release(slotKey)
+        Icons.Release(slotKey)
         return
     end
     local bar = C.bars[slotKey]
@@ -462,10 +462,10 @@ function I.Sync(slotKey)
         icon.mark = syncGen
         local fresh = icon.entry ~= entry or entry.icon ~= icon
         if fresh then Bind(icon, entry) end
-        if entry.charges and not icon.chargeCd then I.ChargeCooldown(icon) end
+        if entry.charges and not icon.chargeCd then Icons.ChargeCooldown(icon) end
         if icon.styleGen ~= view.styleGen or icon.styleView ~= view then Restyle(icon, view) end
-        I.Texture(entry)
-        I.Apply(entry)
+        Icons.Texture(entry)
+        Icons.Apply(entry)
         SetMouse(icon, mouse)
         SetPing(icon, ping)
         if fresh then
@@ -488,7 +488,7 @@ function I.Sync(slotKey)
 end
 
 -- Restyles a bar's icons after a style or tooltip change (memoized).
-function I.Style(slotKey)
+function Icons.Style(slotKey)
     local pool, view = pools[slotKey], C.views[slotKey]
     if not pool or not view then return end
     local mouse = MouseWanted(view, C.bars[slotKey])
@@ -496,7 +496,7 @@ function I.Style(slotKey)
     local ping = not (bar and bar.hidden)
     for _, icon in pairs(pool.byKey) do
         if icon.styleGen ~= view.styleGen or icon.styleView ~= view then Restyle(icon, view) end
-        if icon.entry then I.Apply(icon.entry) end
+        if icon.entry then Icons.Apply(icon.entry) end
         SetMouse(icon, mouse)
         SetPing(icon, ping)
     end
@@ -505,7 +505,7 @@ end
 -- Visibility: a transparent bar must give up tooltips and ping targets.
 -- Plain icon frames remain safe to update in combat; unchanged state writes
 -- nothing.
-function I.SetBarMouse(slotKey, on)
+function Icons.SetBarMouse(slotKey, on)
     local pool, view = pools[slotKey], C.views[slotKey]
     if not pool then return end
     local visible = on == true and view ~= nil
@@ -515,7 +515,7 @@ function I.SetBarMouse(slotKey, on)
     end
 end
 
-function I.Release(slotKey)
+function Icons.Release(slotKey)
     local pool = pools[slotKey]
     if not pool then return end
     for key, icon in pairs(pool.byKey) do
@@ -524,14 +524,14 @@ function I.Release(slotKey)
     end
 end
 
-function I.ReleaseAll()
-    for slotKey in pairs(pools) do I.Release(slotKey) end
+function Icons.ReleaseAll()
+    for slotKey in pairs(pools) do Icons.Release(slotKey) end
     -- Bag events stop with the module: counts are read again next time.
     C.Time.BagsChanged()
 end
 
 -- Test and diagnostics hook: live icons of a bar.
-function I.Count(slotKey)
+function Icons.Count(slotKey)
     local pool, count = pools[slotKey], 0
     if pool then
         for _ in pairs(pool.byKey) do
@@ -543,4 +543,4 @@ end
 
 ------------------------------------------------------------------ options preview
 -- Standalone icons live outside the pools; the preview styles and fills them.
-function I.CreateStandalone(parent) return CreateIcon(parent) end
+function Icons.CreateStandalone(parent) return CreateIcon(parent) end

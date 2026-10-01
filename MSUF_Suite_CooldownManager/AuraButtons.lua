@@ -19,8 +19,8 @@ local C = P.CDM
 --  * placeholders: a dimmed icon for missing buffs (showMissing) and the
 --    sample icon in the preview, on the cell under the slot button.
 local K = C.Const
-local B = {}
-C.AuraButtons = B
+local AuraButtons = {}
+C.AuraButtons = AuraButtons
 
 -- Regions inside Blizzard's aura buttons are created with the client's
 -- CreateFrame: the container lays those buttons out and seals their bound
@@ -597,7 +597,7 @@ local function AdoptWoken()
         Adopt(shell.rec, shell.button, shell.pos)
     end
 end
-B.AdoptWoken = AdoptWoken
+AuraButtons.AdoptWoken = AdoptWoken
 
 local function Woke(sensor)
     local shell = dormant[sensor]
@@ -616,13 +616,13 @@ local function Dormant(rec, button, k)
 end
 
 -- Around AddAuraGroup: true when the batch is collected (auras plain).
-function B.BeginBatch(rec)
+function AuraButtons.BeginBatch(rec)
     for i = #batch, 1, -1 do batch[i] = nil end
     if rec.eager or not Quiet() then return false end
     rec.batch = batch
     return true
 end
-function B.EndBatch(rec, k)
+function AuraButtons.EndBatch(rec, k)
     rec.batch = nil
     local n = #batch
     local shown = batch[n]
@@ -639,7 +639,7 @@ end
 -- Builds the shown buttons that refused right after their batch; false
 -- while one still refuses (the container then counts as refusing a
 -- restyle, Auras.Run).
-function B.Finish(rec)
+function AuraButtons.Finish(rec)
     local waiting = rec.waiting
     if not waiting then return true end
     for i = #waiting, 1, -1 do
@@ -664,5 +664,5 @@ local function Init(rec, button, k)
     Adopt(rec, button, k)
 end
 
-B.TextOpts, B.Look, B.Hush, B.Quiet, B.Mutable = TextOpts, Look, Hush, Quiet, Mutable
-B.Style, B.ApplyEntry, B.Init = Style, ApplyEntry, Init
+AuraButtons.TextOpts, AuraButtons.Look, AuraButtons.Hush, AuraButtons.Quiet, AuraButtons.Mutable = TextOpts, Look, Hush, Quiet, Mutable
+AuraButtons.Style, AuraButtons.ApplyEntry, AuraButtons.Init = Style, ApplyEntry, Init

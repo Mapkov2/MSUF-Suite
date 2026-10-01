@@ -454,7 +454,7 @@ do
         return assert(body,"Auras.lua "..name.." source")
     end
     AuraRule.TargetRow=assert(loadstring(Body("TargetRow","entry").."\nreturn TargetRow"))()
-    assert(text:find("\nA.UnitOf, A.Ids, A.TargetRow = UnitOf, Ids, TargetRow\n",1,true),"Auras.lua exports TargetRow")
+    assert(text:find("\nAuras.UnitOf, Auras.Ids, Auras.TargetRow = UnitOf, Ids, TargetRow\n",1,true),"Auras.lua exports TargetRow")
     local flow=assert(text:match("\n(local FLOW = %b{})\n"),"Auras.lua FLOW source")
     AuraRule.FLOW=assert(loadstring(flow.."\nreturn FLOW"))()
     AuraRule.Place=assert(loadstring("local geo=...\n"..Body("Place","rec, offset, split").."\nreturn Place"))(auraGeo)

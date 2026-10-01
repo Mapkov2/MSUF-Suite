@@ -19,11 +19,11 @@ local ID = "cooldownManager"
 local type = type
 local wipe = C.wipe
 local Dispatch = S.Dispatch
-local F, St, Ev = C.Flush, C.Settings, C.Events
-local dirty = F.dirty
-local Schedule, Pending, ResetDirty, ForgetPlans = F.Schedule, F.Pending, F.Reset, F.Forget
-local ReadGlobals, ReadViews, DecodeData = St.ReadGlobals, St.ReadViews, St.DecodeData
-local UpdateSpec = Ev.UpdateSpec
+local Flush, Settings, Events = C.Flush, C.Settings, C.Events
+local dirty = Flush.dirty
+local Schedule, Pending, ResetDirty, ForgetPlans = Flush.Schedule, Flush.Pending, Flush.Reset, Flush.Forget
+local ReadGlobals, ReadViews, DecodeData = Settings.ReadGlobals, Settings.ReadViews, Settings.DecodeData
+local UpdateSpec = Events.UpdateSpec
 local first, optionsPreview = true, false
 
 ------------------------------------------------------------------ preview mode
@@ -33,7 +33,7 @@ local function PreviewChanged()
     -- buttons take that through a structural sync of every bar.
     if C.state.allGlowsCombat then
         local slots = NS.CDM.SLOTS
-        for i = 1, #slots do F.sync[slots[i].key] = true end
+        for i = 1, #slots do Flush.sync[slots[i].key] = true end
     end
     Schedule()
 end
@@ -45,20 +45,20 @@ end
 
 ------------------------------------------------------------------ lifecycle (spec 8.1)
 function M:Enable()
-    Ev.EnterWorld()
+    Events.EnterWorld()
     C.Layout.InvalidateScale()
     C.Resolve.SpellsChanged()
     first = true
-    St.BeginCapture(self.config)
-    self.context:Callback("CooldownViewerSettings.OnPendingChanges", Ev.OnLayoutChanged)
-    self.context:Callback("CooldownViewerSettings.OnHide", Ev.OnLayoutChanged)
+    Settings.BeginCapture(self.config)
+    self.context:Callback("CooldownViewerSettings.OnPendingChanges", Events.OnLayoutChanged)
+    self.context:Callback("CooldownViewerSettings.OnHide", Events.OnLayoutChanged)
     -- The suite action bars started, stopped or changed their form pages:
     -- the key texts they answered are stale.
-    self.context:Callback("MSUFSuite.ActionBars.BindingsChanged", Ev.OnActionBars)
+    self.context:Callback("MSUFSuite.ActionBars.BindingsChanged", Events.OnActionBars)
     -- The suite action bars paged bar 1 themselves (target or modifier
     -- paging): glows on its buttons may describe the previous page.
-    self.context:Callback("MSUFSuite.ActionBars.ActionsChanged", Ev.OnActionPage)
-    self.context:Callback("AssistedCombatManager.OnSetUseAssistedHighlight", Ev.OnAssistPolicyChanged)
+    self.context:Callback("MSUFSuite.ActionBars.ActionsChanged", Events.OnActionPage)
+    self.context:Callback("AssistedCombatManager.OnSetUseAssistedHighlight", Events.OnAssistPolicyChanged)
     self:Refresh()
 end
 
@@ -73,15 +73,15 @@ function M:Refresh()
     C.PressBridge()
     ApplyPreview()
     C.Effects.Recommendation()
-    if not St.CaptureWaiting() then
+    if not Settings.CaptureWaiting() then
         C.Native.Apply()
-        St.SyncViewerOffset()
+        Settings.SyncViewerOffset()
     end
     if S.editMode then
         C.Layout.ForgetAnchors()
         dirty.layout = true
     end
-    Ev.CoreEvents()
+    Events.CoreEvents()
     if Pending() then Schedule() end
 end
 
@@ -103,7 +103,7 @@ function M:Disable()
     Dispatch(C.PressBridge)
     Dispatch(C.Preview.SetMode, nil)
     Dispatch(C.Preview.ReleaseAll)
-    Dispatch(St.ForgetCapture)
+    Dispatch(Settings.ForgetCapture)
     Dispatch(C.Alerts.ReleaseAll)
     Dispatch(C.Auras.ReleaseAll)
     Dispatch(C.ActionGlows.Release)
@@ -113,7 +113,7 @@ function M:Disable()
     Dispatch(C.Visibility.ReleaseAll)
     Dispatch(C.Native.Release)
     Dispatch(C.Keybinds.Clear)
-    Dispatch(Ev.Release, self.context)
+    Dispatch(Events.Release, self.context)
     Dispatch(ForgetState)
     first = true
 end
