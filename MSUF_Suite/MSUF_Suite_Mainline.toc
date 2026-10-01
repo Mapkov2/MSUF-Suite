@@ -48,6 +48,7 @@ Core\Catalog\Chat.lua
 Core\NameplateStyle.lua
 Core\Catalog\Nameplates.lua
 Core\Catalog\CooldownManager.lua
+Core\SuiteMigrations.lua
 Core\Suite.lua
 Core\SpellRange.lua
 Core\FontBridge.lua

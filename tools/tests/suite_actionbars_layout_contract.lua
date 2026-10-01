@@ -21,7 +21,7 @@ CreateFrame=function() created=created+1;return {SetScript=function() end,Regist
 UIParent={GetEffectiveScale=function() return 1 end,GetWidth=function() return 1024 end,GetHeight=function() return 768 end}
 GetPhysicalScreenSize=function() return 1024,768 end
 for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings",
-    "Catalog/DataTexts","NameplateStyle","Suite"}) do
+    "Catalog/DataTexts","NameplateStyle","SuiteMigrations","Suite"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
