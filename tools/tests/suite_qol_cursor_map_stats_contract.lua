@@ -153,6 +153,19 @@ castDuration = nil
 cursor.context.events.UNIT_SPELLCAST_STOP(cursor)
 assert(not cursor.cast.shown and cursor.gcd.duration == gcdDuration,
     "GCD did not resume after cast")
+-- A cast-time spell starts the global cooldown long before its SUCCEEDED;
+-- without the cast display its start must still draw the GCD.
+cursor.config.showCast = false
+cursor:Refresh()
+local startGCD = cursor.context.events.UNIT_SPELLCAST_START
+cursor.gcd.duration, gcdDuration = nil, { token = "cast-time gcd" }
+assert(startGCD and cursor.context.events.UNIT_SPELLCAST_CHANNEL_START, "cast starts no longer read the GCD")
+startGCD(cursor)
+assert(cursor.gcd.shown and cursor.gcd.duration == gcdDuration, "a cast-time spell's GCD was missed")
+cursor.config.showCast = true
+cursor:Refresh()
+assert(cursor.context.events.UNIT_SPELLCAST_START ~= startGCD and cursor.context.events.UNIT_SPELLCAST_STOP,
+    "the cast display lost its own cast events")
 cursor.config.combatOnly = true
 cursor:Refresh()
 assert(not cursor.host.shown and not cursor.host.scripts.OnUpdate,
