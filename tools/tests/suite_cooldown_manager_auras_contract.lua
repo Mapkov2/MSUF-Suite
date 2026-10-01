@@ -571,6 +571,7 @@ LoadRuntime("AuraGlows.lua")
 LoadRuntime("StackColors.lua")
 LoadRuntime("AuraButtons.lua")
 LoadRuntime("AuraPlaceholders.lua")
+LoadRuntime("AuraContainers.lua")
 LoadRuntime("Auras.lua")
 LoadRuntime("Alerts.lua")
 local A,Alerts=C.Auras,C.Alerts
@@ -586,8 +587,8 @@ for _,name in ipairs({"Ready","SyncAuraSounds","ReleaseAll","Play"}) do assert(t
 -- Scripts per file: the kit sensors in the buttons and the wake sensors of
 -- bare batch buttons, set and dropped once built (AuraButtons.lua), and the
 -- watchers beside kit containers (Auras.lua), OnShow/OnHide each.
-local SCRIPTS={["AuraGlows.lua"]=0,["AuraButtons.lua"]=4,["Auras.lua"]=2,["Alerts.lua"]=0}
-for _,file in ipairs({"AuraGlows.lua","AuraButtons.lua","Auras.lua","Alerts.lua"}) do
+local SCRIPTS={["AuraGlows.lua"]=0,["AuraButtons.lua"]=4,["AuraContainers.lua"]=2,["Auras.lua"]=0,["Alerts.lua"]=0}
+for _,file in ipairs({"AuraGlows.lua","AuraButtons.lua","AuraContainers.lua","Auras.lua","Alerts.lua"}) do
     local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..file,"rb"))
     local text=handle:read("*a")
     handle:close()

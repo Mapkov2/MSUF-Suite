@@ -435,8 +435,9 @@ C.AnchorChanged=function() anchorChanges=anchorChanges+1 end
 -- Icon and aura layer entry points the layout plane calls (guarded there):
 -- overlay edges from PlaceIcons, mouse edges from the visibility paint.
 local overlayLog,mouseLog,auraMouseLog={},{},{}
--- The aura layer's row rule (A.TargetRow), its flow table and its compact
--- container placement (Place) run from Auras.lua's own source, and the
+-- The aura layer's row rule (Auras.TargetRow), its flow table and its
+-- compact container placement (Place) run from the aura layer's own source
+-- (Auras.lua and AuraContainers.lua), and the
 -- controller's footprint (Extent) from Exports.lua's, so the layout is
 -- checked against them. SyncAura's arguments to Place are pinned below.
 local AuraRule={}
@@ -448,7 +449,7 @@ do
         file:close()
         return text
     end
-    local text=Source("Auras.lua")
+    local text=Source("Auras.lua").."\n"..Source("AuraContainers.lua")
     local function Body(name,args)
         local body=text:match("\n(local function "..name.."%("..args.."%)\n.-\nend)\n")
         return assert(body,"Auras.lua "..name.." source")

@@ -10,7 +10,6 @@ local C = P.CDM
 local K = C.Const
 local Icons = {}
 C.Icons = Icons
-local floor, max = math.floor, math.max
 local EMPTY = C.EMPTY
 local pools = {}
 local owner = {}
