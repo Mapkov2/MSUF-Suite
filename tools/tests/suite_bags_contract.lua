@@ -736,6 +736,24 @@ assert(requests[105] == 2, "a returning item could not request its missing data 
 items[3] = nil
 BagChanged()
 hooks.UpdateItems()
+-- A failed load (success false) is not asked again at once: the client
+-- would answer each request with another failure. The next opening retries.
+items[3] = { hyperlink = "gear-broken", itemID = 106, quality = 2 }
+BagChanged()
+hooks.UpdateItems()
+assert(requests[106] == 1 and module.pending[106], "missing item data was not requested")
+context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 106, false)
+assert(requests[106] == 1 and not module.pending[106], "a failed item load was requested again at once")
+hooks.UpdateItems()
+BagChanged()
+hooks.UpdateItems()
+assert(requests[106] == 1 and not context.events.GET_ITEM_INFO_RECEIVED,
+    "a bag refresh retried a failed item load")
+hooks.OnShow()
+assert(requests[106] == 2, "opening the bag did not retry a failed item load")
+items[3] = nil
+BagChanged()
+hooks.UpdateItems()
 
 module.config.itemLevelSize = 15
 module:Refresh()

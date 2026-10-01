@@ -120,8 +120,15 @@ local function Style(self, record)
     record.quality = nil
 end
 
+-- requested[itemID]: true while a load is out, FAILED after the client
+-- answered it with success false. A failed load is not asked again until the
+-- bag opens next (CombinedShown), as BankItemLevel.lua does for the bank:
+-- the client would answer each new request with another failure at once.
+local FAILED = "failed"
+
 -- Queues a button until its item data arrives (GET_ITEM_INFO_RECEIVED).
 local function WaitForItem(self, pending, itemID, button)
+    if self.requested[itemID] == FAILED then return end
     local waiting = pending[itemID]
     if not waiting then
         local pool = self.pendingPool
@@ -257,7 +264,9 @@ local function ItemInfoReceived(module, _, itemID, success)
     local waiting = module.pending[itemID]
     local bankWaiting = module.bankPending[itemID]
     if not waiting and not bankWaiting then return end
-    module.pending[itemID], module.requested[itemID] = nil, nil
+    local loaded = S.Public(success) and success == true
+    module.pending[itemID] = nil
+    module.requested[itemID] = waiting and not loaded and FAILED or nil
     if waiting and module.frame and module.frame:IsShown() then
         for i = 1, #waiting do
             local button = waiting[i]
@@ -328,8 +337,8 @@ function M:UpdateVisible()
             PaintBindBadge(self, button, pending, info)
         end
     end
-    for itemID in pairs(self.requested) do
-        if not pending[itemID] then self.requested[itemID] = nil end
+    for itemID, request in pairs(self.requested) do
+        if request ~= FAILED and not pending[itemID] then self.requested[itemID] = nil end
     end
     if next(pending) or next(self.bankPending) then
         self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, true)
@@ -348,6 +357,9 @@ end
 
 local function CombinedShown()
     if not M.active then return end
+    for itemID, request in pairs(M.requested) do
+        if request == FAILED then M.requested[itemID] = nil end
+    end
     M:UpdateVisible()
     M:RefreshWindowLayout()
     RefreshMovers()
