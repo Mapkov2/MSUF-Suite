@@ -410,7 +410,6 @@ end
 function Auras.FlushPending()
     C.AuraGlows.FlushGates()
     if IsCombatLocked() then return end
-    C.AuraButtons.AdoptWoken()
     local n = 0
     for slot in pairs(Auras.pending) do
         n = n + 1

@@ -84,6 +84,9 @@ local function Index(obj,key)
     end
     if m==nil then m=Methods[key] end
     if m==nil then return nil end
+    if (key=="SetScript" or key=="HookScript") and Sealed(obj) then
+        return function() error("Frame:"..key.."(): Cannot assign script handler (blocked by secret aspects)",2) end
+    end
     if key~="CanBeAccessedInContext" and ACCESS~=true and Sealed(obj) then
         return function() error("sealed aura button touched while auras are secret: "..key,2) end
     end
@@ -584,10 +587,9 @@ assert(type(A.pending)=="table","C.Auras.pending")
 for _,name in ipairs({"Ready","SyncAuraSounds","ReleaseAll","Play"}) do assert(type(Alerts[name])=="function","C.Alerts."..name) end
 
 -- Static rules on the source text.
--- Scripts per file: the kit sensors in the buttons and the wake sensors of
--- bare batch buttons, set and dropped once built (AuraButtons.lua), and the
--- watchers beside kit containers (Auras.lua), OnShow/OnHide each.
-local SCRIPTS={["AuraGlows.lua"]=0,["AuraButtons.lua"]=4,["AuraContainers.lua"]=2,["Auras.lua"]=0,["Alerts.lua"]=0}
+-- Scripts per file: the kit sensors in the buttons (AuraButtons.lua) and
+-- the watchers beside kit containers, OnShow/OnHide each.
+local SCRIPTS={["AuraGlows.lua"]=0,["AuraButtons.lua"]=2,["AuraContainers.lua"]=2,["Auras.lua"]=0,["Alerts.lua"]=0}
 for _,file in ipairs({"AuraGlows.lua","AuraButtons.lua","AuraContainers.lua","Auras.lua","Alerts.lua"}) do
     local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..file,"rb"))
     local text=handle:read("*a")
@@ -759,15 +761,13 @@ assert(ps.flow.anchor=="TOPLEFT" and ps.flow.v==-1 and ps.points[1][1]=="TOPRIGH
     and ts.points[1][4]==1 and #ps.points==1 and #ts.points==1,"back to growing down")
 assert(ps.unit=="player" and ts.unit=="target" and ps.enabled and ts.enabled)
 OwnAnchors("compact centered row")
--- buttons: Blizzard makes ten per group; the one it shows is styled and
--- bound, the other nine stay bare with one sensor each
+-- buttons: Blizzard makes ten per group and seals each once initializeFrame
+-- returns, so every one is styled and bound inside initializeFrame
 local buttons=Buttons(pc,"g1")
 assert(#buttons==10,"a group creates ten buttons")
-for i=1,9 do
+for i=1,10 do
     local s=R[buttons[i]]
-    local kids=s.kids or {}
-    assert(next(s.bind)==nil and #kids==1 and R[kids[1]].kind=="Frame" and R[kids[1]].scripts.OnShow~=nil,
-        "button "..i.." of the batch was built although Blizzard never shows it")
+    assert(s.sealed and s.bind.icon and s.bind.cooldown,"button "..i.." of the batch was not built before its seal")
 end
 buttons[1]=buttons[10]
 local b1=R[buttons[1]]
@@ -1120,8 +1120,8 @@ do
     A.Sync("bar")
     local primary=Live("bar","player")
     local first=Acquired(primary,"g1")
-    -- Markers go to the buttons that are built: the one each group shows.
-    local parts=2
+    -- Markers go to every built button: ten per group, two groups.
+    local parts=20
     local count,widgets,binds=#containers,Widgets(),R[first].bind.appBinds
     for n=9,99 do barView.barStackMax=n;A.Sync("bar") end
     assert(#containers==count and Live("bar","player")==primary,"a Maximum stacks sweep builds no container")
@@ -2417,7 +2417,6 @@ A.Restyle("c4")
 sg.ov={stackGlow=2,glowStyle=1}
 A.Sync("c4")
 assert(bind.appOpts.maxApplications==2 and Live("c4","player")==sc2,"secret counts: restyled and rebound without a read")
--- (Bare batch buttons carry a wake sensor, OnShow only: no kit sensor.)
 assert(#Find(C.bars.c4.auraHost,function(_,s) return s.scripts~=nil and s.scripts.OnHide~=nil end)==0,
     "no kit value: no sensor, no watcher")
 -- the bar's last stack glow gone: the pooled pair without gates returns
@@ -2542,13 +2541,11 @@ local function SensorOf(button)
     assert(#list==1 and R[list[1]].sensor and R[list[1]].kind=="Frame","one sensor per button")
     return list[1]
 end
--- The shown button of each group hears gains and losses; the bare ones of
--- its batch only wake (OnShow) should Blizzard ever show them.
+-- Every button of each group hears gains and losses (built before its seal).
 for _,c in ipairs({kp,kt}) do
     for _,key in ipairs(R[c].order) do
-        local list=Buttons(c,key)
-        for i,b in ipairs(list) do
-            assert((R[SensorOf(b)].scripts.OnHide~=nil)==(i==#list),"a kit sensor in a button Blizzard never shows")
+        for _,b in ipairs(Buttons(c,key)) do
+            assert(R[SensorOf(b)].scripts.OnHide~=nil,"a kit button without its sensor")
         end
     end
 end
@@ -2965,7 +2962,9 @@ do
     for i=1,4 do rows[i]=Aura("c6","a"..(6300+i),"a","player",Set(6300+i)) end
     Plan("c6",3,rows)
     A.Sync("c6")
-    Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),3857)
+    -- 9437: measured 2026-10-01 after the lazy build was reverted (every
+    -- button of a batch is built, so an unchanged sync visits all ten).
+    Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),9437)
     A.Release("c6")
     C.views.c6,C.plans.c6=nil,nil
 end
@@ -2975,12 +2974,10 @@ end
 -- (CustomAuraContainerConstants.FrameCreationBatchSize, Blizzard_Custom-
 -- AuraContainer.lua) and its frame provider hands out the newest free one
 -- (table.remove of the available list; a released frame goes back on top),
--- so a one-frame entry group only ever shows that button. Only it carries
--- regions and is restyled; the other nine hold one wake sensor each.
--- Measured on the same two bars before buttons were built per batch: icons
--- 2321 objects, 7204 writes to build, 4480 to restyle, 230 per choice;
--- stack bars 2201, 6404, 3560, 250 and 81 aura containers (two sensor
--- containers in each of the forty buttons).
+-- so a one-frame entry group only ever shows that button. The client seals
+-- every button once initializeFrame returns (SetScript on it or a child is
+-- then blocked by secret aspects), so all ten are built there. The budgets
+-- pin that cost; a lazy build (2026-10-01) failed in game for that reason.
 do
     local function Budget(kind,entries,setup,choiceOv)
         C.views.c6=View("c6",kind)
@@ -3007,38 +3004,13 @@ do
     local icons={}
     for i=1,8 do icons[i]=Aura("c6","a"..(6100+i),"a","player",Set(6100+i),{ov={auraGlow=true}}) end
     local b,bw,r,c,n=Budget(2,icons,function(view) view.pandemic=true end,{auraGlow=true,swipe=2,glowStyle=3,timeText=3})
-    assert(b<=377 and bw<=724 and r<=448 and c<=23 and n==1,
+    assert(b<=2321 and bw<=7204 and r<=4480 and c<=230 and n==1,
         ("eight glowing icons: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
     local bars={}
     for i=1,4 do bars[i]=Aura("c6","a"..(6200+i),"a","player",Set(6200+i),{ov={stackGlow=3}}) end
     b,bw,r,c,n=Budget(3,bars,function(view) view.barStacks,view.barStackColorAt=true,4 end,{stackGlow=5,glowStyle=3,timeText=3})
-    assert(b<=293 and bw<=644 and r<=356 and c<=25 and n==9,
+    assert(b<=2201 and bw<=6404 and r<=3560 and c<=250 and n==81,
         ("four stack bars: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
-    -- Should Blizzard show a bare button after all, it is built a frame
-    -- later; in combat or while auras are secret, once they open again.
-    C.views.c6=View("c6",2)
-    Plan("c6",2,{icons[1]})
-    A.Sync("c6")
-    local list=Buttons(Live("c6","player"),"g1")
-    local function Wake(i)
-        local kid=R[list[i]].kids[1]
-        assert(R[kid].scripts.OnShow and not R[kid].scripts.OnHide,"a bare button's wake sensor")
-        R[kid].scripts.OnShow(kid)
-    end
-    local timers=timerCount
-    Wake(3)
-    assert(next(R[list[3]].bind)==nil and timerCount==timers+1,"a woken button is built a frame later")
-    RunTimers()
-    assert(R[list[3]].bind.icon and R[list[3]].bind.cooldown,"a bare button Blizzard showed was not built")
-    COMBAT=true
-    Wake(4)
-    RunTimers()
-    assert(next(R[list[4]].bind)==nil,"a bare button was built in combat")
-    COMBAT=false
-    A.FlushPending()
-    assert(R[list[4]].bind.icon,"the woken button was not built after combat")
-    A.Release("c6")
-    C.views.c6,C.plans.c6=nil,nil
 end
 
 local nativeFile=PlaySoundFile
