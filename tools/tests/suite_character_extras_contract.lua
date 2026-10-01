@@ -103,6 +103,7 @@ C_Item = {
     GetItemStats = function(link) statReads = statReads + 1 return link == "helmet" and { EMPTY_SOCKET_PRISMATIC = 2 } or {} end,
     GetItemGem = function(_, index) if index <= socketed then return "Gem", "gem" end end,
     GetItemInfo = function(link) return link == "helmet" and "Helmet" or "Necklace" end,
+    DoesItemExist = function(location) return type(location) == "table" end,
     GetCurrentItemLevel = function() return 144 end,
     GetDetailedItemLevelInfo = function() return 155 end,
 }
@@ -251,13 +252,17 @@ Check(not panel.shown and model.shown, "turning the summary off kept it or took 
 m.config.summaryPanel = true
 m:Refresh()
 
--- Item levels on equipment choices, from both location forms.
-flyoutButton.locationObject = {}
+-- Item levels on equipment choices, from both location forms. Item-location
+-- flyouts (item upgrade) store an ItemLocation in button.location; the
+-- pooled button keeps it as its item location afterwards.
+flyoutButton.location = {}
+flyoutButton.locationObject = flyoutButton.location
 EquipmentFlyout_UpdateItems()
 Check(m.flyoutLabels[flyoutButton].text == 144, "the item location's level is missing")
-flyoutButton.locationObject, flyoutButton.location = nil, 4
+flyoutButton.location = 4
 EquipmentFlyout_UpdateItems()
-Check(m.flyoutLabels[flyoutButton].text == 155, "the packed location's level is missing")
+Check(m.flyoutLabels[flyoutButton].text == 155,
+    "the character sheet showed the item level of an earlier item-upgrade choice")
 flyoutButton.location = 1000
 EquipmentFlyout_UpdateItems()
 Check(not m.flyoutLabels[flyoutButton].shown, "a special flyout entry kept an item level")
