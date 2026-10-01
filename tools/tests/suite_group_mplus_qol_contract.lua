@@ -576,7 +576,8 @@ death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "player")
 death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "party1")
 assert(#notices == deathNotices and #screenNotices == 2 and sounds == 1,
     "screen/sound choices ignored or simultaneous sounds overlapped")
-inCombat = false
+-- A player who died keeps watching the wipe (suite_group_death_alert_contract).
+unitDead.player, inCombat = nil, false
 death.context.events.PLAYER_REGEN_ENABLED(death, "PLAYER_REGEN_ENABLED")
 assert(not death.dead and not death.context.events.UNIT_HEALTH and not death.context.events.UNIT_FLAGS,
     "death alert kept watching health outside combat")
