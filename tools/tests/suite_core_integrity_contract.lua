@@ -107,4 +107,27 @@ end
 local older = assert(IO.PrepareTable({ suite = { schema = 1, revision = 3, modules = {} } }, true))
 Check(older.suite.revision == S.MigrationRevision, "a valid older revision did not migrate on import")
 
+------------------------------------------------------------------ S1.5
+-- An import migrates before it drops undocumented keys: the friendly plate
+-- step still sees the retired group-only switch of an older string.
+do
+    local step = Support.MigrationStep(root, "Steps.FriendlyPlayerDisplay")
+    local function Imported(plates)
+        local prepared = assert(IO.PrepareTable({ suite = { schema = 1, revision = step - 1,
+            modules = { nameplates = plates } } }, true))
+        return prepared.suite.modules.nameplates
+    end
+    local groupOnly = Imported({ friendlyGroupOnly = true, friendlyNamesOnly = 2 })
+    Check(groupOnly.friendlyNamesOnly == 3 and groupOnly.friendlyGroupOnly == nil,
+        "an imported group-only plate lost its choice: " .. tostring(groupOnly.friendlyNamesOnly))
+    local former = Imported({ friendlyNamesOnly = 3 })
+    Check(former.friendlyNamesOnly == 4, "an imported former third choice was not renumbered")
+    local retired = Imported({ friendlyGroupOnly = true, oldTable = { 1 }, oldText = string.rep("x", 300) })
+    for key in pairs(retired) do
+        Check(S.catalog.nameplates.rules[key], "an undocumented key entered the imported profile: " .. key)
+    end
+    Check(not IO.PrepareTable({ suite = { schema = 1, modules = { nameplates = { friendlyNamesOnly = "3" } } } }, true),
+        "a documented setting of the wrong type was imported")
+end
+
 print("Suite core integrity: " .. checks .. " checks passed")

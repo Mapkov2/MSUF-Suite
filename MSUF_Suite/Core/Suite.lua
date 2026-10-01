@@ -137,6 +137,9 @@ local function RunMigrations(db)
         if step.legacy then db[step.legacy] = nil end
     end
 end
+-- The pending migrations of a suite table (profile.suite) alone: imports run
+-- them before only documented settings stay (ProfileIO.lua).
+S.Migrate = RunMigrations
 
 ------------------------------------------------------------------ normalization
 -- Idempotent: every module table exists and every rule holds a valid value.

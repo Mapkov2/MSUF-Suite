@@ -77,8 +77,43 @@ local function MarkedModules(marks)
     return keep
 end
 
+-- A plain value an older string may carry under a key the catalog has
+-- retired since. It stays only until the migrations, which may read it, ran.
+local RETIRED_TEXT_BYTES = 256
+local function PlainValue(value)
+    local kind = type(value)
+    return kind == "boolean" or kind == "number" and Suite.Finite(value)
+        or kind == "string" and #value <= RETIRED_TEXT_BYTES
+end
+
+-- One module's settings: every documented setting with its type checked,
+-- and the plain values of retired keys. nil and why for a malformed setting.
+local function CopySettings(spec, source)
+    local target = {}
+    for key, value in pairs(source) do
+        local rule = spec.rules[key]
+        if rule then
+            if type(value) ~= type(rule.default) then return nil, "Invalid module setting" end
+            if type(value) == "number" and not Suite.Finite(value) then return nil, "Invalid module number" end
+            if type(value) == "string" and #value > rule.maxLength then return nil, "Module setting is too long" end
+            target[key] = value
+        elseif type(key) == "string" and PlainValue(value) then
+            target[key] = value
+        end
+    end
+    return target
+end
+
+local function DropRetired(spec, settings)
+    for key in pairs(settings) do
+        if not spec.rules[key] then settings[key] = nil end
+    end
+end
+
 -- Copy only documented module settings. Runtime history, skin configuration,
--- unknown keys and sharing metadata cannot enter the module profile.
+-- unknown keys and sharing metadata cannot enter the module profile. The
+-- migrations run first: a step may read a key the catalog has retired since
+-- the string was made.
 -- keep: modules whose character-bound settings a marked shared string keeps.
 function IO.PrepareTable(profile, shared, keep)
     local data = type(profile) == "table" and profile.suite
@@ -110,28 +145,22 @@ function IO.PrepareTable(profile, shared, keep)
         end
         result.suite.modules.mapQuickSwitch = target
     end
+    local modules = result.suite.modules
     for _, id in ipairs(Suite.SuiteOrder) do
         local source = data.modules[id]
         if source ~= nil and type(source) ~= "table" then return nil, "Invalid module settings" end
-        local target = {}
-        result.suite.modules[id] = target
+        local target, why = {}, nil
         if source then
-            local spec=Suite.SuiteCatalog[id]
-            for key,value in pairs(source) do
-                local rule=spec.rules[key]
-                if rule then
-                    if type(value) ~= type(rule.default) then return nil, "Invalid module setting" end
-                    if type(value) == "number" and not Suite.Finite(value) then
-                        return nil, "Invalid module number"
-                    end
-                    if type(value) == "string" and #value > rule.maxLength then
-                        return nil, "Module setting is too long"
-                    end
-                    target[key] = value
-                end
-            end
-            if spec.prepareConfig then spec.prepareConfig(target) end
+            target, why = CopySettings(Suite.SuiteCatalog[id], source)
+            if not target then return nil, why end
         end
+        modules[id] = target
+    end
+    Suite.Suite.Migrate(result.suite)
+    for _, id in ipairs(Suite.SuiteOrder) do
+        local spec = Suite.SuiteCatalog[id]
+        DropRetired(spec, modules[id])
+        if data.modules[id] and spec.prepareConfig then spec.prepareConfig(modules[id]) end
     end
     Suite.Suite.Normalize(result)
     if shared then
