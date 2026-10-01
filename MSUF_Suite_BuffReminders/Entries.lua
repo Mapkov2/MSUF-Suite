@@ -365,6 +365,8 @@ local function PotionAura(itemID)
     C_Item.RequestLoadItemDataByID(itemID)
 end
 
+-- stockPotion remembers whether the potion was in the bags, so a bag update
+-- that empties or refills the stack compiles again (R.StockChanged).
 local function AddMapPotion(self, c)
     self.onPotionMap = R.OnPotionMap(self)
     if not self.onPotionMap then return end
@@ -372,20 +374,30 @@ local function AddMapPotion(self, c)
     local aura = itemID and PotionAura(itemID)
     if not aura then return end
     local count = ItemCount(itemID)
+    if count then self.stockPotion = count > 0 end
     if count and (count > 0 or c.restockNotice == true) then
         buildingCategory = "consumable"
         Add("item", itemID, aura, nil, nil, nil, nil, nil, count == 0)
     end
 end
 
--- Whether a bag update changed one of the remembered consumable picks.
+local function PotionStockChanged(self)
+    if self.stockPotion == nil then return false end
+    local itemID = ID(self.config.mapPotionItem)
+    local count = itemID and ItemCount(itemID)
+    return count ~= nil and (count > 0) ~= self.stockPotion
+end
+
+-- Whether a bag update changed one of the remembered consumable picks or
+-- emptied or refilled the map potion.
 function R.StockChanged(self)
     for i = 1, #STOCK do
         local stock = STOCK[i]
         local picked = self[stock.key]
         if picked ~= nil and (FirstStocked(stock.items, self.config[stock.choice]) or false) ~= picked then return true end
     end
-    return self.stockFood ~= nil and FoodPick(self.config) ~= self.stockFood
+    if self.stockFood ~= nil and FoodPick(self.config) ~= self.stockFood then return true end
+    return PotionStockChanged(self)
 end
 
 -- Returns the new list, built into the buffer that self.entries does not use.
@@ -401,7 +413,7 @@ function R.BuildEntries(self)
     buildingCategory = "class"
     R.GroupRoster(self)
     for i = 1, #STOCK do self[STOCK[i].key] = nil end
-    self.stockFood = nil
+    self.stockFood, self.stockPotion = nil, nil
     if c.classBuff or c.groupBuff then
         local buff = R.ClassBuff(class)
         if buff and Known(buff.cast) then

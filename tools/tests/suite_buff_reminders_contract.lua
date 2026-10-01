@@ -1331,6 +1331,31 @@ do
     auras[1459] = nil
 end
 
+-- Consumables used in combat: no bag event is followed there, so leaving
+-- combat reads the item counts once more.
+do
+    combat = false
+    NS.Client.isForever, NS.Client.modernEquipment = false, false
+    UnitClass = function() return "Warrior", "WARRIOR" end
+    inventory = { [123] = 4 }
+    module.config = { classBuff=false, spellIDs="", items="123:888", mainHandItem="", offHandItem="",
+        instancesOnly=false, hideMounted=true, size=38, spacing=5, columns=6, borderColor="e8b855",
+        point=1, x=0, y=0, remindBeforeMinutes=0 }
+    module.active = true
+    module:Enable()
+    local button = module.buttons[1]
+    assert(button.count.text == "4", "the item count was not shown")
+    eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
+    combat = true
+    inventory[123] = 1
+    assert(not eventFrame.events.BAG_UPDATE_DELAYED, "bag events were followed in combat")
+    combat = false
+    eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+    assert(button.count.text == "1", "the item count stayed stale after combat: " .. tostring(button.count.text))
+    module:Disable()
+    inventory = nil
+end
+
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip
 -- included). The seasonal ID tables live only in Data.lua; every runtime file
 -- reads P.BuffReminders in its header.

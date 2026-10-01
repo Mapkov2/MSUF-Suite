@@ -472,8 +472,11 @@ local function Suspend(self)
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
 end
 
+-- Leaving combat: bag events were not followed, so the item counts are read
+-- once more (consumables used in combat).
 local function Resume(self)
     self.suspended = false
+    self.countsDirty = true
     RegisterEvents(self)
     SyncUnitEvents(self)
 end

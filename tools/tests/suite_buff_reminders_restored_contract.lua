@@ -179,10 +179,17 @@ do
     local entry = Find(R.BuildEntries(owner), potion)
     assert(entry and entry.restock and entry.aura == 185394 and entry.category == "consumable",
         "an empty potion stack did not show as a gray restock reminder")
-    owner.config.restockNotice = false
+    -- A bag update that refills or empties the stack compiles the reminder again.
+    eq(R.StockChanged(owner), false, "an unchanged empty potion stack counted as a bag change")
     bags[1][3] = potion
+    eq(R.StockChanged(owner), true, "a potion arriving in the bags left the gray restock reminder")
+    owner.config.restockNotice = false
     entry = Find(R.BuildEntries(owner), potion)
     assert(entry and not entry.restock and entry.aura == 185394, "the potion in the bags is not a clickable reminder")
+    eq(R.StockChanged(owner), false, "an unchanged potion stack counted as a bag change")
+    bags[1][3] = nil
+    eq(R.StockChanged(owner), true, "drinking the last potion left a clickable reminder")
+    bags[1][3] = potion
     owner.config.mapPotion = false
     eq(Find(R.BuildEntries(owner), potion), nil, "the potion ignored its switch")
     bags[1][3] = nil
