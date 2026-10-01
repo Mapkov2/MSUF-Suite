@@ -117,14 +117,16 @@ local function StepPending(db, revision, index, step)
     return not step.legacy or (tonumber(db[step.legacy]) or 0) < (step.done or 1)
 end
 
--- A step that raises is reported and holds the revision before it: that
--- step and the ones after it run again at the next normalization.
+-- A step that raises (reported), or returns false because it cannot finish
+-- yet, holds the revision before it: that step and the ones after it run
+-- again at the next normalization.
 local function RunMigrations(db)
     local revision = S.MigrationState(db)
     local reached = #MIGRATIONS
     for index, step in ipairs(MIGRATIONS) do
         if StepPending(db, revision, index, step) then
-            if not Dispatch(Finish, step.run, db.modules, db) then
+            local finished, done = Dispatch(Finish, step.run, db.modules, db)
+            if not finished or done == false then
                 reached = index - 1
                 break
             end

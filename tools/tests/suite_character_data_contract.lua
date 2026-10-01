@@ -92,7 +92,15 @@ guid = nil
 local unknown = Legacy()
 S.Normalize(unknown)
 assert(#unknown.suite.moduleState.runSummary.history == 2, "records of an unknown character were dropped")
+assert(unknown.suite.revision == moveStep - 1,
+    "the revision passed the move although no record moved: " .. tostring(unknown.suite.revision))
 guid = "Player-1"
+-- The next normalization with a readable character moves them after all.
+local before = #runs.history
+S.Normalize(unknown)
+assert(unknown.suite.moduleState.runSummary.history == nil and #runs.history == before
+    and unknown.suite.revision == S.MigrationRevision,
+    "the records waiting for a readable character never moved")
 
 -- Profile copies never carry a character's records.
 Suite.RootDB.profiles.Main = profile

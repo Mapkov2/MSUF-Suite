@@ -101,12 +101,21 @@ local function Adopt(data, key, value)
     end
 end
 
+local function HasRecords(state, keys)
+    for _, key in ipairs(keys) do
+        if state[key] ~= nil then return true end
+    end
+    return false
+end
+
 -- MIGRATIONS step (MSUF_Suite/Core/Suite.lua): the character that next
 -- loads a profile adopts its records once and the profile drops them.
--- With an unreadable character the records stay where they are.
+-- With an unreadable character the records stay where they are and the step
+-- returns false, so it runs again at the next normalization.
 function Suite.MoveRunRecordsToCharacter(_, db)
     local states = db.moduleState
     if type(states) ~= "table" then return end
+    local waiting = false
     for owner, keys in pairs(MOVED) do
         local state = states[owner]
         local data = type(state) == "table" and Suite.CharacterData(owner)
@@ -119,6 +128,9 @@ function Suite.MoveRunRecordsToCharacter(_, db)
                 end
             end
             state.raidRecordsHealthScale = nil
+        elseif type(state) == "table" and HasRecords(state, keys) then
+            waiting = true
         end
     end
+    if waiting then return false end
 end
