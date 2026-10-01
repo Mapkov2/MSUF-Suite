@@ -47,10 +47,11 @@ C_Item = {
 }
 C_Timer = { After = function(_, fn) scheduled[#scheduled + 1] = fn end }
 GameTooltip = {
-    SetOwner = function() end,
+    SetOwner = function(self, owner) self.owner = owner end,
+    IsOwned = function(self, frame) return self.owner == frame end,
     SetBagItem = function(_, index, slot) assert(index == 0 and slot == 3) end,
-    Show = function() end,
-    Hide = function() end,
+    Show = function(self) self.shown = true end,
+    Hide = function(self) self.shown = false end,
 }
 -- One translated sentence, so a test sees text built from fragments.
 local translations = { ["More gems in your bags (%d)"] = "Weitere Edelsteine (%d)" }
@@ -88,7 +89,10 @@ assert(module.panel.rows[2].name.text == "Zed Gem"
     and module.panel.rows[2].count.text == "2", "stack count was not shown")
 assert(not module.panel.rows[3]:IsShown(), "non-gems were displayed")
 module.panel.rows[1].OnEnter(module.panel.rows[1]) -- Native bag tooltip remains available.
+module.panel.rows[2].OnLeave(module.panel.rows[2])
+assert(GameTooltip.shown, "leaving another gem row hid this row's tooltip")
 module.panel.rows[1].OnLeave(module.panel.rows[1])
+assert(not GameTooltip.shown, "leaving a gem row kept its tooltip")
 
 bag[3] = { itemID = 101, hyperlink = "secret", iconFileID = 11, stackCount = 1 }
 context.events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")

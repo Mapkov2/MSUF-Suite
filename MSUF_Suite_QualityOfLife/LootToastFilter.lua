@@ -25,6 +25,11 @@ local function ParseIDs(value)
     return ids
 end
 
+-- OnLeave hides the shared tooltip only while this frame still owns it.
+local function LeaveTooltip(frame)
+    if GameTooltip:IsOwned(frame) then GameTooltip:Hide() end
+end
+
 local function MakeToast(index)
     local frame = CreateFrame("Frame", nil, UIParent)
     frame:SetSize(258, 48)
@@ -58,7 +63,7 @@ local function MakeToast(index)
         GameTooltip:SetHyperlink(self.link)
         GameTooltip:Show()
     end)
-    frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    frame:SetScript("OnLeave", LeaveTooltip)
     frame:Hide()
     return frame
 end

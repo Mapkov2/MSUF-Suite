@@ -119,6 +119,11 @@ local function Click()
     if #preview > 0 then StaticPopup_Show(POPUP, #preview, nil, preview) end
 end
 
+-- OnLeave hides the shared tooltip only while this frame still owns it.
+local function LeaveTooltip(owner)
+    if GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
+end
+
 local function Enter(button)
     if NS.Safety.IsForbidden(_G.GameTooltip) then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
@@ -140,7 +145,7 @@ local function EnsureButton(self)
     button:SetText(S.Text("Sell marked items"))
     button:SetScript("OnClick", Click)
     button:SetScript("OnEnter", Enter)
-    button:SetScript("OnLeave", GameTooltip_Hide)
+    button:SetScript("OnLeave", LeaveTooltip)
     self.button = button
 end
 

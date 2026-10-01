@@ -102,7 +102,8 @@ local function CreatePanel(owner)
         end)
         row:SetScript("OnLeave", function(self)
             self.hover:Hide()
-            GameTooltip:Hide()
+            -- The shared tooltip hides only while this row still owns it.
+            if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
         end)
         panel.rows[i] = row
     end

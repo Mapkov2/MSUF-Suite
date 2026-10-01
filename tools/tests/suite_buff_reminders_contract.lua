@@ -158,6 +158,7 @@ local function RunAfter()
 end
 GameTooltip = Widget()
 function GameTooltip:SetOwner(owner) self.owner, self.spell, self.item = owner, nil, nil end
+function GameTooltip:IsOwned(frame) return self.owner == frame end
 function GameTooltip:SetSpellByID(id) self.spell = id end
 function GameTooltip:SetItemByID(id) self.item = id end
 function GameTooltip:AddLine(value) self.extraLine = value end
@@ -259,6 +260,8 @@ assert(module.mask == 15 and module.buttons[4].shown, "missing buffs did not sho
 module.buttons[1]:OnEnter()
 assert(GameTooltip.owner == module.buttons[1] and GameTooltip.spell == 1459 and GameTooltip.shown,
     "a spell reminder did not show its spell tooltip")
+module.buttons[2]:OnLeave()
+assert(GameTooltip.shown, "leaving another reminder hid a tooltip it does not own")
 module.buttons[1]:OnLeave()
 assert(not GameTooltip.shown, "leaving a reminder kept its tooltip")
 module.buttons[3]:OnEnter()

@@ -34,10 +34,11 @@ CreateFrame = function(_, _, parent)
 end
 GameFontHighlightSmall, GameFontNormalSmall = {}, {}
 GameTooltip = {
-    SetOwner = function() end,
+    SetOwner = function(self, owner) self.owner = owner end,
+    IsOwned = function(self, frame) return self.owner == frame end,
     SetHyperlink = function(_, link) assert(link == "item:100") end,
-    Show = function() end,
-    Hide = function() end,
+    Show = function(self) self.shown = true end,
+    Hide = function(self) self.shown = false end,
 }
 C_Timer = { After = function(seconds, callback)
     assert(seconds == 5)
@@ -104,7 +105,13 @@ combat = false
 assert(#frames == 1 and frames[1]:IsShown() and frames[1].name.text == "Epic item"
     and frames[1].count.text == "x2", "personal epic toast was not rendered in combat")
 frames[1].OnEnter(frames[1])
+assert(GameTooltip.shown and GameTooltip.owner == frames[1], "the toast did not show its item")
+GameTooltip.owner = "another frame"
 frames[1].OnLeave(frames[1])
+assert(GameTooltip.shown, "leaving the toast hid a tooltip another frame owns")
+GameTooltip.owner = frames[1]
+frames[1].OnLeave(frames[1])
+assert(not GameTooltip.shown, "leaving the toast kept its tooltip")
 local oldTimer = timers[#timers]
 Toast("item", "item:100", 1, true)
 Toast("item", "item:100", 1, true)

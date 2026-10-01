@@ -72,7 +72,7 @@ end
 local function SidebarLeave(button)
     button.hovered = nil
     RefreshSidebarButton(M, button.entry)
-    HideTooltip()
+    HideTooltip(button)
 end
 
 local function SidebarClick(button, mouseButton)

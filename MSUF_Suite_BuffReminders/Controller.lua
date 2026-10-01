@@ -102,8 +102,9 @@ local function Tooltip(button)
     GameTooltip:Show()
 end
 
-local function HideTooltip()
-    GameTooltip:Hide()
+-- OnLeave hides the shared tooltip only while this frame still owns it.
+local function HideTooltip(button)
+    if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
 end
 
 -- Secure action buttons stay raw CreateFrame: the template owns the click.

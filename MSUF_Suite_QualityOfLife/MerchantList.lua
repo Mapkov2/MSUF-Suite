@@ -266,6 +266,12 @@ local function RowEnter(row)
     SetCursor(CanAffordMerchantItem(row.index) == false and "BUY_ERROR_CURSOR" or "BUY_CURSOR")
 end
 
+-- OnLeave hides the shared tooltip only while this row still owns it.
+local function RowLeave(row)
+    if GameTooltip:IsOwned(row) then GameTooltip:Hide() end
+    ResetCursor()
+end
+
 local function Text(parent, size, justify)
     local text = S.CreateFontString(parent, nil, "OVERLAY")
     S.SetFont(text, nil, size, "OUTLINE")
@@ -309,7 +315,7 @@ local function NewRow(panel)
     row:SetScript("OnDragStart", RowDrag)
     row:SetScript("OnReceiveDrag", SellCursorItem)
     row:SetScript("OnEnter", RowEnter)
-    row:SetScript("OnLeave", GameTooltip_HideResetCursor)
+    row:SetScript("OnLeave", RowLeave)
     return row
 end
 
