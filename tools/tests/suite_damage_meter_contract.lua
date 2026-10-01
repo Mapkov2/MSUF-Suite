@@ -1090,6 +1090,79 @@ assert(not M.inCombat,"combat state stuck after Edit Mode combat")
 S.SetEditMode(false)
 assert(S.DamageMeterPreview(true) and S.DamageMeterPreview(false),"options preview refused after combat")
 assert(S.SetMany("damageMeter",{visibility=visibility,combatTime=combatTime}))
+-- Snapshot boundaries, native English secret formatting, fill geometry and
+-- fractional standalone timer do not depend on Lua-readable combat values.
+do
+    local nativeFetch=C_DamageMeter.GetCombatSessionFromType
+    C_DamageMeter.GetCombatSessionFromType=function(session,kind)
+        assert(session==0)
+        return {combatSources={{sourceGUID="Player-test",totalAmount=kind+1}}}
+    end
+    local totals=S.ReadDamageMeterTotals()
+    assert(totals.damage["Player-test"]==1 and totals.damageTaken["Player-test"]==8
+        and totals.interrupts["Player-test"]==6 and totals.deaths["Player-test"]==10)
+    combat=true;assert(S.ReadDamageMeterTotals()==nil);combat=false
+    C_DamageMeter.GetCombatSessionFromType=function() return {combatSources={{sourceGUID=Secret("guid"),totalAmount=1}}} end
+    assert(S.ReadDamageMeterTotals()==nil,"secret snapshot GUID escaped public boundary")
+    C_DamageMeter.GetCombatSessionFromType=nativeFetch
+    local configs=0
+    CreateAbbreviateConfig=function(points)
+        configs=configs+1
+        assert(#points==6 and points[1].breakpoint==1e10 and points[6].abbreviation=="K"
+            and points[6].abbreviationIsGlobal==false)
+        return points
+    end
+    local formatter=AbbreviateNumbers
+    AbbreviateNumbers=function(value,options)
+        assert(IsSecret(value) and options.locale=="enUS" and options.config)
+        return Secret("english")
+    end
+    assert(S.Set("damageMeter","englishNumbers",true))
+    assert(IsSecret(D.Abbreviate(Secret("amount"))))
+    D.ConfigureAbbreviation();assert(configs==1,"native abbreviation config was rebuilt")
+    AbbreviateNumbers=formatter
+    assert(S.SetMany("damageMeter",{rowBorderMode=3,rowBorderIcon=true,iconBorder=true}))
+    local row=D.CreateRow(win.body,win,"tip")
+    D.StyleRow(row)
+    assert(row.fillBorder.points[1][2]==row.icon and row.fillBorder.points[2][2]==row.bar:GetStatusBarTexture(),
+        "filled border lost native texture anchors")
+    assert(row.iconBorder.allPoints==row.icon,"separate icon border lost icon geometry")
+    assert(S.SetMany("damageMeter",{timer=true,combatTime=true,timerDecimals=true,timerKeep=true,timerBorderSize=2}))
+    M.inCombat=false;M.lastDuration=42.7;D.UpdateTimer()
+    assert(M.timerFrame.text.text=="0:42.7" and M.timerFrame.edges[1].shown,"timer decimals or border failed")
+    -- In a real fight the session duration counts whole seconds (the meter
+    -- shows it through SecondsToClock): the tenths come from the combat clock
+    -- that PLAYER_REGEN_DISABLED starts, before the lockdown begins.
+    api.duration=12
+    Event("PLAYER_REGEN_DISABLED");combat=true
+    now=now+12.34;RunAfters(.1)
+    assert(M.timerFrame.text.text=="0:12.3","in-combat tenths did not follow the combat clock: "..tostring(M.timerFrame.text.text))
+    -- A tick reads no settings colors: they are resolved when the timer is styled.
+    local rgb,parsed=S.RGB,0
+    S.RGB=function(...) parsed=parsed+1;return rgb(...) end
+    now=now+.1;RunAfters(.1)
+    S.RGB=rgb
+    assert(M.timerFrame.text.text=="0:12.4","the 10 Hz timer did not advance the tenths")
+    assert(parsed==0,"a timer tick parsed hex colors")
+    combat=false;Event("PLAYER_REGEN_ENABLED");RunAfters()
+    assert(M.timerFrame.text.text=="0:12.4","the kept duration dropped the combat clock's tenths")
+    local historyHidden,historyPushes
+    S.SetActionTrackerSessionHidden=function(hidden) historyHidden=hidden;historyPushes=(historyPushes or 0)+1 end
+    assert(S.Set("damageMeter","toggleHistory",true))
+    assert(S.ToggleDamageMeterViews() and not M.anyShown and not M.timerFrame.shown and historyHidden)
+    assert(S.ToggleDamageMeterViews() and historyHidden==false,"session toggle did not restore current rules")
+    assert(S.ToggleDamageMeterViews() and historyHidden)
+    assert(S.Set("damageMeter","toggleHistory",false) and historyHidden==false,"disabling shared history toggle left history hidden")
+    assert(S.Set("damageMeter","toggleHistory",true) and historyHidden)
+    -- The tracker repaints on every push: a meter setting that does not
+    -- change the answer pushes nothing.
+    local pushes=historyPushes
+    assert(S.Set("damageMeter","barHeight",19) and S.Set("damageMeter","barHeight",18) and historyPushes==pushes,
+        "a meter setting repainted the action tracker")
+    assert(S.Set("damageMeter","enabled",false) and historyHidden==false,"disabling meter left history hidden")
+    assert(S.Set("damageMeter","enabled",true) and not M.sessionHidden)
+    assert(S.SetMany("damageMeter",{timerDecimals=false,rowBorderMode=1,iconBorder=false,englishNumbers=false}))
+end
 D.OpenTypeMenu(win,win.header)
 assert(typePanel.shown and typePanel.events.GLOBAL_MOUSE_DOWN)
 assert(S.Set("damageMeter","enabled",false))

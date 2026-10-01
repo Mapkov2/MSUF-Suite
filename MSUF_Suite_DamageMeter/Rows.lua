@@ -130,6 +130,38 @@ local function StyleGradient(bar, style)
     end
 end
 
+local function RowEdges(row, key, parent)
+    local holder = row[key]
+    if not holder then
+        holder = S.CreateFrame("Frame", nil, parent)
+        holder:SetFrameLevel(parent:GetFrameLevel() + 2)
+        holder.edges = {}
+        for i = 1, 4 do holder.edges[i] = S.CreateTexture(holder, nil, "OVERLAY") end
+        row[key] = holder
+    end
+    return holder
+end
+local function StyleRowBorder(row, hasIcon)
+    local c, bar = M.config, row.bar
+    local mode = c.rowBorderMode
+    local r, g, b = S.RGB(c.rowBorderColor)
+    if mode > 1 then
+        local holder = RowEdges(row, "fillBorder", bar)
+        local target = mode == 3 and bar:GetStatusBarTexture() or bar
+        holder:ClearAllPoints()
+        holder:SetPoint("TOPLEFT", hasIcon and c.rowBorderIcon and row.icon or target, "TOPLEFT", 0, 0)
+        holder:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
+        S.PlaceEdges(holder.edges, holder, c.rowBorderSize, r, g, b, 1)
+        holder:Show()
+    elseif row.fillBorder then row.fillBorder:Hide() end
+    if c.iconBorder and hasIcon then
+        local holder = RowEdges(row, "iconBorder", bar)
+        holder:SetAllPoints(row.icon)
+        S.PlaceEdges(holder.edges, holder, c.rowBorderSize, r, g, b, 1)
+        holder:Show()
+    elseif row.iconBorder then row.iconBorder:Hide() end
+end
+
 function D.StyleRow(row)
     local style = M.style
     row.styleGen = M.styleGen
@@ -152,6 +184,7 @@ function D.StyleRow(row)
     bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
     bar:SetStatusBarTexture(style.texture)
     StyleGradient(bar, style)
+    StyleRowBorder(row, hasIcon)
     row.track:ClearAllPoints()
     row.track:SetAllPoints(bar)
     row.track:SetColorTexture(style.trackR, style.trackG, style.trackB, style.trackA)
@@ -284,7 +317,7 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
         if kind == 1 or (kind == 2 and not countOnly) or (kind == 3 and percent ~= nil) then
             local value
             if kind == 1 then value = total elseif kind == 2 then value = rate else value = percentText end
-            value = kind == 3 and value or (Public(value) and D.Compact(value) or AbbreviateNumbers(value))
+            value = kind == 3 and value or (Public(value) and D.Compact(value) or D.Abbreviate(value))
             count = count + 1
             if count == 1 then first = value elseif count == 2 then second = value else third = value end
         end
@@ -334,9 +367,9 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
         return
     end
     row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
-    local first = Public(a) and D.Compact(a) or AbbreviateNumbers(a)
+    local first = Public(a) and D.Compact(a) or D.Abbreviate(a)
     if two then
-        text:SetFormattedText(separators[fmt], first, Public(b) and D.Compact(b) or AbbreviateNumbers(b))
+        text:SetFormattedText(separators[fmt], first, Public(b) and D.Compact(b) or D.Abbreviate(b))
     else
         text:SetText(first)
     end

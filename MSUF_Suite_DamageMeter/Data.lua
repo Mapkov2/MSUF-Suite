@@ -71,6 +71,24 @@ function D.Compact(value)
     return format(value < 9.995 and "%s%.2f%s" or value < 99.95 and "%s%.1f%s" or "%s%.0f%s", sign, value, unit)
 end
 
+-- Native formatting accepts secret values. Constant raw suffixes avoid
+-- client-localized global strings; the config is created once on opt-in.
+local englishAbbreviation
+function D.ConfigureAbbreviation()
+    if not M.config.englishNumbers or englishAbbreviation then return end
+    local points = {}
+    for _, unit in ipairs({ { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" } }) do
+        points[#points + 1] = { breakpoint = unit[1] * 10, abbreviation = unit[2],
+            significandDivisor = unit[1], fractionDivisor = 1, abbreviationIsGlobal = false }
+        points[#points + 1] = { breakpoint = unit[1], abbreviation = unit[2],
+            significandDivisor = unit[1] / 10, fractionDivisor = 10, abbreviationIsGlobal = false }
+    end
+    englishAbbreviation = { locale = "enUS", config = CreateAbbreviateConfig(points) }
+end
+function D.Abbreviate(value)
+    return AbbreviateNumbers(value, M.config.englishNumbers and englishAbbreviation or nil)
+end
+
 function D.Clock(seconds)
     seconds = floor(seconds)
     if seconds >= 3600 then return format("%d:%02d:%02d", floor(seconds / 3600), floor(seconds / 60) % 60, seconds % 60) end
@@ -435,4 +453,35 @@ function D.TargetGroups(win, source, detail)
     local player = cache.players and cache.players[name]
     if not player then return nil end
     return player.list, #player.list, player.sum
+end
+
+-- Public snapshot for challenge lifecycle consumers. This never resets or
+-- relabels a native session. The consumer owns start/end boundaries and must
+-- invalidate a baseline on DAMAGE_METER_RESET.
+local METER = Enum.DamageMeterType
+local SNAPSHOT_TYPES = { damage = METER.DamageDone, damageTaken = METER.DamageTaken,
+    interrupts = METER.Interrupts, deaths = METER.Deaths }
+function S.ReadDamageMeterTotals()
+    if NS.IsCombatLocked() then return nil end
+    local available = C_DamageMeter.IsDamageMeterAvailable()
+    if not Public(available) or not available then return nil end
+    local result = {}
+    for key, meterType in pairs(SNAPSHOT_TYPES) do
+        local session = C_DamageMeter.GetCombatSessionFromType(D.OVERALL, meterType)
+        if not Public(session) or type(session) ~= "table" then return nil end
+        local sources = session.combatSources
+        if not Public(sources) or type(sources) ~= "table" then return nil end
+        local count = #sources
+        if not Public(count) then return nil end
+        local values = {}
+        for i = 1, count do
+            local source = sources[i]
+            if not Public(source) or type(source) ~= "table" then return nil end
+            local guid, amount = source.sourceGUID, source.totalAmount
+            if not Public(guid) or not Finite(amount) or amount < 0 then return nil end
+            if type(guid) == "string" and guid ~= "" then values[guid] = (values[guid] or 0) + amount end
+        end
+        result[key] = values
+    end
+    return result
 end

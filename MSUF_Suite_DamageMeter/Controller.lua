@@ -19,6 +19,7 @@ local ZONES = { party = "HideDungeon", scenario = "HideDungeon", raid = "HideRai
 local PREVIEW_SECONDS = 95
 
 function D.BuildStyle()
+    D.ConfigureAbbreviation()
     local c = M.config
     local style = M.style or {}
     M.style = style
@@ -175,7 +176,7 @@ end
 function D.NeedClock()
     local c = M.config
     if not M.active or not M.inCombat or not c.combatTime then return false end
-    if c.timer then return true end
+    if c.timer and not (M.sessionHidden and c.toggleTimer) then return true end
     if not c.headerTimer or not M.anyShown then return false end
     for i = 1, c.windowCount do
         local win = D.windows[i]
@@ -322,7 +323,10 @@ end
 local function CombatEnd()
     D.InvalidateTargets()
     M.inCombat = false
-    M.lastDuration = D.Duration(D.CURRENT) or M.lastDuration
+    -- Only the floating timer keeps this; it keeps what it showed: the combat
+    -- clock while it shows tenths (Timer.lua), else the session duration.
+    local clock = M.config.timerDecimals and M.combatStart and GetTime() - M.combatStart
+    M.lastDuration = clock or D.Duration(D.CURRENT) or M.lastDuration
     D.StopClock()
     D.CancelPaint()
     M.nextPaint = nil
@@ -405,7 +409,7 @@ function D.EvaluateVisibility()
     local base
     if M.forced then
         base = true
-    elseif c.visibility == 5 then
+    elseif M.sessionHidden or c.visibility == 5 then
         base = false
     elseif c.visibility == 2 then
         base = M.inCombat == true
@@ -440,8 +444,20 @@ function M:Enable()
     self:Refresh()
 end
 
+-- The meter hotkey can also hide the QoL action tracker. Its export repaints
+-- the tracker, so it is called only when the answer changes, not on every
+-- refresh (each slider tick of a meter setting).
+local historyPushed
+local function SyncHistoryVisibility()
+    local hidden = M.active and M.config.toggleHistory and M.sessionHidden or false
+    if hidden == historyPushed or not S.SetActionTrackerSessionHidden then return end
+    historyPushed = hidden
+    S.SetActionTrackerSessionHidden(hidden)
+end
+
 function M:Refresh()
     local c = self.config
+    SyncHistoryVisibility()
     D.InvalidateTargets()
     -- Blizzard's own meter UI stays hidden (reversible CVar; the data API keeps
     -- working) and MSUF's mover for it steps aside while this module is active.
@@ -470,6 +486,8 @@ end
 
 -- Frames are kept and reused by the next Enable.
 function M:Disable()
+    M.sessionHidden = nil
+    SyncHistoryVisibility()
     D.StopClock()
     D.CancelPaint()
     D.HideTypeMenu()
@@ -558,6 +576,17 @@ function S.DamageMeterPreview(on)
     D.EvaluateVisibility()
     D.MarkAll()
     D.PaintDirty()
+    return true
+end
+
+function S.ToggleDamageMeterViews()
+    if not M.active then return false end
+    M.sessionHidden = not M.sessionHidden
+    D.EvaluateVisibility()
+    D.UpdateTimer()
+    D.MarkAll()
+    D.RequestPaint()
+    SyncHistoryVisibility()
     return true
 end
 
