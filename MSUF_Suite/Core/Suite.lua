@@ -7,6 +7,9 @@ S.ApplyOwnedLayer = NS.ApplyOwnedLayer
 S.ApplyOwnedChildLayer = NS.ApplyOwnedChildLayer
 local pending, pendingFrame, pendingListening = {}, nil, false
 local RUNTIME_ADDON = "MSUF_Suite_Modules"
+-- Code that must not stop its caller runs isolated (NS.Dispatch): an error
+-- reaches the client error handler and the caller goes on.
+local Dispatch, Finish = NS.Dispatch, NS.Finish
 for i = 1, #S.order do S.states[S.order[i]] = { active = false } end
 
 ------------------------------------------------------------------ setting rules
@@ -114,12 +117,20 @@ local function StepPending(db, revision, index, step)
     return not step.legacy or (tonumber(db[step.legacy]) or 0) < (step.done or 1)
 end
 
+-- A step that raises is reported and holds the revision before it: that
+-- step and the ones after it run again at the next normalization.
 local function RunMigrations(db)
     local revision = S.MigrationState(db)
+    local reached = #MIGRATIONS
     for index, step in ipairs(MIGRATIONS) do
-        if StepPending(db, revision, index, step) then step.run(db.modules, db) end
+        if StepPending(db, revision, index, step) then
+            if not Dispatch(Finish, step.run, db.modules, db) then
+                reached = index - 1
+                break
+            end
+        end
     end
-    db.revision = math.max(revision or 0, #MIGRATIONS)
+    db.revision = math.max(revision or 0, reached)
     for _, step in ipairs(MIGRATIONS) do
         if step.legacy then db[step.legacy] = nil end
     end
@@ -127,16 +138,18 @@ end
 
 ------------------------------------------------------------------ normalization
 -- Idempotent: every module table exists and every rule holds a valid value.
+-- A raising prepareConfig or look refresh is reported; the rules still
+-- repair every value, so the module starts from a valid config.
 local function ApplyCatalogRules(modules)
-    NS.SuiteLooks.RefreshClassColor()
+    Dispatch(NS.SuiteLooks.RefreshClassColor)
     for i = 1, #S.order do
         local id = S.order[i]
         local config, spec = EnsureModule(modules, id), S.catalog[id]
-        if spec.prepareConfig then spec.prepareConfig(config) end
+        if spec.prepareConfig then Dispatch(spec.prepareConfig, config) end
         for key, rule in pairs(spec.rules) do
             config[key] = RepairedValue(rule, config[key])
         end
-        NS.SuiteLooks.RefreshConfig(id, config)
+        Dispatch(NS.SuiteLooks.RefreshConfig, id, config)
     end
 end
 -- Returns the suite table of a profile, or nil when a newer build owns it.
@@ -158,7 +171,7 @@ function S.Normalize(profile)
     local db = SuiteTable(profile)
     if not db then return end
     RunMigrations(db)
-    for i = 1, #REPAIRS do REPAIRS[i](db.modules, db) end
+    for i = 1, #REPAIRS do Dispatch(REPAIRS[i], db.modules, db) end
     ApplyCatalogRules(db.modules)
 end
 
@@ -220,9 +233,8 @@ function S.Availability(id)
 end
 
 ------------------------------------------------------------------ lifecycle
--- Module code runs isolated (NS.Dispatch): an error reaches the client error
+-- Module code runs isolated (Dispatch): an error reaches the client error
 -- handler and stops only the module that raised it.
-local Dispatch, Finish = NS.Dispatch, NS.Finish
 -- Statuses are English source text; the menu translates them once, when it
 -- shows them (NS.StatusText through MSUF_Suite_Options/Menu/Bridge.lua).
 local FAILED = "Stopped after an error"
@@ -544,7 +556,7 @@ end
 -- error in the previous profile is tried again with the new settings.
 local function ApplyProfile(_, domain)
     if domain ~= "profile" then return end
-    if NS.DB then S.Normalize(NS.DB) end
+    if NS.DB then Dispatch(S.Normalize, NS.DB) end
     for i = 1, #S.order do S.states[S.order[i]].error = nil end
     S.ApplyAll()
 end
@@ -552,7 +564,8 @@ end
 function S.Start()
     if S.started then return end
     S.started = true
-    if NS.DB then S.Normalize(NS.DB) end
+    -- Normalization never keeps the listener or the modules from starting.
+    if NS.DB then Dispatch(S.Normalize, NS.DB) end
     -- Saved CVars wait in the runtime until their owner hands them back.
     if NS.RootDB and type(NS.RootDB.suiteRecovery) == "table" and next(NS.RootDB.suiteRecovery) then
         C_AddOns.LoadAddOn(RUNTIME_ADDON)
