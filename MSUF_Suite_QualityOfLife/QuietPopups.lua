@@ -45,11 +45,22 @@ local function Suppress(frame, key)
     end
 end
 
+-- A hidden Talking Head is also silent. Blizzard's PlayCurrent starts the
+-- voice-over (PlaySound, TalkingHeadUI.lua) after the frame showed, so the
+-- line stops right after that call; SOUNDKIT_FINISHED and Close stay
+-- Blizzard's own.
+local function StopVoice(frame)
+    if not M.active or not M.config.talkingHead then return end
+    local handle = frame.voHandle
+    if S.Finite(handle) then StopSound(handle) end
+end
+
 local function Install(self)
     for key, name in pairs(frames) do
         local frame = _G[name]
         if self.config[key] and frame and not self.hooked[key] and not NS.Safety.IsForbidden(frame) then
             frame:HookScript("OnShow", function(shown) Suppress(shown, key) end)
+            if key == "talkingHead" then hooksecurefunc(frame, "PlayCurrent", StopVoice) end
             self.hooked[key] = true
         end
         if frame and (frame:IsShown() or (not self.config[key] and self.original[key])) then

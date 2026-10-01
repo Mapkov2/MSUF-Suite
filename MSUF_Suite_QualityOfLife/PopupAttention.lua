@@ -6,7 +6,8 @@ local NS, S = P.NS, P.Suite
 -- a sound) around a resurrection offer and its accept button, the item
 -- quality written on loot toasts and a gold frame around money toasts.
 local M = { looks = {}, cues = {}, buttonCues = {}, heights = {},
-    qualityLabels = setmetatable({}, { __mode = "k" }), moneyFrames = setmetatable({}, { __mode = "k" }) }
+    qualityLabels = setmetatable({}, { __mode = "k" }), moneyFrames = setmetatable({}, { __mode = "k" }),
+    waiting = setmetatable({}, { __mode = "k" }), arrived = {} }
 local DIALOG_COUNT = 4
 local ART_KEYS = { "BG", "NineSlice", "Border" }
 local CUE_FRAME, CUE_SOUND = 2, 3
@@ -218,12 +219,30 @@ local function MarkRevive(dialog)
 end
 
 ------------------------------------------------------------------ loot toasts
+local ItemArrived
+
+-- A toast whose item the client has no data for yet: waiting holds its link
+-- until GET_ITEM_INFO_RECEIVED names that item.
+local function Wait(frame, link)
+    if not S.Finite(C_Item.GetItemInfoInstant(link)) then return end
+    M.waiting[frame] = link
+    M.context:Event("GET_ITEM_INFO_RECEIVED", ItemArrived)
+end
+
+local function StopWaiting(self)
+    for frame in pairs(self.waiting) do self.waiting[frame] = nil end
+    self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
+end
+
 -- LootWonAlertFrame_SetUp(frame, link, quantity, rollType, roll, specID,
--- isCurrency, ...): the toast names the quality in words as well as color.
+-- isCurrency, ...): the toast names the quality in words as well as color,
+-- also for an item whose data arrives after the toast showed.
 local function QualityName(frame, link, _, _, _, _, isCurrency)
     local label = M.qualityLabels[frame]
-    local quality = M.active and M.config.lootQualityName and not isCurrency and S.PublicText(link)
-        and select(3, C_Item.GetItemInfo(link))
+    M.waiting[frame] = nil
+    local wanted = M.active and M.config.lootQualityName and not isCurrency and S.PublicText(link)
+    local quality = wanted and select(3, C_Item.GetItemInfo(link))
+    if wanted and quality == nil then Wait(frame, link) end
     local name = S.Finite(quality) and _G["ITEM_QUALITY" .. quality .. "_DESC"]
     local color = S.PublicText(name) and ITEM_QUALITY_COLORS[quality]
     if not color then
@@ -239,6 +258,21 @@ local function QualityName(frame, link, _, _, _, _, isCurrency)
     label:SetText(name)
     label:SetTextColor(color.r, color.g, color.b)
     label:Show()
+end
+
+ItemArrived = function(self, _, itemID)
+    if not S.Finite(itemID) then return end
+    local arrived = self.arrived
+    for frame, link in pairs(self.waiting) do
+        if C_Item.GetItemInfoInstant(link) == itemID then arrived[#arrived + 1] = frame end
+    end
+    for index = #arrived, 1, -1 do
+        local frame = arrived[index]
+        arrived[index] = nil
+        local link = self.waiting[frame]
+        if frame:IsShown() then QualityName(frame, link) else self.waiting[frame] = nil end
+    end
+    if not next(self.waiting) then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
 end
 
 -- MoneyWonAlertFrame_SetUp(frame, amount): a gold frame inside the toast.
@@ -353,6 +387,7 @@ local function Repaint(self)
     for frame, label in pairs(self.qualityLabels) do
         if not self.active or not self.config.lootQualityName or not frame:IsShown() then label:Hide() end
     end
+    if not self.active or not self.config.lootQualityName then StopWaiting(self) end
     for frame, mark in pairs(self.moneyFrames) do
         if not self.active or not self.config.moneyToastFrame or not frame:IsShown() then mark:Hide() end
     end

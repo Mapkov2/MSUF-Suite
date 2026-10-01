@@ -93,8 +93,20 @@ C_SpecializationInfo = {
     GetSpecialization = function() return 1 end,
     GetSpecializationInfo = function() return 256, "Discipline" end,
 }
-C_ClassTalents = { GetActiveConfigID = function() return 100 end }
-C_Traits = { GetConfigInfo = function() return { name = "Raid" } end }
+-- Client contract: GetActiveConfigID() is the spec's base config and stays
+-- the same across loadout switches; the chosen loadout is
+-- GetLastSelectedSavedConfigID(specID) (Blizzard_ClassTalentsFrame.lua:236).
+local selectedLoadout, starterBuild = 100, false
+C_ClassTalents = {
+    GetActiveConfigID = function() return 7 end,
+    GetLastSelectedSavedConfigID = function(specID)
+        assert(specID == 256, "loadout was read for another specialization")
+        return selectedLoadout
+    end,
+    GetStarterBuildActive = function() return starterBuild end,
+}
+local configNames = { [7] = "Base", [100] = "Raid", [101] = "Dungeon" }
+C_Traits = { GetConfigInfo = function(configID) return { name = configNames[configID] } end }
 UnitGUID = function() return "Player-123" end
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LoadoutReminder.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
@@ -135,13 +147,24 @@ assert(reminder.host.shown and reminder.title.text == "Check your loadout",
 reminder.host:Hide()
 reminder.context.events.ZONE_CHANGED_NEW_AREA(reminder)
 assert(not reminder.host.shown, "zone event repeated one instance reminder")
-C_ClassTalents.GetActiveConfigID = function() return 101 end
-reminder.context.events.PLAYER_TALENT_UPDATE(reminder, "PLAYER_TALENT_UPDATE")
-assert(reminder.host.shown and reminder.title.text == "Check your loadout",
-    "changing talents inside an instance did not refresh the reminder")
+selectedLoadout = 101
+reminder.context.events.SELECTED_LOADOUT_CHANGED(reminder, "SELECTED_LOADOUT_CHANGED")
+assert(reminder.host.shown and reminder.title.text == "Check your loadout"
+    and reminder.detail.text:find("Dungeon", 1, true),
+    "switching loadouts inside an instance did not refresh the reminder")
 reminder.host:Hide()
 reminder.context.events.PLAYER_TALENT_UPDATE(reminder, "PLAYER_TALENT_UPDATE")
 assert(not reminder.host.shown, "unchanged talents repeated the reminder")
+selectedLoadout = nil
+reminder.context.events.PLAYER_TALENT_UPDATE(reminder, "PLAYER_TALENT_UPDATE")
+assert(reminder.host.shown and reminder.detail.text:find("Base", 1, true),
+    "a spec without a saved loadout did not fall back to its base config")
+reminder.host:Hide()
+starterBuild = true
+reminder.context.events.PLAYER_TALENT_UPDATE(reminder, "PLAYER_TALENT_UPDATE")
+assert(reminder.host.shown and reminder.detail.text:find("Starter build", 1, true),
+    "the active starter build was not named")
+starterBuild, selectedLoadout = false, 101
 reminder.config.onLfgProposal = true
 reminder:Refresh()
 assert(reminder.context.events.LFG_PROPOSAL_SHOW,
@@ -169,6 +192,22 @@ assert(reminder:ClearSaved() and reminder.config.expectedConfigID == 0
     "clear action retained a character-specific expectation")
 
 TalkingHeadFrame, BossBanner, QuickJoinToastButton = Frame(), Frame(), nil
+-- Blizzard's PlayCurrent shows the frame and then starts the voice-over.
+local stopped, nextHandle = {}, 40
+function TalkingHeadFrame:PlayCurrent()
+    self:Show()
+    nextHandle = nextHandle + 1
+    self.voHandle = nextHandle
+end
+hooksecurefunc = function(frame, method, callback)
+    assert(frame == TalkingHeadFrame and method == "PlayCurrent", "unexpected secure hook " .. tostring(method))
+    local original = frame[method]
+    frame[method] = function(...)
+        original(...)
+        callback(...)
+    end
+end
+StopSound = function(handle) stopped[#stopped + 1] = handle end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/QuietPopups.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local quiet = modules.quietPopups
 quiet.context = Context()
@@ -200,6 +239,18 @@ combat = false
 quiet.config.bossBanner = false
 quiet:Refresh()
 assert(BossBanner.alpha == 1, "combat suppression did not restore boss banner")
+-- A hidden Talking Head does not keep talking.
+TalkingHeadFrame:PlayCurrent()
+assert(#stopped == 0, "a shown Talking Head lost its voice-over")
+quiet.config.talkingHead = true
+quiet:Refresh()
+TalkingHeadFrame:PlayCurrent()
+assert(TalkingHeadFrame.alpha == 0 and stopped[1] == TalkingHeadFrame.voHandle,
+    "a hidden Talking Head kept playing its voice-over")
+quiet.config.talkingHead = false
+quiet:Refresh()
+TalkingHeadFrame:PlayCurrent()
+assert(TalkingHeadFrame.alpha == 1 and #stopped == 1, "turning the option off kept the voice-over muted")
 quiet.config.quickJoin = true
 quiet:Refresh()
 assert(quiet.context.events.ADDON_LOADED, "late Quick Join addon was not observed when selected")

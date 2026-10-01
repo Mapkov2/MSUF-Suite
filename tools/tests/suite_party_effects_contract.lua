@@ -142,6 +142,20 @@ Fire("UNIT_AURA", "player", { removedAuraInstanceIDs = { 4 } })
 assert(not module.host.shown, "a secret, full or removal update started the banner")
 Fire("UNIT_AURA", "player", { addedAuras = { { spellId = 774 }, { spellId = 80353 } } })
 assert(Playing() and module.title.text == "Zeitkrümmung", "a Time Warp buff from the group was not celebrated")
+-- Your own Bloodlust plays once: its cast starts the banner, its buff does not.
+module:HideEditPreview()
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-4", 2825)
+local ownPlays = module.animations[1].plays
+Fire("UNIT_AURA", "player", { addedAuras = { { spellId = 2825, isFromPlayerOrPlayerPet = true } } })
+assert(module.animations[1].plays == ownPlays, "your own Bloodlust played its banner twice")
+module:HideEditPreview()
+Fire("UNIT_AURA", "player", { addedAuras = { { spellId = 2825, isFromPlayerOrPlayerPet = secret } } })
+assert(Playing(), "a Bloodlust buff of unknown origin was not celebrated")
+module:HideEditPreview()
+module.config.onLust = false
+Fire("UNIT_AURA", "player", { addedAuras = { { spellId = 2825, isFromPlayerOrPlayerPet = true } } })
+assert(Playing(), "without the cast trigger your own Bloodlust buff stayed silent")
+module.config.onLust = true
 module.config.onGroupLust = false
 module:Refresh()
 assert(not module.context.events.UNIT_AURA, "a switched-off buff trigger kept listening")

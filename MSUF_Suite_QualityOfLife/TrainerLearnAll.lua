@@ -202,6 +202,11 @@ local function OnClick()
     StaticPopup_Show(POPUP, #plan.entries, Coins(plan.total), plan)
 end
 
+-- OnLeave hides the shared tooltip only while this frame still owns it.
+local function LeaveTooltip(owner)
+    if GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
+end
+
 local function OnEnter(button)
     if NS.Safety.IsForbidden(_G.GameTooltip) then return end
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
@@ -242,7 +247,7 @@ local function Attach(self)
     button:SetText(S.Text("Learn all"))
     button:SetScript("OnClick", OnClick)
     button:SetScript("OnEnter", OnEnter)
-    button:SetScript("OnLeave", GameTooltip_Hide)
+    button:SetScript("OnLeave", LeaveTooltip)
     frame:HookScript("OnShow", function() if M.active then M:UpdateButton() end end)
     frame:HookScript("OnHide", function()
         if M.queue then Stop(M, "Training stopped because the trainer closed.") end

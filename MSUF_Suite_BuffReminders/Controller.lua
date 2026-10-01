@@ -102,8 +102,9 @@ local function Tooltip(button)
     GameTooltip:Show()
 end
 
-local function HideTooltip()
-    GameTooltip:Hide()
+-- OnLeave hides the shared tooltip only while this frame still owns it.
+local function HideTooltip(button)
+    if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
 end
 
 -- Secure action buttons stay raw CreateFrame: the template owns the click.
@@ -323,6 +324,7 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
             if before ~= entry.missingCount then
                 self.buttons[index].count:SetText(entry.missingCount > 0 and tostring(entry.missingCount) or "")
             end
+            if auraDirty then R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo) end
         elseif entry.poison then
             RefreshPoisonEntry(self, index, entry)
         elseif entry.slot then
@@ -471,8 +473,11 @@ local function Suspend(self)
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
 end
 
+-- Leaving combat: bag events were not followed, so the item counts are read
+-- once more (consumables used in combat).
 local function Resume(self)
     self.suspended = false
+    self.countsDirty = true
     RegisterEvents(self)
     SyncUnitEvents(self)
 end

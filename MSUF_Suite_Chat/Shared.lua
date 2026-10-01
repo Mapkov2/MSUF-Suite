@@ -66,8 +66,9 @@ function C.ShowTooltip(owner, text)
     GameTooltip:Show()
 end
 
-function C.HideTooltip()
-    GameTooltip:Hide()
+-- The shared tooltip is hidden only while owner still owns it.
+function C.HideTooltip(owner)
+    if GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
 end
 
 -- Blizzard_CombatLog gives only the combat log window (ChatFrame2) its

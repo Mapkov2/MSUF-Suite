@@ -306,13 +306,40 @@ C_CVar = { GetCVar = function(key) return liveCVars[key] end,
     end }
 NamePlateUnitFrameMixin = { ApplyFrameOptions = function() error("do not invoke native setup") end,
     UpdateAggroHighlight = function() end }
+-- Client contract: the template copies the mixin's methods into each unit
+-- frame it creates, and the driver pools those frames for the session. uf
+-- was created before the Suite loaded, so it holds the unhooked methods.
+uf.ApplyFrameOptions = NamePlateUnitFrameMixin.ApplyFrameOptions
+uf.UpdateAggroHighlight = NamePlateUnitFrameMixin.UpdateAggroHighlight
 local layoutHook, fontHook, powerHook, threatColorHook
+local instanceHooks = {}
+local function SecureWrap(owner, method, callback)
+    local original = owner[method]
+    owner[method] = function(...)
+        original(...)
+        callback(...)
+    end
+end
 local layoutCallbacks = {}
 MSUF_UpdateCastbarVisuals = function() end
 hooksecurefunc = function(frame, method, callback)
     if type(frame) == "string" then error("do not install cast media hooks") end
-    if frame == NamePlateUnitFrameMixin and method == "ApplyFrameOptions" then fontHook = callback; return end
-    if frame == NamePlateUnitFrameMixin and method == "UpdateAggroHighlight" then threatColorHook = callback; return end
+    if frame == NamePlateUnitFrameMixin and method == "ApplyFrameOptions" then
+        fontHook = callback
+        SecureWrap(frame, method, callback)
+        return
+    end
+    if frame == NamePlateUnitFrameMixin and method == "UpdateAggroHighlight" then
+        threatColorHook = callback
+        SecureWrap(frame, method, callback)
+        return
+    end
+    if method == "ApplyFrameOptions" or method == "UpdateAggroHighlight" then
+        assert(frame.UnitFrame == nil and frame.HealthBarsContainer, "a plate method hook missed the unit frame")
+        instanceHooks[method] = (instanceHooks[method] or 0) + 1
+        SecureWrap(frame, method, callback)
+        return
+    end
     if frame == NamePlateDriverFrame and method == "SetupClassNameplateBars" then powerHook = callback; return end
     if frame == cast then error("do not hook native cast logic") end
     if frame == uf and method == "UpdateAnchors" then
@@ -413,6 +440,8 @@ MSUF_GetCastbarBackgroundTexture = function() error("do not link nameplate cast 
 MSUF_GetCastbarBackgroundColor = function() return 0.1, 0.2, 0.3, 0.8 end
 module:Enable()
 assert(scans == 1)
+assert(instanceHooks.ApplyFrameOptions == 1 and not instanceHooks.UpdateAggroHighlight,
+    "a unit frame created before the Suite missed the font-reset hook")
 assert(not layoutHook, "factory layout installed an unnecessary native layout hook")
 assert(bar.barTexture.texture == "native-health")
 assert(cast.statusTexture.texture == "native-cast" and not cast.created and cast.Background:GetAlpha() == .8,
@@ -596,6 +625,19 @@ assert(not module.needsRefresh and scans == 2, "combat exit should not redo cosm
 
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(scans == 2 and name.points[1][1] == "CENTER", "event performed a scan or changed native anchors")
+-- Budget: Lua VM instructions of one NAME_PLATE_UNIT_ADDED of a styled plate
+-- (deterministic on Lua 5.1, this harness included). 2026-10-01: 1800
+-- before existing unit frames were covered by the plate hooks, 1817 after;
+-- the budget is the old baseline +2 %.
+do
+    local PLATE_ADDED_BUDGET = 1836
+    local count = 0
+    debug.sethook(function() count = count + 1 end, "", 1)
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    debug.sethook()
+    print("nameplate added: " .. count .. " instructions")
+    assert(count <= PLATE_ADDED_BUDGET, "a plate add cost " .. count .. " instructions (budget " .. PLATE_ADDED_BUDGET .. ")")
+end
 hasMana = true
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(module.visuals[bar].fill.color[2] == 0xbf / 255, "caster health fill missing")
@@ -625,6 +667,41 @@ assert(module.visuals[bar].fill.color[1] == 0x93 / 255, "lieutenant health fill 
 unitLevel = 92
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(module.visuals[bar].fill.color[1] == 1, "level-based boss health fill missing")
+-- Lieutenants of one instance can differ in level: every lieutenant level
+-- seen in the context counts, and plates classified before a lieutenant
+-- was seen are classified again.
+do
+    local Roles = private.Roles
+    local levels, lieutenant = { nameplate1 = 81 }, {}
+    local unitLevelBefore, lieutenantBefore = UnitLevel, UnitIsLieutenant
+    UnitLevel = function(unit) return unit == "player" and 90 or levels[unit] end
+    UnitIsLieutenant = function(unit) return lieutenant[unit] == true end
+    local reads = 0
+    local classifyBefore = UnitClassification
+    UnitClassification = function(unit) reads = reads + 1; return classifyBefore(unit) end
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(module.visuals[bar].fill.color[1] ~= 1, "an elite without a lieutenant below it took the boss color")
+    levels.lieutenantA, lieutenant.lieutenantA = 80, true
+    levels.lieutenantB, lieutenant.lieutenantB = 85, true
+    assert(Roles.Classify("lieutenantA", "elite") == "Miniboss" and Roles.learnedLieutenant,
+        "a lieutenant level was not learned")
+    assert(Roles.Classify("lieutenantB", "elite") == "Miniboss", "a second lieutenant was not a miniboss")
+    reads = 0
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(reads == 2 and not Roles.learnedLieutenant,
+        "plates classified before a lieutenant level arrived were not classified again")
+    assert(module.visuals[bar].fill.color[1] == 1, "an elite above an earlier lieutenant lost the boss color")
+    levels.nameplate1 = 86
+    assert(Roles.Classify("nameplate1", "elite") == "Boss", "an elite above the second lieutenant was no boss")
+    -- The context these steps were built in (the last refresh saw no instance).
+    local kind = instanceType
+    instanceType = "none"
+    Roles.RefreshContext()
+    instanceType = kind
+    assert(Roles.Classify("nameplate1", "elite") ~= "Boss" and not next(Roles.lieutenants),
+        "a context change kept the lieutenant levels")
+    UnitLevel, UnitIsLieutenant, UnitClassification = unitLevelBefore, lieutenantBefore, classifyBefore
+end
 unitLevel, instanceType = 90, "none"
 questUnit = true
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
@@ -1373,6 +1450,8 @@ do
     c.threatFlashColorEnabled, c.threatFlashColor = true, "00ff00"
     c.threatHighlightColorEnabled, c.threatHighlightColor = true, "0000ff"
     module:Refresh()
+    assert(instanceHooks.UpdateAggroHighlight == 1 and instanceHooks.ApplyFrameOptions == 1,
+        "the threat hook missed an existing unit frame or a frame was hooked twice")
     assert(threatColorHook and uf.aggroFlash.vertexColor[2] == 1
         and uf.aggroHighlightBase.vertexColor[3] == 1
         and uf.aggroHighlightAdditive.vertexColor[3] == 1,
@@ -1384,9 +1463,11 @@ do
         and uf.aggroHighlightBase.vertexColorWrites == highlightWrites,
         "unchanged nameplates repainted native threat textures")
     uf.aggroHighlightBase:SetVertexColor(1, .45, 0)
-    threatColorHook(uf)
+    uf:UpdateAggroHighlight()
     assert(uf.aggroHighlightBase.vertexColor[3] == 1,
-        "Blizzard's threat update replaced the custom progressive color")
+        "Blizzard's threat update on an existing unit frame replaced the custom progressive color")
+    module:Refresh()
+    assert(instanceHooks.UpdateAggroHighlight == 1, "a refresh hooked an existing unit frame again")
     c.threatFlashColorEnabled, c.threatHighlightColorEnabled = false, false
     module:Refresh()
     assert(uf.aggroFlash.vertexColor[1] == 1 and uf.aggroFlash.vertexColor[2] == 1

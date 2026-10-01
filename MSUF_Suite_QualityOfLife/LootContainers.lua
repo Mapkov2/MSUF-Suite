@@ -14,12 +14,7 @@ local function BagID(bag)
     return S.Finite(bag) and bag >= FIRST_BAG and bag <= LAST_BAG and bag == math.floor(bag)
 end
 
-local function ItemGUID(bag, slot)
-    local location = ItemLocation:CreateFromBagAndSlot(bag, slot)
-    if not S.Public(location) or not location then return nil end
-    local guid = C_Item.GetItemGUID(location)
-    return S.Public(guid) and type(guid) == "string" and guid ~= "" and guid or nil
-end
+local ItemGUID = S.QoLItemGUID
 
 local function ReadSlot(bag, slot)
     local info = C_Container.GetContainerItemInfo(bag, slot)

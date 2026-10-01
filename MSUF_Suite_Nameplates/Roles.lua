@@ -1,6 +1,9 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
-local Roles = { quests = {}, pendingQuests = {} }
+-- lieutenants: the lieutenant levels seen in this context. Lieutenants of
+-- one instance can differ in level, so it is a set; learnedLieutenant tells
+-- the plate owner that a new level arrived (Roles.Classify).
+local Roles = { quests = {}, pendingQuests = {}, lieutenants = {}, learnedLieutenant = false }
 private.Roles = Roles
 
 -- The first result of a unit query, or nil while it is restricted.
@@ -50,7 +53,8 @@ function Roles.RefreshContext()
             if S.Finite(maximum) then Roles.reference = maximum end
         end
     end
-    Roles.lieutenantLevel = nil
+    for level in pairs(Roles.lieutenants) do Roles.lieutenants[level] = nil end
+    Roles.learnedLieutenant = false
     Roles.contextKnown = true
     return not known or wasAllowed ~= Roles.allowed or wasInstanced ~= Roles.instanced
         or wasTank ~= Roles.tank or wasGrouped ~= Roles.grouped or wasReference ~= Roles.reference
@@ -152,16 +156,22 @@ end
 
 -- The unit's type role (Boss, Miniboss, Trivial, Caster, Melee) or nil.
 -- Level, classification and power display change it; threat never does.
+-- An elite one level above a lieutenant seen in this context is a boss; a
+-- newly seen lieutenant level sets learnedLieutenant, so the plates
+-- classified before it are classified again.
 function Roles.Classify(unit, classification)
     if Read(UnitIsBossMob, unit) == true or classification == "worldboss" then return "Boss" end
     if classification == "elite" or classification == "rare" or classification == "rareelite" then
         local level, reference = Level(unit), Roles.reference
         if Read(UnitIsLieutenant, unit) == true or (level and reference and level == reference + 1) then
-            Roles.lieutenantLevel = level
+            if level and not Roles.lieutenants[level] then
+                Roles.lieutenants[level] = true
+                Roles.learnedLieutenant = true
+            end
             return "Miniboss"
         end
         if level == -1 or (level and reference and level == reference + 2)
-            or (level and Roles.lieutenantLevel and level == Roles.lieutenantLevel + 1) then return "Boss" end
+            or (level and Roles.lieutenants[level - 1]) then return "Boss" end
         if not Roles.instanced then return "Miniboss" end
     end
     if classification == "trivial" or classification == "minus" or Read(UnitIsTrivial, unit) == true then

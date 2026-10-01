@@ -53,6 +53,11 @@ local function OpenMenu(button)
     end)
 end
 
+-- OnLeave hides the shared tooltip only while this frame still owns it.
+local function LeaveTooltip(owner)
+    if GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
+end
+
 local function Create(self)
     if self.button then return end
     local button = S.CreateFrame("Button", nil, UIParent)
@@ -78,7 +83,7 @@ local function Create(self)
         GameTooltip:SetText(S.Text("Expansion shortcuts"))
         GameTooltip:Show()
     end)
-    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    button:SetScript("OnLeave", LeaveTooltip)
     button:Hide()
     self.button, self.panel, self.border, self.glyph = button, panel, border, glyph
 end

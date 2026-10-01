@@ -9,20 +9,12 @@ local MAX_TOASTS = 3
 local POPUP_SECONDS = 5
 local BATTLE_PET_CLASS = 17 -- upstream/live Enum.ItemClass.Battlepet
 
-local function ParseIDs(value)
-    local ids = {}
-    if type(value) ~= "string" then return ids end
-    local count = 0
-    for token in value:gmatch("[^,%s;]+") do
-        local id = tonumber(token)
-        if S.Finite(id) and id > 0 and id == math.floor(id) and id < 10000000
-            and not ids[id] then
-            ids[id] = true
-            count = count + 1
-            if count >= 100 then break end
-        end
-    end
-    return ids
+-- At most this many item IDs of the chosen list count (itemIDs).
+local MAX_IDS = 100
+
+-- OnLeave hides the shared tooltip only while this frame still owns it.
+local function LeaveTooltip(frame)
+    if GameTooltip:IsOwned(frame) then GameTooltip:Hide() end
 end
 
 local function MakeToast(index)
@@ -58,7 +50,7 @@ local function MakeToast(index)
         GameTooltip:SetHyperlink(self.link)
         GameTooltip:Show()
     end)
-    frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    frame:SetScript("OnLeave", LeaveTooltip)
     frame:Hide()
     return frame
 end
@@ -132,12 +124,12 @@ end
 
 function M:Enable()
     self.generation = (self.generation or 0) + 1
-    self.ids = ParseIDs(self.config.itemIDs)
+    self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
     self.context:Event("SHOW_LOOT_TOAST", LootToast)
 end
 
 function M:Refresh()
-    self.ids = ParseIDs(self.config.itemIDs)
+    self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
     local style = S.QoLStyle(self.config)
     for _, frame in ipairs(self.toasts) do
         S.QoLColor(frame.bg, style.background, .94)

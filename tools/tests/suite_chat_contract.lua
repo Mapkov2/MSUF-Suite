@@ -166,6 +166,7 @@ Constants = { ChatFrameConstants = { MaxChatWindows = 1 } }
 GameTooltip = Frame("GameTooltip")
 GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
+function GameTooltip:IsOwned(frame) return self.owner == frame end
 local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
@@ -472,6 +473,8 @@ assert(sidebar.copyButton.points[1][4] == copyX + 18
 sidebar.copyButton.scripts.OnEnter(sidebar.copyButton)
 assert(GameTooltip.owner == sidebar.copyButton and GameTooltip.text == "Copy a recent chat message"
     and GameTooltip.shown, "the Copy button did not explain itself")
+sidebar.buttons[2].button.scripts.OnLeave(sidebar.buttons[2].button)
+assert(GameTooltip.shown, "leaving another button hid the Copy button's tooltip")
 sidebar.copyButton.scripts.OnLeave(sidebar.copyButton)
 assert(not GameTooltip.shown, "leaving the Copy button kept its tooltip")
 sidebar.copyButton:Click("LeftButton")

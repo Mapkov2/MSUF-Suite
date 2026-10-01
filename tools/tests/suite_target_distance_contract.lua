@@ -168,6 +168,24 @@ assert(lookups == beforeLookups, "format and attachment edits must reuse discove
 Fire("SPELLS_CHANGED"); Fire("SPELLS_CHANGED"); Fire("PLAYER_SPECIALIZATION_CHANGED", "player")
 assert(#deferred == 1 and lookups == beforeLookups, "spellbook bursts must coalesce until the next frame")
 Flush(); assert(lookups == beforeLookups + #spells and subscriptions[1], "rediscovery dropped the probes")
+-- SPELLS_CHANGED also fires for spell overrides and procs: an unchanged
+-- spellbook layout keeps the probes; a changed one, a talent commit or a
+-- learned spell finds them again.
+beforeLookups = lookups
+for _ = 1, 5 do Fire("SPELLS_CHANGED") end
+assert(#deferred == 0 and lookups == beforeLookups, "an unchanged spellbook was scanned again")
+spells[8] = { spellID = 8, minRange = 0, maxRange = 25, harmful = true }
+Fire("SPELLS_CHANGED")
+assert(#deferred == 1, "a changed spellbook layout was not scanned again")
+Flush(); assert(lookups == beforeLookups + #spells, "the changed spellbook was not scanned")
+spells[8] = nil
+Fire("SPELLS_CHANGED"); Flush()
+for _, event in ipairs({ "TRAIT_CONFIG_UPDATED", "LEARNED_SPELL_IN_SKILL_LINE" }) do
+    beforeLookups = lookups
+    Fire(event, 12345)
+    assert(#deferred == 1, event .. " did not find the probes again")
+    Flush(); assert(lookups == beforeLookups + #spells, event .. " did not scan the spellbook")
+end
 target = false; Fire("PLAYER_TARGET_CHANGED")
 assert(not module.host.shown and not next(subscriptions) and not module.context.events.SPELL_RANGE_CHECK_UPDATE)
 S.editMode = true; module:Refresh()
@@ -176,7 +194,7 @@ S.editMode, target, enemy = false, true, true
 Fire("PLAYER_ENTERING_WORLD", true, false)
 Flush()
 assert(subscriptions[1], "world-entry boolean payload must not be mistaken for a unit token")
-Fire("SPELLS_CHANGED"); beforeLookups = lookups
+Fire("TRAIT_CONFIG_UPDATED", 12345); beforeLookups = lookups
 module:Disable(); Flush()
 assert(not module.host.shown and not next(subscriptions))
 assert(lookups == beforeLookups, "disabled owners must cancel pending discovery")

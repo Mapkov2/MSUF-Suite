@@ -147,6 +147,9 @@ local function Frame(id, name)
             end
         end
     end
+    -- These windows never wrap their 128 lines, so storage order is the
+    -- display order and the newest line (index 1, the front) is stored last.
+    frame.historyBuffer = { CalculateElementIndex = function(_, index) return #frame.lines - index + 1 end }
     function frame:HookScript(script) error("chat message tools hooked the " .. script .. " script") end
     function frame:GetAlpha() return self.alpha end
     function frame:SetAlpha(alpha) self.alpha = alpha end
@@ -390,6 +393,97 @@ for i = 41, 200 do Quiet(restored, texts[i]) end
 local grown = collectgarbage("count") - before
 collectgarbage("restart")
 assert(grown < 1, "the history and fade path allocated per line (" .. grown .. " KB)")
+
+-- A full window wraps: Blizzard's CircularBuffer (CircularBuffer.lua)
+-- behind ScrollingMessageFrame's AddMessage and TransformMessages
+-- (ScrollingMessageFrame.lua). AddMessage pushes to the front, TransformIf
+-- visits every stored entry in storage order. Only the newest entry may be
+-- rewritten, and a formatted line costs the hook a fixed budget.
+do
+    local EMPTY = {}
+    local function NativeWindow(id, maxLines)
+        local buffer = { elements = {}, head = 0, max = maxLines }
+        function buffer:CalculateElementIndex(index)
+            local globalIndex = self.head - index + 1
+            if globalIndex == 0 then return self.max end
+            return (globalIndex - 1) % self.max + 1
+        end
+        local window = { id = id, historyBuffer = buffer, transforms = 0 }
+        function window:GetName() return "ChatFrame" .. self.id end
+        function window:GetID() return self.id end
+        function window:GetMaxLines() return buffer.max end
+        function window:GetNumMessages() return #buffer.elements end
+        function window:BackFillMessage() error("an empty saved ring replayed lines") end
+        function window:AddMessage(text, r, g, b, ...)
+            buffer.head = buffer.head + 1
+            local insert = buffer.head
+            local count = select("#", ...)
+            buffer.elements[insert] = { message = text, r = r, g = g, b = b,
+                extraData = count > 0 and { n = count, ... } or nil }
+            buffer.head = insert % buffer.max
+            for _, callback in ipairs(self.securePostHooks or EMPTY) do callback(self, text, r, g, b, ...) end
+        end
+        function window:TransformMessages(predicate, transform)
+            self.transforms = self.transforms + 1
+            for i, entry in ipairs(buffer.elements) do
+                local extra = entry.extraData or EMPTY
+                if predicate(entry.message, entry.r, entry.g, entry.b, unpack(extra, 1, extra.n or 0)) then
+                    local values = { transform(entry.message, entry.r, entry.g, entry.b, unpack(extra, 1, extra.n or 0)) }
+                    buffer.elements[i] = { message = values[1], r = values[2], g = values[3], b = values[4] }
+                end
+            end
+        end
+        -- Display order: 1 is the newest line.
+        function window:Line(index) return buffer.elements[buffer:CalculateElementIndex(index)].message end
+        return window
+    end
+    config.allTimestamps, config.saveHistory, config.idleSeconds = true, false, 0
+    C.MessagesRefresh(M)
+    local window = NativeWindow(6, 128)
+    window:AddMessage("hello", 1, 1, 1)
+    C.ApplyMessages(M, window)
+    for i = 1, 126 do window:AddMessage("line " .. i, 1, 1, 1) end
+    window:AddMessage("hello", 1, 1, 1)
+    eq(window:Line(1), "[12:34] hello", "the newest line was not stamped")
+    eq(window:Line(128), "hello", "an older line with the same text was rewritten")
+    eq(window:Line(2), "[12:34] line 126", "the line before the newest lost its stamp")
+    for i = 127, 140 do window:AddMessage("line " .. i, 1, 1, 1) end
+    eq(window:Line(1), "[12:34] line 140", "the newest line of a wrapped window was not stamped")
+    for index = 1, 128 do
+        assert(window:Line(index):find("[12:34] ", 1, true) == 1, "a line of the wrapped window was not stamped once")
+    end
+    -- Another hook that adds its own line first: the raw line is found anyway.
+    local echoing = false
+    table.insert(window.securePostHooks, 1, function(frame, text)
+        if echoing or text ~= "ping" then return end
+        echoing = true
+        frame:AddMessage("pong", 1, 1, 1)
+        echoing = false
+    end)
+    window:AddMessage("ping", 1, 1, 1)
+    eq(window:Line(1), "[12:34] pong", "the other hook's line was not stamped")
+    eq(window:Line(2), "[12:34] ping", "a line pushed past the front by another hook was not stamped")
+    table.remove(window.securePostHooks, 1)
+    -- Budget: Lua VM instructions of one stamped line in a full window,
+    -- this window model included (GC and hooks aside, deterministic on Lua
+    -- 5.1). 2026-10-01: 4534 when every visit read the raw text, 3548 with
+    -- the newest-slot predicate; +2 % headroom.
+    local CHAT_LINE_BUDGET = 3620
+    local count = 0
+    local function Instructions(fn)
+        count = 0
+        debug.sethook(function() count = count + 1 end, "", 1)
+        fn()
+        debug.sethook()
+        return count
+    end
+    local used = Instructions(function() window:AddMessage("budget line", 1, 1, 1) end)
+    eq(window:Line(1), "[12:34] budget line", "the budget line was not stamped")
+    print("chat stamped line in a full 128-line window: " .. used .. " instructions")
+    assert(used <= CHAT_LINE_BUDGET, "a stamped line cost " .. used .. " instructions (budget " .. CHAT_LINE_BUDGET .. ")")
+    config.allTimestamps, config.saveHistory, config.idleSeconds = false, true, 5
+    C.MessagesRefresh(M)
+end
 
 C.ClearHistory()
 eq(history.count, 0, "clear saved content")

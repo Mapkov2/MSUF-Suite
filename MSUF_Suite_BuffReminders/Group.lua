@@ -94,9 +94,16 @@ end
 
 -- Whether a member has one of the auras: true, false, or nil while that is
 -- unknown. The lookups return nothing instead of raising while aura data is
--- restricted, which R.AurasRestricted reports.
+-- restricted, which R.AurasRestricted reports. A member that is offline,
+-- out of sight or dead cannot be read: the group buff skips it (nil), and
+-- for the player's own Soulstone or Beacon it holds none (false), so one
+-- such raid member does not silence that notice for everyone.
 local function Present(unit, aliases, own, ranked)
-    if not Eligible(unit) or R.AurasRestricted() then return nil end
+    if R.AurasRestricted() then return nil end
+    if not Eligible(unit) then
+        if own then return false end
+        return nil
+    end
     for i = 1, #aliases do
         local known, data = true, nil
         if ranked or own then known, data = R.RankAura(unit, aliases[i], own)
@@ -172,6 +179,34 @@ function R.RefreshGroup(self, changedUnit)
     end
     Clear(states)
     for unit in pairs(self.groupUnits) do states[unit] = Present(unit, buff.auras, false, ranked) end
+end
+
+-- The advance warning (remindBeforeMinutes) of the group buff entry follows
+-- the player's own copy, as it does for the class buff without the group
+-- option; the member count alone has no expiration. entry.own is the
+-- player's aura record, kept apart so the group presence does not decide
+-- which aura deltas need a fresh lookup.
+function R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo)
+    if not self.config.classBuff then
+        entry.expiresAt, entry.totalDuration = nil, nil
+        return
+    end
+    local own = entry.own
+    if not own then
+        own = {}
+        entry.own = own
+    end
+    if own.aura ~= entry.aura or own.aliases ~= entry.aliases or own.ranked ~= entry.ranked then
+        own.aura, own.aliases, own.ranked, own.present = entry.aura, entry.aliases, entry.ranked, nil
+    end
+    if fullRefresh or R.AuraChangeAffects(own, updateInfo) then
+        own.present, own.auraInstanceID, own.expiresAt, own.instanceIDs, own.totalDuration = R.AuraPresent(own)
+    end
+    if own.present == true then
+        entry.expiresAt, entry.totalDuration = own.expiresAt, own.totalDuration
+    else
+        entry.expiresAt, entry.totalDuration = nil, nil
+    end
 end
 
 function R.GroupPresent(self, entry)

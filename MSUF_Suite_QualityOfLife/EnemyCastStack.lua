@@ -257,11 +257,27 @@ local function PaintMarker(self, entry)
     marker:Show()
 end
 
+-- The cast duration rule (shared with Nameplates/CastTime.lua): the duration
+-- object may itself be secret (UnitCastingDuration: SecretReturns,
+-- UnitDocumentation), and both duration sinks take secret arguments only
+-- from untainted code (SecretArguments = "AllowedWhenUntainted":
+-- StatusBar:SetTimerDuration, DurationTextBinding:SetDuration). A public
+-- duration drives the bar and the time text; a secret one keeps the cast
+-- listed as a full bar without a timer. A public nil means no such cast.
 local function PaintTimer(entry)
-    local direction = Enum.StatusBarTimerDirection
-    entry.row:SetTimerDuration(entry.duration, Enum.StatusBarInterpolation.Immediate,
-        entry.kind == 2 and direction.RemainingTime or direction.ElapsedTime)
-    entry.row.binding:SetDuration(entry.duration)
+    local row, duration = entry.row, entry.duration
+    local timed = Public(duration)
+    if timed then
+        local direction = Enum.StatusBarTimerDirection
+        row:SetTimerDuration(duration, Enum.StatusBarInterpolation.Immediate,
+            entry.kind == 2 and direction.RemainingTime or direction.ElapsedTime)
+        row.binding:SetDuration(duration)
+    else
+        row:SetMinMaxValues(0, 1)
+        row:SetValue(1)
+        row.time:SetText("")
+    end
+    row.binding:SetEnabled(timed)
 end
 
 -- Warm paint: text, texture, color, timer and alpha of one cast.
@@ -272,7 +288,6 @@ local function Paint(self, entry)
     if c.targetLine then row.target:SetText(UnitSpellTargetName(entry.unit)) end
     PaintColor(self, entry)
     PaintTimer(entry)
-    row.binding:SetEnabled(true)
     entry.dim = c.dimOutOfRange and OutOfRange(self, entry.unit) or false
     PaintAlpha(self, entry)
     PaintStripe(self, entry)

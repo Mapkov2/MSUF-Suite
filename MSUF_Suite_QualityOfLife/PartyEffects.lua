@@ -178,14 +178,18 @@ end
 
 -- A group member's Bloodlust reaches you as its buff. Restricted auras carry
 -- secret spell IDs and are skipped; full updates (login, zoning) are not new.
+-- Your own or your pet's Bloodlust already played from its cast while that
+-- trigger is on, so its buff does not play the banner a second time.
 local function OnAura(self, _, _, info)
     if type(info) ~= "table" or info.isFullUpdate == true then return end
     local added = info.addedAuras
     if type(added) ~= "table" then return end
     for i = 1, #added do
-        local spell = added[i].spellId
+        local aura = added[i]
+        local spell = aura.spellId
         if S.Finite(spell) and LUST[spell] then
-            self:Play(LustName(spell))
+            local own = aura.isFromPlayerOrPlayerPet
+            if not (self.config.onLust and S.Public(own) and own == true) then self:Play(LustName(spell)) end
             return
         end
     end

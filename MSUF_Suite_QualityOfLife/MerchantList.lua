@@ -6,7 +6,7 @@ local NS, S = P.NS, P.Suite
 -- costly purchase themselves. Blizzard's offer frames and page controls stay
 -- where they are, faded out under the list (Context:HideControl, never
 -- Hide()), so the buyback tab and a stopped module get them back unchanged.
-local M = { rows = {}, requested = {}, offset = 0 }
+local M = { rows = {}, requests = S.QoLItemRequests(), offset = 0 }
 -- MerchantFrame.xml: offers start 69 below the top, the page buttons sit
 -- centred 96 above the bottom; the list covers both.
 local LIST_TOP, LIST_WIDTH, LIST_HEIGHT = -64, 316, 300
@@ -266,6 +266,12 @@ local function RowEnter(row)
     SetCursor(CanAffordMerchantItem(row.index) == false and "BUY_ERROR_CURSOR" or "BUY_CURSOR")
 end
 
+-- OnLeave hides the shared tooltip only while this row still owns it.
+local function RowLeave(row)
+    if GameTooltip:IsOwned(row) then GameTooltip:Hide() end
+    ResetCursor()
+end
+
 local function Text(parent, size, justify)
     local text = S.CreateFontString(parent, nil, "OVERLAY")
     S.SetFont(text, nil, size, "OUTLINE")
@@ -309,7 +315,7 @@ local function NewRow(panel)
     row:SetScript("OnDragStart", RowDrag)
     row:SetScript("OnReceiveDrag", SellCursorItem)
     row:SetScript("OnEnter", RowEnter)
-    row:SetScript("OnLeave", GameTooltip_HideResetCursor)
+    row:SetScript("OnLeave", RowLeave)
     return row
 end
 
@@ -383,21 +389,10 @@ end
 
 -- Item data that arrives in one frame repaints the list once.
 local function ItemLoaded(self, _, itemID)
-    if self.requested[itemID] ~= true then return end
-    self.requested[itemID] = "done"
+    if not self.requests:Arrived(itemID) then return end
     if self.pending then return end
     self.pending = true
     C_Timer.After(0, Repaint)
-end
-
--- Asks the client once per merchant visit; true while the answer is open.
-local function Request(self, itemID)
-    if not S.Finite(itemID) or itemID <= 0 then return false end
-    if not self.requested[itemID] then
-        self.requested[itemID] = true
-        C_Item.RequestLoadItemDataByID(itemID)
-    end
-    return self.requested[itemID] == true
 end
 
 local function Scroll(offset)
@@ -492,7 +487,8 @@ function M:Paint()
         local info = i <= visible and index <= count and C_MerchantFrame.GetItemInfo(index)
         if S.Public(info) and type(info) == "table" then
             local loading = Fill(row, index, info)
-            if loading and Request(self, loading) then waiting = true end
+            -- Asked once per merchant visit; true while the answer is open.
+            if loading and self.requests:Request(loading) then waiting = true end
         else
             row.index, row.link = nil, nil
             row:Hide()
@@ -508,7 +504,7 @@ end
 
 local function Closed(self)
     self.offset, self.pending = 0, nil
-    wipe(self.requested)
+    self.requests:Reset()
     self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
     HidePopups()
     Leave(self)

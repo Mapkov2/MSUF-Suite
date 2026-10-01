@@ -158,6 +158,7 @@ local function RunAfter()
 end
 GameTooltip = Widget()
 function GameTooltip:SetOwner(owner) self.owner, self.spell, self.item = owner, nil, nil end
+function GameTooltip:IsOwned(frame) return self.owner == frame end
 function GameTooltip:SetSpellByID(id) self.spell = id end
 function GameTooltip:SetItemByID(id) self.item = id end
 function GameTooltip:AddLine(value) self.extraLine = value end
@@ -259,6 +260,8 @@ assert(module.mask == 15 and module.buttons[4].shown, "missing buffs did not sho
 module.buttons[1]:OnEnter()
 assert(GameTooltip.owner == module.buttons[1] and GameTooltip.spell == 1459 and GameTooltip.shown,
     "a spell reminder did not show its spell tooltip")
+module.buttons[2]:OnLeave()
+assert(GameTooltip.shown, "leaving another reminder hid a tooltip it does not own")
 module.buttons[1]:OnLeave()
 assert(not GameTooltip.shown, "leaving a reminder kept its tooltip")
 module.buttons[3]:OnEnter()
@@ -948,8 +951,17 @@ do
     assert(owner.soulstoneMissing,"another Warlock's Soulstone incorrectly satisfied own reminder")
     stoneSource="player"; BR.RefreshGroup(owner,"party1")
     assert(owner.soulstoneMissing==false,"own Soulstone on party member was not detected")
+    -- A member out of sight (or offline, or dead) cannot hold a readable
+    -- Soulstone: in a raid one such member must not silence the notice.
     stoneSource=nil; invisible.party2=true; BR.RefreshGroup(owner)
-    assert(owner.soulstoneMissing==nil,"unknown group member must not imply missing Soulstone")
+    assert(owner.soulstoneMissing==true,"an out-of-sight member silenced the missing-Soulstone notice")
+    stoneSource="player"; BR.RefreshGroup(owner,"party1")
+    assert(owner.soulstoneMissing==false,"own Soulstone beside an out-of-sight member was not detected")
+    local restrictedGroup=C_Secrets.ShouldAurasBeSecret
+    C_Secrets.ShouldAurasBeSecret=function() return true end
+    stoneSource=nil; BR.RefreshGroup(owner)
+    assert(owner.soulstoneMissing==nil,"restricted aura data must not imply a missing Soulstone")
+    C_Secrets.ShouldAurasBeSecret=restrictedGroup
 end
 do
     local owner={config={petPassiveWarning=true,healthstoneFromWarlock=true},groupClasses={WARLOCK=true},host=Widget()}
@@ -1274,6 +1286,77 @@ do
     module:Disable()
     assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.GROUP_ROSTER_UPDATE,
         "disable kept member events")
+end
+
+-- With the group option on, the class buff entry counts the members; the
+-- advance warning (remindBeforeMinutes) still follows the player's own copy.
+do
+    local roster = { player = "MAGE", party1 = "PRIEST" }
+    UnitClass = function(unit) return roster[unit], roster[unit] end
+    knownSpell = function(id) return id == 1459 end
+    IsInRaid = function() return false end
+    GetNumSubgroupMembers = function() return 1 end
+    UnitIsUnit = function(unit, other) return unit == other end
+    UnitExists = function(unit) return roster[unit] ~= nil end
+    UnitIsConnected = function() return true end
+    UnitIsVisible = function() return true end
+    UnitIsDeadOrGhost = function() return false end
+    C_Secrets.ShouldAurasBeSecret = function() return false end
+    C_UnitAuras.GetUnitAuraBySpellID = function() return {} end
+    NS.Client.isForever, NS.Client.modernEquipment = false, false
+    afterQueue, scheduled = {}, {}
+    now = 5000
+    auras[1459] = { spellId = 1459, auraInstanceID = 950, expirationTime = now + 120, duration = 3600 }
+    module.config = { classBuff=true, groupBuff=true, spellIDs="", items="", mainHandItem="", offHandItem="",
+        instancesOnly=false, hideMounted=true, size=38, spacing=5, columns=6, borderColor="e8b855",
+        point=1, x=0, y=0, remindBeforeMinutes=5 }
+    module.active = true
+    module:Enable()
+    RunAfter()
+    local entry = module.entries[1]
+    assert(entry and entry.group and entry.present == true and entry.missingCount == 0,
+        "the group buff entry did not see every member buffed")
+    assert(module.mask % (entry.bit * 2) >= entry.bit and entry.expiresAt == now + 120,
+        "the group buff ignored the advance warning of the player's own buff")
+    auras[1459] = { spellId = 1459, auraInstanceID = 950, expirationTime = now + 1800, duration = 3600 }
+    eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { updatedAuraInstanceIDs = { 950 } })
+    assert(module.mask == 0 and module.thresholdAt == now + 1500,
+        "a refreshed own buff did not move the group buff's advance warning")
+    now = now + 1500
+    FireNext()
+    assert(module.mask % (entry.bit * 2) >= entry.bit, "the group buff's advance warning did not fire")
+    module.config.classBuff = false
+    module:Refresh()
+    RunAfter()
+    assert(module.mask == 0 and module.entries[1].expiresAt == nil,
+        "without the class buff option the player's own buff still warned")
+    module:Disable()
+    auras[1459] = nil
+end
+
+-- Consumables used in combat: no bag event is followed there, so leaving
+-- combat reads the item counts once more.
+do
+    combat = false
+    NS.Client.isForever, NS.Client.modernEquipment = false, false
+    UnitClass = function() return "Warrior", "WARRIOR" end
+    inventory = { [123] = 4 }
+    module.config = { classBuff=false, spellIDs="", items="123:888", mainHandItem="", offHandItem="",
+        instancesOnly=false, hideMounted=true, size=38, spacing=5, columns=6, borderColor="e8b855",
+        point=1, x=0, y=0, remindBeforeMinutes=0 }
+    module.active = true
+    module:Enable()
+    local button = module.buttons[1]
+    assert(button.count.text == "4", "the item count was not shown")
+    eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
+    combat = true
+    inventory[123] = 1
+    assert(not eventFrame.events.BAG_UPDATE_DELAYED, "bag events were followed in combat")
+    combat = false
+    eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+    assert(button.count.text == "1", "the item count stayed stale after combat: " .. tostring(button.count.text))
+    module:Disable()
+    inventory = nil
 end
 
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip

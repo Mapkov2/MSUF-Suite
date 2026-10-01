@@ -80,7 +80,8 @@ end
 function Threat.Refresh()
     if hooked or not owner or not owner.active or owner.config.look == 2
         or not owner.config.enemy or not owner.config.threatHighlightColorEnabled then return end
-    hooksecurefunc(NamePlateUnitFrameMixin, "UpdateAggroHighlight", function(uf)
+    -- Skin.lua's plate hooks also reach the unit frames that already exist.
+    private.HookPlates("UpdateAggroHighlight", function(uf)
         if Eligible(uf) and owner.config.threatHighlightColorEnabled then TintHighlight(uf) end
     end)
     hooked = true
