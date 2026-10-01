@@ -93,4 +93,18 @@ do
     Check(S.states.minimap.error == nil, "a raising normalization kept the profile listener from starting")
 end
 
+------------------------------------------------------------------ shared core
+local Suite = LoadCore()
+local S, IO = Suite.Suite, Suite.ProfileIO
+
+------------------------------------------------------------------ S1.4
+-- An imported revision counts at most the migrations this build knows.
+for _, claimed in ipairs({ 1e9, math.huge, S.MigrationRevision + 1 }) do
+    local prepared = assert(IO.PrepareTable({ suite = { schema = 1, revision = claimed, modules = {} } }, true))
+    Check(prepared.suite.revision == S.MigrationRevision,
+        "an imported revision of " .. tostring(claimed) .. " stayed " .. tostring(prepared.suite.revision))
+end
+local older = assert(IO.PrepareTable({ suite = { schema = 1, revision = 3, modules = {} } }, true))
+Check(older.suite.revision == S.MigrationRevision, "a valid older revision did not migrate on import")
+
 print("Suite core integrity: " .. checks .. " checks passed")
