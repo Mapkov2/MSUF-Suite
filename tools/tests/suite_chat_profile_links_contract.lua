@@ -42,6 +42,7 @@ local S = {
 UIParent = Widget("Frame")
 Support.QoLStyleFixture(root, S)
 GetRealmName = function() return "Tarren Mill" end
+GetNormalizedRealmName = function() return "TarrenMill" end
 GetCurrentRegionName = function() return "EU" end
 Menu = { ModifyMenu = function(tag, callback)
     assert(not callbacks[tag], "menu hook registered twice")
@@ -89,6 +90,21 @@ entries["Copy Warcraft Logs URL"]()
 local encodedTail = "/dun-modr/Bl%C3%BBm"
 assert(module.dialog.edit.text:sub(-#encodedTail) == encodedTail,
     "UTF-8 name was not URL encoded")
+-- Apostrophes go as whole sequences: a byte class would also cut the second
+-- byte of Cyrillic "р" (D1 80). Spaces of the player's own realm come from
+-- its display name, since lowercase words cannot be guessed.
+module.config.raiderIO = true
+entries = Popup({ name = "Pmi", server = "Ревущий фьорд’s" })
+entries["Copy Raider.IO URL"]()
+local cyrillicTail = "/%D0%A0%D0%B5%D0%B2%D1%83%D1%89%D0%B8%D0%B9-%D1%84%D1%8C%D0%BE%D1%80%D0%B4s/Pmi"
+assert(module.dialog.edit.text:sub(-#cyrillicTail) == cyrillicTail,
+    "the realm slug cut UTF-8 characters or kept the typographic apostrophe: " .. module.dialog.edit.text)
+GetRealmName = function() return "Der Rat von Dalaran" end
+GetNormalizedRealmName = function() return "DerRatvonDalaran" end
+entries = Popup({ name = "Pmi-DerRatvonDalaran" })
+entries["Copy Raider.IO URL"]()
+assert(module.dialog.edit.text == "https://raider.io/characters/eu/der-rat-von-dalaran/Pmi",
+    "the player's own realm lost the words its display name keeps")
 entries = Popup({ name = "secret", server = "Realm" })
 assert(not entries.divider, "secret character name leaked to the context menu")
 module.active = false
