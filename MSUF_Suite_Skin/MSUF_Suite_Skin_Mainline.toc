@@ -19,6 +19,7 @@ Locales\enUS.lua
 Locales\deDE.lua
 Core\Defaults.lua
 Core\Database.lua
+Core\DatabaseProfiles.lua
 Core\SharedMedia.lua
 Core\ProfileIO.lua
 Core\Safety.lua

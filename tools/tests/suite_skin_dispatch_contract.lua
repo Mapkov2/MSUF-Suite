@@ -289,7 +289,7 @@ local engine = {
     FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" },
     IsCombatLocked = function() return false end,
 }
-for _, file in ipairs({ "Core/Defaults.lua", "Core/Database.lua", "Core/Safety.lua",
+for _, file in ipairs({ "Core/Defaults.lua", "Core/Database.lua", "Core/DatabaseProfiles.lua", "Core/Safety.lua",
     "Core/Registry.lua", "Core/Theme.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", engine)
 end

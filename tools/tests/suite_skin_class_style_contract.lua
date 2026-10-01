@@ -44,6 +44,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     }
     Load("Defaults", ns)
     Load("Database", ns)
+    Load("DatabaseProfiles", ns)
     Load("Theme", ns)
     ns.DB = ns.CopyValue(ns.Defaults)
     local theme = ns.Theme

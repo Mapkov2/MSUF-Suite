@@ -66,7 +66,7 @@ local NS = {
     Adapters = { ApplyAll = Noop },
     Registry = { RefreshAll = Noop, NotifyListeners = Noop, AddListener = Noop },
 }
-for _, file in ipairs({ "Defaults", "Database", "ProfileIO", "Safety" }) do
+for _, file in ipairs({ "Defaults", "Database", "DatabaseProfiles", "ProfileIO", "Safety" }) do
     Load("MSUF_Suite_Skin/Core/" .. file .. ".lua", NS)
 end
 local Database, IO = NS.Database, NS.ProfileIO

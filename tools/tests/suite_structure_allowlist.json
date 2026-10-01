@@ -1588,25 +1588,25 @@
    "symbol": "region.SetVertexColor"
   },
   {
-   "file": "MSUF_Suite_Skin/Core/Database.lua",
+   "file": "MSUF_Suite_Skin/Core/DatabaseProfiles.lua",
    "kind": "addon",
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
    "symbol": "decode (= MSUF_TryDecodeCompactString)"
   },
   {
-   "file": "MSUF_Suite_Skin/Core/Database.lua",
+   "file": "MSUF_Suite_Skin/Core/DatabaseProfiles.lua",
    "kind": "state",
    "reason": "Suite-owned saved variables: the skin addon can load before the Suite database is ready",
    "symbol": "suiteRoot (= MSUFSuiteDB)"
   },
   {
-   "file": "MSUF_Suite_Skin/Core/Database.lua",
+   "file": "MSUF_Suite_Skin/Core/DatabaseProfiles.lua",
    "kind": "state",
    "reason": "saved variables: nil until their addon has loaded them",
    "symbol": "stored (= MSUFSuiteSkinDB)"
   },
   {
-   "file": "MSUF_Suite_Skin/Core/Database.lua",
+   "file": "MSUF_Suite_Skin/Core/DatabaseProfiles.lua",
    "kind": "state",
    "reason": "saved variables: nil until their addon has loaded them",
    "symbol": "stored.profiles (= MSUFSuiteSkinDB)"

@@ -99,6 +99,7 @@ assert(initializations == 1 and notifications == 1,
 
 local early = { IsCombatLocked = function() return false end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Database.lua"))("MSUF_Suite_Skin", early)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DatabaseProfiles.lua"))("MSUF_Suite_Skin", early)
 local ok, reason = early.Database.CreateProfile("early", true)
 assert(ok == false and reason == "database-not-ready")
 ok, reason = early.Database.SetActiveProfile("early")
@@ -117,6 +118,7 @@ local fighting = {
 }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", fighting)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Database.lua"))("MSUF_Suite_Skin", fighting)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DatabaseProfiles.lua"))("MSUF_Suite_Skin", fighting)
 fighting.RootDB = { activeProfile = "Default", profiles = { Default = {}, Spare = {} } }
 fighting.DB = fighting.RootDB.profiles.Default
 locked = true
