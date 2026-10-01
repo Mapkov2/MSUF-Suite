@@ -199,9 +199,28 @@ local function ActiveSuite()
     return db and db.schema == 1 and db or nil
 end
 
+-- The catalog defaults only fill in, never get handed out: a profile that
+-- lacks a module's settings gets its own copy, and without an active profile
+-- readers see a copy too, so no setter can write into the shared defaults.
+local defaultsCopies = {}
 function S.Config(id)
+    local defaults = NS.Defaults.suite.modules[id]
     local db = ActiveSuite()
-    return db and db.modules and db.modules[id] or NS.Defaults.suite.modules[id]
+    local modules = db and db.modules
+    if modules then
+        local config = modules[id]
+        if config ~= nil or not defaults then return config end
+        config = NS.CopyValue(defaults)
+        modules[id] = config
+        return config
+    end
+    if not defaults then return nil end
+    local copy = defaultsCopies[id]
+    if not copy then
+        copy = NS.CopyValue(defaults)
+        defaultsCopies[id] = copy
+    end
+    return copy
 end
 
 -- Per-profile state a module keeps for itself (for example collapsed tracker

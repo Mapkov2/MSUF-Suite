@@ -205,4 +205,25 @@ do
     recording = false
 end
 
+------------------------------------------------------------------ S1.11
+-- The controller never hands out the shared catalog defaults: a write into
+-- the config it returns cannot change them.
+do
+    local defaults = Suite.Defaults.suite.modules.minimap
+    local size, enabled = defaults.size, defaults.enabled
+    local savedDB = Suite.DB
+    Suite.DB = nil
+    local config = S.Config("minimap")
+    Check(config.size == size, "without an active profile the defaults were not readable")
+    config.size, config.enabled = size + 7, not enabled
+    Check(defaults.size == size and defaults.enabled == enabled,
+        "a write without an active profile changed the shared defaults")
+    Suite.DB = savedDB
+    Suite.DB.suite.modules.minimap = nil
+    Check(S.Set("minimap", "size", size + 3) and Suite.DB.suite.modules.minimap.size == size + 3,
+        "a setting of a module the profile lacked was not stored in the profile")
+    Check(defaults.size == size, "a setter wrote into the shared defaults")
+    Check(S.Config("unknownModule") == nil, "an unknown module got settings")
+end
+
 print("Suite core integrity: " .. checks .. " checks passed")
