@@ -292,7 +292,12 @@ function P.OnLifecycle(kind, source, target)
         if original and not DB.GetProfile(target) then
             Suite.RootDB.profiles[target] = original
             Suite.RootDB.profiles[source] = nil
-            if DB.GetActiveProfileName() == source then DB.Activate(target) end
+            if DB.GetActiveProfileName() == source then
+                -- The active profile keeps its settings under the new name,
+                -- also when the activation below is refused.
+                Suite.RootDB.activeProfile = target
+                DB.Activate(target)
+            end
         end
         if skin then
             local old = skin.Database.GetProfile(source)

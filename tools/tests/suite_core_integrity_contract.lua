@@ -189,4 +189,20 @@ do
     overlay = false
 end
 
+------------------------------------------------------------------ S1.10
+-- Renaming the active profile while the switch is refused (MSUF is recording
+-- a variant) still names a profile that exists.
+do
+    local recording = true
+    MSUF_NS.ProfileVariants.IsRecording = function() return recording end
+    local active = DB.GetActiveProfileName()
+    local settings = Suite.DB
+    Check(P.OnLifecycle("rename", active, "Renamed") and DB.GetProfile("Renamed") == settings
+        and not DB.GetProfile(active), "the active profile was not renamed")
+    Check(DB.GetActiveProfileName() == "Renamed" and Suite.DB == settings,
+        "a refused switch left the renamed active profile pointing at its old name: "
+        .. tostring(DB.GetActiveProfileName()))
+    recording = false
+end
+
 print("Suite core integrity: " .. checks .. " checks passed")
