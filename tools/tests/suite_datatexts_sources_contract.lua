@@ -255,6 +255,23 @@ NS.IsCombatLocked = function() return true end
 X.PrepareHearths()
 assert(X.bindings[hearth].hearth and #stone.written == 0, "a hearth choice never writes attributes on a place")
 NS.IsCombatLocked = function() return false end
+-- A loot that leaves the owned Hearthstones unchanged keeps the choice:
+-- nothing is chosen or built again, and a random variant stays until it is
+-- used (Actions.lua) or lost.
+local rolls, random = 0, math.random
+math.random = function(...) rolls = rolls + 1; return random(...) end
+X.PrepareHearths()
+chosen, rolls = X.bindings[hearth].hearth, 0
+for _ = 1, 5 do X.Changed(M, "BAG_UPDATE_DELAYED"); X.Changed(M, "TOYS_UPDATED") end
+assert(X.bindings[hearth].hearth == chosen and rolls == 0, "a loot without a Hearthstone change chose again")
+itemQuantity = 0
+X.Changed(M, "BAG_UPDATE_DELAYED")
+local toy = X.bindings[hearth].hearth
+assert(toy and toy.id == 42 and toy.toy and rolls == 0, "a lost Hearthstone stayed the place's choice")
+itemQuantity = 1
+X.Changed(M, "BAG_UPDATE_DELAYED")
+assert(rolls == 1 and X.bindings[hearth].hearth ~= toy, "a regained Hearthstone was not offered again")
+math.random = random
 M.values, M.due = {}, {}
 local recycled = Button()
 local dynamicSources = {}

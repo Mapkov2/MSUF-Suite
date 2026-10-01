@@ -406,7 +406,7 @@ local function CombatEdge(self, event)
     -- A Hearthstone looted or learned in combat is offered right away.
     if Extra.hearthDirty then
         Extra.hearthDirty = nil
-        Extra.PrepareHearths()
+        Extra.HearthsMayHaveChanged()
     end
     Actions.Resume()
 end

@@ -336,7 +336,7 @@ function X.Changed(_, event)
         for kind in pairs(kinds) do Refresh(kind) end
     end
     if event == "BAG_UPDATE_DELAYED" and WantsCrestItems() then Refresh("crests") end
-    if (event == "BAG_UPDATE_DELAYED" or event == "TOYS_UPDATED") and ActiveKind("hearth") then X.PrepareHearths() end
+    if event == "BAG_UPDATE_DELAYED" or event == "TOYS_UPDATED" then X.HearthsMayHaveChanged() end
 end
 
 function X.WantedEvents(active, wanted)
@@ -418,9 +418,40 @@ function X.Rebind(module)
     end
 end
 
+------------------------------------------------------------------ hearthstones
+-- The configured Hearthstone IDs, parsed once per setting text, and which of
+-- them the player owned (as an item or a toy) when the places last chose.
+local HEARTH_CHOICES = 100
+local hearthText, hearthIDs, hearthOwned, hearthToys = nil, {}, {}, {}
+
+local function HearthIDs()
+    local text = owner.config.hearthItems or "6948"
+    if text == hearthText then return hearthIDs end
+    hearthText = text
+    for i = #hearthIDs, 1, -1 do hearthIDs[i], hearthOwned[i], hearthToys[i] = nil, nil, nil end
+    for value in text:gmatch("%d+") do hearthIDs[#hearthIDs + 1] = tonumber(value) end
+    return hearthIDs
+end
+
+-- Reads which configured Hearthstones the player owns; true when that
+-- differs from the last read.
+local function ReadHearths()
+    local ids, changed = HearthIDs(), false
+    for i = 1, #ids do
+        local id = ids[i]
+        local toy = PlayerHasToy(id) == true
+        local count = C_Item.GetItemCount(id, false, false, false)
+        local owned = toy or Number(count) and count > 0 or false
+        if hearthOwned[i] ~= owned or hearthToys[i] ~= toy then
+            hearthOwned[i], hearthToys[i], changed = owned, toy, true
+        end
+    end
+    return changed
+end
+
 -- Chooses the Hearthstone each Hearthstone place uses next (data only;
 -- Actions.lua hands it to the secure button out of combat). In combat the
--- overlay is hidden: only mark the choice stale; DataTexts.lua prepares it
+-- overlay is hidden: only mark the choice stale; DataTexts.lua checks it
 -- again at PLAYER_REGEN_ENABLED.
 function X.PrepareHearths()
     if not ActiveKind("hearth") then return end
@@ -428,13 +459,11 @@ function X.PrepareHearths()
         X.hearthDirty = true
         return
     end
+    ReadHearths()
     local choices = {}
-    for text in (owner.config.hearthItems or "6948"):gmatch("%d+") do
-        local id = tonumber(text)
-        local toy = PlayerHasToy(id) == true
-        local count = C_Item.GetItemCount(id, false, false, false)
-        if toy or Number(count) and count > 0 then choices[#choices + 1] = { id = id, toy = toy } end
-        if #choices == 100 then break end
+    for i = 1, #hearthIDs do
+        if hearthOwned[i] then choices[#choices + 1] = { id = hearthIDs[i], toy = hearthToys[i] } end
+        if #choices == HEARTH_CHOICES then break end
     end
     for key in pairs(owner.activeSources or {}) do
         local binding = X.bindings[key]
@@ -445,6 +474,19 @@ function X.PrepareHearths()
     end
     Refresh("hearth")
     P.DataTextActions.Refresh()
+end
+
+-- Bag and toy updates choose again only when the owned Hearthstones changed:
+-- a random variant stays until it is used (Actions.lua OverlayPostClick) or
+-- lost, and an unrelated loot builds nothing. The overlay is hidden in
+-- combat, so a combat update only marks the choice for PLAYER_REGEN_ENABLED.
+function X.HearthsMayHaveChanged()
+    if not ActiveKind("hearth") then return end
+    if NS.IsCombatLocked() then
+        X.hearthDirty = true
+        return
+    end
+    if ReadHearths() then X.PrepareHearths() end
 end
 
 ------------------------------------------------------------------ icons
