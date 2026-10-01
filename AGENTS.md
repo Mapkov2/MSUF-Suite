@@ -5,3 +5,4 @@
 - Work in this checkout directly. Do not create a second `MSUF-Suite-Private` copy or sync between Suite source and publication folders.
 - Preserve unrelated local changes and SavedVariables. Run `python tools/run_suite_tests.py` for Suite source changes; offline contracts do not prove live WoW behavior.
 - Commit, push, release, or build a new Perfy artifact only when the user explicitly requests that action.
+- Quality, cleanup and bug-fix work follows the local plan `../AGENTS_QUALITY.md` (next to this checkout, not part of the repo): rules, bug list, phases, exit criteria and status tracker.
