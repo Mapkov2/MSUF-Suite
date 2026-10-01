@@ -8,8 +8,9 @@ local C = P.CDM
 -- the button.
 --  * Look: every visual value of a container's buttons and the signature
 --    that changes exactly when a button needs restyling;
---  * Init (initializeFrame): builds every region of a new button, styles it
---    and binds last (bound regions are sealed);
+--  * Init (initializeFrame) and the batch: a group's ten pre-built buttons
+--    are collected and only the one Blizzard shows is built (Adopt: every
+--    region, styled, bound last; bound regions are sealed);
 --  * Style and ApplyEntry restyle a button and apply its per-spell choices
 --    (swipe, glows, stack text, countdown, text on top); Mutable says
 --    whether sealed buttons accept that now;
@@ -28,12 +29,11 @@ C.AuraButtons = B
 local CreateFrame = CreateFrame
 local IsCombatLocked = NS.IsCombatLocked
 local floor, max, min = math.floor, math.max, math.min
-local type, tonumber, next = type, tonumber, next
+local type, tonumber = type, tonumber
 local tconcat = table.concat
 local Public = S.Public
 local EMPTY = C.EMPTY
 
-local QUESTION = K.QUESTION_ICON
 local BAR_TEXTURE = K.BAR_TEXTURE
 local TEXT_DEFAULT = {}
 -- Init of a button whose group has no entry yet: the bar's choices.
@@ -561,11 +561,10 @@ local function Bind(rec, part, k)
     part.bound = true
 end
 
--- initializeFrame: runs once per button from Blizzard's frame provider
--- (possibly in combat when a group's pool grows). Builds and styles every
--- region as a descendant of the button, binds last (bound regions are
--- sealed), and keeps our state in our own table, never on the button.
-local function Init(rec, button, k)
+-- Builds and styles every region of a button as its descendant, binds last
+-- (bound regions are sealed) and keeps our state in our own table, never on
+-- the button. Its part joins rec.parts, the buttons restyles reach.
+local function Adopt(rec, button, k)
     local part = NewPart(rec, button, k)
     button:SetMouseClickEnabled(false)
     button:SetTooltipAnchorPoint("ANCHOR_BOTTOMRIGHT")
@@ -579,6 +578,107 @@ local function Init(rec, button, k)
     Bind(rec, part, k)
     local parts = rec.parts
     parts[#parts + 1] = part
+end
+
+------------------------------------------------------------------ batches
+-- AddAuraGroup pre-builds a batch of buttons (FrameCreationBatchSize, ten,
+-- Blizzard_CustomAuraContainer.lua) and runs initializeFrame for each
+-- before it returns. The group's frame provider hands out the newest free
+-- button (AcquireFrame takes the last of its available list; a released
+-- one goes back on top), so a one-frame entry group only ever shows the
+-- last button of its batch. While auras are plain (Quiet) the batch is
+-- collected and only that button is built; the others stay bare, each
+-- with one sensor. Should Blizzard show one of them after all, it is built
+-- a frame later, or once auras are plain again (A.FlushPending). While
+-- auras are secret the buttons seal on creation, so each is built in
+-- initializeFrame, like a button made outside a batch, and so is every
+-- batch of a container made because sealed buttons refused a restyle
+-- (rec.eager). A shown button that refuses right after its batch waits in
+-- rec.waiting; Finish reports the container unfinished meanwhile.
+local batch = {}
+local dormant = {} -- sensor of a bare button -> { rec, button, pos, sensor }
+local woken = {}   -- bare buttons Blizzard showed, waiting to be built
+local wakeArmed = false
+
+local function AdoptWoken()
+    wakeArmed = false
+    for i = #woken, 1, -1 do
+        local shell = woken[i]
+        if not (Quiet() and Open(shell.button)) then
+            -- Pending, so the end of combat or of a restriction comes back.
+            C.Auras.pending[shell.rec.slot] = true
+            return
+        end
+        woken[i] = nil
+        shell.sensor:SetScript("OnShow", nil)
+        Adopt(shell.rec, shell.button, shell.pos)
+    end
+end
+B.AdoptWoken = AdoptWoken
+
+local function Woke(sensor)
+    local shell = dormant[sensor]
+    if not shell then return end
+    dormant[sensor] = nil
+    woken[#woken + 1] = shell
+    if wakeArmed then return end
+    wakeArmed = true
+    C_Timer.After(0, AdoptWoken)
+end
+
+local function Dormant(rec, button, k)
+    local sensor = CreateFrame("Frame", nil, button)
+    dormant[sensor] = { rec = rec, button = button, pos = k, sensor = sensor }
+    sensor:SetScript("OnShow", Woke)
+end
+
+-- Around AddAuraGroup: true when the batch is collected (auras plain).
+function B.BeginBatch(rec)
+    for i = #batch, 1, -1 do batch[i] = nil end
+    if rec.eager or not Quiet() then return false end
+    rec.batch = batch
+    return true
+end
+function B.EndBatch(rec, k)
+    rec.batch = nil
+    local n = #batch
+    local shown = batch[n]
+    if shown and Open(shown) then
+        Adopt(rec, shown, k)
+    elseif shown then
+        local waiting = rec.waiting or {}
+        rec.waiting = waiting
+        waiting[#waiting + 1] = { rec = rec, button = shown, pos = k }
+    end
+    for i = 1, n - 1 do Dormant(rec, batch[i], k) end
+    for i = n, 1, -1 do batch[i] = nil end
+end
+-- Builds the shown buttons that refused right after their batch; false
+-- while one still refuses (the container then counts as refusing a
+-- restyle, Auras.Run).
+function B.Finish(rec)
+    local waiting = rec.waiting
+    if not waiting then return true end
+    for i = #waiting, 1, -1 do
+        local shell = waiting[i]
+        if not (Quiet() and Open(shell.button)) then return false end
+        waiting[i] = nil
+        Adopt(rec, shell.button, shell.pos)
+    end
+    rec.waiting = nil
+    return true
+end
+
+-- initializeFrame, from Blizzard's frame provider: inside a collected
+-- batch the button waits for EndBatch; otherwise it is built at once (a
+-- slot's one button, a batch made while auras are secret).
+local function Init(rec, button, k)
+    local list = rec.batch
+    if list then
+        list[#list + 1] = button
+        return
+    end
+    Adopt(rec, button, k)
 end
 
 B.TextOpts, B.Look, B.Hush, B.Quiet, B.Mutable = TextOpts, Look, Hush, Quiet, Mutable
