@@ -23,9 +23,12 @@ local BUDGETS = {
     { name = "sampled FPS tick", instructions = 3531, kilobytes = 2.90 },
     -- The account total (trackAltGold) also records this character's gold.
     { name = "gold with account total", instructions = 3168, kilobytes = 2.75, altGold = true },
+    -- A bar shown only below full health follows every player health event
+    -- (steady: the player stays injured).
+    { name = "injured-only health", instructions = 385, kilobytes = 0.15, injured = true },
 }
 
-local state = { money = 1234567, free = 8, durability = 80, fps = 80 }
+local state = { money = 1234567, free = 8, durability = 80, fps = 80, health = 1 }
 local W = H.New(root, "Mainline", { beforeModules = function(world)
     local G = world.G
     G.GetFramerate = function() return state.fps end
@@ -45,6 +48,12 @@ local W = H.New(root, "Mainline", { beforeModules = function(world)
     G.UnitGUID = function() return "Player-1" end
     G.UnitName = function() return "Alice" end
     G.GetRealmName = function() return "Realm" end
+    G.Enum = { LuaCurveType = { Step = 1 } }
+    G.C_CurveUtil = { CreateCurve = function()
+        return { SetType = function() end, AddPoint = function() end }
+    end }
+    -- The test returns the curve's result: 1 below full health, else 0.
+    G.UnitHealthPercent = function() return state.health end
 end })
 local S = W.S
 W.LoadAddon("MSUF_Suite_DataTexts")
@@ -90,11 +99,17 @@ local REPAINTS = {
     end,
 }
 REPAINTS["gold with account total"] = REPAINTS.gold
+-- Below full health: each health event repaints the shown bar.
+REPAINTS["injured-only health"] = function()
+    state.health = 1
+    W.Event("UNIT_HEALTH", "player")
+end
 
 local summary, failures = {}, {}
 for _, case in ipairs(BUDGETS) do
     local repaint = REPAINTS[case.name]
     if case.altGold then assert(S.Set("dataTexts", "trackAltGold", true)) end
+    if case.injured then assert(S.Set("dataTexts", "bar1LoadCondShowWhenInjured", true)) end
     repaint(1)
     repaint(2)
     local ticks, kilobytes = 0, 0
