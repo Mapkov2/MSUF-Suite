@@ -12,11 +12,13 @@ local _, NS = ...
 local Safety = {}
 NS.Safety = Safety
 
--- True when the value can be compared, used as a key or in arithmetic.
+-- True when the value can be compared, used as a key or in arithmetic: it is
+-- not secret. The Suite core's rule (MSUF_Suite/Core/Platform.lua Public): a
+-- secret never counts as readable, whatever canaccessvalue says, since that
+-- answers only for its immediate caller, not for the code that compares.
 function Safety.Public(value)
     local isSecret = issecretvalue
-    if isSecret == nil or not isSecret(value) then return true end
-    return canaccessvalue ~= nil and canaccessvalue(value) == true
+    return isSecret == nil or not isSecret(value)
 end
 
 -- Every helper below returns at least one value, so a result can go straight

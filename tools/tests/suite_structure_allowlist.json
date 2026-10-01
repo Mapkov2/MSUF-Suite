@@ -1612,12 +1612,6 @@
   },
   {
    "file": "MSUF_Suite_Skin/Core/Safety.lua",
-   "kind": "client",
-   "reason": "secret-value probe the skin's Safety reads once at load (12.1.0, 12.1.5 and WoW Forever)",
-   "symbol": "canaccessvalue"
-  },
-  {
-   "file": "MSUF_Suite_Skin/Core/Safety.lua",
    "kind": "addon",
    "reason": "foreign object (a Blizzard or other addon's frame, pool or color); per the Suite's safety rule a method is checked with type(obj.Method) before it is called on a foreign object",
    "symbol": "target.AttachFontString"
