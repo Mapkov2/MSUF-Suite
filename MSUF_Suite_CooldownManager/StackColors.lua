@@ -11,6 +11,7 @@ local B = {}
 C.StackColors = B
 local K = C.Const
 local SameSet, CopySet = K.SameSet, K.CopySet
+local Glows = C.AuraGlows
 local options = {}
 
 local function Shape(color, part, rec)
@@ -33,7 +34,7 @@ end
 
 local function Initialize(color, part, rec, button)
     color.button = button
-    C.AuraButtons.Bridge.Overlay(button, part.button)
+    Glows.Overlay(button, part.button)
     -- Over the fill, under the markers, glows and text (K.AURA_LEVEL); the
     -- clip and the colour share that one level.
     local level = part.button:GetFrameLevel() + K.AURA_LEVEL.color
@@ -100,12 +101,12 @@ local function ApplyStack(rec, part, entry, dry)
         sensor.frame:Hide()
         sensor.enabled = false
         -- An idle sensor's glow holds no combat state driver.
-        C.AuraButtons.Bridge.ApplyCombatGate(sensor.part.stack.glow, false, false)
+        Glows.ApplyCombatGate(sensor.part.stack.glow, false, false)
         return false
     end
     local ids, filter = rec.ids[part.pos], rec.filter[part.pos]
     if not ids then return false end
-    local draw = C.AuraButtons.Bridge
+    local draw = Glows
     if not sensor then
         if dry then return true end
         sensor = { ids = CopySet({}, ids), unit = rec.unit, filter = filter, enabled = true }

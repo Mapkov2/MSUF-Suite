@@ -550,6 +550,7 @@ end
 
 -- Strict globals from here on: the runtime files may not create any.
 setmetatable(_G,{__newindex=function(_,key) error("global write: "..tostring(key),2) end})
+LoadRuntime("AuraGlows.lua")
 LoadRuntime("StackColors.lua")
 LoadRuntime("AuraButtons.lua")
 LoadRuntime("AuraPlaceholders.lua")
@@ -567,8 +568,8 @@ for _,name in ipairs({"Ready","SyncAuraSounds","ReleaseAll","Play"}) do assert(t
 -- Static rules on the source text.
 -- Scripts per file: the kit sensors in the buttons (AuraButtons.lua) and
 -- the watchers beside kit containers (Auras.lua), OnShow/OnHide each.
-local SCRIPTS={["AuraButtons.lua"]=2,["Auras.lua"]=2,["Alerts.lua"]=0}
-for _,file in ipairs({"AuraButtons.lua","Auras.lua","Alerts.lua"}) do
+local SCRIPTS={["AuraGlows.lua"]=0,["AuraButtons.lua"]=2,["Auras.lua"]=2,["Alerts.lua"]=0}
+for _,file in ipairs({"AuraGlows.lua","AuraButtons.lua","Auras.lua","Alerts.lua"}) do
     local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/"..file,"rb"))
     local text=handle:read("*a")
     handle:close()
@@ -2312,22 +2313,22 @@ do
     -- A gate change under lockdown (a button built in combat) is parked,
     -- never a protected call, and applies once combat ends.
     local host=CreateFrame("Frame",nil,UIParent)
-    local draw=C.AuraButtons.Bridge
+    local draw=C.AuraGlows
     local g=draw.NewGlow(host,host,1)
     C.state.allGlowsCombat=true
     COMBAT=true
     assert(draw.ApplyCombatGate(g,true,true)==true,"a dry run reports the pending gate")
     draw.ApplyCombatGate(g,true,false)
-    assert(not R[g.combatGate].combatDriver and C.AuraButtons.HasParkedGates(),"a gate change in combat is parked")
-    C.AuraButtons.FlushGates()
+    assert(not R[g.combatGate].combatDriver and C.AuraGlows.HasParkedGates(),"a gate change in combat is parked")
+    C.AuraGlows.FlushGates()
     assert(not R[g.combatGate].combatDriver,"the parked gate applied in combat")
     COMBAT=false
-    C.AuraButtons.FlushGates()
-    assert(R[g.combatGate].combatDriver and not C.AuraButtons.HasParkedGates(),"the parked gate applies after combat")
+    C.AuraGlows.FlushGates()
+    assert(R[g.combatGate].combatDriver and not C.AuraGlows.HasParkedGates(),"the parked gate applies after combat")
     COMBAT=true
     draw.ApplyCombatGate(g,false,false)
     draw.ApplyCombatGate(g,true,false)
-    assert(not C.AuraButtons.HasParkedGates(),"a wish back to the registered state parks nothing")
+    assert(not C.AuraGlows.HasParkedGates(),"a wish back to the registered state parks nothing")
     COMBAT=false
     draw.ApplyCombatGate(g,false,false)
     assert(not R[g.combatGate].combatDriver,"the gate unregistered")

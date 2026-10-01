@@ -331,7 +331,7 @@ local function Retire(slot, fam, unit)
     Hush(rec)
     rec.frame:SetEnabled(false)
     rec.frame:Hide()
-    C.AuraButtons.ReleaseGlows(rec)
+    C.AuraGlows.ReleaseGlows(rec)
     -- Every retired container stays reusable: it cannot be freed, so one
     -- dropped from the pool would only be replaced by a new one.
     local pool = pools[slot]
@@ -747,7 +747,7 @@ function A.ReleaseAll()
     for slot in pairs(live) do A.Release(slot) end
     for slot in pairs(meta) do Unholds(slot) end
     for slot in pairs(A.pending) do A.pending[slot] = nil end
-    C.AuraButtons.FlushGates()
+    C.AuraGlows.FlushGates()
 end
 
 -- Target containers pause while the target is friendly (FriendlyTarget).
@@ -838,7 +838,7 @@ end
 -- pending, and the sealed-button debounce: runs every sync that combat or
 -- sealed buttons held back, then pending aura sounds.
 function A.FlushPending()
-    C.AuraButtons.FlushGates()
+    C.AuraGlows.FlushGates()
     if IsCombatLocked() then return end
     local n = 0
     for slot in pairs(A.pending) do

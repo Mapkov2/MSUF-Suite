@@ -542,7 +542,7 @@ local function ReleaseParked(frame)
     if NS.IsCombatLocked() then return end
     frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
     C.Visibility.FlushPending()
-    C.AuraButtons.FlushGates()
+    C.AuraGlows.FlushGates()
 end
 
 -- Disable: the poll stops, every event goes and routing work parked for the
@@ -556,7 +556,7 @@ function Ev.Release(context)
         context:RemoveEvent(event)
     end
     staleRoutes, seedLater = false, false
-    if C.Visibility.HasPending() or C.AuraButtons.HasParkedGates() then
+    if C.Visibility.HasPending() or C.AuraGlows.HasParkedGates() then
         if not parkedListener then
             parkedListener = S.CreateFrame("Frame")
             parkedListener:SetScript("OnEvent", ReleaseParked)

@@ -4,7 +4,7 @@ local C = P.CDM
 -- Glows on the suite action bars' buttons for entries with an action-bar
 -- glow spell (ov.actionGlowSpell): one native aura slot per button shows
 -- the entry's buff (mode 1) or its stacks (mode 2), drawn with the aura
--- layer's primitives (AuraButtons.Bridge). The action bars, their own
+-- layer's primitives (AuraGlows.lua). The action bars, their own
 -- load-on-demand module, visit the buttons that hold a spell
 -- (S.ForEachActionBarButtonForSpell, out of combat only); nothing here
 -- tells them about aura presence or stack counts.
@@ -30,7 +30,7 @@ local stamp = 0
 local currentEntry, currentView
 local armed = false
 
-local Draw = AB.Bridge
+local Draw = C.AuraGlows
 local NewGlow, ApplyStack, ApplyGlow = Draw.NewGlow, Draw.ApplyStack, Draw.ApplyGlow
 local ApplyCombatGate, Overlay, BridgeStack = Draw.ApplyCombatGate, Draw.Overlay, Draw.BridgeStack
 
@@ -160,7 +160,7 @@ local function Free(rec)
     rec.free = true
     Switch(rec, false)
     rec.frame:Hide()
-    AB.ReleaseGlows(rec)
+    Draw.ReleaseGlows(rec)
 end
 -- Before a pass: records whose entry no longer asks for their glow mode
 -- are free, so the pass can hand them to another entry at once.

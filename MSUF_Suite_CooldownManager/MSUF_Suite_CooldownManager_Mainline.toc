@@ -19,6 +19,7 @@ Icons.lua
 TrackingBars.lua
 Time.lua
 Effects.lua
+AuraGlows.lua
 StackColors.lua
 AuraButtons.lua
 AuraPlaceholders.lua

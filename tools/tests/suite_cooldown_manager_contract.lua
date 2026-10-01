@@ -49,7 +49,7 @@ local function Read(path)
     return text
 end
 local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
-    "Effects.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
+    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
     "Flush.lua","Settings.lua","Events.lua","Controller.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
@@ -65,7 +65,8 @@ do
     for i=1,#tocFiles do at[tocFiles[i]]=i end
     local USES={["Settings.lua"]={"Flush.lua"},["Events.lua"]={"Flush.lua","Settings.lua"},
         ["Controller.lua"]={"Flush.lua","Settings.lua","Events.lua"},["Exports.lua"]={"Controller.lua"},
-        ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua"}}
+        ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua"},
+        ["AuraButtons.lua"]={"AuraGlows.lua"},["StackColors.lua"]={"AuraGlows.lua"}}
     for file,deps in pairs(USES) do
         for _,dep in ipairs(deps) do assert(at[dep] and at[dep]<at[file],dep.." must load before "..file) end
     end
@@ -103,7 +104,7 @@ do
     end
 end
 -- One home per rule: the spell ID set helpers live in Const.lua, the stack
--- glow binding of bridge buttons in AuraButtons.lua, the "can a usability
+-- glow binding of bridge buttons in AuraGlows.lua, the "can a usability
 -- read show" rule in Effects.lua. No runtime file crams statements onto a
 -- line, and every file opens with what it does.
 do
@@ -119,7 +120,7 @@ do
     for _,file in ipairs({"StackColors.lua","ActionGlows.lua"}) do
         local text=Read(root.."/"..ADDON.."/"..file)
         assert(not text:find("maxApplications",1,true) or file=="StackColors.lua" and select(2,text:gsub("maxApplications",""))==1,
-            file.." binds a stack glow's application bar itself (AuraButtons BridgeStack does)")
+            file.." binds a stack glow's application bar itself (AuraGlows BridgeStack does)")
     end
     for _,file in ipairs({"Events.lua","Flush.lua"}) do
         assert(not Read(root.."/"..ADDON.."/"..file):find("readyResources",1,true),
