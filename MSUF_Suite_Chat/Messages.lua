@@ -174,8 +174,21 @@ function C.CompileMessages(config)
 end
 
 ------------------------------------------------------------------ message hook
+-- TransformMessages is the only writer that keeps a window's buffer secure:
+-- ScrollingMessageFrameSecureMixin runs it as an elevation barrier
+-- (ScrollingMessageFrame.lua:795-824); an entry written from addon code
+-- would taint every refresh that reads it. Its loop visits each stored
+-- entry in storage order (CircularBuffer:TransformIf), and AddMessage pushes
+-- the new line to the front, storage slot CalculateElementIndex(1). The
+-- predicate counts the visits and accepts only that slot, while it still
+-- holds the raw line: only the newest entry is rewritten, and every other
+-- visit costs one comparison. Should another hook's line have taken the
+-- slot, one more pass rewrites the entries that hold the raw text.
 local function Transform(frame, record)
-    frame:TransformMessages(record.matches, record.transform)
+    record.done = false
+    record.aim(frame.historyBuffer:CalculateElementIndex(1))
+    frame:TransformMessages(record.newest, record.transform)
+    if not record.done then frame:TransformMessages(record.matches, record.transform) end
     return true
 end
 
@@ -203,10 +216,22 @@ end
 
 local function NewRecord()
     local record = {}
+    -- The visit count and the newest slot are upvalues: the predicate runs
+    -- once per stored line.
+    local visit, slot = 0, 0
+    record.aim = function(newest)
+        visit, slot = 0, newest
+    end
+    record.newest = function(text)
+        visit = visit + 1
+        if visit ~= slot then return false end
+        return PublicText(text) == record.source
+    end
     record.matches = function(text)
         return PublicText(text) == record.source
     end
     record.transform = function(_, r, g, b, ...)
+        record.done = true
         return record.rendered, r, g, b, ...
     end
     return record
