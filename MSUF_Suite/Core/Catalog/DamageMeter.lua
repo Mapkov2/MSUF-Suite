@@ -12,6 +12,17 @@ NS.DamageMeterTypeLabels = {
     "Interrupts", "Dispels", "Damage taken", "Avoidable damage taken", "Deaths", "Enemy damage taken",
 }
 
+-- The choice values of the settings below (each is its label's position
+-- there); the damage meter runtime names its modes through these.
+NS.DamageMeterVisibility = { ALWAYS = 1, COMBAT = 2, GROUP = 3, MOUSEOVER = 4, NEVER = 5 }
+NS.DamageMeterSession = { CURRENT = 1, OVERALL = 2 }
+NS.DamageMeterIconStyle = { NONE = 1, SPEC = 2, CLASS = 3 }
+NS.DamageMeterRowBorder = { NONE = 1, FULL = 2, FILLED = 3 }
+NS.DamageMeterTextStyle = { SHADOW = 1, OUTLINE = 2, THICK = 3, NONE = 4, OUTLINE_SHADOW = 5, THICK_SHADOW = 6 }
+NS.DamageMeterValueFormat = { RATE = 1, PRIMARY = 2, PARENTHESES = 3, BAR = 4, CUSTOM = 5 }
+local ICON, BORDER, TEXT = NS.DamageMeterIconStyle, NS.DamageMeterRowBorder, NS.DamageMeterTextStyle
+local SHADOWED = { [TEXT.SHADOW] = true, [TEXT.OUTLINE_SHADOW] = true, [TEXT.THICK_SHADOW] = true }
+
 B.Module("damageMeter", {
     title = "Damage meter",
     description = "Lightweight meter windows for damage, healing, interrupts, dispels, deaths and damage taken. They read the client's own combat data; Blizzard's meter window stays hidden while this module is active.",
@@ -189,11 +200,12 @@ for _, key in ipairs({ "gradientDirLeft", "gradientDirRight", "gradientDirUp", "
     rules[key].hidden = true -- The Bars-style D-pad below owns these switches.
     rules[key].enableKey = "gradientEnabled"
 end
-rules.iconZoom.requiresChoice = { key = "iconStyle", values = { [2] = true, [3] = true } }
-rules.shadowOpacity.requiresChoice = { key = "outline", values = { [1] = true, [5] = true, [6] = true } }
-rules.shadowDistance.requiresChoice = { key = "outline", values = { [1] = true, [5] = true, [6] = true } }
-rules.valueOrder.requiresChoice = { key = "numberFormat", values = { [5] = true } }
-rules.valueSeparator.requiresChoice = { key = "numberFormat", values = { [5] = true } }
+rules.iconZoom.requiresChoice = { key = "iconStyle", values = { [ICON.SPEC] = true, [ICON.CLASS] = true } }
+rules.shadowOpacity.requiresChoice = { key = "outline", values = SHADOWED }
+rules.shadowDistance.requiresChoice = { key = "outline", values = SHADOWED }
+local CUSTOM = { [NS.DamageMeterValueFormat.CUSTOM] = true }
+rules.valueOrder.requiresChoice = { key = "numberFormat", values = CUSTOM }
+rules.valueSeparator.requiresChoice = { key = "numberFormat", values = CUSTOM }
 rules.headerTimer.enableKey = "combatTime"
 rules.timer.enableKey = "combatTime"
 for _, key in ipairs({ "tooltipRows", "tooltipScale", "spellTooltips" }) do rules[key].enableKey = "hoverTooltip" end
@@ -204,7 +216,7 @@ end
 -- Including the icon applies to the full-row and filled-portion borders. The
 -- border thickness and color also draw the separate icon border, so they
 -- stay editable with Row border None (Rows.lua StyleRowBorder).
-rules.rowBorderIcon.requiresChoice = { key = "rowBorderMode", values = { [2] = true, [3] = true } }
+rules.rowBorderIcon.requiresChoice = { key = "rowBorderMode", values = { [BORDER.FULL] = true, [BORDER.FILLED] = true } }
 rules.timerX.category, rules.timerY.category = "advanced", "advanced"
 for i = 1, MAX_WINDOWS do
     rules["w" .. i .. "X"].category = "advanced"

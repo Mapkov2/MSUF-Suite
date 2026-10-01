@@ -38,7 +38,7 @@ local function StylePanel(win)
     panel.targetsTab:SetPoint("RIGHT", panel.spellsTab, "LEFT", -2, 0)
     D.FontStyle(panel.targetsTab.text, 10)
     D.FontStyle(panel.spellsTab.text, 10)
-    if win.meterType <= 3 then
+    if D.targetTypes[win.meterType] then
         panel.title:SetPoint("RIGHT", panel.targetsTab, "LEFT", -3, style.baseline)
     else
         panel.title:SetPoint("RIGHT", panel, "RIGHT", -3, style.baseline)
@@ -98,8 +98,9 @@ function D.ShowPanel(win, blocked)
     if panel.styleGen ~= M.styleGen or panel.styledType ~= win.meterType then StylePanel(win) end
     local bd = win.bd
     bd.open, bd.blocked, bd.offset = true, blocked, 0
-    panel.targetsTab:SetShown(not blocked and win.meterType <= 3)
-    panel.spellsTab:SetShown(not blocked and win.meterType <= 3)
+    local tabs = not blocked and D.targetTypes[win.meterType] == true
+    panel.targetsTab:SetShown(tabs)
+    panel.spellsTab:SetShown(tabs)
     local name = bd.name
     panel.title:SetText(D.Short(name))
     D.HideTip()
@@ -114,7 +115,7 @@ function D.OpenBreakdown(win, index)
     if not session or D.IsSample(session) then return end
     local source = session.combatSources[index]
     if not source then return end
-    if win.meterType == D.DEATHS then
+    if win.meterType == D.TYPE.Deaths then
         D.OpenRecap(win, source)
         return
     end
@@ -209,7 +210,9 @@ function D.RenderBreakdown(win)
         groups, count, sum = D.TargetGroups(win, bd.listSource, source)
         targets = groups ~= nil
     end
-    if bd.view == "spells" and win.meterType == D.ENEMY then groups, count, sum = D.GroupSpells(source) end
+    if bd.view == "spells" and win.meterType == D.TYPE.EnemyDamageTaken then
+        groups, count, sum = D.GroupSpells(source)
+    end
     local spells = bd.view == "spells" and not groups and source and source.combatSpells
     if not groups then count = D.Count(spells) end
     panel.title:SetText(D.Short(bd.name))
@@ -296,7 +299,7 @@ end
 -- Keep abilities visible and append the native target breakdown when readable.
 local function TipContent(frame, win, source, session)
     frame.section:Hide()
-    if win.meterType == D.DEATHS then
+    if win.meterType == D.TYPE.Deaths then
         local id = source.deathRecapID
         if not Finite(id) or id <= 0 then return 0, nil end
         return 0, Public(source.deathTimeSeconds) and S.Text("Click to open the death recap.") or D.Blocked()
@@ -308,7 +311,7 @@ local function TipContent(frame, win, source, session)
     local detail = D.FetchSource(win, guid, creature)
     local targetGroups, targetCount, targetSum = D.TargetGroups(win, source, detail)
     local spellGroups, spellCount, spellSum
-    if win.meterType == D.ENEMY then spellGroups, spellCount, spellSum = D.GroupSpells(detail) end
+    if win.meterType == D.TYPE.EnemyDamageTaken then spellGroups, spellCount, spellSum = D.GroupSpells(detail) end
     local spells = not spellGroups and detail and detail.combatSpells
     if not spellGroups then spellCount = D.Count(spells) end
     local spellShown = min(spellCount, M.config.tooltipRows)
@@ -338,7 +341,7 @@ local function TipContent(frame, win, source, session)
     end
     local shown = spellShown + targetShown
     local note
-    if not targetGroups and (win.meterType == 0 or win.meterType == 1 or win.meterType == 2 or win.meterType == 3) then
+    if not targetGroups and D.targetTypes[win.meterType] then
         note = S.Text((M.inCombat or NS.IsCombatLocked()) and "Targets after combat" or "Target data unavailable")
     end
     return shown, note or (shown == 0 and S.Text("No details for this entry.") or nil), sectionHeight
@@ -433,7 +436,7 @@ end
 
 function D.BreakdownBack(region, button)
     local win = region.win
-    if button == "RightButton" and win.bd.open and not win.bd.blocked and win.meterType <= 3 then
+    if button == "RightButton" and win.bd.open and not win.bd.blocked and D.targetTypes[win.meterType] then
         D.SetBreakdownView(win, win.bd.view == "targets" and "spells" or "targets")
     else
         D.CloseBreakdown(win)
