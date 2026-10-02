@@ -450,9 +450,7 @@ local function RefreshTarget(uf)
 end
 
 local function CancelQuestRefresh(module)
-    local timer = module.questTimer
-    module.questTimer = nil
-    if timer then timer:Cancel() end
+    module.questJob:Cancel()
 end
 
 -- A quest log change can only change quest facts: each visible plate that
@@ -474,18 +472,20 @@ local function RefreshQuests(module)
     end
 end
 
+-- Quest logs can emit several updates together: one pass a second after
+-- the first (module.questJob) is enough, and no persistent ticker or plate
+-- work runs while idle.
+local QUEST_DELAY = 1
+local function QuestPass(module)
+    if not Roles.inInstance then RefreshQuests(module) end
+end
+
 local function OnQuestLogChanged(module)
     Roles.ClearQuest()
     if Roles.inInstance or not (module.config.enemyQuestColors or module.config.enemyQuestMarker
         or module.config.friendlyQuestMarker) then return end
     if not next(module.activeUnits) then return end
-    if module.questTimer then return end
-    -- Quest logs can emit several updates together. One cancellable pass is
-    -- enough; no persistent ticker or plate work runs while idle.
-    module.questTimer = C_Timer.NewTimer(1, function()
-        module.questTimer = nil
-        if module.active and not Roles.inInstance then RefreshQuests(module) end
-    end)
+    module.questJob:Request()
 end
 
 local function OnTargetChanged(self)
@@ -620,6 +620,7 @@ local function Listen(self, event, callback)
 end
 
 function M:Enable()
+    self.questJob = self.context:Coalesce(QUEST_DELAY, QuestPass)
     if not self.fontHook then
         self.fontHook = true
         private.HookPlates("ApplyFrameOptions", OnFrameOptions)
