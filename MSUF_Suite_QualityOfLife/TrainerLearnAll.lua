@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local POPUP = "MSUF_SUITE_TRAINER_LEARN_ALL"
 local MAX_SERVICES = 2000
@@ -164,7 +165,7 @@ local function Resume(self)
     if self.queue then Advance(self) end
 end
 
-local function OnAccept(_, preview)
+local function OnAccept(preview)
     if not M.active or M.queue or type(preview) ~= "table" then return end
     local current = Plan(M)
     if not SamePlan(preview, current) or current.money < current.total
@@ -183,18 +184,6 @@ local function OnAccept(_, preview)
     Advance(M)
 end
 
-local function EnsurePopup()
-    if StaticPopupDialogs[POPUP] then return end
-    StaticPopupDialogs[POPUP] = {
-        text = S.Text("Learn %d available abilities for %s? Profession choices and rank steps are excluded."),
-        button1 = S.BlizzardText("ACCEPT", "Accept"),
-        button2 = S.BlizzardText("CANCEL", "Cancel"),
-        OnAccept = OnAccept,
-        timeout = 0, whileDead = false, hideOnEscape = true,
-        preferredIndex = 3, showAlert = true,
-    }
-end
-
 local function OnClick()
     if M.queue then
         Stop(M, "Training stopped.")
@@ -202,7 +191,14 @@ local function OnClick()
     end
     local plan = Plan(M)
     if not plan or #plan.entries == 0 or plan.total > plan.money or plan.ambiguous then return end
-    StaticPopup_Show(POPUP, #plan.entries, Coins(plan.total), plan)
+    -- Blizzard's generic confirmation (S.Confirm, MSUF_Suite_Modules/Dialogs.lua).
+    S.Confirm(POPUP, {
+        text = S.Text("Learn %d available abilities for %s? Profession choices and rank steps are excluded."),
+        text_arg1 = #plan.entries, text_arg2 = Coins(plan.total),
+        acceptText = S.BlizzardText("ACCEPT", "Accept"), cancelText = S.BlizzardText("CANCEL", "Cancel"),
+        showAlert = true,
+        callback = function() OnAccept(plan) end,
+    })
 end
 
 -- OnLeave hides the shared tooltip only while this frame still owns it.
@@ -239,7 +235,7 @@ local function Attach(self)
     if not frame or NS.Safety.IsForbidden(frame) then return end
     if self.button then return end
     if NS.IsCombatLocked() then
-        self.context:Event("PLAYER_REGEN_ENABLED", Attach, true)
+        self.context:Event("PLAYER_REGEN_ENABLED", Attach, IN_COMBAT)
         return
     end
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
@@ -297,12 +293,11 @@ end
 
 function M:Enable()
     self.resumeJob = self.context:Coalesce(0, Resume)
-    EnsurePopup()
-    self.context:Event("ADDON_LOADED", OnLoaded, true)
-    self.context:Event("TRAINER_SHOW", OnTrainer, true)
-    self.context:Event("TRAINER_UPDATE", OnTrainer, true)
-    self.context:Event("TRAINER_CLOSED", OnTrainer, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", OnCombat, true)
+    self.context:Event("ADDON_LOADED", OnLoaded, IN_COMBAT)
+    self.context:Event("TRAINER_SHOW", OnTrainer, IN_COMBAT)
+    self.context:Event("TRAINER_UPDATE", OnTrainer, IN_COMBAT)
+    self.context:Event("TRAINER_CLOSED", OnTrainer, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", OnCombat, IN_COMBAT)
     Attach(self)
 end
 
@@ -314,7 +309,7 @@ end
 function M:Disable()
     if self.queue then Stop(self) end
     if self.button then self.button:Hide() end
-    StaticPopup_Hide(POPUP)
+    S.HideQuestion(POPUP)
 end
 
 S.Install("trainerLearnAll", M)

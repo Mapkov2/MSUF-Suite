@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 if NS.Client.isForever then return end
 local ID = "enemyCastStack"
 local Public = S.Public
@@ -8,6 +9,13 @@ local DIM, RANGE_TICK = .45, .25
 -- Blizzard's raid marker sheet: 4 x 4 cells, markers 1-8 (TargetFrame.lua).
 local MARKER_SHEET, MARKER_ROWS, MARKER_COLUMNS = "Interface\\TargetingFrame\\UI-RaidTargetingIcons", 4, 4
 local EMPTY = {}
+-- Cast kinds, and the settings' choices (MSUF_Suite/Core/Catalog/
+-- QualityOfLifeHUD.lua): castKinds lists casts and channels, casts or
+-- channels; readyStyle marks with a stripe or the whole bar; growth adds new
+-- casts below or above the last.
+local CAST, CHANNEL = 1, 2
+local ALL_KINDS, CASTS_ONLY, CHANNELS_ONLY = 1, 2, 3
+local READY_WHOLE_BAR, GROW_UP = 2, 2
 -- entries: one reused record per nameplate token; ordered: the live casts,
 -- oldest first. A row belongs to an entry while that entry has a free slot.
 local M = { entries = {}, ordered = {}, rows = {}, free = {}, previews = {}, wakes = {}, candidates = {},
@@ -19,7 +27,8 @@ for i = 1, 150 do
     PLATE_TOKENS[i] = "nameplate" .. i
     PLATES[PLATE_TOKENS[i]] = true
 end
-local START = { UNIT_SPELLCAST_START = 1, UNIT_SPELLCAST_CHANNEL_START = 2, UNIT_SPELLCAST_EMPOWER_START = 2 }
+local START = { UNIT_SPELLCAST_START = CAST, UNIT_SPELLCAST_CHANNEL_START = CHANNEL,
+    UNIT_SPELLCAST_EMPOWER_START = CHANNEL }
 local STOP = { NAME_PLATE_UNIT_REMOVED = true, UNIT_SPELLCAST_STOP = true, UNIT_SPELLCAST_CHANNEL_STOP = true,
     UNIT_SPELLCAST_EMPOWER_STOP = true, UNIT_SPELLCAST_FAILED = true, UNIT_SPELLCAST_INTERRUPTED = true }
 local RETIME = { UNIT_SPELLCAST_DELAYED = true, UNIT_SPELLCAST_CHANNEL_UPDATE = true,
@@ -144,7 +153,7 @@ end
 
 local function PaintStripe(self, entry)
     local c, row = self.config, entry.row
-    local on = self.ready == true and c.readyStripe == true and c.readyStyle ~= 2
+    local on = self.ready == true and c.readyStripe == true and c.readyStyle ~= READY_WHOLE_BAR
     -- Secret or not, the interrupt state goes straight to the native alpha sink.
     if on then row.stripe:SetAlphaFromBoolean(entry.locked, 0, 1) end
     SetStripe(row, on)
@@ -156,7 +165,7 @@ local PaintColor
 local function PaintReady(self, entry)
     PaintStripe(self, entry)
     local c = self.config
-    if c.readyStripe and c.readyStyle == 2 then PaintColor(self, entry) end
+    if c.readyStripe and c.readyStyle == READY_WHOLE_BAR then PaintColor(self, entry) end
 end
 
 local function PaintStripes(self)
@@ -233,7 +242,7 @@ local function Place(self, row, slot)
     local c = self.config
     local offset, x = (slot - 1) * (c.rowHeight + GAP), c.rowHeight + ICON_GAP
     row:ClearAllPoints()
-    if c.growth == 2 then row:SetPoint("BOTTOMLEFT", self.host, "BOTTOMLEFT", x, offset)
+    if c.growth == GROW_UP then row:SetPoint("BOTTOMLEFT", self.host, "BOTTOMLEFT", x, offset)
     else row:SetPoint("TOPLEFT", self.host, "TOPLEFT", x, -offset) end
     row.slot = slot
 end
@@ -242,7 +251,7 @@ PaintColor = function(self, entry)
     local c, locked, isLocked = self.config, self.lockedRGB, entry.locked
     local Evaluate = C_CurveUtil.EvaluateColorValueFromBoolean
     local r, g, b
-    if self.ready == true and c.readyStripe and c.readyStyle == 2 then
+    if self.ready == true and c.readyStripe and c.readyStyle == READY_WHOLE_BAR then
         -- Whole-bar ready mark: every interruptible cast takes the ready color.
         local ready = self.stripeRGB
         r, g, b = ready[1], ready[2], ready[3]
@@ -307,7 +316,7 @@ local function PaintTimer(entry)
     if timed then
         local direction = Enum.StatusBarTimerDirection
         row:SetTimerDuration(duration, Enum.StatusBarInterpolation.Immediate,
-            entry.kind == 2 and direction.RemainingTime or direction.ElapsedTime)
+            entry.kind == CHANNEL and direction.RemainingTime or direction.ElapsedTime)
         row.binding:SetDuration(duration)
     else
         row:SetMinMaxValues(0, 1)
@@ -376,9 +385,16 @@ local function SyncRangeTicker(self)
 end
 
 -- Rows follow their casts: a stop re-anchors the rows after it and paints
--- only the cast that moves into the freed slot.
+-- only the cast that moves into the freed slot. In Edit Mode the samples
+-- stand in and casts are listed without rows; in combat Edit Mode closes
+-- before the module's Refresh may run, so the first Sync after it gives
+-- every listed cast its row (self.rowless).
 local function Sync(self, from)
-    if S.editMode then return end
+    if S.editMode then
+        self.rowless = true
+        return
+    end
+    if self.rowless then from, self.rowless = 1, nil end
     local ordered = self.ordered
     local count = math.min(#ordered, self.config.listSize)
     if self.visible == 0 and count > 0 then SampleReady(self) end
@@ -397,7 +413,7 @@ end
 
 ------------------------------------------------------------------ casts
 local function Duration(unit, kind)
-    if kind == 2 then return UnitChannelDuration(unit) end
+    if kind == CHANNEL then return UnitChannelDuration(unit) end
     return UnitCastingDuration(unit)
 end
 
@@ -405,7 +421,7 @@ end
 -- reach native sinks; a public nil name means the unit is not casting.
 local function Read(entry, unit, kind)
     local name, icon, locked, spell, _
-    if kind == 2 then
+    if kind == CHANNEL then
         name, _, icon, _, _, _, locked, spell = UnitChannelInfo(unit)
     else
         name, _, icon, _, _, _, _, locked, spell = UnitCastingInfo(unit)
@@ -428,7 +444,7 @@ end
 
 local function Wanted(self, kind)
     local kinds = self.config.castKinds
-    return kinds == 1 or kinds == 2 and kind == 1 or kinds == 3 and kind == 2
+    return kinds == ALL_KINDS or kinds == CASTS_ONLY and kind == CAST or kinds == CHANNELS_ONLY and kind == CHANNEL
 end
 
 local function Attackable(unit)
@@ -444,7 +460,7 @@ local function Add(self, unit, kind)
     end
     if kind then
         if not Read(entry, unit, kind) then return end
-    elseif not Read(entry, unit, 1) and not Read(entry, unit, 2) then
+    elseif not Read(entry, unit, CAST) and not Read(entry, unit, CHANNEL) then
         return
     end
     if not Wanted(self, entry.kind) then
@@ -528,7 +544,7 @@ end
 
 local function ListenCooldowns(self)
     if self.listening and self.config.readyStripe and #self.candidates > 0 then
-        self.context:Event("SPELL_UPDATE_COOLDOWN", OnCooldown, true)
+        self.context:Event("SPELL_UPDATE_COOLDOWN", OnCooldown, IN_COMBAT)
     else self.context:RemoveEvent("SPELL_UPDATE_COOLDOWN") end
 end
 
@@ -549,13 +565,13 @@ end
 local function ListenSpells(self)
     local c = self.config
     local ctx, on = self.context, self.listening and (c.readyStripe or c.dimOutOfRange)
-    if self.listening and c.showMarkers then ctx:Event("RAID_TARGET_UPDATE", OnMarkers, true)
+    if self.listening and c.showMarkers then ctx:Event("RAID_TARGET_UPDATE", OnMarkers, IN_COMBAT)
     else ctx:RemoveEvent("RAID_TARGET_UPDATE") end
     for _, event in ipairs({ "SPELLS_CHANGED", "PET_BAR_UPDATE" }) do
-        if on then ctx:Event(event, OnSpells, true) else ctx:RemoveEvent(event) end
+        if on then ctx:Event(event, OnSpells, IN_COMBAT) else ctx:RemoveEvent(event) end
     end
     for _, event in ipairs({ "PLAYER_SPECIALIZATION_CHANGED", "UNIT_PET" }) do
-        if on then ctx:Event(event, OnSpells, true, "player") else ctx:RemoveEvent(event) end
+        if on then ctx:Event(event, OnSpells, IN_COMBAT, "player") else ctx:RemoveEvent(event) end
     end
     ListenCooldowns(self)
 end
@@ -579,7 +595,7 @@ local function Gate(self)
     if want ~= self.listening then
         self.listening = want
         for _, event in ipairs(CAST_EVENTS) do
-            if want then self.context:Event(event, OnCast, true) else self.context:RemoveEvent(event) end
+            if want then self.context:Event(event, OnCast, IN_COMBAT) else self.context:RemoveEvent(event) end
         end
         Clear(self)
         if want then
@@ -610,11 +626,11 @@ local function PaintSample(self, row, index)
     local base = c.dimOutOfRange and sample.far and DIM or 1
     local minor = c.onlyImportant and 0 or c.fadeMinor and FADE or 1
     row:SetAlpha(sample.important and base or base * minor)
-    if c.readyStripe and c.readyStyle == 2 and not sample.locked then
+    if c.readyStripe and c.readyStyle == READY_WHOLE_BAR and not sample.locked then
         row:SetStatusBarColor(self.stripeRGB[1], self.stripeRGB[2], self.stripeRGB[3])
     end
     row.stripe:SetAlpha(1)
-    SetStripe(row, c.readyStripe == true and c.readyStyle ~= 2 and not sample.locked)
+    SetStripe(row, c.readyStripe == true and c.readyStyle ~= READY_WHOLE_BAR and not sample.locked)
     if c.showMarkers and sample.marker then
         row.marker:SetSpriteSheetCell(sample.marker, MARKER_ROWS, MARKER_COLUMNS)
         row.marker:Show()
@@ -651,8 +667,8 @@ function M:Enable()
         self.formatter:SetDesiredUnitCount(1)
         self.formatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
     end
-    self.context:Event("PLAYER_ENTERING_WORLD", OnZone, true)
-    self.context:Event("ZONE_CHANGED_NEW_AREA", OnZone, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnZone, IN_COMBAT)
+    self.context:Event("ZONE_CHANGED_NEW_AREA", OnZone, IN_COMBAT)
     self:Refresh()
     self:RegisterMovers()
 end

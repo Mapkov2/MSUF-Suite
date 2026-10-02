@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = { config = {} }
 
 local function OnReset(self)
@@ -43,12 +44,12 @@ function M:Refresh()
             end)
             self.resetHooked = true
         end
-        self.context:Event("CHAT_MSG_SYSTEM", SystemMessage, true)
+        self.context:Event("CHAT_MSG_SYSTEM", SystemMessage, IN_COMBAT)
     else self.context:RemoveEvent("CHAT_MSG_SYSTEM") end
 end
 
 function M:Enable()
-    self.context:Event("CHALLENGE_MODE_RESET", OnReset, true)
+    self.context:Event("CHALLENGE_MODE_RESET", OnReset, IN_COMBAT)
     self:Refresh()
 end
 

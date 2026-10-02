@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "announcements"
+local IN_COMBAT = { inCombat = true }
 
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
 -- alerts for the enabled kinds are hidden; their content is shown here.
@@ -66,6 +67,10 @@ local function Create(self)
     host:Hide()
 end
 
+-- colorStyle: Suite skin + default accents, Custom colors; anchor: Top
+-- center, Screen center (MSUF_Suite/Core/Catalog/HUD.lua).
+local CUSTOM_COLORS, SCREEN_CENTER = 2, 2
+
 local function Theme(self)
     local c = self.config
     local skin = self.context and self.context:Skin()
@@ -73,7 +78,7 @@ local function Theme(self)
     S.SetStyledFont(self.title, font, c.titleSize or 31, "OUTLINE", 1, true, 80, 2)
     S.SetStyledFont(self.subtitle, font, c.subtitleSize or 16, "OUTLINE", 1, true, 75, 1)
     local dark = not skin or skin:GetLook() == "midnightDark"
-    local custom = c.colorStyle == 2
+    local custom = c.colorStyle == CUSTOM_COLORS
     self.kindColors = {}
     for kind, key in pairs(COLOR_KEYS) do
         self.kindColors[kind] = custom and { S.RGB(c[key]) } or COLORS[kind]
@@ -93,7 +98,7 @@ local function Theme(self)
     end
     self.host:SetScale(c.scale / 100)
     self.host:ClearAllPoints()
-    local point = c.anchor == 2 and "CENTER" or "TOP"
+    local point = c.anchor == SCREEN_CENTER and "CENTER" or "TOP"
     self.host:SetPoint(point, UIParent, point, c.x, c.y)
 end
 
@@ -106,14 +111,14 @@ local function Paint(self, item)
     self.divider:SetColorTexture(color[1], color[2], color[3], .62)
 end
 
--- The banner on screen fades out after its duration (self.dismissTimer);
--- clearing it or an Edit Mode preview cancels the wait.
+-- The banner on screen fades out after its duration (ctx:After);
+-- clearing it or an Edit Mode preview cancels the wait (ctx:Cancel).
 local function Dismiss(self)
     if not S.editMode then self.leave:Play() end
 end
 
 local function ScheduleDismiss(self, delay)
-    self.dismissTimer = self.context:After(delay, Dismiss)
+    self.context:After(delay, Dismiss)
 end
 
 local function Display(self, item)
@@ -429,8 +434,8 @@ function M:Enable()
     Create(self)
     Theme(self)
     self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil
-    for _, event in ipairs(EVENTS) do self.context:Event(event, Event, true) end
-    self.context:Event("PLAYER_REGEN_ENABLED", NativeAnnouncements, true)
+    for _, event in ipairs(EVENTS) do self.context:Event(event, Event, IN_COMBAT) end
+    self.context:Event("PLAYER_REGEN_ENABLED", NativeAnnouncements, IN_COMBAT)
     self.lastZone = CurrentZoneKey()
     NativeAnnouncements(self)
     self.nativeSignature = NativeSignature(self.config)
@@ -487,7 +492,7 @@ function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "banner", {
         label = "Announcements", order = 626, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", pointKey = "anchor",
-        point = function() return self.config.anchor == 2 and "CENTER" or "TOP" end,
+        point = function() return self.config.anchor == SCREEN_CENTER and "CENTER" or "TOP" end,
         historyKeys = { "scale" },
         extraControls = {
             { id = "scale", label = "Scale %", kind = "number", min = 60, max = 160, step = 1,

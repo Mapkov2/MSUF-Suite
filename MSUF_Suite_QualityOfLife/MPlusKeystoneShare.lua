@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 
 local M = { rows = {}, page = 1 }
 local Command
@@ -258,7 +259,7 @@ function M:Enable()
     HookKeystone(self)
     Register()
     C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
-    self.context:Event("CHAT_MSG_ADDON", OnAddonMessage, true)
+    self.context:Event("CHAT_MSG_ADDON", OnAddonMessage, IN_COMBAT)
 end
 
 function M:Refresh()

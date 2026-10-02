@@ -89,11 +89,11 @@ function R.SyncPreparationEvents(self, callback)
     end
 end
 
+-- The note hides after config.readyCheckDuration seconds (a context wait).
 function R.HideReadyCheck(self)
-    local readyCheck = self.readyCheck
-    if readyCheck.timer then readyCheck.timer:Cancel() end
-    readyCheck.timer = nil
-    if readyCheck.label then readyCheck.label:Hide() end
+    self.context:Cancel(R.HideReadyCheck)
+    local label = self.readyCheck.label
+    if label then label:Hide() end
 end
 
 function R.ReadyCheck(self)
@@ -123,13 +123,7 @@ function R.ReadyCheck(self)
         text:SetTextColor(1, .82, 0)
     end
     text:Show()
-    local timer
-    timer = C_Timer.NewTimer(self.config.readyCheckDuration or 10, function()
-        if readyCheck.timer ~= timer then return end
-        readyCheck.timer = nil
-        text:Hide()
-    end)
-    readyCheck.timer = timer
+    self.context:After(self.config.readyCheckDuration or 10, R.HideReadyCheck)
 end
 
 function R.StyleCount(button, config)

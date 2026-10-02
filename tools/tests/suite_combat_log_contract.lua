@@ -42,7 +42,7 @@ module.config = {
 }
 module.context = Support.ModuleTimers(root, suite, owner)("combatLog", module, {
     Event = function(_, name, callback, allowCombat)
-        assert(allowCombat == true and not events[name], "duplicate event")
+        assert(Support.InCombatOption(allowCombat) and not events[name], "duplicate event")
         events[name] = callback
     end,
 })

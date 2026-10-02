@@ -1,5 +1,6 @@
 local _, private = ...
 local NS = private.NS
+local Mode = private.Mode
 local Layout = {}
 private.Layout = Layout
 local Geometry = private.Geometry
@@ -196,7 +197,7 @@ local function LevelOffsets(state, uf, prefix, plan, setup, config, force)
     local level = plan.Level
     local nativeLevel = setup.useClassicHealthBar == true
     if NS.Client.isForever then
-        nativeLevel = config.levelAppearance == 2 and config[prefix .. "LevelEnabled"]
+        nativeLevel = config.levelAppearance == Mode.LEVEL_BADGE and config[prefix .. "LevelEnabled"]
     end
     local classicLevel = nativeLevel and setup.useClassicHealthBar == true and not NS.Client.isForever
     Offset(state, uf.LevelFrame, classicLevel and level[1] or 0, classicLevel and level[2] or 0, force)
@@ -210,12 +211,15 @@ local function LevelOffsets(state, uf, prefix, plan, setup, config, force)
 end
 
 -- The name follows the health text when Blizzard anchors it there.
+-- NamePlateConstants.NAME_ANCHOR_STYLES (Blizzard_NamePlateConstants.lua).
+local INSIDE_BAR, ABOVE_BAR = 1, 2
 local function NameLink(state, uf, plan, setup, badgeShown)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local anchor = setup.unitNameAnchorStyle
-    if not health or uf.showOnlyName == true or (anchor ~= 1 and anchor ~= 2) then return end
-    local point, relative = anchor == 1 and "RIGHT" or "BOTTOMRIGHT", anchor == 1 and "LEFT" or "BOTTOMLEFT"
-    if anchor == 2 and NS.Public(setup.nameJustificationWhenAboveHealthBar)
+    if not health or uf.showOnlyName == true or (anchor ~= INSIDE_BAR and anchor ~= ABOVE_BAR) then return end
+    local inside = anchor == INSIDE_BAR
+    local point, relative = inside and "RIGHT" or "BOTTOMRIGHT", inside and "LEFT" or "BOTTOMLEFT"
+    if anchor == ABOVE_BAR and NS.Public(setup.nameJustificationWhenAboveHealthBar)
         and setup.nameJustificationWhenAboveHealthBar ~= nil then
         -- Camelot can anchor the name to its level frame before that
         -- frame becomes visible. Its endpoint is Blizzard-owned.
@@ -247,7 +251,7 @@ local function ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
         if control[1] ~= 0 or control[2] ~= 0 then module.needsRefresh = true end
         return
     end
-    local correction = config.barGeometry == 2 and baseX - 5 or 0
+    local correction = config.barGeometry == Mode.SAME_GEOMETRY and baseX - 5 or 0
     local nativeFixed = not NS.Client.isForever
     AuraAnchor(state, auraFrame and auraFrame.CrowdControlListFrame, "LEFT", container,
         "RIGHT", baseX, 0, control[1] - correction, control[2], nativeFixed)
@@ -300,7 +304,7 @@ end
 -- force (Layout.Reapply) writes every offset again.
 local function Apply(uf, prefix, config, force)
     local plan, state = plans[prefix], states[uf]
-    local enabled = plan and plan.active and config.look ~= 2 and config[prefix]
+    local enabled = plan and plan.active and config.look ~= Mode.LOOK_BLIZZARD and config[prefix]
     if not enabled then
         if state then Layout.Restore(uf) end
         return
@@ -317,7 +321,7 @@ local function Apply(uf, prefix, config, force)
     states[uf] = state
     force = force or state.nativeReset
     RestoreLinks(state)
-    local geometryChanged = (config.barGeometry == 2) ~= (state.geometry ~= nil)
+    local geometryChanged = (config.barGeometry == Mode.SAME_GEOMETRY) ~= (state.geometry ~= nil)
     local baseHeight = Geometry.Apply(state, uf, setup, config, force)
     if not baseHeight then
         module.needsRefresh = true
@@ -356,7 +360,7 @@ end
 function Layout.Configure(config)
     generation = generation + 1
     for _, prefix in ipairs({ "enemy", "friendly" }) do
-        local plan = { active = config.barGeometry == 2 }
+        local plan = { active = config.barGeometry == Mode.SAME_GEOMETRY }
         for i = 1, #elements do
             local element = elements[i]
             local key = prefix .. element.key .. "Offset"

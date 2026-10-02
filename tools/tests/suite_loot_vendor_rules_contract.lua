@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local module, sold, popups, printed, reported = nil, {}, {}, {}, {}
+local module, sold, printed, reported = nil, {}, {}, {}
 local frames = Support.EventFrames()
 local combat, cursor = false, false
 local bagSlots = { [0] = {}, [1] = {}, [2] = {}, [3] = {}, [4] = {}, [5] = {} }
@@ -42,11 +42,8 @@ C_Item = {
     IsEquippableItem = function(link) return link == "item-200" and true or false end,
 }
 CursorHasItem = function() return cursor end
-StaticPopupDialogs = {}
-StaticPopup_Show = function(key, count, _, data)
-    popups[#popups + 1] = { key = key, count = count, data = data }
-end
-StaticPopup_Hide = function(key) popups.hidden = key end
+local dialogs = Support.StaticPopups()
+local function Question() return dialogs.Last("GENERIC_CONFIRMATION") end
 GameTooltip_Hide = function() end
 GameTooltip = {}
 MerchantFrame = { shown = false, selectedTab = 1, GetFrameLevel = function() return 20 end }
@@ -106,12 +103,14 @@ assert(buttonCount == 1 and module.button.shown and module.button.enabled
     and context.events.BAG_UPDATE_DELAYED,
     "the merchant button did not preview only eligible non-gear stacks")
 module.button.OnClick(module.button)
-assert(#popups == 1 and popups[1].count == 2 and #sold == 0,
+local question = Question()
+assert(question and question.text == "Sell 2 marked item stacks to this merchant?" and #sold == 0
+    and question.acceptText == "Sell" and question.cancelText == "Cancel" and question.alert,
     "click sold without an explicit confirmation or previewed the wrong count")
 
 -- Replacing a slot after confirmation is shown must not sell the new item.
 bagSlots[0][1] = Item(100, "replacement", 1)
-StaticPopupDialogs[popups[1].key].OnAccept({}, popups[1].data)
+dialogs.Accept(question)
 assert(#sold == 1 and sold[1][1] == 1 and sold[1][2] == 1,
     "confirmation sold a changed slot or skipped its still-matching item")
 assert(#printed == 1, "sale request was not reported")
@@ -130,9 +129,16 @@ module:Refresh()
 assert(buttonCount == 1 and module.button.text == "Verkaufen (4)",
     "explicit gear opt-in and quality cap did not update the preview")
 module.button.OnClick(module.button)
+local first = Question().data
+-- A second click asks again in place of the first question.
+module.button.OnClick(module.button)
+assert(dialogs.Count("GENERIC_CONFIRMATION") == 1 and Question().data ~= first,
+    "a second click kept the first question")
+local stale = Question().data
 MerchantFrame.shown = false
 context.events.MERCHANT_CLOSED(module, "MERCHANT_CLOSED")
-StaticPopupDialogs[popups[2].key].OnAccept({}, popups[2].data)
+assert(not Question(), "closing the merchant left the sale question open")
+stale.callback()
 assert(#sold == 1 and not module.button.shown and not context.events.BAG_UPDATE_DELAYED,
     "closing merchant allowed a stale confirmation to sell")
 
@@ -146,7 +152,7 @@ module:Enable()
 -- A second item window beside the merchant keeps the sale manual.
 MailFrame = { IsShown = function() return true end }
 module.button.OnClick(module.button)
-StaticPopupDialogs[popups[#popups].key].OnAccept({}, popups[#popups].data)
+dialogs.Accept(Question())
 assert(#sold == 1, "a sale ran while another item window was open")
 MailFrame = nil
 module.button.OnClick(module.button)
@@ -155,7 +161,7 @@ module.button.OnClick(module.button)
 C_Container.UseContainerItem = function(bag, slot)
     frames.Fire("ADDON_ACTION_BLOCKED", "MSUF_Suite_QualityOfLife", "UseContainerItem()")
 end
-StaticPopupDialogs[popups[#popups].key].OnAccept({}, popups[#popups].data)
+dialogs.Accept(Question())
 assert(#sold == 1 and #reported == 0 and printed[#printed]
     == "Marked item sale stopped; earlier items may already have been sold.",
     "a blocked merchant item use hid the partial-sale warning")

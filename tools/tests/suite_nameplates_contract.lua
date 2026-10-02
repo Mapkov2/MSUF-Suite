@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
-assert(table.concat(toc, ",") == "Bootstrap.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
+assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
     .. "Level.lua,CastTime.lua,CVars.lua,Auras.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
@@ -88,13 +88,9 @@ local debuffPadding = 0
 GetCVarNumberOrDefault = function(key)
     assert(key == "nameplateDebuffPadding"); return debuffPadding
 end
+-- The context timers' waits (C_Timer.After cannot be cancelled).
 local queuedTimers = {}
-C_Timer = { NewTimer = function(_, callback)
-    local timer = { callback = callback }
-    function timer:Cancel() self.cancelled = true end
-    queuedTimers[#queuedTimers + 1] = timer
-    return timer
-end }
+C_Timer = { After = function(_, callback) queuedTimers[#queuedTimers + 1] = callback end }
 
 local nativeAnchor = {}
 local function Region()
@@ -378,7 +374,7 @@ local context = {
     Event = function(_, event, callback, allowCombat)
         events[event] = callback
         -- Every plate listener also runs in combat (the context's allowCombat).
-        assert(allowCombat == true, event .. " would wait for the end of combat")
+        assert(support.InCombatOption(allowCombat), event .. " would wait for the end of combat")
     end,
     CVar = function(_, key, value) cvars[key] = value; liveCVars[key] = value end,
 }
@@ -402,7 +398,9 @@ for _, file in ipairs(toc) do
     end
 end
 local module = assert(installed)
-module.context = context
+-- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on the stub context.
+NS.Dispatch = function(callback, ...) return callback(...) end
+module.context = support.ModuleTimers(root, S, NS)("nameplates", module, context)
 module.config = {
     look = 1, enemy = true, friendly = true,
     nativeStyle = 2, nativeSize = 3, levelAppearance = 1, enemyTextMode = 4,
@@ -545,13 +543,10 @@ do
         questReads = questReads + 1
         return nativeQuestLog.UnitIsRelatedToActiveQuest(unit)
     end }
-    C_Timer = { NewTimer = function(delay, callback)
+    C_Timer = { After = function(delay, callback)
         assert(delay == 1)
         timerCount = timerCount + 1
-        local timer = { callback = callback }
-        function timer:Cancel() self.cancelled = true end
-        queued[#queued + 1] = timer
-        return timer
+        queued[#queued + 1] = { callback = callback }
     end }
     UnitClassification = function(unit)
         classificationReads = classificationReads + 1
@@ -592,10 +587,12 @@ do
     instanceType = "none"
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
     events.QUEST_LOG_UPDATE(module, "QUEST_LOG_UPDATE")
-    assert(timerCount == 2 and not queued[2].cancelled)
+    assert(timerCount == 2 and module.questJob:Pending())
     instanceType = "party"
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")
-    assert(queued[2].cancelled and module.questTimer == nil,
+    local before = questReads
+    queued[2].callback()
+    assert(not module.questJob:Pending() and questReads == before,
         "context change left stale quest work scheduled")
     instanceType = "none"
     events.ZONE_CHANGED_NEW_AREA(module, "ZONE_CHANGED_NEW_AREA")

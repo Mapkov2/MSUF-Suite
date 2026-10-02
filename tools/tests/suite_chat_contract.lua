@@ -232,8 +232,8 @@ Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true }
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
 local ctx = { callbacks = {}, combat = {}, restored = 0, original = {}, properties = {}, fields = {} }
-function ctx:Event(event, fn, allowCombat)
-    self.callbacks[event], self.combat[event] = fn, allowCombat
+function ctx:Event(event, fn, options)
+    self.callbacks[event], self.combat[event] = fn, Support.InCombatOption(options) or nil
 end
 function ctx:RemoveEvent(event) self.callbacks[event], self.combat[event] = nil, nil end
 function ctx:Property(frame, getter, setter, value)
@@ -298,7 +298,9 @@ function ctx:UpdateTupleBefore(frame, setter, index, current)
     if record.applied and current ~= record.applied[index] then record.before[index] = current end
     return true, unpack(record.before)
 end
-module.context = ctx
+-- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on the stub.
+NS.Dispatch = NS.Dispatch or S.Dispatch
+module.context = Support.ModuleTimers(root, S, NS)("chat", module, ctx)
 module.active = true
 -- The catalog defaults, as the controller hands them over, plus this test's look.
 module.config = {
@@ -817,16 +819,11 @@ assert(messageHooks == 0, "chat styling without message tools hooked the message
 -- alpha; turning the fade off hands back the window and the Suite minimum.
 local fadeTimers = {}
 GetTime = function() return 0 end
-C_Timer = { NewTimer = function(_, callback)
-    local timer = { callback = callback }
-    function timer:Cancel() self.cancelled = true end
-    fadeTimers[#fadeTimers + 1] = timer
-    return timer
-end }
+C_Timer = { After = function(_, callback) fadeTimers[#fadeTimers + 1] = callback end }
 module.config.idleSeconds, module.config.idleAlpha = 5, 20
 module:Refresh()
 GetTime = function() return 10 end
-for _, timer in ipairs(fadeTimers) do if not timer.cancelled then timer.callback() end end
+for _, callback in ipairs(fadeTimers) do callback() end
 assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001 and math.abs(ChatFrame4:GetAlpha() - 0.2) < 0.001,
     "the idle fade did not fade the window and its tab")
 tabAlphaHook(ChatFrame4)

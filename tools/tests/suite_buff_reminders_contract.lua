@@ -148,7 +148,9 @@ C_UnitAuras = {
 -- C_Secrets.ShouldAurasBeSecret reports that state.
 local auraRestricted = false
 C_Secrets = { ShouldAurasBeSecret = function() return auraRestricted end }
--- Coalesced group passes run through C_Timer.After.
+-- The module's waits are context timers on C_Timer.After: coalesced group
+-- passes (0.1 seconds) queue here, every other wait (an advance warning, the
+-- ready check note) is scheduled with its due time.
 local afterQueue = {}
 local function RunAfter()
     local queued = afterQueue
@@ -214,9 +216,12 @@ module.config = { classBuff=true, spellIDs="777", items="123:888", mainHandItem=
 -- The module context: events are registered per name (unit events keep their
 -- unit); eventFrame.OnEvent dispatches like the runtime does.
 local eventFrame, callbacks = { events = {} }, {}
-module.context = {
+-- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on the stub.
+NS.Dispatch = function(callback, ...) return callback(...) end
+local TimerContext = Support.ModuleTimers(root, S, NS)
+module.context = TimerContext("buffReminders", module, {
     Event = function(_, event, callback, allowCombat, unit)
-        assert(allowCombat == true, "buff reminder event must run its own combat checks")
+        assert(Support.InCombatOption(allowCombat), "buff reminder event must run its own combat checks")
         callbacks[event] = callback
         eventFrame.events[event] = unit or true
     end,
@@ -224,7 +229,19 @@ module.context = {
         callbacks[event] = nil
         eventFrame.events[event] = nil
     end,
-}
+})
+-- The ready check note's hide wait (R.HideReadyCheck) and every other
+-- deadline wait of the module, which is the advance warning.
+local function ReadyNotePending()
+    local wait = module.context.timers and module.context.timers[private.BuffReminders.HideReadyCheck]
+    return wait ~= nil and wait:Pending()
+end
+local function ThresholdPending()
+    for fn, wait in pairs(module.context.timers or {}) do
+        if fn ~= private.BuffReminders.HideReadyCheck and wait.Start and wait:Pending() then return true end
+    end
+    return false
+end
 function eventFrame.OnEvent(_, event, ...)
     local callback = callbacks[event]
     if callback and module.active then callback(module, event, ...) end
@@ -302,7 +319,7 @@ before=auraReads
 module:Update("visual")
 assert(module.view.mask==15 and module.view.buttons[1].shown and module.view.buttons[3].count.text=="5")
 assert(auraReads==before and module.list.entries[1].present==cachedPresent and module.list.entries[3].count==cachedCount)
-assert(not module.list.thresholdTimer and not (module.cursor.driver and module.cursor.driver.OnUpdate))
+assert(not ThresholdPending() and not (module.cursor.driver and module.cursor.driver.OnUpdate))
 S.editMode=false
 module:Update("visual")
 assert(module.view.mask==14 and not module.view.buttons[1].shown and module.view.buttons[3].count.text=="2",
@@ -499,23 +516,26 @@ C_SpecializationInfo = {
     GetSpecialization = function() return 1 end,
     GetSpecializationInfo = function() return specID end,
 }
-C_Timer = { NewTimer=function(delay, callback)
-    local timer = { due=now + delay, callback=callback, cancelled=false }
-    function timer:Cancel() self.cancelled = true end
-    scheduled[#scheduled + 1] = timer
-    return timer
-end }
-local function FireNext()
-    local first
-    for _, timer in ipairs(scheduled) do
-        if not timer.cancelled and not timer.fired and (not first or timer.due < first.due) then
-            first = timer
-        end
+C_Timer = { After=function(delay, callback)
+    if delay == 0.1 then
+        afterQueue[#afterQueue + 1] = { callback = callback }
+        return
     end
-    assert(first, "no threshold timer scheduled")
-    now, first.fired = first.due, true
-    first.callback()
-    return first
+    scheduled[#scheduled + 1] = { due=now + delay, callback=callback }
+end }
+-- Time runs to the pending advance warning: every wait due until it ran.
+local function FireNext()
+    assert(ThresholdPending(), "no threshold timer scheduled")
+    local target = module.list.thresholdAt
+    while ThresholdPending() and module.list.thresholdAt == target do
+        local first
+        for _, timer in ipairs(scheduled) do
+            if not timer.fired and (not first or timer.due < first.due) then first = timer end
+        end
+        assert(first, "the advance warning has no wait in flight")
+        now, first.fired = math.max(now, first.due), true
+        first.callback()
+    end
 end
 UnitClass = function() return "Rogue", "ROGUE" end
 local knownPoison = { [2823]=true, [315584]=true, [381637]=true, [3408]=true }
@@ -541,7 +561,7 @@ assert(module.view.mask == 1 and auraReads == before and module.view.buttons[1].
     "threshold timer did not reveal the expiring poison without scanning auras")
 module.config.remindBeforeMinutes = 0
 module:Refresh()
-assert(module.view.mask == 0 and module.list.thresholdTimer == nil,
+assert(module.view.mask == 0 and module.list.thresholdAt == nil and not ThresholdPending(),
     "zero-minute setting did not disable advance reminders")
 module.config.remindBeforeMinutes = 5
 module:Refresh()
@@ -655,9 +675,8 @@ before = enchantReads
 FireNext()
 assert(module.view.mask == 1 and enchantReads == before,
     "weapon advance reminder queried equipment at the threshold")
-local pending = module.list.thresholdTimer
 module:Disable()
-assert(module.list.thresholdTimer == nil and (not pending or pending.cancelled),
+assert(module.list.thresholdAt == nil and not ThresholdPending(),
     "disabling did not cancel the pending threshold timer")
 
 -- Food warnings use the same timer, while a short eating aura is not treated
@@ -681,7 +700,7 @@ foodAura = { spellId=104280, icon=133950, auraInstanceID=556,
 auras[104280] = foodAura
 module.active = true
 module:Enable()
-assert(module.view.mask == 0 and module.list.thresholdTimer == nil,
+assert(module.view.mask == 0 and module.list.thresholdAt == nil and not ThresholdPending(),
     "short eating aura was incorrectly treated as expiring food")
 module:Disable()
 auras[104280] = nil
@@ -831,21 +850,20 @@ module:Refresh()
 before = auraReads
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
 assert(module.readyCheck.label.shown and module.readyCheck.label.text:find("50%%")
-    and auraReads == before and module.readyCheck.timer, "readycheck low-mana warning failed")
-local warningTimer = module.readyCheck.timer
+    and auraReads == before and ReadyNotePending(), "readycheck low-mana warning failed")
 UnitPower = function() return { secret=true } end
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
-assert(not module.readyCheck.label.shown and warningTimer.cancelled, "secret mana was treated as low mana")
+assert(not module.readyCheck.label.shown and not ReadyNotePending(), "secret mana was treated as low mana")
 UnitPower = function() return 10 end
 UnitGroupRolesAssigned = function() return "DAMAGER" end
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
 assert(not module.readyCheck.label.shown, "non-healer got a healer mana warning")
 UnitGroupRolesAssigned = function() return "HEALER" end
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
-warningTimer = module.readyCheck.timer
+assert(ReadyNotePending(), "the low-mana note did not wait to hide")
 combat = true
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
-assert(warningTimer.cancelled and not eventFrame.events.READY_CHECK and not eventFrame.events.CHALLENGE_MODE_START,
+assert(not ReadyNotePending() and not eventFrame.events.READY_CHECK and not eventFrame.events.CHALLENGE_MODE_START,
     "combat kept preparation listeners or the warning timer running")
 combat = false
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
@@ -1327,7 +1345,8 @@ do
     C_Secrets.ShouldAurasBeSecret = function() return false end
     C_UnitAuras.GetUnitAuraBySpellID = function() return {} end
     NS.Client.isForever, NS.Client.modernEquipment = false, false
-    afterQueue, scheduled = {}, {}
+    -- Waits still in flight stay scheduled: C_Timer.After cannot be cancelled.
+    afterQueue = {}
     now = 5000
     auras[1459] = { spellId = 1459, auraInstanceID = 950, expirationTime = now + 120, duration = 3600 }
     module.config = { classBuff=true, groupBuff=true, spellIDs="", items="", mainHandItem="", offHandItem="",
@@ -1407,7 +1426,8 @@ do
     C_UnitAuras.GetAuraDataBySpellName = function() return nil end
     -- One pending pass at a time, kept without allocating.
     local pendingPass
-    C_Timer.After = function(_, callback)
+    C_Timer.After = function(delay, callback)
+        if delay ~= 0.1 then return end
         assert(pendingPass == nil, "a second group pass was queued")
         pendingPass = callback
     end

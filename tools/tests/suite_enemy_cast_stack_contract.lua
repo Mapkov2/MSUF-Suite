@@ -362,8 +362,20 @@ assert(module.previews[1].stripe.shown and not module.previews[3].stripe.shown a
 casts.nameplate4 = SecretCast()
 Fire("UNIT_SPELLCAST_START", "nameplate4")
 assert(Live("nameplate4") and not module.entries.nameplate4.row, "Edit Mode painted a live cast")
+-- In combat MSUF Edit Mode closes at once while the module's Refresh waits
+-- for the lockdown to end (S.Apply queues it): the next listed cast must
+-- give the casts listed during Edit Mode their rows too.
 module:HideEditPreview()
 S.editMode = false
+casts.nameplate5 = SecretCast()
+Fire("UNIT_SPELLCAST_START", "nameplate5")
+assert(module.visible == math.min(#module.ordered, module.config.listSize), "the visible count lost listed casts")
+for i = 1, module.visible do
+    local row = module.ordered[i].row
+    assert(row and row.shown and row.slot == i, "a cast listed during Edit Mode got no row after it closed")
+end
+casts.nameplate5 = nil
+Fire("UNIT_SPELLCAST_STOP", "nameplate5")
 module.config.listSize = 2
 module:Refresh()
 assert(not module.previews[1].shown and module.ordered[1].row.shown and module.ordered[1].row.binding.enabled

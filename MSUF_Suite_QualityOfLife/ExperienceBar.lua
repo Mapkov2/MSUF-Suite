@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "xpBar"
 local SEGMENT_COUNT = 20
@@ -282,7 +283,10 @@ end
 
 -- The Custom style (4) is built from the bar's own color settings; it keeps
 -- one table, refilled only when those colors change.
-local CUSTOM = 4
+-- look (MSUF_Suite/Core/Catalog/QualityOfLifeIndicators.lua): Midnight Blue,
+-- Midnight Dark, MSUF Forever, Custom, Clean Modern, Class Style; the
+-- default is Midnight Dark on Retail and MSUF Forever on Forever.
+local MIDNIGHT_DARK, MSUF_FOREVER, CUSTOM, CLASS_STYLE = 2, 3, 4, 6
 local custom = {}
 local function CustomLook(c)
     local key = c.customFill .. c.customRested .. c.customPanel .. c.customBorder
@@ -297,8 +301,9 @@ end
 
 local function ApplyLook(self)
     local c = self.config
-    local index = (LOOKS[c.look] or c.look == CUSTOM) and c.look or (NS.Client.isForever and 3 or 2)
-    local classRevision = index == 6 and NS.SuiteLooks and NS.SuiteLooks.classRevision or 0
+    local index = (LOOKS[c.look] or c.look == CUSTOM) and c.look
+        or (NS.Client.isForever and MSUF_FOREVER or MIDNIGHT_DARK)
+    local classRevision = index == CLASS_STYLE and NS.SuiteLooks and NS.SuiteLooks.classRevision or 0
     local look = index == CUSTOM and CustomLook(c) or LOOKS[index]
     local customKey = index == CUSTOM and look.key or nil
     if self.appliedLook == index and self.appliedClassRevision == classRevision
@@ -345,11 +350,8 @@ local function Layout(self)
     ApplyLook(self)
     ApplyFont(self)
     local c, host, bar = self.config, self.host, self.bar
-    local point = POINTS[c.point] or "BOTTOM"
-    host:SetScale(c.scale / 100)
     host:SetSize(c.width, c.height + 23)
-    host:ClearAllPoints()
-    host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(host, c, "BOTTOM")
     bar:SetSize(c.width, c.height)
     local effectiveScale = bar:GetEffectiveScale()
     local pixel = Finite(effectiveScale) and effectiveScale > 0 and 1 / effectiveScale or 1
@@ -498,10 +500,10 @@ function M:Enable()
     self.rateJob = self.context:Coalesce(RATE_REFRESH, PaintValues)
     Create(self)
     local context = self.context
-    context:Event("PLAYER_ENTERING_WORLD", EnterWorld, true)
-    context:Event("PLAYER_XP_UPDATE", XPChanged, true)
-    context:Event("PLAYER_LEVEL_UP", XPChanged, true)
-    context:Event("UPDATE_EXHAUSTION", XPChanged, true)
+    context:Event("PLAYER_ENTERING_WORLD", EnterWorld, IN_COMBAT)
+    context:Event("PLAYER_XP_UPDATE", XPChanged, IN_COMBAT)
+    context:Event("PLAYER_LEVEL_UP", XPChanged, IN_COMBAT)
+    context:Event("UPDATE_EXHAUSTION", XPChanged, IN_COMBAT)
     if NS.loginKind then
         local level, current, maximum = XP()
         if level then

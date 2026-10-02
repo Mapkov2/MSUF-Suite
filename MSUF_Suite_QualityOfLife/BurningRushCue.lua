@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID, SPELL_ID = "burningRushCue", 111400
 local WIDTH, HEIGHT = 216, 46
@@ -76,11 +77,7 @@ local function Create(self)
 end
 
 local function Place(self)
-    local c = self.config
-    local point = NS.AnchorPoints[c.point] or "CENTER"
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
-    self.host:SetScale(c.scale / 100)
+    S.PlaceHost(self.host, self.config)
 end
 
 local function Update(self)
@@ -115,9 +112,9 @@ function M:Enable()
     self.driverRegistered = true
     Update(self)
     self.host:Show()
-    self.context:Event("PLAYER_ENTERING_WORLD", Update, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", Update, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", Update, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", Update, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", Update, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", Update, IN_COMBAT)
     self:RegisterMovers()
 end
 

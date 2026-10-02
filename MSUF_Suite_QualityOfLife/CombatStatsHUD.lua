@@ -1,11 +1,15 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "combatStatsHUD"
 -- look 6 is Class Style, whose shared palette is QoLVisualStyles[5]; look 5 is Custom.
 local CUSTOM_LOOK, CLASS_LOOK, CLASS_PALETTE = 5, 6, 5
 -- fps: 1 hidden, 2 below the stats, 3 on its own.
-local FPS_BELOW, FPS_ALONE = 2, 3
+local FPS_HIDDEN, FPS_BELOW, FPS_ALONE = 1, 2, 3
+-- valueFormat: percentages, combat ratings, or both on two lines; labelStyle:
+-- short or full stat names (MSUF_Suite/Core/Catalog/QualityOfLifeHUD.lua).
+local RATINGS, BOTH, FULL_NAMES = 2, 3, 2
 local FIELDS = {
     { key = "showCrit", label = "CRIT", full = "Critical strike" },
     { key = "showHaste", label = "HASTE", full = "Haste" },
@@ -77,15 +81,17 @@ local function ReadRating(rating)
     end
 end
 
-local function SetValue(field, value, rating, mode)
+-- raw: the numbers include ratings; ratingsOnly: only ratings (else both
+-- on two lines). Without raw the value shows as a percentage.
+local function SetValue(field, value, rating, raw, ratingsOnly)
     local text
-    if mode == 2 then
+    if not raw then
+        text = S.Finite(value) and string.format("%.1f%%", value) or "--"
+    elseif ratingsOnly then
         text = S.Finite(rating) and string.format("%.0f", rating) or "--"
-    elseif mode == 3 then
+    else
         text = (S.Finite(value) and string.format("%.1f%%", value) or "--")
             .. "\n" .. (S.Finite(rating) and string.format("%.0f", rating) or "--")
-    else
-        text = S.Finite(value) and string.format("%.1f%%", value) or "--"
     end
     if field.lastText ~= text then
         field.lastText = text
@@ -126,7 +132,7 @@ end
 -- so it also works in combat and never writes a setting.
 local function FPSPlacement(self)
     local wanted = self.fpsSession
-    if wanted == nil then wanted = self.config.fps ~= 1 end
+    if wanted == nil then wanted = self.config.fps ~= FPS_HIDDEN end
     if not self.active or not (wanted or S.editMode) then return nil end
     if self.config.fps == FPS_BELOW then return FPS_BELOW end
     return FPS_ALONE
@@ -190,12 +196,9 @@ end
 
 local function Layout(self)
     local c = self.config
-    local point = NS.AnchorPoints[c.point] or "CENTER"
     local host = self.host
-    host:ClearAllPoints()
-    host:SetPoint(point, UIParent, point, c.x, c.y)
-    host:SetSize(c.width, c.valueFormat == 3 and 58 or 42)
-    host:SetScale(c.scale / 100)
+    host:SetSize(c.width, c.valueFormat == BOTH and 58 or 42)
+    S.PlaceHost(host, c)
     self.bg:SetColorTexture(S.RGB(c.backgroundColor))
     self.bg:SetAlpha(c.opacity / 100)
     self.border:SetColorTexture(S.RGB(c.accentColor))
@@ -209,7 +212,7 @@ local function Layout(self)
     for i = 1, #FIELDS do
         local field, definition = self.fields[i], FIELDS[i]
         local shown = Enabled(c, definition)
-        field.label:SetText(S.Text(c.labelStyle == 2 and definition.full or definition.label))
+        field.label:SetText(S.Text(c.labelStyle == FULL_NAMES and definition.full or definition.label))
         field.label:SetShown(shown)
         field.value:SetShown(shown)
         if shown then
@@ -234,21 +237,23 @@ local function Update(self, event)
     self.host:SetShown(visible)
     if not visible then return end
     local c = self.config
+    local ratingsOnly = c.valueFormat == RATINGS
+    local raw = ratingsOnly or c.valueFormat == BOTH
     if S.editMode then
-        for i = 1, #self.fields do SetValue(self.fields[i], 12.3 + i, 500 + i * 100, c.valueFormat) end
+        for i = 1, #self.fields do SetValue(self.fields[i], 12.3 + i, 500 + i * 100, raw, ratingsOnly) end
         return
     end
     local crit, haste, mastery, versatility, critRating = ReadStats(c)
-    local raw = c.valueFormat == 2 or c.valueFormat == 3
-    SetValue(self.fields[1], crit, c.showCrit and raw and ReadRating(critRating), c.valueFormat)
-    SetValue(self.fields[2], haste, c.showHaste and raw and ReadRating(_G.CR_HASTE_MELEE), c.valueFormat)
-    SetValue(self.fields[3], mastery, c.showMastery and raw and ReadRating(_G.CR_MASTERY), c.valueFormat)
-    SetValue(self.fields[4], versatility, c.showVersatility and raw and ReadRating(_G.CR_VERSATILITY_DAMAGE_DONE), c.valueFormat)
+    SetValue(self.fields[1], crit, c.showCrit and raw and ReadRating(critRating), raw, ratingsOnly)
+    SetValue(self.fields[2], haste, c.showHaste and raw and ReadRating(_G.CR_HASTE_MELEE), raw, ratingsOnly)
+    SetValue(self.fields[3], mastery, c.showMastery and raw and ReadRating(_G.CR_MASTERY), raw, ratingsOnly)
+    SetValue(self.fields[4], versatility, c.showVersatility and raw
+        and ReadRating(_G.CR_VERSATILITY_DAMAGE_DONE), raw, ratingsOnly)
     -- Switched-off extra stats are not read.
     for i = FIRST_EXTRA, #FIELDS do
         local field = FIELDS[i]
         if c[field.key] then
-            SetValue(self.fields[i], ReadPercent(field.read), raw and ReadRating(_G[field.rating]), c.valueFormat)
+            SetValue(self.fields[i], ReadPercent(field.read), raw and ReadRating(_G[field.rating]), raw, ratingsOnly)
         end
     end
 end
@@ -273,7 +278,7 @@ local function SyncListeners(self, event)
     for i = 1, #STAT_EVENTS do
         local name = STAT_EVENTS[i]
         local unit = name:sub(1, 5) == "UNIT_" and "player" or nil
-        if want then self.context:Event(name, self.statsJob, true, unit)
+        if want then self.context:Event(name, self.statsJob, IN_COMBAT, unit)
         else self.context:RemoveEvent(name) end
     end
 end
@@ -288,9 +293,9 @@ function M:Enable()
     self.fpsChoice = self.config.fps
     Create(self)
     Layout(self)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnGate, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", OnGate, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", OnGate, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnGate, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", OnGate, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", OnGate, IN_COMBAT)
     SyncListeners(self)
     Update(self)
     UpdateFPS(self)

@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 
 -- Conceals Blizzard's main tooltip by alpha. GameTooltip:Hide() from addon
 -- code would run GameTooltip_OnHide in the addon's context and leave the
@@ -71,7 +72,7 @@ local function Shown() Apply() end
 local function StateChanged(_, event) Apply(event) end
 
 local function WantEvent(context, event, wanted)
-    if wanted then context:Event(event, StateChanged, true) else context:RemoveEvent(event) end
+    if wanted then context:Event(event, StateChanged, IN_COMBAT) else context:RemoveEvent(event) end
 end
 
 -- Every build ends in GameTooltip:Show(), Blizzard's and other addons' alike.

@@ -79,25 +79,20 @@ local function Sell(self, preview)
     self:UpdateButton()
 end
 
-local function OnAccept(_, preview)
-    if M.active then Sell(M, preview) end
-end
-
-local function EnsurePopup()
-    if StaticPopupDialogs[POPUP] then return end
-    StaticPopupDialogs[POPUP] = {
-        text = S.Text("Sell %d marked item stacks to this merchant?"),
-        button1 = S.BlizzardText("SELL", "Sell"), button2 = S.BlizzardText("CANCEL", "Cancel"),
-        OnAccept = OnAccept,
-        timeout = 0, whileDead = false, hideOnEscape = true,
-        preferredIndex = 3, showAlert = true,
-    }
-end
-
+-- Blizzard's generic confirmation (S.Confirm, MSUF_Suite_Modules/Dialogs.lua)
+-- asks before the marked stacks are sold.
 local function Click()
     if not MerchantOpen(M) then return end
     local preview = Candidates(M)
-    if #preview > 0 then StaticPopup_Show(POPUP, #preview, nil, preview) end
+    if #preview == 0 then return end
+    S.Confirm(POPUP, {
+        text = S.Text("Sell %d marked item stacks to this merchant?"), text_arg1 = #preview,
+        acceptText = S.BlizzardText("SELL", "Sell"), cancelText = S.BlizzardText("CANCEL", "Cancel"),
+        showAlert = true,
+        callback = function()
+            if M.active then Sell(M, preview) end
+        end,
+    })
 end
 
 -- OnLeave hides the shared tooltip only while this frame still owns it.
@@ -164,7 +159,7 @@ end
 local function MerchantEvent(self, event)
     if event == "MERCHANT_CLOSED" then
         if self.button then self.button:Hide() end
-        StaticPopup_Hide(POPUP)
+        S.HideQuestion(POPUP)
         self.context:RemoveEvent("BAG_UPDATE_DELAYED")
         return
     end
@@ -179,11 +174,10 @@ function M:Refresh()
         self.context:RemoveEvent("MERCHANT_CLOSED")
         self.context:RemoveEvent("BAG_UPDATE_DELAYED")
         self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-        StaticPopup_Hide(POPUP)
+        S.HideQuestion(POPUP)
         if self.button then self.button:Hide() end
         return
     end
-    EnsurePopup()
     self.context:Event("MERCHANT_SHOW", MerchantEvent)
     self.context:Event("MERCHANT_CLOSED", MerchantEvent)
     if MerchantFrame:IsShown() then
@@ -199,7 +193,7 @@ function M:Disable()
     self.context:RemoveEvent("MERCHANT_CLOSED")
     self.context:RemoveEvent("BAG_UPDATE_DELAYED")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    StaticPopup_Hide(POPUP)
+    S.HideQuestion(POPUP)
     if self.button then self.button:Hide() end
     self.ids = {}
 end

@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "partyEffects"
+local IN_COMBAT = { inCombat = true }
 local M = {}
 -- Haste spells whose cast by you or your pet starts the banner (public spell
 -- records, nether.wowhead.com/tooltip/spell/<id>, 2026-10-01): Bloodlust,
@@ -95,7 +96,7 @@ local function SpinBars(self)
     self.idleSpins = nil
     S.VisitPartyActionBars(SpinBar, self)
     if next(self.spinning) then
-        self.context:Event("PLAYER_REGEN_DISABLED", OnCombatEdge, true)
+        self.context:Event("PLAYER_REGEN_DISABLED", OnCombatEdge, IN_COMBAT)
     else
         self.idleSpins, self.spinning = self.spinning, nil
     end
@@ -192,7 +193,7 @@ local function OnAura(self, _, _, info)
 end
 
 local function Listen(self, event, on, callback, units)
-    if on then self.context:Event(event, callback, false, units) else self.context:RemoveEvent(event) end
+    if on then self.context:Event(event, callback, nil, units) else self.context:RemoveEvent(event) end
 end
 
 function M:Refresh()

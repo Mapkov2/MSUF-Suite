@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "skyriding"
 local ASCENT, SECOND_WIND, SURGE = 372610, 425782, 361584
@@ -293,7 +294,6 @@ end
 local function Layout(self)
     Create(self)
     local c, host = self.config, self.host
-    local point = POINTS[c.point] or "CENTER"
     local contentTop = ContentTop(c)
     local surgeHeight = max(49, c.fontSize + SurgeSize(c) + 10)
     local y = contentTop
@@ -302,10 +302,8 @@ local function Layout(self)
     if c.showSpeed then y = y - RowHeight(c, "speed") end
     local height = max(-y + 10, c.showWhirlingSurge and (-contentTop + surgeHeight + 10) or 0)
     local contentWidth = ContentWidth(c)
-    host:SetScale(c.scale / 100)
     host:SetSize(c.width, height)
-    host:ClearAllPoints()
-    host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(host, c)
     local pixel = 1 / max(0.1, host:GetEffectiveScale() or 1)
     local border = max(pixel, c.borderSize * pixel)
     self.edges[1]:SetHeight(border)
@@ -467,7 +465,7 @@ local function SyncSpellEvents(self, visible, preview)
         if watchCharges then
             -- Cached charges went stale while nobody listened.
             self.vigor.dirty, self.wind.dirty = true, true
-            context:Event("SPELL_UPDATE_CHARGES", M.ChargesChanged, true)
+            context:Event("SPELL_UPDATE_CHARGES", M.ChargesChanged, IN_COMBAT)
         else
             context:RemoveEvent("SPELL_UPDATE_CHARGES")
         end
@@ -476,7 +474,7 @@ local function SyncSpellEvents(self, visible, preview)
         self.watchCooldown = watchCooldown
         if watchCooldown then
             self.surgeDirty = true
-            context:Event("SPELL_UPDATE_COOLDOWN", M.CooldownChanged, true)
+            context:Event("SPELL_UPDATE_COOLDOWN", M.CooldownChanged, IN_COMBAT)
         else
             context:RemoveEvent("SPELL_UPDATE_COOLDOWN")
         end
@@ -549,10 +547,10 @@ end
 function M:Enable()
     Layout(self)
     local context = self.context
-    context:Event("PLAYER_ENTERING_WORLD", GlideChanged, true)
-    context:Event("PLAYER_CAN_GLIDE_CHANGED", GlideChanged, true)
-    context:Event("PLAYER_IS_GLIDING_CHANGED", GlideChanged, true)
-    context:Event("PLAYER_MOUNT_DISPLAY_CHANGED", GlideChanged, true)
+    context:Event("PLAYER_ENTERING_WORLD", GlideChanged, IN_COMBAT)
+    context:Event("PLAYER_CAN_GLIDE_CHANGED", GlideChanged, IN_COMBAT)
+    context:Event("PLAYER_IS_GLIDING_CHANGED", GlideChanged, IN_COMBAT)
+    context:Event("PLAYER_MOUNT_DISPLAY_CHANGED", GlideChanged, IN_COMBAT)
     GlideChanged()
     self:RegisterMovers()
 end

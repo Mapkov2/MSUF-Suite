@@ -1,5 +1,6 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
+local LOOK_BLIZZARD, LEVEL_BADGE = private.Mode.LOOK_BLIZZARD, private.Mode.LEVEL_BADGE
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
 -- The level number the Suite draws beside the health bar, and the alpha it
 -- applies to Blizzard's own level frames while that number replaces them.
@@ -45,12 +46,12 @@ end
 
 function Level.PaintNative(uf, prefix)
     if not NS.Client.isForever then return end
-    local hide = prefix and M.config.look ~= 2 and M.config[prefix]
-        and (M.config[prefix .. "LevelEnabled"] == false or M.config.levelAppearance ~= 2)
+    local hide = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix]
+        and (M.config[prefix .. "LevelEnabled"] == false or M.config.levelAppearance ~= LEVEL_BADGE)
     NativeAlpha(uf.PlayerLevelDiffFrame, hide)
     -- Camelot already draws its own badge in Classic style. Keep its legacy
     -- LevelFrame out of the Suite look so the level is never duplicated.
-    NativeAlpha(uf.LevelFrame, hide or prefix and M.config.look ~= 2 and M.config[prefix])
+    NativeAlpha(uf.LevelFrame, hide or prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix])
 end
 
 function Level.RestoreNative()
@@ -79,9 +80,9 @@ local function NativeShown(uf, prefix, unit)
     local setup = NamePlateSetupOptions
     local classic = S.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
     local namesOnly = S.Public(uf.showOnlyName) and uf.showOnlyName == true
-    if not prefix or M.config.look == 2 or not M.config[prefix]
+    if not prefix or M.config.look == LOOK_BLIZZARD or not M.config[prefix]
         or not M.config[prefix .. "LevelEnabled"] or not unit then return true end
-    if NS.Client.isForever then return M.config.levelAppearance == 2 or namesOnly end
+    if NS.Client.isForever then return M.config.levelAppearance == LEVEL_BADGE or namesOnly end
     -- Retail's own badge appears only for some players; it keeps its place.
     return classic or LevelBadgeShown(uf, unit) ~= false
 end

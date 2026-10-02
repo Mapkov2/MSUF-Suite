@@ -157,31 +157,10 @@ GameTooltip_ShowCompareItem = function() end
 GameTooltip_HideResetCursor = function() end
 SetCursor = function(kind) tooltip.cursor = kind end
 
--- StaticPopup_Show runs the dialog's OnShow; tests answer it.
-StaticPopupDialogs = {}
-local popups = {}
-StaticPopup_Show = function(which, first, second, data)
-    local edit = { text = "" }
-    function edit:SetNumeric() end
-    function edit:SetMaxLetters() end
-    function edit:SetText(value) self.text = value end
-    function edit:GetText() return self.text end
-    function edit:HighlightText() end
-    local dialog = { which = which, data = data, args = { first, second } }
-    function dialog:GetEditBox() return edit end
-    function dialog:Hide() popups[which] = nil end
-    function edit:GetParent() return dialog end
-    popups[which] = dialog
-    local spec = StaticPopupDialogs[which]
-    if spec.OnShow then spec.OnShow(dialog, data) end
-    return dialog
-end
-StaticPopup_Hide = function(which) popups[which] = nil end
-local function Accept(which)
-    local dialog = assert(popups[which], "no " .. which .. " dialog")
-    StaticPopupDialogs[which].OnAccept(dialog, dialog.data)
-    popups[which] = nil
-end
+-- Blizzard's generic dialogs; tests answer them.
+local dialogs = dofile(root .. "/tools/tests/suite_test_support.lua").StaticPopups()
+local function Confirmation() return dialogs.Last("GENERIC_CONFIRMATION") end
+local function QuantityPrompt() return dialogs.Last("GENERIC_INPUT_BOX") end
 
 local S, modules, printed = { instances = {} }, {}, {}
 S.Public = function(value) return value ~= "secret" end
@@ -225,6 +204,8 @@ local function Context()
     end
     return context
 end
+-- The Suite's questions (S.Confirm, S.AskText) live in MSUF_Suite_Modules/Dialogs.lua.
+assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = S })
 for _, file in ipairs({ "MerchantWatch", "SharedItems", "MerchantList" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("test", { NS = NS, Suite = S })
 end
@@ -303,34 +284,51 @@ Check(bought[1][1] == 1 and bought[1][2] == nil, "a right click did not buy the 
 Click(1, "LeftButton")
 Check(picked[1] == 1 and #bought == 1, "a left click did not pick the offer up")
 Click(2, "RightButton")
-Check(#bought == 1 and popups.MSUF_SUITE_MERCHANT_BUY
-    and popups.MSUF_SUITE_MERCHANT_BUY.args[1] == "Buy item:2 for 50 |T777|t Valorstones?",
+Check(#bought == 1 and Confirmation() and Confirmation().text == "Buy item:2 for 50 |T777|t Valorstones?"
+    and Confirmation().acceptText == "Yes" and Confirmation().cancelText == "No" and Confirmation().alert,
     "a currency purchase did not ask first")
-Accept("MSUF_SUITE_MERCHANT_BUY")
+dialogs.Accept(Confirmation())
 Check(bought[2][1] == 2, "the confirmed currency purchase was not bought")
 Click(2, "LeftButton")
-Check(#picked == 1 and popups.MSUF_SUITE_MERCHANT_BUY, "a left click picked up an offer that needs a confirmation")
+Check(#picked == 1 and Confirmation(), "a left click picked up an offer that needs a confirmation")
 offers = 1
-Accept("MSUF_SUITE_MERCHANT_BUY")
+dialogs.Accept(Confirmation())
 Check(#bought == 2 and printed[1], "a confirmation answered after the stock changed bought something")
 offers = 30
 MerchantFrame_Update()
 Click(3, "RightButton")
-local text = popups.MSUF_SUITE_MERCHANT_BUY.args[1]
+local text = Confirmation().text
 Check(text:find("2000000c", 1, true) and text:find("cannot be refunded", 1, true),
     "a high price purchase did not ask or did not name that it cannot be refunded")
-popups.MSUF_SUITE_MERCHANT_BUY = nil
+dialogs.Cancel(Confirmation())
 modifier = "SPLITSTACK"
 Click(4, "LeftButton")
-local quantity = popups.MSUF_SUITE_MERCHANT_QUANTITY
-Check(quantity and quantity.args[2] == 200 and quantity:GetEditBox():GetText() == "20",
+local quantity = QuantityPrompt()
+local edit = quantity and quantity:GetEditBox()
+Check(quantity and quantity.text == "Buy how many item:4? You can buy up to 200." and edit:GetText() == "20"
+    and edit:IsNumeric() and edit.maxLetters == 5 and edit.highlighted and quantity.acceptText == "Accept",
     "Shift-click did not ask for a quantity up to the affordable stack limit")
-quantity:GetEditBox():SetText("45")
-Accept("MSUF_SUITE_MERCHANT_QUANTITY")
+edit:SetText("45")
+dialogs.Accept(quantity)
 Check(bought[3][1] == 4 and bought[3][2] == 40, "the quantity was not bought in whole stacks")
+-- The edit box belongs to Blizzard's shared dialog frame; however the prompt
+-- closes, the next dialog gets it back as Blizzard's code keeps it.
+Check(not edit:IsNumeric(), "the accepted quantity prompt left the shared edit box numeric")
+Click(4, "LeftButton")
+quantity = QuantityPrompt()
+dialogs.Escape(quantity)
+Check(not quantity:GetEditBox():IsNumeric() and #bought == 3, "Escape left the shared edit box numeric")
+Click(4, "LeftButton")
+quantity = QuantityPrompt()
+quantity:GetEditBox():SetText("")
+dialogs.Enter(quantity)
+Check(QuantityPrompt() == quantity and #bought == 3, "Enter accepted an empty quantity")
+quantity:GetEditBox():SetText("20")
+dialogs.Enter(quantity)
+Check(not QuantityPrompt() and #bought == 4 and bought[4][2] == 20, "Enter did not buy the typed quantity")
 chatLink = true
 Click(4, "LeftButton")
-Check(not popups.MSUF_SUITE_MERCHANT_QUANTITY, "a linked offer still asked for a quantity")
+Check(not QuantityPrompt(), "a linked offer still asked for a quantity")
 modifier, chatLink = nil, false
 -- An item from the bags on the cursor is sold by a click or a drop on the
 -- list, never bought against; a refundable one asks to be refunded instead,
@@ -347,19 +345,18 @@ cursor = "item"
 cursorItem = { IsBagAndSlot = function() return true end, GetBagAndSlot = function() return 0, 3 end,
     IsEquipmentSlot = function() return false end }
 Click(1, "LeftButton")
-Check(#bought == 3 and #picked == 2 and picked[2] == 0, "a click with a bag item did not sell it")
+Check(#bought == 4 and #picked == 2 and picked[2] == 0, "a click with a bag item did not sell it")
 panel.scripts.OnReceiveDrag(panel)
-Check(#picked == 3 and picked[3] == 0 and #bought == 3, "dropping a bag item on the list did not sell it")
+Check(#picked == 3 and picked[3] == 0 and #bought == 4, "dropping a bag item on the list did not sell it")
 purchase = { refundSeconds = 3600, money = 5000, itemCount = 0, currencyCount = 0 }
 Click(2, "RightButton")
-Check(#picked == 3 and #bought == 3 and popups.MSUF_SUITE_MERCHANT_REFUND
-    and popups.MSUF_SUITE_MERCHANT_REFUND.args[1] == "bagitem", "a refundable item was sold without asking")
-Accept("MSUF_SUITE_MERCHANT_REFUND")
+Check(#picked == 3 and #bought == 4 and Confirmation()
+    and Confirmation().text == "Refund bagitem for its purchase price?", "a refundable item was sold without asking")
+dialogs.Accept(Confirmation())
 Check(refunds[1] and refunds[1][1] == 0 and refunds[1][2] == 3 and refunds[1][3] == false, "the accepted refund did not run")
 panel.scripts.OnMouseUp(panel)
-StaticPopupDialogs.MSUF_SUITE_MERCHANT_REFUND.OnCancel()
+dialogs.Cancel(Confirmation())
 Check(cleared == 1 and #refunds == 1 and #picked == 3, "declining the refund did not put the item back")
-popups.MSUF_SUITE_MERCHANT_REFUND = nil
 cursor, cursorItem, purchase = nil, nil, nil
 rows[1].scripts.OnEnter(rows[1])
 Check(tooltip.owner == rows[1] and tooltip.index == 1 and tooltip.cursor == "BUY_CURSOR",
@@ -381,7 +378,7 @@ panel.bar:SetValue(3)
 Click(2, "RightButton")
 list.context.events.MERCHANT_CLOSED(list, "MERCHANT_CLOSED")
 MerchantFrame:Hide()
-Check(list.offset == 0 and not popups.MSUF_SUITE_MERCHANT_BUY and MerchantItem1.alpha == 1,
+Check(list.offset == 0 and not Confirmation() and MerchantItem1.alpha == 1,
     "closing the merchant kept the scroll position, a dialog or the faded offers")
 combat = true
 MerchantFrame:Show()

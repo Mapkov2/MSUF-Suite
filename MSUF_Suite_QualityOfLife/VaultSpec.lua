@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 
 local M = {}
 
@@ -69,7 +70,7 @@ function M:Enable()
     self.context:Event("PLAYER_LOOT_SPEC_UPDATED", SpecChanged)
     self.context:Event("PLAYER_SPECIALIZATION_CHANGED", SpecChanged)
     Attach(self)
-    if not self.label then self.context:Event("ADDON_LOADED", OnAddon, true) end
+    if not self.label then self.context:Event("ADDON_LOADED", OnAddon, IN_COMBAT) end
 end
 
 function M:Refresh()

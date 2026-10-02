@@ -85,7 +85,7 @@ end
 
 local context = {}
 function context:Event(name, callback, allowCombat)
-    assert(name ~= "UNIT_AURA" and allowCombat == true, "Lua aura listener or blocked combat event")
+    assert(name ~= "UNIT_AURA" and dofile(root .. "/tools/tests/suite_test_support.lua").InCombatOption(allowCombat), "Lua aura listener or blocked combat event")
     events[name] = callback
 end
 function context:RemoveEvent(name) events[name] = nil end

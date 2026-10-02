@@ -249,10 +249,17 @@ end
 -- The client sends PLAYER_REGEN_DISABLED before InCombatLockdown() turns
 -- true and PLAYER_REGEN_ENABLED after it turns false. A handler that decides
 -- "in combat" while running for one of those events passes the event here.
+-- Code that runs inside another PLAYER_REGEN_DISABLED handler without
+-- knowing it asks without an event: MSUF Edit Mode closes for combat in its
+-- handler, and the modules re-apply right there (S.SetEditMode). The
+-- player's combat flag already marks that window as combat starting:
+-- Blizzard's own REGEN handlers read UnitAffectingCombat("player")
+-- (EditModeActionBarMixin:UpdateVisibility, upstream/live ActionBar.lua),
+-- and it is never secret (UnitDocumentation.lua, live and forever).
 function Suite.InCombat(event)
     if event == "PLAYER_REGEN_DISABLED" then return true end
     if event == "PLAYER_REGEN_ENABLED" then return false end
-    return InCombatLockdown() == true
+    return InCombatLockdown() == true or UnitAffectingCombat("player") == true
 end
 
 -- Restricted actions raise ADDON_ACTION_BLOCKED when an addon calls them at

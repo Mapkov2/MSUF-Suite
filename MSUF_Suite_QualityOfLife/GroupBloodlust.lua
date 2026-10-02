@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "groupBloodlust"
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local POINTS = NS.AnchorPoints
 local Public, PublicText, Finite = S.Public, S.PublicText, S.Finite
@@ -16,18 +17,11 @@ local INSTANCE_UPDATES = { "updatedAuraInstanceIDs", "removedAuraInstanceIDs" }
 local AURA_DELAY = .1
 local OnAura, Paint
 
+local CARD = { width = 172, height = 42, fill = { .06, .07, .09, .92 }, edge = 1, line = { .54, .72, .78, .95 } }
+
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(172, 42)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-    local background = S.CreateTexture(host, nil, "BACKGROUND")
-    background:SetAllPoints(host)
-    background:SetColorTexture(.06, .07, .09, .92)
-    local edges = {}
-    for i = 1, 4 do edges[i] = S.CreateTexture(host, nil, "BORDER") end
-    S.PlaceEdges(edges, host, 1, .54, .72, .78, .95)
+    local host, background, edges = S.QoLCard(CARD)
     local icon = S.CreateTexture(host, nil, "ARTWORK")
     icon:SetPoint("LEFT", host, "LEFT", 4, 0)
     icon:SetSize(34, 34)
@@ -54,15 +48,10 @@ end
 
 local function Place(self)
     local c = self.config
-    local style = S.QoLStyle(c)
-    S.QoLColor(self.background, style.background, .92)
-    for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.border, .95) end
+    local style = S.PaintQoLCard(ID, c, self.background, self.edges)
     self.title:SetTextColor(S.RGB(style.muted))
-    local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(c.width, c.height)
-    self.host:SetScale(c.scale / 100)
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(self.host, c)
 end
 
 -- Combat, encounter, keystone and PvP restrictions turn these auras secret
@@ -88,11 +77,11 @@ end
 -- for the end of the restriction instead and read again then.
 local function WatchAuras(self, readable)
     if readable then
-        self.context:Event("UNIT_AURA", OnAura, true, "player")
+        self.context:Event("UNIT_AURA", OnAura, IN_COMBAT, "player")
         self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
     else
         self.context:RemoveEvent("UNIT_AURA")
-        self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", Paint, true)
+        self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", Paint, IN_COMBAT)
     end
 end
 
@@ -213,7 +202,7 @@ local function OnGroup(self)
     self.grouped = Public(grouped) and grouped == true
     if self.grouped then
         -- Combat end lifts the most common restriction; read again then.
-        self.context:Event("PLAYER_REGEN_ENABLED", OnGroup, true)
+        self.context:Event("PLAYER_REGEN_ENABLED", OnGroup, IN_COMBAT)
     else
         self.context:RemoveEvent("UNIT_AURA")
         self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
@@ -227,8 +216,8 @@ function M:Enable()
     self.auraJob = self.context:Coalesce(AURA_DELAY, PaintAuras)
     Create(self)
     Place(self)
-    self.context:Event("GROUP_ROSTER_UPDATE", OnGroup, true)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnGroup, true)
+    self.context:Event("GROUP_ROSTER_UPDATE", OnGroup, IN_COMBAT)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnGroup, IN_COMBAT)
     OnGroup(self)
     self:RegisterMovers()
 end

@@ -1,7 +1,10 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 
 local M = {}
+local ID = "loadoutReminder"
+local CARD = { width = 360, height = 70, fill = { .05, .07, .09, .94 }, stripe = 3 }
 local INSTANCE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED", "SELECTED_LOADOUT_CHANGED" }
 -- Events that change the build inside one instance, so they re-check it.
@@ -57,17 +60,7 @@ end
 
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(360, 70)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-    local background = S.CreateTexture(host, nil, "BACKGROUND")
-    background:SetAllPoints()
-    background:SetColorTexture(.05, .07, .09, .94)
-    local border = S.CreateTexture(host, nil, "BORDER")
-    border:SetPoint("TOPLEFT")
-    border:SetPoint("BOTTOMLEFT")
-    border:SetWidth(3)
+    local host, background, border = S.QoLCard(CARD)
     local title = S.CreateFontString(host, nil, "OVERLAY")
     title:SetPoint("TOPLEFT", 12, -8)
     title:SetPoint("TOPRIGHT", -12, -8)
@@ -85,8 +78,7 @@ local function Create(self)
 end
 
 local function Paint(self, mismatch)
-    local style = S.QoLStyle(self.config)
-    S.QoLColor(self.background, style.background, .94)
+    local style = S.PaintQoLCard(ID, self.config, self.background)
     if mismatch then
         self.title:SetTextColor(1, .54, .42)
         self.border:SetColorTexture(1, .42, .28, 1)
@@ -176,12 +168,12 @@ local function SyncEvents(self)
     if not watchInstance then
         self.lastInstance, self.lastConfigID, self.lastLootID = nil, nil, nil
     end
-    if self.config.onReadyCheck then context:Event("READY_CHECK", OnReady, true)
+    if self.config.onReadyCheck then context:Event("READY_CHECK", OnReady, IN_COMBAT)
     else context:RemoveEvent("READY_CHECK") end
-    if self.config.onLfgProposal then context:Event("LFG_PROPOSAL_SHOW", OnProposal, true)
+    if self.config.onLfgProposal then context:Event("LFG_PROPOSAL_SHOW", OnProposal, IN_COMBAT)
     else context:RemoveEvent("LFG_PROPOSAL_SHOW") end
     for _, event in ipairs(INSTANCE_EVENTS) do
-        if watchInstance then context:Event(event, OnZone, true)
+        if watchInstance then context:Event(event, OnZone, IN_COMBAT)
         else context:RemoveEvent(event) end
     end
     return newlyWatching
@@ -214,4 +206,4 @@ function M:Disable()
 end
 
 S.LoadoutReminder = M
-S.Install("loadoutReminder", M)
+S.Install(ID, M)

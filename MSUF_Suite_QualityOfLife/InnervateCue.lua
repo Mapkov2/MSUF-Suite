@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, SPELL_ID = "innervateCue", 29166
 local POINTS, GLOW_OWNER = NS.AnchorPoints, "MSUFSuiteInnervateCue"
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local Dispatch = S.Dispatch
 
@@ -12,18 +13,11 @@ local function Hide(self)
     if self.glow then self.glow:Hide() end
 end
 
+local CARD = { width = 280, height = 54, fill = { .04, .10, .17, .94 }, edge = 2, line = { .32, .72, 1, 1 } }
+
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(280, 54)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-    local panel = S.CreateTexture(host, nil, "BACKGROUND")
-    panel:SetAllPoints(host)
-    panel:SetColorTexture(.04, .10, .17, .94)
-    local edges = {}
-    for i = 1, 4 do edges[i] = S.CreateTexture(host, nil, "BORDER") end
-    S.PlaceEdges(edges, host, 2, .32, .72, 1, 1)
+    local host, panel, edges = S.QoLCard(CARD)
     local icon = S.CreateTexture(host, nil, "ARTWORK")
     icon:SetPoint("LEFT", host, "LEFT", 9, 0)
     icon:SetSize(34, 34)
@@ -56,17 +50,13 @@ end
 
 local function Place(self)
     local c = self.config
-    local style = S.QoLStyle(c)
-    S.QoLColor(self.panel, style.background, .94)
+    local style = S.PaintQoLCard(ID, c, self.panel)
     for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.accent) end
     for _, edge in ipairs(self.glowEdges) do S.QoLColor(edge, style.accent) end
     self.title:SetTextColor(S.RGB(style.text))
     self.subtitle:SetTextColor(S.RGB(style.muted))
-    local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(c.width, c.height)
-    self.host:SetScale(c.scale / 100)
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(self.host, c)
 end
 
 -- Dungeons, scenarios, battlegrounds and arenas share the group switch.
@@ -241,10 +231,10 @@ function M:Enable()
     Create(self)
     Place(self)
     self.lastWhisper = nil
-    self.context:Event("CHAT_MSG_WHISPER", Whisper, true)
-    self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
-    self.context:Event("GROUP_ROSTER_UPDATE", Roster, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", Roster, true)
+    self.context:Event("CHAT_MSG_WHISPER", Whisper, IN_COMBAT)
+    self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, IN_COMBAT, "player")
+    self.context:Event("GROUP_ROSTER_UPDATE", Roster, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", Roster, IN_COMBAT)
     local gf = GroupAPI()
     if gf and type(gf.RegisterFrameRegistryObserver) == "function"
         and Dispatch(gf.RegisterFrameRegistryObserver, GLOW_OWNER, GroupFramesChanged) then

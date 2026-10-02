@@ -5,6 +5,7 @@ local Public, Finite, Text = S.Public, S.Finite, S.PublicText
 local Field, Clock = S.PublicField, S.ClockText
 local Party = P.RunSummaryParty
 local Tr = S.Text
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local DOT = "  \194\183  "
 -- A first click on "Delete run" arms it for this many seconds.
@@ -640,8 +641,8 @@ local MYTHIC_EVENTS = { "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHA
 local function SyncEvents(self)
     local context = self.context
     if self.config.showRaid then
-        context:Event("ENCOUNTER_START", OnEvent, true)
-        context:Event("ENCOUNTER_END", OnEvent, true)
+        context:Event("ENCOUNTER_START", OnEvent, IN_COMBAT)
+        context:Event("ENCOUNTER_END", OnEvent, IN_COMBAT)
     else
         context:RemoveEvent("ENCOUNTER_START")
         context:RemoveEvent("ENCOUNTER_END")
@@ -649,16 +650,16 @@ local function SyncEvents(self)
     end
     local mythic = not NS.Client.isForever and self.config.showMythicPlus
     for _, event in ipairs(MYTHIC_EVENTS) do
-        if mythic then context:Event(event, OnEvent, true) else context:RemoveEvent(event) end
+        if mythic then context:Event(event, OnEvent, IN_COMBAT) else context:RemoveEvent(event) end
     end
     if mythic and (self.config.cardTiming or 1) == 2 then
-        context:Event("LOOT_CLOSED", OnEvent, true)
+        context:Event("LOOT_CLOSED", OnEvent, IN_COMBAT)
     else
         context:RemoveEvent("LOOT_CLOSED")
         self.lootPending = nil
     end
-    context:Event("PLAYER_REGEN_ENABLED", OnEvent, true)
-    context:Event("PLAYER_REGEN_DISABLED", OnEvent, true)
+    context:Event("PLAYER_REGEN_ENABLED", OnEvent, IN_COMBAT)
+    context:Event("PLAYER_REGEN_DISABLED", OnEvent, IN_COMBAT)
 end
 
 -- /msufruns opens the newest saved run. The command stays registered; it
@@ -691,8 +692,11 @@ function M:Refresh()
     end
 end
 
+-- An armed delete ends with the module: its window is cancelled with the
+-- context, and a re-enabled module must ask again.
 function M:Disable()
     self.lootPending = nil
+    Disarm(self)
     self:Close()
     self.pull, self.current, self.lastRunKey = nil, nil, nil
 end

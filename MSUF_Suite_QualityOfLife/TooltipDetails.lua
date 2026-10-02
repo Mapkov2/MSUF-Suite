@@ -153,7 +153,7 @@ local function StillHovered(unit, guid)
         and M.inspectHoverGUID == guid and Identity(unit) == guid
 end
 
--- One delayed attempt per hover, after the quiet period (M.inspectRetry);
+-- One delayed attempt per hover, after the quiet period (ctx:After);
 -- a new request, a foreign inspect or the end of the hover cancels it.
 local HoverLevel
 RetryInspect = function(self)
@@ -166,7 +166,7 @@ local function ScheduleRetry(unit, guid, remaining)
     if M.inspectRetryAttempted then return end
     M.inspectRetryAttempted = true
     M.retryUnit, M.retryGUID = unit, guid
-    M.inspectRetry = M.context:After(remaining, RetryInspect)
+    M.context:After(remaining, RetryInspect)
 end
 
 -- Native InspectFrame_Show on Retail and Forever uses CanInspect(unit, true)

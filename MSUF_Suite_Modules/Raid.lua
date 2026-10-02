@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 if NS.Client.isForever then return end
 
 -- Encounter records belong to the Suite objective HUD. Blizzard supplies the
@@ -434,8 +435,8 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.pull = { started = GetTime() }
     ReadInitialStage(owner)
-    owner.context:Event("UNIT_HEALTH", BossHealth, true, BOSS_UNITS)
-    owner.context:Event("INSTANCE_ENCOUNTER_ENGAGE_UNIT", H.UpdateBosses, true)
+    owner.context:Event("UNIT_HEALTH", BossHealth, IN_COMBAT, BOSS_UNITS)
+    owner.context:Event("INSTANCE_ENCOUNTER_ENGAGE_UNIT", H.UpdateBosses, IN_COMBAT)
     H.UpdateBosses(owner)
     owner.context:Ticker(1, H.Tick)
     Paint(owner)

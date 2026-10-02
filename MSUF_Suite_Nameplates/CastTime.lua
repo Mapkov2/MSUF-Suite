@@ -1,5 +1,6 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
+local LOOK_BLIZZARD, HIDE = private.Mode.LOOK_BLIZZARD, private.Mode.HIDE
 -- Nameplate casts can carry secret values. Never assign CastTimeText to the
 -- native bar: its Lua formatter then reads secret StatusBar values in tainted
 -- execution. DurationTextBinding formats the opaque duration in the engine.
@@ -90,7 +91,7 @@ end
 
 function CastTime.Paint(cast, prefix, unit)
     if not Safe(cast) then return end
-    if not prefix or M.config.look == 2 or M.config.enemyCastEnabled == 3 or not M.config[prefix]
+    if not prefix or M.config.look == LOOK_BLIZZARD or M.config.enemyCastEnabled == HIDE or not M.config[prefix]
         or M.config[prefix .. "CastTimeEnabled"] == false or not unit then
         CastTime.Restore(cast)
         return

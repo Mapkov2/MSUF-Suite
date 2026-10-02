@@ -101,7 +101,7 @@ M.config = { width = 280, height = 54, scale = 100, point = 5, x = 0, y = 180,
     openWorld = true, party = true, raid = true, sound = true, highlightTarget = true,
     targetName = "Healer-Realm", duration = 4 }
 M.context = Support.ModuleTimers(root, S, NS)("innervateCue", M, { Event = function(_, event, callback, allowCombat, unit)
-    assert(allowCombat == true)
+    assert(Support.InCombatOption(allowCombat))
     callbacks[event] = callback
     if event == "UNIT_SPELLCAST_SUCCEEDED" then assert(unit == "player") end
 end })

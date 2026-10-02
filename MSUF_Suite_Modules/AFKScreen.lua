@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "afkScreen"
+local IN_COMBAT = { inCombat = true }
 
 -- A cinematic screen while the player is AFK: the character model between
 -- the equipped items, the regular UI faded out and a slow camera orbit.
@@ -94,23 +95,8 @@ local function CreateModel(stage)
     return model
 end
 
-local function Create(self)
-    if self.host then return end
-    -- Keep the AFK scene outside UIParent so the regular UI can fade away.
-    local host = S.CreateFrame("Frame", "MSUFSuiteAFKScreen", WorldFrame)
-    host:SetAllPoints(UIParent)
-    host:SetFrameStrata("TOOLTIP")
-    host:SetFrameLevel(1000)
-    host:EnableMouse(false)
-    local shade = Fill(host, "BACKGROUND", .009, .014, .023, .68)
-    shade:SetAllPoints(host)
-
-    local panel = S.CreateFrame("Frame", nil, host)
-    panel:SetPoint("CENTER", host, "CENTER", 0, 0)
-    panel:SetSize(2040, 1120)
-    panel:EnableMouse(false)
-
-    -- Equipment and text need a quiet surface even when the camera faces a busy town.
+-- Equipment and text need a quiet surface even when the camera faces a busy town.
+local function CreateBackdrops(panel)
     local leftBackdrop = Fill(panel, "BACKGROUND", .004, .008, .014, .92)
     leftBackdrop:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
     leftBackdrop:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 0)
@@ -119,11 +105,14 @@ local function Create(self)
     rightBackdrop:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
     rightBackdrop:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
     rightBackdrop:SetWidth(540)
+end
 
+-- The character model, its fallback portrait and the equipment slots.
+local function CreateStage(self, panel)
     local stage = S.CreateFrame("Frame", nil, panel)
     stage:SetAllPoints(panel)
     stage:EnableMouse(false)
-    local model = CreateModel(stage)
+    self.model = CreateModel(stage)
     local fallback = S.CreateTexture(stage, nil, "ARTWORK")
     fallback:SetPoint("CENTER", stage, "CENTER", 0, -10)
     fallback:SetSize(160, 160)
@@ -134,7 +123,13 @@ local function Create(self)
     for n = 1, #SLOTS do
         icons[n], itemNames[n], captions[n] = CreateSlot(stage, n <= 9 and n or n - 9, n <= 9)
     end
+    self.fallback, self.fallbackNote, self.icons = fallback, fallbackNote, icons
+    self.itemNames, self.captions = itemNames, captions
+end
 
+-- The player's name and class on the left, the AFK title and the location
+-- on the right.
+local function CreateTexts(self, panel)
     local brand = Label(panel, 16, GOLD, "MSUF  /  SUITE")
     brand:SetPoint("TOPLEFT", panel, "TOPLEFT", 68, -52)
     local name = Label(panel, 48, WHITE, "")
@@ -161,11 +156,28 @@ local function Create(self)
 
     local hint = Label(panel, 18, MUTED, Tr("MOVE OR USE /AFK TO RETURN"))
     hint:SetPoint("BOTTOM", panel, "BOTTOM", 0, 30)
-
-    self.host, self.panel, self.model = host, panel, model
-    self.fallback, self.fallbackNote, self.icons = fallback, fallbackNote, icons
-    self.itemNames, self.captions = itemNames, captions
     self.name, self.class, self.zone = name, class, zone
+end
+
+local function Create(self)
+    if self.host then return end
+    -- Keep the AFK scene outside UIParent so the regular UI can fade away.
+    local host = S.CreateFrame("Frame", "MSUFSuiteAFKScreen", WorldFrame)
+    host:SetAllPoints(UIParent)
+    host:SetFrameStrata("TOOLTIP")
+    host:SetFrameLevel(1000)
+    host:EnableMouse(false)
+    local shade = Fill(host, "BACKGROUND", .009, .014, .023, .68)
+    shade:SetAllPoints(host)
+
+    local panel = S.CreateFrame("Frame", nil, host)
+    panel:SetPoint("CENTER", host, "CENTER", 0, 0)
+    panel:SetSize(2040, 1120)
+    panel:EnableMouse(false)
+    CreateBackdrops(panel)
+    CreateStage(self, panel)
+    CreateTexts(self, panel)
+    self.host, self.panel = host, panel
     host:Hide()
 end
 
@@ -318,9 +330,9 @@ local OnEvent
 -- The status events fire often in groups; they are registered only outside
 -- combat, and unit flags only for the player.
 local function StartStatusEvents(self)
-    self.context:Event("PLAYER_FLAGS_CHANGED", OnEvent, true)
-    self.context:Event("UNIT_FLAGS", OnEvent, true, "player")
-    self.context:Event("PLAYER_STARTED_MOVING", OnEvent, true)
+    self.context:Event("PLAYER_FLAGS_CHANGED", OnEvent, IN_COMBAT)
+    self.context:Event("UNIT_FLAGS", OnEvent, IN_COMBAT, "player")
+    self.context:Event("PLAYER_STARTED_MOVING", OnEvent, IN_COMBAT)
 end
 
 local function EnterCombat(self)
@@ -446,12 +458,12 @@ end
 function M:Enable()
     self.recheckJob = self.context:Coalesce(RECHECK_DELAY, Recheck)
     self.inCombat, self.dismissed = false, nil
-    self.context:Event("LFG_PROPOSAL_SHOW", Attention, true)
-    self.context:Event("READY_CHECK", Attention, true)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, true)
-    self.context:Event("PLAYER_LEAVING_WORLD", OnEvent, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", OnEvent, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", OnEvent, true)
+    self.context:Event("LFG_PROPOSAL_SHOW", Attention, IN_COMBAT)
+    self.context:Event("READY_CHECK", Attention, IN_COMBAT)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, IN_COMBAT)
+    self.context:Event("PLAYER_LEAVING_WORLD", OnEvent, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", OnEvent, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", OnEvent, IN_COMBAT)
     if CombatActive() then
         EnterCombat(self)
         return

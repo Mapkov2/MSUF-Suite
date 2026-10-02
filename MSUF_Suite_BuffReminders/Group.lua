@@ -241,11 +241,11 @@ function R.GroupPresent(self, entry)
     return missing == 0
 end
 
+-- The pass runs only while the module is active (a context job).
 local function Flush(self)
     local group = self.group
-    group.flushPending = false
     local dirty = group.dirty
-    if not self.active or self.listen.suspended or NS.IsCombatLocked() then
+    if self.listen.suspended or NS.IsCombatLocked() then
         Clear(dirty)
         group.rosterDirty = false
         return
@@ -265,17 +265,12 @@ local function Flush(self)
     self:Update("visual")
 end
 
--- The set of marked members, made with the pass callback on first use.
+-- The set of marked members and the pass (a context job), made on first use.
 local function NewDirty(self, group)
     local dirty = {}
     group.dirty = dirty
-    group.flush = function() Flush(self) end
+    group.pass = self.context:Coalesce(FLUSH_DELAY, Flush)
     return dirty
-end
-
-local function SchedulePass(group)
-    group.flushPending = true
-    C_Timer.After(FLUSH_DELAY, group.flush)
 end
 
 -- Marks one member for the next pass. Member events come in bursts, so the
@@ -284,7 +279,7 @@ function R.QueueMemberWork(self, unit)
     local group = self.group
     local dirty = group.dirty or NewDirty(self, group)
     if unit then dirty[unit] = true end
-    if not group.flushPending then SchedulePass(group) end
+    group.pass:Request()
 end
 
 -- Marks the roster for the next pass, which recompiles.
@@ -292,7 +287,7 @@ function R.QueueRosterWork(self)
     local group = self.group
     if not group.dirty then NewDirty(self, group) end
     group.rosterDirty = true
-    if not group.flushPending then SchedulePass(group) end
+    group.pass:Request()
 end
 
 function R.CancelGroupWork(self)

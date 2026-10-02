@@ -20,9 +20,20 @@ if not strsplit then
     end
 end
 
+-- The Suite's anchor point list (NS.AnchorPoints, MSUF_Suite/Core/
+-- SuiteCatalog.lua), read from the shipped file.
+function Support.AnchorPoints(root)
+    local file = assert(io.open(root .. "/MSUF_Suite/Core/SuiteCatalog.lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    local list = assert(source:match("\nNS%.AnchorPoints = (%b{})"), "NS.AnchorPoints is missing from SuiteCatalog.lua")
+    return assert(loadstring("return " .. list))()
+end
+
 -- Isolated QoL module tests load one file without the addon's Bootstrap.lua.
--- Install the real palette bridge with a minimal core namespace, and the
--- shared windows and copy dialog (MSUF_Suite_Modules/Dialogs.lua). palettes
+-- Install the real palette bridge (with the cards and S.PlaceHost) with a
+-- minimal core namespace that has the Suite's anchor points, and the shared
+-- windows and copy dialog (MSUF_Suite_Modules/Dialogs.lua). palettes
 -- (optional) replaces the single default palette.
 function Support.QoLStyleFixture(root, suite, palettes)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = suite })
@@ -31,18 +42,158 @@ function Support.QoLStyleFixture(root, suite, palettes)
     _G.MSUFSuite = { Suite = suite, QoLVisualStyles = palettes or {
         [1] = { background = "0a1220", border = "41627a", accent = "57c7df",
             text = "f4f7fb", muted = "aab5c2" },
-    }, Finish = function(callback, ...) return true, callback(...) end }
+    }, Finish = function(callback, ...) return true, callback(...) end, AnchorPoints = Support.AnchorPoints(root) }
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/Bootstrap.lua"))(
         "MSUF_Suite_QualityOfLife", {})
     _G.MSUFSuite = previous
 end
 
+-- The client's dialogs for Suite questions (Blizzard_StaticPopup/
+-- StaticPopup.lua, Blizzard_StaticPopup_Game/GameDialogDefs.lua and
+-- GameDialog.lua; the same on upstream/live and upstream/forever).
+-- StaticPopupDialogs is Blizzard's table: an entry written by an addon
+-- raises. The generic confirmation and input box take text, labels and
+-- callbacks as data and allow several dialogs at a time. Four dialog frames
+-- are shared by every dialog, so an edit box keeps what a caller set on it
+-- (SetNumeric, SetMaxLetters) into the next dialog; hiding clears its text.
+-- The input box's Accept and Enter work only while its text is not empty.
+-- Returns dialogs: Last(which) (the newest shown) and Count(which); Accept,
+-- Cancel, Enter and Escape (the edit box's: a hide without cancel) answer
+-- one.
+function Support.StaticPopups()
+    local dialogs, shown = { frames = {} }, {}
+    local GENERIC = {
+        GENERIC_CONFIRMATION = { accept = "Yes", cancel = "No" },
+        GENERIC_INPUT_BOX = { accept = "Done", cancel = "Cancel", hasEditBox = true },
+    }
+    StaticPopupDialogs = setmetatable({}, {
+        __index = GENERIC,
+        __newindex = function(_, key) error("an addon wrote " .. tostring(key) .. " into Blizzard's StaticPopupDialogs") end,
+    })
+    local function Frame()
+        local dialog = { shown = false }
+        local edit = { text = "", numeric = false, maxLetters = 0 }
+        function edit:SetText(value)
+            self.text = value
+            dialog.acceptEnabled = value ~= ""
+        end
+        function edit:GetText() return self.text end
+        function edit:SetNumeric(value) self.numeric = value == true end
+        function edit:IsNumeric() return self.numeric end
+        function edit:SetMaxLetters(value) self.maxLetters = value end
+        function edit:SetCountInvisibleLetters() end
+        function edit:HighlightText() self.highlighted = true end
+        function edit:GetParent() return dialog end
+        function dialog:GetEditBox() return edit end
+        function dialog:IsShown() return self.shown end
+        function dialog:Hide()
+            if not self.shown then return end
+            self.shown = false
+            for i = #shown, 1, -1 do
+                if shown[i] == self then table.remove(shown, i) end
+            end
+            local onHide = self.onHide
+            self.onHide = nil
+            if onHide then onHide(self) end
+            edit:SetText("")
+        end
+        return dialog
+    end
+    for i = 1, 4 do dialogs.frames[i] = Frame() end
+    local function Cancel(dialog)
+        local data = dialog.data
+        dialog:Hide()
+        if data and data.cancelCallback then data.cancelCallback() end
+    end
+    StaticPopup_Show = function(which, _, _, data, _, onHide)
+        local info = GENERIC[which]
+        if not info then error("Dialog " .. tostring(which) .. " does not exist.") end
+        for _, open in ipairs(shown) do
+            if open.which == which and open.data == data then Cancel(open) break end
+        end
+        local dialog
+        for _, frame in ipairs(dialogs.frames) do
+            if not frame.shown then dialog = frame break end
+        end
+        if not dialog then
+            if data.cancelCallback then data.cancelCallback() end
+            return nil
+        end
+        dialog.which, dialog.data, dialog.onHide = which, data, onHide
+        dialog.text = string.format(data.text, data.text_arg1, data.text_arg2)
+        dialog.acceptText = data.acceptText or info.accept
+        dialog.cancelText = data.cancelText or info.cancel
+        dialog.alert = which == "GENERIC_CONFIRMATION" and data.showAlert == true
+        if info.hasEditBox then
+            dialog:GetEditBox():SetMaxLetters(data.maxLetters or 24)
+            dialog.acceptEnabled = dialog:GetEditBox():GetText() ~= ""
+        end
+        dialog.shown = true
+        shown[#shown + 1] = dialog
+        return dialog
+    end
+    StaticPopup_ShowCustomGenericConfirmation = function(data, inserted)
+        StaticPopup_Show("GENERIC_CONFIRMATION", nil, nil, data, inserted)
+    end
+    StaticPopup_ShowCustomGenericInputBox = function(data, inserted)
+        StaticPopup_Show("GENERIC_INPUT_BOX", nil, nil, data, inserted)
+    end
+    StaticPopup_Hide = function(which, data)
+        for i = #shown, 1, -1 do
+            local dialog = shown[i]
+            if dialog and dialog.which == which and (not data or data == dialog.data) then dialog:Hide() end
+        end
+    end
+    function dialogs.Last(which)
+        for i = #shown, 1, -1 do
+            if shown[i].which == which then return shown[i] end
+        end
+    end
+    function dialogs.Count(which)
+        local count = 0
+        for _, dialog in ipairs(shown) do
+            if dialog.which == which then count = count + 1 end
+        end
+        return count
+    end
+    function dialogs.Accept(dialog)
+        assert(dialog and dialog.shown, "no shown dialog to accept")
+        local data = dialog.data
+        if dialog.which == "GENERIC_INPUT_BOX" then
+            assert(dialog.acceptEnabled, "Accept is disabled while the input box is empty")
+            data.callback(dialog:GetEditBox():GetText())
+        else
+            data.callback()
+        end
+        dialog:Hide()
+    end
+    function dialogs.Enter(dialog)
+        if not dialog.acceptEnabled then return end
+        dialog.data.callback(dialog:GetEditBox():GetText())
+        dialog:Hide()
+    end
+    dialogs.Cancel = Cancel
+    function dialogs.Escape(dialog) dialog:Hide() end
+    return dialogs
+end
+
 -- Opt-in: the shipped combat and restriction rules of MSUF_Suite/Core/
 -- Platform.lua (Suite.InCombat, ChatLocked, GroupActionsRestricted,
 -- RestrictedNotice) for module tests with a stub core namespace. env holds
--- the client functions they read (InCombatLockdown, C_ChatInfo,
--- C_RestrictedActions, Enum); Text translates like the test's Suite.Text.
+-- the client functions they read (InCombatLockdown, UnitAffectingCombat,
+-- C_ChatInfo, C_RestrictedActions, Enum); Text translates like the test's
+-- Suite.Text. The player's combat flag (UnitAffectingCombat("player")) is
+-- true from PLAYER_REGEN_DISABLED, before the lockdown, to
+-- PLAYER_REGEN_ENABLED; without a flag of its own, a test gets one that
+-- follows its lockdown.
 function Support.Platform(root, env)
+    if not env.UnitAffectingCombat and env.InCombatLockdown then
+        local locked = env.InCombatLockdown
+        env.UnitAffectingCombat = function(unit)
+            assert(unit == "player", "the combat rules read the player's combat flag only")
+            return locked()
+        end
+    end
     local file = assert(io.open(root .. "/MSUF_Suite/Core/Platform.lua", "rb"))
     local source = file:read("*a"):gsub("\r\n", "\n")
     file:close()
@@ -55,8 +206,10 @@ end
 
 -- The client sends PLAYER_REGEN_DISABLED while InCombatLockdown() is still
 -- false; tests fire that event first and only then turn their lockdown on.
-function Support.InCombat(root, isLocked)
-    return Support.Platform(root, { InCombatLockdown = isLocked }).InCombat
+-- isFighting (optional) is the player's combat flag, which is already true
+-- then.
+function Support.InCombat(root, isLocked, isFighting)
+    return Support.Platform(root, { InCombatLockdown = isLocked, UnitAffectingCombat = isFighting }).InCombat
 end
 
 -- The client's slash command registry (Blizzard_ChatFrameBase/Shared:
@@ -263,6 +416,12 @@ function Support.ModuleTimers(root, suite, ns)
         context.id = id
         return context
     end
+end
+
+-- The named Context:Event option (Runtime.lua) of an event the module also
+-- handles in combat: an options table with inCombat = true.
+function Support.InCombatOption(options)
+    return type(options) == "table" and options.inCombat == true
 end
 
 -- What Context:Event (Runtime.lua) registers for a callback: a job's event

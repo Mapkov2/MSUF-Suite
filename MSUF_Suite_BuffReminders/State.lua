@@ -13,10 +13,10 @@ R.STATE = {
     -- the compiled list; poisonStates: one record per Rogue poison group;
     -- hasAura, hasFood and hasWeapon: the event groups the list needs;
     -- needsFullRefresh: the next evaluation re-reads every entry;
-    -- countsDirty: the item counts are read again; thresholdTimer and
-    -- thresholdAt: the pending advance warning and its deadline.
+    -- countsDirty: the item counts are read again; thresholdAt: the
+    -- deadline of the pending advance warning (a context wait).
     list = { "entries", "poisonStates", "hasAura", "hasFood", "hasWeapon", "needsFullRefresh",
-        "countsDirty", "thresholdTimer", "thresholdAt" },
+        "countsDirty", "thresholdAt" },
     -- The secure frames (Controller, Alerts, Cursor). host and its buttons;
     -- preview: the Edit Mode label, previewShown its shown state, previewing
     -- while Edit Mode shows every entry; mask: the bit mask of the shown
@@ -42,10 +42,10 @@ R.STATE = {
     -- list; presence: the group buff per member; soulstonePresence,
     -- beaconLightPresence and beaconFaithPresence: the player's own aura per
     -- member, with soulstoneKnown, beaconLightKnown and beaconFaithKnown;
-    -- dirty, rosterDirty, flush and flushPending: the coalesced member pass.
+    -- dirty, rosterDirty and pass (a context job): the coalesced member pass.
     group = { "settings", "buffers", "units", "unitList", "classes", "listChanged", "presence",
         "soulstonePresence", "beaconLightPresence", "beaconFaithPresence", "soulstoneKnown",
-        "beaconLightKnown", "beaconFaithKnown", "dirty", "rosterDirty", "flush", "flushPending" },
+        "beaconLightKnown", "beaconFaithKnown", "dirty", "rosterDirty", "pass" },
     -- The notice lines below the buttons (Special, Group): one field per
     -- notice (Special's NOTICES), the shown set (mask), its text and label, the
     -- summon that may teach a demon look (summonDemon, summonAt, summonPet).
@@ -55,8 +55,9 @@ R.STATE = {
     -- unreadable), the content setting key, whether a keystone has not
     -- started yet (preKey), the keystone's time limit and whether it started.
     environment = { "instanceType", "key", "preKey", "keystoneSeconds", "challengeStarted" },
-    -- The ready check mana note (Preparation): its hide timer and label.
-    readyCheck = { "timer", "label" },
+    -- The ready check mana note (Preparation): its label (its hide is a
+    -- context wait).
+    readyCheck = { "label" },
 }
 
 -- Gives an owner (the module, or a test's owner) one empty table per concern.

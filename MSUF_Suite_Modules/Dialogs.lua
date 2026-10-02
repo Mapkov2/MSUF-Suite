@@ -134,3 +134,50 @@ function S.QoLCopyDialog(title, hint, width, options)
     panel:Hide()
     return panel
 end
+
+------------------------------------------------------------------ Blizzard dialogs
+-- A question in one of Blizzard's dialog frames. StaticPopupDialogs is
+-- Blizzard's table, read by its own dialog code, so the Suite adds no entry
+-- to it: Blizzard's generic confirmation and input box take the text, the
+-- button labels and the callbacks as data (Blizzard_StaticPopup/
+-- StaticPopup.lua StaticPopup_ShowCustomGenericConfirmation and
+-- StaticPopup_ShowCustomGenericInputBox, Blizzard_StaticPopup_Game/
+-- GameDialogDefs.lua; the same on upstream/live and upstream/forever).
+--   data.text           a format string for data.text_arg1 and text_arg2
+--   data.acceptText     the accept label; data.cancelText the cancel label
+--   data.callback       runs on accept (the input box passes its text)
+--   data.cancelCallback runs on cancel
+--   data.showAlert      the confirmation's alert icon
+--   data.maxLetters     the input box's limit (Blizzard's default is 24)
+-- Both generic dialogs allow several at a time; a question replaces the
+-- earlier one under the same key, as one dialog of its own did. They also
+-- show while the player is dead; the Suite asks only from merchant and
+-- trainer windows, which close then.
+local GENERIC_CONFIRMATION, GENERIC_INPUT_BOX = "GENERIC_CONFIRMATION", "GENERIC_INPUT_BOX"
+local askedWhich, askedData = {}, {}
+
+-- Closes the question under key, if it is still shown; nothing else.
+function S.HideQuestion(key)
+    local data = askedData[key]
+    if not data then return end
+    StaticPopup_Hide(askedWhich[key], data)
+    askedWhich[key], askedData[key] = nil, nil
+end
+
+function S.Confirm(key, data)
+    S.HideQuestion(key)
+    StaticPopup_ShowCustomGenericConfirmation(data)
+    askedWhich[key], askedData[key] = GENERIC_CONFIRMATION, data
+end
+
+-- StaticPopup_ShowCustomGenericInputBox(data) is StaticPopup_Show for the
+-- generic input box; called directly, StaticPopup_Show also returns the
+-- dialog, so the caller can preset its edit box, and runs onHide(dialog)
+-- (its customOnHideScript) however the dialog closes, to undo such presets
+-- on the shared dialog frame.
+function S.AskText(key, data, onHide)
+    S.HideQuestion(key)
+    local dialog = StaticPopup_Show(GENERIC_INPUT_BOX, nil, nil, data, nil, onHide)
+    if dialog then askedWhich[key], askedData[key] = GENERIC_INPUT_BOX, data end
+    return dialog
+end

@@ -2,6 +2,9 @@ local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local installed = {}
 local combat = false
+-- The player's combat flag (UnitAffectingCombat("player")): already true
+-- in PLAYER_REGEN_DISABLED, before the lockdown (combat) starts.
+local fighting = false
 local pointX, pointY = 100, 120
 local currentSpec, lootSpec = 1, 0
 local castDuration, gcdDuration = nil, { token = "gcd" }
@@ -114,7 +117,22 @@ local ns = { Finish = function(callback, ...) return true, callback(...) end, Di
     IsCombatLocked = function() return combat end,
     AnchorPoints = { [5] = "CENTER" }, Safety = { IsForbidden = function() return false end } }
 ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
-    function() return combat end)
+    function() return combat end, function() return combat or fighting end)
+-- MSUF Edit Mode closes for combat inside its own PLAYER_REGEN_DISABLED
+-- handler, and the Suite re-applies the module right there (S.SetEditMode):
+-- after the module's own handler and before the lockdown starts.
+local function CombatStartsInEditMode(module)
+    suite.editMode = true
+    module:Refresh()
+    fighting = true
+    module.context.events.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+    suite.editMode = false
+    module:Refresh()
+end
+local function CombatEnds(module)
+    combat, fighting = false, false
+    module.context.events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+end
 local function Context()
     local context = { events = {} }
     function context:Event(event, callback) self.events[event] = Support.EventCallback(callback) end
@@ -175,6 +193,15 @@ cursor.context.events.PLAYER_REGEN_DISABLED(cursor, "PLAYER_REGEN_DISABLED")
 combat = true
 assert(cursor.host.shown and cursor.host.scripts.OnUpdate,
     "combat-only cursor did not resume on combat entry")
+CombatEnds(cursor)
+assert(not cursor.host.shown, "combat-only cursor stayed after combat")
+CombatStartsInEditMode(cursor)
+assert(cursor.host.shown and cursor.host.scripts.OnUpdate,
+    "closing Edit Mode for combat hid the combat-only cursor for the fight")
+combat = true
+cursor:Refresh()
+assert(cursor.host.shown, "combat-only cursor dropped in the lockdown")
+CombatEnds(cursor)
 cursor:Disable()
 assert(not cursor.host.shown and not cursor.host.scripts.OnUpdate,
     "disabled cursor left its per-frame position callback running")
@@ -324,6 +351,14 @@ assert(hud.host.shown and hud.context.events.UNIT_AURA,
 combat = false
 hud.context.events.PLAYER_REGEN_ENABLED(hud, "PLAYER_REGEN_ENABLED")
 assert(not hud.host.shown and not hud.context.events.UNIT_AURA, "combat-only stats HUD stayed after combat")
+-- Edit Mode shows the FPS sample in the Suite font.
+suite.GlobalFontPath, suite.SetStyledFont = function() return "font" end, function() end
+GetFramerate = function() return 60 end
+CombatStartsInEditMode(hud)
+assert(hud.host.shown and hud.context.events.UNIT_AURA,
+    "closing Edit Mode for combat hid the combat-only stats HUD for the fight")
+CombatEnds(hud)
+assert(not hud.host.shown and not hud.context.events.UNIT_AURA, "combat-only stats HUD stayed after combat")
 local fpsTicks, fps = {}, 144
 GetFramerate = function() return fps end
 suite.GlobalFontPath, suite.SetStyledFont = function() return "font" end, function() end
@@ -400,6 +435,11 @@ pet.context.events.UNIT_PET(pet, "UNIT_PET", "player")
 assert(pet.host.shown, "combat-only warning dropped while in combat")
 combat = false
 pet.context.events.PLAYER_REGEN_ENABLED(pet, "PLAYER_REGEN_ENABLED")
+assert(not pet.host.shown, "combat-only pet warning stayed after combat")
+CombatStartsInEditMode(pet)
+assert(pet.host.shown and pet.label.text == "Pet missing",
+    "closing Edit Mode for combat kept the combat-only missing-pet warning away")
+CombatEnds(pet)
 assert(not pet.host.shown, "combat-only pet warning stayed after combat")
 -- The spellbook decides whether a pet belongs to this character: a
 -- Marksmanship hunter without Call Pet, or a warlock with Grimoire of

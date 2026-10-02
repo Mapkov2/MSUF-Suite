@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = { dialogs = {} }
 local MODIFIERS = { IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown }
 local MODIFIER_NAMES = { SHIFT_KEY_TEXT, CTRL_KEY_TEXT, ALT_KEY_TEXT }
@@ -88,7 +89,7 @@ local function Sync(self)
     if self.current ~= record then
         Release(self)
         self.current = record
-        self.context:Event("MODIFIER_STATE_CHANGED", UpdateGate, true)
+        self.context:Event("MODIFIER_STATE_CHANGED", UpdateGate, IN_COMBAT)
     end
     record.hint:SetWidth(popup:GetWidth())
     S.SetFont(record.hint, nil, 13, "OUTLINE")
@@ -103,8 +104,8 @@ function M:Enable()
         end)
         self.hooked = true
     end
-    self.context:Event("PLAYER_ENTERING_WORLD", Sync, true)
-    self.context:Event("ZONE_CHANGED_NEW_AREA", Sync, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", Sync, IN_COMBAT)
+    self.context:Event("ZONE_CHANGED_NEW_AREA", Sync, IN_COMBAT)
     Sync(self)
 end
 

@@ -2,7 +2,14 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, POINTS = "actionTracker", NS.AnchorPoints
 local MAX_ROWS, FALLBACK_ICON = 8, 134400
+local IN_COMBAT = { inCombat = true }
 local M = {}
+-- displayPreset: standard rows or icons only; growth: down, up, right or
+-- left; insertAnimation: none, fade in or pop in
+-- (MSUF_Suite/Core/Catalog/QualityOfLife.lua).
+local ICONS_ONLY = 2
+local GROW_UP, GROW_RIGHT, GROW_LEFT = 2, 3, 4
+local NO_ANIMATION, POP_IN = 1, 3
 
 -- The examples exist only in Edit Mode. Live rows come exclusively from the
 -- player's successful spellcast event, never from combat-log inference.
@@ -64,10 +71,10 @@ end
 
 local function Layout(self)
     local c = self.config
-    local iconsOnly = c.displayPreset == 2
+    local iconsOnly = c.displayPreset == ICONS_ONLY
     local width = iconsOnly and c.rowHeight or c.width
     local growth = c.growth or 1
-    local horizontal = growth == 3 or growth == 4
+    local horizontal = growth == GROW_RIGHT or growth == GROW_LEFT
     local headerHeight = c.showHeader and not iconsOnly and (c.fontSize + 10) or 0
     local totalWidth = horizontal and c.rows * width + (c.rows - 1) * c.rowGap or width
     local height = horizontal and c.rowHeight or c.rows * c.rowHeight + (c.rows - 1) * c.rowGap
@@ -83,9 +90,9 @@ local function Layout(self)
     for index, row in ipairs(self.rows) do
         row.frame:ClearAllPoints()
         local offset = (index - 1) * ((horizontal and width or c.rowHeight) + c.rowGap)
-        if growth == 2 then row.frame:SetPoint("BOTTOMLEFT", self.host, "BOTTOMLEFT", 0, offset)
-        elseif growth == 3 then row.frame:SetPoint("TOPLEFT", self.host, "TOPLEFT", offset, -headerHeight)
-        elseif growth == 4 then row.frame:SetPoint("TOPRIGHT", self.host, "TOPRIGHT", -offset, -headerHeight)
+        if growth == GROW_UP then row.frame:SetPoint("BOTTOMLEFT", self.host, "BOTTOMLEFT", 0, offset)
+        elseif growth == GROW_RIGHT then row.frame:SetPoint("TOPLEFT", self.host, "TOPLEFT", offset, -headerHeight)
+        elseif growth == GROW_LEFT then row.frame:SetPoint("TOPRIGHT", self.host, "TOPRIGHT", -offset, -headerHeight)
         else row.frame:SetPoint("TOPLEFT", self.host, "TOPLEFT", 0, -headerHeight - offset) end
         row.frame:SetSize(width, c.rowHeight)
         local iconSize = c.rowHeight - (iconsOnly and 2 or 4)
@@ -103,7 +110,7 @@ end
 
 local function Style(self)
     local c = self.config
-    local iconsOnly = c.displayPreset == 2
+    local iconsOnly = c.displayPreset == ICONS_ONLY
     local pr, pg, pb = S.RGB(c.panelColor)
     local br, bg, bb = S.RGB(c.borderColor)
     local ar, ag, ab = S.RGB(c.accentColor)
@@ -184,18 +191,18 @@ local function PauseChanged(self, event)
 end
 
 local function AnimateNewest(self)
-    local mode = self.config.insertAnimation or 1
-    if mode == 1 or S.editMode or self.contextVisible == false then return end
+    local mode = self.config.insertAnimation or NO_ANIMATION
+    if mode == NO_ANIMATION or S.editMode or self.contextVisible == false then return end
     local row = self.rows[1]
     local group
-    if mode == 3 then group = row.pop else group = row.fade end
+    if mode == POP_IN then group = row.pop else group = row.fade end
     if not group then
         group = row.frame:CreateAnimationGroup()
         local alpha = group:CreateAnimation("Alpha")
         alpha:SetFromAlpha(0)
         alpha:SetToAlpha(1)
         alpha:SetDuration(.18)
-        if mode == 3 then
+        if mode == POP_IN then
             local scale = group:CreateAnimation("Scale")
             scale:SetScaleFrom(.75, .75)
             scale:SetScaleTo(1, 1)
@@ -246,7 +253,7 @@ local function ContextChanged(self)
     elseif kind == "pvp" or kind == "arena" then key = "showPvP"
     else key = "showWorld" end
     self.contextVisible = c[key] ~= false
-    if self.contextVisible then self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
+    if self.contextVisible then self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, IN_COMBAT, "player")
     else self.context:RemoveEvent("UNIT_SPELLCAST_SUCCEEDED") end
     Paint(self)
 end
@@ -254,22 +261,22 @@ end
 local function SyncEvents(self)
     local c = self.config
     if c.pauseInCombat then
-        self.context:Event("PLAYER_REGEN_DISABLED", PauseChanged, true)
-        self.context:Event("PLAYER_REGEN_ENABLED", PauseChanged, true)
+        self.context:Event("PLAYER_REGEN_DISABLED", PauseChanged, IN_COMBAT)
+        self.context:Event("PLAYER_REGEN_ENABLED", PauseChanged, IN_COMBAT)
     else
         self.context:RemoveEvent("PLAYER_REGEN_DISABLED")
         self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
     end
     if c.showDungeons == false or c.showRaids == false or c.showDelves == false
         or c.showPvP == false or c.showWorld == false then
-        self.context:Event("PLAYER_ENTERING_WORLD", ContextChanged, true)
-        self.context:Event("ZONE_CHANGED_NEW_AREA", ContextChanged, true)
+        self.context:Event("PLAYER_ENTERING_WORLD", ContextChanged, IN_COMBAT)
+        self.context:Event("ZONE_CHANGED_NEW_AREA", ContextChanged, IN_COMBAT)
         ContextChanged(self)
     else
         self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
         self.context:RemoveEvent("ZONE_CHANGED_NEW_AREA")
         self.contextVisible = true
-        self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
+        self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, IN_COMBAT, "player")
         Paint(self)
     end
 end
