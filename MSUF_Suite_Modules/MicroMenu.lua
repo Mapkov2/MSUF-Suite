@@ -41,6 +41,34 @@ local function Usable(frame)
     return type(frame) == "table" and not NS.Safety.IsForbidden(frame)
 end
 
+-- Blizzard buttons whose own OnClick opens a Blizzard window the way the
+-- player's click or key binding does; a secure "click" on one runs that
+-- opener from secure code. CharacterMicroButton runs
+-- ToggleCharacter("PaperDollFrame") (CharacterMicroButtonMixin:OnClick) and
+-- the minimap's zone text button runs ToggleWorldMap()
+-- (MinimapZoneTextButtonMixin:OnClick, Blizzard_Minimap/Mainline), on Retail
+-- and WoW Forever. The Suite's minimap leaves the zone text button shown at
+-- alpha 0 (Context:HideControl), so it stays clickable.
+local PANEL_BUTTONS = {
+    character = function() return _G.CharacterMicroButton end,
+    worldMap = function()
+        local cluster = _G.MinimapCluster
+        return Usable(cluster) and cluster.ZoneTextButton or nil
+    end,
+}
+
+-- The Blizzard button that opens panel ("character" or "worldMap"), or nil
+-- while it is missing, forbidden, hidden or disabled: the caller then opens
+-- the window from its own click, as before. Out of combat, when a place
+-- offers its secure click.
+function S.PanelButton(panel)
+    local find = PANEL_BUTTONS[panel]
+    local button = find and find()
+    if not Usable(button) then return nil end
+    local visible, enabled = button:IsVisible(), button:IsEnabled()
+    if S.Public(visible) and visible == true and S.Public(enabled) and enabled == true then return button end
+end
+
 -- Opens or closes the game menu out of combat, as GameMenuFrame_Show and
 -- GameMenuFrame_EscapePressed do (Blizzard_GameMenu): ShowUIPanel and
 -- HideUIPanel hand GameMenuFrame to Blizzard's secure FramePositionDelegate,

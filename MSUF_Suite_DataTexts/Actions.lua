@@ -12,6 +12,10 @@ local NO_VALUE = P.NO_VALUE
 --     place, never inside a bar, and runs its SecureActionButtonTemplate click
 --     (item, toy or a click on Blizzard's talent micro button); the Suite only
 --     adds PostClick.
+--   * The built-in Durability, Coordinates and Zone places borrow it too: it
+--     clicks the Blizzard button that opens their window (S.PanelButton), so
+--     the character window and the world map open from secure code. Without
+--     that button the place opens the window itself (Standard.Click).
 --   * Dungeon portals and the micro menu open a popup of secure rows.
 -- PLAYER_REGEN_DISABLED runs before lockdown starts: DataTexts.lua releases
 -- both there, so no protected frame depends on a bar during combat. A
@@ -20,6 +24,8 @@ local Actions = {}
 P.DataTextActions = Actions
 
 local OVERLAY_KINDS = { hearth = true, specialization = true }
+-- Built-in places whose window a Blizzard button opens (S.PanelButton).
+local PANEL_SOURCES = { durability = "character", coordinates = "worldMap", location = "worldMap" }
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100
 local overlay, popup, leaveTimer
@@ -30,7 +36,13 @@ end
 
 ------------------------------------------------------------------ secure overlay
 -- The left-button action of a place: type, item, toy and click target.
-local function SecureAction(binding)
+local function SecureAction(button)
+    local binding = button.extra
+    if not binding then
+        local target = S.PanelButton(PANEL_SOURCES[button.source])
+        if target then return "click", nil, nil, target end
+        return nil
+    end
     if binding.kind == "hearth" then
         local item = binding.hearth
         if not item then return nil end
@@ -71,13 +83,18 @@ local function Overlay()
     return overlay
 end
 
--- Puts the secure overlay over a Hearthstone or Specialization place; force
--- writes the action again for the place that already has it.
-function Actions.Attach(button, force)
+local function Overlaid(button)
     local binding = button.extra
-    if Locked() or S.editMode or not binding or not OVERLAY_KINDS[binding.kind] then return false end
+    if binding then return OVERLAY_KINDS[binding.kind] == true end
+    return PANEL_SOURCES[button.source] ~= nil
+end
+
+-- Puts the secure overlay over a Hearthstone, Specialization or window
+-- place; force writes the action again for the place that already has it.
+function Actions.Attach(button, force)
+    if Locked() or S.editMode or not Overlaid(button) then return false end
     if not force and overlay and overlay.owner == button and overlay:IsShown() then return true end
-    local kind, item, toy, target = SecureAction(binding)
+    local kind, item, toy, target = SecureAction(button)
     if not kind then return false end
     local frame = Overlay()
     frame.owner = button
@@ -85,8 +102,8 @@ function Actions.Attach(button, force)
     frame:SetAttribute("item1", item)
     frame:SetAttribute("toy1", toy)
     frame:SetAttribute("clickbutton1", target)
-    -- Every mouse button of a Specialization place opens the talents, as
-    -- Blizzard's micro button does (PlayerSpellsMicroButtonMixin:OnClick
+    -- Every mouse button of a Specialization or window place opens its
+    -- window, as the place did and Blizzard's buttons do (their OnClick
     -- ignores the button); the unsuffixed attributes cover the others.
     local any = kind == "click" and target or nil
     frame:SetAttribute("type", any and kind)

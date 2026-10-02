@@ -57,6 +57,17 @@ local W = H.New(root, flavor, { clientSecurity = true, beforeModules = function(
     G.PlaySound = function(sound) world.sounds = (world.sounds or 0) + 1; world.lastSound = sound end
     G.GameMenuFrame = world.New("Frame", "GameMenuFrame", world.UIParent)
     G.GameMenuFrame:Hide()
+    -- The minimap's zone text button opens the world map
+    -- (MinimapZoneTextButtonMixin:OnClick); the openers record their callers.
+    G.MinimapCluster.ZoneTextButton.scripts.OnClick = function()
+        microClicks[#microClicks + 1] = { name = "ZoneTextButton", secure = world.secure }
+    end
+    world.opened = {}
+    for _, name in ipairs({ "ToggleCharacter", "ToggleWorldMap" }) do
+        G[name] = function(tab)
+            world.opened[#world.opened + 1] = { name = name, tab = tab, secure = world.secure }
+        end
+    end
     -- MainMenuMicroButtonMixin:OnClick (Blizzard_MicroMenu/Mainline) acts only
     -- while the cursor is over the micro button itself.
     G.MainMenuMicroButton.scripts.OnClick = function(self)
@@ -82,7 +93,9 @@ assert(S.SetMany("dataTexts", { enabled = true, bar1Enabled = true, bar1Layout =
     bar1Slot1 = Choice("clock"), bar1Slot2 = Choice("hearth"), bar1Slot3 = Choice("specialization"),
     bar1Slot4 = Choice("audio"), bar1Slot5 = Choice("portals"), bar1Slot6 = Choice("microMenu"),
     bar2Enabled = true, bar2Visibility = 2, bar2Slot1 = Choice("fps"), bar2Slot2 = 1, bar2Slot3 = 1,
-    bar3Enabled = true, bar3Visibility = 3, bar3Slot1 = Choice("gold"), bar3Slot2 = 1, bar3Slot3 = 1 }))
+    bar3Enabled = true, bar3Visibility = 3, bar3Slot1 = Choice("gold"), bar3Slot2 = 1, bar3Slot3 = 1,
+    bar4Enabled = true, bar4Slot1 = Choice("durability"), bar4Slot2 = Choice("coordinates"),
+    bar4Slot3 = Choice("location") }))
 local bar = assert(M.bars[1])
 local slots = bar.slots
 local clock, hearth, spec, audio, portals, micro = slots[1], slots[2], slots[3], slots[4], slots[5], slots[6]
@@ -194,6 +207,38 @@ W.Click(popup.rows[#expected])
 assert(not G.GameMenuFrame.shown and W.panelCalls[#W.panelCalls].shown == false
     and W.lastSound == G.SOUNDKIT.IG_MAINMENU_QUIT and not popup.shown,
     "the game menu row did not close the open game menu")
+
+-- Durability, Coordinates and Zone places open their window through the
+-- secure overlay, which clicks Blizzard's own button: the character window
+-- (CharacterMicroButton) and the world map (the minimap's zone text button).
+local windows = assert(M.bars[4]).slots
+local durability, coordinates, zone = windows[1], windows[2], windows[3]
+for _, case in ipairs({ { durability, G.CharacterMicroButton, "CharacterMicroButton" },
+    { coordinates, G.MinimapCluster.ZoneTextButton, "ZoneTextButton" },
+    { zone, G.MinimapCluster.ZoneTextButton, "ZoneTextButton" } }) do
+    local place, native, name = case[1], case[2], case[3]
+    W.Fire(place, "OnEnter")
+    assert(overlay.shown and overlay.points[1][2] == place and overlay:GetAttribute("type1") == "click"
+        and overlay:GetAttribute("clickbutton1") == native and overlay:GetAttribute("clickbutton") == native,
+        "the " .. place.source .. " place lacks the secure click on " .. name)
+    for _, mouse in ipairs({ "LeftButton", "RightButton" }) do
+        local clicks = #microClicks
+        W.Click(overlay, mouse)
+        assert(#microClicks == clicks + 1 and microClicks[#microClicks].name == name and microClicks[#microClicks].secure,
+            "a " .. mouse .. " on the " .. place.source .. " place did not click " .. name .. " securely")
+    end
+    W.Fire(overlay, "OnLeave")
+end
+assert(#W.opened == 0, "a window place opened its window from the addon's code")
+-- Without a visible Blizzard button the place opens the window itself, as before.
+G.MinimapCluster.ZoneTextButton.shown = false
+W.Fire(zone, "OnEnter")
+assert(not (overlay.shown and overlay.points[1][2] == zone), "the overlay offered a click on a hidden button")
+W.Click(zone)
+assert(W.opened[#W.opened] and W.opened[#W.opened].name == "ToggleWorldMap",
+    "the Zone place did not fall back to opening the world map")
+W.Fire(zone, "OnLeave")
+G.MinimapCluster.ZoneTextButton.shown = true
 
 -- P2-1: the portal popup stays open while the pointer moves onto and between
 -- its rows, and closes once the pointer rests outside.

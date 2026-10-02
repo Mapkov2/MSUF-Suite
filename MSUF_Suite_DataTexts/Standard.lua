@@ -156,6 +156,12 @@ function Standard.TooltipLines(tooltip, button, config)
 end
 
 -- The Blizzard window of a built-in source. Callers run it out of combat.
+-- Durability, Coordinates and Zone places normally carry the secure overlay
+-- (Actions.lua), which clicks Blizzard's own button; this runs only when that
+-- button is missing. ToggleCalendar loads Blizzard_Calendar and shows the
+-- calendar through ShowUIPanel (Calendar_Toggle). OpenAllBags has no Blizzard
+-- button with the same effect: the backpack button puts a held item into the
+-- bag or toggles the backpack alone (BaseBagSlotButtonMixin:BagSlotOnClick).
 function Standard.Click(button)
     local name = CLICK[button.source]
     if name then
