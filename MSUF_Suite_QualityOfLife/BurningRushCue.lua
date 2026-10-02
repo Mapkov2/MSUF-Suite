@@ -101,7 +101,10 @@ local function Update(self)
 end
 
 function M:Enable()
-    if NS.IsCombatLocked() then S.Queue(ID); return end
+    if NS.IsCombatLocked() then
+        S.Queue(ID)
+        return
+    end
     if NS.Client.isForever or S.PublicText(UnitClassBase("player")) ~= "WARLOCK" then return end
     Create(self)
     Place(self)
@@ -119,7 +122,10 @@ function M:Enable()
 end
 
 function M:Refresh()
-    if NS.IsCombatLocked() then S.Queue(ID); return end
+    if NS.IsCombatLocked() then
+        S.Queue(ID)
+        return
+    end
     if not self.host then return end
     Paint(self.auraBackground, self.auraLabel, self.config)
     Paint(self.previewBackground, self.previewLabel, self.config)

@@ -225,7 +225,10 @@ local function Cast(self, _, _, _, spellID)
     history[1] = entry
     self.lastCastAt = GetTime()
     if self.pausedAt then self.pausedAt = self.lastCastAt end
-    if not S.editMode then Paint(self); AnimateNewest(self) end
+    if not S.editMode then
+        Paint(self)
+        AnimateNewest(self)
+    end
     ScheduleHide(self)
 end
 

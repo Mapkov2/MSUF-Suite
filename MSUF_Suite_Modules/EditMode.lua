@@ -128,7 +128,12 @@ local function PopupControls(id, spec)
     for _, key in ipairs(spec.sizeKeys or EMPTY) do
         local label = SIZE_LABELS[key]
         local rule, exists = rules[key], false
-        for _, control in ipairs(controls) do if control.id == key then exists = true; break end end
+        for _, control in ipairs(controls) do
+            if control.id == key then
+                exists = true
+                break
+            end
+        end
         if not exists and rule and rule.min and rule.max then
             controls[#controls + 1] = { id = key, label = S.Text(label or rule.label or key), kind = "number",
                 min = rule.min, max = rule.max, step = rule.step or 1,
@@ -143,7 +148,10 @@ local function CaptureKeys(spec)
     local keys, seen = {}, {}
     for _, list in ipairs({spec.historyKeys or EMPTY, spec.sizeKeys or EMPTY}) do
         for _, key in ipairs(list) do
-            if not seen[key] then keys[#keys+1]=key;seen[key]=true end
+            if not seen[key] then
+                keys[#keys+1]=key
+                seen[key]=true
+            end
         end
     end
     return keys

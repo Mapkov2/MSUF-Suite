@@ -106,7 +106,10 @@ local function PaintUnreadable(self)
     end
     self.lockedUntil = nil
     self.cooldown:Clear()
-    if self.config.onlyWhenLocked then self.host:Hide(); return end
+    if self.config.onlyWhenLocked then
+        self.host:Hide()
+        return
+    end
     self.status:SetText(S.Text("Unknown"))
     self.status:SetTextColor(S.RGB(S.QoLStyle(self.config).muted))
     self.host:Show()
@@ -246,7 +249,10 @@ function M:Disable()
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
     self.grouped, self.auraInstanceID, self.unknownInstanceID, self.lockedUntil = nil, nil, nil, nil
     -- The context's Release drops a pending aura repaint.
-    if self.host then self.cooldown:Clear(); self.host:Hide() end
+    if self.host then
+        self.cooldown:Clear()
+        self.host:Hide()
+    end
 end
 
 function M:RegisterMovers()

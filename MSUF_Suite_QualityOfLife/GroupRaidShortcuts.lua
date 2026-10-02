@@ -200,10 +200,12 @@ local function CreatePanel(self)
     local body = S.CreateFrame("Frame", nil, host, "SecureHandlerBaseTemplate")
     body:SetPoint("TOPLEFT", 0, -28)
     local back = S.CreateTexture(body, nil, "BACKGROUND")
-    back:SetAllPoints(body); back:SetColorTexture(.04, .05, .07, .95)
+    back:SetAllPoints(body)
+    back:SetColorTexture(.04, .05, .07, .95)
     self.panel, self.panelBody, self.panelButtons = host, body, {}
     local toggle = S.CreateFrame("Button", nil, host, "SecureHandlerClickTemplate")
-    toggle:SetSize(106, 25); toggle:SetPoint("TOPLEFT", 0, 0)
+    toggle:SetSize(106, 25)
+    toggle:SetPoint("TOPLEFT", 0, 0)
     toggle:SetFrameRef("body", body)
     toggle:SetAttribute("_onclick", [[local body = self:GetFrameRef("body"); if body:IsShown() then body:Hide() else body:Show() end]])
     local title = S.CreateFontString(toggle, nil, "OVERLAY")
@@ -254,7 +256,8 @@ local function CreatePanel(self)
     ]])
     local clear = PanelButton(self, "Clear worldmarks", true)
     clear:RegisterForClicks("AnyUp")
-    clear:SetAttribute("type", "worldmarker"); clear:SetAttribute("action", "clear")
+    clear:SetAttribute("type", "worldmarker")
+    clear:SetAttribute("action", "clear")
     SecureHandlerWrapScript(clear, "PreClick", host, [[control:SetAttribute("next", 1); control:SetAttribute("count", 0)]])
     host:Hide()
 end
@@ -262,13 +265,17 @@ end
 local function RefreshPanel(self)
     if NS.IsCombatLocked() then return end
     if not self.config.showPanel then
-        if self.panel then UnregisterStateDriver(self.panel, "visibility"); self.panel:Hide() end
+        if self.panel then
+            UnregisterStateDriver(self.panel, "visibility")
+            self.panel:Hide()
+        end
         return
     end
     CreatePanel(self)
     local columns = self.config.panelColumns or 3
     local width, height = columns * 110, math.ceil(#self.panelButtons / columns) * 29
-    self.panel:SetSize(width, height + 28); self.panelBody:SetSize(width, height)
+    self.panel:SetSize(width, height + 28)
+    self.panelBody:SetSize(width, height)
     self.panel:ClearAllPoints()
     self.panel:SetPoint("CENTER", UIParent, "CENTER", self.config.panelX or 0, self.config.panelY or 160)
     self.panel:SetScale((self.config.panelScale or 100) / 100)

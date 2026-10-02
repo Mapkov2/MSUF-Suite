@@ -194,7 +194,10 @@ end
 
 function M:Refresh()
     local newlyWatching = SyncEvents(self)
-    if self.host then S.SetFont(self.title, nil, 13, "OUTLINE"); S.SetFont(self.detail, nil, 11, "") end
+    if self.host then
+        S.SetFont(self.title, nil, 13, "OUTLINE")
+        S.SetFont(self.detail, nil, 11, "")
+    end
     if self.host then Paint(self, self.lastMismatch) end
     if not self.config.onReadyCheck and not self.config.onInstanceEntry and not self.config.onLfgProposal then
         CancelHide(self)

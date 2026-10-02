@@ -162,7 +162,8 @@ local function ThemeBars(owner)
     local gap = c.chestSpacing or 22
     local chestY = -81 - barHeight
     for i, row in ipairs(view.chests) do
-        row.label:ClearAllPoints(); row.remaining:ClearAllPoints()
+        row.label:ClearAllPoints()
+        row.remaining:ClearAllPoints()
         row.label:SetPoint("TOPLEFT", 4, chestY - (i - 1) * gap)
         row.remaining:SetPoint("TOPRIGHT", -4, chestY - (i - 1) * gap)
     end
@@ -171,13 +172,16 @@ local function ThemeBars(owner)
     for _, spec in ipairs({ { view.deaths, deathY }, { view.affixes, deathY - 22 },
         { view.forces, deathY - 46 }, { view.observedPull, deathY - 88 },
         { view.bossHeader, deathY - 88 - pullSpace } }) do
-        spec[1]:ClearAllPoints(); spec[1]:SetPoint("TOPLEFT", 4, spec[2]); spec[1]:SetPoint("TOPRIGHT", -4, spec[2])
+        spec[1]:ClearAllPoints()
+        spec[1]:SetPoint("TOPLEFT", 4, spec[2])
+        spec[1]:SetPoint("TOPRIGHT", -4, spec[2])
     end
     view.observedPull:SetShown(c.showObservedPull == true and not view.completed)
     StyleText(view.observedPull, owner.font or S.GlobalFontPath(), 12)
     view.bossY = deathY - 110 - pullSpace
     for i, row in ipairs(view.bosses) do
-        row:ClearAllPoints(); row:SetPoint("TOPLEFT", view.frame, "TOPLEFT", 4, view.bossY - (i - 1) * 21)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", view.frame, "TOPLEFT", 4, view.bossY - (i - 1) * 21)
         row:SetPoint("TOPRIGHT", view.frame, "TOPRIGHT", -4, view.bossY - (i - 1) * 21)
     end
     view.forces:SetShown(c.showForcesText ~= false)

@@ -80,7 +80,10 @@ local function Paint(self)
     local format = self.config.format or "{range} {unit}"
     local text = format:gsub("{range}", function() return range end)
         :gsub("{unit}", function() return S.Text("yd") end)
-    if self.lastText ~= text then self.label:SetText(text); self.lastText = text end
+    if self.lastText ~= text then
+        self.label:SetText(text)
+        self.lastText = text
+    end
     self.host:SetShown(self.active and (self.hasTarget or S.editMode) == true)
 end
 
@@ -233,7 +236,8 @@ function M:Enable()
         self.host = S.CreateFrame("Frame", "MSUFSuiteTargetDistance", UIParent)
         self.host:EnableMouse(false)
         self.label = S.CreateFontString(self.host, nil, "OVERLAY")
-        self.label:SetAllPoints(); self.label:SetWordWrap(false)
+        self.label:SetAllPoints()
+        self.label:SetWordWrap(false)
     end
     self.context:Event("SPELLS_CHANGED", SpellsChanged, true)
     self.context:Event("PLAYER_SPECIALIZATION_CHANGED", SpecChanged, true)
@@ -252,7 +256,10 @@ function M:Enable()
     S.RegisterOwnedMover(ID, "attached", { label = "Target spell-range estimate", order = 649,
         getFrame = function() return self.host end, xKey = "attachX", yKey = "attachY", sizeKeys = { "width" },
         point = function() return "TOP" end, quickPosition = true,
-        place = function(x, y) Place(self, x, y); return true end,
+        place = function(x, y)
+            Place(self, x, y)
+            return true
+        end,
         visible = function() return self.config.attachTarget end })
 end
 

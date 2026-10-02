@@ -7,7 +7,8 @@ local REQUEST_WINDOW = 5
 local function Text(value) return S.Public(value) and type(value) == "string" and value ~= "" end
 local function RouteKey(names) return table.concat(names, " > ") end
 local function MapOpened(self)
-    wipe(self.nodes); wipe(self.routes)
+    wipe(self.nodes)
+    wipe(self.routes)
     self.startName = nil
     local count = NumTaxiNodes()
     if not S.Finite(count) then return end
@@ -117,12 +118,15 @@ local function Update(self, force)
         return
     end
     local route = self.current
-    self.host.title:SetText(route and (route.names[1] .. " → " .. route.destination) or S.Text(S.editMode and "Flight route preview" or "Flight route unavailable"))
+    local title = route and (route.names[1] .. " → " .. route.destination)
+        or S.Text(S.editMode and "Flight route preview" or "Flight route unavailable")
+    self.host.title:SetText(title)
     self.host.route:SetText(route and table.concat(route.names, " → ") or S.Text("Select a destination at the flight master."))
     local estimate = route and self.timings and self.timings[route.key]
     if S.Finite(estimate) and estimate > 0 and self.departed then
         self.duration:SetTimeFromEnd(self.departed + estimate, estimate)
-        self.binding:SetDuration(self.duration); self.binding:SetEnabled(true)
+        self.binding:SetDuration(self.duration)
+        self.binding:SetEnabled(true)
     else
         self.binding:SetEnabled(false)
         self.host.time:SetText(S.Text(S.editMode and "Estimated time" or "Learning flight time"))
@@ -144,7 +148,12 @@ local function Land(self, now)
         if not times[self.current.key] then
             local count = 0
             for _ in pairs(times) do count = count + 1 end
-            if count >= 200 then for key in pairs(times) do times[key] = nil; break end end
+            if count >= 200 then
+                for key in pairs(times) do
+                    times[key] = nil
+                    break
+                end
+            end
         end
         times[self.current.key] = elapsed
     end
@@ -195,7 +204,10 @@ function M:Enable()
         hooksecurefunc("TaxiRequestEarlyLanding", function() if self.active then self.earlyLanding = true end end)
         hooksecurefunc("TaxiNodeOnButtonEnter", function(button)
             local route = self.active and self.config.routePreview and self.routes[button:GetID()]
-            if route then GameTooltip:AddLine(table.concat(route.names, " → "), 1, .85, .4, true); GameTooltip:Show() end
+            if route then
+                GameTooltip:AddLine(table.concat(route.names, " → "), 1, .85, .4, true)
+                GameTooltip:Show()
+            end
         end)
     end
     self.context:Event("TAXIMAP_OPENED", MapOpened, true)
