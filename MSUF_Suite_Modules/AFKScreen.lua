@@ -301,10 +301,7 @@ local function RestoreMinimap(self)
 end
 
 local function Hide(self)
-    if self.recheckScheduled then
-        self.recheckToken = (self.recheckToken or 0) + 1
-        self.recheckScheduled = false
-    end
+    self.recheckJob:Cancel()
     StopCamera(self)
     if self.host then
         self.model:Hide()
@@ -329,8 +326,6 @@ end
 local function EnterCombat(self)
     if self.inCombat then return end
     self.inCombat = true
-    self.recheckToken = (self.recheckToken or 0) + 1
-    self.recheckScheduled = false
     self.context:RemoveEvent("PLAYER_FLAGS_CHANGED")
     self.context:RemoveEvent("UNIT_FLAGS")
     self.context:RemoveEvent("PLAYER_STARTED_MOVING")
@@ -367,15 +362,15 @@ end
 
 local Update
 
+-- The one grace check after a secret AFK read (self.recheckJob); hiding the
+-- screen or combat cancels it.
+local RECHECK_DELAY = .1
+local function Recheck(self)
+    if not self.inCombat then Update(self, true) end
+end
+
 local function ScheduleRecheck(self)
-    if self.recheckScheduled then return end
-    self.recheckScheduled = true
-    local token = self.recheckToken or 0
-    C_Timer.After(.1, function()
-        if token ~= (self.recheckToken or 0) then return end
-        self.recheckScheduled = false
-        if self.active and not self.inCombat then Update(self, true) end
-    end)
+    self.recheckJob:Request()
 end
 
 Update = function(self, deferred)
@@ -393,11 +388,22 @@ Update = function(self, deferred)
         return
     end
     if value then
+        -- Closed for a queue popup or a ready check: shut until the AFK ends.
+        if self.dismissed then return end
         if not self.host or not self.host:IsShown() then Show(self) end
         StartCamera(self)
     else
+        self.dismissed = nil
         Hide(self)
     end
+end
+
+-- A dungeon queue popup or a ready check needs the player's UI, which the
+-- AFK screen fades out: the screen closes for the rest of this AFK period.
+local function Attention(self)
+    if not (self.host and self.host:IsShown()) and not self.recheckJob.pending then return end
+    self.dismissed = true
+    Hide(self)
 end
 
 OnEvent = function(self, event, unit)
@@ -423,7 +429,7 @@ OnEvent = function(self, event, unit)
         return
     end
     if event == "PLAYER_STARTED_MOVING" then
-        if self.recheckScheduled or (self.host and self.host:IsShown()) then Hide(self) end
+        if self.recheckJob.pending or (self.host and self.host:IsShown()) then Hide(self) end
         return
     end
     if self.inCombat then return end
@@ -438,7 +444,10 @@ OnEvent = function(self, event, unit)
 end
 
 function M:Enable()
-    self.inCombat = false
+    self.recheckJob = self.context:Coalesce(RECHECK_DELAY, Recheck)
+    self.inCombat, self.dismissed = false, nil
+    self.context:Event("LFG_PROPOSAL_SHOW", Attention, true)
+    self.context:Event("READY_CHECK", Attention, true)
     self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, true)
     self.context:Event("PLAYER_LEAVING_WORLD", OnEvent, true)
     self.context:Event("PLAYER_REGEN_DISABLED", OnEvent, true)
@@ -460,8 +469,7 @@ function M:Refresh()
 end
 
 function M:Disable()
-    self.recheckToken = (self.recheckToken or 0) + 1
-    self.recheckScheduled = false
+    self.dismissed = nil
     Hide(self)
 end
 

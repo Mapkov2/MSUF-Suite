@@ -133,18 +133,21 @@ end
 function suite.Number(value)
     return suite.Public(value) and type(value) == "number" and value == value
 end
-local NS = { MSUFMedia = { font = SUITE_FONT }, Client = { isForever = false } }
+local NS = { MSUFMedia = { font = SUITE_FONT }, Client = { isForever = false },
+    Dispatch = function(callback, ...) return callback(...) end }
 function NS.IsCombatLocked() return InCombatLockdown() == true end
+-- The shipped context timers on each module's stub context.
+local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, suite, NS)
 local private = { NS = NS, Suite = suite }
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
 local module = assert(installed)
 module.active = true
 local eventUnits = {}
-module.context = { Event = function(_, event, callback, allowCombat, unit)
+module.context = TimerContext("afkScreen", module, { Event = function(_, event, callback, allowCombat, unit)
     assert(allowCombat == true)
     events[event] = callback
     eventUnits[event] = unit
-end, RemoveEvent = function(_, event) events[event] = nil end }
+end, RemoveEvent = function(_, event) events[event] = nil end })
 
 module:Enable()
 assert(events.PLAYER_FLAGS_CHANGED and events.UNIT_FLAGS and events.PLAYER_STARTED_MOVING
@@ -261,13 +264,13 @@ assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Module
 local combatModule = assert(installed)
 local combatEvents = {}
 combatModule.active = true
-combatModule.context = {
+combatModule.context = TimerContext("afkScreen", combatModule, {
     Event = function(_, event, callback, allowCombat)
         assert(allowCombat == true)
         combatEvents[event] = callback
     end,
     RemoveEvent = function(_, event) combatEvents[event] = nil end,
-}
+})
 combat, afk = true, true
 local beforeChecks, beforeScenes, beforeStarts = checks, sceneSetups, cameraStarts
 combatModule:Enable()
@@ -334,10 +337,10 @@ assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Module
 local ownerModule = assert(installed)
 local ownerEvents = {}
 ownerModule.active = true
-ownerModule.context = {
+ownerModule.context = TimerContext("afkScreen", ownerModule, {
     Event = function(_, event, callback) ownerEvents[event] = callback end,
     RemoveEvent = function(_, event) ownerEvents[event] = nil end,
-}
+})
 afk = true
 ownerModule:Enable()
 assert(UIParent.alpha == 0, "AFK should fade the UI")
@@ -355,7 +358,8 @@ installed = nil
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
 local paired = assert(installed)
 paired.active = true
-paired.context = module.context
+paired.context = TimerContext("afkScreen", paired,
+    { Event = module.context.Event, RemoveEvent = module.context.RemoveEvent })
 paired:Enable()
 assert(formActor.cleared == 1 and actor.nativeCalls >= 2
     and not paired.fallback:IsShown(),
@@ -367,7 +371,8 @@ installed = nil
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
 local formOnly = assert(installed)
 formOnly.active = true
-formOnly.context = module.context
+formOnly.context = TimerContext("afkScreen", formOnly,
+    { Event = module.context.Event, RemoveEvent = module.context.RemoveEvent })
 formOnly:Enable()
 assert(formActor.nativeCalls == 1 and not formOnly.fallback:IsShown(),
     "a form-tagged active actor should be reused for the native model")
@@ -379,10 +384,10 @@ assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Module
 local exitModule = assert(installed)
 local exitEvents = {}
 exitModule.active = true
-exitModule.context = {
+exitModule.context = TimerContext("afkScreen", exitModule, {
     Event = function(_, event, callback) exitEvents[event] = callback end,
     RemoveEvent = function(_, event) exitEvents[event] = nil end,
-}
+})
 afk = true
 exitModule:Enable()
 assert(exitModule.host:IsShown(), "AFK exit scenario should start with a visible screen")
@@ -406,7 +411,7 @@ deferred = nil
 local checksBeforeMove = checks
 exitEvents.PLAYER_STARTED_MOVING(exitModule, "PLAYER_STARTED_MOVING")
 assert(not exitModule.host:IsShown() and UIParent.alpha == .85 and Minimap:IsShown()
-    and not exitModule.cameraSpinning and not exitModule.recheckScheduled,
+    and not exitModule.cameraSpinning and not exitModule.recheckJob.pending,
     "movement must dismiss the screen immediately, even while AFK is secret")
 staleRecheck()
 assert(checks == checksBeforeMove and not exitModule.host:IsShown(),
@@ -423,6 +428,26 @@ checksBeforeMove = checks
 hiddenRecheck()
 assert(checks == checksBeforeMove and not exitModule.host:IsShown(),
     "movement must also cancel an unknown-state check before the screen appears")
+afk = false
+exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
+-- A dungeon queue popup or a ready check needs the UI: the AFK screen closes
+-- and stays closed until the player is back from AFK.
+assert(exitEvents.LFG_PROPOSAL_SHOW and exitEvents.READY_CHECK, "the AFK screen ignores queue popups and ready checks")
+for _, event in ipairs({ "LFG_PROPOSAL_SHOW", "READY_CHECK" }) do
+    afk = true
+    exitEvents.UNIT_FLAGS(exitModule, "UNIT_FLAGS", "player")
+    assert(exitModule.host:IsShown(), "the AFK screen did not show before " .. event)
+    exitEvents[event](exitModule, event)
+    assert(not exitModule.host:IsShown() and UIParent.alpha == .85 and Minimap:IsShown(),
+        event .. " left the UI faded behind the AFK screen")
+    exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
+    assert(not exitModule.host:IsShown(), "a status event reopened the AFK screen over " .. event)
+    afk = false
+    exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
+end
+afk = true
+exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
+assert(exitModule.host:IsShown(), "a new AFK period did not show the screen again")
 afk = false
 exitEvents.PLAYER_FLAGS_CHANGED(exitModule, "PLAYER_FLAGS_CHANGED", "player")
 exitModule:Disable()
