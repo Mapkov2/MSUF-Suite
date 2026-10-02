@@ -220,10 +220,13 @@ local function Cast(self, _, _, _, spellID)
     -- This event is SecretWhenUnitSpellCastRestricted in upstream/live.
     -- Guard the ID and every field before comparisons, indexing or storage.
     if not S.Finite(spellID) or spellID <= 0 then return end
-    local info = C_Spell.GetSpellInfo(spellID)
-    if not S.Public(info) or type(info) ~= "table" then return end
-    local name, icon = S.PublicText(info.name), info.iconID
-    if not name or not S.Finite(icon) or icon <= 0 then return end
+    -- The name and icon getters answer plain values; GetSpellInfo built a
+    -- whole info table for every cast (520 B a cast in the 2026-10-02 raid
+    -- trace). GetSpellTexture's first result is GetSpellInfo's iconID.
+    local name = S.PublicText(C_Spell.GetSpellName(spellID))
+    if not name then return end
+    local icon = C_Spell.GetSpellTexture(spellID)
+    if not S.Finite(icon) or icon <= 0 then return end
     if self.contextVisible == false then return end
     local history = self.history
     local entry = history[MAX_ROWS] or {}

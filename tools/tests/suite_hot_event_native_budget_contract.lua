@@ -425,5 +425,55 @@ do
     Stop(m)
 end
 
+------------------------------------------------------------------ Nameplates text
+-- Pooled plates: a region is restored when its plate goes and restyled when
+-- the next unit takes it (Capture 496 B and Apply 350 B a call in the raid
+-- trace, three tables per plate cycle). The cycle now reuses the region's
+-- record and must still restore exactly what the client drew.
+do
+    local textNS = { NameplateStyle = {}, Safety = { IsForbidden = function() return false end } }
+    local textS = { Finite = NS.Finite, Public = NS.Public,
+        SetFont = function(region, path, size, flags) region:SetFont(path, size, flags) end }
+    local textPrivate = { NS = textNS, Suite = textS }
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/Text.lua"))("MSUF_Suite_Nameplates", textPrivate)
+    local Text = textPrivate.Text
+    local region = { font = { "native", 12, "" }, shadow = { 0, 0, 0, .6 }, offset = { 1, -1 } }
+    function region:GetFont() return self.font[1], self.font[2], self.font[3] end
+    function region:SetFont(path, size, flags) self.font = { path, size, flags } end
+    function region:GetShadowColor() return unpack(self.shadow) end
+    function region:SetShadowColor(r, g, b, a) self.shadow = { r, g, b, a } end
+    function region:GetShadowOffset() return unpack(self.offset) end
+    function region:SetShadowOffset(x, y) self.offset = { x, y } end
+    local style = { enabled = true, font = "suite", flags = "OUTLINE", shadow = true }
+    local function Cycle()
+        Text.Apply(region, style, 14)
+        Text.Restore(region)
+    end
+    Cycle()
+    -- The KB pass of a hundred cycles: the region's own setters are test
+    -- tables, so only reads (no stub tables) are counted here.
+    region.SetFont = function(self, path, size, flags) local font = self.font; font[1], font[2], font[3] = path, size, flags end
+    region.SetShadowColor = function(self, r, g, b, a) local c = self.shadow; c[1], c[2], c[3], c[4] = r, g, b, a end
+    region.SetShadowOffset = function(self, x, y) local o = self.offset; o[1], o[2] = x, y end
+    local used = Kilobytes(function() for _ = 1, 100 do Cycle() end end)
+    print(string.format("nameplates text: 100 plate cycles %.3f KB", used))
+    if used > .05 then failures[#failures + 1] = string.format("100 nameplate text cycles allocated %.3f KB", used) end
+    assert(region.font[1] == "native" and region.font[2] == 12 and region.font[3] == ""
+        and region.shadow[4] == .6 and region.offset[1] == 1 and region.offset[2] == -1,
+        "a restored plate text lost its native font or shadow")
+    -- The next plate brings its own native look: it is captured, never the
+    -- previous plate's.
+    region.font[1], region.font[2], region.shadow[4], region.offset[2] = "other", 10, .3, -2
+    Text.Apply(region, style, 14)
+    assert(region.font[1] == "suite" and region.font[2] == 14 and region.shadow[4] == 1,
+        "the restyle of a reused region was not applied")
+    Text.Restore(region)
+    assert(region.font[1] == "other" and region.font[2] == 10 and region.shadow[4] == .3 and region.offset[2] == -2,
+        "a reused region restored the previous plate's native look")
+    region.font[1] = "later"
+    Text.Restore(region)
+    assert(region.font[1] == "later", "a second restore wrote the font again")
+end
+
 if #failures > 0 then error(table.concat(failures, "\n")) end
 print("Suite hot event native budgets passed")
