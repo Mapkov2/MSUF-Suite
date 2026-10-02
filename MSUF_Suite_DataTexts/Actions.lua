@@ -21,11 +21,6 @@ P.DataTextActions = A
 
 local OVERLAY_KINDS = { hearth = true, specialization = true }
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
-local MICRO_BUTTONS = NS.Client.isForever
-    and { "CharacterMicroButton", "SpellbookMicroButton", "QuestLogMicroButton", "GuildMicroButton",
-        "MainMenuMicroButton", "TalentMicroButton" }
-    or { "CharacterMicroButton", "PlayerSpellsMicroButton", "QuestLogMicroButton", "GuildMicroButton",
-        "MainMenuMicroButton" }
 local ROW_LIMIT = 100
 local overlay, popup, leaveTimer
 
@@ -225,8 +220,11 @@ local function FillPortal(row, index)
     row:SetAttribute("type", "spell")
     row:SetAttribute("spell", spell.id)
     row:SetAttribute("clickbutton", nil)
+    -- A micro menu row may have shown a disabled micro button before.
+    row:SetEnabled(true)
     row.icon:SetTexture(spell.icon)
     row.label:SetText(spell.name)
+    row.label:SetTextColor(1, 1, 1)
     local duration = C_Spell.GetSpellCooldownDuration(spell.id)
     if duration then row.cooldown:SetCooldownFromDurationObject(duration) else row.cooldown:Clear() end
 end
@@ -242,25 +240,24 @@ end
 
 local micro = {}
 local function FillMicro(row, index)
-    local native = micro[index]
+    local entry = micro[index]
     row:SetAttribute("type", "click")
-    row:SetAttribute("clickbutton", native)
+    row:SetAttribute("clickbutton", entry.button)
     row:SetAttribute("spell", nil)
+    row:SetEnabled(entry.enabled)
     row.icon:SetTexture(nil)
     row.cooldown:Clear()
-    local label = native.tooltipText
-    row.label:SetText(S.Public(label) and type(label) == "string" and label ~= "" and label or native:GetName())
+    row.label:SetText(entry.label)
+    local shade = entry.enabled and 1 or .5
+    row.label:SetTextColor(shade, shade, shade)
 end
 
--- Blizzard's micro buttons, clicked by the secure rows.
+-- The Suite's micro menu (S.MicroMenuEntries, the same entries as the
+-- Minimap's middle-click flyout) plus the game menu row, clicked by the
+-- secure rows.
 function A.MicroMenu(button)
     if Locked() then return end
-    for i = #micro, 1, -1 do micro[i] = nil end
-    for _, name in ipairs(MICRO_BUTTONS) do
-        local native = _G[name]
-        if native then micro[#micro + 1] = native end
-    end
-    OpenPopup(button, #micro, FillMicro)
+    OpenPopup(button, S.MicroMenuEntries(micro, true), FillMicro)
 end
 
 ------------------------------------------------------------------ combat

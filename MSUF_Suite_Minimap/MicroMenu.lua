@@ -2,38 +2,18 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
--- The middle-click micro menu. A Blizzard panel opened from an addon's click
--- runs tainted and can later block talent changes or group finder sign-ups,
--- so the menu is a Suite-owned flyout of secure "click" buttons: a row's
+-- The middle-click flyout of the Suite's micro menu (S.MicroMenuEntries in
+-- MSUF_Suite_Modules/MicroMenu.lua: the offered buttons, their order and
+-- labels; the game menu button is not offered here). A Blizzard panel opened
+-- from an addon's click runs tainted and can later block talent changes or
+-- group finder sign-ups, so the flyout holds secure "click" buttons: a row's
 -- hardware click makes SecureActionButton_OnClick click the Blizzard micro
 -- button from secure code. The flyout opens only out of combat and closes on
 -- a choice, a click elsewhere, the combat start (PLAYER_REGEN_DISABLED comes
 -- before the lockdown) and when the minimap stops.
--- Listed are the micro buttons Blizzard put into its micro menu (the
--- layoutIndex MicroMenuMixin:AddButton sets) that are shown: Forever's menu
--- leaves PlayerSpellsMicroButton and AchievementMicroButton out, Retail's
--- game rules can drop others. The game menu button acts only while the cursor
--- is over it (MainMenuMicroButtonMixin:OnClick), so it is not offered.
-local ENTRIES = {
-    { "CharacterMicroButton", "CHARACTER_BUTTON", "Character" },
-    { "ProfessionMicroButton", "PROFESSIONS_BUTTON", "Professions" },
-    { "PlayerSpellsMicroButton", "PLAYER_SPELLS_BUTTON", "Talents and spellbook" },
-    { "SpellbookMicroButton", "SPELLBOOK_ABILITIES_BUTTON", "Spellbook" },
-    { "TalentMicroButton", "TALENTS_BUTTON", "Talents" },
-    { "LegacyMicroButton", "LEGACY_BUTTON", "Legacy" },
-    { "AchievementMicroButton", "ACHIEVEMENT_BUTTON", "Achievements" },
-    { "QuestLogMicroButton", "QUESTLOG_BUTTON", "Quest log" },
-    { "HousingMicroButton", "HOUSING_BUTTON", "Housing" },
-    { "GuildMicroButton", "GUILD", "Guild" },
-    { "LFDMicroButton", "DUNGEONS_BUTTON", "Group finder" },
-    { "CollectionsMicroButton", "COLLECTIONS", "Collections" },
-    { "EJMicroButton", "ADVENTURE_JOURNAL", "Adventure Guide" },
-    { "HelpMicroButton", "HELP_BUTTON", "Help" },
-    { "StoreMicroButton", "BLIZZARD_STORE", "Shop" },
-}
 local ROW, WIDTH, PAD, FONT = 20, 190, 6, 12
 local flyout
-local rows = {}
+local rows, entries = {}, {}
 
 -- The flyout carries secure rows, so it is protected: it moves, shows and
 -- hides out of combat only.
@@ -94,25 +74,18 @@ local function Build()
     MM.microMenu = flyout
 end
 
--- One row per listed micro button; returns how many rows show.
+-- One row per offered micro button; returns how many rows show.
 local function Fill()
-    local count, font = 0, S.GlobalFontPath()
-    for i = 1, #ENTRIES do
-        local entry = ENTRIES[i]
-        local button = _G[entry[1]]
-        if MM.Usable(button) and button.layoutIndex ~= nil and button:IsShown() then
-            count = count + 1
-            local row = Row(count)
-            local enabled = button:IsEnabled()
-            enabled = S.Public(enabled) and enabled == true
-            row:SetAttribute("clickbutton", button)
-            row:SetEnabled(enabled)
-            S.SetFont(row.label, font, FONT, "")
-            row.label:SetText(S.BlizzardText(entry[2], entry[3]))
-            local shade = enabled and 1 or .5
-            row.label:SetTextColor(shade, shade, shade)
-            row:Show()
-        end
+    local count, font = S.MicroMenuEntries(entries, false), S.GlobalFontPath()
+    for i = 1, count do
+        local entry, row = entries[i], Row(i)
+        row:SetAttribute("clickbutton", entry.button)
+        row:SetEnabled(entry.enabled)
+        S.SetFont(row.label, font, FONT, "")
+        row.label:SetText(entry.label)
+        local shade = entry.enabled and 1 or .5
+        row.label:SetTextColor(shade, shade, shade)
+        row:Show()
     end
     for i = count + 1, #rows do
         rows[i]:Hide()

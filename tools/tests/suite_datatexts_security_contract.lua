@@ -29,10 +29,16 @@ local W = H.New(root, flavor, { clientSecurity = true, beforeModules = function(
     G.C_Spell = { GetSpellCooldownDuration = function() return nil end }
     G.C_AddOns.LoadAddOn = function(name) loaded[#loaded + 1] = name end
     -- Blizzard's micro buttons; their own OnClick records whether it ran secure.
-    for _, name in ipairs({ "CharacterMicroButton", "PlayerSpellsMicroButton", "SpellbookMicroButton",
+    -- layoutIndex marks the buttons Blizzard put into its micro menu
+    -- (MicroMenuMixin:AddButton): Forever's menu leaves PlayerSpells out,
+    -- Retail's has no separate Spellbook and Talent buttons.
+    local unlisted = flavor == "Forever" and { PlayerSpellsMicroButton = true }
+        or { SpellbookMicroButton = true, TalentMicroButton = true }
+    for index, name in ipairs({ "CharacterMicroButton", "PlayerSpellsMicroButton", "SpellbookMicroButton",
         "TalentMicroButton", "QuestLogMicroButton", "GuildMicroButton", "MainMenuMicroButton" }) do
         local native = world.New("Button", name, world.UIParent)
         native.tooltipText = name .. " tip"
+        if not unlisted[name] then native.layoutIndex = index end
         native.scripts.OnClick = function(self)
             microClicks[#microClicks + 1] = { name = self.name, secure = world.secure }
         end
@@ -118,13 +124,31 @@ assert(overlay:GetAttribute("type") == nil and overlay:GetAttribute("clickbutton
 W.Fire(overlay, "OnLeave")
 
 -- P2-12: the micro menu is a popup of secure rows that click the buttons.
+-- It lists the Suite's one micro menu (S.MicroMenuEntries, the Minimap's
+-- entries in Blizzard's order) and keeps its game menu row last (S3.2).
 local beforeMicro = #microClicks
+G.GuildMicroButton.enabled = false
 W.Click(micro)
 local popup = assert(A.popup, "the micro menu did not open its popup")
 assert(popup.shown and popup:IsProtected() and popup.parent == W.UIParent, "the micro menu popup is not secure")
-local first = popup.rows[1]
-assert(first.shown and first:GetAttribute("type") == "click" and first:GetAttribute("clickbutton") == G.CharacterMicroButton
-    and first.label.text == "CharacterMicroButton tip", "micro menu rows are not secure clicks")
+local expected = flavor == "Forever"
+    and { "CharacterMicroButton", "SpellbookMicroButton", "TalentMicroButton", "QuestLogMicroButton",
+        "GuildMicroButton", "MainMenuMicroButton" }
+    or { "CharacterMicroButton", "PlayerSpellsMicroButton", "QuestLogMicroButton", "GuildMicroButton",
+        "MainMenuMicroButton" }
+local shared = {}
+assert(S.MicroMenuEntries(shared, false) == #expected - 1, "the Minimap's micro menu lists other buttons")
+for i, name in ipairs(expected) do
+    local row = popup.rows[i]
+    assert(row and row.shown and row:GetAttribute("type") == "click" and row:GetAttribute("clickbutton") == G[name]
+        and (i == #expected or shared[i].button == G[name] and row.label.text == shared[i].label),
+        "micro menu row " .. i .. " is not the shared secure click on " .. name)
+end
+assert(not (popup.rows[#expected + 1] and popup.rows[#expected + 1].shown), "the micro menu lists extra rows")
+local first, guild = popup.rows[1], popup.rows[#expected - 1]
+assert(first.label.text == "Character" and first.enabled and not guild.enabled,
+    "micro menu rows lost the shared labels or a disabled button stayed clickable")
+G.GuildMicroButton.enabled = true
 W.Click(first)
 assert(#microClicks == beforeMicro + 1 and microClicks[#microClicks].name == "CharacterMicroButton"
     and microClicks[#microClicks].secure and not popup.shown and #popup.points == 0,

@@ -1229,6 +1229,7 @@ T("From this many stacks the number shows in the color on the right.", "À parti
 T("Full", "Complets")
 T("Full Blizzard", "Blizzard complet")
 T("Full row", "Ligne entière")
+T("Game menu", "Menu du jeu")
 T("Gear", "Équipement")
 T("Gear summary", "Résumé de l'équipement")
 T("Gem sockets", "Châsses")

@@ -1227,6 +1227,7 @@ T("From this many stacks the number shows in the color on the right.", "중첩�
 T("Full", "전체")
 T("Full Blizzard", "블리자드 전체")
 T("Full row", "전체 행")
+T("Game menu", "게임 메뉴")
 T("Gear", "장비")
 T("Gear summary", "장비 요약")
 T("Gem sockets", "보석 홈")
