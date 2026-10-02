@@ -33,6 +33,34 @@ local ENUM = {
     BAR = { MAIN = 1, FIRST_NATIVE = 2, LAST_NATIVE = 8, FIRST_EXTRA = 9, LAST_ACTION = 10, STANCE = 11, PET = 12 },
 }
 NS.ActionBarEnum = ENUM
+
+-- The bar layout, in the core so the options preview draws it without the
+-- action bar addon (MSUF_Suite_ActionBars/Bars.lua AB.Grid and AB.Cell are
+-- the runtime's copy). n buttons, R = clamp(rows). Rows first: perRow =
+-- ceil(n/R), rows = ceil(n/perRow). Columns first: perColumn = R,
+-- columns = ceil(n/R), rows = min(R, n). Returns columns, rows, R.
+function NS.ActionBarGrid(n, rows, vertical)
+    n = math.max(1, math.floor(n))
+    local r = math.min(math.max(math.floor(rows), 1), n)
+    if vertical then return math.ceil(n / r), math.min(r, n), r end
+    local per = math.ceil(n / r)
+    return per, math.ceil(n / per), r
+end
+-- Cell of 0-based button i. Row 0 is the top row and column 0 the left
+-- column for "Top left"; a right corner mirrors the columns, a bottom corner
+-- the rows.
+function NS.ActionBarCell(i, columns, rows, r, vertical, start)
+    local col, row
+    if vertical then
+        row, col = i % r, math.floor(i / r)
+    else
+        col, row = i % columns, math.floor(i / columns)
+    end
+    local START = ENUM.START
+    if start == START.TOP_RIGHT or start == START.BOTTOM_RIGHT then col = columns - 1 - col end
+    if start == START.BOTTOM_LEFT or start == START.BOTTOM_RIGHT then row = rows - 1 - row end
+    return col, row
+end
 local VISIBILITY, HIGHLIGHT, LOOK = ENUM.VISIBILITY, ENUM.HIGHLIGHT, ENUM.LOOK
 
 -- No client check: Blizzard_RestrictedAddOnEnvironment (secure handlers and

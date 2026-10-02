@@ -2,7 +2,7 @@ local _, P = ...
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local PAGE, ID = "suite_actionbars", "actionbars"
 local COUNT = Suite.ActionBarCount
-local NEVER, START = Suite.ActionBarEnum.VISIBILITY.NEVER, Suite.ActionBarEnum.START
+local NEVER = Suite.ActionBarEnum.VISIBILITY.NEVER
 
 -- Retail's rotation recommendation runs only while Blizzard's Assisted
 -- Highlight option (the assistedCombatHighlight CVar) is on; Forever has no
@@ -186,24 +186,6 @@ local function BuildQuick(ctx, b)
     P.FinishBody(b, body, top - math.ceil(COUNT / columns) * 54 - 4)
 end
 
--- Canonical grid math shared with the runtime: returns column, row of button i
--- (0-based) plus the grid size.
-function P.ActionBarGrid(count, rows, vertical, start, i)
-    rows = math.max(1, math.min(rows, count))
-    local columns, lines, column, row
-    if vertical then
-        columns, lines = math.ceil(count / rows), rows
-        row, column = i % rows, math.floor(i / rows)
-    else
-        columns = math.ceil(count / rows)
-        lines = math.ceil(count / columns)
-        column, row = i % columns, math.floor(i / columns)
-    end
-    if start == START.TOP_RIGHT or start == START.BOTTOM_RIGHT then column = columns - 1 - column end
-    if start == START.BOTTOM_LEFT or start == START.BOTTOM_RIGHT then row = lines - 1 - row end
-    return column, row, columns, lines
-end
-
 local function BuildPreview(ctx, parent, y, width)
     local height = 132
     local host = CreateFrame("Frame", nil, parent)
@@ -226,7 +208,7 @@ local function BuildPreview(ctx, parent, y, width)
         local count = P.Get(ID, p .. "Buttons")
         local rows, vertical, start = P.Get(ID, p .. "Rows"), P.Get(ID, p .. "Vertical"), P.Get(ID, p .. "Start")
         local size, gap = P.Get(ID, p .. "Size"), P.Get(ID, p .. "Spacing")
-        local _, _, columns, lines = P.ActionBarGrid(count, rows, vertical, start, 0)
+        local columns, lines, r = Suite.ActionBarGrid(count, rows, vertical)
         local realW = columns * size + (columns - 1) * gap
         local realH = lines * size + (lines - 1) * gap
         local fit = math.min(1, (width - 16) / math.max(1, realW), (height - 30) / math.max(1, realH))
@@ -235,7 +217,7 @@ local function BuildPreview(ctx, parent, y, width)
         for i, tile in ipairs(tiles) do
             tile:SetShown(i <= count)
             if i <= count then
-                local column, row = P.ActionBarGrid(count, rows, vertical, start, i - 1)
+                local column, row = Suite.ActionBarCell(i - 1, columns, lines, r, vertical, start)
                 tile:ClearAllPoints()
                 tile:SetSize(size * fit, size * fit)
                 tile:SetPoint("TOPLEFT", host, "TOPLEFT", left + column * (size + gap) * fit, top - row * (size + gap) * fit)
