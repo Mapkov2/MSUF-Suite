@@ -297,6 +297,75 @@ local function PlaceMarkers(rec, part, lk, bar)
     for i = #values + 1, #markers do markers[i]:Hide() end
 end
 
+-- The regions of a buff bar's button: icon, background, fill, markers and the
+-- time and name texts.
+local function StyleBar(rec, part, lk, b, icon)
+    local bw, px = lk.bw, lk.px
+    local left = lk.side == ICON_LEFT
+    local inner = lk.h - 2 * bw
+    local point = left and "TOPLEFT" or "TOPRIGHT"
+    icon:SetPoint(point, b, point, left and bw or -bw, -bw)
+    icon:SetSize(inner, inner)
+    icon:SetShown(lk.icon)
+    local lead = lk.icon and lk.h or bw
+    local bg, bar = part.bg, part.bar
+    bg:ClearAllPoints()
+    bg:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
+    bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
+    bg:SetTexture(lk.tex)
+    bg:SetVertexColor(lk.fr * .25, lk.fg * .25, lk.fb * .25, lk.bgA)
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPLEFT", b, "TOPLEFT", left and lead or bw, -bw)
+    bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", left and -bw or -lead, bw)
+    bar:SetStatusBarTexture(lk.tex)
+    bar:SetStatusBarColor(lk.fr, lk.fg, lk.fb, 1)
+    if rec.stackFill or part.markers then PlaceMarkers(rec, part, lk, bar) end
+    -- The fill's range is its application bar's maximum: a bound button
+    -- is rebound in place when the maximum changes.
+    if rec.stackFill and part.bound and part.appMax ~= lk.smax then
+        part.appMax = lk.smax
+        barOpts.maxApplications = lk.smax
+        b:SetApplicationBar(bar, barOpts)
+    end
+    local dur, name = part.dur, part.name
+    if dur then
+        Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
+        dur:ClearAllPoints()
+        dur:SetPoint("RIGHT", bar, "RIGHT", -4 * px, 0)
+        dur:SetJustifyH("RIGHT")
+    end
+    if name then
+        Text(name, lk.cs, lk.cr, lk.cg, lk.cb, lk)
+        name:ClearAllPoints()
+        -- Room for the time text without anchoring to a sealed string.
+        name:SetPoint("LEFT", bar, "LEFT", 4 * px, 0)
+        name:SetPoint("RIGHT", bar, "RIGHT", dur and -floor(lk.cs * 2.6 + .5) or -4 * px, 0)
+        name:SetJustifyH("LEFT")
+        name:SetWordWrap(false)
+    end
+end
+
+-- The regions of an icon or overlay button: the swipe and the countdown.
+local function StyleIcon(rec, part, lk, b, icon)
+    local bw = lk.bw
+    icon:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
+    icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
+    local cd = part.cd
+    if rec.role == "over" then
+        cd:SetSwipeColor(GOLD[1], GOLD[2], GOLD[3], .55)
+        cd:SetDrawEdge(false)
+    else
+        cd:SetSwipeColor(0, 0, 0, lk.swipe)
+        cd:SetDrawEdge(lk.edge)
+    end
+    local dur = part.dur
+    if dur then
+        Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
+        dur:ClearAllPoints()
+        dur:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    end
+end
+
 -- Every region of one button from rec.lk; idempotent (init and restyle).
 local function Style(rec, part)
     local lk, b = rec.lk, part.button
@@ -306,65 +375,9 @@ local function Style(rec, part)
     local icon = part.icon
     icon:ClearAllPoints()
     if rec.role == "bar" then
-        local left = lk.side == ICON_LEFT
-        local inner = lk.h - 2 * bw
-        local point = left and "TOPLEFT" or "TOPRIGHT"
-        icon:SetPoint(point, b, point, left and bw or -bw, -bw)
-        icon:SetSize(inner, inner)
-        icon:SetShown(lk.icon)
-        local lead = lk.icon and lk.h or bw
-        local bg, bar = part.bg, part.bar
-        bg:ClearAllPoints()
-        bg:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
-        bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
-        bg:SetTexture(lk.tex)
-        bg:SetVertexColor(lk.fr * .25, lk.fg * .25, lk.fb * .25, lk.bgA)
-        bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", b, "TOPLEFT", left and lead or bw, -bw)
-        bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", left and -bw or -lead, bw)
-        bar:SetStatusBarTexture(lk.tex)
-        bar:SetStatusBarColor(lk.fr, lk.fg, lk.fb, 1)
-        if rec.stackFill or part.markers then PlaceMarkers(rec, part, lk, bar) end
-        -- The fill's range is its application bar's maximum: a bound button
-        -- is rebound in place when the maximum changes.
-        if rec.stackFill and part.bound and part.appMax ~= lk.smax then
-            part.appMax = lk.smax
-            barOpts.maxApplications = lk.smax
-            b:SetApplicationBar(bar, barOpts)
-        end
-        local dur, name = part.dur, part.name
-        if dur then
-            Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
-            dur:ClearAllPoints()
-            dur:SetPoint("RIGHT", bar, "RIGHT", -4 * px, 0)
-            dur:SetJustifyH("RIGHT")
-        end
-        if name then
-            Text(name, lk.cs, lk.cr, lk.cg, lk.cb, lk)
-            name:ClearAllPoints()
-            -- Room for the time text without anchoring to a sealed string.
-            name:SetPoint("LEFT", bar, "LEFT", 4 * px, 0)
-            name:SetPoint("RIGHT", bar, "RIGHT", dur and -floor(lk.cs * 2.6 + .5) or -4 * px, 0)
-            name:SetJustifyH("LEFT")
-            name:SetWordWrap(false)
-        end
+        StyleBar(rec, part, lk, b, icon)
     else
-        icon:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
-        icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
-        local cd = part.cd
-        if rec.role == "over" then
-            cd:SetSwipeColor(GOLD[1], GOLD[2], GOLD[3], .55)
-            cd:SetDrawEdge(false)
-        else
-            cd:SetSwipeColor(0, 0, 0, lk.swipe)
-            cd:SetDrawEdge(lk.edge)
-        end
-        local dur = part.dur
-        if dur then
-            Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
-            dur:ClearAllPoints()
-            dur:SetPoint("CENTER", icon, "CENTER", 0, 0)
-        end
+        StyleIcon(rec, part, lk, b, icon)
     end
     icon:SetTexCoord(lk.l, lk.r, lk.t, lk.b)
     local count, pos = part.count, lk.sp

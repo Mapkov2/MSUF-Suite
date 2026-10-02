@@ -200,45 +200,81 @@ local function Refit(rec, look)
     return true
 end
 
--- Brings a container to list[1..n]: compact mode keys groups by position,
--- fixed mode keys slots by their anchor (cell or cooldown icon). Returns
--- false when sealed buttons would need a write they refuse (Refit).
-local function Build(rec, view, n)
-    local container, fixed, over, slot = rec.frame, rec.fixed, rec.fam == "over", rec.slot
-    local look = Look(rec, view)
-    local parts = rec.parts
-    if parts[1] == nil then rec.look = look end
-    -- Bar-level glow and text choices behind the per-spell ones.
+-- Bar-level glow and text choices behind the per-spell ones.
+local function BarChoices(rec, view)
     rec.glowAll = view.auraGlow == true
     rec.gStyle, rec.gTint = view.glowStyle, view.glowTint == true
     rec.gR, rec.gG, rec.gB = view.glowR or 1, view.glowG or 1, view.glowB or 1
     rec.timeBar, rec.stackBar, rec.topBar = K.BarTime(view), K.BarStacks(view, false), K.BarStacksTop(view)
     rec.colorAt, rec.colorHex = view.barStackColorAt or 0, view.barStackColor or "ff6633"
+end
+
+-- The key of entry i (list[i], where[i] its place in the plan): compact mode
+-- keys groups by position, fixed mode keys slots by their anchor (cell or
+-- cooldown icon).
+local function KeyOf(rec, entry, i)
+    local keys = rec.keys
+    if not rec.fixed then
+        if not keys[i] then keys[i] = rec.prefix .. i end
+        return i
+    end
+    local over, slot = rec.fam == "over", rec.slot
+    local anchor = over and entry.icon or C.Layout.Cell(slot, where[i])
+    local k = rec.byAnchor[anchor]
+    if not k then
+        k = #keys + 1
+        keys[k] = rec.prefix .. k
+        rec.byAnchor[anchor], rec.anchors[k] = k, anchor
+    end
+    -- An overlay starts from the layout's shown state of its icon
+    -- (layShown); the layout reports every change (Auras.OverlayShown).
+    if over then
+        overIcon[anchor] = slot
+        rec.shut[k] = anchor.layShown ~= true
+    end
+    return k
+end
+
+-- An entry the container has no group or slot for yet: initializeFrame
+-- styles each button as Blizzard makes it.
+local function AddEntry(rec, k, entry, filter, set)
+    local container, keys = rec.frame, rec.keys
+    rec.entry[k], rec.filter[k], rec.ids[k], rec.on[k], rec.act[k] = entry, filter, CopySet({}, set), true, true
+    cand.includeSpellIDs = set
+    local function init(button) Init(rec, button, k) end
+    if rec.fixed then
+        slotOpts.candidateFilters, slotOpts.initializeFrame = cand, init
+        container:AddAuraSlot(keys[k], filter, slotOpts)
+    else
+        rec.li[k], rec.lg[k] = entry.index, rec.geo
+        groupOpts.candidateFilters, groupOpts.initializeFrame, groupOpts.layout = cand, init, GroupLayout(rec, entry.index)
+        -- Of the ten buttons Blizzard pre-builds, only the one it
+        -- shows gets regions (AuraButtons.BeginBatch).
+        local collected = AuraButtons.BeginBatch(rec)
+        container:AddAuraGroup(keys[k], filter, groupOpts)
+        if collected then AuraButtons.EndBatch(rec, k) end
+    end
+    cand.includeSpellIDs = nil
+    slotOpts.initializeFrame, groupOpts.initializeFrame = nil, nil
+    -- An overlay on a hidden icon starts off.
+    Apply(rec, k)
+end
+
+-- Brings a container to list[1..n]. Returns false when sealed buttons would
+-- need a write they refuse (Refit).
+local function Build(rec, view, n)
+    local container, fixed = rec.frame, rec.fixed
+    local look = Look(rec, view)
+    local parts = rec.parts
+    if parts[1] == nil then rec.look = look end
+    BarChoices(rec, view)
     local threshold = C.state.threshold
     local keys = rec.keys
     stamp = stamp + 1
     for i = 1, n do
         local entry = list[i]
         local set, filter = Ids(entry), FilterOf(entry, rec.unit)
-        local k
-        if fixed then
-            local anchor = over and entry.icon or C.Layout.Cell(slot, where[i])
-            k = rec.byAnchor[anchor]
-            if not k then
-                k = #keys + 1
-                keys[k] = rec.prefix .. k
-                rec.byAnchor[anchor], rec.anchors[k] = k, anchor
-            end
-            -- An overlay starts from the layout's shown state of its icon
-            -- (layShown); the layout reports every change (Auras.OverlayShown).
-            if over then
-                overIcon[anchor] = slot
-                rec.shut[k] = anchor.layShown ~= true
-            end
-        else
-            k = i
-            if not keys[k] then keys[k] = rec.prefix .. k end
-        end
+        local k = KeyOf(rec, entry, i)
         rec.mark[k] = stamp
         if rec.text then rec.topts[k] = TextOpts((entry.ov or EMPTY).threshold or threshold) end
         if rec.ids[k] then
@@ -248,25 +284,7 @@ local function Build(rec, view, n)
                 container:SetAuraGroupLayout(keys[k], GroupLayout(rec, entry.index))
             end
         else
-            rec.entry[k], rec.filter[k], rec.ids[k], rec.on[k], rec.act[k] = entry, filter, CopySet({}, set), true, true
-            cand.includeSpellIDs = set
-            local function init(button) Init(rec, button, k) end
-            if fixed then
-                slotOpts.candidateFilters, slotOpts.initializeFrame = cand, init
-                container:AddAuraSlot(keys[k], filter, slotOpts)
-            else
-                rec.li[k], rec.lg[k] = entry.index, rec.geo
-                groupOpts.candidateFilters, groupOpts.initializeFrame, groupOpts.layout = cand, init, GroupLayout(rec, entry.index)
-                -- Of the ten buttons Blizzard pre-builds, only the one it
-                -- shows gets regions (AuraButtons.BeginBatch).
-                local collected = AuraButtons.BeginBatch(rec)
-                container:AddAuraGroup(keys[k], filter, groupOpts)
-                if collected then AuraButtons.EndBatch(rec, k) end
-            end
-            cand.includeSpellIDs = nil
-            slotOpts.initializeFrame, groupOpts.initializeFrame = nil, nil
-            -- An overlay on a hidden icon starts off.
-            Apply(rec, k)
+            AddEntry(rec, k, entry, filter, set)
         end
     end
     for k = 1, #keys do
@@ -335,68 +353,62 @@ local function Acquire(slot, fam, bind, unit)
     end
 end
 
--- The live container of one bar, family and unit. Regions are made at
--- button creation, so a change of region set (mode, countdown text, name,
--- pandemic, glow, stack glow, kit sensor, bar direction) swaps containers;
--- `need` says which the bar's entries ask for. fresh: a new container for
--- buttons that refused a restyle (a pooled one would refuse it too).
-local function Ensure(slot, fam, unit, role, fixed, view, fresh)
-    local bar = Bar(slot)
-    if not bar then return nil end
-    local fams = live[slot]
-    if not fams then
-        fams = { aura = {}, over = {} }
-        live[slot] = fams
-    end
-    local byUnit = fams[fam]
-    local text, name, fill = need.text == true, false, K.BAR_FILL.DRAIN
-    if role == "bar" then
-        name, fill = view.barName ~= false, view.barFill == K.BAR_FILL.FILL and K.BAR_FILL.FILL or K.BAR_FILL.DRAIN
-    end
-    local pan = fam == "aura" and view.pandemic == true
-    local glow = fam == "aura" and (view.auraGlow == true or need.glow == true)
-    local stack, kit = need.stack == true, fam == "aura" and need.kit == true
+-- The region set the bar's entries ask of one container, as the signature
+-- that swaps containers when it changes: Blizzard's buttons get their
+-- regions when they are made, so a change of mode, countdown text, name,
+-- pandemic, glow, stack glow, kit sensor or bar direction needs a new
+-- container (`need` says what the entries ask for). Region sets only: the
+-- stack maximum and markers are looks (Look), applied in place, so a slider
+-- drag never builds another container. The parts are left in `want`.
+local want = {}
+local function RegionSet(fam, role, fixed, view)
+    local DRAIN, FILL = K.BAR_FILL.DRAIN, K.BAR_FILL.FILL
+    local text, name, fill = need.text == true, false, DRAIN
+    if role == "bar" then name, fill = view.barName ~= false, view.barFill == FILL and FILL or DRAIN end
+    local aura = fam == "aura"
+    local pan = aura and view.pandemic == true
+    local glow = aura and (view.auraGlow == true or need.glow == true)
+    local stack, kit = need.stack == true, aura and need.kit == true
     local stackFill = role == "bar" and view.barStacks == true
     local stackExtra = stackFill and stack
     if stackFill then stack = false end -- The native button has one application-bar binding.
     local color = stackFill and (view.barStackColorAt or 0) > 0
-    -- Region sets only: the stack maximum and markers are looks (Look),
-    -- applied in place, so a slider drag never builds another container.
-    local bind = (fixed and "s" or "g") .. role .. (text and 1 or 0) .. (name and 1 or 0) .. (pan and 1 or 0) .. (glow and 1 or 0)
+    want.text, want.name, want.fill, want.pandemic, want.glow = text, name, fill, pan, glow
+    want.stack, want.kit, want.stackFill, want.stackExtra, want.color = stack, kit, stackFill, stackExtra, color
+    return (fixed and "s" or "g") .. role .. (text and 1 or 0) .. (name and 1 or 0) .. (pan and 1 or 0) .. (glow and 1 or 0)
         .. (stack and 1 or 0) .. (kit and 1 or 0) .. fill .. (stackFill and 1 or 0) .. (color and 1 or 0) .. (stackExtra and 1 or 0)
-    local rec = byUnit[unit]
-    if rec and rec.bind ~= bind then
-        Retire(slot, fam, unit)
-        rec = nil
+end
+
+-- A new container for one bar, family and unit with the region set in `want`.
+-- eager: buttons refused a restyle while auras are plain, so this container
+-- builds every button of a batch (AuraButtons.BeginBatch).
+local function NewContainer(bar, slot, fam, unit, role, fixed, bind, eager)
+    local parent = fam == "over" and bar.frame or bar.auraHost or bar.frame
+    local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+    if not container then return nil end
+    -- No fake Edit Mode auras in our bars (12.1.0 lacks
+    -- SetEditModePreviewEnabled and shows none).
+    if container.SetEditModePreviewEnabled then container:SetEditModePreviewEnabled(false) end
+    if fixed then container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0) end
+    local rec = { frame = container, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
+        eager = eager == true,
+        text = want.text, name = want.name, pandemic = want.pandemic, glow = want.glow, stack = want.stack, kit = want.kit,
+        fill = want.fill, geo = 0, stackFill = want.stackFill, stackExtra = want.stackExtra, color = want.color,
+        keys = {}, on = {}, act = {}, shut = {}, filter = {}, ids = {}, entry = {}, anchors = {}, byAnchor = {}, topts = {}, li = {}, lg = {},
+        mark = {}, parts = {}, lk = {} }
+    if want.kit then
+        local watch = S.CreateFrame("Frame", nil, parent)
+        watch:SetAllPoints(parent)
+        watching[watch] = rec
+        watch:SetScript("OnShow", Woke)
+        watch:SetScript("OnHide", Woke)
     end
-    if not rec then
-        if not fresh then rec = Acquire(slot, fam, bind, unit) end
-        if not rec then
-            local parent = fam == "over" and bar.frame or bar.auraHost or bar.frame
-            local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
-            if not container then return nil end
-            -- No fake Edit Mode auras in our bars (12.1.0 lacks
-            -- SetEditModePreviewEnabled and shows none).
-            if container.SetEditModePreviewEnabled then container:SetEditModePreviewEnabled(false) end
-            if fixed then container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0) end
-            -- eager: buttons refused a restyle while auras are plain, so this
-            -- container builds every button of a batch (AuraButtons.BeginBatch).
-            rec = { frame = container, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
-                eager = fresh == true,
-                text = text, name = name, pandemic = pan, glow = glow, stack = stack, kit = kit, fill = fill, geo = 0,
-                stackFill = stackFill, stackExtra = stackExtra, color = color,
-                keys = {}, on = {}, act = {}, shut = {}, filter = {}, ids = {}, entry = {}, anchors = {}, byAnchor = {}, topts = {}, li = {}, lg = {},
-                mark = {}, parts = {}, lk = {} }
-            if kit then
-                local watch = S.CreateFrame("Frame", nil, parent)
-                watch:SetAllPoints(parent)
-                watching[watch] = rec
-                watch:SetScript("OnShow", Woke)
-                watch:SetScript("OnHide", Woke)
-            end
-        end
-        byUnit[unit] = rec
-    end
+    return rec
+end
+
+-- Level, strata, unit and enabled state of a container; each is written
+-- only when it changed.
+local function FitContainer(rec, bar, fam, unit, view)
     local container = rec.frame
     local level = bar.frame:GetFrameLevel() + (fam == "over" and OVER_LEVEL or AURA_LEVEL)
     if rec.level ~= level then
@@ -418,6 +430,32 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
         container:SetEnabled(enabled)
     end
     Show(rec)
+end
+
+-- The live container of one bar, family and unit. fresh: a new container for
+-- buttons that refused a restyle (a pooled one would refuse it too).
+local function Ensure(slot, fam, unit, role, fixed, view, fresh)
+    local bar = Bar(slot)
+    if not bar then return nil end
+    local fams = live[slot]
+    if not fams then
+        fams = { aura = {}, over = {} }
+        live[slot] = fams
+    end
+    local byUnit = fams[fam]
+    local bind = RegionSet(fam, role, fixed, view)
+    local rec = byUnit[unit]
+    if rec and rec.bind ~= bind then
+        Retire(slot, fam, unit)
+        rec = nil
+    end
+    if not rec then
+        if not fresh then rec = Acquire(slot, fam, bind, unit) end
+        rec = rec or NewContainer(bar, slot, fam, unit, role, fixed, bind, fresh)
+        if not rec then return nil end
+        byUnit[unit] = rec
+    end
+    FitContainer(rec, bar, fam, unit, view)
     return rec
 end
 

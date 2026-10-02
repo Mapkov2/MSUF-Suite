@@ -384,6 +384,48 @@ end
 -- counts as cooling, so no ready alert fires; the BAG_UPDATE_COOLDOWN that
 -- starts it arms the swipe as a new cooldown. Returns the cooling state and
 -- whether the bags hold none of the item.
+-- A cooldown the icon has not drawn yet: the swipe runs from the icon's
+-- reused duration object. Returns whether the item is cooling.
+local function NewItemCooldown(icon, start, length, gcd)
+    local over = start + length <= GetTime()
+    icon.itemStart, icon.itemLen, icon.itemGCD, icon.itemOver = start, length, gcd, over
+    local cooling = not over and length > GCD_MAX
+    local shown = false
+    if not over and (cooling or gcd) then
+        local duration = icon.itemDur
+        if not duration then
+            duration = CreateDuration()
+            icon.itemDur = duration
+        end
+        if duration then
+            duration:SetTimeFromStart(start, length)
+            icon.cd:SetCooldownFromDurationObject(duration, true)
+            icon.cdSet, icon.cdReal = true, true
+            shown = true
+            Feedback(icon, cooling and duration or nil)
+        end
+    end
+    if not shown then
+        ClearMain(icon)
+        Feedback(icon, nil)
+    end
+    return cooling
+end
+
+-- The charge line and the count text of an item or equipment icon; an empty
+-- healthstone (hideEmpty) shows no "0", not even in a preview. Returns the
+-- item's count, nil for equipment and uncounted items.
+local function ItemCountText(entry, icon, slot, item)
+    local count = not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
+    if count and count ~= 1 and icon.stackOn and not (count == 0 and entry.hideEmpty) then
+        ShowCount(icon, count)
+    else
+        icon.lastCount = nil
+        CountOff(icon)
+    end
+    return count
+end
+
 local function ItemState(entry, icon, reason)
     local slot = entry.equipSlot or (entry.src == "e" and entry.id) or nil
     local item = entry.itemID or entry.id
@@ -418,28 +460,7 @@ local function ItemState(entry, icon, reason)
         else
             -- A new cooldown means the item was used: its own count is read again.
             if not slot then counts[item] = nil end
-            local over = start + length <= GetTime()
-            icon.itemStart, icon.itemLen, icon.itemGCD, icon.itemOver = start, length, gcd, over
-            cooling = not over and length > GCD_MAX
-            local shown = false
-            if not over and (cooling or gcd) then
-                local duration = icon.itemDur
-                if not duration then
-                    duration = CreateDuration()
-                    icon.itemDur = duration
-                end
-                if duration then
-                    duration:SetTimeFromStart(start, length)
-                    icon.cd:SetCooldownFromDurationObject(duration, true)
-                    icon.cdSet, icon.cdReal = true, true
-                    shown = true
-                    Feedback(icon, cooling and duration or nil)
-                end
-            end
-            if not shown then
-                ClearMain(icon)
-                Feedback(icon, nil)
-            end
+            cooling = NewItemCooldown(icon, start, length, gcd)
         end
     else
         icon.itemStart, icon.itemLock = nil, nil
@@ -447,15 +468,7 @@ local function ItemState(entry, icon, reason)
         Feedback(icon, nil)
     end
     ClearCharge(icon)
-    -- An empty healthstone (hideEmpty) shows no "0", not even in a preview.
-    local count = not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
-    if count and count ~= 1 and icon.stackOn and not (count == 0 and entry.hideEmpty) then
-        ShowCount(icon, count)
-    else
-        icon.lastCount = nil
-        CountOff(icon)
-    end
-    return cooling, count == 0
+    return cooling, ItemCountText(entry, icon, slot, item) == 0
 end
 
 ------------------------------------------------------------------ edges

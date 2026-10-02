@@ -494,7 +494,7 @@ do
     end
     assert(#anchors==2 and anchors[1]=='container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)' and anchors[2]=="container:SetPoint(point, host, rel, dx, dy)",
         "container anchors: "..table.concat(anchors," | "))
-    assert(text:find("\n            local parent = fam == \"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
+    assert(text:find("\n    local parent = fam == \"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
         and text:find("\n    local point, host = g.point, g.host\n",1,true),"container parents and hosts are the bar's own frames")
     local rels=0
     for rel in layer:gmatch("[%w_]+:SetPoint%(%s*[^,]+,%s*([%w_%.%[%]]+)") do
