@@ -749,9 +749,9 @@ banner.config.zoneColor = "00ff00"
 for _, key in ipairs({ "questColor", "achievementColor", "levelColor", "scenarioColor", "noticeColor" }) do
     banner.config[key] = "ff0000"
 end
-local serial = banner.serial
+local expires = banner.expiresAt
 banner:Refresh()
-assert(banner.serial == serial and banner.title.textColor[2] == 1
+assert(banner.expiresAt == expires and banner.dismissTimer:Pending() and banner.title.textColor[2] == 1
     and math.abs(banner.background.color[1] - 17 / 255) < .001,
     "announcement color changes must repaint without restarting the display timer")
 EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 7,
@@ -797,7 +797,10 @@ banner:Refresh()
 assert(banner.title.text == "The Coreway", "leaving Edit Mode must restore the active announcement")
 banner.queue = {}
 local resumedDismiss = assert(table.remove(scheduled), "Edit Mode exit did not rearm the banner timer")
+local resumedAt = clock
+clock = banner.expiresAt + .01
 resumedDismiss()
+clock = resumedAt
 assert(banner.leave.playing, "a banner resumed from Edit Mode never started fading out")
 banner.leave.OnFinished()
 assert(not banner.showing and not banner.host.shown and not banner.current,

@@ -4,7 +4,7 @@ local ID = "announcements"
 
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
 -- alerts for the enabled kinds are hidden; their content is shown here.
-local M = { queue = {}, generation = 0 }
+local M = { queue = {} }
 local COLORS = {
     zone = { .96, .88, .67 }, quest = { .98, .79, .39 },
     achievement = { .88, .69, .41 }, level = { .47, .81, .98 },
@@ -106,14 +106,14 @@ local function Paint(self, item)
     self.divider:SetColorTexture(color[1], color[2], color[3], .62)
 end
 
+-- The banner on screen fades out after its duration (self.dismissTimer);
+-- clearing it or an Edit Mode preview cancels the wait.
+local function Dismiss(self)
+    if not S.editMode then self.leave:Play() end
+end
+
 local function ScheduleDismiss(self, delay)
-    self.serial = (self.serial or 0) + 1
-    local serial, generation = self.serial, self.generation
-    C_Timer.After(delay, function()
-        if self.active and not S.editMode and self.generation == generation and self.serial == serial then
-            self.leave:Play()
-        end
-    end)
+    self.dismissTimer = self.context:After(delay, Dismiss)
 end
 
 local function Display(self, item)
@@ -139,7 +139,7 @@ local function ClearKind(self, kind)
         if self.queue[i].kind == kind then table.remove(self.queue, i) end
     end
     if not self.current or self.current.kind ~= kind then return end
-    self.serial = (self.serial or 0) + 1
+    self.context:Cancel(Dismiss)
     self.enter:Stop()
     self.leave:Stop()
     self.current, self.showing, self.expiresAt = nil, false, nil
@@ -177,7 +177,6 @@ local function RecentlyDirect(self, kind)
 end
 
 local function Zone(self)
-    self.zoneScheduled = false
     if not self.active or not self.config.zone then return end
     local zone = ReadText(GetZoneText)
     local subzone = ReadText(GetSubZoneText)
@@ -197,12 +196,7 @@ end
 
 -- Zone texts settle after the change events; read them on the next frame.
 local function ScheduleZone(self)
-    if self.zoneScheduled then return end
-    self.zoneScheduled = true
-    local generation = self.generation
-    C_Timer.After(0, function()
-        if self.generation == generation then Zone(self) end
-    end)
+    self.zoneJob:Request()
 end
 
 local function CurrentZoneKey()
@@ -428,12 +422,11 @@ local EVENTS = {
 }
 
 function M:Enable()
-    self.generation = self.generation + 1
+    self.zoneJob = self.context:Coalesce(0, Zone)
     self.active = true
     Create(self)
     Theme(self)
     self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil
-    self.zoneScheduled = false
     for _, event in ipairs(EVENTS) do self.context:Event(event, Event, true) end
     self.context:Event("PLAYER_REGEN_ENABLED", NativeAnnouncements, true)
     self.lastZone = CurrentZoneKey()
@@ -453,7 +446,7 @@ function M:Refresh()
     if S.editMode then
         self.enter:Stop()
         self.leave:Stop()
-        if not self.previewing then self.serial = (self.serial or 0) + 1 end
+        if not self.previewing then self.context:Cancel(Dismiss) end
         self.previewing = true
         Paint(self, { kind = "zone", title = Tr("ANNOUNCEMENTS"), subtitle = Tr("Zone and event preview") })
         self.host:SetAlpha(1)
@@ -480,13 +473,11 @@ function M:Refresh()
     end
 end
 
+-- The context's Release drops the dismissal and the zone read still due.
 function M:Disable()
-    self.generation = self.generation + 1
-    self.serial = (self.serial or 0) + 1
     self.enter:Stop()
     self.leave:Stop()
     self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil
-    self.zoneScheduled = false
     if self.host then self.host:Hide() end
 end
 
