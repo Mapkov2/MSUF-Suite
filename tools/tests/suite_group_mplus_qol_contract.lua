@@ -22,6 +22,7 @@ local ns
 ns = support.Platform(root, setmetatable({ InCombatLockdown = function() return ns.IsCombatLocked() end },
     { __index = _G }))
 ns.AnchorPoints, ns.IsCombatLocked = { "CENTER" }, function() return false end
+ns.Dispatch = function(callback, ...) return callback(...) end
 support.QoLStyleFixture(root, suite)
 local function context()
     return { events = {},
@@ -336,7 +337,7 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupBloodlust.lua"))(
 local lust = assert(installed.groupBloodlust)
 lust.host, lust.cooldown, lust.title, lust.status = widget(), widget(), widget(), widget()
 lust.background, lust.edges = widget(), { widget(), widget(), widget(), widget() }
-lust.active, lust.context = true, context()
+lust.active, lust.context = true, support.ModuleTimers(root, suite, ns)("groupBloodlust", lust, context())
 lust.config = { point = 1, width = 172, height = 42, scale = 100, x = 0, y = 0,
     onlyWhenLocked = false }
 lust:Enable()
@@ -441,7 +442,10 @@ local readsAfterRefresh=auraReads
 DrainAuras()
 assert(auraReads==readsAfterRefresh,"a roster/settings paint did not consume pending aura work")
 lust.context.events.UNIT_AURA(lust,"UNIT_AURA","player",{isFullUpdate=true})
+-- As the controller stops a module: inactive, Disable, then Release.
+lust.active = false
 lust:Disable()
+lust.context:CancelTimers()
 DrainAuras()
 assert(auraReads==readsAfterRefresh,"a stale lockout callback queried after disable")
 assert(not lust.context.events.UNIT_AURA and not lust.context.events.GROUP_ROSTER_UPDATE
