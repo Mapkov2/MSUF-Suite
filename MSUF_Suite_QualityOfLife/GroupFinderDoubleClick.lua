@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 
 local M = {}
 local ID = "groupFinderDoubleClick"
@@ -70,7 +71,7 @@ end
 local function NoteChanged(self, box)
     self.pendingNote = box:GetText()
     if NS.IsCombatLocked() then
-        self.context:Event("PLAYER_REGEN_ENABLED", SaveNote, true)
+        self.context:Event("PLAYER_REGEN_ENABLED", SaveNote, IN_COMBAT)
         return
     end
     SaveNote(self)

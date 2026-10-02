@@ -232,8 +232,8 @@ Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true }
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
 local ctx = { callbacks = {}, combat = {}, restored = 0, original = {}, properties = {}, fields = {} }
-function ctx:Event(event, fn, allowCombat)
-    self.callbacks[event], self.combat[event] = fn, allowCombat
+function ctx:Event(event, fn, options)
+    self.callbacks[event], self.combat[event] = fn, Support.InCombatOption(options) or nil
 end
 function ctx:RemoveEvent(event) self.callbacks[event], self.combat[event] = nil, nil end
 function ctx:Property(frame, getter, setter, value)

@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "combatPetStatus"
 -- Classes with a summoned pet, by the spellbook spell that summons it (Call
@@ -88,20 +89,20 @@ end
 local function SyncEvents(self)
     local c, context = self.config, self.context
     if c.showMissing or c.showDead then
-        context:Event("UNIT_PET", OnEvent, true, "player")
+        context:Event("UNIT_PET", OnEvent, IN_COMBAT, "player")
     else
         context:RemoveEvent("UNIT_PET")
     end
     for _, event in ipairs({ "UNIT_HEALTH", "UNIT_FLAGS" }) do
-        if c.showDead then context:Event(event, OnEvent, true, "pet")
+        if c.showDead then context:Event(event, OnEvent, IN_COMBAT, "pet")
         else context:RemoveEvent(event) end
     end
     for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
-        if c.combatOnly then context:Event(event, OnEvent, true)
+        if c.combatOnly then context:Event(event, OnEvent, IN_COMBAT)
         else context:RemoveEvent(event) end
     end
     if c.showMissing and PET_SUMMONS[self.classFile] then
-        context:Event("SPELLS_CHANGED", OnSpellsChanged, true)
+        context:Event("SPELLS_CHANGED", OnSpellsChanged, IN_COMBAT)
     else
         context:RemoveEvent("SPELLS_CHANGED")
     end
@@ -112,7 +113,7 @@ function M:Enable()
     self.petClass = ExpectsPet(self.classFile)
     Create(self)
     Place(self)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, IN_COMBAT)
     SyncEvents(self)
     Update(self)
     self:RegisterMovers()

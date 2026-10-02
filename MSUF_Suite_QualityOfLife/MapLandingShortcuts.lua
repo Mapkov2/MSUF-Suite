@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "mapLandingShortcuts"
 -- The button beside Blizzard's landing button; Refresh sizes it.
@@ -100,7 +101,7 @@ end
 
 local function Attach(self)
     if NS.IsCombatLocked() then
-        self.context:Event("PLAYER_REGEN_ENABLED", Attach, true)
+        self.context:Event("PLAYER_REGEN_ENABLED", Attach, IN_COMBAT)
         return
     end
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
@@ -126,8 +127,8 @@ local function OnLoaded(self)
 end
 
 function M:Enable()
-    self.context:Event("PLAYER_ENTERING_WORLD", Attach, true)
-    self.context:Event("ADDON_LOADED", OnLoaded, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", Attach, IN_COMBAT)
+    self.context:Event("ADDON_LOADED", OnLoaded, IN_COMBAT)
     Attach(self)
 end
 

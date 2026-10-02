@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "announcements"
+local IN_COMBAT = { inCombat = true }
 
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
 -- alerts for the enabled kinds are hidden; their content is shown here.
@@ -429,8 +430,8 @@ function M:Enable()
     Create(self)
     Theme(self)
     self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil
-    for _, event in ipairs(EVENTS) do self.context:Event(event, Event, true) end
-    self.context:Event("PLAYER_REGEN_ENABLED", NativeAnnouncements, true)
+    for _, event in ipairs(EVENTS) do self.context:Event(event, Event, IN_COMBAT) end
+    self.context:Event("PLAYER_REGEN_ENABLED", NativeAnnouncements, IN_COMBAT)
     self.lastZone = CurrentZoneKey()
     NativeAnnouncements(self)
     self.nativeSignature = NativeSignature(self.config)

@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local Public = S.Public
 local LOOT_EVENTS = { "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED" }
@@ -116,7 +117,7 @@ end
 function M:Refresh()
     local context = self.context
     if self.config.quickLoot then
-        for i = 1, #LOOT_EVENTS do context:Event(LOOT_EVENTS[i], Collect, true) end
+        for i = 1, #LOOT_EVENTS do context:Event(LOOT_EVENTS[i], Collect, IN_COMBAT) end
     else
         for i = 1, #LOOT_EVENTS do context:RemoveEvent(LOOT_EVENTS[i]) end
         self.attempted = false

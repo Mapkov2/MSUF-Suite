@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, SPELL_ID = "battleRes", 20484 -- Rebirth exposes the shared combat-resurrection pool.
 local POINTS = NS.AnchorPoints
+local IN_COMBAT = { inCombat = true }
 local M = {}
 -- CHALLENGE_MODE_START may precede the API's active-state transition; the
 -- key state is read again once, this long after it (self.startJob).
@@ -82,7 +83,7 @@ local function WatchCharges(self, watch)
     if self.watching == watch then return end
     self.watching = watch
     if watch then
-        self.context:Event("SPELL_UPDATE_CHARGES", ChargesChanged, true)
+        self.context:Event("SPELL_UPDATE_CHARGES", ChargesChanged, IN_COMBAT)
     else
         self.context:RemoveEvent("SPELL_UPDATE_CHARGES")
     end
@@ -174,7 +175,7 @@ function M:Enable()
     for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
         "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET",
         "WORLD_STATE_TIMER_START", "WORLD_STATE_TIMER_STOP", "ENCOUNTER_START", "ENCOUNTER_END" }) do
-        context:Event(event, ContextChanged, true)
+        context:Event(event, ContextChanged, IN_COMBAT)
     end
     Update(self)
     self:RegisterMovers()

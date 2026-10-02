@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "durabilityAlert"
 local POINTS = NS.AnchorPoints
+local IN_COMBAT = { inCombat = true }
 local M = {}
 
 local LABEL = S.Text("Low durability")
@@ -87,12 +88,12 @@ function M:Enable()
     Create(self)
     Place(self)
     local context = self.context
-    context:Event("PLAYER_ENTERING_WORLD", OnEvent, true)
-    context:Event("UPDATE_INVENTORY_DURABILITY", OnEvent, true)
-    context:Event("UPDATE_INVENTORY_ALERTS", OnEvent, true)
-    context:Event("PLAYER_EQUIPMENT_CHANGED", OnEvent, true)
-    context:Event("PLAYER_REGEN_DISABLED", OnEvent, true)
-    context:Event("PLAYER_REGEN_ENABLED", OnEvent, true)
+    context:Event("PLAYER_ENTERING_WORLD", OnEvent, IN_COMBAT)
+    context:Event("UPDATE_INVENTORY_DURABILITY", OnEvent, IN_COMBAT)
+    context:Event("UPDATE_INVENTORY_ALERTS", OnEvent, IN_COMBAT)
+    context:Event("PLAYER_EQUIPMENT_CHANGED", OnEvent, IN_COMBAT)
+    context:Event("PLAYER_REGEN_DISABLED", OnEvent, IN_COMBAT)
+    context:Event("PLAYER_REGEN_ENABLED", OnEvent, IN_COMBAT)
     Update(self)
     ScheduleUpdate(self)
     self:RegisterMovers()

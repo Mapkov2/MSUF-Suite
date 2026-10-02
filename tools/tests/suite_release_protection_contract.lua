@@ -103,7 +103,7 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ReleaseProtection.lua"))(
 local M = assert(installed)
 M.active, M.config = true, { modifier = 1, openWorld = true, party = true, raid = true, pvp = true }
 M.context = { events = {}, Event = function(self, event, callback, allowCombat)
-    assert(allowCombat == true, "death protection must react during combat")
+    assert(dofile(root .. "/tools/tests/suite_test_support.lua").InCombatOption(allowCombat), "death protection must react during combat")
     self.events[event] = callback
 end, RemoveEvent = function(self, event) self.events[event] = nil end }
 local function Modifier(index, down)

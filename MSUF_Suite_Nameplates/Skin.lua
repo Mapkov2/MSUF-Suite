@@ -5,6 +5,7 @@ local Border = Style.PaintBorder
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
 local Level, CastTime, CVars, Auras = private.Level, private.CastTime, private.CVars, private.Auras
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
+local IN_COMBAT = { inCombat = true }
 local M = {
     visuals = setmetatable({}, { __mode = "k" }),
     roles = setmetatable({}, { __mode = "k" }),
@@ -616,7 +617,7 @@ local CONTEXT_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAY
 -- explicit should the module ever move frames itself): restyling a native
 -- plate is not protected, and each handler checks combat where it matters.
 local function Listen(self, event, callback)
-    self.context:Event(event, callback, true)
+    self.context:Event(event, callback, IN_COMBAT)
 end
 
 function M:Enable()

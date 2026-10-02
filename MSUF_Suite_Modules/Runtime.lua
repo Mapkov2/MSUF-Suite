@@ -194,7 +194,8 @@ end
 
 ------------------------------------------------------------------ contexts
 function S.NewContext(id)
-    return setmetatable({ id = id, properties = {}, points = {}, callbacks = {}, fields = {} }, Context)
+    return setmetatable({ id = id, properties = {}, points = {}, callbacks = {}, combatEvents = {}, fields = {} },
+        Context)
 end
 
 -- Plain Lua fields on native frames (for example a mixin flag).
@@ -508,7 +509,7 @@ end
 ------------------------------------------------------------------ events
 -- Geometry modules re-apply after combat instead of moving frames in it.
 local function DeferGeometry(ctx, event)
-    if ctx.combatEvents and ctx.combatEvents[event] or not NS.IsCombatLocked() then return false end
+    if ctx.combatEvents[event] or not NS.IsCombatLocked() then return false end
     S.Queue(ctx.id)
     return true
 end
@@ -554,17 +555,23 @@ local function RegisterUnitList(ctx, event, units)
     end
 end
 
--- callback(module, event, ...). allowCombat lets geometry modules receive the
--- event in combat; unit (for example "player", or a list such as the boss
--- tokens) limits a unit event to those units.
-function Context:Event(event, callback, allowCombat, unit)
+-- callback(module, event, ...). options (optional) are named:
+-- options.inCombat lets a geometry module (module.geometry) also get the
+-- event in combat instead of re-applying after it; every other module always
+-- gets its events. Callers keep one options table per file, made once and
+-- never changed (IN_COMBAT = { inCombat = true }). unit (for example
+-- "player", or a list such as the boss tokens) limits a unit event to those
+-- units. The older positional boolean allowCombat in place of options still
+-- works for the callers not moved yet.
+function Context:Event(event, callback, options, unit)
     if not NS.Client.SupportsEvent(event) then return end
     -- A job (Timers.lua) registers its event function: Dispatch only runs functions.
     if type(callback) == "table" then callback = callback:EventFunction() end
+    local inCombat = options
+    if options and options ~= true then inCombat = options.inCombat end
     local alreadyRegistered = self.callbacks[event] ~= nil
     if not self.frame then self.frame = RoutingFrame(self) end
-    self.combatEvents = self.combatEvents or {}
-    self.combatEvents[event] = allowCombat or nil
+    self.combatEvents[event] = inCombat or nil
     self.callbacks[event] = callback
     if alreadyRegistered then return end
     if type(unit) == "table" then
@@ -579,7 +586,7 @@ end
 function Context:RemoveEvent(event)
     if self.callbacks[event] == nil then return end
     self.callbacks[event] = nil
-    if self.combatEvents then self.combatEvents[event] = nil end
+    self.combatEvents[event] = nil
     if self.frame then self.frame:UnregisterEvent(event) end
     if self.unitFrames then
         for _, frame in ipairs(self.unitFrames) do frame:UnregisterEvent(event) end
@@ -612,9 +619,7 @@ local function ReleaseEvents(self)
         for _, frame in ipairs(self.unitFrames) do frame:UnregisterAllEvents() end
     end
     for key in pairs(self.callbacks) do self.callbacks[key] = nil end
-    if self.combatEvents then
-        for key in pairs(self.combatEvents) do self.combatEvents[key] = nil end
-    end
+    for key in pairs(self.combatEvents) do self.combatEvents[key] = nil end
     if self.registryCallbacks then
         for event in pairs(self.registryCallbacks) do
             EventRegistry:UnregisterCallback(event, self)

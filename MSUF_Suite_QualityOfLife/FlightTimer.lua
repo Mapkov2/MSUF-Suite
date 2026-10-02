@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local ID, M = "flightTimer", { routes = {}, nodes = {} }
 -- A chosen destination belongs to the next takeoff only this long; a choice
 -- the flight master refused never starts a flight.
@@ -210,11 +211,11 @@ function M:Enable()
             end
         end)
     end
-    self.context:Event("TAXIMAP_OPENED", MapOpened, true)
-    self.context:Event("PLAYER_CONTROL_LOST", State, true)
-    self.context:Event("PLAYER_CONTROL_GAINED", State, true)
-    self.context:Event("UNIT_FLAGS", State, false, "player")
-    self.context:Event("PLAYER_ENTERING_WORLD", State, true)
+    self.context:Event("TAXIMAP_OPENED", MapOpened, IN_COMBAT)
+    self.context:Event("PLAYER_CONTROL_LOST", State, IN_COMBAT)
+    self.context:Event("PLAYER_CONTROL_GAINED", State, IN_COMBAT)
+    self.context:Event("UNIT_FLAGS", State, nil, "player")
+    self.context:Event("PLAYER_ENTERING_WORLD", State, IN_COMBAT)
     Create(self)
     Layout(self)
     Update(self, true)

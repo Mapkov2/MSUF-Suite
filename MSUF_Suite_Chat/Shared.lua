@@ -1,5 +1,6 @@
 local _, P = ...
 local S = P.Suite
+local IN_COMBAT = { inCombat = true }
 -- Native chat styling. The Chat files share the private table below and load
 -- in TOC order, with Controller installing M. Native chrome updates when
 -- windows, tabs or settings change. Optional message tools and speech bubbles
@@ -44,7 +45,7 @@ end
 -- handlers touch only text, sounds and speech bubbles, never a protected
 -- frame.
 function C.ListenInCombat(context, event, callback)
-    context:Event(event, callback, true)
+    context:Event(event, callback, IN_COMBAT)
 end
 
 function C.Fill(owner, layer)

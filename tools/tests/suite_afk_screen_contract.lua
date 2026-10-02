@@ -138,13 +138,14 @@ local NS = { MSUFMedia = { font = SUITE_FONT }, Client = { isForever = false },
 function NS.IsCombatLocked() return InCombatLockdown() == true end
 -- The shipped context timers on each module's stub context.
 local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, suite, NS)
+local InCombatOption = dofile(root .. "/tools/tests/suite_test_support.lua").InCombatOption
 local private = { NS = NS, Suite = suite }
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
 local module = assert(installed)
 module.active = true
 local eventUnits = {}
 module.context = TimerContext("afkScreen", module, { Event = function(_, event, callback, allowCombat, unit)
-    assert(allowCombat == true)
+    assert(InCombatOption(allowCombat))
     events[event] = callback
     eventUnits[event] = unit
 end, RemoveEvent = function(_, event) events[event] = nil end })
@@ -266,7 +267,7 @@ local combatEvents = {}
 combatModule.active = true
 combatModule.context = TimerContext("afkScreen", combatModule, {
     Event = function(_, event, callback, allowCombat)
-        assert(allowCombat == true)
+        assert(InCombatOption(allowCombat))
         combatEvents[event] = callback
     end,
     RemoveEvent = function(_, event) combatEvents[event] = nil end,

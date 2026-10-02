@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "combatStatsHUD"
 -- look 6 is Class Style, whose shared palette is QoLVisualStyles[5]; look 5 is Custom.
@@ -270,7 +271,7 @@ local function SyncListeners(self, event)
     for i = 1, #STAT_EVENTS do
         local name = STAT_EVENTS[i]
         local unit = name:sub(1, 5) == "UNIT_" and "player" or nil
-        if want then self.context:Event(name, self.statsJob, true, unit)
+        if want then self.context:Event(name, self.statsJob, IN_COMBAT, unit)
         else self.context:RemoveEvent(name) end
     end
 end
@@ -285,9 +286,9 @@ function M:Enable()
     self.fpsChoice = self.config.fps
     Create(self)
     Layout(self)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnGate, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", OnGate, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", OnGate, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnGate, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", OnGate, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", OnGate, IN_COMBAT)
     SyncListeners(self)
     Update(self)
     UpdateFPS(self)

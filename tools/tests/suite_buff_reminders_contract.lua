@@ -221,7 +221,7 @@ NS.Dispatch = function(callback, ...) return callback(...) end
 local TimerContext = Support.ModuleTimers(root, S, NS)
 module.context = TimerContext("buffReminders", module, {
     Event = function(_, event, callback, allowCombat, unit)
-        assert(allowCombat == true, "buff reminder event must run its own combat checks")
+        assert(Support.InCombatOption(allowCombat), "buff reminder event must run its own combat checks")
         callbacks[event] = callback
         eventFrame.events[event] = unit or true
     end,

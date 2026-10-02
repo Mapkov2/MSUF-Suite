@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "combatMovementCue"
 local MAX_IDS, THROTTLE, CHECK_INTERVAL, SHOW_SECONDS = 8, 20, 1, 2.5
@@ -107,7 +108,7 @@ end
 
 local function SyncEvent(self)
     if #self.ids > 0 then
-        self.context:Event("PLAYER_STARTED_MOVING", StartedMoving, true)
+        self.context:Event("PLAYER_STARTED_MOVING", StartedMoving, IN_COMBAT)
     else
         self.context:RemoveEvent("PLAYER_STARTED_MOVING")
     end

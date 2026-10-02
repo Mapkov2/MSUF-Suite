@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 
 local function TryChoose(self)
@@ -35,8 +36,8 @@ local function OnClosed(self)
 end
 
 function M:Enable()
-    self.context:Event("PLAYER_CHOICE_UPDATE", TryChoose, true)
-    self.context:Event("PLAYER_CHOICE_CLOSE", OnClosed, true)
+    self.context:Event("PLAYER_CHOICE_UPDATE", TryChoose, IN_COMBAT)
+    self.context:Event("PLAYER_CHOICE_CLOSE", OnClosed, IN_COMBAT)
     TryChoose(self)
 end
 

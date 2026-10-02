@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 if NS.Client.isForever then return end
 local ID, M = "dungeonPortals", { buttons = {} }
 local Public, Finite, Text = S.Public, S.Finite, S.PublicText
@@ -176,7 +177,7 @@ end
 local function WatchCooldowns(self)
     local open = self.flyout:IsVisible() or self.popup and self.popup:IsVisible()
     if open and self.active then
-        self.context:Event("SPELL_UPDATE_COOLDOWN", Cooldowns, true)
+        self.context:Event("SPELL_UPDATE_COOLDOWN", Cooldowns, IN_COMBAT)
         Cooldowns(self)
     else
         self.context:RemoveEvent("SPELL_UPDATE_COOLDOWN")
@@ -326,8 +327,8 @@ function M:Enable()
     Create(self)
     RegisterStateDriver(self.host, "visibility", "[combat] hide; show")
     for _, event in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
-        "PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE" }) do self.context:Event(event, State, true) end
-    self.context:Event("LFG_LIST_JOINED_GROUP", Joined, true)
+        "PLAYER_ENTERING_WORLD", "GROUP_ROSTER_UPDATE" }) do self.context:Event(event, State, IN_COMBAT) end
+    self.context:Event("LFG_LIST_JOINED_GROUP", Joined, IN_COMBAT)
     self:Refresh()
 end
 

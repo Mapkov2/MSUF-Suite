@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, SPELL_ID = "innervateCue", 29166
 local POINTS, GLOW_OWNER = NS.AnchorPoints, "MSUFSuiteInnervateCue"
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local Dispatch = S.Dispatch
 
@@ -230,10 +231,10 @@ function M:Enable()
     Create(self)
     Place(self)
     self.lastWhisper = nil
-    self.context:Event("CHAT_MSG_WHISPER", Whisper, true)
-    self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
-    self.context:Event("GROUP_ROSTER_UPDATE", Roster, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", Roster, true)
+    self.context:Event("CHAT_MSG_WHISPER", Whisper, IN_COMBAT)
+    self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, IN_COMBAT, "player")
+    self.context:Event("GROUP_ROSTER_UPDATE", Roster, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", Roster, IN_COMBAT)
     local gf = GroupAPI()
     if gf and type(gf.RegisterFrameRegistryObserver) == "function"
         and Dispatch(gf.RegisterFrameRegistryObserver, GLOW_OWNER, GroupFramesChanged) then

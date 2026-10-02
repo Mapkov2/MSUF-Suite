@@ -89,7 +89,7 @@ M.config = { threshold = 40, width = 250, height = 62, scale = 100,
 local events = {}
 M.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, S, NS)(
     "durabilityAlert", M, { Event = function(_, event, callback, allowCombat)
-    assert(allowCombat == true)
+    assert(dofile(root .. "/tools/tests/suite_test_support.lua").InCombatOption(allowCombat))
     events[event] = callback
 end })
 

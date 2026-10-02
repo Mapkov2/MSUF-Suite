@@ -7,6 +7,7 @@ local MythicPlus = S.MythicPlus
 local Raid = S.Raid
 local Public, Finite = S.Public, S.Finite
 local ID = "objectives"
+local IN_COMBAT = { inCombat = true }
 
 -- The objective tracker module: events, the refresh flow and the lifecycle
 -- (see ObjectivesData.lua for how the files fit together).
@@ -309,17 +310,17 @@ end
 local function SetWorkEvents(self, enabled)
     for _, event in ipairs(TRACKER_EVENTS) do
         if event ~= "PLAYER_ENTERING_WORLD" and event ~= "ZONE_CHANGED_NEW_AREA" then
-            if enabled then self.context:Event(event, Event, true)
+            if enabled then self.context:Event(event, Event, IN_COMBAT)
             else self.context:RemoveEvent(event) end
         end
     end
     if MythicPlus then
         for _, event in ipairs(MYTHIC_PLUS_EVENTS) do
-            if enabled then self.context:Event(event, Event, true)
+            if enabled then self.context:Event(event, Event, IN_COMBAT)
             else self.context:RemoveEvent(event) end
         end
     end
-    if enabled then self.context:Event("GROUP_ROSTER_UPDATE", M.SuppressNative, true)
+    if enabled then self.context:Event("GROUP_ROSTER_UPDATE", M.SuppressNative, IN_COMBAT)
     else self.context:RemoveEvent("GROUP_ROSTER_UPDATE") end
 end
 
@@ -367,14 +368,14 @@ function M:Enable()
     self.retheme = true
     LoadCollapseState(self)
     self.pausedForRaidCombat = false
-    self.context:Event("PLAYER_ENTERING_WORLD", Event, true)
-    self.context:Event("ZONE_CHANGED_NEW_AREA", Event, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", RaidCombatEvent, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", RaidCombatEvent, true)
-    self.context:Event("ENCOUNTER_START", Event, true)
-    self.context:Event("ENCOUNTER_END", Event, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", Event, IN_COMBAT)
+    self.context:Event("ZONE_CHANGED_NEW_AREA", Event, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", RaidCombatEvent, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", RaidCombatEvent, IN_COMBAT)
+    self.context:Event("ENCOUNTER_START", Event, IN_COMBAT)
+    self.context:Event("ENCOUNTER_END", Event, IN_COMBAT)
     SetWorkEvents(self, true)
-    self.context:Event("ADDON_LOADED", NativeAddonLoaded, true)
+    self.context:Event("ADDON_LOADED", NativeAddonLoaded, IN_COMBAT)
     self:SuppressNative()
     MarkAllDirty(self)
     self.contentSignature = ContentSignature(self.config)

@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local ID, M = "threatMeter", { units = {}, unitSet = {}, enemies = {}, records = {}, pools = {}, windows = {} }
 -- Threat changes arrive in bursts during raid pulls; the meter repaints at
 -- most this often instead of on every event.
@@ -245,7 +246,7 @@ function M:Enable()
     Roster(self)
     for _, event in ipairs({ "UNIT_THREAT_LIST_UPDATE", "UNIT_THREAT_SITUATION_UPDATE", "GROUP_ROSTER_UPDATE", "UNIT_PET",
         "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "UNIT_TARGET", "PLAYER_ENTERING_WORLD" }) do
-        self.context:Event(event, Changed, true)
+        self.context:Event(event, Changed, IN_COMBAT)
     end
     self:Update()
     self:RegisterMovers()

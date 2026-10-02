@@ -24,7 +24,9 @@ local config = Support.CatalogDefaults(root, "chat")
 config.saveHistory, config.historyLines, config.linkURLs, config.colorMentionNames = true, 20, true, true
 local events = {}
 local context = { removed = {}, combat = {} }
-function context:Event(event, callback, allowCombat) events[event], self.combat[event] = callback, allowCombat end
+function context:Event(event, callback, options)
+    events[event], self.combat[event] = callback, Support.InCombatOption(options) or nil
+end
 function context:RemoveEvent(event) events[event], self.combat[event] = nil, nil end
 local copied
 local C

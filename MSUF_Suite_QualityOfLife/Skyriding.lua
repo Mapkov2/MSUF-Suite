@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "skyriding"
 local ASCENT, SECOND_WIND, SURGE = 372610, 425782, 361584
@@ -464,7 +465,7 @@ local function SyncSpellEvents(self, visible, preview)
         if watchCharges then
             -- Cached charges went stale while nobody listened.
             self.vigor.dirty, self.wind.dirty = true, true
-            context:Event("SPELL_UPDATE_CHARGES", M.ChargesChanged, true)
+            context:Event("SPELL_UPDATE_CHARGES", M.ChargesChanged, IN_COMBAT)
         else
             context:RemoveEvent("SPELL_UPDATE_CHARGES")
         end
@@ -473,7 +474,7 @@ local function SyncSpellEvents(self, visible, preview)
         self.watchCooldown = watchCooldown
         if watchCooldown then
             self.surgeDirty = true
-            context:Event("SPELL_UPDATE_COOLDOWN", M.CooldownChanged, true)
+            context:Event("SPELL_UPDATE_COOLDOWN", M.CooldownChanged, IN_COMBAT)
         else
             context:RemoveEvent("SPELL_UPDATE_COOLDOWN")
         end
@@ -546,10 +547,10 @@ end
 function M:Enable()
     Layout(self)
     local context = self.context
-    context:Event("PLAYER_ENTERING_WORLD", GlideChanged, true)
-    context:Event("PLAYER_CAN_GLIDE_CHANGED", GlideChanged, true)
-    context:Event("PLAYER_IS_GLIDING_CHANGED", GlideChanged, true)
-    context:Event("PLAYER_MOUNT_DISPLAY_CHANGED", GlideChanged, true)
+    context:Event("PLAYER_ENTERING_WORLD", GlideChanged, IN_COMBAT)
+    context:Event("PLAYER_CAN_GLIDE_CHANGED", GlideChanged, IN_COMBAT)
+    context:Event("PLAYER_IS_GLIDING_CHANGED", GlideChanged, IN_COMBAT)
+    context:Event("PLAYER_MOUNT_DISPLAY_CHANGED", GlideChanged, IN_COMBAT)
     GlideChanged()
     self:RegisterMovers()
 end

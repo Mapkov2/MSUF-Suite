@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 
 -- A highlight that follows the mouse pointer so it is easy to find; MSUF's
 -- combat crosshair owns the screen center. The global cooldown and the
@@ -16,7 +17,7 @@ local OPEN_PIECES = 20
 -- choices (1 always).
 local THIN, DOTS, NO_RING = 2, 3, 4
 local INSIDE, OUTSIDE = 2, 3
-local IN_COMBAT, OUT_OF_COMBAT = 2, 3
+local SHOW_IN_COMBAT, SHOW_OUT_OF_COMBAT = 2, 3
 
 local function Ring(parent)
     local pieces = {}
@@ -174,8 +175,8 @@ end
 -- Each part (pointer, global cooldown, cast) can also keep to combat or to
 -- the time outside it.
 local function When(self, choice)
-    if choice == IN_COMBAT then return self.inCombat == true end
-    if choice == OUT_OF_COMBAT then return self.inCombat ~= true end
+    if choice == SHOW_IN_COMBAT then return self.inCombat == true end
+    if choice == SHOW_OUT_OF_COMBAT then return self.inCombat ~= true end
     return true
 end
 
@@ -304,7 +305,7 @@ local ZONE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA" }
 
 local function Listen(self, events, wanted, callback, unit)
     for i = 1, #events do
-        if wanted then self.context:Event(events[i], callback, true, unit)
+        if wanted then self.context:Event(events[i], callback, IN_COMBAT, unit)
         else self.context:RemoveEvent(events[i]) end
     end
 end

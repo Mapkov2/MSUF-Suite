@@ -102,7 +102,7 @@ M.active = true
 M.config = { width = 146, height = 44, scale = 100, point = 5, x = 10, y = 120 }
 M.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, S, NS)("battleRes", M, {
     Event = function(_, event, callback, allowCombat)
-        assert(allowCombat == true)
+        assert(dofile(root .. "/tools/tests/suite_test_support.lua").InCombatOption(allowCombat))
         callbacks[event] = callback
     end,
     RemoveEvent = function(_, event) callbacks[event] = nil end,

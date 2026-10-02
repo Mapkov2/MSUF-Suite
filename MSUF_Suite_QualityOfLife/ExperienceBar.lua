@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "xpBar"
 local SEGMENT_COUNT = 20
@@ -495,10 +496,10 @@ function M:Enable()
     self.rateJob = self.context:Coalesce(RATE_REFRESH, PaintValues)
     Create(self)
     local context = self.context
-    context:Event("PLAYER_ENTERING_WORLD", EnterWorld, true)
-    context:Event("PLAYER_XP_UPDATE", XPChanged, true)
-    context:Event("PLAYER_LEVEL_UP", XPChanged, true)
-    context:Event("UPDATE_EXHAUSTION", XPChanged, true)
+    context:Event("PLAYER_ENTERING_WORLD", EnterWorld, IN_COMBAT)
+    context:Event("PLAYER_XP_UPDATE", XPChanged, IN_COMBAT)
+    context:Event("PLAYER_LEVEL_UP", XPChanged, IN_COMBAT)
+    context:Event("UPDATE_EXHAUSTION", XPChanged, IN_COMBAT)
     if NS.loginKind then
         local level, current, maximum = XP()
         if level then

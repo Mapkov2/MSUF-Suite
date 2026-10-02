@@ -115,10 +115,19 @@ end, true)
 context.frame:callback("TEST_EVENT", 42)
 assert(events == 2 and context.frame.registrations == 1 and context.combatEvents.TEST_EVENT,
     "refresh re-registered an unchanged event or lost its updated callback")
+-- Named options: { inCombat = true } marks the event for combat delivery
+-- like the older positional true; no options, or none named, do not.
+context:Event("TEST_EVENT", function() end)
+assert(context.combatEvents.TEST_EVENT == nil, "an event without options kept its combat delivery")
+context:Event("TEST_EVENT", function() end, { inCombat = true })
+assert(context.combatEvents.TEST_EVENT == true, "the named inCombat option was ignored")
+context:Event("TEST_EVENT", function() end, {})
+assert(context.combatEvents.TEST_EVENT == nil, "an options table without inCombat marked the event")
 context:RemoveEvent("TEST_EVENT")
 context:RemoveEvent("TEST_EVENT")
-context:Event("UNIT_FLAGS", function() end, true, "player")
-assert(context.frame.events.UNIT_FLAGS == "player", "a unit event was registered for every unit")
+context:Event("UNIT_FLAGS", function() end, { inCombat = true }, "player")
+assert(context.frame.events.UNIT_FLAGS == "player" and context.combatEvents.UNIT_FLAGS,
+    "a unit event was registered for every unit or lost its named option")
 context:RemoveEvent("UNIT_FLAGS")
 assert(context.frame.unregistrations == 2, "removing an absent event repeated a native call")
 -- A raising module callback is reported (Dispatch) and never raises out of

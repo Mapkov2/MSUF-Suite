@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local R = P.BuffReminders
+local IN_COMBAT = { inCombat = true }
 -- Lifecycle, secure buttons and evaluation. Secure action buttons change
 -- only out of combat; in combat a state driver hides the reminders and every
 -- listener except PLAYER_REGEN_ENABLED is released. An evaluation re-reads
@@ -142,7 +143,7 @@ local OnEvent
 -- PLAYER_REGEN_ENABLED stays registered. units limits a unit event to that
 -- unit or unit list.
 function R.Listen(self, event, callback, units)
-    self.context:Event(event, callback, true, units)
+    self.context:Event(event, callback, IN_COMBAT, units)
 end
 
 -- Unit and weapon events are registered only while an entry needs them and

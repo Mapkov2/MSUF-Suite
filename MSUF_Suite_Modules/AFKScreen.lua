@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "afkScreen"
+local IN_COMBAT = { inCombat = true }
 
 -- A cinematic screen while the player is AFK: the character model between
 -- the equipped items, the regular UI faded out and a slow camera orbit.
@@ -318,9 +319,9 @@ local OnEvent
 -- The status events fire often in groups; they are registered only outside
 -- combat, and unit flags only for the player.
 local function StartStatusEvents(self)
-    self.context:Event("PLAYER_FLAGS_CHANGED", OnEvent, true)
-    self.context:Event("UNIT_FLAGS", OnEvent, true, "player")
-    self.context:Event("PLAYER_STARTED_MOVING", OnEvent, true)
+    self.context:Event("PLAYER_FLAGS_CHANGED", OnEvent, IN_COMBAT)
+    self.context:Event("UNIT_FLAGS", OnEvent, IN_COMBAT, "player")
+    self.context:Event("PLAYER_STARTED_MOVING", OnEvent, IN_COMBAT)
 end
 
 local function EnterCombat(self)
@@ -446,12 +447,12 @@ end
 function M:Enable()
     self.recheckJob = self.context:Coalesce(RECHECK_DELAY, Recheck)
     self.inCombat, self.dismissed = false, nil
-    self.context:Event("LFG_PROPOSAL_SHOW", Attention, true)
-    self.context:Event("READY_CHECK", Attention, true)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, true)
-    self.context:Event("PLAYER_LEAVING_WORLD", OnEvent, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", OnEvent, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", OnEvent, true)
+    self.context:Event("LFG_PROPOSAL_SHOW", Attention, IN_COMBAT)
+    self.context:Event("READY_CHECK", Attention, IN_COMBAT)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, IN_COMBAT)
+    self.context:Event("PLAYER_LEAVING_WORLD", OnEvent, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", OnEvent, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", OnEvent, IN_COMBAT)
     if CombatActive() then
         EnterCombat(self)
         return

@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 
 local M = {}
 local ID = "loadoutReminder"
@@ -167,12 +168,12 @@ local function SyncEvents(self)
     if not watchInstance then
         self.lastInstance, self.lastConfigID, self.lastLootID = nil, nil, nil
     end
-    if self.config.onReadyCheck then context:Event("READY_CHECK", OnReady, true)
+    if self.config.onReadyCheck then context:Event("READY_CHECK", OnReady, IN_COMBAT)
     else context:RemoveEvent("READY_CHECK") end
-    if self.config.onLfgProposal then context:Event("LFG_PROPOSAL_SHOW", OnProposal, true)
+    if self.config.onLfgProposal then context:Event("LFG_PROPOSAL_SHOW", OnProposal, IN_COMBAT)
     else context:RemoveEvent("LFG_PROPOSAL_SHOW") end
     for _, event in ipairs(INSTANCE_EVENTS) do
-        if watchInstance then context:Event(event, OnZone, true)
+        if watchInstance then context:Event(event, OnZone, IN_COMBAT)
         else context:RemoveEvent(event) end
     end
     return newlyWatching

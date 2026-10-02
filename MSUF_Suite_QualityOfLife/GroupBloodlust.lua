@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "groupBloodlust"
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local POINTS = NS.AnchorPoints
 local Public, PublicText, Finite = S.Public, S.PublicText, S.Finite
@@ -76,11 +77,11 @@ end
 -- for the end of the restriction instead and read again then.
 local function WatchAuras(self, readable)
     if readable then
-        self.context:Event("UNIT_AURA", OnAura, true, "player")
+        self.context:Event("UNIT_AURA", OnAura, IN_COMBAT, "player")
         self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
     else
         self.context:RemoveEvent("UNIT_AURA")
-        self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", Paint, true)
+        self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", Paint, IN_COMBAT)
     end
 end
 
@@ -201,7 +202,7 @@ local function OnGroup(self)
     self.grouped = Public(grouped) and grouped == true
     if self.grouped then
         -- Combat end lifts the most common restriction; read again then.
-        self.context:Event("PLAYER_REGEN_ENABLED", OnGroup, true)
+        self.context:Event("PLAYER_REGEN_ENABLED", OnGroup, IN_COMBAT)
     else
         self.context:RemoveEvent("UNIT_AURA")
         self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
@@ -215,8 +216,8 @@ function M:Enable()
     self.auraJob = self.context:Coalesce(AURA_DELAY, PaintAuras)
     Create(self)
     Place(self)
-    self.context:Event("GROUP_ROSTER_UPDATE", OnGroup, true)
-    self.context:Event("PLAYER_ENTERING_WORLD", OnGroup, true)
+    self.context:Event("GROUP_ROSTER_UPDATE", OnGroup, IN_COMBAT)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnGroup, IN_COMBAT)
     OnGroup(self)
     self:RegisterMovers()
 end

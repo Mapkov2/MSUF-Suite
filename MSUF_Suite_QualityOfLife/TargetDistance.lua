@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 if NS.Client.isForever then return end
 local ID, M = "targetDistance", { probes = {}, values = {}, layout = {}, nextLayout = {} }
 local Public, Finite = S.Public, S.Finite
@@ -156,7 +157,7 @@ local function Subscribe(self, kind)
         self.probes[probe.spell] = probe.distance
         S.SetNativeSpellRange(ID, probe.spell, true)
     end
-    if next(self.probes) then self.context:Event("SPELL_RANGE_CHECK_UPDATE", RangeEvent, true)
+    if next(self.probes) then self.context:Event("SPELL_RANGE_CHECK_UPDATE", RangeEvent, IN_COMBAT)
     else self.context:RemoveEvent("SPELL_RANGE_CHECK_UPDATE") end
 end
 
@@ -239,13 +240,13 @@ function M:Enable()
         self.label:SetAllPoints()
         self.label:SetWordWrap(false)
     end
-    self.context:Event("SPELLS_CHANGED", SpellsChanged, true)
-    self.context:Event("PLAYER_SPECIALIZATION_CHANGED", SpecChanged, true)
-    self.context:Event("TRAIT_CONFIG_UPDATED", Rediscover, true)
-    self.context:Event("LEARNED_SPELL_IN_SKILL_LINE", Rediscover, true)
-    self.context:Event("PLAYER_ENTERING_WORLD", Rediscover, true)
-    self.context:Event("PLAYER_TARGET_CHANGED", Sync, true)
-    self.context:Event("UNIT_FACTION", Sync, false, "target")
+    self.context:Event("SPELLS_CHANGED", SpellsChanged, IN_COMBAT)
+    self.context:Event("PLAYER_SPECIALIZATION_CHANGED", SpecChanged, IN_COMBAT)
+    self.context:Event("TRAIT_CONFIG_UPDATED", Rediscover, IN_COMBAT)
+    self.context:Event("LEARNED_SPELL_IN_SKILL_LINE", Rediscover, IN_COMBAT)
+    self.context:Event("PLAYER_ENTERING_WORLD", Rediscover, IN_COMBAT)
+    self.context:Event("PLAYER_TARGET_CHANGED", Sync, IN_COMBAT)
+    self.context:Event("UNIT_FACTION", Sync, nil, "target")
     Discover(self)
     self:Refresh()
     -- One mover per placement: the free position, or offsets below the target frame.

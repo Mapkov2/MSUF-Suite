@@ -91,7 +91,7 @@ local S = {
     end,
 }
 local context = { combat = {} }
-function context:Event(e, fn, allowCombat) events[e], self.combat[e] = fn, allowCombat end
+function context:Event(e, fn, options) events[e], self.combat[e] = fn, Support.InCombatOption(options) or nil end
 function context:RemoveEvent(e) events[e], self.combat[e] = nil, nil end
 function context:CVar(name, value) cvars[name] = value end
 local config, catalogNS = Support.CatalogDefaults(root, "chat")

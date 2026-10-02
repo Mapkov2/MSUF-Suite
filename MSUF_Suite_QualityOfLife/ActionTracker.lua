@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, POINTS = "actionTracker", NS.AnchorPoints
 local MAX_ROWS, FALLBACK_ICON = 8, 134400
+local IN_COMBAT = { inCombat = true }
 local M = {}
 
 -- The examples exist only in Edit Mode. Live rows come exclusively from the
@@ -246,7 +247,7 @@ local function ContextChanged(self)
     elseif kind == "pvp" or kind == "arena" then key = "showPvP"
     else key = "showWorld" end
     self.contextVisible = c[key] ~= false
-    if self.contextVisible then self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
+    if self.contextVisible then self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, IN_COMBAT, "player")
     else self.context:RemoveEvent("UNIT_SPELLCAST_SUCCEEDED") end
     Paint(self)
 end
@@ -254,22 +255,22 @@ end
 local function SyncEvents(self)
     local c = self.config
     if c.pauseInCombat then
-        self.context:Event("PLAYER_REGEN_DISABLED", PauseChanged, true)
-        self.context:Event("PLAYER_REGEN_ENABLED", PauseChanged, true)
+        self.context:Event("PLAYER_REGEN_DISABLED", PauseChanged, IN_COMBAT)
+        self.context:Event("PLAYER_REGEN_ENABLED", PauseChanged, IN_COMBAT)
     else
         self.context:RemoveEvent("PLAYER_REGEN_DISABLED")
         self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
     end
     if c.showDungeons == false or c.showRaids == false or c.showDelves == false
         or c.showPvP == false or c.showWorld == false then
-        self.context:Event("PLAYER_ENTERING_WORLD", ContextChanged, true)
-        self.context:Event("ZONE_CHANGED_NEW_AREA", ContextChanged, true)
+        self.context:Event("PLAYER_ENTERING_WORLD", ContextChanged, IN_COMBAT)
+        self.context:Event("ZONE_CHANGED_NEW_AREA", ContextChanged, IN_COMBAT)
         ContextChanged(self)
     else
         self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
         self.context:RemoveEvent("ZONE_CHANGED_NEW_AREA")
         self.contextVisible = true
-        self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, true, "player")
+        self.context:Event("UNIT_SPELLCAST_SUCCEEDED", Cast, IN_COMBAT, "player")
         Paint(self)
     end
 end

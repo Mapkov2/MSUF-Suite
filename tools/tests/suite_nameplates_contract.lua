@@ -374,7 +374,7 @@ local context = {
     Event = function(_, event, callback, allowCombat)
         events[event] = callback
         -- Every plate listener also runs in combat (the context's allowCombat).
-        assert(allowCombat == true, event .. " would wait for the end of combat")
+        assert(support.InCombatOption(allowCombat), event .. " would wait for the end of combat")
     end,
     CVar = function(_, key, value) cvars[key] = value; liveCVars[key] = value end,
 }

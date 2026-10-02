@@ -418,6 +418,12 @@ function Support.ModuleTimers(root, suite, ns)
     end
 end
 
+-- The named Context:Event option (Runtime.lua) of an event the module also
+-- handles in combat: an options table with inCombat = true.
+function Support.InCombatOption(options)
+    return type(options) == "table" and options.inCombat == true
+end
+
 -- What Context:Event (Runtime.lua) registers for a callback: a job's event
 -- function, since Dispatch takes functions only. Stub contexts use it too.
 function Support.EventCallback(callback)

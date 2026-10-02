@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID, SPELL_ID = "burningRushCue", 111400
 local WIDTH, HEIGHT = 216, 46
@@ -111,9 +112,9 @@ function M:Enable()
     self.driverRegistered = true
     Update(self)
     self.host:Show()
-    self.context:Event("PLAYER_ENTERING_WORLD", Update, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", Update, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", Update, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", Update, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", Update, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", Update, IN_COMBAT)
     self:RegisterMovers()
 end
 

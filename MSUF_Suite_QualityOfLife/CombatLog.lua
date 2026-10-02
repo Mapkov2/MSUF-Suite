@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local Public = S.Public
 local STOP_DELAY = 30
@@ -147,7 +148,7 @@ function M:Enable()
     self.stopJob = self.context:Coalesce(STOP_DELAY, DelayedStop)
     self.startedBySuite = false
     self.manualStop = nil
-    for i = 1, #EVENTS do self.context:Event(EVENTS[i], Evaluate, true) end
+    for i = 1, #EVENTS do self.context:Event(EVENTS[i], Evaluate, IN_COMBAT) end
     Evaluate(self)
 end
 

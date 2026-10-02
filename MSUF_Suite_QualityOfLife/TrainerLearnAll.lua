@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local POPUP = "MSUF_SUITE_TRAINER_LEARN_ALL"
 local MAX_SERVICES = 2000
@@ -234,7 +235,7 @@ local function Attach(self)
     if not frame or NS.Safety.IsForbidden(frame) then return end
     if self.button then return end
     if NS.IsCombatLocked() then
-        self.context:Event("PLAYER_REGEN_ENABLED", Attach, true)
+        self.context:Event("PLAYER_REGEN_ENABLED", Attach, IN_COMBAT)
         return
     end
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
@@ -292,11 +293,11 @@ end
 
 function M:Enable()
     self.resumeJob = self.context:Coalesce(0, Resume)
-    self.context:Event("ADDON_LOADED", OnLoaded, true)
-    self.context:Event("TRAINER_SHOW", OnTrainer, true)
-    self.context:Event("TRAINER_UPDATE", OnTrainer, true)
-    self.context:Event("TRAINER_CLOSED", OnTrainer, true)
-    self.context:Event("PLAYER_REGEN_DISABLED", OnCombat, true)
+    self.context:Event("ADDON_LOADED", OnLoaded, IN_COMBAT)
+    self.context:Event("TRAINER_SHOW", OnTrainer, IN_COMBAT)
+    self.context:Event("TRAINER_UPDATE", OnTrainer, IN_COMBAT)
+    self.context:Event("TRAINER_CLOSED", OnTrainer, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_DISABLED", OnCombat, IN_COMBAT)
     Attach(self)
 end
 

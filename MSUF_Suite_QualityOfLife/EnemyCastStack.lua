@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 if NS.Client.isForever then return end
 local ID = "enemyCastStack"
 local Public = S.Public
@@ -535,7 +536,7 @@ end
 
 local function ListenCooldowns(self)
     if self.listening and self.config.readyStripe and #self.candidates > 0 then
-        self.context:Event("SPELL_UPDATE_COOLDOWN", OnCooldown, true)
+        self.context:Event("SPELL_UPDATE_COOLDOWN", OnCooldown, IN_COMBAT)
     else self.context:RemoveEvent("SPELL_UPDATE_COOLDOWN") end
 end
 
@@ -556,13 +557,13 @@ end
 local function ListenSpells(self)
     local c = self.config
     local ctx, on = self.context, self.listening and (c.readyStripe or c.dimOutOfRange)
-    if self.listening and c.showMarkers then ctx:Event("RAID_TARGET_UPDATE", OnMarkers, true)
+    if self.listening and c.showMarkers then ctx:Event("RAID_TARGET_UPDATE", OnMarkers, IN_COMBAT)
     else ctx:RemoveEvent("RAID_TARGET_UPDATE") end
     for _, event in ipairs({ "SPELLS_CHANGED", "PET_BAR_UPDATE" }) do
-        if on then ctx:Event(event, OnSpells, true) else ctx:RemoveEvent(event) end
+        if on then ctx:Event(event, OnSpells, IN_COMBAT) else ctx:RemoveEvent(event) end
     end
     for _, event in ipairs({ "PLAYER_SPECIALIZATION_CHANGED", "UNIT_PET" }) do
-        if on then ctx:Event(event, OnSpells, true, "player") else ctx:RemoveEvent(event) end
+        if on then ctx:Event(event, OnSpells, IN_COMBAT, "player") else ctx:RemoveEvent(event) end
     end
     ListenCooldowns(self)
 end
@@ -586,7 +587,7 @@ local function Gate(self)
     if want ~= self.listening then
         self.listening = want
         for _, event in ipairs(CAST_EVENTS) do
-            if want then self.context:Event(event, OnCast, true) else self.context:RemoveEvent(event) end
+            if want then self.context:Event(event, OnCast, IN_COMBAT) else self.context:RemoveEvent(event) end
         end
         Clear(self)
         if want then
@@ -658,8 +659,8 @@ function M:Enable()
         self.formatter:SetDesiredUnitCount(1)
         self.formatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
     end
-    self.context:Event("PLAYER_ENTERING_WORLD", OnZone, true)
-    self.context:Event("ZONE_CHANGED_NEW_AREA", OnZone, true)
+    self.context:Event("PLAYER_ENTERING_WORLD", OnZone, IN_COMBAT)
+    self.context:Event("ZONE_CHANGED_NEW_AREA", OnZone, IN_COMBAT)
     self:Refresh()
     self:RegisterMovers()
 end

@@ -135,7 +135,7 @@ function M:Refresh()
         StopEvents(self)
         return
     end
-    self.context:Event("UNIT_AURA", UnitAura, false, "player")
+    self.context:Event("UNIT_AURA", UnitAura, nil, "player")
     self.context:Event("PLAYER_ENTERING_WORLD", RescanKnown)
     self.context:Event("PLAYER_REGEN_ENABLED", RescanKnown)
     ScanKnown(self)

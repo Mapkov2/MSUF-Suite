@@ -1,5 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local IN_COMBAT = { inCombat = true }
 local M = {}
 local PARTY, RAID = {}, {}
 for i = 1, 4 do PARTY[i] = "party" .. i end
@@ -89,11 +90,11 @@ local function Sync(self, event)
     end
     self.dead = baseline
     self.afterDeath = afterDeath or nil
-    self.context:Event("UNIT_HEALTH", OnHealth, true, watched)
-    self.context:Event("UNIT_FLAGS", OnHealth, true, watched)
+    self.context:Event("UNIT_HEALTH", OnHealth, IN_COMBAT, watched)
+    self.context:Event("UNIT_FLAGS", OnHealth, IN_COMBAT, watched)
     if afterDeath then
-        self.context:Event("PLAYER_ALIVE", PlayerAlive, true)
-        self.context:Event("PLAYER_UNGHOST", PlayerAlive, true)
+        self.context:Event("PLAYER_ALIVE", PlayerAlive, IN_COMBAT)
+        self.context:Event("PLAYER_UNGHOST", PlayerAlive, IN_COMBAT)
     end
 end
 
@@ -107,9 +108,9 @@ local function CombatEnded(self, event)
 end
 
 function M:Enable()
-    self.context:Event("PLAYER_REGEN_DISABLED", Sync, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, true)
-    self.context:Event("GROUP_ROSTER_UPDATE", Sync, true)
+    self.context:Event("PLAYER_REGEN_DISABLED", Sync, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, IN_COMBAT)
+    self.context:Event("GROUP_ROSTER_UPDATE", Sync, IN_COMBAT)
     Sync(self)
 end
 
