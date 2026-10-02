@@ -9,6 +9,7 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
+Modes.lua
 Geometry.lua
 Layout.lua
 Roles.lua

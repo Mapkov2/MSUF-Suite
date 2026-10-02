@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
-assert(table.concat(toc, ",") == "Bootstrap.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
+assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
     .. "Level.lua,CastTime.lua,CVars.lua,Auras.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}

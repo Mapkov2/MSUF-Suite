@@ -1,5 +1,6 @@
 local _, private = ...
 local NS = private.NS
+local LOOK_BLIZZARD = private.Mode.LOOK_BLIZZARD
 local Threat = {}
 private.Threat = Threat
 
@@ -13,7 +14,7 @@ end
 
 local function Eligible(uf)
     local config = owner and owner.config
-    return owner and owner.active and config and config.look ~= 2 and config.enemy
+    return owner and owner.active and config and config.look ~= LOOK_BLIZZARD and config.enemy
         and Safe(uf) and NS.Public(uf.isFriend) and uf.isFriend == false
 end
 
@@ -82,7 +83,7 @@ function Threat.Apply(uf)
 end
 
 function Threat.Refresh()
-    if hooked or not owner or not owner.active or owner.config.look == 2
+    if hooked or not owner or not owner.active or owner.config.look == LOOK_BLIZZARD
         or not owner.config.enemy or not owner.config.threatHighlightColorEnabled then return end
     -- Skin.lua's plate hooks also reach the unit frames that already exist.
     private.HookPlates("UpdateAggroHighlight", function(uf)

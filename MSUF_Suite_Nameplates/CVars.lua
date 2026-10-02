@@ -1,5 +1,7 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
+local Mode = private.Mode
+local KEEP, SHOW, CUSTOMIZE, HIDE, LOOK_BLIZZARD = Mode.KEEP, Mode.SHOW, Mode.CUSTOMIZE, Mode.HIDE, Mode.LOOK_BLIZZARD
 local Style = NS.NameplateStyle
 -- The Blizzard nameplate CVars the Suite settings choose. Choice 1 of each
 -- setting keeps Blizzard's value: the context hands back what it changed.
@@ -25,22 +27,22 @@ local function LowBits(module, key, mask, width)
     module.context:CVar(key, value)
 end
 
--- A three-way choice: 1 keeps Blizzard's value, 2 writes on, 3 writes off.
+-- A three-way choice: keep Blizzard's value, write on (SHOW) or off.
 local function Toggle(module, mode, key)
-    if mode == 1 then
+    if mode == KEEP then
         Restore(key)
     else
-        module.context:CVar(key, mode == 2 and "1" or "0")
+        module.context:CVar(key, mode == SHOW and "1" or "0")
     end
 end
 
 local function Size(module, c)
-    if c.nativeStyle == 1 then
+    if c.nativeStyle == KEEP then
         Restore("nameplateStyle")
     elseif c.nativeStyle then
         module.context:CVar("nameplateStyle", tostring(c.nativeStyle - 2))
     end
-    if c.nativeSize == 1 then
+    if c.nativeSize == KEEP then
         Restore("nameplateSize")
     elseif c.nativeSize then
         module.context:CVar("nameplateSize", tostring(c.nativeSize - 1))
@@ -50,41 +52,41 @@ end
 -- Blizzard's rarity icon is bit 3 of the same CVar as the two health text
 -- flags. Compose one write so either control preserves the other.
 local function InfoDisplay(module, c)
-    local textMode = c.enemy and c.look ~= 2 and c.enemyTextMode or 1
-    local rarityMode = c.enemy and c.look ~= 2 and c.enemyRarityIcon or 1
-    if textMode == 1 then
+    local textMode = c.enemy and c.look ~= LOOK_BLIZZARD and c.enemyTextMode or KEEP
+    local rarityMode = c.enemy and c.look ~= LOOK_BLIZZARD and c.enemyRarityIcon or KEEP
+    if textMode == KEEP then
         Restore("nameplateForceShowUnitName")
         Restore("nameplateSimplifiedTypes")
     else
         module.context:CVar("nameplateForceShowUnitName", "1")
         LowBits(module, "nameplateSimplifiedTypes", 0, 2)
     end
-    if textMode == 1 and (rarityMode == 1 or module.infoTextApplied) then Restore("nameplateInfoDisplay") end
-    if textMode ~= 1 or rarityMode ~= 1 then
+    if textMode == KEEP and (rarityMode == KEEP or module.infoTextApplied) then Restore("nameplateInfoDisplay") end
+    if textMode ~= KEEP or rarityMode ~= KEEP then
         local flags = Style.CVarFlags(C_CVar.GetCVar("nameplateInfoDisplay"))
         if flags ~= nil then
-            local textBits = textMode == 1 and flags % 4 or textMode - 1
+            local textBits = textMode == KEEP and flags % 4 or textMode - 1
             local currentRarity = flags % 8 - flags % 4
-            if rarityMode ~= 1 and module.rarityBefore == nil then module.rarityBefore = currentRarity end
-            local rarityBit = rarityMode == 1 and (module.rarityBefore or currentRarity)
-                or (rarityMode == 2 and 4 or 0)
+            if rarityMode ~= KEEP and module.rarityBefore == nil then module.rarityBefore = currentRarity end
+            local rarityBit = rarityMode == KEEP and (module.rarityBefore or currentRarity)
+                or (rarityMode == SHOW and 4 or 0)
             LowBits(module, "nameplateInfoDisplay", textBits + rarityBit, 3)
-            if rarityMode == 1 then module.rarityBefore = nil end
+            if rarityMode == KEEP then module.rarityBefore = nil end
         end
     else
         module.rarityBefore = nil
     end
-    module.infoTextApplied = textMode ~= 1
+    module.infoTextApplied = textMode ~= KEEP
 end
 
 local function Casts(module, c)
-    local castEnabled = c.look == 2 and 1 or c.enemyCastEnabled
-    if castEnabled == 1 then
+    local castEnabled = c.look == LOOK_BLIZZARD and KEEP or c.enemyCastEnabled
+    if castEnabled == KEEP then
         Restore("nameplateShowCastBars")
     else
-        module.context:CVar("nameplateShowCastBars", castEnabled == 3 and "0" or "1")
+        module.context:CVar("nameplateShowCastBars", castEnabled == HIDE and "0" or "1")
     end
-    if c.enemyCastDisplay == 1 or c.look == 2 then
+    if c.enemyCastDisplay == KEEP or c.look == LOOK_BLIZZARD then
         Restore("nameplateCastBarDisplay")
     else
         local mask = (c.enemyCastSpellName and 1 or 0)
@@ -99,7 +101,7 @@ end
 local function Auras(module, c)
     for _, group in ipairs(Style.AuraGroups) do
         local prefix, key = group.key, group.cvar
-        if c.look == 2 or c[prefix .. "AuraMode"] ~= 2 then
+        if c.look == LOOK_BLIZZARD or c[prefix .. "AuraMode"] ~= CUSTOMIZE then
             Restore(key)
         else
             local mask = (c[prefix .. "Buffs"] and 1 or 0)
@@ -108,8 +110,8 @@ local function Auras(module, c)
             LowBits(module, key, mask, 3)
         end
     end
-    Toggle(module, c.look == 2 and 1 or c.friendlyNpcDebuffs, "nameplateShowDebuffsOnFriendly")
-    if c.look == 2 or c.auraScaleMode ~= 2 then
+    Toggle(module, c.look == LOOK_BLIZZARD and KEEP or c.friendlyNpcDebuffs, "nameplateShowDebuffsOnFriendly")
+    if c.look == LOOK_BLIZZARD or c.auraScaleMode ~= CUSTOMIZE then
         Restore("nameplateAuraScale")
     else
         module.context:CVar("nameplateAuraScale", string.format("%.1f", c.auraScalePercent / 100))
@@ -119,16 +121,16 @@ end
 -- Keep Blizzard's health-color bit and any future flags. The Suite
 -- role-color overlay is independent of both native warning modes.
 local function Signals(module, c)
-    if c.look == 2 or c.threatSignalMode ~= 2 then
+    if c.look == LOOK_BLIZZARD or c.threatSignalMode ~= CUSTOMIZE then
         Restore("nameplateThreatDisplay")
     elseif Style.CVarFlags(C_CVar.GetCVar("nameplateThreatDisplay")) then
         LowBits(module, "nameplateThreatDisplay", (c.threatHighlight and 1 or 0) + (c.threatFlash and 2 or 0), 2)
     end
-    local blizzard = c.look == 2
-    Toggle(module, blizzard and 1 or c.softTargetEnemy, "SoftTargetIconEnemy")
-    Toggle(module, blizzard and 1 or c.softTargetFriend, "SoftTargetIconFriend")
-    Toggle(module, blizzard and 1 or c.softTargetInteract, "SoftTargetIconInteract")
-    Toggle(module, blizzard and 1 or c.softTargetIconGate, "SoftTargetNameplateSize")
+    local blizzard = c.look == LOOK_BLIZZARD
+    Toggle(module, blizzard and KEEP or c.softTargetEnemy, "SoftTargetIconEnemy")
+    Toggle(module, blizzard and KEEP or c.softTargetFriend, "SoftTargetIconFriend")
+    Toggle(module, blizzard and KEEP or c.softTargetInteract, "SoftTargetIconInteract")
+    Toggle(module, blizzard and KEEP or c.softTargetIconGate, "SoftTargetNameplateSize")
 end
 
 -- Settings without a Blizzard look exception: { setting, CVar }.
@@ -145,17 +147,17 @@ local CHOICES = {
 }
 
 local function Names(module, c)
-    -- Names-only choice 3 (group members keep their bar) uses the same CVar.
-    local namesOnly = c.friendlyNamesOnly or 1
-    if namesOnly == 1 then
+    -- Names only for party / raid (group members keep their bar) uses the same CVar.
+    local namesOnly = c.friendlyNamesOnly or KEEP
+    if namesOnly == KEEP then
         Restore("nameplateShowOnlyNameForFriendlyPlayerUnits")
     else
         module.context:CVar("nameplateShowOnlyNameForFriendlyPlayerUnits",
-            (namesOnly == 2 or namesOnly == 3) and "1" or "0")
+            (namesOnly == Mode.ALL_NAMES_ONLY or namesOnly == Mode.GROUP_NAMES_ONLY) and "1" or "0")
     end
     for i = 1, #CHOICES do
         local choice = CHOICES[i]
-        Toggle(module, c[choice[1]] or 1, choice[2])
+        Toggle(module, c[choice[1]] or KEEP, choice[2])
     end
 end
 

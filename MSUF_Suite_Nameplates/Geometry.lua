@@ -1,5 +1,6 @@
 local _, private = ...
 local NS = private.NS
+local SAME_GEOMETRY = private.Mode.SAME_GEOMETRY
 local G = {}
 private.Geometry = G
 
@@ -87,7 +88,7 @@ function G.Restore(state, uf, setup)
 end
 
 function G.Apply(state, uf, setup, config, force)
-    if config.barGeometry ~= 2 then
+    if config.barGeometry ~= SAME_GEOMETRY then
         return G.Restore(state, uf, setup) and setup.healthBarHeight or nil
     end
     local container, health, cast = Ready(uf, setup)

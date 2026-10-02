@@ -1,5 +1,7 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
+local Mode = private.Mode
+local LOOK_BLIZZARD = Mode.LOOK_BLIZZARD
 local Style = NS.NameplateStyle
 local Border = Style.PaintBorder
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
@@ -99,7 +101,7 @@ end
 
 local function ReadFacts(uf, unit, facts)
     local prefix = Prefix(uf)
-    if M.config.look == 2 or not prefix or not M.config[prefix] then return end
+    if M.config.look == LOOK_BLIZZARD or not prefix or not M.config[prefix] then return end
     if not S.Public(unit) or type(unit) ~= "string" then return end
     local focus = UnitIsUnit(unit, "focus")
     if S.Public(focus) and focus == true then M.focusUF = uf end
@@ -188,7 +190,7 @@ end
 -- The arrows keep clear of the level badge or number beside the bar.
 local function TargetGaps(uf, unit)
     local setup = NamePlateSetupOptions
-    local badge = not NS.Client.isForever or M.config.levelAppearance == 2
+    local badge = not NS.Client.isForever or M.config.levelAppearance == Mode.LEVEL_BADGE
     local classic = badge and S.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
     local width = classic and setup.levelIconWidth
     local rightGap = S.Finite(width) and width + 4 or classic and 19 or 0
@@ -222,7 +224,7 @@ end
 local function FilterFriendlyName(uf, prefix)
     local name = uf.name
     if not Safe(name) then return end
-    if M.config.friendlyNamesOnly ~= 3
+    if M.config.friendlyNamesOnly ~= Mode.GROUP_NAMES_ONLY
         or prefix ~= "friendly" or not S.Public(uf.isPlayer) or uf.isPlayer ~= true then
         RestoreFriendlyName(name)
         return
@@ -256,7 +258,7 @@ local function PaintRaidIcon(uf, prefix)
     local icon = frame and frame.RaidTargetIcon
     if not Safe(icon) then return end
     local original = M.raidIcons[icon]
-    local hide = M.active and M.config.look ~= 2 and M.config.enemy and prefix == "enemy"
+    local hide = M.active and M.config.look ~= LOOK_BLIZZARD and M.config.enemy and prefix == "enemy"
         and M.config.enemyRaidIcon == false
     if not hide then
         if original ~= nil then
@@ -305,7 +307,7 @@ local function Paint(uf)
     Level.PaintNative(uf, prefix)
     Level.Paint(uf, prefix, M.units[health])
     Layout.Apply(uf, prefix, M.config)
-    if M.config.look == 2 or not prefix or not M.config[prefix] then
+    if M.config.look == LOOK_BLIZZARD or not prefix or not M.config[prefix] then
         if M.targetUF == uf then M.targetUF = nil end
         HideVisual(M.visuals[health])
         RestorePlateFonts(uf, health, cast)
@@ -431,7 +433,7 @@ local function RefreshRole(uf)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local prefix = Prefix(uf)
     local visual = health and M.visuals[health]
-    if not Safe(health) or not prefix or not visual or M.config.look == 2 or not M.config[prefix] then
+    if not Safe(health) or not prefix or not visual or M.config.look == LOOK_BLIZZARD or not M.config[prefix] then
         Paint(uf)
         return
     end
@@ -443,7 +445,7 @@ local function RefreshTarget(uf)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local prefix = Prefix(uf)
     local visual = health and M.visuals[health]
-    if not Safe(health) or not prefix or not visual or M.config.look == 2 or not M.config[prefix] then
+    if not Safe(health) or not prefix or not visual or M.config.look == LOOK_BLIZZARD or not M.config[prefix] then
         Paint(uf)
         return
     end

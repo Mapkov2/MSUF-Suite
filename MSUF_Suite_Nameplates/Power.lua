@@ -1,5 +1,6 @@
 local _, private = ...
 local NS = private.NS
+local LOOK_BLIZZARD = private.Mode.LOOK_BLIZZARD
 local Style = NS.NameplateStyle
 local Power = {}
 private.Power = Power
@@ -10,7 +11,7 @@ local hooked
 
 local function Requested()
     local config = owner and owner.config
-    return owner and owner.active and config.look ~= 2
+    return owner and owner.active and config.look ~= LOOK_BLIZZARD
         and (config.personalPowerSkin or (config.personalPowerOffsetX or 0) ~= 0
             or (config.personalPowerOffsetY or 0) ~= 0)
 end
@@ -22,7 +23,7 @@ end
 local function Paint(bar, force, targetX, targetY)
     if not Accessible(bar) then return end
     local config = owner.config
-    local active = owner.active and config.look ~= 2
+    local active = owner.active and config.look ~= LOOK_BLIZZARD
     local x = active and (targetX or 0) or 0
     local y = active and (targetY or 0) or 0
     local visual = visuals[bar]
