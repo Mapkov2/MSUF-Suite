@@ -17,6 +17,7 @@ local READER, EVENT_SOURCES = Standard.READER, Standard.EVENT_SOURCES
 local NO_VALUE = P.NO_VALUE
 local floor = math.floor
 local Finite = S.Finite
+local VISIBILITY, LAYOUT, DOCK = NS.DataTextVisibility, NS.DataTextLayout, NS.DataTextDock
 local nativeBagBar, nativeBagBarWasShown, nativeBagDriver, nativeBagHooked
 local nativeBagShowHooks = setmetatable({}, { __mode = "k" })
 local healthCurve
@@ -173,7 +174,7 @@ end
 
 -- Mouseover bars: only a real hover change rebinds the sampled sources.
 local function SetHover(bar, hovered)
-    if M.config[bar.visibilityKey] ~= 4 or bar.hover == hovered then return end
+    if M.config[bar.visibilityKey] ~= VISIBILITY.MOUSEOVER or bar.hover == hovered then return end
     bar.hover = hovered
     bar.frame:SetAlpha(hovered and 1 or 0)
     M:Rebind()
@@ -311,7 +312,7 @@ end
 local function Visible(bar)
     if not bar.frame:IsVisible() then return false end
     if S.editMode then return true end
-    if M.config[bar.visibilityKey] == 4 then return bar.hover == true end
+    if M.config[bar.visibilityKey] == VISIBILITY.MOUSEOVER then return bar.hover == true end
     return bar.frame:GetAlpha() > 0
 end
 
@@ -363,7 +364,7 @@ function M:UpdateSource(key, force)
                     Extra.Paint(button)
                 end
             end
-            if relayout and self.config[bar.layoutKey] == 2 then Layout(bar) end
+            if relayout and self.config[bar.layoutKey] == LAYOUT.FIT then Layout(bar) end
         end
     end
 end
@@ -592,9 +593,9 @@ local function MacroVisibility(c, bar)
         end
     end
     local mode = c[bar.visibilityKey]
-    if n == 0 and mode ~= 2 and mode ~= 3 then return nil end
-    if mode == 2 then table.insert(rules, 1, "[combat] hide")
-    elseif mode == 3 then table.insert(rules, 1, "[nocombat] hide") end
+    if n == 0 and mode ~= VISIBILITY.OUT_OF_COMBAT and mode ~= VISIBILITY.IN_COMBAT then return nil end
+    if mode == VISIBILITY.OUT_OF_COMBAT then table.insert(rules, 1, "[combat] hide")
+    elseif mode == VISIBILITY.IN_COMBAT then table.insert(rules, 1, "[nocombat] hide") end
     rules[#rules + 1] = "show"
     return table.concat(rules, "; ")
 end
@@ -631,7 +632,7 @@ function M:UpdateVisibility()
     Clear(healthBars)
     for i, bar in pairs(self.bars) do
         local mode = c[bar.visibilityKey]
-        if mode ~= 4 then bar.hover = false end
+        if mode ~= VISIBILITY.MOUSEOVER then bar.hover = false end
         local enabled = self.presentIDs[i] and c[bar.enabledKey] == true
         local blocked = enabled and (c[bar.instanceKey] and InInstance()
             or c[bar.housingKey] and InHousing())
@@ -643,7 +644,7 @@ function M:UpdateVisibility()
         if SetVisibilityDriver(bar, expression) and not expression then
             bar.frame:SetShown(enabled and (S.editMode or not blocked))
         end
-        bar.frame:SetAlpha((S.editMode or mode ~= 4 or bar.hover) and 1 or 0)
+        bar.frame:SetAlpha((S.editMode or mode ~= VISIBILITY.MOUSEOVER or bar.hover) and 1 or 0)
         RefreshHealthAlpha(bar)
     end
     self.styling = false
@@ -658,21 +659,23 @@ local function StyleSlot(button, style, font)
     button.label:SetTextColor(1, 1, 1)
 end
 
+-- The screen edge each docked bar snaps to.
+local DOCK_POINTS = { [DOCK.TOP] = "TOP", [DOCK.BOTTOM] = "BOTTOM", [DOCK.LEFT] = "LEFT", [DOCK.RIGHT] = "RIGHT" }
 local function PlaceBar(bar, c)
     local prefix, frame = bar.prefix, bar.frame
     local pixel = S.PixelUnit() or 1
     bar.pixelUnit = pixel
     frame:ClearAllPoints()
     local point = NS.DataTextPoints[c[prefix .. "Point"]] or "BOTTOM"
-    local dock = c[prefix .. "Dock"] or 1
-    if dock > 1 then point = ({ "", "TOP", "BOTTOM", "LEFT", "RIGHT" })[dock] end
+    local dock = c[prefix .. "Dock"] or DOCK.FREE
+    if dock ~= DOCK.FREE then point = DOCK_POINTS[dock] end
     frame:SetPoint(point, UIParent, point, Snap(c[prefix .. "X"], pixel), Snap(c[prefix .. "Y"], pixel))
     bar.vertical = c[prefix .. "Vertical"] == true
     local span = bar.vertical and UIParent:GetHeight() or UIParent:GetWidth()
     bar.length = Snap(c[prefix .. "FullScreen"] and span or c[bar.widthKey], pixel)
     local thickness = Snap(c[bar.heightKey], pixel)
     frame:SetSize(bar.vertical and thickness or bar.length, bar.vertical and bar.length or thickness)
-    if dock > 1 then
+    if dock ~= DOCK.FREE then
         frame:ClearAllPoints()
         frame:SetPoint(point, UIParent, point, 0, 0)
     end

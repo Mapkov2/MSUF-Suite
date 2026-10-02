@@ -1,5 +1,6 @@
 local _, P = ...
 local S = P.Suite
+local ACCENT = P.NS.DataTextAccentPosition
 local Appearance = {}
 P.Appearance = Appearance
 
@@ -49,7 +50,7 @@ function Appearance.Paint(bar)
         bar.accent:SetHeight(pixel)
         local inset = style.bagBadge and Snap(style.bagBadgeSize + 8, pixel) or 0
         bar.accent:ClearAllPoints()
-        if style.accentPosition == 2 then
+        if style.accentPosition == ACCENT.TOP then
             bar.accent:SetPoint("TOPLEFT", bar.frame, "TOPLEFT", inset, 0)
             bar.accent:SetPoint("TOPRIGHT", bar.frame, "TOPRIGHT", 0, 0)
         else

@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local NO_VALUE = P.NO_VALUE
+local CREST = NS.DataTextCrestMode
 
 -- The additional DataText sources: one binding per configured place
 -- ("kind:bar:place"), their values and the events that change them.
@@ -119,8 +120,8 @@ end
 
 local selectionText, selectionCosts, selectionMode, selectedCosts
 SeasonSelection = function(config)
-    local mode = config.crestMode == 2 and 2 or 1
-    local text = Text(mode == 2 and config.crestCurrencyIDs or config.crestCurrencies) or ""
+    local mode = config.crestMode == CREST.SELECTED and CREST.SELECTED or CREST.OBSERVED
+    local text = Text(mode == CREST.SELECTED and config.crestCurrencyIDs or config.crestCurrencies) or ""
     if selectedCosts and selectionText == text and selectionCosts == Sources.seasonCosts and selectionMode == mode then
         return selectedCosts
     end
@@ -137,7 +138,7 @@ SeasonSelection = function(config)
         count = count + 1
         local number = tonumber(id)
         local cost
-        if mode == 2 then
+        if mode == CREST.SELECTED then
             cost = Number(number) and number > 0 and number < 2147483647 and { currencyID = number, order = count } or nil
         else
             cost = byOrder[number]
@@ -304,7 +305,7 @@ local function ActiveKind(kind)
 end
 
 local function WantsCrestItems()
-    if not ActiveKind("crests") or owner.config.crestMode == 2 then return false end
+    if not ActiveKind("crests") or owner.config.crestMode == CREST.SELECTED then return false end
     for _, cost in ipairs(SeasonSelection(owner.config)) do
         if cost.itemID then return true end
     end
@@ -383,7 +384,7 @@ function Sources.Rebind(module)
         if binding then wantedKinds[binding.kind] = true end
     end
     if wantedKinds.crests then
-        if module.config.crestMode ~= 2 and not Sources.seasonCosts then Sources.ObserveSeasonCosts() end
+        if module.config.crestMode ~= CREST.SELECTED and not Sources.seasonCosts then Sources.ObserveSeasonCosts() end
         SeasonSelection(module.config)
     end
     local lib = Broker()

@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local Sources = P.DataTextSources
 local NO_VALUE = P.NO_VALUE
+local CREST = NS.DataTextCrestMode
 
 -- What clicks, the mouse wheel and tooltips of the additional DataText
 -- sources do. DataText places are ordinary buttons, so bars may move and
@@ -361,7 +362,7 @@ end
 
 local function CrestLines(config)
     GameTooltip:AddLine(S.Text("Seasonal upgrade resources observed this login"), 1, 1, 1)
-    if config.crestMode ~= 2 and Sources.seasonItem then GameTooltip:AddLine(Sources.seasonItem, .7, .7, .7) end
+    if config.crestMode ~= CREST.SELECTED and Sources.seasonItem then GameTooltip:AddLine(Sources.seasonItem, .7, .7, .7) end
     for _, cost in ipairs(Sources.SeasonSelection()) do
         local name, quantity = Sources.SeasonValue(cost)
         if name then GameTooltip:AddDoubleLine(tostring(cost.order) .. ": " .. name, tostring(quantity)) end

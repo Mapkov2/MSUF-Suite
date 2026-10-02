@@ -1,5 +1,6 @@
 local _, P = ...
 local S = P.Suite
+local LAYOUT, PLACEMENT = P.NS.DataTextLayout, P.NS.DataTextPlacement
 local Geometry = {}
 P.DataTextGeometry = Geometry
 local SLOT_COUNT = 6
@@ -22,7 +23,7 @@ end
 local function SlotWidths(bar, count, config)
     local style, widths = bar.style, layoutWidths
     local pixel = bar.pixelUnit or 1
-    local fit = config[bar.layoutKey] == 2
+    local fit = config[bar.layoutKey] == LAYOUT.FIT
     local configuredWidth = bar.length or Snap(config[bar.widthKey], pixel)
     local inset = not bar.vertical and style.bagBadge and Snap(style.bagBadgeSize + 8, pixel) or 0
     local gaps = (count - 1) * Snap(style.gap, pixel)
@@ -62,7 +63,7 @@ local function Segment(bar, first, last, left, right, gap, config)
     local total, fill = 0, nil
     for i = first, last do
         total = total + layoutWidths[i]
-        if not fill and SlotSetting(config, bar, layoutSlots[i], i, "Placement") == 3 then fill = i end
+        if not fill and SlotSetting(config, bar, layoutSlots[i], i, "Placement") == PLACEMENT.FILL then fill = i end
     end
     local available = math.max(0, right - left - (last - first) * gap)
     if total > available then
@@ -146,7 +147,7 @@ function Geometry.Layout(bar, config, extra)
     local gap = Snap(style.gap, pixel)
     local center
     for i = 1, count do
-        if SlotSetting(config, bar, slots[i], i, "Placement") == 2 then
+        if SlotSetting(config, bar, slots[i], i, "Placement") == PLACEMENT.CENTER then
             center = i
             break
         end
