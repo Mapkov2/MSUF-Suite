@@ -335,31 +335,8 @@ local function RefreshIfShown(v)
     if Enabled(v) and Visible(v.pane) then Stats.Refresh(v) end
 end
 
-local function Create(pane, owner)
-    local v = {
-        pane = pane, owner = owner, active = true,
-        fonts = {}, heights = {}, rows = {}, ordered = {}, results = {},
-        deferKey = "character-stats:" .. owner,
-    }
-    for index = 1, #definitions do v.results[index] = {} end
-    -- The combat-deferred job is the same every time: a shown pane is laid
-    -- out again, a pane closed during combat gets Blizzard's geometry back.
-    v.refresh = function()
-        if Enabled(v) and Visible(v.pane) then
-            Stats.Refresh(v)
-        else
-            HideMetadata(v)
-            RestoreNativeStyle(v)
-        end
-    end
-
-    local host = CreateFrame("Frame", nil, pane)
-    v.host = host
-    hosts[host] = true
-    host:SetSize(1, 1)
-    host:SetPoint("TOPLEFT")
-    host:EnableMouse(false)
-
+-- The "DR" button beside Enhancements that explains the diminishing returns.
+local function CreateHelp(v, host, pane)
     local help = CreateFrame("Button", nil, host)
     v.help = help
     help:SetSize(28, 18)
@@ -373,7 +350,11 @@ local function Create(pane, owner)
     v.helpText:SetText(NS.L.STATS_DR_SHORT)
     help:SetScript("OnEnter", function() Help(v) end)
     help:SetScript("OnLeave", function() HideHelpTooltip(v) end)
+end
 
+-- The host follows the pane: it lays the rows out when the pane shows and
+-- gives them Blizzard's geometry back when it hides.
+local function WatchPane(v, host)
     host:SetScript("OnShow", function()
         if Enabled(v) then
             host:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -408,6 +389,34 @@ local function Create(pane, owner)
             RefreshIfShown(v)
         end
     end)
+end
+
+local function Create(pane, owner)
+    local v = {
+        pane = pane, owner = owner, active = true,
+        fonts = {}, heights = {}, rows = {}, ordered = {}, results = {},
+        deferKey = "character-stats:" .. owner,
+    }
+    for index = 1, #definitions do v.results[index] = {} end
+    -- The combat-deferred job is the same every time: a shown pane is laid
+    -- out again, a pane closed during combat gets Blizzard's geometry back.
+    v.refresh = function()
+        if Enabled(v) and Visible(v.pane) then
+            Stats.Refresh(v)
+        else
+            HideMetadata(v)
+            RestoreNativeStyle(v)
+        end
+    end
+
+    local host = CreateFrame("Frame", nil, pane)
+    v.host = host
+    hosts[host] = true
+    host:SetSize(1, 1)
+    host:SetPoint("TOPLEFT")
+    host:EnableMouse(false)
+    CreateHelp(v, host, pane)
+    WatchPane(v, host)
     return v
 end
 
