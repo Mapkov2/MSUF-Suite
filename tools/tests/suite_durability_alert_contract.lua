@@ -1,6 +1,9 @@
 local root = assert(arg[1], "repository root required")
 local timers, registered, reads = {}, {}, 0
 local lowest, combat = .65, false
+-- The player's combat flag (UnitAffectingCombat("player")): already true
+-- in PLAYER_REGEN_DISABLED, before the lockdown (combat) starts.
+local fighting = false
 
 local function Widget(fontString)
     local w = { shown = true, fontString = fontString }
@@ -44,6 +47,8 @@ local NS = {
     IsCombatLocked = function() return combat end,
     Dispatch = function(callback, ...) return callback(...) end,
 }
+NS.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
+    function() return combat end, function() return combat or fighting end)
 local S = { editMode = false }
 NS.Suite = S
 S.Text = function(text) return text end
@@ -150,6 +155,24 @@ combat = false
 S.editMode = false
 M:Refresh()
 assert(not M.host.shown, "Edit Mode preview remained visible")
+-- MSUF Edit Mode closes for combat inside its own PLAYER_REGEN_DISABLED
+-- handler, and the Suite re-applies the module right there: after the
+-- module's own handler and before the lockdown starts.
+lowest = .25
+S.editMode = true
+M:Refresh()
+fighting = true
+events.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+S.editMode = false
+M:Refresh()
+assert(not M.host.shown, "closing Edit Mode for combat showed the durability warning for the fight")
+combat = true
+Drain()
+assert(not M.host.shown, "the durability warning appeared in combat")
+combat, fighting = false, false
+events.PLAYER_REGEN_ENABLED(M, "PLAYER_REGEN_ENABLED")
+Drain()
+assert(M.host.shown, "warning did not return after combat")
 
 lowest = .20
 events.UPDATE_INVENTORY_DURABILITY(M, "UPDATE_INVENTORY_DURABILITY")

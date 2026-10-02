@@ -169,9 +169,20 @@ end
 -- Opt-in: the shipped combat and restriction rules of MSUF_Suite/Core/
 -- Platform.lua (Suite.InCombat, ChatLocked, GroupActionsRestricted,
 -- RestrictedNotice) for module tests with a stub core namespace. env holds
--- the client functions they read (InCombatLockdown, C_ChatInfo,
--- C_RestrictedActions, Enum); Text translates like the test's Suite.Text.
+-- the client functions they read (InCombatLockdown, UnitAffectingCombat,
+-- C_ChatInfo, C_RestrictedActions, Enum); Text translates like the test's
+-- Suite.Text. The player's combat flag (UnitAffectingCombat("player")) is
+-- true from PLAYER_REGEN_DISABLED, before the lockdown, to
+-- PLAYER_REGEN_ENABLED; without a flag of its own, a test gets one that
+-- follows its lockdown.
 function Support.Platform(root, env)
+    if not env.UnitAffectingCombat and env.InCombatLockdown then
+        local locked = env.InCombatLockdown
+        env.UnitAffectingCombat = function(unit)
+            assert(unit == "player", "the combat rules read the player's combat flag only")
+            return locked()
+        end
+    end
     local file = assert(io.open(root .. "/MSUF_Suite/Core/Platform.lua", "rb"))
     local source = file:read("*a"):gsub("\r\n", "\n")
     file:close()
@@ -184,8 +195,10 @@ end
 
 -- The client sends PLAYER_REGEN_DISABLED while InCombatLockdown() is still
 -- false; tests fire that event first and only then turn their lockdown on.
-function Support.InCombat(root, isLocked)
-    return Support.Platform(root, { InCombatLockdown = isLocked }).InCombat
+-- isFighting (optional) is the player's combat flag, which is already true
+-- then.
+function Support.InCombat(root, isLocked, isFighting)
+    return Support.Platform(root, { InCombatLockdown = isLocked, UnitAffectingCombat = isFighting }).InCombat
 end
 
 -- The client's slash command registry (Blizzard_ChatFrameBase/Shared:

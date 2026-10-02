@@ -2,6 +2,9 @@ local root = assert(arg[1], "repository root required")
 local secret, events = {}, {}
 local now, reads = 100, 0
 local combat, instanceType, delve = false, "none", false
+-- The player's combat flag (UnitAffectingCombat("player")): already true
+-- in PLAYER_REGEN_DISABLED, before the lockdown (combat) starts.
+local fighting = false
 
 local function Widget(parent, fontString)
     local w = { shown = true, parent = parent, fontString = fontString }
@@ -91,7 +94,7 @@ end
 local NS = { Dispatch = function(callback, ...) return callback(...) end, AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER" },
     IsCombatLocked = function() return combat end }
 NS.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
-    function() return combat end)
+    function() return combat end, function() return combat or fighting end)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ActionTracker.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local M = assert(module)
@@ -203,6 +206,28 @@ combat = false
 events.PLAYER_REGEN_ENABLED(M, "PLAYER_REGEN_ENABLED")
 clock.Advance(14.9)
 assert(M.host.shown, "a new combat cast lost part of its timeout")
+-- MSUF Edit Mode closes for combat inside its own PLAYER_REGEN_DISABLED
+-- handler, and the Suite re-applies the module right there: after the
+-- module's own handler and before the lockdown starts.
+Cast(13)
+S.editMode = true
+M:Refresh()
+fighting = true
+events.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
+S.editMode = false
+M:Refresh()
+assert(M.pausedAt == GetTime(), "closing Edit Mode for combat ran the inactivity timeout in combat")
+combat = true
+clock.Advance(60)
+assert(M.host.shown, "the inactivity timeout ran in combat after Edit Mode closed")
+combat, fighting = false, false
+events.PLAYER_REGEN_ENABLED(M, "PLAYER_REGEN_ENABLED")
+assert(not M.pausedAt, "combat exit kept the pause")
+clock.Advance(14.9)
+assert(M.host.shown, "combat after Edit Mode cut the remaining timeout short")
+clock.Advance(.2)
+assert(not M.host.shown, "the timeout did not resume after combat")
+Cast(14)
 
 M.config.showWorld = false
 M:Refresh()

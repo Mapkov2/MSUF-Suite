@@ -55,9 +55,11 @@ local function Place(self)
     self.host:SetPoint(point, UIParent, point, c.x, c.y)
 end
 
+-- The warning waits for combat to end. A refresh while MSUF Edit Mode
+-- closes for combat runs before the lockdown starts (NS.InCombat).
 local function Update(self)
     if not self.active then return end
-    if NS.IsCombatLocked() then
+    if NS.InCombat() then
         self.host:Hide()
         return
     end
@@ -89,7 +91,7 @@ end
 local function OnEvent(self, event)
     if event == "PLAYER_REGEN_DISABLED" then
         self.host:Hide()
-    elseif not NS.IsCombatLocked() then
+    elseif not NS.InCombat(event) then
         ScheduleUpdate(self)
     end
 end
