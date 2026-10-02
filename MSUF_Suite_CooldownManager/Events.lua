@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- The event map (spec 8.3), spec detection, the assisted-combat source and
+-- The event map, specialization detection, the assisted-combat source and
 -- the combat edges. Events register only while something consumes them.
 -- Cooldown events refresh their entries at once, inside the event, because
 -- isOnGCD is only trustworthy there; the other hot events mark entries and
@@ -348,7 +348,7 @@ local function OnScale()
     Schedule()
 end
 
------------------------------------------------------------------- assisted combat (spec 10.4)
+------------------------------------------------------------------ assisted combat
 -- With Blizzard's highlight on, its own change callback feeds us; otherwise
 -- a 0.2 s poll runs in combat only.
 local assistMode, assistTicker
@@ -458,13 +458,15 @@ local function OnCombatEnd()
     end
 end
 
------------------------------------------------------------------- event map (spec 8.3)
+------------------------------------------------------------------ event map
+-- Context:Event's third argument: the handler also runs in combat.
+local ALLOW_COMBAT = true
 local function Want(event, on, handler)
     on = on and true or false
     if (events[event] == true) == on then return end
     events[event] = on or nil
     if on then
-        M.context:Event(event, handler, true)
+        M.context:Event(event, handler, ALLOW_COMBAT)
     else
         M.context:RemoveEvent(event)
     end

@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Exports for the options page, MSUF Edit Mode and MSUF (spec 11.6): bar
+-- Exports for the options page, MSUF Edit Mode and MSUF: bar
 -- and picker rows, Blizzard's layout snapshot, previews, status, sounds,
 -- the position conversions that keep a bar in place when its growth edge
 -- moves, and the movers. A loaded but inactive module answers from a cold

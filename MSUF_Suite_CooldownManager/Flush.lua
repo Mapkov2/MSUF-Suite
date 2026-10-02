@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- One dirty mask with a prebuilt next-frame flush (spec 8.2). The settings
+-- One dirty mask with a prebuilt next-frame flush. The settings
 -- reader (Settings.lua), the event map (Events.lua) and the layers mark work
 -- here; the flush runs it in dependency order: catalog, resolve, index,
 -- structure (icons before aura overlays), style, cooldown state, effects,

@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Settings in and out (spec 8.1). Refresh runs on every setting change
+-- Settings in and out. Refresh runs on every setting change
 -- (slider ticks included): the reader turns the flat settings into per-bar
 -- views in place, bumps the generation of each group that changed and marks
 -- only the work that setting needs (the dirty mask, Flush.lua). Settings go
