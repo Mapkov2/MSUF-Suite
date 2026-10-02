@@ -5,6 +5,9 @@ tracked pre-program snapshot from `29ca197`. The normal check needs Python 3.12
 and Lua 5.1 (`MSUF_LUA51` overrides the default path), but no git history or sibling
 checkout. `--diff` lists all removals and additions. Every unapproved removal,
 invalid allowlist entry, stale exception, or extraction error fails the check.
+`python tools/run_suite_tests.py` runs the gate after the contracts and includes
+its result in the final pass/fail total, with one inventory summary line. The
+`inventory` name filter selects both the tool contracts and the real gate.
 
 `--freeze REV` rebuilds the snapshot using the current extractor against that
 commit's addon sources. It does not change or prune exceptions. Review a baseline

@@ -16,6 +16,7 @@ TOOLS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(TOOLS))
 import suite_inventory_diff as inventory
 import suite_inventory_source as source
+import run_suite_tests as runner
 from suite_locale_tool import lex
 
 
@@ -242,6 +243,33 @@ S.Cleared = nil
                     with contextlib.redirect_stdout(io.StringIO()):
                         self.assertEqual(inventory.main(args), 1)
 
+    def test_runner_propagates_inventory_status_once(self):
+        summary = "feature inventory (synthetic): summary"
+        with tempfile.TemporaryDirectory(prefix="suite-inventory-runner-") as tmp:
+            root = Path(tmp)
+            (root / "tools/tests").mkdir(parents=True)
+            for status in (0, 1):
+                with self.subTest(status=status), patch.object(runner, "ROOT", root):
+                    result = subprocess.CompletedProcess([], status, summary, "")
+                    with patch.object(runner.subprocess, "run", return_value=result) as call:
+                        with patch.object(sys, "argv", ["run_suite_tests.py"]):
+                            with contextlib.redirect_stdout(io.StringIO()) as output:
+                                self.assertEqual(runner.main(), status)
+                    self.assertEqual(call.call_count, 1)
+                    self.assertEqual(Path(call.call_args.args[0][1]).name, "suite_inventory_diff.py")
+                    self.assertEqual(output.getvalue().count(summary), 1)
+                    self.assertIn("%d passed, %d failed" % (1 - status, status), output.getvalue())
+
+    def test_runner_respects_name_filter(self):
+        with tempfile.TemporaryDirectory(prefix="suite-inventory-runner-") as tmp:
+            root = Path(tmp)
+            (root / "tools/tests").mkdir(parents=True)
+            with patch.object(runner, "ROOT", root), patch.object(runner.subprocess, "run") as call:
+                with patch.object(sys, "argv", ["run_suite_tests.py", "unrelated"]):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        self.assertEqual(runner.main(), 0)
+                call.assert_not_called()
+
 
 MUTANTS = (
     ("lost removals", "suite_inventory_diff.py", "set(before[name]) - set(after[name])", "set()"),
@@ -259,6 +287,7 @@ MUTANTS = (
     ("lost exports", "suite_inventory_source.py", 'inventory.add("S." + name)', "pass"),
     ("lost saved keys", "suite_inventory_source.py", 'inventory.add(owner + "." + key)', "pass"),
     ("lost locales", "suite_inventory_diff.py", 'inventory["locale"].update(english)', "pass"),
+    ("missing runner gate", "run_suite_tests.py", 'if wanted in "suite_inventory_diff.py":', "if False:"),
 )
 
 
@@ -267,7 +296,8 @@ def mutations():
     with tempfile.TemporaryDirectory(prefix="suite-inventory-mutants-") as tmp:
         tools = Path(tmp) / "tools"
         tools.mkdir()
-        names = ("suite_inventory_diff.py", "suite_inventory_source.py", "suite_inventory_catalog.lua", "suite_locale_tool.py")
+        names = ("suite_inventory_diff.py", "suite_inventory_source.py", "suite_inventory_catalog.lua",
+                 "suite_locale_tool.py", "run_suite_tests.py")
         for name in names:
             shutil.copyfile(TOOLS / name, tools / name)
         test = tools / "tests" / Path(__file__).name
