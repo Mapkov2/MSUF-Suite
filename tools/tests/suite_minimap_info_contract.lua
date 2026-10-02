@@ -275,7 +275,8 @@ do
     W.Event("PLAYER_ENTERING_WORLD")
     check(entries.Coordinates.button.shown, "coordinates did not return")
     assert(S.Set("minimap", "enabled", false))
-    check(W.Pending() == 0 and not frame.shown and not frame.scripts.OnUpdate, "disable left sampling work")
+    check(not M.infoTimer and W.ContextPending(M.context) == 0 and not frame.shown and not frame.scripts.OnUpdate,
+        "disable left sampling work")
     print("Minimap information: shared scheduling, intervals, visibility, parking, mouseover, anchors, boxes, clicks and disable passed")
 end
 
@@ -287,8 +288,11 @@ do
     local W = H.New(root, "Mainline", { beforeModules = function(W)
         local G = W.G
         -- Next-frame deferrals run immediately; the texts here never poll.
+        -- Waits with a delay stay on the client clock.
         W.timerAPI = G.C_Timer
-        G.C_Timer = { After = function(_, callback) callback() end, NewTimer = W.timerAPI.NewTimer }
+        G.C_Timer = { After = function(delay, callback)
+            if delay == 0 then callback() else W.timerAPI.After(delay, callback) end
+        end, NewTimer = W.timerAPI.NewTimer }
         G.GetInventoryItemDurability = function(slot)
             durabilityReads = durabilityReads + 1
             if slot == 1 then return current, 100 elseif slot == 5 then return 200, 200 end

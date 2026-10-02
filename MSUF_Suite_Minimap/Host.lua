@@ -113,28 +113,30 @@ function MM.UnlistenAll()
     end
 end
 
--- Deferred work runs once per frame in a fixed order. Hooks only queue, so no
--- suite code runs inside a Blizzard call chain. A kind that raises does not
--- strand the later kinds: nothing re-arms the flush for work already queued.
+-- Deferred work runs once per frame in a fixed order (one ctx:Coalesce job;
+-- requests in between ride along). Hooks only queue, so no suite code runs
+-- inside a Blizzard call chain. A kind that raises does not strand the later
+-- kinds: nothing re-arms the flush for work already queued. The job runs only
+-- while the minimap is active; a stopped minimap queues nothing and drops
+-- what was queued (ReleaseHost).
 local pending, flushers = {}, {}
 MM.flushers = flushers
 local ORDER = { "claim", "mask", "rotate", "stale", "hoverSize", "rows", "drawer", "hover" }
-local scheduled = false
+local flushJob
 local function Flush()
-    scheduled = false
     for i = 1, #ORDER do
         local kind = ORDER[i]
         if pending[kind] then
             pending[kind] = nil
-            if M.active and flushers[kind] then Dispatch(flushers[kind]) end
+            if flushers[kind] then Dispatch(flushers[kind]) end
         end
     end
 end
 function MM.Queue(kind)
+    if not M.active then return end
     pending[kind] = true
-    if scheduled then return end
-    scheduled = true
-    C_Timer.After(0, Flush)
+    flushJob = flushJob or M.context:Coalesce(0, Flush)
+    flushJob:Request()
 end
 
 -- Frames the suite moves (Blizzard buttons, zoom buttons, addon buttons). The
@@ -736,6 +738,8 @@ MM.OnHover(function()
 end)
 
 function MM.ReleaseHost()
+    if flushJob then flushJob:Cancel() end
+    for kind in pairs(pending) do pending[kind] = nil end
     local host = MM.host
     if host and M.driver then UnregisterStateDriver(host, "visibility") end
     M.driver, M.captureWaiting = nil, nil

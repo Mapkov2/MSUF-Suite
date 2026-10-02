@@ -9,7 +9,7 @@ local M = MM.M
 local weak = { __mode = "k" }
 local collected, hooked, labels = setmetatable({}, weak), setmetatable({}, weak), setmetatable({}, weak)
 local list, visible, rowItem = {}, {}, {}
-local toggle, panel, single, rescanTimer, library
+local toggle, panel, single, library
 local libraryToken = {}
 local detached = setmetatable({}, weak)
 local GAP, MARGIN, RESCAN_DELAY = 4, 8, 0.1
@@ -330,15 +330,14 @@ MM.OnHover(function()
 end)
 
 local function Rescan()
-    rescanTimer = nil
     if not M.active or not MM.CollectsButtons() then return end
     -- Late ADDON_LOADED icons are placed right away: rescan, then relayout.
     Scan()
     MM.Queue("drawer")
 end
+-- Each request restarts the wait (ctx:After moves the deadline).
 local function ScheduleRescan()
-    if rescanTimer then rescanTimer:Cancel() end
-    rescanTimer = C_Timer.NewTimer(RESCAN_DELAY, Rescan)
+    M.context:After(RESCAN_DELAY, Rescan)
 end
 local function Library()
     local stub = _G.LibStub
@@ -381,10 +380,7 @@ function S.MinimapRescanButtons()
 end
 
 function MM.ReleaseDrawer()
-    if rescanTimer then
-        rescanTimer:Cancel()
-        rescanTimer = nil
-    end
+    M.context:Cancel(Rescan)
     if library and type(library.UnregisterCallback) == "function" then
         library.UnregisterCallback(libraryToken,
             "LibDBIcon_IconCreated")

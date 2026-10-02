@@ -13,7 +13,7 @@ local weak = { __mode = "k" }
 local holder, catcher
 local inputMap, inputScripts
 local hoverHooked = setmetatable({}, weak)
-local resetTimer, leaveTimer
+local leaveJob
 local zoomShown, zoomHooked = setmetatable({}, weak), setmetatable({}, weak)
 local extents = {}
 local HOVER_GRACE = 0.15
@@ -32,7 +32,6 @@ local function SyncButtons(zoom, levels)
     if zoomOut then zoomOut:SetEnabled(zoom > 0) end
 end
 local function ResetZoom()
-    resetTimer = nil
     local map = _G.Minimap
     if not M.active or not MM.Usable(map) then return end
     local zoom, levels = map:GetZoom(), map:GetZoomLevels()
@@ -43,15 +42,11 @@ local function ResetZoom()
 end
 -- Every manual zoom re-arms the one-shot reset; zoom level 0 needs none.
 local function ArmReset()
-    if resetTimer then
-        resetTimer:Cancel()
-        resetTimer = nil
-    end
     local map = _G.Minimap
     local seconds = M.active and M.config.zoomResetSeconds or 0
-    if seconds <= 0 or not MM.Usable(map) then return end
-    local zoom = map:GetZoom()
-    if Finite(zoom) and zoom > 0 then resetTimer = C_Timer.NewTimer(seconds, ResetZoom) end
+    local zoom = seconds > 0 and MM.Usable(map) and map:GetZoom()
+    -- ctx:After moves a pending deadline; at zoom level 0 nothing waits.
+    if Finite(zoom) and zoom > 0 then M.context:After(seconds, ResetZoom) else M.context:Cancel(ResetZoom) end
 end
 local function Zoom(step)
     local map = _G.Minimap
@@ -153,21 +148,19 @@ local function Inside()
     return S.Public(over) and over == true
 end
 local function LeaveCheck()
-    leaveTimer = nil
     if M.active and not Inside() then SetHovered(false) end
 end
 function MM.HoverEnter()
-    if leaveTimer then
-        leaveTimer:Cancel()
-        leaveTimer = nil
-    end
+    if leaveJob then leaveJob:Cancel() end
     if M.active and catcher and catcher:IsShown() then SetHovered(true) end
 end
 
--- A short grace bridges the gap between the map and its rows or drawer.
+-- A short grace bridges the gap between the map and its rows or drawer: the
+-- first leave starts it (a ctx:Coalesce job), later leaves ride along.
 function MM.HoverLeave()
-    if leaveTimer or not MM.hovered then return end
-    leaveTimer = C_Timer.NewTimer(HOVER_GRACE, LeaveCheck)
+    if not MM.hovered then return end
+    leaveJob = leaveJob or M.context:Coalesce(HOVER_GRACE, LeaveCheck)
+    leaveJob:Request()
 end
 
 -- Native buttons stay above the passive hover area. Observe their own motion
@@ -280,10 +273,7 @@ local function ApplyCatcher()
     local wanted = NeedsHover(c) and true or false
     catcher:SetShown(wanted)
     if not wanted then
-        if leaveTimer then
-            leaveTimer:Cancel()
-            leaveTimer = nil
-        end
+        if leaveJob then leaveJob:Cancel() end
         SetHovered(false)
     end
     MM.Queue("hover")
@@ -340,10 +330,7 @@ function MM.ApplyInput()
         InstallMapInput(map)
         ctx:Property(map, "IsMouseWheelEnabled", "EnableMouseWheel", c.scrollZoom)
     end
-    if c.zoomResetSeconds <= 0 and resetTimer then
-        resetTimer:Cancel()
-        resetTimer = nil
-    end
+    if c.zoomResetSeconds <= 0 then ctx:Cancel(ResetZoom) end
     PlaceZoom(c.zoomButtons)
     holder:SetShown(c.zoomButtons == ZOOM.ALWAYS or (c.zoomButtons == ZOOM.MOUSEOVER and MM.Revealed()))
     -- 1 leaves Blizzard's own rotation setting alone (and returns a suite write).
@@ -358,14 +345,8 @@ function MM.ApplyInput()
 end
 
 function MM.ReleaseInput()
-    if resetTimer then
-        resetTimer:Cancel()
-        resetTimer = nil
-    end
-    if leaveTimer then
-        leaveTimer:Cancel()
-        leaveTimer = nil
-    end
+    M.context:Cancel(ResetZoom)
+    if leaveJob then leaveJob:Cancel() end
     MM.hovered = false
     MM.CloseMicroMenu()
     for button in pairs(zoomShown) do

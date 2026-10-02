@@ -29,7 +29,7 @@ local OVERLAY_KINDS = { hearth = true, specialization = true }
 local PANEL_SOURCES = { durability = "character", coordinates = "worldMap", location = "worldMap" }
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100
-local overlay, popup, leaveTimer
+local overlay, popup
 
 local function Locked()
     return NS.IsCombatLocked()
@@ -155,15 +155,14 @@ Actions.ClosePopup = ClosePopup
 -- Leaving the popup, one of its rows or its place closes it once the pointer
 -- rests on none of them: rows and the gaps between them belong to the popup.
 local function CheckLeave()
-    leaveTimer = nil
     if not popup or not popup:IsShown() or Locked() then return end
     if popup:IsMouseOver() or popup.owner and popup.owner:IsMouseOver() then return end
     ClosePopup()
 end
 
+-- Each leave restarts the short wait (ctx:After moves the deadline).
 local function WatchLeave()
-    if leaveTimer then leaveTimer:Cancel() end
-    leaveTimer = C_Timer.NewTimer(.15, CheckLeave)
+    P.DataTexts.context:After(.15, CheckLeave)
 end
 
 -- A used entry closes the popup (out of combat, right after its action). A
@@ -414,10 +413,7 @@ function Actions.GoldTooltip(tooltip)
 end
 
 function Actions.Disable()
-    if leaveTimer then
-        leaveTimer:Cancel()
-        leaveTimer = nil
-    end
+    P.DataTexts.context:Cancel(CheckLeave)
     Actions.hovered = nil
     Actions.Detach()
     ClosePopup()
