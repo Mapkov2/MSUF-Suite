@@ -567,11 +567,19 @@ death.context.events.UNIT_HEALTH(death, "UNIT_HEALTH", "party1")
 assert(#notices == deathNotices + 2, "party death behavior changed")
 -- Screen/chat/sound are independent, and simultaneous deaths produce one sound.
 local screenNotices, sounds = {}, 0
-RaidWarningFrame, ChatTypeInfo, SOUNDKIT = {}, { RAID_WARNING = {} }, { RAID_WARNING = 8959 }
-RaidNotice_AddMessage = function(_, message) screenNotices[#screenNotices + 1] = message end
+RaidWarningFrame, ChatTypeInfo, SOUNDKIT = {}, { RAID_WARNING = { r = 1, g = .28, b = 0 } }, { RAID_WARNING = 8959 }
 PlaySound = function() sounds = sounds + 1 end
-RaidWarningUtil = { AddMessage = function(message) screenNotices[#screenNotices + 1] = message end }
-RaidNotice_AddMessage = function() error("deprecated raid notice used although native utility exists") end
+RaidWarningUtil = { AddMessage = function() error("death messages mutated the shared Blizzard warning pool") end }
+RaidNotice_AddMessage = function() error("death messages used the shared Blizzard warning frame") end
+suite.CreateFrame = function(kind)
+    assert(kind == "MessageFrame", "screen death alerts require an owned native message frame")
+    local frame = keyWidget()
+    function frame:AddMessage(message, r, g, b)
+        assert(r == 1 and g == .28 and b == 0, "death warning color changed")
+        screenNotices[#screenNotices + 1] = message
+    end
+    return frame
+end
 death.config.chat, death.config.screen, death.config.sound = false, true, true
 unitDead = {}; death:Refresh()
 deathNotices = #notices

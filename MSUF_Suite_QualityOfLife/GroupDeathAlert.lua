@@ -6,6 +6,33 @@ local PARTY, RAID = {}, {}
 for i = 1, 4 do PARTY[i] = "party" .. i end
 for i = 1, 40 do RAID[i] = "raid" .. i end
 
+-- Blizzard's RaidWarningFrame owns a shared Lua pool. BuffFrame.lua reads it
+-- through RaidWarningUtil.UpdateCenterScreenAnchors after updating deadly
+-- debuffs; addon messages there can taint the following aura update/scripts.
+-- An owned MessageFrame keeps the warning text and fading in the native C UI.
+local function PrepareScreen(self)
+    if self.config.screen then
+        if not self.screen then
+            local frame = S.CreateFrame("MessageFrame", "MSUFSuiteGroupDeathAlerts", UIParent)
+            frame:SetSize(800, 100)
+            frame:SetPoint("BOTTOM", RaidWarningFrame, "TOP", 0, 8)
+            frame:SetFrameStrata("HIGH")
+            frame:EnableMouse(false)
+            frame:SetFontObject(GameFontNormalHuge)
+            frame:SetJustifyH("CENTER")
+            frame:SetInsertMode("TOP")
+            frame:SetTimeVisible(10)
+            frame:SetFadeDuration(3)
+            frame:SetFading(true)
+            self.screen = frame
+        end
+        self.screen:Show()
+    elseif self.screen then
+        self.screen:Clear()
+        self.screen:Hide()
+    end
+end
+
 local function StopWatching(self)
     self.context:RemoveEvent("UNIT_HEALTH")
     self.context:RemoveEvent("UNIT_FLAGS")
@@ -44,7 +71,8 @@ local function OnHealth(self, _, unit)
             local message = string.format(S.Text("%s died"), name)
             if self.config.chat ~= false then S.Print(message) end
             if self.config.screen then
-                RaidWarningUtil.AddMessage(message, ChatTypeInfo.RAID_WARNING)
+                local color = ChatTypeInfo.RAID_WARNING
+                self.screen:AddMessage(message, color.r, color.g, color.b)
             end
             if self.config.sound then
                 local now = GetTime()
@@ -108,6 +136,7 @@ local function CombatEnded(self, event)
 end
 
 function M:Enable()
+    PrepareScreen(self)
     self.context:Event("PLAYER_REGEN_DISABLED", Sync, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, IN_COMBAT)
     self.context:Event("GROUP_ROSTER_UPDATE", Sync, IN_COMBAT)
@@ -115,11 +144,16 @@ function M:Enable()
 end
 
 function M:Refresh()
+    PrepareScreen(self)
     Sync(self)
 end
 
 function M:Disable()
     StopWatching(self)
+    if self.screen then
+        self.screen:Clear()
+        self.screen:Hide()
+    end
 end
 
 S.Install("groupDeathAlert", M)

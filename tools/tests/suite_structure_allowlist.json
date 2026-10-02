@@ -15,6 +15,12 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_CooldownManager/Time.lua",
+   "kind": "client",
+   "reason": "Forever 1.60.1.70170 prefers C_Spell.GetItemCooldown for the last category item. Older Forever, Mainline and Classic builds may lack this reader; the guarded path retains the cover-spell fallback.",
+   "symbol": "GetCategoryCooldown (= C_Spell.GetItemCooldown)"
+  },
+  {
    "file": "MSUF_Suite_Modules/Surfaces.lua",
    "kind": "addon",
    "reason": "The external MSUF font setter preserves fonts while Classic glyph metrics become ready. Older hosts without this export retain the native fallback; suite_text_effects_contract exercises both paths.",

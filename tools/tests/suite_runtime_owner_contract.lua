@@ -21,7 +21,7 @@ MapkoSkin = setmetatable({}, { __index = function() error("runtime touched the s
 SlashCmdList = {}
 local pixelVisits = 0
 MSUF_PixelLayoutRegion = function(region) pixelVisits = pixelVisits + 1;return region end
-CreateFrame = function()
+CreateFrame = function(kind)
     local frame = { events = {}, registrations = 0, unregistrations = 0 }
     function frame:SetScript(_, callback) self.callback = callback end
     function frame:RegisterEvent(event) self.events[event] = true; self.registrations = self.registrations + 1 end
@@ -31,6 +31,20 @@ CreateFrame = function()
     end
     function frame:UnregisterEvent(event) self.events[event] = nil; self.unregistrations = self.unregistrations + 1 end
     function frame:UnregisterAllEvents() self.events = {} end
+    if kind == "MessageFrame" then
+        frame.messages = {}
+        for _, method in ipairs({ "SetSize", "SetPoint", "SetFrameStrata", "EnableMouse", "SetFontObject",
+            "SetJustifyH", "SetInsertMode", "SetTimeVisible", "SetFadeDuration", "SetFading" }) do
+            frame[method] = function() end
+        end
+        function frame:Show() self.shown = true end
+        function frame:Hide() self.shown = false end
+        function frame:Clear() self.messages = {} end
+        function frame:AddMessage(text, r, g, b)
+            assert(r == 1 and g == .28 and b == 0, "death warning color changed")
+            self.messages[#self.messages + 1] = text
+        end
+    end
     frames[#frames + 1] = frame
     return frame
 end
@@ -428,11 +442,9 @@ UnitIsDeadOrGhost = function(unit) return deadUnits[unit] end
 UnitIsUnit = function(unit, other) return unit == "raid1" and other == "player" end
 UnitName = function(unit) return unit == "raid5" and "Røxì" or "Teammate" end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) deathChat[#deathChat + 1] = text end }
-ChatTypeInfo, SOUNDKIT = { RAID_WARNING = {} }, { RAID_WARNING = 8959 }
-RaidWarningUtil = { AddMessage = function(text, color)
-    assert(color == ChatTypeInfo.RAID_WARNING)
-    deathScreen[#deathScreen + 1] = text
-end }
+RaidWarningFrame, GameFontNormalHuge = {}, {}
+ChatTypeInfo, SOUNDKIT = { RAID_WARNING = { r = 1, g = .28, b = 0 } }, { RAID_WARNING = 8959 }
+RaidWarningUtil = { AddMessage = function() error("death messages mutated the shared Blizzard warning pool") end }
 PlaySound = function(kit, channel)
     assert(kit == SOUNDKIT.RAID_WARNING and channel == "Master")
     deathSounds = deathSounds + 1
@@ -440,6 +452,7 @@ end
 death.active, death.config = true, { chat = true, screen = true, sound = true, includePlayer = false }
 death.context = S.NewContext("groupDeathAlert")
 death:Enable()
+deathScreen = assert(death.screen.messages, "screen deaths did not use an owned native message frame")
 deadUnits.raid5 = true
 death.context.frame:callback("UNIT_FLAGS", "raid5")
 death.context.frame:callback("UNIT_HEALTH", "raid5")

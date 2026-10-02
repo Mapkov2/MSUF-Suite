@@ -302,17 +302,18 @@ end
 local function BuildToolbar(ui, toolbar)
     local hint = T.Font(toolbar, "GameFontDisableSmall", "Pick a bar below. Drag the bar's edge to move it.", T.colors.muted)
     hint:SetPoint("LEFT", toolbar, "LEFT", 150, 0)
-    hint:SetPoint("RIGHT", toolbar, "RIGHT", -200, 0)
     hint:SetJustifyH("LEFT")
+    hint:SetWordWrap(false)
     local simulate = Page.Button(toolbar, "Simulate", 84, 22, function() Page.SetSimulate(not Page.simulating) end)
     simulate:SetPoint("RIGHT", toolbar, "RIGHT", -106, 0)
+    hint:SetPoint("RIGHT", simulate, "LEFT", -10, 0)
     simulate:SetMotionScriptsWhileDisabled(true)
     simulate:HookScript("OnEnter", SimulateEnter)
     simulate:HookScript("OnLeave", ChipLeave)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(simulate, P.Meta(PAGE, ID, "preview.simulate", "action", SECTION), "Simulate", "button")
     end
-    ui.simulate = simulate
+    ui.simulate, ui.previewHint = simulate, hint
 end
 
 local function BuildStrip(ui, body)
@@ -547,6 +548,11 @@ function Page.BuildPreview(ctx, b, ui)
         expandedSectionHeight = 40 + EXPANDED + 8,
         onStateChanged = ui.PaintPreview,
     })
+    if expander then
+        -- Menu2 widens this button for "Compact Preview"; anchors follow it.
+        ui.simulate:ClearAllPoints()
+        ui.simulate:SetPoint("RIGHT", expander.button, "LEFT", -6, 0)
+    end
     if record then
         record.onActivate = function()
             -- Menu2 may show a cached layout without building it again: the

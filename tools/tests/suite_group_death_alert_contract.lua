@@ -2,6 +2,17 @@ local root = assert(arg[1], "repository root required")
 local module, lines = nil, {}
 local combat, grouped, raid = false, false, false
 local members = {}
+local nativeWrites, created = 0, 0
+local screen
+RaidWarningFrame = { messageCounter = 0 }
+RaidWarningUtil = { AddMessage = function()
+    -- Blizzard's shared pool is also read by DebuffFrame's deadly-debuff path.
+    nativeWrites = nativeWrites + 1
+    RaidWarningFrame.messageCounter = RaidWarningFrame.messageCounter + 1
+end }
+GameFontNormalHuge = {}
+ChatTypeInfo = { RAID_WARNING = { r = 1, g = .28, b = 0 } }
+UIParent = {}
 IsInGroup = function() return grouped end
 IsInRaid = function() return raid end
 UnitExists = function(unit) return members[unit] ~= nil end
@@ -18,6 +29,27 @@ local suite = {
     PublicText = function(value) return type(value) == "string" and value ~= "secret" and value or nil end,
     Text = function(value) return value end,
     Print = function(value) lines[#lines + 1] = value end,
+    CreateFrame = function(kind, name, parent, template)
+        created = created + 1
+        assert(kind == "MessageFrame" and parent == UIParent and not template,
+            "death alerts need an owned native message frame without Blizzard Lua scripts")
+        screen = { messages = {} }
+        function screen:SetSize(width, height) self.width, self.height = width, height end
+        function screen:SetPoint(...) self.point = { ... } end
+        function screen:SetFrameStrata(value) self.strata = value end
+        function screen:EnableMouse(value) self.mouse = value end
+        function screen:SetFontObject(value) self.font = value end
+        function screen:SetJustifyH(value) self.justify = value end
+        function screen:SetInsertMode(value) self.insert = value end
+        function screen:SetTimeVisible(value) self.visibleFor = value end
+        function screen:SetFadeDuration(value) self.fadeFor = value end
+        function screen:SetFading(value) self.fading = value end
+        function screen:Show() self.shown = true end
+        function screen:Hide() self.shown = false end
+        function screen:Clear() self.messages = {} end
+        function screen:AddMessage(...) self.messages[#self.messages + 1] = { ... } end
+        return screen
+    end,
 }
 local ns = { IsCombatLocked = function() return combat end }
 ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
@@ -25,7 +57,7 @@ ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
-module.active, module.context, module.config = true, context, { includePlayer = false }
+module.active, module.context, module.config = true, context, { includePlayer = false, screen = true }
 module:Enable()
 assert(not context.events.UNIT_HEALTH and context.events.GROUP_ROSTER_UPDATE,
     "group health must not be observed while idle")
@@ -39,6 +71,17 @@ members.party1 = true
 context.events.UNIT_HEALTH.callback(module, "UNIT_HEALTH", "party1")
 context.events.UNIT_FLAGS.callback(module, "UNIT_FLAGS", "party1")
 assert(#lines == 1 and lines[1] == "Alice died", "one death was not reported exactly once")
+assert(nativeWrites == 0 and RaidWarningFrame.messageCounter == 0,
+    "death alerts mutated Blizzard's shared raid-warning state used by deadly debuffs")
+assert(created == 1 and screen.shown and #screen.messages == 1,
+    "one death was not displayed exactly once on the owned screen frame")
+local message = screen.messages[1]
+assert(message[1] == "Alice died" and message[2] == 1 and message[3] == .28 and message[4] == 0,
+    "the screen death text or warning color changed")
+assert(screen.visibleFor == 10 and screen.fadeFor == 3 and screen.fading and screen.mouse == false,
+    "screen messages must fade natively and leave input alone")
+assert(screen.point[2] == RaidWarningFrame and screen.point[3] == "TOP",
+    "owned death messages must stay above the native raid-warning/debuff stack")
 combat = false
 context.events.PLAYER_REGEN_ENABLED.callback(module, "PLAYER_REGEN_ENABLED")
 assert(not context.events.UNIT_HEALTH and not context.events.UNIT_FLAGS,
@@ -65,5 +108,14 @@ members.player = false
 context.events.PLAYER_UNGHOST.callback(module, "PLAYER_UNGHOST")
 assert(not context.events.UNIT_HEALTH and not context.events.PLAYER_ALIVE,
     "the watch outlived the player's resurrection")
+module.config.screen = false
+module:Refresh()
+assert(not screen.shown and #screen.messages == 0, "turning screen alerts off left stale messages")
+module.config.screen = true
+module:Refresh()
+assert(created == 1 and screen.shown, "screen alerts rebuilt their frame on a settings refresh")
+screen:AddMessage("pending", 1, 1, 1)
 module:Disable()
+assert(not screen.shown and #screen.messages == 0, "disabling death alerts left screen messages alive")
+assert(nativeWrites == 0, "a later death wrote the native raid-warning pool")
 print("Suite group death alert lifecycle passed")

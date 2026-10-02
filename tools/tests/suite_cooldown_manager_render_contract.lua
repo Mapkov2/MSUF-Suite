@@ -1086,8 +1086,12 @@ do
     end
     equip.start,equip.length,equip.enable=now,60,1
     T.Refresh(e13,"item")
-    Budget("time: an unchanged item cooldown refresh",Cost(function() T.Refresh(e13,"item");T.Refresh(b4,"item") end),371)
-    Budget("time: a new item cooldown",Cost(function() equip.start=equip.start+1;T.Refresh(e13,"item") end),427)
+    -- 2026-10-02: 371 -> 387. Category item cooldowns (Forever 70170) share the
+    -- item timing with ItemState through ItemTiming and carry the modRate:
+    -- one call and the rate compare per unchanged refresh.
+    Budget("time: an unchanged item cooldown refresh",Cost(function() T.Refresh(e13,"item");T.Refresh(b4,"item") end),387)
+    -- 2026-10-02: 427 -> 451, the same ItemTiming call and modRate as above.
+    Budget("time: a new item cooldown",Cost(function() equip.start=equip.start+1;T.Refresh(e13,"item") end),451)
     equip.start,equip.length=0,0
     T.Refresh(e13,"item")
     b4.catSpell=nil

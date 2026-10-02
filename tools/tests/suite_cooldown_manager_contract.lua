@@ -516,9 +516,9 @@ function DurationMT:EvaluateRemainingDuration(curve)
     if self.secret then return SECRET_NUM end
     return (self.start+self.length>now) and curve.points[2][2] or curve.points[1][2]
 end
-function DurationMT:SetTimeFromStart(start,length)
-    Plain(start,"SetTimeFromStart");Plain(length,"SetTimeFromStart")
-    self.start,self.length,self.secret=start,length,false
+function DurationMT:SetTimeFromStart(start,length,rate)
+    Plain(start,"SetTimeFromStart");Plain(length,"SetTimeFromStart");Plain(rate,"SetTimeFromStart")
+    self.start,self.length,self.secret=start,length/(rate or 1),false
 end
 -- Duration text bindings (aura buttons) take a formatter and plain options.
 local BindingMT={}
@@ -558,7 +558,11 @@ local function CooldownInfo(spell)
     return {isActive=active,isOnGCD=state and state.gcd or false,isEnabled=true,
         startTime=combat and SECRET_NUM or (state and state.start or 0),duration=combat and SECRET_NUM or (state and state.length or 0)}
 end
+-- Category item cooldowns by item ID (a field: the main chunk is at Lua's
+-- 200-local limit).
 C_Spell={
+    categoryCooldowns={},
+    GetItemCooldown=function(item) Plain(item,"GetItemCooldown");return C_Spell.categoryCooldowns[item] end,
     GetSpellName=function(spell) Plain(spell,"GetSpellName");return names[spell] end,
     GetSpellTexture=function(spell) Plain(spell,"GetSpellTexture");if names[spell] then return 1000+spell,1000+spell,nil end end,
     GetBaseSpell=function(spell) return spell end,
@@ -977,7 +981,8 @@ local e11,e12,e14,e21,e22=C.entries.b11,C.entries.b12,C.entries.b14,C.entries.b2
 assert(e11.icon and e12.icon and e14.icon and e21.icon and e22.icon)
 assert(e11.icon:GetTargetInfo().spellID==e11.spell and e11.icon.attributes["ping-receiver"]==true,
     "live spell icons expose their spell ping target even with tooltips off")
-assert(C.entries.b52.catSpell==431932,"category entries are seeded from the last category source")
+assert(C.entries.b52.catSpell==431932 and C.entries.b52.catItem==212265,
+    "category entries must seed the last item and spell")
 -- Every Blizzard aura entry gets one unit: the target when an aura ID is
 -- harmful (Ignite, a DoT), else the player. Blizzard's selfAura flag plays
 -- no part: Ignite is no self aura and was tracked on both units before.
@@ -1240,6 +1245,53 @@ end
 cdSpells[431933]=nil
 Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
 assert(C.entries.b52.catSpell==431933 and cdSpells[431933]==1,"category source tracking")
+-- 70170: a cover spell can be ready while its actual item is cooling.
+do
+    local categoryCooldowns = C_Spell.categoryCooldowns
+    local entry = C.entries.b52
+    local icon = assert(entry.icon)
+    local savedSpell = cdState[431933]
+    cdState[431933] = nil
+    categoryCooldowns[212266] = {startTime=now,duration=120,isEnabled=true,isActive=true,isOnGCD=false,modRate=1}
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(entry.catItem==212266 and entry.cooling and icon.cd.running and icon.itemDur.length==120,
+        "a ready cover spell hid the active category item cooldown")
+    local duration, writes = icon.itemDur, icon.cd.calls.SetCooldownFromDurationObject
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(icon.itemDur==duration and icon.cd.calls.SetCooldownFromDurationObject==writes,
+        "unchanged category timing recreated or repainted its duration")
+    categoryCooldowns[212267] = categoryCooldowns[212266]
+    Fire("SPELL_UPDATE_COOLDOWN",nil,nil,4,nil,212267)
+    assert(entry.catItem==212267 and entry.catSpell==nil and entry.cooling,
+        "an item-only category event lost its actual cooldown source")
+    categoryCooldowns[212267] = nil
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    categoryCooldowns[212266].modRate = 2
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(icon.itemDur==duration and duration.length==60, "category cooldown ignored its modRate")
+    categoryCooldowns[212266].isEnabled = false
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(entry.cooling and not icon.cd.running and icon.itemLock, "held category item looked ready")
+    categoryCooldowns[212266] = {startTime=SECRET_NUM,duration=SECRET_NUM,modRate=SECRET_NUM,
+        isEnabled=true,isActive=true,isOnGCD=false}
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(entry.cooling and not icon.cd.running, "secret item timing reached a setter or looked ready")
+    categoryCooldowns[212266] = {startTime=now,duration=120,modRate=2,
+        isEnabled=true,isActive=true,isOnGCD=false}
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(entry.cooling and icon.cd.running and icon.itemDur==duration,
+        "public item timing did not rearm after a secret refresh")
+    categoryCooldowns[212266] = {startTime=now-121,duration=120,modRate=1,
+        isEnabled=true,isActive=false,isOnGCD=false}
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(not entry.cooling and not icon.cd.running, "expired category item stayed cooling")
+    categoryCooldowns[212266] = nil
+    cdState[431933] = {start=now,length=9}
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+    assert(entry.cooling and icon.cd.running, "missing category item lost the spell fallback")
+    cdState[431933] = savedSpell
+    Fire("SPELL_UPDATE_COOLDOWN",431933,nil,4,nil,212266)
+end
 -- Secret payload values are never used as keys.
 Fire("SPELL_UPDATE_COOLDOWN",SECRET_NUM,SECRET_NUM,SECRET_NUM,SECRET_NUM,SECRET_NUM)
 Fire("SPELL_UPDATE_COOLDOWN",101,SECRET_NUM,SECRET_NUM,SECRET_NUM,SECRET_NUM)
@@ -2497,7 +2549,7 @@ assert(Calls("keysRebuild")+Calls("keysRefresh")+Calls("keysRequest")==0 and nex
     "an unchanged resolve touched keybinds or parked aura work")
 -- One bar's content changes: that bar alone syncs and lays out; its aura
 -- containers wait for combat to end. Category sources are not read in combat.
-C.entries.b52.catSpell=nil
+C.entries.b52.catSpell,C.entries.b52.catItem=nil,nil
 seeds=0
 sets[2]={31,32,33}
 Info(33,303,2,{selfAura=true,hasAura=true})
@@ -2508,7 +2560,8 @@ assert(C.entries.b33 and C.entries.b33.slot=="buf","catalog changes resolve in c
 assert(C.Auras.pending.buf and Size(C.Auras.pending)==1,"only the changed bar's aura structure waits for combat to end")
 assert(Calls("iconSync")==1 and Calls("auraSync")==1 and Calls("index")==1 and Calls("layoutAll")==0 and Calls("vis")==1,
     "the changed bar alone syncs, lays out and repaints")
-assert(seeds==0 and C.entries.b52.catSpell==nil,"no category source is read in combat")
+assert(seeds==0 and C.entries.b52.catSpell==nil and C.entries.b52.catItem==nil,
+    "no category source is read in combat")
 -- An override in combat refreshes its entry and routes the new ID at once;
 -- the routing index is rebuilt once combat ends.
 ResetCalls()
@@ -2523,7 +2576,8 @@ Fire("PLAYER_REGEN_ENABLED")
 Run()
 assert(not C.Auras.pending.buf,"combat end flushes aura structure")
 assert(Calls("index")==1,"combat end rebuilds the routing index once")
-assert(seeds>=1 and C.entries.b52.catSpell==431932,"category entries are seeded after combat")
+assert(seeds>=1 and C.entries.b52.catSpell==431932 and C.entries.b52.catItem==212265,
+    "category item and spell are seeded after combat")
 Fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",101,nil)
 Run()
 assert(e11.spell==101 and e11.override==nil)

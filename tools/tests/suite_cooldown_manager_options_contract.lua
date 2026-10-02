@@ -372,8 +372,21 @@ W.FixedPreviewSection = function(ctx)
 end
 W.AttachFixedPreviewExpander = function(section, toolbar, box, opts)
     local expander = { box = box, opts = opts }
-    function expander:Open() self.expanded = true; box:ApplyCompactPreviewPresentation(false); return true end
-    function expander:Close() self.expanded = false; box:ApplyCompactPreviewPresentation(true); return true end
+    expander.button = Widget("Button", toolbar)
+    expander.button:SetSize(88, 20)
+    expander.button:SetPoint("RIGHT", toolbar, "RIGHT", -12, 0)
+    function expander:Open()
+        self.expanded = true
+        self.button:SetWidth(130)
+        box:ApplyCompactPreviewPresentation(false)
+        return true
+    end
+    function expander:Close()
+        self.expanded = false
+        self.button:SetWidth(88)
+        box:ApplyCompactPreviewPresentation(true)
+        return true
+    end
     section.expander = expander
     return expander
 end
@@ -2274,6 +2287,41 @@ M.RequestRefresh()
 -- Simulate is offered only while the module runs; the toggle shows what the
 -- runtime actually plays.
 local simulate = registered["menu2." .. PAGE .. ".cooldownManager.preview.simulate"]
+-- The native expander grows from 88px to 130px for "Compact Preview".
+-- Resolve actual anchors, so a fixed Simulate offset cannot hide the overlap.
+do
+    local toolbar = ctx.fixedPreview.toolbar
+    local expander = ctx.fixedPreview.section.expander
+    local function Span(frame, width)
+        if frame == toolbar then return 0, width end
+        local left, right
+        for _, point in ipairs(frame.points) do
+            local a, b = Span(point[2], width)
+            local relative = point[3] == "LEFT" and a or b
+            if point[1] == "LEFT" then left = relative + point[4] end
+            if point[1] == "RIGHT" then right = relative + point[4] end
+        end
+        return left or right - frame:GetWidth(), right or left + frame:GetWidth()
+    end
+    local expanded = expander.expanded
+    for _, width in ipairs({400, 900}) do
+        for _, mode in ipairs({"Open", "Close"}) do
+            expander[mode](expander)
+            local simulateLeft, simulateRight = Span(simulate, width)
+            local expandLeft, expandRight = Span(expander.button, width)
+            assert(simulateLeft >= 0 and expandRight <= width and simulateRight + 6 <= expandLeft,
+                "preview toolbar buttons overlap in " .. mode .. " at width " .. width)
+            local _, hintRight = Span(ui.previewHint, width)
+            assert(hintRight + 10 <= simulateLeft, "preview hint overlaps the toolbar buttons")
+        end
+    end
+    -- Relative anchors also follow a wider label/font without a new layout.
+    expander.button:SetWidth(180)
+    local _, simulateRight = Span(simulate, 900)
+    local expandLeft = Span(expander.button, 900)
+    assert(simulateRight + 6 <= expandLeft, "a wider preview button collided with Simulate")
+    if expanded then expander:Open() else expander:Close() end
+end
 S.states[ID].active = false
 M.RequestRefresh()
 assert(not simulate.enabled, "Simulate must be off while the module does not run")

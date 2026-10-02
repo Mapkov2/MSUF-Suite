@@ -26,6 +26,7 @@ local GetCharges = C_Spell.GetSpellCharges
 local GetChargeDuration = C_Spell.GetSpellChargeDuration
 local GetDisplayCount = C_Spell.GetSpellDisplayCount
 local GetItemCooldown = C_Item.GetItemCooldown
+local GetCategoryCooldown = C_Spell.GetItemCooldown
 local GetItemCount = C_Item.GetItemCount
 local GetInventoryItemCooldown = GetInventoryItemCooldown
 local CreateDuration = C_DurationUtil.CreateDuration
@@ -386,9 +387,9 @@ end
 -- whether the bags hold none of the item.
 -- A cooldown the icon has not drawn yet: the swipe runs from the icon's
 -- reused duration object. Returns whether the item is cooling.
-local function NewItemCooldown(icon, start, length, gcd)
-    local over = start + length <= GetTime()
-    icon.itemStart, icon.itemLen, icon.itemGCD, icon.itemOver = start, length, gcd, over
+local function NewItemCooldown(icon, start, length, gcd, rate)
+    local over = start + length / rate <= GetTime()
+    icon.itemStart, icon.itemLen, icon.itemGCD, icon.itemOver, icon.itemRate = start, length, gcd, over, rate
     local cooling = not over and length > GCD_MAX
     if not over and (cooling or gcd) then
         local duration = icon.itemDur
@@ -397,7 +398,7 @@ local function NewItemCooldown(icon, start, length, gcd)
             icon.itemDur = duration
         end
         if duration then
-            duration:SetTimeFromStart(start, length)
+            duration:SetTimeFromStart(start, length, rate)
             icon.cd:SetCooldownFromDurationObject(duration, true)
             icon.cdSet, icon.cdReal = true, true
             Feedback(icon, cooling and duration or nil)
@@ -406,6 +407,44 @@ local function NewItemCooldown(icon, start, length, gcd)
     end
     ClearMain(icon)
     Feedback(icon, nil)
+    return cooling
+end
+
+
+local function ItemTiming(entry, icon, reason, start, length, enable, item, rate)
+    local cooling = false
+    rate = rate or 1
+    local plain = Public(start) and Public(length) and Public(enable) and type(start) == "number" and type(length) == "number"
+    if plain and length > 0 and (enable == false or enable == 0) then
+        if not icon.itemLock then
+            -- The item was used: its own count is read again.
+            icon.itemLock, icon.itemStart = true, nil
+            if item then counts[item] = nil end
+        end
+        ClearMain(icon)
+        Held(icon)
+        cooling = true
+    elseif plain and start > 0 and length > 0 then
+        icon.itemLock = nil
+        local gcd = entry.ov and entry.ov.showGCD
+        if gcd == nil then gcd = C.state.showGCD == true end
+        if icon.itemStart == start and icon.itemLen == length and icon.itemGCD == gcd and icon.itemRate == rate then
+            if not icon.itemOver and (reason == "expired" or start + length / rate <= GetTime()) then
+                icon.itemOver = true
+                ClearMain(icon)
+                Feedback(icon, nil)
+            end
+            cooling = not icon.itemOver and length > GCD_MAX
+        else
+            -- A new cooldown means the item was used: its own count is read again.
+            if item then counts[item] = nil end
+            cooling = NewItemCooldown(icon, start, length, gcd, rate)
+        end
+    else
+        icon.itemStart, icon.itemLock = nil, nil
+        ClearMain(icon)
+        Feedback(icon, nil)
+    end
     return cooling
 end
 
@@ -418,38 +457,7 @@ local function ItemState(entry, icon, reason)
     else
         start, length, enable = GetItemCooldown(item)
     end
-    local cooling = false
-    local plain = Public(start) and Public(length) and Public(enable) and type(start) == "number" and type(length) == "number"
-    if plain and length > 0 and (enable == false or enable == 0) then
-        if not icon.itemLock then
-            -- The item was used: its own count is read again.
-            icon.itemLock, icon.itemStart = true, nil
-            if not slot then counts[item] = nil end
-        end
-        ClearMain(icon)
-        Held(icon)
-        cooling = true
-    elseif plain and start > 0 and length > 0 then
-        icon.itemLock = nil
-        local gcd = entry.ov and entry.ov.showGCD
-        if gcd == nil then gcd = C.state.showGCD == true end
-        if icon.itemStart == start and icon.itemLen == length and icon.itemGCD == gcd then
-            if not icon.itemOver and (reason == "expired" or start + length <= GetTime()) then
-                icon.itemOver = true
-                ClearMain(icon)
-                Feedback(icon, nil)
-            end
-            cooling = not icon.itemOver and length > GCD_MAX
-        else
-            -- A new cooldown means the item was used: its own count is read again.
-            if not slot then counts[item] = nil end
-            cooling = NewItemCooldown(icon, start, length, gcd)
-        end
-    else
-        icon.itemStart, icon.itemLock = nil, nil
-        ClearMain(icon)
-        Feedback(icon, nil)
-    end
+    local cooling = ItemTiming(entry, icon, reason, start, length, enable, not slot and item or nil)
     ClearCharge(icon)
     -- An empty healthstone (hideEmpty) shows no "0", not even in a preview.
     local count = not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
@@ -460,6 +468,33 @@ local function ItemState(entry, icon, reason)
         CountOff(icon)
     end
     return cooling, count == 0
+end
+
+-- Forever 70170 CooldownViewerItemData.lua prefers the last category item:
+-- its cover spell may have no cooldown. Older builds keep the spell fallback.
+local function CategoryState(entry, icon, reason, spell)
+    local info = entry.catItem and GetCategoryCooldown and GetCategoryCooldown(entry.catItem)
+    if not info then
+        icon.itemStart, icon.itemLock = nil, nil
+        if spell then return SpellState(entry, icon, spell, reason) end
+        ClearMain(icon)
+        ClearCharge(icon)
+        Feedback(icon, nil)
+        return false
+    end
+    local start, length, enable, rate = info.startTime, info.duration, info.isEnabled, info.modRate
+    ClearCharge(icon)
+    if Public(start) and Public(length) and Public(enable) and Public(rate)
+        and (rate == nil or type(rate) == "number" and rate > 0) then
+        return ItemTiming(entry, icon, reason, start, length, enable, entry.catItem, rate)
+    end
+    -- Duration setters reject tainted secret numbers. Keep the public cooling
+    -- state without timing; isActive/isEnabled/isOnGCD are NeverSecret.
+    icon.itemStart, icon.itemLock = nil, nil
+    ClearMain(icon)
+    local cooling = info.isEnabled == false or info.isActive == true and info.isOnGCD ~= true
+    if cooling then Held(icon) else Feedback(icon, nil) end
+    return cooling
 end
 
 ------------------------------------------------------------------ edges
@@ -509,8 +544,8 @@ function Time.Refresh(entry, reason)
     if entry.equipSlot or entry.src == "i" or entry.src == "e" then
         cooling, empty = ItemState(entry, icon, reason)
     else
-        -- Category entries (potions, healthstones) follow the spell that last
-        -- started the category; the controller keeps entry.catSpell current.
+        -- Category entries (potions, healthstones) follow the item that last
+        -- started the category, with its cover spell as the legacy fallback.
         -- Bag events only move their count: the category's cooldown arrives
         -- with SPELL_UPDATE_COOLDOWN.
         local spell, category = entry.spell, entry.spellCategory
@@ -518,6 +553,8 @@ function Time.Refresh(entry, reason)
         if category then spell = entry.catSpell end
         if category and reason == "item" then
             cooling = entry.cooling == true
+        elseif category then
+            cooling = CategoryState(entry, icon, reason, spell)
         elseif spell then
             cooling = SpellState(entry, icon, spell, reason)
         else

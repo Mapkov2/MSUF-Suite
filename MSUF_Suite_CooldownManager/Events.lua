@@ -95,7 +95,7 @@ end
 
 ------------------------------------------------------------------ hot event handlers
 -- Prebuilt callbacks; per-event values travel through these upvalues.
-local stamp, curSpell, curRange = 0, nil, nil
+local stamp, curSpell, curItem, curRange = 0, nil, nil, nil
 local function RefreshCooldown(entry)
     if entry.cdStamp == stamp or not entry.icon then return end
     entry.cdStamp = stamp
@@ -104,7 +104,7 @@ end
 local function EachCooldown(fn)
     for i = 1, #cooldownEntries do fn(cooldownEntries[i]) end
 end
-local function SetCategorySpell(entry) entry.catSpell = curSpell end
+local function SetCategorySpell(entry) entry.catSpell, entry.catItem = curSpell, curItem end
 
 -- SPELL_UPDATE_COOLDOWN: nil or unreadable spell = all; category payloads
 -- (potions, healthstones) name the spell that started the category; a GCD
@@ -114,12 +114,15 @@ local function OnCooldown(_, _, spellID, baseSpellID, category, recovery, itemID
     stamp = stamp + 1
     if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == GCD_SPELL
         or not issecret(recovery) and recovery == GCD) then Effects.RecommendationGCD() end
-    if issecret(spellID) or spellID == nil then return EachCooldown(RefreshCooldown) end
     local item = not issecret(itemID) and itemID or nil
-    if item and not issecret(category) and category and category ~= 0 then
-        curSpell = not issecret(baseSpellID) and baseSpellID or spellID
-        if ForCategory(category, SetCategorySpell) > 0 then ForCategory(category, RefreshCooldown) end
+    local categoryItem = item and not issecret(category) and category and category ~= 0
+    if categoryItem then
+        curSpell = not issecret(baseSpellID) and baseSpellID or (not issecret(spellID) and spellID or nil)
+        curItem = item
+        ForCategory(category, SetCategorySpell)
     end
+    if issecret(spellID) or spellID == nil then return EachCooldown(RefreshCooldown) end
+    if categoryItem then ForCategory(category, RefreshCooldown) end
     if not issecret(recovery) and recovery == GCD then
         local list = Index.gcd
         for i = 1, #list do RefreshCooldown(list[i]) end
@@ -401,17 +404,18 @@ end
 Events.OnAssistPolicyChanged = UpdateAssist
 
 ------------------------------------------------------------------ category seeds
--- Category entries start from the last spell that started their category.
+-- Category entries retain the last item and spell that started their category.
 -- The source is read out of combat only; seeded icons refresh.
 local function SeedCategories()
     local get = C_Spell.GetLastCategoryCooldownSource
     for i = 1, #itemEntries do
         local entry = itemEntries[i]
         local category = entry.spellCategory
-        if category and category ~= 0 and not entry.catSpell then
+        if category and category ~= 0 and not entry.catItem then
             local spell, item = get(category)
-            if Public(spell) and type(spell) == "number" and spell > 0 and Public(item) and item then
-                entry.catSpell = spell
+            if Public(item) and type(item) == "number" and item > 0 then
+                entry.catItem = item
+                entry.catSpell = Public(spell) and type(spell) == "number" and spell > 0 and spell or nil
                 if entry.icon then Mark(entry, "full") end
             end
         end

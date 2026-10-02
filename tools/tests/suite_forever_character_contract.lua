@@ -125,6 +125,14 @@ PaperDollFrame_UpdateStats = function() end
 local headSlot = Frame()
 headSlot.Icon, headSlot.IconBorder = Texture(), Texture()
 CharacterHeadSlot = headSlot
+PAPERDOLL_SIDEBARS = { "Stats", "Equipment", "Titles", "Pet" }
+PaperDollSidebarTabs = Frame()
+for index = 1, #PAPERDOLL_SIDEBARS do
+    local tab = Frame()
+    tab.TabBg, tab.Hider, tab.Highlight = Texture(), Texture(), Texture()
+    _G["PaperDollSidebarTab" .. index] = tab
+end
+PaperDollFrame_UpdateSidebarTabs = function() end
 local iconSpecs = {}
 local combatLocked = false
 local ns = {
@@ -146,6 +154,10 @@ local ns = {
         SetActive = function(target, active) target.active = active; return true end,
         SetVisible = function(target, shown) target.surfaceVisible = shown; return true end,
     },
+    ControlSkin = { ApplyButton = function(tab, _, spec)
+        tab.surface = spec
+        return true
+    end },
     CharacterStats = { Apply = function() end, Disable = function() end },
     GearAnnotations = { IsWide = function() return false end },
     CharacterDetails = { Apply = function() end, Disable = function() end, views = {} },
@@ -162,6 +174,19 @@ for _, file in ipairs({ "AdapterKit", "SharedChrome", "PaperDollChrome", "Charac
     assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
 end
 assert(ns.CharacterPanel.Apply("blizzardWindows"))
+assert(PaperDollSidebarTab4.surface, "70170 pet sidebar tab was not skinned")
+assert(hooks.PaperDollFrame_UpdateSidebarTabs, "native sidebar updates were not observed")
+PaperDollSidebarTab4.surface = nil
+hooks.PaperDollFrame_UpdateSidebarTabs()
+assert(PaperDollSidebarTab4.surface, "native sidebar update lost the fourth tab")
+-- A three-tab native layout leaves a stray fourth frame alone.
+PAPERDOLL_SIDEBARS[4] = nil
+PaperDollSidebarTab4.surface = nil
+hooks.PaperDollFrame_UpdateSidebarTabs()
+assert(not PaperDollSidebarTab4.surface and PaperDollSidebarTab3.surface,
+    "three-tab native layouts did not retain their own sidebar count")
+PAPERDOLL_SIDEBARS[4] = "Pet"
+hooks.PaperDollFrame_UpdateSidebarTabs()
 local function Parts(index) return ns.CharacterPanel.tabParts[tabs[index]] end
 assert(itemLevelValue.text == "612.25 / 615.50", "the skin did not format the item level")
 assert(left.surface.role == "panel" and right.surface.role == "panel"

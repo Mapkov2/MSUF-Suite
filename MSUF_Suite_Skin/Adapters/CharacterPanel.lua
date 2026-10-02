@@ -529,7 +529,8 @@ local function SkinSidebar(state)
     Fade(state, Field(container, "DecorLeft"))
     Fade(state, Field(container, "DecorRight"))
     local applied = false
-    for index = 1, 3 do
+    local sidebars = _G.PAPERDOLL_SIDEBARS
+    for index = 1, sidebars and #sidebars or 3 do
         local tab = _G["PaperDollSidebarTab" .. index]
         if tab then
             applied = SkinSidebarTab(state, tab) or applied
