@@ -13,8 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
-RATCHET = ROOT / "tools" / "quality_ratchet.py"
-LUA =os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
+LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua"}
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
@@ -44,11 +43,17 @@ def commands(test):
     return [[LUA, str(test), str(ROOT)] + extra for extra in EXTRA.get(test.name, [[]])]
 
 
+def ratchet_path():
+    # Resolved from ROOT at call time, so a contract that points ROOT at a
+    # scratch tree sees no ratchet there.
+    return ROOT / "tools" / "quality_ratchet.py"
+
+
 def run_ratchet(failed):
     """The quality ratchet is one more check; its one summary line is its output."""
     env = dict(os.environ)
     env.setdefault("MSUF_LUA51", LUA)
-    run = subprocess.run([sys.executable, str(RATCHET), "--check"], cwd=ROOT, capture_output=True, text=True,
+    run = subprocess.run([sys.executable, str(ratchet_path()), "--check"], cwd=ROOT, capture_output=True, text=True,
                          errors="replace", env=env)
     lines = (run.stdout + run.stderr).strip().splitlines()
     if run.returncode == 0:
@@ -63,7 +68,7 @@ def main():
     wanted = sys.argv[1] if len(sys.argv) > 1 else ""
     tests = sorted(p for p in (ROOT / "tools" / "tests").glob("suite_*")
                    if p.suffix in (".lua", ".py") and p.name not in HELPERS and wanted in p.name)
-    ratchet = RATCHET.is_file() and wanted in "quality_ratchet"
+    ratchet = ratchet_path().is_file() and wanted in "quality_ratchet"
     failed = []
     total = sum(len(commands(test)) for test in tests)
     for test in tests:
