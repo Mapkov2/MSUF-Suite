@@ -481,7 +481,9 @@ local function PaintCriterion(owner, info, bossCount, elapsed)
         if Finite(split) then
             local delta = split - reference
             display = display .. "  " .. (delta >= 0 and "+" or "-") .. Clock(math.abs(delta))
-        elseif owner.config.bossTargets == true then display = Clock(reference) end
+        elseif owner.config.bossTargets == true then
+            display = Clock(reference)
+        end
     end
     local compare = (owner.config.bossPace or PACE_OFF) ~= PACE_OFF
     row.time:SetWidth(compare and 116 or 55)

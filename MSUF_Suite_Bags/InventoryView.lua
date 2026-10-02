@@ -48,8 +48,11 @@ end
 
 local function SelectCategory(button, mouseButton)
     if mouseButton == "RightButton" then
-        if button.categoryKey == "pinned" then P.InventoryEditor.ShowPinned()
-        else P.InventoryEditor.Show() end
+        if button.categoryKey == "pinned" then
+            P.InventoryEditor.ShowPinned()
+        else
+            P.InventoryEditor.Show()
+        end
         return
     end
     InventoryView.selected, InventoryView.scroll = button.categoryKey, 0

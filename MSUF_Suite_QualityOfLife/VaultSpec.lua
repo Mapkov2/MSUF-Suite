@@ -27,7 +27,10 @@ function M:Draw()
         return
     end
     local value = LootSpecText()
-    if not value then self.label:Hide() return end
+    if not value then
+        self.label:Hide()
+        return
+    end
     self.label:SetText(value)
     self.label:Show()
 end

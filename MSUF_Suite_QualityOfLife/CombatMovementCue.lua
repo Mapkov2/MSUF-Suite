@@ -102,7 +102,10 @@ local function StartedMoving(self)
     self.lastChecked = now
     for i = 1, #self.ids do
         local name, icon = Ready(self.ids[i])
-        if name then Show(self, name, icon, now) return end
+        if name then
+            Show(self, name, icon, now)
+            return
+        end
     end
 end
 

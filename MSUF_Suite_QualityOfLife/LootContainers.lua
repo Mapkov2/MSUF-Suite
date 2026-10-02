@@ -148,8 +148,11 @@ Drain = function(self)
             end
         end
     end
-    if #self.pending == 0 then self.context:RemoveEvent("LOOT_CLOSED")
-    else self.context:Event("LOOT_CLOSED", LootClosed) end
+    if #self.pending == 0 then
+        self.context:RemoveEvent("LOOT_CLOSED")
+    else
+        self.context:Event("LOOT_CLOSED", LootClosed)
+    end
 end
 
 local function ScanBag(self, bag, baseline)

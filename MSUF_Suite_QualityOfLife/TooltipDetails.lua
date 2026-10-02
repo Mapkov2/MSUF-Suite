@@ -181,7 +181,10 @@ end
 -- One request per continuous hover, never inside the quiet periods, and only
 -- while no native or foreign inspect is active. Returns a cached level.
 HoverLevel = function(unit)
-    if NS.IsCombatLocked() then M.pendingInspect = nil return end
+    if NS.IsCombatLocked() then
+        M.pendingInspect = nil
+        return
+    end
     local guid, now = Identity(unit), Now()
     if not guid or not now then return end
     if M.inspectHoverGUID ~= guid then

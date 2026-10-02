@@ -92,11 +92,17 @@ function SplitInventory.Available(source)
 end
 
 function SplitInventory.Split(source, amount)
-    if source.kind == "guild" then SplitGuildBankItem(source.bag, source.slot, amount)
-    else C_Container.SplitContainerItem(source.bag, source.slot, amount) end
+    if source.kind == "guild" then
+        SplitGuildBankItem(source.bag, source.slot, amount)
+    else
+        C_Container.SplitContainerItem(source.bag, source.slot, amount)
+    end
 end
 
 function SplitInventory.Place(destination)
-    if destination.kind == "guild" then PickupGuildBankItem(destination.bag, destination.slot)
-    else C_Container.PickupContainerItem(destination.bag, destination.slot) end
+    if destination.kind == "guild" then
+        PickupGuildBankItem(destination.bag, destination.slot)
+    else
+        C_Container.PickupContainerItem(destination.bag, destination.slot)
+    end
 end

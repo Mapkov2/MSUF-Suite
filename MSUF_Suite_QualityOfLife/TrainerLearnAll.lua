@@ -258,7 +258,10 @@ end
 
 function M:UpdateButton()
     if not self.button then return end
-    if not TrainerOpen(self) then self.button:Hide() return end
+    if not TrainerOpen(self) then
+        self.button:Hide()
+        return
+    end
     self.button:Show()
     if self.queue then
         self.button:SetText(S.Text("Stop training"))
@@ -282,7 +285,10 @@ local function OnTrainer(self, event)
         return
     end
     Attach(self)
-    if self.purchasing then self.deferred = true return end
+    if self.purchasing then
+        self.deferred = true
+        return
+    end
     if self.queue then Advance(self) else self:UpdateButton() end
 end
 

@@ -137,8 +137,11 @@ function AB.DecorationHost(rec)
     return rec.edgeHost
 end
 local function Art(texture, circle)
-    if circle then texture:SetTexture(RING)
-    else texture:SetAtlas("UI-HUD-ActionBar-IconFrame") end
+    if circle then
+        texture:SetTexture(RING)
+    else
+        texture:SetAtlas("UI-HUD-ActionBar-IconFrame")
+    end
 end
 -- Round buttons get round interaction art: the ring of their frame, in the
 -- interaction color, for the mouseover border (HIGHLIGHT layer of the button)
@@ -157,12 +160,18 @@ local function Ring(rec, key, owner, layer, size)
     ring:Show()
 end
 function AB.HoverRing(rec, size, shown)
-    if shown then Ring(rec, "hoverRing", rec.button, "HIGHLIGHT", size)
-    elseif rec.hoverRing then rec.hoverRing:Hide() end
+    if shown then
+        Ring(rec, "hoverRing", rec.button, "HIGHLIGHT", size)
+    elseif rec.hoverRing then
+        rec.hoverRing:Hide()
+    end
 end
 function AB.GlowRing(rec, shown)
-    if shown then Ring(rec, "glowRing", AB.DecorationHost(rec), "OVERLAY", rec.bar.size or M.config[rec.bar.key.Size])
-    elseif rec.glowRing then rec.glowRing:Hide() end
+    if shown then
+        Ring(rec, "glowRing", AB.DecorationHost(rec), "OVERLAY", rec.bar.size or M.config[rec.bar.key.Size])
+    elseif rec.glowRing then
+        rec.glowRing:Hide()
+    end
 end
 function AB.UpdateDecorState(rec)
     if rec.stateArt then rec.stateArt:SetShown(rec.decorFancy and (rec.decorPushed or rec.decorChecked) or false) end
@@ -170,8 +179,11 @@ end
 -- Masks (or unmasks) one of the button's own textures for the round shape.
 local function ShapeMask(texture, rec, circle)
     if not texture then return end
-    if circle then texture:AddMaskTexture(rec.shapeMask)
-    elseif rec.shapeMask then texture:RemoveMaskTexture(rec.shapeMask) end
+    if circle then
+        texture:AddMaskTexture(rec.shapeMask)
+    elseif rec.shapeMask then
+        texture:RemoveMaskTexture(rec.shapeMask)
+    end
 end
 local SWIPES = { "cooldown", "chargeCooldown", "lossOfControlCooldown" }
 local function PlaceArt(texture, button, extent, circle)

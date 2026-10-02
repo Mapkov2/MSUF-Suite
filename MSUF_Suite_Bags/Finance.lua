@@ -74,8 +74,11 @@ function Finance.Record()
     end
     local delta = Finance.observed and Finance.guid == guid and money - Finance.observed or 0
     Finance.observed, Finance.guid = money, guid
-    if delta > 0 then current.earned = current.earned + delta
-    elseif delta < 0 then current.spent = current.spent - delta end
+    if delta > 0 then
+        current.earned = current.earned + delta
+    elseif delta < 0 then
+        current.spent = current.spent - delta
+    end
     while #days > 30 or days[1] and days[1].day < day - 29 do table.remove(days, 1) end
 end
 

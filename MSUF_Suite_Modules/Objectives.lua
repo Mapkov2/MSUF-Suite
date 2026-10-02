@@ -310,18 +310,27 @@ end
 local function SetWorkEvents(self, enabled)
     for _, event in ipairs(TRACKER_EVENTS) do
         if event ~= "PLAYER_ENTERING_WORLD" and event ~= "ZONE_CHANGED_NEW_AREA" then
-            if enabled then self.context:Event(event, Event, IN_COMBAT)
-            else self.context:RemoveEvent(event) end
+            if enabled then
+                self.context:Event(event, Event, IN_COMBAT)
+            else
+                self.context:RemoveEvent(event)
+            end
         end
     end
     if MythicPlus then
         for _, event in ipairs(MYTHIC_PLUS_EVENTS) do
-            if enabled then self.context:Event(event, Event, IN_COMBAT)
-            else self.context:RemoveEvent(event) end
+            if enabled then
+                self.context:Event(event, Event, IN_COMBAT)
+            else
+                self.context:RemoveEvent(event)
+            end
         end
     end
-    if enabled then self.context:Event("GROUP_ROSTER_UPDATE", M.SuppressNative, IN_COMBAT)
-    else self.context:RemoveEvent("GROUP_ROSTER_UPDATE") end
+    if enabled then
+        self.context:Event("GROUP_ROSTER_UPDATE", M.SuppressNative, IN_COMBAT)
+    else
+        self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
+    end
 end
 
 UpdateRaidCombatPause = function(self, event)
@@ -341,8 +350,11 @@ UpdateRaidCombatPause = function(self, event)
         self.retheme = true
         self.contentSignature = ContentSignature(self.config)
         local mapID = MythicPlus and MythicPlus.Detect(self)
-        if mapID then StartMythicPlus(self, mapID)
-        elseif not ShowRaid(self) then Flush(self) end
+        if mapID then
+            StartMythicPlus(self, mapID)
+        elseif not ShowRaid(self) then
+            Flush(self)
+        end
     end
     return true
 end
@@ -384,8 +396,11 @@ function M:Enable()
         return
     end
     local mapID = MythicPlus and MythicPlus.Detect(self)
-    if mapID then StartMythicPlus(self, mapID)
-    elseif not ShowRaid(self) then Flush(self) end
+    if mapID then
+        StartMythicPlus(self, mapID)
+    elseif not ShowRaid(self) then
+        Flush(self)
+    end
     self:RegisterMovers()
 end
 

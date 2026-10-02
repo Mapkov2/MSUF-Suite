@@ -88,7 +88,10 @@ local function Update(self)
         return
     end
     local visible = self.native:IsVisible()
-    if not S.Public(visible) or not visible then self.button:Hide() return end
+    if not S.Public(visible) or not visible then
+        self.button:Hide()
+        return
+    end
     local c = self.config
     local style = S.PaintQoLCard(ID, c, self.panel)
     S.QoLColor(self.border, style.accent)

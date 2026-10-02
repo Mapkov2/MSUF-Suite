@@ -161,8 +161,11 @@ local function UpdateFPS(self)
         self.fpsFormat, self.fpsUnknown = S.Text("%.0f FPS"), S.Text("-- FPS")
     end
     self.fpsHost:ClearAllPoints()
-    if placement == FPS_BELOW then self.fpsHost:SetPoint("TOP", self.host, "BOTTOM", 0, -4)
-    else self.fpsHost:SetPoint("CENTER", UIParent, "CENTER", self.config.fpsX, self.config.fpsY) end
+    if placement == FPS_BELOW then
+        self.fpsHost:SetPoint("TOP", self.host, "BOTTOM", 0, -4)
+    else
+        self.fpsHost:SetPoint("CENTER", UIParent, "CENTER", self.config.fpsX, self.config.fpsY)
+    end
     self.fpsHost:SetScale(self.config.scale / 100)
     self.fpsHost:Show()
     PaintFPS(self)
@@ -188,9 +191,13 @@ local function Colors(self)
     for i, field in ipairs(self.fields) do
         if muted then field.label:SetTextColor(S.RGB(muted)) else field.label:SetTextColor(.68, .74, .79) end
         local own = FIELDS[i].color
-        if own then field.value:SetTextColor(S.RGB(c[own]))
-        elseif accent then field.value:SetTextColor(S.RGB(accent))
-        else field.value:SetTextColor(1, .87, .56) end
+        if own then
+            field.value:SetTextColor(S.RGB(c[own]))
+        elseif accent then
+            field.value:SetTextColor(S.RGB(accent))
+        else
+            field.value:SetTextColor(1, .87, .56)
+        end
     end
 end
 
@@ -278,8 +285,11 @@ local function SyncListeners(self, event)
     for i = 1, #STAT_EVENTS do
         local name = STAT_EVENTS[i]
         local unit = name:sub(1, 5) == "UNIT_" and "player" or nil
-        if want then self.context:Event(name, self.statsJob, IN_COMBAT, unit)
-        else self.context:RemoveEvent(name) end
+        if want then
+            self.context:Event(name, self.statsJob, IN_COMBAT, unit)
+        else
+            self.context:RemoveEvent(name)
+        end
     end
 end
 

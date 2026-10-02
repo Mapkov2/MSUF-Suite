@@ -103,8 +103,11 @@ local function MacroVisibility(c, bar)
     end
     local mode = c[bar.visibilityKey]
     if n == 0 and mode ~= VISIBILITY.OUT_OF_COMBAT and mode ~= VISIBILITY.IN_COMBAT then return nil end
-    if mode == VISIBILITY.OUT_OF_COMBAT then table.insert(rules, 1, "[combat] hide")
-    elseif mode == VISIBILITY.IN_COMBAT then table.insert(rules, 1, "[nocombat] hide") end
+    if mode == VISIBILITY.OUT_OF_COMBAT then
+        table.insert(rules, 1, "[combat] hide")
+    elseif mode == VISIBILITY.IN_COMBAT then
+        table.insert(rules, 1, "[nocombat] hide")
+    end
     rules[#rules + 1] = "show"
     return table.concat(rules, "; ")
 end

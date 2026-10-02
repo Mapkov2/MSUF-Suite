@@ -66,8 +66,11 @@ local function RangeText(self)
     local lower, upper
     for spell, distance in pairs(self.probes) do
         local value = self.values[spell]
-        if value == true then upper = math.min(upper or distance, distance)
-        elseif value == false then lower = math.max(lower or distance, distance) end
+        if value == true then
+            upper = math.min(upper or distance, distance)
+        elseif value == false then
+            lower = math.max(lower or distance, distance)
+        end
     end
     if lower and upper and lower >= upper then return "--" end
     if lower and upper then return string.format("%g-%g", lower, upper) end
@@ -157,8 +160,11 @@ local function Subscribe(self, kind)
         self.probes[probe.spell] = probe.distance
         S.SetNativeSpellRange(ID, probe.spell, true)
     end
-    if next(self.probes) then self.context:Event("SPELL_RANGE_CHECK_UPDATE", RangeEvent, IN_COMBAT)
-    else self.context:RemoveEvent("SPELL_RANGE_CHECK_UPDATE") end
+    if next(self.probes) then
+        self.context:Event("SPELL_RANGE_CHECK_UPDATE", RangeEvent, IN_COMBAT)
+    else
+        self.context:RemoveEvent("SPELL_RANGE_CHECK_UPDATE")
+    end
 end
 
 local function Release(self)
@@ -169,7 +175,9 @@ RangeEvent = function(self, _, spell, inRange, checksRange)
     if not Finite(spell) or not self.probes[spell] then return end
     if Public(checksRange) and checksRange == true and Public(inRange) and type(inRange) == "boolean" then
         self.values[spell] = inRange
-    else self.values[spell] = nil end
+    else
+        self.values[spell] = nil
+    end
     Paint(self)
 end
 

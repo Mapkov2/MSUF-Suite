@@ -327,10 +327,16 @@ function M:UpdateVisible()
     local frame = self.frame
     if not self.active or not frame or not frame:IsShown() then return end
     if NS.IsCombatLocked() then self.needsItemRefresh = true end
-    if not self.config.showItemLevel then HideItemLevels(self)
-    else self.itemLevelsHidden = false end
-    if not self.config.showBindBadge then HideBindBadges(self)
-    else self.bindBadgesHidden = false end
+    if not self.config.showItemLevel then
+        HideItemLevels(self)
+    else
+        self.itemLevelsHidden = false
+    end
+    if not self.config.showBindBadge then
+        HideBindBadges(self)
+    else
+        self.bindBadgesHidden = false
+    end
 
     if not self.config.showItemLevel and not self.config.showBindBadge then
         StyleVisibleSlots(self, frame)

@@ -77,7 +77,10 @@ local function NameExists(name)
 end
 
 local function CreateCharacterMacro(panel)
-    if NS.IsCombatLocked() then Status("Create macros after combat") return end
+    if NS.IsCombatLocked() then
+        Status("Create macros after combat")
+        return
+    end
     local body = Build(panel)
     if not body then return end
     local name = S.PublicText(panel.name:GetText())
@@ -94,7 +97,10 @@ local function CreateCharacterMacro(panel)
         Status("Character macro slots are full")
         return
     end
-    if NameExists(name) then Status("That macro name already exists") return end
+    if NameExists(name) then
+        Status("That macro name already exists")
+        return
+    end
     -- An error from the client is reported (BugSack) like any other.
     local ok, index = S.Dispatch(NS.Finish, CreateMacro, name, ICON, body, true)
     if not ok or not S.Finite(index) or index < 1 then
