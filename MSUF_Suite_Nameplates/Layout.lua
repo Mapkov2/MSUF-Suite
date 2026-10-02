@@ -137,9 +137,13 @@ local function OnAnchors(uf)
         local pending = {}
         for _, link in ipairs(state.links) do
             if link.nativeFixed then
-                if locked then pending[#pending + 1] = link
-                elseif Accessible(link[1]) then Point(unpack(link))
-                else module.needsRefresh = true end
+                if locked then
+                    pending[#pending + 1] = link
+                elseif Accessible(link[1]) then
+                    Point(unpack(link))
+                else
+                    module.needsRefresh = true
+                end
             end
         end
         state.links = pending
@@ -215,8 +219,11 @@ local function NameLink(state, uf, plan, setup, badgeShown)
         and setup.nameJustificationWhenAboveHealthBar ~= nil then
         -- Camelot can anchor the name to its level frame before that
         -- frame becomes visible. Its endpoint is Blizzard-owned.
-        if NS.Client.isForever and uf.PlayerLevelDiffFrame or badgeShown ~= false then point = nil
-        else point, relative = "RIGHT", "LEFT" end
+        if NS.Client.isForever and uf.PlayerLevelDiffFrame or badgeShown ~= false then
+            point = nil
+        else
+            point, relative = "RIGHT", "LEFT"
+        end
     end
     local value = plan.HealthText
     if point then Link(state, uf.name, point, health.Text, relative, -2, 0, value[1], value[2]) end
@@ -275,7 +282,7 @@ local function DebuffPaddingAnchor(state, uf, plan, setup)
     end
 end
 
-local function ElementOffsets(state, uf, plan, setup, force)
+local function ElementOffsets(state, uf, plan, force)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local name, value, raid = plan.Name, plan.HealthText, plan.RaidIcon
     local namesOnly = uf.showOnlyName == true
@@ -318,7 +325,7 @@ local function Apply(uf, prefix, config, force)
     end
     HealthSize(state, uf, setup, config[prefix .. "HealthWidthDelta"] or 0,
         config[prefix .. "HealthHeightDelta"] or 0, force or geometryChanged, baseHeight)
-    ElementOffsets(state, uf, plan, setup, force)
+    ElementOffsets(state, uf, plan, force)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
     NameLink(state, uf, plan, setup, badgeShown)
     AuraAnchors(state, uf, plan)

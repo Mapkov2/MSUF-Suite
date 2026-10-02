@@ -71,10 +71,14 @@ function Threat.Apply(uf)
             and Color(uf.aggroFlash, config.threatFlashColor) then
             original.applied = config.threatFlashColor
         end
-    else RestoreFlash(uf) end
+    else
+        RestoreFlash(uf)
+    end
     if eligible and config.threatHighlightColorEnabled then
         if highlights[uf] ~= config.threatHighlightColor then TintHighlight(uf) end
-    else RestoreHighlight(uf) end
+    else
+        RestoreHighlight(uf)
+    end
 end
 
 function Threat.Refresh()

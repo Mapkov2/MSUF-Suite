@@ -1,5 +1,5 @@
 local _, private = ...
-local NS, S = private.NS, private.Suite
+local S = private.Suite
 -- lieutenants: the lieutenant levels seen in this context. Lieutenants of
 -- one instance can differ in level, so it is a set; learnedLieutenant tells
 -- the plate owner that a new level arrived (Roles.Classify).
@@ -89,7 +89,7 @@ end
 
 -- Tooltip lines distinguish our unfinished objectives from completed
 -- objectives and party quests. nil while a line is restricted.
-local function TooltipQuest(unit, info)
+local function TooltipQuest(info)
     local types = Enum.TooltipDataLineType
     local player, ours = Read(UnitName, "player"), true
     for _, line in ipairs(info.lines) do
@@ -128,7 +128,7 @@ function Roles.Quest(unit)
         end
         return PendingQuest(unit) -- not a cached absent objective
     end
-    local found = TooltipQuest(unit, info)
+    local found = TooltipQuest(info)
     if found == nil then return PendingQuest(unit) end
     Roles.quests[unit] = found
     return found
