@@ -6,7 +6,7 @@ local IN_COMBAT = { inCombat = true }
 local M = {}
 
 local LABEL = S.Text("Low durability")
-local PREVIEW = S.Text("Preview")
+local PREVIEW = S.Text("Preview %d%%")
 
 local CARD = { width = 250, height = 62, fill = { .06, .07, .09, .92 }, edge = 1, line = { .7, .25, .22, .9 } }
 
@@ -51,7 +51,7 @@ local function Update(self)
         return
     end
     if S.editMode then
-        self.value:SetText(PREVIEW .. " 25%")
+        self.value:SetText(PREVIEW:format(25))
         self.host:Show()
         return
     end
@@ -63,7 +63,7 @@ local function Update(self)
         self.host:Hide()
         return
     end
-    self.value:SetText(math.floor(lowest * 100) .. "%")
+    self.value:SetText(("%d%%"):format(math.floor(lowest * 100)))
     self.host:Show()
 end
 

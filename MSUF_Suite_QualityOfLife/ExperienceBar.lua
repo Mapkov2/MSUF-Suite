@@ -42,10 +42,11 @@ local TEXT = {
     unavailableDetails = S.Text("Experience data is currently unavailable"),
     maxLevel = S.Text("Max level"),
     preview = S.Text("Experience bar preview"),
-    short = S.Text("Lv"),
-    session = S.Text("Session"),
-    rate = S.Text("XP/h"),
-    toLevel = S.Text("To level"),
+    levelValue = S.Text("Level %d"),
+    short = S.Text("Lv %d  %s / %s"),
+    session = S.Text("Session +%s"),
+    rate = S.Text("XP/h %s"),
+    toLevel = S.Text("To level %s"),
 }
 -- Reused for the details line; table.concat reads only the filled prefix.
 local detailParts = {}
@@ -371,8 +372,10 @@ local function Layout(self)
     self.details:SetWidth(c.width)
 end
 
--- XP per hour and the time to level age without an XP event: a repaint is
--- due a minute after the last one while either shows (self.rateJob).
+-- XP per hour and the time to level move with the clock, not with XP events:
+-- while either shows and the session has gained XP, a paint asks for the next
+-- one RATE_REFRESH seconds later (self.rateJob). A run already due stays, so
+-- XP events never postpone it.
 local RATE_REFRESH = 60
 local function CancelRateTimer(self)
     self.rateJob:Cancel()
@@ -430,16 +433,15 @@ local function DetailsText(self, current, maximum)
     local count = 0
     if c.showSession then
         count = count + 1
-        detailParts[count] = TEXT.session .. " +" .. Compact(self.session and self.session.gained or 0)
+        detailParts[count] = TEXT.session:format(Compact(self.session and self.session.gained or 0))
     end
     if c.showRate then
         count = count + 1
-        detailParts[count] = TEXT.rate .. " " .. (rate and Compact(rate) or "--")
+        detailParts[count] = TEXT.rate:format(rate and Compact(rate) or "--")
     end
     if c.showETA then
         count = count + 1
-        detailParts[count] = TEXT.toLevel .. " "
-            .. (rate and rate > 0 and Duration((maximum - current) * 3600 / rate) or "--")
+        detailParts[count] = TEXT.toLevel:format(rate and rate > 0 and Duration((maximum - current) * 3600 / rate) or "--")
     end
     return table.concat(detailParts, DETAIL_SEPARATOR, 1, count)
 end
@@ -457,14 +459,14 @@ PaintValues = function(self)
     host:SetShown(S.editMode or not (c.hideAtMax and capped))
     if not host:IsShown() then CancelRateTimer(self) end
     if maximum <= 0 then
-        HideProgress(self, TEXT.level .. " " .. level, TEXT.maxLevel, S.editMode and TEXT.preview or "")
+        HideProgress(self, TEXT.levelValue:format(level), TEXT.maxLevel, S.editMode and TEXT.preview or "")
         return
     end
     local fraction = max(0, min(1, current / maximum))
     self.fill:SetSize(max(0.01, c.width * fraction), c.height)
     self.fill:SetShown(fraction > 0)
     PaintRested(self, fraction, maximum, capped)
-    self.levelText:SetText(TEXT.short .. " " .. level .. "  " .. Compact(current) .. " / " .. Compact(maximum))
+    self.levelText:SetText(TEXT.short:format(level, Compact(current), Compact(maximum)))
     self.percentText:SetText(("%.1f%%"):format(fraction * 100))
     self.details:SetText(DetailsText(self, current, maximum))
     -- An open tooltip follows the new values.

@@ -48,7 +48,7 @@ local function Current()
     if not S.Finite(lootID) or lootID < 0 then return nil end
     local lootName, effectiveLootID
     if lootID == 0 then
-        lootName = specName .. " (" .. S.Text("current") .. ")"
+        lootName = S.Text("%s (current)"):format(specName)
         effectiveLootID = specID
     else
         local _, name = GetSpecializationInfoByID(lootID)
@@ -110,7 +110,7 @@ local function Show(self)
     self.title:SetText(S.Text(mismatch and "Check your loadout" or "Current loadout"))
     self.lastMismatch = mismatch
     Paint(self, mismatch)
-    self.detail:SetText(buildName .. "  |  " .. S.Text("Loot") .. ": " .. lootName)
+    self.detail:SetText(S.Text("%s  |  Loot: %s"):format(buildName, lootName))
     self.host:Show()
     self.context:After(self.config.duration, HideReminder)
     return true, configID, lootID
