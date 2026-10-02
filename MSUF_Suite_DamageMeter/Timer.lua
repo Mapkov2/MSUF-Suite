@@ -1,7 +1,7 @@
 local _, P = ...
 local S = P.Suite
 -- Standalone combat timer: the Current-session duration while combat is
--- live, updated by a one-shot timer only while visible (whole seconds,
+-- live, updated by the clock job only while visible (whole seconds,
 -- memoized). After combat it hides, or keeps the frozen last duration when
 -- timerKeep is on. The session duration counts whole seconds (Blizzard shows
 -- it only through SecondsToClock), so tenths come from the combat clock that
@@ -10,9 +10,9 @@ local D = P.DamageMeter
 local M = D.M
 local floor = math.floor
 local SAMPLE_SECONDS = 95
-local function TimerTick()
-    M.timerInFlight = false
-    if M.active then D.UpdateTimer() end
+-- The timer job (Controller.lua): the tenths, every 0.1 s in combat.
+function D.TimerTick()
+    D.UpdateTimer()
 end
 
 function D.StyleTimer()
@@ -92,9 +92,6 @@ function D.UpdateTimer(liveDuration, liveResolved)
         M.timerSecond = units
         frame.text:SetText(c.timerDecimals and (D.Clock(seconds) .. "." .. units % 10) or D.Clock(seconds))
     end
-    if c.timerDecimals and M.inCombat and not M.timerInFlight and not M.forced then
-        M.timerInFlight = true
-        C_Timer.After(.1, TimerTick)
-    end
+    if c.timerDecimals and M.inCombat and not M.forced then D.timerJob:Request() end
     if not frame:IsShown() then frame:Show() end
 end
