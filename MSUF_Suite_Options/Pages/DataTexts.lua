@@ -57,10 +57,11 @@ local function CrestCurrencyMenu(anchor)
     end)
 end
 -- The upgrade stages DataTexts observed this login. Sources.lua belongs to
--- the load-on-demand DataTexts addon: before it loads, the menu offers only
--- the reset to all observed stages.
+-- the load-on-demand DataTexts addon and exports them on S (Suite.Suite), not
+-- on the namespace: before it loads, the menu offers only the reset to all
+-- observed stages.
 local function SeasonStagesMenu(anchor)
-    local sources = P.Suite.DataTextExtraSources
+    local sources = S.DataTextExtraSources
     local choices = sources and sources.CrestChoices() or {}
     MenuUtil.CreateContextMenu(anchor, function(_, menu)
         menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = 1, crestCurrencies = "" }) end)

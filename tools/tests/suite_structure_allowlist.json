@@ -2397,12 +2397,6 @@
    "symbol": "LibStub"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/DataTexts.lua",
-   "kind": "lod",
-   "reason": "The load-on-demand DataTexts addon exports its source list from Sources.lua; before it loads, the observed-stage menu offers only Show all observed stages. suite_datatexts_currency_picker_contract opens SeasonStagesMenu without and with the export.",
-   "symbol": "sources (= P.Suite.DataTextExtraSources)"
-  },
-  {
    "file": "MSUF_Suite_DataTexts/Actions.lua",
    "kind": "addon",
    "reason": "Blizzard_ProfessionsBook is Blizzard's load-on-demand UI (upstream/live Blizzard_ProfessionsBook defines ProfessionsBookFrame); the Professions place requests it and toggles the frame only once it exists. suite_datatexts_sources_contract covers the missing and the loaded book.",
