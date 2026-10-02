@@ -3507,6 +3507,33 @@ do
     InCombatLockdown = lockdown
     _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs = previousShow, previousSaveAs
 end
+-- "Restore chat colors" asks in Blizzard's generic confirmation (no
+-- StaticPopupDialogs entry), then puts the skin's chat colours back through
+-- the Suite core; refused in combat.
+do
+    local previousGeneric, previousDialogs, previousRestore, previousConfirm =
+        _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs, Suite.Skin.RestoreChatColors, S.Confirm
+    local asked, restores = nil, 0
+    S.Confirm = nil
+    _G.StaticPopupDialogs = {}
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
+    Suite.Skin.RestoreChatColors = function() restores = restores + 1; return true, 3 end
+    assert(optionsNS.RestoreChatColors() and asked and restores == 0, "Restore chat colors did not ask first")
+    asked.callback()
+    assert(restores == 1 and next(_G.StaticPopupDialogs) == nil, "Restore chat colors did not restore through the core")
+    local lockdown = InCombatLockdown
+    InCombatLockdown = function() return true end
+    asked = nil
+    assert(not optionsNS.RestoreChatColors() and not asked, "Restore chat colors asked in combat")
+    InCombatLockdown = lockdown
+    local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
+    local source = appearance:read("*a")
+    appearance:close()
+    local _, buttons = source:gsub("%s%s+RestoreChatColorsButton%(ctx, body", "")
+    assert(buttons == 2, "Restore chat colors is missing from Maintenance or the engine-unavailable page")
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
+    Suite.Skin.RestoreChatColors, S.Confirm = previousRestore, previousConfirm
+end
 -- The cooldown manager page resets like every Suite page: the standard
 -- confirmation, then every cooldown manager setting back to its catalog
 -- default; other modules keep theirs.

@@ -1,6 +1,5 @@
 -- Chat message colours are the player's persistent Blizzard setting. The skin
--- themes a category only while it shows Blizzard's default (or the skin's own
--- colour an unclean exit left behind), adopts every colour the player picks,
+-- themes a category only while it shows Blizzard's default, adopts every colour the player picks,
 -- puts back the colour each category had before the skin, and writes a theme
 -- drag once per frame. Real ChatFrames.lua, Safety.lua and AdapterKit.lua.
 local root = assert(arg[1], "Suite root required")
@@ -143,13 +142,14 @@ ChangeChatColor("SYSTEM", THEME[1], THEME[2], THEME[3])
 chat.RestoreBlizzardMessageColors()
 Check(Is("SYSTEM", DEFAULTS.SYSTEM), "a cancelled color pick left the skin's color behind at logout")
 
--- An unclean exit left the skin's own colour in the chat cache: themed, and
--- logout restores Blizzard's default instead of keeping the skin's colour.
+-- A category that shows the theme colour is the player's: a theme colour
+-- proves nothing (the player may have picked it while the skin was off).
+-- No write, and logout keeps it.
 local left = { SYSTEM = THEME, MONSTER_SAY = DEFAULTS.MONSTER_SAY, MONSTER_PARTY = DEFAULTS.MONSTER_PARTY }
 chat = Session(left)
-Check(Writes("SYSTEM") == 0 and Is("SYSTEM", THEME), "the skin rewrote its own leftover color")
+Check(Writes("SYSTEM") == 0 and Is("SYSTEM", THEME), "the skin rewrote a colour equal to its theme")
 chat.RestoreBlizzardMessageColors()
-Check(Is("SYSTEM", DEFAULTS.SYSTEM), "the skin's leftover color survived logout")
+Check(Is("SYSTEM", THEME) and Writes("SYSTEM") == 0, "logout replaced a colour equal to the theme with Blizzard's default")
 
 -- A change through a path the hook does not see is the player's too.
 chat = Session(DEFAULTS)
