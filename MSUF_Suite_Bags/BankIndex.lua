@@ -29,7 +29,10 @@ local function ReadTab(index, tab, bankType)
     index.tabs[#index.tabs + 1] = container
     for slot = 1, size do
         local key = container.slots[slot]
-        if not key then key = {}; container.slots[slot] = key end
+        if not key then
+            key = {}
+            container.slots[slot] = key
+        end
         local info, quest, version = Slots.Get(id, slot)
         local item = Index.ReadButton(index, key, info, quest, version, id, slot, bankType)
         item.bagName = container.name

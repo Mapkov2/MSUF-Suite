@@ -53,7 +53,10 @@ end
 -- between sessions were not observed, so none is invented as income or
 -- spending (F.observed: the last amount recorded).
 function F.Record()
-    if not M.active or not M.config.showGoldHistory then F.observed = nil; return end
+    if not M.active or not M.config.showGoldHistory then
+        F.observed = nil
+        return
+    end
     local record, money, guid, created = Gold.Record("bags")
     if not record then return end
     if created then F.observed = nil end
@@ -88,7 +91,12 @@ local function ReadCurrencies()
     for value in (M.config.currencyIDs or ""):gmatch("%d+") do
         if #F.currencies == 8 then break end
         local id, seen = tonumber(value), false
-        for i = 1, #F.currencies do if F.currencies[i].id == id then seen = true; break end end
+        for i = 1, #F.currencies do
+            if F.currencies[i].id == id then
+                seen = true
+                break
+            end
+        end
         local data = not seen and CurrencyInfo(id)
         if data then
             local index = #F.currencies + 1
@@ -171,21 +179,31 @@ local function WindowRows()
             label.left:SetPoint("TOPLEFT", 0, -(i - 1) * 24)
             label.right:SetPoint("TOPRIGHT", 0, -(i - 1) * 24)
             label.right:SetWidth(245)
-            label.left:SetJustifyH("LEFT"); label.right:SetJustifyH("RIGHT")
-            label.left:SetWordWrap(false); label.right:SetWordWrap(false)
+            label.left:SetJustifyH("LEFT")
+            label.right:SetJustifyH("RIGHT")
+            label.left:SetWordWrap(false)
+            label.right:SetWordWrap(false)
             F.labels[i] = label
         end
         local width = rows[i].right == "" and 552 or 300
-        if label.width ~= width then label.left:SetWidth(width); label.width = width end
+        if label.width ~= width then
+            label.left:SetWidth(width)
+            label.width = width
+        end
         if label.font ~= font then
             S.SetFont(label.left, font, 12, "OUTLINE")
             S.SetFont(label.right, font, 12, "OUTLINE")
             label.font = font
         end
-        label.left:SetText(rows[i].left); label.right:SetText(rows[i].right)
-        label.left:Show(); label.right:Show()
+        label.left:SetText(rows[i].left)
+        label.right:SetText(rows[i].right)
+        label.left:Show()
+        label.right:Show()
     end
-    for i = #rows + 1, #F.labels do F.labels[i].left:Hide(); F.labels[i].right:Hide() end
+    for i = #rows + 1, #F.labels do
+        F.labels[i].left:Hide()
+        F.labels[i].right:Hide()
+    end
     F.content:SetHeight(math.max(24, #rows * 24))
 end
 
@@ -255,7 +273,10 @@ function F.Refresh()
     end
     if M.config.showGoldHistory then F.text[#F.text + 1] = S.Text("Gold history") end
     local font = S.ResolveFont(M.config.font) or S.GlobalFontPath()
-    if F.font ~= font then S.SetFont(F.label, font, 10, "OUTLINE"); F.font = font end
+    if F.font ~= font then
+        S.SetFont(F.label, font, 10, "OUTLINE")
+        F.font = font
+    end
     F.label:SetText(table.concat(F.text, "   "))
     -- The Suite grid and the combat layout leave room for the line;
     -- Blizzard's own grid puts item rows there.
@@ -293,7 +314,10 @@ function F.Enable()
             F.Record()
         end
         F.events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
-        if not F.hooked then M.frame:HookScript("OnShow", F.Refresh); F.hooked = true end
+        if not F.hooked then
+            M.frame:HookScript("OnShow", F.Refresh)
+            F.hooked = true
+        end
         F.Refresh()
     end
 end

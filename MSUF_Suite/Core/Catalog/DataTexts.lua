@@ -11,12 +11,12 @@ NS.DataTextSourceKeys = {
 -- Bounds imported configurations to at most 1536 place buttons.
 -- Frames are acquired on demand and recycled across profile transitions.
 NS.DataTextBarLimit = 256
-for _,source in ipairs({{"Broker plugin","broker"},{"Currency","currency"},{"Crests","crests"},
-    {"Item level","itemLevel"},{"Professions","professions"},{"Specialization","specialization"},
-    {"Audio volume","audio"},{"Hearthstone","hearth"},{"XP / reputation","progress"},
-    {"Dungeon portals","portals"},{"Micro menu","microMenu"}}) do
-    NS.DataTextSources[#NS.DataTextSources+1]=source[1]
-    NS.DataTextSourceKeys[#NS.DataTextSourceKeys+1]=source[2]
+for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency" }, { "Crests", "crests" },
+    { "Item level", "itemLevel" }, { "Professions", "professions" }, { "Specialization", "specialization" },
+    { "Audio volume", "audio" }, { "Hearthstone", "hearth" }, { "XP / reputation", "progress" },
+    { "Dungeon portals", "portals" }, { "Micro menu", "microMenu" } }) do
+    NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
+    NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
 NS.DataTextPoints = NS.AnchorPoints
 
@@ -81,7 +81,7 @@ NS.SuiteCatalog.dataTexts.look = {
     key = "look", global = true,
     extra = function(values, lookIndex, config)
         values.customColors = false
-        for _,bar in ipairs(NS.DataTextBarIDs(config)) do
+        for _, bar in ipairs(NS.DataTextBarIDs(config)) do
             if config["bar" .. bar .. "StyleOverride"] then
                 values["bar" .. bar .. "Look"] = lookIndex
                 values["bar" .. bar .. "CustomColors"] = false
@@ -158,17 +158,17 @@ B.Section("dataTexts", "bags", "Blizzard bag buttons", {
 B.Section("dataTexts", "gold", "Gold across characters", {
     Bool("trackAltGold", "Remember this character's gold for the account total", false),
 })
-B.Section('dataTexts','sources','Additional data sources',{
-    Bool('itemLevelEquipped','Show equipped item level',true),
-    Number('itemLevelDecimals','Item level decimals',1,0,2),
-    Choice('audioChannel','Audio channel',1,{'Master','Sound effects','Music','Ambience','Dialog'}),
-    B.String('hearthItems','Hearthstone item / toy IDs in preference order','6948',1000),
-    Bool('randomHearth','Choose a random owned Hearthstone variant for the next click',false),
-    B.String('crestCurrencies','Observed seasonal upgrade stages in display order (empty = all)','',256),
-    Choice('crestMode','Crest selection source',1,{'Observed upgrade stages','Selected crest currencies'}),
-    B.String('crestCurrencyIDs','Selected crest currency IDs in display order','',1000),
-    B.String('crestSeparator','Separator between Crest amounts',' / ',20),
-    Bool('showTokenPrice','Show the native WoW Token market price in Gold tooltips',false),
+B.Section('dataTexts', 'sources', 'Additional data sources', {
+    Bool('itemLevelEquipped', 'Show equipped item level', true),
+    Number('itemLevelDecimals', 'Item level decimals', 1, 0, 2),
+    Choice('audioChannel', 'Audio channel', 1, { 'Master', 'Sound effects', 'Music', 'Ambience', 'Dialog' }),
+    B.String('hearthItems', 'Hearthstone item / toy IDs in preference order', '6948', 1000),
+    Bool('randomHearth', 'Choose a random owned Hearthstone variant for the next click', false),
+    B.String('crestCurrencies', 'Observed seasonal upgrade stages in display order (empty = all)', '', 256),
+    Choice('crestMode', 'Crest selection source', 1, { 'Observed upgrade stages', 'Selected crest currencies' }),
+    B.String('crestCurrencyIDs', 'Selected crest currency IDs in display order', '', 1000),
+    B.String('crestSeparator', 'Separator between Crest amounts', ' / ', 20),
+    Bool('showTokenPrice', 'Show the native WoW Token market price in Gold tooltips', false),
 })
 
 -- Settings are copied from the shared style when an override is switched on.
@@ -199,10 +199,10 @@ for bar = 1, 12 do
     -- Section titles are built here, so their format strings translate here.
     local prefix, section, title = "bar" .. bar, "bar" .. bar, NS.Text("Bar %d"):format(bar)
     B.Section("dataTexts", section, title, {
-        B.String(prefix..'Name','Bar name',NS.Text('Bar %d'):format(bar),64),
-        Bool(prefix..'Vertical','Vertical bar',false),
-        Bool(prefix..'FullScreen','Span the entire screen width or height',false),
-        Choice(prefix..'Dock','Snap to screen edge',1,{'Free','Top','Bottom','Left','Right'}),
+        B.String(prefix .. 'Name', 'Bar name', NS.Text('Bar %d'):format(bar), 64),
+        Bool(prefix .. 'Vertical', 'Vertical bar', false),
+        Bool(prefix .. 'FullScreen', 'Span the entire screen width or height', false),
+        Choice(prefix .. 'Dock', 'Snap to screen edge', 1, { 'Free', 'Top', 'Bottom', 'Left', 'Right' }),
         Bool(prefix .. "Enabled", "Show bar", bar == 1),
         Number(prefix .. "Width", "Width", NS.Client.isForever and bar == 1 and 340 or 390, 180, 900, 5),
         Number(prefix .. "Height", "Height", NS.Client.isForever and bar == 1 and 28 or 26, 18, 100),
@@ -240,161 +240,186 @@ for bar = 1, 12 do
     AddBarStyle(bar)
 end
 
-local spec=NS.SuiteCatalog.dataTexts
-B.Add("dataTexts",B.String("barIds","Configured bar IDs","",2048)).hidden=true
-local templates,templateOrder,dynamic,dynamicOrder={},{},{},{}
-local dynamicCursor=1
-for _,rule in ipairs(spec.controls) do
-    local suffix=rule.key:match("^bar12(.+)$")
-    if suffix then templates[suffix]=rule;templateOrder[#templateOrder+1]=suffix end
+local spec = NS.SuiteCatalog.dataTexts
+B.Add("dataTexts", B.String("barIds", "Configured bar IDs", "", 2048)).hidden = true
+local templates, templateOrder, dynamic, dynamicOrder = {}, {}, {}, {}
+local dynamicCursor = 1
+for _, rule in ipairs(spec.controls) do
+    local suffix = rule.key:match("^bar12(.+)$")
+    if suffix then
+        templates[suffix] = rule
+        templateOrder[#templateOrder + 1] = suffix
+    end
 end
 local function ValidID(value)
-    local id=tonumber(value)
-    return id and id>=1 and id<=1000000 and id==math.floor(id) and id or nil
+    local id = tonumber(value)
+    return id and id >= 1 and id <= 1000000 and id == math.floor(id) and id or nil
 end
-local function DynamicRule(id,suffix)
-    local rules=dynamic[id]
+local function DynamicRule(id, suffix)
+    local rules = dynamic[id]
     if not rules then
-        local retired=dynamicOrder[dynamicCursor]
-        if retired then dynamic[retired]=nil end
-        dynamicOrder[dynamicCursor]=id;dynamicCursor=dynamicCursor%NS.DataTextBarLimit+1
-        rules={};dynamic[id]=rules
+        local retired = dynamicOrder[dynamicCursor]
+        if retired then dynamic[retired] = nil end
+        dynamicOrder[dynamicCursor] = id
+        dynamicCursor = dynamicCursor % NS.DataTextBarLimit + 1
+        rules = {}
+        dynamic[id] = rules
     end
-    local prefix="bar"..id
-    local key=prefix..suffix
+    local prefix = "bar" .. id
+    local key = prefix .. suffix
     if not rules[key] then
-        local template=templates[suffix]
-        local rule={}
-        for field,value in pairs(template) do rule[field]=value end
-        rule.key=key
-        rule.section=template.section:gsub("^bar12",prefix)
-        rule.sectionTitle=NS.Text("Bar %d"):format(id)
-        if rule.enableKey then rule.enableKey=rule.enableKey:gsub("^bar12",prefix) end
+        local template = templates[suffix]
+        local rule = {}
+        for field, value in pairs(template) do rule[field] = value end
+        rule.key = key
+        rule.section = template.section:gsub("^bar12", prefix)
+        rule.sectionTitle = NS.Text("Bar %d"):format(id)
+        if rule.enableKey then rule.enableKey = rule.enableKey:gsub("^bar12", prefix) end
         if rule.requiresChoice then
-            rule.requiresChoice={key=rule.requiresChoice.key:gsub("^bar12",prefix),values=rule.requiresChoice.values}
+            rule.requiresChoice = { key = rule.requiresChoice.key:gsub("^bar12", prefix), values = rule.requiresChoice.values }
         end
-        if suffix=="Name" then rule.default=NS.Text("Bar %d"):format(id) end
-        rules[rule.key]=rule
+        if suffix == "Name" then rule.default = NS.Text("Bar %d"):format(id) end
+        rules[rule.key] = rule
     end
     return rules[key]
 end
-setmetatable(spec.rules,{__index=function(_,key)
-    if type(key)~="string" then return end
-    local raw,suffix=key:match("^bar(%d+)(.+)$")
-    local id=ValidID(raw)
-    if id and id>12 and tostring(id)==raw and templates[suffix] then return DynamicRule(id,suffix) end
-end})
+setmetatable(spec.rules, { __index = function(_, key)
+    if type(key) ~= "string" then return end
+    local raw, suffix = key:match("^bar(%d+)(.+)$")
+    local id = ValidID(raw)
+    if id and id > 12 and tostring(id) == raw and templates[suffix] then return DynamicRule(id, suffix) end
+end })
 function NS.DataTextBarIDs(config)
-    local ids,seen={},{}
+    local ids, seen = {}, {}
     local function Add(raw)
-        local id=ValidID(raw)
-        if id and not seen[id] and #ids<NS.DataTextBarLimit then seen[id]=true;ids[#ids+1]=id end
+        local id = ValidID(raw)
+        if id and not seen[id] and #ids < NS.DataTextBarLimit then
+            seen[id] = true
+            ids[#ids + 1] = id
+        end
     end
-    if type(config.barIds)=="string" and config.barIds~="" then
+    if type(config.barIds) == "string" and config.barIds ~= "" then
         for raw in config.barIds:gmatch("%d+") do Add(raw) end
     else
-        Add(1);Add(2);Add(3)
-        for id=4,12 do
-            local prefix="bar"..id
+        Add(1)
+        Add(2)
+        Add(3)
+        for id = 4, 12 do
+            local prefix = "bar" .. id
             for suffix in pairs(templates) do
-                local key=prefix..suffix
-                if config[key]~=nil and config[key]~=spec.rules[key].default then Add(id);break end
+                local key = prefix .. suffix
+                if config[key] ~= nil and config[key] ~= spec.rules[key].default then
+                    Add(id)
+                    break
+                end
             end
         end
     end
     -- Individual variant overrides can activate a bar without replacing the
     -- base list. Removed bars also switch their Enabled setting off.
-    for key,value in pairs(config) do
-        if value==true and type(key)=="string" then Add(key:match("^bar(%d+)Enabled$")) end
+    for key, value in pairs(config) do
+        if value == true and type(key) == "string" then Add(key:match("^bar(%d+)Enabled$")) end
     end
     table.sort(ids)
     return ids
 end
-local controlMaps=setmetatable({},{__mode="k"})
-local function ControlMap(config,force)
-    local record=controlMaps[config]
-    if record and not force and record.signature==config.barIds then return record end
-    record={signature=config.barIds,present={},enabled={}}
-    for _,id in ipairs(NS.DataTextBarIDs(config)) do record.present[id]=true end
-    for key,value in pairs(config) do
-        local raw=type(key)=="string" and key:match("^bar(%d+)Enabled$")
-        if raw then record.enabled[tonumber(raw)]=value end
+local controlMaps = setmetatable({}, { __mode = "k" })
+local function ControlMap(config, force)
+    local record = controlMaps[config]
+    if record and not force and record.signature == config.barIds then return record end
+    record = { signature = config.barIds, present = {}, enabled = {} }
+    for _, id in ipairs(NS.DataTextBarIDs(config)) do record.present[id] = true end
+    for key, value in pairs(config) do
+        local raw = type(key) == "string" and key:match("^bar(%d+)Enabled$")
+        if raw then record.enabled[tonumber(raw)] = value end
     end
-    controlMaps[config]=record
+    controlMaps[config] = record
     return record
 end
-spec.controlAvailable=function(rule,config)
-    local id=tonumber(rule.key:match("^bar(%d+)"))
+spec.controlAvailable = function(rule, config)
+    local id = tonumber(rule.key:match("^bar(%d+)"))
     if not id then return true end
-    local record=ControlMap(config)
-    if record.enabled[id]~=config["bar"..id.."Enabled"] then record=ControlMap(config,true) end
-    if (config.barIds==nil or config.barIds=="") and id>=4 and id<=12 then
+    local record = ControlMap(config)
+    if record.enabled[id] ~= config["bar" .. id .. "Enabled"] then record = ControlMap(config, true) end
+    if (config.barIds == nil or config.barIds == "") and id >= 4 and id <= 12 then
         -- Legacy customizations can create a retained bar without an ID list.
         -- These twelve templates are bounded and require no list allocation.
-        local prefix="bar"..id
+        local prefix = "bar" .. id
         for suffix in pairs(templates) do
-            local key=prefix..suffix
-            if config[key]~=nil and config[key]~=spec.rules[key].default then return true end
+            local key = prefix .. suffix
+            if config[key] ~= nil and config[key] ~= spec.rules[key].default then return true end
         end
         return false
     end
-    return record.present[id]==true
+    return record.present[id] == true
 end
-spec.getControls=function(config)
-    local out={}
-    local present=ControlMap(config,true).present
-    for _,rule in ipairs(spec.controls) do
-        if not rule.key:match("^bar%d+") then out[#out+1]=rule end
+spec.getControls = function(config)
+    local out = {}
+    local present = ControlMap(config, true).present
+    for _, rule in ipairs(spec.controls) do
+        if not rule.key:match("^bar%d+") then out[#out + 1] = rule end
     end
-    local ids={};for id in pairs(present) do ids[#ids+1]=id end;table.sort(ids)
-    for _,id in ipairs(ids) do
-        for _,suffix in ipairs(templateOrder) do out[#out+1]=spec.rules["bar"..id..suffix] end
+    local ids = {}
+    for id in pairs(present) do
+        ids[#ids + 1] = id
+    end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        for _, suffix in ipairs(templateOrder) do out[#out + 1] = spec.rules["bar" .. id .. suffix] end
     end
     return out
 end
 function NS.DataTextNextBarID(config)
-    local ids=NS.DataTextBarIDs(config)
-    if #ids>=NS.DataTextBarLimit then return end
-    local seen={};for _,id in ipairs(ids) do seen[id]=true end
-    for id=1,#ids+1 do if not seen[id] then return id end end
-end
-function NS.DataTextBarCreationValues(config,id)
-    local ids=NS.DataTextBarIDs(config);ids[#ids+1]=id;table.sort(ids)
-    local values={barIds=table.concat(ids,",")}
-    for suffix in pairs(templates) do
-        local key="bar"..id..suffix
-        values[key]=spec.rules[key].default
+    local ids = NS.DataTextBarIDs(config)
+    if #ids >= NS.DataTextBarLimit then return end
+    local seen = {}
+    for _, id in ipairs(ids) do
+        seen[id] = true
     end
-    values["bar"..id.."Enabled"]=true
+    for id = 1, #ids + 1 do if not seen[id] then return id end end
+end
+function NS.DataTextBarCreationValues(config, id)
+    local ids = NS.DataTextBarIDs(config)
+    ids[#ids + 1] = id
+    table.sort(ids)
+    local values = { barIds = table.concat(ids, ",") }
+    for suffix in pairs(templates) do
+        local key = "bar" .. id .. suffix
+        values[key] = spec.rules[key].default
+    end
+    values["bar" .. id .. "Enabled"] = true
     return values
 end
-function NS.DataTextBarRemovalValues(config,id)
-    local ids={}
-    for _,current in ipairs(NS.DataTextBarIDs(config)) do if current~=id then ids[#ids+1]=current end end
-    return {barIds=#ids>0 and table.concat(ids,",") or "0",["bar"..id.."Enabled"]=false}
+function NS.DataTextBarRemovalValues(config, id)
+    local ids = {}
+    for _, current in ipairs(NS.DataTextBarIDs(config)) do if current ~= id then ids[#ids + 1] = current end end
+    return { barIds = #ids > 0 and table.concat(ids, ",") or "0", ["bar" .. id .. "Enabled"] = false }
 end
-spec.prepareConfig=function(config)
-    local check=NS.Suite.CheckProfileValue
-    local function Repaired(rule,value)
-        local checked=check(rule,value);if checked~=nil then return checked end
+spec.prepareConfig = function(config)
+    local check = NS.Suite.CheckProfileValue
+    local function Repaired(rule, value)
+        local checked = check(rule, value)
+        if checked ~= nil then
+            return checked
+        end
         return rule.default
     end
     -- Physical rules stay legacy-only; lazy rules never seed another profile.
-    for key,value in pairs(config) do
-        local raw=type(key)=="string" and key:match("^bar(%d+).+")
-        local id=ValidID(raw)
-        if id and id>12 then
-            local rule=spec.rules[key]
-            if rule then config[key]=Repaired(rule,value) end
+    for key, value in pairs(config) do
+        local raw = type(key) == "string" and key:match("^bar(%d+).+")
+        local id = ValidID(raw)
+        if id and id > 12 then
+            local rule = spec.rules[key]
+            if rule then config[key] = Repaired(rule, value) end
         end
     end
-    for _,id in ipairs(NS.DataTextBarIDs(config)) do
-        if id>12 then
-            for _,suffix in ipairs(templateOrder) do
-                local key="bar"..id..suffix
-                local rule=spec.rules[key]
-                local value=config[key]
-                config[key]=Repaired(rule,value)
+    for _, id in ipairs(NS.DataTextBarIDs(config)) do
+        if id > 12 then
+            for _, suffix in ipairs(templateOrder) do
+                local key = "bar" .. id .. suffix
+                local rule = spec.rules[key]
+                local value = config[key]
+                config[key] = Repaired(rule, value)
             end
         end
     end

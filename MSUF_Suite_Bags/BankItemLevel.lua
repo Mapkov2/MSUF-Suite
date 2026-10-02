@@ -23,6 +23,30 @@ local function BankVisible(self)
         and BankFrame:IsShown() and BankFrame.BankPanel:IsShown()
 end
 
+-- Reads the item level of a bank button's item, or asks for its item data
+-- once; OnBankItemInfoReceived repaints the buttons waiting for it. False
+-- when that data failed to load: the label then stays hidden.
+local function BankLevel(self, button, record, link, itemID)
+    local level = C_Item.GetDetailedItemLevelInfo(link)
+    if S.Finite(level) and level > 0 then
+        record.level = math.floor(level)
+        record.label:SetText(tostring(record.level))
+        return true
+    end
+    if self.bankRequested[itemID] == "failed" then return false end
+    local pending = self.bankPending[itemID]
+    if not pending then
+        pending = {}
+        self.bankPending[itemID] = pending
+    end
+    pending[button] = true
+    if not self.bankRequested[itemID] then
+        self.bankRequested[itemID] = true
+        C_Item.RequestLoadItemDataByID(itemID)
+    end
+    return true
+end
+
 local function PaintBankButton(self, button, info)
     local record = self.bankOverlays[button]
     if not BankVisible(self) or not button or NS.Safety.IsForbidden(button)
@@ -71,24 +95,9 @@ local function PaintBankButton(self, button, info)
         record.label = label
     end
     self:StyleItemLevel(record)
-    if record.level == nil then
-        local level = C_Item.GetDetailedItemLevelInfo(link)
-        if S.Finite(level) and level > 0 then
-            record.level = math.floor(level)
-            record.label:SetText(tostring(record.level))
-        else
-            if self.bankRequested[itemID] == "failed" then
-                record.label:Hide()
-                return
-            end
-            local pending = self.bankPending[itemID]
-            if not pending then pending = {}; self.bankPending[itemID] = pending end
-            pending[button] = true
-            if not self.bankRequested[itemID] then
-                self.bankRequested[itemID] = true
-                C_Item.RequestLoadItemDataByID(itemID)
-            end
-        end
+    if record.level == nil and not BankLevel(self, button, record, link, itemID) then
+        record.label:Hide()
+        return
     end
     if not record.level then
         record.label:Hide()
@@ -119,14 +128,20 @@ local BankButtonRefreshed
 local function HookBankButton(self, button)
     if not button or NS.Safety.IsForbidden(button) then return end
     local record = self.bankOverlays[button]
-    if not record then record = {}; self.bankOverlays[button] = record end
+    if not record then
+        record = {}
+        self.bankOverlays[button] = record
+    end
     if record.refreshHooked then return end
     hooksecurefunc(button, "Refresh", BankButtonRefreshed)
     record.refreshHooked = true
 end
 
 function M:UpdateBank(searchChanged)
-    if not BankVisible(self) then self:HideBankLevels(); return end
+    if not BankVisible(self) then
+        self:HideBankLevels()
+        return
+    end
     local panel = BankFrame.BankPanel
     for button in panel:EnumerateValidItems() do
         HookBankButton(self, button)

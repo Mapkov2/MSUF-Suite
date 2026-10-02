@@ -39,7 +39,10 @@ end
 function Sort.Refresh()
     if not M.active then return end
     local mode = M.config.sortDirection
-    if mode == DIRECTION.BLIZZARD then Sort.Restore(); return end
+    if mode == DIRECTION.BLIZZARD then
+        Sort.Restore()
+        return
+    end
     local current = Current()
     local store, guid = Store(true)
     if current == nil or not store then return end

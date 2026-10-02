@@ -9,7 +9,10 @@ local EVENTS = { "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "CURSOR_CHANGED", "G
 -- A.onStop (StackSplitter.lua) runs after every stop, also the first one in Start.
 function A.Stop()
     A.job = nil
-    if A.timer then A.timer:Cancel(); A.timer = nil end
+    if A.timer then
+        A.timer:Cancel()
+        A.timer = nil
+    end
     if A.events then A.events:UnregisterAllEvents() end
     if A.onStop then A.onStop() end
 end
@@ -34,13 +37,22 @@ Step = function()
     A.queued = false
     local job = A.job
     if not job then return end
-    if not M.active or NS.IsCombatLocked() or not Inventory.Available(job.source) then A.Stop(); return end
+    if not M.active or NS.IsCombatLocked() or not Inventory.Available(job.source) then
+        A.Stop()
+        return
+    end
     local kind, _, cursorLink = GetCursorInfo()
     if job.phase == "cursor" then
         if kind == nil then return end
-        if kind ~= "item" or not S.Public(cursorLink) or cursorLink ~= job.link then A.Stop(); return end
+        if kind ~= "item" or not S.Public(cursorLink) or cursorLink ~= job.link then
+            A.Stop()
+            return
+        end
         local link, count, locked = Inventory.Read(job.destination)
-        if link or count ~= 0 or locked then A.Stop(); return end
+        if link or count ~= 0 or locked then
+            A.Stop()
+            return
+        end
         job.phase = "placed"
         Inventory.Place(job.destination)
         ArmTimeout()
@@ -50,15 +62,30 @@ Step = function()
         if kind ~= nil then return end
         local link, count, locked = Inventory.Read(job.destination)
         if locked or count == 0 then return end
-        if link ~= job.link or count ~= job.amount then A.Stop(); return end
+        if link ~= job.link or count ~= job.amount then
+            A.Stop()
+            return
+        end
         job.next, job.phase, job.completed = job.next + 1, "source", job.completed + 1
-    elseif kind ~= nil then A.Stop(); return end
-    if job.completed >= 128 then A.Stop(); return end
+    elseif kind ~= nil then
+        A.Stop()
+        return
+    end
+    if job.completed >= 128 then
+        A.Stop()
+        return
+    end
     local link, count, locked = Inventory.Read(job.source)
     if locked then return end
-    if link ~= job.link or not S.Finite(count) or count <= job.amount then A.Stop(); return end
+    if link ~= job.link or not S.Finite(count) or count <= job.amount then
+        A.Stop()
+        return
+    end
     job.destination = Destination(job)
-    if not job.destination then A.Stop(); return end
+    if not job.destination then
+        A.Stop()
+        return
+    end
     job.phase = "cursor"
     Inventory.Split(job.source, job.amount)
     ArmTimeout()
@@ -90,7 +117,10 @@ function A.Start(owner, amount)
     if #destinations == 0 then return false, "full" end
     A.job = { source = source, link = link, amount = math.floor(amount), destinations = destinations,
         next = 1, completed = 0, phase = "source" }
-    if not A.events then A.events = S.CreateFrame("Frame"); A.events:SetScript("OnEvent", Event) end
+    if not A.events then
+        A.events = S.CreateFrame("Frame")
+        A.events:SetScript("OnEvent", Event)
+    end
     for i = 1, #EVENTS do if NS.Client.SupportsEvent(EVENTS[i]) then A.events:RegisterEvent(EVENTS[i]) end end
     ArmTimeout()
     Step()

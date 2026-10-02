@@ -150,7 +150,10 @@ local function Create()
     -- TabSystem): the search box and Clean Up button stay free in every view.
     B.modeButton = Button(BankFrame, MODES[BANK_VIEW.TABS], 142, NextMode)
     B.modeButton:SetPoint("TOPRIGHT", BankFrame, "BOTTOMRIGHT", -22, 2)
-    BankFrame:HookScript("OnShow", function() Index.Retry(B.index); Request() end)
+    BankFrame:HookScript("OnShow", function()
+        Index.Retry(B.index)
+        Request()
+    end)
     BankFrame:HookScript("OnHide", function()
         if B.frame then B.frame:Hide() end
         P.BankActions.Cancel()
@@ -229,7 +232,12 @@ local function PrepareModel(state)
     local items = B.index.items
     if tab then
         local found = false
-        for i = 1, #B.index.tabs do if B.index.tabs[i].id == tab then found = true; break end end
+        for i = 1, #B.index.tabs do
+            if B.index.tabs[i].id == tab then
+                found = true
+                break
+            end
+        end
         if not found then B.selected, tab, B.scroll = "all", nil, 0 end
     end
     if tab then
@@ -252,7 +260,11 @@ Flush = function()
     B.modeButton:Show()
     B.active = M.config.bankView ~= BANK_VIEW.TABS
     M.organizedBankActive = B.active
-    if not B.active then B.frame:Hide(); M:UpdateBank(); return end
+    if not B.active then
+        B.frame:Hide()
+        M:UpdateBank()
+        return
+    end
     M:HideBankLevels()
     local moduleState = S.ModuleState("bags")
     if not moduleState then return end
@@ -278,7 +290,10 @@ local function Event(_, event, value, success)
                 local button = B.buttons[i]
                 if button:IsShown() then
                     if event == "BAG_UPDATE_COOLDOWN" then button:UpdateCooldown()
-                    else button:Refresh(); StyleItem(button, button.record, font) end
+                    else
+                        button:Refresh()
+                        StyleItem(button, button.record, font)
+                    end
                 end
             end
         end
@@ -319,5 +334,8 @@ function B.Disable()
     B.enabled, B.active, M.organizedBankActive = false, false, false
     Index.Reset(B.index)
     if B.events then B.events:UnregisterAllEvents() end
-    if B.frame then B.frame:Hide(); B.modeButton:Hide() end
+    if B.frame then
+        B.frame:Hide()
+        B.modeButton:Hide()
+    end
 end

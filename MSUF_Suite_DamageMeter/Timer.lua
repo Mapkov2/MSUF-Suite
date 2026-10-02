@@ -58,7 +58,10 @@ end
 function D.UpdateTimer(liveDuration, liveResolved)
     local frame, c = M.timerFrame, M.config
     if not frame or not c.combatTime or not c.timer then return end
-    if M.sessionHidden and c.toggleTimer and not M.forced then frame:Hide(); return end
+    if M.sessionHidden and c.toggleTimer and not M.forced then
+        frame:Hide()
+        return
+    end
     local seconds
     -- Edit Mode and the options preview need a visible, placeable value.
     if M.forced then

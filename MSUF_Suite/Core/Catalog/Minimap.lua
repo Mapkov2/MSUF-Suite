@@ -242,10 +242,10 @@ B.Section(id, "addons", "Addon buttons", {
 })
 
 -- Information texts keep their established keys and per-text styling.
-local infoFields = { {"Clock", 2, 0, -4, 120, "Show clock"}, {"FPS", 7, 4, 4, 100, "Show FPS"},
-    {"Latency", 9, -4, 4, 110, "Show latency"}, {"Coordinates", 1, 4, -4, 100, "Show coordinates"},
-    {"Durability", 3, -4, -4, 110, "Show durability"}, {"Location", 8, 0, 4, 220, "Show location"},
-    {"Weather", 11, 0, -4, 120, "Show weather"} }
+local infoFields = { { "Clock", 2, 0, -4, 120, "Show clock" }, { "FPS", 7, 4, 4, 100, "Show FPS" },
+    { "Latency", 9, -4, 4, 110, "Show latency" }, { "Coordinates", 1, 4, -4, 100, "Show coordinates" },
+    { "Durability", 3, -4, -4, 110, "Show durability" }, { "Location", 8, 0, 4, 220, "Show location" },
+    { "Weather", 11, 0, -4, 120, "Show weather" } }
 NS.MinimapInfoFields = {}
 for _, field in ipairs(infoFields) do
     local key = field[1]
@@ -294,7 +294,8 @@ InfoOption("Clock", Choice("infoClockDatePosition", "Date position", 1,
     { "Beside the time", "Above the time", "Below the time" }))
 InfoOption("Clock", Choice("infoClockClick", "Clock left-click action", 2, { "Calendar", "Clock" }))
 for _, field in ipairs({ "Clock", "FPS", "Latency" }) do
-    InfoOption(field, Choice("info" .. field .. "Tooltip", "Hover tooltip", 1, { "Value and actions", "Instance lockouts", "Great Vault", "No tooltip" })).infoTooltip = true
+    InfoOption(field, Choice("info" .. field .. "Tooltip", "Hover tooltip", 1,
+        { "Value and actions", "Instance lockouts", "Great Vault", "No tooltip" })).infoTooltip = true
 end
 InfoOption("FPS", Number("infoFPSInterval", "FPS update interval (seconds)", 1, 0.1, 5, 0.05))
 InfoOption("FPS", Number("infoFPSWarning", "Low FPS threshold", 30, 1, 300))
@@ -312,8 +313,13 @@ InfoOption("Durability", Choice("infoDurabilityMode", "Durability value", 1, { "
 InfoOption("Durability", Bool("infoDurabilityStatusColors", "Use durability status colors", true))
 InfoOption("Durability", Number("infoDurabilityBad", "Low durability threshold (percent)", 20, 0, 100))
 InfoOption("Durability", Number("infoDurabilityWarning", "Medium durability threshold (percent)", 50, 0, 100))
-for _, spec in ipairs({ {"Good", "High durability color", "75d36f"}, {"Warning", "Medium durability color", "ffd166"}, {"Bad", "Low durability color", "ff6677"} }) do
-    InfoOption("Durability", Color("infoDurability" .. spec[1] .. "Color", spec[2], spec[3])).enableKey = "infoDurabilityStatusColors"
+for _, spec in ipairs({
+    { "Good", "High durability color", "75d36f" },
+    { "Warning", "Medium durability color", "ffd166" },
+    { "Bad", "Low durability color", "ff6677" },
+}) do
+    InfoOption("Durability", Color("infoDurability" .. spec[1] .. "Color", spec[2], spec[3])).enableKey =
+        "infoDurabilityStatusColors"
 end
 InfoOption("Location", Bool("infoLocationZone", "Show zone", true))
 InfoOption("Location", Bool("infoLocationSubzone", "Show subzone", false))

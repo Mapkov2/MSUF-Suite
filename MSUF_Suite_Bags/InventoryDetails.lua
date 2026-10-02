@@ -23,9 +23,17 @@ local function ReadSets()
                     if data.isBags and S.Finite(data.bag) and S.Finite(data.slot) then
                         local key = data.bag * KEY + data.slot
                         local names = D.sets[key]
-                        if not names then names = {}; D.sets[key] = names end
+                        if not names then
+                            names = {}
+                            D.sets[key] = names
+                        end
                         local found = false
-                        for j = 1, #names do if names[j] == name then found = true; break end end
+                        for j = 1, #names do
+                            if names[j] == name then
+                                found = true
+                                break
+                            end
+                        end
                         if not found then names[#names + 1] = name end
                     end
                 end
@@ -131,7 +139,10 @@ end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, Tooltip)
 
 local function PaintText(label, value, font, size)
-    if not value then label:Hide(); return end
+    if not value then
+        label:Hide()
+        return
+    end
     if label.font ~= font or label.size ~= size then
         S.SetFont(label, font, size, "OUTLINE")
         label.font, label.size = font, size
@@ -162,7 +173,10 @@ end
 
 function D.Hide()
     for _, record in pairs(D.overlays) do
-        record.name:Hide(); record.upgrade:Hide(); record.keyLevel:Hide(); record.keyMap:Hide()
+        record.name:Hide()
+        record.upgrade:Hide()
+        record.keyLevel:Hide()
+        record.keyMap:Hide()
         record.item = nil
     end
     D.dirty = true
