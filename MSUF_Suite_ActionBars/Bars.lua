@@ -16,6 +16,9 @@ local AB = { M = {}, SNIPPET = {}, bars = {}, records = {}, owned = {}, adopted 
 P.ActionBars = AB
 -- The named choice values and bar numbers (Core/Catalog/ActionBars.lua).
 AB.ENUM = NS.ActionBarEnum
+-- Read-only views of module state for the contract tests; nothing in the
+-- addon calls them.
+AB.Diagnostics = {}
 -- Narrow visitor for finite QoL animation of real Suite-owned headers. Out
 -- of combat only; combat start stops every header animation (Events.lua).
 function S.VisitPartyActionBars(visitor, owner)

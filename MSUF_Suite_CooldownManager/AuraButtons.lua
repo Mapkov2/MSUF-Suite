@@ -269,12 +269,17 @@ local function MarkValues(rec, lk)
     return values
 end
 
+-- Diagnostics: the stacks a sample row's markers stand for.
+function C.Diagnostics.MarkerValues(row)
+    local rec = row.rec
+    return rec.stackFill and MarkValues(rec, rec.lk) or NO_MARKS
+end
+
 -- Markers come from a per-button pool (made while the button accepts
 -- writes, never freed): a new maximum or marker list places them again.
 -- Sample rows are our own frames and take the pixel-layout policy.
 local function PlaceMarkers(rec, part, lk, bar)
     local values = rec.stackFill and MarkValues(rec, lk) or NO_MARKS
-    part.markerValues = values
     local markers = part.markers
     if not markers then
         markers = {}

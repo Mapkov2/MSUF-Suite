@@ -530,8 +530,8 @@ function Icons.ReleaseAll()
     C.Time.BagsChanged()
 end
 
--- Test and diagnostics hook: live icons of a bar.
-function Icons.Count(slotKey)
+-- Diagnostics: live icons of a bar.
+function C.Diagnostics.IconCount(slotKey)
     local pool, count = pools[slotKey], 0
     if pool then
         for _ in pairs(pool.byKey) do

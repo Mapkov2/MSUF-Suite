@@ -1701,10 +1701,10 @@ do
     bindings.MSUFSUITE_BAR9_BUTTON1={"CTRL-BUTTON4","MOUSEWHEELUP"}
     AB.Mark("keys");RunTimers()
 end
-local references=AB.RangeReferences()
+local references=AB.Diagnostics.RangeReferences()
 assert(references>0)
 assert(S.Set("actionbars","bar2Visibility",6))
-assert(not rangeEnabled[61] and AB.RangeReferences()<references,"hidden bars release range checks")
+assert(not rangeEnabled[61] and AB.Diagnostics.RangeReferences()<references,"hidden bars release range checks")
 assert(S.Set("actionbars","bar2Visibility",1))
 RunTimers()
 assert(rangeEnabled[61],"shown bars re-acquire")
@@ -1752,10 +1752,10 @@ assert(S.Set("actionbars","procGlow",2));RunTimers()
 assert(M.context.frame.events.SPELL_ACTIVATION_OVERLAY_GLOW_SHOW,
     "enabling proc glows did not restore their listener")
 assert(S.Set("actionbars","rangeColoring",false));RunTimers()
-assert(not M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.RangeReferences()==0,
+assert(not M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.Diagnostics.RangeReferences()==0,
     "disabled range coloring kept range checks or its event listener")
 assert(S.Set("actionbars","rangeColoring",true));RunTimers()
-assert(M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.RangeReferences()>0,
+assert(M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.Diagnostics.RangeReferences()>0,
     "enabling range coloring did not restore its listener and checks")
 -- Slot changes in combat repaint, park later.
 combat=true
@@ -2246,7 +2246,7 @@ assert(overrideClears==clears+1 and not next(overrides),"disable clears override
 assert(S.Status("actionbars")==AB.RELOAD_MESSAGE,"reload message after disable")
 for index=1,12 do assert(not Bar(index).header.shown,"suite bars hide on disable") end
 assert(not next(M.context.frame.events),"no events while disabled")
-assert(AB.RangeReferences()==0)
+assert(AB.Diagnostics.RangeReferences()==0)
 local count=created
 assert(S.Set("actionbars","enabled",true))
 RunTimers()

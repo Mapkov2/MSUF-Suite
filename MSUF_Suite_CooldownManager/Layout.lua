@@ -587,6 +587,15 @@ function Layout.FixedAuras(view, entries)
     return fixed, fixed and single, split
 end
 
+-- Diagnostics: the player and target lines an aura bar reserves.
+function C.Diagnostics.BarLines(slot)
+    local view, plan = C.views[slot], C.plans[slot]
+    if not (view and plan) then return nil end
+    local n1, n2 = Parts(view, plan.entries)
+    local _, _, _, per = Cells(view, px or Layout.PixelScale())
+    return ceil(n1 / per), ceil(n2 / per)
+end
+
 -- Aura bars: footprint of every entry (the container shows the active ones);
 -- player-row entries first, target-row entries from a new line in growth
 -- order. Fixed cells follow entry positions in the plan.
@@ -606,7 +615,6 @@ local function PlaceAuras(bar, view, plan)
     else
         width, height = Fill(w, h, sp, per, vertical, grow, align, n1, n2, out, unit)
     end
-    bar.lines1, bar.lines2 = ceil(n1 / per), ceil(n2 / per)
     local cells = bar.cells
     if #cells > 0 then
         local host = Host(bar)

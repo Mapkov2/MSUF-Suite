@@ -621,8 +621,8 @@ function Effects.ReleaseAll()
     end
 end
 
--- Test and diagnostics hook: range references currently held.
-function Effects.RangeReferences()
+-- Diagnostics: range references currently held.
+function C.Diagnostics.RangeReferences()
     local total = 0
     for _, count in pairs(rangeRefs) do total = total + count end
     return total

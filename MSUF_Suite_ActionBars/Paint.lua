@@ -626,8 +626,8 @@ end
 -- next charge-related event starts a new epoch.
 local function NewChargeEpoch() chargeEpoch = chargeEpoch + 1 end
 
--- Test and diagnostics hook: the number of suite range references held.
-function AB.RangeReferences()
+-- Diagnostics: the number of suite range references held.
+function AB.Diagnostics.RangeReferences()
     local total = 0
     for _, count in pairs(rangeRefs) do total = total + count end
     return total

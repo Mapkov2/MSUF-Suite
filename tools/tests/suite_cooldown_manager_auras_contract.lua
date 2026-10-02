@@ -500,7 +500,7 @@ GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 
 ------------------------------------------------------------------ CDM private table
-local C={M={},EMPTY={},views={},plans={},bars={},entries={},spells={v=1,e={}},lists=CDM.CleanLists(nil),wipe=wipe}
+local C={M={},EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},spells={v=1,e={}},lists=CDM.CleanLists(nil),wipe=wipe}
 C.state={config={},px=1,fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,threshold=0,
     thR=1,thG=.35,thB=.24,muteSounds=false,soundChannel="Master",soundQuietUntil=0,inCombat=false,preview=false}
 local P={NS=NS,Suite=S,CDM=C}
@@ -1362,7 +1362,7 @@ assert(Live("buf","player")==compactP,"re-enable reuses the pool")
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+        local C2={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         local L2=C2.Layout
@@ -1399,7 +1399,7 @@ end
 -- the rule and against the real Extent from Exports.lua.
 do
     local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua"))
-    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+    local Cx={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
         Visibility={Paint=function() end}}
     chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     local L2=Cx.Layout
@@ -1736,14 +1736,15 @@ assert(#bt.points==1 and bt.points[1][1]=="TOP" and bt.points[1][2]==c2Host and 
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         C3.Layout.Apply("c2")
         local lb=C3.bars.c2
         -- the layout reserves the lines the aura layer offsets by: three
         -- player-part entries (two lines of two), then the target line
-        assert(lb.lines1==2 and lb.lines2==1,"the real layout reserves two player lines and the target line")
+        local lines1,lines2=C3.Diagnostics.BarLines(lb.key)
+        assert(lines1==2 and lines2==1,"the real layout reserves two player lines and the target line")
         assert(Args(lb.frame,"SetSize")[1]==62 and Args(lb.frame,"SetSize")[2]==94,"footprint: two per line, three lines")
     end
 end

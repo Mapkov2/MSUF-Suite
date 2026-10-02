@@ -749,6 +749,11 @@ local private={}
 Support.Load(root,ADDON,private)
 for key in pairs(_G) do assert(globalsBefore[key],"runtime created the global "..tostring(key)) end
 local C=assert(private.CDM,"Bootstrap must publish P.CDM")
+-- The player and target lines the layout reserves on an aura bar.
+local function LinesAre(bar,first,second)
+    local lines1,lines2=C.Diagnostics.BarLines(bar.key)
+    return lines1==first and lines2==second
+end
 for _,field in ipairs({"M","EMPTY","state","views","plans","bars","entries","lists","spells"}) do
     assert(C[field]~=nil,"P.CDM."..field.." missing")
 end
@@ -797,7 +802,7 @@ do
 end
 -- Every setting suffix of the catalog says what its change dirties.
 for suffix in pairs(Suite.CDM.SUFFIXES) do
-    assert(C.SettingWork[suffix],"the controller has no work mapping for the setting suffix "..suffix)
+    assert(C.Diagnostics.SettingWork[suffix],"the controller has no work mapping for the setting suffix "..suffix)
 end
 
 ------------------------------------------------------------------ loaded, never enabled: cold snapshot
@@ -829,8 +834,8 @@ do
     local ov={timeText=3,stackText=2}
     local parent=New("Frame",UIParent)
     local sample=C.AuraButtons.Sample(parent,nil,v,ov,500,"Sample")
-    assert(#sample.part.markerValues==2 and sample.part.markerValues[1]==2
-        and sample.part.markerValues[2]==5 and sample.part.count.text=="6"
+    local marked=C.Diagnostics.MarkerValues(sample)
+    assert(#marked==2 and marked[1]==2 and marked[2]==5 and sample.part.count.text=="6"
         and not sample.part.dur.shown and sample.part.count.shown,
         "stack marks, sample count and per-spell time choice must render")
     local before=writes
@@ -839,11 +844,11 @@ do
     local marker=sample.part.markers[1]
     v.styleGen,v.barStackEach,v.barStackMax=2,true,4
     C.AuraButtons.Sample(parent,sample,v,{},500,"Sample")
-    assert(#sample.part.markerValues==3 and sample.part.markers[1]==marker
+    assert(#C.Diagnostics.MarkerValues(sample)==3 and sample.part.markers[1]==marker
         and sample.part.dur.shown and sample.part.count.text=="2","stack marks must reuse their pool")
     v.styleGen,v.barStacks,v.barTime,v.stackText,v.barName=3,false,false,false,false
     C.AuraButtons.Sample(parent,sample,v,nil,500,"Sample")
-    assert(#sample.part.markerValues==0 and not sample.part.markers[1].shown
+    assert(#C.Diagnostics.MarkerValues(sample)==0 and not sample.part.markers[1].shown
         and not sample.part.count.shown and not sample.part.dur.shown and not sample.name.shown,
         "turning features off must clear all corresponding preview regions")
     local view,plan=C.views.bar,C.plans.bar
@@ -954,7 +959,7 @@ for _,slot in ipairs({"ess","uti","def","ext","buf","bar"}) do
     assert(bars[slot] and bars[slot].shown and bars[slot].frame.shown,slot.." bar not shown")
 end
 assert(not (bars.c1 and bars.c1.shown),"custom bars start off")
-assert(C.Icons.Count("ess")==4 and C.Icons.Count("uti")==2 and C.Icons.Count("ext")==2,"cooldown icons per bar")
+assert(C.Diagnostics.IconCount("ess")==4 and C.Diagnostics.IconCount("uti")==2 and C.Diagnostics.IconCount("ext")==2,"cooldown icons per bar")
 -- The trinket slot joins the end of Essential; Potions and racials keeps the
 -- racial and the potion category.
 local trinket=assert(C.entries.b71,"trinket entry")
@@ -986,9 +991,9 @@ assert(C.state.specID==63 and C.state.specTag==82,"spec detection")
 assert(bars.ess.frame.point[1]=="TOP" and bars.ess.frame.point[2]==UIParent and bars.ess.frame.point[3]=="CENTER"
     and bars.ess.frame.point[4]==0 and bars.ess.frame.point[5]==141,"free bars anchor their growth edge to the screen center")
 assert(bars.uti.parent=="ess","Utility attaches to Essential")
-assert(C.Effects.RangeReferences()==2,"range checks held for range spells")
+assert(C.Diagnostics.RangeReferences()==2,"range checks held for range spells")
 assert(frameKinds.AuraContainer and frameKinds.AuraContainer>=4,"aura containers for buffs, buff bars and overlays")
-assert(DriverCount()==0 and C.Visibility.DriverCount()==0,"bars shown always need no state driver")
+assert(DriverCount()==0 and C.Diagnostics.DriverCount()==0,"bars shown always need no state driver")
 for _,event in ipairs({"SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_CHARGES","SPELL_UPDATE_USABLE","SPELL_RANGE_CHECK_UPDATE",
     "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW","SPELL_ACTIVATION_OVERLAY_GLOW_HIDE","BAG_UPDATE_COOLDOWN","BAG_UPDATE_DELAYED",
     "PLAYER_TARGET_CHANGED","COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED","SPELLS_CHANGED",
@@ -2013,12 +2018,12 @@ local stage=New("Frame",UIParent)
 local canvas=assert(S.CooldownManagerRenderPreview(stage,"ess",60,100),"preview canvas")
 assert(canvas.parent==stage and canvas.scale and canvas.scale<1,"the canvas shrinks to fit")
 local canvasIcon=canvas.icons[1]
-local liveCount=C.Icons.Count("ess")
+local liveCount=C.Diagnostics.IconCount("ess")
 assert(S.CooldownManagerSimulate(true))
 local live,ticker=LiveTickers()
 assert(live==1 and ticker.interval==10,"one simulation ticker")
 assert(C.plans.ess.entries[1].icon.sim and canvasIcon.cd.running,"simulated cooldown on live and canvas icons")
-assert(C.Icons.Count("ess")==liveCount,"the canvas never touches live bars")
+assert(C.Diagnostics.IconCount("ess")==liveCount,"the canvas never touches live bars")
 combat=true
 Fire("PLAYER_REGEN_DISABLED")
 assert(LiveTickers()==0 and not C.plans.ess.entries[1].icon.sim,"combat stops the simulation")
@@ -2100,7 +2105,7 @@ assert(C.plans.c2.kind==2 and #C.plans.c2.entries==3 and C.entries.d302.unit=="t
 assert(select(3,C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries))==true
     and not C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries),"a centered mixed row on one line splits, compact")
 -- 36 px icons, 2 px apart: one line of three cells.
-assert(bars.c2.lines1==1 and bars.c2.lines2==1 and bars.c2.frame.w==112 and bars.c2.frame.h==36,
+assert(LinesAre(bars.c2,1,1) and bars.c2.frame.w==112 and bars.c2.frame.h==36,
     "three entries at three per line lay out as one line ("..tostring(bars.c2.frame.w).."x"..tostring(bars.c2.frame.h)..")")
 bars.c2.frame.rect={400,300,74,74}
 values=assert(S.CooldownManagerConvertGrow("c2",2))
@@ -2112,7 +2117,7 @@ Run()
 assert(select("#",C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries))==3
     and not C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries)
     and not select(3,C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries)),"over two lines the row stays compact, unsplit")
-assert(bars.c2.lines1==1 and bars.c2.lines2==1 and bars.c2.frame.w==74 and bars.c2.frame.h==74,"a player line, then a target line")
+assert(LinesAre(bars.c2,1,1) and bars.c2.frame.w==74 and bars.c2.frame.h==74,"a player line, then a target line")
 values=assert(S.CooldownManagerConvertGrow("c2",2))
 assert(values.c2_x==437-512 and values.c2_y==300+37-384-37,"aura bars convert with both groups' lines ("..tostring(values.c2_y)..")")
 -- Per-spell "Track on" (auraUnit) travels through spellsData: 1 automatic
@@ -2207,7 +2212,7 @@ do (function()
         if not changed then
             assert(target==oldTarget and target.calls.SetPoint==placed,label..": an unchanged unit places nothing again")
         end
-        assert(bars.c2.lines1==lines and bars.c2.lines2==1 and math.abs(bars.c2.frame.h-((lines+1)*h+lines*sp))<1e-6,
+        assert(LinesAre(bars.c2,lines,1) and math.abs(bars.c2.frame.h-((lines+1)*h+lines*sp))<1e-6,
             label..": the layout follows ("..tostring(bars.c2.frame.h)..")")
         local conv=assert(S.CooldownManagerConvertGrow("c2",2))
         local depth=(lines+1)*h+lines*sp
@@ -2986,7 +2991,7 @@ for _,event in ipairs({"SPELL_UPDATE_USABLE","SPELL_RANGE_CHECK_UPDATE","SPELL_A
 end
 assert(Registered("SPELL_UPDATE_CHARGES"),"recharge swipes do not depend on shown counts")
 assert(Registered("SPELL_UPDATE_COOLDOWN"))
-assert(C.Effects.RangeReferences()==0,"range checks released")
+assert(C.Diagnostics.RangeReferences()==0,"range checks released")
 local released=0
 for _,call in ipairs(rangeLog) do if call[2]==false then released=released+1 end end
 assert(released>=2)
@@ -3217,7 +3222,7 @@ assert(not next(module.context.frame.events),"events left registered")
 assert(DriverCount()==0,"visibility drivers left registered")
 assert(not registry["CooldownViewerSettings.OnPendingChanges"] and not registry["AssistedCombatManager.OnAssistedHighlightSpellChange"],
     "registry callbacks left registered")
-assert(C.Effects.RangeReferences()==0 and LiveTickers()==0)
+assert(C.Diagnostics.RangeReferences()==0 and LiveTickers()==0)
 assert(Suite.CooldownManager.GetAnchorFrame("EssentialCooldownViewer")==nil,"no anchor while off")
 assert(S.CooldownManagerStatus()==nil)
 Run(5)
@@ -3245,11 +3250,11 @@ config.blizzard=2
 module.active=true
 module:Enable()
 Run()
-assert(C.Preview.mode=="options" and C.state.preview and C.Icons.Count("ess")==5,"the stored preview request applies on enable")
+assert(C.Preview.mode=="options" and C.state.preview and C.Diagnostics.IconCount("ess")==5,"the stored preview request applies on enable")
 assert(S.CooldownManagerSetPreview(false))
 Run()
 assert(not C.state.preview,"the page takes its request back")
-assert(bars.ess.shown and C.Icons.Count("ess")==4 and Registered("SPELL_UPDATE_COOLDOWN"),"re-enable")
+assert(bars.ess.shown and C.Diagnostics.IconCount("ess")==4 and Registered("SPELL_UPDATE_COOLDOWN"),"re-enable")
 assert(essViewer.alpha==0 and cvars.cooldownViewerEnabled=="1")
 assert(AnchorEvents()==anchorCount+2,"a second activation notifies once")
 local alphaHook,acquireHook
@@ -3276,7 +3281,7 @@ do
     C.Auras.ReleaseAll=releaseAuras
     assert(#dispatch.errors==errors+1 and dispatch.errors[errors+1]:find("aura release failed",1,true),
         "the raising release step was not reported")
-    assert(C.Icons.Count("ess")==0 and not bars.ess.frame.shown and next(C.plans)==nil and next(C.entries)==nil,
+    assert(C.Diagnostics.IconCount("ess")==0 and not bars.ess.frame.shown and next(C.plans)==nil and next(C.entries)==nil,
         "a raising release step stopped the icon, bar and plan release after it")
     assert(not next(module.context.frame.events),"a raising release step kept the events")
     releaseAuras()

@@ -74,7 +74,7 @@ Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSi
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.
 local FRESH = { layout = true, style = true, behavior = true, index = true, visible = true, resolve = true, named = true }
-C.SettingWork = WORK
+C.Diagnostics.SettingWork = WORK
 -- A bar setting nobody listed above does all of it, so a new setting is
 -- never silently ignored (the action bars do the same).
 local EVERYTHING = {}

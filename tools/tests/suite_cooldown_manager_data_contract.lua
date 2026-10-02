@@ -182,7 +182,7 @@ end
 local S={Public=function(v) return not IsSecret(v) end,Text=function(v) return v end,
     CreateFrame=function(...) return CreateFrame(...) end}
 local P={NS=NS,Suite=S}
-P.CDM={M={},EMPTY={},state={raidEssentials=false},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
+P.CDM={M={},EMPTY={},Diagnostics={},state={raidEssentials=false},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local C=P.CDM
 -- The shared constants and helpers load first, as in the TOC.

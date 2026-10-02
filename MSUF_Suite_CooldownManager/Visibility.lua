@@ -357,8 +357,8 @@ function Visibility.ReleaseAll()
     Watch(false)
 end
 
--- Test and diagnostics hook: registered driver entries.
-function Visibility.DriverCount()
+-- Diagnostics: registered driver entries.
+function C.Diagnostics.DriverCount()
     local count = 0
     for _, driver in pairs(Visibility.drivers) do
         if driver.slots[1] ~= nil then count = count + 1 end
