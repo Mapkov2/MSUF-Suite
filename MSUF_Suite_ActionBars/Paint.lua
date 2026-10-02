@@ -18,6 +18,9 @@ local USABLE, USABLE_TINT = S.USABLE, S.USABLE_TINT
 local USABLE_OK, NO_POWER, UNUSABLE, OUT_OF_RANGE = USABLE.USABLE, USABLE.NO_POWER, USABLE.UNUSABLE, USABLE.OUT_OF_RANGE
 local UNUSABLE_TINT = USABLE_TINT[UNUSABLE]
 local Public = S.Public
+-- The client's secret test (Platform.lua), called directly on the paint
+-- paths every cooldown, usability and state event runs.
+local IsSecret = NS.IsSecret
 local UpdateAssist = AB.UpdateAssist
 local api = {}
 local slotMap = {}
@@ -143,7 +146,8 @@ local function Usable(rec, usable, noMana)
         return
     end
     if usable == nil then usable, noMana = api.Usable(rec.slot) end
-    rec.usable = (Public(usable) and usable) and USABLE_OK or (Public(noMana) and noMana) and NO_POWER or UNUSABLE
+    rec.usable = (not IsSecret(usable) and usable) and USABLE_OK
+        or (not IsSecret(noMana) and noMana) and NO_POWER or UNUSABLE
     Tint(rec)
 end
 
@@ -152,7 +156,7 @@ local function State(rec)
     if M.config.castHighlight then
         local current = api.Current(slot)
         local repeating = api.AutoRepeat(slot)
-        checked = (Public(current) and current) or (Public(repeating) and repeating) or false
+        checked = (not IsSecret(current) and current) or (not IsSecret(repeating) and repeating) or false
     end
     rec.button:SetChecked(checked)
     rec.decorChecked = checked
@@ -166,10 +170,11 @@ local function Count(rec, charges, queried)
     local alpha = 1
     if M.config.hideEmptyCharges and rec.noChargeEpoch ~= chargeEpoch then
         if not queried then charges, queried = api.Charges(slot), true end
-        local readable = Public(charges) and type(charges) == "table"
+        local readable = not IsSecret(charges) and type(charges) == "table"
         local maximum, current = readable and charges.maxCharges, readable and charges.currentCharges
         -- Secret while cooldowns are restricted: the count then stays shown.
-        if Public(maximum) and type(maximum) == "number" and maximum > 1 and Public(current) and current == 0 then alpha = 0 end
+        if not IsSecret(maximum) and type(maximum) == "number" and maximum > 1
+            and not IsSecret(current) and current == 0 then alpha = 0 end
     end
     count:SetAlpha(alpha)
     return charges, queried
@@ -251,7 +256,7 @@ local function Cooldown(rec, charges, chargesQueried)
     if loc and AB.locActive then
         local lossInfo = api.LoC(slot)
         local shown = lossInfo and lossInfo.isActive
-        if Public(shown) and shown then
+        if not IsSecret(shown) and shown then
             replace = lossInfo.shouldReplaceNormalCooldown == true
             rec.locCooldownShown = Swipe(loc, api.LoCDuration(slot))
         elseif rec.locCooldownShown then
@@ -278,21 +283,21 @@ local function Cooldown(rec, charges, chargesQueried)
             -- A full paint already read the same native table for the count.
             -- Share it only within this synchronous paint, including a nil result.
             if not chargesQueried then charges, chargesQueried = api.Charges(slot), true end
-            local readable = Public(charges) and type(charges) == "table"
+            local readable = not IsSecret(charges) and type(charges) == "table"
             local recharging = readable and charges.isActive
-            if Public(recharging) and recharging and not replace then
+            if not IsSecret(recharging) and recharging and not replace then
                 rec.chargeCooldownShown = Swipe(charge, api.ChargeDuration(slot))
-            elseif readable and Public(recharging) and rec.chargeCooldownShown then
+            elseif readable and not IsSecret(recharging) and rec.chargeCooldownShown then
                 charge:Clear()
                 rec.chargeCooldownShown = nil
             end
             -- Blizzard returns a public maxCharges=0 for actions without charges.
             -- Recheck on a charge event or when the action itself is repainted.
             local maximum = readable and charges.maxCharges
-            if Public(maximum) and type(maximum) == "number" and maximum > 0 then
+            if not IsSecret(maximum) and type(maximum) == "number" and maximum > 0 then
                 rec.chargeTypeEpoch = chargeEpoch
             end
-            if Public(maximum) and maximum == 0 and Public(recharging) and recharging == false then
+            if not IsSecret(maximum) and maximum == 0 and not IsSecret(recharging) and recharging == false then
                 rec.noChargeEpoch = chargeEpoch
                 rec.chargeTypeEpoch = nil
             end
@@ -435,6 +440,49 @@ local function GlowCheck(rec)
     SetGlow(rec, show and M.config.procGlow ~= PROC_NONE)
 end
 
+------------------------------------------------------------------ spell cooldown routes
+-- spell ID -> the suite buttons on a spell action of that ID: what
+-- SPELL_UPDATE_COOLDOWN repaints (Events.lua). A button joins when it is
+-- painted (GlowCheck has just cached its action) and leaves when it is
+-- cleared or painted onto another action. Lists are kept and reused, like
+-- the slot map's.
+local spellButtons = {}
+
+local function UnrouteSpell(rec)
+    local id = rec.cdSpell
+    if not id then return end
+    rec.cdSpell = nil
+    local list = spellButtons[id]
+    for i = #list, 1, -1 do
+        if list[i] == rec then
+            table.remove(list, i)
+            return
+        end
+    end
+end
+
+local function RouteSpell(rec)
+    local id = rec.glowKind == GLOW_SPELL and rec.glowID or nil
+    if rec.cdSpell == id then return end
+    UnrouteSpell(rec)
+    if not id then return end
+    rec.cdSpell = id
+    local list = spellButtons[id]
+    if not list then
+        list = {}
+        spellButtons[id] = list
+    end
+    list[#list + 1] = rec
+end
+
+-- Whether SPELL_UPDATE_COOLDOWN alone keeps the button's swipes current: a
+-- spell action without charges in this charge epoch (Cooldown proves it).
+-- Charge actions, items, macros, flyouts and unreadable actions follow
+-- ACTIONBAR_UPDATE_COOLDOWN, which also brings a recharge back.
+local function SpellRouted(rec)
+    return rec.cdSpell ~= nil and (not rec.button.chargeCooldown or rec.noChargeEpoch == chargeEpoch)
+end
+
 ------------------------------------------------------------------ buttons
 local function Clear(rec)
     if rec.quality then rec.quality:Hide() end
@@ -461,6 +509,7 @@ local function Clear(rec)
         button:SetAlpha(1)
     end
     rec.glowKind, rec.glowID = GLOW_NONE, nil
+    UnrouteSpell(rec)
     SetGlow(rec, false)
     ReleaseRange(rec)
 end
@@ -511,15 +560,23 @@ local function Paint(rec)
     ProfessionQuality(rec)
     Cooldown(rec, charges, chargesQueried)
     GlowCheck(rec)
+    RouteSpell(rec)
     -- The recommendation ring follows the action the paint just cached.
     UpdateAssist(rec)
 end
 
 -- Icon storms (forms, spell overrides): only buttons whose texture changed
--- get the full repaint.
+-- get the full repaint. A spell action keeping its icon is still repainted
+-- when its spell ID changed (an override with the same art): its cooldown
+-- route follows the ID.
 local function Icon(rec)
     local texture = api.Texture(rec.slot)
-    if rec.tex ~= nil and Public(texture) and texture == rec.tex then return end
+    if rec.tex ~= nil and Public(texture) and texture == rec.tex then
+        local spell = rec.cdSpell
+        if not spell then return end
+        local kind, id = ReadAction(rec.slot)
+        if kind == "spell" and id == spell then return end
+    end
     Paint(rec)
 end
 
@@ -637,6 +694,7 @@ end
 
 AB.Painter = {
     api = api, slotMap = slotMap, Visible = Visible, NewChargeEpoch = NewChargeEpoch,
+    spellButtons = spellButtons, SpellRouted = SpellRouted,
     Tint = Tint, ReleaseRange = ReleaseRange, AcquireRange = AcquireRange,
     Usable = Usable, State = State, Count = Count, Cooldown = Cooldown, CooldownFeedback = CooldownFeedback,
     CacheAction = CacheAction, ActionSpell = ActionSpell, SetGlow = SetGlow, GlowCheck = GlowCheck,

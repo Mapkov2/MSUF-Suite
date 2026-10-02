@@ -13,16 +13,21 @@ local slotMap, Visible = Painter.slotMap, Painter.Visible
 local Walk, WalkNative, Paint, Icon, Refill, PaintBar = Painter.Walk, Painter.WalkNative, Painter.Paint, Painter.Icon, Painter.Refill, Painter.PaintBar
 local Cooldown, Usable, State, Count, GlowCheck, AllKeyTexts = Painter.Cooldown, Painter.Usable, Painter.State, Painter.Count, Painter.GlowCheck,
     Painter.AllKeyTexts
+local SpellRouted = Painter.SpellRouted
 local NativeFeedback, NativeState, NativeCount = NativeButtons.Feedback, NativeButtons.State, NativeButtons.Count
 local NativeColor, Retint = NativeButtons.Color, NativeButtons.Retint
 -- tint: re-applies the range color after a color change; keys: binding
 -- texts; usable: every suite button's usability; unreported: only those on
--- slots ACTION_USABLE_CHANGED never named.
+-- slots ACTION_USABLE_CHANGED never named. cooldown: every button's
+-- cooldown; actionbarCooldown: those SPELL_UPDATE_COOLDOWN does not keep
+-- current (ACTIONBAR_UPDATE_COOLDOWN names no action).
 local dirty = {
-    cooldown = false, usable = false, unreported = false, state = false, count = false, icon = false, tint = false,
-    keys = false, full = false,
+    cooldown = false, actionbarCooldown = false, usable = false, unreported = false, state = false, count = false,
+    icon = false, tint = false, keys = false, full = false,
 }
 local dirtySlots, dirtyBars, refillBars, gridBars = {}, {}, {}, {}
+-- The suite buttons SPELL_UPDATE_COOLDOWN named since the last flush.
+local spellCooldowns = {}
 -- Protected work for the next flush out of combat: every bar's shown-button
 -- plan (grid) and the key routing (routing).
 local protected = { grid = false, routing = false }
@@ -30,7 +35,7 @@ local protected = { grid = false, routing = false }
 -- of the cooldown/usable cap is pending. Separate flags, so next-frame work
 -- (a page change, a slot change) never waits for the cap.
 local scheduled, throttled = false, false
-local last = { cooldown = 0, usable = 0, unreported = 0 }
+local last = { cooldown = 0, actionbarCooldown = 0, usable = 0, unreported = 0 }
 -- Slots ACTION_USABLE_CHANGED has named: the client tracks their usability.
 local reported = {}
 local CAP = 0.1
@@ -78,6 +83,34 @@ local function CooldownWalk()
     end
     if not AB.directDuration then WalkNative(NativeFeedback) end
 end
+
+-- ACTIONBAR_UPDATE_COOLDOWN: the buttons SPELL_UPDATE_COOLDOWN does not
+-- keep current, Blizzard's reused buttons' feedback, and the count mark the
+-- same way as the full walk.
+local function OtherCooldown(rec)
+    if not SpellRouted(rec) then Cooldown(rec) end
+end
+local function OtherCooldownAndCount(rec)
+    if SpellRouted(rec) then Count(rec) else CooldownAndCount(rec) end
+end
+local function ActionbarCooldownWalk()
+    if dirty.count then
+        Walk(OtherCooldownAndCount)
+        if M.config.hideEmptyCharges then WalkNative(NativeCount) end
+        dirty.count = false
+    else
+        Walk(OtherCooldown)
+    end
+    if not AB.directDuration then WalkNative(NativeFeedback) end
+end
+
+-- The buttons SPELL_UPDATE_COOLDOWN named, once each per flush.
+local function SpellCooldownWalk()
+    for rec in pairs(spellCooldowns) do
+        spellCooldowns[rec] = nil
+        if rec.filled and Visible(rec.bar) then Run(spellCooldowns, rec, true, Cooldown, rec) end
+    end
+end
 local function UsableWalk() Walk(Usable) end
 -- ACTION_USABLE_CHANGED names the slots it tracks; a suite button on a slot
 -- it never named (bars 9/10 have no Blizzard button) follows
@@ -87,17 +120,19 @@ local function UsableIfUnreported(rec)
 end
 local function UnreportedWalk() Walk(UsableIfUnreported) end
 
--- Leading edge next frame, then at most one walk per CAP seconds.
+-- Leading edge next frame, then at most one walk per CAP seconds. True
+-- when the walk ran.
 local function Capped(kind, now, fn)
-    if not dirty[kind] then return end
+    if not dirty[kind] then return false end
     local wait = last[kind] + CAP - now
     if wait > 0 then
         Throttle(wait)
-        return
+        return false
     end
     dirty[kind] = false
     last[kind] = now
     Run(dirty, kind, true, fn)
+    return true
 end
 
 -- A full refresh repaints every bar and absorbs the same-frame marks.
@@ -105,6 +140,7 @@ local function ExpandFull()
     dirty.full = false
     for kind in pairs(dirty) do dirty[kind] = false end
     for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
+    for rec in pairs(spellCooldowns) do spellCooldowns[rec] = nil end
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
         if bar then dirtyBars[bar] = true end
@@ -177,7 +213,15 @@ local WALK_KINDS = { "state", "count", "icon", "tint", "keys" }
 local WALKS = { state = StateWalk, count = CountWalk, icon = IconWalk, tint = TintWalk, keys = AllKeyTexts }
 
 local function WalkDirty(now)
-    Capped("cooldown", now, CooldownWalk)
+    -- The full cooldown walk (loss of control, a global cooldown, an unnamed
+    -- spell, a setting) also covers both targeted cooldown kinds.
+    if dirty.cooldown then dirty.actionbarCooldown = false end
+    if Capped("cooldown", now, CooldownWalk) then
+        for rec in pairs(spellCooldowns) do spellCooldowns[rec] = nil end
+    else
+        Capped("actionbarCooldown", now, ActionbarCooldownWalk)
+        if next(spellCooldowns) then SpellCooldownWalk() end
+    end
     -- The full usability walk covers the unreported slots.
     if dirty.usable then dirty.unreported = false end
     Capped("usable", now, UsableWalk)
@@ -263,6 +307,7 @@ end
 local function Reset()
     for kind in pairs(dirty) do dirty[kind] = false end
     for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
+    for rec in pairs(spellCooldowns) do spellCooldowns[rec] = nil end
     for bar in pairs(dirtyBars) do dirtyBars[bar] = nil end
     for bar in pairs(gridBars) do gridBars[bar] = nil end
     protected.routing, protected.grid = false, false
@@ -271,6 +316,6 @@ end
 
 -- What the event map (Events.lua) marks directly.
 AB.Dirty = {
-    slots = dirtySlots, grid = gridBars, protected = protected, reported = reported,
+    slots = dirtySlots, grid = gridBars, protected = protected, reported = reported, spellCooldowns = spellCooldowns,
     Schedule = Schedule, Mark = Mark, Reset = Reset,
 }
