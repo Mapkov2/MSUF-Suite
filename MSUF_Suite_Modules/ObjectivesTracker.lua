@@ -270,19 +270,9 @@ local function EnsureTimer(row)
 end
 
 ------------------------------------------------------------------ countdowns
--- One shared one-second callback runs while a visible countdown remains.
--- C_Timer.After cannot be cancelled: a cancelled wait only counts as stale.
-local UpdateTimers
-local function TimerTick()
-    if M.staleTimers > 0 then
-        M.staleTimers = M.staleTimers - 1
-        return
-    end
-    M.timerPending = false
-    UpdateTimers(M)
-end
-
-UpdateTimers = function(self)
+-- One one-second tick (self.countdownJob, Objectives.lua) runs while a
+-- visible countdown remains.
+local function UpdateTimers(self)
     if not self.active or self.pausedForRaidCombat or not self.timedRows then return end
     local now, ticking = GetTime(), false
     for row in pairs(self.timedRows) do
@@ -303,11 +293,9 @@ UpdateTimers = function(self)
             end
         end
     end
-    if ticking and not self.timerPending then
-        self.timerPending = true
-        C_Timer.After(1, TimerTick)
-    end
+    if ticking then self.countdownJob:Request() end
 end
+O.UpdateTimers = UpdateTimers
 
 ------------------------------------------------------------------ theme and layout
 local function RGB(hex)

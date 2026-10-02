@@ -321,8 +321,11 @@ S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return m
 local characterData = {}
 S.CharacterData = function(id) characterData[id] = characterData[id] or {}; return characterData[id] end
 MutedHost = Widget(UIParent)
-local function Context()
-    local ctx = { events = {}, eventUnits = {}, hidden = {}, saved = {}, muted = {} }
+-- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on a stub
+-- context of module id.
+local TimerContext
+local function Context(id, module)
+    local ctx = TimerContext(id, module, { events = {}, eventUnits = {}, hidden = {}, saved = {}, muted = {} })
     function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
     function ctx:RemoveEvent(event) self.events[event] = nil end
     function ctx:Skin() return nil end
@@ -370,12 +373,14 @@ do
     assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
     for key, value in pairs(stubs) do S[key] = value end
 end
+suite.Dispatch = S.Dispatch
+TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, suite)
 local private = { NS = suite, Suite = S }
 for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesActions", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
-tracker.context = Context()
+tracker.context = Context("objectives", tracker)
 tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
     showWorldQuests = true, showBonus = true, showAchievements = true, showScenario = true }
 -- Blizzard's tracker is a right-managed Edit Mode frame: a SetParent or Hide
@@ -669,7 +674,7 @@ assert(#movers.objectives.spec.extraControls == 3
 assert(movers.objectives.spec.extraControls[3].set(125) and tracker.config.scale == 125)
 assert(movers.objectives.spec.extraControls[3].set(100))
 local banner = S.instances.announcements
-banner.context = Context()
+banner.context = Context("announcements", banner)
 banner.config = { zone = true, eventToasts = true, quests = false,
     achievements = true, level = false, scenario = false,
     duration = 4, scale = 100, anchor = 1, x = 0, y = -90 }
@@ -1226,14 +1231,14 @@ insideRaid, instanceKind = false, nil
 tracker.config.pauseInRaidCombat = true
 tracker.config.showTimers = true
 tracker:Refresh()
-assert(tracker.timerPending, "visible objective timers should schedule before raid combat")
+assert(tracker.countdownJob.pending, "visible objective timers should schedule before raid combat")
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 -- The client sends PLAYER_REGEN_DISABLED before InCombatLockdown() turns true.
 insideRaid, instanceKind = true, "raid"
 tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
 combatLocked = true
 assert(tracker.pausedForRaidCombat and not tracker.host.shown
-    and not tracker.timerPending
+    and not tracker.countdownJob.pending
     and not tracker.context.events.QUEST_LOG_UPDATE
     and not tracker.context.events.SCENARIO_UPDATE
     and not tracker.context.events.GROUP_ROSTER_UPDATE
@@ -1242,7 +1247,7 @@ assert(tracker.pausedForRaidCombat and not tracker.host.shown
 local beforeRaidReads = questUpdates
 tracker.context.events.ZONE_CHANGED_NEW_AREA(tracker, "ZONE_CHANGED_NEW_AREA")
 Drain()
-assert(questUpdates == beforeRaidReads and not tracker.timerPending,
+assert(questUpdates == beforeRaidReads and not tracker.countdownJob.pending,
     "raid combat must cancel queued tracker reads and countdown ticks")
 combatLocked = false
 tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")

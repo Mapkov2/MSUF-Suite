@@ -13,28 +13,18 @@ local ID = "objectives"
 
 ------------------------------------------------------------------ refresh flow
 local function Flush(self)
-    self.scheduled = false
+    self.flushJob:Clear()
     if not self.active or self.pausedForRaidCombat or self.mplusActive or self.raidActive then return end
     CollectDirty(self)
     O.UpdateQuestItem(self)
     Render(self)
 end
 
--- Events in one frame share a single flush through one shared callback.
-local function FlushScheduled()
-    if M.staleFlushes > 0 then
-        M.staleFlushes = M.staleFlushes - 1
-        return
-    end
-    Flush(M)
-end
-
+-- Events in one frame share a single flush (self.flushJob).
 local function Request(self, key)
     if self.pausedForRaidCombat or self.raidActive then return end
     self.dirty[key] = true
-    if self.scheduled then return end
-    self.scheduled = true
-    C_Timer.After(0, FlushScheduled)
+    self.flushJob:Request()
 end
 
 -- Native scenario headers can change height when their currencies or effects
@@ -50,16 +40,10 @@ local function MarkAllDirty(self)
     for i = 1, #SOURCES do self.dirty[SOURCES[i]] = true end
 end
 
--- Waits that were already handed to C_Timer become stale.
+-- The flush and the countdown tick already due are dropped.
 local function CancelPending(self)
-    if self.scheduled then
-        self.staleFlushes = self.staleFlushes + 1
-        self.scheduled = false
-    end
-    if self.timerPending then
-        self.staleTimers = self.staleTimers + 1
-        self.timerPending = false
-    end
+    self.flushJob:Cancel()
+    self.countdownJob:Cancel()
 end
 
 local function StopMythicPlus(self)
@@ -353,6 +337,8 @@ local function NativeAddonLoaded(module, _, name)
 end
 
 function M:Enable()
+    self.flushJob = self.context:Coalesce(0, Flush)
+    self.countdownJob = self.context:Coalesce(1, O.UpdateTimers)
     Create(self)
     self.active = true
     self.retheme = true

@@ -14,7 +14,6 @@ local O = {
     -- The module table; Objectives.lua installs it.
     M = {
         sources = {}, rows = {}, freeRows = {}, dirty = {},
-        staleFlushes = 0, staleTimers = 0,
     },
     -- The data sources, in collection order.
     SOURCES = { "quests", "world", "bonus", "achievements", "scenario" },
