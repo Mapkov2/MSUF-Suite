@@ -138,8 +138,19 @@ local function NewBossRow(view, index)
     row.time = NewText(row, 12, true)
     row.time:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     row.time:SetWidth(55)
+    row.paced = false
     view.bosses[index] = row
     return row
+end
+
+-- The boss rows' columns: the time column grows when the pace comparison
+-- shows (row.paced records the layout in place).
+local function PlaceBossColumns(row, paced)
+    row.paced = paced
+    row.time:SetWidth(paced and 116 or 55)
+    row.name:ClearAllPoints()
+    row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.name:SetPoint("RIGHT", row, "RIGHT", paced and -120 or -57, 0)
 end
 
 local CHEST_GROUPS = { "complete", "scenario", "focused" }
@@ -486,10 +497,7 @@ local function PaintCriterion(owner, info, bossCount, elapsed)
         end
     end
     local compare = (owner.config.bossPace or PACE_OFF) ~= PACE_OFF
-    row.time:SetWidth(compare and 116 or 55)
-    row.name:ClearAllPoints()
-    row.name:SetPoint("LEFT", row, "LEFT", 0, 0)
-    row.name:SetPoint("RIGHT", row, "RIGHT", compare and -120 or -57, 0)
+    if row.paced ~= compare then PlaceBossColumns(row, compare) end
     SetText(row.time, display)
     row:Show()
     return bossCount, nil, created
