@@ -628,13 +628,22 @@ events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(scans == 2 and name.points[1][1] == "CENTER", "event performed a scan or changed native anchors")
 -- Budget: Lua VM instructions of one NAME_PLATE_UNIT_ADDED of a styled plate
 -- (deterministic on Lua 5.1, this harness included). 2026-10-01: 1800
--- before existing unit frames were covered by the plate hooks, 1817 after;
--- the budget is the old baseline +2 %.
+-- before existing unit frames were covered by the plate hooks, 1817 after,
+-- 1831 with the cast time and level labels; 1792 with the setting keys read
+-- from per-prefix key tables (private.Key) instead of concatenated per paint.
+-- The budget is that baseline +2 %.
 -- The threat budget (2026-10-02: 114, +2 %) counts one
 -- UNIT_THREAT_SITUATION_UPDATE of that plate the same way; 100 of them must
 -- not allocate with the GC stopped.
 do
-    local PLATE_ADDED_BUDGET, THREAT_BUDGET = 1836, 116
+    local PLATE_ADDED_BUDGET, THREAT_BUDGET = 1828, 116
+    -- Setting keys come from the per-prefix tables: built once, then plain reads.
+    assert(private.Key.enemy.BackdropColor == "enemyBackdropColor"
+        and rawget(private.Key.friendly, "BackdropColor") == nil
+        and private.Key.friendly.BackdropColor == "friendlyBackdropColor"
+        and rawget(private.Key.friendly, "BackdropColor") == "friendlyBackdropColor"
+        and private.RoleKey.Tank.enabled == "enemyTankEnabled" and private.RoleKey.Tank.color == "enemyTankColor"
+        and private.RoleKey.Tank == private.RoleKey.Tank, "the setting key tables are wrong")
     local count = 0
     local function Instructions(fn)
         count = 0

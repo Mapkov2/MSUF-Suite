@@ -1,6 +1,6 @@
 local _, private = ...
 local NS = private.NS
-local Mode = private.Mode
+local Mode, Key = private.Mode, private.Key
 local Layout = {}
 private.Layout = Layout
 local Geometry = private.Geometry
@@ -197,7 +197,7 @@ local function LevelOffsets(state, uf, prefix, plan, setup, config, force)
     local level = plan.Level
     local nativeLevel = setup.useClassicHealthBar == true
     if NS.Client.isForever then
-        nativeLevel = config.levelAppearance == Mode.LEVEL_BADGE and config[prefix .. "LevelEnabled"]
+        nativeLevel = config.levelAppearance == Mode.LEVEL_BADGE and config[Key[prefix].LevelEnabled]
     end
     local classicLevel = nativeLevel and setup.useClassicHealthBar == true and not NS.Client.isForever
     Offset(state, uf.LevelFrame, classicLevel and level[1] or 0, classicLevel and level[2] or 0, force)
@@ -205,7 +205,7 @@ local function LevelOffsets(state, uf, prefix, plan, setup, config, force)
     local moveBadge = badgeShown == true
         and (NS.Client.isForever and nativeLevel or not NS.Client.isForever and not classicLevel)
     Offset(state, uf.PlayerLevelDiffFrame, moveBadge and level[1] or 0, moveBadge and level[2] or 0, force)
-    local ownLevel = not nativeLevel and config[prefix .. "LevelEnabled"]
+    local ownLevel = not nativeLevel and config[Key[prefix].LevelEnabled]
     Offset(state, module.levelLabels[uf], ownLevel and level[1] or 0, ownLevel and level[2] or 0, force)
     return badgeShown
 end
@@ -327,8 +327,9 @@ local function Apply(uf, prefix, config, force)
         module.needsRefresh = true
         return
     end
-    HealthSize(state, uf, setup, config[prefix .. "HealthWidthDelta"] or 0,
-        config[prefix .. "HealthHeightDelta"] or 0, force or geometryChanged, baseHeight)
+    local keys = Key[prefix]
+    HealthSize(state, uf, setup, config[keys.HealthWidthDelta] or 0,
+        config[keys.HealthHeightDelta] or 0, force or geometryChanged, baseHeight)
     ElementOffsets(state, uf, plan, force)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
     NameLink(state, uf, plan, setup, badgeShown)
