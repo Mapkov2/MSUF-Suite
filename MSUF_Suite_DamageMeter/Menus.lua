@@ -11,10 +11,12 @@ local Public, Finite = S.Public, S.Finite
 local format, max, min = string.format, math.max, math.min
 local HIDES = { "HideDungeon", "HideRaid", "HidePvP", "HideWorld" }
 -- Blizzard's grouping of meter types; Absorbs joins the healing group.
+local TYPE = D.TYPE
 local GROUPS = {
-    { "DAMAGE_METER_CATEGORY_DAMAGE", "Damage", { 0, 1, 7, 8, 10 } },
-    { "DAMAGE_METER_CATEGORY_HEALING", "Healing", { 2, 3, 4 } },
-    { "DAMAGE_METER_CATEGORY_ACTIONS", "Actions", { 5, 6, 9 } },
+    { "DAMAGE_METER_CATEGORY_DAMAGE", "Damage",
+        { TYPE.DamageDone, TYPE.Dps, TYPE.DamageTaken, TYPE.AvoidableDamageTaken, TYPE.EnemyDamageTaken } },
+    { "DAMAGE_METER_CATEGORY_HEALING", "Healing", { TYPE.HealingDone, TYPE.Hps, TYPE.Absorbs } },
+    { "DAMAGE_METER_CATEGORY_ACTIONS", "Actions", { TYPE.Interrupts, TYPE.Dispels, TYPE.Deaths } },
 }
 -- Menu entry data per window, created once.
 local function Choices(win)

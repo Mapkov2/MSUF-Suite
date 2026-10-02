@@ -497,7 +497,7 @@ function D.PaintGroup(row, entry, maxAmount, total, duration, meterType, targetA
         D.RowColors(row, entry.class)
     end
     row.spellID = nil
-    D.UnitIcon(row, entry.spec, entry.class, 2)
+    D.UnitIcon(row, entry.spec, entry.class, ICON.SPEC)
     if entry.name ~= row.rawName then
         row.rawName = entry.name
         row.nameText:SetText(D.Short(entry.name))
