@@ -559,6 +559,8 @@ end
 -- tokens) limits a unit event to those units.
 function Context:Event(event, callback, allowCombat, unit)
     if not NS.Client.SupportsEvent(event) then return end
+    -- A job (Timers.lua) registers its event function: Dispatch only runs functions.
+    if type(callback) == "table" then callback = callback:EventFunction() end
     local alreadyRegistered = self.callbacks[event] ~= nil
     if not self.frame then self.frame = RoutingFrame(self) end
     self.combatEvents = self.combatEvents or {}

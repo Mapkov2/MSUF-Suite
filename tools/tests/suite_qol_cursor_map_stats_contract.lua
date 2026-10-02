@@ -117,7 +117,7 @@ ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().
     function() return combat end)
 local function Context()
     local context = { events = {} }
-    function context:Event(event, callback) self.events[event] = callback end
+    function context:Event(event, callback) self.events[event] = Support.EventCallback(callback) end
     function context:RemoveEvent(event) self.events[event] = nil end
     return context
 end

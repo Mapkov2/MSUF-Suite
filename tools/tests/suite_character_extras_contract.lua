@@ -148,7 +148,9 @@ m.active, m.events = true, {}
 -- them: the first value is kept and handed back, only alpha and mouse change.
 local tuples, controls = {}, {}
 m.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, S, NS)(
-    "characterExtras", m, { Event = function(_, event, callback) m.events[event] = callback end,
+    "characterExtras", m, { Event = function(_, event, callback)
+    -- As Context:Event: a job registers its event function.
+    m.events[event] = type(callback) == "table" and callback:EventFunction() or callback end,
     RemoveEvent = function(_, event) m.events[event] = nil end })
 function m.context:Tuple(frame, getter, setter, ...)
     tuples[frame] = tuples[frame] or { frame[getter](frame) }

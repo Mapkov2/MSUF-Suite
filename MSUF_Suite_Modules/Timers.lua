@@ -161,9 +161,19 @@ function Job:Pending()
 end
 
 -- As an event callback (ctx:Event(event, job)) a job takes the request.
-function Job.__call(job)
-    if job.pending then return end
-    job:Request()
+-- Dispatch is securecallfunction, which takes a function, not a callable
+-- table: Context:Event registers this one, made once per job.
+function Job:EventFunction()
+    local fn = self.eventFunction
+    if not fn then
+        local job = self
+        fn = function()
+            if job.pending then return end
+            job:Request()
+        end
+        self.eventFunction = fn
+    end
+    return fn
 end
 
 ------------------------------------------------------------------ tickers

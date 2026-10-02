@@ -19,7 +19,7 @@ local NS = {
 _G.MSUFSuite = NS
 CreateFrame = function()
     local frame = { events = {} }
-    function frame:SetScript() end
+    function frame:SetScript(name, fn) self[name] = fn end
     function frame:RegisterEvent(event) self.events[event] = true end
     function frame:UnregisterAllEvents() self.events = {} end
     return frame
@@ -161,9 +161,15 @@ assert(flushes == 4, "a cancelled wait in flight still ran the job")
 clock.Advance(.1)
 assert(flushes == 5, "the request after Cancel did not wait the full delay")
 assert(ctx:Coalesce(.25, Flush) == job and job.keys == keys, "Coalesce lost the job or its key set")
--- A job is an event callback too (ctx:Event(event, job)): the event requests it.
-job(module, "UNIT_AURA", "player")
-job(module, "UNIT_AURA", "player")
+-- A job is an event callback too (ctx:Event(event, job)): the event requests
+-- it. The event runs through Dispatch (securecallfunction), which takes
+-- functions only, so the context registers the job's event function.
+local refusedBefore = #reported
+ctx:Event("UNIT_AURA", job)
+assert(type(ctx.callbacks.UNIT_AURA) == "function", "a job was registered as a table")
+ctx.frame.OnEvent(ctx.frame, "UNIT_AURA", "player")
+ctx.frame.OnEvent(ctx.frame, "UNIT_AURA", "player")
+Reported(refusedBefore, "the event callback of a job raised")
 assert(job.pending, "an event did not request the job")
 clock.Advance(.3)
 assert(flushes == 6 and not job.pending, "event requests did not coalesce into one run")

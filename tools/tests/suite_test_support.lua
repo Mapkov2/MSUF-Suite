@@ -265,9 +265,18 @@ function Support.ModuleTimers(root, suite, ns)
     end
 end
 
+-- What Context:Event (Runtime.lua) registers for a callback: a job's event
+-- function, since Dispatch takes functions only. Stub contexts use it too.
+function Support.EventCallback(callback)
+    if type(callback) == "table" then return callback:EventFunction() end
+    return callback
+end
+
 -- The client's securecallfunction: an error is reported, nothing returned.
+-- It takes a function only; a callable table is refused, as the client may.
 function Support.Dispatcher(reported)
     return function(callback, ...)
+        assert(type(callback) == "function", "securecallfunction needs a function, got " .. type(callback))
         local results = { pcall(callback, ...) }
         if not results[1] then reported[#reported + 1] = tostring(results[2]) return end
         return unpack(results, 2)

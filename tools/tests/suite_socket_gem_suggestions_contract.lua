@@ -71,7 +71,8 @@ local NS = {
 }
 local context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)(
     "socketGemSuggestions", nil, { events = {} })
-function context:Event(name, fn) self.events[name] = fn end
+-- As Context:Event: a job registers its event function.
+function context:Event(name, fn) self.events[name] = type(fn) == "table" and fn:EventFunction() or fn end
 function context:RemoveEvent(name) self.events[name] = nil end
 
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SocketGemSuggestions.lua"))(

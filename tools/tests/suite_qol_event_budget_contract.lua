@@ -14,9 +14,12 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 -- Instructions and KB measured 2026-10-02 on the hand-rolled timers (base
 -- c8f0304). A budget may grow by at most 2 %; the steady path allocates
 -- nothing.
+-- 2026-10-02: combatStatsHUD steady 19 -> 20. Its stat events request a job,
+-- and Dispatch (securecallfunction) now gets the job's event function instead
+-- of the callable job table: one upvalue read per event.
 local BASELINE = {
     threatMeter = { steady = 58, burst = 1314, burstKB = .198 },
-    combatStatsHUD = { steady = 19, burst = 606, burstKB = .250 },
+    combatStatsHUD = { steady = 20, burst = 606, burstKB = .250 },
     groupBloodlust = { steady = 25, burst = 572, burstKB = .156 },
     observedPull = { steady = 28, burst = 532, burstKB = .156 },
 }
