@@ -104,7 +104,6 @@ local PLAYER_ANCHOR, TARGET_ANCHOR = #ANCHOR_LABELS + 1, #ANCHOR_LABELS + 2
 ANCHOR_LABELS[PLAYER_ANCHOR], ANCHOR_LABELS[TARGET_ANCHOR] = "Player frame", "Target frame"
 CDM.ANCHOR_LABELS = ANCHOR_LABELS
 CDM.FRAME_ANCHORS = { [PLAYER_ANCHOR] = "player", [TARGET_ANCHOR] = "target" }
-CDM.SIDES = { "BELOW", "ABOVE", "LEFT", "RIGHT" }
 
 ------------------------------------------------------------------ module rules
 B.Section(id, "general", "General", {
