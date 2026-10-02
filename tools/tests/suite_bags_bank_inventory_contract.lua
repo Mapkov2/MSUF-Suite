@@ -107,7 +107,7 @@ UnitGUID = function() return "Player-1" end
 -- The Bags module's context timers: bank passes are one coalesced job.
 P.NS.Dispatch = function(callback, ...) return callback(...) end
 M.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", M)
-for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "BankIndex",
+for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "BankIndex",
     "BankActions", "BankInventory" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end

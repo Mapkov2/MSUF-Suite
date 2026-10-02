@@ -176,6 +176,7 @@ C_Container = { GetBagName = function() return "Backpack" end,
     GetContainerItemQuestInfo = function() return { isQuestItem = false } end }
 C_NewItems = { IsNewItem = function() return true end }
 assert(loadfile(root .. "/MSUF_Suite_Bags/SlotCache.lua"))("Bags", P)
+assert(loadfile(root .. "/MSUF_Suite_Bags/ItemLoads.lua"))("Bags", P)
 assert(loadfile(root .. "/MSUF_Suite_Bags/InventoryIndex.lua"))("Bags", P)
 local Index, index = P.InventoryIndex, P.InventoryIndex.New()
 local button = {}
@@ -203,7 +204,7 @@ late = true
 assert(Index.ItemDataReceived(index, 202) and Index.Refresh(index, 202) and record.name == "Potion" and record.loaded,
     "arriving item data must patch the waiting record without reading the slot")
 Index.Reset(index)
-assert(index.requestedCount == 0 and next(index.pending) == nil and next(index.records) == nil,
+assert(index.loads.count == 0 and next(index.pending) == nil and next(index.records) == nil,
     "disable releases runtime item references and request state")
 local buttons = {
     { GetBagID = function() return 0 end, GetID = function() return 2 end },

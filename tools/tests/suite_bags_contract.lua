@@ -319,7 +319,7 @@ state.Text = function(text) return text end
 for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", state)
 end
-for _, file in ipairs({ "SlotCache", "Bags" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end
 -- The sub-modules (their own files, not loaded here) run in Bags.lua's list
@@ -341,7 +341,7 @@ local function BagChanged()
 end
 for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
-        NS = state, Suite = S, BagsModule = module,
+        NS = state, Suite = S, BagsModule = module, ItemLoads = bagsPrivate.ItemLoads,
     })
 end
 assert(module and #fonts == 0 and #textures == 0 and not next(hooks) and infoCalls == 0,
@@ -766,11 +766,11 @@ hooks.UpdateItems()
 items[3] = { hyperlink = "gear-vanished", itemID = 105, quality = 2 }
 BagChanged()
 hooks.UpdateItems()
-assert(requests[105] == 1 and module.requested[105], "new missing item data was not requested")
+assert(requests[105] == 1 and bagsPrivate.ItemLoads.Loading(module.loads, 105), "new missing item data was not requested")
 items[3] = nil
 BagChanged()
 hooks.UpdateItems()
-assert(not module.requested[105] and not context.events.GET_ITEM_INFO_RECEIVED,
+assert(not bagsPrivate.ItemLoads.Loading(module.loads, 105) and not context.events.GET_ITEM_INFO_RECEIVED,
     "a removed item left a stale request or item event")
 items[3] = { hyperlink = "gear-vanished", itemID = 105, quality = 2 }
 BagChanged()

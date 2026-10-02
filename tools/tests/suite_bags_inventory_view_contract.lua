@@ -135,7 +135,7 @@ Enum = { TooltipDataType = { Item = 0 },
     ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
 -- Blizzard_SharedXMLGame defines the tooltip data processor at startup.
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
-for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "InventoryView" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "InventoryView" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 -- Bags.lua runs the view from its sub-module list after its own refresh and stop.
