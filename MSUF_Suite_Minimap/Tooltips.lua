@@ -91,7 +91,7 @@ local function ResetText(seconds, extended)
     else
         text = SecondsToTime(seconds, true, nil, 2)
     end
-    return extended and text .. " (" .. S.Text("Extended") .. ")" or text
+    return extended and S.Text("%s (Extended)"):format(text) or text
 end
 
 local function Lockouts(tooltip)
@@ -127,8 +127,7 @@ local function Lockouts(tooltip)
                 local name, _, reset = GetSavedWorldBossInfo(index)
                 if Text(name) then
                     if shown < c.tooltipRows then
-                        tooltip:AddDoubleLine(name .. " (" .. S.Text("World boss") .. ")", ResetText(reset), 1, 1, 1, .75,
-                            .8, .9)
+                        tooltip:AddDoubleLine(S.Text("%s (World boss)"):format(name), ResetText(reset), 1, 1, 1, .75, .8, .9)
                         shown = shown + 1
                     else
                         omitted = omitted + 1
@@ -166,12 +165,12 @@ local function ActivityLevel(activity)
     local level = activity.level
     if activity.type == types.Raid then
         local name = GetDifficultyInfo(level)
-        return Text(name) or S.Text("Difficulty") .. " " .. math.floor(level)
+        return Text(name) or S.Text("Difficulty %d"):format(level)
     elseif activity.type == types.RankedPvP then
         local name = PVPUtil.GetTierName(level)
-        return Text(name) or S.Text("Tier") .. " " .. math.floor(level)
+        return Text(name) or S.Text("Tier %d"):format(level)
     elseif activity.type == types.World then
-        return S.Text("Tier") .. " " .. math.floor(level)
+        return S.Text("Tier %d"):format(level)
     end
     if NonNegative(activity.activityTierID) then
         local difficulty = C_WeeklyRewards.GetDifficultyIDForActivityTier(activity.activityTierID)
@@ -179,7 +178,7 @@ local function ActivityLevel(activity)
             return S.BlizzardText("PLAYER_DIFFICULTY2", "Heroic")
         end
     end
-    return S.Text("Keystone level") .. " " .. math.floor(level)
+    return S.Text("Keystone level %d"):format(level)
 end
 
 local function Vault(tooltip)
@@ -207,7 +206,7 @@ local function Vault(tooltip)
                 end
                 if complete and M.config.tooltipRewardLevels then
                     local level = RewardLevel(activity)
-                    progress = progress .. " / " .. S.Text("Item level") .. " " .. (level or "--")
+                    progress = S.Text("%s / Item level %s"):format(progress, level or "--")
                 end
                 tooltip:AddDoubleLine(label, progress, 1, 1, 1, complete and .45 or .85, complete and 1 or .85, .55)
                 shown = shown + 1

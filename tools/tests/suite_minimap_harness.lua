@@ -508,6 +508,12 @@ function H.New(root, client, options)
     -- Client APIs Retail and WoW Forever always have, with neutral values (open
     -- world, no invites, no keystone). Scenarios replace the ones they test.
     G.date = os.date
+    -- Blizzard's localized strings and short date, with their enUS values
+    -- (GlobalStrings; FormatShortDate formats SHORTDATE "%2$d/%1$02d/%3$02d",
+    -- Blizzard_SharedXML/TimeUtil.lua on both clients).
+    G.TIMEMANAGER_AM, G.TIMEMANAGER_PM, G.TIME_TWELVEHOURAM = "AM", "PM", "%d:%02d AM"
+    G.GOLD_AMOUNT_SYMBOL = "g"
+    G.FormatShortDate = function(day, month, year) return string.format("%d/%02d/%02d", month, day, year) end
     G.GetServerTime = function() return 1700000000 end
     G.GetGameTime = function() return 12, 0 end
     G.GetFramerate = function() return 60 end

@@ -70,8 +70,9 @@ local SessionBaseline = NS.SessionGoldBaseline
 -- Each formatter returns the display value (nil when unknown) and an
 -- optional "bad" severity from the raw values of its shared data source.
 local FORMATTERS = {
+    -- Blizzard's localized gold symbol (GOLD_AMOUNT_SYMBOL, "g" on enUS).
     gold = function(amount)
-        if Finite(amount) then return floor(amount / 10000) .. "g" end
+        if Finite(amount) then return floor(amount / 10000) .. GOLD_AMOUNT_SYMBOL end
     end,
     sessionGold = function(amount)
         local baseline = SessionBaseline(amount)
@@ -114,7 +115,11 @@ local FORMATTERS = {
 
 -- Label, display value, severity and alternate value of a built-in source.
 function Standard.Format(key)
-    if key == "date" then return LABELS[key], date("%d-%m-%Y") end
+    if key == "date" then
+        -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
+        local now = date("*t")
+        return LABELS[key], FormatShortDate(now.day, now.month, now.year)
+    end
     if key == "fpsLatency" then
         local fps = S.ReadInfoSource("fps")
         local _, world = S.ReadInfoSource("latency")

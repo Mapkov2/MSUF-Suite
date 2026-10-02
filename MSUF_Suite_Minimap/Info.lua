@@ -75,50 +75,73 @@ function S.CanShowMinimapInfo(key)
     return true
 end
 
+-- 12-hour times carry Blizzard's localized AM/PM words (TIMEMANAGER_AM/PM,
+-- the calendar's own), before the digits where Blizzard's own 12-hour format
+-- puts its word first (TIME_TWELVEHOURAM: "%d:%02d AM" on enUS).
+local MERIDIEM_FIRST
+do
+    local word, digits = TIME_TWELVEHOURAM:find(TIMEMANAGER_AM, 1, true), TIME_TWELVEHOURAM:find("%", 1, true)
+    MERIDIEM_FIRST = word ~= nil and digits ~= nil and word < digits
+end
+local function TwelveHour(digits, hour)
+    local word = hour < 12 and TIMEMANAGER_AM or TIMEMANAGER_PM
+    if MERIDIEM_FIRST then return word .. " " .. digits end
+    return digits .. " " .. word
+end
+
+-- The realm clock; nil while the client has no game time.
+local function ServerTime(c, second)
+    local hour, minute = S.ReadInfoSource("clockTime")
+    if not Finite(hour) or not Finite(minute) then return nil end
+    local shown = hour
+    if not c.infoClock24Hour then
+        shown = hour % 12
+        if shown == 0 then shown = 12 end
+    end
+    local digits = c.infoClockSeconds and second and string.format("%02d:%02d:%02d", shown, minute, second)
+        or string.format("%02d:%02d", shown, minute)
+    return c.infoClock24Hour and digits or TwelveHour(digits, hour)
+end
+
+-- The computer's clock (entry.clockFormat leaves the AM/PM word out).
+local function LocalTime(entry, c, now)
+    local digits = date(entry.clockFormat)
+    if c.infoClock24Hour then return digits end
+    return TwelveHour(digits, now.hour)
+end
+
 local function Clock(entry)
     local c = M.config
     local stamp = S.ReadInfoSource("clockStamp")
     local second = Finite(stamp) and math.floor(stamp) % 60 or nil
-    local server, localTime
-    if c.infoClockSource ~= 2 then
-        local hour, minute = S.ReadInfoSource("clockTime")
-        if Finite(hour) and Finite(minute) then
-            local suffix = ""
-            if not c.infoClock24Hour then
-                suffix = hour < 12 and " AM" or " PM"
-                hour = hour % 12
-                if hour == 0 then hour = 12 end
-            end
-            server = string.format("%02d:%02d", hour, minute)
-            if c.infoClockSeconds and second then server = server .. string.format(":%02d", second) end
-            server = server .. suffix
-        end
-    end
-    if c.infoClockSource ~= 1 then localTime = date(entry.clockFormat) end
+    local now = (c.infoClockSource ~= 1 and not c.infoClock24Hour or c.infoClockDate) and date("*t") or nil
+    local server = c.infoClockSource ~= 2 and ServerTime(c, second) or nil
+    local localTime = c.infoClockSource ~= 1 and LocalTime(entry, c, now) or nil
     local text = c.infoClockSource == 1 and server or c.infoClockSource == 2 and localTime
         or server and localTime and server .. " / " .. localTime
     if c.infoClockDate then
-        local calendarDate = date("%d-%m-%Y")
-        if type(calendarDate) == "string" and calendarDate ~= "" then
-            if c.infoClockDatePosition == 2 then
-                text = text and calendarDate .. "\n" .. text or calendarDate
-            elseif c.infoClockDatePosition == 3 then
-                text = text and text .. "\n" .. calendarDate or calendarDate
-            else
-                text = text and text .. "  " .. calendarDate or calendarDate
-            end
+        -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
+        local calendarDate = FormatShortDate(now.day, now.month, now.year)
+        if c.infoClockDatePosition == 2 then
+            text = text and calendarDate .. "\n" .. text or calendarDate
+        elseif c.infoClockDatePosition == 3 then
+            text = text and text .. "\n" .. calendarDate or calendarDate
+        else
+            text = text and text .. "  " .. calendarDate or calendarDate
         end
     end
     return text or "--", c.infoClockSeconds and 1 or second and 60 - second or 1
 end
 
+-- One latency unit for both values, as the DataTexts show it.
+local FPS_TEXT, MS_TEXT = S.Text("%d FPS"), S.Text("%d ms")
 local function FPS(entry)
     local value = S.ReadInfoSource("fps")
     if not Finite(value) or value < 0 then return "--", entry.interval end
     value = math.floor(value + .5)
     if value ~= entry.lastFPS then
         entry.lastFPS = value
-        entry.fpsText = value .. " FPS"
+        entry.fpsText = FPS_TEXT:format(value)
     end
     local severity = value < M.config.infoFPSWarning and 3 or value < M.config.infoFPSGood and 2 or 1
     return entry.fpsText, entry.interval, severity
@@ -132,8 +155,8 @@ local function Latency(entry)
     if mode ~= 2 and not home or mode ~= 1 and not world then return "--", entry.interval end
     if home ~= entry.lastHome or world ~= entry.lastWorld or mode ~= entry.lastMode then
         entry.lastHome, entry.lastWorld, entry.lastMode = home, world, mode
-        entry.latencyText = mode == 1 and home .. " ms" or mode == 2 and world .. " ms"
-            or home .. " / " .. world .. " ms"
+        entry.latencyText = mode == 1 and MS_TEXT:format(home) or mode == 2 and MS_TEXT:format(world)
+            or home .. " / " .. MS_TEXT:format(world)
     end
     local value = mode == 1 and home or mode == 2 and world or math.max(home, world)
     local severity = value >= M.config.infoLatencyBad and 3 or value >= M.config.infoLatencyWarning and 2 or 1
@@ -478,8 +501,7 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     end
     entry.interval = c[prefix .. "Interval"] or 1
     if key == "Clock" then
-        entry.clockFormat = (c.infoClock24Hour and "%H:%M" or "%I:%M") ..
-            (c.infoClockSeconds and ":%S" or "") .. (c.infoClock24Hour and "" or " %p")
+        entry.clockFormat = (c.infoClock24Hour and "%H:%M" or "%I:%M") .. (c.infoClockSeconds and ":%S" or "")
     elseif key == "Coordinates" then
         entry.decimalScale = 10 ^ c.infoCoordinatesDecimals
         entry.coordinateScale = entry.decimalScale * 100

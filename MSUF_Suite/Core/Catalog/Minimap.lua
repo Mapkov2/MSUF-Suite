@@ -289,7 +289,8 @@ end
 InfoOption("Clock", Choice("infoClockSource", "Clock source", 1, { "Realm time", "Local time", "Realm and local time" }))
 InfoOption("Clock", Bool("infoClock24Hour", "Use 24-hour format", true))
 InfoOption("Clock", Bool("infoClockSeconds", "Show seconds"))
-InfoOption("Clock", Bool("infoClockDate", "Show date (day-month-year)"))
+-- The date is Blizzard's localized short date (FormatShortDate).
+InfoOption("Clock", Bool("infoClockDate", "Show date"))
 InfoOption("Clock", Choice("infoClockDatePosition", "Date position", 1,
     { "Beside the time", "Above the time", "Below the time" }))
 InfoOption("Clock", Choice("infoClockClick", "Clock left-click action", 2, { "Calendar", "Clock" }))

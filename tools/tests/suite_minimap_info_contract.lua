@@ -137,9 +137,13 @@ do
         G.GetServerTime = function() return 1700000000 + W.now end
         G.GetGameTime = function() reads.clock = reads.clock + 1; return 14, 3 end
         G.date = function(format)
-            if format == "%d-%m-%Y" then return "26-09-2026" end
+            if format == "*t" then return { day = 26, month = 9, year = 2026, hour = 15, min = 3, sec = 20 } end
             return format:find("%%S") and "15:03:20" or "15:03"
         end
+        -- A German client: the clock date is Blizzard's localized short date,
+        -- and FPS and latency texts translate as format strings.
+        G.FormatShortDate = function(day, month, year) return string.format("%02d.%02d.%d", day, month, year) end
+        W.Suite.L["%d FPS"], W.Suite.L["%d ms"] = "%d BpS", "%d Ms"
         G.GetFramerate = function() reads.fps = reads.fps + 1; return fps end
         G.GetNetStats = function() reads.latency = reads.latency + 1; return 0, 0, home, world end
         G.C_Map = { GetBestMapForUnit = function() reads.map = (reads.map or 0) + 1; return mapID end, GetPlayerMapPosition = function()
@@ -161,12 +165,12 @@ do
     local clock = M.infoEntries.Clock
     check(clock.label.text == "14:03" and W.Pending() == 1 and W.Pending(40) == 1, "clock scheduling")
     assert(S.Set("minimap", "infoClockDate", true))
-    check(clock.label.text == "14:03  26-09-2026", "optional date on minimap clock")
+    check(clock.label.text == "14:03  26.09.2026", "optional date on minimap clock")
     assert(S.Set("minimap", "infoClockDatePosition", 2))
-    check(clock.label.text == "26-09-2026\n14:03" and clock.button.height == 32,
+    check(clock.label.text == "26.09.2026\n14:03" and clock.button.height == 32,
         "date above time must reserve two text lines")
     assert(S.Set("minimap", "infoClockDatePosition", 3))
-    check(clock.label.text == "14:03\n26-09-2026", "date below time")
+    check(clock.label.text == "14:03\n26.09.2026", "date below time")
     assert(S.Set("minimap", "infoClockDate", false))
     check(clock.button.points[1][1] == "TOP" and clock.label.justify == "CENTER", "clock anchor")
     check(clock.label.font[1] == W.Suite.MSUFMedia.font and clock.label.font[2] == 12
@@ -181,7 +185,7 @@ do
         "Slug clock shadow")
     assert(S.SetMany("minimap", { infoFPS = true, infoLatency = true, infoCoordinates = true, infoStatusColors = true }))
     local entries = M.infoEntries
-    check(entries.FPS.label.text == "80 FPS" and entries.Latency.label.text == "50 ms", "fps/latency")
+    check(entries.FPS.label.text == "80 BpS" and entries.Latency.label.text == "50 Ms", "fps/latency")
     check(entries.Coordinates.label.text == "52.3, 48.0" and W.Pending() == 1, "coordinates and one shared timer")
     check(entries.FPS.label.justify == "LEFT" and entries.Latency.label.justify == "RIGHT", "corner justification")
     local clockReads, fpsReads, latencyReads = reads.clock, reads.fps, reads.latency
@@ -190,7 +194,7 @@ do
     local writes = entries.Coordinates.label.textWrites
     fps = 20
     W.Advance(.5)
-    check(entries.FPS.label.text == "20 FPS" and entries.FPS.label.textColor[1] == 1, "status colour")
+    check(entries.FPS.label.text == "20 BpS" and entries.FPS.label.textColor[1] == 1, "status colour")
     check(entries.Coordinates.label.textWrites == writes, "unchanged coordinates rewritten")
     -- Hidden: nothing samples; visible again: sampling resumes.
     assert(S.Set("minimap", "visibility", 5))
@@ -231,7 +235,7 @@ do
     assert(S.Set("minimap", "infoCoordinatesMode", 2))
     -- Formats and anchors: above/below the map sit outside the border.
     assert(S.SetMany("minimap", { infoClockSource = 3, infoClockSeconds = true, infoCoordinatesDecimals = 2, infoLatencySource = 3 }))
-    check(clock.label.text:find(" / 15:03:20", 1, true) and entries.Latency.label.text == "30 / 50 ms", "clock/latency formats")
+    check(clock.label.text:find(" / 15:03:20", 1, true) and entries.Latency.label.text == "30 / 50 Ms", "clock/latency formats")
     check(entries.Coordinates.label.text == "50.00, 50.00", "coordinate decimals")
     assert(S.SetMany("minimap", { infoClockAnchor = 10, infoClockY = 3, infoFPSAnchor = 11, borderSize = 2 }))
     local point = clock.button.points[1]
@@ -422,6 +426,9 @@ do
             HasAvailableRewards = function() return true end, GetExampleRewardItemHyperlinks = function() return "item:1" end }
         G.C_Item = { GetDetailedItemLevelInfo = function() return itemLevel end }
         G.GetDifficultyInfo = function() return "Normal" end
+        -- Lines with a name or number translate as whole format strings.
+        W.Suite.L["%s (World boss)"], W.Suite.L["Tier %d"] = "%s (Weltboss)", "Stufe %d"
+        W.Suite.L["%s / Item level %s"] = "%s / Gegenstandsstufe %s"
     end, float32Scale = true })
     W.editModeReady = true
     local G, S = W.G, W.S
@@ -435,6 +442,7 @@ do
     check(lockReads == 0 and vaultReads == 0 and not events.UPDATE_INSTANCE_INFO, "idle tooltip work")
     Enter()
     check(requests == 1 and lockReads == 1 and #tip.lines == 3, "lockouts")
+    check(tip.lines[3]:find("World boss (Weltboss) | ", 1, true) == 1, "world boss line: " .. tostring(tip.lines[3]))
     check(tip.lines[2]:find("2/6", 1, true) and tip.lines[2]:find("60 minutes", 1, true), "lockout row")
     check(events.UPDATE_INSTANCE_INFO, "lockout event")
     W.Event("UPDATE_INSTANCE_INFO")
@@ -454,7 +462,8 @@ do
     assert(S.Set("minimap", "tooltipInstanceKind", 2)); Enter()
     check(#tip.lines == 2, "raid filter"); Leave()
     assert(S.Set("minimap", "infoClockTooltip", 3)); Enter()
-    check(vaultReads == 1 and #tip.lines == 5 and tip.lines[3]:find("Item level 610", 1, true), "vault")
+    check(vaultReads == 1 and #tip.lines == 5 and tip.lines[3]:find("Gegenstandsstufe 610", 1, true)
+        and tip.lines[5]:find("World activities 1 - Stufe 8", 1, true) == 1, "vault: " .. table.concat(tip.lines, " | "))
     check(events.WEEKLY_REWARDS_UPDATE and not events.GET_ITEM_INFO_RECEIVED, "vault events")
     itemLevel = nil
     W.Event("WEEKLY_REWARDS_UPDATE")
@@ -587,3 +596,30 @@ do
     check(not overlay.shown and #overlay.points == 0 and overlay.owner == nil, "disable kept the secure overlay")
     print("Minimap information: secure window clicks, tooltips, combat release, fallback and disable passed")
 end
+
+-- 12-hour clocks carry Blizzard's localized AM/PM word (TIMEMANAGER_AM/PM),
+-- before the digits where Blizzard's own 12-hour format puts it first.
+for _, case in ipairs({
+    { words = { "AM", "PM", "%d:%02d AM" }, server = "02:03 PM", localTime = "09:03 AM" },
+    { words = { "\236\152\164\236\160\132", "\236\152\164\237\155\132", "\236\152\164\236\160\132 %d:%02d" },
+        server = "\236\152\164\237\155\132 02:03", localTime = "\236\152\164\236\160\132 09:03" },
+}) do
+    local W = H.New(root, "Mainline", { beforeModules = function(W)
+        local G = W.G
+        G.GetGameTime = function() return 14, 3 end
+        G.TIMEMANAGER_AM, G.TIMEMANAGER_PM, G.TIME_TWELVEHOURAM = case.words[1], case.words[2], case.words[3]
+        G.date = function(format)
+            if format == "*t" then return { day = 26, month = 9, year = 2026, hour = 9, min = 3, sec = 20 } end
+            assert(not format:find("%p", 1, true), "the local clock asked the C library for its AM/PM word")
+            return "09:03"
+        end
+    end })
+    W.editModeReady = true
+    H.Enable(W, { captured = true, infoLocation = false, infoClock24Hour = false })
+    W.Step()
+    local clock = W.M.infoEntries.Clock
+    check(clock.label.text == case.server, "12-hour realm clock: " .. tostring(clock.label.text))
+    assert(W.S.Set("minimap", "infoClockSource", 2))
+    check(clock.label.text == case.localTime, "12-hour local clock: " .. tostring(clock.label.text))
+end
+print("Minimap information: localized 12-hour clock words and their order passed")

@@ -65,8 +65,12 @@ do
     assert(W.reads == reads, "other units must not refresh the player's icon")
     W.Event("PLAYER_SPECIALIZATION_CHANGED", "player")
     assert(Q.icon.texture == 102, "spec event must refresh the icon")
+    -- Its lines translate as whole format strings, never as a prefix.
+    W.Suite.L["Current spec: %s"], W.Suite.L["Loot: %s"] = "Aktuell: %s", "Beute: %s"
     W.Fire(Q.button, "OnEnter")
-    assert(W.G.GameTooltip:IsShown(), "tooltip should show current specialization")
+    local lines = W.G.GameTooltip.lines
+    assert(W.G.GameTooltip:IsShown() and lines[2] == "Aktuell: Spec 2" and lines[3] == "Beute: Loot 72",
+        "tooltip should show the current and loot specialization: " .. table.concat(lines, " | "))
     W.SetCombat(true)
     W.Fire(Q.button, "OnClick")
     assert(not W.menu.children[1].children[1].enabled and not W.menu.children[2].children[1].enabled)

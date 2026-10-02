@@ -6,7 +6,7 @@ local M = assert(Private.BagsModule, "Bags.lua must load before BagWindow.lua")
 local floor = math.floor
 local WindowTexture = M.WindowTexture
 local TEXT = {
-    session = S.Text("Session"),
+    session = S.Text("Session %s"),
     drag = S.Text("Drag to move"),
     options = S.Text("Click for bag options"),
 }
@@ -21,7 +21,7 @@ end
 
 -- Losses use the ASCII hyphen-minus.
 local function GoldDeltaText(delta)
-    return TEXT.session .. " " .. (delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta))
+    return TEXT.session:format((delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta)))
 end
 
 local function Edge(shell, from, to)
@@ -215,7 +215,7 @@ function M:UpdateGold()
     local money = PublicMoney()
     local baseline = NS.SessionGoldBaseline(money)
     if not money or not baseline then
-        label:SetText(TEXT.session .. " " .. NO_VALUE)
+        label:SetText(TEXT.session:format(NO_VALUE))
         label:SetTextColor(0.72, 0.77, 0.82)
     else
         local delta = money - baseline
