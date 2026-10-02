@@ -116,6 +116,11 @@ end })
 M:Enable()
 assert(reads == 0 and not M.host.shown and M.host.mouse == false,
     "disabled history did startup spell work or intercepted input")
+-- The controller registers a module's movers after every Enable and Refresh
+-- (Core/Suite.lua ApplyModule -> S.RefreshEditMover); Enable registering them
+-- too registered them twice.
+assert(not mover, "Enable registered the Edit Mode mover itself")
+M:RegisterMovers()
 -- MSUF Edit Mode builds the size controls from these catalog rules.
 local size = mover and mover.sizeKeys
 assert(mover and mover.getFrame() == M.host and size and size[1] == "width" and size[2] == "rowHeight"

@@ -344,7 +344,12 @@ lust.background, lust.edges = widget(), { widget(), widget(), widget(), widget()
 lust.active, lust.context = true, support.ModuleTimers(root, suite, ns)("groupBloodlust", lust, context())
 lust.config = { point = 1, width = 172, height = 42, scale = 100, x = 0, y = 0,
     onlyWhenLocked = false }
+local moverRegistrations, register = 0, suite.RegisterOwnedMover
+suite.RegisterOwnedMover = function(...) moverRegistrations = moverRegistrations + 1; return register(...) end
 lust:Enable()
+-- The controller registers the movers after Enable (S.RefreshEditMover).
+assert(moverRegistrations == 0, "Enable registered the Edit Mode mover itself")
+suite.RegisterOwnedMover = register
 assert(not lust.context.events.UNIT_AURA and auraReads == 0 and not lust.host.shown)
 grouped = true
 lust.context.events.GROUP_ROSTER_UPDATE(lust)

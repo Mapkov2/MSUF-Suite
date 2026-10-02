@@ -247,7 +247,6 @@ function M:Enable()
     self.context:Event("GROUP_ROSTER_UPDATE", OnGroup, IN_COMBAT)
     self.context:Event("PLAYER_ENTERING_WORLD", OnGroup, IN_COMBAT)
     OnGroup(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

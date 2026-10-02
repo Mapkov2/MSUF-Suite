@@ -290,7 +290,6 @@ function M:Enable()
     Paint(self)
     SyncEvents(self)
     PauseChanged(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()
