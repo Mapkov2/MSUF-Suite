@@ -281,22 +281,23 @@ local function Joined(self, _, resultID)
 end
 
 -- A spell-book change in combat only marks the list; it is read again once
--- after combat instead of after every pull.
+-- after combat instead of after every pull. Out of combat a burst of
+-- SPELLS_CHANGED reads it once, on the next frame (self.rescanJob).
 local function State(self, event)
     if event == "PLAYER_REGEN_DISABLED" then self.clearPopup = true; return end
-    if NS.IsCombatLocked() then
-        if event == "SPELLS_CHANGED" then self.dirty = true end
-        return
-    end
+    if event == "SPELLS_CHANGED" then self.dirty = true end
+    if NS.IsCombatLocked() then return end
     local grouped = IsInGroup()
     if self.popup and (self.clearPopup or event == "PLAYER_ENTERING_WORLD"
         or Public(grouped) and grouped == false) then self.popup:Hide() end
     self.clearPopup = nil
-    if event == "SPELLS_CHANGED" or self.dirty then self:Refresh()
+    if event == "SPELLS_CHANGED" then self.rescanJob:Request()
+    elseif self.dirty then self:Refresh()
     elseif self.placePending then CopyMinimap(self) end
 end
 
 function M:Enable()
+    self.rescanJob = self.context:Coalesce(0, M.Refresh)
     Create(self)
     RegisterStateDriver(self.host, "visibility", "[combat] hide; show")
     for _, event in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",

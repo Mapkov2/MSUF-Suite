@@ -68,11 +68,15 @@ local S = { Install = function(_, m) module = m end, Public = function(v) return
     CreateTexture = function(parent) return Widget(nil, nil, parent) end,
     CreateFontString = function(parent) return Widget(nil, nil, parent) end,
     SetStyledFont = function() end, GlobalFontPath = function() return "font" end }
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/DungeonPortals.lua"))("test", {
-    NS = { Client = {}, IsCombatLocked = function() return combat end }, Suite = S })
+local NS = { Client = {}, IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/DungeonPortals.lua"))("test", { NS = NS, Suite = S })
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local clock = Support.Clock()
 module.active, module.config = true, { showMinimap = true, joinPopup = true, flyoutScale = 125 }
-module.context = { events = {}, Event = function(self, event, fn) self.events[event] = fn end,
-    RemoveEvent = function(self, event) self.events[event] = nil end }
+module.context = Support.ModuleTimers(root, S, NS)("dungeonPortals", module, { events = {},
+    Event = function(self, event, fn) self.events[event] = fn end,
+    RemoveEvent = function(self, event) self.events[event] = nil end })
 local function Fire(event, ...) assert(module.context.events[event], event)(module, event, ...) end
 module:Enable()
 assert(#module.spells == 2 and #module.buttons == 2, "recognized native flyout must add new learned slots only")
@@ -156,7 +160,13 @@ grouped = true; inside = true; Fire("LFG_LIST_JOINED_GROUP", 1)
 assert(not module.popup.shown, "joining inside a dungeon must not suggest a teleport")
 inside = false; Fire("LFG_LIST_JOINED_GROUP", 1); Fire("PLAYER_ENTERING_WORLD")
 assert(not module.popup.shown)
-known = {}; Fire("SPELLS_CHANGED")
+-- A burst of spell-book events reads the spell book once, on the next frame.
+local burst = scans
+for _ = 1, 5 do Fire("SPELLS_CHANGED") end
+assert(scans == burst and module.dirty, "a spell-book burst was read inside the events")
+clock.Frame()
+assert(scans == burst + 1 and not module.dirty, "a spell-book burst was not read exactly once")
+known = {}; Fire("SPELLS_CHANGED"); clock.Frame()
 assert(not module.toggle.shown and not module.flyout.shown and not module.buttons[1].shown)
 -- Every current season destination must resolve by the native map, without
 -- English dungeon text or a spellbook flyout discovering an unrelated seed.
@@ -170,7 +180,7 @@ for spell, challenge in pairs(season) do
     C_LFGList.GetActivityInfoTable = function()
         return { categoryID = 2, shortName = "Different listing name", mapID = 9000 + challenge }
     end
-    Fire("SPELLS_CHANGED"); Fire("LFG_LIST_JOINED_GROUP", 1)
+    Fire("SPELLS_CHANGED"); clock.Frame(); Fire("LFG_LIST_JOINED_GROUP", 1)
     assert(#module.spells == 1 and module.popup.shown and module.popup.cast.attributes.spell == spell,
         "every learned Season 2 portal must use its verified destination")
 end
