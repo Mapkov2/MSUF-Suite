@@ -54,7 +54,10 @@ local function Update(self, event)
         return
     end
     local exists = UnitExists("pet")
-    if not S.Public(exists) then self.host:Hide() return end
+    if not S.Public(exists) then
+        self.host:Hide()
+        return
+    end
     if exists == true then
         local dead = UnitIsDeadOrGhost("pet")
         if not S.Public(dead) or dead ~= true or not self.config.showDead then
@@ -94,12 +97,18 @@ local function SyncEvents(self)
         context:RemoveEvent("UNIT_PET")
     end
     for _, event in ipairs({ "UNIT_HEALTH", "UNIT_FLAGS" }) do
-        if c.showDead then context:Event(event, OnEvent, IN_COMBAT, "pet")
-        else context:RemoveEvent(event) end
+        if c.showDead then
+            context:Event(event, OnEvent, IN_COMBAT, "pet")
+        else
+            context:RemoveEvent(event)
+        end
     end
     for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
-        if c.combatOnly then context:Event(event, OnEvent, IN_COMBAT)
-        else context:RemoveEvent(event) end
+        if c.combatOnly then
+            context:Event(event, OnEvent, IN_COMBAT)
+        else
+            context:RemoveEvent(event)
+        end
     end
     if c.showMissing and PET_SUMMONS[self.classFile] then
         context:Event("SPELLS_CHANGED", OnSpellsChanged, IN_COMBAT)
@@ -116,10 +125,12 @@ function M:Enable()
     self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, IN_COMBAT)
     SyncEvents(self)
     Update(self)
-    self:RegisterMovers()
 end
 
+-- The spellbook is read again: SPELLS_CHANGED is heard only while the missing
+-- warning is on, so a respec made with it off left petClass stale.
 function M:Refresh()
+    self.petClass = ExpectsPet(self.classFile)
     S.SetFont(self.label, nil, 14, "OUTLINE")
     Place(self)
     SyncEvents(self)

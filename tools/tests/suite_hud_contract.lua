@@ -421,6 +421,7 @@ local function NativeTrackerSuppressed()
     return true
 end
 tracker:Enable()
+tracker:RegisterMovers() -- the controller registers movers after Enable
 assert(NativeTrackerSuppressed(),
     "native objective tracker must lose alpha, mouse and hit area without a parent or scale change")
 -- Modules join the tracker after the Suite's first suppression.
@@ -750,6 +751,7 @@ ScenarioAlertSystem = { alertFramePool = {
 } }
 function ScenarioAlertSystem:ShowAlert() scenarioAlert:SetParent(UIParent) end
 banner:Enable()
+banner:RegisterMovers() -- the controller registers movers after Enable
 assert(movers.announcements.element == "banner" and ZoneTextFrame:GetParent() == MutedHost)
 setmetatable(_G, nil)
 assert(movers.announcements.spec.extraControls[1].id == "scale"
@@ -1176,6 +1178,21 @@ assert(tracker.mplus.bosses[1].time.text == "6:40  +1:40")
 tracker.config.bossTargets = false
 tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
 assert(tracker.mplus.bosses[2].time.text == "")
+-- A boss row is anchored when it is made and when the pace comparison turns on or off,
+-- not on every criteria update.
+local bossRow = tracker.mplus.bosses[1]
+local anchored = bossRow.name.pointCalls
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(bossRow.name.pointCalls == anchored and bossRow.time.width == 116 and bossRow.name.point[4] == -120,
+    "a criteria update anchored the boss row again")
+tracker.config.bossPace = 1
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(bossRow.name.pointCalls == anchored + 2 and bossRow.time.width == 55 and bossRow.name.point[4] == -57,
+    "turning the pace comparison off did not narrow the time column")
+tracker.config.bossPace = 3
+tracker.context.events.SCENARIO_CRITERIA_UPDATE(tracker, "SCENARIO_CRITERIA_UPDATE")
+assert(bossRow.name.pointCalls == anchored + 4 and bossRow.time.width == 116 and bossRow.name.point[4] == -120,
+    "turning the pace comparison on did not widen the time column")
 -- Every bucket of this run is held: criteria updates read no records again.
 local readCharacter, characterReads = S.CharacterData, 0
 S.CharacterData = function(id) characterReads = characterReads + 1; return readCharacter(id) end

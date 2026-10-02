@@ -139,9 +139,13 @@ function AuraGlows.ReleaseGlows(rec)
     for _, part in ipairs(rec.parts) do
         for i = 1, 3 do
             local g
-            if i == 1 then g = part.glow
-            elseif i == 2 then g = part.stack and part.stack.glow
-            else g = part.stackSensor and part.stackSensor.part.stack.glow end
+            if i == 1 then
+                g = part.glow
+            elseif i == 2 then
+                g = part.stack and part.stack.glow
+            else
+                g = part.stackSensor and part.stackSensor.part.stack.glow
+            end
             if g then Gate(g, false) end
         end
     end

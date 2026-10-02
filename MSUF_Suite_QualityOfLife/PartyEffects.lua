@@ -221,7 +221,6 @@ end
 
 function M:Enable()
     self:Refresh()
-    self:RegisterMovers()
 end
 
 -- The context's Release drops the next surprise.

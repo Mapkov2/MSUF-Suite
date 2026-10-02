@@ -79,6 +79,7 @@ end }
 -- paths are covered by suite_platform_contract.
 local MEDIA = { font = "Interface\\AddOns\\Test\\Media\\MSUF.ttf", barTexture = "Interface\\AddOns\\Test\\Media\\MSUF.tga" }
 local savedRoot = {}
+local translate
 local function Load(kind)
     local callbacks, movers = {}, {}
     local suite = { editMode = false, loginKind = kind, RootDB = savedRoot, MSUFMedia = MEDIA,
@@ -93,7 +94,7 @@ local function Load(kind)
     -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
     runtime.Number = function(value) return runtime.Public(value) and type(value) == "number" and value == value end
     runtime.Finite = function(value) return runtime.Number(value) and value > -math.huge and value < math.huge end
-    runtime.Text = function(value) return value end
+    runtime.Text = function(value) return translate and translate(value) or value end
     runtime.CreateFrame = CreateFrame
     runtime.CreateTexture = function(parent, ...) return parent:CreateTexture(...) end
     runtime.CreateFontString = function(parent, ...) return parent:CreateFontString(...) end
@@ -131,8 +132,18 @@ local function Load(kind)
         callbacks[name] = callback
     end })
     module:Enable()
+    module:RegisterMovers() -- the controller registers movers after Enable
     return module, runtime, callbacks, movers, suite
 end
+
+-- Sentences reach the language pack whole: with every English string wrapped, the level
+-- line and each detail are one translated sentence around their numbers.
+translate = function(value) return "<" .. value .. ">" end
+local worded = Load("login")
+translate = nil
+assert(worded.levelText.text == "<Lv 10  100 / 1.0k>", "the XP level line was joined after translation")
+assert(worded.details.text:find("<Session +0>", 1, true) and worded.details.text:find("<XP/h -->", 1, true)
+    and worded.details.text:find("<To level -->", 1, true), "an XP detail was joined after translation")
 
 local module, runtime, events, movers, suite = Load("login")
 assert(module.session.gained == 0 and module.host:IsShown())

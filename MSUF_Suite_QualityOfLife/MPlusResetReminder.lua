@@ -45,7 +45,9 @@ function M:Refresh()
             self.resetHooked = true
         end
         self.context:Event("CHAT_MSG_SYSTEM", SystemMessage, IN_COMBAT)
-    else self.context:RemoveEvent("CHAT_MSG_SYSTEM") end
+    else
+        self.context:RemoveEvent("CHAT_MSG_SYSTEM")
+    end
 end
 
 function M:Enable()

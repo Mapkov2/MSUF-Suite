@@ -116,6 +116,7 @@ module.context = { Event = function(_, name, callback, combat)
     events[name] = callback
 end, RemoveEvent = function(_, name) events[name] = nil end }
 module:Enable()
+module:RegisterMovers() -- the controller registers movers after Enable
 assert(module.title.fontFlags == "SLUG", "default Skyriding HUD did not use Slug")
 assert(module.title.font == MEDIA.font and module.speed.texture == MEDIA.barTexture,
     "the Skyriding HUD did not use MSUF's font and bar texture from NS.MSUFMedia")

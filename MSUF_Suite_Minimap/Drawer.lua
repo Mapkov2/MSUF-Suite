@@ -138,7 +138,9 @@ function S.MinimapButtonLayoutMenu(anchor)
                     if positions[name] then
                         positions[name] = nil
                         if detached[button] then detached[button]:Hide() end
-                    else positions[name] = { x = 0, y = 0 } end
+                    else
+                        positions[name] = { x = 0, y = 0 }
+                    end
                     MM.Queue("drawer")
                 end)
             end

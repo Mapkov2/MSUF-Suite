@@ -56,6 +56,8 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CharacterPanel.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CharacterUpgradeWindow.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
+-- Ownership shows through the window closing; no caller asked for a query (HoldsCharacter was dead).
+assert(S.HoldsCharacter == nil and S.OpenCharacterFor and S.CloseCharacterFor)
 module.context, module.active = context, true
 module:Enable()
 assert(context.events.ADDON_LOADED, "LOD upgrade UI was not awaited")
@@ -64,15 +66,15 @@ context.events.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_ItemUpgradeUI")
 assert(module.hooked and not context.events.ADDON_LOADED, "native frame was not hooked once")
 
 ItemUpgradeFrame:Show()
-assert(CharacterFrame:IsShown() and S.HoldsCharacter(module) and panels.shown == 1 and #reported == 0,
+assert(CharacterFrame:IsShown() and panels.shown == 1 and #reported == 0,
     "the character window did not open through the panel manager at the upgrade vendor")
 ItemUpgradeFrame:Hide()
-assert(not CharacterFrame:IsShown() and panels.hidden == 1 and not S.HoldsCharacter(module),
+assert(not CharacterFrame:IsShown() and panels.hidden == 1,
     "owned character window did not close with vendor")
 
 CharacterFrame:Show() -- Player-owned windows are left alone.
 ItemUpgradeFrame:Show()
-assert(panels.shown == 1 and CharacterFrame:IsShown() and not S.HoldsCharacter(module),
+assert(panels.shown == 1 and CharacterFrame:IsShown(),
     "module claimed a character window that was already open")
 ItemUpgradeFrame:Hide()
 assert(CharacterFrame:IsShown(), "module closed a pre-existing character window")
@@ -108,7 +110,7 @@ ItemUpgradeFrame:Show()
 assert(not CharacterFrame:IsShown(), "permanent hook acted while disabled")
 module.active = true
 module:Enable()
-assert(CharacterFrame:IsShown() and S.HoldsCharacter(module), "re-enable did not handle an already-open vendor")
+assert(CharacterFrame:IsShown(), "re-enable did not handle an already-open vendor")
 ItemUpgradeFrame:Hide()
 assert(not CharacterFrame:IsShown() and panels.blocked == 0 and #reported == 0,
     "the panel manager refused a call or a call raised")

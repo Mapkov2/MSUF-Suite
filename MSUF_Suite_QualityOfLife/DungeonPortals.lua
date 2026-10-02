@@ -158,8 +158,11 @@ end
 
 local function SetCooldown(button)
     local duration = C_Spell.GetSpellCooldownDuration(button.spellID)
-    if Public(duration) and duration == nil then button.cooldown:Clear()
-    else button.cooldown:SetCooldownFromDurationObject(duration) end
+    if Public(duration) and duration == nil then
+        button.cooldown:Clear()
+    else
+        button.cooldown:SetCooldownFromDurationObject(duration)
+    end
 end
 
 local function Cooldowns(self)
@@ -317,9 +320,13 @@ local function State(self, event)
     if self.popup and (self.clearPopup or event == "PLAYER_ENTERING_WORLD"
         or Public(grouped) and grouped == false) then self.popup:Hide() end
     self.clearPopup = nil
-    if event == "SPELLS_CHANGED" then self.rescanJob:Request()
-    elseif self.dirty then self:Refresh()
-    elseif self.placePending then CopyMinimap(self) end
+    if event == "SPELLS_CHANGED" then
+        self.rescanJob:Request()
+    elseif self.dirty then
+        self:Refresh()
+    elseif self.placePending then
+        CopyMinimap(self)
+    end
 end
 
 function M:Enable()

@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
--- Minimap runtime. The files share P.Minimap and load in this order: Host,
--- Input, Elements, Drawer, Info, Tooltips, Controller (Controller installs M).
+-- Minimap runtime. The files share P.Minimap and load in the order of
+-- MSUF_Suite_Minimap_Mainline.toc; Controller loads last and installs M.
 -- The suite owns a host frame and borrows Blizzard's Minimap: the map moves one
 -- frame after a request (a synchronous reparent inside a Blizzard panel path
 -- taints that path), MinimapCluster stays shown at alpha 0 so Edit Mode and its
@@ -9,6 +9,7 @@ local NS, S = P.NS, P.Suite
 -- Disable can put it back.
 local MM = {}
 P.Minimap = MM
+local IN_COMBAT = { inCombat = true }
 local SHAPE, VISIBILITY = NS.MinimapShape, NS.MinimapVisibility
 -- rotateMinimap is declared on the catalog entry (restored on disable).
 local M = {}
@@ -89,7 +90,7 @@ function MM.Listen(event, key, handler)
     local found
     for i = 1, #set do if set[i].key == key then found = set[i] end end
     if found then found.handler = handler else set[#set + 1] = { key = key, handler = handler } end
-    M.context:Event(event, Route, true)
+    M.context:Event(event, Route, IN_COMBAT)
 end
 
 function MM.Unlisten(event, key)

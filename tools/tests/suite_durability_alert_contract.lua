@@ -94,6 +94,7 @@ M.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().Mo
 end })
 
 M:Enable()
+M:RegisterMovers() -- the controller registers movers after Enable
 assert(not M.host.shown and M.host.mouse == false, "healthy gear showed or captured input")
 Drain()
 assert(registered.spec and registered.spec.getFrame() == M.host
@@ -181,5 +182,22 @@ M:Disable()
 M.active = false
 Drain()
 assert(not M.host.shown and reads == before, "disabled module ran deferred work")
+
+-- A sentence reaches the language pack whole: with every English string wrapped
+-- the preview is one translated "Preview %d%%" around its number.
+S.Text = function(text) return "<" .. text .. ">" end
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/DurabilityAlert.lua"))(
+    "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
+local worded = assert(registered.module)
+worded.active = true
+worded.config = { threshold = 40, width = 250, height = 62, scale = 100, point = 5, x = 10, y = 180 }
+worded.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, S, NS)(
+    "durabilityAlert", worded, { Event = function() end })
+S.editMode = true
+worded:Enable()
+assert(worded.value.text == "<Preview 25%>", "the durability preview was joined after translation")
+S.editMode = false
+worded:Disable()
+worded.active = false
 
 print("Low durability warning: threshold, combat, preview, mover and teardown passed")

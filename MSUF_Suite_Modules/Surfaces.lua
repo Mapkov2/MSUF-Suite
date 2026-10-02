@@ -119,13 +119,19 @@ function S.KeyText(key)
     return text
 end
 
--- Money as "12g 3s 4c" (zero parts left out, "0c" for nothing). The caller
--- adds any sign; amount is a non-negative copper value.
+-- Money as "12g 3s 4c" (zero parts left out, "0c" for nothing), with the
+-- client's own coin symbols (GOLD_, SILVER_ and COPPER_AMOUNT_SYMBOL, the ones
+-- Blizzard's CoinPickupFrame shows). The caller adds any sign; amount is a
+-- non-negative copper value.
 function S.MoneyText(amount)
     local gold, silver, copper = math.floor(amount / 10000), math.floor(amount % 10000 / 100), amount % 100
-    local text = gold > 0 and gold .. "g" or nil
-    if silver > 0 then text = text and text .. " " .. silver .. "s" or silver .. "s" end
-    if copper > 0 or not text then text = text and text .. " " .. copper .. "c" or copper .. "c" end
+    local text = gold > 0 and gold .. GOLD_AMOUNT_SYMBOL or nil
+    if silver > 0 then
+        text = text and text .. " " .. silver .. SILVER_AMOUNT_SYMBOL or silver .. SILVER_AMOUNT_SYMBOL
+    end
+    if copper > 0 or not text then
+        text = text and text .. " " .. copper .. COPPER_AMOUNT_SYMBOL or copper .. COPPER_AMOUNT_SYMBOL
+    end
     return text
 end
 

@@ -249,7 +249,6 @@ function M:Enable()
         self.context:Event(event, Changed, IN_COMBAT)
     end
     self:Update()
-    self:RegisterMovers()
 end
 function M:Refresh()
     self.layoutSerial = (self.layoutSerial or 0) + 1

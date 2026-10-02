@@ -397,8 +397,11 @@ local function PartySnapshot()
             if not NS.IsCombatLocked() then
                 data.spec = Specialization(unit)
                 local ilvl
-                if unit == "player" then ilvl = select(2, GetAverageItemLevel())
-                else ilvl = C_PaperDollInfo.GetInspectItemLevel(unit) end
+                if unit == "player" then
+                    ilvl = select(2, GetAverageItemLevel())
+                else
+                    ilvl = C_PaperDollInfo.GetInspectItemLevel(unit)
+                end
                 if Finite(ilvl) and ilvl > 0 then data.ilvl = ilvl end
                 local score = Field(C_PlayerInfo.GetPlayerMythicPlusRatingSummary(unit), "currentSeasonScore")
                 if Finite(score) and score >= 0 then data.rating = score end
@@ -675,7 +678,6 @@ function M:Enable()
     self.visible = false
     SyncEvents(self)
     self:Refresh()
-    self:RegisterMovers()
 end
 
 function M:Refresh()

@@ -1,5 +1,6 @@
 local _, private = ...
 local S = private.Suite
+local RoleKey = private.RoleKey
 -- lieutenants: the lieutenant levels seen in this context. Lieutenants of
 -- one instance can differ in level, so it is a set; learnedLieutenant tells
 -- the plate owner that a new level arrived (Roles.Classify).
@@ -224,7 +225,7 @@ function Roles.Base(facts, unit, uf)
         facts.neutral = true
     elseif Read(UnitCanAttack, "player", unit) ~= false then
         local role = facts.kind
-        facts.rest = role and c["enemy" .. role .. "Enabled"] ~= false and role
+        facts.rest = role and c[RoleKey[role].enabled] ~= false and role
     end
 end
 
@@ -240,7 +241,7 @@ function Roles.Get(facts, unit, uf)
     if c.enemyTankMode and Roles.tank and not threat and OnThreatList(unit) then return "TankMode" end
     if threat then
         local role = threat >= 3 and "ThreatLost" or "ThreatWarning"
-        if c["enemy" .. role .. "Enabled"] ~= false then return role end
+        if c[RoleKey[role].enabled] ~= false then return role end
         return nil
     end
     if facts.neutral then

@@ -242,8 +242,11 @@ local function Place(self, row, slot)
     local c = self.config
     local offset, x = (slot - 1) * (c.rowHeight + GAP), c.rowHeight + ICON_GAP
     row:ClearAllPoints()
-    if c.growth == GROW_UP then row:SetPoint("BOTTOMLEFT", self.host, "BOTTOMLEFT", x, offset)
-    else row:SetPoint("TOPLEFT", self.host, "TOPLEFT", x, -offset) end
+    if c.growth == GROW_UP then
+        row:SetPoint("BOTTOMLEFT", self.host, "BOTTOMLEFT", x, offset)
+    else
+        row:SetPoint("TOPLEFT", self.host, "TOPLEFT", x, -offset)
+    end
     row.slot = slot
 end
 
@@ -269,9 +272,13 @@ end
 local function PaintAlpha(self, entry)
     local c, row = self.config, entry.row
     local base = entry.dim and DIM or 1
-    if c.onlyImportant then row:SetAlphaFromBoolean(entry.important, base, 0)
-    elseif c.fadeMinor then row:SetAlphaFromBoolean(entry.important, base, base * FADE)
-    else row:SetAlpha(base) end
+    if c.onlyImportant then
+        row:SetAlphaFromBoolean(entry.important, base, 0)
+    elseif c.fadeMinor then
+        row:SetAlphaFromBoolean(entry.important, base, base * FADE)
+    else
+        row:SetAlpha(base)
+    end
 end
 
 -- Public answers only: a cast dims when every interrupt reports false; a
@@ -545,7 +552,9 @@ end
 local function ListenCooldowns(self)
     if self.listening and self.config.readyStripe and #self.candidates > 0 then
         self.context:Event("SPELL_UPDATE_COOLDOWN", OnCooldown, IN_COMBAT)
-    else self.context:RemoveEvent("SPELL_UPDATE_COOLDOWN") end
+    else
+        self.context:RemoveEvent("SPELL_UPDATE_COOLDOWN")
+    end
 end
 
 local function OnSpells(self)
@@ -565,8 +574,11 @@ end
 local function ListenSpells(self)
     local c = self.config
     local ctx, on = self.context, self.listening and (c.readyStripe or c.dimOutOfRange)
-    if self.listening and c.showMarkers then ctx:Event("RAID_TARGET_UPDATE", OnMarkers, IN_COMBAT)
-    else ctx:RemoveEvent("RAID_TARGET_UPDATE") end
+    if self.listening and c.showMarkers then
+        ctx:Event("RAID_TARGET_UPDATE", OnMarkers, IN_COMBAT)
+    else
+        ctx:RemoveEvent("RAID_TARGET_UPDATE")
+    end
     for _, event in ipairs({ "SPELLS_CHANGED", "PET_BAR_UPDATE" }) do
         if on then ctx:Event(event, OnSpells, IN_COMBAT) else ctx:RemoveEvent(event) end
     end
@@ -634,7 +646,9 @@ local function PaintSample(self, row, index)
     if c.showMarkers and sample.marker then
         row.marker:SetSpriteSheetCell(sample.marker, MARKER_ROWS, MARKER_COLUMNS)
         row.marker:Show()
-    else row.marker:Hide() end
+    else
+        row.marker:Hide()
+    end
     if row.slot ~= index then Place(self, row, index) end
     row:Show()
 end
@@ -670,7 +684,6 @@ function M:Enable()
     self.context:Event("PLAYER_ENTERING_WORLD", OnZone, IN_COMBAT)
     self.context:Event("ZONE_CHANGED_NEW_AREA", OnZone, IN_COMBAT)
     self:Refresh()
-    self:RegisterMovers()
 end
 
 function M:Refresh()

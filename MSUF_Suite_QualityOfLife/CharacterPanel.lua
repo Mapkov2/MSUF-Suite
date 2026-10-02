@@ -57,7 +57,3 @@ function S.CloseCharacterFor(owner)
     end
     CloseUnowned()
 end
-
-function S.HoldsCharacter(owner)
-    return owners[owner] == true
-end

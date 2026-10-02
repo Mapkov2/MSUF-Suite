@@ -193,9 +193,13 @@ Command = function(message)
     end
     local channel
     local inParty, inRaid, inInstance = IsInGroup(), IsInRaid(), IsInGroup(LE_PARTY_CATEGORY_INSTANCE)
-    if mode == "party" and S.Public(inParty) and inParty == true then channel = "PARTY"
-    elseif mode == "raid" and S.Public(inRaid) and inRaid == true then channel = "RAID"
-    elseif mode == "instance" and S.Public(inInstance) and inInstance == true then channel = "INSTANCE_CHAT" end
+    if mode == "party" and S.Public(inParty) and inParty == true then
+        channel = "PARTY"
+    elseif mode == "raid" and S.Public(inRaid) and inRaid == true then
+        channel = "RAID"
+    elseif mode == "instance" and S.Public(inInstance) and inInstance == true then
+        channel = "INSTANCE_CHAT"
+    end
     if not channel then
         S.Print(S.Text("Usage: /keys [self||party||raid||instance||group||guild]"))
         return

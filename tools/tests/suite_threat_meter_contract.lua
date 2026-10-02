@@ -57,6 +57,7 @@ local events={}
 local TimerContext=dofile(root.."/tools/tests/suite_test_support.lua").ModuleTimers(root,S,NS)
 m.context=TimerContext("threatMeter",m,{Event=function(_,name,callback) events[name]=callback end})
 m:Enable()
+m:RegisterMovers() -- the controller registers movers after Enable
 assert(m.records.main[1].unit=="party1" and #m.records.main==3 and m.windows.focus.shown,
     "native hostile target, sorted roster, pets or focus window missing")
 assert(movers.focus.visible() and movers.main.visible(), "target and focus windows lack their movers")

@@ -132,6 +132,7 @@ cue:Enable()
 assert(nativeCount == 0 and not cue.host, "non-Warlock must not create the cue")
 playerClass = "WARLOCK"
 cue:Enable()
+cue:RegisterMovers() -- the controller registers movers after Enable
 assert(nativeCount == 1 and slotCount == 1 and moverCount == 1
     and cue.container.unit == "player" and cue.container.enabled == true
     and driver == cue.container and driverCount == 1,

@@ -117,6 +117,14 @@ reminder.context.events.READY_CHECK(reminder)
 assert(reminder.host.shown and reminder.title.text == "Current loadout"
     and reminder.detail.text == "Raid  |  Loot: Discipline (current)",
     "ready check did not show public build and loot spec")
+-- Sentences reach the language pack whole: with every English string wrapped, the loot
+-- line is one translated sentence around the build and the (also whole) loot name.
+local plainText = S.Text
+S.Text = function(value) return "<" .. value .. ">" end
+reminder.context.events.READY_CHECK(reminder)
+S.Text = plainText
+assert(reminder.detail.text == "<Raid  |  Loot: <Discipline (current)>>",
+    "the loadout detail was joined from translated pieces")
 reminder.config.expectedConfigID = 200
 clock.Advance(5)
 reminder.context.events.READY_CHECK(reminder)

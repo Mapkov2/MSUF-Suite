@@ -2,8 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
-local Q = {}
-MM.specialization = Q
+local SpecButton = {}
+MM.specialization = SpecButton
 
 local function Wanted()
     local c = M.config
@@ -129,9 +129,9 @@ local function Create(self)
 end
 
 local function UpdateIcon()
-    if not Q.icon or not Wanted() then return end
+    if not SpecButton.icon or not Wanted() then return end
     local _, _, _, icon = CurrentSpec()
-    Q.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+    SpecButton.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
 end
 
 local function OnChanged(_, event, unit)
@@ -143,7 +143,7 @@ function MM.ReleaseSpecialization()
     MM.Unlisten("PLAYER_ENTERING_WORLD", "specialization")
     MM.Unlisten("PLAYER_SPECIALIZATION_CHANGED", "specialization")
     MM.Unlisten("PLAYER_LOOT_SPEC_UPDATED", "specialization")
-    if Q.button then Q.button:Hide() end
+    if SpecButton.button then SpecButton.button:Hide() end
     MM.SetExtent("specialization", 0, 0, 0, 0)
 end
 
@@ -152,15 +152,15 @@ function MM.ApplySpecialization()
         MM.ReleaseSpecialization()
         return
     end
-    Create(Q)
-    local c, button = M.config, Q.button
+    Create(SpecButton)
+    local c, button = M.config, SpecButton.button
     local corner = NS.MinimapSpecCorners[c.specCorner] or NS.MinimapSpecCorners[1]
     local x, y, size = corner[3] + c.specX, corner[4] + c.specY, c.specSize
     button:SetSize(size, size)
     button:ClearAllPoints()
     button:SetPoint(corner[1], MM.host, corner[2], x, y)
     local r, g, b = MM.BorderRGB()
-    Q.bg:SetColorTexture(r, g, b, .88)
+    SpecButton.bg:SetColorTexture(r, g, b, .88)
     local width, height = MM.Dimensions()
     local left = corner[2]:find("LEFT", 1, true) and x - size or width + x
     local bottom = corner[2]:find("TOP", 1, true) and height + y - size or y

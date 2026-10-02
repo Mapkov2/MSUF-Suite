@@ -176,6 +176,7 @@ local function Live(unit) local entry = module.entries[unit]; return entry and e
 
 ------------------------------------------------------------------ gate and snapshot
 module:Enable()
+module:RegisterMovers() -- the controller registers movers after Enable
 assert(module.mover.element == "casts" and module.mover.spec.sizeKeys[2] == "rowHeight", "mover lost its size keys")
 assert(not module.listening and not module.host.shown and not module.context.events.NAME_PLATE_UNIT_ADDED,
     "the stack listened outside a dungeon")

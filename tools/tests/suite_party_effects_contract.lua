@@ -97,6 +97,7 @@ local function Playing()
 end
 
 module:Enable()
+module:RegisterMovers() -- the controller registers movers after Enable
 assert(S.mover.id == "partyEffects" and S.mover.spec.getFrame() == module.host, "the banner lacks its mover")
 assert(module.context.events.PLAYER_LEVEL_UP and not module.context.events.ACHIEVEMENT_EARNED
     and not module.context.events.UNIT_SPELLCAST_SUCCEEDED, "only the level-up trigger is on by default")

@@ -305,8 +305,11 @@ local ZONE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA" }
 
 local function Listen(self, events, wanted, callback, unit)
     for i = 1, #events do
-        if wanted then self.context:Event(events[i], callback, IN_COMBAT, unit)
-        else self.context:RemoveEvent(events[i]) end
+        if wanted then
+            self.context:Event(events[i], callback, IN_COMBAT, unit)
+        else
+            self.context:RemoveEvent(events[i])
+        end
     end
 end
 
@@ -354,7 +357,6 @@ function M:Enable()
     self.gcdFree:SetScript("OnCooldownDone", CooldownDone)
     ContextChanged(self)
     EditSample(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

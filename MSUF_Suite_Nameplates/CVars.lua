@@ -1,6 +1,6 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
-local Mode = private.Mode
+local Mode, Key = private.Mode, private.Key
 local KEEP, SHOW, CUSTOMIZE, HIDE, LOOK_BLIZZARD = Mode.KEEP, Mode.SHOW, Mode.CUSTOMIZE, Mode.HIDE, Mode.LOOK_BLIZZARD
 local Style = NS.NameplateStyle
 -- The Blizzard nameplate CVars the Suite settings choose. Choice 1 of each
@@ -100,13 +100,13 @@ end
 
 local function Auras(module, c)
     for _, group in ipairs(Style.AuraGroups) do
-        local prefix, key = group.key, group.cvar
-        if c.look == LOOK_BLIZZARD or c[prefix .. "AuraMode"] ~= CUSTOMIZE then
+        local keys, key = Key[group.key], group.cvar
+        if c.look == LOOK_BLIZZARD or c[keys.AuraMode] ~= CUSTOMIZE then
             Restore(key)
         else
-            local mask = (c[prefix .. "Buffs"] and 1 or 0)
-                + (c[prefix .. "Debuffs"] and 2 or 0)
-                + (c[prefix .. "Control"] and 4 or 0)
+            local mask = (c[keys.Buffs] and 1 or 0)
+                + (c[keys.Debuffs] and 2 or 0)
+                + (c[keys.Control] and 4 or 0)
             LowBits(module, key, mask, 3)
         end
     end

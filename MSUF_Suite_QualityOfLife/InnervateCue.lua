@@ -242,7 +242,6 @@ function M:Enable()
     end
     CacheTarget(self)
     Preview(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

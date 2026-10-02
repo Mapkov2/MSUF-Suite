@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = assert(P.BagsModule, "Bags.lua must load before BankItemLevel.lua")
 local Loads = P.ItemLoads
+local IN_COMBAT = { inCombat = true }
 
 M.bankOverlays = setmetatable({}, { __mode = "k" })
 M.bankPending, M.bankLoads = {}, Loads.New()
@@ -143,13 +144,13 @@ function M:UpdateBank(searchChanged)
         end
         PaintBankButton(self, button, info)
     end
-    if next(self.bankPending) then self.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, true) end
+    if next(self.bankPending) then self.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, IN_COMBAT) end
 end
 
 BankButtonRefreshed = function(button)
     if not M.active or not M.config.showBankItemLevel then return end
     PaintBankButton(M, button, button.itemInfo)
-    if next(M.bankPending) then M.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, true) end
+    if next(M.bankPending) then M.context:Event("GET_ITEM_INFO_RECEIVED", M.ItemInfoReceived, IN_COMBAT) end
 end
 
 local function BankSearchUpdated(panel)

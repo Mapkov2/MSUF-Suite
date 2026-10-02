@@ -40,7 +40,10 @@ function M:Paint()
         return
     end
     local count, page = GetMerchantNumItems(), frame.page
-    if not S.Finite(count) or not S.Finite(page) then Hide(self) return end
+    if not S.Finite(count) or not S.Finite(page) then
+        Hide(self)
+        return
+    end
     local perPage = MERCHANT_ITEMS_PER_PAGE
     local waiting = false
     for slot = 1, perPage do

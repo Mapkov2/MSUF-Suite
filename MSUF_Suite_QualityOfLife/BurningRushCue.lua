@@ -115,7 +115,6 @@ function M:Enable()
     self.context:Event("PLAYER_ENTERING_WORLD", Update, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_DISABLED", Update, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", Update, IN_COMBAT)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

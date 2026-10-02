@@ -439,7 +439,6 @@ function M:Enable()
     self.lastZone = CurrentZoneKey()
     NativeAnnouncements(self)
     self.nativeSignature = NativeSignature(self.config)
-    self:RegisterMovers()
     if S.editMode then self:Refresh() end
 end
 

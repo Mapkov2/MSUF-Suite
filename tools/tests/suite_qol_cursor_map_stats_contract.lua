@@ -284,6 +284,7 @@ hud.config = { point = 5, x = 0, y = 0, width = 300, scale = 100,
     avoidanceColor = "c9b3f2", speedColor = "8cc4e8", valueFormat = 1, labelStyle = 1,
     fps = 1, fpsX = 0, fpsY = -55, combatOnly = false }
 hud:Enable()
+hud:RegisterMovers() -- the controller registers movers after Enable
 assert(hud.moverRegistered and hud.fields[1].value.text == "11.1%"
     and hud.fields[4].value.text == "44.4%", "stats HUD did not show native secondary stats")
 hasteValue = "secret"
@@ -450,6 +451,16 @@ assert(pet.host.shown and pet.context.events.SPELLS_CHANGED, "a hunter with Call
 knownSpells[883] = nil
 pet.context.events.SPELLS_CHANGED(pet, "SPELLS_CHANGED")
 assert(not pet.host.shown, "a petless hunter specialization was told its pet is missing")
+-- SPELLS_CHANGED is heard only while the missing warning is on: a respec made
+-- with it off must still be read when it comes back.
+pet.config.showMissing = false
+pet:Refresh()
+assert(not pet.context.events.SPELLS_CHANGED, "the spellbook listener stayed on with the warning off")
+knownSpells[883] = true
+pet.config.showMissing = true
+pet:Refresh()
+assert(pet.host.shown and pet.label.text == "Pet missing",
+    "a hunter who regained Call Pet while the warning was off lost the missing-pet warning")
 pet:Disable()
 playerClass, knownSpells = "WARLOCK", { [688] = true, [108503] = true }
 pet:Enable()

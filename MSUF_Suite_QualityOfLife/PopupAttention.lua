@@ -396,7 +396,6 @@ end
 function M:Enable()
     Install(self)
     self:Refresh()
-    self:RegisterMovers()
 end
 
 function M:Refresh()

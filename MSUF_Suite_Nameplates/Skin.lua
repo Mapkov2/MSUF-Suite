@@ -1,6 +1,6 @@
 local _, private = ...
 local NS, S = private.NS, private.Suite
-local Mode = private.Mode
+local Mode, Key, RoleKey = private.Mode, private.Key, private.RoleKey
 local LOOK_BLIZZARD = Mode.LOOK_BLIZZARD
 local Style = NS.NameplateStyle
 local Border = Style.PaintBorder
@@ -107,7 +107,8 @@ local function ReadFacts(uf, unit, facts)
     if S.Public(focus) and focus == true then M.focusUF = uf end
     if not S.Public(uf.isPlayer) or uf.isPlayer ~= false then return end
     local color = prefix == "enemy" and M.config.enemyRoleColors and Roles.allowed
-    local elite, quest = M.config[prefix .. "EliteMarker"], M.config[prefix .. "QuestMarker"]
+    local keys = Key[prefix]
+    local elite, quest = M.config[keys.EliteMarker], M.config[keys.QuestMarker]
     if not color and not elite and not quest then return end
     local classification = UnitClassification(unit)
     if not S.Public(classification) then classification = false end
@@ -146,7 +147,7 @@ end
 
 local function PaintFill(health, visual, prefix)
     local role = prefix == "enemy" and M.config.enemyRoleColors and M.roles[health]
-    if role and M.config["enemy" .. role .. "Enabled"] == false then role = nil end
+    if role and M.config[RoleKey[role].enabled] == false then role = nil end
     local fillTexture = health:GetStatusBarTexture()
     if not role or not Safe(fillTexture) then
         visual.fill:Hide()
@@ -157,7 +158,7 @@ local function PaintFill(health, visual, prefix)
         visual.fill:SetAllPoints(fillTexture)
         visual.fillTarget = fillTexture
     end
-    local hex = M.config["enemy" .. role .. "Color"]
+    local hex = M.config[RoleKey[role].color]
     if visual.fillColor ~= hex then
         Color(visual.fill, hex)
         visual.fillColor = hex
@@ -166,25 +167,24 @@ local function PaintFill(health, visual, prefix)
 end
 
 local function PaintHealth(health, visual, prefix)
-    local c = M.config
-    local backColor = c[prefix .. "BackdropColor"]
-    local backAlpha = (c[prefix .. "BackdropAlpha"] or 100) / 100
+    local c, keys = M.config, Key[prefix]
+    local backColor = c[keys.BackdropColor]
+    local backAlpha = (c[keys.BackdropAlpha] or 100) / 100
     if visual.backColor ~= backColor or visual.backAlpha ~= backAlpha then
         Color(visual.back, backColor, backAlpha)
         visual.backColor, visual.backAlpha = backColor, backAlpha
     end
-    Border(visual, health, c[prefix .. "BorderEnabled"] == false and 0 or c[prefix .. "BorderSize"],
-        c[prefix .. "BorderColor"])
-    visual.back:SetShown(c[prefix .. "BackdropEnabled"] ~= false and backAlpha > 0)
+    Border(visual, health, c[keys.BorderEnabled] == false and 0 or c[keys.BorderSize], c[keys.BorderColor])
+    visual.back:SetShown(c[keys.BackdropEnabled] ~= false and backAlpha > 0)
     PaintFill(health, visual, prefix)
     local facts = M.facts[health]
     local marker, quest = facts and facts.marker, facts and facts.quest
-    PaintMarker(visual.elite, health, "elite", c[prefix .. "EliteMarker"] and marker,
-        c[prefix .. "EliteMarkerSize"] or 14, c[prefix .. "EliteOffsetX"] or -13,
-        c[prefix .. "EliteOffsetY"] or 0, c.enemyMinibossColor, c[prefix .. "EliteMarkerAnchor"], marker)
-    PaintMarker(visual.quest, health, "quest", c[prefix .. "QuestMarker"] and quest,
-        c[prefix .. "QuestMarkerSize"] or 15, c[prefix .. "QuestOffsetX"] or 0,
-        c[prefix .. "QuestOffsetY"] or 17, c.enemyQuestColor, c[prefix .. "QuestMarkerAnchor"])
+    PaintMarker(visual.elite, health, "elite", c[keys.EliteMarker] and marker,
+        c[keys.EliteMarkerSize] or 14, c[keys.EliteOffsetX] or -13,
+        c[keys.EliteOffsetY] or 0, c.enemyMinibossColor, c[keys.EliteMarkerAnchor], marker)
+    PaintMarker(visual.quest, health, "quest", c[keys.QuestMarker] and quest,
+        c[keys.QuestMarkerSize] or 15, c[keys.QuestOffsetX] or 0,
+        c[keys.QuestOffsetY] or 17, c.enemyQuestColor, c[keys.QuestMarkerAnchor])
 end
 
 -- The arrows keep clear of the level badge or number beside the bar.
@@ -275,8 +275,8 @@ local function PaintRaidIcon(uf, prefix)
 end
 
 local function PaintFonts(uf, health, cast, prefix)
-    local c = M.config
-    Text.Apply(uf.name, Text.styles[prefix], c[prefix .. "NameSize"] or 0)
+    local c, keys = M.config, Key[prefix]
+    Text.Apply(uf.name, Text.styles[prefix], c[keys.NameSize] or 0)
     if prefix == "enemy" then
         Text.Apply(health.Text, Text.styles.enemy, c.enemyHealthTextSize or 0)
         Text.Apply(health.LeftText, Text.styles.enemy, c.enemyHealthTextSize or 0)
@@ -287,7 +287,7 @@ local function PaintFonts(uf, health, cast, prefix)
         RestoreFont(health.RightText)
     end
     if not cast then return end
-    local style, size = Text.styles[prefix .. "Cast"], c[prefix .. "CastSize"] or 0
+    local style, size = Text.styles[keys.Cast], c[keys.CastSize] or 0
     Text.Apply(cast.Text, style, size)
     Text.Apply(cast.CastTargetNameText, style, size)
     local time = M.castTimes[cast]

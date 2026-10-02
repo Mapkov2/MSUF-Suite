@@ -142,8 +142,11 @@ function O.PaintQuestIcon(self, row, item, c, color)
             row.questIcon = S.CreateTexture(row, nil, "ARTWORK")
             row.questIcon:SetPoint("LEFT", row, "LEFT", 10, 0)
         end
-        if item.questIconAtlas then row.questIcon:SetAtlas(item.questIcon)
-        else row.questIcon:SetTexture(item.questIcon) end
+        if item.questIconAtlas then
+            row.questIcon:SetAtlas(item.questIcon)
+        else
+            row.questIcon:SetTexture(item.questIcon)
+        end
         row.questIcon:SetSize(16, 16)
         row.questIcon:Show()
         if row.questBadge then row.questBadge:Hide() end
