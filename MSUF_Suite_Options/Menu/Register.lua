@@ -188,71 +188,55 @@ local function RegisterPages()
     end
 end
 
--- Menu2 owns the toolbar and confirmation UI. Suite pages extend its reset
--- contract without changing the MSUF page handlers used by either client.
-local function InstallPageResets()
-    if M._msufSuitePageResetsInstalled then return end
-    M._msufSuitePageResetsInstalled = true
-    local oldHas, oldWarning = M.PageHasReset, M.BuildPageResetWarning
-    local oldReset, oldConfirm = M.ResetPageToDefaults, M.ShowPageResetConfirm
-    -- Second result: whether the page resets.
-    local function IsSuitePage(key)
-        for _, page in ipairs(P.pages) do if page.key == key then return true, page.reset ~= false and PageAddOnEnabled(key) end end
-        return false
-    end
-    function M.PageHasReset(key)
-        local suite, resettable = IsSuitePage(key)
-        if suite then return resettable end
-        return (oldHas and oldHas(key)) or false
+-- Menu2 owns the toolbar and confirmation UI. Suite pages take part in its
+-- page reset through the Suite's host bridge (MSUF_Suite/Core/HostBridge.lua):
+-- a provider on Menu2 hosts with host API v1, the wrapped reset functions on
+-- older hosts. These handlers are the Suite's half of either.
+local function PageResetHandlers()
+    local pages, specs = {}, {}
+    for _, page in ipairs(P.pages) do
+        pages[page.key], specs[page.key] = true, page
     end
     -- The page's title in the reader's language (its key when it has none).
     local function PageTitle(key)
-        for _, page in ipairs(P.pages) do
-            if page.key == key then return P.Tr(page.title) end
-        end
-        return key
+        local page = specs[key]
+        return page and P.Tr(page.title) or key
     end
-    function M.BuildPageResetWarning(key)
-        if not IsSuitePage(key) then return oldWarning and oldWarning(key) end
+    local handlers = { pages = pages, withHistory = P.WithHistory, confirm = P.Confirm, combat = P.Combat }
+    function handlers.canReset(key)
+        local page = specs[key]
+        return page ~= nil and page.reset ~= false and PageAddOnEnabled(key)
+    end
+    function handlers.warning(key)
         return string.format(P.Tr("Reset %s to defaults?\n\nThis resets all settings on this Suite page for the active profile."),
             PageTitle(key))
     end
-    function M.ResetPageToDefaults(key)
-        local suite, resettable = IsSuitePage(key)
-        if not suite then return oldReset and oldReset(key) or false end
-        if not resettable or P.Combat() then return false end
-        if key == "suite_skin" and not Suite.Skin.EnsureEngine() then return false end
-        local ok = P.WithHistory(string.format(P.Tr("Reset %s"), PageTitle(key)), "page:reset:" .. tostring(key), function()
-            if key == "suite_skin" then return P.ResetSkinPage() or false end
-            local modules = PAGE_MODULES[key]
-            if not modules then return false end
-            for _, id in ipairs(modules) do if not S.Reset(id) then return false end end
-            return true
-        end)
-        if ok then
-            P.Refresh()
-            if M.ShowStatusFeedback then M.ShowStatusFeedback(P.Tr("Page reset"), "ok", 1.5) end
-        end
-        return ok
+    function handlers.label(key)
+        return string.format(P.Tr("Reset %s"), PageTitle(key))
     end
-    function M.ShowPageResetConfirm(key)
-        local suite, resettable = IsSuitePage(key)
-        if not suite then return oldConfirm and oldConfirm(key) or false end
-        if not resettable or P.Combat() then return false end
-        local message = M.BuildPageResetWarning(key)
-        if not M.InstallStaticPopup then
-            return M.ResetPageToDefaults(key)
-        end
-        M.InstallStaticPopup("MSUF_SUITE_PAGE_RESET_CONFIRM", {
-            text = "%s", button1 = YES, button2 = NO,
-            OnAccept = function(_, data)
-                if data and data.pageKey then M.ResetPageToDefaults(data.pageKey) end
-            end,
-        })
-        StaticPopup_Show("MSUF_SUITE_PAGE_RESET_CONFIRM", message, nil, { pageKey = key })
+    function handlers.prepare(key)
+        return key ~= "suite_skin" or Suite.Skin.EnsureEngine() == true
+    end
+    function handlers.run(key)
+        if key == "suite_skin" then return P.ResetSkinPage() or false end
+        -- The cooldown manager resets its settings, spell lists and spell
+        -- options through its page, which offers an Undo line.
+        local body = specs[key] and specs[key].resetPage
+        if body then return body() == true end
+        local modules = PAGE_MODULES[key]
+        if not modules then return false end
+        for _, id in ipairs(modules) do if not S.Reset(id) then return false end end
         return true
     end
-    if M.RefreshToolbarPageReset then M.RefreshToolbarPageReset() end
+    function handlers.finish()
+        P.Refresh()
+        if M.ShowStatusFeedback then M.ShowStatusFeedback(P.Tr("Page reset"), "ok", 1.5) end
+    end
+    return handlers
+end
+
+local function InstallPageResets()
+    P.pageResetMode = Suite.HostBridge.RegisterPageResets(M, PageResetHandlers())
 end
 
 AddIcons()
@@ -303,7 +287,7 @@ local function RegisterSuiteLayers()
         local actions = S.Config("actionbars")
         for i = 1, Suite.ActionBarCount do
             Add("Suite Action Bars", Suite.ActionBarTitles[i], "Whole bar", "actionbars", "bar" .. i .. "Layer",
-                actions.enabled and actions["bar" .. i .. "Visibility"] ~= 6)
+                actions.enabled and actions["bar" .. i .. "Visibility"] ~= Suite.ActionBarEnum.VISIBILITY.NEVER)
         end
         local xp = S.Config("xpBar")
         Add("Suite Quality of Life", "Experience", "Experience bar", "xpBar", "layer", xp.enabled)

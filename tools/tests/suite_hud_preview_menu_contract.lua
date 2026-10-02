@@ -50,23 +50,18 @@ assert(menu.shown and #calls == 2, "unavailable runtime preview must leave the m
 summary.Preview = preview
 actions.last()
 assert(menu.shown and calls[3] == "last", "non-preview menu actions retain their existing behavior")
--- Clearing the run history asks first through MSUF's popup helper.
-local dialogs, shown = {}, nil
-YES, NO = "Yes", "No"
-P.M.InstallStaticPopup = function(name, spec) dialogs[name] = spec end
-StaticPopup_Show = function(name, _, _, data) shown = { name = name, data = data } end
+-- Clearing the run history asks first, in Blizzard's generic confirmation
+-- (P.Confirm, MSUF_Suite_Options/Menu/Bridge.lua).
+local asked
+P.Confirm = function(key, text, onAccept) asked = { key = key, text = text, accept = onAccept } end
 actions.clear_history()
-assert(#calls == 3 and shown and dialogs[shown.name] and dialogs[shown.name].button1 == "Yes",
-    "clearing the run history did not ask first")
+assert(#calls == 3 and asked and type(asked.accept) == "function", "clearing the run history did not ask first")
 -- The question is the Suite's own wording.
-assert(dialogs[shown.name].text == "Erase this character's Mythic+ history? The removed runs cannot be restored.",
+assert(asked.text == "Erase this character's Mythic+ history? The removed runs cannot be restored.",
     "the run history question lost its own wording")
-dialogs[shown.name].OnAccept(nil, shown.data)
+asked.accept()
 assert(calls[4] == "clear", "confirming did not clear the run history")
-P.M.InstallStaticPopup = nil
-actions.clear_history()
-assert(calls[5] == "clear", "a host without the popup helper must still clear the history")
-calls[4], calls[5] = nil, nil
+calls[4] = nil
 P.S.catalog.runSummary.rules.showMythicPlus = nil
 actions = {}
 page.build({})

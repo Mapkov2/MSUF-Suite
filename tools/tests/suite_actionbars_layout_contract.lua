@@ -119,10 +119,16 @@ for n=1,12 do
                 local columns,rowCount,r=AB.Grid(n,rows,vertical)
                 local refColumns,refRows,cells=Reference(n,rows,vertical,start)
                 assert(columns==refColumns and rowCount==refRows,("grid %d/%d/%s"):format(n,rows,tostring(vertical)))
+                -- The options preview draws with the core's copy (Core/Catalog/ActionBars.lua).
+                local coreColumns,coreRows,coreR=Suite.ActionBarGrid(n,rows,vertical)
+                assert(coreColumns==columns and coreRows==rowCount and coreR==r,
+                    ("the preview grid differs from the bar's: %d/%d/%s"):format(n,rows,tostring(vertical)))
                 local seen={}
                 for i=0,n-1 do
                     local col,row=AB.Cell(i,columns,rowCount,r,vertical,start)
                     assert(col==cells[i+1][1] and row==cells[i+1][2],("cell %d of %d/%d/%s/%d"):format(i,n,rows,tostring(vertical),start))
+                    local coreCol,coreRow=Suite.ActionBarCell(i,columns,rowCount,r,vertical,start)
+                    assert(coreCol==col and coreRow==row,("the preview cell differs from the bar's: %d of %d/%d"):format(i,n,rows))
                     assert(col>=0 and col<columns and row>=0 and row<rowCount)
                     local key=col..":"..row
                     assert(not seen[key],"two buttons share a cell");seen[key]=true

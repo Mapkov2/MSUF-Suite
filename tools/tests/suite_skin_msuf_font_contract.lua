@@ -60,9 +60,9 @@ assert(typography.SetSelection("arial") and typography.GetSelection() == "arial"
 msufPath = "Third.ttf"
 assert(typography.ApplyConfigured() and game.path == "Fonts\\ARIALN.TTF",
     "later MSUF font changes must respect the explicit skin selection")
-assert(typography.SetFace("sharedMedia") and game.path == "Skin.ttf"
+assert(typography.SetSelection("lsm:Skin") and game.path == "Skin.ttf"
     and NS.DB.typography.followMSUF == false,
-    "the existing Skin face API must still select a separate SharedMedia font")
+    "a SharedMedia font selection must stop following the MSUF font")
 assert(typography.SetSelection("msuf") and game.path == msufPath,
     "selecting MSUF again must restore font following")
 msufPath = "secret"

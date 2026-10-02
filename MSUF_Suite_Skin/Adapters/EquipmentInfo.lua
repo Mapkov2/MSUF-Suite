@@ -226,7 +226,9 @@ end
 function Info.AddTooltip(result)
     if not result then return end
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine(NS.L.GEAR_TOOLTIP_TITLE, NS.Theme.GetColor("accent"))
+    -- AddLine(text, r, g, b, wrap): the theme colour's alpha is no wrap flag.
+    local tr, tg, tb = NS.Theme.GetColor("accent")
+    GameTooltip:AddLine(NS.L.GEAR_TOOLTIP_TITLE, tr, tg, tb)
     local quality = result.quality and _G["ITEM_QUALITY" .. result.quality .. "_DESC"]
     if type(quality) == "string" then GameTooltip:AddLine(quality, .8, .8, .8) end
     if result.enchantLabel and result.enchantLabel ~= "" then

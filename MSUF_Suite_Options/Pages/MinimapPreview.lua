@@ -437,7 +437,7 @@ local function BuildIconTargets(ui)
 end
 
 local function FitZoom(ui)
-    local size = math.max(100, P.Get(ID, "size") or 190)
+    local size = math.max(100, P.Get(ID, "size") or P.catalog[ID].rules.size.default)
     return Clamp(math.min((ui.width - 160) / size, 250 / size), 0.2, 1)
 end
 
@@ -545,7 +545,7 @@ end
 local function Paint(ui)
     local config = S.Config(ID)
     local state = ui.state
-    local base = state.compact and math.min(state.zoom, 94 / math.max(100, config.size or 190))
+    local base = state.compact and math.min(state.zoom, 94 / math.max(100, config.size or P.catalog[ID].rules.size.default))
         or Clamp(state.zoom, 0.2, 1.5)
     ui.art:Paint(config, base, ui.LayerOn)
     ui.style:SetWidth(ui.art.width + (config.borderSize or 0) * base * 2)
@@ -594,7 +594,7 @@ end
 function P.BuildMinimapPreview(ctx, b, sections)
     local ui = { sections = sections, handles = {} }
     if not BuildCanvas(ui, ctx, b) then return end
-    local initialSize = math.max(100, P.Get(ID, "size") or 190)
+    local initialSize = math.max(100, P.Get(ID, "size") or P.catalog[ID].rules.size.default)
     ui.state = {
         selected = nil,
         zoom = Clamp(math.min((ui.width - 160) / initialSize, 250 / initialSize), 0.2, 1),

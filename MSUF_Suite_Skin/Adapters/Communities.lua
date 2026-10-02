@@ -120,7 +120,6 @@ local function GetState(frame, owner)
         }
         CommunitiesSkin.states[frame] = state
     end
-    state.owner = owner or state.owner
     return state
 end
 
@@ -522,7 +521,9 @@ function CommunitiesSkin.Apply(frame, owner)
         return false, "combat"
     end
     local state = GetState(frame, owner)
+    -- Another owner's skin comes off first, with that owner's records.
     if state.active and state.owner ~= owner then RestoreState(state) end
+    state.owner = owner
     state.active = true
     CommunitiesSkin.activeState = state
     SkinStatic(state)

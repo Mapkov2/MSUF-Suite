@@ -5,6 +5,7 @@ local _, P = ...
 local Page = P.CDMPage
 local M = P.M
 local ID, PAGE = Page.ID, Page.PAGE
+local KIND, ALIGN = P.Suite.CDM.KIND, P.Suite.CDM.ALIGN
 local SECTION = "suite_cooldownManager_preview"
 -- The + tile beside the drawing (canvas units).
 local PLUS, PLUS_GAP = 28, 6
@@ -74,7 +75,7 @@ local function DragCancel(drag)
 end
 local function Flow(drag, ui)
     local axis, sign = "x", 1
-    if ui.kind == 3 then axis, sign = "y", -1 end
+    if ui.kind == KIND.AURA_BAR then axis, sign = "y", -1 end
     local first, second = ui.hits[1], ui.hits[2]
     if ui.hitCount >= 2 and first and second then
         local x1, y1 = first:GetCenter()
@@ -89,7 +90,7 @@ local function Flow(drag, ui)
         end
     end
     drag.axis, drag.sign = axis, sign
-    drag.centerOut = ui.kind == 1 and P.Get(ID, Page.Key("align")) == 1
+    drag.centerOut = ui.kind == KIND.COOLDOWN and P.Get(ID, Page.Key("align")) == ALIGN.CENTER
     drag.perRow = drag.centerOut and (tonumber(P.Get(ID, Page.Key("perRow"))) or 1) or 1
 end
 -- Center-out cooldowns alternate sides of the midpoint in list order.
@@ -400,7 +401,7 @@ local function PaintHits(ui, frame, editable)
             hit:Hide()
         end
     end
-    ui.hitCount, ui.kind = shown, frame and frame.kind or 1
+    ui.hitCount, ui.kind = shown, frame and frame.kind or KIND.COOLDOWN
     local plus, show = ui.plus, editable and frame ~= nil
     if show then
         -- As tall as one drawn icon (or row), within 16 and PLUS.

@@ -26,6 +26,9 @@ local function Finite(value)
 end
 local function Noop() end
 local lastMessage
+-- PLAYER_ENTERING_WORLD settles the chat colours an off skin left behind.
+local settled = 0
+local function Settle() settled = settled + 1 end
 local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing)
     local frame, loginFrame, starts, messages = nil, nil, 0, 0
     CreateFrame = function()
@@ -55,7 +58,8 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         Finite = Finite,
         -- The modules Startup.lua drives (MapkoSkin.lua, Profiles.lua, Menu.lua,
         -- Installer.lua): no legacy skin database, nothing else to do here.
-        Skin = { LoadLegacyDatabase = function() return false end, EnsureEngine = Noop, SetEnabled = Noop },
+        Skin = { LoadLegacyDatabase = function() return false end, EnsureEngine = Noop, SetEnabled = Noop,
+            SettleChatColors = Settle },
         SuiteProfiles = { EnsureNewCharacterProfile = Noop, SyncActive = Noop,
             EnsureRetailForeverCooldownLayout = Noop, EnsureRetailResourceStack = Noop },
         Menu = { Watch = Noop },
@@ -66,6 +70,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
             LoadLegacyDatabase = function() return false end,
             EnsureEngine = function() error("skin engine failed") end,
             SetEnabled = function() error("skin switch failed") end,
+            SettleChatColors = Settle,
         }
         owner.Menu = { Watch = function() error("menu watch failed") end }
     end
@@ -77,6 +82,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
             end,
             EnsureEngine = function() return true end,
             SetEnabled = function() return true end,
+            SettleChatColors = Settle,
         }
     end
     assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", owner)
@@ -95,7 +101,9 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     end
     assert(loginFrame and loginFrame.events.PLAYER_ENTERING_WORLD,
         "login kind listener was not registered")
+    local settledBefore = settled
     loginFrame:callback("PLAYER_ENTERING_WORLD", not reloading, reloading == true)
+    assert(settled == settledBefore + 1, "the first world entry did not settle the skin's chat colours")
     assert(owner.loginKind == (reloading and "reload" or "login") and not next(loginFrame.events),
         "login kind was not captured and released")
     assert(not next(frame.events), "startup left idle events registered")

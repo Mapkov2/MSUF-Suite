@@ -598,10 +598,13 @@ local ownedColorKeys = {
     blizzardCloseDisabled = true, disabled = true,
 }
 
+-- One full pass per frame of settings writes (Registry.QueueJob).
+local function ApplyQueued() Checkmarks.Apply() end
+
 function Checkmarks:OnThemeChanged(domain, key)
     if domain == "color" and not ownedColorKeys[key] then return end
     if domain ~= "color" and domain ~= "theme" and domain ~= "profile" then return end
-    Checkmarks.Apply()
+    NS.Registry.QueueJob(ApplyQueued)
 end
 
 function Checkmarks.GetStatus() return { applied = Checkmarks.count } end

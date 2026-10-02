@@ -71,17 +71,10 @@ local function BuildObjectives(ctx, b)
         })
 end
 
--- Clearing the history asks first (MSUF's popup helper is a host export;
--- StaticPopup_Show exists on every client).
+-- Clearing the history asks first.
 local function ConfirmClearHistory(run)
-    local M = P.M
-    if not M.InstallStaticPopup then return run("ClearHistory") end
-    M.InstallStaticPopup("MSUF_SUITE_CLEAR_RUNS_CONFIRM", {
-        text = Tr("Erase this character's Mythic+ history? The removed runs cannot be restored."),
-        button1 = YES, button2 = NO,
-        OnAccept = function(_, data) if type(data) == "function" then data("ClearHistory") end end,
-    })
-    StaticPopup_Show("MSUF_SUITE_CLEAR_RUNS_CONFIRM", nil, nil, run)
+    P.Confirm("clear-runs", Tr("Erase this character's Mythic+ history? The removed runs cannot be restored."),
+        function() run("ClearHistory") end)
 end
 
 local function BuildSummary(ctx, b)

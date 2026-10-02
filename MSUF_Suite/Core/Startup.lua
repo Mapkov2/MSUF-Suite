@@ -13,6 +13,8 @@ loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
     self:UnregisterAllEvents()
     Suite.loginKind = isReloadingUi == true and "reload" or "login"
     Suite.CaptureSessionGold(isReloadingUi)
+    -- After the skin's PLAYER_LOGIN pass: chat colours an off skin left.
+    Suite.Dispatch(Suite.Skin.SettleChatColors)
     -- "login": the installer waits while MSUF's own first run is pending (Installer.lua).
     if Suite.Suite.started then Suite.Installer.MaybeShow("login") end
 end)

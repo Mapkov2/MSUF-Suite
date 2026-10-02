@@ -2162,6 +2162,33 @@ end
 assert(historyWrites == writes + 1, "Reset page must write one history entry")
 Config().listsData = listsBeforeReuse
 Page.ClearNote()
+-- The page's Reset runs the cooldown manager's own body: every setting, the
+-- spell lists and the spell options back to the catalog defaults, one
+-- history entry and an Undo line on the page that brings it all back.
+do
+    Config().listsData = listsWithC1
+    Config().spellsData = assert(CDM.Codec.EncodeSpells({ e = { s133 = { showGCD = true } } }))
+    Config().ess_size = 50
+    local before = {}
+    for key, value in pairs(Config()) do before[key] = value end
+    writes = historyWrites
+    assert(M.ResetPageToDefaults(PAGE) and historyWrites == writes + 1, "the page Reset was not one history entry")
+    assert(Page.note == L["The cooldown manager was reset: settings, spell lists and spell options."] and Page.undo,
+        "the page Reset showed no Undo line")
+    -- Catalog defaults, with the shared look on top as on every page Reset.
+    local expected = {}
+    for key, rule in pairs(P.catalog[ID].rules) do expected[key] = rule.default end
+    if expected.enabled then P.Suite.SuiteLooks.ApplyToConfig(ID, expected, P.Suite.DB.suite.globalLook) end
+    for key in pairs(P.catalog[ID].rules) do
+        assert(Config()[key] == expected[key], "the page Reset left " .. key .. " changed")
+    end
+    Page.RunUndo()
+    for key in pairs(P.catalog[ID].rules) do
+        assert(Config()[key] == before[key], "Undo of the page Reset lost " .. key)
+    end
+    Config().listsData = listsBeforeReuse
+    Page.ClearNote()
+end
 Page.selected = "c1"
 M.RequestRefresh()
 
@@ -2405,7 +2432,8 @@ lastDropdown = nil
 Fire(ui.chips.ess, "OnClick", "RightButton")
 assert(lastDropdown == nil and not Page.OpenBarMenu(ui.chips.ess, "ess") and not Page.OpenAddBar(ui.addChip)
     and not Page.CopyBarSettings("uti", "ess") and not Page.ResetBar("ess") and not Page.DeleteBar("c1")
-    and not Page.ResetModule() and not Page.CopyListToSpecs("ess") and not Page.FocusName(),
+    and not Page.ResetModule() and not M.ResetPageToDefaults(PAGE) and not Page.CopyListToSpecs("ess")
+    and not Page.FocusName(),
     "combat must refuse bar actions, resets and copies")
 size.set(30)
 assert(Config().listsData == text and historyWrites == writes and Config().ess_size ~= 30, "combat wrote settings")

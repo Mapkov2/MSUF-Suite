@@ -626,12 +626,17 @@ function EncounterJournalSkin:OnScrollBoxInitialized(row)
     SkinDynamicRow(state, row)
 end
 
-function EncounterJournalSkin:OnThemeChanged()
-    local state = self.activeState
+local function RefreshActiveColors()
+    local state = EncounterJournalSkin.activeState
     if state and state.active and not NS.IsCombatLocked() then
         RefreshTextColors(state)
         NS.ControlSkin.RefreshOwner(state.owner)
     end
+end
+
+-- Once per frame of settings writes.
+function EncounterJournalSkin:OnThemeChanged()
+    NS.Registry.QueueJob(RefreshActiveColors)
 end
 
 local function RegisterScrollBox(state, scrollBox)

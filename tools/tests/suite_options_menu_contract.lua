@@ -3435,6 +3435,110 @@ assert(optionsNS.ResetRules("dataTexts", { bar1X })
 assert(M.ResetPageToDefaults("suite_dataTexts")
     and S.Config("dataTexts").bar2X == S.catalog.dataTexts.rules.bar2X.default,
     "Reset page did not restore the module defaults")
+-- The toolbar's Reset page asks first, in Blizzard's generic confirmation,
+-- without an entry in Blizzard's StaticPopupDialogs.
+do
+    local previousGeneric, previousDialogs = _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs
+    local asked
+    _G.StaticPopupDialogs = {}
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
+    assert(S.SetMany("dataTexts", { bar2X = 58 }))
+    assert(M.ShowPageResetConfirm("suite_dataTexts") and asked and asked.text == "%s"
+        and asked.text_arg1 == M.BuildPageResetWarning("suite_dataTexts") and S.Config("dataTexts").bar2X == 58,
+        "Reset page did not ask first")
+    asked.callback()
+    assert(S.Config("dataTexts").bar2X == S.catalog.dataTexts.rules.bar2X.default,
+        "confirming Reset page did not reset the page")
+    assert(next(_G.StaticPopupDialogs) == nil, "Reset page wrote into Blizzard's StaticPopupDialogs")
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
+end
+-- One question per key: a repeated question closes the earlier one (the
+-- generic dialog allows several, and an earlier destructive Yes would stay
+-- live), also when the Modules runtime loads between two questions.
+do
+    local shown = {}
+    local previousGeneric, previousHide, previousConfirm =
+        _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Hide, S.Confirm
+    S.Confirm = nil
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) shown[#shown + 1] = data end
+    _G.StaticPopup_Hide = function(which, data)
+        assert(which == "GENERIC_CONFIRMATION", "closed another dialog type")
+        for i = #shown, 1, -1 do if shown[i] == data then table.remove(shown, i) end end
+    end
+    local resets = 0
+    local reset = M.ResetPageToDefaults
+    M.ResetPageToDefaults = function() resets = resets + 1; return true end
+    assert(M.ShowPageResetConfirm("suite_dataTexts") and M.ShowPageResetConfirm("suite_dataTexts"))
+    assert(#shown == 1, "a repeated Reset page question left the earlier one open")
+    table.remove(shown) -- the player cancels the question on screen
+    assert(#shown == 0 and resets == 0, "a cancelled Reset page question left a live Yes")
+    optionsNS.Confirm("contract-a", "A", function() end)
+    optionsNS.Confirm("contract-b", "B", function() end)
+    assert(#shown == 2, "questions under different keys replaced each other")
+    local runtimeKey
+    S.Confirm = function(key) runtimeKey = key end
+    optionsNS.Confirm("contract-a", "A again", function() end)
+    assert(runtimeKey == "options:contract-a" and #shown == 1 and shown[1].text_arg1 == "B",
+        "the runtime's question left the page's earlier one open")
+    M.ResetPageToDefaults = reset
+    -- Blizzard's StaticPopup_Hide exists on every client.
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Hide, S.Confirm =
+        previousGeneric, previousHide or function() end, previousConfirm
+end
+-- "Save setup as..." asks for a name in Blizzard's generic input box and
+-- saves the MSUF frames, the Suite and the skin under it; refused in combat.
+do
+    local previousShow, previousSaveAs = _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs
+    local asked, saved
+    _G.StaticPopup_Show = function(which, _, _, data) asked = { which = which, data = data }; return {} end
+    Suite.SuiteProfiles.SaveAs = function(name) saved = name; return true end
+    assert(optionsNS.SaveSetupAs() and asked and asked.which == "GENERIC_INPUT_BOX"
+        and asked.data.maxLetters == Suite.Database.MAX_PROFILE_NAME_BYTES, "Save setup as did not ask for a name")
+    asked.data.callback("Raid setup")
+    assert(saved == "Raid setup", "Save setup as did not save the setup under the name")
+    local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
+    local source = appearance:read("*a")
+    appearance:close()
+    assert(source:find("P.SaveSetupAs", 1, true), "the Skinning page lost the Save setup as button")
+    local lockdown = InCombatLockdown
+    InCombatLockdown = function() return true end
+    asked, saved = nil, nil
+    assert(not optionsNS.SaveSetupAs() and not asked, "Save setup as asked in combat")
+    InCombatLockdown = lockdown
+    _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs = previousShow, previousSaveAs
+end
+-- The cooldown manager page resets like every Suite page: the standard
+-- confirmation, then every cooldown manager setting back to its catalog
+-- default; other modules keep theirs.
+do
+    local previousGeneric = _G.StaticPopup_ShowCustomGenericConfirmation
+    local asked
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
+    assert(M.PageHasReset("suite_cooldownManager"), "the cooldown manager page offers no Reset page")
+    assert(S.SetMany("cooldownManager", { ess_size = 50 }) and S.SetMany("dataTexts", { bar2X = 58 }))
+    -- Another profile keeps its own cooldown manager settings.
+    assert(Suite.Database.Create("CDM reset witness", false))
+    local witness = Suite.Database.GetProfile("CDM reset witness")
+    witness.suite.modules.cooldownManager = witness.suite.modules.cooldownManager or {}
+    witness.suite.modules.cooldownManager.ess_size = 51
+    assert(M.ShowPageResetConfirm("suite_cooldownManager") and asked
+        and asked.text_arg1 == M.BuildPageResetWarning("suite_cooldownManager")
+        and S.Config("cooldownManager").ess_size == 50, "the cooldown manager Reset page did not ask first")
+    asked.callback()
+    -- Catalog defaults, with the shared look on top as on every page Reset.
+    local expected = {}
+    for key, rule in pairs(S.catalog.cooldownManager.rules) do expected[key] = rule.default end
+    if expected.enabled then Suite.SuiteLooks.ApplyToConfig("cooldownManager", expected, Suite.DB.suite.globalLook) end
+    for key in pairs(S.catalog.cooldownManager.rules) do
+        assert(S.Config("cooldownManager")[key] == expected[key], "the cooldown manager Reset page left " .. key)
+    end
+    assert(S.Config("dataTexts").bar2X == 58, "the cooldown manager Reset page changed another module")
+    assert(Suite.Database.GetProfile("CDM reset witness").suite.modules.cooldownManager.ess_size == 51,
+        "the cooldown manager Reset page changed another profile")
+    Suite.Database.Delete("CDM reset witness")
+    assert(S.SetMany("dataTexts", { bar2X = S.catalog.dataTexts.rules.bar2X.default }))
+    _G.StaticPopup_ShowCustomGenericConfirmation = previousGeneric
+end
 assert(S.Config("actionbars").look == 1,
     "Suite page reset changed another page")
 ;(function()
@@ -3535,15 +3639,19 @@ for key in pairs(o.scopes) do o.scopes[key] = true end
 o.onRun(nil, popupStub)
 assert(not popupHidden, "Copy Selected ran without a destination")
 for key in pairs(o.scopes) do o.scopes[key] = true end
-local previousShow, previousInstall = _G.StaticPopup_Show, M.InstallStaticPopup
+-- Copy to All asks in Blizzard's generic confirmation and adds no entry to
+-- Blizzard's StaticPopupDialogs.
+local previousGeneric, previousDialogs = _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs
 local confirmed
-M.InstallStaticPopup = function() end
-_G.StaticPopup_Show = function(name, _, _, accept) confirmed = name; accept() end
+_G.StaticPopupDialogs = {}
+_G.StaticPopup_ShowCustomGenericConfirmation = function(data) confirmed = data; data.callback() end
 o.onTargetClick("all")
 assert(S.SetMany("actionbars", { [p .. "Size"] = 44 }))
 o.onRun(nil, popupStub)
-_G.StaticPopup_Show, M.InstallStaticPopup = previousShow, previousInstall
-assert(confirmed == "MSUF_SUITE_COPY_BARS_CONFIRM", "Copy to All did not ask first")
+assert(next(_G.StaticPopupDialogs) == nil, "Copy to All wrote into Blizzard's StaticPopupDialogs")
+_G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
+assert(confirmed and confirmed.text == "%s" and confirmed.text_arg1:find("ALL action bars", 1, true),
+    "Copy to All did not ask first")
 for index = 1, Suite.ActionBarCount do
     if index ~= source and (not S.ActionBarAvailable or S.ActionBarAvailable(index)) then
         assert(S.Config("actionbars")["bar" .. index .. "Size"] == 44, "Copy to All missed bar " .. index)

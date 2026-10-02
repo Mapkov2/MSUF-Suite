@@ -400,11 +400,16 @@ function PlayerSpellsSkin:OnDisplayedSpellsChanged()
     self:QueueRefresh()
 end
 
-function PlayerSpellsSkin:OnThemeChanged()
-    local state = self.activeState
+local function RefreshActiveColors()
+    local state = PlayerSpellsSkin.activeState
     if state and state.active and not NS.IsCombatLocked() then
         RefreshThemeColors(state)
     end
+end
+
+-- Once per frame of settings writes.
+function PlayerSpellsSkin:OnThemeChanged()
+    NS.Registry.QueueJob(RefreshActiveColors)
 end
 
 local function RegisterCallbacks()

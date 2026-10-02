@@ -211,15 +211,16 @@ function Steps.ForeverLayout(modules)
     end
     local bars = Module(modules, "actionbars")
     if not bars or bars.imported ~= false then return end
+    local VISIBILITY = NS.ActionBarEnum.VISIBILITY
     for i, visibility in ipairs(PREVIOUS_FOREVER_VISIBILITY) do
-        if bars["bar" .. i .. "Visibility"] ~= visibility
-            or bars["bar" .. i .. "ResumeVisibility"] ~= (visibility == 6 and 1 or visibility) then
+        if bars["bar" .. i .. "Visibility"] ~= visibility or bars["bar" .. i .. "ResumeVisibility"]
+            ~= (visibility == VISIBILITY.NEVER and VISIBILITY.ALWAYS or visibility) then
             return
         end
     end
     for i = 1, #PREVIOUS_FOREVER_VISIBILITY do
-        bars["bar" .. i .. "Visibility"] = 4
-        bars["bar" .. i .. "ResumeVisibility"] = 4
+        bars["bar" .. i .. "Visibility"] = VISIBILITY.MOUSEOVER
+        bars["bar" .. i .. "ResumeVisibility"] = VISIBILITY.MOUSEOVER
     end
 end
 

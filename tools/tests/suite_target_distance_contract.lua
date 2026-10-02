@@ -70,11 +70,6 @@ local S = {
         subscriptionCalls = subscriptionCalls + 1
         subscriptions[id] = enabled or nil
     end,
-    ClearNativeSpellRanges = function(owner)
-        assert(owner == "targetDistance")
-        subscriptionCalls = subscriptionCalls + 1
-        subscriptions = {}
-    end,
 }
 local movers = {}
 S.RegisterOwnedMover = function(id, element, spec) assert(id == "targetDistance"); movers[element] = spec end

@@ -44,7 +44,10 @@ local messageColorRoles = {
 -- addon changes later, is released and never recoloured or restored again.
 -- Logout and disable put back the colour a category had before the skin,
 -- while it still shows the skin's own. Keep this list limited to the
--- categories we change.
+-- categories we change. What a logout could not put back goes to the
+-- Suite's ledger (MSUF_Suite/Integrations/MapkoSkin.lua), which the skin or,
+-- once the skin is off, the Suite settles at the next login; a session that
+-- ends without PLAYER_LOGOUT saves nothing to it.
 local blizzardMessageDefaults = {
     SYSTEM = { 1, 1, 0 },
     MONSTER_SAY = { 1, 1, 159 / 255 },
@@ -116,10 +119,34 @@ local function Shows(color, current, tolerance)
     return ColorMatches(color, current[1], current[2], current[3], nil, tolerance)
 end
 
+-- The Suite's chat colour ledger (MSUF_Suite/Integrations/MapkoSkin.lua).
+-- MSUF_Suite is this addon's dependency.
+local function Ledger()
+    return _G.MSUFSuite.Skin
+end
+
+-- What the last logout could not put back, taken over at the first apply:
+-- { [chatType] = { original = rgb, left = rgb } }. And what a restore of
+-- this session could not put back, handed to the ledger at logout.
+local carried, leftovers = nil, {}
+
+local function ShowsExactly(color, current)
+    return current[1] == color[1] and current[2] == color[2] and current[3] == color[3]
+end
+
 -- The state of a category the skin meets for the first time: owned with the
 -- colour to restore, or released when it shows a colour the player picked.
 local function CaptureMessageColor(chatType, current, r, g, b)
     local default = blizzardMessageDefaults[chatType]
+    local carry = carried and carried[chatType]
+    if carry then
+        carried[chatType] = nil
+        -- Exactly what the last logout left: the ledger knows its original.
+        if ShowsExactly(carry.left, current) then
+            local original = carry.original
+            return { original = { original[1], original[2], original[3] }, applied = { current[1], current[2], current[3] } }
+        end
+    end
     if Shows(default, current, COLOR_NATIVE) then
         return { original = current, applied = {} }
     end
@@ -162,16 +189,23 @@ local function ApplyMessageColors(state)
 end
 
 -- Puts back the colour each owned category had before the skin, while it
--- still shows the skin's own; a released category keeps the player's.
+-- still shows the skin's own; a released category keeps the player's. An
+-- owned category the restore could not put back is a leftover for the
+-- ledger, with the colour it shows.
 local function RestoreMessageColors(state)
     local restored = 0
     for chatType, colorState in pairs(state.messageColors) do
         local current = ReadMessageColor(chatType)
         local original = colorState.original
-        if not colorState.released and current and original
+        local owned = not colorState.released and current and original
             and Shows(colorState.applied, current, COLOR_OWN)
-            and ChangeMessageColor(chatType, original[1], original[2], original[3]) then
+        if owned and ChangeMessageColor(chatType, original[1], original[2], original[3]) then
             restored = restored + 1
+            leftovers[chatType] = nil
+        elseif owned then
+            leftovers[chatType] = { original = original, left = current }
+        else
+            leftovers[chatType] = nil
         end
     end
     state.messageColors = {}
@@ -544,6 +578,7 @@ function ChatFramesSkin.Apply(frame, owner)
     local state = OwnerState(owner)
     state.active = true
     state.owner = owner
+    if not carried then carried = Ledger().ClaimChatColors() end
     RegisterHooks()
     ApplyAllNow(state, false)
     return true
@@ -566,11 +601,18 @@ end
 -- Visual regions are rebuilt by Blizzard after logout/reload, but native chat
 -- colors persist. Clean only categories currently owned by an active adapter so
 -- disabling MapkoSkin before the next login cannot leave its preset behind.
+-- PLAYER_LOGOUT: what could not go back, and what the last logout left that
+-- this session never met and that still shows, goes to the ledger.
 function ChatFramesSkin.RestoreBlizzardMessageColors()
     local restored = 0
     for _, state in pairs(ChatFramesSkin.owners) do
         if state.active then restored = restored + RestoreMessageColors(state) end
     end
+    for chatType, carry in pairs(carried or {}) do
+        local current = ReadMessageColor(chatType)
+        if current and ShowsExactly(carry.left, current) then leftovers[chatType] = carry end
+    end
+    Ledger().CloseChatColors(leftovers)
     return true, restored
 end
 

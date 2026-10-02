@@ -13,7 +13,6 @@ local Read = NS.AdapterKit.ReadValues
 local Accessible = NS.AdapterKit.PublicValue
 local After = C_Timer.After
 
-local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
 local ROW_HEIGHT = 28
 local hosts = setmetatable({}, { __mode = "k" })
 local slots = {
@@ -77,10 +76,7 @@ local function Color(region, token)
     region:SetTextColor(NS.Theme.GetColor(token))
 end
 
-local function FontPath()
-    return Read(GameFontNormal.GetFont, GameFontNormal)
-        or STANDARD_TEXT_FONT or DEFAULT_FONT
-end
+local FontPath = NS.AdapterKit.FontPath
 
 local function Label(parent, size, token)
     local font = parent:CreateFontString(nil, "OVERLAY")
@@ -790,10 +786,13 @@ function Details.SetView(value)
     return true
 end
 
-NS.Registry.AddListener(Details, function()
+-- Every settings write repaints the open views, once per frame.
+local function RefreshActiveViews()
     for _, v in pairs(Details.views) do
         if v.active then Details.Refresh(v) end
     end
-end)
+end
+
+NS.Registry.AddListener(Details, function() NS.Registry.QueueJob(RefreshActiveViews) end)
 
 return Details

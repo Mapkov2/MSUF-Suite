@@ -9,6 +9,7 @@ if not Page then return end
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local ID, PAGE = Page.ID, Page.PAGE
 local CDM = Suite.CDM
+local KIND, FREE = CDM.KIND, CDM.ANCHOR.FREE
 local RULES, SLOTS, KEYS = P.catalog[ID].rules, CDM.SLOTS, CDM.KEYS
 local max, min, ceil, floor, format = math.max, math.min, math.ceil, math.floor, string.format
 local MODULE_SECTION = PAGE .. "_" .. ID .. "_module"
@@ -133,7 +134,7 @@ local function PaintChoices()
         item.text, item.translate = Page.BarName(slot), false
         item.disabled, item.own, item.loopOf = own or loop, own or nil, loop and slot or nil
         local target = overflowValues[i]
-        local notCooldown = Page.Kind(slot) ~= 1
+        local notCooldown = Page.Kind(slot) ~= KIND.COOLDOWN
         target.text, target.translate = Page.BarName(slot), false
         target.disabled, target.own, target.notCooldown = own or notCooldown, own or nil, not own and notCooldown or nil
     end
@@ -231,29 +232,30 @@ local function Header(body, title, unused, kind)
     end
 end
 
--- Why controls of a section are greyed: 1 unavailable, 2 module off, 3 all
--- used, 4 none used by this bar type, 5 as 4 but the module part below
--- works, 6 some unused.
+-- Why controls of a section are greyed: the module is unavailable or off,
+-- the bar type uses all of them, none of them (MODULE_PART: none of the
+-- bar's own, while the module part below works) or some.
+local STATE = { UNAVAILABLE = 1, MODULE_OFF = 2, ALL_USED = 3, NONE_USED = 4, MODULE_PART = 5, SOME_UNUSED = 6 }
 local function SectionState(spec)
     local ok, why = S.Availability(ID)
-    if not ok then return 1, why end
-    if not P.Get(ID, "enabled") then return 2 end
+    if not ok then return STATE.UNAVAILABLE, why end
+    if not P.Get(ID, "enabled") then return STATE.MODULE_OFF end
     local unused = 0
     for i = 1, #spec.suffixes do
         if not Page.Relevant(Page.selected, spec.suffixes[i]) then unused = unused + 1 end
     end
-    if unused == 0 then return 3 end
-    if unused == #spec.suffixes then return spec.module and 5 or 4 end
-    return 6
+    if unused == 0 then return STATE.ALL_USED end
+    if unused == #spec.suffixes then return spec.module and STATE.MODULE_PART or STATE.NONE_USED end
+    return STATE.SOME_UNUSED
 end
 local function StateText(state, why, kind)
-    if state == 1 then return Suite.StatusText(why or "Unavailable on this client", Tr) end
-    if state == 2 then return Tr("Turn the cooldown manager on in Basics to edit these.") end
-    if state == 4 then return format(Tr("Not used by the %s type. Pick another bar to edit these."), kind) end
-    if state == 5 then
+    if state == STATE.UNAVAILABLE then return Suite.StatusText(why or "Unavailable on this client", Tr) end
+    if state == STATE.MODULE_OFF then return Tr("Turn the cooldown manager on in Basics to edit these.") end
+    if state == STATE.NONE_USED then return format(Tr("Not used by the %s type. Pick another bar to edit these."), kind) end
+    if state == STATE.MODULE_PART then
         return format(Tr("This bar's own options are not used by the %s type; the settings below apply to every bar."), kind)
     end
-    if state == 6 then return Tr("Greyed options are not used by this bar type.") end
+    if state == STATE.SOME_UNUSED then return Tr("Greyed options are not used by this bar type.") end
     return ""
 end
 -- A color edits nothing while its bar does not use it or its own switch
@@ -305,7 +307,7 @@ local function BuildSection(ctx, b, ui, spec)
             body._cdmState, body._cdmStateKind = state, kind
             Page.SetRaw(unused, StateText(state, why, kind))
         end
-        Header(body, spec.title, state == 4, kind)
+        Header(body, spec.title, state == STATE.NONE_USED, kind)
     end)
     P.FinishBody(b, body, y)
     return body
@@ -317,7 +319,7 @@ function Page.Summary(slot)
     local keys = KEYS[slot]
     local text = Page.KindName(Page.Kind(slot))
     local anchor = P.Get(ID, keys.anchor)
-    local parent = anchor > 1 and SLOTS[anchor - 1]
+    local parent = anchor > FREE and SLOTS[anchor - FREE]
     local target = parent and Page.BarName(parent.key) or CDM.FRAME_ANCHORS[anchor] and Tr(CDM.ANCHOR_LABELS[anchor])
     if target then
         text = text .. "  -  " .. format(Tr("attached %s %s"), Tr(SIDES[P.Get(ID, keys.side)] or SIDES[1]), target)
@@ -598,5 +600,5 @@ local function Build(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Cooldown manager", title = "Cooldown manager", build = Build, icon = { 1, 1 },
-    nav = "combat", navOrder = 2,
+    nav = "combat", navOrder = 2, resetPage = Page.ResetModule,
     aliases = { "cdm", "cooldowns", "cooldown manager", "tracked buffs", "received buffs", "buffs", "buff bars", "timer bars", "ccm" } })

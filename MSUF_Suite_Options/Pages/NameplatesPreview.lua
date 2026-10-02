@@ -141,7 +141,7 @@ local function BuildBar(editor, s, cell)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(bar,
             P.Meta(PAGE, ID, "preview." .. prefix, "action", "suite_nameplates_preview"),
-            Tr(prefix == "enemy" and "Enemy nameplate preview" or "Friendly nameplate preview"), "button")
+            prefix == "enemy" and "Enemy nameplate preview" or "Friendly nameplate preview", "button")
     end
     s.bar = bar
     s.back = Fill(bar, "BACKGROUND")

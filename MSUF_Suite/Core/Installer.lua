@@ -191,39 +191,21 @@ local function ApplyForever(profile)
         skinEnabled and skin or nil)
 end
 
--- Runs after the profile install. Installer.Apply has checked the scale
--- controls (ScaleControlsReady) and combat, the only reason MSUF refuses a
--- scale change, so this step cannot refuse.
-local function ApplyScale()
-    local general = _G.MSUF_DB.general
-    general.msufUiScale = 1
-    general.uiScale = nil
-    _G.MSUF_ApplyMsufScale(1)
-    _G.MSUF_ResetGlobalUiScale(true)
-    if not useScale then return end
-    if scalePreset == "pixel" and type(_G.MSUF_GetPixelPerfectScale) == "function" then
-        scale = tonumber(_G.MSUF_GetPixelPerfectScale()) or scale
-    end
-    general.UIScale = type(general.UIScale) == "table" and general.UIScale or {}
-    general.UIScale.Enabled = true
-    general.UIScale.Scale = scale
-    general.globalUiScalePreset = scalePreset
-    general.globalUiScaleValue = scale
-    _G.MSUF_SetGlobalUiScale(scale, true)
+-- The scale the installer applies: MSUF's own frame scale back to 1 and,
+-- when chosen, the global UI scale (Suite.HostBridge applies it).
+local function ScaleSpec()
+    if not useScale then return { msufScale = 1 } end
+    return { msufScale = 1, global = { preset = scalePreset, scale = scale } }
 end
 
-local function ScaleControlsReady()
-    if type(_G.MSUF_DB) ~= "table" or type(_G.MSUF_DB.general) ~= "table" then
-        return false, "MSUF scale settings unavailable"
+-- Runs after the profile install. Installer.Apply has checked the scale
+-- controls (HostBridge.ScaleReady) and combat, the only reason MSUF refuses
+-- a scale change, so this step cannot refuse.
+local function ApplyScale()
+    if useScale and scalePreset == "pixel" and type(_G.MSUF_GetPixelPerfectScale) == "function" then
+        scale = tonumber(_G.MSUF_GetPixelPerfectScale()) or scale
     end
-    if type(_G.MSUF_ResetGlobalUiScale) ~= "function"
-        or type(_G.MSUF_ApplyMsufScale) ~= "function" then
-        return false, "MSUF scale controls unavailable"
-    end
-    if useScale and type(_G.MSUF_SetGlobalUiScale) ~= "function" then
-        return false, "MSUF UI scale control unavailable"
-    end
-    return true
+    Suite.HostBridge.ApplyScale(ScaleSpec())
 end
 
 -- The profile install is the commit point. Every check that can refuse runs
@@ -233,7 +215,7 @@ end
 function Installer.Apply()
     if Suite.IsCombatLocked() then return false, "Finish combat first." end
     if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
-    local ready, why = ScaleControlsReady()
+    local ready, why = Suite.HostBridge.ScaleReady(ScaleSpec())
     if not ready then return false, why end
     local profile, reason = PreparedProfile()
     if not profile then return false, reason end

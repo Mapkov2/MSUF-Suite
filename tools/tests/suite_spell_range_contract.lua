@@ -18,17 +18,33 @@ local NS = { Suite = {}, Public = Public, Finite = function(value)
 end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SpellRange.lua"))("MSUF_Suite", NS)
 local S = NS.Suite
+-- A module lets go of its ranges spell by spell (QualityOfLife/
+-- TargetDistance.lua, CooldownManager/Effects.lua); Release does that for
+-- every spell the test asked for under owner.
+local asked = {}
+local SetRange = S.SetNativeSpellRange
+function S.SetNativeSpellRange(owner, spellID, enabled)
+    if enabled == true and type(owner) == "string" then
+        asked[owner] = asked[owner] or {}
+        asked[owner][spellID] = true
+    end
+    return SetRange(owner, spellID, enabled)
+end
+local function Release(owner)
+    for spellID in pairs(asked[owner] or {}) do SetRange(owner, spellID, false) end
+    asked[owner] = nil
+end
 assert(hookCount == 0, "disabled Suite range consumers install no global hook")
 S.SetNativeSpellRange("cooldownManager", 10, true)
 S.SetNativeSpellRange("cooldownManager", 10, true)
 S.SetNativeSpellRange("targetDistance", 10, true)
 assert(#calls == 1 and calls[1][2], "one native enable for shared/idempotent requests")
-S.ClearNativeSpellRanges("cooldownManager")
+Release("cooldownManager")
 assert(#calls == 1, "releasing CDM never disables the distance owner's same spell")
 S.SetNativeSpellRange("targetDistance", 20, true)
-S.ClearNativeSpellRanges("targetDistance")
+Release("targetDistance")
 assert(#calls == 4, "last owner releases each native spell exactly once")
-S.ClearNativeSpellRanges("targetDistance")
+Release("targetDistance")
 S.SetNativeSpellRange("targetDistance", 10, false)
 S.SetNativeSpellRange("bad", "secret", true)
 S.SetNativeSpellRange("bad", -2, true)
@@ -68,7 +84,7 @@ C_Spell.EnableSpellRangeCheck(10, false)
 assert(#calls == before + 2 and nativeState[10], "native reset cannot disable active Suite interest")
 assert(scans == 0, "posthook never scans native frames, including their stale reset state")
 nativeItem.needsRangeCheck, nativeItem.rangeCheckSpellID = nil, nil
-S.ClearNativeSpellRanges("targetDistance")
+Release("targetDistance")
 assert(nativeState[10] == false, "final Suite release disables after the native item reset")
 
 -- Pools created after Suite acquisition are discovered on the final release.
@@ -78,7 +94,7 @@ local utilItem = Item(30)
 UtilityCooldownViewer = Viewer({Item(31), utilItem, Item(30)})
 UtilityCooldownViewer.IsShown = function() error("hidden native viewer still owns registration") end
 before = #calls
-S.ClearNativeSpellRanges("cooldownManager")
+Release("cooldownManager")
 assert(#calls == before and nativeState[30], "late Utility pool and duplicate native owners survive Suite teardown")
 C_Spell.EnableSpellRangeCheck(30, false)
 assert(#calls == before + 1 and nativeState[30] == false, "idle Suite hook leaves native teardown alone")
@@ -88,9 +104,9 @@ EssentialCooldownViewer = Viewer({Item(40)})
 S.SetNativeSpellRange("enemyCastStack", 40, true)
 S.SetNativeSpellRange("targetDistance", 40, true)
 before, scans = #calls, 0
-S.ClearNativeSpellRanges("enemyCastStack")
+Release("enemyCastStack")
 assert(#calls == before and scans == 0, "intermediate Suite releases do not scan native pools")
-S.ClearNativeSpellRanges("targetDistance")
+Release("targetDistance")
 assert(#calls == before and nativeState[40], "Essential ownership survives final Suite release")
 
 -- Ignore private hook arguments before comparisons/keying; never inspect
@@ -111,11 +127,11 @@ S.SetNativeSpellRange("targetDistance", 50, secret)
 assert(#calls == before, "Suite also rejects secret request arguments")
 EssentialCooldownViewer = Viewer({setmetatable({IsForbidden = function() return true end}, {
     __index = function() error("forbidden native item inspected") end })})
-S.ClearNativeSpellRanges("targetDistance")
+Release("targetDistance")
 assert(#calls == before, "unknown forbidden native ownership is preserved")
 EssentialCooldownViewer = Viewer({Item(61)})
 S.SetNativeSpellRange("targetDistance", 60, true)
-S.ClearNativeSpellRanges("targetDistance")
+Release("targetDistance")
 assert(nativeState[60] == false, "different native spell does not retain released registration")
 for _, viewer in ipairs({secret, Viewer({secret}), Viewer({{IsForbidden = function() return false end,
     needsRangeCheck = secret}}), Viewer({{IsForbidden = function() return false end,
@@ -123,12 +139,12 @@ for _, viewer in ipairs({secret, Viewer({secret}), Viewer({{IsForbidden = functi
     EssentialCooldownViewer = viewer
     S.SetNativeSpellRange("targetDistance", 70, true)
     before = #calls
-    S.ClearNativeSpellRanges("targetDistance")
+    Release("targetDistance")
     assert(#calls == before, "unreadable native ownership never authorizes a destructive disable")
 end
 EssentialCooldownViewer = nil
 S.SetNativeSpellRange("targetDistance", 80, true)
-S.ClearNativeSpellRanges("targetDistance")
+Release("targetDistance")
 before, scans = #calls, 0
 C_Spell.EnableSpellRangeCheck(80, false)
 assert(#calls == before + 1 and scans == 0 and hookCount == 1, "final teardown leaves an inert, scan-free posthook")

@@ -612,12 +612,4 @@ function PublicAPI.RefreshAll()
     return true, "applied"
 end
 
-function PublicAPI.GetCount()
-    local count = 0
-    for _, record in pairs(clients) do
-        if not record.released then count = count + 1 end
-    end
-    return count
-end
-
 return PublicAPI

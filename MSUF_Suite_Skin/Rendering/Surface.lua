@@ -544,7 +544,15 @@ function Surface.SetActive(target, active)
     if not CanRefreshState(state) then
         return false, "protected"
     end
-    state.active = active == true
+    active = active == true
+    -- Selection hooks run per row initialization and per native refresh: a
+    -- surface that shows this state, painted for the current generation,
+    -- is left alone (Surface.Ensure's rule).
+    if state.active == active and state.paintGeneration == paintGeneration and state.visible ~= false
+        and not state.syncNativeSelected then
+        return true
+    end
+    state.active = active
     state.refresh(state)
     return true
 end

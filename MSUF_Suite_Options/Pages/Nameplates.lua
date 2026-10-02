@@ -131,7 +131,7 @@ local function EnemySection(ctx, builder, rules)
     end
     if P.M.RegisterControlMetadata then
         P.M.RegisterControlMetadata(tabs, P.Meta(PAGE, ID, "enemy.tabs", "action", sectionId),
-            Tr("Enemy nameplate tabs"), "segment")
+            "Enemy nameplate tabs", "segment")
     end
     P.AttachRuleColors(body, Tr("Enemy appearance"), ID, rules)
     local resetRules = EnemyResetRules(rules, elements)

@@ -6,7 +6,7 @@ local _, NS = ...
 local Gear = {}
 NS.GearAnnotations = Gear
 
-local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
+local DEFAULT_FONT = NS.AdapterKit.DEFAULT_FONT
 local MAX_PROVIDER_GEMS = 4
 local rightSide = {
     [10] = true, [6] = true, [7] = true, [8] = true, [11] = true,
@@ -26,9 +26,7 @@ local function ProviderSlots()
     return provider and provider.variables and provider.variables.itemSlots
 end
 
-local function FontPath()
-    return GameFontNormal:GetFont() or STANDARD_TEXT_FONT or DEFAULT_FONT
-end
+local FontPath = NS.AdapterKit.FontPath
 
 -- Reversible geometry -------------------------------------------------------------------
 -- Source: upstream/live 8ea15b61, CharacterFrameMixin:UpdateSize and

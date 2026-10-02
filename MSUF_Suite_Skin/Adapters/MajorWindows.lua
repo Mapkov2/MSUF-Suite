@@ -626,12 +626,17 @@ local function UnregisterHousingCallbacks()
     MajorWindows.housingCallbacksRegistered = false
 end
 
-function MajorWindows.OnThemeChanged(_, domain)
-    if domain ~= "theme" and domain ~= "profile" and domain ~= "color" then return end
+local function RefreshOwnerTextColors()
     if NS.IsCombatLocked() then return end
     for _, state in pairs(MajorWindows.owners) do
         if state.active then Kit.RefreshTextColors(state.textColors) end
     end
+end
+
+-- Once per frame of settings writes.
+function MajorWindows.OnThemeChanged(_, domain)
+    if domain ~= "theme" and domain ~= "profile" and domain ~= "color" then return end
+    NS.Registry.QueueJob(RefreshOwnerTextColors)
 end
 
 function MajorWindows.Apply(owner)
@@ -687,16 +692,6 @@ function MajorWindows.Disable(owner)
     -- GenericWindows owns shared ControlSkin/Cosmetics restoration and runs
     -- after this module in the blizzardWindows adapter teardown.
     return true
-end
-
-function MajorWindows.GetIndicator(button)
-    return MajorWindows.indicators[button]
-end
-
-function MajorWindows.GetWaitingCount()
-    local count = 0
-    for _ in pairs(MajorWindows.waiting) do count = count + 1 end
-    return count
 end
 
 return MajorWindows

@@ -91,16 +91,7 @@ end
 -- updates its steppers before it fires OnValueChanged, which carries the Edit
 -- Mode change), so each is its own error boundary. One wrapper per callback.
 local instanceHooks = {}
-local isolatedCallbacks = {}
-
-local function Isolated(callback)
-    local wrapper = isolatedCallbacks[callback]
-    if not wrapper then
-        wrapper = function(...) Dispatch(callback, ...) end
-        isolatedCallbacks[callback] = wrapper
-    end
-    return wrapper
-end
+local Isolated = NS.Safety.Isolated
 
 local function HookInstance(frame, method, callback)
     local hooked = instanceHooks[method]

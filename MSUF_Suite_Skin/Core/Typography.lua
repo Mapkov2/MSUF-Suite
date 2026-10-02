@@ -46,7 +46,6 @@ local loadOnDemandOwners = {
     "Blizzard_PlayerChoice",
     "Blizzard_BoostTutorial",
     "Blizzard_Kiosk",
-    "Blizzard_Communities",
 }
 
 local function LocaleFallback(kind)
@@ -381,20 +380,6 @@ end
 
 function Typography.SetEnabled(enabled)
     return SetValue("enabled", enabled == true)
-end
-
-function Typography.SetFace(face)
-    if face == "msuf" then return SetValue("followMSUF", true) end
-    for index = 1, #NS.FontFaces do
-        if NS.FontFaces[index] == face then
-            if NS.IsCombatLocked() or not NS.DB or not NS.DB.typography then return false end
-            NS.DB.typography.face = face
-            NS.DB.typography.followMSUF = false
-            Typography.ApplyConfigured()
-            return true
-        end
-    end
-    return false
 end
 
 function Typography.SetCustomPath(path)

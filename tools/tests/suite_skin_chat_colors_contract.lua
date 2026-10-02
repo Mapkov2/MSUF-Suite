@@ -66,8 +66,11 @@ local function RunQueued()
 end
 
 -- One fresh engine per scenario: Blizzard's chat functions are hooked once
--- per load, like one game session.
+-- per load, like one game session. Each starts from fresh saved variables,
+-- so the Suite's chat colour ledger is empty (its own contract covers it).
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function Session(colors)
+    Support.SuiteSkinBoundary(root, {})
     Reset(colors)
     _G.ChangeChatColor = NativeChangeChatColor
     CHAT_FRAMES = {}

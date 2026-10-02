@@ -168,25 +168,7 @@
    "file": "MSUF_Suite/Core/Installer.lua",
    "kind": "state",
    "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_DB"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_DB.general"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
    "symbol": "MSUF_GlobalDB"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "general.UIScale (= MSUF_DB.general)"
   },
   {
    "file": "MSUF_Suite/Core/Installer.lua",
@@ -2112,31 +2094,13 @@
    "file": "MSUF_Suite/Core/Installer.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ApplyMsufScale"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "MSUF_GetPixelPerfectScale"
   },
   {
    "file": "MSUF_Suite/Core/Installer.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ResetGlobalUiScale"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "MSUF_SetDefaultProfileForNewCharacters"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_SetGlobalUiScale"
   },
   {
    "file": "MSUF_Suite/Core/Installer.lua",
@@ -2184,25 +2148,7 @@
    "file": "MSUF_Suite/Core/Profiles.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ApplyPowerBarEmbedLayout_ForUnitKey"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ClassPower_Apply"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "MSUF_DeleteProfile"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_EnsureCooldownWidthObservers"
   },
   {
    "file": "MSUF_Suite/Core/Profiles.lua",
@@ -2233,12 +2179,6 @@
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "MSUF_SwitchProfile"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_UFCore_NotifyConfigChanged"
   },
   {
    "file": "MSUF_Suite/Core/Profiles.lua",
@@ -2307,6 +2247,24 @@
    "symbol": "T.SetTranslatedText"
   },
   {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "lod",
+   "reason": "export of MSUF_Suite_Modules, which loads on demand: the pages ask in Blizzard's generic dialog themselves until it is loaded",
+   "symbol": "S.Confirm"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "lod",
+   "reason": "export of MSUF_Suite_Modules, which loads on demand: the pages ask in Blizzard's generic input box themselves until it is loaded",
+   "symbol": "S.AskText"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ShowStatusFeedback (= MSUF2)"
+  },
+  {
    "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
@@ -2337,10 +2295,88 @@
    "symbol": "M.TrackRefresh"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Register.lua",
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "state",
+   "reason": "saved variables: nil until their addon has loaded them",
+   "symbol": "MSUF_DB"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "state",
+   "reason": "saved variables: nil until their addon has loaded them",
+   "symbol": "MSUF_DB.general"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "state",
+   "reason": "saved variables: nil until their addon has loaded them",
+   "symbol": "general.UIScale (= MSUF_DB.general)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ApplyMsufScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ResetGlobalUiScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_SetGlobalUiScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ApplyPowerBarEmbedLayout_ForUnitKey"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ClassPower_Apply"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_EnsureCooldownWidthObservers"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_UFCore_NotifyConfigChanged"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
    "symbol": "M.RefreshToolbarPageReset"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
+   "symbol": "M.RegisterPageResetProvider"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
+   "symbol": "api.ApplyUIScaleProfile"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
+   "symbol": "api.SetResourceStack"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Register.lua",

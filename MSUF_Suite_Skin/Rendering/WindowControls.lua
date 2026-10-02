@@ -645,17 +645,24 @@ function WindowControls.Refresh()
     return true
 end
 
-function WindowControls:OnThemeChanged(domain, key)
-    if domain == "profile" then self.Refresh() end
-    if domain == "theme" and key == "look" then self.Refresh() end
-    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" then return end
+local function RefreshQueued() WindowControls.Refresh() end
+
+local function RecolorMinimize()
     local r, g, b, a = NS.Theme.GetColor("buttonFill")
-    for _, state in pairs(self.states) do
+    for _, state in pairs(WindowControls.states) do
         if state.minimize then
             state.minimize._msufControlBackground:SetColorTexture(r, g, b, a)
             state.minimize._msufControlLabel:SetTextColor(NS.Theme.GetColor("text"))
         end
     end
+end
+
+-- Once per frame of settings writes: a profile or look switch rebuilds the
+-- controls, a colour write repaints the minimize buttons.
+function WindowControls:OnThemeChanged(domain, key)
+    if domain == "profile" or domain == "theme" and key == "look" then NS.Registry.QueueJob(RefreshQueued) end
+    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" then return end
+    NS.Registry.QueueJob(RecolorMinimize)
 end
 
 NS.Registry.AddListener(WindowControls, WindowControls.OnThemeChanged)

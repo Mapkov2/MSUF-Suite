@@ -554,8 +554,11 @@ do
     C_TooltipInfo = { GetInventoryItem = function()
         return tooltipLines and { lines = tooltipLines } or nil
     end }
-    local added = {}
-    GameTooltip = { AddLine = function(_, text) added[#added + 1] = text end }
+    local added, wraps = {}, {}
+    GameTooltip = { AddLine = function(_, text, _, _, _, wrap)
+        added[#added + 1] = text
+        wraps[#added] = wrap
+    end }
     local info = Fresh("EquipmentInfo.lua").EquipmentInfo
     local snapshot = info.Read("item:1:0:", "player", 1, nil, "Player-1")
     assert(snapshot.name == "Contract Helm" and snapshot.itemLevel == 639 and snapshot.sockets == 2
@@ -575,6 +578,8 @@ do
         and snapshot.emptySockets == 1, "a loaded equipment snapshot stayed pending or lost its tooltip data")
     info.AddTooltip(info.Check(snapshot, 90))
     assert(#added > 0 and added[2] == NS.L.GEAR_TOOLTIP_TITLE, "the equipment tooltip lines were not added")
+    -- Theme.GetColor returns r, g, b, a; AddLine's fifth argument is wrap.
+    assert(wraps[2] == nil, "the theme colour's alpha reached AddLine as the title's wrap flag")
     Enum, C_Item, C_TooltipInfo, GameTooltip = enum, item, tooltipInfo, tooltip
 end
 

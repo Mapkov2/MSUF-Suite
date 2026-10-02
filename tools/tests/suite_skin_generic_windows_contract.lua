@@ -93,7 +93,7 @@ do
     string.byte = byte
     Check(hashed == 0, "loading the catalog hashed it in game")
     local catalog = NS.BlizzardCatalog
-    Check(catalog.IsGlassContractValid() and catalog.glass.valid
+    Check(catalog.glass.valid
         and #catalog.GetGlassErrors() == 0, "reviewed catalog is valid")
     local problems = ReviewProblems(data, catalog)
     Check(#problems == 0, "the catalog changed without its review: " .. table.concat(problems, ", "))
@@ -133,7 +133,7 @@ do
         'REVIEWED_CATALOG_FINGERPRINT = "00000000-00000000"')
     Check(HasProblem(ReviewProblems(unreviewedData, unreviewed), "catalog-snapshot-unreviewed:"),
         "the review contract missed an unreviewed catalog snapshot")
-    Check(unreviewed.ValidateGlassEntry(unreviewed.entries[1]) and unreviewed.IsGlassContractValid(),
+    Check(unreviewed.ValidateGlassEntry(unreviewed.entries[1]) and unreviewed.glass.valid,
         "an unreviewed catalog snapshot switched the catalog off in game")
     local recounted, recountedData = LoadModified("REVIEWED_CATALOG_ROOTS = %d+", "REVIEWED_CATALOG_ROOTS = 1")
     Check(HasProblem(ReviewProblems(recountedData, recounted), "catalog-root-count:"),
@@ -413,12 +413,12 @@ Check(GenericWindows.ApplyFrame(window, "contract", MODE) and rowOne.childReads 
     "re-enabling did not re-skin the visible pooled row")
 
 -- The catalog entry list is sorted once; counts reuse it.
-Check(GenericWindows.GetCatalogCount() > 0, "reviewed catalog entries are missing")
+Check(GenericWindows.GetCounts().total > 0, "reviewed catalog entries are missing")
 local sort, sorted = table.sort, 0
 table.sort = function(...) sorted = sorted + 1; return sort(...) end
 GenericWindows.GetCounts()
 GenericWindows.GetCategories()
-local catalogCount = GenericWindows.GetCatalogCount()
+local catalogCount = GenericWindows.GetCounts().total
 table.sort = sort
 Check(sorted == 0 and catalogCount > 0, "catalog entries were rebuilt for a status query")
 
@@ -426,6 +426,8 @@ Check(sorted == 0 and catalogCount > 0, "catalog entries were rebuilt for a stat
 -- (Core/SuiteOwnership.lua); free ones keep their skin.
 local suiteOwned = {}
 MSUFSuite = { Suite = { OwnsBlizzardSurface = function(surface) return suiteOwned[surface] == true end } }
+-- The chat adapter keeps its colour ledger in the Suite core's skin boundary.
+dofile(root .. "/tools/tests/suite_test_support.lua").SuiteSkinBoundary(root, MSUFSuite)
 assert(loadfile(skin .. "Core/SuiteOwnership.lua"))("MSUF_Suite_Skin", NS)
 
 local faded, fade = {}, NS.Cosmetics.Fade
@@ -1618,9 +1620,9 @@ Section("major windows pvp categories", function()
     _G.LFGListPVPStub = Frame("LFGListPVPStub")
     _G.TrainingGroundsFrame = Frame("TrainingGroundsFrame")
     NS.MajorWindows.Apply("major")
-    Expect(NS.MajorWindows.GetIndicator(queue.CategoryButton1) ~= nil
-        and NS.MajorWindows.GetIndicator(queue.CategoryButton3) ~= nil
-        and NS.MajorWindows.GetIndicator(queue.CategoryButton4) ~= nil,
+    local indicators = NS.MajorWindows.indicators
+    Expect(indicators[queue.CategoryButton1] ~= nil and indicators[queue.CategoryButton3] ~= nil
+        and indicators[queue.CategoryButton4] ~= nil,
         "PvP categories after a missing panel lost their selection indicator")
     NS.MajorWindows.Disable("major")
     _G.PVPUIFrame, _G.PVPQueueFrame, _G.HonorFrame = nil, nil, nil
@@ -2293,7 +2295,15 @@ Section("communities column layout", function()
     raise = false
     Expect(ok and #reported == before + 1,
         "a raising column header pass escaped into Blizzard's LayoutColumns")
-    NS.CommunitiesSkin.Disable(communities, "communities")
+    -- Another owner takes the frame over: the first owner's skin comes off
+    -- with that owner's records.
+    local restoreOwner, restored = NS.Cosmetics.RestoreOwner, {}
+    NS.Cosmetics.RestoreOwner = function(owner) restored[#restored + 1] = owner end
+    NS.CommunitiesSkin.Apply(communities, "communities-other")
+    Expect(restored[1] == "communities" and NS.CommunitiesSkin.states[communities].owner == "communities-other",
+        "a new Communities owner did not take the previous owner's skin off")
+    NS.CommunitiesSkin.Disable(communities, "communities-other")
+    NS.Cosmetics.RestoreOwner = restoreOwner
     NS.Checkmarks.TrackControlTree = nil
     CommunitiesFrameMixin = nil
 end)

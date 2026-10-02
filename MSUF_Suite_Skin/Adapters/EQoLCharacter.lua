@@ -13,7 +13,6 @@ local Public = NS.Safety.Public
 local Dispatch = NS.Safety.Dispatch
 
 local KEY = "character-eqol"
-local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
 local MAX_POINTS = 4
 -- slot id, native slot suffix, annotations grow to the left (right-hand column)
 local definitions = {
@@ -34,10 +33,7 @@ local function Visible()
     return Read(Compat.host and Compat.host.IsVisible, Compat.host) == true
 end
 
-local function FontPath()
-    return Read(GameFontNormal.GetFont, GameFontNormal)
-        or STANDARD_TEXT_FONT or DEFAULT_FONT
-end
+local FontPath = NS.AdapterKit.FontPath
 
 local function SamePoint(region, point)
     if not point or Read(region.GetNumPoints, region) ~= 1 then return false end
@@ -286,6 +282,8 @@ function Compat.Disable(owner)
     for element in pairs(Compat.elements) do Compat.elements[element] = nil end
 end
 
-NS.Registry.AddListener(Compat, function() Compat.Refresh() end)
+-- Every settings write refreshes the annotations, once per frame.
+local function RefreshQueued() Compat.Refresh() end
+NS.Registry.AddListener(Compat, function() NS.Registry.QueueJob(RefreshQueued) end)
 
 return Compat

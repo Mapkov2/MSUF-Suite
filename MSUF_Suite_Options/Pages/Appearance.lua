@@ -625,7 +625,10 @@ local function BuildMaintenance(ctx, b, skin)
             Button(ctx, body, "Refresh Blizzard skins", 16, y, width, function()
                 if skin.Adapters.ApplyAll then skin.Adapters.ApplyAll() end
             end, nil, P.Meta(PAGE, "skin", "maintenance.refresh", "action", "suite_skin_advanced"))
-            return y - 40
+            Button(ctx, body, "Save setup as…", 16, y - 34, width, P.SaveSetupAs,
+                function() return not P.Combat() end,
+                P.Meta(PAGE, "skin", "maintenance.saveSetup", "action", "suite_skin_advanced"))
+            return y - 74
         end)
 end
 

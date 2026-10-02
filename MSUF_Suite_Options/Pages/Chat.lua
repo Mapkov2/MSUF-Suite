@@ -19,7 +19,7 @@ P.Gates[ID] = function(rule)
     end
     if rule.key == "fontShadow" or rule.key == "fontShadowOpacity"
         or rule.key == "fontShadowDistance" then
-        return P.Get(ID, "fontRendering") ~= 3
+        return P.Get(ID, "fontRendering") ~= P.Suite.FontRendering.SLUG
     end
     return true
 end
@@ -89,36 +89,43 @@ local function RefreshSampleText(label, otherTab, lines, fonts)
     end
 end
 
-local function Sample(body, y, width, ctx)
-    local sample = CreateFrame("Frame", nil, body)
-    sample:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
-    sample:SetSize(width, 108)
-    local fill = sample:CreateTexture(nil, "BACKGROUND")
-    fill:SetAllPoints(sample)
-    fill:SetTexture(WHITE)
+-- The sample's panel textures, in drawing order: fill, sidebar with its
+-- channel glyphs, the tab accent lines.
+local function SampleTextures(sample)
+    local parts = { icons = {} }
+    parts.fill = sample:CreateTexture(nil, "BACKGROUND")
+    parts.fill:SetAllPoints(sample)
+    parts.fill:SetTexture(WHITE)
     local sidebar = sample:CreateTexture(nil, "BORDER")
     sidebar:SetTexture(WHITE)
     sidebar:SetPoint("TOPLEFT")
     sidebar:SetPoint("BOTTOMLEFT")
     sidebar:SetWidth(28)
-    local icons = {}
+    parts.sidebar = sidebar
     for i, glyphIndex in ipairs({ 0, 1, 3, 4 }) do
         local icon = sample:CreateTexture(nil, "ARTWORK")
         icon:SetTexture(GLYPHS)
         icon:SetTexCoord(glyphIndex / 8, (glyphIndex + 1) / 8, 0, 1)
         icon:SetPoint("TOPLEFT", sample, "TOPLEFT", 5, -4 - (i - 1) * 25)
         icon:SetSize(18, 18)
-        icons[#icons + 1] = icon
+        parts.icons[#parts.icons + 1] = icon
     end
     local top = sample:CreateTexture(nil, "BORDER")
     top:SetTexture(WHITE)
     top:SetPoint("TOPLEFT")
     top:SetPoint("TOPRIGHT")
     top:SetHeight(1)
+    parts.top = top
     local accent = sample:CreateTexture(nil, "ARTWORK")
     accent:SetTexture(WHITE)
     accent:SetPoint("TOPLEFT", sample, "TOPLEFT", 38, -27)
     accent:SetSize(42, 2)
+    parts.accent = accent
+    return parts
+end
+
+-- The tab names, two chat lines and the input box with its prompt.
+local function SampleTexts(sample, width, parts)
     local label = sample:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     label:SetPoint("TOPLEFT", sample, "TOPLEFT", 38, -8)
     label:SetText(Tr("General"))
@@ -139,29 +146,39 @@ local function Sample(body, y, width, ctx)
     local prompt = sample:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     prompt:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 43, 10)
     prompt:SetText(Tr("Say:"))
+    parts.label, parts.otherTab, parts.lines, parts.input = label, otherTab, lines, input
+end
+
+local function PaintSample(parts, fonts)
+    Color(parts.fill, P.Get(ID, "panelColor"), P.Get(ID, "panelAlpha"))
+    Color(parts.sidebar, P.Get(ID, "panelColor"), math.min(100, P.Get(ID, "panelAlpha") + 8))
+    parts.sidebar:SetShown(P.Get(ID, "sidebarPanel"))
+    local r, g, b = P.RGB(P.Get(ID, "accentColor"))
+    for _, icon in ipairs(parts.icons) do
+        icon:SetVertexColor(r, g, b, P.Get(ID, "accentAlpha") / 100)
+        icon:SetShown(P.Get(ID, "sidebarPanel"))
+    end
+    local accentShown = P.Get(ID, "tabPanel") and P.Get(ID, "tabAccent") and P.Get(ID, "accentAlpha") > 0
+    Color(parts.top, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
+    parts.top:SetHeight(2)
+    parts.top:SetShown(accentShown)
+    Color(parts.accent, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
+    parts.accent:SetShown(accentShown)
+    RefreshSampleText(parts.label, parts.otherTab, parts.lines, fonts)
+    Color(parts.input, P.Get(ID, "inputColor"), P.Get(ID, "inputAlpha"))
+    parts.input:SetShown(P.Get(ID, "inputPanel"))
+end
+
+local function Sample(body, y, width, ctx)
+    local sample = CreateFrame("Frame", nil, body)
+    sample:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
+    sample:SetSize(width, 108)
+    local parts = SampleTextures(sample)
+    SampleTexts(sample, width, parts)
     local fonts = {}
-    fonts.tab, fonts.tabSize, fonts.tabFlags = label:GetFont()
-    fonts.message, fonts.messageSize, fonts.messageFlags = lines:GetFont()
-    M.TrackRefresh(ctx, function()
-        Color(fill, P.Get(ID, "panelColor"), P.Get(ID, "panelAlpha"))
-        Color(sidebar, P.Get(ID, "panelColor"), math.min(100, P.Get(ID, "panelAlpha") + 8))
-        sidebar:SetShown(P.Get(ID, "sidebarPanel"))
-        local r, g, b = P.RGB(P.Get(ID, "accentColor"))
-        for _, icon in ipairs(icons) do
-            icon:SetVertexColor(r, g, b, P.Get(ID, "accentAlpha") / 100)
-            icon:SetShown(P.Get(ID, "sidebarPanel"))
-        end
-        Color(top, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
-        top:SetHeight(2)
-        top:SetShown(P.Get(ID, "tabPanel") and P.Get(ID, "tabAccent")
-            and P.Get(ID, "accentAlpha") > 0)
-        Color(accent, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
-        accent:SetShown(P.Get(ID, "tabPanel") and P.Get(ID, "tabAccent")
-            and P.Get(ID, "accentAlpha") > 0)
-        RefreshSampleText(label, otherTab, lines, fonts)
-        Color(input, P.Get(ID, "inputColor"), P.Get(ID, "inputAlpha"))
-        input:SetShown(P.Get(ID, "inputPanel"))
-    end)
+    fonts.tab, fonts.tabSize, fonts.tabFlags = parts.label:GetFont()
+    fonts.message, fonts.messageSize, fonts.messageFlags = parts.lines:GetFont()
+    M.TrackRefresh(ctx, function() PaintSample(parts, fonts) end)
     return y - 121
 end
 

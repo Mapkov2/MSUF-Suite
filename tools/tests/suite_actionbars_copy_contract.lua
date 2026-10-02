@@ -7,8 +7,10 @@ local first = assert(source:find("local TARGET_WIDTHS", 1, true))
 local last = assert(source:find("local function AttachCopyTo", first, true))
 local config, rules, history, writes, confirmed, combat = {}, {}, 0, 0, 0, false
 -- The page reads the Suite namespace's client facts (Core/Platform.lua) at load.
+-- The catalog's choice values (Core/Catalog/ActionBars.lua), as the client's namespace has them.
+local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "actionbars", "ActionBars")
 local P = { Suite = { ActionBarCount = 4, ActionBarTitles = {"Action bar 1", "Action bar 2", "Action bar 3", "Action bar 4"},
-        Client = { isForever = false } },
+        Client = { isForever = false }, ActionBarEnum = catalog.ActionBarEnum },
     S = {}, M = {}, W = {}, T = {}, Tr = function(x) return x end, catalog = { actionbars = { rules = {} } } }
 P.catalog.actionbars.rules = setmetatable(rules, { __index = function() return {} end })
 P.Help = function(a) return a end
@@ -17,8 +19,8 @@ P.Combat = function() return combat end
 P.WithHistory = function(_, _, callback) history = history + 1; return callback() end
 P.SetMany = function(_, values) writes = writes + 1; for k,v in pairs(values) do config[k] = v end; return true end
 P.Refresh = function() end
-P.M.InstallStaticPopup = function() end
-StaticPopup_Show = function(_, _, _, callback) confirmed = confirmed + 1; callback() end
+-- Copy to All asks first through the pages' confirmation (Menu/Bridge.lua).
+P.Confirm = function(_, _, onAccept) confirmed = confirmed + 1; onAccept() end
 local code = source:sub(1, prefix-1) .. source:sub(first, last-1) ..
     "return { targets=CopyDestination, click=SelectCopyDestination, run=RunCopyTo, scopes=copyScopes }"
 local api = assert(loadstring(code))("Options", P)

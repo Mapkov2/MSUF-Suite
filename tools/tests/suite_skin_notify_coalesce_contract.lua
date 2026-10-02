@@ -110,4 +110,40 @@ Check(paints == 0, "a colour write repainted the character stats at once")
 NextFrame()
 Check(paints == 1, "a frame of colour writes repainted the character stats " .. paints .. " times")
 
+-- Blizzard's gold text: one pass over every catalogued font object per
+-- frame of colour writes. Budget: 8 writes in one frame, one pass, i.e.
+-- one SetTextColor per font object (was one pass per write: 8 per object).
+local nativeWrites = 0
+local function FontObject()
+    local object = { color = { 1, 0.82, 0, 1 } }
+    function object:GetObjectType() return "Font" end
+    function object:GetTextColor() return unpack(self.color) end
+    function object:SetTextColor(r, g, b, a)
+        nativeWrites = nativeWrites + 1
+        self.color = { r, g, b, a or 1 }
+    end
+    return object
+end
+local FONTS = 20
+NS.BlizzardFontNames = {}
+for index = 1, FONTS do
+    local name = "ContractGameFont" .. index
+    _G[name] = FontObject()
+    NS.BlizzardFontNames[index] = name
+end
+local yellow = { 0.9, 0.7, 0.2, 1 }
+NS.DB.enabled = true
+NS.Theme = { GetColor = function() return yellow[1], yellow[2], yellow[3], yellow[4] end }
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/BlizzardYellow.lua"))("MSUF_Suite_Skin", NS)
+NS.BlizzardYellow.Apply()
+nativeWrites = 0
+for step = 1, 8 do
+    yellow[2] = 0.6 + step * 0.01
+    Registry.NotifyListeners("color", "blizzardYellow")
+end
+Check(nativeWrites == 0, "a colour write recoloured Blizzard's gold text at once")
+NextFrame()
+Check(nativeWrites == FONTS, ("a frame of colour writes made %d native colour writes for %d fonts")
+    :format(nativeWrites, FONTS))
+
 print("Suite skin notification coalescing: " .. checks .. " checks passed")

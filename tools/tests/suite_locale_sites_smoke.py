@@ -83,6 +83,28 @@ for path in sorted((root / "MSUF_Suite_Options").glob("**/*.lua")):
                     and TRANSLATED.search(Arguments(line, at + len(name) + len(":SetText"))):
                 failures.append("%s:%d translated text is looked up again: %s" % (rel, number, line.strip()))
 
+# Search and Assistant metadata labels are English source text, like the
+# captions Menu2's own widgets keep for search (_msuf2SearchText): the
+# search shows them through its locale tables (SearchDisplayText) and keeps
+# them as the control's identity (Menu2 RegisterControlMetadata). A label
+# composed at runtime stays translated: no locale table holds the composition.
+METADATA = re.compile(r"RegisterControlMetadata\(")
+METADATA_COMPOSED = {
+    ("MSUF_Suite_Options/Pages/DataTexts.lua", 'Tr("Choose data for place %d"):format(slot)'),
+    ("MSUF_Suite_Options/Pages/Minimap.lua", 'Tr("%s minimap style"):format(Tr(spec[2]))'),
+    ("MSUF_Suite_Options/Pages/MinimapPreview.lua", 'Tr("%s preview layer"):format(Tr(entry[2]))'),
+    ("MSUF_Suite_Options/Pages/QualityOfLife.lua", 'Tr(group.title) .. " " .. Tr("Colors")'),
+    ("MSUF_Suite_Options/Pages/QualityOfLife.lua", 'Tr(group.title) .. " " .. Tr("Settings")'),
+}
+for path in sorted((root / "MSUF_Suite_Options").glob("**/*.lua")):
+    rel = path.relative_to(root).as_posix()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for number, line in enumerate(lines, 1):
+        for match in METADATA.finditer(line):
+            call = Arguments(" ".join([line] + lines[number:number + 3]), match.end() - 1)
+            if TRANSLATED.search(call) and not any(rel == file and text in call for file, text in METADATA_COMPOSED):
+                failures.append("%s:%d a metadata label is translated: %s" % (rel, number, line.strip()))
+
 if failures:
     sys.exit("\n".join(failures))
 print("Suite locale sites: prints translated, no runtime-built text reaches a translation,"

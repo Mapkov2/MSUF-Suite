@@ -2,6 +2,7 @@ local _, P = ...
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local PAGE, ID = "suite_actionbars", "actionbars"
 local COUNT = Suite.ActionBarCount
+local NEVER = Suite.ActionBarEnum.VISIBILITY.NEVER
 
 -- Retail's rotation recommendation runs only while Blizzard's Assisted
 -- Highlight option (the assistedCombatHighlight CVar) is on; Forever has no
@@ -66,7 +67,7 @@ local function GroupOf(suffix)
     end
 end
 local function BarTitle(index) return Tr(Suite.ActionBarTitles[index]) end
-local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == 6 end
+local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == NEVER end
 
 -- Blizzard_EditMode loads at startup on every supported client; the button
 -- only reads whether Blizzard would enter its Edit Mode now.
@@ -86,7 +87,7 @@ local function CopyValues(values, from, to, groups)
             end
             if group.id == "visibility" then
                 local mode = P.Get(ID, "bar" .. from .. "Visibility")
-                values["bar" .. to .. "ResumeVisibility"] = mode == 6
+                values["bar" .. to .. "ResumeVisibility"] = mode == NEVER
                     and P.Get(ID, "bar" .. from .. "ResumeVisibility") or mode
             end
         end
@@ -155,7 +156,7 @@ local function BuildQuick(ctx, b)
         local meta = P.Meta(PAGE, ID, "quick.bar" .. index, "setting", section)
         meta.settingKey = "msufsuite.actionbars." .. key
         local toggle = M.BindSwitchAt(ctx, body, Tr(Suite.ActionBarTitles[index]), x, y, cell - 52,
-            function() return P.Get(ID, key) ~= 6 end,
+            function() return P.Get(ID, key) ~= NEVER end,
             function(value) SetBarOn(bar, value == true) end, meta)
         local status = P.Text(body, "", x + 44, y - 26, cell - 44, T.colors.dim or T.colors.muted)
         M.TrackRefresh(ctx, function()
@@ -166,7 +167,7 @@ local function BuildQuick(ctx, b)
             end
             local mode = P.Get(ID, key)
             local label = Rule(key).choices[mode]
-            if mode == 6 then
+            if mode == NEVER then
                 local previous = P.Get(ID, "bar" .. bar .. "ResumeVisibility")
                 P.SetTranslatedText(status, string.format(Tr("Off - restores %s"), Tr(Rule(key).choices[previous])))
             else
@@ -183,24 +184,6 @@ local function BuildQuick(ctx, b)
         return P.ResetRules(ID, {}, nil, keys)
     end)
     P.FinishBody(b, body, top - math.ceil(COUNT / columns) * 54 - 4)
-end
-
--- Canonical grid math shared with the runtime: returns column, row of button i
--- (0-based) plus the grid size.
-function P.ActionBarGrid(count, rows, vertical, start, i)
-    rows = math.max(1, math.min(rows, count))
-    local columns, lines, column, row
-    if vertical then
-        columns, lines = math.ceil(count / rows), rows
-        row, column = i % rows, math.floor(i / rows)
-    else
-        columns = math.ceil(count / rows)
-        lines = math.ceil(count / columns)
-        column, row = i % columns, math.floor(i / columns)
-    end
-    if start == 2 or start == 4 then column = columns - 1 - column end
-    if start == 3 or start == 4 then row = lines - 1 - row end
-    return column, row, columns, lines
 end
 
 local function BuildPreview(ctx, parent, y, width)
@@ -225,7 +208,7 @@ local function BuildPreview(ctx, parent, y, width)
         local count = P.Get(ID, p .. "Buttons")
         local rows, vertical, start = P.Get(ID, p .. "Rows"), P.Get(ID, p .. "Vertical"), P.Get(ID, p .. "Start")
         local size, gap = P.Get(ID, p .. "Size"), P.Get(ID, p .. "Spacing")
-        local _, _, columns, lines = P.ActionBarGrid(count, rows, vertical, start, 0)
+        local columns, lines, r = Suite.ActionBarGrid(count, rows, vertical)
         local realW = columns * size + (columns - 1) * gap
         local realH = lines * size + (lines - 1) * gap
         local fit = math.min(1, (width - 16) / math.max(1, realW), (height - 30) / math.max(1, realH))
@@ -234,7 +217,7 @@ local function BuildPreview(ctx, parent, y, width)
         for i, tile in ipairs(tiles) do
             tile:SetShown(i <= count)
             if i <= count then
-                local column, row = P.ActionBarGrid(count, rows, vertical, start, i - 1)
+                local column, row = Suite.ActionBarCell(i - 1, columns, lines, r, vertical, start)
                 tile:ClearAllPoints()
                 tile:SetSize(size * fit, size * fit)
                 tile:SetPoint("TOPLEFT", host, "TOPLEFT", left + column * (size + gap) * fit, top - row * (size + gap) * fit)
@@ -255,7 +238,7 @@ local function BuildPreview(ctx, parent, y, width)
         end
         host:SetAlpha(math.max(0.25, P.Get(ID, p .. "Alpha") / 100))
         local text = Tr(Suite.ActionBarTitles[selected])
-        if P.Get(ID, p .. "Visibility") == 6 then text = text .. "  (" .. Tr("hidden") .. ")" end
+        if P.Get(ID, p .. "Visibility") == NEVER then text = text .. "  (" .. Tr("hidden") .. ")" end
         if not Available(selected) then text = text .. "  (" .. Tr("not available on this client") .. ")" end
         caption:SetText(text)
     end
@@ -304,14 +287,9 @@ local function SelectCopyDestination(key)
     end
 end
 local function ConfirmCopyAll(run)
-    -- MSUF's popup helper is a host export; StaticPopup_Show exists everywhere.
-    if not M.InstallStaticPopup then return run() end
-    M.InstallStaticPopup("MSUF_SUITE_COPY_BARS_CONFIRM", {
-        text = Tr("Copy these settings to ALL action bars?\n\nThis overwrites the chosen settings on every other bar. Positions stay as they are."),
-        button1 = YES, button2 = NO,
-        OnAccept = function(_, data) if type(data) == "function" then data() end end,
-    })
-    StaticPopup_Show("MSUF_SUITE_COPY_BARS_CONFIRM", nil, nil, run)
+    P.Confirm("copy-bars",
+        Tr("Copy these settings to ALL action bars?\n\nThis overwrites the chosen settings on every other bar. Positions stay as they are."),
+        run)
 end
 local function RunCopyTo(popup)
     if P.Combat() then return false end
@@ -372,7 +350,7 @@ local function AttachCopyTo(ctx, body, y)
     copy:SetScript("OnClick", function(self) api.Show(self) end)
     body:HookScript("OnHide", function() api.Hide() end)
     if M.RegisterControlMetadata then
-        M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"), Tr("Copy To"), "button")
+        M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"), "Copy To", "button")
     end
     return api
 end
@@ -404,7 +382,7 @@ local function BuildEditor(ctx, b)
     end
     y = y - 40
     P.Button(ctx, body, "Move selected bar", 16, y, half, function() P.MoveOnScreen(ID, "bar" .. selected) end,
-        function() return P.Get(ID, "enabled") and Available(selected) and P.Get(ID, "bar" .. selected .. "Visibility") ~= 6 end,
+        function() return P.Get(ID, "enabled") and Available(selected) and P.Get(ID, "bar" .. selected .. "Visibility") ~= NEVER end,
         P.Meta(PAGE, ID, "editor.move", "action", "suite_actionbars_editor"))
     P.Button(ctx, body, "Key bindings", 28 + half, y, half, function() if S.OpenQuickKeybind then S.OpenQuickKeybind() end end,
         function() return S.OpenQuickKeybind ~= nil end,

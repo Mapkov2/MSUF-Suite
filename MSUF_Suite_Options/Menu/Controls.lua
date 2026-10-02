@@ -469,7 +469,7 @@ function P.LookPresetButtons(ctx, pageKey, id, sectionId, after)
             end)
             if M.RegisterControlMetadata then
                 M.RegisterControlMetadata(button, P.Meta(pageKey, id, "look." .. value, "action", sectionId),
-                    Tr(name), "button")
+                    name, "button")
             end
             buttons[index] = button
         end

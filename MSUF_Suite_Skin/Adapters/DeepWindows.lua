@@ -472,18 +472,11 @@ local function DeferredKey(state, suffix)
     return "deep-windows:" .. tostring(state.parentOwner) .. ":" .. tostring(suffix)
 end
 
+local function ApplyStateOf(state) ApplyState(state) end
+
 local function DeferApply(state, suffix)
     if not state or not state.active then return false, "combat" end
-    local parentOwner = state.parentOwner
-    local key = DeferredKey(state, suffix)
-    state.deferred[key] = true
-    local ran, reason = NS.CombatGate.RunOrDefer(key, function()
-        local current = DeepWindows.owners[parentOwner]
-        if current then current.deferred[key] = nil end
-        if current and current.active then ApplyState(current) end
-    end)
-    if ran then state.deferred[key] = nil end
-    return ran == true, reason
+    return Kit.DeferForOwner(DeepWindows.owners, state.parentOwner, DeferredKey(state, suffix), ApplyStateOf)
 end
 
 -- Each addon spec is its own error boundary per owner: a raising window is

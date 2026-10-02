@@ -6,6 +6,7 @@ local _, P = ...
 local Page = P.CDMPage
 local S = P.S
 local CDM = P.Suite.CDM
+local FAMILY = CDM.FAMILY
 local ID = Page.ID
 local SLOTS, KEYS = CDM.SLOTS, CDM.KEYS
 local EMPTY = {}
@@ -196,7 +197,7 @@ local function Ready()
     return spec
 end
 local function WrongFamily(family, slot)
-    if family ~= 1 and family ~= 2 then return nil end
+    if family ~= FAMILY.COOLDOWN and family ~= FAMILY.AURA then return nil end
     if family == Page.Family(slot) then return nil end
     return Page.FamilyError(family)
 end

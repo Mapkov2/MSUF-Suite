@@ -485,6 +485,35 @@ function Support.SuiteProfileNames(root, suite)
     return suite
 end
 
+-- The Suite core's skin boundary (MSUF_Suite/Integrations/MapkoSkin.lua) with
+-- its chat colour ledger, which the skin's chat adapter keeps in
+-- MSUFSuite.Skin, as in the client, where the skin loads after MSUF_Suite.
+-- Gives suite (default _G.MSUFSuite, created when missing) the real boundary
+-- and the core readers it uses unless it has them, and a fresh saved-
+-- variables root unless it has one; publishes it as _G.MSUFSuite and
+-- returns it.
+function Support.SuiteSkinBoundary(root, suite)
+    suite = suite or _G.MSUFSuite or {}
+    suite.RootDB = suite.RootDB or {}
+    suite.PublicText = suite.PublicText or function(value)
+        return type(value) == "string" and value ~= "" and value or nil
+    end
+    suite.Finite = suite.Finite or function(value)
+        return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+    end
+    suite.Dispatch = suite.Dispatch or securecallfunction
+    suite.Finish = suite.Finish or function(callback, ...) return true, callback(...) end
+    UnitGUID = UnitGUID or function() return "Player-1" end
+    if not suite.CharacterData then
+        assert(loadfile(root .. "/MSUF_Suite/Core/CharacterData.lua"))("MSUF_Suite", suite)
+    end
+    if not (suite.Skin and suite.Skin.RememberChatColor) then
+        assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", suite)
+    end
+    _G.MSUFSuite = suite
+    return suite
+end
+
 -- The step of a MIGRATIONS entry (MSUF_Suite/Core/Suite.lua) found by the
 -- function it runs, and the number of steps, so that a test does not depend on
 -- the order in which branches appended their steps.

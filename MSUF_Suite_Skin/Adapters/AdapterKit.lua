@@ -49,6 +49,14 @@ end
 
 -- Up to five results of a Blizzard function called with valid arguments.
 -- Each secret result reads as nil; nil when fn is missing on this client.
+-- The client's normal text font: GameFontNormal's face, else the standard
+-- text font. Read through ReadValues: the getter may answer with secrets.
+local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
+AdapterKit.DEFAULT_FONT = DEFAULT_FONT
+function AdapterKit.FontPath()
+    return AdapterKit.ReadValues(GameFontNormal.GetFont, GameFontNormal) or STANDARD_TEXT_FONT or DEFAULT_FONT
+end
+
 function AdapterKit.ReadValues(fn, ...)
     if type(fn) ~= "function" then return nil end
     return PublicValues(fn(...))
@@ -193,6 +201,22 @@ function AdapterKit.HookGlobal(name, callback)
     if type(_G[name]) ~= "function" then return false end
     hooksecurefunc(name, callback)
     return true
+end
+
+-- Runs run(state, arg) now, or once after combat for the owner's state then:
+-- the owner may have been applied again or disabled meanwhile, and a state
+-- that is no longer active is skipped. state.deferred[key] marks the
+-- pending run for CancelDeferred.
+function AdapterKit.DeferForOwner(owners, owner, key, run, arg)
+    local state = owners[owner]
+    state.deferred[key] = true
+    local ran, reason = NS.CombatGate.RunOrDefer(key, function()
+        local current = owners[owner]
+        if current then current.deferred[key] = nil end
+        if current and current.active then run(current, arg) end
+    end)
+    if ran then state.deferred[key] = nil end
+    return ran == true, reason
 end
 
 function AdapterKit.CancelDeferred(state)
