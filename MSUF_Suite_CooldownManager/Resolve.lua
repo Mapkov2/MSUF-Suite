@@ -50,7 +50,8 @@ for i = 1, #CONSUMABLES do
 end
 
 local KIND = CDM.KIND
-local KIND_FAMILY = { [KIND.COOLDOWN] = 1, [KIND.AURA_ICON] = 2, [KIND.AURA_BAR] = 2 }
+local FAMILY, NO_OVERFLOW = C.Const.FAMILY, C.Const.OVERFLOW.OFF
+local KIND_FAMILY = { [KIND.COOLDOWN] = FAMILY.COOLDOWN, [KIND.AURA_ICON] = FAMILY.AURA, [KIND.AURA_BAR] = FAMILY.AURA }
 local PLACEHOLDER_TEXTURE, PLACEHOLDER_COUNT = C.Const.QUESTION_ICON, 3
 local placeholderKeys = {}
 for i = 1, #SLOTS do
@@ -145,7 +146,7 @@ local function PresetLists()
             local held = covered[category]
             if not held or rec.id < held.id then covered[category] = rec end
         end
-        if rec.family == 1 then
+        if rec.family == FAMILY.COOLDOWN then
             local key = rec.key
             if rec.spell and not spellKey[rec.spell] then spellKey[rec.spell] = key end
             if rec.override and not spellKey[rec.override] then spellKey[rec.override] = key end
@@ -332,7 +333,7 @@ end
 local function Offer(rec, slot, hidden, out, n)
     local key = rec.key
     local owner = claimed[key]
-    local equip = rec.family == 1 and rec.equipSlot
+    local equip = rec.family == FAMILY.COOLDOWN and rec.equipSlot
     local home = equip and slotHome[equip]
     local stand = rec.spellCategory and standIn[rec.spellCategory]
     if not used[key] and not hidden[key] and (owner == nil or owner == slot)
@@ -535,7 +536,7 @@ local function Placeholder(slot, n, family)
     SetOverride(entry, nil)
     entry.base, entry.spell, entry.known = nil, nil, true
     entry.texture, entry.name, entry.auraIDs = PLACEHOLDER_TEXTURE, nil, nil
-    if family == 2 then entry.unit = "player" end
+    if family == FAMILY.AURA then entry.unit = "player" end
     entry.slot, entry.index, entry.ov = slot, n, EMPTY
     C.entries[key], placed[key] = entry, true
     return entry
@@ -565,10 +566,11 @@ function Resolve.OverflowTarget(slot)
     local view = i and C.views[slot]
     local cap = view and view.maxIcons
     if not (view and view.on and KindOf(i) == KIND.COOLDOWN and type(cap) == "number" and cap > 0) then return nil end
-    local target = SLOTS[(view.overflow or 1) - 1]
+    local target = SLOTS[(view.overflow or NO_OVERFLOW) - NO_OVERFLOW]
     local key = target and target.key
     local targetView = key and key ~= slot and C.views[key]
-    if targetView and targetView.on and KindOf(CDM.SLOT_INDEX[key]) == KIND.COOLDOWN and (targetView.overflow or 1) == 1 then
+    if targetView and targetView.on and KindOf(CDM.SLOT_INDEX[key]) == KIND.COOLDOWN
+        and (targetView.overflow or NO_OVERFLOW) == NO_OVERFLOW then
         return key
     end
 end
@@ -656,7 +658,7 @@ function Resolve.Build()
                 end
             end
             if preview and n == 0 then
-                local family = KIND_FAMILY[kind] or 1
+                local family = KIND_FAMILY[kind] or FAMILY.COOLDOWN
                 for p = 1, PLACEHOLDER_COUNT do
                     n = n + 1
                     tmp[n] = Placeholder(slot, p, family)

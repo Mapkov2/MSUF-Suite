@@ -19,25 +19,43 @@ local Catalog = { records = {}, order = {}, generation = 0, content = 0, byBar =
     equipBars = {} }
 C.Catalog = Catalog
 
+-- Blizzard's categories by name (the client's Enum.CooldownViewerCategory).
+local CATEGORY = Enum.CooldownViewerCategory
+local ESSENTIAL, UTILITY, TRACKED_BUFF, TRACKED_BAR = CATEGORY.Essential, CATEGORY.Utility, CATEGORY.TrackedBuff, CATEGORY.TrackedBar
+local POTIONS, AGNOSTIC_TRACKED = CATEGORY.SpecAgnosticEssential, CATEGORY.SpecAgnosticTracked
+local EQUIP_ESSENTIAL, EQUIP_TRACKED = CATEGORY.EquipSlotEssential, CATEGORY.EquipSlotTracked
+-- The pseudo-categories of cooldowns and auras Blizzard hides by default are
+-- ours: the client sorts them out of its sets, they carry no enum value.
+local HIDDEN_SPELL, HIDDEN_AURA = -1, -2
+local K = C.Const
+local FAMILY = K.FAMILY
 -- Blizzard's fetch order (CooldownViewerSettingsDataProvider cooldownCategories).
-local CAT_ORDER = { 0, 1, 2, 3, 7, 8, 5, 6 }
+local CAT_ORDER = { ESSENTIAL, UTILITY, TRACKED_BUFF, TRACKED_BAR, EQUIP_ESSENTIAL, EQUIP_TRACKED, POTIONS, AGNOSTIC_TRACKED }
 -- HideByDefault moves bar categories into the hidden pseudo-categories; the
 -- item pools stay in their own category (that is their "not shown" state).
-local HIDDEN_OF = { [0] = -1, [1] = -1, [2] = -2, [3] = -2, [5] = 5, [6] = 6, [7] = 7, [8] = 8 }
-local FAMILY = { [-1] = 1, [0] = 1, [1] = 1, [5] = 1, [7] = 1, [-2] = 2, [2] = 2, [3] = 2, [6] = 2, [8] = 2 }
--- Equipment slots (7, trinkets) join Essential; potions and healthstones (5)
--- stay on Potions and racials. TAIL categories follow their bar's own
--- entries, in Blizzard's order among themselves; a trinket moved into
--- Essential in Blizzard's settings (category 0) keeps its saved place.
-local BAR_OF = { [0] = "ess", [1] = "uti", [2] = "buf", [3] = "bar", [5] = "ext", [7] = "ess", [6] = "buf", [8] = "buf" }
-local TAIL = { [7] = true }
+local HIDDEN_OF = { [ESSENTIAL] = HIDDEN_SPELL, [UTILITY] = HIDDEN_SPELL, [TRACKED_BUFF] = HIDDEN_AURA,
+    [TRACKED_BAR] = HIDDEN_AURA, [POTIONS] = POTIONS, [AGNOSTIC_TRACKED] = AGNOSTIC_TRACKED,
+    [EQUIP_ESSENTIAL] = EQUIP_ESSENTIAL, [EQUIP_TRACKED] = EQUIP_TRACKED }
+local FAMILY_OF = { [HIDDEN_SPELL] = FAMILY.COOLDOWN, [ESSENTIAL] = FAMILY.COOLDOWN, [UTILITY] = FAMILY.COOLDOWN,
+    [POTIONS] = FAMILY.COOLDOWN, [EQUIP_ESSENTIAL] = FAMILY.COOLDOWN, [HIDDEN_AURA] = FAMILY.AURA,
+    [TRACKED_BUFF] = FAMILY.AURA, [TRACKED_BAR] = FAMILY.AURA, [AGNOSTIC_TRACKED] = FAMILY.AURA, [EQUIP_TRACKED] = FAMILY.AURA }
+-- Equipment slots (trinkets) join Essential; potions and healthstones (the
+-- spec-agnostic Essential pool) stay on Potions and racials. TAIL categories
+-- follow their bar's own entries, in Blizzard's order among themselves; a
+-- trinket moved into Essential in Blizzard's settings keeps its saved place.
+local BAR_OF = { [ESSENTIAL] = "ess", [UTILITY] = "uti", [TRACKED_BUFF] = "buf", [TRACKED_BAR] = "bar", [POTIONS] = "ext",
+    [EQUIP_ESSENTIAL] = "ess", [AGNOSTIC_TRACKED] = "buf", [EQUIP_TRACKED] = "buf" }
+local TAIL = { [EQUIP_ESSENTIAL] = true }
 Catalog.BAR_OF, Catalog.TAIL = BAR_OF, TAIL
 local HIDE_BY_DEFAULT = 2
-local CATEGORY_ICON = C.Const.CATEGORY_ICONS
-local CATEGORY_TITLE = { [4] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_COMBAT_TITLE", "Combat potion" },
-    [30] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTH_TITLE", "Health potion" },
-    [1711] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTHSTONE_TITLE", "Healthstone" },
-    [2566] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_DEMONIC_HEALTHSTONE_TITLE", "Demonic Healthstone" } }
+local CATEGORY_ICON = K.CATEGORY_ICONS
+local SPELL_CATEGORY = K.SPELL_CATEGORY
+local CATEGORY_TITLE = {
+    [SPELL_CATEGORY.COMBAT_POTION] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_COMBAT_TITLE", "Combat potion" },
+    [SPELL_CATEGORY.HEALTH_POTION] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTH_TITLE", "Health potion" },
+    [SPELL_CATEGORY.HEALTHSTONE] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_HEALTHSTONE_TITLE", "Healthstone" },
+    [SPELL_CATEGORY.DEMONIC_HEALTHSTONE] = { "COOLDOWN_VIEWER_TOOLTIP_POTION_DEMONIC_HEALTHSTONE_TITLE", "Demonic Healthstone" },
+}
 
 ------------------------------------------------------------------ plain-value helpers
 local function Num(v)
@@ -87,9 +105,9 @@ local function ItemSpell(item)
     return Num(spell)
 end
 local function SlotLabel(slot)
-    if slot == 13 then return S.Text("Trinket 1") end
-    if slot == 14 then return S.Text("Trinket 2") end
-    return S.Text("Equipment slot") .. " " .. slot
+    if slot == K.TRINKET1 then return S.Text("Trinket 1") end
+    if slot == K.TRINKET2 then return S.Text("Trinket 2") end
+    return S.Text("Equipment slot %d"):format(slot)
 end
 Catalog.SpellTexture, Catalog.SpellName, Catalog.EquipItem, Catalog.EquipTexture = SpellTexture, SpellName, EquipItem, EquipTexture
 Catalog.ItemName, Catalog.ItemIcon, Catalog.ItemSpell, Catalog.SlotLabel = ItemName, ItemIcon, ItemSpell, SlotLabel
@@ -170,7 +188,7 @@ function Catalog.Ready()
     -- A spec can have no Essential entry. Any populated spell or aura category
     -- proves the viewer data exists, including after a late module load.
     local populated = false
-    for category = 0, 3 do
+    for category = ESSENTIAL, TRACKED_BAR do
         local ids = get(category, true)
         if Public(ids) and type(ids) == "table" and #ids > 0 then
             populated = true
@@ -472,7 +490,7 @@ local function FillBars(records, order)
         local rec = records[id]
         local cat = eff[id]
         Put(rec, "category", cat)
-        Put(rec, "family", FAMILY[cat] or FAMILY[rec.defaultCategory])
+        Put(rec, "family", FAMILY_OF[cat] or FAMILY_OF[rec.defaultCategory])
         Put(rec, "bar", BAR_OF[cat])
         -- Bars that hold an equipment slot, learned or not: a gear change
         -- there can add, remove or restyle an entry.

@@ -157,6 +157,7 @@ WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
 C_CooldownViewer={GetCooldownViewerCategorySet=function() return {} end,GetCooldownViewerCooldownInfo=function() end}
 C_Spell={GetSpellCooldownDuration=function() end}
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
 MSUF_EncodeCompactTable=function() return "" end
 MSUF_TryDecodeCompactString=function() return nil end
 local NS={}
@@ -206,10 +207,15 @@ for key,rule in pairs(rules) do config[key]=rule.default end
 local M={active=true,config=config,id="cooldownManager"}
 -- The controller's flush request (Flush.lua) is a no-op here: the test runs
 -- the layout's requests itself through L.Flush with a direct runner.
-local C={M=M,EMPTY={},state={inCombat=false,preview=false},views={},plans={},bars={},entries={},
+local C={M=M,EMPTY={},state={inCombat=false,preview=false},views={},plans={},bars={},entries={},Diagnostics={},
     Index={usable={}},Effects={},Schedule=function() end,
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local P={NS=NS,Suite=S,CDM=C}
+-- The player and target lines the layout reserves on an aura bar.
+local function LinesAre(bar,first,second)
+    local lines1,lines2=C.Diagnostics.BarLines(bar.key)
+    return lines1==first and lines2==second
+end
 
 local FILES={"Const","Grid","Layout","Visibility","Native","Preview"}
 local createdBefore=created
@@ -247,7 +253,7 @@ for _,name in ipairs({"PixelScale","InvalidateScale","EnsureBar","Apply","ApplyA
     "CombatEnded","Request","Flush","FixedAuras"}) do
     assert(type(L[name])=="function","Layout."..name.." missing")
 end
-for _,name in ipairs({"Apply","ApplyAll","CombatChanged","ReleaseAll","FlushPending","HasPending","Paint","Binding","DriverCount"}) do
+for _,name in ipairs({"Apply","ApplyAll","CombatChanged","ReleaseAll","FlushPending","HasPending","Paint","Binding"}) do
     assert(type(V[name])=="function","Visibility."..name.." missing")
 end
 for _,name in ipairs({"Apply","Release","Capture","Mode","AnchorFrame","FollowViewer","Applied"}) do
@@ -456,8 +462,8 @@ do
     end
     AuraRule.TargetRow=assert(loadstring(Body("TargetRow","entry").."\nreturn TargetRow"))()
     assert(text:find("\nAuras.UnitOf, Auras.Ids, Auras.TargetRow = UnitOf, Ids, TargetRow\n",1,true),"Auras.lua exports TargetRow")
-    local flow=assert(text:match("\n(local FLOW = %b{})\n"),"Auras.lua FLOW source")
-    AuraRule.FLOW=assert(loadstring(flow.."\nreturn FLOW"))()
+    local flow=assert(text:match("\n(local function Host%b()[^\n]*\nlocal FLOW = %b{})\n"),"Auras.lua FLOW source")
+    AuraRule.FLOW=assert(loadstring("local ALIGN,DOWN,UP=...\n"..flow.."\nreturn FLOW"))(C.Const.ALIGN,C.Const.GROW.DOWN,C.Const.GROW.UP)
     AuraRule.Place=assert(loadstring("local geo=...\n"..Body("Place","rec, offset, split").."\nreturn Place"))(auraGeo)
     -- SyncAura takes the one rule from the layout, builds the geometry from
     -- the layout's metrics, and places compact containers only: the player
@@ -468,10 +474,10 @@ do
         "    local fixed, _, split = layout.FixedAuras(view, entries)\n",
         "    barMeta.fixed, barMeta.split = fixed == true, split == true\n",
         "    local w, h, sp, per, vertical, grow, align = layout.Metrics(view)\n",
-        "    local flow = FLOW[vertical][grow == 2 and 2 or 1]\n",
+        "    local flow = FLOW[vertical][grow == UP and UP or DOWN]\n",
         "    geo.w, geo.h, geo.gp, geo.gc = w, h, max(0, sp), sp\n",
-        "    geo.flow, geo.point = flow, flow[4][align] or flow[4][1]\n",
-        "    if vertical then\n        dir = grow == 2 and -1 or 1\n    else\n        dir = grow == 2 and 1 or -1\n    end\n",
+        "    geo.flow, geo.point = flow, flow[4][align] or flow[4][ALIGN.CENTER]\n",
+        "    if vertical then\n        dir = grow == UP and -1 or 1\n    else\n        dir = grow == UP and 1 or -1\n    end\n",
         "    geo.step = (cross + sp) * dir\n",
         "    geo.host = bar.auraHost or bar.frame\n",
         "    for i = 1, cap do\n        if not TargetRow(entries[i]) then\n            players = players + 1\n        end\n    end\n",
@@ -493,7 +499,7 @@ do
     end
     assert(#anchors==2 and anchors[1]=='container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)' and anchors[2]=="container:SetPoint(point, host, rel, dx, dy)",
         "container anchors: "..table.concat(anchors," | "))
-    assert(text:find("\n            local parent = fam == \"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
+    assert(text:find("\n    local parent = fam == \"over\" and bar.frame or bar.auraHost or bar.frame\n",1,true)
         and text:find("\n    local point, host = g.point, g.host\n",1,true),"container parents and hosts are the bar's own frames")
     local rels=0
     for rel in layer:gmatch("[%w_]+:SetPoint%(%s*[^,]+,%s*([%w_%.%[%]]+)") do
@@ -590,7 +596,7 @@ end
 -- between the parts; the player/target split is still recorded per part.
 Rule(buf,bufEntries,"centered mixed row",false,false,true)
 assert(bufBar.frame.w==158 and bufBar.frame.h==27,"buf one-line footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
-assert(bufBar.lines1==1 and bufBar.lines2==1,"line split recorded")
+assert(LinesAre(bufBar,1,1),"line split recorded")
 -- cells follow the plan: entry i at cell i of the line
 local cellAt={{0,0},{32,0},{64,0},{96,0},{128,0}}
 for i=1,5 do
@@ -642,7 +648,7 @@ local bothPlan={Both(),Entry("target"),Both(),Entry("player")}
 Plan("buf",bothPlan)
 L.Apply("buf")
 Rule(buf,bothPlan,"both entries beside a target entry",false,false,true)
-assert(bufBar.lines1==1 and bufBar.lines2==1,"both entries in the player part, the target entry in the target part")
+assert(LinesAre(bufBar,1,1),"both entries in the player part, the target entry in the target part")
 assert(bufBar.frame.w==126 and bufBar.frame.h==27,"one line of four "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
 for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"both-unit cell "..i) end
 assert(not bufBar.cells[5].shown,"cell beyond the entries hides")
@@ -650,7 +656,7 @@ assert(not bufBar.cells[5].shown,"cell beyond the entries hides")
 -- player) takes two lines and the target entry a third
 local bothAt={{0,0},{16,-58},{32,0},{16,-29}}
 local function BothLines(label)
-    assert(bufBar.lines1==2 and bufBar.lines2==1 and bufBar.frame.w==62 and bufBar.frame.h==85,
+    assert(LinesAre(bufBar,2,1) and bufBar.frame.w==62 and bufBar.frame.h==85,
         label..": both entries count in the player part")
     for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",bothAt[i][1],bothAt[i][2],label..", cell "..i) end
 end
@@ -671,12 +677,12 @@ for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cell
 Plan("buf",{Both(),Both()})
 L.Apply("buf")
 Rule(buf,C.plans.buf.entries,"own buffs only",false,false,false)
-assert(bufBar.lines1==1 and bufBar.lines2==0 and bufBar.frame.w==62 and bufBar.frame.h==27,"own buffs fill one player line")
+assert(LinesAre(bufBar,1,0) and bufBar.frame.w==62 and bufBar.frame.h==27,"own buffs fill one player line")
 CheckPoint(bufBar.cells[2],"TOPLEFT",bufBar.auraHost,"TOPLEFT",32,0,"second own buff on the player line")
 Plan("buf",{Entry("target"),Entry("target")})
 L.Apply("buf")
 Rule(buf,C.plans.buf.entries,"target auras only",false,false,false)
-assert(bufBar.lines1==0 and bufBar.lines2==1 and bufBar.frame.w==62 and bufBar.frame.h==27,"target debuffs only: one target line")
+assert(LinesAre(bufBar,0,1) and bufBar.frame.w==62 and bufBar.frame.h==27,"target debuffs only: one target line")
 CheckPoint(bufBar.cells[1],"TOPLEFT",bufBar.auraHost,"TOPLEFT",0,0,"a bar of target debuffs starts at the growth point")
 
 -- The rule on its own (no layout pass): which bars keep fixed places,
@@ -771,7 +777,7 @@ buf.keepSlots=false; Touch("buf")
 -- a new line in growth order, and every line is aligned (centered) on its own.
 buf.perRow=4; Touch("buf"); L.Apply("buf")
 Rule(buf,bufEntries,"mixed entries past a line",false,false,false)
-assert(bufBar.lines1==1 and bufBar.lines2==1,"multi-line split")
+assert(LinesAre(bufBar,1,1),"multi-line split")
 assert(bufBar.frame.w==94 and bufBar.frame.h==56,"multi-line footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
 local splitAt={{0,0},{16,-29},{32,0},{48,-29},{64,0}}
 for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",splitAt[i][1],splitAt[i][2],"multi-line cell "..i) end
@@ -803,14 +809,14 @@ Plan("buf",bufEntries)
 -- several player lines (perRow 2): the target part starts after every
 -- reserved player line (the aura layer offsets it by lines*step)
 buf.perRow=2; Touch("buf"); L.Apply("buf")
-assert(bufBar.lines1==2 and bufBar.lines2==1,"two player lines, one target line")
+assert(LinesAre(bufBar,2,1),"two player lines, one target line")
 assert(bufBar.frame.w==62 and bufBar.frame.h==85,"three-line footprint "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
 local reservedAt={{0,0},{0,-58},{32,0},{32,-58},{16,-29}}
 for i=1,5 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",reservedAt[i][1],reservedAt[i][2],"reserved lines, cell "..i) end
 -- maxIcons decides: the first 4 entries (P,T,P,T) fit perRow 4, one split line
 buf.perRow,buf.maxIcons=4,4; Touch("buf"); L.Apply("buf")
 Rule(buf,bufEntries,"capped entries on one line",false,false,true)
-assert(bufBar.lines1==1 and bufBar.lines2==1,"capped split")
+assert(LinesAre(bufBar,1,1),"capped split")
 assert(bufBar.frame.w==126 and bufBar.frame.h==27,"capped entries fit one line "..tostring(bufBar.frame.w).."x"..tostring(bufBar.frame.h))
 for i=1,4 do CheckPoint(bufBar.cells[i],"TOPLEFT",bufBar.auraHost,"TOPLEFT",cellAt[i][1],0,"capped cell "..i) end
 assert(not bufBar.cells[5].shown,"the entry past maxIcons has no cell")
@@ -925,7 +931,7 @@ for _,vertical in ipairs({false,true}) do
                                     label..": footprint "..bufBar.frame.w.."x"..bufBar.frame.h.." ~= "..w.."x"..h)
                                 local ew,eh=AuraRule.Extent(buf,C.plans.buf)
                                 assert(Near(ew,w) and Near(eh,h),label..": controller extent "..ew.."x"..eh.." ~= "..w.."x"..h)
-                                assert(bufBar.lines1==math.ceil(n1/per) and bufBar.lines2==math.ceil(n2/per),label..": part lines")
+                                assert(LinesAre(bufBar,math.ceil(n1/per),math.ceil(n2/per)),label..": part lines")
                                 local r1,r2=0,0
                                 for k=1,n do
                                     local at
@@ -973,16 +979,17 @@ do
         local fixed,_,split=L.FixedAuras(view,plan.entries)
         assert(not fixed,"containers are placed on compact bars only")
         local w,h,sp,per,vertical,grow,align=L.Metrics(view)
-        local flow=AuraRule.FLOW[vertical][grow==2 and 2 or 1]
+        local GROW=C.Const.GROW
+        local flow=AuraRule.FLOW[vertical][grow==GROW.UP and GROW.UP or GROW.DOWN]
         auraGeo.w,auraGeo.h,auraGeo.gp,auraGeo.gc=w,h,math.max(0,sp),sp
         auraGeo.axis=vertical and 1 or 0
-        auraGeo.flow,auraGeo.point=flow,flow[4][align] or flow[4][1]
+        auraGeo.flow,auraGeo.point=flow,flow[4][align] or flow[4][C.Const.ALIGN.CENTER]
         local primary,cross=w,h
         if vertical then primary,cross=h,w end
         auraGeo.line=per*primary+(per-1)*auraGeo.gp+.01
         auraGeo.vertical=vertical
         local dir
-        if vertical then dir=grow==2 and -1 or 1 else dir=grow==2 and 1 or -1 end
+        if vertical then dir=grow==GROW.UP and -1 or 1 else dir=grow==GROW.UP and 1 or -1 end
         auraGeo.step=(cross+sp)*dir
         auraGeo.host=bufBar.auraHost or bufBar.frame
         local cap=#plan.entries
@@ -1135,6 +1142,35 @@ Budget("paint: every bar, unchanged",Cost(L.ApplyAll),8853)
 L.Request("ess");L.Request("buf");L.Request("bar")
 Budget("paint: three layout requests",Cost(L.Flush,Direct),4076)
 Budget("paint: visibility on a combat edge",Cost(V.CombatChanged),379)
+-- A changed bar's grid in every alignment and growth, and an attached bar on
+-- every side and alignment (instructions, GC stopped). These budgets hold the
+-- instructions measured on 2026-10-02 at q11/merge, before the named modes of
+-- wave 3, plus 2 %.
+do
+    local out={}
+    local grids={
+        {kind=1,size=36,perRow=5,spacing=2,align=1,grow=1},
+        {kind=1,size=36,perRow=5,spacing=2,align=2,grow=2},
+        {kind=1,size=36,perRow=5,spacing=2,align=3,grow=1,vertical=true},
+        {kind=1,size=36,perRow=5,spacing=2,align=1,grow=2,laterPerRow=4,laterSize=30},
+        {kind=2,size=30,perRow=4,spacing=2,align=2,grow=2},
+    }
+    Budget("grid: twelve cells in five layouts",Cost(function()
+        for i=1,#grids do C.Grid.Offsets(grids[i],12,out,1) end
+    end),3156)
+    local view=C.views.uti
+    local side,align=view.side,view.align
+    Budget("paint: an attached bar on every side and alignment",Cost(function()
+        for s=1,4 do
+            for a=1,3 do
+                view.side,view.align=s,a
+                L.Request("uti");L.Flush(Direct)
+            end
+        end
+    end),15011)
+    view.side,view.align=side,align
+    L.Request("uti");L.Flush(Direct)
+end
 
 -- empty aura bars keep one cell
 Plan("bar",{})
@@ -1667,7 +1703,7 @@ do
     local registeredBefore=registered
     Clear(mouseLog)
     V.ApplyAll()
-    assert(registered==registeredBefore and V.DriverCount()==0 and next(V.drivers)==nil,"the default setup registers no state driver")
+    assert(registered==registeredBefore and C.Diagnostics.DriverCount()==0 and next(V.drivers)==nil,"the default setup registers no state driver")
     local listener=Listener()
     assert(listener and listener.parent==nil,"one plain event frame")
     local ev=listener.events
@@ -1742,7 +1778,7 @@ do
     uti.vis=2
     registeredBefore=registered
     V.ApplyAll()
-    assert(V.DriverCount()==1 and registered==registeredBefore+1,"two combat bars, one driver")
+    assert(C.Diagnostics.DriverCount()==1 and registered==registeredBefore+1,"two combat bars, one driver")
     local combatDriver=V.drivers[V.Expression(ess)]
     assert(combatDriver and combatDriver.parent==nil and combatDriver~=essBar.frame and #combatDriver.slots==2,"shared plain driver frame")
     assert(drivers[combatDriver].msufvis==V.Expression(ess),"driver registered with the bars' condition")
@@ -1776,7 +1812,7 @@ do
     buf.vis,buf.hideMounted=3,true
     def.hideMounted=true
     V.ApplyAll()
-    assert(V.DriverCount()==3,"three conditions, three drivers, got "..V.DriverCount())
+    assert(C.Diagnostics.DriverCount()==3,"three conditions, three drivers, got "..C.Diagnostics.DriverCount())
     assert(C.bars.buf.hidden,"no combat, no target: hidden")
     assert(not C.bars.def.hidden,"always with the mount rule: shown")
     cond.target=true; Tick()
@@ -1796,13 +1832,13 @@ do
     assert(C.bars.uti.hidden==false and V.expr.uti==V.EVENTS,"back on events: shown")
     ess.vis=1
     V.Apply("ess")
-    assert(unregistered==unregisteredBefore+1 and drivers[combatDriver].msufvis==nil and V.DriverCount()==2,"the last bar out unregisters")
+    assert(unregistered==unregisteredBefore+1 and drivers[combatDriver].msufvis==nil and C.Diagnostics.DriverCount()==2,"the last bar out unregisters")
     -- hidden is static: no driver
-    local count=V.DriverCount()
+    local count=C.Diagnostics.DriverCount()
     registeredBefore=registered
     uti.vis,uti.alpha=4,70
     V.Apply("uti")
-    assert(C.bars.uti.hidden and C.bars.uti.frame.alpha==0 and registered==registeredBefore and V.DriverCount()==count,"hidden bar, no driver")
+    assert(C.bars.uti.hidden and C.bars.uti.frame.alpha==0 and registered==registeredBefore and C.Diagnostics.DriverCount()==count,"hidden bar, no driver")
     -- preview suspends every rule at plain bar opacity
     C.state.preview=true
     V.ApplyAll()
@@ -1850,14 +1886,14 @@ do
     assert(V.expr.ext==V.EVENTS and C.bars.ext.hidden==false,"back on events")
     -- release: drivers unregistered, events gone, paint forgotten
     V.ReleaseAll()
-    assert(V.DriverCount()==0,"release unregisters drivers")
+    assert(C.Diagnostics.DriverCount()==0,"release unregisters drivers")
     for _,set in pairs(drivers) do assert(next(set)==nil,"driver left registered") end
     assert(next(ev)==nil,"release removes the events")
     for _,slot in ipairs(ON) do assert(C.bars[slot].hidden==nil,"release forgets the paint of "..slot) end
     M.active=false
     V.FlushPending()
     V.ApplyAll()
-    assert(V.DriverCount()==0 and next(ev)==nil,"inactive module registers nothing")
+    assert(C.Diagnostics.DriverCount()==0 and next(ev)==nil,"inactive module registers nothing")
     M.active=true
     for _,slot in ipairs(ON) do
         local view=C.views[slot]
@@ -1865,7 +1901,7 @@ do
     end
     V.ApplyAll()
     AllHidden(false,"defaults again")
-    assert(V.DriverCount()==0 and ev.PET_BATTLE_CLOSE,"defaults: events, no driver")
+    assert(C.Diagnostics.DriverCount()==0 and ev.PET_BATTLE_CLOSE,"defaults: events, no driver")
 end
 
 ------------------------------------------------------------------ native: mode and takeover

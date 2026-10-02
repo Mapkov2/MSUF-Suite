@@ -17,6 +17,7 @@ local wipe = C.wipe
 local Public = S.Public
 local EMPTY = C.EMPTY
 local KIND = C.Const.KIND
+local FAMILY = C.Const.FAMILY
 local THROTTLE = 1
 -- Container switches (ours, or an ancestor such as the UI being hidden for
 -- a cinematic) show and hide aura buttons: their sensors keep quiet this
@@ -36,6 +37,7 @@ local flushArmed = false
 local have = {}                            -- registration key -> {id, refs}
 local want = {}                            -- scratch: registration key -> refs
 local regs = {}                            -- registration key -> what to register
+local failed = {}                          -- registration key -> true: its value resolves to no file
 local info = {}                            -- reused UnitAuraSoundInfo
 local kitParams = {}                       -- reused Blizzard cooldown alert params
 local armed = false
@@ -157,7 +159,7 @@ end
 -- entries sound through their native registrations instead.
 function Alerts.Ready(entry)
     local ov = entry and entry.ov
-    if not ov or entry.family == 2 then return end
+    if not ov or entry.family == FAMILY.AURA then return end
     local sound, tts = ov.sound, ov.tts == true
     if sound == "" then sound = nil end
     if not sound and not tts then return end
@@ -205,7 +207,7 @@ end
 local function Settle(key, at, loss, gate)
     local entry = C.entries[key]
     local ov = entry and entry.ov
-    if not ov or ov == EMPTY or entry.family == 1 then return end
+    if not ov or ov == EMPTY or entry.family == FAMILY.COOLDOWN then return end
     local value
     if loss then
         value = ov.lossSound
@@ -253,7 +255,7 @@ end
 function Alerts.PlayAura(key, which, gate)
     local entry = type(key) == "string" and C.entries[key]
     local ov = entry and entry.ov
-    if not ov or ov == EMPTY or entry.family == 1 then return false end
+    if not ov or ov == EMPTY or entry.family == FAMILY.COOLDOWN then return false end
     if not (IsKit(ov.sound) or IsKit(ov.lossSound)) then return false end
     local state = C.state
     local now = GetTime()
@@ -298,11 +300,14 @@ local function Want(entry, trigger, value, channel)
     if not entry.selfAura then Wanted(set, "target", trigger, channel, value) end
 end
 
+-- Returns the native id, or nil plus whether the value cannot resolve to a
+-- file at all (a SharedMedia name nobody registered). Only a refusal by the
+-- native call itself is worth retrying on every pending flush.
 local function Register(add, reg)
     local kind, file = Parse(reg.value)
     if kind == "lsm" then file = Media(file) end
     if kind == "kit" then file = kitFiles[file] end
-    if not file then return nil end
+    if not file then return nil, true end
     info.unitToken, info.spellID, info.outputChannel = reg.unit, reg.spell, reg.channel
     if type(file) == "number" then
         info.soundFileID, info.soundFileName = file, nil
@@ -324,9 +329,12 @@ local function Arm(wait)
 end
 
 -- Cold: after resolve, spell choices, mute/channel changes and loading
--- screens. Out of combat only; in combat it waits for FlushPending.
-function Alerts.SyncAuraSounds()
+-- screens. Out of combat only; in combat it waits for FlushPending. Values
+-- that resolved to no file are tried again on the next cold sync, not on
+-- every pending flush (keepFailed): they would hold `pending` forever.
+function Alerts.SyncAuraSounds(keepFailed)
     Alerts.released = false
+    if not keepFailed then wipe(failed) end
     local add, remove = C_UnitAuras.AddAuraSound, C_UnitAuras.RemoveAuraSound
     if NS.IsCombatLocked() then
         Alerts.pending = true
@@ -351,7 +359,7 @@ function Alerts.SyncAuraSounds()
                 for i = 1, #entries do
                     local entry = entries[i]
                     local ov = entry.ov
-                    if ov and ov ~= EMPTY and entry.src ~= "p" and entry.family ~= 1 then
+                    if ov and ov ~= EMPTY and entry.src ~= "p" and entry.family ~= FAMILY.COOLDOWN then
                         Want(entry, ADDED, ov.sound, channel)
                         Want(entry, REMOVED, ov.lossSound, channel)
                     end
@@ -369,11 +377,19 @@ function Alerts.SyncAuraSounds()
         local reg = have[key]
         if reg then
             reg.refs = refs
-        else
-            local id = Register(add, regs[key])
-            if id then have[key] = { id = id, refs = refs } end
-            if not id then Alerts.pending = true end
+        elseif not failed[key] then
+            local id, unresolved = Register(add, regs[key])
+            if id then
+                have[key] = { id = id, refs = refs }
+            elseif unresolved then
+                failed[key] = true
+            else
+                Alerts.pending = true
+            end
         end
+    end
+    for key in pairs(failed) do
+        if not want[key] then failed[key] = nil end
     end
     if wait > 0 and not state.muteSounds then Arm(wait) end
 end
@@ -390,6 +406,7 @@ function Alerts.ReleaseAll()
     wipe(lossAt)
     wipe(gainGate)
     wipe(lossGate)
+    wipe(failed)
     Alerts.pending = false
     Alerts.released = true
 end

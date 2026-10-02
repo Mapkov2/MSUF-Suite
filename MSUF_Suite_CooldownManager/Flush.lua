@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- One dirty mask with a prebuilt next-frame flush (spec 8.2). The settings
+-- One dirty mask with a prebuilt next-frame flush. The settings
 -- reader (Settings.lua), the event map (Events.lua) and the layers mark work
 -- here; the flush runs it in dependency order: catalog, resolve, index,
 -- structure (icons before aura overlays), style, cooldown state, effects,
@@ -14,6 +14,7 @@ local C = P.CDM
 local M = C.M
 local SLOTS = NS.CDM.SLOTS
 local COOLDOWN = C.Const.KIND.COOLDOWN
+local AURA_FAMILY = C.Const.FAMILY.AURA
 local pairs, next = pairs, next
 local wipe = C.wipe
 local Flush = {}
@@ -119,7 +120,7 @@ local function Resolved(any)
         local entry = touched[i]
         if entry.icon then Mark(entry, "full") end
         local slot = entry.slot
-        if slot and (entry.family == 2 or auraTouched[entry]) then sync[slot] = true end
+        if slot and (entry.family == AURA_FAMILY or auraTouched[entry]) then sync[slot] = true end
     end
     if any or touched[1] ~= nil then dirty.index, dirty.alerts, dirty.keysLater = true, true, true end
 end

@@ -11,6 +11,12 @@ local NS, S = P.NS, P.Suite
 -- through curve evaluations. Only NeverSecret fields are compared.
 local AB = P.ActionBars
 local M = AB.M
+local ENUM = AB.ENUM
+local PROC_BLIZZARD, PROC_PIXEL, PROC_NONE = ENUM.PROC_GLOW.BLIZZARD, ENUM.PROC_GLOW.PIXEL, ENUM.PROC_GLOW.NONE
+local CIRCLE_SHAPE = ENUM.BUTTON_SHAPE.CIRCLE
+local USABLE, USABLE_TINT = S.USABLE, S.USABLE_TINT
+local USABLE_OK, NO_POWER, UNUSABLE, OUT_OF_RANGE = USABLE.USABLE, USABLE.NO_POWER, USABLE.UNUSABLE, USABLE.OUT_OF_RANGE
+local UNUSABLE_TINT = USABLE_TINT[UNUSABLE]
 local Public = S.Public
 local UpdateAssist = AB.UpdateAssist
 local api = {}
@@ -75,18 +81,15 @@ local function Visible(bar) return bar.header:IsVisible() end
 local function Tint(rec)
     local icon = rec.button.icon
     if not icon then return end
-    local style, code = AB.style, rec.usable or 1
-    local key = rec.outOfRange and 4 or code
+    local style, code = AB.style, rec.usable or USABLE_OK
+    local key = rec.outOfRange and OUT_OF_RANGE or code
     if rec.tint == key then return end
     rec.tint = key
-    if key == 4 then
+    if key == OUT_OF_RANGE then
         icon:SetVertexColor(style.rr, style.rg, style.rb)
-    elseif key == 1 then
-        icon:SetVertexColor(1, 1, 1)
-    elseif key == 2 then
-        icon:SetVertexColor(.5, .5, 1)
     else
-        icon:SetVertexColor(.4, .4, .4)
+        local color = USABLE_TINT[key] or UNUSABLE_TINT
+        icon:SetVertexColor(color[1], color[2], color[3])
     end
 end
 
@@ -140,7 +143,7 @@ local function Usable(rec, usable, noMana)
         return
     end
     if usable == nil then usable, noMana = api.Usable(rec.slot) end
-    rec.usable = (Public(usable) and usable) and 1 or (Public(noMana) and noMana) and 2 or 3
+    rec.usable = (Public(usable) and usable) and USABLE_OK or (Public(noMana) and noMana) and NO_POWER or UNUSABLE
     Tint(rec)
 end
 
@@ -377,7 +380,7 @@ end
 -- The pixel border glow in the current interaction color; a round button
 -- glows with a ring.
 local function PixelGlow(rec)
-    if M.config.buttonShape == 2 then
+    if M.config.buttonShape == CIRCLE_SHAPE then
         AB.ShowEdges(rec.glowEdges, false)
         AB.GlowRing(rec, true)
         return
@@ -390,7 +393,7 @@ end
 -- SetGlow skips unchanged glows, so the style pass redraws a showing pixel
 -- glow when the interaction color changes.
 function AB.RecolorGlow(rec)
-    if rec.glow and rec.glowMode == 2 then PixelGlow(rec) end
+    if rec.glow and rec.glowMode == PROC_PIXEL then PixelGlow(rec) end
 end
 
 local function SetGlow(rec, show)
@@ -399,15 +402,15 @@ local function SetGlow(rec, show)
     local button = rec.button
     -- Hide whatever the previous mode drew before switching.
     if rec.glow then
-        if rec.glowMode == 1 then HideAlert(button) end
+        if rec.glowMode == PROC_BLIZZARD then HideAlert(button) end
         AB.ShowEdges(rec.glowEdges, false)
         AB.GlowRing(rec, false)
     end
     rec.glow, rec.glowMode = show, mode
     if not show then return end
-    if mode == 1 then
+    if mode == PROC_BLIZZARD then
         ShowAlert(button)
-    elseif mode == 2 then
+    elseif mode == PROC_PIXEL then
         PixelGlow(rec)
     end
 end
@@ -429,7 +432,7 @@ local function GlowCheck(rec)
             end
         end
     end
-    SetGlow(rec, show and M.config.procGlow ~= 3)
+    SetGlow(rec, show and M.config.procGlow ~= PROC_NONE)
 end
 
 ------------------------------------------------------------------ buttons
@@ -625,8 +628,8 @@ end
 -- next charge-related event starts a new epoch.
 local function NewChargeEpoch() chargeEpoch = chargeEpoch + 1 end
 
--- Test and diagnostics hook: the number of suite range references held.
-function AB.RangeReferences()
+-- Diagnostics: the number of suite range references held.
+function AB.Diagnostics.RangeReferences()
     local total = 0
     for _, count in pairs(rangeRefs) do total = total + count end
     return total

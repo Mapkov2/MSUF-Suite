@@ -11,8 +11,9 @@ local AB = P.ActionBars
 local M = AB.M
 local max, floor = math.max, math.floor
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
--- Highlight/pressed choices: 1 Border, 2 Soft fill, 3 Blizzard, 4 None.
-local STYLE_BORDER, STYLE_FILL, STYLE_BLIZZARD = 1, 2, 3
+-- Highlight and pressed choices (the fourth, none, draws nothing).
+local STYLE_BORDER, STYLE_FILL, STYLE_BLIZZARD = AB.ENUM.HIGHLIGHT.BORDER, AB.ENUM.HIGHLIGHT.FILL, AB.ENUM.HIGHLIGHT.BLIZZARD
+local CIRCLE_SHAPE, PROC_BLIZZARD = AB.ENUM.BUTTON_SHAPE.CIRCLE, AB.ENUM.PROC_GLOW.BLIZZARD
 -- Cooldown frames beside the main swipe that follow the icon.
 local EXTRA_COOLDOWNS = { "chargeCooldown", "lossOfControlCooldown" }
 AB.styleGen = 0
@@ -182,7 +183,7 @@ local function StyleInteractions(rec, size, border)
     local button, style = rec.button, AB.style
     PlaceEdges(Edges(rec, "borderEdges", "OVERLAY", 6), button, border, style.br, style.bg, style.bb, 1)
     -- A round button's mouseover border is a ring (Decorations.lua).
-    local circle = M.config.buttonShape == 2
+    local circle = M.config.buttonShape == CIRCLE_SHAPE
     local hoverWidth = style.highlight == STYLE_BORDER and not circle and max(1, floor(size / 20 + .5)) or 0
     PlaceEdges(Edges(rec, "hoverEdges", "HIGHLIGHT", 7), button, hoverWidth, style.ir, style.ig, style.ib, 1)
     AB.HoverRing(rec, size, circle and style.highlight == STYLE_BORDER)
@@ -303,7 +304,7 @@ function AB.StyleButton(rec)
     end
     local alert = button.SpellActivationAlert
     if alert and rec.owned then alert:SetSize(size * 1.4, size * 1.4) end
-    if rec.native then AB.SetNativeAlertAlpha(button, M.config.procGlow == 1 and 1 or 0) end
+    if rec.native then AB.SetNativeAlertAlpha(button, M.config.procGlow == PROC_BLIZZARD and 1 or 0) end
     -- A showing pixel glow takes the new interaction color.
     AB.RecolorGlow(rec)
     rec.styleGen, rec.barStyleGen = AB.styleGen, bar.styleGen

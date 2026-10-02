@@ -142,13 +142,26 @@ CurveMT.__index=CurveMT
 function CurveMT:SetType(kind) self.type=kind end
 function CurveMT:AddPoint(x,y) self.points[#self.points+1]={x,y} end
 local createdCurves=0
-C_CurveUtil={CreateCurve=function() createdCurves=createdCurves+1;return setmetatable({points={}},CurveMT) end}
+-- Weak views of every object made: what the caches let go of is collected.
+local liveCurves,liveFormatters=setmetatable({},{__mode="v"}),setmetatable({},{__mode="v"})
+C_CurveUtil={CreateCurve=function()
+    createdCurves=createdCurves+1
+    local curve=setmetatable({points={}},CurveMT)
+    liveCurves[createdCurves]=curve
+    return curve
+end}
 local FormatterMT={}
 FormatterMT.__index=FormatterMT
 function FormatterMT:SetBreakpoints(points) self.points=points end
 local createdFormatters=0
-C_StringUtil={CreateNumericRuleFormatter=function() createdFormatters=createdFormatters+1;return setmetatable({},FormatterMT) end}
+C_StringUtil={CreateNumericRuleFormatter=function()
+    createdFormatters=createdFormatters+1
+    local formatter=setmetatable({},FormatterMT)
+    liveFormatters[createdFormatters]=formatter
+    return formatter
+end}
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
 Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},
     StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpolation={Immediate=0}}
 
@@ -228,7 +241,7 @@ S.Public=function(value) return not IsSecret(value) end
 S.Dispatch=NS.Dispatch
 
 ------------------------------------------------------------------ bootstrap stub and render files
-local C={M={},EMPTY={},views={},plans={},bars={},entries={},wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,state={
+local C={M={},EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,state={
     px=1,font="Fonts\\TEST.TTF",fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,keyR=1,keyG=1,keyB=1,
     threshold=0,thR=1,thG=90/255,thB=60/255,showGCD=false,readyGlowCombat=true,inCombat=false,preview=false}}
 local P={NS=NS,Suite=S,CDM=C}
@@ -343,7 +356,7 @@ C.plans.uti={slot="uti",kind=1,entries={s300,b6}}
 
 ------------------------------------------------------------------ Icons: pools, styling, memoization
 I.Sync("ess");I.Sync("uti")
-assert(I.Count("ess")==5 and I.Count("uti")==2)
+assert(C.Diagnostics.IconCount("ess")==5 and C.Diagnostics.IconCount("uti")==2)
 assert(b1.icon.template=="PingReceiverAttributeTemplate" and b1.icon.ping==true
     and b1.icon.attributes["ping-receiver"]==true and not b1.icon:GetAllowRadialWheel(),"live icons are contextual ping receivers")
 assert(b1.icon:GetIsPingable() and b1.icon:GetTargetInfo().spellID==100,"spell ping target")
@@ -1053,6 +1066,66 @@ do
     b4.catSpell=nil
     T.Refresh(b4,"full")
 end
+-- Item and equipment cooldowns (instructions, GC stopped): a repeated
+-- refresh, and a new cooldown on every refresh. These budgets hold the
+-- instructions measured on 2026-10-02 at q11/merge, before the named modes of
+-- wave 3, plus 2 %.
+do
+    local function Cost(fn)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn()
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    equip.start,equip.length,equip.enable=now,60,1
+    T.Refresh(e13,"item")
+    Budget("time: an unchanged item cooldown refresh",Cost(function() T.Refresh(e13,"item");T.Refresh(b4,"item") end),371)
+    Budget("time: a new item cooldown",Cost(function() equip.start=equip.start+1;T.Refresh(e13,"item") end),427)
+    equip.start,equip.length=0,0
+    T.Refresh(e13,"item")
+    b4.catSpell=nil
+    T.Refresh(b4,"full")
+end
+
+------------------------------------------------------------------ bounded native caches
+-- Curves and formatters are shared per value, and a slider or a color picker
+-- drag makes a new value on every tick: the caches keep two generations of
+-- K.CACHE_LIMIT entries and let the rest be collected.
+do
+    local limit=K.CACHE_LIMIT
+    assert(type(limit)=="number" and limit>=64 and limit<=1024,"the native caches have a limit")
+    local function Live(set)
+        collectgarbage("collect")
+        local n=0
+        for _ in pairs(set) do n=n+1 end
+        return n
+    end
+    assert(K.StepCurve(30,60)==K.StepCurve(30,60) and K.StepCurve(0,100)==K.DesatCurve(),"a value shares its curve")
+    local curves=Live(liveCurves)
+    for from=0,100 do
+        for to=0,100 do K.StepCurve(from,to) end
+    end
+    assert(Live(liveCurves)-curves<=2*limit,"a slider drag kept "..(Live(liveCurves)-curves).." curves alive")
+    local a,b=K.StepCurve(25,75),nil
+    b=K.StepCurve(25,75)
+    assert(a==b and a.points[2][2]==.75,"a repeated value is still shared and right")
+    assert(K.CountdownFormatter(5,1,.5,0)==K.CountdownFormatter(5,1,.5,0),"a value shares its formatter")
+    local formatters=Live(liveFormatters)
+    for i=1,6*limit do K.CountdownFormatter(5,(i%256)/255,math.floor(i/256)/255,.5) end
+    assert(Live(liveFormatters)-formatters<=2*limit,"a color drag kept "..(Live(liveFormatters)-formatters).." formatters alive")
+    local made=createdFormatters
+    local one=K.CountdownFormatter(9,.2,.4,.6)
+    assert(K.CountdownFormatter(9,.2,.4,.6)==one and createdFormatters==made+1,"a formatter just made is a hit")
+    local points=one.points
+    assert(points[1].format=="|cff336699%.0f|r" and points[2].threshold==9,"the formatter keeps its breakpoints")
+end
 
 ------------------------------------------------------------------ Effects: usable and range tint
 do
@@ -1086,18 +1159,18 @@ do
         return count
     end
     -- Binding already took one reference per ranged entry: b1 (100), b3 and s300 (300).
-    assert(b1.rangeSpell==100 and b3.rangeSpell==300 and s300.rangeSpell==300 and E.RangeReferences()==3)
+    assert(b1.rangeSpell==100 and b3.rangeSpell==300 and s300.rangeSpell==300 and C.Diagnostics.RangeReferences()==3)
     assert(Count(300,true)==1 and Count(100,true)==1,"a shared spell is enabled once")
     E.Update(b3);E.Update(s300)
-    assert(E.RangeReferences()==3 and Count(300,true)==1,"updates keep their single reference")
+    assert(C.Diagnostics.RangeReferences()==3 and Count(300,true)==1,"updates keep their single reference")
     local pooled=b3.icon
     C.plans.ess.entries={b1,b2,b4,e13}
     I.Sync("ess")
-    assert(not b3.icon and not b3.rangeSpell and E.RangeReferences()==2 and not pooled.shown)
+    assert(not b3.icon and not b3.rangeSpell and C.Diagnostics.RangeReferences()==2 and not pooled.shown)
     assert(Count(300,false)==0,"range must stay enabled while another icon holds it")
     C.plans.uti.entries={b6}
     I.Sync("uti")
-    assert(Count(300,false)==1 and E.RangeReferences()==1,"the last holder disables once")
+    assert(Count(300,false)==1 and C.Diagnostics.RangeReferences()==1,"the last holder disables once")
     C.plans.ess.entries={b1,b2,b3,b4,e13}
     I.Sync("ess")
     assert(b3.icon==pooled and pooled.shown and b3.rangeSpell==300 and Count(300,true)==2,"pooled icon reused")
@@ -1423,7 +1496,7 @@ do
     local parent=CreateFrame("Frame",nil,nil)
     local icon=I.CreateStandalone(parent)
     I.StyleIcon(icon,uti)
-    assert(icon.w==32 and icon.h==29 and icon.parent==parent and I.Count("ess")==5)
+    assert(icon.w==32 and icon.h==29 and icon.parent==parent and C.Diagnostics.IconCount("ess")==5)
     assert(icon.template==nil and icon.GetIsPingable==nil,"options preview is not a ping target")
     local placeholder=Entry("p1","ess",{texture=134400})
     table.insert(C.plans.ess.entries,placeholder)
@@ -1433,7 +1506,7 @@ do
     -- A bar that stops being a cooldown bar releases its icons.
     C.plans.uti.kind=2
     I.Sync("uti")
-    assert(I.Count("uti")==0 and not b6.icon)
+    assert(C.Diagnostics.IconCount("uti")==0 and not b6.icon)
     C.plans.uti.kind=1
     I.Sync("uti")
     assert(b6.icon and b6.icon.shown)
@@ -1443,12 +1516,12 @@ do
     ess.assist=true
     E.Assist(100)
     E.ReleaseAll()
-    assert(E.RangeReferences()==0 and not b1.icon.glow.shown and not b1.icon.gProc and not b1.icon.ants.shown and not b1.assistOn)
+    assert(C.Diagnostics.RangeReferences()==0 and not b1.icon.glow.shown and not b1.icon.gProc and not b1.icon.ants.shown and not b1.assistOn)
     E.Assist(100)
     assert(b1.icon.ants.shown,"assist paints again after a release")
     ess.assist=false
     I.ReleaseAll()
-    assert(I.Count("ess")==0 and I.Count("uti")==0 and not b1.icon and not b2.icon)
+    assert(C.Diagnostics.IconCount("ess")==0 and C.Diagnostics.IconCount("uti")==0 and not b1.icon and not b2.icon)
     for _,widget in ipairs(all) do
         if widget.kind=="AnimationGroup" and widget.playing then
             assert(false,"an animation kept running after release")

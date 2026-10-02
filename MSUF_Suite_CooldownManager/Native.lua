@@ -1,18 +1,19 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Blizzard's cooldown viewers. Mode 1 turns them off through the reversible
--- CVar. Mode 2 keeps them running at alpha 0, so frames anchored to them
--- (MSUF unit frames, class power, castbars) stay where they are. Nothing
--- here calls a viewer method or writes a viewer field: the only writes are
--- SetAlpha through the context and item mouse (off while mode 2 runs,
--- Blizzard's own state again when it ends).
+-- Blizzard's cooldown viewers. BLIZZARD.OFF turns them off through the
+-- reversible CVar. BLIZZARD.INVISIBLE keeps them running at alpha 0, so
+-- frames anchored to them (MSUF unit frames, class power, castbars) stay
+-- where they are. Nothing here calls a viewer method or writes a viewer
+-- field: the only writes are SetAlpha through the context and item mouse
+-- (off while they run invisibly, Blizzard's own state again when that ends).
 local Native = {}
 C.Native = Native
 local M = C.M
 local CDM = NS.CDM
 local K = C.Const
 local Public = S.Public
+local OFF, INVISIBLE = K.BLIZZARD.OFF, K.BLIZZARD.INVISIBLE
 local CVAR = "cooldownViewerEnabled"
 -- Lets S.RestoreSaved put the CVar back after a crash or a disable.
 M.cvars = M.cvars or {}
@@ -32,24 +33,19 @@ local function Viewer(name)
     if type(frame) == "table" and not NS.Safety.IsForbidden(frame) then return frame end
 end
 
--- MSUF's "follow Blizzard's cooldown bars" toggle; foreign saved data, so
--- every level is type-checked.
-local function Anchored()
-    local db = _G.MSUF_DB
-    local general = type(db) == "table" and db.general or nil
-    return type(general) == "table" and general.anchorToCooldown == true
-end
-
--- An MSUF that knows these bars (MSUF_GetSuiteCooldownAnchor) follows our
--- Essential bar itself, so Blizzard's bars can stay off.
+-- An MSUF that knows these bars (Layout.MSUFAnchor) follows our Essential
+-- bar itself, so Blizzard's bars can stay off.
 function Native.Mode()
     local config = M.config
-    local mode = type(config) == "table" and config.blizzard == 2 and 2 or 1
-    if mode == 1 and Anchored() and type(_G.MSUF_GetSuiteCooldownAnchor) ~= "function" then return 2, S.Text(PROMOTED) end
+    local mode = type(config) == "table" and config.blizzard == INVISIBLE and INVISIBLE or OFF
+    if mode == OFF then
+        local wants, follows = C.Layout.MSUFAnchor()
+        if wants and not follows then return INVISIBLE, S.Text(PROMOTED) end
+    end
     return mode
 end
 
------------------------------------------------------------------- hooks (mode 2)
+------------------------------------------------------------------ hooks (invisible)
 local function AlphaHook(viewer, alpha)
     if not active or guard then return end
     if Public(alpha) and alpha == 0 then return end
@@ -67,7 +63,7 @@ end
 local function AcquireHook(viewer, item)
     if active and type(item) == "table" and not NS.Safety.IsForbidden(item) then Mute(viewer, item) end
 end
--- Installed once per viewer; inert whenever mode 2 is not applied.
+-- Installed once per viewer; inert whenever the invisible mode is not applied.
 local function Hook(viewer)
     if hooked[viewer] then return end
     hooked[viewer] = true
@@ -118,7 +114,7 @@ function Native.Apply()
     if not ctx then return end
     local mode = Native.Mode()
     if mode == applied then return end
-    if mode == 2 then
+    if mode == INVISIBLE then
         active = true
         for i = 1, #VIEWERS do
             local viewer = Viewer(VIEWERS[i])
@@ -127,14 +123,14 @@ function Native.Apply()
                 ctx:Alpha(viewer, 0)
             end
         end
-        -- Back from mode 1: the viewers return and re-acquire under the hook.
-        if applied == 1 then S.RestoreCVar(ID(), CVAR) end
+        -- Back from off: the viewers return and re-acquire under the hook.
+        if applied == OFF then S.RestoreCVar(ID(), CVAR) end
         for i = 1, #VIEWERS do
             local viewer = Viewer(VIEWERS[i])
             if viewer then Silence(viewer, viewer:GetChildren()) end
         end
     else
-        if applied == 2 then RestoreAlpha(ctx) end
+        if applied == INVISIBLE then RestoreAlpha(ctx) end
         ctx:CVar(CVAR, "0")
     end
     applied = mode
@@ -142,9 +138,9 @@ end
 
 function Native.Release()
     local ctx = M.context
-    if applied == 2 and ctx then RestoreAlpha(ctx) end
+    if applied == INVISIBLE and ctx then RestoreAlpha(ctx) end
     active = false
-    if applied == 1 then S.RestoreCVar(ID(), CVAR) end
+    if applied == OFF then S.RestoreCVar(ID(), CVAR) end
     applied = nil
 end
 
@@ -153,7 +149,9 @@ function Native.Applied() return applied end
 -- MSUF (without the suite provider) is attached to Blizzard's Essential bar,
 -- which runs invisibly: our Essential bar then sits on top of it.
 function Native.FollowViewer()
-    return applied == 2 and Anchored() and type(_G.MSUF_GetSuiteCooldownAnchor) ~= "function"
+    if applied ~= INVISIBLE then return false end
+    local wants, follows = C.Layout.MSUFAnchor()
+    return wants and not follows
 end
 
 ------------------------------------------------------------------ first-run capture

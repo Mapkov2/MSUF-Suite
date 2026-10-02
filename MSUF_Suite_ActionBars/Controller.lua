@@ -11,6 +11,8 @@ local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
 AB.RELOAD_MESSAGE = "Reload the UI to restore Blizzard's action bars"
 
 local Finite = S.Finite
+local ENUM = AB.ENUM
+local BAR, VIS = ENUM.BAR, ENUM.VISIBILITY
 
 -- Position (as a CENTER offset) and grid of a shown Blizzard bar.
 local function ImportGeometry(values, index, frame)
@@ -20,10 +22,10 @@ local function ImportGeometry(values, index, frame)
     local width, height = UIParent:GetWidth(), UIParent:GetHeight()
     if not (Finite(x) and Finite(y) and Finite(scale) and Finite(root) and root > 0
         and Finite(width) and Finite(height)) then return end
-    values[keys.Point] = 5
+    values[keys.Point] = ENUM.POINT.CENTER
     values[keys.X] = floor((x * scale / root - width / 2) * 10 + .5) / 10
     values[keys.Y] = floor((y * scale / root - height / 2) * 10 + .5) / 10
-    if index > 8 then return end
+    if index > BAR.LAST_NATIVE then return end
     local rows, shown, horizontal = frame.numRows, frame.numButtonsShowable, frame.isHorizontal
     if Finite(rows) and Finite(shown) and Public(horizontal) and type(horizontal) == "boolean" then
         shown, rows = min(max(floor(shown), 1), 12), min(max(floor(rows), 1), 12)
@@ -40,12 +42,12 @@ end
 -- first-enable mouseover defaults must apply even to hidden Blizzard bars.
 function AB.BuildImport(state)
     local values = { imported = true }
-    for index = 1, 12 do
+    for index = 1, AB.BAR_COUNT do
         local entry = state[index]
         local frame = entry and entry.frame
         if entry and AB.Available(index) then
             local shown = frame ~= nil and frame:IsShown() == true
-            if index >= 2 and index <= 8 and entry.toggle ~= nil then
+            if index >= BAR.FIRST_NATIVE and index <= BAR.LAST_NATIVE and entry.toggle ~= nil then
                 shown = entry.toggle == true
             end
             if frame and shown then ImportGeometry(values, index, frame) end
@@ -228,9 +230,9 @@ local function ApplyLayout()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
         if bar and barWork[index].layout then
-            if index >= 11 then AB.Adopt(index) end
+            if index >= BAR.STANCE then AB.Adopt(index) end
             AB.LayoutBar(bar)
-            if index == 11 then bar.forms = AB.HasForms() end
+            if index == BAR.STANCE then bar.forms = AB.HasForms() end
         end
     end
 end
@@ -427,15 +429,15 @@ local function MouseoverControl(key)
         id = "mouseover", label = S.Text("Show on mouseover"), kind = "toggle",
         get = function()
             local mode = S.Config("actionbars")[key]
-            return mode == 4 or mode == 5
+            return mode == VIS.MOUSEOVER or mode == VIS.MOUSEOVER_OR_COMBAT
         end,
         set = function(on)
             local mode = S.Config("actionbars")[key]
             local value
             if on then
-                value = (mode == 2 or mode == 5) and 5 or 4
+                value = (mode == VIS.COMBAT or mode == VIS.MOUSEOVER_OR_COMBAT) and VIS.MOUSEOVER_OR_COMBAT or VIS.MOUSEOVER
             else
-                value = mode == 5 and 2 or mode == 4 and 1 or mode
+                value = mode == VIS.MOUSEOVER_OR_COMBAT and VIS.COMBAT or mode == VIS.MOUSEOVER and VIS.ALWAYS or mode
             end
             return S.Set("actionbars", key, value)
         end,
@@ -456,7 +458,8 @@ local function Mover(index)
         xKey = keys.X, yKey = keys.Y, pointKey = keys.Point,
         point = function() return NS.ActionBarAnchorPoints[S.Config("actionbars")[keys.Point]] or "CENTER" end,
         isEnabled = function()
-            return AB.Available(index) and S.Config("actionbars")[keys.Visibility] ~= 6 and (index ~= 11 or AB.HasForms())
+            return AB.Available(index) and S.Config("actionbars")[keys.Visibility] ~= VIS.NEVER
+                and (index ~= BAR.STANCE or AB.HasForms())
         end,
         order = 100 + index,
         extraControls = {

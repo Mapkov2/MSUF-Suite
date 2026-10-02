@@ -8,6 +8,8 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
+local PROC_PIXEL, PROC_NONE = AB.ENUM.PROC_GLOW.PIXEL, AB.ENUM.PROC_GLOW.NONE
+local MAIN_BAR = AB.ENUM.BAR.MAIN
 local Painter, Dirty = AB.Painter, AB.Dirty
 local slotMap, Visible, NewChargeEpoch = Painter.slotMap, Painter.Visible, Painter.NewChargeEpoch
 local Tint, Usable, Cooldown, ReleaseRange = Painter.Tint, Painter.Usable, Painter.Cooldown, Painter.ReleaseRange
@@ -32,7 +34,7 @@ local function SlotChanged(_, _, slot)
     local list = slotMap[slot]
     if list then
         local flyout = AB.IsFlyoutSlot(slot)
-        local nativeGlow = M.config.procGlow == 2
+        local nativeGlow = M.config.procGlow == PROC_PIXEL
         for i = 1, #list do
             local rec = list[i]
             gridBars[rec.bar] = true
@@ -91,27 +93,27 @@ local glowSpell, glowShow
 local function GlowMatch(rec)
     local kind = rec.glowKind
     if kind == GLOW_SPELL then
-        if rec.glowID == glowSpell then SetGlow(rec, glowShow and M.config.procGlow ~= 3) end
+        if rec.glowID == glowSpell then SetGlow(rec, glowShow and M.config.procGlow ~= PROC_NONE) end
     elseif kind == GLOW_FLYOUT then
         GlowCheck(rec)
     elseif kind == GLOW_DYNAMIC then
         local id, flyout = ActionSpell(rec.slot)
         if id == glowSpell then
-            SetGlow(rec, glowShow and M.config.procGlow ~= 3)
+            SetGlow(rec, glowShow and M.config.procGlow ~= PROC_NONE)
         elseif flyout then
             GlowCheck(rec)
         end
     end
 end
 local function Glow(_, event, spell)
-    if M.config.procGlow == 3 then return end
+    if M.config.procGlow == PROC_NONE then return end
     if not Public(spell) or type(spell) ~= "number" then
         AB.MarkAll()
         return
     end
     glowSpell, glowShow = spell, event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW"
     Walk(GlowMatch)
-    if M.config.procGlow == 2 then WalkNative(GlowMatch) end
+    if M.config.procGlow == PROC_PIXEL then WalkNative(GlowMatch) end
 end
 
 local function ActiveLossOfControl()
@@ -293,16 +295,18 @@ local optionalEvents = {
     SPELL_ACTIVATION_OVERLAY_GLOW_SHOW = true,
     SPELL_ACTIVATION_OVERLAY_GLOW_HIDE = true,
 }
+-- Context:Event's third argument: the handler also runs in combat.
+local ALLOW_COMBAT = true
 function AB.SyncOptionalEvents()
     local context = M.context
     for event in pairs(optionalEvents) do
         local gamepadEvent = event == "GAME_PAD_ACTIVE_CHANGED" or event == "GAME_PAD_CONNECTED"
             or event == "GAME_PAD_DISCONNECTED" or event == "INPUT_DEVICE_INTERFACE_TRANSITION"
         local wanted = event == "ACTION_RANGE_CHECK_UPDATE" and M.config.rangeColoring
-            or event ~= "ACTION_RANGE_CHECK_UPDATE" and M.config.procGlow ~= 3
+            or event ~= "ACTION_RANGE_CHECK_UPDATE" and M.config.procGlow ~= PROC_NONE
         if gamepadEvent then wanted = NS.Client.isForever and AB.AnyGamepadHidden() end
         if wanted then
-            context:Event(event, EVENTS[event], true)
+            context:Event(event, EVENTS[event], ALLOW_COMBAT)
         else
             context:RemoveEvent(event)
         end
@@ -331,7 +335,7 @@ end
 local ACTIONS_CHANGED = "MSUFSuite.ActionBars.ActionsChanged"
 function AB.OnHeaderAttribute(bar, name, value)
     if not M.active then return end
-    if name == "actionpage" and bar.index == 1 then
+    if name == "actionpage" and bar.index == MAIN_BAR then
         local buttons = bar.buttons
         for i = 1, #buttons do UnmapButton(buttons[i]) end
         AB.PageSlots(bar, value)
@@ -353,7 +357,7 @@ function AB.StartDispatcher()
     local context = M.context
     AB.locActive = ActiveLossOfControl()
     for event, handler in pairs(EVENTS) do
-        if not optionalEvents[event] then context:Event(event, handler, true) end
+        if not optionalEvents[event] then context:Event(event, handler, ALLOW_COMBAT) end
     end
     AB.SyncOptionalEvents()
     AB.cooldownOwner = AB.cooldownOwner or {}

@@ -14,11 +14,16 @@ local NS, S = P.NS, P.Suite
 -- frames exist only after the module is first enabled.
 local AB = { M = {}, SNIPPET = {}, bars = {}, records = {}, owned = {}, adopted = {} }
 P.ActionBars = AB
+-- The named choice values and bar numbers (Core/Catalog/ActionBars.lua).
+AB.ENUM = NS.ActionBarEnum
+-- Read-only views of module state for the contract tests; nothing in the
+-- addon calls them.
+AB.Diagnostics = {}
 -- Narrow visitor for finite QoL animation of real Suite-owned headers. Out
 -- of combat only; combat start stops every header animation (Events.lua).
 function S.VisitPartyActionBars(visitor, owner)
     if not AB.M.active or NS.IsCombatLocked() then return end
-    for index = 1, 10 do
+    for index = 1, AB.ENUM.BAR.LAST_ACTION do
         local bar = AB.bars[index]
         if bar and bar.owned and bar.header and not NS.Safety.IsForbidden(bar.header)
             and bar.header:IsShown() then visitor(owner, bar.header) end
@@ -27,8 +32,9 @@ end
 local M = AB.M
 S.Install("actionbars", M)
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
-local BAR_COUNT, BUTTONS = 12, 12
+local BAR_COUNT, BUTTONS = NS.ActionBarCount, 12
 AB.BAR_COUNT, AB.BUTTONS = BAR_COUNT, BUTTONS
+local BAR, START = AB.ENUM.BAR, AB.ENUM.START
 -- Retail reuses Blizzard's buttons on bars 2-8; Forever keeps suite buttons.
 AB.nativeReuse = not NS.Client.isForever
 
@@ -71,8 +77,8 @@ end
 -- Blizzard action bars, so only the stance and pet bars are checked.
 function AB.Available(index)
     if type(index) ~= "number" or index < 1 or index > BAR_COUNT or index ~= floor(index) then return false end
-    if index == 11 then return AB.Frame("StanceBar") ~= nil and AB.Frame("StanceButton1") ~= nil end
-    if index == 12 then return AB.Frame("PetActionBar") ~= nil and AB.Frame("PetActionButton1") ~= nil end
+    if index == BAR.STANCE then return AB.Frame("StanceBar") ~= nil and AB.Frame("StanceButton1") ~= nil end
+    if index == BAR.PET then return AB.Frame("PetActionBar") ~= nil and AB.Frame("PetActionButton1") ~= nil end
     return true
 end
 S.ActionBarAvailable = AB.Available
@@ -88,7 +94,8 @@ function AB.Grid(n, rows, vertical)
     return per, ceil(n / per), r
 end
 -- Cell of 0-based button i. Row 0 is the top row and column 0 the left
--- column for "Top left"; 2 mirrors columns, 3 mirrors rows, 4 both.
+-- column for "Top left"; a right corner mirrors the columns, a bottom corner
+-- the rows.
 function AB.Cell(i, columns, rows, r, vertical, start)
     local col, row
     if vertical then
@@ -96,8 +103,8 @@ function AB.Cell(i, columns, rows, r, vertical, start)
     else
         col, row = i % columns, floor(i / columns)
     end
-    if start == 2 or start == 4 then col = columns - 1 - col end
-    if start == 3 or start == 4 then row = rows - 1 - row end
+    if start == START.TOP_RIGHT or start == START.BOTTOM_RIGHT then col = columns - 1 - col end
+    if start == START.BOTTOM_LEFT or start == START.BOTTOM_RIGHT then row = rows - 1 - row end
     return col, row
 end
 
@@ -112,7 +119,7 @@ end
 -- Stance buttons follow the class's forms; everything else the setting.
 function AB.Count(bar, config)
     local n = config[bar.key.Buttons]
-    if bar.index == 11 then
+    if bar.index == BAR.STANCE then
         local forms = GetNumShapeshiftForms()
         n = min(n, S.Public(forms) and type(forms) == "number" and forms or 0)
     end
@@ -213,7 +220,7 @@ local function NewHeader(index)
     header:SetAttribute("_onstate-vis", AB.SNIPPET.VIS)
     local background = S.CreateTexture(header, nil, "BACKGROUND", nil, -8)
     background:Hide()
-    local native = AB.nativeReuse and index >= 2 and index <= 8
+    local native = AB.nativeReuse and index >= BAR.FIRST_NATIVE and index <= BAR.LAST_NATIVE
     if native then
         for i = 1, BUTTONS do
             if not AB.Frame(AB.NATIVE_BUTTONS[index] .. i) then
@@ -226,7 +233,7 @@ local function NewHeader(index)
     -- whose look is current).
     local bar = {
         index = index, header = header, buttons = {}, filled = {}, background = background, key = AB.KEYS[index],
-        owned = index <= 10, native = native, styleGen = 0,
+        owned = index <= BAR.LAST_ACTION, native = native, styleGen = 0,
     }
     if native then header:SetAttribute("actionpage", math.floor((AB.FIRST_SLOT[index] - 1) / 12) + 1) end
     AB.bars[index] = bar

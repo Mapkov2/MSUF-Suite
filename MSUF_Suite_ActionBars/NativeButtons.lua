@@ -11,6 +11,8 @@ local Public = S.Public
 local Dispatch = S.Dispatch
 local Painter = AB.Painter
 local api = Painter.api
+local PROC_BLIZZARD, PROC_PIXEL = AB.ENUM.PROC_GLOW.BLIZZARD, AB.ENUM.PROC_GLOW.PIXEL
+local OUT_OF_RANGE = S.USABLE.OUT_OF_RANGE
 local Tint, AcquireRange, Usable, CooldownFeedback = Painter.Tint, Painter.AcquireRange, Painter.Usable, Painter.CooldownFeedback
 local GlowCheck, SetGlow = Painter.GlowCheck, Painter.SetGlow
 
@@ -87,7 +89,7 @@ end
 local function NativeAlertPost(_, button)
     local rec = AB.records[button]
     if rec and M.active then AB.RaiseDecoration(rec) end
-    if not rec or not rec.native or not M.active or M.config.procGlow == 1 then return end
+    if not rec or not rec.native or not M.active or M.config.procGlow == PROC_BLIZZARD then return end
     AB.SetNativeAlertAlpha(button, 0)
 end
 
@@ -109,7 +111,7 @@ local function HookNativeShared()
 end
 
 local function NativeColor(rec)
-    local wasRangeTint = rec.tint == 4
+    local wasRangeTint = rec.tint == OUT_OF_RANGE
     AcquireRange(rec)
     if M.config.rangeColoring or wasRangeTint then
         rec.tint = nil
@@ -127,7 +129,7 @@ local function RefreshNativeButton(rec)
     NativeCount(rec)
     NativeState(rec)
     NativeFeedback(rec)
-    if M.config.procGlow == 2 then
+    if M.config.procGlow == PROC_PIXEL then
         GlowCheck(rec)
     else
         SetGlow(rec, false)

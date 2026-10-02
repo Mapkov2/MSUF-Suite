@@ -131,8 +131,9 @@ AB.IsFlyoutSlot = IsFlyout
 function AB.ClickRouted(rec)
     if rec.native then return false end
     local index = rec.bar.index
-    if index >= 9 then return true end
-    if index == 1 and AB.CustomPaging(M.config) then return true end
+    local BAR = AB.ENUM.BAR
+    if index >= BAR.FIRST_EXTRA then return true end
+    if index == BAR.MAIN and AB.CustomPaging(M.config) then return true end
     return IsFlyout(rec.slot) or IsFlyout(rec.base)
 end
 

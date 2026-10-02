@@ -12,11 +12,18 @@ local NS, S = P.NS, P.Suite
 -- plain one Blizzard shows on the main bar.
 local AB = P.ActionBars
 local M = AB.M
-local MODES = { "show", "[combat] show; hide", "[combat] hide; show", "fade", "[combat] show; fade", "hide" }
+local ENUM = AB.ENUM
+local VIS, BAR = ENUM.VISIBILITY, ENUM.BAR
+-- The state driver body of each visibility mode.
+local MODES = {
+    [VIS.ALWAYS] = "show", [VIS.COMBAT] = "[combat] show; hide", [VIS.OUT_OF_COMBAT] = "[combat] hide; show",
+    [VIS.MOUSEOVER] = "fade", [VIS.MOUSEOVER_OR_COMBAT] = "[combat] show; fade", [VIS.NEVER] = "hide",
+}
 local PLACEABLE = { spell = true, item = true, macro = true, mount = true, companion = true, flyout = true, equipmentset = true,
     battlepet = true, petaction = true, outfit = true, toy = true }
 -- Reveal bits: 2 = drag seen by Lua (out of combat), 4 = secure drag from a
--- suite button, 8 = placement preview. Bit 1 is never a reveal.
+-- suite button, 8 = placement preview, 16 = spellbook or macro panel open.
+-- Bit 1 is never a reveal.
 local REVEAL = {}
 for _, bit in ipairs({ 2, 4, 8, 16 }) do
     REVEAL[bit] = {
@@ -37,13 +44,13 @@ AB.HasForms = HasForms
 -- (Never, the gamepad rule, a stance bar without forms) stays hidden.
 function AB.VisibilityDriver(index, mode, forms, gamepad, reveal)
     if gamepad and M.config[AB.KEYS[index].HideGamepad] then return "hide" end
-    if mode == 6 then return "hide" end
+    if mode == VIS.NEVER then return "hide" end
     local body = MODES[mode] or "show"
     if reveal then body = "[nocombat] show; " .. body end
-    if index == 11 then
+    if index == BAR.STANCE then
         if not forms then return "hide" end
         return "[petbattle][vehicleui][possessbar] hide; " .. body
-    elseif index == 12 then
+    elseif index == BAR.PET then
         return "[petbattle][nopet] hide; " .. body
     end
     return "[petbattle][vehicleui] hide; " .. body
@@ -203,14 +210,14 @@ local function ApplyBarVisibility(bar, config, forms, gamepad)
     local keys = bar.key
     local mode = config[keys.Visibility]
     local driver = AB.VisibilityDriver(bar.index, mode, forms, gamepad, AB.panelsOpen)
-    local forced = SetForced(bar, "forceshow", S.editMode and mode ~= 6)
+    local forced = SetForced(bar, "forceshow", S.editMode and mode ~= VIS.NEVER)
     if bar.visDriver ~= driver then
         bar.visDriver = driver
         RegisterStateDriver(bar.header, "vis", driver)
     end
     -- The driver only re-runs the handler when its state changes.
     if forced then AB.Execute(bar.header, AB.SNIPPET.VIS) end
-    local fade = mode == 4 or mode == 5
+    local fade = mode == VIS.MOUSEOVER or mode == VIS.MOUSEOVER_OR_COMBAT
     -- EnableMouseMotion alone leaves the header non-interactive on
     -- Forever. Buttons continue to receive their own clicks.
     bar.header:EnableMouse(fade and not config[keys.ClickThrough])

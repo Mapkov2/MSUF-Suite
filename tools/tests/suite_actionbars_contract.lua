@@ -1657,6 +1657,17 @@ assert(calls.usableBySlot[1]==calls.rangeGateReads,
 actions[1].usable=true
 Event("ACTION_USABLE_CHANGED",{{slot=1,usable=true,noMana=false}})
 assert(Button(1,1).button.icon.vertex[1]==1,"owned action did not accept usable payload")
+-- Hot events of a visible suite button (instructions, GC stopped): usable
+-- reports and range edges repaint its tint, proc glows show and hide. These
+-- budgets hold the instructions measured on 2026-10-02 at q11/merge, before
+-- the named modes of wave 3, plus 2 %.
+do
+    local function Usable(on) Event("ACTION_USABLE_CHANGED",{{slot=61,usable=on,noMana=not on}}) end
+    Budget("actionbars: a usable report pair",Cost(function() Usable(true);Usable(false) end),461)
+    Budget("actionbars: a range edge pair",Cost(function()
+        Event("ACTION_RANGE_CHECK_UPDATE",61,false,true);Event("ACTION_RANGE_CHECK_UPDATE",61,true,true)
+    end),412)
+end
 -- Usability follows Blizzard's buttons (ActionButton.lua, Retail and
 -- Forever): slot payloads, plus one full re-read when the mount display
 -- changes; target changes walk nothing. Suite buttons on slots the payload
@@ -1701,10 +1712,10 @@ do
     bindings.MSUFSUITE_BAR9_BUTTON1={"CTRL-BUTTON4","MOUSEWHEELUP"}
     AB.Mark("keys");RunTimers()
 end
-local references=AB.RangeReferences()
+local references=AB.Diagnostics.RangeReferences()
 assert(references>0)
 assert(S.Set("actionbars","bar2Visibility",6))
-assert(not rangeEnabled[61] and AB.RangeReferences()<references,"hidden bars release range checks")
+assert(not rangeEnabled[61] and AB.Diagnostics.RangeReferences()<references,"hidden bars release range checks")
 assert(S.Set("actionbars","bar2Visibility",1))
 RunTimers()
 assert(rangeEnabled[61],"shown bars re-acquire")
@@ -1727,6 +1738,10 @@ assert(infoReads-reads==flyouts,"a proc glow event read action info for spell bu
 local alert=b61.SpellActivationAlert
 assert(alert and alert.shown and alert.ProcStartAnim.playing and alert.width==b61.width*1.4,
     "Blizzard spell alert on the matching button")
+-- A proc glow pair on the Blizzard alert (instructions, GC stopped).
+Budget("actionbars: a proc glow pair, Blizzard alert",Cost(function()
+    Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61);Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
+end),1555)
 assert(not next(alerts),"a suite button entered Blizzard's shared spell alert table")
 overlayed[61]=nil
 Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61)
@@ -1735,6 +1750,9 @@ Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",Secret());RunTimers()
 assert(S.Set("actionbars","procGlow",2))
 overlayed[61]=true;Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
 assert(not alerts[b61] and Button(2,1).glowEdges and Button(2,1).glowEdges[1].shown,"pixel border glow")
+Budget("actionbars: a proc glow pair, pixel border",Cost(function()
+    Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61);Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
+end),1820)
 -- A new highlight color reaches a pixel glow that is already showing.
 local highlightColor=c.interactionColor
 assert(not c.interactionClassColor and S.Set("actionbars","interactionColor","00ff00"))
@@ -1752,10 +1770,10 @@ assert(S.Set("actionbars","procGlow",2));RunTimers()
 assert(M.context.frame.events.SPELL_ACTIVATION_OVERLAY_GLOW_SHOW,
     "enabling proc glows did not restore their listener")
 assert(S.Set("actionbars","rangeColoring",false));RunTimers()
-assert(not M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.RangeReferences()==0,
+assert(not M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.Diagnostics.RangeReferences()==0,
     "disabled range coloring kept range checks or its event listener")
 assert(S.Set("actionbars","rangeColoring",true));RunTimers()
-assert(M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.RangeReferences()>0,
+assert(M.context.frame.events.ACTION_RANGE_CHECK_UPDATE and AB.Diagnostics.RangeReferences()>0,
     "enabling range coloring did not restore its listener and checks")
 -- Slot changes in combat repaint, park later.
 combat=true
@@ -2246,7 +2264,7 @@ assert(overrideClears==clears+1 and not next(overrides),"disable clears override
 assert(S.Status("actionbars")==AB.RELOAD_MESSAGE,"reload message after disable")
 for index=1,12 do assert(not Bar(index).header.shown,"suite bars hide on disable") end
 assert(not next(M.context.frame.events),"no events while disabled")
-assert(AB.RangeReferences()==0)
+assert(AB.Diagnostics.RangeReferences()==0)
 local count=created
 assert(S.Set("actionbars","enabled",true))
 RunTimers()

@@ -68,7 +68,11 @@ local CDM=NS.CDM
 
 ------------------------------------------------------------------ WoW world
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
-Enum={SpellBookSpellBank={Player=0,Pet=1},CompressionMethod={Deflate=0}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
+-- Blizzard_APIDocumentationGenerated/CooldownViewerConstantsDocumentation.lua
+Enum={SpellBookSpellBank={Player=0,Pet=1},CompressionMethod={Deflate=0},
+    CooldownViewerCategory={Essential=0,Utility=1,TrackedBuff=2,TrackedBar=3,GroupBuff=4,SpecAgnosticEssential=5,SpecAgnosticTracked=6,
+    EquipSlotEssential=7,EquipSlotTracked=8}}
 local SECRET_ID=Secret()
 local sets={[0]={101,102,103,104,107},[1]={111,112,SECRET_ID},[2]={201,202,203},[3]={301},[4]={},
     [5]={501,502,101},[6]={601},[7]={701,702},[8]={801}}
@@ -178,7 +182,7 @@ end
 local S={Public=function(v) return not IsSecret(v) end,Text=function(v) return v end,
     CreateFrame=function(...) return CreateFrame(...) end}
 local P={NS=NS,Suite=S}
-P.CDM={M={},EMPTY={},state={raidEssentials=false},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
+P.CDM={M={},EMPTY={},Diagnostics={},state={raidEssentials=false},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
 local C=P.CDM
 -- The shared constants and helpers load first, as in the TOC.

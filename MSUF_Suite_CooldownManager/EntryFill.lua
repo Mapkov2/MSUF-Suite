@@ -25,7 +25,9 @@ local hideItem, hideCategory = {}, {}
 for i = 1, #CONSUMABLES do
     hideItem[CONSUMABLES[i].item], hideCategory[CONSUMABLES[i].category] = true, true
 end
-local SOURCE_FAMILY = { s = 1, i = 1, e = 1, a = 2, d = 2 }
+local FAMILY = C.Const.FAMILY
+local COOLDOWN_FAMILY, AURA_FAMILY = FAMILY.COOLDOWN, FAMILY.AURA
+local SOURCE_FAMILY = { s = COOLDOWN_FAMILY, i = COOLDOWN_FAMILY, e = COOLDOWN_FAMILY, a = AURA_FAMILY, d = AURA_FAMILY }
 
 -- Keys are parsed once per distinct string.
 local srcOf, idOf = {}, {}
@@ -140,9 +142,9 @@ local function FillBlizzard(entry, rec)
     entry.selfAura, entry.hasAura, entry.charges, entry.known = rec.selfAura, rec.hasAura, rec.charges, rec.known
     entry.equipSlot, entry.spellCategory, entry.hideEmpty = rec.equipSlot, rec.spellCategory, hideCategory[rec.spellCategory] == true
     entry.itemID = rec.equipSlot and Catalog.EquipItem(rec.equipSlot) or nil
-    entry.hasRange = family == 1 and base ~= nil and HasRange(base)
+    entry.hasRange = family == COOLDOWN_FAMILY and base ~= nil and HasRange(base)
     entry.texture, entry.name = Catalog.RecordTexture(rec), Catalog.RecordName(rec)
-    if family == 2 or rec.hasAura then
+    if family == AURA_FAMILY or rec.hasAura then
         entry.auraIDs = AuraSet(entry.auraIDs, base, override, rec.tooltip, rec.linked)
         entry.unit = AuraUnit(base, override, rec.tooltip, rec.linked)
     else
@@ -156,7 +158,7 @@ local function FillSpell(entry, id)
     local base = BaseSpell(id)
     local override = OverrideOf(base)
     local spell = override or base
-    Clear(entry, "s", id, 1)
+    Clear(entry, "s", id, COOLDOWN_FAMILY)
     SetOverride(entry, override)
     entry.base, entry.spell = base, spell
     entry.charges, entry.known, entry.hasRange = Charged(spell), Known(base), HasRange(base)
@@ -168,7 +170,7 @@ local function FillItem(entry, id)
     local icon = Catalog.ItemIcon(id)
     if not icon then return false end
     local spell = Catalog.ItemSpell(id)
-    Clear(entry, "i", id, 1)
+    Clear(entry, "i", id, COOLDOWN_FAMILY)
     SetOverride(entry, nil)
     entry.base, entry.spell, entry.itemID, entry.known, entry.hideEmpty = spell, spell, id, true, hideItem[id] == true
     entry.texture, entry.name = icon, Catalog.ItemName(id)
@@ -178,7 +180,7 @@ end
 local function FillEquip(entry, slot)
     local item = Catalog.EquipItem(slot)
     local spell = item and Catalog.ItemSpell(item) or nil
-    Clear(entry, "e", slot, 1)
+    Clear(entry, "e", slot, COOLDOWN_FAMILY)
     SetOverride(entry, nil)
     entry.base, entry.spell, entry.equipSlot, entry.itemID, entry.known = spell, spell, slot, item, item ~= nil
     entry.texture = Catalog.EquipTexture(slot)
@@ -189,7 +191,7 @@ end
 local function FillAura(entry, src, id)
     local name, texture = Catalog.SpellName(id), Catalog.SpellTexture(id)
     if not (name or texture) then return false end
-    Clear(entry, src, id, 2)
+    Clear(entry, src, id, AURA_FAMILY)
     SetOverride(entry, nil)
     entry.base, entry.spell, entry.known = id, id, true
     entry.selfAura, entry.hasAura = src == "a", true

@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Settings in and out (spec 8.1). Refresh runs on every setting change
+-- Settings in and out. Refresh runs on every setting change
 -- (slider ticks included): the reader turns the flat settings into per-bar
 -- views in place, bumps the generation of each group that changed and marks
 -- only the work that setting needs (the dirty mask, Flush.lua). Settings go
@@ -74,7 +74,7 @@ Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSi
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.
 local FRESH = { layout = true, style = true, behavior = true, index = true, visible = true, resolve = true, named = true }
-C.SettingWork = WORK
+C.Diagnostics.SettingWork = WORK
 -- A bar setting nobody listed above does all of it, so a new setting is
 -- never silently ignored (the action bars do the same).
 local EVERYTHING = {}
@@ -299,7 +299,7 @@ local function ResetDefaults(values, config)
             local def = SLOTS[i]
             local keys = KEYS[def.key]
             local anchor = values[keys.anchor] or config[keys.anchor]
-            if anchor ~= 1 then
+            if anchor ~= K.ANCHOR.FREE then
                 if version < 2 and values[keys.x] == nil then values[keys.x], values[keys.y] = 0, 0 end
             elseif center and values[keys.x] == nil then
                 if def.custom and config[keys.on] ~= true then

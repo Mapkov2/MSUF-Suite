@@ -22,6 +22,7 @@ local K = C.Const
 local SWIPE = K.SWIPE
 local NORMAL_SWIPE, REVERSED_SWIPE, HIDDEN_SWIPE = SWIPE.NORMAL, SWIPE.REVERSED, SWIPE.HIDDEN
 local Choice = K.Choice
+local ICON_LEFT, ICON_RIGHT = K.BAR_ICON_SIDE.LEFT, K.BAR_ICON_SIDE.RIGHT
 local AuraButtons = {}
 C.AuraButtons = AuraButtons
 
@@ -43,9 +44,10 @@ local TEXT_DEFAULT = {}
 local NO_ENTRY = {}
 local TIMER = Enum.StatusBarTimerDirection
 local IMMEDIATE = Enum.StatusBarInterpolation.Immediate
--- barFill 1 drains, 2 fills.
-local BAR_OPTS = { { direction = TIMER.RemainingTime, interpolation = IMMEDIATE },
-    { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
+-- Options by the bar's fill: draining counts the remaining time down, filling
+-- the elapsed time up.
+local BAR_OPTS = { [K.BAR_FILL.DRAIN] = { direction = TIMER.RemainingTime, interpolation = IMMEDIATE },
+    [K.BAR_FILL.FILL] = { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
 local GOLD = K.GLOW_GOLD
 local BAR_LEVEL, ICON_LEVEL = K.AURA_LEVEL, K.AURA_ICON_LEVEL
 local PANDEMIC = { 1, .3, .15 }
@@ -57,8 +59,9 @@ local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font
 local NO_MARKS = {}
 
 local sig = {}
-local textOpts = {} -- duration text options per countdown formatter
-local countOpts = {} -- stack text options per (N, color)
+local textOpts = K.NewCache()  -- duration text options per countdown formatter
+local countOpts = K.NewCache() -- stack text options per (N, color)
+local Recall, Remember = K.Recall, K.Remember
 local barOpts = {}   -- SetApplicationBar options (Blizzard copies them)
 local sensed = {}    -- kit sensor frame -> its button record
 -- Batch button -> its sensor, made inside initializeFrame: the client seals
@@ -78,19 +81,27 @@ local ApplyGlow, ApplyStack, ApplyCombatGate = Glows.ApplyGlow, Glows.ApplyStack
 -- that Blizzard copies into each button, around the shared countdown
 -- formatter (Const). The fallbacks must ride on the binding, and without a
 -- formatter on it no text renders at all.
+-- Every entry of a sync asks for the same few signatures, so the last answer
+-- is kept: a repeat costs four compares.
+local lastSeconds, lastR, lastG, lastB, lastOpts
 local function TextOpts(seconds)
     local state = C.state
-    local formatter = K.CountdownFormatter(seconds, state.thR, state.thG, state.thB)
-    local opts = textOpts[formatter]
-    if opts then return opts end
+    local r, g, b = state.thR, state.thG, state.thB
+    if lastOpts and seconds == lastSeconds and r == lastR and g == lastG and b == lastB then return lastOpts end
+    local formatter = K.CountdownFormatter(seconds, r, g, b)
+    local opts = textOpts.young[formatter] or Recall(textOpts, formatter)
+    if opts then
+        lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
+        return opts
+    end
     local binding = C_DurationUtil.CreateDurationTextBinding()
     binding:SetFormatter(formatter)
     binding:SetZeroDurationText("")
     binding:SetExpiredText("")
     binding:SetUpdateInterval(.1)
     binding:SetEnabled(true)
-    opts = { binding = binding }
-    textOpts[formatter] = opts
+    opts = Remember(textOpts, formatter, { binding = binding })
+    lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
     return opts
 end
 
@@ -106,16 +117,14 @@ local function CountOpts(ov)
     local rgb = type(hex) == "string" and #hex == 6 and tonumber(hex, 16)
     if not rgb then return nil end
     local key = n * 16777216 + rgb
-    local opts = countOpts[key]
+    local opts = countOpts.young[key] or Recall(countOpts, key)
     if opts then return opts end
     local formatter = C_StringUtil.CreateNumericRuleFormatter()
     local points = { { threshold = 0, format = "" } }
     if n > 2 then points[2] = { threshold = 2, format = "%d" } end
     points[#points + 1] = { threshold = n, format = "|cff" .. hex .. "%d|r" }
     formatter:SetBreakpoints(points)
-    opts = { formatter = formatter }
-    countOpts[key] = opts
-    return opts
+    return Remember(countOpts, key, { formatter = formatter })
 end
 
 ------------------------------------------------------------------ look
@@ -163,7 +172,7 @@ local function Look(rec, view)
         lk.fr, lk.fg, lk.fb = r, g, b
         lk.bgA = (view.barBgAlpha or K.BAR_BG_ALPHA) / 100
         lk.icon = view.barIcon ~= false
-        lk.side = view.barIconSide == 2 and 2 or 1
+        lk.side = view.barIconSide == ICON_RIGHT and ICON_RIGHT or ICON_LEFT
         -- Stack fill maximum and markers are looks, not region sets: a new
         -- value restyles the buttons in place (application bar rebound,
         -- pooled markers placed), never builds another container.
@@ -260,12 +269,17 @@ local function MarkValues(rec, lk)
     return values
 end
 
+-- Diagnostics: the stacks a sample row's markers stand for.
+function C.Diagnostics.MarkerValues(row)
+    local rec = row.rec
+    return rec.stackFill and MarkValues(rec, rec.lk) or NO_MARKS
+end
+
 -- Markers come from a per-button pool (made while the button accepts
 -- writes, never freed): a new maximum or marker list places them again.
 -- Sample rows are our own frames and take the pixel-layout policy.
 local function PlaceMarkers(rec, part, lk, bar)
     local values = rec.stackFill and MarkValues(rec, lk) or NO_MARKS
-    part.markerValues = values
     local markers = part.markers
     if not markers then
         markers = {}
@@ -288,6 +302,75 @@ local function PlaceMarkers(rec, part, lk, bar)
     for i = #values + 1, #markers do markers[i]:Hide() end
 end
 
+-- The regions of a buff bar's button: icon, background, fill, markers and the
+-- time and name texts.
+local function StyleBar(rec, part, lk, b, icon)
+    local bw, px = lk.bw, lk.px
+    local left = lk.side == ICON_LEFT
+    local inner = lk.h - 2 * bw
+    local point = left and "TOPLEFT" or "TOPRIGHT"
+    icon:SetPoint(point, b, point, left and bw or -bw, -bw)
+    icon:SetSize(inner, inner)
+    icon:SetShown(lk.icon)
+    local lead = lk.icon and lk.h or bw
+    local bg, bar = part.bg, part.bar
+    bg:ClearAllPoints()
+    bg:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
+    bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
+    bg:SetTexture(lk.tex)
+    bg:SetVertexColor(lk.fr * .25, lk.fg * .25, lk.fb * .25, lk.bgA)
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPLEFT", b, "TOPLEFT", left and lead or bw, -bw)
+    bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", left and -bw or -lead, bw)
+    bar:SetStatusBarTexture(lk.tex)
+    bar:SetStatusBarColor(lk.fr, lk.fg, lk.fb, 1)
+    if rec.stackFill or part.markers then PlaceMarkers(rec, part, lk, bar) end
+    -- The fill's range is its application bar's maximum: a bound button
+    -- is rebound in place when the maximum changes.
+    if rec.stackFill and part.bound and part.appMax ~= lk.smax then
+        part.appMax = lk.smax
+        barOpts.maxApplications = lk.smax
+        b:SetApplicationBar(bar, barOpts)
+    end
+    local dur, name = part.dur, part.name
+    if dur then
+        Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
+        dur:ClearAllPoints()
+        dur:SetPoint("RIGHT", bar, "RIGHT", -4 * px, 0)
+        dur:SetJustifyH("RIGHT")
+    end
+    if name then
+        Text(name, lk.cs, lk.cr, lk.cg, lk.cb, lk)
+        name:ClearAllPoints()
+        -- Room for the time text without anchoring to a sealed string.
+        name:SetPoint("LEFT", bar, "LEFT", 4 * px, 0)
+        name:SetPoint("RIGHT", bar, "RIGHT", dur and -floor(lk.cs * 2.6 + .5) or -4 * px, 0)
+        name:SetJustifyH("LEFT")
+        name:SetWordWrap(false)
+    end
+end
+
+-- The regions of an icon or overlay button: the swipe and the countdown.
+local function StyleIcon(rec, part, lk, b, icon)
+    local bw = lk.bw
+    icon:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
+    icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
+    local cd = part.cd
+    if rec.role == "over" then
+        cd:SetSwipeColor(GOLD[1], GOLD[2], GOLD[3], .55)
+        cd:SetDrawEdge(false)
+    else
+        cd:SetSwipeColor(0, 0, 0, lk.swipe)
+        cd:SetDrawEdge(lk.edge)
+    end
+    local dur = part.dur
+    if dur then
+        Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
+        dur:ClearAllPoints()
+        dur:SetPoint("CENTER", icon, "CENTER", 0, 0)
+    end
+end
+
 -- Every region of one button from rec.lk; idempotent (init and restyle).
 local function Style(rec, part)
     local lk, b = rec.lk, part.button
@@ -297,65 +380,9 @@ local function Style(rec, part)
     local icon = part.icon
     icon:ClearAllPoints()
     if rec.role == "bar" then
-        local left = lk.side == 1
-        local inner = lk.h - 2 * bw
-        local point = left and "TOPLEFT" or "TOPRIGHT"
-        icon:SetPoint(point, b, point, left and bw or -bw, -bw)
-        icon:SetSize(inner, inner)
-        icon:SetShown(lk.icon)
-        local lead = lk.icon and lk.h or bw
-        local bg, bar = part.bg, part.bar
-        bg:ClearAllPoints()
-        bg:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
-        bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
-        bg:SetTexture(lk.tex)
-        bg:SetVertexColor(lk.fr * .25, lk.fg * .25, lk.fb * .25, lk.bgA)
-        bar:ClearAllPoints()
-        bar:SetPoint("TOPLEFT", b, "TOPLEFT", left and lead or bw, -bw)
-        bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", left and -bw or -lead, bw)
-        bar:SetStatusBarTexture(lk.tex)
-        bar:SetStatusBarColor(lk.fr, lk.fg, lk.fb, 1)
-        if rec.stackFill or part.markers then PlaceMarkers(rec, part, lk, bar) end
-        -- The fill's range is its application bar's maximum: a bound button
-        -- is rebound in place when the maximum changes.
-        if rec.stackFill and part.bound and part.appMax ~= lk.smax then
-            part.appMax = lk.smax
-            barOpts.maxApplications = lk.smax
-            b:SetApplicationBar(bar, barOpts)
-        end
-        local dur, name = part.dur, part.name
-        if dur then
-            Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
-            dur:ClearAllPoints()
-            dur:SetPoint("RIGHT", bar, "RIGHT", -4 * px, 0)
-            dur:SetJustifyH("RIGHT")
-        end
-        if name then
-            Text(name, lk.cs, lk.cr, lk.cg, lk.cb, lk)
-            name:ClearAllPoints()
-            -- Room for the time text without anchoring to a sealed string.
-            name:SetPoint("LEFT", bar, "LEFT", 4 * px, 0)
-            name:SetPoint("RIGHT", bar, "RIGHT", dur and -floor(lk.cs * 2.6 + .5) or -4 * px, 0)
-            name:SetJustifyH("LEFT")
-            name:SetWordWrap(false)
-        end
+        StyleBar(rec, part, lk, b, icon)
     else
-        icon:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
-        icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
-        local cd = part.cd
-        if rec.role == "over" then
-            cd:SetSwipeColor(GOLD[1], GOLD[2], GOLD[3], .55)
-            cd:SetDrawEdge(false)
-        else
-            cd:SetSwipeColor(0, 0, 0, lk.swipe)
-            cd:SetDrawEdge(lk.edge)
-        end
-        local dur = part.dur
-        if dur then
-            Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
-            dur:ClearAllPoints()
-            dur:SetPoint("CENTER", icon, "CENTER", 0, 0)
-        end
+        StyleIcon(rec, part, lk, b, icon)
     end
     icon:SetTexCoord(lk.l, lk.r, lk.t, lk.b)
     local count, pos = part.count, lk.sp

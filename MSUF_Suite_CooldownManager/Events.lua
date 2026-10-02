@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- The event map (spec 8.3), spec detection, the assisted-combat source and
+-- The event map, specialization detection, the assisted-combat source and
 -- the combat edges. Events register only while something consumes them.
 -- Cooldown events refresh their entries at once, inside the event, because
 -- isOnGCD is only trustworthy there; the other hot events mark entries and
@@ -14,7 +14,8 @@ local issecret = _G.issecretvalue
 local EMPTY = C.EMPTY
 local pairs, type, next = pairs, type, next
 local K = C.Const
-local GCD = K.GCD_CATEGORY
+local GCD, GCD_SPELL = K.GCD_CATEGORY, K.GCD_SPELL
+local TRINKET1, TRINKET2 = K.TRINKET1, K.TRINKET2
 local KIND, AURA_KINDS = K.KIND, K.AURA_KINDS
 local QUIET = 2   -- seconds without sounds after loading screens and activation
 local Flush, Settings = C.Flush, C.Settings
@@ -111,7 +112,7 @@ local function SetCategorySpell(entry) entry.catSpell = curSpell end
 -- that is secret counts as absent.
 local function OnCooldown(_, _, spellID, baseSpellID, category, recovery, itemID)
     stamp = stamp + 1
-    if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == 61304
+    if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == GCD_SPELL
         or not issecret(recovery) and recovery == GCD) then Effects.RecommendationGCD() end
     if issecret(spellID) or spellID == nil then return EachCooldown(RefreshCooldown) end
     local item = not issecret(itemID) and itemID or nil
@@ -290,7 +291,7 @@ function Events.OnLayoutChanged()
 end
 -- Trinket slots and slots an entry tracks; other gear changes cost a lookup.
 local function OnEquipment(_, _, slot)
-    if Public(slot) and slot ~= nil and slot ~= 13 and slot ~= 14 and not Index.byEquip[slot] then return end
+    if Public(slot) and slot ~= nil and slot ~= TRINKET1 and slot ~= TRINKET2 and not Index.byEquip[slot] then return end
     dirty.catalog, dirty.resolve = true, true
     Schedule()
 end
@@ -347,7 +348,7 @@ local function OnScale()
     Schedule()
 end
 
------------------------------------------------------------------- assisted combat (spec 10.4)
+------------------------------------------------------------------ assisted combat
 -- With Blizzard's highlight on, its own change callback feeds us; otherwise
 -- a 0.2 s poll runs in combat only.
 local assistMode, assistTicker
@@ -372,7 +373,11 @@ local function StartPoll()
     assistTicker = C_Timer.NewTicker(.2, Poll)
     Poll()
 end
+-- Blizzard's highlight callback source is AssistedCombatManager, a table
+-- only Retail loads (Forever's Blizzard_ActionBar.toc lists its file for the
+-- mainline game type): on Forever the poll is the only source.
 local function HighlightOn()
+    if NS.Client.isForever then return false end
     local value = C_CVar.GetCVar("assistedCombatHighlight")
     return Public(value) and value == "1"
 end
@@ -453,13 +458,15 @@ local function OnCombatEnd()
     end
 end
 
------------------------------------------------------------------- event map (spec 8.3)
+------------------------------------------------------------------ event map
+-- Context:Event's third argument: the handler also runs in combat.
+local ALLOW_COMBAT = true
 local function Want(event, on, handler)
     on = on and true or false
     if (events[event] == true) == on then return end
     events[event] = on or nil
     if on then
-        M.context:Event(event, handler, true)
+        M.context:Event(event, handler, ALLOW_COMBAT)
     else
         M.context:RemoveEvent(event)
     end

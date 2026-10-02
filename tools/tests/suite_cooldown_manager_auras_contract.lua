@@ -390,6 +390,7 @@ GetPhysicalScreenSize=function() return 1024,768 end
 
 ------------------------------------------------------------------ WoW API
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
 Enum={StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpolation={Immediate=0,ExponentialEaseOut=1},
     NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},UnitAuraSoundTrigger={Added=0,ApplicationsIncreased=1,Removed=2},
     TtsVoiceType={Standard=0,Alternate=1}}
@@ -499,7 +500,7 @@ GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 
 ------------------------------------------------------------------ CDM private table
-local C={M={},EMPTY={},views={},plans={},bars={},entries={},spells={v=1,e={}},lists=CDM.CleanLists(nil),wipe=wipe}
+local C={M={},EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},spells={v=1,e={}},lists=CDM.CleanLists(nil),wipe=wipe}
 C.state={config={},px=1,fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,threshold=0,
     thR=1,thG=.35,thB=.24,muteSounds=false,soundChannel="Master",soundQuietUntil=0,inCombat=false,preview=false}
 local P={NS=NS,Suite=S,CDM=C}
@@ -1361,7 +1362,7 @@ assert(Live("buf","player")==compactP,"re-enable reuses the pool")
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C2={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+        local C2={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         local L2=C2.Layout
@@ -1398,7 +1399,7 @@ end
 -- the rule and against the real Extent from Exports.lua.
 do
     local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua"))
-    local Cx={EMPTY={},views={},plans={},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+    local Cx={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
         Visibility={Paint=function() end}}
     chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     local L2=Cx.Layout
@@ -1591,8 +1592,33 @@ assert(SoundCount()==0 and Alerts.pending==true,"rejected native sound stays pen
 A.FlushPending()
 assert(SoundCount()==1 and Alerts.pending==false,"native sound registration retries")
 C_UnitAuras.AddAuraSound=addSound
+-- A value that resolves to no file (a SharedMedia name nobody registered) is
+-- no transient refusal: it holds no pending flag, a pending flush leaves it
+-- alone, and the next cold sync tries it again (the name may be registered
+-- by then).
+do
 s1.ov={}
 Alerts.SyncAuraSounds()
+local lsmFetch,lsmLate,fetches=LSM.Fetch,false,0
+LSM.Fetch=function(self,kind,name)
+    fetches=fetches+1
+    if kind=="sound" and name=="Late" and lsmLate then return "Sound\Late.ogg" end
+    return lsmFetch(self,kind,name)
+end
+s1.ov={sound="lsm:Late"}
+Alerts.SyncAuraSounds()
+assert(SoundCount()==0 and Alerts.pending==false,"an unresolvable SharedMedia name does not hold pending")
+local tried=fetches
+Alerts.pending=true
+A.FlushPending()
+assert(fetches==tried and Alerts.pending==false,"a pending flush does not retry an unresolvable sound")
+lsmLate=true
+Alerts.SyncAuraSounds()
+assert(fetches>tried and SoundCount()==1,"a cold sync retries it once the name exists")
+LSM.Fetch=lsmFetch
+s1.ov={}
+Alerts.SyncAuraSounds()
+end
 s1.ov={sound="file:777"}
 COMBAT=true
 Alerts.SyncAuraSounds()
@@ -1710,14 +1736,15 @@ assert(#bt.points==1 and bt.points[1][1]=="TOP" and bt.points[1][2]==c2Host and 
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         C3.Layout.Apply("c2")
         local lb=C3.bars.c2
         -- the layout reserves the lines the aura layer offsets by: three
         -- player-part entries (two lines of two), then the target line
-        assert(lb.lines1==2 and lb.lines2==1,"the real layout reserves two player lines and the target line")
+        local lines1,lines2=C3.Diagnostics.BarLines(lb.key)
+        assert(lines1==2 and lines2==1,"the real layout reserves two player lines and the target line")
         assert(Args(lb.frame,"SetSize")[1]==62 and Args(lb.frame,"SetSize")[2]==94,"footprint: two per line, three lines")
     end
 end
@@ -2973,6 +3000,14 @@ do
     Plan("c6",3,rows)
     A.Sync("c6")
     Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),3857)
+    -- A look change restyles every button of the compact bar (a baseline
+    -- measured on 2026-10-02 at q11/merge, before the named modes of wave 3).
+    do
+        local view=C.views.buf
+        view.zoom=(view.zoom or 8)+1
+        view.styleGen=(view.styleGen or 0)+1
+        Budget("aura restyle: a zoom change on the compact bar",Cost(A.Restyle,"buf"),179539)
+    end
     A.Release("c6")
     C.views.c6,C.plans.c6=nil,nil
 end
@@ -3046,6 +3081,63 @@ do
     assert(R[list[4]].bind.icon,"the woken button was not built after combat")
     A.Release("c6")
     C.views.c6,C.plans.c6=nil,nil
+end
+
+------------------------------------------------------------------ bounded option caches
+-- A color picker drag makes a new threshold or stack color on every tick. The
+-- option objects are shared per value, kept in two bounded generations, and
+-- what falls out is collected.
+do
+    local limit=C.Const.CACHE_LIMIT
+    assert(type(limit)=="number" and limit<=1024,"the option caches have a limit")
+    local liveBindings,liveFormatters=setmetatable({},{__mode="v"}),setmetatable({},{__mode="v"})
+    local makeBinding,makeFormatter=C_DurationUtil.CreateDurationTextBinding,C_StringUtil.CreateNumericRuleFormatter
+    C_DurationUtil.CreateDurationTextBinding=function()
+        local binding=makeBinding()
+        bindings[#bindings]=nil
+        liveBindings[#liveBindings+1]=binding
+        return binding
+    end
+    C_StringUtil.CreateNumericRuleFormatter=function()
+        local formatter=makeFormatter()
+        formatters[#formatters]=nil
+        liveFormatters[#liveFormatters+1]=formatter
+        return formatter
+    end
+    local function Count(set)
+        collectgarbage("collect")
+        local n=0
+        for _ in pairs(set) do n=n+1 end
+        return n
+    end
+    local state=C.state
+    local savedR,savedG,savedB=state.thR,state.thG,state.thB
+    local first=C.AuraButtons.TextOpts(77)
+    assert(C.AuraButtons.TextOpts(77)==first,"one threshold and color: one shared binding")
+    local bound=Count(liveBindings)
+    for i=1,4*limit do
+        state.thR,state.thG,state.thB=(i%256)/255,math.floor(i/256)/255,.25
+        C.AuraButtons.TextOpts(77)
+    end
+    assert(Count(liveBindings)-bound<=2*limit,"a threshold color drag kept "..(Count(liveBindings)-bound).." bindings alive")
+    state.thR,state.thG,state.thB=savedR,savedG,savedB
+    -- stack text: one formatter per (N, color) of an entry's choices
+    local drag=Aura("c4","a4301","a","player",Set(4301),{ov={stackColorAt=7,stackColor="000000"}})
+    Plan("c4",2,{drag})
+    A.Sync("c4")
+    local bound=Count(liveFormatters)
+    for i=1,3*limit do
+        drag.ov={stackColorAt=7,stackColor=("%06x"):format(i*977)}
+        A.Sync("c4")
+    end
+    assert(Count(liveFormatters)-bound<=2*limit,"a stack color drag kept "..(Count(liveFormatters)-bound).." formatters alive")
+    drag.ov={stackColorAt=7,stackColor="123456"}
+    A.Sync("c4")
+    local button=R[Acquired(Live("c4","player"),"g1")]
+    assert(button.bind.countFormatter and button.bind.countFormatter.points[3].format=="|cff123456%d|r","the dragged color reached the button")
+    C_DurationUtil.CreateDurationTextBinding,C_StringUtil.CreateNumericRuleFormatter=makeBinding,makeFormatter
+    drag.ov=C.EMPTY
+    A.Sync("c4")
 end
 
 local nativeFile=PlaySoundFile

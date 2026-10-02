@@ -46,7 +46,7 @@ function AuraButtons.Sample(parent, row, view, ov, texture, name)
     local stackMax = rec.lk.smax
     local amount = max(1, floor(stackMax * .6))
     part.bar:SetMinMaxValues(0, rec.stackFill and stackMax or 1)
-    part.bar:SetValue(rec.stackFill and amount or (view.barFill == 2 and .4 or .6))
+    part.bar:SetValue(rec.stackFill and amount or (view.barFill == K.BAR_FILL.FILL and .4 or .6))
     if rec.stackFill and (view.barStackColorAt or 0) > 0 and amount >= view.barStackColorAt then
         part.bar:SetStatusBarColor(K.HexRGB(view.barStackColor or "ff6633"))
     end
@@ -121,7 +121,7 @@ local function Hold(cell, entry, barMeta, dim, view)
     icon:SetAlpha(dim and .5 or 1)
     icon:ClearAllPoints()
     if barMeta.role == "bar" then
-        local left = lk.side == 1
+        local left = lk.side == K.BAR_ICON_SIDE.LEFT
         local point = left and "TOPLEFT" or "TOPRIGHT"
         icon:SetPoint(point, cell, point, left and bw or -bw, -bw)
         icon:SetSize(lk.h - 2 * bw, lk.h - 2 * bw)

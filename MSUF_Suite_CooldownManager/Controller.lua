@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Lifecycle (spec 8.1), the preview mode and the exports that use controller
+-- Lifecycle, the preview mode and the exports that use controller
 -- state. The work itself is split along its seams, each file loading before
 -- this one:
 --  Flush.lua     one dirty mask with a prebuilt next-frame flush
@@ -43,7 +43,7 @@ local function ApplyPreview()
     if C.Preview.SetMode(mode) then PreviewChanged() end
 end
 
------------------------------------------------------------------- lifecycle (spec 8.1)
+------------------------------------------------------------------ lifecycle
 function M:Enable()
     Events.EnterWorld()
     C.Layout.InvalidateScale()

@@ -471,18 +471,6 @@
    "symbol": "db (= MSUF_DB)"
   },
   {
-   "file": "MSUF_Suite_CooldownManager/Native.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
-   "symbol": "MSUF_GetSuiteCooldownAnchor"
-  },
-  {
-   "file": "MSUF_Suite_CooldownManager/Native.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "db (= MSUF_DB)"
-  },
-  {
    "file": "MSUF_Suite_DamageMeter/Menus.lua",
    "kind": "state",
    "reason": "the meter registers its reset dialog once, on first use",

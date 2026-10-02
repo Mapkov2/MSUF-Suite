@@ -36,7 +36,7 @@ function TrackingBars.Style(icon, view)
     end
     local inset, h = icon.border or 0, icon.h
     local shown = view.barIcon ~= false
-    local right = view.barIconSide == 2
+    local right = view.barIconSide == K.BAR_ICON_SIDE.RIGHT
     icon.tex:SetShown(shown)
     icon.tex:ClearAllPoints()
     icon.tex:SetSize(h - inset * 2, h - inset * 2)
@@ -59,7 +59,8 @@ function TrackingBars.Style(icon, view)
     bar.chargeSegments, bar.chargeDim = view.barChargeSegments == true, view.barChargeDim ~= false
     bar.segmentStyle = nil
     bar.bg:SetColorTexture(0, 0, 0, (view.barBgAlpha or K.BAR_BG_ALPHA) / 100)
-    bar.direction = view.barFill == 2 and Enum.StatusBarTimerDirection.ElapsedTime or Enum.StatusBarTimerDirection.RemainingTime
+    bar.direction = view.barFill == K.BAR_FILL.FILL and Enum.StatusBarTimerDirection.ElapsedTime
+        or Enum.StatusBarTimerDirection.RemainingTime
     local label = bar.name
     S.SetStyledFont(label, C.state.font, K.TextSize(nil, K.FONT.barText, h), C.state.fontFlags,
         C.state.fontRendering, C.state.fontShadow, C.state.fontShadowOpacity, C.state.fontShadowDistance)

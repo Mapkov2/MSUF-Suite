@@ -10,6 +10,7 @@ local C = P.CDM
 -- C API returns: the cooldown and charge info tables (GetSpellCooldown,
 -- GetSpellCharges) and the duration objects.
 local K = C.Const
+local COMBAT_POTION, HEALTH_POTION = K.SPELL_CATEGORY.COMBAT_POTION, K.SPELL_CATEGORY.HEALTH_POTION
 local DESAT = K.DESAT
 -- The timer-bar presentation of cooldown icons (TrackingBars.lua loads first).
 local TrackingBars = C.TrackingBars
@@ -354,7 +355,7 @@ end
 -- Returns true when the bags hold none; a hideEmpty entry reads its total
 -- even while counts are off.
 local function CategoryCount(icon, category, entry)
-    local choose = C.state.potionStockIcon and (category == 4 or category == 30)
+    local choose = C.state.potionStockIcon and (category == COMBAT_POTION or category == HEALTH_POTION)
     local total = (icon.stackOn or entry.hideEmpty or choose) and Total(category) or 0
     local item = choose and selectedItems[category] or nil
     if entry.categoryItem ~= item then
@@ -383,6 +384,31 @@ end
 -- counts as cooling, so no ready alert fires; the BAG_UPDATE_COOLDOWN that
 -- starts it arms the swipe as a new cooldown. Returns the cooling state and
 -- whether the bags hold none of the item.
+-- A cooldown the icon has not drawn yet: the swipe runs from the icon's
+-- reused duration object. Returns whether the item is cooling.
+local function NewItemCooldown(icon, start, length, gcd)
+    local over = start + length <= GetTime()
+    icon.itemStart, icon.itemLen, icon.itemGCD, icon.itemOver = start, length, gcd, over
+    local cooling = not over and length > GCD_MAX
+    if not over and (cooling or gcd) then
+        local duration = icon.itemDur
+        if not duration then
+            duration = CreateDuration()
+            icon.itemDur = duration
+        end
+        if duration then
+            duration:SetTimeFromStart(start, length)
+            icon.cd:SetCooldownFromDurationObject(duration, true)
+            icon.cdSet, icon.cdReal = true, true
+            Feedback(icon, cooling and duration or nil)
+            return cooling
+        end
+    end
+    ClearMain(icon)
+    Feedback(icon, nil)
+    return cooling
+end
+
 local function ItemState(entry, icon, reason)
     local slot = entry.equipSlot or (entry.src == "e" and entry.id) or nil
     local item = entry.itemID or entry.id
@@ -417,28 +443,7 @@ local function ItemState(entry, icon, reason)
         else
             -- A new cooldown means the item was used: its own count is read again.
             if not slot then counts[item] = nil end
-            local over = start + length <= GetTime()
-            icon.itemStart, icon.itemLen, icon.itemGCD, icon.itemOver = start, length, gcd, over
-            cooling = not over and length > GCD_MAX
-            local shown = false
-            if not over and (cooling or gcd) then
-                local duration = icon.itemDur
-                if not duration then
-                    duration = CreateDuration()
-                    icon.itemDur = duration
-                end
-                if duration then
-                    duration:SetTimeFromStart(start, length)
-                    icon.cd:SetCooldownFromDurationObject(duration, true)
-                    icon.cdSet, icon.cdReal = true, true
-                    shown = true
-                    Feedback(icon, cooling and duration or nil)
-                end
-            end
-            if not shown then
-                ClearMain(icon)
-                Feedback(icon, nil)
-            end
+            cooling = NewItemCooldown(icon, start, length, gcd)
         end
     else
         icon.itemStart, icon.itemLock = nil, nil
