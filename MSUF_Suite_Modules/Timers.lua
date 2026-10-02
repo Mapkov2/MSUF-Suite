@@ -4,9 +4,10 @@ local Dispatch = NS.Dispatch
 
 -- Deferred work of a module, owned by its context (Runtime.lua). Release
 -- cancels all of it, so a stopped module never runs a late callback.
---   ctx:After(delay, fn)          fn(module) once, delay seconds from now
---                                 (within a millisecond). A new call moves
---                                 the deadline (a restart).
+--   ctx:After(delay, fn)          fn(module) once, delay seconds from now and
+--                                 never earlier: GetTime() has reached the
+--                                 deadline when fn runs. A new call moves the
+--                                 deadline (a restart).
 --   ctx:Coalesce(delay, fn, keys) a job: job:Request() asks for one run of
 --                                 fn(module, keys) delay seconds after the
 --                                 first request; later requests ride along.
@@ -29,9 +30,6 @@ local Dispatch = NS.Dispatch
 -- nothing. Steady use allocates nothing: a tick is made once and again only
 -- after a cancel caught one in flight.
 local Context = Private.Context
-
--- Deadlines closer than this run at once instead of waiting another frame.
-local EPSILON = .001
 
 ------------------------------------------------------------------ ticks
 local function NewTick(wait)
@@ -73,7 +71,7 @@ Deadline.__index = Deadline
 function Deadline:Start(delay)
     local due = GetTime() + delay
     self.due = due
-    if self.armed and self.firesAt <= due + EPSILON then return end
+    if self.armed and self.firesAt <= due then return end
     Abandon(self)
     self.firesAt = due
     Arm(self, delay)
@@ -82,8 +80,10 @@ end
 function Deadline:Fire()
     local due = self.due
     if not due then return end
+    -- A tick ahead of the deadline (a restart moved it, or C_Timer's clock
+    -- ran a hair ahead of GetTime) waits for the rest.
     local left = due - GetTime()
-    if left > EPSILON then
+    if left > 0 then
         self.firesAt = due
         Arm(self, left)
         return

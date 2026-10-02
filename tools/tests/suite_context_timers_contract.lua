@@ -81,6 +81,20 @@ assert(runs == 3, "a zero delay ran inside the call")
 clock.Frame()
 assert(runs == 4, "a zero delay did not run on the next frame")
 
+-- A deadline never runs early: GetTime() has reached it when fn runs.
+local dueAt, exact = 0, 0
+local function Exact()
+    assert(GetTime() >= dueAt, "After ran before its deadline")
+    exact = exact + 1
+end
+for _, delay in ipairs({ .1, 1 / 3, 2.7, .05, 0 }) do
+    dueAt = GetTime() + delay
+    ctx:After(delay, Exact)
+    clock.Advance(delay + .05)
+end
+Reported(0, "a deadline ran early")
+assert(exact == 5, "a deadline did not run")
+
 -- Inactive modules get no callback; ctx:Cancel drops the run.
 module.active = false
 ctx:After(.1, Once)
