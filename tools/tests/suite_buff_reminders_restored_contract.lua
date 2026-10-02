@@ -345,11 +345,11 @@ do
     local mana = 30
     UnitPower, UnitPowerMax = function() return mana end, function() return 100 end
     local timerDelay
-    C_Timer.NewTimer = function(delay, callback)
-        timerDelay = delay
-        return { callback = callback, Cancel = function() end }
-    end
+    C_Timer.After = function(delay) timerDelay = delay end
     local owner = Owner({ readyCheckMana = true })
+    -- The note's hide is a context wait (MSUF_Suite_Modules/Timers.lua).
+    NS.Dispatch = function(callback, ...) return callback(...) end
+    owner.context = Support.ModuleTimers(root, S, NS)("buffReminders", owner, {})
     owner.view.host = Widget()
     function owner.view.host:CreateFontString()
         local text = Widget()
@@ -374,7 +374,9 @@ local context = {}
 function context:Event(event, callback, _, unit) events[event] = unit or callback end
 function context:RemoveEvent(event) events[event] = nil end
 local module = assert(restoredModule)
-module.context, module.active = context, true
+-- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on the stub.
+NS.Dispatch = NS.Dispatch or function(callback, ...) return callback(...) end
+module.context, module.active = Support.ModuleTimers(root, S, NS)("buffReminders", module, context), true
 module.config = Owner({ classBuff = false }).config
 GetInstanceInfo = function() return "World", "none" end
 DifficultyUtil = { ID = { DungeonTimewalker = 24, RaidTimewalker = 33 } }

@@ -67,24 +67,26 @@ local function Allowed(self)
     return true
 end
 
+-- The next advance warning (list.thresholdAt) is one context wait.
+local function ThresholdReached(self)
+    self.list.thresholdAt = nil
+    if not NS.IsCombatLocked() then self:Update("visual") end
+end
+
 local function CancelThreshold(self)
-    local list = self.list
-    if list.thresholdTimer then list.thresholdTimer:Cancel() end
-    list.thresholdTimer, list.thresholdAt = nil, nil
+    self.context:Cancel(ThresholdReached)
+    self.list.thresholdAt = nil
 end
 
 local function ScheduleThreshold(self, due, now)
     local list = self.list
     if list.thresholdAt == due then return end
-    CancelThreshold(self)
-    if not due then return end
-    local timer
-    timer = C_Timer.NewTimer(math.max(0.05, due - now), function()
-        if list.thresholdTimer ~= timer or not self.active then return end
-        list.thresholdTimer, list.thresholdAt = nil, nil
-        if not NS.IsCombatLocked() then self:Update("visual") end
-    end)
-    list.thresholdTimer, list.thresholdAt = timer, due
+    if not due then
+        CancelThreshold(self)
+        return
+    end
+    self.context:After(math.max(0.05, due - now), ThresholdReached)
+    list.thresholdAt = due
 end
 
 -- A poison reminder shows the spell its button casts right now.
