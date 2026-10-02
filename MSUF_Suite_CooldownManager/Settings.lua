@@ -69,7 +69,8 @@ Work({ "tooltips" }, { restyle = true })
 Work({ "strata" }, { restyle = true, visible = true })
 Work({ "layer" }, { layout = true, aura = true, restyle = true })
 Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
-    "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" }, { bar = true, style = true, behavior = true })
+    "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments",
+    "barChargeDim" }, { bar = true, style = true, behavior = true })
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.
 local FRESH = { layout = true, style = true, behavior = true, index = true, visible = true, resolve = true, named = true }

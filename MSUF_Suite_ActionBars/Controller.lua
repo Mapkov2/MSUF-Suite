@@ -119,10 +119,13 @@ local BAR_WORK = {
 }
 for _, suffix in ipairs({ "Rows", "Spacing", "Vertical", "Start", "ShowEmpty", "Point", "X", "Y", "Background",
     "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY",
-    "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" }) do
+    "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX",
+    "BackgroundY", "BackgroundBorder" }) do
     BAR_WORK[suffix] = { layout = true }
 end
-for _, suffix in ipairs({ "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY" }) do
+for _, suffix in ipairs({ "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize", "CooldownAutoSize",
+    "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint",
+    "CooldownX", "CooldownY" }) do
     BAR_WORK[suffix] = { style = true }
 end
 

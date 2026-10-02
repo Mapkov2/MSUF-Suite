@@ -18,7 +18,8 @@ local issecret = _G.issecretvalue
 
 -- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
 local Index = { bySpell = {}, byBase = {}, byCategory = {}, byItem = {}, byEquip = {}, countedSet = {},
-    cooldown = {}, gcd = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {}, items = {}, bags = {}, aura = {}, overlay = {}, assist = {} }
+    cooldown = {}, gcd = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {},
+    items = {}, bags = {}, aura = {}, overlay = {}, assist = {} }
 C.Index = Index
 
 local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist" }

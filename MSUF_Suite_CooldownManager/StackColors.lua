@@ -124,12 +124,12 @@ local function ApplyStack(rec, part, entry, dry)
     if routing then
         if dry then return true end
         CopySet(sensor.ids, ids)
-        sensor.frame:SetAuraSlotCandidateFilters("stack",{includeSpellIDs=sensor.ids})
-        sensor.frame:SetAuraSlotFilterString("stack",filter)
+        sensor.frame:SetAuraSlotCandidateFilters("stack", { includeSpellIDs = sensor.ids })
+        sensor.frame:SetAuraSlotFilterString("stack", filter)
         sensor.frame:SetUnit(rec.unit)
-        sensor.unit,sensor.filter = rec.unit,filter
+        sensor.unit, sensor.filter = rec.unit, filter
     end
-    if draw.ApplyStack(rec,sensor.part,ov,dry) then return true end
+    if draw.ApplyStack(rec, sensor.part, ov, dry) then return true end
     local glow = sensor.part.stack
     if draw.ApplyCombatGate(glow.glow, glow.on, dry) then return true end
     if not sensor.enabled then
@@ -142,7 +142,7 @@ local function ApplyStack(rec, part, entry, dry)
 end
 
 function StackColors.Apply(rec, part, entry, dry)
-    if ApplyStack(rec,part,entry,dry) then return true end
+    if ApplyStack(rec, part, entry, dry) then return true end
     if not rec.color then return false end
     local color, lk = part.color, rec.lk
     local ids, filter = rec.ids[part.pos], rec.filter[part.pos]
@@ -159,12 +159,12 @@ function StackColors.Apply(rec, part, entry, dry)
     end
     if routing then
         CopySet(color.ids, ids)
-        color.frame:SetAuraSlotCandidateFilters("color", {includeSpellIDs=color.ids})
-        color.frame:SetAuraSlotFilterString("color",filter)
+        color.frame:SetAuraSlotCandidateFilters("color", { includeSpellIDs = color.ids })
+        color.frame:SetAuraSlotFilterString("color", filter)
         color.frame:SetUnit(rec.unit)
-        color.unit,color.filter=rec.unit,filter
+        color.unit, color.filter = rec.unit, filter
     end
-    if shape then Shape(color,part,rec) end
+    if shape then Shape(color, part, rec) end
     return false
 end
 
