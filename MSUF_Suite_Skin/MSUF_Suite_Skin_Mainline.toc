@@ -16,7 +16,6 @@ Core\Bootstrap.lua
 Core\Client.lua
 Locales\Localization.lua
 Locales\enUS.lua
-Locales\deDE.lua
 Core\Defaults.lua
 Core\DefaultsLooks.lua
 Core\Database.lua

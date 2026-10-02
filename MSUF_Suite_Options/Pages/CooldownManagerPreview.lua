@@ -300,7 +300,7 @@ local function SimulateEnter(self)
         not Page.Running() and Tr("Turn the cooldown manager on in Basics to play it.") or nil)
 end
 local function BuildToolbar(ui, toolbar)
-    local hint = T.Font(toolbar, "GameFontDisableSmall", Tr("Pick a bar below. Drag the bar's edge to move it."), T.colors.muted)
+    local hint = T.Font(toolbar, "GameFontDisableSmall", "Pick a bar below. Drag the bar's edge to move it.", T.colors.muted)
     hint:SetPoint("LEFT", toolbar, "LEFT", 150, 0)
     hint:SetPoint("RIGHT", toolbar, "RIGHT", -200, 0)
     hint:SetJustifyH("LEFT")
@@ -459,7 +459,7 @@ local function Render(ui)
         handle:Show()
         message:Hide()
     else
-        message:SetText(Tr("Nothing to show on this bar yet."))
+        Page.SetRaw(message, Tr("Nothing to show on this bar yet."))
         message:Show()
         handle:Hide()
     end

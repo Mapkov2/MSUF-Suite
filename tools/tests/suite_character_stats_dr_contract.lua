@@ -43,8 +43,9 @@ local NS = {
     Client = { modernEquipment = true },
 }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/enUS.lua"))("MSUF_Suite_Skin", NS)
-assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/deDE.lua"))("MSUF_Suite_Skin", NS)
 NS.L = locales.enUS
+-- German through the Suite's pack, as the skin reads it (Localization.lua).
+local German = dofile(root .. "/tools/tests/suite_test_support.lua").SkinLocale(root, "deDE")
 assert(loadfile(skin .. "AdapterKit.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(skin .. "SharedChrome.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(skin .. "CharacterStats.lua"))("MSUF_Suite_Skin", NS)
@@ -80,7 +81,7 @@ local haste = stats.ReadRating(2, {})
 assert(haste.penalty == 0 and haste.inDR == 0 and haste.lostRating == 0)
 assert(stats.DRBadge(haste) == "(0% DR)", "zero DR should be visible in parentheses")
 
-NS.L = locales.deDE
+NS.L = German
 assert(stats.DRBadge(crit) == "(10% DR, +50)")
 assert(string.format(NS.L.STATS_DR_AMOUNT, crit.inDR, crit.lostRating):find("Wertung", 1, true))
 assert(stats.DRBadge({}) == "(DR ?)", "unknown data was rendered as verified zero DR")

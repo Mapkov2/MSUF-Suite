@@ -17,16 +17,23 @@ local SUITE_WORDS = { "suite", "msuf suite", "suite module", "suite modules" }
 local PAGE_WORDS = {
     suite_minimap = "minimap|mini map|map|minimap module|map border|map buttons",
     suite_nameplates = "nameplate|nameplates|name plate|name plates|plates|enemy nameplates|friendly nameplates",
-    suite_cooldownManager = "cooldown manager|cooldowns|cdm|cooldown bars|cooldown icons|buff bars|tracked buffs|empfangene buffs",
+    suite_cooldownManager = "cooldown manager|cooldowns|cdm|cooldown bars|cooldown icons|buff bars|tracked buffs",
     suite_buffReminders = "buff reminder|buff reminders|missing buffs|consumables|flask|food|augment rune",
     suite_chat = "chat|chat frame|chat window|chat tabs|chat font",
     suite_bags = "bags|bag|inventory|backpack|reagent bag|item level",
     suite_actionbars = "action bar|action bars|actionbar|actionbars|hotbar|hotbars|keybinds|stance bar|pet bar",
-    suite_damageMeter = "damage meter|damage meters|meter|meters|dps meter|healing meter|schadensmesser",
-    suite_dataTexts = "data text|data texts|datatext|datatexts|info bar|info texts|datenleiste|datenleisten|infoleiste|infoleisten",
+    suite_damageMeter = "damage meter|damage meters|meter|meters|dps meter|healing meter",
+    suite_dataTexts = "data text|data texts|datatext|datatexts|info bar|info texts",
     suite_skin = "skin|skins|skinning|window skin|blizzard windows",
     suite_qualityOfLife = "quality of life|qualityoflife|quality_of_life|qol|comfort|helpers",
     suite_hud = "hud",
+}
+-- Words players use for a page in their own language: each English word is
+-- searchable in English and, through the locale packs, as its translation.
+local PAGE_TRANSLATED_WORDS = {
+    suite_cooldownManager = { "received buffs" },
+    suite_damageMeter = { "damage meter" },
+    suite_dataTexts = { "data text", "data texts", "info bar", "info bars" },
 }
 local HUD_MODULE_WORDS = {
     objectives = "objective tracker|quest tracker|questtracker|objectives",
@@ -47,11 +54,12 @@ local FAQ = {
         help = "The Suite Cooldown manager page (CDM) shows Blizzard's tracked cooldowns and buffs as bars you arrange and style freely.",
         words = "cdm|cooldown manager|cooldowns|essential cooldowns|utility cooldowns|tracked buffs|enable cooldown manager" },
 }
+-- Feature words, searchable in English and as their translation.
 local FEATURE_WORDS = {
-    dungeonPortals = { "dungeonportal", "dungeonportale" },
-    characterExtras = { "charakterfenster" },
-    flightTimer = { "flugzeit" },
-    popupAttention = { "dialogfenster", "beutemeldung" },
+    dungeonPortals = { "dungeonportal", "dungeon portal", "dungeon portals" },
+    characterExtras = { "character window" },
+    flightTimer = { "flight time" },
+    popupAttention = { "dialog window", "loot notice" },
 }
 local KIND_OF = { font = "dropdown", texture = "dropdown", choices = "dropdown" }
 local EMPTY_ROWS = {}
@@ -152,6 +160,7 @@ local function PageRow(page, modules)
     local keywords = {}
     for _, word in ipairs(SUITE_WORDS) do keywords[#keywords + 1] = word end
     for word in (PAGE_WORDS[page.key] or ""):gmatch("[^|]+") do keywords[#keywords + 1] = word end
+    for _, word in ipairs(PAGE_TRANSLATED_WORDS[page.key] or EMPTY_ROWS) do AddWords(keywords, word) end
     -- Quality of Life aliases name features of both clients. Each feature
     -- this client offers carries its own words on its switch row instead.
     if page.key ~= "suite_qualityOfLife" then
@@ -335,7 +344,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
             AddWords(keywords, category.title)
             AddWords(keywords, spec.title)
             for _, word in ipairs(feature.keywords or {}) do keywords[#keywords + 1] = word end
-            for _, word in ipairs(FEATURE_WORDS[feature.id] or {}) do keywords[#keywords + 1] = word end
+            for _, word in ipairs(FEATURE_WORDS[feature.id] or EMPTY_ROWS) do AddWords(keywords, word) end
             -- Color settings live in the feature's shortcut rather than as
             -- standalone widgets. Index their names on the exact feature row.
             local ruleRows, seen = {}, {}

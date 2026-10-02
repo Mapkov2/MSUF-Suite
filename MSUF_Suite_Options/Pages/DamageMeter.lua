@@ -144,7 +144,8 @@ local function Build(ctx)
     end
     M.TrackRefresh(ctx, function()
         local count = P.Get(ID, "windowCount")
-        note:SetText(selected > count and string.format(Tr("Shown windows: %d. Raise the number of windows to show this one."), count) or "")
+        P.SetTranslatedText(note, selected > count
+            and string.format(Tr("Shown windows: %d. Raise the number of windows to show this one."), count) or "")
         if picker.SetValue then picker:SetValue(selected) end
     end)
     P.FinishBody(b, body, y)

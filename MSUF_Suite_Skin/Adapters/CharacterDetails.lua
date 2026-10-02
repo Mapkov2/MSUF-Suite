@@ -383,6 +383,33 @@ local function UpdateCheckSummary(v)
         or unknown > 0 and "muted" or "success")
 end
 
+-- The unit's name, then its level and class.
+local function PaintIdentity(v, unit)
+    local name = Text(Read(UnitName, unit)) or NS.L.DOSSIER_LOADING
+    local class = Text(Read(UnitClass, unit)) or ""
+    local level = Number(Read(UnitLevel, unit))
+    v.level = level
+    v.identity:SetText(name)
+    v.subtitle:SetText((level and string.format(NS.L.DOSSIER_LEVEL, level) .. " " or "") .. class)
+end
+
+-- Reads the slot rows (only the changed ones when dirtySlots is given) and
+-- paints the item summary and the footer.
+local function PaintRows(v, dirtySlots)
+    local loaded, enchantCount, gemCount, lowest, waiting = 0, 0, 0, nil, false
+    for id in pairs(v.pending) do v.pending[id] = nil end
+    for index, slot in ipairs(slots) do
+        local itemLevel, enchanted, gems, durability, pending = ReadRow(v, v.rows[index], slot, dirtySlots)
+        if itemLevel then loaded = loaded + 1 end
+        if enchanted then enchantCount = enchantCount + 1 end
+        gemCount = gemCount + (gems or 0)
+        if durability then lowest = math.min(lowest or 1, durability) end
+        waiting = waiting or pending
+    end
+    v.summary:SetText(string.format(NS.L.DOSSIER_SUMMARY, loaded, enchantCount, gemCount))
+    v.footer:SetText(FooterText(waiting, lowest))
+end
+
 -- dirtySlots: nil for a full read, or the set of slot ids that changed.
 function Details.Refresh(v, dirtySlots, durabilityOnly)
     if NS.IsCombatLocked() then
@@ -435,30 +462,14 @@ function Details.Refresh(v, dirtySlots, durabilityOnly)
         dirtySlots = nil
     end
     v.unit, v.guid = unit, guid
-    local name = Text(Read(UnitName, unit)) or NS.L.DOSSIER_LOADING
-    local class = Text(Read(UnitClass, unit)) or ""
-    local level = Number(Read(UnitLevel, unit))
-    v.level = level
-    v.identity:SetText(name)
-    v.subtitle:SetText((level and string.format(NS.L.DOSSIER_LEVEL, level) .. " " or "") .. class)
+    PaintIdentity(v, unit)
     -- A target swap while an inspect window stays visible is not permission
     -- to reuse the prior inspect cache. Wait for Blizzard's matching ready GUID.
     if v.kind == "inspect" and v.readyGUID ~= guid then return end
     v.specialization:SetText(SpecializationName(v, unit) or "")
     local average = AverageItemLevel(v, unit)
     v.average:SetText(average and average > 0 and string.format("%.1f", average) or "--")
-    local loaded, enchantCount, gemCount, lowest, waiting = 0, 0, 0, nil, false
-    for id in pairs(v.pending) do v.pending[id] = nil end
-    for index, slot in ipairs(slots) do
-        local itemLevel, enchanted, gems, durability, pending = ReadRow(v, v.rows[index], slot, dirtySlots)
-        if itemLevel then loaded = loaded + 1 end
-        if enchanted then enchantCount = enchantCount + 1 end
-        gemCount = gemCount + (gems or 0)
-        if durability then lowest = math.min(lowest or 1, durability) end
-        waiting = waiting or pending
-    end
-    v.summary:SetText(string.format(NS.L.DOSSIER_SUMMARY, loaded, enchantCount, gemCount))
-    v.footer:SetText(FooterText(waiting, lowest))
+    PaintRows(v, dirtySlots)
     UpdateCheckSummary(v)
     NS.GearAnnotations.UpdateSummary(v)
 end

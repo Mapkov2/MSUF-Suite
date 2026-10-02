@@ -428,10 +428,8 @@ CDM.LIMITS = { specs = 64, entries = 120, hidden = 400, spells = 600 }
 
 local function ValidSpec(value) return type(value) == "number" and value > 0 and value < 100000 and math.floor(value) == value end
 
--- Returns a clean copy; anything malformed is dropped rather than rejected.
-function CDM.CleanLists(data)
-    local out = { v = 1, specs = {}, hidden = {}, replace = {}, shared = {} }
-    if type(data) ~= "table" then return out end
+-- The parts of CDM.CleanLists, each filling its part of out from data.
+local function CleanShared(data, out)
     if type(data.shared) == "table" then
         for slot, list in pairs(data.shared) do
             local index = CDM.SLOT_INDEX[slot]
@@ -449,6 +447,8 @@ function CDM.CleanLists(data)
             end
         end
     end
+end
+local function CleanSpecs(data, out)
     local specCount = 0
     if type(data.specs) == "table" then
         for spec, slots in pairs(data.specs) do
@@ -475,6 +475,8 @@ function CDM.CleanLists(data)
             end
         end
     end
+end
+local function CleanHidden(data, out)
     if type(data.hidden) == "table" then
         for spec, set in pairs(data.hidden) do
             if ValidSpec(spec) and type(set) == "table" then
@@ -489,8 +491,10 @@ function CDM.CleanLists(data)
             end
         end
     end
-    -- A copied Blizzard layout is a complete selection for each built-in bar.
-    -- Older saved lists have no replace map and retain append-new-spells.
+end
+-- A copied Blizzard layout is a complete selection for each built-in bar.
+-- Older saved lists have no replace map and retain append-new-spells.
+local function CleanReplace(data, out)
     if type(data.replace) == "table" then
         for spec, slots in pairs(data.replace) do
             if ValidSpec(spec) and type(slots) == "table" and out.specs[spec] then
@@ -504,6 +508,16 @@ function CDM.CleanLists(data)
             end
         end
     end
+end
+
+-- Returns a clean copy; anything malformed is dropped rather than rejected.
+function CDM.CleanLists(data)
+    local out = { v = 1, specs = {}, hidden = {}, replace = {}, shared = {} }
+    if type(data) ~= "table" then return out end
+    CleanShared(data, out)
+    CleanSpecs(data, out)
+    CleanHidden(data, out)
+    CleanReplace(data, out)
     return out
 end
 

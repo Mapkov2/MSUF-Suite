@@ -208,16 +208,13 @@ function Page.FilterPicker()
     end
     picker.shown = shown
     picker.content:SetHeight(max(1, shown * 24))
-    picker.empty:SetText(any and "" or Tr("Nothing matches. Try a spell ID below."))
+    SetRaw(picker.empty, any and "" or Tr("Nothing matches. Try a spell ID below."))
     picker.empty:SetShown(not any)
 end
 
-function Page.RebuildPicker()
-    local slot = Page.selected
-    local family = Page.Family(slot)
-    SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
-    local n = 1
-    Item(n, "header", Tr(family == 1 and "Blizzard cooldowns" or "Blizzard buffs"))
+-- Blizzard's catalog entries for the bar's family, sorted for the picker
+-- (pooled records); equipment slots go to equip for the trinket section.
+local function CollectCatalog(slot, family)
     local sorted, bySpell, equip = picker.sorted, picker.bySpell, picker.equip
     for i = #sorted, 1, -1 do sorted[i] = nil end
     for id in pairs(bySpell) do bySpell[id] = nil end
@@ -245,6 +242,49 @@ function Page.RebuildPicker()
         end
     end
     table.sort(sorted, SortCatalog)
+    return sorted, bySpell, equip
+end
+
+-- Buffs other players cast on you (Power Infusion, Innervate, ...), after
+-- the catalog; n is the last row so far, the result the new last row.
+local function AddReceivedBuffs(n)
+    local headerAdded = false
+    for i = 1, #RECEIVED_BUFFS do
+        local id = RECEIVED_BUFFS[i]
+        local name = C_Spell.GetSpellName(id)
+        if Public(name) and type(name) == "string" then
+            if not headerAdded then
+                n = n + 1
+                Item(n, "header", Tr("Received buffs (any caster)"))
+                headerAdded = true
+            end
+            local texture = C_Spell.GetSpellTexture(id)
+            n = n + 1
+            Item(n, "entry", name, "a" .. id, Public(texture) and texture or nil,
+                true, Page.WhereIs("a" .. id), 2, id)
+        end
+    end
+    return n
+end
+
+-- The two trinket slots, after the catalog.
+local function AddTrinkets(n, equip)
+    n = n + 1
+    Item(n, "header", Tr("Trinkets and items"))
+    for trinket = 13, 14 do
+        n = n + 1
+        TrinketItem(n, trinket, equip[trinket])
+    end
+    return n
+end
+
+function Page.RebuildPicker()
+    local slot = Page.selected
+    local family = Page.Family(slot)
+    SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
+    local n = 1
+    Item(n, "header", Tr(family == 1 and "Blizzard cooldowns" or "Blizzard buffs"))
+    local sorted, bySpell, equip = CollectCatalog(slot, family)
     for i = 1, #sorted do
         local record = sorted[i]
         n = n + 1
@@ -253,37 +293,13 @@ function Page.RebuildPicker()
         if record.spell and not bySpell[record.spell] then bySpell[record.spell] = item end
         if record.override and not bySpell[record.override] then bySpell[record.override] = item end
     end
-    if family == 2 then
-        local headerAdded = false
-        for i = 1, #RECEIVED_BUFFS do
-            local id = RECEIVED_BUFFS[i]
-            local name = C_Spell.GetSpellName(id)
-            if Public(name) and type(name) == "string" then
-                if not headerAdded then
-                    n = n + 1
-                    Item(n, "header", Tr("Received buffs (any caster)"))
-                    headerAdded = true
-                end
-                local texture = C_Spell.GetSpellTexture(id)
-                n = n + 1
-                Item(n, "entry", name, "a" .. id, Public(texture) and texture or nil,
-                    true, Page.WhereIs("a" .. id), 2, id)
-            end
-        end
-    end
-    if family == 1 then
-        n = n + 1
-        Item(n, "header", Tr("Trinkets and items"))
-        for trinket = 13, 14 do
-            n = n + 1
-            TrinketItem(n, trinket, equip[trinket])
-        end
-    end
+    if family == 2 then n = AddReceivedBuffs(n) end
+    if family == 1 then n = AddTrinkets(n, equip) end
     picker.count = n
     picker.family = family
-    picker.idTitle:SetText(Tr(family == 1 and "Custom spell or item ID" or "Custom aura ID"))
-    picker.addA:SetText(Tr(family == 1 and "Add spell" or "Buff on me"))
-    picker.addB:SetText(Tr(family == 1 and "Add item" or "Debuff on target"))
+    SetRaw(picker.idTitle, Tr(family == 1 and "Custom spell or item ID" or "Custom aura ID"))
+    picker.addA:SetText(family == 1 and "Add spell" or "Buff on me")
+    picker.addB:SetText(family == 1 and "Add item" or "Debuff on target")
     Page.EchoCustom()
     Page.FilterPicker()
 end
@@ -299,7 +315,7 @@ function Page.PickItem(item)
         SetRaw(picker.note, text)
         Page.Note(text)
     else
-        picker.note:SetText(Tr(reason or "That did not work."))
+        SetRaw(picker.note, Tr(reason or "That did not work."))
     end
     Page.FilterPicker()
     return ok
@@ -316,7 +332,7 @@ function Page.EchoCustom()
     picker.customSpell, picker.customItem, picker.customBlizzard = spellID, itemID, blizzard
     local r, g, b = MutedColor()
     if text == "" then
-        picker.echo:SetText(Tr("Type an ID or a spell name."))
+        SetRaw(picker.echo, Tr("Type an ID or a spell name."))
     elseif spellID or itemID then
         r, g, b = 0.35, 0.95, 0.45
         local parts = spellID and format(Tr("Spell %d"), spellID) .. ": " .. spellName or ""
@@ -325,7 +341,7 @@ function Page.EchoCustom()
         SetRaw(picker.echo, parts)
     else
         r, g, b = 1, 0.35, 0.3
-        picker.echo:SetText(Tr("No spell or item with this ID."))
+        SetRaw(picker.echo, Tr("No spell or item with this ID."))
     end
     picker.echo:SetTextColor(r, g, b)
     picker.echoIcon:SetTexture(spellIcon or itemIcon or QUESTION)
@@ -340,7 +356,7 @@ local function AddCustom(prefix)
     local blizzard = prefix ~= "i" and picker.customBlizzard or nil
     if blizzard then
         if blizzard.slot == Page.selected then
-            picker.note:SetText(Tr("Blizzard's entry for this spell is already on this bar."))
+            SetRaw(picker.note, Tr("Blizzard's entry for this spell is already on this bar."))
         elseif Page.PickItem(blizzard) then
             picker.idBox:SetText("")
         end
@@ -356,7 +372,7 @@ local function AddCustom(prefix)
         Page.Note(text)
         picker.idBox:SetText("")
     else
-        picker.note:SetText(Tr(reason or "That did not work."))
+        SetRaw(picker.note, Tr(reason or "That did not work."))
     end
 end
 
@@ -396,7 +412,7 @@ local function EnsurePicker()
     picker.note = Label(picker, "GameFontHighlightSmall", "", "muted")
     picker.note:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 16)
     picker.note:SetWidth(PICK_W - 28)
-    picker.hint = Label(picker, "GameFontDisableSmall", Tr("Picks stay open so you can add several."), "muted")
+    picker.hint = Label(picker, "GameFontDisableSmall", "Picks stay open so you can add several.", "muted")
     picker.hint:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 34)
     picker.OnClosed = function(self)
         self.search:ClearFocus()

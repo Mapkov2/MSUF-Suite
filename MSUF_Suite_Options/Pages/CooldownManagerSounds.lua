@@ -156,7 +156,7 @@ local function EnsureSounds()
     sounds = Page.NewPopup(SOUND_W, SOUND_H)
     Page.soundPicker = sounds
     sounds.items, sounds.rows, sounds.count = {}, {}, 0
-    sounds.title = Label(sounds, "GameFontNormal", Tr("Choose a sound"))
+    sounds.title = Label(sounds, "GameFontNormal", "Choose a sound")
     sounds.title:SetPoint("TOPLEFT", sounds, "TOPLEFT", 12, -12)
     sounds.close = Button(sounds, "x", 22, 20, function() sounds:Hide() end)
     sounds.close:SetPoint("TOPRIGHT", sounds, "TOPRIGHT", -8, -8)

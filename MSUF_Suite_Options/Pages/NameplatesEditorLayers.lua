@@ -411,7 +411,7 @@ function Layers.Build(ui)
     background:SetColorTexture(0.04, 0.06, 0.09, 0.96)
     local border = P.Suite.NameplateStyle.CreateBorder(rail)
     P.Suite.NameplateStyle.PaintBorder(border, rail, 1, "9e997f")
-    local title = T.Font(rail, "GameFontDisableSmall", Tr("LAYERS"), T.colors.muted)
+    local title = T.Font(rail, "GameFontDisableSmall", "LAYERS", T.colors.muted)
     title:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -8)
     ui.layerButtons = {}
     for i, def in ipairs(LAYERS) do
@@ -424,7 +424,7 @@ function Layers.Build(ui)
                     IsAvailable = function(owner, layer) return owner:LayerAvailable(layer) end,
                     IsOn = function(owner, layer) return owner:LayerActive(layer) end })
         else
-            button = T.Button(rail, Tr(label), 95, 20)
+            button = T.Button(rail, label, 95, 20)
             button:SetSize(95, 20)
         end
         button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -444,9 +444,9 @@ function Layers.Build(ui)
                 return ui:LayerActive(key) == desired
             end }
         button:SetScript("OnEnter", function()
-            ui.hint:SetText(Tr(label) .. " · " .. Tr(LayerHelp(key)))
+            P.SetTranslatedText(ui.hint, Tr(label) .. " · " .. Tr(LayerHelp(key)))
         end)
-        button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
+        button:SetScript("OnLeave", function() P.SetTranslatedText(ui.hint, Tr(ui.help)) end)
         Register(button, "layer." .. key, Tr("%s preview layer"):format(Tr(label)))
         ui.layerButtons[#ui.layerButtons + 1] = button
     end

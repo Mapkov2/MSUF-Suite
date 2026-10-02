@@ -161,16 +161,16 @@ local function BuildQuick(ctx, b)
         M.TrackRefresh(ctx, function()
             W.SetControlEnabled(toggle, Available(bar) and not P.Combat())
             if not Available(bar) then
-                status:SetText(Tr("Not available on this client"))
+                P.SetTranslatedText(status, Tr("Not available on this client"))
                 return
             end
             local mode = P.Get(ID, key)
             local label = Rule(key).choices[mode]
             if mode == 6 then
                 local previous = P.Get(ID, "bar" .. bar .. "ResumeVisibility")
-                status:SetText(Tr("Off") .. " - " .. Tr("restores") .. " " .. Tr(Rule(key).choices[previous]))
+                P.SetTranslatedText(status, string.format(Tr("Off - restores %s"), Tr(Rule(key).choices[previous])))
             else
-                status:SetText(Tr(label))
+                P.SetTranslatedText(status, Tr(label))
             end
         end)
     end
@@ -347,8 +347,8 @@ end
 local function AttachCopyTo(ctx, body, y)
     local Shared = M.UnitSectionsShared
     if not (Shared and Shared.MakeScopeCopyPopup) then return nil end
-    local copy = (W.RoleButton and W.RoleButton(body, Tr("Copy To"), "success", 82, 24))
-        or W.TopButton(body, Tr("Copy To"), 82, 24)
+    local copy = (W.RoleButton and W.RoleButton(body, "Copy To", "success", 82, 24))
+        or W.TopButton(body, "Copy To", 82, 24)
     copy:SetPoint("TOPRIGHT", body, "TOPRIGHT", -16, y - 24)
     copy._msuf2AllowCombatClick = true
     copy._msuf2SkipHistoryCheckpoint = true

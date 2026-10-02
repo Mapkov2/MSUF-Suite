@@ -303,13 +303,15 @@ end
 -- Every pass runs at once inside the post-hook, so frames Blizzard's pools
 -- create for the first time never show native art, and a frame takes at most
 -- one pass per frame:
---   * a window-level signal (the root's Refresh, a tab switch, ApplyLayout)
---     takes the root's full pass;
+--   * a window-level signal (a tab switch, ApplyLayout) takes the root's full
+--     pass;
 --   * a page signal takes the node pass of that page's subtree only, unless
 --     the root had its full pass this frame or has none in this skin
 --     generation (then the root takes it);
---   * opening a window whose root was applied in this skin generation takes
---     none: the page signals that rebuild its content ask for their own.
+--   * opening a window, or ProfessionsFrame:Refresh (every trade skill list
+--     update, so every craft), takes none while the root was applied in this
+--     skin generation: the page signals that rebuild its content (Refresh of
+--     every page runs inside it) ask for their own.
 local rootPasses = {
     {
         rootName = "ProfessionsFrame", category = "profession", mode = PROFESSION_MODE,
@@ -407,6 +409,10 @@ local function RequestSubtreePass(pass, subtree)
 end
 
 local function RefreshProfessions(frame)
+    RequestRootPass(PROFESSIONS_PASS, frame, true)
+end
+
+local function ProfessionsTabSet(frame)
     RequestRootPass(PROFESSIONS_PASS, frame, false)
 end
 
@@ -454,7 +460,7 @@ local function RefreshCustomerRow(button)
 end
 
 function DeepWindows:OnProfessionsTabSet(frame)
-    if frame == _G.ProfessionsFrame then RefreshProfessions(frame) end
+    if frame == _G.ProfessionsFrame then ProfessionsTabSet(frame) end
 end
 
 -- XML frames receive a copy of their mixin when Blizzard creates them, and
@@ -499,6 +505,8 @@ local function InstallProfessionsHooks()
     HookInstance(root, "Refresh", RefreshProfessions)
     HookInstance(crafting, "Init", RefreshProfessionPage)
     HookInstance(crafting, "Refresh", RefreshProfessionPage)
+    -- A profession switch rebuilds the specialization tabs and tree here.
+    HookInstance(Field(root, "SpecPage"), "Refresh", RefreshProfessionPage)
     HookInstance(crafting, "SchematicPostInit", RefreshProfessionSchematic)
     HookInstance(orders, "Init", RefreshProfessionPage)
     HookInstance(orders, "Refresh", RefreshProfessionPage)

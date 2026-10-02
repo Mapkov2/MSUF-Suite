@@ -44,7 +44,7 @@ local function Widget(name, parent, methods)
     methods = methods or {}
     local widget = methods
     widgets[widget] = { name = name, parent = parent, scale = 1, points = {}, shown = true,
-        width = 10, height = 10 }
+        width = 10, height = 10, alpha = 1 }
     local function Own() return widgets[widget] end
     function methods:GetName() return Own().name end
     function methods:GetObjectType() return "Frame" end
@@ -67,6 +67,8 @@ local function Widget(name, parent, methods)
     function methods:Show() Own().shown = true end
     function methods:Hide() Own().shown = false end
     function methods:SetShown(shown) Own().shown = shown == true end
+    function methods:SetAlpha(alpha) Own().alpha = alpha end
+    function methods:GetAlpha() return Own().alpha end
     function methods:GetFrameLevel() return 1 end
     function methods:GetFrameStrata() return "MEDIUM" end
     function methods:GetWindow() return nil end
@@ -191,6 +193,7 @@ end
 
 ------------------------------------------------------------------ skin
 local reapplies = 0
+local combat = false
 local settings = {
     layoutMode = "owned", scale = 0.8, buttonsPerLine = 13, spacing = 0, padding = 4,
     orientation = "horizontal", growth = "RIGHT_DOWN", barMaterial = "modern", iconStyle = "line",
@@ -202,7 +205,7 @@ local NS = {
     -- any of this runs; here every key reads as itself.
     L = setmetatable({}, { __index = function(_, key) return key end }),
     Client = { isForever = false, SupportsEvent = function() return true end },
-    IsCombatLocked = function() return false end,
+    IsCombatLocked = function() return combat end,
     DB = { icons = { microMenu = settings }, skins = {} },
     Defaults = { icons = { microMenu = settings } },
     MicroMenuMaxButtonsPerLine = 13,
@@ -279,6 +282,35 @@ Check(State(menu).parent == bar, "the bar did not take a menu Blizzard left on U
 Owned.Disable(menu)
 Check(State(menu).parent == container, "a menu taken from UIParent was not handed back to its container")
 Clean("taking the menu from UIParent")
+
+-- In combat a vehicle takes the menu, and the bar can take it back only once
+-- combat ends: until then the empty shell is invisible, through the vehicle
+-- exit (Blizzard's reset puts the menu in its container) as well.
+Owned.Apply(menu, settings)
+local pending = {}
+local runOrDefer = NS.CombatGate.RunOrDefer
+NS.CombatGate.RunOrDefer = function(key, callback)
+    if not combat then return runOrDefer(key, callback) end
+    pending[key] = callback
+    return false
+end
+combat = true
+AsBlizzard(menu.OverrideMicroMenuPosition, menu, overrideBar, "BOTTOM", overrideBar, "BOTTOM", 0, 0)
+Check(State(menu).parent == overrideBar and State(bar).alpha == 0 and Owned.suspended,
+    "the empty Micro Bar shell stayed visible while a vehicle held the menu in combat")
+AsBlizzard(menu.ResetMicroMenuPosition, menu)
+Check(State(menu).parent == container and State(bar).alpha == 0,
+    "the empty Micro Bar shell came back before the bar could take the menu again")
+combat = false
+local reapply = next(pending) and pending[next(pending)]
+Check(reapply ~= nil, "the bar did not wait for the end of combat to take the menu back")
+pending = {}
+if reapply then reapply() end
+NS.CombatGate.RunOrDefer = runOrDefer
+Check(State(menu).parent == bar and State(bar).alpha == 1 and not Owned.suspended,
+    "the bar did not take the menu back with its shell after combat")
+Clean("yielding to a vehicle in combat")
+Owned.Disable(menu)
 
 -- No Blizzard field changed through the skin.
 Check(fields.stride == 2 and fields.overrideScale == nil and fields.oldGridSettings == nil

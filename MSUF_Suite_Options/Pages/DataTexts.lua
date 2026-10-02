@@ -57,10 +57,11 @@ local function CrestCurrencyMenu(anchor)
     end)
 end
 -- The upgrade stages DataTexts observed this login. Sources.lua belongs to
--- the load-on-demand DataTexts addon: before it loads, the menu offers only
--- the reset to all observed stages.
+-- the load-on-demand DataTexts addon and exports them on S (Suite.Suite), not
+-- on the namespace: before it loads, the menu offers only the reset to all
+-- observed stages.
 local function SeasonStagesMenu(anchor)
-    local sources = P.Suite.DataTextExtraSources
+    local sources = S.DataTextExtraSources
     local choices = sources and sources.CrestChoices() or {}
     MenuUtil.CreateContextMenu(anchor, function(_, menu)
         menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = 1, crestCurrencies = "" }) end)
@@ -272,7 +273,7 @@ local function BuildPlaces(ctx, body, bar, sectionId, y, width)
             and not P.Combat()
         for slot = 1, PLACES do
             local choice = P.Get(ID, prefix .. "Slot" .. slot)
-            buttons[slot]:SetText(Tr(P.Suite.DataTextSources[choice] or "None"))
+            P.SetButtonText(buttons[slot], Tr(P.Suite.DataTextSources[choice] or "None"))
             buttons[slot]:SetEnabled(enabled)
         end
     end)
@@ -307,7 +308,7 @@ end
 -- Switching a bar to its own style starts from the current shared settings.
 local function BuildBarStyle(ctx, body, bar, sectionId, y, width, rules)
     local prefix = "bar" .. bar
-    local heading = P.Text(body, Tr("Bar styling"), 16, y, width, T.colors.text)
+    local heading = P.Text(body, "Bar styling", 16, y, width, T.colors.text)
     y = y - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
     local helpStyle = P.Text(body,
         "Use the shared style or customize this bar. Switching on copies the current shared settings.", 16, y, width)
@@ -343,7 +344,7 @@ local function BuildBarContents(ctx, b, body, bar, sectionId, width, rules)
     y = BuildBarActions(ctx, body, bar, sectionId, y, width)
     y = P.RuleGrid(ctx, body, PAGE, ID, rules.layout, y, width, nil, sectionId)
     y = P.RuleGrid(ctx, body, PAGE, ID, rules.blocks, y - 8, width, nil, sectionId)
-    local heading = P.Text(body, Tr("Visibility"), 16, y - 12, width, T.colors.text)
+    local heading = P.Text(body, "Visibility", 16, y - 12, width, T.colors.text)
     y = y - 12 - math.max(14, math.ceil(heading:GetStringHeight() or 14)) - 6
     local loadHelp = P.Text(body,
         "Hide this bar when any selected condition is true. The health condition uses your character's health. At full health the bar is transparent but can still receive clicks. Edit Mode shows it for placement.",

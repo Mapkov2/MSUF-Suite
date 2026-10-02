@@ -99,12 +99,12 @@ end
 local claim = "No global frame enumeration"
 local named = "• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons"
 for _, path in ipairs({ "MSUF_Suite_Skin_Options/Pages/Advanced.lua", "MSUF_Suite_Skin/Locales/enUS.lua",
-    "MSUF_Suite_Skin/Locales/deDE.lua" }) do
+    "MSUF_Suite/Locales/deDE.lua" }) do
     local text = Read(path)
     Check(not text:find(claim, 1, true) and text:find(named, 1, true),
         path .. " still claims there is no global frame enumeration")
 end
-Check(Read("MSUF_Suite_Skin/Locales/deDE.lua"):find("• Ein Frame-Durchlauf pro Sitzung", 1, true),
+Check(Read("MSUF_Suite/Locales/deDE.lua"):find("• Ein Frame-Durchlauf pro Sitzung", 1, true),
     "the German runtime contract does not name the frame pass")
 
 print("Suite skin panel button adoption: " .. checks .. " checks passed")

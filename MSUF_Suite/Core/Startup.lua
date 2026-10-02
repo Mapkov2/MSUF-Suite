@@ -27,7 +27,7 @@ local function Initialize()
     local ok, reason, quarantined = Suite.Database.Initialize(_G.MSUFSuiteDB, _G.MapkoSkinDB)
     if not ok then
         Suite.startupError = reason
-        Suite.Print("Cannot load suite profiles: " .. tostring(reason))
+        Suite.Print(Suite.Text("Cannot load suite profiles: %s"):format(tostring(reason)))
         return false
     end
     -- Reported once: the saved root keeps them set aside from now on.
@@ -56,7 +56,7 @@ local function Start()
         -- A manually loaded suite must not take ownership from a running old
         -- development runtime. Reloading allows the owner guard to run first.
         Suite.startupError = "legacy-runtime-active"
-        Suite.Print("Reload the interface to start the standalone suite.")
+        Suite.Print(Suite.Text("Reload the interface to start the standalone suite."))
         return
     end
     local profiles = Suite.SuiteProfiles

@@ -433,8 +433,21 @@ local function OnNativeScaleHook(root)
     Dispatch(OnNativeScale, root)
 end
 
+-- Blizzard took the menu (vehicle, pet battle, a full-screen flow). Out of
+-- combat the reapply hides the bar at once; in combat it waits, so the empty
+-- shell turns invisible until then (alpha is allowed in combat) and stays
+-- suspended. Taking the menu back restores its alpha (Visibility.Apply).
+local function OnNativeOverride()
+    if desired and OwnedMicroBar.active and bar and activeRoot and NS.IsCombatLocked()
+        and not ParentIs(activeRoot, bar) then
+        OwnedMicroBar.suspended = true
+        bar:SetAlpha(0)
+    end
+    ScheduleReapply()
+end
+
 local function OnNativeOverrideHook()
-    Dispatch(ScheduleReapply)
+    Dispatch(OnNativeOverride)
 end
 
 local function HookRootMethod(root, method, callback)

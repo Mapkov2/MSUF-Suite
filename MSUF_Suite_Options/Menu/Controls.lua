@@ -462,7 +462,7 @@ function P.LookPresetButtons(ctx, pageKey, id, sectionId, after)
         local buttons = {}
         for index, entry in ipairs(LOOK_BUTTONS) do
             local value, name = entry[1], entry[2]
-            local button = T.Button(body, Tr(name), buttonWidth, 26)
+            local button = T.Button(body, name, buttonWidth, 26)
             button:SetPoint("TOPLEFT", body, "TOPLEFT", 16 + (index - 1) * (buttonWidth + gap), y)
             button:SetScript("OnClick", function()
                 if not P.Combat() then P.Set(id, "look", value) end
@@ -488,13 +488,15 @@ function P.LookPresetButtons(ctx, pageKey, id, sectionId, after)
 end
 
 -- A reset writes the exact catalog keys owned by an accordion. Dynamic
--- sections resolve their selected bar/window only when the action is clicked.
+-- sections resolve their selected bar/window only when the action is clicked;
+-- a keyFn returns nil for a rule its target lacks, and that rule is skipped.
 function P.ResetRules(id, rules, keyFn, extraKeys)
     if P.Combat() then return false end
     local values = {}
     for _, rule in ipairs(rules or {}) do
-        local key = keyFn and keyFn(rule.key) or rule.key
-        local live = P.catalog[id].rules[key]
+        local key = rule.key
+        if keyFn then key = keyFn(key) end
+        local live = key and P.catalog[id].rules[key]
         if live then values[key] = live.default end
     end
     for _, key in ipairs(extraKeys or {}) do
@@ -547,7 +549,7 @@ local function SkinColorRow(skin, entry)
     return {
         id = "skin." .. key,
         kind = "color",
-        label = Tr((skin.L and skin.L[entry[2]]) or key),
+        label = Tr(skin.SourceText(entry[2]) or key),
         get = function()
             local color = skin.Theme.GetColorTable(key)
             return color[1], color[2], color[3], color[4]
@@ -651,12 +653,12 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         -- The preference remains editable even when this client cannot run the
         -- module. S.Apply still enforces Availability before starting it.
         W.SetControlEnabled(toggle, not P.Combat())
-        status:SetText(P.StatusText(id))
+        P.SetTranslatedText(status, P.StatusText(id))
         local entry = body._msuf2CollapsibleEntry
         if entry and entry.label then
             local suffix = not ok and (" - " .. P.Suite.StatusText(why or "Unavailable on this client", Tr))
                 or not P.Get(id, "enabled") and Tr(" - Off") or ""
-            entry.label:SetText(Tr(title) .. suffix)
+            P.SetTranslatedText(entry.label, Tr(title) .. suffix)
         end
     end)
     P.AttachSectionReset(ctx, body, title, function()

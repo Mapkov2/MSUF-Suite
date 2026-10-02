@@ -26,12 +26,16 @@ local PLATE_TEXTURES = {
     midnightDark = MIDNIGHT_PLATE,
 }
 
+-- Atlas cell per button. A client shows each cell once: Retail's combined
+-- PlayerSpells button and Forever's Spellbook share the book, Legacy (Forever)
+-- and Achievements (Retail) the trophy, and Forever's Talents has its own
+-- talent tree (13), apart from the Adventure Guide's compass (9).
 local ICON_CELLS = {
     CharacterMicroButton = 0,
     ProfessionMicroButton = 1,
     PlayerSpellsMicroButton = 2,
     SpellbookMicroButton = 2,
-    TalentMicroButton = 9,
+    TalentMicroButton = 13,
     LegacyMicroButton = 3,
     AchievementMicroButton = 3,
     QuestLogMicroButton = 4,

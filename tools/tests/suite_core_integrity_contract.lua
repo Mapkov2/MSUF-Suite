@@ -93,6 +93,51 @@ do
     Check(S.states.minimap.error == nil, "a raising normalization kept the profile listener from starting")
 end
 
+------------------------------------------------------------------ legacy flags
+-- A profile from before suite.revision carries one flag per migrated step.
+-- When its migration stops at a raising step, the flags of the steps after
+-- that one stay (copies keep them too): once the step finishes, the steps
+-- the flags mark as applied do not run again.
+do
+    local runs, failing = {}, true
+    local Suite = LoadCore(function(file, ns)
+        if file ~= "Core/Suite.lua" then return end
+        local steps = ns.SuiteMigrationSteps
+        for _, name in ipairs({ "ExperienceBarTop", "ActionBarsCustomLook", "BagsCustomLook", "LookRenumbering" }) do
+            local original = steps[name]
+            steps[name] = function(...)
+                runs[#runs + 1] = name
+                return original(...)
+            end
+        end
+        local hud = steps.HudTypography
+        steps.HudTypography = function(...)
+            if failing then error("legacy step failed") end
+            return hud(...)
+        end
+    end)
+    local S = Suite.Suite
+    reported = {}
+    local profile = { suite = { schema = 1, objectivesTransparentRevision = 1, xpTopRevision = 1,
+        actionBarLookRevision = 1, bagsLookRevision = 1, lookPresetRevision = 1, modules = {} } }
+    S.Normalize(profile)
+    Check(Reported("legacy step failed") and profile.suite.revision == 1,
+        "a raising legacy step did not hold the revision before it: " .. tostring(profile.suite.revision))
+    Check(profile.suite.objectivesTransparentRevision == nil and profile.suite.xpTopRevision == 1
+        and profile.suite.lookPresetRevision == 1, "the legacy flags after a raising step were cleared")
+    local revision, flags = S.MigrationState(profile.suite)
+    Check(revision == 1 and flags and flags.bagsLookRevision == 1 and flags.objectivesTransparentRevision == nil,
+        "the migration state of a stopped legacy profile lost its flags")
+    local copy = assert(Suite.ProfileIO.PrepareTable(profile, false))
+    Check(copy.suite.revision == 1 and copy.suite.xpTopRevision == 1 and #runs == 0,
+        "a copy of a stopped legacy profile lost its flags or ran its applied steps")
+    failing = false
+    S.Normalize(profile)
+    Check(#runs == 0, "a step its legacy flag marks as applied ran again: " .. table.concat(runs, ", "))
+    Check(profile.suite.revision == S.MigrationRevision and profile.suite.xpTopRevision == nil
+        and profile.suite.lookPresetRevision == nil, "the finished legacy migration kept its flags")
+end
+
 ------------------------------------------------------------------ shared core
 local Suite = LoadCore()
 local S, IO = Suite.Suite, Suite.ProfileIO

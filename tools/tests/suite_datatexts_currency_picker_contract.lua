@@ -1,8 +1,14 @@
 local root=assert(arg[1])
 local config={crestCurrencyIDs='10',crestMode=1}
-local S={Finite=function(v) return type(v)=='number' and v==v end,Public=function(v) return v~='secret' end}
+-- Two distinct tables, as in the client (Bridge.lua): P.Suite is the namespace
+-- (_G.MSUFSuite, with Finite and Public), P.S is Suite.Suite, where the
+-- DataTexts addon exports its sources. One shared table would hide a lookup
+-- in the wrong one.
+local NS={Finite=function(v) return type(v)=='number' and v==v end,Public=function(v) return v~='secret' end}
+local S={}
+NS.Suite=S
 local page
-local P={Suite=S,Tr=function(v) return v end,RegisterPage=function(v) page=v end,
+local P={Suite=NS,S=S,Tr=function(v) return v end,RegisterPage=function(v) page=v end,
     Get=function(_,key) return config[key] end,SetMany=function(_,values) for key,value in pairs(values) do config[key]=value end end}
 assert(loadfile(root..'/MSUF_Suite_Options/Pages/DataTexts.lua'))('Options',P)
 local picker
@@ -39,7 +45,7 @@ assert(config.crestCurrencyIDs=='20','toggle removes selection')
 buttons['Clear selection']()
 assert(config.crestMode==2 and config.crestCurrencyIDs=='','clear keeps manual empty mode')
 -- The observed seasonal stages come from the load-on-demand DataTexts addon
--- (P.Suite.DataTextExtraSources); before it loads, only the reset is offered.
+-- (S.DataTextExtraSources, P.S); before it loads, only the reset is offered.
 local stages
 for i=1,50 do local name,value=debug.getupvalue(page.build,i);if not name then break end;if name=='SeasonStagesMenu' then stages=value end end
 assert(stages,'season stage menu closure must be reachable')

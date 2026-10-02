@@ -2283,6 +2283,12 @@
    "symbol": "M.frame.Hide (= MSUF2)"
   },
   {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export: Classic MSUF has T.SetTranslatedText, the Retail (Main) MSUF menu not yet; there the font string's raw setter (_msuf2RawSetText) takes translated text. suite_locale_sites_smoke keeps the options pages on this path.",
+   "symbol": "T.SetTranslatedText"
+  },
+  {
    "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
@@ -2383,12 +2389,6 @@
    "kind": "addon",
    "reason": "LibDataBroker-1.1 is another addon's library, reached through LibStub when some addon loaded it; the Suite bundles neither. suite_datatexts_sources_contract covers plugins and callbacks with the library and, without LibStub, an empty plugin list, no callback registration and the configured name with the placeholder.",
    "symbol": "LibStub"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTexts.lua",
-   "kind": "lod",
-   "reason": "The load-on-demand DataTexts addon exports its source list from Sources.lua; before it loads, the observed-stage menu offers only Show all observed stages. suite_datatexts_currency_picker_contract opens SeasonStagesMenu without and with the export.",
-   "symbol": "sources (= P.Suite.DataTextExtraSources)"
   },
   {
    "file": "MSUF_Suite_DataTexts/Actions.lua",

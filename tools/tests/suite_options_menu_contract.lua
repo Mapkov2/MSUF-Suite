@@ -2228,6 +2228,7 @@ S.Config("dataTexts").bar2BackgroundColor = previousDataTextColor
 local skinColor = { 0.4, 0.5, 0.6, 0.7 }
 MapkoSkin = {
     addonName = "MSUF_Suite_Skin", ColorOrder = { { "accent", "ACCENT" } }, L = { ACCENT = "Accent" },
+    SourceText = function(key) return key == "ACCENT" and "Accent" or key end,
     Theme = {
         GetColorTable = function() return skinColor end,
         SetColor = function(_, r, g, blue, alpha) skinColor = { r, g, blue, alpha }; return true end,
@@ -2248,7 +2249,7 @@ MapkoSkin = nil
 -- it must not mount the old second navigation rail or require its options addon.
 -- Core/Client.lua loads before Core/Defaults.lua in the skin's TOC.
 local skin = { addonName = "MSUF_Suite_Skin", Client = { isMainline = true, isForever = false },
-    L = setmetatable({}, { __index = function(_, key) return key end }) }
+    L = setmetatable({}, { __index = function(_, key) return key end }), SourceText = function(key) return key end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", skin)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", skin)
 assert(skin.Defaults.theme.look == "cleanModern" and skin.Defaults.theme.preset == "cleanModern")

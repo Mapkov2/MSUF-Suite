@@ -13,14 +13,16 @@ end
 
 -- A copy keeps the migration state of its source, so one-time migrations
 -- never run again on already migrated values. Older data carries per-step
--- flags instead of a revision; those are copied as they are. A string may
--- claim any revision: it counts at most the steps this build knows, so a
--- step appended later still runs on it.
+-- flags instead of a revision (or after it, when its legacy migration
+-- stopped at a step); those are copied as they are. A string may claim any
+-- revision: it counts at most the steps this build knows, so a step
+-- appended later still runs on it.
 local function CopyMigrationState(source, target)
     local revision, flags = Suite.Suite.MigrationState(source)
     if revision then
         target.revision = math.min(revision, Suite.Suite.MigrationRevision)
-    elseif flags then
+    end
+    if flags then
         for key, value in pairs(flags) do target[key] = value end
     end
 end

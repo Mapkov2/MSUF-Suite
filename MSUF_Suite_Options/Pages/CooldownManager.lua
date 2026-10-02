@@ -283,7 +283,7 @@ local function BuildSection(ctx, b, ui, spec)
     end
     P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn, ColorEnabled)
     P.AttachSectionReset(ctx, body, spec.title, function()
-        return P.ResetRules(ID, rules, Page.KeyFn)
+        return P.ResetRules(ID, rules, Page.ResetKeyFn)
     end)
     if spec.id == "layout" then
         local half = floor((width - 12) / 2)
@@ -467,22 +467,8 @@ local function SpellButton(body, text, width, onClick, onEnter)
     button:HookScript("OnLeave", Page.HideTip)
     return button
 end
-local function BuildSpells(ctx, b, ui)
-    local sectionId = "suite_cooldownManager_spells"
-    local body = b:CollapsibleSection(sectionId, Tr("Spell list"), 120, false)
-    local width = max(240, (body._msuf2Width or b.width or 720) - 32)
-    local y = Help(body, HELP.spells, -18, width)
-    local spec = P.Text(body, "", 16, y, width, T.colors.text)
-    y = y - 22
-    local grid = Page.CreateTileGrid(ctx, body, 16, y, width)
-    grid.ui, ui.grid = ui, grid
-    local note = T.Font(body, "GameFontHighlightSmall", "", T.colors.text)
-    note:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", 0, -12)
-    note:SetWidth(width - 100)
-    note:SetJustifyH("LEFT")
-    local undo = Page.Button(body, "Undo", 80, 20, Page.RunUndo)
-    undo:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", width - 84, -8)
-    undo:Hide()
+-- The list-wide actions under the tiles, with their search metadata.
+local function BuildSpellButtons(body, grid, width, sectionId)
     local half = floor((width - 8) / 2)
     local addSpells = Page.Button(body, "Add spells", half, 24, function() Page.TogglePicker(grid.plus) end)
     addSpells:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", 0, -36)
@@ -504,7 +490,46 @@ local function BuildSpells(ctx, b, ui)
         M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "spells.copy", "action", sectionId), "Copy to other specializations", "button")
         M.RegisterControlMetadata(import, P.Meta(PAGE, ID, "spells.importBlizzard", "action", sectionId), "Import Blizzard CDM", "button")
     end
-    ui.spellButtons = { add = addSpells, restore = restore, clear = clear, copy = copy, import = import }
+    return { add = addSpells, restore = restore, clear = clear, copy = copy, import = import }
+end
+
+-- What the list-wide actions can do for the selected bar right now.
+local function PaintSpellButtons(body, buttons)
+    local blocked = Page.EditorBlocked() ~= nil
+    buttons.add:SetEnabled(not blocked)
+    -- Removals are kept per specialization, for every bar at once.
+    local hidden = blocked and 0 or Page.HiddenCount()
+    Page.ButtonText(buttons.restore, hidden > 0 and format(Tr("Show removed spells, all bars (%d)"), hidden)
+        or Tr("Show removed spells"))
+    buttons.restore:SetEnabled(hidden > 0)
+    local label = Page.ClearLabel(Page.selected)
+    if body._cdmClear ~= label then
+        body._cdmClear = label
+        Page.ButtonText(buttons.clear, Tr(label))
+    end
+    buttons.clear:SetEnabled(not blocked and Page.HasList(Page.selected))
+    buttons.copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))
+    buttons.import:SetEnabled(not blocked and type(S.CooldownManagerBlizzardSnapshot) == "function")
+end
+
+local function BuildSpells(ctx, b, ui)
+    local sectionId = "suite_cooldownManager_spells"
+    local body = b:CollapsibleSection(sectionId, Tr("Spell list"), 120, false)
+    local width = max(240, (body._msuf2Width or b.width or 720) - 32)
+    local y = Help(body, HELP.spells, -18, width)
+    local spec = P.Text(body, "", 16, y, width, T.colors.text)
+    y = y - 22
+    local grid = Page.CreateTileGrid(ctx, body, 16, y, width)
+    grid.ui, ui.grid = ui, grid
+    local note = T.Font(body, "GameFontHighlightSmall", "", T.colors.text)
+    note:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", 0, -12)
+    note:SetWidth(width - 100)
+    note:SetJustifyH("LEFT")
+    local undo = Page.Button(body, "Undo", 80, 20, Page.RunUndo)
+    undo:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", width - 84, -8)
+    undo:Hide()
+    local buttons = BuildSpellButtons(body, grid, width, sectionId)
+    ui.spellButtons = buttons
     -- The note shows here and under the preview.
     ui.PaintNote = function()
         Page.SetRaw(note, Page.note or "")
@@ -524,21 +549,7 @@ local function BuildSpells(ctx, b, ui)
         Page.SetRaw(spec, Page.BarName(Page.selected) .. "  -  " .. (specName or Tr("No specialization")))
         Layout(grid:Refresh())
         ui.PaintNote()
-        local blocked = Page.EditorBlocked() ~= nil
-        addSpells:SetEnabled(not blocked)
-        -- Removals are kept per specialization, for every bar at once.
-        local hidden = blocked and 0 or Page.HiddenCount()
-        Page.ButtonText(restore, hidden > 0 and format(Tr("Show removed spells, all bars (%d)"), hidden)
-            or Tr("Show removed spells"))
-        restore:SetEnabled(hidden > 0)
-        local label = Page.ClearLabel(Page.selected)
-        if body._cdmClear ~= label then
-            body._cdmClear = label
-            clear:SetText(Tr(label))
-        end
-        clear:SetEnabled(not blocked and Page.HasList(Page.selected))
-        copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))
-        import:SetEnabled(not blocked and type(S.CooldownManagerBlizzardSnapshot) == "function")
+        PaintSpellButtons(body, buttons)
         Header(body, "Spell list", false, "")
     end)
     ui.sections.spells = body
@@ -576,7 +587,7 @@ local function Build(ctx)
             local rules = P.SectionRules(ID, "general")
             rules[#rules + 1] = RULES[KEYS.c1.name]
             rules[#rules + 1] = RULES[KEYS.c1.kind]
-            return P.ResetRules(ID, rules, Page.KeyFn, { "enabled" })
+            return P.ResetRules(ID, rules, Page.ResetKeyFn, { "enabled" })
         end)
     end
     -- Basics first, then the closed spell list, then the other topics.
@@ -588,4 +599,4 @@ end
 
 P.RegisterPage({ key = PAGE, label = "Cooldown manager", title = "Cooldown manager", build = Build, icon = { 1, 1 },
     nav = "combat", navOrder = 2,
-    aliases = { "cdm", "cooldowns", "cooldown manager", "tracked buffs", "received buffs", "empfangene buffs", "buffs", "buff bars", "timer bars", "ccm" } })
+    aliases = { "cdm", "cooldowns", "cooldown manager", "tracked buffs", "received buffs", "buffs", "buff bars", "timer bars", "ccm" } })

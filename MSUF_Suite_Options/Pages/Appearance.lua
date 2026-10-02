@@ -40,7 +40,7 @@ end
 local function Preview(ctx, b, skin)
     local section, toolbar = W.FixedPreviewSection(ctx, b, { title = Tr("Skin preview"), height = 176 })
     if not section then return end
-    local hint = T.Font(toolbar, "GameFontDisableSmall", Tr("Choose a look below; this sample follows your changes."),
+    local hint = T.Font(toolbar, "GameFontDisableSmall", "Choose a look below; this sample follows your changes.",
         T.colors.muted)
     hint:SetPoint("LEFT", toolbar, "LEFT", 125, 0)
     hint:SetPoint("RIGHT", toolbar, "RIGHT", -12, 0)
@@ -49,14 +49,14 @@ local function Preview(ctx, b, skin)
     canvas:SetPoint("TOPLEFT", 14, -42)
     canvas:SetPoint("BOTTOMRIGHT", -14, 9)
     local shell = SkinBox(skin, canvas, 10, -7, 292, 116, "shell")
-    local title = T.Font(shell, "GameFontNormal", Tr("Window shell"), T.colors.text)
+    local title = T.Font(shell, "GameFontNormal", "Window shell", T.colors.text)
     title:SetPoint("TOPLEFT", 14, -12)
     local panel = SkinBox(skin, shell, 13, -37, 266, 66, "panel")
     local card = SkinBox(skin, panel, 10, -10, 246, 22, "card")
-    local cardLabel = T.Font(card, "GameFontHighlightSmall", Tr("Panel and card layer"), T.colors.text)
+    local cardLabel = T.Font(card, "GameFontHighlightSmall", "Panel and card layer", T.colors.text)
     cardLabel:SetPoint("LEFT", 8, 0)
     local button = SkinBox(skin, panel, 10, -40, 76, 19, "buttonPrimary")
-    local buttonLabel = T.Font(button, "GameFontHighlightSmall", Tr("Primary"), T.colors.text)
+    local buttonLabel = T.Font(button, "GameFontHighlightSmall", "Primary", T.colors.text)
     buttonLabel:SetPoint("CENTER")
     local note = P.Text(canvas, "", 326, -18, 300)
     -- Labels take the token's RGB only; the preview keeps them opaque.
@@ -70,8 +70,8 @@ local function Preview(ctx, b, skin)
         PaintLabel(buttonLabel, "accent")
         local look = skin.LookPresets[skin.DB.theme.look]
         local description = look and look.description or "Your own colors, materials and shape."
-        note:SetText(Tr(look and look.label or "Custom") .. "\n"
-            .. Tr((skin.L and skin.L[description]) or description))
+        P.SetTranslatedText(note, Tr(look and look.label or "Custom") .. "\n"
+            .. Tr(description))
     end)
 end
 
@@ -117,7 +117,7 @@ local function MicroLoadRows(skin)
         local key, label = condition[1], condition[2]
         rows[#rows + 1] = Row("toggle", label, "icons.microMenu." .. key, "micro",
             function() return skin.DB.icons.microMenu[key] end,
-            MicroOption(skin, "Micro Bar " .. label, key))
+            MicroOption(skin, format(Tr("Micro Bar %s"), Tr(label)), key))
     end
     return rows
 end
@@ -150,7 +150,7 @@ local function MicroPresetExtra(ctx, skin)
         for index, style in ipairs(MICRO_PRESETS) do
             local button = Button(ctx, body, MICRO_PRESET_LABELS[style],
                 16 + ((index - 1) % 2) * (half + 12), y - math.floor((index - 1) / 2) * 38, half, function()
-                    Change(skin, "Micro Bar " .. style, "micro.preset",
+                    Change(skin, format(Tr("Micro Bar %s"), Tr(MICRO_PRESET_LABELS[style])), "micro.preset",
                         function() return skin.MicroMenuSkin.ApplyPreset(style) end)
                 end, nil, P.Meta(PAGE, "skin", "micro.preset." .. style, "action", "suite_skin_micro"))
             if button then button._msuf2PrepareExactSearchTarget = prepare end
@@ -307,7 +307,7 @@ local function BuildLook(ctx, b, skin)
     -- the same colors under Suite skin.
     local paletteRows = {}
     for _, entry in ipairs(skin.ColorOrder or {}) do
-        paletteRows[#paletteRows + 1] = SkinColorRow(skin, entry[1], (skin.L and skin.L[entry[2]]) or entry[1])
+        paletteRows[#paletteRows + 1] = SkinColorRow(skin, entry[1], skin.SourceText(entry[2]) or entry[1])
     end
     Section(ctx, b, "basic", "Choose a look",
         format(Tr("Choosing a look updates Skinning and every enabled Suite module. Modules enabled later inherit it. New skin profiles start with %s."), defaultLabel), {
@@ -543,7 +543,8 @@ local function BuildWindows(ctx, b, skin)
     for _, id in ipairs(order) do
         if id ~= "microMenu" and id ~= "damageMeter" then
             local definition = definitions[id]
-            local label = definition and definition.labelKey and skin.L[definition.labelKey] or id
+            -- English: the row and its history entry translate it.
+            local label = definition and definition.labelKey and skin.SourceText(definition.labelKey) or id
             windows[#windows + 1] = Row("toggle", label, "skins." .. id, "windows",
                 function() return skin.DB.skins[id] end,
                 function(value)
@@ -562,7 +563,7 @@ local function BuildCoverage(ctx, b, skin)
         categories[#categories + 1] = Row("toggle", CATEGORY_LABELS[id] or id,
             "coverage." .. id, "coverage", function() return skin.DB.skinCategories[id] end,
             function(value)
-                Change(skin, "Skin " .. id, "coverage." .. id,
+                Change(skin, format(Tr("Skin %s"), Tr(CATEGORY_LABELS[id] or id)), "coverage." .. id,
                     function() return skin.GenericWindows.SetCategoryEnabled(id, value) end)
             end)
     end

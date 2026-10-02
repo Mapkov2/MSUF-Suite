@@ -49,6 +49,43 @@ local function PositionKeys(rules)
     return keys
 end
 
+-- One panel per enemy tab (Design, Blizzard elements) with its rules; a
+-- search hit on a rule selects the rule's tab first.
+local function EnemyPanels(ctx, body, width, sectionId, appearance, elements)
+    local panels, heights = {}, {}
+    for _, spec in ipairs({ { "appearance", appearance, HELP.enemy }, { "elements", elements, HELP.elements } }) do
+        local panel = CreateFrame("Frame", nil, body)
+        panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -59)
+        panel:SetSize(width + 32, 100)
+        local help = P.Description(panel, spec[3], 16, -18, width, "Enemy appearance")
+        local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
+        local entries
+        y, entries = P.RuleGrid(ctx, panel, PAGE, ID, spec[2], y, width, nil, sectionId)
+        local tab = spec[1]
+        for _, entry in ipairs(entries or {}) do
+            if entry.widget then
+                entry.widget._msuf2PrepareExactSearchTarget = function()
+                    P.SelectNameplatesEnemyTab(tab)
+                end
+            end
+        end
+        heights[spec[1]] = -y + 14
+        panel:SetHeight(heights[spec[1]])
+        panels[spec[1]] = panel
+    end
+    return panels, heights
+end
+
+-- The section reset covers the enemy rules and the cast bar elements shown here.
+local function EnemyResetRules(rules, elements)
+    local resetRules = {}
+    for _, rule in ipairs(rules) do resetRules[#resetRules + 1] = rule end
+    for _, rule in ipairs(elements) do
+        if CAST_ELEMENT_KEYS[rule.key] then resetRules[#resetRules + 1] = rule end
+    end
+    return resetRules
+end
+
 local function EnemySection(ctx, builder, rules)
     local appearance, elements = {}, {}
     for _, rule in ipairs(rules) do
@@ -72,27 +109,7 @@ local function EnemySection(ctx, builder, rules)
 
     local body = builder:CollapsibleSection(sectionId, Tr("Enemy appearance"), 120, true)
     local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
-    local panels, heights = {}, {}
-    for _, spec in ipairs({ { "appearance", appearance, HELP.enemy }, { "elements", elements, HELP.elements } }) do
-        local panel = CreateFrame("Frame", nil, body)
-        panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -59)
-        panel:SetSize(width + 32, 100)
-        local help = P.Description(panel, spec[3], 16, -18, width, "Enemy appearance")
-        local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
-        local entries
-        y, entries = P.RuleGrid(ctx, panel, PAGE, ID, spec[2], y, width, nil, sectionId)
-        local tab = spec[1]
-        for _, entry in ipairs(entries or {}) do
-            if entry.widget then
-                entry.widget._msuf2PrepareExactSearchTarget = function()
-                    P.SelectNameplatesEnemyTab(tab)
-                end
-            end
-        end
-        heights[spec[1]] = -y + 14
-        panel:SetHeight(heights[spec[1]])
-        panels[spec[1]] = panel
-    end
+    local panels, heights = EnemyPanels(ctx, body, width, sectionId, appearance, elements)
     local function RefreshHeight(tab)
         P.FinishBody(builder, body, -59 - heights[tab])
     end
@@ -117,11 +134,7 @@ local function EnemySection(ctx, builder, rules)
             Tr("Enemy nameplate tabs"), "segment")
     end
     P.AttachRuleColors(body, Tr("Enemy appearance"), ID, rules)
-    local resetRules = {}
-    for _, rule in ipairs(rules) do resetRules[#resetRules + 1] = rule end
-    for _, rule in ipairs(elements) do
-        if CAST_ELEMENT_KEYS[rule.key] then resetRules[#resetRules + 1] = rule end
-    end
+    local resetRules = EnemyResetRules(rules, elements)
     P.AttachSectionReset(ctx, body, Tr("Enemy appearance"), function() return P.ResetRules(ID, resetRules) end)
     refresh()
     return body

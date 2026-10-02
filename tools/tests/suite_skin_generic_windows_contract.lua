@@ -653,14 +653,27 @@ Section("deep windows", function()
     Load("DeepWindowsProfessions.lua", deepNS)
     local calls, restore = CountingApplyFrame()
 
+    -- Blizzard_ProfessionsFrame.lua: ProfessionsMixin:Refresh refreshes every
+    -- page (self.Pages) before its own title and tabs.
     local professionsMixin = {}
-    function professionsMixin:Refresh() end
+    function professionsMixin:Refresh()
+        for _, page in ipairs(self.Pages) do page:Refresh(self.professionInfo) end
+    end
     local craftingMixin = {}
     function craftingMixin:Init() end
     function craftingMixin:Refresh() end
     function craftingMixin:SchematicPostInit() end
     _G.ProfessionsMixin, _G.ProfessionsCraftingPageMixin = professionsMixin, craftingMixin
-    -- XML frames carry their own copy of the mixin.
+    -- XML frames carry their own copy of the mixin. The window holds about
+    -- 1,200 nodes, most of them in its pages.
+    local function Leaves(parent, count)
+        for index = 1, count do
+            local leaf = Frame(nil)
+            leaf.parent = parent
+            function leaf:GetParent() return self.parent end
+            parent.children[index] = leaf
+        end
+    end
     local professions = Frame("ProfessionsFrame")
     professions.scripts = {}
     function professions:HookScript(script, callback) self.scripts[script] = callback end
@@ -672,6 +685,19 @@ Section("deep windows", function()
     local schematic = Frame(nil)
     function schematic:GetParent() return crafting end
     crafting.SchematicForm = schematic
+    local spec = Frame(nil)
+    function spec:Refresh() end
+    function spec:GetParent() return professions end
+    professions.SpecPage = spec
+    professions.Pages = { crafting, spec }
+    local chrome = Frame(nil)
+    function chrome:GetParent() return professions end
+    Leaves(crafting, 600)
+    crafting.children[#crafting.children + 1] = schematic
+    Leaves(schematic, 100)
+    Leaves(spec, 300)
+    Leaves(chrome, 200)
+    professions.children = { crafting, spec, chrome }
     _G.ProfessionsFrame = professions
 
     local traitMixin = {}
@@ -716,8 +742,39 @@ Section("deep windows", function()
         "a crafting page signal did not re-skin just that page")
     NextFrame()
     Reset()
-    -- One ProfessionsFrame:Refresh burst: the window pass covers its pages.
+    -- ProfessionsFrame:Refresh runs on every trade skill list update, so on
+    -- every craft: its pages pass over their own subtrees, and the window,
+    -- applied in this skin generation, takes no second full pass.
     professions:Refresh()
+    Expect(calls[professions] == nil and descendants[crafting] == 1 and descendants[spec] == 1,
+        "a profession window refresh walked the whole window again, or skipped a page")
+    NextFrame()
+    Reset()
+    local function RefreshCost()
+        collectgarbage("collect")
+        collectgarbage("stop")
+        local before = collectgarbage("count")
+        local ticks = 0
+        debug.sethook(function() ticks = ticks + 1 end, "", 1)
+        professions:Refresh()
+        debug.sethook()
+        local kilobytes = collectgarbage("count") - before
+        collectgarbage("restart")
+        NextFrame()
+        Reset()
+        return ticks, kilobytes
+    end
+    RefreshCost()
+    -- Measured 2026-10-02 in this fixture (GC stopped): 3,129,656 VM
+    -- instructions before the skin-generation guard (each page walked again
+    -- inside the window's full pass) and 126.7 KB, 1,655,494 and 78.4 KB with
+    -- it; budgets +2 %.
+    local cost, kilobytes = RefreshCost()
+    Expect(cost <= 1688600, ("a profession window refresh costs %d VM instructions (budget 1688600)"):format(cost))
+    Expect(kilobytes <= 80, ("a profession window refresh allocates %.1f KB (budget 80)"):format(kilobytes))
+    -- A tab switch gives the window its full pass; the other signals of that
+    -- frame take none.
+    deepNS.DeepWindows:OnProfessionsTabSet(professions)
     crafting:Init()
     crafting:SchematicPostInit()
     professions.scripts.OnShow(professions)
@@ -1499,6 +1556,54 @@ Section("damage meter rows", function()
         "a raising minimize repaint escaped into Blizzard's SetMinimized")
     NS.DamageMeterSkin.Disable(nil, "meter")
     Expect(next(box.callbacks) == nil, "the damage meter row callback survived disable")
+    NS.DB = nil
+end)
+
+-- Session windows the player opens after the skin applied come from
+-- DamageMeter:SetupSessionWindow (Blizzard_DamageMeter/DamageMeter.lua:284),
+-- which creates the window on first use.
+Section("damage meter windows opened later", function()
+    Load("DamageMeter.lua")
+    NS.DB = { hud = { damageMeterRows = true, damageMeterDetails = true, damageMeterWindows = true } }
+    local windows = {}
+    local meter = Frame("DamageMeter")
+    function meter:ForEachSessionWindow(callback)
+        for _, window in ipairs(windows) do callback(window) end
+    end
+    function meter:SetupSessionWindow(index, windowData)
+        if windowData.sessionWindow then return end
+        local window = Frame("DamageMeterSessionWindow" .. index)
+        window.MinimizeContainer = { ScrollBox = RowBox() }
+        window.MinimizeButton = Frame(nil)
+        function window:SetMinimized(minimized) self.minimized = minimized end
+        windowData.sessionWindow = window
+        windows[#windows + 1] = window
+    end
+    meter:SetupSessionWindow(1, {})
+    Expect(NS.DamageMeterSkin.Apply(meter, "meter") and windows[1].surfaceSpec ~= nil,
+        "the primary damage meter window was not skinned")
+    local second = {}
+    meter:SetupSessionWindow(2, second)
+    Expect(second.sessionWindow.surfaceSpec ~= nil, "a damage meter window opened after the skin applied stayed unskinned")
+    Expect(next(second.sessionWindow.MinimizeContainer.ScrollBox.callbacks) ~= nil,
+        "the rows of a damage meter window opened later are not skinned")
+    -- In combat the pass waits for the gate; one pass covers every window.
+    local deferred = {}
+    local runOrDefer = NS.CombatGate.RunOrDefer
+    NS.CombatGate.RunOrDefer = function(key, callback) deferred[key] = callback; return false end
+    locked = true
+    local third = {}
+    meter:SetupSessionWindow(3, third)
+    locked = false
+    NS.CombatGate.RunOrDefer = runOrDefer
+    local pass = deferred["damageMeter:windows"]
+    Expect(third.sessionWindow.surfaceSpec == nil and pass, "a damage meter window set up in combat was not deferred")
+    if pass then pass() end
+    Expect(third.sessionWindow.surfaceSpec ~= nil, "the deferred pass did not skin the window set up in combat")
+    NS.DamageMeterSkin.Disable(nil, "meter")
+    local fourth = {}
+    meter:SetupSessionWindow(4, fourth)
+    Expect(fourth.sessionWindow.surfaceSpec == nil, "a damage meter window set up after disable was skinned")
     NS.DB = nil
 end)
 

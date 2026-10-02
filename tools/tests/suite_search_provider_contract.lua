@@ -938,6 +938,14 @@ do
     end
     M.Tr=nativeTr
     P.InvalidateSearch()
+    -- The German words come from the German pack, not from the English word
+    -- lists: an English client does not match them.
+    for _, case in ipairs({{"Schadensmesser","suite_damageMeter"},{"empfangene Buffs","suite_cooldownManager"},
+        {"Datenleisten","suite_dataTexts"},{"Infoleiste","suite_dataTexts"}}) do
+        for _, record in ipairs(Search(case[1])) do
+            Check(record.key~=case[2],"an English client matched the German word "..case[1])
+        end
+    end
 end
 
 -- Every shipped locale exercises the combined Core/Suite query path, including

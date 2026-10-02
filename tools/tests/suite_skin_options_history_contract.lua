@@ -97,8 +97,8 @@ pageHost.shown = true
 assert(options.SetMode(options.GetMode() == "expert" and "guided" or "expert"))
 assert(modeRuns == 1 and pageRuns == 2, "mode switch did not run listeners once and refresh the shown page")
 
--- Every Skinning options string resolves in the English and German tables,
--- and neither table declares a key twice.
+-- Every Skinning options string resolves in the skin's English table (which
+-- declares no key twice) and in the Suite's German pack.
 local function ReadFile(path)
     local file = assert(io.open(path, "rb"))
     local text = file:read("*a"):gsub("\r\n", "\n")
@@ -106,7 +106,9 @@ local function ReadFile(path)
     return text
 end
 local locales = {}
-for _, locale in ipairs({ "enUS", "deDE" }) do
+local Support = dofile("tools/tests/suite_test_support.lua")
+local germanPack = Support.SuitePack(".", "deDE")
+for _, locale in ipairs({ "enUS" }) do
     local source = ReadFile("MSUF_Suite_Skin/Locales/" .. locale .. ".lua")
     local seen = {}
     for line in source:gmatch("[^\n]+") do
@@ -127,7 +129,9 @@ for line in ReadFile("MSUF_Suite_Skin_Options/MSUF_Suite_Skin_Options_Mainline.t
         local source = ReadFile("MSUF_Suite_Skin_Options/" .. line:gsub("\\", "/"))
         for raw in source:gmatch('%f[%w_]L%["([^"\n]*)"%]') do
             local key = raw:gsub("\\n", "\n")
-            assert(locales.enUS[key] and locales.deDE[key], "Skinning string missing from the locale tables: " .. raw)
+            local text = locales.enUS[key]
+            assert(text and (germanPack[text] or Support.SKIN_SAME_IN_GERMAN[text]),
+                "Skinning string missing from the locale tables: " .. raw)
             checked = checked + 1
         end
     end

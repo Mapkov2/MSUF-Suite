@@ -53,12 +53,9 @@ local function MutedColor() return Color("muted", 0.6, 0.65, 0.72) end
 Page.Color, Page.Accent, Page.TextColor, Page.MutedColor = Color, Accent, TextColor, MutedColor
 
 -- Spell and item names never go through the locale table: they are data, and
--- a protected value must not become a table key.
-local function SetRaw(fontString, text)
-    local raw = fontString._msuf2RawSetText or fontString.SetText
-    raw(fontString, text or "")
-end
-Page.SetRaw = SetRaw
+-- a protected value must not become a table key. Translated text takes the
+-- same raw setter (P.SetTranslatedText).
+Page.SetRaw = P.SetTranslatedText
 
 function Page.SlotInfo(slot) return SLOTS[CDM.SLOT_INDEX[slot] or 1] end
 function Page.Kind(slot)
@@ -200,6 +197,14 @@ function Page.KeyFn(key)
     local suffix = TEMPLATE_SUFFIX[key]
     if not suffix then return key end
     return KEYS[Page.selected][suffix] or key
+end
+-- A section reset writes only the selected bar's own keys: a suffix the bar
+-- lacks resolves to nothing, so P.ResetRules skips it instead of resetting
+-- custom bar 1's template key.
+function Page.ResetKeyFn(key)
+    local suffix = TEMPLATE_SUFFIX[key]
+    if not suffix then return key end
+    return KEYS[Page.selected][suffix]
 end
 -- The sound channel means nothing while the module's sounds are muted.
 P.Gates[ID] = function(rule)

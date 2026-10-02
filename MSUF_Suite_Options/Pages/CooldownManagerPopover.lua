@@ -434,7 +434,7 @@ local function PaintNumber(row, field, value, companion)
     if shown == nil then shown = field.off and 0 or tonumber(BarValue(field)) or 0 end
     SetRaw(row.value, field.off and shown == 0 and Tr("Off") or tostring(shown))
     row.value:SetAlpha(value ~= nil and 1 or 0.6)
-    if row.hint then row.hint:SetText(value ~= nil and "" or Tr(field.fallback or "Bar")) end
+    if row.hint then SetRaw(row.hint, value ~= nil and "" or Tr(field.fallback or "Bar")) end
     local swatch = row.swatch
     if swatch then
         local r, g, b = P.RGB(companion or STACK_COLOR)
@@ -450,7 +450,7 @@ local function PaintRow(row, fields)
     local companion = field.color and fields and fields[field.color] or nil
     local own = Page.OwnSpellFields(pop.key)
     local custom = own and (own[field.key] ~= nil or (field.color and own[field.color] ~= nil)) or false
-    row.label:SetText(Tr(pop.family == 2 and field.auraLabel or field.label))
+    SetRaw(row.label, Tr(pop.family == 2 and field.auraLabel or field.label))
     local r, g, b
     if custom then r, g, b = Accent() else r, g, b = TextColor() end
     row.label:SetTextColor(r, g, b)
@@ -482,7 +482,7 @@ local function PaintRow(row, fields)
             -- What Automatic picked, when the runtime says so.
             ButtonText(row.choice, Tr(pop.unit == "target" and "Automatic: target" or "Automatic: you"))
         else
-            row.choice:SetText(Tr(text))
+            ButtonText(row.choice, Tr(text))
         end
     elseif kind == "number" then
         PaintNumber(row, field, value, companion)
@@ -504,7 +504,7 @@ local function PaintRow(row, fields)
         if not (row.edit.HasFocus and row.edit:HasFocus()) then row.edit:SetText(value and (name or tostring(value)) or "") end
         if value then row.preview:SetTexture(kind == "spell" and C_Spell.GetSpellTexture(value) or value) else SetIcon(row.preview, pop.texture) end
     end
-    if Page.spellSpecScope and not custom and value ~= nil and row.hint then row.hint:SetText(Tr("Shared")) end
+    if Page.spellSpecScope and not custom and value ~= nil and row.hint then SetRaw(row.hint, Tr("Shared")) end
 end
 
 local function RemoveClick()
@@ -588,7 +588,7 @@ local function EnsurePopover()
         local width = T.MeasureButtonWidth and T.MeasureButtonWidth(pop.actions[i], 60, POP_W - 24)
         if type(width) == "number" and width > 0 then pop.actions[i]:SetWidth(width) end
     end
-    pop.scope = Label(pop, "GameFontDisableSmall", Tr("These choices apply to this spell on every bar and specialization."),
+    pop.scope = Label(pop, "GameFontDisableSmall", "These choices apply to this spell on every bar and specialization.",
         "muted")
     pop.scope:SetWidth(POP_W - 24)
     pop.scroll, pop.content = Page.ScrollArea(pop, POP_W - 40)
@@ -633,9 +633,9 @@ function Page.PaintPopover()
     SetRaw(pop.title, Public(pop.entryName) and pop.entryName or pop.key)
     SetRaw(pop.sub, Page.BarName(pop.slot) .. "  -  " .. Page.Identity(pop.key))
     pop.reset:SetEnabled(Page.OwnSpellFields(pop.key) ~= nil)
-    pop.scope:SetText(Tr(Page.spellSpecScope and "Editing this specialization. Reset a choice to inherit the shared value."
+    SetRaw(pop.scope, Tr(Page.spellSpecScope and "Editing this specialization. Reset a choice to inherit the shared value."
         or "These choices apply to this spell on every bar and specialization."))
-    pop.scopeButton:SetText(Tr(Page.spellSpecScope and "Edit shared choices" or "Edit this specialization"))
+    pop.scopeButton:SetText(Page.spellSpecScope and "Edit shared choices" or "Edit this specialization")
     pop.scopeButton:SetEnabled(Page.Spec() ~= nil)
     local top = PlaceActions(kind ~= "b")
     local y = 0
