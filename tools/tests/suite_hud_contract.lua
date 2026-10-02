@@ -321,8 +321,11 @@ S.ModuleState = function(id) moduleStates[id] = moduleStates[id] or {}; return m
 local characterData = {}
 S.CharacterData = function(id) characterData[id] = characterData[id] or {}; return characterData[id] end
 MutedHost = Widget(UIParent)
-local function Context()
-    local ctx = { events = {}, eventUnits = {}, hidden = {}, saved = {}, muted = {} }
+-- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on a stub
+-- context of module id.
+local TimerContext
+local function Context(id, module)
+    local ctx = TimerContext(id, module, { events = {}, eventUnits = {}, hidden = {}, saved = {}, muted = {} })
     function ctx:Event(event, callback, _, unit) self.events[event], self.eventUnits[event] = callback, unit end
     function ctx:RemoveEvent(event) self.events[event] = nil end
     function ctx:Skin() return nil end
@@ -370,12 +373,14 @@ do
     assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
     for key, value in pairs(stubs) do S[key] = value end
 end
+suite.Dispatch = S.Dispatch
+TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, suite)
 local private = { NS = suite, Suite = S }
 for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesActions", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
-tracker.context = Context()
+tracker.context = Context("objectives", tracker)
 tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
     showWorldQuests = true, showBonus = true, showAchievements = true, showScenario = true }
 -- Blizzard's tracker is a right-managed Edit Mode frame: a SetParent or Hide
@@ -424,6 +429,10 @@ assert(openedLog == 2 and openedQuest == 42, "objective line did not open its qu
 tracker.headerClick.OnClick()
 assert(openedLog == 3, "tracker header did not open the quest log")
 local questRow = tracker.rows["entry:quests:42"]
+-- The row height is read from the text's wrap at its own width, which is set
+-- before the read instead of following anchors resolved later.
+assert(questRow.text.width and questRow.text.width > 0 and questRow.text.width < questRow.width,
+    "the objective text height was read before its width was known")
 -- Hovering a row shows the quest link, the achievement, or the title.
 questRow.OnEnter(questRow)
 assert(GameTooltip.shown and GameTooltip.owner == questRow and GameTooltip.link == "quest:42",
@@ -669,12 +678,22 @@ assert(#movers.objectives.spec.extraControls == 3
 assert(movers.objectives.spec.extraControls[3].set(125) and tracker.config.scale == 125)
 assert(movers.objectives.spec.extraControls[3].set(100))
 local banner = S.instances.announcements
-banner.context = Context()
+banner.context = Context("announcements", banner)
 banner.config = { zone = true, eventToasts = true, quests = false,
     achievements = true, level = false, scenario = false,
     duration = 4, scale = 100, anchor = 1, x = 0, y = -90 }
 ZoneTextFrame = Widget(UIParent)
 SubZoneTextFrame = Widget(UIParent)
+-- Mists-flavor banners: Retail and Forever never build them, so the
+-- announcements never look them up.
+local mistsBanners = {}
+for _, name in ipairs({ "LevelUpDisplay", "LevelUpDisplaySide", "WorldQuestCompleteBannerFrame" }) do
+    mistsBanners[name] = true
+end
+local globalLookups = setmetatable({}, { __index = function(_, key)
+    assert(not mistsBanners[key], "the announcements looked up the Mists-only banner " .. tostring(key))
+end })
+setmetatable(_G, { __index = globalLookups })
 EventToastManagerFrame = Widget(UIParent)
 function EventToastManagerFrame:DisplayToast(info)
     self.currentDisplayingToast = info and { toastInfo = info } or nil
@@ -704,6 +723,7 @@ ScenarioAlertSystem = { alertFramePool = {
 function ScenarioAlertSystem:ShowAlert() scenarioAlert:SetParent(UIParent) end
 banner:Enable()
 assert(movers.announcements.element == "banner" and ZoneTextFrame:GetParent() == MutedHost)
+setmetatable(_G, nil)
 assert(movers.announcements.spec.extraControls[1].id == "scale"
     and movers.announcements.spec.extraControls[1].set(125)
     and banner.config.scale == 125,
@@ -744,9 +764,9 @@ banner.config.zoneColor = "00ff00"
 for _, key in ipairs({ "questColor", "achievementColor", "levelColor", "scenarioColor", "noticeColor" }) do
     banner.config[key] = "ff0000"
 end
-local serial = banner.serial
+local expires = banner.expiresAt
 banner:Refresh()
-assert(banner.serial == serial and banner.title.textColor[2] == 1
+assert(banner.expiresAt == expires and banner.dismissTimer:Pending() and banner.title.textColor[2] == 1
     and math.abs(banner.background.color[1] - 17 / 255) < .001,
     "announcement color changes must repaint without restarting the display timer")
 EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 7,
@@ -792,7 +812,10 @@ banner:Refresh()
 assert(banner.title.text == "The Coreway", "leaving Edit Mode must restore the active announcement")
 banner.queue = {}
 local resumedDismiss = assert(table.remove(scheduled), "Edit Mode exit did not rearm the banner timer")
+local resumedAt = clock
+clock = banner.expiresAt + .01
 resumedDismiss()
+clock = resumedAt
 assert(banner.leave.playing, "a banner resumed from Edit Mode never started fading out")
 banner.leave.OnFinished()
 assert(not banner.showing and not banner.host.shown and not banner.current,
@@ -1226,14 +1249,14 @@ insideRaid, instanceKind = false, nil
 tracker.config.pauseInRaidCombat = true
 tracker.config.showTimers = true
 tracker:Refresh()
-assert(tracker.timerPending, "visible objective timers should schedule before raid combat")
+assert(tracker.countdownJob.pending, "visible objective timers should schedule before raid combat")
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 -- The client sends PLAYER_REGEN_DISABLED before InCombatLockdown() turns true.
 insideRaid, instanceKind = true, "raid"
 tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
 combatLocked = true
 assert(tracker.pausedForRaidCombat and not tracker.host.shown
-    and not tracker.timerPending
+    and not tracker.countdownJob.pending
     and not tracker.context.events.QUEST_LOG_UPDATE
     and not tracker.context.events.SCENARIO_UPDATE
     and not tracker.context.events.GROUP_ROSTER_UPDATE
@@ -1242,7 +1265,7 @@ assert(tracker.pausedForRaidCombat and not tracker.host.shown
 local beforeRaidReads = questUpdates
 tracker.context.events.ZONE_CHANGED_NEW_AREA(tracker, "ZONE_CHANGED_NEW_AREA")
 Drain()
-assert(questUpdates == beforeRaidReads and not tracker.timerPending,
+assert(questUpdates == beforeRaidReads and not tracker.countdownJob.pending,
     "raid combat must cancel queued tracker reads and countdown ticks")
 combatLocked = false
 tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
@@ -1381,6 +1404,20 @@ if flavor == "Mainline" then
     collectgarbage("restart")
     assert(healthAllocated<1,"raid health storms allocated per event")
     assert(#scheduled==pendingCallbacks+1 and healthReads==1,"a health storm repeated native reads")
+    -- Budget of one boss health event while the live redraw is due (shipped
+    -- code only; measured 2026-10-02 on the hand-rolled pending flag, +2 %).
+    local healthInstructions = 0
+    debug.sethook(function()
+        local source = debug.getinfo(2, "S").source:gsub("\\", "/")
+        if source:find("/MSUF_Suite[%w_]*/") and not source:find("/tools/", 1, true) then
+            healthInstructions = healthInstructions + 1
+        end
+    end, "", 1)
+    tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+    debug.sethook()
+    local HEALTH_BUDGET = 22
+    assert(healthInstructions <= math.floor(HEALTH_BUDGET * 1.02),
+        "a boss health event cost " .. healthInstructions .. " instructions, budget " .. HEALTH_BUDGET)
     livePercent=40;raidTicker:Fire()
     assert(healthReads==2 and tracker.raid.current.text:find("First Guardian 40.0%%"),
         "the clock paint did not drain the latest pending health")

@@ -2,7 +2,10 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID, SPELL_ID = "battleRes", 20484 -- Rebirth exposes the shared combat-resurrection pool.
 local POINTS = NS.AnchorPoints
-local M = { generation = 0 }
+local M = {}
+-- CHALLENGE_MODE_START may precede the API's active-state transition; the
+-- key state is read again once, this long after it (self.startJob).
+local START_RECHECK = .2
 
 local function EncounterActive()
     local active = C_InstanceEncounter.IsEncounterInProgress()
@@ -136,7 +139,7 @@ Update = function(self)
     local display = C_Spell.GetSpellDisplayCount(SPELL_ID)
     if S.Public(display) and (type(display) ~= "string" or display == "") then display = "--" end
     self.count:SetText(display)
-    self.maximum:SetText("/" .. math.floor(maximum))
+    self.maximum:SetFormattedText("/%d", math.floor(maximum))
 
     if info.isActive == true then
         local duration = C_Spell.GetSpellChargeDuration(SPELL_ID)
@@ -166,23 +169,16 @@ local function ContextChanged(self, event)
         self.challengeActive = ChallengeActive()
     end
     Update(self)
+    if event == "CHALLENGE_MODE_START" and not self.challengeActive then self.startJob:Request() end
+end
 
-    -- CHALLENGE_MODE_START may precede the API's active-state transition.
-    if event == "CHALLENGE_MODE_START" and not self.challengeActive and not self.pendingStart then
-        self.pendingStart = true
-        local generation = self.generation
-        C_Timer.After(.2, function()
-            if self.generation ~= generation or not self.active then return end
-            self.pendingStart = false
-            self.challengeActive = ChallengeActive()
-            Update(self)
-        end)
-    end
+local function RecheckStart(self)
+    self.challengeActive = ChallengeActive()
+    Update(self)
 end
 
 function M:Enable()
-    self.generation = self.generation + 1
-    self.pendingStart = false
+    self.startJob = self.context:Coalesce(START_RECHECK, RecheckStart)
     Create(self)
     Place(self)
     self.encounterActive = EncounterActive()
@@ -205,9 +201,8 @@ function M:Refresh()
     Update(self)
 end
 
+-- The context's Release drops a pending key recheck.
 function M:Disable()
-    self.generation = self.generation + 1
-    self.pendingStart = false
     if self.watching then WatchCharges(self, false) end
     if self.host then
         self.cooldown:Clear()

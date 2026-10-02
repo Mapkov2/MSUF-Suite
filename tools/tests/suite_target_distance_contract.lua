@@ -79,11 +79,13 @@ local S = {
 local movers = {}
 S.RegisterOwnedMover = function(id, element, spec) assert(id == "targetDistance"); movers[element] = spec end
 local combat = false
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TargetDistance.lua"))("test",
-    { NS = { Client = {}, IsCombatLocked = function() return combat end }, Suite = S })
+local NS = { Client = {}, IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TargetDistance.lua"))("test", { NS = NS, Suite = S })
 module.active, module.config = true, { x = 0, y = -160, attachX = 0, attachY = -8 }
-module.context = { events = {}, Event = function(self, event, fn) self.events[event] = fn end,
-    RemoveEvent = function(self, event) self.events[event] = nil end }
+module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)("targetDistance",
+    module, { events = {}, Event = function(self, event, fn) self.events[event] = fn end,
+    RemoveEvent = function(self, event) self.events[event] = nil end })
 local function Fire(event, ...) assert(module.context.events[event], event)(module, event, ...) end
 module:Enable()
 assert(not module.host.shown and not next(subscriptions) and reads == 0)
@@ -195,7 +197,11 @@ Fire("PLAYER_ENTERING_WORLD", true, false)
 Flush()
 assert(subscriptions[1], "world-entry boolean payload must not be mistaken for a unit token")
 Fire("TRAIT_CONFIG_UPDATED", 12345); beforeLookups = lookups
-module:Disable(); Flush()
+-- As the controller stops a module: inactive, Disable, then Release.
+module.active = false
+module:Disable()
+module.context:CancelTimers()
+Flush()
 assert(not module.host.shown and not next(subscriptions))
 assert(lookups == beforeLookups, "disabled owners must cancel pending discovery")
 print("Target range estimate: bounded discovery, kind-scoped subscriptions, copied target rect, secrets, formatting and cleanup passed")

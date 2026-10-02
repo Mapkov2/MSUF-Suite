@@ -1,6 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local logOn, instanceType, difficulty = false, "none", 0
-local timers, events, messages, calls = {}, {}, {}, {}
+local events, messages, calls = {}, {}, {}
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 
 LoggingCombat = function(value)
     if value == nil then return logOn end
@@ -12,13 +13,13 @@ C_ChatInfo = { IsLoggingCombat = function() return logOn end }
 GetInstanceInfo = function() return "test", instanceType, difficulty end
 local inDelve = false
 C_DelvesUI = { HasActiveDelve = function() return inDelve end }
-C_Timer = { NewTimer = function(seconds, callback)
+local clock, waits = Support.Clock(), 0
+local NativeAfter = C_Timer.After
+C_Timer.After = function(seconds, callback)
     assert(seconds == 30)
-    local timer = { callback = callback, canceled = false }
-    function timer:Cancel() self.canceled = true end
-    timers[#timers + 1] = timer
-    return timer
-end }
+    waits = waits + 1
+    return NativeAfter(seconds, callback)
+end
 local secret = {}
 issecretvalue = function(value) return value == secret end
 
@@ -29,7 +30,8 @@ function suite.Install(id, module)
     assert(id == "combatLog" and not suite.instances[id])
     suite.instances[id] = module
 end
-local owner = { Print = function(message) messages[#messages + 1] = message end }
+local owner = { Print = function(message) messages[#messages + 1] = message end,
+    Dispatch = function(callback, ...) return callback(...) end }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CombatLog.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = owner, Suite = suite })
 local module = assert(suite.instances.combatLog)
@@ -38,12 +40,12 @@ module.config = {
     dungeonMythicPlus = true, raidNormal = true, raidHeroic = true,
     raidMythic = true, stopPolicy = 2, chatNotice = true,
 }
-module.context = {
+module.context = Support.ModuleTimers(root, suite, owner)("combatLog", module, {
     Event = function(_, name, callback, allowCombat)
         assert(allowCombat == true and not events[name], "duplicate event")
         events[name] = callback
     end,
-}
+})
 local function Fire(name)
     assert(events[name], "missing event " .. name)(module, name)
 end
@@ -63,14 +65,15 @@ instanceType, difficulty = "party", 8
 Fire("CHALLENGE_MODE_START")
 assert(logOn and module.startedBySuite and #calls == 1)
 Place("none")
-assert(#timers == 1 and logOn)
+assert(waits == 1 and logOn)
 Place("party", 8)
-assert(timers[1].canceled and logOn)
-timers[1].callback()
+clock.Advance(31)
 assert(logOn, "canceled timer stopped logging after re-entry")
 Place("none")
-assert(#timers == 2)
-timers[2].callback()
+assert(waits == 2)
+clock.Advance(29)
+assert(logOn, "the delayed stop ran before its delay")
+clock.Advance(2)
 assert(not logOn and not module.startedBySuite and #calls == 2)
 
 -- A log already running before MSUF enters is always owned by the player.
@@ -78,7 +81,7 @@ logOn = true
 Place("raid", 14)
 assert(not module.startedBySuite)
 Place("none")
-assert(logOn and #timers == 2 and #calls == 2)
+assert(logOn and waits == 2 and #calls == 2)
 
 -- Selected difficulties are separate, and unclassified content is untouched.
 logOn = false
@@ -87,7 +90,7 @@ assert(not logOn)
 Place("raid", 15)
 assert(logOn and module.startedBySuite)
 Place("raid", 999)
-assert(logOn and #timers == 2, "unknown difficulty stopped an owned log")
+assert(logOn and waits == 2, "unknown difficulty stopped an owned log")
 Place("none")
 module.config.stopPolicy = 1
 module:Refresh()

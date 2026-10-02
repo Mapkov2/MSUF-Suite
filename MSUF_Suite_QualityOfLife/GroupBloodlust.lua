@@ -3,6 +3,7 @@ local NS, S = P.NS, P.Suite
 local ID = "groupBloodlust"
 local M = {}
 local POINTS = NS.AnchorPoints
+local Public, PublicText, Finite = S.Public, S.PublicText, S.Finite
 -- The player lockout auras of MSUF's SATED preset, including the Exhaustion
 -- that the Evoker's Fury of the Aspects applies (390435).
 local SPELLS = { 57723, 57724, 80354, 95809, 160455, 264689, 390435 }
@@ -10,7 +11,8 @@ local SPELL_SET = {}
 for i = 1, #SPELLS do SPELL_SET[SPELLS[i]] = true end
 local INSTANCE_UPDATES = { "updatedAuraInstanceIDs", "removedAuraInstanceIDs" }
 -- The native cooldown animates the 10-minute lockout itself. Aura storms
--- need only one fresh status snapshot per short trailing window.
+-- need only one fresh status snapshot per short trailing window
+-- (self.auraJob).
 local AURA_DELAY = .1
 local OnAura, Paint
 
@@ -70,7 +72,7 @@ end
 local function Readable()
     for i = 1, #SPELLS do
         local secret = C_Secrets.ShouldSpellAuraBeSecret(SPELLS[i])
-        if not S.Public(secret) or secret ~= false then return false end
+        if not Public(secret) or secret ~= false then return false end
     end
     return true
 end
@@ -104,7 +106,10 @@ local function PaintUnreadable(self)
     end
     self.lockedUntil = nil
     self.cooldown:Clear()
-    if self.config.onlyWhenLocked then self.host:Hide(); return end
+    if self.config.onlyWhenLocked then
+        self.host:Hide()
+        return
+    end
     self.status:SetText(S.Text("Unknown"))
     self.status:SetTextColor(S.RGB(S.QoLStyle(self.config).muted))
     self.host:Show()
@@ -114,7 +119,7 @@ local function PaintLocked(self, aura)
     self.status:SetText(S.Text("Locked"))
     self.status:SetTextColor(1, .65, .3)
     local duration, expiration = aura.duration, aura.expirationTime
-    if S.Finite(duration) and duration > 0 and S.Finite(expiration)
+    if Finite(duration) and duration > 0 and Finite(expiration)
         and expiration > duration then
         self.cooldown:SetCooldown(expiration - duration, duration)
         self.lockedUntil = expiration
@@ -146,7 +151,7 @@ Paint = function(self)
         return
     end
     local aura = LockoutAura()
-    self.auraInstanceID = aura and S.Finite(aura.auraInstanceID) and aura.auraInstanceID or nil
+    self.auraInstanceID = aura and Finite(aura.auraInstanceID) and aura.auraInstanceID or nil
     self.unknownInstanceID = aura ~= nil and self.auraInstanceID == nil
     if aura then
         PaintLocked(self, aura)
@@ -164,26 +169,26 @@ Paint = function(self)
 end
 
 local function Relevant(updateInfo, tracked, unknown)
-    if not S.Public(updateInfo) or type(updateInfo) ~= "table" then return true end
-    if not S.Public(updateInfo.isFullUpdate) or updateInfo.isFullUpdate then return true end
+    if not Public(updateInfo) or type(updateInfo) ~= "table" then return true end
+    if not Public(updateInfo.isFullUpdate) or updateInfo.isFullUpdate then return true end
     local added = updateInfo.addedAuras
-    if not S.Public(added) or (added ~= nil and type(added) ~= "table") then return true end
+    if not Public(added) or (added ~= nil and type(added) ~= "table") then return true end
     for i = 1, added and #added or 0 do
         local aura = added[i]
-        if not S.Public(aura) or type(aura) ~= "table" then return true end
+        if not Public(aura) or type(aura) ~= "table" then return true end
         local spellID = aura.spellId
-        if not S.Finite(spellID) or SPELL_SET[spellID] then return true end
+        if not Finite(spellID) or SPELL_SET[spellID] then return true end
     end
     for i = 1, #INSTANCE_UPDATES do
         local ids = updateInfo[INSTANCE_UPDATES[i]]
-        if not S.Public(ids) or (ids ~= nil and type(ids) ~= "table") then return true end
+        if not Public(ids) or (ids ~= nil and type(ids) ~= "table") then return true end
         -- An unreadable lockout instance cannot be matched to updates/removals,
         -- but an added-only delta can still be excluded by its public spells.
         if unknown and ids and #ids > 0 then return true end
         if tracked and ids then
             for i = 1, #ids do
                 local instanceID = ids[i]
-                if not S.Finite(instanceID) or instanceID == tracked then return true end
+                if not Finite(instanceID) or instanceID == tracked then return true end
             end
         end
     end
@@ -191,21 +196,21 @@ local function Relevant(updateInfo, tracked, unknown)
 end
 
 OnAura = function(self, _, unit, updateInfo)
-    if not S.PublicText(unit) or unit ~= "player" or self.auraPending
+    if not PublicText(unit) or unit ~= "player" or self.auraJob.pending
         or not Relevant(updateInfo, self.auraInstanceID, self.unknownInstanceID) then return end
-    self.auraPending = true
-    if not self.auraArmed then
-        self.auraArmed = true
-        C_Timer.After(AURA_DELAY, self.auraTick)
-    end
+    self.auraJob:Request()
+end
+
+local function PaintAuras(self)
+    if self.grouped then Paint(self) end
 end
 
 local function OnGroup(self)
     -- Roster, settings and combat-end edges paint fresh immediately, consuming
     -- any request whose callback is still in flight.
-    self.auraPending = false
+    self.auraJob:Clear()
     local grouped = IsInGroup()
-    self.grouped = S.Public(grouped) and grouped == true
+    self.grouped = Public(grouped) and grouped == true
     if self.grouped then
         -- Combat end lifts the most common restriction; read again then.
         self.context:Event("PLAYER_REGEN_ENABLED", OnGroup, true)
@@ -219,16 +224,9 @@ local function OnGroup(self)
 end
 
 function M:Enable()
+    self.auraJob = self.context:Coalesce(AURA_DELAY, PaintAuras)
     Create(self)
     Place(self)
-    if not self.auraTick then
-        self.auraTick = function()
-            self.auraArmed = false
-            if not self.auraPending then return end
-            self.auraPending = false
-            if self.active and self.grouped then Paint(self) end
-        end
-    end
     self.context:Event("GROUP_ROSTER_UPDATE", OnGroup, true)
     self.context:Event("PLAYER_ENTERING_WORLD", OnGroup, true)
     OnGroup(self)
@@ -250,8 +248,11 @@ function M:Disable()
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
     self.grouped, self.auraInstanceID, self.unknownInstanceID, self.lockedUntil = nil, nil, nil, nil
-    self.auraPending = false
-    if self.host then self.cooldown:Clear(); self.host:Hide() end
+    -- The context's Release drops a pending aura repaint.
+    if self.host then
+        self.cooldown:Clear()
+        self.host:Hide()
+    end
 end
 
 function M:RegisterMovers()

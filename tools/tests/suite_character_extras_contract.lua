@@ -139,15 +139,17 @@ S.Dispatch = function(callback, ...) return callback(...) end
 S.Install = function(id, module) modules[id] = module end
 local combat = false
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
-    Finish = function(callback, ...) return true, callback(...) end }
+    Finish = function(callback, ...) return true, callback(...) end,
+    Dispatch = function(callback, ...) return callback(...) end }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CharacterExtras.lua"))("test", { NS = NS, Suite = S })
 local m = modules.characterExtras
 m.active, m.events = true, {}
 -- Context:Tuple and Context:HideControl as MSUF_Suite_Modules/Runtime.lua runs
 -- them: the first value is kept and handed back, only alpha and mouse change.
 local tuples, controls = {}, {}
-m.context = { Event = function(_, event, callback) m.events[event] = callback end,
-    RemoveEvent = function(_, event) m.events[event] = nil end }
+m.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, S, NS)(
+    "characterExtras", m, { Event = function(_, event, callback) m.events[event] = callback end,
+    RemoveEvent = function(_, event) m.events[event] = nil end })
 function m.context:Tuple(frame, getter, setter, ...)
     tuples[frame] = tuples[frame] or { frame[getter](frame) }
     frame[setter](frame, ...)

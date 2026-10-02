@@ -42,6 +42,7 @@ local NS = {
     AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" },
     MSUFMedia = { font = "MSUF.ttf" },
     IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end,
 }
 local S = { editMode = false }
 NS.Suite = S
@@ -81,10 +82,11 @@ M.active = true
 M.config = { threshold = 40, width = 250, height = 62, scale = 100,
     point = 5, x = 10, y = 180 }
 local events = {}
-M.context = { Event = function(_, event, callback, allowCombat)
+M.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, S, NS)(
+    "durabilityAlert", M, { Event = function(_, event, callback, allowCombat)
     assert(allowCombat == true)
     events[event] = callback
-end }
+end })
 
 M:Enable()
 assert(not M.host.shown and M.host.mouse == false, "healthy gear showed or captured input")

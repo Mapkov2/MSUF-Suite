@@ -44,8 +44,9 @@ local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
     Print = function(value) notices[#notices + 1] = value end,
+    Dispatch = S.Dispatch,
 }
-local context = { events = {} }
+local context = Support.ModuleTimers(root, S, NS)("lootContainers", nil, { events = {} })
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
 
@@ -57,6 +58,7 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SharedItems.lua"))(
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootContainers.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.context, module.active = context, true
+S.instances.lootContainers = module
 module:Enable()
 assert(#calls == 0 and context.events.BAG_UPDATE and context.events.BAG_UPDATE_DELAYED,
     "the baseline opened an existing container or failed to register bag events")
@@ -235,7 +237,10 @@ context.events.CURRENCY_DISPLAY_UPDATE(module, "CURRENCY_DISPLAY_UPDATE", 3376)
 context.events.CURRENCY_DISPLAY_UPDATE(module, "CURRENCY_DISPLAY_UPDATE", 3376)
 assert(#deferred == queuedBefore + 1, "synchronous currency event bursts must coalesce")
 currency.totalEarned = 7
+-- As the controller stops a module: inactive, Disable, then Release.
+module.active = false
 module:Disable()
+context:CancelTimers()
 local staleCallback = table.remove(deferred); staleCallback()
 assert(not next(module.held) and not context.events.CURRENCY_DISPLAY_UPDATE)
 assert(opened == 5, "disable must cancel a pending currency resume")

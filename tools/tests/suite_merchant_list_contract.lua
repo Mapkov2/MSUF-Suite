@@ -90,6 +90,8 @@ hooksecurefunc = function(name, callback)
 end
 local deferred = {}
 C_Timer = { After = function(_, callback) deferred[#deferred + 1] = callback end }
+-- Every wait here is for the next frame; the frame clock stands still.
+GetTime = function() return 100 end
 local function RunFrame()
     local queue = deferred
     deferred = {}
@@ -198,7 +200,9 @@ S.CreateFontString = S.CreateTexture
 S.Install = function(id, module) modules[id] = module end
 local combat = false
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
-    Print = function(text) printed[#printed + 1] = text end }
+    Print = function(text) printed[#printed + 1] = text end, Dispatch = S.Dispatch }
+-- S.Debounce and the context timers (MSUF_Suite_Modules/Timers.lua).
+local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)
 -- Context:HideControl as MSUF_Suite_Modules/Runtime.lua runs it: alpha and
 -- mouse are recorded and restored, never Show/Hide; in combat it only queues.
 local queued = false
@@ -225,7 +229,7 @@ for _, file in ipairs({ "MerchantWatch", "SharedItems", "MerchantList" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("test", { NS = NS, Suite = S })
 end
 local list = modules.merchantList
-list.active, list.context, list.config = true, Context(), { rowHeight = 44 }
+list.active, list.context, list.config = true, TimerContext("merchantList", list, Context()), { rowHeight = 44 }
 list:Enable()
 Check(not list.panel or not list.panel.shown, "the list showed without an open merchant")
 

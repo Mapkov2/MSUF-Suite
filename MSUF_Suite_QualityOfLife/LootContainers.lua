@@ -81,27 +81,23 @@ local function CurrencyChanged(self, _, currencyID)
     Drain(self)
 end
 
+-- A burst of currency updates resumes the held payouts once, next frame.
+local function CurrencySettled(self)
+    CurrencyChanged(self)
+end
+
 local function CurrencyEvent(self, _, currencyID)
-    if self.currencyQueued or not S.Public(currencyID) or currencyID ~= nil and currencyID ~= SHARD then return end
-    self.currencyQueued = true
-    local generation = self.generation
-    C_Timer.After(0, function()
-        if not self.active or self.generation ~= generation then return end
-        self.currencyQueued = nil
-        CurrencyChanged(self)
-    end)
+    if not S.Public(currencyID) or currencyID ~= nil and currencyID ~= SHARD then return end
+    self.currencyJob:Request()
 end
 
 local function Hold(self, candidate)
     self.held[candidate.guid] = candidate
     self.context:Event("CURRENCY_DISPLAY_UPDATE", CurrencyEvent)
 end
+-- Let Blizzard finish hiding the loot window before opening the next box.
 local function LootClosed(self)
-    local generation = self.generation
-    -- Let Blizzard finish hiding the loot window before opening the next box.
-    C_Timer.After(0, function()
-        if self.active and self.generation == generation then Drain(self) end
-    end)
+    self.drainJob:Request()
 end
 
 Drain = function(self)
@@ -206,10 +202,10 @@ local function BagsSettled(self)
 end
 
 function M:Enable()
-    self.generation = (self.generation or 0) + 1
+    self.currencyJob = self.context:Coalesce(0, CurrencySettled)
+    self.drainJob = self.context:Coalesce(0, Drain)
     self.snapshot, self.seen, self.pending, self.attempted, self.dirty, self.held = {}, {}, {}, {}, {}, {}
     self.seenCount, self.seenSaturated = 0, false
-    self.currencyQueued = nil
     self.blocked = nil
     for bag = FIRST_BAG, LAST_BAG do ScanBag(self, bag, true) end
     self.context:Event("BAG_UPDATE", BagChanged)
@@ -220,8 +216,8 @@ function M:Refresh()
     if self.active then CurrencyChanged(self) end
 end
 
+-- The context's Release drops a resume or a drain still due.
 function M:Disable()
-    self.generation = (self.generation or 0) + 1
     self.context:RemoveEvent("BAG_UPDATE")
     self.context:RemoveEvent("BAG_UPDATE_DELAYED")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
@@ -229,7 +225,6 @@ function M:Disable()
     self.context:RemoveEvent("CURRENCY_DISPLAY_UPDATE")
     self.snapshot, self.seen, self.pending, self.attempted, self.dirty, self.held = {}, {}, {}, {}, {}, {}
     self.seenCount, self.seenSaturated = 0, false
-    self.currencyQueued = nil
     self.blocked = nil
 end
 

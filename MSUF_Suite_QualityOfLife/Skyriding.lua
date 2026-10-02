@@ -256,11 +256,13 @@ local function LayoutRow(row, width, y, count, c, kind)
             if not pip.gem then
                 pip.gem = S.CreateFrame("Frame", nil, row)
                 pip.gem.background = S.CreateTexture(pip.gem, nil, "BACKGROUND")
-                pip.gem.background:SetAllPoints(); pip.gem.background:SetAtlas("dragonriding_vigor_background")
+                pip.gem.background:SetAllPoints()
+                pip.gem.background:SetAtlas("dragonriding_vigor_background")
                 pip.gem.fill = S.CreateTexture(pip.gem, nil, "ARTWORK")
                 pip.gem.fill:SetAllPoints()
                 pip.gem.border = S.CreateTexture(pip.gem, nil, "OVERLAY")
-                pip.gem.border:SetAllPoints(); pip.gem.border:SetAtlas("dragonriding_vigor_frame")
+                pip.gem.border:SetAllPoints()
+                pip.gem.border:SetAtlas("dragonriding_vigor_frame")
             end
             local scale = (c.gemScale or 100) / 100
             pip.gem:ClearAllPoints()

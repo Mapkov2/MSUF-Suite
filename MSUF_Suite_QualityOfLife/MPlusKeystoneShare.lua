@@ -71,23 +71,33 @@ local function ShowWindow(self)
         host:SetScript("OnDragStart", function() host:StartMoving() end)
         host:SetScript("OnDragStop", function() host:StopMovingOrSizing() end)
         local back = S.CreateTexture(host, nil, "BACKGROUND")
-        back:SetAllPoints(host); back:SetColorTexture(.04, .05, .07, .97)
+        back:SetAllPoints(host)
+        back:SetColorTexture(.04, .05, .07, .97)
         self.host, self.labels = host, {}
         local function Button(label, x, action)
             local button = S.CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
-            button:SetSize(83, 24); button:SetPoint("TOPLEFT", x, -12)
-            button:SetText(S.Text(label)); button:SetScript("OnClick", action)
+            button:SetSize(83, 24)
+            button:SetPoint("TOPLEFT", x, -12)
+            button:SetText(S.Text(label))
+            button:SetScript("OnClick", action)
         end
         Button("Party keys", 12, function() Command("group") end)
         Button("Guild keys", 104, function() Command("guild") end)
-        Button("Previous", 196, function() self.page = math.max(1, self.page - 1); PaintWindow(self) end)
-        Button("Next", 288, function() self.page = self.page + 1; PaintWindow(self) end)
+        Button("Previous", 196, function()
+            self.page = math.max(1, self.page - 1)
+            PaintWindow(self)
+        end)
+        Button("Next", 288, function()
+            self.page = self.page + 1
+            PaintWindow(self)
+        end)
         Button("Close", 380, function() host:Hide() end)
         for i = 1, 12 do
             local label = S.CreateFontString(host, nil, "OVERLAY")
             label:SetPoint("TOPLEFT", 16, -48 - (i - 1) * 27)
             label:SetPoint("TOPRIGHT", -16, -48 - (i - 1) * 27)
-            label:SetJustifyH("LEFT"); label:SetWordWrap(false)
+            label:SetJustifyH("LEFT")
+            label:SetWordWrap(false)
             self.labels[i] = label
         end
         self.status = S.CreateFontString(host, nil, "OVERLAY")
@@ -167,7 +177,10 @@ Command = function(message)
         end
         return
     end
-    if mode == "" or mode == "window" then AddOwn(M); ShowWindow(M) end
+    if mode == "" or mode == "window" then
+        AddOwn(M)
+        ShowWindow(M)
+    end
     local text = OwnKeystone()
     if not text then
         S.Print(S.Text("No owned keystone found"))
@@ -230,7 +243,10 @@ end
 
 local function HookKeystone(self)
     local frame = _G.ChallengesKeystoneFrame
-    if self.keystoneHooked then self.context:RemoveEvent("ADDON_LOADED"); return end
+    if self.keystoneHooked then
+        self.context:RemoveEvent("ADDON_LOADED")
+        return
+    end
     if not frame then return end
     frame:HookScript("OnShow", function() InsertKey(self) end)
     self.keystoneHooked = true

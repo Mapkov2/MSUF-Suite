@@ -89,7 +89,10 @@ function O.UpdateQuestItem(self, disabled)
                     local entry = list[j]
                     if entry.itemLink and (not link or entry.group == "focused") then
                         link = entry.itemLink
-                        if entry.group == "focused" then focused = true; break end
+                        if entry.group == "focused" then
+                            focused = true
+                            break
+                        end
                     end
                 end
             end

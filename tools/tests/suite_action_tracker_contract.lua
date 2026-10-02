@@ -1,5 +1,5 @@
 local root = assert(arg[1], "repository root required")
-local secret, events, timers = {}, {}, {}
+local secret, events = {}, {}
 local now, reads = 100, 0
 local combat, instanceType, delve = false, "none", false
 
@@ -50,7 +50,6 @@ local function Widget(parent, fontString)
 end
 
 UIParent = Widget()
-GetTime = function() return now end
 GetInstanceInfo = function() return "Instance", instanceType end
 C_DelvesUI = { HasActiveDelve = function() return delve end }
 C_Spell = { GetSpellInfo = function(id)
@@ -59,18 +58,8 @@ C_Spell = { GetSpellInfo = function(id)
     if id == 67 then return { name = "Hidden icon", iconID = secret } end
     return { name = "Spell " .. id, iconID = id + 1000 }
 end }
-C_Timer = { NewTimer = function(delay, callback)
-    assert(delay > 0)
-    local timer = { delay = delay, callback = callback }
-    function timer:Cancel() self.cancelled = true end
-    timers[#timers + 1] = timer
-    return timer
-end }
-local function Fire(timer)
-    assert(not timer.cancelled)
-    now = now + timer.delay
-    timer.callback()
-end
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local clock = Support.Clock(now)
 
 local S = { editMode = false }
 S.Public = function(value) return value ~= secret end
@@ -99,7 +88,7 @@ S.Set = function(_, key, value)
     return true
 end
 
-local NS = { AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER" },
+local NS = { Dispatch = function(callback, ...) return callback(...) end, AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER" },
     IsCombatLocked = function() return combat end }
 NS.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
     function() return combat end)
@@ -112,7 +101,7 @@ M.config = { rows = 5, width = 210, rowHeight = 31, rowGap = 2, scale = 100,
     hideAfter = 15, showNames = true, showChevron = true, font = "", fontSize = 12,
     point = 5, x = 0, y = -40, panelColor = "171316", panelOpacity = 88,
     borderColor = "563938", accentColor = "d4a64c", textColor = "f2eeea" }
-M.context = { Event = function(_, event, callback, allowCombat, unit)
+M.context = Support.ModuleTimers(root, S, NS)("actionTracker", M, { Event = function(_, event, callback, allowCombat, unit)
     assert(allowCombat)
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
         assert(unit == "player")
@@ -120,7 +109,7 @@ M.context = { Event = function(_, event, callback, allowCombat, unit)
     else events[event] = callback end
 end, RemoveEvent = function(_, event)
     if event == "UNIT_SPELLCAST_SUCCEEDED" then events.cast = nil else events[event] = nil end
-end }
+end })
 M:Enable()
 assert(reads == 0 and not M.host.shown and M.host.mouse == false,
     "disabled history did startup spell work or intercepted input")
@@ -140,16 +129,18 @@ Cast(66)
 Cast(67)
 assert(reads == 2 and not M.host.shown and #M.history == 0,
     "private cast details entered the history")
-for id = 1, 9 do Cast(id) end
+for id = 1, 8 do Cast(id) end
+clock.Advance(10)
+Cast(9)
 assert(#M.history == 8 and M.history[1].name == "Spell 9"
     and M.history[8].name == "Spell 2" and M.rows[1].name.text == "Spell 9"
     and M.rows[5].name.text == "Spell 5" and not M.rows[6].frame.shown,
     "recent spells did not remain bounded and newest-first")
 assert(M.host.shown and M.rows[1].icon.texture == 1009,
     "latest spell was not rendered")
-assert(timers[1].cancelled and not timers[#timers].cancelled,
-    "new casts left earlier inactivity timers active")
-Fire(timers[#timers])
+clock.Advance(10)
+assert(M.host.shown and #M.history == 8, "an earlier cast's inactivity timeout cleared a newer cast")
+clock.Advance(5.1)
 assert(not M.host.shown and #M.history == 0, "inactivity did not clear the stack")
 
 S.editMode = true
@@ -179,35 +170,39 @@ M:Refresh()
 assert(not M.host.shown, "Edit Mode preview survived its session")
 M.config.hideAfter = 0
 M:Refresh()
-local timerCount = #timers
+local waits = clock.native
 Cast(10)
-now = now + 120
+clock.Advance(120)
 M:Refresh()
-assert(M.host.shown and M.rows[1].name.text == "Spell 10" and #timers == timerCount,
+assert(M.host.shown and M.rows[1].name.text == "Spell 10" and clock.native == waits,
     "persistent history scheduled a timer or disappeared")
 
 M.config.hideAfter, M.config.pauseInCombat = 15, true
 M:Refresh()
 Cast(11)
-now = now + 5
+clock.Advance(5)
 -- The client sends PLAYER_REGEN_DISABLED before InCombatLockdown() turns true.
 events.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
 combat = true
-assert(timers[#timers].cancelled and M.pausedAt == now,
-    "combat entry did not freeze the remaining timeout")
-now = now + 60
+assert(M.pausedAt == GetTime(), "combat entry did not freeze the remaining timeout")
+clock.Advance(60)
+assert(M.host.shown, "the inactivity timeout ran in combat")
 combat = false
 events.PLAYER_REGEN_ENABLED(M, "PLAYER_REGEN_ENABLED")
-assert(timers[#timers].delay == 10 and not M.pausedAt,
-    "combat exit reset the timeout instead of resuming its remainder")
+assert(not M.pausedAt, "combat exit kept the pause")
+clock.Advance(9.9)
+assert(M.host.shown, "combat exit cut the remaining timeout short")
+clock.Advance(.2)
+assert(not M.host.shown, "combat exit reset the timeout instead of resuming its remainder")
 events.PLAYER_REGEN_DISABLED(M, "PLAYER_REGEN_DISABLED")
 combat = true
-now = now + 3
+clock.Advance(3)
 Cast(12)
-now = now + 20
+clock.Advance(20)
 combat = false
 events.PLAYER_REGEN_ENABLED(M, "PLAYER_REGEN_ENABLED")
-assert(timers[#timers].delay == 15, "a new combat cast lost part of its timeout")
+clock.Advance(14.9)
+assert(M.host.shown, "a new combat cast lost part of its timeout")
 
 M.config.showWorld = false
 M:Refresh()

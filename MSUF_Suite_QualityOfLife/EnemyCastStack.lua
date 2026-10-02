@@ -67,7 +67,10 @@ local function Candidates(self)
     for i = #list, 1, -1 do list[i] = nil end
     -- The ready mark and range dimming both ask the player's interrupt.
     if not (c.readyStripe or c.dimOutOfRange) then return end
-    if c.interruptSpellID > 0 then list[1] = c.interruptSpellID; return end
+    if c.interruptSpellID > 0 then
+        list[1] = c.interruptSpellID
+        return
+    end
     local _, class = UnitClass("player")
     for _, spell in ipairs(INTERRUPTS[S.PublicText(class) or ""] or EMPTY) do
         local own = C_SpellBook.IsSpellKnown(spell, Enum.SpellBookSpellBank.Player)
@@ -85,28 +88,47 @@ local function Wake(self, index)
     wake:SetPoint("TOPLEFT", self.host, "TOPLEFT")
     wake:SetSize(1, 1)
     wake:SetAlpha(0)
-    wake:SetDrawSwipe(false); wake:SetDrawEdge(false); wake:SetDrawBling(false)
+    wake:SetDrawSwipe(false)
+    wake:SetDrawEdge(false)
+    wake:SetDrawBling(false)
     wake:SetHideCountdownNumbers(true)
     wake:SetScript("OnCooldownDone", OnWake)
     self.wakes[index] = wake
     return wake
 end
 
--- isActive and isOnGCD are never secret (SpellSharedDocumentation); a spell
--- that waits only for the global cooldown counts as ready.
-local function SampleReady(self)
+-- The cooldown without the global cooldown: none, or a readable inactive one.
+local function OnlyGCD(duration)
+    if not duration then return true end
+    if duration:HasSecretValues() then return false end
+    local running = duration:IsActive()
+    return Public(running) and running == false
+end
+
+-- A spell that waits only for the global cooldown counts as ready. isActive
+-- and isOnGCD are never secret (SpellSharedDocumentation), but isOnGCD can be
+-- trusted only inside SPELL_UPDATE_COOLDOWN (cooldownEvent); elsewhere the
+-- cooldown without the GCD answers, as in CombatMovementCue.
+local function SampleReady(self, cooldownEvent)
     local ready, list = false, self.candidates
     for index = 1, #list do
         local spell = list[index]
         local info = C_Spell.GetSpellCooldown(spell)
-        local active, gcd = info and info.isActive, info and info.isOnGCD
+        local active, gcd = info and info.isActive, cooldownEvent and info and info.isOnGCD
         local wake = Wake(self, index)
         if Public(active) and active == false or Public(gcd) and gcd == true then
             ready = true
             wake:Clear()
         else
             local duration = C_Spell.GetSpellCooldownDuration(spell, true)
-            if duration then wake:SetCooldownFromDurationObject(duration, true) else wake:Clear() end
+            if not cooldownEvent and OnlyGCD(duration) then
+                ready = true
+                wake:Clear()
+            elseif duration then
+                wake:SetCooldownFromDurationObject(duration, true)
+            else
+                wake:Clear()
+            end
         end
     end
     for index = #list + 1, #self.wakes do self.wakes[index]:Clear() end
@@ -114,7 +136,10 @@ local function SampleReady(self)
 end
 
 local function SetStripe(row, on)
-    if row.stripeOn ~= on then row.stripe:SetShown(on); row.stripeOn = on end
+    if row.stripeOn ~= on then
+        row.stripe:SetShown(on)
+        row.stripeOn = on
+    end
 end
 
 local function PaintStripe(self, entry)
@@ -166,12 +191,15 @@ local function NewRow(self, list)
     local row = S.CreateFrame("StatusBar", nil, self.host)
     row:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
     row.back = S.CreateTexture(row, nil, "BACKGROUND")
-    row.back:SetAllPoints(row); row.back:SetColorTexture(.04, .05, .07, .88)
+    row.back:SetAllPoints(row)
+    row.back:SetColorTexture(.04, .05, .07, .88)
     row.icon = S.CreateTexture(row, nil, "ARTWORK")
     row.icon:SetPoint("RIGHT", row, "LEFT", -ICON_GAP, 0)
     row.stripe = S.CreateTexture(row, nil, "OVERLAY")
-    row.stripe:SetPoint("TOPLEFT", row, "TOPLEFT"); row.stripe:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT")
-    row.stripe:SetWidth(STRIPE_WIDTH); row.stripe:Hide()
+    row.stripe:SetPoint("TOPLEFT", row, "TOPLEFT")
+    row.stripe:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT")
+    row.stripe:SetWidth(STRIPE_WIDTH)
+    row.stripe:Hide()
     row.stripeOn = false
     -- A raid marker badge on the spell icon's corner.
     row.marker = S.CreateTexture(row, nil, "OVERLAY")
@@ -179,13 +207,16 @@ local function NewRow(self, list)
     row.marker:SetTexture(MARKER_SHEET)
     row.marker:Hide()
     row.name = S.CreateFontString(row, nil, "OVERLAY")
-    row.name:SetJustifyH("LEFT"); row.name:SetWordWrap(false)
+    row.name:SetJustifyH("LEFT")
+    row.name:SetWordWrap(false)
     row.target = S.CreateFontString(row, nil, "OVERLAY")
-    row.target:SetJustifyH("LEFT"); row.target:SetWordWrap(false)
+    row.target:SetJustifyH("LEFT")
+    row.target:SetWordWrap(false)
     row.target:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 6, 2)
     row.target:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -TIME_WIDTH, 2)
     row.time = S.CreateFontString(row, nil, "OVERLAY")
-    row.time:SetJustifyH("RIGHT"); row.time:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    row.time:SetJustifyH("RIGHT")
+    row.time:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     row.time:SetWidth(TIME_WIDTH - 6)
     row.binding = C_DurationUtil.CreateDurationTextBinding()
     row.binding:SetFontString(row.time)
@@ -250,9 +281,15 @@ end
 -- cell takes it as it is, the way Blizzard's SetRaidTargetIconTexture does.
 local function PaintMarker(self, entry)
     local marker = entry.row.marker
-    if not self.config.showMarkers then marker:Hide(); return end
+    if not self.config.showMarkers then
+        marker:Hide()
+        return
+    end
     local index = GetRaidTargetIndex(entry.unit)
-    if Public(index) and index == nil then marker:Hide(); return end
+    if Public(index) and index == nil then
+        marker:Hide()
+        return
+    end
     marker:SetSpriteSheetCell(index, MARKER_ROWS, MARKER_COLUMNS)
     marker:Show()
 end
@@ -306,14 +343,16 @@ end
 
 local function ShowHost(self)
     local shown = S.editMode == true or self.visible > 0
-    if self.hostShown ~= shown then self.host:SetShown(shown); self.hostShown = shown end
+    if self.hostShown ~= shown then
+        self.host:SetShown(shown)
+        self.hostShown = shown
+    end
 end
 
 -- Nameplates send no range events (SPELL_RANGE_CHECK_UPDATE covers only the
 -- target), so a ticker samples the listed casts four times a second while
 -- dimming is on and casts are listed; it stops with the last one.
-local function RangeTick()
-    local self = M
+local function RangeTick(self)
     for i = 1, self.visible do
         local entry = self.ordered[i]
         local dim = OutOfRange(self, entry.unit)
@@ -327,11 +366,12 @@ end
 local function SyncRangeTicker(self)
     local needed = self.listening and self.config.dimOutOfRange and #self.candidates > 0
         and self.visible > 0 and not S.editMode
-    if needed and not self.rangeTicker then
-        self.rangeTicker = C_Timer.NewTicker(RANGE_TICK, RangeTick)
-    elseif not needed and self.rangeTicker then
-        self.rangeTicker:Cancel()
-        self.rangeTicker = nil
+    local ticker = self.rangeTicker
+    local running = ticker ~= nil and ticker:Running()
+    if needed and not running then
+        self.rangeTicker = self.context:Ticker(RANGE_TICK, RangeTick)
+    elseif running and not needed then
+        ticker:Cancel()
     end
 end
 
@@ -398,13 +438,19 @@ end
 
 local function Add(self, unit, kind)
     local entry = self.entries[unit]
-    if not entry then entry = { unit = unit }; self.entries[unit] = entry end
+    if not entry then
+        entry = { unit = unit }
+        self.entries[unit] = entry
+    end
     if kind then
         if not Read(entry, unit, kind) then return end
     elseif not Read(entry, unit, 1) and not Read(entry, unit, 2) then
         return
     end
-    if not Wanted(self, entry.kind) then Forget(entry); return end
+    if not Wanted(self, entry.kind) then
+        Forget(entry)
+        return
+    end
     entry.live = true
     local ordered = self.ordered
     ordered[#ordered + 1] = entry
@@ -449,7 +495,10 @@ local function OnCast(self, event, unit)
         if entry.row then PaintTimer(entry) end
     elseif LOCK[event] then
         entry.locked = event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE"
-        if entry.row then PaintColor(self, entry); PaintStripe(self, entry) end
+        if entry.row then
+            PaintColor(self, entry)
+            PaintStripe(self, entry)
+        end
     end
 end
 
@@ -466,7 +515,7 @@ end
 
 local function OnCooldown(self, _, spellID, baseSpellID)
     if self.visible == 0 or not Relevant(self, spellID, baseSpellID) then return end
-    SampleReady(self)
+    SampleReady(self, true)
     PaintStripes(self)
 end
 
@@ -486,7 +535,10 @@ end
 local function OnSpells(self)
     Candidates(self)
     ListenCooldowns(self)
-    if self.visible > 0 then SampleReady(self); PaintStripes(self) end
+    if self.visible > 0 then
+        SampleReady(self)
+        PaintStripes(self)
+    end
     SyncRangeTicker(self)
 end
 
@@ -607,8 +659,10 @@ end
 
 function M:Refresh()
     local c, host = self.config, self.host
-    SetRGB(self.castRGB, c.castColor); SetRGB(self.priorityRGB, c.priorityColor)
-    SetRGB(self.lockedRGB, c.lockedColor); SetRGB(self.stripeRGB, c.stripeColor)
+    SetRGB(self.castRGB, c.castColor)
+    SetRGB(self.priorityRGB, c.priorityColor)
+    SetRGB(self.lockedRGB, c.lockedColor)
+    SetRGB(self.stripeRGB, c.stripeColor)
     host:ClearAllPoints()
     host:SetPoint("CENTER", UIParent, "CENTER", c.x, c.y)
     host:SetSize(c.width, c.listSize * c.rowHeight + (c.listSize - 1) * GAP)
@@ -622,10 +676,18 @@ function M:Refresh()
     for i = #ordered, 1, -1 do
         local entry = ordered[i]
         Release(self, entry)
-        if not Wanted(self, entry.kind) then table.remove(ordered, i); Forget(entry) end
+        if not Wanted(self, entry.kind) then
+            table.remove(ordered, i)
+            Forget(entry)
+        end
     end
     self.visible = 0
-    if S.editMode then ShowSamples(self) else self:HideEditPreview(); Sync(self, 1) end
+    if S.editMode then
+        ShowSamples(self)
+    else
+        self:HideEditPreview()
+        Sync(self, 1)
+    end
     ShowHost(self)
     SyncRangeTicker(self)
 end
@@ -634,7 +696,10 @@ function M:Disable()
     Clear(self)
     self.listening = nil
     self:HideEditPreview()
-    if self.host then self.host:Hide(); self.hostShown = false end
+    if self.host then
+        self.host:Hide()
+        self.hostShown = false
+    end
 end
 
 function M:RegisterMovers()

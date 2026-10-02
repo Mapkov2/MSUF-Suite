@@ -154,23 +154,16 @@ local function Refresh(self)
     self.panel:Show()
 end
 
-local function SocketUpdated(self)
-    local generation = self.generation
-    -- Blizzard loads/shows its frame during this event. Refresh afterward.
-    C_Timer.After(0, function()
-        if self.active and self.generation == generation then Refresh(self) end
-    end)
-end
-
 function M:Enable()
-    self.generation = (self.generation or 0) + 1
-    self.context:Event("SOCKET_INFO_UPDATE", SocketUpdated)
+    -- Blizzard loads and shows its frame during SOCKET_INFO_UPDATE: the event
+    -- requests a refresh on the next frame (the job is its callback).
+    self.context:Event("SOCKET_INFO_UPDATE", self.context:Coalesce(0, Refresh))
     self.context:Event("BAG_UPDATE_DELAYED", Refresh)
     Refresh(self)
 end
 
+-- The context's Release drops a refresh still due.
 function M:Disable()
-    self.generation = (self.generation or 0) + 1
     self.context:RemoveEvent("SOCKET_INFO_UPDATE")
     self.context:RemoveEvent("BAG_UPDATE_DELAYED")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")

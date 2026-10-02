@@ -1,17 +1,20 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 
-local M = { generation = 0 }
+local M = {}
 local INSTANCE_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA",
     "PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED", "SELECTED_LOADOUT_CHANGED" }
 -- Events that change the build inside one instance, so they re-check it.
 local BUILD_EVENTS = { PLAYER_TALENT_UPDATE = true, PLAYER_SPECIALIZATION_CHANGED = true,
     SELECTED_LOADOUT_CHANGED = true }
 
+-- The reminder hides config.duration seconds after it last showed.
+local function HideReminder(self)
+    self.host:Hide()
+end
+
 local function CancelHide(self)
-    local timer = self.hideTimer
-    self.hideTimer = nil
-    if timer then timer:Cancel() end
+    self.context:Cancel(HideReminder)
 end
 
 -- The chosen loadout. GetActiveConfigID() is the spec's base config, which
@@ -117,16 +120,7 @@ local function Show(self)
     Paint(self, mismatch)
     self.detail:SetText(buildName .. "  |  " .. S.Text("Loot") .. ": " .. lootName)
     self.host:Show()
-    CancelHide(self)
-    self.generation = self.generation + 1
-    local generation = self.generation
-    local timer
-    timer = C_Timer.NewTimer(self.config.duration, function()
-        if self.hideTimer ~= timer then return end
-        self.hideTimer = nil
-        if self.active and self.generation == generation then self.host:Hide() end
-    end)
-    self.hideTimer = timer
+    self.context:After(self.config.duration, HideReminder)
     return true, configID, lootID
 end
 
@@ -200,7 +194,10 @@ end
 
 function M:Refresh()
     local newlyWatching = SyncEvents(self)
-    if self.host then S.SetFont(self.title, nil, 13, "OUTLINE"); S.SetFont(self.detail, nil, 11, "") end
+    if self.host then
+        S.SetFont(self.title, nil, 13, "OUTLINE")
+        S.SetFont(self.detail, nil, 11, "")
+    end
     if self.host then Paint(self, self.lastMismatch) end
     if not self.config.onReadyCheck and not self.config.onInstanceEntry and not self.config.onLfgProposal then
         CancelHide(self)
@@ -210,7 +207,6 @@ function M:Refresh()
 end
 
 function M:Disable()
-    self.generation = self.generation + 1
     CancelHide(self)
     self.lastInstance = nil
     self.lastConfigID, self.lastLootID = nil, nil

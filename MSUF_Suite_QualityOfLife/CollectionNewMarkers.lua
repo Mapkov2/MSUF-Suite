@@ -15,13 +15,16 @@ local function ValidID(kind, id)
     if S.Finite(id) and id > 0 and id == math.floor(id) then return id end
 end
 
-local function Flush(self)
+local Flush
+local function AfterCombat(self)
+    self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    Flush(self)
+end
+
+Flush = function(self)
     if not self.active then return end
     if NS.IsCombatLocked() then
-        self.context:Event("PLAYER_REGEN_ENABLED", function(module)
-            module.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-            Flush(module)
-        end)
+        self.context:Event("PLAYER_REGEN_ENABLED", AfterCombat)
         return
     end
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
@@ -40,15 +43,8 @@ local function Schedule(self, kind, id)
     self.pending = self.pending or {}
     self.pending[kind] = self.pending[kind] or {}
     self.pending[kind][id] = true
-    if self.scheduled then return end
-    self.scheduled = true
-    local generation = self.generation
-    C_Timer.After(0, function()
-        if self.active and self.generation == generation then
-            self.scheduled = nil
-            Flush(self)
-        end
-    end)
+    -- One flush on the next frame for every fanfare of a burst.
+    self.flushJob:Request()
 end
 
 local function Sync(self)
@@ -63,15 +59,14 @@ local function Sync(self)
 end
 
 function M:Enable()
-    self.generation = (self.generation or 0) + 1
+    self.flushJob = self.context:Coalesce(0, Flush)
     Sync(self)
 end
 
 function M:Refresh() Sync(self) end
 
+-- The context's Release drops a flush still due.
 function M:Disable()
-    self.generation = (self.generation or 0) + 1
-    self.scheduled = nil
     self.pending = nil
     for _, event in pairs(EVENTS) do self.context:RemoveEvent(event) end
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")

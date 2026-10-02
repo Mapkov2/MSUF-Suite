@@ -1929,6 +1929,12 @@
    "symbol": "gf.RegisterFrameRegistryObserver"
   },
   {
+   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
+   "kind": "addon",
+   "reason": "MSUF group-frame registry is an optional integration; an MSUF build without the observer leave call is left alone",
+   "symbol": "gf.UnregisterFrameRegistryObserver"
+  },
+  {
    "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
    "kind": "addon",
    "reason": "an older MSUF options build may not publish the Forever controller navigation bridge",

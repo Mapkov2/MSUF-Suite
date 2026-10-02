@@ -91,16 +91,17 @@ local function Ready(id)
     return name, icon
 end
 
+local function HideCue(self)
+    if not S.editMode then self.host:Hide() end
+end
+
+-- A newer cue restarts the timeout of the one on screen.
 local function Show(self, name, icon, now)
     self.lastShown = now
-    self.token = (self.token or 0) + 1
-    local token = self.token
     self.icon:SetTexture(icon or QUESTION)
     self.label:SetText(string.format(S.Text("%s ready for movement"), name))
     self.host:Show()
-    C_Timer.After(SHOW_SECONDS, function()
-        if self.active and self.token == token and not S.editMode then self.host:Hide() end
-    end)
+    self.context:After(SHOW_SECONDS, HideCue)
 end
 
 local function StartedMoving(self)
@@ -140,7 +141,7 @@ function M:Refresh()
     SyncEvent(self)
     Place(self)
     S.SetFont(self.label, nil, 13, "OUTLINE")
-    self.token = (self.token or 0) + 1
+    self.context:Cancel(HideCue)
     if S.editMode then
         self.icon:SetTexture(QUESTION)
         self.label:SetText(S.Text("Movement ability ready"))
@@ -150,8 +151,8 @@ function M:Refresh()
     end
 end
 
+-- The context's Release drops a cue timeout still due.
 function M:Disable()
-    self.token = (self.token or 0) + 1
     self.lastChecked = nil
     if self.host then self.host:Hide() end
 end

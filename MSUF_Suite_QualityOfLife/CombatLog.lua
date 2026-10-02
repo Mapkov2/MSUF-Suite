@@ -69,10 +69,9 @@ local function Notice(self, enabled)
     end
 end
 
+-- A delayed stop is one job: the first request starts the STOP_DELAY wait.
 local function CancelStop(self)
-    local timer = self.stopTimer
-    self.stopTimer = nil
-    if timer then timer:Cancel() end
+    self.stopJob:Cancel()
 end
 
 local function StopOwned(self)
@@ -100,17 +99,14 @@ local function StartLogging(self, current)
     end
 end
 
+local function DelayedStop(self)
+    -- Zone and difficulty can change without another reliable event
+    -- before the wait ends. Recheck before stopping the log.
+    if Decision(self.config) == false then StopOwned(self) end
+end
+
 local function ScheduleStop(self)
-    if self.stopTimer then return end
-    local timer
-    timer = C_Timer.NewTimer(STOP_DELAY, function()
-        if self.stopTimer ~= timer or not self.active then return end
-        self.stopTimer = nil
-        -- Zone and difficulty can change without another reliable event
-        -- before the timer fires. Recheck before stopping the log.
-        if Decision(self.config) == false then StopOwned(self) end
-    end)
-    self.stopTimer = timer
+    self.stopJob:Request()
 end
 
 local function Evaluate(self)
@@ -148,6 +144,7 @@ function M:Refresh()
 end
 
 function M:Enable()
+    self.stopJob = self.context:Coalesce(STOP_DELAY, DelayedStop)
     self.startedBySuite = false
     self.manualStop = nil
     for i = 1, #EVENTS do self.context:Event(EVENTS[i], Evaluate, true) end

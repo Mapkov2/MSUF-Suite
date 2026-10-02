@@ -142,9 +142,11 @@ end
 
 local function SpellButton(self, parent)
     local button = S.CreateFrame("Button", nil, parent, "SecureActionButtonTemplate")
-    button:SetAttribute("type", "spell"); button:SetAttribute("useOnKeyDown", false)
+    button:SetAttribute("type", "spell")
+    button:SetAttribute("useOnKeyDown", false)
     button:RegisterForClicks("AnyUp")
-    button.icon = S.CreateTexture(button, nil, "ARTWORK"); button.icon:SetAllPoints()
+    button.icon = S.CreateTexture(button, nil, "ARTWORK")
+    button.icon:SetAllPoints()
     button.cooldown = S.CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
     button.cooldown:SetAllPoints()
     button.cooldown:SetDrawEdge(false)
@@ -186,7 +188,10 @@ end
 -- copies the minimap's bottom-right corner, and a separate watcher anchored to
 -- Minimap reports moves. The proxy moves only outside combat.
 local function CopyMinimap(self)
-    if NS.IsCombatLocked() then self.placePending = true; return end
+    if NS.IsCombatLocked() then
+        self.placePending = true
+        return
+    end
     self.placePending = nil
     local right, bottom = Minimap:GetRight(), Minimap:GetBottom()
     local scale, own = Minimap:GetEffectiveScale(), self.proxy:GetEffectiveScale()
@@ -208,20 +213,26 @@ local function Create(self)
     watcher:SetScript("OnSizeChanged", function() if self.active then CopyMinimap(self) end end)
     -- The bottom-right corner keeps clear of the expansion landing button.
     local toggle = S.CreateFrame("Button", "MSUFSuiteDungeonPortalButton", self.host, "SecureHandlerClickTemplate")
-    toggle:SetSize(26, 26); toggle:SetPoint("BOTTOMRIGHT", self.proxy, "BOTTOMRIGHT", 0, 0)
-    local icon = S.CreateTexture(toggle, nil, "ARTWORK"); icon:SetAllPoints()
+    toggle:SetSize(26, 26)
+    toggle:SetPoint("BOTTOMRIGHT", self.proxy, "BOTTOMRIGHT", 0, 0)
+    local icon = S.CreateTexture(toggle, nil, "ARTWORK")
+    icon:SetAllPoints()
     icon:SetTexture("Interface\\Icons\\Spell_Arcane_TeleportStormWind")
     local flyout = S.CreateFrame("Frame", nil, self.host, "SecureHandlerBaseTemplate")
     flyout:SetPoint("TOPRIGHT", toggle, "BOTTOMRIGHT", 0, -5)
     flyout:SetClampedToScreen(true)
-    local back = S.CreateTexture(flyout, nil, "BACKGROUND"); back:SetAllPoints(); back:SetColorTexture(.04, .05, .07, .96)
+    local back = S.CreateTexture(flyout, nil, "BACKGROUND")
+    back:SetAllPoints()
+    back:SetColorTexture(.04, .05, .07, .96)
     flyout:Hide()
     flyout:SetScript("OnShow", function() WatchCooldowns(self) end)
     flyout:SetScript("OnHide", function() WatchCooldowns(self) end)
     toggle:SetFrameRef("flyout", flyout)
     toggle:SetAttribute("_onclick", [[local f = self:GetFrameRef("flyout"); if f:IsShown() then f:Hide() else f:Show() end]])
     toggle:SetScript("OnEnter", function()
-        GameTooltip:SetOwner(toggle, "ANCHOR_LEFT"); GameTooltip:SetText(S.Text("Dungeon portals")); GameTooltip:Show()
+        GameTooltip:SetOwner(toggle, "ANCHOR_LEFT")
+        GameTooltip:SetText(S.Text("Dungeon portals"))
+        GameTooltip:Show()
     end)
     toggle:SetScript("OnLeave", function() GameTooltip:Hide() end)
     self.toggle, self.flyout = toggle, flyout
@@ -230,21 +241,29 @@ end
 local function Popup(self, spell)
     if not self.popup then
         local frame = S.CreateFrame("Frame", nil, self.host, "SecureHandlerBaseTemplate")
-        frame:SetSize(300, 74); frame:SetPoint("CENTER", UIParent, "CENTER", 0, 170)
-        local back = S.CreateTexture(frame, nil, "BACKGROUND"); back:SetAllPoints(); back:SetColorTexture(.04, .05, .07, .96)
-        frame.cast = SpellButton(self, frame); frame.cast:SetSize(42, 42); frame.cast:SetPoint("LEFT", 12, 0)
+        frame:SetSize(300, 74)
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 170)
+        local back = S.CreateTexture(frame, nil, "BACKGROUND")
+        back:SetAllPoints()
+        back:SetColorTexture(.04, .05, .07, .96)
+        frame.cast = SpellButton(self, frame)
+        frame.cast:SetSize(42, 42)
+        frame.cast:SetPoint("LEFT", 12, 0)
         frame.label = S.CreateFontString(frame, nil, "OVERLAY")
-        frame.label:SetPoint("LEFT", frame.cast, "RIGHT", 10, 0); frame.label:SetWidth(204)
+        frame.label:SetPoint("LEFT", frame.cast, "RIGHT", 10, 0)
+        frame.label:SetWidth(204)
         S.SetStyledFont(frame.label, S.GlobalFontPath(), 13, "OUTLINE", 1, true, 70, 1)
         local close = S.CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-        close:SetPoint("TOPRIGHT", 0, 0); close:SetScript("OnClick", function() frame:Hide() end)
+        close:SetPoint("TOPRIGHT", 0, 0)
+        close:SetScript("OnClick", function() frame:Hide() end)
         frame:Hide()
         frame:SetScript("OnShow", function() WatchCooldowns(self) end)
         frame:SetScript("OnHide", function() WatchCooldowns(self) end)
         self.popup = frame
     end
     self.popup.cast.spellID = spell.id
-    self.popup.cast:SetAttribute("spell", spell.id); self.popup.cast.icon:SetTexture(spell.icon)
+    self.popup.cast:SetAttribute("spell", spell.id)
+    self.popup.cast.icon:SetTexture(spell.icon)
     self.popup.label:SetText(spell.destination or spell.name)
     self.popup:SetScale((self.config.popupScale or 100) / 100)
     if self.popup:IsShown() then Cooldowns(self) else self.popup:Show() end
@@ -266,7 +285,10 @@ local function Joined(self, _, resultID)
             if spell.mapID == mapID and (not mapped or spell.id > mapped.id) then mapped = spell end
         end
     end
-    if mapped then Popup(self, mapped); return end
+    if mapped then
+        Popup(self, mapped)
+        return
+    end
     local destination = Text(Field(activity, "shortName"))
     local matched
     for _, spell in ipairs(self.spells or {}) do
@@ -281,22 +303,26 @@ local function Joined(self, _, resultID)
 end
 
 -- A spell-book change in combat only marks the list; it is read again once
--- after combat instead of after every pull.
+-- after combat instead of after every pull. Out of combat a burst of
+-- SPELLS_CHANGED reads it once, on the next frame (self.rescanJob).
 local function State(self, event)
-    if event == "PLAYER_REGEN_DISABLED" then self.clearPopup = true; return end
-    if NS.IsCombatLocked() then
-        if event == "SPELLS_CHANGED" then self.dirty = true end
+    if event == "PLAYER_REGEN_DISABLED" then
+        self.clearPopup = true
         return
     end
+    if event == "SPELLS_CHANGED" then self.dirty = true end
+    if NS.IsCombatLocked() then return end
     local grouped = IsInGroup()
     if self.popup and (self.clearPopup or event == "PLAYER_ENTERING_WORLD"
         or Public(grouped) and grouped == false) then self.popup:Hide() end
     self.clearPopup = nil
-    if event == "SPELLS_CHANGED" or self.dirty then self:Refresh()
+    if event == "SPELLS_CHANGED" then self.rescanJob:Request()
+    elseif self.dirty then self:Refresh()
     elseif self.placePending then CopyMinimap(self) end
 end
 
 function M:Enable()
+    self.rescanJob = self.context:Coalesce(0, M.Refresh)
     Create(self)
     RegisterStateDriver(self.host, "visibility", "[combat] hide; show")
     for _, event in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",
@@ -306,7 +332,10 @@ function M:Enable()
 end
 
 function M:Refresh()
-    if NS.IsCombatLocked() then self.dirty = true; return end
+    if NS.IsCombatLocked() then
+        self.dirty = true
+        return
+    end
     Create(self)
     CopyMinimap(self)
     self.spells, self.dirty = LearnedPortals(), nil
@@ -315,11 +344,15 @@ function M:Refresh()
     self.flyout:SetScale((self.config.flyoutScale or 100) / 100)
     for i = 1, count do
         local spell = self.spells[i]
-        local button = self.buttons[i] or SpellButton(self, self.flyout); self.buttons[i] = button
-        button:SetSize(32, 32); button:ClearAllPoints()
+        local button = self.buttons[i] or SpellButton(self, self.flyout)
+        self.buttons[i] = button
+        button:SetSize(32, 32)
+        button:ClearAllPoints()
         button:SetPoint("TOPLEFT", 6 + ((i - 1) % 6) * 36, -6 - math.floor((i - 1) / 6) * 36)
-        button.spellID = spell.id; button:SetAttribute("spell", spell.id)
-        button.icon:SetTexture(spell.icon); button:Show()
+        button.spellID = spell.id
+        button:SetAttribute("spell", spell.id)
+        button.icon:SetTexture(spell.icon)
+        button:Show()
     end
     for i = count + 1, #self.buttons do self.buttons[i]:Hide() end
     self.toggle:SetShown(self.config.showMinimap ~= false and count > 0)

@@ -1,7 +1,7 @@
 local root = assert(arg[1], "repository root required")
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local installed = {}
 local combat = false
-local timerQueue = {}
 local pointX, pointY = 100, 120
 local currentSpec, lootSpec = 1, 0
 local castDuration, gcdDuration = nil, { token = "gcd" }
@@ -64,7 +64,7 @@ C_Spell = { GetSpellCooldown = function() return { isActive = gcdDuration ~= nil
     assert(id == 61304)
     return gcdDuration
 end }
-C_Timer = { After = function(_, fn) timerQueue[#timerQueue + 1] = fn end }
+local clock = Support.Clock()
 C_SpecializationInfo = {
     GetSpecialization = function() return currentSpec end,
     GetSpecializationInfo = function(index) return 70 + index, "Spec " .. index, nil, 100 + index end,
@@ -110,7 +110,7 @@ local suite = {
 -- securecallfunction reports an error and returns nothing; this stand-in
 -- lets errors raise so a failing Blizzard opener fails the test.
 suite.Dispatch = function(callback, ...) return callback(...) end
-local ns = { Finish = function(callback, ...) return true, callback(...) end,
+local ns = { Finish = function(callback, ...) return true, callback(...) end, Dispatch = suite.Dispatch,
     IsCombatLocked = function() return combat end,
     AnchorPoints = { [5] = "CENTER" }, Safety = { IsForbidden = function() return false end } }
 ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
@@ -248,7 +248,8 @@ assert(landing.button.shown, "deferred landing shortcut did not resume after com
 landing:Disable()
 
 local hud = assert(installed.combatStatsHUD)
-hud.active, hud.context = true, Context()
+local TimerContext = Support.ModuleTimers(root, suite, ns)
+hud.active, hud.context = true, TimerContext("combatStatsHUD", hud, Context())
 hud.config = { point = 5, x = 0, y = 0, width = 300, scale = 100,
     backgroundColor = "000000", accentColor = "ffffff", opacity = 90, look = 5,
     showCrit = true, showHaste = true, showMastery = true, showVersatility = true,
@@ -259,10 +260,11 @@ hud:Enable()
 assert(hud.moverRegistered and hud.fields[1].value.text == "11.1%"
     and hud.fields[4].value.text == "44.4%", "stats HUD did not show native secondary stats")
 hasteValue = "secret"
+local waits = clock.native
 hud.context.events.UNIT_AURA(hud)
 hud.context.events.COMBAT_RATING_UPDATE(hud)
-assert(#timerQueue == 1, "stat events did not coalesce into one update")
-timerQueue[1]()
+assert(clock.native == waits + 1, "stat events did not coalesce into one update")
+clock.Advance(.1)
 assert(hud.fields[2].value.text == "--", "restricted stat was formatted in Lua")
 -- Class Style (look 6) paints with the shared class palette (index 5), not
 -- the first palette; Custom (look 5) keeps the strip's own colors.
@@ -341,6 +343,17 @@ fpsTicks[1].callback()
 assert(hud.fpsText.text == "-- FPS")
 hud:Refresh()
 assert(#fpsTicks == 1, "refresh duplicated FPS ticker")
+-- A stat repaint leaves the FPS readout where it is: placement is cold
+-- (settings, the session toggle, Edit Mode).
+local anchors, setPoint = 0, hud.fpsHost.SetPoint
+hud.fpsHost.SetPoint = function(self, ...)
+    anchors = anchors + 1
+    return setPoint(self, ...)
+end
+hud.statsJob:Request()
+clock.Advance(.1)
+assert(anchors == 0, "a stat repaint anchored the FPS readout again")
+hud.fpsHost.SetPoint = setPoint
 -- The key binding is a session toggle that also works in combat.
 combat = true
 suite.ToggleCombatStatsFPS()

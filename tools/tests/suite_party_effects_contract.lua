@@ -28,13 +28,14 @@ local function Frame()
     end })
 end
 UIParent = Frame()
-local timers = {}
-C_Timer = { NewTimer = function(delay, callback)
-    local timer = { delay = delay, callback = callback }
-    function timer:Cancel() self.cancelled = true end
-    timers[#timers + 1] = timer
-    return timer
-end }
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local clock = Support.Clock()
+-- The surprise interval draws from math.random; the test fixes the draw.
+local draws = {}
+math.random = function(low, high)
+    draws[#draws + 1] = { low, high }
+    return 100
+end
 local achievements = { [6] = "Stufe 10", [7] = "Gesammelt" }
 GetAchievementInfo = function(id) return id, achievements[id] end
 C_Spell = { GetSpellName = function(id)
@@ -75,14 +76,20 @@ S.Finite = function(v) return type(v) == "number" and v == v end
 S.Public = function(v) return v ~= secret end
 S.PublicText = function(v) return type(v) == "string" and v ~= "" and v or nil end
 S.RegisterOwnedMover = function(id, element, spec) S.mover = { id = id, element = element, spec = spec } end
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PartyEffects.lua"))("test",
-    { NS = { Client = {}, IsCombatLocked = function() return combat end }, Suite = S })
+local NS = { Client = {}, IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PartyEffects.lua"))("test", { NS = NS, Suite = S })
 module.active = true
 module.config = { onLevelUp = true, onAchievement = false, onLust = false, duration = 6, fontSize = 24, scale = 100,
     x = 0, y = 220 }
-module.context = { events = {}, units = {},
+module.context = Support.ModuleTimers(root, S, NS)("partyEffects", module, { events = {}, units = {},
     Event = function(self, event, fn, _, units) self.events[event], self.units[event] = fn, units end,
-    RemoveEvent = function(self, event) self.events[event], self.units[event] = nil, nil end }
+    RemoveEvent = function(self, event) self.events[event], self.units[event] = nil, nil end })
+local plays, play = 0, module.Play
+module.Play = function(...)
+    plays = plays + 1
+    return play(...)
+end
 local function Fire(event, ...) assert(module.context.events[event], event)(module, event, ...) end
 local function Playing()
     for _, group in ipairs(module.animations) do if not group.playing then return false end end
@@ -95,16 +102,13 @@ assert(module.context.events.PLAYER_LEVEL_UP and not module.context.events.ACHIE
     and not module.context.events.UNIT_SPELLCAST_SUCCEEDED, "only the level-up trigger is on by default")
 assert(not module.host.shown, "the banner showed without a moment")
 Fire("PLAYER_LEVEL_UP", 80, 1, 1, 0, 0, 1, 1)
-assert(Playing() and module.title.text == "Stufe 80" and module.stopTimer.delay == 6,
-    "a level-up did not name the level reached")
-local stale = module.stopTimer
+assert(Playing() and module.title.text == "Stufe 80", "a level-up did not name the level reached")
+clock.Advance(3)
 Fire("PLAYER_LEVEL_UP", 81, 1, 1, 0, 0, 1, 1)
-assert(stale.cancelled and module.stopTimer ~= stale, "a new moment kept the old timer")
-stale.callback()
+clock.Advance(4)
 assert(Playing(), "a stale timer ended the newer banner")
-module.stopTimer.callback()
-assert(not module.host.shown and not module.animations[1].playing and not module.stopTimer,
-    "the duration did not end the banner")
+clock.Advance(2.1)
+assert(not module.host.shown and not module.animations[1].playing, "the duration did not end the banner")
 
 -- Bloodlust-type spells count only for you and your pet.
 module.config.onLust, module.config.onAchievement = true, true
@@ -163,17 +167,23 @@ assert(not module.context.events.UNIT_AURA, "a switched-off buff trigger kept li
 -- Surprise celebrations at random times.
 module.config.random, module.config.interval = true, 100
 module:Refresh()
-local surprise = module.randomTimer
-assert(surprise and surprise.delay >= 80 and surprise.delay <= 120, "the surprise interval left 80-120 percent")
-surprise.callback()
-assert(Playing() and module.title.text == "Feiern!" and module.randomTimer and module.randomTimer ~= surprise,
-    "a surprise did not play and schedule the next one")
-local nextSurprise = module.randomTimer
+local draw = draws[#draws]
+assert(draw and draw[1] == 80 and draw[2] == 120, "the surprise interval left 80-120 percent")
+plays = 0
+clock.Advance(99.9)
+assert(plays == 0, "a surprise came early")
+clock.Advance(.2)
+assert(plays == 1 and Playing() and module.title.text == "Feiern!", "a surprise did not play")
+clock.Advance(50)
 module:Refresh()
-assert(nextSurprise.cancelled and module.randomTimer ~= nextSurprise, "a refresh kept a second surprise timer")
+clock.Advance(99.9)
+assert(plays == 1, "a refresh kept the earlier surprise")
+clock.Advance(.2)
+assert(plays == 2, "a surprise did not schedule the next one")
 module.config.random = false
 module:Refresh()
-assert(not module.randomTimer, "switched-off surprises kept their timer")
+clock.Advance(130)
+assert(plays == 2, "switched-off surprises kept their timer")
 
 -- Spinning the Suite action bars: only outside combat, stopped at the edge.
 module.config.rotateActionBars = true
@@ -203,7 +213,7 @@ assert(not spinA.playing and module.host.shown, "bars started turning in combat"
 combat = false
 module:Play()
 assert(spinA.playing, "bars did not turn again after combat")
-module.stopTimer.callback()
+clock.Advance(6.1)
 assert(not spinA.playing and not module.context.events.PLAYER_REGEN_DISABLED, "the effect end left the bars turning")
 module.config.duration = 9
 module:Play()
@@ -218,14 +228,16 @@ module.config.duration = 6
 module.config.onLust, module.config.onLevelUp = false, false
 module:Refresh()
 assert(not module.context.events.UNIT_SPELLCAST_SUCCEEDED and not module.context.events.PLAYER_LEVEL_UP
-    and not module.host.shown and module.stopTimer == nil, "switched-off triggers kept listening or a banner")
+    and not module.host.shown, "switched-off triggers kept listening or a banner")
 
 -- Edit Mode shows the banner for placing it and nothing else.
 S.editMode, module.config.random = true, true
 module:Refresh()
-assert(module.host.shown and module.title.text == "Feiern!" and not module.stopTimer
+assert(module.host.shown and module.title.text == "Feiern!"
     and not module.animations[1].playing, "the Edit Mode sample is missing or animated")
-assert(not module.randomTimer, "a surprise was scheduled in Edit Mode")
+plays = 0
+clock.Advance(130)
+assert(plays == 0 and module.host.shown, "a surprise or a banner timeout ran in Edit Mode")
 module.config.random = false
 module:HideEditPreview()
 S.editMode = false
@@ -234,13 +246,17 @@ assert(not module.host.shown, "the Edit Mode sample stayed")
 module.config.onAchievement, module.config.random, module.config.rotateActionBars = true, true, true
 module:Refresh()
 Fire("ACHIEVEMENT_EARNED", 6, false)
-local pending, pendingSurprise = module.stopTimer, module.randomTimer
-assert(spinA.playing and pendingSurprise, "the disable case needs a turning bar and a surprise timer")
+assert(spinA.playing, "the disable case needs a turning bar")
+-- As the controller stops a module: inactive, Disable, then Release.
 module.active = false
 module:Disable()
-assert(pending.cancelled and not module.stopTimer and not module.host.shown, "disable kept the banner or its timer")
-assert(pendingSurprise.cancelled and not module.randomTimer and not spinA.playing,
-    "disable kept a surprise timer or a turning bar")
+module.context:CancelTimers()
+assert(not module.host.shown and not spinA.playing, "disable kept the banner or a turning bar")
+plays = 0
+module.host.shown = true
+clock.Advance(130)
+assert(plays == 0 and module.host.shown, "disable kept a surprise or a banner timeout")
+module.host.shown = false
 module:Play()
 assert(not module.host.shown, "an inactive module played the banner")
 print("Celebrations: own and group triggers, surprises, bar spin at combat edges, Edit Mode sample and cleanup passed")

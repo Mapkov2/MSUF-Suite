@@ -1,8 +1,10 @@
 -- Offline contract for the optional movement-start cue. Live combat/taint
 -- behavior and Blizzard's secret restrictions still need in-client review.
 local root = assert(arg[1], "repository root required")
-local events, timers, installed = {}, {}, nil
-local clock, combat = 100, false
+local events, installed = {}, nil
+local combat = false
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local clock = Support.Clock(100)
 local known, cooldown, usable, realCooldown = {}, {}, {}, {}
 local cooldownBlocked = false
 local calls = { known = 0, cooldown = 0, usable = 0 }
@@ -30,8 +32,6 @@ local function Region()
 end
 
 UIParent = Region()
-C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
-GetTime = function() return clock end
 C_SpellBook = { IsSpellKnown = function(id)
     calls.known = calls.known + 1
     return known[id]
@@ -59,15 +59,19 @@ C_Spell = {
     GetSpellTexture = function(id) return id + 1000 end,
 }
 
-local context = {}
+local ns = { IsCombatLocked = function() return combat end,
+    AnchorPoints = { [5] = "CENTER" }, Dispatch = function(callback, ...) return callback(...) end }
+local suite = {}
+local context = Support.ModuleTimers(root, suite, ns)("combatMovementCue", nil, {})
 function context:Event(name, callback) events[name] = callback end
 function context:RemoveEvent(name) events[name] = nil end
 local config = { spellIDs = "invalid,0;101,101 102 10000000", combatOnly = true,
     point = 5, x = 0, y = -120, scale = 100 }
-local suite = {
+for key, value in pairs({
     Install = function(id, module)
         assert(id == "combatMovementCue")
         installed = module
+        suite.instances[id] = module
         module.active, module.context, module.config = true, context, config
     end,
     CreateFrame = Region, CreateTexture = Region, CreateFontString = Region,
@@ -82,9 +86,7 @@ local suite = {
     end,
     RegisterOwnedMover = function(id) assert(id == "combatMovementCue") end,
     Config = function() return config end,
-}
-local ns = { IsCombatLocked = function() return combat end,
-    AnchorPoints = { [5] = "CENTER" } }
+}) do suite[key] = value end
 
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, suite)
 local chunk = assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CombatMovementCue.lua"))
@@ -93,7 +95,7 @@ local cue = assert(installed)
 cue:Enable()
 assert(events.PLAYER_STARTED_MOVING and #cue.ids == 2
     and cue.ids[1] == 101 and cue.ids[2] == 102, "only unique public configured IDs")
-assert(not cue.host:IsShown() and #timers == 0, "idle cue stays hidden")
+assert(not cue.host:IsShown() and clock.Queued() == 0, "idle cue stays hidden")
 
 known[101], known[102] = true, true
 cooldown[101], cooldown[102] =
@@ -104,43 +106,46 @@ assert(not cue.host:IsShown() and calls.known == 0, "combat-only gate skips look
 combat = true
 events.PLAYER_STARTED_MOVING(cue)
 assert(cue.host:IsShown() and cue.icon.texture == 1101
-    and cue.label.text == "Spell 101 ready for movement" and #timers == 1,
+    and cue.label.text == "Spell 101 ready for movement" and clock.Queued() == 1,
     "first ready configured ability appears on movement start")
-local firstTimeout = timers[1]
-clock = 101
+clock.now = 101
 events.PLAYER_STARTED_MOVING(cue)
-assert(#timers == 1, "repeated movement is throttled")
-clock = 121
+assert(clock.Queued() == 1 and cue.icon.texture == 1101, "repeated movement is throttled")
+-- The clock jumps past the first timeout without a frame: its wait fires
+-- only on the next frame, after the newer cue restarted the timeout.
+clock.now = 121
 cooldown[101].isActive, realCooldown[101] = true, true
 events.PLAYER_STARTED_MOVING(cue)
-assert(cue.icon.texture == 1102 and #timers == 2,
-    "active cooldown is skipped and next ready ability is chosen")
-firstTimeout()
+assert(cue.icon.texture == 1102, "active cooldown is skipped and next ready ability is chosen")
+clock.Frame(0)
 assert(cue.host:IsShown(), "stale timeout cannot hide newer cue")
-timers[2]()
+clock.Advance(2.4)
+assert(cue.host:IsShown(), "the newer cue hid before its timeout")
+clock.Advance(.2)
 assert(not cue.host:IsShown(), "cue expires without frame polling")
 
-clock = 142
+clock.now = 142
 cooldown[101] = "secret"
 usable[102] = "secret"
 events.PLAYER_STARTED_MOVING(cue)
-assert(not cue.host:IsShown() and #timers == 2,
+assert(not cue.host:IsShown() and clock.Queued() == 0,
     "secret cooldown result or usability fails silently")
-clock, cooldownBlocked = 143, true
+clock.now, cooldownBlocked = 143, true
 events.PLAYER_STARTED_MOVING(cue)
 local blockedReads = calls.cooldown
-clock = 143.2
+clock.now = 143.2
 events.PLAYER_STARTED_MOVING(cue)
 assert(not cue.host:IsShown() and calls.cooldown == blockedReads,
     "restricted cooldown reads were not safely throttled")
 cooldownBlocked = false
 -- Only the global cooldown runs: the ability counts as ready.
-clock = 170
+clock.now = 170
 cooldown[101], realCooldown[101] = { isActive = true, isEnabled = true }, nil
 events.PLAYER_STARTED_MOVING(cue)
-assert(cue.host:IsShown() and cue.icon.texture == 1101 and #timers == 3,
+assert(cue.host:IsShown() and cue.icon.texture == 1101 and clock.Queued() == 1,
     "an ability waiting only for the global cooldown was not offered")
-timers[3]()
+clock.Advance(2.6)
+assert(not cue.host:IsShown(), "the cue did not expire")
 
 config.spellIDs = ""
 cue:Refresh()
@@ -153,9 +158,11 @@ suite.editMode = true
 cue:Refresh()
 assert(cue.host:IsShown() and cue.label.text == "Movement ability ready",
     "Edit Mode shows a placement sample")
-clock = 200
+clock.now = 200
 events.PLAYER_STARTED_MOVING(cue)
-assert(#timers == 3, "Edit Mode cannot show a live cue")
+clock.Advance(3)
+assert(clock.Queued() == 0 and cue.host:IsShown() and cue.label.text == "Movement ability ready",
+    "Edit Mode cannot show a live cue")
 suite.editMode = false
 cue:Disable()
 assert(not cue.host:IsShown(), "disable hides placement sample")

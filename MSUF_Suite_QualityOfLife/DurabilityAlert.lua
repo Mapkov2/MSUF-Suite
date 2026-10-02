@@ -2,7 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "durabilityAlert"
 local POINTS = NS.AnchorPoints
-local M = { generation = 0 }
+local M = {}
 
 local LABEL = S.Text("Low durability")
 local PREVIEW = S.Text("Preview")
@@ -78,17 +78,12 @@ local function Update(self)
     self.host:Show()
 end
 
+-- Inventory and alert events can arrive together: one update per window.
+-- Waiting past the shared reader's 0.05-second cache also ensures a repair
+-- uses fresh values.
+local SETTLE = .06
 local function ScheduleUpdate(self)
-    if self.pending then return end
-    self.pending = true
-    local generation = self.generation
-    -- Inventory and alert events can arrive together. Waiting past the shared
-    -- reader's 0.05-second cache also ensures a repair uses fresh values.
-    C_Timer.After(.06, function()
-        if self.generation ~= generation then return end
-        self.pending = false
-        Update(self)
-    end)
+    self.updateJob:Request()
 end
 
 local function OnEvent(self, event)
@@ -100,8 +95,7 @@ local function OnEvent(self, event)
 end
 
 function M:Enable()
-    self.generation = self.generation + 1
-    self.pending = false
+    self.updateJob = self.context:Coalesce(SETTLE, Update)
     Create(self)
     Place(self)
     local context = self.context
@@ -123,9 +117,8 @@ function M:Refresh()
     Update(self)
 end
 
+-- The context's Release drops an update still due.
 function M:Disable()
-    self.generation = self.generation + 1
-    self.pending = false
     if self.host then self.host:Hide() end
 end
 

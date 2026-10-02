@@ -29,9 +29,12 @@ C_Timer = { After = function(delay, callback)
     timerCallbacks[callback] = true
     queue[#queue + 1] = callback
 end }
-assert(loadfile(root .. "/MSUF_Suite_Modules/MythicPlusPull.lua"))("test", { NS = { Client = {} }, Suite = S })
-local owner = { config = {}, mplusActive = true, mplus = { forcesPercent = 25,
+local NS = { Client = {}, Dispatch = function(callback, ...) return callback(...) end }
+assert(loadfile(root .. "/MSUF_Suite_Modules/MythicPlusPull.lua"))("test", { NS = NS, Suite = S })
+local owner = { active = true, config = {}, mplusActive = true, mplus = { forcesPercent = 25,
     observedPull = { SetText = function(self, value) self.text = value end } } }
+-- The pull paints through a job of its owner's (the objectives module's) context.
+owner.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)("objectives", owner)
 local H = S.MythicPlusPull
 H.Sync(owner); assert(not owner.observedPull and reads == 0, "disabled projection is cold")
 local function Mob(guid, percent)
@@ -108,6 +111,25 @@ Fire("NAME_PLATE_UNIT_REMOVED", "nameplate4")
 Fire("UNIT_FLAGS", "nameplate1"); H.Stop(owner); Flush()
 assert(not next(owner.observedPull.frame.events) and owner.observedPull.sum == nil, "stop cancels queued updates")
 assert(threatReads == 0, "the observed pull walked party threat")
+-- A wait from before Stop stays stale after a restart: the new run's first
+-- request waits its own full delay instead of painting on the old wait.
+H.Sync(owner)
+Fire("UNIT_FLAGS", "nameplate1")
+local stale = queue[#queue]
+H.Stop(owner)
+H.Sync(owner)
+assert(owner.observedPull.sum == 4, "a restart did not paint at once")
+units.nameplate5 = Mob("Creature-E", 1)
+Fire("NAME_PLATE_UNIT_ADDED", "nameplate5")
+local fresh = queue[#queue]
+assert(stale and fresh and fresh ~= stale or #queue == 2, "the restart reused the stale wait")
+stale()
+assert(owner.observedPull.sum == 4, "a wait from before Stop painted the new run's request early")
+fresh()
+assert(owner.observedPull.sum == 5, "the new run's request did not paint after its delay")
+queue = {}
+units.nameplate5 = nil
+H.Stop(owner)
 -- A new run reads its values again (the cache belongs to one run).
 local before = reads
 H.Sync(owner)

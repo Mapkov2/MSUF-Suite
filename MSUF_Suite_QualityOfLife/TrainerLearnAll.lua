@@ -104,7 +104,7 @@ local function Stop(self, reason)
     local hadQueue = self.queue ~= nil
     self.queue, self.awaiting, self.purchasing, self.deferred = nil, nil, nil, nil
     self.nextIndex, self.spent, self.approvedTotal = nil, nil, nil
-    self.generation = (self.generation or 0) + 1
+    self.resumeJob:Cancel()
     if hadQueue and reason then NS.Print(S.Text(reason)) end
     self:UpdateButton()
 end
@@ -151,14 +151,17 @@ local function Advance(self)
         Stop(self, "Training stopped because the purchase call failed.")
         return
     end
+    -- A trainer update that arrived inside the purchase call resumes the
+    -- queue on the next frame (self.resumeJob); Stop cancels it.
     if self.deferred then
         self.deferred = nil
-        local generation = self.generation
-        C_Timer.After(0, function()
-            if self.generation == generation and self.queue then Advance(self) end
-        end)
+        self.resumeJob:Request()
     end
     self:UpdateButton()
+end
+
+local function Resume(self)
+    if self.queue then Advance(self) end
 end
 
 local function OnAccept(_, preview)
@@ -176,7 +179,7 @@ local function OnAccept(_, preview)
         return
     end
     M.queue, M.approvedTotal, M.nextIndex, M.spent = current.entries, current.total, 1, 0
-    M.generation = (M.generation or 0) + 1
+    M.resumeJob:Cancel()
     Advance(M)
 end
 
@@ -293,6 +296,7 @@ local function OnCombat(self)
 end
 
 function M:Enable()
+    self.resumeJob = self.context:Coalesce(0, Resume)
     EnsurePopup()
     self.context:Event("ADDON_LOADED", OnLoaded, true)
     self.context:Event("TRAINER_SHOW", OnTrainer, true)

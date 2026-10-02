@@ -214,8 +214,9 @@ local function PaintSummary(self, panel, durability)
     panel:Show()
 end
 
+-- A direct repaint consumes a repaint still due (self.repaint).
 function M:Update()
-    self.pending = nil
+    self.repaint:Clear()
     local open = self.active and PaperDollFrame:IsVisible()
     local durability = open and DurabilityPercent()
     ModelDurability(self, durability or nil)
@@ -228,24 +229,17 @@ function M:Update()
     PaintSummary(self, panel, durability or nil)
 end
 
--- Item data and gear events arrive in bursts; one repaint per frame.
-local function Schedule(self)
-    if self.pending then return end
-    self.pending = true
-    C_Timer.After(0, function() if self.pending then self:Update() end end)
-end
-
-local function GearChanged(self) Schedule(self) end
-
+-- Item data and gear events arrive in bursts: each requests the one repaint
+-- of the next frame.
 local function SheetShown()
     if not M.active then return end
-    for _, event in ipairs(GEAR_EVENTS) do M.context:Event(event, GearChanged) end
+    for _, event in ipairs(GEAR_EVENTS) do M.context:Event(event, M.repaint) end
     M:Update()
 end
 
 local function SheetHidden()
     for _, event in ipairs(GEAR_EVENTS) do M.context:RemoveEvent(event) end
-    M.pending = nil
+    M.repaint:Clear()
 end
 
 ------------------------------------------------------------------ gear slots
@@ -354,6 +348,7 @@ local function Slots(self)
 end
 
 function M:Enable()
+    self.repaint = self.context:Coalesce(0, M.Update)
     Install(self)
     Slots(self)
     if PaperDollFrame:IsVisible() then SheetShown() end

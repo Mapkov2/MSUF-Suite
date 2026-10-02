@@ -21,9 +21,11 @@ if not strsplit then
 end
 
 -- Isolated QoL module tests load one file without the addon's Bootstrap.lua.
--- Install the real palette bridge with a minimal core namespace. palettes
+-- Install the real palette bridge with a minimal core namespace, and the
+-- shared windows and copy dialog (MSUF_Suite_Modules/Dialogs.lua). palettes
 -- (optional) replaces the single default palette.
 function Support.QoLStyleFixture(root, suite, palettes)
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = suite })
     suite.RGB = suite.RGB or function() return 1, 1, 1 end
     local previous = _G.MSUFSuite
     _G.MSUFSuite = { Suite = suite, QoLVisualStyles = palettes or {
@@ -165,6 +167,102 @@ function Support.TooltipFixture(root, suite, ns)
         for _, callback in ipairs(fixture.post[kind] or {}) do callback(tooltip, data) end
     end
     return fixture
+end
+
+-- The client's frame clock and C_Timer (UITimerDocumentation.lua): GetTime()
+-- is the time of the current frame, and a callback fires on the first frame
+-- at or after its due time, never inside the call that scheduled it (a delay
+-- of 0 means the next frame). C_Timer.After cannot be cancelled; NewTimer and
+-- NewTicker return a handle with Cancel and IsCancelled and pass it to the
+-- callback. clock.Frame(dt) runs one frame, clock.Advance(seconds) frames
+-- until that much time passed; clock.native counts the C_Timer calls.
+function Support.Clock(start)
+    local clock = { now = start or 1000, frame = 1 / 60, native = 0, tickers = 0 }
+    local entries, sequence = {}, 0
+    local function Add(seconds, callback)
+        assert(type(seconds) == "number" and seconds == seconds, "C_Timer needs a number of seconds")
+        assert(type(callback) == "function", "C_Timer needs a callback function")
+        sequence = sequence + 1
+        entries[#entries + 1] = { at = clock.now + math.max(0, seconds), sequence = sequence, callback = callback }
+        clock.native = clock.native + 1
+    end
+    local function Handle()
+        local handle = { cancelled = false }
+        function handle:Cancel() self.cancelled = true end
+        function handle:IsCancelled() return self.cancelled end
+        return handle
+    end
+    GetTime = function() return clock.now end
+    C_Timer = {
+        After = Add,
+        NewTimer = function(seconds, callback)
+            local handle = Handle()
+            Add(seconds, function()
+                if handle.cancelled then return end
+                handle.cancelled = true
+                callback(handle)
+            end)
+            return handle
+        end,
+        NewTicker = function(seconds, callback, iterations)
+            local handle, left = Handle(), iterations
+            clock.tickers = clock.tickers + 1
+            local function Tick()
+                if handle.cancelled then return end
+                if left then
+                    left = left - 1
+                    if left <= 0 then handle.cancelled = true end
+                end
+                if not handle.cancelled then Add(seconds, Tick) end
+                callback(handle)
+            end
+            Add(seconds, Tick)
+            return handle
+        end,
+    }
+    function clock.Frame(dt)
+        clock.now = clock.now + (dt or clock.frame)
+        local limit = sequence
+        while true do
+            local best
+            for i, entry in ipairs(entries) do
+                if entry.sequence <= limit and entry.at <= clock.now + 1e-9 then
+                    local current = entries[best]
+                    if not current or entry.at < current.at
+                        or (entry.at == current.at and entry.sequence < current.sequence) then best = i end
+                end
+            end
+            if not best then return end
+            table.remove(entries, best).callback()
+        end
+    end
+    function clock.Advance(seconds)
+        local target = clock.now + seconds
+        repeat clock.Frame(math.min(clock.frame, target - clock.now)) until clock.now >= target - 1e-9
+    end
+    function clock.Queued()
+        return #entries
+    end
+    return clock
+end
+
+-- MSUF_Suite_Modules/Timers.lua for module tests with a stub context: loads
+-- the shipped timer methods once per suite table (suite.instances is the
+-- module registry they read, ns.Dispatch runs the callbacks) and returns
+-- Context(id, module, fields), which registers module under id and gives the
+-- stub context `fields` the real ctx:After, Coalesce, Ticker and Cancel.
+function Support.ModuleTimers(root, suite, ns)
+    suite.instances = suite.instances or {}
+    local methods = {}
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Timers.lua"))("MSUF_Suite_Modules",
+        { NS = ns, Suite = suite, Context = methods })
+    local meta = { __index = methods }
+    return function(id, module, fields)
+        suite.instances[id] = module
+        local context = setmetatable(fields or {}, meta)
+        context.id = id
+        return context
+    end
 end
 
 -- The client's securecallfunction: an error is reported, nothing returned.

@@ -5,7 +5,7 @@ local Public, Finite, Text = S.Public, S.Finite, S.PublicText
 local Field, Clock = S.PublicField, S.ClockText
 local Party = P.RunSummaryParty
 local Tr = S.Text
-local M = { serial = 0 }
+local M = {}
 local DOT = "  \194\183  "
 -- A first click on "Delete run" arms it for this many seconds.
 local DELETE_WINDOW = 4
@@ -16,20 +16,24 @@ local function Data()
     return S.CharacterData(ID)
 end
 
+local function Disarm(self)
+    local button = self.historyButtons[3]
+    self.context:Cancel(Disarm)
+    if not button.armed then return end
+    button.armed = nil
+    button.label:SetText(Tr("Delete run"))
+end
+
+-- Each arm keeps its whole window (ctx:After); deleting ends it.
 local function DeleteClicked(self, button)
     if button.armed then
-        button.armed = nil
-        button.label:SetText(Tr("Delete run"))
+        Disarm(self)
         self:DeleteCurrent()
         return
     end
     button.armed = true
     button.label:SetText(Tr("Click again to delete"))
-    C_Timer.After(DELETE_WINDOW, function()
-        if not button.armed then return end
-        button.armed = nil
-        button.label:SetText(Tr("Delete run"))
-    end)
+    self.context:After(DELETE_WINDOW, Disarm)
 end
 
 local function CreateHistoryButtons(self, host)
@@ -242,6 +246,10 @@ local function PreviewResult(kind)
     return result
 end
 
+local function AutoClose(self)
+    if not S.editMode then self:Close() end
+end
+
 local function Show(self, result, automatic)
     if not self.active or not result then return end
     if NS.IsCombatLocked() then
@@ -255,17 +263,18 @@ local function Show(self, result, automatic)
     self.pending = nil
     Paint(self, result)
     self.host:Show()
-    self.serial = self.serial + 1
-    local serial, duration = self.serial, self.config.autoHide or 0
+    -- An automatic card closes after config.autoHide seconds; any other show
+    -- or a close ends that wait.
+    local duration = self.config.autoHide or 0
     if automatic and duration > 0 then
-        C_Timer.After(duration, function()
-            if self.active and self.serial == serial and not S.editMode then self:Close() end
-        end)
+        self.context:After(duration, AutoClose)
+    else
+        self.context:Cancel(AutoClose)
     end
 end
 
 function M:Close()
-    self.serial = self.serial + 1
+    self.context:Cancel(AutoClose)
     self.visible, self.pending = false, nil
     if self.host then self.host:Hide() end
 end

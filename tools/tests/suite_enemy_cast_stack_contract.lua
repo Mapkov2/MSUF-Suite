@@ -114,10 +114,18 @@ C_Spell = {
         if active == nil then active = false end
         return { isActive = active, isOnGCD = gcds[id], startTime = Secret(), duration = Secret() }
     end,
+    -- The cooldown without the GCD: a public duration object that runs while
+    -- the spell's own cooldown runs (cooldowns[id]), never for the GCD alone.
     GetSpellCooldownDuration = function(id, ignoreGCD)
         assert(ignoreGCD == true, "the wake must ignore the global cooldown")
-        cooldownDurations[id] = cooldownDurations[id] or { spell = id }
-        return cooldownDurations[id]
+        local duration = cooldownDurations[id]
+        if not duration then
+            duration = { spell = id }
+            function duration:HasSecretValues() return false end
+            function duration:IsActive() return cooldowns[self.spell] == true and not gcds[self.spell] end
+            cooldownDurations[id] = duration
+        end
+        return duration
     end,
     GetSpellInfo = function(id) return { name = LOCALIZED[id], iconID = id + 1000 } end,
 }
@@ -153,14 +161,16 @@ local S = { Install = function(_, m) module = m end, Public = function(v) return
     RegisterOwnedMover = function(_, element, spec) module.mover = { element = element, spec = spec } end,
     RGB = function(hex) return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255,
         tonumber(hex:sub(5, 6), 16) / 255 end }
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/EnemyCastStack.lua"))("test", { NS = { Client = {} }, Suite = S })
+local NS = { Client = {}, Dispatch = function(callback, ...) return callback(...) end }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/EnemyCastStack.lua"))("test", { NS = NS, Suite = S })
 module.active = true
 module.config = { listSize = 2, castKinds = 1, fadeMinor = false, targetLine = true, readyStripe = false,
     interruptSpellID = 0, growth = 1, width = 280, rowHeight = 30, fontSize = 12, scale = 100, x = 350, y = 0,
     castColor = "b88a4a", priorityColor = "d65a5a", lockedColor = "7d8290", stripeColor = "63c88a" }
-module.context = { events = {}, units = {},
+module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)(
+    "enemyCastStack", module, { events = {}, units = {},
     Event = function(self, event, fn, _, unit) self.events[event], self.units[event] = fn, unit end,
-    RemoveEvent = function(self, event) self.events[event], self.units[event] = nil, nil end }
+    RemoveEvent = function(self, event) self.events[event], self.units[event] = nil, nil end })
 local function Fire(event, ...) assert(module.context.events[event], event)(module, event, ...) end
 local function Live(unit) local entry = module.entries[unit]; return entry and entry.live end
 
@@ -279,6 +289,27 @@ assert(not module.ready, "an override spell of the interrupt was ignored")
 cooldowns[2139] = false
 wake.scripts.OnCooldownDone()
 assert(module.ready and rowA.stripe.shown and rowB.stripe.shown, "the cooldown end did not restore the mark")
+-- Outside SPELL_UPDATE_COOLDOWN isOnGCD is not to be trusted: a stale
+-- isOnGCD over a running cooldown is no ready interrupt, while a spell that
+-- waits only for the global cooldown still is.
+cooldowns[2139] = true
+Fire("SPELL_UPDATE_COOLDOWN", 2139, nil)
+assert(not module.ready, "the interrupt on cooldown counted as ready")
+local stale = C_Spell.GetSpellCooldown
+C_Spell.GetSpellCooldown = function(id)
+    local info = stale(id)
+    info.isOnGCD = true
+    return info
+end
+wake.scripts.OnCooldownDone()
+assert(not module.ready and not rowA.stripe.shown, "a stale isOnGCD outside the cooldown event marked the interrupt ready")
+C_Spell.GetSpellCooldown = stale
+gcds[2139] = true
+wake.scripts.OnCooldownDone()
+assert(module.ready and rowA.stripe.shown, "a spell waiting only for the global cooldown lost the ready mark")
+gcds[2139], cooldowns[2139] = nil, false
+wake.scripts.OnCooldownDone()
+assert(module.ready, "the restored interrupt is not ready")
 class, known, petKnown = "WARLOCK", {}, { [19647] = true }
 Fire("UNIT_PET", "player")
 assert(module.candidates[1] == 19647 and #module.candidates == 1, "the active pet interrupt was not found")
@@ -360,7 +391,7 @@ ranges[unitA], ranges[unitB] = { [2139] = false }, { [2139] = true }
 module:Refresh()
 rowA, rowB = module.ordered[1].row, module.ordered[2].row
 local ticker = tickers[#tickers]
-assert(ticker and not ticker.cancelled and ticker.interval == .25 and module.rangeTicker == ticker,
+assert(ticker and not ticker.cancelled and ticker.interval == .25 and module.rangeTicker:Running(),
     "dimming without a range ticker for the listed casts")
 assert(rowA.alpha == .45 and rowB.alpha == 1, "an enemy beyond the interrupt was not dimmed")
 assert(not module.context.events.SPELL_UPDATE_COOLDOWN, "dimming alone listened to cooldowns")
@@ -385,7 +416,7 @@ assert(Same(rowA.alphaBool, module.ordered[1].important) and rowA.alphaYes == 1 
     "hiding unmarked casts must make them fully transparent")
 module.config.fadeMinor, module.config.onlyImportant = false, false
 module.config.dimOutOfRange = false; module:Refresh()
-assert(ticker.cancelled and not module.rangeTicker and module.ordered[1].row.alpha == 1,
+assert(ticker.cancelled and not module.rangeTicker:Running() and module.ordered[1].row.alpha == 1,
     "switching dimming off kept the ticker or the dim")
 
 ------------------------------------------------------------------ whole-bar ready mark

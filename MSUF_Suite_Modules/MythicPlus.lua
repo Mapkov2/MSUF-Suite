@@ -84,7 +84,6 @@ local function Create(owner)
     panel:SetPoint("TOPLEFT", owner.content, "TOPLEFT", 0, 0)
     panel:SetPoint("TOPRIGHT", owner.content, "TOPRIGHT", 0, 0)
     local view = { frame = panel, bosses = {}, height = 282 }
-    view.tick = function() H.Tick(owner) end
     view.dungeon = NewLine(panel, 15, -4)
     view.clock = NewText(panel, 25)
     view.clock:SetPoint("TOPLEFT", 4, -30)
@@ -163,7 +162,8 @@ local function ThemeBars(owner)
     local gap = c.chestSpacing or 22
     local chestY = -81 - barHeight
     for i, row in ipairs(view.chests) do
-        row.label:ClearAllPoints(); row.remaining:ClearAllPoints()
+        row.label:ClearAllPoints()
+        row.remaining:ClearAllPoints()
         row.label:SetPoint("TOPLEFT", 4, chestY - (i - 1) * gap)
         row.remaining:SetPoint("TOPRIGHT", -4, chestY - (i - 1) * gap)
     end
@@ -172,13 +172,16 @@ local function ThemeBars(owner)
     for _, spec in ipairs({ { view.deaths, deathY }, { view.affixes, deathY - 22 },
         { view.forces, deathY - 46 }, { view.observedPull, deathY - 88 },
         { view.bossHeader, deathY - 88 - pullSpace } }) do
-        spec[1]:ClearAllPoints(); spec[1]:SetPoint("TOPLEFT", 4, spec[2]); spec[1]:SetPoint("TOPRIGHT", -4, spec[2])
+        spec[1]:ClearAllPoints()
+        spec[1]:SetPoint("TOPLEFT", 4, spec[2])
+        spec[1]:SetPoint("TOPRIGHT", -4, spec[2])
     end
     view.observedPull:SetShown(c.showObservedPull == true and not view.completed)
     StyleText(view.observedPull, owner.font or S.GlobalFontPath(), 12)
     view.bossY = deathY - 110 - pullSpace
     for i, row in ipairs(view.bosses) do
-        row:ClearAllPoints(); row:SetPoint("TOPLEFT", view.frame, "TOPLEFT", 4, view.bossY - (i - 1) * 21)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", view.frame, "TOPLEFT", 4, view.bossY - (i - 1) * 21)
         row:SetPoint("TOPRIGHT", view.frame, "TOPRIGHT", -4, view.bossY - (i - 1) * 21)
     end
     view.forces:SetShown(c.showForcesText ~= false)
@@ -563,14 +566,14 @@ function H.Detect(owner)
     return Finite(mapID) and mapID > 0 and mapID or nil
 end
 
-local function StopTicker(view)
-    if view.ticker then view.ticker:Cancel() end
-    view.ticker = nil
+-- The run clock ticks once a second on the owner's context (ctx:Ticker).
+local function StopTicker(owner)
+    owner.context:Cancel(H.Tick)
 end
 
 function H.Start(owner, mapID)
     local view = Create(owner)
-    StopTicker(view)
+    StopTicker(owner)
     S.MythicPlusPull.Stop(owner)
     view.forcesPercent = nil
     view.mapID, view.timerID, view.lastElapsed = mapID, nil, nil
@@ -598,13 +601,13 @@ function H.Start(owner, mapID)
     ThemeBars(owner)
     S.MythicPlusPull.Sync(owner)
     H.UpdateObjectives(owner)
-    view.ticker = C_Timer.NewTicker(1, view.tick)
+    owner.context:Ticker(1, H.Tick)
 end
 
 function H.Complete(owner)
     local view = owner.mplus
     if not view or not owner.mplusActive then return end
-    StopTicker(view)
+    StopTicker(owner)
     view.completed = true
     S.MythicPlusPull.Stop(owner)
     view.observedPull:Hide()
@@ -622,7 +625,7 @@ end
 function H.Stop(owner)
     local view = owner.mplus
     if not view then return end
-    StopTicker(view)
+    StopTicker(owner)
     S.MythicPlusPull.Stop(owner)
     view.frame:Hide()
     owner.mplusActive = false

@@ -67,14 +67,17 @@ local S = {
 local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end,
 }
-local context = { events = {} }
+local context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)(
+    "socketGemSuggestions", nil, { events = {} })
 function context:Event(name, fn) self.events[name] = fn end
 function context:RemoveEvent(name) self.events[name] = nil end
 
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SocketGemSuggestions.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.context, module.active = context, true
+S.instances.socketGemSuggestions = module
 module:Enable()
 assert(not module.panel, "socket panel was created outside the native UI")
 

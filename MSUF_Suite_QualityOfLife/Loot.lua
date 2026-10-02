@@ -38,15 +38,13 @@ local function Accessible(frame)
     return frame and not NS.Safety.IsForbidden(frame)
 end
 
+local CloseHistory
 local function CancelHistory(self)
-    local timer = self.historyTimer
-    self.historyTimer = nil
-    if timer then timer:Cancel() end
+    self.context:Cancel(CloseHistory)
     self.pendingHistory = nil
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
 end
 
-local CloseHistory
 local function HistoryAfterCombat(module)
     module.context:RemoveEvent("PLAYER_REGEN_ENABLED")
     if module.pendingHistory then
@@ -71,14 +69,8 @@ local function ScheduleHistory(self)
     CancelHistory(self)
     if not self.active or not self.config.manageHistory then return end
     local delay = self.config.historyMode == 1 and 0 or self.config.historyDelay
-    local timer
     -- Defer even immediate suppression until native OnShow and its caller finish.
-    timer = C_Timer.NewTimer(delay, function()
-        if self.historyTimer ~= timer then return end
-        self.historyTimer = nil
-        CloseHistory(self)
-    end)
-    self.historyTimer = timer
+    self.context:After(delay, CloseHistory)
 end
 
 -- Post-hooks: Blizzard's own OnShow/OnHide run first and stay untouched.

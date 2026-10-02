@@ -63,9 +63,11 @@ local function NewWindow(self, key)
         bar:SetStatusBarTexture(NS.MSUFMedia.barTexture)
         bar:SetMinMaxValues(0, 1)
         bar.background = S.CreateTexture(bar, nil, "BACKGROUND")
-        bar.background:SetAllPoints(); bar.background:SetColorTexture(.05, .06, .08, .85)
+        bar.background:SetAllPoints()
+        bar.background:SetColorTexture(.05, .06, .08, .85)
         bar.text = S.CreateFontString(bar, nil, "OVERLAY")
-        bar.text:SetPoint("LEFT", 4, 0); bar.text:SetPoint("RIGHT", -4, 0)
+        bar.text:SetPoint("LEFT", 4, 0)
+        bar.text:SetPoint("RIGHT", -4, 0)
         bar.marker = S.CreateTexture(bar, nil, "OVERLAY")
         bar.marker:SetColorTexture(1, .25, .15, 1)
         host.rows[i] = bar
@@ -84,12 +86,15 @@ local function Layout(self, key, host)
     local c = self.config
     if host.layoutSerial == self.layoutSerial then return end
     host.layoutSerial = self.layoutSerial
-    host:SetScale(c.scale / 100); host:SetSize(c.width, 23 + c.rows * (c.rowHeight + 2))
-    host:ClearAllPoints(); host:SetPoint("CENTER", UIParent, "CENTER", c[key .. "X"], c[key .. "Y"])
+    host:SetScale(c.scale / 100)
+    host:SetSize(c.width, 23 + c.rows * (c.rowHeight + 2))
+    host:ClearAllPoints()
+    host:SetPoint("CENTER", UIParent, "CENTER", c[key .. "X"], c[key .. "Y"])
     local font = S.GlobalFontPath()
     S.SetStyledFont(host.title, font, c.fontSize, "OUTLINE", 1, true, 80, 1)
     for i, bar in ipairs(host.rows) do
-        bar:ClearAllPoints(); bar:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -23 - (i - 1) * (c.rowHeight + 2))
+        bar:ClearAllPoints()
+        bar:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -23 - (i - 1) * (c.rowHeight + 2))
         bar:SetSize(c.width, c.rowHeight)
         S.SetStyledFont(bar.text, font, c.fontSize, "OUTLINE", 1, true, 80, 1)
     end
@@ -99,9 +104,15 @@ end
 -- threat, the player's share of the pull threshold and that threshold.
 local function Collect(self, key, enemy)
     local data = self.records[key]
-    if not data then data = {}; self.records[key] = data end
+    if not data then
+        data = {}
+        self.records[key] = data
+    end
     local pool = self.pools[key]
-    if not pool then pool = {}; self.pools[key] = pool end
+    if not pool then
+        pool = {}
+        self.pools[key] = pool
+    end
     wipe(data)
     local highest, playerScaled, threshold = 0, nil, nil
     if enemy then
@@ -111,7 +122,10 @@ local function Collect(self, key, enemy)
                 local tanking, _, scaled, raw, amount = UnitDetailedThreatSituation(unit, enemy)
                 if S.Finite(amount) and amount >= 0 and S.Finite(scaled) and S.Finite(raw) then
                     local row = pool[unit]
-                    if not row then row = {}; pool[unit] = row end
+                    if not row then
+                        row = {}
+                        pool[unit] = row
+                    end
                     row.unit, row.threat, row.scaled, row.raw = unit, amount, scaled, raw
                     row.tanking = S.Public(tanking) and tanking
                     data[#data + 1] = row
@@ -153,7 +167,8 @@ local function PaintRows(self, host, data, maximum, threshold)
             local marker = c.showThreshold and threshold and threshold > 0
             bar.marker:SetShown(marker == true)
             if marker then
-                bar.marker:ClearAllPoints(); bar.marker:SetPoint("LEFT", bar, "LEFT", c.width * math.min(1, threshold / maximum), 0)
+                bar.marker:ClearAllPoints()
+                bar.marker:SetPoint("LEFT", bar, "LEFT", c.width * math.min(1, threshold / maximum), 0)
                 bar.marker:SetSize(2, c.rowHeight)
             end
         end
@@ -163,7 +178,10 @@ end
 -- One sound when your share of the pull threshold first reaches the alert.
 local function Alert(self, playerScaled)
     local at = self.config.pullAlert
-    if S.editMode or at <= 0 then self.alerted = false; return end
+    if S.editMode or at <= 0 then
+        self.alerted = false
+        return
+    end
     local reached = playerScaled ~= nil and playerScaled >= at
     if reached and not self.alerted then PlaySound(SOUNDKIT.RAID_WARNING, "Master") end
     self.alerted = reached
@@ -189,8 +207,12 @@ function M:Update()
     if not self.active then return end
     local mode = self.config.windows
     Paint(self, "main", mode == FOCUS and "focus" or "target")
-    if mode == BOTH then Paint(self, "focus", "focus")
-    elseif self.windows.focus then self.windows.focus:Hide(); self.enemies.focus = nil end
+    if mode == BOTH then
+        Paint(self, "focus", "focus")
+    elseif self.windows.focus then
+        self.windows.focus:Hide()
+        self.enemies.focus = nil
+    end
 end
 
 local function Relevant(self, event, unit)
@@ -211,34 +233,31 @@ local function Changed(self, event, unit)
     if not Relevant(self, event, unit) then return end
     if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then self.alerted = false end
     if event == "GROUP_ROSTER_UPDATE" or event == "UNIT_PET" then Roster(self) end
-    if self.pending then return end
-    self.pending = true
-    C_Timer.After(UPDATE_DELAY, self.flush)
+    local repaint = self.repaint
+    if repaint.pending then return end
+    repaint:Request()
 end
 
 function M:Enable()
     self.layoutSerial = (self.layoutSerial or 0) + 1
-    self.generation = (self.generation or 0) + 1
-    local generation = self.generation
-    self.flush = function()
-        if generation ~= self.generation then return end
-        self.pending = false
-        if self.active then self:Update() end
-    end
+    -- Threat events request one repaint per UPDATE_DELAY.
+    self.repaint = self.context:Coalesce(UPDATE_DELAY, M.Update)
     Roster(self)
     for _, event in ipairs({ "UNIT_THREAT_LIST_UPDATE", "UNIT_THREAT_SITUATION_UPDATE", "GROUP_ROSTER_UPDATE", "UNIT_PET",
         "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "UNIT_TARGET", "PLAYER_ENTERING_WORLD" }) do
         self.context:Event(event, Changed, true)
     end
-    self:Update(); self:RegisterMovers()
+    self:Update()
+    self:RegisterMovers()
 end
 function M:Refresh()
     self.layoutSerial = (self.layoutSerial or 0) + 1
-    Roster(self); self:Update()
+    Roster(self)
+    self:Update()
 end
+-- The context's Release drops a pending repaint.
 function M:Disable()
-    self.generation = (self.generation or 0) + 1
-    self.pending, self.alerted = false, false
+    self.alerted = false
     for _, host in pairs(self.windows) do host:Hide() end
 end
 function M:RegisterMovers()

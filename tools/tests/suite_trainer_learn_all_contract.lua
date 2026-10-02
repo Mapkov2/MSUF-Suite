@@ -86,10 +86,13 @@ local ns = {
     Safety = { IsForbidden = function() return false end },
     Print = function(value) messages[#messages + 1] = value end,
     Finish = function(callback, ...) return true, callback(...) end,
+    Dispatch = suite.Dispatch,
 }
+Support.ModuleTimers(root, suite, ns)("trainerLearnAll", nil, context)
 local chunk = assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TrainerLearnAll.lua"))
 chunk("MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 local module = assert(installed)
+suite.instances.trainerLearnAll = module
 local function Emit(event, ...)
     assert(events[event], "missing event " .. event)(module, event, ...)
 end

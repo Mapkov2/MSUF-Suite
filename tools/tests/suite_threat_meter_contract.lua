@@ -35,7 +35,7 @@ C_Timer={After=function(delay,callback) delays[#delays+1]=delay; queued[#queued+
 SOUNDKIT={RAID_WARNING=1}
 PlaySound=function() sounds=sounds+1 end
 local S={}
-local NS={Suite=S,MSUFMedia={barTexture="bar"}}
+local NS={Suite=S,MSUFMedia={barTexture="bar"},Dispatch=function(callback,...) return callback(...) end}
 S.Public=function(v) return v~="secret" end
 S.Finite=function(v) return S.Public(v) and type(v)=="number" and v==v end
 S.CreateFrame=function(_,_,parent) return Widget(parent) end
@@ -54,7 +54,8 @@ m.active=true
 m.config={rows=1,width=260,rowHeight=20,fontSize=11,scale=100,mainX=0,mainY=0,focusX=100,focusY=100,
     windows=3,includePets=true,showThreshold=true,pullAlert=90,numberMode=1}
 local events={}
-m.context={Event=function(_,name,callback) events[name]=callback end}
+local TimerContext=dofile(root.."/tools/tests/suite_test_support.lua").ModuleTimers(root,S,NS)
+m.context=TimerContext("threatMeter",m,{Event=function(_,name,callback) events[name]=callback end})
 m:Enable()
 assert(m.records.main[1].unit=="party1" and #m.records.main==3 and m.windows.focus.shown,
     "native hostile target, sorted roster, pets or focus window missing")

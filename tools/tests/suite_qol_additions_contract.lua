@@ -1,5 +1,5 @@
 local root = assert(arg[1], "repository root required")
-local modules, timers = {}, {}
+local modules = {}
 local S = {
     Public = function(value) return value ~= "secret" end,
     PublicText = function(value) return type(value) == "string" and value ~= "secret" and value or nil end,
@@ -13,7 +13,8 @@ local S = {
     end,
 }
 local combat = false
-local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end }
+local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end }
 local function Context()
     local context = { events = {} }
     function context:Event(name, callback) self.events[name] = callback end
@@ -46,15 +47,9 @@ S.CreateFrame = function() return Frame() end
 S.CreateTexture = function() return Frame() end
 S.CreateFontString = function() return Frame() end
 UIParent = Frame()
-C_Timer = { NewTimer = function(_, callback)
-    local timer = { callback = callback }
-    function timer:Cancel() self.canceled = true end
-    timers[#timers + 1] = timer
-    return timer
-end }
-
 Enum = { TooltipDataType = { Item = 1 } }
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local clock = Support.Clock()
 local reported = {}
 S.Dispatch = Support.Dispatcher(reported)
 local tooltips = Support.TooltipFixture(root, S, NS)
@@ -111,7 +106,7 @@ UnitGUID = function() return "Player-123" end
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LoadoutReminder.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local reminder = modules.loadoutReminder
-reminder.context = Context()
+reminder.context = Support.ModuleTimers(root, S, NS)("loadoutReminder", reminder, Context())
 reminder.config = { onReadyCheck = true, onInstanceEntry = true, onlyMismatch = false,
     duration = 8, expectedConfigID = 0, expectedLootSpecID = 0 }
 reminder.active = true
@@ -123,11 +118,10 @@ assert(reminder.host.shown and reminder.title.text == "Current loadout"
     and reminder.detail.text == "Raid  |  Loot: Discipline (current)",
     "ready check did not show public build and loot spec")
 reminder.config.expectedConfigID = 200
+clock.Advance(5)
 reminder.context.events.READY_CHECK(reminder)
 assert(reminder.title.text == "Check your loadout", "different build was not highlighted")
-local oldTimer = timers[#timers - 1]
-assert(oldTimer.canceled, "new reminder retained the old hide timer")
-oldTimer.callback()
+clock.Advance(5)
 assert(reminder.host.shown, "earlier reminder timer hid a later alert")
 assert(reminder:SaveCurrent() and reminder.config.expectedConfigID == 100
     and reminder.config.expectedLootSpecID == 256
@@ -136,8 +130,10 @@ reminder.config.onlyMismatch = true
 reminder.host:Hide()
 reminder.context.events.READY_CHECK(reminder)
 assert(not reminder.host.shown, "matching selection ignored warn-only option")
-assert(not reminder.hideTimer and timers[#timers].canceled,
-    "warn-only suppression retained a hide timer")
+reminder.host:Show()
+clock.Advance(10)
+assert(reminder.host.shown, "warn-only suppression retained a hide timer")
+reminder.host:Hide()
 lootSpec = 257
 reminder.config.expectedLootSpecID = 256
 inInstance = true
@@ -178,8 +174,12 @@ reminder.config.onReadyCheck, reminder.config.onInstanceEntry = false, false
 reminder:Refresh()
 assert(not reminder.context.events.READY_CHECK and not reminder.context.events.ZONE_CHANGED_NEW_AREA
     and not reminder.context.events.PLAYER_TALENT_UPDATE
-    and not reminder.context.events.LFG_PROPOSAL_SHOW and not reminder.hideTimer,
-    "disabled reminder triggers kept listening or retained an alert timer")
+    and not reminder.context.events.LFG_PROPOSAL_SHOW,
+    "disabled reminder triggers kept listening")
+reminder.host:Show()
+clock.Advance(10)
+assert(reminder.host.shown, "disabled reminder triggers retained an alert timer")
+reminder.host:Hide()
 reminder.config.onInstanceEntry = true
 reminder:Refresh()
 assert(reminder.context.events.ZONE_CHANGED_NEW_AREA and reminder.host.shown,

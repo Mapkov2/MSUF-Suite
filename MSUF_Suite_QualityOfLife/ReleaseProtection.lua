@@ -76,9 +76,15 @@ end
 
 local function Sync(self)
     local popup = self.active and ZoneAllowed(self.config) and StaticPopup_FindVisible("DEATH")
-    if not popup or NS.Safety.IsForbidden(popup) then Release(self); return end
+    if not popup or NS.Safety.IsForbidden(popup) then
+        Release(self)
+        return
+    end
     local record = Dialog(self, popup)
-    if not record then Release(self); return end
+    if not record then
+        Release(self)
+        return
+    end
     if self.current ~= record then
         Release(self)
         self.current = record

@@ -42,20 +42,14 @@ local function Frame()
 end
 CreateFrame=Frame
 MSUF_PixelLayoutRegion=function(frame) return frame end
-local timers={}
-C_Timer={NewTimer=function(delay,callback)
-    local timer={delay=delay,callback=callback}
-    function timer:Cancel() self.cancelled=true end
-    timers[#timers+1]=timer
-    return timer
-end}
+local clock=Support.Clock()
 Support.Load(root,'MSUF_Suite',Suite,'Core/Suite.lua')
 assert(loadfile(root..'/MSUF_Suite/Integrations/MapkoSkin.lua'))('MSUF_Suite',Suite)
 assert(Suite.Database.Initialize(nil))
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
-for _,file in ipairs({'Surfaces','Runtime'}) do
+for _,file in ipairs({'Surfaces','Runtime','Timers'}) do
     assert(loadfile(root..'/MSUF_Suite_Modules/'..file..'.lua'))('MSUF_Suite_Modules',private)
 end
 local quality={}
@@ -68,7 +62,7 @@ module.config=S.Config('loot')
 module.context=S.NewContext('loot')
 module.active=true
 module:Enable()
-assert(not module.context.frame and #timers==0,'default module created idle work')
+assert(not module.context.frame and clock.Queued()==0,'default module created idle work')
 local function Event(name,...)
     local callback=module.context.callbacks[name]
     if callback then callback(module,name,...) end
@@ -140,49 +134,48 @@ assert(frame:GetScript('OnShow')==originalShow and frame:GetScript('OnHide')==or
     and #frame.hooks.OnShow==1 and #frame.hooks.OnHide==1,
     'history management replaced Blizzard handlers instead of hooking them')
 module:Refresh()
-assert(#timers==0,'hidden history started timer')
+assert(clock.Queued()==0,'hidden history started timer')
 frame:Show()
-assert(frame:IsShown() and shows==1 and timers[#timers].delay==0,'native show must finish before suppression')
-timers[#timers].callback()
+assert(frame:IsShown() and shows==1 and clock.Queued()==1,'native show must finish before suppression')
+clock.Frame()
 assert(not frame:IsShown() and hides==1,'native hide cleanup was lost')
 module.config.historyMode=2
 module.config.historyDelay=17
 module:Refresh()
 frame:Show()
-local old=timers[#timers]
-assert(old.delay==17)
+clock.Advance(10)
 frame:Hide()
-assert(old.cancelled)
 frame:Show()
-old.callback()
+clock.Advance(16.9)
 assert(frame:IsShown(),'stale timer closed a later history window')
 combat=true
-timers[#timers].callback()
+clock.Advance(.2)
 assert(frame:IsShown() and module.pendingHistory and module.context.callbacks.PLAYER_REGEN_ENABLED)
 combat=false
 Event('PLAYER_REGEN_ENABLED')
 assert(not frame:IsShown() and not module.context.callbacks.PLAYER_REGEN_ENABLED)
 frame:Show()
-old=timers[#timers]
 local external=function() end
 frame:SetScript('OnShow',external)
 module.active=false
 module:Disable()
 module.context:Release()
-assert(old.cancelled and frame:GetScript('OnShow')==external and frame:GetScript('OnHide')==originalHide,'disable overwrote external handler')
-old.callback()
-assert(frame:IsShown() and not next(module.context.frame.events))
+assert(frame:GetScript('OnShow')==external and frame:GetScript('OnHide')==originalHide,'disable overwrote external handler')
+clock.Advance(20)
+assert(frame:IsShown() and not next(module.context.frame.events),'a released history timer closed the window')
 frame:Hide()
 frame:SetScript('OnShow',originalShow)
 module.active=true
 module:Enable()
 frame:Show()
-assert(timers[#timers].delay==17,'reactivation lost history policy')
+clock.Advance(16.9)
+assert(frame:IsShown() and clock.Queued()==1,'reactivation lost history policy')
 assert(#frame.hooks.OnShow==1 and #frame.hooks.OnHide==1,'reactivation hooked the history frame again')
 module.config.manageHistory=false
 module:Refresh()
 assert(frame:GetScript('OnShow')==originalShow and frame:GetScript('OnHide')==originalHide)
-assert(timers[#timers].cancelled and not module.context.callbacks.ADDON_LOADED)
+clock.Advance(1)
+assert(frame:IsShown() and not module.context.callbacks.ADDON_LOADED,'releasing history management kept its timer')
 -- Retail and WoW Forever always have the APIs the loot, merchant and quest helpers calls.
 for _, name in ipairs({ "Loot", "Merchant", "QuestHelpers" }) do
     local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/" .. name .. ".lua", "rb"))
