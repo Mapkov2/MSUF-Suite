@@ -5,8 +5,9 @@ local R = P.BuffReminders
 -- only out of combat; in combat a state driver hides the reminders and every
 -- listener except PLAYER_REGEN_ENABLED is released. An evaluation re-reads
 -- only what its event can have changed and shows the missing entries as a
--- bit mask.
-local M = {}
+-- bit mask. Every runtime field lives in one of the state tables State.lua
+-- documents.
+local M = R.NewState({})
 local Public = S.Public
 local ANCHORS = { "CENTER", "TOP" }
 -- Registered while out of combat. In combat the reminders are hidden by their
@@ -58,29 +59,32 @@ local function Allowed(self)
         local mounted = IsMounted()
         if not Public(mounted) or mounted == true then return false end
     end
-    local instanceType = self.instanceType
+    local environment = self.environment
+    local instanceType = environment.instanceType
     if instanceType == false or instanceType == "arena" or instanceType == "pvp" then return false end
     if self.config.instancesOnly and instanceType ~= "party" and instanceType ~= "raid" then return false end
-    if self.config[self.environmentKey] == false then return false end
+    if self.config[environment.key] == false then return false end
     return true
 end
 
 local function CancelThreshold(self)
-    if self.thresholdTimer then self.thresholdTimer:Cancel() end
-    self.thresholdTimer, self.thresholdAt = nil, nil
+    local list = self.list
+    if list.thresholdTimer then list.thresholdTimer:Cancel() end
+    list.thresholdTimer, list.thresholdAt = nil, nil
 end
 
 local function ScheduleThreshold(self, due, now)
-    if self.thresholdAt == due then return end
+    local list = self.list
+    if list.thresholdAt == due then return end
     CancelThreshold(self)
     if not due then return end
     local timer
     timer = C_Timer.NewTimer(math.max(0.05, due - now), function()
-        if self.thresholdTimer ~= timer or not self.active then return end
-        self.thresholdTimer, self.thresholdAt = nil, nil
+        if list.thresholdTimer ~= timer or not self.active then return end
+        list.thresholdTimer, list.thresholdAt = nil, nil
         if not NS.IsCombatLocked() then self:Update("visual") end
     end)
-    self.thresholdTimer, self.thresholdAt = timer, due
+    list.thresholdTimer, list.thresholdAt = timer, due
 end
 
 -- A poison reminder shows the spell its button casts right now.
@@ -110,7 +114,7 @@ end
 -- Secure action buttons stay raw CreateFrame: the template owns the click.
 -- Their regions use the shared helpers like every other Suite region.
 local function MakeButton(self, index)
-    local button = CreateFrame("Button", nil, self.host, "SecureActionButtonTemplate")
+    local button = CreateFrame("Button", nil, self.view.host, "SecureActionButtonTemplate")
     button:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
     button.icon = S.CreateTexture(button, nil, "ARTWORK")
     button.icon:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
@@ -124,7 +128,7 @@ local function MakeButton(self, index)
     button:SetScript("OnEnter", Tooltip)
     button:SetScript("OnLeave", HideTooltip)
     button:Hide()
-    self.buttons[index] = button
+    self.view.buttons[index] = button
     return button
 end
 
@@ -144,22 +148,23 @@ end
 -- member events for the current unit list again whenever the roster
 -- membership changed.
 local function SyncUnitEvents(self)
-    local context = self.context
-    local group = not self.suspended and R.WantsMemberAuras(self) and self.groupUnitList ~= nil
-    local mode = group and "group" or not self.suspended and (self.hasAura or self.hasFood) and "player" or false
-    local wantWeapon = not self.suspended and self.hasWeapon or false
-    if mode ~= self.auraListening or group and self.groupListChanged then
-        self.auraListening = mode
-        self.groupListChanged = false
+    local context, listen, list, members = self.context, self.listen, self.list, self.group
+    local active = not listen.suspended
+    local group = active and R.WantsMemberAuras(self) and members.unitList ~= nil
+    local mode = group and "group" or active and (list.hasAura or list.hasFood) and "player" or false
+    local wantWeapon = active and list.hasWeapon or false
+    if mode ~= listen.aura or group and members.listChanged then
+        listen.aura = mode
+        members.listChanged = false
         for i = 1, #MEMBER_EVENTS do context:RemoveEvent(MEMBER_EVENTS[i]) end
         if group then
-            for i = 1, #MEMBER_EVENTS do R.Listen(self, MEMBER_EVENTS[i], OnEvent, self.groupUnitList) end
+            for i = 1, #MEMBER_EVENTS do R.Listen(self, MEMBER_EVENTS[i], OnEvent, members.unitList) end
         elseif mode then
             R.Listen(self, "UNIT_AURA", OnEvent, "player")
         end
     end
-    if wantWeapon ~= self.weaponListening then
-        self.weaponListening = wantWeapon
+    if wantWeapon ~= listen.weapon then
+        listen.weapon = wantWeapon
         if wantWeapon then
             R.Listen(self, "UNIT_INVENTORY_CHANGED", OnEvent, "player")
             for i = 1, #WEAPON_EVENTS do R.Listen(self, WEAPON_EVENTS[i], OnEvent) end
@@ -179,8 +184,10 @@ end
 
 -- Derives masks, poison groups and which event groups the new entry list needs.
 local function IndexEntries(self, entries)
+    local list = self.list
     local hasAura, hasWeapon, hasFood = false, false, false
-    self.poisonStates = {}
+    local poisonStates = {}
+    list.poisonStates = poisonStates
     for index, entry in ipairs(entries) do
         entry.bit = 2 ^ (index - 1)
         if entry.slot then
@@ -190,16 +197,16 @@ local function IndexEntries(self, entries)
         else
             hasAura = true
             if entry.poison then
-                local state = self.poisonStates[entry.poison]
+                local state = poisonStates[entry.poison]
                 if not state then
                     state = NewPoisonState(entry)
-                    self.poisonStates[entry.poison] = state
+                    poisonStates[entry.poison] = state
                 end
                 state.required = state.required + 1
             end
         end
     end
-    self.hasAura, self.hasFood, self.hasWeapon = hasAura, hasFood, hasWeapon
+    list.hasAura, list.hasFood, list.hasWeapon = hasAura, hasFood, hasWeapon
     SyncUnitEvents(self)
 end
 
@@ -244,19 +251,20 @@ local function RememberLayout(layout, c)
 end
 
 local function LayoutButtons(self, entries)
-    local c = self.config
+    local c, view = self.config, self.view
     local size, spacing, columns = c.size, c.spacing, c.columns
     local newEntries, geometry = changed.entries, changed.geometry
     if newEntries or geometry then
         local displayColumns = math.min(columns, math.max(1, #entries))
         local rows = math.max(1, math.ceil(#entries / columns))
-        self.host:SetSize(displayColumns * size + (displayColumns - 1) * spacing,
+        view.host:SetSize(displayColumns * size + (displayColumns - 1) * spacing,
             rows * size + (rows - 1) * spacing)
     end
     if not (newEntries or geometry or changed.color or changed.text) then return end
     local r, g, b = S.RGB(c.borderColor)
-    for index = 1, math.max(#entries, #self.buttons) do
-        local button = self.buttons[index] or MakeButton(self, index)
+    local buttons = view.buttons
+    for index = 1, math.max(#entries, #buttons) do
+        local button = buttons[index] or MakeButton(self, index)
         local entry = entries[index]
         if newEntries then
             button.entry = entry
@@ -281,39 +289,41 @@ function M:Compile()
     R.ReadPet(self)
     R.ReadHealthstone(self)
     SyncUnitEvents(self)
-    changed.entries = not SameEntries(self.entries, entries)
+    local list, view = self.list, self.view
+    changed.entries = not SameEntries(list.entries, entries)
     if changed.entries then
-        self.entries, self.mask = entries, nil
-        self.needsFullRefresh, self.countsDirty = true, true
+        list.entries, view.mask = entries, nil
+        list.needsFullRefresh, list.countsDirty = true, true
     else
-        entries = self.entries
+        entries = list.entries
     end
-    local layoutChanged = ReadLayoutChanges(self.layout, c)
+    local layoutChanged = ReadLayoutChanges(view.layout, c)
     if not changed.entries and not layoutChanged then return false end
     if layoutChanged then
-        self.layout = RememberLayout(self.layout or {}, c)
-        if changed.geometry then self.mask = nil end
+        view.layout = RememberLayout(view.layout or {}, c)
+        if changed.geometry then view.mask = nil end
     end
     if changed.entries then IndexEntries(self, entries) end
     if changed.anchor then
-        self.host:ClearAllPoints()
+        view.host:ClearAllPoints()
         local point = ANCHORS[c.point] or "CENTER"
-        self.host:SetPoint(point, UIParent, point, c.x, c.y)
+        view.host:SetPoint(point, UIParent, point, c.x, c.y)
     end
     LayoutButtons(self, entries)
     return changed.entries
 end
 
 local function RefreshPoisonEntry(self, index, entry)
-    local state = self.poisonStates[entry.poison]
+    local state = self.list.poisonStates[entry.poison]
     local spellID = state.warnings[entry.poisonRank]
     entry.present, entry.expiresAt = spellID == nil, nil
     if state.unknown then entry.present = nil end
     local actionID = spellID or entry.id
     if entry.actionID ~= actionID then
         entry.actionID = actionID
-        self.buttons[index]:SetAttribute("spell1", actionID)
-        self.buttons[index].icon:SetTexture(Texture("spell", actionID))
+        local button = self.view.buttons[index]
+        button:SetAttribute("spell1", actionID)
+        button.icon:SetTexture(Texture("spell", actionID))
     end
 end
 
@@ -330,22 +340,24 @@ end
 
 -- Returns the reminder bit mask and the next advance-warning deadline.
 local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
+    local list = self.list
     local mask, nextDue = 0, nil
-    local fullRefresh = self.needsFullRefresh or mode == "all"
+    local fullRefresh = list.needsFullRefresh or mode == "all"
     local auraDirty = fullRefresh or mode == "aura"
     if fullRefresh then R.RefreshGroup(self) end
     local weaponDirty = fullRefresh or mode == "weapon"
-    for _, state in pairs(self.poisonStates) do
+    for _, state in pairs(list.poisonStates) do
         if auraDirty and (fullRefresh or AuraChangeAffects(state, updateInfo)) then ReadPoisonState(state) end
         local due = BuildPoisonWarnings(state, now, threshold)
         if due and (not nextDue or due < nextDue) then nextDue = due end
     end
-    for index, entry in ipairs(self.entries) do
+    local config, environmentKey = self.config, self.environment.key
+    for index, entry in ipairs(list.entries) do
         if entry.group then
             local before = entry.missingCount
             entry.present = R.GroupPresent(self, entry)
             if before ~= entry.missingCount then
-                self.buttons[index].count:SetText(entry.missingCount > 0 and tostring(entry.missingCount) or "")
+                self.view.buttons[index].count:SetText(entry.missingCount > 0 and tostring(entry.missingCount) or "")
             end
             if auraDirty then R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo) end
         elseif entry.poison then
@@ -355,7 +367,7 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
         elseif auraDirty then
             RefreshAuraEntry(self, entry, fullRefresh, updateInfo, foodDirty)
         end
-        local categoryAllowed = self.config[(entry.category or "personal") .. "_" .. self.environmentKey] ~= false
+        local categoryAllowed = config[(entry.category or "personal") .. "_" .. environmentKey] ~= false
         if not categoryAllowed then
             -- This category follows its own content choices within the
             -- module-wide visibility filter.
@@ -371,18 +383,20 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
             end
         end
     end
-    self.needsFullRefresh = false
+    list.needsFullRefresh = false
     return mask, nextDue
 end
 
 local function ShowMask(self, mask)
+    local view, entries = self.view, self.list.entries
     local shown, columns, size, spacing = 0, self.config.columns, self.config.size, self.config.spacing
-    for index, button in ipairs(self.buttons) do
-        local bit = self.entries[index] and self.entries[index].bit or 2 ^ (index - 1)
-        R.AlertTransition(self, button, self.entries[index], mask % (bit * 2) >= bit)
+    for index, button in ipairs(view.buttons) do
+        local entry = entries[index]
+        local bit = entry and entry.bit or 2 ^ (index - 1)
+        R.AlertTransition(self, button, entry, mask % (bit * 2) >= bit)
         if mask % (bit * 2) >= bit then
             button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", self.host, "TOPLEFT", (shown % columns) * (size + spacing),
+            button:SetPoint("TOPLEFT", view.host, "TOPLEFT", (shown % columns) * (size + spacing),
                 -math.floor(shown / columns) * (size + spacing))
             button:Show()
             shown = shown + 1
@@ -390,49 +404,52 @@ local function ShowMask(self, mask)
             button:Hide()
         end
     end
-    if self.previewing then self.newReminderAlert = nil else R.PlayReminderAlert(self) end
+    if view.previewing then view.newAlert = nil else R.PlayReminderAlert(self) end
 end
 
 local function UpdateCounts(self, force)
-    for index, entry in ipairs(self.entries) do
+    local list, buttons = self.list, self.view.buttons
+    for index, entry in ipairs(list.entries) do
         if entry.group then
-            self.buttons[index].count:SetText(entry.missingCount and entry.missingCount > 0 and tostring(entry.missingCount) or "")
+            buttons[index].count:SetText(entry.missingCount and entry.missingCount > 0 and tostring(entry.missingCount) or "")
         elseif entry.kind ~= "spell" and not entry.notice then
             local count = ItemCount(entry.id)
             if force or count ~= entry.count then
                 entry.count = count
-                self.buttons[index].count:SetText(count and tostring(count) or "")
+                buttons[index].count:SetText(count and tostring(count) or "")
             end
         end
     end
-    self.countsDirty = false
+    list.countsDirty = false
 end
 
 -- Preview configured entries even when all buffs are currently present.
 -- Only display state changes; live presence/count caches remain untouched.
 local function Preview(self)
+    local list, view = self.list, self.view
     CancelThreshold(self)
     R.HideSpecialText(self)
     local mask = 0
-    for _, entry in ipairs(self.entries) do mask = mask + entry.bit end
-    if self.mask ~= mask or not self.previewing then
-        self.previewing, self.mask = true, mask
+    for _, entry in ipairs(list.entries) do mask = mask + entry.bit end
+    if view.mask ~= mask or not view.previewing then
+        view.previewing, view.mask = true, mask
         ShowMask(self, mask)
-        for i, entry in ipairs(self.entries) do
-            self.buttons[i].count:SetText(entry.group and "2" or entry.kind ~= "spell" and not entry.notice and "5" or "")
+        for i, entry in ipairs(list.entries) do
+            view.buttons[i].count:SetText(entry.group and "2" or entry.kind ~= "spell" and not entry.notice and "5" or "")
         end
     end
-    self.needsFullRefresh, self.countsDirty = true, true
-    self.preview:SetShown(mask == 0)
-    self.previewShown = mask == 0
+    list.needsFullRefresh, list.countsDirty = true, true
+    view.preview:SetShown(mask == 0)
+    view.previewShown = mask == 0
     R.SyncCursor(self)
 end
 
 function M:Update(mode, updateCounts, updateInfo, foodDirty)
     if NS.IsCombatLocked() then return end
     if S.editMode then Preview(self); return end
-    local wasPreview = self.previewing
-    if wasPreview then self.mask = nil end
+    local list, view = self.list, self.view
+    local wasPreview = view.previewing
+    if wasPreview then view.mask = nil end
     local now = GetTime()
     -- The catalog keeps the advance warning between 0 and 60 minutes.
     local threshold = R.Threshold(self)
@@ -441,27 +458,27 @@ function M:Update(mode, updateCounts, updateInfo, foodDirty)
     if allowed then
         mask, nextDue = Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
     else
-        self.needsFullRefresh = true
+        list.needsFullRefresh = true
     end
-    R.SpecialText(self, allowed and self.config["class_" .. self.environmentKey] ~= false)
+    R.SpecialText(self, allowed and self.config["class_" .. self.environment.key] ~= false)
     ScheduleThreshold(self, nextDue, now)
-    if self.mask ~= mask then
-        self.mask = mask
+    if view.mask ~= mask then
+        view.mask = mask
         ShowMask(self, mask)
     end
-    if self.countsDirty or updateCounts then UpdateCounts(self, wasPreview) end
-    self.previewing = nil
+    if list.countsDirty or updateCounts then UpdateCounts(self, wasPreview) end
+    view.previewing = nil
     local previewShown = S.editMode == true and mask == 0
-    if self.previewShown ~= previewShown then
-        self.preview:SetShown(previewShown)
-        self.previewShown = previewShown
+    if view.previewShown ~= previewShown then
+        view.preview:SetShown(previewShown)
+        view.previewShown = previewShown
     end
     R.SyncCursor(self)
 end
 
 local function SyncSubzoneEvents(self)
     local c = self.config
-    local wanted = not self.suspended and c.mapPotion and c.mapPotionMaps:find("%d") ~= nil
+    local wanted = not self.listen.suspended and c.mapPotion and c.mapPotionMaps:find("%d") ~= nil
     for i = 1, #SUBZONE_EVENTS do
         if wanted then R.Listen(self, SUBZONE_EVENTS[i], OnEvent)
         else self.context:RemoveEvent(SUBZONE_EVENTS[i]) end
@@ -479,11 +496,11 @@ end
 
 -- Entering combat: every handler would return early, so stop listening.
 local function Suspend(self)
-    self.suspended = true
+    self.listen.suspended = true
     R.StopCursor(self)
     CancelThreshold(self)
     R.StopReminderAlerts(self)
-    self.mask = nil
+    self.view.mask = nil
     for i = 1, #EVENTS do
         if EVENTS[i] ~= "PLAYER_REGEN_ENABLED" then self.context:RemoveEvent(EVENTS[i]) end
     end
@@ -499,22 +516,23 @@ end
 -- Leaving combat: bag events were not followed, so the item counts are read
 -- once more (consumables used in combat).
 local function Resume(self)
-    self.suspended = false
-    self.countsDirty = true
+    self.listen.suspended = false
+    self.list.countsDirty = true
     RegisterEvents(self)
     SyncUnitEvents(self)
 end
 
 OnEvent = function(self, event, unit, updateInfo)
     if not self.active then return end
-    if MEMBER_EVENT[event] and self.auraListening == "group" then
+    local listen = self.listen
+    if MEMBER_EVENT[event] and listen.aura == "group" then
         -- Member work waits for one coalesced pass. The player's own aura
         -- delta refreshes the player's group state at once and goes on to
         -- the personal update below, so no second pass follows.
         if event == "UNIT_AURA" and unit == "player" then
-            if not self.suspended then R.RefreshGroup(self, "player") end
+            if not listen.suspended then R.RefreshGroup(self, "player") end
         else
-            if not self.suspended then R.QueueMemberWork(self, unit) end
+            if not listen.suspended then R.QueueMemberWork(self, unit) end
             return
         end
     end
@@ -523,7 +541,7 @@ OnEvent = function(self, event, unit, updateInfo)
         Suspend(self)
         return
     end
-    if event == "PLAYER_REGEN_ENABLED" and self.suspended then Resume(self) end
+    if event == "PLAYER_REGEN_ENABLED" and listen.suspended then Resume(self) end
     if NS.IsCombatLocked() then return end
     if event == "PET_BAR_UPDATE" or event == "PET_UI_UPDATE" or event == "UNIT_PET" then
         if event ~= "UNIT_PET" or unit == "player" then R.ReadPet(self); self:Update("visual") end
@@ -534,7 +552,7 @@ OnEvent = function(self, event, unit, updateInfo)
         return
     end
     if SUBZONE_EVENT[event] then
-        if R.OnPotionMap(self) ~= self.onPotionMap then
+        if R.OnPotionMap(self) ~= self.stock.onPotionMap then
             self:Compile()
             self:Update("visual")
         end
@@ -554,7 +572,7 @@ OnEvent = function(self, event, unit, updateInfo)
         ReadInstance(self, event)
         -- Re-check food, never forget it: no aura listener runs in combat,
         -- and the rescan keeps every known food aura that is still active.
-        self.foodKnown = nil
+        self.food.known = nil
     end
     local bagUpdate = event == "BAG_UPDATE_DELAYED"
     if bagUpdate then R.ReadHealthstone(self) end
@@ -563,18 +581,19 @@ OnEvent = function(self, event, unit, updateInfo)
 end
 
 function M:Enable()
-    if not self.host then
-        self.host = CreateFrame("Frame", nil, UIParent, "SecureFrameTemplate")
-        self.host:SetScript("OnHide", function() R.StopCursor(self) end)
-        self.buttons, self.foodIDs = {}, {}
-        self.preview = S.CreateFontString(self.host, nil, "OVERLAY", "GameFontHighlightSmall")
-        self.preview:SetPoint("CENTER", self.host, "CENTER")
-        self.preview:SetText(S.Text("Buff reminders"))
+    local view = self.view
+    if not view.host then
+        local host = CreateFrame("Frame", nil, UIParent, "SecureFrameTemplate")
+        host:SetScript("OnHide", function() R.StopCursor(self) end)
+        view.host, view.buttons, self.food.ids = host, {}, {}
+        view.preview = S.CreateFontString(host, nil, "OVERLAY", "GameFontHighlightSmall")
+        view.preview:SetPoint("CENTER", host, "CENTER")
+        view.preview:SetText(S.Text("Buff reminders"))
     end
-    self.host:Show()
-    self.foodKnown = nil
-    self.suspended = false
-    RegisterStateDriver(self.host, "visibility", "[combat] hide; show")
+    view.host:Show()
+    self.food.known = nil
+    self.listen.suspended = false
+    RegisterStateDriver(view.host, "visibility", "[combat] hide; show")
     ReadInstance(self)
     RegisterEvents(self)
     self:Refresh()
@@ -586,7 +605,7 @@ function M:Refresh()
     RegisterEvents(self)
     if not self.config.readyCheckMana then R.HideReadyCheck(self) end
     self:Compile()
-    self.mask = nil
+    self.view.mask = nil
     self:Update("visual")
 end
 
@@ -594,7 +613,8 @@ function M:Disable()
     R.StopCursor(self)
     CancelThreshold(self)
     R.StopReminderAlerts(self)
-    self.suspended = true
+    local listen, view = self.listen, self.view
+    listen.suspended = true
     SyncUnitEvents(self)
     R.SyncPreparationEvents(self, OnEvent)
     R.HideReadyCheck(self)
@@ -604,17 +624,17 @@ function M:Disable()
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     for i = 1, #EVENTS do self.context:RemoveEvent(EVENTS[i]) end
     SyncSubzoneEvents(self)
-    self.suspended = false
-    UnregisterStateDriver(self.host, "visibility")
-    self.host:Hide()
-    self.entries, self.mask = nil, nil
-    self.foodKnown = nil
-    self.previewShown, self.previewing = nil, nil
+    listen.suspended = false
+    UnregisterStateDriver(view.host, "visibility")
+    view.host:Hide()
+    self.list.entries, view.mask = nil, nil
+    self.food.known = nil
+    view.previewShown, view.previewing = nil, nil
 end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("buffReminders", "buffs", {
-        label = "Buff reminders", order = 620, getFrame = function() return self.host end,
+        label = "Buff reminders", order = 620, getFrame = function() return self.view.host end,
         xKey = "x", yKey = "y", pointKey = "point",
         point = function() return ANCHORS[self.config.point] or "CENTER" end,
         historyKeys = { "size", "spacing", "columns" },

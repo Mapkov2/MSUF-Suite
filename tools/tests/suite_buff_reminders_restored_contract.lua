@@ -124,7 +124,7 @@ local private = { NS = NS, Suite = S }
 Support.Load(root, "MSUF_Suite_BuffReminders", private, nil, { ["Bootstrap.lua"] = true })
 local R = private.BuffReminders
 local function Owner(overrides)
-    local owner = { config = {} }
+    local owner = R.NewState({ config = {} })
     for key, value in pairs(config) do owner.config[key] = value end
     for key, value in pairs(overrides or {}) do owner.config[key] = value end
     return owner
@@ -234,11 +234,12 @@ do
         "no food left without restock notices is not a notice")
     for bag in pairs(bags) do for slot in pairs(bags[bag]) do bags[bag][slot] = nil end end
     -- A Hearty Well Fed buff (its own name and icon) counts as food.
-    local fed = { hasFood = true, foodIDs = {}, foodKnown = true }
+    local fed = R.NewState({})
+    fed.list.hasFood, fed.food.ids, fed.food.known = true, {}, true
     local changed = R.FoodDelta(fed, { isFullUpdate = false, addedAuras = {
         { name = "Hearty Well Fed", icon = 133950, auraInstanceID = 7, spellId = 1232080,
           expirationTime = 3700, duration = 3600 } } })
-    assert(changed and fed.foodIDs[7] and R.FoodPresent(fed) == true, "a Hearty Well Fed buff did not count as food")
+    assert(changed and fed.food.ids[7] and R.FoodPresent(fed) == true, "a Hearty Well Fed buff did not count as food")
 end
 
 -- Demon looks: a family no base demon reports counts as the demon whose
@@ -266,15 +267,15 @@ do
     local function Summon(spellID) sent.callback(owner, "UNIT_SPELLCAST_SENT", "player", "", "Cast-1", spellID) end
     family = 101
     R.ReadPet(owner)
-    eq(owner.wrongDemon, nil, "an unknown look was judged before it was learned")
+    eq(owner.notices.wrongDemon, nil, "an unknown look was judged before it was learned")
     Summon(697)
     petGUID = "Pet-2"
     now = 104
     R.ReadPet(owner)
     eq(MSUFSuiteDemonLooks[101], "demonVoidwalker", "the new pet's look was not learned for its summon")
-    eq(owner.wrongDemon, true, "an unticked demon in another look did not get its notice")
+    eq(owner.notices.wrongDemon, true, "an unticked demon in another look did not get its notice")
     R.ReadPet(owner)
-    eq(owner.wrongDemon, true, "a learned look was forgotten")
+    eq(owner.notices.wrongDemon, true, "a learned look was forgotten")
     -- The old pet during a cast, or a pet long after it, teaches nothing.
     Summon(688)
     family = 102
@@ -289,7 +290,7 @@ do
     owner.config.demonImp, owner.config.demonVoidwalker = false, false
     owner.config.demonFelguard = true
     R.ReadPet(owner)
-    eq(owner.wrongDemon, nil, "a notice came although no ticked demon can be summoned")
+    eq(owner.notices.wrongDemon, nil, "a notice came although no ticked demon can be summoned")
     owner.config.demonChoiceWarning = false
     R.SyncSpecialEvents(owner, function() end)
     eq(registered.UNIT_SPELLCAST_SENT, nil, "summon casts are followed without the demon check")
@@ -349,14 +350,14 @@ do
         return { callback = callback, Cancel = function() end }
     end
     local owner = Owner({ readyCheckMana = true })
-    owner.host = Widget()
-    function owner.host:CreateFontString()
+    owner.view.host = Widget()
+    function owner.view.host:CreateFontString()
         local text = Widget()
         function text:SetTextColor(r, g, b) self.color = { r, g, b } end
         return text
     end
     R.ReadyCheck(owner)
-    local note = owner.readyCheckWarning
+    local note = owner.readyCheck.label
     assert(note and note.shown and note.text:find("30%%") and note.color[2] < .5 and timerDelay == 8,
         "a mana note far below the limit is not red for the chosen time")
     mana = 60

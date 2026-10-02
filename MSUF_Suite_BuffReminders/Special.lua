@@ -44,17 +44,19 @@ local function SummonSent(self, _, _, _, _, spellID)
     if not Public(spellID) then return end
     local demon = Summons()[spellID]
     if not demon then return end
-    self.summonDemon, self.summonAt, self.summonPet = demon, GetTime(), PetGUID()
+    local notices = self.notices
+    notices.summonDemon, notices.summonAt, notices.summonPet = demon, GetTime(), PetGUID()
 end
 
 function R.SyncSpecialEvents(self, callback)
     local c = self.config
-    local wanted = not self.suspended and (c.petPassiveWarning or c.demonChoiceWarning)
+    local suspended = self.listen.suspended
+    local wanted = not suspended and (c.petPassiveWarning or c.demonChoiceWarning)
     for _, event in ipairs(EVENTS) do
         if wanted then R.Listen(self, event, callback)
         else self.context:RemoveEvent(event) end
     end
-    if not self.suspended and c.demonChoiceWarning then
+    if not suspended and c.demonChoiceWarning then
         R.Listen(self, "UNIT_SPELLCAST_SENT", SummonSent, "player")
     else
         self.context:RemoveEvent("UNIT_SPELLCAST_SENT")
@@ -67,9 +69,10 @@ local function DemonOf(self, family)
     for _, demon in ipairs(NS.BuffReminderDemons) do
         if demon.family == family then return demon end
     end
-    local pending = self.summonDemon
-    if pending and GetTime() - self.summonAt <= SUMMON_SECONDS and PetGUID() ~= self.summonPet then
-        self.summonDemon = nil
+    local notices = self.notices
+    local pending = notices.summonDemon
+    if pending and GetTime() - notices.summonAt <= SUMMON_SECONDS and PetGUID() ~= notices.summonPet then
+        notices.summonDemon = nil
         Looks()[family] = pending.key
         return pending
     end
@@ -83,7 +86,8 @@ end
 -- demon and no learned look names is never judged. No warning is possible
 -- without a known summon spell of a ticked demon.
 local function ReadDemon(self)
-    self.wrongDemon = nil
+    local notices = self.notices
+    notices.wrongDemon = nil
     if not self.config.demonChoiceWarning then return end
     local _, class = UnitClass("player")
     if not Public(class) or class ~= "WARLOCK" then return end
@@ -101,13 +105,14 @@ local function ReadDemon(self)
         end
         if chosen then break end
     end
-    if chosen then self.wrongDemon = self.config[current.key] == false end
+    if chosen then notices.wrongDemon = self.config[current.key] == false end
 end
 
 -- Blizzard's pet bar names the stance actions by token (PetActionBar.lua);
 -- the passive stance is active when its token reports active.
 function R.ReadPet(self)
-    self.petPassive, self.wrongDemon = nil, nil
+    local notices = self.notices
+    notices.petPassive, notices.wrongDemon = nil, nil
     local c = self.config
     if not (c.petPassiveWarning or c.demonChoiceWarning) or NS.IsCombatLocked() then return end
     local exists, dead = UnitExists("pet"), UnitIsDeadOrGhost("pet")
@@ -117,24 +122,26 @@ function R.ReadPet(self)
     for i = 1, NUM_PET_ACTION_SLOTS do
         local name, _, token, active = GetPetActionInfo(i)
         if Public(name) and name == "PET_MODE_PASSIVE" and Public(token) and token == true
-            and Public(active) then self.petPassive = active == true; return end
+            and Public(active) then notices.petPassive = active == true; return end
     end
 end
 
 function R.ReadHealthstone(self)
-    self.healthstoneMissing = nil
-    if not self.config.healthstoneFromWarlock or not self.groupClasses or not self.groupClasses.WARLOCK then return end
+    local notices, classes = self.notices, self.group.classes
+    notices.healthstoneMissing = nil
+    if not self.config.healthstoneFromWarlock or not classes or not classes.WARLOCK then return end
     local stones = NS.Client.isForever and R.FOREVER_HEALTHSTONES or R.HEALTHSTONES
     local unknown = false
     for _, id in ipairs(stones) do
         local count = R.ItemCount(id)
-        if count and count > 0 then self.healthstoneMissing = false; return end
+        if count and count > 0 then notices.healthstoneMissing = false; return end
         if count == nil then unknown = true end
     end
-    if not unknown then self.healthstoneMissing = true end
+    if not unknown then notices.healthstoneMissing = true end
 end
 
--- One line per active notice, in this order.
+-- One line per active notice, in this order; field is the notice's state
+-- field (State.lua, notices).
 local NOTICES = {
     { field = "petPassive", text = "Pet is set to passive." },
     { field = "healthstoneMissing", text = "No Healthstone in your bags, and a Warlock is here." },
@@ -146,26 +153,28 @@ local NOTICES = {
 -- Runs on every evaluation; the text is rebuilt only when the set of active
 -- notices changed.
 function R.SpecialText(self, allowed)
+    local notices = self.notices
     local mask = 0
     if allowed then
         for i, notice in ipairs(NOTICES) do
-            if self[notice.field] then mask = mask + 2 ^ (i - 1) end
+            if notices[notice.field] then mask = mask + 2 ^ (i - 1) end
         end
     end
-    if self.specialMask == mask then return end
-    self.specialMask = mask
+    if notices.mask == mask then return end
+    notices.mask = mask
     local text = ""
     for i, notice in ipairs(NOTICES) do
         if mask % 2 ^ i >= 2 ^ (i - 1) then
             text = text == "" and S.Text(notice.text) or text .. "\n" .. S.Text(notice.text)
         end
     end
-    self.specialText = text
-    local label = self.specialWarning
+    notices.text = text
+    local label = notices.label
     if not label and text ~= "" then
-        label = S.CreateFontString(self.host, nil, "OVERLAY", "GameFontNormal")
-        label:SetPoint("TOP", self.host, "BOTTOM", 0, -6)
-        self.specialWarning = label
+        local host = self.view.host
+        label = S.CreateFontString(host, nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("TOP", host, "BOTTOM", 0, -6)
+        notices.label = label
     end
     if label then label:SetText(text); label:SetShown(text ~= "") end
 end

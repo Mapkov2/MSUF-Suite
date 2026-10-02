@@ -12,13 +12,13 @@ local FLASK_AURAS, RUNE_AURAS, OIL_WEAPON_LOCATIONS = R.FLASK_AURAS, R.RUNE_AURA
 local LETHAL_POISONS, NONLETHAL_POISONS = R.LETHAL_POISONS, R.NONLETHAL_POISONS
 local ASSASSINATION_LETHAL_POISONS, OTHER_LETHAL_POISONS = R.ASSASSINATION_LETHAL_POISONS, R.OTHER_LETHAL_POISONS
 local Clear, Known, ItemCount = R.Clear, R.Known, R.ItemCount
--- The automatic consumable picks remembered by Compile. A bag update only
--- recompiles when one of these picks changed. A choice is the item the player
--- wants used first while it is in the bags.
+-- The automatic consumable picks remembered by Compile (the stock state's
+-- fields). A bag update only recompiles when one of these picks changed. A
+-- choice is the item the player wants used first while it is in the bags.
 local STOCK = {
-    { key = "stockFlask", choice = "flaskChoice", items = FLASKS },
-    { key = "stockRune", choice = "runeChoice", items = RUNES },
-    { key = "stockOil", choice = "oilChoice", items = OILS },
+    { key = "flask", choice = "flaskChoice", items = FLASKS },
+    { key = "rune", choice = "runeChoice", items = RUNES },
+    { key = "oil", choice = "oilChoice", items = OILS },
 }
 
 local function ID(value)
@@ -279,7 +279,7 @@ end
 -- the gray restock item when none is left and restock notices are on.
 local function Pick(self, c, stock)
     local itemID = FirstStocked(stock.items, c[stock.choice])
-    self[stock.key] = itemID or false
+    self.stock[stock.key] = itemID or false
     if itemID then return itemID, false end
     if c.restockNotice ~= true then return nil, false end
     return Preferred(stock.items, c[stock.choice]) or stock.items[1], true
@@ -336,15 +336,16 @@ end
 -- food in the bags the reminder is a gray restock reminder (with restock
 -- notices on) or a notice without a click.
 local function AddFoodReminder(self, c)
+    local stock = self.stock
     local food = FoodPick(c)
-    self.stockFood = food
+    stock.food = food
     if food then
-        self.lastFood = food
+        stock.lastFood = food
         AddFood(food)
         return
     end
     local restock = c.restockNotice == true
-    local item = ID(c.foodChoice) or self.lastFood
+    local item = ID(c.foodChoice) or stock.lastFood
     if restock and item then
         AddFood(item, restock)
         return
@@ -401,16 +402,17 @@ local function PotionAura(itemID)
     C_Item.RequestLoadItemDataByID(itemID)
 end
 
--- stockPotion remembers whether the potion was in the bags, so a bag update
+-- stock.potion remembers whether the potion was in the bags, so a bag update
 -- that empties or refills the stack compiles again (R.StockChanged).
 local function AddMapPotion(self, c)
-    self.onPotionMap = R.OnPotionMap(self)
-    if not self.onPotionMap then return end
+    local stock = self.stock
+    stock.onPotionMap = R.OnPotionMap(self)
+    if not stock.onPotionMap then return end
     local itemID = ID(c.mapPotionItem)
     local aura = itemID and PotionAura(itemID)
     if not aura then return end
     local count = ItemCount(itemID)
-    if count then self.stockPotion = count > 0 end
+    if count then stock.potion = count > 0 end
     if count and (count > 0 or c.restockNotice == true) then
         buildingCategory = "consumable"
         AddItem(itemID, aura, count == 0)
@@ -418,27 +420,29 @@ local function AddMapPotion(self, c)
 end
 
 local function PotionStockChanged(self)
-    if self.stockPotion == nil then return false end
+    local potion = self.stock.potion
+    if potion == nil then return false end
     local itemID = ID(self.config.mapPotionItem)
     local count = itemID and ItemCount(itemID)
-    return count ~= nil and (count > 0) ~= self.stockPotion
+    return count ~= nil and (count > 0) ~= potion
 end
 
 -- Whether a bag update changed one of the remembered consumable picks or
 -- emptied or refilled the map potion.
 function R.StockChanged(self)
+    local picks = self.stock
     for i = 1, #STOCK do
         local stock = STOCK[i]
-        local picked = self[stock.key]
+        local picked = picks[stock.key]
         if picked ~= nil and (FirstStocked(stock.items, self.config[stock.choice]) or false) ~= picked then return true end
     end
-    if self.stockFood ~= nil and FoodPick(self.config) ~= self.stockFood then return true end
+    if picks.food ~= nil and FoodPick(self.config) ~= picks.food then return true end
     return PotionStockChanged(self)
 end
 
--- Returns the new list, built into the buffer that self.entries does not use.
+-- Returns the new list, built into the buffer the active list does not use.
 function R.BuildEntries(self)
-    building = self.entries == buffers[1].list and buffers[2] or buffers[1]
+    building = self.list.entries == buffers[1].list and buffers[2] or buffers[1]
     local list = building.list
     for index = #list, 1, -1 do list[index] = nil end
     Clear(seenAuras)
@@ -448,8 +452,9 @@ function R.BuildEntries(self)
     local class = PlayerClass()
     buildingCategory = "class"
     R.GroupRoster(self)
-    for i = 1, #STOCK do self[STOCK[i].key] = nil end
-    self.stockFood, self.stockPotion = nil, nil
+    local stock = self.stock
+    for i = 1, #STOCK do stock[STOCK[i].key] = nil end
+    stock.food, stock.potion = nil, nil
     if c.classBuff or c.groupBuff then
         local buff = R.ClassBuff(class)
         if buff and Known(buff.cast) then
@@ -464,7 +469,7 @@ function R.BuildEntries(self)
     if c.otherClassBuffs then
         for _, other in ipairs(R.BUFF_CLASSES) do
             local buff = R.ClassBuff(other)
-            if buff and other ~= class and self.groupClasses[other] then
+            if buff and other ~= class and self.group.classes[other] then
                 local entry = AddSpell(buff.cast, buff.auras[1], buff.auras)
                 if entry then entry.notice = true; entry.ranked = NS.Client.isForever == true end
             end

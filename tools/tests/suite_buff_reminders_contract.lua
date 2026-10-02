@@ -197,7 +197,7 @@ local NS = { IsCombatLocked=function() return combat end,
 -- Data, readers, entry selection and the controller load in TOC order into
 -- one private table (Bootstrap only fills it from _G.MSUFSuite).
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local BR_FILES = { "Bootstrap.lua", "Data.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Special.lua", "Cursor.lua", "Controller.lua" }
+local BR_FILES = { "Bootstrap.lua", "Data.lua", "State.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Special.lua", "Cursor.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_BuffReminders")
 assert(#tocFiles == #BR_FILES, "the BuffReminders TOC must list " .. #BR_FILES .. " files")
 for i = 1, #BR_FILES do
@@ -254,37 +254,37 @@ end
 -- A compile event that changes nothing (SPELLS_CHANGED fires often) keeps the
 -- active reminder list and allocates no tables or string keys.
 local function AssertQuietCompile(label)
-    local active = module.entries
+    local active = module.list.entries
     local grown = EventAllocation("SPELLS_CHANGED", 100)
-    assert(module.entries == active and grown < 1,
+    assert(module.list.entries == active and grown < 1,
         label .. ": an unchanged compile rebuilt the reminder list (" .. grown .. " KB)")
 end
 module.active = true
 module:Enable()
-assert(driver == module.host and #module.entries == 4 and #module.buttons == 4,
+assert(driver == module.view.host and #module.list.entries == 4 and #module.view.buttons == 4,
     "enabled module did not create exactly the configured secure buttons")
-assert(module.buttons[1].attributes.type1 == "spell" and module.buttons[1].attributes.spell1 == 1459)
-assert(module.buttons[3].attributes.type1 == "item" and module.buttons[3].attributes.item1 == "item:123")
-assert(module.buttons[4].attributes["target-slot"] == 16,
+assert(module.view.buttons[1].attributes.type1 == "spell" and module.view.buttons[1].attributes.spell1 == 1459)
+assert(module.view.buttons[3].attributes.type1 == "item" and module.view.buttons[3].attributes.item1 == "item:123")
+assert(module.view.buttons[4].attributes["target-slot"] == 16,
     "manual weapon enchant did not target the main hand")
-assert(module.mask == 15 and module.buttons[4].shown, "missing buffs did not show")
+assert(module.view.mask == 15 and module.view.buttons[4].shown, "missing buffs did not show")
 -- Hovering a reminder shows the spell or item its secure button uses.
-module.buttons[1]:OnEnter()
-assert(GameTooltip.owner == module.buttons[1] and GameTooltip.spell == 1459 and GameTooltip.shown,
+module.view.buttons[1]:OnEnter()
+assert(GameTooltip.owner == module.view.buttons[1] and GameTooltip.spell == 1459 and GameTooltip.shown,
     "a spell reminder did not show its spell tooltip")
-module.buttons[2]:OnLeave()
+module.view.buttons[2]:OnLeave()
 assert(GameTooltip.shown, "leaving another reminder hid a tooltip it does not own")
-module.buttons[1]:OnLeave()
+module.view.buttons[1]:OnLeave()
 assert(not GameTooltip.shown, "leaving a reminder kept its tooltip")
-module.buttons[3]:OnEnter()
-assert(GameTooltip.owner == module.buttons[3] and GameTooltip.item == 123 and not GameTooltip.spell,
+module.view.buttons[3]:OnEnter()
+assert(GameTooltip.owner == module.view.buttons[3] and GameTooltip.item == 123 and not GameTooltip.spell,
     "an item reminder did not show its item tooltip")
-module.buttons[3]:OnLeave()
-assert(module.buttons[3].count.text == "2", "item count was not shown")
+module.view.buttons[3]:OnLeave()
+assert(module.view.buttons[3].count.text == "2", "item count was not shown")
 -- Only the secure frames stay raw CreateFrame; their regions and the preview
 -- text use the shared Suite helpers.
-assert(suiteRegions[module.buttons[1].icon] == "texture" and suiteRegions[module.buttons[1].border] == "texture"
-    and suiteRegions[module.buttons[1].count] == "font" and suiteRegions[module.preview] == "font",
+assert(suiteRegions[module.view.buttons[1].icon] == "texture" and suiteRegions[module.view.buttons[1].border] == "texture"
+    and suiteRegions[module.view.buttons[1].count] == "font" and suiteRegions[module.view.preview] == "font",
     "buff reminder regions bypassed S.CreateTexture/S.CreateFontString")
 assert(eventFrame.events.UNIT_AURA == "player" and eventFrame.events.UNIT_INVENTORY_CHANGED == "player")
 local before = auraReads
@@ -292,20 +292,20 @@ eventFrame.OnEvent(eventFrame, "UNIT_AURA", "target")
 assert(auraReads == before, "another unit caused aura work")
 auras[1459] = { spellId=1459 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
-assert(module.mask == 14 and not module.buttons[1].shown and module.buttons[2].shown)
+assert(module.view.mask == 14 and not module.view.buttons[1].shown and module.view.buttons[2].shown)
 assert(auraReads == before + 3, "player event did more than one targeted lookup per aura")
 -- Edit Mode shows enabled reminders despite real presence, without reading
 -- live auras or replacing their count/presence cache with sample values.
-local cachedPresent,cachedCount=module.entries[1].present,module.entries[3].count
+local cachedPresent,cachedCount=module.list.entries[1].present,module.list.entries[3].count
 S.editMode=true
 before=auraReads
 module:Update("visual")
-assert(module.mask==15 and module.buttons[1].shown and module.buttons[3].count.text=="5")
-assert(auraReads==before and module.entries[1].present==cachedPresent and module.entries[3].count==cachedCount)
-assert(not module.thresholdTimer and not module.cursorFollowing)
+assert(module.view.mask==15 and module.view.buttons[1].shown and module.view.buttons[3].count.text=="5")
+assert(auraReads==before and module.list.entries[1].present==cachedPresent and module.list.entries[3].count==cachedCount)
+assert(not module.list.thresholdTimer and not module.cursor.following)
 S.editMode=false
 module:Update("visual")
-assert(module.mask==14 and not module.buttons[1].shown and module.buttons[3].count.text=="2",
+assert(module.view.mask==14 and not module.view.buttons[1].shown and module.view.buttons[3].count.text=="2",
     "closing preview must restore actual presence and counts even when cache values did not change")
 before, itemReads = auraReads, 0
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
@@ -321,12 +321,12 @@ assert(auraReads == before, "combat caused aura queries")
 combat = false
 enchant[16] = {}
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
-assert(module.mask == 6 and not module.buttons[4].shown, "weapon enchant presence was ignored")
+assert(module.view.mask == 6 and not module.view.buttons[4].shown, "weapon enchant presence was ignored")
 assert(eventFrame.events.UNIT_AURA == "player" and eventFrame.events.UNIT_INVENTORY_CHANGED == "player"
     and eventFrame.events.BAG_UPDATE_DELAYED, "combat end did not restore the event listeners")
 auras[888] = { secret=true }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
-assert(module.mask == 2 and not module.buttons[3].shown, "secret aura result created a false reminder")
+assert(module.view.mask == 2 and not module.view.buttons[3].shown, "secret aura result created a false reminder")
 module:RegisterMovers()
 assert(mover and #mover.extraControls==3 and #mover.historyKeys==3
     and mover.extraControls[1].get()==38 and mover.extraControls[3].get()==6,
@@ -343,7 +343,7 @@ assert(attributeWrites == beforeAttributes and auraReads == before,
 module.config.x = 0
 module:Refresh()
 module:Disable()
-assert(undriven == module.host and not module.host.shown and not next(eventFrame.events))
+assert(undriven == module.view.host and not module.view.host.shown and not next(eventFrame.events))
 before = auraReads
 module.active = false
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
@@ -361,15 +361,15 @@ enchant[16] = nil
 C_UnitAuras.GetAuraDataByIndex = function() error("indexed food aura read is forbidden") end
 module.active = true
 module:Enable()
-assert(#module.entries == 5 and #module.buttons == 5, "Mainline defaults did not select all owned categories")
+assert(#module.list.entries == 5 and #module.view.buttons == 5, "Mainline defaults did not select all owned categories")
 AssertQuietCompile("consumables")
-assert(module.entries[2].id == 241324 and module.entries[3].kind == "food"
-    and module.entries[4].id == 259085 and module.entries[5].id == 243733)
-assert(module.buttons[5].attributes.type1 == "item" and module.buttons[5].attributes.item1 == "item:243733"
-    and module.buttons[5].attributes["target-slot"] == 16,
+assert(module.list.entries[2].id == 241324 and module.list.entries[3].kind == "food"
+    and module.list.entries[4].id == 259085 and module.list.entries[5].id == 243733)
+assert(module.view.buttons[5].attributes.type1 == "item" and module.view.buttons[5].attributes.item1 == "item:243733"
+    and module.view.buttons[5].attributes["target-slot"] == 16,
     "automatic oil did not securely target the main hand")
 -- One scan: the three listed food buff IDs plus their two spell names.
-assert(module.mask == 30 and foodReads == 5, "missing default consumables were not shown")
+assert(module.view.mask == 30 and foodReads == 5, "missing default consumables were not shown")
 -- The augment rune is a separate consumable. Its primary-stat aura must not
 -- satisfy the flask reminder when no flask aura is active.
 auras[1264426] = { spellId = 1264426, auraInstanceID = 81 }
@@ -380,17 +380,17 @@ do
     for i = 2, #runeAuras do assert(runeAuras[i] < runeAuras[i - 1], "rune auras are not ordered newest first") end
     local lookups, lookup = 0, C_UnitAuras.GetPlayerAuraBySpellID
     C_UnitAuras.GetPlayerAuraBySpellID = function(id) lookups = lookups + 1; return lookup(id) end
-    assert(module.entries[4].aliases == runeAuras and private.BuffReminders.AuraPresent(module.entries[4]) == true
+    assert(module.list.entries[4].aliases == runeAuras and private.BuffReminders.AuraPresent(module.list.entries[4]) == true
         and lookups == 1, "finding the current rune took " .. lookups .. " aura lookups")
     C_UnitAuras.GetPlayerAuraBySpellID = lookup
 end
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player",
     { addedAuras = { auras[1264426] } })
-assert(module.mask == 22 and module.buttons[2].shown and not module.buttons[4].shown,
+assert(module.view.mask == 22 and module.view.buttons[2].shown and not module.view.buttons[4].shown,
     "augment rune suppressed the missing-flask reminder")
 auras[1264426] = nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs = { 81 } })
-assert(module.mask == 30 and module.buttons[2].shown and module.buttons[4].shown,
+assert(module.view.mask == 30 and module.view.buttons[2].shown and module.view.buttons[4].shown,
     "removing the rune did not restore its reminder alongside the flask")
 local beforeAura, beforeEnchant, beforeTexture = auraReads, enchantReads, textureWrites
 beforeAttributes = attributeWrites
@@ -408,75 +408,75 @@ beforeAura, beforeEnchant = auraReads, enchantReads
 local beforeFood = foodReads
 itemReads = 0
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=7, icon=7, auraInstanceID=71} } })
-assert(module.mask == 30 and itemReads == 0 and foodReads == beforeFood
+assert(module.view.mask == 30 and itemReads == 0 and foodReads == beforeFood
     and auraReads == beforeAura and enchantReads == beforeEnchant,
     "unrelated aura delta queried buffs, items or weapon enchants")
 auras[432778] = nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 72 } })
-assert(module.mask == 31 and auraReads > beforeAura,
+assert(module.view.mask == 31 and auraReads > beforeAura,
     "removed tracked class aura did not trigger a fresh lookup")
 auras[432778] = { spellId=432778, auraInstanceID=73 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player",
     { addedAuras={ {spellId=432778, auraInstanceID=73} } })
-assert(module.mask == 30, "added class aura alias did not clear the reminder")
+assert(module.view.mask == 30, "added class aura alias did not clear the reminder")
 assert(eventFrame.events.WEAPON_ENCHANT_CHANGED and eventFrame.events.WEAPON_SLOT_CHANGED,
     "weapon enchant events were not registered")
 enchant[16] = {}
 eventFrame.OnEvent(eventFrame, "WEAPON_ENCHANT_CHANGED")
-assert(module.mask == 14, "weapon enchant event did not hide the oil reminder")
+assert(module.view.mask == 14, "weapon enchant event did not hide the oil reminder")
 enchant[16] = nil
 eventFrame.OnEvent(eventFrame, "WEAPON_ENCHANT_CHANGED")
-assert(module.mask == 30, "removed weapon enchant did not restore the oil reminder")
+assert(module.view.mask == 30, "removed weapon enchant did not restore the oil reminder")
 offhandItemID = 900002
 eventFrame.OnEvent(eventFrame, "PLAYER_EQUIPMENT_CHANGED", 17)
-assert(#module.entries == 6 and module.mask == 62
-    and module.buttons[6].attributes.item1 == "item:243733"
-    and module.buttons[6].attributes["target-slot"] == 17,
+assert(#module.list.entries == 6 and module.view.mask == 62
+    and module.view.buttons[6].attributes.item1 == "item:243733"
+    and module.view.buttons[6].attributes["target-slot"] == 17,
     "equipped off-hand weapon did not receive an oil target")
 offhandItemID = 900003
 eventFrame.OnEvent(eventFrame, "PLAYER_EQUIPMENT_CHANGED", 17)
-assert(#module.entries == 5 and module.mask == 30,
+assert(#module.list.entries == 5 and module.view.mask == 30,
     "an off-hand shield received an oil reminder")
 local oldUnitClass, oldKnownSpell = UnitClass, knownSpell
 UnitClass = function() return "Paladin", "PALADIN" end
 knownSpell = function(id) return id == 433583 end
 eventFrame.OnEvent(eventFrame, "PLAYER_SPECIALIZATION_CHANGED", "player")
-assert(#module.entries == 3 and module.mask == 7,
+assert(#module.list.entries == 3 and module.view.mask == 7,
     "a known class weapon imbue did not suppress automatic oil")
 UnitClass = function() return "Rogue", "ROGUE" end
 knownSpell = function() return false end
 eventFrame.OnEvent(eventFrame, "PLAYER_SPECIALIZATION_CHANGED", "player")
-assert(#module.entries == 4 and module.entries[4].slot == 16,
+assert(#module.list.entries == 4 and module.list.entries[4].slot == 16,
     "Rogue without a temporary enchant could not use an oil")
 UnitClass, knownSpell = oldUnitClass, oldKnownSpell
 eventFrame.OnEvent(eventFrame, "PLAYER_SPECIALIZATION_CHANGED", "player")
-assert(#module.entries == 5 and module.mask == 30)
+assert(#module.list.entries == 5 and module.view.mask == 30)
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=7, icon=7, auraInstanceID=70} } })
-assert(foodReads == beforeFood and module.mask == 30, "unrelated aura delta rescanned food")
+assert(foodReads == beforeFood and module.view.mask == 30, "unrelated aura delta rescanned food")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=104280, icon=136000, auraInstanceID=42} } })
-assert(module.mask == 26 and foodReads == beforeFood, "Well Fed delta did not hide food")
+assert(module.view.mask == 26 and foodReads == beforeFood, "Well Fed delta did not hide food")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 42 } })
-assert(module.mask == 30 and foodReads == beforeFood, "removed Well Fed aura did not show food")
+assert(module.view.mask == 30 and foodReads == beforeFood, "removed Well Fed aura did not show food")
 -- Food snapshots are recycled: a food aura that follows a removed one reuses
 -- its table instead of allocating a new one per aura event.
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=104280, icon=136000, auraInstanceID=43} } })
-local foodSnapshot = assert(module.foodIDs[43], "added Well Fed aura was not tracked")
+local foodSnapshot = assert(module.food.ids[43], "added Well Fed aura was not tracked")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 43 } })
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ {spellId=104280, icon=136000, auraInstanceID=44} } })
-assert(module.foodIDs[44] == foodSnapshot and module.foodIDs[43] == nil and module.mask == 26,
+assert(module.food.ids[44] == foodSnapshot and module.food.ids[43] == nil and module.view.mask == 26,
     "a new food aura did not reuse the released snapshot")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 44 } })
-assert(module.mask == 30 and foodReads == beforeFood and not next(module.foodIDs),
+assert(module.view.mask == 30 and foodReads == beforeFood and not next(module.food.ids),
     "removed recycled food aura did not show food")
 -- Restricted targeted aura data remains unknown, never a missing buff.
 auras[104280] = { secret=true }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 26 and not module.buttons[3].shown,
+assert(module.view.mask == 26 and not module.view.buttons[3].shown,
     "restricted food aura data created a false reminder")
 auras[104280] = nil
 inventory[259085] = 0
 eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
-assert(#module.entries == 4 and module.entries[4].id == 243733,
+assert(#module.list.entries == 4 and module.list.entries[4].id == 243733,
     "bag update did not drop an unowned default")
 combat = true
 before, itemReads = auraReads, 0
@@ -488,7 +488,7 @@ module.config.spellIDs = "1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011
 itemReads = 0
 module.active = true
 module:Enable()
-assert(#module.entries == 12 and itemReads == 0,
+assert(#module.list.entries == 12 and itemReads == 0,
     "full reminder pool still resolved unused automatic consumables")
 module:Disable()
 
@@ -530,35 +530,35 @@ auras[2823] = { spellId=2823, auraInstanceID=100, expirationTime=now+420, durati
 auras[381637] = { spellId=381637, auraInstanceID=101, expirationTime=now+600, duration=3600 }
 module.active = true
 module:Enable()
-assert(#module.entries == 2 and module.entries[1].id == 2823
-    and module.entries[2].id == 381637 and module.mask == 0,
+assert(#module.list.entries == 2 and module.list.entries[1].id == 2823
+    and module.list.entries[2].id == 381637 and module.view.mask == 0,
     "Assassination did not select its lethal and known nonlethal poisons")
 AssertQuietCompile("Rogue poisons")
-assert(module.thresholdAt == 1120, "advance reminder was not scheduled at five minutes remaining")
+assert(module.list.thresholdAt == 1120, "advance reminder was not scheduled at five minutes remaining")
 before = auraReads
 FireNext()
-assert(module.mask == 1 and auraReads == before and module.buttons[1].shown,
+assert(module.view.mask == 1 and auraReads == before and module.view.buttons[1].shown,
     "threshold timer did not reveal the expiring poison without scanning auras")
 module.config.remindBeforeMinutes = 0
 module:Refresh()
-assert(module.mask == 0 and module.thresholdTimer == nil,
+assert(module.view.mask == 0 and module.list.thresholdTimer == nil,
     "zero-minute setting did not disable advance reminders")
 module.config.remindBeforeMinutes = 5
 module:Refresh()
-assert(module.mask == 1, "restoring advance warning did not refresh the visible reminder")
+assert(module.view.mask == 1, "restoring advance warning did not refresh the visible reminder")
 auras[2823] = { spellId=2823, auraInstanceID=100, expirationTime=now+900, duration=3600 }
 auras[381637] = { spellId=381637, auraInstanceID=101, expirationTime=now+1200, duration=3600 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 0 and module.thresholdAt == now+600,
+assert(module.view.mask == 0 and module.list.thresholdAt == now+600,
     "refreshing a poison did not postpone its advance reminder")
 auras[2823] = { spellId=2823, auraInstanceID=100, expirationTime={secret=true}, duration=3600 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 0, "a secret expiration time created a false advance reminder")
+assert(module.view.mask == 0, "a secret expiration time created a false advance reminder")
 specID = 260
 auras[2823] = nil
 auras[315584] = { spellId=315584, auraInstanceID=102, expirationTime=now+900, duration=3600 }
 eventFrame.OnEvent(eventFrame, "PLAYER_SPECIALIZATION_CHANGED", "player")
-assert(module.entries[1].id == 315584 and module.mask == 0,
+assert(module.list.entries[1].id == 315584 and module.view.mask == 0,
     "switching from Assassination to Outlaw did not replace Deadly Poison")
 module:Disable()
 
@@ -568,21 +568,21 @@ for _, expectedSpec in ipairs({ 260, 261 }) do
     auras[315584] = { spellId=315584, auraInstanceID=102, expirationTime=now+900, duration=3600 }
     module.active = true
     module:Enable()
-    assert(#module.entries == 2 and module.entries[1].id == 315584 and module.mask == 0,
+    assert(#module.list.entries == 2 and module.list.entries[1].id == 315584 and module.view.mask == 0,
         "Outlaw or Subtlety did not prefer Instant Poison")
     auras[315584] = nil
     auras[8679] = { spellId=8679, auraInstanceID=103, expirationTime=now+900, duration=3600 }
     eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-    assert(module.mask == 0, "an active alternative lethal poison created a false reminder")
+    assert(module.view.mask == 0, "an active alternative lethal poison created a false reminder")
     auras[315584] = { spellId=315584, auraInstanceID=102,
         expirationTime=now+120, duration=3600 }
     eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-    assert(module.mask == 0, "an expiring poison overrode a longer active alternative")
+    assert(module.view.mask == 0, "an expiring poison overrode a longer active alternative")
     auras[315584] = nil
     before = auraReads
     eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player",
         { removedAuraInstanceIDs={ 102 } })
-    assert(module.mask == 0 and auraReads > before,
+    assert(module.view.mask == 0 and auraReads > before,
         "removing one of two active poisons skipped a targeted refresh")
     module:Disable()
     auras[8679] = nil
@@ -598,47 +598,47 @@ auras[381637] = { spellId=381637, auraInstanceID=202, expirationTime=now+900, du
 auras[5761] = { spellId=5761, auraInstanceID=203, expirationTime=now+900, duration=3600 }
 module.active = true
 module:Enable()
-assert(#module.entries == 4 and module.entries[1].id == 2823
-    and module.entries[2].id == 381664 and module.entries[3].id == 381637
-    and module.entries[4].id == 5761 and module.mask == 0,
+assert(#module.list.entries == 4 and module.list.entries[1].id == 2823
+    and module.list.entries[2].id == 381664 and module.list.entries[3].id == 381637
+    and module.list.entries[4].id == 5761 and module.view.mask == 0,
     "Dragon-Tempered Blades did not track all four poison slots")
 auras[2823], auras[381664], auras[381637], auras[5761] = nil, nil, nil, nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 15 and module.buttons[1].attributes.spell1 == 2823
-    and module.buttons[2].attributes.spell1 == 381664
-    and module.buttons[3].attributes.spell1 == 381637
-    and module.buttons[4].attributes.spell1 == 5761,
+assert(module.view.mask == 15 and module.view.buttons[1].attributes.spell1 == 2823
+    and module.view.buttons[2].attributes.spell1 == 381664
+    and module.view.buttons[3].attributes.spell1 == 381637
+    and module.view.buttons[4].attributes.spell1 == 5761,
     "four missing poisons did not create four distinct secure reminders")
 auras[2823] = { spellId=2823, auraInstanceID=200, expirationTime=now+900, duration=3600 }
 auras[381664] = { spellId=381664, auraInstanceID=201, expirationTime=now+900, duration=3600 }
 auras[381637] = { spellId=381637, auraInstanceID=202, expirationTime=now+900, duration=3600 }
 auras[5761] = { spellId=5761, auraInstanceID=203, expirationTime=now+900, duration=3600 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 0)
+assert(module.view.mask == 0)
 auras[381664] = nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 201 } })
-assert(module.mask == 1 and module.buttons[1].attributes.spell1 == 381664,
+assert(module.view.mask == 1 and module.view.buttons[1].attributes.spell1 == 381664,
     "missing second lethal poison did not select Amplifying Poison")
 auras[8679] = { spellId=8679, auraInstanceID=204, expirationTime=now+900, duration=3600 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player",
     { addedAuras={ {spellId=8679, auraInstanceID=204} } })
-assert(module.mask == 0, "an active alternative did not fill the second lethal slot")
+assert(module.view.mask == 0, "an active alternative did not fill the second lethal slot")
 auras[8679], auras[5761] = nil, nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player",
     { removedAuraInstanceIDs={ 204, 203 } })
-assert(module.mask == 5 and module.buttons[3].attributes.spell1 == 5761,
+assert(module.view.mask == 5 and module.view.buttons[3].attributes.spell1 == 5761,
     "missing lethal and nonlethal slots did not produce distinct reminders")
 auras[381664] = { spellId=381664, auraInstanceID=205, expirationTime=now+900, duration=3600 }
 auras[5761] = { spellId=5761, auraInstanceID=206, expirationTime=now+900, duration=3600 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 0, "reapplied poisons did not clear all four reminders")
+assert(module.view.mask == 0, "reapplied poisons did not clear all four reminders")
 auras[2823] = { spellId=2823, auraInstanceID=200, expirationTime=now+120, duration=3600 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 1 and module.buttons[1].attributes.spell1 == 2823,
+assert(module.view.mask == 1 and module.view.buttons[1].attributes.spell1 == 2823,
     "expiring Deadly Poison did not rebind its own reminder")
 knownPoison[381801] = nil
 eventFrame.OnEvent(eventFrame, "SPELLS_CHANGED")
-assert(#module.entries == 2 and module.mask == 0,
+assert(#module.list.entries == 2 and module.view.mask == 0,
     "losing Dragon-Tempered Blades retained four required poisons")
 module:Disable()
 auras[2823], auras[381664], auras[381637], auras[5761] = nil, nil, nil, nil
@@ -649,15 +649,15 @@ module.config.mainHandItem = "456"
 enchant[16] = { hasExpirationTime=true, remainingTimeMs=420000 }
 module.active = true
 module:Enable()
-assert(#module.entries == 1 and module.mask == 0 and module.thresholdAt == now+120,
+assert(#module.list.entries == 1 and module.view.mask == 0 and module.list.thresholdAt == now+120,
     "weapon enchant did not schedule its advance reminder")
 before = enchantReads
 FireNext()
-assert(module.mask == 1 and enchantReads == before,
+assert(module.view.mask == 1 and enchantReads == before,
     "weapon advance reminder queried equipment at the threshold")
-local pending = module.thresholdTimer
+local pending = module.list.thresholdTimer
 module:Disable()
-assert(module.thresholdTimer == nil and (not pending or pending.cancelled),
+assert(module.list.thresholdTimer == nil and (not pending or pending.cancelled),
     "disabling did not cancel the pending threshold timer")
 
 -- Food warnings use the same timer, while a short eating aura is not treated
@@ -668,12 +668,12 @@ local foodAura = { spellId=104280, icon=136000, auraInstanceID=555,
 auras[104280] = foodAura
 module.active = true
 module:Enable()
-assert(#module.entries == 1 and module.entries[1].kind == "food"
-    and module.mask == 0 and module.thresholdAt == now+120,
+assert(#module.list.entries == 1 and module.list.entries[1].kind == "food"
+    and module.view.mask == 0 and module.list.thresholdAt == now+120,
     "food did not schedule its advance warning")
 before = foodReads
 FireNext()
-assert(module.mask == 1 and foodReads == before,
+assert(module.view.mask == 1 and foodReads == before,
     "food warning rescanned auras at the threshold")
 module:Disable()
 foodAura = { spellId=104280, icon=133950, auraInstanceID=556,
@@ -681,7 +681,7 @@ foodAura = { spellId=104280, icon=133950, auraInstanceID=556,
 auras[104280] = foodAura
 module.active = true
 module:Enable()
-assert(module.mask == 0 and module.thresholdTimer == nil,
+assert(module.view.mask == 0 and module.list.thresholdTimer == nil,
     "short eating aura was incorrectly treated as expiring food")
 module:Disable()
 auras[104280] = nil
@@ -692,48 +692,48 @@ auras[104280] = nil
 local learnedFood = { spellId=990001, icon=136000, auraInstanceID=700 }
 module.active = true
 module:Enable()
-assert(#module.entries == 1 and module.entries[1].kind == "food" and module.mask == 1,
+assert(#module.list.entries == 1 and module.list.entries[1].kind == "food" and module.view.mask == 1,
     "missing food did not show its reminder")
 auras[990001] = learnedFood
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ learnedFood } })
-assert(module.mask == 0 and module.foodIDs[700], "a food aura learned by icon did not hide the reminder")
+assert(module.view.mask == 0 and module.food.ids[700], "a food aura learned by icon did not hide the reminder")
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
-assert(module.mask == 0 and module.foodIDs[700],
+assert(module.view.mask == 0 and module.food.ids[700],
     "combat end forgot a food aura whose spell ID is not in the list (false Food reminder)")
 for _, event in ipairs({ "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" }) do
     eventFrame.OnEvent(eventFrame, event)
-    assert(module.mask == 0 and module.foodIDs[700], event .. " forgot a food aura learned by icon")
+    assert(module.view.mask == 0 and module.food.ids[700], event .. " forgot a food aura learned by icon")
 end
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 0 and module.foodIDs[700], "a full aura update forgot a food aura learned by icon")
+assert(module.view.mask == 0 and module.food.ids[700], "a full aura update forgot a food aura learned by icon")
 -- A recreated food aura gets a new instance ID without ever using an
 -- instance-ID lookup; the next removal must address the new ID.
 local replacedFood = { spellId=990001, icon=136000, auraInstanceID=702 }
 auras[990001] = replacedFood
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 0 and module.foodIDs[702] and not module.foodIDs[700],
+assert(module.view.mask == 0 and module.food.ids[702] and not module.food.ids[700],
     "a food aura with a new instance ID kept its old key")
 auras[990001] = learnedFood
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
-assert(module.mask == 0 and module.foodIDs[700] and not module.foodIDs[702],
+assert(module.view.mask == 0 and module.food.ids[700] and not module.food.ids[702],
     "the food snapshot did not follow a second instance-ID change")
 -- An update of the learned aura refreshes it in place.
 learnedFood.expirationTime, learnedFood.duration = now + 3000, 3600
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { updatedAuraInstanceIDs={ 700 } })
-assert(module.mask == 0 and module.foodIDs[700] and module.foodIDs[700].expirationTime == now + 3000,
+assert(module.view.mask == 0 and module.food.ids[700] and module.food.ids[700].expirationTime == now + 3000,
     "an updated food aura learned by icon was dropped or kept stale timing")
 -- A restricted re-check is unknown, never missing, and keeps the aura.
 auras[990001] = { secret=true }
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
-assert(module.mask == 0 and module.foodIDs[700], "a restricted food re-check created a false reminder")
+assert(module.view.mask == 0 and module.food.ids[700], "a restricted food re-check created a false reminder")
 -- Food that ran out in combat (no aura listener then) is dropped by the re-check.
 auras[990001] = nil
 
 
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
-assert(module.mask == 1 and not module.foodIDs[700], "an expired learned food aura was kept")
+assert(module.view.mask == 1 and not module.food.ids[700], "an expired learned food aura was kept")
 module:Disable()
 -- After a reload nothing is learned yet: the targeted lookup by the listed
 -- Well Fed spell name finds a variant whose spell ID is not in the list.
@@ -741,22 +741,22 @@ local renamedFood = { spellId=990002, icon=133950, auraInstanceID=701 }
 namedAuras["Well Fed"], auras[990002] = renamedFood, renamedFood
 module.active = true
 module:Enable()
-assert(module.mask == 0 and module.foodIDs[701], "an unlisted Well Fed aura was not found after a reload")
+assert(module.view.mask == 0 and module.food.ids[701], "an unlisted Well Fed aura was not found after a reload")
 namedAuras["Well Fed"], auras[990002] = nil, nil
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { removedAuraInstanceIDs={ 701 } })
-assert(module.mask == 1 and not next(module.foodIDs), "a removed Well Fed aura kept the food satisfied")
+assert(module.view.mask == 1 and not next(module.food.ids), "a removed Well Fed aura kept the food satisfied")
 module:Disable()
 -- With "instances only", no rescan runs in the open world; a food aura eaten
 -- there is still learned and still counts after entering a dungeon.
 module.config.instancesOnly = true
 module.active = true
 module:Enable()
-assert(module.mask == 0 and module.foodKnown == nil, "the open world ran a food scan under instances only")
+assert(module.view.mask == 0 and module.food.known == nil, "the open world ran a food scan under instances only")
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { addedAuras={ learnedFood } })
 auras[990001] = learnedFood
 GetInstanceInfo = function() return "Dungeon", "party" end
 eventFrame.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
-assert(module.mask == 0 and module.foodIDs[700],
+assert(module.view.mask == 0 and module.food.ids[700],
     "a food aura learned before the first rescan was forgotten on entering an instance")
 module:Disable()
 GetInstanceInfo = function() return "World", "none" end
@@ -774,24 +774,24 @@ inventory = { [241324]=3, [241325]=2 }
 auras = {}
 module.active = true
 module:Enable()
-assert(module.entries[1].id == 241325 and module.buttons[1].count.fontSize == 17,
+assert(module.list.entries[1].id == 241325 and module.view.buttons[1].count.fontSize == 17,
     "preferred stocked flask or count styling was ignored")
 inventory[241325] = 0
 eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
-assert(module.entries[1].id == 241324 and not module.entries[1].restock,
+assert(module.list.entries[1].id == 241324 and not module.list.entries[1].restock,
     "depleted preferred flask did not fall back")
 inventory[241324] = 0
 eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
-assert(module.entries[1].id == 241325 and module.entries[1].restock and module.mask == 1
-    and module.buttons[1].attributes.type1 == nil and module.buttons[1].attributes.item1 == nil
-    and module.buttons[1].icon.desaturated and module.buttons[1].count.text == "0",
+assert(module.list.entries[1].id == 241325 and module.list.entries[1].restock and module.view.mask == 1
+    and module.view.buttons[1].attributes.type1 == nil and module.view.buttons[1].attributes.item1 == nil
+    and module.view.buttons[1].icon.desaturated and module.view.buttons[1].count.text == "0",
     "out-of-stock category must be a gray, non-actionable reminder")
-module.buttons[1]:OnEnter()
+module.view.buttons[1]:OnEnter()
 assert(GameTooltip.extraLine and GameTooltip.extraLine:find("restock", 1, true), "restock tooltip did not explain the disabled action")
 inventory[241325] = 4
 eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
-assert(not module.entries[1].restock and module.buttons[1].attributes.item1 == "item:241325"
-    and not module.buttons[1].icon.desaturated, "restocking did not restore the secure click action")
+assert(not module.list.entries[1].restock and module.view.buttons[1].attributes.item1 == "item:241325"
+    and not module.view.buttons[1].icon.desaturated, "restocking did not restore the secure click action")
 AssertQuietCompile("preferred consumable selection")
 
 -- Pre-key warning uses the longer threshold only before the run; one native
@@ -803,12 +803,12 @@ GetDifficultyInfo = function() return "Mythic", "party", false, false, false, tr
 C_ChallengeMode = { IsChallengeModeActive=function() return challengeActive end }
 auras[1235110] = { spellId=1235110, auraInstanceID=801, expirationTime=now+1200, duration=3600 }
 eventFrame.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
-assert(module.mask == 1 and private.BuffReminders.Threshold(module) == 1800,
+assert(module.view.mask == 1 and private.BuffReminders.Threshold(module) == 1800,
     "pre-key threshold did not show a buff that expires during the configured run time")
 before = auraReads
 challengeActive = true
 eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_START")
-assert(module.mask == 0 and auraReads == before and private.BuffReminders.Threshold(module) == 300,
+assert(module.view.mask == 0 and auraReads == before and private.BuffReminders.Threshold(module) == 300,
     "key start did not restore the normal threshold without an aura scan")
 challengeActive = false
 eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_COMPLETED")
@@ -817,7 +817,7 @@ eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_RESET")
 assert(private.BuffReminders.Threshold(module) == 1800, "reset did not restore pre-key preparation")
 module.config.showDungeonMythic = false
 module:Refresh()
-assert(module.mask == 0, "content visibility did not hide reminders")
+assert(module.view.mask == 0, "content visibility did not hide reminders")
 module.config.showDungeonMythic = true
 
 -- Readycheck mana is evaluated once at the check. No aura or inventory work
@@ -830,19 +830,19 @@ UnitPowerMax = function() return 100 end
 module:Refresh()
 before = auraReads
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
-assert(module.readyCheckWarning.shown and module.readyCheckWarning.text:find("50%%")
-    and auraReads == before and module.readyCheckTimer, "readycheck low-mana warning failed")
-local warningTimer = module.readyCheckTimer
+assert(module.readyCheck.label.shown and module.readyCheck.label.text:find("50%%")
+    and auraReads == before and module.readyCheck.timer, "readycheck low-mana warning failed")
+local warningTimer = module.readyCheck.timer
 UnitPower = function() return { secret=true } end
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
-assert(not module.readyCheckWarning.shown and warningTimer.cancelled, "secret mana was treated as low mana")
+assert(not module.readyCheck.label.shown and warningTimer.cancelled, "secret mana was treated as low mana")
 UnitPower = function() return 10 end
 UnitGroupRolesAssigned = function() return "DAMAGER" end
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
-assert(not module.readyCheckWarning.shown, "non-healer got a healer mana warning")
+assert(not module.readyCheck.label.shown, "non-healer got a healer mana warning")
 UnitGroupRolesAssigned = function() return "HEALER" end
 eventFrame.OnEvent(eventFrame, "READY_CHECK")
-warningTimer = module.readyCheckTimer
+warningTimer = module.readyCheck.timer
 combat = true
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
 assert(warningTimer.cancelled and not eventFrame.events.READY_CHECK and not eventFrame.events.CHALLENGE_MODE_START,
@@ -857,12 +857,20 @@ assert(not eventFrame.events.READY_CHECK and not eventFrame.events.CHALLENGE_MOD
 local sounds = 0
 SOUNDKIT = { RAID_WARNING=1, READY_CHECK=2, IG_QUEST_LOG_OPEN=3 }
 PlaySound = function(id, channel) assert(id == 1 and channel == "Dialog"); sounds = sounds + 1 end
-local alertOwner = { config={ reminderSound=2, reminderSoundChannel=3, reminderGlow=3,
-    reminderGlowColor="ff0000" }, buttons={} }
-local alertButton = { border=Widget() }
-alertOwner.buttons[1] = alertButton
-local alertEntry = { kind="spell", id=1459 }
 local BR = private.BuffReminders
+-- Owners of the function-level checks get the module's state tables; every
+-- one of them is checked for undeclared fields at the end.
+local owners = { module }
+local function Owner(fields)
+    local owner = BR.NewState(fields)
+    owners[#owners + 1] = owner
+    return owner
+end
+local alertOwner = Owner({ config={ reminderSound=2, reminderSoundChannel=3, reminderGlow=3,
+    reminderGlowColor="ff0000" } })
+local alertButton = { border=Widget() }
+alertOwner.view.buttons = { alertButton }
+local alertEntry = { kind="spell", id=1459 }
 BR.AlertTransition(alertOwner, alertButton, alertEntry, true)
 BR.PlayReminderAlert(alertOwner)
 assert(sounds == 1 and alertButton.alertPulse.playing, "new reminder did not sound/pulse")
@@ -900,7 +908,7 @@ do
     for _ = 1, 3 do BR.AlertTransition(alertOwner, alertButton, counted, true) end
     assert(concats == 0, "an alert transition built an identity string")
     BR.AlertTransition(alertOwner, alertButton, alertEntry, true)
-    alertOwner.newReminderAlert = nil
+    alertOwner.view.newAlert = nil
 end
 BR.StopReminderAlerts(alertOwner)
 assert(not alertButton.alertPulse.playing and alertButton.alertKind == nil and alertButton.alertID == nil,
@@ -928,9 +936,9 @@ do
         reads=reads+1
         return groupAuras[unit] and {} or nil
     end
-    local owner={config={groupBuff=true,classBuff=true,otherClassBuffs=true}}
+    local owner=Owner({config={groupBuff=true,classBuff=true,otherClassBuffs=true}})
     BR.GroupRoster(owner)
-    assert(owner.groupClasses.PRIEST and owner.groupClasses.WARRIOR,"roster class coverage missing")
+    assert(owner.group.classes.PRIEST and owner.group.classes.WARRIOR,"roster class coverage missing")
     BR.RefreshGroup(owner)
     local entry={}
     assert(not BR.GroupPresent(owner,entry) and entry.missingCount==1,"invisible member was reported missing")
@@ -958,25 +966,26 @@ do
         if unit=="party1" and stoneSource=="player" then return {sourceUnit=stoneSource} end
     end
     BR.RefreshGroup(owner)
-    assert(owner.soulstoneMissing,"missing own Soulstone not detected")
+    assert(owner.notices.soulstoneMissing,"missing own Soulstone not detected")
     stoneSource="party2"; BR.RefreshGroup(owner,"party1")
-    assert(owner.soulstoneMissing,"another Warlock's Soulstone incorrectly satisfied own reminder")
+    assert(owner.notices.soulstoneMissing,"another Warlock's Soulstone incorrectly satisfied own reminder")
     stoneSource="player"; BR.RefreshGroup(owner,"party1")
-    assert(owner.soulstoneMissing==false,"own Soulstone on party member was not detected")
+    assert(owner.notices.soulstoneMissing==false,"own Soulstone on party member was not detected")
     -- A member out of sight (or offline, or dead) cannot hold a readable
     -- Soulstone: in a raid one such member must not silence the notice.
     stoneSource=nil; invisible.party2=true; BR.RefreshGroup(owner)
-    assert(owner.soulstoneMissing==true,"an out-of-sight member silenced the missing-Soulstone notice")
+    assert(owner.notices.soulstoneMissing==true,"an out-of-sight member silenced the missing-Soulstone notice")
     stoneSource="player"; BR.RefreshGroup(owner,"party1")
-    assert(owner.soulstoneMissing==false,"own Soulstone beside an out-of-sight member was not detected")
+    assert(owner.notices.soulstoneMissing==false,"own Soulstone beside an out-of-sight member was not detected")
     local restrictedGroup=C_Secrets.ShouldAurasBeSecret
     C_Secrets.ShouldAurasBeSecret=function() return true end
     stoneSource=nil; BR.RefreshGroup(owner)
-    assert(owner.soulstoneMissing==nil,"restricted aura data must not imply a missing Soulstone")
+    assert(owner.notices.soulstoneMissing==nil,"restricted aura data must not imply a missing Soulstone")
     C_Secrets.ShouldAurasBeSecret=restrictedGroup
 end
 do
-    local owner={config={petPassiveWarning=true,healthstoneFromWarlock=true},groupClasses={WARLOCK=true},host=Widget()}
+    local owner=Owner({config={petPassiveWarning=true,healthstoneFromWarlock=true}})
+    owner.group.classes, owner.view.host = {WARLOCK=true}, Widget()
     NUM_PET_ACTION_SLOTS=10
     UnitExists=function(unit) return unit=="pet" end
     UnitIsDeadOrGhost=function() return false end
@@ -985,22 +994,22 @@ do
         if index==10 then return "PET_MODE_PASSIVE",nil,true,passive end
     end
     BR.ReadPet(owner)
-    assert(owner.petPassive,"active passive pet mode was not detected")
+    assert(owner.notices.petPassive,"active passive pet mode was not detected")
     passive={secret=true}
     BR.ReadPet(owner)
-    assert(owner.petPassive==nil,"secret pet reaction became a warning")
+    assert(owner.notices.petPassive==nil,"secret pet reaction became a warning")
     inventory={[5512]=0,[224464]=0}
     BR.ReadHealthstone(owner)
     BR.SpecialText(owner,true)
-    assert(owner.healthstoneMissing and owner.specialWarning.shown,"missing healthstone warning not shown")
+    assert(owner.notices.healthstoneMissing and owner.notices.label.shown,"missing healthstone warning not shown")
     inventory[224464]=1
     BR.ReadHealthstone(owner)
     BR.SpecialText(owner,true)
-    assert(not owner.healthstoneMissing and not owner.specialWarning.shown,"demonic healthstone did not satisfy reminder")
-    owner.groupClasses.WARLOCK=nil
+    assert(not owner.notices.healthstoneMissing and not owner.notices.label.shown,"demonic healthstone did not satisfy reminder")
+    owner.group.classes.WARLOCK=nil
     inventory[224464]=0
     BR.ReadHealthstone(owner)
-    assert(not owner.healthstoneMissing,"healthstone warning remained after Warlock left")
+    assert(not owner.notices.healthstoneMissing,"healthstone warning remained after Warlock left")
     NS.BuffReminderDemons={
         {key="demonImp",spells={688},family=23},
         {key="demonFelguard",spells={30146},family=29},
@@ -1010,13 +1019,13 @@ do
     knownSpell=function(id) return id==688 or id==30146 end
     local family=23
     UnitCreatureFamily=function() return "Pet",family end
-    BR.ReadPet(owner); assert(owner.wrongDemon,"disallowed Imp did not warn")
-    family=29; BR.ReadPet(owner); assert(owner.wrongDemon==false,"a chosen Felguard warned")
+    BR.ReadPet(owner); assert(owner.notices.wrongDemon,"disallowed Imp did not warn")
+    family=29; BR.ReadPet(owner); assert(owner.notices.wrongDemon==false,"a chosen Felguard warned")
     -- A family the check does not know (a cosmetic version) is never judged.
-    family=104; BR.ReadPet(owner); assert(owner.wrongDemon==nil,"an unrecognized demon family caused a warning")
-    family={secret=true}; BR.ReadPet(owner); assert(owner.wrongDemon==nil,"secret family caused a demon warning")
+    family=104; BR.ReadPet(owner); assert(owner.notices.wrongDemon==nil,"an unrecognized demon family caused a warning")
+    family={secret=true}; BR.ReadPet(owner); assert(owner.notices.wrongDemon==nil,"secret family caused a demon warning")
     knownSpell=function(id) return id==688 end
-    family=23; BR.ReadPet(owner); assert(owner.wrongDemon==nil,"unavailable allowed summon caused an impossible warning")
+    family=23; BR.ReadPet(owner); assert(owner.notices.wrongDemon==nil,"unavailable allowed summon caused an impossible warning")
     -- One known summon of a chosen demon is enough: the spell checks stop
     -- there, and the list stops once the pet's demon is known as well.
     NS.BuffReminderDemons={
@@ -1031,11 +1040,11 @@ do
     knownSpell=function(id) spellChecks=spellChecks+1; return id~=688 end
     for _,pet in ipairs({16,29}) do
         spellChecks=0; family=pet; BR.ReadPet(owner)
-        assert(owner.wrongDemon==false and spellChecks==1,
+        assert(owner.notices.wrongDemon==false and spellChecks==1,
             "the demon check read "..spellChecks.." summon spells for family "..pet)
     end
     spellChecks=0; family=23; BR.ReadPet(owner)
-    assert(owner.wrongDemon==true and spellChecks==1,"a disallowed Imp did not warn after one summon check")
+    assert(owner.notices.wrongDemon==true and spellChecks==1,"a disallowed Imp did not warn after one summon check")
     local visited={}
     for index,demon in ipairs(NS.BuffReminderDemons) do
         NS.BuffReminderDemons[index]=setmetatable({},{__index=function(_,key)
@@ -1044,7 +1053,7 @@ do
         end})
     end
     family=16; BR.ReadPet(owner)
-    assert(owner.wrongDemon==false and visited[2] and not visited[3],"the demon list went on after both answers were known")
+    assert(owner.notices.wrongDemon==false and visited[2] and not visited[3],"the demon list went on after both answers were known")
 end
 
 -- Game IDs live in Data.lua only; the selection code reads them from there.
@@ -1065,35 +1074,36 @@ end
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip
 do
     local moves=0
-    local owner={active=true,mask=1,host=Widget(),config={followCursor=true,cursorOffsetX=24,cursorOffsetY=24,point=1,x=0,y=0}}
-    owner.host.SetPoint=function() assert(not combat,"cursor moved a protected host in combat");moves=moves+1 end
+    local owner=Owner({active=true,config={followCursor=true,cursorOffsetX=24,cursorOffsetY=24,point=1,x=0,y=0}})
+    owner.view.mask, owner.view.host = 1, Widget()
+    owner.view.host.SetPoint=function() assert(not combat,"cursor moved a protected host in combat");moves=moves+1 end
     UIParent.GetEffectiveScale=function() return 2 end
     local cx,cy=100,200
     GetCursorPosition=function() return cx,cy end
     BR.SyncCursor(owner)
-    assert(owner.cursorDriver.OnUpdate and moves==1)
-    owner.cursorDriver.OnUpdate(owner.cursorDriver)
+    assert(owner.cursor.driver.OnUpdate and moves==1)
+    owner.cursor.driver.OnUpdate(owner.cursor.driver)
     assert(moves==1,"unchanged cursor rewrote the anchor")
-    cx=120;owner.cursorDriver.OnUpdate(owner.cursorDriver)
+    cx=120;owner.cursor.driver.OnUpdate(owner.cursor.driver)
     assert(moves==2)
-    combat=true;owner.cursorDriver.OnUpdate(owner.cursorDriver)
-    assert(not owner.cursorDriver.OnUpdate and moves==2,"combat did not immediately stop cursor input")
+    combat=true;owner.cursor.driver.OnUpdate(owner.cursor.driver)
+    assert(not owner.cursor.driver.OnUpdate and moves==2,"combat did not immediately stop cursor input")
     combat=false;BR.SyncCursor(owner)
-    owner.mask=0;BR.SyncCursor(owner)
-    assert(not owner.cursorDriver.OnUpdate and not owner.cursorFollowing,"no visible reminder kept a cursor reader")
-    assert(not owner.cursorDisplaced,"restoring the anchor retained displacement")
-    owner.mask=1;BR.SyncCursor(owner)
+    owner.view.mask=0;BR.SyncCursor(owner)
+    assert(not owner.cursor.driver.OnUpdate and not owner.cursor.following,"no visible reminder kept a cursor reader")
+    assert(not owner.cursor.displaced,"restoring the anchor retained displacement")
+    owner.view.mask=1;BR.SyncCursor(owner)
     local before=moves
     combat=true;BR.StopCursor(owner)
     owner.config.followCursor=false;BR.SyncCursor(owner)
-    assert(moves==before and owner.cursorDisplaced,"combat suspension forgot pending anchor restoration")
+    assert(moves==before and owner.cursor.displaced,"combat suspension forgot pending anchor restoration")
     combat=false;BR.SyncCursor(owner)
-    assert(moves==before+1 and not owner.cursorDisplaced,"combat exit did not restore the static anchor")
+    assert(moves==before+1 and not owner.cursor.displaced,"combat exit did not restore the static anchor")
     owner.config.followCursor=true;BR.SyncCursor(owner)
     before=moves
     owner.active=false;BR.StopCursor(owner)
     owner.config.followCursor=false;owner.active=true;BR.SyncCursor(owner)
-    assert(moves==before+1 and not owner.cursorDisplaced,"disable/re-enable lost the static anchor")
+    assert(moves==before+1 and not owner.cursor.displaced,"disable/re-enable lost the static anchor")
 end
 
 do
@@ -1113,7 +1123,7 @@ do
         assert(filter=="HELPFUL")
         if name=="Spell 1243" and (unit=="player" or groupRank) then return rankAura end
     end
-    local owner={config={classBuff=true,groupBuff=true,spellIDs="",items="",mainHandItem="",offHandItem=""}}
+    local owner=Owner({config={classBuff=true,groupBuff=true,spellIDs="",items="",mainHandItem="",offHandItem=""}})
     local entries=BR.BuildEntries(owner)
     local entry=entries[1]
     assert(#entries==1 and entry.id==1243 and entry.ranked and entry.spellName=="Spell 1243",
@@ -1138,7 +1148,8 @@ do
 end
 
 do
-    local owner={config={beaconOnAlly=true},groupUnits={player=true,party1=true,party2=true},groupClasses={WARLOCK=true}}
+    local owner=Owner({config={beaconOnAlly=true}})
+    owner.group.units, owner.group.classes = {player=true,party1=true,party2=true}, {WARLOCK=true}
     local knownReads, queries = 0, 0
     knownSpell=function(id) knownReads=knownReads+1;return id==53563 or id==156910 end
     local light,faith,restricted
@@ -1152,21 +1163,21 @@ do
         end
     end
     BR.RefreshGroup(owner)
-    assert(owner.beaconMissing,"known Beacons missing everywhere must warn")
+    assert(owner.notices.beaconMissing,"known Beacons missing everywhere must warn")
     light="party1";BR.RefreshGroup(owner,"party1")
-    assert(owner.beaconMissing,"Faith remains required when only Light is active")
+    assert(owner.notices.beaconMissing,"Faith remains required when only Light is active")
     local beforeKnown=knownReads
     faith="party2";BR.RefreshGroup(owner,"party2")
-    assert(not owner.beaconMissing and knownReads==beforeKnown,"targeted Beacon update must reuse spell knowledge")
+    assert(not owner.notices.beaconMissing and knownReads==beforeKnown,"targeted Beacon update must reuse spell knowledge")
     local beforeQueries=queries
     BR.RefreshGroup(owner,"nameplate1")
     assert(queries==beforeQueries,"untracked unit event queried group buffs")
     faith=nil;restricted="party2";BR.RefreshGroup(owner,"party2")
-    assert(not owner.beaconMissing,"unknown group presence must not become a missing Beacon")
+    assert(not owner.notices.beaconMissing,"unknown group presence must not become a missing Beacon")
     restricted=nil;BR.RefreshGroup(owner,"party2")
-    assert(owner.beaconMissing,"native own-filter absence must warn even if another caster has a Beacon")
+    assert(owner.notices.beaconMissing,"native own-filter absence must warn even if another caster has a Beacon")
     knownSpell=function() return false end;BR.RefreshGroup(owner)
-    assert(not owner.beaconMissing,"unavailable Beacon must not warn")
+    assert(not owner.notices.beaconMissing,"unavailable Beacon must not warn")
 
     NS.Client.isForever=true
     owner.config={soulstoneOnAlly=true,healthstoneFromWarlock=true}
@@ -1177,18 +1188,18 @@ do
         if unit=="party1" and ranked then return {spellId=20765} end
     end
     BR.RefreshGroup(owner)
-    assert(owner.soulstoneMissing,"Forever creation-spell knowledge must enable the reminder")
+    assert(owner.notices.soulstoneMissing,"Forever creation-spell knowledge must enable the reminder")
     ranked=true;BR.RefreshGroup(owner,"party1")
-    assert(owner.soulstoneMissing==false,"higher-rank own Soulstone must satisfy native family lookup")
+    assert(owner.notices.soulstoneMissing==false,"higher-rank own Soulstone must satisfy native family lookup")
     for _,id in ipairs(BR.FOREVER_HEALTHSTONES) do
         inventory={[id]=1};BR.ReadHealthstone(owner)
-        assert(owner.healthstoneMissing==false,"missing Forever Healthstone variant "..id)
+        assert(owner.notices.healthstoneMissing==false,"missing Forever Healthstone variant "..id)
     end
-    inventory={};BR.ReadHealthstone(owner);assert(owner.healthstoneMissing==true)
+    inventory={};BR.ReadHealthstone(owner);assert(owner.notices.healthstoneMissing==true)
     inventory={[19013]={secret=true}};BR.ReadHealthstone(owner)
-    assert(owner.healthstoneMissing==nil,"unreadable stone count must remain unknown")
+    assert(owner.notices.healthstoneMissing==nil,"unreadable stone count must remain unknown")
     NS.Client.isForever=false
-    inventory={[224464]=1};BR.ReadHealthstone(owner);assert(owner.healthstoneMissing==false)
+    inventory={[224464]=1};BR.ReadHealthstone(owner);assert(owner.notices.healthstoneMissing==false)
 end
 
 do
@@ -1241,18 +1252,18 @@ do
     memberAuras.party1 = true
     assert(RunAfter() == 1 and updates == 1 and itemReads == 0,
         "the coalesced member pass did not update once without item counts")
-    assert(module.entries[1].group and module.entries[1].missingCount == 0,
+    assert(module.list.entries[1].group and module.list.entries[1].missingCount == 0,
         "the member pass did not refresh the marked unit")
     -- The player's own aura delta refreshes the player's group state inside
     -- its personal update: no member pass follows it.
     updates = 0
     memberAuras.player = false
     eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate = true })
-    assert(updates == 1 and #afterQueue == 0 and module.entries[1].missingCount == 1,
+    assert(updates == 1 and #afterQueue == 0 and module.list.entries[1].missingCount == 1,
         "the player's aura update queued a second group pass or missed the player's group state")
     memberAuras.player = true
     eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate = true })
-    assert(updates == 2 and #afterQueue == 0 and module.entries[1].missingCount == 0,
+    assert(updates == 2 and #afterQueue == 0 and module.list.entries[1].missingCount == 0,
         "the player's own aura did not refresh the group reminder at once")
     -- A roster storm compiles once and relists the member units.
     roster.party3, members = "WARLOCK", 3
@@ -1267,7 +1278,7 @@ do
     combat = true
     updates = 0
     RunAfter()
-    assert(updates == 0 and not next(module.groupDirty), "a member pass ran in combat")
+    assert(updates == 0 and not next(module.group.dirty), "a member pass ran in combat")
     combat = false
     eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
     -- Group options that need the roster alone (other classes' buffs, a
@@ -1325,22 +1336,22 @@ do
     module.active = true
     module:Enable()
     RunAfter()
-    local entry = module.entries[1]
+    local entry = module.list.entries[1]
     assert(entry and entry.group and entry.present == true and entry.missingCount == 0,
         "the group buff entry did not see every member buffed")
-    assert(module.mask % (entry.bit * 2) >= entry.bit and entry.expiresAt == now + 120,
+    assert(module.view.mask % (entry.bit * 2) >= entry.bit and entry.expiresAt == now + 120,
         "the group buff ignored the advance warning of the player's own buff")
     auras[1459] = { spellId = 1459, auraInstanceID = 950, expirationTime = now + 1800, duration = 3600 }
     eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { updatedAuraInstanceIDs = { 950 } })
-    assert(module.mask == 0 and module.thresholdAt == now + 1500,
+    assert(module.view.mask == 0 and module.list.thresholdAt == now + 1500,
         "a refreshed own buff did not move the group buff's advance warning")
     now = now + 1500
     FireNext()
-    assert(module.mask % (entry.bit * 2) >= entry.bit, "the group buff's advance warning did not fire")
+    assert(module.view.mask % (entry.bit * 2) >= entry.bit, "the group buff's advance warning did not fire")
     module.config.classBuff = false
     module:Refresh()
     RunAfter()
-    assert(module.mask == 0 and module.entries[1].expiresAt == nil,
+    assert(module.view.mask == 0 and module.list.entries[1].expiresAt == nil,
         "without the class buff option the player's own buff still warned")
     module:Disable()
     auras[1459] = nil
@@ -1358,7 +1369,7 @@ do
         point=1, x=0, y=0, remindBeforeMinutes=0 }
     module.active = true
     module:Enable()
-    local button = module.buttons[1]
+    local button = module.view.buttons[1]
     assert(button.count.text == "4", "the item count was not shown")
     eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
     combat = true
@@ -1414,7 +1425,7 @@ do
     module.active = true
     module:Enable()
     RunPass()
-    assert(#module.entries == 5 and module.entries[1].group and module.entries[1].missingCount == 1,
+    assert(#module.list.entries == 5 and module.list.entries[1].group and module.list.entries[1].missingCount == 1,
         "the budget scenario did not build its five reminders with one member missing the buff")
     local count = 0
     local function Instructions(fn)
@@ -1452,6 +1463,25 @@ do
     end
     module:Disable()
     inventory, auras = nil, {}
+end
+
+-- Every runtime field lives in a state table State.lua declares: the
+-- module and every owner above kept no other field.
+do
+    local runtime = { config = true, context = true, active = true, id = true }
+    for concern in pairs(BR.STATE) do runtime[concern] = true end
+    for _, owner in ipairs(owners) do
+        for key, value in pairs(owner) do
+            assert(runtime[key] or type(value) == "function", "the module keeps the undeclared field " .. tostring(key))
+        end
+        for concern, fields in pairs(BR.STATE) do
+            local declared = {}
+            for _, field in ipairs(fields) do declared[field] = true end
+            for key in pairs(owner[concern]) do
+                assert(declared[key], concern .. "." .. tostring(key) .. " is not declared in State.lua")
+            end
+        end
+    end
 end
 
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip

@@ -77,7 +77,7 @@ local function Owner(overrides)
     local config = {}
     for key, value in pairs(BASE) do config[key] = value end
     for key, value in pairs(overrides) do config[key] = value end
-    return { config = config }
+    return R.NewState({ config = config })
 end
 
 local function List(list)
@@ -214,8 +214,8 @@ for index, scenario in ipairs(scenarios) do
     local owner = Owner(scenario.overrides)
     -- The second compile builds into the other buffer: both must agree.
     local first = Describe(R.BuildEntries(owner))
-    owner.entries = R.BuildEntries(owner)
-    local second = Describe(owner.entries)
+    owner.list.entries = R.BuildEntries(owner)
+    local second = Describe(owner.list.entries)
     assert(first == second, scenario.name .. ": the two entry buffers disagree")
     if printOnly then
         output[#output + 1] = ("    [%d] = [[\n%s]],"):format(index, first)
