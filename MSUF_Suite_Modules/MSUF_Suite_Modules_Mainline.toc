@@ -10,9 +10,9 @@
 
 Surfaces.lua
 Runtime.lua
-MicroMenu.lua
 Timers.lua
 Dialogs.lua
+MicroMenu.lua
 DataSources.lua
 EditMode.lua
 MythicPlusPull.lua

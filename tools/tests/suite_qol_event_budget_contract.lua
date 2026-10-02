@@ -106,6 +106,12 @@ NS.InCombat = function(event)
     return event == "PLAYER_REGEN_DISABLED" or (event ~= "PLAYER_REGEN_ENABLED" and InCombatLockdown())
 end
 _G.MSUFSuite = NS
+-- Surfaces reads the "Font rendering" values (NS.FontRendering) from the core catalog.
+do
+    local core = { Suite = {} }
+    assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", core)
+    NS.FontRendering = core.FontRendering
+end
 local clock = Support.Clock()
 -- Coalescing means one C_Timer wait per burst and none for a steady event.
 local waits = 0
