@@ -92,21 +92,38 @@ local function Wake(self, index)
     return wake
 end
 
--- isActive and isOnGCD are never secret (SpellSharedDocumentation); a spell
--- that waits only for the global cooldown counts as ready.
-local function SampleReady(self)
+-- The cooldown without the global cooldown: none, or a readable inactive one.
+local function OnlyGCD(duration)
+    if not duration then return true end
+    if duration:HasSecretValues() then return false end
+    local running = duration:IsActive()
+    return Public(running) and running == false
+end
+
+-- A spell that waits only for the global cooldown counts as ready. isActive
+-- and isOnGCD are never secret (SpellSharedDocumentation), but isOnGCD can be
+-- trusted only inside SPELL_UPDATE_COOLDOWN (cooldownEvent); elsewhere the
+-- cooldown without the GCD answers, as in CombatMovementCue.
+local function SampleReady(self, cooldownEvent)
     local ready, list = false, self.candidates
     for index = 1, #list do
         local spell = list[index]
         local info = C_Spell.GetSpellCooldown(spell)
-        local active, gcd = info and info.isActive, info and info.isOnGCD
+        local active, gcd = info and info.isActive, cooldownEvent and info and info.isOnGCD
         local wake = Wake(self, index)
         if Public(active) and active == false or Public(gcd) and gcd == true then
             ready = true
             wake:Clear()
         else
             local duration = C_Spell.GetSpellCooldownDuration(spell, true)
-            if duration then wake:SetCooldownFromDurationObject(duration, true) else wake:Clear() end
+            if not cooldownEvent and OnlyGCD(duration) then
+                ready = true
+                wake:Clear()
+            elseif duration then
+                wake:SetCooldownFromDurationObject(duration, true)
+            else
+                wake:Clear()
+            end
         end
     end
     for index = #list + 1, #self.wakes do self.wakes[index]:Clear() end
@@ -312,8 +329,7 @@ end
 -- Nameplates send no range events (SPELL_RANGE_CHECK_UPDATE covers only the
 -- target), so a ticker samples the listed casts four times a second while
 -- dimming is on and casts are listed; it stops with the last one.
-local function RangeTick()
-    local self = M
+local function RangeTick(self)
     for i = 1, self.visible do
         local entry = self.ordered[i]
         local dim = OutOfRange(self, entry.unit)
@@ -327,11 +343,12 @@ end
 local function SyncRangeTicker(self)
     local needed = self.listening and self.config.dimOutOfRange and #self.candidates > 0
         and self.visible > 0 and not S.editMode
-    if needed and not self.rangeTicker then
-        self.rangeTicker = C_Timer.NewTicker(RANGE_TICK, RangeTick)
-    elseif not needed and self.rangeTicker then
-        self.rangeTicker:Cancel()
-        self.rangeTicker = nil
+    local ticker = self.rangeTicker
+    local running = ticker ~= nil and ticker:Running()
+    if needed and not running then
+        self.rangeTicker = self.context:Ticker(RANGE_TICK, RangeTick)
+    elseif running and not needed then
+        ticker:Cancel()
     end
 end
 
@@ -466,7 +483,7 @@ end
 
 local function OnCooldown(self, _, spellID, baseSpellID)
     if self.visible == 0 or not Relevant(self, spellID, baseSpellID) then return end
-    SampleReady(self)
+    SampleReady(self, true)
     PaintStripes(self)
 end
 
