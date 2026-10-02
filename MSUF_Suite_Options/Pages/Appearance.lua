@@ -627,8 +627,15 @@ function P.RestoreChatColors()
     P.Confirm("restore-chat-colors",
         Tr("Put the system and NPC chat colors back to the colors they had before the skin, or to Blizzard's defaults?"),
         function()
-            if Suite.Skin.RestoreChatColors() and M.ShowStatusFeedback then
+            local ok, written = Suite.Skin.RestoreChatColors()
+            if not M.ShowStatusFeedback then return end
+            if ok then
                 M.ShowStatusFeedback(Tr("Chat colors restored"), "ok", 1.5)
+            elseif written == 0 then
+                -- Combat (refused before any write) or every write failed.
+                M.ShowStatusFeedback(Tr("Chat colors could not be restored"), "warning", 2)
+            else
+                M.ShowStatusFeedback(Tr("Some chat colors could not be restored"), "warning", 2)
             end
         end)
     return true

@@ -1,13 +1,20 @@
--- The skin's chat message colours are a persistent client setting, and a
--- colour equal to a theme colour proves nothing: the player may have picked
--- it. Nothing is inferred from colours across sessions. Without a ledger the
--- colour a category shows is the player's; the Suite's ledger (in its saved
--- variables) records only what a clean logout could not put back, keeps it
--- as ambiguous and never applies it on its own; "Restore chat colors" is the
--- explicit recovery (recorded originals, else Blizzard's defaults). The
--- normal path (theme, clean logout restores, no ledger) stays as it was.
--- Real MSUF_Suite/Core/CharacterData.lua, MSUF_Suite/Integrations/
--- MapkoSkin.lua and the skin's Safety.lua, AdapterKit.lua and ChatFrames.lua.
+-- The skin's chat message colours are a persistent client setting. These
+-- scenarios drive the per-category state machine documented in
+-- MSUF_Suite/Integrations/MapkoSkin.lua:
+--   session: unowned -> owned (shows Blizzard's default, our own write)
+--            unowned -> released (any other colour, or an external change)
+--            owned   -> released (any change the skin did not make; no
+--                       colour equality brings ownership back)
+--            owned   -> gone (logout/disable restore) | recorded (it failed)
+--   ledger:  recorded -> ambiguous (next session) -> gone only through the
+--            explicit "Restore chat colors" (a failed write keeps it)
+-- Scenarios: 1 normal path; 2/3 the CX-R6 counterexamples B and A; 4 the
+-- explicit restore; 5 a crash before the first save; 6 disable; 7 an
+-- in-session pick of the theme colour; 8 an ambiguous original through a
+-- normal and a failed logout; 9 the restore reconciles a pending leftover;
+-- 10 restore failures reported and kept. Real MSUF_Suite/Core/
+-- CharacterData.lua, MSUF_Suite/Integrations/MapkoSkin.lua and the skin's
+-- Safety.lua, AdapterKit.lua and ChatFrames.lua.
 --
 -- Modelled as in the client: ChangeChatColor writes the chat cache at once;
 -- saved variables are written only by a clean logout or reload, after the
@@ -244,6 +251,78 @@ Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM), "disable kept the skin's colour")
 Logout(session)
 Check(Ledger() == nil, "disable left a ledger behind")
 
-Check(#reported == 1, "the chat colour ledger raised more than the one failed restore: "
-    .. table.concat(reported, "; "))
+-- 7. owned -> released by an external change, and no equality reclaim: with
+-- skinning on the player picks another SYSTEM colour, then the theme colour
+-- on purpose. A theme change does not repaint it and logout writes nothing.
+disk.chat = DeepCopy(DEFAULTS)
+session = Session(true)
+ChangeChatColor("SYSTEM", 0.2, 0.9, 0.3)
+ChangeChatColor("SYSTEM", THEME[1], THEME[2], THEME[3])
+local before = writes
+Logout(session)
+Check(writes == before + 2 and CacheIs("SYSTEM", THEMED) and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY),
+    "logout overwrote the player's in-session pick of the theme colour")
+Check(Ledger() == nil, "a released category was recorded in the ledger")
+disk.chat = DeepCopy(DEFAULTS)
+
+-- 8. An ambiguous entry survives a normal session: SYSTEM was recorded with
+-- the original { 0.6, 0.6, 0.6 } and now shows Blizzard's default; the skin
+-- owns it again this session and restores it at a clean logout. The entry
+-- stays, and a failed restore later does not replace it either. Only the
+-- explicit restore consumes it.
+local GREY = { 0.6, 0.6, 0.6 }
+disk.saved.suiteCharacters = { ["Player-1"] = { skinChatColors = { colors = {
+    SYSTEM = { original = DeepCopy(GREY), left = DeepCopy(THEMED) } } } } }
+session = Session(true)
+Logout(session)
+ledger = Ledger()
+Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and ledger and ledger.colors.SYSTEM
+    and ledger.colors.SYSTEM.original[1] == GREY[1], "a clean logout removed the ambiguous recorded original")
+session = Session(true)
+raising.SYSTEM = true
+Logout(session)
+raising.SYSTEM = nil
+Check(Ledger().colors.SYSTEM.original[1] == GREY[1], "a failed restore replaced the earlier recorded original")
+session = Session(false)
+Check(session.Suite.Skin.RestoreChatColors() and CacheIs("SYSTEM", { Stored(GREY[1]), Stored(GREY[2]), Stored(GREY[3]) }),
+    "Restore chat colors did not write the recorded original")
+Logout(session)
+Check(Ledger() == nil, "the consumed entry stayed")
+disk.chat = DeepCopy(DEFAULTS)
+
+-- 9. A successful explicit restore reconciles the skin's pending leftover:
+-- the disable cannot put SYSTEM back, "Restore chat colors" then writes all
+-- three, and logout records nothing.
+session = Session(true)
+raising.SYSTEM = true
+session.chat.Disable(session.frame, "chat")
+raising.SYSTEM = nil
+Check(CacheIs("SYSTEM", THEMED), "the injected disable failure did not leave the theme colour")
+Check(session.Suite.Skin.RestoreChatColors() and CacheIs("SYSTEM", DEFAULTS.SYSTEM), "Restore chat colors failed")
+Logout(session)
+Check(Ledger() == nil, "logout recorded a leftover the explicit restore had already put back")
+
+-- 10. Restore reports what failed and keeps those entries: every write
+-- raises; then one of three.
+disk.saved.suiteCharacters = { ["Player-1"] = { skinChatColors = { colors = {
+    SYSTEM = { original = DeepCopy(GREY), left = DeepCopy(THEMED), ambiguous = true } } } } }
+session = Session(false)
+raising.SYSTEM, raising.MONSTER_SAY, raising.MONSTER_PARTY = true, true, true
+local okAll, writtenAll, failedAll = session.Suite.Skin.RestoreChatColors()
+raising.MONSTER_SAY, raising.MONSTER_PARTY = nil, nil
+Check(okAll == false and writtenAll == 0 and failedAll == 3, "Restore chat colors reported success when every write failed")
+local okSome, writtenSome, failedSome = session.Suite.Skin.RestoreChatColors()
+raising.SYSTEM = nil
+Check(okSome == false and writtenSome == 2 and failedSome == 1, "a partly failed restore was not reported as such")
+Logout(session)
+Check(Ledger() and Ledger().colors.SYSTEM and Ledger().colors.SYSTEM.original[1] == GREY[1],
+    "the entry whose write failed was dropped")
+session = Session(false)
+Check(session.Suite.Skin.RestoreChatColors(), "the retry did not restore")
+Logout(session)
+Check(Ledger() == nil, "the retried entry stayed")
+disk.chat = DeepCopy(DEFAULTS)
+
+Check(#reported == 7, "the chat colour ledger raised other than the 7 injected failures: "
+    .. #reported .. ": " .. table.concat(reported, "; "))
 print("Suite skin chat colour ledger: " .. checks .. " checks passed")

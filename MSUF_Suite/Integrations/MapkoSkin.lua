@@ -113,20 +113,37 @@ end
 
 ------------------------------------------------------------------ chat colours
 -- The skin themes a few chat message colours with ChangeChatColor, a
--- persistent client setting of the character (its chat cache), and puts
--- them back at PLAYER_LOGOUT (MSUF_Suite_Skin/Adapters/ChatFrames.lua). A
--- colour equal to a theme colour proves nothing: the player may have picked
--- it. So nothing is inferred from colours across sessions:
--- - Without a ledger entry, the colour a category shows is the player's.
---   The skin themes only a category that shows Blizzard's default.
--- - What a clean logout could not put back is recorded here, in the Suite's
---   saved variables (per character), with the colour to put back:
+-- persistent client setting of the character (its chat cache). A colour
+-- equal to a theme colour proves nothing: the player may have picked it. So
+-- ownership comes only from provenance (a write the skin made), never from
+-- colour equality. Per category:
+--
+--   Session (the skin's chat adapter, MSUF_Suite_Skin/Adapters/ChatFrames.lua)
+--     unowned   -> owned     first apply, the category shows Blizzard's
+--                            default and nobody changed it this session;
+--                            the skin's own ChangeChatColor writes the theme
+--     unowned   -> released  first apply with any other colour, or an
+--                            external change earlier this session
+--     owned     -> released  any change the skin did not make (another
+--                            ChangeChatColor, or a colour that is not the
+--                            skin's at a refresh); permanent this session,
+--                            no colour equality brings it back
+--     owned     -> (gone)    logout or disable writes the original back
+--     owned     -> recorded  that write failed: a leftover for the ledger
+--     released  -            never written by the skin, never recorded
+--   Ledger (here, per character, in the Suite's saved variables)
+--     recorded  -> ambiguous the next session starts (SettleChatColors)
+--     ambiguous -            kept; never applied on its own; a later
+--                            logout neither removes nor replaces it
+--     recorded/ambiguous -> (gone)  "Restore chat colors" wrote it back
+--   "Restore chat colors" (Skinning page, Maintenance): each of the three
+--   categories gets its recorded original, else Blizzard's default. Its
+--   writes are external to the adapter, so a category it restored is
+--   released for the session and its pending leftover dropped; an entry
+--   whose write failed stays.
+--
 --   suiteCharacters[guid].skinChatColors = { colors = { [chatType] =
---   { original = rgb, left = rgb, ambiguous = true|nil } } }.
---   From the next session on such an entry is ambiguous: kept, never
---   applied on its own.
--- - "Restore chat colors" (Skinning page, Maintenance) is the only recovery:
---   it puts back the recorded originals, else Blizzard's defaults.
+--       { original = rgb, left = rgb, ambiguous = true|nil } } }
 -- Limit: a session that ends without PLAYER_LOGOUT (a crash) saves nothing,
 -- so a theme colour it left in the chat cache stays until the player picks
 -- another colour or uses "Restore chat colors".
@@ -182,26 +199,24 @@ function Skin.SettleChatColors()
     return count
 end
 
--- The skin's PLAYER_LOGOUT, after its restore. restored: the chat types it
--- put back (their entries go); leftovers: { [chatType] = { original = rgb,
--- left = rgb } } it could not put back (recorded). Other entries stay.
-function Skin.CloseChatColors(restored, leftovers)
-    local colors, own = ChatLedger()
-    if colors then
-        for chatType in pairs(restored or {}) do colors[chatType] = nil end
-    end
+-- The skin's PLAYER_LOGOUT, after its restore. leftovers: { [chatType] =
+-- { original = rgb, left = rgb } } it could not put back; each is recorded
+-- unless the category already has an entry (the earlier original stays).
+-- Nothing is removed here: only "Restore chat colors" consumes entries.
+function Skin.CloseChatColors(leftovers)
+    local colors = ChatLedger()
     for chatType, entry in pairs(leftovers or {}) do
-        if type(chatType) == "string" and ReadableColor(entry.original) and ReadableColor(entry.left) then
+        if type(chatType) == "string" and ReadableColor(entry.original) and ReadableColor(entry.left)
+            and not (colors and colors[chatType]) then
             if not colors then
                 local ledger = Suite.CharacterData(CHAT_LEDGER)
                 if not ledger then return end
                 ledger.colors = {}
-                colors, own = ChatLedger()
+                colors = ChatLedger()
             end
             colors[chatType] = { original = Copy3(entry.original), left = Copy3(entry.left) }
         end
     end
-    if colors then DropEmpty(colors, own) end
 end
 
 -- The number of recorded colours "Restore chat colors" would put back.
@@ -213,22 +228,25 @@ function Skin.PendingChatColors()
 end
 
 -- "Restore chat colors": each themed category gets its recorded original
--- back, else Blizzard's default, and the ledger goes. Refused in combat.
--- Returns ok and the number of colours written (or false, reason).
+-- back, else Blizzard's default. A written entry goes; an entry whose write
+-- failed stays. Refused in combat. Returns ok (every write went through),
+-- the number written and the number that failed; or false, "combat".
 function Skin.RestoreChatColors()
     if Suite.IsCombatLocked() then return false, "combat" end
     local colors, own = ChatLedger()
-    local written = 0
+    local written, failed = 0, 0
     for chatType, default in pairs(Skin.CHAT_COLOR_DEFAULTS) do
         local entry = colors and colors[chatType]
         local color = type(entry) == "table" and ReadableColor(entry.original) and entry.original or default
         if Suite.Dispatch(Suite.Finish, ChangeChatColor, chatType, color[1], color[2], color[3]) then
             written = written + 1
             if colors then colors[chatType] = nil end
+        else
+            failed = failed + 1
         end
     end
     if colors then DropEmpty(colors, own) end
-    return true, written
+    return failed == 0, written, failed
 end
 
 function Skin.OpenEditor(parent, width, height)
