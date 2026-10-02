@@ -1,7 +1,7 @@
 local _, P = ...
 local S = P.Suite
-local G = {}
-P.DataTextGeometry = G
+local Geometry = {}
+P.DataTextGeometry = Geometry
 local SLOT_COUNT = 6
 local floor = math.floor
 local Snap, Color = P.Appearance.Snap, P.Appearance.Color
@@ -127,7 +127,7 @@ end
 
 -- Auto-layout bars relayout on value changes, so this allocates nothing.
 -- Every frame it moves is an ordinary frame: layout is allowed in combat.
-function G.Layout(bar, config, extra)
+function Geometry.Layout(bar, config, extra)
     local style, slots, widths = bar.style, layoutSlots, layoutWidths
     local pixel = bar.pixelUnit or 1
     local count = 0

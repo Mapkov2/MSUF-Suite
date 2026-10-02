@@ -1,6 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local X = P.DataTextSources
+local Sources = P.DataTextSources
 local NO_VALUE = P.NO_VALUE
 
 -- What clicks, the mouse wheel and tooltips of the additional DataText
@@ -16,8 +16,8 @@ local NO_VALUE = P.NO_VALUE
 -- PLAYER_REGEN_DISABLED runs before lockdown starts: DataTexts.lua releases
 -- both there, so no protected frame depends on a bar during combat. A
 -- "[combat] hide" state driver backs that up.
-local A = {}
-P.DataTextActions = A
+local Actions = {}
+P.DataTextActions = Actions
 
 local OVERLAY_KINDS = { hearth = true, specialization = true }
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
@@ -42,19 +42,19 @@ local function SecureAction(binding)
 end
 
 local function OverlayEnter(self)
-    if self.owner then A.enter(self.owner) end
+    if self.owner then Actions.enter(self.owner) end
 end
 
 local function OverlayLeave(self)
     local owner = self.owner
-    A.Detach()
-    if owner then A.leave(owner) end
+    Actions.Detach()
+    if owner then Actions.leave(owner) end
 end
 
 -- The next random Hearthstone variant after a use.
 local function OverlayPostClick(self)
     local binding = self.owner and self.owner.extra
-    if binding and binding.kind == "hearth" then X.PrepareHearths() end
+    if binding and binding.kind == "hearth" then Sources.PrepareHearths() end
 end
 
 local function Overlay()
@@ -67,13 +67,13 @@ local function Overlay()
     overlay:SetScript("PostClick", OverlayPostClick)
     overlay:Hide()
     RegisterStateDriver(overlay, "visibility", "[combat] hide")
-    A.overlay = overlay
+    Actions.overlay = overlay
     return overlay
 end
 
 -- Puts the secure overlay over a Hearthstone or Specialization place; force
 -- writes the action again for the place that already has it.
-function A.Attach(button, force)
+function Actions.Attach(button, force)
     local binding = button.extra
     if Locked() or S.editMode or not binding or not OVERLAY_KINDS[binding.kind] then return false end
     if not force and overlay and overlay.owner == button and overlay:IsShown() then return true end
@@ -100,8 +100,8 @@ function A.Attach(button, force)
 end
 
 -- In combat only the bookkeeping changes; the overlay is hidden already and
--- its points are released after combat (A.Resume).
-function A.Detach()
+-- its points are released after combat (Actions.Resume).
+function Actions.Detach()
     if not overlay then return end
     overlay.owner = nil
     if Locked() then return end
@@ -109,20 +109,20 @@ function A.Detach()
     overlay:ClearAllPoints()
 end
 
-function A.Owner()
+function Actions.Owner()
     return overlay and overlay.owner
 end
 
 -- Whether the overlay over this place now holds the pointer.
-function A.Covers(button)
+function Actions.Covers(button)
     return overlay ~= nil and overlay.owner == button and overlay:IsShown() and overlay:IsMouseOver()
 end
 
 -- Settings or a new Hearthstone choice changed the attached place.
-function A.Refresh()
+function Actions.Refresh()
     local button = overlay and overlay.owner
     if not button or Locked() then return end
-    if not A.Attach(button, true) then A.Detach() end
+    if not Actions.Attach(button, true) then Actions.Detach() end
 end
 
 ------------------------------------------------------------------ secure popup
@@ -132,7 +132,7 @@ local function ClosePopup()
     popup:Hide()
     popup:ClearAllPoints()
 end
-A.ClosePopup = ClosePopup
+Actions.ClosePopup = ClosePopup
 
 -- Leaving the popup, one of its rows or its place closes it once the pointer
 -- rests on none of them: rows and the gaps between them belong to the popup.
@@ -165,7 +165,7 @@ local function Popup()
     popup:SetScript("OnLeave", WatchLeave)
     popup:Hide()
     RegisterStateDriver(popup, "visibility", "[combat] hide")
-    A.popup = popup
+    Actions.popup = popup
     return popup
 end
 
@@ -229,7 +229,7 @@ local function FillPortal(row, index)
     if duration then row.cooldown:SetCooldownFromDurationObject(duration) else row.cooldown:Clear() end
 end
 
-function A.PortalMenu(button)
+function Actions.PortalMenu(button)
     if Locked() or not NS.Client.modernEquipment then return end
     -- LearnedDungeonPortals belongs to the optional QualityOfLife addon.
     if not S.LearnedDungeonPortals then C_AddOns.LoadAddOn("MSUF_Suite_QualityOfLife") end
@@ -255,14 +255,14 @@ end
 -- The Suite's micro menu (S.MicroMenuEntries, the same entries as the
 -- Minimap's middle-click flyout) plus the game menu row, clicked by the
 -- secure rows.
-function A.MicroMenu(button)
+function Actions.MicroMenu(button)
     if Locked() then return end
     OpenPopup(button, S.MicroMenuEntries(micro, true), FillMicro)
 end
 
 ------------------------------------------------------------------ combat
 -- PLAYER_REGEN_DISABLED, before lockdown starts: release every secure frame.
-function A.Release()
+function Actions.Release()
     if overlay then
         overlay.owner = nil
         overlay:Hide()
@@ -273,46 +273,46 @@ end
 
 -- PLAYER_REGEN_ENABLED: drop points kept by a late release and offer the
 -- overlay again to the place the pointer rests on.
-function A.Resume()
+function Actions.Resume()
     if overlay and not overlay.owner then overlay:ClearAllPoints() end
-    local button = A.hovered
-    if button and button:IsVisible() and button:IsMouseOver() then A.Attach(button) end
+    local button = Actions.hovered
+    if button and button:IsVisible() and button:IsMouseOver() then Actions.Attach(button) end
 end
 
 ------------------------------------------------------------------ interactions
-function A.Wheel(button, delta)
+function Actions.Wheel(button, delta)
     local binding = button.extra
     if not binding or binding.kind ~= "audio" then return end
-    local key = X.AUDIO[S.Config("dataTexts").audioChannel or 1]
+    local key = Sources.AUDIO[S.Config("dataTexts").audioChannel or 1]
     local value = tonumber(C_CVar.GetCVar(key))
     if S.Finite(value) then C_CVar.SetCVar(key, math.max(0, math.min(1, value + delta * .05))) end
 end
 
 -- Broker plugins and the volume react at any time; places that open
 -- Blizzard windows or secure popups wait until combat ends.
-function A.Click(button, mouse)
+function Actions.Click(button, mouse)
     local binding = button.extra
     local kind = binding.kind
     if kind == "broker" then
-        local object = X.BrokerObject(binding)
+        local object = Sources.BrokerObject(binding)
         if object and type(object.OnClick) == "function" then S.Dispatch(NS.Finish, object.OnClick, button, mouse) end
     elseif kind == "audio" then
-        A.Wheel(button, mouse == "RightButton" and -1 or 1)
+        Actions.Wheel(button, mouse == "RightButton" and -1 or 1)
     elseif Locked() then
         return
     elseif OVERLAY_KINDS[kind] then
         -- The overlay performs this click; a click that reaches the place
         -- found it detached, so attach it for the next one.
-        A.Attach(button)
+        Actions.Attach(button)
     elseif kind == "professions" then
         C_AddOns.LoadAddOn("Blizzard_ProfessionsBook")
         if _G.ProfessionsBookFrame then ToggleFrame(ProfessionsBookFrame) end
     elseif kind == "currency" or kind == "crests" then
         ToggleCharacter("TokenFrame")
     elseif kind == "portals" then
-        A.PortalMenu(button)
+        Actions.PortalMenu(button)
     elseif kind == "microMenu" then
-        A.MicroMenu(button)
+        Actions.MicroMenu(button)
     end
 end
 
@@ -320,7 +320,7 @@ end
 -- and the place's text. A plugin with its own OnEnter draws its own tooltip;
 -- the Suite adds none beside it.
 local function BrokerTooltip(button, binding, title)
-    local object = X.BrokerObject(binding)
+    local object = Sources.BrokerObject(binding)
     if object and type(object.OnTooltipShow) == "function" then
         GameTooltip:SetOwner(button, "ANCHOR_TOP")
         GameTooltip:ClearLines()
@@ -338,19 +338,19 @@ end
 
 local function CrestLines(config)
     GameTooltip:AddLine(S.Text("Seasonal upgrade resources observed this login"), 1, 1, 1)
-    if config.crestMode ~= 2 and X.seasonItem then GameTooltip:AddLine(X.seasonItem, .7, .7, .7) end
-    for _, cost in ipairs(X.SeasonSelection()) do
-        local name, quantity = X.SeasonValue(cost)
+    if config.crestMode ~= 2 and Sources.seasonItem then GameTooltip:AddLine(Sources.seasonItem, .7, .7, .7) end
+    for _, cost in ipairs(Sources.SeasonSelection()) do
+        local name, quantity = Sources.SeasonValue(cost)
         if name then GameTooltip:AddDoubleLine(tostring(cost.order) .. ": " .. name, tostring(quantity)) end
     end
 end
 
 -- The whole tooltip of an additional source; title is its source name.
-function A.Tooltip(button, title)
+function Actions.Tooltip(button, title)
     local binding = button.extra
     local kind = binding.kind
     if kind == "portals" then
-        A.PortalMenu(button)
+        Actions.PortalMenu(button)
         return
     end
     if kind == "broker" and BrokerTooltip(button, binding, title) then return end
@@ -372,29 +372,29 @@ function A.Tooltip(button, title)
     GameTooltip:Show()
 end
 
-function A.Leave(button)
+function Actions.Leave(button)
     local binding = button.extra
     if not binding then return end
     if binding.kind == "broker" then
-        local object = X.BrokerObject(binding)
+        local object = Sources.BrokerObject(binding)
         if object and type(object.OnLeave) == "function" then S.Dispatch(NS.Finish, object.OnLeave, button) end
     end
     if popup and popup.owner == button then WatchLeave() end
 end
 
-function A.GoldTooltip(tooltip)
+function Actions.GoldTooltip(tooltip)
     local config = S.Config("dataTexts")
     if not config.showTokenPrice or not NS.Client.modernEquipment then return end
     local price = C_WowTokenPublic.GetCurrentMarketPrice()
     if S.Finite(price) then tooltip:AddDoubleLine(S.Text("WoW Token"), S.MoneyText(price)) end
 end
 
-function A.Disable()
+function Actions.Disable()
     if leaveTimer then
         leaveTimer:Cancel()
         leaveTimer = nil
     end
-    A.hovered = nil
-    A.Detach()
+    Actions.hovered = nil
+    Actions.Detach()
     ClosePopup()
 end

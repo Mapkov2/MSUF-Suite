@@ -1,9 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local I = {}
-P.SplitInventory = I
+local SplitInventory = {}
+P.SplitInventory = SplitInventory
 
-function I.Source(owner)
+function SplitInventory.Source(owner)
     if S.Finite(owner.bankTabID) and S.Finite(owner.containerSlotID) then
         return { kind = "bank", bag = owner.bankTabID, slot = owner.containerSlotID, bankType = owner.bankType }
     end
@@ -21,7 +21,7 @@ function I.Source(owner)
     end
 end
 
-function I.Read(source, slot)
+function SplitInventory.Read(source, slot)
     slot = slot or source.slot
     if source.kind == "guild" then
         local link = GetGuildBankItemLink(source.bag, slot)
@@ -52,12 +52,12 @@ local function AddSlots(destinations, source, bag, family)
     end
 end
 
-function I.Destinations(source, link)
+function SplitInventory.Destinations(source, link)
     local destinations = {}
     if source.kind == "guild" then
         -- Blizzard_GuildBankUI's native tab has seven columns of fourteen slots.
         for slot = 1, 98 do
-            local value, count, locked = I.Read(source, slot)
+            local value, count, locked = SplitInventory.Read(source, slot)
             if value == nil and count == 0 and not locked then
                 destinations[#destinations + 1] = { kind = "guild", bag = source.bag, slot = slot }
             end
@@ -81,7 +81,7 @@ function I.Destinations(source, link)
     return destinations
 end
 
-function I.Available(source)
+function SplitInventory.Available(source)
     if source.kind == "guild" then
         return _G.GuildBankFrame and GuildBankFrame:IsShown() and GetCurrentGuildBankTab() == source.bag
     end
@@ -91,12 +91,12 @@ function I.Available(source)
     return true
 end
 
-function I.Split(source, amount)
+function SplitInventory.Split(source, amount)
     if source.kind == "guild" then SplitGuildBankItem(source.bag, source.slot, amount)
     else C_Container.SplitContainerItem(source.bag, source.slot, amount) end
 end
 
-function I.Place(destination)
+function SplitInventory.Place(destination)
     if destination.kind == "guild" then PickupGuildBankItem(destination.bag, destination.slot)
     else C_Container.PickupContainerItem(destination.bag, destination.slot) end
 end

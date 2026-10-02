@@ -9,19 +9,19 @@ local floor = math.floor
 -- sampled one refreshes, the events that change them, their labels and the
 -- Blizzard window a click opens. DataTexts.lua drives them; Sources.lua and
 -- Actions.lua own the additional sources.
-local D = {}
-P.DataTextStandard = D
+local Standard = {}
+P.DataTextStandard = Standard
 
-D.SOURCES = {
+Standard.SOURCES = {
     gold = true, sessionGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
     date = true, fpsLatency = true,
 }
-D.SAMPLED = { clock = true, fps = true, latency = true, coordinates = true, date = true, fpsLatency = true }
-D.INTERVAL = { fps = 2, latency = 5, coordinates = 0.5, fpsLatency = 2 }
+Standard.SAMPLED = { clock = true, fps = true, latency = true, coordinates = true, date = true, fpsLatency = true }
+Standard.INTERVAL = { fps = 2, latency = 5, coordinates = 0.5, fpsLatency = 2 }
 -- Displays that read another shared data source.
-D.READER = { clock = "clockTime", sessionGold = "gold" }
-D.EVENT_SOURCES = {
+Standard.READER = { clock = "clockTime", sessionGold = "gold" }
+Standard.EVENT_SOURCES = {
     PLAYER_MONEY = { "gold", "sessionGold" },
     BAG_UPDATE_DELAYED = { "bags" },
     UPDATE_INVENTORY_DURABILITY = { "durability" },
@@ -43,7 +43,7 @@ local LABELS = {
     latency = S.Text("World"), coordinates = S.Text("Coords"), location = S.Text("Zone"), xp = S.Text("XP"),
     date = S.Text("Date"), fpsLatency = S.Text("FPS / World"),
 }
-D.LABELS = LABELS
+Standard.LABELS = LABELS
 local TEXT = {
     current = S.Text("Current"),
     sinceLogin = S.Text("Since login"),
@@ -113,7 +113,7 @@ local FORMATTERS = {
 }
 
 -- Label, display value, severity and alternate value of a built-in source.
-function D.Format(key)
+function Standard.Format(key)
     if key == "date" then return LABELS[key], date("%d-%m-%Y") end
     if key == "fpsLatency" then
         local fps = S.ReadInfoSource("fps")
@@ -124,12 +124,12 @@ function D.Format(key)
         end
         return LABELS[key], NO_VALUE
     end
-    local value, severity, alternate = FORMATTERS[key](S.ReadInfoSource(D.READER[key] or key))
+    local value, severity, alternate = FORMATTERS[key](S.ReadInfoSource(Standard.READER[key] or key))
     return LABELS[key], value or NO_VALUE, severity, alternate
 end
 
 -- The detail lines of a built-in source below the tooltip title.
-function D.TooltipLines(tooltip, button, config)
+function Standard.TooltipLines(tooltip, button, config)
     local key = button.source
     if key == "gold" or key == "sessionGold" then
         local amount = S.ReadInfoSource("gold")
@@ -156,7 +156,7 @@ function D.TooltipLines(tooltip, button, config)
 end
 
 -- The Blizzard window of a built-in source. Callers run it out of combat.
-function D.Click(button)
+function Standard.Click(button)
     local name = CLICK[button.source]
     if name then
         _G[name]()

@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
-local F = { rows = {}, currencies = {}, currencyPool = {}, text = {}, lines = {}, linePool = {}, labels = {} }
-P.BagFinance = F
+local Finance = { rows = {}, currencies = {}, currencyPool = {}, text = {}, lines = {}, linePool = {}, labels = {} }
+P.BagFinance = Finance
 
 -- The Bags gold history: each character's last recorded balance and its 30
 -- days of income and spending, in the one gold ledger the DataTexts account
@@ -29,7 +29,7 @@ local function LocalDay(now)
     local dayOfEra = yearOfEra * 365 + math.floor(yearOfEra / 4) - math.floor(yearOfEra / 100) + dayOfYear
     return era * 146097 + dayOfEra - 719468
 end
-F.LocalDay = LocalDay
+Finance.LocalDay = LocalDay
 
 -- Days that left the 30-day window leave the history. A character keeps
 -- its last recorded balance; one without a balance and without a day in the
@@ -51,19 +51,19 @@ end
 -- The first amount of a recording session, or of a new record (after a
 -- clear), is its baseline: money changes while the history was off or
 -- between sessions were not observed, so none is invented as income or
--- spending (F.observed: the last amount recorded).
-function F.Record()
+-- spending (Finance.observed: the last amount recorded).
+function Finance.Record()
     if not M.active or not M.config.showGoldHistory then
-        F.observed = nil
+        Finance.observed = nil
         return
     end
     local record, money, guid, created = Gold.Record("bags")
     if not record then return end
-    if created then F.observed = nil end
+    if created then Finance.observed = nil end
     local day = LocalDay(record.updated)
-    if not F.pruned then
+    if not Finance.pruned then
         Prune(Gold.Characters(), day)
-        F.pruned = true
+        Finance.pruned = true
     end
     local days = type(record.days) == "table" and record.days or {}
     record.days = days
@@ -72,8 +72,8 @@ function F.Record()
         current = { day = day, earned = 0, spent = 0 }
         days[#days + 1] = current
     end
-    local delta = F.observed and F.guid == guid and money - F.observed or 0
-    F.observed, F.guid = money, guid
+    local delta = Finance.observed and Finance.guid == guid and money - Finance.observed or 0
+    Finance.observed, Finance.guid = money, guid
     if delta > 0 then current.earned = current.earned + delta
     elseif delta < 0 then current.spent = current.spent - delta end
     while #days > 30 or days[1] and days[1].day < day - 29 do table.remove(days, 1) end
@@ -87,51 +87,51 @@ local function CurrencyInfo(id)
 end
 
 local function ReadCurrencies()
-    for i = #F.currencies, 1, -1 do F.currencies[i] = nil end
+    for i = #Finance.currencies, 1, -1 do Finance.currencies[i] = nil end
     for value in (M.config.currencyIDs or ""):gmatch("%d+") do
-        if #F.currencies == 8 then break end
+        if #Finance.currencies == 8 then break end
         local id, seen = tonumber(value), false
-        for i = 1, #F.currencies do
-            if F.currencies[i].id == id then
+        for i = 1, #Finance.currencies do
+            if Finance.currencies[i].id == id then
                 seen = true
                 break
             end
         end
         local data = not seen and CurrencyInfo(id)
         if data then
-            local index = #F.currencies + 1
-            local row = F.currencyPool[index] or {}
+            local index = #Finance.currencies + 1
+            local row = Finance.currencyPool[index] or {}
             row.id, row.name, row.quantity, row.icon = id, data.name, data.quantity, data.iconFileID
-            F.currencies[index], F.currencyPool[index] = row, row
+            Finance.currencies[index], Finance.currencyPool[index] = row, row
         end
     end
 end
 
 local function Line(left, right)
-    local index = #F.lines + 1
-    local row = F.linePool[index] or {}
+    local index = #Finance.lines + 1
+    local row = Finance.linePool[index] or {}
     row.left, row.right = left, right or ""
-    F.lines[index], F.linePool[index] = row, row
+    Finance.lines[index], Finance.linePool[index] = row, row
 end
 
 -- One row per character the Bags recorded, and per account total character
 -- while that opt-in is on. Returns the rows sorted by name and their total.
 local function Balances(characters)
-    for i = #F.rows, 1, -1 do F.rows[i] = nil end
+    for i = #Finance.rows, 1, -1 do Finance.rows[i] = nil end
     local total, alts = 0, AltGold()
     for _, record in pairs(characters) do
         if Gold.Listed(record) and (record.bags == true or alts and record.account == true) then
-            F.rows[#F.rows + 1], total = record, total + record.money
+            Finance.rows[#Finance.rows + 1], total = record, total + record.money
         end
     end
-    table.sort(F.rows, function(a, b) return a.name < b.name end)
-    return F.rows, total
+    table.sort(Finance.rows, function(a, b) return a.name < b.name end)
+    return Finance.rows, total
 end
 
-function F.BuildRows()
-    for i = #F.lines, 1, -1 do F.lines[i] = nil end
-    for i = 1, #F.currencies do
-        local currency = F.currencies[i]
+function Finance.BuildRows()
+    for i = #Finance.lines, 1, -1 do Finance.lines[i] = nil end
+    for i = 1, #Finance.currencies do
+        local currency = Finance.currencies[i]
         Line(currency.name, tostring(currency.quantity))
     end
     local characters = M.config.showGoldHistory and Gold.Characters()
@@ -156,13 +156,13 @@ function F.BuildRows()
             end
         end
     end
-    return F.lines
+    return Finance.lines
 end
 
 local function Tooltip(button)
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip:SetText(S.Text("Gold and currencies"))
-    local rows = F.BuildRows()
+    local rows = Finance.BuildRows()
     for i = 1, math.min(12, #rows) do GameTooltip:AddDoubleLine(rows[i].left, rows[i].right) end
     GameTooltip:AddLine(S.Text("Click to open the full gold history."), 0.7, 0.7, 0.7, true)
     GameTooltip:AddLine(S.Text("Right-click to choose currencies."), 0.7, 0.7, 0.7, true)
@@ -170,12 +170,12 @@ local function Tooltip(button)
 end
 
 local function WindowRows()
-    if not F.window or not F.window:IsShown() then return end
-    local rows, font = F.BuildRows(), S.ResolveFont(M.config.font) or S.GlobalFontPath()
+    if not Finance.window or not Finance.window:IsShown() then return end
+    local rows, font = Finance.BuildRows(), S.ResolveFont(M.config.font) or S.GlobalFontPath()
     for i = 1, #rows do
-        local label = F.labels[i]
+        local label = Finance.labels[i]
         if not label then
-            label = { left = S.CreateFontString(F.content, nil, "OVERLAY"), right = S.CreateFontString(F.content, nil, "OVERLAY") }
+            label = { left = S.CreateFontString(Finance.content, nil, "OVERLAY"), right = S.CreateFontString(Finance.content, nil, "OVERLAY") }
             label.left:SetPoint("TOPLEFT", 0, -(i - 1) * 24)
             label.right:SetPoint("TOPRIGHT", 0, -(i - 1) * 24)
             label.right:SetWidth(245)
@@ -183,7 +183,7 @@ local function WindowRows()
             label.right:SetJustifyH("RIGHT")
             label.left:SetWordWrap(false)
             label.right:SetWordWrap(false)
-            F.labels[i] = label
+            Finance.labels[i] = label
         end
         local width = rows[i].right == "" and 552 or 300
         if label.width ~= width then
@@ -200,131 +200,131 @@ local function WindowRows()
         label.left:Show()
         label.right:Show()
     end
-    for i = #rows + 1, #F.labels do
-        F.labels[i].left:Hide()
-        F.labels[i].right:Hide()
+    for i = #rows + 1, #Finance.labels do
+        Finance.labels[i].left:Hide()
+        Finance.labels[i].right:Hide()
     end
-    F.content:SetHeight(math.max(24, #rows * 24))
+    Finance.content:SetHeight(math.max(24, #rows * 24))
 end
 
-function F.Show()
+function Finance.Show()
     ReadCurrencies()
-    if not F.window then
-        F.window = P.GridView.Window("MSUFSuiteBagGoldHistory", 610, 510, "Gold and currencies")
-        local scroll = S.CreateFrame("ScrollFrame", nil, F.window, "UIPanelScrollFrameTemplate")
+    if not Finance.window then
+        Finance.window = P.GridView.Window("MSUFSuiteBagGoldHistory", 610, 510, "Gold and currencies")
+        local scroll = S.CreateFrame("ScrollFrame", nil, Finance.window, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", 18, -38)
         scroll:SetPoint("BOTTOMRIGHT", -35, 16)
-        F.content = S.CreateFrame("Frame", nil, scroll)
-        F.content:SetSize(552, 24)
-        scroll:SetScrollChild(F.content)
+        Finance.content = S.CreateFrame("Frame", nil, scroll)
+        Finance.content:SetSize(552, 24)
+        scroll:SetScrollChild(Finance.content)
     end
-    F.window:Show()
+    Finance.window:Show()
     WindowRows()
 end
 
 -- The footer line stands above the Suite grid's footer. In the combat
 -- layout it stands right above Blizzard's money row, in the room
--- InventoryView.lua leaves below the slots (F.LINE), so the currencies and
+-- InventoryView.lua leaves below the slots (Finance.LINE), so the currencies and
 -- the Gold history stay at hand during a fight. Placed out of combat only.
-F.LINE = 18
+Finance.LINE = 18
 local function Place(combat)
     local offset = combat and 4 or 35
-    if F.offset == offset or NS.IsCombatLocked() then return end
-    F.offset = offset
+    if Finance.offset == offset or NS.IsCombatLocked() then return end
+    Finance.offset = offset
     local money = M.frame.MoneyFrame
-    F.button:ClearAllPoints()
-    F.button:SetPoint("BOTTOMLEFT", money, "TOPLEFT", 4, offset)
-    F.button:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, offset)
+    Finance.button:ClearAllPoints()
+    Finance.button:SetPoint("BOTTOMLEFT", money, "TOPLEFT", 4, offset)
+    Finance.button:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, offset)
 end
 
 -- Whether the line has anything to show (the combat layout asks first).
-function F.HasLine()
-    return M.active and (M.config.showGoldHistory or #F.currencies > 0) and true or false
+function Finance.HasLine()
+    return M.active and (M.config.showGoldHistory or #Finance.currencies > 0) and true or false
 end
 
-function F.Refresh()
+function Finance.Refresh()
     if not M.active or not M.frame then return end
-    if not M.frame:IsShown() and not (F.window and F.window:IsShown()) then return end
+    if not M.frame:IsShown() and not (Finance.window and Finance.window:IsShown()) then return end
     ReadCurrencies()
     WindowRows()
     if not M.frame:IsShown() then return end
-    if not F.button then
+    if not Finance.button then
         -- Above the inventory view's footer, which stands on Blizzard's money
         -- row (it moves up for tracked currencies); see Place.
-        F.button = S.CreateFrame("Button", nil, M.frame)
-        F.button:SetHeight(14)
-        F.button:SetFrameLevel(M.frame:GetFrameLevel() + 16)
-        F.button:SetScript("OnEnter", Tooltip)
-        F.button:SetScript("OnLeave", GameTooltip_Hide)
-        F.button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        F.button:SetScript("OnClick", function(button, mouseButton)
-            if mouseButton == "RightButton" then S.BagCurrencyMenu(button) else F.Show() end
+        Finance.button = S.CreateFrame("Button", nil, M.frame)
+        Finance.button:SetHeight(14)
+        Finance.button:SetFrameLevel(M.frame:GetFrameLevel() + 16)
+        Finance.button:SetScript("OnEnter", Tooltip)
+        Finance.button:SetScript("OnLeave", GameTooltip_Hide)
+        Finance.button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        Finance.button:SetScript("OnClick", function(button, mouseButton)
+            if mouseButton == "RightButton" then S.BagCurrencyMenu(button) else Finance.Show() end
         end)
-        F.label = S.CreateFontString(F.button, nil, "OVERLAY")
-        F.label:SetAllPoints(F.button)
-        F.label:SetJustifyH("LEFT")
-        F.label:SetWordWrap(false)
+        Finance.label = S.CreateFontString(Finance.button, nil, "OVERLAY")
+        Finance.label:SetAllPoints(Finance.button)
+        Finance.label:SetJustifyH("LEFT")
+        Finance.label:SetWordWrap(false)
     end
-    for i = #F.text, 1, -1 do F.text[i] = nil end
-    for i = 1, #F.currencies do
-        local row = F.currencies[i]
+    for i = #Finance.text, 1, -1 do Finance.text[i] = nil end
+    for i = 1, #Finance.currencies do
+        local row = Finance.currencies[i]
         local icon = S.Finite(row.icon) and ("|T" .. row.icon .. ":12|t ") or ""
-        F.text[#F.text + 1] = icon .. row.name .. ": " .. tostring(row.quantity)
+        Finance.text[#Finance.text + 1] = icon .. row.name .. ": " .. tostring(row.quantity)
     end
-    if M.config.showGoldHistory then F.text[#F.text + 1] = S.Text("Gold history") end
+    if M.config.showGoldHistory then Finance.text[#Finance.text + 1] = S.Text("Gold history") end
     local font = S.ResolveFont(M.config.font) or S.GlobalFontPath()
-    if F.font ~= font then
-        S.SetFont(F.label, font, 10, "OUTLINE")
-        F.font = font
+    if Finance.font ~= font then
+        S.SetFont(Finance.label, font, 10, "OUTLINE")
+        Finance.font = font
     end
-    F.label:SetText(table.concat(F.text, "   "))
+    Finance.label:SetText(table.concat(Finance.text, "   "))
     -- The Suite grid and the combat layout leave room for the line;
     -- Blizzard's own grid puts item rows there.
     local view = P.InventoryView
     local combat = view.CombatLine()
-    local shown = #F.text > 0 and (view.SuiteLayout() or combat)
+    local shown = #Finance.text > 0 and (view.SuiteLayout() or combat)
     if shown then Place(combat) end
-    F.button:SetShown(shown)
+    Finance.button:SetShown(shown)
 end
 
 local function Flush()
-    F.queued = false
-    F.Refresh()
+    Finance.queued = false
+    Finance.Refresh()
 end
 
-function F.Event(_, event)
-    if event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then F.Record() end
-    if F.queued or not M.active or not M.frame then return end
-    if not M.frame:IsShown() and not (F.window and F.window:IsShown()) then return end
-    F.queued = true
+function Finance.Event(_, event)
+    if event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then Finance.Record() end
+    if Finance.queued or not M.active or not M.frame then return end
+    if not M.frame:IsShown() and not (Finance.window and Finance.window:IsShown()) then return end
+    Finance.queued = true
     C_Timer.After(0, Flush)
 end
 
-function F.Enable()
-    if not M.active or not M.config.showGoldHistory then F.observed = nil end
-    if not F.events then
-        F.events = S.CreateFrame("Frame")
-        F.events:SetScript("OnEvent", F.Event)
+function Finance.Enable()
+    if not M.active or not M.config.showGoldHistory then Finance.observed = nil end
+    if not Finance.events then
+        Finance.events = S.CreateFrame("Frame")
+        Finance.events:SetScript("OnEvent", Finance.Event)
     end
-    F.events:UnregisterAllEvents()
+    Finance.events:UnregisterAllEvents()
     if M.active then
         if M.config.showGoldHistory then
-            F.events:RegisterEvent("PLAYER_MONEY")
-            F.events:RegisterEvent("PLAYER_ENTERING_WORLD")
-            F.Record()
+            Finance.events:RegisterEvent("PLAYER_MONEY")
+            Finance.events:RegisterEvent("PLAYER_ENTERING_WORLD")
+            Finance.Record()
         end
-        F.events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
-        if not F.hooked then
-            M.frame:HookScript("OnShow", F.Refresh)
-            F.hooked = true
+        Finance.events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+        if not Finance.hooked then
+            M.frame:HookScript("OnShow", Finance.Refresh)
+            Finance.hooked = true
         end
-        F.Refresh()
+        Finance.Refresh()
     end
 end
 
-function F.Disable()
-    F.observed = nil
-    if F.events then F.events:UnregisterAllEvents() end
-    if F.button then F.button:Hide() end
-    if F.window then F.window:Hide() end
+function Finance.Disable()
+    Finance.observed = nil
+    if Finance.events then Finance.events:UnregisterAllEvents() end
+    if Finance.button then Finance.button:Hide() end
+    if Finance.window then Finance.window:Hide() end
 end
