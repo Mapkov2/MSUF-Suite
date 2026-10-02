@@ -3435,6 +3435,23 @@ assert(optionsNS.ResetRules("dataTexts", { bar1X })
 assert(M.ResetPageToDefaults("suite_dataTexts")
     and S.Config("dataTexts").bar2X == S.catalog.dataTexts.rules.bar2X.default,
     "Reset page did not restore the module defaults")
+-- The toolbar's Reset page asks first, in Blizzard's generic confirmation,
+-- without an entry in Blizzard's StaticPopupDialogs.
+do
+    local previousGeneric, previousDialogs = _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs
+    local asked
+    _G.StaticPopupDialogs = {}
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
+    assert(S.SetMany("dataTexts", { bar2X = 58 }))
+    assert(M.ShowPageResetConfirm("suite_dataTexts") and asked and asked.text == "%s"
+        and asked.text_arg1 == M.BuildPageResetWarning("suite_dataTexts") and S.Config("dataTexts").bar2X == 58,
+        "Reset page did not ask first")
+    asked.callback()
+    assert(S.Config("dataTexts").bar2X == S.catalog.dataTexts.rules.bar2X.default,
+        "confirming Reset page did not reset the page")
+    assert(next(_G.StaticPopupDialogs) == nil, "Reset page wrote into Blizzard's StaticPopupDialogs")
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
+end
 assert(S.Config("actionbars").look == 1,
     "Suite page reset changed another page")
 ;(function()
@@ -3535,15 +3552,19 @@ for key in pairs(o.scopes) do o.scopes[key] = true end
 o.onRun(nil, popupStub)
 assert(not popupHidden, "Copy Selected ran without a destination")
 for key in pairs(o.scopes) do o.scopes[key] = true end
-local previousShow, previousInstall = _G.StaticPopup_Show, M.InstallStaticPopup
+-- Copy to All asks in Blizzard's generic confirmation and adds no entry to
+-- Blizzard's StaticPopupDialogs.
+local previousGeneric, previousDialogs = _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs
 local confirmed
-M.InstallStaticPopup = function() end
-_G.StaticPopup_Show = function(name, _, _, accept) confirmed = name; accept() end
+_G.StaticPopupDialogs = {}
+_G.StaticPopup_ShowCustomGenericConfirmation = function(data) confirmed = data; data.callback() end
 o.onTargetClick("all")
 assert(S.SetMany("actionbars", { [p .. "Size"] = 44 }))
 o.onRun(nil, popupStub)
-_G.StaticPopup_Show, M.InstallStaticPopup = previousShow, previousInstall
-assert(confirmed == "MSUF_SUITE_COPY_BARS_CONFIRM", "Copy to All did not ask first")
+assert(next(_G.StaticPopupDialogs) == nil, "Copy to All wrote into Blizzard's StaticPopupDialogs")
+_G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
+assert(confirmed and confirmed.text == "%s" and confirmed.text_arg1:find("ALL action bars", 1, true),
+    "Copy to All did not ask first")
 for index = 1, Suite.ActionBarCount do
     if index ~= source and (not S.ActionBarAvailable or S.ActionBarAvailable(index)) then
         assert(S.Config("actionbars")["bar" .. index .. "Size"] == 44, "Copy to All missed bar " .. index)

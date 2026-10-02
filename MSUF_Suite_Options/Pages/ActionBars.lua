@@ -304,14 +304,9 @@ local function SelectCopyDestination(key)
     end
 end
 local function ConfirmCopyAll(run)
-    -- MSUF's popup helper is a host export; StaticPopup_Show exists everywhere.
-    if not M.InstallStaticPopup then return run() end
-    M.InstallStaticPopup("MSUF_SUITE_COPY_BARS_CONFIRM", {
-        text = Tr("Copy these settings to ALL action bars?\n\nThis overwrites the chosen settings on every other bar. Positions stay as they are."),
-        button1 = YES, button2 = NO,
-        OnAccept = function(_, data) if type(data) == "function" then data() end end,
-    })
-    StaticPopup_Show("MSUF_SUITE_COPY_BARS_CONFIRM", nil, nil, run)
+    P.Confirm("copy-bars",
+        Tr("Copy these settings to ALL action bars?\n\nThis overwrites the chosen settings on every other bar. Positions stay as they are."),
+        run)
 end
 local function RunCopyTo(popup)
     if P.Combat() then return false end

@@ -17,8 +17,8 @@ P.Combat = function() return combat end
 P.WithHistory = function(_, _, callback) history = history + 1; return callback() end
 P.SetMany = function(_, values) writes = writes + 1; for k,v in pairs(values) do config[k] = v end; return true end
 P.Refresh = function() end
-P.M.InstallStaticPopup = function() end
-StaticPopup_Show = function(_, _, _, callback) confirmed = confirmed + 1; callback() end
+-- Copy to All asks first through the pages' confirmation (Menu/Bridge.lua).
+P.Confirm = function(_, _, onAccept) confirmed = confirmed + 1; onAccept() end
 local code = source:sub(1, prefix-1) .. source:sub(first, last-1) ..
     "return { targets=CopyDestination, click=SelectCopyDestination, run=RunCopyTo, scopes=copyScopes }"
 local api = assert(loadstring(code))("Options", P)

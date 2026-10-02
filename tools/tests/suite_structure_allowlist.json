@@ -2307,6 +2307,12 @@
    "symbol": "T.SetTranslatedText"
   },
   {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "lod",
+   "reason": "export of MSUF_Suite_Modules, which loads on demand: the pages ask in Blizzard's generic dialog themselves until it is loaded",
+   "symbol": "S.Confirm"
+  },
+  {
    "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",

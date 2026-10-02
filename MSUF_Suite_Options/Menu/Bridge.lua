@@ -317,6 +317,18 @@ end
 
 function P.Combat() return Suite.IsCombatLocked() end
 
+-- A yes/no question in Blizzard's generic confirmation dialog: the pages add
+-- no entry to Blizzard's StaticPopupDialogs. text is translated text, shown
+-- as is; onAccept runs on Yes. S.Confirm (MSUF_Suite_Modules/Dialogs.lua)
+-- also closes an earlier question under the same key; the pages work while
+-- that load-on-demand runtime is not loaded, so they open Blizzard's dialog
+-- themselves then.
+function P.Confirm(key, text, onAccept)
+    local data = { text = "%s", text_arg1 = text, callback = onAccept }
+    if S.Confirm then return S.Confirm(key, data) end
+    StaticPopup_ShowCustomGenericConfirmation(data)
+end
+
 -- Named capability checks used by catalog rules (rule.requires). Pages add
 -- entries; unknown names are treated as available.
 P.Requires = {}

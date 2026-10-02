@@ -239,17 +239,7 @@ local function InstallPageResets()
         local suite, resettable = IsSuitePage(key)
         if not suite then return oldConfirm and oldConfirm(key) or false end
         if not resettable or P.Combat() then return false end
-        local message = M.BuildPageResetWarning(key)
-        if not M.InstallStaticPopup then
-            return M.ResetPageToDefaults(key)
-        end
-        M.InstallStaticPopup("MSUF_SUITE_PAGE_RESET_CONFIRM", {
-            text = "%s", button1 = YES, button2 = NO,
-            OnAccept = function(_, data)
-                if data and data.pageKey then M.ResetPageToDefaults(data.pageKey) end
-            end,
-        })
-        StaticPopup_Show("MSUF_SUITE_PAGE_RESET_CONFIRM", message, nil, { pageKey = key })
+        P.Confirm("page-reset", M.BuildPageResetWarning(key), function() M.ResetPageToDefaults(key) end)
         return true
     end
     if M.RefreshToolbarPageReset then M.RefreshToolbarPageReset() end
