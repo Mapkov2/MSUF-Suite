@@ -128,7 +128,10 @@ function M:Enable()
     self:RegisterMovers()
 end
 
+-- The spellbook is read again: SPELLS_CHANGED is heard only while the missing
+-- warning is on, so a respec made with it off left petClass stale.
 function M:Refresh()
+    self.petClass = ExpectsPet(self.classFile)
     S.SetFont(self.label, nil, 14, "OUTLINE")
     Place(self)
     SyncEvents(self)
