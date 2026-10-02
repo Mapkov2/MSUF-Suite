@@ -243,32 +243,10 @@ function Context:Skin()
     return NS.Skin.Acquire(self.id)
 end
 
--- MapkoSkin is another addon: every call into it runs through Dispatch, so
--- its error is reported and never stops the module that owns the frame.
-local function AcquireSkin(self)
-    return Dispatch(NS.Skin.Acquire, self.id)
-end
-
-local function PaintOwnedSkin(skin, method, target, options)
-    skin[method](skin, target, options)
-end
-
--- Remembers a MapkoSkin call so it is repeated after the skin is re-enabled.
-function Context:OwnSkin(method, target, options)
-    self.ownedSkins = self.ownedSkins or {}
-    self.ownedSkins[target] = { method = method, options = options }
-    local skin = AcquireSkin(self)
-    if skin then Dispatch(PaintOwnedSkin, skin, method, target, options) end
-end
-
-function Context:RefreshOwnedSkins()
-    if not self.ownedSkins then return end
-    local skin = AcquireSkin(self)
-    if not skin then return end
-    for target, entry in pairs(self.ownedSkins) do
-        Dispatch(PaintOwnedSkin, skin, entry.method, target, entry.options)
-    end
-end
+-- The controller (Suite.lua ApplyModule) still calls this after every Enable
+-- and Refresh. No module remembers a skin call to repeat, so there is nothing
+-- to paint; drop it together with that call.
+function Context:RefreshOwnedSkins() end
 
 -- Single-value getter/setter pairs such as GetScale/SetScale.
 local function SetOwnedProperty(self, frame, getter, setter, value)

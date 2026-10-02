@@ -238,37 +238,11 @@ context:Event("UNIT_HEALTH", function() end, true, { "boss1", "boss2", "boss3", 
 assert(context.unitFrames[1] == overflow, "a routing frame was created again instead of reused")
 context:Release()
 assert(not next(overflow.events), "release left a routing frame registered")
-local paints, released = 0, 0
-local owned = {}
-context:OwnSkin("SkinFrame", owned, { role = "popup" })
-assert(paints == 0)
-MapkoSkin = { GetAPI = function()
-    return { RegisterAddon = function()
-        return { SkinFrame = function(_, target) assert(target == owned);paints = paints + 1 end,
-            ReleaseAll = function() released = released + 1 end }
-    end }
-end }
-Suite.Skin.SetEnabled(true)
+-- Nothing remembers a skin call (Context:OwnSkin had no caller), so the
+-- controller's refresh after Enable has nothing to repeat and never reaches
+-- the skin provider.
 context:RefreshOwnedSkins()
-assert(paints == 1)
-Suite.Skin.SetEnabled(false)
-assert(released == 1)
-Suite.Skin.SetEnabled(true)
-context:RefreshOwnedSkins()
-assert(paints == 2, "previously created popup lost its skin after toggling")
-context:Release()
-context:RefreshOwnedSkins()
-assert(paints == 3 and released == 2, "module reactivation lost owned popup styling")
--- MapkoSkin is another addon: each owned-skin call is isolated, so its error
--- is reported, the other owned frames are still painted and the module's
--- Enable or Refresh (which calls these) is never failed by it.
-local skinErrors, broken = #reported, {}
-local skinning = Suite.Suite.NewContext("qol")
-skinning:OwnSkin("SkinFrame", owned, { role = "popup" })
-local ownedSkinCompleted = pcall(skinning.OwnSkin, skinning, "SkinBroken", broken, {})
-local refreshCompleted = pcall(skinning.RefreshOwnedSkins, skinning)
-assert(ownedSkinCompleted and refreshCompleted and #reported == skinErrors + 2 and paints == 5,
-    "a MapkoSkin error escaped into the module or skipped another owned frame")
+assert(context.ownedSkins == nil and not context.OwnSkin, "a context kept a skin call nothing makes")
 
 -- CVar ownership: a context sets only CVars its module declares, and a saved
 -- record is dropped only once it is resolved.

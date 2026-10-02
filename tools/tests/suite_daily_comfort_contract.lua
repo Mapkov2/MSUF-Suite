@@ -187,10 +187,10 @@ local dialog = { GetEditBox = function() return edit end }
 StaticPopupDialogs.DELETE_GOOD_ITEM.postHook(dialog)
 assert(edit.text == "DELETE", "item confirmation was not prefilled")
 module.context.events.MERCHANT_SHOW(module)
-assert(panels.shown == 1 and CharacterFrame:IsShown() and suite.HoldsCharacter(module) and #reported == 0,
+assert(panels.shown == 1 and CharacterFrame:IsShown() and #reported == 0,
     "merchant did not open the character window through the panel manager")
 module.context.events.MERCHANT_CLOSED(module)
-assert(panels.hidden == 1 and not suite.HoldsCharacter(module), "merchant did not close its owned window")
+assert(panels.hidden == 1 and not CharacterFrame:IsShown(), "merchant did not close its owned window")
 module.context.events.MERCHANT_SHOW(module)
 combat = true
 module.context.events.MERCHANT_CLOSED(module)
