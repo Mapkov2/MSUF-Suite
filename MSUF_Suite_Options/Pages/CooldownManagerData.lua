@@ -4,8 +4,8 @@ local _, P = ...
 -- entry per gesture) are in CooldownManagerLists.lua, bar edits and the note
 -- line with its Undo in CooldownManagerBars.lua; the pooled editors (spell
 -- tiles and picker in CooldownManagerWidgets.lua and CooldownManagerPicker.lua,
--- sound picker and per-spell popover in CooldownManagerPopover.lua) build on
--- the helpers exported here.
+-- sound picker in CooldownManagerSounds.lua, per-spell popover in
+-- CooldownManagerPopover.lua) build on the helpers exported here.
 local Suite, S, T, Tr = P.Suite, P.S, P.T, P.Tr
 local CDM = Suite.CDM
 local ID, PAGE = "cooldownManager", "suite_cooldownManager"

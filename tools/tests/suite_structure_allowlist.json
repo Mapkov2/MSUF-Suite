@@ -933,7 +933,7 @@
    "symbol": "T.SkinEditBox"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/CooldownManagerPopover.lua",
+   "file": "MSUF_Suite_Options/Pages/CooldownManagerSounds.lua",
    "kind": "addon",
    "reason": "LibSharedMedia, an optional library from another addon",
    "symbol": "lsm.List"

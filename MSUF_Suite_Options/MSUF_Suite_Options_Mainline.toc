@@ -35,6 +35,7 @@ Pages\CooldownManagerLists.lua
 Pages\CooldownManagerBars.lua
 Pages\CooldownManagerWidgets.lua
 Pages\CooldownManagerPicker.lua
+Pages\CooldownManagerSounds.lua
 Pages\CooldownManagerPopover.lua
 Pages\CooldownManagerPreviewIcons.lua
 Pages\CooldownManagerPreview.lua
