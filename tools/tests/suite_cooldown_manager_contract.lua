@@ -1137,8 +1137,11 @@ do
             ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
     end
     -- Time: one matched cooldown event, then every cooldown icon at once.
-    Budget("time: a matched cooldown event",Cost(Fire,"SPELL_UPDATE_COOLDOWN",101),715)
-    Budget("time: a cooldown event for every icon",Cost(Fire,"SPELL_UPDATE_COOLDOWN",nil),4554)
+    -- 2026-10-02 (wave 4): 722 -> 696, 4629 -> 4492, 6415 -> 6315 and
+    -- 1387 -> 1362 with Time.lua testing secrets through issecretvalue
+    -- directly instead of the S.Public wrapper.
+    Budget("time: a matched cooldown event",Cost(Fire,"SPELL_UPDATE_COOLDOWN",101),696)
+    Budget("time: a cooldown event for every icon",Cost(Fire,"SPELL_UPDATE_COOLDOWN",nil),4492)
     steady=nil
     assert(writes>quiet,"the matched cooldown event did not reach the icon")
     assert(used==0,"a matched cooldown event allocated "..used.." KB in Lua")
@@ -1185,10 +1188,10 @@ do
     Run()
     C.Flush.dirty.cooldowns=true
     C.Schedule()
-    Budget("flush: every cooldown entry",Cost(Run),6348)
+    Budget("flush: every cooldown entry",Cost(Run),6315)
     C.Flush.dirty.usable=true
     C.Schedule()
-    Budget("flush: a usability sweep",Cost(Run),1382)
+    Budget("flush: a usability sweep",Cost(Run),1362)
 end
 -- A GCD for one spell refreshes that spell's icons only: the others do not
 -- show the GCD and are not touched.

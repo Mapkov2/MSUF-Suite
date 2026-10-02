@@ -12,6 +12,8 @@ local NS, S = P.NS, P.Suite
 local D = P.DamageMeter
 local M = D.M
 local Public = S.Public
+-- The client's secret test (Platform.lua) for the session event storm.
+local IsSecret = NS.IsSecret
 local max, format = math.max, string.format
 local HOST_KEY = "external:msuf.blizzard:damagemeter"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -248,7 +250,7 @@ function D.ZoneKey()
 end
 
 SessionUpdated = function(self, _, meterType, sessionID)
-    if not Public(meterType) or not Public(sessionID) then return end
+    if IsSecret(meterType) or IsSecret(sessionID) then return end
     D.InvalidateTargets()
     local dirty, clean = false, false
     for i = 1, self.config.windowCount do

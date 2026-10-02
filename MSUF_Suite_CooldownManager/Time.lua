@@ -5,7 +5,7 @@ local C = P.CDM
 -- swipe through duration objects, desaturation and opacity through step
 -- curves evaluated C-side, counts through SetText. Lua branches only on
 -- NeverSecret fields (isActive, isOnGCD, maxCharges, charge isActive),
--- HasSecretValues, or values that passed S.Public. No Lua table, closure or
+-- HasSecretValues, or values that passed issecretvalue. No Lua table, closure or
 -- string is built here per event; the new objects per event are the ones the
 -- C API returns: the cooldown and charge info tables (GetSpellCooldown,
 -- GetSpellCharges) and the duration objects.
@@ -16,7 +16,8 @@ local DESAT = K.DESAT
 local TrackingBars = C.TrackingBars
 local Time = {}
 C.Time = Time
-local Public = S.Public
+-- The client's secret test, called directly (no Lua wrapper on hot paths).
+local issecret = _G.issecretvalue
 local Dispatch = S.Dispatch
 local EMPTY = C.EMPTY
 local wipe = C.wipe
@@ -39,7 +40,7 @@ local DirectChargeDuration, DirectDisplayCount = GetChargeDuration, GetDisplayCo
 local function SharedReader(reader, argument, hasArgument)
     local seen, values = {}, {}
     local function Read(spell)
-        if not Public(spell) then
+        if issecret(spell) then
             if hasArgument then return reader(spell, argument) end
             return reader(spell)
         end
@@ -192,15 +193,15 @@ end
 local function Real(info, duration, reason, previous)
     if reason == "cooldown" then
         local gcd = info.isOnGCD
-        return not (Public(gcd) and gcd), true
+        return issecret(gcd) or not gcd, true
     end
     if duration and not duration:HasSecretValues() then
         local active = duration:IsActive()
-        if Public(active) then return active == true, true end
+        if not issecret(active) then return active == true, true end
     end
     if previous ~= nil then return previous, false end
     local gcd = info.isOnGCD
-    return not (Public(gcd) and gcd), false
+    return issecret(gcd) or not gcd, false
 end
 
 -- The charge part of SpellState: the recharge swipe, entry.fullyCharged,
@@ -214,10 +215,10 @@ local function ChargeState(entry, icon, spell, cooling, exact)
     local rechargeDuration
     entry.fullyCharged = nil
     local maximum = charges and charges.maxCharges
-    if Public(maximum) and type(maximum) == "number" and maximum > 1 then
+    if not issecret(maximum) and type(maximum) == "number" and maximum > 1 then
         local state = charges.isActive
-        local recharging = Public(state) and state == true
-        entry.fullyCharged = Public(state) and state == false or nil
+        local recharging = not issecret(state) and state == true
+        entry.fullyCharged = not issecret(state) and state == false or nil
         if recharging then
             local duration = GetChargeDuration(spell)
             rechargeDuration = duration
@@ -232,13 +233,13 @@ local function ChargeState(entry, icon, spell, cooling, exact)
             if not cooling and entry.cooling then cooling = true end
         else
             ClearCharge(icon)
-            if not exact and Public(state) and state == false then cooling = false end
+            if not exact and not issecret(state) and state == false then cooling = false end
         end
     else
         ClearCharge(icon)
     end
     TrackingBars.Charges(icon, charges, rechargeDuration)
-    if entry.ov and entry.ov.hideAvailableCharges and Public(maximum) and type(maximum) == "number" and maximum > 1
+    if entry.ov and entry.ov.hideAvailableCharges and not issecret(maximum) and type(maximum) == "number" and maximum > 1
         and not C.state.preview then
         local duration = icon.mainDuration
         if duration then
@@ -270,7 +271,7 @@ local function SpellState(entry, icon, spell, reason)
     else
         local info = GetCooldown(spell)
         local active = info and info.isActive
-        if Public(active) and active then
+        if not issecret(active) and active then
             local ov = entry.ov
             local showGCD = ov and ov.showGCD
             if showGCD == nil then showGCD = C.state.showGCD end
@@ -332,7 +333,7 @@ local function Total(category)
     if items then
         for i = 1, #items do
             local count = GetItemCount(items[i], false, true)
-            if Public(count) and type(count) == "number" and count > 0 then
+            if not issecret(count) and type(count) == "number" and count > 0 then
                 total = total + count
                 if not selected or items[i] == previous then selected = items[i] end
             end
@@ -348,7 +349,7 @@ local function ItemCount(item)
     local count = counts[item]
     if count == nil then
         count = GetItemCount(item, false, true)
-        if not (Public(count) and type(count) == "number") then count = false end
+        if issecret(count) or type(count) ~= "number" then count = false end
         counts[item] = count
     end
     return count
@@ -362,7 +363,7 @@ local function CategoryCount(icon, category, entry)
     if entry.categoryItem ~= item then
         entry.categoryItem = item
         local texture = item and C_Item.GetItemIconByID(item)
-        entry.categoryTexture = Public(texture) and texture or nil
+        entry.categoryTexture = not issecret(texture) and texture or nil
         C.Icons.Texture(entry)
     end
     if total > 0 and icon.stackOn then
@@ -414,7 +415,7 @@ end
 local function ItemTiming(entry, icon, reason, start, length, enable, item, rate)
     local cooling = false
     rate = rate or 1
-    local plain = Public(start) and Public(length) and Public(enable) and type(start) == "number" and type(length) == "number"
+    local plain = not issecret(start) and not issecret(length) and not issecret(enable) and type(start) == "number" and type(length) == "number"
     if plain and length > 0 and (enable == false or enable == 0) then
         if not icon.itemLock then
             -- The item was used: its own count is read again.
@@ -484,7 +485,7 @@ local function CategoryState(entry, icon, reason, spell)
     end
     local start, length, enable, rate = info.startTime, info.duration, info.isEnabled, info.modRate
     ClearCharge(icon)
-    if Public(start) and Public(length) and Public(enable) and Public(rate)
+    if not issecret(start) and not issecret(length) and not issecret(enable) and not issecret(rate)
         and (rate == nil or type(rate) == "number" and rate > 0) then
         return ItemTiming(entry, icon, reason, start, length, enable, entry.catItem, rate)
     end

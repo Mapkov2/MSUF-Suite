@@ -7,6 +7,8 @@ local S = P.Suite
 local D = P.DamageMeter
 local M = D.M
 local Public, Finite, Num = S.Public, S.Finite, D.Num
+-- The client's secret test (Platform.lua) for the row paint.
+local IsSecret = P.NS.IsSecret
 local TYPE, ICON, ROW_BORDER, VALUE_FORMAT = D.TYPE, D.ICON, D.ROW_BORDER, D.VALUE_FORMAT
 local floor, format = math.floor, string.format
 local CLASS_SHEET = "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes"
@@ -268,7 +270,7 @@ function D.SetBar(row, maxValue, value)
     local bar = row.bar
     row.full = nil
     maxValue, value = Num(maxValue), Num(value)
-    if Public(maxValue) then
+    if not IsSecret(maxValue) then
         if maxValue ~= row.mMax then
             row.mMax = maxValue
             bar:SetMinMaxValues(0, maxValue)
@@ -277,7 +279,7 @@ function D.SetBar(row, maxValue, value)
         row.mMax = nil
         bar:SetMinMaxValues(0, maxValue)
     end
-    if Public(value) then
+    if not IsSecret(value) then
         if value ~= row.mVal then
             row.mVal = value
             bar:SetValue(value)
@@ -294,7 +296,7 @@ end
 local function Percent(total, denominator, shown)
     if not shown then return nil end
     denominator = Num(denominator)
-    if Public(total) and Public(denominator) and denominator > 0 then
+    if not IsSecret(total) and not IsSecret(denominator) and denominator > 0 then
         return floor(total / denominator * 100 + .5)
     end
 end
@@ -308,7 +310,7 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
     if not countOnly then rate = perSecond end
     local percent = Percent(total, denominator, alwaysPercent or style.percent)
     local order, separator = style.valueOrder or 1, style.valueSeparator or 2
-    local allPlain = Public(total) and (countOnly or Public(rate))
+    local allPlain = not IsSecret(total) and (countOnly or not IsSecret(rate))
     if allPlain and total == row.mA and rate == row.mB and percent == row.mP
         and row.mF == VALUE_FORMAT.CUSTOM and order == row.mO and separator == row.mS then
         return
@@ -324,7 +326,7 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
         if kind == TOTAL or (kind == RATE and not countOnly) or (kind == PERCENT and percent ~= nil) then
             local value
             if kind == TOTAL then value = total elseif kind == RATE then value = rate else value = percentText end
-            value = kind == PERCENT and value or (Public(value) and D.Compact(value) or D.Abbreviate(value))
+            value = kind == PERCENT and value or (not IsSecret(value) and D.Compact(value) or D.Abbreviate(value))
             count = count + 1
             if count == 1 then first = value elseif count == 2 then second = value else third = value end
         end
@@ -368,7 +370,7 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
         else a, b, two = main, second, true end
     end
     local text = row.valueText
-    if Public(a) and (not two or Public(b)) then
+    if not IsSecret(a) and (not two or not IsSecret(b)) then
         local percent = Percent(total, denominator, alwaysPercent or style.percent)
         if a == row.mA and b == row.mB and percent == row.mP and fmt == row.mF then return end
         row.mA, row.mB, row.mP, row.mF = a, b, percent, fmt
@@ -379,9 +381,9 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
         return
     end
     row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
-    local first = Public(a) and D.Compact(a) or D.Abbreviate(a)
+    local first = not IsSecret(a) and D.Compact(a) or D.Abbreviate(a)
     if two then
-        text:SetFormattedText(separators[fmt], first, Public(b) and D.Compact(b) or D.Abbreviate(b))
+        text:SetFormattedText(separators[fmt], first, not IsSecret(b) and D.Compact(b) or D.Abbreviate(b))
     else
         text:SetText(first)
     end
@@ -395,7 +397,7 @@ function D.PaintSource(row, source, index, session, win)
         row.rankText:SetText(ranks[index])
     end
     local name = source.name
-    if Public(name) then
+    if not IsSecret(name) then
         if name ~= row.rawName then
             row.rawName = name
             row.nameText:SetText(D.Short(name))
@@ -405,7 +407,7 @@ function D.PaintSource(row, source, index, session, win)
         row.nameText:SetText(D.Short(name))
     end
     local class = source.classFilename
-    if not Public(class) or type(class) ~= "string" then class = "" end
+    if IsSecret(class) or type(class) ~= "string" then class = "" end
     if class ~= row.class then
         row.class = class
         D.RowColors(row, class)
