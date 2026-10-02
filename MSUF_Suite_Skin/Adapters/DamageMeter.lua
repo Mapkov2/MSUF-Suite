@@ -6,6 +6,7 @@ local _, NS = ...
 local DamageMeterSkin = {
     owners = {},
     hookedWindows = setmetatable({}, { __mode = "k" }),
+    hookedMeters = setmetatable({}, { __mode = "k" }),
 }
 NS.DamageMeterSkin = DamageMeterSkin
 
@@ -168,12 +169,55 @@ local function SkinAllWindows(frame, state)
     end
 end
 
+local function SkinEveryWindow(frame)
+    for _, state in pairs(DamageMeterSkin.owners) do
+        if state.active then SkinAllWindows(frame, state) end
+    end
+end
+
+-- One deferred pass covers every window set up during combat.
+local function SkinPendingWindows()
+    local frame = DamageMeterSkin.pendingMeter
+    DamageMeterSkin.pendingMeter = nil
+    if frame then SkinEveryWindow(frame) end
+end
+
+-- A session window the player opens later (or one Blizzard sets up again)
+-- comes from SetupSessionWindow after the skin applied; it is skinned once
+-- Blizzard has finished setting it up. Combat defers the pass.
+local function OnSetupSessionWindow(frame, _, windowData)
+    if NS.IsCombatLocked() then
+        DamageMeterSkin.pendingMeter = frame
+        NS.CombatGate.RunOrDefer("damageMeter:windows", SkinPendingWindows)
+        return
+    end
+    local window = Field(windowData, "sessionWindow")
+    if not window then return end
+    for _, state in pairs(DamageMeterSkin.owners) do
+        if state.active then SkinSessionWindow(state, window) end
+    end
+end
+
+-- Runs inside Blizzard's SetupSessionWindow, so the pass is its own error boundary.
+local function OnSetupSessionWindowHook(frame, index, windowData)
+    Dispatch(OnSetupSessionWindow, frame, index, windowData)
+end
+
+-- SetupSessionWindow is a method the meter frame got from its mixin. Once
+-- hooked, the hook stays: after Disable no owner is active and it does nothing.
+local function HookMeter(frame)
+    if DamageMeterSkin.hookedMeters[frame] or not HasMethod(frame, "SetupSessionWindow") then return end
+    hooksecurefunc(frame, "SetupSessionWindow", OnSetupSessionWindowHook)
+    DamageMeterSkin.hookedMeters[frame] = true
+end
+
 function DamageMeterSkin.Apply(frame, owner)
     if not frame then return false, "missing" end
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.Safety.CanDecorate(frame, true) then return false, "protected" end
     local state = OwnerState(owner)
     state.active = true
+    HookMeter(frame)
     SkinAllWindows(frame, state)
     return true
 end

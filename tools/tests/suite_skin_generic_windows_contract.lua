@@ -1502,6 +1502,54 @@ Section("damage meter rows", function()
     NS.DB = nil
 end)
 
+-- Session windows the player opens after the skin applied come from
+-- DamageMeter:SetupSessionWindow (Blizzard_DamageMeter/DamageMeter.lua:284),
+-- which creates the window on first use.
+Section("damage meter windows opened later", function()
+    Load("DamageMeter.lua")
+    NS.DB = { hud = { damageMeterRows = true, damageMeterDetails = true, damageMeterWindows = true } }
+    local windows = {}
+    local meter = Frame("DamageMeter")
+    function meter:ForEachSessionWindow(callback)
+        for _, window in ipairs(windows) do callback(window) end
+    end
+    function meter:SetupSessionWindow(index, windowData)
+        if windowData.sessionWindow then return end
+        local window = Frame("DamageMeterSessionWindow" .. index)
+        window.MinimizeContainer = { ScrollBox = RowBox() }
+        window.MinimizeButton = Frame(nil)
+        function window:SetMinimized(minimized) self.minimized = minimized end
+        windowData.sessionWindow = window
+        windows[#windows + 1] = window
+    end
+    meter:SetupSessionWindow(1, {})
+    Expect(NS.DamageMeterSkin.Apply(meter, "meter") and windows[1].surfaceSpec ~= nil,
+        "the primary damage meter window was not skinned")
+    local second = {}
+    meter:SetupSessionWindow(2, second)
+    Expect(second.sessionWindow.surfaceSpec ~= nil, "a damage meter window opened after the skin applied stayed unskinned")
+    Expect(next(second.sessionWindow.MinimizeContainer.ScrollBox.callbacks) ~= nil,
+        "the rows of a damage meter window opened later are not skinned")
+    -- In combat the pass waits for the gate; one pass covers every window.
+    local deferred = {}
+    local runOrDefer = NS.CombatGate.RunOrDefer
+    NS.CombatGate.RunOrDefer = function(key, callback) deferred[key] = callback; return false end
+    locked = true
+    local third = {}
+    meter:SetupSessionWindow(3, third)
+    locked = false
+    NS.CombatGate.RunOrDefer = runOrDefer
+    local pass = deferred["damageMeter:windows"]
+    Expect(third.sessionWindow.surfaceSpec == nil and pass, "a damage meter window set up in combat was not deferred")
+    if pass then pass() end
+    Expect(third.sessionWindow.surfaceSpec ~= nil, "the deferred pass did not skin the window set up in combat")
+    NS.DamageMeterSkin.Disable(nil, "meter")
+    local fourth = {}
+    meter:SetupSessionWindow(4, fourth)
+    Expect(fourth.sessionWindow.surfaceSpec == nil, "a damage meter window set up after disable was skinned")
+    NS.DB = nil
+end)
+
 Section("major windows pvp categories", function()
     Load("MajorWindows.lua")
     Load("MajorWindowsItems.lua")
