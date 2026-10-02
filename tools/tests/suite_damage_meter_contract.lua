@@ -346,7 +346,7 @@ S.started=true
 local c=S.Config("damageMeter")
 assert(c.windowCount==2 and c.w1Type==1 and c.w2Type==3 and c.w1Session==1 and c.w2Session==1
     and c.w1X==-20 and c.w2X==-20 and c.w1Y==20 and c.w2Y==210
-    and c.refreshRate==1 and c.showPlayer and c.trackAlpha==42
+    and c.refreshRate==1.5 and c.showPlayer and c.trackAlpha==42
     and c.bgAlpha==82 and c.borderSize==1 and c.look==5
     and c.bgColor=="101010" and c.borderColor=="333333", "damage meter defaults")
 c.enabled = false
@@ -600,8 +600,8 @@ D.SetValueText(Row(win,1),0,1000,10,Secret("sessiontotal"),true)
 assert(Row(win,1).valueText.text=="1.00K (10)","secret denominator produced a share")
 fetches=api.fetch
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
-assert(PaintRequest() and PaintRequest().delay==1 and api.fetch==fetches,
-    "combat event must schedule one paint at refreshRate")
+assert(PaintRequest() and PaintRequest().delay==1.5 and api.fetch==fetches,
+    "combat event must schedule one paint at refreshRate (the 1.5 s default)")
 now=201;RunPaint()
 assert(api.fetch==fetches+1,"one-shot did not paint the dirty window")
 now=202;RunClock()
@@ -1233,15 +1233,18 @@ end
 ------------------------------------------------------------------ raid combat budget
 -- The 2026-10-02 raid trace: D.FetchSession ran 240 times in 120 s, 19 KB of
 -- native session table each, for the two default windows (Damage Done and
--- Healing Done, Current) at the default 1 s combat refresh. A fetch happens
+-- Healing Done, Current) at the then default 1 s combat refresh; the default
+-- is 1.5 s since 2026-10-03 (owner decision), a stored value stays. A fetch happens
 -- only for a shown, unfaded window whose meter type and session an event
 -- touched since its last paint (Blizzard's own window refreshes on the same
 -- test, DamageMeterSessionWindowMixin:OnEvent), once per paint interval,
 -- and windows showing the same meter and fight share one fetch. Natives are
 -- the C_DamageMeter session getters (api.fetch, api.fetchID).
 do
+    local defaultRate=S.catalog.damageMeter.rules.refreshRate.default
+    assert(defaultRate==1.5,"the combat refresh default is not 1.5 s")
     assert(S.SetMany("damageMeter",{windowCount=2,w1Type=1,w2Type=3,w1Session=1,w2Session=1,
-        visibility=Suite.DamageMeterVisibility.ALWAYS,refreshRate=1}))
+        visibility=Suite.DamageMeterVisibility.ALWAYS,refreshRate=defaultRate}))
     -- The scenarios above end with the module switched off.
     assert(S.Set("damageMeter","enabled",true) and M.active,"the meter did not start again")
     api.secret=true
@@ -1282,10 +1285,37 @@ do
         debug.sethook()
         return Fetches()-before,count
     end
+    -- Three seconds of raid combat in 0.1 s frames, both meters changing every
+    -- frame: a paint runs once its request is due (the interval after the
+    -- last paint). The default 1.5 s paints twice per window in the window,
+    -- a stored 1 s three times.
+    local function CombatWindow()
+        combat=false;Event("PLAYER_REGEN_ENABLED");RunPaint();RunClock()
+        combat=true;Event("PLAYER_REGEN_DISABLED");RunClock()
+        local before,requestedAt=Fetches(),nil
+        for _=1,30 do
+            for _,meterType in ipairs({0,2}) do Send(meterType,0);Send(meterType,9) end
+            local request=PaintRequest()
+            if request and not requestedAt then requestedAt=now end
+            now=now+.1
+            if request and now>=requestedAt+request.delay-1e-6 then
+                requestedAt=nil
+                RunPaint()
+            end
+        end
+        return Fetches()-before
+    end
+    local window=CombatWindow()
+    assert(window==4,"three combat seconds at the 1.5 s default fetched "..window.." sessions, not 4")
+    Reconfigure({refreshRate=1})
+    local storedOne=CombatWindow()
+    assert(storedOne==6,"three combat seconds at a stored 1 s fetched "..storedOne.." sessions, not 6")
+    Reconfigure({refreshRate=defaultRate})
     Second()
     -- A raid second: both shown meters change, one meter nobody shows too.
+    local sentBefore=delivered
     local fetched,instructions=Measure(function() Storm({0,2,5});Second() end)
-    local raidDelivered=delivered
+    local raidDelivered=delivered-sentBefore
     assert(fetched==2 and not damage.dirty and not healing.dirty,
         "a combat second fetched "..fetched.." sessions for two windows")
     -- Measured 2026-10-02 (wave 4): 2 fetches and 3293 VM instructions at base
@@ -1320,7 +1350,18 @@ do
     combat=false;Event("PLAYER_REGEN_ENABLED");RunPaint();RunClock()
     assert(S.Set("damageMeter","visibility",Suite.DamageMeterVisibility.ALWAYS))
     api.secret=false
-    print(("damage meter raid budget: 2 fetches, %d instructions, %d of 600 events delivered"):format(
-        instructions,raidDelivered))
+    print(("damage meter raid budget: 2 fetches, %d instructions, %d of 600 events delivered;"
+        .. " 3 s of combat: %d fetches at the 1.5 s default, %d at a stored 1 s"):format(
+        instructions,raidDelivered,window,storedOne))
+end
+-- No migration: a profile that stored the old default keeps it; a profile
+-- without the setting gets the new default.
+do
+    local stored={suite={schema=1,modules={damageMeter={refreshRate=1}}}}
+    S.Normalize(stored)
+    assert(stored.suite.modules.damageMeter.refreshRate==1,"normalization moved a stored 1 s refresh")
+    local fresh={suite={schema=1,modules={}}}
+    S.Normalize(fresh)
+    assert(fresh.suite.modules.damageMeter.refreshRate==1.5,"a new profile did not get the 1.5 s default")
 end
 print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, damage and healing targets, combat spell unit labels, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

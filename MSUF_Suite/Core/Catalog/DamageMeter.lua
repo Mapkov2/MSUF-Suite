@@ -77,7 +77,7 @@ B.Section(id, "look", "Choose a look", {
 })
 B.Section(id, "general", "Windows and data", {
     Number("windowCount", "Number of windows", 2, 1, MAX_WINDOWS),
-    Number("refreshRate", "Update interval in combat (seconds)", 1, 0.2, 2, 0.1),
+    Number("refreshRate", "Update interval in combat (seconds)", 1.5, 0.2, 2, 0.1),
     Choice("visibility", "Show windows", 1, { "Always", "In combat", "In a group", "Mouseover", "Never" }),
     Bool("autoCurrent", "Return to the current fight when combat starts", true),
     Bool("mythicReset", "Reset data when a Mythic+ keystone starts", true),
