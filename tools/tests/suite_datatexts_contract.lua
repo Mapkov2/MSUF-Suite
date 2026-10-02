@@ -7,8 +7,8 @@ local W = H.New(root, flavor, { beforeModules = function(world)
     local G = world.G
     G.GetFramerate = function() reads.fps = reads.fps + 1; return fps end
     G.GetMoney = function() reads.gold = reads.gold + 1; return money end
-    -- A German client: Blizzard's gold symbol and short date are localized.
-    G.GOLD_AMOUNT_SYMBOL = "G"
+    -- A German client: Blizzard's coin symbols and short date are localized.
+    G.GOLD_AMOUNT_SYMBOL, G.SILVER_AMOUNT_SYMBOL, G.COPPER_AMOUNT_SYMBOL = "G", "S", "K"
     G.FormatShortDate = function(day, month, year) return string.format("%02d.%02d.%d", day, month, year) end
     G.GetInventoryItemDurability = function()
         reads.durability = reads.durability + 1
@@ -328,7 +328,7 @@ do
     local tip = W.G.GameTooltip
     W.Fire(slots[1], "OnEnter")
     assert(tip.shown and tip.owner == slots[1] and tip.lines[1] == W.Suite.DataTextSources[slots[1].sourceIndex]
-        and tip.lines[2] == "Current | 11g 23s 45c", "the gold DataText tooltip did not show the full amount")
+        and tip.lines[2] == "Current | 11G 23S 45K", "the gold DataText tooltip did not show the full amount")
     W.Fire(slots[1], "OnLeave")
     assert(not tip.shown, "leaving a DataText kept its tooltip")
 end
@@ -347,15 +347,15 @@ assert(M.bars[1].slots[4].text == "Session: —", "session gold was shown before
 -- the first public amount becomes it, stored for the Bags and a /reload.
 W.Suite.loginKind = "login"
 W.Event("PLAYER_MONEY")
-assert(M.bars[1].slots[4].text == "Session: 0c" and W.Suite.RootDB.suiteGold["Player-1"] == 100000
+assert(M.bars[1].slots[4].text == "Session: 0K" and W.Suite.RootDB.suiteGold["Player-1"] == 100000
     and W.Suite.goldSessionCaptured == true, "saved gold of an earlier session became the login baseline")
 money = 112345
 W.Event("PLAYER_MONEY")
-assert(M.bars[1].slots[4].text == "Session: +1g 23s 45c",
+assert(M.bars[1].slots[4].text == "Session: +1G 23S 45K",
     "session gold lost silver or copper")
 money = 99901
 W.Event("PLAYER_MONEY")
-assert(M.bars[1].slots[4].text == "Session: −99c", "session gold loss was formatted incorrectly")
+assert(M.bars[1].slots[4].text == "Session: −99K", "session gold loss was formatted incorrectly")
 assert(moneyTexts > 0, "session gold did not use the shared S.MoneyText")
 money = 100000
 G.UnitGUID = function() return W.secret end

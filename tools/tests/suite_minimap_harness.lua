@@ -522,7 +522,7 @@ function H.New(root, client, options)
     -- (GlobalStrings; FormatShortDate formats SHORTDATE "%2$d/%1$02d/%3$02d",
     -- Blizzard_SharedXML/TimeUtil.lua on both clients).
     G.TIMEMANAGER_AM, G.TIMEMANAGER_PM, G.TIME_TWELVEHOURAM = "AM", "PM", "%d:%02d AM"
-    G.GOLD_AMOUNT_SYMBOL = "g"
+    G.GOLD_AMOUNT_SYMBOL, G.SILVER_AMOUNT_SYMBOL, G.COPPER_AMOUNT_SYMBOL = "g", "s", "c"
     G.FormatShortDate = function(day, month, year) return string.format("%d/%02d/%02d", month, day, year) end
     G.GetServerTime = function() return 1700000000 end
     G.GetGameTime = function() return 12, 0 end

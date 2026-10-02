@@ -812,6 +812,7 @@ function H.New(root, options)
     UnitFullName = function() return W.playerName or "Tester", W.realmShort or "TestRealm" end
     GetRealmName = function() return W.realm or "Test Realm" end
     GetMoney = function() return W.money end
+    GOLD_AMOUNT_SYMBOL, SILVER_AMOUNT_SYMBOL, COPPER_AMOUNT_SYMBOL = "g", "s", "c"
     GetServerTime = function() return W.serverTime or 1790000000 end
     date, time = os.date, os.time
     GetCursorPosition = function() return 500, 500 end

@@ -297,6 +297,7 @@ GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12
 -- Money text comes from the shared helper in MSUF_Suite_Modules/Surfaces.lua.
 local shared = { Suite = {} }
 MSUFSuite = shared
+GOLD_AMOUNT_SYMBOL, SILVER_AMOUNT_SYMBOL, COPPER_AMOUNT_SYMBOL = "g", "s", "c"
 assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
 MSUFSuite = nil
 local moneyTexts = 0
