@@ -376,9 +376,16 @@ local function SyncRangeTicker(self)
 end
 
 -- Rows follow their casts: a stop re-anchors the rows after it and paints
--- only the cast that moves into the freed slot.
+-- only the cast that moves into the freed slot. In Edit Mode the samples
+-- stand in and casts are listed without rows; in combat Edit Mode closes
+-- before the module's Refresh may run, so the first Sync after it gives
+-- every listed cast its row (self.rowless).
 local function Sync(self, from)
-    if S.editMode then return end
+    if S.editMode then
+        self.rowless = true
+        return
+    end
+    if self.rowless then from, self.rowless = 1, nil end
     local ordered = self.ordered
     local count = math.min(#ordered, self.config.listSize)
     if self.visible == 0 and count > 0 then SampleReady(self) end
