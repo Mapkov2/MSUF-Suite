@@ -448,7 +448,6 @@ end
 
 -- event is the client event that asked for this pass, if any.
 Flush = function(event)
-    InventoryView.queued = false
     if not InventoryView.active or not M.active or not InventoryView.frame:IsShown() then return end
     if NS.IsCombatLocked() then
         -- A bag opened in combat shows Blizzard's own grid; the Suite controls
@@ -476,10 +475,13 @@ Flush = function(event)
     RenderSidebar()
 end
 
+-- One pass per frame (a ctx:Coalesce job): requests in between ride along.
+-- The tail call keeps the pass one stack level shallower (bag refresh budget).
+local function DeferredFlush() return Flush() end
 Request = function()
-    if not InventoryView.active or InventoryView.queued or not InventoryView.frame:IsShown() then return end
-    InventoryView.queued = true
-    C_Timer.After(0, Flush)
+    if not InventoryView.active or not InventoryView.frame:IsShown() then return end
+    InventoryView.flushJob = InventoryView.flushJob or M.context:Coalesce(0, DeferredFlush)
+    InventoryView.flushJob:Request()
 end
 InventoryView.Request = Request
 

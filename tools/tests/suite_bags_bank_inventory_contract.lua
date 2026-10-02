@@ -104,6 +104,9 @@ local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
     Client = { SupportsEvent = function() return true end } }, BagsModule = M,
     StackSplitter = { OwnerHidden = function() end, OpenFor = function() end } }
 UnitGUID = function() return "Player-1" end
+-- The Bags module's context timers: bank passes are one coalesced job.
+P.NS.Dispatch = function(callback, ...) return callback(...) end
+M.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", M)
 for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "BankIndex",
     "BankActions", "BankInventory" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)

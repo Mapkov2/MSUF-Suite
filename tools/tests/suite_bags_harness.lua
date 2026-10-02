@@ -786,13 +786,17 @@ function H.New(root, options)
             return unpack(results, 1, table.maxn(results))
         end)
     end
+    -- C_Timer on the client clock: a zero delay runs on the next frame
+    -- (W.Frame), a longer wait once W.Advance has reached it.
+    W.later = {}
+    GetTime = function() return W.now end
     C_Timer = {
-        After = function(_, callback) W.timers[#W.timers + 1] = callback end,
-        NewTimer = function(_, callback)
-            local timer = { callback = callback }
-            function timer:Cancel() self.cancelled = true end
-            W.timers[#W.timers + 1] = function() if not timer.cancelled then callback(timer) end end
-            return timer
+        After = function(delay, callback)
+            if delay > 0 then
+                W.later[#W.later + 1] = { due = W.now + delay, callback = callback }
+            else
+                W.timers[#W.timers + 1] = callback
+            end
         end,
     }
     C_EventUtils = { IsEventValid = function() return true end }
@@ -1020,6 +1024,14 @@ function H.New(root, options)
         W.timers = {}
         for i = 1, #list do Insecure(list[i]) end
     end
+    function W.Advance(seconds)
+        W.now = W.now + seconds
+        local due = {}
+        for i = #W.later, 1, -1 do
+            if W.later[i].due <= W.now then table.insert(due, 1, table.remove(W.later, i)) end
+        end
+        for i = 1, #due do Insecure(due[i].callback) end
+    end
     function W.Settle(limit)
         for _ = 1, limit or 10 do
             if #W.timers == 0 then return end
@@ -1108,7 +1120,9 @@ function H.New(root, options)
     function S.ResetKeys(id, values) return S.SetMany(id, values) end
     function S.RegisterOwnedMover(id, element, spec) W.movers = W.movers or {}; W.movers[element] = spec end
     function S.RefreshOwnedMovers() end
-    assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
+    local runtime = {}
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", runtime)
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Timers.lua"))("MSUF_Suite_Modules", runtime)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
     W.S = S
 

@@ -288,16 +288,16 @@ function Finance.Refresh()
 end
 
 local function Flush()
-    Finance.queued = false
     Finance.Refresh()
 end
 
+-- One repaint per frame (a ctx:Coalesce job): events in between ride along.
 function Finance.Event(_, event)
     if event == "PLAYER_MONEY" or event == "PLAYER_ENTERING_WORLD" then Finance.Record() end
-    if Finance.queued or not M.active or not M.frame then return end
+    if not M.active or not M.frame then return end
     if not M.frame:IsShown() and not (Finance.window and Finance.window:IsShown()) then return end
-    Finance.queued = true
-    C_Timer.After(0, Flush)
+    Finance.flushJob = Finance.flushJob or M.context:Coalesce(0, Flush)
+    Finance.flushJob:Request()
 end
 
 function Finance.Enable()

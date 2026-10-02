@@ -123,6 +123,9 @@ local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, Bag
     Client = { SupportsEvent = function() return true end } }, BagsModule = module,
     BagFinance = { Refresh = function() end },
     InventoryEditor = { Show = function() end, Hide = function() end, ShowPinned = function() end } }
+-- Renders are one coalesced job on the Bags module's context.
+P.NS.Dispatch = function(callback, ...) return callback(...) end
+module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", module)
 UnitGUID = function() return "Player-1" end
 -- Recent items remember their arrival in server time.
 GetServerTime = function() return 1000000 end

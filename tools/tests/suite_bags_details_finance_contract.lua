@@ -252,6 +252,9 @@ end
 local timers, shown, refreshes = {}, true, 0
 M.frame = { IsShown = function() return shown end }
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+-- Repaints are one coalesced job on the Bags module's context.
+NS.Dispatch = function(callback, ...) return callback(...) end
+M.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)("bags", M)
 F.Refresh = function() refreshes = refreshes + 1 end
 money = 1000; F.Event(nil, "PLAYER_MONEY")
 money = 1002; F.Event(nil, "PLAYER_MONEY")
