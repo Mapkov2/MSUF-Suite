@@ -1,6 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local M = { generation = 0 }
+local M = {}
 local ID = "combatStatsHUD"
 -- look 6 is Class Style, whose shared palette is QoLVisualStyles[5]; look 5 is Custom.
 local CUSTOM_LOOK, CLASS_LOOK, CLASS_PALETTE = 5, 6, 5
@@ -132,15 +132,17 @@ local function FPSPlacement(self)
     return FPS_ALONE
 end
 
-local function PaintFPS()
+local function PaintFPS(self)
     local value = GetFramerate()
-    M.fpsText:SetText(S.Finite(value) and string.format(M.fpsFormat, value) or M.fpsUnknown)
+    self.fpsText:SetText(S.Finite(value) and string.format(self.fpsFormat, value) or self.fpsUnknown)
 end
 
+-- Cold: placement and the sampling ticker follow the settings, the session
+-- toggle and Edit Mode, never a stat repaint.
 local function UpdateFPS(self)
     local placement = FPSPlacement(self)
     if not placement then
-        if self.fpsTicker then self.fpsTicker:Cancel(); self.fpsTicker = nil end
+        self.context:Cancel(PaintFPS)
         if self.fpsHost then self.fpsHost:Hide() end
         return
     end
@@ -157,8 +159,8 @@ local function UpdateFPS(self)
     else self.fpsHost:SetPoint("CENTER", UIParent, "CENTER", self.config.fpsX, self.config.fpsY) end
     self.fpsHost:SetScale(self.config.scale / 100)
     self.fpsHost:Show()
-    PaintFPS()
-    if not self.fpsTicker then self.fpsTicker = C_Timer.NewTicker(1, PaintFPS) end
+    PaintFPS(self)
+    self.context:Ticker(1, PaintFPS)
 end
 
 function S.ToggleCombatStatsFPS()
@@ -230,7 +232,6 @@ local function Update(self, event)
     if not self.active or not self.host then return end
     local visible = Wanted(self, event)
     self.host:SetShown(visible)
-    UpdateFPS(self)
     if not visible then return end
     local c = self.config
     if S.editMode then
@@ -252,15 +253,10 @@ local function Update(self, event)
     end
 end
 
-local function Schedule(self)
-    if self.pending then return end
-    self.pending = true
-    local generation = self.generation
-    C_Timer.After(.05, function()
-        if self.generation ~= generation then return end
-        self.pending = false
-        Update(self)
-    end)
+-- Stat events request one repaint per short window (self.statsJob).
+local STATS_DELAY = .05
+local function Repaint(self)
+    Update(self)
 end
 
 local STAT_EVENTS = {
@@ -277,7 +273,7 @@ local function SyncListeners(self, event)
     for i = 1, #STAT_EVENTS do
         local name = STAT_EVENTS[i]
         local unit = name:sub(1, 5) == "UNIT_" and "player" or nil
-        if want then self.context:Event(name, Schedule, true, unit)
+        if want then self.context:Event(name, self.statsJob, true, unit)
         else self.context:RemoveEvent(name) end
     end
 end
@@ -288,7 +284,7 @@ local function OnGate(self, event)
 end
 
 function M:Enable()
-    self.generation = self.generation + 1
+    self.statsJob = self.context:Coalesce(STATS_DELAY, Repaint)
     self.fpsChoice = self.config.fps
     Create(self)
     Layout(self)
@@ -297,6 +293,7 @@ function M:Enable()
     self.context:Event("PLAYER_REGEN_ENABLED", OnGate, true)
     SyncListeners(self)
     Update(self)
+    UpdateFPS(self)
     self:RegisterMovers()
 end
 
@@ -306,13 +303,12 @@ function M:Refresh()
     Layout(self)
     SyncListeners(self)
     Update(self)
+    UpdateFPS(self)
 end
 
+-- The context's Release stops the repaint and the FPS ticker.
 function M:Disable()
-    if self.fpsTicker then self.fpsTicker:Cancel(); self.fpsTicker = nil end
     if self.fpsHost then self.fpsHost:Hide() end
-    self.generation = self.generation + 1
-    self.pending = false
     self.listening = nil
     if self.host then self.host:Hide() end
 end

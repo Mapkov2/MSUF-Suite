@@ -147,6 +147,15 @@ assert(flushes == 4, "a cancelled wait in flight still ran the job")
 clock.Advance(.1)
 assert(flushes == 5, "the request after Cancel did not wait the full delay")
 assert(ctx:Coalesce(.25, Flush) == job and job.keys == keys, "Coalesce lost the job or its key set")
+-- A job is an event callback too (ctx:Event(event, job)): the event requests it.
+job(module, "UNIT_AURA", "player")
+job(module, "UNIT_AURA", "player")
+assert(job.pending, "an event did not request the job")
+clock.Advance(.3)
+assert(flushes == 6 and not job.pending, "event requests did not coalesce into one run")
+-- Handles keep the module their context belongs to: one must be installed.
+assert(not pcall(S.NewContext("missing").After, S.NewContext("missing"), 1, Once),
+    "a context without an installed module made a timer")
 
 ------------------------------------------------------------------ Ticker
 local ticks = 0
@@ -206,7 +215,7 @@ clock.Advance(.2)
 assert(runs == 5, "After did not run in combat")
 job:Request("combat")
 clock.Advance(.3)
-assert(flushes == 6, "a job did not run in combat")
+assert(flushes == 7, "a job did not run in combat")
 
 ------------------------------------------------------------------ Release
 ctx:After(.2, Once)
@@ -215,14 +224,14 @@ ctx:Ticker(1, Tick)
 ctx:Release()
 assert(not job.pending and not ticker:Running() and not handle:Pending(), "Release left a timer pending")
 clock.Advance(3)
-assert(runs == 5 and flushes == 6 and ticks == 5, "a timer ran after Release")
+assert(runs == 5 and flushes == 7 and ticks == 5, "a timer ran after Release")
 locked = false
 -- The context and its handles stay usable after Release (the next Enable).
 ctx:After(.1, Once)
 job:Request("next")
 ctx:Ticker(1, Tick)
 clock.Advance(1.05)
-assert(runs == 6 and flushes == 7 and ticks == 6, "timers did not work again after Release")
+assert(runs == 6 and flushes == 8 and ticks == 6, "timers did not work again after Release")
 ctx:Release()
 -- A context that never made a timer releases without one.
 S.NewContext("timed"):Release()

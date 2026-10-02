@@ -15,8 +15,10 @@ local Dispatch = NS.Dispatch
 -- Each returns a handle, one per fn and context, reused by every call: fn must
 -- be a function made once, never a closure made per call. handle:Cancel()
 -- drops the pending run; handle:Pending() (job, deadline) and
--- handle:Running() (ticker) tell whether one is due. A per-event path may
--- read job.pending and skip the Request call while a run is due already.
+-- handle:Running() (ticker) tell whether one is due. A job is also an event
+-- callback: ctx:Event(event, job) requests it on every event at the cost of
+-- a pending check. A per-event path with work of its own may read
+-- job.pending and skip the Request call while a run is due already.
 -- Callbacks run isolated (Dispatch) and only while the module is active. They
 -- run in combat too: work that needs the lockdown over checks it itself.
 --
@@ -53,9 +55,10 @@ local function Abandon(wait)
     wait.tick = nil
 end
 
-local function Owner(wait)
-    local module = S.instances[wait.ctx.id]
-    return module and module.active and module or nil
+-- The module a context belongs to stays the same for the context's lifetime
+-- (S.Install), so each handle keeps it.
+local function OwnerOf(ctx)
+    return assert(S.instances[ctx.id], "context timers need an installed module")
 end
 
 ------------------------------------------------------------------ deadlines
@@ -100,8 +103,8 @@ local After = setmetatable({}, { __index = Deadline })
 After.__index = After
 
 function After:Run()
-    local module = Owner(self)
-    if module then Dispatch(self.fn, module) end
+    local module = self.module
+    if module.active then Dispatch(self.fn, module) end
 end
 
 ------------------------------------------------------------------ coalesced jobs
@@ -118,8 +121,8 @@ end
 function Job:Fire()
     if not self.pending then return end
     self.pending = false
-    local module = Owner(self)
-    if module then Dispatch(self.fn, module, self.keys) end
+    local module = self.module
+    if module.active then Dispatch(self.fn, module, self.keys) end
 end
 
 -- Forgets the request; a wait in flight finds nothing to do, and a request
@@ -139,6 +142,12 @@ function Job:Pending()
     return self.pending == true
 end
 
+-- As an event callback (ctx:Event(event, job)) a job takes the request.
+function Job.__call(job)
+    if job.pending then return end
+    job:Request()
+end
+
 ------------------------------------------------------------------ tickers
 local Ticker = {}
 Ticker.__index = Ticker
@@ -147,8 +156,8 @@ function Ticker:Start()
     if self.ticker then return end
     if not self.tick then
         self.tick = function()
-            local module = Owner(self)
-            if module then Dispatch(self.fn, module) end
+            local module = self.module
+            if module.active then Dispatch(self.fn, module) end
         end
     end
     self.ticker = C_Timer.NewTicker(self.interval, self.tick)
@@ -173,7 +182,7 @@ local function Handle(ctx, fn, class)
     end
     local handle = timers[fn]
     if not handle then
-        handle = setmetatable({ ctx = ctx, fn = fn, kind = class }, class)
+        handle = setmetatable({ ctx = ctx, fn = fn, kind = class, module = OwnerOf(ctx) }, class)
         timers[fn] = handle
     end
     assert(handle.kind == class, "a callback serves one kind of context timer")

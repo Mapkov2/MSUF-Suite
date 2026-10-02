@@ -78,10 +78,12 @@ local function Fire(event, ...)
 end
 
 ------------------------------------------------------------------ the shipped runtime
+-- securecallfunction is a C function: the stand-in calls straight through,
+-- so neither its instructions nor a results table enter the budget.
 local reported = {}
 local S = { instances = {}, catalog = {}, states = {} }
 local NS = {
-    Suite = S, Dispatch = Support.Dispatcher(reported),
+    Suite = S, Dispatch = function(callback, ...) return callback(...) end,
     Finish = function(callback, ...) return true, callback(...) end,
     Public = function(value) return value ~= "secret" end,
     Number = function(value) return type(value) == "number" end,
@@ -161,9 +163,18 @@ local function Instructions(fn)
     return count
 end
 
+-- A full collect shrinks the Lua stack of a thread that uses little of it;
+-- the first deep call afterwards grows it again. Growing it once before the
+-- window keeps that one-time cost out of the per-burst kilobytes.
+local function Deep(depth, a, b, c, d, e, f, g, h)
+    if depth > 0 then return Deep(depth - 1, a, b, c, d, e, f, g, h) + 0 end
+    return 0
+end
+
 local function Kilobytes(fn)
     collectgarbage("collect")
     collectgarbage("stop")
+    Deep(120)
     local before = collectgarbage("count")
     fn()
     local used = collectgarbage("count") - before
