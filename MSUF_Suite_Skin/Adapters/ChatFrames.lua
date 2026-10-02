@@ -47,7 +47,6 @@ local messageColorRoles = {
 -- logout could not put back goes to the Suite's ledger, which only the
 -- explicit "Restore chat colors" applies. Keep this list limited to the
 -- categories we change.
-local blizzardMessageDefaults = _G.MSUFSuite.Skin.CHAT_COLOR_DEFAULTS
 
 local frameBorderSuffixes = {
     "TopLeftTexture", "BottomLeftTexture", "TopRightTexture", "BottomRightTexture",
@@ -114,10 +113,17 @@ local function Shows(color, current, tolerance)
     return ColorMatches(color, current[1], current[2], current[3], nil, tolerance)
 end
 
--- The Suite's chat colour ledger (MSUF_Suite/Integrations/MapkoSkin.lua).
--- MSUF_Suite is this addon's dependency.
+-- The Suite core's skin boundary (MSUF_Suite/Integrations/MapkoSkin.lua):
+-- the chat colour ledger and Blizzard's default chat colours. Resolved once,
+-- at the first use, through the skin's handle on the core (NS.SuiteCore).
+local suiteSkin
 local function Ledger()
-    return _G.MSUFSuite.Skin
+    if not suiteSkin then suiteSkin = NS.SuiteCore().Skin end
+    return suiteSkin
+end
+
+local function DefaultColor(chatType)
+    return Ledger().CHAT_COLOR_DEFAULTS[chatType]
 end
 
 -- What the restores of this session put back and what they could not,
@@ -127,7 +133,7 @@ local restoredTypes, leftovers = {}, {}
 -- The state of a category the skin meets for the first time: owned with the
 -- colour to restore while it shows Blizzard's default, else released.
 local function CaptureMessageColor(chatType, current)
-    if Shows(blizzardMessageDefaults[chatType], current, COLOR_NATIVE) then
+    if Shows(DefaultColor(chatType), current, COLOR_NATIVE) then
         return { original = current, applied = {} }
     end
     return { released = true }
@@ -143,7 +149,7 @@ local function ApplyMessageColor(state, chatType)
         colorState = CaptureMessageColor(chatType, current)
         state.messageColors[chatType] = colorState
     elseif not colorState.released and not Shows(colorState.applied, current, COLOR_OWN)
-        and not Shows(blizzardMessageDefaults[chatType], current, COLOR_NATIVE) then
+        and not Shows(DefaultColor(chatType), current, COLOR_NATIVE) then
         -- Changed by a path the ChangeChatColor hook does not see: theirs.
         colorState.released = true
     end

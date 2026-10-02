@@ -1497,12 +1497,6 @@
    "symbol": "object.SetTextColor"
   },
   {
-   "file": "MSUF_Suite_Skin/Core/Bootstrap.lua",
-   "kind": "addon",
-   "reason": "the standalone MapkoSkin addon also publishes _G.MapkoSkin; the skin takes the name only when it is free",
-   "symbol": "MapkoSkin"
-  },
-  {
    "file": "MSUF_Suite_Skin/Core/Checkmarks.lua",
    "kind": "addon",
    "reason": "foreign object (a Blizzard or other addon's frame, pool or color); per the Suite's safety rule a method is checked with type(obj.Method) before it is called on a foreign object",

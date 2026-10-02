@@ -213,6 +213,8 @@ NS = {
     -- any of this runs; here every key reads as itself.
     L = setmetatable({}, { __index = function(_, key) return key end }),
     IsCombatLocked = function() return locked end,
+    -- The skin's handle on the Suite core (Core/Bootstrap.lua).
+    SuiteCore = function() return MSUFSuite end,
     Client = {
         IsAddOnLoaded = function() return true end,
         HasAddOn = function() return true end,

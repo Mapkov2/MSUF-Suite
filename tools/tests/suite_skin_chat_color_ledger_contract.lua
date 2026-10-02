@@ -103,6 +103,7 @@ local function Session(skinOn)
     if skinOn then
         local NS = {
             IsCombatLocked = function() return false end,
+            SuiteCore = function() return MSUFSuite end, -- Core/Bootstrap.lua
             Theme = { GetColor = function(role)
                 if role == "blizzardYellow" then return THEME[1], THEME[2], THEME[3], 1 end
                 return 1, 1, 1, 1
