@@ -1,5 +1,6 @@
 """Line style of the BuffReminders, Chat and Nameplates addons: no statements
-chained with `;` and no line longer than 160 characters.
+chained with `;`, no statement on the line of an `else` or `elseif ... then`
+(the branch gets its own lines) and no line longer than 160 characters.
 
 Usage: python tools/tests/suite_br_chat_np_line_style_contract.py <repo root>
 
@@ -8,12 +9,14 @@ out of the `;` check; a long bracket string or comment fails the check, so
 it cannot hide code from it.
 """
 
+import re
 import sys
 from pathlib import Path
 
 ADDONS = ("MSUF_Suite_BuffReminders", "MSUF_Suite_Chat", "MSUF_Suite_Nameplates")
 SKIP = {"MSUF_Suite_Chat/Copy.lua"}
 MAX_LINE = 160
+ELSE_STATEMENT = re.compile(r"^\s*(else\s+\S|elseif\b.*\bthen\s+\S)")
 
 
 def code_only(line):
@@ -52,8 +55,11 @@ def problems(root):
                     found.append(where + " uses a long bracket; the line check cannot read past it")
                 if len(line) > MAX_LINE:
                     found.append("%s is %d characters long (at most %d)" % (where, len(line), MAX_LINE))
-                if ";" in code_only(line).rstrip().rstrip(";"):
+                code = code_only(line).rstrip()
+                if ";" in code.rstrip(";"):
                     found.append(where + " chains statements with ';': " + line.strip())
+                if ELSE_STATEMENT.match(code):
+                    found.append(where + " puts a statement on its else line: " + line.strip())
     return found
 
 
@@ -65,13 +71,18 @@ def main():
     samples = ['if x then a(); return end', 'local s = "a; b" -- c; d', "x" * (MAX_LINE + 1)]
     assert ";" in code_only(samples[0]) and ";" not in code_only(samples[1])
     assert len(samples[2]) > MAX_LINE
+    for line in ("    else b() end", "    elseif y then b()", "  else x = 1 end"):
+        assert ELSE_STATEMENT.match(code_only(line).rstrip()), line
+    for line in ("    else", "    elseif y then", "    elseif y then -- c", "    else -- else b()",
+                 "    if x then a() else b() end", 'local s = "else b()"'):
+        assert not ELSE_STATEMENT.match(code_only(line).rstrip()), line
     for problem in found:
         print(problem)
     if found:
         print("%d line style problems" % len(found))
         return 1
-    print("BuffReminders, Chat and Nameplates line style: no chained statements, no line over %d characters"
-          % MAX_LINE)
+    print("BuffReminders, Chat and Nameplates line style: no chained statements, no else-line statements, "
+          "no line over %d characters" % MAX_LINE)
     return 0
 
 
