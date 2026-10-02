@@ -211,20 +211,15 @@ local function Changed(self, event, unit)
     if not Relevant(self, event, unit) then return end
     if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then self.alerted = false end
     if event == "GROUP_ROSTER_UPDATE" or event == "UNIT_PET" then Roster(self) end
-    if self.pending then return end
-    self.pending = true
-    C_Timer.After(UPDATE_DELAY, self.flush)
+    local repaint = self.repaint
+    if repaint.pending then return end
+    repaint:Request()
 end
 
 function M:Enable()
     self.layoutSerial = (self.layoutSerial or 0) + 1
-    self.generation = (self.generation or 0) + 1
-    local generation = self.generation
-    self.flush = function()
-        if generation ~= self.generation then return end
-        self.pending = false
-        if self.active then self:Update() end
-    end
+    -- Threat events request one repaint per UPDATE_DELAY.
+    self.repaint = self.context:Coalesce(UPDATE_DELAY, M.Update)
     Roster(self)
     for _, event in ipairs({ "UNIT_THREAT_LIST_UPDATE", "UNIT_THREAT_SITUATION_UPDATE", "GROUP_ROSTER_UPDATE", "UNIT_PET",
         "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED", "UNIT_TARGET", "PLAYER_ENTERING_WORLD" }) do
@@ -236,9 +231,9 @@ function M:Refresh()
     self.layoutSerial = (self.layoutSerial or 0) + 1
     Roster(self); self:Update()
 end
+-- The context's Release drops a pending repaint.
 function M:Disable()
-    self.generation = (self.generation or 0) + 1
-    self.pending, self.alerted = false, false
+    self.alerted = false
     for _, host in pairs(self.windows) do host:Hide() end
 end
 function M:RegisterMovers()

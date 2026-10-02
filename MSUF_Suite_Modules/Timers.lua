@@ -6,10 +6,11 @@ local Dispatch = NS.Dispatch
 -- cancels all of it, so a stopped module never runs a late callback.
 --   ctx:After(delay, fn)          fn(module) once, delay seconds from now. A
 --                                 new call moves the deadline (a restart).
---   ctx:Coalesce(delay, fn, keys) a job: job:Request(key) asks for one run of
+--   ctx:Coalesce(delay, fn, keys) a job: job:Request() asks for one run of
 --                                 fn(module, keys) delay seconds after the
---                                 first request; later requests ride along
---                                 (keys[key] = true) and fn consumes the keys.
+--                                 first request; later requests ride along.
+--                                 job:Add(key) also marks keys[key] = true;
+--                                 fn consumes the keys.
 --   ctx:Ticker(interval, fn)      fn(module) every interval seconds.
 --   ctx:Cancel(fn)                drops fn's pending run or stops its ticker.
 -- Each returns a handle, one per fn and context, reused by every call: fn must
@@ -111,18 +112,34 @@ end
 local Job = {}
 Job.__index = Job
 
-function Job:Request(key)
-    if key ~= nil then self.keys[key] = true end
-    if self.pending then return end
-    self.pending = true
-    if not self.armed then Arm(self, self.delay) end
+-- A job's tick runs the job itself: the per-window path stays one call.
+local function NewJobTick(job)
+    local tick
+    tick = function()
+        local self = job
+        if self.tick ~= tick then return end
+        self.armed = false
+        if not self.pending then return end
+        self.pending = false
+        local module = self.module
+        if module.active then Dispatch(self.fn, module, self.keys) end
+    end
+    job.tick = tick
+    return tick
 end
 
-function Job:Fire()
-    if not self.pending then return end
-    self.pending = false
-    local module = self.module
-    if module.active then Dispatch(self.fn, module, self.keys) end
+-- Per-event code calls this: the wait is armed inline.
+function Job:Request()
+    if self.pending then return end
+    self.pending = true
+    if self.armed then return end
+    self.armed = true
+    C_Timer.After(self.delay, self.tick or NewJobTick(self))
+end
+
+function Job:Add(key)
+    self.keys[key] = true
+    self:Request()
 end
 
 -- Forgets the request; a wait in flight finds nothing to do, and a request

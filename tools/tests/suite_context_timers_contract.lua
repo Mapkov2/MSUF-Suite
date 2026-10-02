@@ -105,16 +105,16 @@ local function Flush(owner, keys)
     end
     if requeue then
         requeue = false
-        job:Request("again")
+        job:Add("again")
     end
 end
 local keys = {}
 job = ctx:Coalesce(.25, Flush, keys)
 assert(job.pending == false and not job:Pending(), "a new job is idle")
 native = clock.native
-job:Request("a")
-job:Request("b")
-job:Request("a")
+job:Add("a")
+job:Add("b")
+job:Add("a")
 job:Request()
 assert(job.pending and clock.native == native + 1, "a burst armed more than one wait")
 clock.Advance(.2)
@@ -125,23 +125,23 @@ assert(flushes == 1 and #seen == 2 and seen[1] == "a" and seen[2] == "b" and not
     "the burst did not run once with every key")
 -- A request from inside the run waits a full delay again.
 requeue = true
-job:Request("first")
+job:Add("first")
 clock.Advance(.3)
 assert(flushes == 2 and job.pending, "a request made by the run was lost")
 clock.Advance(.3)
 assert(flushes == 3 and seen[#seen] == "again", "the run's own request did not run")
 -- Clear forgets the request; a new one rides on the wait in flight.
-job:Request("x")
+job:Add("x")
 clock.Advance(.1)
 job:Clear()
-job:Request("y")
+job:Add("y")
 clock.Advance(.16)
 assert(flushes == 4, "a request after Clear did not ride on the wait in flight")
 -- Cancel makes the wait in flight stale; the next request waits the full delay.
-job:Request("z")
+job:Add("z")
 clock.Advance(.1)
 job:Cancel()
-job:Request("w")
+job:Add("w")
 clock.Advance(.2)
 assert(flushes == 4, "a cancelled wait in flight still ran the job")
 clock.Advance(.1)
@@ -213,13 +213,13 @@ locked = true
 ctx:After(.1, Once)
 clock.Advance(.2)
 assert(runs == 5, "After did not run in combat")
-job:Request("combat")
+job:Add("combat")
 clock.Advance(.3)
 assert(flushes == 7, "a job did not run in combat")
 
 ------------------------------------------------------------------ Release
 ctx:After(.2, Once)
-job:Request("released")
+job:Add("released")
 ctx:Ticker(1, Tick)
 ctx:Release()
 assert(not job.pending and not ticker:Running() and not handle:Pending(), "Release left a timer pending")
@@ -228,7 +228,7 @@ assert(runs == 5 and flushes == 7 and ticks == 5, "a timer ran after Release")
 locked = false
 -- The context and its handles stay usable after Release (the next Enable).
 ctx:After(.1, Once)
-job:Request("next")
+job:Add("next")
 ctx:Ticker(1, Tick)
 clock.Advance(1.05)
 assert(runs == 6 and flushes == 8 and ticks == 6, "timers did not work again after Release")
@@ -263,7 +263,7 @@ local function Kilobytes(count)
     local before = collectgarbage("count")
     for _ = 1, count do
         ctx:After(10, Once)
-        job:Request("warm")
+        job:Add("warm")
         job:Request()
     end
     local used = collectgarbage("count") - before
@@ -271,7 +271,7 @@ local function Kilobytes(count)
     return used
 end
 ctx:After(10, Once)
-job:Request("warm")
+job:Add("warm")
 local idle, used = Kilobytes(0), Kilobytes(500)
 assert(used - idle < .001, string.format("restarts and pending requests allocated %.3f KB", used - idle))
 ctx:Release()
