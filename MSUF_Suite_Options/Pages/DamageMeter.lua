@@ -67,7 +67,7 @@ local function BuildGradientPad(ctx, body, y, width)
         end)
         if M.RegisterControlMetadata then
             M.RegisterControlMetadata(button, P.Meta(PAGE, ID, key, "setting", sectionId),
-                Tr(P.catalog[ID].rules[key].label), "button")
+                P.catalog[ID].rules[key].label, "button")
         end
         buttons[key] = button
     end

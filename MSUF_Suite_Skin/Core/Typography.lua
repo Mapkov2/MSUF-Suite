@@ -46,7 +46,6 @@ local loadOnDemandOwners = {
     "Blizzard_PlayerChoice",
     "Blizzard_BoostTutorial",
     "Blizzard_Kiosk",
-    "Blizzard_Communities",
 }
 
 local function LocaleFallback(kind)

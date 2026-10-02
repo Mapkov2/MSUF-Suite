@@ -2295,7 +2295,15 @@ Section("communities column layout", function()
     raise = false
     Expect(ok and #reported == before + 1,
         "a raising column header pass escaped into Blizzard's LayoutColumns")
-    NS.CommunitiesSkin.Disable(communities, "communities")
+    -- Another owner takes the frame over: the first owner's skin comes off
+    -- with that owner's records.
+    local restoreOwner, restored = NS.Cosmetics.RestoreOwner, {}
+    NS.Cosmetics.RestoreOwner = function(owner) restored[#restored + 1] = owner end
+    NS.CommunitiesSkin.Apply(communities, "communities-other")
+    Expect(restored[1] == "communities" and NS.CommunitiesSkin.states[communities].owner == "communities-other",
+        "a new Communities owner did not take the previous owner's skin off")
+    NS.CommunitiesSkin.Disable(communities, "communities-other")
+    NS.Cosmetics.RestoreOwner = restoreOwner
     NS.Checkmarks.TrackControlTree = nil
     CommunitiesFrameMixin = nil
 end)

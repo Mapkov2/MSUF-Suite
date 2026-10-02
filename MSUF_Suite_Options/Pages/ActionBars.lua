@@ -367,7 +367,7 @@ local function AttachCopyTo(ctx, body, y)
     copy:SetScript("OnClick", function(self) api.Show(self) end)
     body:HookScript("OnHide", function() api.Hide() end)
     if M.RegisterControlMetadata then
-        M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"), Tr("Copy To"), "button")
+        M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"), "Copy To", "button")
     end
     return api
 end
