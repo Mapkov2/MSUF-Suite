@@ -199,6 +199,28 @@ M:Refresh(); Flush()
 state = savedState
 M:Refresh(); Flush()
 assert(B.active and #B.index.items == 2, "the bank view returns once the module state exists")
+-- Junk desaturation follows its option both ways on a reused button that
+-- Blizzard does not refresh (BankPanelItemButtonMixin clears the grey only in
+-- Refresh through UpdateLocked); a locked slot keeps Blizzard's grey.
+info[12].quality = 0
+Fire("BAG_UPDATE", 12)
+Flush()
+c.desaturateJunk = true
+M:Refresh(); Flush()
+local junk
+for _, button in ipairs(B.buttons) do
+    if button.shown and button.record and button.record.quality == 0 then junk = button end
+end
+assert(junk and junk.desaturated == true, "a junk bank item was not desaturated")
+local refreshes = junk.refreshes
+c.desaturateJunk = false
+M:Refresh(); Flush()
+assert(junk.refreshes == refreshes and junk.desaturated == false,
+    "turning junk desaturation off left an unchanged bank item grey")
+junk.itemInfo = { isLocked = true }
+M:Refresh(); Flush()
+assert(junk.desaturated == true, "the junk option removed the grey of a locked bank slot")
+junk.itemInfo, info[12].quality = nil, 1
 c.bankView = 1
 M:Refresh(); Flush()
 assert(not B.active and not B.frame:IsShown() and M.nativeUpdates > 0, "native bank management restored")

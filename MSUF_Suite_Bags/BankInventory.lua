@@ -68,7 +68,12 @@ local function StyleItem(button, item, font)
     else
         button.level:Hide()
     end
-    if c.desaturateJunk and item.quality == POOR then SetItemButtonDesaturated(button, true) end
+    -- Pass the state every time: Blizzard clears the grey only in Refresh
+    -- (BankPanelItemButtonMixin:UpdateLocked), which an unchanged slot skips.
+    -- A locked slot keeps the grey UpdateLocked gave it.
+    local info = button.itemInfo
+    local locked = info ~= nil and info.isLocked == true
+    SetItemButtonDesaturated(button, locked or c.desaturateJunk and item.quality == POOR or false)
 end
 
 local function Select(button)
