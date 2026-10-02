@@ -463,14 +463,14 @@ local function OnCombatEnd()
 end
 
 ------------------------------------------------------------------ event map
--- Context:Event's third argument: the handler also runs in combat.
-local ALLOW_COMBAT = true
+-- Context:Event's named option: the handler also runs in combat.
+local IN_COMBAT = { inCombat = true }
 local function Want(event, on, handler)
     on = on and true or false
     if (events[event] == true) == on then return end
     events[event] = on or nil
     if on then
-        M.context:Event(event, handler, ALLOW_COMBAT)
+        M.context:Event(event, handler, IN_COMBAT)
     else
         M.context:RemoveEvent(event)
     end

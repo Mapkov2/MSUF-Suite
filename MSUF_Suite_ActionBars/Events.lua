@@ -332,8 +332,8 @@ local optionalEvents = {
     SPELL_ACTIVATION_OVERLAY_GLOW_SHOW = true,
     SPELL_ACTIVATION_OVERLAY_GLOW_HIDE = true,
 }
--- Context:Event's third argument: the handler also runs in combat.
-local ALLOW_COMBAT = true
+-- Context:Event's named option: the handler also runs in combat.
+local IN_COMBAT = { inCombat = true }
 function AB.SyncOptionalEvents()
     local context = M.context
     for event in pairs(optionalEvents) do
@@ -343,7 +343,7 @@ function AB.SyncOptionalEvents()
             or event ~= "ACTION_RANGE_CHECK_UPDATE" and M.config.procGlow ~= PROC_NONE
         if gamepadEvent then wanted = NS.Client.isForever and AB.AnyGamepadHidden() end
         if wanted then
-            context:Event(event, EVENTS[event], ALLOW_COMBAT)
+            context:Event(event, EVENTS[event], IN_COMBAT)
         else
             context:RemoveEvent(event)
         end
@@ -395,7 +395,7 @@ function AB.StartDispatcher()
     GCD_RECOVERY = Constants.SpellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
     AB.locActive = ActiveLossOfControl()
     for event, handler in pairs(EVENTS) do
-        if not optionalEvents[event] then context:Event(event, handler, ALLOW_COMBAT) end
+        if not optionalEvents[event] then context:Event(event, handler, IN_COMBAT) end
     end
     AB.SyncOptionalEvents()
     AB.cooldownOwner = AB.cooldownOwner or {}

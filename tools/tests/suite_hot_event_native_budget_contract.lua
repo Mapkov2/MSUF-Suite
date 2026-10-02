@@ -475,5 +475,21 @@ do
     assert(region.font[1] == "later", "a second restore wrote the font again")
 end
 
+------------------------------------------------------------------ named event options
+-- Context:Event's options are named ({ inCombat = true }); the positional
+-- true is legacy. These hot-path files pass the named option.
+for _, file in ipairs({ "MSUF_Suite_DamageMeter/Controller.lua", "MSUF_Suite_ActionBars/Events.lua",
+    "MSUF_Suite_CooldownManager/Events.lua", "MSUF_Suite_QualityOfLife/GroupBloodlust.lua",
+    "MSUF_Suite_QualityOfLife/GroupDeathAlert.lua", "MSUF_Suite_QualityOfLife/ActionTracker.lua",
+    "MSUF_Suite_Modules/Raid.lua" }) do
+    local handle = assert(io.open(root .. "/" .. file, "rb"))
+    local source = handle:read("*a")
+    handle:close()
+    for call in source:gmatch(":Event(%b())") do
+        local third = call:match("^%([^,]+,[^,]+,%s*([%w_]+)")
+        assert(third ~= "true" and third ~= "ALLOW_COMBAT", file .. " passes a positional combat flag: " .. call)
+    end
+end
+
 if #failures > 0 then error(table.concat(failures, "\n")) end
 print("Suite hot event native budgets passed")
