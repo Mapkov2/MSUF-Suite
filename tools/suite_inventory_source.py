@@ -67,9 +67,12 @@ def literal_bindings(tokens):
         pos += 1
         for name in names:
             token = tokens[pos]
-            if token.kind not in ("str", "number"):
+            if token.kind not in ("str", "num"):
                 break
-            values[name] = token.value if token.kind == "str" else int(float(token.value))
+            if token.kind == "str":
+                values[name] = token.value
+            else:
+                values[name] = int(token.value, 16) if token.value.lower().startswith("0x") else float(token.value)
             pos += 1
             if pos >= len(tokens) or not tokens[pos].op(","):
                 break

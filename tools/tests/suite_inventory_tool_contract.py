@@ -144,6 +144,13 @@ S.Cleared = nil
         with self.assertRaises(ValueError):
             source.slash_commands(tokens('S.RegisterSlash("TEST", handler, unknown)'), {}, set())
 
+    def test_literal_alias_after_numeric_constant(self):
+        values = source.literal_bindings(tokens('local COUNT, ID = 2, "test"\nlocal HEX, RATE = 0x10, 0.5'))
+        self.assertEqual(values, {"COUNT": 2, "ID": "test", "HEX": 16, "RATE": 0.5})
+        found = set()
+        source.mover_ids(tokens('S.RegisterOwnedMover(ID, "main", {})'), values, "", "", {}, found)
+        self.assertEqual(found, {"MSUFSuite.test:main"})
+
     def test_dynamic_mover_limits(self):
         found = set()
         text = 'for i = 1, 2 do S.RegisterOwnedMover("test", "bar" .. i, {}) end'
@@ -288,6 +295,7 @@ MUTANTS = (
     ("lost saved keys", "suite_inventory_source.py", 'inventory.add(owner + "." + key)', "pass"),
     ("lost locales", "suite_inventory_diff.py", 'inventory["locale"].update(english)', "pass"),
     ("missing runner gate", "run_suite_tests.py", 'if wanted in "suite_inventory_diff.py":', "if False:"),
+    ("numeric literal prefix", "suite_inventory_source.py", '("str", "num")', '("str", "number")'),
 )
 
 
