@@ -30,6 +30,13 @@ do
     W.Settle()
     local V = W.P.InventoryView
     assert(V.active, "the inventory view did not take over the combined bag")
+    -- The Suite's show hook leaves the stale open-bag list to Blizzard's own
+    -- anchor pass; a rebuild from Suite code would taint the cached list.
+    assert(#W.taint == 0 and ContainerFrameSettingsManager.bagsShown[1] == W.CF,
+        "opening the bags rebuilt Blizzard's open-bag list from Suite code: " .. table.concat(W.taint, ", "))
+    local passes = W.anchorPasses
+    W.P.BagsModule:RefreshWindowLayout()
+    assert(W.anchorPasses == passes + 1 and #W.taint == 0, "a layout refresh with a built list skipped Blizzard's pass")
     -- Blizzard's Items list starts with bag 4's last slot.
     assert(W.CF.Items[1]:GetBagID() == 4 and W.CF.Items[1]:GetID() == 2, "client model must fill Items from bag 4")
     local items = V.index.items

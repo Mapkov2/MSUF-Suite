@@ -569,7 +569,7 @@ RestoreLayout = function()
     for _, button in frame:EnumerateValidItems() do button:Show() end
     frame:UpdateItemLayout()
     frame:UpdateFrameSize()
-    UpdateContainerFrameAnchors()
+    M.NativeAnchorPass()
 end
 
 -- Hands the combined bag back to Blizzard. Count fonts and the mouse wheel

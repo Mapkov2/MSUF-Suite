@@ -102,7 +102,7 @@ local c = { font = "Suite", inventoryColumns = 12, inventoryRows = 8, inventoryV
     itemCountSize = 12, mergeStacks = true, showPinned = true, showRecent = true,
     customCategories = "", hideEmptyCategories = true, compactGroups = true }
 local module = { active = true, frame = frame, config = c, Refresh = function() end,
-    RefreshWindowLayout = function() end }
+    RefreshWindowLayout = function() end, NativeAnchorPass = function() UpdateContainerFrameAnchors() end }
 function module:Disable() self.active = false end
 local S = {
     CreateFrame = Widget, CreateFontString = Widget, Text = function(value) return value end,

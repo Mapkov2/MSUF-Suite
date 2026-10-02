@@ -2013,6 +2013,12 @@
    "symbol": "PlayerSpellsFrame"
   },
   {
+   "file": "MSUF_Suite_Bags/BagWindow.lua",
+   "kind": "state",
+   "reason": "Blizzard's cache of open bags (ContainerFrameSettingsManager:GetBagsShown, upstream/live and forever ContainerFrame.lua) is nil while stale; the Suite runs Blizzard's anchor pass only while it holds, so the list is never rebuilt from addon code. suite_bags_view_client_contract opens the bags with a stale list.",
+   "symbol": "ContainerFrameSettingsManager.bagsShown"
+  },
+  {
    "file": "MSUF_Suite_Bags/SplitInventory.lua",
    "kind": "addon",
    "reason": "Native StackSplitFrame accepts merchant, guild bank, bank and container owners; only native container owners expose GetBagID.",

@@ -562,7 +562,7 @@ function M:Disable()
     Slots.Stop()
     ClearPending(self)
     self.pending, self.pendingPool, self.requested = {}, {}, {}
-    if not NS.IsCombatLocked() then UpdateContainerFrameAnchors() end
+    M.NativeAnchorPass()
     self.nativeScale = nil
     self.frame = nil
     RunSubmodules(STOP)

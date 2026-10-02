@@ -170,6 +170,9 @@ for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
         self.TitleContainer:SetPoint("TOPRIGHT", self, "TOPRIGHT", right or -24, -1)
     end
 end
+-- The open-bag list of ContainerFrameSettingsManager:GetBagsShown, already
+-- built (a stale list is nil; suite_bags_view_client_contract covers it).
+ContainerFrameSettingsManager = { bagsShown = {} }
 UpdateContainerFrameAnchors = function()
     nativeLayouts = nativeLayouts + 1
     ContainerFrameCombinedBags.scale = 0.9

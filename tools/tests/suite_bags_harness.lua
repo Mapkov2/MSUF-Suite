@@ -361,6 +361,30 @@ function H.BuildClient(W, env)
     W.CF = CombinedBag(W, env)
     W.Reagent = ReagentBag(W, env)
     W.BankFrame = Bank(W, env)
+    -- ContainerFrameSettingsManager:GetBagsShown caches the open bags in
+    -- bagsShown; ContainerFrame_OnShow and ContainerFrame_OnHide mark it stale
+    -- (OnHide also runs the anchor pass). A list rebuilt from addon code is
+    -- tainted for Blizzard's later passes, so that rebuild is recorded.
+    ContainerFrameSettingsManager = {}
+    function ContainerFrameSettingsManager:MarkBagsShownDirty() self.bagsShown = nil end
+    function ContainerFrameSettingsManager:GetBagsShown()
+        if not self.bagsShown then
+            env.Taint("ContainerFrameSettingsManager.bagsShown")
+            local shown = {}
+            for _, frame in ipairs({ W.CF, W.Reagent }) do
+                if frame.shown then shown[#shown + 1] = frame end
+            end
+            self.bagsShown = shown
+        end
+        return self.bagsShown
+    end
+    for _, frame in ipairs({ W.CF, W.Reagent }) do
+        frame.scripts.OnShow = function() ContainerFrameSettingsManager:MarkBagsShownDirty() end
+        frame.scripts.OnHide = function()
+            ContainerFrameSettingsManager:MarkBagsShownDirty()
+            UpdateContainerFrameAnchors()
+        end
+    end
     for _, name in ipairs({ "MailFrame", "TradeFrame", "MerchantFrame" }) do
         local frame = env.NewWidget("Frame", name, W.UIParent, true)
         frame.shown = false
@@ -388,6 +412,7 @@ function H.BuildClient(W, env)
     -- UpdateContainerFrameAnchors: the first open bag sits at the bottom right.
     UpdateContainerFrameAnchors = function()
         W.anchorPasses = (W.anchorPasses or 0) + 1
+        ContainerFrameSettingsManager:GetBagsShown()
         local frame = W.CF
         if frame.shown then
             frame:SetScale(W.nativeScale or 1)
