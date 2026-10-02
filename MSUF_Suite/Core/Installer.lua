@@ -355,7 +355,7 @@ local function ModuleRow(parent, id, index, count)
     local card = Panel(parent, 36 + column * 258, 272 - row * 25, 250, 22, true)
     card.id = id
     card.label = Label(card, "GameFontHighlightSmall", 10, -4, 188, 16)
-    card.label:SetText((Suite.SuiteCatalog[id] and Suite.SuiteCatalog[id].title) or id)
+    card.label:SetText(Text((Suite.SuiteCatalog[id] and Suite.SuiteCatalog[id].title) or id))
     card.state = Label(card, "GameFontNormalSmall", 198, -4, 42, 16)
     card.state:SetJustifyH("RIGHT")
     card:SetScript("OnClick", function()
@@ -370,9 +370,9 @@ local function ModuleRow(parent, id, index, count)
         if not spec then return end
         local tooltip = GameTooltip
         tooltip:SetOwner(self, "ANCHOR_RIGHT")
-        tooltip:SetText(spec.title or id)
+        tooltip:SetText(Text(spec.title or id))
         if type(spec.description) == "string" and spec.description ~= "" then
-            tooltip:AddLine(spec.description, 0.78, 0.84, 0.89, true)
+            tooltip:AddLine(Text(spec.description), 0.78, 0.84, 0.89, true)
         end
         local available, reason = Suite.Suite.Availability(id)
         if not available and reason then tooltip:AddLine(ReasonText(reason), 1, 0.45, 0.4, true) end
@@ -693,7 +693,7 @@ local function ModuleSummary(profile)
         total = total + 1
         if profile and ModuleEnabled(profile, id) then enabled = enabled + 1 end
     end
-    local summary = ("%d / %d %s"):format(enabled, total, Text("enabled"))
+    local summary = Text("%d / %d enabled"):format(enabled, total)
     if RetailCooldowns() then
         summary = summary .. "  ·  "
             .. (useRaidEssentials and Text("MSUF spec cooldowns") or Text("Blizzard cooldowns"))

@@ -416,5 +416,27 @@ window = OpenLocalized("frFR", fr)
 assert(window.next.caption.text == "Continuer" and rawget(fr, "Welcome to MSUF Suite")
     and window.title.text == rawget(fr, "Welcome to MSUF Suite"),
     "the installer ignored the Suite localization in another language")
+-- Module rows, their tooltips and the review read the Suite localization too:
+-- the catalog title and description, and one format for the enabled count.
+do
+    local chat = Suite.SuiteCatalog.chat
+    chat.title, chat.description = "Chat", "Contract chat description"
+    local L = setmetatable({ Chat = "Discussion", ["Contract chat description"] = "Description du chat",
+        ["%d / %d enabled"] = "%d sur %d activés" }, { __index = function(_, key) return key end })
+    window = OpenLocalized("frFR", L)
+    local row = window.moduleRows[1]
+    assert(row.id == "chat" and row.label.text == "Discussion", "a module row shows its English catalog title")
+    local lines = {}
+    GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    Suite.Suite.Availability = function() return true end
+    row.scripts.OnEnter(row)
+    GameTooltip.AddLine, Suite.Suite.Availability = nil, nil
+    assert(GameTooltip.text == "Discussion" and lines[1] == "Description du chat",
+        "a module tooltip shows its English catalog title or description")
+    for _ = 1, 4 do window.next.scripts.OnClick() end
+    assert(window.review[2].detail.text:find("^%d+ sur %d+ activés"),
+        "the module count is not one translated format: " .. tostring(window.review[2].detail.text))
+    chat.title, chat.description = "chat", nil
+end
 GetLocale, Suite.L = function() return "enUS" end, nil
 print("Suite installer: profiles, module selection, optional scaling, layout, localization and completion passed")

@@ -205,23 +205,24 @@ local function InstallPageResets()
         if suite then return resettable end
         return (oldHas and oldHas(key)) or false
     end
+    -- The page's title in the reader's language (its key when it has none).
+    local function PageTitle(key)
+        for _, page in ipairs(P.pages) do
+            if page.key == key then return P.Tr(page.title) end
+        end
+        return key
+    end
     function M.BuildPageResetWarning(key)
         if not IsSuitePage(key) then return oldWarning and oldWarning(key) end
-        local title = key
-        for _, page in ipairs(P.pages) do
-            if page.key == key then
-                title = P.Tr(page.title)
-                break
-            end
-        end
-        return string.format(P.Tr("Reset %s to defaults?\n\nThis resets all settings on this Suite page for the active profile."), title)
+        return string.format(P.Tr("Reset %s to defaults?\n\nThis resets all settings on this Suite page for the active profile."),
+            PageTitle(key))
     end
     function M.ResetPageToDefaults(key)
         local suite, resettable = IsSuitePage(key)
         if not suite then return oldReset and oldReset(key) or false end
         if not resettable or P.Combat() then return false end
         if key == "suite_skin" and not Suite.Skin.EnsureEngine() then return false end
-        local ok = P.WithHistory("Reset " .. tostring(key), "page:reset:" .. tostring(key), function()
+        local ok = P.WithHistory(string.format(P.Tr("Reset %s"), PageTitle(key)), "page:reset:" .. tostring(key), function()
             if key == "suite_skin" then return P.ResetSkinPage() or false end
             local modules = PAGE_MODULES[key]
             if not modules then return false end

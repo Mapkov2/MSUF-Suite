@@ -606,7 +606,7 @@ function S.Open(id)
     local spec = type(id) == "string" and S.catalog[id]
     local page = spec and (spec.page or ("suite_" .. id)) or "home"
     if NS.Menu.Open(page, spec and id) then return true end
-    NS.Print("Open the MSUF menu to find the Suite pages. MSUF must be installed and enabled.")
+    NS.Print(NS.Text("Open the MSUF menu to find the Suite pages. MSUF must be installed and enabled."))
     return false
 end
 

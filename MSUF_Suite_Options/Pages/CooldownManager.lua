@@ -588,4 +588,4 @@ end
 
 P.RegisterPage({ key = PAGE, label = "Cooldown manager", title = "Cooldown manager", build = Build, icon = { 1, 1 },
     nav = "combat", navOrder = 2,
-    aliases = { "cdm", "cooldowns", "cooldown manager", "tracked buffs", "received buffs", "empfangene buffs", "buffs", "buff bars", "timer bars", "ccm" } })
+    aliases = { "cdm", "cooldowns", "cooldown manager", "tracked buffs", "received buffs", "buffs", "buff bars", "timer bars", "ccm" } })

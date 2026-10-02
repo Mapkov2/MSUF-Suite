@@ -22,7 +22,7 @@ function Menu.Attach()
         local ok, reason = LoadAddOnByName(SUITE_OPTIONS)
         if not ok then
             Menu.error = tostring(reason or "not loaded")
-            Suite.Print("Enable MSUF Suite Options in the AddOns list (" .. Menu.error .. ").")
+            Suite.Print(Suite.Text("Enable MSUF Suite Options in the AddOns list (%s)."):format(Menu.error))
             return false
         end
     end

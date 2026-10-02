@@ -117,7 +117,7 @@ local function MicroLoadRows(skin)
         local key, label = condition[1], condition[2]
         rows[#rows + 1] = Row("toggle", label, "icons.microMenu." .. key, "micro",
             function() return skin.DB.icons.microMenu[key] end,
-            MicroOption(skin, "Micro Bar " .. label, key))
+            MicroOption(skin, format(Tr("Micro Bar %s"), Tr(label)), key))
     end
     return rows
 end
@@ -150,7 +150,7 @@ local function MicroPresetExtra(ctx, skin)
         for index, style in ipairs(MICRO_PRESETS) do
             local button = Button(ctx, body, MICRO_PRESET_LABELS[style],
                 16 + ((index - 1) % 2) * (half + 12), y - math.floor((index - 1) / 2) * 38, half, function()
-                    Change(skin, "Micro Bar " .. style, "micro.preset",
+                    Change(skin, format(Tr("Micro Bar %s"), Tr(MICRO_PRESET_LABELS[style])), "micro.preset",
                         function() return skin.MicroMenuSkin.ApplyPreset(style) end)
                 end, nil, P.Meta(PAGE, "skin", "micro.preset." .. style, "action", "suite_skin_micro"))
             if button then button._msuf2PrepareExactSearchTarget = prepare end
@@ -562,7 +562,7 @@ local function BuildCoverage(ctx, b, skin)
         categories[#categories + 1] = Row("toggle", CATEGORY_LABELS[id] or id,
             "coverage." .. id, "coverage", function() return skin.DB.skinCategories[id] end,
             function(value)
-                Change(skin, "Skin " .. id, "coverage." .. id,
+                Change(skin, format(Tr("Skin %s"), Tr(CATEGORY_LABELS[id] or id)), "coverage." .. id,
                     function() return skin.GenericWindows.SetCategoryEnabled(id, value) end)
             end)
     end
