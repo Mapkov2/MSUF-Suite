@@ -10,6 +10,7 @@ local healthBars, GateHealth = Visibility.healthBars, Visibility.GateHealthBar
 local M = P.DataTexts
 local Bars, BarKeys = P.DataTextBars, P.DataTextBarKeys
 local ID = "dataTexts"
+local IN_COMBAT = { inCombat = true }
 local SLOT_COUNT = P.SLOT_COUNT
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
@@ -250,7 +251,7 @@ local function SyncEvents(self, active)
     end
     for event in pairs(wantedEvents) do
         if not self.events[event] then
-            self.context:Event(event, OnEvent, true,
+            self.context:Event(event, OnEvent, IN_COMBAT,
                 (event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH") and "player" or nil)
             self.events[event] = true
         end
@@ -441,7 +442,7 @@ end
 function M:Enable()
     self:Refresh()
     NativeBagBar.Sync()
-    self.context:Event("ADDON_LOADED", NativeBagBar.AddonLoaded, true)
+    self.context:Event("ADDON_LOADED", NativeBagBar.AddonLoaded, IN_COMBAT)
     self.context:Event("UI_SCALE_CHANGED", ScaleChanged)
     self.context:Event("DISPLAY_SIZE_CHANGED", ScaleChanged)
 end

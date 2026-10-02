@@ -4,6 +4,7 @@ local M = assert(Private.BagsModule, "Bags.lua must load before BagWindow.lua")
 -- The bag windows: Suite surface, title drag handles, session gold label and
 -- the placement Blizzard's container layout receives after each native pass.
 local floor = math.floor
+local IN_COMBAT = { inCombat = true }
 local WindowTexture = M.WindowTexture
 local TEXT = {
     session = S.Text("Session %s"),
@@ -233,8 +234,8 @@ end
 
 function M:ApplyGoldEvents()
     if self.config.showSessionGold then
-        self.context:Event("PLAYER_MONEY", M.UpdateGold, true)
-        self.context:Event("PLAYER_ENTERING_WORLD", M.UpdateGold, true)
+        self.context:Event("PLAYER_MONEY", M.UpdateGold, IN_COMBAT)
+        self.context:Event("PLAYER_ENTERING_WORLD", M.UpdateGold, IN_COMBAT)
     else
         self.context:RemoveEvent("PLAYER_MONEY")
         self.context:RemoveEvent("PLAYER_ENTERING_WORLD")

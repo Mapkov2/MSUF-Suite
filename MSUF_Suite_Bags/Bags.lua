@@ -4,6 +4,7 @@ local Slots, Loads = Private.SlotCache, Private.ItemLoads
 -- The controller restores the player's combinedBags CVar when disabled.
 local M = { overlays = setmetatable({}, { __mode = "k" }), pending = {}, pendingPool = {}, loads = Loads.New() }
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
+local IN_COMBAT = { inCombat = true }
 -- Surface sits below native item buttons; see upstream/live ContainerFrame.xml.
 local function WindowTexture(frame, layer, sublevel)
     return S.CreateTexture(frame, nil, layer, nil, sublevel)
@@ -351,7 +352,7 @@ function M:UpdateVisible()
     end
     Loads.Prune(self.loads, pending)
     if next(pending) or next(self.bankPending) then
-        self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, true)
+        self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, IN_COMBAT)
     else
         self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
     end
@@ -439,8 +440,8 @@ function M:Enable()
     self.frame = ContainerFrameCombinedBags
     Slots.Start()
     InstallHooks(self)
-    self.context:Event("USE_COMBINED_BAGS_CHANGED", CombinedModeChanged, true)
-    self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, true)
+    self.context:Event("USE_COMBINED_BAGS_CHANGED", CombinedModeChanged, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", CombatEnded, IN_COMBAT)
     self:ApplyBankLevels()
     self:Refresh()
 end

@@ -109,7 +109,7 @@ local function Create()
     Splitter.auto:SetPoint("LEFT", Splitter.take, "RIGHT", 4, 0)
     Splitter.auto:SetScript("OnEnter", AutoEnter)
     Splitter.auto:SetScript("OnLeave", GameTooltip_Hide)
-    -- A closure: Stop is looked up when clicked (finding 11).
+    -- A closure: P.AutoSplit.Stop is read when the button is clicked, not captured here.
     local stop = Button(S.Text("Stop"), 52, function() P.AutoSplit.Stop() end)
     stop:SetPoint("BOTTOMRIGHT", -7, 7)
     local less = Button("<", 23, Step)
