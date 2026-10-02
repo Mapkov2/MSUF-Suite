@@ -229,11 +229,7 @@ local Color = S.RGB
 local function ClassColor()
     local _, token = UnitClass("player")
     if not S.Public(token) then return end
-    local r, g, b = S.ClassRGB(token)
-    if not Finite(r) or not Finite(g) or not Finite(b) then return end
-    return string.format("%02x%02x%02x", math.floor(math.max(0, math.min(1, r)) * 255 + .5),
-        math.floor(math.max(0, math.min(1, g)) * 255 + .5),
-        math.floor(math.max(0, math.min(1, b)) * 255 + .5))
+    return S.ClassHex(token)
 end
 
 -- Group size and difficulty letter, e.g. "20M", "5H", "M+12", "25LFR".

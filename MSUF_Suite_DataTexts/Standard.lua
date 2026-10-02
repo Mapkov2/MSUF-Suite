@@ -64,7 +64,7 @@ local function SignedMoneyText(delta)
 end
 
 -- This session's login gold, or nil: the one session baseline of the Bags
--- and DataTexts (MSUF_Suite/Core/Catalog/Bags.lua).
+-- and DataTexts (MSUF_Suite/Core/SessionGold.lua).
 local SessionBaseline = NS.SessionGoldBaseline
 
 -- Each formatter returns the display value (nil when unknown) and an

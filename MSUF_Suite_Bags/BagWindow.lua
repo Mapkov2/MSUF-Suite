@@ -211,7 +211,7 @@ function M:UpdateGold()
         label:Hide()
         return
     end
-    -- The one session baseline of the Bags and DataTexts (Core/Catalog/Bags.lua).
+    -- The one session baseline of the Bags and DataTexts (Core/SessionGold.lua).
     local money = PublicMoney()
     local baseline = NS.SessionGoldBaseline(money)
     if not money or not baseline then

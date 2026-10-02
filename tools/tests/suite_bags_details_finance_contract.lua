@@ -9,8 +9,8 @@ local S = { Public = function(v) return v ~= "secret" end, Finite = function(v) 
     Config = function(id) return id == "dataTexts" and { trackAltGold = optIn } or M.config end }
 local NS = { Client = { isForever = false }, RootDB = {}, IsCombatLocked = function() return combat end,
     Text = function(text) return text end, PublicText = S.PublicText, Finite = S.Finite }
--- The one gold ledger of the Bags and DataTexts (MSUF_Suite/Core/Catalog/Bags.lua).
-for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+-- The one gold ledger of the Bags and DataTexts (MSUF_Suite/Core/SessionGold.lua).
+for _, file in ipairs({ "SessionGold", "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
 end
 local P = { NS = NS, Suite = S, BagsModule = M,

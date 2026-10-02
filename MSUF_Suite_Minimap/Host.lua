@@ -36,12 +36,12 @@ end
 MM.Usable = Usable
 
 
--- One physical pixel in host units; 1 when the client cannot tell.
+-- One physical pixel in host units: S.PixelUnit is one in UIParent units,
+-- and the host may carry a scale of its own. 1 when the client cannot tell.
 function MM.Pixel()
-    local host = MM.host
-    local factor = PixelUtil.GetPixelToUIUnitFactor()
-    local scale = host and host:GetEffectiveScale()
-    if Finite(factor) and factor > 0 and Finite(scale) and scale > 0 then return factor / scale end
+    local unit, host = S.PixelUnit(), MM.host
+    local parent, scale = UIParent:GetEffectiveScale(), host and host:GetEffectiveScale()
+    if unit and Finite(scale) and scale > 0 then return unit * parent / scale end
     return 1
 end
 

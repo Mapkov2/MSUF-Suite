@@ -5,7 +5,7 @@ P.BagFinance = Finance
 
 -- The Bags gold history: each character's last recorded balance and its 30
 -- days of income and spending, in the one gold ledger the DataTexts account
--- total shares (MSUF_Suite/Core/Catalog/Bags.lua). The Gold history lists the
+-- total shares (MSUF_Suite/Core/SessionGold.lua). The Gold history lists the
 -- characters the Bags recorded, and the account total's characters only
 -- while that DataTexts opt-in is on. One clear removes all
 -- (NS.ClearCharacterGold).

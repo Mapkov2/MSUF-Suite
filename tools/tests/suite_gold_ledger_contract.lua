@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 -- The DataTexts account total over the one gold ledger it shares with the
--- Bags gold history (MSUF_Suite/Core/Catalog/Bags.lua).
+-- Bags gold history (MSUF_Suite/Core/SessionGold.lua).
 local amount, guid, name, now = 12345, "Player-1", "Alice", 1000
 UnitGUID = function() return guid end
 UnitName = function() return name end
@@ -14,7 +14,7 @@ local suite = {
 local ns = { RootDB = {}, Client = { isForever = false }, Text = function(text) return text end,
     PublicText = suite.PublicText, Finite = suite.Finite }
 local function LoadCore()
-    for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+    for _, file in ipairs({ "SessionGold", "SuiteCatalog", "Catalog/Bags" }) do
         assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", ns)
     end
 end
