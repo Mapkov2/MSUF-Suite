@@ -130,6 +130,19 @@ M:Refresh()
 Flush()
 assert(B.active and M.organizedBankActive and #B.index.items == 4, "shared categories include both banks and empty slots")
 assert(B.model.rowCount == 4, "bank physical stacks must never merge")
+-- Budget (2026-10-02): 100 unchanged bank passes allocate 160.9 KB with the GC
+-- stopped (167.6 KB while the navigation built a closure per pass); the limit is
+-- that baseline +2 %.
+do
+    collectgarbage("collect")
+    collectgarbage("stop")
+    M:Refresh(); Flush()
+    local before = collectgarbage("count")
+    for _ = 1, 100 do M:Refresh(); Flush() end
+    local grown = collectgarbage("count") - before
+    collectgarbage("restart")
+    assert(grown <= 164.2, "100 unchanged bank passes allocated " .. grown .. " KB (budget 164.2)")
+end
 local bank2
 for _, button in ipairs(B.buttons) do if button.record.bankType == 2 then bank2 = button; break end end
 assert(bank2)
