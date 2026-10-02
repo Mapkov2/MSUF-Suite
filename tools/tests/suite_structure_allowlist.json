@@ -495,7 +495,13 @@
    "symbol": "notice (= DAMAGE_METER_AVOIDABLE_DAMAGE_NOT_ACTIVE)"
   },
   {
-   "file": "MSUF_Suite_DataTexts/DataTexts.lua",
+   "file": "MSUF_Suite_DataTexts/NativeBagBar.lua",
+   "kind": "addon",
+   "reason": "BagsBar belongs to Blizzard's Blizzard_MainMenuBarBagButtons; the bag bar option waits for it and syncs again on its ADDON_LOADED (suite_datatexts_contract hides and restores it).",
+   "symbol": "frame (= BagsBar)"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/NativeBagBar.lua",
    "kind": "client",
    "reason": "only WoW Forever defines MainActionBar_InitializeMKB (its keyboard action bar setup shows the bag bar); 12.1.0 and 12.1.5 lack it",
    "symbol": "MainActionBar_InitializeMKB"

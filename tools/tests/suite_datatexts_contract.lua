@@ -534,9 +534,13 @@ end
 -- client-specific hook target (Forever's MainActionBar_InitializeMKB) is a
 -- plain existence check, not a type guard.
 do
-    local file = assert(io.open(root .. "/MSUF_Suite_DataTexts/DataTexts.lua", "rb"))
-    local source = file:read("*a")
-    file:close()
+    local parts = {}
+    for _, name in ipairs({ "DataTexts", "Bars", "Visibility", "NativeBagBar", "Movers" }) do
+        local file = assert(io.open(root .. "/MSUF_Suite_DataTexts/" .. name .. ".lua", "rb"))
+        parts[#parts + 1] = file:read("*a")
+        file:close()
+    end
+    local source = table.concat(parts, "\n")
     local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"")
     assert(not guarded, "DataTexts guards " .. tostring(guarded) .. " as if a client lacked it")
     assert(not source:find("C_Housing and", 1, true), "DataTexts guards C_Housing as if a client lacked it")
