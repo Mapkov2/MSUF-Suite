@@ -55,10 +55,7 @@ function Stats.StylesRows(pane)
         and pane.ItemLevelCategory.Title and Visible(pane)
 end
 
-local function FontPath()
-    return Read(GameFontNormal.GetFont, GameFontNormal)
-        or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-end
+local FontPath = NS.AdapterKit.FontPath
 
 -- Diminishing returns ---------------------------------------------------------------------
 

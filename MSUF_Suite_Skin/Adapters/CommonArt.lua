@@ -277,23 +277,15 @@ local function SkinCategoryCards(selection, state)
     return applied
 end
 
+local function SkinCardsOf(state, selection) SkinCategoryCards(selection, state) end
+
 local function ScheduleCategoryCards(selection, state)
     if not selection or not state.active then
         return false
     end
     local owner = state.owner
-    local key = "common-art:category-cards:" .. tostring(owner)
-    state.deferred[key] = true
-    local ran, reason = NS.CombatGate.RunOrDefer(key, function()
-        local current = CommonArt.owners[owner]
-        if current then
-            current.deferred[key] = nil
-            if current.active then
-                SkinCategoryCards(selection, current)
-            end
-        end
-    end)
-    return ran == true, reason
+    return Kit.DeferForOwner(CommonArt.owners, owner, "common-art:category-cards:" .. tostring(owner),
+        SkinCardsOf, selection)
 end
 
 -- A post-hook on Blizzard's global: each owner's pass is its own error

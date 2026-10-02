@@ -138,9 +138,7 @@ end
 -- Every hook runs inside Blizzard's own call (QuestInfo_Display, the NPC
 -- greeting setup, GossipFrame's row setup), so each paint is its own error
 -- boundary and Blizzard's display goes on.
-local function Isolated(callback)
-    return function(...) Safety.Dispatch(callback, ...) end
-end
+local Isolated = Safety.Isolated
 
 local function EnsureGossipHooks(root)
     if root ~= GossipFrame or QuestText.hooks[root] then return end

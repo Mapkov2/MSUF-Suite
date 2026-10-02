@@ -254,9 +254,7 @@ end
 
 -- Every hook runs inside Blizzard's own call (RefreshTabStates checks each
 -- tab in a loop), so each is its own error boundary.
-local function Isolated(callback)
-    return function(...) NS.Safety.Dispatch(callback, ...) end
-end
+local Isolated = NS.Safety.Isolated
 
 local OnTabsRebuiltHook = Isolated(OnTabsRebuilt)
 local OnTabStatesRefreshedHook = Isolated(OnTabStatesRefreshed)

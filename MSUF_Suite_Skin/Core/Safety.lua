@@ -165,4 +165,18 @@ end
 -- on. Nothing is swallowed. Returns the results, or nothing after an error.
 Safety.Dispatch = securecallfunction
 
+-- A hook body for Blizzard functions that call it inside their own loop or
+-- setup: each call is its own error boundary (Safety.Dispatch), so a failing
+-- skin is reported and Blizzard's code goes on. One wrapper per callback, so
+-- hooking the same callback again hands Blizzard the same function.
+local isolatedCallbacks = setmetatable({}, { __mode = "k" })
+function Safety.Isolated(callback)
+    local wrapper = isolatedCallbacks[callback]
+    if not wrapper then
+        wrapper = function(...) Safety.Dispatch(callback, ...) end
+        isolatedCallbacks[callback] = wrapper
+    end
+    return wrapper
+end
+
 return Safety

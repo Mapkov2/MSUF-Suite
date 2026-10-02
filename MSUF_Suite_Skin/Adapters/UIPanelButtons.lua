@@ -32,7 +32,6 @@ local Call = NS.Safety.Call
 local Read = NS.Safety.Read
 local HasMethod = NS.Safety.HasMethod
 local CanControl = NS.Safety.CanControl
-local Dispatch = NS.Safety.Dispatch
 
 local OWNER = "uipanel-buttons"
 local DEFER_KEY = "uipanel-buttons:late"
@@ -319,9 +318,7 @@ end
 -- Every hook below runs inside Blizzard's own call (GameDialogMixin runs
 -- SetupButtons in the middle of a StaticPopup's Init), so each is its own
 -- error boundary: a failing skin is reported and Blizzard's setup goes on.
-local function Isolated(callback)
-    return function(...) Dispatch(callback, ...) end
-end
+local Isolated = NS.Safety.Isolated
 
 local OnGameDialogButtonsSetupHook = Isolated(OnGameDialogButtonsSetup)
 local OnGameDialogCloseSetupHook = Isolated(OnGameDialogCloseSetup)

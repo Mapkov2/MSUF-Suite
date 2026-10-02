@@ -24,10 +24,13 @@ end
 
 -- Reported like a Lua error (BugSack shows it); the caller goes on.
 function NS.ReportError(context, message)
-    local text = ("MapkoSkin %s: %s"):format(tostring(context or "error"), tostring(message or "unknown error"))
+    local text = ("MSUF Suite skin %s: %s"):format(tostring(context or "error"), tostring(message or "unknown error"))
     geterrorhandler()(text)
 end
 
+-- Chat lines go out under the Suite's name, through the Suite core's
+-- printer (MSUF_Suite/Core/Platform.lua; MSUF_Suite is this addon's
+-- dependency).
 function NS.Print(message)
-    DEFAULT_CHAT_FRAME:AddMessage("|cff3b82f6MapkoSkin|r: " .. tostring(message or ""))
+    _G.MSUFSuite.Print(message or "")
 end

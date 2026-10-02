@@ -269,13 +269,7 @@ function CommonMenus.Apply(owner)
     end
 
     if NS.IsCombatLocked() then
-        local key = "commonMenus:" .. tostring(owner) .. ":apply"
-        state.deferred[key] = true
-        NS.CombatGate.RunOrDefer(key, function()
-            local current = CommonMenus.owners[owner]
-            if current then current.deferred[key] = nil end
-            if current and current.active then ApplyNow(current) end
-        end)
+        Kit.DeferForOwner(CommonMenus.owners, owner, "commonMenus:" .. tostring(owner) .. ":apply", ApplyNow)
         return false, "combat"
     end
 
