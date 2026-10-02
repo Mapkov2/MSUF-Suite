@@ -274,6 +274,8 @@ S.GlobalFontPath = function() return SUITE_FONT end
 -- secret one.
 local secret = {}
 S.Public = function(value) return value ~= secret end
+-- Platform.lua's IsSecret: the client's issecretvalue.
+suite.IsSecret = function(value) return value == secret end
 -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
 S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
@@ -1468,6 +1470,52 @@ if flavor == "Mainline" then
     raidTicker:Fire()
     assert(current.format and current.formatArgs[1] == secret,
         "the one-second paint must keep secret boss health in its C sink")
+    -- A secret fight reuses its row format: a live repaint only collects the
+    -- secret percentages (SecretFormat cost 143 B per paint in the
+    -- 2026-10-02 raid trace). String building is counted at the string
+    -- library, which the format and gsub methods reach through.
+    do
+        local stringFormat, stringGsub, built = string.format, string.gsub, 0
+        string.format = function(...) built = built + 1; return stringFormat(...) end
+        string.gsub = function(...) built = built + 1; return stringGsub(...) end
+        for _ = 1, 5 do
+            tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+            table.remove(scheduled)()
+        end
+        string.format, string.gsub = stringFormat, stringGsub
+        assert(built == 0 and current.format == "ACTIVE BOSSES  First Guardian %.1f%%"
+            and current.formatArgs[1] == secret,
+            "a secret repaint rebuilt the unchanged row format (" .. built .. " string builds)")
+        -- Budget of one secret live repaint (shipped code, +2 %; measured
+        -- 2026-10-02: 232 instructions plus a gsub, a format and a concat per
+        -- paint while the format was rebuilt, 218 and none with it kept).
+        tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+        local repaint, repaintInstructions = table.remove(scheduled), 0
+        debug.sethook(function()
+            local source = debug.getinfo(2, "S").source:gsub("\\", "/")
+            if source:find("/MSUF_Suite[%w_]*/") and not source:find("/tools/", 1, true) then
+                repaintInstructions = repaintInstructions + 1
+            end
+        end, "", 1)
+        repaint()
+        debug.sethook()
+        local REPAINT_BUDGET = 218
+        assert(repaintInstructions <= math.floor(REPAINT_BUDGET * 1.02),
+            "a secret live repaint cost " .. repaintInstructions .. " instructions, budget " .. REPAINT_BUDGET)
+        -- A new name in the same secret fight rebuilds the row.
+        activeBoss = "Renamed Guardian"
+        UnitExists = function(unit) return unit == "boss1" end
+        tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+        table.remove(scheduled)()
+        assert(current.format == "ACTIVE BOSSES  Renamed Guardian %.1f%%" and current.formatArgs[1] == secret,
+            "a boss renamed while its health is secret kept the old row format")
+        activeBoss = "First Guardian"
+        UnitExists = function(unit) return unit == "boss1" and activeBoss == "First Guardian"
+            or unit == "boss2" and activeBoss == "Second Guardian" end
+        tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+        table.remove(scheduled)()
+        assert(current.format == "ACTIVE BOSSES  First Guardian %.1f%%", "the restored boss name was not drawn")
+    end
     UnitHealthPercent = function(_, _, curve) return HealthPercent(35, curve) end
     tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
     table.remove(scheduled)()
