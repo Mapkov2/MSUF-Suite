@@ -1142,6 +1142,35 @@ Budget("paint: every bar, unchanged",Cost(L.ApplyAll),8853)
 L.Request("ess");L.Request("buf");L.Request("bar")
 Budget("paint: three layout requests",Cost(L.Flush,Direct),4076)
 Budget("paint: visibility on a combat edge",Cost(V.CombatChanged),379)
+-- A changed bar's grid in every alignment and growth, and an attached bar on
+-- every side and alignment (instructions, GC stopped). These budgets hold the
+-- instructions measured on 2026-10-02 at q11/merge, before the named modes of
+-- wave 3, plus 2 %.
+do
+    local out={}
+    local grids={
+        {kind=1,size=36,perRow=5,spacing=2,align=1,grow=1},
+        {kind=1,size=36,perRow=5,spacing=2,align=2,grow=2},
+        {kind=1,size=36,perRow=5,spacing=2,align=3,grow=1,vertical=true},
+        {kind=1,size=36,perRow=5,spacing=2,align=1,grow=2,laterPerRow=4,laterSize=30},
+        {kind=2,size=30,perRow=4,spacing=2,align=2,grow=2},
+    }
+    Budget("grid: twelve cells in five layouts",Cost(function()
+        for i=1,#grids do C.Grid.Offsets(grids[i],12,out,1) end
+    end),3156)
+    local view=C.views.uti
+    local side,align=view.side,view.align
+    Budget("paint: an attached bar on every side and alignment",Cost(function()
+        for s=1,4 do
+            for a=1,3 do
+                view.side,view.align=s,a
+                L.Request("uti");L.Flush(Direct)
+            end
+        end
+    end),15011)
+    view.side,view.align=side,align
+    L.Request("uti");L.Flush(Direct)
+end
 
 -- empty aura bars keep one cell
 Plan("bar",{})

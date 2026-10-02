@@ -390,7 +390,6 @@ local function NewItemCooldown(icon, start, length, gcd)
     local over = start + length <= GetTime()
     icon.itemStart, icon.itemLen, icon.itemGCD, icon.itemOver = start, length, gcd, over
     local cooling = not over and length > GCD_MAX
-    local shown = false
     if not over and (cooling or gcd) then
         local duration = icon.itemDur
         if not duration then
@@ -401,29 +400,13 @@ local function NewItemCooldown(icon, start, length, gcd)
             duration:SetTimeFromStart(start, length)
             icon.cd:SetCooldownFromDurationObject(duration, true)
             icon.cdSet, icon.cdReal = true, true
-            shown = true
             Feedback(icon, cooling and duration or nil)
+            return cooling
         end
     end
-    if not shown then
-        ClearMain(icon)
-        Feedback(icon, nil)
-    end
+    ClearMain(icon)
+    Feedback(icon, nil)
     return cooling
-end
-
--- The charge line and the count text of an item or equipment icon; an empty
--- healthstone (hideEmpty) shows no "0", not even in a preview. Returns the
--- item's count, nil for equipment and uncounted items.
-local function ItemCountText(entry, icon, slot, item)
-    local count = not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
-    if count and count ~= 1 and icon.stackOn and not (count == 0 and entry.hideEmpty) then
-        ShowCount(icon, count)
-    else
-        icon.lastCount = nil
-        CountOff(icon)
-    end
-    return count
 end
 
 local function ItemState(entry, icon, reason)
@@ -468,7 +451,15 @@ local function ItemState(entry, icon, reason)
         Feedback(icon, nil)
     end
     ClearCharge(icon)
-    return cooling, ItemCountText(entry, icon, slot, item) == 0
+    -- An empty healthstone (hideEmpty) shows no "0", not even in a preview.
+    local count = not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
+    if count and count ~= 1 and icon.stackOn and not (count == 0 and entry.hideEmpty) then
+        ShowCount(icon, count)
+    else
+        icon.lastCount = nil
+        CountOff(icon)
+    end
+    return cooling, count == 0
 end
 
 ------------------------------------------------------------------ edges

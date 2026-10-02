@@ -1066,6 +1066,33 @@ do
     b4.catSpell=nil
     T.Refresh(b4,"full")
 end
+-- Item and equipment cooldowns (instructions, GC stopped): a repeated
+-- refresh, and a new cooldown on every refresh. These budgets hold the
+-- instructions measured on 2026-10-02 at q11/merge, before the named modes of
+-- wave 3, plus 2 %.
+do
+    local function Cost(fn)
+        local n=0
+        collectgarbage("stop")
+        debug.sethook(function() n=n+1 end,"",1)
+        fn()
+        debug.sethook()
+        collectgarbage("restart")
+        return n
+    end
+    local function Budget(label,used,baseline)
+        assert(used<=math.floor(baseline*1.02),
+            ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
+    end
+    equip.start,equip.length,equip.enable=now,60,1
+    T.Refresh(e13,"item")
+    Budget("time: an unchanged item cooldown refresh",Cost(function() T.Refresh(e13,"item");T.Refresh(b4,"item") end),371)
+    Budget("time: a new item cooldown",Cost(function() equip.start=equip.start+1;T.Refresh(e13,"item") end),427)
+    equip.start,equip.length=0,0
+    T.Refresh(e13,"item")
+    b4.catSpell=nil
+    T.Refresh(b4,"full")
+end
 
 ------------------------------------------------------------------ bounded native caches
 -- Curves and formatters are shared per value, and a slider or a color picker

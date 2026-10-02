@@ -15,6 +15,7 @@ local KIND = C.Const.KIND
 local COOLDOWN, AURA_BAR = KIND.COOLDOWN, KIND.AURA_BAR
 local DOWN, UP = C.Const.GROW.DOWN, C.Const.GROW.UP
 local CENTER, START, END = C.Const.ALIGN.CENTER, C.Const.ALIGN.START, C.Const.ALIGN.END
+local ALIGNED = { [START] = true, [END] = true }
 
 local function Round(value) return floor(value + .5) end
 
@@ -22,8 +23,8 @@ local function Round(value) return floor(value + .5) end
 -- bars without a grow rule (built-in "Buff bars") stack upward.
 local function Grow(view)
     local grow = view.grow
-    if grow == nil and view.kind == AURA_BAR then return UP end
-    return grow == UP and UP or DOWN
+    if grow == UP or grow == nil and view.kind == AURA_BAR then return UP end
+    return DOWN
 end
 
 -- Cell size and spacing in whole pixels, stride, flow and alignment.
@@ -36,7 +37,7 @@ local function Cells(view, unit)
     local per = floor(view.perRow or 1)
     if per < 1 then per = 1 end
     local align = view.align
-    if align ~= START and align ~= END then align = CENTER end
+    if not ALIGNED[align] then align = CENTER end
     return max(1, Round(size / unit)), max(1, Round(size * (view.height or 100) / 100 / unit)), Round((view.spacing or 0) / unit),
         per, view.vertical == true, Grow(view), align
 end
@@ -57,6 +58,7 @@ local function Fill(w, h, sp, per, vertical, grow, align, n1, n2, out, unit)
     local extent = full * along + (full - 1) * sp
     local depth = lines * across + (lines - 1) * sp
     local index = 0
+    local up, atStart, atEnd = grow == UP, align == START, align == END
     for group = 1, 2 do
         local n, base = n1, 0
         if group == 2 then n, base = n2, lines1 end
@@ -65,9 +67,9 @@ local function Fill(w, h, sp, per, vertical, grow, align, n1, n2, out, unit)
             local count = n - line * per
             if count > per then count = per end
             local free = extent - (count * along + (count - 1) * sp)
-            local a = (align == START and 0 or align == END and free or floor(free / 2)) + (i - line * per) * (along + sp)
+            local a = (atStart and 0 or atEnd and free or floor(free / 2)) + (i - line * per) * (along + sp)
             local g = base + line
-            if grow == UP then g = lines - 1 - g end
+            if up then g = lines - 1 - g end
             local b = g * (across + sp)
             index = index + 1
             if vertical then
@@ -96,12 +98,13 @@ local function CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
     local lines = ceil(n / per)
     local depth = lines * across + (lines - 1) * sp
     local middle = radius * stride
+    local up = grow == UP
     for i = 0, n - 1 do
         local line = floor(i / per)
         local ordinal = i - line * per
         local side = ordinal == 0 and 0 or (ordinal % 2 == 1 and (ordinal + 1) / 2 or -ordinal / 2)
         local a = middle + side * stride
-        local g = grow == UP and lines - 1 - line or line
+        local g = up and lines - 1 - line or line
         local b = g * (across + sp)
         if vertical then
             out[2 * i + 1], out[2 * i + 2] = b * unit, -a * unit
@@ -127,9 +130,9 @@ local function Footprint(view, index, unit)
     end
     return w * unit, h * unit
 end
-local function RowSpan(count, size, align, spacing)
+local function RowSpan(count, size, centered, spacing)
     if count == 0 then return 0 end
-    if align == CENTER then count = 2 * floor(count / 2) + 1 end
+    if centered then count = 2 * floor(count / 2) + 1 end
     return count * size + (count - 1) * spacing
 end
 local function FillMixed(view, n, out, unit)
@@ -142,18 +145,19 @@ local function FillMixed(view, n, out, unit)
     local rows = ceil(remaining / per2)
     local a, b, a2, b2 = w, h, w2, h2
     if vertical then a, b, a2, b2 = h, w, h2, w2 end
-    local extent = max(RowSpan(first, a, align, sp), RowSpan(min(remaining, per2), a2, align, sp))
+    local centered, atStart, atEnd, up = align == CENTER, align == START, align == END, grow == UP
+    local extent = max(RowSpan(first, a, centered, sp), RowSpan(min(remaining, per2), a2, centered, sp))
     local depth = b + rows * (b2 + sp)
     local index = 0
     for row = 0, rows do
         local count = row == 0 and first or min(per2, remaining - (row - 1) * per2)
         local along, across = row == 0 and a or a2, row == 0 and b or b2
         local cross = row == 0 and 0 or b + sp + (row - 1) * (b2 + sp)
-        if grow == UP then cross = depth - cross - across end
-        local origin = align == START and 0 or align == END and extent - RowSpan(count, along, align, sp) or floor((extent - along) / 2)
+        if up then cross = depth - cross - across end
+        local origin = atStart and 0 or atEnd and extent - RowSpan(count, along, centered, sp) or floor((extent - along) / 2)
         for ordinal = 0, count - 1 do
             local offset = ordinal
-            if align == CENTER then offset = ordinal == 0 and 0 or ordinal % 2 == 1 and (ordinal + 1) / 2 or -ordinal / 2 end
+            if centered then offset = ordinal == 0 and 0 or ordinal % 2 == 1 and (ordinal + 1) / 2 or -ordinal / 2 end
             local alongAt = origin + offset * (along + sp)
             index = index + 1
             out[2 * index - 1] = (vertical and cross or alongAt) * unit

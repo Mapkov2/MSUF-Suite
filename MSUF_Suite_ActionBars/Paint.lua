@@ -15,6 +15,8 @@ local ENUM = AB.ENUM
 local PROC_BLIZZARD, PROC_PIXEL, PROC_NONE = ENUM.PROC_GLOW.BLIZZARD, ENUM.PROC_GLOW.PIXEL, ENUM.PROC_GLOW.NONE
 local CIRCLE_SHAPE = ENUM.BUTTON_SHAPE.CIRCLE
 local USABLE, USABLE_TINT = S.USABLE, S.USABLE_TINT
+local USABLE_OK, NO_POWER, UNUSABLE, OUT_OF_RANGE = USABLE.USABLE, USABLE.NO_POWER, USABLE.UNUSABLE, USABLE.OUT_OF_RANGE
+local UNUSABLE_TINT = USABLE_TINT[UNUSABLE]
 local Public = S.Public
 local UpdateAssist = AB.UpdateAssist
 local api = {}
@@ -79,14 +81,14 @@ local function Visible(bar) return bar.header:IsVisible() end
 local function Tint(rec)
     local icon = rec.button.icon
     if not icon then return end
-    local style, code = AB.style, rec.usable or USABLE.USABLE
-    local key = rec.outOfRange and USABLE.OUT_OF_RANGE or code
+    local style, code = AB.style, rec.usable or USABLE_OK
+    local key = rec.outOfRange and OUT_OF_RANGE or code
     if rec.tint == key then return end
     rec.tint = key
-    if key == USABLE.OUT_OF_RANGE then
+    if key == OUT_OF_RANGE then
         icon:SetVertexColor(style.rr, style.rg, style.rb)
     else
-        local color = USABLE_TINT[key] or USABLE_TINT[USABLE.UNUSABLE]
+        local color = USABLE_TINT[key] or UNUSABLE_TINT
         icon:SetVertexColor(color[1], color[2], color[3])
     end
 end
@@ -141,7 +143,7 @@ local function Usable(rec, usable, noMana)
         return
     end
     if usable == nil then usable, noMana = api.Usable(rec.slot) end
-    rec.usable = (Public(usable) and usable) and USABLE.USABLE or (Public(noMana) and noMana) and USABLE.NO_POWER or USABLE.UNUSABLE
+    rec.usable = (Public(usable) and usable) and USABLE_OK or (Public(noMana) and noMana) and NO_POWER or UNUSABLE
     Tint(rec)
 end
 

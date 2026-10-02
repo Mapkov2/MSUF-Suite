@@ -3000,6 +3000,14 @@ do
     Plan("c6",3,rows)
     A.Sync("c6")
     Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),3857)
+    -- A look change restyles every button of the compact bar (a baseline
+    -- measured on 2026-10-02 at q11/merge, before the named modes of wave 3).
+    do
+        local view=C.views.buf
+        view.zoom=(view.zoom or 8)+1
+        view.styleGen=(view.styleGen or 0)+1
+        Budget("aura restyle: a zoom change on the compact bar",Cost(A.Restyle,"buf"),179539)
+    end
     A.Release("c6")
     C.views.c6,C.plans.c6=nil,nil
 end
