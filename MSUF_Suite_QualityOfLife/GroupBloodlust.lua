@@ -4,18 +4,20 @@ local ID = "groupBloodlust"
 local IN_COMBAT = { inCombat = true }
 local M = {}
 local POINTS = NS.AnchorPoints
-local Public, PublicText, Finite = S.Public, S.PublicText, S.Finite
+local Public, Finite = S.Public, S.Finite
+-- The client's secret test (Platform.lua), called directly on the player's
+-- aura path.
+local IsSecret = NS.IsSecret
 -- The player lockout auras of MSUF's SATED preset, including the Exhaustion
 -- that the Evoker's Fury of the Aspects applies (390435).
 local SPELLS = { 57723, 57724, 80354, 95809, 160455, 264689, 390435 }
 local SPELL_SET = {}
 for i = 1, #SPELLS do SPELL_SET[SPELLS[i]] = true end
-local INSTANCE_UPDATES = { "updatedAuraInstanceIDs", "removedAuraInstanceIDs" }
 -- The native cooldown animates the 10-minute lockout itself. Aura storms
 -- need only one fresh status snapshot per short trailing window
 -- (self.auraJob).
 local AURA_DELAY = .1
-local OnAura, Paint
+local OnAura, OnRestriction, Paint
 
 local CARD = { width = 172, height = 42, fill = { .06, .07, .09, .92 }, edge = 1, line = { .54, .72, .78, .95 } }
 
@@ -73,15 +75,13 @@ local function LockoutAura()
     end
 end
 
--- While the auras are unreadable, aura events carry nothing usable. Listen
--- for the end of the restriction instead and read again then.
+-- While the auras are unreadable, aura events carry nothing usable; the
+-- end of the restriction (OnRestriction) reads again.
 local function WatchAuras(self, readable)
     if readable then
         self.context:Event("UNIT_AURA", OnAura, IN_COMBAT, "player")
-        self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
     else
         self.context:RemoveEvent("UNIT_AURA")
-        self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", Paint, IN_COMBAT)
     end
 end
 
@@ -157,37 +157,64 @@ Paint = function(self)
     end
 end
 
-local function Relevant(updateInfo, tracked, unknown)
-    if not Public(updateInfo) or type(updateInfo) ~= "table" then return true end
-    if not Public(updateInfo.isFullUpdate) or updateInfo.isFullUpdate then return true end
-    local added = updateInfo.addedAuras
-    if not Public(added) or (added ~= nil and type(added) ~= "table") then return true end
-    for i = 1, added and #added or 0 do
-        local aura = added[i]
-        if not Public(aura) or type(aura) ~= "table" then return true end
-        local spellID = aura.spellId
-        if not Finite(spellID) or SPELL_SET[spellID] then return true end
-    end
-    for i = 1, #INSTANCE_UPDATES do
-        local ids = updateInfo[INSTANCE_UPDATES[i]]
-        if not Public(ids) or (ids ~= nil and type(ids) ~= "table") then return true end
-        -- An unreadable lockout instance cannot be matched to updates/removals,
-        -- but an added-only delta can still be excluded by its public spells.
-        if unknown and ids and #ids > 0 then return true end
-        if tracked and ids then
-            for i = 1, #ids do
-                local instanceID = ids[i]
-                if not Finite(instanceID) or instanceID == tracked then return true end
-            end
+-- Whether an aura delta can change the lockout: a full update, an added
+-- lockout spell, or an update or removal of the tracked lockout instance
+-- (any update or removal while that instance is unknown). UNIT_AURA is only
+-- registered while the lockout spells are readable (C_Secrets), and every
+-- restriction change reads again (OnRestriction), so an added aura with a
+-- secret spell ID cannot be a lockout: in raid combat most added auras are
+-- such secret buffs, and each one used to read every lockout spell. A field
+-- the delta leaves out is nil, which is never secret.
+local function TouchesLockout(ids, tracked, unknown)
+    if ids == nil then return false end
+    if IsSecret(ids) or type(ids) ~= "table" then return true end
+    -- An unreadable lockout instance cannot be matched to updates/removals,
+    -- but an added-only delta can still be excluded by its public spells.
+    if unknown and #ids > 0 then return true end
+    if tracked then
+        for i = 1, #ids do
+            local instanceID = ids[i]
+            if not Finite(instanceID) or instanceID == tracked then return true end
         end
     end
     return false
 end
 
+local function Relevant(updateInfo, tracked, unknown)
+    if IsSecret(updateInfo) or type(updateInfo) ~= "table" then return true end
+    local full = updateInfo.isFullUpdate
+    if IsSecret(full) or full then return true end
+    local added = updateInfo.addedAuras
+    if added ~= nil then
+        if IsSecret(added) or type(added) ~= "table" then return true end
+        for i = 1, #added do
+            local aura = added[i]
+            if IsSecret(aura) or type(aura) ~= "table" then return true end
+            local spellID = aura.spellId
+            if not IsSecret(spellID) and (not Finite(spellID) or SPELL_SET[spellID]) then return true end
+        end
+    end
+    return TouchesLockout(updateInfo.updatedAuraInstanceIDs, tracked, unknown)
+        or TouchesLockout(updateInfo.removedAuraInstanceIDs, tracked, unknown)
+end
+
 OnAura = function(self, _, unit, updateInfo)
-    if not PublicText(unit) or unit ~= "player" or self.auraJob.pending
+    if IsSecret(unit) or unit ~= "player" or self.auraJob.pending
         or not Relevant(updateInfo, self.auraInstanceID, self.unknownInstanceID) then return end
     self.auraJob:Request()
+end
+
+-- ADDON_RESTRICTION_STATE_CHANGED fires before a restriction is enforced and
+-- after it is lifted (RestrictedActionsDocumentation.lua). A lifted one is
+-- read now; an activating one after its dispatch, when the lockout spells
+-- may have turned secret.
+OnRestriction = function(self, _, _, state)
+    if not IsSecret(state) and state == Enum.AddOnRestrictionState.Inactive then
+        self.auraJob:Clear()
+        Paint(self)
+    else
+        self.auraJob:Request()
+    end
 end
 
 local function PaintAuras(self)
@@ -203,6 +230,7 @@ local function OnGroup(self)
     if self.grouped then
         -- Combat end lifts the most common restriction; read again then.
         self.context:Event("PLAYER_REGEN_ENABLED", OnGroup, IN_COMBAT)
+        self.context:Event("ADDON_RESTRICTION_STATE_CHANGED", OnRestriction, IN_COMBAT)
     else
         self.context:RemoveEvent("UNIT_AURA")
         self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")

@@ -1,5 +1,6 @@
 -- Raid hot paths measured the way the 2026-10-02 raid trace saw them:
--- GroupDeathAlert (every raid member's UNIT_HEALTH/UNIT_FLAGS).
+-- GroupDeathAlert (every raid member's UNIT_HEALTH/UNIT_FLAGS), GroupBloodlust
+-- (the player's UNIT_AURA in combat) and the raid HUD's boss health.
 -- Each module runs on the shipped Runtime.lua context and its timers; events
 -- reach the routing frames the way the client delivers them (unit filters
 -- included). The secret readers are the shipped ones from Platform.lua, so
@@ -21,8 +22,20 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 --   groupDeathAlert steady (a living member's UNIT_HEALTH): base 76 instr,
 --     0 KB, 5 natives (3 issecretvalue, UnitExists, UnitIsDeadOrGhost)
 --     -> 39 instr, 0 KB, 3 natives (UnitExists only on a state change).
+--   groupBloodlust, the player sated, a buff with a secret spell ID per
+--     event (raid combat: 1,126 UNIT_AURA, 520 lockout reads in 120 s):
+--     secretSteady (one event) base 137 instr, .156 KB, 6 issecretvalue
+--       -> 93 instr, 0 KB, 6 issecretvalue (no lockout read requested);
+--     secretBurst (ten events, then the frames until a read could run) base
+--       790 instr, .313 KB, 25 issecretvalue + 7 ShouldSpellAuraBeSecret + 3
+--       GetPlayerAuraBySpellID (the client allocates each found aura, about
+--       1.9 KB in the trace) -> 930 instr, 0 KB, 60 issecretvalue. The trade:
+--       +140 VM instructions per ten events for no lockout read at all; at
+--       the trace's 2.2 events per read that is 205 instead of about 800.
 local BASELINE = {
     groupDeathAlert = { steady = 39, steadyNatives = { issecretvalue = 2, UnitIsDeadOrGhost = 1 } },
+    groupBloodlust = { secretSteady = 93, secretSteadyNatives = { issecretvalue = 6 },
+        secretBurst = 930, secretBurstNatives = { issecretvalue = 60 } },
 }
 
 ------------------------------------------------------------------ native counting
@@ -194,6 +207,18 @@ local function Stop(module)
     module.context:Release()
 end
 
+-- A QoL module's catalog defaults (QualityOfLife.lua helpers first, as in the TOC).
+local catalogNS = { Client = { isForever = false }, Text = function(text) return text end }
+assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", catalogNS)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/QualityOfLife.lua"))("MSUF_Suite", catalogNS)
+local function Defaults(id, file)
+    assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/" .. file .. ".lua"))("MSUF_Suite", catalogNS)
+    local config = {}
+    for key, rule in pairs(catalogNS.SuiteCatalog[id].rules) do config[key] = rule.default end
+    return config
+end
+
+local function Settle() clock.Advance(1) end
 
 ------------------------------------------------------------------ measuring
 local function ProductCode(source)
@@ -342,6 +367,61 @@ do
     assert(#printed == 2 and #reported == 0, "group death alert raised: " .. tostring(reported[1]))
     combat = false
     Fire("PLAYER_REGEN_ENABLED")
+    Stop(m)
+end
+
+------------------------------------------------------------------ GroupBloodlust
+do
+    local restricted, sated = false, true
+    Enum = Enum or {}
+    Enum.AddOnRestrictionState = { Inactive = 0, Activating = 1, Active = 2 }
+    C_Spell = { GetSpellTexture = function() return 1 end }
+    C_Secrets = { ShouldSpellAuraBeSecret = Native("ShouldSpellAuraBeSecret", function() return restricted end) }
+    C_UnitAuras = { GetPlayerAuraBySpellID = Native("GetPlayerAuraBySpellID", function(id)
+        if restricted or not sated or id ~= 80354 then return nil end
+        return { auraInstanceID = 41, spellId = 80354, duration = 600, expirationTime = clock.now + 500 }
+    end) }
+    IsInGroup = Native("IsInGroup", function() return true end)
+    local config = Defaults("groupBloodlust", "QualityOfLifeGroup")
+    config.enabled = true
+    local m = Start("groupBloodlust", "GroupBloodlust.lua", config)
+    Settle()
+    assert(m.status.text == "Locked" and m.auraInstanceID == 41, "the sated player was not shown locked")
+    -- Raid combat: buffs land with secret spell IDs while the lockout stays readable.
+    -- One payload, built once: the KB pass measures the module, not the test.
+    local buff = { isFullUpdate = false, addedAuras = { { spellId = Secret(), auraInstanceID = 7 } } }
+    local function SecretBuff() Fire("UNIT_AURA", "player", buff) end
+    Budget("groupBloodlust", "secretSteady", SecretBuff, Settle)
+    Budget("groupBloodlust", "secretBurst", function()
+        for _ = 1, 10 do SecretBuff() end
+        Settle()
+    end, Settle)
+    assert(m.status.text == "Locked", "secret buffs changed the lockout")
+    -- The lockout itself still counts: its removal and a new lockout repaint.
+    sated = false
+    Fire("UNIT_AURA", "player", { isFullUpdate = false, removedAuraInstanceIDs = { 41 } })
+    Settle()
+    assert(m.status.text == "Ready" and not m.auraInstanceID, "the lockout removal was missed")
+    sated = true
+    Fire("UNIT_AURA", "player", { isFullUpdate = false, addedAuras = { { spellId = 80354, auraInstanceID = 41 } } })
+    Settle()
+    assert(m.status.text == "Locked", "a new lockout was missed")
+    -- A restriction that turns the lockout secret: read after its dispatch;
+    -- the known lockout keeps counting and aura events stop.
+    restricted = true
+    Fire("ADDON_RESTRICTION_STATE_CHANGED", 1, 1)
+    assert(m.context.callbacks.UNIT_AURA, "an activating restriction read during its own dispatch")
+    Settle()
+    assert(m.status.text == "Locked" and not m.context.callbacks.UNIT_AURA,
+        "a restricted lockout was read or replaced")
+    -- Missing data never reads as Ready: an unknown state after the countdown.
+    clock.Advance(600)
+    Fire("GROUP_ROSTER_UPDATE")
+    assert(m.status.text == "Unknown", "an unreadable lockout state was shown as Ready")
+    restricted, sated = false, false
+    Fire("ADDON_RESTRICTION_STATE_CHANGED", 1, 0)
+    assert(m.status.text == "Ready" and m.context.callbacks.UNIT_AURA, "the lifted restriction was not read")
+    assert(#reported == 0, "group bloodlust raised: " .. tostring(reported[1]))
     Stop(m)
 end
 

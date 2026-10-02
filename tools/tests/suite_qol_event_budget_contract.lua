@@ -89,6 +89,8 @@ local NS = {
     Suite = S, Dispatch = function(callback, ...) return callback(...) end,
     Finish = function(callback, ...) return true, callback(...) end,
     Public = function(value) return value ~= "secret" end,
+    -- Platform.lua's IsSecret: the client's issecretvalue, a C function.
+    IsSecret = function(value) return value == "secret" end,
     Number = function(value) return type(value) == "number" end,
     Finite = function(value) return type(value) == "number" and value == value and value ~= math.huge end,
     PublicText = function(value) return type(value) == "string" and value ~= "" and value or nil end,
