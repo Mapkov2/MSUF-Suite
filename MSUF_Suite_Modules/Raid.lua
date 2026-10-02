@@ -105,7 +105,6 @@ end
 
 local function PaintLive(owner)
     local view = owner.raid
-    view.livePending = false
     if view.pull and owner.active and owner.raidActive then
         ReadPending(view)
         PaintCurrent(view)
@@ -127,8 +126,8 @@ local function Create(owner)
     view.fastest = Line(panel, 13, -205)
     view.current:SetWordWrap(true)
     view.best:SetWordWrap(true)
-    view.tick = function() H.Tick(owner) end
-    view.liveTick = function() PaintLive(owner) end
+    -- Health storms share one deferred redraw (a job of the owner's context).
+    view.liveJob = owner.context:Coalesce(LIVE_PAINT_DELAY, PaintLive)
     panel:Hide()
     owner.raid = view
     return view
@@ -218,15 +217,15 @@ function H.Show(owner)
     return true
 end
 
-local function StopTicker(view)
-    if view.ticker then view.ticker:Cancel() end
-    view.ticker = nil
+-- The pull clock ticks once a second on the owner's context (ctx:Ticker).
+local function StopTicker(owner)
+    owner.context:Cancel(H.Tick)
 end
 
 function H.Stop(owner)
     local view = owner.raid
     if not view then return end
-    StopTicker(view)
+    StopTicker(owner)
     H.Unbind(owner)
     owner.context:RemoveEvent("UNIT_HEALTH")
     owner.context:RemoveEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
@@ -291,15 +290,15 @@ end
 
 -- Health storms mark their boss without reading a native snapshot per tick.
 -- The existing live paint reads each dirty boss once at the latest value.
-function H.Health(owner, unit)
+local function BossHealth(owner, _, unit)
     local view = owner.raid
     if not view or not view.pull or not Public(unit) then return end
     local index = BOSS_INDEX[unit]
     if not index then return end
     view.liveDirty[index] = true
-    if view.livePending then return end
-    view.livePending = true
-    C_Timer.After(LIVE_PAINT_DELAY, view.liveTick)
+    local job = view.liveJob
+    if job.pending then return end
+    job:Request()
 end
 
 -- Engage changes (a boss appears or leaves) are drawn at once.
@@ -424,7 +423,7 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     if not H.Detect(owner) or not Finite(encounterID) or not Finite(difficultyID) then return false end
     H.Show(owner)
     local view = owner.raid
-    StopTicker(view)
+    StopTicker(owner)
     view.encounterID, view.difficultyID = encounterID, difficultyID
     view.encounterName = Text(encounterName) or L.encounter
     view.difficultyName = Text(GetDifficultyInfo(difficultyID)) or L.difficulty:format(difficultyID)
@@ -435,10 +434,10 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.pull = { started = GetTime() }
     ReadInitialStage(owner)
-    owner.context:Event("UNIT_HEALTH", function(module, _, unit) H.Health(module, unit) end, true, BOSS_UNITS)
-    owner.context:Event("INSTANCE_ENCOUNTER_ENGAGE_UNIT", function(module) H.UpdateBosses(module) end, true)
+    owner.context:Event("UNIT_HEALTH", BossHealth, true, BOSS_UNITS)
+    owner.context:Event("INSTANCE_ENCOUNTER_ENGAGE_UNIT", H.UpdateBosses, true)
     H.UpdateBosses(owner)
-    view.ticker = C_Timer.NewTicker(1, view.tick)
+    owner.context:Ticker(1, H.Tick)
     Paint(owner)
     return true
 end
@@ -483,7 +482,7 @@ function H.End(owner, encounterID, _, difficultyID, _, success, status)
     if not view or not view.pull or view.encounterID ~= encounterID
         or view.difficultyID ~= difficultyID then return end
     ReadPending(view, true)
-    StopTicker(view)
+    StopTicker(owner)
     owner.context:RemoveEvent("UNIT_HEALTH")
     owner.context:RemoveEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
     local elapsed = GetTime() - view.pull.started

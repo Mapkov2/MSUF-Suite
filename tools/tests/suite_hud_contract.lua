@@ -1386,6 +1386,20 @@ if flavor == "Mainline" then
     collectgarbage("restart")
     assert(healthAllocated<1,"raid health storms allocated per event")
     assert(#scheduled==pendingCallbacks+1 and healthReads==1,"a health storm repeated native reads")
+    -- Budget of one boss health event while the live redraw is due (shipped
+    -- code only; measured 2026-10-02 on the hand-rolled pending flag, +2 %).
+    local healthInstructions = 0
+    debug.sethook(function()
+        local source = debug.getinfo(2, "S").source:gsub("\\", "/")
+        if source:find("/MSUF_Suite[%w_]*/") and not source:find("/tools/", 1, true) then
+            healthInstructions = healthInstructions + 1
+        end
+    end, "", 1)
+    tracker.context.events.UNIT_HEALTH(tracker, "UNIT_HEALTH", "boss1")
+    debug.sethook()
+    local HEALTH_BUDGET = 22
+    assert(healthInstructions <= math.floor(HEALTH_BUDGET * 1.02),
+        "a boss health event cost " .. healthInstructions .. " instructions, budget " .. HEALTH_BUDGET)
     livePercent=40;raidTicker:Fire()
     assert(healthReads==2 and tracker.raid.current.text:find("First Guardian 40.0%%"),
         "the clock paint did not drain the latest pending health")

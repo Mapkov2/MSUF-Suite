@@ -84,7 +84,6 @@ local function Create(owner)
     panel:SetPoint("TOPLEFT", owner.content, "TOPLEFT", 0, 0)
     panel:SetPoint("TOPRIGHT", owner.content, "TOPRIGHT", 0, 0)
     local view = { frame = panel, bosses = {}, height = 282 }
-    view.tick = function() H.Tick(owner) end
     view.dungeon = NewLine(panel, 15, -4)
     view.clock = NewText(panel, 25)
     view.clock:SetPoint("TOPLEFT", 4, -30)
@@ -563,14 +562,14 @@ function H.Detect(owner)
     return Finite(mapID) and mapID > 0 and mapID or nil
 end
 
-local function StopTicker(view)
-    if view.ticker then view.ticker:Cancel() end
-    view.ticker = nil
+-- The run clock ticks once a second on the owner's context (ctx:Ticker).
+local function StopTicker(owner)
+    owner.context:Cancel(H.Tick)
 end
 
 function H.Start(owner, mapID)
     local view = Create(owner)
-    StopTicker(view)
+    StopTicker(owner)
     S.MythicPlusPull.Stop(owner)
     view.forcesPercent = nil
     view.mapID, view.timerID, view.lastElapsed = mapID, nil, nil
@@ -598,13 +597,13 @@ function H.Start(owner, mapID)
     ThemeBars(owner)
     S.MythicPlusPull.Sync(owner)
     H.UpdateObjectives(owner)
-    view.ticker = C_Timer.NewTicker(1, view.tick)
+    owner.context:Ticker(1, H.Tick)
 end
 
 function H.Complete(owner)
     local view = owner.mplus
     if not view or not owner.mplusActive then return end
-    StopTicker(view)
+    StopTicker(owner)
     view.completed = true
     S.MythicPlusPull.Stop(owner)
     view.observedPull:Hide()
@@ -622,7 +621,7 @@ end
 function H.Stop(owner)
     local view = owner.mplus
     if not view then return end
-    StopTicker(view)
+    StopTicker(owner)
     S.MythicPlusPull.Stop(owner)
     view.frame:Hide()
     owner.mplusActive = false
