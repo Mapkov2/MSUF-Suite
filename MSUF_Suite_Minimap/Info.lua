@@ -18,16 +18,6 @@ local zoneColors = {
     sanctuary = "69ccf0", arena = "ff1a1a", friendly = "1aff1a", hostile = "ff1a1a", contested = "ffb300",
 }
 local outlines = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
--- Blizzard's localized names where one exists, else the suite's own text.
-local TITLES = {
-    Clock = { "TIMEMANAGER_TITLE", "Clock" },
-    FPS = { false, "FPS" },
-    Latency = { false, "Latency" },
-    Coordinates = { false, "Coordinates" },
-    Durability = { "DURABILITY", "Durability" },
-    Location = { "ZONE", "Location" },
-    Weather = { false, "Weather" },
-}
 -- GetInstanceInfo difficulty IDs: tag and colour tier (1 normal, 2 heroic, 3
 -- mythic, 4 raid finder/follower, 5 timewalking, 6 keystone). Bare tags carry
 -- no group size. Unknown IDs fall back to GetDifficultyInfo's heroic/mythic flags.
@@ -431,55 +421,12 @@ local function WorldChanged()
     end
 end
 
--- ToggleCalendar and ToggleTimeManager are the bootstrap entry points of
--- Blizzard's load-on-demand calendar and clock (they load the addon first).
-local function Click(button, mouseButton)
-    if not M.active or NS.IsCombatLocked() then return end
-    if button.infoKey == "Clock" then
-        local calendar = M.config.infoClockClick == 1
-        if mouseButton == "RightButton" then calendar = not calendar end
-        if calendar then ToggleCalendar() else ToggleTimeManager() end
-    elseif button.infoKey == "Coordinates" or button.infoKey == "Location" and M.config.infoLocationClick then
-        ToggleWorldMap()
-    elseif button.infoKey == "Durability" then
-        ToggleCharacter("PaperDollFrame")
-    end
-end
-
-local function Tooltip(button)
-    if not M.active or MM.ShowInfoTooltip(button) then return end
-    local key = button.infoKey
-    local entry, title = M.infoEntries[key], TITLES[key]
-    GameTooltip:SetOwner(button, "ANCHOR_TOP")
-    MM.ScaleTooltip(button)
-    GameTooltip:SetText(S.BlizzardText(title[1], title[2]))
-    GameTooltip:AddLine(entry.tooltipText or entry.text or "--", 1, 1, 1)
-    if key == "Clock" then
-        if entry.invite and entry.invite:IsShown() then
-            GameTooltip:AddLine(S.Text("Calendar invitations are waiting."), 1, .82, 0)
-        end
-        local hint = M.config.infoClockClick == 1 and "Left: calendar. Right: clock." or "Left: clock. Right: calendar."
-        GameTooltip:AddLine(S.Text(hint), .7, .8, .9)
-    elseif key == "Coordinates" or key == "Location" and M.config.infoLocationClick then
-        GameTooltip:AddLine(S.Text("Click to open the world map."), .7, .8, .9)
-    elseif key == "Durability" then
-        GameTooltip:AddLine(S.Text("Click to open your equipment."), .7, .8, .9)
-    end
-    GameTooltip:Show()
-end
-
-local function LeaveTooltip(button)
-    MM.HideInfoTooltip(button)
-end
-
 local function CreateEntry(key)
     local button = S.CreateFrame("Button", nil, M.infoFrame)
     button.infoKey = key
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:SetScript("OnClick", Click)
-    button:SetScript("OnEnter", Tooltip)
-    button:SetScript("OnLeave", LeaveTooltip)
-    button:SetScript("OnHide", LeaveTooltip)
+    -- Clicks, tooltips and the secure window overlay: InfoInput.lua.
+    for script, handler in pairs(MM.InfoScripts) do button:SetScript(script, handler) end
     local label = S.CreateFontString(button, nil, "OVERLAY", "GameFontNormalSmall")
     label:SetAllPoints(button)
     label:SetWordWrap(false)
@@ -697,6 +644,7 @@ function MM.RefreshTexts()
         return
     end
     Cancel()
+    MM.DetachInfoOverlay()
     local c = M.config
     local hideCoordinates = CoordinatesHidden(c)
     local difficulty = SyncTextEvents(c)
@@ -735,6 +683,7 @@ end)
 
 function MM.ReleaseTexts()
     Cancel()
+    MM.DetachInfoOverlay()
     M.infoActive, M.difficultyActive = false, false
     if M.infoFrame and not NS.Safety.IsForbidden(M.infoFrame) then M.infoFrame:Hide() end
 end

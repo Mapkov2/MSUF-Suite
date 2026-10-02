@@ -34,7 +34,7 @@ H.Float32 = Float32
 
 -- Runtime files in load order across the shared and minimap AddOns.
 H.MODULES = { "Bootstrap", "Host", "Input", "MicroMenu", "Elements", "Drawer",
-    "Info", "Tooltips", "Specialization", "Controller" }
+    "InfoInput", "Info", "Tooltips", "Specialization", "Controller" }
 
 function H.New(root, client, options)
     options = options or {}

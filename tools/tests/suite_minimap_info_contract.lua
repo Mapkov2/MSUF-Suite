@@ -502,3 +502,88 @@ do
     check(not tip.shown and not next(events), "disable kept tooltip work")
     print("Minimap tooltips: lockouts, throttled raid info, weekly rewards, owned-hover events and disable passed")
 end
+
+-- Coordinates, Location and Durability open their windows from secure code:
+-- while hovered out of combat they borrow a secure overlay in UIParent that
+-- clicks Blizzard's own opener button; the combat start releases it.
+do
+    local opened, clicks = {}, {}
+    local W = H.New(root, "Mainline", { clientSecurity = true, beforeModules = function(W)
+        local G = W.G
+        G.GetInventoryItemDurability = function(slot) if slot == 1 then return 50, 100 end end
+        G.GetZoneText = function() return "Stormwind" end
+        G.C_Map = { GetBestMapForUnit = function() return 1 end,
+            GetPlayerMapPosition = function() return { GetXY = function() return .5, .5 end } end }
+        local character = W.New("Button", "CharacterMicroButton", W.UIParent)
+        for _, native in ipairs({ character, W.cluster.ZoneTextButton }) do
+            native.scripts.OnClick = function(self) clicks[#clicks + 1] = { button = self, secure = W.secure } end
+        end
+        for _, name in ipairs({ "ToggleCharacter", "ToggleWorldMap" }) do
+            G[name] = function() opened[#opened + 1] = { name = name, secure = W.secure } end
+        end
+    end })
+    W.editModeReady = true
+    local G, S = W.G, W.S
+    H.Enable(W, { captured = true, infoClock = false, infoDurability = true, infoLocation = true,
+        infoCoordinates = true })
+    W.Step()
+    local M, MM, tip = W.M, W.MM, G.GameTooltip
+    local entries = M.infoEntries
+    local function Hover(entry)
+        entry.button.mouseOver = true
+        W.Fire(entry.button, "OnEnter")
+    end
+    for _, case in ipairs({ { "Durability", G.CharacterMicroButton }, { "Coordinates", W.cluster.ZoneTextButton },
+        { "Location", W.cluster.ZoneTextButton } }) do
+        local entry, native = entries[case[1]], case[2]
+        Hover(entry)
+        local overlay = MM.infoOverlay
+        check(overlay and overlay.protected and overlay.parent == W.UIParent and overlay.shown
+            and overlay.points[1][2] == entry.button and overlay:GetAttribute("type") == "click"
+            and overlay:GetAttribute("clickbutton") == native, case[1] .. " text lacks the secure window click")
+        check(not entry.button:IsProtected(), case[1] .. " text became protected")
+        -- The pointer moves onto the overlay: the text keeps its tooltip.
+        overlay.mouseOver = true
+        W.Fire(entry.button, "OnLeave")
+        check(overlay.shown and tip.shown and tip.owner == entry.button, case[1] .. " lost its tooltip to the overlay")
+        for _, mouse in ipairs({ "LeftButton", "RightButton" }) do
+            local count = #clicks
+            W.Click(overlay, mouse)
+            check(#clicks == count + 1 and clicks[#clicks].button == native and clicks[#clicks].secure,
+                case[1] .. " " .. mouse .. " did not click Blizzard's opener securely")
+        end
+        overlay.mouseOver, entry.button.mouseOver = false, false
+        W.Fire(overlay, "OnLeave")
+        check(not overlay.shown and #overlay.points == 0 and not tip.shown, case[1] .. " overlay or tooltip stayed")
+    end
+    check(#opened == 0, "an information text opened its window from the addon's code")
+    local overlay = MM.infoOverlay
+    -- The combat start releases the overlay before the lockdown; none in combat.
+    Hover(entries.Durability)
+    W.SetCombat(true)
+    check(not overlay.shown and #overlay.points == 0 and overlay.owner == nil, "the overlay stayed over a text in combat")
+    W.Fire(entries.Durability.button, "OnLeave")
+    Hover(entries.Durability)
+    W.Click(entries.Durability.button)
+    check(not overlay.shown and #opened == 0, "a text attached the overlay or opened a window in combat")
+    W.SetCombat(false)
+    W.Fire(entries.Durability.button, "OnLeave")
+    -- Location without its click option offers no overlay.
+    assert(S.Set("minimap", "infoLocationClick", false))
+    Hover(entries.Location)
+    check(not overlay.shown, "Location offered a window click with its click option off")
+    W.Fire(entries.Location.button, "OnLeave")
+    -- Without a visible Blizzard button the text opens the window itself.
+    W.cluster.ZoneTextButton.shown = false
+    Hover(entries.Coordinates)
+    check(not overlay.shown, "the overlay offered a click on a hidden Blizzard button")
+    W.Click(entries.Coordinates.button)
+    check(opened[#opened] and opened[#opened].name == "ToggleWorldMap", "Coordinates did not fall back to the world map")
+    W.Fire(entries.Coordinates.button, "OnLeave")
+    W.cluster.ZoneTextButton.shown = true
+    Hover(entries.Coordinates)
+    check(overlay.shown, "the overlay did not return with the Blizzard button")
+    assert(S.Set("minimap", "enabled", false))
+    check(not overlay.shown and #overlay.points == 0 and overlay.owner == nil, "disable kept the secure overlay")
+    print("Minimap information: secure window clicks, tooltips, combat release, fallback and disable passed")
+end

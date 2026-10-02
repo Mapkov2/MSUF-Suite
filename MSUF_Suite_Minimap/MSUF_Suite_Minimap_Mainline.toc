@@ -14,6 +14,7 @@ Input.lua
 MicroMenu.lua
 Elements.lua
 Drawer.lua
+InfoInput.lua
 Info.lua
 Tooltips.lua
 Specialization.lua
