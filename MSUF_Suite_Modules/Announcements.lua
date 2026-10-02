@@ -273,11 +273,13 @@ local function ToastAllowed(self, kind)
     return kind == nil or kind == "notice" or self.config[kind == "quest" and "quests" or kind]
 end
 
+-- The banner frames Retail and Forever build (Blizzard_FrameXML ZoneText.xml,
+-- Blizzard_BonusObjectiveTracker.xml). Their level-up banner is an event
+-- toast (NativeToasts) and a world quest completion an alert (ALERT_SYSTEMS);
+-- LevelUpDisplay exists only in the Mists flavor of the UI.
 local ZONE_FRAMES = {
     { "ZoneTextFrame", "zone" }, { "SubZoneTextFrame", "zone" },
-    { "LevelUpDisplay", "level" }, { "LevelUpDisplaySide", "level" },
     { "ObjectiveTrackerTopBannerFrame", "quests" },
-    { "WorldQuestCompleteBannerFrame", "quests" },
 }
 
 -- Blizzard keeps showing these frames, alerts and banners itself; the

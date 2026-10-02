@@ -680,6 +680,16 @@ banner.config = { zone = true, eventToasts = true, quests = false,
     duration = 4, scale = 100, anchor = 1, x = 0, y = -90 }
 ZoneTextFrame = Widget(UIParent)
 SubZoneTextFrame = Widget(UIParent)
+-- Mists-flavor banners: Retail and Forever never build them, so the
+-- announcements never look them up.
+local mistsBanners = {}
+for _, name in ipairs({ "LevelUpDisplay", "LevelUpDisplaySide", "WorldQuestCompleteBannerFrame" }) do
+    mistsBanners[name] = true
+end
+local globalLookups = setmetatable({}, { __index = function(_, key)
+    assert(not mistsBanners[key], "the announcements looked up the Mists-only banner " .. tostring(key))
+end })
+setmetatable(_G, { __index = globalLookups })
 EventToastManagerFrame = Widget(UIParent)
 function EventToastManagerFrame:DisplayToast(info)
     self.currentDisplayingToast = info and { toastInfo = info } or nil
@@ -709,6 +719,7 @@ ScenarioAlertSystem = { alertFramePool = {
 function ScenarioAlertSystem:ShowAlert() scenarioAlert:SetParent(UIParent) end
 banner:Enable()
 assert(movers.announcements.element == "banner" and ZoneTextFrame:GetParent() == MutedHost)
+setmetatable(_G, nil)
 assert(movers.announcements.spec.extraControls[1].id == "scale"
     and movers.announcements.spec.extraControls[1].set(125)
     and banner.config.scale == 125,
