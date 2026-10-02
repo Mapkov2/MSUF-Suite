@@ -54,7 +54,7 @@ Check(skinAt["Core/DefaultsLooks.lua"] == skinAt["Core/Defaults.lua"] + 1,
 Before("Rendering/MicroMenuPerformance.lua", "Rendering/MicroMenuVisual.lua")
 -- Load-time locals: NS.Clamp and NS.IsListed (Defaults), WatchSettings
 -- (Registry), NS.MicroMenuPerformance.
-for _, consumer in ipairs({ "Core/Database.lua", "Core/Theme.lua", "Rendering/WindowActionSkin.lua",
+for _, consumer in ipairs({ "Core/Database.lua", "Core/Theme.lua", "Rendering/WindowActionSettings.lua",
     "Rendering/MicroMenuVisual.lua", "Rendering/MicroMenuPerformance.lua" }) do
     Before("Core/Defaults.lua", consumer)
 end
@@ -262,7 +262,7 @@ Check(allSources["MSUF_Suite_Skin/Adapters/MicroMenuSettings.lua"]:find("local C
 -- One way to do each thing: the shared helpers, not local copies.
 local function Source(path) return assert(sources[path], path) end
 for _, path in ipairs({ "MSUF_Suite_Skin/Core/Database.lua", "MSUF_Suite_Skin/Core/Theme.lua",
-    "MSUF_Suite_Skin/Rendering/WindowActionSkin.lua" }) do
+    "MSUF_Suite_Skin/Rendering/WindowActionSettings.lua" }) do
     Check(not Source(path):find("local function IsListed(", 1, true)
         and Source(path):find("local IsListed = NS.IsListed", 1, true),
         path .. " keeps its own IsListed instead of NS.IsListed")

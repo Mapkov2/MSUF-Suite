@@ -36,6 +36,7 @@ Core\Typography.lua
 Rendering\Geometry.lua
 Rendering\Surface.lua
 Rendering\WindowActionSkin.lua
+Rendering\WindowActionSettings.lua
 Rendering\WindowControls.lua
 Rendering\MicroMenuPerformance.lua
 Rendering\MicroMenuVisual.lua
