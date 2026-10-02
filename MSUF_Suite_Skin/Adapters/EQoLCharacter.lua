@@ -286,6 +286,8 @@ function Compat.Disable(owner)
     for element in pairs(Compat.elements) do Compat.elements[element] = nil end
 end
 
-NS.Registry.AddListener(Compat, function() Compat.Refresh() end)
+-- Every settings write refreshes the annotations, once per frame.
+local function RefreshQueued() Compat.Refresh() end
+NS.Registry.AddListener(Compat, function() NS.Registry.QueueJob(RefreshQueued) end)
 
 return Compat

@@ -238,7 +238,7 @@ function QuestText.Refresh()
 end
 
 NS.Registry.AddListener(QuestText, function(_, domain)
-    if domain == "color" or domain == "theme" then PaintCurrent() end
+    if domain == "color" or domain == "theme" then NS.Registry.QueueJob(PaintCurrent) end
 end)
 
 return QuestText

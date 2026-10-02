@@ -790,10 +790,13 @@ function Details.SetView(value)
     return true
 end
 
-NS.Registry.AddListener(Details, function()
+-- Every settings write repaints the open views, once per frame.
+local function RefreshActiveViews()
     for _, v in pairs(Details.views) do
         if v.active then Details.Refresh(v) end
     end
-end)
+end
+
+NS.Registry.AddListener(Details, function() NS.Registry.QueueJob(RefreshActiveViews) end)
 
 return Details

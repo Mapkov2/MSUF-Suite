@@ -701,12 +701,14 @@ function CharacterPanel.Disable(owner)
     return true
 end
 
+local function RefreshForeverLooks() panel:ForActiveOwners("mode-tabs-theme", RefreshForeverLook) end
+
 NS.Registry.AddListener(CharacterPanel, function(_, domain, key)
     if not NS.Client.isForever or (domain ~= "profile"
         and not (domain == "theme" and key == "look")) then
         return
     end
-    panel:ForActiveOwners("mode-tabs-theme", RefreshForeverLook)
+    NS.Registry.QueueJob(RefreshForeverLooks)
 end)
 
 return CharacterPanel

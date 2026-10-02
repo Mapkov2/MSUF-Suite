@@ -115,7 +115,7 @@ local function RegisterThemeListener()
         return
     end
     listenerRegistered = true
-    NS.Registry.AddListener(GameMenuSkin, RefreshActiveFrames)
+    NS.Registry.AddListener(GameMenuSkin, function() NS.Registry.QueueJob(RefreshActiveFrames) end)
 end
 
 -- Buttons appear when Blizzard shows the menu, which can happen in combat.

@@ -135,11 +135,22 @@ end
 PaperDollFrame_UpdateSidebarTabs = function() end
 local iconSpecs = {}
 local combatLocked = false
+-- Registry.QueueJob runs a job once on the next frame (Core/Registry.lua).
+local queuedJobs = {}
+local function QueueJob(job)
+    for _, pending in ipairs(queuedJobs) do if pending == job then return end end
+    queuedJobs[#queuedJobs + 1] = job
+end
+local function NextFrame()
+    local jobs = queuedJobs
+    queuedJobs = {}
+    for _, job in ipairs(jobs) do job() end
+end
 local ns = {
     Client = { isForever = true },
     DB = { theme = { look = "foreverGlass" } },
     Theme = { GetColor = function() return 0.7, 0.5, 0.3, 1 end },
-    Registry = { AddListener = function(_, callback) themeListener = callback end },
+    Registry = { AddListener = function(_, callback) themeListener = callback end, QueueJob = QueueJob },
     IsCombatLocked = function() return combatLocked end,
     Safety = assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     Cosmetics = {
@@ -239,6 +250,7 @@ assert(tabs[3].points[1][4] > tabs[2].points[1][4],
 assert(themeListener, "Forever tabs did not observe look changes")
 ns.DB.theme.look = "midnight"
 themeListener(nil, "theme", "look")
+NextFrame()
 assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
     and Parts(2).label.shown == false
     and tabs[2].Icon.alpha == 1
@@ -248,6 +260,7 @@ assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
     "switching looks did not restore the native tabs")
 ns.DB.theme.look = "foreverGlass"
 themeListener(nil, "theme", "look")
+NextFrame()
 assert(Parts(2).label.shown == true and Parts(3).rule.shown
     and modelBackgrounds[1].vertex[1] == 0.36,
     "reselecting Forever did not restore the tab row and backdrop")
@@ -260,6 +273,7 @@ assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
     "collapsed Forever panel did not fall back to accessible native side tabs")
 character.width = 646
 themeListener(nil, "profile", nil)
+NextFrame()
 assert(character.ModeTabs.frameStrata == "HIGH"
     and Parts(2).label.shown == true,
     "expanded Forever panel did not restore visible top tabs")

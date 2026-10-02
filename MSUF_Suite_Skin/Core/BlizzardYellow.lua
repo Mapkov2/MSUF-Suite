@@ -274,10 +274,14 @@ function BlizzardYellow.Apply()
     return true, count + directCount
 end
 
+-- Settings writes arrive once per slider tick or colour-picker move; the
+-- full font pass they need runs once on the next frame (Registry.QueueJob).
+local function ApplyQueued() BlizzardYellow.Apply() end
+
 function BlizzardYellow:OnThemeChanged(domain, key)
     if domain == "color" and key ~= "blizzardYellow" then return end
     if domain ~= "color" and domain ~= "theme" and domain ~= "profile" then return end
-    BlizzardYellow.Apply()
+    NS.Registry.QueueJob(ApplyQueued)
 end
 
 function BlizzardYellow.GetStatus()

@@ -246,16 +246,22 @@ local themeDomains = {
     theme = true, color = true, appearance = true, geometry = true, profile = true,
 }
 
--- Repaints the glyphs. A theme change also makes every pooled row take one
--- full skin pass again on its next initialization.
-local function OnThemeChanged(_, domain)
-    local newGeneration = themeDomains[domain] == true
+local function RecolorGlyphs()
     for _, ownerState in pairs(ownerStates) do
-        if newGeneration then ownerState.generation = ownerState.generation + 1 end
         for button, glyph in pairs(ownerState.glyphs) do
             glyph:SetTextColor(NS.Theme.GetColor(ownerState.glyphRoles[button] or "accentBright"))
         end
     end
+end
+
+-- Repaints the glyphs, once per frame of settings writes. A theme change
+-- also makes every pooled row take one full skin pass again on its next
+-- initialization.
+local function OnThemeChanged(_, domain)
+    if themeDomains[domain] == true then
+        for _, ownerState in pairs(ownerStates) do ownerState.generation = ownerState.generation + 1 end
+    end
+    NS.Registry.QueueJob(RecolorGlyphs)
 end
 
 local function EnsureThemeListener()

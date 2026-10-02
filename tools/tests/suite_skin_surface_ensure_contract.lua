@@ -95,6 +95,30 @@ paints = 0
 Surface.Ensure(tab, spec)
 Check(paints > 0, "a surface that mirrors native selection skipped its repaint")
 
+-- Selection hooks call SetActive per row initialization and per native
+-- refresh: the same state on a current surface costs no native paint call;
+-- a new state, or the first call after a settings change, paints once.
+-- Budget: 50 unchanged calls, 0 native paint calls (was one full paint each).
+local selectable = Target("Button")
+Surface.Attach(selectable, spec)
+Surface.SetActive(selectable, true)
+paints = 0
+for _ = 1, 50 do Surface.SetActive(selectable, true) end
+Check(paints == 0, ("an unchanged selection was painted again %d times"):format(paints))
+Surface.SetActive(selectable, false)
+Check(paints > 0 and NS.Registry.GetSurface(selectable).active == false, "a new selection state was not painted")
+NS.Registry.NotifyListeners("color", "accent")
+paints = 0
+Surface.SetActive(selectable, false)
+Check(paints > 0, "SetActive kept a stale paint after a settings change")
+paints = 0
+Surface.SetActive(selectable, false)
+Check(paints == 0, "SetActive painted a current surface twice")
+Surface.SetNativeStateSync(selectable, true)
+Surface.SetActive(selectable, false)
+Check(paints > 0, "SetActive skipped a surface that mirrors native selection")
+Surface.SetNativeStateSync(selectable, false)
+
 ------------------------------------------------------------------ hot callers
 -- Each hot path attaches through Ensure.
 local ensures, attaches = 0, 0

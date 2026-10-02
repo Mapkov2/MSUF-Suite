@@ -33,6 +33,17 @@ QuestFrameGreetingPanel_OnShow = function() end
 
 local locked = false
 local deferred = {}
+-- Registry.QueueJob runs a job once on the next frame (Core/Registry.lua).
+local queuedJobs = {}
+local function QueueJob(job)
+    for _, pending in ipairs(queuedJobs) do if pending == job then return end end
+    queuedJobs[#queuedJobs + 1] = job
+end
+local function NextFrame()
+    local jobs = queuedJobs
+    queuedJobs = {}
+    for _, job in ipairs(jobs) do job() end
+end
 local NS = {
     Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     IsCombatLocked = function() return locked end,
@@ -48,7 +59,7 @@ local NS = {
         local color = assert(theme[role], role)
         return color[1], color[2], color[3], 1
     end },
-    Registry = { AddListener = function(_, callback) listener = callback end },
+    Registry = { AddListener = function(_, callback) listener = callback end, QueueJob = QueueJob },
 }
 
 local function Frame(parent)
@@ -134,6 +145,7 @@ callbacks.QuestInfo_Display()
 assert(QuestInfoDescriptionText.color[1] == theme.text[1], "native quest refresh was not repaired")
 theme.text = { 0.84, 0.86, 0.88 }
 listener(nil, "theme", "look")
+NextFrame()
 assert(QuestInfoDescriptionText.color[1] == 0.84, "theme change did not refresh quest text")
 
 NS.QuestText.Activate(quest, "quest")

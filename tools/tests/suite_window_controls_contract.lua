@@ -121,6 +121,17 @@ MSUF2 = { RunWithHistory = function(_, _, fn)
 end }
 
 local adapterPasses = 0
+-- Registry.QueueJob runs a job once on the next frame (Core/Registry.lua).
+local queuedJobs = {}
+local function QueueJob(job)
+    for _, pending in ipairs(queuedJobs) do if pending == job then return end end
+    queuedJobs[#queuedJobs + 1] = job
+end
+local function NextFrame()
+    local jobs = queuedJobs
+    queuedJobs = {}
+    for _, job in ipairs(jobs) do job() end
+end
 local NS = {
     -- The skin's locale table (Locales/Localization.lua) is ready before
     -- any of this runs; here every key reads as itself.
@@ -128,7 +139,7 @@ local NS = {
     DB = { enabled = true, skins = { blizzardWindows = true },
         windowControls = { enabled = true, scales = {}, positions = {} } },
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
-    Registry = { AddListener = function() end },
+    Registry = { AddListener = function() end, QueueJob = QueueJob },
     BlizzardCatalog = { FindByFrame = function(name)
         if name == "CharacterFrame" or name == "InspectFrame" then return { category = "character" } end
         if name == "MerchantFrame" then return { category = "npc" } end
@@ -210,17 +221,21 @@ Check(NS.WindowControls.SetEnabled(true) and state.grip.shown
 Check(adapterPasses == 1, "reenabling controls did not reapply the adapters")
 NS.DB.windowControls.scales.CharacterFrame = 1.11
 NS.WindowControls:OnThemeChanged("profile")
+NextFrame()
 Check(character.scale == 1.11, "profile restore did not reapply saved scale")
 NS.DB.windowControls.positions.CharacterFrame = { x = 325, y = -140 }
 NS.WindowControls:OnThemeChanged("profile")
+NextFrame()
 Check(character.point[4] == 325 / character.scale,
     "profile restore did not reapply saved position")
 NS.DB.windowControls.enabled = false
 NS.WindowControls:OnThemeChanged("profile")
+NextFrame()
 Check(not state.grip.shown and not state.minimize.shown,
     "history restore did not hide disabled controls")
 NS.DB.windowControls.enabled = true
 NS.WindowControls:OnThemeChanged("profile")
+NextFrame()
 
 local merchant = Frame("MerchantFrame", UIParent)
 Check(NS.WindowControls.Attach(merchant, "blizzardWindows")
@@ -278,6 +293,7 @@ Check(NS.WindowControls.ResetPositions()
 NS.Client = { isForever = true }
 NS.DB.theme = { look = "foreverGlass" }
 NS.WindowControls:OnThemeChanged("theme", "look")
+NextFrame()
 Check(state.defaultPosition and character.point[4] == 0
     and NS.DB.windowControls.positions.CharacterFrame == nil,
     "Forever character default was not docked without saving a position")
@@ -287,6 +303,7 @@ UpdateUIPanelPositions(character)
 Check(character.point[4] == 0, "Blizzard reflow displaced the Forever dock")
 NS.DB.windowControls.positions.CharacterFrame = { x = 325, y = -140 }
 NS.WindowControls:OnThemeChanged("profile")
+NextFrame()
 Check(not state.defaultPosition and character.point[4] == 325,
     "saved position did not override the Forever dock")
 Check(NS.WindowControls.ResetPositions() and state.defaultPosition
@@ -294,6 +311,7 @@ Check(NS.WindowControls.ResetPositions() and state.defaultPosition
     "reset did not restore the Forever default")
 NS.DB.theme.look = "midnight"
 NS.WindowControls:OnThemeChanged("theme", "look")
+NextFrame()
 Check(not state.defaultPosition and character.point[4] == 30,
     "switching away from Forever did not restore native placement")
 
@@ -327,6 +345,7 @@ Check(state.grip.scripts.OnMouseDown == settingsGrip.scripts.OnMouseDown
 -- still re-places saved panels afterwards.
 NS.DB.windowControls.positions.CharacterFrame = { x = 200, y = -100 }
 NS.WindowControls:OnThemeChanged("profile")
+NextFrame()
 local nativeLayout = UpdateUIPanelPositions
 local failLayout = true
 UpdateUIPanelPositions = function(frame)
@@ -340,6 +359,7 @@ Check(NS.WindowControls.ResetPositions() == false and Reported("panel layout fai
     "a failed native restore was reported as a successful reset")
 NS.DB.windowControls.positions.CharacterFrame = { x = 150, y = -60 }
 NS.WindowControls:OnThemeChanged("profile")
+NextFrame()
 UpdateUIPanelPositions(character)
 Check(character.point[4] == 150 / character.scale,
     "the panel layout hook stayed suspended after a failed reset")
