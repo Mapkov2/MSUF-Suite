@@ -813,7 +813,7 @@
    "symbol": "skin.Surface.Attach"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/Appearance.lua",
+   "file": "MSUF_Suite_Options/Pages/AppearanceKit.lua",
    "kind": "lod",
    "reason": "export of MSUF_Suite_Skin, which loads on demand",
    "symbol": "skin.Theme"

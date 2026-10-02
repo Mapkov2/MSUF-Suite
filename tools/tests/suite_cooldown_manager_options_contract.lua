@@ -576,7 +576,7 @@ local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) er
 for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Pages/CooldownManagerData.lua",
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua", "Pages/CooldownManagerPopover.lua",
     "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManager.lua",
-    "Pages/Appearance.lua", "Menu/Register.lua" }) do
+    "Pages/AppearanceKit.lua", "Pages/Appearance.lua", "Menu/Register.lua" }) do
     local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))
     if file:find("CooldownManager", 1, true) then setfenv(chunk, strict) end
     chunk("MSUF_Suite_Options", P)

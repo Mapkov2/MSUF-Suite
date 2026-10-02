@@ -37,6 +37,7 @@ Pages\CooldownManagerPopover.lua
 Pages\CooldownManagerPreviewIcons.lua
 Pages\CooldownManagerPreview.lua
 Pages\CooldownManager.lua
+Pages\AppearanceKit.lua
 Pages\Appearance.lua
 Menu\Register.lua
 Menu\SearchActions.lua
