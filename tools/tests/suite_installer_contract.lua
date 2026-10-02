@@ -381,6 +381,24 @@ for _, api in ipairs({ hostAPI, false }) do
         and Suite.RootDB.installation == installed,
         (api and "v1" or "legacy") .. ": an invalid scale did not refuse before the profile install")
 end
+-- A 480 px tall screen makes a pixel-perfect scale of 1.6, above the 1.5
+-- MSUF accepts: both host paths refuse before the profile install.
+MSUF_GetPixelPerfectScale = function() return 768 / 480 end
+for _, api in ipairs({ hostAPI, false }) do
+    UseHost(api or nil)
+    Suite.Installer.Open()
+    window.next.scripts.OnClick() -- profile
+    window.next.scripts.OnClick() -- modules
+    window.next.scripts.OnClick() -- scaling
+    if not window.scaleSlider.shown then window.scaleToggle.scripts.OnClick() end
+    window.presets[1].scripts.OnClick()
+    window.next.scripts.OnClick() -- review
+    local before, installed = activations + factoryCalls, Suite.RootDB.installation
+    local refused, why = Suite.Installer.Apply()
+    assert(refused == false and why == "MSUF refused this UI scale" and activations + factoryCalls == before
+        and Suite.RootDB.installation == installed,
+        (api and "v1" or "legacy") .. ": a 480 px pixel-perfect scale did not refuse before the profile install")
+end
 UseHost(nil)
 MSUF_GetPixelPerfectScale = function() return 768 / 2160 end
 Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData = "MSUF3:rogue"

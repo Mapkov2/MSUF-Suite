@@ -138,8 +138,26 @@ for _, withHost in ipairs({ true, false }) do
     Check(not ready and not applied and why == "MSUF scale controls unavailable" and applyWhy == why
         and Same(MSUF_DB, before), (withHost and "v1" or "legacy") .. ": a missing MSUF scale owner was not refused")
 end
--- A refusal MSUF gives only when it applies (its own range check) reaches
--- the caller in the installer's words.
+-- MSUF's ranges, both bounds inclusive: msufScale 0.25-2.0, the global
+-- scale 0.3-1.5; outside them both paths refuse with nothing written.
+for _, withHost in ipairs({ true, false }) do
+    Legacy()
+    bridge = Bridge(withHost)
+    for _, case in ipairs({
+        { 0.25, 0.3, true }, { 2.0, 1.5, true }, { 0.24, 1, false }, { 2.01, 1, false },
+        { 1, 0.29, false }, { 1, 1.51, false }, { 1, 768 / 480, false },
+    }) do
+        MSUF_DB = FreshDB()
+        local before = DeepCopy(MSUF_DB)
+        local spec = { msufScale = case[1], global = { preset = "pixel", scale = case[2] } }
+        local ready = bridge.ScaleReady(spec)
+        Check(ready == case[3] and (ready or Same(MSUF_DB, before)),
+            ("%s: scale %s / %s was %s"):format(withHost and "v1" or "legacy", case[1], case[2],
+                ready and "accepted" or "refused"))
+    end
+end
+-- A refusal MSUF gives only when it applies reaches the caller in the
+-- installer's words.
 Legacy()
 MSUF_DB = FreshDB()
 bridge = Bridge(true)

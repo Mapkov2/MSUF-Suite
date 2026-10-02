@@ -65,15 +65,26 @@ local function LegacyApplyScale(spec)
     return true
 end
 
--- A spec both paths can apply: positive finite scales, a known preset.
+-- The scale ranges MSUF accepts, both bounds inclusive: host API v1
+-- ApplyUIScaleProfile refuses anything outside them as "invalid" (the clamps
+-- of MSUF's ApplyMsufScale and SetGlobalUiScale). Checked here for both
+-- paths, so a refusal comes before the installer commits anything.
+local MSUF_SCALE_MIN, MSUF_SCALE_MAX = 0.25, 2.0
+local GLOBAL_SCALE_MIN, GLOBAL_SCALE_MAX = 0.3, 1.5
+
+local function InRange(value, minimum, maximum)
+    return Suite.Finite(value) and value >= minimum and value <= maximum
+end
+
+-- A spec both paths can apply: scales MSUF accepts, a known preset.
 local function ValidSpec(spec)
     if type(spec) ~= "table" then return false end
     local msufScale = spec.msufScale
-    if msufScale ~= nil and not (Suite.Finite(msufScale) and msufScale > 0) then return false end
+    if msufScale ~= nil and not InRange(msufScale, MSUF_SCALE_MIN, MSUF_SCALE_MAX) then return false end
     local global = spec.global
     if global == nil then return true end
     return type(global) == "table" and (global.preset == "pixel" or global.preset == "custom")
-        and Suite.Finite(global.scale) and global.scale > 0
+        and InRange(global.scale, GLOBAL_SCALE_MIN, GLOBAL_SCALE_MAX)
 end
 
 -- The v1 host's refusals in the installer's words (host API v1: "combat",
@@ -88,8 +99,7 @@ local HOST_REFUSALS = {
 -- same answer on both paths, so a caller can check before it commits
 -- anything. The v1 setter answers only by applying, and it refuses as
 -- "unavailable" exactly when MSUF's scale settings or appliers are missing,
--- which is the legacy check; MSUF's own range check can still refuse at
--- ApplyScale.
+-- which is the legacy check, and "invalid" outside MSUF's ranges (above).
 function HostBridge.ScaleReady(spec)
     if not ValidSpec(spec) then return false, HOST_REFUSALS.invalid end
     return LegacyScaleReady(spec)

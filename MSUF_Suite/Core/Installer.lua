@@ -207,8 +207,8 @@ end
 -- both host paths), and the profile helpers roll a refused install back, so
 -- a failed attempt changed nothing and a retry never installs a second
 -- Forever profile. The scale goes to the installed profile, so it applies
--- after the install; should MSUF still refuse it (its own range check), the
--- install is reported as failed and not recorded as complete.
+-- after the install; should MSUF still refuse it there, the install is
+-- reported as failed and not recorded as complete.
 function Installer.Apply()
     if Suite.IsCombatLocked() then return false, "Finish combat first." end
     if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
