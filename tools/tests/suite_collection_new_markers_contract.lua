@@ -7,10 +7,13 @@ local suite = {
     PublicText = function(value) return type(value) == "string" and value ~= "secret" and value ~= "" and value or nil end,
     Finite = function(value) return type(value) == "number" and value == value and value ~= math.huge end,
 }
-local context = {
+local ns = { IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end }
+local context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, suite, ns)(
+    "collectionNewMarkers", nil, {
     Event = function(_, event, callback) handlers[event] = callback end,
     RemoveEvent = function(_, event) handlers[event] = nil end,
-}
+})
 local function Emit(event, id)
     local callback = handlers[event]
     if callback then callback(module, event, id) end
@@ -28,8 +31,9 @@ C_MountJournal = { ClearFanfare = function(id) cleared.mounts[#cleared.mounts + 
 C_PetJournal = { ClearFanfare = function(id) cleared.pets[#cleared.pets + 1] = id end }
 C_ToyBoxInfo = { ClearFanfare = function(id) cleared.toys[#cleared.toys + 1] = id end }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CollectionNewMarkers.lua"))(
-    "MSUF_Suite_QualityOfLife", { NS = { IsCombatLocked = function() return combat end }, Suite = suite })
+    "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 module.active = true
+suite.instances.collectionNewMarkers = module
 module.context = context
 module.config = { mounts = true, pets = true, toys = true }
 module:Enable()
