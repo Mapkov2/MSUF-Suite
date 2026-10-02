@@ -65,21 +65,46 @@ local function LegacyApplyScale(spec)
     return true
 end
 
--- Whether a scale profile can be applied now (spec as for ApplyScale).
--- A v1 host answers for itself when it applies.
+-- A spec both paths can apply: positive finite scales, a known preset.
+local function ValidSpec(spec)
+    if type(spec) ~= "table" then return false end
+    local msufScale = spec.msufScale
+    if msufScale ~= nil and not (Suite.Finite(msufScale) and msufScale > 0) then return false end
+    local global = spec.global
+    if global == nil then return true end
+    return type(global) == "table" and (global.preset == "pixel" or global.preset == "custom")
+        and Suite.Finite(global.scale) and global.scale > 0
+end
+
+-- The v1 host's refusals in the installer's words (host API v1: "combat",
+-- "unavailable", "invalid"; a refusal writes nothing).
+local HOST_REFUSALS = {
+    combat = "Finish combat first.",
+    unavailable = "MSUF scale controls unavailable",
+    invalid = "MSUF refused this UI scale",
+}
+
+-- Whether a scale profile can be applied now (spec as for ApplyScale), the
+-- same answer on both paths, so a caller can check before it commits
+-- anything. The v1 setter answers only by applying, and it refuses as
+-- "unavailable" exactly when MSUF's scale settings or appliers are missing,
+-- which is the legacy check; MSUF's own range check can still refuse at
+-- ApplyScale.
 function HostBridge.ScaleReady(spec)
-    if CoreAPI() then return true end
+    if not ValidSpec(spec) then return false, HOST_REFUSALS.invalid end
     return LegacyScaleReady(spec)
 end
 
 -- spec = { msufScale = number (default 1), global = nil | { preset = "pixel"|"custom", scale = number } }
--- Returns ok, reason.
+-- Returns ok, reason (the installer's English status text).
 function HostBridge.ApplyScale(spec)
-    local api = CoreAPI()
-    if api then return api.ApplyUIScaleProfile(spec) end
-    local ready, why = LegacyScaleReady(spec)
+    local ready, why = HostBridge.ScaleReady(spec)
     if not ready then return false, why end
-    return LegacyApplyScale(spec)
+    local api = CoreAPI()
+    if not api then return LegacyApplyScale(spec) end
+    local ok, reason = api.ApplyUIScaleProfile(spec)
+    if ok then return true end
+    return false, HOST_REFUSALS[reason] or HOST_REFUSALS.invalid
 end
 
 ------------------------------------------------------------------ resource stack

@@ -191,31 +191,29 @@ local function ApplyForever(profile)
         skinEnabled and skin or nil)
 end
 
--- The scale the installer applies: MSUF's own frame scale back to 1 and,
--- when chosen, the global UI scale (Suite.HostBridge applies it).
+-- The scale the installer applies, decided once before anything commits:
+-- MSUF's own frame scale back to 1 and, when chosen, the global UI scale
+-- (the pixel preset takes the screen's current pixel-perfect scale).
 local function ScaleSpec()
     if not useScale then return { msufScale = 1 } end
+    if scalePreset == "pixel" and type(_G.MSUF_GetPixelPerfectScale) == "function" then
+        scale = tonumber(_G.MSUF_GetPixelPerfectScale()) or scale
+    end
     return { msufScale = 1, global = { preset = scalePreset, scale = scale } }
 end
 
--- Runs after the profile install. Installer.Apply has checked the scale
--- controls (HostBridge.ScaleReady) and combat, the only reason MSUF refuses
--- a scale change, so this step cannot refuse.
-local function ApplyScale()
-    if useScale and scalePreset == "pixel" and type(_G.MSUF_GetPixelPerfectScale) == "function" then
-        scale = tonumber(_G.MSUF_GetPixelPerfectScale()) or scale
-    end
-    Suite.HostBridge.ApplyScale(ScaleSpec())
-end
-
 -- The profile install is the commit point. Every check that can refuse runs
--- before it, and the profile helpers roll a refused install back, so a
--- failed attempt changed nothing and a retry never installs a second
--- Forever profile. Nothing after the install can refuse.
+-- before it (the scale through HostBridge.ScaleReady, the same answer on
+-- both host paths), and the profile helpers roll a refused install back, so
+-- a failed attempt changed nothing and a retry never installs a second
+-- Forever profile. The scale goes to the installed profile, so it applies
+-- after the install; should MSUF still refuse it (its own range check), the
+-- install is reported as failed and not recorded as complete.
 function Installer.Apply()
     if Suite.IsCombatLocked() then return false, "Finish combat first." end
     if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
-    local ready, why = Suite.HostBridge.ScaleReady(ScaleSpec())
+    local spec = ScaleSpec()
+    local ready, why = Suite.HostBridge.ScaleReady(spec)
     if not ready then return false, why end
     local profile, reason = PreparedProfile()
     if not profile then return false, reason end
@@ -228,7 +226,8 @@ function Installer.Apply()
         ok, reason = ApplySuiteOnly(profile)
     end
     if not ok then return false, reason end
-    ApplyScale()
+    local scaled, scaleWhy = Suite.HostBridge.ApplyScale(spec)
+    if not scaled then return false, scaleWhy end
     local previous = Suite.RootDB.installation
     local getDefault = _G.MSUF_GetDefaultProfileForNewCharacters
     local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true

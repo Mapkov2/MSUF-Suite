@@ -114,33 +114,40 @@ end
 ------------------------------------------------------------------ chat colours
 -- The skin themes a few chat message colours with ChangeChatColor, a
 -- persistent client setting of the character (its chat cache), and puts
--- them back at PLAYER_LOGOUT (MSUF_Suite_Skin/Adapters/ChatFrames.lua).
--- Saved variables are written only by a clean logout or reload, after that
--- restore, so this ledger (per character, in the Suite's saved variables,
--- which load with or without the skin) holds only what a clean logout could
--- not put back: per chat type the colour to put back and the colour the
--- category showed at that logout, stamped with that logout's generation.
---   suiteCharacters[guid].skinChatColors =
---       { generation = n, colors = { [chatType] = { original = rgb, left = rgb, generation = n } } }
--- A category the logout restored, or that became the player's, is not in
--- it. A session that ends without PLAYER_LOGOUT (a crash) saves nothing:
--- its colours are recognised only by the skin when it runs again (its own
--- theme colour), never by the ledger. A colour goes back only when the
--- category shows exactly what the last saved logout left; everything else
--- is ambiguous (the player may have picked that colour in a session without
--- the Suite) and is left alone.
+-- them back at PLAYER_LOGOUT (MSUF_Suite_Skin/Adapters/ChatFrames.lua). A
+-- colour equal to a theme colour proves nothing: the player may have picked
+-- it. So nothing is inferred from colours across sessions:
+-- - Without a ledger entry, the colour a category shows is the player's.
+--   The skin themes only a category that shows Blizzard's default.
+-- - What a clean logout could not put back is recorded here, in the Suite's
+--   saved variables (per character), with the colour to put back:
+--   suiteCharacters[guid].skinChatColors = { colors = { [chatType] =
+--   { original = rgb, left = rgb, ambiguous = true|nil } } }.
+--   From the next session on such an entry is ambiguous: kept, never
+--   applied on its own.
+-- - "Restore chat colors" (Skinning page, Maintenance) is the only recovery:
+--   it puts back the recorded originals, else Blizzard's defaults.
+-- Limit: a session that ends without PLAYER_LOGOUT (a crash) saves nothing,
+-- so a theme colour it left in the chat cache stays until the player picks
+-- another colour or uses "Restore chat colors".
 local CHAT_LEDGER = "skinChatColors"
-local chatColorsClaimed = false
+-- Blizzard's clean-profile colours of the categories the skin themes
+-- (Retail's ChatTypeInfo defaults).
+Skin.CHAT_COLOR_DEFAULTS = {
+    SYSTEM = { 1, 1, 0 },
+    MONSTER_SAY = { 1, 1, 159 / 255 },
+    MONSTER_PARTY = { 170 / 255, 170 / 255, 1 },
+}
 
--- The character's ledger and its owner table; nil while the database or the
--- GUID is unreadable, or while there is none.
+-- The character's ledger entries and the owner table; nil while the
+-- database or the GUID is unreadable, or while there is none.
 local function ChatLedger()
     local characters = type(Suite.RootDB) == "table" and Suite.RootDB.suiteCharacters
     local guid = Suite.PublicText(UnitGUID("player"))
     local own = type(characters) == "table" and guid and characters[guid]
     local ledger = type(own) == "table" and own[CHAT_LEDGER]
-    if type(ledger) ~= "table" then return nil end
-    return ledger, own
+    if type(ledger) ~= "table" or type(ledger.colors) ~= "table" then return nil end
+    return ledger.colors, own
 end
 
 local function ReadableColor(color)
@@ -152,95 +159,76 @@ local function Copy3(color)
     return { color[1], color[2], color[3] }
 end
 
--- The entries the last saved logout stamped, else nil.
-local function Eligible(ledger, entry)
-    return type(entry) == "table" and Suite.Finite(ledger.generation) and entry.generation == ledger.generation
-        and ReadableColor(entry.original) and ReadableColor(entry.left)
+local function DropEmpty(colors, own)
+    if own and next(colors) == nil then own[CHAT_LEDGER] = nil end
 end
 
--- The category's colour, when ChatTypeInfo holds a readable one.
-local function CurrentColor(chatType)
-    local info = ChatTypeInfo[chatType]
-    if type(info) ~= "table" then return nil end
-    local r, g, b = info.r, info.g, info.b
-    if not (Suite.Finite(r) and Suite.Finite(g) and Suite.Finite(b)) then return nil end
-    return r, g, b
-end
-
--- The skin's chat adapter runs this session and takes over what the last
--- logout left: { [chatType] = { original = rgb, left = rgb } } (copies).
--- The ledger keeps nothing then; the skin's logout writes it anew.
-function Skin.ClaimChatColors()
-    chatColorsClaimed = true
-    local ledger = ChatLedger()
-    local leftovers = {}
-    if not ledger then return leftovers end
-    for chatType, entry in pairs(type(ledger.colors) == "table" and ledger.colors or {}) do
-        if Eligible(ledger, entry) then
-            leftovers[chatType] = { original = Copy3(entry.original), left = Copy3(entry.left) }
+-- PLAYER_ENTERING_WORLD of the login (Startup.lua): every entry an earlier
+-- session left becomes ambiguous. Never writes a colour. Returns the number
+-- of entries waiting for "Restore chat colors".
+function Skin.SettleChatColors()
+    local colors, own = ChatLedger()
+    if not colors then return 0 end
+    local count = 0
+    for chatType, entry in pairs(colors) do
+        if type(entry) == "table" and ReadableColor(entry.original) then
+            entry.ambiguous = true
+            count = count + 1
+        else
+            colors[chatType] = nil
         end
     end
-    ledger.colors = nil
-    return leftovers
+    DropEmpty(colors, own)
+    return count
 end
 
--- The skin's PLAYER_LOGOUT, after its restore: leftovers maps each chat type
--- the restore could not put back to { original = rgb, left = rgb }.
--- Without leftovers the ledger leaves the saved variables.
-function Skin.CloseChatColors(leftovers)
-    if not chatColorsClaimed then return end
-    local ledger, own = ChatLedger()
-    local colors
+-- The skin's PLAYER_LOGOUT, after its restore. restored: the chat types it
+-- put back (their entries go); leftovers: { [chatType] = { original = rgb,
+-- left = rgb } } it could not put back (recorded). Other entries stay.
+function Skin.CloseChatColors(restored, leftovers)
+    local colors, own = ChatLedger()
+    if colors then
+        for chatType in pairs(restored or {}) do colors[chatType] = nil end
+    end
     for chatType, entry in pairs(leftovers or {}) do
         if type(chatType) == "string" and ReadableColor(entry.original) and ReadableColor(entry.left) then
-            colors = colors or {}
+            if not colors then
+                local ledger = Suite.CharacterData(CHAT_LEDGER)
+                if not ledger then return end
+                ledger.colors = {}
+                colors, own = ChatLedger()
+            end
             colors[chatType] = { original = Copy3(entry.original), left = Copy3(entry.left) }
         end
     end
-    if not colors then
-        if own then own[CHAT_LEDGER] = nil end
-        return
-    end
-    if not ledger then
-        ledger = Suite.CharacterData(CHAT_LEDGER)
-        if not ledger then return end
-    end
-    local generation = (Suite.Finite(ledger.generation) and ledger.generation or 0) + 1
-    for _, entry in pairs(colors) do entry.generation = generation end
-    ledger.generation, ledger.colors = generation, colors
+    if colors then DropEmpty(colors, own) end
 end
 
--- PLAYER_ENTERING_WORLD of the login (Startup.lua), after the skin's login
--- pass: when no skin claimed the ledger, each category that shows exactly
--- the colour the last logout left gets its original back. Every entry it can
--- read goes; one whose colour is unreadable waits. Returns the number of
--- colours put back.
-function Skin.SettleChatColors()
-    if chatColorsClaimed then return 0 end
-    local ledger, own = ChatLedger()
-    if not ledger then return 0 end
-    local colors = type(ledger.colors) == "table" and ledger.colors or {}
-    local restored = 0
-    for chatType, entry in pairs(colors) do
-        local r, g, b = CurrentColor(chatType)
-        local eligible = Eligible(ledger, entry)
-        if not eligible then
-            colors[chatType] = nil
-        elseif r then
-            local left = entry.left
-            if r == left[1] and g == left[2] and b == left[3] then
-                local original = entry.original
-                if Suite.Dispatch(Suite.Finish, ChangeChatColor, chatType, original[1], original[2], original[3]) then
-                    restored = restored + 1
-                    colors[chatType] = nil
-                end
-            else
-                colors[chatType] = nil
-            end
+-- The number of recorded colours "Restore chat colors" would put back.
+function Skin.PendingChatColors()
+    local colors = ChatLedger()
+    local count = 0
+    for _ in pairs(colors or {}) do count = count + 1 end
+    return count
+end
+
+-- "Restore chat colors": each themed category gets its recorded original
+-- back, else Blizzard's default, and the ledger goes. Refused in combat.
+-- Returns ok and the number of colours written (or false, reason).
+function Skin.RestoreChatColors()
+    if Suite.IsCombatLocked() then return false, "combat" end
+    local colors, own = ChatLedger()
+    local written = 0
+    for chatType, default in pairs(Skin.CHAT_COLOR_DEFAULTS) do
+        local entry = colors and colors[chatType]
+        local color = type(entry) == "table" and ReadableColor(entry.original) and entry.original or default
+        if Suite.Dispatch(Suite.Finish, ChangeChatColor, chatType, color[1], color[2], color[3]) then
+            written = written + 1
+            if colors then colors[chatType] = nil end
         end
     end
-    if next(colors) == nil and own then own[CHAT_LEDGER] = nil end
-    return restored
+    if colors then DropEmpty(colors, own) end
+    return true, written
 end
 
 function Skin.OpenEditor(parent, width, height)

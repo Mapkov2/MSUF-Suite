@@ -618,6 +618,28 @@ P.ResetSkinPage = function()
     return Suite.Skin.SetEnabled(true)
 end
 
+-- "Restore chat colors": the system and NPC chat categories the skin
+-- themes get their recorded originals back, else Blizzard's defaults
+-- (MSUF_Suite/Integrations/MapkoSkin.lua). The only recovery of a chat
+-- colour the skin may have left behind; asks first, refused in combat.
+function P.RestoreChatColors()
+    if P.Combat() then return false end
+    P.Confirm("restore-chat-colors",
+        Tr("Put the system and NPC chat colors back to the colors they had before the skin, or to Blizzard's defaults?"),
+        function()
+            if Suite.Skin.RestoreChatColors() and M.ShowStatusFeedback then
+                M.ShowStatusFeedback(Tr("Chat colors restored"), "ok", 1.5)
+            end
+        end)
+    return true
+end
+
+local function RestoreChatColorsButton(ctx, body, y, width, sectionId)
+    return Button(ctx, body, "Restore chat colors", 16, y, width, P.RestoreChatColors,
+        function() return not P.Combat() end,
+        P.Meta(PAGE, "skin", "maintenance.restoreChatColors", "action", sectionId))
+end
+
 local function BuildMaintenance(ctx, b, skin)
     Section(ctx, b, "advanced", "Maintenance",
         "Refresh newly opened Blizzard windows. Use Reset page in the menu toolbar to restore this skin profile.",
@@ -628,7 +650,8 @@ local function BuildMaintenance(ctx, b, skin)
             Button(ctx, body, "Save setup as…", 16, y - 34, width, P.SaveSetupAs,
                 function() return not P.Combat() end,
                 P.Meta(PAGE, "skin", "maintenance.saveSetup", "action", "suite_skin_advanced"))
-            return y - 74
+            RestoreChatColorsButton(ctx, body, y - 68, width, "suite_skin_advanced")
+            return y - 108
         end)
 end
 
@@ -670,7 +693,11 @@ local function Build(ctx)
     if not skin then
         Section(ctx, b, "frame_basic", "Basics",
             P.Combat() and "Open Skinning outside combat to load its settings." or "The Suite skin engine is unavailable.",
-            {}, true)
+            {}, true, function(body, y, width)
+                -- The chat colors the skin themes outlive the engine.
+                RestoreChatColorsButton(ctx, body, y, width, "suite_skin_frame_basic")
+                return y - 40
+            end)
         return
     end
     -- FixedPreviewSection must own the first builder slot so its reserved

@@ -33,6 +33,10 @@ Suite.Text = function(english)
     return type(value) == "string" and value ~= "" and value or english
 end
 Suite.StatusText = function(text, translate) return translate(text) end
+-- The core's number reader (Platform.lua): readable, not NaN, not infinite.
+Suite.Finite = function(value)
+    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
 Suite.RGB = function(hex)
     return tonumber(hex:sub(1, 2), 16) / 255,
         tonumber(hex:sub(3, 4), 16) / 255,
@@ -231,6 +235,47 @@ assert(applied == false and activations == 1 and factoryCalls == 0,
     "Missing scale controls changed a profile before failing")
 MSUF_ResetGlobalUiScale = resetScale
 
+-- With MSUF host API v1 the scale goes through MSUF_HostAPI (the Suite's
+-- host bridge resolves it once per load). Both host paths refuse before the
+-- profile install when MSUF's scale owner is missing; a refusal MSUF gives
+-- only at apply (its own range check) is reported and not recorded as
+-- complete.
+local hostRefusal, hostScales = nil, 0
+local hostAPI = { version = 1, SetResourceStack = function() return false end }
+function hostAPI.ApplyUIScaleProfile(spec)
+    if not (MSUF_ApplyMsufScale and MSUF_ResetGlobalUiScale) then return false, "unavailable" end
+    if hostRefusal then return false, hostRefusal end
+    hostScales = hostScales + 1
+    MSUF_DB.general.msufUiScale, MSUF_DB.general.uiScale = spec.msufScale or 1, nil
+    MSUF_ApplyMsufScale(spec.msufScale or 1)
+    MSUF_ResetGlobalUiScale(true)
+    return true
+end
+local function UseHost(api)
+    MSUF_HostAPI = api
+    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+end
+for _, api in ipairs({ hostAPI, false }) do
+    UseHost(api or nil)
+    MSUF_ResetGlobalUiScale = nil
+    Suite.RootDB.installation = nil
+    local before = activations
+    local refused, why = Suite.Installer.Apply()
+    assert(refused == false and activations == before and Suite.RootDB.installation == nil
+        and why == "MSUF scale controls unavailable",
+        (api and "v1" or "legacy") .. ": a missing MSUF scale owner did not refuse before the profile install")
+    MSUF_ResetGlobalUiScale = resetScale
+end
+UseHost(hostAPI)
+hostRefusal = "invalid"
+local refusedAtApply, applyWhy = Suite.Installer.Apply()
+assert(refusedAtApply == false and applyWhy == "MSUF refused this UI scale" and Suite.RootDB.installation == nil,
+    "the installer reported a scale MSUF refused as a complete install")
+hostRefusal = nil
+assert(Suite.Installer.Apply() and hostScales == 1 and Suite.RootDB.installation.status == "complete"
+    and MSUF_DB.general.msufUiScale == 1, "the v1 scale path did not install")
+UseHost(nil)
+
 Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 copies = 0
@@ -318,6 +363,26 @@ assert(Suite.RootDB.installation.uiScalePreset == "pixel"
     and Suite.RootDB.installation.uiScale == 768 / 2160
     and scaleChanges[#scaleChanges][2] == 768 / 2160,
     "pixel-perfect selection lost its exact screen scale")
+-- An unreadable pixel-perfect scale makes an invalid scale: both host paths
+-- refuse before the profile install.
+MSUF_GetPixelPerfectScale = function() return 0 / 0 end
+for _, api in ipairs({ hostAPI, false }) do
+    UseHost(api or nil)
+    Suite.Installer.Open()
+    window.next.scripts.OnClick() -- profile
+    window.next.scripts.OnClick() -- modules
+    window.next.scripts.OnClick() -- scaling
+    if not window.scaleSlider.shown then window.scaleToggle.scripts.OnClick() end
+    window.presets[1].scripts.OnClick()
+    window.next.scripts.OnClick() -- review
+    local before, installed = activations + factoryCalls, Suite.RootDB.installation
+    local refused, why = Suite.Installer.Apply()
+    assert(refused == false and why == "MSUF refused this UI scale" and activations + factoryCalls == before
+        and Suite.RootDB.installation == installed,
+        (api and "v1" or "legacy") .. ": an invalid scale did not refuse before the profile install")
+end
+UseHost(nil)
+MSUF_GetPixelPerfectScale = function() return 768 / 2160 end
 Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData = "MSUF3:rogue"
 Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData = "MSUF3:spells"
 Suite.Installer.Open()
