@@ -244,81 +244,97 @@ function P.EnsureRetailForeverCooldownLayout()
 end
 
 -- MSUF's native Profiles page owns names and copy operations. Keep the Suite
--- and optional skin profile stores aligned with those same actions.
+-- and optional skin profile stores aligned with those same actions. Each
+-- handler gets the source and target names MSUF passed (checked below) and
+-- the skin engine when it is loaded.
+local Lifecycle = {}
+
+function Lifecycle.create(source, _, skin)
+    if not DB.GetProfile(source) then DB.Create(source, false) end
+    if skin and not skin.Database.GetProfile(source) then skin.Database.CreateProfile(source, false) end
+    return true
+end
+
+function Lifecycle.reset(source, _, skin)
+    if DB.GetProfile(source) then
+        local profile = DB.CreateFactoryProfile()
+        Suite.Suite.Normalize(profile)
+        Suite.RootDB.profiles[source] = profile
+        if DB.GetActiveProfileName() == source then DB.Activate(source) end
+    end
+    if skin and skin.Defaults then
+        local factory = skin.Database.CreateFactoryProfile and skin.Database.CreateFactoryProfile()
+            or Suite.CopyValue(skin.Defaults)
+        skin.Database.SetProfile(source, factory)
+        if skin.Database.GetActiveProfileName() == source then skin.Database.SetActiveProfile(source) end
+    end
+    return true
+end
+
+function Lifecycle.copy(source, target, skin)
+    if not DB.GetProfile(target) then
+        -- An MSUF profile from before the Suite was installed has no Suite
+        -- twin yet; its copy starts from the factory like a new profile.
+        local ok, why
+        if DB.GetProfile(source) then
+            local original
+            original, why = Suite.ProfileVariants.BaseProfile(source)
+            if not original then return false, why end
+            ok, why = DB.CreateFromProfile(target, original)
+        else
+            ok, why = DB.Create(target, false)
+        end
+        if not ok then return false, why end
+    end
+    if skin and not skin.Database.GetProfile(target) then
+        local original = skin.Database.GetProfile(source)
+        if original then skin.Database.SetProfile(target, Suite.CopyValue(original))
+        else skin.Database.CreateProfile(target, false) end
+    end
+    return true
+end
+
+function Lifecycle.rename(source, target, skin)
+    local original = DB.GetProfile(source)
+    if original and not DB.GetProfile(target) then
+        Suite.RootDB.profiles[target] = original
+        Suite.RootDB.profiles[source] = nil
+        if DB.GetActiveProfileName() == source then
+            -- The active profile keeps its settings under the new name,
+            -- also when the activation below is refused.
+            Suite.RootDB.activeProfile = target
+            DB.Activate(target)
+        end
+    end
+    if skin then
+        local old = skin.Database.GetProfile(source)
+        if old and not skin.Database.GetProfile(target) then
+            skin.Database.SetProfile(target, Suite.CopyValue(old))
+            if skin.Database.GetActiveProfileName() == source then skin.Database.SetActiveProfile(target) end
+            skin.Database.DeleteProfile(source)
+        end
+    end
+    return true
+end
+
+function Lifecycle.delete(source, _, skin)
+    if DB.GetProfile(source) and DB.GetActiveProfileName() ~= source then DB.Delete(source) end
+    if skin and skin.Database.GetProfile(source)
+        and skin.Database.GetActiveProfileName() ~= source then skin.Database.DeleteProfile(source) end
+    return true
+end
+
+-- The kinds that name a second profile.
+local WITH_TARGET = { copy = true, rename = true }
+
 function P.OnLifecycle(kind, source, target)
     if Suite.suppressProfileSync or not Suite.RootDB or Suite.IsCombatLocked() then return false end
     local skin = SkinEngine()
-    if kind == "create" and DB.IsProfileName(source) then
-        if not DB.GetProfile(source) then DB.Create(source, false) end
-        if skin and not skin.Database.GetProfile(source) then skin.Database.CreateProfile(source, false) end
-        return true
+    local handler = Lifecycle[kind]
+    if not handler or not DB.IsProfileName(source) or WITH_TARGET[kind] and not DB.IsProfileName(target) then
+        return false
     end
-    if kind == "reset" and DB.IsProfileName(source) then
-        if DB.GetProfile(source) then
-            local profile = DB.CreateFactoryProfile()
-            Suite.Suite.Normalize(profile)
-            Suite.RootDB.profiles[source] = profile
-            if DB.GetActiveProfileName() == source then DB.Activate(source) end
-        end
-        if skin and skin.Defaults then
-            local factory = skin.Database.CreateFactoryProfile and skin.Database.CreateFactoryProfile()
-                or Suite.CopyValue(skin.Defaults)
-            skin.Database.SetProfile(source, factory)
-            if skin.Database.GetActiveProfileName() == source then skin.Database.SetActiveProfile(source) end
-        end
-        return true
-    end
-    if kind == "copy" and DB.IsProfileName(source) and DB.IsProfileName(target) then
-        if not DB.GetProfile(target) then
-            -- An MSUF profile from before the Suite was installed has no Suite
-            -- twin yet; its copy starts from the factory like a new profile.
-            local ok, why
-            if DB.GetProfile(source) then
-                local original
-                original, why = Suite.ProfileVariants.BaseProfile(source)
-                if not original then return false, why end
-                ok, why = DB.CreateFromProfile(target, original)
-            else
-                ok, why = DB.Create(target, false)
-            end
-            if not ok then return false, why end
-        end
-        if skin and not skin.Database.GetProfile(target) then
-            local original = skin.Database.GetProfile(source)
-            if original then skin.Database.SetProfile(target, Suite.CopyValue(original))
-            else skin.Database.CreateProfile(target, false) end
-        end
-        return true
-    end
-    if kind == "rename" and DB.IsProfileName(source) and DB.IsProfileName(target) then
-        local original = DB.GetProfile(source)
-        if original and not DB.GetProfile(target) then
-            Suite.RootDB.profiles[target] = original
-            Suite.RootDB.profiles[source] = nil
-            if DB.GetActiveProfileName() == source then
-                -- The active profile keeps its settings under the new name,
-                -- also when the activation below is refused.
-                Suite.RootDB.activeProfile = target
-                DB.Activate(target)
-            end
-        end
-        if skin then
-            local old = skin.Database.GetProfile(source)
-            if old and not skin.Database.GetProfile(target) then
-                skin.Database.SetProfile(target, Suite.CopyValue(old))
-                if skin.Database.GetActiveProfileName() == source then skin.Database.SetActiveProfile(target) end
-                skin.Database.DeleteProfile(source)
-            end
-        end
-        return true
-    end
-    if kind == "delete" and DB.IsProfileName(source) then
-        if DB.GetProfile(source) and DB.GetActiveProfileName() ~= source then DB.Delete(source) end
-        if skin and skin.Database.GetProfile(source)
-            and skin.Database.GetActiveProfileName() ~= source then skin.Database.DeleteProfile(source) end
-        return true
-    end
-    return false
+    return handler(source, target, skin)
 end
 Suite.OnMSUFProfileLifecycle = P.OnLifecycle
 
