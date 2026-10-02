@@ -58,12 +58,13 @@ def extract(root, clients=CLIENTS):
                 constants[parts[0]] = parts[1]
             else:
                 inventory[category].add(item(*parts))
-    source_inventory(root, inventory, constants)
     # Same English keys as `suite_locale_tool.py extract`, without translation
     # coverage, which would unnecessarily read sibling checkouts.
-    english = set(locale.Extractor(root).run().found)
+    extracted = locale.Extractor(root).run()
+    english = set(extracted.found)
     english.update(text for text, _ in locale.skin_strings(root) if locale.is_translatable(text))
     inventory["locale"].update(english)
+    source_inventory(root, inventory, constants, {file.rel: file.tokens for file in extracted.files})
     return inventory
 
 

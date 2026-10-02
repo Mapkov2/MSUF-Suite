@@ -190,7 +190,8 @@ S.Cleared = nil
     def test_synthetic_extraction_and_no_git_gate(self):
         with tempfile.TemporaryDirectory(prefix="suite-inventory-test-") as tmp:
             root = fixture(Path(tmp))
-            found = inventory.extract(root)
+            with patch.object(source, "lex", side_effect=AssertionError("reuse the locale tokens")):
+                found = inventory.extract(root)
             self.assertIn(inventory.item("retail:test.setting", "boolean", False), found["defaults"])
             self.assertIn(inventory.item("forever:test.setting", 2, "Two"), found["choices"])
             self.assertIn(inventory.item("retail:test.setting", "general", "General"), found["sections"])
@@ -296,6 +297,7 @@ MUTANTS = (
     ("lost locales", "suite_inventory_diff.py", 'inventory["locale"].update(english)', "pass"),
     ("missing runner gate", "run_suite_tests.py", 'if wanted in "suite_inventory_diff.py":', "if False:"),
     ("numeric literal prefix", "suite_inventory_source.py", '("str", "num")', '("str", "number")'),
+    ("duplicate tokenization", "suite_inventory_source.py", "cached = parsed.get(rel.as_posix())", "cached = None"),
 )
 
 

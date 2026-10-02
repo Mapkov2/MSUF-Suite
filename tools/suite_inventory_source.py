@@ -13,6 +13,11 @@ import xml.etree.ElementTree as ET
 
 from suite_locale_tool import lex, read_source
 
+SOURCE_CANDIDATE = re.compile(
+    r"\bS\s*[.:\[]|\blocal\s+S\s*=|\bRegisterOwnedMover\b|\bRegisterElement\b|SLASH_|\bRegisterSlash\b|RootDB|"
+    r"MSUFSuite\w*(?:DB|History|Looks)\b|\b(?:MAX|BAR_COUNT)\s*="
+)
+
 
 def source_paths(root):
     for addon in sorted(root.glob("MSUF_Suite*")):
@@ -250,7 +255,8 @@ def dynamic_movers(owner, expression, preceding, code, addon_code, constants):
     raise ValueError("unresolved mover ID: " + owner + " " + text)
 
 
-def source_inventory(root, inventory, constants):
+def source_inventory(root, inventory, constants, parsed=None):
+    parsed = parsed or {}
     files = []
     addon_sources = {}
     for path in source_paths(root):
@@ -264,7 +270,13 @@ def source_inventory(root, inventory, constants):
             for kind, names in re.findall(r"^## (SavedVariables(?:PerCharacter)?):\s*(.+)$", text, re.M):
                 inventory["saved_variables"].update(kind + ":" + name.strip() for name in names.split(","))
         else:
-            tokens = [token for token in lex(read_source(path)) if token.value is not None]
+            source = read_source(path)
+            # Catalog and English labels have their own complete passes. Files
+            # without an interface token cannot contribute to this source pass.
+            if not SOURCE_CANDIDATE.search(source) and not path.name.startswith("Database"):
+                continue
+            cached = parsed.get(rel.as_posix())
+            tokens = [token for token in (cached if cached is not None else lex(source)) if token.value is not None]
             # Keep statement line boundaries for simple saved-root aliases.
             lines = {}
             for token in tokens:
