@@ -167,6 +167,22 @@
       "evidence": "c883b22444af0c09f09735b4f0afd95e809244d1; git grep at its parent finds only the definition (MSUF_Suite_QualityOfLife/CharacterPanel.lua:61); no reference in the Classic, Retail or MapkoSkin trees.",
       "reason": "Dead export with no caller in any MSUF addon.",
       "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:damageMeter.refreshRate\",\"number\",1]",
+      "basis": "owner",
+      "evidence": "7f5152f; MSUF_Suite/Core/Catalog/DamageMeter.lua:80 default 1 -> 1.5; suite_damage_meter_contract pins the new default and that a stored 1 survives S.Normalize.",
+      "reason": "Owner decision 2026-10-03: combat update every 1.5 s by default; default only, stored values are not migrated.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:damageMeter.refreshRate\",\"number\",1]",
+      "basis": "owner",
+      "evidence": "7f5152f; MSUF_Suite/Core/Catalog/DamageMeter.lua:80 default 1 -> 1.5; suite_damage_meter_contract pins the new default and that a stored 1 survives S.Normalize.",
+      "reason": "Owner decision 2026-10-03: combat update every 1.5 s by default; default only, stored values are not migrated.",
+      "date": "2026-10-03"
     }
   ]
 }
