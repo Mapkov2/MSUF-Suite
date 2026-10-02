@@ -636,9 +636,13 @@ local function PaintRow(self, row, item, c, width, y)
     end
     row.kind, row.group, row.collapseKey = item.kind, item.group, item.collapseKey
     local rightInset = PaintRowWidgets(self, row, item, color, size)
+    local leftInset = O.PaintQuestIcon(self, row, item, c, color)
     row.text:ClearAllPoints()
-    row.text:SetPoint("LEFT", row, "LEFT", O.PaintQuestIcon(self, row, item, c, color), 0)
-    row.text:SetPoint("RIGHT", row, "RIGHT", -(rightInset + 2), 0)
+    row.text:SetPoint("LEFT", row, "LEFT", leftInset, 0)
+    -- An explicit width, not a second anchor: a width that follows anchors
+    -- resolves only at the next layout pass, so the height read below would
+    -- measure the wrap of the previous width.
+    row.text:SetWidth(math.max(1, width - leftInset - rightInset - 2))
     local textHeight = row.text:GetStringHeight()
     local height = math.max(item.height, Finite(textHeight) and textHeight + 10 or 0,
         O.PaintScenarioHeader(row, item, width))

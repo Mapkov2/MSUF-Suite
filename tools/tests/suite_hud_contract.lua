@@ -429,6 +429,10 @@ assert(openedLog == 2 and openedQuest == 42, "objective line did not open its qu
 tracker.headerClick.OnClick()
 assert(openedLog == 3, "tracker header did not open the quest log")
 local questRow = tracker.rows["entry:quests:42"]
+-- The row height is read from the text's wrap at its own width, which is set
+-- before the read instead of following anchors resolved later.
+assert(questRow.text.width and questRow.text.width > 0 and questRow.text.width < questRow.width,
+    "the objective text height was read before its width was known")
 -- Hovering a row shows the quest link, the achievement, or the title.
 questRow.OnEnter(questRow)
 assert(GameTooltip.shown and GameTooltip.owner == questRow and GameTooltip.link == "quest:42",
