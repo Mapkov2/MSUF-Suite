@@ -75,22 +75,6 @@ local function NeedsConfirmation(offer)
     return offer.extended or offer.gold >= MERCHANT_HIGH_PRICE_COST
 end
 
-local function Purchase(index, quantity, pickup)
-    local offer = Offer(index, quantity)
-    if not offer then return end
-    if NeedsConfirmation(offer) then
-        local item = offer.link or offer.name or ""
-        if offer.amount > 1 then item = string.format("%dx %s", offer.amount, item) end
-        local text = string.format(S.Text("Buy %s for %s?"), item, offer.cost)
-        if not offer.refundable then text = text .. "\n\n" .. S.Text("This purchase cannot be refunded.") end
-        StaticPopup_Show(CONFIRM, text, nil, offer)
-    elseif pickup then
-        PickupMerchantItem(index)
-    else
-        BuyMerchantItem(index, quantity)
-    end
-end
-
 -- A dialog answered after the stock changed must not buy another offer.
 local function StillOffered(offer)
     if not M.active or not MerchantFrame:IsShown() then return false end
@@ -101,8 +85,33 @@ local function StillOffered(offer)
     return same
 end
 
-local function Confirmed(_, offer)
-    if StillOffered(offer) then BuyMerchantItem(offer.index, offer.quantity) end
+-- The questions are Blizzard's generic dialogs (S.Confirm and S.AskText,
+-- MSUF_Suite_Modules/Dialogs.lua).
+local function ConfirmPurchase(offer)
+    local item = offer.link or offer.name or ""
+    if offer.amount > 1 then item = string.format("%dx %s", offer.amount, item) end
+    local text = string.format(S.Text("Buy %s for %s?"), item, offer.cost)
+    if not offer.refundable then text = text .. "\n\n" .. S.Text("This purchase cannot be refunded.") end
+    S.Confirm(CONFIRM, {
+        text = "%s", text_arg1 = text,
+        acceptText = S.BlizzardText("YES", "Yes"), cancelText = S.BlizzardText("NO", "No"),
+        showAlert = true,
+        callback = function()
+            if StillOffered(offer) then BuyMerchantItem(offer.index, offer.quantity) end
+        end,
+    })
+end
+
+local function Purchase(index, quantity, pickup)
+    local offer = Offer(index, quantity)
+    if not offer then return end
+    if NeedsConfirmation(offer) then
+        ConfirmPurchase(offer)
+    elseif pickup then
+        PickupMerchantItem(index)
+    else
+        BuyMerchantItem(index, quantity)
+    end
 end
 
 -- How many items of one offer the money and carried cost items pay for,
@@ -122,6 +131,20 @@ local function Affordable(index, info, most)
     return math.min(limit, most), stack
 end
 
+-- Whole stacks only, never more than the dialog offered.
+local function QuantityAccepted(data, text)
+    local amount = tonumber(text)
+    if not amount or not StillOffered(data.offer) then return end
+    amount = math.floor(math.min(amount, data.limit) / data.stack) * data.stack
+    if amount >= data.stack then Purchase(data.index, amount, false) end
+end
+
+-- The edit box belongs to Blizzard's shared dialog frame, whose own code
+-- never makes it numeric: the next dialog gets it back as it was.
+local function QuantityHidden(dialog)
+    dialog:GetEditBox():SetNumeric(false)
+end
+
 local function AskQuantity(index)
     local most = GetMerchantItemMaxStack(index)
     local info = C_MerchantFrame.GetItemInfo(index)
@@ -129,47 +152,17 @@ local function AskQuantity(index)
     local limit, stack = Affordable(index, info, most)
     if limit < stack then return end
     local data = { index = index, stack = stack, limit = limit, offer = Offer(index) }
-    StaticPopup_Show(QUANTITY, data.offer.link or data.offer.name or "", limit, data)
-end
-
--- Whole stacks only, never more than the dialog offered.
-local function QuantityAccepted(dialog, data)
-    local amount = tonumber(dialog:GetEditBox():GetText())
-    if not amount or not StillOffered(data.offer) then return end
-    amount = math.floor(math.min(amount, data.limit) / data.stack) * data.stack
-    if amount >= data.stack then Purchase(data.index, amount, false) end
-end
-
-local function QuantityShown(dialog, data)
+    data.text = S.Text("Buy how many %s? You can buy up to %d.")
+    data.text_arg1, data.text_arg2 = data.offer.link or data.offer.name or "", limit
+    data.acceptText, data.cancelText = S.BlizzardText("ACCEPT", "Accept"), S.BlizzardText("CANCEL", "Cancel")
+    data.maxLetters = 5
+    data.callback = function(text) QuantityAccepted(data, text) end
+    local dialog = S.AskText(QUANTITY, data, QuantityHidden)
+    if not dialog then return end
     local edit = dialog:GetEditBox()
     edit:SetNumeric(true)
-    edit:SetMaxLetters(5)
-    edit:SetText(tostring(data.stack))
+    edit:SetText(tostring(stack))
     edit:HighlightText()
-end
-
-local function QuantityEntered(edit, data)
-    local dialog = edit:GetParent()
-    QuantityAccepted(dialog, data)
-    dialog:Hide()
-end
-
-local function EnsurePopups()
-    if StaticPopupDialogs[CONFIRM] then return end
-    StaticPopupDialogs[CONFIRM] = {
-        text = "%s",
-        button1 = S.BlizzardText("YES", "Yes"), button2 = S.BlizzardText("NO", "No"),
-        OnAccept = Confirmed,
-        timeout = 0, whileDead = false, hideOnEscape = true, preferredIndex = 3, showAlert = true,
-    }
-    StaticPopupDialogs[QUANTITY] = {
-        text = S.Text("Buy how many %s? You can buy up to %d."),
-        button1 = S.BlizzardText("ACCEPT", "Accept"), button2 = S.BlizzardText("CANCEL", "Cancel"),
-        hasEditBox = true,
-        OnShow = QuantityShown, OnAccept = QuantityAccepted, EditBoxOnEnterPressed = QuantityEntered,
-        EditBoxOnEscapePressed = function(edit) edit:GetParent():Hide() end,
-        timeout = 0, whileDead = false, hideOnEscape = true, preferredIndex = 3,
-    }
 end
 
 ------------------------------------------------------------------ selling
@@ -193,6 +186,11 @@ local function Refundable(bag, slot, equipped)
         or (S.Finite(info.currencyCount) and info.currencyCount > 0)
 end
 
+-- Declining keeps the item, as Blizzard's dialog does: it leaves the cursor.
+local function Declined()
+    ClearCursor()
+end
+
 -- An item dropped or clicked onto the list is sold, as on Blizzard's rows
 -- (PickupMerchantItem with an item on the cursor); a refundable one asks
 -- first and is refunded (C_Container.ContainerRefundItemPurchase), the
@@ -200,39 +198,27 @@ end
 local function SellCursorItem()
     if not Showing(M) or GetCursorInfo() ~= "item" then return end
     local bag, slot, equipped = CursorSlot()
-    if slot and Refundable(bag, slot, equipped) then
-        local link = equipped and GetInventoryItemLink("player", slot) or C_Container.GetContainerItemLink(bag, slot)
-        StaticPopup_Show(REFUND, S.PublicText(link) or "", nil, { bag = bag, slot = slot, equipped = equipped })
-    else
+    if not slot or not Refundable(bag, slot, equipped) then
         PickupMerchantItem(0)
+        return
     end
-end
-
-local function Refunded(_, data)
-    if M.active and MerchantFrame:IsShown() then
-        C_Container.ContainerRefundItemPurchase(data.bag, data.slot, data.equipped)
-    end
-end
-
--- Declining keeps the item, as Blizzard's dialog does: it leaves the cursor.
-local function Declined()
-    ClearCursor()
-end
-
-local function EnsureRefund()
-    if StaticPopupDialogs[REFUND] then return end
-    StaticPopupDialogs[REFUND] = {
-        text = S.Text("Refund %s for its purchase price?"),
-        button1 = S.BlizzardText("YES", "Yes"), button2 = S.BlizzardText("NO", "No"),
-        OnAccept = Refunded, OnCancel = Declined,
-        timeout = 0, whileDead = false, hideOnEscape = true, preferredIndex = 3,
-    }
+    local link = equipped and GetInventoryItemLink("player", slot) or C_Container.GetContainerItemLink(bag, slot)
+    S.Confirm(REFUND, {
+        text = S.Text("Refund %s for its purchase price?"), text_arg1 = S.PublicText(link) or "",
+        acceptText = S.BlizzardText("YES", "Yes"), cancelText = S.BlizzardText("NO", "No"),
+        callback = function()
+            if M.active and MerchantFrame:IsShown() then
+                C_Container.ContainerRefundItemPurchase(bag, slot, equipped)
+            end
+        end,
+        cancelCallback = Declined,
+    })
 end
 
 local function HidePopups()
-    StaticPopup_Hide(CONFIRM)
-    StaticPopup_Hide(QUANTITY)
-    StaticPopup_Hide(REFUND)
+    S.HideQuestion(CONFIRM)
+    S.HideQuestion(QUANTITY)
+    S.HideQuestion(REFUND)
 end
 
 ------------------------------------------------------------------ rows
@@ -504,8 +490,6 @@ end
 
 function M:Enable()
     self.repaint = self.context:Coalesce(0, M.Paint)
-    EnsurePopups()
-    EnsureRefund()
     self.offset = 0
     self.context:Event("MERCHANT_CLOSED", Closed)
     S.WatchMerchant(self, self.Paint)
