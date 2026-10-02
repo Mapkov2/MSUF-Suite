@@ -1504,6 +1504,7 @@ end)
 
 Section("major windows pvp categories", function()
     Load("MajorWindows.lua")
+    Load("MajorWindowsItems.lua")
     _G.PVPUIFrame = Frame("PVPUIFrame")
     local queue = Frame("PVPQueueFrame")
     for index = 1, 5 do queue["CategoryButton" .. index] = Frame("CategoryButton" .. index) end
@@ -1727,6 +1728,7 @@ end)
 
 Section("housing reward cards", function()
     Load("MajorWindows.lua")
+    Load("MajorWindowsItems.lua")
     local upgrade = Frame(nil)
     upgrade.rewardPoolLarge, upgrade.rewardPoolSmall = CardPool(), CardPool()
     upgrade.RewardsFrame = Frame(nil)

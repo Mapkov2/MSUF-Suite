@@ -1413,7 +1413,7 @@
    "symbol": "TrainingGroundsFrame"
   },
   {
-   "file": "MSUF_Suite_Skin/Adapters/MajorWindows.lua",
+   "file": "MSUF_Suite_Skin/Adapters/MajorWindowsItems.lua",
    "kind": "addon",
    "reason": "Blizzard load-on-demand UI (Blizzard_WeeklyRewards); the frame exists only after that addon loads",
    "symbol": "warning (= WeeklyRewardExpirationWarningDialog)"

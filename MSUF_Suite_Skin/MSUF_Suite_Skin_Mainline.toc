@@ -80,6 +80,7 @@ Adapters\DamageMeter.lua
 Adapters\EditMode.lua
 Adapters\Communities.lua
 Adapters\MajorWindows.lua
+Adapters\MajorWindowsItems.lua
 Adapters\OwnedMicroBarLayout.lua
 Adapters\OwnedMicroBarVisibility.lua
 Adapters\OwnedMicroBar.lua
