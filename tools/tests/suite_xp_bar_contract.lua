@@ -70,11 +70,9 @@ function tooltip:Hide() self.shown = false end
 -- Blizzard_SharedXML defines GameRulesUtil on both clients.
 local uncappedRules = { IsPlayerAtEffectiveMaxLevel = function() return false end }
 GameRulesUtil = uncappedRules
-C_Timer = { NewTimer = function(_, callback)
-    local timer = { callback = callback }
-    function timer:Cancel() self.canceled = true end
-    timers[#timers + 1] = timer
-    return timer
+C_Timer = { After = function(seconds, callback)
+    assert(seconds == 60, "the rate refresh waits a minute")
+    timers[#timers + 1] = { callback = callback }
 end }
 
 -- MSUF's media comes from the suite's shared table (NS.MSUFMedia); the real
@@ -84,6 +82,7 @@ local savedRoot = {}
 local function Load(kind)
     local callbacks, movers = {}, {}
     local suite = { editMode = false, loginKind = kind, RootDB = savedRoot, MSUFMedia = MEDIA,
+        Dispatch = function(callback, ...) return callback(...) end,
         AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
     suite.Suite = { instances = {}, editMode = false }
     local runtime = suite.Suite
@@ -126,10 +125,11 @@ local function Load(kind)
     module.config = { enabled = true, look = 1, width = 400, height = 18, scale = 100,
         showSegments = true, showRested = true, showSession = true, showRate = true, showETA = true,
         hideAtMax = true, point = 8, x = 0, y = 148 }
-    module.context = { Event = function(_, name, callback, allowCombat)
+    module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, runtime, suite)(
+        "xpBar", module, { Event = function(_, name, callback, allowCombat)
         assert(allowCombat and not callbacks[name])
         callbacks[name] = callback
-    end }
+    end })
     module:Enable()
     return module, runtime, callbacks, movers, suite
 end

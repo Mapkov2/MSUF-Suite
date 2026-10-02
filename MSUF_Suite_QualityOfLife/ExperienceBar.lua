@@ -369,27 +369,21 @@ local function Layout(self)
     self.details:SetWidth(c.width)
 end
 
+-- XP per hour and the time to level age without an XP event: a repaint is
+-- due a minute after the last one while either shows (self.rateJob).
+local RATE_REFRESH = 60
 local function CancelRateTimer(self)
-    if self.rateTimer then
-        self.rateTimer:Cancel()
-        self.rateTimer = nil
-    end
+    self.rateJob:Cancel()
 end
 
 local PaintValues
 local function KeepRateCurrent(self)
-    if self.rateTimer or not self.active or not self.host:IsShown()
+    if not self.active or not self.host:IsShown()
         or not self.session or self.session.gained <= 0
         or not (self.config.showRate or self.config.showETA) then
         return
     end
-    local timer
-    timer = C_Timer.NewTimer(60, function()
-        if self.rateTimer ~= timer then return end
-        self.rateTimer = nil
-        if self.active then PaintValues(self) end
-    end)
-    self.rateTimer = timer
+    self.rateJob:Request()
 end
 
 local function HideProgress(self, levelText, percentText, detailsText)
@@ -501,6 +495,7 @@ local function EnterWorld(self)
 end
 
 function M:Enable()
+    self.rateJob = self.context:Coalesce(RATE_REFRESH, PaintValues)
     Create(self)
     local context = self.context
     context:Event("PLAYER_ENTERING_WORLD", EnterWorld, true)
