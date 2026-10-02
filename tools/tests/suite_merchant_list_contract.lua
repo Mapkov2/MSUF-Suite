@@ -229,7 +229,7 @@ for _, file in ipairs({ "MerchantWatch", "SharedItems", "MerchantList" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("test", { NS = NS, Suite = S })
 end
 local list = modules.merchantList
-list.active, list.context, list.config = true, Context(), { rowHeight = 44 }
+list.active, list.context, list.config = true, TimerContext("merchantList", list, Context()), { rowHeight = 44 }
 list:Enable()
 Check(not list.panel or not list.panel.shown, "the list showed without an open merchant")
 

@@ -380,19 +380,10 @@ local function Fill(row, index, info)
 end
 
 ------------------------------------------------------------------ list
-local function Repaint()
-    if M.pending then
-        M.pending = nil
-        M:Paint()
-    end
-end
-
--- Item data that arrives in one frame repaints the list once.
+-- Item data that arrives in one frame repaints the list once (self.repaint).
 local function ItemLoaded(self, _, itemID)
     if not self.requests:Arrived(itemID) then return end
-    if self.pending then return end
-    self.pending = true
-    C_Timer.After(0, Repaint)
+    self.repaint:Request()
 end
 
 local function Scroll(offset)
@@ -503,7 +494,8 @@ function M:Paint()
 end
 
 local function Closed(self)
-    self.offset, self.pending = 0, nil
+    self.offset = 0
+    self.repaint:Clear()
     self.requests:Reset()
     self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
     HidePopups()
@@ -511,6 +503,7 @@ local function Closed(self)
 end
 
 function M:Enable()
+    self.repaint = self.context:Coalesce(0, M.Paint)
     EnsurePopups()
     EnsureRefund()
     self.offset = 0
