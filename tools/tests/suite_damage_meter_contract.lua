@@ -370,6 +370,14 @@ local heal=assert(D.windows[2],"default healing window was not created")
 assert(heal.shown and heal.frame.shown and heal.meterType==2 and heal.sessionType==D.CURRENT
     and heal.frame.points[1][1]=="BOTTOMRIGHT" and heal.frame.points[1][4]==-20
     and heal.frame.points[1][5]==210,"healing window must show Current above damage at bottom right")
+-- The outline frames a box one border width outside the window.
+do
+    local box, edges = heal.borderBox, heal.edges
+    assert(box.points[1][1]=="TOPLEFT" and box.points[1][2]==heal.border and box.points[1][4]==-1
+        and box.points[1][5]==1 and box.points[2][1]=="BOTTOMRIGHT" and box.points[2][4]==1
+        and box.points[2][5]==-1 and not box.shown, "window outline box is not one border width outside")
+    for i=1,4 do assert(edges[i].shown and edges[i].points[1][2]==box,"window outline strip "..i.." left the box") end
+end
 assert(win.shown and win.frame.shown and win.capacity>0)
 assert(api.fetch==2,"two default windows should each fetch one session")
 local sharedFetches=api.fetch

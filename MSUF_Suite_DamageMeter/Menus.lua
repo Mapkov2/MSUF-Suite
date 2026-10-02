@@ -78,6 +78,8 @@ local function MixColor(first, second, amount)
         first[2] + (second[2] - first[2]) * amount,
         first[3] + (second[3] - first[3]) * amount, 1 }
 end
+-- The MSUF Forever look's colors: with them the picker accent is the border.
+local FOREVER_LOOK = NS.DamageMeterLookPresets[NS.DamageMeterLook.FOREVER]
 local function TypePalette()
     local c = M.config
     local br, bg, bb = S.RGB(c.bgColor)
@@ -88,7 +90,7 @@ local function TypePalette()
     local background, header, text = { br, bg, bb }, { hr, hg, hb }, { tr, tg, tb }
     local border = { rr, rg, rb }
     local accent
-    if c.borderColor == "9f8960" and c.barColor == "d8b66a" then
+    if c.borderColor == FOREVER_LOOK.borderColor and c.barColor == FOREVER_LOOK.barColor then
         accent = border
     elseif NS.Client.isForever and c.barColor == "598ccc" then
         accent = { .95, .74, .36 }
@@ -152,6 +154,52 @@ local function TypeFontString(parent)
     S.SetFont(fontString, nil, 11, "")
     return fontString
 end
+-- One meter type tile: the index-th of its group, two per row below y.
+local function TypeTile(panel, index, meterType, y)
+    local button = S.CreateFrame("Button", nil, panel)
+    button.meterType = meterType
+    button:RegisterForClicks("LeftButtonUp")
+    button:SetSize(TYPE_TILE, TYPE_ROW)
+    button:SetPoint("TOPLEFT", panel, "TOPLEFT", TYPE_PAD + ((index - 1) % 2) * (TYPE_TILE + TYPE_GAP),
+        y - math.floor((index - 1) / 2) * (TYPE_ROW + TYPE_GAP))
+    button.bg = S.CreateTexture(button, nil, "BACKGROUND")
+    button.bg:SetAllPoints(button)
+    button.accent = S.CreateTexture(button, nil, "ARTWORK")
+    button.accent:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+    button.accent:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+    button.accent:SetWidth(2)
+    button.label = TypeFontString(button)
+    button.label:SetPoint("LEFT", button, "LEFT", 9, 0)
+    button.label:SetPoint("RIGHT", button, "RIGHT", -14, 0)
+    button.label:SetJustifyH("LEFT")
+    button.label:SetWordWrap(false)
+    button.label:SetText(D.TypeName(meterType))
+    button.arrow = TypeFontString(button)
+    button.arrow:SetPoint("RIGHT", button, "RIGHT", -5, 0)
+    button.arrow:SetText(">")
+    button:SetScript("OnClick", TypePicked)
+    button:SetScript("OnEnter", TypeEntered)
+    button:SetScript("OnLeave", TypeLeft)
+    panel.buttons[meterType] = button
+end
+
+-- Blizzard's three groups, each a heading above its tiles; returns the
+-- height they take.
+local function AddTypeGroups(panel)
+    local y = -TYPE_PAD
+    for groupIndex, group in ipairs(GROUPS) do
+        local heading = TypeFontString(panel)
+        heading:SetPoint("TOPLEFT", panel, "TOPLEFT", TYPE_PAD, y)
+        heading:SetText(S.BlizzardText(group[1], group[2]))
+        heading:SetJustifyH("LEFT")
+        panel.headings[groupIndex] = heading
+        y = y - TYPE_HEADING
+        for index, meterType in ipairs(group[3]) do TypeTile(panel, index, meterType, y) end
+        y = y - math.ceil(#group[3] / 2) * (TYPE_ROW + TYPE_GAP) - 5
+    end
+    return -y + TYPE_PAD - 5
+end
+
 local function EnsureTypePanel()
     local panel = D.typePanel
     if panel then return panel end
@@ -165,65 +213,10 @@ local function EnsureTypePanel()
     panel.bg = S.CreateTexture(panel, nil, "BACKGROUND")
     panel.bg:SetAllPoints(panel)
     panel.bg:SetColorTexture(.055, .062, .067, .97)
-    local top = S.CreateTexture(panel, nil, "BORDER")
-    top:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    top:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    top:SetHeight(1)
-    top:SetColorTexture(.34, .36, .37, 1)
-    local bottom = S.CreateTexture(panel, nil, "BORDER")
-    bottom:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 0)
-    bottom:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
-    bottom:SetHeight(1)
-    bottom:SetColorTexture(.25, .28, .29, 1)
-    local left = S.CreateTexture(panel, nil, "BORDER")
-    left:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    left:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 0, 0)
-    left:SetWidth(1)
-    left:SetColorTexture(.25, .28, .29, 1)
-    local right = S.CreateTexture(panel, nil, "BORDER")
-    right:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-    right:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", 0, 0)
-    right:SetWidth(1)
-    right:SetColorTexture(.25, .28, .29, 1)
-    panel.edges = { top, bottom, left, right }
-    local y = -TYPE_PAD
-    for groupIndex, group in ipairs(GROUPS) do
-        local heading = TypeFontString(panel)
-        heading:SetPoint("TOPLEFT", panel, "TOPLEFT", TYPE_PAD, y)
-        heading:SetText(S.BlizzardText(group[1], group[2]))
-        heading:SetJustifyH("LEFT")
-        panel.headings[groupIndex] = heading
-        y = y - TYPE_HEADING
-        for index, meterType in ipairs(group[3]) do
-            local button = S.CreateFrame("Button", nil, panel)
-            button.meterType = meterType
-            button:RegisterForClicks("LeftButtonUp")
-            button:SetSize(TYPE_TILE, TYPE_ROW)
-            button:SetPoint("TOPLEFT", panel, "TOPLEFT", TYPE_PAD + ((index - 1) % 2) * (TYPE_TILE + TYPE_GAP),
-                y - math.floor((index - 1) / 2) * (TYPE_ROW + TYPE_GAP))
-            button.bg = S.CreateTexture(button, nil, "BACKGROUND")
-            button.bg:SetAllPoints(button)
-            button.accent = S.CreateTexture(button, nil, "ARTWORK")
-            button.accent:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-            button.accent:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-            button.accent:SetWidth(2)
-            button.label = TypeFontString(button)
-            button.label:SetPoint("LEFT", button, "LEFT", 9, 0)
-            button.label:SetPoint("RIGHT", button, "RIGHT", -14, 0)
-            button.label:SetJustifyH("LEFT")
-            button.label:SetWordWrap(false)
-            button.label:SetText(D.TypeName(meterType))
-            button.arrow = TypeFontString(button)
-            button.arrow:SetPoint("RIGHT", button, "RIGHT", -5, 0)
-            button.arrow:SetText(">")
-            button:SetScript("OnClick", TypePicked)
-            button:SetScript("OnEnter", TypeEntered)
-            button:SetScript("OnLeave", TypeLeft)
-            panel.buttons[meterType] = button
-        end
-        y = y - math.ceil(#group[3] / 2) * (TYPE_ROW + TYPE_GAP) - 5
-    end
-    panel:SetSize(TYPE_WIDTH, -y + TYPE_PAD - 5)
+    -- OpenTypeMenu paints the plate and places the 1-pixel outline (S.PlaceEdges).
+    panel.edges = {}
+    for i = 1, 4 do panel.edges[i] = S.CreateTexture(panel, nil, "BORDER") end
+    panel:SetSize(TYPE_WIDTH, AddTypeGroups(panel))
     panel:Hide()
     D.typePanel = panel
     return panel
@@ -237,7 +230,8 @@ function D.OpenTypeMenu(win, owner)
     panel.win, panel.owner = win, owner
     panel.palette = TypePalette()
     panel.bg:SetColorTexture(unpack(panel.palette.panel))
-    for _, edge in ipairs(panel.edges) do edge:SetColorTexture(unpack(panel.palette.border)) end
+    local border = panel.palette.border
+    S.PlaceEdges(panel.edges, panel, 1, border[1], border[2], border[3], 1)
     if panel.styleGen ~= M.styleGen then
         panel.styleGen = M.styleGen
         for _, heading in ipairs(panel.headings) do D.FontStyle(heading, 11) end
