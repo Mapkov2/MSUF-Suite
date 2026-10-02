@@ -10,7 +10,7 @@ controller, call RegisterMovers.
 
 Usage: python tools/tests/suite_mover_registration_contract.py <tree root>
 
-Files that another package owns are named in SKIP.
+Files that another package owns would be named in SKIP (none since the wave-4 merge).
 """
 
 import re
@@ -20,7 +20,7 @@ from pathlib import Path
 ADDONS = ("MSUF_Suite_QualityOfLife", "MSUF_Suite_Modules", "MSUF_Suite_Bags", "MSUF_Suite_DataTexts",
           "MSUF_Suite_Minimap", "MSUF_Suite_Nameplates", "MSUF_Suite_BuffReminders", "MSUF_Suite_Chat",
           "MSUF_Suite_ActionBars", "MSUF_Suite_CooldownManager")
-SKIP = {"MSUF_Suite_QualityOfLife/GroupBloodlust.lua", "MSUF_Suite_QualityOfLife/ActionTracker.lua"}
+SKIP = set()
 ALLOWED = {"MSUF_Suite_Modules/EditMode.lua": 1, "MSUF_Suite_DataTexts/DataTexts.lua": 1}
 CALL = re.compile(r"[:.]RegisterMovers\(\)")
 DEFINITION = re.compile(r"function\s+\w+[:.]RegisterMovers\(\)")

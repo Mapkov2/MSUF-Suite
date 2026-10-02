@@ -111,6 +111,62 @@
       "evidence": "996ebf4d3b8da74cdce92d69a2a6886f8cebb543; git log -S S.AddSpellFromCursor; git grep AddSpellFromCursor 996ebf4^ -- product paths finds only its definition in MSUF_Suite/Core/Suite.lua. Commit records the cross-addon and string-dispatch audit.",
       "reason": "Unused cursor helper; no product caller at removal or at the current package base.",
       "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Lv",
+      "basis": "moved",
+      "evidence": "21f0a620b8250f9d17c6b273041c485f1c3e117f; git log -S on the quoted old literal; MSUF_Suite_QualityOfLife/ExperienceBar.lua: 'Lv' becomes 'Lv %d  %s / %s'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "XP/h",
+      "basis": "moved",
+      "evidence": "21f0a620b8250f9d17c6b273041c485f1c3e117f; git log -S on the quoted old literal; MSUF_Suite_QualityOfLife/ExperienceBar.lua: 'XP/h' becomes 'XP/h %s'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "To level",
+      "basis": "moved",
+      "evidence": "21f0a620b8250f9d17c6b273041c485f1c3e117f; git log -S on the quoted old literal; MSUF_Suite_QualityOfLife/ExperienceBar.lua: 'To level' becomes 'To level %s'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "current",
+      "basis": "moved",
+      "evidence": "21f0a620b8250f9d17c6b273041c485f1c3e117f; git log -S on the quoted old literal; MSUF_Suite_QualityOfLife/LoadoutReminder.lua: 'current' becomes '%s (current)'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Reset cooldown manager",
+      "basis": "owner",
+      "evidence": "2762bcf; git log -S on the quoted old literal; MSUF_Suite_Options/Pages/CooldownManager.lua: the page reset now runs through Menu2's standard Reset (Menu/Register.lua), whose history entry is 'Reset <page>'.",
+      "reason": "Owner decision 2026-10-02: the Cooldown Manager page resets like every page; the reset itself is kept, only its private history label is gone.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "exports",
+      "item": "S.ClearNativeSpellRanges",
+      "basis": "dead",
+      "evidence": "cf6d6141f2897cbe9eda85c0fcd55c3bee809c44; git grep at its parent finds only the definition (MSUF_Suite/Core/SpellRange.lua:87); no reference in the Classic, Retail or MapkoSkin trees.",
+      "reason": "Dead export with no caller in any MSUF addon.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "exports",
+      "item": "S.HoldsCharacter",
+      "basis": "dead",
+      "evidence": "c883b22444af0c09f09735b4f0afd95e809244d1; git grep at its parent finds only the definition (MSUF_Suite_QualityOfLife/CharacterPanel.lua:61); no reference in the Classic, Retail or MapkoSkin trees.",
+      "reason": "Dead export with no caller in any MSUF addon.",
+      "date": "2026-10-03"
     }
   ]
 }
