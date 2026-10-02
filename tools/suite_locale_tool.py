@@ -65,7 +65,7 @@ CORE = "MSUF_Suite"
 # The skin's English table (skin_strings): German is complete, the other
 # packs wait for their delta pass.
 SKIN_STRINGS = "MSUF_Suite_Skin/Locales/enUS.lua"
-DELTA_PENDING = (SKIN_STRINGS,)
+DELTA_PENDING = ()
 
 CHROME_MIN, HELP_MIN = 0.99, 0.95
 
