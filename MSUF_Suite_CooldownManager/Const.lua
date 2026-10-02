@@ -21,6 +21,9 @@ K.QUESTION_ICON = 134400
 local CDM = NS.CDM
 K.KIND, K.VIS, K.TEXT_TOP = CDM.KIND, CDM.VIS, CDM.TEXT_TOP
 K.CHOICE, K.DESAT, K.SWIPE, K.STACK_OP, K.ACTION_GLOW = CDM.CHOICE, CDM.DESAT, CDM.SWIPE, CDM.STACK_OP, CDM.ACTION_GLOW
+-- The family of a Blizzard catalog entry and the bar's layout choices.
+K.FAMILY, K.GROW, K.ALIGN, K.SIDE, K.ANCHOR, K.OVERFLOW = CDM.FAMILY, CDM.GROW, CDM.ALIGN, CDM.SIDE, CDM.ANCHOR, CDM.OVERFLOW
+K.BAR_FILL, K.BAR_ICON_SIDE, K.BLIZZARD = CDM.BAR_FILL, CDM.BAR_ICON_SIDE, CDM.BLIZZARD
 local KIND, CHOICE, TEXT_TOP = K.KIND, K.CHOICE, K.TEXT_TOP
 local COOLDOWN, AURA_BAR, COUNTDOWN_ON_TOP = KIND.COOLDOWN, KIND.AURA_BAR, TEXT_TOP.COUNTDOWN
 -- The kinds drawn by the aura layer (buff icons and buff bars).
@@ -44,13 +47,17 @@ K.SWIPE_ALPHA = 70
 K.BAR_RGB = { .91, .72, .33 }
 K.BAR_BG_ALPHA = 55
 
+-- The spell categories (spellCategory of a Blizzard record) of the bag
+-- consumables the viewer shows as one entry each.
+K.SPELL_CATEGORY = { COMBAT_POTION = 4, HEALTH_POTION = 30, HEALTHSTONE = 1711, DEMONIC_HEALTHSTONE = 2566 }
+local SPELL_CATEGORY = K.SPELL_CATEGORY
 -- Blizzard's viewers use these file paths for bag-item categories (potions,
 -- healthstones); the space in the Warlock paths is part of the file name.
 K.CATEGORY_ICONS = {
-    [4] = "Interface/ICONS/INV_POTION_114",
-    [30] = "Interface/ICONS/INV_POTION_54",
-    [1711] = "Interface/ICONS/Warlock_ Healthstone",
-    [2566] = "Interface/ICONS/Warlock_ Bloodstone",
+    [SPELL_CATEGORY.COMBAT_POTION] = "Interface/ICONS/INV_POTION_114",
+    [SPELL_CATEGORY.HEALTH_POTION] = "Interface/ICONS/INV_POTION_54",
+    [SPELL_CATEGORY.HEALTHSTONE] = "Interface/ICONS/Warlock_ Healthstone",
+    [SPELL_CATEGORY.DEMONIC_HEALTHSTONE] = "Interface/ICONS/Warlock_ Bloodstone",
 }
 
 ------------------------------------------------------------------ anchors
@@ -102,10 +109,15 @@ end
 function K.BarStacksTop(view) return view.textTop ~= COUNTDOWN_ON_TOP end
 
 ------------------------------------------------------------------ tints
--- Usable/range codes: 1 usable, 2 not enough power, 3 unusable,
--- 4 out of range (bar color, read from the view).
-K.TINT = { { 1, 1, 1 }, { .5, .5, 1 }, { .4, .4, .4 } }
+-- The usable states and their colors are S.USABLE and S.USABLE_TINT (shared
+-- with the action bars); out of range paints the bar's range color.
 K.GLOW_GOLD = { 1, .82, 0 }
+
+------------------------------------------------------------------ game constants
+-- The global cooldown's spell and the trinket equipment slots (Blizzard's
+-- INVSLOT_TRINKET1 and INVSLOT_TRINKET2): every layer that names them uses these.
+K.GCD_SPELL = 61304
+K.TRINKET1, K.TRINKET2 = INVSLOT_TRINKET1, INVSLOT_TRINKET2
 
 ------------------------------------------------------------------ text sizes
 -- A size setting of 0 means automatic: this share of the icon or bar

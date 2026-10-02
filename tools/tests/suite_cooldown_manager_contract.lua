@@ -443,7 +443,11 @@ C_SpecializationInfo={
     GetSpecializationInfo=function(index) return SPEC_IDS[index],"Spec"..index,"",6000+index end,
 }
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
+-- Blizzard_APIDocumentationGenerated/CooldownViewerConstantsDocumentation.lua
 Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},
+    CooldownViewerCategory={Essential=0,Utility=1,TrackedBuff=2,TrackedBar=3,GroupBuff=4,SpecAgnosticEssential=5,SpecAgnosticTracked=6,
+    EquipSlotEssential=7,EquipSlotTracked=8},
     UnitAuraSoundTrigger={Added=0,Removed=2},StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},
     StatusBarInterpolation={Immediate=0},SpellBookSpellBank={Player=0,Pet=1},CompressionMethod={Deflate=0},
     AddOnRestrictionState={Inactive=0,Activating=1,Active=2}}

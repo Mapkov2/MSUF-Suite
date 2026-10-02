@@ -299,7 +299,7 @@ local function ResetDefaults(values, config)
             local def = SLOTS[i]
             local keys = KEYS[def.key]
             local anchor = values[keys.anchor] or config[keys.anchor]
-            if anchor ~= 1 then
+            if anchor ~= K.ANCHOR.FREE then
                 if version < 2 and values[keys.x] == nil then values[keys.x], values[keys.y] = 0, 0 end
             elseif center and values[keys.x] == nil then
                 if def.custom and config[keys.on] ~= true then

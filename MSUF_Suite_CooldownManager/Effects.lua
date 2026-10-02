@@ -9,6 +9,8 @@ local C = P.CDM
 -- until their last icon lets go.
 local K = C.Const
 local KIND = K.KIND
+local USABLE = S.USABLE
+local USABLE_TINT = S.USABLE_TINT
 local Effects = {}
 C.Effects = Effects
 local Public = S.Public
@@ -33,7 +35,7 @@ function Effects.RecommendationGCD()
         frame.cd:Clear()
         return
     end
-    local duration = C_Spell.GetSpellCooldownDuration(61304)
+    local duration = C_Spell.GetSpellCooldownDuration(K.GCD_SPELL)
     if duration then frame.cd:SetCooldownFromDurationObject(duration, true) else frame.cd:Clear() end
 end
 local function NewRecommendation()
@@ -318,14 +320,14 @@ function Effects.Tint(entry)
     local icon = entry.icon
     if not icon then return end
     local view = C.views[entry.slot]
-    local code = entry.outOfRange and 4 or entry.usableCode or 1
+    local code = entry.outOfRange and USABLE.OUT_OF_RANGE or entry.usableCode or USABLE.USABLE
     local gen = view and view.behaviorGen or 0
     if icon.tint == code and icon.tintGen == gen then return end
     icon.tint, icon.tintGen = code, gen
-    if code == 4 then
+    if code == USABLE.OUT_OF_RANGE then
         icon.tex:SetVertexColor(view and view.rangeR or .8, view and view.rangeG or .18, view and view.rangeB or .18)
     else
-        local color = K.TINT[code]
+        local color = USABLE_TINT[code]
         icon.tex:SetVertexColor(color[1], color[2], color[3])
     end
 end
@@ -351,7 +353,7 @@ function Effects.Usable(entry, queries)
     local view = C.views[entry.slot]
     local needResources = NeedsResources(entry, view)
     if entry.outOfRange and not needResources then return end
-    local code = 1
+    local code = USABLE.USABLE
     entry.resourcesAvailable = nil
     if view and (view.usable or needResources) and entry.src ~= "p" then
         local usable, noPower, id, reader
@@ -379,7 +381,7 @@ function Effects.Usable(entry, queries)
         end
         entry.resourcesAvailable = not issecret(noPower) and noPower == false or nil
         if view.usable and not issecret(usable) and usable == false then
-            code = (not issecret(noPower) and noPower) and 2 or 3
+            code = (not issecret(noPower) and noPower) and USABLE.NO_POWER or USABLE.UNUSABLE
         end
     end
     entry.usableCode = code

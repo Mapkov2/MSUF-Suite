@@ -8,6 +8,7 @@ local C = P.CDM
 -- Blizzard bars. A user list for the bar replaces this default.
 local Presets = {}
 C.Presets = Presets
+local SPELL_CATEGORY = C.Const.SPELL_CATEGORY
 
 local DEFENSIVES = {
     [1] = { -- Warrior
@@ -211,17 +212,17 @@ Presets.RACIALS = RACIALS
 -- of its spellCategory while the catalog has no learned record, and shows
 -- only while the bags hold it (hideEmpty).
 Presets.CONSUMABLES = {
-    { item = 5512, category = 1711 },   -- Healthstone
-    { item = 224464, category = 2566 }, -- Demonic Healthstone
+    { item = 5512, category = SPELL_CATEGORY.HEALTHSTONE },
+    { item = 224464, category = SPELL_CATEGORY.DEMONIC_HEALTHSTONE },
 }
 
 -- Bag items behind Blizzard's potion and healthstone entries (spellCategory),
 -- every quality rank: their counts add up to the number shown on the icon.
 Presets.CATEGORY_ITEMS = {
-    [4] = { 241308, 241309, 245897, 245898, 241288, 241289, 245902, 245903, 271886, 271887, 274763, 274764 }, -- combat potions
-    [30] = { 241304, 241305, 271883, 271884 }, -- health potions
-    [1711] = { 5512 },                     -- Healthstone
-    [2566] = { 224464 },                   -- Demonic Healthstone
+    [SPELL_CATEGORY.COMBAT_POTION] = { 241308, 241309, 245897, 245898, 241288, 241289, 245902, 245903, 271886, 271887, 274763, 274764 },
+    [SPELL_CATEGORY.HEALTH_POTION] = { 241304, 241305, 271883, 271884 },
+    [SPELL_CATEGORY.HEALTHSTONE] = { 5512 },
+    [SPELL_CATEGORY.DEMONIC_HEALTHSTONE] = { 224464 },
 }
 
 -- Spell IDs of the player's class, strongest first; C.EMPTY when unknown.

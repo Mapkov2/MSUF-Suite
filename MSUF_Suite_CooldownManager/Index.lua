@@ -14,6 +14,7 @@ local pairs = pairs
 local SLOTS = NS.CDM.SLOTS
 local K = C.Const
 local COOLDOWN = K.KIND.COOLDOWN
+local COOLDOWN_FAMILY, AURA_FAMILY = K.FAMILY.COOLDOWN, K.FAMILY.AURA
 local issecret = _G.issecretvalue
 
 -- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
@@ -129,8 +130,8 @@ function Index.Rebuild()
                     -- Override updates find their entries by base spell.
                     Add(byBase, entry.base, entry)
                     if cooldownBar then
-                        if entry.family == 1 then AddCooldown(entry, view) end
-                    elseif entry.family == 2 then
+                        if entry.family == COOLDOWN_FAMILY then AddCooldown(entry, view) end
+                    elseif entry.family == AURA_FAMILY then
                         Push(Index.aura, entry)
                     end
                 end
@@ -158,7 +159,7 @@ end
 -- An override that arrived in combat routes its new ID without a rebuild.
 -- Cooldown entries only; the next rebuild drops IDs that are gone.
 function Index.AddSpell(entry, id)
-    if id == nil or entry.family ~= 1 then return end
+    if id == nil or entry.family ~= COOLDOWN_FAMILY then return end
     local list = Index.bySpell[id]
     if list then
         if #list > 1 or list[1] ~= entry then Index.hasSharedTimeSpells = true end

@@ -28,6 +28,9 @@ local C = P.CDM
 local K = C.Const
 local KIND = K.KIND
 local YES = K.CHOICE.YES
+local FAMILY = K.FAMILY
+local DOWN, UP = K.GROW.DOWN, K.GROW.UP
+local ALIGN = K.ALIGN
 local Auras = { pending = {} }
 C.Auras = Auras
 local AuraButtons = C.AuraButtons
@@ -53,9 +56,16 @@ local UNITS = { "player", "target" }
 -- Flow per [vertical][grow]: flow anchor, horizontal and vertical direction
 -- (AnchorUtil.FlowDirection), host point per align (center, start, end).
 -- Lines always run in entry order; the block is aligned by its host point.
+local function Host(center, start, last) return { [ALIGN.CENTER] = center, [ALIGN.START] = start, [ALIGN.END] = last } end
 local FLOW = {
-    [false] = { { "TOPLEFT", 1, -1, { "TOP", "TOPLEFT", "TOPRIGHT" } }, { "BOTTOMLEFT", 1, 1, { "BOTTOM", "BOTTOMLEFT", "BOTTOMRIGHT" } } },
-    [true] = { { "TOPLEFT", 1, -1, { "LEFT", "TOPLEFT", "BOTTOMLEFT" } }, { "TOPRIGHT", -1, -1, { "RIGHT", "TOPRIGHT", "BOTTOMRIGHT" } } },
+    [false] = {
+        [DOWN] = { "TOPLEFT", 1, -1, Host("TOP", "TOPLEFT", "TOPRIGHT") },
+        [UP] = { "BOTTOMLEFT", 1, 1, Host("BOTTOM", "BOTTOMLEFT", "BOTTOMRIGHT") },
+    },
+    [true] = {
+        [DOWN] = { "TOPLEFT", 1, -1, Host("LEFT", "TOPLEFT", "BOTTOMLEFT") },
+        [UP] = { "TOPRIGHT", -1, -1, Host("RIGHT", "TOPRIGHT", "BOTTOMRIGHT") },
+    },
 }
 
 local meta = {}    -- per aura bar: role, fixed mode and look (placeholders)
@@ -108,13 +118,13 @@ local function Collect(plan, unit, over, view)
             if entry.icon then
                 if limit and steady >= limit then break end
                 if not Hides(entry, view) then steady = steady + 1 end
-                if entry.family == 1 and entry.hasAura and entry.src ~= "p" and OnUnit(entry, unit) then
+                if entry.family == FAMILY.COOLDOWN and entry.hasAura and entry.src ~= "p" and OnUnit(entry, unit) then
                     ok = (entry.ov or EMPTY).showAura
                     if ok == nil then ok = view.showAura == true end
                 end
             end
         elseif entry.src ~= "p" and OnUnit(entry, unit) then
-            ok = entry.family ~= 1
+            ok = entry.family ~= FAMILY.COOLDOWN
         end
         if ok and Ids(entry) then
             n = n + 1
@@ -203,19 +213,19 @@ local function SyncAura(slot, view, plan, force)
     if not bar then return end
     local w, h, sp, per, vertical, grow, align = layout.Metrics(view)
     vertical = vertical == true
-    local flow = FLOW[vertical][grow == 2 and 2 or 1]
+    local flow = FLOW[vertical][grow == UP and UP or DOWN]
     geo.w, geo.h, geo.gp, geo.gc = w, h, max(0, sp), sp
     geo.axis = vertical and 1 or 0
-    geo.flow, geo.point = flow, flow[4][align] or flow[4][1]
+    geo.flow, geo.point = flow, flow[4][align] or flow[4][ALIGN.CENTER]
     local primary, cross = w, h
     if vertical then primary, cross = h, w end
     geo.line = per * primary + (per - 1) * geo.gp + .01
     geo.vertical = vertical
     local dir
     if vertical then
-        dir = grow == 2 and -1 or 1
+        dir = grow == UP and -1 or 1
     else
-        dir = grow == 2 and 1 or -1
+        dir = grow == UP and 1 or -1
     end
     geo.step = (cross + sp) * dir
     geo.host = bar.auraHost or bar.frame

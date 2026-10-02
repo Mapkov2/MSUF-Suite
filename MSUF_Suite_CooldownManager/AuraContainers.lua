@@ -349,8 +349,10 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
         live[slot] = fams
     end
     local byUnit = fams[fam]
-    local text, name, fill = need.text == true, false, 1
-    if role == "bar" then name, fill = view.barName ~= false, view.barFill == 2 and 2 or 1 end
+    local text, name, fill = need.text == true, false, K.BAR_FILL.DRAIN
+    if role == "bar" then
+        name, fill = view.barName ~= false, view.barFill == K.BAR_FILL.FILL and K.BAR_FILL.FILL or K.BAR_FILL.DRAIN
+    end
     local pan = fam == "aura" and view.pandemic == true
     local glow = fam == "aura" and (view.auraGlow == true or need.glow == true)
     local stack, kit = need.stack == true, fam == "aura" and need.kit == true

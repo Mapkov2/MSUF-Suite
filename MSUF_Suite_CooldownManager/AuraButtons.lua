@@ -22,6 +22,7 @@ local K = C.Const
 local SWIPE = K.SWIPE
 local NORMAL_SWIPE, REVERSED_SWIPE, HIDDEN_SWIPE = SWIPE.NORMAL, SWIPE.REVERSED, SWIPE.HIDDEN
 local Choice = K.Choice
+local ICON_LEFT, ICON_RIGHT = K.BAR_ICON_SIDE.LEFT, K.BAR_ICON_SIDE.RIGHT
 local AuraButtons = {}
 C.AuraButtons = AuraButtons
 
@@ -43,9 +44,10 @@ local TEXT_DEFAULT = {}
 local NO_ENTRY = {}
 local TIMER = Enum.StatusBarTimerDirection
 local IMMEDIATE = Enum.StatusBarInterpolation.Immediate
--- barFill 1 drains, 2 fills.
-local BAR_OPTS = { { direction = TIMER.RemainingTime, interpolation = IMMEDIATE },
-    { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
+-- Options by the bar's fill: draining counts the remaining time down, filling
+-- the elapsed time up.
+local BAR_OPTS = { [K.BAR_FILL.DRAIN] = { direction = TIMER.RemainingTime, interpolation = IMMEDIATE },
+    [K.BAR_FILL.FILL] = { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
 local GOLD = K.GLOW_GOLD
 local BAR_LEVEL, ICON_LEVEL = K.AURA_LEVEL, K.AURA_ICON_LEVEL
 local PANDEMIC = { 1, .3, .15 }
@@ -170,7 +172,7 @@ local function Look(rec, view)
         lk.fr, lk.fg, lk.fb = r, g, b
         lk.bgA = (view.barBgAlpha or K.BAR_BG_ALPHA) / 100
         lk.icon = view.barIcon ~= false
-        lk.side = view.barIconSide == 2 and 2 or 1
+        lk.side = view.barIconSide == ICON_RIGHT and ICON_RIGHT or ICON_LEFT
         -- Stack fill maximum and markers are looks, not region sets: a new
         -- value restyles the buttons in place (application bar rebound,
         -- pooled markers placed), never builds another container.
@@ -304,7 +306,7 @@ local function Style(rec, part)
     local icon = part.icon
     icon:ClearAllPoints()
     if rec.role == "bar" then
-        local left = lk.side == 1
+        local left = lk.side == ICON_LEFT
         local inner = lk.h - 2 * bw
         local point = left and "TOPLEFT" or "TOPRIGHT"
         icon:SetPoint(point, b, point, left and bw or -bw, -bw)

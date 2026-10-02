@@ -14,7 +14,8 @@ local issecret = _G.issecretvalue
 local EMPTY = C.EMPTY
 local pairs, type, next = pairs, type, next
 local K = C.Const
-local GCD = K.GCD_CATEGORY
+local GCD, GCD_SPELL = K.GCD_CATEGORY, K.GCD_SPELL
+local TRINKET1, TRINKET2 = K.TRINKET1, K.TRINKET2
 local KIND, AURA_KINDS = K.KIND, K.AURA_KINDS
 local QUIET = 2   -- seconds without sounds after loading screens and activation
 local Flush, Settings = C.Flush, C.Settings
@@ -111,7 +112,7 @@ local function SetCategorySpell(entry) entry.catSpell = curSpell end
 -- that is secret counts as absent.
 local function OnCooldown(_, _, spellID, baseSpellID, category, recovery, itemID)
     stamp = stamp + 1
-    if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == 61304
+    if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == GCD_SPELL
         or not issecret(recovery) and recovery == GCD) then Effects.RecommendationGCD() end
     if issecret(spellID) or spellID == nil then return EachCooldown(RefreshCooldown) end
     local item = not issecret(itemID) and itemID or nil
@@ -290,7 +291,7 @@ function Events.OnLayoutChanged()
 end
 -- Trinket slots and slots an entry tracks; other gear changes cost a lookup.
 local function OnEquipment(_, _, slot)
-    if Public(slot) and slot ~= nil and slot ~= 13 and slot ~= 14 and not Index.byEquip[slot] then return end
+    if Public(slot) and slot ~= nil and slot ~= TRINKET1 and slot ~= TRINKET2 and not Index.byEquip[slot] then return end
     dirty.catalog, dirty.resolve = true, true
     Schedule()
 end

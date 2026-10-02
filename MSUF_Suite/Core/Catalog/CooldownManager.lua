@@ -55,6 +55,25 @@ local KIND = CDM.KIND
 CDM.VIS = { ALWAYS = 1, COMBAT = 2, COMBAT_OR_TARGET = 3, HIDDEN = 4 }
 -- The bar's "Text on top" choice.
 CDM.TEXT_TOP = { STACKS = 1, COUNTDOWN = 2 }
+-- The family of a Blizzard catalog entry: cooldown spells (Essential,
+-- Utility, equipment and potion pools) or auras (tracked buffs and bars).
+CDM.FAMILY = { COOLDOWN = 1, AURA = 2 }
+-- The bar's layout choices; each value is the saved index of the choice's
+-- label list. "New rows" grow down or up (a vertical bar: right or left),
+-- "Alignment" places each row, "Attach side" the bar next to its target.
+CDM.GROW = { DOWN = 1, UP = 2 }
+CDM.ALIGN = { CENTER = 1, START = 2, END = 3 }
+CDM.SIDE = { BELOW = 1, ABOVE = 2, LEFT = 3, RIGHT = 4 }
+-- "Attach to": free, then another bar (its slot index plus FREE), then
+-- MSUF's player and target frames. "Send excess cooldowns to": off, then a
+-- bar the same way (slot index plus OFF).
+CDM.ANCHOR = { FREE = 1 }
+CDM.OVERFLOW = { OFF = 1 }
+-- Aura bars: "Bar direction" (the timer drains or fills) and "Icon side".
+CDM.BAR_FILL = { DRAIN = 1, FILL = 2 }
+CDM.BAR_ICON_SIDE = { LEFT = 1, RIGHT = 2 }
+-- "Blizzard's cooldown bars": turned off, or running invisibly.
+CDM.BLIZZARD = { OFF = 1, INVISIBLE = 2 }
 -- preset: "defensives" fills the bar with the class's defensive cooldowns
 -- (runtime Presets.lua) until the user edits its list; "racials" appends the
 -- character's racial to the bar's Blizzard entries (potions and healthstones).
@@ -72,6 +91,8 @@ for i = 1, 6 do
 end
 CDM.SLOT_INDEX = {}
 for i, slot in ipairs(CDM.SLOTS) do CDM.SLOT_INDEX[slot.key] = i end
+-- The "Attach to" value of another bar.
+local function AttachTo(key) return CDM.SLOT_INDEX[key] + CDM.ANCHOR.FREE end
 CDM.POINTS = NS.AnchorPoints
 local POINT_LABELS = NS.AnchorLabels
 -- Attach targets: 1 free, 2..#SLOTS+1 another bar, then MSUF's unit frames.
@@ -87,7 +108,7 @@ CDM.SIDES = { "BELOW", "ABOVE", "LEFT", "RIGHT" }
 
 ------------------------------------------------------------------ module rules
 B.Section(id, "general", "General", {
-    Choice("blizzard", "Blizzard's cooldown bars", 1, { "Turn off (fastest)", "Keep running invisibly" }),
+    Choice("blizzard", "Blizzard's cooldown bars", CDM.BLIZZARD.OFF, { "Turn off (fastest)", "Keep running invisibly" }),
     Bool("raidEssentials", "Use MSUF cooldown profiles by specialization", true),
     Bool("showGCD", "Show the global cooldown on icons", false),
     Bool("readyGlowCombat", "Ready glows only in combat", true),
@@ -137,23 +158,25 @@ CDM.DEFAULTS_KEEP = { enabled = true, raidEssentials = true, listsData = true, s
 -- set just below the screen center for the player's screen (runtime).
 -- Gaps clear MSUF's default player debuff row (above the frame) and player
 -- castbar (below it); Essential starts under that castbar.
--- side: 1 below, 2 above; align: 1 center, 2 start, 3 end. x/y of a free
--- bar are its position; of an attached bar, an offset from the attach point.
+-- x/y of a free bar are its position; of an attached bar, an offset from
+-- the attach point.
+local FREE, BELOW, ABOVE = CDM.ANCHOR.FREE, CDM.SIDE.BELOW, CDM.SIDE.ABOVE
+local DOWN, UP = CDM.GROW.DOWN, CDM.GROW.UP
 local D = {
-    ess = { on = true, anchor = 1, side = 1, gap = 2, x = 0, y = -222, size = 40, height = 90, perRow = 9,
-        grow = 1, usable = true, range = true, swipeAlpha = 70 },
-    uti = { on = true, anchor = 2, side = 1, gap = 2, x = 0, y = 0, size = 32, height = 90, perRow = 12,
-        grow = 1, usable = true, range = true, swipeAlpha = 70 },
-    def = { on = true, anchor = PLAYER_ANCHOR, side = 2, gap = 44, align = 3, x = 0, y = 0, size = 32,
-        height = 90, perRow = 10, grow = 2, usable = true, range = false, swipeAlpha = 70 },
-    ext = { on = true, anchor = PLAYER_ANCHOR, side = 1, gap = 22, align = 2, x = 0, y = 0, size = 28,
-        height = 90, perRow = 10, grow = 1, usable = false, range = false, swipeAlpha = 70 },
-    buf = { on = true, anchor = 3, side = 1, gap = 4, x = 0, y = 0, size = 30, height = 90, perRow = 10,
-        grow = 1, swipeAlpha = 60 },
-    bar = { on = true, anchor = 6, side = 1, gap = 4, x = 0, y = 0, size = 20, perRow = 1, grow = 1,
+    ess = { on = true, anchor = FREE, side = BELOW, gap = 2, x = 0, y = -222, size = 40, height = 90, perRow = 9,
+        grow = DOWN, usable = true, range = true, swipeAlpha = 70 },
+    uti = { on = true, anchor = AttachTo("ess"), side = BELOW, gap = 2, x = 0, y = 0, size = 32, height = 90, perRow = 12,
+        grow = DOWN, usable = true, range = true, swipeAlpha = 70 },
+    def = { on = true, anchor = PLAYER_ANCHOR, side = ABOVE, gap = 44, align = CDM.ALIGN.END, x = 0, y = 0, size = 32,
+        height = 90, perRow = 10, grow = UP, usable = true, range = false, swipeAlpha = 70 },
+    ext = { on = true, anchor = PLAYER_ANCHOR, side = BELOW, gap = 22, align = CDM.ALIGN.START, x = 0, y = 0, size = 28,
+        height = 90, perRow = 10, grow = DOWN, usable = false, range = false, swipeAlpha = 70 },
+    buf = { on = true, anchor = AttachTo("uti"), side = BELOW, gap = 4, x = 0, y = 0, size = 30, height = 90, perRow = 10,
+        grow = DOWN, swipeAlpha = 60 },
+    bar = { on = true, anchor = AttachTo("buf"), side = BELOW, gap = 4, x = 0, y = 0, size = 20, perRow = 1, grow = DOWN,
         swipeAlpha = 60 },
 }
-local CUSTOM = { on = false, anchor = 1, side = 1, gap = 4, x = 0, y = 0, size = 36, perRow = 10, grow = 1,
+local CUSTOM = { on = false, anchor = FREE, side = BELOW, gap = 4, x = 0, y = 0, size = 36, perRow = 10, grow = DOWN,
     usable = true, range = true, swipeAlpha = 70 }
 
 -- Groups by kind; custom slots carry every group because their kind changes.
@@ -195,7 +218,7 @@ local function IconRules(Add, p, d)
     Add(Number(p .. "perRow", "Icons per row", d.perRow, 1, 40), "perRow")
     Add(Number(p .. "maxIcons", "Maximum icons (0 = all)", 0, 0, 40), "maxIcons")
     Add(Bool(p .. "vertical", "Vertical", false), "vertical")
-    Add(Choice(p .. "align", "Alignment", d.align or 1, { "Center", "Start", "End" }), "align")
+    Add(Choice(p .. "align", "Alignment", d.align or CDM.ALIGN.CENTER, { "Center", "Start", "End" }), "align")
     Add(Choice(p .. "grow", "New rows", d.grow, { "Down", "Up" }), "grow")
     Add(Number(p .. "zoom", "Icon zoom (percent)", 8, 0, 30), "zoom")
     Add(Number(p .. "border", "Border", 1, 0, 4), "border")
@@ -217,7 +240,7 @@ local function CooldownRules(Add, p, d)
     Add(Number(p .. "readyAlpha", "Opacity when ready (percent)", 100, 0, 100, 5), "readyAlpha")
     Add(Bool(p .. "hideReady", "Hide icons that are ready", false), "hideReady")
     Add(Bool(p .. "cooldownFixed", "Keep hidden cooldown icons in fixed places", false), "cooldownFixed")
-    Add(Choice(p .. "overflow", "Send excess cooldowns to", 1, OVERFLOW_LABELS), "overflow")
+    Add(Choice(p .. "overflow", "Send excess cooldowns to", CDM.OVERFLOW.OFF, OVERFLOW_LABELS), "overflow")
     Add(Number(p .. "laterPerRow", "Icons in later rows (0 = first row)", 0, 0, 40), "laterPerRow")
     Add(Number(p .. "laterSize", "Later row icon size (0 = first row)", 0, 0, 96), "laterSize")
     Add(Bool(p .. "procGlow", "Spell alert glow", true), "procGlow")
@@ -265,10 +288,10 @@ local function BarRules(Add, p, d, slot)
     Add(Bool(p .. "barClass", "Class-colored bars", true), "barClass")
     Add(Number(p .. "barBgAlpha", "Bar background opacity (percent)", 55, 0, 100, 5), "barBgAlpha")
     Add(Bool(p .. "barIcon", "Show icon", true), "barIcon")
-    Add(Choice(p .. "barIconSide", "Icon side", 1, { "Left", "Right" }), "barIconSide")
+    Add(Choice(p .. "barIconSide", "Icon side", CDM.BAR_ICON_SIDE.LEFT, { "Left", "Right" }), "barIconSide")
     Add(Bool(p .. "barName", "Show name", true), "barName")
     Add(Bool(p .. "barTime", "Show time", true), "barTime")
-    Add(Choice(p .. "barFill", "Bar direction", 1, { "Drain", "Fill" }), "barFill")
+    Add(Choice(p .. "barFill", "Bar direction", CDM.BAR_FILL.DRAIN, { "Drain", "Fill" }), "barFill")
     Add(Bool(p .. "barStacks", "Fill buff bars by stacks", false), "barStacks")
     Add(Bool(p .. "barChargeSegments", "Separate cooldown charges into segments", false), "barChargeSegments")
     Add(Bool(p .. "barChargeDim", "Darken the recharging segment", true), "barChargeDim")

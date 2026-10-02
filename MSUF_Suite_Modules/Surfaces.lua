@@ -25,6 +25,16 @@ end
 -- Settings store colors as six hex digits (MSUF_Suite/Core/Platform.lua).
 S.RGB = Suite.RGB
 
+-- How usable an action or cooldown icon is, and the vertex color each state
+-- takes: the one definition the cooldown manager and the action bars share.
+-- Out of range is a state of its own, painted in the bar's own range color.
+S.USABLE = { USABLE = 1, NO_POWER = 2, UNUSABLE = 3, OUT_OF_RANGE = 4 }
+S.USABLE_TINT = {
+    [S.USABLE.USABLE] = { 1, 1, 1 },
+    [S.USABLE.NO_POWER] = { .5, .5, 1 },
+    [S.USABLE.UNUSABLE] = { .4, .4, .4 },
+}
+
 -- Blizzard's client-localized global string, else the English text through
 -- the suite locale. Shared by the damage meter and the minimap.
 function S.BlizzardText(global, english)

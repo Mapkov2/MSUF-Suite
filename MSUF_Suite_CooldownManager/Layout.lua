@@ -16,16 +16,26 @@ local Public = S.Public
 local floor, ceil = math.floor, math.ceil
 local STRATA = C.Const.STRATA
 local AURA_KINDS = C.Const.AURA_KINDS
--- Attach sides (Below, Above, Left, Right) x alignment along that edge
--- (Center, Start, End): own point, target point; gap sign per side.
+local SIDE, ALIGN = C.Const.SIDE, C.Const.ALIGN
+local CENTER, START, END = ALIGN.CENTER, ALIGN.START, ALIGN.END
+local BELOW, ABOVE, LEFT, RIGHT = SIDE.BELOW, SIDE.ABOVE, SIDE.LEFT, SIDE.RIGHT
+-- The bar an "Attach to" value names (its slot index plus FREE); free, a unit
+-- frame and anything unreadable name none.
+local BAR_OF = {}
+for i = 1, #SLOTS do BAR_OF[i + C.Const.ANCHOR.FREE] = SLOTS[i] end
+local VALID_SIDE = { [ABOVE] = true, [LEFT] = true, [RIGHT] = true }
+local VALID_ALIGN = { [START] = true, [END] = true }
+-- Attach sides x alignment along that edge: own point, target point; gap
+-- sign per side.
+local function Edge(center, start, last) return { [CENTER] = center, [START] = start, [END] = last } end
 local ATTACH = {
-    { { "TOP", "BOTTOM" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } },
-    { { "BOTTOM", "TOP" }, { "BOTTOMLEFT", "TOPLEFT" }, { "BOTTOMRIGHT", "TOPRIGHT" } },
-    { { "RIGHT", "LEFT" }, { "TOPRIGHT", "TOPLEFT" }, { "BOTTOMRIGHT", "BOTTOMLEFT" } },
-    { { "LEFT", "RIGHT" }, { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" } },
+    [BELOW] = Edge({ "TOP", "BOTTOM" }, { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" }),
+    [ABOVE] = Edge({ "BOTTOM", "TOP" }, { "BOTTOMLEFT", "TOPLEFT" }, { "BOTTOMRIGHT", "TOPRIGHT" }),
+    [LEFT] = Edge({ "RIGHT", "LEFT" }, { "TOPRIGHT", "TOPLEFT" }, { "BOTTOMRIGHT", "BOTTOMLEFT" }),
+    [RIGHT] = Edge({ "LEFT", "RIGHT" }, { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" }),
 }
-local SIDE_X = { 0, 0, -1, 1 }
-local SIDE_Y = { -1, 1, 0, 0 }
+local SIDE_X = { [BELOW] = 0, [ABOVE] = 0, [LEFT] = -1, [RIGHT] = 1 }
+local SIDE_Y = { [BELOW] = -1, [ABOVE] = 1, [LEFT] = 0, [RIGHT] = 0 }
 -- Where a point sits on a rectangle: -1 left/bottom, 0 center, 1 right/top.
 local POINT_X = { TOP = 0, BOTTOM = 0, LEFT = -1, RIGHT = 1, TOPLEFT = -1, TOPRIGHT = 1, BOTTOMLEFT = -1, BOTTOMRIGHT = 1, CENTER = 0 }
 local POINT_Y = { TOP = 1, BOTTOM = -1, LEFT = 0, RIGHT = 0, TOPLEFT = 1, TOPRIGHT = 1, BOTTOMLEFT = -1, BOTTOMRIGHT = -1, CENTER = 0 }
@@ -165,9 +175,7 @@ local function Direct(slot)
     local cursor, standIn = slot, nil
     for _ = 1, #SLOTS do
         local view = C.views[cursor]
-        local anchor = view and view.anchor
-        if type(anchor) ~= "number" or anchor < 2 then return nil, standIn end
-        local target = SLOTS[anchor - 1]
+        local target = BAR_OF[view and view.anchor]
         local key = target and target.key
         if not key or key == slot then return nil, standIn end
         local parent = C.views[key]
@@ -274,14 +282,24 @@ local function Rect(unit)
     return left, bottom, right, top
 end
 
+-- MSUF's "follow the cooldown bars" toggle (foreign saved data, so every
+-- level is type-checked) and whether this MSUF knows our bars
+-- (MSUF_GetSuiteCooldownAnchor): then MSUF follows our Essential bar itself,
+-- and without it MSUF stays attached to Blizzard's invisible one. The one
+-- place that reads either; Native.lua asks it too. Returns wants, follows.
+local function MSUFAnchor()
+    local db = _G.MSUF_DB
+    local general = type(db) == "table" and db.general or nil
+    local wants = type(general) == "table" and general.anchorToCooldown == true
+    return wants, wants and type(_G.MSUF_GetSuiteCooldownAnchor) == "function"
+end
+Layout.MSUFAnchor = MSUFAnchor
 -- MSUF places its unit frames by our Essential bar when it follows the
 -- cooldown bars; then the Essential bar and every bar it attaches to stay
 -- off MSUF's frames, or the two would chase each other.
 local function MSUFFollows()
-    local db = _G.MSUF_DB
-    local general = type(db) == "table" and db.general or nil
-    return type(general) == "table" and general.anchorToCooldown == true
-        and type(_G.MSUF_GetSuiteCooldownAnchor) == "function"
+    local _, follows = MSUFAnchor()
+    return follows
 end
 -- from: the switched-off bar whose placement `slot` takes over, if any.
 function Layout.FrameTarget(slot, from)
@@ -354,8 +372,8 @@ local function Anchor(slot)
     local vx, vy = pv.x or 0, pv.y or 0
     if dragSlot == slot and not standIn then vx, vy = dragX, dragY end
     local side, align = pv.side, pv.align
-    if side ~= 2 and side ~= 3 and side ~= 4 then side = 1 end
-    if align ~= 2 and align ~= 3 then align = 1 end
+    if not VALID_SIDE[side] then side = BELOW end
+    if not VALID_ALIGN[align] then align = CENTER end
     local attach = ATTACH[side][align]
     local gap = Round((pv.gap or 0) / unit) * unit
     local ox, oy = Round(vx / unit) * unit, Round(vy / unit) * unit
@@ -563,7 +581,7 @@ function Layout.FixedAuras(view, entries)
         if (vertical and n <= per) or (not vertical and per == 1) then
             fixed = true
         elseif not vertical and n <= per then
-            if align == 1 then split = true else fixed = true end
+            if align == CENTER then split = true else fixed = true end
         end
     end
     return fixed, fixed and single, split

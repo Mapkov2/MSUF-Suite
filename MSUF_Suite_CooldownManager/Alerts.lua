@@ -17,6 +17,7 @@ local wipe = C.wipe
 local Public = S.Public
 local EMPTY = C.EMPTY
 local KIND = C.Const.KIND
+local FAMILY = C.Const.FAMILY
 local THROTTLE = 1
 -- Container switches (ours, or an ancestor such as the UI being hidden for
 -- a cinematic) show and hide aura buttons: their sensors keep quiet this
@@ -158,7 +159,7 @@ end
 -- entries sound through their native registrations instead.
 function Alerts.Ready(entry)
     local ov = entry and entry.ov
-    if not ov or entry.family == 2 then return end
+    if not ov or entry.family == FAMILY.AURA then return end
     local sound, tts = ov.sound, ov.tts == true
     if sound == "" then sound = nil end
     if not sound and not tts then return end
@@ -206,7 +207,7 @@ end
 local function Settle(key, at, loss, gate)
     local entry = C.entries[key]
     local ov = entry and entry.ov
-    if not ov or ov == EMPTY or entry.family == 1 then return end
+    if not ov or ov == EMPTY or entry.family == FAMILY.COOLDOWN then return end
     local value
     if loss then
         value = ov.lossSound
@@ -254,7 +255,7 @@ end
 function Alerts.PlayAura(key, which, gate)
     local entry = type(key) == "string" and C.entries[key]
     local ov = entry and entry.ov
-    if not ov or ov == EMPTY or entry.family == 1 then return false end
+    if not ov or ov == EMPTY or entry.family == FAMILY.COOLDOWN then return false end
     if not (IsKit(ov.sound) or IsKit(ov.lossSound)) then return false end
     local state = C.state
     local now = GetTime()
@@ -358,7 +359,7 @@ function Alerts.SyncAuraSounds(keepFailed)
                 for i = 1, #entries do
                     local entry = entries[i]
                     local ov = entry.ov
-                    if ov and ov ~= EMPTY and entry.src ~= "p" and entry.family ~= 1 then
+                    if ov and ov ~= EMPTY and entry.src ~= "p" and entry.family ~= FAMILY.COOLDOWN then
                         Want(entry, ADDED, ov.sound, channel)
                         Want(entry, REMOVED, ov.lossSound, channel)
                     end

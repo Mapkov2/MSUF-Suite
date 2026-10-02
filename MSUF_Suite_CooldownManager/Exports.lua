@@ -40,7 +40,7 @@ end
 -- the bags, Time: entry.empty); nil while it shows.
 local function HiddenBy(placed, cap, hide, live, desc)
     if cap ~= nil and placed >= cap then return "cap" end
-    if hide and live ~= nil and desc.family == 1 and not live.cooling then return "ready" end
+    if hide and live ~= nil and desc.family == K.FAMILY.COOLDOWN and not live.cooling then return "ready" end
     if live ~= nil and live.empty == true then return "empty" end
 end
 
@@ -145,10 +145,13 @@ function S.CooldownManagerGeneration() return C.Catalog.generation end
 function S.CooldownManagerStatus()
     if not M.active then return nil end
     local mode, reason = C.Native.Mode()
-    local text = S.Text(mode == 2 and "Blizzard's cooldown bars keep running invisibly." or "Blizzard's cooldown bars are off.")
-    if reason then text = text .. " " .. reason end
-    if not C.Catalog.Ready() then text = text .. " " .. S.Text("Waiting for Blizzard's cooldown data.") end
-    return text
+    -- Every sentence is translated on its own and the reader gets them in a
+    -- row: nothing is joined before it is translated.
+    local sentences = { S.Text(mode == K.BLIZZARD.INVISIBLE and "Blizzard's cooldown bars keep running invisibly."
+        or "Blizzard's cooldown bars are off.") }
+    if reason then sentences[#sentences + 1] = reason end
+    if not C.Catalog.Ready() then sentences[#sentences + 1] = S.Text("Waiting for Blizzard's cooldown data.") end
+    return table.concat(sentences, " ")
 end
 
 function S.CooldownManagerPlaySound(value)
@@ -234,7 +237,7 @@ end
 C.Convert = Convert
 
 function S.CooldownManagerConvertGrow(slot, grow)
-    if grow ~= 1 and grow ~= 2 then return nil end
+    if grow ~= K.GROW.DOWN and grow ~= K.GROW.UP then return nil end
     return Convert(slot, grow, nil)
 end
 function S.CooldownManagerConvertVertical(slot, vertical)
@@ -275,7 +278,7 @@ function S.CooldownManagerConvertAnchor(slot, anchor)
     local keys = KEYS[slot]
     if not keys or type(anchor) ~= "number" then return nil end
     local values
-    if anchor == 1 then
+    if anchor == K.ANCHOR.FREE then
         values = Convert(slot, nil, nil, true) or {}
     else
         values = { [keys.x] = 0, [keys.y] = 0 }

@@ -157,6 +157,7 @@ WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
 C_CooldownViewer={GetCooldownViewerCategorySet=function() return {} end,GetCooldownViewerCooldownInfo=function() end}
 C_Spell={GetSpellCooldownDuration=function() end}
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
 MSUF_EncodeCompactTable=function() return "" end
 MSUF_TryDecodeCompactString=function() return nil end
 local NS={}
@@ -456,8 +457,8 @@ do
     end
     AuraRule.TargetRow=assert(loadstring(Body("TargetRow","entry").."\nreturn TargetRow"))()
     assert(text:find("\nAuras.UnitOf, Auras.Ids, Auras.TargetRow = UnitOf, Ids, TargetRow\n",1,true),"Auras.lua exports TargetRow")
-    local flow=assert(text:match("\n(local FLOW = %b{})\n"),"Auras.lua FLOW source")
-    AuraRule.FLOW=assert(loadstring(flow.."\nreturn FLOW"))()
+    local flow=assert(text:match("\n(local function Host%b()[^\n]*\nlocal FLOW = %b{})\n"),"Auras.lua FLOW source")
+    AuraRule.FLOW=assert(loadstring("local ALIGN,DOWN,UP=...\n"..flow.."\nreturn FLOW"))(C.Const.ALIGN,C.Const.GROW.DOWN,C.Const.GROW.UP)
     AuraRule.Place=assert(loadstring("local geo=...\n"..Body("Place","rec, offset, split").."\nreturn Place"))(auraGeo)
     -- SyncAura takes the one rule from the layout, builds the geometry from
     -- the layout's metrics, and places compact containers only: the player
@@ -468,10 +469,10 @@ do
         "    local fixed, _, split = layout.FixedAuras(view, entries)\n",
         "    barMeta.fixed, barMeta.split = fixed == true, split == true\n",
         "    local w, h, sp, per, vertical, grow, align = layout.Metrics(view)\n",
-        "    local flow = FLOW[vertical][grow == 2 and 2 or 1]\n",
+        "    local flow = FLOW[vertical][grow == UP and UP or DOWN]\n",
         "    geo.w, geo.h, geo.gp, geo.gc = w, h, max(0, sp), sp\n",
-        "    geo.flow, geo.point = flow, flow[4][align] or flow[4][1]\n",
-        "    if vertical then\n        dir = grow == 2 and -1 or 1\n    else\n        dir = grow == 2 and 1 or -1\n    end\n",
+        "    geo.flow, geo.point = flow, flow[4][align] or flow[4][ALIGN.CENTER]\n",
+        "    if vertical then\n        dir = grow == UP and -1 or 1\n    else\n        dir = grow == UP and 1 or -1\n    end\n",
         "    geo.step = (cross + sp) * dir\n",
         "    geo.host = bar.auraHost or bar.frame\n",
         "    for i = 1, cap do\n        if not TargetRow(entries[i]) then\n            players = players + 1\n        end\n    end\n",
@@ -973,16 +974,17 @@ do
         local fixed,_,split=L.FixedAuras(view,plan.entries)
         assert(not fixed,"containers are placed on compact bars only")
         local w,h,sp,per,vertical,grow,align=L.Metrics(view)
-        local flow=AuraRule.FLOW[vertical][grow==2 and 2 or 1]
+        local GROW=C.Const.GROW
+        local flow=AuraRule.FLOW[vertical][grow==GROW.UP and GROW.UP or GROW.DOWN]
         auraGeo.w,auraGeo.h,auraGeo.gp,auraGeo.gc=w,h,math.max(0,sp),sp
         auraGeo.axis=vertical and 1 or 0
-        auraGeo.flow,auraGeo.point=flow,flow[4][align] or flow[4][1]
+        auraGeo.flow,auraGeo.point=flow,flow[4][align] or flow[4][C.Const.ALIGN.CENTER]
         local primary,cross=w,h
         if vertical then primary,cross=h,w end
         auraGeo.line=per*primary+(per-1)*auraGeo.gp+.01
         auraGeo.vertical=vertical
         local dir
-        if vertical then dir=grow==2 and -1 or 1 else dir=grow==2 and 1 or -1 end
+        if vertical then dir=grow==GROW.UP and -1 or 1 else dir=grow==GROW.UP and 1 or -1 end
         auraGeo.step=(cross+sp)*dir
         auraGeo.host=bufBar.auraHost or bufBar.frame
         local cap=#plan.entries

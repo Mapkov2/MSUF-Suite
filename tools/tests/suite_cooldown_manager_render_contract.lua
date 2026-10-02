@@ -161,6 +161,7 @@ C_StringUtil={CreateNumericRuleFormatter=function()
     return formatter
 end}
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
 Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},
     StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpolation={Immediate=0}}
 

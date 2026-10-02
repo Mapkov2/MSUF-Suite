@@ -10,6 +10,7 @@ local C = P.CDM
 -- C API returns: the cooldown and charge info tables (GetSpellCooldown,
 -- GetSpellCharges) and the duration objects.
 local K = C.Const
+local COMBAT_POTION, HEALTH_POTION = K.SPELL_CATEGORY.COMBAT_POTION, K.SPELL_CATEGORY.HEALTH_POTION
 local DESAT = K.DESAT
 -- The timer-bar presentation of cooldown icons (TrackingBars.lua loads first).
 local TrackingBars = C.TrackingBars
@@ -354,7 +355,7 @@ end
 -- Returns true when the bags hold none; a hideEmpty entry reads its total
 -- even while counts are off.
 local function CategoryCount(icon, category, entry)
-    local choose = C.state.potionStockIcon and (category == 4 or category == 30)
+    local choose = C.state.potionStockIcon and (category == COMBAT_POTION or category == HEALTH_POTION)
     local total = (icon.stackOn or entry.hideEmpty or choose) and Total(category) or 0
     local item = choose and selectedItems[category] or nil
     if entry.categoryItem ~= item then

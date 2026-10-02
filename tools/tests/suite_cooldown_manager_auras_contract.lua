@@ -390,6 +390,7 @@ GetPhysicalScreenSize=function() return 1024,768 end
 
 ------------------------------------------------------------------ WoW API
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
+INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
 Enum={StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpolation={Immediate=0,ExponentialEaseOut=1},
     NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},UnitAuraSoundTrigger={Added=0,ApplicationsIncreased=1,Removed=2},
     TtsVoiceType={Standard=0,Alternate=1}}
