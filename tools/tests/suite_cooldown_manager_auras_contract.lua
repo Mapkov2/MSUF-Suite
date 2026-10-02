@@ -3073,6 +3073,63 @@ do
     C.views.c6,C.plans.c6=nil,nil
 end
 
+------------------------------------------------------------------ bounded option caches
+-- A color picker drag makes a new threshold or stack color on every tick. The
+-- option objects are shared per value, kept in two bounded generations, and
+-- what falls out is collected.
+do
+    local limit=C.Const.CACHE_LIMIT
+    assert(type(limit)=="number" and limit<=1024,"the option caches have a limit")
+    local liveBindings,liveFormatters=setmetatable({},{__mode="v"}),setmetatable({},{__mode="v"})
+    local makeBinding,makeFormatter=C_DurationUtil.CreateDurationTextBinding,C_StringUtil.CreateNumericRuleFormatter
+    C_DurationUtil.CreateDurationTextBinding=function()
+        local binding=makeBinding()
+        bindings[#bindings]=nil
+        liveBindings[#liveBindings+1]=binding
+        return binding
+    end
+    C_StringUtil.CreateNumericRuleFormatter=function()
+        local formatter=makeFormatter()
+        formatters[#formatters]=nil
+        liveFormatters[#liveFormatters+1]=formatter
+        return formatter
+    end
+    local function Count(set)
+        collectgarbage("collect")
+        local n=0
+        for _ in pairs(set) do n=n+1 end
+        return n
+    end
+    local state=C.state
+    local savedR,savedG,savedB=state.thR,state.thG,state.thB
+    local first=C.AuraButtons.TextOpts(77)
+    assert(C.AuraButtons.TextOpts(77)==first,"one threshold and color: one shared binding")
+    local bound=Count(liveBindings)
+    for i=1,4*limit do
+        state.thR,state.thG,state.thB=(i%256)/255,math.floor(i/256)/255,.25
+        C.AuraButtons.TextOpts(77)
+    end
+    assert(Count(liveBindings)-bound<=2*limit,"a threshold color drag kept "..(Count(liveBindings)-bound).." bindings alive")
+    state.thR,state.thG,state.thB=savedR,savedG,savedB
+    -- stack text: one formatter per (N, color) of an entry's choices
+    local drag=Aura("c4","a4301","a","player",Set(4301),{ov={stackColorAt=7,stackColor="000000"}})
+    Plan("c4",2,{drag})
+    A.Sync("c4")
+    local bound=Count(liveFormatters)
+    for i=1,3*limit do
+        drag.ov={stackColorAt=7,stackColor=("%06x"):format(i*977)}
+        A.Sync("c4")
+    end
+    assert(Count(liveFormatters)-bound<=2*limit,"a stack color drag kept "..(Count(liveFormatters)-bound).." formatters alive")
+    drag.ov={stackColorAt=7,stackColor="123456"}
+    A.Sync("c4")
+    local button=R[Acquired(Live("c4","player"),"g1")]
+    assert(button.bind.countFormatter and button.bind.countFormatter.points[3].format=="|cff123456%d|r","the dragged color reached the button")
+    C_DurationUtil.CreateDurationTextBinding,C_StringUtil.CreateNumericRuleFormatter=makeBinding,makeFormatter
+    drag.ov=C.EMPTY
+    A.Sync("c4")
+end
+
 local nativeFile=PlaySoundFile
 PlaySoundFile=function(file,channel)
     if file==7466901 then return false end

@@ -142,12 +142,24 @@ CurveMT.__index=CurveMT
 function CurveMT:SetType(kind) self.type=kind end
 function CurveMT:AddPoint(x,y) self.points[#self.points+1]={x,y} end
 local createdCurves=0
-C_CurveUtil={CreateCurve=function() createdCurves=createdCurves+1;return setmetatable({points={}},CurveMT) end}
+-- Weak views of every object made: what the caches let go of is collected.
+local liveCurves,liveFormatters=setmetatable({},{__mode="v"}),setmetatable({},{__mode="v"})
+C_CurveUtil={CreateCurve=function()
+    createdCurves=createdCurves+1
+    local curve=setmetatable({points={}},CurveMT)
+    liveCurves[createdCurves]=curve
+    return curve
+end}
 local FormatterMT={}
 FormatterMT.__index=FormatterMT
 function FormatterMT:SetBreakpoints(points) self.points=points end
 local createdFormatters=0
-C_StringUtil={CreateNumericRuleFormatter=function() createdFormatters=createdFormatters+1;return setmetatable({},FormatterMT) end}
+C_StringUtil={CreateNumericRuleFormatter=function()
+    createdFormatters=createdFormatters+1
+    local formatter=setmetatable({},FormatterMT)
+    liveFormatters[createdFormatters]=formatter
+    return formatter
+end}
 Constants={SpellCooldownConsts={GLOBAL_RECOVERY_CATEGORY=133}}
 Enum={LuaCurveType={Linear=0,Step=1},NumericRuleFormatRounding={Nearest=0,Up=1,Down=2},
     StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpolation={Immediate=0}}
@@ -1052,6 +1064,39 @@ do
     T.Refresh(e13,"item")
     b4.catSpell=nil
     T.Refresh(b4,"full")
+end
+
+------------------------------------------------------------------ bounded native caches
+-- Curves and formatters are shared per value, and a slider or a color picker
+-- drag makes a new value on every tick: the caches keep two generations of
+-- K.CACHE_LIMIT entries and let the rest be collected.
+do
+    local limit=K.CACHE_LIMIT
+    assert(type(limit)=="number" and limit>=64 and limit<=1024,"the native caches have a limit")
+    local function Live(set)
+        collectgarbage("collect")
+        local n=0
+        for _ in pairs(set) do n=n+1 end
+        return n
+    end
+    assert(K.StepCurve(30,60)==K.StepCurve(30,60) and K.StepCurve(0,100)==K.DesatCurve(),"a value shares its curve")
+    local curves=Live(liveCurves)
+    for from=0,100 do
+        for to=0,100 do K.StepCurve(from,to) end
+    end
+    assert(Live(liveCurves)-curves<=2*limit,"a slider drag kept "..(Live(liveCurves)-curves).." curves alive")
+    local a,b=K.StepCurve(25,75),nil
+    b=K.StepCurve(25,75)
+    assert(a==b and a.points[2][2]==.75,"a repeated value is still shared and right")
+    assert(K.CountdownFormatter(5,1,.5,0)==K.CountdownFormatter(5,1,.5,0),"a value shares its formatter")
+    local formatters=Live(liveFormatters)
+    for i=1,6*limit do K.CountdownFormatter(5,(i%256)/255,math.floor(i/256)/255,.5) end
+    assert(Live(liveFormatters)-formatters<=2*limit,"a color drag kept "..(Live(liveFormatters)-formatters).." formatters alive")
+    local made=createdFormatters
+    local one=K.CountdownFormatter(9,.2,.4,.6)
+    assert(K.CountdownFormatter(9,.2,.4,.6)==one and createdFormatters==made+1,"a formatter just made is a hit")
+    local points=one.points
+    assert(points[1].format=="|cff336699%.0f|r" and points[2].threshold==9,"the formatter keeps its breakpoints")
 end
 
 ------------------------------------------------------------------ Effects: usable and range tint

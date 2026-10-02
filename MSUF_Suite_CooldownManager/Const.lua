@@ -126,13 +126,44 @@ function K.TextSize(setting, spec, height)
     return max(spec.floor, floor(height * spec.share))
 end
 
+------------------------------------------------------------------ bounded caches
+-- Native objects built per setting value (formatters, bindings, curves) are
+-- shared by every user of that value. A color picker drag or a slider makes
+-- a new value on every tick, so a cache keeps two generations of CACHE_LIMIT
+-- entries: a full young generation becomes the old one and the previous old
+-- one is dropped, so an object nothing uses any more is collected. A lookup
+-- is one table read.
+local CACHE_LIMIT = 256
+K.CACHE_LIMIT = CACHE_LIMIT
+function K.NewCache() return { young = {}, old = {}, n = 0 } end
+local function Remember(cache, key, value)
+    local n = cache.n + 1
+    if n > CACHE_LIMIT then
+        local recycled = cache.old
+        for stale in pairs(recycled) do recycled[stale] = nil end
+        cache.old, cache.young, n = cache.young, recycled, 1
+    end
+    cache.n = n
+    cache.young[key] = value
+    return value
+end
+K.Remember = Remember
+function K.Recall(cache, key)
+    local value = cache.young[key]
+    if value ~= nil then return value end
+    value = cache.old[key]
+    if value ~= nil then Remember(cache, key, value) end
+    return value
+end
+local Recall = K.Recall
+
 ------------------------------------------------------------------ countdown
 -- One countdown formatter per (warning seconds, warning color): whole
 -- seconds (below the threshold in the warning color), m:ss from a minute,
 -- hours from an hour. No threshold: plain seconds. Shared by the cooldown
 -- swipes (SetCountdownFormatter) and the aura buttons' duration text
--- bindings, built on first use and kept.
-local countdowns = {}
+-- bindings, built on first use and kept (bounded).
+local countdowns = K.NewCache()
 function K.CountdownFormatter(seconds, r, g, b)
     if type(seconds) ~= "number" or seconds <= 0 then
         seconds = 0
@@ -142,7 +173,7 @@ function K.CountdownFormatter(seconds, r, g, b)
     local R, G, B = 0, 0, 0
     if seconds > 0 then R, G, B = floor((r or 1) * 255 + .5), floor((g or 1) * 255 + .5), floor((b or 1) * 255 + .5) end
     local key = seconds * 16777216 + R * 65536 + G * 256 + B
-    local formatter = countdowns[key]
+    local formatter = countdowns.young[key] or Recall(countdowns, key)
     if formatter then return formatter end
     local rounding = Enum.NumericRuleFormatRounding
     local up, down = rounding.Up, rounding.Down
@@ -156,8 +187,7 @@ function K.CountdownFormatter(seconds, r, g, b)
     points[#points + 1] = { threshold = 3600, format = "%dh", rounding = down, components = { { div = 3600, rounding = down } } }
     formatter = C_StringUtil.CreateNumericRuleFormatter()
     formatter:SetBreakpoints(points)
-    countdowns[key] = formatter
-    return formatter
+    return Remember(countdowns, key, formatter)
 end
 
 ------------------------------------------------------------------ glows
@@ -218,19 +248,18 @@ end
 
 ------------------------------------------------------------------ curves
 -- Step curves from plain setting percentages: y0 while nothing remains,
--- y1 from 1 ms remaining on. Numeric cache key, built only on refresh.
-local curves = {}
+-- y1 from 1 ms remaining on. Numeric cache key (bounded), built only on refresh.
+local curves = K.NewCache()
 function K.StepCurve(from, to)
     from, to = floor(from + .5), floor(to + .5)
     local key = from * 1000 + to
-    local curve = curves[key]
+    local curve = curves.young[key] or Recall(curves, key)
     if curve then return curve end
     curve = C_CurveUtil.CreateCurve()
     curve:SetType(Enum.LuaCurveType.Step)
     curve:AddPoint(0, from / 100)
     curve:AddPoint(.001, to / 100)
-    curves[key] = curve
-    return curve
+    return Remember(curves, key, curve)
 end
 function K.DesatCurve() return K.StepCurve(0, 100) end
 

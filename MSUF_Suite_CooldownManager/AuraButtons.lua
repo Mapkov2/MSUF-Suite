@@ -57,8 +57,9 @@ local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font
 local NO_MARKS = {}
 
 local sig = {}
-local textOpts = {} -- duration text options per countdown formatter
-local countOpts = {} -- stack text options per (N, color)
+local textOpts = K.NewCache()  -- duration text options per countdown formatter
+local countOpts = K.NewCache() -- stack text options per (N, color)
+local Recall, Remember = K.Recall, K.Remember
 local barOpts = {}   -- SetApplicationBar options (Blizzard copies them)
 local sensed = {}    -- kit sensor frame -> its button record
 -- Batch button -> its sensor, made inside initializeFrame: the client seals
@@ -78,19 +79,27 @@ local ApplyGlow, ApplyStack, ApplyCombatGate = Glows.ApplyGlow, Glows.ApplyStack
 -- that Blizzard copies into each button, around the shared countdown
 -- formatter (Const). The fallbacks must ride on the binding, and without a
 -- formatter on it no text renders at all.
+-- Every entry of a sync asks for the same few signatures, so the last answer
+-- is kept: a repeat costs four compares.
+local lastSeconds, lastR, lastG, lastB, lastOpts
 local function TextOpts(seconds)
     local state = C.state
-    local formatter = K.CountdownFormatter(seconds, state.thR, state.thG, state.thB)
-    local opts = textOpts[formatter]
-    if opts then return opts end
+    local r, g, b = state.thR, state.thG, state.thB
+    if lastOpts and seconds == lastSeconds and r == lastR and g == lastG and b == lastB then return lastOpts end
+    local formatter = K.CountdownFormatter(seconds, r, g, b)
+    local opts = textOpts.young[formatter] or Recall(textOpts, formatter)
+    if opts then
+        lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
+        return opts
+    end
     local binding = C_DurationUtil.CreateDurationTextBinding()
     binding:SetFormatter(formatter)
     binding:SetZeroDurationText("")
     binding:SetExpiredText("")
     binding:SetUpdateInterval(.1)
     binding:SetEnabled(true)
-    opts = { binding = binding }
-    textOpts[formatter] = opts
+    opts = Remember(textOpts, formatter, { binding = binding })
+    lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
     return opts
 end
 
@@ -106,16 +115,14 @@ local function CountOpts(ov)
     local rgb = type(hex) == "string" and #hex == 6 and tonumber(hex, 16)
     if not rgb then return nil end
     local key = n * 16777216 + rgb
-    local opts = countOpts[key]
+    local opts = countOpts.young[key] or Recall(countOpts, key)
     if opts then return opts end
     local formatter = C_StringUtil.CreateNumericRuleFormatter()
     local points = { { threshold = 0, format = "" } }
     if n > 2 then points[2] = { threshold = 2, format = "%d" } end
     points[#points + 1] = { threshold = n, format = "|cff" .. hex .. "%d|r" }
     formatter:SetBreakpoints(points)
-    opts = { formatter = formatter }
-    countOpts[key] = opts
-    return opts
+    return Remember(countOpts, key, { formatter = formatter })
 end
 
 ------------------------------------------------------------------ look
