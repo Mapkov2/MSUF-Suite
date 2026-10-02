@@ -60,7 +60,16 @@ local function SyncNativeControls(self, hidden)
     for i = 1, #NATIVE_BUTTONS do context:HideControl(_G[NATIVE_BUTTONS[i]], hidden) end
     OwnBorderedParts(context, _G.ChatFrame1.buttonFrame, hidden)
 end
-C.SyncNativeControls = SyncNativeControls
+
+local function OwnNativeControls(self)
+    SyncNativeControls(self, true)
+end
+
+-- Hands the native buttons and the button frame's chrome back.
+local function ReleaseNativeControls(self)
+    SyncNativeControls(self, false)
+end
+C.ReleaseNativeControls = ReleaseNativeControls
 
 -- Sidebar buttons share these scripts; button.entry holds their definition.
 local function SidebarEnter(button)
@@ -193,7 +202,7 @@ function C.ApplySidebar(self, visual, frame)
     if not (c.sidebarPanel and c.panelAlpha > 0) then
         if visual.sidebar then visual.sidebar:Hide() end
         if visual.sidebarFrame then visual.sidebarFrame:Hide() end
-        SyncNativeControls(self, false)
+        ReleaseNativeControls(self)
         return
     end
     self.sidebarClassColor = SidebarClassColor(c)
@@ -215,6 +224,6 @@ function C.ApplySidebar(self, visual, frame)
     sidebar:SetFrameLevel(frame:GetFrameLevel() + 3)
     LayoutButtons(self, sidebar, visual)
     sidebar:Show()
-    SyncNativeControls(self, true)
+    OwnNativeControls(self)
     UpdateFriendsCount(self)
 end

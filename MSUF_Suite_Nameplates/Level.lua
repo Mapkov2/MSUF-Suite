@@ -28,10 +28,16 @@ local function NativeAlpha(frame, hide)
             if not S.Finite(previous) then return end
             M.nativeLevelAlphas[frame] = previous
         end
-        if NS.IsCombatLocked() then M.needsRefresh = true; return end
+        if NS.IsCombatLocked() then
+            M.needsRefresh = true
+            return
+        end
         frame:SetAlpha(0)
     elseif previous ~= nil then
-        if NS.IsCombatLocked() then M.needsRefresh = true; return end
+        if NS.IsCombatLocked() then
+            M.needsRefresh = true
+            return
+        end
         frame:SetAlpha(previous)
         M.nativeLevelAlphas[frame] = nil
     end
@@ -83,7 +89,10 @@ end
 local function Label(uf)
     local label = M.levelLabels[uf]
     if label then return label end
-    if NS.IsCombatLocked() or not Safe(uf) then M.needsRefresh = true; return end
+    if NS.IsCombatLocked() or not Safe(uf) then
+        M.needsRefresh = true
+        return
+    end
     local container = uf.HealthBarsContainer
     if not Safe(container) then return end
     label = uf:CreateFontString(nil, "OVERLAY", "SystemFont_NamePlateLevel")
@@ -96,10 +105,16 @@ local function Label(uf)
 end
 
 function Level.Paint(uf, prefix, unit)
-    if NativeShown(uf, prefix, unit) then Level.Hide(uf); return end
+    if NativeShown(uf, prefix, unit) then
+        Level.Hide(uf)
+        return
+    end
     local label = Label(uf)
     if not label then return end
-    if not Safe(label) then M.needsRefresh = true; return end
+    if not Safe(label) then
+        M.needsRefresh = true
+        return
+    end
     local customHeight = M.config[prefix .. "LevelSize"]
     local height = S.Finite(customHeight) and customHeight > 0 and customHeight
         or NamePlateSetupOptions.levelFontHeight or 10

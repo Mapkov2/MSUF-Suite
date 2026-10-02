@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 local C = P.Chat
 -- Optional message tools: clickable URLs, class-colored group names, short
 -- channel prefixes, a timestamp on every line, saved history and the idle
@@ -133,13 +133,6 @@ local function Format(text)
     if tools.channels then text = ShortChannels(text) end
     if tools.stamps then text = Stamp(text) end
     return text
-end
-
--- The rendered public line, nil for a restricted or empty one.
-function C.FormatMessage(text)
-    text = PublicText(text)
-    if not text or not tools.format then return text end
-    return Format(text)
 end
 
 local function CompileChannels(config)
@@ -316,13 +309,13 @@ function C.MessagesRefresh(self)
     local c, context = self.config, self.context
     C.CompileMessages(c)
     if tools.names then
-        context:Event("GROUP_ROSTER_UPDATE", C.MessageRoster, true)
+        C.ListenInCombat(context, "GROUP_ROSTER_UPDATE", C.MessageRoster)
     else
         context:RemoveEvent("GROUP_ROSTER_UPDATE")
     end
     C.MessageRoster()
     if c.whisperSound ~= "" or c.whisperSoundKit > 0 then
-        context:Event("CHAT_MSG_WHISPER", WhisperSound, true)
+        C.ListenInCombat(context, "CHAT_MSG_WHISPER", WhisperSound)
     else
         context:RemoveEvent("CHAT_MSG_WHISPER")
     end

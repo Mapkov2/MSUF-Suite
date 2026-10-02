@@ -23,9 +23,9 @@ S.Queue = function() error("chat message tools queued the module for combat end"
 local config = Support.CatalogDefaults(root, "chat")
 config.saveHistory, config.historyLines, config.linkURLs, config.colorMentionNames = true, 20, true, true
 local events = {}
-local context = { removed = {} }
-function context:Event(event, callback) events[event] = callback end
-function context:RemoveEvent(event) events[event] = nil end
+local context = { removed = {}, combat = {} }
+function context:Event(event, callback, allowCombat) events[event], self.combat[event] = callback, allowCombat end
+function context:RemoveEvent(event) events[event], self.combat[event] = nil, nil end
 local copied
 local C
 local function LoadChat(saved)
@@ -164,36 +164,61 @@ assert(handlers.msufurl, "URL clicks did not register Blizzard's link handler")
 C.MessagesRefresh(M)
 assert(events.GROUP_ROSTER_UPDATE and not events.CHAT_MSG_WHISPER,
     "message events did not follow the enabled tools")
+-- Chat is a geometry module: these text and sound listeners must also run
+-- in combat (the context's allowCombat).
+assert(context.combat.GROUP_ROSTER_UPDATE == true, "the group name colors wait for the end of combat")
+do
+    local kit = config.whisperSoundKit
+    config.whisperSoundKit = 12867
+    C.MessagesRefresh(M)
+    assert(events.CHAT_MSG_WHISPER and context.combat.CHAT_MSG_WHISPER == true,
+        "the whisper sound waits for the end of combat")
+    config.whisperSoundKit = kit
+    C.MessagesRefresh(M)
+end
 C.MessageRoster()
-local formatted = C.FormatMessage("Mapko https://example.org/Mapko. |Hspell:123|h[Mapko]|h")
+-- The rendered line of one message: a window's message hook rewrites what it
+-- is handed through the window's own TransformMessages, so the window's
+-- newest stored line is the result (a temporary window keeps no history).
+local formatWindow
+local function Rendered(text)
+    if not formatWindow then
+        formatWindow = Frame(9)
+        formatWindow.isTemporary = true
+        C.ApplyMessages(M, formatWindow)
+    end
+    formatWindow:AddMessage(text)
+    return formatWindow.lines[#formatWindow.lines]
+end
+local formatted = Rendered("Mapko https://example.org/Mapko. |Hspell:123|h[Mapko]|h")
 assert(formatted:find("|cffff8000Mapko|r", 1, true), "public mention colored")
 assert(formatted:find("|Hmsufurl:https://example.org/Mapko|h", 1, true), "URL preserved as copy link")
 assert(formatted:find("|Hspell:123|h[Mapko]|h", 1, true), "native hyperlink not changed")
-eq(C.FormatMessage("secret"), nil, "restricted message ignored")
+eq(Rendered("secret"), "secret", "a restricted message was rewritten")
 -- SetItemRef asks LinkUtil first and stops when the handler answers.
 eq(handlers.msufurl("msufurl:https://example.org/x", "[x]", { type = "msufurl", options = "https://example.org/x" }), nil,
     "the URL handler must answer as handled")
 eq(copied, "https://example.org/x", "clicking a URL did not open its copy box")
 config.allTimestamps, config.timestampFormat = true, "%Q"
 C.CompileMessages(config)
-assert(C.FormatMessage("hello"):find("[12:34]", 1, true), "invalid timestamp falls back")
+assert(Rendered("hello"):find("[12:34]", 1, true), "invalid timestamp falls back")
 config.timestampFormat = "%"
 C.CompileMessages(config)
-assert(C.FormatMessage("hello"):find("[12:34]", 1, true))
+assert(Rendered("hello"):find("[12:34]", 1, true))
 -- Blizzard's own stamp (showTimestamps) is replaced, not repeated.
 config.timestampFormat = "[%H:%M]"
 nativeStamp = "%H:%M "
 C.CompileMessages(config)
-eq(C.FormatMessage("12:34 hello"), "[12:34] hello", "Blizzard's own timestamp was kept next to the Suite stamp")
+eq(Rendered("12:34 hello"), "[12:34] hello", "Blizzard's own timestamp was kept next to the Suite stamp")
 -- Per line, settings were compiled: no global string, and the native
 -- setting at most once per second.
 config.shortenChannels, config.channelShortcuts = true, "General=Gen"
 C.CompileMessages(config)
 stringReads, cvarReads = 0, 0
-for _ = 1, 20 do C.FormatMessage("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General] and [Guild]") end
+for _ = 1, 20 do Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General] and [Guild]") end
 eq(stringReads, 0, "a line read Blizzard's channel labels")
 assert(cvarReads <= 1, "a line read the native timestamp setting")
-local shortened = C.FormatMessage("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General]")
+local shortened = Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General]")
 assert(shortened:find("|Hchannel:GUILD|h[G]|h", 1, true) and shortened:find("[Gen]", 1, true),
     "channel prefixes or shortcuts were not shortened")
 config.allTimestamps, config.shortenChannels, nativeStamp = false, false, "none"

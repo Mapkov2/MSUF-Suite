@@ -38,7 +38,7 @@ function R.AlertTransition(self, button, entry, visible)
     local kind, id, slot
     if visible and entry then kind, id, slot = entry.kind, entry.id, entry.slot or entry.poisonRank or 0 end
     if kind and (button.alertKind ~= kind or button.alertID ~= id or button.alertSlot ~= slot) then
-        self.newReminderAlert = true
+        self.view.newAlert = true
     end
     button.alertKind, button.alertID, button.alertSlot = kind, id, slot
     local style, color = BorderStyle(self, entry)
@@ -58,8 +58,9 @@ function R.AlertTransition(self, button, entry, visible)
 end
 
 function R.PlayReminderAlert(self)
-    if not self.newReminderAlert then return end
-    self.newReminderAlert = nil
+    local view = self.view
+    if not view.newAlert then return end
+    view.newAlert = nil
     local name = SOUNDS[self.config.reminderSound or 1]
     if name and not S.editMode then
         PlaySound(SOUNDKIT[name], CHANNELS[self.config.reminderSoundChannel or 1] or "Master")
@@ -68,10 +69,11 @@ end
 
 -- Forgets every identity and border state, so a later reminder starts fresh.
 function R.StopReminderAlerts(self)
-    for _, button in ipairs(self.buttons or {}) do
+    local view = self.view
+    for _, button in ipairs(view.buttons or {}) do
         button.alertKind, button.alertID, button.alertSlot = nil, nil, nil
         button.alertColor, button.alertPulsing = nil, nil
         if button.alertPulse then button.alertPulse:Stop() end
     end
-    self.newReminderAlert = nil
+    view.newAlert = nil
 end

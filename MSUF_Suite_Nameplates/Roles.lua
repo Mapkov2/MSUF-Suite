@@ -1,5 +1,5 @@
 local _, private = ...
-local NS, S = private.NS, private.Suite
+local S = private.Suite
 -- lieutenants: the lieutenant levels seen in this context. Lieutenants of
 -- one instance can differ in level, so it is a set; learnedLieutenant tells
 -- the plate owner that a new level arrived (Roles.Classify).
@@ -89,7 +89,7 @@ end
 
 -- Tooltip lines distinguish our unfinished objectives from completed
 -- objectives and party quests. nil while a line is restricted.
-local function TooltipQuest(unit, info)
+local function TooltipQuest(info)
     local types = Enum.TooltipDataLineType
     local player, ours = Read(UnitName, "player"), true
     for _, line in ipairs(info.lines) do
@@ -116,13 +116,19 @@ function Roles.Quest(unit)
     if Read(C_Secrets.ShouldUnitIdentityBeSecret, unit) ~= false then return PendingQuest(unit) end
     -- Direct API is a cheap negative gate.
     local related = Read(C_QuestLog.UnitIsRelatedToActiveQuest, unit)
-    if related == false then Roles.quests[unit] = false; return false end
+    if related == false then
+        Roles.quests[unit] = false
+        return false
+    end
     local info = Read(C_TooltipInfo.GetUnit, unit)
     if type(info) ~= "table" or not S.Public(info.lines) or type(info.lines) ~= "table" then
-        if type(related) == "boolean" then Roles.quests[unit] = related; return related end
+        if type(related) == "boolean" then
+            Roles.quests[unit] = related
+            return related
+        end
         return PendingQuest(unit) -- not a cached absent objective
     end
-    local found = TooltipQuest(unit, info)
+    local found = TooltipQuest(info)
     if found == nil then return PendingQuest(unit) end
     Roles.quests[unit] = found
     return found

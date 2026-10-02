@@ -41,14 +41,15 @@ local function FadeOut(visual)
     visual.faded = true
 end
 
--- keepTab: Blizzard's fade-in already animates the tab from its alpha.
-local function Wake(visual, keepTab)
+-- skip: the part whose alpha stays as it is (TAB on a mouse-over: Blizzard's
+-- fade-in already animates the tab from its alpha).
+local function Wake(visual, skip)
     if not visual.faded then return end
     visual.faded = nil
     local parts, before, applied = visual.fadeParts, visual.fadeBefore, visual.fadeApplied
     for i = 1, 4 do
         local part, value = parts[i], before[i]
-        if part and value ~= nil and not (keepTab and i == TAB) then
+        if part and value ~= nil and i ~= skip then
             local current = part:GetAlpha()
             if Finite(current) and current == applied[i] then part:SetAlpha(value) end
         end
@@ -83,7 +84,7 @@ local function HoverStarted(chatFrame)
     local visual = M.active and M.visuals[chatFrame]
     if not (visual and visual.fadeArmed) then return end
     visual.hovered = true
-    Wake(visual, true)
+    Wake(visual, TAB)
 end
 
 local function HoverEnded(chatFrame)

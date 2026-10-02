@@ -50,7 +50,10 @@ local function SetClickthrough(button)
     if not Safe(button) then return end
     local current = button:IsMouseClickEnabled()
     if not S.Public(current) or current ~= true then return end
-    if not CanChange(button) then M.needsRefresh = true; return end
+    if not CanChange(button) then
+        M.needsRefresh = true
+        return
+    end
     if M.auraButtons[button] == nil then M.auraButtons[button] = current end
     button:SetMouseClickEnabled(false)
 end

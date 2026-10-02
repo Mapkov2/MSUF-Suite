@@ -17,7 +17,7 @@ local function LowBits(module, key, mask, width)
     local current = C_CVar.GetCVar(key)
     local flags = Style.CVarFlags(current)
     if flags == nil then return end
-    local span = 2 ^ (width or 2)
+    local span = 2 ^ width
     local nextFlags = flags - flags % span + mask
     local tail = current:sub(3)
     local value = current:sub(1, 1)
@@ -27,15 +27,24 @@ end
 
 -- A three-way choice: 1 keeps Blizzard's value, 2 writes on, 3 writes off.
 local function Toggle(module, mode, key)
-    if mode == 1 then Restore(key)
-    else module.context:CVar(key, mode == 2 and "1" or "0") end
+    if mode == 1 then
+        Restore(key)
+    else
+        module.context:CVar(key, mode == 2 and "1" or "0")
+    end
 end
 
 local function Size(module, c)
-    if c.nativeStyle == 1 then Restore("nameplateStyle")
-    elseif c.nativeStyle then module.context:CVar("nameplateStyle", tostring(c.nativeStyle - 2)) end
-    if c.nativeSize == 1 then Restore("nameplateSize")
-    elseif c.nativeSize then module.context:CVar("nameplateSize", tostring(c.nativeSize - 1)) end
+    if c.nativeStyle == 1 then
+        Restore("nameplateStyle")
+    elseif c.nativeStyle then
+        module.context:CVar("nameplateStyle", tostring(c.nativeStyle - 2))
+    end
+    if c.nativeSize == 1 then
+        Restore("nameplateSize")
+    elseif c.nativeSize then
+        module.context:CVar("nameplateSize", tostring(c.nativeSize - 1))
+    end
 end
 
 -- Blizzard's rarity icon is bit 3 of the same CVar as the two health text
@@ -70,8 +79,11 @@ end
 
 local function Casts(module, c)
     local castEnabled = c.look == 2 and 1 or c.enemyCastEnabled
-    if castEnabled == 1 then Restore("nameplateShowCastBars")
-    else module.context:CVar("nameplateShowCastBars", castEnabled == 3 and "0" or "1") end
+    if castEnabled == 1 then
+        Restore("nameplateShowCastBars")
+    else
+        module.context:CVar("nameplateShowCastBars", castEnabled == 3 and "0" or "1")
+    end
     if c.enemyCastDisplay == 1 or c.look == 2 then
         Restore("nameplateCastBarDisplay")
     else

@@ -24,12 +24,16 @@ function R.RankName(spellID)
     return name or nil
 end
 
+-- The aura filters of a spell name lookup: any helpful aura, or only the
+-- player's own (PLAYER selects the caster natively).
+R.HELPFUL, R.OWN_HELPFUL = "HELPFUL", "HELPFUL|PLAYER"
+
 -- Forever's ranked buffs share their spell name across ranks. Returns false
 -- when the name is unreadable (nothing to look up), else true and the aura.
-function R.RankAura(unit, spellID, own)
+function R.RankAura(unit, spellID, filter)
     local name = R.RankName(spellID)
     if not name then return false end
-    return true, C_UnitAuras.GetAuraDataBySpellName(unit, name, own and "HELPFUL|PLAYER" or "HELPFUL")
+    return true, C_UnitAuras.GetAuraDataBySpellName(unit, name, filter)
 end
 
 -- Aura lookups (RequiresNonSecretAura) return nothing instead of raising
@@ -123,8 +127,11 @@ function R.AuraPresent(entry)
     for index = 1, count do
         local id = ids and ids[index] or entry.aura
         local ok, data = true, nil
-        if entry.ranked then ok, data = R.RankAura("player", id)
-        else data = C_UnitAuras.GetPlayerAuraBySpellID(id) end
+        if entry.ranked then
+            ok, data = R.RankAura("player", id, R.HELPFUL)
+        else
+            data = C_UnitAuras.GetPlayerAuraBySpellID(id)
+        end
         if not ok or not Public(data) then
             unknown = true
         elseif data then
@@ -246,11 +253,12 @@ local function LearnFood(ids, data, lookupKey)
 end
 
 local function ScanFood(self)
-    local ids = self.foodIDs
-    local keys = self.foodScanKeys
+    local food = self.food
+    local ids = food.ids
+    local keys = food.scanKeys
     if not keys then
         keys = {}
-        self.foodScanKeys = keys
+        food.scanKeys = keys
     end
     for index = #keys, 1, -1 do keys[index] = nil end
     for key in pairs(ids) do keys[#keys + 1] = key end
@@ -290,7 +298,7 @@ local function ScanFood(self)
             known = false
         end
     end
-    self.foodKnown = known
+    food.known = known
 end
 
 -- Removed and added food auras of one delta; false when a list is unreadable.
@@ -326,42 +334,43 @@ end
 -- keeps the reminder unknown. A delta is applied in every state: a pending
 -- rescan re-checks what it learned instead of forgetting it.
 function R.FoodDelta(self, info)
-    if not self.hasFood then return false end
+    if not self.list.hasFood then return false end
+    local food = self.food
     if not Public(info) then
-        self.foodKnown = false
+        food.known = false
         return true
     end
     if info == nil then
-        self.foodKnown = nil
+        food.known = nil
         return true
     end
     if type(info) ~= "table" or not Public(info.isFullUpdate) then
-        self.foodKnown = false
+        food.known = false
         return true
     end
     if info.isFullUpdate then
-        self.foodKnown = nil
+        food.known = nil
         return true
     end
-    local ids = self.foodIDs
+    local ids = food.ids
     local readable, changed = ApplyFoodLists(ids, info)
     if not readable then
-        self.foodKnown = false
+        food.known = false
         return true
     end
     local updated = IDList(info.updatedAuraInstanceIDs)
     if updated == false then
-        self.foodKnown = false
+        food.known = false
         return true
     end
     if updated then
         for _, id in ipairs(updated) do
             if not Public(id) then
-                self.foodKnown = false
+                food.known = false
                 return true
             end
             if ids[id] then
-                self.foodKnown = nil
+                food.known = nil
                 return true
             end
         end
@@ -371,10 +380,11 @@ end
 
 function R.FoodPresent(self)
     if R.AurasRestricted() then return nil end
-    if self.foodKnown == nil then ScanFood(self) end
-    if not self.foodKnown then return nil end
+    local food = self.food
+    if food.known == nil then ScanFood(self) end
+    if not food.known then return nil end
     local present, expiresAt, totalDuration = false, nil, nil
-    for _, aura in pairs(self.foodIDs) do
+    for _, aura in pairs(food.ids) do
         present = true
         local expiration = aura.expirationTime
         if expiration and (not expiresAt or expiration > expiresAt) then

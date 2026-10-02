@@ -298,11 +298,11 @@ end
 function C.BubblesRefresh(self)
     local c, context = self.config, self.context
     for event in pairs(sourceKeys) do
-        if c.styleBubbles then context:Event(event, Heard, true) else context:RemoveEvent(event) end
+        if c.styleBubbles then C.ListenInCombat(context, event, Heard) else context:RemoveEvent(event) end
     end
     if c.styleBubbles or c.hideInstanceBubbles then
-        context:Event("PLAYER_ENTERING_WORLD", ZoneChanged, true)
-        context:Event("ZONE_CHANGED_NEW_AREA", ZoneChanged, true)
+        C.ListenInCombat(context, "PLAYER_ENTERING_WORLD", ZoneChanged)
+        C.ListenInCombat(context, "ZONE_CHANGED_NEW_AREA", ZoneChanged)
     else
         context:RemoveEvent("PLAYER_ENTERING_WORLD")
         context:RemoveEvent("ZONE_CHANGED_NEW_AREA")

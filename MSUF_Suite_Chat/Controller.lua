@@ -12,7 +12,7 @@ local FRIEND_EVENTS = {
 }
 local ApplyWindow, ReleaseWindow, ColorTab, TabSelected = C.ApplyWindow, C.ReleaseWindow, C.ColorTab, C.TabSelected
 local KeepTabVisible = C.KeepTabVisible
-local PlaceSidebar, SyncNativeControls, UpdateFriendsCount = C.PlaceSidebar, C.SyncNativeControls, C.UpdateFriendsCount
+local PlaceSidebar, ReleaseNativeControls, UpdateFriendsCount = C.PlaceSidebar, C.ReleaseNativeControls, C.UpdateFriendsCount
 local HideCopyDialog, DockSelection = C.HideCopyDialog, C.DockSelection
 local Dispatch = S.Dispatch
 
@@ -124,7 +124,7 @@ function M:Enable()
     self.geometry = true
     self.context:Event("UPDATE_CHAT_WINDOWS", ApplyAll)
     self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", ApplyAll)
-    for _, event in ipairs(FRIEND_EVENTS) do self.context:Event(event, UpdateFriendsCount, true) end
+    for _, event in ipairs(FRIEND_EVENTS) do C.ListenInCombat(self.context, event, UpdateFriendsCount) end
     self.context:Event("ADDON_LOADED", AddonLoaded)
     Hook(self, "hookedTemporary", "FCF_OpenTemporaryWindow", TemporaryWindowOpened)
     Hook(self, "hookedSelect", "FCFDock_SelectWindow", DockSelectionChanged)
@@ -147,9 +147,9 @@ function M:Disable()
     C.MessagesDisable()
     -- Faded alpha goes back before the context restores the tabs it owns.
     C.FadeDisable()
-    C.BubblesDisable(self)
+    C.BubblesDisable()
     for _, visual in pairs(self.visuals) do ReleaseWindow(self, visual) end
-    SyncNativeControls(self, false)
+    ReleaseNativeControls(self)
     HideCopyDialog(self.copyDialog)
 end
 

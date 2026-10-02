@@ -4,7 +4,7 @@ local R = P.BuffReminders
 
 local function Follow(driver)
     local self = driver.owner
-    if not self.active or self.suspended or NS.IsCombatLocked() then
+    if not self.active or self.listen.suspended or NS.IsCombatLocked() then
         driver:SetScript("OnUpdate", nil)
         return
     end
@@ -14,39 +14,50 @@ local function Follow(driver)
     x, y = x / scale + (self.config.cursorOffsetX or 24), y / scale + (self.config.cursorOffsetY or 24)
     if driver.x == x and driver.y == y then return end
     driver.x, driver.y = x, y
-    self.host:ClearAllPoints()
-    self.host:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
-    self.cursorDisplaced = true
+    local host = self.view.host
+    host:ClearAllPoints()
+    host:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
+    self.cursor.displaced = true
 end
 
-function R.StopCursor(self, restore)
-    local driver = self.cursorDriver
+-- Stops following the cursor; the host stays where the cursor left it.
+function R.StopCursor(self)
+    local cursor = self.cursor
+    local driver = cursor.driver
     if not driver then return end
     driver:SetScript("OnUpdate", nil)
-    if restore and self.cursorDisplaced and not NS.IsCombatLocked() then
-        local point = self.config.point == 2 and "TOP" or "CENTER"
-        self.host:ClearAllPoints()
-        self.host:SetPoint(point, UIParent, point, self.config.x, self.config.y)
-        self.cursorDisplaced = nil
-    end
-    driver.x, driver.y, self.cursorFollowing = nil, nil, false
+    driver.x, driver.y = nil, nil
+end
+
+-- Stops following and, out of combat, puts the host back on its anchor.
+local function ReturnToAnchor(self)
+    local cursor = self.cursor
+    if not cursor.driver then return end
+    R.StopCursor(self)
+    if not cursor.displaced or NS.IsCombatLocked() then return end
+    local point = self.config.point == 2 and "TOP" or "CENTER"
+    local host = self.view.host
+    host:ClearAllPoints()
+    host:SetPoint(point, UIParent, point, self.config.x, self.config.y)
+    cursor.displaced = nil
 end
 
 -- Cursor movement has no event. Only visible, opted-in OOC reminders attach
 -- this input reader; it never reads aura/item state or creates Lua tables.
 function R.SyncCursor(self)
-    local visible = self.mask and self.mask ~= 0 or self.specialText and self.specialText ~= ""
-    if not self.config.followCursor or not visible or S.editMode or self.suspended or NS.IsCombatLocked() then
-        R.StopCursor(self, true)
+    local mask, text = self.view.mask, self.notices.text
+    local visible = mask and mask ~= 0 or text and text ~= ""
+    if not self.config.followCursor or not visible or S.editMode or self.listen.suspended or NS.IsCombatLocked() then
+        ReturnToAnchor(self)
         return
     end
-    local driver = self.cursorDriver
+    local cursor = self.cursor
+    local driver = cursor.driver
     if not driver then
         driver = S.CreateFrame("Frame")
         driver.owner = self
-        self.cursorDriver = driver
+        cursor.driver = driver
     end
-    self.cursorFollowing = true
     driver:SetScript("OnUpdate", Follow)
     Follow(driver)
 end

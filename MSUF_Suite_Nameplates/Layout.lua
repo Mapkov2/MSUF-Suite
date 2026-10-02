@@ -43,10 +43,16 @@ end
 
 -- Blizzard's aura list anchors include fixed offsets (-5, +5 and the debuff
 -- padding). SetPointsOffset replaces those offsets on every point, so move
--- each known native anchor from its own base instead.
+-- each known native anchor from its own base instead. nativeFixed marks an
+-- anchor from Blizzard's XML, which UpdateAnchors never rebuilds (OnAnchors
+-- restores it before the offsets are applied again).
+local NATIVE_FIXED = true
 local function AuraAnchor(state, region, point, owner, relative, x, y, dx, dy, nativeFixed)
     if dx == 0 and dy == 0 then return end
-    if not Accessible(region) or not owner then module.needsRefresh = true; return end
+    if not Accessible(region) or not owner then
+        module.needsRefresh = true
+        return
+    end
     local link = { region, point, owner, relative, x, y }
     link.nativeFixed = nativeFixed
     state.links[#state.links + 1] = link
@@ -103,7 +109,10 @@ end
 function Layout.Restore(uf)
     local state = states[uf]
     if not state then return end
-    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then module.needsRefresh = true; return end
+    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
+        module.needsRefresh = true
+        return
+    end
     RestoreLinks(state)
     RestoreHealthSize(state, uf)
     if not Geometry.Restore(state, uf, NamePlateSetupOptions) then module.needsRefresh = true end
@@ -128,19 +137,29 @@ local function OnAnchors(uf)
         local pending = {}
         for _, link in ipairs(state.links) do
             if link.nativeFixed then
-                if locked then pending[#pending + 1] = link
-                elseif Accessible(link[1]) then Point(unpack(link))
-                else module.needsRefresh = true end
+                if locked then
+                    pending[#pending + 1] = link
+                elseif Accessible(link[1]) then
+                    Point(unpack(link))
+                else
+                    module.needsRefresh = true
+                end
             end
         end
         state.links = pending
         state.generation = nil
         state.nativeReset = true
     end
-    if locked then module.needsRefresh = true; return end
-    if not module.active then Layout.Restore(uf); return end
+    if locked then
+        module.needsRefresh = true
+        return
+    end
+    if not module.active then
+        Layout.Restore(uf)
+        return
+    end
     if not NS.Public(uf.isFriend) then return end
-    Layout.Apply(uf, uf.isFriend and "friendly" or "enemy", module.config, true)
+    Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
 end
 
 local function CastOffsets(state, uf, plan, setup, force)
@@ -200,8 +219,11 @@ local function NameLink(state, uf, plan, setup, badgeShown)
         and setup.nameJustificationWhenAboveHealthBar ~= nil then
         -- Camelot can anchor the name to its level frame before that
         -- frame becomes visible. Its endpoint is Blizzard-owned.
-        if NS.Client.isForever and uf.PlayerLevelDiffFrame or badgeShown ~= false then point = nil
-        else point, relative = "RIGHT", "LEFT" end
+        if NS.Client.isForever and uf.PlayerLevelDiffFrame or badgeShown ~= false then
+            point = nil
+        else
+            point, relative = "RIGHT", "LEFT"
+        end
     end
     local value = plan.HealthText
     if point then Link(state, uf.name, point, health.Text, relative, -2, 0, value[1], value[2]) end
@@ -237,10 +259,10 @@ end
 local function AuraAnchors(state, uf, plan)
     local auras, auraFrame = plan.Auras, uf.AurasFrame
     AuraAnchor(state, auraFrame and auraFrame.DebuffListFrame, "LEFT", uf.HealthBarsContainer, "LEFT",
-        0, 0, auras[1], auras[2], true)
+        0, 0, auras[1], auras[2], NATIVE_FIXED)
     local buff = plan.Buffs
     AuraAnchor(state, auraFrame and auraFrame.BuffListFrame, "RIGHT", uf.ClassificationFrame,
-        "LEFT", -5, 0, buff[1], buff[2], true)
+        "LEFT", -5, 0, buff[1], buff[2], NATIVE_FIXED)
 end
 
 -- The debuffs also follow the name or health bar through Blizzard's padding
@@ -260,7 +282,7 @@ local function DebuffPaddingAnchor(state, uf, plan, setup)
     end
 end
 
-local function ElementOffsets(state, uf, plan, setup, force)
+local function ElementOffsets(state, uf, plan, force)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local name, value, raid = plan.Name, plan.HealthText, plan.RaidIcon
     local namesOnly = uf.showOnlyName == true
@@ -274,11 +296,19 @@ local function ElementOffsets(state, uf, plan, setup, force)
         plan.Classification[1] - raid[1], plan.Classification[2] - raid[2], force)
 end
 
-function Layout.Apply(uf, prefix, config, force)
+-- Lays one plate out, once per settings generation (Layout.Configure).
+-- force (Layout.Reapply) writes every offset again.
+local function Apply(uf, prefix, config, force)
     local plan, state = plans[prefix], states[uf]
     local enabled = plan and plan.active and config.look ~= 2 and config[prefix]
-    if not enabled then if state then Layout.Restore(uf) end; return end
-    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then module.needsRefresh = true; return end
+    if not enabled then
+        if state then Layout.Restore(uf) end
+        return
+    end
+    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
+        module.needsRefresh = true
+        return
+    end
     if state and state.generation == generation and state.prefix == prefix and not force then return end
     local setup = NamePlateSetupOptions
     if not NS.Public(setup.useClassicCastBar) or not NS.Public(setup.spellNameInsideCastBar)
@@ -289,10 +319,13 @@ function Layout.Apply(uf, prefix, config, force)
     RestoreLinks(state)
     local geometryChanged = (config.barGeometry == 2) ~= (state.geometry ~= nil)
     local baseHeight = Geometry.Apply(state, uf, setup, config, force)
-    if not baseHeight then module.needsRefresh = true; return end
+    if not baseHeight then
+        module.needsRefresh = true
+        return
+    end
     HealthSize(state, uf, setup, config[prefix .. "HealthWidthDelta"] or 0,
         config[prefix .. "HealthHeightDelta"] or 0, force or geometryChanged, baseHeight)
-    ElementOffsets(state, uf, plan, setup, force)
+    ElementOffsets(state, uf, plan, force)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
     NameLink(state, uf, plan, setup, badgeShown)
     AuraAnchors(state, uf, plan)
@@ -305,6 +338,13 @@ function Layout.Apply(uf, prefix, config, force)
         hooksecurefunc(uf, "UpdateAnchors", OnAnchors)
         hooked[uf] = true
     end
+end
+Layout.Apply = Apply
+
+-- Lays the plate out again although its generation is current: Blizzard
+-- rebuilt its anchors (UpdateAnchors).
+function Layout.Reapply(uf, prefix, config)
+    Apply(uf, prefix, config, true)
 end
 
 function Layout.Bind(owner) module = owner end

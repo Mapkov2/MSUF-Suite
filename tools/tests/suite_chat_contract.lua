@@ -225,9 +225,11 @@ end
 Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
-local ctx = { callbacks = {}, restored = 0, original = {}, properties = {}, fields = {} }
-function ctx:Event(event, fn) self.callbacks[event] = fn end
-function ctx:RemoveEvent(event) self.callbacks[event]=nil end
+local ctx = { callbacks = {}, combat = {}, restored = 0, original = {}, properties = {}, fields = {} }
+function ctx:Event(event, fn, allowCombat)
+    self.callbacks[event], self.combat[event] = fn, allowCombat
+end
+function ctx:RemoveEvent(event) self.callbacks[event], self.combat[event] = nil, nil end
 function ctx:Property(frame, getter, setter, value)
     local record = self.properties[frame] or {}
     self.properties[frame] = record
@@ -309,6 +311,18 @@ for key, value in pairs(chatDefaults) do
     if module.config[key] == nil then module.config[key] = value end
 end
 module:Enable()
+-- Chat moves frames (a geometry module), so its window listeners wait for
+-- the end of combat; the friend count is plain text and also updates in
+-- combat (the context's allowCombat). The message and bubble contracts
+-- check their own listeners.
+assert(module.geometry == true, "Chat is no longer a geometry module")
+for _, event in ipairs({ "FRIENDLIST_UPDATE", "BN_FRIEND_LIST_SIZE_CHANGED", "BN_FRIEND_ACCOUNT_ONLINE",
+    "BN_FRIEND_ACCOUNT_OFFLINE", "BN_CONNECTED", "BN_DISCONNECTED" }) do
+    assert(ctx.callbacks[event] and ctx.combat[event] == true, event .. " does not also run in combat")
+end
+for _, event in ipairs({ "UPDATE_CHAT_WINDOWS", "UPDATE_FLOATING_CHAT_WINDOWS", "ADDON_LOADED" }) do
+    assert(ctx.callbacks[event] and ctx.combat[event] == nil, event .. " runs in combat")
+end
 -- Regression: the dock texture must join the body and border exactly. The
 -- dock itself is offset above ChatFrame1, so matching its own bounds leaves
 -- the short right corner and the gap seen in the live client.

@@ -129,7 +129,10 @@ local function SetRole(uf, unit)
 end
 
 local function PaintMarker(texture, health, kind, enabled, size, x, y, color, anchor, variant)
-    if not enabled then texture:Hide(); return end
+    if not enabled then
+        texture:Hide()
+        return
+    end
     Style.PaintMarker(texture, kind, size, color, variant)
     if texture._msufX ~= x or texture._msufY ~= y or texture._msufAnchor ~= anchor then
         Style.PlaceMarker(texture, health, kind, x, y, anchor)
@@ -220,14 +223,24 @@ local function FilterFriendlyName(uf, prefix)
     if not Safe(name) then return end
     if M.config.friendlyNamesOnly ~= 3
         or prefix ~= "friendly" or not S.Public(uf.isPlayer) or uf.isPlayer ~= true then
-        RestoreFriendlyName(name); return
+        RestoreFriendlyName(name)
+        return
     end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local unit = health and M.units[health]
-    if not unit then RestoreFriendlyName(name); return end
+    if not unit then
+        RestoreFriendlyName(name)
+        return
+    end
     local party, raid = UnitInParty(unit), UnitInRaid(unit)
-    if not S.Public(party) or not S.Public(raid) then RestoreFriendlyName(name); return end
-    if party or raid then RestoreFriendlyName(name); return end
+    if not S.Public(party) or not S.Public(raid) then
+        RestoreFriendlyName(name)
+        return
+    end
+    if party or raid then
+        RestoreFriendlyName(name)
+        return
+    end
     if M.friendlyNames[name] == nil then
         local alpha = name:GetAlpha()
         if not NS.Finite(alpha) then return end
@@ -346,7 +359,10 @@ local function ApplyPlate(plate)
     if not Safe(plate) or not Safe(plate.UnitFrame) then return end
     local uf, unit = plate.UnitFrame, plate.unitToken
     CoverPlate(uf)
-    if not M.active then RestorePlate(uf); return end
+    if not M.active then
+        RestorePlate(uf)
+        return
+    end
     if S.Public(unit) and type(unit) == "string" then
         M.activeUnits[unit] = uf
         SetRole(uf, unit)
@@ -363,16 +379,19 @@ local function EachPlate(callback)
     for i = 1, #plates do callback(plates[i]) end
 end
 
-local function RefreshActive(self, recategorize)
+-- Classifies and repaints every active plate. A lieutenant level seen for
+-- the first time on the way bosses the plates classified before it, so the
+-- pass then runs once more.
+local function RefreshActive(self)
     for unit, uf in pairs(self.activeUnits) do
         if Safe(uf) then
-            if recategorize then SetRole(uf, unit) end
+            SetRole(uf, unit)
             Paint(uf)
         end
     end
-    if recategorize and Roles.learnedLieutenant then
+    if Roles.learnedLieutenant then
         Roles.learnedLieutenant = false
-        RefreshActive(self, true)
+        RefreshActive(self)
     end
 end
 
@@ -381,7 +400,7 @@ end
 local function AfterClassify(self)
     if not Roles.learnedLieutenant then return end
     Roles.learnedLieutenant = false
-    RefreshActive(self, true)
+    RefreshActive(self)
 end
 
 local function OnAdded(self, _, unit)
@@ -530,7 +549,7 @@ local function OnContextChanged(module, event)
     if event == "ZONE_CHANGED" and not changed then return end
     CancelQuestRefresh(module)
     Roles.ClearQuest()
-    RefreshActive(module, true)
+    RefreshActive(module)
 end
 
 local function OnFocusChanged(module)
@@ -541,7 +560,10 @@ local function OnFocusChanged(module)
         if not Safe(uf) then return end
         local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
         local unit = health and module.units[health]
-        if unit then SetRole(uf, unit); Paint(uf) end
+        if unit then
+            SetRole(uf, unit)
+            Paint(uf)
+        end
     end
     Refresh(previous)
     if current ~= previous then Refresh(current) end
@@ -568,12 +590,15 @@ end
 local function OnCombatEnded(module)
     local retryQuests = Roles.RetryQuests()
     if not module.needsRefresh then
-        if retryQuests then CancelQuestRefresh(module); RefreshActive(module, true) end
+        if retryQuests then
+            CancelQuestRefresh(module)
+            RefreshActive(module)
+        end
         return
     end
     module.needsRefresh = false
     EachPlate(ApplyPlate)
-    Power.Refresh(true)
+    Power.Reapply()
 end
 
 local UNIT_EVENTS = { "UNIT_THREAT_SITUATION_UPDATE", "UNIT_THREAT_LIST_UPDATE",
@@ -587,20 +612,27 @@ local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_DELAYED",
 local CONTEXT_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP",
     "GROUP_ROSTER_UPDATE", "PLAYER_ROLES_ASSIGNED", "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED" }
 
+-- Every plate listener also runs in combat (the context's allowCombat, kept
+-- explicit should the module ever move frames itself): restyling a native
+-- plate is not protected, and each handler checks combat where it matters.
+local function Listen(self, event, callback)
+    self.context:Event(event, callback, true)
+end
+
 function M:Enable()
     if not self.fontHook then
         self.fontHook = true
         private.HookPlates("ApplyFrameOptions", OnFrameOptions)
     end
-    self.context:Event("NAME_PLATE_UNIT_ADDED", OnAdded, true)
-    self.context:Event("NAME_PLATE_UNIT_REMOVED", OnRemoved, true)
-    self.context:Event("PLAYER_TARGET_CHANGED", OnTargetChanged, true)
-    self.context:Event("PLAYER_FOCUS_CHANGED", OnFocusChanged, true)
-    for _, event in ipairs(UNIT_EVENTS) do self.context:Event(event, OnUnitChanged, true) end
-    for _, event in ipairs(CAST_EVENTS) do self.context:Event(event, OnCastChanged, true) end
-    self.context:Event("QUEST_LOG_UPDATE", OnQuestLogChanged, true)
-    for _, event in ipairs(CONTEXT_EVENTS) do self.context:Event(event, OnContextChanged, true) end
-    self.context:Event("PLAYER_REGEN_ENABLED", OnCombatEnded, true)
+    Listen(self, "NAME_PLATE_UNIT_ADDED", OnAdded)
+    Listen(self, "NAME_PLATE_UNIT_REMOVED", OnRemoved)
+    Listen(self, "PLAYER_TARGET_CHANGED", OnTargetChanged)
+    Listen(self, "PLAYER_FOCUS_CHANGED", OnFocusChanged)
+    for _, event in ipairs(UNIT_EVENTS) do Listen(self, event, OnUnitChanged) end
+    for _, event in ipairs(CAST_EVENTS) do Listen(self, event, OnCastChanged) end
+    Listen(self, "QUEST_LOG_UPDATE", OnQuestLogChanged)
+    for _, event in ipairs(CONTEXT_EVENTS) do Listen(self, event, OnContextChanged) end
+    Listen(self, "PLAYER_REGEN_ENABLED", OnCombatEnded)
     Power.Enable(self)
     Threat.Enable(self)
     self:Refresh()

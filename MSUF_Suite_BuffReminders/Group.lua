@@ -33,7 +33,7 @@ end
 
 -- The members are built into the idle one of two roster buffers, so a
 -- rebuild can tell a changed membership apart without allocating.
-local function FillRoster(self, roster)
+local function FillRoster(roster)
     local units, list = roster.units, roster.list
     units.player = true
     list[1] = "player"
@@ -61,25 +61,29 @@ local function SameMembers(previous, roster)
 end
 
 -- Roster work is cold; individual member events refresh only their unit.
--- groupUnitList ("player" first) is the unit filter of the member events.
+-- group.unitList ("player" first) is the unit filter of the member events.
 function R.GroupRoster(self)
-    local settings = self.groupSettings or {}
-    self.groupSettings = settings
+    local group = self.group
+    local settings = group.settings or {}
+    group.settings = settings
     for _, key in ipairs(GROUP_OPTIONS) do
         local enabled = self.config[key] == true
-        if settings[key] ~= enabled then self.needsFullRefresh = true; settings[key] = enabled end
+        if settings[key] ~= enabled then
+            self.list.needsFullRefresh = true
+            settings[key] = enabled
+        end
     end
-    local buffers = self.rosterBuffers or { NewRoster(), NewRoster() }
-    self.rosterBuffers = buffers
-    local roster = self.groupUnits == buffers[1].units and buffers[2] or buffers[1]
+    local buffers = group.buffers or { NewRoster(), NewRoster() }
+    group.buffers = buffers
+    local roster = group.units == buffers[1].units and buffers[2] or buffers[1]
     Clear(roster.units)
     Clear(roster.list)
-    local classes = self.groupClasses or {}
-    self.groupClasses = classes
+    local classes = group.classes or {}
+    group.classes = classes
     Clear(classes)
-    if R.WantsGroup(self) then FillRoster(self, roster) end
-    if not SameMembers(self.groupUnits, roster) then self.groupListChanged = true end
-    self.groupUnits, self.groupUnitList = roster.units, roster.list
+    if R.WantsGroup(self) then FillRoster(roster) end
+    if not SameMembers(group.units, roster) then group.listChanged = true end
+    group.units, group.unitList = roster.units, roster.list
     for unit in pairs(roster.units) do
         local _, class = UnitClass(unit)
         if Public(class) and type(class) == "string" then classes[class] = true end
@@ -94,23 +98,36 @@ end
 
 -- Whether a member has one of the auras: true, false, or nil while that is
 -- unknown. The lookups return nothing instead of raising while aura data is
--- restricted, which R.AurasRestricted reports. A member that is offline,
--- out of sight or dead cannot be read: the group buff skips it (nil), and
--- for the player's own Soulstone or Beacon it holds none (false), so one
--- such raid member does not silence that notice for everyone.
-local function Present(unit, aliases, own, ranked)
+-- restricted, which R.AurasRestricted reports.
+--
+-- The player's own Soulstone or Beacon, looked up by name with the PLAYER
+-- filter: it selects the caster natively, also when another caster has the
+-- same aura on this unit (no first-instance guess). A member that is
+-- offline, out of sight or dead cannot be read and holds none (false), so
+-- one such raid member does not silence that notice for everyone.
+local function OwnAuraOn(unit, aliases)
     if R.AurasRestricted() then return nil end
-    if not Eligible(unit) then
-        if own then return false end
-        return nil
+    if not Eligible(unit) then return false end
+    for i = 1, #aliases do
+        local known, data = R.RankAura(unit, aliases[i], R.OWN_HELPFUL)
+        if not known or not Public(data) then return nil end
+        if data then return true end
     end
+    return false
+end
+
+-- The group buff on a member, by name for Forever's ranked buffs, else by
+-- spell ID. A member that cannot be read is skipped (nil).
+local function BuffOn(unit, aliases, ranked)
+    if R.AurasRestricted() or not Eligible(unit) then return nil end
     for i = 1, #aliases do
         local known, data = true, nil
-        if ranked or own then known, data = R.RankAura(unit, aliases[i], own)
-        else data = C_UnitAuras.GetUnitAuraBySpellID(unit, aliases[i]) end
+        if ranked then
+            known, data = R.RankAura(unit, aliases[i], R.HELPFUL)
+        else
+            data = C_UnitAuras.GetUnitAuraBySpellID(unit, aliases[i])
+        end
         if not known or not Public(data) then return nil end
-        -- PLAYER selects the caster natively, including when another
-        -- caster has the same aura on this unit. No first-instance guess.
         if data then return true end
     end
     return false
@@ -119,16 +136,17 @@ end
 -- Whether the player's own aura is on no member: true, false, or nil while
 -- a member is unknown.
 local function OwnMissing(self, key, aliases, changedUnit)
-    local states = self[key] or {}
-    self[key] = states
+    local group = self.group
+    local states = group[key] or {}
+    group[key] = states
     if changedUnit then
-        states[changedUnit] = Present(changedUnit, aliases, true)
+        states[changedUnit] = OwnAuraOn(changedUnit, aliases)
     else
         Clear(states)
-        for unit in pairs(self.groupUnits) do states[unit] = Present(unit, aliases, true) end
+        for unit in pairs(group.units) do states[unit] = OwnAuraOn(unit, aliases) end
     end
     local unknown = false
-    for unit in pairs(self.groupUnits) do
+    for unit in pairs(group.units) do
         if states[unit] == true then return false end
         if states[unit] == nil then unknown = true end
     end
@@ -143,42 +161,44 @@ end
 
 local SOULSTONE, LIGHT, FAITH = { R.SOULSTONE_AURA }, { R.BEACON_OF_LIGHT }, { R.BEACON_OF_FAITH }
 local function RefreshOwnBuffs(self, changedUnit)
-    local c = self.config
-    self.soulstoneMissing, self.beaconMissing = nil, nil
+    local c, group, notices = self.config, self.group, self.notices
+    notices.soulstoneMissing, notices.beaconMissing = nil, nil
     if not changedUnit then
-        self.soulstoneKnown = c.soulstoneOnAlly and SoulstoneKnown() or false
-        self.beaconLightKnown = c.beaconOnAlly and R.Known(R.BEACON_OF_LIGHT) or false
-        self.beaconFaithKnown = c.beaconOnAlly and R.Known(R.BEACON_OF_FAITH) or false
+        group.soulstoneKnown = c.soulstoneOnAlly and SoulstoneKnown() or false
+        group.beaconLightKnown = c.beaconOnAlly and R.Known(R.BEACON_OF_LIGHT) or false
+        group.beaconFaithKnown = c.beaconOnAlly and R.Known(R.BEACON_OF_FAITH) or false
     end
-    if c.soulstoneOnAlly and self.soulstoneKnown then
-        self.soulstoneMissing = OwnMissing(self, "soulstonePresence", SOULSTONE, changedUnit)
+    if c.soulstoneOnAlly and group.soulstoneKnown then
+        notices.soulstoneMissing = OwnMissing(self, "soulstonePresence", SOULSTONE, changedUnit)
     end
     if not c.beaconOnAlly then return end
-    if self.beaconLightKnown and OwnMissing(self, "beaconLightPresence", LIGHT, changedUnit) then
-        self.beaconMissing = true
+    if group.beaconLightKnown and OwnMissing(self, "beaconLightPresence", LIGHT, changedUnit) then
+        notices.beaconMissing = true
     end
-    if self.beaconFaithKnown and OwnMissing(self, "beaconFaithPresence", FAITH, changedUnit) then
-        self.beaconMissing = true
+    if group.beaconFaithKnown and OwnMissing(self, "beaconFaithPresence", FAITH, changedUnit) then
+        notices.beaconMissing = true
     end
 end
 
 function R.RefreshGroup(self, changedUnit)
-    if NS.IsCombatLocked() or not self.groupUnits then return end
-    if changedUnit and not self.groupUnits[changedUnit] then return end
+    local group = self.group
+    local units = group.units
+    if NS.IsCombatLocked() or not units then return end
+    if changedUnit and not units[changedUnit] then return end
     RefreshOwnBuffs(self, changedUnit)
     if not self.config.groupBuff then return end
     local _, class = UnitClass("player")
     local buff = Public(class) and R.ClassBuff(class)
     if not buff or not R.Known(buff.cast) then return end
-    local states = self.groupPresence or {}
-    self.groupPresence = states
+    local states = group.presence or {}
+    group.presence = states
     local ranked = NS.Client.isForever
     if changedUnit then
-        states[changedUnit] = Present(changedUnit, buff.auras, false, ranked)
+        states[changedUnit] = BuffOn(changedUnit, buff.auras, ranked)
         return
     end
     Clear(states)
-    for unit in pairs(self.groupUnits) do states[unit] = Present(unit, buff.auras, false, ranked) end
+    for unit in pairs(units) do states[unit] = BuffOn(unit, buff.auras, ranked) end
 end
 
 -- The advance warning (remindBeforeMinutes) of the group buff entry follows
@@ -210,26 +230,29 @@ function R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo)
 end
 
 function R.GroupPresent(self, entry)
+    local group = self.group
+    local presence = group.presence
     local missing = 0
-    for unit in pairs(self.groupUnits or {}) do
-        if (unit ~= "player" or self.config.classBuff) and self.groupPresence
-            and self.groupPresence[unit] == false then missing = missing + 1 end
+    for unit in pairs(group.units or {}) do
+        if (unit ~= "player" or self.config.classBuff) and presence
+            and presence[unit] == false then missing = missing + 1 end
     end
     entry.missingCount = missing
     return missing == 0
 end
 
 local function Flush(self)
-    self.groupFlushPending = false
-    local dirty = self.groupDirty
-    if not self.active or self.suspended or NS.IsCombatLocked() then
+    local group = self.group
+    group.flushPending = false
+    local dirty = group.dirty
+    if not self.active or self.listen.suspended or NS.IsCombatLocked() then
         Clear(dirty)
-        self.groupRosterDirty = false
+        group.rosterDirty = false
         return
     end
-    if self.groupRosterDirty then
+    if group.rosterDirty then
         -- A roster change can change who provides which buff: recompile.
-        self.groupRosterDirty = false
+        group.rosterDirty = false
         Clear(dirty)
         self:Compile()
         self:Update("all")
@@ -242,21 +265,38 @@ local function Flush(self)
     self:Update("visual")
 end
 
--- Marks a member (or, with roster true, the roster) for the next pass.
-function R.QueueGroupWork(self, unit, roster)
-    local dirty = self.groupDirty
-    if not dirty then
-        dirty = {}
-        self.groupDirty = dirty
-        self.groupFlush = function() Flush(self) end
-    end
-    if roster then self.groupRosterDirty = true elseif unit then dirty[unit] = true end
-    if self.groupFlushPending then return end
-    self.groupFlushPending = true
-    C_Timer.After(FLUSH_DELAY, self.groupFlush)
+-- The set of marked members, made with the pass callback on first use.
+local function NewDirty(self, group)
+    local dirty = {}
+    group.dirty = dirty
+    group.flush = function() Flush(self) end
+    return dirty
+end
+
+local function SchedulePass(group)
+    group.flushPending = true
+    C_Timer.After(FLUSH_DELAY, group.flush)
+end
+
+-- Marks one member for the next pass. Member events come in bursts, so the
+-- common case only marks the unit.
+function R.QueueMemberWork(self, unit)
+    local group = self.group
+    local dirty = group.dirty or NewDirty(self, group)
+    if unit then dirty[unit] = true end
+    if not group.flushPending then SchedulePass(group) end
+end
+
+-- Marks the roster for the next pass, which recompiles.
+function R.QueueRosterWork(self)
+    local group = self.group
+    if not group.dirty then NewDirty(self, group) end
+    group.rosterDirty = true
+    if not group.flushPending then SchedulePass(group) end
 end
 
 function R.CancelGroupWork(self)
-    if self.groupDirty then Clear(self.groupDirty) end
-    self.groupRosterDirty = false
+    local group = self.group
+    if group.dirty then Clear(group.dirty) end
+    group.rosterDirty = false
 end

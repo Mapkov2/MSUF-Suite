@@ -97,7 +97,10 @@ function CastTime.Paint(cast, prefix, unit)
     end
     local state = M.castTimes[cast]
     if not state then
-        if NS.IsCombatLocked() then M.needsRefresh = true; return end
+        if NS.IsCombatLocked() then
+            M.needsRefresh = true
+            return
+        end
         state = Create(cast)
         M.castTimes[cast] = state
     end

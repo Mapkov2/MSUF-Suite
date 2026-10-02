@@ -39,6 +39,14 @@ function C.OwnBorderedParts(context, frame, own)
     end
 end
 
+-- Chat moves frames (a geometry module), so a listener waits for the end of
+-- combat unless it is registered here (the context's allowCombat). These
+-- handlers touch only text, sounds and speech bubbles, never a protected
+-- frame.
+function C.ListenInCombat(context, event, callback)
+    context:Event(event, callback, true)
+end
+
 function C.Fill(owner, layer)
     local texture = S.CreateTexture(owner, nil, layer)
     texture:SetTexture(WHITE)

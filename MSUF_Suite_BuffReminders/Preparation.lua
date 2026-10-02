@@ -22,9 +22,11 @@ local function KeystoneLimit(instanceID)
 end
 
 function R.ReadEnvironment(self, event)
+    local environment = self.environment
     local _, kind, difficulty, _, _, _, _, instanceID = GetInstanceInfo()
-    self.instanceType = Public(kind) and kind or false
-    self.preKey, self.keystoneSeconds = false, nil
+    local instanceType = Public(kind) and kind or false
+    environment.instanceType = instanceType
+    environment.preKey, environment.keystoneSeconds = false, nil
     local key = "showWorld"
     local ids = DifficultyUtil.ID
     local timewalking = ids and Public(difficulty) and type(difficulty) == "number" and
@@ -37,48 +39,50 @@ function R.ReadEnvironment(self, event)
     end
     if timewalking then
         key = "showTimewalking"
-    elseif self.instanceType == "raid" then
+    elseif instanceType == "raid" then
         key = lfr and "showRaidFinder" or mythic and "showRaidMythic" or heroic and "showRaidHeroic" or "showRaidNormal"
-    elseif self.instanceType == "party" then
+    elseif instanceType == "party" then
         key = challenge and "showMythicPlus" or mythic and "showDungeonMythic" or heroic and "showDungeonHeroic" or "showDungeonNormal"
         if NS.Client.modernEquipment and (challenge or mythic) then
             local active = C_ChallengeMode.IsChallengeModeActive()
             if event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_COMPLETED" then
-                self.challengeStarted = true
+                environment.challengeStarted = true
             elseif event == "CHALLENGE_MODE_RESET" or event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
-                self.challengeStarted = nil
+                environment.challengeStarted = nil
             end
-            self.preKey = Public(active) and active == false and not self.challengeStarted
-            if self.preKey and self.config.keystoneCover == 2 then self.keystoneSeconds = KeystoneLimit(instanceID) end
+            environment.preKey = Public(active) and active == false and not environment.challengeStarted
+            if environment.preKey and self.config.keystoneCover == 2 then
+                environment.keystoneSeconds = KeystoneLimit(instanceID)
+            end
         end
-    elseif self.instanceType == "scenario" then
+    elseif instanceType == "scenario" then
         key = "showScenarios"
     end
-    self.environmentKey = key
+    environment.key = key
 end
 
 -- Seconds a buff must still last. Before a keystone starts, the dungeon's
 -- timer or the chosen minutes replace the normal warning time.
 function R.Threshold(self)
-    local c = self.config
-    if self.preKey then
-        if c.keystoneCover == 2 and self.keystoneSeconds then return self.keystoneSeconds end
+    local c, environment = self.config, self.environment
+    if environment.preKey then
+        if c.keystoneCover == 2 and environment.keystoneSeconds then return environment.keystoneSeconds end
         if c.keystoneCover == 3 then return c.keystoneMinutes * 60 end
     end
     return (c.remindBeforeMinutes or 0) * 60
 end
 
 function R.SyncPreparationEvents(self, callback)
-    local listen = not self.suspended
+    local listen = not self.listen.suspended
     if listen and self.config.readyCheckMana then
-        self.context:Event("READY_CHECK", callback, true)
+        R.Listen(self, "READY_CHECK", callback)
     else
         self.context:RemoveEvent("READY_CHECK")
     end
     for i = 1, #PREP_EVENTS do
         local event = PREP_EVENTS[i]
         if listen and NS.Client.modernEquipment and self.config.keystoneCover ~= 1 then
-            self.context:Event(event, callback, true)
+            R.Listen(self, event, callback)
         else
             self.context:RemoveEvent(event)
         end
@@ -86,9 +90,10 @@ function R.SyncPreparationEvents(self, callback)
 end
 
 function R.HideReadyCheck(self)
-    if self.readyCheckTimer then self.readyCheckTimer:Cancel() end
-    self.readyCheckTimer = nil
-    if self.readyCheckWarning then self.readyCheckWarning:Hide() end
+    local readyCheck = self.readyCheck
+    if readyCheck.timer then readyCheck.timer:Cancel() end
+    readyCheck.timer = nil
+    if readyCheck.label then readyCheck.label:Hide() end
 end
 
 function R.ReadyCheck(self)
@@ -101,11 +106,13 @@ function R.ReadyCheck(self)
     if not Public(power) or not Public(maximum) or type(power) ~= "number" or type(maximum) ~= "number"
         or maximum <= 0 or power < 0 then return end
     if power / maximum * 100 >= (self.config.readyCheckManaPercent or 80) then return end
-    local text = self.readyCheckWarning
+    local readyCheck = self.readyCheck
+    local text = readyCheck.label
     if not text then
-        text = S.CreateFontString(self.host, nil, "OVERLAY", "GameFontNormalLarge")
-        text:SetPoint("BOTTOM", self.host, "TOP", 0, 8)
-        self.readyCheckWarning = text
+        local host = self.view.host
+        text = S.CreateFontString(host, nil, "OVERLAY", "GameFontNormalLarge")
+        text:SetPoint("BOTTOM", host, "TOP", 0, 8)
+        readyCheck.label = text
     end
     -- The note turns red once the mana is below half of the chosen limit.
     local percent = power / maximum * 100
@@ -118,11 +125,11 @@ function R.ReadyCheck(self)
     text:Show()
     local timer
     timer = C_Timer.NewTimer(self.config.readyCheckDuration or 10, function()
-        if self.readyCheckTimer ~= timer then return end
-        self.readyCheckTimer = nil
+        if readyCheck.timer ~= timer then return end
+        readyCheck.timer = nil
         text:Hide()
     end)
-    self.readyCheckTimer = timer
+    readyCheck.timer = timer
 end
 
 function R.StyleCount(button, config)
