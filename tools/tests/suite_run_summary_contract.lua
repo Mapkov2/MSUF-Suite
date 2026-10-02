@@ -277,11 +277,13 @@ delete.OnClick(delete)
 assert(#state.history == 1 and state.history[1].historyID ~= savedID and delete.label.text == "Delete run")
 -- A new arm keeps its whole window: the end of an earlier, used one must
 -- not disarm it.
+clock = clock + 1
 delete.OnClick(delete)
-clock = clock + 4
+clock = clock + 3
 firstWindow()
 assert(#state.history == 1 and delete.label.text == "Click again to delete",
     "the window of an earlier arm disarmed a newer one")
+clock = clock + 1
 timers[#timers]()
 assert(delete.label.text == "Delete run" and not delete.armed, "the delete arm did not end after its window")
 -- Turning the module off ends an arm (the runtime's Release cancels its

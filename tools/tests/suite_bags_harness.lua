@@ -6,7 +6,8 @@
 --     down to 1 (ContainerFrame.lua UpdateItemSlots) and lays the grid out from
 --     the bottom right; a bag opened in combat rebuilds that native grid.
 --   * PLAYER_REGEN_DISABLED is delivered before InCombatLockdown() turns true,
---     PLAYER_REGEN_ENABLED after it turned false.
+--     PLAYER_REGEN_ENABLED after it turned false; the player's combat flag
+--     (UnitAffectingCombat) is already set in the first and clear in the second.
 --   * GameTooltip_OnUpdate calls owner:UpdateTooltip() every 0.2 s; container
 --     buttons rebuild the tooltip there (SetOwner + SetBagItem), and
 --     TooltipDataProcessor post-calls run inside SetBagItem.
@@ -749,6 +750,7 @@ function H.New(root, options)
     end
     RegisterStateDriver = function(frame, state, value) frame.stateDrivers = frame.stateDrivers or {}; frame.stateDrivers[state] = value end
     InCombatLockdown = function() return W.combat end
+    UnitAffectingCombat = function(unit) return unit == "player" and (W.combat or W.fighting == true) end
     securecallfunction = function(fn, ...) return fn(...) end
     issecretvalue = nil
     hooksecurefunc = function(target, key, hook)
@@ -1003,11 +1005,12 @@ function H.New(root, options)
         assert(#W.timers == 0, "timers keep rescheduling")
     end
     function W.EnterCombat()
+        W.fighting = true
         W.Fire("PLAYER_REGEN_DISABLED")
         W.combat = true
     end
     function W.LeaveCombat()
-        W.combat = false
+        W.combat, W.fighting = false, false
         W.Fire("PLAYER_REGEN_ENABLED")
     end
 

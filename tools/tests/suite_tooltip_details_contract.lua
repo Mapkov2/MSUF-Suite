@@ -250,14 +250,20 @@ local function RetryHandle()
         if handle.Start and handle.Pending then return handle end
     end
 end
-local retry, wait = RetryHandle(), timers[#timers]
-Check(retry and retry:Pending() and wait.delay == 3 and inspectRequests == 2,
+-- Every native wait in flight runs once time reached it; a context wait
+-- that a restart moved arms again for the rest.
+local function RunDue()
+    local queued = timers
+    timers = {}
+    for _, entry in ipairs(queued) do entry.callback() end
+end
+local retry = RetryHandle()
+Check(retry and retry:Pending() and retry.due == now + 3 and inspectRequests == 2,
     "a hover inside the quiet period did not wait once")
-local timerCount = #timers
 Build("delayed")
-Check(#timers == timerCount, "the same hover scheduled a second retry")
+Check(retry.due == 1025, "the same hover scheduled a second retry")
 now = 1025
-wait.callback()
+RunDue()
 Check(inspectRequests == 3 and m.pendingInspect.guid == "GUID-delayed", "the delayed attempt did not request")
 Foreign("external")
 Check(not m.pendingInspect, "a foreign request did not take over the inspect buffer")
