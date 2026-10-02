@@ -49,6 +49,7 @@ Adapters\CatalogGlass.lua
 Adapters\AdapterKit.lua
 Adapters\SharedChrome.lua
 Adapters\GenericWindows.lua
+Adapters\GenericWindowsNodes.lua
 Adapters\GenericWindowsFrames.lua
 Adapters\GenericWindowsCatalog.lua
 Adapters\QuestText.lua

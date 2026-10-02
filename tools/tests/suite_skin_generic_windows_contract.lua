@@ -313,7 +313,8 @@ end
 for _, file in ipairs({ "Core/Safety.lua", "Core/SuiteOwnership.lua",
     "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua",
     "Adapters/AdapterKit.lua", "Adapters/SharedChrome.lua",
-    "Adapters/GenericWindows.lua", "Adapters/GenericWindowsFrames.lua", "Adapters/GenericWindowsCatalog.lua" }) do
+    "Adapters/GenericWindows.lua", "Adapters/GenericWindowsNodes.lua", "Adapters/GenericWindowsFrames.lua",
+    "Adapters/GenericWindowsCatalog.lua" }) do
     assert(loadfile(skin .. file))("MSUF_Suite_Skin", NS)
 end
 local GenericWindows = NS.GenericWindows
@@ -2256,7 +2257,7 @@ Section("supported clients and shared helpers", function()
         "the Micro Menu header still says Blizzard owns the layout")
     -- GenericWindows is split into cohesive files in load order.
     local previousAt = 0
-    for _, file in ipairs({ "GenericWindows", "GenericWindowsFrames", "GenericWindowsCatalog" }) do
+    for _, file in ipairs({ "GenericWindows", "GenericWindowsNodes", "GenericWindowsFrames", "GenericWindowsCatalog" }) do
         local at = toc:find("Adapters\\" .. file .. ".lua", 1, true)
         Expect(at and at > previousAt, file .. " is missing from the TOC or out of order")
         previousAt = at or previousAt
