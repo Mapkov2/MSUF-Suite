@@ -255,8 +255,7 @@ def dynamic_movers(owner, expression, preceding, code, addon_code, constants):
     raise ValueError("unresolved mover ID: " + owner + " " + text)
 
 
-def source_inventory(root, inventory, constants, parsed=None):
-    parsed = parsed or {}
+def source_inventory(root, inventory, constants):
     files = []
     addon_sources = {}
     for path in source_paths(root):
@@ -275,8 +274,7 @@ def source_inventory(root, inventory, constants, parsed=None):
             # without an interface token cannot contribute to this source pass.
             if not SOURCE_CANDIDATE.search(source) and not path.name.startswith("Database"):
                 continue
-            cached = parsed.get(rel.as_posix())
-            tokens = [token for token in (cached if cached is not None else lex(source)) if token.value is not None]
+            tokens = [token for token in lex(source) if token.value is not None]
             # Keep statement line boundaries for simple saved-root aliases.
             lines = {}
             for token in tokens:

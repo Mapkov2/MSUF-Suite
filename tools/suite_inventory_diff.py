@@ -8,7 +8,9 @@ See suite_inventory.md for extraction boundaries and evidence requirements.
 """
 
 import argparse
-from contextlib import contextmanager
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
+import contextlib
 from datetime import date
 import io
 import json
@@ -28,8 +30,8 @@ HERE = Path(__file__).resolve().parent
 BASELINE = HERE / "suite_inventory_baseline.json"
 ALLOWLIST = HERE / "suite_inventory_allowlist.json"
 VERSION = 1
-CATEGORIES = ("modules", "module_metadata", "rules", "defaults", "choices", "labels", "sections",
-              "rule_metadata", "slash", "bindings", "locale", "movers", "saved_variables", "exports")
+CATEGORIES = ("modules", "module_metadata", "module_traits", "rules", "defaults", "choices", "labels", "sections",
+              "rule_metadata", "rule_traits", "slash", "bindings", "locale", "movers", "saved_variables", "exports")
 CLIENTS = ("retail", "forever")
 LUA = r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe"
 
@@ -49,22 +51,29 @@ def catalog(root, client):
     return rows
 
 
+def english_keys(root):
+    """The English keys `suite_locale_tool.py extract` finds, without its
+    translation coverage (which would read sibling checkouts)."""
+    english = set(locale.Extractor(root).run().found)
+    english.update(text for text, _ in locale.skin_strings(root) if locale.is_translatable(text))
+    return english
+
+
 def extract(root, clients=CLIENTS):
     inventory = {name: set() for name in CATEGORIES}
     constants = {}
-    for client in clients:
-        for category, *parts in catalog(root, client):
-            if category == "constants":
-                constants[parts[0]] = parts[1]
-            else:
-                inventory[category].add(item(*parts))
-    # Same English keys as `suite_locale_tool.py extract`, without translation
-    # coverage, which would unnecessarily read sibling checkouts.
-    extracted = locale.Extractor(root).run()
-    english = set(extracted.found)
-    english.update(text for text, _ in locale.skin_strings(root) if locale.is_translatable(text))
-    inventory["locale"].update(english)
-    source_inventory(root, inventory, constants, {file.rel: file.tokens for file in extracted.files})
+    # The locale pass is the longest and shares nothing with the others, so it
+    # runs in its own process while the catalogs and the source pass finish.
+    with ProcessPoolExecutor(max_workers=1) as process, ThreadPoolExecutor(max_workers=len(clients)) as threads:
+        english = process.submit(english_keys, root)
+        for rows in [job.result() for job in [threads.submit(catalog, root, client) for client in clients]]:
+            for category, *parts in rows:
+                if category == "constants":
+                    constants[parts[0]] = parts[1]
+                else:
+                    inventory[category].add(item(*parts))
+        source_inventory(root, inventory, constants)
+        inventory["locale"].update(english.result())
     return inventory
 
 
@@ -72,7 +81,7 @@ def git(root, *args):
     return subprocess.run(["git", "-C", str(root), *args], capture_output=True)
 
 
-@contextmanager
+@contextlib.contextmanager
 def revision_tree(root, revision):
     """Extract only regular addon sources to a private temporary directory."""
     run = git(root, "archive", "--format=tar", revision)
@@ -131,7 +140,8 @@ def compare(before, after, allowlist):
             problems.append(label + " is not an object")
             continue
         category, pattern = entry.get("category"), entry.get("item")
-        valid = category in CATEGORIES and isinstance(pattern, str) and bool(pattern.strip())
+        # A pattern of only wildcards would exempt a whole category.
+        valid = category in CATEGORIES and isinstance(pattern, str) and bool(pattern.replace("*", "").strip())
         valid = valid and entry.get("basis") in ("migration", "owner", "dead", "moved")
         valid = valid and all(isinstance(entry.get(k), str) and entry[k].strip()
                               for k in ("evidence", "reason", "date"))
@@ -173,6 +183,30 @@ def check(before, after, allowlist, revision, verbose=False):
     return 1 if problems else 0
 
 
+def load_allowlist(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def freeze(args):
+    """Write a new snapshot, but only when it still passes with the reviewed
+    exceptions: advancing the baseline must never hide a loss or leave a stale
+    exception behind."""
+    data = snapshot(args.root, args.freeze)
+    summary = io.StringIO()
+    with contextlib.redirect_stdout(summary):
+        status = check(data["items"], extract(args.root), load_allowlist(args.allowlist), data["revision"])
+    if status and not args.accept_problems:
+        print(summary.getvalue().rstrip())
+        print("FAIL feature inventory: baseline %s not written; review the problems above, update the "
+              "allowlist or pass --accept-problems" % data["revision"][:7])
+        return 1
+    args.baseline.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                             encoding="utf-8", newline="\n")
+    print("frozen baseline %s: %d items" % (data["revision"], count(data["items"])))
+    print(summary.getvalue().rstrip())
+    return status
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("before", nargs="?", type=Path)
@@ -182,17 +216,15 @@ def main(argv=None):
     parser.add_argument("--allowlist", type=Path, default=ALLOWLIST)
     parser.add_argument("--client", choices=(*CLIENTS, "both"), default="both")
     parser.add_argument("--diff", action="store_true")
+    parser.add_argument("--accept-problems", action="store_true",
+                        help="with --freeze: write the snapshot although the check reports problems")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--freeze", metavar="REV")
     modes.add_argument("--verify-baseline", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.freeze:
-            data = snapshot(args.root, args.freeze)
-            args.baseline.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-                                     encoding="utf-8", newline="\n")
-            print("frozen baseline %s: %d items" % (data["revision"], count(data["items"])))
-            return 0
+            return freeze(args)
         if args.before:
             if args.verify_baseline:
                 raise ValueError("--verify-baseline requires the frozen snapshot")
@@ -211,9 +243,8 @@ def main(argv=None):
             return 0
         if args.client != "both":
             raise ValueError("the frozen gate always checks both clients")
-        allowlist = json.loads(args.allowlist.read_text(encoding="utf-8"))
-        return check(data["items"], extract(args.root), allowlist, data["revision"], args.diff)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        return check(data["items"], extract(args.root), load_allowlist(args.allowlist), data["revision"], args.diff)
+    except (OSError, ValueError, SyntaxError, subprocess.SubprocessError, BrokenProcessPool) as error:
         print("FAIL feature inventory: " + str(error))
         return 1
 
