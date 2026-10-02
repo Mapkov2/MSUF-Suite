@@ -190,12 +190,9 @@ end
 
 local function Layout(self)
     local c = self.config
-    local point = NS.AnchorPoints[c.point] or "CENTER"
     local host = self.host
-    host:ClearAllPoints()
-    host:SetPoint(point, UIParent, point, c.x, c.y)
     host:SetSize(c.width, c.valueFormat == 3 and 58 or 42)
-    host:SetScale(c.scale / 100)
+    S.PlaceHost(host, c)
     self.bg:SetColorTexture(S.RGB(c.backgroundColor))
     self.bg:SetAlpha(c.opacity / 100)
     self.border:SetColorTexture(S.RGB(c.accentColor))

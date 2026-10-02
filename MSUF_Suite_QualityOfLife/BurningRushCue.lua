@@ -76,11 +76,7 @@ local function Create(self)
 end
 
 local function Place(self)
-    local c = self.config
-    local point = NS.AnchorPoints[c.point] or "CENTER"
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
-    self.host:SetScale(c.scale / 100)
+    S.PlaceHost(self.host, self.config)
 end
 
 local function Update(self)

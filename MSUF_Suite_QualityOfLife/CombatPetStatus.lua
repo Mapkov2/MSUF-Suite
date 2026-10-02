@@ -21,19 +21,11 @@ local function ExpectsPet(class)
     return not (petless and Known(petless))
 end
 
+local CARD = { width = 200, height = 34, fill = { .08, .07, .08, .91 }, stripe = 3 }
+
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(200, 34)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-    local bg = S.CreateTexture(host, nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(.08, .07, .08, .91)
-    local stripe = S.CreateTexture(host, nil, "BORDER")
-    stripe:SetPoint("TOPLEFT")
-    stripe:SetPoint("BOTTOMLEFT")
-    stripe:SetWidth(3)
+    local host, bg, stripe = S.QoLCard(CARD)
     local label = S.CreateFontString(host, nil, "OVERLAY")
     label:SetPoint("CENTER")
     S.SetFont(label, nil, 14, "OUTLINE")
@@ -43,11 +35,8 @@ end
 
 local function Place(self)
     local c = self.config
-    S.QoLColor(self.bg, S.QoLStyle(c).background, .91)
-    local point = NS.AnchorPoints[c.point] or "CENTER"
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
-    self.host:SetScale(c.scale / 100)
+    S.PaintQoLCard(ID, c, self.bg)
+    S.PlaceHost(self.host, c)
 end
 
 local function Update(self, event)

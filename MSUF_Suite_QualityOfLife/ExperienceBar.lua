@@ -345,11 +345,8 @@ local function Layout(self)
     ApplyLook(self)
     ApplyFont(self)
     local c, host, bar = self.config, self.host, self.bar
-    local point = POINTS[c.point] or "BOTTOM"
-    host:SetScale(c.scale / 100)
     host:SetSize(c.width, c.height + 23)
-    host:ClearAllPoints()
-    host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(host, c, "BOTTOM")
     bar:SetSize(c.width, c.height)
     local effectiveScale = bar:GetEffectiveScale()
     local pixel = Finite(effectiveScale) and effectiveScale > 0 and 1 / effectiveScale or 1

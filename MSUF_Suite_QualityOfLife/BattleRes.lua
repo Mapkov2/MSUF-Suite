@@ -17,20 +17,12 @@ local function ChallengeActive()
     return S.Public(active) and active == true
 end
 
+local CARD = { width = 146, height = 44, fill = { .06, .07, .09, .92 }, edge = 1, line = { .54, .72, .78, .95 } }
+
 local function Create(self)
     if self.host then return end
 
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(146, 44)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-
-    local panel = S.CreateTexture(host, nil, "BACKGROUND")
-    panel:SetAllPoints(host)
-    panel:SetColorTexture(.06, .07, .09, .92)
-    local edges = {}
-    for i = 1, 4 do edges[i] = S.CreateTexture(host, nil, "BORDER") end
-    S.PlaceEdges(edges, host, 1, .54, .72, .78, .95)
+    local host, panel, edges = S.QoLCard(CARD)
 
     local icon = S.CreateTexture(host, nil, "ARTWORK")
     icon:SetPoint("LEFT", host, "LEFT", 3, 0)
@@ -66,17 +58,12 @@ end
 
 local function Place(self)
     local c = self.config
-    local style = S.QoLStyle(c)
-    S.QoLColor(self.panel, style.background, .92)
-    for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.border, .95) end
+    local style = S.PaintQoLCard(ID, c, self.panel, self.edges)
     self.title:SetTextColor(S.RGB(style.muted))
     self.count:SetTextColor(S.RGB(style.text))
     self.maximum:SetTextColor(S.RGB(style.muted))
-    local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(c.width, c.height)
-    self.host:SetScale(c.scale / 100)
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(self.host, c)
 end
 
 local function InSharedPool(self)

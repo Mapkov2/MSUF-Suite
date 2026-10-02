@@ -16,18 +16,11 @@ local INSTANCE_UPDATES = { "updatedAuraInstanceIDs", "removedAuraInstanceIDs" }
 local AURA_DELAY = .1
 local OnAura, Paint
 
+local CARD = { width = 172, height = 42, fill = { .06, .07, .09, .92 }, edge = 1, line = { .54, .72, .78, .95 } }
+
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(172, 42)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-    local background = S.CreateTexture(host, nil, "BACKGROUND")
-    background:SetAllPoints(host)
-    background:SetColorTexture(.06, .07, .09, .92)
-    local edges = {}
-    for i = 1, 4 do edges[i] = S.CreateTexture(host, nil, "BORDER") end
-    S.PlaceEdges(edges, host, 1, .54, .72, .78, .95)
+    local host, background, edges = S.QoLCard(CARD)
     local icon = S.CreateTexture(host, nil, "ARTWORK")
     icon:SetPoint("LEFT", host, "LEFT", 4, 0)
     icon:SetSize(34, 34)
@@ -54,15 +47,10 @@ end
 
 local function Place(self)
     local c = self.config
-    local style = S.QoLStyle(c)
-    S.QoLColor(self.background, style.background, .92)
-    for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.border, .95) end
+    local style = S.PaintQoLCard(ID, c, self.background, self.edges)
     self.title:SetTextColor(S.RGB(style.muted))
-    local point = POINTS[c.point] or "CENTER"
     self.host:SetSize(c.width, c.height)
-    self.host:SetScale(c.scale / 100)
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(self.host, c)
 end
 
 -- Combat, encounter, keystone and PvP restrictions turn these auras secret

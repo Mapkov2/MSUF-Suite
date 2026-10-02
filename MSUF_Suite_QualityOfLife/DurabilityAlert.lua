@@ -7,21 +7,12 @@ local M = {}
 local LABEL = S.Text("Low durability")
 local PREVIEW = S.Text("Preview")
 
+local CARD = { width = 250, height = 62, fill = { .06, .07, .09, .92 }, edge = 1, line = { .7, .25, .22, .9 } }
+
 local function Create(self)
     if self.host then return end
 
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(250, 62)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-
-    local panel = S.CreateTexture(host, nil, "BACKGROUND")
-    panel:SetAllPoints(host)
-    panel:SetColorTexture(.06, .07, .09, .92)
-
-    local edges = {}
-    for i = 1, 4 do edges[i] = S.CreateTexture(host, nil, "BORDER") end
-    S.PlaceEdges(edges, host, 1, .7, .25, .22, .9)
+    local host, panel, edges = S.QoLCard(CARD)
 
     local title = S.CreateFontString(host, nil, "OVERLAY")
     title:SetPoint("TOPLEFT", host, "TOPLEFT", 8, -8)
@@ -45,14 +36,9 @@ end
 
 local function Place(self)
     local c = self.config
-    local style = S.QoLStyle(c)
-    S.QoLColor(self.panel, style.background, .92)
-    for _, edge in ipairs(self.edges) do S.QoLColor(edge, style.border, .9) end
-    local point = POINTS[c.point] or "CENTER"
+    S.PaintQoLCard(ID, c, self.panel, self.edges)
     self.host:SetSize(c.width, c.height)
-    self.host:SetScale(c.scale / 100)
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(self.host, c)
 end
 
 -- The warning waits for combat to end. A refresh while MSUF Edit Mode

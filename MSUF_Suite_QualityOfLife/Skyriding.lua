@@ -293,7 +293,6 @@ end
 local function Layout(self)
     Create(self)
     local c, host = self.config, self.host
-    local point = POINTS[c.point] or "CENTER"
     local contentTop = ContentTop(c)
     local surgeHeight = max(49, c.fontSize + SurgeSize(c) + 10)
     local y = contentTop
@@ -302,10 +301,8 @@ local function Layout(self)
     if c.showSpeed then y = y - RowHeight(c, "speed") end
     local height = max(-y + 10, c.showWhirlingSurge and (-contentTop + surgeHeight + 10) or 0)
     local contentWidth = ContentWidth(c)
-    host:SetScale(c.scale / 100)
     host:SetSize(c.width, height)
-    host:ClearAllPoints()
-    host:SetPoint(point, UIParent, point, c.x, c.y)
+    S.PlaceHost(host, c)
     local pixel = 1 / max(0.1, host:GetEffectiveScale() or 1)
     local border = max(pixel, c.borderSize * pixel)
     self.edges[1]:SetHeight(border)

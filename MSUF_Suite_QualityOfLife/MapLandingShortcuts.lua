@@ -1,6 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = {}
+local ID = "mapLandingShortcuts"
+-- The button beside Blizzard's landing button; Refresh sizes it.
+local CARD = { kind = "Button", mouse = true, fill = { .08, .1, .13, .95 }, stripe = 2, line = { .81, .66, .38 } }
 
 -- Blizzard owns the landing button and its click script (which does not
 -- distinguish mouse buttons). This small adjacent button opens a separate
@@ -60,18 +63,8 @@ end
 
 local function Create(self)
     if self.button then return end
-    local button = S.CreateFrame("Button", nil, UIParent)
-    button:SetFrameStrata("HIGH")
+    local button, panel, border = S.QoLCard(CARD)
     button:RegisterForClicks("AnyUp")
-    button:EnableMouse(true)
-    local panel = S.CreateTexture(button, nil, "BACKGROUND")
-    panel:SetAllPoints()
-    panel:SetColorTexture(.08, .1, .13, .95)
-    local border = S.CreateTexture(button, nil, "BORDER")
-    border:SetPoint("TOPLEFT")
-    border:SetPoint("BOTTOMLEFT")
-    border:SetWidth(2)
-    border:SetColorTexture(.81, .66, .38)
     local glyph = S.CreateFontString(button, nil, "OVERLAY")
     glyph:SetPoint("CENTER", 0, 1)
     S.SetFont(glyph, nil, 13, "OUTLINE")
@@ -96,8 +89,7 @@ local function Update(self)
     local visible = self.native:IsVisible()
     if not S.Public(visible) or not visible then self.button:Hide() return end
     local c = self.config
-    local style = S.QoLStyle(c)
-    S.QoLColor(self.panel, style.background, .95)
+    local style = S.PaintQoLCard(ID, c, self.panel)
     S.QoLColor(self.border, style.accent)
     self.glyph:SetTextColor(S.RGB(style.accent))
     self.button:SetSize(c.size, c.size)
@@ -147,4 +139,4 @@ function M:Disable()
     if self.button then self.button:Hide() end
 end
 
-S.Install("mapLandingShortcuts", M)
+S.Install(ID, M)

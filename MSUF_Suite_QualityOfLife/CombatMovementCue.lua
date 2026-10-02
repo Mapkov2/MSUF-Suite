@@ -20,20 +20,11 @@ local function ParseIDs(raw)
     return ids
 end
 
+local CARD = { width = 230, height = 38, fill = { .07, .09, .12, .92 }, stripe = 3, line = { .86, .7, .38 } }
+
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetSize(230, 38)
-    host:SetFrameStrata("HIGH")
-    host:EnableMouse(false)
-    local bg = S.CreateTexture(host, nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(.07, .09, .12, .92)
-    local stripe = S.CreateTexture(host, nil, "BORDER")
-    stripe:SetPoint("TOPLEFT")
-    stripe:SetPoint("BOTTOMLEFT")
-    stripe:SetWidth(3)
-    stripe:SetColorTexture(.86, .7, .38)
+    local host, bg, stripe = S.QoLCard(CARD)
     local icon = S.CreateTexture(host, nil, "ARTWORK")
     icon:SetSize(27, 27)
     icon:SetPoint("LEFT", 8, 0)
@@ -48,14 +39,10 @@ end
 
 local function Place(self)
     local c = self.config
-    local style = S.QoLStyle(c)
-    S.QoLColor(self.bg, style.background, .92)
+    local style = S.PaintQoLCard(ID, c, self.bg)
     S.QoLColor(self.stripe, style.accent)
     self.label:SetTextColor(S.RGB(style.text))
-    local point = NS.AnchorPoints[c.point] or "CENTER"
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
-    self.host:SetScale(c.scale / 100)
+    S.PlaceHost(self.host, c)
 end
 
 -- A spell that waits only for the global cooldown counts as ready. isActive

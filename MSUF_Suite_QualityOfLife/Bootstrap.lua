@@ -22,6 +22,79 @@ function S.QoLColor(region, hex, alpha)
     region:SetColorTexture(r, g, b, alpha or 1)
 end
 
+------------------------------------------------------------------ cards
+-- The palette alpha of each module card's fill and frame lines, as each
+-- module has always drawn them. Stripes and accent lines are opaque.
+local CARD_ALPHA = {
+    battleRes = { fill = .92, lines = .95 },
+    durabilityAlert = { fill = .92, lines = .9 },
+    groupBloodlust = { fill = .92, lines = .95 },
+    innervateCue = { fill = .94 },
+    combatMovementCue = { fill = .92 },
+    combatPetStatus = { fill = .91 },
+    loadoutReminder = { fill = .94 },
+    mapLandingShortcuts = { fill = .95 },
+}
+
+-- A card of a QoL module: a frame on UIParent (spec.kind, else a Frame)
+-- above the game world, without the mouse unless spec.mouse, of spec.width
+-- by spec.height when given. Its BACKGROUND fill covers it; its BORDER lines
+-- are four, a frame spec.edge pixels wide, or one down its left side,
+-- spec.stripe pixels wide. spec.fill and spec.line ({ r, g, b, a }) color
+-- them until the module paints its palette (S.PaintQoLCard). Returns the
+-- host, the fill and the lines (the four, or the stripe).
+local function FrameLines(host, spec)
+    local lines = {}
+    for i = 1, 4 do lines[i] = S.CreateTexture(host, nil, "BORDER") end
+    local line = spec.line
+    S.PlaceEdges(lines, host, spec.edge, line[1], line[2], line[3], line[4])
+    return lines
+end
+
+local function Stripe(host, spec)
+    local stripe = S.CreateTexture(host, nil, "BORDER")
+    stripe:SetPoint("TOPLEFT")
+    stripe:SetPoint("BOTTOMLEFT")
+    stripe:SetWidth(spec.stripe)
+    if spec.line then stripe:SetColorTexture(unpack(spec.line)) end
+    return stripe
+end
+
+function S.QoLCard(spec)
+    local host = S.CreateFrame(spec.kind or "Frame", nil, UIParent)
+    if spec.width then host:SetSize(spec.width, spec.height) end
+    host:SetFrameStrata("HIGH")
+    host:EnableMouse(spec.mouse == true)
+    local fill = S.CreateTexture(host, nil, "BACKGROUND")
+    fill:SetAllPoints(host)
+    fill:SetColorTexture(unpack(spec.fill))
+    local lines = spec.edge and FrameLines(host, spec) or Stripe(host, spec)
+    return host, fill, lines
+end
+
+-- Paints the fill and, where the module's alphas name them, the four frame
+-- lines in the module's palette; returns the palette for the rest.
+function S.PaintQoLCard(id, config, fill, lines)
+    local style, alpha = S.QoLStyle(config), CARD_ALPHA[id]
+    S.QoLColor(fill, style.background, alpha.fill)
+    if alpha.lines then
+        for i = 1, #lines do S.QoLColor(lines[i], style.border, alpha.lines) end
+    end
+    return style
+end
+
+-- Places a Suite-owned surface on UIParent from its settings: the same
+-- anchor point of both (config.point, an index into the Suite's anchor
+-- points, else fallback or CENTER) at config.x and config.y, at
+-- config.scale percent. Returns that point.
+function S.PlaceHost(host, config, fallback)
+    local point = suite.AnchorPoints[config.point] or fallback or "CENTER"
+    host:ClearAllPoints()
+    host:SetPoint(point, UIParent, point, config.x, config.y)
+    host:SetScale(config.scale / 100)
+    return point
+end
+
 -- S.QoLLabel, S.QoLWindow and the copy dialog live in the shared runtime
 -- (MSUF_Suite_Modules/Dialogs.lua): the Chat addon uses them too.
 

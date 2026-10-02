@@ -20,9 +20,20 @@ if not strsplit then
     end
 end
 
+-- The Suite's anchor point list (NS.AnchorPoints, MSUF_Suite/Core/
+-- SuiteCatalog.lua), read from the shipped file.
+function Support.AnchorPoints(root)
+    local file = assert(io.open(root .. "/MSUF_Suite/Core/SuiteCatalog.lua", "rb"))
+    local source = file:read("*a")
+    file:close()
+    local list = assert(source:match("\nNS%.AnchorPoints = (%b{})"), "NS.AnchorPoints is missing from SuiteCatalog.lua")
+    return assert(loadstring("return " .. list))()
+end
+
 -- Isolated QoL module tests load one file without the addon's Bootstrap.lua.
--- Install the real palette bridge with a minimal core namespace, and the
--- shared windows and copy dialog (MSUF_Suite_Modules/Dialogs.lua). palettes
+-- Install the real palette bridge (with the cards and S.PlaceHost) with a
+-- minimal core namespace that has the Suite's anchor points, and the shared
+-- windows and copy dialog (MSUF_Suite_Modules/Dialogs.lua). palettes
 -- (optional) replaces the single default palette.
 function Support.QoLStyleFixture(root, suite, palettes)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = suite })
@@ -31,7 +42,7 @@ function Support.QoLStyleFixture(root, suite, palettes)
     _G.MSUFSuite = { Suite = suite, QoLVisualStyles = palettes or {
         [1] = { background = "0a1220", border = "41627a", accent = "57c7df",
             text = "f4f7fb", muted = "aab5c2" },
-    }, Finish = function(callback, ...) return true, callback(...) end }
+    }, Finish = function(callback, ...) return true, callback(...) end, AnchorPoints = Support.AnchorPoints(root) }
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/Bootstrap.lua"))(
         "MSUF_Suite_QualityOfLife", {})
     _G.MSUFSuite = previous
