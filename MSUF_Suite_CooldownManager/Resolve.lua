@@ -587,6 +587,33 @@ local function RouteOverflow(plans)
     end
 end
 
+-- The end of a build: every staged list (after the overflow routing) becomes
+-- its plan's entry list, and entries that left every bar lose their place;
+-- Icons releases their frames. Returns whether any entry list changed.
+local function Commit(plans, entries)
+    local any = false
+    for i = 1, #SLOTS do
+        local slot = SLOTS[i].key
+        local plan = plans[slot]
+        if plan then
+            local staging = plan.staging
+            for j = 1, #staging do
+                local entry = staging[j]
+                entry.slot, entry.index, tmp[j] = slot, j, entry
+            end
+            for j = #tmp, #staging + 1, -1 do tmp[j] = nil end
+            if Fold(plan, plan.stagingKind, #staging) then any = true end
+        end
+    end
+    for key, entry in pairs(entries) do
+        if not placed[key] then
+            entries[key] = nil
+            entry.slot, entry.index = nil, nil
+        end
+    end
+    return any
+end
+
 -- Returns C.plans and whether any bar's entry list changed. Each plan's gen
 -- increments when its list changes; Resolve.touched lists entries that kept
 -- their place but changed on refill. view.maxIcons is applied by the layout.
@@ -648,26 +675,7 @@ function Resolve.Build()
         end
     end
     RouteOverflow(plans)
-    for i = 1, #SLOTS do
-        local slot = SLOTS[i].key
-        local plan = plans[slot]
-        if plan then
-            local staging = plan.staging
-            for j = 1, #staging do
-                local entry = staging[j]
-                entry.slot, entry.index, tmp[j] = slot, j, entry
-            end
-            for j = #tmp, #staging + 1, -1 do tmp[j] = nil end
-            if Fold(plan, plan.stagingKind, #staging) then any = true end
-        end
-    end
-    -- Entries that left every bar lose their place; Icons releases their frames.
-    for key, entry in pairs(entries) do
-        if not placed[key] then
-            entries[key] = nil
-            entry.slot, entry.index = nil, nil
-        end
-    end
+    if Commit(plans, entries) then any = true end
     return plans, any
 end
 
