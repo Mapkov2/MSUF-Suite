@@ -373,18 +373,6 @@ function GenericWindows.GetStatus(id)
     return status and status.state or "pending", status
 end
 
-function GenericWindows.GetStatusTable()
-    local copy = {}
-    for id, status in pairs(entryStatus) do
-        local item = {}
-        for key, value in pairs(status) do
-            item[key] = value
-        end
-        copy[id] = item
-    end
-    return copy
-end
-
 function GenericWindows.GetCounts()
     local counts = {
         total = 0,
@@ -424,14 +412,6 @@ function GenericWindows.GetCounts()
         end
     end
     return counts
-end
-
-function GenericWindows.GetCatalogCount()
-    return #CatalogEntries()
-end
-
-function GenericWindows.GetPendingAddonCount()
-    return pendingAddonCount
 end
 
 loadFrame:SetScript("OnEvent", function(self, event, addon)

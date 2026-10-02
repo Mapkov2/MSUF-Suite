@@ -372,8 +372,8 @@ end
 assert(namespace.BlizzardCatalog.glass.valid, "reviewed Blizzard glass catalog is invalid")
 assert(not namespace.Adapters.definitions.objectiveTracker
     and not namespace.Adapters.definitions.objectiveTrackerAccents
-    and not namespace.BlizzardCatalog.GetGlassContract("ObjectiveTrackerFrame")
-    and not namespace.BlizzardCatalog.GetGlassContract("ObjectiveTrackerTopBannerFrame"),
+    and not namespace.BlizzardCatalog.glass.byFrame.ObjectiveTrackerFrame
+    and not namespace.BlizzardCatalog.glass.byFrame.ObjectiveTrackerTopBannerFrame,
     "Blizzard Objective Tracker skin is still registered")
 for _, fontName in ipairs(namespace.BlizzardFontNames) do
     assert(fontName ~= "ObjectiveFont" and not fontName:match("^ObjectiveTracker"),
@@ -386,7 +386,7 @@ end
 assert(macroShell == "popup", "Macro window still uses the translucent generic shell")
 for _, frameName in ipairs({ "CharacterFrame", "PVEFrame", "ProfessionsFrame",
     "SettingsPanel", "GameMenuFrame", "AddonList", "MerchantFrame" }) do
-    local coverage = namespace.BlizzardCatalog.GetGlassContract(frameName)
+    local coverage = namespace.BlizzardCatalog.glass.byFrame[frameName]
     if not coverage then
         for _, entry in ipairs(namespace.BlizzardCatalog.glass.standalone) do
             for _, rootName in ipairs(entry.roots) do

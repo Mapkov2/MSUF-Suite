@@ -253,36 +253,12 @@ function Catalog.FindByFrame(frameName)
     return byFrame[frameName]
 end
 
-function Catalog.GetGlassContract(frameName)
-    return glassByFrame[frameName]
-end
-
-function Catalog.GetGlassCounts()
-    return {
-        total = glassCounts.total,
-        genericShell = glassCounts.genericShell,
-        dedicated = glassCounts.dedicated,
-        semanticContent = glassCounts.semanticContent,
-        semanticChrome = glassCounts.semanticChrome,
-        semanticHUD = glassCounts.semanticHUD,
-        full = glassCounts.full,
-        partial = glassCounts.partial,
-        none = glassCounts.none,
-        standalone = standaloneRootCount,
-        nested = #nestedGlass,
-    }
-end
-
 function Catalog.GetGlassErrors()
     local result = {}
     for index = 1, #glassErrors do
         result[index] = glassErrors[index]
     end
     return result
-end
-
-function Catalog.IsGlassContractValid()
-    return glassContractValid
 end
 
 -- True for a catalog entry whose roots all passed review.

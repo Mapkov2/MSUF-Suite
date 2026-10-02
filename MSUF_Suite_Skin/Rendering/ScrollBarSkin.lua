@@ -616,9 +616,4 @@ function ScrollBarSkin.GetState(target)
     return ScrollBarSkin.states[target]
 end
 
-function ScrollBarSkin.GetContract(target)
-    local contract = DetectContract(target, scratchContract)
-    return contract and contract.kind or nil
-end
-
 return ScrollBarSkin

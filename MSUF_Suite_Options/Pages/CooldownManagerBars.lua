@@ -35,7 +35,6 @@ function Page.Fail(reason) Page.Note(Tr(reason or "That did not work."), nil, tr
 -- may change. The Undo puts them back as one history entry, and only while
 -- nothing changed them since. Returns what `run` returned.
 local LIST_KEYS = { "listsData" }
-Page.LIST_KEYS = LIST_KEYS
 local function Snapshot(keys)
     local out = {}
     for i = 1, #keys do out[keys[i]] = P.Get(ID, keys[i]) end

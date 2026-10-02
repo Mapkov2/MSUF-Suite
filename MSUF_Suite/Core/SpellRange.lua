@@ -84,8 +84,3 @@ function S.SetNativeSpellRange(owner, spellID, enabled)
     end
 end
 
-function S.ClearNativeSpellRanges(owner)
-    local spells = owners[owner]
-    if not spells then return end
-    for spellID in pairs(spells) do S.SetNativeSpellRange(owner, spellID, false) end
-end

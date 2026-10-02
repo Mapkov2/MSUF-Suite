@@ -399,10 +399,4 @@ function LegacyWindows.Disable(owner)
     return DisableNow(owner)
 end
 
-function LegacyWindows.GetWaitingCount()
-    local count = 0
-    for _ in pairs(LegacyWindows.waiting) do count = count + 1 end
-    return count
-end
-
 return LegacyWindows

@@ -93,7 +93,7 @@ do
     string.byte = byte
     Check(hashed == 0, "loading the catalog hashed it in game")
     local catalog = NS.BlizzardCatalog
-    Check(catalog.IsGlassContractValid() and catalog.glass.valid
+    Check(catalog.glass.valid
         and #catalog.GetGlassErrors() == 0, "reviewed catalog is valid")
     local problems = ReviewProblems(data, catalog)
     Check(#problems == 0, "the catalog changed without its review: " .. table.concat(problems, ", "))
@@ -133,7 +133,7 @@ do
         'REVIEWED_CATALOG_FINGERPRINT = "00000000-00000000"')
     Check(HasProblem(ReviewProblems(unreviewedData, unreviewed), "catalog-snapshot-unreviewed:"),
         "the review contract missed an unreviewed catalog snapshot")
-    Check(unreviewed.ValidateGlassEntry(unreviewed.entries[1]) and unreviewed.IsGlassContractValid(),
+    Check(unreviewed.ValidateGlassEntry(unreviewed.entries[1]) and unreviewed.glass.valid,
         "an unreviewed catalog snapshot switched the catalog off in game")
     local recounted, recountedData = LoadModified("REVIEWED_CATALOG_ROOTS = %d+", "REVIEWED_CATALOG_ROOTS = 1")
     Check(HasProblem(ReviewProblems(recountedData, recounted), "catalog-root-count:"),
@@ -413,12 +413,12 @@ Check(GenericWindows.ApplyFrame(window, "contract", MODE) and rowOne.childReads 
     "re-enabling did not re-skin the visible pooled row")
 
 -- The catalog entry list is sorted once; counts reuse it.
-Check(GenericWindows.GetCatalogCount() > 0, "reviewed catalog entries are missing")
+Check(GenericWindows.GetCounts().total > 0, "reviewed catalog entries are missing")
 local sort, sorted = table.sort, 0
 table.sort = function(...) sorted = sorted + 1; return sort(...) end
 GenericWindows.GetCounts()
 GenericWindows.GetCategories()
-local catalogCount = GenericWindows.GetCatalogCount()
+local catalogCount = GenericWindows.GetCounts().total
 table.sort = sort
 Check(sorted == 0 and catalogCount > 0, "catalog entries were rebuilt for a status query")
 
@@ -1620,9 +1620,9 @@ Section("major windows pvp categories", function()
     _G.LFGListPVPStub = Frame("LFGListPVPStub")
     _G.TrainingGroundsFrame = Frame("TrainingGroundsFrame")
     NS.MajorWindows.Apply("major")
-    Expect(NS.MajorWindows.GetIndicator(queue.CategoryButton1) ~= nil
-        and NS.MajorWindows.GetIndicator(queue.CategoryButton3) ~= nil
-        and NS.MajorWindows.GetIndicator(queue.CategoryButton4) ~= nil,
+    local indicators = NS.MajorWindows.indicators
+    Expect(indicators[queue.CategoryButton1] ~= nil and indicators[queue.CategoryButton3] ~= nil
+        and indicators[queue.CategoryButton4] ~= nil,
         "PvP categories after a missing panel lost their selection indicator")
     NS.MajorWindows.Disable("major")
     _G.PVPUIFrame, _G.PVPQueueFrame, _G.HonorFrame = nil, nil, nil

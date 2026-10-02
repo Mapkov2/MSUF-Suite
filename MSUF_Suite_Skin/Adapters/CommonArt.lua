@@ -456,10 +456,4 @@ function CommonArt.Disable(owner)
     return true
 end
 
--- Read-only diagnostic for the focused runtime smoke and `/dump` debugging.
--- The frame remains wholly owned by MapkoSkin; callers receive no state.
-function CommonArt.GetNavigationIndicator(button)
-    return CommonArt.navigationIndicators[button]
-end
-
 return CommonArt

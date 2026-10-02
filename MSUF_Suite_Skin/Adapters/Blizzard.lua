@@ -253,14 +253,6 @@ function Adapters.GetStatus(id)
     return status and status.state or "pending"
 end
 
-function Adapters.GetStatusTable()
-    local copy = {}
-    for id, status in pairs(Adapters.status) do
-        copy[id] = status and status.state or "pending"
-    end
-    return copy
-end
-
 -- Sub-skins of the Blizzard window adapter, applied in this order after the
 -- generic catalog. A failure whose reason is `tolerated` (combat deferral, a
 -- pending load-on-demand addon) still counts as applied; any other failure,
