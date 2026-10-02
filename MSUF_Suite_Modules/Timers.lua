@@ -4,8 +4,9 @@ local Dispatch = NS.Dispatch
 
 -- Deferred work of a module, owned by its context (Runtime.lua). Release
 -- cancels all of it, so a stopped module never runs a late callback.
---   ctx:After(delay, fn)          fn(module) once, delay seconds from now. A
---                                 new call moves the deadline (a restart).
+--   ctx:After(delay, fn)          fn(module) once, delay seconds from now
+--                                 (within a millisecond). A new call moves
+--                                 the deadline (a restart).
 --   ctx:Coalesce(delay, fn, keys) a job: job:Request() asks for one run of
 --                                 fn(module, keys) delay seconds after the
 --                                 first request; later requests ride along.

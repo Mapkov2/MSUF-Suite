@@ -145,29 +145,31 @@ local function Paint(self)
     self.host:SetShown(count > 0 and (S.editMode or (not self.sessionHidden and self.contextVisible ~= false)))
 end
 
-local function CancelHide(self)
-    if self.hideTimer then self.hideTimer:Cancel(); self.hideTimer = nil end
-end
-
 local function ClearHistory(self)
     for index = #self.history, 1, -1 do self.history[index] = nil end
     Paint(self)
 end
 
-local function ExpireHistory()
-    if not M.active or M.pausedAt or not M.lastCastAt then return end
-    if GetTime() - M.lastCastAt < M.config.hideAfter then return end
-    M.hideTimer = nil
-    ClearHistory(M)
+local function ExpireHistory(self)
+    if self.pausedAt or not self.lastCastAt then return end
+    ClearHistory(self)
 end
 
+-- The timeout is the deadline itself: every cast restarts it, a pause or a
+-- setting without one cancels it, and Release drops it.
 local function ScheduleHide(self)
-    CancelHide(self)
     local delay = self.config.hideAfter
-    if S.editMode or delay == 0 or not self.lastCastAt or self.pausedAt then return end
+    if S.editMode or delay == 0 or not self.lastCastAt or self.pausedAt then
+        self.context:Cancel(ExpireHistory)
+        return
+    end
     local remaining = delay - (GetTime() - self.lastCastAt)
-    if remaining <= 0 then ClearHistory(self); return end
-    self.hideTimer = C_Timer.NewTimer(remaining, ExpireHistory)
+    if remaining <= 0 then
+        self.context:Cancel(ExpireHistory)
+        ClearHistory(self)
+        return
+    end
+    self.context:After(remaining, ExpireHistory)
 end
 
 local function PauseChanged(self, event)
@@ -290,7 +292,6 @@ function M:Refresh()
 end
 
 function M:Disable()
-    CancelHide(self)
     self.history = {}
     self.lastCastAt, self.pausedAt = nil, nil
     for _, row in ipairs(self.rows or {}) do
