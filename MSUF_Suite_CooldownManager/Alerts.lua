@@ -36,6 +36,7 @@ local flushArmed = false
 local have = {}                            -- registration key -> {id, refs}
 local want = {}                            -- scratch: registration key -> refs
 local regs = {}                            -- registration key -> what to register
+local failed = {}                          -- registration key -> true: its value resolves to no file
 local info = {}                            -- reused UnitAuraSoundInfo
 local kitParams = {}                       -- reused Blizzard cooldown alert params
 local armed = false
@@ -298,11 +299,14 @@ local function Want(entry, trigger, value, channel)
     if not entry.selfAura then Wanted(set, "target", trigger, channel, value) end
 end
 
+-- Returns the native id, or nil plus whether the value cannot resolve to a
+-- file at all (a SharedMedia name nobody registered). Only a refusal by the
+-- native call itself is worth retrying on every pending flush.
 local function Register(add, reg)
     local kind, file = Parse(reg.value)
     if kind == "lsm" then file = Media(file) end
     if kind == "kit" then file = kitFiles[file] end
-    if not file then return nil end
+    if not file then return nil, true end
     info.unitToken, info.spellID, info.outputChannel = reg.unit, reg.spell, reg.channel
     if type(file) == "number" then
         info.soundFileID, info.soundFileName = file, nil
@@ -324,9 +328,12 @@ local function Arm(wait)
 end
 
 -- Cold: after resolve, spell choices, mute/channel changes and loading
--- screens. Out of combat only; in combat it waits for FlushPending.
-function Alerts.SyncAuraSounds()
+-- screens. Out of combat only; in combat it waits for FlushPending. Values
+-- that resolved to no file are tried again on the next cold sync, not on
+-- every pending flush (keepFailed): they would hold `pending` forever.
+function Alerts.SyncAuraSounds(keepFailed)
     Alerts.released = false
+    if not keepFailed then wipe(failed) end
     local add, remove = C_UnitAuras.AddAuraSound, C_UnitAuras.RemoveAuraSound
     if NS.IsCombatLocked() then
         Alerts.pending = true
@@ -369,11 +376,19 @@ function Alerts.SyncAuraSounds()
         local reg = have[key]
         if reg then
             reg.refs = refs
-        else
-            local id = Register(add, regs[key])
-            if id then have[key] = { id = id, refs = refs } end
-            if not id then Alerts.pending = true end
+        elseif not failed[key] then
+            local id, unresolved = Register(add, regs[key])
+            if id then
+                have[key] = { id = id, refs = refs }
+            elseif unresolved then
+                failed[key] = true
+            else
+                Alerts.pending = true
+            end
         end
+    end
+    for key in pairs(failed) do
+        if not want[key] then failed[key] = nil end
     end
     if wait > 0 and not state.muteSounds then Arm(wait) end
 end
@@ -390,6 +405,7 @@ function Alerts.ReleaseAll()
     wipe(lossAt)
     wipe(gainGate)
     wipe(lossGate)
+    wipe(failed)
     Alerts.pending = false
     Alerts.released = true
 end

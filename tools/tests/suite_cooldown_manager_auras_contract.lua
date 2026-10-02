@@ -1591,8 +1591,33 @@ assert(SoundCount()==0 and Alerts.pending==true,"rejected native sound stays pen
 A.FlushPending()
 assert(SoundCount()==1 and Alerts.pending==false,"native sound registration retries")
 C_UnitAuras.AddAuraSound=addSound
+-- A value that resolves to no file (a SharedMedia name nobody registered) is
+-- no transient refusal: it holds no pending flag, a pending flush leaves it
+-- alone, and the next cold sync tries it again (the name may be registered
+-- by then).
+do
 s1.ov={}
 Alerts.SyncAuraSounds()
+local lsmFetch,lsmLate,fetches=LSM.Fetch,false,0
+LSM.Fetch=function(self,kind,name)
+    fetches=fetches+1
+    if kind=="sound" and name=="Late" and lsmLate then return "Sound\Late.ogg" end
+    return lsmFetch(self,kind,name)
+end
+s1.ov={sound="lsm:Late"}
+Alerts.SyncAuraSounds()
+assert(SoundCount()==0 and Alerts.pending==false,"an unresolvable SharedMedia name does not hold pending")
+local tried=fetches
+Alerts.pending=true
+A.FlushPending()
+assert(fetches==tried and Alerts.pending==false,"a pending flush does not retry an unresolvable sound")
+lsmLate=true
+Alerts.SyncAuraSounds()
+assert(fetches>tried and SoundCount()==1,"a cold sync retries it once the name exists")
+LSM.Fetch=lsmFetch
+s1.ov={}
+Alerts.SyncAuraSounds()
+end
 s1.ov={sound="file:777"}
 COMBAT=true
 Alerts.SyncAuraSounds()

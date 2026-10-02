@@ -425,7 +425,7 @@ function Auras.FlushPending()
         Auras.Sync(slot, true)
     end
     local alerts = C.Alerts
-    if alerts.pending then alerts.SyncAuraSounds() end
+    if alerts.pending then alerts.SyncAuraSounds(true) end
 end
 
 -- Edit Mode / options preview: every aura-bar entry shows its sample icon
