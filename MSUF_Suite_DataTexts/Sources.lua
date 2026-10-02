@@ -5,12 +5,12 @@ local NO_VALUE = P.NO_VALUE
 -- The additional DataText sources: one binding per configured place
 -- ("kind:bar:place"), their values and the events that change them.
 -- Actions.lua owns what their clicks and tooltips do.
-local X = { bindings = {} }
-P.DataTextSources = X
-S.DataTextExtraSources = X
+local Sources = { bindings = {} }
+P.DataTextSources = Sources
+S.DataTextExtraSources = Sources
 local broker, owner
 local SeasonSelection
-X.AUDIO = { "Sound_MasterVolume", "Sound_SFXVolume", "Sound_MusicVolume", "Sound_AmbienceVolume", "Sound_DialogVolume" }
+Sources.AUDIO = { "Sound_MasterVolume", "Sound_SFXVolume", "Sound_MusicVolume", "Sound_AmbienceVolume", "Sound_DialogVolume" }
 local EVENTS = {
     CURRENCY_DISPLAY_UPDATE = { currency = true, crests = true },
     PLAYER_AVG_ITEM_LEVEL_UPDATE = { itemLevel = true },
@@ -27,13 +27,13 @@ local EVENTS = {
     SPELLS_CHANGED = { specialization = true, portals = true },
     ITEM_UPGRADE_MASTER_SET_ITEM = { crests = true },
 }
-X.kinds = {
+Sources.kinds = {
     broker = true, currency = true, crests = true, itemLevel = true, professions = true, specialization = true,
     audio = true, hearth = true, progress = true, portals = true, microMenu = true,
 }
 -- Places whose click runs a protected action through a secure button
 -- (Actions.lua). Their bars release it when combat starts.
-X.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true }
+Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true }
 
 local function Text(value)
     return S.Public(value) and type(value) == "string" and value or nil
@@ -55,41 +55,29 @@ local function Broker()
     return broker
 end
 
-function X.BrokerNames()
-    local lib = Broker()
-    local names = {}
-    if lib then
-        for name in lib:DataObjectIterator() do
-            if Text(name) then names[#names + 1] = name end
-        end
-    end
-    table.sort(names)
-    return names
-end
-
 -- The broker data object of a binding, or nil.
-function X.BrokerObject(binding)
+function Sources.BrokerObject(binding)
     local lib = Broker()
     return lib and lib:GetDataObjectByName(binding.broker) or nil
 end
 
-function X.Bind(button, config, index, slot, kind)
+function Sources.Bind(button, config, index, slot, kind)
     local prefix = "bar" .. index .. "Slot" .. slot
     local key = kind .. ":" .. index .. ":" .. slot
-    local binding = X.bindings[key] or { icons = {} }
+    local binding = Sources.bindings[key] or { icons = {} }
     binding.kind, binding.button, binding.prefix = kind, button, prefix
     binding.broker = config[prefix .. "Broker"] or ""
     binding.currency = tonumber(config[prefix .. "Currency"]) or 0
     binding.maxWidth = config[prefix .. "MaxWidth"] or 180
     binding.padding = config[prefix .. "Padding"] or 5
     binding.iconR, binding.iconG, binding.iconB = S.RGB(config[prefix .. "IconColor"] or "ffffff")
-    X.bindings[key] = binding
+    Sources.bindings[key] = binding
     button.source, button.extra = key, binding
     return key
 end
 
-function X.Has(key)
-    return X.bindings[key] ~= nil
+function Sources.Has(key)
+    return Sources.bindings[key] ~= nil
 end
 
 local function Currency(id)
@@ -103,7 +91,7 @@ end
 -- Native season metadata exists only while an upgrade item is selected.
 -- Keep the last observed list for this login; never invent a season or
 -- replace it with unrelated currency IDs when the API has no item.
-function X.ObserveSeasonCosts()
+function Sources.ObserveSeasonCosts()
     -- Forever has no C_ItemUpgrade and no modern equipment upgrades.
     if not NS.Client.modernEquipment or not C_ItemUpgrade then return end
     local info = C_ItemUpgrade.GetItemUpgradeItemInfo()
@@ -120,25 +108,25 @@ function X.ObserveSeasonCosts()
         end
     end
     table.sort(observed, function(a, b) return a.order < b.order end)
-    X.seasonCosts = #observed > 0 and observed or nil
-    X.seasonItem = Text(info.name)
+    Sources.seasonCosts = #observed > 0 and observed or nil
+    Sources.seasonItem = Text(info.name)
     if owner then SeasonSelection(owner.config) end
 end
 
-function X.CrestChoices()
-    return X.seasonCosts or {}
+function Sources.CrestChoices()
+    return Sources.seasonCosts or {}
 end
 
 local selectionText, selectionCosts, selectionMode, selectedCosts
 SeasonSelection = function(config)
     local mode = config.crestMode == 2 and 2 or 1
     local text = Text(mode == 2 and config.crestCurrencyIDs or config.crestCurrencies) or ""
-    if selectedCosts and selectionText == text and selectionCosts == X.seasonCosts and selectionMode == mode then
+    if selectedCosts and selectionText == text and selectionCosts == Sources.seasonCosts and selectionMode == mode then
         return selectedCosts
     end
-    selectionText, selectionCosts, selectionMode = text, X.seasonCosts, mode
+    selectionText, selectionCosts, selectionMode = text, Sources.seasonCosts, mode
     selectedCosts = {}
-    local costs = X.seasonCosts or {}
+    local costs = Sources.seasonCosts or {}
     local byOrder = {}
     for _, cost in ipairs(costs) do
         if not byOrder[cost.order] then byOrder[cost.order] = cost end
@@ -162,10 +150,10 @@ SeasonSelection = function(config)
     end
     return selectedCosts
 end
-X.SeasonSelection = function() return SeasonSelection(owner.config) end
+Sources.SeasonSelection = function() return SeasonSelection(owner.config) end
 
 -- Name, amount and icon of one seasonal cost, or nothing while unknown.
-function X.SeasonValue(cost)
+function Sources.SeasonValue(cost)
     if cost.currencyID then
         local info = Currency(cost.currencyID)
         if info then return info.name, info.quantity, info.iconFileID end
@@ -180,7 +168,7 @@ end
 local FORMAT = {}
 
 FORMAT.broker = function(binding)
-    local object = X.BrokerObject(binding)
+    local object = Sources.BrokerObject(binding)
     if not object then return binding.broker ~= "" and binding.broker or S.Text("Broker"), NO_VALUE end
     AddIcon(binding, object.icon)
     return Text(object.label) or binding.broker, Text(object.text) or Text(object.value) or NO_VALUE
@@ -228,7 +216,7 @@ FORMAT.specialization = function(binding)
 end
 
 FORMAT.audio = function(_, c)
-    local value = tonumber(C_CVar.GetCVar(X.AUDIO[c.audioChannel or 1]))
+    local value = tonumber(C_CVar.GetCVar(Sources.AUDIO[c.audioChannel or 1]))
     return S.Text("Volume"), Number(value) and math.floor(value * 100 + .5) .. "%" or NO_VALUE
 end
 
@@ -262,7 +250,7 @@ FORMAT.crests = function(binding, c)
     local pieces = binding.pieces
     for i = #pieces, 1, -1 do pieces[i] = nil end
     for _, cost in ipairs(SeasonSelection(c)) do
-        local name, quantity, icon = X.SeasonValue(cost)
+        local name, quantity, icon = Sources.SeasonValue(cost)
         if name then
             pieces[#pieces + 1] = tostring(quantity)
             binding.icons[#binding.icons + 1] = Number(icon) or 134400
@@ -280,8 +268,8 @@ FORMAT.microMenu = function()
 end
 
 -- Label and value of a bound place; its icons land in binding.icons.
-function X.Format(key)
-    local binding = X.bindings[key]
+function Sources.Format(key)
+    local binding = Sources.bindings[key]
     if not binding then return end
     local icons = binding.icons
     for i = #icons, 1, -1 do icons[i] = nil end
@@ -293,7 +281,7 @@ end
 local function Refresh(kind)
     if not owner or not owner.active then return end
     for key in pairs(owner.activeSources or {}) do
-        local binding = X.bindings[key]
+        local binding = Sources.bindings[key]
         if binding and binding.kind == kind then owner:UpdateSource(key, true) end
     end
 end
@@ -301,7 +289,7 @@ end
 local function BrokerChanged(_, name)
     if not owner or not owner.active then return end
     for key in pairs(owner.activeSources or {}) do
-        local binding = X.bindings[key]
+        local binding = Sources.bindings[key]
         if binding and binding.kind == "broker" and binding.broker == name then owner:UpdateSource(key, true) end
     end
 end
@@ -309,7 +297,7 @@ end
 local function ActiveKind(kind)
     if not owner or not owner.active then return false end
     for key in pairs(owner.activeSources or {}) do
-        local binding = X.bindings[key]
+        local binding = Sources.bindings[key]
         if binding and binding.kind == kind then return true end
     end
     return false
@@ -323,10 +311,10 @@ local function WantsCrestItems()
     return false
 end
 
-function X.Changed(_, event)
+function Sources.Changed(_, event)
     if event == "ITEM_UPGRADE_MASTER_SET_ITEM" then
         local previous = WantsCrestItems()
-        X.ObserveSeasonCosts()
+        Sources.ObserveSeasonCosts()
         -- Native metadata can first introduce/remove item stages after login.
         -- Reuse the owner's source/event reconciliation only on that transition.
         if previous ~= WantsCrestItems() and owner then owner:Rebind() end
@@ -336,20 +324,20 @@ function X.Changed(_, event)
         for kind in pairs(kinds) do Refresh(kind) end
     end
     if event == "BAG_UPDATE_DELAYED" and WantsCrestItems() then Refresh("crests") end
-    if event == "BAG_UPDATE_DELAYED" or event == "TOYS_UPDATED" then X.HearthsMayHaveChanged() end
+    if event == "BAG_UPDATE_DELAYED" or event == "TOYS_UPDATED" then Sources.HearthsMayHaveChanged() end
 end
 
-function X.WantedEvents(active, wanted)
+function Sources.WantedEvents(active, wanted)
     if WantsCrestItems() then wanted.BAG_UPDATE_DELAYED = true end
     for key in pairs(active) do
-        local binding = X.bindings[key]
+        local binding = Sources.bindings[key]
         if binding then
             for event, kinds in pairs(EVENTS) do
                 if kinds[binding.kind] then wanted[event] = true end
             end
             -- PLAYER_REGEN_DISABLED runs before lockdown: the secure button of
             -- these places is released there and offered again after combat.
-            if X.secureKinds[binding.kind] then
+            if Sources.secureKinds[binding.kind] then
                 wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
             end
         end
@@ -358,14 +346,14 @@ end
 
 -- Called only after the complete bar/slot rebuild; hidden configured slots
 -- remain bound so their visibility changes can reactivate them.
-function X.Prune(module, configured, sources)
-    for key, binding in pairs(X.bindings) do
+function Sources.Prune(module, configured, sources)
+    for key, binding in pairs(Sources.bindings) do
         if not configured[key] or binding.button.extra ~= binding or binding.button.source ~= key then
             local button = binding.button
             if button.extra == binding then button.extra = nil end
             if button.source == key then button.source = nil end
             binding.button = nil
-            X.bindings[key] = nil
+            Sources.bindings[key] = nil
             module.values[key], module.due[key] = nil, nil
             if sources then sources[key] = nil end
         end
@@ -373,7 +361,7 @@ function X.Prune(module, configured, sources)
 end
 
 local configuredSources = {}
-function X.PruneConfigured(module, sources)
+function Sources.PruneConfigured(module, sources)
     for key in pairs(configuredSources) do configuredSources[key] = nil end
     for _, bar in pairs(module.bars) do
         if module.config[bar.enabledKey] then
@@ -383,37 +371,37 @@ function X.PruneConfigured(module, sources)
             end
         end
     end
-    X.Prune(module, configuredSources, sources)
+    Sources.Prune(module, configuredSources, sources)
 end
 
 local wantedKinds = {}
-function X.Rebind(module)
+function Sources.Rebind(module)
     owner = module
     for kind in pairs(wantedKinds) do wantedKinds[kind] = nil end
     for key in pairs(module.activeSources or {}) do
-        local binding = X.bindings[key]
+        local binding = Sources.bindings[key]
         if binding then wantedKinds[binding.kind] = true end
     end
     if wantedKinds.crests then
-        if module.config.crestMode ~= 2 and not X.seasonCosts then X.ObserveSeasonCosts() end
+        if module.config.crestMode ~= 2 and not Sources.seasonCosts then Sources.ObserveSeasonCosts() end
         SeasonSelection(module.config)
     end
     local lib = Broker()
-    if wantedKinds.broker and lib and not X.brokerRegistered then
-        lib.RegisterCallback(X, "LibDataBroker_AttributeChanged", BrokerChanged)
-        lib.RegisterCallback(X, "LibDataBroker_DataObjectCreated", BrokerChanged)
-        X.brokerRegistered = true
-    elseif not wantedKinds.broker and lib and X.brokerRegistered then
-        lib.UnregisterAllCallbacks(X)
-        X.brokerRegistered = nil
+    if wantedKinds.broker and lib and not Sources.brokerRegistered then
+        lib.RegisterCallback(Sources, "LibDataBroker_AttributeChanged", BrokerChanged)
+        lib.RegisterCallback(Sources, "LibDataBroker_DataObjectCreated", BrokerChanged)
+        Sources.brokerRegistered = true
+    elseif not wantedKinds.broker and lib and Sources.brokerRegistered then
+        lib.UnregisterAllCallbacks(Sources)
+        Sources.brokerRegistered = nil
     end
     local active = module.activeSources
     if module.config.showTokenPrice and NS.Client.modernEquipment and (active.gold or active.sessionGold)
-        and not X.tokenQueried then
+        and not Sources.tokenQueried then
         -- The price arrives with TOKEN_MARKET_PRICE_UPDATED; tooltips read it then.
         if C_WowTokenPublic.GetCommerceSystemStatus() then
             C_WowTokenPublic.UpdateMarketPrice()
-            X.tokenQueried = true
+            Sources.tokenQueried = true
         end
     end
 end
@@ -453,10 +441,10 @@ end
 -- Actions.lua hands it to the secure button out of combat). In combat the
 -- overlay is hidden: only mark the choice stale; DataTexts.lua checks it
 -- again at PLAYER_REGEN_ENABLED.
-function X.PrepareHearths()
+function Sources.PrepareHearths()
     if not ActiveKind("hearth") then return end
     if NS.IsCombatLocked() then
-        X.hearthDirty = true
+        Sources.hearthDirty = true
         return
     end
     ReadHearths()
@@ -466,7 +454,7 @@ function X.PrepareHearths()
         if #choices == HEARTH_CHOICES then break end
     end
     for key in pairs(owner.activeSources or {}) do
-        local binding = X.bindings[key]
+        local binding = Sources.bindings[key]
         if binding and binding.kind == "hearth" and binding.button.extra == binding then
             local pick = owner.config.randomHearth and #choices > 1 and math.random(#choices) or 1
             binding.hearth = choices[pick]
@@ -480,13 +468,13 @@ end
 -- a random variant stays until it is used (Actions.lua OverlayPostClick) or
 -- lost, and an unrelated loot builds nothing. The overlay is hidden in
 -- combat, so a combat update only marks the choice for PLAYER_REGEN_ENABLED.
-function X.HearthsMayHaveChanged()
+function Sources.HearthsMayHaveChanged()
     if not ActiveKind("hearth") then return end
     if NS.IsCombatLocked() then
-        X.hearthDirty = true
+        Sources.hearthDirty = true
         return
     end
-    if ReadHearths() then X.PrepareHearths() end
+    if ReadHearths() then Sources.PrepareHearths() end
 end
 
 ------------------------------------------------------------------ icons
@@ -508,7 +496,7 @@ end
 -- The icons of a place left of its text. Textures change only with their
 -- file, anchors only with the icon count or padding, or after a relayout
 -- (Geometry.lua anchored the label anew).
-function X.Paint(button, relayout)
+function Sources.Paint(button, relayout)
     local binding = button.extra
     local count = binding and math.min(#binding.icons, 32) or 0
     local shown = button.iconCount or 0
@@ -549,8 +537,8 @@ function X.Paint(button, relayout)
     button.iconCount, button.iconPadding = count, padding
 end
 
-function X.Disable()
-    if broker and X.brokerRegistered then broker.UnregisterAllCallbacks(X) end
-    X.brokerRegistered = nil
+function Sources.Disable()
+    if broker and Sources.brokerRegistered then broker.UnregisterAllCallbacks(Sources) end
+    Sources.brokerRegistered = nil
     owner = nil
 end

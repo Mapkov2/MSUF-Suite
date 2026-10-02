@@ -163,7 +163,10 @@ local function ClickAway()
     ClosePanel()
 end
 local function TogglePanel(self, button)
-    if button == "RightButton" then S.MinimapButtonLayoutMenu(self); return end
+    if button == "RightButton" then
+        S.MinimapButtonLayoutMenu(self)
+        return
+    end
     if not M.active then return end
     if panel:IsShown() then
         ClosePanel()

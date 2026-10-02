@@ -18,10 +18,10 @@ P.ActionBars = AB
 -- of combat only; combat start stops every header animation (Events.lua).
 function S.VisitPartyActionBars(visitor, owner)
     if not AB.M.active or NS.IsCombatLocked() then return end
-    for index=1,10 do
-        local bar=AB.bars[index]
+    for index = 1, 10 do
+        local bar = AB.bars[index]
         if bar and bar.owned and bar.header and not NS.Safety.IsForbidden(bar.header)
-            and bar.header:IsShown() then visitor(owner,bar.header) end
+            and bar.header:IsShown() then visitor(owner, bar.header) end
     end
 end
 local M = AB.M
@@ -49,9 +49,12 @@ AB.NATIVE_BUTTONS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBotto
 -- checks it against Core/Catalog/ActionBars.lua).
 local SUFFIXES = { "Visibility", "HideGamepad", "ResumeVisibility", "Layer",
     "Alpha", "FadeAlpha", "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty",
-    "ClickThrough", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY",
+    "ClickThrough", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize",
+    "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX",
+    "CountY", "CooldownPoint", "CooldownX", "CooldownY",
     "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY",
-    "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" }
+    "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY",
+    "BackgroundX", "BackgroundY", "BackgroundBorder" }
 AB.KEYS = {}
 for i = 1, BAR_COUNT do
     local keys = {}
@@ -114,20 +117,6 @@ function AB.Count(bar, config)
         n = min(n, S.Public(forms) and type(forms) == "number" and forms or 0)
     end
     return n
-end
-
--- Menu preview description; plain values, no frames.
-function S.ActionBarPreviewInfo(index)
-    if not AB.Available(index) then return nil end
-    local config, keys = S.Config("actionbars"), AB.KEYS[index]
-    local n, size, spacing, vertical = config[keys.Buttons], config[keys.Size], config[keys.Spacing], config[keys.Vertical]
-    local columns, rows, r = AB.Grid(n, config[keys.Rows], vertical)
-    return {
-        buttons = n, rows = r, columns = columns, rowCount = rows, size = size, spacing = spacing, vertical = vertical,
-        start = config[keys.Start],
-        width = columns * size + (columns - 1) * spacing,
-        height = rows * size + (rows - 1) * spacing,
-    }
 end
 
 -- Restricted snippets. Button visibility: inside the button count, and

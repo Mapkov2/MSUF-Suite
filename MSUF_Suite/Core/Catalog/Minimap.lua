@@ -242,10 +242,10 @@ B.Section(id, "addons", "Addon buttons", {
 })
 
 -- Information texts keep their established keys and per-text styling.
-local infoFields = { {"Clock", 2, 0, -4, 120, "Show clock"}, {"FPS", 7, 4, 4, 100, "Show FPS"},
-    {"Latency", 9, -4, 4, 110, "Show latency"}, {"Coordinates", 1, 4, -4, 100, "Show coordinates"},
-    {"Durability", 3, -4, -4, 110, "Show durability"}, {"Location", 8, 0, 4, 220, "Show location"},
-    {"Weather", 11, 0, -4, 120, "Show weather"} }
+local infoFields = { { "Clock", 2, 0, -4, 120, "Show clock" }, { "FPS", 7, 4, 4, 100, "Show FPS" },
+    { "Latency", 9, -4, 4, 110, "Show latency" }, { "Coordinates", 1, 4, -4, 100, "Show coordinates" },
+    { "Durability", 3, -4, -4, 110, "Show durability" }, { "Location", 8, 0, 4, 220, "Show location" },
+    { "Weather", 11, 0, -4, 120, "Show weather" } }
 NS.MinimapInfoFields = {}
 for _, field in ipairs(infoFields) do
     local key = field[1]
@@ -267,7 +267,7 @@ for _, field in ipairs(infoFields) do
     Info(Font(prefix .. "Font", "Text font"))
     Info(Number(prefix .. "Size", "Text size", 12, 8, 32))
     Info(Choice(prefix .. "Outline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }))
-    Info(Choice(prefix .. "Rendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }))
+    Info(Choice(prefix .. "Rendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }))
     Info(Bool(prefix .. "Shadow", "Text shadow"))
     Info(Number(prefix .. "ShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5))
     Info(Choice(prefix .. "ShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }))
@@ -314,11 +314,12 @@ InfoOption("Durability", Bool("infoDurabilityStatusColors", "Use durability stat
 InfoOption("Durability", Number("infoDurabilityBad", "Low durability threshold (percent)", 20, 0, 100))
 InfoOption("Durability", Number("infoDurabilityWarning", "Medium durability threshold (percent)", 50, 0, 100))
 for _, spec in ipairs({
-    {"Good", "High durability color", "75d36f"},
-    {"Warning", "Medium durability color", "ffd166"},
-    {"Bad", "Low durability color", "ff6677"},
+    { "Good", "High durability color", "75d36f" },
+    { "Warning", "Medium durability color", "ffd166" },
+    { "Bad", "Low durability color", "ff6677" },
 }) do
-    InfoOption("Durability", Color("infoDurability" .. spec[1] .. "Color", spec[2], spec[3])).enableKey = "infoDurabilityStatusColors"
+    InfoOption("Durability", Color("infoDurability" .. spec[1] .. "Color", spec[2], spec[3])).enableKey =
+        "infoDurabilityStatusColors"
 end
 InfoOption("Location", Bool("infoLocationZone", "Show zone", true))
 InfoOption("Location", Bool("infoLocationSubzone", "Show subzone", false))
@@ -345,7 +346,7 @@ for _, rule in ipairs({
     Font("infoDifficultyFont", "Text font"),
     Number("infoDifficultySize", "Text size", 12, 8, 24),
     Choice("infoDifficultyOutline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }),
-    Choice("infoDifficultyRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Choice("infoDifficultyRendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
     Bool("infoDifficultyShadow", "Text shadow"),
     Number("infoDifficultyShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("infoDifficultyShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),

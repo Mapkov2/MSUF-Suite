@@ -15,6 +15,16 @@ local type = type
 -- The GCD's recovery category (133 on every client).
 K.GCD_CATEGORY = Constants.SpellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
 K.QUESTION_ICON = 134400
+-- The catalog's named choice values (Core/Catalog/CooldownManager.lua):
+-- bar kinds, the "Show" rule, the bar's "Text on top" and the per-spell
+-- choices.
+local CDM = NS.CDM
+K.KIND, K.VIS, K.TEXT_TOP = CDM.KIND, CDM.VIS, CDM.TEXT_TOP
+K.CHOICE, K.DESAT, K.SWIPE, K.STACK_OP, K.ACTION_GLOW = CDM.CHOICE, CDM.DESAT, CDM.SWIPE, CDM.STACK_OP, CDM.ACTION_GLOW
+local KIND, CHOICE, TEXT_TOP = K.KIND, K.CHOICE, K.TEXT_TOP
+local COOLDOWN, AURA_BAR, COUNTDOWN_ON_TOP = KIND.COOLDOWN, KIND.AURA_BAR, TEXT_TOP.COUNTDOWN
+-- The kinds drawn by the aura layer (buff icons and buff bars).
+K.AURA_KINDS = { [KIND.AURA_ICON] = true, [KIND.AURA_BAR] = true }
 -- Catalog choice "Frame layer" and the default bar texture.
 K.STRATA = { "BACKGROUND", "LOW", "MEDIUM", "HIGH" }
 K.BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
@@ -70,27 +80,26 @@ function K.Pick(ov, view, field)
     if value == nil then value = view[field] end
     return value == true
 end
--- Per-spell text choices (timeText, stackText, textTop): 2 yes, 3 no,
--- anything else the bar's answer.
+-- Per-spell text choices (timeText, stackText, textTop): CHOICE.YES,
+-- CHOICE.NO, anything else the bar's answer. Every aura sync asks once per
+-- button and text, so it is one table lookup.
+local CHOSEN = { [CHOICE.YES] = true, [CHOICE.NO] = false }
 function K.Choice(value, bar)
-    if value == 2 then
-        return true
-    elseif value == 3 then
-        return false
-    end
+    local chosen = CHOSEN[value]
+    if chosen ~= nil then return chosen end
     return bar == true
 end
 -- The bar's countdown switch; timer bars also follow "Show time".
 function K.BarTime(view)
-    return view.cdText ~= false and (view.kind ~= 3 and not view.cooldownDuration or view.barTime ~= false)
+    return view.cdText ~= false and (view.kind ~= AURA_BAR and not view.cooldownDuration or view.barTime ~= false)
 end
 -- The bar's charge and stack switch; counts on cooldown icons also follow
 -- the cooldown bar's "Show charges".
 function K.BarStacks(view, counts)
     return view.stackText ~= false and not (counts and view.charges == false)
 end
--- Text on top: 1 stacks (true), 2 countdown.
-function K.BarStacksTop(view) return view.textTop ~= 2 end
+-- Text on top: stacks (true) unless the bar chose the countdown.
+function K.BarStacksTop(view) return view.textTop ~= COUNTDOWN_ON_TOP end
 
 ------------------------------------------------------------------ tints
 -- Usable/range codes: 1 usable, 2 not enough power, 3 unusable,
@@ -243,7 +252,7 @@ function K.Pixels(count) return count * K.Px() end
 
 -- Icon footprint in UI units, snapped to whole physical pixels.
 function K.IconSize(view)
-    if view.kind == 1 and view.cooldownDuration then
+    if view.kind == COOLDOWN and view.cooldownDuration then
         return K.Snap(view.barWidth or 200), K.Snap(view.barHeight or 18)
     end
     local px = K.Px()

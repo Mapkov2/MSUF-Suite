@@ -194,12 +194,14 @@ end
 
 -- Text effects are shared by Suite-owned FontStrings. Slug renders its own
 -- crisp edge; WoW does not combine it with thick outlines or drop shadows.
+-- rendering is a "Font rendering" choice (NS.FontRendering).
+local RENDERING = Suite.FontRendering
 function S.FontFlags(outline, rendering)
     outline = outline or ""
-    if rendering == 3 then
+    if rendering == RENDERING.SLUG then
         return outline == "" and "SLUG" or "OUTLINE,SLUG"
     end
-    if rendering == 2 and not outline:find("MONOCHROME", 1, true) then
+    if rendering == RENDERING.SHARP and not outline:find("MONOCHROME", 1, true) then
         return outline == "" and "MONOCHROME" or outline .. ",MONOCHROME"
     end
     return outline
@@ -209,7 +211,7 @@ function S.SetStyledFont(fontString, path, size, outline, rendering, shadow, opa
     local flags = S.SetFont(fontString, path, size, S.FontFlags(outline, rendering))
     local applyScaleMode = _G.MSUF_ApplyFontScaleAnimationMode
     if type(applyScaleMode) == "function" then applyScaleMode(fontString, flags) end
-    local showShadow = shadow == true and rendering ~= 3
+    local showShadow = shadow == true and rendering ~= RENDERING.SLUG
     fontString:SetShadowColor(0, 0, 0, showShadow and (opacity or 100) / 100 or 0)
     if showShadow then
         local offset = distance or 1

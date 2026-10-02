@@ -21,19 +21,26 @@ local SLOTS = NS.CDM.SLOTS
 local Public = S.Public
 local tremove = table.remove
 local ATTR = "msufvis"
+-- The "Show" choice: Always, In combat, In combat or with a target, Hidden.
+local VIS = C.Const.VIS
+local VIS_HIDDEN = VIS.HIDDEN
 -- Bindings without a driver.
 local EVENTS, HIDDEN = "events", "hide"
 Visibility.EVENTS, Visibility.HIDDEN = EVENTS, HIDDEN
 
 -- Driver strings per (vis, hideMounted, hideVehicle), built once.
-local BODY = { "show", "[combat] show; hide", "[combat][@target,exists] show; hide" }
+local BODY = {
+    [VIS.ALWAYS] = "show",
+    [VIS.COMBAT] = "[combat] show; hide",
+    [VIS.COMBAT_OR_TARGET] = "[combat][@target,exists] show; hide",
+}
 local EXPR = {}
-for vis = 1, 4 do
+for _, vis in ipairs({ VIS.ALWAYS, VIS.COMBAT, VIS.COMBAT_OR_TARGET, VIS.HIDDEN }) do
     EXPR[vis] = {}
     for mounted = 0, 1 do
         EXPR[vis][mounted] = {}
         for vehicle = 0, 1 do
-            EXPR[vis][mounted][vehicle] = vis == 4 and "hide" or "[petbattle] hide; "
+            EXPR[vis][mounted][vehicle] = vis == VIS.HIDDEN and "hide" or "[petbattle] hide; "
                 .. (vehicle == 1 and "[vehicleui][overridebar] hide; " or "")
                 .. (mounted == 1 and "[mounted] hide; " or "") .. BODY[vis]
         end
@@ -41,15 +48,15 @@ for vis = 1, 4 do
 end
 function Visibility.Expression(view)
     local vis = view.vis
-    if vis ~= 2 and vis ~= 3 and vis ~= 4 then vis = 1 end
+    if vis ~= VIS.COMBAT and vis ~= VIS.COMBAT_OR_TARGET and vis ~= VIS.HIDDEN then vis = VIS.ALWAYS end
     return EXPR[vis][view.hideMounted and 1 or 0][view.hideVehicle and 1 or 0]
 end
 
 -- What a bar's rule binds to: EVENTS, HIDDEN or a driver expression.
 function Visibility.Binding(view)
     local vis = view.vis
-    if vis == 4 then return HIDDEN end
-    if vis ~= 2 and vis ~= 3 and not view.hideMounted then return EVENTS end
+    if vis == VIS.HIDDEN then return HIDDEN end
+    if vis ~= VIS.COMBAT and vis ~= VIS.COMBAT_OR_TARGET and not view.hideMounted then return EVENTS end
     return Visibility.Expression(view)
 end
 local function Driven(bind) return bind ~= nil and bind ~= EVENTS and bind ~= HIDDEN end
@@ -77,7 +84,7 @@ local function Paint(slot)
     else
         local value = Visibility.state[slot]
         if value == nil then
-            hidden = view.vis == 4
+            hidden = view.vis == VIS_HIDDEN
         else
             hidden = value == "hide"
         end

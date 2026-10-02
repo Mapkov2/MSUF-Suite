@@ -6,11 +6,11 @@ local VIEW, POOR = NS.BagsView, Enum.ItemQuality.Poor
 local ALL, PINNED = { label = "All items", translate = true }, { label = "Pinned items", translate = true }
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
-local V = { index = Index.New(), model = Model.New(), buttons = {}, labels = {}, scroll = 0, view = {},
+local InventoryView = { index = Index.New(), model = Model.New(), buttons = {}, labels = {}, scroll = 0, view = {},
     context = {}, layout = "native" }
-V.nativeCountFonts = setmetatable({}, { __mode = "k" })
-V.visibleButtons, V.slotState = {}, setmetatable({}, { __mode = "k" })
-P.InventoryView = V
+InventoryView.nativeCountFonts = setmetatable({}, { __mode = "k" })
+InventoryView.visibleButtons, InventoryView.slotState = {}, setmetatable({}, { __mode = "k" })
+P.InventoryView = InventoryView
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 -- Cell size, the space above the first Suite row, the footer above the money
 -- row, and the top margin of the combat layout (below the window header).
@@ -28,7 +28,7 @@ local EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO
 local function State()
     local state = S.ModuleState("bags")
     if not state then return nil end
-    return Index.State(state, V.view)
+    return Index.State(state, InventoryView.view)
 end
 
 local function TransactionOpen()
@@ -41,8 +41,8 @@ end
 
 -- Pages exist in the Suite grid only; in combat every slot is already shown.
 local function MoveScroll(delta)
-    if V.layout ~= "suite" or NS.IsCombatLocked() then return end
-    V.scroll = max(0, min(V.maxScroll or 0, V.scroll + delta))
+    if InventoryView.layout ~= "suite" or NS.IsCombatLocked() then return end
+    InventoryView.scroll = max(0, min(InventoryView.maxScroll or 0, InventoryView.scroll + delta))
     Render()
 end
 
@@ -52,7 +52,7 @@ local function SelectCategory(button, mouseButton)
         else P.InventoryEditor.Show() end
         return
     end
-    V.selected, V.scroll = button.categoryKey, 0
+    InventoryView.selected, InventoryView.scroll = button.categoryKey, 0
     Request()
 end
 
@@ -65,7 +65,7 @@ local function DropCategory(button)
     if button.categoryKey == "pinned" then
         state.pinned[itemID] = true
     else
-        local number = V.model.customIndex[button.categoryKey]
+        local number = InventoryView.model.customIndex[button.categoryKey]
         local categories = Model.DecodeCategories(M.config.customCategories)
         local category = number and categories[number]
         if not category then return end
@@ -103,15 +103,15 @@ local function CategoryEnter(button)
 end
 
 local function CategoryButton(key, group, count, order)
-    local button = V.buttons[order]
+    local button = InventoryView.buttons[order]
     if not button then
-        button = Button(V.sidebarChild, "", 140, SelectCategory)
+        button = Button(InventoryView.sidebarChild, "", 140, SelectCategory)
         button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         button:RegisterForDrag("LeftButton")
         button:SetScript("OnReceiveDrag", DropCategory)
         button:SetScript("OnEnter", CategoryEnter)
         button:SetScript("OnLeave", GameTooltip_Hide)
-        V.buttons[order] = button
+        InventoryView.buttons[order] = button
     end
     button.categoryKey = key
     local label = Grid.GroupLabel(group)
@@ -123,14 +123,14 @@ local function CategoryButton(key, group, count, order)
 end
 
 local function ViewSelected(button)
-    V.scroll, V.selected = 0, "all"
-    V.shuffle = false
+    InventoryView.scroll, InventoryView.selected = 0, "all"
+    InventoryView.shuffle = false
     S.Set("bags", "inventoryView", button.view)
 end
 
 local function ShuffleItems()
     if NS.IsCombatLocked() then return end
-    V.shuffle, V.shufflePending = true, true
+    InventoryView.shuffle, InventoryView.shufflePending = true, true
     Request()
 end
 
@@ -151,109 +151,109 @@ end
 -- currencies are shown (ContainerFrameTokenWatcherMixin:UpdateCurrencyFrames).
 local function MakeFooter(frame)
     local money = frame.MoneyFrame
-    V.previous = Button(V.chrome, "Previous", 72, function() MoveScroll(-V.visibleRows) end)
-    V.next = Button(V.chrome, "Next", 72, function() MoveScroll(V.visibleRows) end)
-    V.previous:SetPoint("BOTTOMLEFT", money, "TOPLEFT", 4, 13)
-    V.next:SetPoint("LEFT", V.previous, "RIGHT", 6, 0)
-    V.position = Font(V.chrome, 11)
-    V.position:SetPoint("LEFT", V.next, "RIGHT", 8, 0)
-    V.manage = Button(V.chrome, "Edit categories", 108, EditCategories)
-    V.manage:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, 13)
-    V.shuffleButton = Button(V.chrome, "", 24, ShuffleItems)
-    V.shuffleButton:SetPoint("RIGHT", V.manage, "LEFT", -5, 0)
-    V.shuffleButton:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Dice-Up")
-    V.shuffleButton:SetScript("OnEnter", ShuffleEnter)
-    V.shuffleButton:SetScript("OnLeave", GameTooltip_Hide)
+    InventoryView.previous = Button(InventoryView.chrome, "Previous", 72, function() MoveScroll(-InventoryView.visibleRows) end)
+    InventoryView.next = Button(InventoryView.chrome, "Next", 72, function() MoveScroll(InventoryView.visibleRows) end)
+    InventoryView.previous:SetPoint("BOTTOMLEFT", money, "TOPLEFT", 4, 13)
+    InventoryView.next:SetPoint("LEFT", InventoryView.previous, "RIGHT", 6, 0)
+    InventoryView.position = Font(InventoryView.chrome, 11)
+    InventoryView.position:SetPoint("LEFT", InventoryView.next, "RIGHT", 8, 0)
+    InventoryView.manage = Button(InventoryView.chrome, "Edit categories", 108, EditCategories)
+    InventoryView.manage:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, 13)
+    InventoryView.shuffleButton = Button(InventoryView.chrome, "", 24, ShuffleItems)
+    InventoryView.shuffleButton:SetPoint("RIGHT", InventoryView.manage, "LEFT", -5, 0)
+    InventoryView.shuffleButton:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Dice-Up")
+    InventoryView.shuffleButton:SetScript("OnEnter", ShuffleEnter)
+    InventoryView.shuffleButton:SetScript("OnLeave", GameTooltip_Hide)
 end
 
 local function MakeControls()
-    local frame = V.frame
-    V.chrome = S.CreateFrame("Frame", nil, frame)
-    V.chrome:SetAllPoints(frame)
-    V.chrome:SetFrameLevel(frame:GetFrameLevel() + 15)
+    local frame = InventoryView.frame
+    InventoryView.chrome = S.CreateFrame("Frame", nil, frame)
+    InventoryView.chrome:SetAllPoints(frame)
+    InventoryView.chrome:SetFrameLevel(frame:GetFrameLevel() + 15)
     -- The Suite views: the first three inventoryView choices.
     local titles = { [VIEW.ALL] = "All items", [VIEW.BY_BAG] = "By bag", [VIEW.CATEGORIES] = "Categories" }
     for view = VIEW.ALL, VIEW.CATEGORIES do
-        local button = Button(V.chrome, titles[view], 100, ViewSelected)
+        local button = Button(InventoryView.chrome, titles[view], 100, ViewSelected)
         button.view = view
         button:SetPoint("TOPLEFT", 12 + (view - 1) * 104, -62)
     end
     MakeFooter(frame)
-    V.sidebar = S.CreateFrame("ScrollFrame", nil, V.chrome, "UIPanelScrollFrameTemplate")
-    V.sidebar:SetPoint("TOPLEFT", 12, -TOP)
-    V.sidebar:SetPoint("BOTTOMLEFT", V.previous, "TOPLEFT", -4, 8)
-    V.sidebar:SetWidth(142)
-    V.sidebarChild = S.CreateFrame("Frame", nil, V.sidebar)
-    V.sidebarChild:SetSize(140, 30)
-    V.sidebar:SetScrollChild(V.sidebarChild)
-    V.clearRecent = Button(V.chrome, "Clear recent items", 136, function()
+    InventoryView.sidebar = S.CreateFrame("ScrollFrame", nil, InventoryView.chrome, "UIPanelScrollFrameTemplate")
+    InventoryView.sidebar:SetPoint("TOPLEFT", 12, -TOP)
+    InventoryView.sidebar:SetPoint("BOTTOMLEFT", InventoryView.previous, "TOPLEFT", -4, 8)
+    InventoryView.sidebar:SetWidth(142)
+    InventoryView.sidebarChild = S.CreateFrame("Frame", nil, InventoryView.sidebar)
+    InventoryView.sidebarChild:SetSize(140, 30)
+    InventoryView.sidebar:SetScrollChild(InventoryView.sidebarChild)
+    InventoryView.clearRecent = Button(InventoryView.chrome, "Clear recent items", 136, function()
         Index.ClearRecent(Index.Recent())
         Request()
     end)
-    V.clearRecent:SetPoint("TOPRIGHT", -12, -62)
-    V.nativeMouseWheel = frame:IsMouseWheelEnabled()
+    InventoryView.clearRecent:SetPoint("TOPRIGHT", -12, -62)
+    InventoryView.nativeMouseWheel = frame:IsMouseWheelEnabled()
     frame:EnableMouseWheel(true)
     frame:HookScript("OnMouseWheel", function(_, delta)
-        if V.active then MoveScroll(-delta * 3) end
+        if InventoryView.active then MoveScroll(-delta * 3) end
     end)
 end
 
 local function RenderSidebar()
-    for i = 1, #V.buttons do V.buttons[i]:Hide() end
+    for i = 1, #InventoryView.buttons do InventoryView.buttons[i]:Hide() end
     local n = 1
     CategoryButton("all", ALL, nil, n)
     local state = State()
-    if M.config.showPinned and not V.model.groupsByKey.pinned then
+    if M.config.showPinned and not InventoryView.model.groupsByKey.pinned then
         n = n + 1
         CategoryButton("pinned", PINNED, 0, n)
     end
-    for i = 1, #V.model.groups do
-        local group = V.model.groups[i]
+    for i = 1, #InventoryView.model.groups do
+        local group = InventoryView.model.groups[i]
         if group.key ~= "all" then
             n = n + 1
             CategoryButton(group.key, group, #group.rows, n)
         end
     end
-    V.sidebarChild:SetHeight(n * 25)
-    V.clearRecent:SetShown(M.config.showRecent and state ~= nil)
+    InventoryView.sidebarChild:SetHeight(n * 25)
+    InventoryView.clearRecent:SetShown(M.config.showRecent and state ~= nil)
 end
 
 -- The Suite footer line of Finance.lua follows the chrome.
 -- Finance.lua reads its currencies when its line changes visibility only.
 local function ShowChrome(shown)
-    if V.chrome then V.chrome:SetShown(shown) end
-    if V.chromeShown == shown then return end
-    V.chromeShown = shown
+    if InventoryView.chrome then InventoryView.chrome:SetShown(shown) end
+    if InventoryView.chromeShown == shown then return end
+    InventoryView.chromeShown = shown
     P.BagFinance.Refresh()
 end
 
-function V.SuiteLayout()
-    return V.active == true and V.layout == "suite"
+function InventoryView.SuiteLayout()
+    return InventoryView.active == true and InventoryView.layout == "suite"
 end
 
 -- The combat layout left room for the Finance.lua footer line.
-function V.CombatLine()
-    return V.active == true and V.layout == "combat" and V.combatLine == true
+function InventoryView.CombatLine()
+    return InventoryView.active == true and InventoryView.layout == "combat" and InventoryView.combatLine == true
 end
 
 -- Hiding the item button that owns Blizzard's stack split window would run
 -- its OnHide (StackSplitFrame:Hide()) from Suite code: the Suite grid waits
 -- until the split window closes. The combat layout hides no button.
 local function SplitOwnerShown()
-    return StackSplitFrame:IsShown() and V.visibleButtons[StackSplitFrame.owner] == true
+    return StackSplitFrame:IsShown() and InventoryView.visibleButtons[StackSplitFrame.owner] == true
 end
 
 local function SplitClosed()
-    if not V.splitPending then return end
-    V.splitPending = false
+    if not InventoryView.splitPending then return end
+    InventoryView.splitPending = false
     Request()
 end
 
 -- Item tooltip post-calls survive Blizzard's 0.2 s tooltip rebuild
 -- (see InventoryDetails.lua).
 local function StackTooltip(tooltip)
-    if not V.SuiteLayout() or tooltip ~= GameTooltip then return end
-    local slot = V.slotState[tooltip:GetOwner()]
+    if not InventoryView.SuiteLayout() or tooltip ~= GameTooltip then return end
+    local slot = InventoryView.slotState[tooltip:GetOwner()]
     local row = slot and slot.row
     if not row or row.stacks < 2 then return end
     tooltip:AddLine(string.format(S.Text("Combined: %d items in %d stacks"), row.count, row.stacks), 0.8, 0.8, 0.8)
@@ -263,17 +263,17 @@ end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, StackTooltip)
 
 local function PlaceSlot(button, x, y, row)
-    local slot = V.slotState[button]
+    local slot = InventoryView.slotState[button]
     if not slot then
         slot = {}
-        V.slotState[button] = slot
+        InventoryView.slotState[button] = slot
     end
-    if V.positionsDirty or slot.x ~= x or slot.y ~= y then
+    if InventoryView.positionsDirty or slot.x ~= x or slot.y ~= y then
         button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", V.frame, "TOPLEFT", x, y)
+        button:SetPoint("TOPLEFT", InventoryView.frame, "TOPLEFT", x, y)
         slot.x, slot.y = x, y
     end
-    slot.row, V.visibleButtons[button] = row, true
+    slot.row, InventoryView.visibleButtons[button] = row, true
     if not button:IsShown() then button:Show() end
 end
 
@@ -283,10 +283,10 @@ end
 local function SetCount(button, count, path)
     local text = button.Count
     if not text then return end
-    local saved = V.nativeCountFonts[text]
+    local saved = InventoryView.nativeCountFonts[text]
     if not saved then
         saved = { text:GetFont() }
-        V.nativeCountFonts[text] = saved
+        InventoryView.nativeCountFonts[text] = saved
     end
     if saved.path ~= path or saved.size ~= M.config.itemCountSize then
         S.SetFont(text, path, M.config.itemCountSize, "OUTLINE")
@@ -315,9 +315,9 @@ local function PaintCell(cell, top, sidebar, columns, font)
     if row then
         PaintSlot(row.item, sidebar + cell.column * CELL, y, row, row.count, font)
     else
-        V.labelCount = V.labelCount + 1
-        Grid.PaintHeader(V.labels, V.labelCount, V.chrome, V.frame, sidebar + cell.column * CELL, y - 10,
-            (cell.width or columns) * CELL - 5, group)
+        InventoryView.labelCount = InventoryView.labelCount + 1
+        Grid.PaintHeader(InventoryView.labels, InventoryView.labelCount, InventoryView.chrome, InventoryView.frame,
+            sidebar + cell.column * CELL, y - 10, (cell.width or columns) * CELL - 5, group)
     end
 end
 
@@ -326,7 +326,7 @@ end
 -- window's own units. The window grows upward from Blizzard's anchor
 -- (CONTAINER_OFFSET_Y above the screen bottom) or from its custom position.
 local function Available()
-    local frame = V.frame
+    local frame = InventoryView.frame
     local bottom, top = frame:GetBottom(), UIParent:GetTop()
     local scale, parentScale = frame:GetEffectiveScale(), UIParent:GetEffectiveScale()
     if S.Finite(bottom) and S.Finite(top) and S.Finite(scale) and S.Finite(parentScale) and scale > 0 then
@@ -338,7 +338,7 @@ end
 -- Height of Blizzard's money row above the window bottom, tracked currency
 -- rows included.
 local function MoneyTop()
-    local top, bottom = V.frame.MoneyFrame:GetTop(), V.frame:GetBottom()
+    local top, bottom = InventoryView.frame.MoneyFrame:GetTop(), InventoryView.frame:GetBottom()
     if S.Finite(top) and S.Finite(bottom) and top > bottom then return top - bottom end
     return 24
 end
@@ -346,24 +346,24 @@ end
 -- Blizzard scaled its bags for its own window size: lay them out again for
 -- the Suite size (Bags.lua reapplies the Suite scale and position after it).
 local function SetWindowSize(width, height)
-    local frame = V.frame
+    local frame = InventoryView.frame
     if frame:GetWidth() == width and frame:GetHeight() == height then return end
     frame:SetSize(width, height)
     M:RefreshWindowLayout()
 end
 
 local function ClearVisible()
-    for button in pairs(V.visibleButtons) do V.visibleButtons[button] = nil end
-    for i = 1, #V.labels do V.labels[i]:Hide() end
-    V.labelCount = 0
+    for button in pairs(InventoryView.visibleButtons) do InventoryView.visibleButtons[button] = nil end
+    for i = 1, #InventoryView.labels do InventoryView.labels[i]:Hide() end
+    InventoryView.labelCount = 0
 end
 
 local function HideUnplaced()
-    for i = 1, #V.index.items do
-        local button = V.index.items[i].button
-        if not V.visibleButtons[button] and button:IsShown() then button:Hide() end
+    for i = 1, #InventoryView.index.items do
+        local button = InventoryView.index.items[i].button
+        if not InventoryView.visibleButtons[button] and button:IsShown() then button:Hide() end
     end
-    V.positionsDirty = false
+    InventoryView.positionsDirty = false
 end
 
 local function RenderSuite()
@@ -371,28 +371,28 @@ local function RenderSuite()
     local columns = c.inventoryColumns
     local categories = c.inventoryView == VIEW.CATEGORIES
     local sidebar = categories and 178 or 12
-    local layout = Model.Layout(V.model, columns, c.compactGroups)
+    local layout = Model.Layout(InventoryView.model, columns, c.compactGroups)
     local bottom = MoneyTop() + FOOTER
     local visibleRows = max(2, min(c.inventoryRows, floor((Available() - TOP - bottom) / CELL)))
-    if c.autoSizeWindow then visibleRows = max(2, min(visibleRows, V.model.lineCount)) end
-    V.visibleRows, V.maxScroll = visibleRows, max(0, V.model.lineCount - visibleRows)
-    V.scroll = min(V.scroll, V.maxScroll)
+    if c.autoSizeWindow then visibleRows = max(2, min(visibleRows, InventoryView.model.lineCount)) end
+    InventoryView.visibleRows, InventoryView.maxScroll = visibleRows, max(0, InventoryView.model.lineCount - visibleRows)
+    InventoryView.scroll = min(InventoryView.scroll, InventoryView.maxScroll)
     ClearVisible()
     local font = Grid.FontPath()
     for i = 1, #layout do
         local cell = layout[i]
-        if cell.line >= V.scroll and cell.line < V.scroll + visibleRows then
-            PaintCell(cell, V.scroll, sidebar, columns, font)
+        if cell.line >= InventoryView.scroll and cell.line < InventoryView.scroll + visibleRows then
+            PaintCell(cell, InventoryView.scroll, sidebar, columns, font)
         end
     end
     HideUnplaced()
-    V.layout = "suite"
+    InventoryView.layout = "suite"
     ShowChrome(true)
-    V.sidebar:SetShown(categories)
-    V.shuffleButton:SetShown(c.inventoryView == VIEW.ALL)
-    V.previous:SetEnabled(V.scroll > 0)
-    V.next:SetEnabled(V.scroll < V.maxScroll)
-    Grid.PositionText(V.position, V.scroll, visibleRows, V.model.lineCount)
+    InventoryView.sidebar:SetShown(categories)
+    InventoryView.shuffleButton:SetShown(c.inventoryView == VIEW.ALL)
+    InventoryView.previous:SetEnabled(InventoryView.scroll > 0)
+    InventoryView.next:SetEnabled(InventoryView.scroll < InventoryView.maxScroll)
+    Grid.PositionText(InventoryView.position, InventoryView.scroll, visibleRows, InventoryView.model.lineCount)
     SetWindowSize(max(500, sidebar + columns * CELL + 12), visibleRows * CELL + TOP + bottom)
 end
 
@@ -402,10 +402,10 @@ end
 -- last moment before combat lockdown, so nothing is out of reach while the
 -- layout cannot change.
 local function RenderCombat()
-    local items = V.index.items
+    local items = InventoryView.index.items
     local total = #items
     local line = P.BagFinance.HasLine() and P.BagFinance.LINE or 0
-    V.combatLine = line > 0
+    InventoryView.combatLine = line > 0
     local fit = max(1, floor((Available() - COMBAT_TOP - MoneyTop() - 6 - line) / CELL))
     local columns = max(M.config.inventoryColumns, ceil(total / fit))
     ClearVisible()
@@ -416,7 +416,7 @@ local function RenderCombat()
             item.count or 0, font)
     end
     HideUnplaced()
-    V.layout = "combat"
+    InventoryView.layout = "combat"
     ShowChrome(false)
     P.BagFinance.Refresh()
     SetWindowSize(max(300, columns * CELL + 24),
@@ -424,51 +424,51 @@ local function RenderCombat()
 end
 
 Render = function()
-    if not V.active or not V.frame:IsShown() or NS.IsCombatLocked() or V.layout ~= "suite" then return end
+    if not InventoryView.active or not InventoryView.frame:IsShown() or NS.IsCombatLocked() or InventoryView.layout ~= "suite" then return end
     if SplitOwnerShown() then
-        V.splitPending = true
+        InventoryView.splitPending = true
         return
     end
     RenderSuite()
 end
 
 local function BuildModel(state)
-    for i = 1, #V.index.items do
-        local item = V.index.items[i]
-        if V.shuffle and (V.shufflePending or not item.shuffle) then item.shuffle = math.random() end
-        if not V.shuffle then item.shuffle = nil end
+    for i = 1, #InventoryView.index.items do
+        local item = InventoryView.index.items[i]
+        if InventoryView.shuffle and (InventoryView.shufflePending or not item.shuffle) then item.shuffle = math.random() end
+        if not InventoryView.shuffle then item.shuffle = nil end
     end
-    V.shufflePending = false
-    V.context.transactions, V.context.shuffle = TransactionOpen(), V.shuffle
+    InventoryView.shufflePending = false
+    InventoryView.context.transactions, InventoryView.context.shuffle = TransactionOpen(), InventoryView.shuffle
     -- Blizzard's search only dims matching buttons; matches on later pages
     -- would stay unseen, so the Suite grid lists the matches alone.
-    V.context.searching = V.index.filtered > 0
-    V.selected = Grid.Build(Model, V.model, V.index.items, M.config, state, V.context, V.selected)
+    InventoryView.context.searching = InventoryView.index.filtered > 0
+    InventoryView.selected = Grid.Build(Model, InventoryView.model, InventoryView.index.items, M.config, state, InventoryView.context, InventoryView.selected)
 end
 
 -- event is the client event that asked for this pass, if any.
 Flush = function(event)
-    V.queued = false
-    if not V.active or not M.active or not V.frame:IsShown() then return end
+    InventoryView.queued = false
+    if not InventoryView.active or not M.active or not InventoryView.frame:IsShown() then return end
     if NS.IsCombatLocked() then
         -- A bag opened in combat shows Blizzard's own grid; the Suite controls
         -- must not cover its rows. Everything else waits for the combat end.
-        if V.layout ~= "combat" then
-            V.layout = "native"
+        if InventoryView.layout ~= "combat" then
+            InventoryView.layout = "native"
             ShowChrome(false)
         end
         return
     end
     local state = State()
     if not state then return end
-    Index.ReadContainer(V.index, V.frame, Index.Recent())
-    P.InventoryDetails.Index(V.index)
+    Index.ReadContainer(InventoryView.index, InventoryView.frame, Index.Recent())
+    P.InventoryDetails.Index(InventoryView.index)
     if NS.InCombat(event) then
         RenderCombat()
         return
     end
     if SplitOwnerShown() then
-        V.splitPending = true
+        InventoryView.splitPending = true
         return
     end
     BuildModel(state)
@@ -477,16 +477,16 @@ Flush = function(event)
 end
 
 Request = function()
-    if not V.active or V.queued or not V.frame:IsShown() then return end
-    V.queued = true
+    if not InventoryView.active or InventoryView.queued or not InventoryView.frame:IsShown() then return end
+    InventoryView.queued = true
     C_Timer.After(0, Flush)
 end
-V.Request = Request
+InventoryView.Request = Request
 
 local RestoreLayout
 local function OnEvent(_, event, value, success)
-    if not V.active then
-        if V.restorePending and event == "PLAYER_REGEN_ENABLED" then RestoreLayout() end
+    if not InventoryView.active then
+        if InventoryView.restorePending and event == "PLAYER_REGEN_ENABLED" then RestoreLayout() end
         return
     end
     if event == "PLAYER_REGEN_DISABLED" then
@@ -494,77 +494,77 @@ local function OnEvent(_, event, value, success)
         Flush(event)
         return
     end
-    if event == "PLAYER_REGEN_ENABLED" then V.positionsDirty = true end
+    if event == "PLAYER_REGEN_ENABLED" then InventoryView.positionsDirty = true end
     if event == "BAG_UPDATE_DELAYED" or event == "EQUIPMENT_SETS_CHANGED" or event == "PLAYER_EQUIPMENT_CHANGED" then
         P.InventoryDetails.Invalidate()
     end
     if event == "GET_ITEM_INFO_RECEIVED" then
         -- Arriving item data patches the waiting records; no slot is read again.
-        if not Index.ItemDataReceived(V.index, value, success) then return end
-        Index.Refresh(V.index, value)
+        if not Index.ItemDataReceived(InventoryView.index, value, success) then return end
+        Index.Refresh(InventoryView.index, value)
     end
-    if event == "INVENTORY_SEARCH_UPDATE" then V.scroll = 0 end
+    if event == "INVENTORY_SEARCH_UPDATE" then InventoryView.scroll = 0 end
     Request()
 end
 
 -- Blizzard re-acquires and re-anchors its item buttons; slot order is read again.
 local function NativeLayoutChanged()
-    V.positionsDirty = true
-    Index.Invalidate(V.index)
+    InventoryView.positionsDirty = true
+    Index.Invalidate(InventoryView.index)
     Request()
 end
 
 local function WindowShown()
-    Index.Invalidate(V.index)
-    Index.Retry(V.index)
+    Index.Invalidate(InventoryView.index)
+    Index.Retry(InventoryView.index)
     Request()
 end
 
 -- Blizzard lays the bag out again when it opens; until the Suite's own pass
 -- (or during combat) its grid is what shows.
 local function WindowHidden()
-    if not V.active then return end
-    V.layout = "native"
+    if not InventoryView.active then return end
+    InventoryView.layout = "native"
     ShowChrome(false)
 end
 
-function V.Refresh()
+function InventoryView.Refresh()
     if not M.active or NS.IsCombatLocked() then return end
-    V.frame = M.frame
+    InventoryView.frame = M.frame
     -- Blizzard grid: Blizzard's own layout, with the Suite window style and
     -- item levels of Bags.lua.
     if M.config.inventoryView == VIEW.BLIZZARD_GRID then
-        if V.active then V.Release() end
+        if InventoryView.active then InventoryView.Release() end
         return
     end
-    if not V.chrome then MakeControls() end
+    if not InventoryView.chrome then MakeControls() end
     Grid.RefreshFonts()
-    V.frame:EnableMouseWheel(true)
-    V.active = true
-    if not V.events then
-        V.events = S.CreateFrame("Frame")
-        V.events:SetScript("OnEvent", OnEvent)
+    InventoryView.frame:EnableMouseWheel(true)
+    InventoryView.active = true
+    if not InventoryView.events then
+        InventoryView.events = S.CreateFrame("Frame")
+        InventoryView.events:SetScript("OnEvent", OnEvent)
     end
     for i = 1, #EVENTS do
-        if NS.Client.SupportsEvent(EVENTS[i]) then V.events:RegisterEvent(EVENTS[i]) end
+        if NS.Client.SupportsEvent(EVENTS[i]) then InventoryView.events:RegisterEvent(EVENTS[i]) end
     end
-    if not V.hooked then
-        hooksecurefunc(V.frame, "UpdateItems", Request)
-        hooksecurefunc(V.frame, "UpdateItemLayout", NativeLayoutChanged)
-        hooksecurefunc(V.frame, "UpdateFrameSize", Request)
-        V.frame:HookScript("OnShow", WindowShown)
-        V.frame:HookScript("OnHide", WindowHidden)
+    if not InventoryView.hooked then
+        hooksecurefunc(InventoryView.frame, "UpdateItems", Request)
+        hooksecurefunc(InventoryView.frame, "UpdateItemLayout", NativeLayoutChanged)
+        hooksecurefunc(InventoryView.frame, "UpdateFrameSize", Request)
+        InventoryView.frame:HookScript("OnShow", WindowShown)
+        InventoryView.frame:HookScript("OnHide", WindowHidden)
         StackSplitFrame:HookScript("OnHide", SplitClosed)
-        V.hooked = true
+        InventoryView.hooked = true
     end
     Request()
 end
 
 -- Blizzard's own layout of the combined bag, from the native methods.
 RestoreLayout = function()
-    V.restorePending = false
-    if not V.active then V.events:UnregisterAllEvents() end
-    local frame = V.frame
+    InventoryView.restorePending = false
+    if not InventoryView.active then InventoryView.events:UnregisterAllEvents() end
+    local frame = InventoryView.frame
     frame:UpdateItems()
     for _, button in frame:EnumerateValidItems() do button:Show() end
     frame:UpdateItemLayout()
@@ -575,28 +575,28 @@ end
 -- Hands the combined bag back to Blizzard. Count fonts and the mouse wheel
 -- return at once (neither is protected); the layout follows when combat ends,
 -- also after a module error stopped the view in combat.
-function V.Release()
-    V.active, V.layout, V.positionsDirty, V.splitPending = false, "native", true, false
-    Index.Reset(V.index)
-    if V.events then V.events:UnregisterAllEvents() end
+function InventoryView.Release()
+    InventoryView.active, InventoryView.layout, InventoryView.positionsDirty, InventoryView.splitPending = false, "native", true, false
+    Index.Reset(InventoryView.index)
+    if InventoryView.events then InventoryView.events:UnregisterAllEvents() end
     ShowChrome(false)
     P.InventoryEditor.Hide()
     P.InventoryDetails.Hide()
-    local frame = V.frame
-    if not frame or not V.chrome then return end
-    frame:EnableMouseWheel(V.nativeMouseWheel)
-    for label, font in pairs(V.nativeCountFonts) do
+    local frame = InventoryView.frame
+    if not frame or not InventoryView.chrome then return end
+    frame:EnableMouseWheel(InventoryView.nativeMouseWheel)
+    for label, font in pairs(InventoryView.nativeCountFonts) do
         if font[1] then label:SetFont(unpack(font)) end
-        V.nativeCountFonts[label] = nil
+        InventoryView.nativeCountFonts[label] = nil
     end
     if NS.IsCombatLocked() then
-        V.restorePending = true
-        V.events:RegisterEvent("PLAYER_REGEN_ENABLED")
+        InventoryView.restorePending = true
+        InventoryView.events:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
     RestoreLayout()
 end
 
-function V.Disable()
-    V.Release()
+function InventoryView.Disable()
+    InventoryView.Release()
 end

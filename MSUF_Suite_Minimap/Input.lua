@@ -51,7 +51,6 @@ local function ArmReset()
     local zoom = map:GetZoom()
     if Finite(zoom) and zoom > 0 then resetTimer = C_Timer.NewTimer(seconds, ResetZoom) end
 end
-MM.ArmZoomReset = ArmReset
 local function Zoom(step)
     local map = _G.Minimap
     if not MM.Usable(map) then return end

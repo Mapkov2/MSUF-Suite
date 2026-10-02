@@ -148,7 +148,10 @@ function MM.ReleaseSpecialization()
 end
 
 function MM.ApplySpecialization()
-    if not Wanted() then MM.ReleaseSpecialization(); return end
+    if not Wanted() then
+        MM.ReleaseSpecialization()
+        return
+    end
     Create(Q)
     local c, button = M.config, Q.button
     local corner = NS.MinimapSpecCorners[c.specCorner] or NS.MinimapSpecCorners[1]

@@ -13,6 +13,7 @@ local CDM = NS.CDM
 local SLOTS, KEYS = CDM.SLOTS, CDM.KEYS
 local EMPTY = C.EMPTY
 local K = C.Const
+local KIND = K.KIND
 local Finite, Clamp = S.Finite, K.Clamp
 local Dispatch = S.Dispatch
 local Cold = C.Cold
@@ -162,7 +163,7 @@ local offsetScratch = {}
 -- as Layout.PlaceAuras draws them.
 local function Extent(view, plan)
     local list = plan.entries
-    if plan.kind == 1 then
+    if plan.kind == KIND.COOLDOWN then
         local n, preview = 0, C.state.preview
         for i = 1, #list do
             local entry = list[i]

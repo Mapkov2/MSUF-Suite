@@ -159,7 +159,10 @@ end
 -- change keeps its record without any client call.
 function Index.ReadButton(index, button, info, quest, version, bag, slot, bankType)
     local item = index.records[button]
-    if not item then item = {}; index.records[button] = item end
+    if not item then
+        item = {}
+        index.records[button] = item
+    end
     if item.version == version and item.bag == bag and item.slot == slot and item.bankType == bankType then
         index.items[#index.items + 1] = item
         if item.filtered then index.filtered = index.filtered + 1 end
@@ -253,7 +256,10 @@ function Index.ReadContainer(index, frame, recent)
     for i = 1, #order do
         local key = order[i]
         local bag, slot = math.floor(key / KEY), key % KEY
-        if bag ~= synced then Slots.Sync(bag); synced = bag end
+        if bag ~= synced then
+            Slots.Sync(bag)
+            synced = bag
+        end
         local info, quest, version = Slots.Get(bag, slot)
         local item = Index.ReadButton(index, index.buttons[key], info, quest, version, bag, slot)
         item.bagName = BagName(index, bag)

@@ -306,7 +306,10 @@ local function WatchPanel(panel)
 end
 -- In combat the reveal waits: PLAYER_REGEN_ENABLED flushes it (Events.lua).
 function AB.SyncPanelReveal()
-    if NS.IsCombatLocked() then AB.panelPending = true; return end
+    if NS.IsCombatLocked() then
+        AB.panelPending = true
+        return
+    end
     AB.panelPending = nil
     -- Retail and Forever keep the spellbook in Blizzard_PlayerSpells, which
     -- loads on demand.

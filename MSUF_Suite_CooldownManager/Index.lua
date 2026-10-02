@@ -13,11 +13,13 @@ local C = P.CDM
 local pairs = pairs
 local SLOTS = NS.CDM.SLOTS
 local K = C.Const
+local COOLDOWN = K.KIND.COOLDOWN
 local issecret = _G.issecretvalue
 
 -- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
 local Index = { bySpell = {}, byBase = {}, byCategory = {}, byItem = {}, byEquip = {}, countedSet = {},
-    cooldown = {}, gcd = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {}, items = {}, bags = {}, aura = {}, overlay = {}, assist = {} }
+    cooldown = {}, gcd = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {},
+    items = {}, bags = {}, aura = {}, overlay = {}, assist = {} }
 C.Index = Index
 
 local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist" }
@@ -119,7 +121,7 @@ function Index.Rebuild()
         local plan = plans[slot]
         if plan then
             local view, entries = views[slot], plan.entries
-            local cooldownBar = plan.kind == 1
+            local cooldownBar = plan.kind == COOLDOWN
             for j = 1, #entries do
                 local entry = entries[j]
                 -- Placeholders never read live state.

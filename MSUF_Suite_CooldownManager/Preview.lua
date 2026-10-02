@@ -9,7 +9,7 @@ local C = P.CDM
 -- the second and a buff glow on the third, from duration objects built out
 -- of plain numbers. The simulation runs only while the page is open and out
 -- of combat; its one ticker exists only while it runs. At load it reads
--- only C.EMPTY, C.Const.QUESTION_ICON and C.Layout.Shown (Const.lua and
+-- only C.EMPTY, C.Const.QUESTION_ICON, C.Const.KIND and C.Layout.Shown (Const.lua and
 -- Layout.lua load first), so the options contract loads it with a stub
 -- CDM table that has those.
 local Preview = { mode = nil, sim = false }
@@ -18,6 +18,7 @@ local EMPTY = C.EMPTY
 local pairs, type, max, min = pairs, type, math.max, math.min
 local wipe = table.wipe
 local QUESTION = C.Const.QUESTION_ICON
+local KIND = C.Const.KIND
 local SIM_LENGTH, SIM_LOOP = 8, 10
 
 ------------------------------------------------------------------ sample icons
@@ -131,7 +132,7 @@ local function Canvas(holder)
     local fakes = holder.fakes
     for i = 1, 3 do
         local fake, role = fakes[i], ROLES[i]
-        if fake and i <= holder.count and holder.kind ~= 3 and touched[fake] ~= role then Sim(fake, role) end
+        if fake and i <= holder.count and holder.kind ~= KIND.AURA_BAR and touched[fake] ~= role then Sim(fake, role) end
     end
 end
 
@@ -146,7 +147,7 @@ local function Restart()
     StopAll()
     if not Preview.sim then return end
     for _, plan in pairs(C.plans) do
-        if plan.kind == 1 then
+        if plan.kind == KIND.COOLDOWN then
             local entries, n = plan.entries, 0
             for i = 1, #entries do
                 local entry = entries[i]
@@ -258,7 +259,7 @@ local function Content(slot, kind, holder)
     end
     if n == 0 then
         Samples()
-        local family = kind == 1 and 1 or 2
+        local family = kind == KIND.COOLDOWN and 1 or 2
         for i = 1, 3 do textures[i], names[i], itemKeys[i], dim[i] = Sample(family, i), "", false, true end
         n = 3
     end
@@ -354,21 +355,21 @@ function Preview.Render(parent, slot, maxWidth, maxHeight)
     local view = parent and C.views[slot]
     if not view then return nil end
     local holder = Holder(parent)
-    local kind = view.kind or 1
+    local kind = view.kind or KIND.COOLDOWN
     local n = holder.n
     if not SameContent(holder, slot, kind) or not n then
         n = Content(slot, kind, holder)
         holder.n = n
     end
     local width, height, count = C.Layout.Offsets(view, n, holder.out)
-    Rest(holder, kind ~= 3 and count or 0)
-    if kind == 3 then
+    Rest(holder, kind ~= KIND.AURA_BAR and count or 0)
+    if kind == KIND.AURA_BAR then
         Rows(holder, view, count)
     else
         Icons(holder, view, count, slot)
     end
     holder.kind, holder.count, holder.slot = kind, count, slot
-    holder.items = kind == 3 and holder.rows or holder.icons
+    holder.items = kind == KIND.AURA_BAR and holder.rows or holder.icons
     if holder.pvW ~= width or holder.pvH ~= height then
         holder.pvW, holder.pvH = width, height
         holder:SetSize(width, height)

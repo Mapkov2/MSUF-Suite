@@ -179,7 +179,10 @@ local function Add(model, group, item, merge, alias)
     end
     model.rowCount = model.rowCount + 1
     row = model.rowPool[model.rowCount]
-    if not row then row = {}; model.rowPool[model.rowCount] = row end
+    if not row then
+        row = {}
+        model.rowPool[model.rowCount] = row
+    end
     row.item, row.count, row.stacks = item, item.count or 0, 1
     row.alias = alias == true
     group.rows[#group.rows + 1] = row

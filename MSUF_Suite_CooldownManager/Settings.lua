@@ -15,6 +15,7 @@ local ID = "cooldownManager"
 local pairs, type, next = pairs, type, next
 local wipe = C.wipe
 local K = C.Const
+local KIND, AURA_KINDS = K.KIND, K.AURA_KINDS
 local Flush = C.Flush
 local dirty, sync, style, behavior, visible = Flush.dirty, Flush.sync, Flush.style, Flush.behavior, Flush.visible
 local Settings = {}
@@ -68,7 +69,8 @@ Work({ "tooltips" }, { restyle = true })
 Work({ "strata" }, { restyle = true, visible = true })
 Work({ "layer" }, { layout = true, aura = true, restyle = true })
 Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
-    "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" }, { bar = true, style = true, behavior = true })
+    "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments",
+    "barChargeDim" }, { bar = true, style = true, behavior = true })
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.
 local FRESH = { layout = true, style = true, behavior = true, index = true, visible = true, resolve = true, named = true }
@@ -205,14 +207,17 @@ function Settings.ReadViews(config, all, text)
         end
         if text then hit.style = true end
         if not def.builtin then
-            if view.kind ~= 1 and view.kind ~= 2 and view.kind ~= 3 then view.kind = 1 end
+            local kind = view.kind
+            if kind ~= KIND.COOLDOWN and kind ~= KIND.AURA_ICON and kind ~= KIND.AURA_BAR then
+                view.kind = KIND.COOLDOWN
+            end
             if hit.named then
                 local name = view.name
                 view.title = type(name) == "string" and name ~= "" and name or S.Text(def.title)
             end
         end
         if next(hit) ~= nil then
-            local aura = view.kind == 2 or view.kind == 3
+            local aura = AURA_KINDS[view.kind] == true
             if hit.layout then
                 view.layoutGen = view.layoutGen + 1
                 dirty.layout = true
@@ -302,7 +307,7 @@ local function ResetDefaults(values, config)
                     values[keys.x], values[keys.y] = 0, 0
                 else
                     -- Free x/y used to count from the same point of UIParent.
-                    pointProbe.kind = config[keys.kind] or def.kind or 1
+                    pointProbe.kind = config[keys.kind] or def.kind or KIND.COOLDOWN
                     pointProbe.vertical = keys.vertical and config[keys.vertical] == true or false
                     pointProbe.grow = keys.grow and config[keys.grow] or nil
                     local dx, dy = K.EdgeOffset(C.Layout.Point(pointProbe), uiW, uiH)

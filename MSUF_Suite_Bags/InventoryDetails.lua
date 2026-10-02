@@ -1,16 +1,16 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
-local D = { dirty = true, sets = {}, overlays = setmetatable({}, { __mode = "k" }), maps = {} }
-P.InventoryDetails = D
+local Details = { dirty = true, sets = {}, overlays = setmetatable({}, { __mode = "k" }), maps = {} }
+P.InventoryDetails = Details
 -- Slot keys of SlotCache.lua: bag * KEY + slot, no string per item.
 local KEY = P.SlotCache.KEY
 
-function D.Invalidate() D.dirty = true end
+function Details.Invalidate() Details.dirty = true end
 
 local function ReadSets()
-    if not D.dirty then return end
-    D.dirty = false
-    for key in pairs(D.sets) do D.sets[key] = nil end
+    if not Details.dirty then return end
+    Details.dirty = false
+    for key in pairs(Details.sets) do Details.sets[key] = nil end
     local ids = C_EquipmentSet.GetEquipmentSetIDs()
     table.sort(ids)
     for i = 1, #ids do
@@ -22,17 +22,25 @@ local function ReadSets()
                     local data = EquipmentManager_GetLocationData(location)
                     if data.isBags and S.Finite(data.bag) and S.Finite(data.slot) then
                         local key = data.bag * KEY + data.slot
-                        local names = D.sets[key]
-                        if not names then names = {}; D.sets[key] = names end
+                        local names = Details.sets[key]
+                        if not names then
+                            names = {}
+                            Details.sets[key] = names
+                        end
                         local found = false
-                        for j = 1, #names do if names[j] == name then found = true; break end end
+                        for j = 1, #names do
+                            if names[j] == name then
+                                found = true
+                                break
+                            end
+                        end
                         if not found then names[#names + 1] = name end
                     end
                 end
             end
         end
     end
-    for _, names in pairs(D.sets) do names.label = table.concat(names, " / ") end
+    for _, names in pairs(Details.sets) do names.label = table.concat(names, " / ") end
 end
 
 local function ReadUpgrade(item)
@@ -62,7 +70,7 @@ end
 -- name in a script without spaces (Chinese, Korean) gives its first two
 -- characters. Punctuation is ignored; UTF-8 characters stay whole.
 local function MapTag(mapID)
-    if D.maps[mapID] then return D.maps[mapID] end
+    if Details.maps[mapID] then return Details.maps[mapID] end
     local name = C_ChallengeMode.GetMapUIInfo(mapID)
     if not S.Public(name) or type(name) ~= "string" then return nil end
     local words, chosen, longest, longestLength = 0, nil, nil, 0
@@ -79,11 +87,11 @@ local function MapTag(mapID)
     else
         tag = Characters(chosen or longest or name, 3)
     end
-    D.maps[mapID] = tag:upper()
-    return D.maps[mapID]
+    Details.maps[mapID] = tag:upper()
+    return Details.maps[mapID]
 end
 
-function D.Index(index)
+function Details.Index(index)
     local c = M.config
     if c.groupEquipmentSets or c.showEquipmentSetNames then ReadSets() end
     local keyLevel, keyMap
@@ -93,7 +101,7 @@ function D.Index(index)
     for i = 1, #index.items do
         local item = index.items[i]
         item.setNames = (c.groupEquipmentSets or c.showEquipmentSetNames)
-            and D.sets[item.bag * KEY + item.slot] or nil
+            and Details.sets[item.bag * KEY + item.slot] or nil
         item.setName = item.setNames and item.setNames[1] or nil
         item.setLabel = item.setNames and item.setNames.label or nil
         if c.showUpgradeTrack and item.equipLoc and item.equipLoc ~= "" then ReadUpgrade(item) end
@@ -118,7 +126,7 @@ end
 -- added once on enter vanish. Item tooltip post-calls run on every rebuild.
 local function Tooltip(tooltip)
     if not M.active or tooltip ~= GameTooltip then return end
-    local record = D.overlays[tooltip:GetOwner()]
+    local record = Details.overlays[tooltip:GetOwner()]
     local item = record and record.item
     if not item then return end
     if item.setName and M.config.showEquipmentSetNames then
@@ -131,7 +139,10 @@ end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, Tooltip)
 
 local function PaintText(label, value, font, size)
-    if not value then label:Hide(); return end
+    if not value then
+        label:Hide()
+        return
+    end
     if label.font ~= font or label.size ~= size then
         S.SetFont(label, font, size, "OUTLINE")
         label.font, label.size = font, size
@@ -141,17 +152,17 @@ local function PaintText(label, value, font, size)
 end
 
 -- font: the bag font, read once per render (GridView.FontPath).
-function D.Paint(button, item, font)
+function Details.Paint(button, item, font)
     local c = M.config
     local name = c.showEquipmentSetNames and (item.setLabel or item.setName)
     local upgrade = c.showUpgradeTrack and item.upgrade
     local keyLevel = c.showKeystoneDetails and item.keyLevel
-    local record = D.overlays[button]
+    local record = Details.overlays[button]
     if not record and not name and not upgrade and not keyLevel then return end
     if not record then
         record = { name = Label(button, "BOTTOM", 0, 1), upgrade = Label(button, "TOPLEFT", 0, -13),
             keyLevel = Label(button, "CENTER", 0, 2), keyMap = Label(button, "BOTTOM", 0, 1) }
-        D.overlays[button] = record
+        Details.overlays[button] = record
     end
     record.item = item
     PaintText(record.name, name, font, c.equipmentSetNameSize)
@@ -160,10 +171,13 @@ function D.Paint(button, item, font)
     PaintText(record.keyMap, keyLevel and item.keyMap, font, c.keystoneDungeonSize)
 end
 
-function D.Hide()
-    for _, record in pairs(D.overlays) do
-        record.name:Hide(); record.upgrade:Hide(); record.keyLevel:Hide(); record.keyMap:Hide()
+function Details.Hide()
+    for _, record in pairs(Details.overlays) do
+        record.name:Hide()
+        record.upgrade:Hide()
+        record.keyLevel:Hide()
+        record.keyMap:Hide()
         record.item = nil
     end
-    D.dirty = true
+    Details.dirty = true
 end

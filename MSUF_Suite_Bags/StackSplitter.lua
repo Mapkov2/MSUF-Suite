@@ -69,7 +69,9 @@ end
 local function AutoEnter(button)
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
     GameTooltip:SetText(S.Text("Auto split"))
-    GameTooltip:AddLine(S.Text("Split this stack into the selected amount using compatible empty slots. Stops on combat, cursor changes, a full inventory or after 128 stacks."), 0.8, 0.8, 0.8, true)
+    GameTooltip:AddLine(S.Text(
+        "Split this stack into the selected amount using compatible empty slots. Stops on combat, cursor changes, a full inventory or after 128 stacks."
+    ), 0.8, 0.8, 0.8, true)
     GameTooltip:Show()
 end
 

@@ -15,6 +15,7 @@ local EMPTY = C.EMPTY
 local pairs, type, next = pairs, type, next
 local K = C.Const
 local GCD = K.GCD_CATEGORY
+local KIND, AURA_KINDS = K.KIND, K.AURA_KINDS
 local QUIET = 2   -- seconds without sounds after loading screens and activation
 local Flush, Settings = C.Flush, C.Settings
 local dirty, sync, style = Flush.dirty, Flush.sync, Flush.style
@@ -339,7 +340,7 @@ local function OnScale()
         if view then
             view.styleGen, view.layoutGen = view.styleGen + 1, view.layoutGen + 1
             style[slot] = true
-            if view.kind == 2 or view.kind == 3 then sync[slot] = true end
+            if AURA_KINDS[view.kind] then sync[slot] = true end
         end
     end
     dirty.layout = true
@@ -482,7 +483,7 @@ local function KeybindWatch()
     if C.state.assistIcon and C.state.assistIconKeybind then return true end
     for slot, plan in pairs(C.plans) do
         local view = C.views[slot]
-        if plan.kind == 1 and view and view.keybind and #plan.entries > 0 then return true end
+        if plan.kind == KIND.COOLDOWN and view and view.keybind and #plan.entries > 0 then return true end
     end
     return false
 end

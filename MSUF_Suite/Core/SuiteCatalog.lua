@@ -141,10 +141,17 @@ function Build.Section(id, section, sectionTitle, rules, opts)
     for i = 1, #rules do Build.Add(id, rules[i], section, sectionTitle, opts) end
 end
 
+-- The values of every "Font rendering" choice (Smooth, Sharp / pixel, Slug),
+-- shared by the catalog, the runtime text styling (S.FontFlags,
+-- S.SetStyledFont) and the menu previews. Slug draws its own crisp edge and
+-- never a shadow.
+local RENDERING = { SMOOTH = 1, SHARP = 2, SLUG = 3 }
+NS.FontRendering = RENDERING
+
 -- Only Smooth and Sharp rendering draw a text shadow; its opacity and
 -- distance also follow the shadow switch.
 function Build.LinkFontShadow(rules)
-    local rendering = { key = "fontRendering", values = { [1] = true, [2] = true } }
+    local rendering = { key = "fontRendering", values = { [RENDERING.SMOOTH] = true, [RENDERING.SHARP] = true } }
     rules.fontShadow.requiresChoice = rendering
     for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do
         rules[key].enableKey = "fontShadow"
@@ -158,7 +165,7 @@ function Build.TextSection(id, extra)
     local rules = {
         Build.Font("font", "Font"),
         Build.Choice("fontOutline", "Text outline", 1, { "Outline", "Thick outline", "None" }),
-        Build.Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+        Build.Choice("fontRendering", "Font rendering", RENDERING.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
         Build.Bool("fontShadow", "Text shadow"),
         Build.Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
         Build.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),

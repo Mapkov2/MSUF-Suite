@@ -94,14 +94,21 @@ local function NewCategory()
     if NS.IsCombatLocked() or Editor.editPins or #Editor.categories >= 24 then return end
     Editor.categories[#Editor.categories + 1] = { name = S.Text("New category"), enabled = true, items = {} }
     Editor.selected = #Editor.categories
-    if Store() then Refresh(); Editor.name:SetFocus(); Editor.name:HighlightText() end
+    if Store() then
+        Refresh()
+        Editor.name:SetFocus()
+        Editor.name:HighlightText()
+    end
 end
 
 local function SaveCategory()
     local category = Editor.categories[Editor.selected]
     if not category or NS.IsCombatLocked() then return end
     local name = Editor.name:GetText():gsub("[\r\n]", " ")
-    if not name:find("%S") then Editor.status:SetText(S.Text("Enter a category name.")); return end
+    if not name:find("%S") then
+        Editor.status:SetText(S.Text("Enter a category name."))
+        return
+    end
     local input, count = Editor.items:GetText(), 0
     local invalid = input:find("[^%d, ]")
     for value in input:gmatch("%d+") do

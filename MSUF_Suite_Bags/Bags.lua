@@ -248,7 +248,11 @@ local function PaintBindBadge(self, button, pending, info)
         return
     end
     if not record.bindBadge then
-        if NS.IsCombatLocked() then self.needsItemRefresh = true; S.Queue("bags"); return end
+        if NS.IsCombatLocked() then
+            self.needsItemRefresh = true
+            S.Queue("bags")
+            return
+        end
         local badge = S.CreateFontString(button, nil, "OVERLAY")
         badge:SetDrawLayer("OVERLAY", 7)
         badge:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 2, 2)

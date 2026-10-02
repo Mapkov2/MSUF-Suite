@@ -1,6 +1,8 @@
 local root = assert(arg[1], "repository root required")
 local S = {}
 MSUFSuite = { Suite = S }
+-- The "Font rendering" values (NS.FontRendering) come from the core catalog.
+assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", MSUFSuite)
 GameFontHighlightSmall = { GetFont = function() return "Native.ttf", 12, "" end }
 local scaleFlags
 MSUF_ApplyFontScaleAnimationMode = function(_, flags) scaleFlags = flags end

@@ -16,6 +16,7 @@ local pairs, type, tonumber = pairs, type, tonumber
 local wipe = C.wipe
 local Public = S.Public
 local EMPTY = C.EMPTY
+local KIND = C.Const.KIND
 local THROTTLE = 1
 -- Container switches (ours, or an ancestor such as the UI being hidden for
 -- a cinematic) show and hide aura buttons: their sensors keep quiet this
@@ -345,7 +346,7 @@ function Alerts.SyncAuraSounds()
     if not state.muteSounds and wait <= 0 then
         local channel = Channel()
         for _, plan in pairs(C.plans) do
-            if plan.kind ~= 1 then
+            if plan.kind ~= KIND.COOLDOWN then
                 local entries = plan.entries
                 for i = 1, #entries do
                     local entry = entries[i]

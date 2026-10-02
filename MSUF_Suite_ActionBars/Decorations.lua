@@ -14,7 +14,10 @@ local function Endcap(bar, side)
     local c, keys, names = M.config, bar.key, ENDCAP_KEYS[side]
     local style = c[keys[names.style]]
     local cap = bar[names.style]
-    if style == 1 then if cap then cap:Hide() end; return end
+    if style == 1 then
+        if cap then cap:Hide() end
+        return
+    end
     if not cap then
         cap = S.CreateFrame("Frame", nil, bar.header)
         cap.pieces = {}
@@ -215,7 +218,10 @@ function AB.StyleDecoration(rec, size)
         AB.ShowEdges(rec.pressEdges, false)
         AB.UpdateDecorState(rec)
     else
-        if rec.borderArt then rec.borderArt:Hide(); rec.stateArt:Hide() end
+        if rec.borderArt then
+            rec.borderArt:Hide()
+            rec.stateArt:Hide()
+        end
     end
     if rec.quality then rec.quality:SetSize(math.max(8, size * .4), math.max(8, size * .4)) end
 end

@@ -17,7 +17,12 @@ end
 local function Toggle(id)
     if selected[id] then
         selected[id] = nil
-        for i = #order, 1, -1 do if order[i] == id then table.remove(order, i); break end end
+        for i = #order, 1, -1 do
+            if order[i] == id then
+                table.remove(order, i)
+                break
+            end
+        end
     elseif #order < 8 then order[#order + 1], selected[id] = id, true end
     S.Set("bags", "currencyIDs", table.concat(order, ","))
     for currencyID, option in pairs(options) do option:SetEnabled(selected[currencyID] or #order < 8) end

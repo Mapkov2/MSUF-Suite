@@ -10,6 +10,9 @@ local C = P.CDM
 -- C API returns: the cooldown and charge info tables (GetSpellCooldown,
 -- GetSpellCharges) and the duration objects.
 local K = C.Const
+local DESAT = K.DESAT
+-- The timer-bar presentation of cooldown icons (TrackingBars.lua loads first).
+local TrackingBars = C.TrackingBars
 local Time = {}
 C.Time = Time
 local Public = S.Public
@@ -89,11 +92,11 @@ local READY_MIN, GCD_MAX = 2, 1.5
 local function Curves(icon, entry, view)
     local ov = entry.ov or EMPTY
     icon.curveEntry, icon.curveOv, icon.curveGen = entry, ov, view.behaviorGen
-    local desat = ov.desat or 1
+    local desat = ov.desat
     local on
-    if desat == 2 then
+    if desat == DESAT.NEVER then
         on = false
-    elseif desat == 3 then
+    elseif desat == DESAT.ALWAYS then
         on = true
     else
         on = view.desat == true
@@ -115,7 +118,7 @@ end
 -- icon shows its ready look through memoized plain writes.
 local function Feedback(icon, duration)
     icon.mainDuration = duration
-    C.TrackingBars.Duration(icon, duration)
+    TrackingBars.Duration(icon, duration)
     local desat, alpha = icon.desatCurve, icon.alphaCurve
     local tex = icon.tex
     if desat and duration then
@@ -198,14 +201,52 @@ local function Real(info, duration, reason, previous)
     return not (Public(gcd) and gcd), false
 end
 
-local function ChargeVisibility(entry, icon, maximum)
+-- The charge part of SpellState: the recharge swipe, entry.fullyCharged,
+-- the timer bar's charges and "Hide while a charge is available". cooling
+-- and exact are the main answer; returns cooling. A charge spell stays
+-- cooling until every charge is back. When the main answer was only the
+-- last known state (a GCD hides it), a plain "not recharging" settles it:
+-- every charge is back.
+local function ChargeState(entry, icon, spell, cooling, exact)
+    local charges = entry.charges ~= false and GetCharges(spell)
+    local rechargeDuration
+    entry.fullyCharged = nil
+    local maximum = charges and charges.maxCharges
+    if Public(maximum) and type(maximum) == "number" and maximum > 1 then
+        local state = charges.isActive
+        local recharging = Public(state) and state == true
+        entry.fullyCharged = Public(state) and state == false or nil
+        if recharging then
+            local duration = GetChargeDuration(spell)
+            rechargeDuration = duration
+            if duration then
+                local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
+                cooldown:SetCooldownFromDurationObject(duration, true)
+                TrackingBars.Duration(icon, duration)
+                icon.chargeSet = true
+            else
+                ClearCharge(icon)
+            end
+            if not cooling and entry.cooling then cooling = true end
+        else
+            ClearCharge(icon)
+            if not exact and Public(state) and state == false then cooling = false end
+        end
+    else
+        ClearCharge(icon)
+    end
+    TrackingBars.Charges(icon, charges, rechargeDuration)
     if entry.ov and entry.ov.hideAvailableCharges and Public(maximum) and type(maximum) == "number" and maximum > 1
         and not C.state.preview then
         local duration = icon.mainDuration
-        if duration then icon:SetAlpha(duration:EvaluateRemainingDuration(K.StepCurve(0, 100)))
-        else icon:SetAlpha(0) end
+        if duration then
+            icon:SetAlpha(duration:EvaluateRemainingDuration(K.StepCurve(0, 100)))
+        else
+            icon:SetAlpha(0)
+        end
         icon.fbAlpha = nil
     end
+    return cooling
 end
 
 -- Returns the entry's cooling state. reason "expired": the main swipe held
@@ -228,7 +269,8 @@ local function SpellState(entry, icon, spell, reason)
         local info = GetCooldown(spell)
         local active = info and info.isActive
         if Public(active) and active then
-            local showGCD = entry.ov and entry.ov.showGCD
+            local ov = entry.ov
+            local showGCD = ov and ov.showGCD
             if showGCD == nil then showGCD = C.state.showGCD end
             local ignoreGCD = showGCD ~= true
             local duration = GetDuration(spell, ignoreGCD)
@@ -240,7 +282,7 @@ local function SpellState(entry, icon, spell, reason)
             end
             -- Desaturation, opacity and the ready check ignore the GCD.
             local base = duration
-            if not ignoreGCD and (icon.desatCurve or icon.alphaCurve or entry.ov and entry.ov.hideAvailableCharges or reason ~= "cooldown") then
+            if not ignoreGCD and (icon.desatCurve or icon.alphaCurve or ov and ov.hideAvailableCharges or reason ~= "cooldown") then
                 base = GetDuration(spell, true)
             end
             Feedback(icon, base)
@@ -250,41 +292,7 @@ local function SpellState(entry, icon, spell, reason)
             Feedback(icon, nil)
         end
     end
-    local charges = entry.charges ~= false and GetCharges(spell)
-    local rechargeDuration
-    entry.fullyCharged = nil
-    local maximum = charges and charges.maxCharges
-    if Public(maximum) and type(maximum) == "number" and maximum > 1 then
-        local state = charges.isActive
-        local recharging = Public(state) and state == true
-        entry.fullyCharged = Public(state) and state == false or nil
-        if recharging then
-            local duration = GetChargeDuration(spell)
-            rechargeDuration = duration
-            if duration then
-                local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
-                cooldown:SetCooldownFromDurationObject(duration, true)
-                C.TrackingBars.Duration(icon, duration)
-                icon.chargeSet = true
-            else
-                ClearCharge(icon)
-            end
-        else
-            ClearCharge(icon)
-        end
-        -- A charge spell stays cooling until every charge is back. When the
-        -- main answer was only the last known state (a GCD hides it), a plain
-        -- "not recharging" settles it: every charge is back.
-        if recharging then
-            if not cooling and entry.cooling then cooling = true end
-        elseif not exact and Public(state) and state == false then
-            cooling = false
-        end
-    else
-        ClearCharge(icon)
-    end
-    C.TrackingBars.Charges(icon, charges, rechargeDuration)
-    ChargeVisibility(entry, icon, maximum)
+    cooling = ChargeState(entry, icon, spell, cooling, exact)
     -- Potion and healthstone entries show their bag count (CategoryCount).
     local category = entry.spellCategory
     if category and category ~= 0 then return cooling end

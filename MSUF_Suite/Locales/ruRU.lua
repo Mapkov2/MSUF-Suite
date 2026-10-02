@@ -1229,6 +1229,7 @@ T("From this many stacks the number shows in the color on the right.", "Начи
 T("Full", "Полные")
 T("Full Blizzard", "Полностью Blizzard")
 T("Full row", "Вся строка")
+T("Game menu", "Главное меню")
 T("Gear", "Снаряжение")
 T("Gear summary", "Сводка снаряжения")
 T("Gem sockets", "Гнёзда")

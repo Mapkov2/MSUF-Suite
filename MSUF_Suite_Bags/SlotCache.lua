@@ -8,77 +8,77 @@ local S = P.Suite
 -- refresh on the same events (ContainerFrame.lua ContainerFrame_OnEvent).
 -- Slot keys are bag * KEY + slot (bank tabs hold 98 slots).
 -- bankTabs: the bank tab IDs read through the cache (BankIndex.lua).
-local C = { info = {}, quest = {}, version = {}, sizes = {}, dirtyBags = {}, dirtySlots = {}, bankTabs = {},
+local SlotCache = { info = {}, quest = {}, version = {}, sizes = {}, dirtyBags = {}, dirtySlots = {}, bankTabs = {},
     KEY = 1000 }
-P.SlotCache = C
-local KEY = C.KEY
+P.SlotCache = SlotCache
+local KEY = SlotCache.KEY
 local Finite, Public = S.Finite, S.Public
 
 local function Forget(key)
-    C.info[key], C.quest[key], C.dirtySlots[key] = nil, nil, nil
-    C.version[key] = (C.version[key] or 0) + 1
+    SlotCache.info[key], SlotCache.quest[key], SlotCache.dirtySlots[key] = nil, nil, nil
+    SlotCache.version[key] = (SlotCache.version[key] or 0) + 1
 end
 
 local function Read(bag, slot)
     local key = bag * KEY + slot
     local info = C_Container.GetContainerItemInfo(bag, slot)
-    C.version[key] = (C.version[key] or 0) + 1
-    C.dirtySlots[key] = nil
+    SlotCache.version[key] = (SlotCache.version[key] or 0) + 1
+    SlotCache.dirtySlots[key] = nil
     if not Public(info) then
         -- Unreadable now: nothing is kept and the next pass reads it again.
-        C.info[key], C.quest[key], C.dirtySlots[key] = nil, nil, true
+        SlotCache.info[key], SlotCache.quest[key], SlotCache.dirtySlots[key] = nil, nil, true
         return
     end
-    C.info[key] = info or false
+    SlotCache.info[key] = info or false
     if not info then
-        C.quest[key] = nil
+        SlotCache.quest[key] = nil
         return
     end
     local quest = C_Container.GetContainerItemQuestInfo(bag, slot)
-    C.quest[key] = Public(quest) and quest and Public(quest.isQuestItem) and quest.isQuestItem == true
+    SlotCache.quest[key] = Public(quest) and quest and Public(quest.isQuestItem) and quest.isQuestItem == true
 end
 
 -- Brings one container up to date and returns its slot count.
-function C.Sync(bag)
+function SlotCache.Sync(bag)
     local size = C_Container.GetContainerNumSlots(bag)
     if not Finite(size) or size < 0 or size >= KEY then size = 0 end
     local base = bag * KEY
-    local known = C.sizes[bag]
-    if C.dirtyBags[bag] or known ~= size then
+    local known = SlotCache.sizes[bag]
+    if SlotCache.dirtyBags[bag] or known ~= size then
         for slot = 1, size do Read(bag, slot) end
         for slot = size + 1, known or 0 do Forget(base + slot) end
-        C.sizes[bag], C.dirtyBags[bag] = size, nil
-    elseif next(C.dirtySlots) then
+        SlotCache.sizes[bag], SlotCache.dirtyBags[bag] = size, nil
+    elseif next(SlotCache.dirtySlots) then
         for slot = 1, size do
-            if C.dirtySlots[base + slot] then Read(bag, slot) end
+            if SlotCache.dirtySlots[base + slot] then Read(bag, slot) end
         end
     end
     return size
 end
 
 -- info (nil for an empty or unreadable slot), quest flag, read version.
-function C.Get(bag, slot)
+function SlotCache.Get(bag, slot)
     local key = bag * KEY + slot
-    local info = C.info[key]
-    return info or nil, C.quest[key] == true, C.version[key] or 0
+    local info = SlotCache.info[key]
+    return info or nil, SlotCache.quest[key] == true, SlotCache.version[key] or 0
 end
 
-function C.MarkBag(bag)
-    if Finite(bag) then C.dirtyBags[bag] = true end
+function SlotCache.MarkBag(bag)
+    if Finite(bag) then SlotCache.dirtyBags[bag] = true end
 end
 
 -- Equipment slots report ITEM_LOCK_CHANGED(inventorySlot, nil); only a
 -- container slot changes cached contents.
-function C.MarkSlot(bag, slot)
-    if Finite(bag) and Finite(slot) then C.dirtySlots[bag * KEY + slot] = true end
+function SlotCache.MarkSlot(bag, slot)
+    if Finite(bag) and Finite(slot) then SlotCache.dirtySlots[bag * KEY + slot] = true end
 end
 
-function C.MarkAll()
-    for bag in pairs(C.sizes) do C.dirtyBags[bag] = true end
+function SlotCache.MarkAll()
+    for bag in pairs(SlotCache.sizes) do SlotCache.dirtyBags[bag] = true end
 end
 
-function C.Reset()
-    for _, t in ipairs({ C.info, C.quest, C.sizes, C.dirtyBags, C.dirtySlots, C.bankTabs }) do
+function SlotCache.Reset()
+    for _, t in ipairs({ SlotCache.info, SlotCache.quest, SlotCache.sizes, SlotCache.dirtyBags, SlotCache.dirtySlots, SlotCache.bankTabs }) do
         for key in pairs(t) do t[key] = nil end
     end
 end
@@ -90,22 +90,22 @@ local MARK_ALL = { QUEST_ACCEPTED = true, QUEST_REMOVED = true,
 -- buttons refresh themselves on INVENTORY_SEARCH_UPDATE), so a search marks
 -- the bags alone, never the bank tabs.
 local function MarkSearched()
-    for bag in pairs(C.sizes) do
-        if not C.bankTabs[bag] then C.dirtyBags[bag] = true end
+    for bag in pairs(SlotCache.sizes) do
+        if not SlotCache.bankTabs[bag] then SlotCache.dirtyBags[bag] = true end
     end
 end
 
 local function OnEvent(_, event, bag, slot)
     if event == "BAG_UPDATE" then
-        C.MarkBag(bag)
+        SlotCache.MarkBag(bag)
     elseif event == "ITEM_LOCK_CHANGED" then
-        C.MarkSlot(bag, slot)
+        SlotCache.MarkSlot(bag, slot)
     elseif event == "INVENTORY_SEARCH_UPDATE" then
         MarkSearched()
     elseif event == "UNIT_QUEST_LOG_CHANGED" then
-        if bag == "player" then C.MarkAll() end
+        if bag == "player" then SlotCache.MarkAll() end
     elseif MARK_ALL[event] then
-        C.MarkAll()
+        SlotCache.MarkAll()
     end
 end
 
@@ -116,20 +116,20 @@ local EVENTS = { "BAG_UPDATE", "ITEM_LOCK_CHANGED", "INVENTORY_SEARCH_UPDATE",
 
 -- Bags.lua starts the cache before its first read and stops it on disable.
 -- Contents can change while the module is off: a start reads everything again.
-function C.Start()
-    if not C.events then
-        C.events = S.CreateFrame("Frame")
-        C.events:SetScript("OnEvent", OnEvent)
+function SlotCache.Start()
+    if not SlotCache.events then
+        SlotCache.events = S.CreateFrame("Frame")
+        SlotCache.events:SetScript("OnEvent", OnEvent)
     end
-    if C.listening then return end
-    C.Reset()
-    for i = 1, #EVENTS do C.events:RegisterEvent(EVENTS[i]) end
-    C.events:RegisterUnitEvent("UNIT_QUEST_LOG_CHANGED", "player")
-    C.listening = true
+    if SlotCache.listening then return end
+    SlotCache.Reset()
+    for i = 1, #EVENTS do SlotCache.events:RegisterEvent(EVENTS[i]) end
+    SlotCache.events:RegisterUnitEvent("UNIT_QUEST_LOG_CHANGED", "player")
+    SlotCache.listening = true
 end
 
-function C.Stop()
-    if C.events then C.events:UnregisterAllEvents() end
-    C.listening = false
-    C.Reset()
+function SlotCache.Stop()
+    if SlotCache.events then SlotCache.events:UnregisterAllEvents() end
+    SlotCache.listening = false
+    SlotCache.Reset()
 end

@@ -166,7 +166,7 @@ local pointProbe = {}
 -- bar's growth edge relative to the screen center.
 local function CaptureOffsets(values, config, cx, cy, w, h, uiW, uiH)
     local keys = CDM.KEYS.ess
-    pointProbe.kind = 1
+    pointProbe.kind = K.KIND.COOLDOWN
     pointProbe.vertical = keys.vertical and config[keys.vertical] == true or false
     pointProbe.grow = keys.grow and config[keys.grow] or nil
     local dx, dy = K.EdgeOffset(C.Layout.Point(pointProbe), w, h)

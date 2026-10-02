@@ -8,6 +8,7 @@ local C = P.CDM
 -- frames under our own bar frames, never secure, so every setter used by
 -- the time and effect layers stays legal in combat.
 local K = C.Const
+local KIND, SWIPE = K.KIND, K.SWIPE
 local Icons = {}
 C.Icons = Icons
 local EMPTY = C.EMPTY
@@ -304,11 +305,11 @@ function Icons.Apply(entry)
     Texts(icon, view, ov)
     Icons.StyleCharge(icon)
     local cooldown, state = icon.cd, C.state
-    local swipe = view.cooldownDuration and 3 or ov.swipe or 1
+    local swipe = view.cooldownDuration and SWIPE.HIDDEN or ov.swipe or SWIPE.NORMAL
     if icon.lastSwipe ~= swipe then
         icon.lastSwipe = swipe
-        cooldown:SetReverse(swipe == 2)
-        cooldown:SetDrawSwipe(swipe ~= 3)
+        cooldown:SetReverse(swipe == SWIPE.REVERSED)
+        cooldown:SetDrawSwipe(swipe ~= SWIPE.HIDDEN)
     end
     local bling = view.bling == true
     if icon.lastBling ~= bling then
@@ -437,7 +438,7 @@ end
 -- live state at once so a sync never shows a stale icon.
 function Icons.Sync(slotKey)
     local plan, view = C.plans[slotKey], C.views[slotKey]
-    if not plan or plan.kind ~= 1 or not view then
+    if not plan or plan.kind ~= KIND.COOLDOWN or not view then
         Icons.Release(slotKey)
         return
     end

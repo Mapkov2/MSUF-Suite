@@ -198,7 +198,12 @@ end
 
 local function GamepadChanged()
     if not M.active or not NS.Client.isForever then return end
-    if NS.IsCombatLocked() then AB.gamepadVisibilityPending = true; S.Queue("actionbars") else AB.ApplyVisibility() end
+    if NS.IsCombatLocked() then
+        AB.gamepadVisibilityPending = true
+        S.Queue("actionbars")
+    else
+        AB.ApplyVisibility()
+    end
 end
 
 -- Blizzard's buttons on Retail and Forever follow ACTIONBAR_UPDATE_COOLDOWN

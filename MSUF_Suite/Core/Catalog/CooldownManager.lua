@@ -44,21 +44,28 @@ B.Module("cooldownManager", {
 local id = "cooldownManager"
 
 ------------------------------------------------------------------ slots
--- kind: 1 cooldown icons, 2 aura icons, 3 aura bars. Categories are
--- Enum.CooldownViewerCategory values the built-in bars follow (runtime
--- Catalog.lua BAR_OF mirrors them). Essential also takes the equipment
--- slot pool (7, trinkets), after its own entries in Blizzard's order.
-CDM.KIND_COOLDOWN, CDM.KIND_AURA, CDM.KIND_BAR = 1, 2, 3
+-- Bar kinds, the values of the "Bar type" choice: cooldown icons, aura
+-- (buff) icons and aura bars. Categories are Enum.CooldownViewerCategory
+-- values the built-in bars follow (runtime Catalog.lua BAR_OF mirrors them).
+-- Essential also takes the equipment slot pool (7, trinkets), after its own
+-- entries in Blizzard's order.
+CDM.KIND = { COOLDOWN = 1, AURA_ICON = 2, AURA_BAR = 3 }
+local KIND = CDM.KIND
+-- The "Show" choice of a bar.
+CDM.VIS = { ALWAYS = 1, COMBAT = 2, COMBAT_OR_TARGET = 3, HIDDEN = 4 }
+-- The bar's "Text on top" choice.
+CDM.TEXT_TOP = { STACKS = 1, COUNTDOWN = 2 }
 -- preset: "defensives" fills the bar with the class's defensive cooldowns
 -- (runtime Presets.lua) until the user edits its list; "racials" appends the
 -- character's racial to the bar's Blizzard entries (potions and healthstones).
 CDM.SLOTS = {
-    { key = "ess", title = "Essential cooldowns", kind = 1, builtin = true, categories = { 0, 7 } },
-    { key = "uti", title = "Utility cooldowns", kind = 1, builtin = true, categories = { 1 } },
-    { key = "def", title = "Defensives", kind = 1, builtin = true, categories = {}, preset = "defensives" },
-    { key = "ext", title = "Potions and racials", kind = 1, builtin = true, categories = { 5 }, preset = "racials" },
-    { key = "buf", title = "Buffs", kind = 2, builtin = true, categories = { 2, 6, 8 } },
-    { key = "bar", title = "Buff bars", kind = 3, builtin = true, categories = { 3 } },
+    { key = "ess", title = "Essential cooldowns", kind = KIND.COOLDOWN, builtin = true, categories = { 0, 7 } },
+    { key = "uti", title = "Utility cooldowns", kind = KIND.COOLDOWN, builtin = true, categories = { 1 } },
+    { key = "def", title = "Defensives", kind = KIND.COOLDOWN, builtin = true, categories = {}, preset = "defensives" },
+    { key = "ext", title = "Potions and racials", kind = KIND.COOLDOWN, builtin = true, categories = { 5 },
+        preset = "racials" },
+    { key = "buf", title = "Buffs", kind = KIND.AURA_ICON, builtin = true, categories = { 2, 6, 8 } },
+    { key = "bar", title = "Buff bars", kind = KIND.AURA_BAR, builtin = true, categories = { 3 } },
 }
 for i = 1, 6 do
     CDM.SLOTS[#CDM.SLOTS + 1] = { key = "c" .. i, title = NS.Text("Custom bar %d"):format(i), custom = true, categories = {} }
@@ -150,8 +157,9 @@ local CUSTOM = { on = false, anchor = 1, side = 1, gap = 4, x = 0, y = 0, size =
     usable = true, range = true, swipeAlpha = 70 }
 
 -- Groups by kind; custom slots carry every group because their kind changes.
-local GROUPS = { common = true, icon = { [1] = true, [2] = true }, cooldown = { [1] = true },
-    aura = { [2] = true, [3] = true }, bar = { [3] = true } }
+local GROUPS = { common = true, icon = { [KIND.COOLDOWN] = true, [KIND.AURA_ICON] = true },
+    cooldown = { [KIND.COOLDOWN] = true }, aura = { [KIND.AURA_ICON] = true, [KIND.AURA_BAR] = true },
+    bar = { [KIND.AURA_BAR] = true } }
 local function Has(slot, group)
     if slot.custom or group == "common" then return true end
     return GROUPS[group][slot.kind] == true
@@ -164,7 +172,7 @@ CDM.SUFFIXES = {}
 local function CommonRules(Add, p, d, slot)
     Add(Bool(p .. "on", "Show this bar", d.on), "on")
     Add(String(p .. "name", "Bar name", "", 24), "name")
-    Add(Choice(p .. "kind", "Bar type", slot.kind or 1, { "Cooldowns", "Buff icons", "Buff bars" }), "kind")
+    Add(Choice(p .. "kind", "Bar type", slot.kind or KIND.COOLDOWN, { "Cooldowns", "Buff icons", "Buff bars" }), "kind")
     Add(Number(p .. "x", "Horizontal position", d.x, -4000, 4000), "x")
     Add(Number(p .. "y", "Vertical position", d.y, -3000, 3000), "y")
     Add(Choice(p .. "anchor", "Attach to", d.anchor, ANCHOR_LABELS), "anchor")
@@ -172,7 +180,8 @@ local function CommonRules(Add, p, d, slot)
     Add(Number(p .. "gap", "Attach gap", d.gap, 0, 60), "gap")
     Add(Number(p .. "alpha", "Opacity (percent)", 100, 0, 100, 5), "alpha")
     Add(Number(p .. "oocAlpha", "Opacity out of combat (percent)", 100, 0, 100, 5), "oocAlpha")
-    Add(Choice(p .. "vis", "Show", 1, { "Always", "In combat", "In combat or with a target", "Hidden" }), "vis")
+    Add(Choice(p .. "vis", "Show", CDM.VIS.ALWAYS, { "Always", "In combat", "In combat or with a target", "Hidden" }),
+        "vis")
     Add(Bool(p .. "hideMounted", "Hide while mounted", false), "hideMounted")
     Add(Bool(p .. "hideVehicle", "Hide in vehicles", true), "hideVehicle")
     Add(Bool(p .. "tooltips", "Show tooltips", false), "tooltips")
@@ -194,7 +203,7 @@ local function IconRules(Add, p, d)
     Add(Bool(p .. "borderClass", "Class-colored border", false), "borderClass")
     Add(Bool(p .. "cdText", "Show countdown", true), "cdText")
     Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
-    Add(Choice(p .. "textTop", "Text on top", 1, { "Stacks", "Countdown" }), "textTop")
+    Add(Choice(p .. "textTop", "Text on top", CDM.TEXT_TOP.STACKS, { "Stacks", "Countdown" }), "textTop")
     Add(Number(p .. "cdSize", "Countdown size (0 = automatic)", 0, 0, 40), "cdSize")
     Add(Number(p .. "stackSize", "Charges and stacks size (0 = automatic)", 0, 0, 40), "stackSize")
     Add(Choice(p .. "stackPos", "Charges and stacks position", 9, POINT_LABELS), "stackPos")
@@ -247,7 +256,7 @@ local function BarRules(Add, p, d, slot)
         -- Text switches of every bar type (icon bars have them above).
         Add(Bool(p .. "cdText", "Show countdown", true), "cdText")
         Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
-        Add(Choice(p .. "textTop", "Text on top", 1, { "Stacks", "Countdown" }), "textTop")
+        Add(Choice(p .. "textTop", "Text on top", CDM.TEXT_TOP.STACKS, { "Stacks", "Countdown" }), "textTop")
     end
     Add(Number(p .. "barWidth", "Bar width", slot.key == "bar" and 220 or 200, 60, 480), "barWidth")
     Add(Number(p .. "barHeight", "Bar height", slot.key == "bar" and 20 or 18, 8, 48), "barHeight")
@@ -358,6 +367,17 @@ local function Sound(value)
     if value == "" then return true end
     return value:find("^lsm:.+") ~= nil or value:find("^kit:%d+$") ~= nil or value:find("^file:%d+$") ~= nil
 end
+-- Per-spell choice values; absent (the menu's 0) is the bar's setting.
+-- timeText and stackText: 2 show, 3 hide; textTop: 2 stacks on top,
+-- 3 countdown on top (K.Choice reads 2 as yes and 3 as no).
+CDM.CHOICE = { BAR = 1, YES = 2, NO = 3 }
+-- desat: 2 never, 3 always. swipe: 1 normal, 2 reversed, 3 hidden.
+-- stackGlowOp: 1 at least, 2 exactly, 3 more than the stackGlow count.
+-- actionGlowMode: 1 while the buff is present, 2 the stack comparison.
+CDM.DESAT = { NEVER = 2, ALWAYS = 3 }
+CDM.SWIPE = { NORMAL = 1, REVERSED = 2, HIDDEN = 3 }
+CDM.STACK_OP = { AT_LEAST = 1, EXACTLY = 2, MORE_THAN = 3 }
+CDM.ACTION_GLOW = { PRESENT = 1, STACKS = 2 }
 -- glowStyle (1 Blizzard alert, 2 Marching ants, 3 Pulse, 4 Border) and
 -- glowColor style every glow of the entry: ready, spell alert, "glow while
 -- active" and the stack glow; absent, the bar's glow style and tint apply.

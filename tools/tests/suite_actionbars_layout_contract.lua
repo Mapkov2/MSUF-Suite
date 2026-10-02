@@ -195,10 +195,8 @@ do
     S.PixelUnit=unit
 end
 
--- Menu preview uses the same math without frames.
-local info=S.ActionBarPreviewInfo(4)
-assert(info.buttons==7 and info.rows==3 and info.columns==3 and info.rowCount==3 and info.width==52 and info.height==52 and info.start==4)
-assert(S.ActionBarPreviewInfo(13)==nil and not S.ActionBarAvailable(0) and not S.ActionBarAvailable(1.5))
+-- Only the bar indices the catalog knows are available.
+assert(not S.ActionBarAvailable(13) and not S.ActionBarAvailable(0) and not S.ActionBarAvailable(1.5))
 
 ------------------------------------------------------------------ edges
 -- Same contract as the cooldown manager's K.PlaceEdges: no width only hides

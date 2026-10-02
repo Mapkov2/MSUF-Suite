@@ -11,6 +11,8 @@ local Grid = {}
 C.Grid = Grid
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local type = type
+local KIND = C.Const.KIND
+local COOLDOWN, AURA_BAR = KIND.COOLDOWN, KIND.AURA_BAR
 
 local function Round(value) return floor(value + .5) end
 
@@ -18,13 +20,13 @@ local function Round(value) return floor(value + .5) end
 -- bars without a grow rule (built-in "Buff bars") stack upward.
 local function Grow(view)
     local grow = view.grow
-    if grow == nil and view.kind == 3 then return 2 end
+    if grow == nil and view.kind == AURA_BAR then return 2 end
     return grow == 2 and 2 or 1
 end
 
 -- Cell size and spacing in whole pixels, stride, flow and alignment.
 local function Cells(view, unit)
-    if view.kind == 3 or view.kind == 1 and view.cooldownDuration then
+    if view.kind == AURA_BAR or view.kind == COOLDOWN and view.cooldownDuration then
         return max(1, Round((view.barWidth or 200) / unit)), max(1, Round((view.barHeight or 18) / unit)),
             Round((view.spacing or 2) / unit), 1, false, Grow(view), 1
     end
@@ -111,7 +113,8 @@ end
 
 -- Cooldown bars whose later rows take their own icon count or size.
 local function MixedRows(view)
-    return view.kind == 1 and not view.cooldownDuration and ((view.laterPerRow or 0) > 0 or (view.laterSize or 0) > 0)
+    return view.kind == COOLDOWN and not view.cooldownDuration
+        and ((view.laterPerRow or 0) > 0 or (view.laterSize or 0) > 0)
 end
 -- Size of the icon at place index (later rows may have their own).
 local function Footprint(view, index, unit)
@@ -171,7 +174,7 @@ local function Offsets(view, count, out, unit)
     local width, height
     if MixedRows(view) then
         width, height = FillMixed(view, n, out, unit)
-    elseif view.kind == 1 and align == 1 then
+    elseif view.kind == COOLDOWN and align == 1 then
         width, height = CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
     else
         width, height = Fill(w, h, sp, per, vertical, grow, align, n, 0, out, unit)
@@ -188,7 +191,7 @@ end
 
 -- Growth-edge point of a bar; free bars anchor it to UIParent's center.
 local function Point(view)
-    if view.kind ~= 3 and view.vertical then return Grow(view) == 2 and "RIGHT" or "LEFT" end
+    if view.kind ~= AURA_BAR and view.vertical then return Grow(view) == 2 and "RIGHT" or "LEFT" end
     return Grow(view) == 2 and "BOTTOM" or "TOP"
 end
 

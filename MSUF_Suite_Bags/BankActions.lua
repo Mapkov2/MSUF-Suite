@@ -11,8 +11,8 @@ if NS.Client.isForever then return end
 --    selected, so Blizzard's own bag clicks still confirm refundable swaps;
 --    a click on one switches that tab first through a secure overlay;
 --  * stacks split in the Suite panel (StackSplitter.lua).
-local A = {}
-P.BankActions = A
+local BankActions = {}
+P.BankActions = BankActions
 local ACCOUNT = Enum.BankType.Account
 
 local function Usable(button)
@@ -72,9 +72,9 @@ local function Confirm(record, location)
     confirm:Show()
 end
 -- The bank closed: the refund question and the warband tab overlay go.
-A.Cancel = function()
+BankActions.Cancel = function()
     if confirm and confirm:IsShown() then Cancel() end
-    A.TabDetach()
+    BankActions.TabDetach()
 end
 
 local function Place(record)
@@ -110,7 +110,7 @@ local function TabDetach()
     tab:Hide()
     tab:ClearAllPoints()
 end
-A.TabDetach = TabDetach
+BankActions.TabDetach = TabDetach
 
 local function Forward(owner, script)
     local handler = owner and owner:GetScript(script)
@@ -136,20 +136,20 @@ local function TabOverlay()
     tab:SetScript("PostClick", function(self, mouseButton)
         local owner = self.owner
         TabDetach()
-        if owner then A.Click(owner, mouseButton) end
+        if owner then BankActions.Click(owner, mouseButton) end
     end)
-    tab:SetScript("OnDragStart", function(self) if self.owner then A.Drag(self.owner) end end)
-    tab:SetScript("OnReceiveDrag", function(self) if self.owner then A.Receive(self.owner) end end)
+    tab:SetScript("OnDragStart", function(self) if self.owner then BankActions.Drag(self.owner) end end)
+    tab:SetScript("OnReceiveDrag", function(self) if self.owner then BankActions.Receive(self.owner) end end)
     tab:SetScript("OnEvent", TabDetach)
     tab:RegisterEvent("PLAYER_REGEN_DISABLED")
     tab:Hide()
     RegisterStateDriver(tab, "visibility", "[combat] hide")
-    A.tabOverlay = tab
+    BankActions.tabOverlay = tab
     return tab
 end
 
 -- A Suite bank item gained the pointer.
-function A.Enter(button)
+function BankActions.Enter(button)
     local record = button.record
     if NS.IsCombatLocked() or not record or not record.itemID or record.bankType ~= ACCOUNT
         or not BankFrame:IsShown() or BankFrame:GetActiveBankType() == ACCOUNT or not C_Bank.CanUseBank(ACCOUNT) then
@@ -169,7 +169,7 @@ function A.Enter(button)
 end
 
 -- A pooled item button left the page.
-function A.Hidden(button)
+function BankActions.Hidden(button)
     if tab and tab.owner == button then TabDetach() end
 end
 
@@ -183,7 +183,7 @@ local function ModifiedClick(button, record)
     end
 end
 
-function A.Click(button, mouseButton)
+function BankActions.Click(button, mouseButton)
     local record = Usable(button)
     if not record then return end
     if IsModifiedClick() then
@@ -198,13 +198,13 @@ function A.Click(button, mouseButton)
     end
 end
 
-function A.Drag(button)
+function BankActions.Drag(button)
     local record = Usable(button)
     if not record then return end
     if CursorHasItem() then Place(record) else PickUp(record) end
 end
 
-function A.Receive(button)
+function BankActions.Receive(button)
     local record = Usable(button)
     if record and CursorHasItem() then Place(record) end
 end

@@ -1230,6 +1230,7 @@ T("From this many stacks the number shows in the color on the right.", "達到�
 T("Full", "完整")
 T("Full Blizzard", "完全暴雪")
 T("Full row", "整列")
+T("Game menu", "遊戲選單")
 T("Gear", "裝備")
 T("Gear summary", "裝備摘要")
 T("Gem sockets", "寶石插槽")

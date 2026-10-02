@@ -75,7 +75,6 @@ local one = X.Bind(a, c, 1, 1, "broker")
 local two = X.Bind(b, c, 1, 2, "broker")
 M.activeSources[one], M.activeSources[two] = true, true
 X.Rebind(M)
-eq(#X.BrokerNames(), 2, "discover plugins")
 local _, first = X.Format(one)
 eq(first, "first", "first plugin")
 eq(X.bindings[one].icons[1], 12, "plugin icon")
@@ -320,7 +319,6 @@ Load("Bootstrap", bare)
 Load("Sources", bare)
 Load("Actions", bare)
 local Y = bare.DataTextSources
-eq(#Y.BrokerNames(), 0, "no library lists no plugins")
 local lonely = Y.Bind(Button(), c, 1, 1, "broker")
 local module = { active = true, activeSources = { [lonely] = true }, config = config, values = {}, due = {} }
 Y.Rebind(module)
