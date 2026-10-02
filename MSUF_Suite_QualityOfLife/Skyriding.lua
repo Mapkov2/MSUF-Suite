@@ -481,6 +481,11 @@ local function SyncSpellEvents(self, visible, preview)
     end
 end
 
+-- The redraw is the host's OnUpdate script, not a ctx:Ticker. A script runs
+-- only while the host is visible, so the redraw also stops when the player
+-- hides the UI (Alt+Z) or a parent hides the host, which a ticker would not
+-- notice; it also follows frame time (the elapsed it accumulates), so a long
+-- frame is not repeated as several ticks.
 local Update
 local function Tick(_, elapsed)
     local self = M

@@ -4,6 +4,9 @@ local Dispatch, Finite, PublicText = S.Dispatch, S.Finite, S.PublicText
 
 -- All Suite information displays share one deadline timer. A display owns one
 -- reusable task per owner key; the native timer exists only while a task is due.
+-- This is not ctx:After (Timers.lua): the owners are plain strings that need no
+-- module context, and every due task rides on one native timer, where a wait
+-- per context would arm one C_Timer per display and tick.
 local tasks, taskPool, ready = {}, {}, {}
 local timer, timerDue, dispatching = nil, nil, false
 
