@@ -22,6 +22,8 @@ local ns
 ns = support.Platform(root, setmetatable({ InCombatLockdown = function() return ns.IsCombatLocked() end },
     { __index = _G }))
 ns.AnchorPoints, ns.IsCombatLocked = { "CENTER" }, function() return false end
+-- Platform.lua's IsSecret is the client's issecretvalue.
+ns.IsSecret = function(value) return value == "secret" end
 ns.Dispatch = function(callback, ...) return callback(...) end
 support.QoLStyleFixture(root, suite)
 local function context()
@@ -332,6 +334,8 @@ local function widget()
 end
 UIParent = {}
 IsInGroup = function() return grouped end
+-- RestrictedActionsConstantsDocumentation.lua: Inactive 0, Activating 1, Active 2.
+Enum.AddOnRestrictionState = { Inactive = 0, Activating = 1, Active = 2 }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupBloodlust.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 local lust = assert(installed.groupBloodlust)
@@ -340,7 +344,12 @@ lust.background, lust.edges = widget(), { widget(), widget(), widget(), widget()
 lust.active, lust.context = true, support.ModuleTimers(root, suite, ns)("groupBloodlust", lust, context())
 lust.config = { point = 1, width = 172, height = 42, scale = 100, x = 0, y = 0,
     onlyWhenLocked = false }
+local moverRegistrations, register = 0, suite.RegisterOwnedMover
+suite.RegisterOwnedMover = function(...) moverRegistrations = moverRegistrations + 1; return register(...) end
 lust:Enable()
+-- The controller registers the movers after Enable (S.RefreshEditMover).
+assert(moverRegistrations == 0, "Enable registered the Edit Mode mover itself")
+suite.RegisterOwnedMover = register
 assert(not lust.context.events.UNIT_AURA and auraReads == 0 and not lust.host.shown)
 grouped = true
 lust.context.events.GROUP_ROSTER_UPDATE(lust)
@@ -390,9 +399,18 @@ do
     DrainAuras()
     assert(auraReads>reads,"an unknown lockout update was skipped")
     reads=auraReads
+    -- UNIT_AURA listens only while C_Secrets keeps the lockout spells
+    -- readable, so an added aura with a secret spell ID is another buff
+    -- (raid combat sends many); restriction edges read again instead.
     callback(lust,"UNIT_AURA","player",{isFullUpdate=false,addedAuras={{spellId="secret"}}})
     DrainAuras()
-    assert(auraReads>reads,"an unreadable added spell was treated as unrelated")
+    assert(auraReads==reads and #auraTimers==0,"a secret added spell re-read the readable lockouts")
+    assert(lust.context.events.ADDON_RESTRICTION_STATE_CHANGED,
+        "restriction edges are not heard while the lockouts are readable")
+    lust.context.events.ADDON_RESTRICTION_STATE_CHANGED(lust,"ADDON_RESTRICTION_STATE_CHANGED",1,1)
+    assert(auraReads==reads and #auraTimers==1,"an activating restriction read before its dispatch ended")
+    DrainAuras()
+    assert(auraReads>reads,"an activating restriction did not read the lockouts again")
 end
 auras[57724] = nil
 lust.context.events.UNIT_AURA(lust, "UNIT_AURA", "player", { isFullUpdate = false,
@@ -427,7 +445,7 @@ lust.config.onlyWhenLocked = false
 auraRestricted = false
 auras[390435] = nil
 lust.context.events.ADDON_RESTRICTION_STATE_CHANGED(lust, "ADDON_RESTRICTION_STATE_CHANGED", 1, 0)
-assert(lust.context.events.UNIT_AURA and not lust.context.events.ADDON_RESTRICTION_STATE_CHANGED
+assert(lust.context.events.UNIT_AURA and lust.context.events.ADDON_RESTRICTION_STATE_CHANGED
     and lust.host.shown and lust.status.text == "Ready", "lockout did not resume when the restriction ended")
 auraRestricted = true
 lust.context.events.UNIT_AURA(lust, "UNIT_AURA", "player", { isFullUpdate = true })

@@ -51,7 +51,10 @@ local suite = {
         return screen
     end,
 }
-local ns = { IsCombatLocked = function() return combat end }
+-- Platform.lua's IsSecret is the client's issecretvalue; "secret" stands in
+-- for a secret value.
+local ns = { IsCombatLocked = function() return combat end,
+    IsSecret = function(value) return value == "secret" end }
 ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
     function() return combat end)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(

@@ -55,12 +55,25 @@ end
 UIParent = Widget()
 GetInstanceInfo = function() return "Instance", instanceType end
 C_DelvesUI = { HasActiveDelve = function() return delve end }
-C_Spell = { GetSpellInfo = function(id)
-    reads = reads + 1
-    if id == 66 then return { name = secret, iconID = 66 } end
-    if id == 67 then return { name = "Hidden icon", iconID = secret } end
-    return { name = "Spell " .. id, iconID = id + 1000 }
-end }
+-- The name and texture getters answer plain values (reads counts the
+-- casts that reached them); GetSpellInfo builds an info table (infoTables),
+-- which only the Edit Mode samples may ask for, once.
+local infoTables = 0
+C_Spell = {
+    GetSpellInfo = function(id)
+        infoTables = infoTables + 1
+        return { name = "Sample " .. id, iconID = id + 3000 }
+    end,
+    GetSpellName = function(id)
+        reads = reads + 1
+        if id == 66 then return secret end
+        return id == 67 and "Hidden icon" or "Spell " .. id
+    end,
+    GetSpellTexture = function(id)
+        if id == 67 then return secret end
+        return id + 1000, id + 2000
+    end,
+}
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local clock = Support.Clock(now)
 
@@ -116,6 +129,11 @@ end })
 M:Enable()
 assert(reads == 0 and not M.host.shown and M.host.mouse == false,
     "disabled history did startup spell work or intercepted input")
+-- The controller registers a module's movers after every Enable and Refresh
+-- (Core/Suite.lua ApplyModule -> S.RefreshEditMover); Enable registering them
+-- too registered them twice.
+assert(not mover, "Enable registered the Edit Mode mover itself")
+M:RegisterMovers()
 -- MSUF Edit Mode builds the size controls from these catalog rules.
 local size = mover and mover.sizeKeys
 assert(mover and mover.getFrame() == M.host and size and size[1] == "width" and size[2] == "rowHeight"
@@ -135,6 +153,7 @@ assert(reads == 2 and not M.host.shown and #M.history == 0,
 for id = 1, 8 do Cast(id) end
 clock.Advance(10)
 Cast(9)
+assert(infoTables == 0, "a cast built a spell info table")
 assert(#M.history == 8 and M.history[1].name == "Spell 9"
     and M.history[8].name == "Spell 2" and M.rows[1].name.text == "Spell 9"
     and M.rows[5].name.text == "Spell 5" and not M.rows[6].frame.shown,

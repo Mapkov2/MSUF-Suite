@@ -1,6 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local IN_COMBAT = { inCombat = true }
+-- The client's secret test (Platform.lua), called directly on the raid
+-- health path.
+local IsSecret = NS.IsSecret
 local M = {}
 local PARTY, RAID = {}, {}
 for i = 1, 4 do PARTY[i] = "party" .. i end
@@ -56,35 +59,42 @@ local function PlayerAlive(self)
     if not (self.afterDeath and PlayerDead()) then StopWatching(self) end
 end
 
-local function OnHealth(self, _, unit)
-    if not self.active or not self.dead or not S.PublicText(unit) then return end
-    if self.dead[unit] == nil then return end
-    local exists = UnitExists(unit)
-    if not S.Public(exists) or exists ~= true then return end
-    local dead = UnitIsDeadOrGhost(unit)
-    if not S.Public(dead) or type(dead) ~= "boolean" then return end
-    local before = self.dead[unit]
-    self.dead[unit] = dead
-    if dead and before == false then
-        local name = S.PublicText(UnitName(unit))
-        if name then
-            local message = string.format(S.Text("%s died"), name)
-            if self.config.chat ~= false then S.Print(message) end
-            if self.config.screen then
-                local color = ChatTypeInfo.RAID_WARNING
-                self.screen:AddMessage(message, color.r, color.g, color.b)
-            end
-            if self.config.sound then
-                local now = GetTime()
-                -- Several simultaneous deaths are one audible notice, not a
-                -- stack of overlapping sounds. No timer runs between deaths.
-                if S.Finite(now) and (not self.lastSoundAt or now - self.lastSoundAt >= 1) then
-                    self.lastSoundAt = now
-                    PlaySound(SOUNDKIT.RAID_WARNING, "Master")
-                end
-            end
+local function Announce(self, unit)
+    local name = S.PublicText(UnitName(unit))
+    if not name then return end
+    local message = string.format(S.Text("%s died"), name)
+    if self.config.chat ~= false then S.Print(message) end
+    if self.config.screen then
+        local color = ChatTypeInfo.RAID_WARNING
+        self.screen:AddMessage(message, color.r, color.g, color.b)
+    end
+    if self.config.sound then
+        local now = GetTime()
+        -- Several simultaneous deaths are one audible notice, not a
+        -- stack of overlapping sounds. No timer runs between deaths.
+        if S.Finite(now) and (not self.lastSoundAt or now - self.lastSoundAt >= 1) then
+            self.lastSoundAt = now
+            PlaySound(SOUNDKIT.RAID_WARNING, "Master")
         end
     end
+end
+
+-- Every raid member's UNIT_HEALTH and UNIT_FLAGS lands here in combat. A tick
+-- that leaves the stored state as it was costs two client calls: the secret
+-- test of the token (a table key) and UnitIsDeadOrGhost with the secret test
+-- of its answer. Only a change asks UnitExists: a token whose unit is gone
+-- reads alive and must leave the stored state alone, as before.
+local function OnHealth(self, _, unit)
+    local states = self.dead
+    if not states or not self.active or IsSecret(unit) then return end
+    local before = states[unit]
+    if before == nil then return end
+    local dead = UnitIsDeadOrGhost(unit)
+    if IsSecret(dead) or type(dead) ~= "boolean" or dead == before then return end
+    local exists = UnitExists(unit)
+    if IsSecret(exists) or exists ~= true then return end
+    states[unit] = dead
+    if dead then Announce(self, unit) end
 end
 
 -- The unit list and the baseline are reused for every combat.

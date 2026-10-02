@@ -7,6 +7,8 @@ local NS, S = P.NS, P.Suite
 local D = P.DamageMeter
 local M = D.M
 local Public, Finite = S.Public, S.Finite
+-- The client's secret test (Platform.lua) for the list paint.
+local IsSecret = NS.IsSecret
 local floor, max, min, format = math.floor, math.max, math.min, string.format
 local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
 local ORDER = { "settings", "reset", "session", "type" }
@@ -288,7 +290,7 @@ end
 function D.LocalIndex(sources, count)
     for i = 1, count do
         local flag = sources[i].isLocalPlayer
-        if Public(flag) and flag == true then return i end
+        if not IsSecret(flag) and flag == true then return i end
     end
     return 0
 end

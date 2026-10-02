@@ -9,6 +9,8 @@ P.DamageMeter = D
 local M = { styleGen = 0, events = {} }
 D.M = M
 local Public, Finite = S.Public, S.Finite
+-- The client's secret test (Platform.lua) for the per-row readers.
+local IsSecret = NS.IsSecret
 local floor, format = math.floor, string.format
 
 -- Enum.DamageMeterType values are identical on every client (catalog choice
@@ -36,25 +38,29 @@ for i = 1, D.MAX do
     D.KEYS[i] = keys
 end
 
--- Plain junk (nil, NaN) becomes 0; secret values pass through for C sinks.
+-- Plain junk (nil, NaN, infinity) becomes 0; secret values pass through for
+-- C sinks. Runs for every value of every painted row: one secret test, no
+-- Lua reader call.
+local HUGE = math.huge
 function D.Num(value)
-    if Public(value) and not Finite(value) then return 0 end
-    return value
+    if IsSecret(value) then return value end
+    if type(value) == "number" and value == value and value > -HUGE and value < HUGE then return value end
+    return 0
 end
 
 function D.Count(list)
     if type(list) ~= "table" then return 0 end
     local count = #list
-    return Public(count) and count or 0
+    return not IsSecret(count) and count or 0
 end
 
 -- Ambiguate accepts secret names; its result goes directly to text sinks.
 -- Character-count shortening remains limited to public strings.
 function D.Short(name)
-    if Public(name) and type(name) ~= "string" then return "" end
+    if not IsSecret(name) and type(name) ~= "string" then return "" end
     local config = M.config
     if not (config and config.showRealm) then name = Ambiguate(name, "short") end
-    if not Public(name) then return name end
+    if IsSecret(name) then return name end
     local maxChars = config and config.nameMaxChars or 0
     if maxChars <= 0 then return name end
     local index, chars = 1, 0

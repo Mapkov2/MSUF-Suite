@@ -367,7 +367,7 @@ function Effects.Usable(entry, queries)
         if id and reader then
             -- The flush owns separate spell/item maps and clears them before
             -- returning. Resolve overrides by their current ID on every pass.
-            if queries and Public(id) then
+            if queries and not issecret(id) then
                 if queries.seen[id] then
                     usable, noPower = queries.usable[id], queries.noPower[id]
                 else

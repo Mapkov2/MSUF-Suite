@@ -7,6 +7,8 @@ if NS.Client.isForever then return end
 -- engaged boss list at ENCOUNTER_END, including bosses from earlier phases.
 local H = {}
 local Finite, Public, Text = S.Finite, S.Public, S.PublicText
+-- The client's secret test (Platform.lua), called directly on boss health.
+local IsSecret = NS.IsSecret
 local Dispatch, Finish = S.Dispatch, NS.Finish
 local Clock = S.ClockText
 local Tr = S.Text
@@ -64,25 +66,42 @@ end
 
 -- While combat keeps a boss's health secret, the row becomes a format: the
 -- readable parts are written into it and each secret percentage stays an
--- argument for SetFormattedText, a C sink. Nothing is cached then, because
--- a secret reading cannot be compared with the previous one.
+-- argument for SetFormattedText, a C sink. The format depends only on the
+-- names, which bosses read secret and the readable percents; ReadBoss drops
+-- it when one of those changes (view.secretFormat), so a paint in a secret
+-- fight only collects the secret percentages.
 local secretArgs = {}
-local function SecretFormat(view)
-    local parts, count = {}, 0
+local function BuildSecretFormat(view)
+    local parts = {}
     for i = 1, 10 do
         local boss = view.live[i]
         if boss then
             local name = (boss.name or L.boss:format(i)):gsub("%%", "%%%%")
             if boss.secret then
-                count = count + 1
-                secretArgs[count] = boss.secretPercent
                 parts[#parts + 1] = name .. " %.1f%%"
             else
                 parts[#parts + 1] = name .. (boss.percent and string.format(" %.1f%%%%", boss.percent) or "")
             end
         end
     end
-    return L.active:format(table.concat(parts, " \194\183 ")), count
+    return L.active:format(table.concat(parts, " \194\183 "))
+end
+
+local function SecretFormat(view)
+    local count = 0
+    for i = 1, 10 do
+        local boss = view.live[i]
+        if boss and boss.secret then
+            count = count + 1
+            secretArgs[count] = boss.secretPercent
+        end
+    end
+    local format = view.secretFormat
+    if not format then
+        format = BuildSecretFormat(view)
+        view.secretFormat = format
+    end
+    return format, count
 end
 
 local function AnySecret(view)
@@ -235,7 +254,7 @@ function H.Stop(owner)
     view.stage, view.stageStep, view.stageSource = nil, nil, nil
     view.lastTime, view.lastResult = nil, nil
     view.live = {}
-    view.liveText = nil
+    view.liveText, view.secretFormat = nil, nil
     for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.frame:Hide()
     owner.raidActive = false
@@ -260,7 +279,7 @@ local function ReadBoss(view, index, unit, keepMissing)
         if keepMissing then return false end
         if not before then return false end
         view.live[index] = nil
-        view.liveText = nil
+        view.liveText, view.secretFormat = nil, nil
         return true
     end
     local name = Text(UnitName(unit))
@@ -268,13 +287,18 @@ local function ReadBoss(view, index, unit, keepMissing)
     if before and not secret and not before.secret and before.name == name and before.percent == percent then
         return false
     end
+    -- name and percent are readable (or nil); a secret reading's own value
+    -- stays out of the comparison.
     if not name and not percent and not secret then
         if not before then return false end
         view.live[index] = nil
+        view.secretFormat = nil
     elseif before then
+        if before.name ~= name or before.percent ~= percent or before.secret ~= secret then view.secretFormat = nil end
         before.name, before.percent, before.secret, before.secretPercent = name, percent, secret, secretPercent
     else
         view.live[index] = { name = name, percent = percent, secret = secret, secretPercent = secretPercent }
+        view.secretFormat = nil
     end
     view.liveText = nil
     return true
@@ -293,7 +317,7 @@ end
 -- The existing live paint reads each dirty boss once at the latest value.
 local function BossHealth(owner, _, unit)
     local view = owner.raid
-    if not view or not view.pull or not Public(unit) then return end
+    if not view or not view.pull or IsSecret(unit) then return end
     local index = BOSS_INDEX[unit]
     if not index then return end
     view.liveDirty[index] = true
@@ -431,7 +455,7 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     view.lastTime, view.lastResult = nil, nil
     view.stage, view.stageStep, view.stageSource = nil, nil, nil
     view.live = {}
-    view.liveText = nil
+    view.liveText, view.secretFormat = nil, nil
     for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
     view.pull = { started = GetTime() }
     ReadInitialStage(owner)

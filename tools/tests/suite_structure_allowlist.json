@@ -459,12 +459,6 @@
    "symbol": "db (= MSUF_DB)"
   },
   {
-   "file": "MSUF_Suite_DamageMeter/Menus.lua",
-   "kind": "state",
-   "reason": "the meter registers its reset dialog once, on first use",
-   "symbol": "dialogs.MSUF_SUITE_DAMAGE_METER_RESET (= StaticPopupDialogs)"
-  },
-  {
    "file": "MSUF_Suite_DamageMeter/Window.lua",
    "kind": "client",
    "reason": "not in the UI source: a global string of the 12.1 damage meter, unproven on WoW Forever",

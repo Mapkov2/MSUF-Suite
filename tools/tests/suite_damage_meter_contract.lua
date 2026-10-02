@@ -183,9 +183,8 @@ GameTooltip=NewRegion("Frame")
 function GameTooltip:SetOwner(owner) self.owner=owner end
 function GameTooltip:GetOwner() return self.owner end
 function GameTooltip:SetSpellByID(id) self.spell=id end
-StaticPopupDialogs={}
-local dialogTable,shownPopup=StaticPopupDialogs,nil
-StaticPopup_Show=function(which) shownPopup=which end
+-- Blizzard's dialogs: an addon entry in StaticPopupDialogs raises.
+local dialogs=dofile(root.."/tools/tests/suite_test_support.lua").StaticPopups()
 local recapOpened
 OpenDeathRecapUI=function(id) recapOpened=id end
 
@@ -299,7 +298,7 @@ local files={"Data","Rows","Window","Breakdown","Menus","Timer","Controller"}
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
-for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode"}) do
+for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode","Dialogs"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
 local baseFrames=#frames
@@ -805,12 +804,19 @@ win.panel.scripts.OnClick(win.panel,"LeftButton")
 S.Set("damageMeter","w1Type",1)
 
 local resets=api.resets
-assert(S.DamageMeterReset(false) and shownPopup=="MSUF_SUITE_DAMAGE_METER_RESET" and api.resets==resets,"reset must confirm first")
-assert(StaticPopupDialogs==dialogTable and StaticPopupDialogs.MSUF_SUITE_DAMAGE_METER_RESET.text=="Reset all sessions?")
-StaticPopupDialogs.MSUF_SUITE_DAMAGE_METER_RESET.OnAccept();assert(api.resets==resets+1)
+assert(S.DamageMeterReset(false) and dialogs.Count("GENERIC_CONFIRMATION")==1 and api.resets==resets,
+    "reset must confirm first")
+local question=dialogs.Last("GENERIC_CONFIRMATION")
+assert(question.text=="Reset all sessions?" and question.acceptText=="Yes" and question.cancelText=="No",
+    "the reset question lost its text or buttons")
+assert(S.DamageMeterReset(false) and dialogs.Count("GENERIC_CONFIRMATION")==1,
+    "a second reset question stacked on the first")
+dialogs.Cancel(dialogs.Last("GENERIC_CONFIRMATION"));assert(api.resets==resets,"a cancelled question reset")
+S.DamageMeterReset(false)
+dialogs.Accept(dialogs.Last("GENERIC_CONFIRMATION"));assert(api.resets==resets+1)
 assert(S.DamageMeterReset(true) and api.resets==resets+2,"skipConfirm must reset directly")
-S.Set("damageMeter","confirmReset",false);shownPopup=nil
-S.DamageMeterReset(false);assert(api.resets==resets+3 and shownPopup==nil)
+S.Set("damageMeter","confirmReset",false)
+S.DamageMeterReset(false);assert(api.resets==resets+3 and dialogs.Count("GENERIC_CONFIRMATION")==0)
 Event("CHALLENGE_MODE_START");assert(api.resets==resets+4,"M+ start did not reset")
 
 ------------------------------------------------------------------ scrolling and the pinned own row
@@ -1223,5 +1229,98 @@ do
         end
         assert(count==#choices,entry[1].." has a choice without a name")
     end
+end
+------------------------------------------------------------------ raid combat budget
+-- The 2026-10-02 raid trace: D.FetchSession ran 240 times in 120 s, 19 KB of
+-- native session table each, for the two default windows (Damage Done and
+-- Healing Done, Current) at the default 1 s combat refresh. A fetch happens
+-- only for a shown, unfaded window whose meter type and session an event
+-- touched since its last paint (Blizzard's own window refreshes on the same
+-- test, DamageMeterSessionWindowMixin:OnEvent), once per paint interval,
+-- and windows showing the same meter and fight share one fetch. Natives are
+-- the C_DamageMeter session getters (api.fetch, api.fetchID).
+do
+    assert(S.SetMany("damageMeter",{windowCount=2,w1Type=1,w2Type=3,w1Session=1,w2Session=1,
+        visibility=Suite.DamageMeterVisibility.ALWAYS,refreshRate=1}))
+    -- The scenarios above end with the module switched off.
+    assert(S.Set("damageMeter","enabled",true) and M.active,"the meter did not start again")
+    api.secret=true
+    combat=true;now=1000;Event("PLAYER_REGEN_DISABLED")
+    RunPaint();RunClock()
+    local damage,healing=assert(D.windows[1]),assert(D.windows[2])
+    assert(damage.shown and healing.shown and damage.meterType==0 and healing.meterType==2,"two default windows expected")
+    -- The client sends each change twice (the Overall copy with sessionID 0,
+    -- the current fight with its own ID); 5 is a meter no window shows.
+    local delivered=0
+    local function Send(meterType,sessionID)
+        if Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED") then
+            delivered=delivered+1
+            Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",meterType,sessionID)
+        end
+    end
+    local function Storm(types)
+        for _=1,100 do
+            for _,meterType in ipairs(types) do Send(meterType,0);Send(meterType,9) end
+        end
+    end
+    local function Second() now=now+1;RunPaint() end
+    -- Settings change out of combat only.
+    local function Reconfigure(values)
+        combat=false;Event("PLAYER_REGEN_ENABLED");RunPaint();RunClock()
+        assert(S.SetMany("damageMeter",values))
+        combat=true;Event("PLAYER_REGEN_DISABLED");RunPaint();RunClock()
+        Second()
+    end
+    local function Fetches() return api.fetch+api.fetchID end
+    local function Measure(fn)
+        local before,count=Fetches(),0
+        debug.sethook(function()
+            local source=debug.getinfo(2,"S").source:gsub("\\","/")
+            if source:find("/MSUF_Suite[%w_]*/") and not source:find("/tools/",1,true) then count=count+1 end
+        end,"",1)
+        fn()
+        debug.sethook()
+        return Fetches()-before,count
+    end
+    Second()
+    -- A raid second: both shown meters change, one meter nobody shows too.
+    local fetched,instructions=Measure(function() Storm({0,2,5});Second() end)
+    local raidDelivered=delivered
+    assert(fetched==2 and not damage.dirty and not healing.dirty,
+        "a combat second fetched "..fetched.." sessions for two windows")
+    -- Measured 2026-10-02 (wave 4): 2 fetches and 3293 VM instructions at base
+    -- a7aee25, 2 fetches and 2864 with the direct secret tests, for 600 sent
+    -- events (most muted behind the pending paint).
+    assert(instructions<=math.floor(2864*1.02),"a combat second cost "..instructions.." instructions")
+    -- Only the meter nobody shows changed: no fetch, no paint.
+    fetched=Measure(function() Storm({5});Second() end)
+    assert(fetched==0 and not PaintRequest(),"an unshown meter's update fetched "..fetched.." sessions")
+    -- A quiet second fetches nothing.
+    fetched=Measure(Second)
+    assert(fetched==0,"a quiet second fetched "..fetched.." sessions")
+    -- An update always repaints within one paint interval.
+    Send(2,0)
+    local request=PaintRequest()
+    assert(healing.dirty and request and request.delay<=c.refreshRate,"a session update did not schedule its paint")
+    fetched=Measure(Second)
+    assert(fetched==1 and not healing.dirty,"a session update was not painted within one interval")
+    -- Two windows on the same meter and fight share one fetch.
+    Reconfigure({w2Type=1})
+    fetched=Measure(function() Storm({0});Second() end)
+    assert(fetched==1,"two windows on one meter fetched "..fetched.." sessions")
+    -- A mouseover window that is faded fetches nothing until it is shown.
+    Reconfigure({w2Type=3,visibility=Suite.DamageMeterVisibility.MOUSEOVER})
+    assert(damage.faded and healing.faded,"mouseover windows did not fade")
+    fetched=Measure(function() Storm({0,2});Second() end)
+    assert(fetched==0,"faded windows fetched "..fetched.." sessions")
+    local hidden=Fetches()
+    damage.hover=true;D.ApplyHover(damage)
+    assert(not damage.dirty and Fetches()==hidden+1,"a revealed window did not catch up with one fetch")
+    damage.hover=false;D.ApplyHover(damage)
+    combat=false;Event("PLAYER_REGEN_ENABLED");RunPaint();RunClock()
+    assert(S.Set("damageMeter","visibility",Suite.DamageMeterVisibility.ALWAYS))
+    api.secret=false
+    print(("damage meter raid budget: 2 fetches, %d instructions, %d of 600 events delivered"):format(
+        instructions,raidDelivered))
 end
 print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, damage and healing targets, combat spell unit labels, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

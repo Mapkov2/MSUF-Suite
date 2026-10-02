@@ -11,7 +11,11 @@ local NS, S = P.NS, P.Suite
 -- because declassification can lag the regen edge.
 local D = P.DamageMeter
 local M = D.M
+-- Context:Event's named option: the meter's events also run in combat.
+local IN_COMBAT = { inCombat = true }
 local Public = S.Public
+-- The client's secret test (Platform.lua) for the session event storm.
+local IsSecret = NS.IsSecret
 local max, format = math.max, string.format
 local HOST_KEY = "external:msuf.blizzard:damagemeter"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -121,7 +125,7 @@ function D.ResumeSessionUpdates()
     if not M.sessionMuted then return end
     M.sessionMuted = false
     D.InvalidateTargets()
-    if M.events[SESSION_EVENT] then M.context:Event(SESSION_EVENT, SessionUpdated, true) end
+    if M.events[SESSION_EVENT] then M.context:Event(SESSION_EVENT, SessionUpdated, IN_COMBAT) end
 end
 
 -- Deferred paints, clock ticks, the timer's tenths and the late repaint are
@@ -248,7 +252,7 @@ function D.ZoneKey()
 end
 
 SessionUpdated = function(self, _, meterType, sessionID)
-    if not Public(meterType) or not Public(sessionID) then return end
+    if IsSecret(meterType) or IsSecret(sessionID) then return end
     D.InvalidateTargets()
     local dirty, clean = false, false
     for i = 1, self.config.windowCount do
@@ -371,7 +375,7 @@ local function Want(event, on, handler)
     on = on and true or false
     if (M.events[event] == true) == on then return end
     M.events[event] = on or nil
-    if on then M.context:Event(event, handler, true) else M.context:RemoveEvent(event) end
+    if on then M.context:Event(event, handler, IN_COMBAT) else M.context:RemoveEvent(event) end
 end
 -- Data events only while a window is shown; combat and zone events while a
 -- window could appear (or the standalone timer runs). A combat that started

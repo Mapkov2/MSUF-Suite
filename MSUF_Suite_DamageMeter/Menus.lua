@@ -363,28 +363,22 @@ local function ResetNow()
     C_DamageMeter.ResetAllCombatSessions()
 end
 -- Resets every tracked fight. Confirms first unless skipConfirm or the
--- confirmReset setting is off. The popup is added as one new field of
--- StaticPopupDialogs; the table itself is never replaced.
+-- confirmReset setting is off. The question is Blizzard's generic
+-- confirmation (S.Confirm, MSUF_Suite_Modules/Dialogs.lua): StaticPopupDialogs
+-- is Blizzard's table, read by its own dialog code, so the Suite adds no
+-- entry to it. The label is the format's argument, never part of the format.
+local RESET_QUESTION = "damageMeterReset"
 function S.DamageMeterReset(skipConfirm)
     local config = M.config or S.Config("damageMeter")
     if skipConfirm or not config.confirmReset then
         ResetNow()
         return true
     end
-    local dialogs = StaticPopupDialogs
-    if not dialogs.MSUF_SUITE_DAMAGE_METER_RESET then
-        dialogs.MSUF_SUITE_DAMAGE_METER_RESET = {
-            text = format("%s?", S.BlizzardText("DAMAGE_METER_RESET_ALL_SESSIONS", "Reset all sessions")),
-            button1 = S.BlizzardText("YES", "Yes"),
-            button2 = S.BlizzardText("NO", "No"),
-            OnAccept = ResetNow,
-            timeout = 0,
-            whileDead = 1,
-            hideOnEscape = 1,
-            preferredIndex = 3,
-        }
-    end
-    StaticPopup_Show("MSUF_SUITE_DAMAGE_METER_RESET")
+    S.Confirm(RESET_QUESTION, {
+        text = "%s?", text_arg1 = S.BlizzardText("DAMAGE_METER_RESET_ALL_SESSIONS", "Reset all sessions"),
+        acceptText = S.BlizzardText("YES", "Yes"), cancelText = S.BlizzardText("NO", "No"),
+        callback = ResetNow,
+    })
     return true
 end
 

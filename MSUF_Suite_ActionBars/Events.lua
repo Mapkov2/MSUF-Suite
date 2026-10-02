@@ -8,16 +8,24 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
+-- The client's secret test (Platform.lua), called directly on the hot
+-- payloads.
+local IsSecret = NS.IsSecret
+-- SpellConstantsDocumentation.lua: the start recovery category of the GCD
+-- (read when the dispatcher starts).
+local GCD_RECOVERY
 local PROC_PIXEL, PROC_NONE = AB.ENUM.PROC_GLOW.PIXEL, AB.ENUM.PROC_GLOW.NONE
 local MAIN_BAR = AB.ENUM.BAR.MAIN
 local Painter, Dirty = AB.Painter, AB.Dirty
 local slotMap, Visible, NewChargeEpoch = Painter.slotMap, Painter.Visible, Painter.NewChargeEpoch
+local spellButtons = Painter.spellButtons
 local Tint, Usable, Cooldown, ReleaseRange = Painter.Tint, Painter.Usable, Painter.Cooldown, Painter.ReleaseRange
 local CacheAction, ActionSpell, SetGlow, GlowCheck = Painter.CacheAction, Painter.ActionSpell, Painter.SetGlow, Painter.GlowCheck
 local GLOW_SPELL, GLOW_DYNAMIC, GLOW_FLYOUT = Painter.GLOW_SPELL, Painter.GLOW_DYNAMIC, Painter.GLOW_FLYOUT
 local Walk, WalkNative, MapButton, UnmapButton, Remap, AllKeyTexts = Painter.Walk, Painter.WalkNative, Painter.MapButton, Painter.UnmapButton,
     Painter.Remap, Painter.AllKeyTexts
 local dirtySlots, gridBars, protected, reported = Dirty.slots, Dirty.grid, Dirty.protected, Dirty.reported
+local spellCooldowns = Dirty.spellCooldowns
 local Schedule, Mark = Dirty.Schedule, Dirty.Mark
 
 ------------------------------------------------------------------ events
@@ -57,8 +65,9 @@ local function UsableChanged(_, _, changes)
     for i = 1, #changes do
         local change = changes[i]
         local slot = type(change) == "table" and change.slot
-        if Public(slot) and slot then reported[slot] = true end
-        local list = Public(slot) and slotMap[slot]
+        local readable = not IsSecret(slot)
+        if readable and slot then reported[slot] = true end
+        local list = readable and slotMap[slot]
         if list then
             for n = 1, #list do
                 local rec = list[n]
@@ -70,9 +79,9 @@ end
 
 local function RangeChanged(_, _, slot, inRange, checksRange)
     if not M.config.rangeColoring then return end
-    local list = Public(slot) and slotMap[slot]
+    local list = not IsSecret(slot) and slotMap[slot]
     if not list then return end
-    local out = Public(inRange) and Public(checksRange) and checksRange and not inRange or nil
+    local out = not IsSecret(inRange) and not IsSecret(checksRange) and checksRange and not inRange or nil
     for i = 1, #list do
         local rec = list[i]
         if rec.rangeSlot == slot and rec.outOfRange ~= out then
@@ -114,6 +123,37 @@ local function Glow(_, event, spell)
     glowSpell, glowShow = spell, event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW"
     Walk(GlowMatch)
     if M.config.procGlow == PROC_PIXEL then WalkNative(GlowMatch) end
+end
+
+-- SPELL_UPDATE_COOLDOWN (SpellBookDocumentation.lua): spellID "can be a
+-- base spell or an override spell", baseSpellID is the base of an
+-- override, nil means every cooldown; category is the spell's cooldown
+-- category. As Blizzard's cooldown viewer decides it
+-- (CooldownViewerItemMixin:OnSpellUpdateCooldownEvent), a nil spell and a
+-- global cooldown start repaint every cooldown. So does a cooldown category:
+-- other spells and items can share it, and no separate event for them is
+-- documented. Any unreadable payload value repaints every cooldown too. A
+-- plain named spell repaints only the suite buttons listed under it (the
+-- action's spell, its override, the previous ones; Paint.lua).
+local function MarkSpell(id)
+    local list = spellButtons[id]
+    if not list or not list[1] then return false end
+    for i = 1, #list do spellCooldowns[list[i]] = true end
+    return true
+end
+local function SpellCooldown(_, _, spellID, baseSpellID, category, recovery)
+    if IsSecret(spellID) or spellID == nil then
+        Mark("cooldown")
+        return
+    end
+    if IsSecret(baseSpellID) or IsSecret(category) or IsSecret(recovery) or recovery == GCD_RECOVERY
+        or (category ~= nil and category ~= 0) then
+        Mark("cooldown")
+        return
+    end
+    local marked = MarkSpell(spellID)
+    if baseSpellID ~= nil and baseSpellID ~= spellID then marked = MarkSpell(baseSpellID) or marked end
+    if marked then Schedule() end
 end
 
 local function ActiveLossOfControl()
@@ -209,7 +249,10 @@ local function GamepadChanged()
 end
 
 -- Blizzard's buttons on Retail and Forever follow ACTIONBAR_UPDATE_COOLDOWN
--- for swipes, SPELL_UPDATE_CHARGES for counts, and for usability the slot
+-- for swipes (the suite's spell actions follow SPELL_UPDATE_COOLDOWN's
+-- spell instead, the rest of the buttons ACTIONBAR_UPDATE_COOLDOWN; the
+-- 2026-10-02 raid trace counted 1,463 payload-less cooldown events and 7,653
+-- button cooldown reads in 120 s), SPELL_UPDATE_CHARGES for counts, and for usability the slot
 -- payloads of ACTION_USABLE_CHANGED plus one full re-read on
 -- PLAYER_MOUNT_DISPLAY_CHANGED (Blizzard_ActionBar/Shared/ActionButton.lua;
 -- ACTIONBAR_UPDATE_USABLE is no longer registered there); so do these.
@@ -219,7 +262,8 @@ end
 local EVENTS = {
     ADDON_LOADED = function() AB.SyncPanelReveal() end,
     ACTIONBAR_SLOT_CHANGED = SlotChanged,
-    ACTIONBAR_UPDATE_COOLDOWN = function() Mark("cooldown") end,
+    ACTIONBAR_UPDATE_COOLDOWN = function() Mark("actionbarCooldown") end,
+    SPELL_UPDATE_COOLDOWN = SpellCooldown,
     SPELL_UPDATE_CHARGES = function()
         NewChargeEpoch()
         Mark("count")
@@ -295,8 +339,8 @@ local optionalEvents = {
     SPELL_ACTIVATION_OVERLAY_GLOW_SHOW = true,
     SPELL_ACTIVATION_OVERLAY_GLOW_HIDE = true,
 }
--- Context:Event's third argument: the handler also runs in combat.
-local ALLOW_COMBAT = true
+-- Context:Event's named option: the handler also runs in combat.
+local IN_COMBAT = { inCombat = true }
 function AB.SyncOptionalEvents()
     local context = M.context
     for event in pairs(optionalEvents) do
@@ -306,7 +350,7 @@ function AB.SyncOptionalEvents()
             or event ~= "ACTION_RANGE_CHECK_UPDATE" and M.config.procGlow ~= PROC_NONE
         if gamepadEvent then wanted = NS.Client.isForever and AB.AnyGamepadHidden() end
         if wanted then
-            context:Event(event, EVENTS[event], ALLOW_COMBAT)
+            context:Event(event, EVENTS[event], IN_COMBAT)
         else
             context:RemoveEvent(event)
         end
@@ -355,9 +399,10 @@ end
 
 function AB.StartDispatcher()
     local context = M.context
+    GCD_RECOVERY = Constants.SpellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
     AB.locActive = ActiveLossOfControl()
     for event, handler in pairs(EVENTS) do
-        if not optionalEvents[event] then context:Event(event, handler, ALLOW_COMBAT) end
+        if not optionalEvents[event] then context:Event(event, handler, IN_COMBAT) end
     end
     AB.SyncOptionalEvents()
     AB.cooldownOwner = AB.cooldownOwner or {}
