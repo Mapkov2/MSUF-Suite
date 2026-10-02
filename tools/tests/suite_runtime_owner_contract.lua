@@ -121,6 +121,13 @@ context:Event("UNIT_FLAGS", function() end, true, "player")
 assert(context.frame.events.UNIT_FLAGS == "player", "a unit event was registered for every unit")
 context:RemoveEvent("UNIT_FLAGS")
 assert(context.frame.unregistrations == 2, "removing an absent event repeated a native call")
+-- A raising module callback is reported (Dispatch) and never raises out of
+-- the routing frame's OnEvent, like every other callback the runtime runs.
+context:Event("RAISING_EVENT", function() error("module callback raised") end)
+local reportedBefore = #reported
+assert(pcall(context.frame.callback, context.frame, "RAISING_EVENT"), "a module callback raised out of OnEvent")
+assert(#reported == reportedBefore + 1, "a raising module callback was not reported")
+context:RemoveEvent("RAISING_EVENT")
 local native = { scale = 1 }
 function native:GetScale() return self.scale end
 function native:SetScale(value) self.scale = value end

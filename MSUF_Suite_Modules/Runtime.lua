@@ -506,24 +506,29 @@ function Context:RestorePoints(frame)
 end
 
 ------------------------------------------------------------------ events
--- OnEvent of every context frame: hands the event to the module callback.
+-- Geometry modules re-apply after combat instead of moving frames in it.
+local function DeferGeometry(ctx, event)
+    if ctx.combatEvents and ctx.combatEvents[event] or not NS.IsCombatLocked() then return false end
+    S.Queue(ctx.id)
+    return true
+end
+
+-- OnEvent of every context frame: hands the event to the module callback,
+-- isolated (Dispatch) like every other callback a module gives the runtime.
 local function RouteEvent(frame, event, ...)
-    local ctx = frame.context
     local module = frame.module
     if not module.active then return end
     if event == "ADDON_LOADED" and module.addons and not module.addons[(...)] then return end
-    -- Geometry modules re-apply after combat instead of moving frames in it.
-    if module.geometry and not (ctx.combatEvents and ctx.combatEvents[event]) and NS.IsCombatLocked() then
-        S.Queue(ctx.id)
-        return
-    end
-    local callback = ctx.callbacks[event]
-    if callback then callback(module, event, ...) end
+    if module.geometry and DeferGeometry(frame.context, event) then return end
+    local callback = frame.callbacks[event]
+    if callback then Dispatch(callback, module, event, ...) end
 end
 
 local function RoutingFrame(ctx)
     local frame = S.CreateFrame("Frame")
     frame.context = ctx
+    -- The context keeps this table for its lifetime (Release empties it).
+    frame.callbacks = ctx.callbacks
     -- Install owns this instance for the context's lifetime.
     frame.module = S.instances[ctx.id]
     frame:SetScript("OnEvent", RouteEvent)
