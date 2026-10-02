@@ -24,6 +24,7 @@ Pages\BuffReminders.lua
 Pages\Chat.lua
 Pages\NameplatesSize.lua
 Pages\NameplatesEditorMarkers.lua
+Pages\NameplatesEditorLayers.lua
 Pages\NameplatesPreviewLayout.lua
 Pages\NameplatesEditor.lua
 Pages\NameplatesPreview.lua

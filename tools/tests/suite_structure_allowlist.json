@@ -2505,7 +2505,7 @@
    "symbol": "H.ShouldSkipDuplicateNudge"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua",
    "kind": "addon",
    "reason": "MSUF2 export (Shell/Menu2/MSUF_Menu2_API.lua on the Main and Classic hosts) that scrolls to one setting row; without it a handle click selects the element without opening its setting.",
    "symbol": "M.OpenExactSettingControl"
