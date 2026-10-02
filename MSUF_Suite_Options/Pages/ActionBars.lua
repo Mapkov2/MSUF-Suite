@@ -2,6 +2,7 @@ local _, P = ...
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local PAGE, ID = "suite_actionbars", "actionbars"
 local COUNT = Suite.ActionBarCount
+local NEVER, START = Suite.ActionBarEnum.VISIBILITY.NEVER, Suite.ActionBarEnum.START
 
 -- Retail's rotation recommendation runs only while Blizzard's Assisted
 -- Highlight option (the assistedCombatHighlight CVar) is on; Forever has no
@@ -66,7 +67,7 @@ local function GroupOf(suffix)
     end
 end
 local function BarTitle(index) return Tr(Suite.ActionBarTitles[index]) end
-local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == 6 end
+local function BarOff(index) return P.Get(ID, "bar" .. index .. "Visibility") == NEVER end
 
 -- Blizzard_EditMode loads at startup on every supported client; the button
 -- only reads whether Blizzard would enter its Edit Mode now.
@@ -86,7 +87,7 @@ local function CopyValues(values, from, to, groups)
             end
             if group.id == "visibility" then
                 local mode = P.Get(ID, "bar" .. from .. "Visibility")
-                values["bar" .. to .. "ResumeVisibility"] = mode == 6
+                values["bar" .. to .. "ResumeVisibility"] = mode == NEVER
                     and P.Get(ID, "bar" .. from .. "ResumeVisibility") or mode
             end
         end
@@ -155,7 +156,7 @@ local function BuildQuick(ctx, b)
         local meta = P.Meta(PAGE, ID, "quick.bar" .. index, "setting", section)
         meta.settingKey = "msufsuite.actionbars." .. key
         local toggle = M.BindSwitchAt(ctx, body, Tr(Suite.ActionBarTitles[index]), x, y, cell - 52,
-            function() return P.Get(ID, key) ~= 6 end,
+            function() return P.Get(ID, key) ~= NEVER end,
             function(value) SetBarOn(bar, value == true) end, meta)
         local status = P.Text(body, "", x + 44, y - 26, cell - 44, T.colors.dim or T.colors.muted)
         M.TrackRefresh(ctx, function()
@@ -166,7 +167,7 @@ local function BuildQuick(ctx, b)
             end
             local mode = P.Get(ID, key)
             local label = Rule(key).choices[mode]
-            if mode == 6 then
+            if mode == NEVER then
                 local previous = P.Get(ID, "bar" .. bar .. "ResumeVisibility")
                 P.SetTranslatedText(status, string.format(Tr("Off - restores %s"), Tr(Rule(key).choices[previous])))
             else
@@ -198,8 +199,8 @@ function P.ActionBarGrid(count, rows, vertical, start, i)
         lines = math.ceil(count / columns)
         column, row = i % columns, math.floor(i / columns)
     end
-    if start == 2 or start == 4 then column = columns - 1 - column end
-    if start == 3 or start == 4 then row = lines - 1 - row end
+    if start == START.TOP_RIGHT or start == START.BOTTOM_RIGHT then column = columns - 1 - column end
+    if start == START.BOTTOM_LEFT or start == START.BOTTOM_RIGHT then row = lines - 1 - row end
     return column, row, columns, lines
 end
 
@@ -255,7 +256,7 @@ local function BuildPreview(ctx, parent, y, width)
         end
         host:SetAlpha(math.max(0.25, P.Get(ID, p .. "Alpha") / 100))
         local text = Tr(Suite.ActionBarTitles[selected])
-        if P.Get(ID, p .. "Visibility") == 6 then text = text .. "  (" .. Tr("hidden") .. ")" end
+        if P.Get(ID, p .. "Visibility") == NEVER then text = text .. "  (" .. Tr("hidden") .. ")" end
         if not Available(selected) then text = text .. "  (" .. Tr("not available on this client") .. ")" end
         caption:SetText(text)
     end
@@ -399,7 +400,7 @@ local function BuildEditor(ctx, b)
     end
     y = y - 40
     P.Button(ctx, body, "Move selected bar", 16, y, half, function() P.MoveOnScreen(ID, "bar" .. selected) end,
-        function() return P.Get(ID, "enabled") and Available(selected) and P.Get(ID, "bar" .. selected .. "Visibility") ~= 6 end,
+        function() return P.Get(ID, "enabled") and Available(selected) and P.Get(ID, "bar" .. selected .. "Visibility") ~= NEVER end,
         P.Meta(PAGE, ID, "editor.move", "action", "suite_actionbars_editor"))
     P.Button(ctx, body, "Key bindings", 28 + half, y, half, function() if S.OpenQuickKeybind then S.OpenQuickKeybind() end end,
         function() return S.OpenQuickKeybind ~= nil end,

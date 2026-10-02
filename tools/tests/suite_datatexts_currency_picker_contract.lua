@@ -5,6 +5,11 @@ local config={crestCurrencyIDs='10',crestMode=1}
 -- DataTexts addon exports its sources. One shared table would hide a lookup
 -- in the wrong one.
 local NS={Finite=function(v) return type(v)=='number' and v==v end,Public=function(v) return v~='secret' end}
+-- The catalog's choice values (Core/Catalog/DataTexts.lua), as the client's namespace has them.
+local _,catalog=dofile(root..'/tools/tests/suite_test_support.lua').CatalogDefaults(root,'dataTexts','DataTexts')
+for _,name in ipairs({'DataTextSources','DataTextSourceIndex','DataTextCrestMode','DataTextAccentPosition'}) do
+    NS[name]=assert(catalog[name],name)
+end
 local S={}
 NS.Suite=S
 local page

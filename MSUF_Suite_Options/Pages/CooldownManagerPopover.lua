@@ -5,6 +5,7 @@ local Page = P.CDMPage
 if not Page then return end
 local W, T, Tr = P.W, P.T, P.Tr
 local CDM = P.Suite.CDM
+local FAMILY = CDM.FAMILY
 local ID = Page.ID
 local SLOTS, KEYS = CDM.SLOTS, CDM.KEYS
 local CROP_MIN, CROP_MAX = Page.CROP_MIN, Page.CROP_MAX
@@ -155,8 +156,8 @@ local pop
 -- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
 local function Applies(field, family, kind, aura)
     if field.blizzardOnly and kind ~= "b" then return false end
-    if field.stack then return family == 2 or aura == true end
-    if family == 2 then return field.aura == true end
+    if field.stack then return family == FAMILY.AURA or aura == true end
+    if family == FAMILY.AURA then return field.aura == true end
     if not field.cd then return false end
     return not (field.spellOnly and (kind == "i" or kind == "e"))
 end
@@ -198,7 +199,7 @@ end
 -- A cooldown shows its buff, and so its stacks, only while "Show active
 -- buff duration" applies to it; its stack rows are dimmed otherwise.
 local function StacksShown(fields)
-    if pop.family == 2 then return true end
+    if pop.family == FAMILY.AURA then return true end
     local value = fields and fields.showAura
     if value == nil then
         local key = KEYS[pop.slot] and KEYS[pop.slot].showAura
@@ -450,7 +451,7 @@ local function PaintRow(row, fields)
     local companion = field.color and fields and fields[field.color] or nil
     local own = Page.OwnSpellFields(pop.key)
     local custom = own and (own[field.key] ~= nil or (field.color and own[field.color] ~= nil)) or false
-    SetRaw(row.label, Tr(pop.family == 2 and field.auraLabel or field.label))
+    SetRaw(row.label, Tr(pop.family == FAMILY.AURA and field.auraLabel or field.label))
     local r, g, b
     if custom then r, g, b = Accent() else r, g, b = TextColor() end
     row.label:SetTextColor(r, g, b)

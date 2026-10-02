@@ -7,6 +7,12 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 local ANCHORS = Suite.AnchorPoints
 local ROWS = Suite.MinimapRowGeometry
 local OUTLINES = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
+-- The choice values (Core/Catalog/Minimap.lua) and the catalog defaults that
+-- stand in for a setting a partial config lacks.
+local TEXT_ANCHOR, WEATHER, BOX = Suite.MinimapTextAnchor, Suite.MinimapWeatherDisplay, Suite.MinimapTextBox
+local LANDING, LANDING_ICON, ZOOM = Suite.MinimapLanding, Suite.MinimapLandingIcon, Suite.MinimapZoomButtons
+local ROTATE, ART = Suite.MinimapRotate, Suite.MinimapStyleTexture
+local RULES = P.catalog.minimap.rules
 
 -- { name, sample text, key } of every info text.
 local TEXTS = {
@@ -164,21 +170,21 @@ end
 local function RowPosition(button, map, rowIndex, index, config, scale, prefix)
     local row = ROWS[rowIndex] or ROWS[1]
     local distance = ((config.elementDistance or 0) + (config.borderSize or 0)) * scale
-    local step = ((config.elementSize or 21) + (config.elementSpacing or 0)) * scale
+    local step = ((config.elementSize or RULES.elementSize.default) + (config.elementSpacing or 0)) * scale
     button:ClearAllPoints()
     button:SetPoint(row[1], map, row[2],
         row[3] * distance + row[5] * index * step + (config[prefix .. "X"] or 0) * scale,
         row[4] * distance + row[6] * index * step + (config[prefix .. "Y"] or 0) * scale)
 end
 
--- Anchors 10 and 11 sit above and below the map; returns the text justify.
+-- The anchors Above and Below sit outside the map; returns the text justify.
 local function TextPosition(button, map, anchor, x, y, scale, border)
     button:ClearAllPoints()
-    if anchor == 10 then
+    if anchor == TEXT_ANCHOR.ABOVE then
         button:SetPoint("BOTTOM", map, "TOP", x * scale, y * scale + border)
         return "CENTER"
     end
-    if anchor == 11 then
+    if anchor == TEXT_ANCHOR.BELOW then
         button:SetPoint("TOP", map, "BOTTOM", x * scale, y * scale - border)
         return "CENTER"
     end
@@ -225,9 +231,9 @@ local function PaintText(ui, config, item)
     -- The hit area hugs the rendered text, up to the configured field width.
     local contentHeight = name == "Weather" and Suite.MinimapStyle.WeatherHeight(config) or size
     local fieldWidth = config[prefix .. "Width"] or 100
-    if name == "Weather" and config.infoWeatherDisplay ~= 1 then
-        local iconSize = config.infoWeatherIconSize or 24
-        fieldWidth = config.infoWeatherDisplay == 2 and iconSize or math.max(fieldWidth, iconSize + 8)
+    if name == "Weather" and config.infoWeatherDisplay ~= WEATHER.TEXT then
+        local iconSize = config.infoWeatherIconSize or RULES.infoWeatherIconSize.default
+        fieldWidth = config.infoWeatherDisplay == WEATHER.ICON and iconSize or math.max(fieldWidth, iconSize + 8)
     end
     local configuredWidth = math.max(24, fieldWidth * scale)
     -- A font that has not loaded yet measures 0: estimate from the text.
@@ -236,7 +242,7 @@ local function PaintText(ui, config, item)
         measured = #sample * size * scale * 0.62
     end
     if name == "Weather" and texture then
-        measured = measured + (config.infoWeatherIconSize or 24) * scale + (sample ~= "" and 4 * scale or 0)
+        measured = measured + (config.infoWeatherIconSize or RULES.infoWeatherIconSize.default) * scale + (sample ~= "" and 4 * scale or 0)
     end
     local hitWidth = math.min(configuredWidth, math.max(24, measured + 8))
     button:SetSize(hitWidth, math.max(18, (contentHeight + 8) * scale))
@@ -255,9 +261,9 @@ local function PaintText(ui, config, item)
     if config[prefix .. "ClassColor"] then r, g, b = PlayerClassColor(r, g, b) end
     item.label:SetTextColor(r or 1, g or 1, b or 1)
     local boxMode = config[prefix .. "Box"]
-    local boxed = name ~= "Difficulty" and (boxMode == 2 or boxMode == 3)
+    local boxed = name ~= "Difficulty" and (boxMode == BOX.BORDER or boxMode == BOX.CUSTOM)
     local br, bg, bb = P.RGB(config.borderColor)
-    if boxMode == 3 then br, bg, bb = P.RGB(config[prefix .. "BoxColor"]) end
+    if boxMode == BOX.CUSTOM then br, bg, bb = P.RGB(config[prefix .. "BoxColor"]) end
     Tint(item.box, br, bg, bb, 0.85)
     item.box:SetShown(boxed or ui.state.selected and ui.state.selected.key == prefix)
     button:SetAlpha(on and 1 or 0.38)
@@ -275,7 +281,7 @@ local function IconWanted(config, spec)
         if S.MinimapElementPreviewShown and S.MinimapElementPreviewShown("Difficulty") == false then wanted = false end
         return wanted
     end
-    local wanted = key == "folio" and config.showLanding ~= 3 or spec[4] and config[spec[4]] == true
+    local wanted = key == "folio" and config.showLanding ~= LANDING.NEVER or spec[4] and config[spec[4]] == true
     if key == "drawer" and Suite.Client.IsAddOnLoaded("MinimapButtonButton") then wanted = false end
     if spec[4] == false then
         wanted = S.MinimapElementPreviewShown and S.MinimapElementPreviewShown(spec[2]) == true or false
@@ -291,7 +297,7 @@ local function PaintDifficulty(ui, config, item, size)
     local button, parts, scale = item.button, item.button.previewNative, ui.art.scale
     local native, mode
     if S.MinimapDifficultyPreviewSource then native, mode = S.MinimapDifficultyPreviewSource() end
-    local nativeScale = (config.elementSize or 21) / 21
+    local nativeScale = (config.elementSize or RULES.elementSize.default) / 21
     local mirrored = false
     if native and mode and mode.Background and mode.Border then
         local width, height = native:GetSize()
@@ -329,7 +335,7 @@ local function PaintDifficulty(ui, config, item, size)
 end
 
 local function PaintFolio(ui, config, button, size)
-    local simpleBook = config.landingIcon == 2
+    local simpleBook = config.landingIcon == LANDING_ICON.BOOK
     button.previewIcon:SetShown(not simpleBook)
     for _, part in ipairs(button.previewBook) do part:SetShown(simpleBook) end
     local scale = ui.art.scale
@@ -342,7 +348,7 @@ end
 local function PaintIcons(ui, config)
     local rowCount = 0
     local scale = ui.art.scale
-    local size = Clamp((config.elementSize or 21) * scale, 12, 60)
+    local size = Clamp((config.elementSize or RULES.elementSize.default) * scale, 12, 60)
     local selectedKey = ui.state.selected and ui.state.selected.key
     for _, item in ipairs(ui.iconItems) do
         local spec, button = item.spec, item.button
@@ -353,7 +359,7 @@ local function PaintIcons(ui, config)
         button:SetSize(size, size)
         if key == "specialization" then
             local corner = Suite.MinimapSpecCorners[config.specCorner] or Suite.MinimapSpecCorners[1]
-            local buttonSize = (config.specSize or 24) * scale
+            local buttonSize = (config.specSize or RULES.specSize.default) * scale
             button:SetSize(buttonSize, buttonSize)
             button:ClearAllPoints()
             button:SetPoint(corner[1], ui.map, corner[2], (corner[3] + (config.specX or 0)) * scale,
@@ -390,8 +396,8 @@ end
 
 local function PaintOrnament(ui, config)
     local art = ui.art
-    local rim = math.max(12, ((config.styleScale or 100) / 100 - 1) * art.width)
-    local shown = ui.LayerOn("ornament") and (config.styleTexture ~= 1 or ui.LayerOn("hidden"))
+    local rim = math.max(12, ((config.styleScale or RULES.styleScale.default) / 100 - 1) * art.width)
+    local shown = ui.LayerOn("ornament") and (config.styleTexture ~= ART.NONE or ui.LayerOn("hidden"))
     local edges = ui.ornamentEdges
     edges[1]:SetWidth(art.width + rim)
     edges[2]:SetWidth(art.width + rim)
@@ -407,18 +413,18 @@ end
 
 local function PaintMapControls(ui, config)
     local scale = ui.art.scale
-    local mode = config.zoomButtons or 1
+    local mode = config.zoomButtons or RULES.zoomButtons.default
     for index, button in ipairs(ui.zoomItems) do
-        button:SetShown(ui.LayerOn("blizzard") and (mode ~= 3 or ui.LayerOn("hidden")))
-        button:SetAlpha(mode == 2 and 1 or mode == 1 and 0.62 or 0.38)
+        button:SetShown(ui.LayerOn("blizzard") and (mode ~= ZOOM.HIDE or ui.LayerOn("hidden")))
+        button:SetAlpha(mode == ZOOM.ALWAYS and 1 or mode == ZOOM.MOUSEOVER and 0.62 or 0.38)
         local prefix = index == 1 and "zoomIn" or "zoomOut"
         button:ClearAllPoints()
         button:SetPoint("BOTTOMRIGHT", ui.map, "BOTTOMRIGHT",
             (-2 + (config[prefix .. "X"] or 0)) * scale,
             ((index == 1 and 27 or 3) + (config[prefix .. "Y"] or 0)) * scale)
     end
-    local rotating = config.rotate == 2
-    if config.rotate == 1 then
+    local rotating = config.rotate == ROTATE.ROTATE
+    if config.rotate == ROTATE.BLIZZARD then
         local value = GetCVarBool("rotateMinimap")
         rotating = Public(value) and value == true
     end

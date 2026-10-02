@@ -8,6 +8,7 @@ local _, P = ...
 -- CooldownManagerPopover.lua) build on the helpers exported here.
 local Suite, S, T, Tr = P.Suite, P.S, P.T, P.Tr
 local CDM = Suite.CDM
+local KIND, FAMILY = CDM.KIND, CDM.FAMILY
 local ID, PAGE = "cooldownManager", "suite_cooldownManager"
 
 local RULES, SLOTS, KEYS = P.catalog[ID].rules, CDM.SLOTS, CDM.KEYS
@@ -63,7 +64,7 @@ function Page.Kind(slot)
     if info.custom then return P.Get(ID, KEYS[info.key].kind) end
     return info.kind
 end
-function Page.Family(slot) return Page.Kind(slot) == 1 and 1 or 2 end
+function Page.Family(slot) return Page.Kind(slot) == KIND.COOLDOWN and FAMILY.COOLDOWN or FAMILY.AURA end
 function Page.IsOn(slot) return P.Get(ID, KEYS[slot].on) == true end
 -- Bars the strip and the bar list keep in view: every bar that is on or
 -- selected, the built-in bars, and custom bars that were set up (named).
@@ -153,7 +154,7 @@ function Page.KindName(kind) return Tr(KIND_NAMES[kind] or KIND_NAMES[1]) end
 function Page.Key(suffix) return KEYS[Page.selected][suffix] end
 -- Why an entry cannot go to a bar of the other family (untranslated).
 function Page.FamilyError(family)
-    return family == 1 and "That bar shows buffs." or "That bar shows cooldowns."
+    return family == FAMILY.COOLDOWN and "That bar shows buffs." or "That bar shows cooldowns."
 end
 
 -- A template suffix applies to a bar when that bar's kind declares it.
@@ -178,12 +179,12 @@ function Page.Relevant(slot, suffix)
     if not key or RULES[key].hidden then return false end
     local kind = Page.Kind(slot)
     if suffix == "barStacks" or suffix == "barStackMax" or suffix == "barStackEach" or suffix == "barStackMarks"
-        or suffix == "barStackColorAt" or suffix == "barStackColor" then return kind == 3 end
-    if suffix == "barChargeSegments" or suffix == "barChargeDim" then return kind == 1 and P.Get(ID, KEYS[slot].cooldownDuration) == true end
-    if kind == 1 and TIMER_FIELDS[suffix] then return P.Get(ID, KEYS[slot].cooldownDuration) == true end
+        or suffix == "barStackColorAt" or suffix == "barStackColor" then return kind == KIND.AURA_BAR end
+    if suffix == "barChargeSegments" or suffix == "barChargeDim" then return kind == KIND.COOLDOWN and P.Get(ID, KEYS[slot].cooldownDuration) == true end
+    if kind == KIND.COOLDOWN and TIMER_FIELDS[suffix] then return P.Get(ID, KEYS[slot].cooldownDuration) == true end
     if not Page.SlotInfo(slot).custom or suffix == "name" or suffix == "kind" or suffix == "shareContents" then return true end
-    if kind == 3 and KIND3_EXTRA[suffix] then return true end
-    if (kind == 2 or kind == 3) and AURA_EXTRA[suffix] then return true end
+    if kind == KIND.AURA_BAR and KIND3_EXTRA[suffix] then return true end
+    if (kind == KIND.AURA_ICON or kind == KIND.AURA_BAR) and AURA_EXTRA[suffix] then return true end
     local ref = REF_KEYS[kind] or REF_KEYS[1]
     return ref[suffix] ~= nil
 end

@@ -5,6 +5,7 @@ local _, P = ...
 local Page = P.CDMPage
 local Tr = P.Tr
 local CDM = P.Suite.CDM
+local FAMILY = CDM.FAMILY
 local EMPTY = {}
 local QUESTION = Page.QUESTION
 local CROP_MIN, CROP_MAX = Page.CROP_MIN, Page.CROP_MAX
@@ -283,7 +284,7 @@ function Page.RebuildPicker()
     local family = Page.Family(slot)
     SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
     local n = 1
-    Item(n, "header", Tr(family == 1 and "Blizzard cooldowns" or "Blizzard buffs"))
+    Item(n, "header", Tr(family == FAMILY.COOLDOWN and "Blizzard cooldowns" or "Blizzard buffs"))
     local sorted, bySpell, equip = CollectCatalog(slot, family)
     for i = 1, #sorted do
         local record = sorted[i]
@@ -293,13 +294,13 @@ function Page.RebuildPicker()
         if record.spell and not bySpell[record.spell] then bySpell[record.spell] = item end
         if record.override and not bySpell[record.override] then bySpell[record.override] = item end
     end
-    if family == 2 then n = AddReceivedBuffs(n) end
-    if family == 1 then n = AddTrinkets(n, equip) end
+    if family == FAMILY.AURA then n = AddReceivedBuffs(n) end
+    if family == FAMILY.COOLDOWN then n = AddTrinkets(n, equip) end
     picker.count = n
     picker.family = family
-    SetRaw(picker.idTitle, Tr(family == 1 and "Custom spell or item ID" or "Custom aura ID"))
-    picker.addA:SetText(family == 1 and "Add spell" or "Buff on me")
-    picker.addB:SetText(family == 1 and "Add item" or "Debuff on target")
+    SetRaw(picker.idTitle, Tr(family == FAMILY.COOLDOWN and "Custom spell or item ID" or "Custom aura ID"))
+    picker.addA:SetText(family == FAMILY.COOLDOWN and "Add spell" or "Buff on me")
+    picker.addB:SetText(family == FAMILY.COOLDOWN and "Add item" or "Debuff on target")
     Page.EchoCustom()
     Page.FilterPicker()
 end
@@ -325,10 +326,10 @@ function Page.EchoCustom()
     local text = (picker.idBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
     local spellID, spellName, spellIcon = ResolveSpell(text)
     local itemID, itemName, itemIcon
-    if picker.family == 1 then itemID, itemName, itemIcon = ResolveItem(text) end
+    if picker.family == FAMILY.COOLDOWN then itemID, itemName, itemIcon = ResolveItem(text) end
     -- Cooldowns reuse Blizzard's entry. A received buff must keep its own
     -- a<spellID> key: Blizzard's entry can be unlearned or caster-filtered.
-    local blizzard = picker.family == 1 and spellID and picker.bySpell[spellID] or nil
+    local blizzard = picker.family == FAMILY.COOLDOWN and spellID and picker.bySpell[spellID] or nil
     picker.customSpell, picker.customItem, picker.customBlizzard = spellID, itemID, blizzard
     local r, g, b = MutedColor()
     if text == "" then
@@ -347,7 +348,7 @@ function Page.EchoCustom()
     picker.echoIcon:SetTexture(spellIcon or itemIcon or QUESTION)
     picker.echoIcon:SetShown((spellID or itemID) ~= nil)
     picker.addA:SetEnabled(spellID ~= nil)
-    picker.addB:SetEnabled(picker.family == 1 and itemID ~= nil or picker.family ~= 1 and spellID ~= nil)
+    picker.addB:SetEnabled(picker.family == FAMILY.COOLDOWN and itemID ~= nil or picker.family ~= FAMILY.COOLDOWN and spellID ~= nil)
 end
 local function AddCustom(prefix)
     if P.Combat() then return end
@@ -398,9 +399,9 @@ local function EnsurePicker()
     picker.idTitle:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 112)
     picker.idBox = Page.SearchBox(picker, 120, Tr("ID or name"), Page.EchoCustom)
     picker.idBox:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 16, 82)
-    picker.addA = Button(picker, "", 90, 22, function() AddCustom(picker.family == 1 and "s" or "a") end)
+    picker.addA = Button(picker, "", 90, 22, function() AddCustom(picker.family == FAMILY.COOLDOWN and "s" or "a") end)
     picker.addA:SetPoint("LEFT", picker.idBox, "RIGHT", 8, 0)
-    picker.addB = Button(picker, "", 100, 22, function() AddCustom(picker.family == 1 and "i" or "d") end)
+    picker.addB = Button(picker, "", 100, 22, function() AddCustom(picker.family == FAMILY.COOLDOWN and "i" or "d") end)
     picker.addB:SetPoint("LEFT", picker.addA, "RIGHT", 6, 0)
     picker.echoIcon = picker:CreateTexture(nil, "ARTWORK")
     picker.echoIcon:SetSize(16, 16)

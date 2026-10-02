@@ -1,6 +1,7 @@
 local _, P = ...
 local Suite, S, W, M, T, Tr = P.Suite, P.S, P.W, P.M, P.T, P.Tr
 local PAGE, ID = "suite_minimap", "minimap"
+local WEATHER, SHAPE, TOOLTIP = Suite.MinimapWeatherDisplay, Suite.MinimapShape, Suite.MinimapInfoTooltip
 
 local HELP = {
     layout = "Select the map in the preview, then drag it or adjust X and Y in the preview's position bar.",
@@ -27,18 +28,18 @@ local WEATHER_TEXT_CONTROLS = { Font = true, Size = true, Outline = true, Render
 -- every control stays editable and the runtime ignores what it cannot do.
 P.Gates[ID] = function(rule, key)
     if key == "infoWeatherIconStyle" or key == "infoWeatherIconSize" then
-        return P.Get(ID, "infoWeatherDisplay") ~= 1
+        return P.Get(ID, "infoWeatherDisplay") ~= WEATHER.TEXT
     end
-    if WEATHER_TEXT_CONTROLS[key:match("^infoWeather(.+)$")] and P.Get(ID, "infoWeatherDisplay") == 2 then return false end
+    if WEATHER_TEXT_CONTROLS[key:match("^infoWeather(.+)$")] and P.Get(ID, "infoWeatherDisplay") == WEATHER.ICON then return false end
     if rule.section == "specialization" and not Suite.CanShowMinimapSpecialization() then return false end
     local prefix = key:match("^(info%a+)Shadow")
     if prefix then
         prefix = prefix:gsub("Shadow.*$", "")
-        if P.Get(ID, prefix .. "Rendering") == 3 then return false end
+        if P.Get(ID, prefix .. "Rendering") == Suite.FontRendering.SLUG then return false end
         if key ~= prefix .. "Shadow" and not P.Get(ID, prefix .. "Shadow") then return false end
     end
     if rule.key == "shape" and S.CanShapeMinimap and not S.CanShapeMinimap() then return false end
-    if rule.key == "hoverHeight" and P.Get(ID, "shape") == 2 then return false end
+    if rule.key == "hoverHeight" and P.Get(ID, "shape") == SHAPE.CIRCLE then return false end
     if rule.infoField and S.CanShowMinimapInfo and not P.Get(ID, key) and not S.CanShowMinimapInfo(rule.infoField) then return false end
     local element = ELEMENTS[rule.key]
     -- Retail creates the expansion button lazily; its setting must be editable
@@ -50,7 +51,7 @@ end
 
 -- Lockout and Great Vault tooltips depend on client APIs.
 local function TooltipChoice(index)
-    if index ~= 2 and index ~= 3 then return true end
+    if index ~= TOOLTIP.LOCKOUTS and index ~= TOOLTIP.VAULT then return true end
     return not S.CanShowMinimapTooltip or S.CanShowMinimapTooltip(index) and true or false
 end
 P.ChoiceGates[ID] = { infoClockTooltip = TooltipChoice, infoFPSTooltip = TooltipChoice, infoLatencyTooltip = TooltipChoice }

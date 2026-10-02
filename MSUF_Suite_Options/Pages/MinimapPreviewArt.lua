@@ -227,11 +227,11 @@ Art.__index = Art
 
 -- layerOn(key): whether a preview layer (map, border, shadow, ...) is shown.
 function Art:Paint(config, scale, layerOn)
-    local size = math.max(100, tonumber(config.size) or 190)
+    local size = math.max(100, tonumber(config.size) or P.catalog.minimap.rules.size.default)
     local shape = tonumber(config.shape) or 1
-    local round = shape == 2
+    local round = shape == P.Suite.MinimapShape.CIRCLE
     local width = math.floor(size * scale + 0.5)
-    local height = shape == 3 and math.floor(width * 2 / 3 + 0.5) or width
+    local height = shape == P.Suite.MinimapShape.WIDE and math.floor(width * 2 / 3 + 0.5) or width
     self.map:SetSize(width, height)
     self.width, self.height, self.scale = width, height, scale
 

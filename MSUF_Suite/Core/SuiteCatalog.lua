@@ -250,7 +250,7 @@ local function LookValues(id, lookIndex, config)
         end
     end
     if look.extra then look.extra(values, lookIndex, config) end
-    if not look.global then values.classStyle = lookIndex == 6 end
+    if not look.global then values.classStyle = lookIndex == lookIndexes.classColor end
     return values
 end
 

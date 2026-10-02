@@ -137,7 +137,7 @@ local function Build(ctx)
     P.Gates[ID] = function(rule, key)
         if rule.key == "nameEllipsis" then return P.Get(ID, "nameMaxChars") > 0 end
         if rule.key == "shadowOpacity" or rule.key == "shadowDistance" then
-            return P.Get(ID, "rendering") ~= 3
+            return P.Get(ID, "rendering") ~= P.Suite.FontRendering.SLUG
         end
         local index = tonumber(key:match("^w(%d+)"))
         return not index or index <= P.Get(ID, "windowCount")

@@ -5,6 +5,7 @@ local _, P = ...
 local Page = P.CDMPage
 local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 local CDM = P.Suite.CDM
+local FAMILY, OVERFLOW_OFF = CDM.FAMILY, CDM.OVERFLOW.OFF
 local ID = Page.ID
 local SLOTS, KEYS = CDM.SLOTS, CDM.KEYS
 local TILE, GAP = 36, 6
@@ -333,8 +334,8 @@ end
 
 local function EntryFamily(entry, slot)
     local family = Plain(entry.family)
-    if family == 1 or family == 2 then return family end
-    return CDM.IsAuraKey(entry.key) and 2 or Page.Family(slot)
+    if family == FAMILY.COOLDOWN or family == FAMILY.AURA then return family end
+    return CDM.IsAuraKey(entry.key) and FAMILY.AURA or Page.Family(slot)
 end
 
 function Page.CreateTileGrid(_, parent, x, y, width)
@@ -394,9 +395,9 @@ function Grid:Same(slot, blocked)
     local lists, spells = P.Get(ID, "listsData"), P.Get(ID, "spellsData")
     local cap = k.maxIcons and P.Get(ID, k.maxIcons) or 0
     local hide = k.hideReady and P.Get(ID, k.hideReady) or false
-    local route = k.overflow and P.Get(ID, k.overflow) or 1
+    local route = k.overflow and P.Get(ID, k.overflow) or OVERFLOW_OFF
     local target = SLOTS[route - 1]
-    local chain = target and KEYS[target.key].overflow and P.Get(ID, KEYS[target.key].overflow) or 1
+    local chain = target and KEYS[target.key].overflow and P.Get(ID, KEYS[target.key].overflow) or OVERFLOW_OFF
     local sig, running, source = BarsSignature(), Page.Running(), S.CooldownManagerBarEntries
     local same = self.valid == true and self.mSlot == slot and self.mBlocked == blocked and self.mGen == gen
         and self.mSpec == spec and self.mLists == lists and self.mSpells == spells and self.mCap == cap
@@ -418,7 +419,7 @@ local function PaintTile(tile, entry, key, slot, spells, lit)
     -- "Automatic" tracks its buff on.
     tile.hiddenBy, tile.unit, tile.movedTo = Plain(entry.hiddenBy), Plain(entry.unit), Plain(entry.movedTo)
     -- A cooldown that tracks a buff shows it on the icon (stack options).
-    tile.aura = tile.family == 2 or Plain(entry.hasAura) == true
+    tile.aura = tile.family == FAMILY.AURA or Plain(entry.hasAura) == true
     SetIcon(tile.icon, tile.texture)
     tile.icon:SetDesaturated(not tile.known)
     tile:SetAlpha(tile.known and 1 or 0.55)

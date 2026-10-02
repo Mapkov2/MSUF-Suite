@@ -18,6 +18,11 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
+-- The saved value of each source is its position in the lists above.
+NS.DataTextSourceIndex = { none = 1 }
+for index, key in ipairs(NS.DataTextSourceKeys) do
+    if key then NS.DataTextSourceIndex[key] = index end
+end
 NS.DataTextPoints = NS.AnchorPoints
 -- The choice values of the bar and source settings below (each is its
 -- label's position there); the DataTexts runtime names its modes through these.

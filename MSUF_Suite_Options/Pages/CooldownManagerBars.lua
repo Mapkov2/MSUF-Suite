@@ -6,6 +6,7 @@ local _, P = ...
 local Page = P.CDMPage
 local S, M, W, Tr = P.S, P.M, P.W, P.Tr
 local CDM = P.Suite.CDM
+local KIND, FREE = CDM.KIND, CDM.ANCHOR.FREE
 local ID = Page.ID
 local RULES, SLOTS, KEYS = P.catalog[ID].rules, CDM.SLOTS, CDM.KEYS
 local format = string.format
@@ -167,7 +168,7 @@ local function Occupied(slot, x, y)
     for i = 1, #SLOTS do
         local other = SLOTS[i].key
         local k = KEYS[other]
-        if other ~= slot and Page.IsOn(other) and P.Get(ID, k.anchor) == 1
+        if other ~= slot and Page.IsOn(other) and P.Get(ID, k.anchor) == FREE
             and P.Get(ID, k.x) == x and P.Get(ID, k.y) == y then return true end
     end
     return false
@@ -211,7 +212,7 @@ local function NewBarValues(slot, kind, reused)
     if #name > RULES[keys.name].maxLength then name = "Bar " .. slot:sub(2) end
     values[keys.name] = name
     local anchor = values[keys.anchor] or P.Get(ID, keys.anchor)
-    if anchor == 1 then
+    if anchor == FREE then
         local x, y = values[keys.x] or P.Get(ID, keys.x), values[keys.y] or P.Get(ID, keys.y)
         local nx, ny = FreeSpot(slot, x, y)
         if nx ~= x or ny ~= y then values[keys.x], values[keys.y] = nx, ny end
@@ -226,7 +227,7 @@ function Page.AddBar(kind)
         Page.Fail("All six custom bars are in use.")
         return false
     end
-    kind = (kind == 2 or kind == 3) and kind or 1
+    kind = (kind == KIND.AURA_ICON or kind == KIND.AURA_BAR) and kind or KIND.COOLDOWN
     Page.CommitFocus()
     local ok
     if reused then
@@ -317,7 +318,7 @@ function Page.ResetBar(slot)
             -- x/y follow the attachment: an attached bar goes back flush on
             -- its anchor, a bar that becomes free keeps its place on screen.
             local anchor = RULES[k.anchor].default
-            if anchor ~= 1 or P.Get(ID, k.anchor) ~= 1 then
+            if anchor ~= FREE or P.Get(ID, k.anchor) ~= FREE then
                 -- The conversion comes with the cooldown manager addon.
                 local moved = S.CooldownManagerConvertAnchor and S.CooldownManagerConvertAnchor(slot, anchor)
                 if type(moved) == "table" then for key, value in pairs(moved) do values[key] = value end end

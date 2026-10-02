@@ -6,6 +6,8 @@ local BAG_BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local PLACES = 6
+-- The choice values of the crest and source settings (Core/Catalog/DataTexts.lua).
+local CREST_MODE, SOURCE = P.Suite.DataTextCrestMode, P.Suite.DataTextSourceIndex
 local function CrestCurrencyMenu(anchor)
     local suite=P.Suite
     local selected,order,seen={},{},{}
@@ -26,7 +28,7 @@ local function CrestCurrencyMenu(anchor)
             local values={}
             for _,value in ipairs(order) do if value~=id then values[#values+1]=value end end
             if not selected[id] and #values<32 then values[#values+1]=id end
-            P.SetMany(ID,{crestMode=2,crestCurrencyIDs=table.concat(values,',')})
+            P.SetMany(ID,{crestMode=CREST_MODE.SELECTED,crestCurrencyIDs=table.concat(values,',')})
             CrestCurrencyMenu(anchor)
         end)
     end
@@ -34,7 +36,7 @@ local function CrestCurrencyMenu(anchor)
         menu:SetScrollMode(420)
         menu:CreateTitle(Tr('Select your current-season crests from the native currency list.'))
         menu:CreateTitle(Tr('Selection order is display order. Remove and select again to move a currency last.'))
-        menu:CreateButton(Tr('Clear selection'),function() P.SetMany(ID,{crestMode=2,crestCurrencyIDs=''}) end)
+        menu:CreateButton(Tr('Clear selection'),function() P.SetMany(ID,{crestMode=CREST_MODE.SELECTED,crestCurrencyIDs=''}) end)
         for _,id in ipairs(order) do Add(menu,id,C_CurrencyInfo.GetCurrencyInfo(id)) end
         menu:CreateDivider()
         for index=1,C_CurrencyInfo.GetCurrencyListSize() do
@@ -64,7 +66,7 @@ local function SeasonStagesMenu(anchor)
     local sources = S.DataTextExtraSources
     local choices = sources and sources.CrestChoices() or {}
     MenuUtil.CreateContextMenu(anchor, function(_, menu)
-        menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = 1, crestCurrencies = "" }) end)
+        menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = CREST_MODE.OBSERVED, crestCurrencies = "" }) end)
         for _, cost in ipairs(choices) do
             local order = cost.order
             local selected = false
@@ -79,7 +81,7 @@ local function SeasonStagesMenu(anchor)
                     if tonumber(value) ~= order then values[#values + 1] = value end
                 end
                 if not selected then values[#values + 1] = tostring(order) end
-                P.SetMany(ID, { crestMode = 1, crestCurrencies = table.concat(values, ",") })
+                P.SetMany(ID, { crestMode = CREST_MODE.OBSERVED, crestCurrencies = table.concat(values, ",") })
             end)
         end
     end)
@@ -123,7 +125,7 @@ local function PaintPreview(view, style)
     view.accent:SetShown(style.accentEnabled)
     view.accent:ClearAllPoints()
     local contentX = style.bagBadge and 64 or 0
-    if style.accentPosition == 2 then
+    if style.accentPosition == P.Suite.DataTextAccentPosition.TOP then
         view.accent:SetPoint("TOPLEFT", view.sample, "TOPLEFT", contentX, 0)
         view.accent:SetPoint("TOPRIGHT", view.sample, "TOPRIGHT", 0, 0)
     else
@@ -219,7 +221,7 @@ end
 
 local function HasEmptyPlace(prefix)
     for slot = 1, PLACES do
-        if P.Get(ID, prefix .. "Slot" .. slot) == 1 then return true end
+        if P.Get(ID, prefix .. "Slot" .. slot) == SOURCE.none then return true end
     end
     return false
 end
@@ -230,11 +232,11 @@ local function AddPlace(bar)
     for slot = 1, PLACES do used[P.Get(ID, prefix .. "Slot" .. slot)] = true end
     for slot = 1, PLACES do
         local key = prefix .. "Slot" .. slot
-        if P.Get(ID, key) == 1 then
-            for choice = 2, #P.Suite.DataTextSources do
+        if P.Get(ID, key) == SOURCE.none then
+            for choice = SOURCE.none + 1, #P.Suite.DataTextSources do
                 if not used[choice] then return P.Set(ID, key, choice) end
             end
-            return P.Set(ID, key, 2)
+            return P.Set(ID, key, SOURCE.gold)
         end
     end
 end

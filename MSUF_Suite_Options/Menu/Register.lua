@@ -293,7 +293,7 @@ local function RegisterSuiteLayers()
         local actions = S.Config("actionbars")
         for i = 1, Suite.ActionBarCount do
             Add("Suite Action Bars", Suite.ActionBarTitles[i], "Whole bar", "actionbars", "bar" .. i .. "Layer",
-                actions.enabled and actions["bar" .. i .. "Visibility"] ~= 6)
+                actions.enabled and actions["bar" .. i .. "Visibility"] ~= Suite.ActionBarEnum.VISIBILITY.NEVER)
         end
         local xp = S.Config("xpBar")
         Add("Suite Quality of Life", "Experience", "Experience bar", "xpBar", "layer", xp.enabled)

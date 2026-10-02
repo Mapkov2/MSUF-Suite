@@ -19,7 +19,7 @@ P.Gates[ID] = function(rule)
     end
     if rule.key == "fontShadow" or rule.key == "fontShadowOpacity"
         or rule.key == "fontShadowDistance" then
-        return P.Get(ID, "fontRendering") ~= 3
+        return P.Get(ID, "fontRendering") ~= P.Suite.FontRendering.SLUG
     end
     return true
 end

@@ -61,7 +61,11 @@ for i = #NS.AnchorLabels, 1, -1 do table.insert(NS.MinimapTextAnchorLabels, 1, N
 -- there); the minimap runtime names its modes through these.
 NS.MinimapTextAnchor = { ABOVE = #NS.AnchorLabels + 1, BELOW = #NS.AnchorLabels + 2 }
 NS.MinimapShape = { SQUARE = 1, CIRCLE = 2, WIDE = 3 }
-NS.MinimapStyleTexture = { NONE = 1 }
+NS.MinimapStyleTexture = { NONE = 1, ARCANE_RING = 2, EMBER_RING = 3, ASTRAL_RING = 4, STEEL_FRAME = 5,
+    CUSTOM = 6, PARCHMENT_SCROLL = 7 }
+NS.MinimapStylePlacement = { ABOVE = 1, BEHIND = 2 }
+NS.MinimapStyleBlend = { NORMAL = 1, ADDITIVE = 2 }
+NS.MinimapWeatherIcons = { BLIZZARD = 1, FOREVER = 2 }
 NS.MinimapVisibility = { ALWAYS = 1, IN_COMBAT = 2, OUT_OF_COMBAT = 3, MOUSEOVER = 4, NEVER = 5 }
 NS.MinimapRotate = { BLIZZARD = 1, ROTATE = 2, NORTH_UP = 3 }
 NS.MinimapZoomButtons = { MOUSEOVER = 1, ALWAYS = 2, HIDE = 3 }
@@ -109,10 +113,11 @@ NS.MinimapStyleTextureNames = { "None", "Arcane ring", "Ember ring", "Astral rin
 NS.MinimapStylePresetNames = { "Custom", "Clean", "Arcane", "Ember", "Astral", "Steel",
     "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map", "Clean Modern", "Class Style" }
 local clean = {
-    shape = 1, borderSize = 1, borderColor = "000000", borderClassColor = false, borderAlpha = 100,
+    shape = NS.MinimapShape.SQUARE, borderSize = 1, borderColor = "000000", borderClassColor = false, borderAlpha = 100,
     shadowSize = 0, shadowColor = "000000", shadowAlpha = 45,
-    styleTexture = 1, styleTexturePath = "", styleColor = "ffffff", styleAlpha = 100,
-    styleScale = 100, styleX = 0, styleY = 0, stylePlacement = 1, styleBlend = 1, styleRotation = 0,
+    styleTexture = NS.MinimapStyleTexture.NONE, styleTexturePath = "", styleColor = "ffffff", styleAlpha = 100,
+    styleScale = 100, styleX = 0, styleY = 0, stylePlacement = NS.MinimapStylePlacement.ABOVE,
+    styleBlend = NS.MinimapStyleBlend.NORMAL, styleRotation = 0,
     styleGlow = false, styleGlowColor = "7963bf", styleGlowAlpha = 50, styleGlowScale = 145,
     styleBackdrop = false, styleBackdropColor = "090c14", styleBackdropAlpha = 85, styleBackdropPadding = 4,
 }
@@ -280,8 +285,10 @@ for _, field in ipairs(infoFields) do
         return B.Add(id, rule, section, key)
     end
     if key == "Weather" then
-        Info(Choice("infoWeatherDisplay", "Weather display", 3, { "Text only", "Icon only", "Icon and text" }))
-        Info(Choice("infoWeatherIconStyle", "Weather icons", NS.Client.isForever and 2 or 1,
+        Info(Choice("infoWeatherDisplay", "Weather display", NS.MinimapWeatherDisplay.BOTH,
+            { "Text only", "Icon only", "Icon and text" }))
+        local icons = NS.MinimapWeatherIcons
+        Info(Choice("infoWeatherIconStyle", "Weather icons", NS.Client.isForever and icons.FOREVER or icons.BLIZZARD,
             { "Blizzard icons", "Forever artwork" }))
         Info(Number("infoWeatherIconSize", "Icon size", 24, 12, 64))
     end
@@ -422,9 +429,11 @@ rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverR
 for _, key in ipairs({ "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover" }) do rules[key].enableKey = "collectButtons" end
 for _, key in ipairs({ "infoGoodColor", "infoWarningColor", "infoBadColor" }) do rules[key].enableKey = "infoStatusColors" end
 rules.infoLocationBelow.enableKey = "infoLocationSubzone"
-rules.styleTexturePath.requiresChoice = { key = "styleTexture", values = { [6] = true } }
+local ART = NS.MinimapStyleTexture
+rules.styleTexturePath.requiresChoice = { key = "styleTexture", values = { [ART.CUSTOM] = true } }
 for _, key in ipairs({ "styleGlowColor", "styleGlowAlpha", "styleGlowScale" }) do rules[key].enableKey = "styleGlow" end
 for _, key in ipairs({ "styleBackdropColor", "styleBackdropAlpha", "styleBackdropPadding" }) do rules[key].enableKey = "styleBackdrop" end
 for _, key in ipairs({ "styleColor", "styleAlpha", "styleScale", "styleX", "styleY", "stylePlacement", "styleBlend", "styleRotation" }) do
-    rules[key].requiresChoice = { key = "styleTexture", values = { [2] = true, [3] = true, [4] = true, [5] = true, [6] = true } }
+    rules[key].requiresChoice = { key = "styleTexture", values = { [ART.ARCANE_RING] = true, [ART.EMBER_RING] = true,
+        [ART.ASTRAL_RING] = true, [ART.STEEL_FRAME] = true, [ART.CUSTOM] = true } }
 end

@@ -9,6 +9,11 @@ Style.paths = { false, MEDIA .. "ArcaneRing.tga", MEDIA .. "EmberRing.tga",
     MEDIA .. "AntiqueScrollFrame.tga" }
 local HALO, CIRCLE = MEDIA .. "Halo.tga", MEDIA .. "Circle.tga"
 local RGB = NS.RGB
+-- The choice values (Core/Catalog/Minimap.lua) and the catalog defaults that
+-- stand in for a setting a partial config lacks.
+local WEATHER, ICONS, SHAPE = NS.MinimapWeatherDisplay, NS.MinimapWeatherIcons, NS.MinimapShape
+local ART, PLACEMENT, BLEND = NS.MinimapStyleTexture, NS.MinimapStylePlacement, NS.MinimapStyleBlend
+local RULES = NS.SuiteCatalog.minimap.rules
 
 -- Shared by the live weather entry and the options preview. WeatherType and
 -- Blizzard's weather auras come from upstream/forever WeatherConstantsDocumentation
@@ -21,10 +26,10 @@ local WEATHER_BLIZZARD = { [0] = 535593, [1] = 132852, [2] = 135857, [3] = 46352
 local WEATHER_ART = "Interface\\AddOns\\MSUF_Suite\\Media\\Weather\\"
 
 function Style.WeatherHeight(c)
-    local textSize = c.infoWeatherSize or 12
-    if c.infoWeatherDisplay == 1 then return textSize end
-    local iconSize = c.infoWeatherIconSize or 24
-    return c.infoWeatherDisplay == 2 and iconSize or math.max(textSize, iconSize)
+    local textSize = c.infoWeatherSize or RULES.infoWeatherSize.default
+    if c.infoWeatherDisplay == WEATHER.TEXT then return textSize end
+    local iconSize = c.infoWeatherIconSize or RULES.infoWeatherIconSize.default
+    return c.infoWeatherDisplay == WEATHER.ICON and iconSize or math.max(textSize, iconSize)
 end
 
 -- Keep the plain localized name for tooltips, including in icon-only mode.
@@ -33,12 +38,12 @@ function Style.WeatherContent(c, kind)
     local name = WEATHER_TYPES[kind]
     if not name then return "--", "--" end
     local label = NS.Text(name)
-    if c.infoWeatherDisplay == 1 then return label, label end
+    if c.infoWeatherDisplay == WEATHER.TEXT then return label, label end
     local file = "Interface\\Icons\\INV_Misc_QuestionMark"
     if WEATHER_BLIZZARD[kind] then
-        file = c.infoWeatherIconStyle == 2 and WEATHER_ART .. name .. ".tga" or WEATHER_BLIZZARD[kind]
+        file = c.infoWeatherIconStyle == ICONS.FOREVER and WEATHER_ART .. name .. ".tga" or WEATHER_BLIZZARD[kind]
     end
-    return c.infoWeatherDisplay == 2 and "" or label, label, file
+    return c.infoWeatherDisplay == WEATHER.ICON and "" or label, label, file
 end
 
 -- Weather artwork is a native Texture, never FontString escape markup: the
@@ -47,14 +52,14 @@ end
 function Style.LayoutWeather(entry, c, text, scale)
     scale = scale or 1
     local label, icon, button = entry.label, entry.icon, entry.button
-    local iconSize = entry.weatherTexture and math.max(1, math.floor((c.infoWeatherIconSize or 24) * scale + .5)) or 0
+    local iconSize = entry.weatherTexture and math.max(1, math.floor((c.infoWeatherIconSize or RULES.infoWeatherIconSize.default) * scale + .5)) or 0
     local hasText = text ~= ""
     local gap = iconSize > 0 and hasText and 4 * scale or 0
     local available = button:GetWidth()
     -- Measure the full new name before clipping it to the configured field;
     -- a longer weather name must not inherit the previous label's width.
     local measured = label:GetUnboundedStringWidth()
-    if not NS.Finite(measured) or measured <= 0 then measured = #text * (c.infoWeatherSize or 12) * scale * .62 end
+    if not NS.Finite(measured) or measured <= 0 then measured = #text * (c.infoWeatherSize or RULES.infoWeatherSize.default) * scale * .62 end
     local textWidth = hasText and math.min(math.max(1, available - iconSize - gap), measured) or 0
     local width = iconSize + gap + textWidth
     local x = entry.justify == "LEFT" and 0 or entry.justify == "RIGHT" and available - width or (available - width) / 2
@@ -125,7 +130,7 @@ local function PaintBackdrop(self, c, scale, width, height, layerOn)
     if plate then
         local pad = (tonumber(c.styleBackdropPadding) or 0) * scale
         local r, g, b = RGB(c.styleBackdropColor)
-        if c.shape == 2 then
+        if c.shape == SHAPE.CIRCLE then
             Assign(self.backdrop, CIRCLE)
             self.backdrop:SetVertexColor(r, g, b, alpha)
         else
@@ -142,17 +147,17 @@ local function PaintGlow(self, c, width, height, layerOn)
     local glow = c.styleGlow == true and alpha > 0 and Visible(layerOn, "glow")
     if glow then
         local r, g, b = RGB(c.styleGlowColor)
-        local factor = (tonumber(c.styleGlowScale) or 145) / 100
+        local factor = (tonumber(c.styleGlowScale) or RULES.styleGlowScale.default) / 100
         self.glow:SetSize(width * factor, height * factor)
         self.glow:SetVertexColor(r, g, b, alpha)
     end
     self.glow:SetShown(glow)
 end
 
--- The ornament path of the chosen artwork (6 is a custom file or ID).
+-- The ornament path of the chosen artwork (Custom is a file or ID).
 local function ArtPath(c)
-    local choice = tonumber(c.styleTexture) or 1
-    if choice == 6 and type(c.styleTexturePath) == "string" and c.styleTexturePath ~= "" then
+    local choice = tonumber(c.styleTexture) or ART.NONE
+    if choice == ART.CUSTOM and type(c.styleTexturePath) == "string" and c.styleTexturePath ~= "" then
         return tonumber(c.styleTexturePath) or c.styleTexturePath
     end
     return Style.paths[choice]
@@ -163,16 +168,16 @@ local function PaintArt(self, texture, shown, path, c, scale, width, height, ani
     texture:SetShown(shown)
     if shown then
         Assign(texture, path)
-        local factor = (tonumber(c.styleScale) or 100) / 100
+        local factor = (tonumber(c.styleScale) or RULES.styleScale.default) / 100
         texture:SetSize(width * factor, height * factor)
         texture:ClearAllPoints()
         -- The scroll is asymmetric. Keep its paper opening aligned as the map resizes.
-        local scrollX = tonumber(c.styleTexture) == 7 and width * (11 / 190) or 0
+        local scrollX = tonumber(c.styleTexture) == ART.PARCHMENT_SCROLL and width * (11 / 190) or 0
         texture:SetPoint("CENTER", self.parent, "CENTER", scrollX + (tonumber(c.styleX) or 0) * scale,
             (tonumber(c.styleY) or 0) * scale)
         local r, g, b = RGB(c.styleColor)
         texture:SetVertexColor(r, g, b, (tonumber(c.styleAlpha) or 0) / 100)
-        texture:SetBlendMode(c.styleBlend == 2 and "ADD" or "BLEND")
+        texture:SetBlendMode(c.styleBlend == BLEND.ADDITIVE and "ADD" or "BLEND")
     end
     Rotate(texture, shown and (tonumber(c.styleRotation) or 0) or 0, animate == true)
 end
@@ -184,13 +189,13 @@ Renderer.__index = Renderer
 -- c: minimap settings; layerOn(key) filters preview layers (nil: all shown).
 function Renderer:Paint(c, scale, layerOn, animate, widthOverride, heightOverride)
     scale = tonumber(scale) or 1
-    local width = widthOverride or (tonumber(c.size) or 190) * scale
-    local height = heightOverride or (c.shape == 3 and width * 2 / 3 or width)
+    local width = widthOverride or (tonumber(c.size) or RULES.size.default) * scale
+    local height = heightOverride or (c.shape == SHAPE.WIDE and width * 2 / 3 or width)
     PaintBackdrop(self, c, scale, width, height, layerOn)
     PaintGlow(self, c, width, height, layerOn)
     local path = ArtPath(c)
     local art = path and (tonumber(c.styleAlpha) or 0) > 0 and Visible(layerOn, "ornament")
-    local over = c.stylePlacement ~= 2
+    local over = c.stylePlacement ~= PLACEMENT.BEHIND
     PaintArt(self, self.artUnder, art and not over, path, c, scale, width, height, animate)
     PaintArt(self, self.artOver, art and over, path, c, scale, width, height, animate)
 end

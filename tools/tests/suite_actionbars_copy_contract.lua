@@ -7,8 +7,10 @@ local first = assert(source:find("local TARGET_WIDTHS", 1, true))
 local last = assert(source:find("local function AttachCopyTo", first, true))
 local config, rules, history, writes, confirmed, combat = {}, {}, 0, 0, 0, false
 -- The page reads the Suite namespace's client facts (Core/Platform.lua) at load.
+-- The catalog's choice values (Core/Catalog/ActionBars.lua), as the client's namespace has them.
+local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "actionbars", "ActionBars")
 local P = { Suite = { ActionBarCount = 4, ActionBarTitles = {"Action bar 1", "Action bar 2", "Action bar 3", "Action bar 4"},
-        Client = { isForever = false } },
+        Client = { isForever = false }, ActionBarEnum = catalog.ActionBarEnum },
     S = {}, M = {}, W = {}, T = {}, Tr = function(x) return x end, catalog = { actionbars = { rules = {} } } }
 P.catalog.actionbars.rules = setmetatable(rules, { __index = function() return {} end })
 P.Help = function(a) return a end

@@ -284,7 +284,7 @@ local function StatusText()
     if not Page.IsOn(slot) then
         text = text .. "  " .. Tr("This bar is off.")
     elseif Page.Movable(slot) then
-        local label = P.Get(ID, Page.Key("anchor")) == 1 and "Position %d, %d." or "Offset %d, %d from its anchor."
+        local label = P.Get(ID, Page.Key("anchor")) == P.Suite.CDM.ANCHOR.FREE and "Position %d, %d." or "Offset %d, %d from its anchor."
         text = text .. "  " .. format(Tr(label), P.Get(ID, Page.Key("x")), P.Get(ID, Page.Key("y")))
     end
     local status = S.CooldownManagerStatus and S.CooldownManagerStatus()
