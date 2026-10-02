@@ -1905,7 +1905,8 @@ Section("owned micro bar", function()
     -- Retail and Forever keep MicroMenu's frame level when reparenting it.
     local frameUtil = FrameUtil
     FrameUtil = { SetParentMaintainRenderLayering = function(frame, parent) frame:SetParent(parent) end }
-    for _, file in ipairs({ "OwnedMicroBarLayout.lua", "OwnedMicroBarVisibility.lua", "OwnedMicroBar.lua" }) do
+    for _, file in ipairs({ "OwnedMicroBarLayout.lua", "OwnedMicroBarVisibility.lua", "OwnedMicroBarEditMode.lua",
+        "OwnedMicroBar.lua" }) do
         Load(file, microNS)
     end
     local eventFrame = created[1]
@@ -2285,7 +2286,8 @@ Section("adapter file structure", function()
     for _, chain in ipairs({
         { "Catalog", "CatalogGlass", "AdapterKit", "SharedChrome" },
         { "DeepWindows", "DeepWindowsProfessions" },
-        { "OwnedMicroBarLayout", "OwnedMicroBarVisibility", "OwnedMicroBar", "MicroMenu", "MicroMenuSettings" },
+        { "OwnedMicroBarLayout", "OwnedMicroBarVisibility", "OwnedMicroBarEditMode", "OwnedMicroBar", "MicroMenu",
+            "MicroMenuSettings" },
     }) do
         for index = 2, #chain do
             Expect(position[chain[index - 1]] and position[chain[index]]

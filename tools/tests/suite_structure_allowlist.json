@@ -1425,19 +1425,19 @@
    "symbol": "original.GetRGBA"
   },
   {
-   "file": "MSUF_Suite_Skin/Adapters/OwnedMicroBar.lua",
+   "file": "MSUF_Suite_Skin/Adapters/OwnedMicroBarEditMode.lua",
    "kind": "addon",
    "reason": "MSUF Edit Mode export: MSUF_EditModeAPI and MSUF_EM2 differ between the Main and Classic MSUF builds",
    "symbol": "api.RefreshOwner"
   },
   {
-   "file": "MSUF_Suite_Skin/Adapters/OwnedMicroBar.lua",
+   "file": "MSUF_Suite_Skin/Adapters/OwnedMicroBarEditMode.lua",
    "kind": "addon",
    "reason": "MSUF Edit Mode export: MSUF_EditModeAPI and MSUF_EM2 differ between the Main and Classic MSUF builds",
    "symbol": "api.RegisterElement"
   },
   {
-   "file": "MSUF_Suite_Skin/Adapters/OwnedMicroBar.lua",
+   "file": "MSUF_Suite_Skin/Adapters/OwnedMicroBarEditMode.lua",
    "kind": "addon",
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
    "symbol": "open (= MSUF2_Open)"

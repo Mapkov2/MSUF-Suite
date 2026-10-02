@@ -83,6 +83,7 @@ Adapters\MajorWindows.lua
 Adapters\MajorWindowsItems.lua
 Adapters\OwnedMicroBarLayout.lua
 Adapters\OwnedMicroBarVisibility.lua
+Adapters\OwnedMicroBarEditMode.lua
 Adapters\OwnedMicroBar.lua
 Adapters\MicroMenu.lua
 Adapters\MicroMenuSettings.lua

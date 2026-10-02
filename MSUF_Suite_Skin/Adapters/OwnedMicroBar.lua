@@ -29,7 +29,8 @@ local _, NS = ...
 --
 -- The grid and companion placement lives in OwnedMicroBarLayout.lua, the
 -- visibility driver, health gate and mouseover reveal in
--- OwnedMicroBarVisibility.lua; both load before this file.
+-- OwnedMicroBarVisibility.lua and the MSUF Edit Mode element in
+-- OwnedMicroBarEditMode.lua; all three load before this file.
 local OwnedMicroBar = {
     active = false,
     suspended = false,
@@ -52,11 +53,13 @@ local PerLine = Layout.PerLine
 local LayoutButtons = Layout.LayoutButtons
 local AnchorCompanions = Layout.AnchorCompanions
 local PlaceNativeGrid = Layout.PlaceNativeGrid
-local MAX_BUTTONS_PER_LINE = Layout.MAX_BUTTONS_PER_LINE
+local IsOwnedMode = Layout.IsOwnedMode
 
 local Visibility = NS.OwnedMicroBarVisibility
 local ApplyVisibility = Visibility.Apply
 local RefreshHealthGate = Visibility.RefreshHealthGate
+
+local EditMode = NS.OwnedMicroBarEditMode
 
 local BAR_NAME = "MapkoSkinMicroBar"
 local HEALTH_GATE_NAME = "MapkoSkinMicroBarHealthGate"
@@ -68,7 +71,6 @@ local RULE_LEFT_INSET = 62
 local FOREVER_RING = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\MicroMenu\\ForeverPortraitRing.tga"
 local MIDNIGHT_RING = "Interface\\AddOns\\MSUF_Suite_Skin\\Media\\MicroMenu\\MidnightPortraitRing.tga"
 local PORTRAIT_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-local EDIT_OWNER, EDIT_ID = "MSUFSuite.Skin", "microBar"
 local PORTRAIT_MATERIALS = { forever = true, modern = true, midnightDark = true }
 local PORTRAIT_ICON_STYLES = { bold = true, blizzardIcons = true }
 
@@ -83,24 +85,11 @@ local hookedRoots = setmetatable({}, { __mode = "k" })
 local hookedGlobals = {}
 local desired = false
 local ScheduleReapply
-local editRegistered = false
-local editProfile, editEpoch = nil, 0
 
 local eventFrame = CreateFrame("Frame")
 
-local function ProfileEpoch()
-    if editProfile ~= NS.DB then
-        editProfile, editEpoch = NS.DB, editEpoch + 1
-    end
-    return editEpoch
-end
-
 local function CanOwn(target)
     return NS.Safety.CanControl(target, true) == true
-end
-
-local function IsOwnedMode(settings)
-    return settings and settings.layoutMode == "owned"
 end
 
 -- MicroMenuSkin's single OnEnter/OnLeave script hook per native button calls
@@ -139,7 +128,7 @@ end
 
 local function SetMoverVisible(visible)
     if not mover then return end
-    mover:SetShown(visible == true and not editRegistered and not NS.IsCombatLocked())
+    mover:SetShown(visible == true and not EditMode.registered and not NS.IsCombatLocked())
 end
 
 local function ApplyShell(root, settings, horizontal, scale)
@@ -239,193 +228,16 @@ end
 
 -- Edit Mode -----------------------------------------------------------------------------
 
-local function EditAPI()
-    local api = _G.MSUF_EditModeAPI
-    if type(api) == "table" and type(api.RegisterElement) == "function" then
-        return api
-    end
-end
-
-local function RoundTenth(value)
-    if value >= 0 then return math.floor(value * 10 + 0.5) / 10 end
-    return math.ceil(value * 10 - 0.5) / 10
-end
-
-local function PlaceEditPosition(state, x, y, commit)
-    local settings = Settings()
-    if not settings or not bar or NS.IsCombatLocked() then return false end
-    if type(x) ~= "number" or type(y) ~= "number"
-        or x ~= x or y ~= y or math.abs(x) > 4096 or math.abs(y) > 4096 then
-        return false
-    end
-    if commit then
-        settings.layoutPoint = state.point
-        settings.layoutRelativePoint = state.relativePoint
-        settings.layoutX = RoundTenth(x)
-        settings.layoutY = RoundTenth(y)
-        settings.positionPreset = "custom"
-        return ApplyPosition(settings)
-    end
-    bar:ClearAllPoints()
-    bar:SetPoint(state.point, UIParent, state.relativePoint, x, y)
-    return true
-end
-
-local function EditState()
-    local settings = Settings()
-    if not settings then return nil end
-    return {
-        epoch = ProfileEpoch(),
-        point = settings.layoutPoint,
-        relativePoint = settings.layoutRelativePoint,
-        x = settings.layoutX,
-        y = settings.layoutY,
-        positionPreset = settings.positionPreset,
-        orientation = settings.orientation,
-        buttonsPerLine = settings.buttonsPerLine,
-        spacing = settings.spacing,
-        scale = settings.scale,
-        padding = settings.padding,
-    }
-end
-
-local function ValidEditState(state)
-    return type(state) == "table" and state.epoch == ProfileEpoch()
-        and type(state.point) == "string" and type(state.relativePoint) == "string"
-        and type(state.x) == "number" and type(state.y) == "number"
-        and (state.orientation == "horizontal" or state.orientation == "vertical")
-        and type(state.buttonsPerLine) == "number" and state.buttonsPerLine >= 1
-        and state.buttonsPerLine <= MAX_BUTTONS_PER_LINE
-        and type(state.spacing) == "number" and state.spacing >= -8 and state.spacing <= 16
-        and type(state.scale) == "number" and state.scale >= 0.5 and state.scale <= 1.5
-        and type(state.padding) == "number" and state.padding >= 0 and state.padding <= 16
-end
-
--- Labels are locale keys: NS.L exists once the skin finished loading, so
--- they are resolved when the element registers (EnsureEditRegistration).
-local function EditOption(key, labelKey, minimum, maximum, step)
-    return {
-        id = key, labelKey = labelKey, kind = "number", min = minimum, max = maximum, step = step,
-        get = function()
-            local settings = Settings()
-            return settings and settings[key]
-        end,
-        set = function(value) return NS.MicroMenuSkin.SetOption(key, value) end,
-    }
-end
-
-local function OrientationToggle(orientation, labelKey)
-    return {
-        id = orientation, labelKey = labelKey, kind = "toggle",
-        get = function()
-            local settings = Settings()
-            return settings and settings.orientation == orientation
-        end,
-        set = function(on)
-            return on and NS.MicroMenuSkin.SetOption("orientation", orientation) or false
-        end,
-    }
-end
-
-local editControls = {
-    EditOption("buttonsPerLine", "Per line", 1, MAX_BUTTONS_PER_LINE, 1),
-    EditOption("spacing", "Spacing", -8, 16, 1),
-    {
-        id = "size", labelKey = "Size %", kind = "number", min = 50, max = 150, step = 1,
-        get = function()
-            local settings = Settings()
-            return settings and math.floor((settings.scale or 1) * 100 + 0.5)
-        end,
-        set = function(value) return NS.MicroMenuSkin.SetOption("scale", value / 100) end,
-    },
-    EditOption("padding", "Padding", 0, 16, 1),
-    OrientationToggle("vertical", "Vertical"),
-    OrientationToggle("horizontal", "Horizontal"),
-}
-
-local editElement = {
-    id = EDIT_ID, labelKey = "Micro Bar", groupKey = "MSUF Suite", order = 450,
-    getFrame = function() return bar end,
-    isEnabled = function()
-        return OwnedMicroBar.active and not OwnedMicroBar.suspended
-            and IsOwnedMode(Settings()) and NS.DB.skins.microMenu ~= false
-    end,
-    captureState = EditState,
-    restoreState = function(state)
-        if not ValidEditState(state) or not PlaceEditPosition(state, state.x, state.y, true) then
-            return false
-        end
-        local settings = Settings()
-        settings.positionPreset = state.positionPreset
-        settings.orientation = state.orientation
-        settings.buttonsPerLine = state.buttonsPerLine
-        settings.spacing = state.spacing
-        settings.scale = state.scale
-        settings.padding = state.padding
-        local refreshed
-        if NS.MicroMenuSkin.active then
-            refreshed = NS.MicroMenuSkin.RefreshActive()
-        else
-            refreshed = OwnedMicroBar.Apply(activeRoot, settings)
-        end
-        return refreshed ~= false and refreshed ~= nil
-    end,
-    movePosition = function(request)
-        local state = request and request.state
-        if not ValidEditState(state) then return false end
-        local scale = ReadNumber(bar, "GetScale", 1)
-        if scale <= 0 then scale = 1 end
-        local x = state.x + (tonumber(request.deltaX) or 0) / scale
-        local y = state.y + (tonumber(request.deltaY) or 0) / scale
-        return PlaceEditPosition(state, x, y, request.phase == "commit")
-    end,
-    resetPosition = function()
-        local defaults = NS.Defaults.icons.microMenu
-        local settings = Settings()
-        if not settings or NS.IsCombatLocked() then return false end
-        settings.layoutPoint = defaults.layoutPoint
-        settings.layoutRelativePoint = defaults.layoutRelativePoint
-        settings.layoutX, settings.layoutY = defaults.layoutX, defaults.layoutY
-        settings.positionPreset = defaults.positionPreset
-        return ApplyPosition(settings)
-    end,
-    onSessionChanged = function(enabled)
-        Visibility.SetEditSession(enabled)
-        if OwnedMicroBar.active and not OwnedMicroBar.suspended then
-            ApplyVisibility(Settings())
-        end
-    end,
-    extraControls = editControls,
-    openSettings = function()
-        local open = _G.MSUF2_Open
-        if type(open) ~= "function" then return false end
-        open("suite_skin")
-        return true
-    end,
-}
-
-local function LocalizeEditElement()
-    local L = NS.L
-    editElement.label, editElement.group = L[editElement.labelKey], L[editElement.groupKey]
-    for index = 1, #editControls do
-        local control = editControls[index]
-        control.label = L[control.labelKey]
-    end
-end
-
+-- MSUF Edit Mode (OwnedMicroBarEditMode.lua) replaces the legacy mover.
 local function EnsureEditRegistration()
-    if editRegistered or not bar then return editRegistered end
-    local api = EditAPI()
-    if not api then return false end
-    LocalizeEditElement()
-    editRegistered = api.RegisterElement(EDIT_OWNER, editElement) == true
-    if editRegistered then SetMoverVisible(false) end
-    return editRegistered
+    if EditMode.registered then return true end
+    if EditMode.Register() then SetMoverVisible(false) end
+    return EditMode.registered
 end
 
-local function RefreshEditOwner()
-    local api = EditAPI()
-    if editRegistered and api and api.RefreshOwner then api.RefreshOwner(EDIT_OWNER) end
+-- Edit Mode's undo applies the restored settings to the menu the bar holds.
+local function ApplyToActiveRoot(settings)
+    return OwnedMicroBar.Apply(activeRoot, settings)
 end
 
 -- Frames ------------------------------------------------------------------------------
@@ -510,6 +322,7 @@ local function EnsureFrames()
     bar:SetScript("OnLeave", Visibility.HoverLeave)
     bar:Hide()
     Visibility.Attach(OwnedMicroBar, bar, healthGate)
+    EditMode.Attach(OwnedMicroBar, bar, ApplyPosition, ApplyToActiveRoot)
 
     CreatePortrait()
     CreateMover()
@@ -543,7 +356,7 @@ local function PlaceAgain(root, settings)
     ApplyGrid(root, settings)
     ApplyVisibility(settings)
     SetMoverVisible(settings.locked == false)
-    RefreshEditOwner()
+    EditMode.RefreshOwner()
 end
 
 local function Reapply()
@@ -699,7 +512,7 @@ local function RegisterEvents(settings)
         eventsRegistered = true
     end
     SyncLoadEvents(settings)
-    if not editRegistered and not addonListening then
+    if not EditMode.registered and not addonListening then
         eventFrame:RegisterEvent("ADDON_LOADED")
         addonListening = true
     end
@@ -783,7 +596,7 @@ function OwnedMicroBar.Apply(root, settings)
     ApplyVisibility(settings)
     if EnsureEditRegistration() then StopAddonListening() end
     SetMoverVisible(settings.locked == false)
-    RefreshEditOwner()
+    EditMode.RefreshOwner()
     return bar, "owned"
 end
 
@@ -822,7 +635,7 @@ function OwnedMicroBar.Disable(root)
     portraitEnabled = false
     activeRoot = nil
     takenRoot = nil
-    RefreshEditOwner()
+    EditMode.RefreshOwner()
     return success, success and "disabled" or "partial"
 end
 
@@ -832,6 +645,5 @@ end
 
 function OwnedMicroBar.OpenEditMode()
     if NS.IsCombatLocked() or not EnsureEditRegistration() then return false end
-    local api = EditAPI()
-    return api and api.EnterEditMode and api.EnterEditMode(EDIT_OWNER, EDIT_ID) == true
+    return EditMode.Enter()
 end

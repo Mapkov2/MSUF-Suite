@@ -6,7 +6,7 @@
 -- keeps that scale through Blizzard's own UpdateScale, yields to Blizzard's
 -- overrides, and hands the menu back to its container the way Blizzard's
 -- layout places it. Real OwnedMicroBarLayout, OwnedMicroBarVisibility,
--- OwnedMicroBar, Safety and AdapterKit.
+-- OwnedMicroBarEditMode, OwnedMicroBar, Safety and AdapterKit.
 local root = assert(arg[1], "Suite root required")
 local checks = 0
 local function Check(value, message)
@@ -223,7 +223,7 @@ NS.MicroMenuSkin = {
     end,
 }
 for _, file in ipairs({ "Core/Safety.lua", "Adapters/AdapterKit.lua", "Adapters/OwnedMicroBarLayout.lua",
-    "Adapters/OwnedMicroBarVisibility.lua", "Adapters/OwnedMicroBar.lua" }) do
+    "Adapters/OwnedMicroBarVisibility.lua", "Adapters/OwnedMicroBarEditMode.lua", "Adapters/OwnedMicroBar.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local Owned = NS.OwnedMicroBar

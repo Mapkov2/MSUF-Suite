@@ -24,6 +24,11 @@ function Layout.Settings()
     return NS.DB and NS.DB.icons and NS.DB.icons.microMenu
 end
 
+-- The owned bar runs only in the owned layout mode.
+function Layout.IsOwnedMode(settings)
+    return settings and settings.layoutMode == "owned"
+end
+
 local Clamp = NS.Clamp
 
 -- A readable number from target:methodName(), or fallback.
