@@ -56,6 +56,8 @@ local levels = { [1] = 510 }
 local requests, merchantHook = {}, nil
 local frames = {}
 C_Timer = { After = function(_, callback) frames[#frames + 1] = callback end }
+-- Every wait here is for the next frame; the frame clock stands still.
+GetTime = function() return 100 end
 local function RunFrame()
     local queue = frames
     frames = {}

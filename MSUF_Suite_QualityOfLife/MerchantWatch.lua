@@ -8,24 +8,21 @@ local S = P.Suite
 -- tab reaches them at once, so a decoration never sits on the items of the
 -- previous page for a frame.
 local watchers = {}
-local hooked, pending, tab, page = false, false, nil, nil
+local hooked, tab, page = false, nil, nil
 
+-- The next-frame run: no module owns it, so it is a plain S.Debounce.
+local deferred
 local function Run()
-    pending = false
+    deferred:Cancel()
     tab, page = MerchantFrame.selectedTab, MerchantFrame.page
     for module, paint in pairs(watchers) do
         if module.active then S.Dispatch(paint, module) end
     end
 end
-
-local function Deferred()
-    if pending then Run() end
-end
+deferred = S.Debounce(0, Run)
 
 local function Schedule()
-    if pending then return end
-    pending = true
-    C_Timer.After(0, Deferred)
+    deferred:Request()
 end
 
 local function Updated()
