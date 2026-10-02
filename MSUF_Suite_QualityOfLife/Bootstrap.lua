@@ -95,9 +95,15 @@ end
 -- client refuses one with ADDON_ACTION_BLOCKED or ADDON_ACTION_FORBIDDEN
 -- instead of a Lua error; both events fire while the call runs. True when the
 -- call returned without a refusal; a call that raises is reported.
-local refusalWatch, calling, refused = nil, false, false
+-- Blizzard answers a refusal with its own notice (the interface-action
+-- message or the ADDON_ACTION_FORBIDDEN popup), so callers check the known
+-- restriction states first and stop after one refusal.
+-- Calls nest (an action may run another restricted call): every level sees
+-- the refusals made while it ran, inner ones included, and the watch stays
+-- registered until the outermost call returns.
+local refusalWatch, depth, refused = nil, 0, false
 local function Refused()
-    if calling then refused = true end
+    if depth > 0 then refused = true end
 end
 
 function S.QoLRestrictedCall(action, ...)
@@ -105,14 +111,21 @@ function S.QoLRestrictedCall(action, ...)
         refusalWatch = S.CreateFrame("Frame")
         refusalWatch:SetScript("OnEvent", Refused)
     end
-    refusalWatch:RegisterEvent("ADDON_ACTION_BLOCKED")
-    refusalWatch:RegisterEvent("ADDON_ACTION_FORBIDDEN")
-    calling, refused = true, false
+    if depth == 0 then
+        refusalWatch:RegisterEvent("ADDON_ACTION_BLOCKED")
+        refusalWatch:RegisterEvent("ADDON_ACTION_FORBIDDEN")
+    end
+    local outer = refused
+    depth, refused = depth + 1, false
     local ok = S.Dispatch(suite.Finish, action, ...)
-    calling = false
-    refusalWatch:UnregisterEvent("ADDON_ACTION_BLOCKED")
-    refusalWatch:UnregisterEvent("ADDON_ACTION_FORBIDDEN")
-    return ok == true and not refused
+    local mine = refused
+    depth, refused = depth - 1, outer or mine
+    if depth == 0 then
+        refused = false
+        refusalWatch:UnregisterEvent("ADDON_ACTION_BLOCKED")
+        refusalWatch:UnregisterEvent("ADDON_ACTION_FORBIDDEN")
+    end
+    return ok == true and not mine
 end
 
 -- Windows that give C_Container.UseContainerItem another meaning (sell,
