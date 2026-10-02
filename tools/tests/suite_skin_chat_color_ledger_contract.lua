@@ -1,14 +1,18 @@
 -- The skin's chat message colours are a persistent client setting. The Suite
--- keeps a ledger of what the skin wrote in its saved variables, so a colour
--- left behind by a session that ended without PLAYER_LOGOUT is put back on
--- the next login: by the skin, which knows its leftover even after the theme
--- changed, and by the Suite itself once the skin is off. Real
--- MSUF_Suite/Core/CharacterData.lua, MSUF_Suite/Integrations/MapkoSkin.lua
--- and the skin's Safety.lua, AdapterKit.lua and ChatFrames.lua.
+-- keeps a ledger, in its saved variables, of what a clean logout could not
+-- put back; the skin or, once the skin is off, the Suite settles it at the
+-- next login. The ledger never overwrites a colour the player chose: a
+-- category is restored only when it shows exactly what the last saved
+-- logout left, and a clean logout that restored everything leaves no
+-- ledger behind. A session that ends without PLAYER_LOGOUT saves nothing
+-- (documented limit: only the skin itself recognises its theme colour when
+-- it runs again). Real MSUF_Suite/Core/CharacterData.lua,
+-- MSUF_Suite/Integrations/MapkoSkin.lua and the skin's Safety.lua,
+-- AdapterKit.lua and ChatFrames.lua.
 --
--- Worst case modelled: ChangeChatColor writes the chat cache at once, while
+-- Modelled as in the client: ChangeChatColor writes the chat cache at once;
 -- saved variables are written only by a clean logout or reload, after the
--- PLAYER_LOGOUT handlers ran.
+-- PLAYER_LOGOUT handlers ran, and only while MSUF_Suite is loaded.
 local root = assert(arg[1], "Suite root required")
 local checks = 0
 local function Check(value, message)
@@ -43,22 +47,15 @@ local function DeepCopy(value)
     return copy
 end
 
-local DEFAULTS = { SYSTEM = { 1, 1, 0 }, MONSTER_SAY = { 1, 1, 159 / 255 }, MONSTER_PARTY = { 170 / 255, 170 / 255, 1 } }
-local THEME_A = { 0.84, 0.68, 0.44 }
-local THEME_B = { 0.30, 0.55, 0.90 }
-local PICKED = { 0.2, 0.9, 0.3 }
+-- The chat cache stores 8 bits per channel.
+local function Stored(value) return math.floor(value * 255 + 0.5) / 255 end
+local DEFAULTS = { SYSTEM = { 1, 1, 0 }, MONSTER_SAY = { 1, 1, Stored(159 / 255) },
+    MONSTER_PARTY = { Stored(170 / 255), Stored(170 / 255), 1 } }
+local THEME = { 0.84, 0.68, 0.44 }
 
--- What survives a session: the character's chat cache and the saved
--- variables of the last clean logout.
 local disk = { chat = DeepCopy(DEFAULTS), saved = nil }
-local writes = 0
-local theme = THEME_A
+local writes, raising = 0, {}
 
-local function Is(chatType, color)
-    local info = ChatTypeInfo[chatType]
-    return math.abs(info.r - color[1]) < 1e-6 and math.abs(info.g - color[2]) < 1e-6
-        and math.abs(info.b - color[3]) < 1e-6
-end
 local function CacheIs(chatType, color)
     local stored = disk.chat[chatType]
     return math.abs(stored[1] - color[1]) < 1e-6 and math.abs(stored[2] - color[2]) < 1e-6
@@ -66,23 +63,29 @@ local function CacheIs(chatType, color)
 end
 
 -- Blizzard's own function: the colour reaches ChatTypeInfo (UPDATE_CHAT_COLOR
--- runs inside the call) and the chat cache at once.
+-- runs inside the call) and the chat cache at once, 8 bits per channel.
 local function NativeChangeChatColor(chatType, r, g, b)
+    if raising[chatType] then error("contract: ChangeChatColor raised") end
     writes = writes + 1
+    r, g, b = Stored(r), Stored(g), Stored(b)
     local info = ChatTypeInfo[chatType]
     info.r, info.g, info.b = r, g, b
     disk.chat[chatType] = { r, g, b }
 end
 
--- One game session: the saved variables and the chat cache load, the skin
--- (when on) applies at PLAYER_LOGIN, the Suite settles at the first
--- PLAYER_ENTERING_WORLD.
-local function Session(skinOn)
+local function LoadChatCache()
     ChatTypeInfo = {}
     for chatType, color in pairs(disk.chat) do
         ChatTypeInfo[chatType] = { r = color[1], g = color[2], b = color[3] }
     end
     _G.ChangeChatColor = NativeChangeChatColor
+end
+
+-- One game session with MSUF_Suite loaded: the saved variables and the chat
+-- cache load, the skin (when on) applies at PLAYER_LOGIN, the Suite settles
+-- at the first PLAYER_ENTERING_WORLD.
+local function Session(skinOn)
+    LoadChatCache()
     CHAT_FRAMES = {}
     writes = 0
     local Suite = {
@@ -100,7 +103,7 @@ local function Session(skinOn)
         local NS = {
             IsCombatLocked = function() return false end,
             Theme = { GetColor = function(role)
-                if role == "blizzardYellow" then return theme[1], theme[2], theme[3], 1 end
+                if role == "blizzardYellow" then return THEME[1], THEME[2], THEME[3], 1 end
                 return 1, 1, 1, 1
             end },
             Registry = { AddListener = Noop, QueueJob = function(job) job() end },
@@ -122,6 +125,13 @@ local function Session(skinOn)
     return session
 end
 
+-- A session without MSUF_Suite: the player may change chat colours; no Suite
+-- code runs and the Suite's saved variables are not written.
+local function SessionWithoutSuite(change)
+    LoadChatCache()
+    if change then change() end
+end
+
 -- A clean logout or reload: PLAYER_LOGOUT, then the saved variables.
 local function Logout(session)
     if session.chat then session.chat.RestoreBlizzardMessageColors() end
@@ -134,71 +144,97 @@ local function Ledger()
     return own and own.skinChatColors
 end
 
--- 1. A clean session: themed, put back at logout. The saved ledger keeps
--- what the skin wrote for the next session's sake.
+-- 1. A clean session: themed, put back at logout, no ledger left behind.
 local session = Session(true)
-Check(Is("SYSTEM", THEME_A) and session.settled == 0, "the skin did not theme or the Suite settled a claimed ledger")
+Check(session.settled == 0 and CacheIs("SYSTEM", { Stored(THEME[1]), Stored(THEME[2]), Stored(THEME[3]) }),
+    "the skin did not theme the chat colours or the Suite settled a claimed session")
 Logout(session)
 Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY),
     "logout did not put Blizzard's colours back")
-Check(Ledger() and Ledger().SYSTEM and Ledger().SYSTEM.applied[1] == THEME_A[1],
-    "the saved ledger did not record the colour the skin wrote")
+Check(Ledger() == nil, "a clean logout that put everything back left a ledger")
 
--- 2. A crash, then the skin is off: the Suite puts the colours back alone.
+-- 2. Across sessions: in a session without the Suite the player picks the
+-- skin's old theme colour on purpose. When the Suite returns (skin off), it
+-- must not overwrite that choice.
+SessionWithoutSuite(function() ChangeChatColor("SYSTEM", THEME[1], THEME[2], THEME[3]) end)
+session = Session(false)
+Check(session.settled == 0 and writes == 0, "the Suite rewrote a chat colour the player picked")
+Logout(session)
+session = Session(false)
+Check(writes == 0 and CacheIs("SYSTEM", { Stored(THEME[1]), Stored(THEME[2]), Stored(THEME[3]) }),
+    "the player's colour did not survive the Suite")
+Logout(session)
+disk.chat = DeepCopy(DEFAULTS)
+
+-- 3. A crash before the first save: nothing reached the saved variables, so
+-- the Suite (skin off) leaves the colour alone (documented limit) ...
 session = Session(true)
-Check(CacheIs("SYSTEM", THEME_A), "the session did not write the theme colour")
 -- crash: no logout, nothing saved
 session = Session(false)
-Check(session.settled == 3 and CacheIs("SYSTEM", DEFAULTS.SYSTEM) and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY)
-    and CacheIs("MONSTER_PARTY", DEFAULTS.MONSTER_PARTY),
-    "with the skin off, the colours a crash left stayed in the chat cache")
+Check(session.settled == 0 and writes == 0, "the Suite settled colours no saved ledger recorded")
+Logout(session)
+-- ... and the skin, when it runs again, recognises its own theme colour and
+-- puts Blizzard's default back at logout.
+session = Session(true)
+Logout(session)
+Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and Ledger() == nil, "the skin did not clean up its own leftover")
+
+-- 4. A logout whose restore fails leaves a ledger; the next login with the
+-- skin off puts the colour back exactly and drops the entry.
+session = Session(true)
+raising.SYSTEM = true
+Logout(session)
+raising.SYSTEM = nil
+local ledger = Ledger()
+Check(ledger and ledger.colors and ledger.colors.SYSTEM and ledger.colors.SYSTEM.generation == ledger.generation
+    and not ledger.colors.MONSTER_SAY, "a failed logout restore was not recorded with its generation")
+session = Session(false)
+Check(session.settled == 1 and CacheIs("SYSTEM", DEFAULTS.SYSTEM), "the Suite did not put back what the logout left")
 Logout(session)
 Check(Ledger() == nil, "the settled ledger stayed in the saved variables")
--- The next session without the skin writes nothing.
+
+-- 5. The same leftover with the skin on: the skin takes it over, themes it
+-- and puts the recorded original back at its own clean logout.
+session = Session(true)
+raising.SYSTEM = true
+Logout(session)
+raising.SYSTEM = nil
+session = Session(true)
+Check(session.settled == 0, "the Suite settled a ledger the skin had claimed")
+Logout(session)
+Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and Ledger() == nil, "the skin did not settle the leftover it took over")
+
+-- 6. A leftover the player changed afterwards (a session without the
+-- Suite): ambiguous, so nothing is written and the entry goes.
+session = Session(true)
+raising.SYSTEM = true
+Logout(session)
+raising.SYSTEM = nil
+SessionWithoutSuite(function() ChangeChatColor("SYSTEM", 0.2, 0.9, 0.3) end)
 session = Session(false)
-Check(session.settled == 0 and writes == 0, "a settled ledger wrote chat colours again")
+Check(session.settled == 0 and writes == 0 and CacheIs("SYSTEM", { Stored(0.2), Stored(0.9), Stored(0.3) }),
+    "the Suite overwrote a colour the player changed after the leftover")
 Logout(session)
+Check(Ledger() == nil, "an ambiguous entry stayed in the ledger")
 
--- 3. Re-enabled after that: themed again and put back at logout.
-session = Session(true)
-Check(Is("SYSTEM", THEME_A), "the re-enabled skin did not theme the chat colours")
-Logout(session)
-Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM), "the re-enabled skin left its colour at logout")
-
--- 4. A crash, and before the next login the shared skin theme changed (on
--- another character): the skin still knows its leftover from the ledger,
--- owns it, themes it and puts Blizzard's default back at logout.
-session = Session(true)
--- crash
-theme = THEME_B
-session = Session(true)
-Check(Is("SYSTEM", THEME_B), "the skin took its own leftover colour for the player's")
-Logout(session)
-Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and CacheIs("MONSTER_PARTY", DEFAULTS.MONSTER_PARTY),
-    "the leftover of the old theme survived logout")
--- The skin's theme is saved with the ledger: it stays THEME_B from here.
-
--- 5. The player picks a colour, then the session crashes: the saved ledger
--- is older than the pick, so nothing may paint over it, skin off or on.
-session = Session(true)
-ChangeChatColor("SYSTEM", PICKED[1], PICKED[2], PICKED[3])
--- crash
-session = Session(false)
-Check(CacheIs("SYSTEM", PICKED), "the Suite replaced the colour the player picked")
-Check(CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY), "the Suite left the skin's other colours behind")
-Logout(session)
-session = Session(true)
-Check(Is("SYSTEM", PICKED) and Is("MONSTER_SAY", THEME_B), "the skin painted over the player's colour")
-Logout(session)
-Check(CacheIs("SYSTEM", PICKED), "logout replaced the player's colour")
-
--- 6. Disabling the chat skin puts the colours back and empties the ledger.
+-- 7. An entry without the ledger's generation is stale: dropped unwritten.
 disk.chat = DeepCopy(DEFAULTS)
+disk.chat.SYSTEM = { Stored(THEME[1]), Stored(THEME[2]), Stored(THEME[3]) }
+disk.saved.suiteCharacters = { ["Player-1"] = { skinChatColors = { generation = 3, colors = {
+    SYSTEM = { original = { 1, 1, 0 }, left = DeepCopy(disk.chat.SYSTEM), generation = 2 } } } } }
+session = Session(false)
+Check(session.settled == 0 and writes == 0, "a stale ledger entry was settled by colour equality")
+Logout(session)
+Check(Ledger() == nil, "a stale ledger entry stayed")
+disk.chat = DeepCopy(DEFAULTS)
+
+-- 8. Disable puts the colours back; the next clean logout leaves no ledger.
 session = Session(true)
 session.chat.Disable(session.frame, "chat")
-Check(Is("SYSTEM", DEFAULTS.SYSTEM), "disable kept the skin's colour")
+Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM), "disable kept the skin's colour")
 Logout(session)
-Check(Ledger() == nil, "disable left the ledger in the saved variables")
+Check(Ledger() == nil, "disable left a ledger behind")
 
-Check(#reported == 0, "the chat colour ledger raised: " .. table.concat(reported, "; "))
+Check(#reported == 3, "the chat colour ledger raised more than the three failed restores: "
+    .. table.concat(reported, "; "))
 print("Suite skin chat colour ledger: " .. checks .. " checks passed")
