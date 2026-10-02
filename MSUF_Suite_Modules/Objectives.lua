@@ -223,21 +223,44 @@ end
 -- from here would run its OnHide (ManagedFrameMixin.OnHide, then
 -- RemoveManagedFrame and the right container's Layout, which also places the
 -- protected boss and arena frames) inside this addon's call and taint that
--- layout (Blizzard_ManagedFrameSystem/Shared/ManagedFrameSystem.lua). Only
--- properties change instead, and none of them runs Blizzard code: alpha
--- zero, no mouse, and a scale so small that the tracker's blocks and
--- buttons, which take the mouse themselves, keep no hit area. The container
--- sets the alpha back to 1 when the UI is shown again; the scale stays. The
--- context restores all three on disable.
+-- layout (Blizzard_ManagedFrameSystem/Shared/ManagedFrameSystem.lua). Its
+-- SetScale is Blizzard code as well: EditModeSystemMixin replaces it with
+-- SetScaleOverride, which re-anchors the tracker with its offsets times the
+-- old scale over the new one and runs ManageFramePositions, and an Edit Mode
+-- save (BreakFrameSnap) stores offsets divided by the scale
+-- (Blizzard_EditMode/Shared/EditModeSystemTemplates.lua). So the tracker
+-- itself only loses its alpha and its mouse. Its children (the header, the
+-- modules and the Edit Mode selection) take the mouse themselves; each gets
+-- a scale so small that it keeps no hit area. They are plain frames, so
+-- their SetScale runs no Blizzard code, and the tracker keeps its own place
+-- as the last frame of the right column (layoutIndex 50). The modules join
+-- the tracker at login (ObjectiveTrackerManager:Init) through AddModule,
+-- which a hook follows. The container sets the alpha back to 1 when the UI
+-- is shown again; the scales stay. The context restores all of them on
+-- disable.
 local NATIVE_HIDDEN_SCALE = .001
+
+local function SuppressNativeChildren(context, ...)
+    for i = 1, select("#", ...) do
+        context:Scale(select(i, ...), NATIVE_HIDDEN_SCALE)
+    end
+end
+
+local function NativeModuleAdded()
+    if M.active then M:SuppressNative() end
+end
 
 function M:SuppressNative()
     if not self.active or NS.IsCombatLocked() then return end
     -- Blizzard_ObjectiveTracker loads at startup on every supported client.
     local native = ObjectiveTrackerFrame
     if NS.Safety.IsForbidden(native) then return end
+    if not self.nativeModuleHook then
+        self.nativeModuleHook = true
+        hooksecurefunc(native, "AddModule", NativeModuleAdded)
+    end
     self.context:HideControl(native, true)
-    self.context:Scale(native, NATIVE_HIDDEN_SCALE)
+    SuppressNativeChildren(self.context, native:GetChildren())
 end
 
 local function LoadCollapseState(self)

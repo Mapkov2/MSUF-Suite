@@ -386,21 +386,49 @@ tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
 -- Blizzard's tracker is a right-managed Edit Mode frame: a SetParent or Hide
 -- from addon code runs its OnHide (RemoveManagedFrame and the container
 -- layout that also places the protected boss frames) inside that call.
+-- Its SetScale is EditModeSystemMixin:SetScaleOverride, Blizzard code that
+-- re-anchors it and runs ManageFramePositions; an Edit Mode save then stores
+-- offsets divided by that scale (Blizzard_EditMode/Shared/
+-- EditModeSystemTemplates.lua). Its children are plain frames: the header,
+-- the Edit Mode selection, and the modules ObjectiveTrackerManager:Init adds
+-- through AddModule (ObjectiveTrackerModuleMixin:SetContainer reparents them).
 ObjectiveTrackerFrame = Widget(UIParent)
+local nativeTrackerChildren = {}
 do
     local native = ObjectiveTrackerFrame
     function native:SetParent() error("the Suite reparented Blizzard's managed objective tracker") end
     function native:Hide() error("the Suite hid Blizzard's managed objective tracker") end
+    function native:SetScale() error("the Suite scaled Blizzard's Edit Mode objective tracker") end
+    function native:GetChildren() return unpack(nativeTrackerChildren) end
+    function native:AddModule(module)
+        module:SetParent(self)
+        nativeTrackerChildren[#nativeTrackerChildren + 1] = module
+    end
+    for _, key in ipairs({ "Header", "Selection" }) do
+        native[key] = Widget(native)
+        nativeTrackerChildren[#nativeTrackerChildren + 1] = native[key]
+    end
 end
+local nativeQuestModule = Widget(UIParent)
 local function NativeTrackerSuppressed()
-    return tracker.context.hidden[ObjectiveTrackerFrame] == true and ObjectiveTrackerFrame:GetScale() < .01
-        and ObjectiveTrackerFrame:GetParent() == UIParent
+    if tracker.context.hidden[ObjectiveTrackerFrame] ~= true or ObjectiveTrackerFrame:GetScale() ~= 1
+        or ObjectiveTrackerFrame:GetParent() ~= UIParent or #nativeTrackerChildren < 2 then
+        return false
+    end
+    for _, child in ipairs(nativeTrackerChildren) do
+        if child:GetScale() >= .01 then return false end
+    end
+    return true
 end
 tracker:Enable()
 assert(NativeTrackerSuppressed(),
-    "native objective tracker must lose alpha, mouse and hit area without a parent change")
+    "native objective tracker must lose alpha, mouse and hit area without a parent or scale change")
+-- Modules join the tracker after the Suite's first suppression.
+ObjectiveTrackerFrame:AddModule(nativeQuestModule)
+assert(nativeQuestModule:GetScale() < .01 and NativeTrackerSuppressed(),
+    "a module Blizzard adds to its tracker kept its hit area")
 -- The right container sets the alpha back when the UI is shown again.
-ObjectiveTrackerFrame:SetScale(1)
+ObjectiveTrackerFrame.Header:SetScale(1)
 tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
 assert(NativeTrackerSuppressed(), "raid roster changes must restore native tracker suppression")
 local combatLocked = false
@@ -412,9 +440,9 @@ suite.InCombat = function(event)
     return combatLocked
 end
 combatLocked = true
-ObjectiveTrackerFrame:SetScale(1)
+ObjectiveTrackerFrame.Header:SetScale(1)
 tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
-assert(ObjectiveTrackerFrame:GetScale() == 1,
+assert(ObjectiveTrackerFrame.Header:GetScale() == 1,
     "protected combat transitions must defer native tracker changes")
 combatLocked = false
 tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
@@ -1599,8 +1627,11 @@ assert(tracker.sources.quests[1].lines.count == 1 and not completeLine.shown,
     "reused completed rows retained a stale turn-in hint")
 tracker:Disable()
 Drain()
-tracker.context:RestoreProperty(ObjectiveTrackerFrame, "SetScale")
+for _, child in ipairs(nativeTrackerChildren) do tracker.context:RestoreProperty(child, "SetScale") end
+for _, child in ipairs(nativeTrackerChildren) do
+    assert(child:GetScale() == 1, "disabling the MSUF tracker must restore Blizzard's original scales")
+end
 assert(ObjectiveTrackerFrame:GetScale() == 1 and ObjectiveTrackerFrame:GetParent() == UIParent,
-    "disabling the MSUF tracker must restore Blizzard's original scale")
+    "disabling the MSUF tracker must leave Blizzard's tracker in place")
 for _, frame in ipairs(frames) do assert(frame.OnUpdate == nil, "HUD registered an OnUpdate") end
 print("Suite HUD: owned frames, full objectives, clicks, timers, collapse, row reuse and movers passed: " .. flavor)
