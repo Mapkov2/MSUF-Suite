@@ -15,7 +15,7 @@ local Accent, SetRaw = Page.Accent, Page.SetRaw
 
 ------------------------------------------------------------------ popups
 local function Button(parent, text, width, height, onClick)
-    local button = T.Button(parent, text and Tr(text) or "", width, height or 22, { noSearch = true })
+    local button = T.Button(parent, text or "", width, height or 22, { noSearch = true })
     button._msuf2SkipHistoryCheckpoint = true
     if T.CenterButtonLabel then T.CenterButtonLabel(button) end
     if onClick then button:SetScript("OnClick", onClick) end
@@ -28,10 +28,7 @@ local function Label(parent, template, text, colorName)
     return label
 end
 -- Captions built from data skip the locale lookup and the search index.
-local function ButtonText(button, text)
-    local label = button._msuf2Label
-    if label then SetRaw(label, text) else button:SetText(text) end
-end
+local ButtonText = P.SetButtonText
 Page.Button, Page.Label, Page.ButtonText = Button, Label, ButtonText
 
 -- The cursor in screen pixels.
@@ -496,7 +493,7 @@ function Grid:Refresh()
     if blocked then
         SetRaw(self.message, blocked)
     elseif count == 0 then
-        self.message:SetText(Tr("No spells yet. Click + to add some."))
+        SetRaw(self.message, Tr("No spells yet. Click + to add some."))
     else
         self.message:SetText("")
     end

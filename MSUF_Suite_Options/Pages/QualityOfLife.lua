@@ -448,14 +448,14 @@ local function BuildFeatureDetails(ctx, panel, group, sectionId, width, sections
     P.T.ApplySurface(details, "card")
     details:SetSize(width, 100)
     details._msuf2Width, details._msuf2ContextColorHost = width, true
-    local heading = P.Text(details, Tr(group.title), 16, -14, width - 104, P.T.colors.text)
+    local heading = P.Text(details, group.title, 16, -14, width - 104, P.T.colors.text)
     heading:SetWordWrap(false)
     details.title = heading
     AddFeatureHelp(details, group, sections)
     local y = -42
     for _, section in ipairs(sections) do
         if #sections > 1 and section.source[1] then
-            local subtitle = P.Text(details, Tr(section.source[1].sectionTitle), 16, y, width - 32, P.T.colors.text)
+            local subtitle = P.Text(details, section.source[1].sectionTitle, 16, y, width - 32, P.T.colors.text)
             y = y - math.max(14, math.ceil(subtitle:GetStringHeight() or 14)) - 6
         end
         if #section.rules > 0 then
@@ -544,7 +544,7 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
         PaintFeatureRow(self)
     end)
     local textWidth = width - (hasDetails and 164 or 78)
-    local label = P.T.Font(row, "GameFontHighlightSmall", Tr(group.title), P.T.colors.text, "control")
+    local label = P.T.Font(row, "GameFontHighlightSmall", group.title, P.T.colors.text, "control")
     label:SetPoint("LEFT", row, "LEFT", 12, 0)
     label:SetWidth(textWidth)
     label:SetHeight(36)
@@ -567,7 +567,7 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
     P.M.AddTooltip(toggle, Tr(group.title), help, { hook = true })
     local settings
     if hasDetails then
-        settings = P.T.Button(row, Tr("Settings"), 88, 25)
+        settings = P.T.Button(row, "Settings", 88, 25)
         settings:SetPoint("RIGHT", toggle, "LEFT", -10, 0)
         settings:SetScript("OnClick", function() onSettings(group, false) end)
         P.M.AddTooltip(settings, Tr(group.title), help, { hook = true })
@@ -583,7 +583,7 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
         local available, reason = S.Availability(group.id)
         P.W.SetControlEnabled(toggle, not P.Combat())
         local suffix = available and "" or (reason and (" - " .. P.Suite.StatusText(reason, Tr)) or Tr(" - Unavailable"))
-        label:SetText(Tr(group.title) .. suffix)
+        P.SetTranslatedText(label, Tr(group.title) .. suffix)
         PaintFeatureRow(row)
     end)
     return row, toggle, settings, meta.keywords
@@ -691,7 +691,7 @@ local function BuildCategory(ctx, builder, category, featureRows, featureOrder)
         for _, group in ipairs(category.features) do
             if GroupEnabled(group) then enabled = enabled + 1 end
         end
-        entry.label:SetText(Tr(category.title) .. "  "
+        P.SetTranslatedText(entry.label, Tr(category.title) .. "  "
             .. Tr("%d/%d enabled"):format(enabled, #category.features))
     end)
 end

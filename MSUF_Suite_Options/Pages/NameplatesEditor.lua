@@ -209,12 +209,12 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     end)
     handle:SetScript("OnEnter", function()
         handle.outline(1, "4ebaff")
-        self.hint:SetText(Tr(label) .. " · " .. Tr(handle._npSettingsTab
+        P.SetTranslatedText(self.hint, Tr(label) .. " · " .. Tr(handle._npSettingsTab
             and "Drag to move; click for Blizzard settings" or "Drag to move; right-click for settings"))
     end)
     handle:SetScript("OnLeave", function()
         self:RefreshSelection()
-        self.hint:SetText(Tr(self.help))
+        P.SetTranslatedText(self.hint, Tr(self.help))
     end)
     handle:SetScript("OnKeyDown", Key)
     handle:SetScript("OnHide", function()
@@ -236,7 +236,7 @@ function Editor:Paint()
     self.stage:SetScale(self.zoom)
     for _, render in ipairs(self.renderers) do render() end
     if self.contextButton then
-        self.contextButton:SetText(Tr(self.inDungeon and "Dungeon / raid" or "Outdoor"))
+        self.contextButton:SetText(self.inDungeon and "Dungeon / raid" or "Outdoor")
     end
     if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
     self:LayoutLayerRail()
@@ -245,8 +245,8 @@ function Editor:Paint()
         else button:SetAlpha(self:LayerActive(button.layerKey) and 1 or 0.42) end
     end
     if self.sampleButton then
-        self.sampleButton:SetText(Tr(self.personal and "Personal plate" or self.sampleKind == "enemy"
-            and "Enemy plate" or "Friendly plate"))
+        self.sampleButton:SetText(self.personal and "Personal plate" or self.sampleKind == "enemy"
+            and "Enemy plate" or "Friendly plate")
     end
     if self.roleButton then self.roleButton:SetShown(self.sampleKind == "enemy" and not self.enemyPlayer) end
     if self.enemyTypeButton then self.enemyTypeButton:SetShown(self.sampleKind == "enemy") end
@@ -265,7 +265,7 @@ function Editor:Paint()
 end
 
 local function Button(ui, parent, key, label, width, x, action)
-    local button = T.Button(parent, Tr(label), width, 20)
+    local button = T.Button(parent, label, width, 20)
     if T.CenterButtonLabel then T.CenterButtonLabel(button) end
     button:SetPoint("LEFT", parent, "LEFT", x, 0)
     button:SetScript("OnClick", action)
@@ -383,7 +383,7 @@ local function BuildRaidPalette(ui)
     ui.raidPalette = strip
     strip:SetPoint("TOPRIGHT", ui.canvas, "TOPRIGHT", -8, -39)
     strip:SetSize(165, 22)
-    local title = T.Font(strip, "GameFontDisableSmall", Tr("RAID MARKS"), T.colors.muted)
+    local title = T.Font(strip, "GameFontDisableSmall", "RAID MARKS", T.colors.muted)
     title:SetPoint("BOTTOMRIGHT", strip, "TOPRIGHT", 0, 1)
     ui.raidChoices = {}
     for index = 1, 8 do
@@ -410,10 +410,10 @@ local function BuildRaidPalette(ui)
             ui:Paint()
         end)
         button:SetScript("OnEnter", function()
-            ui.hint:SetText(Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])) .. " · "
+            P.SetTranslatedText(ui.hint, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])) .. " · "
                 .. Tr("Click to preview; right-click for settings"))
         end)
-        button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
+        button:SetScript("OnLeave", function() P.SetTranslatedText(ui.hint, Tr(ui.help)) end)
         Register(button, "raidMark." .. index, Tr("Raid mark: %s"):format(Tr(RAID_MARK_NAMES[index])))
         ui.raidChoices[index] = button
     end
@@ -548,7 +548,7 @@ function Editor.Create(ctx, builder, sections)
     stage:SetSize(600, 180)
     stage:SetMovable(true)
     ui.stage = stage
-    ui.hint = T.Font(toolbar, "GameFontDisableSmall", Tr(ui.help), T.colors.muted)
+    ui.hint = T.Font(toolbar, "GameFontDisableSmall", ui.help, T.colors.muted)
     ui.hint:SetPoint("LEFT", section.title or toolbar, section.title and "RIGHT" or "LEFT", section.title and 12 or 160, 0)
     ui.hint:SetPoint("RIGHT", toolbar, "RIGHT", -154, 0)
     ui.hint:SetJustifyH("LEFT")

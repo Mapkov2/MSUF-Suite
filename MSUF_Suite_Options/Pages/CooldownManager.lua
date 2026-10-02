@@ -534,7 +534,7 @@ local function BuildSpells(ctx, b, ui)
         local label = Page.ClearLabel(Page.selected)
         if body._cdmClear ~= label then
             body._cdmClear = label
-            clear:SetText(Tr(label))
+            Page.ButtonText(clear, Tr(label))
         end
         clear:SetEnabled(not blocked and Page.HasList(Page.selected))
         copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))

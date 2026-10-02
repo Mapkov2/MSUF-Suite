@@ -462,7 +462,7 @@ function P.LookPresetButtons(ctx, pageKey, id, sectionId, after)
         local buttons = {}
         for index, entry in ipairs(LOOK_BUTTONS) do
             local value, name = entry[1], entry[2]
-            local button = T.Button(body, Tr(name), buttonWidth, 26)
+            local button = T.Button(body, name, buttonWidth, 26)
             button:SetPoint("TOPLEFT", body, "TOPLEFT", 16 + (index - 1) * (buttonWidth + gap), y)
             button:SetScript("OnClick", function()
                 if not P.Combat() then P.Set(id, "look", value) end
@@ -653,12 +653,12 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         -- The preference remains editable even when this client cannot run the
         -- module. S.Apply still enforces Availability before starting it.
         W.SetControlEnabled(toggle, not P.Combat())
-        status:SetText(P.StatusText(id))
+        P.SetTranslatedText(status, P.StatusText(id))
         local entry = body._msuf2CollapsibleEntry
         if entry and entry.label then
             local suffix = not ok and (" - " .. P.Suite.StatusText(why or "Unavailable on this client", Tr))
                 or not P.Get(id, "enabled") and Tr(" - Off") or ""
-            entry.label:SetText(Tr(title) .. suffix)
+            P.SetTranslatedText(entry.label, Tr(title) .. suffix)
         end
     end)
     P.AttachSectionReset(ctx, body, title, function()

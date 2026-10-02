@@ -40,9 +40,9 @@ end
 local function UpdateHint(ui)
     local handle = ui.hovered or ui.body._selectedHandle
     if handle then
-        ui.hint:SetText(Tr(handle._label) .. "  -  " .. Tr("Drag or use arrows to move; click for settings."))
+        P.SetTranslatedText(ui.hint, Tr(handle._label) .. "  -  " .. Tr("Drag or use arrows to move; click for settings."))
     else
-        ui.hint:SetText(Tr(DEFAULT_HINT))
+        P.SetTranslatedText(ui.hint, Tr(DEFAULT_HINT))
     end
 end
 
@@ -241,7 +241,7 @@ local function BuildCanvas(ui, ctx, b)
     })
     if not section then return false end
     ui.section, ui.toolbar, ui.fixedRecord = section, toolbar, fixedRecord
-    ui.hint = T.Font(toolbar, "GameFontDisableSmall", Tr(DEFAULT_HINT), T.colors.muted)
+    ui.hint = T.Font(toolbar, "GameFontDisableSmall", DEFAULT_HINT, T.colors.muted)
     ui.hint:SetPoint("LEFT", toolbar, "LEFT", 145, 0)
     ui.hint:SetPoint("RIGHT", toolbar, "RIGHT", -145, 0)
     ui.hint:SetJustifyH("LEFT")

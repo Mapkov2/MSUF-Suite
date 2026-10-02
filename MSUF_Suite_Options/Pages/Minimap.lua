@@ -68,7 +68,7 @@ local PRESET_COLUMNS, PRESET_GAP = 4, 7
 
 -- A tall preset tile: the style's border art as a swatch above its name.
 local function PresetButton(body, spec, index, width)
-    local button = T.Button(body, Tr(spec[2]), width, 55)
+    local button = T.Button(body, spec[2], width, 55)
     local label = rawget(button, "_msuf2Label")
     if label then
         label:ClearAllPoints()

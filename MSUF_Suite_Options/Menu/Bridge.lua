@@ -395,8 +395,24 @@ function P.Meta(pageKey, id, key, classification, sectionId)
     return exact
 end
 
+-- Menu2's font strings and buttons translate what they are given (T.Font,
+-- T.Button). Text that is in the reader's language already (translated,
+-- composed or data) goes through their raw setter, so it is not looked up
+-- a second time: T.SetTranslatedText where the host has it.
+function P.SetTranslatedText(fontString, text)
+    if T.SetTranslatedText then return T.SetTranslatedText(fontString, text or "") end
+    local raw = fontString._msuf2RawSetText or fontString.SetText
+    return raw(fontString, text or "")
+end
+function P.SetButtonText(button, text)
+    local label = button._msuf2Label
+    if label then return P.SetTranslatedText(label, text) end
+    return button:SetText(text or "")
+end
+
+-- English text; Menu2's font string translates it.
 function P.Text(parent, text, x, y, width, color)
-    local label = T.Font(parent, "GameFontHighlightSmall", Tr(text or ""), color or T.colors.muted, "supporting")
+    local label = T.Font(parent, "GameFontHighlightSmall", text or "", color or T.colors.muted, "supporting")
     label:SetPoint("TOPLEFT", x or 16, y or 0)
     label:SetWidth(width or 300)
     label:SetJustifyH("LEFT")
@@ -419,7 +435,7 @@ end
 
 -- Buttons follow the page's enable rules: pass `enabled` (function) to gate.
 function P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta)
-    local button = T.Button(parent, Tr(label), width or 180, 26)
+    local button = T.Button(parent, label, width or 180, 26)
     button:SetPoint("TOPLEFT", x, y)
     button:SetScript("OnClick", function()
         if P.Combat() then return end
@@ -500,7 +516,7 @@ local function SecureAttach(button)
     overlay:Show()
 end
 function P.SecureMacroButton(ctx, parent, label, x, y, width, macro, enabled, meta)
-    local button = T.Button(parent, Tr(label), width or 180, 26)
+    local button = T.Button(parent, label, width or 180, 26)
     button:SetPoint("TOPLEFT", x, y)
     button.secureMacro = macro
     button.secureReady = function() return not enabled or enabled() and true or false end

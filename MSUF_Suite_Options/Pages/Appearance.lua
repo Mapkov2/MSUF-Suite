@@ -40,7 +40,7 @@ end
 local function Preview(ctx, b, skin)
     local section, toolbar = W.FixedPreviewSection(ctx, b, { title = Tr("Skin preview"), height = 176 })
     if not section then return end
-    local hint = T.Font(toolbar, "GameFontDisableSmall", Tr("Choose a look below; this sample follows your changes."),
+    local hint = T.Font(toolbar, "GameFontDisableSmall", "Choose a look below; this sample follows your changes.",
         T.colors.muted)
     hint:SetPoint("LEFT", toolbar, "LEFT", 125, 0)
     hint:SetPoint("RIGHT", toolbar, "RIGHT", -12, 0)
@@ -49,14 +49,14 @@ local function Preview(ctx, b, skin)
     canvas:SetPoint("TOPLEFT", 14, -42)
     canvas:SetPoint("BOTTOMRIGHT", -14, 9)
     local shell = SkinBox(skin, canvas, 10, -7, 292, 116, "shell")
-    local title = T.Font(shell, "GameFontNormal", Tr("Window shell"), T.colors.text)
+    local title = T.Font(shell, "GameFontNormal", "Window shell", T.colors.text)
     title:SetPoint("TOPLEFT", 14, -12)
     local panel = SkinBox(skin, shell, 13, -37, 266, 66, "panel")
     local card = SkinBox(skin, panel, 10, -10, 246, 22, "card")
-    local cardLabel = T.Font(card, "GameFontHighlightSmall", Tr("Panel and card layer"), T.colors.text)
+    local cardLabel = T.Font(card, "GameFontHighlightSmall", "Panel and card layer", T.colors.text)
     cardLabel:SetPoint("LEFT", 8, 0)
     local button = SkinBox(skin, panel, 10, -40, 76, 19, "buttonPrimary")
-    local buttonLabel = T.Font(button, "GameFontHighlightSmall", Tr("Primary"), T.colors.text)
+    local buttonLabel = T.Font(button, "GameFontHighlightSmall", "Primary", T.colors.text)
     buttonLabel:SetPoint("CENTER")
     local note = P.Text(canvas, "", 326, -18, 300)
     -- Labels take the token's RGB only; the preview keeps them opaque.
@@ -70,7 +70,7 @@ local function Preview(ctx, b, skin)
         PaintLabel(buttonLabel, "accent")
         local look = skin.LookPresets[skin.DB.theme.look]
         local description = look and look.description or "Your own colors, materials and shape."
-        note:SetText(Tr(look and look.label or "Custom") .. "\n"
+        P.SetTranslatedText(note, Tr(look and look.label or "Custom") .. "\n"
             .. Tr((skin.L and skin.L[description]) or description))
     end)
 end

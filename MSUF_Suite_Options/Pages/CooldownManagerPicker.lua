@@ -208,7 +208,7 @@ function Page.FilterPicker()
     end
     picker.shown = shown
     picker.content:SetHeight(max(1, shown * 24))
-    picker.empty:SetText(any and "" or Tr("Nothing matches. Try a spell ID below."))
+    SetRaw(picker.empty, any and "" or Tr("Nothing matches. Try a spell ID below."))
     picker.empty:SetShown(not any)
 end
 
@@ -281,9 +281,9 @@ function Page.RebuildPicker()
     end
     picker.count = n
     picker.family = family
-    picker.idTitle:SetText(Tr(family == 1 and "Custom spell or item ID" or "Custom aura ID"))
-    picker.addA:SetText(Tr(family == 1 and "Add spell" or "Buff on me"))
-    picker.addB:SetText(Tr(family == 1 and "Add item" or "Debuff on target"))
+    SetRaw(picker.idTitle, Tr(family == 1 and "Custom spell or item ID" or "Custom aura ID"))
+    picker.addA:SetText(family == 1 and "Add spell" or "Buff on me")
+    picker.addB:SetText(family == 1 and "Add item" or "Debuff on target")
     Page.EchoCustom()
     Page.FilterPicker()
 end
@@ -299,7 +299,7 @@ function Page.PickItem(item)
         SetRaw(picker.note, text)
         Page.Note(text)
     else
-        picker.note:SetText(Tr(reason or "That did not work."))
+        SetRaw(picker.note, Tr(reason or "That did not work."))
     end
     Page.FilterPicker()
     return ok
@@ -316,7 +316,7 @@ function Page.EchoCustom()
     picker.customSpell, picker.customItem, picker.customBlizzard = spellID, itemID, blizzard
     local r, g, b = MutedColor()
     if text == "" then
-        picker.echo:SetText(Tr("Type an ID or a spell name."))
+        SetRaw(picker.echo, Tr("Type an ID or a spell name."))
     elseif spellID or itemID then
         r, g, b = 0.35, 0.95, 0.45
         local parts = spellID and format(Tr("Spell %d"), spellID) .. ": " .. spellName or ""
@@ -325,7 +325,7 @@ function Page.EchoCustom()
         SetRaw(picker.echo, parts)
     else
         r, g, b = 1, 0.35, 0.3
-        picker.echo:SetText(Tr("No spell or item with this ID."))
+        SetRaw(picker.echo, Tr("No spell or item with this ID."))
     end
     picker.echo:SetTextColor(r, g, b)
     picker.echoIcon:SetTexture(spellIcon or itemIcon or QUESTION)
@@ -340,7 +340,7 @@ local function AddCustom(prefix)
     local blizzard = prefix ~= "i" and picker.customBlizzard or nil
     if blizzard then
         if blizzard.slot == Page.selected then
-            picker.note:SetText(Tr("Blizzard's entry for this spell is already on this bar."))
+            SetRaw(picker.note, Tr("Blizzard's entry for this spell is already on this bar."))
         elseif Page.PickItem(blizzard) then
             picker.idBox:SetText("")
         end
@@ -356,7 +356,7 @@ local function AddCustom(prefix)
         Page.Note(text)
         picker.idBox:SetText("")
     else
-        picker.note:SetText(Tr(reason or "That did not work."))
+        SetRaw(picker.note, Tr(reason or "That did not work."))
     end
 end
 
@@ -396,7 +396,7 @@ local function EnsurePicker()
     picker.note = Label(picker, "GameFontHighlightSmall", "", "muted")
     picker.note:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 16)
     picker.note:SetWidth(PICK_W - 28)
-    picker.hint = Label(picker, "GameFontDisableSmall", Tr("Picks stay open so you can add several."), "muted")
+    picker.hint = Label(picker, "GameFontDisableSmall", "Picks stay open so you can add several.", "muted")
     picker.hint:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 34)
     picker.OnClosed = function(self)
         self.search:ClearFocus()
