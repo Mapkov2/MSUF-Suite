@@ -102,7 +102,7 @@ local c = { font = "Suite", inventoryColumns = 12, inventoryRows = 8, inventoryV
     itemCountSize = 12, mergeStacks = true, showPinned = true, showRecent = true,
     customCategories = "", hideEmptyCategories = true, compactGroups = true }
 local module = { active = true, frame = frame, config = c, Refresh = function() end,
-    RefreshWindowLayout = function() end }
+    RefreshWindowLayout = function() end, NativeAnchorPass = function() UpdateContainerFrameAnchors() end }
 function module:Disable() self.active = false end
 local S = {
     CreateFrame = Widget, CreateFontString = Widget, Text = function(value) return value end,
@@ -123,6 +123,9 @@ local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, Bag
     Client = { SupportsEvent = function() return true end } }, BagsModule = module,
     BagFinance = { Refresh = function() end },
     InventoryEditor = { Show = function() end, Hide = function() end, ShowPinned = function() end } }
+-- Renders are one coalesced job on the Bags module's context.
+P.NS.Dispatch = function(callback, ...) return callback(...) end
+module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", module)
 UnitGUID = function() return "Player-1" end
 -- Recent items remember their arrival in server time.
 GetServerTime = function() return 1000000 end
@@ -132,7 +135,7 @@ Enum = { TooltipDataType = { Item = 0 },
     ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
 -- Blizzard_SharedXMLGame defines the tooltip data processor at startup.
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
-for _, file in ipairs({ "SlotCache", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "InventoryView" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "InventoryView" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 -- Bags.lua runs the view from its sub-module list after its own refresh and stop.

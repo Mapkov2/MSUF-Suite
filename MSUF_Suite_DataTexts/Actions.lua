@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local Sources = P.DataTextSources
 local NO_VALUE = P.NO_VALUE
+local CREST = NS.DataTextCrestMode
 
 -- What clicks, the mouse wheel and tooltips of the additional DataText
 -- sources do. DataText places are ordinary buttons, so bars may move and
@@ -12,6 +13,10 @@ local NO_VALUE = P.NO_VALUE
 --     place, never inside a bar, and runs its SecureActionButtonTemplate click
 --     (item, toy or a click on Blizzard's talent micro button); the Suite only
 --     adds PostClick.
+--   * The built-in Durability, Coordinates and Zone places borrow it too: it
+--     clicks the Blizzard button that opens their window (S.PanelButton), so
+--     the character window and the world map open from secure code. Without
+--     that button the place opens the window itself (Standard.Click).
 --   * Dungeon portals and the micro menu open a popup of secure rows.
 -- PLAYER_REGEN_DISABLED runs before lockdown starts: DataTexts.lua releases
 -- both there, so no protected frame depends on a bar during combat. A
@@ -20,9 +25,11 @@ local Actions = {}
 P.DataTextActions = Actions
 
 local OVERLAY_KINDS = { hearth = true, specialization = true }
+-- Built-in places whose window a Blizzard button opens (S.PanelButton).
+local PANEL_SOURCES = { durability = "character", coordinates = "worldMap", location = "worldMap" }
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100
-local overlay, popup, leaveTimer
+local overlay, popup
 
 local function Locked()
     return NS.IsCombatLocked()
@@ -30,7 +37,13 @@ end
 
 ------------------------------------------------------------------ secure overlay
 -- The left-button action of a place: type, item, toy and click target.
-local function SecureAction(binding)
+local function SecureAction(button)
+    local binding = button.extra
+    if not binding then
+        local target = S.PanelButton(PANEL_SOURCES[button.source])
+        if target then return "click", nil, nil, target end
+        return nil
+    end
     if binding.kind == "hearth" then
         local item = binding.hearth
         if not item then return nil end
@@ -71,13 +84,18 @@ local function Overlay()
     return overlay
 end
 
--- Puts the secure overlay over a Hearthstone or Specialization place; force
--- writes the action again for the place that already has it.
-function Actions.Attach(button, force)
+local function Overlaid(button)
     local binding = button.extra
-    if Locked() or S.editMode or not binding or not OVERLAY_KINDS[binding.kind] then return false end
+    if binding then return OVERLAY_KINDS[binding.kind] == true end
+    return PANEL_SOURCES[button.source] ~= nil
+end
+
+-- Puts the secure overlay over a Hearthstone, Specialization or window
+-- place; force writes the action again for the place that already has it.
+function Actions.Attach(button, force)
+    if Locked() or S.editMode or not Overlaid(button) then return false end
     if not force and overlay and overlay.owner == button and overlay:IsShown() then return true end
-    local kind, item, toy, target = SecureAction(binding)
+    local kind, item, toy, target = SecureAction(button)
     if not kind then return false end
     local frame = Overlay()
     frame.owner = button
@@ -85,8 +103,8 @@ function Actions.Attach(button, force)
     frame:SetAttribute("item1", item)
     frame:SetAttribute("toy1", toy)
     frame:SetAttribute("clickbutton1", target)
-    -- Every mouse button of a Specialization place opens the talents, as
-    -- Blizzard's micro button does (PlayerSpellsMicroButtonMixin:OnClick
+    -- Every mouse button of a Specialization or window place opens its
+    -- window, as the place did and Blizzard's buttons do (their OnClick
     -- ignores the button); the unsuffixed attributes cover the others.
     local any = kind == "click" and target or nil
     frame:SetAttribute("type", any and kind)
@@ -137,20 +155,23 @@ Actions.ClosePopup = ClosePopup
 -- Leaving the popup, one of its rows or its place closes it once the pointer
 -- rests on none of them: rows and the gaps between them belong to the popup.
 local function CheckLeave()
-    leaveTimer = nil
     if not popup or not popup:IsShown() or Locked() then return end
     if popup:IsMouseOver() or popup.owner and popup.owner:IsMouseOver() then return end
     ClosePopup()
 end
 
+-- Each leave restarts the short wait (ctx:After moves the deadline).
 local function WatchLeave()
-    if leaveTimer then leaveTimer:Cancel() end
-    leaveTimer = C_Timer.NewTimer(.15, CheckLeave)
+    P.DataTexts.context:After(.15, CheckLeave)
 end
 
--- A used entry closes the popup (out of combat, right after its action).
-local function RowPostClick()
+-- A used entry closes the popup (out of combat, right after its action). A
+-- plain row (the game menu, S.MicroMenuEntries) has no secure action: its
+-- own action runs here, after the popup closed.
+local function RowPostClick(row)
+    local action = row.action
     ClosePopup()
+    if action then action() end
 end
 
 local function Popup()
@@ -220,6 +241,7 @@ local function FillPortal(row, index)
     row:SetAttribute("type", "spell")
     row:SetAttribute("spell", spell.id)
     row:SetAttribute("clickbutton", nil)
+    row.action = nil
     -- A micro menu row may have shown a disabled micro button before.
     row:SetEnabled(true)
     row.icon:SetTexture(spell.icon)
@@ -241,9 +263,10 @@ end
 local micro = {}
 local function FillMicro(row, index)
     local entry = micro[index]
-    row:SetAttribute("type", "click")
+    row:SetAttribute("type", entry.button and "click" or nil)
     row:SetAttribute("clickbutton", entry.button)
     row:SetAttribute("spell", nil)
+    row.action = entry.action
     row:SetEnabled(entry.enabled)
     row.icon:SetTexture(nil)
     row.cooldown:Clear()
@@ -253,8 +276,8 @@ local function FillMicro(row, index)
 end
 
 -- The Suite's micro menu (S.MicroMenuEntries, the same entries as the
--- Minimap's middle-click flyout) plus the game menu row, clicked by the
--- secure rows.
+-- Minimap's middle-click flyout), clicked by the secure rows, plus the plain
+-- game menu row.
 function Actions.MicroMenu(button)
     if Locked() then return end
     OpenPopup(button, S.MicroMenuEntries(micro, true), FillMicro)
@@ -338,7 +361,7 @@ end
 
 local function CrestLines(config)
     GameTooltip:AddLine(S.Text("Seasonal upgrade resources observed this login"), 1, 1, 1)
-    if config.crestMode ~= 2 and Sources.seasonItem then GameTooltip:AddLine(Sources.seasonItem, .7, .7, .7) end
+    if config.crestMode ~= CREST.SELECTED and Sources.seasonItem then GameTooltip:AddLine(Sources.seasonItem, .7, .7, .7) end
     for _, cost in ipairs(Sources.SeasonSelection()) do
         local name, quantity = Sources.SeasonValue(cost)
         if name then GameTooltip:AddDoubleLine(tostring(cost.order) .. ": " .. name, tostring(quantity)) end
@@ -390,10 +413,7 @@ function Actions.GoldTooltip(tooltip)
 end
 
 function Actions.Disable()
-    if leaveTimer then
-        leaveTimer:Cancel()
-        leaveTimer = nil
-    end
+    P.DataTexts.context:Cancel(CheckLeave)
     Actions.hovered = nil
     Actions.Detach()
     ClosePopup()

@@ -34,7 +34,7 @@ H.Float32 = Float32
 
 -- Runtime files in load order across the shared and minimap AddOns.
 H.MODULES = { "Bootstrap", "Host", "Input", "MicroMenu", "Elements", "Drawer",
-    "Info", "Tooltips", "Specialization", "Controller" }
+    "InfoInput", "Info", "Tooltips", "Specialization", "Controller" }
 
 function H.New(root, client, options)
     options = options or {}
@@ -333,6 +333,16 @@ function H.New(root, client, options)
         end
     end
     function W.Step() W.Advance(0) end
+    -- Context timers (Timers.lua) with a run still due. A cancelled wait
+    -- leaves its C_Timer tick behind (C_Timer.After cannot be cancelled);
+    -- that stale tick does nothing when it fires, so W.Pending counts it.
+    function W.ContextPending(ctx)
+        local count = 0
+        for _, handle in pairs(ctx and ctx.timers or {}) do
+            if handle.Running and handle:Running() or not handle.Running and handle:Pending() then count = count + 1 end
+        end
+        return count
+    end
     -- Pending timers with the given delay; without one, every timer except the
     -- zero-delay (next frame) deferrals.
     function W.Pending(delay)
@@ -508,6 +518,12 @@ function H.New(root, client, options)
     -- Client APIs Retail and WoW Forever always have, with neutral values (open
     -- world, no invites, no keystone). Scenarios replace the ones they test.
     G.date = os.date
+    -- Blizzard's localized strings and short date, with their enUS values
+    -- (GlobalStrings; FormatShortDate formats SHORTDATE "%2$d/%1$02d/%3$02d",
+    -- Blizzard_SharedXML/TimeUtil.lua on both clients).
+    G.TIMEMANAGER_AM, G.TIMEMANAGER_PM, G.TIME_TWELVEHOURAM = "AM", "PM", "%d:%02d AM"
+    G.GOLD_AMOUNT_SYMBOL = "g"
+    G.FormatShortDate = function(day, month, year) return string.format("%d/%02d/%02d", month, day, year) end
     G.GetServerTime = function() return 1700000000 end
     G.GetGameTime = function() return 12, 0 end
     G.GetFramerate = function() return 60 end
@@ -656,7 +672,7 @@ function H.New(root, client, options)
     if options.beforeModules then options.beforeModules(W) end
     -- Blizzard builds its shared font objects at startup on every client.
     G.GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
-    for _, file in ipairs({ "Surfaces", "Runtime", "MicroMenu", "DataSources", "EditMode" }) do
+    for _, file in ipairs({ "Surfaces", "Runtime", "Timers", "MicroMenu", "DataSources", "EditMode" }) do
         Load("MSUF_Suite_Modules/" .. file .. ".lua", "MSUF_Suite_Modules", W.private)
     end
     for _, file in ipairs(options.modules or H.MODULES) do

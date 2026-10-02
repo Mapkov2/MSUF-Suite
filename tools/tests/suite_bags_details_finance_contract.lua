@@ -9,8 +9,8 @@ local S = { Public = function(v) return v ~= "secret" end, Finite = function(v) 
     Config = function(id) return id == "dataTexts" and { trackAltGold = optIn } or M.config end }
 local NS = { Client = { isForever = false }, RootDB = {}, IsCombatLocked = function() return combat end,
     Text = function(text) return text end, PublicText = S.PublicText, Finite = S.Finite }
--- The one gold ledger of the Bags and DataTexts (MSUF_Suite/Core/Catalog/Bags.lua).
-for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+-- The one gold ledger of the Bags and DataTexts (MSUF_Suite/Core/SessionGold.lua).
+for _, file in ipairs({ "SessionGold", "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
 end
 local P = { NS = NS, Suite = S, BagsModule = M,
@@ -252,6 +252,9 @@ end
 local timers, shown, refreshes = {}, true, 0
 M.frame = { IsShown = function() return shown end }
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+-- Repaints are one coalesced job on the Bags module's context.
+NS.Dispatch = function(callback, ...) return callback(...) end
+M.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)("bags", M)
 F.Refresh = function() refreshes = refreshes + 1 end
 money = 1000; F.Event(nil, "PLAYER_MONEY")
 money = 1002; F.Event(nil, "PLAYER_MONEY")

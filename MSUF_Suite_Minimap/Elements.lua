@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
+local LANDING, LANDING_ICON = NS.MinimapLanding, NS.MinimapLandingIcon
 -- Blizzard's own minimap buttons, moved into suite slots around the map.
 -- Missing buttons are skipped. Blizzard keeps deciding when each button is
 -- shown (nothing here force-shows a button): a hidden button keeps an empty
@@ -103,7 +104,7 @@ end
 
 local function Wanted(spec, c)
     local value = c[spec.toggle]
-    if spec.key == "Landing" then return value ~= 3 end
+    if spec.key == "Landing" then return value ~= LANDING.NEVER end
     -- The difficulty text replaces Blizzard's flag.
     if spec == DIFFICULTY then return value and not c.infoDifficulty end
     return value
@@ -165,7 +166,7 @@ local function StyleLanding(button, c)
         if landingBadge then landingBadge:Hide() end
         landingBadge, landingButton = nil, button
     end
-    if not button or c.landingIcon ~= 2 or c.showLanding == 3 then
+    if not button or c.landingIcon ~= LANDING_ICON.BOOK or c.showLanding == LANDING.NEVER then
         if landingBadge then landingBadge:Hide() end
         return
     end
@@ -270,7 +271,7 @@ local function PlaceCorner(spec, c, frame)
     slot:SetPoint(corner, MM.host, corner, x, y)
     Own(frame, slot, corner, slot, corner, 0, 0, scale)
     -- Mouseover mode shows the slot on hover; Blizzard still decides the button.
-    slot:SetShown(spec.key ~= "Landing" or c.showLanding == 1 or MM.Revealed())
+    slot:SetShown(spec.key ~= "Landing" or c.showLanding == LANDING.ALWAYS or MM.Revealed())
 end
 
 function MM.LayoutElements()
@@ -319,7 +320,7 @@ MM.flushers.rows = MM.LayoutElements
 
 MM.OnHover(function(shown)
     local slot = slots.Landing
-    if slot and M.active and M.config.showLanding == 2 and not Locked(slot) then slot:SetShown(shown) end
+    if slot and M.active and M.config.showLanding == LANDING.MOUSEOVER and not Locked(slot) then slot:SetShown(shown) end
 end)
 
 -- Blizzard re-anchors some of these buttons after loading screens.

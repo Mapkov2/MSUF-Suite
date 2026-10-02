@@ -170,6 +170,9 @@ for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
         self.TitleContainer:SetPoint("TOPRIGHT", self, "TOPRIGHT", right or -24, -1)
     end
 end
+-- The open-bag list of ContainerFrameSettingsManager:GetBagsShown, already
+-- built (a stale list is nil; suite_bags_view_client_contract covers it).
+ContainerFrameSettingsManager = { bagsShown = {} }
 UpdateContainerFrameAnchors = function()
     nativeLayouts = nativeLayouts + 1
     ContainerFrameCombinedBags.scale = 0.9
@@ -235,9 +238,11 @@ local function RunDeferred()
     deferred = {}
     for _, callback in ipairs(list) do callback() end
 end
+-- The session label translates as one format string (a German client).
+local translations = { ["Session %s"] = "Sitzung %s" }
 local S = {
     Public = function(value) return value ~= "secret" end,
-    Text = function(value) return value end,
+    Text = function(value) return translations[value] or value end,
     CreateFontString = function(parent) local font = Font(); font.parent = parent; return font end,
     CreateFrame = function(_, _, parent) return VisualFrame(parent) end,
     CreateTexture = function(parent, _, layer, _, sublevel)
@@ -314,7 +319,7 @@ state.Text = function(text) return text end
 for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", state)
 end
-for _, file in ipairs({ "SlotCache", "Bags" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end
 -- The sub-modules (their own files, not loaded here) run in Bags.lua's list
@@ -336,7 +341,7 @@ local function BagChanged()
 end
 for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
-        NS = state, Suite = S, BagsModule = module,
+        NS = state, Suite = S, BagsModule = module, ItemLoads = bagsPrivate.ItemLoads,
     })
 end
 assert(module and #fonts == 0 and #textures == 0 and not next(hooks) and infoCalls == 0,
@@ -434,7 +439,7 @@ assert(#textures == 23 and module.windows[ContainerFrameCombinedBags]
     and module.windows[ContainerFrame6] and textures[2].color[4] == 0.98,
     "combined and reagent bag backgrounds were not styled on enable")
 local combinedStyle, reagentStyle = module.windows[ContainerFrameCombinedBags], module.windows[ContainerFrame6]
-assert(combinedStyle.goldLabel and combinedStyle.goldLabel.text == "Session 0c"
+assert(combinedStyle.goldLabel and combinedStyle.goldLabel.text == "Sitzung 0c"
     and combinedStyle.goldLabel.width == 210
     and combinedStyle.goldLabel.parent == ContainerFrameCombinedBags.MoneyFrame
     and combinedStyle.goldLabel.point[2] == ContainerFrameCombinedBags.MoneyFrame
@@ -442,19 +447,19 @@ assert(combinedStyle.goldLabel and combinedStyle.goldLabel.text == "Session 0c"
     "the combined bag did not show the login gold baseline")
 money = 112345
 context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
-assert(combinedStyle.goldLabel.text == "Session +1g 23s 45c"
+assert(combinedStyle.goldLabel.text == "Sitzung +1g 23s 45c"
     and combinedStyle.goldLabel.color[2] > combinedStyle.goldLabel.color[1],
     "gold gains did not update from the money event")
 money = 90000
 context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
-assert(combinedStyle.goldLabel.text == "Session -1g"
+assert(combinedStyle.goldLabel.text == "Sitzung -1g"
     and combinedStyle.goldLabel.color[1] > combinedStyle.goldLabel.color[2],
     "gold losses did not update from the money event")
 assert(moneyTexts > 0 and combinedStyle.goldLabel.path == state.MSUFMedia.font,
     "session gold did not use the shared S.MoneyText and MSUF media font")
 money = "secret"
 context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
-assert(combinedStyle.goldLabel.text == "Session —", "unknown money showed a stale gain or loss")
+assert(combinedStyle.goldLabel.text == "Sitzung —", "unknown money showed a stale gain or loss")
 money = 100000
 module.config.showSessionGold = false
 module:Refresh()
@@ -463,17 +468,17 @@ assert(not combinedStyle.goldLabel.shown and not context.events.PLAYER_MONEY,
 module.config.showSessionGold = true
 module:Refresh()
 assert(combinedStyle.goldLabel.shown and context.events.PLAYER_MONEY
-    and combinedStyle.goldLabel.text == "Session 0c", "session gold did not return when enabled")
+    and combinedStyle.goldLabel.text == "Sitzung 0c", "session gold did not return when enabled")
 state.goldSessionCaptured = false
 state.RootDB.suiteGold["Player-test"] = 999999
 money = 120000
 context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
-assert(combinedStyle.goldLabel.text == "Session 0c"
+assert(combinedStyle.goldLabel.text == "Sitzung 0c"
     and state.RootDB.suiteGold["Player-test"] == 120000 and state.goldSessionCaptured,
     "an unreadable login baseline leaked a stale session change")
 money = 130000
 context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
-assert(combinedStyle.goldLabel.text == "Session +1g",
+assert(combinedStyle.goldLabel.text == "Sitzung +1g",
     "the first public login baseline did not track subsequent gains")
 assert(combinedStyle.shell.parent == ContainerFrameCombinedBags
     and reagentStyle.shell.parent == ContainerFrame6
@@ -761,11 +766,11 @@ hooks.UpdateItems()
 items[3] = { hyperlink = "gear-vanished", itemID = 105, quality = 2 }
 BagChanged()
 hooks.UpdateItems()
-assert(requests[105] == 1 and module.requested[105], "new missing item data was not requested")
+assert(requests[105] == 1 and bagsPrivate.ItemLoads.Loading(module.loads, 105), "new missing item data was not requested")
 items[3] = nil
 BagChanged()
 hooks.UpdateItems()
-assert(not module.requested[105] and not context.events.GET_ITEM_INFO_RECEIVED,
+assert(not bagsPrivate.ItemLoads.Loading(module.loads, 105) and not context.events.GET_ITEM_INFO_RECEIVED,
     "a removed item left a stale request or item event")
 items[3] = { hyperlink = "gear-vanished", itemID = 105, quality = 2 }
 BagChanged()

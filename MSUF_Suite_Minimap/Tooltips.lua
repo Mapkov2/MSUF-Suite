@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
+local TOOLTIP, KIND = NS.MinimapInfoTooltip, NS.MinimapInstanceKind
 -- Hover details for the clock, FPS and latency texts: instance lockouts or Great
 -- Vault progress. Data is read and its events are registered only while such a
 -- tooltip is owned; leaving the text releases both.
@@ -22,7 +23,7 @@ end
 
 -- The vault tooltip reads the data of Blizzard's weekly rewards addon.
 function S.CanShowMinimapTooltip(value)
-    if value == 3 then return NS.Client.HasAddOn("Blizzard_WeeklyRewards") end
+    if value == TOOLTIP.VAULT then return NS.Client.HasAddOn("Blizzard_WeeklyRewards") end
     return true
 end
 
@@ -91,7 +92,7 @@ local function ResetText(seconds, extended)
     else
         text = SecondsToTime(seconds, true, nil, 2)
     end
-    return extended and text .. " (" .. S.Text("Extended") .. ")" or text
+    return extended and S.Text("%s (Extended)"):format(text) or text
 end
 
 local function Lockouts(tooltip)
@@ -105,8 +106,8 @@ local function Lockouts(tooltip)
         local name, _, reset, _, locked, extended, _, raid, _, difficulty, bosses, defeated = GetSavedInstanceInfo(index)
         if Text(name) and S.Public(locked) and S.Public(extended) and S.Public(raid)
             and (c.tooltipExpired or locked or extended)
-            and (c.tooltipInstanceKind == 1 or c.tooltipInstanceKind == 2 and raid
-                or c.tooltipInstanceKind == 3 and not raid) then
+            and (c.tooltipInstanceKind == KIND.ALL or c.tooltipInstanceKind == KIND.RAIDS and raid
+                or c.tooltipInstanceKind == KIND.DUNGEONS and not raid) then
             if shown < c.tooltipRows then
                 local label = name
                 if Text(difficulty) and difficulty ~= "" then label = label .. " - " .. difficulty end
@@ -127,8 +128,7 @@ local function Lockouts(tooltip)
                 local name, _, reset = GetSavedWorldBossInfo(index)
                 if Text(name) then
                     if shown < c.tooltipRows then
-                        tooltip:AddDoubleLine(name .. " (" .. S.Text("World boss") .. ")", ResetText(reset), 1, 1, 1, .75,
-                            .8, .9)
+                        tooltip:AddDoubleLine(S.Text("%s (World boss)"):format(name), ResetText(reset), 1, 1, 1, .75, .8, .9)
                         shown = shown + 1
                     else
                         omitted = omitted + 1
@@ -166,12 +166,12 @@ local function ActivityLevel(activity)
     local level = activity.level
     if activity.type == types.Raid then
         local name = GetDifficultyInfo(level)
-        return Text(name) or S.Text("Difficulty") .. " " .. math.floor(level)
+        return Text(name) or S.Text("Difficulty %d"):format(level)
     elseif activity.type == types.RankedPvP then
         local name = PVPUtil.GetTierName(level)
-        return Text(name) or S.Text("Tier") .. " " .. math.floor(level)
+        return Text(name) or S.Text("Tier %d"):format(level)
     elseif activity.type == types.World then
-        return S.Text("Tier") .. " " .. math.floor(level)
+        return S.Text("Tier %d"):format(level)
     end
     if NonNegative(activity.activityTierID) then
         local difficulty = C_WeeklyRewards.GetDifficultyIDForActivityTier(activity.activityTierID)
@@ -179,7 +179,7 @@ local function ActivityLevel(activity)
             return S.BlizzardText("PLAYER_DIFFICULTY2", "Heroic")
         end
     end
-    return S.Text("Keystone level") .. " " .. math.floor(level)
+    return S.Text("Keystone level %d"):format(level)
 end
 
 local function Vault(tooltip)
@@ -207,7 +207,7 @@ local function Vault(tooltip)
                 end
                 if complete and M.config.tooltipRewardLevels then
                     local level = RewardLevel(activity)
-                    progress = progress .. " / " .. S.Text("Item level") .. " " .. (level or "--")
+                    progress = S.Text("%s / Item level %s"):format(progress, level or "--")
                 end
                 tooltip:AddDoubleLine(label, progress, 1, 1, 1, complete and .45 or .85, complete and 1 or .85, .55)
                 shown = shown + 1
@@ -224,14 +224,14 @@ local function Draw()
         return
     end
     GameTooltip:ClearLines()
-    GameTooltip:SetText(S.Text(mode == 2 and "Instance lockouts" or "Great Vault"))
+    GameTooltip:SetText(S.Text(mode == TOOLTIP.LOCKOUTS and "Instance lockouts" or "Great Vault"))
     if S.CanShowMinimapTooltip(mode) then
-        if mode == 2 then Lockouts(GameTooltip) else Vault(GameTooltip) end
+        if mode == TOOLTIP.LOCKOUTS then Lockouts(GameTooltip) else Vault(GameTooltip) end
     else
         waitingForItems = false
         GameTooltip:AddLine(S.Text("Unavailable on this client."), .85, .7, .45)
     end
-    if mode == 3 and waitingForItems then
+    if mode == TOOLTIP.VAULT and waitingForItems then
         MM.Listen("GET_ITEM_INFO_RECEIVED", "tooltip", Changed)
     else
         MM.Unlisten("GET_ITEM_INFO_RECEIVED", "tooltip")
@@ -257,19 +257,20 @@ function MM.ShowInfoTooltip(button)
     MM.HideInfoTooltip()
     if not M.active or not MM.InfoVisible() then return true end
     local key = button.infoKey
-    local selected = (key == "Clock" or key == "FPS" or key == "Latency") and M.config["info" .. key .. "Tooltip"] or 1
-    if selected == 1 then
-        owner, mode = button, 1
+    local selected = (key == "Clock" or key == "FPS" or key == "Latency") and M.config["info" .. key .. "Tooltip"]
+        or TOOLTIP.VALUE
+    if selected == TOOLTIP.VALUE then
+        owner, mode = button, TOOLTIP.VALUE
         return false
     end
-    if selected == 4 then return true end
+    if selected == TOOLTIP.NONE then return true end
     if NS.Safety.IsForbidden(GameTooltip) then return true end
     owner, mode = button, selected
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     MM.ScaleTooltip(button)
     Draw()
     if not S.CanShowMinimapTooltip(selected) then return true end
-    if selected == 2 then
+    if selected == TOOLTIP.LOCKOUTS then
         MM.Listen("UPDATE_INSTANCE_INFO", "tooltip", Changed)
         RequestLockouts()
     else

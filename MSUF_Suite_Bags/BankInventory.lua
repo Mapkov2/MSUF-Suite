@@ -68,7 +68,12 @@ local function StyleItem(button, item, font)
     else
         button.level:Hide()
     end
-    if c.desaturateJunk and item.quality == POOR then SetItemButtonDesaturated(button, true) end
+    -- Pass the state every time: Blizzard clears the grey only in Refresh
+    -- (BankPanelItemButtonMixin:UpdateLocked), which an unchanged slot skips.
+    -- A locked slot keeps the grey UpdateLocked gave it.
+    local info = button.itemInfo
+    local locked = info ~= nil and info.isLocked == true
+    SetItemButtonDesaturated(button, locked or c.desaturateJunk and item.quality == POOR or false)
 end
 
 local function Select(button)
@@ -252,7 +257,6 @@ local function PrepareModel(state)
 end
 
 Flush = function()
-    BankInventory.queued = false
     if not BankInventory.enabled or not M.active or not BankFrame:IsShown() then return end
     if NS.IsCombatLocked() then return end
     if not BankInventory.frame then Create() end
@@ -276,10 +280,11 @@ Flush = function()
     RenderNavigation()
 end
 
+-- One pass per frame (a ctx:Coalesce job): requests in between ride along.
 Request = function()
-    if not BankInventory.enabled or BankInventory.queued or not BankFrame:IsShown() then return end
-    BankInventory.queued = true
-    C_Timer.After(0, Flush)
+    if not BankInventory.enabled or not BankFrame:IsShown() then return end
+    BankInventory.flushJob = BankInventory.flushJob or M.context:Coalesce(0, Flush)
+    BankInventory.flushJob:Request()
 end
 
 local function Event(_, event, value, success)

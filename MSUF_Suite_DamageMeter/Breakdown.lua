@@ -423,7 +423,7 @@ function D.SpellLeave(row)
 end
 
 function D.SetBreakdownView(win, view)
-    if not win.bd.open or win.bd.blocked or win.meterType > 3 then return end
+    if not win.bd.open or win.bd.blocked or not D.targetTypes[win.meterType] then return end
     if win.bd.view == view and view ~= "targets" then return end
     win.bd.view, win.bd.offset = view, 0
     if view == "targets" then

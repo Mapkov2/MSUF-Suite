@@ -83,11 +83,14 @@ function D.EnsureWindow(index)
     win.status:SetPoint("RIGHT", body, "RIGHT", -8, 0)
     win.status:SetJustifyH("CENTER")
     -- Border strips live on their own frame above the header and the rows.
+    -- They frame a box just outside the window (an anchor only, never drawn).
     local border = S.CreateFrame("Frame", nil, frame)
     border:SetAllPoints(frame)
     border:SetFrameLevel(frame:GetFrameLevel() + 10)
     win.border, win.edges = border, {}
     for i = 1, 4 do win.edges[i] = S.CreateTexture(border, nil, "OVERLAY") end
+    win.borderBox = S.CreateTexture(border, nil, "OVERLAY")
+    win.borderBox:Hide()
     local grip = S.CreateFrame("Button", nil, frame)
     grip.win, win.grip = win, grip
     grip:SetSize(16, 16)
@@ -184,31 +187,19 @@ function D.StyleHeader(win)
     win.title:SetPoint("RIGHT", win.timer, "LEFT", -4, 0)
 end
 
+-- The outline sits outside the window: S.PlaceEdges frames the box that
+-- reaches size pixels past each side, so the strips cover the same pixels
+-- as an outline drawn around the window itself.
 function D.StyleBorder(win)
-    local c, edges, frame = M.config, win.edges, win.border
+    local c, box = M.config, win.borderBox
     local size = c.borderSize
-    if size <= 0 then
-        for i = 1, 4 do edges[i]:Hide() end
-        return
+    if size > 0 then
+        box:ClearAllPoints()
+        box:SetPoint("TOPLEFT", win.border, "TOPLEFT", -size, size)
+        box:SetPoint("BOTTOMRIGHT", win.border, "BOTTOMRIGHT", size, -size)
     end
     local r, g, b = S.RGB(c.borderColor)
-    for i = 1, 4 do
-        edges[i]:ClearAllPoints()
-        edges[i]:SetColorTexture(r, g, b, 1)
-        edges[i]:Show()
-    end
-    edges[1]:SetPoint("TOPLEFT", frame, "TOPLEFT", -size, size)
-    edges[1]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", size, size)
-    edges[1]:SetHeight(size)
-    edges[2]:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", -size, -size)
-    edges[2]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", size, -size)
-    edges[2]:SetHeight(size)
-    edges[3]:SetPoint("TOPLEFT", frame, "TOPLEFT", -size, 0)
-    edges[3]:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", -size, 0)
-    edges[3]:SetWidth(size)
-    edges[4]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", size, 0)
-    edges[4]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", size, 0)
-    edges[4]:SetWidth(size)
+    S.PlaceEdges(win.edges, box, size, r, g, b, 1)
 end
 
 -- Layout pass: runs when the style generation changed (after Refresh).

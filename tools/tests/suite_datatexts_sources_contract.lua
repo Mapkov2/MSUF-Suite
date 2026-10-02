@@ -3,6 +3,9 @@ local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tost
 -- What a DataText shows without a value: U+2014 EM DASH as UTF-8 bytes.
 local DASH = "\226\128\148"
 local NS = { Client = { modernEquipment = true }, IsCombatLocked = function() return false end }
+-- The catalog's choice values (MSUF_Suite/Core/Catalog/DataTexts.lua).
+local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "dataTexts")
+NS.DataTextCrestMode = catalog.DataTextCrestMode
 local config = { audioChannel = 1, itemLevelEquipped = true, itemLevelDecimals = 1, hearthItems = "6948,42",
     randomHearth = true }
 local S = { Text = function(v) return v end, Public = function(v) return v ~= "secret" end,

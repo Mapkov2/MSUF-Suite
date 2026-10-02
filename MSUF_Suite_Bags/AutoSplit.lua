@@ -1,27 +1,25 @@
 local _, P = ...
 local NS, S, M, Inventory = P.NS, P.Suite, P.BagsModule, P.SplitInventory
-local AutoSplit = { queued = false }
+local AutoSplit = {}
 P.AutoSplit = AutoSplit
-local Step
+local Step, Timeout
 local EVENTS = { "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "CURSOR_CHANGED", "GUILDBANKBAGSLOTS_CHANGED",
     "GUILDBANK_ITEM_LOCK_CHANGED", "BANKFRAME_CLOSED", "GUILDBANKFRAME_CLOSED", "PLAYER_REGEN_DISABLED" }
 
 -- AutoSplit.onStop (StackSplitter.lua) runs after every stop, also the first one in Start.
+-- The split's next step waits one frame (a ctx:Coalesce job); each step
+-- restarts the 3-second timeout (ctx:After). Both run only while Bags runs.
 function AutoSplit.Stop()
     AutoSplit.job = nil
-    if AutoSplit.timer then
-        AutoSplit.timer:Cancel()
-        AutoSplit.timer = nil
-    end
+    if M.context then M.context:Cancel(Timeout) end
     if AutoSplit.events then AutoSplit.events:UnregisterAllEvents() end
     if AutoSplit.onStop then AutoSplit.onStop() end
 end
 
-local function Timeout() AutoSplit.Stop() end
+Timeout = function() AutoSplit.Stop() end
 
 local function ArmTimeout()
-    if AutoSplit.timer then AutoSplit.timer:Cancel() end
-    AutoSplit.timer = C_Timer.NewTimer(3, Timeout)
+    M.context:After(3, Timeout)
 end
 
 local function Destination(job)
@@ -34,7 +32,6 @@ local function Destination(job)
 end
 
 Step = function()
-    AutoSplit.queued = false
     local job = AutoSplit.job
     if not job then return end
     if not M.active or NS.IsCombatLocked() or not Inventory.Available(job.source) then
@@ -93,9 +90,9 @@ Step = function()
 end
 
 function AutoSplit.Request()
-    if not AutoSplit.job or AutoSplit.queued then return end
-    AutoSplit.queued = true
-    C_Timer.After(0, Step)
+    if not AutoSplit.job then return end
+    AutoSplit.stepJob = AutoSplit.stepJob or M.context:Coalesce(0, Step)
+    AutoSplit.stepJob:Request()
 end
 
 local function Event(_, event)

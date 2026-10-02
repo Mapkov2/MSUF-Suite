@@ -57,9 +57,19 @@ local function Inventory(view)
     return W
 end
 
+-- A full collect also shrinks the Lua stack and call-info arrays; growing
+-- them back during the refresh would count as allocation. Deep() grows them
+-- first, so the kilobytes are the refresh's own (added 2026-10-02 when the
+-- inventory view's flush moved onto a context job, one call level deeper).
+local function Deep(n)
+    if n > 0 then Deep(n - 1) end
+    return n
+end
+
 local function Measure(fn)
     collectgarbage("collect")
     collectgarbage("stop")
+    Deep(60)
     local before = collectgarbage("count")
     local ticks = 0
     debug.sethook(function() ticks = ticks + 1 end, "", 1)

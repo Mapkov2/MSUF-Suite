@@ -5,10 +5,12 @@ local GoldLedger = P.GoldLedger
 local Standard = P.DataTextStandard
 local Extra = P.DataTextSources
 local Actions = P.DataTextActions
-local M = { bars = {}, pool = {}, barIDs = {}, presentIDs = {}, due = {}, values = {}, events = {} }
+local Visibility, NativeBagBar = P.DataTextBarVisibility, P.DataTextNativeBagBar
+local healthBars, GateHealth = Visibility.healthBars, Visibility.GateHealthBar
+local M = P.DataTexts
+local Bars, BarKeys = P.DataTextBars, P.DataTextBarKeys
 local ID = "dataTexts"
-local SLOT_COUNT = 6
-local BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.tga"
+local SLOT_COUNT = P.SLOT_COUNT
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local Snap, ApplyColor = Appearance.Snap, Appearance.Color
@@ -17,123 +19,11 @@ local READER, EVENT_SOURCES = Standard.READER, Standard.EVENT_SOURCES
 local NO_VALUE = P.NO_VALUE
 local floor = math.floor
 local Finite = S.Finite
-local nativeBagBar, nativeBagBarWasShown, nativeBagDriver, nativeBagHooked
-local nativeBagShowHooks = setmetatable({}, { __mode = "k" })
-local healthCurve
+local VISIBILITY, LAYOUT, DOCK = NS.DataTextVisibility, NS.DataTextLayout, NS.DataTextDock
 -- Rebind alternates between two active-source sets and reuses its event set.
 local activeSetA, activeSetB, wantedEvents = {}, {}, {}
--- Per-bar setting names, built once so event paths never concatenate keys.
-local BAR_KEYS = {}
-local function BarKeys(i)
-    if BAR_KEYS[i] then return BAR_KEYS[i] end
-    local prefix = "bar" .. i
-    BAR_KEYS[i] = {
-        prefix = prefix, enabled = prefix .. "Enabled", visibility = prefix .. "Visibility",
-        injured = prefix .. "LoadCondShowWhenInjured", instance = prefix .. "LoadCondHideInInstance",
-        housing = prefix .. "LoadCondHideInHousing",
-    }
-    return BAR_KEYS[i]
-end
-
 local function Clear(t)
     for key in pairs(t) do t[key] = nil end
-end
-
-local function InInstance()
-    local inside = IsInInstance()
-    return inside == true or inside == 1
-end
-
-local function InHousing()
-    return C_Housing.IsInsideHouseOrPlot() == true
-end
-
--- Full health maps to 0 (hidden), anything less to 1 (shown). Retail and
--- WoW Forever both have UnitHealthPercent with curve support.
-local function HealthCurve()
-    if not healthCurve then
-        healthCurve = C_CurveUtil.CreateCurve()
-        healthCurve:SetType(Enum.LuaCurveType.Step)
-        healthCurve:AddPoint(0, 1)
-        healthCurve:AddPoint(1, 0)
-    end
-    return healthCurve
-end
-
--- Whether a bar and its places take the pointer. An invisible bar must not
--- catch clicks, tooltips or the wheel; only audio places take the wheel.
-local function SetBarMouse(bar, enabled)
-    if bar.mouseEnabled == enabled then return end
-    bar.mouseEnabled = enabled
-    bar.frame:EnableMouse(enabled)
-    bar.badge:EnableMouse(enabled)
-    for i = 1, SLOT_COUNT do
-        local button = bar.slots[i]
-        button:EnableMouse(enabled)
-        button:EnableMouseWheel(enabled and button.extra ~= nil and button.extra.kind == "audio")
-    end
-end
-
--- The bars shown only below full health, listed by UpdateVisibility (none
--- in Edit Mode): player health events repaint these alone.
-local healthBars = {}
-
-local function GateHealth(bar)
-    -- Health can be secret. The curve result goes straight into SetAlpha
-    -- without Lua comparison, arithmetic or string conversion.
-    local alpha = UnitHealthPercent("player", false, HealthCurve())
-    bar.visual:SetAlpha(alpha)
-    -- At full health (alpha 0) the bar lets the pointer through. A secret
-    -- reading cannot be compared: the bar keeps taking the pointer then.
-    SetBarMouse(bar, not Finite(alpha) or alpha > 0)
-end
-
-local function RefreshHealthAlpha(bar)
-    if not bar or not bar.visual then return end
-    if S.editMode or not M.config[bar.injuredKey] then
-        bar.visual:SetAlpha(1)
-        SetBarMouse(bar, true)
-        return
-    end
-    healthBars[#healthBars + 1] = bar
-    GateHealth(bar)
-end
-
--- Retail and Forever keep backpack and bag slots on a separate BagsBar.
--- The bag DataText is the visible entry point while this option is on;
--- Blizzard still owns item movement and the actual container windows.
-local function SyncNativeBagBar()
-    if NS.IsCombatLocked() then
-        S.Queue(ID)
-        return
-    end
-    local frame = _G.BagsBar
-    if M.active and M.config and M.config.hideBlizzardBagBar == true and frame then
-        if nativeBagBar ~= frame then
-            nativeBagBar = frame
-            nativeBagBarWasShown = frame:IsShown() == true
-        end
-        if not nativeBagDriver then
-            RegisterStateDriver(frame, "visibility", "hide")
-            nativeBagDriver = true
-        end
-        frame:Hide()
-        if not nativeBagShowHooks[frame] then
-            frame:HookScript("OnShow", SyncNativeBagBar)
-            nativeBagShowHooks[frame] = true
-        end
-        -- WoW Forever only: its mouse-and-keyboard action bar setup shows the bag bar.
-        if not nativeBagHooked and _G.MainActionBar_InitializeMKB then
-            hooksecurefunc("MainActionBar_InitializeMKB", SyncNativeBagBar)
-            nativeBagHooked = true
-        end
-    elseif nativeBagBar then
-        if nativeBagDriver then UnregisterStateDriver(nativeBagBar, "visibility") end
-        nativeBagDriver = nil
-        local restoreFrame, wasShown = nativeBagBar, nativeBagBarWasShown
-        nativeBagBar, nativeBagBarWasShown = nil, nil
-        if wasShown then restoreFrame:Show() end
-    end
 end
 
 local function Format(key)
@@ -141,177 +31,10 @@ local function Format(key)
     return Standard.Format(key)
 end
 
-local function Tooltip(button)
-    if not M.active or not button.source then return end
-    local title = S.Text(NS.DataTextSources[button.sourceIndex] or "")
-    if button.extra then
-        Actions.Tooltip(button, title)
-        return
-    end
-    GameTooltip:SetOwner(button, "ANCHOR_TOP")
-    GameTooltip:ClearLines()
-    GameTooltip:AddLine(title, 1, .82, .36)
-    if Standard.TooltipLines(GameTooltip, button, M.config) then Actions.GoldTooltip(GameTooltip) end
-    GameTooltip:Show()
-end
-
-local function HideTooltip(button)
-    Actions.Leave(button)
-    if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
-end
-
--- Built-in places open Blizzard windows out of combat; Actions.lua decides
--- for the additional sources.
-local function Click(button, mouse)
-    if not button.source then return end
-    if button.extra then
-        Actions.Click(button, mouse or "LeftButton")
-    elseif not NS.IsCombatLocked() then
-        Standard.Click(button)
-    end
-end
-
--- Mouseover bars: only a real hover change rebinds the sampled sources.
-local function SetHover(bar, hovered)
-    if M.config[bar.visibilityKey] ~= 4 or bar.hover == hovered then return end
-    bar.hover = hovered
-    bar.frame:SetAlpha(hovered and 1 or 0)
-    M:Rebind()
-end
-
-local function SlotEnter(button)
-    SetHover(button.bar, true)
-    Actions.hovered = button
-    Actions.Attach(button)
-    Tooltip(button)
-end
-
-local function SlotLeave(button)
-    -- The secure overlay over this place took the pointer: still hovered.
-    if Actions.Covers(button) then return end
-    if Actions.hovered == button then Actions.hovered = nil end
-    HideTooltip(button)
-    if not button.bar.frame:IsMouseOver() then SetHover(button.bar, false) end
-end
-Actions.enter, Actions.leave = SlotEnter, SlotLeave
-
-local function BarEnter(frame) SetHover(frame.bar, true) end
-
-local function BarLeave(frame)
-    if not frame:IsMouseOver() then SetHover(frame.bar, false) end
-end
-
--- A bar that hides takes the secure overlay and popup of its places along.
-local function BarShownChanged(frame)
-    if not frame:IsVisible() then
-        local owner = Actions.Owner()
-        if owner and owner.bar.frame == frame then Actions.Detach() end
-        local popup = Actions.popup
-        if popup and popup.owner and popup.owner.bar.frame == frame then Actions.ClosePopup() end
-    end
-    if not M.styling then M:Rebind() end
-end
-
-local function CreateEdge(frame, layer, from, to)
-    local texture = S.CreateTexture(frame, nil, layer)
-    texture:SetPoint(from)
-    texture:SetPoint(to)
-    return texture
-end
-
--- Places are ordinary buttons (no secure template), so a bar may move,
--- resize, show and hide in combat. Actions.lua runs protected clicks.
-local function CreateSlot(bar, slot)
-    local button = S.CreateFrame("Button", nil, bar.visual)
-    button.bar, button.slot = bar, slot
-    button:RegisterForClicks("AnyUp")
-    button:SetScript("OnClick", Click)
-    button:SetScript("OnEnter", SlotEnter)
-    button:SetScript("OnLeave", SlotLeave)
-    -- Only volume places take the wheel; the others leave it to the camera.
-    button:SetScript("OnMouseWheel", Actions.Wheel)
-    button:EnableMouseWheel(false)
-    local text = S.CreateFontString(button, nil, "OVERLAY", "GameFontHighlightSmall")
-    text:SetPoint("LEFT", button, "LEFT", 5, 0)
-    text:SetPoint("RIGHT", button, "RIGHT", -5, 0)
-    text:SetJustifyH("CENTER")
-    text:SetWordWrap(false)
-    button.label = text
-    return button
-end
-
-local function AssignBarKeys(bar, index)
-    local keys = BarKeys(index)
-    local prefix = keys.prefix
-    bar.index, bar.prefix = index, prefix
-    bar.enabledKey, bar.visibilityKey = keys.enabled, keys.visibility
-    bar.layoutKey, bar.widthKey, bar.heightKey = prefix .. "Layout", prefix .. "Width", prefix .. "Height"
-    bar.injuredKey, bar.instanceKey, bar.housingKey = keys.injured, keys.instance, keys.housing
-end
-
-local function CreateBadge(bar)
-    local badge = S.CreateFrame("Button", nil, bar.visual)
-    badge.bar, badge.source, badge.sourceIndex, badge.text = bar, "bags", 3, Standard.LABELS.bags
-    badge:RegisterForClicks("LeftButtonUp")
-    badge:SetScript("OnClick", Click)
-    badge:SetScript("OnEnter", SlotEnter)
-    badge:SetScript("OnLeave", SlotLeave)
-    local badgeArt = S.CreateTexture(badge, nil, "OVERLAY")
-    badgeArt:SetAllPoints(badge)
-    badgeArt:SetTexture(BADGE)
-    bar.badge = badge
-end
-
-local function CreateBar(index)
-    if M.bars[index] then return M.bars[index] end
-    local recycled = table.remove(M.pool)
-    if recycled then
-        AssignBarKeys(recycled, index)
-        recycled.hover = false
-        M.bars[index] = recycled
-        return recycled
-    end
-    local frame = S.CreateFrame("Frame", nil, UIParent)
-    frame:SetFrameStrata("MEDIUM")
-    frame:EnableMouse(true)
-    local visual = S.CreateFrame("Frame", nil, frame)
-    visual:SetAllPoints(frame)
-    local background = S.CreateTexture(visual, nil, "BACKGROUND")
-    background:SetAllPoints(visual)
-    local gradient = S.CreateTexture(visual, nil, "BACKGROUND")
-    gradient:SetAllPoints(visual)
-    gradient:SetTexture("Interface\\Buttons\\WHITE8X8")
-    local top = CreateEdge(visual, "BORDER", "TOPLEFT", "TOPRIGHT")
-    top:SetHeight(1)
-    local bottom = CreateEdge(visual, "BORDER", "BOTTOMLEFT", "BOTTOMRIGHT")
-    bottom:SetHeight(1)
-    local left = CreateEdge(visual, "BORDER", "TOPLEFT", "BOTTOMLEFT")
-    left:SetWidth(1)
-    local right = CreateEdge(visual, "BORDER", "TOPRIGHT", "BOTTOMRIGHT")
-    right:SetWidth(1)
-    local accent = CreateEdge(visual, "ARTWORK", "BOTTOMLEFT", "BOTTOMRIGHT")
-    accent:SetHeight(1)
-    local bar = {
-        frame = frame, visual = visual, background = background, gradient = gradient,
-        border = { top, bottom, left, right },
-        accent = accent, dividers = {}, slots = {},
-    }
-    AssignBarKeys(bar, index)
-    frame.bar = bar
-    M.bars[index] = bar
-    CreateBadge(bar)
-    for slot = 1, SLOT_COUNT do bar.slots[slot] = CreateSlot(bar, slot) end
-    frame:SetScript("OnEnter", BarEnter)
-    frame:SetScript("OnLeave", BarLeave)
-    frame:SetScript("OnShow", BarShownChanged)
-    frame:SetScript("OnHide", BarShownChanged)
-    return bar
-end
-
 local function Visible(bar)
     if not bar.frame:IsVisible() then return false end
     if S.editMode then return true end
-    if M.config[bar.visibilityKey] == 4 then return bar.hover == true end
+    if M.config[bar.visibilityKey] == VISIBILITY.MOUSEOVER then return bar.hover == true end
     return bar.frame:GetAlpha() > 0
 end
 
@@ -363,7 +86,7 @@ function M:UpdateSource(key, force)
                     Extra.Paint(button)
                 end
             end
-            if relayout and self.config[bar.layoutKey] == 2 then Layout(bar) end
+            if relayout and self.config[bar.layoutKey] == LAYOUT.FIT then Layout(bar) end
         end
     end
 end
@@ -577,76 +300,9 @@ function M:Rebind()
     if sampledChanged then self:Schedule() end
 end
 
--- "Out of combat" and "In combat" are state drivers as well: the client
--- decides combat, and PLAYER_REGEN_DISABLED fires before lockdown starts.
-local function MacroVisibility(c, bar)
-    local rules, n = {}, 0
-    local injured = c[bar.injuredKey] == true
-    for _, condition in ipairs(NS.DataTextLoadConditions) do
-        local suffix, macro = condition[1], condition[3]
-        if macro and c[bar.prefix .. "LoadCond" .. suffix] == true
-            and not (injured and (suffix == "HideNoTarget" or suffix == "HideOutOfCombat"
-                or suffix == "HideOutOfCombatNoTarget")) then
-            n = n + 1
-            rules[n] = macro
-        end
-    end
-    local mode = c[bar.visibilityKey]
-    if n == 0 and mode ~= 2 and mode ~= 3 then return nil end
-    if mode == 2 then table.insert(rules, 1, "[combat] hide")
-    elseif mode == 3 then table.insert(rules, 1, "[nocombat] hide") end
-    rules[#rules + 1] = "show"
-    return table.concat(rules, "; ")
-end
-
--- Visibility macros depend on settings only: they are built when a bar is
--- refreshed, and UpdateVisibility (zone and housing events) reads the cached
--- strings. Edit Mode reveals bars out of combat.
-local EDIT_PREFIX = "[nocombat] show; "
-local BLOCKED, BLOCKED_EDIT = "hide", EDIT_PREFIX .. "hide"
-local function CacheVisibility(c, bar)
-    local expression = MacroVisibility(c, bar)
-    bar.visibilityMacro = expression
-    bar.visibilityEditMacro = expression and EDIT_PREFIX .. expression
-end
-
-local function SetVisibilityDriver(bar, expression)
-    if bar.visibilityDriver == expression then return true end
-    if NS.IsCombatLocked() then
-        S.Queue(ID)
-        return false
-    end
-    if bar.visibilityDriver then UnregisterStateDriver(bar.frame, "visibility") end
-    bar.visibilityDriver = nil
-    if expression then
-        RegisterStateDriver(bar.frame, "visibility", expression)
-        bar.visibilityDriver = expression
-    end
-    return true
-end
-
+-- Bar visibility (modes, load conditions, health gate): Visibility.lua.
 function M:UpdateVisibility()
-    local c = self.config
-    self.styling = true
-    Clear(healthBars)
-    for i, bar in pairs(self.bars) do
-        local mode = c[bar.visibilityKey]
-        if mode ~= 4 then bar.hover = false end
-        local enabled = self.presentIDs[i] and c[bar.enabledKey] == true
-        local blocked = enabled and (c[bar.instanceKey] and InInstance()
-            or c[bar.housingKey] and InHousing())
-        local expression
-        if enabled then
-            expression = S.editMode and bar.visibilityEditMacro or bar.visibilityMacro
-            if expression and blocked then expression = S.editMode and BLOCKED_EDIT or BLOCKED end
-        end
-        if SetVisibilityDriver(bar, expression) and not expression then
-            bar.frame:SetShown(enabled and (S.editMode or not blocked))
-        end
-        bar.frame:SetAlpha((S.editMode or mode ~= 4 or bar.hover) and 1 or 0)
-        RefreshHealthAlpha(bar)
-    end
-    self.styling = false
+    Visibility.Apply(self)
     self:Rebind()
 end
 
@@ -658,21 +314,23 @@ local function StyleSlot(button, style, font)
     button.label:SetTextColor(1, 1, 1)
 end
 
+-- The screen edge each docked bar snaps to.
+local DOCK_POINTS = { [DOCK.TOP] = "TOP", [DOCK.BOTTOM] = "BOTTOM", [DOCK.LEFT] = "LEFT", [DOCK.RIGHT] = "RIGHT" }
 local function PlaceBar(bar, c)
     local prefix, frame = bar.prefix, bar.frame
     local pixel = S.PixelUnit() or 1
     bar.pixelUnit = pixel
     frame:ClearAllPoints()
     local point = NS.DataTextPoints[c[prefix .. "Point"]] or "BOTTOM"
-    local dock = c[prefix .. "Dock"] or 1
-    if dock > 1 then point = ({ "", "TOP", "BOTTOM", "LEFT", "RIGHT" })[dock] end
+    local dock = c[prefix .. "Dock"] or DOCK.FREE
+    if dock ~= DOCK.FREE then point = DOCK_POINTS[dock] end
     frame:SetPoint(point, UIParent, point, Snap(c[prefix .. "X"], pixel), Snap(c[prefix .. "Y"], pixel))
     bar.vertical = c[prefix .. "Vertical"] == true
     local span = bar.vertical and UIParent:GetHeight() or UIParent:GetWidth()
     bar.length = Snap(c[prefix .. "FullScreen"] and span or c[bar.widthKey], pixel)
     local thickness = Snap(c[bar.heightKey], pixel)
     frame:SetSize(bar.vertical and thickness or bar.length, bar.vertical and bar.length or thickness)
-    if dock > 1 then
+    if dock ~= DOCK.FREE then
         frame:ClearAllPoints()
         frame:SetPoint(point, UIParent, point, 0, 0)
     end
@@ -720,7 +378,7 @@ end
 
 local function RefreshBar(index)
     local c = M.config
-    local bar = CreateBar(index)
+    local bar = Bars.Create(index)
     local frame, layer = bar.frame, c[bar.prefix .. "Layer"]
     local restored = S.ApplyOwnedLayer(frame, layer)
     S.ApplyOwnedChildLayer(bar.visual, frame, layer, 1, restored)
@@ -736,7 +394,7 @@ local function RefreshBar(index)
         RefreshSlot(button, c, index, slot, style, font)
     end
     Layout(bar)
-    CacheVisibility(c, bar)
+    Visibility.Cache(c, bar)
 end
 
 function M:Refresh()
@@ -747,17 +405,17 @@ function M:Refresh()
     if self.config.trackAltGold then GoldLedger.Capture() end
     self.styling = true
     Clear(self.values)
-    Clear(BAR_KEYS)
+    Bars.ResetKeys()
     NS.SuiteCatalog.dataTexts.prepareConfig(self.config)
     self.barIDs = NS.DataTextBarIDs(self.config)
     Clear(self.presentIDs)
     for _, i in ipairs(self.barIDs) do self.presentIDs[i] = true end
     for i, bar in pairs(self.bars) do
         if not self.presentIDs[i] then
-            SetVisibilityDriver(bar, nil)
+            Visibility.SetDriver(bar, nil)
             bar.frame:Hide()
             bar.visual:SetAlpha(1)
-            for slot = 1, SLOT_COUNT do HideTooltip(bar.slots[slot]) end
+            for slot = 1, SLOT_COUNT do Bars.HideTooltip(bar.slots[slot]) end
             self.bars[i] = nil
             self.pool[#self.pool + 1] = bar
         end
@@ -769,11 +427,7 @@ function M:Refresh()
     self:UpdateVisibility()
     self:RegisterMovers()
     Extra.PrepareHearths()
-    SyncNativeBagBar()
-end
-
-local function AddonLoaded(_, _, addon)
-    if addon == "Blizzard_MainMenuBarBagButtons" then SyncNativeBagBar() end
+    NativeBagBar.Sync()
 end
 
 local function ScaleChanged(module)
@@ -786,17 +440,17 @@ end
 
 function M:Enable()
     self:Refresh()
-    SyncNativeBagBar()
-    self.context:Event("ADDON_LOADED", AddonLoaded, true)
+    NativeBagBar.Sync()
+    self.context:Event("ADDON_LOADED", NativeBagBar.AddonLoaded, true)
     self.context:Event("UI_SCALE_CHANGED", ScaleChanged)
     self.context:Event("DISPLAY_SIZE_CHANGED", ScaleChanged)
 end
 
 function M:Disable()
-    Clear(healthBars)
+    Visibility.Release()
     Actions.Disable()
     Extra.Disable()
-    SyncNativeBagBar()
+    NativeBagBar.Sync()
     if self.timer then
         self.timer:Cancel()
         self.timer = nil
@@ -810,48 +464,19 @@ function M:Disable()
     Clear(self.due)
     local owned = GameTooltip:GetOwner()
     for _, bar in pairs(self.bars) do
-        SetVisibilityDriver(bar, nil)
+        Visibility.SetDriver(bar, nil)
         bar.frame:Hide()
         bar.visual:SetAlpha(1)
         if owned then
-            for i = 1, SLOT_COUNT do HideTooltip(bar.slots[i]) end
+            for i = 1, SLOT_COUNT do Bars.HideTooltip(bar.slots[i]) end
         end
     end
 end
 
-local movers
-local function Mover(index)
-    local keys = BarKeys(index)
-    local prefix = keys.prefix
-    return {
-        label = M.config[prefix .. "Name"] or S.Text("DataTexts bar %d"):format(index), order = 690 + index,
-        centerPopup = true,
-        getFrame = function() return M.bars[index] and M.bars[index].frame end,
-        isEnabled = function() return M.presentIDs[index] and M.config[keys.enabled] == true end,
-        xKey = prefix .. "X", yKey = prefix .. "Y", pointKey = prefix .. "Point",
-        point = function() return NS.DataTextPoints[M.config[prefix .. "Point"]] or "BOTTOM" end,
-        historyKeys = { prefix .. "Width", prefix .. "Height" },
-        extraControls = {
-            { id = "width", label = "Width", kind = "number", min = 180, max = 900, step = 1,
-                get = function() return S.Config(ID)[prefix .. "Width"] end,
-                set = function(value) return S.Set(ID, prefix .. "Width", value) end },
-            { id = "height", label = "Height", kind = "number", min = 18, max = 100, step = 1,
-                get = function() return S.Config(ID)[prefix .. "Height"] end,
-                set = function(value) return S.Set(ID, prefix .. "Height", value) end },
-        },
-    }
-end
-
+-- The bars' MSUF Edit Mode movers (Movers.lua); the shared Edit Mode runtime
+-- calls this method too.
 function M:RegisterMovers()
-    movers = movers or {}
-    Clear(movers)
-    S.UnregisterEditElements(ID)
-    for _, i in ipairs(self.barIDs) do
-        if self.bars[i] then
-            movers[i] = Mover(i)
-            S.RegisterOwnedMover(ID, "bar" .. i, movers[i])
-        end
-    end
+    P.DataTextMovers.Register(self)
 end
 
 S.Install(ID, M)

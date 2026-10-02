@@ -35,7 +35,7 @@ local function OnEnter(button)
     MM.ScaleTooltip(button)
     GameTooltip:SetText(S.Text("Quick specialization"))
     local _, _, name = CurrentSpec()
-    if name then GameTooltip:AddLine(S.Text("Current spec: ") .. name, 1, 1, 1) end
+    if name then GameTooltip:AddLine(S.Text("Current spec: %s"):format(name), 1, 1, 1) end
     local loot = CurrentLoot()
     if loot then
         local lootName = S.Text("Current specialization")
@@ -43,7 +43,7 @@ local function OnEnter(button)
             local _, name = GetSpecializationInfoByID(loot)
             lootName = S.PublicText(name) or lootName
         end
-        GameTooltip:AddLine(S.Text("Loot: ") .. lootName, .8, .8, .8)
+        GameTooltip:AddLine(S.Text("Loot: %s"):format(lootName), .8, .8, .8)
     end
     if NS.IsCombatLocked() then
         GameTooltip:AddLine(S.Text("Changing specialization is unavailable in combat."), 1, .55, .4, true)

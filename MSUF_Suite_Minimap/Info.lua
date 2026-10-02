@@ -2,6 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
+local CLOCK, DATE, LATENCY = NS.MinimapClockSource, NS.MinimapDatePosition, NS.MinimapLatencySource
+local TEXT_ANCHOR, BOX = NS.MinimapTextAnchor, NS.MinimapTextBox
 -- Information texts on the map. One cancellable timer serves every sampled text
 -- (clock, FPS, latency, coordinates); durability, location, weather, difficulty and the
 -- calendar invite mark are event-driven. Hidden texts do no work and only
@@ -18,16 +20,6 @@ local zoneColors = {
     sanctuary = "69ccf0", arena = "ff1a1a", friendly = "1aff1a", hostile = "ff1a1a", contested = "ffb300",
 }
 local outlines = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
--- Blizzard's localized names where one exists, else the suite's own text.
-local TITLES = {
-    Clock = { "TIMEMANAGER_TITLE", "Clock" },
-    FPS = { false, "FPS" },
-    Latency = { false, "Latency" },
-    Coordinates = { false, "Coordinates" },
-    Durability = { "DURABILITY", "Durability" },
-    Location = { "ZONE", "Location" },
-    Weather = { false, "Weather" },
-}
 -- GetInstanceInfo difficulty IDs: tag and colour tier (1 normal, 2 heroic, 3
 -- mythic, 4 raid finder/follower, 5 timewalking, 6 keystone). Bare tags carry
 -- no group size. Unknown IDs fall back to GetDifficultyInfo's heroic/mythic flags.
@@ -85,50 +77,74 @@ function S.CanShowMinimapInfo(key)
     return true
 end
 
+-- 12-hour times carry Blizzard's localized AM/PM words (TIMEMANAGER_AM/PM,
+-- the calendar's own), before the digits where Blizzard's own 12-hour format
+-- puts its word first (TIME_TWELVEHOURAM: "%d:%02d AM" on enUS).
+local MERIDIEM_FIRST
+do
+    local word, digits = TIME_TWELVEHOURAM:find(TIMEMANAGER_AM, 1, true), TIME_TWELVEHOURAM:find("%", 1, true)
+    MERIDIEM_FIRST = word ~= nil and digits ~= nil and word < digits
+end
+local function TwelveHour(digits, hour)
+    local word = hour < 12 and TIMEMANAGER_AM or TIMEMANAGER_PM
+    if MERIDIEM_FIRST then return word .. " " .. digits end
+    return digits .. " " .. word
+end
+
+-- The realm clock; nil while the client has no game time.
+local function ServerTime(c, second)
+    local hour, minute = S.ReadInfoSource("clockTime")
+    if not Finite(hour) or not Finite(minute) then return nil end
+    local shown = hour
+    if not c.infoClock24Hour then
+        shown = hour % 12
+        if shown == 0 then shown = 12 end
+    end
+    local digits = c.infoClockSeconds and second and string.format("%02d:%02d:%02d", shown, minute, second)
+        or string.format("%02d:%02d", shown, minute)
+    return c.infoClock24Hour and digits or TwelveHour(digits, hour)
+end
+
+-- The computer's clock (entry.clockFormat leaves the AM/PM word out).
+local function LocalTime(entry, c, now)
+    local digits = date(entry.clockFormat)
+    if c.infoClock24Hour then return digits end
+    return TwelveHour(digits, now.hour)
+end
+
 local function Clock(entry)
     local c = M.config
     local stamp = S.ReadInfoSource("clockStamp")
     local second = Finite(stamp) and math.floor(stamp) % 60 or nil
-    local server, localTime
-    if c.infoClockSource ~= 2 then
-        local hour, minute = S.ReadInfoSource("clockTime")
-        if Finite(hour) and Finite(minute) then
-            local suffix = ""
-            if not c.infoClock24Hour then
-                suffix = hour < 12 and " AM" or " PM"
-                hour = hour % 12
-                if hour == 0 then hour = 12 end
-            end
-            server = string.format("%02d:%02d", hour, minute)
-            if c.infoClockSeconds and second then server = server .. string.format(":%02d", second) end
-            server = server .. suffix
-        end
-    end
-    if c.infoClockSource ~= 1 then localTime = date(entry.clockFormat) end
-    local text = c.infoClockSource == 1 and server or c.infoClockSource == 2 and localTime
+    local source = c.infoClockSource
+    local now = (source ~= CLOCK.REALM and not c.infoClock24Hour or c.infoClockDate) and date("*t") or nil
+    local server = source ~= CLOCK.LOCAL and ServerTime(c, second) or nil
+    local localTime = source ~= CLOCK.REALM and LocalTime(entry, c, now) or nil
+    local text = source == CLOCK.REALM and server or source == CLOCK.LOCAL and localTime
         or server and localTime and server .. " / " .. localTime
     if c.infoClockDate then
-        local calendarDate = date("%d-%m-%Y")
-        if type(calendarDate) == "string" and calendarDate ~= "" then
-            if c.infoClockDatePosition == 2 then
-                text = text and calendarDate .. "\n" .. text or calendarDate
-            elseif c.infoClockDatePosition == 3 then
-                text = text and text .. "\n" .. calendarDate or calendarDate
-            else
-                text = text and text .. "  " .. calendarDate or calendarDate
-            end
+        -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
+        local calendarDate = FormatShortDate(now.day, now.month, now.year)
+        if c.infoClockDatePosition == DATE.ABOVE then
+            text = text and calendarDate .. "\n" .. text or calendarDate
+        elseif c.infoClockDatePosition == DATE.BELOW then
+            text = text and text .. "\n" .. calendarDate or calendarDate
+        else
+            text = text and text .. "  " .. calendarDate or calendarDate
         end
     end
     return text or "--", c.infoClockSeconds and 1 or second and 60 - second or 1
 end
 
+-- One latency unit for both values, as the DataTexts show it.
+local FPS_TEXT, MS_TEXT = S.Text("%d FPS"), S.Text("%d ms")
 local function FPS(entry)
     local value = S.ReadInfoSource("fps")
     if not Finite(value) or value < 0 then return "--", entry.interval end
     value = math.floor(value + .5)
     if value ~= entry.lastFPS then
         entry.lastFPS = value
-        entry.fpsText = value .. " FPS"
+        entry.fpsText = FPS_TEXT:format(value)
     end
     local severity = value < M.config.infoFPSWarning and 3 or value < M.config.infoFPSGood and 2 or 1
     return entry.fpsText, entry.interval, severity
@@ -139,13 +155,14 @@ local function Latency(entry)
     local mode = M.config.infoLatencySource
     home = Finite(home) and home >= 0 and math.floor(home + .5) or nil
     world = Finite(world) and world >= 0 and math.floor(world + .5) or nil
-    if mode ~= 2 and not home or mode ~= 1 and not world then return "--", entry.interval end
+    if mode ~= LATENCY.WORLD and not home or mode ~= LATENCY.HOME and not world then return "--", entry.interval end
     if home ~= entry.lastHome or world ~= entry.lastWorld or mode ~= entry.lastMode then
         entry.lastHome, entry.lastWorld, entry.lastMode = home, world, mode
-        entry.latencyText = mode == 1 and home .. " ms" or mode == 2 and world .. " ms"
-            or home .. " / " .. world .. " ms"
+        entry.latencyText = mode == LATENCY.HOME and MS_TEXT:format(home)
+            or mode == LATENCY.WORLD and MS_TEXT:format(world)
+            or home .. " / " .. MS_TEXT:format(world)
     end
-    local value = mode == 1 and home or mode == 2 and world or math.max(home, world)
+    local value = mode == LATENCY.HOME and home or mode == LATENCY.WORLD and world or math.max(home, world)
     local severity = value >= M.config.infoLatencyBad and 3 or value >= M.config.infoLatencyWarning and 2 or 1
     return entry.latencyText, entry.interval, severity
 end
@@ -166,7 +183,7 @@ end
 local function Durability(entry)
     local lowest, currentTotal, maxTotal = S.ReadInfoSource("durability")
     if not lowest then return "--" end
-    local value = math.floor((M.config.infoDurabilityMode == 2 and currentTotal / maxTotal or lowest) * 100)
+    local value = math.floor((M.config.infoDurabilityMode == NS.MinimapDurabilityMode.COMBINED and currentTotal / maxTotal or lowest) * 100)
     if entry.lastDurability ~= value then
         entry.lastDurability = value
         entry.durabilityText = entry.iconPrefix .. value .. "%"
@@ -212,11 +229,7 @@ local Color = S.RGB
 local function ClassColor()
     local _, token = UnitClass("player")
     if not S.Public(token) then return end
-    local r, g, b = S.ClassRGB(token)
-    if not Finite(r) or not Finite(g) or not Finite(b) then return end
-    return string.format("%02x%02x%02x", math.floor(math.max(0, math.min(1, r)) * 255 + .5),
-        math.floor(math.max(0, math.min(1, g)) * 255 + .5),
-        math.floor(math.max(0, math.min(1, b)) * 255 + .5))
+    return S.ClassHex(token)
 end
 
 -- Group size and difficulty letter, e.g. "20M", "5H", "M+12", "25LFR".
@@ -431,55 +444,12 @@ local function WorldChanged()
     end
 end
 
--- ToggleCalendar and ToggleTimeManager are the bootstrap entry points of
--- Blizzard's load-on-demand calendar and clock (they load the addon first).
-local function Click(button, mouseButton)
-    if not M.active or NS.IsCombatLocked() then return end
-    if button.infoKey == "Clock" then
-        local calendar = M.config.infoClockClick == 1
-        if mouseButton == "RightButton" then calendar = not calendar end
-        if calendar then ToggleCalendar() else ToggleTimeManager() end
-    elseif button.infoKey == "Coordinates" or button.infoKey == "Location" and M.config.infoLocationClick then
-        ToggleWorldMap()
-    elseif button.infoKey == "Durability" then
-        ToggleCharacter("PaperDollFrame")
-    end
-end
-
-local function Tooltip(button)
-    if not M.active or MM.ShowInfoTooltip(button) then return end
-    local key = button.infoKey
-    local entry, title = M.infoEntries[key], TITLES[key]
-    GameTooltip:SetOwner(button, "ANCHOR_TOP")
-    MM.ScaleTooltip(button)
-    GameTooltip:SetText(S.BlizzardText(title[1], title[2]))
-    GameTooltip:AddLine(entry.tooltipText or entry.text or "--", 1, 1, 1)
-    if key == "Clock" then
-        if entry.invite and entry.invite:IsShown() then
-            GameTooltip:AddLine(S.Text("Calendar invitations are waiting."), 1, .82, 0)
-        end
-        local hint = M.config.infoClockClick == 1 and "Left: calendar. Right: clock." or "Left: clock. Right: calendar."
-        GameTooltip:AddLine(S.Text(hint), .7, .8, .9)
-    elseif key == "Coordinates" or key == "Location" and M.config.infoLocationClick then
-        GameTooltip:AddLine(S.Text("Click to open the world map."), .7, .8, .9)
-    elseif key == "Durability" then
-        GameTooltip:AddLine(S.Text("Click to open your equipment."), .7, .8, .9)
-    end
-    GameTooltip:Show()
-end
-
-local function LeaveTooltip(button)
-    MM.HideInfoTooltip(button)
-end
-
 local function CreateEntry(key)
     local button = S.CreateFrame("Button", nil, M.infoFrame)
     button.infoKey = key
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    button:SetScript("OnClick", Click)
-    button:SetScript("OnEnter", Tooltip)
-    button:SetScript("OnLeave", LeaveTooltip)
-    button:SetScript("OnHide", LeaveTooltip)
+    -- Clicks, tooltips and the secure window overlay: InfoInput.lua.
+    for script, handler in pairs(MM.InfoScripts) do button:SetScript(script, handler) end
     local label = S.CreateFontString(button, nil, "OVERLAY", "GameFontNormalSmall")
     label:SetAllPoints(button)
     label:SetWordWrap(false)
@@ -506,11 +476,11 @@ end
 local function Anchor(region, anchor, x, y)
     local host, border = MM.host, MM.BorderWidth()
     region:ClearAllPoints()
-    if anchor == 10 then
+    if anchor == TEXT_ANCHOR.ABOVE then
         region:SetPoint("BOTTOM", host, "TOP", x, y + border)
         return "CENTER"
     end
-    if anchor == 11 then
+    if anchor == TEXT_ANCHOR.BELOW then
         region:SetPoint("TOP", host, "BOTTOM", x, y - border)
         return "CENTER"
     end
@@ -531,8 +501,7 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     end
     entry.interval = c[prefix .. "Interval"] or 1
     if key == "Clock" then
-        entry.clockFormat = (c.infoClock24Hour and "%H:%M" or "%I:%M") ..
-            (c.infoClockSeconds and ":%S" or "") .. (c.infoClock24Hour and "" or " %p")
+        entry.clockFormat = (c.infoClock24Hour and "%H:%M" or "%I:%M") .. (c.infoClockSeconds and ":%S" or "")
     elseif key == "Coordinates" then
         entry.decimalScale = 10 ^ c.infoCoordinatesDecimals
         entry.coordinateScale = entry.decimalScale * 100
@@ -554,18 +523,19 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         outlines[c[prefix .. "Outline"]], c[prefix .. "Rendering"],
         c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
     local lines = key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2
-        or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2 or 1
+        or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2 or 1
     local height = key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or size * lines
     local width = c[prefix .. "Width"]
-    if key == "Weather" and c.infoWeatherDisplay ~= 1 then
-        width = c.infoWeatherDisplay == 2 and c.infoWeatherIconSize or math.max(width, c.infoWeatherIconSize + 8)
+    local weather = NS.MinimapWeatherDisplay
+    if key == "Weather" and c.infoWeatherDisplay ~= weather.TEXT then
+        width = c.infoWeatherDisplay == weather.ICON and c.infoWeatherIconSize or math.max(width, c.infoWeatherIconSize + 8)
     end
     entry.size = key == "Weather" and height or size
     entry.button:SetSize(width, height + 8)
     entry.justify = Anchor(entry.button, c[prefix .. "Anchor"], c[prefix .. "X"], c[prefix .. "Y"])
     entry.label:SetJustifyH(entry.justify)
     local boxMode = c[prefix .. "Box"]
-    if boxMode == 2 or boxMode == 3 then
+    if boxMode == BOX.BORDER or boxMode == BOX.CUSTOM then
         if not entry.box then entry.box = S.CreateTexture(entry.button, nil, "BACKGROUND") end
         local box = entry.box
         box:ClearAllPoints()
@@ -577,7 +547,7 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
             box:SetPoint("CENTER", entry.button, "CENTER")
         end
         box:SetHeight(height + 4)
-        if boxMode == 3 then boxR, boxG, boxB = Color(c[prefix .. "BoxColor"]) end
+        if boxMode == BOX.CUSTOM then boxR, boxG, boxB = Color(c[prefix .. "BoxColor"]) end
         box:SetColorTexture(boxR, boxG, boxB, 1)
         box:Show()
     elseif entry.box then
@@ -648,12 +618,12 @@ local function LayoutEntries(c, hideCoordinates)
             end
             Style(entry, key, c, classColor, boxR, boxG, boxB)
             local anchor = c[prefix .. "Anchor"]
-            local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2
+            local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2
                 or key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2 or 1
             local height = (key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or c[prefix .. "Size"] * lines) + 8
-            if anchor == 10 then above = math.max(above, c[prefix .. "Y"] + height) end
-            if anchor == 11 then below = math.max(below, height - c[prefix .. "Y"]) end
-            entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == 2 or MM.Revealed())
+            if anchor == TEXT_ANCHOR.ABOVE then above = math.max(above, c[prefix .. "Y"] + height) end
+            if anchor == TEXT_ANCHOR.BELOW then below = math.max(below, height - c[prefix .. "Y"]) end
+            entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == NS.MinimapCoordinatesMode.ALWAYS or MM.Revealed())
         elseif entry then
             entry.active = false
             entry.button:Hide()
@@ -697,6 +667,7 @@ function MM.RefreshTexts()
         return
     end
     Cancel()
+    MM.DetachInfoOverlay()
     local c = M.config
     local hideCoordinates = CoordinatesHidden(c)
     local difficulty = SyncTextEvents(c)
@@ -728,13 +699,14 @@ end
 
 MM.OnHover(function(shown)
     local entry = M.infoEntries and M.infoEntries.Coordinates
-    if not M.active or not entry or not entry.active or M.config.infoCoordinatesMode ~= 1 then return end
+    if not M.active or not entry or not entry.active or M.config.infoCoordinatesMode ~= NS.MinimapCoordinatesMode.MOUSEOVER then return end
     entry.button:SetShown(shown)
     if shown then Rearm() end
 end)
 
 function MM.ReleaseTexts()
     Cancel()
+    MM.DetachInfoOverlay()
     M.infoActive, M.difficultyActive = false, false
     if M.infoFrame and not NS.Safety.IsForbidden(M.infoFrame) then M.infoFrame:Hide() end
 end

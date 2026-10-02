@@ -64,14 +64,15 @@ local function SignedMoneyText(delta)
 end
 
 -- This session's login gold, or nil: the one session baseline of the Bags
--- and DataTexts (MSUF_Suite/Core/Catalog/Bags.lua).
+-- and DataTexts (MSUF_Suite/Core/SessionGold.lua).
 local SessionBaseline = NS.SessionGoldBaseline
 
 -- Each formatter returns the display value (nil when unknown) and an
 -- optional "bad" severity from the raw values of its shared data source.
 local FORMATTERS = {
+    -- Blizzard's localized gold symbol (GOLD_AMOUNT_SYMBOL, "g" on enUS).
     gold = function(amount)
-        if Finite(amount) then return floor(amount / 10000) .. "g" end
+        if Finite(amount) then return floor(amount / 10000) .. GOLD_AMOUNT_SYMBOL end
     end,
     sessionGold = function(amount)
         local baseline = SessionBaseline(amount)
@@ -114,7 +115,11 @@ local FORMATTERS = {
 
 -- Label, display value, severity and alternate value of a built-in source.
 function Standard.Format(key)
-    if key == "date" then return LABELS[key], date("%d-%m-%Y") end
+    if key == "date" then
+        -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
+        local now = date("*t")
+        return LABELS[key], FormatShortDate(now.day, now.month, now.year)
+    end
     if key == "fpsLatency" then
         local fps = S.ReadInfoSource("fps")
         local _, world = S.ReadInfoSource("latency")
@@ -156,6 +161,12 @@ function Standard.TooltipLines(tooltip, button, config)
 end
 
 -- The Blizzard window of a built-in source. Callers run it out of combat.
+-- Durability, Coordinates and Zone places normally carry the secure overlay
+-- (Actions.lua), which clicks Blizzard's own button; this runs only when that
+-- button is missing. ToggleCalendar loads Blizzard_Calendar and shows the
+-- calendar through ShowUIPanel (Calendar_Toggle). OpenAllBags has no Blizzard
+-- button with the same effect: the backpack button puts a held item into the
+-- bag or toggles the backpack alone (BaseBagSlotButtonMixin:BagSlotOnClick).
 function Standard.Click(button)
     local name = CLICK[button.source]
     if name then

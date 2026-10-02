@@ -10,6 +10,7 @@
 
 Bootstrap.lua
 SlotCache.lua
+ItemLoads.lua
 Bags.lua
 BagWindow.lua
 BankItemLevel.lua

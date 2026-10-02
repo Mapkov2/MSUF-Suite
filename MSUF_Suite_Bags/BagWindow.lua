@@ -6,7 +6,7 @@ local M = assert(Private.BagsModule, "Bags.lua must load before BagWindow.lua")
 local floor = math.floor
 local WindowTexture = M.WindowTexture
 local TEXT = {
-    session = S.Text("Session"),
+    session = S.Text("Session %s"),
     drag = S.Text("Drag to move"),
     options = S.Text("Click for bag options"),
 }
@@ -21,7 +21,7 @@ end
 
 -- Losses use the ASCII hyphen-minus.
 local function GoldDeltaText(delta)
-    return TEXT.session .. " " .. (delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta))
+    return TEXT.session:format((delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta)))
 end
 
 local function Edge(shell, from, to)
@@ -211,11 +211,11 @@ function M:UpdateGold()
         label:Hide()
         return
     end
-    -- The one session baseline of the Bags and DataTexts (Core/Catalog/Bags.lua).
+    -- The one session baseline of the Bags and DataTexts (Core/SessionGold.lua).
     local money = PublicMoney()
     local baseline = NS.SessionGoldBaseline(money)
     if not money or not baseline then
-        label:SetText(TEXT.session .. " " .. NO_VALUE)
+        label:SetText(TEXT.session:format(NO_VALUE))
         label:SetTextColor(0.72, 0.77, 0.82)
     else
         local delta = money - baseline
@@ -347,12 +347,28 @@ function M:ApplyWindowLayout()
     end
 end
 
+-- Blizzard's anchor pass (UpdateContainerFrameAnchors) reads the open bags
+-- through ContainerFrameSettingsManager:GetBagsShown, which rebuilds and
+-- caches that list (bagsShown) after a bag opened or closed. Rebuilt from
+-- addon code, the cached list would be tainted for every later Blizzard pass.
+-- A bag's OnShow marks the list stale and ContainerFrame_GenerateFrame runs
+-- the pass right after the show hooks (ContainerFrame_OnHide runs it at
+-- once), so a stale list means Blizzard's own pass is due. Runs the pass only
+-- while the list holds; returns whether it ran.
+function M.NativeAnchorPass()
+    if NS.IsCombatLocked() or ContainerFrameSettingsManager.bagsShown == nil then return false end
+    UpdateContainerFrameAnchors()
+    return true
+end
+
 function M:RefreshWindowLayout()
     if NS.IsCombatLocked() or not ((self.frame and self.frame:IsShown()) or ContainerFrame6:IsShown()) then
         return
     end
-    -- The post-hook reapplies the Suite layout after Blizzard's layout pass.
-    UpdateContainerFrameAnchors()
+    -- The post-hook reapplies the Suite layout after Blizzard's layout pass;
+    -- while Blizzard's own pass is due, the Suite layout goes on now and again
+    -- after that pass.
+    if not M.NativeAnchorPass() then self:ApplyWindowLayout() end
 end
 
 function M:RestoreWindows()

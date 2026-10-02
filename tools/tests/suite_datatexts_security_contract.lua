@@ -43,6 +43,38 @@ local W = H.New(root, flavor, { clientSecurity = true, beforeModules = function(
             microClicks[#microClicks + 1] = { name = self.name, secure = world.secure }
         end
     end
+    -- Blizzard_UIParentPanelManager: an addon's ShowUIPanel/HideUIPanel hand
+    -- the panel to the secure FramePositionDelegate (refused in combat).
+    world.panelCalls = {}
+    local function Panel(shown)
+        return function(frame)
+            world.panelCalls[#world.panelCalls + 1] = { frame = frame, shown = shown, secure = world.secure }
+            if not G.InCombatLockdown() then world.Blizzard(function() frame:SetShown(shown) end) end
+        end
+    end
+    G.ShowUIPanel, G.HideUIPanel = Panel(true), Panel(false)
+    G.SOUNDKIT = { IG_MAINMENU_OPEN = 850, IG_MAINMENU_QUIT = 851 }
+    G.PlaySound = function(sound) world.sounds = (world.sounds or 0) + 1; world.lastSound = sound end
+    G.GameMenuFrame = world.New("Frame", "GameMenuFrame", world.UIParent)
+    G.GameMenuFrame:Hide()
+    -- The minimap's zone text button opens the world map
+    -- (MinimapZoneTextButtonMixin:OnClick); the openers record their callers.
+    G.MinimapCluster.ZoneTextButton.scripts.OnClick = function()
+        microClicks[#microClicks + 1] = { name = "ZoneTextButton", secure = world.secure }
+    end
+    world.opened = {}
+    for _, name in ipairs({ "ToggleCharacter", "ToggleWorldMap" }) do
+        G[name] = function(tab)
+            world.opened[#world.opened + 1] = { name = name, tab = tab, secure = world.secure }
+        end
+    end
+    -- MainMenuMicroButtonMixin:OnClick (Blizzard_MicroMenu/Mainline) acts only
+    -- while the cursor is over the micro button itself.
+    G.MainMenuMicroButton.scripts.OnClick = function(self)
+        microClicks[#microClicks + 1] = { name = self.name, secure = world.secure }
+        if not self:IsMouseOver() then return end
+        if G.GameMenuFrame:IsShown() then G.HideUIPanel(G.GameMenuFrame) else G.ShowUIPanel(G.GameMenuFrame) end
+    end
 end })
 local G, S, NS = W.G, W.S, W.Suite
 function G.GameTooltip:SetItemByID(id) self.lines = { "item:" .. id } end
@@ -61,7 +93,9 @@ assert(S.SetMany("dataTexts", { enabled = true, bar1Enabled = true, bar1Layout =
     bar1Slot1 = Choice("clock"), bar1Slot2 = Choice("hearth"), bar1Slot3 = Choice("specialization"),
     bar1Slot4 = Choice("audio"), bar1Slot5 = Choice("portals"), bar1Slot6 = Choice("microMenu"),
     bar2Enabled = true, bar2Visibility = 2, bar2Slot1 = Choice("fps"), bar2Slot2 = 1, bar2Slot3 = 1,
-    bar3Enabled = true, bar3Visibility = 3, bar3Slot1 = Choice("gold"), bar3Slot2 = 1, bar3Slot3 = 1 }))
+    bar3Enabled = true, bar3Visibility = 3, bar3Slot1 = Choice("gold"), bar3Slot2 = 1, bar3Slot3 = 1,
+    bar4Enabled = true, bar4Slot1 = Choice("durability"), bar4Slot2 = Choice("coordinates"),
+    bar4Slot3 = Choice("location") }))
 local bar = assert(M.bars[1])
 local slots = bar.slots
 local clock, hearth, spec, audio, portals, micro = slots[1], slots[2], slots[3], slots[4], slots[5], slots[6]
@@ -140,9 +174,16 @@ local shared = {}
 assert(S.MicroMenuEntries(shared, false) == #expected - 1, "the Minimap's micro menu lists other buttons")
 for i, name in ipairs(expected) do
     local row = popup.rows[i]
-    assert(row and row.shown and row:GetAttribute("type") == "click" and row:GetAttribute("clickbutton") == G[name]
-        and (i == #expected or shared[i].button == G[name] and row.label.text == shared[i].label),
-        "micro menu row " .. i .. " is not the shared secure click on " .. name)
+    if i < #expected then
+        assert(row and row.shown and row:GetAttribute("type") == "click" and row:GetAttribute("clickbutton") == G[name]
+            and shared[i].button == G[name] and row.label.text == shared[i].label,
+            "micro menu row " .. i .. " is not the shared secure click on " .. name)
+    else
+        -- S3.2: a secure click on the game menu button does nothing (it
+        -- checks IsMouseOver), so the game menu is a plain row.
+        assert(row and row.shown and row:GetAttribute("type") == nil and row:GetAttribute("clickbutton") == nil
+            and row.label.text == "Game menu" and row.enabled, "the game menu row is not a plain, enabled row")
+    end
 end
 assert(not (popup.rows[#expected + 1] and popup.rows[#expected + 1].shown), "the micro menu lists extra rows")
 local first, guild = popup.rows[1], popup.rows[#expected - 1]
@@ -153,6 +194,51 @@ W.Click(first)
 assert(#microClicks == beforeMicro + 1 and microClicks[#microClicks].name == "CharacterMicroButton"
     and microClicks[#microClicks].secure and not popup.shown and #popup.points == 0,
     "a micro menu row did not click securely or did not close the popup")
+-- S3.2: the game menu row opens the game menu out of combat through
+-- Blizzard's panel manager, and closes it again; the popup closes either way.
+W.Click(micro)
+W.Click(popup.rows[#expected])
+local opened = W.panelCalls[#W.panelCalls]
+assert(G.GameMenuFrame.shown and opened and opened.frame == G.GameMenuFrame and opened.shown
+    and W.lastSound == G.SOUNDKIT.IG_MAINMENU_OPEN and not popup.shown,
+    "the game menu row did not open the game menu (S3.2)")
+W.Click(micro)
+W.Click(popup.rows[#expected])
+assert(not G.GameMenuFrame.shown and W.panelCalls[#W.panelCalls].shown == false
+    and W.lastSound == G.SOUNDKIT.IG_MAINMENU_QUIT and not popup.shown,
+    "the game menu row did not close the open game menu")
+
+-- Durability, Coordinates and Zone places open their window through the
+-- secure overlay, which clicks Blizzard's own button: the character window
+-- (CharacterMicroButton) and the world map (the minimap's zone text button).
+local windows = assert(M.bars[4]).slots
+local durability, coordinates, zone = windows[1], windows[2], windows[3]
+for _, case in ipairs({ { durability, G.CharacterMicroButton, "CharacterMicroButton" },
+    { coordinates, G.MinimapCluster.ZoneTextButton, "ZoneTextButton" },
+    { zone, G.MinimapCluster.ZoneTextButton, "ZoneTextButton" } }) do
+    local place, native, name = case[1], case[2], case[3]
+    W.Fire(place, "OnEnter")
+    assert(overlay.shown and overlay.points[1][2] == place and overlay:GetAttribute("type1") == "click"
+        and overlay:GetAttribute("clickbutton1") == native and overlay:GetAttribute("clickbutton") == native,
+        "the " .. place.source .. " place lacks the secure click on " .. name)
+    for _, mouse in ipairs({ "LeftButton", "RightButton" }) do
+        local clicks = #microClicks
+        W.Click(overlay, mouse)
+        assert(#microClicks == clicks + 1 and microClicks[#microClicks].name == name and microClicks[#microClicks].secure,
+            "a " .. mouse .. " on the " .. place.source .. " place did not click " .. name .. " securely")
+    end
+    W.Fire(overlay, "OnLeave")
+end
+assert(#W.opened == 0, "a window place opened its window from the addon's code")
+-- Without a visible Blizzard button the place opens the window itself, as before.
+G.MinimapCluster.ZoneTextButton.shown = false
+W.Fire(zone, "OnEnter")
+assert(not (overlay.shown and overlay.points[1][2] == zone), "the overlay offered a click on a hidden button")
+W.Click(zone)
+assert(W.opened[#W.opened] and W.opened[#W.opened].name == "ToggleWorldMap",
+    "the Zone place did not fall back to opening the world map")
+W.Fire(zone, "OnLeave")
+G.MinimapCluster.ZoneTextButton.shown = true
 
 -- P2-1: the portal popup stays open while the pointer moves onto and between
 -- its rows, and closes once the pointer rests outside.

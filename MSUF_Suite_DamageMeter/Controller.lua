@@ -124,13 +124,15 @@ function D.ResumeSessionUpdates()
     if M.events[SESSION_EVENT] then M.context:Event(SESSION_EVENT, SessionUpdated, true) end
 end
 
--- Deferred paints and clock ticks use C_Timer.After with one shared callback
--- each and keep at most one call in flight: no timer object per paint or per
--- second. The pending flag is the request; cancelling clears it, so a call
--- still in flight finds nothing to do, and a newer request reuses that call
--- instead of scheduling another.
+-- Deferred paints, clock ticks, the timer's tenths and the late repaint are
+-- ctx:Coalesce jobs (M:Enable makes them): at most one tick in flight each,
+-- no timer object per paint or per second. A pending job is the request;
+-- Clear forgets it, so a tick still in flight finds nothing to do, and a
+-- newer request reuses that tick instead of scheduling another. The paint
+-- and clock jobs are also kept as locals for the per-event paths.
+local paintJob, clockJob
 function D.CancelPaint()
-    M.pendingPaint = false
+    if paintJob then paintJob:Clear() end
     D.ResumeSessionUpdates()
 end
 
@@ -190,13 +192,11 @@ function D.NeedClock()
 end
 
 function D.StopClock()
-    M.clockRunning = false
+    if clockJob then clockJob:Clear() end
 end
 
+-- The clock job: runs just after each whole second of the combat.
 function D.ClockTick()
-    M.clockInFlight = false
-    if not M.clockRunning then return end
-    M.clockRunning = false
     if not D.NeedClock() then return end
     D.UpdateTimers()
     D.SyncClock()
@@ -207,33 +207,25 @@ function D.SyncClock()
         D.StopClock()
         return
     end
-    if M.clockRunning then return end
-    M.clockRunning = true
-    if M.clockInFlight then return end
-    M.clockInFlight = true
+    if clockJob.pending then return end
     local origin = M.combatStart or 0
-    C_Timer.After(1 - ((GetTime() - origin) % 1) + .02, D.ClockTick)
+    M.context:Coalesce(1 - ((GetTime() - origin) % 1) + .02, D.ClockTick):Request()
 end
 
+-- The paint job: one paint for every request since the last one.
 function D.DeferredPaint()
-    M.paintInFlight = false
-    if not M.pendingPaint then return end
-    M.pendingPaint = false
     D.ResumeSessionUpdates()
-    if M.active and D.HasDirtyVisible() then D.PaintDirty() end
+    if D.HasDirtyVisible() then D.PaintDirty() end
 end
 
 function D.RequestPaint()
-    if M.pendingPaint or not M.active or not D.HasDirtyVisible() then return end
-    M.pendingPaint = true
-    if M.paintInFlight then return end
-    M.paintInFlight = true
+    if paintJob.pending or not M.active or not D.HasDirtyVisible() then return end
     local delay = .1
     if M.inCombat then
         local now = GetTime()
         delay = max(.01, (M.nextPaint or now) - now)
     end
-    C_Timer.After(delay, D.DeferredPaint)
+    M.context:Coalesce(delay, D.DeferredPaint):Request()
 end
 
 -- A pinned historic fight returns to Current (autoCurrent, resets).
@@ -270,7 +262,7 @@ SessionUpdated = function(self, _, meterType, sessionID)
         end
     end
     if dirty then D.RequestPaint() end
-    if M.pendingPaint and not clean then MuteSessionUpdates() end
+    if paintJob.pending and not clean then MuteSessionUpdates() end
 end
 local function CurrentUpdated(self)
     D.InvalidateTargets()
@@ -341,7 +333,7 @@ local function CombatEnd()
         D.MarkAll()
         D.PaintDirty()
     end
-    C_Timer.After(.5, LateRepaint)
+    D.lateJob:Request()
 end
 local function Encounter(self, event)
     D.InvalidateTargets()
@@ -442,6 +434,10 @@ function D.EvaluateVisibility()
 end
 
 function M:Enable()
+    local ctx = self.context
+    paintJob, clockJob = ctx:Coalesce(.1, D.DeferredPaint), ctx:Coalesce(1, D.ClockTick)
+    D.paintJob, D.clockJob = paintJob, clockJob
+    D.timerJob, D.lateJob = ctx:Coalesce(.1, D.TimerTick), ctx:Coalesce(.5, LateRepaint)
     M.inCombat = NS.IsCombatLocked()
     M.preview, M.pendingWrites, M.lastDuration, M.nextPaint = false, nil, nil, nil
     D.SessionTypes()

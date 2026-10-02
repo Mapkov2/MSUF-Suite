@@ -362,6 +362,30 @@ function H.BuildClient(W, env)
     W.CF = CombinedBag(W, env)
     W.Reagent = ReagentBag(W, env)
     W.BankFrame = Bank(W, env)
+    -- ContainerFrameSettingsManager:GetBagsShown caches the open bags in
+    -- bagsShown; ContainerFrame_OnShow and ContainerFrame_OnHide mark it stale
+    -- (OnHide also runs the anchor pass). A list rebuilt from addon code is
+    -- tainted for Blizzard's later passes, so that rebuild is recorded.
+    ContainerFrameSettingsManager = {}
+    function ContainerFrameSettingsManager:MarkBagsShownDirty() self.bagsShown = nil end
+    function ContainerFrameSettingsManager:GetBagsShown()
+        if not self.bagsShown then
+            env.Taint("ContainerFrameSettingsManager.bagsShown")
+            local shown = {}
+            for _, frame in ipairs({ W.CF, W.Reagent }) do
+                if frame.shown then shown[#shown + 1] = frame end
+            end
+            self.bagsShown = shown
+        end
+        return self.bagsShown
+    end
+    for _, frame in ipairs({ W.CF, W.Reagent }) do
+        frame.scripts.OnShow = function() ContainerFrameSettingsManager:MarkBagsShownDirty() end
+        frame.scripts.OnHide = function()
+            ContainerFrameSettingsManager:MarkBagsShownDirty()
+            UpdateContainerFrameAnchors()
+        end
+    end
     for _, name in ipairs({ "MailFrame", "TradeFrame", "MerchantFrame" }) do
         local frame = env.NewWidget("Frame", name, W.UIParent, true)
         frame.shown = false
@@ -389,6 +413,7 @@ function H.BuildClient(W, env)
     -- UpdateContainerFrameAnchors: the first open bag sits at the bottom right.
     UpdateContainerFrameAnchors = function()
         W.anchorPasses = (W.anchorPasses or 0) + 1
+        ContainerFrameSettingsManager:GetBagsShown()
         local frame = W.CF
         if frame.shown then
             frame:SetScale(W.nativeScale or 1)
@@ -763,13 +788,17 @@ function H.New(root, options)
             return unpack(results, 1, table.maxn(results))
         end)
     end
+    -- C_Timer on the client clock: a zero delay runs on the next frame
+    -- (W.Frame), a longer wait once W.Advance has reached it.
+    W.later = {}
+    GetTime = function() return W.now end
     C_Timer = {
-        After = function(_, callback) W.timers[#W.timers + 1] = callback end,
-        NewTimer = function(_, callback)
-            local timer = { callback = callback }
-            function timer:Cancel() self.cancelled = true end
-            W.timers[#W.timers + 1] = function() if not timer.cancelled then callback(timer) end end
-            return timer
+        After = function(delay, callback)
+            if delay > 0 then
+                W.later[#W.later + 1] = { due = W.now + delay, callback = callback }
+            else
+                W.timers[#W.timers + 1] = callback
+            end
         end,
     }
     C_EventUtils = { IsEventValid = function() return true end }
@@ -997,6 +1026,14 @@ function H.New(root, options)
         W.timers = {}
         for i = 1, #list do Insecure(list[i]) end
     end
+    function W.Advance(seconds)
+        W.now = W.now + seconds
+        local due = {}
+        for i = #W.later, 1, -1 do
+            if W.later[i].due <= W.now then table.insert(due, 1, table.remove(W.later, i)) end
+        end
+        for i = 1, #due do Insecure(due[i].callback) end
+    end
     function W.Settle(limit)
         for _ = 1, limit or 10 do
             if #W.timers == 0 then return end
@@ -1086,7 +1123,9 @@ function H.New(root, options)
     function S.ResetKeys(id, values) return S.SetMany(id, values) end
     function S.RegisterOwnedMover(id, element, spec) W.movers = W.movers or {}; W.movers[element] = spec end
     function S.RefreshOwnedMovers() end
-    assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
+    local runtime = {}
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", runtime)
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Timers.lua"))("MSUF_Suite_Modules", runtime)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
     W.S = S
 

@@ -19,6 +19,14 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
 NS.DataTextPoints = NS.AnchorPoints
+-- The choice values of the bar and source settings below (each is its
+-- label's position there); the DataTexts runtime names its modes through these.
+NS.DataTextVisibility = { ALWAYS = 1, OUT_OF_COMBAT = 2, IN_COMBAT = 3, MOUSEOVER = 4 }
+NS.DataTextLayout = { EQUAL = 1, FIT = 2 }
+NS.DataTextPlacement = { FLOW = 1, CENTER = 2, FILL = 3 }
+NS.DataTextDock = { FREE = 1, TOP = 2, BOTTOM = 3, LEFT = 4, RIGHT = 5 }
+NS.DataTextAccentPosition = { BOTTOM = 1, TOP = 2 }
+NS.DataTextCrestMode = { OBSERVED = 1, SELECTED = 2 }
 
 function NS.CenterDefaultDataTexts(modules)
     local data = modules.dataTexts

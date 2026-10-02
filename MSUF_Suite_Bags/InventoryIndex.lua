@@ -1,13 +1,13 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local Slots = P.SlotCache
+local Slots, Loads = P.SlotCache, P.ItemLoads
 local Index = {}
 P.InventoryIndex = Index
 local KEY = Slots.KEY
 
 function Index.New()
     return { items = {}, records = setmetatable({}, { __mode = "k" }), metadata = {},
-        requested = {}, pending = {}, bagNames = {}, freshItems = {}, count = 0, requestedCount = 0, revision = 0,
+        loads = Loads.New(2048), pending = {}, bagNames = {}, freshItems = {}, count = 0, revision = 0,
         buttons = {}, order = {}, filtered = 0 }
 end
 
@@ -16,12 +16,8 @@ local function Metadata(index, link, itemID)
     if data then return data end
     local name, _, _, _, _, _, subclassName, maxStack, equipLoc, _, _, classID, subclassID, _, expansion = C_Item.GetItemInfo(link)
     if not S.Public(name) or type(name) ~= "string" then
-        if not index.requested[itemID] and index.requestedCount < 2048 then
-            index.requested[itemID] = true
-            index.requestedCount = index.requestedCount + 1
-            index.pending[itemID] = true
-            C_Item.RequestLoadItemDataByID(itemID)
-        end
+        -- At most 2048 items are asked for at once (ItemLoads.lua).
+        if Loads.Request(index.loads, itemID) then index.pending[itemID] = true end
         return nil
     end
     data = { name = name, search = name:lower(), maxStack = S.Finite(maxStack) and maxStack or 1,
@@ -287,10 +283,7 @@ end
 function Index.ItemDataReceived(index, itemID, success)
     if not S.Finite(itemID) or not index.pending[itemID] then return false end
     index.pending[itemID] = nil
-    if success ~= false and index.requested[itemID] then
-        index.requested[itemID] = nil
-        index.requestedCount = index.requestedCount - 1
-    end
+    Loads.Received(index.loads, itemID, success ~= false)
     return true
 end
 
@@ -310,20 +303,16 @@ end
 function Index.Retry(index)
     -- Retry failed requests only on the next explicit window opening. A
     -- failure event must not cause an immediate request/failure loop.
-    for itemID in pairs(index.requested) do
-        if not index.pending[itemID] then
-            index.requested[itemID] = nil
-            index.requestedCount = index.requestedCount - 1
-        end
-    end
+    Loads.Retry(index.loads)
 end
 
 function Index.Reset(index)
-    for _, key in ipairs({ "items", "records", "metadata", "requested", "pending", "bagNames", "freshItems",
+    Loads.Reset(index.loads)
+    for _, key in ipairs({ "items", "records", "metadata", "pending", "bagNames", "freshItems",
         "buttons", "order" }) do
         for entry in pairs(index[key]) do index[key][entry] = nil end
     end
-    index.count, index.requestedCount, index.ordered, index.filtered = 0, 0, false, 0
+    index.count, index.ordered, index.filtered = 0, false, 0
 end
 
 function Index.ClearRecent(recent)

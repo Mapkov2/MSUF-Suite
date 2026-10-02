@@ -7,6 +7,9 @@ local W = H.New(root, flavor, { beforeModules = function(world)
     local G = world.G
     G.GetFramerate = function() reads.fps = reads.fps + 1; return fps end
     G.GetMoney = function() reads.gold = reads.gold + 1; return money end
+    -- A German client: Blizzard's gold symbol and short date are localized.
+    G.GOLD_AMOUNT_SYMBOL = "G"
+    G.FormatShortDate = function(day, month, year) return string.format("%02d.%02d.%d", day, month, year) end
     G.GetInventoryItemDurability = function()
         reads.durability = reads.durability + 1
         return 80, 100
@@ -204,7 +207,7 @@ if nativeBag then
         "bag toggle did not hide Blizzard buttons again")
 end
 assert(S.states.dataTexts.active and M.bars[1].frame:IsShown()
-    and M.bars[1].slots[1].text == "Gold: 10g"
+    and M.bars[1].slots[1].text == "Gold: 10G"
     and M.bars[1].slots[2].text == "Durability: 80%"
     and M.bars[1].slots[3].text == "FPS: 80",
     "starter bar did not render its selected sources")
@@ -242,7 +245,7 @@ assert(bar.background.texture == "Interface\\AddOns\\Test\\Media\\bar.tga"
     and bar.slots[1].label.font[1] == "Interface\\AddOns\\Test\\Media\\font.ttf"
     and bar.slots[1].label.font[3] == "THICKOUTLINE"
     and bar.slots[1].label.justify == "LEFT"
-    and bar.slots[1].label.text:find("|cffabcdefGold: |r|cfffedcba10g|r", 1, true),
+    and bar.slots[1].label.text:find("|cffabcdefGold: |r|cfffedcba10G|r", 1, true),
     "custom texture, colors, outline, alignment or dividers were not applied")
 assert(S.SetMany("dataTexts", { fontRendering = 2, fontShadow = true,
     fontShadowOpacity = 65, fontShadowDistance = 2 }))
@@ -303,7 +306,7 @@ assert(dataMover.extraControls[4].set(34) and S.Config("dataTexts").bar1Height =
     "DataTexts popup height must apply and support undo")
 money = 112345
 W.Event("PLAYER_MONEY")
-assert(M.bars[1].slots[1].text == "Gold: 11g", "gold event did not update the bar")
+assert(M.bars[1].slots[1].text == "Gold: 11G", "gold event did not update the bar")
 assert(S.Set("dataTexts", "trackAltGold", true))
 -- The account total records into the one gold ledger the Bags share.
 local ledger = W.Suite.RootDB.suiteBagGold and W.Suite.RootDB.suiteBagGold.characters
@@ -444,13 +447,13 @@ assert(W.Pending() == 0, "disabled information displays kept a timer")
 -- New choices append to the existing index table so saved slot selections
 -- retain their meaning. Both sampled values share the active bar's timer.
 G.date = function(format)
-    assert(format == "%d-%m-%Y")
-    return "26-09-2026"
+    assert(format == "*t", "the Date place did not read the local date parts")
+    return { day = 26, month = 9, year = 2026, hour = 15, min = 3, sec = 20 }
 end
 assert(S.SetMany("dataTexts", { bar1Slot1 = 12, bar1Slot2 = 13,
     bar1Slot3 = 1, bar1Visibility = 1, valueClassColor = true }))
 assert(S.Set("dataTexts", "enabled", true))
-assert(M.bars[1].slots[1].text == "Date: 26-09-2026"
+assert(M.bars[1].slots[1].text == "Date: 26.09.2026"
     and M.bars[1].slots[2].text == "FPS / World: 40 / 50 ms"
     and M.bars[1].style.valueColor == "3366cc"
     and W.Pending() == 1, "date, combined FPS/latency or class-color DataText failed")
@@ -531,9 +534,13 @@ end
 -- client-specific hook target (Forever's MainActionBar_InitializeMKB) is a
 -- plain existence check, not a type guard.
 do
-    local file = assert(io.open(root .. "/MSUF_Suite_DataTexts/DataTexts.lua", "rb"))
-    local source = file:read("*a")
-    file:close()
+    local parts = {}
+    for _, name in ipairs({ "DataTexts", "Bars", "Visibility", "NativeBagBar", "Movers" }) do
+        local file = assert(io.open(root .. "/MSUF_Suite_DataTexts/" .. name .. ".lua", "rb"))
+        parts[#parts + 1] = file:read("*a")
+        file:close()
+    end
+    local source = table.concat(parts, "\n")
     local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"")
     assert(not guarded, "DataTexts guards " .. tostring(guarded) .. " as if a client lacked it")
     assert(not source:find("C_Housing and", 1, true), "DataTexts guards C_Housing as if a client lacked it")

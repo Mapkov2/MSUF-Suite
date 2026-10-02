@@ -299,7 +299,7 @@ local files={"Data","Rows","Window","Breakdown","Menus","Timer","Controller"}
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
-for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
+for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
 local baseFrames=#frames
@@ -309,33 +309,35 @@ end
 local S,D=Suite.Suite,private.DamageMeter
 local M=S.instances.damageMeter
 Suite.Client.AddOnEnabled=function() return true end -- the test loaded this optional addon directly
--- Paints and clock ticks are C_Timer.After calls with one shared callback
--- each (D.DeferredPaint, D.ClockTick); a request is pending while its flag is
--- set and returns the call in flight that will serve it.
-local function Request(pending,callback)
-    if not pending then return nil end
-    for _,entry in ipairs(afters) do if entry.callback==callback then return entry end end
+-- Paints and clock ticks are context jobs (D.paintJob, D.clockJob): a
+-- request is pending while its job is, and the job's one C_Timer.After tick
+-- in flight serves it.
+local function Pending(job) return job and job.pending and 1 or 0 end
+local function Tick(job) return job and job.tick end
+local function Request(job)
+    if Pending(job)==0 then return nil end
+    for _,entry in ipairs(afters) do if entry.callback==job.tick then return entry end end
     return {delay="no call in flight"}
 end
-local function PaintRequest() return Request(M.pendingPaint,D.DeferredPaint) end
-local function ClockRequest() return Request(M.clockRunning,D.ClockTick) end
-local function LiveTimers() return (M.pendingPaint and 1 or 0)+(M.clockRunning and 1 or 0) end
+local function PaintRequest() return Request(D.paintJob) end
+local function ClockRequest() return Request(D.clockJob) end
+local function LiveTimers() return Pending(D.paintJob)+Pending(D.clockJob) end
 local function OtherCalls()
     local count=0
     for _,entry in ipairs(afters) do
-        if entry.callback~=D.DeferredPaint and entry.callback~=D.ClockTick then count=count+1 end
+        if entry.callback~=Tick(D.paintJob) and entry.callback~=Tick(D.clockJob) then count=count+1 end
     end
     return count
 end
 local function RunPaint()
-    local pending=M.pendingPaint
-    RunCalls(D.DeferredPaint)
-    return pending and 1 or 0
+    local pending=Pending(D.paintJob)
+    RunCalls(Tick(D.paintJob))
+    return pending
 end
 local function RunClock()
-    local running=M.clockRunning
-    RunCalls(D.ClockTick)
-    return running and 1 or 0
+    local running=Pending(D.clockJob)
+    RunCalls(Tick(D.clockJob))
+    return running
 end
 assert(M and D and S.catalog.damageMeter.cvars.damageMeterEnabled,"module did not install")
 assert(#frames==baseFrames and Created("Texture")==0 and #timers==0 and #afters==0,"loading allocated frames or timers")
@@ -370,6 +372,14 @@ local heal=assert(D.windows[2],"default healing window was not created")
 assert(heal.shown and heal.frame.shown and heal.meterType==2 and heal.sessionType==D.CURRENT
     and heal.frame.points[1][1]=="BOTTOMRIGHT" and heal.frame.points[1][4]==-20
     and heal.frame.points[1][5]==210,"healing window must show Current above damage at bottom right")
+-- The outline frames a box one border width outside the window.
+do
+    local box, edges = heal.borderBox, heal.edges
+    assert(box.points[1][1]=="TOPLEFT" and box.points[1][2]==heal.border and box.points[1][4]==-1
+        and box.points[1][5]==1 and box.points[2][1]=="BOTTOMRIGHT" and box.points[2][4]==1
+        and box.points[2][5]==-1 and not box.shown, "window outline box is not one border width outside")
+    for i=1,4 do assert(edges[i].shown and edges[i].points[1][2]==box,"window outline strip "..i.." left the box") end
+end
 assert(win.shown and win.frame.shown and win.capacity>0)
 assert(api.fetch==2,"two default windows should each fetch one session")
 local sharedFetches=api.fetch

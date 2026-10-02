@@ -1,8 +1,8 @@
 local _, Private = ...
 local NS, S = Private.NS, Private.Suite
-local Slots = Private.SlotCache
+local Slots, Loads = Private.SlotCache, Private.ItemLoads
 -- The controller restores the player's combinedBags CVar when disabled.
-local M = { overlays = setmetatable({}, { __mode = "k" }), pending = {}, pendingPool = {}, requested = {} }
+local M = { overlays = setmetatable({}, { __mode = "k" }), pending = {}, pendingPool = {}, loads = Loads.New() }
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
 -- Surface sits below native item buttons; see upstream/live ContainerFrame.xml.
 local function WindowTexture(frame, layer, sublevel)
@@ -91,6 +91,20 @@ local function StyleVisibleSlots(self, frame)
     for _, button in frame:EnumerateValidItems() do StyleSlot(self, button) end
 end
 
+-- A text on a Blizzard item button, above its count and icon art and with a
+-- hard shadow: the item level (both bags and bank) and the bind badge.
+-- point is the button corner it sits in.
+local function OverlayText(button, point, x, y, justify)
+    local text = S.CreateFontString(button, nil, "OVERLAY")
+    text:SetDrawLayer("OVERLAY", 7)
+    text:SetPoint(point, button, point, x, y)
+    text:SetJustifyH(justify)
+    text:SetShadowOffset(1, -1)
+    text:SetShadowColor(0, 0, 0, 1)
+    return text
+end
+M.OverlayText = OverlayText
+
 local function EnsureLabel(self, button)
     local record = self.overlays[button]
     if record and record.label then return record end
@@ -100,13 +114,7 @@ local function EnsureLabel(self, button)
         return nil
     end
     record = record or {}
-    local label = S.CreateFontString(button, nil, "OVERLAY")
-    label:SetDrawLayer("OVERLAY", 7)
-    label:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
-    label:SetJustifyH("RIGHT")
-    label:SetShadowOffset(1, -1)
-    label:SetShadowColor(0, 0, 0, 1)
-    record.label = label
+    record.label = OverlayText(button, "TOPRIGHT", -2, -2, "RIGHT")
     self.overlays[button] = record
     return record
 end
@@ -120,15 +128,12 @@ local function Style(self, record)
     record.quality = nil
 end
 
--- requested[itemID]: true while a load is out, FAILED after the client
--- answered it with success false. A failed load is not asked again until the
--- bag opens next (CombinedShown), as BankItemLevel.lua does for the bank:
--- the client would answer each new request with another failure at once.
-local FAILED = "failed"
+-- Item data loads (ItemLoads.lua): a failed load is not asked again until
+-- the bag opens next (CombinedShown).
 
 -- Queues a button until its item data arrives (GET_ITEM_INFO_RECEIVED).
 local function WaitForItem(self, pending, itemID, button)
-    if self.requested[itemID] == FAILED then return end
+    if Loads.Failed(self.loads, itemID) then return end
     local waiting = pending[itemID]
     if not waiting then
         local pool = self.pendingPool
@@ -137,10 +142,7 @@ local function WaitForItem(self, pending, itemID, button)
         pending[itemID] = waiting
     end
     if waiting[#waiting] ~= button then waiting[#waiting + 1] = button end
-    if not self.requested[itemID] then
-        self.requested[itemID] = true
-        C_Item.RequestLoadItemDataByID(itemID)
-    end
+    Loads.Request(self.loads, itemID)
 end
 
 local function PaintQuality(self, record, quality)
@@ -253,13 +255,7 @@ local function PaintBindBadge(self, button, pending, info)
             S.Queue("bags")
             return
         end
-        local badge = S.CreateFontString(button, nil, "OVERLAY")
-        badge:SetDrawLayer("OVERLAY", 7)
-        badge:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 2, 2)
-        badge:SetJustifyH("LEFT")
-        badge:SetShadowOffset(1, -1)
-        badge:SetShadowColor(0, 0, 0, 1)
-        record.bindBadge = badge
+        record.bindBadge = OverlayText(button, "BOTTOMLEFT", 2, 2, "LEFT")
     end
     if not record.bindStyled or record.bindFontEpoch ~= self.fontEpoch then
         S.SetFont(record.bindBadge, nil, 10, "OUTLINE")
@@ -281,7 +277,8 @@ local function ItemInfoReceived(module, _, itemID, success)
     if not waiting and not bankWaiting then return end
     local loaded = S.Public(success) and success == true
     module.pending[itemID] = nil
-    module.requested[itemID] = waiting and not loaded and FAILED or nil
+    -- A failure nothing waits for is not remembered.
+    Loads.Received(module.loads, itemID, loaded or not waiting)
     if waiting and module.frame and module.frame:IsShown() then
         for i = 1, #waiting do
             local button = waiting[i]
@@ -310,7 +307,7 @@ local function HideItemLevels(self)
         if record.label then record.label:Hide() end
     end
     ClearPending(self)
-    for itemID in pairs(self.requested) do self.requested[itemID] = nil end
+    Loads.Reset(self.loads)
     if not next(self.bankPending) then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
     self.itemLevelsHidden = true
 end
@@ -352,9 +349,7 @@ function M:UpdateVisible()
             PaintBindBadge(self, button, pending, info)
         end
     end
-    for itemID, request in pairs(self.requested) do
-        if request ~= FAILED and not pending[itemID] then self.requested[itemID] = nil end
-    end
+    Loads.Prune(self.loads, pending)
     if next(pending) or next(self.bankPending) then
         self.context:Event("GET_ITEM_INFO_RECEIVED", ItemInfoReceived, true)
     else
@@ -372,9 +367,7 @@ end
 
 local function CombinedShown()
     if not M.active then return end
-    for itemID, request in pairs(M.requested) do
-        if request == FAILED then M.requested[itemID] = nil end
-    end
+    Loads.Retry(M.loads)
     M:UpdateVisible()
     M:RefreshWindowLayout()
     RefreshMovers()
@@ -561,8 +554,9 @@ function M:Disable()
     self:RestoreWindows()
     Slots.Stop()
     ClearPending(self)
-    self.pending, self.pendingPool, self.requested = {}, {}, {}
-    if not NS.IsCombatLocked() then UpdateContainerFrameAnchors() end
+    self.pending, self.pendingPool = {}, {}
+    Loads.Reset(self.loads)
+    M.NativeAnchorPass()
     self.nativeScale = nil
     self.frame = nil
     RunSubmodules(STOP)

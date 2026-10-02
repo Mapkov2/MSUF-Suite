@@ -2,7 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 -- The account total of the DataTexts ("Remember this character's gold for
 -- the account total"): the characters that opted in, from the one gold
--- ledger the Bags gold history shares (MSUF_Suite/Core/Catalog/Bags.lua).
+-- ledger the Bags gold history shares (MSUF_Suite/Core/SessionGold.lua).
 local Ledger = {}
 local Gold = NS.GoldLedger
 

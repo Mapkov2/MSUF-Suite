@@ -15,4 +15,8 @@ Standard.lua
 Sources.lua
 Actions.lua
 Geometry.lua
+Visibility.lua
+NativeBagBar.lua
+Movers.lua
+Bars.lua
 DataTexts.lua

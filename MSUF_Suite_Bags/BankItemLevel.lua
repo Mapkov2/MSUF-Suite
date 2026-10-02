@@ -1,9 +1,10 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local M = assert(P.BagsModule, "Bags.lua must load before BankItemLevel.lua")
+local Loads = P.ItemLoads
 
 M.bankOverlays = setmetatable({}, { __mode = "k" })
-M.bankPending, M.bankRequested = {}, {}
+M.bankPending, M.bankLoads = {}, Loads.New()
 
 -- The Retail bank owns its pooled buttons, search and tab handling. Only
 -- attach a label to a visible native button after Blizzard has refreshed it
@@ -13,7 +14,7 @@ function M:HideBankLevels()
         if record.label then record.label:Hide() end
     end
     for itemID in pairs(self.bankPending) do self.bankPending[itemID] = nil end
-    for itemID in pairs(self.bankRequested) do self.bankRequested[itemID] = nil end
+    Loads.Reset(self.bankLoads)
 end
 
 -- Blizzard_UIPanels_Game creates BankFrame at startup; only the Retail one
@@ -33,17 +34,13 @@ local function BankLevel(self, button, record, link, itemID)
         record.label:SetText(tostring(record.level))
         return true
     end
-    if self.bankRequested[itemID] == "failed" then return false end
+    if not Loads.Request(self.bankLoads, itemID) then return false end
     local pending = self.bankPending[itemID]
     if not pending then
         pending = {}
         self.bankPending[itemID] = pending
     end
     pending[button] = true
-    if not self.bankRequested[itemID] then
-        self.bankRequested[itemID] = true
-        C_Item.RequestLoadItemDataByID(itemID)
-    end
     return true
 end
 
@@ -86,13 +83,7 @@ local function PaintBankButton(self, button, info)
             S.Queue("bags")
             return
         end
-        local label = S.CreateFontString(button, nil, "OVERLAY")
-        label:SetDrawLayer("OVERLAY", 7)
-        label:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
-        label:SetJustifyH("RIGHT")
-        label:SetShadowOffset(1, -1)
-        label:SetShadowColor(0, 0, 0, 1)
-        record.label = label
+        record.label = self.OverlayText(button, "TOPRIGHT", -2, -2, "RIGHT")
     end
     self:StyleItemLevel(record)
     if record.level == nil and not BankLevel(self, button, record, link, itemID) then
@@ -111,8 +102,7 @@ end
 function M:OnBankItemInfoReceived(itemID, success, waiting)
     self.bankPending[itemID] = nil
     local loaded = S.Public(success) and success == true
-    if loaded then self.bankRequested[itemID] = nil
-    else self.bankRequested[itemID] = "failed" end
+    Loads.Received(self.bankLoads, itemID, loaded)
     if loaded and BankVisible(self) then
         for button in pairs(waiting) do
             local info = C_Container.GetContainerItemInfo(button:GetBankTabID(), button:GetContainerSlotID())

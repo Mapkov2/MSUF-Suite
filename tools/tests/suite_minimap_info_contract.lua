@@ -137,9 +137,13 @@ do
         G.GetServerTime = function() return 1700000000 + W.now end
         G.GetGameTime = function() reads.clock = reads.clock + 1; return 14, 3 end
         G.date = function(format)
-            if format == "%d-%m-%Y" then return "26-09-2026" end
+            if format == "*t" then return { day = 26, month = 9, year = 2026, hour = 15, min = 3, sec = 20 } end
             return format:find("%%S") and "15:03:20" or "15:03"
         end
+        -- A German client: the clock date is Blizzard's localized short date,
+        -- and FPS and latency texts translate as format strings.
+        G.FormatShortDate = function(day, month, year) return string.format("%02d.%02d.%d", day, month, year) end
+        W.Suite.L["%d FPS"], W.Suite.L["%d ms"] = "%d BpS", "%d Ms"
         G.GetFramerate = function() reads.fps = reads.fps + 1; return fps end
         G.GetNetStats = function() reads.latency = reads.latency + 1; return 0, 0, home, world end
         G.C_Map = { GetBestMapForUnit = function() reads.map = (reads.map or 0) + 1; return mapID end, GetPlayerMapPosition = function()
@@ -161,12 +165,12 @@ do
     local clock = M.infoEntries.Clock
     check(clock.label.text == "14:03" and W.Pending() == 1 and W.Pending(40) == 1, "clock scheduling")
     assert(S.Set("minimap", "infoClockDate", true))
-    check(clock.label.text == "14:03  26-09-2026", "optional date on minimap clock")
+    check(clock.label.text == "14:03  26.09.2026", "optional date on minimap clock")
     assert(S.Set("minimap", "infoClockDatePosition", 2))
-    check(clock.label.text == "26-09-2026\n14:03" and clock.button.height == 32,
+    check(clock.label.text == "26.09.2026\n14:03" and clock.button.height == 32,
         "date above time must reserve two text lines")
     assert(S.Set("minimap", "infoClockDatePosition", 3))
-    check(clock.label.text == "14:03\n26-09-2026", "date below time")
+    check(clock.label.text == "14:03\n26.09.2026", "date below time")
     assert(S.Set("minimap", "infoClockDate", false))
     check(clock.button.points[1][1] == "TOP" and clock.label.justify == "CENTER", "clock anchor")
     check(clock.label.font[1] == W.Suite.MSUFMedia.font and clock.label.font[2] == 12
@@ -181,7 +185,7 @@ do
         "Slug clock shadow")
     assert(S.SetMany("minimap", { infoFPS = true, infoLatency = true, infoCoordinates = true, infoStatusColors = true }))
     local entries = M.infoEntries
-    check(entries.FPS.label.text == "80 FPS" and entries.Latency.label.text == "50 ms", "fps/latency")
+    check(entries.FPS.label.text == "80 BpS" and entries.Latency.label.text == "50 Ms", "fps/latency")
     check(entries.Coordinates.label.text == "52.3, 48.0" and W.Pending() == 1, "coordinates and one shared timer")
     check(entries.FPS.label.justify == "LEFT" and entries.Latency.label.justify == "RIGHT", "corner justification")
     local clockReads, fpsReads, latencyReads = reads.clock, reads.fps, reads.latency
@@ -190,7 +194,7 @@ do
     local writes = entries.Coordinates.label.textWrites
     fps = 20
     W.Advance(.5)
-    check(entries.FPS.label.text == "20 FPS" and entries.FPS.label.textColor[1] == 1, "status colour")
+    check(entries.FPS.label.text == "20 BpS" and entries.FPS.label.textColor[1] == 1, "status colour")
     check(entries.Coordinates.label.textWrites == writes, "unchanged coordinates rewritten")
     -- Hidden: nothing samples; visible again: sampling resumes.
     assert(S.Set("minimap", "visibility", 5))
@@ -231,7 +235,7 @@ do
     assert(S.Set("minimap", "infoCoordinatesMode", 2))
     -- Formats and anchors: above/below the map sit outside the border.
     assert(S.SetMany("minimap", { infoClockSource = 3, infoClockSeconds = true, infoCoordinatesDecimals = 2, infoLatencySource = 3 }))
-    check(clock.label.text:find(" / 15:03:20", 1, true) and entries.Latency.label.text == "30 / 50 ms", "clock/latency formats")
+    check(clock.label.text:find(" / 15:03:20", 1, true) and entries.Latency.label.text == "30 / 50 Ms", "clock/latency formats")
     check(entries.Coordinates.label.text == "50.00, 50.00", "coordinate decimals")
     assert(S.SetMany("minimap", { infoClockAnchor = 10, infoClockY = 3, infoFPSAnchor = 11, borderSize = 2 }))
     local point = clock.button.points[1]
@@ -271,7 +275,8 @@ do
     W.Event("PLAYER_ENTERING_WORLD")
     check(entries.Coordinates.button.shown, "coordinates did not return")
     assert(S.Set("minimap", "enabled", false))
-    check(W.Pending() == 0 and not frame.shown and not frame.scripts.OnUpdate, "disable left sampling work")
+    check(not M.infoTimer and W.ContextPending(M.context) == 0 and not frame.shown and not frame.scripts.OnUpdate,
+        "disable left sampling work")
     print("Minimap information: shared scheduling, intervals, visibility, parking, mouseover, anchors, boxes, clicks and disable passed")
 end
 
@@ -283,8 +288,11 @@ do
     local W = H.New(root, "Mainline", { beforeModules = function(W)
         local G = W.G
         -- Next-frame deferrals run immediately; the texts here never poll.
+        -- Waits with a delay stay on the client clock.
         W.timerAPI = G.C_Timer
-        G.C_Timer = { After = function(_, callback) callback() end, NewTimer = W.timerAPI.NewTimer }
+        G.C_Timer = { After = function(delay, callback)
+            if delay == 0 then callback() else W.timerAPI.After(delay, callback) end
+        end, NewTimer = W.timerAPI.NewTimer }
         G.GetInventoryItemDurability = function(slot)
             durabilityReads = durabilityReads + 1
             if slot == 1 then return current, 100 elseif slot == 5 then return 200, 200 end
@@ -422,6 +430,9 @@ do
             HasAvailableRewards = function() return true end, GetExampleRewardItemHyperlinks = function() return "item:1" end }
         G.C_Item = { GetDetailedItemLevelInfo = function() return itemLevel end }
         G.GetDifficultyInfo = function() return "Normal" end
+        -- Lines with a name or number translate as whole format strings.
+        W.Suite.L["%s (World boss)"], W.Suite.L["Tier %d"] = "%s (Weltboss)", "Stufe %d"
+        W.Suite.L["%s / Item level %s"] = "%s / Gegenstandsstufe %s"
     end, float32Scale = true })
     W.editModeReady = true
     local G, S = W.G, W.S
@@ -435,6 +446,7 @@ do
     check(lockReads == 0 and vaultReads == 0 and not events.UPDATE_INSTANCE_INFO, "idle tooltip work")
     Enter()
     check(requests == 1 and lockReads == 1 and #tip.lines == 3, "lockouts")
+    check(tip.lines[3]:find("World boss (Weltboss) | ", 1, true) == 1, "world boss line: " .. tostring(tip.lines[3]))
     check(tip.lines[2]:find("2/6", 1, true) and tip.lines[2]:find("60 minutes", 1, true), "lockout row")
     check(events.UPDATE_INSTANCE_INFO, "lockout event")
     W.Event("UPDATE_INSTANCE_INFO")
@@ -454,7 +466,8 @@ do
     assert(S.Set("minimap", "tooltipInstanceKind", 2)); Enter()
     check(#tip.lines == 2, "raid filter"); Leave()
     assert(S.Set("minimap", "infoClockTooltip", 3)); Enter()
-    check(vaultReads == 1 and #tip.lines == 5 and tip.lines[3]:find("Item level 610", 1, true), "vault")
+    check(vaultReads == 1 and #tip.lines == 5 and tip.lines[3]:find("Gegenstandsstufe 610", 1, true)
+        and tip.lines[5]:find("World activities 1 - Stufe 8", 1, true) == 1, "vault: " .. table.concat(tip.lines, " | "))
     check(events.WEEKLY_REWARDS_UPDATE and not events.GET_ITEM_INFO_RECEIVED, "vault events")
     itemLevel = nil
     W.Event("WEEKLY_REWARDS_UPDATE")
@@ -502,3 +515,115 @@ do
     check(not tip.shown and not next(events), "disable kept tooltip work")
     print("Minimap tooltips: lockouts, throttled raid info, weekly rewards, owned-hover events and disable passed")
 end
+
+-- Coordinates, Location and Durability open their windows from secure code:
+-- while hovered out of combat they borrow a secure overlay in UIParent that
+-- clicks Blizzard's own opener button; the combat start releases it.
+do
+    local opened, clicks = {}, {}
+    local W = H.New(root, "Mainline", { clientSecurity = true, beforeModules = function(W)
+        local G = W.G
+        G.GetInventoryItemDurability = function(slot) if slot == 1 then return 50, 100 end end
+        G.GetZoneText = function() return "Stormwind" end
+        G.C_Map = { GetBestMapForUnit = function() return 1 end,
+            GetPlayerMapPosition = function() return { GetXY = function() return .5, .5 end } end }
+        local character = W.New("Button", "CharacterMicroButton", W.UIParent)
+        for _, native in ipairs({ character, W.cluster.ZoneTextButton }) do
+            native.scripts.OnClick = function(self) clicks[#clicks + 1] = { button = self, secure = W.secure } end
+        end
+        for _, name in ipairs({ "ToggleCharacter", "ToggleWorldMap" }) do
+            G[name] = function() opened[#opened + 1] = { name = name, secure = W.secure } end
+        end
+    end })
+    W.editModeReady = true
+    local G, S = W.G, W.S
+    H.Enable(W, { captured = true, infoClock = false, infoDurability = true, infoLocation = true,
+        infoCoordinates = true })
+    W.Step()
+    local M, MM, tip = W.M, W.MM, G.GameTooltip
+    local entries = M.infoEntries
+    local function Hover(entry)
+        entry.button.mouseOver = true
+        W.Fire(entry.button, "OnEnter")
+    end
+    for _, case in ipairs({ { "Durability", G.CharacterMicroButton }, { "Coordinates", W.cluster.ZoneTextButton },
+        { "Location", W.cluster.ZoneTextButton } }) do
+        local entry, native = entries[case[1]], case[2]
+        Hover(entry)
+        local overlay = MM.infoOverlay
+        check(overlay and overlay.protected and overlay.parent == W.UIParent and overlay.shown
+            and overlay.points[1][2] == entry.button and overlay:GetAttribute("type") == "click"
+            and overlay:GetAttribute("clickbutton") == native, case[1] .. " text lacks the secure window click")
+        check(not entry.button:IsProtected(), case[1] .. " text became protected")
+        -- The pointer moves onto the overlay: the text keeps its tooltip.
+        overlay.mouseOver = true
+        W.Fire(entry.button, "OnLeave")
+        check(overlay.shown and tip.shown and tip.owner == entry.button, case[1] .. " lost its tooltip to the overlay")
+        for _, mouse in ipairs({ "LeftButton", "RightButton" }) do
+            local count = #clicks
+            W.Click(overlay, mouse)
+            check(#clicks == count + 1 and clicks[#clicks].button == native and clicks[#clicks].secure,
+                case[1] .. " " .. mouse .. " did not click Blizzard's opener securely")
+        end
+        overlay.mouseOver, entry.button.mouseOver = false, false
+        W.Fire(overlay, "OnLeave")
+        check(not overlay.shown and #overlay.points == 0 and not tip.shown, case[1] .. " overlay or tooltip stayed")
+    end
+    check(#opened == 0, "an information text opened its window from the addon's code")
+    local overlay = MM.infoOverlay
+    -- The combat start releases the overlay before the lockdown; none in combat.
+    Hover(entries.Durability)
+    W.SetCombat(true)
+    check(not overlay.shown and #overlay.points == 0 and overlay.owner == nil, "the overlay stayed over a text in combat")
+    W.Fire(entries.Durability.button, "OnLeave")
+    Hover(entries.Durability)
+    W.Click(entries.Durability.button)
+    check(not overlay.shown and #opened == 0, "a text attached the overlay or opened a window in combat")
+    W.SetCombat(false)
+    W.Fire(entries.Durability.button, "OnLeave")
+    -- Location without its click option offers no overlay.
+    assert(S.Set("minimap", "infoLocationClick", false))
+    Hover(entries.Location)
+    check(not overlay.shown, "Location offered a window click with its click option off")
+    W.Fire(entries.Location.button, "OnLeave")
+    -- Without a visible Blizzard button the text opens the window itself.
+    W.cluster.ZoneTextButton.shown = false
+    Hover(entries.Coordinates)
+    check(not overlay.shown, "the overlay offered a click on a hidden Blizzard button")
+    W.Click(entries.Coordinates.button)
+    check(opened[#opened] and opened[#opened].name == "ToggleWorldMap", "Coordinates did not fall back to the world map")
+    W.Fire(entries.Coordinates.button, "OnLeave")
+    W.cluster.ZoneTextButton.shown = true
+    Hover(entries.Coordinates)
+    check(overlay.shown, "the overlay did not return with the Blizzard button")
+    assert(S.Set("minimap", "enabled", false))
+    check(not overlay.shown and #overlay.points == 0 and overlay.owner == nil, "disable kept the secure overlay")
+    print("Minimap information: secure window clicks, tooltips, combat release, fallback and disable passed")
+end
+
+-- 12-hour clocks carry Blizzard's localized AM/PM word (TIMEMANAGER_AM/PM),
+-- before the digits where Blizzard's own 12-hour format puts it first.
+for _, case in ipairs({
+    { words = { "AM", "PM", "%d:%02d AM" }, server = "02:03 PM", localTime = "09:03 AM" },
+    { words = { "\236\152\164\236\160\132", "\236\152\164\237\155\132", "\236\152\164\236\160\132 %d:%02d" },
+        server = "\236\152\164\237\155\132 02:03", localTime = "\236\152\164\236\160\132 09:03" },
+}) do
+    local W = H.New(root, "Mainline", { beforeModules = function(W)
+        local G = W.G
+        G.GetGameTime = function() return 14, 3 end
+        G.TIMEMANAGER_AM, G.TIMEMANAGER_PM, G.TIME_TWELVEHOURAM = case.words[1], case.words[2], case.words[3]
+        G.date = function(format)
+            if format == "*t" then return { day = 26, month = 9, year = 2026, hour = 9, min = 3, sec = 20 } end
+            assert(not format:find("%p", 1, true), "the local clock asked the C library for its AM/PM word")
+            return "09:03"
+        end
+    end })
+    W.editModeReady = true
+    H.Enable(W, { captured = true, infoLocation = false, infoClock24Hour = false })
+    W.Step()
+    local clock = W.M.infoEntries.Clock
+    check(clock.label.text == case.server, "12-hour realm clock: " .. tostring(clock.label.text))
+    assert(W.S.Set("minimap", "infoClockSource", 2))
+    check(clock.label.text == case.localTime, "12-hour local clock: " .. tostring(clock.label.text))
+end
+print("Minimap information: localized 12-hour clock words and their order passed")

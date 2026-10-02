@@ -58,17 +58,21 @@ local cleanModern = {
     bgColor = "101010", bgAlpha = 82, borderSize = 1, borderColor = "333333",
     headerColor = "191919", headerAlpha = 92, titleColor = "f5f5f5",
 }
-NS.DamageMeterLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever, [5] = cleanModern }
-NS.DamageMeterLookPresets[6] = B.ClassPreset(cleanModern, { barColor = "accent", borderColor = "border", titleColor = "label" })
+-- The "look" choice values (Style preset below).
+local LOOK = { MIDNIGHT_BLUE = 1, MIDNIGHT_DARK = 2, FOREVER = 3, CUSTOM = 4, CLEAN_MODERN = 5, CLASS_STYLE = 6 }
+NS.DamageMeterLook = LOOK
+NS.DamageMeterLookPresets = { [LOOK.MIDNIGHT_BLUE] = midnight, [LOOK.MIDNIGHT_DARK] = midnightDark,
+    [LOOK.FOREVER] = forever, [LOOK.CLEAN_MODERN] = cleanModern }
+NS.DamageMeterLookPresets[LOOK.CLASS_STYLE] = B.ClassPreset(cleanModern, { barColor = "accent", borderColor = "border", titleColor = "label" })
 NS.DamageMeterLookVisualKeys = {}
 for key in pairs(midnight) do NS.DamageMeterLookVisualKeys[key] = true end
 NS.SuiteCatalog[id].look = {
     key = "look", presets = NS.DamageMeterLookPresets, visualKeys = NS.DamageMeterLookVisualKeys,
-    custom = 4, global = true,
+    custom = LOOK.CUSTOM, global = true,
 }
 local initial = NS.Client.isForever and forever or midnightDark
 B.Section(id, "look", "Choose a look", {
-    Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
+    Choice("look", "Style preset", NS.Client.isForever and LOOK.FOREVER or LOOK.MIDNIGHT_DARK,
         { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
 })
 B.Section(id, "general", "Windows and data", {
