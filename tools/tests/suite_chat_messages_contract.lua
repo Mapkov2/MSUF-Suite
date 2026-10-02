@@ -47,7 +47,10 @@ local function LoadChat(saved)
     local chat = private.Chat
     chat.ShowURL = function(url) copied = url end
     local module = chat.M
-    module.config, module.active, module.context = config, true, context
+    -- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on the stub.
+    module.config, module.active = config, true
+    NS.Dispatch = S.Dispatch
+    module.context = Support.ModuleTimers(root, S, NS)("chat", module, context)
     return chat, module, handlers
 end
 -- Blizzard's global strings and the chat constants are read once per compile.
@@ -83,12 +86,10 @@ end
 TimeUtil = { BetterDate = function(format) return date(format) end }
 local now = 0
 GetTime = function() return now end
+-- The context timers' waits (C_Timer.After cannot be cancelled).
 local timers = {}
-C_Timer = { NewTimer = function(delay, callback)
-    local timer = { callback = callback, delay = delay, due = now + delay }
-    function timer:Cancel() self.cancelled = true end
-    timers[#timers + 1] = timer
-    return timer
+C_Timer = { After = function(delay, callback)
+    timers[#timers + 1] = { callback = callback, delay = delay, due = now + delay }
 end }
 local function RunTimers(untilTime)
     now = untilTime

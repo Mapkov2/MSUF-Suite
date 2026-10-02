@@ -9,8 +9,8 @@ local C = P.Chat
 -- Chat frames, tabs and edit boxes are not protected, so this also runs in
 -- combat and never waits for the module to apply again. Each part's alpha
 -- before the fade is kept here and handed back on waking, unless Blizzard
--- set another one meanwhile. One timer per window and idle period: a line
--- only moves the deadline the pending timer checks when it fires.
+-- set another one meanwhile. One context wait per window (ctx:After with
+-- the window's own callback): a line only moves its deadline.
 local M = C.M
 local Finite = S.Finite
 local TAB = 2
@@ -58,25 +58,17 @@ local function Wake(visual, skip)
 end
 
 local function Expired(visual)
-    visual.fadeTimer = nil
     if not (M.active and visual.fadeArmed) or visual.hovered then return end
-    local remaining = visual.idleAt - GetTime()
-    if remaining > 0.05 then
-        visual.fadeTimer = C_Timer.NewTimer(remaining, visual.fadeCallback)
-        return
-    end
     FadeOut(visual)
 end
 
 -- Activity: a new line (in or out of combat) or the end of a mouse-over.
+-- Under the pointer the window waits for the pointer to leave.
 function C.ChatActivity(frame)
     local visual = M.visuals[frame]
     if not (visual and visual.fadeArmed) then return end
-    visual.idleAt = GetTime() + delay
     if visual.faded then Wake(visual) end
-    if not visual.fadeTimer and not visual.hovered then
-        visual.fadeTimer = C_Timer.NewTimer(delay, visual.fadeCallback)
-    end
+    if not visual.hovered then M.context:After(delay, visual.fadeCallback) end
 end
 
 -- Blizzard shows the window's chrome while the pointer is over it.
@@ -96,10 +88,7 @@ end
 
 function C.ReleaseFade(visual)
     visual.fadeArmed, visual.hovered = nil, nil
-    if visual.fadeTimer then
-        visual.fadeTimer:Cancel()
-        visual.fadeTimer = nil
-    end
+    if visual.fadeCallback then M.context:Cancel(visual.fadeCallback) end
     Wake(visual)
 end
 
@@ -127,10 +116,7 @@ function C.ApplyInactivity(self, visual)
     local parts = visual.fadeParts
     parts[1], parts[TAB], parts[3], parts[4] =
         frame, _G[frame:GetName() .. "Tab"], frame.editBox, visual.sidebarFrame
-    if visual.fadeTimer then
-        visual.fadeTimer:Cancel()
-        visual.fadeTimer = nil
-    end
+    M.context:Cancel(visual.fadeCallback)
     visual.fadeArmed = true
     C.ChatActivity(frame)
 end
