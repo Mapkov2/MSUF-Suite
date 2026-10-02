@@ -183,9 +183,8 @@ GameTooltip=NewRegion("Frame")
 function GameTooltip:SetOwner(owner) self.owner=owner end
 function GameTooltip:GetOwner() return self.owner end
 function GameTooltip:SetSpellByID(id) self.spell=id end
-StaticPopupDialogs={}
-local dialogTable,shownPopup=StaticPopupDialogs,nil
-StaticPopup_Show=function(which) shownPopup=which end
+-- Blizzard's dialogs: an addon entry in StaticPopupDialogs raises.
+local dialogs=dofile(root.."/tools/tests/suite_test_support.lua").StaticPopups()
 local recapOpened
 OpenDeathRecapUI=function(id) recapOpened=id end
 
@@ -299,7 +298,7 @@ local files={"Data","Rows","Window","Breakdown","Menus","Timer","Controller"}
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
-for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode"}) do
+for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode","Dialogs"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
 local baseFrames=#frames
@@ -805,12 +804,19 @@ win.panel.scripts.OnClick(win.panel,"LeftButton")
 S.Set("damageMeter","w1Type",1)
 
 local resets=api.resets
-assert(S.DamageMeterReset(false) and shownPopup=="MSUF_SUITE_DAMAGE_METER_RESET" and api.resets==resets,"reset must confirm first")
-assert(StaticPopupDialogs==dialogTable and StaticPopupDialogs.MSUF_SUITE_DAMAGE_METER_RESET.text=="Reset all sessions?")
-StaticPopupDialogs.MSUF_SUITE_DAMAGE_METER_RESET.OnAccept();assert(api.resets==resets+1)
+assert(S.DamageMeterReset(false) and dialogs.Count("GENERIC_CONFIRMATION")==1 and api.resets==resets,
+    "reset must confirm first")
+local question=dialogs.Last("GENERIC_CONFIRMATION")
+assert(question.text=="Reset all sessions?" and question.acceptText=="Yes" and question.cancelText=="No",
+    "the reset question lost its text or buttons")
+assert(S.DamageMeterReset(false) and dialogs.Count("GENERIC_CONFIRMATION")==1,
+    "a second reset question stacked on the first")
+dialogs.Cancel(dialogs.Last("GENERIC_CONFIRMATION"));assert(api.resets==resets,"a cancelled question reset")
+S.DamageMeterReset(false)
+dialogs.Accept(dialogs.Last("GENERIC_CONFIRMATION"));assert(api.resets==resets+1)
 assert(S.DamageMeterReset(true) and api.resets==resets+2,"skipConfirm must reset directly")
-S.Set("damageMeter","confirmReset",false);shownPopup=nil
-S.DamageMeterReset(false);assert(api.resets==resets+3 and shownPopup==nil)
+S.Set("damageMeter","confirmReset",false)
+S.DamageMeterReset(false);assert(api.resets==resets+3 and dialogs.Count("GENERIC_CONFIRMATION")==0)
 Event("CHALLENGE_MODE_START");assert(api.resets==resets+4,"M+ start did not reset")
 
 ------------------------------------------------------------------ scrolling and the pinned own row
