@@ -9,6 +9,7 @@ local NS, S = P.NS, P.Suite
 -- Disable can put it back.
 local MM = {}
 P.Minimap = MM
+local SHAPE, VISIBILITY = NS.MinimapShape, NS.MinimapVisibility
 -- rotateMinimap is declared on the catalog entry (restored on disable).
 local M = {}
 MM.M = M
@@ -24,7 +25,7 @@ local WIDE = 2 / 3
 local SHADOW_STRENGTHS = { 0.45, 0.25, 0.12 }
 local HYBRID_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local WRAP = "CLAMPTOBLACKADDITIVE"
-local DRIVERS = { [2] = "[combat] show; hide", [3] = "[combat] hide; show" }
+local DRIVERS = { [VISIBILITY.IN_COMBAT] = "[combat] show; hide", [VISIBILITY.OUT_OF_COMBAT] = "[combat] hide; show" }
 -- The underlay exists on WoW Forever's Camelot skin only.
 local TEXTURES = { "MinimapCompassTexture", "MinimapCompassTextureUnderlay" }
 
@@ -333,8 +334,8 @@ function MM.Dimensions()
     local c, pixel = M.config, MM.Pixel()
     local hovered = c.hoverResize and MM.hovered and not S.editMode
     local width = MM.Snap(hovered and c.hoverWidth or c.size, pixel)
-    local height = hovered and c.shape ~= 2 and MM.Snap(c.hoverHeight, pixel)
-        or c.shape == 3 and MM.Snap(c.size * WIDE, pixel) or width
+    local height = hovered and c.shape ~= SHAPE.CIRCLE and MM.Snap(c.hoverHeight, pixel)
+        or c.shape == SHAPE.WIDE and MM.Snap(c.size * WIDE, pixel) or width
     return width, height, hovered and true or false
 end
 
@@ -350,7 +351,7 @@ function MM.ApplyHost()
     -- Keep the original map footprint in the hover area when a smaller
     -- mouseover size would otherwise put the cursor outside the new host.
     local baseWidth = MM.Snap(c.size, pixel)
-    local baseHeight = c.shape == 3 and MM.Snap(c.size * WIDE, pixel) or baseWidth
+    local baseHeight = c.shape == SHAPE.WIDE and MM.Snap(c.size * WIDE, pixel) or baseWidth
     local dw, dh = math.max(0, baseWidth - width), math.max(0, baseHeight - height)
     local left = anchor:find("RIGHT", 1, true) and dw or anchor:find("LEFT", 1, true) and 0 or dw / 2
     local top = anchor:find("BOTTOM", 1, true) and dh or anchor:find("TOP", 1, true) and 0 or dh / 2
@@ -437,7 +438,7 @@ local function ClampOutside(c, reach)
     if not MM.style then return reach end
     MM.style:Paint(c, 1, nil, true, MM.width, MM.height)
     local extent = math.max(MM.width, MM.height)
-    if c.styleTexture ~= 1 and c.styleAlpha > 0 then
+    if c.styleTexture ~= NS.MinimapStyleTexture.NONE and c.styleAlpha > 0 then
         reach = math.max(reach, math.max(0, extent * (c.styleScale / 100 - 1) / 2)
             + math.max(math.abs(c.styleX), math.abs(c.styleY)))
     end
@@ -452,7 +453,7 @@ function MM.ApplyBorder()
     local c = M.config
     local thickness = MM.BorderWidth()
     local r, g, b = BorderRGB()
-    local round = c.shape == 2
+    local round = c.shape == SHAPE.CIRCLE
     PlaceRing(MM.edges, MM.disc, 0, thickness, r, g, b, c.borderAlpha / 100, thickness > 0, round)
     local shadow = c.shadowSize * MM.Pixel()
     ApplyShadows(c, thickness, shadow, round)
@@ -483,8 +484,8 @@ function MM.ApplyHybrid()
         MM.hybridTexture = S.Public(current) and current or HYBRID_MASK
     end
     local shape = M.config.shape
-    local texture = shape == 2 and MM.hybridTexture or shape == 3 and MM.hoverGeometryActive and MASKS[1]
-        or MASKS[shape] or MASKS[2]
+    local texture = shape == SHAPE.CIRCLE and MM.hybridTexture
+        or shape == SHAPE.WIDE and MM.hoverGeometryActive and MASKS[SHAPE.SQUARE] or MASKS[shape] or MASKS[SHAPE.CIRCLE]
     mask:SetTexture(texture, WRAP, WRAP)
     MM.hybridShaped = true
 end
@@ -521,9 +522,10 @@ function MM.ApplyMap(nudge)
     local xBand, yBand = (size - width) / 2, (size - height) / 2
     Placing("placingMap", WriteMap, map, size)
     map:SetHitRectInsets(xBand, xBand, yBand, yBand)
-    clip:SetClipsChildren(c.shape == 3 or width ~= height)
-    map:SetMaskTexture(c.shape == 3 and MM.hoverGeometryActive and MASKS[1] or MASKS[c.shape] or MASKS[2])
-    BlobScalars(map, c.shape == 2 and 1 or 0)
+    clip:SetClipsChildren(c.shape == SHAPE.WIDE or width ~= height)
+    map:SetMaskTexture(c.shape == SHAPE.WIDE and MM.hoverGeometryActive and MASKS[SHAPE.SQUARE]
+        or MASKS[c.shape] or MASKS[SHAPE.CIRCLE])
+    BlobScalars(map, c.shape == SHAPE.CIRCLE and 1 or 0)
     MM.ApplyHybrid()
     if nudge then Nudge(map) end
 end
@@ -590,7 +592,7 @@ function MM.Capture()
             and Finite(cy) and Finite(screenW) and Finite(screenH) then
             local ratio = mapScale / uiScale
             local size = math.max(100, math.min(600, width * ratio))
-            local halfW, halfH = size / 2, (c.shape == 3 and size * WIDE or size) / 2
+            local halfW, halfH = size / 2, (c.shape == SHAPE.WIDE and size * WIDE or size) / 2
             cx, cy = cx * ratio, cy * ratio
             local column = cx < screenW / 3 and 1 or cx > screenW * 2 / 3 and 3 or 2
             local row = cy > screenH * 2 / 3 and 1 or cy < screenH / 3 and 3 or 2
@@ -704,7 +706,7 @@ end
 -- alpha. The map is protected, so combat conditions use a state driver that is
 -- (un)registered out of combat only; mouseover waits for combat to end.
 local function Mode()
-    if S.editMode then return 1 end
+    if S.editMode then return VISIBILITY.ALWAYS end
     return M.config.visibility
 end
 function MM.ApplyVisibility()
@@ -718,12 +720,18 @@ function MM.ApplyVisibility()
         if driver then RegisterStateDriver(host, "visibility", driver) end
     end
     if driver then return end
-    if mode == 5 then host:Hide() elseif mode == 4 then host:SetShown(MM.hovered) else host:Show() end
+    if mode == VISIBILITY.NEVER then
+        host:Hide()
+    elseif mode == VISIBILITY.MOUSEOVER then
+        host:SetShown(MM.hovered)
+    else
+        host:Show()
+    end
     MM.UpdateCatcherLayer()
 end
 
 MM.OnHover(function()
-    if not M.active or not MM.host or Mode() ~= 4 then return end
+    if not M.active or not MM.host or Mode() ~= VISIBILITY.MOUSEOVER then return end
     if NS.IsCombatLocked() then S.Queue("minimap") else MM.host:SetShown(MM.hovered) end
 end)
 

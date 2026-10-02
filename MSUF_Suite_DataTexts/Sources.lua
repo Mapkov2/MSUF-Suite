@@ -146,7 +146,7 @@ SeasonSelection = function(config)
         if cost then selectedCosts[#selectedCosts + 1] = cost end
         if count == 128 then break end
     end
-    if count == 0 and mode == 1 then
+    if count == 0 and mode == CREST.OBSERVED then
         for _, cost in ipairs(costs) do selectedCosts[#selectedCosts + 1] = byOrder[cost.order] end
     end
     return selectedCosts

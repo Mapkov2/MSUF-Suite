@@ -2,6 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
+local VISIBILITY, ZOOM, ROTATE = NS.MinimapVisibility, NS.MinimapZoomButtons, NS.MinimapRotate
+local MIDDLE = NS.MinimapMiddleClick
 -- Mouse input lives on Blizzard's map itself. A full-size input overlay can
 -- intercept map pings and native buttons even when pass-through is requested.
 -- Blizzard's zoom buttons move into a mouse-transparent suite holder. A
@@ -77,7 +79,7 @@ end
 local function MouseUp(_, button)
     if button ~= "MiddleButton" or not M.active or NS.IsCombatLocked() then return end
     local action = M.config.middleClick
-    if action == 2 then
+    if action == MIDDLE.TRACKING then
         local tracking = TrackingButton()
         if not tracking then return end
         if tracking:IsMenuOpen() then
@@ -85,11 +87,11 @@ local function MouseUp(_, button)
         else
             tracking:OpenMenu()
         end
-    elseif action == 3 then
+    elseif action == MIDDLE.CALENDAR then
         ToggleCalendar()
-    elseif action == 4 then
+    elseif action == MIDDLE.WORLD_MAP then
         ToggleWorldMap()
-    elseif action == 5 then
+    elseif action == MIDDLE.MICRO_MENU then
         -- A secure flyout clicks Blizzard's own micro buttons (MicroMenu.lua).
         MM.OpenMicroMenu()
     end
@@ -181,7 +183,7 @@ local function LayerCatcher()
     if not catcher or not MM.host then return end
     -- Only a hidden mouseover minimap needs the catcher above the map to wake
     -- it. Once visible, the catcher is below Blizzard's map and every button.
-    local waking = M.config.visibility == 4 and not MM.host:IsShown()
+    local waking = M.config.visibility == VISIBILITY.MOUSEOVER and not MM.host:IsShown()
     catcher:SetFrameLevel(MM.mapLevel + (waking and 30 or -1))
 end
 MM.UpdateCatcherLayer = LayerCatcher
@@ -195,7 +197,7 @@ local function EnsureInput()
     holder:EnableMouse(false)
     holder:SetScript("OnShow", function()
         -- Blizzard may have hidden its buttons while the holder was hidden.
-        if not M.active or M.config.zoomButtons == 3 then return end
+        if not M.active or M.config.zoomButtons == ZOOM.HIDE then return end
         local zoomIn, zoomOut = ZoomButtons()
         if zoomIn and MM.owned[zoomIn] and not zoomIn:IsShown() then zoomIn:Show() end
         if zoomOut and MM.owned[zoomOut] and not zoomOut:IsShown() then zoomOut:Show() end
@@ -216,7 +218,7 @@ end
 -- Retail's map hides its zoom buttons when the cursor leaves the round map;
 -- inside the suite holder they stay shown and the holder decides.
 local function ZoomHidden(button)
-    if M.active and MM.owned[button] and M.config.zoomButtons ~= 3 and not button:IsShown() then button:Show() end
+    if M.active and MM.owned[button] and M.config.zoomButtons ~= ZOOM.HIDE and not button:IsShown() then button:Show() end
 end
 local function Adopt(button, mode)
     if not button then return end
@@ -227,14 +229,14 @@ local function Adopt(button, mode)
     end
     if zoomShown[button] == nil then zoomShown[button] = button:IsShown() == true end
     -- Parked buttons sit in a hidden frame, so Blizzard's hover show never renders them.
-    if mode == 3 then MM.Place(button, MM.park, "CENTER", MM.park, "CENTER", 0, 0) end
+    if mode == ZOOM.HIDE then MM.Place(button, MM.park, "CENTER", MM.park, "CENTER", 0, 0) end
 end
 local function PlaceZoom(mode)
     local zoomIn, zoomOut = ZoomButtons()
     local host = MM.host
     Adopt(zoomIn, mode)
     Adopt(zoomOut, mode)
-    if mode == 3 or not zoomIn or not zoomOut then
+    if mode == ZOOM.HIDE or not zoomIn or not zoomOut then
         MM.SetExtent("zoom", 0, 0, 0, 0)
         return
     end
@@ -262,15 +264,16 @@ local function PlaceZoom(mode)
 end
 
 local function NeedsHover(c)
-    return c.visibility == 4 or c.zoomButtons == 1 or (c.hoverResize and c.visibility ~= 5)
+    return c.visibility == VISIBILITY.MOUSEOVER or c.zoomButtons == ZOOM.MOUSEOVER
+        or (c.hoverResize and c.visibility ~= VISIBILITY.NEVER)
         or (MM.CollectsButtons() and c.drawerMouseover)
-        or (c.infoCoordinates and c.infoCoordinatesMode == 1)
-        or (c.showLanding == 2 and S.MinimapElementAvailable("Landing"))
+        or (c.infoCoordinates and c.infoCoordinatesMode == NS.MinimapCoordinatesMode.MOUSEOVER)
+        or (c.showLanding == NS.MinimapLanding.MOUSEOVER and S.MinimapElementAvailable("Landing"))
 end
 -- In mouseover visibility the host is hidden, so the catcher cannot be its child.
 local function ApplyCatcher()
     local c, host = M.config, MM.host
-    local parent = c.visibility == 4 and UIParent or host
+    local parent = c.visibility == VISIBILITY.MOUSEOVER and UIParent or host
     if catcher:GetParent() ~= parent then catcher:SetParent(parent) end
     catcher:SetFrameStrata(host:GetFrameStrata())
     LayerCatcher()
@@ -312,20 +315,20 @@ end
 
 MM.OnHover(function(shown)
     LayerCatcher()
-    if holder and M.active and M.config.zoomButtons == 1 then holder:SetShown(shown) end
+    if holder and M.active and M.config.zoomButtons == ZOOM.MOUSEOVER then holder:SetShown(shown) end
 end)
 
 -- Edit Mode writes its own rotation when it applies a layout (at login); an
 -- explicit suite choice goes back on after Blizzard's handler has run.
 MM.flushers.rotate = function()
     local rotate = M.config.rotate
-    if rotate == 1 then return end
+    if rotate == ROTATE.BLIZZARD then return end
     if NS.IsCombatLocked() then
         MM.Force("input")
         S.Queue("minimap")
         return
     end
-    M.context:CVar("rotateMinimap", rotate == 2 and "1" or "0")
+    M.context:CVar("rotateMinimap", rotate == ROTATE.ROTATE and "1" or "0")
 end
 local function LayoutApplied() MM.Queue("rotate") end
 
@@ -342,13 +345,13 @@ function MM.ApplyInput()
         resetTimer = nil
     end
     PlaceZoom(c.zoomButtons)
-    holder:SetShown(c.zoomButtons == 2 or (c.zoomButtons == 1 and MM.Revealed()))
+    holder:SetShown(c.zoomButtons == ZOOM.ALWAYS or (c.zoomButtons == ZOOM.MOUSEOVER and MM.Revealed()))
     -- 1 leaves Blizzard's own rotation setting alone (and returns a suite write).
-    if c.rotate == 1 then
+    if c.rotate == ROTATE.BLIZZARD then
         S.RestoreCVar("minimap", "rotateMinimap")
         MM.Unlisten("EDIT_MODE_LAYOUTS_UPDATED", "rotate")
     else
-        ctx:CVar("rotateMinimap", c.rotate == 2 and "1" or "0")
+        ctx:CVar("rotateMinimap", c.rotate == ROTATE.ROTATE and "1" or "0")
         MM.Listen("EDIT_MODE_LAYOUTS_UPDATED", "rotate", LayoutApplied)
     end
     ApplyCatcher()

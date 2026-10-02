@@ -2,6 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
+local CLOCK, DATE, LATENCY = NS.MinimapClockSource, NS.MinimapDatePosition, NS.MinimapLatencySource
+local TEXT_ANCHOR, BOX = NS.MinimapTextAnchor, NS.MinimapTextBox
 -- Information texts on the map. One cancellable timer serves every sampled text
 -- (clock, FPS, latency, coordinates); durability, location, weather, difficulty and the
 -- calendar invite mark are event-driven. Hidden texts do no work and only
@@ -114,17 +116,18 @@ local function Clock(entry)
     local c = M.config
     local stamp = S.ReadInfoSource("clockStamp")
     local second = Finite(stamp) and math.floor(stamp) % 60 or nil
-    local now = (c.infoClockSource ~= 1 and not c.infoClock24Hour or c.infoClockDate) and date("*t") or nil
-    local server = c.infoClockSource ~= 2 and ServerTime(c, second) or nil
-    local localTime = c.infoClockSource ~= 1 and LocalTime(entry, c, now) or nil
-    local text = c.infoClockSource == 1 and server or c.infoClockSource == 2 and localTime
+    local source = c.infoClockSource
+    local now = (source ~= CLOCK.REALM and not c.infoClock24Hour or c.infoClockDate) and date("*t") or nil
+    local server = source ~= CLOCK.LOCAL and ServerTime(c, second) or nil
+    local localTime = source ~= CLOCK.REALM and LocalTime(entry, c, now) or nil
+    local text = source == CLOCK.REALM and server or source == CLOCK.LOCAL and localTime
         or server and localTime and server .. " / " .. localTime
     if c.infoClockDate then
         -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
         local calendarDate = FormatShortDate(now.day, now.month, now.year)
-        if c.infoClockDatePosition == 2 then
+        if c.infoClockDatePosition == DATE.ABOVE then
             text = text and calendarDate .. "\n" .. text or calendarDate
-        elseif c.infoClockDatePosition == 3 then
+        elseif c.infoClockDatePosition == DATE.BELOW then
             text = text and text .. "\n" .. calendarDate or calendarDate
         else
             text = text and text .. "  " .. calendarDate or calendarDate
@@ -152,13 +155,14 @@ local function Latency(entry)
     local mode = M.config.infoLatencySource
     home = Finite(home) and home >= 0 and math.floor(home + .5) or nil
     world = Finite(world) and world >= 0 and math.floor(world + .5) or nil
-    if mode ~= 2 and not home or mode ~= 1 and not world then return "--", entry.interval end
+    if mode ~= LATENCY.WORLD and not home or mode ~= LATENCY.HOME and not world then return "--", entry.interval end
     if home ~= entry.lastHome or world ~= entry.lastWorld or mode ~= entry.lastMode then
         entry.lastHome, entry.lastWorld, entry.lastMode = home, world, mode
-        entry.latencyText = mode == 1 and MS_TEXT:format(home) or mode == 2 and MS_TEXT:format(world)
+        entry.latencyText = mode == LATENCY.HOME and MS_TEXT:format(home)
+            or mode == LATENCY.WORLD and MS_TEXT:format(world)
             or home .. " / " .. MS_TEXT:format(world)
     end
-    local value = mode == 1 and home or mode == 2 and world or math.max(home, world)
+    local value = mode == LATENCY.HOME and home or mode == LATENCY.WORLD and world or math.max(home, world)
     local severity = value >= M.config.infoLatencyBad and 3 or value >= M.config.infoLatencyWarning and 2 or 1
     return entry.latencyText, entry.interval, severity
 end
@@ -179,7 +183,7 @@ end
 local function Durability(entry)
     local lowest, currentTotal, maxTotal = S.ReadInfoSource("durability")
     if not lowest then return "--" end
-    local value = math.floor((M.config.infoDurabilityMode == 2 and currentTotal / maxTotal or lowest) * 100)
+    local value = math.floor((M.config.infoDurabilityMode == NS.MinimapDurabilityMode.COMBINED and currentTotal / maxTotal or lowest) * 100)
     if entry.lastDurability ~= value then
         entry.lastDurability = value
         entry.durabilityText = entry.iconPrefix .. value .. "%"
@@ -476,11 +480,11 @@ end
 local function Anchor(region, anchor, x, y)
     local host, border = MM.host, MM.BorderWidth()
     region:ClearAllPoints()
-    if anchor == 10 then
+    if anchor == TEXT_ANCHOR.ABOVE then
         region:SetPoint("BOTTOM", host, "TOP", x, y + border)
         return "CENTER"
     end
-    if anchor == 11 then
+    if anchor == TEXT_ANCHOR.BELOW then
         region:SetPoint("TOP", host, "BOTTOM", x, y - border)
         return "CENTER"
     end
@@ -523,18 +527,19 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
         outlines[c[prefix .. "Outline"]], c[prefix .. "Rendering"],
         c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
     local lines = key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2
-        or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2 or 1
+        or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2 or 1
     local height = key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or size * lines
     local width = c[prefix .. "Width"]
-    if key == "Weather" and c.infoWeatherDisplay ~= 1 then
-        width = c.infoWeatherDisplay == 2 and c.infoWeatherIconSize or math.max(width, c.infoWeatherIconSize + 8)
+    local weather = NS.MinimapWeatherDisplay
+    if key == "Weather" and c.infoWeatherDisplay ~= weather.TEXT then
+        width = c.infoWeatherDisplay == weather.ICON and c.infoWeatherIconSize or math.max(width, c.infoWeatherIconSize + 8)
     end
     entry.size = key == "Weather" and height or size
     entry.button:SetSize(width, height + 8)
     entry.justify = Anchor(entry.button, c[prefix .. "Anchor"], c[prefix .. "X"], c[prefix .. "Y"])
     entry.label:SetJustifyH(entry.justify)
     local boxMode = c[prefix .. "Box"]
-    if boxMode == 2 or boxMode == 3 then
+    if boxMode == BOX.BORDER or boxMode == BOX.CUSTOM then
         if not entry.box then entry.box = S.CreateTexture(entry.button, nil, "BACKGROUND") end
         local box = entry.box
         box:ClearAllPoints()
@@ -546,7 +551,7 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
             box:SetPoint("CENTER", entry.button, "CENTER")
         end
         box:SetHeight(height + 4)
-        if boxMode == 3 then boxR, boxG, boxB = Color(c[prefix .. "BoxColor"]) end
+        if boxMode == BOX.CUSTOM then boxR, boxG, boxB = Color(c[prefix .. "BoxColor"]) end
         box:SetColorTexture(boxR, boxG, boxB, 1)
         box:Show()
     elseif entry.box then
@@ -617,12 +622,12 @@ local function LayoutEntries(c, hideCoordinates)
             end
             Style(entry, key, c, classColor, boxR, boxG, boxB)
             local anchor = c[prefix .. "Anchor"]
-            local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= 1 and 2
+            local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2
                 or key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2 or 1
             local height = (key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or c[prefix .. "Size"] * lines) + 8
-            if anchor == 10 then above = math.max(above, c[prefix .. "Y"] + height) end
-            if anchor == 11 then below = math.max(below, height - c[prefix .. "Y"]) end
-            entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == 2 or MM.Revealed())
+            if anchor == TEXT_ANCHOR.ABOVE then above = math.max(above, c[prefix .. "Y"] + height) end
+            if anchor == TEXT_ANCHOR.BELOW then below = math.max(below, height - c[prefix .. "Y"]) end
+            entry.button:SetShown(key ~= "Coordinates" or c.infoCoordinatesMode == NS.MinimapCoordinatesMode.ALWAYS or MM.Revealed())
         elseif entry then
             entry.active = false
             entry.button:Hide()
@@ -698,7 +703,7 @@ end
 
 MM.OnHover(function(shown)
     local entry = M.infoEntries and M.infoEntries.Coordinates
-    if not M.active or not entry or not entry.active or M.config.infoCoordinatesMode ~= 1 then return end
+    if not M.active or not entry or not entry.active or M.config.infoCoordinatesMode ~= NS.MinimapCoordinatesMode.MOUSEOVER then return end
     entry.button:SetShown(shown)
     if shown then Rearm() end
 end)

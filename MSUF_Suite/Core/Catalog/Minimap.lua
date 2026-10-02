@@ -57,6 +57,27 @@ NS.MinimapRowLabels = {
 -- Text anchors: the nine inside points plus above and below the map.
 NS.MinimapTextAnchorLabels = { "Above the map", "Below the map" }
 for i = #NS.AnchorLabels, 1, -1 do table.insert(NS.MinimapTextAnchorLabels, 1, NS.AnchorLabels[i]) end
+-- The choice values of the settings below (each is its label's position
+-- there); the minimap runtime names its modes through these.
+NS.MinimapTextAnchor = { ABOVE = #NS.AnchorLabels + 1, BELOW = #NS.AnchorLabels + 2 }
+NS.MinimapShape = { SQUARE = 1, CIRCLE = 2, WIDE = 3 }
+NS.MinimapStyleTexture = { NONE = 1 }
+NS.MinimapVisibility = { ALWAYS = 1, IN_COMBAT = 2, OUT_OF_COMBAT = 3, MOUSEOVER = 4, NEVER = 5 }
+NS.MinimapRotate = { BLIZZARD = 1, ROTATE = 2, NORTH_UP = 3 }
+NS.MinimapZoomButtons = { MOUSEOVER = 1, ALWAYS = 2, HIDE = 3 }
+NS.MinimapMiddleClick = { NOTHING = 1, TRACKING = 2, CALENDAR = 3, WORLD_MAP = 4, MICRO_MENU = 5 }
+NS.MinimapLanding = { ALWAYS = 1, MOUSEOVER = 2, NEVER = 3 }
+NS.MinimapLandingIcon = { BLIZZARD = 1, BOOK = 2 }
+NS.MinimapTextBox = { NONE = 1, BORDER = 2, CUSTOM = 3 }
+NS.MinimapWeatherDisplay = { TEXT = 1, ICON = 2, BOTH = 3 }
+NS.MinimapClockSource = { REALM = 1, LOCAL = 2, BOTH = 3 }
+NS.MinimapDatePosition = { BESIDE = 1, ABOVE = 2, BELOW = 3 }
+NS.MinimapClockClick = { CALENDAR = 1, CLOCK = 2 }
+NS.MinimapInfoTooltip = { VALUE = 1, LOCKOUTS = 2, VAULT = 3, NONE = 4 }
+NS.MinimapLatencySource = { HOME = 1, WORLD = 2, BOTH = 3 }
+NS.MinimapCoordinatesMode = { MOUSEOVER = 1, ALWAYS = 2 }
+NS.MinimapDurabilityMode = { LOWEST = 1, COMBINED = 2 }
+NS.MinimapInstanceKind = { ALL = 1, RAIDS = 2, DUNGEONS = 3 }
 
 B.Section(id, "layout", "Size and position", {
     Number("size", "Minimap size", 190, 100, 600),

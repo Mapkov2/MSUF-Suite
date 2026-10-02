@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
+local CLOCK_CLICK = NS.MinimapClockClick
 -- Clicks and tooltips of the information texts (Info.lua builds them). A
 -- text is an ordinary button on the minimap host, which moves, shows and
 -- hides in combat. Coordinates, Location (with its click on) and Durability
@@ -36,7 +37,7 @@ end
 local function Click(button, mouseButton)
     if not M.active or NS.IsCombatLocked() then return end
     if button.infoKey == "Clock" then
-        local calendar = M.config.infoClockClick == 1
+        local calendar = M.config.infoClockClick == CLOCK_CLICK.CALENDAR
         if mouseButton == "RightButton" then calendar = not calendar end
         if calendar then ToggleCalendar() else ToggleTimeManager() end
     elseif OpensWindow(button) then
@@ -124,7 +125,8 @@ local function Enter(button)
         if entry.invite and entry.invite:IsShown() then
             GameTooltip:AddLine(S.Text("Calendar invitations are waiting."), 1, .82, 0)
         end
-        local hint = M.config.infoClockClick == 1 and "Left: calendar. Right: clock." or "Left: clock. Right: calendar."
+        local hint = M.config.infoClockClick == CLOCK_CLICK.CALENDAR and "Left: calendar. Right: clock."
+            or "Left: clock. Right: calendar."
         GameTooltip:AddLine(S.Text(hint), .7, .8, .9)
     elseif key == "Coordinates" or key == "Location" and M.config.infoLocationClick then
         GameTooltip:AddLine(S.Text("Click to open the world map."), .7, .8, .9)
