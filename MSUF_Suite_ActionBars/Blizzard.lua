@@ -118,17 +118,18 @@ end
 function AB.ReadBlizzard()
     local toggles = { GetActionBarToggles() }
     local state = {}
-    for index = 1, 12 do
+    local BAR = AB.ENUM.BAR
+    for index = 1, AB.BAR_COUNT do
         local frame
-        if index <= 8 then
+        if index <= BAR.LAST_NATIVE then
             frame = AB.Frame(AB.NATIVE_BARS[index])
-        elseif index == 11 then
+        elseif index == BAR.STANCE then
             frame = AB.Frame("StanceBar")
-        elseif index == 12 then
+        elseif index == BAR.PET then
             frame = AB.Frame("PetActionBar")
         end
         local entry = { frame = frame }
-        if index >= 2 and index <= 8 then entry.toggle = toggles[index - 1] end
+        if index >= BAR.FIRST_NATIVE and index <= BAR.LAST_NATIVE then entry.toggle = toggles[index - 1] end
         state[index] = entry
     end
     return state
@@ -278,7 +279,8 @@ function AB.Adopt(index)
     local bar = AB.bars[index]
     if not bar or NS.IsCombatLocked() or not AB.control then return false end
     local control, config = AB.control, M.config
-    local prefix = index == 11 and "StanceButton" or "PetActionButton"
+    local PET = AB.ENUM.BAR.PET
+    local prefix = index == AB.ENUM.BAR.STANCE and "StanceButton" or "PetActionButton"
     if not bar.adopted then
         for i = 1, 10 do
             local button = AB.Frame(prefix .. i)
@@ -303,10 +305,10 @@ function AB.Adopt(index)
             local want = "cap"
             if i <= count then
                 want = "show"
-                if index == 12 and not showEmpty and not PetHasAction(i) then want = "idle" end
+                if index == PET and not showEmpty and not PetHasAction(i) then want = "idle" end
             end
             control:SetAttribute("want" .. i, want)
-            if index == 12 then
+            if index == PET then
                 control:SetAttribute("grid" .. i, i <= count and showEmpty)
             else
                 control:SetAttribute("grid" .. i, nil)

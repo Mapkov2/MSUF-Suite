@@ -8,6 +8,7 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local Painter, NativeButtons = AB.Painter, AB.NativeButtons
+local PROC_PIXEL = AB.ENUM.PROC_GLOW.PIXEL
 local slotMap, Visible = Painter.slotMap, Painter.Visible
 local Walk, WalkNative, Paint, Icon, Refill, PaintBar = Painter.Walk, Painter.WalkNative, Painter.Paint, Painter.Icon, Painter.Refill, Painter.PaintBar
 local Cooldown, Usable, State, Count, GlowCheck, AllKeyTexts = Painter.Cooldown, Painter.Usable, Painter.State, Painter.Count, Painter.GlowCheck,
@@ -168,7 +169,7 @@ local function TintWalk()
 end
 local function NativeFullWalk()
     WalkNative(NativeColor)
-    if M.config.procGlow == 2 then WalkNative(GlowCheck) end
+    if M.config.procGlow == PROC_PIXEL then WalkNative(GlowCheck) end
 end
 
 -- The uncapped paint kinds, in this order.

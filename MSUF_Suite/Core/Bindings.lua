@@ -24,10 +24,11 @@ end
 -- toggle bindings (ActionBars/Visibility.lua) and the options page switches.
 function NS.ActionBarSwitchValues(config, index, on)
     local key, resume = "bar" .. index .. "Visibility", "bar" .. index .. "ResumeVisibility"
+    local NEVER = NS.ActionBarEnum.VISIBILITY.NEVER
     local mode = config[key]
-    if on == nil then on = mode == 6 end
-    if on then return mode == 6 and { [key] = config[resume] } or nil end
-    return mode ~= 6 and { [key] = 6, [resume] = mode } or nil
+    if on == nil then on = mode == NEVER end
+    if on then return mode == NEVER and { [key] = config[resume] } or nil end
+    return mode ~= NEVER and { [key] = NEVER, [resume] = mode } or nil
 end
 
 _G.BINDING_HEADER_MSUFSUITE = "MSUF Suite"

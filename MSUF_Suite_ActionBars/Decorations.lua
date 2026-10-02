@@ -1,6 +1,8 @@
 local _, P = ...
 local NS, S, AB = P.NS, P.Suite, P.ActionBars
 local M = AB.M
+local ENUM = AB.ENUM
+local ENDCAP, SHAPE, BORDER_ART, ASSIST = ENUM.ENDCAP, ENUM.BUTTON_SHAPE, ENUM.BORDER_ART, ENUM.ASSIST_STYLE
 
 -- Optional static ornaments use only small colored regions owned by Suite.
 -- Nothing follows combat events, timers or the cursor. They take the
@@ -14,7 +16,7 @@ local function Endcap(bar, side)
     local c, keys, names = M.config, bar.key, ENDCAP_KEYS[side]
     local style = c[keys[names.style]]
     local cap = bar[names.style]
-    if style == 1 then
+    if style == ENDCAP.NONE then
         if cap then cap:Hide() end
         return
     end
@@ -35,8 +37,8 @@ local function Endcap(bar, side)
         local t = cap.pieces[i]
         t:ClearAllPoints()
         t:SetColorTexture(r, g, b, 1)
-        t:SetShown(i <= (style == 2 and 2 or 4))
-        if style == 2 then
+        t:SetShown(i <= (style == ENDCAP.DIAMOND and 2 or 4))
+        if style == ENDCAP.DIAMOND then
             t:SetSize(size * .55, i == 1 and size * .55 or size * .3)
             t:SetPoint("CENTER", cap, "CENTER", 0, 0)
             t:SetRotation(math.pi / 4)
@@ -86,7 +88,7 @@ function AB.LayoutDecorations(bar)
     end
     Endcap(bar, "Left")
     Endcap(bar, "Right")
-    if bar.index ~= 1 then return end
+    if bar.index ~= ENUM.BAR.MAIN then return end
     local c, arrows = M.config, bar.pageArrows
     local main = AB.Frame("MainActionBar")
     if not c.pageArrows or not main then
@@ -101,7 +103,7 @@ function AB.LayoutDecorations(bar)
         bar.pageArrows = arrows
     end
     arrows:ClearAllPoints()
-    local left = c.pageArrowSide == 1
+    local left = c.pageArrowSide == ENUM.PAGE_ARROW_SIDE.LEFT
     arrows:SetPoint(left and "RIGHT" or "LEFT", bar.header, left and "LEFT" or "RIGHT", left and -4 or 4, 0)
     arrows:Show()
 end
@@ -180,7 +182,7 @@ local function PlaceArt(texture, button, extent, circle)
 end
 function AB.StyleDecoration(rec, size)
     local c, button = M.config, rec.button
-    local circle = c.buttonShape == 2
+    local circle = c.buttonShape == SHAPE.CIRCLE
     if circle and not rec.shapeMask then
         rec.shapeMask = button:CreateMaskTexture()
         rec.shapeMask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
@@ -198,7 +200,7 @@ function AB.StyleDecoration(rec, size)
         local cooldown = button[SWIPES[i]]
         if cooldown then cooldown:SetSwipeTexture(circle and CIRCLE or WHITE) end
     end
-    local fancy = circle or c.borderArt == 2
+    local fancy = circle or c.borderArt == BORDER_ART.BLIZZARD
     rec.decorFancy = fancy
     if fancy then
         local host = AB.DecorationHost(rec)
@@ -241,7 +243,7 @@ local assistedSpell
 local assistActive = false
 local function NativeAlpha(button)
     local frame = button.AssistedCombatHighlightFrame
-    if frame then frame:SetAlpha(M.config.assistStyle == 1 and 1 or 0) end
+    if frame then frame:SetAlpha(M.config.assistStyle == ASSIST.BLIZZARD and 1 or 0) end
 end
 -- The ring's look: laid out again only when one of its inputs changed, so a
 -- new recommendation (every few hundred milliseconds in combat) only moves
@@ -249,7 +251,7 @@ end
 local function LayoutAssist(rec, holder)
     local c = M.config
     local size = (rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
-    local circle = c.buttonShape == 2
+    local circle = c.buttonShape == SHAPE.CIRCLE
     if holder.size == size and holder.x == c.assistX and holder.y == c.assistY and holder.circle == circle
         and holder.color == c.assistColor and holder.alpha == c.assistAlpha and holder.style == c.assistStyle then return end
     holder.size, holder.x, holder.y, holder.circle = size, c.assistX, c.assistY, circle
@@ -264,8 +266,8 @@ local function LayoutAssist(rec, holder)
     local r, g, b = S.RGB(c.assistColor)
     holder.ring:SetVertexColor(r, g, b, c.assistAlpha / 100)
     holder.fill:SetVertexColor(r, g, b, c.assistAlpha / 100 * .35)
-    holder.ring:SetShown(c.assistStyle == 2 or c.assistStyle == 4)
-    holder.fill:SetShown(c.assistStyle == 3 or c.assistStyle == 4)
+    holder.ring:SetShown(c.assistStyle == ASSIST.RING or c.assistStyle == ASSIST.RING_AND_FILL)
+    holder.fill:SetShown(c.assistStyle == ASSIST.FILL or c.assistStyle == ASSIST.RING_AND_FILL)
 end
 local function ShowAssist(rec, show)
     local holder = rec.assist
@@ -331,13 +333,13 @@ local function NativeHighlightHook(manager, button) Dispatch(NativeHighlight, ma
 function AB.SyncAssistedDecoration()
     if NS.Client.isForever then return end
     local style = M.config.assistStyle
-    if style ~= 1 and not AB.assistHooked then
+    if style ~= ASSIST.BLIZZARD and not AB.assistHooked then
         AB.assistHooked = true
         hooksecurefunc(AssistedCombatManager, "UpdateAllAssistedHighlightFramesForSpell", RecommendationHook)
         hooksecurefunc(AssistedCombatManager, "SetAssistedHighlightFrameShown", NativeHighlightHook)
     end
     if not AB.assistHooked then return end
-    assistActive = style ~= 1
+    assistActive = style ~= ASSIST.BLIZZARD
     local spell = AssistedCombatManager.lastNextCastSpellID
     assistedSpell = S.Finite(spell) and spell or nil
     for _, rec in pairs(AB.records) do NativeAlpha(rec.button) end
