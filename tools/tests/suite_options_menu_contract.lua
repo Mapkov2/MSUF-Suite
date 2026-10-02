@@ -3485,6 +3485,28 @@ do
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Hide, S.Confirm =
         previousGeneric, previousHide or function() end, previousConfirm
 end
+-- "Save setup as..." asks for a name in Blizzard's generic input box and
+-- saves the MSUF frames, the Suite and the skin under it; refused in combat.
+do
+    local previousShow, previousSaveAs = _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs
+    local asked, saved
+    _G.StaticPopup_Show = function(which, _, _, data) asked = { which = which, data = data }; return {} end
+    Suite.SuiteProfiles.SaveAs = function(name) saved = name; return true end
+    assert(optionsNS.SaveSetupAs() and asked and asked.which == "GENERIC_INPUT_BOX"
+        and asked.data.maxLetters == Suite.Database.MAX_PROFILE_NAME_BYTES, "Save setup as did not ask for a name")
+    asked.data.callback("Raid setup")
+    assert(saved == "Raid setup", "Save setup as did not save the setup under the name")
+    local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
+    local source = appearance:read("*a")
+    appearance:close()
+    assert(source:find("P.SaveSetupAs", 1, true), "the Skinning page lost the Save setup as button")
+    local lockdown = InCombatLockdown
+    InCombatLockdown = function() return true end
+    asked, saved = nil, nil
+    assert(not optionsNS.SaveSetupAs() and not asked, "Save setup as asked in combat")
+    InCombatLockdown = lockdown
+    _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs = previousShow, previousSaveAs
+end
 -- The cooldown manager page resets like every Suite page: the standard
 -- confirmation, then every cooldown manager setting back to its catalog
 -- default; other modules keep theirs.

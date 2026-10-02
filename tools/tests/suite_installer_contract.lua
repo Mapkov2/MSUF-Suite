@@ -208,6 +208,8 @@ ReloadUI = function() end
 GetLocale = function() return "enUS" end
 UISpecialFrames = {}
 
+-- The scale goes through the Suite's host bridge; this MSUF has no host API v1.
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
 assert(Suite.Installer.Apply())
 assert(factoryCalls == 0 and activations == 1)

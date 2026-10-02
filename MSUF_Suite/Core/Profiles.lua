@@ -182,31 +182,9 @@ function P.EnsureRetailResourceStack(force)
             or installation.profile == "forever" and bars.classPowerOffsetY == -41))
     installation.resourceStackRevision = 1
     if not migrate then return false end
-    bars.showClassPower = true
-    bars.classPowerAnchorToCooldown = true
-    bars.classPowerCooldownTopAnchor = true
-    bars.classPowerWidthMode = "cooldown"
-    bars.detachedPowerBarWidthMode = "cooldown"
-    bars.classPowerOffsetX, bars.classPowerOffsetY = 0, 0
-    player.showPowerBar = true
-    player.powerBarDetached = true
-    player.detachedPowerBarAnchorToClassPower = true
-    player.detachedPowerBarSyncClassPower = true
-    player.detachedPowerBarAnchorMode = "CENTER"
-    player.detachedPowerBarOffsetX, player.detachedPowerBarOffsetY = 0, -4
-    if type(_G.MSUF_EnsureCooldownWidthObservers) == "function" then
-        _G.MSUF_EnsureCooldownWidthObservers()
-    end
-    if type(_G.MSUF_ApplyPowerBarEmbedLayout_ForUnitKey) == "function" then
-        _G.MSUF_ApplyPowerBarEmbedLayout_ForUnitKey("player", true)
-    end
-    if type(_G.MSUF_ClassPower_Apply) == "function" then
-        _G.MSUF_ClassPower_Apply({ playerHP = true })
-    end
-    if type(_G.MSUF_UFCore_NotifyConfigChanged) == "function" then
-        _G.MSUF_UFCore_NotifyConfigChanged("player", false, true, "SuiteResourceStack")
-    end
-    return true
+    -- MSUF writes the stack (Suite.HostBridge: its host API, or the
+    -- Suite's previous writes on older hosts).
+    return Suite.HostBridge.SetResourceStack("cooldown")
 end
 
 -- Older Retail Forever imports had Potions attached to Utility at Y=-380.

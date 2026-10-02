@@ -326,18 +326,47 @@ function P.Combat() return Suite.IsCombatLocked() end
 -- while that load-on-demand runtime is not loaded, so they open Blizzard's
 -- dialog themselves then and keep that question here, and close it when the
 -- runtime asks the next one.
-local GENERIC_CONFIRMATION = "GENERIC_CONFIRMATION"
+local GENERIC_CONFIRMATION, GENERIC_INPUT_BOX = "GENERIC_CONFIRMATION", "GENERIC_INPUT_BOX"
 local questions = {}
-function P.Confirm(key, text, onAccept)
+local function CloseQuestion(key)
     local earlier = questions[key]
-    if earlier then
-        questions[key] = nil
-        StaticPopup_Hide(GENERIC_CONFIRMATION, earlier)
-    end
+    if not earlier then return end
+    questions[key] = nil
+    StaticPopup_Hide(earlier.which, earlier.data)
+end
+function P.Confirm(key, text, onAccept)
+    CloseQuestion(key)
     local data = { text = "%s", text_arg1 = text, callback = onAccept }
     if S.Confirm then return S.Confirm("options:" .. key, data) end
-    questions[key] = data
+    questions[key] = { which = GENERIC_CONFIRMATION, data = data }
     StaticPopup_ShowCustomGenericConfirmation(data)
+end
+
+-- A name or other short text in Blizzard's generic input box, one per key
+-- like P.Confirm (S.AskText once the Modules runtime is loaded). onAccept
+-- gets the text; maxLetters bounds the edit box (Blizzard's default is 24).
+function P.AskText(key, text, onAccept, maxLetters)
+    CloseQuestion(key)
+    local data = { text = "%s", text_arg1 = text, callback = onAccept, maxLetters = maxLetters }
+    if S.AskText then return S.AskText("options:" .. key, data) end
+    questions[key] = { which = GENERIC_INPUT_BOX, data = data }
+    return StaticPopup_Show(GENERIC_INPUT_BOX, nil, nil, data)
+end
+
+-- "Save setup as…": the MSUF frames, the Suite and the skin of the active
+-- profiles saved together under a new profile name (SuiteProfiles.SaveAs).
+-- Refused in combat, when asked and when the name comes back.
+function P.SaveSetupAs()
+    if P.Combat() then return false end
+    P.AskText("save-setup", Tr("Name for the new profile:"), function(name)
+        if P.Combat() then return end
+        local ok, reason = Suite.SuiteProfiles.SaveAs(name)
+        if M.ShowStatusFeedback then
+            M.ShowStatusFeedback(ok and Tr("Setup saved as a new profile")
+                or Suite.StatusText(reason or "That did not work.", Tr), ok and "ok" or "warning", 2)
+        end
+    end, Suite.Database.MAX_PROFILE_NAME_BYTES)
+    return true
 end
 
 -- Named capability checks used by catalog rules (rule.requires). Pages add
