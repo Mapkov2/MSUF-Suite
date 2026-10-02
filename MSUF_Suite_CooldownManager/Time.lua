@@ -16,8 +16,9 @@ local DESAT = K.DESAT
 local TrackingBars = C.TrackingBars
 local Time = {}
 C.Time = Time
--- The client's secret test, called directly (no Lua wrapper on hot paths).
-local issecret = _G.issecretvalue
+-- The client's secret test (Platform.lua; its fallback where the host has
+-- none), called directly: no Lua wrapper on the cooldown paths.
+local issecret = NS.IsSecret
 local Dispatch = S.Dispatch
 local EMPTY = C.EMPTY
 local wipe = C.wipe
