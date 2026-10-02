@@ -22,6 +22,8 @@ local ns
 ns = support.Platform(root, setmetatable({ InCombatLockdown = function() return ns.IsCombatLocked() end },
     { __index = _G }))
 ns.AnchorPoints, ns.IsCombatLocked = { "CENTER" }, function() return false end
+-- Platform.lua's IsSecret is the client's issecretvalue.
+ns.IsSecret = function(value) return value == "secret" end
 ns.Dispatch = function(callback, ...) return callback(...) end
 support.QoLStyleFixture(root, suite)
 local function context()

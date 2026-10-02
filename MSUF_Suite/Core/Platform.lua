@@ -166,7 +166,9 @@ end
 -- readers live here (always loaded) so the options pages share them with the
 -- module runtime (MSUF_Suite_Modules/Runtime.lua aliases them as S.*).
 -- The readers below sit on event hot paths (health, damage meter, cooldowns),
--- so each tests the secret flag inline instead of calling Public.
+-- so each tests the secret flag inline instead of calling Public. The hottest
+-- module paths call Suite.IsSecret themselves: on a client with secrets it is
+-- the client's issecretvalue, so a test costs one C call and no Lua call.
 local IsSecret = type(issecretvalue) == "function" and issecretvalue or function() return false end
 local HUGE = math.huge
 
@@ -195,7 +197,7 @@ local function ReadText(fn, ...)
     return PublicText((fn(...)))
 end
 
-Suite.Public, Suite.Number, Suite.Finite = Public, Number, Finite
+Suite.IsSecret, Suite.Public, Suite.Number, Suite.Finite = IsSecret, Public, Number, Finite
 Suite.PublicText, Suite.ReadText = PublicText, ReadText
 
 ------------------------------------------------------------------ shared media
