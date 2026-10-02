@@ -115,11 +115,9 @@ local function ReadInspect(unit)
     if S.Finite(value) and value > 0 then return math.floor(value) end
 end
 
+local RetryInspect
 local function CancelInspectRetry()
-    if M.inspectRetry then
-        M.inspectRetry:Cancel()
-        M.inspectRetry = nil
-    end
+    M.context:Cancel(RetryInspect)
 end
 
 local function ClearHoverInspect()
@@ -155,20 +153,20 @@ local function StillHovered(unit, guid)
         and M.inspectHoverGUID == guid and Identity(unit) == guid
 end
 
+-- One delayed attempt per hover, after the quiet period (M.inspectRetry);
+-- a new request, a foreign inspect or the end of the hover cancels it.
 local HoverLevel
+RetryInspect = function(self)
+    local unit, guid = self.retryUnit, self.retryGUID
+    if not self.config.inspectHovered or NS.IsCombatLocked() or not StillHovered(unit, guid) then return end
+    HoverLevel(unit)
+end
+
 local function ScheduleRetry(unit, guid, remaining)
     if M.inspectRetryAttempted then return end
     M.inspectRetryAttempted = true
-    local generation = M.inspectGeneration
-    local timer
-    timer = C_Timer.NewTimer(remaining, function()
-        if M.inspectRetry ~= timer then return end
-        M.inspectRetry = nil
-        if not M.active or not M.config.inspectHovered or NS.IsCombatLocked()
-            or M.inspectGeneration ~= generation or not StillHovered(unit, guid) then return end
-        HoverLevel(unit)
-    end)
-    M.inspectRetry = timer
+    M.retryUnit, M.retryGUID = unit, guid
+    M.inspectRetry = M.context:After(remaining, RetryInspect)
 end
 
 -- Native InspectFrame_Show on Retail and Forever uses CanInspect(unit, true)

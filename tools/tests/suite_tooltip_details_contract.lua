@@ -116,12 +116,7 @@ C_MountJournal = {
 }
 local inspectRequests, now = 0, 1000
 local timers = {}
-C_Timer = { NewTimer = function(delay, callback)
-    local timer = { delay = delay, callback = callback }
-    function timer:Cancel() self.cancelled = true end
-    timers[#timers + 1] = timer
-    return timer
-end }
+C_Timer = { After = function(delay, callback) timers[#timers + 1] = { delay = delay, callback = callback } end }
 GetTime = function() return now end
 local inspectable = true
 CanInspect = function() return inspectable end
@@ -159,8 +154,10 @@ m.active, m.events = true, {}
 m.config = { guildRank = true, target = true, selfTarget = true, itemLevel = true, inspectHovered = false,
     hideHealth = true, maxStack = true, iconID = true, ownedMount = true, titles = true, unitMount = false,
     unitMountOwned = false, anchor = 2, cursorX = 19, cursorY = 23, growth = 3, fixedX = -24, fixedY = 24 }
-m.context = { Event = function(_, event, callback) m.events[event] = callback end,
-    RemoveEvent = function(_, event) m.events[event] = nil end }
+NS.Dispatch = S.Dispatch
+m.context = Support.ModuleTimers(root, S, NS)("tooltipDetails", m, {
+    Event = function(_, event, callback) m.events[event] = callback end,
+    RemoveEvent = function(_, event) m.events[event] = nil end })
 m:Enable()
 m:Enable()
 Check(#tooltips.post[Enum.TooltipDataType.Unit] == 1 and #tooltips.post[Enum.TooltipDataType.Item] == 1
@@ -246,13 +243,14 @@ Leave()
 -- Quiet period after any request: one delayed attempt, cancelled by others.
 now = 1022
 Build("delayed")
-local retry = m.inspectRetry
-Check(retry and retry.delay == 3 and inspectRequests == 2, "a hover inside the quiet period did not wait once")
+local retry, wait = m.inspectRetry, timers[#timers]
+Check(retry and retry:Pending() and wait.delay == 3 and inspectRequests == 2,
+    "a hover inside the quiet period did not wait once")
 local timerCount = #timers
 Build("delayed")
 Check(#timers == timerCount, "the same hover scheduled a second retry")
 now = 1025
-retry.callback()
+wait.callback()
 Check(inspectRequests == 3 and m.pendingInspect.guid == "GUID-delayed", "the delayed attempt did not request")
 Foreign("external")
 Check(not m.pendingInspect, "a foreign request did not take over the inspect buffer")
@@ -260,8 +258,9 @@ Leave()
 now = 1027
 Build("quiet")
 retry = m.inspectRetry
+Check(retry:Pending(), "the quiet hover did not wait")
 ClearInspectPlayer()
-Check(retry.cancelled and not m.inspectRetry, "a foreign clear did not cancel the delayed hover")
+Check(not retry:Pending(), "a foreign clear did not cancel the delayed hover")
 Leave()
 -- Native or foreign inspect activity, combat and restrictions suppress requests.
 now = 1100
