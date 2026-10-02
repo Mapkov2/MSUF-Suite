@@ -148,9 +148,13 @@ local function WatchLeave()
     leaveTimer = C_Timer.NewTimer(.15, CheckLeave)
 end
 
--- A used entry closes the popup (out of combat, right after its action).
-local function RowPostClick()
+-- A used entry closes the popup (out of combat, right after its action). A
+-- plain row (the game menu, S.MicroMenuEntries) has no secure action: its
+-- own action runs here, after the popup closed.
+local function RowPostClick(row)
+    local action = row.action
     ClosePopup()
+    if action then action() end
 end
 
 local function Popup()
@@ -220,6 +224,7 @@ local function FillPortal(row, index)
     row:SetAttribute("type", "spell")
     row:SetAttribute("spell", spell.id)
     row:SetAttribute("clickbutton", nil)
+    row.action = nil
     -- A micro menu row may have shown a disabled micro button before.
     row:SetEnabled(true)
     row.icon:SetTexture(spell.icon)
@@ -241,9 +246,10 @@ end
 local micro = {}
 local function FillMicro(row, index)
     local entry = micro[index]
-    row:SetAttribute("type", "click")
+    row:SetAttribute("type", entry.button and "click" or nil)
     row:SetAttribute("clickbutton", entry.button)
     row:SetAttribute("spell", nil)
+    row.action = entry.action
     row:SetEnabled(entry.enabled)
     row.icon:SetTexture(nil)
     row.cooldown:Clear()
@@ -253,8 +259,8 @@ local function FillMicro(row, index)
 end
 
 -- The Suite's micro menu (S.MicroMenuEntries, the same entries as the
--- Minimap's middle-click flyout) plus the game menu row, clicked by the
--- secure rows.
+-- Minimap's middle-click flyout), clicked by the secure rows, plus the plain
+-- game menu row.
 function Actions.MicroMenu(button)
     if Locked() then return end
     OpenPopup(button, S.MicroMenuEntries(micro, true), FillMicro)

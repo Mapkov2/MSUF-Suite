@@ -43,6 +43,27 @@ local W = H.New(root, flavor, { clientSecurity = true, beforeModules = function(
             microClicks[#microClicks + 1] = { name = self.name, secure = world.secure }
         end
     end
+    -- Blizzard_UIParentPanelManager: an addon's ShowUIPanel/HideUIPanel hand
+    -- the panel to the secure FramePositionDelegate (refused in combat).
+    world.panelCalls = {}
+    local function Panel(shown)
+        return function(frame)
+            world.panelCalls[#world.panelCalls + 1] = { frame = frame, shown = shown, secure = world.secure }
+            if not G.InCombatLockdown() then world.Blizzard(function() frame:SetShown(shown) end) end
+        end
+    end
+    G.ShowUIPanel, G.HideUIPanel = Panel(true), Panel(false)
+    G.SOUNDKIT = { IG_MAINMENU_OPEN = 850, IG_MAINMENU_QUIT = 851 }
+    G.PlaySound = function(sound) world.sounds = (world.sounds or 0) + 1; world.lastSound = sound end
+    G.GameMenuFrame = world.New("Frame", "GameMenuFrame", world.UIParent)
+    G.GameMenuFrame:Hide()
+    -- MainMenuMicroButtonMixin:OnClick (Blizzard_MicroMenu/Mainline) acts only
+    -- while the cursor is over the micro button itself.
+    G.MainMenuMicroButton.scripts.OnClick = function(self)
+        microClicks[#microClicks + 1] = { name = self.name, secure = world.secure }
+        if not self:IsMouseOver() then return end
+        if G.GameMenuFrame:IsShown() then G.HideUIPanel(G.GameMenuFrame) else G.ShowUIPanel(G.GameMenuFrame) end
+    end
 end })
 local G, S, NS = W.G, W.S, W.Suite
 function G.GameTooltip:SetItemByID(id) self.lines = { "item:" .. id } end
@@ -140,9 +161,16 @@ local shared = {}
 assert(S.MicroMenuEntries(shared, false) == #expected - 1, "the Minimap's micro menu lists other buttons")
 for i, name in ipairs(expected) do
     local row = popup.rows[i]
-    assert(row and row.shown and row:GetAttribute("type") == "click" and row:GetAttribute("clickbutton") == G[name]
-        and (i == #expected or shared[i].button == G[name] and row.label.text == shared[i].label),
-        "micro menu row " .. i .. " is not the shared secure click on " .. name)
+    if i < #expected then
+        assert(row and row.shown and row:GetAttribute("type") == "click" and row:GetAttribute("clickbutton") == G[name]
+            and shared[i].button == G[name] and row.label.text == shared[i].label,
+            "micro menu row " .. i .. " is not the shared secure click on " .. name)
+    else
+        -- S3.2: a secure click on the game menu button does nothing (it
+        -- checks IsMouseOver), so the game menu is a plain row.
+        assert(row and row.shown and row:GetAttribute("type") == nil and row:GetAttribute("clickbutton") == nil
+            and row.label.text == "Game menu" and row.enabled, "the game menu row is not a plain, enabled row")
+    end
 end
 assert(not (popup.rows[#expected + 1] and popup.rows[#expected + 1].shown), "the micro menu lists extra rows")
 local first, guild = popup.rows[1], popup.rows[#expected - 1]
@@ -153,6 +181,19 @@ W.Click(first)
 assert(#microClicks == beforeMicro + 1 and microClicks[#microClicks].name == "CharacterMicroButton"
     and microClicks[#microClicks].secure and not popup.shown and #popup.points == 0,
     "a micro menu row did not click securely or did not close the popup")
+-- S3.2: the game menu row opens the game menu out of combat through
+-- Blizzard's panel manager, and closes it again; the popup closes either way.
+W.Click(micro)
+W.Click(popup.rows[#expected])
+local opened = W.panelCalls[#W.panelCalls]
+assert(G.GameMenuFrame.shown and opened and opened.frame == G.GameMenuFrame and opened.shown
+    and W.lastSound == G.SOUNDKIT.IG_MAINMENU_OPEN and not popup.shown,
+    "the game menu row did not open the game menu (S3.2)")
+W.Click(micro)
+W.Click(popup.rows[#expected])
+assert(not G.GameMenuFrame.shown and W.panelCalls[#W.panelCalls].shown == false
+    and W.lastSound == G.SOUNDKIT.IG_MAINMENU_QUIT and not popup.shown,
+    "the game menu row did not close the open game menu")
 
 -- P2-1: the portal popup stays open while the pointer moves onto and between
 -- its rows, and closes once the pointer rests outside.
