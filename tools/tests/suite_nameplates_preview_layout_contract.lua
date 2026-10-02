@@ -65,6 +65,18 @@ Frame = function(parent)
         if changed and self.scripts.OnHide then self.scripts.OnHide(self) end
     end
     function f:IsShown() return self.shown end
+    function f:IsVisible()
+        local frame = self
+        while frame do
+            if not frame.shown then return false end
+            frame = frame.parent
+        end
+        return true
+    end
+    -- Event registration, as the client keeps it per frame.
+    f.events = {}
+    function f:RegisterEvent(event) self.events[event] = true end
+    function f:UnregisterEvent(event) self.events[event] = nil end
     function f:GetEffectiveScale() return 1 end
     function f:GetFrameLevel() return 1 end
     function f:CreateTexture() return Frame(self) end
@@ -165,6 +177,14 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         local ui = P.NameplatesEditor.Create(ctx, builder, {})
         local body, section = ui.body, ui.body.parent
+        -- Combat start drops the selection only while the preview shows: with
+        -- the menu closed the event stays unregistered, and no pull repaints.
+        assert(not body.events.PLAYER_REGEN_DISABLED == not body:IsVisible(),
+            "combat start registration does not follow the preview's visibility")
+        body:Hide()
+        assert(not body.events.PLAYER_REGEN_DISABLED, "a hidden preview still repaints on every combat start")
+        body:Show()
+        assert(body.events.PLAYER_REGEN_DISABLED, "a preview shown again does not end its drag on combat start")
         local fixed = assert(ctx.entry.pageHeaders[1], "preview was not registered in the fixed header")
         local expander = assert(fixed.previewExpander)
         assert(builder.y == 0, "fixed preview still consumes scrolling content height")

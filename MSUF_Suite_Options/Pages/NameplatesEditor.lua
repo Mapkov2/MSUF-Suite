@@ -494,9 +494,20 @@ local function BuildInput(ui)
         ui:CancelDrag()
         ui:Select(nil)
     end
-    body:SetScript("OnHide", Release)
-    body:RegisterEvent("PLAYER_REGEN_DISABLED")
+    -- Combat start ends a drag and drops the selection. Only a shown preview
+    -- holds either, so the event is registered while it shows (TrackCombat).
+    body:SetScript("OnHide", function(self)
+        self:UnregisterEvent("PLAYER_REGEN_DISABLED")
+        Release()
+    end)
     body:SetScript("OnEvent", Release)
+end
+
+-- After P.NameplatesPreviewLayout.Attach, which owns the body's OnShow script.
+local function TrackCombat(ui)
+    local body = ui.body
+    body:HookScript("OnShow", function(self) self:RegisterEvent("PLAYER_REGEN_DISABLED") end)
+    if body:IsVisible() then body:RegisterEvent("PLAYER_REGEN_DISABLED") end
 end
 
 function Editor.Create(ctx, builder, sections)
@@ -549,6 +560,7 @@ function Editor.Create(ctx, builder, sections)
     Layers.Build(ui)
     BuildInput(ui)
     P.NameplatesPreviewLayout.Attach(ui, section, toolbar, record)
+    TrackCombat(ui)
     ui:Layout()
     M.TrackRefresh(ctx, function() ui:Paint() end)
     return ui
