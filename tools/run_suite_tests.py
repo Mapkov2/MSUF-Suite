@@ -65,6 +65,7 @@ def main():
                    if p.suffix in (".lua", ".py") and p.name not in HELPERS and wanted in p.name)
     ratchet = RATCHET.is_file() and wanted in "quality_ratchet"
     failed = []
+    total = sum(len(commands(test)) for test in tests)
     for test in tests:
         for command in commands(test):
             run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, errors="replace")
@@ -76,8 +77,18 @@ def main():
                 print("FAIL " + label)
                 print("\n".join((run.stdout + run.stderr).strip().splitlines()[-6:]))
     if ratchet:
+        total += 1
         run_ratchet(failed)
-    total = sum(len(commands(t)) for t in tests) + (1 if ratchet else 0)
+    if wanted in "suite_inventory_diff.py":
+        total += 1
+        label = "suite_inventory_diff.py"
+        run = subprocess.run([sys.executable, str(ROOT / "tools" / label)], cwd=ROOT,
+                             capture_output=True, text=True, errors="replace")
+        if run.returncode:
+            failed.append(label)
+            print("FAIL " + label)
+        # The inventory owns its single summary line and names every open loss.
+        print((run.stdout + run.stderr).strip())
     print("\n%d passed, %d failed" % (total - len(failed), len(failed)))
     return 1 if failed else 0
 
