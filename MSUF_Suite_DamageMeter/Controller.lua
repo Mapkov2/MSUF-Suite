@@ -22,7 +22,7 @@ local OUTLINED = { [TEXT_STYLE.OUTLINE] = "OUTLINE", [TEXT_STYLE.OUTLINE_SHADOW]
     [TEXT_STYLE.THICK] = "THICKOUTLINE", [TEXT_STYLE.THICK_SHADOW] = "THICKOUTLINE" }
 local SHADOWED = { [TEXT_STYLE.SHADOW] = true, [TEXT_STYLE.OUTLINE_SHADOW] = true, [TEXT_STYLE.THICK_SHADOW] = true }
 -- The fontRendering choice "Slug" draws no shadow (S.SetStyledFont).
-local SLUG = 3
+local SLUG = NS.FontRendering.SLUG
 
 function D.BuildStyle()
     D.ConfigureAbbreviation()

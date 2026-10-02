@@ -14,6 +14,7 @@ C.Keybinds = Keybinds
 local Public = S.Public
 local type, pairs = type, pairs
 local wipe = C.wipe
+local KIND = C.Const.KIND
 local DELAY = 0.2
 
 -- Action slots and the binding command that presses each, in the order a
@@ -120,7 +121,7 @@ end
 function Keybinds.Refresh()
     for slot, plan in pairs(C.plans) do
         local view = C.views[slot]
-        if plan.kind == 1 and view and view.keybind then
+        if plan.kind == KIND.COOLDOWN and view and view.keybind then
             local entries = plan.entries
             for i = 1, #entries do
                 local entry = entries[i]

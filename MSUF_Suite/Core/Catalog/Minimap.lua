@@ -267,7 +267,7 @@ for _, field in ipairs(infoFields) do
     Info(Font(prefix .. "Font", "Text font"))
     Info(Number(prefix .. "Size", "Text size", 12, 8, 32))
     Info(Choice(prefix .. "Outline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }))
-    Info(Choice(prefix .. "Rendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }))
+    Info(Choice(prefix .. "Rendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }))
     Info(Bool(prefix .. "Shadow", "Text shadow"))
     Info(Number(prefix .. "ShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5))
     Info(Choice(prefix .. "ShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }))
@@ -340,7 +340,7 @@ for _, rule in ipairs({
     Font("infoDifficultyFont", "Text font"),
     Number("infoDifficultySize", "Text size", 12, 8, 24),
     Choice("infoDifficultyOutline", "Text outline", 2, { "None", "Outline", "Thick outline", "Monochrome outline" }),
-    Choice("infoDifficultyRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Choice("infoDifficultyRendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
     Bool("infoDifficultyShadow", "Text shadow"),
     Number("infoDifficultyShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("infoDifficultyShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),

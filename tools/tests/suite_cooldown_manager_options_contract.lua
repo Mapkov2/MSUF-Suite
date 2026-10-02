@@ -2357,7 +2357,7 @@ assert(runtime.previewOn == false and runtime.simulate == false and runtime.rele
 -- sample), for icons and buff bar rows alike.
 do
     local C = { EMPTY = {}, plans = {}, state = {}, entries = {}, spells = { e = {} }, views = {},
-        Const = { QUESTION_ICON = 134400 } }
+        Const = { QUESTION_ICON = 134400, KIND = CDM.KIND } }
     -- The runtime's one choice accessor (Resolve.lua): shared choices with
     -- the current specialization's on top.
     C.Choices = function() return CDM.EffectiveSpells(C.spells, C.state.specID) end

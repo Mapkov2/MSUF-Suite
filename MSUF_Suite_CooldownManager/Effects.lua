@@ -8,6 +8,7 @@ local C = P.CDM
 -- checks are reference counted per spell so shared spells stay enabled
 -- until their last icon lets go.
 local K = C.Const
+local KIND = K.KIND
 local Effects = {}
 C.Effects = Effects
 local Public = S.Public
@@ -537,7 +538,7 @@ local function Walk(list, fn, arg)
         return
     end
     for _, plan in pairs(C.plans) do
-        if plan.kind == 1 then
+        if plan.kind == KIND.COOLDOWN then
             local entries = plan.entries
             for i = 1, #entries do fn(entries[i], arg) end
         end

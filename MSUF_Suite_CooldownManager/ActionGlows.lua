@@ -22,6 +22,7 @@ local C = P.CDM
 local ActionGlows = { wanted = false, pending = false }
 C.ActionGlows = ActionGlows
 local AuraButtons, K = C.AuraButtons, C.Const
+local ACTION_GLOW = K.ACTION_GLOW
 local Public = S.Public
 local pairs, next, type = pairs, next, type
 local DELAY = 0.2
@@ -72,7 +73,7 @@ local function InitBridge(rec, button)
     local level = button:GetFrameLevel() + 1
     local part = { button = button, pos = 1, rec = rec }
     rec.parts[1] = part
-    if rec.mode == 2 then
+    if rec.mode == ACTION_GLOW.STACKS then
         BridgeStack(rec, part, rec.ov, level)
     else
         part.glow = NewGlow(button, button, level)
@@ -119,7 +120,7 @@ end
 local function Visit(button)
     local entry, view = currentEntry, currentView
     local ov = entry.ov
-    local mode = ov.actionGlowMode or 1
+    local mode = ov.actionGlowMode or ACTION_GLOW.PRESENT
     local width, height = button:GetSize()
     if not Public(width) or not Public(height) or width <= 0 or height <= 0 then return end
     local list = records[button]
@@ -170,7 +171,9 @@ local function Unwanted()
             local rec = list[i]
             if not rec.free then
                 local entry = C.entries[rec.key]
-                if not (entry and Wants(entry) and (entry.ov.actionGlowMode or 1) == rec.mode) then Free(rec) end
+                if not (entry and Wants(entry) and (entry.ov.actionGlowMode or ACTION_GLOW.PRESENT) == rec.mode) then
+                    Free(rec)
+                end
             end
         end
     end

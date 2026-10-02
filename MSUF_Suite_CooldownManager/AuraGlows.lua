@@ -9,6 +9,7 @@ local C = P.CDM
 -- style them through this file; the loops run in C and are styled by
 -- widget writes only.
 local K = C.Const
+local STACK_OP = K.STACK_OP
 local AuraGlows = {}
 C.AuraGlows = AuraGlows
 
@@ -278,9 +279,9 @@ local function ApplyStack(rec, part, ov, dry)
     local lk = rec.lk
     -- Equal uses one extra native range step: counts above N move the
     -- glow beyond the right clip edge instead of clamping at the center.
-    local op = ov.stackGlowOp or 1
-    if op == 3 then n = n + 1 end
-    local cap = op == 2 and n + 1 or n
+    local op = ov.stackGlowOp
+    if op == STACK_OP.MORE_THAN then n = n + 1 end
+    local cap = op == STACK_OP.EXACTLY and n + 1 or n
     local style, r, gg, b = GlowSpec(rec, ov)
     if s.on and Placed(s, n, lk, cap) and Painted(s.glow, style, r, gg, b, lk) and (s.bound == cap or not part.bound) then return false end
     if dry then return true end

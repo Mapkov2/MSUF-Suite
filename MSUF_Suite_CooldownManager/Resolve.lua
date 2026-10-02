@@ -49,7 +49,8 @@ for i = 1, #CONSUMABLES do
     consumable[key] = true
 end
 
-local KIND_FAMILY = { 1, 2, 2 }
+local KIND = CDM.KIND
+local KIND_FAMILY = { [KIND.COOLDOWN] = 1, [KIND.AURA_ICON] = 2, [KIND.AURA_BAR] = 2 }
 local PLACEHOLDER_TEXTURE, PLACEHOLDER_COUNT = C.Const.QUESTION_ICON, 3
 local placeholderKeys = {}
 for i = 1, #SLOTS do
@@ -255,7 +256,7 @@ end
 local function KindOf(i)
     local def = SLOTS[i]
     local view = C.views[def.key]
-    return view and view.kind or def.kind or 1
+    return view and view.kind or def.kind or KIND.COOLDOWN
 end
 -- The list a bar holds first: the user's list for this spec, then Suite
 -- defaults for Essential, Utility, Defensives and both buff rows.
@@ -563,11 +564,13 @@ function Resolve.OverflowTarget(slot)
     local i = CDM.SLOT_INDEX[slot]
     local view = i and C.views[slot]
     local cap = view and view.maxIcons
-    if not (view and view.on and KindOf(i) == 1 and type(cap) == "number" and cap > 0) then return nil end
+    if not (view and view.on and KindOf(i) == KIND.COOLDOWN and type(cap) == "number" and cap > 0) then return nil end
     local target = SLOTS[(view.overflow or 1) - 1]
     local key = target and target.key
     local targetView = key and key ~= slot and C.views[key]
-    if targetView and targetView.on and KindOf(CDM.SLOT_INDEX[key]) == 1 and (targetView.overflow or 1) == 1 then return key end
+    if targetView and targetView.on and KindOf(CDM.SLOT_INDEX[key]) == KIND.COOLDOWN and (targetView.overflow or 1) == 1 then
+        return key
+    end
 end
 local function RouteOverflow(plans)
     for i = 1, #SLOTS do

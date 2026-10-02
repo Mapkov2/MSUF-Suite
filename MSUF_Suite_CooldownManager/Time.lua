@@ -10,6 +10,7 @@ local C = P.CDM
 -- C API returns: the cooldown and charge info tables (GetSpellCooldown,
 -- GetSpellCharges) and the duration objects.
 local K = C.Const
+local DESAT = K.DESAT
 local Time = {}
 C.Time = Time
 local Public = S.Public
@@ -89,11 +90,11 @@ local READY_MIN, GCD_MAX = 2, 1.5
 local function Curves(icon, entry, view)
     local ov = entry.ov or EMPTY
     icon.curveEntry, icon.curveOv, icon.curveGen = entry, ov, view.behaviorGen
-    local desat = ov.desat or 1
+    local desat = ov.desat
     local on
-    if desat == 2 then
+    if desat == DESAT.NEVER then
         on = false
-    elseif desat == 3 then
+    elseif desat == DESAT.ALWAYS then
         on = true
     else
         on = view.desat == true

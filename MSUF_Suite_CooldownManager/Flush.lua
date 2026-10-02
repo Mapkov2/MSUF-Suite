@@ -13,6 +13,7 @@ local C = P.CDM
 -- here once at its load (Flush.BindDataUnits), so every call stays an upvalue.
 local M = C.M
 local SLOTS = NS.CDM.SLOTS
+local COOLDOWN = C.Const.KIND.COOLDOWN
 local pairs, next = pairs, next
 local wipe = C.wipe
 local Flush = {}
@@ -125,7 +126,7 @@ end
 
 local function MarkPlans(only)
     for slot, plan in pairs(C.plans) do
-        if plan.kind == 1 and (not only or only[slot]) then
+        if plan.kind == COOLDOWN and (not only or only[slot]) then
             local list = plan.entries
             for i = 1, #list do marked[list[i]] = "full" end
         end

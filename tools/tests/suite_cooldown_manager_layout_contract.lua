@@ -509,7 +509,7 @@ do
     local extent=assert(exports:match("\n(local function Extent%(view, plan%)\n.-\nend)\n"),"Exports.lua Extent source")
     assert(extent:find("\n    local _, ordered, split = C.Layout.FixedAuras(view, list)\n    if ordered or split then n1, n2 = n1 + n2, 0 end\n",1,true),
         "Extent takes the one rule: one line when ordered or split")
-    AuraRule.Extent=assert(loadstring("local C,probe,ceil=...\n"..extent.."\nreturn Extent"))(C,{},math.ceil)
+    AuraRule.Extent=assert(loadstring("local C,probe,ceil,KIND=...\n"..extent.."\nreturn Extent"))(C,{},math.ceil,C.Const.KIND)
 end
 -- Resolve gives every entry one unit; only "target" takes the target part,
 -- a per-spell "both" counts in the player part.

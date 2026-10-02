@@ -12,7 +12,7 @@ local emptyDuration
 -- Presentation of the existing cooldown entry; the native duration, event
 -- routing, ownership, binding and tooltip stay with the icon owner.
 function TrackingBars.Style(icon, view)
-    local wanted = view.kind == 1 and view.cooldownDuration == true
+    local wanted = view.kind == K.KIND.COOLDOWN and view.cooldownDuration == true
     local bar = icon.timerBar
     if not bar and wanted then
         bar = S.CreateFrame("StatusBar", nil, icon)

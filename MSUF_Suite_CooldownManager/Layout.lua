@@ -15,6 +15,7 @@ local SLOTS = NS.CDM.SLOTS
 local Public = S.Public
 local floor, ceil = math.floor, math.ceil
 local STRATA = C.Const.STRATA
+local AURA_KINDS = C.Const.AURA_KINDS
 -- Attach sides (Below, Above, Left, Right) x alignment along that edge
 -- (Center, Start, End): own point, target point; gap sign per side.
 local ATTACH = {
@@ -99,7 +100,7 @@ function Layout.EnsureBar(slot)
     end
     C.bars[slot] = bar
     local view = C.views[slot]
-    if view and (view.kind == 2 or view.kind == 3) then Host(bar) end
+    if view and AURA_KINDS[view.kind] then Host(bar) end
     -- A driver may have reported before the bar existed.
     C.Visibility.Paint(slot)
     return bar
@@ -638,7 +639,7 @@ function Layout.Cell(slot, i)
         cell.layShown = false
         cells[index] = cell
     end
-    if view and plan and (view.kind == 2 or view.kind == 3) then PlaceAuras(bar, view, plan) end
+    if view and plan and AURA_KINDS[view.kind] then PlaceAuras(bar, view, plan) end
     return cells[i]
 end
 
@@ -670,7 +671,7 @@ function Layout.Apply(slot)
         local restored = S.ApplyOwnedLayer(bar.frame, view.layer)
         if bar.auraHost then S.ApplyOwnedChildLayer(bar.auraHost, bar.frame, view.layer, 1, restored) end
         local width, height
-        if view.kind == 2 or view.kind == 3 then
+        if AURA_KINDS[view.kind] then
             Host(bar)
             width, height = PlaceAuras(bar, view, plan)
         else

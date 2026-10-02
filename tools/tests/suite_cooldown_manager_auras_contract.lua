@@ -1408,7 +1408,8 @@ do
     handle:close()
     local body=text:match("\n(local function Extent%(view, plan%)\n.-\nend)\n")
     assert(body and body:find("FixedAuras(",1,true),"Exports.lua: Extent sizes aura bars by Layout.FixedAuras")
-    local Extent=assert(loadstring("local C,probe,ceil=...\n"..body.."\nreturn Extent","=Exports.Extent"))(Cx,{},math.ceil)
+    local Extent=assert(loadstring("local C,probe,ceil,KIND=...\n"..body.."\nreturn Extent","=Exports.Extent"))(Cx,{},math.ceil,
+        C.Const.KIND)
     local UNIT={p="player",t="target",b="both",m="player"}
     -- p player, t target, b both (player part), m player with a per-spell showMissing
     local function Entries(units)

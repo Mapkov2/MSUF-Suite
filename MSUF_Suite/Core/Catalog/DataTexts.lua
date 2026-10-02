@@ -117,7 +117,7 @@ local textStyle = {
     Font("font", "Font"),
     Number("fontSize", "Text size", NS.Client.isForever and 11 or 12, 9, 22),
     Choice("textOutline", "Text outline", 1, { "Outline", "Thick outline", "None", "Monochrome outline" }),
-    Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Choice("fontRendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
     Bool("fontShadow", "Text shadow"),
     Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),

@@ -19,6 +19,9 @@ local C = P.CDM
 --  * placeholders: a dimmed icon for missing buffs (showMissing) and the
 --    sample icon in the preview, on the cell under the slot button.
 local K = C.Const
+local SWIPE = K.SWIPE
+local NORMAL_SWIPE, REVERSED_SWIPE, HIDDEN_SWIPE = SWIPE.NORMAL, SWIPE.REVERSED, SWIPE.HIDDEN
+local Choice = K.Choice
 local AuraButtons = {}
 C.AuraButtons = AuraButtons
 
@@ -389,13 +392,13 @@ local function ApplyEntry(rec, part, entry, dry)
     local ov = entry.ov or EMPTY
     local cd = part.cd
     if cd and rec.role == "icon" then
-        local mode = ov.swipe or 1
+        local mode = ov.swipe or NORMAL_SWIPE
         if part.swipe ~= mode then
             if dry then return true end
             part.swipe = mode
-            -- 1 normal (aura swipes run reversed), 2 flipped, 3 hidden.
-            cd:SetReverse(mode ~= 2)
-            cd:SetDrawSwipe(mode ~= 3)
+            -- Normal aura swipes run reversed; REVERSED flips them.
+            cd:SetReverse(mode ~= REVERSED_SWIPE)
+            cd:SetDrawSwipe(mode ~= HIDDEN_SWIPE)
         end
     end
     if part.glow and ApplyGlow(rec, part, ov, dry) then return true end
@@ -403,7 +406,7 @@ local function ApplyEntry(rec, part, entry, dry)
     if part.stack and ApplyStack(rec, part, ov, dry) then return true end
     if part.stack and ApplyCombatGate(part.stack.glow, part.stack.on, dry) then return true end
     local b = part.button
-    local stacks = K.Choice(ov.stackText, rec.stackBar)
+    local stacks = Choice(ov.stackText, rec.stackBar)
     local count = stacks and CountOpts(ov) or nil
     if part.countOn ~= stacks or part.countOpts ~= count then
         if dry then return true end
@@ -419,7 +422,7 @@ local function ApplyEntry(rec, part, entry, dry)
     end
     local dur = part.dur
     if dur then
-        local shown = K.Choice(ov.timeText, rec.timeBar)
+        local shown = Choice(ov.timeText, rec.timeBar)
         if part.durOn ~= shown then
             if dry then return true end
             local was = part.durOn
@@ -441,7 +444,7 @@ local function ApplyEntry(rec, part, entry, dry)
             end
         end
     end
-    local top = K.Choice(ov.textTop, rec.topBar)
+    local top = Choice(ov.textTop, rec.topBar)
     if part.top ~= top then
         if dry then return true end
         part.top = top

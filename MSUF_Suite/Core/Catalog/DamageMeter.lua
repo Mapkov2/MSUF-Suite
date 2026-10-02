@@ -110,7 +110,7 @@ B.Section(id, "text", "Text and numbers", {
     Font("font", "Font"),
     Bool("englishNumbers", "Use English K/M/B abbreviations", false),
     Choice("outline", "Text style", 2, { "Shadow", "Outline", "Thick outline", "None", "Outline + shadow", "Thick outline + shadow" }),
-    Choice("rendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
+    Choice("rendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
     Number("shadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("shadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Number("textOpacity", "Text opacity (percent)", 100, 50, 100, 5),

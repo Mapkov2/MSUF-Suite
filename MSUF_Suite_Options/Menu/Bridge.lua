@@ -18,14 +18,16 @@ end
 local Tr = P.Tr
 
 -- Previews must work before the optional runtime addon loads Surfaces.lua.
+-- rendering is a "Font rendering" choice (MSUFSuite.FontRendering).
+local RENDERING = Suite.FontRendering
 function P.StylePreviewFont(label, path, size, outline, rendering, shadow, opacity, distance)
     if S.SetStyledFont then
         return S.SetStyledFont(label, path, size, outline, rendering, shadow, opacity, distance)
     end
     local flags = outline or ""
-    if rendering == 3 then
+    if rendering == RENDERING.SLUG then
         flags = flags == "" and "SLUG" or "OUTLINE,SLUG"
-    elseif rendering == 2 and not flags:find("MONOCHROME", 1, true) then
+    elseif rendering == RENDERING.SHARP and not flags:find("MONOCHROME", 1, true) then
         flags = flags == "" and "MONOCHROME" or flags .. ",MONOCHROME"
     end
     local fallback = _G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
@@ -35,7 +37,7 @@ function P.StylePreviewFont(label, path, size, outline, rendering, shadow, opaci
     elseif label:SetFont(path or fallback, size, flags) == false then
         label:SetFont(fallback, size, "")
     end
-    local shown = shadow == true and rendering ~= 3
+    local shown = shadow == true and rendering ~= RENDERING.SLUG
     label:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
     local offset = shown and (distance or 1) or 0
     label:SetShadowOffset(offset, -offset)

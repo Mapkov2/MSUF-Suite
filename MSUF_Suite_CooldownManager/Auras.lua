@@ -26,6 +26,8 @@ local C = P.CDM
 -- Everything inside a button (look, glows, text bindings, sensors) and the
 -- placeholders on cells are in AuraButtons.lua.
 local K = C.Const
+local KIND = K.KIND
+local YES = K.CHOICE.YES
 local Auras = { pending = {} }
 C.Auras = Auras
 local AuraButtons = C.AuraButtons
@@ -147,7 +149,7 @@ local function Needs(entries, aura, view)
         local entry = entries[i]
         local ov = entry.ov
         if ov and ov ~= EMPTY and entry.src ~= "p" then
-            if ov.timeText == 2 then need.text = true end
+            if ov.timeText == YES then need.text = true end
             local n = ov.stackGlow
             if type(n) == "number" and n >= 1 then need.stack = true end
             if aura then
@@ -183,7 +185,7 @@ local function Run(slot, fam, unit, role, fixed, view, n, force, offset, split)
 end
 
 local function SyncAura(slot, view, plan, force)
-    local role = plan.kind == 3 and "bar" or "icon"
+    local role = plan.kind == KIND.AURA_BAR and "bar" or "icon"
     local barMeta = meta[slot]
     if not barMeta then
         barMeta = { lk = {} }
@@ -261,7 +263,7 @@ function Auras.Sync(slot, force)
         Auras.Release(slot)
         return
     end
-    if plan.kind == 1 then
+    if plan.kind == KIND.COOLDOWN then
         if live[slot] then ReleaseFam(slot, "aura") end
         Unholds(slot)
         return Auras.SyncOverlays(slot, force)
@@ -276,7 +278,7 @@ end
 -- aura, anchored to that icon. Needs the bar's icons (C.Icons.Sync) first.
 function Auras.SyncOverlays(slot, force)
     local view, plan = C.views[slot], C.plans[slot]
-    if not (view and plan and view.on and plan.kind == 1 and not view.cooldownDuration) then
+    if not (view and plan and view.on and plan.kind == KIND.COOLDOWN and not view.cooldownDuration) then
         if live[slot] then
             ReleaseFam(slot, "over")
             RefreshTargets()
@@ -437,7 +439,7 @@ function Auras.SetPreview(on)
     end
     for slot, barMeta in pairs(meta) do
         local view, plan = C.views[slot], C.plans[slot]
-        if view and plan and view.on and plan.kind ~= 1 then
+        if view and plan and view.on and plan.kind ~= KIND.COOLDOWN then
             Placeholders(slot, view, plan, barMeta, on)
         else
             Unholds(slot)
