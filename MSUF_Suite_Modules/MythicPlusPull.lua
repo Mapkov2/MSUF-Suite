@@ -10,7 +10,7 @@ if NS.Client.isForever then return end
 -- A unit without criteria progress (a boss, an add that does not count)
 -- adds nothing; a secret value hides the sum, as identities may be secret
 -- when the client restricts them. Unit events coalesce into one paint per
--- PAINT_DELAY seconds.
+-- PAINT_DELAY seconds (a job of the owner's context).
 local H = {}
 local Public, Finite, Text = S.Public, S.Finite, S.PublicText
 local PAINT_DELAY = .25
@@ -81,14 +81,6 @@ local function Paint(owner)
     end
 end
 
--- One timer per PAINT_DELAY, whatever the number of unit events. A timer
--- from before Stop belongs to an older generation and paints nothing.
-local function Queue(state)
-    if state.queued then return end
-    state.queued, state.queuedGeneration = true, state.generation
-    C_Timer.After(PAINT_DELAY, state.flush)
-end
-
 local function Snapshot(state)
     local units = state.units
     for unit in pairs(units) do units[unit] = nil end
@@ -115,22 +107,25 @@ local function Event(owner, event, unit)
     elseif event == "NAME_PLATE_UNIT_ADDED" then
         state.units[unit] = true
     end
-    Queue(state)
+    -- One paint per PAINT_DELAY, whatever the number of unit events.
+    local job = state.job
+    if job.pending then return end
+    job:Request()
 end
 
 local function OnEvent(frame, event, unit)
     Event(frame.owner, event, unit)
 end
 
+local function PaintPull(owner)
+    if owner.observedPull.active then Paint(owner) end
+end
+
 local function NewState(owner)
-    local state = { frame = S.CreateFrame("Frame"), units = {}, seen = {}, percent = {}, generation = 0 }
+    local state = { frame = S.CreateFrame("Frame"), units = {}, seen = {}, percent = {} }
     state.frame.owner = owner
     state.frame:SetScript("OnEvent", OnEvent)
-    state.flush = function()
-        if state.queuedGeneration ~= state.generation then return end
-        state.queued = false
-        if state.active then Paint(owner) end
-    end
+    state.job = owner.context:Coalesce(PAINT_DELAY, PaintPull)
     return state
 end
 
@@ -157,13 +152,14 @@ function H.Update(owner)
     if state and state.active then Paint(owner) end
 end
 
--- A new run starts with an empty value cache.
+-- A new run starts with an empty value cache. A paint still in flight is
+-- dropped: the next run's first request waits its own full delay.
 function H.Stop(owner)
     local state = owner.observedPull
     if not state then return end
     state.frame:UnregisterAllEvents()
-    state.active, state.queued, state.sum = nil, false, nil
-    state.generation = state.generation + 1
+    state.active, state.sum = nil, nil
+    state.job:Cancel()
     for unit in pairs(state.units) do state.units[unit] = nil end
     for guid in pairs(state.percent) do state.percent[guid] = nil end
 end
