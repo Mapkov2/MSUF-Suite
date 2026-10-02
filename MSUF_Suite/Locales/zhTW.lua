@@ -2443,7 +2443,6 @@ T("Reset Micro Bar to client default", "將微型選單列重置為用戶端預�
 T("Reset Suite skin colors", "重置Suite美化顏色")
 T("Reset all sessions", "重置所有紀錄")
 T("Reset combat data", "重置戰鬥資料")
-T("Reset cooldown manager", "重置冷卻管理員")
 T("Reset damage meter", "重設傷害統計")
 T("Reset data when a Mythic+ keystone starts", "傳奇+鑰石開始時重置資料")
 T("Reset session", "重置本次統計")

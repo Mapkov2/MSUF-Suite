@@ -3452,6 +3452,38 @@ do
     assert(next(_G.StaticPopupDialogs) == nil, "Reset page wrote into Blizzard's StaticPopupDialogs")
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
 end
+-- The cooldown manager page resets like every Suite page: the standard
+-- confirmation, then every cooldown manager setting back to its catalog
+-- default; other modules keep theirs.
+do
+    local previousGeneric = _G.StaticPopup_ShowCustomGenericConfirmation
+    local asked
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
+    assert(M.PageHasReset("suite_cooldownManager"), "the cooldown manager page offers no Reset page")
+    assert(S.SetMany("cooldownManager", { ess_size = 50 }) and S.SetMany("dataTexts", { bar2X = 58 }))
+    -- Another profile keeps its own cooldown manager settings.
+    assert(Suite.Database.Create("CDM reset witness", false))
+    local witness = Suite.Database.GetProfile("CDM reset witness")
+    witness.suite.modules.cooldownManager = witness.suite.modules.cooldownManager or {}
+    witness.suite.modules.cooldownManager.ess_size = 51
+    assert(M.ShowPageResetConfirm("suite_cooldownManager") and asked
+        and asked.text_arg1 == M.BuildPageResetWarning("suite_cooldownManager")
+        and S.Config("cooldownManager").ess_size == 50, "the cooldown manager Reset page did not ask first")
+    asked.callback()
+    -- Catalog defaults, with the shared look on top as on every page Reset.
+    local expected = {}
+    for key, rule in pairs(S.catalog.cooldownManager.rules) do expected[key] = rule.default end
+    if expected.enabled then Suite.SuiteLooks.ApplyToConfig("cooldownManager", expected, Suite.DB.suite.globalLook) end
+    for key in pairs(S.catalog.cooldownManager.rules) do
+        assert(S.Config("cooldownManager")[key] == expected[key], "the cooldown manager Reset page left " .. key)
+    end
+    assert(S.Config("dataTexts").bar2X == 58, "the cooldown manager Reset page changed another module")
+    assert(Suite.Database.GetProfile("CDM reset witness").suite.modules.cooldownManager.ess_size == 51,
+        "the cooldown manager Reset page changed another profile")
+    Suite.Database.Delete("CDM reset witness")
+    assert(S.SetMany("dataTexts", { bar2X = S.catalog.dataTexts.rules.bar2X.default }))
+    _G.StaticPopup_ShowCustomGenericConfirmation = previousGeneric
+end
 assert(S.Config("actionbars").look == 1,
     "Suite page reset changed another page")
 ;(function()

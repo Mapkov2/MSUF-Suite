@@ -200,6 +200,12 @@ local function InstallPageResets()
         for _, page in ipairs(P.pages) do if page.key == key then return true, page.reset ~= false and PageAddOnEnabled(key) end end
         return false
     end
+    -- A page's own reset body (spec.resetPage), else nil.
+    local function ResetBody(key)
+        for _, page in ipairs(P.pages) do
+            if page.key == key then return page.resetPage end
+        end
+    end
     function M.PageHasReset(key)
         local suite, resettable = IsSuitePage(key)
         if suite then return resettable end
@@ -224,6 +230,10 @@ local function InstallPageResets()
         if key == "suite_skin" and not Suite.Skin.EnsureEngine() then return false end
         local ok = P.WithHistory(string.format(P.Tr("Reset %s"), PageTitle(key)), "page:reset:" .. tostring(key), function()
             if key == "suite_skin" then return P.ResetSkinPage() or false end
+            -- The cooldown manager resets its settings, spell lists and spell
+            -- options through its page, which offers an Undo line.
+            local body = ResetBody(key)
+            if body then return body() == true end
             local modules = PAGE_MODULES[key]
             if not modules then return false end
             for _, id in ipairs(modules) do if not S.Reset(id) then return false end end

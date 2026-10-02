@@ -2442,7 +2442,6 @@ T("Reset Micro Bar to client default", "Вернуть микроменю к с�
 T("Reset Suite skin colors", "Сбросить цвета скина Suite")
 T("Reset all sessions", "Сбросить все сессии")
 T("Reset combat data", "Сбросить боевые данные")
-T("Reset cooldown manager", "Сбросить менеджер восстановления")
 T("Reset damage meter", "Сбросить измеритель урона")
 T("Reset data when a Mythic+ keystone starts", "Сбрасывать данные при запуске эпохального ключа")
 T("Reset session", "Сбросить сессию")

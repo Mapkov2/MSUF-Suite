@@ -2443,7 +2443,6 @@ T("Reset Micro Bar to client default", "Restablecer micromenú al predeterminado
 T("Reset Suite skin colors", "Restablecer colores del skin de la Suite")
 T("Reset all sessions", "Restablecer todas las sesiones")
 T("Reset combat data", "Restablecer datos de combate")
-T("Reset cooldown manager", "Restablecer gestor de reutilización")
 T("Reset damage meter", "Restablecer medidor de daño")
 T("Reset data when a Mythic+ keystone starts", "Restablecer datos al iniciar una piedra angular de Mítica+")
 T("Reset session", "Restablecer sesión")

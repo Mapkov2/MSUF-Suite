@@ -2444,7 +2444,6 @@ T("Reset Micro Bar to client default", "将微型菜单重置为客户端默认"
 T("Reset Suite skin colors", "重置 Suite 皮肤颜色")
 T("Reset all sessions", "重置所有记录")
 T("Reset combat data", "重置战斗数据")
-T("Reset cooldown manager", "重置冷却管理器")
 T("Reset damage meter", "重置伤害统计")
 T("Reset data when a Mythic+ keystone starts", "史诗钥石开始时重置数据")
 T("Reset session", "重置本次统计")

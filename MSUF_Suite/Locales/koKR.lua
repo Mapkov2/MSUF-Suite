@@ -2440,7 +2440,6 @@ T("Reset Micro Bar to client default", "마이크로 메뉴를 클라이언트 �
 T("Reset Suite skin colors", "Suite 스킨 색상 초기화")
 T("Reset all sessions", "모든 세션 초기화")
 T("Reset combat data", "전투 데이터 초기화")
-T("Reset cooldown manager", "재사용 대기시간 관리자 초기화")
 T("Reset damage meter", "피해 측정기 초기화")
 T("Reset data when a Mythic+ keystone starts", "신화+ 쐐기돌 시작 시 데이터 초기화")
 T("Reset session", "세션 초기화")

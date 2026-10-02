@@ -328,19 +328,16 @@ function Page.ResetBar(slot)
     if not ok then Page.Fail(reason) end
     return ok
 end
--- Everything of the module: settings, every specialization's spell lists
--- and every spell's options. One history entry, and an Undo line.
+-- The page's Reset (Menu2's toolbar, Menu/Register.lua, which owns the
+-- confirmation and the one history entry): everything of the module back
+-- to the catalog defaults, settings, every specialization's spell lists and
+-- every spell's options, with an Undo line on the page.
 function Page.ResetModule()
     if P.Combat() then return false end
     local keys = {}
     for key in pairs(RULES) do keys[#keys + 1] = key end
     return Page.WithUndo(Tr("The cooldown manager was reset: settings, spell lists and spell options."), keys, function()
-        local done
-        P.WithHistory("Reset cooldown manager", "suite:cooldownManager.reset", function()
-            done = S.Reset(ID)
-            return done
-        end)
-        return done == true
+        return S.Reset(ID) == true
     end)
 end
 function Page.EnableBar(slot)
