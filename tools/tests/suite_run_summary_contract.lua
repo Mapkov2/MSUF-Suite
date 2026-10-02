@@ -47,7 +47,7 @@ C_ChallengeMode = {
     GetDeathCount = function() return 2, 10 end,
 }
 local NS = { AnchorPoints = { [5] = "CENTER" }, Client = { isForever = false },
-    IsCombatLocked = function() return combat end }
+    IsCombatLocked = function() return combat end, Dispatch = function(callback, ...) return callback(...) end }
 local S = { instances = {}, editMode = false }
 NS.Suite = S
 local secret = {}
@@ -87,12 +87,19 @@ summary.config = { showMythicPlus = true, showRaid = true, showDuration = true,
     showScore = true, showRecord = true, showBest = true, showGroupSize = true,
     showKills = true, autoHide = 0, colorStyle = 1,
     backgroundOpacity = 90, width = 390, scale = 100, point = 5, x = 0, y = 80 }
-local context = { events = {} }
+local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)
+local context = TimerContext("runSummary", summary, { events = {} })
 function context:Event(event, callback) self.events[event] = callback end
 function context:RemoveEvent(event) self.events[event] = nil end
 function context:Skin() return nil end
 summary.context = context
 summary:Enable()
+-- Counts the cards shown: a refresh repaints, it does not show a second card.
+local cards, showHost = 0, summary.host.Show
+summary.host.Show = function(self, ...)
+    cards = cards + 1
+    return showHost(self, ...)
+end
 assert(movers.runSummary.element == "summary" and not summary.host:IsVisible())
 assert(movers.runSummary.spec.quickPosition and movers.runSummary.spec.getFrame() == summary.host)
 assert(movers.runSummary.spec.extraControls[1].set(420)
@@ -138,10 +145,10 @@ assert(summary.host:IsVisible() and state.lastKind == "mythic" and state.history
 assert(summary.subtitle.text == "Test Dungeon  +15" and summary.rows[1].value.text == "23:42")
 assert(summary.rows[2].value.text:find("In time", 1, true))
 assert(summary.rows[5].value.text == "+2 upgrades" and summary.rows[6].value.text == "+18")
-local serial = summary.serial
+local serial = cards
 info.newOverallDungeonScore = 1020
 Event("CHALLENGE_MODE_COMPLETED_REWARDS")
-assert(summary.serial == serial and summary.rows[6].value.text == "+20",
+assert(cards == serial and summary.rows[6].value.text == "+20",
     "reward update should refresh the same result, not open a second card")
 summary:Close()
 summary.config.showDeaths = false
@@ -185,9 +192,9 @@ summary.config.showKills = false
 summary:Refresh()
 assert(not summary.rows[4].label.shown, "raid kill count switch must remove its row")
 summary.config.showKills = true
-serial = summary.serial
+serial = cards
 Event("ENCOUNTER_END", 9001, "Test Boss", 16, 20, 1)
-assert(summary.serial == serial and state.raidRecords["9001:16"].kills == 1,
+assert(cards == serial and state.raidRecords["9001:16"].kills == 1,
     "duplicate encounter end must count once")
 summary.config.autoHide = 5
 clock = 400
@@ -195,6 +202,7 @@ Event("ENCOUNTER_START", 9001, "Test Boss", 16, 20)
 clock = 550
 Event("ENCOUNTER_END", 9001, "Test Boss", 16, 20, 1)
 assert(#timers == 1 and state.raidRecords["9001:16"].best == 120)
+clock = 555
 timers[1]()
 timers = {}
 assert(not summary.host:IsVisible(), "auto-hide must close the card")
@@ -263,9 +271,19 @@ assert(summary.current.historyID == savedID)
 -- Deleting a run takes a second click on the armed button.
 local delete = summary.historyButtons[3]
 delete.OnClick(delete)
+local firstWindow = timers[#timers]
 assert(#state.history == 2 and delete.label.text == "Click again to delete", "one click deleted a run")
 delete.OnClick(delete)
 assert(#state.history == 1 and state.history[1].historyID ~= savedID and delete.label.text == "Delete run")
+-- A new arm keeps its whole window: the end of an earlier, used one must
+-- not disarm it.
+delete.OnClick(delete)
+clock = clock + 4
+firstWindow()
+assert(#state.history == 1 and delete.label.text == "Click again to delete",
+    "the window of an earlier arm disarmed a newer one")
+timers[#timers]()
+assert(delete.label.text == "Delete run" and not delete.armed, "the delete arm did not end after its window")
 summary:Close()
 Event("CHALLENGE_MODE_START")
 Event("DAMAGE_METER_RESET")
@@ -330,7 +348,7 @@ UnitGUID = function() return nil end
 -- It has raid encounters but the Suite must never subscribe to Mythic+ there.
 NS.Client.isForever = true
 summary.config.showRaid, summary.config.showMythicPlus = true, nil
-summary.context = { events = {} }
+summary.context = TimerContext("runSummary", summary, { events = {} })
 summary.context.Event = context.Event
 summary.context.RemoveEvent = context.RemoveEvent
 summary.context.Skin = context.Skin
