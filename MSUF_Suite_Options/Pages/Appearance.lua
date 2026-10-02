@@ -71,7 +71,7 @@ local function Preview(ctx, b, skin)
         local look = skin.LookPresets[skin.DB.theme.look]
         local description = look and look.description or "Your own colors, materials and shape."
         P.SetTranslatedText(note, Tr(look and look.label or "Custom") .. "\n"
-            .. Tr((skin.L and skin.L[description]) or description))
+            .. Tr(description))
     end)
 end
 
@@ -307,7 +307,7 @@ local function BuildLook(ctx, b, skin)
     -- the same colors under Suite skin.
     local paletteRows = {}
     for _, entry in ipairs(skin.ColorOrder or {}) do
-        paletteRows[#paletteRows + 1] = SkinColorRow(skin, entry[1], (skin.L and skin.L[entry[2]]) or entry[1])
+        paletteRows[#paletteRows + 1] = SkinColorRow(skin, entry[1], skin.SourceText(entry[2]) or entry[1])
     end
     Section(ctx, b, "basic", "Choose a look",
         format(Tr("Choosing a look updates Skinning and every enabled Suite module. Modules enabled later inherit it. New skin profiles start with %s."), defaultLabel), {
@@ -543,7 +543,8 @@ local function BuildWindows(ctx, b, skin)
     for _, id in ipairs(order) do
         if id ~= "microMenu" and id ~= "damageMeter" then
             local definition = definitions[id]
-            local label = definition and definition.labelKey and skin.L[definition.labelKey] or id
+            -- English: the row and its history entry translate it.
+            local label = definition and definition.labelKey and skin.SourceText(definition.labelKey) or id
             windows[#windows + 1] = Row("toggle", label, "skins." .. id, "windows",
                 function() return skin.DB.skins[id] end,
                 function(value)

@@ -549,7 +549,7 @@ local function SkinColorRow(skin, entry)
     return {
         id = "skin." .. key,
         kind = "color",
-        label = Tr((skin.L and skin.L[entry[2]]) or key),
+        label = Tr(skin.SourceText(entry[2]) or key),
         get = function()
             local color = skin.Theme.GetColorTable(key)
             return color[1], color[2], color[3], color[4]

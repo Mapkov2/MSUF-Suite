@@ -288,7 +288,6 @@ Check(Source("MSUF_Suite_Skin_Options/Shell/WidgetsDropdown.lua"):find("CreateIn
 local DATA_FILES = {
     ["MSUF_Suite_Skin/Core/BlizzardFontCatalog.lua"] = true,
     ["MSUF_Suite_Skin/Locales/enUS.lua"] = true,
-    ["MSUF_Suite_Skin/Locales/deDE.lua"] = true,
 }
 for path, text in pairs(sources) do
     local _, lines = text:gsub("\n", "\n")

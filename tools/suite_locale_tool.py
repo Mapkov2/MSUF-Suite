@@ -62,7 +62,10 @@ CORE = "MSUF_Suite"
 # Files whose strings wait for a delta pass: they are extracted and listed by
 # `missing`, but do not count against the coverage gate yet. Remove a file
 # once its strings are translated.
-DELTA_PENDING = ()
+# The skin's English table (skin_strings): German is complete, the other
+# packs wait for their delta pass.
+SKIN_STRINGS = "MSUF_Suite_Skin/Locales/enUS.lua"
+DELTA_PENDING = (SKIN_STRINGS,)
 
 CHROME_MIN, HELP_MIN = 0.99, 0.95
 
@@ -1057,7 +1060,8 @@ class Extractor:
 
 def source_files(root):
     """Suite Lua sources that can show text through MSUF's locale table. The
-    skin keeps its own locale system; Nameplates shows no translated text."""
+    skin reads its text by key from its English table (skin_strings);
+    Nameplates shows no translated text."""
     for folder in sorted(root.glob("MSUF_Suite*")):
         if not folder.is_dir() or folder.name.startswith("MSUF_Suite_Skin") or folder.name == "MSUF_Suite_Nameplates":
             continue
@@ -1066,6 +1070,20 @@ def source_files(root):
             if "Locales" in parts or "Libs" in parts:
                 continue
             yield path
+
+
+def skin_strings(root):
+    """The skin's English text with its line: the values of its enUS table.
+    The skin reads every string by key there and shows the English text
+    through MSUF's locale table (MSUF_Suite_Skin/Locales/Localization.lua)."""
+    path = root / SKIN_STRINGS
+    if not path.is_file():
+        return []
+    tokens, out = lex(read_source(path)), []
+    for k in range(len(tokens) - 2):
+        if tokens[k].op("=") and tokens[k + 1].kind == "str" and tokens[k + 2].op(",", "}"):
+            out.append((tokens[k + 1].value, tokens[k + 1].line))
+    return out
 
 
 # ---------------------------------------------------------------- records
@@ -1101,6 +1119,11 @@ class Record:
 def extract(root=ROOT):
     """Records sorted by English text, plus the extractor for reports."""
     ex = Extractor(root).run()
+    for text, line in skin_strings(root):
+        if is_translatable(text):
+            uses = ex.found.setdefault(text, [])
+            if (SKIN_STRINGS, line, "skin") not in uses:
+                uses.append((SKIN_STRINGS, line, "skin"))
     coverage = msuf_coverage()
     records = []
     for english in sorted(ex.found):

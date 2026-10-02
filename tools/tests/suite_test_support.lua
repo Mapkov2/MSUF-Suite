@@ -358,4 +358,50 @@ function Support.CatalogDefaults(root, id, file, client)
     return config, ns
 end
 
+-- Skin names that read the same in German: the German pack keeps no entry
+-- identical to the English text (suite_locale_tool.py rejects one).
+Support.SKIN_SAME_IN_GERMAN = { ["MSUF Forever Glass"] = true, ["Ink & Sand"] = true,
+    ["(%.0f%% DR, +%.1fk)"] = true }
+
+-- The skin's English table (MSUF_Suite_Skin/Locales/enUS.lua): key -> text.
+function Support.SkinEnglish(root)
+    local captured
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/enUS.lua"))("MSUF_Suite_Skin",
+        { RegisterLocale = function(_, values) captured = values end })
+    return assert(captured, "enUS.lua did not register")
+end
+
+-- MSUF's locale table for a language as the Suite sees it: MSUF's own pack
+-- (the Classic sibling; MSUF's wording comes first), then the Suite pack
+-- (MSUF_Suite/Locales/<locale>.lua) adds the Suite's strings. English -> text.
+function Support.SuitePack(root, locale)
+    local pack = {}
+    local host = MSUF_NS
+    MSUF_NS = { LOCALE = locale, RegisterLocale = function(requested) return requested == locale and pack or {} end }
+    assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames/Locales/" .. locale .. ".lua"))(
+        "MidnightSimpleUnitFrames", {})
+    assert(loadfile(root .. "/MSUF_Suite/Locales/" .. locale .. ".lua"))("MSUF_Suite", {})
+    MSUF_NS = host
+    return pack
+end
+
+-- The skin's NS.L and NS.SourceText as a reader of `locale` sees them: the
+-- real Locales/Localization.lua over the English table, translated the way
+-- Suite.Text does through that locale's Suite pack.
+function Support.SkinLocale(root, locale)
+    local pack = locale == "enUS" and {} or Support.SuitePack(root, locale)
+    local suite = MSUFSuite
+    MSUFSuite = { Text = function(english)
+        local value = pack[english]
+        return type(value) == "string" and value ~= "" and value or english
+    end }
+    local ns = {}
+    for _, file in ipairs({ "Localization.lua", "enUS.lua" }) do
+        assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/" .. file))("MSUF_Suite_Skin", ns)
+    end
+    ns.InitializeLocalization()
+    MSUFSuite = suite
+    return ns.L, ns.SourceText, pack
+end
+
 return Support

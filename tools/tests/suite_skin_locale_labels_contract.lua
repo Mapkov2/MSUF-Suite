@@ -1,6 +1,7 @@
 -- The skin's user-facing names reach the player through its locale tables:
 -- every look and palette name and description, the font choices and the
--- Class Style label exist in English and German, the options show them
+-- Class Style label exist in the skin's English table and in the Suite's
+-- German pack (the skin translates through the Suite), the options show them
 -- localized (a German search for "Klassenstil" finds the style preset), and
 -- no setter in the skin's code shows a hard-coded English literal.
 local root = assert(arg[1], "Suite root required")
@@ -17,23 +18,11 @@ local function ReadFile(path)
     return text
 end
 
-local tables = {}
-for _, locale in ipairs({ "enUS", "deDE" }) do
-    local captured
-    assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/" .. locale .. ".lua"))("MSUF_Suite_Skin",
-        { RegisterLocale = function(_, values) captured = values end })
-    tables[locale] = assert(captured, locale .. " did not register")
-end
-local function Resolver(locale)
-    local active = tables[locale]
-    return setmetatable({}, { __index = function(_, key)
-        local value = active[key]
-        if value == nil then value = tables.enUS[key] end
-        return value == nil and key or value
-    end })
-end
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local english = Support.SkinEnglish(root)
+local German, _, germanPack = Support.SkinLocale(root, "deDE")
 local function Translated(text, what)
-    Check(tables.enUS[text] ~= nil and tables.deDE[text] ~= nil,
+    Check(english[text] ~= nil and (germanPack[text] ~= nil or Support.SKIN_SAME_IN_GERMAN[text]),
         what .. " is missing from the locale tables: " .. tostring(text))
 end
 
@@ -51,11 +40,38 @@ Check(faces ~= nil, "Typography.lua has no face label table")
 for label in faces:gmatch('=%s*"([^"]+)"') do Translated(label, "the font choice") end
 Translated("Class: %s", "the Class Style label")
 
+-- Every language reads the skin through the Suite's localization: the
+-- English text of a key (a key names it, like DOSSIER_LOADING, or is it)
+-- goes through Suite.Text, and NS.SourceText gives that English text.
+do
+    local ns, shown = {}, { ["Loading item..."] = "Chargement de l'objet...", ["Rounded"] = "Arrondi" }
+    local suite, locale = MSUFSuite, GetLocale
+    MSUFSuite = { Text = function(text) return shown[text] or text end }
+    GetLocale = function() return "frFR" end
+    for _, file in ipairs({ "Localization.lua", "enUS.lua" }) do
+        assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/" .. file))("MSUF_Suite_Skin", ns)
+    end
+    ns.InitializeLocalization()
+    MSUFSuite, GetLocale = suite, locale
+    Check(english.DOSSIER_LOADING == "Loading item..." and ns.L.DOSSIER_LOADING == shown["Loading item..."],
+        "a skin key that names its text is not translated through the Suite")
+    Check(ns.L.Rounded == "Arrondi" and ns.L["Not a skin string"] == "Not a skin string",
+        "a skin key that is its text is not translated through the Suite")
+    Check(ns.SourceText("DOSSIER_LOADING") == "Loading item..." and ns.SourceText("Rounded") == "Rounded",
+        "NS.SourceText does not give the English text of a key")
+    local French = Support.SkinLocale(root, "frFR")
+    local translated = 0
+    for key, text in pairs(english) do
+        if French[key] ~= text then translated = translated + 1 end
+    end
+    Check(translated >= 30, "the French skin shows only " .. translated .. " translated strings")
+end
+
 -- The Class Style label and a German search.
 UnitClass = function() return "Paladin", "PALADIN" end
 C_ClassColor = { GetClassColor = function() return { r = 0.96, g = 0.55, b = 0.73, a = 1 } end }
 RAID_CLASS_COLORS = {}
-NS.L = Resolver("deDE")
+NS.L = German
 NS.Registry = { QueueRefresh = function() end, NotifyListeners = function() end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Theme.lua"))("MSUF_Suite_Skin", NS)
 Check(NS.Theme.GetClassLookLabel() == "Klasse: Paladin",
@@ -68,11 +84,15 @@ for _, record in ipairs(options.SearchSettings("Klassenstil", 50)) do
     if record.page == "looks" then found = true end
 end
 Check(found, "a German search for Klassenstil found no style setting")
+-- The class color palette, by the German name the packs give it (MSUF's
+-- deDE wording for "Class Color" comes first).
 found = false
-for _, record in ipairs(options.SearchSettings("Klassenfarbe", 50)) do
+local classColor = German["Class Color"]
+Check(classColor ~= "Class Color", "the class color palette has no German name")
+for _, record in ipairs(options.SearchSettings(classColor, 50)) do
     if record.page == "colors" then found = true end
 end
-Check(found, "a German search for Klassenfarbe found no palette setting")
+Check(found, "a German search for " .. classColor .. " found no palette setting")
 
 -- The pages show catalog names through the locale table.
 for path, needle in pairs({
