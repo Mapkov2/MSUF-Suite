@@ -557,6 +557,9 @@ local function Duration(slot,ignoreGCD)
 end
 local calls,rangeEnabled,ranges={cooldown=0,duration=0,charges=0,loc=0,usable=0,texture=0,usableBySlot={}},{},{}
 calls.chargesBySlot={}
+-- C_Spell.GetOverrideSpell answers the spell itself without an override.
+local spellOverrides={}
+C_Spell={GetOverrideSpell=function(id) assert(not IsSecret(id),"secret spell ID reached GetOverrideSpell");return spellOverrides[id] or id end}
 local locCount=0
 C_LossOfControl={GetActiveLossOfControlDataCountByUnit=function(unit)
     assert(unit=="player")
@@ -1460,10 +1463,21 @@ assert(not h3.shown and Bar(5).header.attrs.gridmask==0)
 -- starts), ACTIONBAR_UPDATE_COOLDOWN names nothing. Spell actions without
 -- charges follow their spell; every other button follows the action bar
 -- event; a nil spell, a global cooldown and loss of control repaint all.
-local function SpellCooldown(spell,base,recovery) Event("SPELL_UPDATE_COOLDOWN",spell,base,nil,recovery) end
+local function SpellCooldown(spell,base,recovery,category) Event("SPELL_UPDATE_COOLDOWN",spell,base,category,recovery) end
 local function AllCooldowns() Event("SPELL_UPDATE_COOLDOWN") end
 -- A spell's cooldown change: its spell event, then the action bar event.
 local function SpellChanged(spell) SpellCooldown(spell);Event("ACTIONBAR_UPDATE_COOLDOWN") end
+-- The cooldown and recharge duration reads of one slot while fn runs: the
+-- painter's resolved getters, wrapped for the scenario only.
+local function SlotReads(slot,fn)
+    local api=AB.Painter.api
+    local cooldown,charge,cooldowns,charges=api.CooldownDuration,api.ChargeDuration,0,0
+    api.CooldownDuration=function(at,...) if at==slot then cooldowns=cooldowns+1 end return cooldown(at,...) end
+    api.ChargeDuration=function(at,...) if at==slot then charges=charges+1 end return charge(at,...) end
+    fn()
+    api.CooldownDuration,api.ChargeDuration=cooldown,charge
+    return cooldowns,charges
+end
 RunTimers()
 local cooldownCalls=calls.duration
 local infoCalls=calls.cooldown
@@ -1532,16 +1546,18 @@ do
         "ACTIONBAR_UPDATE_COOLDOWN read "..others.." of "..walk.." buttons")
     -- Measured 2026-10-02 (wave 4) on this fixture (20 spell buttons, the
     -- item, the macro): before, this event ran the full walk, 2654
-    -- instructions and 22 duration reads; now 1309 and 2.
-    Budget("action bars flush: an ACTIONBAR_UPDATE_COOLDOWN walk",used,1309)
+    -- instructions and 22 duration reads; now 1309 and 2 (1313 since the
+    -- walk consumes the spell marks of the buttons it paints, 2026-10-03).
+    Budget("action bars flush: an ACTIONBAR_UPDATE_COOLDOWN walk",used,1313)
     -- A named spell: its own button only (one native duration read), by
     -- the spell or by the base an override names.
     reads=calls.duration
     now=now+1
     used=Cost(function() SpellCooldown(1001);RunTimers() end)
     assert(calls.duration-reads==1,"a named spell cooldown read "..(calls.duration-reads).." buttons, not its own one")
-    -- 552 instructions, 1 duration read (measured 2026-10-02).
-    Budget("action bars flush: a named SPELL_UPDATE_COOLDOWN",used,552)
+    -- 552 instructions, 1 duration read (measured 2026-10-02); 564 since the
+    -- secret base and category tests and the category fallback (2026-10-03).
+    Budget("action bars flush: a named SPELL_UPDATE_COOLDOWN",used,564)
     reads=calls.duration
     SpellCooldown(91001,1001);RunTimers()
     assert(calls.duration-reads==1,"an override's cooldown did not reach its base spell's button")
@@ -1550,15 +1566,34 @@ do
     assert(calls.duration==reads,"a spell on no button read cooldowns")
     -- A global cooldown start, a nil spell or an unreadable payload: every
     -- button, as before.
+    -- A cooldown category (other spells and items can share it; no event
+    -- for the peers is documented) and an unreadable base or category too.
     for _,send in ipairs({
         function() SpellCooldown(1002,nil,133) end,
         function() Event("SPELL_UPDATE_COOLDOWN",Secret(),1002,nil,0) end,
         function() SpellCooldown(1002,nil,Secret()) end,
+        function() SpellCooldown(1002,nil,nil,77) end,
+        function() SpellCooldown(1002,Secret()) end,
+        function() SpellCooldown(1002,nil,nil,Secret()) end,
     }) do
         reads=calls.duration
         now=now+1;send();RunTimers()
-        assert(calls.duration-reads==walk+2,"a global, unnamed or unreadable cooldown missed buttons")
+        assert(calls.duration-reads==walk+2,"a global, unnamed, categorized or unreadable cooldown missed buttons")
     end
+    -- Category 0 is no category: the named spell only.
+    reads=calls.duration
+    now=now+1;SpellCooldown(1002,nil,nil,0);RunTimers()
+    assert(calls.duration-reads==1,"category 0 repainted every button")
+    -- A shared category started by a spell on no button (an item, a racial's
+    -- partner) still reaches a spell button that shares it.
+    actions[3].cooldown={isActive=true,isEnabled=true,startTime=now,duration=90,modRate=1}
+    now=now+1;SpellCooldown(55555,nil,nil,88);Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    local third=Button(1,3).button
+    assert(third.cooldown.object and not third.cooldown.object.zero,
+        "a shared category cooldown missed a spell button that shares it")
+    actions[3].cooldown=nil
+    now=now+1;SpellChanged(1003);RunTimers()
+    assert(not third.cooldown.object,"the shared category cooldown did not end")
     -- The spell swipe itself: shown by its spell event, cleared by the next.
     actions[1].cooldown={isActive=true,isEnabled=true,startTime=now,duration=8,modRate=1}
     now=now+1;SpellChanged(1001);RunTimers()
@@ -1592,25 +1627,73 @@ do
     now=now+1;Event("SPELL_UPDATE_CHARGES");Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
     local second=Button(1,2).button
     assert(second.chargeCooldown.object and not second.chargeCooldown.object.zero,"a recharge did not show")
+    -- Its spell event and the action bar event in one flush read it once:
+    -- one cooldown and one recharge duration (measured 2026-10-03: two of
+    -- each before the action bar walk consumed the spell mark).
+    do
+        now=now+1
+        local cooldowns,charges=SlotReads(2,function() SpellChanged(1002);RunTimers() end)
+        assert(cooldowns==1 and charges==1,"a charge action read "..cooldowns.." cooldown and "..charges
+            .." recharge durations for one event pair")
+        now=now+1
+        Budget("action bars flush: a charge action's spell and action bar events",
+            Cost(function() SpellChanged(1002);RunTimers() end),1606)
+    end
     actions[2].charges.isActive=false
     now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
     assert(not second.chargeCooldown.object,"a recharge that came back kept its swipe")
     actions[2].charges=nil
     now=now+1;Event("SPELL_UPDATE_CHARGES");Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
-    -- A slot change moves the route: the old spell no longer reads it.
+    -- A slot change moves the route; the old spell keeps reaching the button
+    -- for one change only.
     actions[1]={kind="spell",id=1201,texture=101}
     Event("ACTIONBAR_SLOT_CHANGED",1);now=now+1;RunTimers()
     reads=calls.duration
-    SpellCooldown(1001);RunTimers()
-    assert(calls.duration==reads,"a replaced spell still read its old button")
     SpellCooldown(1201);RunTimers()
     assert(calls.duration-reads==1,"the new spell of a slot did not reach its button")
+    reads=calls.duration
+    SpellCooldown(1001);RunTimers()
+    assert(calls.duration-reads==1,"the previous spell of a slot lost its one-change alias")
     -- An override with the same art: the icon event re-reads the action.
     actions[1].id=1301
     now=now+1;Event("SPELL_UPDATE_ICON");RunTimers()
     reads=calls.duration
     SpellCooldown(1301);RunTimers()
     assert(calls.duration-reads==1,"a same-art override kept the old spell's route")
+    reads=calls.duration
+    SpellCooldown(1001);RunTimers()
+    assert(calls.duration==reads,"a spell two changes back still read its old button")
+    -- An override the action itself reports (GetActionInfo), dropped before
+    -- its last cooldown event, which names the old override without a base
+    -- (Blizzard keeps previousOverrideSpellID for this order).
+    actions[1]={kind="spell",id=91001,texture=191}
+    Event("ACTIONBAR_SLOT_CHANGED",1);now=now+1;RunTimers()
+    actions[1]={kind="spell",id=1001,texture=101}
+    now=now+1;Event("SPELL_UPDATE_ICON");RunTimers()
+    actions[1].cooldown={isActive=true,isEnabled=true,startTime=now,duration=12,modRate=1}
+    now=now+1
+    local slotReads=SlotReads(1,function() SpellCooldown(91001);Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers() end)
+    assert(slotReads==1 and first.cooldown.object and not first.cooldown.object.zero,
+        "the late cooldown event of a dropped override did not repaint its button")
+    actions[1].cooldown=nil
+    now=now+1;SpellChanged(1001);RunTimers()
+    -- An override the client applies to the action's base spell
+    -- (C_Spell.GetOverrideSpell) with the same art, then dropped.
+    spellOverrides[1001]=92001
+    now=now+1;Event("SPELL_UPDATE_ICON");RunTimers()
+    assert(Button(1,1).cdOverride==92001,"the base spell's override was not listed")
+    now=now+1
+    slotReads=SlotReads(1,function() SpellCooldown(92001);RunTimers() end)
+    assert(slotReads==1,"an override's own cooldown event missed its base spell's button")
+    spellOverrides[1001]=nil
+    now=now+1;Event("SPELL_UPDATE_ICON");RunTimers()
+    actions[1].cooldown={isActive=true,isEnabled=true,startTime=now,duration=12,modRate=1}
+    now=now+1
+    slotReads=SlotReads(1,function() SpellCooldown(92001);Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers() end)
+    assert(slotReads==1 and first.cooldown.object and not first.cooldown.object.zero,
+        "the late cooldown event of a dropped base-spell override did not repaint its button")
+    actions[1].cooldown=nil
+    now=now+1;SpellChanged(1001);RunTimers()
     actions[1]={kind="spell",id=1001,texture=101}
     Event("ACTIONBAR_SLOT_CHANGED",1)
     -- Clearing a button drops its route.

@@ -86,12 +86,21 @@ end
 
 -- ACTIONBAR_UPDATE_COOLDOWN: the buttons SPELL_UPDATE_COOLDOWN does not
 -- keep current, Blizzard's reused buttons' feedback, and the count mark the
--- same way as the full walk.
+-- same way as the full walk. A button this walk paints is done for the
+-- flush: a spell event that also named it (a charge action) reads nothing
+-- again.
 local function OtherCooldown(rec)
-    if not SpellRouted(rec) then Cooldown(rec) end
+    if SpellRouted(rec) then return end
+    spellCooldowns[rec] = nil
+    Cooldown(rec)
 end
 local function OtherCooldownAndCount(rec)
-    if SpellRouted(rec) then Count(rec) else CooldownAndCount(rec) end
+    if SpellRouted(rec) then
+        Count(rec)
+        return
+    end
+    spellCooldowns[rec] = nil
+    CooldownAndCount(rec)
 end
 local function ActionbarCooldownWalk()
     if dirty.count then

@@ -51,6 +51,7 @@ function AB.ResolveAPI()
     api.InRange = bar.IsActionInRange
     api.EnableRange = bar.EnableActionRangeCheck
     api.Overlayed = C_SpellActivationOverlay.IsSpellOverlayed
+    api.Override = C_Spell.GetOverrideSpell
     api.IsItem = bar.IsItemAction
     api.Quality = bar.GetProfessionQualityInfo
     if AB.desatCurve then return end
@@ -442,16 +443,33 @@ end
 
 ------------------------------------------------------------------ spell cooldown routes
 -- spell ID -> the suite buttons on a spell action of that ID: what
--- SPELL_UPDATE_COOLDOWN repaints (Events.lua). A button joins when it is
--- painted (GlowCheck has just cached its action) and leaves when it is
--- cleared or painted onto another action. Lists are kept and reused, like
--- the slot map's.
+-- SPELL_UPDATE_COOLDOWN repaints (Events.lua). A button is listed under the
+-- action's spell (rec.cdSpell), the spell's current override
+-- (rec.cdOverride, C_Spell.GetOverrideSpell) and, for one change, the IDs
+-- it held before on the same slot (rec.cdPrevious, rec.cdPreviousOverride):
+-- a spell can drop its override before its last cooldown event, which then
+-- names the old override without a base (Blizzard_CooldownViewer:
+-- CooldownViewerItemDataMixin:SetOverrideSpell, previousOverrideSpellID).
+-- A button joins when it is painted (GlowCheck has just cached its action)
+-- and leaves when it is cleared or painted onto another action. Lists are
+-- kept and reused, like the slot map's.
 local spellButtons = {}
 
-local function UnrouteSpell(rec)
-    local id = rec.cdSpell
-    if not id then return end
-    rec.cdSpell = nil
+local function Join(rec, id)
+    if id == nil then return end
+    local list = spellButtons[id]
+    if not list then
+        list = {}
+        spellButtons[id] = list
+    end
+    for i = 1, #list do
+        if list[i] == rec then return end
+    end
+    list[#list + 1] = rec
+end
+
+local function Leave(rec, id, a, b, c, d)
+    if id == nil or id == a or id == b or id == c or id == d then return end
     local list = spellButtons[id]
     for i = #list, 1, -1 do
         if list[i] == rec then
@@ -461,18 +479,49 @@ local function UnrouteSpell(rec)
     end
 end
 
+local function SetRoute(rec, spell, override, previous, previousOverride)
+    Leave(rec, rec.cdSpell, spell, override, previous, previousOverride)
+    Leave(rec, rec.cdOverride, spell, override, previous, previousOverride)
+    Leave(rec, rec.cdPrevious, spell, override, previous, previousOverride)
+    Leave(rec, rec.cdPreviousOverride, spell, override, previous, previousOverride)
+    rec.cdSpell, rec.cdOverride, rec.cdPrevious, rec.cdPreviousOverride = spell, override, previous, previousOverride
+    Join(rec, spell)
+    Join(rec, override)
+    Join(rec, previous)
+    Join(rec, previousOverride)
+end
+
+-- The override the client currently applies to a spell, else nil.
+local function OverrideOf(spell)
+    local override = api.Override(spell)
+    if IsSecret(override) or type(override) ~= "number" or override == spell then return nil end
+    return override
+end
+
+local function UnrouteSpell(rec)
+    if rec.cdSpell == nil and rec.cdOverride == nil and rec.cdPrevious == nil and rec.cdPreviousOverride == nil then return end
+    SetRoute(rec, nil, nil, nil, nil)
+    rec.cdSlot = nil
+end
+
 local function RouteSpell(rec)
-    local id = rec.glowKind == GLOW_SPELL and rec.glowID or nil
-    if rec.cdSpell == id then return end
-    UnrouteSpell(rec)
-    if not id then return end
-    rec.cdSpell = id
-    local list = spellButtons[id]
-    if not list then
-        list = {}
-        spellButtons[id] = list
+    local spell = rec.glowKind == GLOW_SPELL and rec.glowID or nil
+    if not spell then
+        UnrouteSpell(rec)
+        return
     end
-    list[#list + 1] = rec
+    local override = OverrideOf(spell)
+    local oldSpell, oldOverride = rec.cdSpell, rec.cdOverride
+    if spell == oldSpell and override == oldOverride and rec.cdSlot == rec.slot then return end
+    -- The IDs the button leaves stay listed for one change on the same slot;
+    -- another slot (a page) starts without them.
+    local previous, previousOverride
+    if rec.cdSlot == rec.slot then
+        if oldSpell ~= spell and oldSpell ~= override then previous = oldSpell end
+        if oldOverride ~= spell and oldOverride ~= override then previousOverride = oldOverride end
+    end
+    SetRoute(rec, spell, override, previous, previousOverride)
+    rec.cdSlot = rec.slot
 end
 
 -- Whether SPELL_UPDATE_COOLDOWN alone keeps the button's swipes current: a
@@ -567,15 +616,15 @@ end
 
 -- Icon storms (forms, spell overrides): only buttons whose texture changed
 -- get the full repaint. A spell action keeping its icon is still repainted
--- when its spell ID changed (an override with the same art): its cooldown
--- route follows the ID.
+-- when its spell ID or that spell's override changed (an override with the
+-- same art): its cooldown route follows both.
 local function Icon(rec)
     local texture = api.Texture(rec.slot)
     if rec.tex ~= nil and Public(texture) and texture == rec.tex then
         local spell = rec.cdSpell
         if not spell then return end
         local kind, id = ReadAction(rec.slot)
-        if kind == "spell" and id == spell then return end
+        if kind == "spell" and id == spell and OverrideOf(spell) == rec.cdOverride then return end
     end
     Paint(rec)
 end

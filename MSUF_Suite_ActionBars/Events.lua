@@ -127,25 +127,32 @@ end
 
 -- SPELL_UPDATE_COOLDOWN (SpellBookDocumentation.lua): spellID "can be a
 -- base spell or an override spell", baseSpellID is the base of an
--- override, nil means every cooldown. As Blizzard's cooldown viewer decides
--- it (CooldownViewerItemMixin:OnSpellUpdateCooldownEvent), a nil or
--- unreadable spell and a global cooldown start repaint every cooldown; a
--- named spell repaints only the suite buttons on that spell action.
+-- override, nil means every cooldown; category is the spell's cooldown
+-- category. As Blizzard's cooldown viewer decides it
+-- (CooldownViewerItemMixin:OnSpellUpdateCooldownEvent), a nil spell and a
+-- global cooldown start repaint every cooldown. So does a cooldown category:
+-- other spells and items can share it, and no separate event for them is
+-- documented. Any unreadable payload value repaints every cooldown too. A
+-- plain named spell repaints only the suite buttons listed under it (the
+-- action's spell, its override, the previous ones; Paint.lua).
 local function MarkSpell(id)
     local list = spellButtons[id]
     if not list or not list[1] then return false end
     for i = 1, #list do spellCooldowns[list[i]] = true end
     return true
 end
-local function SpellCooldown(_, _, spellID, baseSpellID, _, recovery)
-    if IsSecret(spellID) or spellID == nil or IsSecret(recovery) or recovery == GCD_RECOVERY then
+local function SpellCooldown(_, _, spellID, baseSpellID, category, recovery)
+    if IsSecret(spellID) or spellID == nil then
+        Mark("cooldown")
+        return
+    end
+    if IsSecret(baseSpellID) or IsSecret(category) or IsSecret(recovery) or recovery == GCD_RECOVERY
+        or (category ~= nil and category ~= 0) then
         Mark("cooldown")
         return
     end
     local marked = MarkSpell(spellID)
-    if not IsSecret(baseSpellID) and baseSpellID ~= nil and baseSpellID ~= spellID then
-        marked = MarkSpell(baseSpellID) or marked
-    end
+    if baseSpellID ~= nil and baseSpellID ~= spellID then marked = MarkSpell(baseSpellID) or marked end
     if marked then Schedule() end
 end
 
