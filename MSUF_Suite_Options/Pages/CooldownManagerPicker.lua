@@ -212,12 +212,9 @@ function Page.FilterPicker()
     picker.empty:SetShown(not any)
 end
 
-function Page.RebuildPicker()
-    local slot = Page.selected
-    local family = Page.Family(slot)
-    SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
-    local n = 1
-    Item(n, "header", Tr(family == 1 and "Blizzard cooldowns" or "Blizzard buffs"))
+-- Blizzard's catalog entries for the bar's family, sorted for the picker
+-- (pooled records); equipment slots go to equip for the trinket section.
+local function CollectCatalog(slot, family)
     local sorted, bySpell, equip = picker.sorted, picker.bySpell, picker.equip
     for i = #sorted, 1, -1 do sorted[i] = nil end
     for id in pairs(bySpell) do bySpell[id] = nil end
@@ -245,6 +242,49 @@ function Page.RebuildPicker()
         end
     end
     table.sort(sorted, SortCatalog)
+    return sorted, bySpell, equip
+end
+
+-- Buffs other players cast on you (Power Infusion, Innervate, ...), after
+-- the catalog; n is the last row so far, the result the new last row.
+local function AddReceivedBuffs(n)
+    local headerAdded = false
+    for i = 1, #RECEIVED_BUFFS do
+        local id = RECEIVED_BUFFS[i]
+        local name = C_Spell.GetSpellName(id)
+        if Public(name) and type(name) == "string" then
+            if not headerAdded then
+                n = n + 1
+                Item(n, "header", Tr("Received buffs (any caster)"))
+                headerAdded = true
+            end
+            local texture = C_Spell.GetSpellTexture(id)
+            n = n + 1
+            Item(n, "entry", name, "a" .. id, Public(texture) and texture or nil,
+                true, Page.WhereIs("a" .. id), 2, id)
+        end
+    end
+    return n
+end
+
+-- The two trinket slots, after the catalog.
+local function AddTrinkets(n, equip)
+    n = n + 1
+    Item(n, "header", Tr("Trinkets and items"))
+    for trinket = 13, 14 do
+        n = n + 1
+        TrinketItem(n, trinket, equip[trinket])
+    end
+    return n
+end
+
+function Page.RebuildPicker()
+    local slot = Page.selected
+    local family = Page.Family(slot)
+    SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
+    local n = 1
+    Item(n, "header", Tr(family == 1 and "Blizzard cooldowns" or "Blizzard buffs"))
+    local sorted, bySpell, equip = CollectCatalog(slot, family)
     for i = 1, #sorted do
         local record = sorted[i]
         n = n + 1
@@ -253,32 +293,8 @@ function Page.RebuildPicker()
         if record.spell and not bySpell[record.spell] then bySpell[record.spell] = item end
         if record.override and not bySpell[record.override] then bySpell[record.override] = item end
     end
-    if family == 2 then
-        local headerAdded = false
-        for i = 1, #RECEIVED_BUFFS do
-            local id = RECEIVED_BUFFS[i]
-            local name = C_Spell.GetSpellName(id)
-            if Public(name) and type(name) == "string" then
-                if not headerAdded then
-                    n = n + 1
-                    Item(n, "header", Tr("Received buffs (any caster)"))
-                    headerAdded = true
-                end
-                local texture = C_Spell.GetSpellTexture(id)
-                n = n + 1
-                Item(n, "entry", name, "a" .. id, Public(texture) and texture or nil,
-                    true, Page.WhereIs("a" .. id), 2, id)
-            end
-        end
-    end
-    if family == 1 then
-        n = n + 1
-        Item(n, "header", Tr("Trinkets and items"))
-        for trinket = 13, 14 do
-            n = n + 1
-            TrinketItem(n, trinket, equip[trinket])
-        end
-    end
+    if family == 2 then n = AddReceivedBuffs(n) end
+    if family == 1 then n = AddTrinkets(n, equip) end
     picker.count = n
     picker.family = family
     SetRaw(picker.idTitle, Tr(family == 1 and "Custom spell or item ID" or "Custom aura ID"))
