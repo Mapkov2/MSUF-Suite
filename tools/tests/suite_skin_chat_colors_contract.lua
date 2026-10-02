@@ -135,13 +135,25 @@ chat.Disable(chatFrame, "chat")
 Check(Is("SYSTEM", { 0.5, 0.4, 0.3 }) and Is("MONSTER_SAY", DEFAULTS.MONSTER_SAY),
     "disable reset the player's color or kept the skin's own")
 
--- The colour picker's Cancel restores the colour it opened with (the skin's):
--- the category is the skin's again and logout restores Blizzard's default.
+-- The player picks another colour, then the theme colour again (or the
+-- colour picker's Cancel puts the colour it opened with back): a change the
+-- skin did not make, so the category stays the player's for the session.
+-- Equality with the theme brings no ownership back: a theme change does not
+-- repaint it and logout writes nothing ("Restore chat colors" recovers it).
 chat, chatFrame = Session(DEFAULTS)
+local picked = { THEME[1], THEME[2], THEME[3] }
 ChangeChatColor("SYSTEM", 0.1, 0.1, 0.1)
-ChangeChatColor("SYSTEM", THEME[1], THEME[2], THEME[3])
+ChangeChatColor("SYSTEM", picked[1], picked[2], picked[3])
+local systemWrites = Writes("SYSTEM")
+SetTheme(0.6, 0.5, 0.4)
+chat:OnThemeChanged("color", "blizzardYellow")
+RunQueued()
+Check(Is("SYSTEM", picked) and Writes("SYSTEM") == systemWrites,
+    "a theme change repainted a category the player had set to the theme colour")
 chat.RestoreBlizzardMessageColors()
-Check(Is("SYSTEM", DEFAULTS.SYSTEM), "a cancelled color pick left the skin's color behind at logout")
+Check(Is("SYSTEM", picked) and Writes("SYSTEM") == systemWrites,
+    "logout overwrote a colour the player picked because it equals the theme colour")
+SetTheme(picked[1], picked[2], picked[3])
 
 -- A category that shows the theme colour is the player's: a theme colour
 -- proves nothing (the player may have picked it while the skin was off).

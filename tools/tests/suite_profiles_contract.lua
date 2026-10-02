@@ -181,6 +181,37 @@ assert(not P.InstallSuiteFactory("Raid", raid, nil) and #reported == errors + 3
     and DB.GetProfile("Raid") == raid and DB.GetActiveProfileName() == "Shared",
     "a raising installer activation skipped the rollback")
 DB.Activate = activate
+-- The installer's last step (finish: the UI scale) is part of the
+-- transaction: a refusal or an error rolls the whole install back, the
+-- previous profiles are active again and the new ones are gone, so a retry
+-- under the same name installs cleanly.
+do
+    local calls = 0
+    local function Refuse() calls = calls + 1;return false, "injected scale refusal" end
+    local function Raise() calls = calls + 1;error("injected scale error") end
+    local function Accept() calls = calls + 1;return true end
+    local refused, why = P.InstallFactory("FactoryScale", "MSUF3:frames", raid, nil, nil, Refuse)
+    assert(not refused and why == "injected scale refusal" and calls == 1
+        and P.Active() == "Shared" and MSUF_ActiveProfile == "Shared"
+        and not DB.GetProfile("FactoryScale") and not MSUF_GlobalDB.profiles.FactoryScale,
+        "a refused scale left the new factory profiles behind")
+    assert(not P.InstallFactory("FactoryScale", "MSUF3:frames", raid, nil, nil, Raise)
+        and calls == 2 and #reported == errors + 4 and P.Active() == "Shared"
+        and not DB.GetProfile("FactoryScale") and not MSUF_GlobalDB.profiles.FactoryScale,
+        "a raising scale left the new factory profiles behind")
+    assert(P.InstallFactory("FactoryScale", "MSUF3:frames", raid, nil, nil, Accept)
+        and calls == 3 and P.Active() == "FactoryScale",
+        "the retry after a refused scale did not install under the same name")
+    assert(P.Activate("Shared"))
+    refused, why = P.InstallSuiteFactory("Raid", raid, nil, nil, Refuse)
+    assert(not refused and why == "injected scale refusal" and calls == 4
+        and DB.GetProfile("Raid") == raid and DB.GetActiveProfileName() == "Shared",
+        "a refused scale kept the Modern install")
+    assert(P.InstallSuiteFactory("Raid", raid, nil, nil, Accept) and calls == 5
+        and DB.GetActiveProfileName() == "Raid", "the Modern retry after a refused scale did not install")
+    Suite.RootDB.profiles.Raid = raid
+    assert(P.Activate("Shared"))
+end
 assert(P.Activate("Default"))
 local clean = assert(IO.PrepareTable({ suite = { schema = 1, modules = {
     minimap = { enabled = true, undocumented = "ignored" },

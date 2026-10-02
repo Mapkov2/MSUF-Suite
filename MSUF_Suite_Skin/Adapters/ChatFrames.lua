@@ -36,15 +36,15 @@ local messageColorRoles = {
 }
 
 -- ChangeChatColor is a persistent Blizzard setting (chat-cache.txt), unlike
--- the frame-local chrome below, and the colours are the player's. The skin
--- themes a category only while it shows Blizzard's clean-profile default
--- (MSUF_Suite/Integrations/MapkoSkin.lua CHAT_COLOR_DEFAULTS); any other
--- colour is the player's, even one equal to a theme colour. A colour the
--- player picked stays theirs: a category that holds one at the first apply,
--- or that the player or another addon changes later, is released and never
--- recoloured or restored again. Logout and disable put back the colour a
--- category had before the skin, while it still shows the skin's own. What a
--- logout could not put back goes to the Suite's ledger, which only the
+-- the frame-local chrome below, and the colours are the player's. Ownership
+-- comes only from the skin's own writes, never from colour equality; the
+-- per-category state machine (unowned, owned, released, recorded,
+-- ambiguous) is in MSUF_Suite/Integrations/MapkoSkin.lua. The skin themes a
+-- category only while it shows Blizzard's clean-profile default and nobody
+-- else changed it this session; any change the skin did not make releases it
+-- for the rest of the session. Logout and disable put back the colour a
+-- category had before the skin, while it still shows the skin's own; what
+-- they could not put back goes to the Suite's ledger, which only the
 -- explicit "Restore chat colors" applies. Keep this list limited to the
 -- categories we change.
 
@@ -126,14 +126,16 @@ local function DefaultColor(chatType)
     return Ledger().CHAT_COLOR_DEFAULTS[chatType]
 end
 
--- What the restores of this session put back and what they could not,
--- handed to the ledger at logout.
-local restoredTypes, leftovers = {}, {}
+-- What the restores of this session could not put back, handed to the
+-- ledger at logout; and the categories something other than the skin
+-- changed this session (released for its rest).
+local leftovers, changedExternally = {}, {}
 
 -- The state of a category the skin meets for the first time: owned with the
--- colour to restore while it shows Blizzard's default, else released.
+-- colour to restore while it shows Blizzard's default and nobody changed it
+-- this session, else released.
 local function CaptureMessageColor(chatType, current)
-    if Shows(DefaultColor(chatType), current, COLOR_NATIVE) then
+    if not changedExternally[chatType] and Shows(DefaultColor(chatType), current, COLOR_NATIVE) then
         return { original = current, applied = {} }
     end
     return { released = true }
@@ -148,8 +150,7 @@ local function ApplyMessageColor(state, chatType)
     if not colorState then
         colorState = CaptureMessageColor(chatType, current)
         state.messageColors[chatType] = colorState
-    elseif not colorState.released and not Shows(colorState.applied, current, COLOR_OWN)
-        and not Shows(DefaultColor(chatType), current, COLOR_NATIVE) then
+    elseif not colorState.released and colorState.applied[1] and not Shows(colorState.applied, current, COLOR_OWN) then
         -- Changed by a path the ChangeChatColor hook does not see: theirs.
         colorState.released = true
     end
@@ -182,9 +183,9 @@ local function RestoreMessageColors(state)
             and Shows(colorState.applied, current, COLOR_OWN)
         if owned and ChangeMessageColor(chatType, original[1], original[2], original[3]) then
             restored = restored + 1
-            restoredTypes[chatType], leftovers[chatType] = true, nil
+            leftovers[chatType] = nil
         elseif owned then
-            restoredTypes[chatType], leftovers[chatType] = nil, { original = original, left = current }
+            leftovers[chatType] = { original = original, left = current }
         end
     end
     state.messageColors = {}
@@ -484,17 +485,18 @@ local function OnTemporaryWindow()
     RefreshAll()
 end
 
--- Someone else set this category's colour: from now on it is theirs, unless
--- the change put the skin's own back (the colour picker's Cancel restores the
--- colour it opened with). Only bookkeeping, so it also runs in combat.
+-- Someone else set this category's colour (the player, another addon, the
+-- colour picker's live preview or its Cancel, "Restore chat colors"): from
+-- now on, for the rest of the session, it is theirs, whatever colour it
+-- shows, and nothing is left to put back. Only bookkeeping, so it also runs
+-- in combat.
 local function OnMessageColorChanged(chatType)
     if changingChatColor or not messageColorRoles[chatType] then return end
-    local current = ReadMessageColor(chatType)
+    changedExternally[chatType] = true
+    leftovers[chatType] = nil
     for _, state in pairs(ChatFramesSkin.owners) do
-        local colorState = state.active and state.messageColors[chatType]
-        if colorState and colorState.applied then
-            colorState.released = not current or not Shows(colorState.applied, current, COLOR_OWN)
-        end
+        local colorState = state.messageColors[chatType]
+        if colorState then colorState.released = true end
     end
 end
 
@@ -585,7 +587,7 @@ function ChatFramesSkin.RestoreBlizzardMessageColors()
     for _, state in pairs(ChatFramesSkin.owners) do
         if state.active then restored = restored + RestoreMessageColors(state) end
     end
-    Ledger().CloseChatColors(restoredTypes, leftovers)
+    Ledger().CloseChatColors(leftovers)
     return true, restored
 end
 

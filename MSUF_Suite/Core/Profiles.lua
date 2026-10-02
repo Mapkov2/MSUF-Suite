@@ -446,7 +446,11 @@ local function PublishCreated(name, profile, skin, skinProfile, screenHeight)
     return ActivateProfiles(name, skin, skinProfile)
 end
 
-local function Create(name, frames, profile, skinProfile, screenHeight)
+-- finish (optional): the last step of the transaction, run once the new
+-- profiles are active (the installer's UI scale, which belongs to the new
+-- MSUF profile); a refusal (false, reason) or an error rolls everything back
+-- like a refused import.
+local function Create(name, frames, profile, skinProfile, screenHeight, finish)
     local _, previousFrames, previousModules = P.Active()
     local skin = skinProfile and SkinEngine()
     if skinProfile and (not skin or skin.Database.GetProfile(name)) then
@@ -463,9 +467,13 @@ local function Create(name, frames, profile, skinProfile, screenHeight)
     if finished and ok then
         finished, ok, reason = Dispatch(Finish, PublishCreated, name, profile, skin, skinProfile, screenHeight)
     end
-    if finished and ok and _G.MSUF_ActiveProfile == name and DB.GetActiveProfileName() == name then
-        return true, name
+    local active = finished and ok and _G.MSUF_ActiveProfile == name and DB.GetActiveProfileName() == name
+    if active and finish then
+        local done, finishedOk, why = Dispatch(Finish, finish)
+        active = done and finishedOk == true
+        if not active then reason = why end
     end
+    if active then return true, name end
     if skin and previousSkin and skin.Database.GetProfile(previousSkin) then
         skin.Database.SetActiveProfile(previousSkin)
     end
@@ -536,7 +544,7 @@ end
 -- Installer-owned factory data is already bundled and validated by the same
 -- catalog as normal profiles. Keep its module values, including explicit
 -- enabled choices, while MSUF's frame import remains transactional.
-function P.InstallFactory(name, frames, modules, skinText, lookName)
+function P.InstallFactory(name, frames, modules, skinText, lookName, finish)
     local clean, reason = NewName(name)
     if not clean then return false, reason end
     if type(frames) ~= "string" or not frames:match("^MSUF[234]:") then
@@ -562,13 +570,13 @@ function P.InstallFactory(name, frames, modules, skinText, lookName)
         end
     end
     local screenHeight = not lookName and Suite.ForeverFactoryScreenHeight or nil
-    return Create(clean, frames, profile, skinProfile, screenHeight)
+    return Create(clean, frames, profile, skinProfile, screenHeight, finish)
 end
 
 -- Modern replaces only the active Suite and optional Skin settings. Prepare
 -- both payloads before changing either store; the MSUF frame profile is never
--- imported or switched here.
-function P.InstallSuiteFactory(name, modules, skinText, lookName)
+-- imported or switched here. finish: as for Create.
+function P.InstallSuiteFactory(name, modules, skinText, lookName, finish)
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
     local profile, reason = IO.PrepareTable(modules, false)
     if not profile then return false, reason end
@@ -595,6 +603,10 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName)
     Suite.RootDB.profiles[name] = profile
     -- An error in any step is reported and rolled back like a refusal.
     local finished, ok, why = Dispatch(Finish, ActivateProfiles, name, skin, skinProfile)
+    if finished and ok and finish then
+        finished, ok, why = Dispatch(Finish, finish)
+        ok = finished and ok == true
+    end
     if finished and ok then return true, name end
     Suite.RootDB.profiles[name] = previousModules
     if previousActive and DB.GetProfile(previousActive) then DB.Activate(previousActive) end

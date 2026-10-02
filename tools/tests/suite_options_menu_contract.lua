@@ -3509,30 +3509,45 @@ do
 end
 -- "Restore chat colors" asks in Blizzard's generic confirmation (no
 -- StaticPopupDialogs entry), then puts the skin's chat colours back through
--- the Suite core; refused in combat.
+-- the Suite core, reports what failed; refused in combat. (One state table:
+-- this chunk is near Lua's 200-local limit.)
 do
-    local previousGeneric, previousDialogs, previousRestore, previousConfirm =
-        _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs, Suite.Skin.RestoreChatColors, S.Confirm
-    local asked, restores = nil, 0
+    local rc = { previous = { _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs,
+        Suite.Skin.RestoreChatColors, S.Confirm, M.ShowStatusFeedback, InCombatLockdown },
+        restores = 0, result = { true, 3, 0 } }
+    M.ShowStatusFeedback = function(text, kind) rc.feedback = { text = text, kind = kind } end
     S.Confirm = nil
     _G.StaticPopupDialogs = {}
-    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
-    Suite.Skin.RestoreChatColors = function() restores = restores + 1; return true, 3 end
-    assert(optionsNS.RestoreChatColors() and asked and restores == 0, "Restore chat colors did not ask first")
-    asked.callback()
-    assert(restores == 1 and next(_G.StaticPopupDialogs) == nil, "Restore chat colors did not restore through the core")
-    local lockdown = InCombatLockdown
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) rc.asked = data end
+    Suite.Skin.RestoreChatColors = function()
+        rc.restores = rc.restores + 1
+        return rc.result[1], rc.result[2], rc.result[3]
+    end
+    assert(optionsNS.RestoreChatColors() and rc.asked and rc.restores == 0, "Restore chat colors did not ask first")
+    rc.asked.callback()
+    assert(rc.restores == 1 and next(_G.StaticPopupDialogs) == nil, "Restore chat colors did not restore through the core")
+    assert(rc.feedback and rc.feedback.kind == "ok", "a full restore did not report success")
+    -- Every write failed, then some: the feedback says so.
+    rc.result = { false, 0, 3 }
+    optionsNS.RestoreChatColors()
+    rc.asked.callback()
+    assert(rc.feedback.kind == "warning" and rc.feedback.text == M.Tr("Chat colors could not be restored"),
+        "a restore where every write failed reported success")
+    rc.result = { false, 2, 1 }
+    optionsNS.RestoreChatColors()
+    rc.asked.callback()
+    assert(rc.feedback.kind == "warning" and rc.feedback.text == M.Tr("Some chat colors could not be restored"),
+        "a partly failed restore was not reported")
     InCombatLockdown = function() return true end
-    asked = nil
-    assert(not optionsNS.RestoreChatColors() and not asked, "Restore chat colors asked in combat")
-    InCombatLockdown = lockdown
+    rc.asked = nil
+    assert(not optionsNS.RestoreChatColors() and not rc.asked, "Restore chat colors asked in combat")
     local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
-    local source = appearance:read("*a")
+    rc.source = appearance:read("*a")
     appearance:close()
-    local _, buttons = source:gsub("%s%s+RestoreChatColorsButton%(ctx, body", "")
-    assert(buttons == 2, "Restore chat colors is missing from Maintenance or the engine-unavailable page")
-    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
-    Suite.Skin.RestoreChatColors, S.Confirm = previousRestore, previousConfirm
+    rc.buttons = select(2, rc.source:gsub("%s%s+RestoreChatColorsButton%(ctx, body", ""))
+    assert(rc.buttons == 2, "Restore chat colors is missing from Maintenance or the engine-unavailable page")
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs, Suite.Skin.RestoreChatColors,
+        S.Confirm, M.ShowStatusFeedback, InCombatLockdown = unpack(rc.previous, 1, 6)
 end
 -- Register.lua's real canReset handler (here through the legacy wrap, the
 -- same handler a v1 provider gets) allocates nothing per call.

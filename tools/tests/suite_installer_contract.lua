@@ -96,11 +96,24 @@ Suite.ProfileIO = {
         return { suite = { schema = 1, modules = modules } }
     end,
 }
+-- The installer's last step (finish: the UI scale) runs inside the profile
+-- helpers' transaction; these stubs undo their install when it refuses, as
+-- the real helpers do (suite_profiles_contract checks those).
+local function FinishInstall(finish, undo, name)
+    if finish then
+        local ok, why = finish()
+        if not ok then
+            undo()
+            return false, why
+        end
+    end
+    return true, name
+end
 Suite.SuiteProfiles = {
     -- The follow-up repairs belong to suite_profiles_contract.
     EnsureNewCharacterProfile = function() return false end,
     EnsureRetailResourceStack = function() return false end,
-    InstallSuiteFactory = function(name, profile, skin, look)
+    InstallSuiteFactory = function(name, profile, skin, look, finish)
         assert(name == "Default" and skin == (Suite.Client.isForever
             and Suite.ForeverFactorySkinCompact or Suite.RetailFactorySkinCompact))
         assert(look == (profile.suite.globalLook == "midnight" and "midnight" or "cleanModern"))
@@ -110,11 +123,15 @@ Suite.SuiteProfiles = {
             and profile.suite.modules.actionbars.bar3Point == 7
             and profile.suite.modules.minimap.x == -20,
             "Modern factory positions did not use screen anchors")
+        local previous = Suite.RootDB.profiles[name]
         Suite.RootDB.profiles[name] = profile
         Suite.Database.Activate(name)
-        return true, name
+        return FinishInstall(finish, function()
+            Suite.RootDB.profiles[name] = previous
+            Suite.Database.Activate(name)
+        end, name)
     end,
-    InstallFactory = function(name, frames, profile, skin, look)
+    InstallFactory = function(name, frames, profile, skin, look, finish)
         factoryCalls = factoryCalls + 1
         if look == "midnight" then
             assert(name == (Suite.Client.isForever and "MSUF Suite Classic 2" or "MSUF Suite Classic")
@@ -124,11 +141,15 @@ Suite.SuiteProfiles = {
                     or Suite.RetailFactorySkinCompact)
                 and profile.suite.globalLook == "midnight",
                 "Classic MSUF must install a complete frame, Suite and Skin factory")
+            local previousFrames = MSUF_ActiveProfile
             MSUF_GlobalDB.profiles[name] = {}
             Suite.RootDB.profiles[name] = profile
             MSUF_ActiveProfile = name
             Suite.Database.Activate(name)
-            return true, name
+            return FinishInstall(finish, function()
+                MSUF_ActiveProfile = previousFrames
+                MSUF_GlobalDB.profiles[name], Suite.RootDB.profiles[name] = nil, nil
+            end, name)
         end
         assert(name == "MSUF Suite Forever")
         assert(frames == "MSUF3:frames")
@@ -159,7 +180,7 @@ Suite.SuiteProfiles = {
             and cdm.ext_gap == 22 and cdm.ext_align == 2 and cdm.ext_y == 0
             and cdm.listsData == "MSUF3:factoryRogue",
             "Retail Forever did not retain CDM presets and anchor its side rows to Player")
-        return true, name
+        return FinishInstall(finish, function() end, name)
     end,
 }
 
@@ -238,8 +259,7 @@ MSUF_ResetGlobalUiScale = resetScale
 -- With MSUF host API v1 the scale goes through MSUF_HostAPI (the Suite's
 -- host bridge resolves it once per load). Both host paths refuse before the
 -- profile install when MSUF's scale owner is missing; a refusal MSUF gives
--- only at apply (its own range check) is reported and not recorded as
--- complete.
+-- only at apply rolls the install back and is not recorded as complete.
 local hostRefusal, hostScales = nil, 0
 local hostAPI = { version = 1, SetResourceStack = function() return false end }
 function hostAPI.ApplyUIScaleProfile(spec)
@@ -268,9 +288,12 @@ for _, api in ipairs({ hostAPI, false }) do
 end
 UseHost(hostAPI)
 hostRefusal = "invalid"
+local previousDefault = Suite.RootDB.profiles.Default
 local refusedAtApply, applyWhy = Suite.Installer.Apply()
 assert(refusedAtApply == false and applyWhy == "MSUF refused this UI scale" and Suite.RootDB.installation == nil,
     "the installer reported a scale MSUF refused as a complete install")
+assert(Suite.RootDB.profiles.Default == previousDefault,
+    "a scale MSUF refused at apply kept the Modern install")
 hostRefusal = nil
 assert(Suite.Installer.Apply() and hostScales == 1 and Suite.RootDB.installation.status == "complete"
     and MSUF_DB.general.msufUiScale == 1, "the v1 scale path did not install")
@@ -381,6 +404,24 @@ for _, api in ipairs({ hostAPI, false }) do
         and Suite.RootDB.installation == installed,
         (api and "v1" or "legacy") .. ": an invalid scale did not refuse before the profile install")
 end
+-- A 480 px tall screen makes a pixel-perfect scale of 1.6, above the 1.5
+-- MSUF accepts: both host paths refuse before the profile install.
+MSUF_GetPixelPerfectScale = function() return 768 / 480 end
+for _, api in ipairs({ hostAPI, false }) do
+    UseHost(api or nil)
+    Suite.Installer.Open()
+    window.next.scripts.OnClick() -- profile
+    window.next.scripts.OnClick() -- modules
+    window.next.scripts.OnClick() -- scaling
+    if not window.scaleSlider.shown then window.scaleToggle.scripts.OnClick() end
+    window.presets[1].scripts.OnClick()
+    window.next.scripts.OnClick() -- review
+    local before, installed = activations + factoryCalls, Suite.RootDB.installation
+    local refused, why = Suite.Installer.Apply()
+    assert(refused == false and why == "MSUF refused this UI scale" and activations + factoryCalls == before
+        and Suite.RootDB.installation == installed,
+        (api and "v1" or "legacy") .. ": a 480 px pixel-perfect scale did not refuse before the profile install")
+end
 UseHost(nil)
 MSUF_GetPixelPerfectScale = function() return 768 / 2160 end
 Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData = "MSUF3:rogue"
@@ -422,25 +463,32 @@ assert(Suite.Installer.Apply() and MSUF_ActiveProfile == "MSUF Suite Classic 2"
     "Forever Classic selection did not import the bundled non-Forever MSUF frames")
 Suite.Client.isForever = false
 
--- The profile install is the commit point: nothing after it refuses, so a
--- scale step that MSUF refuses can neither fail the install nor let a retry
--- create a second Forever profile.
+-- The scale is the profile transaction's last step: a scale MSUF refuses at
+-- apply rolls the Forever install back, so the retry installs "MSUF Suite
+-- Forever" again, never a "MSUF Suite Forever 2".
 local created, installFactory = {}, Suite.SuiteProfiles.InstallFactory
-Suite.SuiteProfiles.InstallFactory = function(name)
+Suite.SuiteProfiles.InstallFactory = function(name, _, _, _, _, finish)
     created[#created + 1] = name
     MSUF_GlobalDB.profiles[name] = {}
-    return true, name
+    return FinishInstall(finish, function() MSUF_GlobalDB.profiles[name] = nil end, name)
 end
-MSUF_ResetGlobalUiScale = function() return false end
+UseHost(hostAPI)
+hostRefusal = "invalid"
 Suite.Client.isForever = true
 Suite.Installer.Open()
 window.next.scripts.OnClick()
 window.forever.scripts.OnClick()
-if not Suite.Installer.Apply() then Suite.Installer.Apply() end
-assert(#created == 1 and created[1] == "MSUF Suite Forever"
+local installedBefore = Suite.RootDB.installation
+local refusedForever, foreverWhy = Suite.Installer.Apply()
+assert(refusedForever == false and foreverWhy == "MSUF refused this UI scale"
+    and Suite.RootDB.installation == installedBefore and not MSUF_GlobalDB.profiles["MSUF Suite Forever"],
+    "a scale MSUF refused at apply left the Forever profile behind")
+hostRefusal = nil
+assert(Suite.Installer.Apply() and #created == 2 and created[2] == "MSUF Suite Forever"
     and Suite.RootDB.installation.profile == "forever",
-    "a refused step after the Forever install left a retry that installs a second profile")
-Suite.SuiteProfiles.InstallFactory, MSUF_ResetGlobalUiScale = installFactory, resetScale
+    "the retry after a refused scale installed a second Forever profile")
+Suite.SuiteProfiles.InstallFactory = installFactory
+UseHost(nil)
 Suite.Client.isForever = false
 MSUF_GlobalDB.profiles["MSUF Suite Forever"] = nil
 
