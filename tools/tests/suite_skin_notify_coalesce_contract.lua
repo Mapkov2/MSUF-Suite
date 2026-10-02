@@ -2,8 +2,9 @@
 -- The listeners whose work is a full pass (the Micro Bar skin, the character
 -- stats fonts) and the public appearance signal (MSUF menus and Suite HUD
 -- modules repaint on it) run once per frame, after that frame's writes.
--- Real Registry, Safety, MicroMenu.lua and CharacterStats.lua; the public
--- signal is covered in suite_skin_absorption_contract.lua.
+-- Real Registry, Safety, MicroMenuStates.lua, MicroMenu.lua and
+-- CharacterStats.lua; the public signal is covered in
+-- suite_skin_absorption_contract.lua.
 local root = assert(arg[1], "Suite root required")
 local checks = 0
 local function Check(value, message)
@@ -63,7 +64,7 @@ local NS = {
     Surface = { Attach = function() return {} end, SetVisible = function() return true end },
 }
 for _, file in ipairs({ "Core/Safety.lua", "Core/Registry.lua", "Adapters/AdapterKit.lua",
-    "Adapters/MicroMenu.lua" }) do
+    "Adapters/MicroMenuStates.lua", "Adapters/MicroMenu.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local Registry = NS.Registry

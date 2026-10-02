@@ -1582,6 +1582,7 @@ Section("micro menu", function()
             HoverLeave = function() end,
         },
     }, { __index = NS })
+    Load("MicroMenuStates.lua", microNS)
     Load("MicroMenu.lua", microNS)
     Load("MicroMenuSettings.lua", microNS)
     local menu = Frame("MicroMenu")
@@ -1777,6 +1778,7 @@ Section("micro menu tint read-back", function()
             HoverLeave = function() end,
         },
     }, { __index = NS })
+    Load("MicroMenuStates.lua", microNS)
     Load("MicroMenu.lua", microNS)
     Load("MicroMenuSettings.lua", microNS)
     local menu = Frame("MicroMenu")
@@ -1798,6 +1800,18 @@ Section("micro menu tint read-back", function()
     Expect(Near(icon.a, 0.5), ("state hooks compounded the micro icon opacity to %.3f"):format(icon.a))
     microNS.MicroMenuSkin.Disable()
     Expect(Near(icon.a, 1), "disable did not give the micro icon its native color back")
+    -- Monochrome icon colors also desaturate the native icon (the settings of
+    -- the pass, MicroMenuStates.ApplyTextureTint); disable restores it.
+    icon.desaturated = false
+    function icon:IsDesaturated() return self.desaturated end
+    function icon:SetDesaturated(value) self.desaturated = value end
+    microNS.DB.icons.microMenu.tint = "monochrome"
+    microNS.MicroMenuSkin.Apply(menu, "tint")
+    Expect(icon.desaturated == true, "a monochrome Micro Bar did not desaturate the Blizzard icon")
+    button:SetNormal()
+    Expect(icon.desaturated == true, "a state hook dropped the monochrome desaturation")
+    microNS.MicroMenuSkin.Disable()
+    Expect(icon.desaturated == false, "disable did not give the micro icon its native saturation back")
     _G.MicroMenu, _G.MicroMenuContainer, _G.CharacterMicroButton = nil, nil, nil
 end)
 
@@ -1910,6 +1924,7 @@ Section("owned micro bar", function()
         Load(file, microNS)
     end
     local eventFrame = created[1]
+    Load("MicroMenuStates.lua", microNS)
     Load("MicroMenu.lua", microNS)
     Load("MicroMenuSettings.lua", microNS)
 
@@ -2221,7 +2236,7 @@ Section("supported clients and shared helpers", function()
         "PaperDollChrome must load before both PaperDoll panels")
     for _, file in ipairs({ "UIPanelButtons", "SemanticHUD", "EquipmentInfo", "CharacterDetails",
         "CharacterStats", "EQoLCharacter", "CharacterPanel", "ChatFrames", "DamageMeter",
-        "EditMode", "MacroWindow", "MicroMenu", "OwnedMicroBar" }) do
+        "EditMode", "MacroWindow", "MicroMenu", "MicroMenuStates", "OwnedMicroBar" }) do
         local source = ReadSource(skin .. "Adapters/" .. file .. ".lua")
         Expect(not source:find("local function HasMethod", 1, true)
             and not source:find("local function Accessible", 1, true)
@@ -2240,12 +2255,12 @@ Section("supported clients and shared helpers", function()
         Expect(not source:find("COLOR_TOLERANCE", 1, true) and not source:find("math.abs", 1, true),
             file .. " keeps its own colour tolerance")
     end
-    for _, file in ipairs({ "MicroMenu", "OwnedMicroBar", "SharedChrome", "AdapterKit" }) do
+    for _, file in ipairs({ "MicroMenu", "MicroMenuStates", "OwnedMicroBar", "SharedChrome", "AdapterKit" }) do
         Expect(not ReadSource(skin .. "Adapters/" .. file .. ".lua"):find('Call%(%s*[%w_]+,%s*"GetParent"%)'),
             file .. " compares a GetParent result that can be secret")
     end
     -- Stored-colour checks go through the secret-safe Safety.ColorMatches.
-    for _, file in ipairs({ "ChatFrames", "QuestText", "AdapterKit", "MicroMenu" }) do
+    for _, file in ipairs({ "ChatFrames", "QuestText", "AdapterKit", "MicroMenuStates" }) do
         local source = ReadSource(skin .. "Adapters/" .. file .. ".lua")
         Expect(source:find("Safety.ColorMatches", 1, true) ~= nil
             and not source:find("local function SameRGB", 1, true)
@@ -2286,8 +2301,8 @@ Section("adapter file structure", function()
     for _, chain in ipairs({
         { "Catalog", "CatalogGlass", "AdapterKit", "SharedChrome" },
         { "DeepWindows", "DeepWindowsProfessions" },
-        { "OwnedMicroBarLayout", "OwnedMicroBarVisibility", "OwnedMicroBarEditMode", "OwnedMicroBar", "MicroMenu",
-            "MicroMenuSettings" },
+        { "OwnedMicroBarLayout", "OwnedMicroBarVisibility", "OwnedMicroBarEditMode", "OwnedMicroBar",
+            "MicroMenuStates", "MicroMenu", "MicroMenuSettings" },
     }) do
         for index = 2, #chain do
             Expect(position[chain[index - 1]] and position[chain[index]]

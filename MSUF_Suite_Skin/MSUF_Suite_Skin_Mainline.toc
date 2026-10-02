@@ -85,6 +85,7 @@ Adapters\OwnedMicroBarLayout.lua
 Adapters\OwnedMicroBarVisibility.lua
 Adapters\OwnedMicroBarEditMode.lua
 Adapters\OwnedMicroBar.lua
+Adapters\MicroMenuStates.lua
 Adapters\MicroMenu.lua
 Adapters\MicroMenuSettings.lua
 Adapters\Blizzard.lua
