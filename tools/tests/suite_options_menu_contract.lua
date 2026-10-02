@@ -3534,6 +3534,19 @@ do
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
     Suite.Skin.RestoreChatColors, S.Confirm = previousRestore, previousConfirm
 end
+-- Register.lua's real canReset handler (here through the legacy wrap, the
+-- same handler a v1 provider gets) allocates nothing per call.
+do
+    assert(optionsNS.pageResetMode == "legacy", "this host took the v1 provider path")
+    M.PageHasReset("suite_dataTexts")
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local before = collectgarbage("count")
+    for _ = 1, 100 do M.PageHasReset("suite_dataTexts") end
+    local grown = collectgarbage("count") - before
+    collectgarbage("restart")
+    assert(grown < 0.1, ("the page reset canReset handler allocated %.2f KB in 100 calls"):format(grown))
+end
 -- The cooldown manager page resets like every Suite page: the standard
 -- confirmation, then every cooldown manager setting back to its catalog
 -- default; other modules keep theirs.

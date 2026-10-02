@@ -1,9 +1,12 @@
--- The Suite's host bridge (MSUF_Suite/Core/HostBridge.lua) in both host
--- modes: with MSUF host API v1 (MSUF_HostAPI and Menu2's page-reset
--- providers) it calls the host and wraps or writes nothing of MSUF's; without
--- it, it runs the Suite's previous code. Both modes give the same MSUF_DB.
--- Real HostBridge.lua; the v1 host is a stub that writes the fields the
--- host API v1 spec names (the Suite's previous code is the oracle).
+-- Suite-side stub matrix of the Suite's host bridge (MSUF_Suite/Core/
+-- HostBridge.lua): this Suite against a stubbed MSUF host with host API v1
+-- (MSUF_HostAPI and Menu2's page-reset providers) and a stubbed older host.
+-- With v1 it calls the host and wraps or writes nothing of MSUF's; without
+-- it, it runs the Suite's previous code; both give the same MSUF_DB and
+-- refuse the same specs. Real HostBridge.lua; the v1 host is a stub that
+-- writes the fields the host API v1 spec names (the Suite's previous code is
+-- the oracle). The full old/new host x old/new Suite matrix with the real
+-- hosts is W4-H's host-side contract.
 local root = assert(arg[1], "Suite root required")
 local checks = 0
 local function Check(value, message)
@@ -82,7 +85,9 @@ local function Bridge(withHost)
             return withHost and HostAPI or nil
         end
     end })
-    local Suite = {}
+    local Suite = { Finite = function(value)
+        return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+    end }
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
     return Suite.HostBridge
 end
@@ -102,16 +107,50 @@ local legacyDB = DeepCopy(MSUF_DB)
 _G.MSUF_ResetGlobalUiScale = nil
 Check(not bridge.ScaleReady(SPEC) and not bridge.ApplyScale(SPEC), "the legacy scale path ran without MSUF's appliers")
 
--- With v1: the host writes; the Suite calls no MSUF applier and writes
--- nothing itself; the result is the same MSUF_DB.
-NoLegacy()
+-- With v1: the host writes; the Suite calls none of MSUF's appliers (they
+-- stay tripwires here) and writes nothing itself; the result is the same
+-- MSUF_DB.
+Legacy()
 MSUF_DB = FreshDB()
 hostCalls = {}
 bridge = Bridge(true)
 Check(bridge.ScaleReady(SPEC) and bridge.ApplyScale(SPEC) and bridge.SetResourceStack("cooldown")
     and not bridge.SetResourceStack("other") and bridge.HasCoreAPI(), "the v1 host path refused")
-Check(table.concat(hostCalls, ",") == "scale,stack:cooldown", "the v1 host was not called for the writes")
+Check(table.concat(hostCalls, ",") == "scale,stack:cooldown" and #calls == 0,
+    "the v1 host was not called for the writes, or the Suite called MSUF's appliers itself")
 Check(Same(MSUF_DB, legacyDB), "the v1 host and the legacy path gave different MSUF settings")
+
+-- Both paths refuse the same specs before anything is written: an invalid
+-- spec, and a missing MSUF scale owner (the v1 setter's "unavailable").
+local INVALID = { msufScale = 1, global = { preset = "custom", scale = 0 / 0 } }
+for _, withHost in ipairs({ true, false }) do
+    Legacy()
+    MSUF_DB = FreshDB()
+    local before = DeepCopy(MSUF_DB)
+    bridge = Bridge(withHost)
+    local ready, why = bridge.ScaleReady(INVALID)
+    local applied, applyWhy = bridge.ApplyScale(INVALID)
+    Check(not ready and not applied and why == "MSUF refused this UI scale" and applyWhy == why
+        and Same(MSUF_DB, before), (withHost and "v1" or "legacy") .. ": an invalid scale spec was not refused")
+    _G.MSUF_ResetGlobalUiScale = nil
+    ready, why = bridge.ScaleReady(SPEC)
+    applied, applyWhy = bridge.ApplyScale(SPEC)
+    Check(not ready and not applied and why == "MSUF scale controls unavailable" and applyWhy == why
+        and Same(MSUF_DB, before), (withHost and "v1" or "legacy") .. ": a missing MSUF scale owner was not refused")
+end
+-- A refusal MSUF gives only when it applies (its own range check) reaches
+-- the caller in the installer's words.
+Legacy()
+MSUF_DB = FreshDB()
+bridge = Bridge(true)
+local applyScale = HostAPI.ApplyUIScaleProfile
+HostAPI.ApplyUIScaleProfile = function() return false, "invalid" end
+local applied, applyWhy = bridge.ApplyScale(SPEC)
+Check(not applied and applyWhy == "MSUF refused this UI scale", "a v1 refusal at apply was not passed on")
+HostAPI.ApplyUIScaleProfile = function() return false, "combat" end
+applied, applyWhy = bridge.ApplyScale(SPEC)
+Check(not applied and applyWhy == "Finish combat first.", "a v1 combat refusal was not passed on")
+HostAPI.ApplyUIScaleProfile = applyScale
 
 -- The host API is looked up once, however often the bridge is used.
 for _ = 1, 100 do bridge.ApplyScale(SPEC) end
@@ -165,11 +204,8 @@ Check(provider.reset("suite_bags") and table.concat(log, ",") == "run:suite_bags
 handlers.combatLocked = true
 Check(not provider.reset("suite_bags") and #log == 2, "the provider reset ran in combat")
 handlers.combatLocked = false
--- Its canReset allocates nothing per call.
-collectgarbage("collect")
-local before = collectgarbage("count")
-for _ = 1, 100 do provider.canReset("suite_bags") end
-Check(collectgarbage("count") - before < 0.5, "the provider's canReset allocates per call")
+-- (Register.lua's real canReset handler is measured for allocations in
+-- suite_options_menu_contract.)
 
 -- Older Menu2: the four functions are wrapped as before.
 M = Host(false)

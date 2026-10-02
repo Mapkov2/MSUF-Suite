@@ -1991,6 +1991,7 @@ T("MSUF looks use Suite glyphs and a player portrait. Blizzard keeps every butto
 T("MSUF profile system unavailable", "MSUF-Profilsystem nicht verfügbar")
 T("MSUF profile unavailable", "MSUF-Profil nicht verfügbar")
 T("MSUF quest", "MSUF-Quest")
+T("MSUF refused this UI scale", "MSUF hat diese UI-Skalierung abgelehnt")
 T("MSUF replaces Blizzard's zone text and event banners. Quest, achievement and scenario alert frames are hidden when their MSUF announcements are enabled. Turning a type off restores Blizzard's corresponding alert.", "MSUF ersetzt Blizzards Gebietstext und Ereignisbanner. Meldungsfenster für Quests, Erfolge und Szenarien werden ausgeblendet, wenn ihre MSUF-Ankündigungen aktiviert sind. Schaltest du einen Typ aus, kehrt Blizzards entsprechende Meldung zurück.")
 T("MSUF restores your current Blizzard UI scale. Click here to enable optional scaling.", "MSUF stellt deine aktuelle Blizzard-UI-Skalierung wieder her. Klicke hier, um die optionale Skalierung zu aktivieren.")
 T("MSUF scale controls unavailable", "MSUF-Skalierung nicht verfügbar")

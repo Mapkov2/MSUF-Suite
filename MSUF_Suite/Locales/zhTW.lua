@@ -1752,6 +1752,7 @@ T("MSUF looks use Suite glyphs and a player portrait. Blizzard keeps every butto
 T("MSUF profile system unavailable", "無法使用MSUF設定檔系統")
 T("MSUF profile unavailable", "無法使用MSUF設定檔")
 T("MSUF quest", "MSUF任務")
+T("MSUF refused this UI scale", "MSUF 拒絕了此介面縮放")
 T("MSUF replaces Blizzard's zone text and event banners. Quest, achievement and scenario alert frames are hidden when their MSUF announcements are enabled. Turning a type off restores Blizzard's corresponding alert.", "MSUF會取代暴雪的區域文字與事件橫幅。啟用對應的MSUF公告時，任務、成就與事件警示框架會被隱藏。關閉某一類型即可恢復暴雪對應的警示。")
 T("MSUF restores your current Blizzard UI scale. Click here to enable optional scaling.", "MSUF會恢復你目前的暴雪介面縮放。點擊此處可啟用選用縮放。")
 T("MSUF scale controls unavailable", "無法使用MSUF縮放控制")

@@ -1749,6 +1749,7 @@ T("MSUF looks use Suite glyphs and a player portrait. Blizzard keeps every butto
 T("MSUF profile system unavailable", "MSUF 프로필 시스템을 사용할 수 없음")
 T("MSUF profile unavailable", "MSUF 프로필을 사용할 수 없음")
 T("MSUF quest", "MSUF 퀘스트")
+T("MSUF refused this UI scale", "MSUF가 이 UI 크기를 거부했습니다")
 T("MSUF replaces Blizzard's zone text and event banners. Quest, achievement and scenario alert frames are hidden when their MSUF announcements are enabled. Turning a type off restores Blizzard's corresponding alert.", "MSUF가 블리자드의 지역 텍스트와 이벤트 배너를 대체합니다. 퀘스트, 업적, 시나리오 알림 프레임은 해당 MSUF 공지가 활성화되면 숨겨집니다. 유형을 끄면 해당 블리자드 알림이 복원됩니다.")
 T("MSUF restores your current Blizzard UI scale. Click here to enable optional scaling.", "MSUF는 현재 블리자드 UI 배율을 복원합니다. 선택적 배율 조정을 켜려면 여기를 클릭하세요.")
 T("MSUF scale controls unavailable", "MSUF 배율 조절을 사용할 수 없음")
