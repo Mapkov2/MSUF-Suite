@@ -401,14 +401,6 @@ function Typography.SetCustomPath(path)
     return SetValue("customPath", tostring(path or ""))
 end
 
-function Typography.SetSharedMediaFont(name)
-    local path = NS.SharedMedia.FetchFont(name)
-    if not path then return false end
-    NS.DB.typography.sharedMediaFont = name
-    if NS.DB.typography.face == "sharedMedia" then Typography.ApplyConfigured() end
-    return true
-end
-
 function Typography.GetSharedMediaFontNames()
     return NS.SharedMedia.GetFontNames()
 end
@@ -419,11 +411,6 @@ end
 
 function Typography.SetIncludeSpecial(enabled)
     return SetValue("includeSpecial", enabled == true)
-end
-
-function Typography.GetFaceLabel(face)
-    local label = faceLabels[face]
-    return label and NS.L[label] or tostring(face)
 end
 
 function Typography.GetStatus()

@@ -426,21 +426,12 @@ function GenericWindows.GetCounts()
     return counts
 end
 
-function GenericWindows.GetAppliedCount()
-    local counts = GenericWindows.GetCounts()
-    return counts.applied + counts.partial
-end
-
 function GenericWindows.GetCatalogCount()
     return #CatalogEntries()
 end
 
 function GenericWindows.GetPendingAddonCount()
     return pendingAddonCount
-end
-
-function GenericWindows.GetTraversalLimits()
-    return GenericWindows.maxDepth, GenericWindows.maxNodes
 end
 
 loadFrame:SetScript("OnEvent", function(self, event, addon)

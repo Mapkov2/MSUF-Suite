@@ -483,7 +483,6 @@ local function SecureOverlay()
     secure:RegisterEvent("PLAYER_REGEN_DISABLED")
     secure:Hide()
     RegisterStateDriver(secure, "visibility", "[combat] hide")
-    P.secureOverlay = secure
     return secure
 end
 local function SecureAttach(button)

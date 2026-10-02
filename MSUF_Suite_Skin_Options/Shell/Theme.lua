@@ -43,14 +43,6 @@ function O.CreatePanel(parent, role, inset)
     return frame
 end
 
-function O.FormatRGBA(color)
-    local r = math.floor((color[1] or 0) * 255 + 0.5)
-    local g = math.floor((color[2] or 0) * 255 + 0.5)
-    local b = math.floor((color[3] or 0) * 255 + 0.5)
-    local a = math.floor((color[4] or 1) * 100 + 0.5)
-    return ("#%02X%02X%02X  %d%%"):format(r, g, b, a)
-end
-
 ------------------------------------------------------------------ value labels
 function O.Percent(value)
     return tostring(math.floor((tonumber(value) or 0) * 100 + 0.5)) .. "%"

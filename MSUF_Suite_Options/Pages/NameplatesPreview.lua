@@ -138,7 +138,6 @@ local function BuildBar(editor, s, cell)
     local bar = CreateFrame("Button", nil, cell)
     bar:SetSize(206, 20)
     bar:SetPoint("CENTER", cell, "CENTER", 0, -4)
-    bar._msufPreviewState = s.state
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(bar,
             P.Meta(PAGE, ID, "preview." .. prefix, "action", "suite_nameplates_preview"),

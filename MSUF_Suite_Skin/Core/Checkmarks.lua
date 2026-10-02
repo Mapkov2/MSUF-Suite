@@ -336,10 +336,6 @@ local function CanTrack(button)
     return button and Safety.CanDecorate(button, true)
 end
 
-function Checkmarks.IsCloseButton(button)
-    return Checkmarks.GetWindowAction(button) == "close"
-end
-
 function Checkmarks.TrackButton(button, owner)
     if not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() or not CanTrack(button) then
         return false

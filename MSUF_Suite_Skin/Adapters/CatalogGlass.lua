@@ -245,10 +245,6 @@ local Catalog = {
 }
 NS.BlizzardCatalog = Catalog
 
-function Catalog.GetEntries()
-    return entries
-end
-
 function Catalog.GetFrames()
     return flattened
 end

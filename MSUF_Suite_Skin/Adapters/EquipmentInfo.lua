@@ -141,8 +141,6 @@ local function ReadTooltip(unit, slot, result)
         elseif kind and kind == types.GemSocket then
             socketLines = socketLines + 1
             if Field(line, "gemIcon") then filledLines = filledLines + 1 end
-        elseif kind and kind == types.ItemUpgradeLevel then
-            result.upgradeDescription = Text(Field(line, "leftText"))
         end
     end
     if socketLines > 0 and not result.sockets then result.sockets = socketLines end

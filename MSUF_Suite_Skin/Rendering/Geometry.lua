@@ -105,15 +105,3 @@ function Geometry.ConfigureShape(texture, asset, geometry)
         texture:SetTextureSliceMode(STRETCHED)
     end
 end
-
-function Geometry.GetFamilies()
-    return NS.GeometryFamilies
-end
-
-function Geometry.GetRadii()
-    return NS.GeometryRadii
-end
-
-function Geometry.GetBorders()
-    return NS.GeometryBorders
-end

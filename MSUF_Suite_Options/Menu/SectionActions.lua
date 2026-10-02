@@ -96,7 +96,6 @@ local function BuildCopyRow(state, spec)
     copyButton:SetScript("OnClick", function() CopySection(state, popup.destination) end)
     popup:SetHeight(174)
     popup.RefreshTargets = function() RefreshCopyTargets(state, select, copyButton) end
-    popup._msufSuiteCopySection = function(target) return CopySection(state, target) end
 end
 
 local function BuildSectionPopup(state, spec)
@@ -120,7 +119,6 @@ local function BuildSectionPopup(state, spec)
         ShowFeedback(state.body._msufSuiteSectionReset(), "Section reset")
         ClosePopup(state)
     end)
-    popup._msuf2ResetSection = function() return state.body._msufSuiteSectionReset() end
     state.entry.outer:HookScript("OnHide", function() ClosePopup(state) end)
     Controller.AttachControllerWindow(popup)
     if Controller.isForever then

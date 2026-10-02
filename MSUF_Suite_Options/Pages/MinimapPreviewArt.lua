@@ -252,7 +252,6 @@ function P.CreateMinimapPreviewArt(canvas)
     BuildMap(art, canvas, canvasLevel)
     BuildFrame(art, canvas)
     art.terrain = ReadTerrain()
-    art.terrainAvailable = art.terrain ~= nil
     art.style = Suite.MinimapStyle.Create(canvas, canvasLevel + 1, canvasLevel + 4)
     return art
 end

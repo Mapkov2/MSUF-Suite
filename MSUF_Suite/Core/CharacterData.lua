@@ -6,7 +6,6 @@ local _, Suite = ...
 -- carry them, and a profile switch keeps the character's history. The
 -- owners cap their own lists (run history, split buckets).
 local ROOT_KEY = "suiteCharacters"
-Suite.CharacterDataKey = ROOT_KEY
 
 local function Table(parent, key)
     local value = parent[key]

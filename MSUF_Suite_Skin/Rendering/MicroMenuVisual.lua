@@ -500,10 +500,6 @@ function MicroMenuVisual.GetState(button)
     return states[button]
 end
 
-function MicroMenuVisual.GetIconPath(buttonName)
-    return ICON_CELLS[buttonName] ~= nil and ICON_ATLASES.line or nil
-end
-
 function MicroMenuVisual.ApplyIcon(texture, buttonName, iconStyle)
     if not texture or ICON_CELLS[buttonName] == nil then return false end
     ApplyIconSource(texture, buttonName, iconStyle)

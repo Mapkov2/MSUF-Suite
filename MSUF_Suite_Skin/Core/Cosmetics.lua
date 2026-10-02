@@ -74,7 +74,6 @@ local function FadePieces(frame, pieces, owner)
 end
 
 local dialogHeaderPieces = { "LeftBG", "CenterBG", "RightBG" }
-local flatBackgroundPieces = { "BottomLeft", "BottomRight", "BottomEdge", "TopSection" }
 
 function Cosmetics.FadeNineSlice(nineSlice, owner)
     FadePieces(nineSlice, nineSlicePieces, owner)
@@ -82,10 +81,6 @@ end
 
 function Cosmetics.FadeDialogHeader(header, owner)
     FadePieces(header, dialogHeaderPieces, owner)
-end
-
-function Cosmetics.FadeFlatBackground(background, owner)
-    FadePieces(background, flatBackgroundPieces, owner)
 end
 
 -- Restores the original value only while the region still shows ours;

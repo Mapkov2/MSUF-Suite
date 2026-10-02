@@ -93,11 +93,4 @@ function SharedMedia.FetchFont(name)
     return LSM:Fetch("font", name, true)
 end
 
-function SharedMedia.GetStatusBarNames()
-    local result = {}
-    local list = LSM:List("statusbar")
-    for index = 1, #(list or {}) do result[index] = list[index] end
-    return result
-end
-
 return SharedMedia

@@ -527,27 +527,6 @@ function S.ResetKeys(id, values)
     return true
 end
 
-function S.AddSpellFromCursor(id, key)
-    local rule = S.catalog[id] and S.catalog[id].rules[key]
-    if not rule or not (rule.spells or rule.items) or NS.IsCombatLocked() then return false end
-    local kind, cursorID, _, spellID = GetCursorInfo()
-    if not NS.Public(kind) or not NS.Public(cursorID) or not NS.Public(spellID) then return false end
-    if rule.items then
-        if kind ~= "item" then return false end
-        spellID = cursorID
-    elseif kind ~= "spell" then
-        return false
-    end
-    if type(spellID) ~= "number" then return false end
-    local text = S.Config(id)[key]
-    for token in text:gmatch("%d+") do
-        if tonumber(token) == spellID then return false end
-    end
-    local ok = S.Set(id, key, text == "" and tostring(spellID) or text .. " " .. tostring(spellID))
-    if ok then ClearCursor() end
-    return ok
-end
-
 function S.Reset(id)
     local db = ActiveSuite()
     if NS.IsCombatLocked() or not S.catalog[id] or not db then return false end
