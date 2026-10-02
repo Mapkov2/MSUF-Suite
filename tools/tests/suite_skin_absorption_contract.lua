@@ -10,6 +10,8 @@ local fixture = source:sub(1, at - 1)
 local contract = [=[
 -- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(arg[1])
+-- The chat adapter keeps its colour ledger in the Suite core's skin boundary.
+dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteSkinBoundary(arg[1])
 -- The Suite core's text lookup (MSUF_Suite/Core/Platform.lua), through which
 -- the skin shows its English text; no language pack is loaded here.
 local function SuiteText(english) return english end
@@ -1736,7 +1738,7 @@ assert(looks == 5 and palettes >= 5,
     "Client look catalog or palette collection changed")
 
 local private = {}
-_G.MSUFSuite = { Database = _G.MSUFSuite.Database, Text = SuiteText, Client = {
+_G.MSUFSuite = { Database = _G.MSUFSuite.Database, Skin = _G.MSUFSuite.Skin, Text = SuiteText, Client = {
     AttachControllerWindow = function() end,
     PauseControllerWindow = function() end,
     ResumeControllerWindow = function() end,

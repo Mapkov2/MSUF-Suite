@@ -426,6 +426,8 @@ Check(sorted == 0 and catalogCount > 0, "catalog entries were rebuilt for a stat
 -- (Core/SuiteOwnership.lua); free ones keep their skin.
 local suiteOwned = {}
 MSUFSuite = { Suite = { OwnsBlizzardSurface = function(surface) return suiteOwned[surface] == true end } }
+-- The chat adapter keeps its colour ledger in the Suite core's skin boundary.
+dofile(root .. "/tools/tests/suite_test_support.lua").SuiteSkinBoundary(root, MSUFSuite)
 assert(loadfile(skin .. "Core/SuiteOwnership.lua"))("MSUF_Suite_Skin", NS)
 
 local faded, fade = {}, NS.Cosmetics.Fade
