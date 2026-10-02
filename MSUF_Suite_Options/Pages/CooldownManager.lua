@@ -283,7 +283,7 @@ local function BuildSection(ctx, b, ui, spec)
     end
     P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn, ColorEnabled)
     P.AttachSectionReset(ctx, body, spec.title, function()
-        return P.ResetRules(ID, rules, Page.KeyFn)
+        return P.ResetRules(ID, rules, Page.ResetKeyFn)
     end)
     if spec.id == "layout" then
         local half = floor((width - 12) / 2)
@@ -576,7 +576,7 @@ local function Build(ctx)
             local rules = P.SectionRules(ID, "general")
             rules[#rules + 1] = RULES[KEYS.c1.name]
             rules[#rules + 1] = RULES[KEYS.c1.kind]
-            return P.ResetRules(ID, rules, Page.KeyFn, { "enabled" })
+            return P.ResetRules(ID, rules, Page.ResetKeyFn, { "enabled" })
         end)
     end
     -- Basics first, then the closed spell list, then the other topics.

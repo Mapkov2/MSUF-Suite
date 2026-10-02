@@ -201,6 +201,14 @@ function Page.KeyFn(key)
     if not suffix then return key end
     return KEYS[Page.selected][suffix] or key
 end
+-- A section reset writes only the selected bar's own keys: a suffix the bar
+-- lacks resolves to nothing, so P.ResetRules skips it instead of resetting
+-- custom bar 1's template key.
+function Page.ResetKeyFn(key)
+    local suffix = TEMPLATE_SUFFIX[key]
+    if not suffix then return key end
+    return KEYS[Page.selected][suffix]
+end
 -- The sound channel means nothing while the module's sounds are muted.
 P.Gates[ID] = function(rule)
     if rule.key == "soundChannel" then return P.Get(ID, "muteSounds") ~= true end

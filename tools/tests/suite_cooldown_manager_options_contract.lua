@@ -905,6 +905,27 @@ Control("vertical").set(true)
 M.RequestRefresh()
 assert(runtime.vertical == "ess" and Config().ess_vertical and Config().ess_x == 17, "orientation change did not keep the bar in place")
 assert(Control("grow").row.values[2].text == "Left", "vertical bars grow left or right")
+-- "Reset section" resets the selected bar's own keys only. The built-in Buff
+-- bars row has no icon look and Essential cooldowns no buff rules: their
+-- resets must leave custom bar 1's template keys alone.
+do
+    local look, buffs = ctx.sections[5], ctx.sections[8]
+    assert(look.title == "Look" and buffs.title == "Buffs", "unexpected section order for the reset check")
+    Config().c1_zoom, Config().c1_border, Config().c1_pandemic = 20, 3, false
+    Config().bar_strata, Config().ess_pandemic = 1, false
+    picker.set("bar")
+    assert(look._msufSuiteSectionReset(), "the Look reset of the Buff bars row wrote nothing")
+    assert(Config().c1_zoom == 20 and Config().c1_border == 3, "a Buff bars section reset reset custom bar 1")
+    assert(Config().bar_strata == catalog.rules.bar_strata.default, "the Buff bars row's own Look setting was not reset")
+    picker.set("ess")
+    assert(buffs._msufSuiteSectionReset() == false, "Essential cooldowns own no buff rules, so the reset writes nothing")
+    assert(Config().c1_pandemic == false, "an Essential cooldowns section reset reset custom bar 1")
+    picker.set("c1")
+    assert(look._msufSuiteSectionReset() and Config().c1_zoom == catalog.rules.c1_zoom.default
+        and Config().c1_border == catalog.rules.c1_border.default, "custom bar 1's own Look reset failed")
+    Config().c1_pandemic = true
+    picker.set("ess")
+end
 
 ------------------------------------------------------------------ list edits
 local grid = ui.grid
