@@ -375,7 +375,11 @@ local S = {
     Install = function(_, module) installed = module end,
 }
 local context = {
-    Event = function(_, event, callback) events[event] = callback end,
+    Event = function(_, event, callback, allowCombat)
+        events[event] = callback
+        -- Every plate listener also runs in combat (the context's allowCombat).
+        assert(allowCombat == true, event .. " would wait for the end of combat")
+    end,
     CVar = function(_, key, value) cvars[key] = value; liveCVars[key] = value end,
 }
 NS.Suite = S
@@ -1674,11 +1678,11 @@ do
         end
     end
     NativeAnchors()
-    private.Layout.Apply(uf, "enemy", config, true)
+    private.Layout.Reapply(uf, "enemy", config)
     Check(51, -7, "Forever moved CC auras into the native level badge")
     private.Layout.Restore(uf)
     Check(38, 0, "Forever CC reset discarded the native level reservation")
-    private.Layout.Apply(uf, "enemy", config, true)
+    private.Layout.Reapply(uf, "enemy", config)
     NamePlateSetupOptions.playerLevelDiffWidth = 40
     NativeAnchors()
     layoutHook(uf)
@@ -1697,7 +1701,7 @@ do
     Check(42, 0, "Forever CC hook changed protected anchors in combat")
     assert(module.needsRefresh, "Forever CC combat refresh was not deferred")
     combat = false
-    private.Layout.Apply(uf, "enemy", config, true)
+    private.Layout.Reapply(uf, "enemy", config)
     Check(55, -7, "Forever CC layout did not recover after combat")
     -- Removing the offset during a native rebuild must keep its new base.
     config.enemyControlAuraOffsetX, config.enemyControlAuraOffsetY = 0, 0
@@ -1866,11 +1870,11 @@ do
         and nativeMana.texture == "native-mana",
         "personal bars were not skinned without replacing native fill")
     mana:Hide()
-    private.Power.Refresh(true)
+    private.Power.Reapply()
     assert(alternate.offsetX == 12 and alternate.offsetY == -3,
         "alternate power did not move when Blizzard attached it directly to health")
     mana:Show()
-    private.Power.Refresh(true)
+    private.Power.Reapply()
     assert(alternate.offsetX == 0 and alternate.offsetY == 0,
         "alternate power retained a second offset when attached to mana")
     local created = mana.created

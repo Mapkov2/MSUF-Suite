@@ -1084,14 +1084,14 @@ do
     assert(not owner.cursorDisplaced,"restoring the anchor retained displacement")
     owner.mask=1;BR.SyncCursor(owner)
     local before=moves
-    combat=true;BR.StopCursor(owner,false)
+    combat=true;BR.StopCursor(owner)
     owner.config.followCursor=false;BR.SyncCursor(owner)
     assert(moves==before and owner.cursorDisplaced,"combat suspension forgot pending anchor restoration")
     combat=false;BR.SyncCursor(owner)
     assert(moves==before+1 and not owner.cursorDisplaced,"combat exit did not restore the static anchor")
     owner.config.followCursor=true;BR.SyncCursor(owner)
     before=moves
-    owner.active=false;BR.StopCursor(owner,false)
+    owner.active=false;BR.StopCursor(owner)
     owner.config.followCursor=false;owner.active=true;BR.SyncCursor(owner)
     assert(moves==before+1 and not owner.cursorDisplaced,"disable/re-enable lost the static anchor")
 end

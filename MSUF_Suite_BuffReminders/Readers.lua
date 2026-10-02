@@ -24,12 +24,16 @@ function R.RankName(spellID)
     return name or nil
 end
 
+-- The aura filters of a spell name lookup: any helpful aura, or only the
+-- player's own (PLAYER selects the caster natively).
+R.HELPFUL, R.OWN_HELPFUL = "HELPFUL", "HELPFUL|PLAYER"
+
 -- Forever's ranked buffs share their spell name across ranks. Returns false
 -- when the name is unreadable (nothing to look up), else true and the aura.
-function R.RankAura(unit, spellID, own)
+function R.RankAura(unit, spellID, filter)
     local name = R.RankName(spellID)
     if not name then return false end
-    return true, C_UnitAuras.GetAuraDataBySpellName(unit, name, own and "HELPFUL|PLAYER" or "HELPFUL")
+    return true, C_UnitAuras.GetAuraDataBySpellName(unit, name, filter)
 end
 
 -- Aura lookups (RequiresNonSecretAura) return nothing instead of raising
@@ -123,7 +127,7 @@ function R.AuraPresent(entry)
     for index = 1, count do
         local id = ids and ids[index] or entry.aura
         local ok, data = true, nil
-        if entry.ranked then ok, data = R.RankAura("player", id)
+        if entry.ranked then ok, data = R.RankAura("player", id, R.HELPFUL)
         else data = C_UnitAuras.GetPlayerAuraBySpellID(id) end
         if not ok or not Public(data) then
             unknown = true

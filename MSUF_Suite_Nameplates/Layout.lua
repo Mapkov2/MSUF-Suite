@@ -43,7 +43,10 @@ end
 
 -- Blizzard's aura list anchors include fixed offsets (-5, +5 and the debuff
 -- padding). SetPointsOffset replaces those offsets on every point, so move
--- each known native anchor from its own base instead.
+-- each known native anchor from its own base instead. nativeFixed marks an
+-- anchor from Blizzard's XML, which UpdateAnchors never rebuilds (OnAnchors
+-- restores it before the offsets are applied again).
+local NATIVE_FIXED = true
 local function AuraAnchor(state, region, point, owner, relative, x, y, dx, dy, nativeFixed)
     if dx == 0 and dy == 0 then return end
     if not Accessible(region) or not owner then module.needsRefresh = true; return end
@@ -140,7 +143,7 @@ local function OnAnchors(uf)
     if locked then module.needsRefresh = true; return end
     if not module.active then Layout.Restore(uf); return end
     if not NS.Public(uf.isFriend) then return end
-    Layout.Apply(uf, uf.isFriend and "friendly" or "enemy", module.config, true)
+    Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
 end
 
 local function CastOffsets(state, uf, plan, setup, force)
@@ -237,10 +240,10 @@ end
 local function AuraAnchors(state, uf, plan)
     local auras, auraFrame = plan.Auras, uf.AurasFrame
     AuraAnchor(state, auraFrame and auraFrame.DebuffListFrame, "LEFT", uf.HealthBarsContainer, "LEFT",
-        0, 0, auras[1], auras[2], true)
+        0, 0, auras[1], auras[2], NATIVE_FIXED)
     local buff = plan.Buffs
     AuraAnchor(state, auraFrame and auraFrame.BuffListFrame, "RIGHT", uf.ClassificationFrame,
-        "LEFT", -5, 0, buff[1], buff[2], true)
+        "LEFT", -5, 0, buff[1], buff[2], NATIVE_FIXED)
 end
 
 -- The debuffs also follow the name or health bar through Blizzard's padding
@@ -274,7 +277,9 @@ local function ElementOffsets(state, uf, plan, setup, force)
         plan.Classification[1] - raid[1], plan.Classification[2] - raid[2], force)
 end
 
-function Layout.Apply(uf, prefix, config, force)
+-- Lays one plate out, once per settings generation (Layout.Configure).
+-- force (Layout.Reapply) writes every offset again.
+local function Apply(uf, prefix, config, force)
     local plan, state = plans[prefix], states[uf]
     local enabled = plan and plan.active and config.look ~= 2 and config[prefix]
     if not enabled then if state then Layout.Restore(uf) end; return end
@@ -305,6 +310,13 @@ function Layout.Apply(uf, prefix, config, force)
         hooksecurefunc(uf, "UpdateAnchors", OnAnchors)
         hooked[uf] = true
     end
+end
+Layout.Apply = Apply
+
+-- Lays the plate out again although its generation is current: Blizzard
+-- rebuilt its anchors (UpdateAnchors).
+function Layout.Reapply(uf, prefix, config)
+    Apply(uf, prefix, config, true)
 end
 
 function Layout.Bind(owner) module = owner end

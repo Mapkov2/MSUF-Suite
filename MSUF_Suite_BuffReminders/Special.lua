@@ -51,11 +51,11 @@ function R.SyncSpecialEvents(self, callback)
     local c = self.config
     local wanted = not self.suspended and (c.petPassiveWarning or c.demonChoiceWarning)
     for _, event in ipairs(EVENTS) do
-        if wanted then self.context:Event(event, callback, true)
+        if wanted then R.Listen(self, event, callback)
         else self.context:RemoveEvent(event) end
     end
     if not self.suspended and c.demonChoiceWarning then
-        self.context:Event("UNIT_SPELLCAST_SENT", SummonSent, true, "player")
+        R.Listen(self, "UNIT_SPELLCAST_SENT", SummonSent, "player")
     else
         self.context:RemoveEvent("UNIT_SPELLCAST_SENT")
     end
@@ -168,4 +168,9 @@ function R.SpecialText(self, allowed)
         self.specialWarning = label
     end
     if label then label:SetText(text); label:SetShown(text ~= "") end
+end
+
+-- No notice line (Edit Mode preview, disable).
+function R.HideSpecialText(self)
+    R.SpecialText(self, false)
 end

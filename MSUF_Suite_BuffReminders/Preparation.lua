@@ -71,14 +71,14 @@ end
 function R.SyncPreparationEvents(self, callback)
     local listen = not self.suspended
     if listen and self.config.readyCheckMana then
-        self.context:Event("READY_CHECK", callback, true)
+        R.Listen(self, "READY_CHECK", callback)
     else
         self.context:RemoveEvent("READY_CHECK")
     end
     for i = 1, #PREP_EVENTS do
         local event = PREP_EVENTS[i]
         if listen and NS.Client.modernEquipment and self.config.keystoneCover ~= 1 then
-            self.context:Event(event, callback, true)
+            R.Listen(self, event, callback)
         else
             self.context:RemoveEvent(event)
         end

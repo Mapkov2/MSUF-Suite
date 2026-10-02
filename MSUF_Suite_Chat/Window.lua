@@ -81,6 +81,7 @@ local function OwnTab(context, tab, name, own)
     end
 end
 
+-- enabled: the Suite panel shows, so its parts replace Blizzard's chrome.
 local function SetNativeChrome(self, frame, tab, input, enabled)
     local context, c = self.context, self.config
     local name = frame:GetName()
@@ -98,6 +99,11 @@ local function SetNativeChrome(self, frame, tab, input, enabled)
             context:RestoreProperty(quickTexture, "SetAlpha")
         end
     end
+end
+
+-- Hands every native chrome part of the window back.
+local function ReleaseNativeChrome(self, frame, tab)
+    SetNativeChrome(self, frame, tab, frame.editBox, false)
 end
 
 function C.ColorTab(self, visual, selected)
@@ -136,14 +142,19 @@ function C.TabSelected(frame, chat, dock)
 end
 local TabSelected = C.TabSelected
 
+-- Hands the tab's fade fields and alpha back to Blizzard.
+local function ReleaseTabAlpha(context, tab)
+    context:RestoreFields(tab)
+    context:RestoreProperty(tab, "SetAlpha")
+end
+
 -- Blizzard fades idle tabs to 0.2 alpha. The Suite strip keeps their labels
 -- readable while leaving the native title, target and click behavior intact.
-function C.KeepTabVisible(self, frame, release)
+function C.KeepTabVisible(self, frame)
     local tab = _G[frame:GetName() .. "Tab"]
     local context = self.context
-    if release or not (self.config.tabPanel and self.config.panelAlpha > 0) then
-        context:RestoreFields(tab)
-        context:RestoreProperty(tab, "SetAlpha")
+    if not (self.config.tabPanel and self.config.panelAlpha > 0) then
+        ReleaseTabAlpha(context, tab)
         return
     end
     context:Field(tab, "noMouseAlpha", TAB_MIN_ALPHA)
@@ -426,13 +437,13 @@ function C.ReleaseWindow(self, visual)
     HideVisual(visual)
     local frame = visual.frame
     local tab = _G[frame:GetName() .. "Tab"]
-    SetNativeChrome(self, frame, tab, frame.editBox, false)
+    ReleaseNativeChrome(self, frame, tab)
     if visual.tabLabel then
         self.context:RestoreTuple(visual.tabLabel, "SetTextColor")
         self.context:RestoreTuple(visual.tabLabel, "SetFont")
     end
     M.tabs[tab] = nil
-    KeepTabVisible(self, frame, true)
+    ReleaseTabAlpha(self.context, tab)
 end
 
 -- tabGap > 0: docked tabs keep that much room between them. Blizzard's

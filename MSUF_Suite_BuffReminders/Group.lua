@@ -94,23 +94,33 @@ end
 
 -- Whether a member has one of the auras: true, false, or nil while that is
 -- unknown. The lookups return nothing instead of raising while aura data is
--- restricted, which R.AurasRestricted reports. A member that is offline,
--- out of sight or dead cannot be read: the group buff skips it (nil), and
--- for the player's own Soulstone or Beacon it holds none (false), so one
--- such raid member does not silence that notice for everyone.
-local function Present(unit, aliases, own, ranked)
+-- restricted, which R.AurasRestricted reports.
+--
+-- The player's own Soulstone or Beacon, looked up by name with the PLAYER
+-- filter: it selects the caster natively, also when another caster has the
+-- same aura on this unit (no first-instance guess). A member that is
+-- offline, out of sight or dead cannot be read and holds none (false), so
+-- one such raid member does not silence that notice for everyone.
+local function OwnAuraOn(unit, aliases)
     if R.AurasRestricted() then return nil end
-    if not Eligible(unit) then
-        if own then return false end
-        return nil
+    if not Eligible(unit) then return false end
+    for i = 1, #aliases do
+        local known, data = R.RankAura(unit, aliases[i], R.OWN_HELPFUL)
+        if not known or not Public(data) then return nil end
+        if data then return true end
     end
+    return false
+end
+
+-- The group buff on a member, by name for Forever's ranked buffs, else by
+-- spell ID. A member that cannot be read is skipped (nil).
+local function BuffOn(unit, aliases, ranked)
+    if R.AurasRestricted() or not Eligible(unit) then return nil end
     for i = 1, #aliases do
         local known, data = true, nil
-        if ranked or own then known, data = R.RankAura(unit, aliases[i], own)
+        if ranked then known, data = R.RankAura(unit, aliases[i], R.HELPFUL)
         else data = C_UnitAuras.GetUnitAuraBySpellID(unit, aliases[i]) end
         if not known or not Public(data) then return nil end
-        -- PLAYER selects the caster natively, including when another
-        -- caster has the same aura on this unit. No first-instance guess.
         if data then return true end
     end
     return false
@@ -122,10 +132,10 @@ local function OwnMissing(self, key, aliases, changedUnit)
     local states = self[key] or {}
     self[key] = states
     if changedUnit then
-        states[changedUnit] = Present(changedUnit, aliases, true)
+        states[changedUnit] = OwnAuraOn(changedUnit, aliases)
     else
         Clear(states)
-        for unit in pairs(self.groupUnits) do states[unit] = Present(unit, aliases, true) end
+        for unit in pairs(self.groupUnits) do states[unit] = OwnAuraOn(unit, aliases) end
     end
     local unknown = false
     for unit in pairs(self.groupUnits) do
@@ -174,11 +184,11 @@ function R.RefreshGroup(self, changedUnit)
     self.groupPresence = states
     local ranked = NS.Client.isForever
     if changedUnit then
-        states[changedUnit] = Present(changedUnit, buff.auras, false, ranked)
+        states[changedUnit] = BuffOn(changedUnit, buff.auras, ranked)
         return
     end
     Clear(states)
-    for unit in pairs(self.groupUnits) do states[unit] = Present(unit, buff.auras, false, ranked) end
+    for unit in pairs(self.groupUnits) do states[unit] = BuffOn(unit, buff.auras, ranked) end
 end
 
 -- The advance warning (remindBeforeMinutes) of the group buff entry follows
@@ -242,18 +252,32 @@ local function Flush(self)
     self:Update("visual")
 end
 
--- Marks a member (or, with roster true, the roster) for the next pass.
-function R.QueueGroupWork(self, unit, roster)
-    local dirty = self.groupDirty
-    if not dirty then
-        dirty = {}
-        self.groupDirty = dirty
-        self.groupFlush = function() Flush(self) end
-    end
-    if roster then self.groupRosterDirty = true elseif unit then dirty[unit] = true end
-    if self.groupFlushPending then return end
+-- The set of marked members, made with the pass callback on first use.
+local function NewDirty(self)
+    local dirty = {}
+    self.groupDirty = dirty
+    self.groupFlush = function() Flush(self) end
+    return dirty
+end
+
+local function SchedulePass(self)
     self.groupFlushPending = true
     C_Timer.After(FLUSH_DELAY, self.groupFlush)
+end
+
+-- Marks one member for the next pass. Member events come in bursts, so the
+-- common case only marks the unit.
+function R.QueueMemberWork(self, unit)
+    local dirty = self.groupDirty or NewDirty(self)
+    if unit then dirty[unit] = true end
+    if not self.groupFlushPending then SchedulePass(self) end
+end
+
+-- Marks the roster for the next pass, which recompiles.
+function R.QueueRosterWork(self)
+    if not self.groupDirty then NewDirty(self) end
+    self.groupRosterDirty = true
+    if not self.groupFlushPending then SchedulePass(self) end
 end
 
 function R.CancelGroupWork(self)

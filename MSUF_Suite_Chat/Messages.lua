@@ -316,13 +316,13 @@ function C.MessagesRefresh(self)
     local c, context = self.config, self.context
     C.CompileMessages(c)
     if tools.names then
-        context:Event("GROUP_ROSTER_UPDATE", C.MessageRoster, true)
+        C.ListenInCombat(context, "GROUP_ROSTER_UPDATE", C.MessageRoster)
     else
         context:RemoveEvent("GROUP_ROSTER_UPDATE")
     end
     C.MessageRoster()
     if c.whisperSound ~= "" or c.whisperSoundKit > 0 then
-        context:Event("CHAT_MSG_WHISPER", WhisperSound, true)
+        C.ListenInCombat(context, "CHAT_MSG_WHISPER", WhisperSound)
     else
         context:RemoveEvent("CHAT_MSG_WHISPER")
     end

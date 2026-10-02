@@ -23,9 +23,9 @@ S.Queue = function() error("chat message tools queued the module for combat end"
 local config = Support.CatalogDefaults(root, "chat")
 config.saveHistory, config.historyLines, config.linkURLs, config.colorMentionNames = true, 20, true, true
 local events = {}
-local context = { removed = {} }
-function context:Event(event, callback) events[event] = callback end
-function context:RemoveEvent(event) events[event] = nil end
+local context = { removed = {}, combat = {} }
+function context:Event(event, callback, allowCombat) events[event], self.combat[event] = callback, allowCombat end
+function context:RemoveEvent(event) events[event], self.combat[event] = nil, nil end
 local copied
 local C
 local function LoadChat(saved)
@@ -164,6 +164,18 @@ assert(handlers.msufurl, "URL clicks did not register Blizzard's link handler")
 C.MessagesRefresh(M)
 assert(events.GROUP_ROSTER_UPDATE and not events.CHAT_MSG_WHISPER,
     "message events did not follow the enabled tools")
+-- Chat is a geometry module: these text and sound listeners must also run
+-- in combat (the context's allowCombat).
+assert(context.combat.GROUP_ROSTER_UPDATE == true, "the group name colors wait for the end of combat")
+do
+    local kit = config.whisperSoundKit
+    config.whisperSoundKit = 12867
+    C.MessagesRefresh(M)
+    assert(events.CHAT_MSG_WHISPER and context.combat.CHAT_MSG_WHISPER == true,
+        "the whisper sound waits for the end of combat")
+    config.whisperSoundKit = kit
+    C.MessagesRefresh(M)
+end
 C.MessageRoster()
 local formatted = C.FormatMessage("Mapko https://example.org/Mapko. |Hspell:123|h[Mapko]|h")
 assert(formatted:find("|cffff8000Mapko|r", 1, true), "public mention colored")

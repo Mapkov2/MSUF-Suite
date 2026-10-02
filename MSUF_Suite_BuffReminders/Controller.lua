@@ -130,6 +130,15 @@ end
 
 local OnEvent
 
+-- Registers one module event. Every listener also runs in combat (the
+-- context's allowCombat, kept explicit should the module ever move frames
+-- itself): each handler checks combat on its own, and in combat only
+-- PLAYER_REGEN_ENABLED stays registered. units limits a unit event to that
+-- unit or unit list.
+function R.Listen(self, event, callback, units)
+    self.context:Event(event, callback, true, units)
+end
+
 -- Unit and weapon events are registered only while an entry needs them and
 -- the player is out of combat. Options that read member auras register the
 -- member events for the current unit list again whenever the roster
@@ -144,16 +153,16 @@ local function SyncUnitEvents(self)
         self.groupListChanged = false
         for i = 1, #MEMBER_EVENTS do context:RemoveEvent(MEMBER_EVENTS[i]) end
         if group then
-            for i = 1, #MEMBER_EVENTS do context:Event(MEMBER_EVENTS[i], OnEvent, true, self.groupUnitList) end
+            for i = 1, #MEMBER_EVENTS do R.Listen(self, MEMBER_EVENTS[i], OnEvent, self.groupUnitList) end
         elseif mode then
-            context:Event("UNIT_AURA", OnEvent, true, "player")
+            R.Listen(self, "UNIT_AURA", OnEvent, "player")
         end
     end
     if wantWeapon ~= self.weaponListening then
         self.weaponListening = wantWeapon
         if wantWeapon then
-            context:Event("UNIT_INVENTORY_CHANGED", OnEvent, true, "player")
-            for i = 1, #WEAPON_EVENTS do context:Event(WEAPON_EVENTS[i], OnEvent, true) end
+            R.Listen(self, "UNIT_INVENTORY_CHANGED", OnEvent, "player")
+            for i = 1, #WEAPON_EVENTS do R.Listen(self, WEAPON_EVENTS[i], OnEvent) end
         else
             context:RemoveEvent("UNIT_INVENTORY_CHANGED")
             for i = 1, #WEAPON_EVENTS do context:RemoveEvent(WEAPON_EVENTS[i]) end
@@ -209,32 +218,58 @@ local function BindButton(button, entry)
     button.count:SetText("")
 end
 
-local function LayoutButtons(self, entries, entriesChanged, geometryChanged, colorChanged, textChanged)
+-- What one compile changed: the reminder list (entries), the host anchor,
+-- the geometry (size, spacing, columns), the border color and the count
+-- text. Reused, so an unchanged compile allocates nothing.
+local changed = { entries = false, anchor = false, geometry = false, color = false, text = false }
+
+-- Compares the layout settings with the ones applied last.
+local function ReadLayoutChanges(layout, c)
+    changed.anchor = not layout or layout.point ~= c.point or layout.x ~= c.x or layout.y ~= c.y
+    changed.geometry = not layout or layout.size ~= c.size or layout.spacing ~= c.spacing
+        or layout.columns ~= c.columns
+    changed.color = not layout or layout.borderColor ~= c.borderColor
+    changed.text = not layout or layout.countFont ~= c.countFont or layout.countSize ~= c.countSize
+        or layout.countPosition ~= c.countPosition or layout.countX ~= c.countX or layout.countY ~= c.countY
+    return changed.anchor or changed.geometry or changed.color or changed.text
+end
+
+local function RememberLayout(layout, c)
+    layout.point, layout.x, layout.y = c.point, c.x, c.y
+    layout.size, layout.spacing, layout.columns = c.size, c.spacing, c.columns
+    layout.borderColor = c.borderColor
+    layout.countFont, layout.countSize, layout.countPosition = c.countFont, c.countSize, c.countPosition
+    layout.countX, layout.countY = c.countX, c.countY
+    return layout
+end
+
+local function LayoutButtons(self, entries)
     local c = self.config
     local size, spacing, columns = c.size, c.spacing, c.columns
-    if entriesChanged or geometryChanged then
+    local newEntries, geometry = changed.entries, changed.geometry
+    if newEntries or geometry then
         local displayColumns = math.min(columns, math.max(1, #entries))
         local rows = math.max(1, math.ceil(#entries / columns))
         self.host:SetSize(displayColumns * size + (displayColumns - 1) * spacing,
             rows * size + (rows - 1) * spacing)
     end
-    if not (entriesChanged or geometryChanged or colorChanged or textChanged) then return end
+    if not (newEntries or geometry or changed.color or changed.text) then return end
     local r, g, b = S.RGB(c.borderColor)
     for index = 1, math.max(#entries, #self.buttons) do
         local button = self.buttons[index] or MakeButton(self, index)
         local entry = entries[index]
-        if entriesChanged then
+        if newEntries then
             button.entry = entry
             button:Hide()
         end
         if entry then
-            if entriesChanged then BindButton(button, entry) end
-            if entriesChanged or textChanged then R.StyleCount(button, c) end
-            if entriesChanged or colorChanged then
+            if newEntries then BindButton(button, entry) end
+            if newEntries or changed.text then R.StyleCount(button, c) end
+            if newEntries or changed.color then
                 button.border:SetColorTexture(r, g, b, 1)
                 button.alertColor = nil
             end
-            if entriesChanged or geometryChanged then button:SetSize(size, size) end
+            if newEntries or geometry then button:SetSize(size, size) end
         end
     end
 end
@@ -246,39 +281,27 @@ function M:Compile()
     R.ReadPet(self)
     R.ReadHealthstone(self)
     SyncUnitEvents(self)
-    local entriesChanged = not SameEntries(self.entries, entries)
-    if entriesChanged then
+    changed.entries = not SameEntries(self.entries, entries)
+    if changed.entries then
         self.entries, self.mask = entries, nil
         self.needsFullRefresh, self.countsDirty = true, true
     else
         entries = self.entries
     end
-    local layout = self.layout
-    local anchorChanged = not layout or layout.point ~= c.point or layout.x ~= c.x or layout.y ~= c.y
-    local geometryChanged = not layout or layout.size ~= c.size or layout.spacing ~= c.spacing
-        or layout.columns ~= c.columns
-    local colorChanged = not layout or layout.borderColor ~= c.borderColor
-    local textChanged = not layout or layout.countFont ~= c.countFont or layout.countSize ~= c.countSize
-        or layout.countPosition ~= c.countPosition or layout.countX ~= c.countX or layout.countY ~= c.countY
-    if not entriesChanged and not anchorChanged and not geometryChanged and not colorChanged and not textChanged then return false end
-    if anchorChanged or geometryChanged or colorChanged or textChanged then
-        layout = layout or {}
-        layout.point, layout.x, layout.y = c.point, c.x, c.y
-        layout.size, layout.spacing, layout.columns = c.size, c.spacing, c.columns
-        layout.borderColor = c.borderColor
-        layout.countFont, layout.countSize, layout.countPosition = c.countFont, c.countSize, c.countPosition
-        layout.countX, layout.countY = c.countX, c.countY
-        self.layout = layout
-        if geometryChanged then self.mask = nil end
+    local layoutChanged = ReadLayoutChanges(self.layout, c)
+    if not changed.entries and not layoutChanged then return false end
+    if layoutChanged then
+        self.layout = RememberLayout(self.layout or {}, c)
+        if changed.geometry then self.mask = nil end
     end
-    if entriesChanged then IndexEntries(self, entries) end
-    if anchorChanged then
+    if changed.entries then IndexEntries(self, entries) end
+    if changed.anchor then
         self.host:ClearAllPoints()
         local point = ANCHORS[c.point] or "CENTER"
         self.host:SetPoint(point, UIParent, point, c.x, c.y)
     end
-    LayoutButtons(self, entries, entriesChanged, geometryChanged, colorChanged, textChanged)
-    return entriesChanged
+    LayoutButtons(self, entries)
+    return changed.entries
 end
 
 local function RefreshPoisonEntry(self, index, entry)
@@ -389,7 +412,7 @@ end
 -- Only display state changes; live presence/count caches remain untouched.
 local function Preview(self)
     CancelThreshold(self)
-    R.SpecialText(self, false)
+    R.HideSpecialText(self)
     local mask = 0
     for _, entry in ipairs(self.entries) do mask = mask + entry.bit end
     if self.mask ~= mask or not self.previewing then
@@ -440,24 +463,24 @@ local function SyncSubzoneEvents(self)
     local c = self.config
     local wanted = not self.suspended and c.mapPotion and c.mapPotionMaps:find("%d") ~= nil
     for i = 1, #SUBZONE_EVENTS do
-        if wanted then self.context:Event(SUBZONE_EVENTS[i], OnEvent, true)
+        if wanted then R.Listen(self, SUBZONE_EVENTS[i], OnEvent)
         else self.context:RemoveEvent(SUBZONE_EVENTS[i]) end
     end
 end
 
 local function RegisterEvents(self)
-    for i = 1, #EVENTS do self.context:Event(EVENTS[i], OnEvent, true) end
+    for i = 1, #EVENTS do R.Listen(self, EVENTS[i], OnEvent) end
     SyncSubzoneEvents(self)
     R.SyncPreparationEvents(self, OnEvent)
     R.SyncSpecialEvents(self, OnEvent)
-    if R.WantsGroup(self) then self.context:Event("GROUP_ROSTER_UPDATE", OnEvent, true)
+    if R.WantsGroup(self) then R.Listen(self, "GROUP_ROSTER_UPDATE", OnEvent)
     else self.context:RemoveEvent("GROUP_ROSTER_UPDATE") end
 end
 
 -- Entering combat: every handler would return early, so stop listening.
 local function Suspend(self)
     self.suspended = true
-    R.StopCursor(self, false)
+    R.StopCursor(self)
     CancelThreshold(self)
     R.StopReminderAlerts(self)
     self.mask = nil
@@ -491,7 +514,7 @@ OnEvent = function(self, event, unit, updateInfo)
         if event == "UNIT_AURA" and unit == "player" then
             if not self.suspended then R.RefreshGroup(self, "player") end
         else
-            if not self.suspended then R.QueueGroupWork(self, unit) end
+            if not self.suspended then R.QueueMemberWork(self, unit) end
             return
         end
     end
@@ -507,7 +530,7 @@ OnEvent = function(self, event, unit, updateInfo)
         return
     end
     if event == "GROUP_ROSTER_UPDATE" then
-        R.QueueGroupWork(self, nil, true)
+        R.QueueRosterWork(self)
         return
     end
     if SUBZONE_EVENT[event] then
@@ -542,7 +565,7 @@ end
 function M:Enable()
     if not self.host then
         self.host = CreateFrame("Frame", nil, UIParent, "SecureFrameTemplate")
-        self.host:SetScript("OnHide", function() R.StopCursor(self, false) end)
+        self.host:SetScript("OnHide", function() R.StopCursor(self) end)
         self.buttons, self.foodIDs = {}, {}
         self.preview = S.CreateFontString(self.host, nil, "OVERLAY", "GameFontHighlightSmall")
         self.preview:SetPoint("CENTER", self.host, "CENTER")
@@ -568,7 +591,7 @@ function M:Refresh()
 end
 
 function M:Disable()
-    R.StopCursor(self, false)
+    R.StopCursor(self)
     CancelThreshold(self)
     R.StopReminderAlerts(self)
     self.suspended = true
@@ -576,7 +599,7 @@ function M:Disable()
     R.SyncPreparationEvents(self, OnEvent)
     R.HideReadyCheck(self)
     R.SyncSpecialEvents(self, OnEvent)
-    R.SpecialText(self, false)
+    R.HideSpecialText(self)
     R.CancelGroupWork(self)
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     for i = 1, #EVENTS do self.context:RemoveEvent(EVENTS[i]) end

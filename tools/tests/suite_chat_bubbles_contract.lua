@@ -90,9 +90,9 @@ local S = {
         return scanner
     end,
 }
-local context = {}
-function context:Event(e, fn) events[e] = fn end
-function context:RemoveEvent(e) events[e] = nil end
+local context = { combat = {} }
+function context:Event(e, fn, allowCombat) events[e], self.combat[e] = fn, allowCombat end
+function context:RemoveEvent(e) events[e], self.combat[e] = nil, nil end
 function context:CVar(name, value) cvars[name] = value end
 local config, catalogNS = Support.CatalogDefaults(root, "chat")
 config.styleBubbles, config.bubbleFontSize, config.bubbleMaxWidth = true, 18, 200
@@ -102,6 +102,10 @@ local C = { M = M, Fill = function() fills = fills + 1; return Texture() end, Ti
 end }
 local NS = { Safety = { IsForbidden = function(frame) return frame.forbidden == true end },
     IsCombatLocked = function() return true end, ChatBubbleSources = catalogNS.ChatBubbleSources }
+-- The production listener helper (Shared.lua) registers the bubble events.
+local shared = { NS = NS, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite_Chat/Shared.lua"))("MSUF_Suite_Chat", shared)
+C.ListenInCombat = shared.Chat.ListenInCombat
 assert(loadfile(root .. "/MSUF_Suite_Chat/Bubbles.lua"))("MSUF_Suite_Chat", { NS = NS, Suite = S, Chat = C })
 -- The OnUpdate scanner runs while it is shown; each frame advances time.
 local function Frames(seconds, step)
@@ -123,6 +127,11 @@ assert(events.CHAT_MSG_SAY and events.CHAT_MSG_YELL and events.CHAT_MSG_PARTY an
     and events.CHAT_MSG_MONSTER_SAY and events.PLAYER_ENTERING_WORLD, "bubble sources are not followed")
 assert(events.CHAT_MSG_EMOTE and events.CHAT_MSG_TEXT_EMOTE and events.CHAT_MSG_MONSTER_EMOTE,
     "emotes are not a bubble source")
+-- Chat is a geometry module: every bubble listener must also run in combat
+-- (the context's allowCombat).
+for event in pairs(events) do
+    assert(context.combat[event] == true, event .. " waits for the end of combat")
+end
 -- Styled in combat too: nothing in the bubble path waits for combat end.
 local hello = Bubble()
 Show(hello, "hello")
