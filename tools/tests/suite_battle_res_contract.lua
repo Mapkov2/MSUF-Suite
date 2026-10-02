@@ -22,6 +22,9 @@ local function Widget()
     function w:SetTextColor() end
     function w:SetFont() end
     function w:SetText(value) self.text = value end
+    function w:SetFormattedText(format, ...)
+        self.text, self.formatted = format:format(...), (self.formatted or 0) + 1
+    end
     function w:SetCooldown(start, duration) self.preview = { start, duration } end
     function w:SetCooldownFromDurationObject(value) self.duration = value; self.preview = nil end
     function w:Clear() self.duration, self.preview = nil, nil end
@@ -87,6 +90,7 @@ local NS = {
     AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" },
     MSUFMedia = { font = "MSUF.ttf" },
     IsCombatLocked = function() return false end,
+    Dispatch = function(callback, ...) return callback(...) end,
 }
 NS.Suite = S
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
@@ -96,13 +100,13 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/BattleRes.lua"))(
 local M = assert(installed.module)
 M.active = true
 M.config = { width = 146, height = 44, scale = 100, point = 5, x = 10, y = 120 }
-M.context = {
+M.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().ModuleTimers(root, S, NS)("battleRes", M, {
     Event = function(_, event, callback, allowCombat)
         assert(allowCombat == true)
         callbacks[event] = callback
     end,
     RemoveEvent = function(_, event) callbacks[event] = nil end,
-}
+})
 local function Event(name)
     assert(callbacks[name], name .. " is not registered")
     callbacks[name](M, name)
@@ -139,9 +143,13 @@ assert(M.host.shown and M.count.text == "2" and M.maximum.text == "/3"
 local readBefore = chargeReads
 charges = { currentCharges = 1, maxCharges = 3, isActive = true,
     display = "1", duration = {} }
+local formatted = M.maximum.formatted or 0
 Event("SPELL_UPDATE_CHARGES")
 assert(chargeReads == readBefore + 1 and M.count.text == "1" and M.cooldown.duration == charges.duration,
     "charge event did not refresh count and next recharge")
+-- The pool size goes to the native formatter: no Lua string per charge event.
+assert(M.maximum.formatted == formatted + 1 and M.maximum.text == "/3",
+    "the pool size was built as a Lua string on a charge event")
 
 -- Current charge and time are allowed to be secret in combat. The display
 -- string and duration object must flow directly to native UI setters.
