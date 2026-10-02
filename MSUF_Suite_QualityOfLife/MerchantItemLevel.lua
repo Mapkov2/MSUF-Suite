@@ -5,9 +5,7 @@ local ID = "merchantLevel"
 local M = { labels = {}, requests = S.QoLItemRequests() }
 
 local function CancelPaint(self)
-    local timer = self.paintTimer
-    self.paintTimer = nil
-    if timer then timer:Cancel() end
+    self.paintJob:Cancel()
 end
 
 local function Hide(self)
@@ -31,14 +29,7 @@ local function ItemLoaded(self, _, itemID)
     if not self.requests:Arrived(itemID) then return end
     -- Several visible items can finish loading in one frame. Repaint their
     -- page once, after the item events have been delivered.
-    if self.paintTimer then return end
-    local timer
-    timer = C_Timer.NewTimer(0, function()
-        if self.paintTimer ~= timer then return end
-        self.paintTimer = nil
-        self:Paint()
-    end)
-    self.paintTimer = timer
+    self.paintJob:Request()
 end
 
 function M:Paint()
@@ -93,6 +84,7 @@ end
 
 -- The merchant list shows these levels on its own rows.
 function M:Enable()
+    self.paintJob = self.context:Coalesce(0, M.Paint)
     self.open = MerchantFrame:IsShown()
     self.requests:Reset()
     self.context:Event("MERCHANT_SHOW", OnMerchant)
