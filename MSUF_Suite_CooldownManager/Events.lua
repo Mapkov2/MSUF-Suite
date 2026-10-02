@@ -372,7 +372,11 @@ local function StartPoll()
     assistTicker = C_Timer.NewTicker(.2, Poll)
     Poll()
 end
+-- Blizzard's highlight callback source is AssistedCombatManager, a table
+-- only Retail loads (Forever's Blizzard_ActionBar.toc lists its file for the
+-- mainline game type): on Forever the poll is the only source.
 local function HighlightOn()
+    if NS.Client.isForever then return false end
     local value = C_CVar.GetCVar("assistedCombatHighlight")
     return Public(value) and value == "1"
 end

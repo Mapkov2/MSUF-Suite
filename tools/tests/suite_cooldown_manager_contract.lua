@@ -2778,6 +2778,33 @@ do
     Run()
     assert(not frame.shown,"the assisted icon stayed shown")
 end
+-- Forever has no AssistedCombatManager (its ActionBar TOC loads the file for
+-- the mainline game type only): the assist source falls back to the poll and
+-- nothing reads or registers for the missing table.
+do
+    local manager=AssistedCombatManager
+    AssistedCombatManager=nil
+    registry["AssistedCombatManager.OnAssistedHighlightSpellChange"]=nil
+    Suite.Client.isForever=true
+    config.assistIcon=true
+    cvars.assistedCombatHighlight="1"
+    module:Refresh()
+    Run()
+    assert(not registry["AssistedCombatManager.OnAssistedHighlightSpellChange"],"Forever registered Blizzard's highlight callback")
+    combat=true
+    Fire("PLAYER_REGEN_DISABLED")
+    local live,ticker=LiveTickers()
+    assert(live==1 and ticker.interval==.2,"Forever polls the recommendation in combat")
+    combat=false
+    Fire("PLAYER_REGEN_ENABLED")
+    assert(LiveTickers()==0,"the Forever poll stops after combat")
+    Suite.Client.isForever=false
+    AssistedCombatManager=manager
+    config.assistIcon=false
+    cvars.assistedCombatHighlight="0"
+    module:Refresh()
+    Run()
+end
 
 ------------------------------------------------------------------ invisible mode and MSUF promotion
 config.blizzard=2
