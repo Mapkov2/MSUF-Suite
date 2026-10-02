@@ -26,7 +26,7 @@ function R.StopCursor(self)
     local driver = cursor.driver
     if not driver then return end
     driver:SetScript("OnUpdate", nil)
-    driver.x, driver.y, cursor.following = nil, nil, false
+    driver.x, driver.y = nil, nil
 end
 
 -- Stops following and, out of combat, puts the host back on its anchor.
@@ -58,7 +58,6 @@ function R.SyncCursor(self)
         driver.owner = self
         cursor.driver = driver
     end
-    cursor.following = true
     driver:SetScript("OnUpdate", Follow)
     Follow(driver)
 end

@@ -33,7 +33,7 @@ end
 
 -- The members are built into the idle one of two roster buffers, so a
 -- rebuild can tell a changed membership apart without allocating.
-local function FillRoster(self, roster)
+local function FillRoster(roster)
     local units, list = roster.units, roster.list
     units.player = true
     list[1] = "player"
@@ -81,7 +81,7 @@ function R.GroupRoster(self)
     local classes = group.classes or {}
     group.classes = classes
     Clear(classes)
-    if R.WantsGroup(self) then FillRoster(self, roster) end
+    if R.WantsGroup(self) then FillRoster(roster) end
     if not SameMembers(group.units, roster) then group.listChanged = true end
     group.units, group.unitList = roster.units, roster.list
     for unit in pairs(roster.units) do
@@ -122,8 +122,11 @@ local function BuffOn(unit, aliases, ranked)
     if R.AurasRestricted() or not Eligible(unit) then return nil end
     for i = 1, #aliases do
         local known, data = true, nil
-        if ranked then known, data = R.RankAura(unit, aliases[i], R.HELPFUL)
-        else data = C_UnitAuras.GetUnitAuraBySpellID(unit, aliases[i]) end
+        if ranked then
+            known, data = R.RankAura(unit, aliases[i], R.HELPFUL)
+        else
+            data = C_UnitAuras.GetUnitAuraBySpellID(unit, aliases[i])
+        end
         if not known or not Public(data) then return nil end
         if data then return true end
     end

@@ -367,19 +367,19 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
         elseif auraDirty then
             RefreshAuraEntry(self, entry, fullRefresh, updateInfo, foodDirty)
         end
-        local categoryAllowed = config[(entry.category or "personal") .. "_" .. environmentKey] ~= false
-        if not categoryAllowed then
-            -- This category follows its own content choices within the
-            -- module-wide visibility filter.
-        elseif entry.restock or entry.present == false then
-            mask = mask + entry.bit
-        elseif entry.present == true and threshold > 0 and now and entry.expiresAt
-            and (not entry.totalDuration or entry.totalDuration > threshold) then
-            local due = entry.expiresAt - threshold
-            if due <= now then
+        -- A category follows its own content choices within the module-wide
+        -- visibility filter.
+        if config[(entry.category or "personal") .. "_" .. environmentKey] ~= false then
+            if entry.restock or entry.present == false then
                 mask = mask + entry.bit
-            elseif not nextDue or due < nextDue then
-                nextDue = due
+            elseif entry.present == true and threshold > 0 and now and entry.expiresAt
+                and (not entry.totalDuration or entry.totalDuration > threshold) then
+                local due = entry.expiresAt - threshold
+                if due <= now then
+                    mask = mask + entry.bit
+                elseif not nextDue or due < nextDue then
+                    nextDue = due
+                end
             end
         end
     end
@@ -483,8 +483,11 @@ local function SyncSubzoneEvents(self)
     local c = self.config
     local wanted = not self.listen.suspended and c.mapPotion and c.mapPotionMaps:find("%d") ~= nil
     for i = 1, #SUBZONE_EVENTS do
-        if wanted then R.Listen(self, SUBZONE_EVENTS[i], OnEvent)
-        else self.context:RemoveEvent(SUBZONE_EVENTS[i]) end
+        if wanted then
+            R.Listen(self, SUBZONE_EVENTS[i], OnEvent)
+        else
+            self.context:RemoveEvent(SUBZONE_EVENTS[i])
+        end
     end
 end
 
@@ -493,8 +496,11 @@ local function RegisterEvents(self)
     SyncSubzoneEvents(self)
     R.SyncPreparationEvents(self, OnEvent)
     R.SyncSpecialEvents(self, OnEvent)
-    if R.WantsGroup(self) then R.Listen(self, "GROUP_ROSTER_UPDATE", OnEvent)
-    else self.context:RemoveEvent("GROUP_ROSTER_UPDATE") end
+    if R.WantsGroup(self) then
+        R.Listen(self, "GROUP_ROSTER_UPDATE", OnEvent)
+    else
+        self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
+    end
 end
 
 -- Entering combat: every handler would return early, so stop listening.

@@ -53,8 +53,11 @@ function R.SyncSpecialEvents(self, callback)
     local suspended = self.listen.suspended
     local wanted = not suspended and (c.petPassiveWarning or c.demonChoiceWarning)
     for _, event in ipairs(EVENTS) do
-        if wanted then R.Listen(self, event, callback)
-        else self.context:RemoveEvent(event) end
+        if wanted then
+            R.Listen(self, event, callback)
+        else
+            self.context:RemoveEvent(event)
+        end
     end
     if not suspended and c.demonChoiceWarning then
         R.Listen(self, "UNIT_SPELLCAST_SENT", SummonSent, "player")

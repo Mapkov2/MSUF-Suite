@@ -23,9 +23,9 @@ R.STATE = {
     -- buttons (nil repaints); layout: the layout settings applied last;
     -- newAlert: a newly shown reminder still owes its sound.
     view = { "host", "buttons", "preview", "previewShown", "previewing", "mask", "layout", "newAlert" },
-    -- Following the cursor (Cursor): the OnUpdate driver, whether it runs,
-    -- and whether the host left its saved anchor.
-    cursor = { "driver", "following", "displaced" },
+    -- Following the cursor (Cursor): the OnUpdate driver (it runs while the
+    -- host follows) and whether the host left its saved anchor.
+    cursor = { "driver", "displaced" },
     -- The known food auras (Readers): ids holds one snapshot per aura
     -- instance; known is nil until a rescan, false while unreadable;
     -- scanKeys is the rescan's reused key list.

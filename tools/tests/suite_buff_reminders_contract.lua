@@ -302,7 +302,7 @@ before=auraReads
 module:Update("visual")
 assert(module.view.mask==15 and module.view.buttons[1].shown and module.view.buttons[3].count.text=="5")
 assert(auraReads==before and module.list.entries[1].present==cachedPresent and module.list.entries[3].count==cachedCount)
-assert(not module.list.thresholdTimer and not module.cursor.following)
+assert(not module.list.thresholdTimer and not (module.cursor.driver and module.cursor.driver.OnUpdate))
 S.editMode=false
 module:Update("visual")
 assert(module.view.mask==14 and not module.view.buttons[1].shown and module.view.buttons[3].count.text=="2",
@@ -1090,7 +1090,7 @@ do
     assert(not owner.cursor.driver.OnUpdate and moves==2,"combat did not immediately stop cursor input")
     combat=false;BR.SyncCursor(owner)
     owner.view.mask=0;BR.SyncCursor(owner)
-    assert(not owner.cursor.driver.OnUpdate and not owner.cursor.following,"no visible reminder kept a cursor reader")
+    assert(not owner.cursor.driver.OnUpdate,"no visible reminder kept a cursor reader")
     assert(not owner.cursor.displaced,"restoring the anchor retained displacement")
     owner.view.mask=1;BR.SyncCursor(owner)
     local before=moves

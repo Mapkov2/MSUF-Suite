@@ -127,8 +127,11 @@ function R.AuraPresent(entry)
     for index = 1, count do
         local id = ids and ids[index] or entry.aura
         local ok, data = true, nil
-        if entry.ranked then ok, data = R.RankAura("player", id, R.HELPFUL)
-        else data = C_UnitAuras.GetPlayerAuraBySpellID(id) end
+        if entry.ranked then
+            ok, data = R.RankAura("player", id, R.HELPFUL)
+        else
+            data = C_UnitAuras.GetPlayerAuraBySpellID(id)
+        end
         if not ok or not Public(data) then
             unknown = true
         elseif data then
