@@ -119,20 +119,6 @@ function AB.Count(bar, config)
     return n
 end
 
--- Menu preview description; plain values, no frames.
-function S.ActionBarPreviewInfo(index)
-    if not AB.Available(index) then return nil end
-    local config, keys = S.Config("actionbars"), AB.KEYS[index]
-    local n, size, spacing, vertical = config[keys.Buttons], config[keys.Size], config[keys.Spacing], config[keys.Vertical]
-    local columns, rows, r = AB.Grid(n, config[keys.Rows], vertical)
-    return {
-        buttons = n, rows = r, columns = columns, rowCount = rows, size = size, spacing = spacing, vertical = vertical,
-        start = config[keys.Start],
-        width = columns * size + (columns - 1) * spacing,
-        height = rows * size + (rows - 1) * spacing,
-    }
-end
-
 -- Restricted snippets. Button visibility: inside the button count, and
 -- filled unless empty slots are shown or a drag reveal bit (2 and up) is
 -- set. Press-and-hold follows the spell and keeps its value when the

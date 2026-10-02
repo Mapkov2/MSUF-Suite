@@ -55,18 +55,6 @@ local function Broker()
     return broker
 end
 
-function Sources.BrokerNames()
-    local lib = Broker()
-    local names = {}
-    if lib then
-        for name in lib:DataObjectIterator() do
-            if Text(name) then names[#names + 1] = name end
-        end
-    end
-    table.sort(names)
-    return names
-end
-
 -- The broker data object of a binding, or nil.
 function Sources.BrokerObject(binding)
     local lib = Broker()

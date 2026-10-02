@@ -707,7 +707,6 @@ local function Mode()
     if S.editMode then return 1 end
     return M.config.visibility
 end
-MM.VisibilityMode = Mode
 function MM.ApplyVisibility()
     local host = MM.host
     if not host or NS.IsCombatLocked() then return end
