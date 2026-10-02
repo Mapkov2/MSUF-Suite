@@ -147,7 +147,7 @@ function M:Disable()
     C.MessagesDisable()
     -- Faded alpha goes back before the context restores the tabs it owns.
     C.FadeDisable()
-    C.BubblesDisable(self)
+    C.BubblesDisable()
     for _, visual in pairs(self.visuals) do ReleaseWindow(self, visual) end
     ReleaseNativeControls(self)
     HideCopyDialog(self.copyDialog)

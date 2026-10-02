@@ -1,5 +1,5 @@
 local _, P = ...
-local NS, S = P.NS, P.Suite
+local S = P.Suite
 local C = P.Chat
 -- Optional message tools: clickable URLs, class-colored group names, short
 -- channel prefixes, a timestamp on every line, saved history and the idle
@@ -133,13 +133,6 @@ local function Format(text)
     if tools.channels then text = ShortChannels(text) end
     if tools.stamps then text = Stamp(text) end
     return text
-end
-
--- The rendered public line, nil for a restricted or empty one.
-function C.FormatMessage(text)
-    text = PublicText(text)
-    if not text or not tools.format then return text end
-    return Format(text)
 end
 
 local function CompileChannels(config)
