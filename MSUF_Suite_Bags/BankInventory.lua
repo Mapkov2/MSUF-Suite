@@ -81,32 +81,33 @@ local function Select(button)
     Request()
 end
 
-local function RenderNavigation()
-    local count = 0
-    for i = 1, #BankInventory.categories do BankInventory.categories[i]:Hide() end
-    local function Add(key, text)
-        count = count + 1
-        local button = BankInventory.categories[count]
-        if not button then
-            button = Button(BankInventory.sideChild, "", 132, Select)
-            BankInventory.categories[count] = button
-        end
-        button.key = key
-        button:SetText(text)
-        button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", 0, -(count - 1) * 25)
-        button:Show()
+-- The navigation button at position, made on first use; returns position.
+local function AddNavigation(position, key, text)
+    local button = BankInventory.categories[position]
+    if not button then
+        button = Button(BankInventory.sideChild, "", 132, Select)
+        BankInventory.categories[position] = button
     end
-    Add("all", Grid.GroupLabel(ALL))
+    button.key = key
+    button:SetText(text)
+    button:ClearAllPoints()
+    button:SetPoint("TOPLEFT", 0, -(position - 1) * 25)
+    button:Show()
+    return position
+end
+
+local function RenderNavigation()
+    for i = 1, #BankInventory.categories do BankInventory.categories[i]:Hide() end
+    local count = AddNavigation(1, "all", Grid.GroupLabel(ALL))
     for i = 1, #BankInventory.model.groups do
         local group = BankInventory.model.groups[i]
-        if group.key ~= "all" then Add(group.key, Grid.GroupLabel(group)) end
+        if group.key ~= "all" then count = AddNavigation(count + 1, group.key, Grid.GroupLabel(group)) end
     end
     -- Bank tab names are the player's own text.
     if M.config.showBankTabs then
         for i = 1, #BankInventory.index.tabs do
             local tab = BankInventory.index.tabs[i]
-            Add("tab:" .. tab.id, tab.name)
+            count = AddNavigation(count + 1, "tab:" .. tab.id, tab.name)
         end
     end
     BankInventory.sideChild:SetHeight(math.max(25, count * 25))
