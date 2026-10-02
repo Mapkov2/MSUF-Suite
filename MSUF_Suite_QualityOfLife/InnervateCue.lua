@@ -3,14 +3,11 @@ local NS, S = P.NS, P.Suite
 local ID, SPELL_ID = "innervateCue", 29166
 local POINTS, GLOW_OWNER = NS.AnchorPoints, "MSUFSuiteInnervateCue"
 local M = {}
+local Dispatch = S.Dispatch
 
-local function Cancel(self, key)
-    local timer = self[key]
-    if timer then timer:Cancel(); self[key] = nil end
-end
-
+-- Also the cue's own timeout (ctx:After in Show).
 local function Hide(self)
-    Cancel(self, "hideTimer")
+    self.context:Cancel(Hide)
     if self.host then self.host:Hide() end
     if self.glow then self.glow:Hide() end
 end
@@ -150,7 +147,6 @@ local function CacheTarget(self)
 end
 
 local function Show(self, sender)
-    Cancel(self, "hideTimer")
     self.title:SetText(S.Text("Innervate whisper cue"))
     local readable = S.PublicText(sender)
     self.subtitle:SetText(readable and S.Text("%s whispered"):format(readable) or S.Text("Incoming whisper"))
@@ -163,21 +159,18 @@ local function Show(self, sender)
     if self.config.sound then
         PlaySound(SOUNDKIT.RAID_WARNING, "SFX")
     end
-    local timer
-    timer = C_Timer.NewTimer(self.config.duration, function()
-        if self.active and self.hideTimer == timer then Hide(self) end
-    end)
-    self.hideTimer = timer
+    self.context:After(self.config.duration, Hide)
 end
 
+-- A whisper while Innervate is about to come off cooldown waits for it.
+local PendingReady
 local function ClearPending(self)
-    Cancel(self, "readyTimer")
+    self.context:Cancel(PendingReady)
     self.pending = nil
 end
 
-local function PendingReady(self)
-    self.readyTimer = nil
-    if not self.active or not self.pending then return end
+PendingReady = function(self)
+    if not self.pending then return end
     local pending = self.pending
     self.pending = nil
     local ready = Ready(self)
@@ -198,7 +191,7 @@ local function Whisper(self, _, _, sender)
     if ready == false then
         if S.Finite(remaining) and remaining > 0 and remaining <= 5 then
             self.pending = { at = now, sender = readable }
-            self.readyTimer = C_Timer.NewTimer(remaining, function() PendingReady(self) end)
+            self.context:After(remaining, PendingReady)
         end
         return
     end
@@ -218,12 +211,29 @@ end
 
 local function Preview(self)
     if S.editMode and not NS.IsCombatLocked() then
-        Cancel(self, "hideTimer")
+        self.context:Cancel(Hide)
         self.title:SetText(S.Text("Innervate whisper cue"))
         self.subtitle:SetText(S.Text("Incoming whisper"))
         self.host:Show()
     else
         Hide(self)
+    end
+end
+
+-- MSUF's group frames call their registry observers inside their own
+-- update; the cue's work runs isolated so its error never stops theirs.
+local function GroupFramesChanged()
+    if M.active then Dispatch(CacheTarget, M) end
+end
+
+-- MSUF is another addon: registering and leaving its observer list run
+-- through Dispatch, and an MSUF without the leave call is left alone.
+local function ReleaseGroupFrames(self)
+    local gf = self.observedGF
+    if not gf then return end
+    self.observedGF = nil
+    if type(gf.UnregisterFrameRegistryObserver) == "function" then
+        Dispatch(gf.UnregisterFrameRegistryObserver, GLOW_OWNER)
     end
 end
 
@@ -236,8 +246,8 @@ function M:Enable()
     self.context:Event("GROUP_ROSTER_UPDATE", Roster, true)
     self.context:Event("PLAYER_REGEN_ENABLED", Roster, true)
     local gf = GroupAPI()
-    if gf and type(gf.RegisterFrameRegistryObserver) == "function" then
-        gf.RegisterFrameRegistryObserver(GLOW_OWNER, function() if self.active then CacheTarget(self) end end)
+    if gf and type(gf.RegisterFrameRegistryObserver) == "function"
+        and Dispatch(gf.RegisterFrameRegistryObserver, GLOW_OWNER, GroupFramesChanged) then
         self.observedGF = gf
     end
     CacheTarget(self)
@@ -257,10 +267,7 @@ function M:Disable()
     ClearPending(self)
     Hide(self)
     self.glowAnchor = nil
-    if self.observedGF then
-        self.observedGF.UnregisterFrameRegistryObserver(GLOW_OWNER)
-        self.observedGF = nil
-    end
+    ReleaseGroupFrames(self)
 end
 
 function M:RegisterMovers()
