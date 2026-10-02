@@ -142,13 +142,15 @@ local function PreparedProfile()
     return profile
 end
 
-local function ApplySuiteOnly(profile)
+-- finish: the installer's last step inside the profile transaction (the UI
+-- scale); its refusal rolls the install back.
+local function ApplySuiteOnly(profile, finish)
     local name = FrameProfileName()
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
     local skin = Suite.Client.isForever and Suite.ForeverFactorySkinCompact
         or Suite.RetailFactorySkinCompact
     return Suite.SuiteProfiles.InstallSuiteFactory(name, profile,
-        skin, "cleanModern")
+        skin, "cleanModern", finish)
 end
 
 local function NextFactoryName(base)
@@ -162,7 +164,7 @@ local function NextFactoryName(base)
     return name
 end
 
-local function ApplyClassic(profile)
+local function ApplyClassic(profile, finish)
     local msuf = _G.MSUF_NS
     local frames = not Suite.Client.isForever and msuf
         and msuf.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
@@ -174,10 +176,10 @@ local function ApplyClassic(profile)
     local skin = Suite.Client.isForever and Suite.ForeverFactorySkinCompact
         or Suite.RetailFactorySkinCompact
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Classic"),
-        frames, profile, skinEnabled and skin or nil, "midnight")
+        frames, profile, skinEnabled and skin or nil, "midnight", finish)
 end
 
-local function ApplyForever(profile)
+local function ApplyForever(profile, finish)
     local msuf = _G.MSUF_NS
     local frames = Suite.Client.isForever and msuf
         and msuf.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
@@ -188,7 +190,7 @@ local function ApplyForever(profile)
     end
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Forever"), frames, profile,
-        skinEnabled and skin or nil)
+        skinEnabled and skin or nil, nil, finish)
 end
 
 -- The scale the installer applies, decided once before anything commits:
@@ -204,11 +206,11 @@ end
 
 -- The profile install is the commit point. Every check that can refuse runs
 -- before it (the scale through HostBridge.ScaleReady, the same answer on
--- both host paths), and the profile helpers roll a refused install back, so
--- a failed attempt changed nothing and a retry never installs a second
--- Forever profile. The scale goes to the installed profile, so it applies
--- after the install; should MSUF still refuse it there, the install is
--- reported as failed and not recorded as complete.
+-- both host paths, with MSUF's ranges). The scale goes to the installed
+-- profile, so it is the transaction's last step (finish): should MSUF still
+-- refuse it, the profile helpers roll the whole install back like any other
+-- refusal. A failed attempt changes nothing, and a retry never installs a
+-- second Forever profile.
 function Installer.Apply()
     if Suite.IsCombatLocked() then return false, "Finish combat first." end
     if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
@@ -217,17 +219,16 @@ function Installer.Apply()
     if not ready then return false, why end
     local profile, reason = PreparedProfile()
     if not profile then return false, reason end
+    local function ApplyScale() return Suite.HostBridge.ApplyScale(spec) end
     local ok
     if selected == "forever" then
-        ok, reason = ApplyForever(profile)
+        ok, reason = ApplyForever(profile, ApplyScale)
     elseif selected == "classic" then
-        ok, reason = ApplyClassic(profile)
+        ok, reason = ApplyClassic(profile, ApplyScale)
     else
-        ok, reason = ApplySuiteOnly(profile)
+        ok, reason = ApplySuiteOnly(profile, ApplyScale)
     end
     if not ok then return false, reason end
-    local scaled, scaleWhy = Suite.HostBridge.ApplyScale(spec)
-    if not scaled then return false, scaleWhy end
     local previous = Suite.RootDB.installation
     local getDefault = _G.MSUF_GetDefaultProfileForNewCharacters
     local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
