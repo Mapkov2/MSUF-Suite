@@ -1,7 +1,9 @@
 """Run every Suite contract test with its required arguments.
 
 Usage: python tools/run_suite_tests.py [name-filter]
-Exit code 0 only when every selected test passes.
+Exit code 0 only when every selected test passes. After the contracts it runs the
+quality ratchet (tools/quality_ratchet.py --check) and prints its one summary line;
+a filter selects it with "ratchet".
 """
 
 import os
@@ -11,7 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
-LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
+RATCHET = ROOT / "tools" / "quality_ratchet.py"
+LUA =os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua"}
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
@@ -41,10 +44,26 @@ def commands(test):
     return [[LUA, str(test), str(ROOT)] + extra for extra in EXTRA.get(test.name, [[]])]
 
 
+def run_ratchet(failed):
+    """The quality ratchet is one more check; its one summary line is its output."""
+    env = dict(os.environ)
+    env.setdefault("MSUF_LUA51", LUA)
+    run = subprocess.run([sys.executable, str(RATCHET), "--check"], cwd=ROOT, capture_output=True, text=True,
+                         errors="replace", env=env)
+    lines = (run.stdout + run.stderr).strip().splitlines()
+    if run.returncode == 0:
+        print("ok   " + (lines[-1] if lines else "quality ratchet"))
+        return
+    failed.append("quality_ratchet.py --check")
+    print("FAIL quality_ratchet.py --check")
+    print("\n".join(lines[-12:]))
+
+
 def main():
     wanted = sys.argv[1] if len(sys.argv) > 1 else ""
     tests = sorted(p for p in (ROOT / "tools" / "tests").glob("suite_*")
                    if p.suffix in (".lua", ".py") and p.name not in HELPERS and wanted in p.name)
+    ratchet = RATCHET.is_file() and wanted in "quality_ratchet"
     failed = []
     for test in tests:
         for command in commands(test):
@@ -56,7 +75,10 @@ def main():
                 failed.append(label)
                 print("FAIL " + label)
                 print("\n".join((run.stdout + run.stderr).strip().splitlines()[-6:]))
-    print("\n%d passed, %d failed" % (sum(len(commands(t)) for t in tests) - len(failed), len(failed)))
+    if ratchet:
+        run_ratchet(failed)
+    total = sum(len(commands(t)) for t in tests) + (1 if ratchet else 0)
+    print("\n%d passed, %d failed" % (total - len(failed), len(failed)))
     return 1 if failed else 0
 
 
