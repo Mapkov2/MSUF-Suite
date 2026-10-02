@@ -108,7 +108,7 @@ class Metrics(unittest.TestCase):
             write(root, ADDON + "/Two.lua", "-- two, longer\n" + shared.replace("local", "local  ").replace("\n", "   -- bb\n"))
             write(root, ADDON + "/Three.lua", "\n".join("local other%d = Other(%d)" % (i, i) for i in range(8)) + "\n")
             allowlist(root, [])
-            results, _, _ = ratchet.measure(root, PROFILE, {}, LUAC)
+            results = ratchet.measure(root, PROFILE, {}, LUAC)[0]
         self.assertEqual(results[ADDON + "/One.lua"]["clone_windows"], 3)
         self.assertEqual(results[ADDON + "/Two.lua"]["clone_windows"], 3)
         self.assertEqual(results[ADDON + "/Three.lua"]["clone_windows"], 0)
@@ -119,7 +119,7 @@ class Metrics(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             write(root, ADDON + "/L.lua", source)
-            results, _, _ = ratchet.measure(root, PROFILE, {}, LUAC)
+            results = ratchet.measure(root, PROFILE, {}, LUAC)[0]
         values = results[ADDON + "/L.lua"]
         self.assertEqual(values["max_function"], 13)
         self.assertEqual(values["main_locals"], 2)
@@ -209,6 +209,33 @@ class Check(Tree):
         code, text = run_tool(self.root, "--check")
         self.assertEqual(code, 1, text)
         self.assertIn("clone windows", text)
+
+    def test_report_lists_totals_limits_and_the_worst_files(self):
+        code, text = run_tool(self.root, "--report", "--top", "2")
+        self.assertEqual(code, 0, text)
+        for needle in ("files measured: 2", "totals: lines=", "files above the new-file limits", "worst lines:",
+                       self.rel):
+            self.assertIn(needle, text)
+
+    @unittest.skipUnless(PROFILE == "classic", "the owned-file list is a Classic contract")
+    def test_new_file_limits_apply_to_owned_files_only(self):
+        write(self.root, "tools/classic-owned-addon-paths.txt", ADDON + "/Owned.lua\n")
+        write(self.root, ADDON + "/Owned.lua", "local a = 1; local b = 2\n")
+        write(self.root, ADDON + "/Mirror.lua", "local a = 1; local b = 2\n")
+        code, text = run_tool(self.root, "--check")
+        self.assertEqual(code, 1, text)
+        self.assertIn("Owned.lua: new file has semicolon_lines", text)
+        self.assertNotIn("Mirror.lua: new file", text)
+
+    def test_copying_code_names_the_partner_file(self):
+        shared = "\n".join("local value%d = Compute(%d)" % (i, i) for i in range(8)) + "\n"
+        write(self.root, ADDON + "/B.lua", shared)
+        self.assertEqual(run_tool(self.root, "--update", "--accept-regressions")[0], 0)
+        write(self.root, ADDON + "/C.lua", shared)
+        allowlist(self.root, [entry(ADDON + "/C.lua", "clone_windows", 3)])
+        code, text = run_tool(self.root, "--check")
+        self.assertEqual(code, 1, text)
+        self.assertIn("B.lua: clone_windows 3 is worse than the baseline 0 (+3); shares windows with %s/C.lua (3)" % ADDON, text)
 
     def test_data_and_generated_files_are_not_measured(self):
         write(self.root, ADDON + "/Data/Strings.lua", "local a = 1; local b = 2\n")
