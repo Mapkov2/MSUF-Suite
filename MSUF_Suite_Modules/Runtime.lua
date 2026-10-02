@@ -9,6 +9,8 @@ S.editMode = _G.MSUF_UnitEditModeActive == true
 -- and leave later changes by Blizzard or other addons alone.
 local Context = {}
 Context.__index = Context
+-- Timers.lua adds the deferred-work methods (ctx:After, Coalesce, Ticker).
+Private.Context = Context
 
 -- Secret-safe readers, the translation lookup and error isolation are
 -- defined once in MSUF_Suite/Core/Platform.lua, which is always loaded.
@@ -622,6 +624,8 @@ end
 -- its restore finished, so one whose native setter raised stays for the
 -- next release.
 function Context:Release()
+    -- Pending timers (Timers.lua) go first: nothing deferred runs after this.
+    if self.timers then Dispatch(Context.CancelTimers, self) end
     if self.tuples then
         for frame, values in pairs(self.tuples) do
             for setter in pairs(values) do Dispatch(Context.RestoreTuple, self, frame, setter) end
