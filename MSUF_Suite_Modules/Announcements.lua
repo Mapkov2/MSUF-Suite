@@ -67,6 +67,10 @@ local function Create(self)
     host:Hide()
 end
 
+-- colorStyle: Suite skin + default accents, Custom colors; anchor: Top
+-- center, Screen center (MSUF_Suite/Core/Catalog/HUD.lua).
+local CUSTOM_COLORS, SCREEN_CENTER = 2, 2
+
 local function Theme(self)
     local c = self.config
     local skin = self.context and self.context:Skin()
@@ -74,7 +78,7 @@ local function Theme(self)
     S.SetStyledFont(self.title, font, c.titleSize or 31, "OUTLINE", 1, true, 80, 2)
     S.SetStyledFont(self.subtitle, font, c.subtitleSize or 16, "OUTLINE", 1, true, 75, 1)
     local dark = not skin or skin:GetLook() == "midnightDark"
-    local custom = c.colorStyle == 2
+    local custom = c.colorStyle == CUSTOM_COLORS
     self.kindColors = {}
     for kind, key in pairs(COLOR_KEYS) do
         self.kindColors[kind] = custom and { S.RGB(c[key]) } or COLORS[kind]
@@ -94,7 +98,7 @@ local function Theme(self)
     end
     self.host:SetScale(c.scale / 100)
     self.host:ClearAllPoints()
-    local point = c.anchor == 2 and "CENTER" or "TOP"
+    local point = c.anchor == SCREEN_CENTER and "CENTER" or "TOP"
     self.host:SetPoint(point, UIParent, point, c.x, c.y)
 end
 
@@ -488,7 +492,7 @@ function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "banner", {
         label = "Announcements", order = 626, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", pointKey = "anchor",
-        point = function() return self.config.anchor == 2 and "CENTER" or "TOP" end,
+        point = function() return self.config.anchor == SCREEN_CENTER and "CENTER" or "TOP" end,
         historyKeys = { "scale" },
         extraControls = {
             { id = "scale", label = "Scale %", kind = "number", min = 60, max = 160, step = 1,

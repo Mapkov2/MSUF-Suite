@@ -377,13 +377,15 @@ local function RecordBucket(view, sameLevel)
     return records, key, data
 end
 
--- bossPace: 2/3 compare with the best time of each boss, 4/5 with the
--- splits of the fastest whole run; 2/4 at this keystone level, 3/5 at any.
+-- bossPace (MSUF_Suite/Core/Catalog/HUD.lua): off, the best time of each
+-- boss or the splits of the fastest whole run, at this keystone level or at
+-- any level.
+local PACE_OFF, BOSS_THIS_LEVEL, RUN_THIS_LEVEL, RUN_ANY_LEVEL = 1, 2, 4, 5
 local function Reference(owner, criterion)
     local c, view = owner.config, owner.mplus
-    local pace = c.bossPace or 1
-    if pace == 1 then return nil end
-    local sameLevel = pace == 2 or pace == 4
+    local pace = c.bossPace or PACE_OFF
+    if pace == PACE_OFF then return nil end
+    local sameLevel = pace == BOSS_THIS_LEVEL or pace == RUN_THIS_LEVEL
     local key = BucketKey(view, sameLevel)
     if not key then return nil end
     local cache = view.referenceRecords or {}
@@ -403,7 +405,7 @@ local function Reference(owner, criterion)
         cache[key] = copy
     end
     local record = cache[key]
-    local splits = record and (pace >= 4 and record.run or record.individual)
+    local splits = record and ((pace == RUN_THIS_LEVEL or pace == RUN_ANY_LEVEL) and record.run or record.individual)
     return splits and splits[criterion]
 end
 
@@ -481,7 +483,7 @@ local function PaintCriterion(owner, info, bossCount, elapsed)
             display = display .. "  " .. (delta >= 0 and "+" or "-") .. Clock(math.abs(delta))
         elseif owner.config.bossTargets == true then display = Clock(reference) end
     end
-    local compare = (owner.config.bossPace or 1) ~= 1
+    local compare = (owner.config.bossPace or PACE_OFF) ~= PACE_OFF
     row.time:SetWidth(compare and 116 or 55)
     row.name:ClearAllPoints()
     row.name:SetPoint("LEFT", row, "LEFT", 0, 0)

@@ -8,6 +8,8 @@ local M = { toasts = {}, ids = {} }
 local MAX_TOASTS = 3
 local POPUP_SECONDS = 5
 local BATTLE_PET_CLASS = 17 -- upstream/live Enum.ItemClass.Battlepet
+-- kindFilter (MSUF_Suite/Core/Catalog/QualityOfLife.lua).
+local ALL_ITEMS, MOUNTS_ONLY, PETS_ONLY, MOUNTS_AND_PETS = 1, 2, 3, 4
 
 -- At most this many item IDs of the chosen list count (itemIDs).
 local MAX_IDS = 100
@@ -63,22 +65,22 @@ local function ShowToast(self, itemLink, quantity)
         or quality < minQuality or not S.Finite(icon) then return end
     local itemID, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemLink)
     if not S.Finite(itemID) or (next(self.ids) and not self.ids[itemID]) then return end
-    local filter = self.config.kindFilter or 1
-    if filter ~= 1 then
+    local filter = self.config.kindFilter or ALL_ITEMS
+    if filter ~= ALL_ITEMS then
         local mount, pet = false, false
-        if filter ~= 3 then
+        if filter ~= PETS_ONLY then
             local mountID = C_MountJournal.GetMountFromItem(itemID)
             mount = S.Finite(mountID) and mountID > 0
         end
-        if filter ~= 2 then
+        if filter ~= MOUNTS_ONLY then
             pet = S.Finite(classID) and classID == BATTLE_PET_CLASS
             if not pet then
                 local species = C_PetJournal.GetPetInfoByItemID(itemID)
                 pet = S.Public(species) and species ~= nil and species ~= false
             end
         end
-        if (filter == 2 and not mount) or (filter == 3 and not pet)
-            or (filter == 4 and not (mount or pet)) then return end
+        if (filter == MOUNTS_ONLY and not mount) or (filter == PETS_ONLY and not pet)
+            or (filter == MOUNTS_AND_PETS and not (mount or pet)) then return end
     end
     self.nextIndex = (self.nextIndex or 0) % MAX_TOASTS + 1
     local frame = self.toasts[self.nextIndex]
