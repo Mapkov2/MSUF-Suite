@@ -691,8 +691,11 @@ function M:Refresh()
     end
 end
 
+-- An armed delete ends with the module: its window is cancelled with the
+-- context, and a re-enabled module must ask again.
 function M:Disable()
     self.lootPending = nil
+    Disarm(self)
     self:Close()
     self.pull, self.current, self.lastRunKey = nil, nil, nil
 end

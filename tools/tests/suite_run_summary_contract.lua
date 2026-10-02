@@ -284,6 +284,18 @@ assert(#state.history == 1 and delete.label.text == "Click again to delete",
     "the window of an earlier arm disarmed a newer one")
 timers[#timers]()
 assert(delete.label.text == "Delete run" and not delete.armed, "the delete arm did not end after its window")
+-- Turning the module off ends an arm (the runtime's Release cancels its
+-- window): the first click after turning it on again only arms.
+delete.OnClick(delete)
+summary:Disable()
+summary.context:CancelTimers()
+summary:Enable()
+assert(not delete.armed and delete.label.text == "Delete run", "turning the module off kept the delete arm")
+summary:ShowHistory()
+delete.OnClick(delete)
+assert(#state.history == 1 and delete.label.text == "Click again to delete",
+    "one click after turning the module on again deleted a run")
+timers[#timers]()
 summary:Close()
 Event("CHALLENGE_MODE_START")
 Event("DAMAGE_METER_RESET")
