@@ -106,14 +106,14 @@ local function Paint(self, item)
     self.divider:SetColorTexture(color[1], color[2], color[3], .62)
 end
 
--- The banner on screen fades out after its duration (self.dismissTimer);
--- clearing it or an Edit Mode preview cancels the wait.
+-- The banner on screen fades out after its duration (ctx:After);
+-- clearing it or an Edit Mode preview cancels the wait (ctx:Cancel).
 local function Dismiss(self)
     if not S.editMode then self.leave:Play() end
 end
 
 local function ScheduleDismiss(self, delay)
-    self.dismissTimer = self.context:After(delay, Dismiss)
+    self.context:After(delay, Dismiss)
 end
 
 local function Display(self, item)

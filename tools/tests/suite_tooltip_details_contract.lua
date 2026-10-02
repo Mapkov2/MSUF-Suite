@@ -243,7 +243,14 @@ Leave()
 -- Quiet period after any request: one delayed attempt, cancelled by others.
 now = 1022
 Build("delayed")
-local retry, wait = m.inspectRetry, timers[#timers]
+-- The module's waits are context timers (ctx:After keeps one handle per
+-- function); the retry is the one After handle.
+local function RetryHandle()
+    for _, handle in pairs(m.context.timers) do
+        if handle.Start and handle.Pending then return handle end
+    end
+end
+local retry, wait = RetryHandle(), timers[#timers]
 Check(retry and retry:Pending() and wait.delay == 3 and inspectRequests == 2,
     "a hover inside the quiet period did not wait once")
 local timerCount = #timers
@@ -257,7 +264,7 @@ Check(not m.pendingInspect, "a foreign request did not take over the inspect buf
 Leave()
 now = 1027
 Build("quiet")
-retry = m.inspectRetry
+retry = RetryHandle()
 Check(retry:Pending(), "the quiet hover did not wait")
 ClearInspectPlayer()
 Check(not retry:Pending(), "a foreign clear did not cancel the delayed hover")

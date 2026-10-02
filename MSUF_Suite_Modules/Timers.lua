@@ -18,7 +18,10 @@ local Dispatch = NS.Dispatch
 -- Each returns a handle, one per fn and context, reused by every call: fn must
 -- be a function made once, never a closure made per call. handle:Cancel()
 -- drops the pending run; handle:Pending() (job, deadline) and
--- handle:Running() (ticker) tell whether one is due. A job is also an event
+-- handle:Running() (ticker) tell whether one is due. A module keeps a handle
+-- only to ask it something (a job's Request, Add or Pending, a ticker's
+-- Running) and cancels it through that handle; every other wait is cancelled
+-- through its function (ctx:Cancel(fn)). A job is also an event
 -- callback: ctx:Event(event, job) requests it on every event at the cost of
 -- a pending check. A per-event path with work of its own may read
 -- job.pending and skip the Request call while a run is due already.
@@ -26,9 +29,12 @@ local Dispatch = NS.Dispatch
 -- run in combat too: work that needs the lockdown over checks it itself.
 --
 -- C_Timer.After cannot be cancelled. Every wait therefore hands C_Timer a
--- tick of its own; a tick that Cancel replaced finds itself stale and does
--- nothing. Steady use allocates nothing: a tick is made once and again only
--- after a cancel caught one in flight.
+-- tick of its own; a tick that was replaced finds itself stale and does
+-- nothing. Steady use allocates nothing, and so does a cancel followed by a
+-- restart: a cancelled deadline keeps its tick in flight for the next start,
+-- and a cancelled job serves its next request with its second tick. A tick
+-- is made again only when a restart moves a deadline before its tick or a
+-- cancel finds both of a job's ticks in flight.
 local Context = Private.Context
 
 ------------------------------------------------------------------ ticks
@@ -92,9 +98,10 @@ function Deadline:Fire()
     self:Run()
 end
 
+-- A tick in flight stays armed: it finds no deadline and does nothing,
+-- unless a later Start reuses it.
 function Deadline:Cancel()
     self.due = nil
-    Abandon(self)
 end
 
 function Deadline:Pending()
@@ -113,12 +120,16 @@ end
 local Job = {}
 Job.__index = Job
 
--- A job's tick runs the job itself: the per-window path stays one call.
+-- A job's tick runs the job itself: the per-window path stays one call. A
+-- stale tick that was the job's second one frees it (Job:Cancel).
 local function NewJobTick(job)
     local tick
     tick = function()
         local self = job
-        if self.tick ~= tick then return end
+        if self.tick ~= tick then
+            if self.spare == tick then self.spareBusy = false end
+            return
+        end
         self.armed = false
         if not self.pending then return end
         self.pending = false
@@ -150,10 +161,15 @@ function Job:Clear()
 end
 
 -- Forgets the request and makes a wait in flight stale: the next request
--- waits the full delay.
+-- waits the full delay. The stale tick becomes the job's second one; the
+-- earlier second tick, once its own wait is over, serves the next request.
 function Job:Cancel()
     self.pending = false
-    Abandon(self)
+    if not self.armed then return end
+    self.armed = false
+    local stale = self.tick
+    self.tick = not self.spareBusy and self.spare or nil
+    self.spare, self.spareBusy = stale, true
 end
 
 function Job:Pending()

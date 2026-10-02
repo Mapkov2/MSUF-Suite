@@ -276,6 +276,56 @@ failing:Request()
 clock.Advance(.2)
 Reported(7, "a raising debounce was not reported")
 
+------------------------------------------------------------------ cancel and restart
+-- A cancel and a restart while the wait is in flight reuse it: no new tick
+-- and no second C_Timer wait, and the restart still runs once, on time.
+local restarted = 0
+local function Restarted() restarted = restarted + 1 end
+local wait = ctx:After(1, Restarted)
+clock.Advance(.2)
+local firstTick, armed = wait.tick, clock.native
+for _ = 1, 10 do
+    ctx:Cancel(Restarted)
+    ctx:After(1, Restarted)
+end
+assert(wait.tick == firstTick and clock.native == armed, "a cancel and restart armed a new wait")
+clock.Advance(.95)
+assert(restarted == 0, "the restart ran at the cancelled deadline")
+clock.Advance(.1)
+assert(restarted == 1 and not wait:Pending(), "the restart did not run once at its deadline")
+ctx:After(1, Restarted)
+ctx:Cancel(Restarted)
+clock.Advance(2)
+assert(restarted == 1, "a cancelled wait ran")
+-- A cancelled job's next request waits the full delay on the job's second
+-- tick, so cancels and requests while armed use two ticks at most.
+local runsAfterCancel, ticks, distinct = 0, {}, 0
+local cancelled = ctx:Coalesce(.5, function() runsAfterCancel = runsAfterCancel + 1 end)
+for round = 1, 6 do
+    cancelled:Request()
+    clock.Advance(.1)
+    cancelled:Cancel()
+    cancelled:Request()
+    if not ticks[cancelled.tick] then ticks[cancelled.tick], distinct = true, distinct + 1 end
+    clock.Advance(.45)
+    assert(runsAfterCancel == round - 1, "the request after Cancel ran on the cancelled wait")
+    clock.Advance(.1)
+    assert(runsAfterCancel == round, "the request after Cancel did not run after its full delay")
+end
+assert(distinct <= 2, "cancels and requests made " .. distinct .. " ticks")
+-- Two cancels inside one delay leave both ticks in flight: a third serves.
+cancelled:Request()
+clock.Advance(.1)
+cancelled:Cancel()
+cancelled:Request()
+clock.Advance(.1)
+cancelled:Cancel()
+cancelled:Request()
+clock.Advance(.45)
+assert(runsAfterCancel == 6, "a request ran on a cancelled wait")
+clock.Advance(.1)
+assert(runsAfterCancel == 7, "the last request did not run after its full delay")
+
 ------------------------------------------------------------------ steady state allocates nothing
 local function Kilobytes(count)
     collectgarbage("collect")

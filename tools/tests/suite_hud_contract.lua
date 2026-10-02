@@ -794,7 +794,14 @@ for _, key in ipairs({ "questColor", "achievementColor", "levelColor", "scenario
 end
 local expires = banner.expiresAt
 banner:Refresh()
-assert(banner.expiresAt == expires and banner.dismissTimer:Pending() and banner.title.textColor[2] == 1
+-- The banner's one wait is its dismiss (ctx:After, one handle per function).
+local function DismissPending()
+    for _, handle in pairs(banner.context.timers) do
+        if handle.due ~= nil then return true end
+    end
+    return false
+end
+assert(banner.expiresAt == expires and DismissPending() and banner.title.textColor[2] == 1
     and math.abs(banner.background.color[1] - 17 / 255) < .001,
     "announcement color changes must repaint without restarting the display timer")
 EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 7,
