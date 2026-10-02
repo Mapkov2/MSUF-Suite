@@ -1,10 +1,13 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 
-local M = { serial = 0 }
+local M = {}
 
+-- The invite still due: one accept on the next frame for the newest trusted
+-- invite (self.inviter); any newer invite, a cancel or a refresh drops it.
+local AcceptLatest
 local function Invalidate(self)
-    self.serial = self.serial + 1
+    self.context:Cancel(AcceptLatest)
 end
 
 -- Blizzard's relationship and queue helpers are Lua: an error inside one is
@@ -28,8 +31,8 @@ local function SafeToJoin()
     return ok == true and S.Public(removesQueue) and removesQueue == false
 end
 
-local function AcceptVisible(self, serial, inviterName)
-    if not self.active or serial ~= self.serial or not SafeToJoin() then return end
+local function AcceptVisible(self, inviterName)
+    if not SafeToJoin() then return end
     local dialog = StaticPopup_FindVisible("PARTY_INVITE")
     if not S.Public(dialog) or not dialog or NS.Safety.IsForbidden(dialog) then return end
     local shown = dialog:IsShown()
@@ -55,9 +58,13 @@ local function OnInvite(self, _, name, tank, healer, damage, _, _, guid, questSe
         or not S.Public(damage) or damage ~= false
         or not S.Public(questSession) or questSession ~= false
         or not SafeToJoin() or not Trusted(self, guid, name) then return end
-    local serial = self.serial
     -- The event may reach addons before Blizzard creates its native popup.
-    C_Timer.After(0, function() AcceptVisible(self, serial, name) end)
+    self.inviter = name
+    self.context:After(0, AcceptLatest)
+end
+
+AcceptLatest = function(self)
+    AcceptVisible(self, self.inviter)
 end
 
 function M:Enable()

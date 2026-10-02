@@ -30,6 +30,8 @@ C_Timer = { After = function(delay, callback)
     assert(delay == 0)
     deferred[#deferred + 1] = callback
 end }
+-- Every wait here is for the next frame; the frame clock stands still.
+GetTime = function() return 100 end
 local dialog = { which = "PARTY_INVITE", shown = true, text = "Name-Realm invites you to a group." }
 function dialog:IsShown() return self.shown end
 function dialog:GetTextFontString()
@@ -57,7 +59,9 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TrustedPartyInvites.lua"))(
 local module = assert(installed.trustedPartyInvites)
 module.active = true
 module.config = { battleNet = true, wowFriends = true, guild = false }
-module.context = context()
+ns.Dispatch = suite.Dispatch
+module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, suite, ns)(
+    "trustedPartyInvites", module, context())
 module:Enable()
 assert(module.context.events.PARTY_INVITE_REQUEST and module.context.events.PARTY_INVITE_CANCEL)
 local function invite(guid, tank, healer, damage, quest)
