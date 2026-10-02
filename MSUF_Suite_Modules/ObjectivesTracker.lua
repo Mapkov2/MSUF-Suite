@@ -678,19 +678,10 @@ local function Scratch(self, key)
     return scratch
 end
 
-Render = function(self)
-    if not self.active then return end
-    local c = self.config
-    if self.raidActive and self.raid then
-        RenderRaid(self, c)
-        return
-    end
-    if self.raid then self.raid.frame:Hide() end
-    if self.mplusActive and self.mplus then
-        RenderMythicPlus(self, c)
-        return
-    end
-    if self.mplus then self.mplus.frame:Hide() end
+-- The rows to show, in order, from the grouped entries (an Edit Mode preview
+-- line while nothing is tracked). Returns the list, its length and the
+-- number of entries.
+local function BuildFlat(self, c)
     local grouped = GroupEntries(self)
     local flat, flatCount, totalEntries = self.flatWork or {}, 0, 0
     for i = 1, #ORDER do
@@ -705,31 +696,27 @@ Render = function(self)
         preview.text, preview.height = Tr("Tracked objectives appear here"), 24
     end
     for i = #flat, flatCount + 1, -1 do flat[i] = nil end
-    -- Compare with the previous layout first; an unchanged tracker stops here.
-    local previous = self.previousFlat
-    local themeChanged = self.retheme or not self.font
+    return flat, flatCount, totalEntries
+end
+
+-- Whether the rows differ from the previous layout; an unchanged tracker
+-- stops there.
+local function LayoutChanged(self, c, flat, flatCount, previous, themeChanged)
     local geometryChanged = self.lastWidth ~= c.width or self.lastHeight ~= c.height
         or self.lastScale ~= c.scale or self.lastX ~= c.x or self.lastY ~= c.y
         or self.lastEditMode ~= S.editMode
-    local changed = self.layoutDirty or themeChanged or geometryChanged or not previous or #previous ~= flatCount
-    if not changed then
-        for i = 1, flatCount do
-            if not SameItem(flat[i], previous[i]) then
-                changed = true
-                break
-            end
-        end
+    if self.layoutDirty or themeChanged or geometryChanged or not previous or #previous ~= flatCount then
+        return true
     end
-    if not changed then
-        self.flatWork = flat
-        return
+    for i = 1, flatCount do
+        if not SameItem(flat[i], previous[i]) then return true end
     end
-    self.previousFlat, self.flatWork = flat, previous or {}
-    self.layoutDirty = nil
-    self.retheme = false
-    if themeChanged then Theme(self) end
-    self.title:SetText(TITLE.objectives)
-    PlaceHost(self, c, themeChanged)
+    return false
+end
+
+-- Paints the rows that moved or changed; a row in its place keeps its paint.
+-- Returns the height of the content.
+local function PaintRows(self, c, flat, flatCount, previous, themeChanged)
     local used = Scratch(self, "usedRows")
     for i = 1, flatCount do used[flat[i].key] = true end
     local previousByKey = Scratch(self, "previousByKey")
@@ -751,6 +738,36 @@ Render = function(self)
             y = y + PaintRow(self, row, item, c, width, y)
         end
     end
+    return y
+end
+
+Render = function(self)
+    if not self.active then return end
+    local c = self.config
+    if self.raidActive and self.raid then
+        RenderRaid(self, c)
+        return
+    end
+    if self.raid then self.raid.frame:Hide() end
+    if self.mplusActive and self.mplus then
+        RenderMythicPlus(self, c)
+        return
+    end
+    if self.mplus then self.mplus.frame:Hide() end
+    local flat, flatCount, totalEntries = BuildFlat(self, c)
+    local previous = self.previousFlat
+    local themeChanged = self.retheme or not self.font
+    if not LayoutChanged(self, c, flat, flatCount, previous, themeChanged) then
+        self.flatWork = flat
+        return
+    end
+    self.previousFlat, self.flatWork = flat, previous or {}
+    self.layoutDirty = nil
+    self.retheme = false
+    if themeChanged then Theme(self) end
+    self.title:SetText(TITLE.objectives)
+    PlaceHost(self, c, themeChanged)
+    local y = PaintRows(self, c, flat, flatCount, previous, themeChanged)
     self.content:SetHeight(math.max(1, y))
     self.host:SetHeight(math.min(c.height, math.max(S.editMode and 160 or self.headerHeight + 5,
         y + self.headerHeight + 5)))

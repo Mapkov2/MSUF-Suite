@@ -165,20 +165,69 @@ local function ResetPosition(id, spec)
     return S.SetMany(id, values)
 end
 
+-- The element's frame (spec.getFrame) while it is accessible, its scale
+-- and the anchor point its x/y offsets use.
+local function SpecFrame(spec)
+    local frame = spec.getFrame()
+    if frame and not NS.Safety.IsForbidden(frame) then return frame end
+end
+
+local function SpecScale(spec)
+    local frame = SpecFrame(spec)
+    local scale = frame and frame:GetScale()
+    return Finite(scale) and scale > 0 and scale or 1
+end
+
+local function SpecPoint(spec)
+    return type(spec.point) == "function" and spec.point() or spec.point or "CENTER"
+end
+
+-- The saved values an undo restores (position and captureKeys).
+local function CaptureState(id, spec, captureKeys)
+    local config = S.Config(id)
+    local values = { [spec.xKey] = config[spec.xKey], [spec.yKey] = config[spec.yKey] }
+    if spec.pointKey then values[spec.pointKey] = config[spec.pointKey] end
+    for _, key in ipairs(captureKeys) do values[key] = config[key] end
+    local state = { epoch = Epoch(), values = values }
+    -- A module may start a drag from its live position (Bags: Blizzard's
+    -- anchor while the bag never moved). Undo still restores the saved
+    -- values, so a native anchor never reaches the profile.
+    if spec.capture then
+        local origin = { [spec.xKey] = values[spec.xKey], [spec.yKey] = values[spec.yKey] }
+        spec.capture(origin)
+        state.origin = origin
+    end
+    return state
+end
+
+-- A drag preview moves the frame; the commit writes the settings.
+local function MovePosition(id, spec, request)
+    local state = request and request.state
+    if not ValidState(state) then return false end
+    local scale = SpecScale(spec)
+    local origin = state.origin or state.values
+    local x = origin[spec.xKey] + (request.deltaX or 0) / scale
+    local y = origin[spec.yKey] + (request.deltaY or 0) / scale
+    if not Finite(x) or not Finite(y) then return false end
+    if request.phase ~= "commit" then
+        -- Elements whose x/y are not UIParent offsets place themselves.
+        if spec.place then return spec.place(x, y) == true end
+        local frame = SpecFrame(spec)
+        if not frame then return false end
+        Place(frame, SpecPoint(spec), x, y)
+        return true
+    end
+    local values = {
+        [spec.xKey] = math.floor(x * 10 + 0.5) / 10,
+        [spec.yKey] = math.floor(y * 10 + 0.5) / 10,
+    }
+    for key, value in pairs(spec.moveValues or EMPTY) do values[key] = value end
+    return S.SetMany(id, values)
+end
+
 local function Element(id, elementID, spec)
     local captureKeys = CaptureKeys(spec)
-    local function Frame()
-        local frame = spec.getFrame()
-        if frame and not NS.Safety.IsForbidden(frame) then return frame end
-    end
-    local function Scale()
-        local frame = Frame()
-        local scale = frame and frame:GetScale()
-        return Finite(scale) and scale > 0 and scale or 1
-    end
-    local function Point()
-        return type(spec.point) == "function" and spec.point() or spec.point or "CENTER"
-    end
+    local function Frame() return SpecFrame(spec) end
     return {
         id = elementID,
         label = S.Text(spec.label),
@@ -190,49 +239,12 @@ local function Element(id, elementID, spec)
             return S.states[id].active and (not spec.isEnabled or spec.isEnabled())
                 and (not spec.visible or spec.visible()) and Frame() ~= nil
         end,
-        captureState = function()
-            local config = S.Config(id)
-            local values = { [spec.xKey] = config[spec.xKey], [spec.yKey] = config[spec.yKey] }
-            if spec.pointKey then values[spec.pointKey] = config[spec.pointKey] end
-            for _, key in ipairs(captureKeys) do values[key] = config[key] end
-            local state = { epoch = Epoch(), values = values }
-            -- A module may start a drag from its live position (Bags: Blizzard's
-            -- anchor while the bag never moved). Undo still restores the saved
-            -- values, so a native anchor never reaches the profile.
-            if spec.capture then
-                local origin = { [spec.xKey] = values[spec.xKey], [spec.yKey] = values[spec.yKey] }
-                spec.capture(origin)
-                state.origin = origin
-            end
-            return state
-        end,
+        captureState = function() return CaptureState(id, spec, captureKeys) end,
         restoreState = function(state)
             if not ValidState(state) then return false end
             return S.SetMany(id, state.values)
         end,
-        movePosition = function(request)
-            local state = request and request.state
-            if not ValidState(state) then return false end
-            local scale = Scale()
-            local origin = state.origin or state.values
-            local x = origin[spec.xKey] + (request.deltaX or 0) / scale
-            local y = origin[spec.yKey] + (request.deltaY or 0) / scale
-            if not Finite(x) or not Finite(y) then return false end
-            if request.phase ~= "commit" then
-                -- Elements whose x/y are not UIParent offsets place themselves.
-                if spec.place then return spec.place(x, y) == true end
-                local frame = Frame()
-                if not frame then return false end
-                Place(frame, Point(), x, y)
-                return true
-            end
-            local values = {
-                [spec.xKey] = math.floor(x * 10 + 0.5) / 10,
-                [spec.yKey] = math.floor(y * 10 + 0.5) / 10,
-            }
-            for key, value in pairs(spec.moveValues or EMPTY) do values[key] = value end
-            return S.SetMany(id, values)
-        end,
+        movePosition = function(request) return MovePosition(id, spec, request) end,
         resetPosition = function() return ResetPosition(id, spec) end,
         extraControls = PopupControls(id, spec),
         openSettings = function()
